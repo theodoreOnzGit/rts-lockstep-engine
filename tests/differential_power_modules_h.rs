@@ -115,6 +115,22 @@
 //! | 2213 | `doSpecialPowerAtLocation` does the base's `doSpecialPower` | 2,038 |
 //! | 2214 | `doSpecialPowerAtObject` targets the object itself | 1,617 |
 //!
+//! # Batch R63: `FireWeaponPower` (2026-10-25, `p1w13-sonnet`)
+//!
+//! `FireWeaponPower.cpp` is compiled unchanged into the driver and run as kind 9 (`fire_weapon_power_r63_matches_upstream`, seed `0x0063_F1E0`,
+//! `L9R63_CASES`); flag bit 11 gives the object an AI, whose `aiAttackPosition`, `aiAttackObject` and turret orders are lines (a probe AI's
+//! trace on the Rust side), as is `Object::reloadAllAmmo` (a `CutCall::ObjectReloadAllAmmo` record under `cuts.stub_weapon_calls`). Results,
+//! 9,000 cases: 7,883 reads and 62,742 dump lines compared (5,122 cases run), **0 mismatches**; 1,117 excluded as undefined upstream, 2,761
+//! data blocks threw on both sides; 29,823 powers done, 3,125 xfers, 121,370 effect lines (16,736 reloads, 9,417 position attacks, 4,085
+//! object attacks, 18,834 turret positions, 8,170 turret objects).
+//!
+//! | plant | what is broken | mismatches |
+//! |---|---|---|
+//! | 2331 | the weapons not reloaded | 16,736 |
+//! | 2332 | the attack is always of one shot | 8,722 |
+//! | 2333 | a location attack points only the first turret | 4,580 |
+//! | 2334 | a disabled object still orders the attack | 5,719 |
+//!
 //! # Upstream facts the test exposed
 //!
 //! - `SpecialPowerModule.h` declares TWO `getReadyFrame`: the interface's `const` one (the shared timer, or `m_availableOnFrame` plus the paused frames)
@@ -179,6 +195,7 @@ use rts_lockstep_engine::logic::modules::cash_hack_special_power::CashHackSpecia
 use rts_lockstep_engine::logic::modules::cleanup_area_power::CleanupAreaPowerModuleData;
 use rts_lockstep_engine::logic::modules::defector_special_power::DefectorSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::special_ability::SpecialAbilityModuleData;
+use rts_lockstep_engine::logic::modules::fire_weapon_power::FireWeaponPowerModuleData;
 use rts_lockstep_engine::logic::modules::ocl_special_power::OCLSpecialPowerModuleData;
 use rts_lockstep_engine::logic::modules::special_power_body::SpecialPowerBehavior;
 use rts_lockstep_engine::logic::modules::special_power_module_impl::SpecialPowerModuleImpl;
@@ -206,7 +223,7 @@ const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9power_h.bi
 const XFER_FILE: &str = "l9power_h.bin";
 
 /// The class names of the kinds, in the order of the driver's `kind` (the base is never registered with the module factory).
-const CLASSES: [&str; 9] = [
+const CLASSES: [&str; 10] = [
     "SpecialPowerModule",
     "CleanupAreaPower",
     "BaikonurLaunchPower",
@@ -216,6 +233,7 @@ const CLASSES: [&str; 9] = [
     "CashHackSpecialPower",
     "OCLSpecialPower",
     "SpecialAbility",
+    "FireWeaponPower",
 ];
 /// The power types the cases give the special powers (`Enum = `).
 const TYPES: [&str; 13] = [
@@ -307,6 +325,7 @@ fn read_block(ini: &mut Ini<'_>, out: &mut (usize, Option<ModuleDataKind>)) -> I
         6 => ModuleDataKind::CashHackSpecialPower(Arc::new(CashHackSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         7 => ModuleDataKind::OCLSpecialPower(Arc::new(OCLSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
         8 => ModuleDataKind::SpecialAbility(Arc::new(SpecialAbilityModuleData::friend_new_module_data(Some(ini))?)),
+        9 => ModuleDataKind::FireWeaponPower(Arc::new(FireWeaponPowerModuleData::friend_new_module_data(Some(ini))?)),
         _ => ModuleDataKind::DefectorSpecialPower(Arc::new(DefectorSpecialPowerModuleData::friend_new_module_data(Some(ini))?)),
     });
     Ok(())
@@ -330,6 +349,7 @@ fn base_of(data: &ModuleDataKind) -> &SpecialPowerModuleData {
         ModuleDataKind::CashHackSpecialPower(d) => &d.special_power,
         ModuleDataKind::OCLSpecialPower(d) => &d.special_power,
         ModuleDataKind::SpecialAbility(d) => &d.special_power,
+        ModuleDataKind::FireWeaponPower(d) => &d.special_power,
         _ => unreachable!("not a special power module"),
     }
 }
@@ -353,6 +373,7 @@ fn put_data(v: &mut Vec<u8>, data: &ModuleDataKind, store: &SpecialPowerStore) {
             put_u32(v, d.max_duration_in_frames);
         }
         ModuleDataKind::DefectorSpecialPower(d) => put_u32(v, d.fat_cursor_radius.to_bits()),
+        ModuleDataKind::FireWeaponPower(d) => put_u32(v, d.max_shots_to_fire),
         ModuleDataKind::CashBountyPower(d) => put_u32(v, d.default_bounty.to_bits()),
         ModuleDataKind::CashHackSpecialPower(d) => {
             put_u32(v, d.upgrades.len() as u32);
@@ -416,6 +437,7 @@ fn decode(kind: usize, b: &[u8], n_ops: usize) -> Vec<String> {
             out.push(format!("spy {a} {c} {d}"));
         }
         4 => out.push(format!("fat cursor {:#x}", u32_(&mut p))),
+        9 => out.push(format!("max shots {}", u32_(&mut p))),
         5 => out.push(format!("bounty {:#x}", u32_(&mut p))),
         6 => {
             let n = u32_(&mut p);
@@ -556,6 +578,7 @@ fn gen_text(g: &mut Gen, kind: usize, clean: bool) -> Vec<u8> {
             }
         }
         4 if g.below(100) < 80 => lines.push(format!("FatCursorRadius = {}", gen_real(g, clean))),
+        9 if g.below(100) < 80 => lines.push(format!("MaxShotsToFire = {}", pick(g, &["0", "1", "3", "12", "4294967295"]))),
         5 if g.below(100) < 85 => lines.push(format!("Bounty = {}", pick(g, &["0%", "10%", "25%", "50%", "12.5%"]))),
         6 => {
             // (only declared sciences: an unknown one throws upstream when read, and is looked up only when used here; see the module docs)
@@ -735,6 +758,8 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
             match cut_iter.next().expect("a cut line has a cut call") {
                 CutCall::ScriptNotifyOfTriggeredSpecialPower { player, name, source } => log.push(format!("script {player} {} {source}", String::from_utf8_lossy(&name))),
                 CutCall::PlayerAcademyRecordSpecialPowerUsed { player, template } => log.push(format!("academy {player} {template}")),
+                // batch R63: FireWeaponPower's reload (the stand-in's line, l9_powers_h.inc)
+                CutCall::ObjectReloadAllAmmo { object, now } => log.push(format!("reloadall {object} {}", i32::from(now))),
                 CutCall::PlayerSetUnitsVisionSpied { player, setting, which_units, by_whom } => log.push(format!("spied {player} {} {by_whom} {}", i32::from(setting), kind_words(&which_units))),
                 // batch R21: the cash hack (the stand-ins' lines, l9_crates_f.inc, l9_sabotage_r13.inc, l9_updates_l.inc)
                 CutCall::PlayerMoneyWithdraw { player, amount } => log.push(format!("withdraw {player} {amount} 1")),
@@ -796,6 +821,11 @@ fn effects(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClientEvent
             }
         } else if t.starts_with("defect ") || t.starts_with("cleanup ") || t.starts_with("intent ") {
             log.push(t);
+        } else if let Some(l) = t.strip_prefix("bt ") {
+            // batch R63: the AI's attack and turret orders (the probe AI's trace; the stand-in's lines)
+            if l.starts_with("aiattack ") || l.starts_with("aiattackpos ") || l.starts_with("turretpos ") || l.starts_with("turretobj ") {
+                log.push(l.to_string());
+            }
         }
     }
     log
@@ -814,6 +844,7 @@ fn state_words(w: &World, me: ObjectId, idx: u16) -> Vec<u32> {
         UpdateBody::CashHackSpecialPower(m) => m.power(),
         UpdateBody::OCLSpecialPower(m) => m.power(),
         UpdateBody::SpecialAbility(m) => m.power(),
+        UpdateBody::FireWeaponPower(m) => m.power(),
         _ => unreachable!("not a special power module"),
     };
     vec![power.get_available_on_frame(), power.paused_count() as u32, power.paused_on_frame(), power.paused_percent().to_bits()]
@@ -866,6 +897,11 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
         ..Default::default()
     });
     w.cuts.probe_effect_trace = true;
+    if kind == 9 {
+        // batch R63: the weapons' reload a record, the AI's orders a trace
+        w.cuts.stub_weapon_calls = true;
+        w.cuts.body.probe_trace = true;
+    }
     w.cuts.trace = Some(Vec::new());
     w.cuts.log = Some(Vec::new());
     if cfg[2] >> 9 & 1 != 0 {
@@ -906,6 +942,13 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     }
     if cfg[2] >> 5 & 1 != 0 {
         let mut b = NewModule::plain(b"CleanupHazardUpdate", b"ModuleTag_Cleanup");
+        b.body = Some(probe(ProbeAnswers::default()));
+        modules.push(b);
+    }
+    if cfg[2] >> 11 & 1 != 0 {
+        // batch R63: an AI (a probe; its orders are trace lines)
+        let mut b = NewModule::plain(b"AIUpdateInterface", b"ModuleTag_AI");
+        b.is_ai = true;
         b.body = Some(probe(ProbeAnswers::default()));
         modules.push(b);
     }
@@ -1156,6 +1199,13 @@ fn special_ability_r51_matches_upstream() {
     run_suite(&[8], 0x0051_5AB1, cases, "SpecialAbility R51");
 }
 
+/// Batch R63: `FireWeaponPower` on the same driver (its own seed and case count).
+#[test]
+fn fire_weapon_power_r63_matches_upstream() {
+    let cases = std::env::var("L9R63_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(9_000);
+    run_suite(&[9], 0x0063_F1E0, cases, "FireWeaponPower R63");
+}
+
 /// The cases of `kinds` (in turn), from the seed: each a set of special powers, a data block, a scene and ops, run on both sides and compared.
 fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1165,7 +1215,7 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
     let mut run = Check::new(&format!("{label} ops (data, effects, state, objects)"));
     let (mut read_failed, mut ops_run, mut excluded) = (0u64, 0u64, 0u64);
     let mut tally = Tally::default();
-    let mut per_kind = [0u64; 9];
+    let mut per_kind = [0u64; 10];
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut shown = 0;
     for case in 0..cases {
@@ -1215,6 +1265,10 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         let view_name = u32::from(g.below(10) < 7) << 9;
         let drawable = u32::from(g.below(10) < 6) << 10;
         cfg[2] = dis | constructing | structure | contain | spy | cleanup | spu | take | ro_a | view_name | drawable;
+        if kind == 9 {
+            // batch R63: mostly an AI
+            cfg[2] |= u32::from(g.below(10) < 8) << 11;
+        }
         cfg[3] = if g.below(10) == 0 { g.below(40) } else { g.below(6) };
         cfg[4] = (g.below(3)) | (g.below(3) << 2) | (g.below(3) << 4);
         cfg[5] = 3;
@@ -1255,6 +1309,17 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
                     4 => *o = [0, gen_options(&mut g), 0, 0, 0, 0],
                     5 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
                     6 => *o = [2, f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), gen_options(&mut g), 0],
+                    _ => {}
+                }
+            }
+        }
+        if kind == 9 {
+            // batch R63: the power mostly runs
+            for o in &mut ops {
+                match g.below(10) {
+                    0 => *o = [0, gen_options(&mut g), 0, 0, 0, 0],
+                    1 => *o = [1, gen_options(&mut g), 0, 0, 0, 0],
+                    2 => *o = [2, f32_bits(&mut g, 200.0), f32_bits(&mut g, 200.0), f32_bits(&mut g, 20.0), gen_options(&mut g), 0],
                     _ => {}
                 }
             }
@@ -1331,7 +1396,7 @@ fn run_suite(kinds: &[usize], seed: u64, cases: usize, label: &str) {
         };
         let (dr, dc) = (decode(kind, &rd, ops.len()), decode(kind, &buf, ops.len()));
         for l in &dr {
-            for key in ["\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float ", "\"oclat ", "\"oclown ", "\"findpos "] {
+            for key in ["\"reloadall ", "\"aiattack ", "\"aiattackpos ", "\"turretpos ", "\"turretobj ", "\"eva ", "\"script ", "\"academy ", "\"audio ", "\"addsuper ", "\"defect ", "\"cleanup ", "\"spied ", "\"intent ", "\"mc ", "\"withdraw ", "\"float ", "\"oclat ", "\"oclown ", "\"findpos "] {
                 *counts.entry(key.trim_matches('"').trim().to_string()).or_default() += l.matches(key).count() as u64;
             }
             if l.contains(" bounties [") && !l.contains(" bounties [0, 0, 0]") {

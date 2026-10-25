@@ -105,6 +105,7 @@ pub mod cleanup_area_power;
 pub mod baikonur_launch_power;
 pub mod spy_vision_special_power;
 pub mod defector_special_power;
+pub mod fire_weapon_power;
 pub mod special_ability;
 pub mod ocl_special_power;
 pub mod cash_hack_special_power;
@@ -514,6 +515,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DefectorSpecialPower(d) => Some(made(
             defector_special_power::DefectorSpecialPower::get_interface_mask(),
             defector_special_power::DefectorSpecialPower::new(object, Some(d.clone())).map(UpdateBody::DefectorSpecialPower),
+        )),
+        ModuleDataKind::FireWeaponPower(d) => Some(made(
+            fire_weapon_power::FireWeaponPower::get_interface_mask(),
+            fire_weapon_power::FireWeaponPower::new(object, Some(d.clone())).map(UpdateBody::FireWeaponPower),
         )),
         ModuleDataKind::SpecialAbility(d) => Some(made(
             special_ability::SpecialAbility::get_interface_mask(),

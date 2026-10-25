@@ -621,6 +621,12 @@ pub enum ModuleCall {
     AiBusy { command_source: i32 },
     /// batch R56: `AIUpdateInterface::aiAttackObject(victim, maxShotsToFire, cmdSource)`.
     AiAttackObject { victim: ObjectId, max_shots: i32, command_source: i32 },
+    /// batch R63: `AIUpdateInterface::aiAttackPosition(pos, maxShotsToFire, cmdSource)`, `None` for a `NULL` position.
+    AiAttackPosition { pos: Option<Coord3D>, max_shots: i32, command_source: i32 },
+    /// batch R63: `AIUpdateInterface::setTurretTargetPosition(turret, pos)`.
+    AiSetTurretTargetPosition { turret: i32, pos: Coord3D },
+    /// batch R63: `AIUpdateInterface::setTurretTargetObject(turret, target, isForceAttacking)`.
+    AiSetTurretTargetObject { turret: i32, target: ObjectId, force_attacking: bool },
     /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.

@@ -1054,6 +1054,20 @@ impl ProbeModule {
                 world.body_trace(format!("aiattack {} {victim} {max_shots} {command_source}", me.object));
                 ModuleReply::Done
             }
+            // batch R63: FireWeaponPower's AI
+            ModuleCall::AiAttackPosition { pos, max_shots, command_source } => {
+                let at = pos.map_or("null".to_string(), |p| format!("{:08x} {:08x} {:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits()));
+                world.body_trace(format!("aiattackpos {} {at} {max_shots} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetTurretTargetPosition { turret, pos } => {
+                world.body_trace(format!("turretpos {} {turret} {:08x} {:08x} {:08x}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetTurretTargetObject { turret, target, force_attacking } => {
+                world.body_trace(format!("turretobj {} {turret} {target} {}", me.object, force_attacking as i32));
+                ModuleReply::Done
+            }
             ModuleCall::PhysicsGetVelocityMagnitude => {
                 let v = self.answers.velocity;
                 ModuleReply::Real((v.x * v.x + v.y * v.y + v.z * v.z).sqrt())

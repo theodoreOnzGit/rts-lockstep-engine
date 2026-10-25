@@ -19,6 +19,22 @@
 #undef min
 /* p1w13-sonnet, batch R51: SpecialAbility (kind 8) */
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/SpecialAbility.cpp"
+/* p1w13-sonnet, batch R63: FireWeaponPower (kind 9); the object's reloadAllAmmo and its AI's attack and turret orders are lines */
+#include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/SpecialPower/FireWeaponPower.cpp"
+void Object::reloadAllAmmo(Bool now) { ulog("reloadall %d %d", (int)m_oid, (int)now); }
+void AIUpdateInterface::aiAttackPosition(const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource)
+{
+	if (pos) ulog("aiattackpos %d %08x %08x %08x %d %d", (int)m_owner->m_oid, realBits(pos->x), realBits(pos->y), realBits(pos->z), (int)maxShotsToFire, (int)cmdSource);
+	else ulog("aiattackpos %d null %d %d", (int)m_owner->m_oid, (int)maxShotsToFire, (int)cmdSource);
+}
+void AIUpdateInterface::setTurretTargetObject(WhichTurretType tur, Object *o, Bool isForceAttacking)
+{
+	ulog("turretobj %d %d %d %d", (int)m_owner->m_oid, (int)tur, o ? (int)o->m_oid : 0, (int)isForceAttacking);
+}
+void AIUpdateInterface::setTurretTargetPosition(WhichTurretType tur, const Coord3D *pos)
+{
+	ulog("turretpos %d %d %08x %08x %08x", (int)m_owner->m_oid, (int)tur, realBits(pos->x), realBits(pos->y), realBits(pos->z));
+}
 
 /* batch R22: OCLSpecialPower (kind 7) is compiled at the end of the unit, after the stand-ins it reaches (differential/l9_ocl_power_r22.inc) */
 ModuleData *r22ReadOcl(INI *ini);
@@ -110,6 +126,7 @@ ModuleData *l9spRead(int kind, const char *filename)
 			case 6: data = CashHackSpecialPower::friend_newModuleData(&ini); break;
 			case 7: data = r22ReadOcl(&ini); break;
 			case 8: data = SpecialAbility::friend_newModuleData(&ini); break;
+			case 9: data = FireWeaponPower::friend_newModuleData(&ini); break;
 			default: data = DefectorSpecialPower::friend_newModuleData(&ini); break;
 			}
 		} catch (...) {
@@ -193,7 +210,7 @@ extern "C" {
 ** 5 onSpecialPowerCreation  6 setReadyFrame(a)  7 markSpecialPowerTriggered(a != 0: location (b, c, d))  8 startPowerRecharge  9 queries only  10 the frame = a
 ** 11 the objects' disabled = a & 1 and controlling player = b - 1 (0 none)  12 xfer save  13 xfer load of the last save  14 xfer CRC  15 loadPostProcess
 ** 16 the local player = a - 1 (0 none)  17 the relationships = a (2 bits each)  18 the relationships to the default teams = a  19 (batch R21) player a gets
-** science c (its key) if b, else loses every science  20 onObjectCreated  21 player a's money = b. Kind 8 (batch R51): SpecialAbility. cfg[8..10] (batch R21): the players' money. Kinds 5
+** science c (its key) if b, else loses every science  20 onObjectCreated  21 player a's money = b. Kind 8 (batch R51): SpecialAbility. Kind 9 (batch R63): FireWeaponPower; flag bit 11 the object has an AI. cfg[8..10] (batch R21): the players' money. Kinds 5
 ** CashBountyPower and 6 CashHackSpecialPower (batch R21); the constructor is followed by onObjectCreated, as Object's (only CashBountyPower has one). Each op appends: the CATCH_ALL status, isReady, getPercentReady (bits),
 ** getReadyFrame, isScriptOnly, the effect log (count, then each as a string), the xfer status, bytes and CRC, the module's four state words, and the
 ** players' cash bounties (batch R21), the objects the module made (count, then id, team, position and shroud range bits of each). The constructor's effect log (count, then each as a string) comes
@@ -240,6 +257,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 			break;
 		}
 		case 7: r22PutOclData(d); break;
+		case 9: putU32(((FireWeaponPowerModuleData *)d)->m_maxShotsToFire); break;
 		default: break;
 		}
 	}
@@ -305,6 +323,9 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	obj->m_pos.x = 11.0f; obj->m_pos.y = 22.0f; obj->m_pos.z = 5.0f;
 	other->m_pos.x = -3.0f; other->m_pos.y = 8.0f; other->m_pos.z = 1.5f;
 	obj->m_contain = (cfg[2] >> 3 & 1) ? &g_spContain : 0;
+	AIUpdateInterface r63Ai;   /* batch R63 */
+	r63Ai.m_owner = obj;
+	obj->m_ai = (cfg[2] >> 11 & 1) ? &r63Ai : 0;
 	UpdateModuleData behaviorData;
 	SpuBehavior *spu = 0;
 	BehaviorModule *list[2] = { 0, 0 };
@@ -330,6 +351,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	case 6: m = new CashHackSpecialPower(obj, d); break;
 	case 7: m = r22NewOcl(obj, d); break;
 	case 8: m = new SpecialAbility(obj, d); break;
+	case 9: m = new FireWeaponPower(obj, d); break;
 	default: m = new DefectorSpecialPower(obj, d); break;
 	}
 	m->onObjectCreated();   /* (batch R21) Object's constructor, once every module is made (Object.cpp:485); only CashBountyPower has one */
@@ -444,6 +466,7 @@ int ref_l9sp_run(int kind, const char *filename, const char *xfer_path, const un
 	delete spu;
 	delete d;
 	obj->m_drawable = 0;
+	obj->m_ai = 0;
 	delete obj;
 	delete other;
 	for (size_t j = 0; j < g_roObjects.size(); ++j) { delete[] g_roObjects[j]->m_behaviors; g_roObjects[j]->m_behaviors = 0; delete g_roObjects[j]; }

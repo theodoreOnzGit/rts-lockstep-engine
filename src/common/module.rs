@@ -394,6 +394,8 @@ pub enum ModuleDataKind {
     SpyVisionSpecialPower(Arc<crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPowerModuleData>),
     /// `DefectorSpecialPowerModuleData`.
     DefectorSpecialPower(Arc<crate::logic::modules::defector_special_power::DefectorSpecialPowerModuleData>),
+    /// `FireWeaponPower` (batch R63).
+    FireWeaponPower(Arc<crate::logic::modules::fire_weapon_power::FireWeaponPowerModuleData>),
     /// `SpecialAbility` (batch R51).
     SpecialAbility(Arc<crate::logic::modules::special_ability::SpecialAbilityModuleData>),
     /// `OCLSpecialPower` (batch R22).
@@ -660,6 +662,7 @@ impl ModuleDataKind {
             ModuleDataKind::BaikonurLaunchPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpyVisionSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::DefectorSpecialPower(d) => &d.special_power.behavior.module_data,
+            ModuleDataKind::FireWeaponPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::SpecialAbility(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::OCLSpecialPower(d) => &d.special_power.behavior.module_data,
             ModuleDataKind::CashHackSpecialPower(d) => &d.special_power.behavior.module_data,
@@ -1039,6 +1042,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::DefectorSpecialPower(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.special_power.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FireWeaponPower(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.special_power.behavior.module_data.set_module_tag_name_key(key);
                     true

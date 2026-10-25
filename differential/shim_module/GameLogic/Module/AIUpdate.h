@@ -134,6 +134,10 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Bool m_busy = false;
 	void aiBusy( CommandSourceType cmdSource );
 	void aiAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	/* batch R63: FireWeaponPower's attack and turrets (lines: differential/l9_powers_h.inc) */
+	void aiAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	void setTurretTargetObject( WhichTurretType tur, Object *o, Bool isForceAttacking = FALSE );
+	void setTurretTargetPosition( WhichTurretType tur, const Coord3D *pos );
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (batch R50: PhysicsBehavior's questions, differential/l9_physics_r50.inc) */

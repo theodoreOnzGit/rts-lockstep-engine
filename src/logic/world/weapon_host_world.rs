@@ -111,6 +111,16 @@ impl World {
         }
     }
 
+    /// `obj->reloadAllAmmo(now)`: every weapon of the object's set. Under `cuts.stub_weapon_calls` a record
+    /// ([`CutCall::ObjectReloadAllAmmo`]) and nothing else.
+    pub fn object_reload_all_ammo(&mut self, object: ObjectId, now: bool) {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::ObjectReloadAllAmmo { object, now });
+            return;
+        }
+        crate::logic::world::object_weapons::reload_all_ammo(self, object, now);
+    }
+
     /// `weapon->fireWeapon(source, target)` for a weapon a module owns: whether the clip was reloaded after the shot. Under
     /// `cuts.stub_weapon_calls` a record ([`CutCall::WeaponFireAtObject`]), `false`.
     pub fn module_weapon_fire_at_object(&mut self, weapon: &mut Weapon, source: ObjectId, target: ObjectId) -> Result<bool, crate::common::ini::IniError> {

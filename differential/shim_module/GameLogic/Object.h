@@ -165,6 +165,7 @@ public:
 	/* --- p1w12-sonnet --- (upgrade batch C: what PowerPlantUpgrade, RadarUpgrade and UnpauseSpecialPowerUpgrade call on their object; the
 	** behaviour modules are the test's, a null-terminated array as upstream's m_behaviors) */
 	Bool isDisabled() const { return m_disabled; }
+	void reloadAllAmmo(Bool now);   /* batch R63: FireWeaponPower (a line: differential/l9_powers_h.inc) */
 	BehaviorModule **getBehaviorModules() const { return m_behaviors; }
 	UpdateModule *findUpdateModule(NameKeyType key) const;   /* defined in l9_upgrades_c.inc */
 	class DamageModule *findDamageModule(NameKeyType key) const;   /* batch R30: defined in l9_bonefx_r30.inc */

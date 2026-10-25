@@ -209,6 +209,8 @@ pub enum UpdateBody {
     SpyVisionSpecialPower(crate::logic::modules::spy_vision_special_power::SpyVisionSpecialPower),
     /// `DefectorSpecialPower`.
     DefectorSpecialPower(crate::logic::modules::defector_special_power::DefectorSpecialPower),
+    /// `FireWeaponPower` (batch R63).
+    FireWeaponPower(crate::logic::modules::fire_weapon_power::FireWeaponPower),
     /// `SpecialAbility` (batch R51).
     SpecialAbility(crate::logic::modules::special_ability::SpecialAbility),
     /// `OCLSpecialPower` (batch R22).
@@ -494,6 +496,7 @@ impl UpdateBody {
             UpdateBody::BaikonurLaunchPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpyVisionSpecialPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::DefectorSpecialPower(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::FireWeaponPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SpecialAbility(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::OCLSpecialPower(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::CashHackSpecialPower(_) => UPDATE_SLEEP_FOREVER,
@@ -684,6 +687,7 @@ impl UpdateBody {
             UpdateBody::BaikonurLaunchPower(m) => m.module_call(world, me, call),
             UpdateBody::SpyVisionSpecialPower(m) => m.module_call(world, me, call),
             UpdateBody::DefectorSpecialPower(m) => m.module_call(world, me, call),
+            UpdateBody::FireWeaponPower(m) => m.module_call(world, me, call),
             UpdateBody::SpecialAbility(m) => m.module_call(world, me, call),
             UpdateBody::OCLSpecialPower(m) => m.module_call(world, me, call),
             UpdateBody::CashHackSpecialPower(m) => m.module_call(world, me, call),
@@ -1321,6 +1325,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::BaikonurLaunchPower(m) => m.crc(xfer),
             UpdateBody::SpyVisionSpecialPower(m) => m.crc(xfer),
             UpdateBody::DefectorSpecialPower(m) => m.crc(xfer),
+            UpdateBody::FireWeaponPower(m) => m.crc(xfer),
             UpdateBody::SpecialAbility(m) => m.crc(xfer),
             UpdateBody::OCLSpecialPower(m) => m.crc(xfer),
             UpdateBody::CashHackSpecialPower(m) => m.crc(xfer),
@@ -1507,6 +1512,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::BaikonurLaunchPower(m) => m.xfer(xfer),
             UpdateBody::SpyVisionSpecialPower(m) => m.xfer(xfer),
             UpdateBody::DefectorSpecialPower(m) => m.xfer(xfer),
+            UpdateBody::FireWeaponPower(m) => m.xfer(xfer),
             UpdateBody::SpecialAbility(m) => m.xfer(xfer),
             UpdateBody::OCLSpecialPower(m) => m.xfer(xfer),
             UpdateBody::CashHackSpecialPower(m) => m.xfer(xfer),
@@ -1693,6 +1699,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::BaikonurLaunchPower(m) => m.load_post_process(),
             UpdateBody::SpyVisionSpecialPower(m) => m.load_post_process(),
             UpdateBody::DefectorSpecialPower(m) => m.load_post_process(),
+            UpdateBody::FireWeaponPower(m) => m.load_post_process(),
             UpdateBody::SpecialAbility(m) => m.load_post_process(),
             UpdateBody::OCLSpecialPower(m) => m.load_post_process(),
             UpdateBody::CashHackSpecialPower(m) => m.load_post_process(),
@@ -1951,6 +1958,7 @@ impl UpdateBody {
             UpdateBody::BaikonurLaunchPower(m) => m.world_construct(world, me),
             UpdateBody::SpyVisionSpecialPower(m) => m.world_construct(world, me),
             UpdateBody::DefectorSpecialPower(m) => m.world_construct(world, me),
+            UpdateBody::FireWeaponPower(m) => m.world_construct(world, me),
             UpdateBody::SpecialAbility(m) => m.world_construct(world, me),
             UpdateBody::OCLSpecialPower(m) => m.world_construct(world, me),
             UpdateBody::CashHackSpecialPower(m) => m.world_construct(world, me),
