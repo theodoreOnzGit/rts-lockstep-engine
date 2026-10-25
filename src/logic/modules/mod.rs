@@ -173,6 +173,7 @@ pub mod derived_bodies;
 pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod jet_slow_death_behavior;
+pub mod neutron_missile_slow_death_behavior;
 pub mod helicopter_slow_death_behavior;
 pub mod battle_bus_slow_death_behavior;
 pub mod rebuild_hole_behavior;
@@ -804,6 +805,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::JetSlowDeathBehavior(d) => Some(made_update(
             jet_slow_death_behavior::JetSlowDeathBehavior::get_interface_mask(),
             jet_slow_death_behavior::JetSlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::JetSlowDeathBehavior(m))),
+        )),
+        ModuleDataKind::NeutronMissileSlowDeathBehavior(d) => Some(made_update(
+            neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehavior::get_interface_mask(),
+            neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::NeutronMissileSlowDeathBehavior(m))),
         )),
         ModuleDataKind::HelicopterSlowDeathBehavior(d) => Some(made_update(
             helicopter_slow_death_behavior::HelicopterSlowDeathBehavior::get_interface_mask(),
