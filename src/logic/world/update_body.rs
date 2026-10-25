@@ -179,6 +179,8 @@ pub enum UpdateBody {
     RadarUpdate(crate::logic::modules::radar_update::RadarUpdate),
     /// `HealCrateCollide`.
     HealCrateCollide(crate::logic::modules::heal_crate_collide::HealCrateCollide),
+    /// `FireWeaponCollide` (batch R62).
+    FireWeaponCollide(crate::logic::modules::fire_weapon_collide::FireWeaponCollide),
     /// `ShroudCrateCollide`.
     ShroudCrateCollide(crate::logic::modules::shroud_crate_collide::ShroudCrateCollide),
     /// `MoneyCrateCollide`.
@@ -477,6 +479,7 @@ impl UpdateBody {
             UpdateBody::PowerPlantUpdate(m) => m.world_update(world, me),
             UpdateBody::RadarUpdate(m) => m.world_update(world, me),
             UpdateBody::HealCrateCollide(_) => UPDATE_SLEEP_FOREVER,
+            UpdateBody::FireWeaponCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::ShroudCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::MoneyCrateCollide(_) => UPDATE_SLEEP_FOREVER,
             UpdateBody::SabotageCrateCollide(_) => UPDATE_SLEEP_FOREVER,
@@ -666,6 +669,7 @@ impl UpdateBody {
             UpdateBody::PowerPlantUpdate(m) => m.module_call(world, me, call),
             UpdateBody::RadarUpdate(m) => m.module_call(world, me, call),
             UpdateBody::HealCrateCollide(m) => m.module_call(world, me, call),
+            UpdateBody::FireWeaponCollide(m) => m.module_call(world, me, call),
             UpdateBody::ShroudCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::MoneyCrateCollide(m) => m.module_call(world, me, call),
             UpdateBody::SabotageCrateCollide(m) => m.module_call(world, me, call),
@@ -1302,6 +1306,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpdate(m) => m.crc(xfer),
             UpdateBody::RadarUpdate(m) => m.crc(xfer),
             UpdateBody::HealCrateCollide(m) => m.crc(xfer),
+            UpdateBody::FireWeaponCollide(m) => m.crc(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.crc(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.crc(xfer),
             UpdateBody::SabotageCrateCollide(m) => m.crc(xfer),
@@ -1487,6 +1492,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpdate(m) => m.xfer(xfer),
             UpdateBody::RadarUpdate(m) => m.xfer(xfer),
             UpdateBody::HealCrateCollide(m) => m.xfer(xfer),
+            UpdateBody::FireWeaponCollide(m) => m.xfer(xfer),
             UpdateBody::ShroudCrateCollide(m) => m.xfer(xfer),
             UpdateBody::MoneyCrateCollide(m) => m.xfer(xfer),
             UpdateBody::SabotageCrateCollide(m) => m.xfer(xfer),
@@ -1672,6 +1678,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::PowerPlantUpdate(m) => m.load_post_process(),
             UpdateBody::RadarUpdate(m) => m.load_post_process(),
             UpdateBody::HealCrateCollide(m) => m.load_post_process(),
+            UpdateBody::FireWeaponCollide(m) => m.load_post_process(),
             UpdateBody::ShroudCrateCollide(m) => m.load_post_process(),
             UpdateBody::MoneyCrateCollide(m) => m.load_post_process(),
             UpdateBody::SabotageCrateCollide(m) => m.load_post_process(),
@@ -1925,6 +1932,8 @@ impl UpdateBody {
     pub fn construct(&mut self, world: &mut World, me: ModuleHandle) {
         match self {
             UpdateBody::LifetimeUpdate(m) => m.world_construct(world, me),
+            // batch R62: the weapon, made from the store
+            UpdateBody::FireWeaponCollide(m) => m.construct(world, me),
             UpdateBody::DeletionUpdate(m) => m.world_construct(world, me),
             UpdateBody::BaseRegenerateUpdate(m) => m.world_construct(world, me),
             UpdateBody::SmartBombTargetHomingUpdate(m) => m.world_construct(world, me),

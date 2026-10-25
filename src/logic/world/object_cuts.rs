@@ -1065,6 +1065,10 @@ pub enum CutCall {
     WeaponOclCreate { ocl: u32, primary: ObjectId },
     /// batch W1b: `m_firingTracker->shotFired(weapon, victimID)` (the helper is a stub module yet), the weapon by its template.
     FiringTrackerShotFired { object: ObjectId, template: usize, victim: ObjectId },
+    /// batch R62: a module's weapon's `loadAmmoNow(source)`, under `stub_weapon_calls`.
+    WeaponLoadAmmoNow { source: ObjectId, template: usize },
+    /// batch R62: a module's weapon's `fireWeapon(source, target)`, under `stub_weapon_calls`.
+    WeaponFireAtObject { source: ObjectId, target: ObjectId, template: usize },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
@@ -1362,6 +1366,8 @@ pub struct ObjectCuts {
     pub drawable_launch_offset: BTreeMap<(ObjectId, i32, i32, i32), crate::logic::weapon_host::LaunchOffset>,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
+    /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
+    pub stub_weapon_calls: bool,
     /// batch R60: `World::thing_factory_new_object` makes a module no layer has translated as a probe with these answers (an `...AIUpdate` the
     /// object's AI), not a plain stub (`None`, the default: a stub).
     pub untranslated_probe: Option<crate::logic::world::module_probe::ProbeAnswers>,
@@ -1486,6 +1492,7 @@ impl Default for ObjectCuts {
             drawable_barrel_count: BTreeMap::new(),
             drawable_launch_offset: BTreeMap::new(),
             blocked_lines_of_sight: BTreeSet::new(),
+            stub_weapon_calls: false,
             untranslated_probe: None,
             probe_power_trace: false,
             audio_playing: false,

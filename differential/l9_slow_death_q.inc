@@ -110,7 +110,8 @@ const FXList *FXListStore::findFXList(const char *name) const
 }
 FXListStore *TheFXListStore = &g_sdFxStore;
 GameLODManager *TheGameLODManager = &g_sdLod;
-const WeaponTemplate *WeaponStore::findWeaponTemplate(const char *name) const { return (const WeaponTemplate *)kWeaponLookup(name); }
+const void *(*g_weaponFindHook)(const char *) = 0;   /* p1w13-sonnet, batch R62: a driver's own templates (l9_fire_weapon_collide_r62.inc) */
+const WeaponTemplate *WeaponStore::findWeaponTemplate(const char *name) const { return (const WeaponTemplate *)(g_weaponFindHook ? g_weaponFindHook(name) : kWeaponLookup(name)); }
 
 void Drawable::setShadowsEnabled(Bool enable) { ulog("shadows %d", (int)enable); }
 void Drawable::setTerrainDecalFadeTarget(Real target, Real rate) { ulog("decalfade %08x %08x", realBits(target), realBits(rate)); }

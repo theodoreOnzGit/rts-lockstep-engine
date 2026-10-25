@@ -368,6 +368,8 @@ pub enum ModuleDataKind {
     RadarUpdate(Arc<crate::logic::modules::radar_update::RadarUpdateModuleData>),
     /// `HealCrateCollideModuleData`.
     HealCrateCollide(Arc<crate::logic::modules::heal_crate_collide::HealCrateCollideModuleData>),
+    /// `FireWeaponCollide` (batch R62).
+    FireWeaponCollide(Arc<crate::logic::modules::fire_weapon_collide::FireWeaponCollideModuleData>),
     /// `ShroudCrateCollideModuleData`.
     ShroudCrateCollide(Arc<crate::logic::modules::shroud_crate_collide::ShroudCrateCollideModuleData>),
     /// `MoneyCrateCollideModuleData`.
@@ -645,6 +647,7 @@ impl ModuleDataKind {
             ModuleDataKind::PowerPlantUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadarUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::HealCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
+            ModuleDataKind::FireWeaponCollide(d) => &d.collide.behavior.module_data,
             ModuleDataKind::ShroudCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::MoneyCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
             ModuleDataKind::SabotageCrateCollide(d) => &d.crate_data.collide.behavior.module_data,
@@ -947,6 +950,13 @@ impl ModuleDataKind {
             ModuleDataKind::HealCrateCollide(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.crate_data.collide.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::FireWeaponCollide(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.collide.behavior.module_data.set_module_tag_name_key(key);
                     true
                 }
                 None => false,

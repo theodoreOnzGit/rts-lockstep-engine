@@ -71,6 +71,7 @@ public:
 	void createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos);
 	const WeaponTemplate *findWeaponTemplate(const char *name) const;   /* p1w13-sonnet: SlowDeathBehavior (differential/l9_slow_death_q.inc) */
 	const WeaponTemplate *findWeaponTemplate(const AsciiString &name) const { return findWeaponTemplate(name.str()); }   /* batch R36: StructureToppleUpdate (upstream's takes an AsciiString) */
+	class Weapon *allocateNewWeapon(const WeaponTemplate *tmpl, Int wslot) const;   /* batch R62: FireWeaponCollide (Weapon.h 839-842; defined below) */
 };
 extern WeaponStore *TheWeaponStore;
 /* --- end p1w12-sonnet --- */
@@ -141,11 +142,45 @@ public:
 		return r;
 	}
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R62: what Weapon's constructor, crc and xfer read of the template, Weapon.cpp's own text: build.rs) */
+	AsciiString m_name;
+	Real m_minTargetPitch = -PI, m_maxTargetPitch = PI;
+	Int m_shotsPerBarrel = 1;
+	UnsignedInt m_suspendFXDelay = 0;
+	const AsciiString &getName() const { return m_name; }
+	Real getMinTargetPitch() const { return m_minTargetPitch; }
+	Real getMaxTargetPitch() const { return m_maxTargetPitch; }
+	Int getShotsPerBarrel() const { return m_shotsPerBarrel; }
+	UnsignedInt getSuspendFXDelay() const { return m_suspendFXDelay; }
+	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w13-sonnet --- */
-class Weapon
+#include "Common/Snapshot.h"
+class Weapon : public Snapshot
 {
 public:
+	/* --- p1w13-sonnet --- (batch R62: FireWeaponCollide owns a weapon: Weapon.cpp's constructor, crc, xfer and loadPostProcess, verbatim (build.rs
+	** mod_gen/Weapon_r62.inc, defined by differential/l9_fire_weapon_collide_r62.inc), on the members they use; loadAmmoNow and fireWeapon are
+	** that driver's lines) */
+	Weapon() {}
+	virtual ~Weapon() {}
+	void deleteInstance() { delete this; }   /* the memory pool glue (newInstance is the module build's new) */
+	Weapon(const WeaponTemplate *tmpl, WeaponSlotType wslot);
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+	void loadAmmoNow(const Object *source);
+	Bool fireWeapon(const Object *source, Object *target, ObjectID *projectileID = NULL);
+	UnsignedInt getSuspendFXFrame() const { return m_suspendFXFrame; }
+	const WeaponTemplate *m_template = 0;
+	WeaponSlotType m_wslot = PRIMARY_WEAPON;
+	WeaponStatus m_status = READY_TO_FIRE;
+	UnsignedInt m_ammoInClip = 0, m_whenWeCanFireAgain = 0, m_whenPreAttackFinished = 0, m_whenLastReloadStarted = 0, m_lastFireFrame = 0, m_suspendFXFrame = 0;
+	ObjectID m_projectileStreamID = INVALID_ID;
+	Int m_maxShotCount = 0x7fffffff, m_curBarrel = 0, m_numShotsForCurBarrel = 0;
+	std::vector<Int> m_scatterTargetsUnused;
+	Bool m_pitchLimited = false, m_leechWeaponRangeActive = false;
+	/* --- end p1w13-sonnet --- */
 	WeaponSlotType getWeaponSlot() const { return m_slot; }
 	UnsignedInt getLastShotFrame() const { return m_last; }
 	UnsignedInt getPossibleNextShotFrame() const { return m_next; }
@@ -170,6 +205,7 @@ public:
 	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w12-sonnet --- */
+inline Weapon *WeaponStore::allocateNewWeapon(const WeaponTemplate *tmpl, Int wslot) const { return newInstance(Weapon)(tmpl, (WeaponSlotType)wslot); }   /* batch R62 */
 /* --- p1w13-sonnet --- (batch P: ActiveBody asks the guard to retaliate with no limit on the shots; Weapon.h line 56, verbatim) */
 const Int NO_MAX_SHOTS_LIMIT = 0x7fffffff;
 /* --- end p1w13-sonnet --- */

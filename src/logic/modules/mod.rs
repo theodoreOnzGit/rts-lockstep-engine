@@ -92,6 +92,7 @@ pub mod create_object_die;
 pub mod power_plant_update;
 pub mod radar_update;
 pub mod heal_crate_collide;
+pub mod fire_weapon_collide;
 pub mod shroud_crate_collide;
 pub mod sabotage_crate_collide;
 pub mod unit_crate_collide;
@@ -461,6 +462,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::HealCrateCollide(d) => Some(made(
             heal_crate_collide::HealCrateCollide::get_interface_mask(),
             heal_crate_collide::HealCrateCollide::new(object, Some(d.clone())).map(UpdateBody::HealCrateCollide),
+        )),
+        ModuleDataKind::FireWeaponCollide(d) => Some(made(
+            fire_weapon_collide::FireWeaponCollide::get_interface_mask(),
+            fire_weapon_collide::FireWeaponCollide::new(object, Some(d.clone())).map(UpdateBody::FireWeaponCollide),
         )),
         ModuleDataKind::ShroudCrateCollide(d) => Some(made(
             shroud_crate_collide::ShroudCrateCollide::get_interface_mask(),

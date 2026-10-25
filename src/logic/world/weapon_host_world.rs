@@ -84,6 +84,49 @@ impl World {
     }
 }
 
+/// What a [`WeaponError`] is in the module's terms: `ThingFactory::newObject(NULL)`'s throw, or a read upstream makes through `NULL` or
+/// of nothing.
+pub fn weapon_error_to_ini(e: WeaponError) -> crate::common::ini::IniError {
+    use crate::common::ini::{IniError, IniErrorKind, Undefined};
+    match e {
+        WeaponError::NullTemplate => IniError::new(IniErrorKind::BadArg),
+        WeaponError::NullObject => IniError::undefined(Undefined::NullObject),
+        WeaponError::FloatToIntOutOfRange => IniError::undefined(Undefined::FloatToIntOutOfRange),
+        WeaponError::UninitialisedRead => IniError::undefined(Undefined::UninitialisedLocal),
+    }
+}
+
+impl World {
+    /// `weapon->loadAmmoNow(source)` for a weapon a module owns (`FireWeaponCollide`, ...), with the shared reload it may hand the source's
+    /// set. Under `cuts.stub_weapon_calls` a record ([`CutCall::WeaponLoadAmmoNow`]) and nothing else: the weapon code is verified by its
+    /// own test, a module's test compares the call.
+    pub fn module_weapon_load_ammo_now(&mut self, weapon: &mut Weapon, source: ObjectId) {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponLoadAmmoNow { source, template: weapon.template() });
+            return;
+        }
+        let shared = WeaponHost::is_reload_time_shared(self, source);
+        if let Some(e) = weapon.load_ammo_now(self, source, shared) {
+            e.apply_via_host(self, source);
+        }
+    }
+
+    /// `weapon->fireWeapon(source, target)` for a weapon a module owns: whether the clip was reloaded after the shot. Under
+    /// `cuts.stub_weapon_calls` a record ([`CutCall::WeaponFireAtObject`]), `false`.
+    pub fn module_weapon_fire_at_object(&mut self, weapon: &mut Weapon, source: ObjectId, target: ObjectId) -> Result<bool, crate::common::ini::IniError> {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponFireAtObject { source, target, template: weapon.template() });
+            return Ok(false);
+        }
+        let shared = WeaponHost::is_reload_time_shared(self, source);
+        let out = weapon.fire_weapon(self, source, target, None, shared).map_err(weapon_error_to_ini)?;
+        if let Some(e) = out.shared {
+            e.apply_via_host(self, source);
+        }
+        Ok(out.reloaded)
+    }
+}
+
 impl WeaponXferLookups for World {
     fn find_thing_template(&self, name: &[u8]) -> Option<u16> {
         self.statics.thing_factory.find_template(name).map(|t| t.get_final_override().data.get_template_id())
