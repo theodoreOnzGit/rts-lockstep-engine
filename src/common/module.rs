@@ -510,6 +510,8 @@ pub enum ModuleDataKind {
     SlowDeathBehavior(Arc<crate::logic::modules::slow_death_behavior::SlowDeathBehaviorModuleData>),
     /// `JetSlowDeathBehavior` (batch R46).
     JetSlowDeathBehavior(Arc<crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehaviorModuleData>),
+    /// `BattleBusSlowDeathBehavior` (batch R47).
+    BattleBusSlowDeathBehavior(Arc<crate::logic::modules::battle_bus_slow_death_behavior::BattleBusSlowDeathBehaviorModuleData>),
     /// `RebuildHoleBehavior` (batch R15).
     RebuildHoleBehavior(Arc<crate::logic::modules::rebuild_hole_behavior::RebuildHoleBehaviorModuleData>),
     /// `OpenContainModuleData`.
@@ -688,6 +690,7 @@ impl ModuleDataKind {
             ModuleDataKind::ActiveBody(d) => &d.body.behavior.module_data,
             ModuleDataKind::SlowDeathBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::JetSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
+            ModuleDataKind::BattleBusSlowDeathBehavior(d) => &d.slow.update.behavior.module_data,
             ModuleDataKind::RebuildHoleBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::OpenContain(d) => &d.update.behavior.module_data,
             ModuleDataKind::TransportContain(d) => &d.open.update.behavior.module_data,
@@ -1387,6 +1390,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::JetSlowDeathBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.slow.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::BattleBusSlowDeathBehavior(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.slow.update.behavior.module_data.set_module_tag_name_key(key);
                     true

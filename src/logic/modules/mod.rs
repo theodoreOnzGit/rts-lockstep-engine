@@ -173,6 +173,7 @@ pub mod derived_bodies;
 pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod jet_slow_death_behavior;
+pub mod battle_bus_slow_death_behavior;
 pub mod rebuild_hole_behavior;
 pub mod open_contain;
 pub mod transport_contain;
@@ -802,6 +803,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::JetSlowDeathBehavior(d) => Some(made_update(
             jet_slow_death_behavior::JetSlowDeathBehavior::get_interface_mask(),
             jet_slow_death_behavior::JetSlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::JetSlowDeathBehavior(m))),
+        )),
+        ModuleDataKind::BattleBusSlowDeathBehavior(d) => Some(made_update(
+            battle_bus_slow_death_behavior::BattleBusSlowDeathBehavior::get_interface_mask(),
+            battle_bus_slow_death_behavior::BattleBusSlowDeathBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BattleBusSlowDeathBehavior(m))),
         )),
         ModuleDataKind::RebuildHoleBehavior(d) => Some(made_update(
             rebuild_hole_behavior::RebuildHoleBehavior::get_interface_mask(),

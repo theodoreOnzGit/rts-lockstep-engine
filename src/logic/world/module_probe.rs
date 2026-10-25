@@ -68,6 +68,11 @@ pub struct ProbeAnswers {
     pub rider: ObjectId,
     /// The contained items.
     pub contained: Vec<ObjectId>,
+    /// Batch R47: the physics' `clearAcceleration` since the last `scrubVelocity2D` (which reports it).
+    pub acceleration_cleared: bool,
+    /// Batch R47: `applyShock`, `applyRandomRotation` and `processDamageToContained` are lines (`pshock`, `prandrot`, `pdmgcontained`);
+    /// otherwise they do nothing, as they did before.
+    pub trace_throw: bool,
     /// The slaver (`getSlaverID`, 0 = no slaved interface: `Unhandled`).
     pub slaver: ObjectId,
     /// The landing deck height offset (NaN = no parking place: `Unhandled`).
@@ -703,6 +708,34 @@ impl ProbeModule {
                 world.body_trace(format!("ppitch {} {:08x}", me.object, p.to_bits()));
                 ModuleReply::Done
             }
+            // --- p1w13-sonnet --- (batch R47: a cleared acceleration is reported by the next scrub, as the C++ stand-in sees it)
+            ModuleCall::PhysicsClearAcceleration => {
+                self.answers.acceleration_cleared = true;
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsScrubVelocity2D(v) => {
+                world.body_trace(format!("pscrub {} {:08x} {}", me.object, v.to_bits(), i32::from(self.answers.acceleration_cleared)));
+                self.answers.acceleration_cleared = false;
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsApplyShock(f) => {
+                if self.answers.trace_throw {
+                    world.body_trace(format!("pshock {} {:08x} {:08x} {:08x}", me.object, f.x.to_bits(), f.y.to_bits(), f.z.to_bits()));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::PhysicsApplyRandomRotation => {
+                if self.answers.trace_throw {
+                    world.body_trace(format!("prandrot {}", me.object));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::ProcessDamageToContained(p) => {
+                if self.answers.trace_throw {
+                    world.body_trace(format!("pdmgcontained {} {:08x}", me.object, p.to_bits()));
+                }
+                ModuleReply::Done
+            }
             // --- p1w13-sonnet --- (batch R46)
             ModuleCall::PhysicsSetRollRate(r) => {
                 world.body_trace(format!("proll {} {:08x}", me.object, r.to_bits()));
@@ -909,7 +942,6 @@ impl ProbeModule {
             | ModuleCall::GetContainedItemsMass
             | ModuleCall::GetStealthUnitsContained
             | ModuleCall::GetPlayerWhoEntered
-            | ModuleCall::ProcessDamageToContained(_)
             | ModuleCall::EnableLoadSounds(_)
             | ModuleCall::SetEvacDisposition(_)
             | ModuleCall::IsWeaponBonusPassedToPassengers
@@ -1232,8 +1264,6 @@ impl ProbeModule {
             | ModuleCall::CancelAndRefundAllProduction
             | ModuleCall::StartRebuildProcess { .. }
             | ModuleCall::ReportMissileForCountermeasures { .. }
-            | ModuleCall::PhysicsApplyShock(_)
-            | ModuleCall::PhysicsApplyRandomRotation
             | ModuleCall::PhysicsSetStunned(_)
             | ModuleCall::NotifySubdualDamage { .. }
             | ModuleCall::DoStatusDamage { .. }

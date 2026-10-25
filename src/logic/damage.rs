@@ -320,6 +320,8 @@ pub const DEATH_NONE: DeathType = 1;
 pub const DEATH_CRUSHED: DeathType = 2;
 /// `DEATH_BURNED`.
 pub const DEATH_BURNED: DeathType = 3;
+/// `DEATH_EXTRA_4` (batch R47: the battle bus's empty-hulk kill).
+pub const DEATH_EXTRA_4: DeathType = 15;
 // --- end p1w13-sonnet ---
 
 /// `class DamageInfoInput`: what the damage is (the inputs of a

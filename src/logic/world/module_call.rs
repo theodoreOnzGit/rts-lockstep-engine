@@ -751,6 +751,12 @@ pub enum ModuleCall {
     /// `PhysicsBehavior::setRollRate(rate)`.
     PhysicsSetRollRate(f32),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R47: BattleBusSlowDeathBehavior)
+    /// `PhysicsBehavior::clearAcceleration()`.
+    PhysicsClearAcceleration,
+    /// `PhysicsBehavior::scrubVelocity2D(desiredVelocity)`.
+    PhysicsScrubVelocity2D(f32),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),
