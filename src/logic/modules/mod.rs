@@ -178,6 +178,7 @@ pub mod squish_collide;
 pub mod prone_update;
 pub mod enemy_near_update;
 pub mod float_update;
+pub mod fire_weapon_update;
 pub mod hijacker_update;
 pub mod tech_building_behavior;
 pub mod fire_spread_update;
@@ -778,6 +779,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FloatUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             float_update::FloatUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FloatUpdate(m))),
+        )),
+        ModuleDataKind::FireWeaponUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            fire_weapon_update::FireWeaponUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FireWeaponUpdate(m))),
         )),
         ModuleDataKind::HijackerUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),

@@ -111,6 +111,21 @@ impl World {
         }
     }
 
+    /// `weapon->forceFireWeapon(source, pos)` for a weapon a module owns (the projectile, if one was made, is not kept). Under
+    /// `cuts.stub_weapon_calls` a record ([`CutCall::WeaponForceFireAtPosition`]).
+    pub fn module_weapon_force_fire_at_position(&mut self, weapon: &mut Weapon, source: ObjectId, pos: Coord3D) -> Result<(), crate::common::ini::IniError> {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponForceFireAtPosition { source, pos, template: weapon.template() });
+            return Ok(());
+        }
+        let shared = WeaponHost::is_reload_time_shared(self, source);
+        let (_, out) = weapon.force_fire_weapon(self, source, &pos, shared).map_err(weapon_error_to_ini)?;
+        if let Some(e) = out.shared {
+            e.apply_via_host(self, source);
+        }
+        Ok(())
+    }
+
     /// `obj->reloadAllAmmo(now)`: every weapon of the object's set. Under `cuts.stub_weapon_calls` a record
     /// ([`CutCall::ObjectReloadAllAmmo`]) and nothing else.
     pub fn object_reload_all_ammo(&mut self, object: ObjectId, now: bool) {

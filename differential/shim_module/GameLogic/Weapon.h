@@ -174,7 +174,7 @@ public:
 	UnsignedInt getSuspendFXFrame() const { return m_suspendFXFrame; }
 	const WeaponTemplate *m_template = 0;
 	WeaponSlotType m_wslot = PRIMARY_WEAPON;
-	WeaponStatus m_status = READY_TO_FIRE;
+	mutable WeaponStatus m_status = READY_TO_FIRE;   /* (Weapon.h: mutable, as getStatus sets it; batch R64) */
 	UnsignedInt m_ammoInClip = 0, m_whenWeCanFireAgain = 0, m_whenPreAttackFinished = 0, m_whenLastReloadStarted = 0, m_lastFireFrame = 0, m_suspendFXFrame = 0;
 	ObjectID m_projectileStreamID = INVALID_ID;
 	Int m_maxShotCount = 0x7fffffff, m_curBarrel = 0, m_numShotsForCurBarrel = 0;
@@ -194,9 +194,18 @@ public:
 	Bool m_damageW = false;
 	Int m_ownerId = 0;
 	/* --- end p1w13-sonnet --- */
-	/* --- p1w13-sonnet --- (batch R59: AssistedTargetingUpdate asks whether the current weapon is ready: the test's status) */
-	WeaponStatus getStatus() const { return (WeaponStatus)m_r59Status; }
+	/* --- p1w13-sonnet --- (batches R59, R64: the weapon's status) */
+	/* batch R59: AssistedTargetingUpdate asks whether the current weapon is ready: the test's status (its call is renamed to this by
+	** differential/l9_assisted_r59.inc) */
+	WeaponStatus r59GetStatus() const { return (WeaponStatus)m_r59Status; }
 	Int m_r59Status = 0;
+	/* batch R64: Weapon.cpp's getStatus, verbatim (build.rs, mod_gen/Weapon_r62.inc), forceFireWeapon
+	** (a line: differential/l9_fire_weapon_update_r64.inc) and Weapon.h's three setters, verbatim */
+	WeaponStatus getStatus() const;
+	Object* forceFireWeapon( const Object *source, const Coord3D *pos );
+	void setPossibleNextShotFrame( UnsignedInt frameNum ) { m_whenWeCanFireAgain = frameNum; }
+	void setPreAttackFinishedFrame( UnsignedInt frameNum ) { m_whenPreAttackFinished = frameNum; }
+	void setStatus( WeaponStatus status) { m_status = status; }
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the range check (a line, the test's answer: differential/l9_open_contain_r.inc) and the damage type */
 	Bool isWithinAttackRange(const Object *source, const Object *target) const;
 	Bool isWithinAttackRange(const Object *source, const Coord3D *pos) const;

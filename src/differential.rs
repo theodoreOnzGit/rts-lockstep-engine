@@ -1829,6 +1829,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R64: FireWeaponUpdate (differential/l9_fire_weapon_update_r64.inc).
+    pub fn ref_l9r64_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R62: FireWeaponCollide (differential/l9_fire_weapon_collide_r62.inc).
     pub fn ref_l9r62_run(
         filename: *const c_char,

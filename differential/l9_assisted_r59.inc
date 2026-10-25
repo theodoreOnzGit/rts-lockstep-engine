@@ -6,7 +6,11 @@
 ** thing factory (the templates LaserA, with a LaserUpdate client module, and LaserB, without; newObject makes a laser object, ids 4, 5, ...,
 ** with a drawable), the laser's LaserUpdate (initLaser a line), setWeaponLock (batch R55's line), destroyObject (a line), the REAL
 ** UpdateModule, INI and Xfer; the game logic (its frame). */
+/* (batch R64: the stand-in Weapon's getStatus is now Weapon.cpp's own, whose answer depends on the frames; this test gives the status
+** directly, so the file's one call, `getCurrentWeapon()->getStatus()`, is renamed by macro to the stand-in's r59GetStatus for the include) */
+#define getStatus r59GetStatus
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AssistedTargetingUpdate.cpp"
+#undef getStatus
 
 void LaserUpdate::initLaser(const Object *parent, const Object *target, const Coord3D *startPos, const Coord3D *endPos, AsciiString parentBoneName, Int)
 {
