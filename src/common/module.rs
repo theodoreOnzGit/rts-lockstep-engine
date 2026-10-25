@@ -456,6 +456,8 @@ pub enum ModuleDataKind {
     DemoTrapUpdate(Arc<crate::logic::modules::demo_trap_update::DemoTrapUpdateModuleData>),
     /// `SlavedUpdate` (batch R57).
     SlavedUpdate(Arc<crate::logic::modules::slaved_update::SlavedUpdateModuleData>),
+    /// `MobMemberSlavedUpdate` (batch R58).
+    MobMemberSlavedUpdate(Arc<crate::logic::modules::mob_member_slaved_update::MobMemberSlavedUpdateModuleData>),
     /// `CleanupHazardUpdate` (batch R56).
     CleanupHazardUpdate(Arc<crate::logic::modules::cleanup_hazard_update::CleanupHazardUpdateModuleData>),
     /// `BunkerBusterBehavior` (batch R54).
@@ -681,6 +683,7 @@ impl ModuleDataKind {
             ModuleDataKind::NeutronBlastBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::DemoTrapUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SlavedUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::MobMemberSlavedUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CleanupHazardUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::BunkerBusterBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::TensileFormationUpdate(d) => &d.update.behavior.module_data,
@@ -1229,6 +1232,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::SlavedUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::MobMemberSlavedUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

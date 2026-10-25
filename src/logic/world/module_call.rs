@@ -589,6 +589,16 @@ pub enum ModuleCall {
     SpawnRevealSlaves,
     /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
     AiGetLastCommandSource,
+    /// batch R58: `AIUpdateInterface::getGoalPosition()`; replies [`ModuleReply::Coord`].
+    AiGetGoalPosition,
+    /// batch R58: `AIUpdateInterface::getLocomotorDistanceToGoal()`; replies [`ModuleReply::Real`].
+    AiGetLocomotorDistanceToGoal,
+    /// batch R58: `AIUpdateInterface::isAttacking()`; replies [`ModuleReply::Bool`].
+    AiIsAttacking,
+    /// batch R58: `AIUpdateInterface::getNextMoodTarget(calledByAI, calledDuringIdle)`; replies [`ModuleReply::Id`].
+    AiGetNextMoodTarget { called_by_ai: bool, called_during_idle: bool },
+    /// batch R58: `SpawnBehaviorInterface::maySpawnSelfTaskAI(ratio)`; replies [`ModuleReply::Bool`].
+    SpawnMaySpawnSelfTaskAi(f32),
     /// batch R57: `AIUpdateInterface::getPath()->getLastNode()->getPosition()`; replies [`ModuleReply::Coord`] (unhandled: no path).
     AiGetPathLastNodePosition,
     /// batch R57: `getCurLocomotor()->setUsePreciseZPos(on)`.

@@ -17,5 +17,8 @@ public:
 	Bool areAllSlavesStealthed() const { return m_allStealthed; }
 	void revealSlaves();
 	Bool m_allStealthed = false;
+	/* p1w13-sonnet, batch R58: MobMemberSlavedUpdate asks whether it may pick its own target (the test's answer) */
+	Bool maySpawnSelfTaskAI( Real maxSelfTaskersRatio ) { return m_r58MaySelfTask; }
+	Bool m_r58MaySelfTask = false;
 };
 #endif

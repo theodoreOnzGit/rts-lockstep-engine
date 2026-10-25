@@ -157,6 +157,13 @@ pub struct ProbeAnswers {
     pub moving: bool,
     /// `isIdle()` of the AI.
     pub idle: bool,
+    /// batch R58: the AI's goal position, its locomotor's distance to the goal, `isAttacking()` and `getNextMoodTarget` (`INVALID_ID`: `NULL`);
+    /// the spawn behaviour's `maySpawnSelfTaskAI`.
+    pub goal_position: Coord3D,
+    pub distance_to_goal: f32,
+    pub attacking: bool,
+    pub mood_target: ObjectId,
+    pub may_self_task: bool,
     /// batch R57: the AI's path's last node (`None`: `getPath()` is `NULL`).
     pub path_last_node: Option<Coord3D>,
     /// batch R56: the AI's `isBusy()`.
@@ -966,6 +973,12 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            // batch R58: MobMemberSlavedUpdate's AI and spawn behaviour
+            ModuleCall::AiGetGoalPosition => ModuleReply::Coord(self.answers.goal_position),
+            ModuleCall::AiGetLocomotorDistanceToGoal => ModuleReply::Real(self.answers.distance_to_goal),
+            ModuleCall::AiIsAttacking => ModuleReply::Bool(self.answers.attacking),
+            ModuleCall::AiGetNextMoodTarget { .. } => ModuleReply::Id(self.answers.mood_target),
+            ModuleCall::SpawnMaySpawnSelfTaskAi(_) => ModuleReply::Bool(self.answers.may_self_task),
             // batch R57: SlavedUpdate's AI and locomotor
             ModuleCall::AiGetPathLastNodePosition => self.answers.path_last_node.map_or(ModuleReply::Unhandled, ModuleReply::Coord),
             ModuleCall::AiLocomotorSetUsePreciseZPos(on) => {

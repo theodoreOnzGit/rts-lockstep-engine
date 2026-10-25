@@ -142,6 +142,7 @@ pub mod structure_topple_update;
 pub mod neutron_blast_behavior;
 pub mod demo_trap_update;
 pub mod slaved_update;
+pub mod mob_member_slaved_update;
 pub mod cleanup_hazard_update;
 pub mod bunker_buster_behavior;
 pub mod bridge_scaffold_behavior;
@@ -627,6 +628,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SlavedUpdate(d) => Some(made_update(
             slaved_update::SlavedUpdate::get_interface_mask(),
             slaved_update::SlavedUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SlavedUpdate(m))),
+        )),
+        ModuleDataKind::MobMemberSlavedUpdate(d) => Some(made_update(
+            mob_member_slaved_update::MobMemberSlavedUpdate::get_interface_mask(),
+            mob_member_slaved_update::MobMemberSlavedUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::MobMemberSlavedUpdate(m))),
         )),
         ModuleDataKind::CleanupHazardUpdate(d) => Some(made_update(
             cleanup_hazard_update::CleanupHazardUpdate::get_interface_mask(),

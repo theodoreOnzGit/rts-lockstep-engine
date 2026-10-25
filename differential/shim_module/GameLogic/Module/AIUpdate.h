@@ -115,6 +115,15 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* batch R26: StealthUpdate drops a temporary grant on a player's command (differential/l9_stealth_r26.inc) */
 	CommandSourceType getLastCommandSource() const { return (CommandSourceType)m_lastCmdSource; }
 	Int m_lastCmdSource = 0;
+	/* batch R58: MobMemberSlavedUpdate's questions (the test's answers: differential/l9_mob_member_r58.inc) */
+	Real getLocomotorDistanceToGoal() { return m_r58Dist; }
+	const Coord3D* getGoalPosition() const { return &m_r58Goal; }
+	Bool isAttacking() const { return m_r58Attacking; }
+	Object *getNextMoodTarget( Bool calledByAI, Bool calledDuringIdle ) { return m_r58Mood; }
+	Real m_r58Dist = 0.0f;
+	Coord3D m_r58Goal{};
+	Bool m_r58Attacking = false;
+	Object *m_r58Mood = 0;
 	/* batch R57: SlavedUpdate follows its master's path and goes prone when the master is hit (differential/l9_slaved_r57.inc) */
 	Path *getPath() { return m_r57Path; }
 	Path *m_r57Path = 0;
