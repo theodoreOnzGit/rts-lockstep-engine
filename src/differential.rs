@@ -1829,6 +1829,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R59: AssistedTargetingUpdate (differential/l9_assisted_r59.inc).
+    pub fn ref_l9r59_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R58: MobMemberSlavedUpdate (differential/l9_mob_member_r58.inc).
     pub fn ref_l9r58_run(
         filename: *const c_char,

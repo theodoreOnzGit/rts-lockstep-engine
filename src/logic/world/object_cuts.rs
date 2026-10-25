@@ -109,6 +109,24 @@ impl World {
         self.cuts.weapon_slot_facts.get(&(id, slot)).copied()
     }
 
+    /// batch R59: `obj->getCurrentWeapon()->getStatus()` as a `WeaponStatus` value: the weapon set's current weapon's, else the table
+    /// `cuts.cur_weapon_status` (an object of the table with no entry answers `NULL`: `None`).
+    pub fn current_weapon_status(&self, id: ObjectId) -> Option<i32> {
+        let o = self.objects.find(id)?;
+        if let Some(w) = o.weapon_set.get_cur_weapon() {
+            return Some(w.get_status(self.frame()) as i32);
+        }
+        self.cuts.cur_weapon_status.get(&id).copied()
+    }
+
+    /// batch R59: `obj->getDrawable()->findClientUpdateModule(NAMEKEY(name)) != NULL`: the object's template has a client update module of
+    /// that name (the drawable's are made from the template's list; the caller checks the drawable).
+    pub fn client_update_module_named(&self, id: ObjectId, name: &[u8]) -> bool {
+        let Some(o) = self.objects.find(id) else { return false };
+        let info = o.template().get_client_update_module_info();
+        (0..info.get_count()).any(|i| info.get_nth_name(i) == name)
+    }
+
     /// `obj->getWeaponInWeaponSlot(slot)->getTemplate()` (batch R56): the weapon set's weapon's template (its position in the weapon store), else
     /// the table `cuts.weapon_slot_template`; `None` for no weapon.
     pub fn weapon_in_slot_template(&self, id: ObjectId, slot: i32) -> Option<usize> {
@@ -1260,6 +1278,8 @@ pub struct ObjectCuts {
     /// batch R56: the template (its position in the weapon store) of the weapon an object with no weapon set has in a slot, by object and slot
     /// (no entry: `NULL`).
     pub weapon_slot_template: BTreeMap<(ObjectId, i32), usize>,
+    /// batch R59: the status (a `WeaponStatus` value) of the current weapon of an object with no weapon set (no entry: no current weapon).
+    pub cur_weapon_status: BTreeMap<ObjectId, i32>,
     /// batch R34: what `TheAudio->isCurrentlyPlaying(handle)` answers, for every handle.
     pub audio_playing: bool,
     /// The cut points of `ActiveBody`: see `body_cuts`.
@@ -1372,6 +1392,7 @@ impl Default for ObjectCuts {
             terrain_normal: [Coord3D { x: 0.0, y: 0.0, z: 1.0 }; 8],
             closest_object_at: 0,
             weapon_slot_template: BTreeMap::new(),
+            cur_weapon_status: BTreeMap::new(),
             audio_playing: false,
             body: Default::default(),
             contain: Default::default(),

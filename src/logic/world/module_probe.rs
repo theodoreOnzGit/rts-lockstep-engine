@@ -973,6 +973,8 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            // batch R59: a probe is no assisted targeting update
+            ModuleCall::AssistedTargetingIsFreeToAssist | ModuleCall::AssistedTargetingAssistAttack { .. } => ModuleReply::Unhandled,
             // batch R58: MobMemberSlavedUpdate's AI and spawn behaviour
             ModuleCall::AiGetGoalPosition => ModuleReply::Coord(self.answers.goal_position),
             ModuleCall::AiGetLocomotorDistanceToGoal => ModuleReply::Real(self.answers.distance_to_goal),

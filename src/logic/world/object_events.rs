@@ -300,6 +300,9 @@ pub enum ObjectClientEvent {
     DrawableColorFlash { object_id: ObjectId, color: crate::common::base_type::RGBColor, decay_frames: u32, attack_frames: u32, sustain_at_peak: bool },
     /// batch R32: `TheGameClient->addScorch(&position, radius, type)`.
     GameClientAddScorch { position: Coord3D, radius: f32, scorch_type: i32 },
+    /// batch R59: `LaserUpdate::initLaser(parent, target, &start, &end, bone)` on the laser object's drawable's `LaserUpdate` client module
+    /// (`AssistedTargetingUpdate`'s feedback lasers).
+    LaserInit { laser: ObjectId, parent: ObjectId, target: ObjectId, start: crate::common::base_type::Coord3D, end: crate::common::base_type::Coord3D, bone: Vec<u8> },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(

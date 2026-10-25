@@ -210,9 +210,12 @@ public:
 	/* update batch L: what AutoDepositUpdate asks of its object (differential/l9_updates_l.inc) */
 	/* update batch M: FireOCLAfterWeaponCooldownUpdate asks for the current weapon and the weapon in a slot (the test's) */
 	Weapon *getCurrentWeapon(WeaponSlotType *wslot = NULL) { if (wslot && m_curWeapon) *wslot = m_curWeapon->getWeaponSlot(); return m_curWeapon; }
+	const Weapon *getCurrentWeapon(WeaponSlotType *wslot = NULL) const { if (wslot && m_curWeapon) *wslot = m_curWeapon->getWeaponSlot(); return m_curWeapon; }   /* batch R59: Object.h's const overload */
 	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const { return m_slotWeapon[wslot]; }
 	Weapon *m_curWeapon = 0;
 	Bool setWeaponLock( WeaponSlotType weaponSlot, WeaponLockType lockType );   /* batch R55: a line (differential/l9_demo_trap_r55.inc) */
+	/* batch R59: Object.cpp's isAbleToAttack reads the weapon set and the turrets, the weapon layer's: here the one status bit that turns it off */
+	Bool isAbleToAttack() const { return !m_status.test(OBJECT_STATUS_NO_ATTACK); }
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the test's last shot frame; isMobile is Object.cpp:2902-2911 (isDisabled() of the disabled bits) */
 	UnsignedInt getLastShotFiredFrame() const { return m_lastShotFrame; }
 	void setDisabledUntil( DisabledType type = DISABLED_DEFAULT, UnsignedInt frame = FOREVER );   /* batch R13: the sabotage crates (a line: differential/l9_crates_f.inc) */

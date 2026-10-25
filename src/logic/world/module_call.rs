@@ -589,6 +589,10 @@ pub enum ModuleCall {
     SpawnRevealSlaves,
     /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
     AiGetLastCommandSource,
+    /// batch R59: `AssistedTargetingUpdate::isFreeToAssist()`; replies [`ModuleReply::Bool`].
+    AssistedTargetingIsFreeToAssist,
+    /// batch R59: `AssistedTargetingUpdate::assistAttack(requestingObject, victimObject)`.
+    AssistedTargetingAssistAttack { requesting: ObjectId, victim: ObjectId },
     /// batch R58: `AIUpdateInterface::getGoalPosition()`; replies [`ModuleReply::Coord`].
     AiGetGoalPosition,
     /// batch R58: `AIUpdateInterface::getLocomotorDistanceToGoal()`; replies [`ModuleReply::Real`].

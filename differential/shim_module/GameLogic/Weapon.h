@@ -79,6 +79,7 @@ extern WeaponStore *TheWeaponStore;
 #include "Common/GameType.h"
 /* --- p1w13-sonnet --- (batch R2: TransportContain) */
 #include "GameLogic/Damage.h"   /* batch R39: the template's damage and death types */
+#include "GameLogic/WeaponStatus.h"   /* batch R59 (upstream's, an enum) */
 /* --- p1w13-sonnet --- (batch R39: StickyBombUpdate's detonation reads a template's damage through a null bonus) Weapon.h lines 257-291, verbatim but
 ** for appendBonuses, which nothing here calls */
 class WeaponBonus
@@ -158,6 +159,9 @@ public:
 	Bool m_damageW = false;
 	Int m_ownerId = 0;
 	/* --- end p1w13-sonnet --- */
+	/* --- p1w13-sonnet --- (batch R59: AssistedTargetingUpdate asks whether the current weapon is ready: the test's status) */
+	WeaponStatus getStatus() const { return (WeaponStatus)m_r59Status; }
+	Int m_r59Status = 0;
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain) the range check (a line, the test's answer: differential/l9_open_contain_r.inc) and the damage type */
 	Bool isWithinAttackRange(const Object *source, const Object *target) const;
 	Bool isWithinAttackRange(const Object *source, const Coord3D *pos) const;

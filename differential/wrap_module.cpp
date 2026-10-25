@@ -864,5 +864,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_cleanup_hazard_r56.inc"   /* p1w13-sonnet, batch R56: CleanupHazardUpdate */
 #include "l9_slaved_r57.inc"   /* p1w13-sonnet, batch R57: SlavedUpdate */
 #include "l9_mob_member_r58.inc"   /* p1w13-sonnet, batch R58: MobMemberSlavedUpdate */
+#include "l9_assisted_r59.inc"   /* p1w13-sonnet, batch R59: AssistedTargetingUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

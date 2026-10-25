@@ -454,6 +454,8 @@ pub enum ModuleDataKind {
     NeutronBlastBehavior(Arc<crate::logic::modules::neutron_blast_behavior::NeutronBlastBehaviorModuleData>),
     /// `DemoTrapUpdate` (batch R55).
     DemoTrapUpdate(Arc<crate::logic::modules::demo_trap_update::DemoTrapUpdateModuleData>),
+    /// `AssistedTargetingUpdate` (batch R59).
+    AssistedTargetingUpdate(Arc<crate::logic::modules::assisted_targeting_update::AssistedTargetingUpdateModuleData>),
     /// `SlavedUpdate` (batch R57).
     SlavedUpdate(Arc<crate::logic::modules::slaved_update::SlavedUpdateModuleData>),
     /// `MobMemberSlavedUpdate` (batch R58).
@@ -682,6 +684,7 @@ impl ModuleDataKind {
             ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronBlastBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::DemoTrapUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::AssistedTargetingUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SlavedUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::MobMemberSlavedUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CleanupHazardUpdate(d) => &d.update.behavior.module_data,
@@ -1225,6 +1228,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::DemoTrapUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AssistedTargetingUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

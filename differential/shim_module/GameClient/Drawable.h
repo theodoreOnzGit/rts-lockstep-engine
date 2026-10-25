@@ -145,6 +145,8 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void stopAmbientSound();   /* batch R48: HelicopterSlowDeathBehavior (a line: differential/l9_heli_death_r48.inc) */
 	void convertBonePosToWorldPos(const Coord3D *bonePos, const Matrix3D *boneTransform, Coord3D *worldPos, Matrix3D *worldTransform) const;   /* batch R48 */
 	class ClientUpdateModule **getClientUpdateModules();   /* batch R28: ToppleUpdate stops the sway (a line, and none: differential/l9_topple_r28.inc) */
+	class ClientUpdateModule *findClientUpdateModule( NameKeyType key ) { return m_r59Laser; }   /* batch R59: the laser object's LaserUpdate, the test's */
+	class ClientUpdateModule *m_r59Laser = 0;
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */ };
 /* --- end p1w10-sonnet --- */

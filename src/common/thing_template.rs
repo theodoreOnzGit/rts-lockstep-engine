@@ -1088,6 +1088,11 @@ impl ThingTemplate {
         &mut self.behavior_module_info
     }
 
+    /// The client update modules' list, to change (batch R59: a test gives a factory template a `LaserUpdate`, as `Object` blocks do).
+    pub fn friend_client_update_module_info_mut(&mut self) -> &mut ModuleInfo {
+        &mut self.client_update_module_info
+    }
+
     /// `getDrawModuleInfo()`.
     pub fn get_draw_module_info(&self) -> &ModuleInfo {
         &self.draw_module_info

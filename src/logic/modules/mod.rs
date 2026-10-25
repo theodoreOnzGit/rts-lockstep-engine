@@ -141,6 +141,7 @@ pub mod sticky_bomb_update;
 pub mod structure_topple_update;
 pub mod neutron_blast_behavior;
 pub mod demo_trap_update;
+pub mod assisted_targeting_update;
 pub mod slaved_update;
 pub mod mob_member_slaved_update;
 pub mod cleanup_hazard_update;
@@ -624,6 +625,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::DemoTrapUpdate(d) => Some(made_update(
             demo_trap_update::DemoTrapUpdate::get_interface_mask(),
             demo_trap_update::DemoTrapUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::DemoTrapUpdate(m))),
+        )),
+        ModuleDataKind::AssistedTargetingUpdate(d) => Some(made_update(
+            assisted_targeting_update::AssistedTargetingUpdate::get_interface_mask(),
+            assisted_targeting_update::AssistedTargetingUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AssistedTargetingUpdate(m))),
         )),
         ModuleDataKind::SlavedUpdate(d) => Some(made_update(
             slaved_update::SlavedUpdate::get_interface_mask(),

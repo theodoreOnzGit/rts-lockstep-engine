@@ -865,6 +865,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::demo_trap_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::demo_trap_update::DemoTrapUpdate::get_interface_mask()),
         }),
+        "AssistedTargetingUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::assisted_targeting_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::assisted_targeting_update::AssistedTargetingUpdate::get_interface_mask()),
+        }),
         "SlavedUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::slaved_update::new_module_data),
@@ -1252,6 +1257,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::StructureToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::NeutronBlastBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DemoTrapUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::AssistedTargetingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SlavedUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::MobMemberSlavedUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CleanupHazardUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
