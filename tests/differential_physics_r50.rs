@@ -33,13 +33,20 @@
 //! pilot's capture: `transferObjectName` and `defect`), the wake calls, the xfer status, bytes and CRC, the module's 23 state words, object 1's
 //! transform and angle, the other objects' positions and physics velocities, and the captured flags.
 //!
-//! # Results (2026-10-25, `L9R50_CASES=9000`)
+//! # Results (2026-10-25, `L9R50_CASES=9000`; re-measured the same day after the zero-fill correction below)
 //!
-//! 9,000 cases (1,442 data blocks threw, as the C++ did; 2,476 excluded, undefined upstream: 2,473 `m_turning` saved or read before anything
-//! set it, or the never-set `m_originalAllowBounce` read when a bounce ends; 3 a parachuting object bouncing off a structure through a
-//! container with no physics), 139,359 ops and 288,882 outputs: **0 mismatches**. In the compared cases: 39,538 updates, 14,380 xfers, 10,654
-//! collisions, 47,983 effect lines (752 landings, 336 bounce sounds, 102 falling damages, 598 crushes, 465 kills, 2,247 AI `processCollision`
-//! calls, 5 crash weapons, 706 destroys, 14 pilot captures).
+//! 9,000 cases (1,442 data blocks threw, as the C++ did; 4 excluded, undefined upstream: a parachuting object bouncing off a structure
+//! through a container with no physics), 229,972 ops and 475,052 outputs: **0 mismatches**. In the compared cases: 66,191 updates, 24,208
+//! xfers, 17,705 collisions, 85,347 effect lines (1,533 landings, 645 bounce sounds, 204 falling damages, 996 crushes, 861 kills, 3,763 AI
+//! `processCollision` calls, 7 crash weapons, 1,023 destroys, 36 pilot captures).
+//!
+//! **CORRECTED 2026-10-25.** ~~9,000 cases (2,476 excluded, undefined upstream: 2,473 `m_turning` saved or read before anything set it, or
+//! the never-set `m_originalAllowBounce` read when a bounce ends; 3 the parachute case), 139,359 ops and 288,882 outputs: 0 mismatches.~~
+//! The first run treated the two members the constructor never sets as undefined. They are not, in the shipped game or here: the memory pool
+//! zero-fills every module it allocates (`MemoryPool::allocateBlockImplementation`, as the test shim's `newInstance` does), so `m_turning` is
+//! `TURN_NONE` and `m_originalAllowBounce` is `false`. The Rust side now holds those zeros, the driver makes its modules with `newInstance`
+//! (it had used a plain `new`, whose memory is not zeroed, and pinned `m_turning` to a sentinel), and the 2,472 cases those members excluded
+//! are compared.
 //!
 //! On the way: `applyRandomRotation`'s modifier is `GameLogicRandomValue(-1.0f, 1.0f)`, the integer draw (-1, 0 or 1), where the first
 //! translation drew a real; the driver's `createAndFireTempWeapon` stand-in (batch K's) read a `NULL` template, which upstream's returns on
@@ -55,15 +62,18 @@
 //!
 //! | id | planted bug | mismatches |
 //! |---|---|---|
-//! | 2201 | no gravity | 127,139 |
-//! | 2202 | the forward friction the lateral one | 19,176 |
-//! | 2203 | the fall damage factor ignored | 18 |
-//! | 2204 | `KillWhenRestingOnGround` ignored | 465 |
-//! | 2205 | the overlap push not capped at 5 | 1,566 |
-//! | 2206 | a crush deals no damage | 58 |
-//! | 2207 | a motive force keeps its forward part | 36,396 |
-//! | 2208 | `scrubVelocity2D` never slows | 1,933 |
-//! | 2209 | `m_velMag` not saved | 6,287 |
+//! | 2201 | no gravity | 170,715 |
+//! | 2202 | the forward friction the lateral one | 45,374 |
+//! | 2203 | the fall damage factor ignored | 39 |
+//! | 2204 | `KillWhenRestingOnGround` ignored | 860 |
+//! | 2205 | the overlap push not capped at 5 | 2,980 |
+//! | 2206 | a crush deals no damage | 92 |
+//! | 2207 | a motive force keeps its forward part | 65,530 |
+//! | 2208 | `scrubVelocity2D` never slows | 3,434 |
+//! | 2209 | `m_velMag` not saved | 10,893 |
+//!
+//! (The counts are the re-measured ones; the first run's, before the correction, were 127,139, 19,176, 18, 465, 1,566, 58, 36,396, 1,933 and
+//! 6,287.)
 
 mod harness;
 mod mux_common;

@@ -112,10 +112,9 @@ Object *r52NewObject(const ThingTemplate *tmplate, Team *team)
 	list[0] = list[1] = 0;
 	R50PhysicsBehavior *p = 0;
 	if (tmplate == &g_r52Templates[0]) {
-		p = new R50PhysicsBehavior(o, g_r52FlareData);
-		/* (the Rust world schedules an update module with no wake frame at the next frame; m_turning held at -2, R50's) */
+		p = newInstance(R50PhysicsBehavior)(o, g_r52FlareData);
+		/* (the Rust world schedules an update module with no wake frame at the next frame) */
 		if (p->friend_getNextCallFrame() == 0) p->friend_setNextCallFrame(TheGameLogic->getFrame() ? TheGameLogic->getFrame() : 1);
-		p->m_turning = (R50PhysicsTurningType)-2;
 		list[0] = p;
 	}
 	o->m_behaviors = list;
@@ -142,8 +141,7 @@ extern "C" {
 ** frame, 1 the random seed, 2 flags (0 a physics behaviour, 1 a controlling player, 2 airborne target, 3 effectively dead, 4 missile 2 has a
 ** projectile update, 5 missile 3 has one, 6 the player has a default team), 3 the angle, 4-6 the position (float bits). The data dump goes
 ** first (the mux, the flare and bone names, the evasion rate, the volley size, arc, velocity factor and delay, the number of volleys, the
-** reload, decoy and reaction frames (the last as -1: its value is undefined unless the INI gives it; the test never reads it), the airfield
-** flag); then the constructor's wake calls. Then `n` ops of 5 words [op, a, b, c, d]: 0 update()  1 the frame = a  2 the frame += 1
+** reload, decoy and reaction frames, the airfield flag); then the constructor's wake calls. Then `n` ops of 5 words [op, a, b, c, d]: 0 update()  1 the frame = a  2 the frame += 1
 ** 3 xfer save  4 xfer load of the last save  5 xfer CRC  6 attemptUpgrade(m)  7 resetUpgrade(m) (m: a..d, 128 bits)  8
 ** reportMissileForCountermeasures(object a, 0 NULL)  9 calculateCountermeasureToDivertTo(the aircraft)  10 reloadCountermeasures()  11 isActive()
 ** 12 flags = a (bits 1-3 and 6 of cfg[2])  13 the aircraft's physics addVelocityTo(a, b, c)  14 its transferVelocityTo(itself)  15 object a
@@ -177,6 +175,7 @@ static int l9r52RunInner(const char *filename, const char *xfer_path, const unsi
 		putU32(cd->m_numberOfVolleys);
 		putU32(cd->m_reloadFrames);
 		putU32(cd->m_missileDecoyFrames);
+		putU32(cd->m_countermeasureReactionFrames);
 		putU32(cd->m_mustReloadAtAirfield ? 1 : 0);
 	}
 	GlobalData globals;
@@ -225,8 +224,7 @@ static int l9r52RunInner(const char *filename, const char *xfer_path, const unsi
 	team.m_dummy = 101;
 	R50PhysicsBehavior *phys = 0;
 	if (cfg[2] & 1) {
-		phys = new R50PhysicsBehavior(me, &physData);
-		phys->m_turning = (R50PhysicsTurningType)-2;
+		phys = newInstance(R50PhysicsBehavior)(me, &physData);
 		me->m_r50Physics = phys;
 	}
 	for (int k = 0; k < 2; ++k) if (cfg[2] >> (4 + k) & 1) { proj[k] = new R52Projectile(objs[k + 1], &projData); lists[k + 1][0] = proj[k]; }
@@ -244,7 +242,7 @@ static int l9r52RunInner(const char *filename, const char *xfer_path, const unsi
 	g_r52WakeFrame = 0;
 	CountermeasuresBehavior *m = 0;
 	status = 0;
-	try { m = new CountermeasuresBehavior(me, d); }
+	try { m = newInstance(CountermeasuresBehavior)(me, d); }
 	CATCH_ALL(status, code, msg, msgCap)
 	if (status) return 5;
 	g_r52Me = m;
@@ -328,6 +326,7 @@ static int l9r52RunInner(const char *filename, const char *xfer_path, const unsi
 		putU32(m->m_incomingMissiles);
 		putU32(m->m_reactionFrame);
 		putU32(m->m_nextVolleyFrame);
+		putU32(m->m_reloadFrame);
 		putU32(m->isAlreadyUpgraded() ? 1 : 0);
 		putU32((unsigned)m->m_counterMeasures.size());
 		for (size_t j = 0; j < m->m_counterMeasures.size(); ++j) putU32((unsigned)m->m_counterMeasures[j]);

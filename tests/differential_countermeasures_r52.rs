@@ -31,16 +31,18 @@
 //! module's state (the counts and frames, the flare list) and every flare (its id, whether it is found, its position and angle, its physics'
 //! velocity, acceleration, speed and motive expiry).
 //!
-//! # Results (2026-10-25, `L9R52_CASES=9000`)
+//! # Results (2026-10-25, `L9R52_CASES=9000`; re-measured the same day after the zero-fill correction below)
 //!
-//! 9,000 cases (914 data blocks threw, as the C++ did; 404 excluded, undefined upstream: 280 an uninitialised member read (`m_reloadFrame`
-//! before the first countdown or reload, the data's `m_countermeasureReactionFrames` when the INI does not give it), 63 a `NULL` upgrade
-//! template, 51 a launch with no physics on the aircraft or on a `FLARE_B` flare, 9 no controlling player, 1 the iterator stepped before the
-//! first flare), 244,366 ops and 542,506 outputs: **0 mismatches**. In the compared cases: 83,899 updates, 9,151 xfers, 13,477 missiles
-//! reported (1,921 decoyed), at least 92 volleys (up to 8 flares in a case), 7 reloads, 54 diversions found, 3,035 effect lines.
+//! 9,000 cases (914 data blocks threw, as the C++ did; 130 excluded, undefined upstream: 63 a `NULL` upgrade template, 57 a launch with no
+//! physics on the aircraft or on a `FLARE_B` flare, 9 no controlling player, 1 the iterator stepped before the first flare), 255,182 ops
+//! and 566,056 outputs: **0 mismatches**. In the compared cases: 87,717 updates, 9,551 xfers, 14,146 missiles reported (2,300 decoyed), at
+//! least 105 volleys (up to 8 flares in a case), 9 reloads, 58 diversions found, 3,494 effect lines.
 //!
-//! Coverage is thin where upstream is undefined: a volley that empties the countermeasures reaches the reload countdown, which reads
-//! `m_reloadFrame` before anything set it unless a reload came first; the generator reloads first in most cases.
+//! **CORRECTED 2026-10-25.** ~~404 excluded (280 an uninitialised member read: `m_reloadFrame` before the first countdown or reload, the
+//! data's `m_countermeasureReactionFrames` when the INI does not give it), 244,366 ops and 542,506 outputs: 0 mismatches.~~ Both members are
+//! the zero the allocator fills new memory with, in the shipped game and in the test shim (`newInstance`, `MSGNEW`), and are now held as
+//! zero and compared (the driver makes its modules with `newInstance`, the data dump includes the reaction latency, the state the reload
+//! frame).
 //!
 //! # Planted bugs
 //!
@@ -49,16 +51,16 @@
 //! | id | planted bug | mismatches |
 //! |---|---|---|
 //! | 2221 | a decoy sets no reaction frame | 1,357 |
-//! | 2222 | the volley arc ignored | 372 |
-//! | 2223 | a slow aircraft's flares not thrown back | 747 |
+//! | 2222 | the volley arc ignored | 534 |
+//! | 2223 | a slow aircraft's flares not thrown back | 893 |
 //! | 2224 | no volley at the next volley frame | 37 |
-//! | 2225 | the reload is due at once | 164 |
-//! | 2226 | the diverted count not saved | 4,210 |
-//! | 2227 | the divert search steps back past a flare it found | 34 |
-//! | 2228 | a reported missile not counted | 138,732 |
+//! | 2225 | the reload is due at once | 6,368 |
+//! | 2226 | the diverted count not saved | 4,534 |
+//! | 2227 | the divert search steps back past a flare it found | 38 |
+//! | 2228 | a reported missile not counted | 146,017 |
 //! | 2229 | a flare gone does not lower the active count | 104 |
 //!
-//! A first 2227 (the closest flare taken whatever its distance) survived: the search reads the same id again once it finds one, so the
+//! (Re-measured after the correction; the first run's counts were 1,357, 372, 747, 37, 164, 4,210, 34, 138,732 and 104.) A first 2227 (the closest flare taken whatever its distance) survived: the search reads the same id again once it finds one, so the
 //! distance test never decides; it was an equivalent mutant and was replaced.
 
 mod harness;
@@ -125,6 +127,7 @@ fn put_data(v: &mut Vec<u8>, d: &CountermeasuresBehaviorModuleData, fx: &mut FxI
     put_u32(v, d.number_of_volleys);
     put_u32(v, d.reload_frames);
     put_u32(v, d.missile_decoy_frames);
+    put_u32(v, d.countermeasure_reaction_frames);
     put_u32(v, u32::from(d.must_reload_at_airfield));
 }
 
@@ -136,7 +139,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
     let mut r = Reader::new(b);
     r.mux(&mut out);
     let (flare, bone) = (r.str(), r.str());
-    let words: Vec<u32> = (0..9).map(|_| r.u32()).collect();
+    let words: Vec<u32> = (0..10).map(|_| r.u32()).collect();
     let (w, f) = (r.u32(), r.u32());
     out.push(format!("data {flare:?} {bone:?} {words:x?} constructor wakes {w} next {f}"));
     for i in 0..n_ops {
@@ -151,7 +154,7 @@ fn decode(b: &[u8], n_ops: usize) -> Vec<String> {
         let blen = r.u32();
         let bytes: Vec<u32> = (0..blen).map(|_| r.u32()).collect();
         let crc = r.u32();
-        let mut state: Vec<u32> = (0..7).map(|_| r.u32()).collect();
+        let mut state: Vec<u32> = (0..8).map(|_| r.u32()).collect();
         let nf = r.u32();
         state.push(nf);
         state.extend((0..nf).map(|_| r.u32()));
@@ -227,7 +230,7 @@ fn gen_case(g: &mut Gen, _data: &Option<ModuleDataKind>, n_up: usize, _upgrades:
         let m = if g.below(2) == 0 { gen_mask(g, n_up, 1) } else { [if n_up >= 32 { u32::MAX } else { (1u32 << n_up) - 1 }, 0, 0, 0] };
         ops.push([6, m[0], m[1], m[2], m[3]]);
     }
-    // `m_reloadFrame` is set by nothing but a reload or the countdown, which reads it first: most cases reload first
+    // (a reload first in most cases: the counts start full however the data multiplies out)
     if g.below(10) < 8 {
         ops.push([10, 0, 0, 0, 0]);
     }
@@ -537,11 +540,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
         let ob = w.objects.find(me).unwrap();
         let Some(UpdateBody::CountermeasuresBehavior(m)) = ob.behaviors[u.index as usize].body.as_ref() else { panic!("the module is back in its slot") };
         let s = m.state_words();
-        // (the reload frame is not dumped: the C++ value is indeterminate until set)
-        for (k, x) in s.iter().enumerate() {
-            if k != 6 {
-                put_u32(&mut v, *x);
-            }
+        for x in &s {
+            put_u32(&mut v, *x);
         }
         if o[0] == 0 {
             if let Some(before) = available_before {

@@ -305,11 +305,11 @@ int ref_l9r50_run(const char *filename, const char *xfer_path, const unsigned *c
 	status = 0;
 	try {
 		g_r50Constructing = true;
-		m = new R50PhysicsBehavior(me, d);
+		m = newInstance(R50PhysicsBehavior)(me, d);   /* (the memory pool's zero-filled block, as Thing's modules are made: ThingFactory/Object.cpp) */
 		g_r50Constructing = false;
 		g_r50Me = m;
 		phys[0] = m;
-		for (int k = 1; k < 4; ++k) if (flags >> (1 + k) & 1) phys[k] = new R50PhysicsBehavior(objs[k], d);
+		for (int k = 1; k < 4; ++k) if (flags >> (1 + k) & 1) phys[k] = newInstance(R50PhysicsBehavior)(objs[k], d);
 	}
 	CATCH_ALL(status, code, msg, msgCap)
 	g_r50Constructing = false;
@@ -319,8 +319,6 @@ int ref_l9r50_run(const char *filename, const char *xfer_path, const unsigned *c
 	putU32(g_r50Wakes ? g_r50WakeFrame : 0);
 	/* the Rust world schedules an update module when it makes the object (frame 1 at frame 0) for a constructor that sets no wake frame */
 	for (int k = 0; k < 4; ++k) if (phys[k] && phys[k]->friend_getNextCallFrame() == 0) phys[k]->friend_setNextCallFrame(gl.m_frame ? gl.m_frame : 1);
-	/* m_turning is not set by the constructor: indeterminate. The test holds -2 for "not set" (the Rust side's None) */
-	for (int k = 0; k < 4; ++k) if (phys[k]) phys[k]->m_turning = (R50PhysicsTurningType)-2;
 	AudioEventRTS bounce(AsciiString("SND_A"), INVALID_ID);
 	for (int i = 0; i < n; ++i) {
 		const unsigned *o = ops + 5 * i;

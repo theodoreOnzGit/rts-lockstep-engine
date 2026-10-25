@@ -23,9 +23,10 @@
 //!
 //! # Upstream facts kept
 //!
-//! - `m_reloadFrame` is not set by the constructor and not saved: reading it before the first reload countdown is
-//!   `Undefined::UninitialisedMember`; so is the data's `m_countermeasureReactionFrames` (`ReactionLaunchLatency`), which the data's
-//!   constructor does not set, read when a decoy is the first.
+//! - `m_reloadFrame` is not set by the constructor and not saved, and the data's `m_countermeasureReactionFrames` (`ReactionLaunchLatency`)
+//!   is not set by the data's constructor: both are the zero the allocator fills new memory with (`MemoryPool::allocateBlockImplementation`,
+//!   `DynamicMemoryAllocator::allocateBytesImplementation`). ~~Reading either was `Undefined::UninitialisedMember`~~ **CORRECTED
+//!   2026-10-25** (batch R52 as first committed excluded those cases).
 //! - `calculateCountermeasureToDivertTo` tests the end iterator as a pointer (`if( it )`: the shipped `std::vector`'s iterator is one, null
 //!   while the vector has never had storage), steps back from the end only past ids it does not find, and reads the same id again once it
 //!   finds one (so, short of a distance of 1e15 or more, the answer is the last id still found, whatever the distances); reading before the first element is
@@ -79,9 +80,9 @@ pub struct CountermeasuresBehaviorModuleData {
     pub frames_between_volleys: u32,
     pub number_of_volleys: u32,
     pub reload_frames: u32,
-    /// `m_missileDecoyFrames`; `m_countermeasureReactionFrames`, which the constructor does not set (`None` until the INI gives it).
+    /// `m_missileDecoyFrames`; `m_countermeasureReactionFrames` (the constructor does not set it: the allocator's zero).
     pub missile_decoy_frames: u32,
-    pub countermeasure_reaction_frames: Option<u32>,
+    pub countermeasure_reaction_frames: u32,
     /// `m_mustReloadAtAirfield`.
     pub must_reload_at_airfield: bool,
 }
@@ -102,7 +103,7 @@ impl Default for CountermeasuresBehaviorModuleData {
             number_of_volleys: 0,
             reload_frames: 0,
             missile_decoy_frames: 0,
-            countermeasure_reaction_frames: None,
+            countermeasure_reaction_frames: 0,
             must_reload_at_airfield: false,
         }
     }
@@ -122,7 +123,7 @@ static OWN_FIELD_PARSE: [FieldParse<CountermeasuresBehaviorModuleData>; 13] = [
     FieldParse::new("EvasionRate", |i, d, _| { d.evasion_rate = i.parse_percent_to_real()?; Ok(()) }, UserData::None),
     FieldParse::new("MustReloadAtAirfield", |i, d, _| { d.must_reload_at_airfield = i.parse_bool()?; Ok(()) }, UserData::None),
     FieldParse::new("MissileDecoyDelay", |i, d, _| { d.missile_decoy_frames = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
-    FieldParse::new("ReactionLaunchLatency", |i, d, _| { d.countermeasure_reaction_frames = Some(i.parse_duration_unsigned_int()?); Ok(()) }, UserData::None),
+    FieldParse::new("ReactionLaunchLatency", |i, d, _| { d.countermeasure_reaction_frames = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
     FieldParse::end(),
 ];
 
@@ -168,8 +169,8 @@ pub struct CountermeasuresBehavior {
     incoming: u32,
     reaction_frame: u32,
     next_volley_frame: u32,
-    /// `m_reloadFrame` (`None`: never set).
-    reload_frame: Option<u32>,
+    /// `m_reloadFrame` (the pool's zero until set).
+    reload_frame: u32,
 }
 
 impl PartialEq for CountermeasuresBehavior {
@@ -208,7 +209,7 @@ impl CountermeasuresBehavior {
             incoming: 0,
             reaction_frame: 0,
             next_volley_frame: 0,
-            reload_frame: None,
+            reload_frame: 0,
         })
     }
 
@@ -220,7 +221,7 @@ impl CountermeasuresBehavior {
         &self.data
     }
 
-    /// The state the test compares: the counts and frames (`m_reloadFrame` -1 while unset), the mux, the flares.
+    /// The state the test compares: the counts and frames, the mux, the flares.
     pub fn state_words(&self) -> Vec<u32> {
         let mut v = vec![
             self.available,
@@ -229,7 +230,7 @@ impl CountermeasuresBehavior {
             self.incoming,
             self.reaction_frame,
             self.next_volley_frame,
-            self.reload_frame.unwrap_or(u32::MAX),
+            self.reload_frame,
             u32::from(self.mux.is_already_upgraded()),
             self.counter_measures.len() as u32,
         ];
@@ -279,8 +280,7 @@ impl CountermeasuresBehavior {
                     world.module_call(missile, pui, ModuleCall::ProjectileSetFramesTillCountermeasureDiversion(d.missile_decoy_frames));
                     self.diverted = self.diverted.wrapping_add(1);
                     if self.active == 0 && self.reaction_frame == 0 && !crate::logic::modules::plant(2221) {
-                        let Some(latency) = d.countermeasure_reaction_frames else { return Err(IniError::undefined(Undefined::UninitialisedMember)) };
-                        self.reaction_frame = world.frame().wrapping_add(latency);
+                        self.reaction_frame = world.frame().wrapping_add(d.countermeasure_reaction_frames);
                     }
                 }
             }
@@ -321,7 +321,7 @@ impl CountermeasuresBehavior {
     /// `reloadCountermeasures()`.
     fn reload_countermeasures(&mut self) {
         self.available = self.data.number_of_volleys.wrapping_mul(self.data.volley_size);
-        self.reload_frame = Some(0);
+        self.reload_frame = 0;
     }
 
     /// `launchVolley()`.
@@ -410,13 +410,12 @@ impl CountermeasuresBehavior {
             }
         }
         if self.available == 0 && d.reload_frames != 0 {
-            let Some(reload) = self.reload_frame else { return Err(IniError::undefined(Undefined::UninitialisedMember)) };
-            if reload != 0 {
-                if reload <= now {
+            if self.reload_frame != 0 {
+                if self.reload_frame <= now {
                     self.reload_countermeasures();
                 }
             } else {
-                self.reload_frame = Some(now.wrapping_add(if crate::logic::modules::plant(2225) { 0 } else { d.reload_frames }));
+                self.reload_frame = now.wrapping_add(if crate::logic::modules::plant(2225) { 0 } else { d.reload_frames });
             }
         }
         Ok(UPDATE_SLEEP_NONE)
@@ -546,9 +545,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_constructor_counts_the_volleys_and_leaves_the_reload_frame_unset() {
+    fn the_constructor_counts_the_volleys_and_the_reload_frame_is_the_pools_zero() {
         let d = CountermeasuresBehaviorModuleData { volley_size: 3, number_of_volleys: 4, ..Default::default() };
         let m = CountermeasuresBehavior::unconstructed(1, Some(Arc::new(d))).unwrap();
-        assert_eq!(m.state_words()[..7], [12, 0, 0, 0, 0, 0, u32::MAX]);
+        assert_eq!(m.state_words()[..7], [12, 0, 0, 0, 0, 0, 0]);
     }
 }

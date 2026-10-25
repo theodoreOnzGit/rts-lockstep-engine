@@ -22,9 +22,11 @@
 //!
 //! # Upstream facts kept
 //!
-//! - `m_turning` is not set by the constructor (`resetDynamicPhysics` and `setTurning` set it): reading it, or saving it, before then is
-//!   `Undefined::UninitialisedMember`. `m_originalAllowBounce` is never set at all: a bounce that ends (`handleBounce` with no upward force)
-//!   reads it, `Undefined::UninitialisedMember` too.
+//! - `m_turning` is not set by the constructor (`resetDynamicPhysics` and `setTurning` set it), and `m_originalAllowBounce` is never set at
+//!   all: both are the zero the memory pool fills a new module with (`MemoryPool::allocateBlockImplementation` memsets the block), so
+//!   `TURN_NONE` and `false`; a bounce that ends (`handleBounce` with no upward force) turns bouncing off. ~~Reading either was
+//!   `Undefined::UninitialisedMember`~~ **CORRECTED 2026-10-25** (batch R50 as first committed excluded those cases; the pool's zero-fill
+//!   is what the shipped game reads).
 //! - `m_lastCollidee` is not saved; `m_velMag` is (a stale `-1` after a load means "recompute").
 //! - The minimum fall speed for damage is `sqrt(|2 * gravity * height|)` of the height the INI gives (40 by default), with the gravity of
 //!   `TheGlobalData` when the data was made: here, `cuts.globals.gravity` when it is used (the same while the global data does not change).
@@ -252,8 +254,8 @@ pub struct PhysicsBehavior {
     accel: Coord3D,
     prev_accel: Coord3D,
     vel: Coord3D,
-    /// `m_turning` (`None`: never set; see the module docs).
-    turning: Option<i32>,
+    /// `m_turning` (the pool's zero until set; see the module docs).
+    turning: i32,
     /// `m_ignoreCollisionsWith`.
     ignore_collisions_with: ObjectId,
     /// `m_flags`.
@@ -301,7 +303,7 @@ impl PhysicsBehavior {
             accel: Coord3D::default(),
             prev_accel: Coord3D::default(),
             vel: Coord3D::default(),
-            turning: None,
+            turning: TURN_NONE,
             ignore_collisions_with: INVALID_ID,
             flags: 0,
             mass: data.mass,
@@ -325,7 +327,7 @@ impl PhysicsBehavior {
         &self.update
     }
 
-    /// The state the test compares: the rates, the three vectors, the turning (-2: unset), the ids, the flags, the mass, the frames and the
+    /// The state the test compares: the rates, the three vectors, the turning, the ids, the flags, the mass, the frames and the
     /// modifiers, as words.
     pub fn state_words(&self) -> Vec<u32> {
         let b = |x: f32| x.to_bits();
@@ -342,7 +344,7 @@ impl PhysicsBehavior {
             b(self.vel.x),
             b(self.vel.y),
             b(self.vel.z),
-            self.turning.unwrap_or(-2) as u32,
+            self.turning as u32,
             self.ignore_collisions_with as u32,
             self.flags as u32,
             b(self.mass),
@@ -386,10 +388,6 @@ impl PhysicsBehavior {
         update_behavior::load_post_process_with(self, update);
     }
 
-    /// Whether a save is defined: `m_turning` has been set (see the module docs).
-    pub fn check_save(&self) -> bool {
-        self.turning.is_some()
-    }
 
     fn set_flag(&mut self, f: i32, set: bool) {
         if set {
@@ -517,7 +515,7 @@ impl PhysicsBehavior {
         self.prev_accel = Coord3D::default();
         self.vel = Coord3D::default();
         self.vel_mag = 0.0;
-        self.turning = Some(TURN_NONE);
+        self.turning = TURN_NONE;
         self.yaw_rate = 0.0;
         self.roll_rate = 0.0;
         self.pitch_rate = 0.0;
@@ -622,8 +620,9 @@ impl PhysicsBehavior {
             self.test_stunned_unit_for_destruction(world, me);
             Ok((true, bounce_force))
         } else {
-            // `setAllowBouncing(m_originalAllowBounce)`: a member no code sets
-            Err(Undefined::UninitialisedMember)
+            // `setAllowBouncing(m_originalAllowBounce)`: a member no code sets, so the pool's zero (see the module docs)
+            self.set_flag(ALLOW_BOUNCE, false);
+            Ok((false, bounce_force))
         }
     }
 
@@ -1319,11 +1318,10 @@ impl UpdateBehavior for PhysicsBehavior {
             xfer.xfer_coord3d(&mut tmp)?;
         }
         // `xferUser(&m_turning, sizeof(PhysicsTurningType))`
-        // (a save of an unset one is reported by `World::xfer_module_slot`: see `check_save`)
-        let mut b = self.turning.unwrap_or(0).to_le_bytes();
+        let mut b = self.turning.to_le_bytes();
         xfer.xfer_user(&mut b)?;
         if xfer.get_xfer_mode() == XferMode::Load {
-            self.turning = Some(i32::from_le_bytes(b));
+            self.turning = i32::from_le_bytes(b);
         }
         xfer.xfer_object_id(&mut self.ignore_collisions_with)?;
         xfer.xfer_int(&mut self.flags)?;
@@ -1410,15 +1408,9 @@ impl UpdateBehavior for PhysicsBehavior {
                 ModuleReply::Done
             }
             ModuleCall::PhysicsIsMotive => ModuleReply::Bool(self.is_motive(world)),
-            ModuleCall::PhysicsGetTurning => match self.turning {
-                Some(t) => ModuleReply::Int(t),
-                None => {
-                    world.cuts.module_errors.push((me, IniError::undefined(Undefined::UninitialisedMember)));
-                    ModuleReply::Int(0)
-                }
-            },
+            ModuleCall::PhysicsGetTurning => ModuleReply::Int(self.turning),
             ModuleCall::PhysicsSetTurning(t) => {
-                self.turning = Some(t);
+                self.turning = t;
                 ModuleReply::Done
             }
             ModuleCall::PhysicsScrubVelocity2D(v) => {
@@ -1550,7 +1542,8 @@ mod tests {
         let d = PhysicsBehaviorModuleData::default();
         assert_eq!((d.mass, d.z_friction, d.pitch_roll_yaw_factor, d.allow_collide_force), (1.0, 0.8, 2.0, true));
         let m = PhysicsBehavior::unconstructed(1, Some(Arc::new(d))).unwrap();
-        assert_eq!(m.state_words()[12], (-2i32) as u32);
+        // m_turning: the memory pool's zero, TURN_NONE
+        assert_eq!(m.state_words()[12], TURN_NONE as u32);
         assert_eq!(m.state_words()[14] as i32, ALLOW_COLLIDE_FORCE);
         assert_eq!(height_to_speed(-1.0, 40.0), 80.0f32.sqrt());
     }
