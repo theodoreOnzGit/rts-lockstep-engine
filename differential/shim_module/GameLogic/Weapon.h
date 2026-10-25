@@ -117,6 +117,19 @@ private:
 
 };
 /* --- end p1w13-sonnet --- */
+/* --- p1w13-sonnet --- (batch R66) Weapon.h lines 97-107, verbatim */
+enum WeaponAntiMaskType
+{
+	WEAPON_ANTI_AIRBORNE_VEHICLE	= 0x01,
+	WEAPON_ANTI_GROUND						= 0x02,
+	WEAPON_ANTI_PROJECTILE				= 0x04,
+	WEAPON_ANTI_SMALL_MISSILE			= 0x08, // All missiles are also projectiles (but not all projectiles are missiles)
+	WEAPON_ANTI_MINE							= 0x10,
+	WEAPON_ANTI_AIRBORNE_INFANTRY	= 0x20, // When set, anti-air weapons will not target infantry paratroopers.
+	WEAPON_ANTI_BALLISTIC_MISSILE	= 0x40, // Specifically large missiles that are vulnerable to base defenses
+	WEAPON_ANTI_PARACHUTE					= 0x80, // Parachutes can be targeted directly
+};
+/* --- end p1w13-sonnet --- */
 class WeaponTemplate
 {
 public:
@@ -152,6 +165,12 @@ public:
 	Real getMaxTargetPitch() const { return m_maxTargetPitch; }
 	Int getShotsPerBarrel() const { return m_shotsPerBarrel; }
 	UnsignedInt getSuspendFXDelay() const { return m_suspendFXDelay; }
+	/* batch R66 (PointDefenseLaserUpdate): the delays between shots and the anti mask; getDelayBetweenShots is Weapon.cpp 499-514
+	** (differential/l9_point_defense_r66.inc), getAntiMask Weapon.h's getter */
+	Int m_minDelayBetweenShots = 0, m_maxDelayBetweenShots = 0;
+	Int m_antiMask = 0;
+	Int getDelayBetweenShots(const WeaponBonus& bonus) const;
+	Int getAntiMask() const { return m_antiMask; }
 	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w13-sonnet --- */
