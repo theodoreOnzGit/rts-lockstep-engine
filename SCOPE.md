@@ -54,10 +54,32 @@ Generals multiplayer and replays are **lockstep**: each peer runs the same
 - **Floating point.** `GameLogic.cpp:198 setFPMode()` sets the x87 to
   **24-bit precision, round-to-nearest** on every logic entry. That is close to,
   but not identical to, IEEE `f32` (x87 keeps an extended exponent range, and
-  `fsin`/`fsqrt` differ from libm). Consequences:
+  ~~`fsin`/`fsqrt` differ from libm~~ `fsin`/`fcos` differ from any software
+  `sinf`/`cosf`; **corrected 2026-10-17**: `fsqrt` is correctly rounded, so it
+  matches `sqrtf`). Consequences:
   - Rust↔Rust lockstep (native ↔ wasm included) is achievable with plain `f32`,
-    no fused multiply-add, and **pure-Rust `libm`** for transcendentals. Never
-    use `std` `sin`/`cos` in logic: they call the platform's libm.
+    no fused multiply-add, and ~~**pure-Rust `libm`**~~ **petir** from crates.io
+    (`=0.0.1`; the owner's no_std numerics crate, which delegates to pure-Rust
+    `libm`; owner decision 2026-10-17) for all maths, `f32` and `f64`, through
+    its `Real` trait. Never use `std` `sin`/`cos` in logic: they call the
+    platform's libm. ~~petir is `f64` only so far~~ **Corrected 2026-10-17**:
+    `petir::Real` is implemented for `f32` too, forwarding to `libm`'s `f32`
+    functions, so upstream's `sinf`/`cosf`/`tanf` calls go through petir as
+    well. Its `mul_add` is `fmaf` and must not be used: upstream has no FMA.
+  - **Which trig the logic really uses (found 2026-10-17).** GameLogic never
+    calls `WWMath::Sin`/`Cos` or their x87 assembly. Its ~120 `Sin`/`Cos` calls
+    go to `Common/System/Trig.cpp`, which `#define`s `DEFAULT_TRIG`, so they are
+    the 2003 Microsoft C runtime's `sinf`/`cosf` under the 24-bit FPU mode. It
+    also calls `sqrt` ~80 times and `atan2` 28 times directly. Matching original
+    replays therefore depends on that runtime's results, not on WWMath's
+    assembly (which matters only to rendering). `Trig.cpp` also holds an
+    unused integer lookup-table trig.
+  - **NaN.** `XferCRC` hashes raw float bytes, and IEEE 754, Rust and wasm leave
+    the bits of a NaN result unspecified, so a NaN in game state could give a
+    native and a wasm peer different CRCs from identical behaviour. **Rule
+    (approved by the owner 2026-10-17):** logic never stores a NaN; the CRC
+    path panics on one in tests and debug builds and canonicalises it to
+    `0x7FC00000` in release builds (`common::xfer_crc::nan_guard`).
   - **Bit-exact compatibility with original replays and the original
     `generals.exe` is NOT assumed.** It is an experiment with a pass/fail gate
     (Phase 1). It is not a design promise.
