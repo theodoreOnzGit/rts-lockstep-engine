@@ -757,6 +757,10 @@ pub enum ModuleCall {
     /// `PhysicsBehavior::scrubVelocity2D(desiredVelocity)`.
     PhysicsScrubVelocity2D(f32),
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch R48: HelicopterSlowDeathBehavior)
+    /// `getCurLocomotor()->setMaxBraking(braking)`.
+    AiLocomotorSetMaxBraking(f32),
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R38: `BridgeTowerBehaviorInterface`, which `TerrainLogic`'s `Bridge::createTower` drives)
     /// `setBridge(bridge)` (the bridge's id; one that is no object is `setBridge(NULL)`).
     BridgeTowerSetBridge(ObjectId),

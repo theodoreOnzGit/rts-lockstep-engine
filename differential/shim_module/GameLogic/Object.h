@@ -80,6 +80,8 @@ enum CanAttackResult
 #include "Common/Geometry.h"
 /* p1w13-sonnet, batch R12: the contain test asks for the transform its scene implies (see Object::poseMatrix) */
 inline bool g_objXformFromPose = false;
+/* batch R48: getTransformMatrix takes the position (Thing's transform carries it; the shim's setPosition keeps only m_pos) */
+inline bool g_objXformSyncPos = false;
 class Object;
 class DamageInfo;
 typedef std::list<Object *>																ObjectPointerList;
@@ -155,7 +157,12 @@ public:
 	Bool m_disabled;
 	BehaviorModule **m_behaviors;
 	/* ReplaceObjectUpgrade: the object's place, team and id, and whether destroyObject has been called on it */
-	const Matrix3D *getTransformMatrix() const { if (g_objXformFromPose) const_cast<Object *>(this)->poseMatrix(); return &m_matrix; }
+	const Matrix3D *getTransformMatrix() const
+	{
+		if (g_objXformFromPose) const_cast<Object *>(this)->poseMatrix();
+		if (g_objXformSyncPos) const_cast<Object *>(this)->m_matrix.Set_Translation(Vector3(m_pos.x, m_pos.y, m_pos.z));
+		return &m_matrix;
+	}
 	/* --- p1w13-sonnet --- (batch R12: GarrisonContain reads the container's transform) the transform Thing::setOrientation and setPosition keep: the
 	** rotation about z by the angle (Thing.cpp's cross products: y = z x u, x = y x z) and the position */
 	void poseMatrix()

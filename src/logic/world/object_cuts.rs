@@ -168,7 +168,6 @@ impl World {
     /// `TheAudio->addAudioEvent(&AudioEventRTS(name, object))`: the handle the audio manager gave it (never 0).
     pub fn audio_add_event(&mut self, name: Vec<u8>, object_id: ObjectId) -> u32 {
         self.emit(ObjectClientEvent::AudioAddEvent { name, object_id, position: None, player_index: None });
-        self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
         self.cuts.last_audio_handle
     }
 
@@ -1539,6 +1538,10 @@ impl World {
 
     /// Sends one `Object` notification to the client.
     pub fn emit(&mut self, e: ObjectClientEvent) {
+        // every `addAudioEvent` gets the next handle, whether the caller keeps it or not (batch R48: `EjectPilotDie::ejectPilot`'s two)
+        if let ObjectClientEvent::AudioAddEvent { .. } = e {
+            self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
+        }
         if let Some(t) = &mut self.cuts.trace {
             t.push(format!("evt {e:?}"));
         }

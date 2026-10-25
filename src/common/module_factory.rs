@@ -1052,6 +1052,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::jet_slow_death_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehavior::get_interface_mask()),
         }),
+        "HelicopterSlowDeathBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::helicopter_slow_death_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::helicopter_slow_death_behavior::HelicopterSlowDeathBehavior::get_interface_mask()),
+        }),
         "BattleBusSlowDeathBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::battle_bus_slow_death_behavior::new_module_data),
@@ -1226,6 +1231,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FireSpreadUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::JetSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
+        Some(ModuleDataKind::HelicopterSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
         Some(ModuleDataKind::BattleBusSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
         Some(ModuleDataKind::RebuildHoleBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         // --- end p1w13-sonnet ---

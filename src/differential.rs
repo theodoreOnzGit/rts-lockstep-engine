@@ -1801,6 +1801,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R48: HelicopterSlowDeathBehavior (differential/l9_heli_death_r48.inc).
+    pub fn ref_l9r48_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R45: SupplyCenterProductionExitUpdate (kind 0), SpawnPointProductionExitUpdate (1) (differential/l9_exits_r45.inc).
     pub fn ref_l9r45_run(
         kind: c_int,

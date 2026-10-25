@@ -3465,6 +3465,20 @@ mod differential {
                     .replace(b, "\tInt matrixIndex;\n\tfor( matrixIndex = 0; matrixIndex < MAX_SPAWN_POINTS; matrixIndex++ )");
                 std::fs::write(mod_gen.join("SpawnPointProductionExitUpdate_edit.cpp"), cut).expect("write SpawnPointProductionExitUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R48 (differential/l9_heli_death_r48.inc): HelicopterSlowDeathUpdate.cpp's field table names `INI::parseParticleSystemTemplate`
+                // once, as AutoHealBehavior.h does; the same replacement (asserted once), its declaration after the PhysicsUpdate.h include (asserted
+                // once), into mod_gen/HelicopterSlowDeathUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/HelicopterSlowDeathUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read HelicopterSlowDeathUpdate.cpp");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/PhysicsUpdate.h\"\n");
+                assert_eq!(text.matches(parse).count(), 1, "HelicopterSlowDeathUpdate.cpp: the particle system parser must occur once");
+                assert_eq!(text.matches(include).count(), 1, "HelicopterSlowDeathUpdate.cpp: the PhysicsUpdate.h include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("HelicopterSlowDeathUpdate_edit.cpp"), cut).expect("write HelicopterSlowDeathUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

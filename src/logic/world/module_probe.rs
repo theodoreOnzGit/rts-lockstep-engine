@@ -741,6 +741,10 @@ impl ProbeModule {
                 world.body_trace(format!("proll {} {:08x}", me.object, r.to_bits()));
                 ModuleReply::Done
             }
+            ModuleCall::AiLocomotorSetMaxBraking(b) => {
+                world.body_trace(format!("maxbraking {} {:08x}", me.object, b.to_bits()));
+                ModuleReply::Done
+            }
             ModuleCall::AiLocomotorSetMaxLift(l) => {
                 world.body_trace(format!("maxlift {} {:08x}", me.object, l.to_bits()));
                 ModuleReply::Done
