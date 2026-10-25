@@ -157,6 +157,8 @@ pub struct ProbeAnswers {
     pub moving: bool,
     /// `isIdle()` of the AI.
     pub idle: bool,
+    /// batch R56: the AI's `isBusy()`.
+    pub busy: bool,
     /// `isImmuneToClearBuildingAttacks()` of the contain module.
     pub immune: bool,
     /// `isRiderChangeContain()` of the contain module.
@@ -960,6 +962,16 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            // batch R56: CleanupHazardUpdate's AI
+            ModuleCall::AiIsBusy => ModuleReply::Bool(self.answers.busy),
+            ModuleCall::AiBusy { command_source } => {
+                world.body_trace(format!("aibusy {} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiAttackObject { victim, max_shots, command_source } => {
+                world.body_trace(format!("aiattack {} {victim} {max_shots} {command_source}", me.object));
+                ModuleReply::Done
+            }
             ModuleCall::PhysicsGetVelocityMagnitude => {
                 let v = self.answers.velocity;
                 ModuleReply::Real((v.x * v.x + v.y * v.y + v.z * v.z).sqrt())

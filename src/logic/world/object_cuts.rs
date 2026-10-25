@@ -109,6 +109,16 @@ impl World {
         self.cuts.weapon_slot_facts.get(&(id, slot)).copied()
     }
 
+    /// `obj->getWeaponInWeaponSlot(slot)->getTemplate()` (batch R56): the weapon set's weapon's template (its position in the weapon store), else
+    /// the table `cuts.weapon_slot_template`; `None` for no weapon.
+    pub fn weapon_in_slot_template(&self, id: ObjectId, slot: i32) -> Option<usize> {
+        let o = self.objects.find(id)?;
+        if let Some(w) = o.weapon_set.get_weapon_in_weapon_slot(slot) {
+            return Some(w.template());
+        }
+        self.cuts.weapon_slot_template.get(&(id, slot)).copied()
+    }
+
     /// `obj->setWeaponLock(slot, lockType)` (batch R55): an object whose weapon set holds weapons takes the lock; one whose weapons are the
     /// tables' (`cuts.cur_weapon`, `cuts.weapons`) is a [`CutCall::ObjectSetWeaponLock`] record.
     pub fn set_weapon_lock(&mut self, id: ObjectId, slot: i32, lock: crate::logic::weapon_set_state::WeaponLockType) {
@@ -344,6 +354,14 @@ impl World {
     /// batch R34: `TheAI->pathfinder()->removeWallFromMyFootprint(obj)`.
     pub fn pathfinder_remove_wall_from_footprint(&mut self, object: ObjectId) {
         self.cut(CutCall::PathfinderRemoveWallFromFootprint { object });
+    }
+
+    /// batch R56: `ThePartitionManager->getClosestObject(&position, range, FROM_CENTER_2D, { KINDOF_CLEANUP_HAZARD, the same map status as
+    /// `object` })`: the table's answer (the partition manager is layer 12's), `None` for `NULL`.
+    pub fn partition_get_closest_cleanup_hazard_at(&mut self, object: ObjectId, position: Coord3D, range: f32) -> Option<ObjectId> {
+        self.cut(CutCall::PartitionGetClosestCleanupHazardAt { object, position, range });
+        let id = self.cuts.closest_object_at;
+        self.objects.find(id).map(|_| id)
     }
 
     /// batch R34: `ThePartitionManager->getClosestObject(&position, range, dc)` (no filters); `None` for `NULL`.
@@ -943,6 +961,9 @@ pub enum CutCall {
     WeaponTransferNextShotStats { to: ObjectId, from: ObjectId },
     /// `obj->setWeaponLock(slot, lockType)` of an object whose weapon set holds no weapons (`World::set_weapon_lock`, batch R55).
     ObjectSetWeaponLock { object: ObjectId, slot: i32, lock: i32 },
+    /// `ThePartitionManager->getClosestObject(&position, range, FROM_CENTER_2D, { PartitionFilterAcceptByKindOf(CLEANUP_HAZARD),
+    /// PartitionFilterSameMapStatus(object) })` (`World::partition_get_closest_cleanup_hazard_at`, batch R56).
+    PartitionGetClosestCleanupHazardAt { object: ObjectId, position: Coord3D, range: f32 },
     // --- end p1w13-sonnet ---
 }
 
@@ -1207,6 +1228,9 @@ pub struct ObjectCuts {
     pub terrain_normal: [Coord3D; 8],
     /// batch R34: what `ThePartitionManager->getClosestObject(&pos, range, dc)` answers (`INVALID_ID` for `NULL`).
     pub closest_object_at: ObjectId,
+    /// batch R56: the template (its position in the weapon store) of the weapon an object with no weapon set has in a slot, by object and slot
+    /// (no entry: `NULL`).
+    pub weapon_slot_template: BTreeMap<(ObjectId, i32), usize>,
     /// batch R34: what `TheAudio->isCurrentlyPlaying(handle)` answers, for every handle.
     pub audio_playing: bool,
     /// The cut points of `ActiveBody`: see `body_cuts`.
@@ -1318,6 +1342,7 @@ impl Default for ObjectCuts {
             terrain_water: [0.0; 8],
             terrain_normal: [Coord3D { x: 0.0, y: 0.0, z: 1.0 }; 8],
             closest_object_at: 0,
+            weapon_slot_template: BTreeMap::new(),
             audio_playing: false,
             body: Default::default(),
             contain: Default::default(),

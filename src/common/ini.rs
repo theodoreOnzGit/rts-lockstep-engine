@@ -248,6 +248,9 @@ pub enum Undefined {
     ModuloByZero,
     /// batch R55: `getCurrentWeapon()` is `NULL` and the module calls through it (`DemoTrapUpdate::update`'s `getWeaponSlot()`).
     NullCurrentWeapon,
+    /// batch R56: a cached weapon template is `NULL` where its attack range is read (`CleanupHazardUpdate::fireWhenReady` of a unit whose
+    /// `WeaponSlot` held no weapon at `onObjectCreated`).
+    NullWeaponTemplate,
     /// `getAI()` is `NULL` and the module calls through it (`ActiveBody`'s `DAMAGE_KILLPILOT` of a rider-change vehicle).
     NullAi,
     /// `getContain()` is `NULL` and the module calls through it (`HijackerUpdate`: a parachute template whose object has no contain module).

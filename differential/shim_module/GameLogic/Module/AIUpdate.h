@@ -98,6 +98,11 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* batch R26: StealthUpdate drops a temporary grant on a player's command (differential/l9_stealth_r26.inc) */
 	CommandSourceType getLastCommandSource() const { return (CommandSourceType)m_lastCmdSource; }
 	Int m_lastCmdSource = 0;
+	/* batch R56: CleanupHazardUpdate keeps the AI busy and orders the attack (lines: differential/l9_cleanup_hazard_r56.inc) */
+	Bool isBusy() const { return m_busy; }
+	Bool m_busy = false;
+	void aiBusy( CommandSourceType cmdSource );
+	void aiAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (batch R50: PhysicsBehavior's questions, differential/l9_physics_r50.inc) */

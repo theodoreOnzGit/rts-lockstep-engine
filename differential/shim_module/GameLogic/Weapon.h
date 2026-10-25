@@ -130,6 +130,15 @@ public:
 	DamageType getDamageType() const { return (DamageType)m_damageTypeT; }
 	DeathType getDeathType() const { return (DeathType)m_deathTypeT; }
 	ObjectStatusTypes getDamageStatusType() const { return (ObjectStatusTypes)m_damageStatusTypeT; }
+	/* batch R56: the attack range; the getter is Weapon.cpp 461-469 (RATIONALIZE_ATTACK_RANGE), verbatim but for PATHFIND_CELL_SIZE_F's value */
+	Real m_attackRange = 0.0f;
+	Real getAttackRange(const WeaponBonus& bonus) const
+	{
+		const Real UNDERSIZE = 10.0f*0.25f;
+		Real r = m_attackRange * bonus.getField(WeaponBonus::RANGE) - UNDERSIZE;
+		if (r < 0.0f) r = 0.0f;
+		return r;
+	}
 	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w13-sonnet --- */

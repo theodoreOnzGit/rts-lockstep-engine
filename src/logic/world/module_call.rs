@@ -589,6 +589,12 @@ pub enum ModuleCall {
     SpawnRevealSlaves,
     /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
     AiGetLastCommandSource,
+    /// batch R56: `AIUpdateInterface::isBusy()`; replies [`ModuleReply::Bool`].
+    AiIsBusy,
+    /// batch R56: `AIUpdateInterface::aiBusy(cmdSource)`.
+    AiBusy { command_source: i32 },
+    /// batch R56: `AIUpdateInterface::aiAttackObject(victim, maxShotsToFire, cmdSource)`.
+    AiAttackObject { victim: ObjectId, max_shots: i32, command_source: i32 },
     /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.

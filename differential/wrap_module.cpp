@@ -861,5 +861,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_missile_launcher_r53.inc"   /* p1w13-sonnet, batch R53: MissileLauncherBuildingUpdate */
 #include "l9_bunker_buster_r54.inc"   /* p1w13-sonnet, batch R54: BunkerBusterBehavior */
 #include "l9_demo_trap_r55.inc"   /* p1w13-sonnet, batch R55: DemoTrapUpdate */
+#include "l9_cleanup_hazard_r56.inc"   /* p1w13-sonnet, batch R56: CleanupHazardUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

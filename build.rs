@@ -3526,6 +3526,16 @@ mod differential {
                 let cut = text.replace(from, "\tif( m_counterMeasures.capacity() != 0 )   /* build.rs: was `if( it )` */\n");
                 std::fs::write(mod_gen.join("CountermeasuresBehavior_r52.cpp"), cut).expect("write CountermeasuresBehavior_r52.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R56 (differential/l9_cleanup_hazard_r56.inc): CleanupHazardUpdate.cpp, into mod_gen/CleanupHazardUpdate_r56.cpp, with
+                // setCleanupAreaParameters defined as a member of the driver's subclass R56Cleanup (the class's own name is special power batch H's
+                // stand-in, the line CleanupAreaPower's test reads), its body unchanged; asserted once.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/CleanupHazardUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read CleanupHazardUpdate.cpp");
+                let from = "void CleanupHazardUpdate::setCleanupAreaParameters( const Coord3D *pos, Real range )\n";
+                assert_eq!(text.matches(from).count(), 1, "CleanupHazardUpdate.cpp: setCleanupAreaParameters must occur once");
+                let cut = text.replace(from, "void R56Cleanup::r56SetCleanupAreaParameters( const Coord3D *pos, Real range )   /* build.rs: was CleanupHazardUpdate:: */\n");
+                std::fs::write(mod_gen.join("CleanupHazardUpdate_r56.cpp"), cut).expect("write CleanupHazardUpdate_r56.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();
