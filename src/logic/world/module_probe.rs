@@ -68,6 +68,9 @@ pub struct ProbeAnswers {
     pub rider: ObjectId,
     /// The contained items.
     pub contained: Vec<ObjectId>,
+    /// batch R61: the contain questions and changes a dock makes (`isValidContainerFor`, answered `yes`; `addToContain`; `removeFromContain`,
+    /// which takes the object out of `contained`) are lines of the trace.
+    pub trace_contain: bool,
     /// Batch R47: the physics' `clearAcceleration` since the last `scrubVelocity2D` (which reports it).
     pub acceleration_cleared: bool,
     /// Batch R50: the AI's `getCurLocomotorSetType` (`None`: `Unhandled`), `getIgnoredObstacleID`, `processCollision`'s answer (a line
@@ -390,6 +393,10 @@ impl ProbeModule {
                 ModuleReply::Bool(self.answers.spu_take)
             }
             ModuleCall::DoesSpecialPowerUpdatePassScienceTest | ModuleCall::InitiateIntentToDoSpecialPower { .. } => ModuleReply::Unhandled,
+            // batch R61: not a railed transport's dock
+            ModuleCall::RailedTransportDockIsLoadingOrUnloading | ModuleCall::RailedTransportDockUnloadAll | ModuleCall::RailedTransportDockUnloadSingleObject(_) => {
+                ModuleReply::Unhandled
+            }
             ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.answers.subdual_rate as i32),
             ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.answers.subdual_amount),
             ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.answers.subdual_has),
@@ -933,6 +940,19 @@ impl ProbeModule {
             ModuleCall::StickyBombGetTargetObject | ModuleCall::StickyBombSetTargetObject(_) => ModuleReply::Unhandled,
             ModuleCall::AiNotifyCrate(c) => {
                 world.body_trace(format!("notifycrate {} {c}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::IsValidContainerFor { obj, check_capacity } if self.answers.trace_contain => {
+                world.body_trace(format!("validfor {} {obj} {}", me.object, i32::from(check_capacity)));
+                ModuleReply::Bool(self.answers.yes)
+            }
+            ModuleCall::AddToContain(obj) if self.answers.trace_contain => {
+                world.body_trace(format!("addtocontain {} {obj}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::RemoveFromContain(obj) if self.answers.trace_contain => {
+                world.body_trace(format!("removefromcontain {} {obj}", me.object));
+                self.answers.contained.retain(|&c| c != obj);
                 ModuleReply::Done
             }
             ModuleCall::IsValidContainerFor { obj, check_capacity } if self.answers.parachute => {

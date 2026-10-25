@@ -3551,6 +3551,20 @@ mod differential {
                 let cut = text.replace(from, "void R56Cleanup::r56SetCleanupAreaParameters( const Coord3D *pos, Real range )   /* build.rs: was CleanupHazardUpdate:: */\n");
                 std::fs::write(mod_gen.join("CleanupHazardUpdate_r56.cpp"), cut).expect("write CleanupHazardUpdate_r56.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R61 (differential/l9_railed_dock_r61.inc): RailedTransportDockUpdate.h without its include guard and its interface class,
+                // into mod_gen/RailedTransportDockUpdate_r61.h: the contain driver (l9_open_contain_r.inc) defines the guard and copies that class
+                // (the header's lines 57-66) for RailedTransportContain.cpp, before DockUpdate is in the unit; the rest of the header is unchanged.
+                let path = up.join("GameEngine/Include/GameLogic/Module/RailedTransportDockUpdate.h");
+                let text = std::fs::read_to_string(&path).expect("read RailedTransportDockUpdate.h");
+                let start = "class RailedTransportDockUpdateInterface\n{";
+                assert_eq!(text.matches(start).count(), 1, "RailedTransportDockUpdate.h: the interface class must occur once");
+                let at = text.find(start).expect("the interface class");
+                let stop = at + text[at..].find("};\n").expect("the end of the interface class") + "};\n".len();
+                let cut = format!("{}/* build.rs: the interface class is the contain driver's copy */\n{}", &text[..at], &text[stop..])
+                    .replacen("#ifndef __RAILED_TRANSPORT_DOCK_UPDATE_H_", "#ifndef __RAILED_TRANSPORT_DOCK_UPDATE_H_R61", 1)
+                    .replacen("#define __RAILED_TRANSPORT_DOCK_UPDATE_H_", "#define __RAILED_TRANSPORT_DOCK_UPDATE_H_R61", 1);
+                std::fs::write(mod_gen.join("RailedTransportDockUpdate_r61.h"), cut).expect("write RailedTransportDockUpdate_r61.h");
+                println!("cargo:rerun-if-changed={}", path.display());
             }
             // --- end p1w13-sonnet ---
             let mut md = cc::Build::new();

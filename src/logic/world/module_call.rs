@@ -976,6 +976,12 @@ pub enum ModuleCall {
     /// `SpecialPowerUpdateInterface::initiateIntentToDoSpecialPower(template, targetObj, targetPos, way, commandOptions)`, the template by id
     /// and the waypoint by id; replies [`ModuleReply::Bool`] (unhandled: no such interface).
     InitiateIntentToDoSpecialPower { template: u32, target_object: ObjectId, target_position: Option<Coord3D>, waypoint: u32, command_options: u32 },
+    /// batch R61: `RailedTransportDockUpdateInterface::isLoadingOrUnloading()`; replies [`ModuleReply::Bool`] (unhandled: no such interface).
+    RailedTransportDockIsLoadingOrUnloading,
+    /// batch R61: `RailedTransportDockUpdateInterface::unloadAll()`.
+    RailedTransportDockUnloadAll,
+    /// batch R61: `RailedTransportDockUpdateInterface::unloadSingleObject(obj)`.
+    RailedTransportDockUnloadSingleObject(ObjectId),
     // --- end p1w11-sonnet ---
 }
 

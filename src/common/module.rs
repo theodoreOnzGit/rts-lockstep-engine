@@ -440,6 +440,8 @@ pub enum ModuleDataKind {
     PropagandaTowerBehavior(Arc<crate::logic::modules::propaganda_tower_behavior::PropagandaTowerBehaviorModuleData>),
     /// `RepairDockUpdate` (batch R43).
     RepairDockUpdate(Arc<crate::logic::modules::repair_dock_update::RepairDockUpdateModuleData>),
+    /// `RailedTransportDockUpdate` (batch R61).
+    RailedTransportDockUpdate(Arc<crate::logic::modules::railed_transport_dock_update::RailedTransportDockUpdateModuleData>),
     /// `SupplyCenterDockUpdate` (batch R44).
     SupplyCenterDockUpdate(Arc<crate::logic::modules::supply_center_dock_update::SupplyCenterDockUpdateModuleData>),
     /// `SupplyWarehouseDockUpdate` (batch R44).
@@ -679,6 +681,7 @@ impl ModuleDataKind {
             ModuleDataKind::ToppleUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PropagandaTowerBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::RepairDockUpdate(d) => &d.dock.update.behavior.module_data,
+            ModuleDataKind::RailedTransportDockUpdate(d) => &d.dock.update.behavior.module_data,
             ModuleDataKind::SupplyCenterDockUpdate(d) => &d.dock.update.behavior.module_data,
             ModuleDataKind::SupplyWarehouseDockUpdate(d) => &d.dock.update.behavior.module_data,
             ModuleDataKind::GenerateMinefieldBehavior(d) => &d.behavior.module_data,
@@ -1182,6 +1185,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::RepairDockUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.dock.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::RailedTransportDockUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.dock.update.behavior.module_data.set_module_tag_name_key(key);
                     true

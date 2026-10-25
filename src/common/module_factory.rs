@@ -820,6 +820,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::repair_dock_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::repair_dock_update::RepairDockUpdate::get_interface_mask()),
         }),
+        "RailedTransportDockUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::railed_transport_dock_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::railed_transport_dock_update::RailedTransportDockUpdate::get_interface_mask()),
+        }),
         "SupplyCenterDockUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::supply_center_dock_update::new_module_data),
@@ -1255,6 +1260,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::ToppleUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::PropagandaTowerBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RepairDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
+        Some(ModuleDataKind::RailedTransportDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
         Some(ModuleDataKind::SupplyCenterDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
         Some(ModuleDataKind::SupplyWarehouseDockUpdate(d)) => Some(std::sync::Arc::new(d.dock.update.clone())),
         Some(ModuleDataKind::GenerateMinefieldBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),

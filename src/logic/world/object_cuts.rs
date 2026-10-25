@@ -130,6 +130,11 @@ impl World {
         }
     }
 
+    /// batch R61: `TheGameLogic->deselectObject(obj, playerMask, affectClient)`: a record (the selection is the client's).
+    pub fn game_logic_deselect_object(&mut self, id: ObjectId, player_mask: PlayerMaskType, affect_client: bool) {
+        self.cut(CutCall::GameLogicDeselectObject { object: id, player_mask, affect_client });
+    }
+
     /// batch R60: `TheGameLogic->selectObject(obj, createNewSelection, playerMask, affectClient)`: a record (the selection is the client's).
     pub fn game_logic_select_object(&mut self, id: ObjectId, create_new_selection: bool, player_mask: PlayerMaskType, affect_client: bool) {
         self.cut(CutCall::GameLogicSelectObject { object: id, create_new_selection, player_mask, affect_client });
@@ -274,10 +279,11 @@ impl World {
             if i != 0 {
                 name.extend_from_slice(format!("{i:02}").as_bytes());
             }
-            if !self.cuts.contain.pristine_bones.contains_key(&(id, name.clone())) {
+            // (the art's bone names are case-blind: W3D keys them lowercased; batch R61's `DOCKWAITING07` names `DockWaiting07`)
+            let Some(found) = self.cuts.contain.pristine_bones.keys().find(|(o, n)| *o == id && n.eq_ignore_ascii_case(&name)).map(|(_, n)| n.clone()) else {
                 break;
-            }
-            out.push(name);
+            };
+            out.push(found);
             if out.len() as i32 >= max_bones {
                 break;
             }

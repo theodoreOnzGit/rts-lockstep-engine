@@ -866,5 +866,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_mob_member_r58.inc"   /* p1w13-sonnet, batch R58: MobMemberSlavedUpdate */
 #include "l9_assisted_r59.inc"   /* p1w13-sonnet, batch R59: AssistedTargetingUpdate */
 #include "l9_spectre_deploy_r60.inc"   /* p1w13-sonnet, batch R60: SpectreGunshipDeploymentUpdate */
+#include "l9_railed_dock_r61.inc"   /* p1w13-sonnet, batch R61: RailedTransportDockUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */
