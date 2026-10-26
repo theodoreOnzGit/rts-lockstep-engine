@@ -4,6 +4,8 @@
 ** on the stand-ins of differential/shim_pathfind (pathfind_world.h: the object, the terrain logic, the AI and the game logic; PreRTS.h
 ** renames them and every class of AIPathfind.h), with the real BaseType.h, Snapshot.h, the Xfer classes, GameMemory and LocomotorSet.h.
 **
+** Batch P3 (zone_p3.inc): the zone helpers, ZoneBlock, PathfindZoneManager and PathfindLayer, ref_pf_p3_run; their world (bridges, the
+** ground's height, the wall's pieces) the stand-ins of pathfind_world.h, answered from the same hash.
 ** Batch P2 (cell_p2.inc): PathfindCellInfo and PathfindCell, ref_pf_p2_run.
 ** Batch P1 (path_p1.inc): PathNode and Path. The pathfinder calls a path makes (isLinePassable, isGroundPathPassable, getCell) are
 ** answered here from a hash of their arguments that the Rust test computes too (`p1Hash`), and each is a line of the log. */
@@ -36,6 +38,12 @@ class PathfindCell;
 #endif
 #include "path_p1.inc"
 #include "cell_p2.inc"
+/* batch P3: what the zone code takes from headers this build does not include: MIN (the Windows macro) and `register` (C++17
+** removed it; -Wno-register in build.rs) */
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#include "zone_p3.inc"
 #undef private
 #undef protected
 
@@ -114,9 +122,33 @@ Bool Pathfinder::isGroundPathPassable( Bool isCrusher, const Coord3D& startWorld
 	return r;
 }
 
-/* the bridge layers' cells (batch P3's): none yet, so a layer's cell is the ground's (Pathfinder::getCell, inline) */
-PathfindCell *PathfindLayer::getCell( Int x, Int y )
+/* batch P3: the scene's bridges, ground and wall pieces answer from the hash of their arguments (the same in
+** tests/differential_zone_p3.rs): a point or a cell on a bridge at the case's rates, heights 0..39 */
+struct P3Rates { unsigned onBridge, end, side, entry; };
+P3Rates g_p3;
+std::vector<Object> g_walls;
+Bool Bridge::isPointOnBridge(const Coord3D *p) { return p1Pick(p1Hash(10, { m_index, bitsOf(p->x), bitsOf(p->y) }), g_p3.onBridge); }
+Bool Bridge::isCellOnEnd(const Region2D *c)
 {
+	return p1Pick(p1Hash(11, { m_index, bitsOf(c->lo.x), bitsOf(c->lo.y), bitsOf(c->hi.x), bitsOf(c->hi.y) }), g_p3.end);
+}
+Bool Bridge::isCellOnSide(const Region2D *c)
+{
+	return p1Pick(p1Hash(12, { m_index, bitsOf(c->lo.x), bitsOf(c->lo.y), bitsOf(c->hi.x), bitsOf(c->hi.y) }), g_p3.side);
+}
+Bool Bridge::isCellEntryPoint(const Region2D *c)
+{
+	return p1Pick(p1Hash(13, { m_index, bitsOf(c->lo.x), bitsOf(c->lo.y), bitsOf(c->hi.x), bitsOf(c->hi.y) }), g_p3.entry);
+}
+Real Bridge::getBridgeHeight(const Coord3D *p, Coord3D *normal) { return (Real)((p1Hash(14, { m_index, bitsOf(p->x), bitsOf(p->y) }) >> 8) % 40u); }
+Real TerrainLogic::getLayerHeight(Real x, Real y, PathfindLayerEnum layer, Coord3D *normal, Bool clip)
+{
+	return (Real)((p1Hash(15, { bitsOf(x), bitsOf(y), (unsigned)layer }) >> 8) % 40u);
+}
+Object *GameLogic::findObjectByID(ObjectID id)
+{
+	for (Object &o : g_walls)
+		if (o.m_id == id) return &o;
 	return NULL;
 }
 
@@ -459,6 +491,208 @@ int ref_pf_p2_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 	}
 	delete[] cells;
 	PathfindCellInfo::releaseCellInfos();
+	*len = (int)g_out.size();
+	if (*len > cap) return 1;
+	memcpy(buf, &g_out[0], g_out.size() * sizeof(unsigned));
+	return 0;
+}
+
+/* Batch P3: zones and layers. The scene: a map of cfg[0] x cfg[1] real PathfindCells (Pathfinder::m_map, m_extent (0, 0) ..
+** (w - 1, h - 1)), the REAL info pool, a real PathfindZoneManager and LAYER_LAST + 1 real PathfindLayers (in zeroed memory), the
+** bridges and wall pieces of the cfg. cfg: [w, h, seed, onBridge rate, end rate, side rate, entry rate, bridge count, per bridge
+** (bounds lo.x lo.y hi.x hi.y, from x y z, to x y z; float bits; its object 1000 + index), wall piece count, per piece (id, x, y,
+** angle, major, minor, sphere; floats as bits), then the map's w * h types]. Ops of 6 words [op, a, b, c, d, e] (cells k are (k / h,
+** k % h); x, y signed): 0 calculateZones  1 updateZonesForModify(lo a b, hi c d)  2 setType(cell a, b)  3 setZone(cell a, b)
+** 4 setConnectLayer(cell a, b)  5 setTypeAsObstacle(cell a, id b, fence c)  6 removeObstacle(cell a, id b)
+** 7 getEffectiveZone(surfaces a, crusher b, zone c)  8 getEffectiveTerrainZone(a)  9 getBlockZone(surfaces a, crusher b, x c, y d)
+** 10 clearPassableFlags  11 setAllPassable  12 setPassable(x a, y b, c)  13 isPassable(x a, y b)  14 clipIsPassable(x a, y b)
+** 15 setBridge(x a, y b, c)  16 interactsWithBridge(x a, y b)  17 markZonesDirty(insert b) at frame a, then needToCalculateZones
+** 18 allocateBlocks(the map)  19 the manager's reset  20 layer a: init(bridge b (0xffffffff: NULL), layer c)  21 allocateCells
+** 22 classifyCells  23 setDestroyed(b)  24 reset  25 getCell(x b, y c)  26 connectsZones(surfaces b, zones c d)  27 getBridgeID
+** 28 allocateCellsForWallLayer(the pieces)  29 classifyWallCells(the pieces)  30 isPointOnWall(the pieces, x bits b, y bits c)
+** 31 setZone(b) then applyZone  32 the map's zones in x a..b, y c..d unset (the setup of a modification). (The caller keeps to the calls upstream defines; see the test.) Each op appends: the results; the
+** manager (blocks or not, block extent, max zone, next frame, zones allocated, tables or not and their first max zone + 1 entries);
+** each block (origin, first zone, zone count, allocated, bridge, passable, tables or not and their first zone-count entries); each
+** map cell (type, zone, connect layer, layer); each layer (extent, origin, ends, layer, zone, bridge, destroyed, unused, then its
+** cells: type, zone, connect layer, layer, pinched), after a word that counts the rest. */
+int ref_pf_p3_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf, int cap, int *len)
+{
+	g_out.clear();
+	int w = (int)cfg[0], h = (int)cfg[1], count = w * h;
+	g_scene.seed = cfg[2];
+	g_p3.onBridge = cfg[3]; g_p3.end = cfg[4]; g_p3.side = cfg[5]; g_p3.entry = cfg[6];
+	int nb = (int)cfg[7], at = 8;
+	std::vector<Bridge> bridges(nb);
+	for (int k = 0; k < nb; ++k, at += 10) {
+		Bridge &b = bridges[k];
+		b.m_index = (unsigned)k;
+		b.m_bounds.lo.x = floatOf(cfg[at]); b.m_bounds.lo.y = floatOf(cfg[at + 1]);
+		b.m_bounds.hi.x = floatOf(cfg[at + 2]); b.m_bounds.hi.y = floatOf(cfg[at + 3]);
+		b.m_info.from.x = floatOf(cfg[at + 4]); b.m_info.from.y = floatOf(cfg[at + 5]); b.m_info.from.z = floatOf(cfg[at + 6]);
+		b.m_info.to.x = floatOf(cfg[at + 7]); b.m_info.to.y = floatOf(cfg[at + 8]); b.m_info.to.z = floatOf(cfg[at + 9]);
+		b.m_info.bridgeObjectID = (ObjectID)(1000 + k);
+	}
+	int nw = (int)cfg[at++];
+	g_walls.assign(nw, Object());
+	std::vector<ObjectID> pieces(nw);
+	for (int k = 0; k < nw; ++k, at += 7) {
+		Object &o = g_walls[k];
+		o.m_id = (ObjectID)cfg[at]; pieces[k] = o.m_id;
+		o.m_pos.x = floatOf(cfg[at + 1]); o.m_pos.y = floatOf(cfg[at + 2]); o.m_pos.z = 0;
+		o.m_angle = floatOf(cfg[at + 3]); o.m_geom.m_major = floatOf(cfg[at + 4]); o.m_geom.m_minor = floatOf(cfg[at + 5]);
+		o.m_geom.m_sphere = cfg[at + 6] != 0;
+	}
+	PathfindCellInfo::allocateCellInfos();
+	PathfindCell *cells = new PathfindCell[count];
+	std::vector<PathfindCell *> columns(w);
+	for (int x = 0; x < w; ++x) columns[x] = cells + x * h;
+	for (int k = 0; k < count; ++k) cells[k].setType((PathfindCell::CellType)cfg[at + k]);
+	Pathfinder *pf = TheAI->pathfinder();
+	memset(g_pathfinderMem, 0, sizeof g_pathfinderMem);
+	pf->m_extent.lo.x = 0; pf->m_extent.lo.y = 0; pf->m_extent.hi.x = w - 1; pf->m_extent.hi.y = h - 1;
+	pf->m_map = &columns[0];
+	IRegion2D extent = pf->m_extent;
+	PathfindZoneManager *zm = new PathfindZoneManager;
+	alignas(16) static unsigned char layerMem[(LAYER_LAST + 1) * sizeof(PathfindLayer)];
+	memset(layerMem, 0, sizeof layerMem);
+	PathfindLayer *layers = (PathfindLayer *)layerMem;
+	for (int k = 0; k <= LAYER_LAST; ++k) new (&layers[k]) PathfindLayer();
+	alignas(16) unsigned char locoMem[sizeof(LocomotorSet)];
+	memset(locoMem, 0, sizeof locoMem);
+	LocomotorSet *loco = (LocomotorSet *)locoMem;
+	Object obstacle;
+	auto layerOf = [&](unsigned k) -> PathfindLayer & { return layers[k % (LAYER_LAST + 1)]; };
+	for (int i = 0; i < n; ++i) {
+		const unsigned *o = ops + 6 * i;
+		std::vector<unsigned> res;
+		PathfindCell *a = &cells[o[1] % count];
+		/* As in P2: a call the test judged defined on the Rust state but undefined here (a planted defect) ends the dump with a marker. */
+		{
+			unsigned op = o[0];
+			PathfindLayer &l = layerOf(o[1]);
+			bool bad = ((op == 0 || op == 1 || op == 9) && !zm->m_zoneBlocks) || ((op == 7 || op == 8) && !zm->m_groundCliffZones)
+				|| (op == 8 && o[1] >= zm->m_zonesAllocated) || ((op == 22 || op == 23) && l.m_width > 0 && !l.m_bridge)
+				|| (op == 27 && !l.m_bridge) || (op == 26 && l.m_destroyed && !zm->m_groundCliffZones)
+				|| ((op == 21 || op == 28) && l.m_layerCells);
+			if (bad) { putU32(0xbadc0de5u); break; }
+		}
+		size_t mark = g_out.size();
+		putU32(0);
+		switch (o[0]) {
+		case 0: zm->calculateZones(pf->m_map, layers, extent); break;
+		case 1: {
+			IRegion2D sb;
+			sb.lo.x = (Int)o[1]; sb.lo.y = (Int)o[2]; sb.hi.x = (Int)o[3]; sb.hi.y = (Int)o[4];
+			zm->updateZonesForModify(pf->m_map, layers, sb, extent);
+			break;
+		}
+		case 2: a->setType((PathfindCell::CellType)o[2]); break;
+		case 3: a->setZone((zoneStorageType)o[2]); break;
+		case 4: a->setConnectLayer((PathfindLayerEnum)o[2]); break;
+		case 5: {
+			ICoord2D p; p.x = (Int)((o[1] % count) / h); p.y = (Int)((o[1] % count) % h);
+			res.push_back(p2SetTypeAsObstacle(a, (ObjectID)o[2], false, false, o[3] != 0, p) ? 1u : 0u);
+			break;
+		}
+		case 6: res.push_back(p2RemoveObstacle(a, (ObjectID)o[2]) ? 1u : 0u); break;
+		case 7: res.push_back(zm->getEffectiveZone((LocomotorSurfaceTypeMask)o[1], o[2] != 0, (zoneStorageType)o[3])); break;
+		case 8: res.push_back(zm->getEffectiveTerrainZone((zoneStorageType)o[1])); break;
+		case 9: res.push_back(zm->getBlockZone((LocomotorSurfaceTypeMask)o[1], o[2] != 0, (Int)o[3], (Int)o[4], pf->m_map)); break;
+		case 10: zm->clearPassableFlags(); break;
+		case 11: zm->setAllPassable(); break;
+		case 12: zm->setPassable((Int)o[1], (Int)o[2], o[3] != 0); break;
+		case 13: res.push_back(zm->isPassable((Int)o[1], (Int)o[2]) ? 1u : 0u); break;
+		case 14: res.push_back(zm->clipIsPassable((Int)o[1], (Int)o[2]) ? 1u : 0u); break;
+		case 15: zm->setBridge((Int)o[1], (Int)o[2], o[3] != 0); break;
+		case 16: res.push_back(zm->interactsWithBridge((Int)o[1], (Int)o[2]) ? 1u : 0u); break;
+		case 17:
+			g_gameLogic.m_frame = o[1];
+			zm->markZonesDirty(o[2] != 0);
+			res.push_back(zm->needToCalculateZones() ? 1u : 0u);
+			break;
+		case 18: zm->allocateBlocks(extent); break;
+		case 19: zm->reset(); break;
+		case 20: res.push_back(layerOf(o[1]).init(o[2] == 0xffffffffu ? NULL : &bridges[o[2] % nb], (PathfindLayerEnum)o[3]) ? 1u : 0u); break;
+		case 21: layerOf(o[1]).allocateCells(&extent); break;
+		case 22: layerOf(o[1]).classifyCells(); break;
+		case 23: res.push_back(layerOf(o[1]).setDestroyed(o[2] != 0) ? 1u : 0u); break;
+		case 24: layerOf(o[1]).reset(); break;
+		case 25: {
+			PathfindLayer &l = layerOf(o[1]);
+			PathfindCell *c = l.getCell((Int)o[2], (Int)o[3]);
+			res.push_back(c ? (unsigned)(c - l.m_blockOfMapCells) : 0xffffffffu);
+			break;
+		}
+		case 26:
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			res.push_back(layerOf(o[1]).connectsZones(zm, *loco, (Int)o[3], (Int)o[4]) ? 1u : 0u);
+			break;
+		case 27: res.push_back((unsigned)layerOf(o[1]).getBridgeID()); break;
+		case 28: layerOf(o[1]).allocateCellsForWallLayer(&extent, nw ? &pieces[0] : NULL, nw); break;
+		case 29: layerOf(o[1]).classifyWallCells(nw ? &pieces[0] : NULL, nw); break;
+		case 30: {
+			Coord3D pt; pt.x = floatOf(o[2]); pt.y = floatOf(o[3]); pt.z = 0;
+			res.push_back(layerOf(o[1]).isPointOnWall(nw ? &pieces[0] : NULL, nw, &pt) ? 1u : 0u);
+			break;
+		}
+		case 31: layerOf(o[1]).setZone((Int)o[2]); layerOf(o[1]).applyZone(); break;
+		case 32:
+			for (int x = (Int)o[1]; x <= (Int)o[2]; ++x)
+				for (int y = (Int)o[3]; y <= (Int)o[4]; ++y)
+					if (x >= 0 && x < w && y >= 0 && y < h) columns[x][y].setZone(PathfindZoneManager::UNINITIALIZED_ZONE);
+			break;
+		}
+		putU32((unsigned)res.size());
+		for (unsigned r : res) putU32(r);
+		/* the manager */
+		putU32(zm->m_zoneBlocks ? 1u : 0u); putU32((unsigned)zm->m_zoneBlockExtent.x); putU32((unsigned)zm->m_zoneBlockExtent.y);
+		putU32(zm->m_maxZone); putU32(zm->m_nextFrameToCalculateZones); putU32(zm->m_zonesAllocated);
+		putU32(zm->m_groundCliffZones ? 1u : 0u);
+		if (zm->m_groundCliffZones) {
+			int m = (int)zm->m_maxZone + 1 < (int)zm->m_zonesAllocated ? (int)zm->m_maxZone + 1 : (int)zm->m_zonesAllocated;
+			for (zoneStorageType *t : { zm->m_groundCliffZones, zm->m_groundWaterZones, zm->m_groundRubbleZones, zm->m_terrainZones,
+					zm->m_crusherZones, zm->m_hierarchicalZones })
+				for (int k = 0; k < m; ++k) putU32(t[k]);
+		}
+		if (zm->m_zoneBlocks) {
+			for (int bx = 0; bx < zm->m_zoneBlockExtent.x; ++bx)
+				for (int by = 0; by < zm->m_zoneBlockExtent.y; ++by) {
+					const ZoneBlock &b = zm->m_zoneBlocks[bx][by];
+					putU32((unsigned)b.m_cellOrigin.x); putU32((unsigned)b.m_cellOrigin.y); putU32(b.m_firstZone); putU32(b.m_numZones);
+					putU32(b.m_zonesAllocated); putU32(b.m_interactsWithBridge ? 1u : 0u); putU32(b.m_markedPassable ? 1u : 0u);
+					putU32(b.m_groundCliffZones ? 1u : 0u);
+					if (b.m_groundCliffZones) {
+						int m = b.m_numZones < b.m_zonesAllocated ? (int)b.m_numZones : (int)b.m_zonesAllocated;
+						for (zoneStorageType *t : { b.m_groundCliffZones, b.m_groundWaterZones, b.m_groundRubbleZones, b.m_crusherZones })
+							for (int k = 0; k < m; ++k) putU32(t[k]);
+					}
+				}
+		}
+		for (int k = 0; k < count; ++k) {
+			const PathfindCell &c = cells[k];
+			putU32((unsigned)c.getType()); putU32((unsigned)c.getZone()); putU32((unsigned)c.getConnectLayer()); putU32((unsigned)c.getLayer());
+		}
+		for (int k = 0; k <= LAYER_LAST; ++k) {
+			PathfindLayer &l = layers[k];
+			putU32((unsigned)l.m_width); putU32((unsigned)l.m_height); putU32((unsigned)l.m_xOrigin); putU32((unsigned)l.m_yOrigin);
+			putU32((unsigned)l.m_startCell.x); putU32((unsigned)l.m_startCell.y); putU32((unsigned)l.m_endCell.x); putU32((unsigned)l.m_endCell.y);
+			putU32((unsigned)l.m_layer); putU32((unsigned)l.m_zone); putU32(l.m_bridge ? l.m_bridge->m_index : 0xffffffffu);
+			putU32(l.m_destroyed ? 1u : 0u); putU32(l.isUnused() ? 1u : 0u); putU32(l.m_layerCells ? 1u : 0u);
+			if (l.m_layerCells)
+				for (int x = 0; x < l.m_width; ++x)
+					for (int y = 0; y < l.m_height; ++y) {
+						const PathfindCell &c = l.m_layerCells[x][y];
+						putU32((unsigned)c.getType()); putU32((unsigned)c.getZone()); putU32((unsigned)c.getConnectLayer());
+						putU32((unsigned)c.getLayer()); putU32(c.getPinched() ? 1u : 0u);
+					}
+		}
+		g_out[mark] = (unsigned)(g_out.size() - mark - 1);
+	}
+	for (int k = 0; k <= LAYER_LAST; ++k) layers[k].~PathfindLayer();
+	delete zm;
+	delete[] cells;
+	PathfindCellInfo::releaseCellInfos();
+	g_walls.clear();
 	*len = (int)g_out.size();
 	if (*len > cap) return 1;
 	memcpy(buf, &g_out[0], g_out.size() * sizeof(unsigned));

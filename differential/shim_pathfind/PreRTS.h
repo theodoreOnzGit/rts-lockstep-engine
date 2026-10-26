@@ -52,6 +52,8 @@
 #define PathNode PfPathNode
 #define Path PfPath
 #define Bridge PfBridge
+#define BridgeInfo PfBridgeInfo
+#define GeometryInfo PfGeometryInfo
 #define Weapon PfWeapon
 #define GlobalData PfGlobalData
 #define TheGlobalData PfTheGlobalData
