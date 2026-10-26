@@ -1069,6 +1069,15 @@ pub enum CutCall {
     WeaponLoadAmmoNow { source: ObjectId, template: usize },
     /// batch R62: a module's weapon's `fireWeapon(source, target)`, under `stub_weapon_calls`.
     WeaponFireAtObject { source: ObjectId, target: ObjectId, template: usize },
+    /// batch R68: `Weapon::positionProjectileForLaunch(projectile, launcher, wslot, barrel)` (`INVALID_ID` for no launcher), under
+    /// `stub_weapon_calls`.
+    WeaponPositionProjectileForLaunch { projectile: ObjectId, launcher: ObjectId, wslot: i32, barrel: i32 },
+    /// batch R68: `template->shouldProjectileCollideWith(launcher, projectile, other, victim)`, under `stub_weapon_calls`.
+    WeaponShouldProjectileCollideWith { template: usize, launcher: ObjectId, projectile: ObjectId, other: ObjectId, victim: ObjectId },
+    /// batch R68: `TheWeaponStore->handleProjectileDetonation(template, source, pos, extraBonusFlags)`, under `stub_weapon_calls`.
+    WeaponHandleProjectileDetonation { template: usize, source: ObjectId, pos: Coord3D, extra_bonus_flags: u32 },
+    /// batch R68: `ThePartitionManager->estimateTerrainExtremesAlongLine(start, end, ..)`, answered by `terrain_extremes`.
+    PartitionEstimateTerrainExtremes { start: Coord3D, end: Coord3D },
     /// batch R65: a module's weapon's `reloadAmmo(source)`, under `stub_weapon_calls`.
     WeaponReloadAmmo { source: ObjectId, template: usize },
     /// batch R64: a module's weapon's `forceFireWeapon(source, pos)`, under `stub_weapon_calls`.
@@ -1370,6 +1379,10 @@ pub struct ObjectCuts {
     pub drawable_barrel_count: BTreeMap<(ObjectId, i32), i32>,
     /// batch W1b: `getDrawable()->getProjectileLaunchOffset(wslot, barrel, ...)` by (object, slot, barrel, turret) (no entry: no bone).
     pub drawable_launch_offset: BTreeMap<(ObjectId, i32, i32, i32), crate::logic::weapon_host::LaunchOffset>,
+    /// batch R68: the others a stubbed `shouldProjectileCollideWith` says the projectile collides with.
+    pub projectile_collides_with: std::collections::BTreeSet<ObjectId>,
+    /// batch R68: the answer of `estimateTerrainExtremesAlongLine` (on the map, the highest terrain), `None` for the partition manager's.
+    pub terrain_extremes: Option<(bool, f32)>,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1497,6 +1510,8 @@ impl Default for ObjectCuts {
             bridge_attack_points: BTreeMap::new(),
             drawable_barrel_count: BTreeMap::new(),
             drawable_launch_offset: BTreeMap::new(),
+            projectile_collides_with: std::collections::BTreeSet::new(),
+            terrain_extremes: None,
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe: None,

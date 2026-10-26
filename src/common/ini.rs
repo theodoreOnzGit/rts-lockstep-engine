@@ -347,6 +347,10 @@ pub enum Undefined {
     /// at the freed object; the next walk of the list reads freed memory.
     DanglingTemplateLink,
     // --- end p1w4-thingtemplate ---
+    /// batch R68: a recursion without bound (`BezierSegment::getApproximateLength` past its subdivision limit: the stack overflows).
+    StackOverflow,
+    /// batch R68: `std::vector::resize` to a negative `Int` (a huge `size_t`: `std::length_error` or `std::bad_alloc`, by the allocator).
+    VectorLengthError,
 }
 
 /// What failed, innermost cause first.

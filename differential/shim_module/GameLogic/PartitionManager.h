@@ -124,6 +124,7 @@ public:
 	Bool geomCollidesWithGeom(const Coord3D* pos1, const GeometryInfo& geom1, Real angle1, const Coord3D* pos2, const GeometryInfo& geom2, Real angle2) const;
 	SimpleObjectIterator *iterateObjectsInRange( const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	Real getDistanceSquared( const Object *obj, const Object *otherObj, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch P: ActiveBody */
+	Bool estimateTerrainExtremesAlongLine(const Coord3D& startWorld, const Coord3D& endWorld, Real* minZ, Real* maxZ, Coord2D* minZPos, Coord2D* maxZPos);   /* batch R68: the test's (differential/l9_dumb_projectile_r68.inc) */
 	Real getDistanceSquared( const Object *obj, const Coord3D *pos, DistanceCalculationType d, Coord3D *vec = 0 ) const;   /* batch R: OpenContain */
 	void registerObject( Object *obj );   /* batch R: OpenContain */
 	void unRegisterObject( Object *obj );

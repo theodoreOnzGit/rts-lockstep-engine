@@ -71,6 +71,7 @@ public:
 	void createAndFireTempWeapon(const WeaponTemplate *wt, const Object *source, const Coord3D *pos);
 	const WeaponTemplate *findWeaponTemplate(const char *name) const;   /* p1w13-sonnet: SlowDeathBehavior (differential/l9_slow_death_q.inc) */
 	const WeaponTemplate *findWeaponTemplate(const AsciiString &name) const { return findWeaponTemplate(name.str()); }   /* batch R36: StructureToppleUpdate (upstream's takes an AsciiString) */
+	void handleProjectileDetonation( const WeaponTemplate* w, const Object *source, const Coord3D* pos, UnsignedInt extraBonusFlags, Bool inflictDamage = TRUE );   /* batch R68: a line */
 	class Weapon *allocateNewWeapon(const WeaponTemplate *tmpl, Int wslot) const;   /* batch R62: FireWeaponCollide (Weapon.h 839-842; defined below) */
 };
 extern WeaponStore *TheWeaponStore;
@@ -171,6 +172,22 @@ public:
 	Int m_antiMask = 0;
 	Int getDelayBetweenShots(const WeaponBonus& bonus) const;
 	Int getAntiMask() const { return m_antiMask; }
+	/* batch R68 (DumbProjectileBehavior): the speeds (Weapon.h's getters), the minimum and unmodified ranges (Weapon.cpp 478-496, verbatim but for
+	** PATHFIND_CELL_SIZE_F's value, as getAttackRange above) and the collision test (differential/l9_dumb_projectile_r68.inc answers it) */
+	Real m_weaponSpeed = 0.0f, m_minWeaponSpeed = 0.0f, m_minimumAttackRange = 0.0f;
+	Bool m_isScaleWeaponSpeed = false;
+	Real getWeaponSpeed() const { return m_weaponSpeed; }
+	Real getMinWeaponSpeed() const { return m_minWeaponSpeed; }
+	Bool isScaleWeaponSpeed() const { return m_isScaleWeaponSpeed; }
+	Real getMinimumAttackRange() const
+	{
+		const Real UNDERSIZE = 10.0f*0.25f;
+		Real r = m_minimumAttackRange - UNDERSIZE;
+		if (r < 0.0f) r = 0.0f;
+		return r;
+	}
+	Real getUnmodifiedAttackRange() const { return m_attackRange; }
+	Bool shouldProjectileCollideWith(const Object* projectileLauncher, const Object* projectile, const Object* thingWeCollidedWith, ObjectID intendedVictimID) const;
 	/* --- end p1w13-sonnet --- */
 };
 /* --- end p1w13-sonnet --- */
@@ -222,6 +239,7 @@ public:
 	** (a line: differential/l9_fire_weapon_update_r64.inc) and Weapon.h's three setters, verbatim */
 	WeaponStatus getStatus() const;
 	Object* forceFireWeapon( const Object *source, const Coord3D *pos );
+	static void positionProjectileForLaunch(Object* projectile, const Object *launcher, WeaponSlotType wslot, Int specificBarrelToUse);   /* batch R68: a line */
 	void reloadAmmo(const Object *source);   /* batch R65: a line (differential/l9_fire_weapon_damaged_r65.inc) */
 	void setPossibleNextShotFrame( UnsignedInt frameNum ) { m_whenWeCanFireAgain = frameNum; }
 	void setPreAttackFinishedFrame( UnsignedInt frameNum ) { m_whenPreAttackFinished = frameNum; }

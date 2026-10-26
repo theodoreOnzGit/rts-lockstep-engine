@@ -111,6 +111,48 @@ impl World {
         }
     }
 
+    /// `Weapon::positionProjectileForLaunch(projectile, launcher, wslot, specificBarrelToUse)` (`None` for a `NULL` launcher, which destroys the
+    /// projectile). Under `cuts.stub_weapon_calls` a record ([`CutCall::WeaponPositionProjectileForLaunch`]).
+    pub fn module_position_projectile_for_launch(&mut self, projectile: ObjectId, launcher: Option<ObjectId>, wslot: i32, barrel: i32) {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponPositionProjectileForLaunch { projectile, launcher: launcher.unwrap_or(INVALID_ID), wslot, barrel });
+            return;
+        }
+        Weapon::position_projectile_for_launch(self, projectile, launcher, wslot, barrel);
+    }
+
+    /// `template->shouldProjectileCollideWith(launcher, projectile, other, intendedVictimID)`. Under `cuts.stub_weapon_calls` a record
+    /// ([`CutCall::WeaponShouldProjectileCollideWith`]) answered by `cuts.projectile_collides_with` (the others the test says it collides with).
+    pub fn module_should_projectile_collide_with(&mut self, template: usize, launcher: Option<ObjectId>, projectile: ObjectId, other: ObjectId, victim: ObjectId) -> bool {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponShouldProjectileCollideWith { template, launcher: launcher.unwrap_or(INVALID_ID), projectile, other, victim });
+            return self.cuts.projectile_collides_with.contains(&other);
+        }
+        crate::logic::weapon_fire::should_projectile_collide_with(self, template, launcher, Some(projectile), Some(other), victim)
+    }
+
+    /// `TheWeaponStore->handleProjectileDetonation(template, source, pos, extraBonusFlags)`. Under `cuts.stub_weapon_calls` a record
+    /// ([`CutCall::WeaponHandleProjectileDetonation`]).
+    pub fn module_handle_projectile_detonation(&mut self, template: usize, source: ObjectId, pos: Coord3D, extra_bonus_flags: u32) -> Result<(), crate::common::ini::IniError> {
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponHandleProjectileDetonation { template, source, pos, extra_bonus_flags });
+            return Ok(());
+        }
+        crate::logic::weapon_fire::handle_projectile_detonation(self, template, source, &pos, extra_bonus_flags, true).map_err(weapon_error_to_ini)
+    }
+
+    /// `ThePartitionManager->estimateTerrainExtremesAlongLine(start, end, NULL, &maxZ, NULL, NULL)`: whether the line is on the map, and the
+    /// highest terrain along it. `cuts.terrain_extremes` answers when the test sets it (a record, [`CutCall::PartitionEstimateTerrainExtremes`]);
+    /// else the partition manager.
+    pub fn partition_estimate_terrain_max_along_line(&mut self, start: Coord3D, end: Coord3D) -> (bool, f32) {
+        if let Some(answer) = self.cuts.terrain_extremes {
+            self.cut(CutCall::PartitionEstimateTerrainExtremes { start, end });
+            return answer;
+        }
+        let e = self.partition.estimate_terrain_extremes_along_line(&start, &end);
+        (e.is_valid, e.max_z)
+    }
+
     /// `weapon->reloadAmmo(source)` for a weapon a module owns: the clip reloaded at the bonus's rate. Under `cuts.stub_weapon_calls` a
     /// record ([`CutCall::WeaponReloadAmmo`]) and nothing else.
     pub fn module_weapon_reload_ammo(&mut self, weapon: &mut Weapon, source: ObjectId) {
