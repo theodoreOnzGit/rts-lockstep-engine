@@ -156,6 +156,10 @@ public:
 	void maskObject(Bool mask);   /* batch R15 */
 	void doTempWeaponBonus(WeaponBonusConditionType status, UnsignedInt duration);   /* batch R17: WeaponBonusUpdate (differential/l9_weapon_bonus_r17.inc) */
 	Bool hasUpgrade(const UpgradeTemplate *upgradeT) const;   /* Object.cpp:4456, in l9_helpers.inc */
+	/* batch R76: ProductionUpdate (differential/l9_production_r76.inc: the test's answers; giveUpgrade a line) */
+	Bool affectedByUpgrade( const UpgradeTemplate *upgrade ) const;
+	Bool canProduceUpgrade( const UpgradeTemplate *upgrade );
+	void giveUpgrade( const UpgradeTemplate *upgrade );
 	ObjectID m_producerID;
 	/* --- end p1w10-sonnet --- */
 	/* --- p1w10-sonnet --- (the layer-9 upgrade batch B: what StatusBitsUpgrade, LocomotorSetUpgrade, PassengersFireUpgrade, StealthUpgrade,

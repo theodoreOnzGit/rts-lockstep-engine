@@ -1189,6 +1189,18 @@ impl ThingTemplate {
         self.per_unit_sounds.insert(sound_name.to_vec(), event);
     }
 
+    /// batch R76: a template sound (`m_audioarray`) set directly (a test seam: the differential tests' templates are not read from INI).
+    pub fn friend_set_audio(&mut self, t: ThingTemplateAudioType, event: AudioEventName) {
+        self.audio_array[t as usize] = Some(event);
+    }
+
+    /// batch R76: an upgrade cameo's upgrade name set directly (a test seam).
+    pub fn friend_set_upgrade_cameo_name(&mut self, n: usize, name: &[u8]) {
+        if let Some(s) = self.upgrade_cameo_upgrade_names.get_mut(n) {
+            *s = name.to_vec();
+        }
+    }
+
     /// `getAllPerUnitSounds()`.
     pub fn get_all_per_unit_sounds(&self) -> &BTreeMap<Vec<u8>, AudioEventName> {
         &self.per_unit_sounds

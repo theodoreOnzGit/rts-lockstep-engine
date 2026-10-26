@@ -13,6 +13,7 @@ class ScriptEngine
 {
 public:
 	void notifyOfCompletedSpecialPower(Int playerIndex, const AsciiString &specialPowerName, ObjectID sourceObject);
+	void notifyOfCompletedUpgrade(Int playerIndex, const AsciiString &upgrade, ObjectID sourceObject);   /* p1w13-sonnet, batch R76: ProductionUpdate */
 	void notifyOfTriggeredSpecialPower(Int playerIndex, const AsciiString &completedPower, ObjectID sourceObj);   /* special power batch H */
 	void transferObjectName(const AsciiString &unitName, Object *pNewObject);   /* p1w13-sonnet, batch R13b: VeterancyCrateCollide's pilot */
 	void adjustToppleDirection( Object *object, struct Coord3D *direction );   /* p1w13-sonnet, batch R28: ToppleUpdate (differential/l9_topple_r28.inc) */

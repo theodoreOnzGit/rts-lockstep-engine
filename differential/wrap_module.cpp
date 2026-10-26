@@ -880,5 +880,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_spawn_r73.inc"   /* p1w13-sonnet, batch R73: SpawnBehavior */
 #include "l9_parking_r74.inc"   /* p1w13-sonnet, batch R74: ParkingPlaceBehavior */
 #include "l9_uplink_r75.inc"   /* p1w13-sonnet, batch R75: ParticleUplinkCannonUpdate */
+#include "l9_production_r76.inc"   /* p1w13-sonnet, batch R76: ProductionUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

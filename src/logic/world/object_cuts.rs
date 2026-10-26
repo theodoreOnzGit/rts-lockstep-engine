@@ -724,6 +724,91 @@ impl World {
         self.cuts.last_audio_handle
     }
 
+    /// batch R76: `TheUpgradeCenter->canAffordUpgrade(player, upgrade)`: a player whose money is at least the cost (compared as
+    /// `UnsignedInt`s); none for no player.
+    pub fn upgrade_center_can_afford_upgrade(&self, player: Option<PlayerIndex>, cost: i32) -> bool {
+        let Some(p) = player else { return false };
+        let money = self.players.get_nth(p).map_or(0, |pl| pl.money.count_money());
+        money >= cost as u32
+    }
+
+    /// batch R76: `obj->canProduceUpgrade(upgrade)` (`cuts.can_produce_upgrades`).
+    pub fn object_can_produce_upgrade(&self, _id: ObjectId, upgrade: u32) -> bool {
+        self.cuts.can_produce_upgrades.contains(&upgrade)
+    }
+
+    /// batch R76: `player->hasUpgradeComplete(upgrade)`.
+    pub fn player_has_upgrade_complete(&self, p: PlayerIndex, mask: &UpgradeMaskType) -> bool {
+        self.cuts.player_completed_upgrade_mask(p).test_for_all(mask)
+    }
+
+    /// batch R76: `player->hasUpgradeInProduction(upgrade)`.
+    pub fn player_has_upgrade_in_production(&self, p: PlayerIndex, mask: &UpgradeMaskType) -> bool {
+        self.cuts.player_upgrades_in_production.get(&p).is_some_and(|m| m.test_for_all(mask))
+    }
+
+    /// batch R76: `player->addUpgrade(upgrade, status)` (see [`CutCall::PlayerAddUpgrade`]): the masks as `Player::addUpgrade` keeps them
+    /// (the completed upgrade's effects on the player's objects are the player's, a later layer's).
+    pub fn player_add_upgrade(&mut self, p: PlayerIndex, key: u32, mask: &UpgradeMaskType, status: i32) {
+        self.cut(CutCall::PlayerAddUpgrade { player: p, upgrade: key, status });
+        if status == crate::common::upgrade::UPGRADE_STATUS_IN_PRODUCTION {
+            self.cuts.player_upgrades_in_production.entry(p).or_default().set_mask(mask);
+        } else if status == crate::common::upgrade::UPGRADE_STATUS_COMPLETE {
+            self.cuts.player_upgrades_in_production.entry(p).or_default().clear_mask(mask);
+            self.cuts.player_upgrades.entry(p).or_default().set_mask(mask);
+        }
+    }
+
+    /// batch R76: `player->removeUpgrade(upgrade)` (see [`CutCall::PlayerRemoveUpgrade`]): the upgrade's bits cleared from both masks, if
+    /// the player has it in either (its upgrade list, which the masks stand for here).
+    pub fn player_remove_upgrade(&mut self, p: PlayerIndex, key: u32, mask: &UpgradeMaskType) {
+        self.cut(CutCall::PlayerRemoveUpgrade { player: p, upgrade: key });
+        if self.player_has_upgrade_in_production(p, mask) || self.player_has_upgrade_complete(p, mask) {
+            self.cuts.player_upgrades_in_production.entry(p).or_default().clear_mask(mask);
+            self.cuts.player_upgrades.entry(p).or_default().clear_mask(mask);
+        }
+    }
+
+    /// batch R76: `player->allowedToBuild(tmplate)`: no structure without `m_canBuildBase`, no unit without `m_canBuildUnits`.
+    pub fn player_allowed_to_build(&self, p: PlayerIndex, template: u16) -> bool {
+        let (base, units) = self.cuts.player_build_permissions.get(&p).copied().unwrap_or((true, true));
+        let structure = self.statics.thing_factory.find_by_template_id(template).is_some_and(|t| t.data.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE));
+        if !base && structure {
+            return false;
+        }
+        !(!units && !structure)
+    }
+
+    /// batch R76: `TheBuildAssistant->canMakeUnit(builder, whatToBuild)` (see [`CutCall::BuildAssistantCanMakeUnit`]).
+    pub fn build_assistant_can_make_unit(&mut self, builder: ObjectId, template: u16) -> i32 {
+        self.cut(CutCall::BuildAssistantCanMakeUnit { builder, template });
+        self.cuts.can_make_unit.get(&template).copied().unwrap_or(0)
+    }
+
+    /// batch R76: `tmpl->calcCostToBuild(player)` (`cuts.template_build_costs`).
+    pub fn template_calc_cost_to_build(&self, template: u16, _player: PlayerIndex) -> i32 {
+        self.cuts.template_build_costs.get(&template).map_or(0, |c| c.0)
+    }
+
+    /// batch R76: `tmpl->calcTimeToBuild(player)` (`cuts.template_build_costs`).
+    pub fn template_calc_time_to_build(&self, template: u16, _player: PlayerIndex) -> i32 {
+        self.cuts.template_build_costs.get(&template).map_or(0, |c| c.1)
+    }
+
+    /// batch R76: `a->isEquivalentTo(b)` of two templates by id (`ThingTemplate`'s; an id the factory has not is no template: false).
+    pub fn thing_template_is_equivalent_to(&self, a: u16, b: u16) -> bool {
+        let f = &self.statics.thing_factory;
+        match (f.find_by_template_id(a), f.find_by_template_id(b)) {
+            (Some(x), Some(y)) => crate::common::thing_template::is_equivalent_to(x, y),
+            _ => false,
+        }
+    }
+
+    /// batch R76: `TheAudio->isValidAudioEvent(&event)` (`cuts.valid_audio_events`).
+    pub fn audio_is_valid_event(&self, name: &[u8]) -> bool {
+        self.cuts.valid_audio_events.contains(name)
+    }
+
     /// batch R75: `ThePartitionManager->doShroudReveal(x, y, range, mask)`.
     pub fn partition_do_shroud_reveal(&mut self, x: f32, y: f32, range: f32, mask: PlayerMaskType) {
         self.cut(CutCall::PartitionDoShroudReveal { x, y, range, mask });
@@ -1334,6 +1419,18 @@ pub enum CutCall {
     PartitionIterateSpectreTargets { object: ObjectId, position: Coord3D, range: f32, player_index: PlayerIndex },
     /// batch R73: `player->onUnitCreated(factory, unit)` (the player's object operations are not on `World` yet).
     PlayerOnUnitCreated { player: PlayerIndex, factory: ObjectId, unit: ObjectId },
+    /// batch R76: `player->addUpgrade(upgrade, status)` (the upgrade's name key).
+    PlayerAddUpgrade { player: PlayerIndex, upgrade: u32, status: i32 },
+    /// batch R76: `player->removeUpgrade(upgrade)`.
+    PlayerRemoveUpgrade { player: PlayerIndex, upgrade: u32 },
+    /// batch R76: `TheBuildAssistant->canMakeUnit(builder, whatToBuild)` (`ObjectCuts::can_make_unit` answers).
+    BuildAssistantCanMakeUnit { builder: ObjectId, template: u16 },
+    /// batch R76: `player->getScoreKeeper()->addMoneySpent(amount)`.
+    PlayerScoreAddMoneySpent { player: PlayerIndex, amount: i32 },
+    /// batch R76: `TheScriptEngine->notifyOfCompletedUpgrade(playerIndex, upgradeName, sourceObject)`.
+    ScriptNotifyOfCompletedUpgrade { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
+    /// batch R76: `player->getAcademyStats()->recordProduction(obj, constructor)`.
+    PlayerAcademyRecordProduction { player: PlayerIndex, object: ObjectId, constructor: ObjectId },
     /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (the weapon layer's), answered by
     /// `able_to_attack_results`.
     ObjectGetAbleToAttackSpecificObject { object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32 },
@@ -1698,6 +1795,16 @@ pub struct ObjectCuts {
     /// batch R75: the thing templates whose drawables have a `LaserUpdate` client module, the client drawables made of one (`newDrawable`),
     /// and every laser's `getCurrentLaserRadius()` (the client's growth, the test's).
     pub laser_templates: BTreeSet<u16>,
+    /// batch R76: the players' upgrades in production (`m_upgradesInProgress`; the completed ones are `player_upgrades`), their build
+    /// permissions (`m_canBuildBase`, `m_canBuildUnits`: both unless set), the thing templates' cost and build time for a player
+    /// (`calcCostToBuild`, `calcTimeToBuild`: the player's handicaps and power are later layers'), the build assistant's `canMakeUnit`
+    /// (`CANMAKE_OK` unless set), the upgrades the object can produce (its command set's buttons) and the audio events that are valid.
+    pub player_upgrades_in_production: BTreeMap<PlayerIndex, UpgradeMaskType>,
+    pub player_build_permissions: BTreeMap<PlayerIndex, (bool, bool)>,
+    pub template_build_costs: BTreeMap<u16, (i32, i32)>,
+    pub can_make_unit: BTreeMap<u16, i32>,
+    pub can_produce_upgrades: BTreeSet<u32>,
+    pub valid_audio_events: BTreeSet<Vec<u8>>,
     pub laser_drawables: BTreeSet<crate::common::game_type::DrawableId>,
     pub laser_radius: f32,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
@@ -1844,6 +1951,12 @@ impl Default for ObjectCuts {
             selected: BTreeSet::new(),
             bone_transforms: BTreeMap::new(),
             laser_templates: BTreeSet::new(),
+            player_upgrades_in_production: BTreeMap::new(),
+            player_build_permissions: BTreeMap::new(),
+            template_build_costs: BTreeMap::new(),
+            can_make_unit: BTreeMap::new(),
+            can_produce_upgrades: BTreeSet::new(),
+            valid_audio_events: BTreeSet::new(),
             laser_drawables: BTreeSet::new(),
             laser_radius: 0.0,
             blocked_lines_of_sight: BTreeSet::new(),

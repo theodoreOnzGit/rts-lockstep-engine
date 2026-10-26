@@ -212,6 +212,9 @@ pub struct ProbeAnswers {
     pub trace_initial_health: bool,
     /// batch R74: a `JetAIUpdate`: its parking offset and whether a takeoff or a landing is in progress.
     pub jet: Option<(f32, bool)>,
+    /// batch R76: a parking place behaviour's `shouldReserveDoorWhenQueued` and `hasAvailableSpaceFor` (both lines; `has` bit 6 makes the
+    /// probe one).
+    pub parking: Option<(bool, bool)>,
     /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
     pub has_locomotor: bool,
     /// batch R60: the current locomotor's preferred height.
@@ -384,6 +387,26 @@ impl ProbeModule {
             }
             ModuleCall::JetGetParkingOffset => self.answers.jet.map_or(ModuleReply::Unhandled, |(o, _)| ModuleReply::Real(o)),
             ModuleCall::JetIsTakeoffOrLandingInProgress => self.answers.jet.map_or(ModuleReply::Unhandled, |(_, b)| ModuleReply::Bool(b)),
+            ModuleCall::ParkingPlaceShouldReserveDoorWhenQueued { template } if self.answers.parking.is_some() => {
+                world.body_trace(format!("ppreserve {} {template}", me.object));
+                ModuleReply::Bool(self.answers.parking.is_some_and(|p| p.0))
+            }
+            ModuleCall::ParkingPlaceHasAvailableSpaceFor { template } if self.answers.parking.is_some() => {
+                world.body_trace(format!("ppspace {} {template}", me.object));
+                ModuleReply::Bool(self.answers.parking.is_some_and(|p| p.1))
+            }
+            ModuleCall::ProductionCanQueueCreateUnit { .. }
+            | ModuleCall::ProductionCanQueueUpgrade { .. }
+            | ModuleCall::ProductionRequestUniqueUnitId
+            | ModuleCall::ProductionQueueUpgrade { .. }
+            | ModuleCall::ProductionCancelUpgrade { .. }
+            | ModuleCall::ProductionIsUpgradeInQueue { .. }
+            | ModuleCall::ProductionCountUnitTypeInQueue { .. }
+            | ModuleCall::ProductionQueueCreateUnit { .. }
+            | ModuleCall::ProductionCancelUnitCreate { .. }
+            | ModuleCall::ProductionCancelAllUnitsOfType { .. }
+            | ModuleCall::ProductionGetCount
+            | ModuleCall::ProductionSetSpecialPowerConstructionCommandButton(_) => ModuleReply::Unhandled,
             ModuleCall::ParkingPlaceShouldReserveDoorWhenQueued { .. }
             | ModuleCall::ParkingPlaceHasAvailableSpaceFor { .. }
             | ModuleCall::ParkingPlaceGetSpaceIndex { .. }

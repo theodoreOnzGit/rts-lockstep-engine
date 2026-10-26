@@ -146,6 +146,7 @@ pub mod projectile_stream_update;
 pub mod generate_minefield_behavior;
 pub mod spawn_behavior;
 pub mod parking_place_behavior;
+pub mod production_update;
 pub mod minefield_behavior;
 pub mod sticky_bomb_update;
 pub mod structure_topple_update;
@@ -661,6 +662,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ParkingPlaceBehavior(d) => Some(made_update(
             parking_place_behavior::ParkingPlaceBehavior::get_interface_mask(),
             parking_place_behavior::ParkingPlaceBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ParkingPlaceBehavior(m))),
+        )),
+        ModuleDataKind::ProductionUpdate(d) => Some(made_update(
+            production_update::ProductionUpdate::get_interface_mask(),
+            production_update::ProductionUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ProductionUpdate(m))),
         )),
         ModuleDataKind::MinefieldBehavior(d) => Some(made_update(
             minefield_behavior::MinefieldBehavior::get_interface_mask(),

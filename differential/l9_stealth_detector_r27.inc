@@ -12,7 +12,8 @@
 ** REAL UpdateModule, INI, Xfer and logic random values. */
 #include "StealthDetectorUpdate_edit.cpp"
 
-void InGameUI::message( const UnicodeString &text ) { if (g_uiMessageHook) g_uiMessageHook(text.m_label); }
+void (*g_r76MessageHook)(const UnicodeString &) = 0;   /* batch R76: ProductionUpdate's formatted message (differential/l9_production_r76.inc) */
+void InGameUI::message( const UnicodeString &text ) { if (g_r76MessageHook) { g_r76MessageHook(text); return; } if (g_uiMessageHook) g_uiMessageHook(text.m_label); }
 void ParticleSystem::attachToDrawable( const Drawable *draw ) { ulog("psattachdraw %u %d", m_id, draw && draw->m_ownerObject ? (int)draw->m_ownerObject->m_oid : 0); }
 
 namespace {

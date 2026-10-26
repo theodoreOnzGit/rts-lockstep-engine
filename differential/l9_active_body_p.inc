@@ -321,7 +321,8 @@ ParticleSystem *ParticleSystemManager::findParticleSystem(ParticleSystemID id)
 	g_abPsAny.m_id = id;
 	return &g_abPsAny;
 }
-Drawable *InGameUI::getFirstSelectedDrawable() { return g_abSelection.empty() ? 0 : &g_abObjs[g_abSelection[0]].draw; }
+Drawable *(*g_r76SelectHook)() = 0;   /* batch R76: ProductionUpdate's selection (differential/l9_production_r76.inc) */
+Drawable *InGameUI::getFirstSelectedDrawable() { if (g_r76SelectHook) return g_r76SelectHook(); return g_abSelection.empty() ? 0 : &g_abObjs[g_abSelection[0]].draw; }
 Int InGameUI::getSelectCount() { return (Int)g_abSelection.size(); }
 
 namespace {

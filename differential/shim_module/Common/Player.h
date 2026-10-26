@@ -26,7 +26,7 @@ class Money { public: void deposit(UnsignedInt amountToDeposit, Bool playSound =
 	UnsignedInt m_count = 0; };
 /* p1w13-sonnet, batch R13: the power plant sabotage's call, a line of the log */
 class Energy { public: void setPowerSabotagedTillFrame(UnsignedInt frame); Int m_idx = 0; };
-class ScoreKeeper { public: void addMoneyEarned(Int money); Int m_idx; };
+class ScoreKeeper { public: void addMoneyEarned(Int money); void addMoneySpent(Int money); Int m_idx; };   /* addMoneySpent: batch R76 */
 class Player
 {
 public:
@@ -65,6 +65,13 @@ public:
 	Money *getMoney() { return &m_money; }
 	ScoreKeeper *getScoreKeeper() { return &m_score; }
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate) { return m_upgradesCompleted.testForAll(upgradeTemplate->getUpgradeMask()); }
+	/* batch R76: ProductionUpdate (differential/l9_production_r76.inc: the upgrades in production a mask, the calls lines that keep the masks) */
+	Bool hasUpgradeInProduction(const UpgradeTemplate *upgradeTemplate) { return m_upgradesInProduction.testForAll(upgradeTemplate->getUpgradeMask()); }
+	UpgradeMaskType m_upgradesInProduction;
+	void addUpgrade( const UpgradeTemplate *upgradeTemplate, UpgradeStatusType status );
+	void removeUpgrade( const UpgradeTemplate *upgradeTemplate );
+	Bool allowedToBuild( const class ThingTemplate *tmplate ) const;
+	Bool m_canBuildBase = true, m_canBuildUnits = true;   /* Player.h's names: the permissions allowedToBuild reads */
 	/* special power batch H: the player's shared special power timers, its academy stats, its relationship to a team and its default team */
 	void expressSpecialPowerReadyFrame(const SpecialPowerTemplate *temp, UnsignedInt frame);
 	UnsignedInt getOrStartSpecialPowerReadyFrame(const SpecialPowerTemplate *temp);
@@ -121,5 +128,7 @@ class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPower
 	void recordBuildingGarrisoned();   /* batch R12: GarrisonContain (differential/l9_open_contain_r.inc) */
 	void recordVehicleDisguised();   /* batch R26: StealthUpdate (a count: differential/l9_stealth_r26.inc) */
 	void recordBattlePlanSelected();   /* batch R71: a line (differential/l9_battle_plan_r71.inc) */
+	void recordProduction( const Object *obj, const Object *constructor );   /* batch R76: ProductionUpdate (lines) */
+	void recordUpgrade( const UpgradeTemplate *up, Bool granted );
 	/* --- end p1w13-sonnet --- */ };
 #endif

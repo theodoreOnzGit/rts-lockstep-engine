@@ -464,6 +464,8 @@ pub enum ModuleDataKind {
     SpawnBehavior(Arc<crate::logic::modules::spawn_behavior::SpawnBehaviorModuleData>),
     /// `ParkingPlaceBehavior` (batch R74).
     ParkingPlaceBehavior(Arc<crate::logic::modules::parking_place_behavior::ParkingPlaceBehaviorModuleData>),
+    /// `ProductionUpdate` (batch R76).
+    ProductionUpdate(Arc<crate::logic::modules::production_update::ProductionUpdateModuleData>),
     /// `MinefieldBehavior` (batch R40).
     MinefieldBehavior(Arc<crate::logic::modules::minefield_behavior::MinefieldBehaviorModuleData>),
     /// `StickyBombUpdate` (batch R39).
@@ -721,6 +723,7 @@ impl ModuleDataKind {
             ModuleDataKind::GenerateMinefieldBehavior(d) => &d.behavior.module_data,
             ModuleDataKind::SpawnBehavior(d) => &d.behavior.module_data,
             ModuleDataKind::ParkingPlaceBehavior(d) => &d.update.behavior.module_data,
+            ModuleDataKind::ProductionUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::MinefieldBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::StickyBombUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::StructureToppleUpdate(d) => &d.update.behavior.module_data,
@@ -1311,6 +1314,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::ParkingPlaceBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::ProductionUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

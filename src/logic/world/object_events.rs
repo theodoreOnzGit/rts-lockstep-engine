@@ -79,6 +79,8 @@ pub enum EvaMessage {
     CashStolen,
     /// batch R13e: `EVA_VehicleStolen`.
     VehicleStolen,
+    /// batch R76: `EVA_UpgradeComplete`.
+    UpgradeComplete,
 }
 
 // --- p1w11-sonnet ---
@@ -282,6 +284,8 @@ pub enum ObjectClientEvent {
     MessageAppendObjectIdArgument(ObjectId),
     /// batch R24: `TheInGameUI->message(label)` (the string manager's label, shown to the local player).
     UiMessage { label: Vec<u8> },
+    /// batch R76: `msg.format(TheGameText->fetch(format), TheGameText->fetch(arg)); TheInGameUI->message(msg)` (the two labels).
+    UiMessageFormatted { format: Vec<u8>, arg: Vec<u8> },
     /// batch R24: `TheRadar->createEvent(&pos, type)` (a `RadarEventType` number; the default four seconds to live).
     RadarCreateEvent { position: Coord3D, event_type: i32 },
     /// `TheInGameUI->selectDrawable(object's drawable)`.

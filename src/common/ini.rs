@@ -351,6 +351,8 @@ pub enum Undefined {
     StackOverflow,
     /// batch R68: `std::vector::resize` to a negative `Int` (a huge `size_t`: `std::length_error` or `std::bad_alloc`, by the allocator).
     VectorLengthError,
+    /// batch R76: an object read as another type through a union (`ProductionEntry`'s template or upgrade, read as the one it is not).
+    TypeConfusion,
 }
 
 /// What failed, innermost cause first.

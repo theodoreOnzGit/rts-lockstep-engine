@@ -11,6 +11,10 @@ class UnicodeString
 public:
 	UnicodeString() : m_label(0), m_arg(0) {}
 	void format(const UnicodeString &fmt, ...) { va_list args; va_start(args, fmt); m_label = fmt.m_label; m_arg = va_arg(args, int); va_end(args); }
+	/* batch R76: ProductionUpdate's `msg.format(format.str(), upgradeName.str())`: the format's label and the upgrade's name */
+	const char *str() const { return m_label; }
+	void format(const char *fmt, const char *arg) { m_label = fmt; m_arg = 0; m_argLabel = arg; }
+	const char *m_argLabel = 0;
 	const char *m_label;
 	int m_arg;
 };

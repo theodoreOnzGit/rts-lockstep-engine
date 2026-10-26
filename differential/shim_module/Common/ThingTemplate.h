@@ -29,6 +29,11 @@ typedef std::vector<WeaponTemplateSet> WeaponTemplateSetVector;
 typedef SparseMatchFinder<WeaponTemplateSet, WeaponSetFlags> WeaponTemplateSetFinder;
 /* --- end p1w13-sonnet --- */
 class GeometryInfo;   /* batch R29 */
+/* ThingTemplate.h lines 90-93, verbatim (batch R76: ProductionUpdate) */
+enum
+{
+	MAX_UPGRADE_CAMEO_UPGRADES = 5
+};
 class ThingTemplate
 {
 public:
@@ -79,6 +84,12 @@ public:
 	UnsignedInt m_occlusionDelay = 0;
 	Bool isEquivalentTo(const ThingTemplate *tt) const;   /* p1w13-sonnet, batch R5: differential/l9_open_contain_r.inc */
 	const GeometryInfo &getTemplateGeometryInfo() const;   /* batch R29: differential/l9_collapse_r29.inc */
+	/* batch R76: ProductionUpdate (differential/l9_production_r76.inc answers the cost and the time; the voice is the template's) */
+	Int calcCostToBuild( const class Player *player ) const;
+	Int calcTimeToBuild( const class Player *player ) const;
+	AudioEventRTS m_voiceCreated;
+	const AudioEventRTS *getVoiceCreated() const { return &m_voiceCreated; }
+	AsciiString getUpgradeCameoName( Int buttonIndex ) const;
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };

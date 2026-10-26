@@ -613,6 +613,12 @@ impl World {
                 m.stage_build_info(self, id);
             }
         }
+        // batch R76: a production queue's load finds its entries' templates and upgrades by name
+        if loading {
+            if let Some(crate::logic::world::update_body::UpdateBody::ProductionUpdate(m)) = &mut snap.body {
+                m.stage_load_names(self);
+            }
+        }
         let r = xfer.xfer_snapshot(&mut snap);
         if let Some(crate::logic::world::update_body::UpdateBody::ParkingPlaceBehavior(m)) = &mut snap.body {
             if let Some(e) = m.finish_staged_build(self, id) {

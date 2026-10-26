@@ -939,6 +939,22 @@ pub enum ModuleCall {
     StealthAllowedToStealth { owner: ObjectId },
     /// batch R74: `ProductionUpdateInterface::setHoldDoorOpen(exitDoor, holdIt)`.
     SetHoldDoorOpen { door: i32, hold: bool },
+    /// batch R76: `ProductionUpdateInterface`: `canQueueCreateUnit(unitType)` and `canQueueUpgrade(upgrade)` (a `CanMakeType`),
+    /// `requestUniqueUnitID()`, `queueUpgrade(upgrade)`, `cancelUpgrade(upgrade)`, `isUpgradeInQueue(upgrade)`, `countUnitTypeInQueue(unitType)`,
+    /// `queueCreateUnit(unitType, productionID)`, `cancelUnitCreate(productionID)`, `cancelAllUnitsOfType(unitType)`, `getProductionCount()`
+    /// and `setSpecialPowerConstructionCommandButton(button)` (by name). A template is its id, an upgrade its name key; `None` is `NULL`.
+    ProductionCanQueueCreateUnit { template: u16 },
+    ProductionCanQueueUpgrade { upgrade: Option<u32> },
+    ProductionRequestUniqueUnitId,
+    ProductionQueueUpgrade { upgrade: Option<u32> },
+    ProductionCancelUpgrade { upgrade: Option<u32> },
+    ProductionIsUpgradeInQueue { upgrade: Option<u32> },
+    ProductionCountUnitTypeInQueue { template: Option<u16> },
+    ProductionQueueCreateUnit { template: Option<u16>, production_id: i32 },
+    ProductionCancelUnitCreate { production_id: i32 },
+    ProductionCancelAllUnitsOfType { template: Option<u16> },
+    ProductionGetCount,
+    ProductionSetSpecialPowerConstructionCommandButton(Option<Vec<u8>>),
     /// batch R74: `JetAIUpdate::friend_getParkingOffset()`; replies [`ModuleReply::Real`].
     JetGetParkingOffset,
     /// batch R74: `JetAIUpdate::friend_isTakeoffOrLandingInProgress()`; replies [`ModuleReply::Bool`].
