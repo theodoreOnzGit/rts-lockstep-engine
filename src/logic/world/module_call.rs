@@ -913,6 +913,30 @@ pub enum ModuleCall {
     DoesSpecialPowerHaveOverridableDestination,
     /// batch R72: `SpecialPowerUpdateInterface::setSpecialPowerOverridableDestination(loc)`.
     SetSpecialPowerOverridableDestination(Coord3D),
+    /// batch R73: `getSlavedUpdateInterface() != NULL`; replies [`ModuleReply::Bool`].
+    HasSlavedUpdateInterface,
+    /// batch R73: `SlavedUpdateInterface::isSelfTasking()`; replies [`ModuleReply::Bool`].
+    SlavedIsSelfTasking,
+    /// batch R73: `AIUpdateInterface::aiForceAttackObject(victim, maxShotsToFire, cmdSource)`.
+    AiForceAttackObject { victim: ObjectId, max_shots: i32, command_source: i32 },
+    /// batch R73: `SpawnBehaviorInterface::orderSlavesToAttackTarget(target, maxShotsToFire, cmdSource)`.
+    SpawnOrderSlavesToAttackTarget { target: ObjectId, max_shots: i32, command_source: i32 },
+    /// batch R73: `SpawnBehaviorInterface::orderSlavesToAttackPosition(pos, maxShotsToFire, cmdSource)`.
+    SpawnOrderSlavesToAttackPosition { pos: Coord3D, max_shots: i32, command_source: i32 },
+    /// batch R73: `SpawnBehaviorInterface::orderSlavesToGoIdle(cmdSource)`.
+    SpawnOrderSlavesToGoIdle { command_source: i32 },
+    /// batch R73: `SpawnBehaviorInterface::getCanAnySlavesAttackSpecificTarget(attackType, target, cmdSource)`; replies [`ModuleReply::Int`]
+    /// (a `CanAttackResult`).
+    SpawnGetCanAnySlavesAttackSpecificTarget { attack_type: i32, target: ObjectId, command_source: i32 },
+    /// batch R73: `SpawnBehaviorInterface::giveSlavesStealthUpgrade(grantStealth)`.
+    SpawnGiveSlavesStealthUpgrade(bool),
+    /// batch R73: `SpawnBehaviorInterface::doSlavesHaveFreedom()`; replies [`ModuleReply::Bool`].
+    SpawnDoSlavesHaveFreedom,
+    /// batch R73: `SpawnBehavior::stopSpawning()`, `startSpawning()`.
+    SpawnStopSpawning,
+    SpawnStartSpawning,
+    /// batch R73: `StealthUpdate::allowedToStealth(stealthOwner)`; replies [`ModuleReply::Bool`].
+    StealthAllowedToStealth { owner: ObjectId },
     /// `SpecialPowerUpdateInterface::isSpecialAbility()` and, if it is,
     /// `SpecialAbilityUpdate::getSpecialPowerType()`; replies
     /// [`ModuleReply::Int`] (anything else: not a special ability).

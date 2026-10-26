@@ -202,6 +202,14 @@ pub struct ProbeAnswers {
     pub center_of_mass_offset: f32,
     /// `AIUpdateInterface::getAiFreeToExit(exiter)` (`AIFreeToExitType`).
     pub free_to_exit: i32,
+    /// batch R73: an exit interface (`HasUpdateExitInterface`) whose `reserveDoorForExit` gives this door; its calls are lines.
+    pub exit_door: Option<i32>,
+    /// batch R73: a slaved update interface, `isSelfTasking()` the value; `onEnslave` and `onSlaverDamage` are lines.
+    pub slaved: Option<bool>,
+    /// batch R73: `StealthUpdate::allowedToStealth(owner)`.
+    pub stealth_allowed: bool,
+    /// batch R73: `setInitialHealth(percent)` is a line.
+    pub trace_initial_health: bool,
     /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
     pub has_locomotor: bool,
     /// batch R60: the current locomotor's preferred height.
@@ -338,6 +346,51 @@ impl ProbeModule {
         match call {
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),
+            // batch R73 (SpawnBehavior): an exit interface, a slaved update and a stealth update the test describes
+            ModuleCall::HasUpdateExitInterface if self.answers.exit_door.is_some() => ModuleReply::Bool(true),
+            ModuleCall::ReserveDoorForExit { .. } if self.answers.exit_door.is_some() => {
+                world.body_trace(format!("reservedoor {}", me.object));
+                ModuleReply::Int(self.answers.exit_door.unwrap_or(-1))
+            }
+            ModuleCall::ExitObjectViaDoor { obj, door } if self.answers.exit_door.is_some() => {
+                world.body_trace(format!("exitdoor {} {obj} {door}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::ExitObjectByBudding { obj, bud_host } if self.answers.exit_door.is_some() => {
+                world.body_trace(format!("exitbud {} {obj} {bud_host}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::UnreserveDoorForExit(door) if self.answers.exit_door.is_some() => {
+                world.body_trace(format!("unreservedoor {} {door}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::HasSlavedUpdateInterface => ModuleReply::Bool(self.answers.slaved.is_some()),
+            ModuleCall::SlavedIsSelfTasking => self.answers.slaved.map_or(ModuleReply::Unhandled, ModuleReply::Bool),
+            ModuleCall::SlavedOnEnslave { slaver } if self.answers.slaved.is_some() => {
+                world.body_trace(format!("enslave {} {slaver}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::SlavedOnSlaverDamage(ref info) if self.answers.slaved.is_some() => {
+                world.body_trace(format!("slaverdamage {} {}", me.object, crate::logic::world::body_cuts::info_line(info)));
+                ModuleReply::Done
+            }
+            ModuleCall::StealthAllowedToStealth { .. } => ModuleReply::Bool(self.answers.stealth_allowed),
+            ModuleCall::SetInitialHealth(percent) if self.answers.trace_initial_health => {
+                world.body_trace(format!("initialhealth {} {percent}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiForceAttackObject { victim, max_shots, command_source } => {
+                world.body_trace(format!("aiforceattack {} {victim} {max_shots} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::SpawnOrderSlavesToAttackTarget { .. }
+            | ModuleCall::SpawnOrderSlavesToAttackPosition { .. }
+            | ModuleCall::SpawnOrderSlavesToGoIdle { .. }
+            | ModuleCall::SpawnGetCanAnySlavesAttackSpecificTarget { .. }
+            | ModuleCall::SpawnGiveSlavesStealthUpgrade(_)
+            | ModuleCall::SpawnDoSlavesHaveFreedom
+            | ModuleCall::SpawnStopSpawning
+            | ModuleCall::SpawnStartSpawning => ModuleReply::Unhandled,
             // --- p1w11-sonnet ---
             ModuleCall::SetCleanupAreaParameters { loc, range } => {
                 if world.cuts.probe_effect_trace {

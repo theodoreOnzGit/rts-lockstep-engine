@@ -274,6 +274,12 @@ pub enum ObjectClientEvent {
     MessageCreateSelectedGroup { create_new: bool, object_id: ObjectId },
     /// `TheMessageStream->appendMessage(MSG_REMOVE_FROM_SELECTED_GROUP)` with `appendObjectIDArgument(object)`.
     MessageRemoveFromSelectedGroup { object_id: ObjectId },
+    /// batch R73 (SpawnBehavior builds one message of many arguments): `TheMessageStream->appendMessage(MSG_CREATE_SELECTED_GROUP)`.
+    MessageAppendCreateSelectedGroup,
+    /// batch R73: `msg->appendBooleanArgument(b)` on the last message appended.
+    MessageAppendBooleanArgument(bool),
+    /// batch R73: `msg->appendObjectIDArgument(id)` on the last message appended.
+    MessageAppendObjectIdArgument(ObjectId),
     /// batch R24: `TheInGameUI->message(label)` (the string manager's label, shown to the local player).
     UiMessage { label: Vec<u8> },
     /// batch R24: `TheRadar->createEvent(&pos, type)` (a `RadarEventType` number; the default four seconds to live).

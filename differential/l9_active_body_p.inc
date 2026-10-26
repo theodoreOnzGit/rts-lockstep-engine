@@ -282,8 +282,10 @@ Object *SpawnBehaviorInterface::getClosestSlave(const Coord3D *pos)
 	return m_closestSlave;
 }
 Bool Object::isFactionStructure() const { return isAnyKindOf(KINDOFMASK_FS); }
-CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType, const Object *target, CommandSourceType, WeaponSlotType) const
+CanAttackResult (*g_canAttackHook)(const Object *, AbleToAttackType, const Object *, CommandSourceType) = 0;   /* p1w13-sonnet, batch R73: SpawnBehavior's */
+CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType src, WeaponSlotType) const
 {
+	if (g_canAttackHook) return g_canAttackHook(this, t, target, src);
 	ulog("canattack %d %d", (int)m_oid, (int)target->m_oid);
 	return (CanAttackResult)g_abAble[m_oid - 1][target->m_oid - 1];
 }

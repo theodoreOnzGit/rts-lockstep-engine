@@ -453,6 +453,9 @@ impl UpdateBehavior for MobMemberSlavedUpdate {
                 ModuleReply::Done
             }
             ModuleCall::GetSlaverId => ModuleReply::Id(self.slaver),
+            // batch R73 (SpawnBehavior): the slaved update interface and `isSelfTasking()`
+            ModuleCall::HasSlavedUpdateInterface => ModuleReply::Bool(true),
+            ModuleCall::SlavedIsSelfTasking => ModuleReply::Bool(self.is_self_tasking),
             _ => ModuleReply::Unhandled,
         }
     }

@@ -742,6 +742,9 @@ impl UpdateBehavior for SlavedUpdate {
                 ModuleReply::Done
             }
             ModuleCall::GetSlaverId => ModuleReply::Id(self.slaver),
+            // batch R73 (SpawnBehavior): the slaved update interface; `isSelfTasking()` is the base's FALSE
+            ModuleCall::HasSlavedUpdateInterface => ModuleReply::Bool(true),
+            ModuleCall::SlavedIsSelfTasking => ModuleReply::Bool(false),
             _ => ModuleReply::Unhandled,
         }
     }

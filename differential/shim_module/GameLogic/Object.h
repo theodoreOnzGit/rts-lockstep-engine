@@ -324,6 +324,10 @@ public:
 	Bool isAirborneTarget() const { return m_status.test( OBJECT_STATUS_AIRBORNE_TARGET ); }
 	Bool isFactionStructure() const;
 	CanAttackResult getAbleToAttackSpecificObject( AbleToAttackType t, const Object *target, CommandSourceType commandSource, WeaponSlotType specificSlot = (WeaponSlotType)-1 ) const;
+	/* batch R73: SpawnBehavior (a line), and the health box offset it sets */
+	CanAttackResult getAbleToUseWeaponAgainstTarget( AbleToAttackType attackType, const Object *victim, const Coord3D *pos, CommandSourceType commandSource ) const;
+	void setHealthBoxOffset( const Coord3D& offset ) { m_healthBoxOffset = offset; }
+	Coord3D m_healthBoxOffset{};
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w13-sonnet --- (SlowDeathBehavior; differential/l9_slow_death_q.inc) */
 	Real getHeightAboveTerrain() const { return m_pos.z; }   /* the test's terrain is flat at zero */

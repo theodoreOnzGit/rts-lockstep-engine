@@ -16,5 +16,6 @@ public:
 	Bool m_temporaryGrant = false;
 	void receiveGrant( Bool active = TRUE, UnsignedInt frames = 0 );   /* p1w13-sonnet, batch R4: HelixContain grants stealth to its portable structure */
 	Object *m_owner = 0;
+	Bool allowedToStealth( Object *stealthOwner ) const;   /* p1w13-sonnet, batch R73: SpawnBehavior (the test's) */
 };
 #endif

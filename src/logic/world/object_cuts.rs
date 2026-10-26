@@ -627,6 +627,34 @@ impl World {
         found.into_iter().map(|(_, id)| id).collect()
     }
 
+    /// batch R73: `player->onUnitCreated(factory, unit)` (see [`CutCall::PlayerOnUnitCreated`]).
+    pub fn player_on_unit_created(&mut self, player: PlayerIndex, factory: ObjectId, unit: ObjectId) {
+        self.cut(CutCall::PlayerOnUnitCreated { player, factory, unit });
+    }
+
+    /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (see [`CutCall::ObjectGetAbleToAttackSpecificObject`]).
+    pub fn object_get_able_to_attack_specific_object(&mut self, object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32) -> i32 {
+        self.cut(CutCall::ObjectGetAbleToAttackSpecificObject { object, attack_type, target, command_source });
+        self.cuts.able_to_attack_results.get(&object).copied().unwrap_or(0)
+    }
+
+    /// batch R73: `obj->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, cmdSource)` (see
+    /// [`CutCall::ObjectGetAbleToUseWeaponAgainstTarget`]).
+    pub fn object_get_able_to_use_weapon_against_target(&mut self, object: ObjectId, attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32) -> i32 {
+        self.cut(CutCall::ObjectGetAbleToUseWeaponAgainstTarget { object, attack_type, victim, pos, command_source });
+        self.cuts.able_to_use_weapon_results.get(&object).copied().unwrap_or(0)
+    }
+
+    /// batch R73: `obj->getDrawable()->isSelected()` (`cuts.selected`; the caller checks the drawable).
+    pub fn drawable_is_selected(&self, id: ObjectId) -> bool {
+        self.cuts.selected.contains(&id)
+    }
+
+    /// batch R73: `TheInGameUI->selectDrawable(obj->getDrawable())` (the client's; the selection it keeps is not the logic's).
+    pub fn ui_select_drawable(&mut self, id: ObjectId) {
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::UiSelectDrawable { object_id: id });
+    }
+
     /// batch R72: `TheTerrainLogic->getExtentIncludingBorder(&region)`: `cuts.extent_including_border`.
     pub fn terrain_get_extent_including_border(&self) -> crate::common::base_type::Region2D {
         self.cuts.extent_including_border
@@ -1195,6 +1223,14 @@ pub enum CutCall {
     /// enemies of object, stealthed and undetected (object, false), possible to attack (ATTACK_NEW_TARGET, object, CMD_FROM_AI), free of
     /// fog (player_index) }, ITER_SORTED_NEAR_TO_FAR)`, answered by `range_scan` (see [`World::partition_iterate_spectre_targets`]).
     PartitionIterateSpectreTargets { object: ObjectId, position: Coord3D, range: f32, player_index: PlayerIndex },
+    /// batch R73: `player->onUnitCreated(factory, unit)` (the player's object operations are not on `World` yet).
+    PlayerOnUnitCreated { player: PlayerIndex, factory: ObjectId, unit: ObjectId },
+    /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (the weapon layer's), answered by
+    /// `able_to_attack_results`.
+    ObjectGetAbleToAttackSpecificObject { object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32 },
+    /// batch R73: `obj->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, cmdSource)` (the weapon layer's), answered by
+    /// `able_to_use_weapon_results`.
+    ObjectGetAbleToUseWeaponAgainstTarget { object: ObjectId, attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32 },
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
     TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
     /// batch R71: `player->changeBattlePlan(plan, delta, bonuses)` (the player's object operations are not on `World` yet): the bonuses'
@@ -1541,6 +1577,12 @@ pub struct ObjectCuts {
     pub bridge_at: [Option<(Coord3D, Coord3D)>; 8],
     /// batch R72: `TheTerrainLogic->getExtentIncludingBorder(&region)`'s x and y (the terrain's map is layer 2's loader's; zero by default).
     pub extent_including_border: crate::common::base_type::Region2D,
+    /// batch R73: the `CanAttackResult` values of an object's `getAbleToAttackSpecificObject` and `getAbleToUseWeaponAgainstTarget`, whatever
+    /// the target (default: `ATTACKRESULT_NOT_POSSIBLE`).
+    pub able_to_attack_results: BTreeMap<ObjectId, i32>,
+    pub able_to_use_weapon_results: BTreeMap<ObjectId, i32>,
+    /// batch R73: the objects whose drawables are selected (`Drawable::isSelected`, the client's).
+    pub selected: BTreeSet<ObjectId>,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1548,6 +1590,8 @@ pub struct ObjectCuts {
     /// batch R60: `World::thing_factory_new_object` makes a module no layer has translated as a probe with these answers (an `...AIUpdate` the
     /// object's AI), not a plain stub (`None`, the default: a stub).
     pub untranslated_probe: Option<crate::logic::world::module_probe::ProbeAnswers>,
+    /// batch R73: the answers of the probes of `untranslated_probe` by module name (others: `untranslated_probe`'s).
+    pub untranslated_probe_by_name: BTreeMap<Vec<u8>, crate::logic::world::module_probe::ProbeAnswers>,
     /// batch R60: a probe writes its special power calls (`setReadyFrame`, `markSpecialPowerTriggered`, `doSpecialPowerAtLocation`) to the
     /// trace as `bt` lines (off by default).
     pub probe_power_trace: bool,
@@ -1678,8 +1722,12 @@ impl Default for ObjectCuts {
             particle_systems: BTreeMap::new(),
             bridge_at: [None; 8],
             extent_including_border: Default::default(),
+            able_to_attack_results: BTreeMap::new(),
+            able_to_use_weapon_results: BTreeMap::new(),
+            selected: BTreeSet::new(),
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
+            untranslated_probe_by_name: BTreeMap::new(),
             untranslated_probe: None,
             probe_power_trace: false,
             audio_playing: false,

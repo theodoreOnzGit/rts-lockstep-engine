@@ -1204,6 +1204,7 @@ impl UpdateBehavior for StealthUpdate {
                 ModuleReply::Done
             }
             ModuleCall::StealthIsTemporaryGrant => ModuleReply::Bool(self.is_temporary_grant()), // batch R44 (SupplyCenterDockUpdate)
+            ModuleCall::StealthAllowedToStealth { owner } => ModuleReply::Bool(self.allowed_to_stealth(world, me, owner)), // batch R73 (SpawnBehavior)
             ModuleCall::StealthDisguiseAsObject(target) => {
                 self.disguise_as_object(world, me, target);
                 ModuleReply::Done

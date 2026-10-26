@@ -143,6 +143,7 @@ pub mod supply_center_dock_update;
 pub mod supply_warehouse_dock_update;
 pub mod projectile_stream_update;
 pub mod generate_minefield_behavior;
+pub mod spawn_behavior;
 pub mod minefield_behavior;
 pub mod sticky_bomb_update;
 pub mod structure_topple_update;
@@ -646,6 +647,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::GenerateMinefieldBehavior(d) => Some(made_update(
             generate_minefield_behavior::GenerateMinefieldBehavior::get_interface_mask(),
             generate_minefield_behavior::GenerateMinefieldBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::GenerateMinefieldBehavior(m))),
+        )),
+        ModuleDataKind::SpawnBehavior(d) => Some(made_update(
+            spawn_behavior::SpawnBehavior::get_interface_mask(),
+            spawn_behavior::SpawnBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpawnBehavior(m))),
         )),
         ModuleDataKind::MinefieldBehavior(d) => Some(made_update(
             minefield_behavior::MinefieldBehavior::get_interface_mask(),

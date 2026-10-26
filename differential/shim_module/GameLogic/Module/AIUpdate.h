@@ -145,6 +145,7 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Bool m_busy = false;
 	void aiBusy( CommandSourceType cmdSource );
 	void aiAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	void aiForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );   /* batch R73: SpawnBehavior (a line) */
 	/* batch R63: FireWeaponPower's attack and turrets (lines: differential/l9_powers_h.inc) */
 	void aiAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	void setTurretTargetObject( WhichTurretType tur, Object *o, Bool isForceAttacking = FALSE );

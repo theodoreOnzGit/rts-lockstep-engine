@@ -92,8 +92,11 @@ impl World {
                     stub.interfaces = info.nuggets()[i as usize].interface_mask;
                     // (batch R60: a test's probe in its place, when it asks)
                     if let Some(answers) = self.cuts.untranslated_probe.clone() {
+                        // (batch R73: a module name may have its own answers; a name ending in StealthUpdate is the object's stealth)
+                        let answers = self.cuts.untranslated_probe_by_name.get(name).cloned().unwrap_or(answers);
                         stub.body = Some(UpdateBody::ModuleProbe(ProbeModule::new(answers, 0.0, Default::default())));
                         stub.is_ai = name.ends_with(b"AIUpdate");
+                        stub.is_stealth = name.ends_with(b"StealthUpdate");
                     }
                     self.cuts.untranslated_modules.push(name.to_vec());
                     modules.push(stub);

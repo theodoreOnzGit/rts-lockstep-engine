@@ -1222,6 +1222,8 @@ fn effect_lines(trace: Vec<String>, cuts: Vec<CutCall>, events: Vec<ObjectClient
                         tally.borrow_mut().kills += 1;
                         log.push(format!("score {killer} {victim}"))
                     }
+                    // (batch R73's: ActiveBody never makes it)
+                    BodyCall::ExperienceSetVeterancyLevel { object, level } => log.push(format!("xplevel {object} {level}")),
                     BodyCall::OnDie { object, info } => {
                         tally.borrow_mut().deaths += 1;
                         log.push(format!("ondie {object} {}", info_line(&info)))

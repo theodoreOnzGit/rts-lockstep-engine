@@ -1179,6 +1179,11 @@ impl ThingTemplate {
         self.geometry_info = geom;
     }
 
+    /// batch R73: the kinds set directly (a test seam: the differential tests' templates are not read from INI).
+    pub fn friend_set_kind_of(&mut self, kinds: &[crate::common::kind_of::KindOfType]) {
+        self.kindof = KindOfMaskType::from_indices(kinds);
+    }
+
     /// batch R39: a per-unit sound set directly (a test seam: the differential tests' templates are not read from INI).
     pub fn friend_set_per_unit_sound(&mut self, sound_name: &[u8], event: AudioEventName) {
         self.per_unit_sounds.insert(sound_name.to_vec(), event);

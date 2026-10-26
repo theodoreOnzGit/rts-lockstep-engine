@@ -130,6 +130,8 @@ pub enum BodyCall {
     NotifySubdualDamage { object: ObjectId, amount: f32 },
     /// `damager->scoreTheKill(victim)`.
     ScoreTheKill { killer: ObjectId, victim: ObjectId },
+    /// batch R73: `obj->getExperienceTracker()->setVeterancyLevel(level)` (feedback on).
+    ExperienceSetVeterancyLevel { object: ObjectId, level: i32 },
     /// `obj->onDie(damageInfo)`.
     OnDie { object: ObjectId, info: DamageInfo },
     /// `obj->setTeam(team)`.
@@ -195,6 +197,19 @@ impl World {
         self.body_cut(BodyCall::DestroyObject { object: id });
         if !self.cuts.body.stub_object_calls {
             self.destroy_object(id);
+        }
+    }
+
+    /// batch R73: `obj->getExperienceTracker()->setVeterancyLevel(level)`, feedback on. The stub records the call and sets the level (the
+    /// bookkeeping the stand-in keeps).
+    pub fn body_experience_set_veterancy_level(&mut self, id: ObjectId, level: crate::common::game_common::VeterancyLevel) {
+        self.body_cut(BodyCall::ExperienceSetVeterancyLevel { object: id, level: level as i32 });
+        if self.cuts.body.stub_object_calls {
+            if let Some(o) = self.objects.find_mut(id) {
+                o.experience.level = level;
+            }
+        } else {
+            self.cut_experience_set_veterancy_level(id, level, true);
         }
     }
 
