@@ -67,6 +67,8 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void reactToBodyDamageStateChange( int newState );   /* a BodyDamageType */
 	Object *getObject() const { return m_ownerObject; }
 	Object *m_ownerObject = 0;
+	/* batch R67: the launch bone NeutronMissileUpdate asks for (Drawable.h's signature; differential/l9_neutron_missile_r67.inc answers it) */
+	Bool getProjectileLaunchOffset(WeaponSlotType wslot, Int specificBarrelToUse, Matrix3D* launchPos, WhichTurretType tur, Coord3D* turretRotPos, Coord3D* turretPitchPos = NULL) const;
 	void setShadowsEnabled(Bool enable);   /* SlowDeathBehavior */
 	void setTerrainDecalFadeTarget(Real target, Real rate);
 	void setTerrainDecalSize(Real x, Real y);   /* batch R14c: CreateCrateDie (differential/l9_dies_r14.inc) */

@@ -871,5 +871,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_fire_weapon_update_r64.inc"   /* p1w13-sonnet, batch R64: FireWeaponUpdate */
 #include "l9_fire_weapon_damaged_r65.inc"   /* p1w13-sonnet, batch R65: FireWeaponWhenDamagedBehavior */
 #include "l9_point_defense_r66.inc"   /* p1w13-sonnet, batch R66: PointDefenseLaserUpdate */
+#include "l9_neutron_missile_r67.inc"   /* p1w13-sonnet, batch R67: NeutronMissileUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

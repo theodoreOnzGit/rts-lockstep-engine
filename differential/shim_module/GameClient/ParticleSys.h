@@ -10,7 +10,7 @@
 #include "Lib/BaseType.h"
 typedef UnsignedInt ParticleSystemID;
 enum { INVALID_PARTICLE_SYSTEM_ID = 0 };
-class ParticleSystemTemplate { public: int m_idx; };
+class ParticleSystemTemplate { public: int m_idx; AsciiString getName() const; /* batch R67 (differential/l9_neutron_missile_r67.inc) */ };
 /* batch R32: the emission volume types (ParticleSys.h, verbatim order) */
 class ParticleSystemInfo { public: enum EmissionVolumeType { INVALID_VOLUME=0, POINT, LINE, BOX, SPHERE, CYLINDER }; };
 class ParticleSystem
@@ -41,6 +41,7 @@ public:
 	void destroyParticleSystemByID( ParticleSystemID id );
 	void destroyAttachedSystems( class Object *obj );   /* p1w13-sonnet, update batch O: differential/l9_height_die_o.inc */
 	ParticleSystem *findParticleSystem( ParticleSystemID id );   /* p1w13-sonnet, batch P */
+	ParticleSystemID createAttachedParticleSystemID( const ParticleSystemTemplate *sysTemplate, class Object* attachTo, Bool createSlaves = TRUE );   /* batch R67: a line */
 };
 extern ParticleSystemManager *TheParticleSystemManager;
 #endif

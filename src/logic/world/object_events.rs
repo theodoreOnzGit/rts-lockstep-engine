@@ -258,6 +258,11 @@ pub enum ObjectClientEvent {
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
     /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
+    /// batch R67: `getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`, the identity): the drawable's own offset from its object.
+    DrawableSetInstanceMatrix { object_id: ObjectId, matrix: Option<crate::ww::matrix3d::Matrix3D> },
+    /// batch R67: `TheParticleSystemManager->createAttachedParticleSystemID(template, object)`: a system of the named template attached to the
+    /// object (the client numbers it; the logic keeps no id).
+    ParticleSystemCreateAttached { template: Vec<u8>, object_id: ObjectId },
     /// batch W1b: a weapon's client effect (`Drawable::handleWeaponFireFX`, the FX lists of a shot or a disarm).
     WeaponFx(crate::logic::weapon_host::WeaponFx),
     /// batch W1b: `m_drawable->updateDrawableClipStatus(ammoInClip, maxClipSize, slot)`.
