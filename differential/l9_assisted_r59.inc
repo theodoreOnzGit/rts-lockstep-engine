@@ -12,8 +12,14 @@
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AssistedTargetingUpdate.cpp"
 #undef getStatus
 
-void LaserUpdate::initLaser(const Object *parent, const Object *target, const Coord3D *startPos, const Coord3D *endPos, AsciiString parentBoneName, Int)
+void LaserUpdate::initLaser(const Object *parent, const Object *target, const Coord3D *startPos, const Coord3D *endPos, AsciiString parentBoneName, Int sizeDeltaFrames)
 {
+	/* batch R75: a client drawable's laser (ParticleUplinkCannonUpdate's beams), its growth frames */
+	if (m_r75Drawable) {
+		ulog("laserdraw %d %u,%u,%u %u,%u,%u %d", (int)m_r75Drawable, realBits(startPos->x), realBits(startPos->y), realBits(startPos->z), realBits(endPos->x),
+			realBits(endPos->y), realBits(endPos->z), (int)sizeDeltaFrames);
+		return;
+	}
 	ulog("laser %d %d %d %u,%u,%u %u,%u,%u %s", m_r59Owner ? (int)m_r59Owner->m_oid : 0, parent ? (int)parent->m_oid : 0, target ? (int)target->m_oid : 0,
 		realBits(startPos->x), realBits(startPos->y), realBits(startPos->z), realBits(endPos->x), realBits(endPos->y), realBits(endPos->z), parentBoneName.str());
 }

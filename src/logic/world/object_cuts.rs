@@ -645,6 +645,95 @@ impl World {
         }
     }
 
+    /// batch R75: `obj->getMultiLogicalBonePosition(prefix, maxBones, positions, transforms, FALSE)`: the drawable's pristine bones `prefix01`,
+    /// `prefix02`, ... while the art has them (`cuts.bone_transforms`), at most `max_bones`; none without a drawable.
+    pub fn object_get_multi_logical_bone_transforms(&self, id: ObjectId, prefix: &[u8], max_bones: i32) -> Vec<(Coord3D, crate::ww::matrix3d::Matrix3D)> {
+        let mut out = Vec::new();
+        if !self.has_drawable(id) {
+            return out;
+        }
+        for i in 1..=99 {
+            if out.len() as i32 >= max_bones {
+                break;
+            }
+            let mut name = prefix.to_vec();
+            name.extend_from_slice(format!("{i:02}").as_bytes());
+            let (found, p, m) = self.object_get_single_logical_bone_transform(id, &name);
+            if !found {
+                break;
+            }
+            out.push((p, m));
+        }
+        out
+    }
+
+    /// batch R75: `draw->getCurrentClientBonePositions(name, 0, &pos, &mtx, 1)`: the drawable's bone of that name (`cuts.bone_transforms`, the
+    /// client's current pose taken as the pristine one), `None` where the art has none; the caller checks the drawable.
+    pub fn drawable_get_current_client_bone(&self, id: ObjectId, name: &[u8]) -> Option<(Coord3D, crate::ww::matrix3d::Matrix3D)> {
+        let (found, p, m) = self.object_get_single_logical_bone_transform(id, name);
+        found.then_some((p, m))
+    }
+
+    /// batch R75: `obj->convertBonePosToWorldPos(&pos, &mtx, &worldPos, &worldMtx)` (`Thing`'s).
+    pub fn object_convert_bone_pos_to_world_pos(&self, id: ObjectId, pos: &Coord3D, m: &crate::ww::matrix3d::Matrix3D) -> (Coord3D, crate::ww::matrix3d::Matrix3D) {
+        match self.objects.find(id) {
+            Some(o) => o.thing.convert_bone_pos_to_world_pos(pos, m),
+            None => (*pos, *m),
+        }
+    }
+
+    /// batch R75: `TheThingFactory->newDrawable(tmpl)`: a client drawable (the muzzle flashes' ids, [`World::contain_effect_new`]); one of a
+    /// laser template (`cuts.laser_templates`) has a `LaserUpdate`.
+    pub fn client_new_drawable(&mut self, template: u16) -> crate::common::game_type::DrawableId {
+        let id = self.contain_effect_new();
+        if self.cuts.laser_templates.contains(&template) {
+            self.cuts.laser_drawables.insert(id);
+        }
+        id
+    }
+
+    /// batch R75: `TheGameClient->destroyDrawable(draw)` of a client drawable.
+    pub fn client_destroy_drawable(&mut self, id: crate::common::game_type::DrawableId) {
+        self.cuts.laser_drawables.remove(&id);
+        self.contain_effect_destroy(id);
+    }
+
+    /// batch R75: `(LaserUpdate *)draw->findClientUpdateModule("LaserUpdate") != NULL` of a client drawable.
+    pub fn client_drawable_has_laser(&self, id: crate::common::game_type::DrawableId) -> bool {
+        self.cuts.laser_drawables.contains(&id)
+    }
+
+    /// batch R75: `update->initLaser(NULL, NULL, &start, &end, "", growthFrames)` on a client drawable's `LaserUpdate`.
+    pub fn client_laser_init(&mut self, drawable: crate::common::game_type::DrawableId, start: Coord3D, end: Coord3D, growth_frames: i32) {
+        self.emit(ObjectClientEvent::LaserDrawInit { drawable, start, end, growth_frames });
+    }
+
+    /// batch R75: `update->setDecayFrames(frames)` on a client drawable's `LaserUpdate`.
+    pub fn client_laser_set_decay_frames(&mut self, drawable: crate::common::game_type::DrawableId, frames: u32) {
+        self.emit(ObjectClientEvent::LaserSetDecayFrames { drawable, frames });
+    }
+
+    /// batch R75: `update->getCurrentLaserRadius()` (`cuts.laser_radius`).
+    pub fn client_laser_current_radius(&self, _drawable: crate::common::game_type::DrawableId) -> f32 {
+        self.cuts.laser_radius
+    }
+
+    /// batch R75: `TheAudio->addAudioEvent(&event)` of an event placed at a client drawable (`setDrawableID`): the handle.
+    pub fn audio_add_event_at_drawable(&mut self, name: Vec<u8>, drawable: crate::common::game_type::DrawableId) -> u32 {
+        self.emit(ObjectClientEvent::AudioAddEventAtDrawable { name, drawable });
+        self.cuts.last_audio_handle
+    }
+
+    /// batch R75: `ThePartitionManager->doShroudReveal(x, y, range, mask)`.
+    pub fn partition_do_shroud_reveal(&mut self, x: f32, y: f32, range: f32, mask: PlayerMaskType) {
+        self.cut(CutCall::PartitionDoShroudReveal { x, y, range, mask });
+    }
+
+    /// batch R75: `ThePartitionManager->undoShroudReveal(x, y, range, mask)`.
+    pub fn partition_undo_shroud_reveal(&mut self, x: f32, y: f32, range: f32, mask: PlayerMaskType) {
+        self.cut(CutCall::PartitionUndoShroudReveal { x, y, range, mask });
+    }
+
     /// batch R73: `player->onUnitCreated(factory, unit)` (see [`CutCall::PlayerOnUnitCreated`]).
     pub fn player_on_unit_created(&mut self, player: PlayerIndex, factory: ObjectId, unit: ObjectId) {
         self.cut(CutCall::PlayerOnUnitCreated { player, factory, unit });
@@ -1140,6 +1229,8 @@ pub enum CutCall {
     PartitionDoShroudReveal { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->queueUndoShroudReveal(x, y, range, mask)`.
     PartitionQueueUndoShroudReveal { x: f32, y: f32, range: f32, mask: PlayerMaskType },
+    /// batch R75: `ThePartitionManager->undoShroudReveal(x, y, range, mask)`.
+    PartitionUndoShroudReveal { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->doShroudCover(x, y, range, mask)`.
     PartitionDoShroudCover { x: f32, y: f32, range: f32, mask: PlayerMaskType },
     /// `ThePartitionManager->undoShroudCover(x, y, range, mask)`.
@@ -1604,6 +1695,11 @@ pub struct ObjectCuts {
     /// batch R74: the art's bones by object and name: the position and the rotation about z of the bone's world transform (no entry: no
     /// such bone).
     pub bone_transforms: BTreeMap<(ObjectId, Vec<u8>), (Coord3D, f32)>,
+    /// batch R75: the thing templates whose drawables have a `LaserUpdate` client module, the client drawables made of one (`newDrawable`),
+    /// and every laser's `getCurrentLaserRadius()` (the client's growth, the test's).
+    pub laser_templates: BTreeSet<u16>,
+    pub laser_drawables: BTreeSet<crate::common::game_type::DrawableId>,
+    pub laser_radius: f32,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1747,6 +1843,9 @@ impl Default for ObjectCuts {
             able_to_use_weapon_results: BTreeMap::new(),
             selected: BTreeSet::new(),
             bone_transforms: BTreeMap::new(),
+            laser_templates: BTreeSet::new(),
+            laser_drawables: BTreeSet::new(),
+            laser_radius: 0.0,
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe_by_name: BTreeMap::new(),
@@ -1992,7 +2091,7 @@ impl World {
     /// Sends one `Object` notification to the client.
     pub fn emit(&mut self, e: ObjectClientEvent) {
         // every `addAudioEvent` gets the next handle, whether the caller keeps it or not (batch R48: `EjectPilotDie::ejectPilot`'s two)
-        if let ObjectClientEvent::AudioAddEvent { .. } = e {
+        if let ObjectClientEvent::AudioAddEvent { .. } | ObjectClientEvent::AudioAddEventAtDrawable { .. } = e {
             self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
         }
         if let Some(t) = &mut self.cuts.trace {

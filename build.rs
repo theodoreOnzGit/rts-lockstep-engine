@@ -3511,6 +3511,16 @@ mod differential {
                 );
                 std::fs::write(mod_gen.join("SpectreGunshipUpdate_edit.cpp"), cut).expect("write SpectreGunshipUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R75 (differential/l9_uplink_r75.inc): ParticleUplinkCannonUpdate.h forward-declares `enum ParticleSystemID;`, which the
+                // module build's ParticleSys.h has as a typedef, and the file uses the type throughout: the header without that line (asserted
+                // once), into mod_gen/ParticleUplinkCannonUpdate_r75.h, which the driver includes first (the .cpp's own include then stops at the
+                // include guard).
+                let path = up.join("GameEngine/Include/GameLogic/Module/ParticleUplinkCannonUpdate.h");
+                let text = std::fs::read_to_string(&path).expect("read ParticleUplinkCannonUpdate.h");
+                let fwd = "enum ParticleSystemID;\n";
+                assert_eq!(text.matches(fwd).count(), 1, "ParticleUplinkCannonUpdate.h: the forward declaration must occur once");
+                std::fs::write(mod_gen.join("ParticleUplinkCannonUpdate_r75.h"), text.replace(fwd, "")).expect("write ParticleUplinkCannonUpdate_r75.h");
+                println!("cargo:rerun-if-changed={}", path.display());
                 // batch R50 (differential/l9_physics_r50.inc): PhysicsUpdate.cpp, compiled a second time in the unit (whose PhysicsBehavior is the
                 // module build's stand-in, a block of memory other drivers define methods of) under R50 names, by macros in the driver: the header once
                 // more, as mod_gen/PhysicsUpdate_r50.h (its `#pragma once` and include guard renamed, each asserted once); the .cpp, into

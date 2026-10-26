@@ -373,6 +373,7 @@ void ctClearEffects() { for (std::map<DrawableID, Drawable *>::iterator it = g_c
 /* p1w13-sonnet, batch R26 (differential/l9_stealth_r26.inc): with the pool set, a destroyed drawable is kept and the next new drawable is that block,
 ** as the game's memory pool (last in, first out) gives it back; the calls are lines naming the object and the template, and the object is unbound */
 bool g_r26DrawPool = false;
+void (*g_r75NewDrawHook)(Drawable *, const ThingTemplate *) = 0;
 Drawable *g_r26Freed = 0;
 Drawable *ThingFactory::newDrawable(const ThingTemplate *t)
 {
@@ -383,7 +384,9 @@ Drawable *ThingFactory::newDrawable(const ThingTemplate *t)
 		if (d) d->m_ownerObject = 0;
 		return d;
 	}
-	Drawable *d = new Drawable; d->m_effectId = (DrawableID)g_ctNextEffect++; g_ctEffects[d->m_effectId] = d; ulog("effnew %d", (int)d->m_effectId); return d; }
+	Drawable *d = new Drawable; d->m_effectId = (DrawableID)g_ctNextEffect++; g_ctEffects[d->m_effectId] = d; ulog("effnew %d", (int)d->m_effectId);
+	if (g_r75NewDrawHook) g_r75NewDrawHook(d, t);   /* batch R75: a laser template's drawable gets its LaserUpdate (l9_uplink_r75.inc) */
+	return d; }
 void GameClient::destroyDrawable(Drawable *d)
 {
 	if (g_r26DrawPool) {

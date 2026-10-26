@@ -83,6 +83,8 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );   /* p1w13-sonnet, batch R44: a line (differential/l9_supply_docks_r44.inc) */
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */
 	/* the transport's exit bone: one named ExitBoneT, at a world position, if the scene gives the art one */
+	/* batch R75: the client's current bones, the test's (differential/l9_uplink_r75.inc) */
+	Int getCurrentClientBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const;
 	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
 	{
 		/* batch R30: BoneFXUpdate's bones, when the test gives them (differential/l9_bonefx_r30.inc) */

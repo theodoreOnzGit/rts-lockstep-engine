@@ -122,6 +122,7 @@ pub mod fire_ocl_after_weapon_cooldown_update;
 pub mod missile_launcher_building_update;
 pub mod spectre_gunship_deployment_update;
 pub mod spectre_gunship_update;
+pub mod particle_uplink_cannon_update;
 pub mod battle_plan_update;
 pub mod countermeasures_behavior;
 pub mod auto_heal_behavior;
@@ -580,6 +581,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SpectreGunshipUpdate(d) => Some(made_update(
             spectre_gunship_update::SpectreGunshipUpdate::get_interface_mask(),
             spectre_gunship_update::SpectreGunshipUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpectreGunshipUpdate(m))),
+        )),
+        ModuleDataKind::ParticleUplinkCannonUpdate(d) => Some(made_update(
+            particle_uplink_cannon_update::ParticleUplinkCannonUpdate::get_interface_mask(),
+            particle_uplink_cannon_update::ParticleUplinkCannonUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ParticleUplinkCannonUpdate(m))),
         )),
         ModuleDataKind::BattlePlanUpdate(d) => Some(made_update(
             battle_plan_update::BattlePlanUpdate::get_interface_mask(),

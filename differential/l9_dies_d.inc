@@ -59,7 +59,10 @@ UnsignedInt AudioManager::addAudioEvent(const AudioEventRTS *eventToAdd)
 	char pos[64];
 	if (eventToAdd->m_hasPos) sprintf(pos, "%u,%u,%u", realBits(eventToAdd->m_pos.x), realBits(eventToAdd->m_pos.y), realBits(eventToAdd->m_pos.z));
 	else strcpy(pos, "-");
-	ulog("audio %s %s %d %d", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID);
+	if (eventToAdd->m_drawableID)   /* batch R75: an event at a client drawable */
+		ulog("audio %s %s %d %d draw %u", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID, eventToAdd->m_drawableID);
+	else
+		ulog("audio %s %s %d %d", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID);
 	return ++g_audioHandleLast;
 }
 

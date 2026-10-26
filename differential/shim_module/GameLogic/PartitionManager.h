@@ -42,7 +42,8 @@ public:
 	PartitionFilterRelationship( const Object *obj, Int flags ) : m_flags(flags) {}
 	Int m_flags;   /* batch R69: logged by CommandButtonHuntUpdate's scan */
 };
-class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive( void ) {} };
+/* (batch R75: its allow, PartitionManager.cpp's, is l9_uplink_r75.inc's; the drivers before it never asked a filter) */
+class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive( void ) {} virtual Bool allow( Object *objOther ); };
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus( const Object *obj ) {} };
 /* batch R69: CommandButtonHuntUpdate's scan (the list is the test's) */
 class PartitionFilterStealthedAndUndetected : public PartitionFilter { public: PartitionFilterStealthedAndUndetected( const Object *obj, Bool allow ) {} };
@@ -120,6 +121,9 @@ class PartitionManager
 {
 public:
 	void revealMapForPlayer( Int playerIndex );
+	/* batch R75: ParticleUplinkCannonUpdate's reveal and its undo (lines, differential/l9_uplink_r75.inc) */
+	void doShroudReveal( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
+	void undoShroudReveal( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
 	/* --- p1w12-sonnet --- */
 	SimpleObjectIterator *iterateObjectsInRange( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = 0, IterOrderType order = ITER_FASTEST );
 	SimpleObjectIterator *iteratePotentialCollisions( const Coord3D *pos, const GeometryInfo &geom, Real angle, Bool use2D = false );   /* batch R41 (differential/l9_gen_minefield_r41.inc) */

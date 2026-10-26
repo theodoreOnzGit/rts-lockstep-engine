@@ -422,6 +422,8 @@ pub enum ModuleDataKind {
     SpectreGunshipDeploymentUpdate(Arc<crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdateModuleData>),
     /// `SpectreGunshipUpdate` (batch R72).
     SpectreGunshipUpdate(Arc<crate::logic::modules::spectre_gunship_update::SpectreGunshipUpdateModuleData>),
+    /// `ParticleUplinkCannonUpdate` (batch R75).
+    ParticleUplinkCannonUpdate(Arc<crate::logic::modules::particle_uplink_cannon_update::ParticleUplinkCannonUpdateModuleData>),
     /// `BattlePlanUpdate` (batch R71).
     BattlePlanUpdate(Arc<crate::logic::modules::battle_plan_update::BattlePlanUpdateModuleData>),
     /// `CountermeasuresBehavior` (batch R52).
@@ -699,6 +701,7 @@ impl ModuleDataKind {
             ModuleDataKind::MissileLauncherBuildingUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpectreGunshipUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::ParticleUplinkCannonUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::BattlePlanUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CountermeasuresBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
@@ -1168,6 +1171,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::SpectreGunshipUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::ParticleUplinkCannonUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

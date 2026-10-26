@@ -10,5 +10,9 @@ class LaserUpdate
 public:
 	void initLaser( const Object *parent, const Object *target, const Coord3D *startPos, const Coord3D *endPos, AsciiString parentBoneName, Int sizeDeltaFrames = 0 );
 	Object *m_r59Owner = 0;   /* the laser object, for the line */
+	/* batch R75: ParticleUplinkCannonUpdate's beams (differential/l9_uplink_r75.inc: the calls lines, the radius the test's) */
+	void setDecayFrames( UnsignedInt decayFrames );
+	Real getCurrentLaserRadius() const;
+	Int m_r75Drawable = 0;   /* the client drawable it is on (0: a laser object's, batch R59) */
 };
 #endif

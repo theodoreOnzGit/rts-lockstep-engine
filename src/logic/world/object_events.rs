@@ -318,6 +318,13 @@ pub enum ObjectClientEvent {
     /// batch R59: `LaserUpdate::initLaser(parent, target, &start, &end, bone)` on the laser object's drawable's `LaserUpdate` client module
     /// (`AssistedTargetingUpdate`'s feedback lasers).
     LaserInit { laser: ObjectId, parent: ObjectId, target: ObjectId, start: crate::common::base_type::Coord3D, end: crate::common::base_type::Coord3D, bone: Vec<u8> },
+    /// batch R75: `LaserUpdate::initLaser(NULL, NULL, &start, &end, "", growthFrames)` on a client drawable's `LaserUpdate`
+    /// (`ParticleUplinkCannonUpdate`'s beams).
+    LaserDrawInit { drawable: crate::common::game_type::DrawableId, start: crate::common::base_type::Coord3D, end: crate::common::base_type::Coord3D, growth_frames: i32 },
+    /// batch R75: `LaserUpdate::setDecayFrames(frames)` on a client drawable's `LaserUpdate`.
+    LaserSetDecayFrames { drawable: crate::common::game_type::DrawableId, frames: u32 },
+    /// batch R75: `TheAudio->addAudioEvent(&event)` of an event placed at a client drawable (`event.setDrawableID(id)`).
+    AudioAddEventAtDrawable { name: Vec<u8>, drawable: crate::common::game_type::DrawableId },
     /// batch R28: `ToppleUpdate` tells the drawable to stop swaying (its `SwayClientUpdate` client modules' `stopSway()`).
     DrawableStopSway { object_id: ObjectId },
     /// batch R28: `ToppleUpdate`'s stump burns if the toppled object's drawable is burned: `if (draw->getModelConditionFlags().test(

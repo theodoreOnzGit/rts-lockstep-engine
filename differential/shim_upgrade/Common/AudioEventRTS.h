@@ -36,6 +36,9 @@ public:
 	void setPlayingHandle(UnsignedInt handle) { m_playingHandle = handle; }
 	UnsignedInt getPlayingHandle() const { return m_playingHandle; }
 	Bool isCurrentlyPlaying() const;
+	/* batch R75: an event placed at a client drawable (ParticleUplinkCannonUpdate's annihilation sound; the audio line names it) */
+	UnsignedInt m_drawableID = 0;
+	void setDrawableID(UnsignedInt drawID) { m_drawableID = drawID; }
 	/* --- end p1w13-sonnet --- */
 };
 /* --- p1w12-sonnet --- */
