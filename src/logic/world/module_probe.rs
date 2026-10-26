@@ -1035,6 +1035,15 @@ impl ProbeModule {
             },
             // batch R69: a probe is no CommandButtonHuntUpdate
             ModuleCall::CommandButtonHuntSetCommandButton(_) => ModuleReply::Unhandled,
+            // batch R70: the AI's path orders (lines)
+            ModuleCall::AiFollowWaypointPath { waypoint, command_source } => {
+                world.body_trace(format!("aifollowpath {} {waypoint} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetPathExtraDistance(d) => {
+                world.body_trace(format!("aipathextra {} {:08x}", me.object, d.to_bits()));
+                ModuleReply::Done
+            }
             // batch R59: a probe is no assisted targeting update
             ModuleCall::AssistedTargetingIsFreeToAssist | ModuleCall::AssistedTargetingAssistAttack { .. } => ModuleReply::Unhandled,
             // batch R58: MobMemberSlavedUpdate's AI and spawn behaviour

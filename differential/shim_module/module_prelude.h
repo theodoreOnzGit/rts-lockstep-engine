@@ -197,5 +197,7 @@ float ref_fast_float_ceil(float f);
 #define CommandSet ModTestCommandSet
 #define ActionManager ModTestActionManager
 #define TheActionManager ModTestTheActionManager
+#define TerrainVisual ModTestTerrainVisual   /* batch R70 */
+#define TheTerrainVisual ModTestTheTerrainVisual
 /* --- end p1w13-sonnet --- */
 #endif

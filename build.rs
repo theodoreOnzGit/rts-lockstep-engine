@@ -3479,6 +3479,20 @@ mod differential {
                 );
                 std::fs::write(mod_gen.join("HelicopterSlowDeathUpdate_edit.cpp"), cut).expect("write HelicopterSlowDeathUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R70 (differential/l9_wave_guide_r70.inc): WaveGuideUpdate.cpp's field table names `INI::parseParticleSystemTemplate` once; the
+                // same replacement (asserted once), its declaration after the PhysicsUpdate.h include (asserted once), into
+                // mod_gen/WaveGuideUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/WaveGuideUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read WaveGuideUpdate.cpp");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/PhysicsUpdate.h\"\n");
+                assert_eq!(text.matches(parse).count(), 1, "WaveGuideUpdate.cpp: the particle system parser must occur once");
+                assert_eq!(text.matches(include).count(), 1, "WaveGuideUpdate.cpp: the PhysicsUpdate.h include must occur once");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("WaveGuideUpdate_edit.cpp"), cut).expect("write WaveGuideUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
                 // batch R50 (differential/l9_physics_r50.inc): PhysicsUpdate.cpp, compiled a second time in the unit (whose PhysicsBehavior is the
                 // module build's stand-in, a block of memory other drivers define methods of) under R50 names, by macros in the driver: the header once
                 // more, as mod_gen/PhysicsUpdate_r50.h (its `#pragma once` and include guard renamed, each asserted once); the .cpp, into

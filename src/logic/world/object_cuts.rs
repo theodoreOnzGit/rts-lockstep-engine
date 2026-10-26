@@ -350,12 +350,40 @@ impl World {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
         let id = self.cuts.last_particle_system_id;
         self.cut(CutCall::ParticleSystemCreateUnplaced { template, id });
+        self.cuts.particle_systems.insert(id, Coord3D::default());
         id
     }
 
     /// batch R33: `system->setPosition(&position)`.
     pub fn particle_system_set_position(&mut self, id: u32, position: Coord3D) {
         self.cut(CutCall::ParticleSystemSetPosition { id, position });
+        if let Some(p) = self.cuts.particle_systems.get_mut(&id) {
+            *p = position;
+        }
+    }
+
+    /// batch R70: `TheParticleSystemManager->findParticleSystem(id)` and `system->getPosition(&pos)`: the system's position, `None` for `NULL`
+    /// (see `ObjectCuts::particle_systems`).
+    pub fn particle_system_find_position(&self, id: u32) -> Option<Coord3D> {
+        self.cuts.particle_systems.get(&id).copied()
+    }
+
+    /// batch R70: `system->setLocalTransform(&transform)`.
+    pub fn particle_system_set_local_transform(&mut self, id: u32, m: &crate::ww::matrix3d::Matrix3D) {
+        let matrix = m.to_array();
+        self.cut(CutCall::ParticleSystemSetLocalTransform { id, matrix });
+    }
+
+    /// batch R70: `TheTerrainLogic->findBridgeAt(position)` and `bridge->getBridgeInfo(&info)`: the info's ends, `None` for `NULL`
+    /// (`ObjectCuts::bridge_at`).
+    pub fn terrain_find_bridge_at(&mut self, position: Coord3D) -> Option<(Coord3D, Coord3D)> {
+        self.cut(CutCall::TerrainFindBridgeAt { position });
+        self.cuts.bridge_at[terrain_cell(position.x, position.y)]
+    }
+
+    /// batch R70: `TheTerrainLogic->deleteBridge(bridge)` (`None`: `NULL`).
+    pub fn terrain_delete_bridge(&mut self, bridge: Option<(Coord3D, Coord3D)>) {
+        self.cut(CutCall::TerrainDeleteBridge { bridge });
     }
 
     /// batch R33: `system->setSystemLifetime(frames)`.
@@ -398,6 +426,7 @@ impl World {
     /// batch R31: `TheParticleSystemManager->destroyParticleSystemByID(id)`.
     pub fn destroy_particle_system_by_id(&mut self, id: u32) {
         self.cut(CutCall::ParticleSystemDestroyById { id });
+        self.cuts.particle_systems.remove(&id);
     }
 
     /// batch R28: `TheScriptEngine->adjustToppleDirection(object, direction)`: "if the object is named and has a specified topple direction,
@@ -427,6 +456,7 @@ impl World {
         self.cuts.last_particle_system_id = self.cuts.last_particle_system_id.wrapping_add(1);
         let id = self.cuts.last_particle_system_id;
         self.cut(CutCall::ParticleSystemCreate { template, position, id });
+        self.cuts.particle_systems.insert(id, position);
         id
     }
 }
@@ -1133,6 +1163,12 @@ pub enum CutCall {
     ActionManagerCan { kind: i32, object: ObjectId, other: ObjectId, source: i32, template: u32 },
     /// batch R69: `obj->doCommandButtonAtObject(button, victim, source)` (the button by its name).
     ObjectDoCommandButtonAtObject { object: ObjectId, button: Vec<u8>, victim: ObjectId, source: i32 },
+    /// batch R70: `system->setLocalTransform(&transform)`: the matrix's three rows.
+    ParticleSystemSetLocalTransform { id: u32, matrix: [f32; 12] },
+    /// batch R70: `TheTerrainLogic->findBridgeAt(position)`, answered by `bridge_at`.
+    TerrainFindBridgeAt { position: Coord3D },
+    /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
+    TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
@@ -1455,6 +1491,12 @@ pub struct ObjectCuts {
     pub own_mines_near: BTreeSet<ObjectId>,
     /// batch R69: `TheAI->getAiData()->m_attackPriorityDistanceModifier` (layer 10's).
     pub attack_priority_distance_modifier: f32,
+    /// batch R70: the client's particle systems the logic finds again (`findParticleSystem`) and reads (`getPosition`), by id: every system the
+    /// cut points make, at the position it was last given, until it is destroyed (a test can take one away: the client's own end).
+    pub particle_systems: BTreeMap<u32, Coord3D>,
+    /// batch R70: `TheTerrainLogic->findBridgeAt(pos)` by the cell of the position ([`terrain_cell`]): the bridge's info's ends, `None` for
+    /// `NULL`.
+    pub bridge_at: [Option<(Coord3D, Coord3D)>; 8],
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1589,6 +1631,8 @@ impl Default for ObjectCuts {
             action_allowed: BTreeSet::new(),
             own_mines_near: BTreeSet::new(),
             attack_priority_distance_modifier: 1.0,
+            particle_systems: BTreeMap::new(),
+            bridge_at: [None; 8],
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe: None,

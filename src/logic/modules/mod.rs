@@ -180,6 +180,7 @@ pub mod squish_collide;
 pub mod prone_update;
 pub mod enemy_near_update;
 pub mod float_update;
+pub mod wave_guide_update;
 pub mod dumb_projectile_behavior;
 pub mod neutron_missile_update;
 pub mod point_defense_laser_update;
@@ -792,6 +793,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::FloatUpdate(d) => Some(made_update(
             UpdateModule::get_interface_mask(),
             float_update::FloatUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::FloatUpdate(m))),
+        )),
+        ModuleDataKind::WaveGuideUpdate(d) => Some(made_update(
+            UpdateModule::get_interface_mask(),
+            wave_guide_update::WaveGuideUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::WaveGuideUpdate(m))),
         )),
         ModuleDataKind::DumbProjectileBehavior(d) => Some(made_update(
             UpdateModule::get_interface_mask(),

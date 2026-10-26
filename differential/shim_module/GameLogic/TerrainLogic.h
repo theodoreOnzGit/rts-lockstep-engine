@@ -4,9 +4,33 @@
 #define SHIM_MODULE_TERRAINLOGIC_H
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"   /* PathfindLayerEnum (p1w13-sonnet) */
+#include "Common/AsciiString.h"   /* (batch R70) */
+/* --- p1w13-sonnet --- (batch R70: WaveGuideUpdate's waypoint path and bridges; differential/l9_wave_guide_r70.inc) TerrainLogic.h's Waypoint getters,
+** verbatim, on the test's nodes; the bridge's info's two ends (the rest of BridgeInfo is unused) */
+class Waypoint
+{
+public:
+	enum {MAX_LINKS=8};
+	Int getNumLinks(void) const {return m_numLinks; }
+	Waypoint *getLink(Int ndx) const {if (ndx>=0 && ndx <= MAX_LINKS) return m_links[ndx]; return NULL; }
+	const Coord3D *getLocation(void) const { return &m_location; }
+	Int getID(void) const { return m_id; }
+	Int m_id;
+	Coord3D m_location;
+	Waypoint *m_links[MAX_LINKS + 1];
+	Int m_numLinks;
+};
+class BridgeInfo { public: Coord3D from, to; };
+class Bridge { public: void getBridgeInfo(class BridgeInfo *pInfo) {*pInfo = m_bridgeInfo; } BridgeInfo m_bridgeInfo; Int m_cell; };
+/* --- end p1w13-sonnet --- */
 class TerrainLogic
 {
 public:
+	/* --- p1w13-sonnet --- (batch R70: the test's) */
+	Waypoint *getWaypointByName( AsciiString name );
+	Bridge *findBridgeAt(const Coord3D *pLoc) const;
+	void deleteBridge( Bridge *bridge );
+	/* --- end p1w13-sonnet --- */
 	Coord3D findClosestEdgePoint( const Coord3D *closestTo ) const;
 	Coord3D findFarthestEdgePoint( const Coord3D *farthestFrom ) const;   /* p1w13-sonnet, batch R22: OCLSpecialPower (differential/l9_ocl_power_r22.inc) */
 	/* --- p1w13-sonnet --- (update batch O: HeightDieUpdate; differential/l9_height_die_o.inc) */

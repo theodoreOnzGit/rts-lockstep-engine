@@ -69,17 +69,20 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate( const AsciiString &
 	}
 	return it->second;
 }
+void (*g_psPosHook)(ParticleSystem *, const Coord3D *) = 0;   /* p1w13-sonnet, batch R70: the positions the systems are given (NULL: created) */
 ParticleSystem *ParticleSystemManager::createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves )
 {
 	if (!sysTemplate) return 0;   /* batch R30: as the real manager (BoneFXUpdate asks for a NULL template) */
 	ParticleSystem *s = &g_ahPsSlots[g_ahPsNext++ % 64];
 	s->m_id = ++g_ahPsLastId;
 	s->m_tmpl = sysTemplate->m_idx;
+	if (g_psPosHook) g_psPosHook(s, 0);
 	return s;
 }
 void ParticleSystemManager::destroyParticleSystemByID( ParticleSystemID id ) { ulog("psdestroyid %u", id); }   /* batch R31: a line */
 void ParticleSystem::setPosition( const Coord3D *pos )
 {
+	if (g_psPosHook) g_psPosHook(this, pos);
 	ulog("psys %s %u %08x,%08x,%08x", g_ahPsNames[(size_t)m_tmpl].c_str(), m_id, realBits(pos->x), realBits(pos->y), realBits(pos->z));
 }
 void Player::iterateObjects( void (*func)( Object *, void * ), void *userData )

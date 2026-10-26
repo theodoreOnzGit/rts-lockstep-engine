@@ -1719,6 +1719,19 @@ impl TerrainLogic {
         self.waypoints.get(w.0)
     }
 
+    /// A waypoint made directly, at `loc` (the map's `addWaypoint` without the map object or the snap to the ground), at the head of the
+    /// list: for a test that builds a path.
+    pub fn friend_push_waypoint(&mut self, id: i32, name: &[u8], loc: Coord3D) -> WaypointHandle {
+        let none = AsciiString::default();
+        self.waypoints.push(Waypoint::new(id, AsciiString::try_from_bytes(name).unwrap_or_default(), loc, none.clone(), none.clone(), none, false));
+        WaypointHandle(self.waypoints.len() - 1)
+    }
+
+    /// `addWaypointLink(id1, id2)`, for a test that builds a path.
+    pub fn friend_add_waypoint_link(&mut self, id1: i32, id2: i32) {
+        self.add_waypoint_link(id1, id2);
+    }
+
     /// `getWaypointByName(name)`.
     pub fn waypoint_by_name(&self, name: &AsciiString) -> Option<WaypointHandle> {
         self.waypoint_handles().into_iter().find(|&h| self.waypoints[h.0].name == *name)

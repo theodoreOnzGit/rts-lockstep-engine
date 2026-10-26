@@ -123,6 +123,8 @@ public:
 	** set: an empty name for it); doCommandButtonAtObject is a line (differential/l9_command_button_hunt_r69.inc) */
 	const AsciiString& getCommandSetString() const { if (m_commandSetStringOverride.isNotEmpty()) return m_commandSetStringOverride; return AsciiString::TheEmptyString; }
 	void doCommandButtonAtObject( const class CommandButton *commandButton, Object *obj, CommandSourceType cmdSource );
+	/* batch R70: Thing.cpp 367-386 (differential/l9_wave_guide_r70.inc), through getTransformMatrix */
+	void transformPoint( const Coord3D *in, Coord3D *out );
 	/* --- end p1w13-sonnet --- */
 	/* --- p1w10-sonnet --- (the layer-9 upgrade batch: what the eight upgrade modules call on their object; every call is
 	** a line of the effect log, the state is what the dump reads) */

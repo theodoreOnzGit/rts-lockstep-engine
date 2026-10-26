@@ -632,6 +632,10 @@ pub enum ModuleCall {
     AiGetAttackPriority { other: ObjectId },
     /// batch R69: `CommandButtonHuntUpdate::setCommandButton(buttonName)` (`ScriptActions`' call).
     CommandButtonHuntSetCommandButton(Vec<u8>),
+    /// batch R70: `AIUpdateInterface::aiFollowWaypointPath(waypoint, cmdSource)`, the waypoint by its id.
+    AiFollowWaypointPath { waypoint: i32, command_source: i32 },
+    /// batch R70: `AIUpdateInterface::setPathExtraDistance(dist)`.
+    AiSetPathExtraDistance(f32),
     /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.

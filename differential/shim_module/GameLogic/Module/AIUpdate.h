@@ -118,6 +118,8 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	Int m_lastCmdSource = 0;
 	const class AttackPriorityInfo *getAttackInfo(void) { return m_attackInfo; }   /* batch R69: CommandButtonHuntUpdate */
 	const class AttackPriorityInfo *m_attackInfo = 0;
+	void aiFollowWaypointPath( const class Waypoint *way, CommandSourceType cmdSource );   /* batch R70: lines (differential/l9_wave_guide_r70.inc) */
+	void setPathExtraDistance( Real dist );
 	/* batch R58: MobMemberSlavedUpdate's questions (the test's answers: differential/l9_mob_member_r58.inc) */
 	Real getLocomotorDistanceToGoal() { return m_r58Dist; }
 	const Coord3D* getGoalPosition() const { return &m_r58Goal; }

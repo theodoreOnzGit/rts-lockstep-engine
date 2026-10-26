@@ -1857,6 +1857,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R70: WaveGuideUpdate (differential/l9_wave_guide_r70.inc).
+    pub fn ref_l9r70_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R67: NeutronMissileUpdate (differential/l9_neutron_missile_r67.inc).
     pub fn ref_l9r67_run(
         filename: *const c_char,

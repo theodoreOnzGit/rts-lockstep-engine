@@ -28,6 +28,7 @@ public:
 	void addObject(Object *obj);   /* batch R13d */
 	void createEvent( const Coord3D *world, RadarEventType type, float secondsToLive = 4.0f );   /* batch R24: differential/l9_overcharge_r24.inc */
 	Bool tryEvent( RadarEventType event, const Coord3D *pos );   /* batch R27: differential/l9_stealth_detector_r27.inc (a line; the test's answer) */
+	void refreshTerrain( class TerrainLogic *terrain );   /* batch R70: a line (differential/l9_wave_guide_r70.inc) */
 };
 extern Radar *TheRadar;
 #endif

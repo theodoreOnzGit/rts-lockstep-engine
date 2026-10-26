@@ -528,6 +528,8 @@ pub enum ModuleDataKind {
     EnemyNearUpdate(Arc<crate::logic::modules::enemy_near_update::EnemyNearUpdateModuleData>),
     /// `FloatUpdateModuleData`.
     FloatUpdate(Arc<crate::logic::modules::float_update::FloatUpdateModuleData>),
+    /// `WaveGuideUpdate` (batch R70).
+    WaveGuideUpdate(Arc<crate::logic::modules::wave_guide_update::WaveGuideUpdateModuleData>),
     /// `DumbProjectileBehavior` (batch R68).
     DumbProjectileBehavior(Arc<crate::logic::modules::dumb_projectile_behavior::DumbProjectileBehaviorModuleData>),
     /// `NeutronMissileUpdate` (batch R67).
@@ -743,6 +745,7 @@ impl ModuleDataKind {
             ModuleDataKind::ProneUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::EnemyNearUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::FloatUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::WaveGuideUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::DumbProjectileBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::NeutronMissileUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::PointDefenseLaserUpdate(d) => &d.update.behavior.module_data,
@@ -1519,6 +1522,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::FloatUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::WaveGuideUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

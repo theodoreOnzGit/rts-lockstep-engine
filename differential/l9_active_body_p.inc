@@ -311,8 +311,10 @@ Real PartitionManager::getDistanceSquared(const Object *obj, const Object *other
 }
 void ParticleSystem::attachToObject(const Object *obj) { ulog("psattach %u %d", m_id, (int)obj->m_oid); }
 void ParticleSystem::destroy(void) { ulog("psdestroy %u", m_id); }
+ParticleSystem *(*g_psFindHook)(ParticleSystemID) = 0;   /* p1w13-sonnet, batch R70: the systems the driver keeps */
 ParticleSystem *ParticleSystemManager::findParticleSystem(ParticleSystemID id)
 {
+	if (g_psFindHook) return g_psFindHook(id);
 	if (g_abDeadMod != 0 && id % g_abDeadMod == g_abDeadRem) return 0;
 	g_abPsAny.m_id = id;
 	return &g_abPsAny;

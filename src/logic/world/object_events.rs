@@ -321,6 +321,10 @@ pub enum ObjectClientEvent {
     /// drawable (or the object), at the position of the drawable's pristine bone `bone` (the IR ping's default, `{-1.66, 5.5, 15}`, if it has
     /// none).
     ParticleSystemAtBone { template: Vec<u8>, id: u32, object_id: ObjectId, attach_to_drawable: bool, bone: Vec<u8> },
+    /// batch R70: `TheTerrainVisual->addWaterVelocity(x, y, velocity, preferredHeight)` (`WaveGuideUpdate`'s wave).
+    TerrainVisualAddWaterVelocity { x: f32, y: f32, velocity: f32, preferred_height: f32 },
+    /// batch R70: `TheRadar->refreshTerrain(TheTerrainLogic)`.
+    RadarRefreshTerrain,
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
