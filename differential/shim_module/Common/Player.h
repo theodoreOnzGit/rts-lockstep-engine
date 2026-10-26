@@ -58,6 +58,7 @@ public:
 	Bool m_dead = false, m_observer = false;   /* the dies: SpecialPowerCompletionDie, EjectPilotDie */
 	/* crate batch F: the crates ask a player its type and sciences, and heal all its objects (a line of the effect log) */
 	PlayerType getPlayerType() const { return m_type; }
+	Bool isLocalPlayer() const;   /* p1w13-sonnet, batch R72: Player.cpp's, verbatim (differential/l9_spectre_gunship_r72.inc) */
 	Bool hasScience(ScienceType t) const { return std::find(m_sciences.begin(), m_sciences.end(), t) != m_sciences.end(); }
 	void healAllObjects();   /* differential/l9_crates_f.inc */
 	Money *getMoney() { return &m_money; }

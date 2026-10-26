@@ -40,6 +40,7 @@ public:
 	Bool isUnderwater( Real x, Real y, Real *waterZ = NULL, Real *terrainZ = NULL );   /* update batch O: FloatUpdate */
 	Bool isCliffCell( Real x, Real y ) const;   /* batch R41: GenerateMinefieldBehavior (differential/l9_gen_minefield_r41.inc) */
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);   /* batch R: OpenContain */
+	void getExtentIncludingBorder( struct Region3D *extent ) const;   /* batch R72: SpectreGunshipUpdate (the test's) */
 	/* --- end p1w13-sonnet --- */
 };
 extern TerrainLogic *TheTerrainLogic;

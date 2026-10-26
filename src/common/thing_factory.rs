@@ -896,8 +896,8 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
     fn a_module_that_is_not_translated_is_an_error_never_skipped() {
         let mut c = Ctx::new();
         c.modules.init(&mut c.names).unwrap();
-        let e = load(&mut c, "Object M\n Behavior = SpectreGunshipUpdate ModuleTag_X\n  HealingAmount = 3\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"SpectreGunshipUpdate".to_vec()));
+        let e = load(&mut c, "Object M\n Behavior = SpecialAbilityUpdate ModuleTag_X\n  HealingAmount = 3\n End\nEnd\n").unwrap_err();
+        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"SpecialAbilityUpdate".to_vec()));
         assert_eq!(root(&c, "M").get_behavior_module_info().get_count(), 0);
         let e = load(&mut c, "Object M2\n Body = ParticleUplinkCannonUpdate ModuleTag_B\n End\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"ParticleUplinkCannonUpdate".to_vec()));

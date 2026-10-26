@@ -608,6 +608,30 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// batch R72: `SpectreGunshipUpdate`'s scans (see [`CutCall::PartitionIterateSpectreTargets`]; the partition manager is layer 12's):
+    /// the objects of `cuts.range_scan` (those the stealth, attack and fog filters pass) whose centres are within `range` of `position`
+    /// in 2D, nearest first (ties in list order). The live-map-enemies filter is the caller's.
+    pub fn partition_iterate_spectre_targets(&mut self, object: ObjectId, position: Coord3D, range: f32, player_index: PlayerIndex) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateSpectreTargets { object, position, range, player_index });
+        let mut found: Vec<(f32, ObjectId)> = Vec::new();
+        for &id in &self.cuts.range_scan {
+            let Some(o) = self.objects.find(id) else { continue };
+            let p = o.get_position();
+            let (dx, dy) = (p.x - position.x, p.y - position.y);
+            let d = dx * dx + dy * dy;
+            if d <= range * range {
+                found.push((d, id));
+            }
+        }
+        found.sort_by(|a, b| a.0.total_cmp(&b.0));
+        found.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// batch R72: `TheTerrainLogic->getExtentIncludingBorder(&region)`: `cuts.extent_including_border`.
+    pub fn terrain_get_extent_including_border(&self) -> crate::common::base_type::Region2D {
+        self.cuts.extent_including_border
+    }
+
     /// batch R69: `CommandButtonHuntUpdate::scanClosestTarget`'s scan (see [`CutCall::PartitionIterateHuntTargets`]): the objects, nearest first.
     pub fn partition_iterate_hunt_targets(&mut self, object: ObjectId, range: f32, relationship: i32, team_filter: bool) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateHuntTargets { object, range, relationship, team_filter });
@@ -1167,6 +1191,10 @@ pub enum CutCall {
     ParticleSystemSetLocalTransform { id: u32, matrix: [f32; 12] },
     /// batch R70: `TheTerrainLogic->findBridgeAt(position)`, answered by `bridge_at`.
     TerrainFindBridgeAt { position: Coord3D },
+    /// batch R72: `SpectreGunshipUpdate::update`'s scans, `iterateObjectsInRange(&position, range, FROM_BOUNDINGSPHERE_2D, { live map
+    /// enemies of object, stealthed and undetected (object, false), possible to attack (ATTACK_NEW_TARGET, object, CMD_FROM_AI), free of
+    /// fog (player_index) }, ITER_SORTED_NEAR_TO_FAR)`, answered by `range_scan` (see [`World::partition_iterate_spectre_targets`]).
+    PartitionIterateSpectreTargets { object: ObjectId, position: Coord3D, range: f32, player_index: PlayerIndex },
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
     TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
     /// batch R71: `player->changeBattlePlan(plan, delta, bonuses)` (the player's object operations are not on `World` yet): the bonuses'
@@ -1511,6 +1539,8 @@ pub struct ObjectCuts {
     /// batch R70: `TheTerrainLogic->findBridgeAt(pos)` by the cell of the position ([`terrain_cell`]): the bridge's info's ends, `None` for
     /// `NULL`.
     pub bridge_at: [Option<(Coord3D, Coord3D)>; 8],
+    /// batch R72: `TheTerrainLogic->getExtentIncludingBorder(&region)`'s x and y (the terrain's map is layer 2's loader's; zero by default).
+    pub extent_including_border: crate::common::base_type::Region2D,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1647,6 +1677,7 @@ impl Default for ObjectCuts {
             attack_priority_distance_modifier: 1.0,
             particle_systems: BTreeMap::new(),
             bridge_at: [None; 8],
+            extent_including_border: Default::default(),
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe: None,

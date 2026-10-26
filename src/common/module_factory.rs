@@ -775,6 +775,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::spectre_gunship_deployment_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate::get_interface_mask()),
         }),
+        "SpectreGunshipUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::spectre_gunship_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::spectre_gunship_update::SpectreGunshipUpdate::get_interface_mask()),
+        }),
         "BattlePlanUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::battle_plan_update::new_module_data),
@@ -1299,6 +1304,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::MissileLauncherBuildingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpectreGunshipDeploymentUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::SpectreGunshipUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BattlePlanUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CountermeasuresBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
@@ -1906,8 +1912,8 @@ mod tests {
         let name = |s: &str| s.as_bytes().to_vec();
         let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| f.find_module_template(names, n.as_bytes(), t).unwrap_err();
         assert_eq!(
-            find(&f, &mut names, "SpectreGunshipUpdate", ModuleType::Behavior),
-            ModuleFactoryError::NotTranslated { name: name("SpectreGunshipUpdate"), module_type: ModuleType::Behavior }
+            find(&f, &mut names, "SpecialAbilityUpdate", ModuleType::Behavior),
+            ModuleFactoryError::NotTranslated { name: name("SpecialAbilityUpdate"), module_type: ModuleType::Behavior }
         );
         assert_eq!(
             find(&f, &mut names, "BeaconClientUpdate", ModuleType::ClientUpdate),

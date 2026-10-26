@@ -3493,6 +3493,24 @@ mod differential {
                 );
                 std::fs::write(mod_gen.join("WaveGuideUpdate_edit.cpp"), cut).expect("write WaveGuideUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R72 (differential/l9_spectre_gunship_r72.inc): SpectreGunshipUpdate.cpp, the same way (its PhysicsUpdate.h include is written
+                // with backslashes), into mod_gen/SpectreGunshipUpdate_edit.cpp.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/SpectreGunshipUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read SpectreGunshipUpdate.cpp");
+                let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic\\Module\\PhysicsUpdate.h\"\n");
+                assert_eq!(text.matches(parse).count(), 1, "SpectreGunshipUpdate.cpp: the particle system parser must occur once");
+                assert_eq!(text.matches(include).count(), 1, "SpectreGunshipUpdate.cpp: the PhysicsUpdate.h include must occur once");
+                // (and its file-static `zero`, which SpectreGunshipDeploymentUpdate.cpp in the same unit also defines: renamed, the definition
+                // and its three uses asserted)
+                let (zero, uses) = ("static Real zero = 0.0f;", " = zero;");
+                assert_eq!(text.matches(zero).count(), 1, "SpectreGunshipUpdate.cpp: the static zero must occur once");
+                assert_eq!(text.matches(uses).count(), 3, "SpectreGunshipUpdate.cpp: the static zero must be used three times");
+                let cut = text.replace(parse, "l9ahParsePsTemplate").replace(zero, "static Real s_r72Zero = 0.0f;").replace(uses, " = s_r72Zero;").replace(
+                    include,
+                    &format!("{include}class INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n"),
+                );
+                std::fs::write(mod_gen.join("SpectreGunshipUpdate_edit.cpp"), cut).expect("write SpectreGunshipUpdate_edit.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
                 // batch R50 (differential/l9_physics_r50.inc): PhysicsUpdate.cpp, compiled a second time in the unit (whose PhysicsBehavior is the
                 // module build's stand-in, a block of memory other drivers define methods of) under R50 names, by macros in the driver: the header once
                 // more, as mod_gen/PhysicsUpdate_r50.h (its `#pragma once` and include guard renamed, each asserted once); the .cpp, into

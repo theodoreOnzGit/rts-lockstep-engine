@@ -64,7 +64,9 @@ struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f;
 	Bool operator==( const Coord3D &r ) { return (x == r.x && y == r.y && z == r.z); }   /* batch R42 (ProjectileStreamUpdate): BaseType.h lines 406-411 */
 	static void crossProduct( const Coord3D *a, const Coord3D *b, Coord3D *r ) { r->x = (a->y * b->z - a->z * b->y); r->y = (a->z * b->x - a->x * b->z); r->z = (a->x * b->y - a->y * b->x); }   /* batch R70 (WaveGuideUpdate): BaseType.h lines 350-355 */ };
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
-struct Region3D { Coord3D lo, hi; };
+struct Region3D { Coord3D lo, hi;
+	/* batch R72 (SpectreGunshipUpdate): BaseType.h lines 437-441 */
+	Bool isInRegionNoZ( const Coord3D *query ) const { return (lo.x < query->x) && (query->x < hi.x) && (lo.y < query->y) && (query->y < hi.y); } };
 struct IRegion3D { ICoord3D lo, hi; };
 struct RGBColor { Real red, green, blue;
 	/* p1w2-globaldata: setFromInt (BaseType.h lines 472-477), called by GlobalData's constructor */

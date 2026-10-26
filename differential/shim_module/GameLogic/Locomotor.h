@@ -18,6 +18,7 @@ public:
 	void setMaxBraking(Real braking);   /* p1w13-sonnet, batch R48: HelicopterSlowDeathBehavior (differential/l9_heli_death_r48.inc) */
 	void setMaxTurnRate(Real turn);
 	Real getPreferredHeight() const;   /* p1w13-sonnet, batch R60: SpectreGunshipDeploymentUpdate (differential/l9_spectre_deploy_r60.inc) */
-	void setUsePreciseZPos(Bool u);   /* p1w13-sonnet, batch R57: SlavedUpdate (a line: differential/l9_slaved_r57.inc) */
+	void setUsePreciseZPos(Bool u);
+	void setAllowInvalidPosition(Bool allow);   /* p1w13-sonnet, batch R72: SpectreGunshipUpdate (a line: differential/l9_spectre_gunship_r72.inc) */   /* p1w13-sonnet, batch R57: SlavedUpdate (a line: differential/l9_slaved_r57.inc) */
 };
 #endif

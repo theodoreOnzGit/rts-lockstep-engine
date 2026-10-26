@@ -61,6 +61,8 @@ public:
 	const AudioEventRTS *getSoundOnDamaged() const { return &m_soundOnDamaged; }
 	const AudioEventRTS *getSoundOnReallyDamaged() const { return &m_soundOnReallyDamaged; }
 	const AudioEventRTS *getVoiceFear() const { return &m_voiceFear; }
+	AudioEventRTS m_voiceAttack;   /* batch R72: SpectreGunshipUpdate */
+	const AudioEventRTS *getVoiceAttack() const { return &m_voiceAttack; }
 	const AudioEventRTS *getSoundPromotedVeteran() const { return &m_soundPromotedVeteran; }
 	const AudioEventRTS *getSoundPromotedElite() const { return &m_soundPromotedElite; }
 	const AudioEventRTS *getSoundPromotedHero() const { return &m_soundPromotedHero; }

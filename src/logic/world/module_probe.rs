@@ -1278,6 +1278,11 @@ impl ProbeModule {
                 world.body_trace(format!("locoultra {} {}", me.object, i32::from(on)));
                 ModuleReply::Done
             }
+            // batch R72 (SpectreGunshipUpdate)
+            ModuleCall::AiLocomotorSetAllowInvalidPosition(on) => {
+                world.body_trace(format!("locoinvalid {} {}", me.object, i32::from(on)));
+                ModuleReply::Done
+            }
             ModuleCall::AiLocomotorSetCloseEnoughDist(d) => {
                 world.body_trace(format!("lococlose {} {:08x}", me.object, d.to_bits()));
                 ModuleReply::Done
@@ -1410,6 +1415,7 @@ impl ProbeModule {
                     ModuleReply::Unhandled
                 }
             }
+            ModuleCall::SetSpecialPowerOverridableDestination(_) => ModuleReply::Unhandled,
             ModuleCall::GetSpecialAbilityType => {
                 if self.answers.has & (1 << 9) != 0 {
                     ModuleReply::Int(self.answers.special_power_type)

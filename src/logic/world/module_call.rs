@@ -217,6 +217,9 @@ pub enum ModuleCall {
     AiLocomotorSway(u8),
     /// `getCurLocomotor()->setUltraAccurate(on)`.
     AiLocomotorSetUltraAccurate(bool),
+    /// batch R72: `ai->getCurLocomotor()->setAllowInvalidPosition(allow)` (SpectreGunshipUpdate; the locomotor checked first with
+    /// [`ModuleCall::AiHasCurLocomotor`]).
+    AiLocomotorSetAllowInvalidPosition(bool),
     /// `getCurLocomotor()->setCloseEnoughDist(dist)`.
     AiLocomotorSetCloseEnoughDist(f32),
     /// `getCurLocomotor()->setCloseEnoughDist3D(on)`.
@@ -908,6 +911,8 @@ pub enum ModuleCall {
     /// `SpecialPowerUpdateInterface::doesSpecialPowerHaveOverridableDestination()`;
     /// replies [`ModuleReply::Bool`] (unhandled: no such interface).
     DoesSpecialPowerHaveOverridableDestination,
+    /// batch R72: `SpecialPowerUpdateInterface::setSpecialPowerOverridableDestination(loc)`.
+    SetSpecialPowerOverridableDestination(Coord3D),
     /// `SpecialPowerUpdateInterface::isSpecialAbility()` and, if it is,
     /// `SpecialAbilityUpdate::getSpecialPowerType()`; replies
     /// [`ModuleReply::Int`] (anything else: not a special ability).

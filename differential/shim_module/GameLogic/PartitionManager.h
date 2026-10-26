@@ -46,6 +46,9 @@ class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAli
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus( const Object *obj ) {} };
 /* batch R69: CommandButtonHuntUpdate's scan (the list is the test's) */
 class PartitionFilterStealthedAndUndetected : public PartitionFilter { public: PartitionFilterStealthedAndUndetected( const Object *obj, Bool allow ) {} };
+/* batch R72: SpectreGunshipUpdate's scans (the list is the test's; the fog filter keeps its player, which the scan logs) */
+class PartitionFilterPossibleToAttack : public PartitionFilter { public: PartitionFilterPossibleToAttack( AbleToAttackType t, const Object *obj, CommandSourceType commandSource ) {} };
+class PartitionFilterFreeOfFog : public PartitionFilter { public: PartitionFilterFreeOfFog( Int toWhom ) : m_comparisonIndex(toWhom) {} Int m_comparisonIndex; };
 class Player;
 class PartitionFilterSamePlayer : public PartitionFilter { public: PartitionFilterSamePlayer( const Player *player ) {} };   /* p1w13-sonnet, batch R13b: the scan's list is the test's */
 class MemoryPoolObjectHolder

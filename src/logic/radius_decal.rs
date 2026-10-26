@@ -133,6 +133,11 @@ impl RadiusDecal {
         world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::Update });
     }
 
+    /// `setPosition(pos)` (batch R72, `SpectreGunshipUpdate`): the client moves its shadow, if it drew one.
+    pub fn set_position(&self, world: &mut World, owner: ObjectId, index: u32, pos: Coord3D) {
+        world.emit(ObjectClientEvent::GridDecal { object_id: owner, index, op: GridDecalOp::SetPosition(pos) });
+    }
+
     /// `xferRadiusDecal(xfer)`: nothing saved ("@todo implement me"); a load clears the decal. The load has no world, so the client is not told
     /// (it rebuilds its drawing after a load anyway).
     pub fn xfer_radius_decal(&mut self, loading: bool) {
