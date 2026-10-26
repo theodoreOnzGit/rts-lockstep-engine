@@ -52,6 +52,9 @@ pub mod terrain_visual;
 // --- end p1w4-terrain ---
 // --- p1w5-world ---
 pub mod world;
+// --- p1w13-sonnet --- (layer 10)
+pub mod ai;
+// --- end p1w13-sonnet ---
 // --- end p1w5-world ---
 // --- p1w6-locomotor ---
 pub mod locomotor;

@@ -295,7 +295,7 @@ pub fn deg2rad(rad: f32) -> f32 {
 
 /// `(Real)sqrt(v)` of a `float` sum: C's double `sqrt`, rounded back once.
 #[inline]
-fn sqrt_via_double(v: f32) -> f32 {
+pub fn sqrt_via_double(v: f32) -> f32 {
     // the hardware's `sqrt` returns a NaN operand quieted, its sign and payload kept (`petir`'s answers the canonical positive NaN), and the
     // conversions keep it (batch R49: a distance from an object at -inf, whose sign the damage line shows)
     if v.is_nan() {
