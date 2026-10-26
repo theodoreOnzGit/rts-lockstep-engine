@@ -502,6 +502,8 @@ pub enum ModuleDataKind {
     RadiusDecalUpdate(Arc<crate::logic::modules::radius_decal_update::RadiusDecalUpdateModuleData>),
     /// `AutoFindHealingUpdate` (batch R19).
     AutoFindHealingUpdate(Arc<crate::logic::modules::auto_find_healing_update::AutoFindHealingUpdateModuleData>),
+    /// `CommandButtonHuntUpdate` (batch R69).
+    CommandButtonHuntUpdate(Arc<crate::logic::modules::command_button_hunt_update::CommandButtonHuntUpdateModuleData>),
     /// `QueueProductionExitUpdate` (batch R18).
     QueueProductionExitUpdate(Arc<crate::logic::modules::queue_production_exit_update::QueueProductionExitUpdateModuleData>),
     /// `DefaultProductionExitUpdate` (batch R18).
@@ -727,6 +729,7 @@ impl ModuleDataKind {
             ModuleDataKind::AnimationSteeringUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::RadiusDecalUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoFindHealingUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::CommandButtonHuntUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::QueueProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::DefaultProductionExitUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpawnPointProductionExitUpdate(d) => &d.update.behavior.module_data,
@@ -1430,6 +1433,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::AutoFindHealingUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::CommandButtonHuntUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

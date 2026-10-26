@@ -39,10 +39,13 @@ class PartitionFilterRelationship : public PartitionFilter
 {
 public:
 	enum RelationshipAllowTypes { ALLOW_ALLIES = 2, ALLOW_ENEMIES = 1, ALLOW_NEUTRAL = 4 };
-	PartitionFilterRelationship( const Object *obj, Int flags ) {}
+	PartitionFilterRelationship( const Object *obj, Int flags ) : m_flags(flags) {}
+	Int m_flags;   /* batch R69: logged by CommandButtonHuntUpdate's scan */
 };
 class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive( void ) {} };
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus( const Object *obj ) {} };
+/* batch R69: CommandButtonHuntUpdate's scan (the list is the test's) */
+class PartitionFilterStealthedAndUndetected : public PartitionFilter { public: PartitionFilterStealthedAndUndetected( const Object *obj, Bool allow ) {} };
 class Player;
 class PartitionFilterSamePlayer : public PartitionFilter { public: PartitionFilterSamePlayer( const Player *player ) {} };   /* p1w13-sonnet, batch R13b: the scan's list is the test's */
 class MemoryPoolObjectHolder

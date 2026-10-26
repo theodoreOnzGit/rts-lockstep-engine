@@ -191,4 +191,11 @@ float ref_fast_float_ceil(float f);
 #ifndef REAL_TO_INT_CEIL
 #define REAL_TO_INT_CEIL(x) (ref_fast_float2long_round(ref_fast_float_ceil(x)))
 #endif
+/* --- p1w13-sonnet --- (batch R69: CommandButtonHuntUpdate) the command buttons and sets (GameClient/ControlBar.h's stand-ins) and the REAL
+** ActionManager.h, whose four tests the driver defines (differential/l9_command_button_hunt_r69.inc) */
+#define CommandButton ModTestCommandButton
+#define CommandSet ModTestCommandSet
+#define ActionManager ModTestActionManager
+#define TheActionManager ModTestTheActionManager
+/* --- end p1w13-sonnet --- */
 #endif

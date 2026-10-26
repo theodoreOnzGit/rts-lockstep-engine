@@ -627,6 +627,11 @@ pub enum ModuleCall {
     AiSetTurretTargetPosition { turret: i32, pos: Coord3D },
     /// batch R63: `AIUpdateInterface::setTurretTargetObject(turret, target, isForceAttacking)`.
     AiSetTurretTargetObject { turret: i32, target: ObjectId, force_attacking: bool },
+    /// batch R69: `ai->getAttackInfo()->getPriority(other->getTemplate())`; replies [`ModuleReply::Int`], [`ModuleReply::Unhandled`] for a
+    /// `NULL` attack info.
+    AiGetAttackPriority { other: ObjectId },
+    /// batch R69: `CommandButtonHuntUpdate::setCommandButton(buttonName)` (`ScriptActions`' call).
+    CommandButtonHuntSetCommandButton(Vec<u8>),
     /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.

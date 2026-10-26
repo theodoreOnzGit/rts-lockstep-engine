@@ -165,6 +165,7 @@ pub mod firestorm_dynamic_geometry_info_update;
 pub mod animation_steering_update;
 pub mod radius_decal_update;
 pub mod auto_find_healing_update;
+pub mod command_button_hunt_update;
 pub mod queue_production_exit_update;
 pub mod default_production_exit_update;
 pub mod spawn_point_production_exit_update;
@@ -737,6 +738,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::AutoFindHealingUpdate(d) => Some(made_update(
             auto_find_healing_update::AutoFindHealingUpdate::get_interface_mask(),
             auto_find_healing_update::AutoFindHealingUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::AutoFindHealingUpdate(m))),
+        )),
+        ModuleDataKind::CommandButtonHuntUpdate(d) => Some(made_update(
+            command_button_hunt_update::CommandButtonHuntUpdate::get_interface_mask(),
+            command_button_hunt_update::CommandButtonHuntUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::CommandButtonHuntUpdate(m))),
         )),
         ModuleDataKind::QueueProductionExitUpdate(d) => Some(made_update(
             queue_production_exit_update::QueueProductionExitUpdate::get_interface_mask(),

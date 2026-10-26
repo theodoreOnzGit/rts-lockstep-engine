@@ -578,6 +578,43 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// batch R69: `CommandButtonHuntUpdate::scanClosestTarget`'s scan (see [`CutCall::PartitionIterateHuntTargets`]): the objects, nearest first.
+    pub fn partition_iterate_hunt_targets(&mut self, object: ObjectId, range: f32, relationship: i32, team_filter: bool) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateHuntTargets { object, range, relationship, team_filter });
+        self.cuts.range_scan.clone()
+    }
+
+    /// batch R69: the closest mine of the object's player near `object` (see [`CutCall::PartitionGetClosestOwnMine`]): whether there is one.
+    pub fn partition_has_closest_own_mine(&mut self, object: ObjectId, range: f32) -> bool {
+        self.cut(CutCall::PartitionGetClosestOwnMine { object, range });
+        self.cuts.own_mines_near.contains(&object)
+    }
+
+    /// batch R69: one of `TheActionManager`'s tests (see [`CutCall::ActionManagerCan`]; the action manager is not on `World` yet).
+    pub fn action_manager_can(&mut self, kind: i32, object: ObjectId, other: ObjectId, source: i32, template: u32) -> bool {
+        self.cut(CutCall::ActionManagerCan { kind, object, other, source, template });
+        self.cuts.action_allowed.contains(&(kind, other))
+    }
+
+    /// batch R69: `TheControlBar->findCommandSet(name)`: the set's index in `cuts.command_sets`, `None` for `NULL`.
+    pub fn control_bar_find_command_set(&self, name: &[u8]) -> Option<usize> {
+        self.cuts.command_sets.iter().position(|(n, _)| n.as_slice() == name)
+    }
+
+    /// batch R69: `commandSet->getCommandButton(i)`: the button's index in `cuts.command_buttons`, `None` for `NULL`.
+    pub fn command_set_get_command_button(&self, set: usize, i: usize) -> Option<usize> {
+        self.cuts.command_sets.get(set).and_then(|(_, slots)| slots.get(i).copied().flatten())
+    }
+
+    /// batch R69: `obj->getCommandSetString()`: the override if it is not empty, else the template's.
+    pub fn object_get_command_set_string(&self, object: ObjectId) -> Vec<u8> {
+        match self.objects.find(object) {
+            Some(o) if !o.command_set_string_override.is_empty() => o.command_set_string_override.clone(),
+            Some(o) => o.template().friend_get_command_set_string().to_vec(),
+            None => Vec::new(),
+        }
+    }
+
     /// `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)` (batch R19): the table's entry, else the squared distance in the plane.
     pub fn partition_get_distance_squared_center_2d(&mut self, object: ObjectId, other: ObjectId) -> f32 {
         self.cut(CutCall::PartitionGetDistanceSquaredCenter2D { object, other });
@@ -1084,6 +1121,18 @@ pub enum CutCall {
     WeaponForceFireAtPosition { source: ObjectId, pos: Coord3D, template: usize },
     /// batch R63: `obj->reloadAllAmmo(now)`, under `stub_weapon_calls`.
     ObjectReloadAllAmmo { object: ObjectId, now: bool },
+    /// batch R69: `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), range, FROM_CENTER_2D, { PartitionFilterAlive,
+    /// PartitionFilterSameMapStatus(obj), PartitionFilterStealthedAndUndetected(obj, FALSE), PartitionFilterRelationship(obj, relationship)
+    /// unless `!team_filter` }, ITER_SORTED_NEAR_TO_FAR)` (`CommandButtonHuntUpdate`), answered by `range_scan`.
+    PartitionIterateHuntTargets { object: ObjectId, range: f32, relationship: i32, team_filter: bool },
+    /// batch R69: `ThePartitionManager->getClosestObject(object, range, FROM_BOUNDINGSPHERE_2D, { PartitionFilterAcceptByKindOf(MINE),
+    /// PartitionFilterSamePlayer(player) })`, answered by `own_mines_near`.
+    PartitionGetClosestOwnMine { object: ObjectId, range: f32 },
+    /// batch R69: `TheActionManager->canDoSpecialPowerAtObject(obj, other, source, template, 0)` (kind 0), `canHijackVehicle` (1),
+    /// `canSabotageBuilding` (2) or `canConvertObjectToCarBomb` (3), answered by `action_allowed`.
+    ActionManagerCan { kind: i32, object: ObjectId, other: ObjectId, source: i32, template: u32 },
+    /// batch R69: `obj->doCommandButtonAtObject(button, victim, source)` (the button by its name).
+    ObjectDoCommandButtonAtObject { object: ObjectId, button: Vec<u8>, victim: ObjectId, source: i32 },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },
@@ -1192,6 +1241,19 @@ impl Default for ObjectGlobals {
             // --- end p1w13-sonnet ---
         }
     }
+}
+
+/// batch R69: what the logic reads of a client `CommandButton` (`GameClient/ControlBar.h`; not translated).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CommandButtonFacts {
+    /// `getName()`.
+    pub name: Vec<u8>,
+    /// `getCommandType()` (a `GUICommandType`).
+    pub command_type: i32,
+    /// `getWeaponSlot()`.
+    pub weapon_slot: i32,
+    /// `getSpecialPowerTemplate()`: the template's id, `None` for `NULL`.
+    pub special_power: Option<u32>,
 }
 
 /// The tables and logs behind the cut points. See the module docs.
@@ -1383,6 +1445,16 @@ pub struct ObjectCuts {
     pub projectile_collides_with: std::collections::BTreeSet<ObjectId>,
     /// batch R68: the answer of `estimateTerrainExtremesAlongLine` (on the map, the highest terrain), `None` for the partition manager's.
     pub terrain_extremes: Option<(bool, f32)>,
+    /// batch R69: the client's command buttons (`CommandButton`: not translated) the command sets hold.
+    pub command_buttons: Vec<CommandButtonFacts>,
+    /// batch R69: the client's command sets (`TheControlBar->findCommandSet`), by name: each slot a button of `command_buttons`, or empty.
+    pub command_sets: Vec<(Vec<u8>, Vec<Option<usize>>)>,
+    /// batch R69: the `(kind, other)` pairs `TheActionManager` allows (see [`CutCall::ActionManagerCan`]).
+    pub action_allowed: BTreeSet<(i32, ObjectId)>,
+    /// batch R69: the objects that have a mine of their player in range (see [`CutCall::PartitionGetClosestOwnMine`]).
+    pub own_mines_near: BTreeSet<ObjectId>,
+    /// batch R69: `TheAI->getAiData()->m_attackPriorityDistanceModifier` (layer 10's).
+    pub attack_priority_distance_modifier: f32,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1512,6 +1584,11 @@ impl Default for ObjectCuts {
             drawable_launch_offset: BTreeMap::new(),
             projectile_collides_with: std::collections::BTreeSet::new(),
             terrain_extremes: None,
+            command_buttons: Vec::new(),
+            command_sets: Vec::new(),
+            action_allowed: BTreeSet::new(),
+            own_mines_near: BTreeSet::new(),
+            attack_priority_distance_modifier: 1.0,
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe: None,

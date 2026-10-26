@@ -116,6 +116,8 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	/* batch R26: StealthUpdate drops a temporary grant on a player's command (differential/l9_stealth_r26.inc) */
 	CommandSourceType getLastCommandSource() const { return (CommandSourceType)m_lastCmdSource; }
 	Int m_lastCmdSource = 0;
+	const class AttackPriorityInfo *getAttackInfo(void) { return m_attackInfo; }   /* batch R69: CommandButtonHuntUpdate */
+	const class AttackPriorityInfo *m_attackInfo = 0;
 	/* batch R58: MobMemberSlavedUpdate's questions (the test's answers: differential/l9_mob_member_r58.inc) */
 	Real getLocomotorDistanceToGoal() { return m_r58Dist; }
 	const Coord3D* getGoalPosition() const { return &m_r58Goal; }

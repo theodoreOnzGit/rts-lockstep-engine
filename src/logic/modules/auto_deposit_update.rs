@@ -137,7 +137,7 @@ impl PartialEq for AutoDepositUpdate {
 }
 
 /// The `Int` an `Int`-parameter receives from a `Real` argument (`(Int)x`): truncated toward zero; a value `int` cannot hold is undefined.
-fn real_to_int(x: f32) -> Result<i32, IniError> {
+pub(crate) fn real_to_int(x: f32) -> Result<i32, IniError> {
     if x.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&x) {
         return Err(IniError::undefined(Undefined::FloatToIntOutOfRange));
     }

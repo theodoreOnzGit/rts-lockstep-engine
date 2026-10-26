@@ -605,6 +605,7 @@ impl World {
             }
         }
         crate::common::xfer::take_invalid_bool_read();
+        let loading = xfer.get_xfer_mode() == crate::common::xfer::XferMode::Load;
         let r = xfer.xfer_snapshot(&mut snap);
         // batch R12: a `Bool` loaded from a byte that is no bool is undefined
         if crate::common::xfer::take_invalid_bool_read() {
@@ -618,6 +619,11 @@ impl World {
             (Some(crate::logic::world::update_body::UpdateBody::GarrisonContain(g)), r) => g.check_loaded_team(self, r),
             // batch R15: a rebuild hole's load finds its two template names in the thing factory (it throws `SC_INVALID_DATA` for one it does not know)
             (Some(crate::logic::world::update_body::UpdateBody::RebuildHoleBehavior(m)), r) => m.check_loaded_templates(self, r),
+            // batch R69: a hunt's load finds its button again by name in the object's command set
+            (Some(crate::logic::world::update_body::UpdateBody::CommandButtonHuntUpdate(m)), Ok(())) if loading => {
+                m.find_loaded_button(self, id);
+                Ok(())
+            }
             (_, r) => r,
         };
         self.put_slot_snapshot(id, idx, snap);

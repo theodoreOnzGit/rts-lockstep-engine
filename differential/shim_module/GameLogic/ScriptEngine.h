@@ -5,6 +5,10 @@
 #include "Common/AsciiString.h"
 #include "Common/GameType.h"
 class Object;
+class ThingTemplate;
+/* batch R69: what CommandButtonHuntUpdate reads of an attack priority info; getPriority is ScriptEngine.cpp's on the test's table
+** (differential/l9_command_button_hunt_r69.inc) */
+class AttackPriorityInfo { public: Int getPriority(const ThingTemplate *tThing) const; Int m_defaultPriority; const ThingTemplate *m_tmpl[6]; Int m_priority[6]; };
 class ScriptEngine
 {
 public:

@@ -75,7 +75,8 @@ public:
 	Pathfinder *pathfinder() { return &m_pathfinder; }
 	Pathfinder m_pathfinder;
 	/* --- p1w13-sonnet --- (batch P: ActiveBody reads three fields of the AI data) */
-	struct AIData { Bool m_enableRepulsors; Real m_maxRetaliateDistance; Real m_retaliateFriendsRadius; };
+	struct AIData { Bool m_enableRepulsors; Real m_maxRetaliateDistance; Real m_retaliateFriendsRadius;
+		Real m_attackPriorityDistanceModifier;   /* batch R69: CommandButtonHuntUpdate */ };
 	const AIData *getAiData() const { return &m_aiData; }
 	AIData m_aiData;
 	/* --- end p1w13-sonnet --- */

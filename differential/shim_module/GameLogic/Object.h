@@ -119,6 +119,11 @@ public:
 	UpgradeMaskType m_objectUpgradesCompleted;
 	AsciiString m_commandSetStringOverride;
 	/* --- end p1l9-example --- */
+	/* --- p1w13-sonnet --- (batch R69: CommandButtonHuntUpdate) Object.cpp 6108-6114, the override half (the stand-in template has no command
+	** set: an empty name for it); doCommandButtonAtObject is a line (differential/l9_command_button_hunt_r69.inc) */
+	const AsciiString& getCommandSetString() const { if (m_commandSetStringOverride.isNotEmpty()) return m_commandSetStringOverride; return AsciiString::TheEmptyString; }
+	void doCommandButtonAtObject( const class CommandButton *commandButton, Object *obj, CommandSourceType cmdSource );
+	/* --- end p1w13-sonnet --- */
 	/* --- p1w10-sonnet --- (the layer-9 upgrade batch: what the eight upgrade modules call on their object; every call is
 	** a line of the effect log, the state is what the dump reads) */
 	void setWeaponSetFlag(WeaponSetType wst);

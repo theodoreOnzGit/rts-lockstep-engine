@@ -259,6 +259,8 @@ pub struct ProbeAnswers {
     pub supply_boost: i32,
     /// `StealthUpdate::isTemporaryGrant`.
     pub temporary_grant: bool,
+    /// batch R69: the AI's attack info (`None`: `NULL`): the default priority and the priorities of the objects whose templates it lists.
+    pub attack_priority: Option<(i32, Vec<(ObjectId, i32)>)>,
     // --- end p1w13-sonnet ---
 }
 
@@ -1026,6 +1028,13 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
+            // batch R69: `AttackPriorityInfo::getPriority`: the listed priority, else the default
+            ModuleCall::AiGetAttackPriority { other } => match &self.answers.attack_priority {
+                Some((default, list)) => ModuleReply::Int(list.iter().find(|(o, _)| *o == other).map_or(*default, |(_, p)| *p)),
+                None => ModuleReply::Unhandled,
+            },
+            // batch R69: a probe is no CommandButtonHuntUpdate
+            ModuleCall::CommandButtonHuntSetCommandButton(_) => ModuleReply::Unhandled,
             // batch R59: a probe is no assisted targeting update
             ModuleCall::AssistedTargetingIsFreeToAssist | ModuleCall::AssistedTargetingAssistAttack { .. } => ModuleReply::Unhandled,
             // batch R58: MobMemberSlavedUpdate's AI and spawn behaviour

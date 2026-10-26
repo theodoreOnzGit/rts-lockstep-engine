@@ -1000,6 +1000,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::auto_find_healing_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::auto_find_healing_update::AutoFindHealingUpdate::get_interface_mask()),
         }),
+        "CommandButtonHuntUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::command_button_hunt_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::command_button_hunt_update::CommandButtonHuntUpdate::get_interface_mask()),
+        }),
         "QueueProductionExitUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::queue_production_exit_update::new_module_data),
@@ -1324,6 +1329,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::AnimationSteeringUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::RadiusDecalUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoFindHealingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::CommandButtonHuntUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::QueueProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::DefaultProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpawnPointProductionExitUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
