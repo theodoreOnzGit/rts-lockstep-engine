@@ -121,6 +121,7 @@ pub mod auto_deposit_update;
 pub mod fire_ocl_after_weapon_cooldown_update;
 pub mod missile_launcher_building_update;
 pub mod spectre_gunship_deployment_update;
+pub mod battle_plan_update;
 pub mod countermeasures_behavior;
 pub mod auto_heal_behavior;
 pub mod fire_weapon_when_damaged_behavior;
@@ -572,6 +573,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => Some(made_update(
             spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate::get_interface_mask(),
             spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpectreGunshipDeploymentUpdate(m))),
+        )),
+        ModuleDataKind::BattlePlanUpdate(d) => Some(made_update(
+            battle_plan_update::BattlePlanUpdate::get_interface_mask(),
+            battle_plan_update::BattlePlanUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BattlePlanUpdate(m))),
         )),
         ModuleDataKind::CountermeasuresBehavior(d) => Some(made_update(
             countermeasures_behavior::CountermeasuresBehavior::get_interface_mask(),

@@ -82,6 +82,7 @@ public:
 	Energy m_energy;
 	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
 	void iterateObjects( void (*func)( Object *, void * ), void *userData );
+	void changeBattlePlan( Int plan, Int delta, class BattlePlanBonuses *bonus );   /* batch R71: a line (differential/l9_battle_plan_r71.inc) */
 	std::vector<Object *> m_objects;
 	/* update batch N: OCLUpdate */
 	Bool isPlayableSide() const { return m_playable; }
@@ -117,5 +118,6 @@ class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPower
 	void recordUnitEnteredTunnelNetwork();   /* batch R10: TunnelContain (differential/l9_open_contain_r.inc) */
 	void recordBuildingGarrisoned();   /* batch R12: GarrisonContain (differential/l9_open_contain_r.inc) */
 	void recordVehicleDisguised();   /* batch R26: StealthUpdate (a count: differential/l9_stealth_r26.inc) */
+	void recordBattlePlanSelected();   /* batch R71: a line (differential/l9_battle_plan_r71.inc) */
 	/* --- end p1w13-sonnet --- */ };
 #endif

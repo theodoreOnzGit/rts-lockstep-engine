@@ -636,6 +636,22 @@ pub enum ModuleCall {
     AiFollowWaypointPath { waypoint: i32, command_source: i32 },
     /// batch R70: `AIUpdateInterface::setPathExtraDistance(dist)`.
     AiSetPathExtraDistance(f32),
+    /// batch R71: `AIUpdateInterface::getWhichTurretForCurWeapon()`; replies [`ModuleReply::Int`] (`TURRET_INVALID`, -1: none).
+    AiGetWhichTurretForCurWeapon,
+    /// batch R71: `AIUpdateInterface::setTurretEnabled(turret, enabled)`.
+    AiSetTurretEnabled { turret: i32, enabled: bool },
+    /// batch R71: `AIUpdateInterface::recenterTurret(turret)`.
+    AiRecenterTurret { turret: i32 },
+    /// batch R71: `AIUpdateInterface::isTurretInNaturalPosition(turret)`; replies [`ModuleReply::Bool`].
+    AiIsTurretInNaturalPosition { turret: i32 },
+    /// batch R71: `SpecialPowerUpdateInterface::isActive()`; replies [`ModuleReply::Bool`].
+    SpecialPowerUpdateIsActive,
+    /// batch R71: `SpecialPowerUpdateInterface::getCommandOption()`; replies [`ModuleReply::Int`] (a `CommandOption`).
+    SpecialPowerUpdateGetCommandOption,
+    /// batch R71: `SpecialPowerUpdateInterface::isPowerCurrentlyInUse(command)`; replies [`ModuleReply::Bool`].
+    IsPowerCurrentlyInUse,
+    /// batch R71: `BattlePlanUpdate::getActiveBattlePlan()`; replies [`ModuleReply::Int`] (a `BattlePlanStatus`).
+    BattlePlanGetActiveBattlePlan,
     /// `PhysicsBehavior::getVelocityMagnitude()`; replies [`ModuleReply::Real`].
     PhysicsGetVelocityMagnitude,
     /// `PhysicsBehavior::resetDynamicPhysics()`.

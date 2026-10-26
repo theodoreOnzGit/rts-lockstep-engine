@@ -1169,6 +1169,20 @@ pub enum CutCall {
     TerrainFindBridgeAt { position: Coord3D },
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
     TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
+    /// batch R71: `player->changeBattlePlan(plan, delta, bonuses)` (the player's object operations are not on `World` yet): the bonuses'
+    /// numbers as passed.
+    PlayerChangeBattlePlan {
+        player: PlayerIndex,
+        plan: i32,
+        delta: i32,
+        armor_scalar: f32,
+        bombardment: i32,
+        search_and_destroy: i32,
+        hold_the_line: i32,
+        sight_range_scalar: f32,
+    },
+    /// batch R71: `player->getAcademyStats()->recordBattlePlanSelected()`.
+    AcademyStatsRecordBattlePlanSelected { player: PlayerIndex },
     // ---- WeaponSet and helpers ----
     /// `m_weaponSet.updateWeaponSet(obj)`.
     WeaponSetUpdate { object: ObjectId },

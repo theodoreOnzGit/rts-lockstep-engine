@@ -775,6 +775,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::spectre_gunship_deployment_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate::get_interface_mask()),
         }),
+        "BattlePlanUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::battle_plan_update::new_module_data),
+            which_interfaces: Some(crate::logic::modules::battle_plan_update::BattlePlanUpdate::get_interface_mask()),
+        }),
         "CountermeasuresBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::countermeasures_behavior::new_module_data),
@@ -1294,6 +1299,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::MissileLauncherBuildingUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpectreGunshipDeploymentUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::BattlePlanUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CountermeasuresBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::FireWeaponWhenDamagedBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),

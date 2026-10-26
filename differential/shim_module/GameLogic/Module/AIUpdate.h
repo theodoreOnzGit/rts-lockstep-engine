@@ -120,6 +120,13 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	const class AttackPriorityInfo *m_attackInfo = 0;
 	void aiFollowWaypointPath( const class Waypoint *way, CommandSourceType cmdSource );   /* batch R70: lines (differential/l9_wave_guide_r70.inc) */
 	void setPathExtraDistance( Real dist );
+	/* batch R71: BattlePlanUpdate's turret (the test's answers; the orders lines: differential/l9_battle_plan_r71.inc) */
+	WhichTurretType getWhichTurretForCurWeapon() const { return (WhichTurretType)m_curTurret; }
+	void setTurretEnabled( WhichTurretType tur, Bool enabled );
+	void recenterTurret( WhichTurretType tur );
+	Bool isTurretInNaturalPosition( WhichTurretType tur ) const;
+	Int m_curTurret = -1;
+	Bool m_turretNatural = false;
 	/* batch R58: MobMemberSlavedUpdate's questions (the test's answers: differential/l9_mob_member_r58.inc) */
 	Real getLocomotorDistanceToGoal() { return m_r58Dist; }
 	const Coord3D* getGoalPosition() const { return &m_r58Goal; }

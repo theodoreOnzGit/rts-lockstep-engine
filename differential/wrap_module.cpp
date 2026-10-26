@@ -875,5 +875,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_dumb_projectile_r68.inc"   /* p1w13-sonnet, batch R68: DumbProjectileBehavior */
 #include "l9_command_button_hunt_r69.inc"   /* p1w13-sonnet, batch R69: CommandButtonHuntUpdate */
 #include "l9_wave_guide_r70.inc"   /* p1w13-sonnet, batch R70: WaveGuideUpdate */
+#include "l9_battle_plan_r71.inc"   /* p1w13-sonnet, batch R71: BattlePlanUpdate */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

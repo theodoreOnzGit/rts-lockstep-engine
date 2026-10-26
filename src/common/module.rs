@@ -420,6 +420,8 @@ pub enum ModuleDataKind {
     MissileLauncherBuildingUpdate(Arc<crate::logic::modules::missile_launcher_building_update::MissileLauncherBuildingUpdateModuleData>),
     /// `SpectreGunshipDeploymentUpdate` (batch R60).
     SpectreGunshipDeploymentUpdate(Arc<crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdateModuleData>),
+    /// `BattlePlanUpdate` (batch R71).
+    BattlePlanUpdate(Arc<crate::logic::modules::battle_plan_update::BattlePlanUpdateModuleData>),
     /// `CountermeasuresBehavior` (batch R52).
     CountermeasuresBehavior(Arc<crate::logic::modules::countermeasures_behavior::CountermeasuresBehaviorModuleData>),
     /// `AutoHealBehaviorModuleData`.
@@ -690,6 +692,7 @@ impl ModuleDataKind {
             ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::MissileLauncherBuildingUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::BattlePlanUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CountermeasuresBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::FireWeaponWhenDamagedBehavior(d) => &d.update.behavior.module_data,
@@ -1149,6 +1152,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::BattlePlanUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

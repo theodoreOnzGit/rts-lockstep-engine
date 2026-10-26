@@ -261,6 +261,11 @@ pub struct ProbeAnswers {
     pub temporary_grant: bool,
     /// batch R69: the AI's attack info (`None`: `NULL`): the default priority and the priorities of the objects whose templates it lists.
     pub attack_priority: Option<(i32, Vec<(ObjectId, i32)>)>,
+    /// batch R71: the AI's `getWhichTurretForCurWeapon()` (-1: `TURRET_INVALID`) and `isTurretInNaturalPosition`.
+    pub cur_turret: i32,
+    pub turret_natural: bool,
+    /// batch R71: a body's `setMaxHealth(max, changeType)` is a line of the trace.
+    pub trace_max_health: bool,
     // --- end p1w13-sonnet ---
 }
 
@@ -1040,6 +1045,24 @@ impl ProbeModule {
                 world.body_trace(format!("aifollowpath {} {waypoint} {command_source}", me.object));
                 ModuleReply::Done
             }
+            // batch R71: the AI's turret (its answers the test's; the orders lines)
+            ModuleCall::AiGetWhichTurretForCurWeapon => ModuleReply::Int(self.answers.cur_turret),
+            ModuleCall::AiIsTurretInNaturalPosition { turret } => {
+                world.body_trace(format!("turretnatural {} {turret}", me.object));
+                ModuleReply::Bool(self.answers.turret_natural)
+            }
+            ModuleCall::AiSetTurretEnabled { turret, enabled } => {
+                world.body_trace(format!("turretenable {} {turret} {}", me.object, i32::from(enabled)));
+                ModuleReply::Done
+            }
+            ModuleCall::AiRecenterTurret { turret } => {
+                world.body_trace(format!("turretrecenter {} {turret}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::SpecialPowerUpdateIsActive
+            | ModuleCall::SpecialPowerUpdateGetCommandOption
+            | ModuleCall::IsPowerCurrentlyInUse
+            | ModuleCall::BattlePlanGetActiveBattlePlan => ModuleReply::Unhandled,
             ModuleCall::AiSetPathExtraDistance(d) => {
                 world.body_trace(format!("aipathextra {} {:08x}", me.object, d.to_bits()));
                 ModuleReply::Done
@@ -1204,8 +1227,11 @@ impl ProbeModule {
             }
             ModuleCall::TestArmorSetFlag(f) => ModuleReply::Bool(self.armor_flags & 1u32.wrapping_shl(f as u32) != 0),
 // --- p1l9-upgrades ---
-            ModuleCall::SetMaxHealthWithChange { max_health, .. } => {
-                // the probe has no change type: the answer is the same as `SetMaxHealth`
+            ModuleCall::SetMaxHealthWithChange { max_health, change_type } => {
+                // the probe has no change type: the answer is the same as `SetMaxHealth` (batch R71: a line, when asked)
+                if self.answers.trace_max_health {
+                    world.body_trace(format!("setmaxhealth {} {:08x} {change_type}", me.object, max_health.to_bits()));
+                }
                 self.max_health = max_health;
                 if self.health > max_health {
                     self.health = max_health;

@@ -325,6 +325,8 @@ pub enum ObjectClientEvent {
     TerrainVisualAddWaterVelocity { x: f32, y: f32, velocity: f32, preferred_height: f32 },
     /// batch R70: `TheRadar->refreshTerrain(TheTerrainLogic)`.
     RadarRefreshTerrain,
+    /// batch R71: `TheRadar->createPlayerEvent(player, pos, type)` (`None`: a `NULL` player).
+    RadarCreatePlayerEvent { player: Option<i32>, position: Coord3D, event_type: i32 },
     // --- end p1w13-sonnet ---
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
