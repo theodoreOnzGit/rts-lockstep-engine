@@ -35,6 +35,7 @@
 /* ---- renames (the stand-ins of this directory, and every class of AIPathfind.h: other builds define stand-in
 ** members of Pathfinder, Path and PathNode, which must not meet these at link time) */
 #define Object PfObject
+#define BodyModuleInterface PfBodyModuleInterface
 #define TerrainLogic PfTerrainLogic
 #define TheTerrainLogic PfTheTerrainLogic
 #define GameLogic PfGameLogic

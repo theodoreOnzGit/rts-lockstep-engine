@@ -1913,6 +1913,8 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, layer 10 batch P2: PathfindCellInfo and PathfindCell (differential/wrap_pathfind.cpp).
+    pub fn ref_pf_p2_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, layer 10 batch P1: PathNode and Path (differential/wrap_pathfind.cpp).
     pub fn ref_pf_p1_run(xfer_path: *const c_char, cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, batch R77: BridgeBehavior (differential/l9_bridge_r77.inc).
