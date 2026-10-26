@@ -1913,6 +1913,20 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
+    /// p1w13-sonnet, batch R77: BridgeBehavior (differential/l9_bridge_r77.inc).
+    pub fn ref_l9r77_run(
+        filename: *const c_char,
+        xfer_path: *const c_char,
+        cfg: *const c_uint,
+        n: c_int,
+        ops: *const c_uint,
+        buf: *mut c_uchar,
+        cap: c_int,
+        len: *mut c_int,
+        msg: *mut c_char,
+        msg_cap: c_int,
+        code: *mut c_uint,
+    ) -> c_int;
     /// p1w13-sonnet, batch R76: ProductionUpdate (differential/l9_production_r76.inc).
     pub fn ref_l9r76_run(
         filename: *const c_char,

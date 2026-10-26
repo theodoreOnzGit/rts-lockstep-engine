@@ -1444,6 +1444,11 @@ impl ProbeModule {
             | ModuleCall::BridgeTowerSetBridge(_)
             | ModuleCall::BridgeTowerGetBridgeId
             | ModuleCall::BridgeTowerSetTowerType(_)
+            | ModuleCall::BridgeSetTower { .. }
+            | ModuleCall::BridgeCreateScaffolding
+            | ModuleCall::BridgeRemoveScaffolding
+            | ModuleCall::BridgeIsScaffoldInMotion
+            | ModuleCall::BridgeIsScaffoldPresent
             | ModuleCall::StickyBombInit { .. }
             | ModuleCall::StickyBombIsTimedBomb
             | ModuleCall::StickyBombGetDetonationFrame

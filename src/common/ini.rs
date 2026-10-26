@@ -353,6 +353,12 @@ pub enum Undefined {
     VectorLengthError,
     /// batch R76: an object read as another type through a union (`ProductionEntry`'s template or upgrade, read as the one it is not).
     TypeConfusion,
+    /// batch R77: a `NULL` `Bridge` dereferenced (`TheTerrainLogic->findBridgeAt` found none where `BridgeBehavior` reads one unchecked).
+    NullBridge,
+    /// batch R77: a `NULL` `TerrainRoadType` dereferenced (`TheTerrainRoads->findBridge` found no template where `BridgeBehavior` reads one).
+    NullBridgeTemplate,
+    /// batch R77: a `NULL` `BridgeScaffoldBehaviorInterface` dereferenced (an object `BridgeBehavior` makes or keeps as scaffold has none).
+    NullScaffoldInterface,
 }
 
 /// What failed, innermost cause first.

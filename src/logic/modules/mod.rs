@@ -123,6 +123,7 @@ pub mod missile_launcher_building_update;
 pub mod spectre_gunship_deployment_update;
 pub mod spectre_gunship_update;
 pub mod particle_uplink_cannon_update;
+pub mod bridge_behavior;
 pub mod battle_plan_update;
 pub mod countermeasures_behavior;
 pub mod auto_heal_behavior;
@@ -586,6 +587,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::ParticleUplinkCannonUpdate(d) => Some(made_update(
             particle_uplink_cannon_update::ParticleUplinkCannonUpdate::get_interface_mask(),
             particle_uplink_cannon_update::ParticleUplinkCannonUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::ParticleUplinkCannonUpdate(m))),
+        )),
+        ModuleDataKind::BridgeBehavior(d) => Some(made_update(
+            bridge_behavior::BridgeBehavior::get_interface_mask(),
+            bridge_behavior::BridgeBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::BridgeBehavior(m))),
         )),
         ModuleDataKind::BattlePlanUpdate(d) => Some(made_update(
             battle_plan_update::BattlePlanUpdate::get_interface_mask(),

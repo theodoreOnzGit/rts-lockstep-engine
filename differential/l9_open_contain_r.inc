@@ -560,7 +560,8 @@ void InGameUI::deselectDrawable(Drawable *d) { ulog("uideselect %d", ctDrawOwner
 void InGameUI::setDisplayedMaxWarning(Bool b) { ulog("maxwarning %d", b ? 1 : 0); }
 /* --- end p1w13-sonnet --- */
 void Drawable::setDrawableHidden(Bool hidden) { ulog("hidden %d %d", m_ownerObject ? (int)m_ownerObject->m_oid : 0, (int)hidden); }
-void Object::setLayer(PathfindLayerEnum layer) { ulog("setlayer %d %d", (int)m_oid, (int)layer); }
+void (*g_setLayerHook)(Object *, PathfindLayerEnum) = 0;   /* p1w13-sonnet, batch R77: BridgeBehavior's driver keeps the layer */
+void Object::setLayer(PathfindLayerEnum layer) { ulog("setlayer %d %d", (int)m_oid, (int)layer); if (g_setLayerHook) g_setLayerHook(this, layer); }
 /* p1w13-sonnet, batch R28 (differential/l9_topple_r28.inc): with the pose set, Thing::setOrientation (Thing.cpp lines 198-245): the transform posed from
 ** the angle at the position (the shim's setPosition keeps m_pos, which is the translation Thing::setPosition would keep), the angle normalised */
 bool g_r28ThingPose = false;

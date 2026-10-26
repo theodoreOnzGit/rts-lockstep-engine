@@ -29,6 +29,7 @@ public:
 	void createEvent( const Coord3D *world, RadarEventType type, float secondsToLive = 4.0f );   /* batch R24: differential/l9_overcharge_r24.inc */
 	Bool tryEvent( RadarEventType event, const Coord3D *pos );   /* batch R27: differential/l9_stealth_detector_r27.inc (a line; the test's answer) */
 	void refreshTerrain( class TerrainLogic *terrain );   /* batch R70: a line (differential/l9_wave_guide_r70.inc) */
+	void queueTerrainRefresh( void );   /* batch R77: a line (differential/l9_bridge_r77.inc) */
 	void createPlayerEvent( class Player *player, const Coord3D *world, RadarEventType type, Real secondsToLive = 4.0f );   /* batch R71: a line */
 };
 extern Radar *TheRadar;

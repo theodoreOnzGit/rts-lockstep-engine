@@ -5,6 +5,7 @@
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"   /* PathfindLayerEnum (p1w13-sonnet) */
 #include "Common/AsciiString.h"   /* (batch R70) */
+#include "GameLogic/Module/BridgeBehavior.h"   /* BridgeTowerType (batch R77) */
 /* --- p1w13-sonnet --- (batch R70: WaveGuideUpdate's waypoint path and bridges; differential/l9_wave_guide_r70.inc) TerrainLogic.h's Waypoint getters,
 ** verbatim, on the test's nodes; the bridge's info's two ends (the rest of BridgeInfo is unused) */
 class Waypoint
@@ -20,8 +21,17 @@ public:
 	Waypoint *m_links[MAX_LINKS + 1];
 	Int m_numLinks;
 };
-class BridgeInfo { public: Coord3D from, to; };
-class Bridge { public: void getBridgeInfo(class BridgeInfo *pInfo) {*pInfo = m_bridgeInfo; } BridgeInfo m_bridgeInfo; Int m_cell; };
+class BridgeInfo { public: Coord3D from, to;
+	Coord3D fromLeft, fromRight, toLeft, toRight;   /* batch R77: BridgeBehavior's corners */ };
+/* batch R77: what BridgeBehavior reads of a bridge (TerrainLogic.h lines 189, 200-201, verbatim), its template name and layer the test's; the
+** object and tower ids it sets are lines (differential/l9_bridge_r77.inc) */
+class Bridge { public: void getBridgeInfo(class BridgeInfo *pInfo) {*pInfo = m_bridgeInfo; } BridgeInfo m_bridgeInfo; Int m_cell;
+	AsciiString getBridgeTemplateName( void ) { return m_templateName; }
+	inline const BridgeInfo *peekBridgeInfo(void) const {return &m_bridgeInfo;}
+	inline PathfindLayerEnum getLayer(void) const {return m_layer;}
+	void setBridgeObjectID( ObjectID id );
+	void setTowerObjectID( ObjectID id, BridgeTowerType which );
+	AsciiString m_templateName; PathfindLayerEnum m_layer; };
 /* --- end p1w13-sonnet --- */
 class TerrainLogic
 {
@@ -41,6 +51,7 @@ public:
 	Bool isCliffCell( Real x, Real y ) const;   /* batch R41: GenerateMinefieldBehavior (differential/l9_gen_minefield_r41.inc) */
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);   /* batch R: OpenContain */
 	void getExtentIncludingBorder( struct Region3D *extent ) const;   /* batch R72: SpectreGunshipUpdate (the test's) */
+	void updateBridgeDamageStates( void );   /* batch R77: BridgeBehavior (a line, differential/l9_bridge_r77.inc) */
 	Waypoint *getWaypointByID( UnsignedInt id );   /* batch R75: ParticleUplinkCannonUpdate (the test's nodes, differential/l9_uplink_r75.inc) */
 	/* --- end p1w13-sonnet --- */
 };

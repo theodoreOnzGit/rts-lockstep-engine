@@ -3521,6 +3521,20 @@ mod differential {
                 assert_eq!(text.matches(fwd).count(), 1, "ParticleUplinkCannonUpdate.h: the forward declaration must occur once");
                 std::fs::write(mod_gen.join("ParticleUplinkCannonUpdate_r75.h"), text.replace(fwd, "")).expect("write ParticleUplinkCannonUpdate_r75.h");
                 println!("cargo:rerun-if-changed={}", path.display());
+                // batch R77 (differential/l9_bridge_r77.inc): BridgeBehavior.h's forward `enum BridgeTowerType;` and its BridgeBehaviorInterface,
+                // which the module build's stand-in header (GameLogic/Module/BridgeBehavior.h, already in the unit) defines with the same six lines:
+                // the header without them (each asserted once), into mod_gen/BridgeBehavior_r77.h, which the driver includes first.
+                let path = up.join("GameEngine/Include/GameLogic/Module/BridgeBehavior.h");
+                let text = std::fs::read_to_string(&path).expect("read BridgeBehavior.h");
+                let fwd = "enum BridgeTowerType;\n";
+                let start = "class BridgeBehaviorInterface\n{";
+                assert_eq!(text.matches(fwd).count(), 1, "BridgeBehavior.h: the forward declaration must occur once");
+                assert_eq!(text.matches(start).count(), 1, "BridgeBehavior.h: the interface must occur once");
+                let at = text.find(start).expect("the interface");
+                let end = at + text[at..].find("\n};\n").expect("the interface's end") + 4;
+                let cut = format!("{}{}", &text[..at], &text[end..]).replace(fwd, "");
+                std::fs::write(mod_gen.join("BridgeBehavior_r77.h"), cut).expect("write BridgeBehavior_r77.h");
+                println!("cargo:rerun-if-changed={}", path.display());
                 // batch R50 (differential/l9_physics_r50.inc): PhysicsUpdate.cpp, compiled a second time in the unit (whose PhysicsBehavior is the
                 // module build's stand-in, a block of memory other drivers define methods of) under R50 names, by macros in the driver: the header once
                 // more, as mod_gen/PhysicsUpdate_r50.h (its `#pragma once` and include guard renamed, each asserted once); the .cpp, into

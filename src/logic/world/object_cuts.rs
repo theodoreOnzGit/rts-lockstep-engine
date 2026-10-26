@@ -462,6 +462,38 @@ impl World {
 }
 // --- end p1w12-sonnet ---
 // --- p1w13-sonnet ---
+/// batch R77: what `BridgeBehavior` reads of a terrain bridge (`Bridge`, `TerrainLogic.h`): its info's four corners, its template's name and
+/// its pathfinding layer.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BridgeDetails {
+    /// `BridgeInfo::fromLeft`, `fromRight`, `toLeft`, `toRight`.
+    pub from_left: Coord3D,
+    pub from_right: Coord3D,
+    pub to_left: Coord3D,
+    pub to_right: Coord3D,
+    /// `getBridgeTemplateName()`.
+    pub template_name: Vec<u8>,
+    /// `getLayer()`.
+    pub layer: crate::common::game_type::PathfindLayer,
+}
+
+/// batch R77: what `BridgeBehavior` reads of a bridge template (`TerrainRoadType`, `TerrainRoads.h`): the names of the transition effects
+/// by body damage state (`BODYDAMAGETYPE_COUNT`) and index (`MAX_BRIDGE_BODY_FX`), the sounds, the effects' height and count, and the
+/// scaffold objects' template names. An empty name is the default `AsciiString`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BridgeTemplateDetails {
+    pub damage_to_ocl: [[Vec<u8>; 3]; 4],
+    pub damage_to_fx: [[Vec<u8>; 3]; 4],
+    pub repaired_to_ocl: [[Vec<u8>; 3]; 4],
+    pub repaired_to_fx: [[Vec<u8>; 3]; 4],
+    pub damage_to_sound: [Vec<u8>; 4],
+    pub repaired_to_sound: [Vec<u8>; 4],
+    pub transition_effects_height: f32,
+    pub num_fx_per_type: i32,
+    pub scaffold_object_name: Vec<u8>,
+    pub scaffold_support_object_name: Vec<u8>,
+}
+
 /// The cell of the cut-point terrain tables a position falls in: an integer hash of the bits of (x, y), so that both sides of a differential test
 /// (which share no terrain) answer alike. (A stand-in only until the layer-12 adapter answers from the real terrain.)
 pub fn terrain_cell(x: f32, y: f32) -> usize {
@@ -807,6 +839,44 @@ impl World {
     /// batch R76: `TheAudio->isValidAudioEvent(&event)` (`cuts.valid_audio_events`).
     pub fn audio_is_valid_event(&self, name: &[u8]) -> bool {
         self.cuts.valid_audio_events.contains(name)
+    }
+
+    /// batch R77: `TheTerrainLogic->findBridgeAt(position)` as `BridgeBehavior` reads it: the bridge's corners, template name and layer,
+    /// `None` for `NULL` (`ObjectCuts::bridge_details`; the same call as [`World::terrain_find_bridge_at`]).
+    pub fn terrain_find_bridge_details(&mut self, position: Coord3D) -> Option<BridgeDetails> {
+        self.cut(CutCall::TerrainFindBridgeAt { position });
+        self.cuts.bridge_details[terrain_cell(position.x, position.y)].clone()
+    }
+
+    /// batch R77: `TheTerrainRoads->findBridge(name)`: the bridge template's transition effects and scaffold names, `None` for `NULL`
+    /// (`ObjectCuts::bridge_templates`; the terrain roads are the client's INI, read by no layer yet).
+    pub fn terrain_roads_find_bridge(&self, name: &[u8]) -> Option<BridgeTemplateDetails> {
+        self.cuts.bridge_templates.get(name).cloned()
+    }
+
+    /// batch R77: `bridge->setBridgeObjectID(id)` on the bridge `findBridgeAt(position)` found.
+    pub fn bridge_set_bridge_object_id(&mut self, position: Coord3D, id: ObjectId) {
+        self.cut(CutCall::BridgeSetBridgeObjectId { position, id });
+    }
+
+    /// batch R77: `bridge->setTowerObjectID(id, tower)` on the bridge `findBridgeAt(position)` found.
+    pub fn bridge_set_tower_object_id(&mut self, position: Coord3D, id: ObjectId, tower: i32) {
+        self.cut(CutCall::BridgeSetTowerObjectId { position, id, tower });
+    }
+
+    /// batch R77: `TheTerrainLogic->updateBridgeDamageStates()`.
+    pub fn terrain_update_bridge_damage_states(&mut self) {
+        self.cut(CutCall::TerrainUpdateBridgeDamageStates);
+    }
+
+    /// batch R77: `TheRadar->queueTerrainRefresh()`.
+    pub fn radar_queue_terrain_refresh(&mut self) {
+        self.cut(CutCall::RadarQueueTerrainRefresh);
+    }
+
+    /// batch R77: `TheAI->pathfinder()->changeBridgeState(layer, repaired)`.
+    pub fn pathfinder_change_bridge_state(&mut self, layer: crate::common::game_type::PathfindLayer, repaired: bool) {
+        self.cut(CutCall::PathfinderChangeBridgeState { layer, repaired });
     }
 
     /// batch R75: `ThePartitionManager->doShroudReveal(x, y, range, mask)`.
@@ -1431,6 +1501,16 @@ pub enum CutCall {
     ScriptNotifyOfCompletedUpgrade { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// batch R76: `player->getAcademyStats()->recordProduction(obj, constructor)`.
     PlayerAcademyRecordProduction { player: PlayerIndex, object: ObjectId, constructor: ObjectId },
+    /// batch R77: `bridge->setBridgeObjectID(id)` on the bridge at `position`.
+    BridgeSetBridgeObjectId { position: Coord3D, id: ObjectId },
+    /// batch R77: `bridge->setTowerObjectID(id, tower)` on the bridge at `position`.
+    BridgeSetTowerObjectId { position: Coord3D, id: ObjectId, tower: i32 },
+    /// batch R77: `TheTerrainLogic->updateBridgeDamageStates()`.
+    TerrainUpdateBridgeDamageStates,
+    /// batch R77: `TheRadar->queueTerrainRefresh()`.
+    RadarQueueTerrainRefresh,
+    /// batch R77: `TheAI->pathfinder()->changeBridgeState(layer, repaired)`.
+    PathfinderChangeBridgeState { layer: crate::common::game_type::PathfindLayer, repaired: bool },
     /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (the weapon layer's), answered by
     /// `able_to_attack_results`.
     ObjectGetAbleToAttackSpecificObject { object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32 },
@@ -1805,6 +1885,9 @@ pub struct ObjectCuts {
     pub can_make_unit: BTreeMap<u16, i32>,
     pub can_produce_upgrades: BTreeSet<u32>,
     pub valid_audio_events: BTreeSet<Vec<u8>>,
+    /// batch R77: what `BridgeBehavior` reads of the bridge `findBridgeAt` finds in a cell (as `bridge_at`), and the bridge templates by name.
+    pub bridge_details: [Option<BridgeDetails>; 8],
+    pub bridge_templates: BTreeMap<Vec<u8>, BridgeTemplateDetails>,
     pub laser_drawables: BTreeSet<crate::common::game_type::DrawableId>,
     pub laser_radius: f32,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
@@ -1957,6 +2040,8 @@ impl Default for ObjectCuts {
             can_make_unit: BTreeMap::new(),
             can_produce_upgrades: BTreeSet::new(),
             valid_audio_events: BTreeSet::new(),
+            bridge_details: Default::default(),
+            bridge_templates: BTreeMap::new(),
             laser_drawables: BTreeSet::new(),
             laser_radius: 0.0,
             blocked_lines_of_sight: BTreeSet::new(),

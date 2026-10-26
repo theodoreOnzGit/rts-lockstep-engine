@@ -47,6 +47,7 @@ public:
 	Bool validMovementTerrain( PathfindLayerEnum layer, const Locomotor* locomotor, const Coord3D *pos );
 	void createAWallFromMyFootprint( Object *obj );   /* batch R34: TensileFormationUpdate (lines, differential/l9_tensile_r34.inc) */
 	void removeWallFromMyFootprint( Object *obj );
+	void changeBridgeState( PathfindLayerEnum layer, Bool repaired );   /* batch R77: BridgeBehavior (a line, differential/l9_bridge_r77.inc) */
 	/* --- end p1w13-sonnet --- */
 	/* --- end p1w13-sonnet --- */
 };

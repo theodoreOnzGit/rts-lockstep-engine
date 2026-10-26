@@ -785,6 +785,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::particle_uplink_cannon_update::new_module_data),
             which_interfaces: Some(crate::logic::modules::particle_uplink_cannon_update::ParticleUplinkCannonUpdate::get_interface_mask()),
         }),
+        "BridgeBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::bridge_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::bridge_behavior::BridgeBehavior::get_interface_mask()),
+        }),
         "BattlePlanUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::battle_plan_update::new_module_data),
@@ -1326,6 +1331,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::SpectreGunshipDeploymentUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::SpectreGunshipUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::ParticleUplinkCannonUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::BridgeBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::BattlePlanUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::CountermeasuresBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::AutoHealBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
@@ -1960,7 +1966,7 @@ mod tests {
         assert!(matches!(find(&f, &mut names, "NoSuchModule", ModuleType::Behavior), ModuleFactoryError::UnknownModule { .. }));
         assert!(matches!(find(&f, &mut names, "autohealbehavior", ModuleType::Behavior), ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }));
         // the three public entry points, for an untranslated name
-        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::Behavior && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
+        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::Behavior && r.in_shipped_build && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
         let pending = &pending[..];
         let e = f.new_module(&mut names, 1, pending, None, ModuleType::Behavior).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));

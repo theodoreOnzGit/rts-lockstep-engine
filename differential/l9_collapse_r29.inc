@@ -68,7 +68,12 @@ void r29Instance(const Drawable *, const Matrix3D *m)
 
 }  // namespace
 
-const GeometryInfo &ThingTemplate::getTemplateGeometryInfo() const { return g_r29Geom; }
+const GeometryInfo *(*g_r77GeomHook)(const ThingTemplate *) = 0;   /* p1w13-sonnet, batch R77: a driver's own templates (l9_bridge_r77.inc) */
+const GeometryInfo &ThingTemplate::getTemplateGeometryInfo() const
+{
+	if (g_r77GeomHook) { const GeometryInfo *g = g_r77GeomHook(this); if (g) return *g; }
+	return g_r29Geom;
+}
 void BoneFXUpdate::stopAllBoneFX() { ulog("stopbonefx %d", g_r29Me ? (int)g_r29Me->m_oid : 0); }
 
 extern "C" {

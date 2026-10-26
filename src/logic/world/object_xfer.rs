@@ -626,6 +626,13 @@ impl World {
                 self.cuts.module_errors.push((me, e));
             }
         }
+        // batch R77: a bridge's load tells the terrain bridge its object and towers (the steps the xfer got through)
+        if let Some(crate::logic::world::update_body::UpdateBody::BridgeBehavior(m)) = &mut snap.body {
+            if let Some(e) = m.finish_load(self, id) {
+                let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+                self.cuts.module_errors.push((me, e));
+            }
+        }
         // batch R12: a `Bool` loaded from a byte that is no bool is undefined
         if crate::common::xfer::take_invalid_bool_read() {
             let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };

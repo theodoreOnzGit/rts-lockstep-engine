@@ -711,6 +711,16 @@ pub enum ModuleCall {
     HasBridgeBehaviorInterface,
     /// `BridgeBehaviorInterface::getTowerID(BridgeTowerType)`; replies [`ModuleReply::Id`].
     GetBridgeTowerId { tower: i32 },
+    /// batch R77: `BridgeBehaviorInterface::setTower(towerType, tower)` (`INVALID_ID`: `NULL`).
+    BridgeSetTower { tower: i32, object: ObjectId },
+    /// batch R77: `BridgeBehaviorInterface::createScaffolding()`.
+    BridgeCreateScaffolding,
+    /// batch R77: `BridgeBehaviorInterface::removeScaffolding()`.
+    BridgeRemoveScaffolding,
+    /// batch R77: `BridgeBehaviorInterface::isScaffoldInMotion()`; replies [`ModuleReply::Bool`].
+    BridgeIsScaffoldInMotion,
+    /// batch R77: `BridgeBehaviorInterface::isScaffoldPresent()`; replies [`ModuleReply::Bool`].
+    BridgeIsScaffoldPresent,
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
