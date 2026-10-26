@@ -606,7 +606,20 @@ impl World {
         }
         crate::common::xfer::take_invalid_bool_read();
         let loading = xfer.get_xfer_mode() == crate::common::xfer::XferMode::Load;
+        // batch R74: an airfield's load builds its spaces after the version and the base ("so it won't be overwritten later"); the bones are
+        // read here, the doors released after
+        if loading {
+            if let Some(crate::logic::world::update_body::UpdateBody::ParkingPlaceBehavior(m)) = &mut snap.body {
+                m.stage_build_info(self, id);
+            }
+        }
         let r = xfer.xfer_snapshot(&mut snap);
+        if let Some(crate::logic::world::update_body::UpdateBody::ParkingPlaceBehavior(m)) = &mut snap.body {
+            if let Some(e) = m.finish_staged_build(self, id) {
+                let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
+                self.cuts.module_errors.push((me, e));
+            }
+        }
         // batch R12: a `Bool` loaded from a byte that is no bool is undefined
         if crate::common::xfer::take_invalid_bool_read() {
             let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };

@@ -663,6 +663,7 @@ fn rust_outcome(r: IniResult<()>, crc: u32) -> Result<Outcome, IniError> {
             Some(Thrown::Status(c)) => (2, c.to_le_bytes().to_vec()),
             Some(Thrown::ErrorCode(c)) => (3, c.to_le_bytes().to_vec()),
             Some(Thrown::OutOfRange) => (4, Vec::new()),
+            Some(Thrown::Other) => (5, Vec::new()),
         },
     };
     Ok(Outcome { status, detail, log, crc })

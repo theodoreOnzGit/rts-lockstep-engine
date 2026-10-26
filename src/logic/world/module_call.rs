@@ -574,7 +574,7 @@ pub enum ModuleCall {
     /// batch R60: `AIUpdateInterface::getCurLocomotor()->getPreferredHeight()`; replies [`ModuleReply::Real`], anything else for no locomotor.
     AiGetCurLocomotorPreferredHeight,
     /// `ExitInterface::reserveDoorForExit(objType, specificObject)` of a contain module; replies [`ModuleReply::Int`] (`ExitDoorType`).
-    ReserveDoorForExit { specific: ObjectId },
+    ReserveDoorForExit { template: Option<u16>, specific: ObjectId },
     /// `killRidersWhoAreNotFreeToExit()` of a contain module (protected upstream; the differential test calls it).
     KillRidersWhoAreNotFreeToExit,
     /// `TransportContain::isSpecificRiderFreeToExit(obj)` (protected upstream; the differential test calls it); replies [`ModuleReply::Bool`], or
@@ -937,6 +937,42 @@ pub enum ModuleCall {
     SpawnStartSpawning,
     /// batch R73: `StealthUpdate::allowedToStealth(stealthOwner)`; replies [`ModuleReply::Bool`].
     StealthAllowedToStealth { owner: ObjectId },
+    /// batch R74: `ProductionUpdateInterface::setHoldDoorOpen(exitDoor, holdIt)`.
+    SetHoldDoorOpen { door: i32, hold: bool },
+    /// batch R74: `JetAIUpdate::friend_getParkingOffset()`; replies [`ModuleReply::Real`].
+    JetGetParkingOffset,
+    /// batch R74: `JetAIUpdate::friend_isTakeoffOrLandingInProgress()`; replies [`ModuleReply::Bool`].
+    JetIsTakeoffOrLandingInProgress,
+    /// batch R74: `ParkingPlaceBehaviorInterface::shouldReserveDoorWhenQueued(thing)`; replies [`ModuleReply::Bool`].
+    ParkingPlaceShouldReserveDoorWhenQueued { template: u16 },
+    /// batch R74: `ParkingPlaceBehaviorInterface::hasAvailableSpaceFor(thing)`; replies [`ModuleReply::Bool`].
+    ParkingPlaceHasAvailableSpaceFor { template: u16 },
+    /// batch R74: `ParkingPlaceBehaviorInterface::getSpaceIndex(id)`; replies [`ModuleReply::Int`].
+    ParkingPlaceGetSpaceIndex { id: ObjectId },
+    /// batch R74: `ParkingPlaceBehaviorInterface::reserveSpace(id, parkingOffset, want_info ? &info : NULL)`; replies [`ModuleReply::PPInfo`].
+    ParkingPlaceReserveSpace { id: ObjectId, parking_offset: f32, want_info: bool },
+    /// batch R74: `ParkingPlaceBehaviorInterface::releaseSpace(id)`.
+    ParkingPlaceReleaseSpace { id: ObjectId },
+    /// batch R74: `ParkingPlaceBehaviorInterface::reserveRunway(id, forLanding)`; replies [`ModuleReply::Bool`].
+    ParkingPlaceReserveRunway { id: ObjectId, for_landing: bool },
+    /// batch R74: `ParkingPlaceBehaviorInterface::calcPPInfo(id, &info)` with `info` as given; replies [`ModuleReply::PPInfo`].
+    ParkingPlaceCalcPPInfo { id: ObjectId, info: PPInfo },
+    /// batch R74: `ParkingPlaceBehaviorInterface::releaseRunway(id)`.
+    ParkingPlaceReleaseRunway { id: ObjectId },
+    /// batch R74: `ParkingPlaceBehaviorInterface::getRunwayCount()`; replies [`ModuleReply::Int`].
+    ParkingPlaceGetRunwayCount,
+    /// batch R74: `ParkingPlaceBehaviorInterface::getRunwayReservation(r, type)`; replies [`ModuleReply::Id`].
+    ParkingPlaceGetRunwayReservation { runway: i32, kind: i32 },
+    /// batch R74: `ParkingPlaceBehaviorInterface::transferRunwayReservationToNextInLineForTakeoff(id)`.
+    ParkingPlaceTransferRunwayReservation { id: ObjectId },
+    /// batch R74: `ParkingPlaceBehaviorInterface::getApproachHeight()`; replies [`ModuleReply::Real`].
+    ParkingPlaceGetApproachHeight,
+    /// batch R74: `ParkingPlaceBehaviorInterface::setHealee(healee, add)`.
+    ParkingPlaceSetHealee { id: ObjectId, add: bool },
+    /// batch R74: `ParkingPlaceBehaviorInterface::killAllParkedUnits()`.
+    ParkingPlaceKillAllParkedUnits,
+    /// batch R74: `ParkingPlaceBehaviorInterface::calcBestParkingAssignment(id, &pos, ...)`; replies [`ModuleReply::Bool`].
+    ParkingPlaceCalcBestParkingAssignment,
     /// `SpecialPowerUpdateInterface::isSpecialAbility()` and, if it is,
     /// `SpecialAbilityUpdate::getSpecialPowerType()`; replies
     /// [`ModuleReply::Int`] (anything else: not a special ability).
@@ -1083,6 +1119,23 @@ pub enum ModuleCall {
     // --- end p1w11-sonnet ---
 }
 
+/// batch R74: `ParkingPlaceBehaviorInterface::PPInfo`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PPInfo {
+    pub parking_space: Coord3D,
+    pub parking_orientation: f32,
+    pub runway_prep: Coord3D,
+    pub runway_start: Coord3D,
+    pub runway_end: Coord3D,
+    pub runway_exit: Coord3D,
+    pub runway_landing_start: Coord3D,
+    pub runway_landing_end: Coord3D,
+    pub runway_approach: Coord3D,
+    pub hangar_internal: Coord3D,
+    pub runway_takeoff_dist: f32,
+    pub hangar_internal_orient: f32,
+}
+
 /// What a module answers to a [`ModuleCall`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum ModuleReply {
@@ -1112,6 +1165,8 @@ pub enum ModuleReply {
     Approach { ok: bool, position: Option<Coord3D>, index: i32 },
     /// batch W1b: `getWhichTurretForWeaponSlot(slot, &angle, &pitch)`: the turret and its two out-parameters.
     Turret { turret: i32, angle: f32, pitch: f32 },
+    /// batch R74: `reserveSpace` / `calcPPInfo`: the answer, and the `PPInfo` written (`None`: the caller's left as it was).
+    PPInfo { ok: bool, info: Option<PPInfo> },
     // --- end p1w13-sonnet ---
 }
 

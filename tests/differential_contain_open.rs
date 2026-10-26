@@ -2792,7 +2792,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32], ops: &[[u32; 5]], tally
                         }
                     }
                     // batch R2: the transport's own (the specific rider is NULL when the fourth word is odd)
-                    49 => result = w.module_call(id, m, ModuleCall::ReserveDoorForExit { specific: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_int(-1) as u32,
+                    49 => result = w.module_call(id, m, ModuleCall::ReserveDoorForExit { template: None, specific: if o[3] & 1 != 0 { INVALID_ID } else { rider } }).as_int(-1) as u32,
                     50 => result = u32::from(w.module_call(id, m, ModuleCall::IsExitBusy).as_bool()),
                     51 => result = w.module_call(id, m, ModuleCall::GetContainMax).as_int(-1) as u32,
                     52 => result = w.module_call(id, m, ModuleCall::GetExtraSlotsInUse).as_int(-1) as u32,

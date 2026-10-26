@@ -411,7 +411,7 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 17], ops: &[
                 tally.exits += 1;
             }
             1 => {
-                let door = w.module_call(me, idx, ModuleCall::ReserveDoorForExit { specific: 0 }).as_int(99);
+                let door = w.module_call(me, idx, ModuleCall::ReserveDoorForExit { template: None, specific: 0 }).as_int(99);
                 if door != 0 {
                     tally.doors_refused += 1;
                 }

@@ -364,7 +364,7 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 16], ops: &[
                 w.module_call(me, idx, ModuleCall::ExitObjectViaDoor { obj: o[1] as ObjectId, door: 0 });
                 tally.exits += 1;
             }
-            1 => res.push(w.module_call(me, idx, ModuleCall::ReserveDoorForExit { specific: 0 }).as_int(99) as u32),
+            1 => res.push(w.module_call(me, idx, ModuleCall::ReserveDoorForExit { template: None, specific: 0 }).as_int(99) as u32),
             2 => {
                 w.module_call(me, idx, ModuleCall::UnreserveDoorForExit(0));
             }

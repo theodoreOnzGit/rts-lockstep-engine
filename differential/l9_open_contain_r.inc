@@ -580,8 +580,10 @@ void Object::clearAndSetModelConditionState(ModelConditionFlagType clr, ModelCon
 {
 	if (m_drawable) m_drawable->clearAndSetModelConditionState(clr, set);
 }
-Bool Object::getSingleLogicalBonePosition(const char *boneName, Coord3D *position, Matrix3D *) const
+int (*g_r74BoneHook)(const Object *, const char *, Coord3D *, Matrix3D *) = 0;   /* p1w13-sonnet, batch R74: the airfield's bones, with transforms */
+Bool Object::getSingleLogicalBonePosition(const char *boneName, Coord3D *position, Matrix3D *transform) const
 {
+	if (g_r74BoneHook) { int r = g_r74BoneHook(this, boneName, position, transform); if (r >= 0) return r != 0; }
 	ulog("bone1 %d %s", (int)m_oid, boneName);
 	CtObj *a = ctOf(this);
 	for (int i = 0; i < CT_BONES; ++i) {

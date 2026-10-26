@@ -379,6 +379,8 @@ pub enum IniErrorKind {
     // --- p1w13-sonnet ---
     /// `throw ERROR_BAD_ARG` (`ThingFactory::newObject(NULL)`, reached from a module during a game: `TransportContain::createPayload`).
     BadArg,
+    /// `std::vector::reserve` of a count beyond `max_size()` threw `std::length_error` (a negative `Int` count, converted).
+    LengthError,
     // --- end p1w13-sonnet ---
     // --- p1w4-thingtemplate ---
     /// An object template names a behavior or body module that
@@ -408,6 +410,8 @@ pub enum Thrown {
     ErrorCode(u32),
     /// `std::out_of_range`.
     OutOfRange,
+    /// Another standard exception (`std::length_error`), which the harnesses' `catch (...)` reports as status 5.
+    Other,
 }
 
 /// An INI error: the innermost cause and, when an `INIException` wrapped it,
@@ -451,6 +455,7 @@ impl IniError {
             IniErrorKind::Bug => Thrown::ErrorCode(ERROR_BUG),
             IniErrorKind::BadArg => Thrown::ErrorCode(crate::common::errors::ERROR_BAD_ARG),
             IniErrorKind::BitIndexOutOfRange => Thrown::OutOfRange,
+            IniErrorKind::LengthError => Thrown::Other,
             IniErrorKind::Xfer(_) => return None,
             IniErrorKind::ModuleNotTranslated(_) | IniErrorKind::ModuleUnknown(_) | IniErrorKind::ModuleNotInShippedBuild(_) => return None,
             _ => Thrown::Status(ERROR_BAD_INI),

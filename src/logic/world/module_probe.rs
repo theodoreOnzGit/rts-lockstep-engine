@@ -210,6 +210,8 @@ pub struct ProbeAnswers {
     pub stealth_allowed: bool,
     /// batch R73: `setInitialHealth(percent)` is a line.
     pub trace_initial_health: bool,
+    /// batch R74: a `JetAIUpdate`: its parking offset and whether a takeoff or a landing is in progress.
+    pub jet: Option<(f32, bool)>,
     /// `AIUpdateInterface::getCurLocomotor()` is not `NULL`.
     pub has_locomotor: bool,
     /// batch R60: the current locomotor's preferred height.
@@ -375,6 +377,28 @@ impl ProbeModule {
                 ModuleReply::Done
             }
             ModuleCall::StealthAllowedToStealth { .. } => ModuleReply::Bool(self.answers.stealth_allowed),
+            // batch R74 (ParkingPlaceBehavior): the production's held doors (a line), the jet's two answers
+            ModuleCall::SetHoldDoorOpen { door, hold } => {
+                world.body_trace(format!("holddoor {} {door} {}", me.object, i32::from(hold)));
+                ModuleReply::Done
+            }
+            ModuleCall::JetGetParkingOffset => self.answers.jet.map_or(ModuleReply::Unhandled, |(o, _)| ModuleReply::Real(o)),
+            ModuleCall::JetIsTakeoffOrLandingInProgress => self.answers.jet.map_or(ModuleReply::Unhandled, |(_, b)| ModuleReply::Bool(b)),
+            ModuleCall::ParkingPlaceShouldReserveDoorWhenQueued { .. }
+            | ModuleCall::ParkingPlaceHasAvailableSpaceFor { .. }
+            | ModuleCall::ParkingPlaceGetSpaceIndex { .. }
+            | ModuleCall::ParkingPlaceReserveSpace { .. }
+            | ModuleCall::ParkingPlaceReleaseSpace { .. }
+            | ModuleCall::ParkingPlaceReserveRunway { .. }
+            | ModuleCall::ParkingPlaceCalcPPInfo { .. }
+            | ModuleCall::ParkingPlaceReleaseRunway { .. }
+            | ModuleCall::ParkingPlaceGetRunwayCount
+            | ModuleCall::ParkingPlaceGetRunwayReservation { .. }
+            | ModuleCall::ParkingPlaceTransferRunwayReservation { .. }
+            | ModuleCall::ParkingPlaceGetApproachHeight
+            | ModuleCall::ParkingPlaceSetHealee { .. }
+            | ModuleCall::ParkingPlaceKillAllParkedUnits
+            | ModuleCall::ParkingPlaceCalcBestParkingAssignment => ModuleReply::Unhandled,
             ModuleCall::SetInitialHealth(percent) if self.answers.trace_initial_health => {
                 world.body_trace(format!("initialhealth {} {percent}", me.object));
                 ModuleReply::Done

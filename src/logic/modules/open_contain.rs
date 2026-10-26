@@ -1798,7 +1798,7 @@ pub fn contain_module_call<T: OpenContainVirtuals>(t: &mut T, world: &mut World,
         ModuleCall::HasContainExitInterface => ModuleReply::Bool(true),
         ModuleCall::IsExitBusy => ModuleReply::Bool(t.is_exit_busy(world, me)),
         // --- p1w13-sonnet --- (batch R2)
-        ModuleCall::ReserveDoorForExit { specific } => ModuleReply::Int(t.reserve_door_for_exit(world, me, specific)),
+        ModuleCall::ReserveDoorForExit { specific, .. } => ModuleReply::Int(t.reserve_door_for_exit(world, me, specific)),
         ModuleCall::KillRidersWhoAreNotFreeToExit => {
             t.kill_riders_who_are_not_free_to_exit(world, me);
             ModuleReply::Done

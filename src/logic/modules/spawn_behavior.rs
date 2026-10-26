@@ -477,7 +477,7 @@ impl SpawnBehavior {
             // "Something cannot have SpawnBehavior without an exit interface"
             return Ok(false);
         };
-        let exit_door = match world.module_call(us, exit, ModuleCall::ReserveDoorForExit { specific: INVALID_ID }) {
+        let exit_door = match world.module_call(us, exit, ModuleCall::ReserveDoorForExit { template: None, specific: INVALID_ID }) {
             ModuleReply::Int(door) => door,
             _ => DOOR_NONE_AVAILABLE,
         };
@@ -526,7 +526,7 @@ impl SpawnBehavior {
                     let barracks = world.objects.find(producer).filter(|o| o.is_kind_of(KINDOF_STRUCTURE)).map(|o| o.id);
                     if let Some(barracks) = barracks {
                         if let Some(barracks_exit) = world.get_object_exit_interface(barracks) {
-                            let door = match world.module_call(barracks, barracks_exit, ModuleCall::ReserveDoorForExit { specific: INVALID_ID }) {
+                            let door = match world.module_call(barracks, barracks_exit, ModuleCall::ReserveDoorForExit { template: None, specific: INVALID_ID }) {
                                 ModuleReply::Int(door) => door,
                                 _ => DOOR_NONE_AVAILABLE,
                             };

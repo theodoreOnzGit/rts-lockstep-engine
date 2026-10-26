@@ -627,6 +627,24 @@ impl World {
         found.into_iter().map(|(_, id)| id).collect()
     }
 
+    /// batch R74: `obj->getSingleLogicalBonePosition(name, &pos, &mtx)` on the art's bones (`cuts.bone_transforms`): whether the bone was
+    /// found, its position, and its transform (the identity turned about z, at the position); with no such bone the object's position and
+    /// transform, as upstream's fallback.
+    pub fn object_get_single_logical_bone_transform(&self, id: ObjectId, name: &[u8]) -> (bool, Coord3D, crate::ww::matrix3d::Matrix3D) {
+        match self.cuts.bone_transforms.get(&(id, name.to_vec())) {
+            Some(&(p, angle)) => {
+                let mut m = crate::ww::matrix3d::Matrix3D::IDENTITY;
+                m.rotate_z(angle);
+                m.set_translation(&crate::ww::vector3::Vector3::new(p.x, p.y, p.z));
+                (true, p, m)
+            }
+            None => match self.objects.find(id) {
+                Some(o) => (false, o.get_position(), *o.thing.transform_matrix()),
+                None => (false, Coord3D::default(), crate::ww::matrix3d::Matrix3D::IDENTITY),
+            },
+        }
+    }
+
     /// batch R73: `player->onUnitCreated(factory, unit)` (see [`CutCall::PlayerOnUnitCreated`]).
     pub fn player_on_unit_created(&mut self, player: PlayerIndex, factory: ObjectId, unit: ObjectId) {
         self.cut(CutCall::PlayerOnUnitCreated { player, factory, unit });
@@ -1583,6 +1601,9 @@ pub struct ObjectCuts {
     pub able_to_use_weapon_results: BTreeMap<ObjectId, i32>,
     /// batch R73: the objects whose drawables are selected (`Drawable::isSelected`, the client's).
     pub selected: BTreeSet<ObjectId>,
+    /// batch R74: the art's bones by object and name: the position and the rotation about z of the bone's world transform (no entry: no
+    /// such bone).
+    pub bone_transforms: BTreeMap<(ObjectId, Vec<u8>), (Coord3D, f32)>,
     /// batch W1b: the segments `ThePartitionManager->isClearLineOfSightTerrain` finds blocked, as (from, to) bit patterns (none: clear).
     pub blocked_lines_of_sight: BTreeSet<([u32; 3], [u32; 3])>,
     /// batch R62: a module's weapon calls are records, not the weapon code (off by default: an explicit ablation for a module's test).
@@ -1725,6 +1746,7 @@ impl Default for ObjectCuts {
             able_to_attack_results: BTreeMap::new(),
             able_to_use_weapon_results: BTreeMap::new(),
             selected: BTreeSet::new(),
+            bone_transforms: BTreeMap::new(),
             blocked_lines_of_sight: BTreeSet::new(),
             stub_weapon_calls: false,
             untranslated_probe_by_name: BTreeMap::new(),

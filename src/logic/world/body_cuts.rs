@@ -132,6 +132,8 @@ pub enum BodyCall {
     ScoreTheKill { killer: ObjectId, victim: ObjectId },
     /// batch R73: `obj->getExperienceTracker()->setVeterancyLevel(level)` (feedback on).
     ExperienceSetVeterancyLevel { object: ObjectId, level: i32 },
+    /// batch R74: `obj->defect(newTeam, detectionTime)`.
+    Defect { object: ObjectId, team: TeamId, detection_time: u32 },
     /// `obj->onDie(damageInfo)`.
     OnDie { object: ObjectId, info: DamageInfo },
     /// `obj->setTeam(team)`.
@@ -210,6 +212,14 @@ impl World {
             }
         } else {
             self.cut_experience_set_veterancy_level(id, level, true);
+        }
+    }
+
+    /// batch R74: `obj->defect(newTeam, detectionTime)`.
+    pub fn body_defect(&mut self, id: ObjectId, team: TeamId, detection_time: u32) {
+        self.body_cut(BodyCall::Defect { object: id, team, detection_time });
+        if !self.cuts.body.stub_object_calls {
+            self.defect(id, team, detection_time);
         }
     }
 
