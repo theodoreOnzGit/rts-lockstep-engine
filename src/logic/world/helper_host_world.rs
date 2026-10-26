@@ -96,7 +96,7 @@ impl World {
     /// Makes the helper of that kind for object `id` (`Object::Object`'s `newInstance(ObjectSMCHelper)(this, &data)` and the
     /// others): ~~the five helpers that are translated are real modules, the rest (`SubdualDamageHelper`, `ObjectDefectionHelper`,
     /// `FiringTracker`)~~ **CORRECTED 2026-10-21** (`p1w11-sonnet`): seven are real modules, only `FiringTracker` are the stand-in of [`ObjectCuts::make_helper`](crate::logic::world::object_cuts::ObjectCuts::make_helper)
-    /// until they are.
+    /// until they are. **CORRECTED 2026-10-26** (batch R78): all eight are real modules; the stand-ins are only for `cuts.stub_helpers`.
     pub(crate) fn make_helper_module(&self, id: ObjectId, kind: HelperKind) -> NewModule {
         let data = Some(Arc::new(UpdateModuleData::new()));
         if self.cuts.stub_helpers {
@@ -124,7 +124,10 @@ impl World {
                 ObjectDefectionHelper::unconstructed(id, data).ok().map(|h| (h.helper().update_module().clone(), UpdateBody::ObjectDefectionHelper(h)))
             }
             // --- end p1w11-sonnet ---
-            _ => None,
+            // batch R78
+            HelperKind::FiringTracker => crate::logic::modules::firing_tracker_module::FiringTrackerModule::unconstructed(id, data)
+                .ok()
+                .map(|h| (h.update_module().clone(), UpdateBody::FiringTracker(h))),
         };
         let mut m = self.cuts.make_helper(kind);
         if let Some((update, body)) = made {
@@ -238,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn an_object_has_the_translated_helpers_asleep_and_the_rest_as_stand_ins() {
+    fn an_object_has_its_helpers_asleep_unless_stubbed() {
         let mut w = base_world();
         let id = make(&mut w, vec![]);
         let o = w.objects.find(id).unwrap();
@@ -249,10 +252,19 @@ mod tests {
             assert!(o.modules[idx as usize].update_index.is_some(), "{}", String::from_utf8_lossy(class));
             assert_eq!(next_call(&w, id, class), UPDATE_SLEEP_FOREVER.0, "asleep: {}", String::from_utf8_lossy(class));
         }
-        // `FiringTracker` is the one helper no layer has translated yet: a stand-in
+        // batch R78: `FiringTracker` is a real module too, asleep until a shot reaches it
         let armed = make_armed(&mut w);
         let idx = w.find_module(armed, b"FiringTracker").unwrap();
-        assert!(w.objects.find(armed).unwrap().modules[idx as usize].update_index.is_none(), "not translated yet: a stand-in");
+        assert!(w.objects.find(armed).unwrap().modules[idx as usize].update_index.is_some(), "FiringTracker");
+        assert_eq!(next_call(&w, armed, b"FiringTracker"), UPDATE_SLEEP_FOREVER.0, "asleep: FiringTracker");
+        assert!(crate::logic::world::object_weapons::ObjectWeaponHost::firing_tracker_shot_fired(&mut w, armed, 0, 5));
+        assert_eq!(w.module_call(armed, idx, crate::logic::world::module_call::ModuleCall::FiringTrackerGetLastShotVictim).as_id(), 5);
+        // two more at the same victim: the weapon code reads the count from the tracker
+        for _ in 0..2 {
+            crate::logic::world::object_weapons::ObjectWeaponHost::firing_tracker_shot_fired(&mut w, armed, 0, 5);
+        }
+        assert_eq!(crate::logic::weapon_host::WeaponHost::num_consecutive_shots_fired_at_target(&mut w, armed, Some(5)), 3);
+        assert_eq!(crate::logic::weapon_host::WeaponHost::num_consecutive_shots_fired_at_target(&mut w, armed, Some(6)), 0);
         // the ablation is explicit
         let mut w = base_world();
         w.cuts.stub_helpers = true;

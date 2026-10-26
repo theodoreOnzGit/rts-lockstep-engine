@@ -48,8 +48,10 @@
 //!   behaviour and no update interface~~ **CORRECTED 2026-10-21**: the five
 //!   translated helpers (`ObjectSMCHelper`, `ObjectRepulsorHelper`,
 //!   `ObjectWeaponStatusHelper`, `StatusDamageHelper`, `TempWeaponBonusHelper`)
-//!   are real update modules; `SubdualDamageHelper`, `ObjectDefectionHelper`
-//!   and `FiringTracker` are still `cuts.make_helper`'s stand-in, and
+//!   are real update modules; ~~`SubdualDamageHelper`, `ObjectDefectionHelper`
+//!   and `FiringTracker` are still `cuts.make_helper`'s stand-in~~
+//!   **CORRECTED 2026-10-26**: all eight are (the last, `FiringTracker`, in
+//!   batch R78), and
 //!   `cuts.stub_helpers` is the explicit ablation that makes all of them so.
 //! - **An object under construction is findable by id from the start**, as
 //!   upstream (`setID` adds it to the lookup table), but is not in the object

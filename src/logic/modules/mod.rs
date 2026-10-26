@@ -123,6 +123,7 @@ pub mod missile_launcher_building_update;
 pub mod spectre_gunship_deployment_update;
 pub mod spectre_gunship_update;
 pub mod particle_uplink_cannon_update;
+pub mod firing_tracker_module;
 pub mod bridge_behavior;
 pub mod battle_plan_update;
 pub mod countermeasures_behavior;

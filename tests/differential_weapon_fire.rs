@@ -2222,9 +2222,8 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let o = r.i();
                 let slot = r.i();
                 let victim = r.i();
-                let weapon = sim.ob(o).weapon_set.get_weapon_in_weapon_slot(slot).cloned();
-                if let Some(w) = weapon {
-                    ow::notify_firing_tracker_shot_fired(&mut sim, o, &w, victim);
+                if sim.ob(o).weapon_set.get_weapon_in_weapon_slot(slot).is_some() {
+                    ow::notify_firing_tracker_shot_fired(&mut sim, o, slot, victim);
                 }
             }
             46 => {
@@ -2280,11 +2279,11 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let ex = r.i();
                 let v: i32 = match kind {
                     0 => am::can_get_repaired_at(&mut sim, o, t, cs)? as i32,
-                    1 => am::can_transfer_supplies_at(&sim, o, t) as i32,
-                    2 => am::can_dock_at(&sim, o.expect("canDockAt takes objects"), t.expect("canDockAt takes objects"), cs) as i32,
-                    3 => am::can_get_healed_at(&sim, o, t, cs) as i32,
-                    4 => am::can_repair_object(&sim, o, t, cs)? as i32,
-                    5 => am::can_resume_construction_of(&sim, o, t, cs) as i32,
+                    1 => am::can_transfer_supplies_at(&mut sim, o, t) as i32,
+                    2 => am::can_dock_at(&mut sim, o.expect("canDockAt takes objects"), t.expect("canDockAt takes objects"), cs) as i32,
+                    3 => am::can_get_healed_at(&mut sim, o, t, cs) as i32,
+                    4 => am::can_repair_object(&mut sim, o, t, cs)? as i32,
+                    5 => am::can_resume_construction_of(&mut sim, o, t, cs) as i32,
                     6 => {
                         let mode = match ex % 3 {
                             0 => CanEnterType::CheckCapacity,
@@ -2294,9 +2293,9 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                         am::can_enter_object(&mut sim, o, t, cs, mode)? as i32
                     }
                     7 => am::get_can_attack_object(&mut sim, o, t, cs, ex as AbleToAttackType)? as i32,
-                    8 => am::can_convert_object_to_car_bomb(&sim, o, t, cs) as i32,
-                    9 => am::can_hijack_vehicle(&sim, o, t, cs) as i32,
-                    10 => am::can_sabotage_building(&sim, o, t, cs) as i32,
+                    8 => am::can_convert_object_to_car_bomb(&mut sim, o, t, cs) as i32,
+                    9 => am::can_hijack_vehicle(&mut sim, o, t, cs) as i32,
+                    10 => am::can_sabotage_building(&mut sim, o, t, cs) as i32,
                     11 => am::can_capture_building(&mut sim, o, t, cs)? as i32,
                     12 => am::can_disable_vehicle_via_hacking(&mut sim, o, t, cs, ex & 1 != 0)? as i32,
                     13 => am::can_steal_cash_via_hacking(&mut sim, o, t, cs)? as i32,
@@ -2304,7 +2303,7 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                     15 => am::can_bribe_unit(o, t, cs) as i32,
                     16 => am::can_cut_building_power(o, t, cs) as i32,
                     17 => am::can_disable_building_via_hacking(&mut sim, o, t, cs)? as i32,
-                    18 => am::can_make_object_defector(&sim, o, t, cs) as i32,
+                    18 => am::can_make_object_defector(&mut sim, o, t, cs) as i32,
                     19 => am::can_fire_weapon_at_object(&mut sim, o, t, cs, ex % 3)? as i32,
                     20 => am::can_garrison(&mut sim, o, t, cs)? as i32,
                     _ => {
@@ -2328,12 +2327,18 @@ fn run_rust(words: &[u32], names: &mut NameKeyGenerator) -> Result<Vec<String>, 
                 let way = sim.opt(r.i());
                 let tmpl = SpecialPowerTemplateRef { id: 1000 + sp_type as u32, sp_type };
                 let v: i32 = match kind {
-                    0 => am::can_do_special_power_at_location(&sim, o, &loc, cs, &tmpl, way, opts, check)? as i32,
+                    0 => am::can_do_special_power_at_location(&mut sim, o, &loc, cs, &tmpl, way, opts, check)? as i32,
                     1 => am::can_do_special_power_at_object(&mut sim, o, t, cs, &tmpl, opts, check)? as i32,
-                    2 => am::can_do_special_power(&sim, o, &tmpl, cs, opts, check) as i32,
-                    3 => am::can_fire_weapon_at_location(&sim, sim.opt(o), has_loc.then_some(&loc), cs, slot % 3, way) as i32,
-                    4 => am::can_fire_weapon(&sim, sim.opt(o), slot % 3, cs) as i32,
-                    _ => am::can_override_special_power_destination(&sim, o, &loc, sp_type, cs)? as i32,
+                    2 => am::can_do_special_power(&mut sim, o, &tmpl, cs, opts, check) as i32,
+                    3 => {
+                        let oo = sim.opt(o);
+                        am::can_fire_weapon_at_location(&mut sim, oo, has_loc.then_some(&loc), cs, slot % 3, way) as i32
+                    }
+                    4 => {
+                        let oo = sim.opt(o);
+                        am::can_fire_weapon(&mut sim, oo, slot % 3, cs) as i32
+                    }
+                    _ => am::can_override_special_power_destination(&mut sim, o, &loc, sp_type, cs)? as i32,
                 };
                 sim.rec(format!("ret actsp k={kind} v={v}"));
             }
@@ -2361,36 +2366,36 @@ fn shroud_from(v: i32) -> ObjectShroudStatus {
 
 /// What `ActionManager.cpp` asks, from the same configuration the stand-ins of `fire_standins.h` answer from.
 impl ActionHost for Sim {
-    fn is_mobile(&self, o: ObjectId) -> bool {
+    fn is_mobile(&mut self, o: ObjectId) -> bool {
         self.ob(o).mobile
     }
-    fn carrier_deck_height(&self, o: ObjectId) -> f32 {
+    fn carrier_deck_height(&mut self, o: ObjectId) -> f32 {
         self.ob(o).deck_height
     }
-    fn is_disabled_by_type(&self, o: ObjectId, t: DisabledType) -> bool {
+    fn is_disabled_by_type(&mut self, o: ObjectId, t: DisabledType) -> bool {
         (self.ob(o).disabled_mask >> (if t == DISABLED_SUBDUED { 0 } else { 1 })) & 1 != 0
     }
-    fn body_health(&self, o: ObjectId) -> Option<(f32, f32)> {
+    fn body_health(&mut self, o: ObjectId) -> Option<(f32, f32)> {
         let s = self.ob(o);
         s.has_body.then_some((s.health, s.max_health))
     }
-    fn transport_slot_count(&self, o: ObjectId) -> i32 {
+    fn transport_slot_count(&mut self, o: ObjectId) -> i32 {
         self.ob(o).transport_slots
     }
-    fn is_faction_structure(&self, o: ObjectId) -> bool {
+    fn is_faction_structure(&mut self, o: ObjectId) -> bool {
         self.ob(o).faction_structure
     }
-    fn object_shrouded_status(&self, o: ObjectId, player_index: i32) -> ObjectShroudStatus {
+    fn object_shrouded_status(&mut self, o: ObjectId, player_index: i32) -> ObjectShroudStatus {
         shroud_from(self.ob(o).shroud[player_index as usize])
     }
-    fn builder_id(&self, o: ObjectId) -> ObjectId {
+    fn builder_id(&mut self, o: ObjectId) -> ObjectId {
         self.ob(o).builder
     }
-    fn controlling_player_is_human(&self, o: ObjectId) -> Option<bool> {
+    fn controlling_player_is_human(&mut self, o: ObjectId) -> Option<bool> {
         let p = self.ob(o).player;
         (p >= 0).then(|| self.players[p as usize].is_human)
     }
-    fn player_relationship_to_team_of(&self, player_index: i32, o: ObjectId) -> Relationship {
+    fn player_relationship_to_team_of(&mut self, player_index: i32, o: ObjectId) -> Relationship {
         let op = self.ob(o).player;
         if op < 0 {
             return Relationship::Neutral;
@@ -2401,25 +2406,25 @@ impl ActionHost for Sim {
             _ => Relationship::Allies,
         }
     }
-    fn has_special_power(&self, o: ObjectId, t: i32) -> bool {
+    fn has_special_power(&mut self, o: ObjectId, t: i32) -> bool {
         (self.ob(o).sp_has[(t >> 5) as usize] >> (t & 31)) & 1 != 0
     }
-    fn special_power_percent_ready_by_type(&self, o: ObjectId, t: i32) -> Option<f32> {
+    fn special_power_percent_ready_by_type(&mut self, o: ObjectId, t: i32) -> Option<f32> {
         self.ob(o).sp_modules.iter().find(|m| m.0 == t).map(|m| m.1)
     }
-    fn special_power_percent_ready_by_template(&self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32> {
+    fn special_power_percent_ready_by_template(&mut self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32> {
         self.special_power_percent_ready_by_type(o, template.sp_type)
     }
-    fn special_ability_update(&self, o: ObjectId, t: i32) -> Option<SpecialAbilityFacts> {
+    fn special_ability_update(&mut self, o: ObjectId, t: i32) -> Option<SpecialAbilityFacts> {
         self.ob(o).sa.iter().find(|s| s.0 == t).map(|s| SpecialAbilityFacts { object_count: s.1, object_max: s.2 })
     }
-    fn special_ability_has_object_with_producer(&self, o: ObjectId, t: i32, target: ObjectId) -> bool {
+    fn special_ability_has_object_with_producer(&mut self, o: ObjectId, t: i32, target: ObjectId) -> bool {
         self.ob(o).sa.iter().find(|s| s.0 == t).is_some_and(|s| s.3.contains(&target))
     }
-    fn special_power_overridable_destination_active(&self, o: ObjectId, t: i32) -> bool {
+    fn special_power_overridable_destination_active(&mut self, o: ObjectId, t: i32) -> bool {
         (self.ob(o).sp_override[(t >> 5) as usize] >> (t & 31)) & 1 != 0
     }
-    fn has_named_update_module(&self, o: ObjectId, which: NamedUpdateModule) -> bool {
+    fn has_named_update_module(&mut self, o: ObjectId, which: NamedUpdateModule) -> bool {
         let s = self.ob(o);
         match which {
             NamedUpdateModule::SupplyWarehouseDock => s.has_wh,
@@ -2428,31 +2433,31 @@ impl ActionHost for Sim {
             NamedUpdateModule::Railroad => s.has_railroad,
         }
     }
-    fn warehouse_boxes_stored(&self, o: ObjectId) -> i32 {
+    fn warehouse_boxes_stored(&mut self, o: ObjectId) -> i32 {
         self.ob(o).wh_boxes
     }
-    fn has_ai_interface(&self, o: ObjectId) -> bool {
+    fn has_ai_interface(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_ai
     }
-    fn supply_truck_ai(&self, o: ObjectId) -> Option<SupplyTruckFacts> {
+    fn supply_truck_ai(&mut self, o: ObjectId) -> Option<SupplyTruckFacts> {
         let s = self.ob(o);
         s.has_supply_truck.then_some(SupplyTruckFacts { number_boxes: s.st_boxes, available_for_supplying: s.st_avail })
     }
-    fn dozer_ai(&self, o: ObjectId) -> Option<DozerFacts> {
+    fn dozer_ai(&mut self, o: ObjectId) -> Option<DozerFacts> {
         let s = self.ob(o);
         s.has_dozer.then_some(DozerFacts { current_task: s.dz_task, build_task_target: s.dz_target })
     }
-    fn has_dock_update_interface(&self, o: ObjectId) -> bool {
+    fn has_dock_update_interface(&mut self, o: ObjectId) -> bool {
         self.ob(o).has_dock
     }
-    fn collide_facts(&self, o: ObjectId, other: ObjectId) -> Vec<CollideFacts> {
+    fn collide_facts(&mut self, o: ObjectId, other: ObjectId) -> Vec<CollideFacts> {
         self.ob(o)
             .colliders
             .iter()
             .map(|(likes, car_bomb, hijack, sabotage)| CollideFacts { would_like: likes.contains(&other), car_bomb: *car_bomb, hijack: *hijack, sabotage: *sabotage })
             .collect()
     }
-    fn parking_facts(&self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts> {
+    fn parking_facts(&mut self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts> {
         let d = self.ob(dest);
         if d.has_parking {
             vec![ParkingFacts { has_reserved_space: d.reserved.contains(&obj), should_reserve_door: d.park_should, has_available_space: d.park_avail }]
@@ -2460,30 +2465,30 @@ impl ActionHost for Sim {
             Vec::new()
         }
     }
-    fn contain_is_heal_contain(&self, o: ObjectId) -> bool {
+    fn contain_is_heal_contain(&mut self, o: ObjectId) -> bool {
         self.ob(o).heal_contain
     }
-    fn contain_stealth_units_contained(&self, o: ObjectId) -> i32 {
+    fn contain_stealth_units_contained(&mut self, o: ObjectId) -> i32 {
         self.ob(o).stealth_count
     }
-    fn contain_is_valid_container_for(&self, container: ObjectId, _obj: ObjectId, check_capacity: bool) -> bool {
+    fn contain_is_valid_container_for(&mut self, container: ObjectId, _obj: ObjectId, check_capacity: bool) -> bool {
         (self.ob(container).valid_mask >> (if check_capacity { 0 } else { 1 })) & 1 != 0
     }
-    fn contain_closest_rider(&self, container: ObjectId, _pos: &Coord3D) -> Option<ObjectId> {
+    fn contain_closest_rider(&mut self, container: ObjectId, _pos: &Coord3D) -> Option<ObjectId> {
         self.opt(self.ob(container).closest_rider)
     }
-    fn spawn_closest_slave(&self, o: ObjectId, _pos: &Coord3D) -> Option<Option<ObjectId>> {
+    fn spawn_closest_slave(&mut self, o: ObjectId, _pos: &Coord3D) -> Option<Option<ObjectId>> {
         let s = self.ob(o);
         s.has_spawn.then(|| self.opt(s.closest_slave))
     }
-    fn cell_shroud_status_for_player(&self, player_index: i32, loc: &Coord3D) -> CellShroudStatus {
+    fn cell_shroud_status_for_player(&mut self, player_index: i32, loc: &Coord3D) -> CellShroudStatus {
         match (((loc.x * 0.1f32) as i32 + player_index) % 3 + 3) % 3 {
             0 => CellShroudStatus::Clear,
             1 => CellShroudStatus::Fogged,
             _ => CellShroudStatus::Shrouded,
         }
     }
-    fn is_underwater(&self, x: f32, y: f32) -> bool {
+    fn is_underwater(&mut self, x: f32, y: f32) -> bool {
         x < y
     }
 }
@@ -2595,10 +2600,11 @@ impl ObjectWeaponHost for Sim {
     fn set_last_weapon_condition(&mut self, o: ObjectId, slot: usize, v: i8) {
         self.ob_mut(o).last_cond[slot] = v;
     }
-    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool {
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, slot: i32, victim: ObjectId) -> bool {
         if !self.ob(o).has_tracker {
             return false;
         }
+        let weapon = self.ob(o).weapon_set.slots()[slot as usize].as_ref().expect("the weapon fired is back in its slot");
         self.rec(format!(
             "tracker o={} slot={} victim={} next={} last={}",
             o,

@@ -331,8 +331,13 @@ impl WeaponHost for World {
         }
     }
     fn num_consecutive_shots_fired_at_target(&mut self, o: ObjectId, victim: Option<ObjectId>) -> i32 {
-        // (the firing tracker helper is not an object module yet: the table `cuts.consecutive_shots_at_victim`)
-        self.cuts.consecutive_shots_at_victim.get(&(o, victim.unwrap_or(INVALID_ID))).copied().unwrap_or(0)
+        // batch R78: the tracker module (`m_firingTracker ? ... : 0`); a stand-in helper (`cuts.stub_helpers`) answers from the table
+        // `cuts.consecutive_shots_at_victim`
+        let Some(idx) = self.objects.find(o).and_then(|x| x.helpers.firing_tracker) else { return 0 };
+        match self.module_call(o, idx, ModuleCall::FiringTrackerGetNumConsecutiveShotsAtVictim(victim)) {
+            ModuleReply::Int(n) => n,
+            _ => self.cuts.consecutive_shots_at_victim.get(&(o, victim.unwrap_or(INVALID_ID))).copied().unwrap_or(0),
+        }
     }
     fn is_above_terrain(&mut self, o: ObjectId) -> bool {
         World::is_above_terrain(self, o)
@@ -762,12 +767,13 @@ impl ObjectWeaponHost for World {
             x.last_weapon_condition[slot] = v;
         }
     }
-    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool {
-        // (the firing tracker helper is a stub module yet: a record when the object has one)
-        if self.objects.find(o).and_then(|x| x.helpers.firing_tracker).is_none() {
-            return false;
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, slot: i32, victim: ObjectId) -> bool {
+        let Some(idx) = self.objects.find(o).and_then(|x| x.helpers.firing_tracker) else { return false };
+        // batch R78: the tracker module; a stand-in helper (`cuts.stub_helpers`) is a record
+        if self.module_call(o, idx, ModuleCall::FiringTrackerShotFired { slot, victim }) == ModuleReply::Unhandled {
+            let template = self.objects.find(o).and_then(|x| x.weapon_set.slots().get(slot as usize)?.as_ref().map(|w| w.template())).unwrap_or(0);
+            self.cut(CutCall::FiringTrackerShotFired { object: o, template, victim });
         }
-        self.cut(CutCall::FiringTrackerShotFired { object: o, template: weapon.template(), victim });
         true
     }
     fn friend_set_undetected_defector(&mut self, o: ObjectId, undetected: bool) {

@@ -89,8 +89,9 @@ pub trait ObjectWeaponHost: WeaponHost {
     fn last_weapon_condition(&self, o: ObjectId, slot: usize) -> i8;
     /// `m_lastWeaponCondition[slot] = v`.
     fn set_last_weapon_condition(&mut self, o: ObjectId, slot: usize, v: i8);
-    /// `m_firingTracker->shotFired(weapon, victimID)`; false (and nothing done) if the object has no firing tracker.
-    fn firing_tracker_shot_fired(&mut self, o: ObjectId, weapon: &Weapon, victim: ObjectId) -> bool;
+    /// `m_firingTracker->shotFired(weapon, victimID)`, the weapon by its slot in the object's set (the tracker reads the live weapon:
+    /// batch R78); false (and nothing done) if the object has no firing tracker.
+    fn firing_tracker_shot_fired(&mut self, o: ObjectId, slot: i32, victim: ObjectId) -> bool;
     /// `friend_setUndetectedDefector(undetected)`.
     fn friend_set_undetected_defector(&mut self, o: ObjectId, undetected: bool);
     /// `m_drawable->updateDrawableClipStatus(ammoInClip, maxClipSize, slot)`.
@@ -315,10 +316,11 @@ pub fn fire_current_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, at: F
             return Err(e);
         }
     };
-    host.firing_tracker_shot_fired(o, &weapon, target.unwrap_or(crate::common::game_type::INVALID_ID));
     host.put_weapon(o, slot, weapon);
     // the siblings' shared reload is the last thing `fireWeapon` does
     host.weapon_set_mut(o).apply_shared_reload(outcome.shared);
+    // (batch R78: the tracker is told after `fireWeapon` returns, with the weapon back in its set, as upstream)
+    host.firing_tracker_shot_fired(o, slot, target.unwrap_or(crate::common::game_type::INVALID_ID));
     if outcome.reloaded {
         host.weapon_set_mut(o).release_weapon_lock(LOCKED_TEMPORARILY); // release any temporary locks.
     }
@@ -327,8 +329,8 @@ pub fn fire_current_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, at: F
 }
 
 /// `Object::notifyFiringTrackerShotFired(weaponFired, victimID)`.
-pub fn notify_firing_tracker_shot_fired<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, weapon: &Weapon, victim_id: ObjectId) {
-    host.firing_tracker_shot_fired(o, weapon, victim_id);
+pub fn notify_firing_tracker_shot_fired<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, slot: i32, victim_id: ObjectId) {
+    host.firing_tracker_shot_fired(o, slot, victim_id);
 }
 
 /// `Object::preFireCurrentWeapon(victim)`: "if we are going to be capable of firing our weapon NEXT frame, set

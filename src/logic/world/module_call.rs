@@ -721,6 +721,12 @@ pub enum ModuleCall {
     BridgeIsScaffoldInMotion,
     /// batch R77: `BridgeBehaviorInterface::isScaffoldPresent()`; replies [`ModuleReply::Bool`].
     BridgeIsScaffoldPresent,
+    /// batch R78: `FiringTracker::shotFired(weaponFired, victimID)` (the weapon by its slot in the object's set; `INVALID_ID`: a ground shot).
+    FiringTrackerShotFired { slot: i32, victim: ObjectId },
+    /// batch R78: `FiringTracker::getNumConsecutiveShotsAtVictim(victim)` (`None`: `NULL`); replies [`ModuleReply::Int`].
+    FiringTrackerGetNumConsecutiveShotsAtVictim(Option<ObjectId>),
+    /// batch R78: `FiringTracker::getLastShotVictim()`; replies [`ModuleReply::Id`].
+    FiringTrackerGetLastShotVictim,
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,

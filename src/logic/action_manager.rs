@@ -150,75 +150,75 @@ pub struct ParkingFacts {
 pub trait ActionHost: ObjectWeaponHost {
     // ---- the object ---------------------------------------------------------------------------------------------
     /// `isMobile()`.
-    fn is_mobile(&self, o: ObjectId) -> bool;
+    fn is_mobile(&mut self, o: ObjectId) -> bool;
     /// `getCarrierDeckHeight()`.
-    fn carrier_deck_height(&self, o: ObjectId) -> f32;
+    fn carrier_deck_height(&mut self, o: ObjectId) -> f32;
     /// `isDisabledByType(t)`.
-    fn is_disabled_by_type(&self, o: ObjectId, t: DisabledType) -> bool;
+    fn is_disabled_by_type(&mut self, o: ObjectId, t: DisabledType) -> bool;
     /// `getBodyModule()`: its `getHealth()` and `getMaxHealth()`; `None` = no body module.
-    fn body_health(&self, o: ObjectId) -> Option<(f32, f32)>;
+    fn body_health(&mut self, o: ObjectId) -> Option<(f32, f32)>;
     /// `getTransportSlotCount()`.
-    fn transport_slot_count(&self, o: ObjectId) -> i32;
+    fn transport_slot_count(&mut self, o: ObjectId) -> i32;
     /// `isFactionStructure()`.
-    fn is_faction_structure(&self, o: ObjectId) -> bool;
+    fn is_faction_structure(&mut self, o: ObjectId) -> bool;
     /// `getShroudedStatus(playerIndex)`.
-    fn object_shrouded_status(&self, o: ObjectId, player_index: i32) -> ObjectShroudStatus;
+    fn object_shrouded_status(&mut self, o: ObjectId, player_index: i32) -> ObjectShroudStatus;
     /// `getBuilderID()`.
-    fn builder_id(&self, o: ObjectId) -> ObjectId;
+    fn builder_id(&mut self, o: ObjectId) -> ObjectId;
     /// `getControllingPlayer()->getPlayerType() == PLAYER_HUMAN`; `None` when there is no controlling player.
-    fn controlling_player_is_human(&self, o: ObjectId) -> Option<bool>;
+    fn controlling_player_is_human(&mut self, o: ObjectId) -> Option<bool>;
     /// `player->getRelationship(o->getTeam())` for the player with this index (`NEUTRAL` for an object with no
     /// team: `Player::getRelationship(NULL)` is `NEUTRAL`).
-    fn player_relationship_to_team_of(&self, player_index: i32, o: ObjectId) -> Relationship;
+    fn player_relationship_to_team_of(&mut self, player_index: i32, o: ObjectId) -> Relationship;
 
     // ---- special powers -------------------------------------------------------------------------------------------
     /// `hasSpecialPower(type)`.
-    fn has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool;
+    fn has_special_power(&mut self, o: ObjectId, t: SpecialPowerType) -> bool;
     /// `findSpecialPowerModuleInterface(type)->getPercentReady()`; `None` = no such module.
-    fn special_power_percent_ready_by_type(&self, o: ObjectId, t: SpecialPowerType) -> Option<f32>;
+    fn special_power_percent_ready_by_type(&mut self, o: ObjectId, t: SpecialPowerType) -> Option<f32>;
     /// `getSpecialPowerModule(template)->getPercentReady()`; `None` = no such module.
-    fn special_power_percent_ready_by_template(&self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32>;
+    fn special_power_percent_ready_by_template(&mut self, o: ObjectId, template: &SpecialPowerTemplateRef) -> Option<f32>;
     /// `findSpecialAbilityUpdate(type)`.
-    fn special_ability_update(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialAbilityFacts>;
+    fn special_ability_update(&mut self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialAbilityFacts>;
     /// `findSpecialAbilityUpdate(type)->findSpecialObjectWithProducerID(target) != NULL`.
-    fn special_ability_has_object_with_producer(&self, o: ObjectId, t: SpecialPowerType, target: ObjectId) -> bool;
+    fn special_ability_has_object_with_producer(&mut self, o: ObjectId, t: SpecialPowerType, target: ObjectId) -> bool;
     /// `findSpecialPowerWithOverridableDestinationActive(type) != NULL`.
-    fn special_power_overridable_destination_active(&self, o: ObjectId, t: SpecialPowerType) -> bool;
+    fn special_power_overridable_destination_active(&mut self, o: ObjectId, t: SpecialPowerType) -> bool;
 
     // ---- modules --------------------------------------------------------------------------------------------------
     /// `findUpdateModule(key) != NULL`.
-    fn has_named_update_module(&self, o: ObjectId, which: NamedUpdateModule) -> bool;
+    fn has_named_update_module(&mut self, o: ObjectId, which: NamedUpdateModule) -> bool;
     /// `SupplyWarehouseDockUpdate::getBoxesStored()`.
-    fn warehouse_boxes_stored(&self, o: ObjectId) -> i32;
+    fn warehouse_boxes_stored(&mut self, o: ObjectId) -> i32;
     /// `getAI() != NULL`.
-    fn has_ai_interface(&self, o: ObjectId) -> bool;
+    fn has_ai_interface(&mut self, o: ObjectId) -> bool;
     /// `getAI()->getSupplyTruckAIInterface()`.
-    fn supply_truck_ai(&self, o: ObjectId) -> Option<SupplyTruckFacts>;
+    fn supply_truck_ai(&mut self, o: ObjectId) -> Option<SupplyTruckFacts>;
     /// `getAI()->getDozerAIInterface()`.
-    fn dozer_ai(&self, o: ObjectId) -> Option<DozerFacts>;
+    fn dozer_ai(&mut self, o: ObjectId) -> Option<DozerFacts>;
     /// Whether some behaviour module of `o` has a `DockUpdateInterface`.
-    fn has_dock_update_interface(&self, o: ObjectId) -> bool;
+    fn has_dock_update_interface(&mut self, o: ObjectId) -> bool;
     /// Every behaviour module of `o` that has a `CollideModuleInterface`, in module order, asked about `other`.
-    fn collide_facts(&self, o: ObjectId, other: ObjectId) -> Vec<CollideFacts>;
+    fn collide_facts(&mut self, o: ObjectId, other: ObjectId) -> Vec<CollideFacts>;
     /// Every behaviour module of `dest` that has a `ParkingPlaceBehaviorInterface`, in module order, asked about
     /// `obj`.
-    fn parking_facts(&self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts>;
+    fn parking_facts(&mut self, dest: ObjectId, obj: ObjectId) -> Vec<ParkingFacts>;
     /// `getContain()->isHealContain()`.
-    fn contain_is_heal_contain(&self, o: ObjectId) -> bool;
+    fn contain_is_heal_contain(&mut self, o: ObjectId) -> bool;
     /// `getContain()->getStealthUnitsContained()`.
-    fn contain_stealth_units_contained(&self, o: ObjectId) -> i32;
+    fn contain_stealth_units_contained(&mut self, o: ObjectId) -> i32;
     /// `container->getContain()->isValidContainerFor(obj, checkCapacity)`.
-    fn contain_is_valid_container_for(&self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
+    fn contain_is_valid_container_for(&mut self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
     /// `getContain()->getClosestRider(pos)`.
-    fn contain_closest_rider(&self, container: ObjectId, pos: &Coord3D) -> Option<ObjectId>;
+    fn contain_closest_rider(&mut self, container: ObjectId, pos: &Coord3D) -> Option<ObjectId>;
     /// `getSpawnBehaviorInterface()->getClosestSlave(pos)`: `None` = no spawn behaviour.
-    fn spawn_closest_slave(&self, o: ObjectId, pos: &Coord3D) -> Option<Option<ObjectId>>;
+    fn spawn_closest_slave(&mut self, o: ObjectId, pos: &Coord3D) -> Option<Option<ObjectId>>;
 
     // ---- the world ------------------------------------------------------------------------------------------------
     /// `ThePartitionManager->getShroudStatusForPlayer(playerIndex, loc)`.
-    fn cell_shroud_status_for_player(&self, player_index: i32, loc: &Coord3D) -> CellShroudStatus;
+    fn cell_shroud_status_for_player(&mut self, player_index: i32, loc: &Coord3D) -> CellShroudStatus;
     /// `TheTerrainLogic->isUnderwater(x, y)`.
-    fn is_underwater(&self, x: f32, y: f32) -> bool;
+    fn is_underwater(&mut self, x: f32, y: f32) -> bool;
 }
 
 /// `appearsToContainFriendlies(obj, otherObject)`: "check if the object is a container containing stealth units
@@ -241,7 +241,7 @@ fn appears_to_contain_friendlies<H: ActionHost>(host: &mut H, obj: ObjectId, oth
 
 /// `isObjectShroudedForAction(source, target, commandSource)`: the target is only shrouded for action if the asking
 /// player is human, the asking impetus is not from a script and the target object is Fogged or worse.
-fn is_object_shrouded_for_action<H: ActionHost>(host: &H, source: ObjectId, target: ObjectId, command_source: CommandSourceType) -> bool {
+fn is_object_shrouded_for_action<H: ActionHost>(host: &mut H, source: ObjectId, target: ObjectId, command_source: CommandSourceType) -> bool {
     if let (Some(human), Some(player)) = (host.controlling_player_is_human(source), host.controlling_player(source)) {
         if human && command_source != CommandSourceType::FromScript && host.object_shrouded_status(target, player) >= ObjectShroudStatus::Fogged {
             return true;
@@ -252,7 +252,7 @@ fn is_object_shrouded_for_action<H: ActionHost>(host: &H, source: ObjectId, targ
 
 /// A stealthed, undetected and undisguised target: "if the enemy unit is stealthed and not detected, then we can't
 /// attack it!"
-fn is_hidden_by_stealth<H: ActionHost>(host: &H, target: ObjectId) -> bool {
+fn is_hidden_by_stealth<H: ActionHost>(host: &mut H, target: ObjectId) -> bool {
     host.test_status(target, OBJECT_STATUS_STEALTHED) && !host.test_status(target, OBJECT_STATUS_DETECTED) && !host.test_status(target, OBJECT_STATUS_DISGUISED)
 }
 
@@ -319,7 +319,7 @@ pub fn can_get_repaired_at<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, r
 }
 
 /// `ActionManager::canTransferSuppliesAt(obj, transferDest)`: note that "dest" is typically a building.
-pub fn can_transfer_supplies_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, transfer_dest: Option<ObjectId>) -> bool {
+pub fn can_transfer_supplies_at<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, transfer_dest: Option<ObjectId>) -> bool {
     // sanity
     let (Some(obj), Some(transfer_dest)) = (obj, transfer_dest) else { return false };
 
@@ -381,7 +381,7 @@ pub fn can_transfer_supplies_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, 
 
 /// `ActionManager::canDockAt(obj, dockDest, commandSource)`: can object 'obj' dock with object 'dockDest' for any
 /// reason.
-pub fn can_dock_at<H: ActionHost>(host: &H, obj: ObjectId, dock_dest: ObjectId, _command_source: CommandSourceType) -> bool {
+pub fn can_dock_at<H: ActionHost>(host: &mut H, obj: ObjectId, dock_dest: ObjectId, _command_source: CommandSourceType) -> bool {
     // look for a dock interface
     if !host.has_dock_update_interface(dock_dest) {
         return false; // no dock update interface, can't possibly dock
@@ -402,7 +402,7 @@ pub fn can_dock_at<H: ActionHost>(host: &H, obj: ObjectId, dock_dest: ObjectId, 
 }
 
 /// `ActionManager::canGetHealedAt(obj, healDest, commandSource)`.
-pub fn can_get_healed_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, heal_dest: Option<ObjectId>, command_source: CommandSourceType) -> bool {
+pub fn can_get_healed_at<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, heal_dest: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
     let (Some(obj), Some(heal_dest)) = (obj, heal_dest) else { return false };
 
@@ -455,7 +455,7 @@ pub fn can_get_healed_at<H: ActionHost>(host: &H, obj: Option<ObjectId>, heal_de
 }
 
 /// `ActionManager::canRepairObject(obj, objectToRepair, commandSource)`.
-pub fn can_repair_object<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_repair: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
+pub fn can_repair_object<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_repair: Option<ObjectId>, command_source: CommandSourceType) -> AResult<bool> {
     // sanity
     let (Some(obj), Some(object_to_repair)) = (obj, object_to_repair) else { return Ok(false) };
 
@@ -523,7 +523,7 @@ pub fn can_repair_object<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_
 
 /// `ActionManager::canResumeConstructionOf(obj, objectBeingConstructed, commandSource)`.
 pub fn can_resume_construction_of<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_being_constructed: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -820,7 +820,7 @@ pub fn get_can_attack_object<H: ActionHost>(
 
 /// `ActionManager::canConvertObjectToCarBomb(obj, objectToConvert, commandSource)`.
 pub fn can_convert_object_to_car_bomb<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_convert: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -847,7 +847,7 @@ pub fn can_convert_object_to_car_bomb<H: ActionHost>(
 }
 
 /// `ActionManager::canHijackVehicle(obj, objectToHijack, commandSource)` (LORENZEN).
-pub fn can_hijack_vehicle<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_hijack: Option<ObjectId>, command_source: CommandSourceType) -> bool {
+pub fn can_hijack_vehicle<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_hijack: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
     let (Some(obj), Some(object_to_hijack)) = (obj, object_to_hijack) else { return false };
 
@@ -893,7 +893,7 @@ pub fn can_hijack_vehicle<H: ActionHost>(host: &H, obj: Option<ObjectId>, object
 }
 
 /// `ActionManager::canSabotageBuilding(obj, objectToSabotage, commandSource)`.
-pub fn can_sabotage_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, object_to_sabotage: Option<ObjectId>, command_source: CommandSourceType) -> bool {
+pub fn can_sabotage_building<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, object_to_sabotage: Option<ObjectId>, command_source: CommandSourceType) -> bool {
     // sanity
     let (Some(obj), Some(object_to_sabotage)) = (obj, object_to_sabotage) else { return false };
 
@@ -925,7 +925,7 @@ pub fn can_sabotage_building<H: ActionHost>(host: &H, obj: Option<ObjectId>, obj
 
 /// `ActionManager::canMakeObjectDefector(obj, objectToMakeDefector, commandSource)` (LORENZEN).
 pub fn can_make_object_defector<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     object_to_make_defector: Option<ObjectId>,
     command_source: CommandSourceType,
@@ -1292,7 +1292,7 @@ pub fn can_snipe_vehicle<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, obj
 }
 
 /// `isPointOnMap(testPos)`.
-fn is_point_on_map<H: ActionHost>(host: &H, test_pos: &Coord3D) -> bool {
+fn is_point_on_map<H: ActionHost>(host: &mut H, test_pos: &Coord3D) -> bool {
     let map_region = host.terrain_extent();
     map_region.is_in_region_no_z(test_pos)
 }
@@ -1302,7 +1302,7 @@ fn is_point_on_map<H: ActionHost>(host: &H, test_pos: &Coord3D) -> bool {
 // The eight parameters are upstream's (`canDoSpecialPowerAtLocation`, one overload).
 #[allow(clippy::too_many_arguments)]
 pub fn can_do_special_power_at_location<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: ObjectId,
     loc: &Coord3D,
     _command_source: CommandSourceType,
@@ -1641,7 +1641,7 @@ pub fn can_do_special_power_at_object<H: ActionHost>(
 
 /// `ActionManager::canDoSpecialPower(obj, spTemplate, commandSource, commandOptions, checkSourceRequirements)`.
 pub fn can_do_special_power<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: ObjectId,
     sp_template: &SpecialPowerTemplateRef,
     _command_source: CommandSourceType,
@@ -1730,7 +1730,7 @@ pub fn can_do_special_power<H: ActionHost>(
 
 /// `ActionManager::canFireWeaponAtLocation(obj, loc, commandSource, slot, objectInWay)`.
 pub fn can_fire_weapon_at_location<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: Option<ObjectId>,
     loc: Option<&Coord3D>,
     _command_source: CommandSourceType,
@@ -1784,7 +1784,7 @@ pub fn can_fire_weapon_at_object<H: ActionHost>(
 }
 
 /// `ActionManager::canFireWeapon(obj, slot, commandSource)`.
-pub fn can_fire_weapon<H: ActionHost>(host: &H, obj: Option<ObjectId>, slot: i32, _command_source: CommandSourceType) -> bool {
+pub fn can_fire_weapon<H: ActionHost>(host: &mut H, obj: Option<ObjectId>, slot: i32, _command_source: CommandSourceType) -> bool {
     // Sanity check
     let Some(obj) = obj else { return false };
 
@@ -1860,7 +1860,7 @@ pub fn can_player_garrison<H: ActionHost>(host: &mut H, player: Option<i32>, tar
 
 /// `ActionManager::canOverrideSpecialPowerDestination(obj, loc, spType, commandSource)`.
 pub fn can_override_special_power_destination<H: ActionHost>(
-    host: &H,
+    host: &mut H,
     obj: ObjectId,
     loc: &Coord3D,
     sp_type: SpecialPowerType,

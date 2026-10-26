@@ -1449,6 +1449,9 @@ impl ProbeModule {
             | ModuleCall::BridgeRemoveScaffolding
             | ModuleCall::BridgeIsScaffoldInMotion
             | ModuleCall::BridgeIsScaffoldPresent
+            | ModuleCall::FiringTrackerShotFired { .. }
+            | ModuleCall::FiringTrackerGetNumConsecutiveShotsAtVictim(_)
+            | ModuleCall::FiringTrackerGetLastShotVictim
             | ModuleCall::StickyBombInit { .. }
             | ModuleCall::StickyBombIsTimedBomb
             | ModuleCall::StickyBombGetDetonationFrame

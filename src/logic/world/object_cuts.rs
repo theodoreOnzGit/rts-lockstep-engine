@@ -34,7 +34,7 @@
 //! | `Energy` (wave 6 `energy`) | `objectEnteringInfluence`, `objectLeavingInfluence`, `adjustPower` | `CutCall::Energy*` |
 //! | `PartitionManager` (wave 6 `partition`) | `registerObject`, `unRegisterObject`, `PartitionData::makeDirty`, `doShroudReveal`, `queueUndoShroudReveal`, `doShroudCover`, `undoShroudCover`, `do/undoValueAffect`, `do/undoThreatAffect`, `iteratePotentialCollisions`, `iterateObjectsInRange` | `CutCall::Partition*`, the two scripted iterations |
 //! | `ExperienceTracker` (wave 6 `trackers`) | `setVeterancyLevel`, `setExperienceAndLevel`, `addExperiencePoints`, `getExperienceValue`, `isAcceptingExperiencePoints` | default copies of the tracker's logic over `Object::experience`, below |
-//! | `FiringTracker`, the helpers (layer 9) | `sleepUntil`, `shotFired`, `startDefectionTimer`, `notifySubdualDamage`, `doStatusDamage`, `doTempWeaponBonus` | `make_helper` makes a stub; the calls are `ModuleCall`s |
+//! | `FiringTracker`, the helpers (layer 9) | `sleepUntil`, `shotFired`, `startDefectionTimer`, `notifySubdualDamage`, `doStatusDamage`, `doTempWeaponBonus` | ~~`make_helper` makes a stub~~ real modules since batch R78 (`make_helper`'s stub only under `stub_helpers`); the calls are `ModuleCall`s |
 //! | `WeaponSet`, `Weapon` (layer 8, not translated) | `updateWeaponSet`, `weaponSetOnWeaponBonusChange`, the slot queries of `isAbleToAttack`, `fireCurrentWeapon` and the other 25 forwards | `CutCall::WeaponSet*`, `weapon_in_slot`, `weapon_set_has_any_weapon`; ~~**the forwards are not translated**~~ **CORRECTED 2026-10-20 (`p1w8-sonnet`)** — the forwards are `logic::world::object_weapons`, generic over a host the full-game adapter provides; `Object` holds the real `WeaponSet`, and the two table queries here are only consulted in addition to it |
 //! | `AIUpdateInterface`, `TheAI` (layer 10) | `setAttitude`, `setAttackInfo`, `aiIdle`, `transferAttack`, `getTurretRotAndPitch`, `getWhichTurretForWeaponSlot`, `isTurretEnabled`, `getCurLocomotor`, `getDozerAIInterface`, `pathfinder()->updatePos/removePos/addObjectToPathfindMap/removeObjectFromPathfindMap`, `AIGroup::remove` | `CutCall::Ai*`, `CutCall::Pathfinder*`, `CutCall::Dozer*` |
 //! | `ScriptEngine` (layer 11) | `notifyOfObjectCreationOrDestruction`, `notifyOfObjectDestruction`, `getAttackInfo`, `getObjectsShouldReceiveDifficultyBonus`, `AppendDebugMessage` | `CutCall::ScriptEngine*`, `ObjectGlobals` |
@@ -1832,8 +1832,8 @@ pub struct ObjectCuts {
     pub weapon_slot_template: BTreeMap<(ObjectId, i32), usize>,
     /// batch R59: the status (a `WeaponStatus` value) of the current weapon of an object with no weapon set (no entry: no current weapon).
     pub cur_weapon_status: BTreeMap<ObjectId, i32>,
-    /// batch W1b: `getNumConsecutiveShotsFiredAtTarget(victim)` by (object, victim) (the firing tracker helper is not an object module
-    /// yet; no entry: 0).
+    /// batch W1b: `getNumConsecutiveShotsFiredAtTarget(victim)` by (object, victim) (~~the firing tracker helper is not an object module
+    /// yet~~ batch R78: only for a stand-in tracker, `stub_helpers`; no entry: 0).
     pub consecutive_shots_at_victim: BTreeMap<(ObjectId, ObjectId), i32>,
     /// batch W1b: `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`'s two points, by bridge (no entry: the origin twice).
     pub bridge_attack_points: BTreeMap<ObjectId, (Coord3D, Coord3D)>,

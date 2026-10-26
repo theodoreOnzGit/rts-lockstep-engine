@@ -376,6 +376,11 @@ pub enum ObjectClientEvent {
     FxListDoFxObjSecondary { fx: Vec<u8>, object_id: ObjectId, secondary: ObjectId },
     /// `FXList::doFXPos(fx, &position)` (`FXListDie` with `OrientToObject = No`).
     FxListDoFxPos { fx: Vec<u8>, position: Coord3D },
+    /// batch R78: `FiringTracker`'s looping fire sound started: a copy of the weapon's fire sound with the owner's id added, and its handle
+    /// kept (with `only_if_not_playing`, only when `!TheAudio->isCurrentlyPlaying(handle)`).
+    FiringTrackerStartLoopingSound { object_id: ObjectId, name: Vec<u8>, only_if_not_playing: bool },
+    /// batch R78: `FiringTracker`'s looping fire sound stopped: `TheAudio->removeAudioEvent(m_audioHandle)`.
+    FiringTrackerStopLoopingSound { object_id: ObjectId },
     /// batch R39: `FXList::doFXPos(fx, &position, NULL, 0, NULL, overrideRadius)` (`StickyBombUpdate::detonate`).
     FxListDoFxPosRadius { fx: Vec<u8>, position: Coord3D, radius: f32 },
     // --- end p1w11-sonnet ---

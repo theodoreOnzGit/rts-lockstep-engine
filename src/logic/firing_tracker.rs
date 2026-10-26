@@ -234,7 +234,14 @@ impl FiringTracker {
     /// `FiringTracker(thing, modData)`: no shots, no victim, nothing pending,
     /// and `setWakeFrame(getObject(), UPDATE_SLEEP_FOREVER)`.
     pub fn new<H: FiringHost>(host: &mut H) -> Self {
+        let me = FiringTracker::unconstructed();
         host.set_wake_frame(UPDATE_SLEEP_FOREVER);
+        me
+    }
+
+    /// The constructor's state, without its `setWakeFrame` (the world runs that once the module is part of its object, as for the
+    /// other helpers).
+    pub fn unconstructed() -> Self {
         FiringTracker {
             consecutive_shots: 0,
             victim_id: INVALID_ID,
@@ -242,6 +249,11 @@ impl FiringTracker {
             frame_to_force_reload: 0,
             frame_to_stop_looping_sound: 0,
         }
+    }
+
+    /// The state the tests compare, as words: the shots, the victim, the cooldown, reload and sound frames.
+    pub fn state_words(&self) -> [u32; 5] {
+        [self.consecutive_shots as u32, self.victim_id as u32, self.frame_to_start_cooldown, self.frame_to_force_reload, self.frame_to_stop_looping_sound]
     }
 
     /// `~FiringTracker()`: `TheAudio->removeAudioEvent(m_audioHandle)`,
