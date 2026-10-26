@@ -1452,6 +1452,13 @@ impl ProbeModule {
             | ModuleCall::FiringTrackerShotFired { .. }
             | ModuleCall::FiringTrackerGetNumConsecutiveShotsAtVictim(_)
             | ModuleCall::FiringTrackerGetLastShotVictim
+            | ModuleCall::SupplyTruckGetNumberBoxes
+            | ModuleCall::SupplyTruckIsAvailableForSupplying
+            | ModuleCall::DozerGetCurrentTask
+            | ModuleCall::DozerGetTaskTarget(_)
+            | ModuleCall::SpecialAbilityGetSpecialObjectCount
+            | ModuleCall::SpecialAbilityGetSpecialObjectMax
+            | ModuleCall::SpecialAbilityFindSpecialObjectWithProducerId(_)
             | ModuleCall::StickyBombInit { .. }
             | ModuleCall::StickyBombIsTimedBomb
             | ModuleCall::StickyBombGetDetonationFrame

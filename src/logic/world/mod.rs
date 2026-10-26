@@ -53,6 +53,7 @@ pub mod create_host_world;
 pub mod weapon_host_world; // layer 12, batch W1b: WeaponHost for World
 pub mod update_host_world;
 pub mod helper_host_world;
+pub mod action_host_world;
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;

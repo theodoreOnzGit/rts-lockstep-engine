@@ -727,6 +727,20 @@ pub enum ModuleCall {
     FiringTrackerGetNumConsecutiveShotsAtVictim(Option<ObjectId>),
     /// batch R78: `FiringTracker::getLastShotVictim()`; replies [`ModuleReply::Id`].
     FiringTrackerGetLastShotVictim,
+    /// batch R79: `SupplyTruckAIInterface::getNumberBoxes()` (of an AI module); replies [`ModuleReply::Int`].
+    SupplyTruckGetNumberBoxes,
+    /// batch R79: `SupplyTruckAIInterface::isAvailableForSupplying()`; replies [`ModuleReply::Bool`].
+    SupplyTruckIsAvailableForSupplying,
+    /// batch R79: `DozerAIInterface::getCurrentTask()` (of an AI module); replies [`ModuleReply::Int`].
+    DozerGetCurrentTask,
+    /// batch R79: `DozerAIInterface::getTaskTarget(task)`; replies [`ModuleReply::Id`].
+    DozerGetTaskTarget(i32),
+    /// batch R79: `SpecialAbilityUpdate::getSpecialObjectCount()`; replies [`ModuleReply::Int`].
+    SpecialAbilityGetSpecialObjectCount,
+    /// batch R79: `SpecialAbilityUpdate::getSpecialObjectMax()`; replies [`ModuleReply::Int`].
+    SpecialAbilityGetSpecialObjectMax,
+    /// batch R79: `SpecialAbilityUpdate::findSpecialObjectWithProducerID(target) != NULL`; replies [`ModuleReply::Bool`].
+    SpecialAbilityFindSpecialObjectWithProducerId(ObjectId),
     // --- end p1w13-sonnet ---
     /// `ToppleUpdate::isAbleToBeToppled()`; replies [`ModuleReply::Bool`].
     IsAbleToBeToppled,
