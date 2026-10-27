@@ -61,6 +61,7 @@
 #define Locomotor PfLocomotor
 #define SlavedUpdateInterface PfSlavedUpdateInterface
 #define BehaviorModule PfBehaviorModule
+#define Player PfPlayer
 #define PartitionManager PfPartitionManager
 #define ThePartitionManager PfThePartitionManager
 #define PartitionFilter PfPartitionFilter

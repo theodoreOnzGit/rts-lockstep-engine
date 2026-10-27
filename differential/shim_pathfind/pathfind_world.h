@@ -11,7 +11,9 @@
 ** water, extent and bridge interactions; the AI's data (TAiData: the wall height); the game logic's object list.
 ** Batch P5 (the movement checks and lines): the objects' relations, crush levels and tests, ignored obstacles, slavers (a behaviour
 ** module with a slaved update), containers, height state and weapon (Weapon: the terrain line of sight); a locomotor's legal surfaces;
-** the partition's closest object; the AI data's attack-uses-line-of-sight. The answers the wrapper's (relations and lines hashed). */
+** the partition's closest object; the AI data's attack-uses-line-of-sight. The answers the wrapper's (relations and lines hashed).
+** Batch P6 (the A* search): the controlling player's type (Player), the AI's canPathThroughUnits, the terrain's ground height, the
+** global data's debug mode (GlobalData: off), the AI's debug enum, and ClipLine2D's declaration (the real one is linked). */
 #ifndef SHIM_PATHFIND_WORLD_H
 #define SHIM_PATHFIND_WORLD_H
 #include "Lib/BaseType.h"
@@ -78,6 +80,13 @@ public:
 	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Object *victim) const;
 	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const;
 };
+/* batch P6: the controlling player (its type, an Int: GameCommon.h's PlayerType comes later) */
+class Player { public: Int getPlayerType() const { return m_type; } Int m_type; };
+/* batch P6: the global data's AI debug mode, and AI.h's debug values */
+class GlobalData { public: Int m_debugAI; };
+extern GlobalData *TheGlobalData;
+enum { AI_DEBUG_NONE = 0, AI_DEBUG_PATHS, AI_DEBUG_TERRAIN, AI_DEBUG_CELLS, AI_DEBUG_GROUND_PATHS, AI_DEBUG_ZONES };
+Bool ClipLine2D(ICoord2D *p1, ICoord2D *p2, ICoord2D *c1, ICoord2D *c2, IRegion2D *clipRegion);
 /* batch P4: a unit's AI */
 class AIUpdateInterface
 {
@@ -85,6 +94,9 @@ public:
 	/* batch P5 */
 	ObjectID getIgnoredObstacleID() const { return m_ignored; }
 	ObjectID m_ignored;
+	/* batch P6 */
+	Bool canPathThroughUnits() const { return m_pathThrough; }
+	bool m_pathThrough;
 	Bool isDoingGroundMovement() const { return m_ground; }
 	Bool isAircraftThatAdjustsDestination() const { return m_adjusts; }
 	const ICoord2D *getPathfindGoalCell() const { return &m_goal; }
@@ -123,6 +135,8 @@ public:
 		m_modules[0] = NULL; m_modules[1] = NULL;
 		m_container = NULL;
 		m_above = m_hasWeapon = false;
+		m_ai.m_pathThrough = false;
+		m_player = NULL;
 	}
 	/* (the modules point into the object: copies re-point them) */
 	Object(const Object &o) { *this = o; }
@@ -158,6 +172,8 @@ public:
 	Object *getContainedBy() const { return m_container; }
 	Bool isSignificantlyAboveTerrain() const { return m_above; }
 	const Weapon *getCurrentWeapon() const { return m_hasWeapon ? &m_weapon : NULL; }
+	/* batch P6 */
+	Player *getControllingPlayer() const { return m_player; }
 	void attemptDamage(DamageInfo *info);
 	Object *getNextObject() { return m_next; }
 	/* batch P3: a wall piece's place and geometry */
@@ -187,6 +203,8 @@ public:
 	Object *m_container;
 	bool m_above, m_hasWeapon;
 	Weapon m_weapon;
+	/* batch P6 */
+	Player *m_player;
 };
 /* batch P3: a bridge, its answers the wrapper's */
 class BridgeInfo { public: Coord3D from, to; ObjectID bridgeObjectID; };
@@ -235,6 +253,8 @@ public:
 	void getMaximumPathfindExtent(Region3D *extent) const;
 	Bool objectInteractsWithBridgeLayer(Object *obj, Int layer, Bool considerBridgeHealth = true) const;
 	Bool objectInteractsWithBridgeEnd(Object *obj, Int layer) const;
+	/* batch P6 */
+	Real getGroundHeight(Real x, Real y, Coord3D *normal = NULL) const;
 };
 extern TerrainLogic *TheTerrainLogic;
 class GameLogic

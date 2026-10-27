@@ -7,7 +7,7 @@
 //   (`PartitionFilter` and its 33 subclasses, `filtersAllow`)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Line2D.cpp
 //   (`IntersectLine2D`, `PointInsideArea2D`, the two functions the irregular
-//   area filter calls)
+//   area filter calls; and `ClipLine2D`, the pathfinder's `clip`)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -520,4 +520,76 @@ pub fn filters_allow<H: PartitionFilterHost>(pm: &mut PartitionManager, host: &H
 /// The "infantry or vehicle" test `tryPosition` applies to a unit.
 pub(super) fn is_unit<H: PartitionFilterHost>(host: &H, id: ObjectId) -> bool {
     host.is_kind_of(id, KINDOF_INFANTRY) || host.is_kind_of(id, KINDOF_VEHICLE)
+}
+
+/// `ClipLine2D(p1, p2, c1, c2, clipRegion)` (Line2D.cpp): the segment clipped to the inclusive region by Cohen-Sutherland in integers
+/// (the second point's moves use the first's clipped coordinates; divisions truncate). `None` when both points are outside on one
+/// side or a clip divides by zero (upstream leaves `c1`, `c2` unwritten then); otherwise the clipped points and whether both lie in
+/// the region.
+pub fn clip_line_2d(p1: crate::common::base_type::ICoord2D, p2: crate::common::base_type::ICoord2D, region: &crate::common::base_type::IRegion2D) -> Option<(bool, crate::common::base_type::ICoord2D, crate::common::base_type::ICoord2D)> {
+    use crate::common::base_type::ICoord2D;
+    const CLIP_LEFT: i32 = 0x01;
+    const CLIP_RIGHT: i32 = 0x02;
+    const CLIP_BOTTOM: i32 = 0x04;
+    const CLIP_TOP: i32 = 0x08;
+    let (left, right, top, bottom) = (region.lo.x, region.hi.x, region.lo.y, region.hi.y);
+    let (mut x1, mut y1, mut x2, mut y2) = (p1.x, p1.y, p2.x, p2.y);
+    let code = |x: i32, y: i32| {
+        let mut c = if x < left { CLIP_LEFT } else if x > right { CLIP_RIGHT } else { 0 };
+        if y < top {
+            c |= CLIP_TOP;
+        } else if y > bottom {
+            c |= CLIP_BOTTOM;
+        }
+        c
+    };
+    let (code1, code2) = (code(x1, y1), code(x2, y2));
+    if code1 | code2 == 0 {
+        return Some((true, p1, p2));
+    }
+    if code1 & code2 != 0 {
+        return None;
+    }
+    if code1 != 0 {
+        if code1 & (CLIP_TOP | CLIP_BOTTOM) != 0 {
+            let edge = if code1 & CLIP_TOP != 0 { top } else { bottom };
+            let diff = y2 - y1;
+            if diff == 0 {
+                return None;
+            }
+            x1 = x1.wrapping_add((x2 - x1).wrapping_mul(edge - y1) / diff);
+            y1 = edge;
+        }
+        if x1 > right || x1 < left {
+            let edge = if x1 > right { right } else { left };
+            let diff = x2 - x1;
+            if diff == 0 {
+                return None;
+            }
+            y1 = y1.wrapping_add((y2 - y1).wrapping_mul(edge - x1) / diff);
+            x1 = edge;
+        }
+    }
+    if code2 != 0 {
+        if code2 & (CLIP_TOP | CLIP_BOTTOM) != 0 {
+            let edge = if code2 & CLIP_TOP != 0 { top } else { bottom };
+            let diff = y2 - y1;
+            if diff == 0 {
+                return None;
+            }
+            x2 = x2.wrapping_add((x2 - x1).wrapping_mul(edge - if crate::logic::modules::plant(3101) { y1 } else { y2 }) / diff);
+            y2 = edge;
+        }
+        if x2 > right || x2 < left {
+            let edge = if x2 > right { right } else { left };
+            let diff = x2 - x1;
+            if diff == 0 {
+                return None;
+            }
+            y2 = y2.wrapping_add((y2 - y1).wrapping_mul(edge - x2) / diff);
+            x2 = edge;
+        }
+    }
+    let inside = |x: i32, y: i32| x >= left && x <= right && y >= top && y <= bottom;
+    Some((inside(x1, y1) && inside(x2, y2), ICoord2D { x: x1, y: y1 }, ICoord2D { x: x2, y: y2 }))
 }
