@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of layer 10 batches A2, A3 and A4, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
+//! Code-to-code verification of layer 10 batches A2 to A5, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
 //! `logic::ai::ai_states` (its state machine, first states and update), against upstream `AIUpdate.cpp` and `AIStates.cpp` (commit
 //! 0a05454d) in `differential/wrap_ai.cpp`: their members cut verbatim,
 //! with `Locomotor.cpp` compiled UNCHANGED and the paths of `AIPathfind.cpp` (batch P1's cut), so that the AI drives the REAL
@@ -52,6 +52,13 @@
 //! update and the idle state ask, the repulsor, the vision range, the rates of the placeholder states and turret updates. The
 //! dump adds the machine (its state, sleep, default, goal, lock, temporary state, goal path, the idle state's members).
 //!
+//! Batch A5 adds the commands: a quarter of the operations are `aiDoCommand` of random parms (any command, its source, an object,
+//! the team, a waypoint, a polygon, an int value, a command button, coords; what upstream dereferences unchecked is always given)
+//! and `doQuickExit`, over a scene that adds the map's extent, the team's members, the action manager's answers, the other AIs'
+//! paths, the move-away path and quick path rates, the weapon's continue range and contact flag, the partition's closest
+//! attackable object, the position finder, the container, the special modules and the command set. The dump adds the area to
+//! guard, the goal waypoint and the goal squad.
+//!
 //! # Results
 //!
 //! See the `# Results` section of the test function's doc comment.
@@ -84,6 +91,7 @@ use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::AiEnv as Env;
+use rts_lockstep_engine::logic::ai::ai_commands::AiCommandParms;
 use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule};
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiUpdate, LocoGoalType};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
@@ -141,13 +149,22 @@ const L_PF_SNAP: u32 = 71;
 const L_PF_UPDATE_GOAL: u32 = 72;
 const L_PF_QUEUE: u32 = 73;
 const L_TURRET_UPDATE: u32 = 74;
-const L_AI_COMMAND: u32 = 75;
 const L_REPULSOR: u32 = 76;
 const L_CLEAR_SET_MODEL: u32 = 77;
 const L_SCRIPT_NOTIFY: u32 = 78;
 const L_STATE_ENTER: u32 = 79;
 const L_STATE_UPDATE: u32 = 80;
 const L_STATE_EXIT: u32 = 81;
+const L_EDGE_POINT: u32 = 82;
+const L_ACTION: u32 = 83;
+const L_MOVE_AWAY_PATH: u32 = 84;
+const L_MOVE_ALLIES: u32 = 85;
+const L_PATH_EXISTS: u32 = 86;
+const L_MAX_SHOTS: u32 = 87;
+const L_CLOSEST_OBJECT: u32 = 88;
+const L_FIND_POSITION: u32 = 89;
+const L_CONTAIN: u32 = 90;
+const L_MODULE: u32 = 91;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
 const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
@@ -692,6 +709,14 @@ impl StateContext for Host {
 }
 
 impl Host {
+    /// The action manager's answer (`actionAnswer` of `wrap_ai.cpp`): the hash of the question, the target and the source.
+    fn action_answer(&mut self, kind: u32, target: ObjectId, src: CommandSourceType) -> bool {
+        let id = if self.object_exists(target) { target as u32 } else { 0 };
+        let r = pick(p1_hash(self.env.seed, 13, &[kind, id, src as u32]), self.env.action_rate);
+        self.l(L_ACTION, &[kind, id, src as u32, u32::from(r)]);
+        r
+    }
+
     /// A placeholder state's answer (`placeholderAnswer` of `wrap_ai.cpp`): the hash of the frame, its id and the callback.
     fn placeholder_answer(&self, id: StateId, which: u32) -> StateReturn {
         let h = p1_hash(self.env.seed, 11, &[self.env.loco.frame, id, which]);
@@ -741,9 +766,6 @@ impl AiStateHost for Host {
         self.l(L_TURRET_UPDATE, &[which as u32, r.0]);
         r
     }
-    fn ai_do_command(&mut self, cmd: i32, source: CommandSourceType, obj: ObjectId, int_value: i32) {
-        self.l(L_AI_COMMAND, &[cmd as u32, source as u32, obj as u32, int_value as u32]);
-    }
     fn find_closest_repulsor(&mut self, range: f32) -> ObjectId {
         let id = self.env.object_id;
         self.l(L_REPULSOR, &[id as u32, range.to_bits()]);
@@ -763,6 +785,144 @@ impl AiStateHost for Host {
     }
     fn notify_of_object_creation_or_destruction(&mut self) {
         self.l(L_SCRIPT_NOTIFY, &[]);
+    }
+    // ---- batch A5
+    fn is_mobile(&self) -> bool {
+        self.env.mobile != 0
+    }
+    fn partition_cell_size(&self) -> f32 {
+        self.env.partition_cell_size
+    }
+    fn is_significantly_above_terrain(&mut self) -> bool {
+        // Thing's: `getHeightAboveTerrain() > -(3*3)*TheGlobalData->m_gravity`
+        let g = self.env.loco.gravity;
+        self.height_above_terrain() > (-(3 * 3)) as f32 * g
+    }
+    fn terrain_extent(&self) -> (Coord3D, Coord3D) {
+        (Coord3D::default(), Coord3D { x: self.env.extent_hi[0], y: self.env.extent_hi[1], z: 0.0 })
+    }
+    fn terrain_find_closest_edge_point(&mut self, pos: &Coord3D) -> Coord3D {
+        self.l(L_EDGE_POINT, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        let mut r = *pos;
+        if r.x < 0.0 {
+            r.x = 0.0;
+        }
+        if r.x > self.env.extent_hi[0] {
+            r.x = self.env.extent_hi[0];
+        }
+        if r.y < 0.0 {
+            r.y = 0.0;
+        }
+        if r.y > self.env.extent_hi[1] {
+            r.y = self.env.extent_hi[1];
+        }
+        r
+    }
+    fn team_member_ids(&mut self, _team: u32) -> Vec<ObjectId> {
+        (1..32).filter(|i| (self.env.team_mask >> i) & 1 != 0).collect()
+    }
+    fn action_can_get_healed_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool {
+        self.action_answer(1, depot, src)
+    }
+    fn action_can_get_repaired_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool {
+        self.action_answer(0, depot, src)
+    }
+    fn action_can_enter_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        self.action_answer(2, target, src)
+    }
+    fn object_is_disabled_by_type(&self, _id: ObjectId, t: DisabledType) -> bool {
+        // (the scene's disabled types are every object's)
+        self.is_disabled_by_type(t)
+    }
+    fn object_ai_has_path(&self, id: ObjectId) -> bool {
+        self.object_exists(id) && (self.env.ai_mask >> id) & 1 != 0 && self.env.other_ai_path != 0
+    }
+    fn pf_move_away_from_path(&mut self, unit: ObjectId, other: ObjectId, other_has_path: bool) -> Option<Path> {
+        let can_path = u32::from(self.ai_stack.last().expect("a running AI").can_path_through_units);
+        let h = p1_hash(self.env.seed, 14, &[unit as u32, other as u32, u32::from(other_has_path), can_path]);
+        let found = pick(h, self.env.move_away_rate);
+        self.l(L_MOVE_AWAY_PATH, &[unit as u32, other as u32, u32::from(other_has_path), can_path, u32::from(found)]);
+        if !found {
+            return None;
+        }
+        let a = *self.thing.position();
+        let mut b = a;
+        b.x += (((h >> 12) % 41) as i32 - 20) as f32;
+        b.y += (((h >> 20) % 41) as i32 - 20) as f32;
+        let mut path = Path::new();
+        path.append_node(&a, LAYER_GROUND);
+        path.append_node(&b, LAYER_GROUND);
+        Some(path)
+    }
+    fn pf_move_allies(&mut self, path: &Path) {
+        let n = path.list().len() as u32;
+        self.l(L_MOVE_ALLIES, &[n]);
+    }
+    fn is_path_available(&mut self, d: &Coord3D) -> bool {
+        let r = pick(p1_hash(self.env.seed, 15, &[d.x.to_bits(), d.y.to_bits()]), self.env.path_exists_rate);
+        self.l(L_PATH_EXISTS, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits(), u32::from(r)]);
+        r
+    }
+    fn weapon_set_max_shot_count(&mut self, n: i32) {
+        if self.env.weapon_anti >= 0 {
+            self.l(L_MAX_SHOTS, &[n as u32]);
+        }
+    }
+    fn weapon_continue_attack_range(&self) -> f32 {
+        if self.env.weapon_anti >= 0 { self.env.continue_range } else { 0.0 }
+    }
+    fn weapon_is_contact(&self) -> bool {
+        self.env.weapon_anti >= 0 && self.env.contact_weapon != 0
+    }
+    fn partition_closest_attack_target(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType) -> ObjectId {
+        self.l(L_CLOSEST_OBJECT, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), range.to_bits(), 0, src as u32]);
+        let c = self.env.closest_attack;
+        if self.object_exists(c) { c } else { 0 }
+    }
+    fn find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
+        let r = pick(p1_hash(self.env.seed, 16, &[pos.x.to_bits(), pos.y.to_bits()]), self.env.find_pos_rate);
+        let id = self.env.object_id as u32;
+        self.l(L_FIND_POSITION, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), min_radius.to_bits(), max_radius.to_bits(), id, u32::from(r)]);
+        r.then_some(Coord3D { x: pos.x + 5.0, y: pos.y + 5.0, z: pos.z })
+    }
+    fn has_contain(&self) -> bool {
+        self.env.has_contain != 0
+    }
+    fn contain_idle_passengers(&mut self, _src: CommandSourceType) {
+        // (the stand-in container lists no passengers)
+    }
+    fn contain_remove_all_contained(&mut self) {
+        self.l(L_CONTAIN, &[0, 0]);
+    }
+    fn contain_mark_all_passengers_detected(&mut self) {
+        self.l(L_CONTAIN, &[1]);
+    }
+    fn contain_order_all_passengers_to_exit(&mut self, src: CommandSourceType, instantly: bool) {
+        self.l(L_CONTAIN, &[2, src as u32, u32::from(instantly)]);
+    }
+    fn deliver_payload_via_module_data(&mut self, pos: &Coord3D) -> bool {
+        if self.env.modules & 1 == 0 {
+            return false;
+        }
+        self.l(L_MODULE, &[0, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        true
+    }
+    fn go_prone(&mut self) {
+        if self.env.modules & 2 != 0 {
+            self.l(L_MODULE, &[1]);
+        }
+    }
+    fn hack_internet(&mut self) {
+        if self.env.modules & 4 != 0 {
+            self.l(L_MODULE, &[2]);
+        }
+    }
+    fn polygon_center(&mut self, polygon: i32) -> Coord3D {
+        Coord3D { x: 10.0 * polygon as f32, y: 20.0 * polygon as f32, z: 0.0 }
+    }
+    fn command_set_button_matches(&mut self, button: u32) -> (u32, i32) {
+        let n = if self.env.has_command_set != 0 { self.env.command_slots.iter().filter(|&&k| k == button as i32).count() as u32 } else { 0 };
+        (n, self.env.button_types[button as usize])
     }
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn {
         let r = self.placeholder_answer(id, 0);
@@ -961,6 +1121,7 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     v.push(ai.next_goal_path_index as u32);
     v.push(ai.move_out_of_way1 as u32);
     v.push(ai.move_out_of_way2 as u32);
+    v.push(ai.area_to_guard.map_or(u32::MAX, |a| a as u32));
     let set = &ai.locomotor_set;
     v.push(set.len() as u32);
     for i in 0..set.len() {
@@ -1021,6 +1182,12 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
         v.extend([x.temporary_state, x.temporary_state_frame_end, x.goal_path.len() as u32]);
         for p in &x.goal_path {
             put_pos(&mut v, p);
+        }
+        v.push(x.goal_waypoint.unwrap_or(u32::MAX));
+        v.push(u32::from(x.goal_squad.is_some()));
+        if let Some(q) = &x.goal_squad {
+            v.push(q.object_ids.len() as u32);
+            v.extend(q.object_ids.iter().map(|&i| i as u32));
         }
         match sm.state(states_ai_idle()) {
             Some(AiState::Idle { initial_sleep_offset, should_look_for_targets, inited }) => {
@@ -1120,7 +1287,34 @@ fn gen_scene(g: &mut Gen) -> Env {
     gen_a4(g, &mut e);
     e.turret_rate = g.below(101);
     e.state_rate = g.below(101);
+    // batch A5
+    e.mobile = i32::from(g.below(8) != 0);
+    e.partition_cell_size = [40.0, 10.0, 25.0][g.below(3) as usize];
+    e.extent_hi = [g.uniform(100.0, 300.0), g.uniform(80.0, 250.0)];
+    e.team_mask = g.u32() & !1 & if g.below(3) == 0 { 0 } else { u32::MAX };
+    e.other_ai_path = g.below(3).min(1);
+    e.contact_weapon = i32::from(g.below(4) == 0);
+    e.has_contain = i32::from(g.below(3) == 0);
+    e.modules = g.below(8) as i32;
+    e.has_command_set = i32::from(g.below(4) != 0);
+    for k in e.command_slots.iter_mut() {
+        *k = if g.below(4) == 0 { g.below(4) as i32 } else { -1 };
+    }
+    for t in e.button_types.iter_mut() {
+        *t = [12, 25, 3, 12, 25, 0][g.below(6) as usize];
+    }
+    gen_a5(g, &mut e);
     e
+}
+
+/// Batch A5's answers that change between operations: the rates, the continue range, the closest attackable object.
+fn gen_a5(g: &mut Gen, e: &mut Env) {
+    e.action_rate = g.below(101);
+    e.move_away_rate = g.below(101);
+    e.path_exists_rate = g.below(101);
+    e.find_pos_rate = g.below(101);
+    e.continue_range = if g.below(3) == 0 { g.uniform(1.0, 200.0) } else { 0.0 };
+    e.closest_attack = if g.below(2) == 0 { g.below(32) as i32 } else { 0 };
 }
 
 /// Batch A4's scene: the pathfinder's goal, the disabled types the AI's update and idle state ask, the repulsor, the vision range.
@@ -1159,6 +1353,10 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     if g.below(6) == 0 {
         gen_a4(g, e);
     }
+    // batch A5
+    if g.below(6) == 0 {
+        gen_a5(g, e);
+    }
     if g.below(10) == 0 {
         e.state_rate = g.below(101);
         e.turret_rate = g.below(101);
@@ -1195,6 +1393,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if g.below(4) == 0 {
+        // batch A5: a command (and the quick exit)
+        if g.below(15) == 0 { 73 } else { 72 }
     } else if g.below(3) == 0 {
         // batch A4: the machine, the AI's update and creation
         match g.below(100) {
@@ -1252,7 +1453,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=71);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=73);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -1339,6 +1540,34 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             }
         }
         69 => ia[0] = g.below(8) as i32 - 1,
+        // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
+        // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
+        72 | 73 => {
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25][g.below(16) as usize] };
+            ia[0] = cmd;
+            ia[1] = g.below(4) as i32;
+            let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
+            let some_object = |g: &mut Gen| if ids.is_empty() { 0 } else { ids[g.below(ids.len() as u32) as usize] };
+            ia[2] = if g.below(4) == 0 { g.below(32) as i32 } else { some_object(g) };
+            if matches!(cmd, 30 | 40 | 48) {
+                ia[2] = some_object(g);
+            }
+            ia[3] = if g.below(3) == 0 { -1 } else { 0 };
+            ia[4] = g.below(9) as i32 - 1;
+            ia[5] = if cmd == 31 { g.below(8) as i32 } else { g.below(9) as i32 - 1 };
+            ia[6] = [0, 1, 2, 3, -1, 5, 0x7fff_ffff][g.below(7) as usize];
+            ia[7] = g.below(5) as i32 - 1;
+            ia[8] = g.below(5) as i32;
+            for i in 0..ia[8] as usize {
+                let q = gen_point(g);
+                fa[3 + 3 * i..6 + 3 * i].copy_from_slice(&q);
+            }
+            if g.below(3) == 0 {
+                // off the map (the player's goal clipping, the guard's edge point)
+                fa[0] = g.uniform(-100.0, 400.0);
+                fa[1] = g.uniform(-100.0, 400.0);
+            }
+        }
         _ => {}
     }
     (op, fa, ia)
@@ -1349,7 +1578,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
     let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
     let b = |x: bool| vec![u32::from(x ^ (bug == 2))];
     if op >= 59 {
-        return rust_op_a4(module, h, op, &p, ia, saved);
+        return rust_op_a4(module, h, op, fa, ia, saved);
     }
     let ai = module.ai.as_mut().expect("the AI");
     let m = module.machine.as_ref();
@@ -1550,8 +1779,23 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
     }
 }
 
+/// The waypoints' names (`wrap_ai.cpp`'s stand-in: "wp" and the index).
+fn waypoint_name(i: u32) -> Vec<u8> {
+    format!("wp{i}").into_bytes()
+}
+
+/// `TheTerrainLogic->getWaypointByName` of the stand-in.
+fn waypoint_by_name(name: &[u8]) -> Option<u32> {
+    let s = std::str::from_utf8(name).ok()?;
+    let i: u32 = s.strip_prefix("wp")?.parse().ok()?;
+    (i < 8).then_some(i)
+}
+
 /// Batch A4's operations (`ref_ai_a2_op`'s 59..71): the machine, the AI's update and creation.
-fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, p: &Coord3D, ia: &[i32], saved: &mut Vec<u8>) -> Vec<u32> {
+fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], saved: &mut Vec<u8>) -> Vec<u32> {
+    let p = &Coord3D { x: fa[0], y: fa[1], z: fa[2] };
+    let coords: Vec<Coord3D> = (0..ia[8].max(0) as usize).map(|i| Coord3D { x: fa[3 + 3 * i], y: fa[4 + 3 * i], z: fa[5 + 3 * i] }).collect();
+    let coords = &coords[..];
     let ret = |r: StateReturn| vec![r.0 as u32];
     match op {
         59 => ret(module.run(h, |sm, h| states::aism_set_state(sm, h, ia[0] as StateId)).expect("setState")),
@@ -1596,18 +1840,35 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, p: &Coor
             let mut x = XferSave::new();
             x.open(b"ai_a4.bin").expect("open");
             let (sm, ai) = (module.machine.as_mut().expect("the machine"), module.ai.as_mut().expect("the AI"));
-            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, |_| panic!("no goal waypoint"), |_| panic!("no goal waypoint")).is_err();
+            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, waypoint_name, waypoint_by_name).is_err();
             let _ = x.close();
             *saved = x.bytes().to_vec();
             let mut r = vec![u32::from(st), saved.len() as u32];
             r.extend(saved.iter().map(|&c| u32::from(c)));
             r
         }
+        72 => {
+            let mut parms = AiCommandParms::new(ia[0], ia[1]);
+            parms.pos = *p;
+            parms.obj = if h.object_exists(ia[2]) { ia[2] } else { 0 };
+            parms.team = (ia[3] >= 0).then_some(ia[3] as u32);
+            parms.waypoint = (ia[4] >= 0).then_some(ia[4] as u32);
+            parms.polygon = (ia[5] >= 0).then_some(ia[5]);
+            parms.int_value = ia[6];
+            parms.command_button = (ia[7] >= 0).then_some(ia[7] as u32);
+            parms.coords = coords.to_vec();
+            module.ai_do_command(h, &parms).expect("aiDoCommand");
+            vec![]
+        }
+        73 => {
+            module.run(h, |sm, h| rts_lockstep_engine::logic::ai::ai_commands::do_quick_exit(sm, h, coords)).expect("doQuickExit");
+            vec![]
+        }
         71 => {
             let mut x = XferLoad::new(saved.clone());
             x.open(b"ai_a4.bin").expect("open");
             let (sm, ai) = (module.machine.as_mut().expect("the machine"), module.ai.as_mut().expect("the AI"));
-            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, |_| panic!("no goal waypoint"), |_| panic!("no goal waypoint")).is_err();
+            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, waypoint_name, waypoint_by_name).is_err();
             let _ = x.close();
             vec![u32::from(st)]
         }
@@ -1623,7 +1884,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 72],
+    ops: [u64; 74],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -1638,7 +1899,7 @@ struct Checks {
     /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
-    a4_logs: [u64; 12],
+    a4_logs: [u64; 22],
     a4_states: [u64; 5],
     temporary_states: u64,
     loads: u64,
@@ -1653,7 +1914,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 72],
+            ops: [0; 74],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -1664,7 +1925,7 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
-            a4_logs: [0; 12],
+            a4_logs: [0; 22],
             a4_states: [0; 5],
             temporary_states: 0,
             loads: 0,
@@ -1696,6 +1957,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_stack: Vec::new(),
     };
     host.names.reset();
+    // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
+    for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate"] {
+        host.names.name_to_key(name.as_bytes());
+    }
     unsafe { cpp::ref_ai_a2_reset() };
     let xfer_path = cstr(XFER_FILE_PATH);
     unsafe { cpp::ref_ai_a4_xfer_path(xfer_path.as_ptr()) };
@@ -1744,6 +2009,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     data.auto_acquire_enemies_when_idle = g.below(32);
     data.mood_attack_check_rate = [0, 1, 60, 61, g.below(300)][g.below(5) as usize];
     sets_words.extend([data.auto_acquire_enemies_when_idle, data.mood_attack_check_rate]);
+    // batch A5: the forbidden player commands
+    data.forbid_player_commands = g.below(5) == 0;
+    sets_words.push(u32::from(data.forbid_player_commands));
     for i in 0..2 {
         if (host.env.turrets >> i) & 1 != 0 {
             data.turret_data[i] = Some(Arc::new(rts_lockstep_engine::logic::ai::turret::TurretAiData::default()));
@@ -1846,7 +2114,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut k = 0;
         while k + 1 < host_log_copy.len() {
             let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
-            if (70..=81).contains(&code) {
+            if (70..=91).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
@@ -1896,6 +2164,19 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-27, batch A5; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - 10,000 constructions and 600,000 operations, a quarter of them commands (128,461 `aiDoCommand`, every command type, and
+///   9,013 `doQuickExit`): **0 mismatches** in the results, the call logs and the dumps. The commands reached 8,846 action-manager
+///   questions, 1,566 move-away paths and 730 allies moved, 8,700 shot counts, 934 partition searches, 333 positions found, 540
+///   container calls, 336 special modules.
+/// - Planted bugs: in the Rust source plants 3250-3256, each caught: the player's forbidden commands allowed, the goal's north edge
+///   not clipped, the retaliation not cleared before a guard, an AI-sourced move of a busy AI not temporary, the follow-append's
+///   goal position dropped, a subdued container exited, the guard target type always in the first slot. 3250 survived the first run
+///   (no data forbade player commands; the data now does one time in five). A4's plants re-run: all caught.
+/// - Two harness defects, no port bug: the module lookups' name keys are function-local statics that outlive the name-generator
+///   reset between cases (the three names are now registered first on both sides); a goal waypoint had no name to save.
+///
 /// # Results (2026-10-27, batch A4; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - 10,000 constructions and 600,000 operations, a third of them batch A4's (51,290 updates, 36,661 `setState`, 18,306
@@ -1950,7 +2231,7 @@ fn ai_update_a2_matches_upstream() {
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
-         A4 log records 70..=81 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
+         A4/A5 log records 70..=91 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
     );

@@ -43,8 +43,8 @@
 //! - The machine's update is the temporary state's alone while it continues within its frames; the AI's `update` sleeps for the
 //!   shortest of the machine's, the path queue's, the turrets' and `doLocomotor`'s sleeps, and not at all once dead.
 //!
-//! Not yet: the squad (`setGoalTeam`, `setGoalSquad`, `setGoalAIGroup`; `xfer` refuses a stream with one) and the goal waypoint
-//! (by id; `xfer`'s name lookups are the caller's).
+//! The goal squad is `logic::world::player`'s `Squad` (batch A5: `setGoalTeam`, `ai_commands::aism_set_goal_team`); the goal
+//! waypoint is by id (`xfer`'s name lookups are the caller's).
 //!
 //! # Verification
 //!
@@ -66,25 +66,26 @@ use crate::common::state_machine::{
     SmResult, StateBehavior, StateContext, StateExitType, StateId, StateMachine, StateReturn, INVALID_STATE_ID,
 };
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
+use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
+use crate::logic::ai::path::Path;
+use crate::common::disabled_types::DisabledType;
 use crate::logic::ai::ai_update_data::AiUpdateModuleData;
 use crate::logic::ai::ai_update_types::*;
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
 use crate::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use crate::logic::modules::plant;
 use crate::logic::weapon::NO_MAX_SHOTS_LIMIT;
+use crate::logic::world::player::Squad;
+use crate::logic::world::player_squads::squad_xfer;
 use std::sync::Arc;
-
-/// `AICommandType`'s commands the batch's states give (AI.h; "Stored in save file, do not reorder/renumber").
-pub const AICMD_MOVE_TO_OBJECT: i32 = 1;
-pub const AICMD_ATTACK_OBJECT: i32 = 11;
 
 /// `IDLE_COUNTDOWN_DELAY`: "reset the idle countdown so that we don't do expensive checks too often".
 pub const IDLE_COUNTDOWN_DELAY: u32 = LOGICFRAMES_PER_SECOND as u32 * 2;
 
-/// What the machine's states and the AI's update reach beyond the AI's members: the AI's lent state, the pathfinder's goal
-/// bookkeeping, the turrets' updates (until the turrets' AIs are held by the AI), the commands (until they are translated), the
-/// object's repulsors, model condition and the script engine, and the states not yet translated.
+/// What the machine's states, the AI's update and its commands reach beyond the AI's members: the AI's lent state, the
+/// pathfinder's goal bookkeeping, the turrets' updates (until the turrets' AIs are held by the AI), the object's repulsors, model
+/// condition and the script engine, the states not yet translated, and (batch A5) what the commands hand over to.
 pub trait AiStateHost: AiHost + StateContext {
     /// The AIs whose machines are running, the innermost last.
     fn ai_stack(&mut self) -> &mut Vec<AiUpdate>;
@@ -98,8 +99,6 @@ pub trait AiStateHost: AiHost + StateContext {
     fn pf_queue_for_path(&mut self);
     /// `m_turretAI[which]->updateTurretAI()`.
     fn turret_update(&mut self, which: usize) -> UpdateSleepTime;
-    /// `aiDoCommand(&parms)` of the commands the states give (`AICommandParms(cmd, source)` with its object and int value).
-    fn ai_do_command(&mut self, cmd: i32, source: CommandSourceType, obj: ObjectId, int_value: i32);
     /// `TheAI->findClosestRepulsor(obj, range)`'s id (`INVALID_ID`: none).
     fn find_closest_repulsor(&mut self, range: f32) -> ObjectId;
     /// `obj->getVisionRange()`.
@@ -108,6 +107,67 @@ pub trait AiStateHost: AiHost + StateContext {
     fn clear_and_set_model_condition_flags(&mut self, clear: &[ModelConditionFlagType], set: ModelConditionFlagType);
     /// `TheScriptEngine->notifyOfObjectCreationOrDestruction()`.
     fn notify_of_object_creation_or_destruction(&mut self);
+    // ---- batch A5: the commands
+    /// `getObject()->isMobile()`.
+    fn is_mobile(&self) -> bool;
+    /// `TheGlobalData->m_partitionCellSize`.
+    fn partition_cell_size(&self) -> f32;
+    /// `getObject()->isSignificantlyAboveTerrain()` (Thing's).
+    fn is_significantly_above_terrain(&mut self) -> bool;
+    /// `TheTerrainLogic->getExtent(&region)`: its low and high corners.
+    fn terrain_extent(&self) -> (Coord3D, Coord3D);
+    /// `TheTerrainLogic->findClosestEdgePoint(pos)`.
+    fn terrain_find_closest_edge_point(&mut self, pos: &Coord3D) -> Coord3D;
+    /// The team's members (`iterate_TeamMemberList`), in its list's order.
+    fn team_member_ids(&mut self, team: u32) -> Vec<ObjectId>;
+    /// `TheActionManager->canGetHealedAt(obj, depot, cmdSource)`.
+    fn action_can_get_healed_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool;
+    /// `TheActionManager->canGetRepairedAt(obj, depot, cmdSource)`.
+    fn action_can_get_repaired_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool;
+    /// `TheActionManager->canEnterObject(obj, target, cmdSource, DONT_CHECK_CAPACITY)`.
+    fn action_can_enter_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool;
+    /// `findObjectByID(id)->isDisabledByType(type)` of an object of the scene.
+    fn object_is_disabled_by_type(&self, id: ObjectId, t: DisabledType) -> bool;
+    /// `findObjectByID(id)->getAI()->getPath() != NULL` (false without an AI).
+    fn object_ai_has_path(&self, id: ObjectId) -> bool;
+    /// `TheAI->pathfinder()->getMoveAwayFromPath(obj, unit, unitPath, obj2, path2)`.
+    fn pf_move_away_from_path(&mut self, unit: ObjectId, other: ObjectId, other_has_path: bool) -> Option<Path>;
+    /// `TheAI->pathfinder()->moveAllies(obj, path)`.
+    fn pf_move_allies(&mut self, path: &Path);
+    /// `TheAI->pathfinder()->clientSafeQuickDoesPathExist(m_locomotorSet, myPos, destination)` (`isPathAvailable`).
+    fn is_path_available(&mut self, destination: &Coord3D) -> bool;
+    /// `getObject()->getCurrentWeapon()->setMaxShotCount(n)`, if it has one.
+    fn weapon_set_max_shot_count(&mut self, n: i32);
+    /// The current weapon's `getContinueAttackRange()` (0 without one).
+    fn weapon_continue_attack_range(&self) -> f32;
+    /// The current weapon's `isContactWeapon()` (false without one).
+    fn weapon_is_contact(&self) -> bool;
+    /// `ThePartitionManager->getClosestObject(pos, range, FROM_CENTER_2D, {possible to attack (ATTACK_NEW_TARGET, src), same map
+    /// status})`'s id.
+    fn partition_closest_attack_target(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType) -> ObjectId;
+    /// `ThePartitionManager->findPositionAround(pos, {minRadius, maxRadius, sourceToPathToDest: the object}, &result)`.
+    fn find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D>;
+    /// `getObject()->getContain() != NULL`.
+    fn has_contain(&self) -> bool;
+    /// `privateIdle`'s loop: `aiIdle(cmdSource)` of every contained object with an AI.
+    fn contain_idle_passengers(&mut self, src: CommandSourceType);
+    /// `getContain()->removeAllContained(FALSE)`.
+    fn contain_remove_all_contained(&mut self);
+    /// `getContain()->markAllPassengersDetected()`.
+    fn contain_mark_all_passengers_detected(&mut self);
+    /// `getContain()->orderAllPassengersToExit(cmdSource, instantly)`.
+    fn contain_order_all_passengers_to_exit(&mut self, src: CommandSourceType, instantly: bool);
+    /// A `DeliverPayloadAIUpdate`'s `deliverPayloadViaModuleData(pos)`: false if the object has none.
+    fn deliver_payload_via_module_data(&mut self, pos: &Coord3D) -> bool;
+    /// A `ProneUpdate`'s `goProne(damageInfo)`, if the object has one.
+    fn go_prone(&mut self);
+    /// A `HackInternetAIUpdate`'s `hackInternet()`, if the object has one (else a `DEBUG_CRASH`).
+    fn hack_internet(&mut self);
+    /// The polygon trigger's `getCenterPoint`.
+    fn polygon_center(&mut self, polygon: i32) -> Coord3D;
+    /// `TheControlBar->findCommandSet(getCommandSetString())`: how many of its slots hold the button (0 without a set), and the
+    /// button's `getCommandType()`.
+    fn command_set_button_matches(&mut self, button: u32) -> (u32, i32);
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -176,6 +236,8 @@ pub fn aism_clear<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H) 
     let extras = &mut ai(h).machine;
     extras.goal_path.clear();
     extras.goal_waypoint = None;
+    // (`m_goalSquad = NULL`: the squad is dropped, upstream leaks it)
+    extras.goal_squad = None;
     with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
     Ok(())
 }
@@ -283,11 +345,14 @@ pub fn aism_xfer<H: AiStateHost>(
     if xfer.get_xfer_mode() == XferMode::Load && !name.is_empty() {
         extras.goal_waypoint = waypoint_by_name(&name);
     }
-    let mut has_squad = false;
+    let mut has_squad = extras.goal_squad.is_some();
     xfer.xfer_bool(&mut has_squad)?;
+    if xfer.get_xfer_mode() == XferMode::Load && has_squad && extras.goal_squad.is_none() {
+        extras.goal_squad = Some(Squad::default());
+    }
     if has_squad {
-        // (Squad: not yet translated; no machine of these batches has one)
-        return Err(crate::common::state_machine::StateMachineError::BadArg);
+        let squad = extras.goal_squad.as_mut().expect("the goal squad");
+        squad_xfer(squad, xfer).map_err(|_| crate::common::state_machine::StateMachineError::InvalidData)?;
     }
 
     let mut id = extras.temporary_state;
@@ -431,7 +496,7 @@ fn idle_update<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id:
         // "Check to see if we have created a crate we need to pick up."
         let crate_id = with_ai(h, |a, h| a.check_for_crate_to_pickup(h));
         if crate_id != INVALID_ID {
-            h.ai_do_command(AICMD_MOVE_TO_OBJECT, CMD_FROM_AI, crate_id, 0);
+            commands::ai_move_to_object(sm, h, crate_id, CMD_FROM_AI)?;
             return Ok(StateReturn::CONTINUE);
         }
 
@@ -447,7 +512,7 @@ fn idle_update<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id:
                 // "If we're supposed to attack based on mood, etc, then we will do so."
                 let enemy = with_ai(h, |a, h| a.get_next_mood_target(h, &*sm, true, true));
                 if enemy != INVALID_ID {
-                    h.ai_do_command(AICMD_ATTACK_OBJECT, CMD_FROM_AI, enemy, NO_MAX_SHOTS_LIMIT);
+                    commands::ai_attack_object(sm, h, enemy, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)?;
                     // "weird but true. return state_continue, because if we're here, we're actually an attack state"
                     return Ok(StateReturn::CONTINUE);
                 }
@@ -645,6 +710,11 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             self.run(h, |sm, h| sm.init_default_state(h).map(|_| ()))?;
         }
         Ok(())
+    }
+
+    /// `aiDoCommand(parms)` (batch A5, [`commands::ai_do_command`]) on the AI and its machine.
+    pub fn ai_do_command(&mut self, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+        self.run(h, |sm, h| commands::ai_do_command(sm, h, parms))
     }
 
     /// `update()`: "The "main loop" of the AI subsystem".

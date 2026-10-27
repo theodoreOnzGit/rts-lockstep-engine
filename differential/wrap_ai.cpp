@@ -32,6 +32,11 @@
 ** state's commands (aiMoveToObject, aiAttackObject: logged); the repulsor; the vision range; the dead state's model conditions and
 ** script notice; a Squad and a Waypoint that are never reached.
 **
+** Batch A5 adds the commands: AI.h's AICommandParms and AICommandInterface (ai_commands_decl.inc), AIUpdate.cpp's aiDoCommand and
+** every private* command (ai_update_a5.inc), the machine's squad setters, and Squad.cpp unchanged beside this file; the stand-ins
+** they reach are logged (the action manager, the containers, the weapon's shot count and ranges, the partition's search and
+** position finder, the move-away path, the allies, the quick path check, the command set, the special modules).
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -93,25 +98,18 @@ public:
 	Int m_which;
 };
 
-/* batch A4: AIStateMachine's neighbours not yet translated. Squad (Squad.cpp): no machine of these batches has one (the squad
-** setters are not compiled; xfer writes `hasSquad` false, and a stream saying true is never loaded). Waypoint: no goal waypoint is
-** set (xfer writes its name empty, and loads none). */
-class Squad : public MemoryPoolObject, public Snapshot
-{
-	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(Squad, "AiSquad")
-public:
-	Squad() {}
-protected:
-	virtual void crc( Xfer *xfer ) { abort(); }
-	virtual void xfer( Xfer *xfer ) { abort(); }
-	virtual void loadPostProcess() { abort(); }
-};
-EMPTY_DTOR(Squad)
+/* batch A4: AIStateMachine's neighbours. Squad: the real Squad.h (Squad.cpp is compiled unchanged beside this file, batch A5).
+** Waypoint: a stand-in with an index (no goal waypoint's name is ever saved: xfer writes it empty and loads none). */
+#include "GameLogic/Squad.h"
 class Waypoint
 {
 public:
-	AsciiString getName() const { abort(); }
+	/* batch A5: "wp" and the index (TerrainLogic::getWaypointByName reads it back) */
+	AsciiString getName() const { AsciiString n; n.format("wp%d", m_index); return n; }
+	Int m_index;
 };
+/* batch A5: AI.h's AICommandParms and AICommandInterface, verbatim */
+#include "ai_commands_decl.inc"
 
 /* batch A4: the AI states not yet translated. Each is this class with its id (build.rs edits AIStateMachine's constructor): its
 ** isIdle/isAttack/isBusy are its class's static answers (AIAttackState's TRUE for the four attack states; FALSE for the others,
@@ -151,7 +149,7 @@ public:
 	const LocomotorTemplateVector* findLocomotorTemplateVector(LocomotorSetType t) const;
 };
 
-class AIUpdateInterface : public UpdateModule
+class AIUpdateInterface : public UpdateModule, public AICommandInterface
 {
 public:
 	AIUpdateInterface( Thing *thing, const ModuleData* moduleData );
@@ -242,10 +240,67 @@ public:
 	AIStateMachine* makeStateMachine();
 	void onObjectCreated();
 	UpdateSleepTime update( void );
-	/* AICommandInterface's (AI.h) commands the idle state gives: aiDoCommand, not yet translated (logged: the command, its source,
-	** its object, its int value) */
-	void aiMoveToObject( Object *obj, CommandSourceType cmdSource );
-	void aiAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+
+	/* batch A5's members (ai_update_a5.inc), and the header's inlines they call, verbatim */
+	virtual void aiDoCommand(const AICommandParms* parms);
+	virtual Bool isAllowedToMoveAwayFromUnit() const { return true; }
+	Bool canPathThroughUnits( void ) const { return m_canPathThroughUnits; }
+	void setCanPathThroughUnits( Bool canPath ) { m_canPathThroughUnits = canPath; if (canPath) m_isBlockedAndStuck=false;}
+	void setIgnoreCollisionTime(Int frames) { m_ignoreCollisionsUntil = TheGameLogic->getFrame() + frames; }
+	void setGoalPositionClipped(const Coord3D* in, CommandSourceType cmdSource);
+	Bool isPathAvailable( const Coord3D *destination ) const;
+	Bool isAllowedToRespondToAiCommands(const AICommandParms* parms) const;
+	void doQuickExit( const std::vector<Coord3D>* path );
+	void privateMoveToPosition( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateMoveToObject( Object *obj, CommandSourceType cmdSource );
+	void privateFaceObject( Object *obj, CommandSourceType cmdSource );
+	void privateFacePosition( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateRappelInto( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
+	void privateMoveToAndEvacuate( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateMoveToAndEvacuateAndExit( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateIdle(CommandSourceType cmdSource);
+	void privateTightenToPosition( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateMoveAwayFromUnit( Object *unit, CommandSourceType cmdSource );
+	void privateFollowWaypointPath( const Waypoint *way, CommandSourceType cmdSource );
+	void privateFollowWaypointPathExact( const Waypoint *way, CommandSourceType cmdSource );
+	void privateFollowWaypointPathAsTeam( const Waypoint *way, CommandSourceType cmdSource );
+	void privateFollowWaypointPathAsTeamExact( const Waypoint *way, CommandSourceType cmdSource );
+	void privateFollowPathAppend( const Coord3D *pos, CommandSourceType cmdSource );
+	void privateFollowPath( const std::vector<Coord3D>* path, Object *ignoreObject, CommandSourceType cmdSource, Bool exitProduction );
+	void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateGuardRetaliate( Object *victim, const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateAttackTeam( const Team *team, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateAttackMoveToPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	void privateAttackFollowWaypointPath( const Waypoint *way, Int maxShotsToFire, Bool asTeam, CommandSourceType cmdSource );
+	void privateHunt( CommandSourceType cmdSource );
+	void privateAttackArea( const PolygonTrigger *areaToGuard, CommandSourceType cmdSource );
+	void privateRepair( Object *obj, CommandSourceType cmdSource );
+	void privateResumeConstruction( Object *obj, CommandSourceType cmdSource );
+	void privateGetHealed( Object *healDepot, CommandSourceType cmdSource );
+	void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
+	void privateEnter( Object *obj, CommandSourceType cmdSource );
+	void privateDock( Object *obj, CommandSourceType cmdSource );
+	void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
+	void privateExit( Object *objectToExit, CommandSourceType cmdSource );
+	void privateExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
+	void privateEvacuate( Int exposeStealthUnits, CommandSourceType cmdSource );
+	void privateEvacuateInstantly( Int exposeStealthUnits, CommandSourceType cmdSource );
+	void privateExecuteRailedTransport( CommandSourceType cmdSource );
+	void privateGoProne( const DamageInfo *damageInfo, CommandSourceType );
+	void privateWander( const Waypoint *way, CommandSourceType cmdSource );
+	void privateWanderInPlace( CommandSourceType cmdSource );
+	void privatePanic( const Waypoint *way, CommandSourceType cmdSource );
+	void privateBusy( CommandSourceType cmdSource );
+	void privateGuardPosition( const Coord3D *pos, GuardMode guardMode, CommandSourceType cmdSource );
+	void privateGuardTunnelNetwork( GuardMode guardMode, CommandSourceType cmdSource );
+	void privateGuardObject( Object *objectToGuard, GuardMode guardMode, CommandSourceType cmdSource );
+	void privateGuardArea( const PolygonTrigger *areaToGuard, GuardMode guardMode, CommandSourceType cmdSource );
+	void privateHackInternet( CommandSourceType cmdSource );
+	void privateCommandButton( const CommandButton *commandButton, CommandSourceType cmdSource );
+	void privateCommandButtonPosition( const CommandButton *commandButton, const Coord3D *pos, CommandSourceType cmdSource );
+	void privateCommandButtonObject( const CommandButton *commandButton, Object *obj, CommandSourceType cmdSource );
 
 #include "ai_update_members.inc"
 };
@@ -254,6 +309,7 @@ public:
 #include "ai_update_a3.inc"
 #include "ai_update_a4.inc"
 #include "ai_states_a4.inc"
+#include "ai_update_a5.inc"
 
 #undef private
 #undef protected
@@ -321,6 +377,16 @@ HordeUpdateInterface g_horde[3];
 BehaviorModule g_modules[3];
 BehaviorModule *g_moduleList[4];
 ScriptEngine g_scriptEngine;
+/* batch A5 */
+ActionManager g_actionManager;
+ControlBar g_controlBar;
+CommandSet g_commandSet;
+CommandButton g_buttons[4];
+PolygonTrigger g_polygons[8];
+Waypoint g_waypoints[8];
+unsigned char g_moduleDummy[3];
+/* the action manager's answer: the hash of the question, the target and the source */
+Bool actionAnswer(unsigned kind, const Object *dest, CommandSourceType src);
 UnsignedInt g_nextCallFrame = 0;		/* the AI module's sleepy update: its next call frame */
 alignas(16) unsigned char g_pathfinderMem[sizeof(Pathfinder)];
 
@@ -344,6 +410,8 @@ PartitionManager *ThePartitionManager = &g_partition;
 AI *TheAI = &g_ai;
 UpgradeCenter *TheUpgradeCenter = &g_upgradeCenter;
 ScriptEngine *TheScriptEngine = &g_scriptEngine;
+ActionManager *TheActionManager = &g_actionManager;
+ControlBar *TheControlBar = &g_controlBar;
 
 Pathfinder *AI::pathfinder() { return (Pathfinder *)g_pathfinderMem; }
 
@@ -388,7 +456,12 @@ Int TerrainLogic::alignOnTerrain(Real angle, const Coord3D &pos, Bool stickToGro
 	abort();
 }
 
-Waypoint *TerrainLogic::getWaypointByName(AsciiString name) { abort(); }
+Waypoint *TerrainLogic::getWaypointByName(AsciiString name)
+{
+	int i = -1;
+	if (sscanf(name.str(), "wp%d", &i) == 1 && i >= 0 && i < 8) return &g_waypoints[i];
+	return NULL;
+}
 
 /* the paths: batch P1's hash */
 PathfindLayerEnum TerrainLogic::getLayerForDestination(const Coord3D *pos)
@@ -661,7 +734,8 @@ CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType t, const 
 	return r;
 }
 Object *Object::getContainedBy() { return m_otherId ? NULL : findObject((ObjectID)g_aiEnv.containerId); }
-ContainModuleInterface *Object::getContain() const { return &g_contain; }
+/* (batch A5: the AI's own object has one if the scene says so; another object always has one) */
+ContainModuleInterface *Object::getContain() const { return (m_otherId || g_aiEnv.hasContain) ? &g_contain : NULL; }
 StealthUpdate *Object::getStealth() const { return g_aiEnv.stealth >= 0 ? &g_stealth : NULL; }
 Weapon *Object::getCurrentWeapon() { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
 const Weapon *Object::getCurrentWeapon() const { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
@@ -684,6 +758,15 @@ AIUpdateInterface *Object::getAI()
 
 /* ---- batch A4's stand-ins */
 Real Object::getVisionRange() const { return g_aiEnv.objVisionRange; }
+namespace {
+Bool actionAnswer(unsigned kind, const Object *dest, CommandSourceType src)
+{
+	unsigned id = dest ? (unsigned)dest->getID() : 0u;
+	bool r = p1Pick(p1Hash(13, { kind, id, (unsigned)src }), g_aiEnv.actionRate);
+	L(LOG_ACTION, { kind, id, (unsigned)src, r ? 1u : 0u });
+	return r;
+}
+}  // namespace
 void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, const ModelConditionFlags &set)
 {
 	/* the cleared conditions, then the set ones, each in increasing order */
@@ -697,6 +780,133 @@ void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, cons
 	for (unsigned x : w) g_aiLog->push_back(x);
 }
 void ScriptEngine::notifyOfObjectCreationOrDestruction() { L(LOG_SCRIPT_NOTIFY, {}); }
+/* ---- batch A5's stand-ins (the commands' reach) */
+Bool Object::isMobile() const { return g_aiEnv.mobile != 0; }
+void TerrainLogic::getExtent(Region3D *r) const
+{
+	r->lo.x = 0.0f; r->lo.y = 0.0f; r->lo.z = 0.0f;
+	r->hi.x = g_aiEnv.extentHi[0]; r->hi.y = g_aiEnv.extentHi[1]; r->hi.z = 0.0f;
+}
+/* the closest point of the extent's edge (the stand-in: clamped into the extent) */
+Coord3D TerrainLogic::findClosestEdgePoint(const Coord3D *pos) const
+{
+	L(LOG_EDGE_POINT, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+	Coord3D r = *pos;
+	if (r.x < 0.0f) r.x = 0.0f;
+	if (r.x > g_aiEnv.extentHi[0]) r.x = g_aiEnv.extentHi[0];
+	if (r.y < 0.0f) r.y = 0.0f;
+	if (r.y > g_aiEnv.extentHi[1]) r.y = g_aiEnv.extentHi[1];
+	return r;
+}
+Object *Object::dlink_next_TeamMemberList() const
+{
+	for (unsigned id = (unsigned)m_otherId + 1; id < 32; ++id)
+		if ((g_aiEnv.teamMask >> id) & 1) { g_others[id].m_otherId = (ObjectID)id; return &g_others[id]; }
+	return NULL;
+}
+DLINK_ITERATOR<Object> Team::iterate_TeamMemberList() const
+{
+	Object *head = NULL;
+	for (unsigned id = 1; id < 32 && !head; ++id)
+		if ((g_aiEnv.teamMask >> id) & 1) { g_others[id].m_otherId = (ObjectID)id; head = &g_others[id]; }
+	return DLINK_ITERATOR<Object>(head, &Object::dlink_next_TeamMemberList);
+}
+Bool Object::isSelectable() const { return TRUE; }
+const std::vector<ObjectID>& AIGroup::getAllIDs() const { static std::vector<ObjectID> none; return none; }
+void AIGroup::add(Object *obj) { abort(); }
+Bool ActionManager::canGetRepairedAt(const Object *obj, const Object *dest, CommandSourceType src)
+{
+	return actionAnswer(0, dest, src);
+}
+Bool ActionManager::canGetHealedAt(const Object *obj, const Object *dest, CommandSourceType src)
+{
+	return actionAnswer(1, dest, src);
+}
+Bool ActionManager::canEnterObject(const Object *obj, const Object *dest, CommandSourceType src, Int mode)
+{
+	return actionAnswer(2, dest, src);
+}
+/* another AI's path: getMoveAwayFromPath's stand-in makes a two-node path (from the object to an offset) at the scene's rate */
+Path *Pathfinder::getMoveAwayFromPath(Object *obj, Object *otherObj, Path *pathToAvoid, Object *otherObj2, Path *pathToAvoid2)
+{
+	unsigned canPath = g_ai_update->m_canPathThroughUnits ? 1u : 0u;
+	unsigned id2 = otherObj2 ? (unsigned)otherObj2->getID() : 0u;
+	unsigned h = p1Hash(14, { (unsigned)otherObj->getID(), id2, pathToAvoid2 ? 1u : 0u, canPath });
+	bool found = p1Pick(h, g_aiEnv.moveAwayRate);
+	L(LOG_MOVE_AWAY_PATH, { (unsigned)otherObj->getID(), id2, pathToAvoid2 ? 1u : 0u, canPath, found ? 1u : 0u });
+	if (!found) return NULL;
+	Path *path = newInstance(Path);
+	Coord3D a = *obj->getPosition();
+	Coord3D b = a;
+	b.x += (Real)((Int)((h >> 12) % 41u) - 20);
+	b.y += (Real)((Int)((h >> 20) % 41u) - 20);
+	path->appendNode(&a, LAYER_GROUND);
+	path->appendNode(&b, LAYER_GROUND);
+	return path;
+}
+Bool Pathfinder::moveAllies(Object *obj, Path *path)
+{
+	unsigned count = 0;
+	for (const PathNode *n = path->getFirstNode(); n; n = n->getNext()) ++count;
+	L(LOG_MOVE_ALLIES, { count });
+	return TRUE;
+}
+const AsciiString& Object::getName() const { return AsciiString::TheEmptyString; }
+const AsciiString& AiTemplateView::getName() const { return AsciiString::TheEmptyString; }
+Bool Pathfinder::clientSafeQuickDoesPathExist(const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D *to)
+{
+	bool r = p1Pick(p1Hash(15, { bitsOf(to->x), bitsOf(to->y) }), g_aiEnv.pathExistsRate);
+	L(LOG_PATH_EXISTS, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z), r ? 1u : 0u });
+	return r;
+}
+void Weapon::setMaxShotCount(Int maxShots) { L(LOG_MAX_SHOTS, { (unsigned)maxShots }); }
+Real Weapon::getContinueAttackRange() const { return g_aiEnv.continueRange; }
+Bool Weapon::isContactWeapon() const { return g_aiEnv.contactWeapon != 0; }
+Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
+	Real *closestDist, Coord3D *closestDistVec)
+{
+	const PartitionFilterPossibleToAttack *f = (const PartitionFilterPossibleToAttack *)filters[0];
+	L(LOG_CLOSEST_OBJECT, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), bitsOf(maxDist), (unsigned)dc, (unsigned)f->m_commandSource });
+	return findObject((ObjectID)g_aiEnv.closestAttack);
+}
+Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result)
+{
+	bool r = p1Pick(p1Hash(16, { bitsOf(center->x), bitsOf(center->y) }), g_aiEnv.findPosRate);
+	L(LOG_FIND_POSITION, { bitsOf(center->x), bitsOf(center->y), bitsOf(center->z), bitsOf(options->minRadius), bitsOf(options->maxRadius),
+		options->sourceToPathToDest ? (unsigned)options->sourceToPathToDest->getID() : 0u, r ? 1u : 0u });
+	if (r) { *result = *center; result->x += 5.0f; result->y += 5.0f; }
+	return r;
+}
+const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const { return NULL; }
+void ContainModuleInterface::removeAllContained(Bool exposeStealthUnits) { L(LOG_CONTAIN, { 0u, (unsigned)exposeStealthUnits }); }
+void ContainModuleInterface::markAllPassengersDetected() { L(LOG_CONTAIN, { 1u }); }
+void ContainModuleInterface::orderAllPassengersToExit(CommandSourceType src, Bool instantly) { L(LOG_CONTAIN, { 2u, (unsigned)src, (unsigned)instantly }); }
+UpdateModule *Object::findUpdateModule(UnsignedInt key) const
+{
+	static const char *const names[3] = { "DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate" };
+	for (int i = 0; i < 3; ++i)
+		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(names[i])))
+			return ((g_aiEnv.modules >> i) & 1) ? (UpdateModule *)&g_moduleDummy[i] : NULL;
+	return NULL;
+}
+void DeliverPayloadAIUpdate::deliverPayloadViaModuleData(const Coord3D *pos) { L(LOG_MODULE, { 0u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void ProneUpdate::goProne(const DamageInfo *damageInfo) { L(LOG_MODULE, { 1u }); }
+void HackInternetAIUpdate::hackInternet() { L(LOG_MODULE, { 2u }); }
+const AsciiString& Object::getCommandSetString() const { static AsciiString name("AiCommandSet"); return name; }
+const CommandSet *ControlBar::findCommandSet(const AsciiString& name) { return g_aiEnv.hasCommandSet ? &g_commandSet : NULL; }
+const CommandButton* CommandSet::getCommandButton(Int i) const
+{
+	Int k = g_aiEnv.commandSlots[i];
+	return k >= 0 ? &g_buttons[k] : NULL;
+}
+Int CommandButton::getCommandType() const { return g_aiEnv.buttonTypes[m_index]; }
+void PolygonTrigger::getCenterPoint(Coord3D* pOutCoord) const
+{
+	pOutCoord->x = 10.0f * (Real)m_index;
+	pOutCoord->y = 20.0f * (Real)m_index;
+	pOutCoord->z = 0.0f;
+}
+
 Object *AI::findClosestRepulsor(const Object *me, Real range)
 {
 	L(LOG_REPULSOR, { (unsigned)me->getID(), bitsOf(range) });
@@ -730,14 +940,6 @@ UpdateSleepTime TurretAI::updateTurretAI()
 		: ((h >> 16) & 1) ? UPDATE_SLEEP(1 + (h >> 20) % 60) : UPDATE_SLEEP_FOREVER;
 	L(LOG_TURRET_UPDATE, { (unsigned)m_which, (unsigned)r });
 	return r;
-}
-void AIUpdateInterface::aiMoveToObject(Object *obj, CommandSourceType cmdSource)
-{
-	L(LOG_AI_COMMAND, { (unsigned)AICMD_MOVE_TO_OBJECT, (unsigned)cmdSource, obj ? (unsigned)obj->getID() : 0u, 0u });
-}
-void AIUpdateInterface::aiAttackObject(Object *victim, Int maxShotsToFire, CommandSourceType cmdSource)
-{
-	L(LOG_AI_COMMAND, { (unsigned)AICMD_ATTACK_OBJECT, (unsigned)cmdSource, victim ? (unsigned)victim->getID() : 0u, (unsigned)maxShotsToFire });
 }
 namespace {
 /* a placeholder state's answer: the hash of the frame, its id and the callback (0 onEnter, 1 update) */
@@ -777,6 +979,11 @@ void setScene(const AiEnv *env)
 	g_aiEnv = *env;
 	TheGlobalData->m_gravity = env->gravity;
 	TheGlobalData->m_movementPenaltyDamageState = env->penalty;
+	/* batch A5 */
+	TheGlobalData->m_partitionCellSize = env->partitionCellSize;
+	((AIUpdateInterface *)g_otherAiMem)->m_path = env->otherAiPath ? (Path *)g_otherAiMem : NULL;
+	for (int i = 0; i < 4; ++i) g_buttons[i].m_index = i;
+	for (int i = 0; i < 8; ++i) { g_polygons[i].m_index = i; g_waypoints[i].m_index = i; }
 }
 
 void putU32(std::vector<unsigned> &v, unsigned x) { v.push_back(x); }
@@ -871,6 +1078,10 @@ void ref_ai_a2_reset(void)
 	if (!gen) gen = new NameKeyGenerator;
 	gen->reset();
 	TheNameKeyGenerator = gen;
+	/* batch A5: the modules the commands look up, first (their keys are kept in function-local statics, which outlive a reset) */
+	gen->nameToKey(AsciiString("DeliverPayloadAIUpdate"));
+	gen->nameToKey(AsciiString("ProneUpdate"));
+	gen->nameToKey(AsciiString("HackInternetAIUpdate"));
 	g_ai_update = 0;	/* (leaked: its locomotors point into the store deleted below) */
 	delete TheLocomotorStore;
 	TheLocomotorStore = new LocomotorStore;
@@ -910,7 +1121,7 @@ int ref_ai_a2_load(const char *filename, int loadType)
 }
 
 /* A new AI: its data's locomotor sets from `sets` (count, then per set: its type, its number of templates, their names' keys,
-** then (batch A3) the data's auto-acquire bits and mood check rate),
+** then (batch A3) the data's auto-acquire bits and mood check rate, (batch A5) its forbidden player commands),
 ** the scene `env`, the object at the scene's start (identity, at `pos` facing `angle`), the AI made by its constructor
 ** (AIUpdateInterface(NULL, NULL)); the log of the construction is returned (length in words, may exceed cap). */
 int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, float angle, unsigned *log, int cap)
@@ -934,6 +1145,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	for (int i = 0; i < MAX_TURRETS; ++i) g_data->m_turretData[i] = ((g_aiEnv.turrets >> i) & 1) ? (const TurretAIData *)&g_aiEnv : NULL;
 	g_data->m_autoAcquireEnemiesWhenIdle = sets[k++];
 	g_data->m_moodAttackCheckRate = sets[k++];
+	/* batch A5: the data's forbidden player commands */
+	g_data->m_forbidPlayerCommands = sets[k++] != 0;
 	g_object = Object();
 	++g_aiQuiet;
 	Coord3D p = { pos[0], pos[1], pos[2] };
@@ -1076,6 +1289,28 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 		for (unsigned char c : g_saved) r.push_back(c);
 		break;
 	}
+	case 72: {
+		/* batch A5: aiDoCommand of the parms: ia[0] the command, ia[1] its source, ia[2] its object (findObject), ia[3] the team (>= 0),
+		** ia[4] the waypoint, ia[5] the polygon, ia[6] the int value, ia[7] the command button (each -1: none), ia[8] coords at fa[3..] */
+		AICommandParms parms((AICommandType)ia[0], (CommandSourceType)ia[1]);
+		parms.m_pos = p;
+		parms.m_obj = findObject((ObjectID)ia[2]);
+		parms.m_team = ia[3] >= 0 ? &g_team : NULL;
+		parms.m_waypoint = ia[4] >= 0 ? &g_waypoints[ia[4]] : NULL;
+		parms.m_polygon = ia[5] >= 0 ? &g_polygons[ia[5]] : NULL;
+		parms.m_intValue = ia[6];
+		parms.m_commandButton = ia[7] >= 0 ? &g_buttons[ia[7]] : NULL;
+		for (int i = 0; i < ia[8]; ++i) { Coord3D c = { fa[3 + 3 * i], fa[4 + 3 * i], fa[5 + 3 * i] }; parms.m_coords.push_back(c); }
+		ai->aiDoCommand(&parms);
+		break;
+	}
+	case 73: {
+		/* batch A5: doQuickExit of the coords (ia[8] at fa[3..]) */
+		std::vector<Coord3D> path;
+		for (int i = 0; i < ia[8]; ++i) { Coord3D c = { fa[3 + 3 * i], fa[4 + 3 * i], fa[5 + 3 * i] }; path.push_back(c); }
+		ai->doQuickExit(&path);
+		break;
+	}
 	case 71: {
 		/* the last save loaded into the machine (xferSnapshot, then loadPostProcess): the status */
 		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_saved.empty()) fwrite(&g_saved[0], 1, g_saved.size(), f); fclose(f); }
@@ -1135,6 +1370,8 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 	putU32(v, (unsigned)ai->m_nextGoalPathIndex);
 	putU32(v, (unsigned)ai->m_moveOutOfWay1);
 	putU32(v, (unsigned)ai->m_moveOutOfWay2);
+	/* batch A5 */
+	putU32(v, ai->m_areaToGuard ? (unsigned)ai->m_areaToGuard->m_index : 0xffffffffu);
 	/* the locomotors */
 	const LocomotorSet &set = ai->m_locomotorSet;
 	putU32(v, (unsigned)set.m_locomotors.size());
@@ -1185,6 +1422,13 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, sm->m_temporaryStateFramEnd);
 		putU32(v, (unsigned)sm->m_goalPath.size());
 		for (size_t i = 0; i < sm->m_goalPath.size(); ++i) putPos(v, sm->m_goalPath[i]);
+		/* batch A5: the goal waypoint and squad */
+		putU32(v, sm->m_goalWaypoint ? (unsigned)sm->m_goalWaypoint->m_index : 0xffffffffu);
+		putU32(v, sm->m_goalSquad ? 1u : 0u);
+		if (sm->m_goalSquad) {
+			putU32(v, (unsigned)sm->m_goalSquad->m_objectIDs.size());
+			for (size_t i = 0; i < sm->m_goalSquad->m_objectIDs.size(); ++i) putU32(v, (unsigned)sm->m_goalSquad->m_objectIDs[i]);
+		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;
 		putU32(v, (unsigned)idle->m_initialSleepOffset);
 		putU32(v, idle->m_shouldLookForTargets ? 1u : 0u);

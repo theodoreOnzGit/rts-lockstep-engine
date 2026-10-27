@@ -89,6 +89,24 @@ struct AiEnv
 	Real objVisionRange;		/* the object's getVisionRange */
 	UnsignedInt turretRate;		/* a turret's update: UPDATE_SLEEP_NONE at this rate (the hash), else a sleep */
 	UnsignedInt stateRate;		/* a placeholder state's onEnter/update: STATE_CONTINUE at this rate (the hash), else an end or a sleep */
+	/* ---- batch A5 (the commands) */
+	Int mobile;			/* isMobile */
+	Real partitionCellSize;		/* TheGlobalData->m_partitionCellSize */
+	Real extentHi[2];		/* TheTerrainLogic->getExtent: (0, 0) to (extentHi[0], extentHi[1]) */
+	UnsignedInt teamMask;		/* the team's members (objects 1..31), in increasing id order */
+	UnsignedInt actionRate;		/* the action manager's answers: TRUE at this rate (the hash) */
+	UnsignedInt otherAiPath;	/* another object's AI has a path */
+	UnsignedInt moveAwayRate;	/* getMoveAwayFromPath: a path at this rate (the hash) */
+	UnsignedInt pathExistsRate;	/* clientSafeQuickDoesPathExist: TRUE at this rate (the hash) */
+	Real continueRange;		/* the current weapon's continue-attack range */
+	Int contactWeapon;		/* the current weapon is a contact weapon */
+	Int closestAttack;		/* getClosestObject's answer (0: none) */
+	UnsignedInt findPosRate;	/* findPositionAround: found at this rate (the hash) */
+	Int hasContain;			/* the object has a contain module */
+	Int modules;			/* bit 0 DeliverPayloadAIUpdate, bit 1 ProneUpdate, bit 2 HackInternetAIUpdate */
+	Int hasCommandSet;		/* TheControlBar finds the object's command set */
+	Int commandSlots[18];		/* the set's slots: a button's index (0..3), -1 empty */
+	Int buttonTypes[4];		/* the buttons' GUI command types */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -107,7 +125,9 @@ enum
 	LOG_GROUND_PASSABLE, LOG_LAYER_FOR, LOG_EFFECTIVELY_DEAD,
 	LOG_ADD_TARGETER = 60, LOG_ABLE_TO_ATTACK, LOG_VISION_RANGE, LOG_CLOSEST_ENEMY, LOG_SET_BONUS, LOG_CLEAR_BONUS,
 	LOG_PF_GOAL_POSITION = 70, LOG_PF_SNAP, LOG_PF_UPDATE_GOAL, LOG_PF_QUEUE, LOG_TURRET_UPDATE, LOG_AI_COMMAND, LOG_REPULSOR,
-	LOG_CLEAR_SET_MODEL, LOG_SCRIPT_NOTIFY, LOG_STATE_ENTER, LOG_STATE_UPDATE, LOG_STATE_EXIT
+	LOG_CLEAR_SET_MODEL, LOG_SCRIPT_NOTIFY, LOG_STATE_ENTER, LOG_STATE_UPDATE, LOG_STATE_EXIT,
+	LOG_EDGE_POINT = 82, LOG_ACTION, LOG_MOVE_AWAY_PATH, LOG_MOVE_ALLIES, LOG_PATH_EXISTS, LOG_MAX_SHOTS, LOG_CLOSEST_OBJECT,
+	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -134,6 +154,8 @@ class GlobalData
 public:
 	Real m_gravity;
 	Int m_movementPenaltyDamageState;
+	/* batch A5 */
+	Real m_partitionCellSize;
 };
 extern GlobalData *TheGlobalData;
 
@@ -160,10 +182,60 @@ public:
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);
 	/* batch A4: AIStateMachine::xfer's (never reached: no goal waypoint is set) */
 	Waypoint *getWaypointByName(AsciiString name);
+	/* batch A5: the commands' map edges */
+	void getExtent(Region3D *extent) const;
+	Coord3D findClosestEdgePoint(const Coord3D *closestTo) const;
 };
 extern TerrainLogic *TheTerrainLogic;
 
 class Object;
+
+/* batch A5: privateAttackPosition's partition filters (their arguments kept for the stand-in search) and search options */
+class PartitionFilter
+{
+public:
+	virtual ~PartitionFilter() {}
+};
+class PartitionFilterPossibleToAttack : public PartitionFilter
+{
+public:
+	PartitionFilterPossibleToAttack(AbleToAttackType t, const Object *obj, CommandSourceType commandSource)
+		: m_obj(obj), m_commandSource(commandSource), m_attackType(t) {}
+	const Object *m_obj;
+	CommandSourceType m_commandSource;
+	AbleToAttackType m_attackType;
+};
+class PartitionFilterSameMapStatus : public PartitionFilter
+{
+public:
+	PartitionFilterSameMapStatus(const Object *obj) : m_obj(obj) {}
+	const Object *m_obj;
+};
+enum FindPositionFlags { FPF_NONE = 0 };
+const Real RANDOM_START_ANGLE = -99999.9f;
+/* PartitionManager.h, verbatim */
+struct FindPositionOptions
+{
+	FindPositionOptions( void )
+	{
+		flags									= FPF_NONE;
+		minRadius							= 0.0f;
+		maxRadius							= 0.0f;
+		startAngle						= RANDOM_START_ANGLE;
+		maxZDelta							= 1e10f;	// ie, any z delta.
+		ignoreObject					= NULL;
+		sourceToPathToDest    = NULL;
+		relationshipObject		= NULL;
+	};
+	FindPositionFlags flags;
+	Real minRadius;
+	Real maxRadius;
+	Real startAngle;
+	Real maxZDelta;
+	const Object *ignoreObject;
+	const Object *sourceToPathToDest;
+	const Object *relationshipObject;
+};
 
 class PartitionManager
 {
@@ -171,6 +243,10 @@ public:
 	Real getGroundOrStructureHeight(Real posx, Real posy);
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
+	/* batch A5 */
+	Object *getClosestObject(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
+		Real *closestDist = NULL, Coord3D *closestDistVec = NULL);
+	Bool findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result);
 };
 extern PartitionManager *ThePartitionManager;
 
@@ -266,10 +342,30 @@ class Team
 public:
 	const TeamPrototype *getPrototype();
 	Object *getTeamTargetObject();
+	/* batch A5: the scene's members (teamMask) */
+	DLINK_ITERATOR<Object> iterate_TeamMemberList() const;
 };
-class ContainModuleInterface { public: Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const; };
+typedef std::list<Object*> ContainedItemsList;
+class ContainModuleInterface
+{
+public:
+	Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const;
+	/* batch A5 (logged) */
+	const ContainedItemsList* getContainedItemsList() const;
+	void removeAllContained( Bool exposeStealthUnits = FALSE );
+	void markAllPassengersDetected();
+	void orderAllPassengersToExit( CommandSourceType, Bool instantly );
+};
 class StealthUpdate { public: Bool isGrantedBySpecialPower(); };
-class Weapon { public: Int getAntiMask() const; };
+class Weapon
+{
+public:
+	Int getAntiMask() const;
+	/* batch A5 */
+	void setMaxShotCount(Int maxShots);
+	Real getContinueAttackRange() const;
+	Bool isContactWeapon() const;
+};
 class HordeUpdateInterface
 {
 public:
@@ -294,6 +390,8 @@ struct AiTemplateView
 {
 	const AiTemplateView *operator->() const { return this; }
 	Bool isKindOf(KindOfType t) const { return FALSE; }
+	/* batch A5: the command buttons' "not implemented" branches name it */
+	const AsciiString& getName() const;
 };
 
 class Object
@@ -354,6 +452,17 @@ public:
 	AIUpdateInterface *getAI();
 	/* batch A4 */
 	Real getVisionRange() const;
+	/* batch A5 */
+	Bool isMobile() const;
+	Bool isSignificantlyAboveTerrain() const;
+	class UpdateModule *findUpdateModule(UnsignedInt key) const;	/* (NameKeyType, not declared here) */
+	const AsciiString& getCommandSetString() const;
+	Bool isSelectable() const;
+	/* the command buttons' "not implemented" branches name the object */
+	const AsciiString& getName() const;
+	const AiTemplateView *getTemplate() const { return &m_template; }
+	/* the team's member list (Team::iterate_TeamMemberList): the next member */
+	Object *dlink_next_TeamMemberList() const;
 	void clearAndSetModelConditionFlags( const ModelConditionFlags& clr, const ModelConditionFlags& set );
 	/* 0: the AI's own object; else the id of another object of the scene */
 	ObjectID m_otherId;
@@ -397,6 +506,28 @@ class AIGroup
 {
 public:
 	void recomputeGroupSpeed();
+	/* batch A5: Squad.cpp's (not reached: no command makes a squad from a group) */
+	const std::vector<ObjectID>& getAllIDs() const;
+	void add(Object *obj);
 };
+
+/* ---- batch A5: what the commands hand over to (logged) */
+class ActionManager
+{
+public:
+	Bool canGetRepairedAt( const Object *obj, const Object *repairDest, CommandSourceType commandSource );
+	Bool canGetHealedAt( const Object *obj, const Object *healDest, CommandSourceType commandSource );
+	Bool canEnterObject( const Object *obj, const Object *objectToEnter, CommandSourceType commandSource, Int mode );
+};
+enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };	/* ActionManager.h, verbatim */
+extern ActionManager *TheActionManager;
+class DeliverPayloadAIUpdate { public: void deliverPayloadViaModuleData( const Coord3D *moveToPos ); };
+class ProneUpdate { public: void goProne( const DamageInfo *damageInfo ); };
+class HackInternetAIUpdate { public: void hackInternet(); };
+class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; Int m_index; };
+class CommandButton { public: Int getCommandType() const; Int m_index; };
+class CommandSet { public: const CommandButton* getCommandButton(Int i) const; };
+class ControlBar { public: const CommandSet *findCommandSet( const AsciiString& name ); };
+extern ControlBar *TheControlBar;
 
 #endif

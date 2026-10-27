@@ -143,6 +143,8 @@ pub struct AiMachineExtras {
     pub temporary_state: StateId,
     /// `m_temporaryStateFramEnd`.
     pub temporary_state_frame_end: u32,
+    /// `m_goalSquad` (batch A5).
+    pub goal_squad: Option<crate::logic::world::player::Squad>,
 }
 
 /// What the AI's members reach outside themselves: the object, its world and its subsystems (see the module docs).

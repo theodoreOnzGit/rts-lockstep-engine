@@ -71,6 +71,23 @@
 #define AIWaitState AiAIWaitState
 #define AIBusyState AiAIBusyState
 #define AIPlaceholderState AiAIPlaceholderState
+/* batch A5 */
+#define AICommandParms AiAICommandParms
+#define AICommandInterface AiAICommandInterface
+#define ActionManager AiActionManager
+#define TheActionManager AiTheActionManager
+#define DeliverPayloadAIUpdate AiDeliverPayloadAIUpdate
+#define ProneUpdate AiProneUpdate
+#define HackInternetAIUpdate AiHackInternetAIUpdate
+#define PolygonTrigger AiPolygonTrigger
+#define CommandButton AiCommandButton
+#define CommandSet AiCommandSet
+#define ControlBar AiControlBar
+#define TheControlBar AiTheControlBar
+#define PartitionFilter AiPartitionFilter
+#define PartitionFilterPossibleToAttack AiPartitionFilterPossibleToAttack
+#define PartitionFilterSameMapStatus AiPartitionFilterSameMapStatus
+#define FindPositionOptions AiFindPositionOptions
 /* ---- renames: Locomotor.cpp's classes, its global and its INI block handler */
 #define Locomotor AiLocomotor
 #define LocomotorTemplate AiLocomotorTemplate
@@ -138,4 +155,6 @@ float ref_fast_float_ceil(float f);
 #define FAST_REAL_CEIL(x) ref_fast_float_ceil(x)
 
 #include "Common/SubsystemInterface.h"
+/* batch A5: Squad.cpp includes Squad.h first, which names ObjectID */
+#include "Common/GameType.h"
 #endif

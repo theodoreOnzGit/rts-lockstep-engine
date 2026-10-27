@@ -155,8 +155,8 @@ pub struct BattlePlanBonuses {
     pub invalid_kind_of: KindOfMaskType,
 }
 
-/// `Squad` (`Squad.h`), not translated yet: a hotkey squad or the current selection is only known to exist. The
-/// squad unit replaces this type when it lands (the object ids it holds are its own).
+/// `Squad` (`Squad.h`): its data members; its functions are `player_squads`' `squad_*` (Squad.cpp). Also the AI machine's
+/// goal squad (`logic::ai::ai_update::AiMachineExtras::goal_squad`, layer 10 batch A5).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Squad {
     /// `m_objectIDs`.
