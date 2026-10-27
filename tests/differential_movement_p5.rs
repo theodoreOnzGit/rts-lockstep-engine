@@ -284,6 +284,8 @@ fn gen_scene(g: &mut Gen) -> Scene {
                 can_see_through_structure: p(g, 20),
                 aircraft_path_around: p(g, 25),
                 attack_needs_line_of_sight: p(g, 60),
+                aircraft: false,
+                fs_airfield: false,
                 unmanned: p(g, 15),
                 rubble: p(g, 10),
                 fence_width: if p(g, 15) { g.uniform(5.0, 40.0) } else { 0.0 },

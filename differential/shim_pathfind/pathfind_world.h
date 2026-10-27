@@ -79,6 +79,8 @@ class Weapon
 public:
 	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Object *victim) const;
 	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const;
+	/* batch P9 */
+	Bool isGoalPosWithinAttackRange(const Object *source, const Coord3D *goalPos, const Object *victim, const Coord3D *victimPos) const;
 };
 /* batch P6: the controlling player (its type, an Int: GameCommon.h's PlayerType comes later) */
 class Player { public: Int getPlayerType() const { return m_type; } Int m_type; };

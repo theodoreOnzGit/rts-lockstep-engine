@@ -14,6 +14,7 @@
 ** Batch P2 (cell_p2.inc): PathfindCellInfo and PathfindCell, ref_pf_p2_run.
 ** Batch P1 (path_p1.inc): PathNode and Path. The pathfinder calls a path makes (isLinePassable, isGroundPathPassable, getCell) are
 ** answered here from a hash of their arguments that the Rust test computes too (`p1Hash`), and each is a line of the log. */
+#include <float.h> /* batch P9: FLT_MAX (the real PreRTS.h brings it) */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -60,9 +61,8 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "search_p6.inc"
 #include "hierarchical_p7.inc"
 #include "ground_p8.inc"
+#include "adjust_p9.inc"
 /* the Pathfinder's virtual searches not yet ported (later batches cut them; until then the vtable needs them): they find no path */
-Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, Coord3D *to, Bool blocked,
-	Real pathCostMultiplier, Bool moveAllies ) { return NULL; }
 Path *Pathfinder::findAttackPath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Object *victim,
 	const Coord3D* victimPos, const Weapon *weapon ) { return NULL; }
 Path *Pathfinder::findSafePath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D* repulsorPos1,
@@ -221,6 +221,12 @@ Bool Weapon::isClearGoalFiringLineOfSightTerrain(const Object *source, const Coo
 Bool Weapon::isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const
 {
 	return p1Pick(p1Hash(33, { (unsigned)source->getID(), bitsOf(pos.x), bitsOf(pos.y), bitsOf(victimPos.x), bitsOf(victimPos.y) }), g_p5Line);
+}
+/* batch P9: whether the goal is within the attack range (tag 34; the victim's id, or 0xffffffff without one; the line-of-sight rate) */
+Bool Weapon::isGoalPosWithinAttackRange(const Object *source, const Coord3D *goalPos, const Object *victim, const Coord3D *victimPos) const
+{
+	return p1Pick(p1Hash(34, { (unsigned)source->getID(), bitsOf(goalPos->x), bitsOf(goalPos->y), victim ? (unsigned)victim->getID() : 0xffffffffu,
+		bitsOf(victimPos->x), bitsOf(victimPos->y) }), g_p5Line);
 }
 static PartitionManager s_pfPartition;
 PartitionManager *ThePartitionManager = &s_pfPartition;
@@ -1040,6 +1046,8 @@ Pathfinder *pfP5Setup(const unsigned *cfg, std::vector<Bridge> &bridges, int &no
 		o.m_hasAI = c[18] != 0; o.m_ai.m_ground = c[19] != 0; o.m_ai.m_adjusts = c[20] != 0; o.m_unmanned = c[21] != 0;
 		o.m_ai.m_ignored = (ObjectID)c[22]; o.m_crusherLevel = (Int)c[23]; o.m_crushableLevel = (Int)c[24]; o.m_above = c[25] != 0;
 		o.m_kinds[KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT] = (c[26] & 1) != 0; o.m_kinds[KINDOF_AIRCRAFT_PATH_AROUND] = (c[26] & 2) != 0;
+		/* batch P9: kinds 2's bits 2, 3 */
+		o.m_kinds[KINDOF_AIRCRAFT] = (c[26] & 4) != 0; o.m_kinds[KINDOF_FS_AIRFIELD] = (c[26] & 8) != 0;
 		o.m_hasWeapon = c[27] != 0;
 		if (c[28] != 0) {
 			o.m_slavedUpdate.m_slaver = (ObjectID)c[28];
@@ -1227,7 +1235,11 @@ int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 ** 11 addBridge(bridge a).  Batch P7's: 12 findPath(as 5)  13 findHierarchicalPath(human a, surfaces b, crusher c, from d e, to f g)
 ** 14 findClosestHierarchicalPath(as 13)  15 clientSafeQuickDoesPathExist(surfaces a, from b c, to d e)  16 ...ForUI(as 15)
 ** 17 findBrokenBridge(as 15)  18 changeBridgeState(layer a, repaired b)  19 forceMapRecalculation.  Batch P8's: 20 findGroundPath(
-** diameter a, crusher b, from d e, to f g).
+** diameter a, crusher b, from d e, to f g).  Batch P9's (surfaces b, positions by pairs): 21 adjustDestination(obj a, dest c d, group
+** dest e f, none when e is 0xffffffff)  22 adjustTargetDestination(obj a, target b, target's position c d, dest e f)
+** 23 adjustToPossibleDestination(obj a, dest c d)  24 pathDestination(obj a, dest c d, layer e, group dest f g)  25 tightenPath(obj a,
+** from c d, to e f)  26 checkPathCost(as 25)  27 findClosestPath(obj a, from c d, to e f, blocked g & 1, path cost multiplier (g >> 1) / 4).
+** (21-24 append the result and the destination, 25 the position, 26 the cost, 27 the path and the destination.)
 ** Each op appends, after a word that counts the rest: the results (a path: its nodes, each position, layer, can-optimize and next
 ** optimized node's order + 1, then blocked-by-ally), tunneling, the lists' heads, the cumulative cell count, the first free info, the
 ** zone blocks' passable flags. */
@@ -1252,6 +1264,23 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		return 0xfffffffeu;
 	};
 	auto infoIndex = [](const PathfindCellInfo *i) -> unsigned { return i ? (unsigned)(i - PathfindCellInfo::s_infoArray) : 0xffffffffu; };
+	auto putPos = [&](std::vector<unsigned> &res, const Coord3D &p) { res.push_back(bitsOf(p.x)); res.push_back(bitsOf(p.y)); res.push_back(bitsOf(p.z)); };
+	auto dumpPath = [&](std::vector<unsigned> &res, Path *path) {
+		res.push_back(path ? 1u : 0u);
+		if (!path) return;
+		std::vector<PathNode *> nodes;
+		for (PathNode *nd = path->getFirstNode(); nd; nd = nd->getNext()) nodes.push_back(nd);
+		res.push_back((unsigned)nodes.size());
+		for (PathNode *nd : nodes) {
+			res.push_back(bitsOf(nd->getPosition()->x)); res.push_back(bitsOf(nd->getPosition()->y)); res.push_back(bitsOf(nd->getPosition()->z));
+			res.push_back((unsigned)nd->getLayer()); res.push_back(nd->getCanOptimize() ? 1u : 0u);
+			unsigned next = 0;
+			for (size_t k = 0; k < nodes.size(); ++k) if (nodes[k] == nd->m_nextOpti) next = (unsigned)k + 1;
+			res.push_back(next);
+		}
+		res.push_back(path->getBlockedByAlly() ? 1u : 0u);
+		path->deleteInstance();
+	};
 	alignas(16) unsigned char locoMem[sizeof(LocomotorSet)];
 	memset(locoMem, 0, sizeof locoMem);
 	LocomotorSet *loco = (LocomotorSet *)locoMem;
@@ -1279,21 +1308,45 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 			else if (o[0] == 20) path = pf->findGroundPath(&from, &to, (Int)o[1], o[2] != 0);
 			else if (o[0] == 13) path = pf->findHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
 			else path = pf->findClosestHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
-			res.push_back(path ? 1u : 0u);
-			if (path) {
-				std::vector<PathNode *> nodes;
-				for (PathNode *nd = path->getFirstNode(); nd; nd = nd->getNext()) nodes.push_back(nd);
-				res.push_back((unsigned)nodes.size());
-				for (PathNode *nd : nodes) {
-					res.push_back(bitsOf(nd->getPosition()->x)); res.push_back(bitsOf(nd->getPosition()->y)); res.push_back(bitsOf(nd->getPosition()->z));
-					res.push_back((unsigned)nd->getLayer()); res.push_back(nd->getCanOptimize() ? 1u : 0u);
-					unsigned next = 0;
-					for (size_t k = 0; k < nodes.size(); ++k) if (nodes[k] == nd->m_nextOpti) next = (unsigned)k + 1;
-					res.push_back(next);
-				}
-				res.push_back(path->getBlockedByAlly() ? 1u : 0u);
-				path->deleteInstance();
-			}
+			dumpPath(res, path);
+			break;
+		}
+		/* batch P9 */
+		case 21: case 23: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D dest = posOf(o[3], o[4]), group = posOf(o[5], o[6]);
+			Bool r = o[0] == 21 ? pf->adjustDestination(objAt(o[1]), *loco, &dest, o[5] == 0xffffffffu ? NULL : &group)
+				: pf->adjustToPossibleDestination(objAt(o[1]), *loco, &dest);
+			res.push_back(r ? 1u : 0u); putPos(res, dest);
+			break;
+		}
+		case 22: {
+			static Weapon s_weapon;
+			Coord3D targetPos = posOf(o[3], o[4]), dest = posOf(o[5], o[6]);
+			Bool r = pf->adjustTargetDestination(objAt(o[1]), objAt(o[2]), &targetPos, &s_weapon, &dest);
+			res.push_back(r ? 1u : 0u); putPos(res, dest);
+			break;
+		}
+		case 24: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D dest = posOf(o[3], o[4]), group = posOf(o[6], o[7]);
+			Bool r = pf->pathDestination(objAt(o[1]), *loco, &dest, (PathfindLayerEnum)o[5], &group);
+			res.push_back(r ? 1u : 0u); putPos(res, dest);
+			break;
+		}
+		case 25: case 26: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D from = posOf(o[3], o[4]), to = posOf(o[5], o[6]);
+			if (o[0] == 25) { pf->tightenPath(objAt(o[1]), *loco, &from, &to); putPos(res, from); }
+			else res.push_back((unsigned)pf->checkPathCost(objAt(o[1]), *loco, &from, &to));
+			break;
+		}
+		case 27: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D from = posOf(o[3], o[4]), to = posOf(o[5], o[6]);
+			Path *path = pf->findClosestPath(objAt(o[1]), *loco, &from, &to, (o[7] & 1) != 0, (Real)(o[7] >> 1) / 4.0f, false);
+			dumpPath(res, path);
+			putPos(res, to);
 			break;
 		}
 		case 6: {

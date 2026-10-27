@@ -120,6 +120,8 @@ pub enum LineProc {
     AttackBlocked { obj: ObjectId, victim: Option<ObjectId>, victim_cell: Option<CellId>, skip_count: i32 },
     /// `segmentIntersectsBuildingCallback`: the building found.
     SegmentIntersectsBuilding { ignore: ObjectId, found: Option<ObjectId> },
+    /// `tightenPathCallback` (batch P9): the last position on the line where the unit may stop (`adjust_candidate`, as a human's).
+    TightenPath { obj: ObjectId, surfaces: LocomotorSurfaceTypeMask, layer: PathfindLayer, radius: i32, center: bool, found: Option<Coord3D> },
 }
 
 /// `computeNormalRadialOffset(from, insert, to, obj, radius)`: the object's position moved `radius` along the normal to from-to on
@@ -571,6 +573,17 @@ impl Pathfinder {
                     }
                 }
                 1 // "bail early"
+            }
+            LineProc::TightenPath { obj, surfaces, layer, radius, center, found } => {
+                if from.is_none() || cells[to as usize].get_layer() != *layer {
+                    return 0; // ("abort", but the walk goes on)
+                }
+                let Some(facts) = host.object(*obj) else { return 0 };
+                // (upstream's `pos` is uninitialised: the origin, see `adjust`)
+                if let Some(pos) = self.adjust_candidate(host, &facts, *surfaces, true, to_x, to_y, *layer, *radius, *center, &Coord3D::default()) {
+                    *found = Some(pos);
+                }
+                0
             }
             LineProc::SegmentIntersectsBuilding { ignore, found } => {
                 if cells[to as usize].get_type() != CELL_OBSTACLE {
