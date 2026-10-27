@@ -8,4 +8,5 @@
 pub mod cell;
 pub mod layer;
 pub mod path;
+pub mod pathfinder;
 pub mod zone;

@@ -54,6 +54,10 @@
 #define Bridge PfBridge
 #define BridgeInfo PfBridgeInfo
 #define GeometryInfo PfGeometryInfo
+#define DamageInfo PfDamageInfo
+#define ThingTemplate PfThingTemplate
+#define AIUpdateInterface PfAIUpdateInterface
+#define TAiData PfTAiData
 #define Weapon PfWeapon
 #define GlobalData PfGlobalData
 #define TheGlobalData PfTheGlobalData
