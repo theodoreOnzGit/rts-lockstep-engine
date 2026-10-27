@@ -36,10 +36,11 @@
 //!
 //! # Upstream defects kept
 //!
-//! - A search from a bridge's cell to that same cell moves the cell to the closed list and opens the bridge's two ground ends with it
+//! - A search from a bridge's cell to that same cell (two ends within a cell, or an end `clip` moves onto the other's cell) moves the
+//!   cell to the closed list and opens the bridge's two ground ends with it
 //!   as their parent. If an end's BLOCK zone number happens to equal the bridge LAYER's zone number (two kinds of zone number,
 //!   compared), the search takes it for the goal, makes it the goal's parent, and the parents loop: `prependCells` never returns,
-//!   upstream as here (found by the differential test, which keeps a search's two ends apart).
+//!   upstream as here (found by the differential tests, which keep clear of it).
 //! - A short bridge (both ends in one zone block) can put the cell the search popped back on the open list as the bridge's end while
 //!   it also goes on the closed list; the lists then cycle or crash, upstream as here.
 

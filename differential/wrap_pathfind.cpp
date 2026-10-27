@@ -59,6 +59,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "movement_p5.inc"
 #include "search_p6.inc"
 #include "hierarchical_p7.inc"
+#include "ground_p8.inc"
 /* the Pathfinder's virtual searches not yet ported (later batches cut them; until then the vtable needs them): they find no path */
 Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, Coord3D *to, Bool blocked,
 	Real pathCostMultiplier, Bool moveAllies ) { return NULL; }
@@ -1225,7 +1226,8 @@ int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 ** region lo (e, f), hi (g & 0xffff, g >> 16))  8 clearPassableFlags  9 setAllPassable  10 the logical extent (a, b) .. (c, d)
 ** 11 addBridge(bridge a).  Batch P7's: 12 findPath(as 5)  13 findHierarchicalPath(human a, surfaces b, crusher c, from d e, to f g)
 ** 14 findClosestHierarchicalPath(as 13)  15 clientSafeQuickDoesPathExist(surfaces a, from b c, to d e)  16 ...ForUI(as 15)
-** 17 findBrokenBridge(as 15)  18 changeBridgeState(layer a, repaired b)  19 forceMapRecalculation.
+** 17 findBrokenBridge(as 15)  18 changeBridgeState(layer a, repaired b)  19 forceMapRecalculation.  Batch P8's: 20 findGroundPath(
+** diameter a, crusher b, from d e, to f g).
 ** Each op appends, after a word that counts the rest: the results (a path: its nodes, each position, layer, can-optimize and next
 ** optimized node's order + 1, then blocked-by-ally), tunneling, the lists' heads, the cumulative cell count, the first free info, the
 ** zone blocks' passable flags. */
@@ -1265,7 +1267,7 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		case 2: { Coord3D p = posOf(o[2], o[3]); pf->updateGoal(objAt(o[1]), &p, (PathfindLayerEnum)o[4]); break; }
 		case 3: { Coord3D p = posOf(o[2], o[3]); pf->updatePos(objAt(o[1]), &p); break; }
 		case 4: pf->setIgnoreObstacleID(o[1] == 0xffffffffu ? INVALID_ID : objAt(o[1])->getID()); break;
-		case 5: case 12: case 13: case 14: {
+		case 5: case 12: case 13: case 14: case 20: {
 			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
 			loco->m_downhillOnly = o[3] != 0;
 			Coord3D from = posOf(o[4], o[5]), to = posOf(o[6], o[7]);
@@ -1273,6 +1275,8 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 			if (o[0] == 5) path = pf->Pathfinder::internalFindPath(objAt(o[1]), *loco, &from, &to);
 			else if (o[0] == 12) path = pf->findPath(objAt(o[1]), *loco, &from, &to);
 			/* 13, 14: a is isHuman, c is crusher (not downhill) */
+			/* 20: a is the diameter, b crusher (not surfaces), c unused */
+			else if (o[0] == 20) path = pf->findGroundPath(&from, &to, (Int)o[1], o[2] != 0);
 			else if (o[0] == 13) path = pf->findHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
 			else path = pf->findClosestHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
 			res.push_back(path ? 1u : 0u);
