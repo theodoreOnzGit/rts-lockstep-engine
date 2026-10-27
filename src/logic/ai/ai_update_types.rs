@@ -12,7 +12,8 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only for
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
-//! The enums and constants of `AIUpdate.h` that the AI's parts share (`p1w13-sonnet`, layer 10, batch T1). Values as upstream's:
+//! The enums and constants of `AIUpdate.h` that the AI's parts share (`p1w13-sonnet`, layer 10, batch T1), with
+//! `CommandSourceType` and `GuardMode` of `GameCommon.h` and `AttitudeType` of `AI.h` (batch A2). Values as upstream's:
 //! several are saved ("you MUST NOT REMOVE OR CHANGE existing values").
 
 /// `FAST_AS_POSSIBLE`.
@@ -36,6 +37,33 @@ pub const LOCOMOTORSET_COUNT: LocomotorSetType = 8;
 /// `TheLocomotorSetNames[]` (under `DEFINE_LOCOMOTORSET_NAMES`), without the `NULL`.
 pub const LOCOMOTOR_SET_NAMES: [&str; 8] =
     ["SET_NORMAL", "SET_NORMAL_UPGRADED", "SET_FREEFALL", "SET_WANDER", "SET_PANIC", "SET_TAXIING", "SET_SUPERSONIC", "SET_SLUGGISH"];
+
+/// `enum CommandSourceType` (GameCommon.h): "the source of a command".
+pub type CommandSourceType = i32;
+pub const CMD_FROM_PLAYER: CommandSourceType = 0;
+pub const CMD_FROM_SCRIPT: CommandSourceType = 1;
+pub const CMD_FROM_AI: CommandSourceType = 2;
+/// "Special rare command when the dozer originates a command to attack a mine."
+pub const CMD_FROM_DOZER: CommandSourceType = 3;
+/// "Special case: A weapon that can be chosen -- this is the default case (machine gun vs flashbang)."
+pub const CMD_DEFAULT_SWITCH_WEAPON: CommandSourceType = 4;
+
+/// `enum GuardMode` (GameCommon.h).
+pub type GuardMode = i32;
+pub const GUARDMODE_NORMAL: GuardMode = 0;
+/// "no pursuit out of guard area"
+pub const GUARDMODE_GUARD_WITHOUT_PURSUIT: GuardMode = 1;
+/// "ignore nonflyers"
+pub const GUARDMODE_GUARD_FLYING_UNITS_ONLY: GuardMode = 2;
+
+/// `enum AttitudeType` (AI.h): "AI "attitude" behavior modifiers".
+pub type AttitudeType = i32;
+pub const AI_SLEEP: AttitudeType = -2;
+pub const AI_PASSIVE: AttitudeType = -1;
+pub const AI_NORMAL: AttitudeType = 0;
+pub const AI_ALERT: AttitudeType = 1;
+pub const AI_AGGRESSIVE: AttitudeType = 2;
+pub const AI_INVALID: AttitudeType = 3;
 
 /// `enum GuardTargetType`.
 pub type GuardTargetType = i32;

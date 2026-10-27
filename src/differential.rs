@@ -899,6 +899,26 @@ pub struct LocoEnv {
     pub inv_box: [c_float; 4],
 }
 
+/// The scene of the AI build (`AiEnv` of `differential/shim_ai/ai_world.h`, p1w13-sonnet batch A2): the Locomotor build's
+/// [`LocoEnv`] field for field, then the AI's. Same fields, same order, 4-byte fields only.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct AiEnv {
+    pub loco: LocoEnv,
+    pub object_id: c_int,
+    pub crusher_level: c_int,
+    pub disabled_unmanned: c_int,
+    pub allow_to_fall: c_int,
+    pub has_group: c_int,
+    pub seed: c_uint,
+    pub line_rate: c_uint,
+    pub ground_rate: c_uint,
+    pub cliff_rate: c_uint,
+    pub pinch_rate: c_uint,
+    pub valid_pos_rate: c_uint,
+    pub goal: [c_float; 3],
+}
+
 extern "C" {
     // Locomotor.cpp, LocomotorSet and the INI block (wrap_locomotor.cpp). The meaning of every
     // argument is in differential/wrap_locomotor.cpp and tests/differential_locomotor.rs.
@@ -1919,6 +1939,22 @@ extern "C" {
     pub fn ref_pf_p4_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     pub fn ref_pf_p5_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     pub fn ref_pf_p6_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
+    /// p1w13-sonnet, layer 10 batch A2: AIUpdateInterface's members without the state machine (differential/wrap_ai.cpp).
+    pub fn ref_ai_a2_reset();
+    pub fn ref_ai_a2_load(filename: *const c_char, load_type: c_int) -> c_int;
+    pub fn ref_ai_a2_new(sets: *const c_uint, env: *const AiEnv, pos: *const c_float, angle: c_float, log: *mut c_uint, cap: c_int) -> c_int;
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_ai_a2_op(
+        op: c_int,
+        fa: *const c_float,
+        ia: *const c_int,
+        env: *const AiEnv,
+        out: *mut c_uint,
+        log: *mut c_uint,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_ai_a2_dump(buf: *mut c_uint, cap: c_int) -> c_int;
     /// p1w13-sonnet, layer 10 batch T1: TurretAI (differential/wrap_turret.cpp).
     pub fn ref_turret_run(cfg: *const c_uint, data: *const c_uint, n: c_int, ops: *const c_uint, xfer_path: *const c_char, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, layer 10 batch P1: PathNode and Path (differential/wrap_pathfind.cpp).
