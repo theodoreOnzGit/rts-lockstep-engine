@@ -37,6 +37,10 @@
 ** they reach are logged (the action manager, the containers, the weapon's shot count and ranges, the partition's search and
 ** position finder, the move-away path, the allies, the quick path check, the command set, the special modules).
 **
+** Batch A6 adds the paths (ai_update_a6.inc: doPathfind, the requests, the path computations, setPathFromWaypoint), over a stand-in
+** PathfindServicesInterface whose searches make their paths from the hash, and logged stand-ins of the pathfinder's other answers,
+** the weapon's range tests, the waypoints' locations and links, and the bridge's attack points.
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -107,6 +111,10 @@ public:
 	/* batch A5: "wp" and the index (TerrainLogic::getWaypointByName reads it back) */
 	AsciiString getName() const { AsciiString n; n.format("wp%d", m_index); return n; }
 	Int m_index;
+	/* batch A6: at (15 i, 25 i, 1), linked to the next when the scene says so */
+	const Coord3D *getLocation( void ) const;
+	Waypoint *getLink(Int ndx) const;
+	Coord3D m_location;
 };
 /* batch A5: AI.h's AICommandParms and AICommandInterface, verbatim */
 #include "ai_commands_decl.inc"
@@ -302,6 +310,20 @@ public:
 	void privateCommandButtonPosition( const CommandButton *commandButton, const Coord3D *pos, CommandSourceType cmdSource );
 	void privateCommandButtonObject( const CommandButton *commandButton, Object *obj, CommandSourceType cmdSource );
 
+	/* batch A6's members (ai_update_a6.inc) */
+	void doPathfind( PathfindServicesInterface *pathfinder );
+	void requestPath( Coord3D *destination, Bool isFinalGoal );
+	void requestAttackPath( ObjectID victimID, const Coord3D* victimPos );
+	void requestApproachPath( Coord3D *destination );
+	void requestSafePath( ObjectID repulsor );
+	void setPathFromWaypoint(const Waypoint *way, const Coord2D *offset);
+	Bool canComputeQuickPath( void );
+	Bool computeQuickPath( const Coord3D *destination );
+	Bool computePath( PathfindServicesInterface *pathServices, Coord3D *destination );
+	Bool computeAttackPath( PathfindServicesInterface *pathServices, const Object *victim, const Coord3D* victimPos );
+	void friend_setGoalObject(Object *obj);
+	Bool isQuickPathAvailable( const Coord3D *destination ) const;
+
 #include "ai_update_members.inc"
 };
 
@@ -310,6 +332,7 @@ public:
 #include "ai_update_a4.inc"
 #include "ai_states_a4.inc"
 #include "ai_update_a5.inc"
+#include "ai_update_a6.inc"
 
 #undef private
 #undef protected
@@ -481,7 +504,8 @@ Real PartitionManager::getGroundOrStructureHeight(Real posx, Real posy)
 /* PartitionManager::getDistanceSquared(obj, pos, FROM_CENTER_3D) (layer 8, translated): the 3-D distance from the object's centre */
 Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec)
 {
-	if (dc != FROM_CENTER_3D) abort();
+	/* (batch A6: FROM_BOUNDINGSPHERE_3D too, computed alike by the stand-in) */
+	if (dc != FROM_CENTER_3D && dc != FROM_BOUNDINGSPHERE_3D) abort();
 	const Coord3D *p = obj->getPosition();
 	Real dx = pos->x - p->x, dy = pos->y - p->y, dz = pos->z - p->z;
 	Real d = dx * dx + dy * dy + dz * dz;
@@ -601,6 +625,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT) return (g_aiEnv.kindMask & 64) != 0;
 	/* batch A4 */
 	if (t == KINDOF_CAN_BE_REPULSED) return (g_aiEnv.kindMask & 128) != 0;
+	/* batch A6 */
+	if (t == KINDOF_BRIDGE) return (g_aiEnv.kindMask & 256) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -679,6 +705,7 @@ const AiData *AI::getAiData()
 	g_aiData.m_forceIdleFramesCount = (UnsignedInt)g_aiEnv.forceIdleFrames;
 	g_aiData.m_attackUsesLineOfSight = g_aiEnv.attackUsesLOS != 0;
 	g_aiData.m_attackIgnoreInsignificantBuildings = g_aiEnv.ignoreInsignificant != 0;
+	g_aiData.m_repulsedDistance = g_aiEnv.repulsedDistance;
 	return &g_aiData;
 }
 Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToConsider)
@@ -900,6 +927,162 @@ const CommandButton* CommandSet::getCommandButton(Int i) const
 	return k >= 0 ? &g_buttons[k] : NULL;
 }
 Int CommandButton::getCommandType() const { return g_aiEnv.buttonTypes[m_index]; }
+/* ---- batch A6's stand-ins (the paths) */
+const Coord3D *Waypoint::getLocation( void ) const { return &m_location; }
+Waypoint *Waypoint::getLink(Int ndx) const
+{
+	if (ndx == 0 && m_index < 7 && ((g_aiEnv.waypointLinks >> m_index) & 1)) return &g_waypoints[m_index + 1];
+	return NULL;
+}
+void TerrainLogic::getMaximumPathfindExtent(Region3D *r) const
+{
+	r->lo.x = 0.0f; r->lo.y = 0.0f; r->lo.z = 0.0f;
+	r->hi.x = g_aiEnv.pfExtentHi[0]; r->hi.y = g_aiEnv.pfExtentHi[1]; r->hi.z = 0.0f;
+}
+void TerrainLogic::getBridgeAttackPoints(const Object *bridge, TBridgeAttackInfo *info)
+{
+	Real i = (Real)bridge->getID();
+	info->attackPoint1.x = 7.0f * i; info->attackPoint1.y = 3.0f * i; info->attackPoint1.z = 0.0f;
+	info->attackPoint2.x = 3.0f * i; info->attackPoint2.y = 7.0f * i; info->attackPoint2.z = 0.0f;
+}
+namespace {
+/* a search's path (the stand-in's): from the object to `to` offset by the hash, sometimes blocked by an ally; or none */
+Path *standinPath(unsigned kind, const Object *obj, const Coord3D *to, std::initializer_list<unsigned> words)
+{
+	unsigned h = p1Hash(17 + kind, words);
+	bool found = p1Pick(h, g_aiEnv.serviceRate);
+	std::vector<unsigned> w(1, kind);
+	w.insert(w.end(), words.begin(), words.end());
+	w.push_back(found ? 1u : 0u);
+	if (!g_aiQuiet) {
+		g_aiLog->push_back((unsigned)LOG_SERVICE);
+		g_aiLog->push_back((unsigned)w.size());
+		for (unsigned x : w) g_aiLog->push_back(x);
+	}
+	if (!found) return NULL;
+	Path *path = newInstance(Path);
+	Coord3D a = *obj->getPosition();
+	Coord3D b = *to;
+	b.x += (Real)((Int)((h >> 12) % 9u) - 4);
+	b.y += (Real)((Int)((h >> 16) % 9u) - 4);
+	path->appendNode(&a, LAYER_GROUND);
+	path->appendNode(&b, LAYER_GROUND);
+	if ((h >> 28) & 1) path->setBlockedByAlly(TRUE);
+	return path;
+}
+bool pfAnswer(unsigned kind, std::initializer_list<unsigned> words)
+{
+	bool r = p1Pick(p1Hash(30 + kind, words), g_aiEnv.pfAnswerRate);
+	std::vector<unsigned> w(1, kind);
+	w.insert(w.end(), words.begin(), words.end());
+	w.push_back(r ? 1u : 0u);
+	if (!g_aiQuiet) {
+		g_aiLog->push_back((unsigned)LOG_PF_ANSWER);
+		g_aiLog->push_back((unsigned)w.size());
+		for (unsigned x : w) g_aiLog->push_back(x);
+	}
+	return r;
+}
+bool rangeAnswer(unsigned kind, std::initializer_list<unsigned> words)
+{
+	bool r = p1Pick(p1Hash(40 + kind, words), g_aiEnv.rangeRate);
+	std::vector<unsigned> w(1, kind);
+	w.insert(w.end(), words.begin(), words.end());
+	w.push_back(r ? 1u : 0u);
+	if (!g_aiQuiet) {
+		g_aiLog->push_back((unsigned)LOG_WEAPON_RANGE);
+		g_aiLog->push_back((unsigned)w.size());
+		for (unsigned x : w) g_aiLog->push_back(x);
+	}
+	return r;
+}
+unsigned idOf(const Object *o) { return o ? (unsigned)o->getID() : 0u; }
+/* PathfindServicesInterface: the searches doPathfind and the path computations ask (the stand-in's paths) */
+class StandinServices : public PathfindServicesInterface
+{
+public:
+	virtual Path *findPath( Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D *to )
+	{
+		return standinPath(0, obj, to, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z) });
+	}
+	virtual Path *findClosestPath( Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, Coord3D *to, Bool blocked,
+		Real pathCostMultiplier, Bool moveAllies )
+	{
+		return standinPath(1, obj, to, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z), (unsigned)blocked, bitsOf(pathCostMultiplier),
+			(unsigned)moveAllies });
+	}
+	virtual Path *findAttackPath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Object *victim,
+		const Coord3D* victimPos, const Weapon *weapon )
+	{
+		return standinPath(2, obj, victimPos, { idOf(victim), bitsOf(victimPos->x), bitsOf(victimPos->y), bitsOf(victimPos->z) });
+	}
+	virtual Path *patchPath( const Object *obj, const LocomotorSet& locomotorSet, Path *originalPath, Bool blocked )
+	{
+		return standinPath(3, obj, obj->getPosition(), { originalPath ? 1u : 0u, (unsigned)blocked });
+	}
+	virtual Path *findSafePath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D* repulsorPos1,
+		const Coord3D* repulsorPos2, Real repulsorRadius )
+	{
+		return standinPath(4, obj, obj->getPosition(), { bitsOf(repulsorPos1->x), bitsOf(repulsorPos1->y), bitsOf(repulsorPos2->x),
+			bitsOf(repulsorPos2->y), bitsOf(repulsorRadius) });
+	}
+};
+StandinServices g_services;
+}  // namespace
+/* the pathfinder's line test (computePath asks it): batch P1's (the paths' calls are edited to it) */
+Bool Pathfinder::isLinePassable(const Object *obj, LocomotorSurfaceTypeMask acceptableSurfaces, PathfindLayerEnum layer,
+	const Coord3D& startWorld, const Coord3D& endWorld, Bool blocked, Bool allowPinched)
+{
+	return p1IsLinePassable(this, obj, acceptableSurfaces, layer, startWorld, endWorld, blocked, allowPinched);
+}
+Path *Pathfinder::getAircraftPath(const Object *obj, const Coord3D *to)
+{
+	return standinPath(5, obj, to, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z) });
+}
+void Pathfinder::moveAlliesAwayFromDestination(Object *obj, const Coord3D& destination)
+{
+	pfAnswer(0, { bitsOf(destination.x), bitsOf(destination.y), bitsOf(destination.z) });
+}
+Bool Pathfinder::adjustToPossibleDestination(Object *obj, const LocomotorSet& locomotorSet, Coord3D *dest)
+{
+	bool r = pfAnswer(1, { idOf(obj), bitsOf(dest->x), bitsOf(dest->y), bitsOf(dest->z) });
+	if (r) { dest->x += 2.0f; dest->y -= 2.0f; }
+	return r;
+}
+Bool Pathfinder::adjustDestination(Object *obj, const LocomotorSet& locomotorSet, Coord3D *dest, const Coord3D *groupDest)
+{
+	bool r = pfAnswer(2, { bitsOf(dest->x), bitsOf(dest->y), bitsOf(dest->z), groupDest ? 1u : 0u });
+	if (r) { dest->x -= 3.0f; dest->y += 3.0f; }
+	return r;
+}
+Bool Pathfinder::clientSafeQuickDoesPathExistForUI(const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D *to)
+{
+	return pfAnswer(3, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z) });
+}
+Bool Pathfinder::isAttackViewBlockedByObstacle(const Object* obj, const Coord3D& attackerPos, const Object* victim, const Coord3D& victimPos)
+{
+	return pfAnswer(4, { idOf(victim), bitsOf(attackerPos.x), bitsOf(attackerPos.y), bitsOf(victimPos.x), bitsOf(victimPos.y) });
+}
+Bool Weapon::isWithinAttackRange(const Object *source, const Object *target) const { return rangeAnswer(0, { idOf(target) }); }
+Bool Weapon::isWithinAttackRange(const Object *source, const Coord3D* pos) const
+{
+	return rangeAnswer(1, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+}
+Bool Weapon::isGoalPosWithinAttackRange(const Object *source, const Coord3D* goalPos, const Object *target, const Coord3D* targetPos) const
+{
+	return rangeAnswer(2, { bitsOf(goalPos->x), bitsOf(goalPos->y), bitsOf(goalPos->z), idOf(target), bitsOf(targetPos->x), bitsOf(targetPos->y) });
+}
+/* the approach point: the position moved toward the object by a quarter (logged) */
+Bool Weapon::computeApproachTarget(const Object *source, const Object *target, const Coord3D *pos, Real angleOffset, Coord3D& approachTargetPos) const
+{
+	const Coord3D *s = source->getPosition();
+	Coord3D r = *pos;
+	r.x += (s->x - pos->x) * 0.25f;
+	r.y += (s->y - pos->y) * 0.25f;
+	rangeAnswer(3, { idOf(target), bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), bitsOf(angleOffset) });
+	approachTargetPos = r;
+	return TRUE;
+}
 void PolygonTrigger::getCenterPoint(Coord3D* pOutCoord) const
 {
 	pOutCoord->x = 10.0f * (Real)m_index;
@@ -984,6 +1167,9 @@ void setScene(const AiEnv *env)
 	((AIUpdateInterface *)g_otherAiMem)->m_path = env->otherAiPath ? (Path *)g_otherAiMem : NULL;
 	for (int i = 0; i < 4; ++i) g_buttons[i].m_index = i;
 	for (int i = 0; i < 8; ++i) { g_polygons[i].m_index = i; g_waypoints[i].m_index = i; }
+	/* batch A6: the waypoints' locations; the other objects anew (their cached heights are asked) */
+	for (int i = 0; i < 8; ++i) { g_waypoints[i].m_location.x = 15.0f * i; g_waypoints[i].m_location.y = 25.0f * i; g_waypoints[i].m_location.z = 1.0f; }
+	for (int i = 0; i < 32; ++i) g_others[i] = Object();
 }
 
 void putU32(std::vector<unsigned> &v, unsigned x) { v.push_back(x); }
@@ -1311,6 +1497,21 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 		ai->doQuickExit(&path);
 		break;
 	}
+	/* batch A6: the paths */
+	case 74: ai->requestPath(&p, ia[0] != 0); break;
+	case 75: ai->requestAttackPath((ObjectID)ia[0], &p); break;
+	case 76: ai->requestApproachPath(&p); break;
+	case 77: ai->requestSafePath((ObjectID)ia[0]); break;
+	case 78: ai->doPathfind(&g_services); break;
+	case 79: { Coord2D off = { fa[3], fa[4] }; ai->setPathFromWaypoint(ia[0] >= 0 ? &g_waypoints[ia[0]] : NULL, &off); break; }
+	case 80: r.push_back(ai->computePath(&g_services, &p) ? 1u : 0u); break;
+	case 81: r.push_back(ai->computeAttackPath(&g_services, findObject((ObjectID)ia[0]), ia[1] ? &p : NULL) ? 1u : 0u); break;
+	case 82: ai->friend_setGoalObject(findObject((ObjectID)ia[0])); break;
+	case 83: r.push_back(ai->isQuickPathAvailable(&p) ? 1u : 0u); break;
+	case 84: r.push_back(ai->canComputeQuickPath() ? 1u : 0u); break;
+	case 85: r.push_back(ai->computeQuickPath(&p) ? 1u : 0u); break;
+	/* what the move states set on the current locomotor (not yet translated): ultra-accurate ia[0] */
+	case 86: if (ai->m_curLocomotor) ai->m_curLocomotor->setUltraAccurate(ia[0] != 0); break;
 	case 71: {
 		/* the last save loaded into the machine (xferSnapshot, then loadPostProcess): the status */
 		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_saved.empty()) fwrite(&g_saved[0], 1, g_saved.size(), f); fclose(f); }
@@ -1407,6 +1608,8 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 	putU32(v, (unsigned)(g_object.m_status & 0xffffffffu));
 	putU32(v, (unsigned)(g_object.m_status >> 32));
 	putU32(v, g_nextCallFrame);
+	/* batch A6: the pathfinder's ignored obstacle */
+	putU32(v, (unsigned)TheAI->pathfinder()->m_ignoreObstacleID);
 	/* batch A4: the machine (StateMachine's members, AIStateMachine's, the idle state's) */
 	const AIStateMachine *sm = ai->m_stateMachine;
 	putU32(v, sm ? 1u : 0u);

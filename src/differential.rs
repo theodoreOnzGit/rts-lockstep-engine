@@ -966,6 +966,13 @@ pub struct AiEnv {
     pub has_command_set: c_int,
     pub command_slots: [c_int; 18],
     pub button_types: [c_int; 4],
+    // batch A6
+    pub pf_extent_hi: [c_float; 2],
+    pub service_rate: c_uint,
+    pub pf_answer_rate: c_uint,
+    pub range_rate: c_uint,
+    pub repulsed_distance: c_float,
+    pub waypoint_links: c_uint,
     pub turrets: c_int,
 }
 

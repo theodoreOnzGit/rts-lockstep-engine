@@ -60,7 +60,7 @@ use crate::common::base_type::Coord3D;
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNMANNED};
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID};
-use crate::common::kind_of::{KINDOF_CAN_BE_REPULSED, KINDOF_INFANTRY};
+use crate::common::kind_of::{KindOfType, KINDOF_CAN_BE_REPULSED, KINDOF_INFANTRY};
 use crate::common::model_state::*;
 use crate::common::state_machine::{
     SmResult, StateBehavior, StateContext, StateExitType, StateId, StateMachine, StateReturn, INVALID_STATE_ID,
@@ -168,6 +168,55 @@ pub trait AiStateHost: AiHost + StateContext {
     /// `TheControlBar->findCommandSet(getCommandSetString())`: how many of its slots hold the button (0 without a set), and the
     /// button's `getCommandType()`.
     fn command_set_button_matches(&mut self, button: u32) -> (u32, i32);
+    // ---- batch A6: the paths
+    /// The waypoint's `getLocation()`.
+    fn waypoint_location(&mut self, way: u32) -> Coord3D;
+    /// The waypoint's `getLink(0)`.
+    fn waypoint_link0(&mut self, way: u32) -> Option<u32>;
+    /// `TheAI->pathfinder()->getAircraftPath(obj, destination)`.
+    fn pf_get_aircraft_path(&mut self, destination: &Coord3D) -> Option<Path>;
+    /// `TheTerrainLogic->getMaximumPathfindExtent(&extent)`: its low and high corners.
+    fn terrain_max_pathfind_extent(&mut self) -> (Coord3D, Coord3D);
+    /// `TheAI->pathfinder()->moveAlliesAwayFromDestination(obj, destination)`.
+    fn pf_move_allies_away_from_destination(&mut self, destination: &Coord3D);
+    /// `TheAI->pathfinder()->setIgnoreObstacleID(id)`.
+    fn pf_set_ignore_obstacle_id(&mut self, id: ObjectId);
+    /// `pathServices->patchPath(obj, locomotorSet, path, blocked)`.
+    fn pf_patch_path(&mut self, path: Option<&Path>, blocked: bool) -> Option<Path>;
+    /// `pathServices->findPath(obj, locomotorSet, obj's position, destination)`.
+    fn pf_find_path(&mut self, destination: &Coord3D) -> Option<Path>;
+    /// `pathServices->findClosestPath(obj, locomotorSet, obj's position, destination, blocked, pathCostMultiplier, moveAllies)`.
+    fn pf_find_closest_path(&mut self, destination: &Coord3D, blocked: bool, path_cost_multiplier: f32, move_allies: bool) -> Option<Path>;
+    /// `pathServices->findSafePath(obj, locomotorSet, obj's position, repulsorPos1, repulsorPos2, repulsorRadius)`.
+    fn pf_find_safe_path(&mut self, repulsor_pos1: &Coord3D, repulsor_pos2: &Coord3D, radius: f32) -> Option<Path>;
+    /// `pathServices->findAttackPath(obj, locomotorSet, obj's position, victim, victimPos, weapon)`.
+    fn pf_find_attack_path(&mut self, victim: ObjectId, victim_pos: &Coord3D) -> Option<Path>;
+    /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, pos)`.
+    fn pf_adjust_to_possible_destination(&mut self, pos: &mut Coord3D);
+    /// `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, pos)`.
+    fn pf_adjust_destination(&mut self, pos: &mut Coord3D);
+    /// `TheAI->pathfinder()->clientSafeQuickDoesPathExistForUI(locomotorSet, obj's position, destination)`.
+    fn pf_quick_path_exists_for_ui(&mut self, destination: &Coord3D) -> bool;
+    /// `TheAI->pathfinder()->isAttackViewBlockedByObstacle(obj, obj's position, victim (none: `INVALID_ID`), victimPos)`.
+    fn pf_is_attack_view_blocked(&mut self, victim: ObjectId, victim_pos: &Coord3D) -> bool;
+    /// `TheAI->getAiData()->m_repulsedDistance`.
+    fn ai_data_repulsed_distance(&self) -> f32;
+    /// The current weapon's `isWithinAttackRange(obj, victim)`.
+    fn weapon_is_within_attack_range_of_object(&mut self, victim: ObjectId) -> bool;
+    /// The current weapon's `isWithinAttackRange(obj, pos)`.
+    fn weapon_is_within_attack_range_of_position(&mut self, pos: &Coord3D) -> bool;
+    /// The current weapon's `computeApproachTarget(obj, victim, pos, 0, result)`'s result.
+    fn weapon_compute_approach_target(&mut self, victim: ObjectId, pos: &Coord3D) -> Coord3D;
+    /// The current weapon's `isGoalPosWithinAttackRange(obj, goal, victim, victimPos)`.
+    fn weapon_is_goal_pos_within_attack_range(&mut self, goal: &Coord3D, victim: ObjectId, victim_pos: &Coord3D) -> bool;
+    /// Another object's `isSignificantlyAboveTerrain()`.
+    fn object_is_significantly_above_terrain(&mut self, id: ObjectId) -> bool;
+    /// Another object's `isKindOf(kind)`.
+    fn object_is_kind_of(&self, id: ObjectId, kind: KindOfType) -> bool;
+    /// `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`: its two attack points.
+    fn bridge_attack_points(&mut self, bridge: ObjectId) -> (Coord3D, Coord3D);
+    /// `ThePartitionManager->getDistanceSquared(obj, pos, FROM_BOUNDINGSPHERE_3D)`.
+    fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32;
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -715,6 +764,11 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     /// `aiDoCommand(parms)` (batch A5, [`commands::ai_do_command`]) on the AI and its machine.
     pub fn ai_do_command(&mut self, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
         self.run(h, |sm, h| commands::ai_do_command(sm, h, parms))
+    }
+
+    /// `doPathfind(pathfinder)` (batch A6, [`crate::logic::ai::ai_paths::do_pathfind`]): the AI's turn in the pathfinder's queue.
+    pub fn do_pathfind(&mut self, h: &mut H) {
+        self.run(h, crate::logic::ai::ai_paths::do_pathfind);
     }
 
     /// `update()`: "The "main loop" of the AI subsystem".

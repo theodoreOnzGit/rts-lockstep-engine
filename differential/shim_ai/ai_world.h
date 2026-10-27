@@ -107,6 +107,14 @@ struct AiEnv
 	Int hasCommandSet;		/* TheControlBar finds the object's command set */
 	Int commandSlots[18];		/* the set's slots: a button's index (0..3), -1 empty */
 	Int buttonTypes[4];		/* the buttons' GUI command types */
+	/* ---- batch A6 (the paths) */
+	Real pfExtentHi[2];		/* TheTerrainLogic->getMaximumPathfindExtent: (0, 0) to these */
+	UnsignedInt serviceRate;	/* the pathfinder's searches (and getAircraftPath): a path at this rate (the hash) */
+	UnsignedInt pfAnswerRate;	/* adjustToPossibleDestination, adjustDestination, the UI's quick path check, the attack view: TRUE at
+					** this rate (the hash) */
+	UnsignedInt rangeRate;		/* the weapon's range tests: TRUE at this rate (the hash) */
+	Real repulsedDistance;		/* TheAI->getAiData()->m_repulsedDistance */
+	UnsignedInt waypointLinks;	/* bit i: waypoint i links to waypoint i+1 */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -127,7 +135,8 @@ enum
 	LOG_PF_GOAL_POSITION = 70, LOG_PF_SNAP, LOG_PF_UPDATE_GOAL, LOG_PF_QUEUE, LOG_TURRET_UPDATE, LOG_AI_COMMAND, LOG_REPULSOR,
 	LOG_CLEAR_SET_MODEL, LOG_SCRIPT_NOTIFY, LOG_STATE_ENTER, LOG_STATE_UPDATE, LOG_STATE_EXIT,
 	LOG_EDGE_POINT = 82, LOG_ACTION, LOG_MOVE_AWAY_PATH, LOG_MOVE_ALLIES, LOG_PATH_EXISTS, LOG_MAX_SHOTS, LOG_CLOSEST_OBJECT,
-	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE
+	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE,
+	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -156,6 +165,8 @@ public:
 	Int m_movementPenaltyDamageState;
 	/* batch A5 */
 	Real m_partitionCellSize;
+	/* batch A6 (always AI_DEBUG_NONE here) */
+	AIDebugOptions m_debugAI;
 };
 extern GlobalData *TheGlobalData;
 
@@ -184,6 +195,9 @@ public:
 	Waypoint *getWaypointByName(AsciiString name);
 	/* batch A5: the commands' map edges */
 	void getExtent(Region3D *extent) const;
+	/* batch A6 */
+	void getMaximumPathfindExtent(Region3D *extent) const;
+	void getBridgeAttackPoints(const Object *bridge, TBridgeAttackInfo *info);
 	Coord3D findClosestEdgePoint(const Coord3D *closestTo) const;
 };
 extern TerrainLogic *TheTerrainLogic;
@@ -259,6 +273,8 @@ struct AiData
 	UnsignedInt m_forceIdleFramesCount;
 	Bool m_attackUsesLineOfSight;
 	Bool m_attackIgnoreInsignificantBuildings;
+	/* batch A6 */
+	Real m_repulsedDistance;
 };
 class AI
 {
@@ -365,6 +381,11 @@ public:
 	void setMaxShotCount(Int maxShots);
 	Real getContinueAttackRange() const;
 	Bool isContactWeapon() const;
+	/* batch A6 (logged, from the hash) */
+	Bool isWithinAttackRange(const Object *source, const Object *target) const;
+	Bool isWithinAttackRange(const Object *source, const Coord3D* pos) const;
+	Bool isGoalPosWithinAttackRange(const Object *source, const Coord3D* goalPos, const Object *target, const Coord3D* targetPos) const;
+	Bool computeApproachTarget(const Object *source, const Object *target, const Coord3D *pos, Real angleOffset, Coord3D& approachTargetPos) const;
 };
 class HordeUpdateInterface
 {

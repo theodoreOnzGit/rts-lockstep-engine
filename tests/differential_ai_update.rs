@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of layer 10 batches A2 to A5, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
+//! Code-to-code verification of layer 10 batches A2 to A6, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
 //! `logic::ai::ai_states` (its state machine, first states and update), against upstream `AIUpdate.cpp` and `AIStates.cpp` (commit
 //! 0a05454d) in `differential/wrap_ai.cpp`: their members cut verbatim,
 //! with `Locomotor.cpp` compiled UNCHANGED and the paths of `AIPathfind.cpp` (batch P1's cut), so that the AI drives the REAL
@@ -59,6 +59,12 @@
 //! attackable object, the position finder, the container, the special modules and the command set. The dump adds the area to
 //! guard, the goal waypoint and the goal squad.
 //!
+//! Batch A6 adds the paths: the four requests, `doPathfind` (with a stand-in `PathfindServicesInterface` whose searches make a
+//! path from the hash or none), `setPathFromWaypoint` over linked waypoints, `computePath`, `computeAttackPath` (with or without a
+//! victim or its position), the quick paths, `friend_setGoalObject`, `isQuickPathAvailable` and the current locomotor's
+//! ultra-accurate flag; the scene adds the pathfinding extent, the searches', answers' and weapon ranges' rates, the repulsed
+//! distance, the waypoints' links and bridges. The dump adds the pathfinder's ignored obstacle.
+//!
 //! # Results
 //!
 //! See the `# Results` section of the test function's doc comment.
@@ -75,7 +81,7 @@ use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, 
 use rts_lockstep_engine::common::game_common::{AbleToAttackType, PlayerType};
 use rts_lockstep_engine::common::kind_of::{
     KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
-    KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED,
+    KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED, KINDOF_BRIDGE,
 };
 use rts_lockstep_engine::logic::ai::ai_update_types::{
     CanAttackResultValue, CommandSourceType, ATTACKRESULT_NOT_POSSIBLE, ATTACKRESULT_POSSIBLE, ATTACKRESULT_POSSIBLE_AFTER_MOVING,
@@ -92,6 +98,7 @@ use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::AiEnv as Env;
 use rts_lockstep_engine::logic::ai::ai_commands::AiCommandParms;
+use rts_lockstep_engine::logic::ai::ai_paths;
 use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule};
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiUpdate, LocoGoalType};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
@@ -165,6 +172,9 @@ const L_CLOSEST_OBJECT: u32 = 88;
 const L_FIND_POSITION: u32 = 89;
 const L_CONTAIN: u32 = 90;
 const L_MODULE: u32 = 91;
+const L_SERVICE: u32 = 92;
+const L_PF_ANSWER: u32 = 93;
+const L_WEAPON_RANGE: u32 = 94;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
 const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
@@ -267,6 +277,8 @@ struct Host {
     rng: RandomValues,
     /// Batch A4: the AIs whose machines are running (the AI's state, lent while its machine runs).
     ai_stack: Vec<AiUpdate>,
+    /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
+    pf_ignore: ObjectId,
 }
 
 impl Host {
@@ -365,6 +377,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_IGNORED_IN_GUI && m & 32 != 0)
             || (kind == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT && m & 64 != 0)
             || (kind == KINDOF_CAN_BE_REPULSED && m & 128 != 0)
+            || (kind == KINDOF_BRIDGE && m & 256 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -709,6 +722,51 @@ impl StateContext for Host {
 }
 
 impl Host {
+    /// A search's path (`standinPath` of `wrap_ai.cpp`): from the object to `to` offset by the hash, sometimes blocked by an
+    /// ally; or none.
+    fn standin_path(&mut self, kind: u32, to: &Coord3D, words: &[u32]) -> Option<Path> {
+        let h = p1_hash(self.env.seed, 17 + kind, words);
+        let found = pick(h, self.env.service_rate);
+        let mut w = vec![kind];
+        w.extend_from_slice(words);
+        w.push(u32::from(found));
+        self.l(L_SERVICE, &w);
+        if !found {
+            return None;
+        }
+        let a = *self.thing.position();
+        let mut b = *to;
+        b.x += (((h >> 12) % 9) as i32 - 4) as f32;
+        b.y += (((h >> 16) % 9) as i32 - 4) as f32;
+        let mut path = Path::new();
+        path.append_node(&a, LAYER_GROUND);
+        path.append_node(&b, LAYER_GROUND);
+        if (h >> 28) & 1 != 0 {
+            path.set_blocked_by_ally(true);
+        }
+        Some(path)
+    }
+
+    /// The pathfinder's answers (`pfAnswer` of `wrap_ai.cpp`).
+    fn pf_answer(&mut self, kind: u32, words: &[u32]) -> bool {
+        let r = pick(p1_hash(self.env.seed, 30 + kind, words), self.env.pf_answer_rate);
+        let mut w = vec![kind];
+        w.extend_from_slice(words);
+        w.push(u32::from(r));
+        self.l(L_PF_ANSWER, &w);
+        r
+    }
+
+    /// The weapon's range answers (`rangeAnswer` of `wrap_ai.cpp`).
+    fn range_answer(&mut self, kind: u32, words: &[u32]) -> bool {
+        let r = pick(p1_hash(self.env.seed, 40 + kind, words), self.env.range_rate);
+        let mut w = vec![kind];
+        w.extend_from_slice(words);
+        w.push(u32::from(r));
+        self.l(L_WEAPON_RANGE, &w);
+        r
+    }
+
     /// The action manager's answer (`actionAnswer` of `wrap_ai.cpp`): the hash of the question, the target and the source.
     fn action_answer(&mut self, kind: u32, target: ObjectId, src: CommandSourceType) -> bool {
         let id = if self.object_exists(target) { target as u32 } else { 0 };
@@ -923,6 +981,104 @@ impl AiStateHost for Host {
     fn command_set_button_matches(&mut self, button: u32) -> (u32, i32) {
         let n = if self.env.has_command_set != 0 { self.env.command_slots.iter().filter(|&&k| k == button as i32).count() as u32 } else { 0 };
         (n, self.env.button_types[button as usize])
+    }
+    // ---- batch A6
+    fn waypoint_location(&mut self, way: u32) -> Coord3D {
+        Coord3D { x: 15.0 * way as f32, y: 25.0 * way as f32, z: 1.0 }
+    }
+    fn waypoint_link0(&mut self, way: u32) -> Option<u32> {
+        (way < 7 && (self.env.waypoint_links >> way) & 1 != 0).then_some(way + 1)
+    }
+    fn pf_get_aircraft_path(&mut self, d: &Coord3D) -> Option<Path> {
+        self.standin_path(5, d, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()])
+    }
+    fn terrain_max_pathfind_extent(&mut self) -> (Coord3D, Coord3D) {
+        (Coord3D::default(), Coord3D { x: self.env.pf_extent_hi[0], y: self.env.pf_extent_hi[1], z: 0.0 })
+    }
+    fn pf_move_allies_away_from_destination(&mut self, d: &Coord3D) {
+        self.pf_answer(0, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()]);
+    }
+    fn pf_set_ignore_obstacle_id(&mut self, id: ObjectId) {
+        self.pf_ignore = id;
+    }
+    fn pf_patch_path(&mut self, path: Option<&Path>, blocked: bool) -> Option<Path> {
+        let pos = *self.thing.position();
+        self.standin_path(3, &pos, &[u32::from(path.is_some()), u32::from(blocked)])
+    }
+    fn pf_find_path(&mut self, d: &Coord3D) -> Option<Path> {
+        self.standin_path(0, d, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()])
+    }
+    fn pf_find_closest_path(&mut self, d: &Coord3D, blocked: bool, cost: f32, move_allies: bool) -> Option<Path> {
+        self.standin_path(1, d, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits(), u32::from(blocked), cost.to_bits(), u32::from(move_allies)])
+    }
+    fn pf_find_safe_path(&mut self, p1: &Coord3D, p2: &Coord3D, radius: f32) -> Option<Path> {
+        let pos = *self.thing.position();
+        self.standin_path(4, &pos, &[p1.x.to_bits(), p1.y.to_bits(), p2.x.to_bits(), p2.y.to_bits(), radius.to_bits()])
+    }
+    fn pf_find_attack_path(&mut self, victim: ObjectId, vp: &Coord3D) -> Option<Path> {
+        self.standin_path(2, vp, &[victim as u32, vp.x.to_bits(), vp.y.to_bits(), vp.z.to_bits()])
+    }
+    fn pf_adjust_to_possible_destination(&mut self, d: &mut Coord3D) {
+        let id = self.env.object_id as u32;
+        if self.pf_answer(1, &[id, d.x.to_bits(), d.y.to_bits(), d.z.to_bits()]) {
+            d.x += 2.0;
+            d.y -= 2.0;
+        }
+    }
+    fn pf_adjust_destination(&mut self, d: &mut Coord3D) {
+        if self.pf_answer(2, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits(), 0]) {
+            d.x -= 3.0;
+            d.y += 3.0;
+        }
+    }
+    fn pf_quick_path_exists_for_ui(&mut self, d: &Coord3D) -> bool {
+        self.pf_answer(3, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()])
+    }
+    fn pf_is_attack_view_blocked(&mut self, victim: ObjectId, vp: &Coord3D) -> bool {
+        let p = *self.thing.position();
+        self.pf_answer(4, &[victim as u32, p.x.to_bits(), p.y.to_bits(), vp.x.to_bits(), vp.y.to_bits()])
+    }
+    fn ai_data_repulsed_distance(&self) -> f32 {
+        self.env.repulsed_distance
+    }
+    fn weapon_is_within_attack_range_of_object(&mut self, victim: ObjectId) -> bool {
+        self.range_answer(0, &[victim as u32])
+    }
+    fn weapon_is_within_attack_range_of_position(&mut self, p: &Coord3D) -> bool {
+        self.range_answer(1, &[p.x.to_bits(), p.y.to_bits(), p.z.to_bits()])
+    }
+    fn weapon_compute_approach_target(&mut self, victim: ObjectId, pos: &Coord3D) -> Coord3D {
+        let s = *self.thing.position();
+        let mut r = *pos;
+        r.x += (s.x - pos.x) * 0.25;
+        r.y += (s.y - pos.y) * 0.25;
+        self.range_answer(3, &[victim as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), 0.0f32.to_bits()]);
+        r
+    }
+    fn weapon_is_goal_pos_within_attack_range(&mut self, g: &Coord3D, victim: ObjectId, vp: &Coord3D) -> bool {
+        self.range_answer(2, &[g.x.to_bits(), g.y.to_bits(), g.z.to_bits(), victim as u32, vp.x.to_bits(), vp.y.to_bits()])
+    }
+    fn object_is_significantly_above_terrain(&mut self, _id: ObjectId) -> bool {
+        // another object of the scene: at the origin, its height asked anew (wrap_ai.cpp resets them every operation)
+        let mut t = Thing::new(Some(Arc::new(TplView))).unwrap();
+        let ctx = TCtx::new(&self.env);
+        let height = t.height_above_terrain(&ctx);
+        let queries = ctx.queries.into_inner();
+        for (x, y) in queries {
+            self.l(L_GROUND_HEIGHT, &[x.to_bits(), y.to_bits()]);
+        }
+        height > (-(3 * 3)) as f32 * self.env.loco.gravity
+    }
+    fn object_is_kind_of(&self, _id: ObjectId, kind: KindOfType) -> bool {
+        // (the scene's kinds are every object's)
+        self.is_kind_of(kind)
+    }
+    fn bridge_attack_points(&mut self, bridge: ObjectId) -> (Coord3D, Coord3D) {
+        let i = bridge as f32;
+        (Coord3D { x: 7.0 * i, y: 3.0 * i, z: 0.0 }, Coord3D { x: 3.0 * i, y: 7.0 * i, z: 0.0 })
+    }
+    fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32 {
+        self.distance_squared_3d(pos)
     }
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn {
         let r = self.placeholder_answer(id, 0);
@@ -1172,6 +1328,8 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     v.push(h.status as u32);
     v.push((h.status >> 32) as u32);
     v.push(h.next_call_frame);
+    // batch A6: the pathfinder's ignored obstacle
+    v.push(h.pf_ignore as u32);
     // batch A4: the machine
     v.push(u32::from(module.machine.is_some()));
     if let Some(sm) = &module.machine {
@@ -1304,7 +1462,20 @@ fn gen_scene(g: &mut Gen) -> Env {
         *t = [12, 25, 3, 12, 25, 0][g.below(6) as usize];
     }
     gen_a5(g, &mut e);
+    // batch A6
+    e.loco.kind_mask |= i32::from(g.below(6) == 0) << 8;
+    e.pf_extent_hi = [g.uniform(100.0, 300.0), g.uniform(80.0, 250.0)];
+    e.waypoint_links = g.u32();
+    e.repulsed_distance = g.uniform(0.0, 100.0);
+    gen_a6(g, &mut e);
     e
+}
+
+/// Batch A6's rates (the searches, the pathfinder's answers, the weapon's ranges).
+fn gen_a6(g: &mut Gen, e: &mut Env) {
+    e.service_rate = g.below(101);
+    e.pf_answer_rate = g.below(101);
+    e.range_rate = g.below(101);
 }
 
 /// Batch A5's answers that change between operations: the rates, the continue range, the closest attackable object.
@@ -1357,6 +1528,10 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     if g.below(6) == 0 {
         gen_a5(g, e);
     }
+    // batch A6
+    if g.below(6) == 0 {
+        gen_a6(g, e);
+    }
     if g.below(10) == 0 {
         e.state_rate = g.below(101);
         e.turret_rate = g.below(101);
@@ -1393,6 +1568,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if g.below(5) == 0 {
+        // batch A6: the paths
+        [74, 74, 75, 76, 77, 78, 78, 78, 79, 80, 80, 81, 81, 82, 83, 84, 85, 86][g.below(18) as usize]
     } else if g.below(4) == 0 {
         // batch A5: a command (and the quick exit)
         if g.below(15) == 0 { 73 } else { 72 }
@@ -1453,7 +1631,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=73);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -1540,6 +1718,18 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             }
         }
         69 => ia[0] = g.below(8) as i32 - 1,
+        // batch A6
+        74 | 86 => ia[0] = g.below(2) as i32,
+        75 | 77 | 81 | 82 => {
+            ia[0] = g.below(32) as i32;
+            // (upstream dereferences a contact weapon's victim position)
+            ia[1] = i32::from(g.below(3) != 0 || e.contact_weapon != 0 || ia[0] == 0);
+        }
+        79 => {
+            ia[0] = g.below(9) as i32 - 1;
+            fa[3] = g.uniform(-10.0, 10.0);
+            fa[4] = g.uniform(-10.0, 10.0);
+        }
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
@@ -1847,6 +2037,52 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             r.extend(saved.iter().map(|&c| u32::from(c)));
             r
         }
+        // batch A6: the paths
+        74 => {
+            module.run(h, |_, h| ai_paths::request_path(h, p, ia[0] != 0));
+            vec![]
+        }
+        75 => {
+            module.run(h, |_, h| ai_paths::request_attack_path(h, ia[0], p));
+            vec![]
+        }
+        76 => {
+            module.run(h, |_, h| ai_paths::request_approach_path(h, p));
+            vec![]
+        }
+        77 => {
+            module.run(h, |_, h| ai_paths::request_safe_path(h, ia[0]));
+            vec![]
+        }
+        78 => {
+            module.do_pathfind(h);
+            vec![]
+        }
+        79 => {
+            let way = (ia[0] >= 0).then_some(ia[0] as u32);
+            module.run(h, |_, h| ai_paths::set_path_from_waypoint(h, way, fa[3], fa[4]));
+            vec![]
+        }
+        80 => vec![u32::from(module.run(h, |sm, h| ai_paths::compute_path(sm, h, p)))],
+        81 => {
+            let victim = if h.object_exists(ia[0]) { ia[0] } else { 0 };
+            let pos = (ia[1] != 0).then_some(p);
+            vec![u32::from(module.run(h, |sm, h| ai_paths::compute_attack_path(sm, h, victim, pos)))]
+        }
+        82 => {
+            module.run(h, |sm, h| ai_paths::friend_set_goal_object(sm, h, ia[0]));
+            vec![]
+        }
+        83 => vec![u32::from(module.run(h, |_, h| ai_paths::is_quick_path_available(h, p)))],
+        84 => vec![u32::from(module.run(h, |_, h| ai_paths::can_compute_quick_path(h)))],
+        85 => vec![u32::from(module.run(h, |_, h| ai_paths::compute_quick_path(h, p)))],
+        86 => {
+            let a = module.ai_mut();
+            if let Some(cur) = a.cur_locomotor {
+                a.locomotor_set.get_mut(cur).expect("the locomotor").set_ultra_accurate(ia[0] != 0);
+            }
+            vec![]
+        }
         72 => {
             let mut parms = AiCommandParms::new(ia[0], ia[1]);
             parms.pos = *p;
@@ -1884,7 +2120,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 74],
+    ops: [u64; 87],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -1899,7 +2135,7 @@ struct Checks {
     /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
-    a4_logs: [u64; 22],
+    a4_logs: [u64; 25],
     a4_states: [u64; 5],
     temporary_states: u64,
     loads: u64,
@@ -1914,7 +2150,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 74],
+            ops: [0; 87],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -1925,7 +2161,7 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
-            a4_logs: [0; 22],
+            a4_logs: [0; 25],
             a4_states: [0; 5],
             temporary_states: 0,
             loads: 0,
@@ -1955,6 +2191,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         names: NameKeyGenerator::new(),
         rng: RandomValues::default(),
         ai_stack: Vec::new(),
+        pf_ignore: 0,
     };
     host.names.reset();
     // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
@@ -2114,7 +2351,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut k = 0;
         while k + 1 < host_log_copy.len() {
             let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
-            if (70..=91).contains(&code) {
+            if (70..=94).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
@@ -2164,6 +2401,16 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-27, batch A6; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - 10,000 constructions and 600,000 operations, a sixth of them A6's (12,867 `requestPath`, 19,344 `doPathfind`, 12,788
+///   `computePath`, 13,000 `computeAttackPath`, the other requests, `setPathFromWaypoint`, the quick paths, the goal object through
+///   the lock, the ultra-accurate flag): **0 mismatches** in the results, the call logs and the dumps. The stand-in searches were
+///   asked 13,806 times, the pathfinder's other answers 7,961 times, the weapon's range 11,527 times.
+/// - Planted bugs: in the Rust source plants 3260-3264, each caught: no spin wait for a quick re-request, the prior repulsor not
+///   kept, the ultra-accurate destination not jammed in, the short attack path not unstacked, the path wait not kept after a
+///   pathfind. 3262 survived the first run (no locomotor was ultra-accurate; op 86 sets it).
+///
 /// # Results (2026-10-27, batch A5; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - 10,000 constructions and 600,000 operations, a quarter of them commands (128,461 `aiDoCommand`, every command type, and
@@ -2231,7 +2478,7 @@ fn ai_update_a2_matches_upstream() {
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
-         A4/A5 log records 70..=91 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
+         A4-A6 log records 70..=94 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
     );
