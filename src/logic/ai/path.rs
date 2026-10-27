@@ -109,6 +109,10 @@ impl PathNode {
     pub fn position(&self) -> &Coord3D {
         &self.pos
     }
+    /// `setPosition(pos)`.
+    pub fn set_position(&mut self, pos: &Coord3D) {
+        self.pos = *pos;
+    }
     pub fn layer(&self) -> PathfindLayer {
         self.layer
     }

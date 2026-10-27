@@ -58,6 +58,13 @@
 #define ThingTemplate PfThingTemplate
 #define AIUpdateInterface PfAIUpdateInterface
 #define TAiData PfTAiData
+#define Locomotor PfLocomotor
+#define SlavedUpdateInterface PfSlavedUpdateInterface
+#define BehaviorModule PfBehaviorModule
+#define PartitionManager PfPartitionManager
+#define ThePartitionManager PfThePartitionManager
+#define PartitionFilter PfPartitionFilter
+#define PartitionFilterAcceptByKindOf PfPartitionFilterAcceptByKindOf
 #define Weapon PfWeapon
 #define GlobalData PfGlobalData
 #define TheGlobalData PfTheGlobalData

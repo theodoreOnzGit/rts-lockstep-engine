@@ -7,6 +7,7 @@
 
 pub mod cell;
 pub mod layer;
+pub mod movement;
 pub mod path;
 pub mod pathfinder;
 pub mod zone;

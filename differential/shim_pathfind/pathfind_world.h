@@ -8,7 +8,10 @@
 **   GeometryInfo  (batch P3) a wall piece's 2-D bounds, radii and shape; (P4) a footprint's shape, smallness, bounding circle
 ** Batch P4 (the Pathfinder's map, footprints and units' cells): the objects' kinds, template (fence), mobility, height, layers,
 ** AI (AIUpdateInterface: ground movement, goal and position cells), unmanned state and damage (DamageInfo); the terrain's cliffs,
-** water, extent and bridge interactions; the AI's data (TAiData: the wall height); the game logic's object list. */
+** water, extent and bridge interactions; the AI's data (TAiData: the wall height); the game logic's object list.
+** Batch P5 (the movement checks and lines): the objects' relations, crush levels and tests, ignored obstacles, slavers (a behaviour
+** module with a slaved update), containers, height state and weapon (Weapon: the terrain line of sight); a locomotor's legal surfaces;
+** the partition's closest object; the AI data's attack-uses-line-of-sight. The answers the wrapper's (relations and lines hashed). */
 #ifndef SHIM_PATHFIND_WORLD_H
 #define SHIM_PATHFIND_WORLD_H
 #include "Lib/BaseType.h"
@@ -55,10 +58,33 @@ public:
 	Real getFenceXOffset() const { return m_fenceXOffset; }
 	Real m_fenceWidth, m_fenceXOffset;
 };
+/* batch P5: Object.h's crush test types */
+enum CrushSquishTestType { TEST_CRUSH_ONLY, TEST_SQUISH_ONLY, TEST_CRUSH_OR_SQUISH };
+/* batch P5: a locomotor's legal surfaces */
+class Locomotor { public: Int getLegalSurfaces() const { return m_legal; } Int m_legal; };
+/* batch P5: a slaved update's slaver, behind a behaviour module */
+class SlavedUpdateInterface { public: ObjectID getSlaverID() const { return m_slaver; } ObjectID m_slaver; };
+class BehaviorModule
+{
+public:
+	SlavedUpdateInterface *getSlavedUpdateInterface() { return m_slaved; }
+	SlavedUpdateInterface *m_slaved;
+};
+class Object;
+/* batch P5: a weapon's terrain line of sight (the wrapper's, hashed) */
+class Weapon
+{
+public:
+	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Object *victim) const;
+	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const;
+};
 /* batch P4: a unit's AI */
 class AIUpdateInterface
 {
 public:
+	/* batch P5 */
+	ObjectID getIgnoredObstacleID() const { return m_ignored; }
+	ObjectID m_ignored;
 	Bool isDoingGroundMovement() const { return m_ground; }
 	Bool isAircraftThatAdjustsDestination() const { return m_adjusts; }
 	const ICoord2D *getPathfindGoalCell() const { return &m_goal; }
@@ -90,6 +116,23 @@ public:
 		m_ai.m_ground = m_ai.m_adjusts = false;
 		m_ai.m_goal.x = m_ai.m_goal.y = m_ai.m_cur.x = m_ai.m_cur.y = -1;
 		m_next = NULL;
+		m_ai.m_ignored = INVALID_ID;
+		m_crusherLevel = m_crushableLevel = 0;
+		m_slavedUpdate.m_slaver = INVALID_ID;
+		m_slavedModule.m_slaved = NULL;
+		m_modules[0] = NULL; m_modules[1] = NULL;
+		m_container = NULL;
+		m_above = m_hasWeapon = false;
+	}
+	/* (the modules point into the object: copies re-point them) */
+	Object(const Object &o) { *this = o; }
+	Object &operator=(const Object &o)
+	{
+		memcpy((void *)this, (const void *)&o, sizeof(Object));
+		m_slavedModule.m_slaved = o.m_slavedModule.m_slaved ? &m_slavedUpdate : NULL;
+		m_modules[0] = o.m_modules[0] ? &m_slavedModule : NULL;
+		m_modules[1] = NULL;
+		return *this;
 	}
 	ObjectID getID() const { return m_id; }
 	PathfindLayerEnum getLayer() const { return m_layer; }
@@ -104,7 +147,17 @@ public:
 	PathfindLayerEnum getDestinationLayer() const { return m_destLayer; }
 	void setDestinationLayer(PathfindLayerEnum l) { m_destLayer = l; }
 	Bool isDisabledByType(DisabledType t) const { return t == DISABLED_UNMANNED && m_unmanned; }
-	AIUpdateInterface *getAIUpdateInterface() { return m_hasAI ? &m_ai : NULL; }
+	AIUpdateInterface *getAIUpdateInterface() const { return m_hasAI ? const_cast<AIUpdateInterface *>(&m_ai) : NULL; }
+	/* batch P5 */
+	AIUpdateInterface *getAI() const { return getAIUpdateInterface(); }
+	Int getRelationship(const Object *that) const; /* (a Relationship: GameCommon.h comes later) */
+	Bool canCrushOrSquish(Object *other, CrushSquishTestType t = TEST_CRUSH_OR_SQUISH) const;
+	Int getCrusherLevel() const { return m_crusherLevel; }
+	Int getCrushableLevel() const { return m_crushableLevel; }
+	BehaviorModule **getBehaviorModules() const { return const_cast<BehaviorModule **>(m_modules); }
+	Object *getContainedBy() const { return m_container; }
+	Bool isSignificantlyAboveTerrain() const { return m_above; }
+	const Weapon *getCurrentWeapon() const { return m_hasWeapon ? &m_weapon : NULL; }
 	void attemptDamage(DamageInfo *info);
 	Object *getNextObject() { return m_next; }
 	/* batch P3: a wall piece's place and geometry */
@@ -126,6 +179,14 @@ public:
 	PathfindLayerEnum m_destLayer;
 	AIUpdateInterface m_ai;
 	Object *m_next;
+	/* batch P5 */
+	Int m_crusherLevel, m_crushableLevel;
+	BehaviorModule m_slavedModule;
+	SlavedUpdateInterface m_slavedUpdate;
+	BehaviorModule *m_modules[2];
+	Object *m_container;
+	bool m_above, m_hasWeapon;
+	Weapon m_weapon;
 };
 /* batch P3: a bridge, its answers the wrapper's */
 class BridgeInfo { public: Coord3D from, to; ObjectID bridgeObjectID; };
@@ -145,8 +206,21 @@ public:
 	unsigned m_index;
 };
 class Pathfinder;
+/* batch P5: the partition's closest object (PartitionManager.h's call, the kind filter a stand-in) */
+enum { FROM_BOUNDINGSPHERE_2D = 3 };
+#define MAKE_KINDOF_MASK(k) (k)
+#define KINDOFMASK_NONE (-1)
+class PartitionFilter { public: virtual ~PartitionFilter() {} };
+class PartitionFilterAcceptByKindOf : public PartitionFilter
+{
+public:
+	PartitionFilterAcceptByKindOf(int must, int mustNot) : m_kind(must) {}
+	int m_kind;
+};
+class PartitionManager { public: Object *getClosestObject(const Coord3D *pos, Real maxDist, int dc, PartitionFilter **filters); };
+extern PartitionManager *ThePartitionManager;
 /* batch P4: the AI's data (the wall height) */
-class TAiData { public: Real m_wallHeight; };
+class TAiData { public: Real m_wallHeight; Bool m_attackUsesLineOfSight; };
 class AI { public: Pathfinder *pathfinder(); const TAiData *getAiData(); };
 extern AI *TheAI;
 class TerrainLogic

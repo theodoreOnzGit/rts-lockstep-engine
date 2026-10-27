@@ -39,6 +39,12 @@ class PathfindCell;
 #ifndef DUMPCOORD3D
 #define DUMPCOORD3D(x)
 #endif
+/* batch P1's line tests (the paths' calls of them are edited to these by build.rs; batch P5 compiles the real ones) */
+Bool p1IsLinePassable( Pathfinder *pf, const Object *obj, LocomotorSurfaceTypeMask acceptableSurfaces, PathfindLayerEnum layer,
+	const Coord3D& startWorld, const Coord3D& endWorld, Bool blocked, Bool allowPinched );
+Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& startWorld, PathfindLayerEnum startLayer, const Coord3D& endWorld,
+	Int pathDiameter );
+#include "movement_p5_head.inc"
 #include "path_p1.inc"
 #include "cell_p2.inc"
 /* batch P3: what the zone code takes from headers this build does not include: MIN (the Windows macro) and `register` (C++17
@@ -48,6 +54,7 @@ class PathfindCell;
 #endif
 #include "zone_p3.inc"
 #include "pathfinder_p4.inc"
+#include "movement_p5.inc"
 #undef private
 #undef protected
 
@@ -105,8 +112,8 @@ PathfindLayerEnum TerrainLogic::getLayerForDestination(const Coord3D *pos)
 	return layer;
 }
 
-Bool Pathfinder::isLinePassable( const Object *obj, LocomotorSurfaceTypeMask acceptableSurfaces, PathfindLayerEnum layer, const Coord3D& startWorld,
-	const Coord3D& endWorld, Bool blocked, Bool allowPinched )
+Bool p1IsLinePassable( Pathfinder *pf, const Object *obj, LocomotorSurfaceTypeMask acceptableSurfaces, PathfindLayerEnum layer,
+	const Coord3D& startWorld, const Coord3D& endWorld, Bool blocked, Bool allowPinched )
 {
 	unsigned h = p1Hash(2, { (unsigned)obj->getID(), (unsigned)acceptableSurfaces, (unsigned)layer, bitsOf(startWorld.x), bitsOf(startWorld.y),
 		bitsOf(endWorld.x), bitsOf(endWorld.y), (unsigned)blocked, (unsigned)allowPinched });
@@ -116,7 +123,8 @@ Bool Pathfinder::isLinePassable( const Object *obj, LocomotorSurfaceTypeMask acc
 	return r;
 }
 
-Bool Pathfinder::isGroundPathPassable( Bool isCrusher, const Coord3D& startWorld, PathfindLayerEnum startLayer, const Coord3D& endWorld, Int pathDiameter )
+Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& startWorld, PathfindLayerEnum startLayer, const Coord3D& endWorld,
+	Int pathDiameter )
 {
 	unsigned h = p1Hash(3, { (unsigned)isCrusher, bitsOf(startWorld.x), bitsOf(startWorld.y), (unsigned)startLayer, bitsOf(endWorld.x), bitsOf(endWorld.y),
 		(unsigned)pathDiameter });
@@ -172,6 +180,35 @@ void Object::attemptDamage(DamageInfo *d)
 {
 	g_splats.push_back((unsigned)m_id); g_splats.push_back((unsigned)d->in.m_damageType); g_splats.push_back((unsigned)d->in.m_deathType);
 	g_splats.push_back((unsigned)d->in.m_sourceID); g_splats.push_back(bitsOf(d->in.m_amount));
+}
+/* batch P5: relations, crush tests and weapons' terrain lines from the hash; the closest tall building by squared 2-D distance */
+unsigned g_p5Allies = 50, g_p5Crush = 40, g_p5Line = 70;
+Int Object::getRelationship(const Object *that) const { return p1Pick(p1Hash(30, { (unsigned)m_id, (unsigned)that->getID() }), g_p5Allies) ? ALLIES : ENEMIES; }
+Bool Object::canCrushOrSquish(Object *other, CrushSquishTestType t) const
+{
+	return p1Pick(p1Hash(31, { (unsigned)m_id, (unsigned)other->getID(), (unsigned)t }), g_p5Crush);
+}
+Bool Weapon::isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Object *victim) const
+{
+	return p1Pick(p1Hash(32, { (unsigned)source->getID(), bitsOf(pos.x), bitsOf(pos.y), (unsigned)victim->getID() }), g_p5Line);
+}
+Bool Weapon::isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const
+{
+	return p1Pick(p1Hash(33, { (unsigned)source->getID(), bitsOf(pos.x), bitsOf(pos.y), bitsOf(victimPos.x), bitsOf(victimPos.y) }), g_p5Line);
+}
+static PartitionManager s_pfPartition;
+PartitionManager *ThePartitionManager = &s_pfPartition;
+Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, int dc, PartitionFilter **filters)
+{
+	int kind = ((PartitionFilterAcceptByKindOf *)filters[0])->m_kind;
+	Object *best = NULL;
+	Real bestD2 = 0;
+	for (Object &o : g_walls) {
+		if (!o.isKindOf((KindOfType)kind)) continue;
+		Real dx = o.m_pos.x - pos->x, dy = o.m_pos.y - pos->y, d2 = dx * dx + dy * dy, r = maxDist + o.m_geom.m_boundingRadius;
+		if (d2 <= r * r && (!best || d2 < bestD2)) { best = &o; bestD2 = d2; }
+	}
+	return best;
 }
 Object *GameLogic::findObjectByID(ObjectID id)
 {
@@ -922,6 +959,210 @@ int ref_pf_p4_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		for (unsigned v : g_splats) putU32(v);
 		g_out[mark] = (unsigned)(g_out.size() - mark - 1);
 	}
+	pf->reset();
+	for (int k = 0; k <= LAYER_LAST; ++k) pf->m_layers[k].~PathfindLayer();
+	pf->m_zoneManager.~PathfindZoneManager();
+	PathfindCellInfo::releaseCellInfos();
+	g_walls.clear();
+	*len = (int)g_out.size();
+	if (*len > cap) return 1;
+	memcpy(buf, &g_out[0], g_out.size() * sizeof(unsigned));
+	return 0;
+}
+
+/* Batch P5: the Pathfinder's movement checks and lines, on a map built as P4's. cfg as P4's (with the AI data's attack-uses-line-of-
+** sight word after the wall height, and the relation, crush and weapon-line rates after the bridges' rates), each object 32 words: P4's
+** 22, then ignored obstacle, crusher level, crushable level, significantly above the terrain, kinds 2 (bits: attack needs line of
+** sight, aircraft path around), weapon, slaver (0: no slaved module), container (object index + 1, or 0), (two unused). Ops of 8
+** words [op, a, b, c, d, e, f, g] (objects by index, 0xffffffff none; positions as float bits):
+** 0 newMap  1 addObjectToPathfindMap(a)  2 updateGoal(a, x b, y c, layer d)  3 updatePos(a, x b, y c)  4 setIgnoreObstacleID(a)
+** 5 validMovementTerrain(layer a, legal surfaces b, x c, y d)  6 validMovementPosition(crusher a, surfaces b, getCell(layer c, d, e))
+** 7 checkDestination(obj a, cell b c, layer d, radius e, centre f)  8 checkForMovement(obj a, cell b c, layer d, radius e, centre f,
+** transient g)  9 snapPosition(a, x b, y c)  10 snapClosestGoalPosition(a, x b, y c)  11 goalPosition(a)
+** 12 adjustToLandingDestination(a, x b, y c)  13 clearCellForDiameter(crusher a, cell b c, layer d, diameter e)
+** 14 adjustCoordToCell(cell a b, centre c, layer d)  15 isLinePassable(obj a, surfaces b, layer c & 255 (blocked bit 8, pinched
+** bit 9), from d e, to f g)  16 isGroundPathPassable(crusher a, from b c, layer d, to e f, diameter g)  17 isViewBlockedByObstacle(a, b)
+** 18 isAttackViewBlockedByObstacle(a, at b c, victim d, at e f)  19 segmentIntersectsTallBuilding(from a b, to c d, ignoring e)
+** 20 circleClipsTallBuilding(from a b, to c d, radius e)  21 the line of lineBlockedByObstacleCallback(a, b, from c d, to e f, layer g)
+** 22 cell (a, b) of layer c onto the sorted open list (an info allocated if none; costs d)  23 onto the closed list
+** 24 cleanOpenAndClosedLists  25 validLocomotorSurfacesForCellType(a). (The caller keeps to defined calls.) Each op appends, after a
+** word that counts the rest: the results, the lists' heads, the cumulative cell count, the first free info. */
+int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf, int cap, int *len)
+{
+	g_out.clear();
+	g_splats.clear();
+	g_gameLogic.m_frame = 0;
+	g_scene.seed = cfg[0];
+	g_p4.cliff = cfg[1]; g_p4.water = cfg[2]; g_p4.layer = cfg[3]; g_p4.end = cfg[4];
+	g_p4.extent.lo.x = floatOf(cfg[5]); g_p4.extent.lo.y = floatOf(cfg[6]); g_p4.extent.lo.z = 0;
+	g_p4.extent.hi.x = floatOf(cfg[7]); g_p4.extent.hi.y = floatOf(cfg[8]); g_p4.extent.hi.z = 0;
+	g_aiData.m_wallHeight = floatOf(cfg[9]);
+	g_aiData.m_attackUsesLineOfSight = cfg[10] != 0;
+	g_p3.onBridge = cfg[11]; g_p3.end = cfg[12]; g_p3.side = cfg[13]; g_p3.entry = cfg[14];
+	g_p5Allies = cfg[15]; g_p5Crush = cfg[16]; g_p5Line = cfg[17];
+	int nb = (int)cfg[18], at = 19;
+	std::vector<Bridge> bridges(nb);
+	for (int k = 0; k < nb; ++k, at += 10) {
+		Bridge &b = bridges[k];
+		b.m_index = (unsigned)k;
+		b.m_bounds.lo.x = floatOf(cfg[at]); b.m_bounds.lo.y = floatOf(cfg[at + 1]);
+		b.m_bounds.hi.x = floatOf(cfg[at + 2]); b.m_bounds.hi.y = floatOf(cfg[at + 3]);
+		b.m_info.from.x = floatOf(cfg[at + 4]); b.m_info.from.y = floatOf(cfg[at + 5]); b.m_info.from.z = floatOf(cfg[at + 6]);
+		b.m_info.to.x = floatOf(cfg[at + 7]); b.m_info.to.y = floatOf(cfg[at + 8]); b.m_info.to.z = floatOf(cfg[at + 9]);
+		b.m_info.bridgeObjectID = (ObjectID)(1000 + k);
+	}
+	int no = (int)cfg[at++];
+	g_walls.assign(no, Object());
+	static const KindOfType kinds[10] = { KINDOF_MINE, KINDOF_PROJECTILE, KINDOF_BRIDGE_TOWER, KINDOF_DEFENSIVE_WALL, KINDOF_BLAST_CRATER,
+		KINDOF_WALK_ON_TOP_OF_WALL, KINDOF_STRUCTURE, KINDOF_IMMOBILE, KINDOF_PRODUCED_AT_HELIPAD, KINDOF_CAN_SEE_THROUGH_STRUCTURE };
+	for (int k = 0; k < no; ++k, at += 32) {
+		Object &o = g_walls[k];
+		const unsigned *c = cfg + at;
+		o.m_id = (ObjectID)c[0];
+		o.m_pos.x = floatOf(c[1]); o.m_pos.y = floatOf(c[2]); o.m_pos.z = floatOf(c[3]); o.m_angle = floatOf(c[4]);
+		for (int b = 0; b < 10; ++b) o.m_kinds[kinds[b]] = ((c[5] >> b) & 1) != 0;
+		o.m_rubble = c[6] != 0;
+		o.m_template.m_fenceWidth = floatOf(c[7]); o.m_template.m_fenceXOffset = floatOf(c[8]);
+		o.m_mobile = c[9] != 0;
+		o.m_geom.m_sphere = c[10] == GEOMETRY_SPHERE; o.m_geom.m_type = (int)c[10];
+		o.m_geom.m_major = floatOf(c[11]); o.m_geom.m_minor = floatOf(c[12]); o.m_geom.m_small = c[13] != 0;
+		o.m_geom.m_boundingRadius = floatOf(c[14]); o.m_heightAboveTerrain = floatOf(c[15]);
+		o.m_layer = (PathfindLayerEnum)c[16]; o.m_destLayer = (PathfindLayerEnum)c[17];
+		o.m_hasAI = c[18] != 0; o.m_ai.m_ground = c[19] != 0; o.m_ai.m_adjusts = c[20] != 0; o.m_unmanned = c[21] != 0;
+		o.m_ai.m_ignored = (ObjectID)c[22]; o.m_crusherLevel = (Int)c[23]; o.m_crushableLevel = (Int)c[24]; o.m_above = c[25] != 0;
+		o.m_kinds[KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT] = (c[26] & 1) != 0; o.m_kinds[KINDOF_AIRCRAFT_PATH_AROUND] = (c[26] & 2) != 0;
+		o.m_hasWeapon = c[27] != 0;
+		if (c[28] != 0) {
+			o.m_slavedUpdate.m_slaver = (ObjectID)c[28];
+			o.m_slavedModule.m_slaved = &o.m_slavedUpdate;
+			o.m_modules[0] = &o.m_slavedModule;
+		}
+	}
+	at -= 32 * no;
+	for (int k = 0; k < no; ++k, at += 32) {
+		Object &o = g_walls[k];
+		o.m_next = k + 1 < no ? &g_walls[k + 1] : NULL;
+		o.m_container = cfg[at + 29] ? &g_walls[(cfg[at + 29] - 1) % no] : NULL;
+	}
+	PathfindCellInfo::allocateCellInfos();
+	memset(g_pathfinderMem, 0, sizeof g_pathfinderMem);
+	Pathfinder *pf = TheAI->pathfinder();
+	new (&pf->m_zoneManager) PathfindZoneManager();
+	for (int k = 0; k <= LAYER_LAST; ++k) new (&pf->m_layers[k]) PathfindLayer();
+	pf->reset();
+	auto objAt = [&](unsigned k) -> Object * { return k == 0xffffffffu ? NULL : &g_walls[k % (unsigned)no]; };
+	auto posOf = [&](unsigned x, unsigned y) -> Coord3D { Coord3D p; p.x = floatOf(x); p.y = floatOf(y); p.z = 0; return p; };
+	auto cellCode = [&](PathfindCell *c) -> unsigned {
+		if (!c) return 0xffffffffu;
+		int mh = pf->m_extent.hi.y + 1, count = (pf->m_extent.hi.x + 1) * mh;
+		if (pf->m_blockOfMapCells && c >= pf->m_blockOfMapCells && c < pf->m_blockOfMapCells + count) return (unsigned)(c - pf->m_blockOfMapCells);
+		for (int l = 0; l <= LAYER_LAST; ++l) {
+			PathfindLayer &ly = pf->m_layers[l];
+			if (ly.m_blockOfMapCells && c >= ly.m_blockOfMapCells && c < ly.m_blockOfMapCells + ly.m_width * ly.m_height)
+				return 0x100000u | ((unsigned)l << 16) | (unsigned)(c - ly.m_blockOfMapCells);
+		}
+		return 0xfffffffeu;
+	};
+	auto infoIndex = [](const PathfindCellInfo *i) -> unsigned { return i ? (unsigned)(i - PathfindCellInfo::s_infoArray) : 0xffffffffu; };
+	auto putPos = [&](std::vector<unsigned> &res, const Coord3D &p) { res.push_back(bitsOf(p.x)); res.push_back(bitsOf(p.y)); res.push_back(bitsOf(p.z)); };
+	for (int i = 0; i < n; ++i) {
+		const unsigned *o = ops + 8 * i;
+		std::vector<unsigned> res;
+		if (o[0] != 0 && o[0] != 4 && o[0] != 25 && !pf->m_map) { putU32(0xbadc0de5u); break; }
+		size_t mark = g_out.size();
+		putU32(0);
+		switch (o[0]) {
+		case 0: pf->newMap(); break;
+		case 1: pf->addObjectToPathfindMap(objAt(o[1])); break;
+		case 2: { Coord3D p = posOf(o[2], o[3]); pf->updateGoal(objAt(o[1]), &p, (PathfindLayerEnum)o[4]); break; }
+		case 3: { Coord3D p = posOf(o[2], o[3]); pf->updatePos(objAt(o[1]), &p); break; }
+		case 4: pf->setIgnoreObstacleID(o[1] == 0xffffffffu ? INVALID_ID : objAt(o[1])->getID()); break;
+		case 5: {
+			Locomotor loco; loco.m_legal = (Int)o[2];
+			Coord3D p = posOf(o[3], o[4]);
+			res.push_back(pf->validMovementTerrain((PathfindLayerEnum)o[1], &loco, &p) ? 1u : 0u);
+			break;
+		}
+		case 6: res.push_back(pf->validMovementPosition(o[1] != 0, (LocomotorSurfaceTypeMask)o[2], pf->getCell((PathfindLayerEnum)o[3], (Int)o[4], (Int)o[5])) ? 1u : 0u); break;
+		case 7: res.push_back(pf->checkDestination(objAt(o[1]), (Int)o[2], (Int)o[3], (PathfindLayerEnum)o[4], (Int)o[5], o[6] != 0) ? 1u : 0u); break;
+		case 8: {
+			TCheckMovementInfo info;
+			info.cell.x = (Int)o[2]; info.cell.y = (Int)o[3]; info.layer = (PathfindLayerEnum)o[4]; info.radius = (Int)o[5];
+			info.centerInCell = o[6] != 0; info.considerTransient = o[7] != 0; info.acceptableSurfaces = 0;
+			info.allyFixedCount = 77; info.enemyFixed = info.allyMoving = info.allyGoal = true;
+			res.push_back(pf->checkForMovement(objAt(o[1]), info) ? 1u : 0u);
+			res.push_back((unsigned)info.allyFixedCount); res.push_back(info.enemyFixed); res.push_back(info.allyMoving); res.push_back(info.allyGoal);
+			break;
+		}
+		case 9: { Coord3D p = posOf(o[2], o[3]); pf->snapPosition(objAt(o[1]), &p); putPos(res, p); break; }
+		case 10: { Coord3D p = posOf(o[2], o[3]); pf->snapClosestGoalPosition(objAt(o[1]), &p); putPos(res, p); break; }
+		case 11: { Coord3D p = posOf(0x3f800000u, 0x3f800000u); res.push_back(pf->goalPosition(objAt(o[1]), &p) ? 1u : 0u); putPos(res, p); break; }
+		case 12: { Coord3D p = posOf(o[2], o[3]); res.push_back(pf->adjustToLandingDestination(objAt(o[1]), &p) ? 1u : 0u); putPos(res, p); break; }
+		case 13: res.push_back((unsigned)pf->clearCellForDiameter(o[1] != 0, (Int)o[2], (Int)o[3], (PathfindLayerEnum)o[4], (Int)o[5])); break;
+		case 14: { Coord3D p = posOf(0, 0); pf->adjustCoordToCell((Int)o[1], (Int)o[2], o[3] != 0, p, (PathfindLayerEnum)o[4]); putPos(res, p); break; }
+		case 15: {
+			Coord3D a = posOf(o[4], o[5]), b = posOf(o[6], o[7]);
+			res.push_back(pf->isLinePassable(objAt(o[1]), (LocomotorSurfaceTypeMask)o[2], (PathfindLayerEnum)(o[3] & 255), a, b, (o[3] >> 8) & 1, (o[3] >> 9) & 1) ? 1u : 0u);
+			break;
+		}
+		case 16: {
+			Coord3D a = posOf(o[2], o[3]), b = posOf(o[5], o[6]);
+			res.push_back(pf->isGroundPathPassable(o[1] != 0, a, (PathfindLayerEnum)o[4], b, (Int)o[7]) ? 1u : 0u);
+			break;
+		}
+		case 17: res.push_back(pf->isViewBlockedByObstacle(objAt(o[1]), objAt(o[2])) ? 1u : 0u); break;
+		case 18: {
+			Coord3D a = posOf(o[2], o[3]), b = posOf(o[5], o[6]);
+			res.push_back(pf->isAttackViewBlockedByObstacle(objAt(o[1]), a, objAt(o[4]), b) ? 1u : 0u);
+			break;
+		}
+		case 19: {
+			Path *path = newInstance(Path);
+			Coord3D a = posOf(o[1], o[2]), b = posOf(o[3], o[4]);
+			path->appendNode(&a, LAYER_GROUND);
+			path->appendNode(&b, LAYER_GROUND);
+			Coord3D p1, p2, p3;
+			p1.zero(); p2.zero(); p3.zero();
+			Bool r = pf->segmentIntersectsTallBuilding(path->getFirstNode(), path->getFirstNode()->getNext(), (ObjectID)o[5], &p1, &p2, &p3);
+			res.push_back(r ? 1u : 0u);
+			putPos(res, *path->getFirstNode()->getNext()->getPosition());
+			if (r) { putPos(res, p1); putPos(res, p2); putPos(res, p3); }
+			path->deleteInstance();
+			break;
+		}
+		case 20: {
+			Coord3D a = posOf(o[1], o[2]), b = posOf(o[3], o[4]), adj;
+			adj.zero();
+			Bool r = pf->circleClipsTallBuilding(&a, &b, floatOf(o[5]), INVALID_ID, &adj);
+			res.push_back(r ? 1u : 0u);
+			if (r) putPos(res, adj);
+			break;
+		}
+		case 21: {
+			ViewBlockedStruct info;
+			info.obj = objAt(o[1]); info.objOther = objAt(o[2]);
+			Coord3D a = posOf(o[3], o[4]), b = posOf(o[5], o[6]);
+			res.push_back((unsigned)pf->iterateCellsAlongLine(a, b, (PathfindLayerEnum)o[7], Pathfinder::lineBlockedByObstacleCallback, &info));
+			break;
+		}
+		case 22: case 23: {
+			PathfindCell *c = pf->getCell((PathfindLayerEnum)o[3], (Int)o[1], (Int)o[2]);
+			if (!c->hasInfo()) { ICoord2D p; p.x = (Int)o[1]; p.y = (Int)o[2]; c->allocateInfo(p); }
+			c->setCostSoFar((UnsignedShort)o[4]); c->setTotalCost((UnsignedShort)o[4]);
+			if (o[0] == 22) pf->m_openList = c->putOnSortedOpenList(pf->m_openList);
+			else pf->m_closedList = c->putOnClosedList(pf->m_closedList);
+			break;
+		}
+		case 24: pf->cleanOpenAndClosedLists(); break;
+		case 25: res.push_back((unsigned)Pathfinder::validLocomotorSurfacesForCellType((PathfindCell::CellType)o[1])); break;
+		}
+		putU32((unsigned)res.size());
+		for (unsigned r : res) putU32(r);
+		putU32(cellCode(pf->m_openList)); putU32(cellCode(pf->m_closedList)); putU32((unsigned)pf->m_cumulativeCellsAllocated);
+		putU32(infoIndex(PathfindCellInfo::s_firstFree));
+		g_out[mark] = (unsigned)(g_out.size() - mark - 1);
+	}
+	pf->m_openList = pf->m_closedList = NULL;
 	pf->reset();
 	for (int k = 0; k <= LAYER_LAST; ++k) pf->m_layers[k].~PathfindLayer();
 	pf->m_zoneManager.~PathfindZoneManager();

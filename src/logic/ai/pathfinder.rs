@@ -104,6 +104,9 @@ pub struct PfObjectFacts {
     pub immobile: bool,
     pub produced_at_helipad: bool,
     pub can_see_through_structure: bool,
+    /// (batch P5) `KINDOF_AIRCRAFT_PATH_AROUND`, `KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT`.
+    pub aircraft_path_around: bool,
+    pub attack_needs_line_of_sight: bool,
     /// `isDisabledByType(DISABLED_UNMANNED)`.
     pub unmanned: bool,
     /// `getBodyModule()->getDamageState() == BODY_RUBBLE`.
