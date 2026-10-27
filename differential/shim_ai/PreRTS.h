@@ -45,6 +45,20 @@
 #define AIUpdateModuleData AiAIUpdateModuleData
 #define TurretAI AiTurretAI
 #define TurretAIData AiTurretAIData
+/* batch A3 */
+#define UpgradeTemplate AiUpgradeTemplate
+#define UpgradeCenter AiUpgradeCenter
+#define TheUpgradeCenter AiTheUpgradeCenter
+#define TeamTemplateInfo AiTeamTemplateInfo
+#define TeamPrototype AiTeamPrototype
+#define Team AiTeam
+#define ContainModuleInterface AiContainModuleInterface
+#define StealthUpdate AiStealthUpdate
+#define HordeUpdateInterface AiHordeUpdateInterface
+#define BehaviorModule AiBehaviorModule
+#define CollideModuleInterface AiCollideModuleInterface
+#define DamageInfo AiDamageInfo
+#define AiData AiAiData
 /* ---- renames: Locomotor.cpp's classes, its global and its INI block handler */
 #define Locomotor AiLocomotor
 #define LocomotorTemplate AiLocomotorTemplate

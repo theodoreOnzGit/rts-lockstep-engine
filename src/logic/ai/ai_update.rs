@@ -41,22 +41,34 @@
 //!   waiting path it returns `UPDATE_SLEEP_FOREVER` before the airborne-target flag is updated.
 //! - `getLocomotorDistanceToGoal`'s `POSITION_EXPLICIT` is "not yet implemented": 0.
 //!
+//! Batch A3 adds the victim (`setCurrentVictim`, `getCurrentVictim`, `getCurrentVictimPos`), the mood (`getMoodMatrixValue`,
+//! `getMoodMatrixActionAdjustment`, `wakeUpAndAttemptToTarget`, the mood check times, `canAutoAcquireWhileStealthed`,
+//! `getNextMoodTarget`), the morale (`evaluateMoraleBonus`), the state queries (`isIdle`, `isAttacking`, `isBusy`,
+//! `isClearingMines`, `isMovingAwayFrom`, `isMoving`, `getAIStateType`, `getEnterTarget`), `checkForCrateToPickup` and the plain
+//! getters; the host answers for the state machine until it is translated. Upstream facts kept: `checkForCrateToPickup` clears the
+//! crate's id BEFORE looking it up (it never finds the crate); `getNextMoodTarget` reads the controlling player unchecked when called
+//! by the AI.
+//!
 //! Verified against upstream's members (cut verbatim, with `Locomotor.cpp` unchanged and batch P1's paths) by
-//! `tests/differential_ai_update_a2.rs`: 10,000 programs, 600,000 operations, 0 mismatches in the results, the call logs and the
-//! dumps (2026-10-27; plants 3200-3214 caught).
+//! `tests/differential_ai_update.rs`: 10,000 programs, 600,000 operations, 0 mismatches in the results, the call logs and the
+//! dumps (2026-10-27; plants 3200-3214 and 3220-3229 caught).
 
 use crate::common::base_type::{sqr, Coord3D, ICoord2D};
 use crate::common::disabled_types::{DisabledType, DISABLED_HELD, DISABLED_UNMANNED};
 use crate::common::game_common::{WhichTurretType, LOGICFRAMES_PER_SECOND, TURRET_INVALID};
 use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID, LAYER_GROUND};
-use crate::common::kind_of::{KINDOF_IMMOBILE, KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE};
+use crate::common::game_common::{AbleToAttackType, PlayerType, ATTACK_NEW_TARGET};
+use crate::common::kind_of::{
+    KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY, KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE,
+};
+use crate::common::object_status_types::{OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_STEALTHED};
+use crate::logic::damage::{DamageType, DAMAGE_HEALING};
+use crate::logic::weapon::WEAPON_ANTI_MINE;
+use crate::logic::weapon_bonus::condition;
 use crate::common::name_key_generator::NameKeyType;
 use crate::common::object_status_types::OBJECT_STATUS_AIRBORNE_TARGET;
 use crate::logic::ai::ai_update_data::AiUpdateModuleData;
-use crate::logic::ai::ai_update_types::{
-    AttitudeType, CommandSourceType, GuardMode, GuardTargetType, LocomotorSetType, AI_NORMAL, CMD_FROM_AI, FAST_AS_POSSIBLE, GUARDMODE_NORMAL,
-    GUARDTARGET_NONE, LOCOMOTORSET_INVALID, LOCOMOTORSET_NORMAL, LOCOMOTORSET_NORMAL_UPGRADED,
-};
+use crate::logic::ai::ai_update_types::*;
 use crate::logic::ai::path::{Path, PathHost, PATHFIND_CELL_SIZE_F, PATHFIND_CLOSE_ENOUGH};
 use crate::logic::locomotor::{
     LocomotorAppearance, LocomotorHost, LocomotorSet, LocomotorSurfaceTypeMask, LOCOMOTORSURFACE_AIR, LOCOMOTORSURFACE_GROUND,
@@ -111,6 +123,68 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn machine_goal_position(&mut self) -> Coord3D;
     /// `set.addLocomotor(lt)`: `TheLocomotorStore->newLocomotor(lt)` appended (none for a template the store does not have).
     fn add_locomotor(&mut self, set: &mut LocomotorSet, template: NameKeyType);
+
+    // ---- batch A3 ----
+    /// `TheGameLogic->findObjectByID(id) != NULL`.
+    fn object_exists(&self, id: ObjectId) -> bool;
+    /// `findObjectByID(target)->getAI()`, if it has one, `->addTargeter(targeter, add)`.
+    fn ai_add_targeter(&mut self, target: ObjectId, targeter: ObjectId, add: bool);
+    /// `getStateMachine() != NULL`.
+    fn has_state_machine(&self) -> bool;
+    /// `getStateMachine()->getCurrentStateID()`.
+    fn machine_current_state_id(&self) -> u32;
+    /// `getStateMachine()->isInIdleState()`.
+    fn machine_is_in_idle_state(&self) -> bool;
+    /// `getStateMachine()->isInAttackState()`.
+    fn machine_is_in_attack_state(&self) -> bool;
+    /// `getStateMachine()->isInBusyState()`.
+    fn machine_is_in_busy_state(&self) -> bool;
+    /// `getStateMachine()->getTemporaryState()` (`INVALID_STATE_ID` without one).
+    fn machine_temporary_state(&self) -> u32;
+    /// `getStateMachine()->getGoalObject()`'s id (`INVALID_ID`: none).
+    fn machine_goal_object(&self) -> ObjectId;
+    /// `getObject()->isEffectivelyDead()`.
+    fn is_effectively_dead(&self) -> bool;
+    /// `getObject()->getControllingPlayer()->getPlayerType()`, `None` without a controlling player.
+    fn controlling_player_type(&self) -> Option<PlayerType>;
+    /// `getObject()->getTeam()->getPrototype()->getTemplateInfo()->m_attackCommonTarget`.
+    fn team_attack_common_target(&self) -> bool;
+    /// `getObject()->getTeam()->getTeamTargetObject()`'s id (`INVALID_ID`: none).
+    fn team_target_object(&self) -> ObjectId;
+    /// `getObject()->getAbleToAttackSpecificObject(type, target, commandSource)`.
+    fn able_to_attack_specific_object(&mut self, t: AbleToAttackType, target: ObjectId, command_source: CommandSourceType) -> CanAttackResultValue;
+    /// `getObject()->getStealth()->isGrantedBySpecialPower()`, `None` without a stealth module.
+    fn stealth_granted_by_special_power(&self) -> Option<bool>;
+    /// `getObject()->getContainedBy()`'s id (`INVALID_ID`: none).
+    fn contained_by(&self) -> ObjectId;
+    /// `getContainedBy()->getContain()->isPassengerAllowedToFire()`.
+    fn container_passenger_allowed_to_fire(&self) -> bool;
+    /// `getContainedBy()->getGeometryInfo().getBoundingCircleRadius()`.
+    fn container_bounding_circle_radius(&self) -> f32;
+    /// `getObject()->getBodyModule()->getLastDamageInfo()->in`'s damage type and source.
+    fn last_damage_type_and_source(&self) -> (DamageType, ObjectId);
+    /// `TheAI->getAiData()->m_forceIdleFramesCount`.
+    fn ai_data_force_idle_frames(&self) -> u32;
+    /// `TheAI->getAiData()->m_attackUsesLineOfSight`.
+    fn ai_data_attack_uses_line_of_sight(&self) -> bool;
+    /// `TheAI->getAiData()->m_attackIgnoreInsignificantBuildings`.
+    fn ai_data_attack_ignore_insignificant_buildings(&self) -> bool;
+    /// `TheAI->getAdjustedVisionRangeForObject(getObject(), factors)`.
+    fn adjusted_vision_range_for_object(&mut self, factors: i32) -> f32;
+    /// `TheAI->findClosestEnemy(getObject(), range, qualifiers, info)`'s id (`INVALID_ID`: none).
+    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>) -> ObjectId;
+    /// `getObject()->getCurrentWeapon()->getAntiMask()`, `None` without a current weapon.
+    fn current_weapon_anti_mask(&self) -> Option<i32>;
+    /// `player->hasUpgradeComplete(TheUpgradeCenter->findUpgrade(name))` for the controlling player.
+    fn player_has_upgrade_complete(&self, name: &str) -> bool;
+    /// The object's behavior modules' horde interfaces, in order: `(isInHorde(), isAllowedNationalism())` of each that has one.
+    fn horde_update_interfaces(&self) -> Vec<(bool, bool)>;
+    /// `getObject()->setWeaponBonusCondition(c)`.
+    fn set_weapon_bonus_condition(&mut self, c: i32);
+    /// `getObject()->clearWeaponBonusCondition(c)`.
+    fn clear_weapon_bonus_condition(&mut self, c: i32);
+    /// `GameLogicRandomValue(lo, hi)`.
+    fn logic_random_value(&mut self, lo: i32, hi: i32) -> i32;
 }
 
 /// `class AIUpdateInterface`'s state (its data members, in the header's order). The state machine and the turrets' AIs come
@@ -166,6 +240,9 @@ pub struct AiUpdate {
     pub locomotor_goal_type: LocoGoalType,
     pub locomotor_goal_data: Coord3D,
     pub turret_sync_flag: WhichTurretType,
+    /// `m_turretAI[i] != NULL`: the constructor makes one per turret of the data (batch A3; the turrets' AIs themselves join with
+    /// their batch).
+    pub has_turret_ai: [bool; 2],
     pub attitude: AttitudeType,
     pub next_mood_check_time: u32,
     pub crate_created: ObjectId,
@@ -242,6 +319,7 @@ impl AiUpdate {
             locomotor_goal_type: LocoGoalType::None,
             locomotor_goal_data: zero,
             turret_sync_flag: TURRET_INVALID,
+            has_turret_ai: [false; 2],
             attitude: AI_NORMAL,
             next_mood_check_time: 0,
             crate_created: INVALID_ID,
@@ -267,6 +345,9 @@ impl AiUpdate {
             is_in_update: false,
             fix_loco_in_post_process: false,
         };
+        for i in 0..2 {
+            ai.has_turret_ai[i] = ai.data.turret_data[i].is_some();
+        }
         ai.choose_locomotor_set(h, LOCOMOTORSET_NORMAL);
         h.set_wake_frame(UPDATE_SLEEP_NONE);
         ai
@@ -809,5 +890,387 @@ impl AiUpdate {
     /// `setLastCommandSource(source)`.
     pub fn set_last_command_source(&mut self, source: CommandSourceType) {
         self.last_command_source = source;
+    }
+
+    // ---- batch A3: the victim, the mood, the morale, the state queries ----
+
+    /// `getNextMoodCheckTime()`.
+    pub fn get_next_mood_check_time(&self) -> u32 {
+        self.next_mood_check_time
+    }
+    /// `notifyCrate(id)`.
+    pub fn notify_crate(&mut self, id: ObjectId) {
+        self.crate_created = id;
+    }
+    /// `canAutoAcquire()`.
+    pub fn can_auto_acquire(&self) -> bool {
+        self.data.auto_acquire_enemies_when_idle != 0
+    }
+
+    /// `checkForCrateToPickup()`: the crate made by a kill, if it would like to be collided with by us. Upstream clears the id
+    /// BEFORE it looks the crate up, so it looks up `INVALID_ID` and never finds one: the answer is always none (kept).
+    pub fn check_for_crate_to_pickup<H: AiHost>(&mut self, h: &mut H) -> ObjectId {
+        if self.crate_created != INVALID_ID {
+            self.crate_created = INVALID_ID; // "we have processed it, so clear it."
+            let crate_id = if plant(3220) { 1 } else { self.crate_created };
+            if h.object_exists(crate_id) {
+                // (the crate's collide modules' wouldLikeToCollideWith: unreachable, see above)
+                return crate_id;
+            }
+        }
+        INVALID_ID
+    }
+
+    /// `setCurrentVictim(victim)`: none tells the previous victim's AI we no longer target it.
+    pub fn set_current_victim<H: AiHost>(&mut self, h: &mut H, victim: ObjectId) {
+        if victim == INVALID_ID {
+            // "be paranoid, in case we are called from dtors, etc."
+            if self.current_victim_id != INVALID_ID && h.object_exists(self.current_victim_id) && !plant(3221) {
+                let me = h.object_id();
+                h.ai_add_targeter(self.current_victim_id, me, false);
+            }
+            self.current_victim_id = INVALID_ID;
+        } else {
+            // "we don't add a targeter here, since we usually want to defer that until we are actually aiming"
+            self.current_victim_id = victim;
+        }
+    }
+
+    /// `getCurrentVictim()`: the victim if it still exists.
+    pub fn get_current_victim<H: AiHost>(&self, h: &H) -> ObjectId {
+        if self.current_victim_id != INVALID_ID && h.object_exists(self.current_victim_id) {
+            return self.current_victim_id;
+        }
+        INVALID_ID
+    }
+
+    /// `getCurrentVictimPos()`: "if we are attacking a position (and NOT an object), return it".
+    pub fn get_current_victim_pos<H: AiHost>(&self, h: &mut H) -> Option<Coord3D> {
+        if h.status_test(OBJECT_STATUS_IS_ATTACKING) && self.current_victim_id == INVALID_ID {
+            return Some(h.machine_goal_position());
+        }
+        None
+    }
+
+    /// `getAttitude()`.
+    pub fn get_attitude(&self) -> AttitudeType {
+        self.attitude
+    }
+
+    /// `getAIStateType()`.
+    pub fn get_ai_state_type<H: AiHost>(&self, h: &H) -> AiStateType {
+        h.machine_current_state_id()
+    }
+
+    /// `ignoreObstacle(obj)`.
+    pub fn ignore_obstacle(&mut self, obj: ObjectId) {
+        self.ignore_obstacle_id = obj;
+    }
+
+    /// `getIgnoredObstacleID()`.
+    pub fn get_ignored_obstacle_id(&self) -> ObjectId {
+        self.ignore_obstacle_id
+    }
+
+    /// `getEnterTarget()`: the goal object while entering, guarding a tunnel network or getting repaired.
+    pub fn get_enter_target<H: AiHost>(&self, h: &H) -> ObjectId {
+        let state_type = self.get_ai_state_type(h);
+        if state_type != AI_ENTER && state_type != AI_GUARD_TUNNEL_NETWORK && (state_type != AI_GET_REPAIRED || plant(3222)) {
+            return INVALID_ID;
+        }
+        h.machine_goal_object()
+    }
+
+    /// `getMoodMatrixValue()`: the controller, the mood (computer players only) and the unit type.
+    pub fn get_mood_matrix_value<H: AiHost>(&self, h: &H) -> u32 {
+        let mut return_val = 0;
+        if !h.has_state_machine() {
+            return return_val;
+        }
+        let Some(player_type) = h.controlling_player_type() else { return return_val };
+        if player_type == PlayerType::Human {
+            return_val |= MM_CONTROLLER_PLAYER; // "Human units don't have a mood."
+        } else {
+            return_val |= MM_CONTROLLER_AI;
+            return_val |= match self.get_attitude() {
+                AI_SLEEP => MM_MOOD_SLEEP,
+                AI_PASSIVE => MM_MOOD_PASSIVE,
+                AI_NORMAL => MM_MOOD_NORMAL,
+                AI_ALERT => MM_MOOD_ALERT,
+                AI_AGGRESSIVE => MM_MOOD_AGGRESSIVE,
+                _ => MM_MOOD_NORMAL, // DEBUG_CRASH(("Unknown mood ...")), "Using normal."
+            };
+        }
+
+        if self.locomotor_set.get_valid_surfaces() & LOCOMOTORSURFACE_AIR != 0 {
+            return_val |= MM_UNITTYPE_AIR;
+        } else if self.has_turret_ai[0] && !plant(3223) {
+            return_val |= MM_UNITTYPE_TURRETED;
+        } else {
+            return_val |= MM_UNITTYPE_NONTURRETED;
+        }
+
+        return_val
+    }
+
+    /// `getMoodMatrixActionAdjustment(action)`.
+    pub fn get_mood_matrix_action_adjustment<H: AiHost>(&self, h: &H, action: MoodMatrixAction) -> u32 {
+        // "Angry Mob Members (but not Nexi) are never subject to moods."
+        if h.is_kind_of(KINDOF_INFANTRY) && h.is_kind_of(KINDOF_IGNORED_IN_GUI) {
+            return MAA_ACTION_OK;
+        }
+
+        let mood_matrix = self.get_mood_matrix_value(h);
+        if mood_matrix & MM_CONTROLLER_PLAYER != 0 {
+            // "Player-controlled units can always do actions (from a mood perspective, at any rate)"
+            return MAA_ACTION_OK;
+        }
+
+        let mood = mood_matrix & MM_MOOD_BITMASK;
+        let pick = |sleep: u32, passive: u32, normal: u32, alert: u32, aggressive: u32| -> u32 {
+            match mood {
+                MM_MOOD_SLEEP => sleep,
+                MM_MOOD_PASSIVE => passive,
+                MM_MOOD_NORMAL => normal,
+                MM_MOOD_ALERT => alert,
+                MM_MOOD_AGGRESSIVE => aggressive,
+                _ => MAA_ACTION_OK,
+            }
+        };
+        match action {
+            MM_ACTION_IDLE => pick(
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_IGNORE_ALL,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_WAIT_FOR_ATTACK,
+                MAA_ACTION_OK,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_ALERT,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_AGGRESSIVE,
+            ),
+            MM_ACTION_MOVE => pick(
+                MAA_ACTION_TO_IDLE | MAA_AFFECT_RANGE_IGNORE_ALL,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_WAIT_FOR_ATTACK,
+                MAA_ACTION_OK,
+                MAA_ACTION_TO_ATTACK_MOVE | MAA_AFFECT_RANGE_ALERT,
+                MAA_ACTION_TO_ATTACK_MOVE | if plant(3224) { MAA_AFFECT_RANGE_ALERT } else { MAA_AFFECT_RANGE_AGGRESSIVE },
+            ),
+            MM_ACTION_ATTACK => pick(MAA_ACTION_TO_IDLE | MAA_AFFECT_RANGE_IGNORE_ALL, MAA_ACTION_OK, MAA_ACTION_OK, MAA_ACTION_OK, MAA_ACTION_OK),
+            MM_ACTION_ATTACK_MOVE => pick(
+                MAA_ACTION_TO_IDLE | MAA_AFFECT_RANGE_IGNORE_ALL,
+                MAA_ACTION_OK,
+                MAA_ACTION_OK,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_ALERT,
+                MAA_ACTION_OK | MAA_AFFECT_RANGE_AGGRESSIVE,
+            ),
+            _ => MAA_ACTION_OK,
+        }
+    }
+
+    /// `wakeUpAndAttemptToTarget()`: an idle AI checks its mood now, randomly offset.
+    pub fn wake_up_and_attempt_to_target<H: AiHost>(&mut self, h: &mut H) {
+        if !self.is_idle(h) {
+            return;
+        }
+        self.next_mood_check_time = h.frame();
+        self.randomly_offset_mood_check = true;
+    }
+
+    /// `resetNextMoodCheckTime()`: "Usually called by *Idle::onEnter".
+    pub fn reset_next_mood_check_time<H: AiHost>(&mut self, h: &mut H) {
+        let now = h.frame();
+        self.next_mood_check_time = now.wrapping_add(h.ai_data_force_idle_frames());
+        self.randomly_offset_mood_check = !plant(3225);
+    }
+
+    /// `setNextMoodCheckTime(frame)`.
+    pub fn set_next_mood_check_time(&mut self, frame: u32) {
+        self.next_mood_check_time = frame;
+        self.randomly_offset_mood_check = false;
+    }
+
+    /// `canAutoAcquireWhileStealthed()`: a stealth granted by a special power, or the data's `STEALTHED` bit.
+    pub fn can_auto_acquire_while_stealthed<H: AiHost>(&self, h: &H) -> bool {
+        if h.stealth_granted_by_special_power() == Some(true) {
+            return true;
+        }
+        self.data.auto_acquire_enemies_when_idle & AAS_IDLE_STEALTHED != 0
+    }
+
+    /// `getNextMoodTarget(calledByAI, calledDuringIdle)`: "the next object that our mood suggests we should attack".
+    pub fn get_next_mood_target<H: AiHost>(&mut self, h: &mut H, called_by_ai: bool, called_during_idle: bool) -> ObjectId {
+        // "if we're dead, we can't attack"
+        if h.is_effectively_dead() {
+            return INVALID_ID;
+        }
+        if h.status_test(OBJECT_STATUS_IS_USING_ABILITY) {
+            return INVALID_ID; // "we are doing a special ability. Shouldn't auto-acquire a target at this time."
+        }
+        let auto = self.data.auto_acquire_enemies_when_idle;
+        if called_during_idle && auto & AAS_IDLE == 0 {
+            return INVALID_ID;
+        }
+        // "this should ignore calledDuringIdle, despite what the name of the bit implies."
+        if self.is_attacking(h) && auto & AAS_IDLE_NOT_WHILE_ATTACKING != 0 {
+            return INVALID_ID;
+        }
+        if called_during_idle && h.status_test(OBJECT_STATUS_STEALTHED) && !self.can_auto_acquire_while_stealthed(h) {
+            let container = h.contained_by();
+            if !(container != INVALID_ID && h.container_passenger_allowed_to_fire()) {
+                return INVALID_ID; // "Sorry, stealthed and not allowed to idle fire when stealthed."
+            }
+        }
+
+        let now = h.frame();
+
+        // "Check if team auto targets same victim."
+        if called_by_ai && h.team_attack_common_target() {
+            let mut team_victim = h.team_target_object();
+            if team_victim != INVALID_ID {
+                let result = h.able_to_attack_specific_object(ATTACK_NEW_TARGET, team_victim, CMD_FROM_AI);
+                if result != ATTACKRESULT_POSSIBLE && result != ATTACKRESULT_POSSIBLE_AFTER_MOVING {
+                    team_victim = INVALID_ID; // "Can't attack him."
+                }
+            }
+            if team_victim != INVALID_ID && self.get_attitude() >= AI_NORMAL {
+                return team_victim;
+            }
+        }
+
+        if called_by_ai {
+            // "make sure it's time to check again."
+            if now < self.next_mood_check_time {
+                return INVALID_ID;
+            }
+            let check_rate = self.data.mood_attack_check_rate as i32;
+            self.next_mood_check_time = now.wrapping_add(check_rate as u32);
+            if self.randomly_offset_mood_check {
+                let half_rate = check_rate >> 1;
+                let offset = h.logic_random_value(-half_rate, if plant(3226) { half_rate + 1 } else { half_rate });
+                self.next_mood_check_time = (self.next_mood_check_time as i32).wrapping_add(offset) as u32;
+                self.randomly_offset_mood_check = false;
+            }
+        }
+
+        // "Use Guard Outer, which typically corresponds to the total range"
+        let mut range_to_find_within = h.adjusted_vision_range_for_object(AI_VISIONFACTOR_OWNERTYPE | AI_VISIONFACTOR_MOOD);
+        if range_to_find_within <= 0.0 {
+            return INVALID_ID;
+        }
+
+        // "If we are contained by an object, add it's bounding radius"
+        if h.contained_by() != INVALID_ID {
+            range_to_find_within += h.container_bounding_circle_radius();
+        }
+
+        let mood_matrix_val = self.get_mood_matrix_value(h);
+        if mood_matrix_val & MM_CONTROLLER_AI != 0 && mood_matrix_val & MM_MOOD_PASSIVE != 0 {
+            // "Do not allow units that healed me to get acquired! They are our friends!!!"
+            let (damage_type, source) = h.last_damage_type_and_source();
+            if damage_type != DAMAGE_HEALING {
+                return if h.object_exists(source) { source } else { INVALID_ID };
+            }
+        }
+        let mut flags = AI_CAN_ATTACK;
+        if h.ai_data_attack_uses_line_of_sight() && h.is_kind_of(KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT) {
+            flags |= AI_CAN_SEE;
+        }
+        if h.ai_data_attack_ignore_insignificant_buildings() {
+            flags |= AI_IGNORE_INSIGNIFICANT_BUILDINGS;
+        }
+        if auto & AAS_IDLE_ATTACK_BUILDINGS != 0 {
+            flags |= AI_ATTACK_BUILDINGS;
+        }
+        // "if we're called by AI, and are human controlled, then our AI will not allow us to pursue the target." (the controlling
+        // player is read unchecked here upstream)
+        let human = h.controlling_player_type() == Some(PlayerType::Human);
+        if called_by_ai && human {
+            flags |= AI_WITHIN_ATTACK_RANGE;
+        }
+        if called_by_ai && human && !plant(3227) {
+            flags |= AI_UNFOGGED;
+        }
+
+        h.find_closest_enemy(range_to_find_within, flags, self.attack_info)
+    }
+
+    /// `evaluateMoraleBonus()`: the horde, nationalism and fanaticism weapon bonuses.
+    pub fn evaluate_morale_bonus<H: AiHost>(&mut self, h: &mut H) {
+        let mut horde = false;
+        let mut nationalism = h.player_has_upgrade_complete("Upgrade_Nationalism");
+        let mut fanaticism = h.player_has_upgrade_complete("Upgrade_Fanaticism");
+
+        // "are we in a horde"
+        for (in_horde, allowed_nationalism) in h.horde_update_interfaces() {
+            if in_horde {
+                horde = true;
+                if !allowed_nationalism && !plant(3228) {
+                    nationalism = false;
+                    fanaticism = false;
+                }
+            }
+        }
+
+        if horde {
+            h.set_weapon_bonus_condition(condition::HORDE);
+        } else {
+            h.clear_weapon_bonus_condition(condition::HORDE);
+        }
+
+        if nationalism {
+            h.set_weapon_bonus_condition(condition::NATIONALISM);
+            if fanaticism {
+                h.set_weapon_bonus_condition(condition::FANATICISM); // "FOR THE NEW GC INFANTRY GENERAL"
+            } else {
+                h.clear_weapon_bonus_condition(condition::FANATICISM);
+            }
+        } else {
+            h.clear_weapon_bonus_condition(condition::NATIONALISM);
+        }
+    }
+
+    /// `isIdle()`: the idle state, or a current state that is idle.
+    pub fn is_idle<H: AiHost>(&self, h: &H) -> bool {
+        if h.machine_current_state_id() == AI_IDLE {
+            return true;
+        }
+        h.machine_is_in_idle_state()
+    }
+
+    /// `isAttacking()`.
+    pub fn is_attacking<H: AiHost>(&self, h: &H) -> bool {
+        h.machine_is_in_attack_state()
+    }
+
+    /// `isBusy()`: "when explicitly in the busy state. Moving or attacking is not considered busy!"
+    pub fn is_busy<H: AiHost>(&self, h: &H) -> bool {
+        h.machine_is_in_busy_state()
+    }
+
+    /// `isClearingMines()`: attacking with an anti-mine weapon.
+    pub fn is_clearing_mines<H: AiHost>(&self, h: &H) -> bool {
+        if !h.status_test(OBJECT_STATUS_IS_ATTACKING) {
+            return false;
+        }
+        let Some(anti) = h.current_weapon_anti_mask() else { return false };
+        anti & WEAPON_ANTI_MINE as i32 != 0
+    }
+
+    /// `isMovingAwayFrom(obj)`: moving out of its way (the temporary state).
+    pub fn is_moving_away_from<H: AiHost>(&self, h: &H, obj: ObjectId) -> bool {
+        if h.machine_temporary_state() == AI_MOVE_OUT_OF_THE_WAY {
+            if self.move_out_of_way1 == obj {
+                return true;
+            }
+            if self.move_out_of_way2 == obj && !plant(3229) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `isMoving()`.
+    pub fn is_moving<H: AiHost>(&self, h: &H) -> bool {
+        if self.is_idle(h) {
+            return false;
+        }
+        self.locomotor_goal_type != LocoGoalType::None || self.is_moving
     }
 }

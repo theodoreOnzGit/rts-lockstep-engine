@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of layer 10 batch A2, `logic::ai::ai_update` (`AIUpdateInterface`'s members that do not need its
-//! state machine), against upstream `AIUpdate.cpp` (commit 0a05454d) in `differential/wrap_ai.cpp`: its members cut verbatim,
+//! Code-to-code verification of layer 10 batches A2 and A3, `logic::ai::ai_update` (`AIUpdateInterface`'s members that do not need
+//! its state machine), against upstream `AIUpdate.cpp` (commit 0a05454d) in `differential/wrap_ai.cpp`: its members cut verbatim,
 //! with `Locomotor.cpp` compiled UNCHANGED and the paths of `AIPathfind.cpp` (batch P1's cut), so that the AI drives the REAL
 //! locomotors along REAL paths on both sides.
 //!
@@ -26,7 +26,15 @@
 //! (the most frequent), each locomotor goal, new paths (appended nodes, optimized or ground-optimized or not), locomotor set
 //! choices and upgrades, the distance to the goal, the movement queries, the waypoint queue, the sleep, the final position, the
 //! death, moving the object, and setting the state the machine and the collisions will set (final position and its flag,
-//! blocked, the blocked and bump speeds, in-update, waiting for a path, the path's extra distance). The frame advances and the
+//! blocked, the blocked and bump speeds, in-update, waiting for a path, the path's extra distance). Batch A3 adds half the
+//! operations: the crate check, the victim (set, get, its position), the attitude, the state type, the ignored obstacle, the enter
+//! target, the mood matrix and its action adjustments, waking to target, the mood check times, `canAutoAcquireWhileStealthed`,
+//! `getNextMoodTarget` (by the AI or not, during idle or not), the morale bonus, `isIdle`/`isAttacking`/`isBusy`/
+//! `isClearingMines`/`isMovingAwayFrom`/`isMoving`, `notifyCrate`, the object's status bits and the move-out-of-the-way ids; over a
+//! scene that adds the other objects (which exist, which have an AI), the controlling player (none, human, computer) and its
+//! upgrades, the team's common target, the ability to attack (the hash), stealth, a container, the last damage, `TheAI`'s data,
+//! vision range and closest enemy, the current weapon's anti mask, three behavior modules' hordes, and the state machine's answers
+//! (its current state, idle/attack/busy, temporary state, goal object). The frame advances and the
 //! physics numbers change between operations. After every operation, compared: its result, its whole call log (every force,
 //! scrub, status, transform change, terrain, partition and pathfinder query, wake, group, line test, with arguments), and a dump
 //! of the AI (every data member the batch sets, the locomotor set with every locomotor's saved state, the path node by node with
@@ -43,9 +51,15 @@ use rts_lockstep_engine::common::base_type::{real_to_int, real_to_int_floor, Coo
 use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_HELD, DISABLED_UNMANNED};
 use rts_lockstep_engine::common::game_type::{ObjectId, PathfindLayer, LAYER_GROUND, LAYER_WALL};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, TYPE_TABLE};
+use rts_lockstep_engine::common::game_common::{AbleToAttackType, PlayerType};
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_DOZER, KINDOF_IMMOBILE, KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE,
+    KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
+    KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE,
 };
+use rts_lockstep_engine::logic::ai::ai_update_types::{
+    CanAttackResultValue, CommandSourceType, ATTACKRESULT_NOT_POSSIBLE, ATTACKRESULT_POSSIBLE, ATTACKRESULT_POSSIBLE_AFTER_MOVING,
+};
+use rts_lockstep_engine::logic::damage::DamageType;
 use rts_lockstep_engine::common::model_state::ModelConditionFlagType;
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::object_status_types::ObjectStatusTypes;
@@ -99,6 +113,12 @@ const L_LINE_PASSABLE: u32 = 45;
 const L_GROUND_PASSABLE: u32 = 46;
 const L_LAYER_FOR: u32 = 47;
 const L_EFFECTIVELY_DEAD: u32 = 48;
+const L_ADD_TARGETER: u32 = 60;
+const L_ABLE_TO_ATTACK: u32 = 61;
+const L_VISION_RANGE: u32 = 62;
+const L_CLOSEST_ENEMY: u32 = 63;
+const L_SET_BONUS: u32 = 64;
+const L_CLEAR_BONUS: u32 = 65;
 
 /// The map of `wrap_ai.cpp` (`MAP_W` x `MAP_H` cells from the origin).
 const MAP_W: i32 = 24;
@@ -290,6 +310,9 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_DOZER && m & 2 != 0)
             || (kind == KINDOF_IMMOBILE && m & 4 != 0)
             || (kind == KINDOF_PRODUCED_AT_HELIPAD && m & 8 != 0)
+            || (kind == KINDOF_INFANTRY && m & 16 != 0)
+            || (kind == KINDOF_IGNORED_IN_GUI && m & 32 != 0)
+            || (kind == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT && m & 64 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -522,6 +545,127 @@ impl AiHost for Host {
     fn add_locomotor(&mut self, set: &mut LocomotorSet, template: NameKeyType) {
         let frame = self.env.loco.frame;
         set.add_locomotor(&self.store, template, &mut self.rng, frame).expect("the data names the store's templates");
+    }
+
+    // ---- batch A3 ----
+    fn object_exists(&self, id: ObjectId) -> bool {
+        (1..32).contains(&id) && (self.env.exist_mask >> id) & 1 != 0
+    }
+    fn ai_add_targeter(&mut self, target: ObjectId, targeter: ObjectId, add: bool) {
+        if self.object_exists(target) && (self.env.ai_mask >> target) & 1 != 0 {
+            self.l(L_ADD_TARGETER, &[1, targeter as u32, u32::from(add)]);
+        }
+    }
+    fn has_state_machine(&self) -> bool {
+        self.env.has_machine != 0
+    }
+    fn machine_current_state_id(&self) -> u32 {
+        self.env.machine_state as u32
+    }
+    fn machine_is_in_idle_state(&self) -> bool {
+        self.env.machine_idle != 0
+    }
+    fn machine_is_in_attack_state(&self) -> bool {
+        self.env.machine_attack != 0
+    }
+    fn machine_is_in_busy_state(&self) -> bool {
+        self.env.machine_busy != 0
+    }
+    fn machine_temporary_state(&self) -> u32 {
+        self.env.temp_state as u32
+    }
+    fn machine_goal_object(&self) -> ObjectId {
+        let id = self.env.goal_object;
+        if self.object_exists(id) { id } else { 0 }
+    }
+    fn is_effectively_dead(&self) -> bool {
+        self.env.effectively_dead != 0
+    }
+    fn controlling_player_type(&self) -> Option<PlayerType> {
+        match self.env.player_type {
+            0 => Some(PlayerType::Human),
+            1 => Some(PlayerType::Computer),
+            _ => None,
+        }
+    }
+    fn team_attack_common_target(&self) -> bool {
+        self.env.team_attack_common != 0
+    }
+    fn team_target_object(&self) -> ObjectId {
+        let id = self.env.team_target;
+        if self.object_exists(id) { id } else { 0 }
+    }
+    fn able_to_attack_specific_object(&mut self, t: AbleToAttackType, target: ObjectId, command_source: CommandSourceType) -> CanAttackResultValue {
+        let h = p1_hash(self.env.seed, 9, &[t as u32, target as u32, command_source as u32]);
+        let r = if pick(h, self.env.able_rate) {
+            ATTACKRESULT_POSSIBLE
+        } else if pick(p1_hash(self.env.seed, 10, &[h]), self.env.able_rate) {
+            ATTACKRESULT_POSSIBLE_AFTER_MOVING
+        } else {
+            ATTACKRESULT_NOT_POSSIBLE
+        };
+        self.l(L_ABLE_TO_ATTACK, &[t as u32, target as u32, command_source as u32, r as u32]);
+        r
+    }
+    fn stealth_granted_by_special_power(&self) -> Option<bool> {
+        (self.env.stealth >= 0).then_some(self.env.stealth > 0)
+    }
+    fn contained_by(&self) -> ObjectId {
+        let id = self.env.container_id;
+        if self.object_exists(id) { id } else { 0 }
+    }
+    fn container_passenger_allowed_to_fire(&self) -> bool {
+        self.env.container_allows_fire != 0
+    }
+    fn container_bounding_circle_radius(&self) -> f32 {
+        self.env.container_radius
+    }
+    fn last_damage_type_and_source(&self) -> (DamageType, ObjectId) {
+        (self.env.last_damage_type, self.env.last_damage_source)
+    }
+    fn ai_data_force_idle_frames(&self) -> u32 {
+        self.env.force_idle_frames as u32
+    }
+    fn ai_data_attack_uses_line_of_sight(&self) -> bool {
+        self.env.attack_uses_los != 0
+    }
+    fn ai_data_attack_ignore_insignificant_buildings(&self) -> bool {
+        self.env.ignore_insignificant != 0
+    }
+    fn adjusted_vision_range_for_object(&mut self, factors: i32) -> f32 {
+        let id = self.env.object_id;
+        self.l(L_VISION_RANGE, &[id as u32, factors as u32]);
+        self.env.vision_range
+    }
+    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>) -> ObjectId {
+        let id = self.env.object_id;
+        self.l(L_CLOSEST_ENEMY, &[id as u32, range.to_bits(), qualifiers, u32::from(info.is_some())]);
+        let e = self.env.closest_enemy;
+        if self.object_exists(e) { e } else { 0 }
+    }
+    fn current_weapon_anti_mask(&self) -> Option<i32> {
+        (self.env.weapon_anti >= 0).then_some(self.env.weapon_anti)
+    }
+    fn player_has_upgrade_complete(&self, name: &str) -> bool {
+        self.env.player_type >= 0
+            && match name {
+                "Upgrade_Nationalism" => self.env.upgrades & 1 != 0,
+                "Upgrade_Fanaticism" => self.env.upgrades & 2 != 0,
+                _ => false,
+            }
+    }
+    fn horde_update_interfaces(&self) -> Vec<(bool, bool)> {
+        let b = self.env.horde;
+        (0..3).filter(|i| (b >> i) & 1 != 0).map(|i| ((b >> (3 + i)) & 1 != 0, (b >> (6 + i)) & 1 != 0)).collect()
+    }
+    fn set_weapon_bonus_condition(&mut self, c: i32) {
+        self.l(L_SET_BONUS, &[c as u32]);
+    }
+    fn clear_weapon_bonus_condition(&mut self, c: i32) {
+        self.l(L_CLEAR_BONUS, &[c as u32]);
+    }
+    fn logic_random_value(&mut self, lo: i32, hi: i32) -> i32 {
+        self.rng.game_logic_random_value(lo, hi)
     }
 }
 
@@ -813,7 +957,44 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.pinch_rate = g.below(30);
     e.valid_pos_rate = g.below(101);
     e.goal = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), g.uniform(-5.0, 30.0)];
+    // batch A3
+    e.loco.kind_mask |= (g.below(8) as i32) << 4;
+    e.effectively_dead = i32::from(g.below(10) == 0);
+    e.player_type = [-1, 0, 1, 1, 0, 1, 0, 1, 1, 0][g.below(10) as usize];
+    e.team_attack_common = i32::from(g.below(2) == 0);
+    e.team_target = g.below(32) as i32;
+    e.able_rate = g.below(101);
+    e.stealth = g.below(3) as i32 - 1;
+    e.container_id = if g.below(3) == 0 { g.below(32) as i32 } else { 0 };
+    e.container_allows_fire = i32::from(g.below(2) == 0);
+    e.container_radius = g.uniform(0.0, 30.0);
+    e.last_damage_type = if g.below(4) == 0 { 10 } else { g.below(24) as i32 };
+    e.last_damage_source = g.below(32) as i32;
+    e.force_idle_frames = g.below(60) as i32;
+    e.attack_uses_los = i32::from(g.below(2) == 0);
+    e.ignore_insignificant = i32::from(g.below(2) == 0);
+    e.vision_range = if g.below(8) == 0 { -g.uniform(0.0, 10.0) } else { g.uniform(0.0, 300.0) };
+    e.closest_enemy = g.below(32) as i32;
+    e.weapon_anti = if g.below(4) == 0 { -1 } else { g.below(256) as i32 };
+    e.upgrades = g.below(4) as i32;
+    e.horde = g.below(512) as i32;
+    e.exist_mask = g.u32() & !1;
+    e.ai_mask = g.u32();
+    e.has_machine = i32::from(g.below(10) != 0);
+    gen_machine(g, &mut e);
+    e.turrets = g.below(4) as i32;
     e
+}
+
+/// The state machine's answers (the scene's): the current state (often one the AI asks about), its flags, the temporary state,
+/// the goal object.
+fn gen_machine(g: &mut Gen, e: &mut Env) {
+    e.machine_state = [0, 0, 15, 21, 22, 23, 1, 10, 41, g.below(45) as i32][g.below(10) as usize];
+    e.machine_idle = i32::from(g.below(3) == 0);
+    e.machine_attack = i32::from(g.below(3) == 0);
+    e.machine_busy = i32::from(g.below(4) == 0);
+    e.temp_state = [999_999, 999_999, 23, 23, 1, 0][g.below(6) as usize];
+    e.goal_object = g.below(32) as i32;
 }
 
 /// The physics numbers and the frame between operations.
@@ -838,6 +1019,25 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     if g.below(10) == 0 {
         e.goal = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), g.uniform(-5.0, 30.0)];
     }
+    // batch A3
+    if g.below(6) == 0 {
+        gen_machine(g, e);
+    }
+    if g.below(10) == 0 {
+        e.closest_enemy = g.below(32) as i32;
+        e.team_target = g.below(32) as i32;
+        e.able_rate = g.below(101);
+    }
+    if g.below(15) == 0 {
+        e.effectively_dead ^= 1;
+    }
+    if g.below(10) == 0 {
+        e.horde = g.below(512) as i32;
+        e.upgrades = g.below(4) as i32;
+    }
+    if g.below(12) == 0 {
+        e.player_type = [-1, 0, 1, 1][g.below(4) as usize];
+    }
 }
 
 fn gen_point(g: &mut Gen) -> [f32; 3] {
@@ -845,7 +1045,7 @@ fn gen_point(g: &mut Gen) -> [f32; 3] {
 }
 
 /// One operation: the op number, its floats and its ints (`ref_ai_a2_op`'s).
-fn gen_op(g: &mut Gen, waypoint_heavy: bool) -> (i32, Vec<f32>, Vec<i32>) {
+fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32)) -> (i32, Vec<f32>, Vec<i32>) {
     let mut fa = vec![0.0f32; 64];
     let mut ia = vec![0i32; 64];
     let p = gen_point(g);
@@ -854,6 +1054,9 @@ fn gen_op(g: &mut Gen, waypoint_heavy: bool) -> (i32, Vec<f32>, Vec<i32>) {
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if g.below(2) == 0 {
+        // batch A3's members
+        33 + g.below(26) as i32
     } else {
         match g.below(100) {
         0..=29 => 0,
@@ -927,6 +1130,34 @@ fn gen_op(g: &mut Gen, waypoint_heavy: bool) -> (i32, Vec<f32>, Vec<i32>) {
         }
         31 => fa[3] = g.uniform(-3.2, 3.2),
         32 => ia[0] = [0, 1, 2, 3, 10, 40, 1000][g.below(7) as usize],
+        34 | 39 | 56 => ia[0] = if g.below(4) == 0 { 0 } else { g.below(32) as i32 },
+        43 => ia[0] = g.below(5) as i32,
+        46 => ia[0] = e.loco.frame as i32 + g.below(200) as i32 - 100,
+        48 => {
+            // upstream reads the controlling player unchecked when called by the AI (a crash without one): not generated
+            ia[0] = i32::from(e.player_type >= 0 && g.below(3) != 0);
+            ia[1] = i32::from(g.below(2) == 0);
+        }
+        54 => {
+            // an object that exists (upstream asks it its id)
+            let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
+            ia[0] = if ids.is_empty() { 0 } else { ids[g.below(ids.len() as u32) as usize] };
+            if g.below(2) == 0 {
+                // one of the move-out-of-the-way ids (op 58), if it exists
+                let id = [moving_away.0, moving_away.1][g.below(2) as usize];
+                if (e.exist_mask >> id) & 1 != 0 && id != 0 {
+                    ia[0] = id;
+                }
+            }
+        }
+        57 => {
+            ia[0] = [16, 23, 24, 7, 2][g.below(5) as usize];
+            ia[1] = g.below(2) as i32;
+        }
+        58 => {
+            ia[0] = g.below(32) as i32;
+            ia[1] = g.below(32) as i32;
+        }
         _ => {}
     }
     (op, fa, ia)
@@ -1059,6 +1290,76 @@ fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug
             h.next_call_frame = h.env.loco.frame.wrapping_add(ia[0] as u32);
             vec![]
         }
+        // batch A3 (an object argument is ia[0]'s object, none if the scene has none)
+        33 => vec![ai.check_for_crate_to_pickup(h) as u32],
+        34 => {
+            let v = if h.object_exists(ia[0]) { ia[0] } else { 0 };
+            ai.set_current_victim(h, v);
+            vec![]
+        }
+        35 => vec![ai.get_current_victim(h) as u32],
+        36 => match ai.get_current_victim_pos(h) {
+            Some(p) => vec![1, p.x.to_bits(), p.y.to_bits(), p.z.to_bits()],
+            None => vec![0],
+        },
+        37 => vec![ai.get_attitude() as u32],
+        38 => vec![ai.get_ai_state_type(h)],
+        39 => {
+            let o = if h.object_exists(ia[0]) { ia[0] } else { 0 };
+            ai.ignore_obstacle(o);
+            vec![]
+        }
+        40 => vec![ai.get_ignored_obstacle_id() as u32],
+        41 => vec![ai.get_enter_target(h) as u32],
+        42 => vec![ai.get_mood_matrix_value(h)],
+        43 => vec![ai.get_mood_matrix_action_adjustment(h, ia[0])],
+        44 => {
+            ai.wake_up_and_attempt_to_target(h);
+            vec![]
+        }
+        45 => {
+            ai.reset_next_mood_check_time(h);
+            vec![]
+        }
+        46 => {
+            ai.set_next_mood_check_time(ia[0] as u32);
+            vec![]
+        }
+        47 => b(ai.can_auto_acquire_while_stealthed(h)),
+        48 => vec![ai.get_next_mood_target(h, ia[0] != 0, ia[1] != 0) as u32],
+        49 => {
+            ai.evaluate_morale_bonus(h);
+            vec![]
+        }
+        50 => b(ai.is_idle(h)),
+        51 => b(ai.is_attacking(h)),
+        52 => b(ai.is_busy(h)),
+        53 => b(ai.is_clearing_mines(h)),
+        54 => {
+            if h.object_exists(ia[0]) {
+                b(ai.is_moving_away_from(h, ia[0]))
+            } else {
+                vec![]
+            }
+        }
+        55 => b(ai.is_moving(h)),
+        56 => {
+            ai.notify_crate(ia[0]);
+            vec![]
+        }
+        57 => {
+            if ia[1] != 0 {
+                h.status |= 1 << ia[0];
+            } else {
+                h.status &= !(1 << ia[0]);
+            }
+            vec![]
+        }
+        58 => {
+            ai.move_out_of_way1 = ia[0];
+            ai.move_out_of_way2 = ia[1];
+            vec![]
+        }
         _ => unreachable!(),
     }
 }
@@ -1071,7 +1372,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 33],
+    ops: [u64; 59],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -1079,6 +1380,10 @@ struct Checks {
     paths_followed: u64,
     cases: u64,
     ended_early: u64,
+    /// batch A3: mood targets found (`getNextMoodTarget` answering an object), victims found, enter targets found
+    mood_targets: u64,
+    victims: u64,
+    enter_targets: u64,
 }
 
 impl Checks {
@@ -1090,7 +1395,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 33],
+            ops: [0; 59],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -1098,6 +1403,9 @@ impl Checks {
             paths_followed: 0,
             cases: 0,
             ended_early: 0,
+            mood_targets: 0,
+            victims: 0,
+            enter_targets: 0,
         }
     }
 }
@@ -1143,7 +1451,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     }
 
     // the data's locomotor sets
-    let data = AiUpdateModuleData::default();
+    let mut data = AiUpdateModuleData::default();
     let mut sets_words = vec![0u32];
     {
         let mut map = data.locomotor_templates.write().unwrap();
@@ -1163,6 +1471,15 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             sets_words.push(n as u32);
             sets_words.extend(chosen.iter().map(|k| k.0));
             map.insert(set, chosen);
+        }
+    }
+    // batch A3: the auto-acquire bits, the mood check rate, the turrets
+    data.auto_acquire_enemies_when_idle = g.below(32);
+    data.mood_attack_check_rate = [0, 1, 60, 61, g.below(300)][g.below(5) as usize];
+    sets_words.extend([data.auto_acquire_enemies_when_idle, data.mood_attack_check_rate]);
+    for i in 0..2 {
+        if (host.env.turrets >> i) & 1 != 0 {
+            data.turret_data[i] = Some(Arc::new(rts_lockstep_engine::logic::ai::turret::TurretAiData::default()));
         }
     }
     let data = Arc::new(data);
@@ -1200,7 +1517,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let waypoint_heavy = g.below(8) == 0;
     for step in 0..60 {
         perturb(&mut g, &mut host.env);
-        let (op, mut fa, ia) = gen_op(&mut g, waypoint_heavy);
+        let (op, mut fa, ia) = gen_op(&mut g, &host.env, waypoint_heavy, (ai.move_out_of_way1, ai.move_out_of_way2));
         if op == 27 && fa[0] == -1.0e30 {
             let p = *host.thing.position();
             fa[0] = p.x + g.uniform(-0.6, 0.6);
@@ -1223,7 +1540,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let tag = || format!("seed {seed:#x} step {step} op {op} fa {:?} ia {:?}", &fa[..8], &ia[..8]);
         let mut ok = r == out;
         ck.results.eq(r.clone(), out.clone(), tag);
-        if !r.is_empty() && op != 0 && op != 7 && op != 21 {
+        if r.len() == 1 && r[0] <= 1 && matches!(op, 1 | 8..=11 | 14 | 22 | 47 | 50..=55) {
             ck.results_bug.eq(rust_op_bug_view(&r), out.clone(), tag);
         }
         ok &= rlog == log;
@@ -1251,6 +1568,12 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             if goal == LocoGoalType::None && *host.thing.position() != before_pos {
                 ck.final_pops += 1;
             }
+        }
+        match op {
+            48 if r[0] != 0 => ck.mood_targets += 1,
+            35 if r[0] != 0 => ck.victims += 1,
+            41 if r[0] != 0 => ck.enter_targets += 1,
+            _ => {}
         }
         if ai.cur_locomotor != before_loco {
             ck.loco_changes += 1;
@@ -1280,7 +1603,20 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
-/// # Results (2026-10-27, upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+/// # Results (2026-10-27, batch A3; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - 10,000 constructions and 600,000 operations, half of them batch A3's (about 10,600 of each of its 26): **0 mismatches** in the
+///   results, the call logs and the dumps. Reached: 1,359 mood targets, 1,489 victims, 1,582 enter targets.
+/// - Planted bugs: the result flip (124,159 of 124,159), the blocked frames (18,240 of 600,000); in the Rust source plants
+///   3220-3229, each caught: the crate looked up by its id (upstream clears it first), the targeter not told, the get-repaired state
+///   not an enter target, the turret ignored by the mood matrix, an aggressive move adjusted as alert, the random mood offset not
+///   asked for, its range one wider, the human's unfogged qualifier dropped, the horde's nationalism veto ignored, the second
+///   move-out-of-the-way id ignored (3229 survived the first run: nothing set those ids; op 58 sets them). A2's plants 3200-3214
+///   re-run against this mix: all caught.
+/// - Upstream defects kept: `checkForCrateToPickup` clears the crate's id before looking it up, so it never finds the crate;
+///   `getNextMoodTarget` reads the controlling player unchecked when called by the AI (not generated without one).
+///
+/// # Results (2026-10-27, batch A2; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - 10,000 constructions and 600,000 operations (165,208 `doLocomotor`, 38,505 new paths, 27,911 distances to the goal, ...):
 ///   **0 mismatches** in the results, the call logs and the dumps. No case ended early.
@@ -1304,8 +1640,9 @@ fn ai_update_a2_matches_upstream() {
     }
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
-         path frames {}; final-position moves {}; locomotor changes {}",
-        ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes
+         path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}",
+        ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
+        ck.enter_targets
     );
     ck.construction.finish();
     ck.results.finish();

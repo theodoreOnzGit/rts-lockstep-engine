@@ -13,7 +13,8 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 //! The enums and constants of `AIUpdate.h` that the AI's parts share (`p1w13-sonnet`, layer 10, batch T1), with
-//! `CommandSourceType` and `GuardMode` of `GameCommon.h` and `AttitudeType` of `AI.h` (batch A2). Values as upstream's:
+//! `CommandSourceType` and `GuardMode` of `GameCommon.h` and `AttitudeType` of `AI.h` (batch A2), `AIStateType` of `AIStateMachine.h`
+//! and the qualifiers and vision factors of `AI.h` (batch A3). Values as upstream's:
 //! several are saved ("you MUST NOT REMOVE OR CHANGE existing values").
 
 /// `FAST_AS_POSSIBLE`.
@@ -65,6 +66,26 @@ pub const AI_ALERT: AttitudeType = 1;
 pub const AI_AGGRESSIVE: AttitudeType = 2;
 pub const AI_INVALID: AttitudeType = 3;
 
+/// `AI_VISIONFACTOR_*` (AI.h).
+pub const AI_VISIONFACTOR_OWNERTYPE: i32 = 0x01;
+pub const AI_VISIONFACTOR_MOOD: i32 = 0x02;
+pub const AI_VISIONFACTOR_GUARDINNER: i32 = 0x04;
+
+/// `AI::CAN_SEE` .. `AI::UNFOGGED`: `findClosestEnemy`'s qualifiers.
+pub const AI_CAN_SEE: u32 = 1 << 0;
+pub const AI_CAN_ATTACK: u32 = 1 << 1;
+pub const AI_IGNORE_INSIGNIFICANT_BUILDINGS: u32 = 1 << 2;
+pub const AI_ATTACK_BUILDINGS: u32 = 1 << 3;
+pub const AI_WITHIN_ATTACK_RANGE: u32 = 1 << 4;
+pub const AI_UNFOGGED: u32 = 1 << 5;
+
+/// `enum CanAttackResult` (WeaponSet.h): "Worst scenario to best scenario".
+pub type CanAttackResultValue = i32;
+pub const ATTACKRESULT_NOT_POSSIBLE: CanAttackResultValue = 0;
+pub const ATTACKRESULT_INVALID_SHOT: CanAttackResultValue = 1;
+pub const ATTACKRESULT_POSSIBLE_AFTER_MOVING: CanAttackResultValue = 2;
+pub const ATTACKRESULT_POSSIBLE: CanAttackResultValue = 3;
+
 /// `enum GuardTargetType`.
 pub type GuardTargetType = i32;
 pub const GUARDTARGET_LOCATION: GuardTargetType = 0;
@@ -114,6 +135,54 @@ pub const MAA_AFFECT_RANGE_ALERT: u32 = 0x0000_0040;
 pub const MAA_AFFECT_RANGE_AGGRESSIVE: u32 = 0x0000_0080;
 pub const MAA_AFFECT_RANGE_BITMASK: u32 =
     MAA_AFFECT_RANGE_IGNORE_ALL | MAA_AFFECT_RANGE_WAIT_FOR_ATTACK | MAA_AFFECT_RANGE_ALERT | MAA_AFFECT_RANGE_AGGRESSIVE;
+
+/// `enum AIStateType` (AIStateMachine.h): the AI state machine's state ids, in upstream's order.
+pub type AiStateType = u32;
+pub const AI_IDLE: AiStateType = 0;
+pub const AI_MOVE_TO: AiStateType = 1;
+pub const AI_FOLLOW_WAYPOINT_PATH_AS_TEAM: AiStateType = 2;
+pub const AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS: AiStateType = 3;
+pub const AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT: AiStateType = 4;
+pub const AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT: AiStateType = 5;
+pub const AI_FOLLOW_PATH: AiStateType = 6;
+pub const AI_FOLLOW_EXITPRODUCTION_PATH: AiStateType = 7;
+pub const AI_WAIT: AiStateType = 8;
+pub const AI_ATTACK_POSITION: AiStateType = 9;
+pub const AI_ATTACK_OBJECT: AiStateType = 10;
+pub const AI_FORCE_ATTACK_OBJECT: AiStateType = 11;
+pub const AI_ATTACK_AND_FOLLOW_OBJECT: AiStateType = 12;
+pub const AI_DEAD: AiStateType = 13;
+pub const AI_DOCK: AiStateType = 14;
+pub const AI_ENTER: AiStateType = 15;
+pub const AI_GUARD: AiStateType = 16;
+pub const AI_HUNT: AiStateType = 17;
+pub const AI_WANDER: AiStateType = 18;
+pub const AI_PANIC: AiStateType = 19;
+pub const AI_ATTACK_SQUAD: AiStateType = 20;
+pub const AI_GUARD_TUNNEL_NETWORK: AiStateType = 21;
+pub const AI_GET_REPAIRED: AiStateType = 22;
+pub const AI_MOVE_OUT_OF_THE_WAY: AiStateType = 23;
+pub const AI_MOVE_AND_TIGHTEN: AiStateType = 24;
+pub const AI_MOVE_AND_EVACUATE: AiStateType = 25;
+pub const AI_MOVE_AND_EVACUATE_AND_EXIT: AiStateType = 26;
+pub const AI_MOVE_AND_DELETE: AiStateType = 27;
+pub const AI_ATTACK_AREA: AiStateType = 28;
+pub const AI_HACK_INTERNET: AiStateType = 29;
+pub const AI_ATTACK_MOVE_TO: AiStateType = 30;
+pub const AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS: AiStateType = 31;
+pub const AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM: AiStateType = 32;
+pub const AI_FACE_OBJECT: AiStateType = 33;
+pub const AI_FACE_POSITION: AiStateType = 34;
+pub const AI_RAPPEL_INTO: AiStateType = 35;
+pub const AI_COMBATDROP: AiStateType = 36;
+pub const AI_EXIT: AiStateType = 37;
+pub const AI_PICK_UP_CRATE: AiStateType = 38;
+pub const AI_MOVE_AWAY_FROM_REPULSORS: AiStateType = 39;
+pub const AI_WANDER_IN_PLACE: AiStateType = 40;
+pub const AI_BUSY: AiStateType = 41;
+pub const AI_EXIT_INSTANTLY: AiStateType = 42;
+pub const AI_GUARD_RETALIATE: AiStateType = 43;
+pub const NUM_AI_STATES: AiStateType = 44;
 
 #[cfg(test)]
 mod tests {

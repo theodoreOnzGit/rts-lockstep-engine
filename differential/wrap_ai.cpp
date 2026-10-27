@@ -19,6 +19,11 @@
 ** Locomotor build's handler, so ref_ai_a2_load runs INI::load's loop itself, sending each `Locomotor` block to this build's
 ** (renamed) handler.
 **
+** Batch A3 adds the victim, mood, morale and state-query members (ai_update_a3.inc), over more stand-ins: the scene's other objects
+** (ids 1..31; which exist, which have an AI), the controlling player and its upgrades, the team, the container, stealth, the last
+** damage, TheAI's data, vision range and closest enemy, the current weapon, three behavior modules' hordes, and the state machine's
+** answers (current and temporary state, idle/attack/busy, goal object).
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -67,11 +72,12 @@ class PolygonTrigger;
 class AttackPriorityInfo;
 class Waypoint;
 class TurretAIData;
-/* TurretAI (batch T1, its own build): the AI makes one per turret its data has; the scenes of this build have none */
+/* TurretAI (batch T1, its own build): the AI makes one per turret its data has; here an empty object, whose presence the mood
+** matrix asks */
 class TurretAI
 {
 public:
-	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) { abort(); }
+	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) {}
 };
 
 /* AIUpdateModuleData's members (AIUpdate.h), and its real findLocomotorTemplateVector (ai_update_a2.inc) */
@@ -106,8 +112,13 @@ public:
 	inline const AIStateMachine* getStateMachine() const { return m_stateMachine; }
 	inline const Coord3D* getGoalPosition() const { return getStateMachine()->getGoalPosition(); }	///< return the id of the current state of the machine
 	void setFinalPosition(const Coord3D *pos) { m_finalPosition = *pos; m_doFinalPosition = false;}
-	/* AIUpdate.cpp's getGroup (the AI's group): the scene's */
-	AIGroup *getGroup(void);
+	/* batch A3 */
+	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
+	UnsignedInt getNextMoodCheckTime() const { return m_nextMoodCheckTime; }
+	const LocomotorSet& getLocomotorSet(void) const {return m_locomotorSet;}
+	/* `virtual void addTargeter(ObjectID id, Bool add) { return; }`: what another object's AI does with it is its class's (logged) */
+	void addTargeter(ObjectID id, Bool add);
+	void notifyCrate(ObjectID id) { m_crateCreated = id; }
 
 	/* batch A2's members (ai_update_a2.inc) */
 	Real getCurLocomotorSpeed() const;
@@ -141,10 +152,37 @@ public:
 	void setLastCommandSource( CommandSourceType source );
 	Bool hasLocomotorForSurface(LocomotorSurfaceType surfaceType);
 
+	/* batch A3's members (ai_update_a3.inc) */
+	Object* checkForCrateToPickup();
+	void setCurrentVictim( const Object *victim );
+	Object *getCurrentVictim( void ) const;
+	const Coord3D *getCurrentVictimPos( void ) const;
+	AttitudeType getAttitude( void ) const;
+	AIStateType getAIStateType() const;
+	void ignoreObstacle( const Object *obj );
+	ObjectID getIgnoredObstacleID( void ) const;
+	Object* getEnterTarget();
+	UnsignedInt getMoodMatrixValue( void ) const;
+	UnsignedInt getMoodMatrixActionAdjustment( MoodMatrixAction action ) const;
+	void wakeUpAndAttemptToTarget( void );
+	void resetNextMoodCheckTime();
+	void setNextMoodCheckTime( UnsignedInt frame );
+	Bool canAutoAcquireWhileStealthed() const;
+	Object* getNextMoodTarget( Bool calledByAI, Bool calledDuringIdle );
+	void evaluateMoraleBonus( void );
+	Bool isIdle() const;
+	Bool isAttacking() const;
+	Bool isBusy() const;
+	Bool isClearingMines() const;
+	Bool isMovingAwayFrom(Object *obj) const;
+	Bool isMoving() const;
+	AIGroup *getGroup(void);
+
 #include "ai_update_members.inc"
 };
 
 #include "ai_update_a2.inc"
+#include "ai_update_a3.inc"
 
 #undef private
 #undef protected
@@ -173,7 +211,7 @@ void L(int code, std::initializer_list<unsigned> w)
 
 Real groundAt(Real x, Real y) { return g_aiEnv.ga * x + g_aiEnv.gb * y + g_aiEnv.gc; }
 
-/* batch P1's hash: the seed, a tag, the words (tests/differential_ai_update_a2.rs has the same function) */
+/* batch P1's hash: the seed, a tag, the words (tests/differential_ai_update.rs has the same function) */
 unsigned p1Hash(unsigned tag, std::initializer_list<unsigned> words)
 {
 	unsigned x = g_aiEnv.seed ^ (tag * 0x85ebca6bu);
@@ -194,6 +232,23 @@ TerrainLogic g_terrain;
 PartitionManager g_partition;
 AI g_ai;
 AIGroup g_group;
+/* batch A3: the other objects of the scene (ids 1..31), the AIs they may have, the objects' neighbours */
+Object g_others[32];
+alignas(16) unsigned char g_otherAiMem[sizeof(AIUpdateInterface)];
+AiData g_aiData;
+Player g_player;
+TeamTemplateInfo g_teamInfo;
+TeamPrototype g_teamPrototype;
+Team g_team;
+ContainModuleInterface g_contain;
+StealthUpdate g_stealth;
+Weapon g_weapon;
+DamageInfo g_lastDamage;
+UpgradeTemplate g_nationalism, g_fanaticism, g_otherUpgrade;
+UpgradeCenter g_upgradeCenter;
+HordeUpdateInterface g_horde[3];
+BehaviorModule g_modules[3];
+BehaviorModule *g_moduleList[4];
 AIStateMachine g_machine;
 Coord3D g_goal;
 UnsignedInt g_nextCallFrame = 0;		/* the AI module's sleepy update: its next call frame */
@@ -214,6 +269,7 @@ GameLogic *TheGameLogic = &g_gameLogic;
 TerrainLogic *TheTerrainLogic = &g_terrain;
 PartitionManager *ThePartitionManager = &g_partition;
 AI *TheAI = &g_ai;
+UpgradeCenter *TheUpgradeCenter = &g_upgradeCenter;
 
 Pathfinder *AI::pathfinder() { return (Pathfinder *)g_pathfinderMem; }
 
@@ -352,7 +408,11 @@ void PhysicsBehavior::setStickToGround(Bool stick) { L(LOG_SET_STICK, { (unsigne
 Bool PhysicsBehavior::getAllowToFall() const { return g_aiEnv.allowToFall != 0; }
 
 Real GeometryInfo::getMajorRadius() const { return g_aiEnv.majorRadius; }
-Real GeometryInfo::getBoundingCircleRadius() const { return g_aiEnv.boundingCircleRadius; }
+Real GeometryInfo::getBoundingCircleRadius() const
+{
+	/* batch A3: another object's (the container's) radius is the scene's container radius */
+	return this == &g_object.m_geometry ? g_aiEnv.boundingCircleRadius : g_aiEnv.containerRadius;
+}
 
 /* the owner's reaction to a transform change (Thing's pure virtual): logged with the NEW state */
 void Object::reactToTransformChange(const Matrix3D *oldMtx, const Coord3D *oldPos, Real oldAngle)
@@ -373,6 +433,7 @@ Object::Object()
 	m_cachedAltitudeAboveTerrainOrWater = 0.0f;
 	m_cacheFlags = 0;
 	m_status = 0;
+	m_otherId = INVALID_ID;
 }
 
 PhysicsBehavior *Object::getPhysics() { return g_aiEnv.hasPhysics ? &m_physics : 0; }
@@ -385,6 +446,10 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_DOZER) return (g_aiEnv.kindMask & 2) != 0;
 	if (t == KINDOF_IMMOBILE) return (g_aiEnv.kindMask & 4) != 0;
 	if (t == KINDOF_PRODUCED_AT_HELIPAD) return (g_aiEnv.kindMask & 8) != 0;
+	/* batch A3 */
+	if (t == KINDOF_INFANTRY) return (g_aiEnv.kindMask & 16) != 0;
+	if (t == KINDOF_IGNORED_IN_GUI) return (g_aiEnv.kindMask & 32) != 0;
+	if (t == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT) return (g_aiEnv.kindMask & 64) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -405,7 +470,7 @@ Bool Object::isDisabledByType(DisabledType type) const
 }
 void Object::setModelConditionState(ModelConditionFlagType a) { L(LOG_SET_MODEL_COND, { (unsigned)a }); }
 void Object::clearModelConditionState(ModelConditionFlagType a) { L(LOG_CLEAR_MODEL_COND, { (unsigned)a }); }
-ObjectID Object::getID() const { return (ObjectID)g_aiEnv.objectId; }
+ObjectID Object::getID() const { return m_otherId ? m_otherId : (ObjectID)g_aiEnv.objectId; }
 UnsignedByte Object::getCrusherLevel() const { return (UnsignedByte)g_aiEnv.crusherLevel; }
 void Object::setEffectivelyDead(Bool dead) { L(LOG_EFFECTIVELY_DEAD, { (unsigned)dead }); }
 
@@ -444,7 +509,110 @@ const Coord3D *AIStateMachine::getGoalPosition() const
 	return &g_goal;
 }
 const AIUpdateModuleData* AIUpdateInterface::getAIUpdateModuleData() const { return g_data; }
-AIGroup *AIUpdateInterface::getGroup(void) { return g_aiEnv.hasGroup ? &g_group : NULL; }
+
+/* ---- batch A3's stand-ins */
+namespace {
+Object *findObject(ObjectID id)
+{
+	if ((unsigned)id >= 1 && (unsigned)id < 32 && ((g_aiEnv.existMask >> id) & 1)) {
+		g_others[id].m_otherId = id;
+		return &g_others[id];
+	}
+	return NULL;
+}
+}  // namespace
+Object *GameLogic::findObjectByID(ObjectID id) const { return findObject(id); }
+Object *AIStateMachine::getGoalObject() { return findObject((ObjectID)g_aiEnv.goalObject); }
+StateID AIStateMachine::getCurrentStateID() const { return (StateID)g_aiEnv.machineState; }
+Bool AIStateMachine::isInIdleState() const { return g_aiEnv.machineIdle != 0; }
+Bool AIStateMachine::isInAttackState() const { return g_aiEnv.machineAttack != 0; }
+Bool AIStateMachine::isInBusyState() const { return g_aiEnv.machineBusy != 0; }
+StateID AIStateMachine::getTemporaryState(void) const { return (StateID)g_aiEnv.tempState; }
+void AIUpdateInterface::addTargeter(ObjectID id, Bool add)
+{
+	/* (only another object's AI is asked) */
+	L(LOG_ADD_TARGETER, { (unsigned)(this == g_ai_update ? 0 : 1), (unsigned)id, (unsigned)add });
+}
+const AiData *AI::getAiData()
+{
+	g_aiData.m_forceIdleFramesCount = (UnsignedInt)g_aiEnv.forceIdleFrames;
+	g_aiData.m_attackUsesLineOfSight = g_aiEnv.attackUsesLOS != 0;
+	g_aiData.m_attackIgnoreInsignificantBuildings = g_aiEnv.ignoreInsignificant != 0;
+	return &g_aiData;
+}
+Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToConsider)
+{
+	L(LOG_VISION_RANGE, { (unsigned)object->getID(), (unsigned)factorsToConsider });
+	return g_aiEnv.visionRange;
+}
+Object *AI::findClosestEnemy(const Object *me, Real range, UnsignedInt qualifiers, const AttackPriorityInfo *info, PartitionFilter *optionalFilter)
+{
+	L(LOG_CLOSEST_ENEMY, { (unsigned)me->getID(), bitsOf(range), qualifiers, info ? 1u : 0u });
+	return findObject((ObjectID)g_aiEnv.closestEnemy);
+}
+const DamageInfo *BodyModuleInterface::getLastDamageInfo() const
+{
+	g_lastDamage.in.m_damageType = (DamageType)g_aiEnv.lastDamageType;
+	g_lastDamage.in.m_sourceID = (ObjectID)g_aiEnv.lastDamageSource;
+	return &g_lastDamage;
+}
+const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &name)
+{
+	if (name == "Upgrade_Nationalism") return &g_nationalism;
+	if (name == "Upgrade_Fanaticism") return &g_fanaticism;
+	return &g_otherUpgrade;
+}
+PlayerType Player::getPlayerType() const { return (PlayerType)g_aiEnv.playerType; }
+Bool Player::hasUpgradeComplete(const UpgradeTemplate *t)
+{
+	return (t == &g_nationalism && (g_aiEnv.upgrades & 1)) || (t == &g_fanaticism && (g_aiEnv.upgrades & 2));
+}
+const TeamTemplateInfo *TeamPrototype::getTemplateInfo() const { g_teamInfo.m_attackCommonTarget = g_aiEnv.teamAttackCommon != 0; return &g_teamInfo; }
+const TeamPrototype *Team::getPrototype() { return &g_teamPrototype; }
+Object *Team::getTeamTargetObject() { return findObject((ObjectID)g_aiEnv.teamTarget); }
+Bool ContainModuleInterface::isPassengerAllowedToFire(ObjectID id) const { return g_aiEnv.containerAllowsFire != 0; }
+Bool StealthUpdate::isGrantedBySpecialPower() { return g_aiEnv.stealth > 0; }
+Int Weapon::getAntiMask() const { return g_aiEnv.weaponAnti; }
+Bool HordeUpdateInterface::isInHorde() const { return (g_aiEnv.horde >> (3 + m_index)) & 1; }
+Bool HordeUpdateInterface::isAllowedNationalism() const { return (g_aiEnv.horde >> (6 + m_index)) & 1; }
+HordeUpdateInterface *BehaviorModule::getHordeUpdateInterface()
+{
+	if (!((g_aiEnv.horde >> m_index) & 1)) return NULL;
+	g_horde[m_index].m_index = m_index;
+	return &g_horde[m_index];
+}
+Bool Object::isEffectivelyDead() const { return g_aiEnv.effectivelyDead != 0; }
+Player *Object::getControllingPlayer() const { return g_aiEnv.playerType >= 0 ? &g_player : NULL; }
+Team *Object::getTeam() { return &g_team; }
+CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType commandSource) const
+{
+	unsigned h = p1Hash(9, { (unsigned)t, (unsigned)target->getID(), (unsigned)commandSource });
+	CanAttackResult r = p1Pick(h, g_aiEnv.ableRate) ? ATTACKRESULT_POSSIBLE
+		: p1Pick(p1Hash(10, { h }), g_aiEnv.ableRate) ? ATTACKRESULT_POSSIBLE_AFTER_MOVING : ATTACKRESULT_NOT_POSSIBLE;
+	L(LOG_ABLE_TO_ATTACK, { (unsigned)t, (unsigned)target->getID(), (unsigned)commandSource, (unsigned)r });
+	return r;
+}
+Object *Object::getContainedBy() { return m_otherId ? NULL : findObject((ObjectID)g_aiEnv.containerId); }
+ContainModuleInterface *Object::getContain() const { return &g_contain; }
+StealthUpdate *Object::getStealth() const { return g_aiEnv.stealth >= 0 ? &g_stealth : NULL; }
+Weapon *Object::getCurrentWeapon() { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
+const Weapon *Object::getCurrentWeapon() const { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
+BehaviorModule **Object::getBehaviorModules()
+{
+	for (int i = 0; i < 3; ++i) { g_modules[i].m_index = i; g_moduleList[i] = &g_modules[i]; }
+	g_moduleList[3] = NULL;
+	return g_moduleList;
+}
+CollideModuleInterface *BehaviorModule::getCollide() { abort(); }
+Bool CollideModuleInterface::wouldLikeToCollideWith(const Object *other) const { abort(); }
+void Object::setWeaponBonusCondition(WeaponBonusConditionType wst) { L(LOG_SET_BONUS, { (unsigned)wst }); }
+void Object::clearWeaponBonusCondition(WeaponBonusConditionType wst) { L(LOG_CLEAR_BONUS, { (unsigned)wst }); }
+AIGroup *Object::getGroup() { return g_aiEnv.hasGroup ? &g_group : NULL; }
+AIUpdateInterface *Object::getAI()
+{
+	if (!m_otherId) return g_ai_update;
+	return ((g_aiEnv.aiMask >> m_otherId) & 1) ? (AIUpdateInterface *)g_otherAiMem : NULL;
+}
 
 /* ---- the driver -------------------------------------------------------------------------------------------------------------- */
 
@@ -456,6 +624,8 @@ void setScene(const AiEnv *env)
 	g_aiEnv = *env;
 	TheGlobalData->m_gravity = env->gravity;
 	TheGlobalData->m_movementPenaltyDamageState = env->penalty;
+	/* batch A3: the AI's state machine (the stand-in), or none */
+	if (g_ai_update) g_ai_update->m_stateMachine = env->hasMachine ? &g_machine : NULL;
 }
 
 void putU32(std::vector<unsigned> &v, unsigned x) { v.push_back(x); }
@@ -585,7 +755,8 @@ int ref_ai_a2_load(const char *filename, int loadType)
 	return 0;
 }
 
-/* A new AI: its data's locomotor sets from `sets` (count, then per set: its type, its number of templates, their names' keys),
+/* A new AI: its data's locomotor sets from `sets` (count, then per set: its type, its number of templates, their names' keys,
+** then (batch A3) the data's auto-acquire bits and mood check rate),
 ** the scene `env`, the object at the scene's start (identity, at `pos` facing `angle`), the AI made by its constructor
 ** (AIUpdateInterface(NULL, NULL)); the log of the construction is returned (length in words, may exceed cap). */
 int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, float angle, unsigned *log, int cap)
@@ -605,7 +776,10 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 			vec.push_back(lt);
 		}
 	}
-	for (int i = 0; i < MAX_TURRETS; ++i) g_data->m_turretData[i] = NULL;
+	/* the data's turrets (the scene's bits; TurretAI is an empty stand-in) */
+	for (int i = 0; i < MAX_TURRETS; ++i) g_data->m_turretData[i] = ((g_aiEnv.turrets >> i) & 1) ? (const TurretAIData *)&g_aiEnv : NULL;
+	g_data->m_autoAcquireEnemiesWhenIdle = sets[k++];
+	g_data->m_moodAttackCheckRate = sets[k++];
 	g_object = Object();
 	++g_aiQuiet;
 	Coord3D p = { pos[0], pos[1], pos[2] };
@@ -613,6 +787,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_object.setOrientation(angle);
 	--g_aiQuiet;
 	g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL);
+	g_ai_update->m_stateMachine = g_aiEnv.hasMachine ? &g_machine : NULL;
 	int n = (int)g_aiLog->size();
 	if (n <= cap && n > 0) memcpy(log, &(*g_aiLog)[0], 4 * n);
 	return n;
@@ -687,6 +862,35 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 31: g_object.setPosition(&p); g_object.setOrientation(fa[3]); break;
 	/* the sleep the AI's update returned (the update loop's, not yet translated): its next call, ia[0] frames from now */
 	case 32: g_nextCallFrame = TheGameLogic->getFrame() + (UnsignedInt)ia[0]; break;
+	/* batch A3 (an object argument is ia[0]'s object, NULL if the scene has none) */
+	case 33: { Object *o = ai->checkForCrateToPickup(); r.push_back(o ? (unsigned)o->getID() : 0u); break; }
+	case 34: ai->setCurrentVictim(findObject((ObjectID)ia[0])); break;
+	case 35: { Object *o = ai->getCurrentVictim(); r.push_back(o ? (unsigned)o->getID() : 0u); break; }
+	case 36: { const Coord3D *q = ai->getCurrentVictimPos(); r.push_back(q ? 1u : 0u); if (q) putPos(r, *q); break; }
+	case 37: r.push_back((unsigned)ai->getAttitude()); break;
+	case 38: r.push_back((unsigned)ai->getAIStateType()); break;
+	case 39: ai->ignoreObstacle(findObject((ObjectID)ia[0])); break;
+	case 40: r.push_back((unsigned)ai->getIgnoredObstacleID()); break;
+	case 41: { Object *o = ai->getEnterTarget(); r.push_back(o ? (unsigned)o->getID() : 0u); break; }
+	case 42: r.push_back(ai->getMoodMatrixValue()); break;
+	case 43: r.push_back(ai->getMoodMatrixActionAdjustment((MoodMatrixAction)ia[0])); break;
+	case 44: ai->wakeUpAndAttemptToTarget(); break;
+	case 45: ai->resetNextMoodCheckTime(); break;
+	case 46: ai->setNextMoodCheckTime((UnsignedInt)ia[0]); break;
+	case 47: r.push_back(ai->canAutoAcquireWhileStealthed() ? 1u : 0u); break;
+	case 48: { Object *o = ai->getNextMoodTarget(ia[0] != 0, ia[1] != 0); r.push_back(o ? (unsigned)o->getID() : 0u); break; }
+	case 49: ai->evaluateMoraleBonus(); break;
+	case 50: r.push_back(ai->isIdle() ? 1u : 0u); break;
+	case 51: r.push_back(ai->isAttacking() ? 1u : 0u); break;
+	case 52: r.push_back(ai->isBusy() ? 1u : 0u); break;
+	case 53: r.push_back(ai->isClearingMines() ? 1u : 0u); break;
+	case 54: { Object *o = findObject((ObjectID)ia[0]); if (o) r.push_back(ai->isMovingAwayFrom(o) ? 1u : 0u); break; }
+	case 55: r.push_back(ai->isMoving() ? 1u : 0u); break;
+	case 56: ai->notifyCrate((ObjectID)ia[0]); break;
+	/* the object's status bit ia[0] set to ia[1] (the object's other modules', quietly) */
+	case 57: if (ia[1]) g_object.m_status |= 1ULL << ia[0]; else g_object.m_status &= ~(1ULL << ia[0]); break;
+	/* the ids privateMoveAwayFromUnit sets (not yet translated) */
+	case 58: ai->m_moveOutOfWay1 = (ObjectID)ia[0]; ai->m_moveOutOfWay2 = (ObjectID)ia[1]; break;
 	}
 	for (size_t i = 0; i < r.size(); ++i) out[i] = r[i];
 	int n = (int)g_aiLog->size();

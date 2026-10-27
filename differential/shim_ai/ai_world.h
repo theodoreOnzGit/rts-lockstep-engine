@@ -17,6 +17,7 @@
 
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"
+#include "Common/GameCommon.h"
 #include "matrix3d.h"
 #include "vector3.h"
 #include "locomotor_gen_defs.h"
@@ -38,7 +39,8 @@ struct AiEnv
 	Real vel[3];
 	Real velMag, fwd2d, fwd3d, mass;
 	Int layer;
-	Int kindMask;			/* bit 0 KINDOF_PROJECTILE, bit 1 KINDOF_DOZER, bit 2 KINDOF_IMMOBILE, bit 3 KINDOF_PRODUCED_AT_HELIPAD */
+	Int kindMask;			/* bit 0 KINDOF_PROJECTILE, bit 1 KINDOF_DOZER, bit 2 KINDOF_IMMOBILE, bit 3 KINDOF_PRODUCED_AT_HELIPAD;
+					** (batch A3) bit 4 KINDOF_INFANTRY, bit 5 KINDOF_IGNORED_IN_GUI, bit 6 KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT */
 	Real deckHeight, majorRadius, boundingCircleRadius;
 	Int disabledHeld;
 	/* terrain: ground(x, y) = ga*x + gb*y + gc; water over every point with x < wx at height wz;
@@ -58,6 +60,30 @@ struct AiEnv
 	UnsignedInt seed, lineRate, groundRate, cliffRate, pinchRate, validPosRate;
 	/* the state machine's goal position */
 	Real goal[3];
+	/* ---- batch A3 */
+	Int effectivelyDead;
+	Int playerType;			/* the controlling player's type; -1: none */
+	Int teamAttackCommon;		/* the team's template's m_attackCommonTarget */
+	Int teamTarget;			/* the team's target object (0: none) */
+	UnsignedInt ableRate;		/* getAbleToAttackSpecificObject: possible at this rate (the hash), else after moving at it, else not */
+	Int stealth;			/* -1: no stealth module; else isGrantedBySpecialPower */
+	Int containerId;		/* the object containing this one (0: none) */
+	Int containerAllowsFire;
+	Real containerRadius;		/* the container's bounding circle radius */
+	Int lastDamageType, lastDamageSource;
+	Int forceIdleFrames, attackUsesLOS, ignoreInsignificant;	/* TheAI->getAiData()'s */
+	Real visionRange;		/* TheAI->getAdjustedVisionRangeForObject's answer */
+	Int closestEnemy;		/* TheAI->findClosestEnemy's answer (0: none) */
+	Int weaponAnti;			/* the current weapon's anti mask; -1: no current weapon */
+	Int upgrades;			/* the controlling player's completed upgrades: bit 0 nationalism, bit 1 fanaticism */
+	Int horde;			/* three behavior modules: bits 0-2 with a horde interface, 3-5 in a horde, 6-8 allowed nationalism */
+	UnsignedInt existMask;		/* the objects 1..31 that exist (TheGameLogic->findObjectByID) */
+	UnsignedInt aiMask;		/* of those, the ones with an AI */
+	Int hasMachine;			/* the AI's state machine exists */
+	Int machineState, machineIdle, machineAttack, machineBusy;	/* its current state's id and isIdle, isAttack, isBusy */
+	Int tempState;			/* its temporary state's id (INVALID_STATE_ID: none) */
+	Int goalObject;			/* its goal object (0: none) */
+	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
 extern AiEnv g_aiEnv;
@@ -72,7 +98,8 @@ enum
 	LOG_GROUND_HEIGHT = 20, LOG_LAYER_HEIGHT, LOG_UNDERWATER, LOG_HIGHEST_LAYER, LOG_STRUCT_HEIGHT,
 	LOG_VALID_TERRAIN,
 	LOG_SET_WAKE = 40, LOG_GROUP_SPEED, LOG_UPDATE_LAYER, LOG_VALID_POSITION, LOG_DISTANCE_SQUARED, LOG_LINE_PASSABLE,
-	LOG_GROUND_PASSABLE, LOG_LAYER_FOR, LOG_EFFECTIVELY_DEAD
+	LOG_GROUND_PASSABLE, LOG_LAYER_FOR, LOG_EFFECTIVELY_DEAD,
+	LOG_ADD_TARGETER = 60, LOG_ABLE_TO_ATTACK, LOG_VISION_RANGE, LOG_CLOSEST_ENEMY, LOG_SET_BONUS, LOG_CLEAR_BONUS
 };
 
 class GlobalData
@@ -83,10 +110,13 @@ public:
 };
 extern GlobalData *TheGlobalData;
 
+class Object;
 class GameLogic
 {
 public:
 	UnsignedInt getFrame() const;
+	/* batch A3: the scene's objects */
+	Object *findObjectByID(ObjectID id) const;
 };
 extern GameLogic *TheGameLogic;
 
@@ -116,17 +146,41 @@ public:
 extern PartitionManager *ThePartitionManager;
 
 class Pathfinder;
+class AttackPriorityInfo;
+class PartitionFilter;
+/* batch A3: TheAI->getAiData()'s fields the AI reads */
+struct AiData
+{
+	UnsignedInt m_forceIdleFramesCount;
+	Bool m_attackUsesLineOfSight;
+	Bool m_attackIgnoreInsignificantBuildings;
+};
 class AI
 {
 public:
 	Pathfinder *pathfinder();
+	/* batch A3 */
+	const AiData *getAiData();
+	Real getAdjustedVisionRangeForObject(const Object *object, Int factorsToConsider);
+#include "ai_qualifiers.inc"
+	Object *findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers,
+		const AttackPriorityInfo *info=NULL, PartitionFilter *optionalFilter=NULL);
 };
 extern AI *TheAI;
+
+/* batch A3: the damage info's input as the AI reads it */
+class DamageInfo
+{
+public:
+	struct { DamageType m_damageType; ObjectID m_sourceID; } in;
+};
 
 class BodyModuleInterface
 {
 public:
 	BodyDamageType getDamageState() const;
+	/* batch A3 */
+	const DamageInfo *getLastDamageInfo() const;
 };
 
 class PhysicsBehavior
@@ -164,6 +218,45 @@ struct ObjectStatusMaskType
 };
 inline ObjectStatusMaskType makeObjectStatusMask(Int bit) { ObjectStatusMaskType m; m.m_bits = 1ULL << bit; return m; }
 #define MAKE_OBJECT_STATUS_MASK(k) makeObjectStatusMask(k)
+
+/* batch A3: the object's neighbours the AI reads, each answering from the scene */
+/* (UpgradeTemplate and UpgradeCenter: the shared shim's Common/Upgrade.h, renamed by PreRTS.h; the wrapper defines findUpgrade) */
+#include "Common/Upgrade.h"
+class Player
+{
+public:
+	PlayerType getPlayerType() const;
+	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate);
+};
+struct TeamTemplateInfo { Bool m_attackCommonTarget; };
+class TeamPrototype { public: const TeamTemplateInfo *getTemplateInfo() const; };
+class Team
+{
+public:
+	const TeamPrototype *getPrototype();
+	Object *getTeamTargetObject();
+};
+class ContainModuleInterface { public: Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const; };
+class StealthUpdate { public: Bool isGrantedBySpecialPower(); };
+class Weapon { public: Int getAntiMask() const; };
+class HordeUpdateInterface
+{
+public:
+	Bool isInHorde() const;
+	Bool isAllowedNationalism() const;
+	int m_index;
+};
+class CollideModuleInterface { public: Bool wouldLikeToCollideWith(const Object *other) const; };
+class BehaviorModule
+{
+public:
+	HordeUpdateInterface *getHordeUpdateInterface();
+	/* (checkForCrateToPickup's: never reached, it looks the crate up after clearing its id) */
+	CollideModuleInterface *getCollide();
+	int m_index;
+};
+class AIGroup;
+class AIUpdateInterface;
 
 /* what Object's m_template stands in for: Thing.cpp asks it isKindOf(KINDOF_STICK_TO_TERRAIN_SLOPE) */
 struct AiTemplateView
@@ -212,6 +305,24 @@ public:
 	/* Object.h: `void clearStatus( ObjectStatusMaskType objectStatus ) { setStatus( objectStatus, false ); }` */
 	void clearStatus(ObjectStatusMaskType objectStatus) { setStatus(objectStatus, false); }
 	void setEffectivelyDead(Bool dead);
+	/* batch A3 (Object.h: `Bool testStatus( ObjectStatusTypes bit ) const { return m_status.test( bit ); }`) */
+	Bool testStatus(ObjectStatusTypes bit) const { return getStatusBits().test(bit); }
+	Bool isEffectivelyDead() const;
+	Player *getControllingPlayer() const;
+	Team *getTeam();
+	CanAttackResult getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType commandSource) const;
+	Object *getContainedBy();
+	ContainModuleInterface *getContain() const;
+	StealthUpdate *getStealth() const;
+	Weapon *getCurrentWeapon();
+	const Weapon *getCurrentWeapon() const;
+	BehaviorModule **getBehaviorModules();
+	void setWeaponBonusCondition(WeaponBonusConditionType wst);
+	void clearWeaponBonusCondition(WeaponBonusConditionType wst);
+	AIGroup *getGroup();
+	AIUpdateInterface *getAI();
+	/* 0: the AI's own object; else the id of another object of the scene */
+	ObjectID m_otherId;
 
 	Object();
 
@@ -254,11 +365,21 @@ public:
 	void recomputeGroupSpeed();
 };
 
-/* AIStateMachine (AIStates.cpp, not yet translated): the goal position (the scene's) */
+/* AIStateMachine (AIStates.cpp, not yet translated): the goal position, the current and temporary states, the goal object (the
+** scene's) */
+typedef UnsignedInt StateID;
+enum { MACHINE_DONE_STATE_ID = 999998, INVALID_STATE_ID = 999999 };	/* StateMachine.h, verbatim */
 class AIStateMachine
 {
 public:
 	const Coord3D *getGoalPosition() const;
+	/* batch A3 */
+	StateID getCurrentStateID() const;
+	Bool isInIdleState() const;
+	Bool isInAttackState() const;
+	Bool isInBusyState() const;
+	StateID getTemporaryState(void) const;
+	Object *getGoalObject();
 };
 
 #endif
