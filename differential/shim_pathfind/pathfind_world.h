@@ -81,6 +81,8 @@ public:
 	Bool isClearGoalFiringLineOfSightTerrain(const Object *source, const Coord3D &pos, const Coord3D &victimPos) const;
 	/* batch P9 */
 	Bool isGoalPosWithinAttackRange(const Object *source, const Coord3D *goalPos, const Object *victim, const Coord3D *victimPos) const;
+	/* batch P10 */
+	Real getAttackDistance(const Object *source, const Object *victim, const Coord3D *victimPos) const;
 };
 /* batch P6: the controlling player (its type, an Int: GameCommon.h's PlayerType comes later) */
 class Player { public: Int getPlayerType() const { return m_type; } Int m_type; };
@@ -89,6 +91,9 @@ class GlobalData { public: Int m_debugAI; };
 extern GlobalData *TheGlobalData;
 enum { AI_DEBUG_NONE = 0, AI_DEBUG_PATHS, AI_DEBUG_TERRAIN, AI_DEBUG_CELLS, AI_DEBUG_GROUND_PATHS, AI_DEBUG_ZONES };
 Bool ClipLine2D(ICoord2D *p1, ICoord2D *p2, ICoord2D *c1, ICoord2D *c2, IRegion2D *clipRegion);
+/* batch P10 (the real one is linked, as ClipLine2D) */
+Bool LineInRegion(const Coord2D *p1, const Coord2D *p2, const Region2D *clipRegion);
+class LocomotorSet;
 /* batch P4: a unit's AI */
 class AIUpdateInterface
 {
@@ -107,6 +112,11 @@ public:
 	void setCurPathfindCell(const ICoord2D &c) { m_cur = c; }
 	bool m_ground, m_adjusts;
 	ICoord2D m_goal, m_cur;
+	/* batch P10: idle, and the AI's locomotors (the driver's) */
+	Bool isIdle() const { return m_idle; }
+	const LocomotorSet &getLocomotorSet() const { return *m_loco; }
+	bool m_idle;
+	const LocomotorSet *m_loco;
 };
 class BodyModuleInterface
 {

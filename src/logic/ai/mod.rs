@@ -6,6 +6,7 @@
 //! batch by batch. See `docs/phase1-porting-graph.md`.
 
 pub mod adjust;
+pub mod attack;
 pub mod cell;
 pub mod ground;
 pub mod hierarchical;

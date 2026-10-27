@@ -62,12 +62,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "hierarchical_p7.inc"
 #include "ground_p8.inc"
 #include "adjust_p9.inc"
-/* the Pathfinder's virtual searches not yet ported (later batches cut them; until then the vtable needs them): they find no path */
-Path *Pathfinder::findAttackPath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Object *victim,
-	const Coord3D* victimPos, const Weapon *weapon ) { return NULL; }
-Path *Pathfinder::findSafePath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D* repulsorPos1,
-	const Coord3D* repulsorPos2, Real repulsorRadius ) { return NULL; }
-Path *Pathfinder::patchPath( const Object *obj, const LocomotorSet& locomotorSet, Path *originalPath, Bool blocked ) { return NULL; }
+#include "attack_p10.inc"
 #undef private
 #undef protected
 
@@ -227,6 +222,12 @@ Bool Weapon::isGoalPosWithinAttackRange(const Object *source, const Coord3D *goa
 {
 	return p1Pick(p1Hash(34, { (unsigned)source->getID(), bitsOf(goalPos->x), bitsOf(goalPos->y), victim ? (unsigned)victim->getID() : 0xffffffffu,
 		bitsOf(victimPos->x), bitsOf(victimPos->y) }), g_p5Line);
+}
+/* batch P10: the attack distance (tag 35: the victim's id, or 0xffffffff; 0 to 149) */
+Real Weapon::getAttackDistance(const Object *source, const Object *victim, const Coord3D *victimPos) const
+{
+	return (Real)((p1Hash(35, { (unsigned)source->getID(), victim ? (unsigned)victim->getID() : 0xffffffffu, bitsOf(victimPos->x),
+		bitsOf(victimPos->y) }) >> 8) % 150u);
 }
 static PartitionManager s_pfPartition;
 PartitionManager *ThePartitionManager = &s_pfPartition;
@@ -1066,6 +1067,12 @@ Pathfinder *pfP5Setup(const unsigned *cfg, std::vector<Bridge> &bridges, int &no
 		o.m_ai.m_pathThrough = (w30 & 4) != 0;
 		o.m_kinds[KINDOF_DOZER] = (w30 & 8) != 0;
 		o.m_kinds[KINDOF_VEHICLE] = (w30 & 16) != 0;
+		/* batch P10: bit 5 idle, bits 6-10 the AI's locomotors' surfaces */
+		o.m_ai.m_idle = (w30 & 32) != 0;
+		static unsigned long long s_aiLoco[64][(sizeof(LocomotorSet) + 7) / 8];
+		memset(s_aiLoco[k % 64], 0, sizeof(LocomotorSet));
+		((LocomotorSet *)s_aiLoco[k % 64])->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)((w30 >> 6) & 31);
+		o.m_ai.m_loco = (const LocomotorSet *)s_aiLoco[k % 64];
 	}
 	/* the real constructor (batch P7: the vtable is emitted with findPath): the info pool, then reset; zeroed memory first, as the
 	** layers' unset m_layer is 0 in it */
@@ -1239,7 +1246,10 @@ int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 ** dest e f, none when e is 0xffffffff)  22 adjustTargetDestination(obj a, target b, target's position c d, dest e f)
 ** 23 adjustToPossibleDestination(obj a, dest c d)  24 pathDestination(obj a, dest c d, layer e, group dest f g)  25 tightenPath(obj a,
 ** from c d, to e f)  26 checkPathCost(as 25)  27 findClosestPath(obj a, from c d, to e f, blocked g & 1, path cost multiplier (g >> 1) / 4).
-** (21-24 append the result and the destination, 25 the position, 26 the cost, 27 the path and the destination.)
+** (21-24 append the result and the destination, 25 the position, 26 the cost, 27 the path and the destination.)  Batch P10's:
+** 28 findAttackPath(obj a, surfaces b, victim c, victim's position d e, from f g)  29 findSafePath(obj a, surfaces b, repulsors c d
+** and e f, radius g's float bits)  30 patchPath(obj a, surfaces b, of findPath(a, from c d, to e f), blocked g)
+** 31 getMoveAwayFromPath(obj a, other b, avoiding findPath(b, surfaces g & 31, from c d, to e f), and when g & 32 the path back too).
 ** Each op appends, after a word that counts the rest: the results (a path: its nodes, each position, layer, can-optimize and next
 ** optimized node's order + 1, then blocked-by-ally), tunneling, the lists' heads, the cumulative cell count, the first free info, the
 ** zone blocks' passable flags. */
@@ -1347,6 +1357,40 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 			Path *path = pf->findClosestPath(objAt(o[1]), *loco, &from, &to, (o[7] & 1) != 0, (Real)(o[7] >> 1) / 4.0f, false);
 			dumpPath(res, path);
 			putPos(res, to);
+			break;
+		}
+		/* batch P10 */
+		case 28: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			static Weapon s_weapon;
+			Coord3D victimPos = posOf(o[4], o[5]), from = posOf(o[6], o[7]);
+			dumpPath(res, pf->findAttackPath(objAt(o[1]), *loco, &from, objAt(o[3]), &victimPos, &s_weapon));
+			break;
+		}
+		case 29: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D r1 = posOf(o[3], o[4]), r2 = posOf(o[5], o[6]);
+			dumpPath(res, pf->findSafePath(objAt(o[1]), *loco, objAt(o[1])->getPosition(), &r1, &r2, floatOf(o[7])));
+			break;
+		}
+		case 30: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+			Coord3D from = posOf(o[3], o[4]), to = posOf(o[5], o[6]);
+			Path *original = pf->findPath(objAt(o[1]), *loco, &from, &to);
+			Path *patched = pf->patchPath(objAt(o[1]), *loco, original, o[7] != 0);
+			dumpPath(res, patched);
+			if (original) original->deleteInstance();
+			break;
+		}
+		case 31: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)(o[7] & 31);
+			Coord3D a = posOf(o[3], o[4]), b = posOf(o[5], o[6]);
+			Path *avoid = pf->findPath(objAt(o[2]), *loco, &a, &b);
+			Path *avoid2 = (o[7] & 32) ? pf->findPath(objAt(o[2]), *loco, &b, &a) : NULL;
+			res.push_back(avoid ? 1u : 0u);
+			if (avoid) dumpPath(res, pf->getMoveAwayFromPath(objAt(o[1]), objAt(o[2]), avoid, NULL, avoid2));
+			if (avoid) avoid->deleteInstance();
+			if (avoid2) avoid2->deleteInstance();
 			break;
 		}
 		case 6: {
