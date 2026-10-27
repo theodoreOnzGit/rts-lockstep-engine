@@ -63,7 +63,18 @@ public:
 /* batch P5: Object.h's crush test types */
 enum CrushSquishTestType { TEST_CRUSH_ONLY, TEST_SQUISH_ONLY, TEST_CRUSH_OR_SQUISH };
 /* batch P5: a locomotor's legal surfaces */
-class Locomotor { public: Int getLegalSurfaces() const { return m_legal; } Int m_legal; };
+/* batch P11: Locomotor.h's LocomotorAppearance, verbatim but for comments */
+enum LocomotorAppearance { LOCO_LEGS_TWO, LOCO_WHEELS_FOUR, LOCO_TREADS, LOCO_HOVER, LOCO_THRUST, LOCO_WINGS, LOCO_CLIMBER, LOCO_OTHER,
+	LOCO_MOTORCYCLE };
+class Locomotor
+{
+public:
+	Int getLegalSurfaces() const { return m_legal; }
+	Int m_legal;
+	/* batch P11 */
+	LocomotorAppearance getAppearance() const { return m_appearance; }
+	LocomotorAppearance m_appearance;
+};
 /* batch P5: a slaved update's slaver, behind a behaviour module */
 class SlavedUpdateInterface { public: ObjectID getSlaverID() const { return m_slaver; } ObjectID m_slaver; };
 class BehaviorModule
@@ -117,6 +128,18 @@ public:
 	const LocomotorSet &getLocomotorSet() const { return *m_loco; }
 	bool m_idle;
 	const LocomotorSet *m_loco;
+	/* batch P11: the activity moveAllies asks, its request (logged, and the unit then moving), the building an aircraft does not path
+	** around, the current locomotor (a winged one or none), and the queue's pathfind (the driver's) */
+	Bool isMoving() const { return m_moving; }
+	Bool isAttacking() const { return m_attacking; }
+	Bool isBusy() const { return m_busy; }
+	void aiMoveAwayFromUnit(Object *obj, Int cmdSource); /* (a CommandSourceType: GameCommon.h comes later) */
+	ObjectID getBuildingToNotPathAround() const { return m_avoid; }
+	Locomotor *getCurLocomotor() const { return m_wings ? const_cast<Locomotor *>(&m_wingsLoco) : NULL; }
+	void doPathfind(class Pathfinder *pathfinder);
+	bool m_moving, m_attacking, m_busy, m_wings;
+	ObjectID m_avoid, m_owner;
+	Locomotor m_wingsLoco;
 };
 class BodyModuleInterface
 {
@@ -186,6 +209,9 @@ public:
 	const Weapon *getCurrentWeapon() const { return m_hasWeapon ? &m_weapon : NULL; }
 	/* batch P6 */
 	Player *getControllingPlayer() const { return m_player; }
+	/* batch P11 */
+	Bool testStatus(ObjectStatusTypes bit) const { return bit == OBJECT_STATUS_IS_USING_ABILITY && m_usingAbility; }
+	bool m_usingAbility;
 	void attemptDamage(DamageInfo *info);
 	Object *getNextObject() { return m_next; }
 	/* batch P3: a wall piece's place and geometry */
@@ -269,6 +295,8 @@ public:
 	Bool objectInteractsWithBridgeEnd(Object *obj, Int layer) const;
 	/* batch P6 */
 	Real getGroundHeight(Real x, Real y, Coord3D *normal = NULL) const;
+	/* batch P11 */
+	void getExtent(Region3D *extent) const;
 };
 extern TerrainLogic *TheTerrainLogic;
 class GameLogic

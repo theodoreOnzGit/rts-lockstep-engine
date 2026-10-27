@@ -13,6 +13,7 @@ pub mod hierarchical;
 pub mod layer;
 pub mod movement;
 pub mod path;
+pub mod queue;
 pub mod search;
 pub mod pathfinder;
 pub mod zone;

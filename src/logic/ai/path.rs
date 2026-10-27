@@ -339,6 +339,19 @@ impl Path {
         self.is_optimized = false;
     }
 
+    /// `node->append(newNode)` of a new node at `pos` on `layer` (batch P11, `getAircraftPath`): the new node after `node`, before its
+    /// next; the path's tail is not moved (upstream's PathNode does not know its path). Returns the new node.
+    pub fn insert_after(&mut self, node: usize, pos: &Coord3D, layer: PathfindLayer) -> usize {
+        let new = self.new_node(pos, layer);
+        self.nodes[new].next = self.nodes[node].next;
+        self.nodes[new].prev = Some(node);
+        if let Some(n) = self.nodes[new].next {
+            self.nodes[n].prev = Some(new);
+        }
+        self.nodes[node].next = Some(new);
+        new
+    }
+
     /// `appendNode(pos, layer)`.
     pub fn append_node(&mut self, pos: &Coord3D, layer: PathfindLayer) {
         if self.is_optimized {

@@ -31,6 +31,10 @@
 //! but the calls upstream leaves undefined (anything on the map before `newMap`, the object-dereferencing calls without an object, a
 //! cell put on a list it is already linked into).
 //!
+//! **Gap found 2026-10-27 (batch P11):** no scene here made a unit infantry, so `checkForMovement`'s pass of infantry through
+//! infantry (`INFANTRY_MOVES_THROUGH_INFANTRY`, which AIPathfind.h defines) was missing from the port and unseen. P11's scenes set
+//! the kind, found it, and the port now has it (`differential_queue_p11.rs`, plant 3157).
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (`logic::modules::plant`), 10,000 cases: 12 of 12 caught. A first 3072 (`validMovementTerrain`'s layer-equals-
@@ -339,6 +343,10 @@ impl Host {
 }
 
 impl MovementHost for Host {
+    /// (P11's word 30 bit 11: P5's word 30 is 0)
+    fn is_infantry(&self, _id: ObjectId) -> bool {
+        false
+    }
     fn ignored_obstacle_id(&self, id: ObjectId) -> ObjectId {
         self.extra(id).ignored
     }

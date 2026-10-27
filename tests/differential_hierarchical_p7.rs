@@ -361,6 +361,10 @@ impl Host {
 }
 
 impl MovementHost for Host {
+    /// (P11's word 30 bit 11: never set here, as the C++ reads it)
+    fn is_infantry(&self, id: ObjectId) -> bool {
+        self.extra(id).w30 >> 11 & 1 != 0
+    }
     fn ignored_obstacle_id(&self, id: ObjectId) -> ObjectId {
         self.extra(id).ignored
     }

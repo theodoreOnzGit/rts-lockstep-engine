@@ -35,6 +35,8 @@
 /* AIPathfind.h names PathfindCell in PathfindCellInfo before declaring it (MSVC took its friend declaration as one) */
 class PathfindCell;
 #include "GameLogic/AIPathfind.h"
+/* batch P11: moveAllies' LatchRestore (the real header) */
+#include "Common/LatchRestore.h"
 /* CRCDebug.h's logging macros, as the release build has them (empty) */
 #ifndef CRCDEBUG_LOG
 #define CRCDEBUG_LOG(x)
@@ -63,6 +65,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "ground_p8.inc"
 #include "adjust_p9.inc"
 #include "attack_p10.inc"
+#include "queue_p11.inc"
 #undef private
 #undef protected
 
@@ -229,6 +232,26 @@ Real Weapon::getAttackDistance(const Object *source, const Object *victim, const
 	return (Real)((p1Hash(35, { (unsigned)source->getID(), victim ? (unsigned)victim->getID() : 0xffffffffu, bitsOf(victimPos->x),
 		bitsOf(victimPos->y) }) >> 8) % 150u);
 }
+/* batch P11: the allies asked to move (the unit, the one it moves from), the unit then moving; the queue's pathfind: findPath with the
+** AI's locomotors from the unit's place to a point near it (tag 38: 20 to 100 out in x and in y, each either way; never the unit's
+** cell, P7's upstream hang), the path dropped */
+std::vector<unsigned> g_moves;
+void AIUpdateInterface::aiMoveAwayFromUnit(Object *obj, Int cmdSource)
+{
+	g_moves.push_back((unsigned)m_owner); g_moves.push_back((unsigned)obj->getID());
+	m_moving = true;
+}
+void AIUpdateInterface::doPathfind(Pathfinder *pathfinder)
+{
+	Object *obj = TheGameLogic->findObjectByID(m_owner);
+	unsigned h = p1Hash(38, { (unsigned)m_owner, (unsigned)pathfinder->m_queuePRHead });
+	Coord3D to = *obj->getPosition();
+	Int dx = 20 + (Int)((h >> 8) % 81u), dy = 20 + (Int)((h >> 16) % 81u);
+	to.x += (Real)((h & 1) ? -dx : dx); to.y += (Real)((h & 2) ? -dy : dy);
+	Path *path = pathfinder->findPath(obj, *m_loco, obj->getPosition(), &to);
+	if (path) path->deleteInstance();
+}
+void TerrainLogic::getExtent(Region3D *extent) const { *extent = g_p4.extent; }
 static PartitionManager s_pfPartition;
 PartitionManager *ThePartitionManager = &s_pfPartition;
 Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, int dc, PartitionFilter **filters)
@@ -1073,6 +1096,14 @@ Pathfinder *pfP5Setup(const unsigned *cfg, std::vector<Bridge> &bridges, int &no
 		memset(s_aiLoco[k % 64], 0, sizeof(LocomotorSet));
 		((LocomotorSet *)s_aiLoco[k % 64])->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)((w30 >> 6) & 31);
 		o.m_ai.m_loco = (const LocomotorSet *)s_aiLoco[k % 64];
+		/* batch P11: bits 11 infantry, 12 harvester, 13 moving, 14 attacking, 15 busy, 16 using an ability, 17 a winged locomotor,
+		** 18-21 the building not pathed around (object index + 1, or none) */
+		o.m_kinds[KINDOF_INFANTRY] = (w30 >> 11) & 1; o.m_kinds[KINDOF_HARVESTER] = (w30 >> 12) & 1;
+		o.m_ai.m_moving = (w30 >> 13) & 1; o.m_ai.m_attacking = (w30 >> 14) & 1; o.m_ai.m_busy = (w30 >> 15) & 1;
+		o.m_usingAbility = (w30 >> 16) & 1; o.m_ai.m_wings = (w30 >> 17) & 1; o.m_ai.m_wingsLoco.m_appearance = LOCO_WINGS;
+		unsigned avoid = (w30 >> 18) & 15;
+		o.m_ai.m_avoid = avoid ? g_walls[(avoid - 1) % no].m_id : INVALID_ID;
+		o.m_ai.m_owner = o.m_id;
 	}
 	/* the real constructor (batch P7: the vtable is emitted with findPath): the info pool, then reset; zeroed memory first, as the
 	** layers' unset m_layer is 0 in it */
@@ -1250,6 +1281,10 @@ int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 ** 28 findAttackPath(obj a, surfaces b, victim c, victim's position d e, from f g)  29 findSafePath(obj a, surfaces b, repulsors c d
 ** and e f, radius g's float bits)  30 patchPath(obj a, surfaces b, of findPath(a, from c d, to e f), blocked g)
 ** 31 getMoveAwayFromPath(obj a, other b, avoiding findPath(b, surfaces g & 31, from c d, to e f), and when g & 32 the path back too).
+** Batch P11's: 32 moveAllies(obj a, findPath(a, surfaces b, from c d, to e f) (its nodes appended), blocked by an ally when g & 1)  33 moveAlliesAway-
+** FromDestination(obj a, destination b c) (both append the moves asked: each unit and the one it moves from)  34 getAircraftPath(obj a,
+** to b c, z d)  35 queueForPath(a's id, or a & 0xffff when a's bit 31 is set)  36 processPathfindQueue at frame a (then 0 again)  37 slowDoesPath-
+** Exist(obj a, from b c, to d e, ignoring f)  38 crc  39 xfer (both through an XferCRC: its CRC)  40 addWallPiece(a)  41 removeWallPiece(a).
 ** Each op appends, after a word that counts the rest: the results (a path: its nodes, each position, layer, can-optimize and next
 ** optimized node's order + 1, then blocked-by-ally), tunneling, the lists' heads, the cumulative cell count, the first free info, the
 ** zone blocks' passable flags. */
@@ -1393,6 +1428,66 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 			if (avoid2) avoid2->deleteInstance();
 			break;
 		}
+		/* batch P11 */
+		case 32: case 33: {
+			g_moves.clear();
+			if (o[0] == 32) {
+				loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
+				Coord3D from = posOf(o[3], o[4]), to = posOf(o[5], o[6]);
+				Path *path = pf->findPath(objAt(o[1]), *loco, &from, &to);
+				res.push_back(path ? 1u : 0u);
+				if (path) {
+					unsigned n = 0;
+					for (PathNode *nd = path->getFirstNode(); nd; nd = nd->getNext()) ++n;
+					res.push_back(n);
+					for (PathNode *nd = path->getFirstNode(); nd; nd = nd->getNext()) putPos(res, *nd->getPosition());
+					if (o[7] & 1) path->setBlockedByAlly(true);
+					res.push_back(pf->moveAllies(objAt(o[1]), path) ? 1u : 0u);
+					path->deleteInstance();
+				}
+			} else {
+				pf->moveAlliesAwayFromDestination(objAt(o[1]), posOf(o[2], o[3]));
+			}
+			res.push_back((unsigned)g_moves.size());
+			for (unsigned m : g_moves) res.push_back(m);
+			break;
+		}
+		case 34: {
+			Coord3D to = posOf(o[2], o[3]);
+			to.z = floatOf(o[4]);
+			dumpPath(res, pf->getAircraftPath(objAt(o[1]), &to));
+			break;
+		}
+		case 35: {
+			ObjectID id = (o[1] & 0x80000000u) ? (ObjectID)(o[1] & 0xffff) : objAt(o[1])->getID();
+			res.push_back(pf->queueForPath(id) ? 1u : 0u);
+			res.push_back((unsigned)pf->m_queuePRHead); res.push_back((unsigned)pf->m_queuePRTail);
+			break;
+		}
+		case 36: {
+			g_gameLogic.m_frame = o[1];
+			pf->processPathfindQueue();
+			g_gameLogic.m_frame = 0;
+			res.push_back((unsigned)pf->m_queuePRHead); res.push_back((unsigned)pf->m_queuePRTail);
+			res.push_back((unsigned)pf->m_logicalExtent.lo.x); res.push_back((unsigned)pf->m_logicalExtent.lo.y);
+			res.push_back((unsigned)pf->m_logicalExtent.hi.x); res.push_back((unsigned)pf->m_logicalExtent.hi.y);
+			break;
+		}
+		case 37: {
+			Coord3D from = posOf(o[2], o[3]), to = posOf(o[4], o[5]);
+			res.push_back(pf->slowDoesPathExist(objAt(o[1]), &from, &to, o[6] == 0xffffffffu ? INVALID_ID : objAt(o[6])->getID()) ? 1u : 0u);
+			break;
+		}
+		case 38: case 39: {
+			XferCRC x;
+			x.open(AsciiString("crc"));
+			if (o[0] == 38) pf->crc(&x); else pf->xfer(&x);
+			res.push_back(x.getCRC());
+			x.close();
+			break;
+		}
+		case 40: pf->addWallPiece(objAt(o[1])); break;
+		case 41: pf->removeWallPiece(objAt(o[1])); break;
 		case 6: {
 			Coord3D from = posOf(o[1], o[2]), to = posOf(o[3], o[4]);
 			pf->clip(&from, &to);

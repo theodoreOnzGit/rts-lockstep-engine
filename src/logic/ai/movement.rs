@@ -71,6 +71,8 @@ pub trait MovementHost: PathfinderHost {
     /// `getSlaverID(o)` (the first slaved update's slaver), `getContainerID(o)`.
     fn slaver_id(&self, id: ObjectId) -> ObjectId;
     fn container_id(&self, id: ObjectId) -> ObjectId;
+    /// `obj->isKindOf(KINDOF_INFANTRY)` (batch P11).
+    fn is_infantry(&self, id: ObjectId) -> bool;
     /// `ThePartitionManager->getClosestObject(pos, radius, FROM_BOUNDINGSPHERE_2D, {KINDOF_AIRCRAFT_PATH_AROUND})`.
     fn closest_tall_building(&self, pos: &Coord3D, radius: f32) -> Option<ObjectId>;
 }
@@ -256,7 +258,7 @@ impl Pathfinder {
     }
 
     /// `checkForMovement(obj, info)`: whether the unit may pass over the cells around (false off the map), counting the fixed allies
-    /// (each once) and noting fixed enemies it cannot crush, moving allies and goals.
+    /// (each once) and noting fixed enemies it cannot crush, moving allies and goals; infantry passes infantry.
     pub fn check_for_movement(&self, host: &impl MovementHost, obj: Option<&PfObjectFacts>, info: &mut CheckMovementInfo) -> bool {
         const MAX_ALLY: usize = 5;
         info.ally_fixed_count = 0;
@@ -299,6 +301,10 @@ impl Pathfinder {
                     }
                 }
                 let (true, Some(u)) = (check, unit) else { continue };
+                // (`INFANTRY_MOVES_THROUGH_INFANTRY`, which AIPathfind.h defines; batch P11)
+                if host.is_infantry(o.id) && host.is_infantry(u) && !plant(3157) {
+                    continue; // "Infantry can run through infantry."
+                }
                 if host.are_allies(o.id, u) {
                     if host.object(u).and_then(|f| f.ai).is_none() {
                         return false; // "can't path through not-idle units."
@@ -614,6 +620,11 @@ impl Pathfinder {
     /// `iterateCellsAlongLine(start, end, layer, proc, userData)`: Bresenham's line, the callback on each cell (see the module's
     /// notes); 0 when it completes or leaves the map.
     pub fn iterate_cells_along_line(&self, host: &impl MovementHost, start: ICoord2D, end: ICoord2D, layer: PathfindLayer, proc_: &mut LineProc) -> i32 {
+        self.walk_line(start, end, layer, |pf, from, to, x, y| pf.line_proc(host, proc_, from, to, x, y))
+    }
+
+    /// `iterateCellsAlongLine`'s walk, `f` its callback (`(pathfinder, from, to, to_x, to_y)`; nonzero ends the line).
+    pub fn walk_line(&self, start: ICoord2D, end: ICoord2D, layer: PathfindLayer, mut f: impl FnMut(&Self, Option<CellId>, CellId, i32, i32) -> i32) -> i32 {
         let delta_x = (end.x - start.x).abs();
         let delta_y = (end.y - start.y).abs();
         let (mut x, mut y) = (start.x, start.y);
@@ -638,7 +649,7 @@ impl Pathfinder {
         let mut from: Option<CellId> = None;
         for _ in 0..=numpixels {
             let Some(mut to) = self.get_cell(layer, x, y) else { return 0 };
-            let ret = self.line_proc(host, proc_, from, to, x, y);
+            let ret = f(self, from, to, x, y);
             if ret != 0 {
                 return ret;
             }
@@ -650,7 +661,7 @@ impl Pathfinder {
                 from = Some(to);
                 let Some(t) = self.get_cell(layer, x, y) else { return 0 };
                 to = t;
-                let ret = self.line_proc(host, proc_, from, to, x, y);
+                let ret = f(self, from, to, x, y);
                 if ret != 0 {
                     return ret;
                 }
