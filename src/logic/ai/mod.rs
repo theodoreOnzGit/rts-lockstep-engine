@@ -6,8 +6,10 @@
 //! batch by batch. See `docs/phase1-porting-graph.md`.
 
 pub mod adjust;
+pub mod ai_update_types;
 pub mod attack;
 pub mod cell;
+pub mod fire_state;
 pub mod ground;
 pub mod hierarchical;
 pub mod layer;
@@ -15,5 +17,6 @@ pub mod movement;
 pub mod path;
 pub mod queue;
 pub mod search;
+pub mod turret;
 pub mod pathfinder;
 pub mod zone;

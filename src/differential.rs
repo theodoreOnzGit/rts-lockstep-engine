@@ -1919,6 +1919,8 @@ extern "C" {
     pub fn ref_pf_p4_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     pub fn ref_pf_p5_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     pub fn ref_pf_p6_run(cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
+    /// p1w13-sonnet, layer 10 batch T1: TurretAI (differential/wrap_turret.cpp).
+    pub fn ref_turret_run(cfg: *const c_uint, data: *const c_uint, n: c_int, ops: *const c_uint, xfer_path: *const c_char, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, layer 10 batch P1: PathNode and Path (differential/wrap_pathfind.cpp).
     pub fn ref_pf_p1_run(xfer_path: *const c_char, cfg: *const c_uint, n: c_int, ops: *const c_uint, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, batch R77: BridgeBehavior (differential/l9_bridge_r77.inc).
