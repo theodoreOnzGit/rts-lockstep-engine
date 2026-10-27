@@ -5,8 +5,10 @@
 ** renames them and every class of AIPathfind.h), with the real BaseType.h, Snapshot.h, the Xfer classes, GameMemory and LocomotorSet.h.
 **
 ** Batch P4 (pathfinder_p4.inc): the Pathfinder's map, footprints, wall and units' cells, ref_pf_p4_run; the objects, the terrain
-** and the AI's data the stand-ins of pathfind_world.h. The Pathfinder is zeroed memory with its members constructed (its constructor
-** would need the vtable of the searches).
+** and the AI's data the stand-ins of pathfind_world.h. The Pathfinder is built by its real constructor in zeroed memory (since batch
+** P7 compiles findPath, the key function, the vtable is emitted here; the searches not yet ported are stubs, see below).
+** Batch P7 (hierarchical_p7.inc): findPath, the hierarchical search, findBrokenBridge, the quick checks, ref_pf_p7_run; and the
+** Snapshot members (crc, xfer, loadPostProcess).
 ** Batch P3 (zone_p3.inc): the zone helpers, ZoneBlock, PathfindZoneManager and PathfindLayer, ref_pf_p3_run; their world (bridges, the
 ** ground's height, the wall's pieces) the stand-ins of pathfind_world.h, answered from the same hash.
 ** Batch P2 (cell_p2.inc): PathfindCellInfo and PathfindCell, ref_pf_p2_run.
@@ -56,6 +58,15 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "pathfinder_p4.inc"
 #include "movement_p5.inc"
 #include "search_p6.inc"
+#include "hierarchical_p7.inc"
+/* the Pathfinder's virtual searches not yet ported (later batches cut them; until then the vtable needs them): they find no path */
+Path *Pathfinder::findClosestPath( Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, Coord3D *to, Bool blocked,
+	Real pathCostMultiplier, Bool moveAllies ) { return NULL; }
+Path *Pathfinder::findAttackPath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Object *victim,
+	const Coord3D* victimPos, const Weapon *weapon ) { return NULL; }
+Path *Pathfinder::findSafePath( const Object *obj, const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D* repulsorPos1,
+	const Coord3D* repulsorPos2, Real repulsorRadius ) { return NULL; }
+Path *Pathfinder::patchPath( const Object *obj, const LocomotorSet& locomotorSet, Path *originalPath, Bool blocked ) { return NULL; }
 #undef private
 #undef protected
 
@@ -171,7 +182,14 @@ const TAiData *AI::getAiData() { return &g_aiData; }
 Real TerrainLogic::getGroundHeight(Real x, Real y, Coord3D *normal) const { return (Real)((p1Hash(16, { bitsOf(x), bitsOf(y) }) >> 8) % 40u); }
 static GlobalData s_pfGlobalData = { 0 };
 GlobalData *TheGlobalData = &s_pfGlobalData;
-Bool TerrainLogic::isUnderwater(Real x, Real y, Real *waterZ, Real *terrainZ) { return p1Pick(p1Hash(21, { bitsOf(x), bitsOf(y) }), g_p4.water); }
+/* (the water word: the rate in its low 8 bits; batch P7, a river: the columns of cells (bits 8-15) .. (bits 16-23) under water, when
+** bits 16-23 are not 0) */
+Bool TerrainLogic::isUnderwater(Real x, Real y, Real *waterZ, Real *terrainZ)
+{
+	unsigned lo = (g_p4.water >> 8) & 255, hi = (g_p4.water >> 16) & 255;
+	if (hi != 0 && x >= lo * 10.0f && x <= hi * 10.0f) return TRUE;
+	return p1Pick(p1Hash(21, { bitsOf(x), bitsOf(y) }), g_p4.water & 255);
+}
 Bool TerrainLogic::isCliffCell(Real x, Real y) const { return p1Pick(p1Hash(20, { bitsOf(x), bitsOf(y) }), g_p4.cliff); }
 void TerrainLogic::getMaximumPathfindExtent(Region3D *extent) const { *extent = g_p4.extent; }
 Bool TerrainLogic::objectInteractsWithBridgeLayer(Object *obj, Int layer, Bool considerBridgeHealth) const
@@ -829,12 +847,10 @@ int ref_pf_p4_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		o.m_hasAI = c[18] != 0; o.m_ai.m_ground = c[19] != 0; o.m_ai.m_adjusts = c[20] != 0; o.m_unmanned = c[21] != 0;
 		o.m_next = k + 1 < no ? &g_walls[k + 1] : NULL;
 	}
-	PathfindCellInfo::allocateCellInfos();
+	/* the real constructor (batch P7: the vtable is emitted with findPath): the info pool, then reset; zeroed memory first, as the
+	** layers' unset m_layer is 0 in it */
 	memset(g_pathfinderMem, 0, sizeof g_pathfinderMem);
-	Pathfinder *pf = TheAI->pathfinder();
-	new (&pf->m_zoneManager) PathfindZoneManager();
-	for (int k = 0; k <= LAYER_LAST; ++k) new (&pf->m_layers[k]) PathfindLayer();
-	pf->reset();
+	Pathfinder *pf = new (g_pathfinderMem) Pathfinder();
 	int highWater = 0;
 	auto objAt = [&](unsigned k) -> Object * { return &g_walls[k % (unsigned)no]; };
 	auto posOf = [&](unsigned x, unsigned y) -> Coord3D { Coord3D p; p.x = floatOf(x); p.y = floatOf(y); p.z = 0; return p; };
@@ -966,10 +982,8 @@ int ref_pf_p4_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		for (unsigned v : g_splats) putU32(v);
 		g_out[mark] = (unsigned)(g_out.size() - mark - 1);
 	}
-	pf->reset();
-	for (int k = 0; k <= LAYER_LAST; ++k) pf->m_layers[k].~PathfindLayer();
-	pf->m_zoneManager.~PathfindZoneManager();
-	PathfindCellInfo::releaseCellInfos();
+	pf->reset();	/* (the cells first: the destructor releases the pool before its members' destructors run) */
+	pf->~Pathfinder();
 	g_walls.clear();
 	*len = (int)g_out.size();
 	if (*len > cap) return 1;
@@ -1044,12 +1058,10 @@ Pathfinder *pfP5Setup(const unsigned *cfg, std::vector<Bridge> &bridges, int &no
 		o.m_kinds[KINDOF_DOZER] = (w30 & 8) != 0;
 		o.m_kinds[KINDOF_VEHICLE] = (w30 & 16) != 0;
 	}
-	PathfindCellInfo::allocateCellInfos();
+	/* the real constructor (batch P7: the vtable is emitted with findPath): the info pool, then reset; zeroed memory first, as the
+	** layers' unset m_layer is 0 in it */
 	memset(g_pathfinderMem, 0, sizeof g_pathfinderMem);
-	Pathfinder *pf = TheAI->pathfinder();
-	new (&pf->m_zoneManager) PathfindZoneManager();
-	for (int k = 0; k <= LAYER_LAST; ++k) new (&pf->m_layers[k]) PathfindLayer();
-	pf->reset();
+	Pathfinder *pf = new (g_pathfinderMem) Pathfinder();
 	return pf;
 }
 
@@ -1057,10 +1069,8 @@ Pathfinder *pfP5Setup(const unsigned *cfg, std::vector<Bridge> &bridges, int &no
 void pfP5Teardown(Pathfinder *pf)
 {
 	pf->m_openList = pf->m_closedList = NULL;
-	pf->reset();
-	for (int k = 0; k <= LAYER_LAST; ++k) pf->m_layers[k].~PathfindLayer();
-	pf->m_zoneManager.~PathfindZoneManager();
-	PathfindCellInfo::releaseCellInfos();
+	pf->reset();	/* (the cells first: the destructor releases the pool before its members' destructors run) */
+	pf->~Pathfinder();
 	g_walls.clear();
 }
 
@@ -1213,7 +1223,9 @@ int ref_pf_p5_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 ** 0 newMap  1 addObjectToPathfindMap(a)  2 updateGoal(a, x b, y c, layer d)  3 updatePos(a, x b, y c)  4 setIgnoreObstacleID(a)
 ** 5 internalFindPath(obj a, surfaces b, downhill only c, from d e, to f g)  6 clip(from a b, to c d)  7 ClipLine2D(p1 (a, b), p2 (c, d),
 ** region lo (e, f), hi (g & 0xffff, g >> 16))  8 clearPassableFlags  9 setAllPassable  10 the logical extent (a, b) .. (c, d)
-** 11 addBridge(bridge a).
+** 11 addBridge(bridge a).  Batch P7's: 12 findPath(as 5)  13 findHierarchicalPath(human a, surfaces b, crusher c, from d e, to f g)
+** 14 findClosestHierarchicalPath(as 13)  15 clientSafeQuickDoesPathExist(surfaces a, from b c, to d e)  16 ...ForUI(as 15)
+** 17 findBrokenBridge(as 15)  18 changeBridgeState(layer a, repaired b)  19 forceMapRecalculation.
 ** Each op appends, after a word that counts the rest: the results (a path: its nodes, each position, layer, can-optimize and next
 ** optimized node's order + 1, then blocked-by-ally), tunneling, the lists' heads, the cumulative cell count, the first free info, the
 ** zone blocks' passable flags. */
@@ -1253,11 +1265,16 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		case 2: { Coord3D p = posOf(o[2], o[3]); pf->updateGoal(objAt(o[1]), &p, (PathfindLayerEnum)o[4]); break; }
 		case 3: { Coord3D p = posOf(o[2], o[3]); pf->updatePos(objAt(o[1]), &p); break; }
 		case 4: pf->setIgnoreObstacleID(o[1] == 0xffffffffu ? INVALID_ID : objAt(o[1])->getID()); break;
-		case 5: {
+		case 5: case 12: case 13: case 14: {
 			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[2];
 			loco->m_downhillOnly = o[3] != 0;
 			Coord3D from = posOf(o[4], o[5]), to = posOf(o[6], o[7]);
-			Path *path = pf->Pathfinder::internalFindPath(objAt(o[1]), *loco, &from, &to);
+			Path *path = NULL;
+			if (o[0] == 5) path = pf->Pathfinder::internalFindPath(objAt(o[1]), *loco, &from, &to);
+			else if (o[0] == 12) path = pf->findPath(objAt(o[1]), *loco, &from, &to);
+			/* 13, 14: a is isHuman, c is crusher (not downhill) */
+			else if (o[0] == 13) path = pf->findHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
+			else path = pf->findClosestHierarchicalPath(o[1] != 0, *loco, &from, &to, o[3] != 0);
 			res.push_back(path ? 1u : 0u);
 			if (path) {
 				std::vector<PathNode *> nodes;
@@ -1294,6 +1311,23 @@ int ref_pf_p6_run(const unsigned *cfg, int n, const unsigned *ops, unsigned *buf
 		case 8: pf->m_zoneManager.clearPassableFlags(); break;
 		case 9: pf->m_zoneManager.setAllPassable(); break;
 		case 11: res.push_back((unsigned)pf->addBridge(&bridges[o[1] % bridges.size()])); break;
+		case 15: case 16: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[1];
+			Coord3D from = posOf(o[2], o[3]), to = posOf(o[4], o[5]);
+			Bool r = o[0] == 15 ? pf->clientSafeQuickDoesPathExist(*loco, &from, &to) : pf->clientSafeQuickDoesPathExistForUI(*loco, &from, &to);
+			res.push_back(r ? 1u : 0u);
+			break;
+		}
+		case 17: {
+			loco->m_validLocomotorSurfaces = (LocomotorSurfaceTypeMask)o[1];
+			Coord3D from = posOf(o[2], o[3]), to = posOf(o[4], o[5]);
+			ObjectID id = (ObjectID)12345;
+			Bool r = pf->findBrokenBridge(*loco, &from, &to, &id);
+			res.push_back(r ? 1u : 0u); res.push_back((unsigned)id);
+			break;
+		}
+		case 18: pf->changeBridgeState((PathfindLayerEnum)(o[1] % (LAYER_LAST + 1)), o[2] != 0); break;
+		case 19: pf->forceMapRecalculation(); break;
 		case 10: pf->m_logicalExtent.lo.x = (Int)o[1]; pf->m_logicalExtent.lo.y = (Int)o[2]; pf->m_logicalExtent.hi.x = (Int)o[3]; pf->m_logicalExtent.hi.y = (Int)o[4]; break;
 		}
 		putU32((unsigned)res.size());

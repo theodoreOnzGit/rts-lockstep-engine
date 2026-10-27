@@ -226,6 +226,8 @@ public:
 class Pathfinder;
 /* batch P5: the partition's closest object (PartitionManager.h's call, the kind filter a stand-in) */
 enum { FROM_BOUNDINGSPHERE_2D = 3 };
+/* batch P7: PartitionManager.h's HUGE_DIST (the hierarchical search's first closest distance) */
+const Real HUGE_DIST = 1000000.0f;
 #define MAKE_KINDOF_MASK(k) (k)
 #define KINDOFMASK_NONE (-1)
 class PartitionFilter { public: virtual ~PartitionFilter() {} };
