@@ -6,6 +6,7 @@
 //! batch by batch. See `docs/phase1-porting-graph.md`.
 
 pub mod adjust;
+pub mod ai_update_data;
 pub mod ai_update_types;
 pub mod attack;
 pub mod cell;

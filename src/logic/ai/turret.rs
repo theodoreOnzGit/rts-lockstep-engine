@@ -53,6 +53,8 @@ use crate::common::state_machine::{
 };
 use crate::common::trig;
 use crate::common::xfer::{Xfer, XferResult, XferVersion};
+use crate::common::ini::{FieldParse, Ini, IniResult, MultiIniFieldParse, UserData};
+use crate::logic::weapon_set::WEAPON_SLOT_TYPE_NAMES;
 use crate::logic::ai::ai_update_types::{MAA_AFFECT_RANGE_IGNORE_ALL, MM_ACTION_IDLE};
 use crate::logic::ai::fire_state::{self, FireAttacker, FireHost, SLOTS};
 use crate::logic::module::update_module::{update_sleep, UpdateSleepTime, FOREVER, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
@@ -135,6 +137,65 @@ impl Default for TurretAiData {
             fires_while_turning: false,
             is_allows_pitch: false,
         }
+    }
+}
+
+/// `parseTWS` (`ControlledWeaponSlots`): each named slot's bit OR'd in (at least one name).
+fn parse_tws(ini: &mut Ini<'_>, d: &mut TurretAiData, _: &UserData) -> IniResult<()> {
+    let mut token = Some(ini.get_next_token(None)?);
+    while let Some(t) = token {
+        let wslot = Ini::scan_index_list(&t, &WEAPON_SLOT_TYPE_NAMES)?;
+        if plant(3186) {
+            d.turret_weapon_slots = 1 << wslot;
+        } else {
+            d.turret_weapon_slots |= 1 << wslot;
+        }
+        token = ini.get_next_token_or_null(None);
+    }
+    Ok(())
+}
+
+/// `parseTurretSweep` (`TurretFireAngleSweep`): a slot, then its sweep as an angle.
+fn parse_turret_sweep(ini: &mut Ini<'_>, d: &mut TurretAiData, _: &UserData) -> IniResult<()> {
+    let wslot = Ini::scan_index_list(&ini.get_next_token(None)?, &WEAPON_SLOT_TYPE_NAMES)? as usize;
+    d.turret_fire_angle_sweep[wslot] = ini.parse_angle_real()?;
+    Ok(())
+}
+
+/// `parseTurretSweepSpeed` (`TurretSweepSpeedModifier`): a slot, then its modifier.
+fn parse_turret_sweep_speed(ini: &mut Ini<'_>, d: &mut TurretAiData, _: &UserData) -> IniResult<()> {
+    let wslot = Ini::scan_index_list(&ini.get_next_token(None)?, &WEAPON_SLOT_TYPE_NAMES)? as usize;
+    d.turret_sweep_speed_modifier[wslot] = ini.parse_real()?;
+    Ok(())
+}
+
+/// `TurretAIData::buildFieldParse`'s table.
+static TURRET_FIELD_PARSE: [FieldParse<TurretAiData>; 19] = [
+    FieldParse::new("TurretTurnRate", |i, d, _| { d.turn_rate = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TurretPitchRate", |i, d, _| { d.pitch_rate = i.parse_angular_velocity_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("NaturalTurretAngle", |i, d, _| { d.natural_turret_angle = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("NaturalTurretPitch", |i, d, _| { d.natural_turret_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("FirePitch", |i, d, _| { d.fire_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinPhysicalPitch", |i, d, _| { d.min_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("GroundUnitPitch", |i, d, _| { d.ground_unit_pitch = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("TurretFireAngleSweep", parse_turret_sweep, UserData::None),
+    FieldParse::new("TurretSweepSpeedModifier", parse_turret_sweep_speed, UserData::None),
+    FieldParse::new("ControlledWeaponSlots", parse_tws, UserData::None),
+    FieldParse::new("AllowsPitch", |i, d, _| { d.is_allows_pitch = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinIdleScanAngle", |i, d, _| { d.min_idle_scan_angle = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxIdleScanAngle", |i, d, _| { d.max_idle_scan_angle = i.parse_angle_real()?; Ok(()) }, UserData::None),
+    FieldParse::new("MinIdleScanInterval", |i, d, _| { d.min_idle_scan_interval = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("MaxIdleScanInterval", |i, d, _| { d.max_idle_scan_interval = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("RecenterTime", |i, d, _| { d.recenter_time = i.parse_duration_unsigned_int()?; Ok(()) }, UserData::None),
+    FieldParse::new("InitiallyDisabled", |i, d, _| { d.initially_disabled = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::new("FiresWhileTurning", |i, d, _| { d.fires_while_turning = i.parse_bool()?; Ok(()) }, UserData::None),
+    FieldParse::end(),
+];
+
+impl TurretAiData {
+    /// `TurretAIData::buildFieldParse(p)`: its own table (no base).
+    pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, TurretAiData>) -> IniResult<()> {
+        p.add(&TURRET_FIELD_PARSE)
     }
 }
 

@@ -81,6 +81,12 @@
 #define WeaponTemplate TtWeaponTemplate
 #define TheWeaponStore TtTheWeaponStore
 #define AIUpdateModuleData TtAIUpdateModuleData
+#define TurretAIData TtTurretAIData
+#define BehaviorModuleData TtBehaviorModuleData
+#define UpdateModuleData TtUpdateModuleData
+#define LocomotorStore TtLocomotorStore
+#define TheLocomotorStore TtTheLocomotorStore
+#define LocomotorTemplate TtLocomotorTemplate
 #define BehaviorModule TtBehaviorModule
 #define BehaviorModuleInterface TtBehaviorModuleInterface
 #define CreateModuleInterface TtCreateModuleInterface

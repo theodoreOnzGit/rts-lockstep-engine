@@ -428,6 +428,8 @@ pub enum ModuleDataKind {
     BridgeBehavior(Arc<crate::logic::modules::bridge_behavior::BridgeBehaviorModuleData>),
     /// `BattlePlanUpdate` (batch R71).
     BattlePlanUpdate(Arc<crate::logic::modules::battle_plan_update::BattlePlanUpdateModuleData>),
+    /// `AIUpdateModuleData` (layer 10, batch A1).
+    AiUpdate(Arc<crate::logic::ai::ai_update_data::AiUpdateModuleData>),
     /// `CountermeasuresBehavior` (batch R52).
     CountermeasuresBehavior(Arc<crate::logic::modules::countermeasures_behavior::CountermeasuresBehaviorModuleData>),
     /// `AutoHealBehaviorModuleData`.
@@ -708,6 +710,7 @@ impl ModuleDataKind {
             ModuleDataKind::ParticleUplinkCannonUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::BridgeBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::BattlePlanUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::AiUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::CountermeasuresBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::AutoHealBehavior(d) => &d.update.behavior.module_data,
             ModuleDataKind::FireWeaponWhenDamagedBehavior(d) => &d.update.behavior.module_data,
@@ -1191,6 +1194,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::BridgeBehavior(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::AiUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true
@@ -1883,9 +1893,20 @@ impl ModuleDataKind {
         self.module_data().module_tag_name_key()
     }
 
-    /// `isAiModuleData()`: false for every class so far.
+    /// The `AIUpdateModuleData` of an AI module's data (batch A1): its own class's.
+    pub fn ai_update_data(&self) -> Option<&Arc<crate::logic::ai::ai_update_data::AiUpdateModuleData>> {
+        match self {
+            ModuleDataKind::AiUpdate(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// `isAiModuleData()`: true for `AIUpdateModuleData` (batch A1), false for every other class so far.
     pub fn is_ai_module_data(&self) -> bool {
-        self.module_data().is_ai_module_data()
+        match self {
+            ModuleDataKind::AiUpdate(d) => d.is_ai_module_data(),
+            _ => self.module_data().is_ai_module_data(),
+        }
     }
 
     /// `getMinimumRequiredGameLOD()`: `STATIC_GAME_LOD_LOW` for every class so

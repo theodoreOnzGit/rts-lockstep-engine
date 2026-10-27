@@ -37,6 +37,13 @@
 ** translated as an error. A name no module of this wrapper has is NOT given to the C++: upstream's
 ** newModuleDataFromINI returns NULL for it and parseModuleName calls isAiModuleData on that.
 **
+** The AI (batch A1). Two more behavior modules, AIUpdateInterface and TestAI2, have the REAL AIUpdateModuleData as
+** their data: its declaration (shim_thingtemplate's AIUpdate.h includes ai_update_decl.inc) and its members from
+** AIUpdate.cpp, with TurretAIData's from TurretAI.cpp (ai_update_data.inc), all cut verbatim by build.rs. The
+** "Locomotor" field reaches the real parseLocomotorSet, which asks the Locomotor build's real TheLocomotorStore (the
+** files' "Locomotor" blocks go to Locomotor.cpp's handler) through ref_loco_find_template; the dump writes each
+** locomotor of a set as the key the store holds it under (ref_loco_template_key).
+**
 ** Not compiled: ThingTemplate::calcCostToBuild, calcTimeToBuild and getBuildFacilityTemplate are linked
 ** (they are in ThingTemplate.cpp) against stand-in Player members that return constants, and are not
 ** called: they are layer 7 and the Rust does not translate them.
@@ -58,6 +65,8 @@
 #define private public
 #define protected public
 #define DEFINE_WEAPONSLOTTYPE_NAMES
+#define DEFINE_LOCOMOTORSET_NAMES
+#define DEFINE_AUTOACQUIRE_NAMES
 #include "Common/INI.h"
 #include "Common/INIException.h"
 #include "Common/NameKeyGenerator.h"
@@ -185,22 +194,28 @@ Bool Player::hasScience(ScienceType) const { return false; }
 /* ProductionPrerequisite::getExistingBuildFacilityTemplate needs a Player (layer 7) */
 const ThingTemplate *ProductionPrerequisite::getExistingBuildFacilityTemplate(const Player *) const { return NULL; }
 
-/* AIUpdateModuleData::parseLocomotorSet (AIUpdate.cpp lines 165-173): no module of the wrapper is AI module
-** data, so friend_getAIModuleInfo is NULL and upstream throws INI_INVALID_DATA; the rest needs the
-** locomotor store (layer 9) and is unreachable */
-void AIUpdateModuleData::parseLocomotorSet(INI *, void *instance, void *, const void *)
+/* TheLocomotorStore (layer 9) is the Locomotor build's, real (Locomotor.cpp, wrap_locomotor.cpp): the "Locomotor"
+** blocks of the files reach its real handler, and parseLocomotorSet below asks it for a template by name key
+** through ref_loco_find_template. This view is all the AIUpdateModuleData cut names of it. */
+extern "C" const void *ref_loco_find_template(unsigned key);
+extern "C" unsigned ref_loco_template_key(const void *tmpl);
+extern "C" void ref_loco_store_new(void);
+class LocomotorStore
 {
-	ThingTemplate *tt = (ThingTemplate *)instance;
-	AIUpdateModuleData *self = tt->friend_getAIModuleInfo();
-	if (!self)
-		throw INI_INVALID_DATA;
-	throw ERROR_BUG;
-}
+public:
+	const LocomotorTemplate *findLocomotorTemplate(NameKeyType namekey) const
+	{
+		return (const LocomotorTemplate *)ref_loco_find_template((unsigned)namekey);
+	}
+};
+static LocomotorStore g_locomotorStoreView;
+static LocomotorStore *const TheLocomotorStore = &g_locomotorStoreView;
 
 /* ---- upstream text, cut out by build.rs (see the header) */
 #include "ini_field_parsers.inc"
 #include "weapon_template_set.inc"
 #include "production_prerequisite.inc"
+#include "ai_update_data.inc"
 #include "module_factory_methods.inc"
 void ModuleFactory::init(void) {}
 
@@ -261,6 +276,13 @@ ModuleData *clientDataProc(INI *ini)
 }
 /* the behavior modules' data: a base ModuleData, `End` only */
 ModuleData *baseDataProc(INI *ini) { return Module::friend_newModuleData(ini); }
+/* batch A1: the AI's data, real (AIUpdateInterface's friend_newModuleData, MAKE_STANDARD_MODULE_DATA_MACRO_ABC) */
+ModuleData *aiDataProc(INI *ini)
+{
+	AIUpdateModuleData *data = MSGNEW( "AllModuleData" ) AIUpdateModuleData;
+	if (ini) ini->initFromINIMultiProc(data, AIUpdateModuleData::buildFieldParse);
+	return data;
+}
 
 struct TestModule
 {
@@ -280,6 +302,8 @@ const TestModule g_testModules[] = {
 	{ "TestDraw", MODULETYPE_DRAW, MODULEINTERFACE_DRAW },
 	{ "TestDraw2", MODULETYPE_DRAW, MODULEINTERFACE_DRAW },
 	{ "TestClient", MODULETYPE_CLIENT_UPDATE, MODULEINTERFACE_CLIENT_UPDATE },
+	{ "AIUpdateInterface", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "TestAI2", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
 };
 const char *const g_testWeapons[] = { "Rifle", "Cannon", "Missile" };
 
@@ -348,6 +372,46 @@ int weaponKey(const WeaponTemplate *w)
 }
 int templateId(const ThingTemplate *t) { return t ? (int)t->getTemplateID() : -1; }
 
+/* batch A1: an AI's module data (the locomotor sets by set, each template by its key in the store; the turrets,
+** every field; then the rest) */
+void dumpTurretAiData(const TurretAIData *td)
+{
+	put8(td ? 1 : 0);
+	if (!td) return;
+	putF32(td->m_turnRate);
+	putF32(td->m_pitchRate);
+	putF32(td->m_naturalTurretAngle);
+	putF32(td->m_naturalTurretPitch);
+	for (int i = 0; i < WEAPONSLOT_COUNT; ++i) putF32(td->m_turretFireAngleSweep[i]);
+	for (int i = 0; i < WEAPONSLOT_COUNT; ++i) putF32(td->m_turretSweepSpeedModifier[i]);
+	putF32(td->m_firePitch);
+	putF32(td->m_minPitch);
+	putF32(td->m_groundUnitPitch);
+	putU32(td->m_turretWeaponSlots);
+	putF32(td->m_minIdleScanAngle);
+	putF32(td->m_maxIdleScanAngle);
+	putU32(td->m_minIdleScanInterval);
+	putU32(td->m_maxIdleScanInterval);
+	putU32(td->m_recenterTime);
+	put8(td->m_initiallyDisabled ? 1 : 0);
+	put8(td->m_firesWhileTurning ? 1 : 0);
+	put8(td->m_isAllowsPitch ? 1 : 0);
+}
+void dumpAiModuleData(const AIUpdateModuleData *d)
+{
+	putU32((unsigned)d->m_locomotorTemplates.size());
+	for (LocomotorTemplateMap::const_iterator it = d->m_locomotorTemplates.begin(); it != d->m_locomotorTemplates.end(); ++it) {
+		putI32((int)it->first);
+		putU32((unsigned)it->second.size());
+		for (size_t k = 0; k < it->second.size(); ++k) putU32(ref_loco_template_key(it->second[k]));
+	}
+	for (int i = 0; i < MAX_TURRETS; ++i) dumpTurretAiData(d->m_turretData[i]);
+	putU32(d->m_moodAttackCheckRate);
+	put8(d->m_forbidPlayerCommands ? 1 : 0);
+	put8(d->m_turretsLinked ? 1 : 0);
+	putU32(d->m_autoAcquireEnemiesWhenIdle);
+}
+
 void dumpModuleInfo(const ModuleInfo &mi)
 {
 	putU32((unsigned)mi.m_info.size());
@@ -367,6 +431,8 @@ void dumpModuleInfo(const ModuleInfo &mi)
 		put8(c ? 1 : 0);
 		put8(n.second->isAiModuleData() ? 1 : 0);
 		putU32((unsigned)n.second->m_moduleTagNameKey);
+		if (n.second->isAiModuleData())
+			dumpAiModuleData((const AIUpdateModuleData *)n.second);
 		if (c) {
 			putU32((unsigned)c->lines.size());
 			for (size_t k = 0; k < c->lines.size(); ++k) {
@@ -604,6 +670,7 @@ void ref_tt_reset(unsigned defaultOcclusionDelay, unsigned superweaponRestrictio
 	ref_object_block_hook = objectHook;
 	ref_armor_reset();
 	ref_science_reset();
+	ref_loco_store_new();
 	g_globalData.m_defaultOcclusionDelay = defaultOcclusionDelay;
 	g_globalData.m_LowEnergyPenaltyModifier = 0.0f;
 	g_globalData.m_MinLowEnergyProductionSpeed = 0.0f;
@@ -616,7 +683,9 @@ void ref_tt_reset(unsigned defaultOcclusionDelay, unsigned superweaponRestrictio
 	TheModuleFactory = new ModuleFactory;
 	for (size_t i = 0; i < sizeof(g_testModules) / sizeof(g_testModules[0]); ++i) {
 		const TestModule &m = g_testModules[i];
-		TheModuleFactory->addModuleInternal(0, m.type == MODULETYPE_BEHAVIOR ? baseDataProc : clientDataProc, m.type, AsciiString(m.name), m.mask);
+		ModuleData *(*proc)(INI *) = m.type != MODULETYPE_BEHAVIOR ? clientDataProc : strncmp(m.name, "Test", 4) ? aiDataProc
+			: !strcmp(m.name, "TestAI2") ? aiDataProc : baseDataProc;
+		TheModuleFactory->addModuleInternal(0, proc, m.type, AsciiString(m.name), m.mask);
 	}
 	g_weapons.clear();
 	for (size_t i = 0; i < sizeof(g_testWeapons) / sizeof(g_testWeapons[0]); ++i) {

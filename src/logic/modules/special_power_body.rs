@@ -600,6 +600,7 @@ mod tests {
             weapons: &c.weapons,
             sciences: &c.sciences,
             text: &Text,
+            locomotors: &crate::logic::locomotor::LocomotorStore::new(),
         };
         c.factory.parse_object_block(ini, &mut env, 0)
     }

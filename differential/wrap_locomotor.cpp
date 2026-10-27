@@ -352,6 +352,28 @@ void ref_loco_reset(void)
 
 unsigned ref_loco_name_key(const char *name) { return (unsigned)TheNameKeyGenerator->nameToKey(name); }
 
+/* batch A1, for the ThingTemplate build (wrap_thingtemplate.cpp): a fresh TheLocomotorStore without touching the
+** name keys (ref_tt_reset makes them), the template of a key (findLocomotorTemplate, as AIUpdateModuleData's
+** parseLocomotorSet asks), and the key of a template the store holds (0 if none does) */
+void ref_loco_store_new(void)
+{
+	for (size_t i = 0; i < g_locos.size(); ++i) g_locos[i]->deleteInstance();
+	g_locos.clear();
+	delete TheLocomotorStore;
+	TheLocomotorStore = new LocomotorStore;
+}
+const void *ref_loco_find_template(unsigned key)
+{
+	return TheLocomotorStore ? TheLocomotorStore->findLocomotorTemplate((NameKeyType)key) : 0;
+}
+unsigned ref_loco_template_key(const void *tmpl)
+{
+	for (LocomotorStore::LocomotorTemplateMap::const_iterator it = TheLocomotorStore->m_locomotorTemplates.begin();
+			 it != TheLocomotorStore->m_locomotorTemplates.end(); ++it)
+		if ((const void *)it->second == tmpl) return (unsigned)it->first;
+	return 0;
+}
+
 /* the dump of every LocomotorTemplate: the count, then per template (in key order) its key
 ** and its chain: the number of nodes, then per node the override flag and the fields (see
 ** dumpTemplate). Returns the length in words (may exceed cap). */

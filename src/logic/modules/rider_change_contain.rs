@@ -71,8 +71,7 @@ pub const MAX_RIDERS: usize = 8;
 const DEATH_TOPPLED: i32 = 6;
 
 /// `TheLocomotorSetNames[]` (AIUpdate.h, under `DEFINE_LOCOMOTORSET_NAMES`), without the `NULL`.
-pub const LOCOMOTOR_SET_NAMES: [&str; 8] =
-    ["SET_NORMAL", "SET_NORMAL_UPGRADED", "SET_FREEFALL", "SET_WANDER", "SET_PANIC", "SET_TAXIING", "SET_SUPERSONIC", "SET_SLUGGISH"];
+pub const LOCOMOTOR_SET_NAMES: [&str; 8] = crate::logic::ai::ai_update_types::LOCOMOTOR_SET_NAMES;
 
 /// `struct RiderInfo`.
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -62,7 +62,32 @@
 //! the wrapper's factory has never heard of) are **not** given to the C++; their counts are printed, and a
 //! session stops at such a step (the steps before it are compared).
 //!
+//! **The AI's module data (batch A1, 2026-10-27).** Two more behavior modules, `AIUpdateInterface` and `TestAI2`,
+//! have the REAL `AIUpdateModuleData` as their data on both sides (`AIUpdate.cpp`'s members and `TurretAI.cpp`'s
+//! `TurretAIData` parse, cut out verbatim by build.rs; `logic::ai::ai_update_data` and `logic::ai::turret` here), and
+//! the files carry `Locomotor` blocks read by the real `Locomotor.cpp` handler into the Locomotor build's
+//! `TheLocomotorStore` (`LocomotorStore::parse_locomotor_template_definition` here). The AI blocks are generated with
+//! every field (`Turret`/`AltTurret` blocks with every `TurretAIData` field, a second turret, `AutoAcquireEnemiesWhenIdle`
+//! bit lists, `MoodAttackCheckRate`, `ForbidPlayerCommands`, `TurretsLinked`, unknown fields), sometimes a second AI
+//! module (which replaces the first: `clearAiModuleInfo`), and followed by `Locomotor` lines (every set name, a bad
+//! one, defined and undefined locomotors, `None`/`NONE`, no locomotor). Every AI module's data is part of the dump: its
+//! locomotor sets (each locomotor by the key the store holds it under), both turrets field by field, and the rest.
+//!
 //! Each comparison also runs a planted bug, which must be caught.
+//!
+//! # Results (2026-10-27, batch A1: the AI's module data; upstream commit 0a05454d, same seeds)
+//!
+//! - `object_blocks_...`: 3000 sessions, 7612 loads (977 ok), 9359 dumps, AI module data compared 203 times (123
+//!   locomotor sets, 51 with locomotors, 128 turrets): **0 mismatches** in every comparison.
+//! - `module_lists_...`: 3000 sessions, 8180 loads (541 ok), 10079 dumps, AI module data compared 970 times (765
+//!   locomotor sets, 259 with locomotors, 342 turrets, 625 with a non-default field): **0 mismatches**.
+//! - Planted: the default mood check rate off by one (caught in 359 and 104 dumps); and, in the Rust source (plants
+//!   3180-3186, 3188, each caught, then switched off): a second `Turret` not refused, a re-specified set refused under
+//!   `INI_LOAD_CREATE_OVERRIDES`, `None` compared case-sensitively, a refused set's entry not left behind, the mood
+//!   check rate default, `friend_getAIModuleInfo` looking only at the first behavior module, `ControlledWeaponSlots`
+//!   assigned instead of ORed, `AltTurret` written into the first turret.
+//! - Finding (upstream, kept): `parseLocomotorSet` makes the set's entry before it checks anything, so a set whose
+//!   locomotor is not found is left present and partial (`findLocomotorTemplateVector` finds it).
 //!
 //! # Results (2026-10-18, upstream commit 0a05454d, seeds `0x7A11` / `0xB0DE` / the `Gen` of this file)
 //!
@@ -88,7 +113,8 @@
 //!   that `reset()`.
 //!
 //! Not tested against the C++ (layer 7/8 cut points, see the module docs): `calcCostToBuild`,
-//! `calcTimeToBuild`, `getBuildFacilityTemplate`, `friend_getAIModuleInfo` (no AI module exists),
+//! `calcTimeToBuild`, `getBuildFacilityTemplate`, ~~`friend_getAIModuleInfo` (no AI module exists)~~ (**CORRECTED
+//! 2026-10-27**: compared since batch A1, see "The AI's module data" above),
 //! `getBuildable`'s script override, `ProductionPrerequisite`'s `Player` members, and everything of
 //! `newObject` after the template is chosen.
 #![cfg(feature = "differential")]
@@ -119,7 +145,11 @@ use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::differential as cpp;
+use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
+use rts_lockstep_engine::logic::ai::ai_update_types::AUTO_ACQUIRE_ENEMIES_NAMES;
+use rts_lockstep_engine::logic::ai::turret::TurretAiData;
 use rts_lockstep_engine::logic::armor::ArmorStore;
+use rts_lockstep_engine::logic::locomotor::LocomotorStore;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::weapon_set::WeaponTemplateTable;
 use std::collections::BTreeMap;
@@ -151,7 +181,7 @@ impl GameTextFetch for StandInText {
 
 /// The test modules, in the order `wrap_thingtemplate.cpp` registers them (each assigns a decorated name
 /// key): name, type, interface mask.
-const TEST_MODULES: [(&str, ModuleType, i32); 11] = [
+const TEST_MODULES: [(&str, ModuleType, i32); 13] = [
     ("TestUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
     ("TestUpdate2", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
     ("TestDie", ModuleType::Behavior, MODULEINTERFACE_DIE),
@@ -163,6 +193,9 @@ const TEST_MODULES: [(&str, ModuleType, i32); 11] = [
     ("TestDraw", ModuleType::Draw, MODULEINTERFACE_DRAW),
     ("TestDraw2", ModuleType::Draw, MODULEINTERFACE_DRAW),
     ("TestClient", ModuleType::ClientUpdate, MODULEINTERFACE_CLIENT_UPDATE),
+    // batch A1: the AI's real module data (`AIUpdateInterface`'s), under its own name and another
+    ("AIUpdateInterface", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("TestAI2", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
 ];
 const TEST_WEAPONS: [&str; 3] = ["Rifle", "Cannon", "Missile"];
 
@@ -171,6 +204,9 @@ fn never(_: ObjectId, _: Option<ModuleDataKind>) -> Result<Module, IniError> {
 }
 fn base_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
     Ok(ModuleDataKind::Module(Arc::new(ModuleData::friend_new_module_data(ini)?)))
+}
+fn ai_data(ini: Option<&mut Ini<'_>>) -> Result<ModuleDataKind, IniError> {
+    Ok(ModuleDataKind::AiUpdate(Arc::new(AiUpdateModuleData::friend_new_module_data(ini)?)))
 }
 
 struct Ctx {
@@ -181,6 +217,7 @@ struct Ctx {
     dfx: DamageFxStore,
     weapons: WeaponTemplateTable,
     sciences: ScienceStore,
+    locomotors: LocomotorStore,
     occlusion: u32,
     superweapon: u32,
 }
@@ -195,7 +232,8 @@ impl Ctx {
         let mut modules = ModuleFactory::new();
         for (name, module_type, mask) in TEST_MODULES {
             if module_type == ModuleType::Behavior {
-                let t = ModuleTemplate { create_proc: Some(never), create_data_proc: Some(base_data), which_interfaces: Some(mask) };
+                let data = if name == "AIUpdateInterface" || name == "TestAI2" { ai_data } else { base_data };
+                let t = ModuleTemplate { create_proc: Some(never), create_data_proc: Some(data), which_interfaces: Some(mask) };
                 modules.add_module_internal(&mut names, t, module_type, name).unwrap();
             } else {
                 // the client's modules are not in the Rust factory; the C++ registration assigned the key
@@ -214,6 +252,7 @@ impl Ctx {
             dfx: DamageFxStore::new(),
             weapons,
             sciences: ScienceStore::new(),
+            locomotors: LocomotorStore::new(),
             occlusion,
             superweapon,
         }
@@ -229,6 +268,7 @@ fn object_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         weapons: &c.weapons,
         sciences: &c.sciences,
         text: &StandInText,
+        locomotors: &c.locomotors,
     };
     c.factory.parse_object_block(ini, &mut env, c.occlusion)
 }
@@ -241,6 +281,7 @@ fn reskin_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         weapons: &c.weapons,
         sciences: &c.sciences,
         text: &StandInText,
+        locomotors: &c.locomotors,
     };
     c.factory.parse_object_reskin_block(ini, &mut env, c.occlusion)
 }
@@ -252,6 +293,9 @@ fn dfx_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
 }
 fn science_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
     c.sciences.parse_science_definition(ini, &mut c.names, &StandInText)
+}
+fn locomotor_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
+    c.locomotors.parse_locomotor_template_definition(ini, &mut c.names)
 }
 fn stub_block(_: &mut Ini<'_>, _: &mut Ctx) -> IniResult<()> {
     Err(IniError::new(IniErrorKind::Bug))
@@ -271,6 +315,7 @@ fn blocks() -> Vec<BlockParse<Ctx>> {
                 "Armor" => armor_block,
                 "DamageFX" => dfx_block,
                 "Science" => science_block,
+                "Locomotor" => locomotor_block,
                 _ => stub_block,
             },
         })
@@ -314,7 +359,55 @@ fn root_ids(c: &Ctx) -> Vec<u64> {
     c.factory.templates().map(|t| t.data.node_id()).collect()
 }
 
-fn dump_module_info(v: &mut Vec<u8>, mi: &ModuleInfo, bug: u32) {
+/// `dumpTurretAiData`.
+fn dump_turret_ai_data(v: &mut Vec<u8>, td: Option<&TurretAiData>) {
+    let Some(td) = td else {
+        v.push(0);
+        return;
+    };
+    v.push(1);
+    for x in [td.turn_rate, td.pitch_rate, td.natural_turret_angle, td.natural_turret_pitch] {
+        put_f32(v, x);
+    }
+    for &x in td.turret_fire_angle_sweep.iter().chain(&td.turret_sweep_speed_modifier) {
+        put_f32(v, x);
+    }
+    for x in [td.fire_pitch, td.min_pitch, td.ground_unit_pitch] {
+        put_f32(v, x);
+    }
+    put_u32(v, td.turret_weapon_slots);
+    put_f32(v, td.min_idle_scan_angle);
+    put_f32(v, td.max_idle_scan_angle);
+    put_u32(v, td.min_idle_scan_interval);
+    put_u32(v, td.max_idle_scan_interval);
+    put_u32(v, td.recenter_time);
+    v.push(u8::from(td.initially_disabled));
+    v.push(u8::from(td.fires_while_turning));
+    v.push(u8::from(td.is_allows_pitch));
+}
+
+/// `dumpAiModuleData` (batch A1): each locomotor of a set by its key (the key the store holds it under, 0 if none).
+/// `bug` 7 plants the mood check rate's default off by one frame.
+fn dump_ai_module_data(v: &mut Vec<u8>, c: &Ctx, d: &AiUpdateModuleData, bug: u32) {
+    let map = d.locomotor_templates.read().unwrap();
+    put_u32(v, map.len() as u32);
+    for (set, keys) in map.iter() {
+        put_i32(v, *set);
+        put_u32(v, keys.len() as u32);
+        for k in keys {
+            put_u32(v, if c.locomotors.find_locomotor_template(*k).is_some() { k.0 } else { 0 });
+        }
+    }
+    for t in &d.turret_data {
+        dump_turret_ai_data(v, t.as_deref());
+    }
+    put_u32(v, d.mood_attack_check_rate + u32::from(bug == 7 && d.mood_attack_check_rate == 60));
+    v.push(u8::from(d.forbid_player_commands));
+    v.push(u8::from(d.turrets_linked));
+    put_u32(v, d.auto_acquire_enemies_when_idle);
+}
+
+fn dump_module_info(v: &mut Vec<u8>, c: &Ctx, mi: &ModuleInfo, bug: u32) {
     put_u32(v, mi.get_count() as u32);
     for n in mi.nuggets() {
         put_ascii(v, &n.first);
@@ -328,6 +421,9 @@ fn dump_module_info(v: &mut Vec<u8>, mi: &ModuleInfo, bug: u32) {
                 v.push(0);
                 v.push(u8::from(d.is_ai_module_data()));
                 put_u32(v, d.module_tag_name_key().expect("the factory set the tag").0);
+                if let Some(ai) = d.ai_update_data() {
+                    dump_ai_module_data(v, c, ai, bug);
+                }
             }
             ModuleInfoData::Client(c) => {
                 v.push(1);
@@ -422,9 +518,9 @@ fn dump_template(v: &mut Vec<u8>, c: &Ctx, t: &ThingTemplate, roots: &[u64], bug
         v.push(u8::from(present));
         put_ascii(v, if present { &t.get_audio(*a).event_name } else { b"" });
     }
-    dump_module_info(v, t.get_behavior_module_info(), bug);
-    dump_module_info(v, t.get_draw_module_info(), bug);
-    dump_module_info(v, t.get_client_update_module_info(), bug);
+    dump_module_info(v, c, t.get_behavior_module_info(), bug);
+    dump_module_info(v, c, t.get_draw_module_info(), bug);
+    dump_module_info(v, c, t.get_client_update_module_info(), bug);
     const LEVELS: [VeterancyLevel; 4] = [VeterancyLevel::Regular, VeterancyLevel::Veteran, VeterancyLevel::Elite, VeterancyLevel::Heroic];
     for l in LEVELS {
         let (skill, exp) = if bug == 1 { (t.get_experience_value(l), t.raw_skill_point_value(l)) } else { (t.raw_skill_point_value(l), t.get_experience_value(l)) };
@@ -628,7 +724,24 @@ const TAGS: [&str; 9] = [
     "ModuleTag_Client",
     "ModuleTag_F",
 ];
-const BEHAVIORS: [&str; 8] = ["TestUpdate", "TestUpdate2", "TestDie", "TestDie2", "TestMulti", "TestUpgrade", "TestUpdate", "TestDie"];
+const BEHAVIORS: [&str; 10] =
+    ["TestUpdate", "TestUpdate2", "TestDie", "TestDie2", "TestMulti", "TestUpgrade", "TestUpdate", "TestDie", "AIUpdateInterface", "TestAI2"];
+/// batch A1: the locomotor names (the preamble defines the first two, a share of the time)
+const LOCOS: [&str; 6] = ["LocoA", "LocoB", "loCoa", "None", "NoSuchLoco", "NONE"];
+/// The locomotor set names, and mistakes.
+const LOCO_SETS: [&str; 11] = [
+    "SET_NORMAL",
+    "SET_NORMAL_UPGRADED",
+    "SET_FREEFALL",
+    "SET_WANDER",
+    "SET_PANIC",
+    "SET_TAXIING",
+    "SET_SUPERSONIC",
+    "SET_SLUGGISH",
+    "SET_NORMAL",
+    "set_wander",
+    "SET_BOGUS",
+];
 const BODIES: [&str; 2] = ["TestBody", "TestBody2"];
 const DRAWS: [&str; 2] = ["TestDraw", "TestDraw2"];
 const STRINGS: [&str; 8] = ["Alpha", "Name_1", "\"quoted words\"", "x=y", "a/b.tga", "\"unterminated", "", "Menu.wnd"];
@@ -764,7 +877,9 @@ impl Gx<'_> {
         let s = sep(g);
         let head = if tag.is_empty() { format!("{field}{s}{name}") } else { format!("{field}{s}{name} {tag}") };
         out.push(self.line(head));
-        if kind == "Draw" || kind == "ClientUpdate" {
+        if name == "AIUpdateInterface" || name == "TestAI2" {
+            self.ai_lines(out);
+        } else if kind == "Draw" || kind == "ClientUpdate" {
             for _ in 0..self.g.below(5) {
                 match self.g.below(5) {
                     0 | 1 => {
@@ -791,6 +906,87 @@ impl Gx<'_> {
         }
         if self.clean || self.g.below(60) != 0 {
             out.push(self.line("End".to_string()));
+        }
+        // batch A1: an AI's locomotor sets follow its block, mostly; sometimes after a second AI module, which replaces
+        // the first (`clearAiModuleInfo`: a template has at most one)
+        if (name == "AIUpdateInterface" || name == "TestAI2") && self.g.below(5) == 0 {
+            let other = if name == "TestAI2" { "AIUpdateInterface" } else { "TestAI2" };
+            let tag = pick(self.g, &["ModuleTag_AI2", "ModuleTag_AI3"]);
+            out.push(self.line(format!("Behavior = {other} {tag}")));
+            self.ai_lines(out);
+            out.push(self.line("End".to_string()));
+        }
+        if (name == "AIUpdateInterface" || name == "TestAI2") && self.g.below(3) != 0 {
+            for _ in 0..1 + self.g.below(3) {
+                self.field(out, "Locomotor");
+            }
+        }
+    }
+
+    /// batch A1: the body of an AI module block (`AIUpdateModuleData`'s fields, `Turret` and `AltTurret` blocks).
+    fn ai_lines(&mut self, out: &mut Vec<String>) {
+        let clean = self.clean;
+        for _ in 0..self.g.below(6) {
+            let g = &mut *self.g;
+            let s = sep(g);
+            let l = match g.below(9) {
+                0..=2 => {
+                    let head = pick(g, &["Turret", "AltTurret", "Turret"]);
+                    out.push(self.line(head.to_string()));
+                    for _ in 0..self.g.below(6) {
+                        let l = self.turret_line();
+                        out.push(self.line(l));
+                    }
+                    if clean || self.g.below(40) != 0 {
+                        out.push(self.line("End".to_string()));
+                    }
+                    continue;
+                }
+                3 => format!("AutoAcquireEnemiesWhenIdle{s}{}", gen_bits(g, &AUTO_ACQUIRE_ENEMIES_NAMES, clean, true)),
+                4 => format!("MoodAttackCheckRate{s}{}", if clean || g.below(4) != 0 { format!("{}", g.below(5000)) } else { gen_int(g, false) }),
+                5 => format!("ForbidPlayerCommands{s}{}", gen_bool(g, clean)),
+                6 => format!("TurretsLinked{s}{}", gen_bool(g, clean)),
+                7 if !clean => pick(g, &["SurrenderDuration = 10", "Garbage = 1", "Locomotor = SET_NORMAL LocoA"]).to_string(),
+                _ => format!("MoodAttackCheckRate{s}{}", g.below(100)),
+            };
+            out.push(self.line(l));
+        }
+    }
+
+    /// One field line of a `Turret` block.
+    fn turret_line(&mut self) -> String {
+        let clean = self.clean;
+        let g = &mut *self.g;
+        let s = sep(g);
+        let slot = |g: &mut Gen| pick(g, &["PRIMARY", "SECONDARY", "TERTIARY", "primary", "QUATERNARY"]).to_string();
+        match g.below(12) {
+            0 => format!("{}{s}{}", pick(g, &["TurretTurnRate", "TurretPitchRate"]), gen_real(g, clean)),
+            1 | 2 => format!(
+                "{}{s}{}",
+                pick(g, &["NaturalTurretAngle", "NaturalTurretPitch", "FirePitch", "MinPhysicalPitch", "GroundUnitPitch", "MinIdleScanAngle", "MaxIdleScanAngle"]),
+                gen_real(g, clean)
+            ),
+            3 => {
+                let sl = slot(g);
+                format!("TurretFireAngleSweep{s}{sl} {}", gen_real(g, clean))
+            }
+            4 => {
+                let sl = slot(g);
+                format!("TurretSweepSpeedModifier{s}{sl} {}", gen_real(g, clean))
+            }
+            5 | 6 => {
+                let n = if !clean && g.below(8) == 0 { 0 } else { 1 + g.below(3) };
+                let v: Vec<String> = (0..n).map(|_| slot(g)).collect();
+                format!("ControlledWeaponSlots{s}{}", v.join(" "))
+            }
+            7 => format!("{}{s}{}", pick(g, &["AllowsPitch", "InitiallyDisabled", "FiresWhileTurning"]), gen_bool(g, clean)),
+            8 | 9 => format!(
+                "{}{s}{}",
+                pick(g, &["MinIdleScanInterval", "MaxIdleScanInterval", "RecenterTime"]),
+                if clean || g.below(4) != 0 { format!("{}", g.below(10000)) } else { gen_int(g, false) }
+            ),
+            10 if !clean => pick(g, &["InterTurretDelay = 5", "Bogus = 1"]).to_string(),
+            _ => format!("TurretTurnRate{s}{}", g.below(360)),
         }
     }
 
@@ -834,7 +1030,12 @@ impl Gx<'_> {
                 if g.below(5) == 0 { pick(g, &["DeterminedBySuperweaponRestriction", "determinedbysuperweaponrestriction"]).to_string() } else { gen_small(g, clean, 65535) }
             ),
             "MaxSimultaneousLinkKey" => format!("{name}{s}{}", pick(g, &["LinkA", "LinkB", "linka", ""])),
-            "Locomotor" => format!("{name}{s}{}", pick(g, &["SET_NORMAL Loco", "", "SET_WANDER None"])),
+            "Locomotor" => {
+                let set = if !clean && g.below(12) == 0 { "" } else { pick(g, &LOCO_SETS) };
+                let n = if !clean && g.below(10) == 0 { 0 } else { 1 + g.below(3) };
+                let locos: Vec<&str> = (0..n).map(|_| if clean { pick(g, &LOCOS[..4]) } else { pick(g, &LOCOS) }).collect();
+                format!("{name}{s}{set} {}", locos.join(" "))
+            }
             "RemoveModule" => format!("{name}{s}{}", if g.below(10) == 0 { String::new() } else { pick(g, &TAGS).to_string() }),
             n if n.starts_with("Voice") || n.starts_with("Sound") => format!("{name}{s}{}", pick(g, &SOUNDS)),
             _ => format!("{name}{s}X"),
@@ -943,7 +1144,7 @@ impl Gx<'_> {
     fn object(&mut self, out: &mut Vec<String>, name: &str) {
         out.push(format!("Object {name}{}", comment(self.g)));
         let n = if self.modules_only { 1 + self.g.below(7) } else { 1 + self.g.below(22) };
-        let module_fields = ["Behavior", "Body", "Draw", "ClientUpdate", "AddModule", "RemoveModule", "ReplaceModule", "InheritableModule", "OverrideableByLikeKind"];
+        let module_fields = ["Behavior", "Body", "Draw", "ClientUpdate", "AddModule", "RemoveModule", "ReplaceModule", "InheritableModule", "OverrideableByLikeKind", "Locomotor"];
         let other_in_module_mode = ["KindOf", "IsTrainable", "ArmorSet", "WeaponSet", "Side", "VisionRange"];
         for _ in 0..n {
             let field: &str = if self.modules_only {
@@ -1000,6 +1201,12 @@ fn preamble(g: &mut Gen) -> Vec<String> {
         for n in ["SCIENCE_A", "SCIENCE_B"] {
             if g.below(4) != 0 {
                 out.push(format!("Science {n}\n DisplayName = NAME:{n}\n IsGrantable = No\nEnd"));
+            }
+        }
+        // batch A1: the locomotors the AI modules' `Locomotor` lines name
+        for n in ["LocoA", "LocoB"] {
+            if g.below(4) != 0 {
+                out.push(format!("Locomotor {n}\n Surfaces = GROUND\n Speed = 10\nEnd"));
             }
         }
     }
@@ -1119,6 +1326,7 @@ struct Checks {
     dump_bug_audio: Check,
     dump_bug_inheritable: Check,
     dump_bug_reskin: Check,
+    dump_bug_ai: Check,
     keys: Check,
     find: Check,
     find_bug: Check,
@@ -1146,6 +1354,7 @@ impl Checks {
             dump_bug_audio: Check::new("first sound"),
             dump_bug_inheritable: Check::new("module inheritable flag"),
             dump_bug_reskin: Check::new("reskinnedFrom"),
+            dump_bug_ai: Check::new("AI mood check rate"),
             keys: Check::new("NAMEKEY of the probe names"),
             find: Check::new("findTemplate"),
             find_bug: Check::new("findTemplate"),
@@ -1183,6 +1392,12 @@ struct Tally {
     with_modules: u64,
     modules: u64,
     client_modules: u64,
+    /// batch A1: AI module data dumped, their locomotor sets (and those with a locomotor), turrets, non-default fields
+    ai_modules: u64,
+    loco_sets: u64,
+    loco_sets_filled: u64,
+    turrets: u64,
+    ai_fields_set: u64,
     armor_sets: u64,
     weapon_sets: u64,
     prereqs: u64,
@@ -1415,6 +1630,18 @@ fn tally_dump(c: &Ctx, t: &mut Tally) {
             t.modules += n as u64;
             t.client_modules += (d.get_draw_module_info().get_count() + d.get_client_update_module_info().get_count()) as u64;
             t.with_modules += u64::from(n > 0);
+            for nug in d.get_behavior_module_info().nuggets() {
+                if let ModuleInfoData::Logic(m) = &nug.second {
+                    if let Some(ai) = m.ai_update_data() {
+                        t.ai_modules += 1;
+                        let map = ai.locomotor_templates.read().unwrap();
+                        t.loco_sets += map.len() as u64;
+                        t.loco_sets_filled += map.values().filter(|v| !v.is_empty()).count() as u64;
+                        t.turrets += ai.turret_data.iter().filter(|x| x.is_some()).count() as u64;
+                        t.ai_fields_set += u64::from(ai.mood_attack_check_rate != 60 || ai.forbid_player_commands || ai.turrets_linked || ai.auto_acquire_enemies_when_idle != 0);
+                    }
+                }
+            }
             t.armor_sets += d.armor_template_sets().len() as u64;
             t.weapon_sets += d.get_weapon_template_sets().len() as u64;
             t.prereqs += d.get_prereq_count() as u64;
@@ -1581,7 +1808,8 @@ fn run_sessions(seed: u64, sessions: usize, modules_only: bool, label: &str) -> 
             ck.dump_bug_weapon_owner.eq(rust_dump(&c, 2), cd.clone(), file);
             ck.dump_bug_audio.eq(rust_dump(&c, 3), cd.clone(), file);
             ck.dump_bug_inheritable.eq(rust_dump(&c, 4), cd.clone(), file);
-            ck.dump_bug_reskin.eq(rust_dump(&c, 5), cd, file);
+            ck.dump_bug_reskin.eq(rust_dump(&c, 5), cd.clone(), file);
+            ck.dump_bug_ai.eq(rust_dump(&c, 7), cd, file);
             tally_dump(&c, &mut t);
             probe(&mut c, &mut ck, &mut t, &mut g, &tag, step + session as u32);
         }
@@ -1600,6 +1828,7 @@ fn finish(ck: Checks, full: bool) {
     }
     ck.dump_bug_inheritable.finish_planted();
     ck.dump_bug_reskin.finish_planted();
+    ck.dump_bug_ai.finish_planted();
     ck.keys.finish();
     ck.find.finish();
     ck.find_bug.finish_planted();
@@ -1620,6 +1849,10 @@ fn finish(ck: Checks, full: bool) {
 
 fn report(label: &str, t: &Tally, excluded: &Excluded) {
     println!("{label}: set lookups answered from a copied (stale) cache, index not comparable: {}", t.stale_cache);
+    println!(
+        "{label}: AI module data compared {} times ({} locomotor sets, {} with locomotors; {} turrets; {} with a field set)",
+        t.ai_modules, t.loco_sets, t.loco_sets_filled, t.turrets, t.ai_fields_set
+    );
     println!(
         "{label}: {} sessions, {} loads ({} overrides, {} ok, {} threw, {} with a message), {} resets, {} postProcessLoad, {} init/update; \
          compared {} template objects in {} chains ({} override copies, {} templates made for a map, {} reskins, {} with modules: {} modules of which {} client, \
@@ -1673,6 +1906,7 @@ fn object_blocks_match_upstream() {
 fn module_lists_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ck, t, excluded) = run_sessions(0xB0DE, 3_000, true, "module lists");
+    assert!(t.ai_modules > 500 && t.loco_sets_filled > 100 && t.turrets > 150, "too few AI module data compared (batch A1)");
     report("module lists", &t, &excluded);
     assert!(t.loads_ok > 500 && t.loads_failed > 1000, "the generator must reach both outcomes: {} ok, {} threw", t.loads_ok, t.loads_failed);
     assert!(t.modules > 8000 && t.client_modules > 1500 && t.override_nodes > 800, "too few modules compared");

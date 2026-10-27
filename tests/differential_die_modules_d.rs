@@ -190,6 +190,7 @@ fn object_block(ini: &mut Ini<'_>, c: &mut FactoryCtx) -> IniResult<()> {
         weapons: &c.weapons,
         sciences: &c.sciences,
         text: &Text,
+        locomotors: &rts_lockstep_engine::logic::locomotor::LocomotorStore::new(),
     };
     c.factory.parse_object_block(ini, &mut env, 0)
 }

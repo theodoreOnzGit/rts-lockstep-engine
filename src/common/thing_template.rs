@@ -117,12 +117,16 @@
 //! energy and factory counts), and `getBuildable()`'s script override
 //! (`TheGameLogic->findBuildableStatusOverride`; [`ThingTemplate::buildable`]
 //! is the template's own value) and `getMaxSimultaneousOfType()`'s
-//! superweapon restriction (a parameter). `friend_getAIModuleInfo()` and
-//! the `Locomotor` field (`AIUpdateModuleData::parseLocomotorSet`) need
-//! `AIUpdateModuleData` (layer 9): no AI module data exists yet, so the
-//! field is `INI_INVALID_DATA`, which is also what upstream throws for a
-//! template without an `AIUpdate` module ("Attempted to specify a locomotor
-//! ... without an AIUpdate block"). `getDisplayColor`, the editor sorting, the
+//! superweapon restriction (a parameter). ~~`friend_getAIModuleInfo()` and
+//! the `Locomotor` field need `AIUpdateModuleData` (layer 9): no AI module
+//! data exists yet, so the field is `INI_INVALID_DATA`.~~ **CORRECTED
+//! 2026-10-27 (batch A1):** `AIUpdateModuleData` is translated
+//! (`logic::ai::ai_update_data`), and the `Locomotor` field is its
+//! `parseLocomotorSet`, into the data [`ThingTemplate::friend_get_ai_module_info`]
+//! finds, compared against upstream by `tests/differential_thing_template.rs`;
+//! a template without an `AIUpdate` module still throws `INI_INVALID_DATA`
+//! ("Attempted to specify a locomotor ... without an AIUpdate block").
+//! `getDisplayColor`, the editor sorting, the
 //! shadow and the radar priority are plain data. `ProductionPrerequisite`'s
 //! player-dependent members are in [`super::production_prerequisite`].
 //!
@@ -1449,11 +1453,18 @@ impl ThingTemplate {
         self.weapons_copied_from_default
     }
 
-    /// `friend_getAIModuleInfo()`: whether the template has a module whose
-    /// data is AI module data (the data itself is `AIUpdateModuleData`,
-    /// layer 9).
-    pub fn has_ai_module(&self) -> bool {
-        self.behavior_module_info.nuggets().iter().any(|n| n.second.is_ai_module_data())
+    /// `friend_getAIModuleInfo()` (batch A1): the first behavior module's data that is AI module data, shared with every copy of
+    /// this template (upstream hands out the pointer; see `logic::ai::ai_update_data`).
+    pub fn friend_get_ai_module_info(&self) -> Option<std::sync::Arc<crate::logic::ai::ai_update_data::AiUpdateModuleData>> {
+        let n = if crate::logic::modules::plant(3185) {
+            self.behavior_module_info.nuggets().iter().take(1).find(|n| n.second.is_ai_module_data())?
+        } else {
+            self.behavior_module_info.nuggets().iter().find(|n| n.second.is_ai_module_data())?
+        };
+        match &n.second {
+            ModuleInfoData::Logic(d) => d.ai_update_data().cloned(),
+            ModuleInfoData::Client(_) => None,
+        }
     }
 
     /// `removeModuleInfo(moduleToRemove, clearedModuleNameOut)`: remove the
@@ -1678,6 +1689,8 @@ pub struct ThingParseEnv<'a> {
     pub sciences: &'a ScienceStore,
     /// `TheGameText`.
     pub text: &'a dyn GameTextFetch,
+    /// `TheLocomotorStore`, for the `Locomotor` field (batch A1).
+    pub locomotors: &'a crate::logic::locomotor::LocomotorStore,
 }
 
 impl<'a> ThingParseEnv<'a> {
@@ -1691,6 +1704,7 @@ impl<'a> ThingParseEnv<'a> {
             weapons: self.weapons,
             sciences: self.sciences,
             text: self.text,
+            locomotors: self.locomotors,
         }
     }
 }
@@ -2336,16 +2350,13 @@ fn f_replace_module(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> 
     Ok(())
 }
 
-/// `Locomotor`: `AIUpdateModuleData::parseLocomotorSet`, a cut point (see the
-/// module docs). With no AI module data (and none can exist yet) it throws
-/// `INI_INVALID_DATA`, as upstream does for a template without an `AIUpdate`.
-fn f_locomotor(_ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
-    if !w.tt.has_ai_module() {
-        // Attempted to specify a locomotor for object without an AIUpdate block.
+/// `Locomotor`: `AIUpdateModuleData::parseLocomotorSet` into the template's AI module data (batch A1); a template without an
+/// `AIUpdate` throws `INI_INVALID_DATA` ("Attempted to specify a locomotor ... without an AIUpdate block").
+fn f_locomotor(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> IniResult<()> {
+    let Some(ai) = w.tt.friend_get_ai_module_info() else {
         return Err(IniError::new(IniErrorKind::InvalidData));
-    }
-    // An AI module's data is not translated: unreachable until layer 9.
-    Err(IniError::new(IniErrorKind::Bug))
+    };
+    ai.parse_locomotor_set(ini, w.env.names, w.env.locomotors)
 }
 
 // ---------------------------------------------------------------------------

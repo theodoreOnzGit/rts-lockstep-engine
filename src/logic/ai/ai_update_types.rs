@@ -33,6 +33,9 @@ pub const LOCOMOTORSET_SUPERSONIC: LocomotorSetType = 6;
 /// "set used for abnormally slow (but not damaged) speeds"
 pub const LOCOMOTORSET_SLUGGISH: LocomotorSetType = 7;
 pub const LOCOMOTORSET_COUNT: LocomotorSetType = 8;
+/// `TheLocomotorSetNames[]` (under `DEFINE_LOCOMOTORSET_NAMES`), without the `NULL`.
+pub const LOCOMOTOR_SET_NAMES: [&str; 8] =
+    ["SET_NORMAL", "SET_NORMAL_UPGRADED", "SET_FREEFALL", "SET_WANDER", "SET_PANIC", "SET_TAXIING", "SET_SUPERSONIC", "SET_SLUGGISH"];
 
 /// `enum GuardTargetType`.
 pub type GuardTargetType = i32;
@@ -47,6 +50,8 @@ pub const AAS_IDLE_STEALTHED: u32 = 0x02;
 pub const AAS_IDLE_NO: u32 = 0x04;
 pub const AAS_IDLE_NOT_WHILE_ATTACKING: u32 = 0x08;
 pub const AAS_IDLE_ATTACK_BUILDINGS: u32 = 0x10;
+/// `TheAutoAcquireEnemiesNames[]` (under `DEFINE_AUTOACQUIRE_NAMES`), without the `NULL`.
+pub const AUTO_ACQUIRE_ENEMIES_NAMES: [&str; 5] = ["YES", "STEALTHED", "NO", "NOTWHILEATTACKING", "ATTACK_BUILDINGS"];
 
 /// `enum MoodMatrixParameters` (bits).
 pub const MM_CONTROLLER_PLAYER: u32 = 0x0000_0001;
