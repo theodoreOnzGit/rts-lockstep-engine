@@ -21,10 +21,18 @@
 **
 ** Batch A3 adds the victim, mood, morale and state-query members (ai_update_a3.inc), over more stand-ins: the scene's other objects
 ** (ids 1..31; which exist, which have an AI), the controlling player and its upgrades, the team, the container, stealth, the last
-** damage, TheAI's data, vision range and closest enemy, the current weapon, three behavior modules' hordes, and the state machine's
-** answers (current and temporary state, idle/attack/busy, goal object).
+** damage, TheAI's data, vision range and closest enemy, the current weapon, three behavior modules' hordes, and (until batch A4)
+** the state machine's answers.
 **
-** Entry points: ref_ai_a2_reset, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
+** Batch A4 replaces the stand-in state machine with the REAL one: AIStateMachine.h read unchanged, StateMachine.cpp compiled
+** unchanged beside this file (State and StateMachine renamed by PreRTS.h), AIStates.cpp's AIStateMachine members, idle, dead and
+** wait states (ai_states_a4.inc: verbatim but for the constructor, where each state class not yet translated is an
+** AIPlaceholderState of its id, logged and answering from the hash) and AIUpdate.cpp's makeStateMachine, onObjectCreated and update
+** (ai_update_a4.inc). New stand-ins: the pathfinder's goal position, snap, goal update and queue; the turrets' updates; the idle
+** state's commands (aiMoveToObject, aiAttackObject: logged); the repulsor; the vision range; the dead state's model conditions and
+** script notice; a Squad and a Waypoint that are never reached.
+**
+** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -63,6 +71,8 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 	Int pathDiameter );
 #include "path_p1.inc"
 #include "ai_pathfinder_a2.inc"
+/* batch A4: the real AIStateMachine.h (its State and StateMachine are StateMachine.cpp's, compiled beside this file) */
+#include "GameLogic/AIStateMachine.h"
 
 /* ---- the AI ------------------------------------------------------------------------------------------------------------------ */
 
@@ -77,8 +87,56 @@ class TurretAIData;
 class TurretAI
 {
 public:
-	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) {}
+	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) : m_which((Int)tur) {}
+	/* batch A4: the AI's update runs it (batch T1's, its own build): logged, its sleep from the hash */
+	UpdateSleepTime updateTurretAI();
+	Int m_which;
 };
+
+/* batch A4: AIStateMachine's neighbours not yet translated. Squad (Squad.cpp): no machine of these batches has one (the squad
+** setters are not compiled; xfer writes `hasSquad` false, and a stream saying true is never loaded). Waypoint: no goal waypoint is
+** set (xfer writes its name empty, and loads none). */
+class Squad : public MemoryPoolObject, public Snapshot
+{
+	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(Squad, "AiSquad")
+public:
+	Squad() {}
+protected:
+	virtual void crc( Xfer *xfer ) { abort(); }
+	virtual void xfer( Xfer *xfer ) { abort(); }
+	virtual void loadPostProcess() { abort(); }
+};
+EMPTY_DTOR(Squad)
+class Waypoint
+{
+public:
+	AsciiString getName() const { abort(); }
+};
+
+/* batch A4: the AI states not yet translated. Each is this class with its id (build.rs edits AIStateMachine's constructor): its
+** isIdle/isAttack/isBusy are its class's static answers (AIAttackState's TRUE for the four attack states; FALSE for the others,
+** whose answers are their inner machines' or the base's); its onEnter, update and onExit are logged, and onEnter and update
+** answer from the hash (the scene's stateRate); its snapshot is the version only. The Rust side is AiState::Untranslated with the
+** host's callbacks. */
+class AIPlaceholderState : public State
+{
+	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(AIPlaceholderState, "AIPlaceholderState")
+public:
+	AIPlaceholderState( StateMachine *machine, StateID id ) : State( machine, "AIPlaceholderState" ), m_id(id) { }
+	virtual StateReturnType onEnter();
+	virtual void onExit( StateExitType status );
+	virtual StateReturnType update();
+	virtual Bool isAttack() const
+	{
+		return m_id == AI_ATTACK_POSITION || m_id == AI_ATTACK_OBJECT || m_id == AI_FORCE_ATTACK_OBJECT || m_id == AI_ATTACK_AND_FOLLOW_OBJECT;
+	}
+protected:
+	virtual void crc( Xfer *xfer ) {}
+	virtual void xfer( Xfer *xfer ) { XferVersion cv = 1; XferVersion v = cv; xfer->xferVersion( &v, cv ); }
+	virtual void loadPostProcess() {}
+	StateID m_id;
+};
+EMPTY_DTOR(AIPlaceholderState)
 
 /* AIUpdateModuleData's members (AIUpdate.h), and its real findLocomotorTemplateVector (ai_update_a2.inc) */
 class AIUpdateModuleData
@@ -109,6 +167,8 @@ public:
 	const Path* getPath( void ) const { return m_path; }				///< return the agent's current path
 	inline Real getPathExtraDistance() const { return m_pathExtraDistance; }
 	inline AIStateMachine* getStateMachine() { return m_stateMachine; }
+	/* batch A4 (AIUpdate.h): `inline StateID getCurrentStateID() const { return getStateMachine()->getCurrentStateID(); }` */
+	inline StateID getCurrentStateID() const { return getStateMachine()->getCurrentStateID(); }
 	inline const AIStateMachine* getStateMachine() const { return m_stateMachine; }
 	inline const Coord3D* getGoalPosition() const { return getStateMachine()->getGoalPosition(); }	///< return the id of the current state of the machine
 	void setFinalPosition(const Coord3D *pos) { m_finalPosition = *pos; m_doFinalPosition = false;}
@@ -178,11 +238,22 @@ public:
 	Bool isMoving() const;
 	AIGroup *getGroup(void);
 
+	/* batch A4's members (ai_update_a4.inc) */
+	AIStateMachine* makeStateMachine();
+	void onObjectCreated();
+	UpdateSleepTime update( void );
+	/* AICommandInterface's (AI.h) commands the idle state gives: aiDoCommand, not yet translated (logged: the command, its source,
+	** its object, its int value) */
+	void aiMoveToObject( Object *obj, CommandSourceType cmdSource );
+	void aiAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+
 #include "ai_update_members.inc"
 };
 
 #include "ai_update_a2.inc"
 #include "ai_update_a3.inc"
+#include "ai_update_a4.inc"
+#include "ai_states_a4.inc"
 
 #undef private
 #undef protected
@@ -249,8 +320,7 @@ UpgradeCenter g_upgradeCenter;
 HordeUpdateInterface g_horde[3];
 BehaviorModule g_modules[3];
 BehaviorModule *g_moduleList[4];
-AIStateMachine g_machine;
-Coord3D g_goal;
+ScriptEngine g_scriptEngine;
 UnsignedInt g_nextCallFrame = 0;		/* the AI module's sleepy update: its next call frame */
 alignas(16) unsigned char g_pathfinderMem[sizeof(Pathfinder)];
 
@@ -261,6 +331,9 @@ PathfindCell *g_columns[MAP_W];
 
 AIUpdateModuleData *g_data = 0;
 AIUpdateInterface *g_ai_update = 0;
+/* batch A4: the file the machine's xfer goes through, and the last save */
+std::string g_xferPath;
+std::vector<unsigned char> g_saved;
 
 }  // namespace
 
@@ -270,6 +343,7 @@ TerrainLogic *TheTerrainLogic = &g_terrain;
 PartitionManager *ThePartitionManager = &g_partition;
 AI *TheAI = &g_ai;
 UpgradeCenter *TheUpgradeCenter = &g_upgradeCenter;
+ScriptEngine *TheScriptEngine = &g_scriptEngine;
 
 Pathfinder *AI::pathfinder() { return (Pathfinder *)g_pathfinderMem; }
 
@@ -313,6 +387,8 @@ Int TerrainLogic::alignOnTerrain(Real angle, const Coord3D &pos, Bool stickToGro
 	/* only for KINDOF_STICK_TO_TERRAIN_SLOPE things, which this scene has none of */
 	abort();
 }
+
+Waypoint *TerrainLogic::getWaypointByName(AsciiString name) { abort(); }
 
 /* the paths: batch P1's hash */
 PathfindLayerEnum TerrainLogic::getLayerForDestination(const Coord3D *pos)
@@ -450,6 +526,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_INFANTRY) return (g_aiEnv.kindMask & 16) != 0;
 	if (t == KINDOF_IGNORED_IN_GUI) return (g_aiEnv.kindMask & 32) != 0;
 	if (t == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT) return (g_aiEnv.kindMask & 64) != 0;
+	/* batch A4 */
+	if (t == KINDOF_CAN_BE_REPULSED) return (g_aiEnv.kindMask & 128) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -466,6 +544,9 @@ Bool Object::isDisabledByType(DisabledType type) const
 {
 	if (type == DISABLED_HELD) return g_aiEnv.disabledHeld != 0;
 	if (type == DISABLED_UNMANNED) return g_aiEnv.disabledUnmanned != 0;
+	/* batch A4 */
+	if (type == DISABLED_PARALYZED || type == DISABLED_EMP || type == DISABLED_SUBDUED || type == DISABLED_HACKED)
+		return ((g_aiEnv.disabledMask >> (Int)type) & 1) != 0;
 	return FALSE;
 }
 void Object::setModelConditionState(ModelConditionFlagType a) { L(LOG_SET_MODEL_COND, { (unsigned)a }); }
@@ -501,13 +582,6 @@ void UpdateModule::setWakeFrame(Object *obj, UpdateSleepTime wakeDelay)
 }
 Object *UpdateModule::getObject() const { return &g_object; }
 void AIGroup::recomputeGroupSpeed() { L(LOG_GROUP_SPEED, {}); }
-const Coord3D *AIStateMachine::getGoalPosition() const
-{
-	g_goal.x = g_aiEnv.goal[0];
-	g_goal.y = g_aiEnv.goal[1];
-	g_goal.z = g_aiEnv.goal[2];
-	return &g_goal;
-}
 const AIUpdateModuleData* AIUpdateInterface::getAIUpdateModuleData() const { return g_data; }
 
 /* ---- batch A3's stand-ins */
@@ -522,12 +596,6 @@ Object *findObject(ObjectID id)
 }
 }  // namespace
 Object *GameLogic::findObjectByID(ObjectID id) const { return findObject(id); }
-Object *AIStateMachine::getGoalObject() { return findObject((ObjectID)g_aiEnv.goalObject); }
-StateID AIStateMachine::getCurrentStateID() const { return (StateID)g_aiEnv.machineState; }
-Bool AIStateMachine::isInIdleState() const { return g_aiEnv.machineIdle != 0; }
-Bool AIStateMachine::isInAttackState() const { return g_aiEnv.machineAttack != 0; }
-Bool AIStateMachine::isInBusyState() const { return g_aiEnv.machineBusy != 0; }
-StateID AIStateMachine::getTemporaryState(void) const { return (StateID)g_aiEnv.tempState; }
 void AIUpdateInterface::addTargeter(ObjectID id, Bool add)
 {
 	/* (only another object's AI is asked) */
@@ -614,6 +682,91 @@ AIUpdateInterface *Object::getAI()
 	return ((g_aiEnv.aiMask >> m_otherId) & 1) ? (AIUpdateInterface *)g_otherAiMem : NULL;
 }
 
+/* ---- batch A4's stand-ins */
+Real Object::getVisionRange() const { return g_aiEnv.objVisionRange; }
+void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, const ModelConditionFlags &set)
+{
+	/* the cleared conditions, then the set ones, each in increasing order */
+	std::vector<unsigned> w;
+	for (Int i = 0; i < MODELCONDITION_COUNT; ++i) if (clr.test(i)) w.push_back((unsigned)i);
+	w.push_back(0xffffffffu);
+	for (Int i = 0; i < MODELCONDITION_COUNT; ++i) if (set.test(i)) w.push_back((unsigned)i);
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_CLEAR_SET_MODEL);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+void ScriptEngine::notifyOfObjectCreationOrDestruction() { L(LOG_SCRIPT_NOTIFY, {}); }
+Object *AI::findClosestRepulsor(const Object *me, Real range)
+{
+	L(LOG_REPULSOR, { (unsigned)me->getID(), bitsOf(range) });
+	return findObject((ObjectID)g_aiEnv.repulsor);
+}
+Bool Pathfinder::goalPosition(Object *obj, Coord3D *pos)
+{
+	L(LOG_PF_GOAL_POSITION, { (unsigned)g_aiEnv.pfHasGoal });
+	if (!g_aiEnv.pfHasGoal) return FALSE;
+	pos->x = g_aiEnv.pfGoal[0];
+	pos->y = g_aiEnv.pfGoal[1];
+	pos->z = g_aiEnv.pfGoal[2];
+	return TRUE;
+}
+/* the cell's centre (the stand-in's grid) */
+void Pathfinder::snapPosition(Object *obj, Coord3D *pos)
+{
+	L(LOG_PF_SNAP, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+	pos->x = floorf(pos->x / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2;
+	pos->y = floorf(pos->y / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2;
+}
+void Pathfinder::updateGoal(Object *obj, const Coord3D *newGoalPos, PathfindLayerEnum layer)
+{
+	L(LOG_PF_UPDATE_GOAL, { bitsOf(newGoalPos->x), bitsOf(newGoalPos->y), bitsOf(newGoalPos->z), (unsigned)layer });
+}
+Bool Pathfinder::queueForPath(ObjectID id) { L(LOG_PF_QUEUE, { (unsigned)id }); return TRUE; }
+UpdateSleepTime TurretAI::updateTurretAI()
+{
+	unsigned h = p1Hash(12, { TheGameLogic->getFrame(), (unsigned)m_which });
+	UpdateSleepTime r = p1Pick(h, g_aiEnv.turretRate) ? UPDATE_SLEEP_NONE
+		: ((h >> 16) & 1) ? UPDATE_SLEEP(1 + (h >> 20) % 60) : UPDATE_SLEEP_FOREVER;
+	L(LOG_TURRET_UPDATE, { (unsigned)m_which, (unsigned)r });
+	return r;
+}
+void AIUpdateInterface::aiMoveToObject(Object *obj, CommandSourceType cmdSource)
+{
+	L(LOG_AI_COMMAND, { (unsigned)AICMD_MOVE_TO_OBJECT, (unsigned)cmdSource, obj ? (unsigned)obj->getID() : 0u, 0u });
+}
+void AIUpdateInterface::aiAttackObject(Object *victim, Int maxShotsToFire, CommandSourceType cmdSource)
+{
+	L(LOG_AI_COMMAND, { (unsigned)AICMD_ATTACK_OBJECT, (unsigned)cmdSource, victim ? (unsigned)victim->getID() : 0u, (unsigned)maxShotsToFire });
+}
+namespace {
+/* a placeholder state's answer: the hash of the frame, its id and the callback (0 onEnter, 1 update) */
+StateReturnType placeholderAnswer(StateID id, unsigned which)
+{
+	unsigned h = p1Hash(11, { TheGameLogic->getFrame(), (unsigned)id, which });
+	if (p1Pick(h, g_aiEnv.stateRate)) return STATE_CONTINUE;
+	switch ((h >> 16) % 4u) {
+	case 0: return STATE_SUCCESS;
+	case 1: return STATE_FAILURE;
+	case 2: return STATE_SLEEP(1 + (h >> 20) % 40);
+	default: return STATE_SLEEP_FOREVER;
+	}
+}
+}  // namespace
+StateReturnType AIPlaceholderState::onEnter()
+{
+	StateReturnType r = placeholderAnswer(m_id, 0);
+	L(LOG_STATE_ENTER, { (unsigned)m_id, (unsigned)(Int)r });
+	return r;
+}
+StateReturnType AIPlaceholderState::update()
+{
+	StateReturnType r = placeholderAnswer(m_id, 1);
+	L(LOG_STATE_UPDATE, { (unsigned)m_id, (unsigned)(Int)r });
+	return r;
+}
+void AIPlaceholderState::onExit(StateExitType status) { L(LOG_STATE_EXIT, { (unsigned)m_id, (unsigned)status }); }
+
 /* ---- the driver -------------------------------------------------------------------------------------------------------------- */
 
 namespace {
@@ -624,8 +777,6 @@ void setScene(const AiEnv *env)
 	g_aiEnv = *env;
 	TheGlobalData->m_gravity = env->gravity;
 	TheGlobalData->m_movementPenaltyDamageState = env->penalty;
-	/* batch A3: the AI's state machine (the stand-in), or none */
-	if (g_ai_update) g_ai_update->m_stateMachine = env->hasMachine ? &g_machine : NULL;
 }
 
 void putU32(std::vector<unsigned> &v, unsigned x) { v.push_back(x); }
@@ -728,6 +879,9 @@ void ref_ai_a2_reset(void)
 	log.clear();
 }
 
+/* batch A4: the file the machine's xfer goes through (one per test thread) */
+void ref_ai_a4_xfer_path(const char *path) { g_xferPath = path; g_saved.clear(); }
+
 /* INI::load's loop over `filename` (load type `loadType`), each Locomotor block to this build's handler (see the header); 0, or 1
 ** if it threw */
 int ref_ai_a2_load(const char *filename, int loadType)
@@ -787,7 +941,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_object.setOrientation(angle);
 	--g_aiQuiet;
 	g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL);
-	g_ai_update->m_stateMachine = g_aiEnv.hasMachine ? &g_machine : NULL;
+	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
+	if (g_aiEnv.hasMachine) g_ai_update->onObjectCreated();
 	int n = (int)g_aiLog->size();
 	if (n <= cap && n > 0) memcpy(log, &(*g_aiLog)[0], 4 * n);
 	return n;
@@ -891,6 +1046,47 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 57: if (ia[1]) g_object.m_status |= 1ULL << ia[0]; else g_object.m_status &= ~(1ULL << ia[0]); break;
 	/* the ids privateMoveAwayFromUnit sets (not yet translated) */
 	case 58: ai->m_moveOutOfWay1 = (ObjectID)ia[0]; ai->m_moveOutOfWay2 = (ObjectID)ia[1]; break;
+	/* batch A4: the machine (AIStateMachine's overrides, StateMachine's members), the AI's update and creation */
+	case 59: r.push_back((unsigned)(Int)ai->getStateMachine()->setState((StateID)ia[0])); break;
+	case 60: r.push_back((unsigned)(Int)ai->getStateMachine()->setTemporaryState((StateID)ia[0], ia[1])); break;
+	case 61: ai->getStateMachine()->clear(); break;
+	case 62: r.push_back((unsigned)(Int)ai->getStateMachine()->resetToDefaultState()); break;
+	case 63: ai->getStateMachine()->setGoalObject(findObject((ObjectID)ia[0])); break;
+	case 64: ai->getStateMachine()->setGoalPosition(&p); break;
+	case 65: r.push_back((unsigned)ai->update()); break;
+	case 66: ai->onObjectCreated(); break;
+	case 67: if (ia[0]) ai->getStateMachine()->lock("op"); else ai->getStateMachine()->unlock(); break;
+	case 68: ai->getStateMachine()->addToGoalPath(&p); break;
+	case 69: { const Coord3D *q = ai->getStateMachine()->getGoalPathPosition(ia[0]); r.push_back(q ? 1u : 0u); if (q) putPos(r, *q); break; }
+	case 70: {
+		/* the machine saved (xferSnapshot): the status, then the bytes */
+		XferSave x;
+		int st = 0;
+		try { x.open(AsciiString(g_xferPath.c_str())); x.xferSnapshot(ai->getStateMachine()); } catch (...) { st = 1; }
+		try { x.close(); } catch (...) {}
+		g_saved.clear();
+		if (FILE *f = fopen(g_xferPath.c_str(), "rb")) {
+			unsigned char b[65536];
+			size_t m = fread(b, 1, sizeof b, f);
+			fclose(f);
+			g_saved.assign(b, b + m);
+		}
+		r.push_back((unsigned)st);
+		r.push_back((unsigned)g_saved.size());
+		for (unsigned char c : g_saved) r.push_back(c);
+		break;
+	}
+	case 71: {
+		/* the last save loaded into the machine (xferSnapshot, then loadPostProcess): the status */
+		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_saved.empty()) fwrite(&g_saved[0], 1, g_saved.size(), f); fclose(f); }
+		XferLoad x;
+		int st = 0;
+		try { x.open(AsciiString(g_xferPath.c_str())); x.xferSnapshot(ai->getStateMachine()); } catch (...) { st = 1; }
+		try { x.close(); } catch (...) {}
+		ai->getStateMachine()->loadPostProcess();
+		r.push_back((unsigned)st);
+		break;
+	}
 	}
 	for (size_t i = 0; i < r.size(); ++i) out[i] = r[i];
 	int n = (int)g_aiLog->size();
@@ -974,6 +1170,26 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 	putU32(v, (unsigned)(g_object.m_status & 0xffffffffu));
 	putU32(v, (unsigned)(g_object.m_status >> 32));
 	putU32(v, g_nextCallFrame);
+	/* batch A4: the machine (StateMachine's members, AIStateMachine's, the idle state's) */
+	const AIStateMachine *sm = ai->m_stateMachine;
+	putU32(v, sm ? 1u : 0u);
+	if (sm) {
+		putU32(v, sm->m_currentState ? (unsigned)sm->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+		putU32(v, sm->m_sleepTill);
+		putU32(v, (unsigned)sm->m_defaultStateID);
+		putU32(v, (unsigned)sm->m_goalObjectID);
+		putPos(v, sm->m_goalPosition);
+		putU32(v, sm->m_locked ? 1u : 0u);
+		putU32(v, sm->m_defaultStateInited ? 1u : 0u);
+		putU32(v, (unsigned)sm->getTemporaryState());
+		putU32(v, sm->m_temporaryStateFramEnd);
+		putU32(v, (unsigned)sm->m_goalPath.size());
+		for (size_t i = 0; i < sm->m_goalPath.size(); ++i) putPos(v, sm->m_goalPath[i]);
+		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;
+		putU32(v, (unsigned)idle->m_initialSleepOffset);
+		putU32(v, idle->m_shouldLookForTargets ? 1u : 0u);
+		putU32(v, idle->m_inited ? 1u : 0u);
+	}
 	int n = (int)v.size();
 	if (n <= cap && n > 0) memcpy(buf, &v[0], 4 * n);
 	return n;

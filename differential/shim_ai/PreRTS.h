@@ -59,6 +59,18 @@
 #define CollideModuleInterface AiCollideModuleInterface
 #define DamageInfo AiDamageInfo
 #define AiData AiAiData
+/* batch A4: StateMachine.cpp is compiled again in this archive (over this build's Object and GameLogic), the real
+** AIStateMachine.h is read, and AIStates.cpp's machine and first states are compiled */
+#define State AiSmState
+#define StateMachine AiSmStateMachine
+#define ScriptEngine AiScriptEngine
+#define TheScriptEngine AiTheScriptEngine
+#define Squad AiSquad
+#define AIIdleState AiAIIdleState
+#define AIDeadState AiAIDeadState
+#define AIWaitState AiAIWaitState
+#define AIBusyState AiAIBusyState
+#define AIPlaceholderState AiAIPlaceholderState
 /* ---- renames: Locomotor.cpp's classes, its global and its INI block handler */
 #define Locomotor AiLocomotor
 #define LocomotorTemplate AiLocomotorTemplate

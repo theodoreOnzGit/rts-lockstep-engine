@@ -650,6 +650,12 @@ impl<S: StateBehavior> StateMachine<S> {
         }
     }
 
+    /// `internalGetState(id)`'s answer, as an id (for `AIStateMachine::setTemporaryState` and its `xfer`, which keep a state of
+    /// the machine outside its current one): `id`, or the default state for an unknown id, or `ERROR_BAD_ARG`.
+    pub fn resolve_state_id(&self, id: StateId) -> SmResult<StateId> {
+        self.internal_get_state(id)
+    }
+
     // ---------------------------------------------------------------------
     // Queries
     // ---------------------------------------------------------------------
@@ -1070,8 +1076,10 @@ impl<S: StateBehavior> StateMachine<S> {
     // ---------------------------------------------------------------------
 
     /// `xferSnapshot( state )` for the state with this id: the value is lent
-    /// to the xfer and put back, whatever the result.
-    fn xfer_state(&mut self, xfer: &mut dyn Xfer, id: StateId) -> XferResult<()> {
+    /// to the xfer and put back, whatever the result. (Public for a machine
+    /// that snapshots a state of its own, as `AIStateMachine` its temporary
+    /// state.)
+    pub fn xfer_state(&mut self, xfer: &mut dyn Xfer, id: StateId) -> XferResult<()> {
         let Some(kind) = self.state_map.get_mut(&id).and_then(|e| e.kind.take()) else {
             return Err(XferStatus::InvalidParameters);
         };

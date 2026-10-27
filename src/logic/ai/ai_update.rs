@@ -14,7 +14,8 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 //! `AIUpdateInterface`, the AI of a unit: its state and the members that do not need its state machine (`p1w13-sonnet`, layer 10,
-//! batch A2). The machine (`AIStateMachine`), the turrets' `TurretAI`s, the commands and the update come in later batches.
+//! batch A2). The machine (`AIStateMachine`), its first states and the update are `ai_states` (batch A4); the turrets' `TurretAI`s
+//! and the commands come in later batches.
 //!
 //! # What is here
 //!
@@ -29,8 +30,8 @@
 //!
 //! [`AiHost`] is the AI's object and the world as these members reach them: the object (it is the [`LocomotorHost`] the locomotors
 //! drive and the [`PathHost`] the path asks), its sleepy update's wake frame, its group, the pathfinder's three answers the AI asks
-//! for itself, the partition's distance, the state machine's goal position (until the machine is translated), and the store a new
-//! locomotor is made from. The World implements it once the AI is a module of it.
+//! for itself, the partition's distance, and the store a new locomotor is made from. The World implements it once the AI is a module
+//! of it. The members that ask the state machine take it as a parameter ([`AiMachineQuery`]: the real machine since batch A4).
 //!
 //! # Upstream facts kept
 //!
@@ -45,13 +46,14 @@
 //! `getMoodMatrixActionAdjustment`, `wakeUpAndAttemptToTarget`, the mood check times, `canAutoAcquireWhileStealthed`,
 //! `getNextMoodTarget`), the morale (`evaluateMoraleBonus`), the state queries (`isIdle`, `isAttacking`, `isBusy`,
 //! `isClearingMines`, `isMovingAwayFrom`, `isMoving`, `getAIStateType`, `getEnterTarget`), `checkForCrateToPickup` and the plain
-//! getters; the host answers for the state machine until it is translated. Upstream facts kept: `checkForCrateToPickup` clears the
+//! getters. Upstream facts kept: `checkForCrateToPickup` clears the
 //! crate's id BEFORE looking it up (it never finds the crate); `getNextMoodTarget` reads the controlling player unchecked when called
 //! by the AI.
 //!
 //! Verified against upstream's members (cut verbatim, with `Locomotor.cpp` unchanged and batch P1's paths) by
 //! `tests/differential_ai_update.rs`: 10,000 programs, 600,000 operations, 0 mismatches in the results, the call logs and the
-//! dumps (2026-10-27; plants 3200-3214 and 3220-3229 caught).
+//! dumps (2026-10-27; plants 3200-3214 and 3220-3229 caught). Since batch A4 the same test runs them on the real machine
+//! (`AIStateMachine` and `StateMachine.cpp` on the C++ side, `ai_states` here): see its results.
 
 use crate::common::base_type::{sqr, Coord3D, ICoord2D};
 use crate::common::disabled_types::{DisabledType, DISABLED_HELD, DISABLED_UNMANNED};
@@ -74,6 +76,7 @@ use crate::logic::locomotor::{
     LocomotorAppearance, LocomotorHost, LocomotorSet, LocomotorSurfaceTypeMask, LOCOMOTORSURFACE_AIR, LOCOMOTORSURFACE_GROUND,
 };
 use crate::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
+use crate::common::state_machine::{StateBehavior, StateId, StateMachine, INVALID_STATE_ID};
 use crate::logic::modules::plant;
 use std::sync::Arc;
 
@@ -88,6 +91,58 @@ pub enum LocoGoalType {
     PositionOnPath = 1,
     PositionExplicit = 2,
     Angle = 3,
+}
+
+/// What the AI's members ask of its state machine (`getStateMachine()->...`): the machine itself (batch A4,
+/// [`StateMachine`]), or a stand-in in a test.
+pub trait AiMachineQuery {
+    /// `getCurrentStateID()`.
+    fn current_state_id(&self) -> StateId;
+    /// `isInIdleState()`.
+    fn is_in_idle_state(&self) -> bool;
+    /// `isInAttackState()`.
+    fn is_in_attack_state(&self) -> bool;
+    /// `isInBusyState()`.
+    fn is_in_busy_state(&self) -> bool;
+    /// The goal object's id (`getGoalObject()` is `findObjectByID` of it).
+    fn goal_object_id(&self) -> ObjectId;
+    /// `*getGoalPosition()`.
+    fn goal_position(&self) -> Coord3D;
+}
+
+impl<S: StateBehavior> AiMachineQuery for StateMachine<S> {
+    fn current_state_id(&self) -> StateId {
+        self.get_current_state_id()
+    }
+    fn is_in_idle_state(&self) -> bool {
+        StateMachine::is_in_idle_state(self)
+    }
+    fn is_in_attack_state(&self) -> bool {
+        StateMachine::is_in_attack_state(self)
+    }
+    fn is_in_busy_state(&self) -> bool {
+        StateMachine::is_in_busy_state(self)
+    }
+    fn goal_object_id(&self) -> ObjectId {
+        StateMachine::goal_object_id(self)
+    }
+    fn goal_position(&self) -> Coord3D {
+        *StateMachine::goal_position(self)
+    }
+}
+
+/// `AIStateMachine`'s own members (beyond `StateMachine`'s): kept with the AI's state, so that the machine's states reach them
+/// through the AI as upstream's reach them through the machine (`AIStateMachine::getGoalPath`, ...).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AiMachineExtras {
+    /// `m_goalPath`.
+    pub goal_path: Vec<Coord3D>,
+    /// `m_goalWaypoint`, by id.
+    pub goal_waypoint: Option<u32>,
+    /// `m_temporaryState`'s id (`INVALID_STATE_ID`: none).
+    pub temporary_state: StateId,
+    /// `m_temporaryStateFramEnd`.
+    pub temporary_state_frame_end: u32,
 }
 
 /// What the AI's members reach outside themselves: the object, its world and its subsystems (see the module docs).
@@ -119,8 +174,6 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn pf_valid_movement_position(&mut self, is_crusher: bool, layer: PathfindLayer, surfaces: LocomotorSurfaceTypeMask, pos: &Coord3D) -> bool;
     /// `ThePartitionManager->getDistanceSquared(getObject(), dest, FROM_CENTER_3D)`.
     fn distance_squared_3d(&mut self, dest: &Coord3D) -> f32;
-    /// `getStateMachine()->getGoalPosition()` (until the machine is translated).
-    fn machine_goal_position(&mut self) -> Coord3D;
     /// `set.addLocomotor(lt)`: `TheLocomotorStore->newLocomotor(lt)` appended (none for a template the store does not have).
     fn add_locomotor(&mut self, set: &mut LocomotorSet, template: NameKeyType);
 
@@ -129,20 +182,6 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn object_exists(&self, id: ObjectId) -> bool;
     /// `findObjectByID(target)->getAI()`, if it has one, `->addTargeter(targeter, add)`.
     fn ai_add_targeter(&mut self, target: ObjectId, targeter: ObjectId, add: bool);
-    /// `getStateMachine() != NULL`.
-    fn has_state_machine(&self) -> bool;
-    /// `getStateMachine()->getCurrentStateID()`.
-    fn machine_current_state_id(&self) -> u32;
-    /// `getStateMachine()->isInIdleState()`.
-    fn machine_is_in_idle_state(&self) -> bool;
-    /// `getStateMachine()->isInAttackState()`.
-    fn machine_is_in_attack_state(&self) -> bool;
-    /// `getStateMachine()->isInBusyState()`.
-    fn machine_is_in_busy_state(&self) -> bool;
-    /// `getStateMachine()->getTemporaryState()` (`INVALID_STATE_ID` without one).
-    fn machine_temporary_state(&self) -> u32;
-    /// `getStateMachine()->getGoalObject()`'s id (`INVALID_ID`: none).
-    fn machine_goal_object(&self) -> ObjectId;
     /// `getObject()->isEffectivelyDead()`.
     fn is_effectively_dead(&self) -> bool;
     /// `getObject()->getControllingPlayer()->getPlayerType()`, `None` without a controlling player.
@@ -187,8 +226,8 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn logic_random_value(&mut self, lo: i32, hi: i32) -> i32;
 }
 
-/// `class AIUpdateInterface`'s state (its data members, in the header's order). The state machine and the turrets' AIs come
-/// with their batches.
+/// `class AIUpdateInterface`'s state (its data members, in the header's order), and `AIStateMachine`'s own members
+/// ([`AiMachineExtras`], batch A4; the machine itself is `ai_states::AiUpdateModule`'s). The turrets' AIs come with their batch.
 #[derive(Clone, Debug)]
 pub struct AiUpdate {
     /// The module's data (`getAIUpdateModuleData()`).
@@ -268,6 +307,8 @@ pub struct AiUpdate {
     pub allowed_to_chase: bool,
     pub is_in_update: bool,
     pub fix_loco_in_post_process: bool,
+    /// `AIStateMachine`'s own members (batch A4).
+    pub machine: AiMachineExtras,
 }
 
 impl AiUpdate {
@@ -344,6 +385,7 @@ impl AiUpdate {
             allowed_to_chase: false,
             is_in_update: false,
             fix_loco_in_post_process: false,
+            machine: AiMachineExtras { temporary_state: INVALID_STATE_ID, ..AiMachineExtras::default() },
         };
         for i in 0..2 {
             ai.has_turret_ai[i] = ai.data.turret_data[i].is_some();
@@ -811,7 +853,7 @@ impl AiUpdate {
     }
 
     /// `getLocomotorDistanceToGoal()`.
-    pub fn get_locomotor_distance_to_goal<H: AiHost>(&mut self, h: &mut H) -> f32 {
+    pub fn get_locomotor_distance_to_goal<H: AiHost, M: AiMachineQuery>(&mut self, h: &mut H, m: &M) -> f32 {
         match self.locomotor_goal_type {
             LocoGoalType::PositionExplicit => 0.0, // DEBUG_CRASH(("not yet implemented"))
             LocoGoalType::PositionOnPath => {
@@ -820,7 +862,7 @@ impl AiUpdate {
                 }
                 let Some(cur) = self.get_cur_locomotor() else { return 0.0 };
                 if cur.is_close_enough_dist_3d() || h.is_kind_of(KINDOF_PROJECTILE) {
-                    let mut dest = h.machine_goal_position();
+                    let mut dest = m.goal_position();
                     let path = self.path.as_ref().expect("a path");
                     if let Some(last) = path.last_node() {
                         dest = *path.node(last).position();
@@ -945,9 +987,9 @@ impl AiUpdate {
     }
 
     /// `getCurrentVictimPos()`: "if we are attacking a position (and NOT an object), return it".
-    pub fn get_current_victim_pos<H: AiHost>(&self, h: &mut H) -> Option<Coord3D> {
+    pub fn get_current_victim_pos<H: AiHost, M: AiMachineQuery>(&self, h: &mut H, m: &M) -> Option<Coord3D> {
         if h.status_test(OBJECT_STATUS_IS_ATTACKING) && self.current_victim_id == INVALID_ID {
-            return Some(h.machine_goal_position());
+            return Some(m.goal_position());
         }
         None
     }
@@ -958,8 +1000,8 @@ impl AiUpdate {
     }
 
     /// `getAIStateType()`.
-    pub fn get_ai_state_type<H: AiHost>(&self, h: &H) -> AiStateType {
-        h.machine_current_state_id()
+    pub fn get_ai_state_type<M: AiMachineQuery>(&self, m: &M) -> AiStateType {
+        m.current_state_id()
     }
 
     /// `ignoreObstacle(obj)`.
@@ -973,18 +1015,20 @@ impl AiUpdate {
     }
 
     /// `getEnterTarget()`: the goal object while entering, guarding a tunnel network or getting repaired.
-    pub fn get_enter_target<H: AiHost>(&self, h: &H) -> ObjectId {
-        let state_type = self.get_ai_state_type(h);
+    pub fn get_enter_target<H: AiHost, M: AiMachineQuery>(&self, h: &H, m: &M) -> ObjectId {
+        let state_type = self.get_ai_state_type(m);
         if state_type != AI_ENTER && state_type != AI_GUARD_TUNNEL_NETWORK && (state_type != AI_GET_REPAIRED || plant(3222)) {
             return INVALID_ID;
         }
-        h.machine_goal_object()
+        let goal = m.goal_object_id();
+        if h.object_exists(goal) { goal } else { INVALID_ID }
     }
 
     /// `getMoodMatrixValue()`: the controller, the mood (computer players only) and the unit type.
-    pub fn get_mood_matrix_value<H: AiHost>(&self, h: &H) -> u32 {
+    /// (`m` is `getStateMachine()`, none before `onObjectCreated` makes it.)
+    pub fn get_mood_matrix_value<H: AiHost, M: AiMachineQuery>(&self, h: &H, m: Option<&M>) -> u32 {
         let mut return_val = 0;
-        if !h.has_state_machine() {
+        if m.is_none() {
             return return_val;
         }
         let Some(player_type) = h.controlling_player_type() else { return return_val };
@@ -1014,13 +1058,13 @@ impl AiUpdate {
     }
 
     /// `getMoodMatrixActionAdjustment(action)`.
-    pub fn get_mood_matrix_action_adjustment<H: AiHost>(&self, h: &H, action: MoodMatrixAction) -> u32 {
+    pub fn get_mood_matrix_action_adjustment<H: AiHost, M: AiMachineQuery>(&self, h: &H, m: &M, action: MoodMatrixAction) -> u32 {
         // "Angry Mob Members (but not Nexi) are never subject to moods."
         if h.is_kind_of(KINDOF_INFANTRY) && h.is_kind_of(KINDOF_IGNORED_IN_GUI) {
             return MAA_ACTION_OK;
         }
 
-        let mood_matrix = self.get_mood_matrix_value(h);
+        let mood_matrix = self.get_mood_matrix_value(h, Some(m));
         if mood_matrix & MM_CONTROLLER_PLAYER != 0 {
             // "Player-controlled units can always do actions (from a mood perspective, at any rate)"
             return MAA_ACTION_OK;
@@ -1065,8 +1109,8 @@ impl AiUpdate {
     }
 
     /// `wakeUpAndAttemptToTarget()`: an idle AI checks its mood now, randomly offset.
-    pub fn wake_up_and_attempt_to_target<H: AiHost>(&mut self, h: &mut H) {
-        if !self.is_idle(h) {
+    pub fn wake_up_and_attempt_to_target<H: AiHost, M: AiMachineQuery>(&mut self, h: &mut H, m: &M) {
+        if !self.is_idle(m) {
             return;
         }
         self.next_mood_check_time = h.frame();
@@ -1095,7 +1139,7 @@ impl AiUpdate {
     }
 
     /// `getNextMoodTarget(calledByAI, calledDuringIdle)`: "the next object that our mood suggests we should attack".
-    pub fn get_next_mood_target<H: AiHost>(&mut self, h: &mut H, called_by_ai: bool, called_during_idle: bool) -> ObjectId {
+    pub fn get_next_mood_target<H: AiHost, M: AiMachineQuery>(&mut self, h: &mut H, m: &M, called_by_ai: bool, called_during_idle: bool) -> ObjectId {
         // "if we're dead, we can't attack"
         if h.is_effectively_dead() {
             return INVALID_ID;
@@ -1108,7 +1152,7 @@ impl AiUpdate {
             return INVALID_ID;
         }
         // "this should ignore calledDuringIdle, despite what the name of the bit implies."
-        if self.is_attacking(h) && auto & AAS_IDLE_NOT_WHILE_ATTACKING != 0 {
+        if self.is_attacking(m) && auto & AAS_IDLE_NOT_WHILE_ATTACKING != 0 {
             return INVALID_ID;
         }
         if called_during_idle && h.status_test(OBJECT_STATUS_STEALTHED) && !self.can_auto_acquire_while_stealthed(h) {
@@ -1160,7 +1204,7 @@ impl AiUpdate {
             range_to_find_within += h.container_bounding_circle_radius();
         }
 
-        let mood_matrix_val = self.get_mood_matrix_value(h);
+        let mood_matrix_val = self.get_mood_matrix_value(h, Some(m));
         if mood_matrix_val & MM_CONTROLLER_AI != 0 && mood_matrix_val & MM_MOOD_PASSIVE != 0 {
             // "Do not allow units that healed me to get acquired! They are our friends!!!"
             let (damage_type, source) = h.last_damage_type_and_source();
@@ -1227,21 +1271,21 @@ impl AiUpdate {
     }
 
     /// `isIdle()`: the idle state, or a current state that is idle.
-    pub fn is_idle<H: AiHost>(&self, h: &H) -> bool {
-        if h.machine_current_state_id() == AI_IDLE {
+    pub fn is_idle<M: AiMachineQuery>(&self, m: &M) -> bool {
+        if m.current_state_id() == AI_IDLE {
             return true;
         }
-        h.machine_is_in_idle_state()
+        m.is_in_idle_state()
     }
 
     /// `isAttacking()`.
-    pub fn is_attacking<H: AiHost>(&self, h: &H) -> bool {
-        h.machine_is_in_attack_state()
+    pub fn is_attacking<M: AiMachineQuery>(&self, m: &M) -> bool {
+        m.is_in_attack_state()
     }
 
     /// `isBusy()`: "when explicitly in the busy state. Moving or attacking is not considered busy!"
-    pub fn is_busy<H: AiHost>(&self, h: &H) -> bool {
-        h.machine_is_in_busy_state()
+    pub fn is_busy<M: AiMachineQuery>(&self, m: &M) -> bool {
+        m.is_in_busy_state()
     }
 
     /// `isClearingMines()`: attacking with an anti-mine weapon.
@@ -1254,8 +1298,8 @@ impl AiUpdate {
     }
 
     /// `isMovingAwayFrom(obj)`: moving out of its way (the temporary state).
-    pub fn is_moving_away_from<H: AiHost>(&self, h: &H, obj: ObjectId) -> bool {
-        if h.machine_temporary_state() == AI_MOVE_OUT_OF_THE_WAY {
+    pub fn is_moving_away_from(&self, obj: ObjectId) -> bool {
+        if self.machine.temporary_state == AI_MOVE_OUT_OF_THE_WAY {
             if self.move_out_of_way1 == obj {
                 return true;
             }
@@ -1267,8 +1311,8 @@ impl AiUpdate {
     }
 
     /// `isMoving()`.
-    pub fn is_moving<H: AiHost>(&self, h: &H) -> bool {
-        if self.is_idle(h) {
+    pub fn is_moving<M: AiMachineQuery>(&self, m: &M) -> bool {
+        if self.is_idle(m) {
             return false;
         }
         self.locomotor_goal_type != LocoGoalType::None || self.is_moving

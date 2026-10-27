@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of layer 10 batches A2 and A3, `logic::ai::ai_update` (`AIUpdateInterface`'s members that do not need
-//! its state machine), against upstream `AIUpdate.cpp` (commit 0a05454d) in `differential/wrap_ai.cpp`: its members cut verbatim,
+//! Code-to-code verification of layer 10 batches A2, A3 and A4, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
+//! `logic::ai::ai_states` (its state machine, first states and update), against upstream `AIUpdate.cpp` and `AIStates.cpp` (commit
+//! 0a05454d) in `differential/wrap_ai.cpp`: their members cut verbatim,
 //! with `Locomotor.cpp` compiled UNCHANGED and the paths of `AIPathfind.cpp` (batch P1's cut), so that the AI drives the REAL
 //! locomotors along REAL paths on both sides.
 //!
@@ -11,8 +12,8 @@
 //! `Locomotor.cpp` (the store, the INI block, every locomotor's movement), `Path` and `PathNode`, the pathfinder's
 //! `chooseBestLocomotorForPosition` over a map of real cells, the INI reader, name keys, the logic random values, `Thing`'s
 //! position and height code. Stand-ins (`differential/shim_ai/ai_world.h`): the rest of the object, its physics behaviour and
-//! body, the terrain, the partition manager, the AI's update module (the wake frame), its group, its state machine (the goal
-//! position), and the pathfinder's members not compiled here (`validMovementTerrain`, `validMovementPosition`, `updateLayer`).
+//! body, the terrain, the partition manager, the AI's update module (the wake frame), its group, and the pathfinder's members not
+//! compiled here (`validMovementTerrain`, `validMovementPosition`, `updateLayer`).
 //! They answer from a scene (`AiEnv`) and log every call that crosses the cut; the Rust side is `AiUpdate` driven through an
 //! [`AiHost`] that answers from the same scene, on the translated `Thing`, `Locomotor`, `LocomotorSet` and `Path`, and writes the
 //! same log.
@@ -34,11 +35,22 @@
 //! scene that adds the other objects (which exist, which have an AI), the controlling player (none, human, computer) and its
 //! upgrades, the team's common target, the ability to attack (the hash), stealth, a container, the last damage, `TheAI`'s data,
 //! vision range and closest enemy, the current weapon's anti mask, three behavior modules' hordes, and the state machine's answers
-//! (its current state, idle/attack/busy, temporary state, goal object). The frame advances and the
+//! (batch A4: the real machine's, see below). The frame advances and the
 //! physics numbers change between operations. After every operation, compared: its result, its whole call log (every force,
 //! scrub, status, transform change, terrain, partition and pathfinder query, wake, group, line test, with arguments), and a dump
 //! of the AI (every data member the batch sets, the locomotor set with every locomotor's saved state, the path node by node with
 //! its cache), the object and the wake frame. A mismatch ends the case.
+//!
+//! Batch A4 replaces the stand-in machine with the REAL one: `StateMachine.cpp` unchanged and `AIStateMachine` (AIStates.cpp's
+//! machine members cut verbatim, its constructor edited so that each state class not yet translated is a placeholder of that id,
+//! logged and answering from the hash; the idle, dead, wait and busy states verbatim) against `ai_states`. The machine is made at
+//! the object's creation (`onObjectCreated`; one case in ten later, by an operation, the operations that need it held back until
+//! then). A third of the operations are the machine's: `setState` (often the translated states, else any id, the undefined
+//! ones included), `setTemporaryState`, `clear`, `resetToDefaultState`, the goal object and position, lock and unlock, the goal
+//! path, a save (`xferSnapshot`, its bytes compared) and a load of the last save; and the AI's `update` (the machine, the path
+//! queue, the turrets' updates, the death check, `doLocomotor`). The scene adds the pathfinder's goal, the disabled types the
+//! update and the idle state ask, the repulsor, the vision range, the rates of the placeholder states and turret updates. The
+//! dump adds the machine (its state, sleep, default, goal, lock, temporary state, goal path, the idle state's members).
 //!
 //! # Results
 //!
@@ -48,13 +60,15 @@
 mod support;
 
 use rts_lockstep_engine::common::base_type::{real_to_int, real_to_int_floor, Coord3D};
-use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_HELD, DISABLED_UNMANNED};
+use rts_lockstep_engine::common::disabled_types::{
+    DisabledType, DISABLED_EMP, DISABLED_HACKED, DISABLED_HELD, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNMANNED,
+};
 use rts_lockstep_engine::common::game_type::{ObjectId, PathfindLayer, LAYER_GROUND, LAYER_WALL};
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, TYPE_TABLE};
 use rts_lockstep_engine::common::game_common::{AbleToAttackType, PlayerType};
 use rts_lockstep_engine::common::kind_of::{
     KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
-    KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE,
+    KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED,
 };
 use rts_lockstep_engine::logic::ai::ai_update_types::{
     CanAttackResultValue, CommandSourceType, ATTACKRESULT_NOT_POSSIBLE, ATTACKRESULT_POSSIBLE, ATTACKRESULT_POSSIBLE_AFTER_MOVING,
@@ -64,17 +78,20 @@ use rts_lockstep_engine::common::model_state::ModelConditionFlagType;
 use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyType};
 use rts_lockstep_engine::common::object_status_types::ObjectStatusTypes;
 use rts_lockstep_engine::common::random_value::RandomValues;
+use rts_lockstep_engine::common::state_machine::{ObjectRef, StateContext, StateExitType, StateId, StateReturn};
 use rts_lockstep_engine::common::xfer::Xfer;
+use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::AiEnv as Env;
+use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule};
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiUpdate, LocoGoalType};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
 use rts_lockstep_engine::logic::locomotor::*;
 use rts_lockstep_engine::logic::module::body_module::BodyDamageType;
-use rts_lockstep_engine::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_NONE};
+use rts_lockstep_engine::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use rts_lockstep_engine::logic::terrain_logic::Underwater;
 use rts_lockstep_engine::logic::thing::{Thing, ThingContext, ThingTemplateView};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
@@ -119,6 +136,21 @@ const L_VISION_RANGE: u32 = 62;
 const L_CLOSEST_ENEMY: u32 = 63;
 const L_SET_BONUS: u32 = 64;
 const L_CLEAR_BONUS: u32 = 65;
+const L_PF_GOAL_POSITION: u32 = 70;
+const L_PF_SNAP: u32 = 71;
+const L_PF_UPDATE_GOAL: u32 = 72;
+const L_PF_QUEUE: u32 = 73;
+const L_TURRET_UPDATE: u32 = 74;
+const L_AI_COMMAND: u32 = 75;
+const L_REPULSOR: u32 = 76;
+const L_CLEAR_SET_MODEL: u32 = 77;
+const L_SCRIPT_NOTIFY: u32 = 78;
+const L_STATE_ENTER: u32 = 79;
+const L_STATE_UPDATE: u32 = 80;
+const L_STATE_EXIT: u32 = 81;
+
+/// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
+const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
 
 /// The map of `wrap_ai.cpp` (`MAP_W` x `MAP_H` cells from the origin).
 const MAP_W: i32 = 24;
@@ -216,6 +248,8 @@ struct Host {
     store: LocomotorStore,
     names: NameKeyGenerator,
     rng: RandomValues,
+    /// Batch A4: the AIs whose machines are running (the AI's state, lent while its machine runs).
+    ai_stack: Vec<AiUpdate>,
 }
 
 impl Host {
@@ -313,6 +347,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_INFANTRY && m & 16 != 0)
             || (kind == KINDOF_IGNORED_IN_GUI && m & 32 != 0)
             || (kind == KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT && m & 64 != 0)
+            || (kind == KINDOF_CAN_BE_REPULSED && m & 128 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -477,7 +512,9 @@ impl AiHost for Host {
         self.env.object_id
     }
     fn is_disabled_by_type(&self, t: DisabledType) -> bool {
-        (t == DISABLED_HELD && self.env.loco.disabled_held != 0) || (t == DISABLED_UNMANNED && self.env.disabled_unmanned != 0)
+        (t == DISABLED_HELD && self.env.loco.disabled_held != 0)
+            || (t == DISABLED_UNMANNED && self.env.disabled_unmanned != 0)
+            || ([DISABLED_PARALYZED, DISABLED_EMP, DISABLED_SUBDUED, DISABLED_HACKED].contains(&t) && (self.env.disabled_mask >> t) & 1 != 0)
     }
     fn crusher_level(&self) -> i32 {
         i32::from(self.env.crusher_level as u8)
@@ -539,9 +576,6 @@ impl AiHost for Host {
         self.l(L_DISTANCE_SQUARED, &[dest.x.to_bits(), dest.y.to_bits(), dest.z.to_bits(), d.to_bits()]);
         d
     }
-    fn machine_goal_position(&mut self) -> Coord3D {
-        Coord3D { x: self.env.goal[0], y: self.env.goal[1], z: self.env.goal[2] }
-    }
     fn add_locomotor(&mut self, set: &mut LocomotorSet, template: NameKeyType) {
         let frame = self.env.loco.frame;
         set.add_locomotor(&self.store, template, &mut self.rng, frame).expect("the data names the store's templates");
@@ -555,28 +589,6 @@ impl AiHost for Host {
         if self.object_exists(target) && (self.env.ai_mask >> target) & 1 != 0 {
             self.l(L_ADD_TARGETER, &[1, targeter as u32, u32::from(add)]);
         }
-    }
-    fn has_state_machine(&self) -> bool {
-        self.env.has_machine != 0
-    }
-    fn machine_current_state_id(&self) -> u32 {
-        self.env.machine_state as u32
-    }
-    fn machine_is_in_idle_state(&self) -> bool {
-        self.env.machine_idle != 0
-    }
-    fn machine_is_in_attack_state(&self) -> bool {
-        self.env.machine_attack != 0
-    }
-    fn machine_is_in_busy_state(&self) -> bool {
-        self.env.machine_busy != 0
-    }
-    fn machine_temporary_state(&self) -> u32 {
-        self.env.temp_state as u32
-    }
-    fn machine_goal_object(&self) -> ObjectId {
-        let id = self.env.goal_object;
-        if self.object_exists(id) { id } else { 0 }
     }
     fn is_effectively_dead(&self) -> bool {
         self.env.effectively_dead != 0
@@ -666,6 +678,104 @@ impl AiHost for Host {
     }
     fn logic_random_value(&mut self, lo: i32, hi: i32) -> i32 {
         self.rng.game_logic_random_value(lo, hi)
+    }
+}
+
+impl StateContext for Host {
+    fn frame(&self) -> u32 {
+        self.env.loco.frame
+    }
+    /// The scene's other objects (never moved: at the origin, as `wrap_ai.cpp`'s `g_others`).
+    fn find_object(&self, id: ObjectId) -> Option<ObjectRef> {
+        self.object_exists(id).then(|| ObjectRef { id, position: Coord3D::default() })
+    }
+}
+
+impl Host {
+    /// A placeholder state's answer (`placeholderAnswer` of `wrap_ai.cpp`): the hash of the frame, its id and the callback.
+    fn placeholder_answer(&self, id: StateId, which: u32) -> StateReturn {
+        let h = p1_hash(self.env.seed, 11, &[self.env.loco.frame, id, which]);
+        if pick(h, self.env.state_rate) {
+            return StateReturn::CONTINUE;
+        }
+        match (h >> 16) % 4 {
+            0 => StateReturn::SUCCESS,
+            1 => StateReturn::FAILURE,
+            2 => StateReturn::sleep(1 + (h >> 20) % 40),
+            _ => StateReturn::SLEEP_FOREVER,
+        }
+    }
+}
+
+impl AiStateHost for Host {
+    fn ai_stack(&mut self) -> &mut Vec<AiUpdate> {
+        &mut self.ai_stack
+    }
+    fn pf_goal_position(&mut self) -> Option<Coord3D> {
+        let has = self.env.pf_has_goal;
+        self.l(L_PF_GOAL_POSITION, &[has as u32]);
+        let g = self.env.pf_goal;
+        (has != 0).then_some(Coord3D { x: g[0], y: g[1], z: g[2] })
+    }
+    fn pf_snap_position(&mut self, pos: &mut Coord3D) {
+        self.l(L_PF_SNAP, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        pos.x = (pos.x / 10.0).floor() * 10.0 + 10.0 / 2.0;
+        pos.y = (pos.y / 10.0).floor() * 10.0 + 10.0 / 2.0;
+    }
+    fn pf_update_goal(&mut self, pos: &Coord3D, layer: PathfindLayer) {
+        self.l(L_PF_UPDATE_GOAL, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), layer as u32]);
+    }
+    fn pf_queue_for_path(&mut self) {
+        let id = self.env.object_id;
+        self.l(L_PF_QUEUE, &[id as u32]);
+    }
+    fn turret_update(&mut self, which: usize) -> UpdateSleepTime {
+        let h = p1_hash(self.env.seed, 12, &[self.env.loco.frame, which as u32]);
+        let r = if pick(h, self.env.turret_rate) {
+            UPDATE_SLEEP_NONE
+        } else if (h >> 16) & 1 != 0 {
+            update_sleep(1 + (h >> 20) % 60)
+        } else {
+            UPDATE_SLEEP_FOREVER
+        };
+        self.l(L_TURRET_UPDATE, &[which as u32, r.0]);
+        r
+    }
+    fn ai_do_command(&mut self, cmd: i32, source: CommandSourceType, obj: ObjectId, int_value: i32) {
+        self.l(L_AI_COMMAND, &[cmd as u32, source as u32, obj as u32, int_value as u32]);
+    }
+    fn find_closest_repulsor(&mut self, range: f32) -> ObjectId {
+        let id = self.env.object_id;
+        self.l(L_REPULSOR, &[id as u32, range.to_bits()]);
+        let r = self.env.repulsor;
+        if self.object_exists(r) { r } else { 0 }
+    }
+    fn object_vision_range(&self) -> f32 {
+        self.env.obj_vision_range
+    }
+    fn clear_and_set_model_condition_flags(&mut self, clear: &[ModelConditionFlagType], set: ModelConditionFlagType) {
+        let mut w: Vec<u32> = clear.iter().map(|&c| c as u32).collect();
+        w.sort_unstable();
+        w.dedup();
+        w.push(u32::MAX);
+        w.push(set as u32);
+        self.l(L_CLEAR_SET_MODEL, &w);
+    }
+    fn notify_of_object_creation_or_destruction(&mut self) {
+        self.l(L_SCRIPT_NOTIFY, &[]);
+    }
+    fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn {
+        let r = self.placeholder_answer(id, 0);
+        self.l(L_STATE_ENTER, &[id, r.0 as u32]);
+        r
+    }
+    fn untranslated_update(&mut self, id: StateId) -> StateReturn {
+        let r = self.placeholder_answer(id, 1);
+        self.l(L_STATE_UPDATE, &[id, r.0 as u32]);
+        r
+    }
+    fn untranslated_on_exit(&mut self, id: StateId, status: StateExitType) {
+        self.l(L_STATE_EXIT, &[id, status as u32]);
     }
 }
 
@@ -813,7 +923,8 @@ fn put_loco(v: &mut Vec<u32>, names: &mut NameKeyGenerator, loco: &Locomotor) {
 }
 
 /// `ref_ai_a2_dump`. `bug` plants a wrong dump: 1 forgets the blocked frames.
-fn rust_dump(ai: &AiUpdate, h: &mut Host, bug: u32) -> Vec<u32> {
+fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> {
+    let ai = module.ai();
     let mut v = vec![
         ai.prior_waypoint_id,
         ai.current_waypoint_id,
@@ -900,7 +1011,29 @@ fn rust_dump(ai: &AiUpdate, h: &mut Host, bug: u32) -> Vec<u32> {
     v.push(h.status as u32);
     v.push((h.status >> 32) as u32);
     v.push(h.next_call_frame);
+    // batch A4: the machine
+    v.push(u32::from(module.machine.is_some()));
+    if let Some(sm) = &module.machine {
+        v.extend([sm.get_current_state_id(), sm.peek_sleep_till(), sm.default_state_id(), sm.goal_object_id() as u32]);
+        put_pos(&mut v, sm.goal_position());
+        v.extend([u32::from(sm.is_locked()), u32::from(sm.is_default_state_inited())]);
+        let x = &ai.machine;
+        v.extend([x.temporary_state, x.temporary_state_frame_end, x.goal_path.len() as u32]);
+        for p in &x.goal_path {
+            put_pos(&mut v, p);
+        }
+        match sm.state(states_ai_idle()) {
+            Some(AiState::Idle { initial_sleep_offset, should_look_for_targets, inited }) => {
+                v.extend([u32::from(*initial_sleep_offset), u32::from(*should_look_for_targets), u32::from(*inited)]);
+            }
+            _ => panic!("the idle state"),
+        }
+    }
     v
+}
+
+fn states_ai_idle() -> StateId {
+    rts_lockstep_engine::logic::ai::ai_update_types::AI_IDLE
 }
 
 fn cpp_dump() -> Vec<u32> {
@@ -919,7 +1052,8 @@ fn cpp_dump() -> Vec<u32> {
 fn gen_scene(g: &mut Gen) -> Env {
     let mut e = Env::default();
     let l = &mut e.loco;
-    l.frame = g.below(5000);
+    // (batch A4: sometimes the first frames, where the idle state's first update pops the object to its goal)
+    l.frame = if g.below(10) == 0 { g.below(2) } else { g.below(5000) };
     l.gravity = if g.below(4) == 0 { -1.0 } else { -60.0 * (1.0 / 30.0) * (1.0 / 30.0) };
     l.penalty = 1 + g.below(2) as i32;
     l.body_state = g.below(4) as i32;
@@ -956,7 +1090,6 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.cliff_rate = g.below(40);
     e.pinch_rate = g.below(30);
     e.valid_pos_rate = g.below(101);
-    e.goal = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), g.uniform(-5.0, 30.0)];
     // batch A3
     e.loco.kind_mask |= (g.below(8) as i32) << 4;
     e.effectively_dead = i32::from(g.below(10) == 0);
@@ -981,20 +1114,26 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.exist_mask = g.u32() & !1;
     e.ai_mask = g.u32();
     e.has_machine = i32::from(g.below(10) != 0);
-    gen_machine(g, &mut e);
     e.turrets = g.below(4) as i32;
+    // batch A4
+    e.loco.kind_mask |= i32::from(g.below(3) == 0) << 7;
+    gen_a4(g, &mut e);
+    e.turret_rate = g.below(101);
+    e.state_rate = g.below(101);
     e
 }
 
-/// The state machine's answers (the scene's): the current state (often one the AI asks about), its flags, the temporary state,
-/// the goal object.
-fn gen_machine(g: &mut Gen, e: &mut Env) {
-    e.machine_state = [0, 0, 15, 21, 22, 23, 1, 10, 41, g.below(45) as i32][g.below(10) as usize];
-    e.machine_idle = i32::from(g.below(3) == 0);
-    e.machine_attack = i32::from(g.below(3) == 0);
-    e.machine_busy = i32::from(g.below(4) == 0);
-    e.temp_state = [999_999, 999_999, 23, 23, 1, 0][g.below(6) as usize];
-    e.goal_object = g.below(32) as i32;
+/// Batch A4's scene: the pathfinder's goal, the disabled types the AI's update and idle state ask, the repulsor, the vision range.
+fn gen_a4(g: &mut Gen, e: &mut Env) {
+    e.pf_has_goal = i32::from(g.below(3) != 0);
+    e.pf_goal = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), g.uniform(-5.0, 30.0)];
+    if g.below(4) == 0 {
+        // near the object's cell or not (the update's pop to the goal is within a cell)
+        e.pf_goal[2] = g.uniform(-5.0, 30.0);
+    }
+    e.disabled_mask = if g.below(4) == 0 { [1 << DISABLED_PARALYZED, 1 << DISABLED_EMP, 1 << DISABLED_SUBDUED, 1 << DISABLED_HACKED][g.below(4) as usize] } else { 0 };
+    e.repulsor = if g.below(3) == 0 { g.below(32) as i32 } else { 0 };
+    e.obj_vision_range = g.uniform(0.0, 300.0);
 }
 
 /// The physics numbers and the frame between operations.
@@ -1016,13 +1155,15 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     if g.below(15) == 0 {
         l.disabled_held ^= 1;
     }
+    // batch A4
+    if g.below(6) == 0 {
+        gen_a4(g, e);
+    }
     if g.below(10) == 0 {
-        e.goal = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), g.uniform(-5.0, 30.0)];
+        e.state_rate = g.below(101);
+        e.turret_rate = g.below(101);
     }
     // batch A3
-    if g.below(6) == 0 {
-        gen_machine(g, e);
-    }
     if g.below(10) == 0 {
         e.closest_enemy = g.below(32) as i32;
         e.team_target = g.below(32) as i32;
@@ -1045,7 +1186,7 @@ fn gen_point(g: &mut Gen) -> [f32; 3] {
 }
 
 /// One operation: the op number, its floats and its ints (`ref_ai_a2_op`'s).
-fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32)) -> (i32, Vec<f32>, Vec<i32>) {
+fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), has_machine: bool, has_saved: bool) -> (i32, Vec<f32>, Vec<i32>) {
     let mut fa = vec![0.0f32; 64];
     let mut ia = vec![0i32; 64];
     let p = gen_point(g);
@@ -1054,6 +1195,23 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32)) -
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if g.below(3) == 0 {
+        // batch A4: the machine, the AI's update and creation
+        match g.below(100) {
+            0..=19 => 59,
+            20..=29 => 60,
+            30..=34 => 61,
+            35..=39 => 62,
+            40..=45 => 63,
+            46..=51 => 64,
+            52..=79 => 65,
+            80..=82 => 66,
+            83..=85 => 67,
+            86..=90 => 68,
+            91..=94 => 69,
+            95..=97 => 70,
+            _ => 71,
+        }
     } else if g.below(2) == 0 {
         // batch A3's members
         33 + g.below(26) as i32
@@ -1093,6 +1251,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32)) -
         _ => 31,
         }
     };
+    // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=71);
+    let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
         2 => ia[0] = g.below(2) as i32,
@@ -1158,15 +1319,40 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32)) -
             ia[0] = g.below(32) as i32;
             ia[1] = g.below(32) as i32;
         }
+        // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
+        // machine's: upstream's internalGetState gives the default state)
+        59 | 60 => {
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21][g.below(7) as usize] } else { g.below(46) as i32 };
+            if op == 60 {
+                if g.below(2) == 0 {
+                    ia[0] = 23;
+                }
+                ia[1] = [0, 1, 5, 30, 1799, 1800, 1801, 5000, -5][g.below(9) as usize];
+            }
+        }
+        63 => ia[0] = if g.below(4) == 0 { 0 } else { g.below(32) as i32 },
+        67 => ia[0] = i32::from(g.below(3) == 0),
+        68 => {
+            if g.below(2) == 0 {
+                // a repeated point (addToGoalPath skips the path's last point)
+                fa[..3].copy_from_slice(&[10.0, 20.0, 30.0]);
+            }
+        }
+        69 => ia[0] = g.below(8) as i32 - 1,
         _ => {}
     }
     (op, fa, ia)
 }
 
 /// The Rust side of `ref_ai_a2_op`. `bug` plants a wrong translation in the result: 2 flips a boolean result.
-fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug: u32) -> Vec<u32> {
+fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug: u32, saved: &mut Vec<u8>) -> Vec<u32> {
     let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
     let b = |x: bool| vec![u32::from(x ^ (bug == 2))];
+    if op >= 59 {
+        return rust_op_a4(module, h, op, &p, ia, saved);
+    }
+    let ai = module.ai.as_mut().expect("the AI");
+    let m = module.machine.as_ref();
     match op {
         0 => vec![ai.do_locomotor(h).0],
         1 => b(ai.choose_locomotor_set(h, ia[0])),
@@ -1190,7 +1376,7 @@ fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug
             ai.set_locomotor_goal_none();
             vec![]
         }
-        7 => vec![ai.get_locomotor_distance_to_goal(h).to_bits()],
+        7 => vec![ai.get_locomotor_distance_to_goal(h, m.unwrap()).to_bits()],
         8 => b(ai.is_doing_ground_movement(h)),
         9 => b(ai.is_aircraft_that_adjusts_destination()),
         10 => b(ai.get_treat_as_aircraft_for_loco_dist_to_goal(h)),
@@ -1298,23 +1484,23 @@ fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug
             vec![]
         }
         35 => vec![ai.get_current_victim(h) as u32],
-        36 => match ai.get_current_victim_pos(h) {
+        36 => match ai.get_current_victim_pos(h, m.unwrap()) {
             Some(p) => vec![1, p.x.to_bits(), p.y.to_bits(), p.z.to_bits()],
             None => vec![0],
         },
         37 => vec![ai.get_attitude() as u32],
-        38 => vec![ai.get_ai_state_type(h)],
+        38 => vec![ai.get_ai_state_type(m.unwrap())],
         39 => {
             let o = if h.object_exists(ia[0]) { ia[0] } else { 0 };
             ai.ignore_obstacle(o);
             vec![]
         }
         40 => vec![ai.get_ignored_obstacle_id() as u32],
-        41 => vec![ai.get_enter_target(h) as u32],
-        42 => vec![ai.get_mood_matrix_value(h)],
-        43 => vec![ai.get_mood_matrix_action_adjustment(h, ia[0])],
+        41 => vec![ai.get_enter_target(h, m.unwrap()) as u32],
+        42 => vec![ai.get_mood_matrix_value(h, m)],
+        43 => vec![ai.get_mood_matrix_action_adjustment(h, m.unwrap(), ia[0])],
         44 => {
-            ai.wake_up_and_attempt_to_target(h);
+            ai.wake_up_and_attempt_to_target(h, m.unwrap());
             vec![]
         }
         45 => {
@@ -1326,23 +1512,23 @@ fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug
             vec![]
         }
         47 => b(ai.can_auto_acquire_while_stealthed(h)),
-        48 => vec![ai.get_next_mood_target(h, ia[0] != 0, ia[1] != 0) as u32],
+        48 => vec![ai.get_next_mood_target(h, m.unwrap(), ia[0] != 0, ia[1] != 0) as u32],
         49 => {
             ai.evaluate_morale_bonus(h);
             vec![]
         }
-        50 => b(ai.is_idle(h)),
-        51 => b(ai.is_attacking(h)),
-        52 => b(ai.is_busy(h)),
+        50 => b(ai.is_idle(m.unwrap())),
+        51 => b(ai.is_attacking(m.unwrap())),
+        52 => b(ai.is_busy(m.unwrap())),
         53 => b(ai.is_clearing_mines(h)),
         54 => {
             if h.object_exists(ia[0]) {
-                b(ai.is_moving_away_from(h, ia[0]))
+                b(ai.is_moving_away_from(ia[0]))
             } else {
                 vec![]
             }
         }
-        55 => b(ai.is_moving(h)),
+        55 => b(ai.is_moving(m.unwrap())),
         56 => {
             ai.notify_crate(ia[0]);
             vec![]
@@ -1364,6 +1550,71 @@ fn rust_op(ai: &mut AiUpdate, h: &mut Host, op: i32, fa: &[f32], ia: &[i32], bug
     }
 }
 
+/// Batch A4's operations (`ref_ai_a2_op`'s 59..71): the machine, the AI's update and creation.
+fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, p: &Coord3D, ia: &[i32], saved: &mut Vec<u8>) -> Vec<u32> {
+    let ret = |r: StateReturn| vec![r.0 as u32];
+    match op {
+        59 => ret(module.run(h, |sm, h| states::aism_set_state(sm, h, ia[0] as StateId)).expect("setState")),
+        60 => ret(module.run(h, |sm, h| states::aism_set_temporary_state(sm, h, ia[0] as StateId, ia[1])).expect("setTemporaryState")),
+        61 => {
+            module.run(h, states::aism_clear).expect("clear");
+            vec![]
+        }
+        62 => ret(module.run(h, states::aism_reset_to_default_state).expect("resetToDefaultState")),
+        63 => {
+            let o = h.find_object(ia[0]);
+            module.machine.as_mut().expect("the machine").set_goal_object(o.as_ref());
+            vec![]
+        }
+        64 => {
+            module.machine.as_mut().expect("the machine").set_goal_position(Some(p));
+            vec![]
+        }
+        65 => vec![module.update(h).expect("update").0],
+        66 => {
+            module.on_object_created(h).expect("onObjectCreated");
+            vec![]
+        }
+        67 => {
+            let sm = module.machine.as_mut().expect("the machine");
+            if ia[0] != 0 {
+                sm.lock();
+            } else {
+                sm.unlock();
+            }
+            vec![]
+        }
+        68 => {
+            states::aism_add_to_goal_path(&mut module.ai_mut().machine, p);
+            vec![]
+        }
+        69 => match states::aism_goal_path_position(&module.ai().machine, ia[0]) {
+            Some(q) => vec![1, q.x.to_bits(), q.y.to_bits(), q.z.to_bits()],
+            None => vec![0],
+        },
+        70 => {
+            let mut x = XferSave::new();
+            x.open(b"ai_a4.bin").expect("open");
+            let (sm, ai) = (module.machine.as_mut().expect("the machine"), module.ai.as_mut().expect("the AI"));
+            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, |_| panic!("no goal waypoint"), |_| panic!("no goal waypoint")).is_err();
+            let _ = x.close();
+            *saved = x.bytes().to_vec();
+            let mut r = vec![u32::from(st), saved.len() as u32];
+            r.extend(saved.iter().map(|&c| u32::from(c)));
+            r
+        }
+        71 => {
+            let mut x = XferLoad::new(saved.clone());
+            x.open(b"ai_a4.bin").expect("open");
+            let (sm, ai) = (module.machine.as_mut().expect("the machine"), module.ai.as_mut().expect("the AI"));
+            let st = states::aism_xfer(sm, &mut ai.machine, &mut x, |_| panic!("no goal waypoint"), |_| panic!("no goal waypoint")).is_err();
+            let _ = x.close();
+            vec![u32::from(st)]
+        }
+        _ => unreachable!(),
+    }
+}
+
 /// The comparisons and the coverage.
 struct Checks {
     construction: Check,
@@ -1372,7 +1623,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 59],
+    ops: [u64; 72],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -1384,6 +1635,13 @@ struct Checks {
     mood_targets: u64,
     victims: u64,
     enter_targets: u64,
+    /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
+    /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
+    /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
+    a4_logs: [u64; 12],
+    a4_states: [u64; 5],
+    temporary_states: u64,
+    loads: u64,
 }
 
 impl Checks {
@@ -1395,7 +1653,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 59],
+            ops: [0; 72],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -1406,6 +1664,10 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
+            a4_logs: [0; 12],
+            a4_states: [0; 5],
+            temporary_states: 0,
+            loads: 0,
         }
     }
 }
@@ -1431,9 +1693,14 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         store: LocomotorStore::new(),
         names: NameKeyGenerator::new(),
         rng: RandomValues::default(),
+        ai_stack: Vec::new(),
     };
     host.names.reset();
     unsafe { cpp::ref_ai_a2_reset() };
+    let xfer_path = cstr(XFER_FILE_PATH);
+    unsafe { cpp::ref_ai_a4_xfer_path(xfer_path.as_ptr()) };
+    let mut saved: Vec<u8> = Vec::new();
+    let mut has_saved = false;
     {
         let mut ctx = IniCtx { store: &mut host.store, names: &mut host.names };
         let table = blocks();
@@ -1495,13 +1762,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     host.make_map();
     let _ = host.thing.set_position(&TCtx::new(&host.env), Some(&start_pos)).unwrap();
     let _ = host.thing.set_orientation(&TCtx::new(&host.env), angle).unwrap();
-    let mut ai = AiUpdate::new(&mut host, data);
+    let mut module = AiUpdateModule::new(&mut host, data);
+    if host.env.has_machine != 0 {
+        // batch A4: the object's creation makes the machine
+        module.on_object_created(&mut host).expect("onObjectCreated");
+    }
     let mut clog = vec![0u32; 1 << 16];
     let pos = [start_pos.x, start_pos.y, start_pos.z];
     let n = unsafe { cpp::ref_ai_a2_new(sets_words.as_ptr(), &host.env, pos.as_ptr(), angle, clog.as_mut_ptr(), clog.len() as c_int) };
     clog.truncate(n as usize);
     let rlog = std::mem::take(&mut host.log);
-    let rd = rust_dump(&ai, &mut host, 0);
+    let rd = rust_dump(&module, &mut host, 0);
     let cd = cpp_dump();
     let ok = rlog == clog && rd == cd;
     if !ok && std::env::var("AI_A2_DEBUG").is_ok() {
@@ -1517,7 +1788,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let waypoint_heavy = g.below(8) == 0;
     for step in 0..60 {
         perturb(&mut g, &mut host.env);
-        let (op, mut fa, ia) = gen_op(&mut g, &host.env, waypoint_heavy, (ai.move_out_of_way1, ai.move_out_of_way2));
+        let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
+        let (op, mut fa, ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
+        has_saved |= op == 70;
         if op == 27 && fa[0] == -1.0e30 {
             let p = *host.thing.position();
             fa[0] = p.x + g.uniform(-0.6, 0.6);
@@ -1525,12 +1798,12 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             fa[2] = p.z;
         }
         ck.ops[op as usize] += 1;
-        let before_loco = ai.cur_locomotor;
-        let goal = ai.locomotor_goal_type;
+        let before_loco = module.ai().cur_locomotor;
+        let goal = module.ai().locomotor_goal_type;
         let before_pos = *host.thing.position();
-        let r = rust_op(&mut ai, &mut host, op, &fa, &ia, 0);
+        let r = rust_op(&mut module, &mut host, op, &fa, &ia, 0, &mut saved);
         let rlog = std::mem::take(&mut host.log);
-        let mut out = vec![0u32; 16];
+        let mut out = vec![0u32; 1 << 16];
         let mut log = vec![0u32; 1 << 16];
         let mut log_len = 0;
         let nr = unsafe { cpp::ref_ai_a2_op(op, fa.as_ptr(), ia.as_ptr(), &host.env, out.as_mut_ptr(), log.as_mut_ptr(), log.len() as c_int, &mut log_len) };
@@ -1546,7 +1819,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ok &= rlog == log;
         let (host_log_copy, log_copy) = (rlog.clone(), log.clone());
         ck.log.eq(rlog, log, tag);
-        let rd = rust_dump(&ai, &mut host, 0);
+        let rd = rust_dump(&module, &mut host, 0);
         let cd = cpp_dump();
         ok &= rd == cd;
         if !ok && std::env::var("AI_A2_DEBUG").is_ok() {
@@ -1555,27 +1828,47 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             first_diff("log", &host_log_copy, &log_copy);
             first_diff("dump", &rd, &cd);
         }
-        ck.dump_bug.eq(rust_dump(&ai, &mut host, 1), cd.clone(), tag);
+        ck.dump_bug.eq(rust_dump(&module, &mut host, 1), cd.clone(), tag);
         ck.dump.eq(rd, cd, tag);
         if op == 0 {
             ck.sleeps[usize::from(r[0] != 1)] += 1;
-            if *host.thing.position() != before_pos || ai.blocked_frames > 0 {
+            if *host.thing.position() != before_pos || module.ai().blocked_frames > 0 {
                 ck.goals_moved[goal as usize] += 1;
             }
-            if goal == LocoGoalType::PositionOnPath && ai.path.is_some() {
+            if goal == LocoGoalType::PositionOnPath && module.ai().path.is_some() {
                 ck.paths_followed += 1;
             }
             if goal == LocoGoalType::None && *host.thing.position() != before_pos {
                 ck.final_pops += 1;
             }
         }
+        // batch A4's coverage
+        let mut k = 0;
+        while k + 1 < host_log_copy.len() {
+            let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
+            if (70..=81).contains(&code) {
+                ck.a4_logs[(code - 70) as usize] += 1;
+            }
+            k += 2 + n;
+        }
+        if let Some(sm) = &module.machine {
+            ck.a4_states[match sm.get_current_state_id() {
+                0 => 0,
+                13 => 1,
+                8 => 2,
+                41 => 3,
+                _ => 4,
+            }] += 1;
+        }
         match op {
+            60 if r[0] == 0 => ck.temporary_states += 1,
+            71 => ck.loads += 1,
             48 if r[0] != 0 => ck.mood_targets += 1,
             35 if r[0] != 0 => ck.victims += 1,
             41 if r[0] != 0 => ck.enter_targets += 1,
             _ => {}
         }
-        if ai.cur_locomotor != before_loco {
+        if module.ai().cur_locomotor != before_loco {
             ck.loco_changes += 1;
         }
         if !ok {
@@ -1603,6 +1896,22 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-27, batch A4; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - 10,000 constructions and 600,000 operations, a third of them batch A4's (51,290 updates, 36,661 `setState`, 18,306
+///   `setTemporaryState` of which 11,147 continued, 7,886 saves and 1,239 loads): **0 mismatches** in the results, the call logs and
+///   the dumps. After an operation the machine was idle 298,017 times, dead 58,367, waiting 25,084, busy 24,299, in a placeholder
+///   state 192,942. Reached through the states and the update: 4,773 dead entries (the model condition cleared and set, the script
+///   notice), 4,813 repulsor checks, 434 commands from the idle state (crate pick-ups and mood attacks), 8,869 goal updates, 921
+///   snaps, 1,540 path queues, 11,648 turret updates, 36,321 placeholder `onEnter`s, 11,485 `update`s and 32,589 `onExit`s.
+/// - Planted bugs: in the Rust source plants 3240-3247, each caught: the AI not told of a changed state, the temporary state's
+///   minute not clamped, the idle state not inited on entry, its sleep offset not kept, the dead state's model condition list one
+///   short, the dead infantry's slowing factor, the attack flag of the attack states, the goal path's repeated point. A2's and
+///   A3's plants re-run against this mix: all caught (3201 by a panic, as before; 3210 at 10,000 cases) but 3222 (the get-repaired
+///   state as an enter target), which the base machine cannot reach (it defines no `AI_GET_REPAIRED` state; subclasses' machines
+///   do) and which A3's run caught.
+/// - The first run found no mismatch; one harness defect (the result buffer of 16 words, which a save overflowed).
+///
 /// # Results (2026-10-27, batch A3; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - 10,000 constructions and 600,000 operations, half of them batch A3's (about 10,600 of each of its 26): **0 mismatches** in the
@@ -1640,9 +1949,10 @@ fn ai_update_a2_matches_upstream() {
     }
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
-         path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}",
+         path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
+         A4 log records 70..=81 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();

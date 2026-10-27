@@ -916,7 +916,8 @@ pub struct AiEnv {
     pub cliff_rate: c_uint,
     pub pinch_rate: c_uint,
     pub valid_pos_rate: c_uint,
-    pub goal: [c_float; 3],
+    // batch A4: the pathfinder's goal position
+    pub pf_goal: [c_float; 3],
     // batch A3
     pub effectively_dead: c_int,
     pub player_type: c_int,
@@ -940,12 +941,13 @@ pub struct AiEnv {
     pub exist_mask: c_uint,
     pub ai_mask: c_uint,
     pub has_machine: c_int,
-    pub machine_state: c_int,
-    pub machine_idle: c_int,
-    pub machine_attack: c_int,
-    pub machine_busy: c_int,
-    pub temp_state: c_int,
-    pub goal_object: c_int,
+    // batch A4
+    pub pf_has_goal: c_int,
+    pub disabled_mask: c_int,
+    pub repulsor: c_int,
+    pub obj_vision_range: c_float,
+    pub turret_rate: c_uint,
+    pub state_rate: c_uint,
     pub turrets: c_int,
 }
 
@@ -1985,6 +1987,8 @@ extern "C" {
         log_len: *mut c_int,
     ) -> c_int;
     pub fn ref_ai_a2_dump(buf: *mut c_uint, cap: c_int) -> c_int;
+    /// Batch A4: the file the machine's xfer goes through (one per test thread).
+    pub fn ref_ai_a4_xfer_path(path: *const c_char);
     /// p1w13-sonnet, layer 10 batch T1: TurretAI (differential/wrap_turret.cpp).
     pub fn ref_turret_run(cfg: *const c_uint, data: *const c_uint, n: c_int, ops: *const c_uint, xfer_path: *const c_char, buf: *mut c_uint, cap: c_int, len: *mut c_int) -> c_int;
     /// p1w13-sonnet, layer 10 batch P1: PathNode and Path (differential/wrap_pathfind.cpp).

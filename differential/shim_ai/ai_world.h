@@ -9,8 +9,8 @@
 **  - Object: its id, crusher level, more kinds and disabled types, effectively-dead, clearStatus, the physics' allow-to-fall;
 **  - TerrainLogic::getLayerForDestination (the paths), answered from the hash of batch P1;
 **  - PartitionManager::getDistanceSquared (FROM_CENTER_3D);
-**  - the AI's own neighbours: its sleepy update module (UpdateModule: the wake frame), its group (AIGroup), its state machine
-**    (AIStateMachine: the goal position), declared here and defined by the wrapper.
+**  - the AI's own neighbours: its sleepy update module (UpdateModule: the wake frame) and its group (AIGroup), declared here and
+**    defined by the wrapper (batch A4: its state machine is the real AIStateMachine, on StateMachine.cpp).
 ** The pathfinder is the REAL class of AIPathfind.h (declared there); the wrapper defines the members the paths and the AI call. */
 #ifndef SHIM_AI_WORLD_H
 #define SHIM_AI_WORLD_H
@@ -26,6 +26,8 @@ class LocomotorTemplate;
 #include "ai_defs.h"
 
 class Locomotor;
+class Waypoint;
+class AsciiString;
 
 /* The scene of one call. The Rust test has the same struct (tests/differential_ai_update_a2.rs, `Env`): same field order, 4-byte
 ** fields only. The first block is the Locomotor build's LocoEnv, field for field. */
@@ -58,8 +60,8 @@ struct AiEnv
 	Int hasGroup;
 	/* the hash of batch P1 (the paths' line tests, cells and layers; the pathfinder's validMovementPosition) and its rates */
 	UnsignedInt seed, lineRate, groundRate, cliffRate, pinchRate, validPosRate;
-	/* the state machine's goal position */
-	Real goal[3];
+	/* batch A4: the pathfinder's goalPosition (TRUE with pfGoal when pfHasGoal) */
+	Real pfGoal[3];
 	/* ---- batch A3 */
 	Int effectivelyDead;
 	Int playerType;			/* the controlling player's type; -1: none */
@@ -79,10 +81,14 @@ struct AiEnv
 	Int horde;			/* three behavior modules: bits 0-2 with a horde interface, 3-5 in a horde, 6-8 allowed nationalism */
 	UnsignedInt existMask;		/* the objects 1..31 that exist (TheGameLogic->findObjectByID) */
 	UnsignedInt aiMask;		/* of those, the ones with an AI */
-	Int hasMachine;			/* the AI's state machine exists */
-	Int machineState, machineIdle, machineAttack, machineBusy;	/* its current state's id and isIdle, isAttack, isBusy */
-	Int tempState;			/* its temporary state's id (INVALID_STATE_ID: none) */
-	Int goalObject;			/* its goal object (0: none) */
+	Int hasMachine;			/* at construction: onObjectCreated (the AI's state machine made) */
+	/* ---- batch A4 */
+	Int pfHasGoal;			/* the pathfinder's goalPosition answers TRUE (with pfGoal) */
+	Int disabledMask;		/* bit t: isDisabledByType(t), for DISABLED_PARALYZED, _EMP, _SUBDUED, _HACKED */
+	Int repulsor;			/* TheAI->findClosestRepulsor's answer (0: none) */
+	Real objVisionRange;		/* the object's getVisionRange */
+	UnsignedInt turretRate;		/* a turret's update: UPDATE_SLEEP_NONE at this rate (the hash), else a sleep */
+	UnsignedInt stateRate;		/* a placeholder state's onEnter/update: STATE_CONTINUE at this rate (the hash), else an end or a sleep */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -99,8 +105,29 @@ enum
 	LOG_VALID_TERRAIN,
 	LOG_SET_WAKE = 40, LOG_GROUP_SPEED, LOG_UPDATE_LAYER, LOG_VALID_POSITION, LOG_DISTANCE_SQUARED, LOG_LINE_PASSABLE,
 	LOG_GROUND_PASSABLE, LOG_LAYER_FOR, LOG_EFFECTIVELY_DEAD,
-	LOG_ADD_TARGETER = 60, LOG_ABLE_TO_ATTACK, LOG_VISION_RANGE, LOG_CLOSEST_ENEMY, LOG_SET_BONUS, LOG_CLEAR_BONUS
+	LOG_ADD_TARGETER = 60, LOG_ABLE_TO_ATTACK, LOG_VISION_RANGE, LOG_CLOSEST_ENEMY, LOG_SET_BONUS, LOG_CLEAR_BONUS,
+	LOG_PF_GOAL_POSITION = 70, LOG_PF_SNAP, LOG_PF_UPDATE_GOAL, LOG_PF_QUEUE, LOG_TURRET_UPDATE, LOG_AI_COMMAND, LOG_REPULSOR,
+	LOG_CLEAR_SET_MODEL, LOG_SCRIPT_NOTIFY, LOG_STATE_ENTER, LOG_STATE_UPDATE, LOG_STATE_EXIT
 };
+
+/* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
+struct ModelConditionFlags
+{
+	UnsignedInt64 m_bits[4];
+	ModelConditionFlags() { m_bits[0] = m_bits[1] = m_bits[2] = m_bits[3] = 0; }
+	void set(ModelConditionFlagType t) { m_bits[t >> 6] |= 1ULL << (t & 63); }
+	Bool test(Int t) const { return ((m_bits[t >> 6] >> (t & 63)) & 1) != 0; }
+};
+inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType t) { ModelConditionFlags f; f.set(t); return f; }
+#define MAKE_MODELCONDITION_MASK(k) makeModelConditionMask(k)
+
+/* batch A4: TheScriptEngine, as far as AIDeadState uses it (logged) */
+class ScriptEngine
+{
+public:
+	void notifyOfObjectCreationOrDestruction();
+};
+extern ScriptEngine *TheScriptEngine;
 
 class GlobalData
 {
@@ -131,6 +158,8 @@ public:
 	Int alignOnTerrain(Real angle, const Coord3D &pos, Bool stickToGround, Matrix3D &mtx);
 	/* batch A2: the paths (batch P1's hash) */
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);
+	/* batch A4: AIStateMachine::xfer's (never reached: no goal waypoint is set) */
+	Waypoint *getWaypointByName(AsciiString name);
 };
 extern TerrainLogic *TheTerrainLogic;
 
@@ -165,6 +194,8 @@ public:
 #include "ai_qualifiers.inc"
 	Object *findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers,
 		const AttackPriorityInfo *info=NULL, PartitionFilter *optionalFilter=NULL);
+	/* batch A4 */
+	Object *findClosestRepulsor( const Object *me, Real range);
 };
 extern AI *TheAI;
 
@@ -321,6 +352,9 @@ public:
 	void clearWeaponBonusCondition(WeaponBonusConditionType wst);
 	AIGroup *getGroup();
 	AIUpdateInterface *getAI();
+	/* batch A4 */
+	Real getVisionRange() const;
+	void clearAndSetModelConditionFlags( const ModelConditionFlags& clr, const ModelConditionFlags& set );
 	/* 0: the AI's own object; else the id of another object of the scene */
 	ObjectID m_otherId;
 
@@ -363,23 +397,6 @@ class AIGroup
 {
 public:
 	void recomputeGroupSpeed();
-};
-
-/* AIStateMachine (AIStates.cpp, not yet translated): the goal position, the current and temporary states, the goal object (the
-** scene's) */
-typedef UnsignedInt StateID;
-enum { MACHINE_DONE_STATE_ID = 999998, INVALID_STATE_ID = 999999 };	/* StateMachine.h, verbatim */
-class AIStateMachine
-{
-public:
-	const Coord3D *getGoalPosition() const;
-	/* batch A3 */
-	StateID getCurrentStateID() const;
-	Bool isInIdleState() const;
-	Bool isInAttackState() const;
-	Bool isInBusyState() const;
-	StateID getTemporaryState(void) const;
-	Object *getGoalObject();
 };
 
 #endif

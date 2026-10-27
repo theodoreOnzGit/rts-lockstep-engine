@@ -8,6 +8,7 @@
 pub mod adjust;
 pub mod ai_update;
 pub mod ai_update_data;
+pub mod ai_states;
 pub mod ai_update_types;
 pub mod attack;
 pub mod cell;
