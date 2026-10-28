@@ -1112,6 +1112,7 @@ ObjectID Object::getProducerID() const
 {
 	return (m_otherId && ((g_aiEnv.droneMask >> m_otherId) & 1)) ? (ObjectID)g_aiEnv.objectId : INVALID_ID;
 }
+extern ExitInterface g_exit;
 ExitInterface *Object::getObjectExitInterface() const { return (g_aiEnv.dockFlags & 8) ? &g_exit : NULL; }
 Coord3D g_rallyPoint;
 const Coord3D *ExitInterface::getRallyPoint() const
