@@ -394,6 +394,8 @@ public:
 	Real getBoundingCircleRadius() const;
 	/* batch A7 */
 	Real getMaxHeightAbovePosition() const;
+	/* batch A10b: the position raised by half the scene's height above position */
+	void getCenterPosition(const Coord3D& pos, Coord3D& center) const;
 };
 
 /* ObjectStatusMaskType, as far as Locomotor.cpp and the AI use it */
@@ -475,6 +477,8 @@ public:
 	Bool isWithinAttackRange(const Object *source, const Coord3D* pos) const;
 	Bool isGoalPosWithinAttackRange(const Object *source, const Coord3D* goalPos, const Object *target, const Coord3D* targetPos) const;
 	Bool computeApproachTarget(const Object *source, const Object *target, const Coord3D *pos, Real angleOffset, Coord3D& approachTargetPos) const;
+	/* batch A10b (logged, from the hash) */
+	Bool isTooClose(const Object *source, const Object *target) const;
 	/* batch A10a: the scene's; fireWeapon and setPreAttackFinishedFrame logged */
 	WeaponStatus getStatus() const;
 	Bool hasLeechRange() const;

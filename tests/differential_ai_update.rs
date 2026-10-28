@@ -1339,6 +1339,23 @@ impl AiStateHost for Host {
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId) {
         self.l(L_ATTACK, &[3, slot as u32, victim as u32]);
     }
+    // ---- batch A10b
+    fn weapon_is_too_close(&mut self, victim: ObjectId) -> bool {
+        self.range_answer(3, &[victim as u32])
+    }
+    fn object_forward_speed_2d(&self, _id: ObjectId) -> f32 {
+        self.env.loco.fwd2d // (the scene's physics is every object's)
+    }
+    fn object_unit_direction_vector_2d(&mut self, _id: ObjectId) -> Coord3D {
+        // another object of the scene: unturned
+        Thing::new(Some(Arc::new(TplView))).unwrap().unit_direction_vector_2d()
+    }
+    fn object_center_position(&mut self, _id: ObjectId, pos: &Coord3D) -> Coord3D {
+        Coord3D { z: pos.z + self.env.max_height_above_position * 0.5, ..*pos }
+    }
+    fn object_template_is_kind_of(&self, _id: ObjectId, _kind: KindOfType) -> bool {
+        false // (the stand-in template's)
+    }
     // ---- batch A9
     fn waypoint_num_links(&mut self, way: u32) -> i32 {
         if !(way < 7 && (self.env.waypoint_links >> way) & 1 != 0) {
@@ -1763,6 +1780,15 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                             }
                             _ => panic!("the aim state"),
                         }
+                        // batch A10b: the chase states' members (when the machine has them)
+                        for cid in [0u32, 1] {
+                            if let Some(AiState::AttackApproach { mv, chase } | AiState::AttackPursue { mv, chase }) = m.state(cid) {
+                                put_move(&mut v, mv);
+                                put_pos(&mut v, &chase.prev_victim_pos);
+                                v.extend([chase.approach_timestamp, u32::from(chase.follow), u32::from(chase.attacking_object)]);
+                                v.extend([u32::from(chase.stop_if_in_range), u32::from(chase.initial_approach), u32::from(chase.force_attacking)]);
+                            }
+                        }
                     }
                 }
                 _ => panic!("an attack state"),
@@ -1808,7 +1834,8 @@ fn gen_scene(g: &mut Gen) -> Env {
     let mut e = Env::default();
     let l = &mut e.loco;
     // (batch A4: sometimes the first frames, where the idle state's first update pops the object to its goal)
-    l.frame = if g.below(10) == 0 { g.below(2) } else { g.below(5000) };
+    // (batch A10b: a quarter early, below the chase states' recompute time)
+    l.frame = if g.below(4) == 0 { g.below(3) } else { g.below(5000) };
     l.gravity = if g.below(4) == 0 { -1.0 } else { -60.0 * (1.0 / 30.0) * (1.0 / 30.0) };
     l.penalty = 1 + g.below(2) as i32;
     l.body_state = g.below(4) as i32;
@@ -1871,6 +1898,10 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.ai_mask = g.u32();
     e.has_machine = i32::from(g.below(10) != 0);
     e.turrets = g.below(4) as i32;
+    // (batch A10b: a quarter of the scenes have the main turret, for the pursuit)
+    if g.below(4) == 0 {
+        e.turrets |= 1;
+    }
     // batch A4
     e.loco.kind_mask |= i32::from(g.below(3) == 0) << 7;
     gen_a4(g, &mut e);
@@ -1934,6 +1965,10 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.rel_angle = if g.below(2) == 0 { g.uniform(-0.05, 0.05) } else { g.uniform(-1.0, 1.0) };
     e.turret_cur_weapon = g.below(4) as i32;
     e.team_epoch = g.below(3) as i32;
+    // (a quarter: the main turret holds the current weapon, for the pursuit)
+    if g.below(4) == 0 {
+        e.turret_cur_weapon |= 1;
+    }
 }
 
 /// Batch A9's answers that change between operations: the wall's height, the groups' centres, the skirmish player and its fudge.
@@ -1960,8 +1995,9 @@ fn gen_a5(g: &mut Gen, e: &mut Env) {
     e.move_away_rate = g.below(101);
     e.path_exists_rate = g.below(101);
     e.find_pos_rate = g.below(101);
-    e.continue_range = if g.below(3) == 0 { g.uniform(1.0, 200.0) } else { 0.0 };
-    e.closest_attack = if g.below(2) == 0 { g.below(32) as i32 } else { 0 };
+    // (batch A10b: half with a continue range, three quarters with a closest object: the fire state's continued attack)
+    e.continue_range = if g.below(2) == 0 { g.uniform(1.0, 200.0) } else { 0.0 };
+    e.closest_attack = if g.below(4) != 0 { g.below(32) as i32 } else { 0 };
 }
 
 /// Batch A4's scene: the pathfinder's goal, the disabled types the AI's update and idle state ask, the repulsor, the vision range.
@@ -2768,7 +2804,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let data = Arc::new(data);
 
     // the object and the AI: the constructor draws the locomotors' random values
-    let start = [g.uniform(-20.0, 260.0), g.uniform(-20.0, 180.0), 0.0];
+    // (batch A10b: a quarter at negative x, where the other objects, at the origin facing +x, move away: pursued)
+    let start = [if g.below(4) == 0 { g.uniform(-60.0, -1.0) } else { g.uniform(-20.0, 260.0) }, g.uniform(-20.0, 180.0), 0.0];
     let start_pos = Coord3D { x: start[0], y: start[1], z: host.ground(start[0], start[1]) + if g.below(3) == 0 { g.uniform(0.0, 50.0) } else { 0.0 } };
     let angle = g.uniform(-3.1, 3.1);
     let rng_seed = g.u32();
@@ -2804,16 +2841,36 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let waypoint_heavy = g.below(8) == 0;
     for step in 0..60 {
         perturb(&mut g, &mut host.env);
-        // batch A9: an as-team waypoint state reads the controlling player unchecked (kept while one is in the machine)
-        if a9_states(&module).1 && host.env.player_type < 0 {
+        // batch A9: an as-team waypoint state reads the controlling player unchecked (kept while one is in the machine); batch
+        // A10b: so do the attack machine's chase states (kept while an attack state is in the machine)
+        let attacking = module.machine.as_ref().is_some_and(|sm| {
+            (9..=12).contains(&sm.get_current_state_id()) || (9..=12).contains(&module.ai().machine.temporary_state)
+        });
+        // batch A10b: without a controlling player the team does not attack a common target (the idle state would attack it, and
+        // the chase states read the player unchecked)
+        if host.env.player_type < 0 {
+            host.env.team_attack_common = 0;
+        }
+        // (and so does the idle state's mood target: `getNextMoodTarget` reads the player unchecked, and the C++ stand-in's
+        // `getPlayerType` tolerated a missing one; kept while the idle state is in the machine)
+        let idle = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 0 || module.ai().machine.temporary_state == 0);
+        if (a9_states(&module).1 || attacking || idle) && host.env.player_type < 0 {
             host.env.player_type = 0;
         }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
         let (mut op, mut fa, mut ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
         a9_guard(&module, &host.env, &mut op, &mut ia);
+        // batch A10b: an attack-position command a third of the time at the object (the approach's exact goal on exit)
+        if op == 72 && ia[0] == 14 && g.below(3) == 0 {
+            let p = *host.thing.position();
+            fa[0] = p.x + g.uniform(-0.3, 0.3);
+            fa[1] = p.y + g.uniform(-0.3, 0.3);
+            fa[2] = p.z;
+        }
         // batch A10a: in an attack state, half the operations are the AI's update (which runs the attack machine)
         if module.machine.as_ref().is_some_and(|sm| (9..=12).contains(&sm.get_current_state_id())) && g.below(2) == 0 {
             op = 65;
+            ia.iter_mut().for_each(|x| *x = 0); // (the update takes no arguments; another op's would be read for coordinates)
         }
         if std::env::var("AI_A2_TRACE").is_ok() {
             let cur = module.machine.as_ref().map(|sm| sm.get_current_state_id());
@@ -2955,8 +3012,9 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
     let unsafe_entry = |state: i32, way: bool| {
         (matches!(state, 2..=5 | 18 | 19) && (no_loco || in_machine(state) || (state == 2 && (!way || e.player_type < 0))))
             // batch A10a: an attack state already the machine's state or its temporary state (the other's exit deletes the one
-            // attack machine, which the next update dereferences)
-            || (matches!(state, 9..=12) && in_machine(state))
+            // attack machine, which the next update dereferences); batch A10b: or without a controlling player (the chase states
+            // read it unchecked)
+            || (matches!(state, 9..=12) && (in_machine(state) || e.player_type < 0))
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
@@ -2999,6 +3057,21 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A10b; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases, the default from now on)
+///
+/// - The attack machine's pursue and approach states (no placeholders left in it): 30,000 constructions and 1,799,000 operations,
+///   **0 mismatches** in the results, the call logs and the dumps (which add the chase states' members). After an operation the
+///   machine was in an attack state 15,008 times; its attack machine chasing 6,277 times, approaching 2,269, aiming 5,276, firing
+///   1,186.
+/// - Not generated: an attack state entered without a controlling player (the chase states read it unchecked); a player is kept
+///   while the idle state is in the machine (its mood target reads it unchecked: before this batch the C++ stand-in tolerated a
+///   missing one), and without a player the team attacks no common target.
+/// - Planted bugs: plants 3310-3317 at 30,000 cases, each caught but one: the recompute timestamp's wrap (15), the slow victim
+///   (13), the direction away (45), the follow continue (2), the snap to the goal (62), the contact weapon's extra distance (1),
+///   the initial approach's targets (62). **3315 (the pursuit's 0.95 speed match) is not caught**: the in-range pursuit branch is
+///   reached about once in a thousand cases (it was caught by 3 mismatches before the last generator change, by none after).
+///   All earlier AI plants re-run at 30,000: caught.
+///
 /// # Results (2026-10-28, batch A10a; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - The attack states (ids 9-12, now `AIAttackState` with its attack machine: aim, fire, the chase placeholders) entered by
@@ -3127,7 +3200,7 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
 ///   waypoint-heavy programs were added for them.
 #[test]
 fn ai_update_a2_matches_upstream() {
-    let cases: u64 = std::env::var("AI_A2_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
+    let cases: u64 = std::env::var("AI_A2_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(30_000);
     let mut ck = Checks::new();
     // (AI_A2_FROM: the first case, to re-run one)
     let from: u64 = std::env::var("AI_A2_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);

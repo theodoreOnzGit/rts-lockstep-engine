@@ -240,6 +240,9 @@ public:
 	void setTurretTargetPosition(WhichTurretType tur, const Coord3D* pos);
 	Real getTurretTurnRate(WhichTurretType tur) const;
 	WhichTurretType getWhichTurretForCurWeapon() const;
+	/* batch A10b: AIUpdate.h's inlines, verbatim */
+	Bool isAttackPath(void) const {return m_isAttackPath;}
+	inline Bool isAllowedToChase() const { return m_allowedToChase; }
 	/* batch A9: AIUpdate.h's inlines, verbatim */
 	void setPriorWaypointID( UnsignedInt id )   { m_priorWaypointID = id; };
 	void setCurrentWaypointID( UnsignedInt id ) { m_currentWaypointID = id; };
@@ -1273,6 +1276,13 @@ void TurretAI::setTurretTargetPosition(const Coord3D *pos)
 	else L(LOG_ATTACK, { 15u, (unsigned)m_which });
 }
 Real TurretAI::getTurnRate() const { return g_aiEnv.turretTurnRate[m_which]; }
+/* ---- batch A10b's stand-ins (the chase states) */
+Bool Weapon::isTooClose(const Object *source, const Object *target) const { return rangeAnswer(3, { idOf(target) }); }
+void GeometryInfo::getCenterPosition(const Coord3D& pos, Coord3D& center) const
+{
+	center = pos;
+	center.z += g_aiEnv.maxHeightAbovePosition * 0.5f;
+}
 Bool TurretAI::isOwnersCurWeaponOnTurret() const { return ((g_aiEnv.turretCurWeapon >> m_which) & 1) != 0; }
 /* batch A9 */
 Bool Pathfinder::isPointOnWall(const Coord3D *pos) { return pfAnswer(7, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
@@ -1987,6 +1997,31 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 				const AIAttackAimAtTargetState *aim = (const AIAttackAimAtTargetState *)m->m_stateMap.find(AttackStateMachine::AIM_AT_TARGET)->second;
 				putU32(v, aim->m_canTurnInPlace ? 1u : 0u);
 				putU32(v, aim->m_setLocomotor ? 1u : 0u);
+				/* batch A10b: the chase states' members (when the machine has them: not the continue or failure states) */
+				for (int c = 0; c < 2; ++c) {
+					std::map<StateID, State *>::const_iterator it = m->m_stateMap.find((StateID)c);
+					if (it == m->m_stateMap.end()) continue;	/* (no approach state for an immobile or portable owner) */
+					const State *st = it->second;
+					const AIAttackApproachTargetState *ap = dynamic_cast<const AIAttackApproachTargetState *>(st);
+					const AIAttackPursueTargetState *pu = dynamic_cast<const AIAttackPursueTargetState *>(st);
+					if (!ap && !pu) continue;
+					const AIInternalMoveToState *mt = (const AIInternalMoveToState *)st;
+					putPos(v, mt->m_goalPosition);
+					putU32(v, (unsigned)mt->m_goalLayer);
+					putPos(v, mt->m_pathGoalPosition);
+					putU32(v, (unsigned)mt->m_ambientPlayingHandle);
+					putU32(v, mt->m_pathTimestamp);
+					putU32(v, mt->m_blockedRepathTimestamp);
+					putU32(v, mt->m_adjustDestinations ? 1u : 0u);
+					putU32(v, mt->m_waitingForPath ? 1u : 0u);
+					putU32(v, mt->m_tryOneMoreRepath ? 1u : 0u);
+#define PUT_CHASE(x) \
+					putPos(v, x->m_prevVictimPos); putU32(v, x->m_approachTimestamp); putU32(v, x->m_follow ? 1u : 0u); \
+					putU32(v, x->m_isAttackingObject ? 1u : 0u); putU32(v, x->m_stopIfInRange ? 1u : 0u); \
+					putU32(v, x->m_isInitialApproach ? 1u : 0u); putU32(v, x->m_isForceAttacking ? 1u : 0u);
+					if (ap) { PUT_CHASE(ap) } else { PUT_CHASE(pu) }
+#undef PUT_CHASE
+				}
 			}
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

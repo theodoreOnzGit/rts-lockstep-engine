@@ -69,7 +69,7 @@ use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
-use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds};
+use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -358,6 +358,17 @@ pub trait AiStateHost: AiHost + StateContext {
     fn fire_current_weapon_at_position(&mut self, pos: &Coord3D);
     fn release_weapon_lock(&mut self, lock: i32);
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
+    // ---- batch A10b: the chase states
+    /// The current weapon's `isTooClose(owner, victim)`.
+    fn weapon_is_too_close(&mut self, victim: ObjectId) -> bool;
+    /// Another object's physics' `getForwardSpeed2D()`.
+    fn object_forward_speed_2d(&self, id: ObjectId) -> f32;
+    /// Another object's `getUnitDirectionVector2D()`.
+    fn object_unit_direction_vector_2d(&mut self, id: ObjectId) -> Coord3D;
+    /// Another object's `getGeometryInfo().getCenterPosition(pos, center)`.
+    fn object_center_position(&mut self, id: ObjectId, pos: &Coord3D) -> Coord3D;
+    /// Another object's `getTemplate()->isKindOf(kind)`.
+    fn object_template_is_kind_of(&self, id: ObjectId, kind: KindOfType) -> bool;
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -417,6 +428,10 @@ pub enum AiState<H: AiStateHost> {
     AttackAim { attacking_object: bool, force_attacking: bool, can_turn_in_place: bool, set_locomotor: bool },
     /// The attack machine's `AIAttackFireWeaponState`.
     AttackFire,
+    /// The attack machine's `AIAttackApproachTargetState` (batch A10b).
+    AttackApproach { mv: MoveToData, chase: ChaseData },
+    /// The attack machine's `AIAttackPursueTargetState`.
+    AttackPursue { mv: MoveToData, chase: ChaseData },
     /// The attack machine's `ContinueState` and `FailureState`.
     Utility(UtilityState),
     /// A state class not yet translated: the host's (see the module docs).
@@ -881,6 +896,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Panic { .. }) => waypoint_states::on_enter(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
+            Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
+            Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
             Some(AiState::AttackFire) => crate::logic::ai::fire_state::fire_on_enter(sm, h),
             Some(AiState::Utility(u)) => Ok(u.on_enter()),
             Some(AiState::Untranslated { id }) => {
@@ -908,6 +925,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Panic { .. }) => waypoint_states::on_exit(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_on_exit(sm, h, id)?,
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
+            Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
+            Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
             Some(AiState::AttackFire) => attack_states::fire_on_exit(sm, h, status)?,
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
@@ -936,6 +955,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Panic { .. }) => waypoint_states::update(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
+            Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
+            Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
             Some(AiState::AttackFire) => crate::logic::ai::fire_state::fire_update(sm, h),
             Some(AiState::Utility(u)) => Ok(u.update()),
             // "@todo srj -- find a way to sleep for a number of frames here, if possible"
@@ -961,8 +982,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     }
     fn is_attack(&self) -> bool {
         match self {
-            // (AIAttackState's TRUE)
+            // (AIAttackState's TRUE; the chase states' TRUE)
             AiState::Attack { .. } => !plant(3246),
+            AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
             _ => false,
         }
@@ -997,9 +1019,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::MoveAndDelete { mv, append_goal_position } => move_states::delete_xfer(mv, append_goal_position, xfer)?,
             AiState::FollowWaypointPath { mv, wp, .. } => waypoint_states::waypoint_path_xfer(mv, wp, xfer)?,
             AiState::FollowWaypointPathExact { mv, last, .. } => waypoint_states::exact_xfer(mv, last, xfer)?,
-            AiState::Attack { machine, original_victim_pos, attacking_object, force_attacking, kinds, .. } => {
-                attack_states::attack_xfer(machine, original_victim_pos, *attacking_object, *force_attacking, *kinds, xfer)?
+            AiState::Attack { machine, original_victim_pos, follow, attacking_object, force_attacking, kinds, .. } => {
+                attack_states::attack_xfer(machine, original_victim_pos, *follow, *attacking_object, *force_attacking, *kinds, xfer)?
             }
+            AiState::AttackApproach { mv, chase } | AiState::AttackPursue { mv, chase } => attack_states::chase_xfer(mv, chase, xfer)?,
             AiState::AttackAim { can_turn_in_place, set_locomotor, .. } => attack_states::aim_xfer(can_turn_in_place, set_locomotor, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

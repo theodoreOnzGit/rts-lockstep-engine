@@ -3,7 +3,8 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AttackStateMachine; inWeaponRangeObject, wantToSquishTarget,
-//     outOfWeaponRangePosition, cannotPossiblyAttackObject; AIAttackAimAtTargetState; AIAttackState)
+//     outOfWeaponRangePosition, cannotPossiblyAttackObject; AIAttackAimAtTargetState; AIAttackState; batch A10b: canPursue,
+//     AIAttackApproachTargetState, AIAttackPursueTargetState)
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate.cpp (setTurretTargetObject, setTurretTargetPosition,
 //     getTurretTurnRate, getWhichTurretForCurWeapon)
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/AIStateMachine.h (those classes)
@@ -16,12 +17,13 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only for
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
-//! The AI's attack state and its machine (`p1w13-sonnet`, layer 10, batch A10a).
+//! The AI's attack state and its machine (`p1w13-sonnet`, layer 10, batches A10a and A10b).
 //!
 //! `AIAttackState` (the AI's `AI_ATTACK_POSITION`, `AI_ATTACK_OBJECT`, `AI_FORCE_ATTACK_OBJECT`, `AI_ATTACK_AND_FOLLOW_OBJECT`)
 //! makes an `AttackStateMachine` on entry and runs it every update: **aim** (the default; turn toward the victim or position, or
 //! let the turret aim; success when within the aim delta), **fire** ([`crate::logic::ai::fire_state`]), and the chase states
-//! (pursue and approach, batch A10b; a portable structure's chase is a continue state, an immobile owner's a failure state), with
+//! (pursue a fleeing victim with a turret, then approach a spot to fire from, batch A10b; a portable structure's chase is a
+//! continue state, an immobile owner's a failure state), with
 //! the conditions out of weapon range, want to squish and cannot attack (objects) or out of range (positions).
 //!
 //! # The shape
@@ -52,6 +54,7 @@ use crate::common::game_type::{ObjectId, WeaponSlotType, INVALID_ID};
 use crate::common::kind_of::{KINDOF_DONT_AUTO_CRUSH_INFANTRY, KINDOF_IMMOBILE, KINDOF_PROJECTILE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE};
 use crate::common::model_state::MODELCONDITION_ATTACKING;
 use crate::common::object_status_types::{
+    OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED,
     OBJECT_STATUS_CAN_ATTACK, OBJECT_STATUS_IGNORING_STEALTH, OBJECT_STATUS_IS_AIMING_WEAPON, OBJECT_STATUS_IS_ATTACKING,
     OBJECT_STATUS_IS_FIRING_WEAPON, OBJECT_STATUS_UNDER_CONSTRUCTION,
 };
@@ -59,7 +62,11 @@ use crate::common::state_machine::{
     SmResult, StateConditionInfo, StateExitType, StateId, StateMachine, StateReturn, UtilityState, EXIT_MACHINE_WITH_FAILURE,
 };
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
+use crate::logic::ai::ai_move_states::{self as move_states, mv, set_precise_z, MoveToData};
 use crate::logic::ai::ai_paths;
+use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
+use crate::common::state_machine::{ObjectRef, StateContext};
+use crate::common::kind_of::KINDOF_AIRCRAFT;
 use crate::logic::ai::ai_states::{ai, with_ai, AiCondition, AiState, AiStateHost};
 use crate::logic::ai::ai_update::AiMachineQuery;
 use crate::logic::ai::ai_update_types::*;
@@ -78,8 +85,6 @@ pub const APPROACH_TARGET: StateId = 1;
 pub const AIM_AT_TARGET: StateId = 2;
 /// `AttackStateMachine::FIRE_WEAPON`.
 pub const FIRE_WEAPON: StateId = 3;
-/// The untranslated chase states (batch A10b) are `AiState::Untranslated` of this plus their id.
-pub const ATTACK_PLACEHOLDER_BASE: StateId = 1000;
 /// `REL_THRESH`: "about 2 degrees".
 const REL_THRESH: f32 = 0.035;
 
@@ -179,7 +184,13 @@ fn run_inner<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl 
 
 /// `AttackStateMachine::AttackStateMachine(obj, att, name, follow, attackingObject, forceAttacking)`: "order matters: first state
 /// is the default state" (aim, so that things that cannot move can shoot things in range).
-pub fn define_attack_states<H: AiStateHost>(inner: &mut Sm<H>, attacking_object: bool, force_attacking: bool, kinds: AttackOwnerKinds) -> SmResult<()> {
+pub fn define_attack_states<H: AiStateHost>(
+    inner: &mut Sm<H>,
+    follow: bool,
+    attacking_object: bool,
+    force_attacking: bool,
+    kinds: AttackOwnerKinds,
+) -> SmResult<()> {
     let objects_normal = [
         StateConditionInfo { test: AiCondition::OutOfWeaponRangeObject, to_state_id: CHASE_TARGET },
         StateConditionInfo { test: AiCondition::WantToSquishTarget, to_state_id: CHASE_TARGET },
@@ -199,7 +210,10 @@ pub fn define_attack_states<H: AiStateHost>(inner: &mut Sm<H>, attacking_object:
     let aim = AiState::AttackAim { attacking_object, force_attacking, can_turn_in_place: false, set_locomotor: false };
     inner.define_state(AIM_AT_TARGET, aim, FIRE_WEAPON, EXIT_MACHINE_WITH_FAILURE, conditions)?;
     inner.define_state(FIRE_WEAPON, AiState::AttackFire, AIM_AT_TARGET, AIM_AT_TARGET, conditions)?;
-    let placeholder = |id: StateId| AiState::Untranslated { id: ATTACK_PLACEHOLDER_BASE + id };
+    // the chase states' constructors: the initial approach; the approach's other members the pool's zeros
+    let data = ChaseData { follow, attacking_object, initial_approach: true, force_attacking, ..ChaseData::default() };
+    let approach = || AiState::AttackApproach { mv: MoveToData::default(), chase: data.clone() };
+    let pursue = || AiState::AttackPursue { mv: MoveToData::default(), chase: data.clone() };
     if !kinds.immobile {
         if kinds.portable_that_attacks {
             // "we're a rider on a mobile object, so we can't control our motion. just make bogus states that always fall back
@@ -207,13 +221,14 @@ pub fn define_attack_states<H: AiStateHost>(inner: &mut Sm<H>, attacking_object:
             let chase = [StateConditionInfo { test: AiCondition::InWeaponRangeObject, to_state_id: AIM_AT_TARGET }];
             inner.define_state(CHASE_TARGET, AiState::Utility(UtilityState::Continue), EXIT_MACHINE_WITH_FAILURE, EXIT_MACHINE_WITH_FAILURE, &chase)?;
         } else if attacking_object {
-            // (AIAttackPursueTargetState, then AIAttackApproachTargetState: batch A10b)
-            inner.define_state(CHASE_TARGET, placeholder(CHASE_TARGET), APPROACH_TARGET, APPROACH_TARGET, &[])?;
-            inner.define_state(APPROACH_TARGET, placeholder(APPROACH_TARGET), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
+            // "This state will pursue a target that is moving away from it. If it is not moving away, it will drop into the
+            // AIAttackApproachTarget state."
+            inner.define_state(CHASE_TARGET, pursue(), APPROACH_TARGET, APPROACH_TARGET, &[])?;
+            // "This state will succeed when we have a useful weapon within range of victim, and fail if the victim is dead"
+            inner.define_state(APPROACH_TARGET, approach(), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
         } else {
-            // (AIAttackApproachTargetState twice: batch A10b)
-            inner.define_state(CHASE_TARGET, placeholder(CHASE_TARGET), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
-            inner.define_state(APPROACH_TARGET, placeholder(APPROACH_TARGET), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
+            inner.define_state(CHASE_TARGET, approach(), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
+            inner.define_state(APPROACH_TARGET, approach(), AIM_AT_TARGET, EXIT_MACHINE_WITH_FAILURE, &[])?;
         }
     } else {
         // "This state always instantly fails, so when immobile things transition here, we bail."
@@ -223,9 +238,9 @@ pub fn define_attack_states<H: AiStateHost>(inner: &mut Sm<H>, attacking_object:
 }
 
 /// A new attack machine for the attack state's flags.
-fn new_attack_machine<H: AiStateHost>(attacking_object: bool, force_attacking: bool, kinds: AttackOwnerKinds) -> Sm<H> {
+fn new_attack_machine<H: AiStateHost>(follow: bool, attacking_object: bool, force_attacking: bool, kinds: AttackOwnerKinds) -> Sm<H> {
     let mut inner = StateMachine::new();
-    define_attack_states(&mut inner, attacking_object, force_attacking, kinds).expect("the attack machine's definitions");
+    define_attack_states(&mut inner, follow, attacking_object, force_attacking, kinds).expect("the attack machine's definitions");
     inner
 }
 
@@ -370,9 +385,9 @@ pub fn attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
     if h.is_out_of_ammo() && !h.is_kind_of(KINDOF_PROJECTILE) {
         return Ok(StateReturn::FAILURE);
     }
-    let (_, attacking_object, force_attacking, kinds) = attack_flags(sm, id);
+    let (follow, attacking_object, force_attacking, kinds) = attack_flags(sm, id);
     // "create new state machine for attack behavior"
-    let mut inner = new_attack_machine::<H>(attacking_object, force_attacking, kinds);
+    let mut inner = new_attack_machine::<H>(follow, attacking_object, force_attacking, kinds);
     // "tell the attack machine who the victim of the attack is"
     let original;
     if attacking_object {
@@ -531,6 +546,7 @@ pub fn attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
 pub fn attack_xfer<H: AiStateHost>(
     machine: &mut Option<Sm<H>>,
     original_victim_pos: &mut Coord3D,
+    follow: bool,
     attacking_object: bool,
     force_attacking: bool,
     kinds: AttackOwnerKinds,
@@ -544,7 +560,7 @@ pub fn attack_xfer<H: AiStateHost>(
     xfer.xfer_coord3d(original_victim_pos)?;
     if has_machine && machine.is_none() {
         // "create new state machine for attack behavior"
-        *machine = Some(new_attack_machine(attacking_object, force_attacking, kinds));
+        *machine = Some(new_attack_machine(follow, attacking_object, force_attacking, kinds));
     }
     if has_machine {
         let m = machine.as_mut().expect("the attack machine");
@@ -766,4 +782,508 @@ impl<H: AiStateHost> FireAttacker for AiState<H> {
 /// The attack machine's states' `onExit` for the fire state.
 pub fn fire_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, status: StateExitType) -> SmResult<()> {
     crate::logic::ai::fire_state::fire_on_exit(sm, h, status)
+}
+
+// ---- batch A10b: AIAttackApproachTargetState and AIAttackPursueTargetState (to be appended to ai_attack_states.rs)
+
+/// `MIN_RECOMPUTE_TIME` of both chase states.
+const MIN_RECOMPUTE_TIME: u32 = 10;
+
+/// The chase states' members (`AIAttackApproachTargetState`'s and `AIAttackPursueTargetState`'s).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ChaseData {
+    /// `m_prevVictimPos`: "Where we think our victim is".
+    pub prev_victim_pos: Coord3D,
+    /// `m_approachTimestamp`: "When we last computed an approach goal".
+    pub approach_timestamp: u32,
+    /// `m_follow`.
+    pub follow: bool,
+    /// `m_isAttackingObject`.
+    pub attacking_object: bool,
+    /// `m_stopIfInRange`.
+    pub stop_if_in_range: bool,
+    /// `m_isInitialApproach`: "we can attack other units along the way".
+    pub initial_approach: bool,
+    /// `m_isForceAttacking` (not saved).
+    pub force_attacking: bool,
+}
+
+/// `xfer` of both (version 1): the base's, the victim's position, the timestamp, the flags but force-attacking.
+pub fn chase_xfer(mv: &mut MoveToData, c: &mut ChaseData, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    mv.xfer(xfer)?;
+    xfer.xfer_coord3d(&mut c.prev_victim_pos)?;
+    xfer.xfer_unsigned_int(&mut c.approach_timestamp)?;
+    xfer.xfer_bool(&mut c.follow)?;
+    xfer.xfer_bool(&mut c.attacking_object)?;
+    xfer.xfer_bool(&mut c.stop_if_in_range)?;
+    xfer.xfer_bool(&mut c.initial_approach)?;
+    Ok(())
+}
+
+fn chase<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut ChaseData {
+    match sm.state_mut(id) {
+        Some(AiState::AttackApproach { chase, .. }) | Some(AiState::AttackPursue { chase, .. }) => chase,
+        _ => unreachable!("a chase state"),
+    }
+}
+
+/// `canPursue(source, weapon, victim)`: "Requires that 1. We are faster than the other unit. 2. The other unit is moving. 3. The
+/// other unit is moving away from us." (a turret, and physics on the victim; a computer that crushes always pursues).
+fn can_pursue<H: AiStateHost>(h: &mut H, victim: ObjectId) -> bool {
+    if !h.object_has_physics(victim) {
+        return false;
+    }
+    // "Have to have a turret to pursue."
+    if get_which_turret_for_cur_weapon(h) == TURRET_INVALID {
+        return false;
+    }
+    if h.ai_data_crushes_infantry()
+        && h.controlling_player_type() == Some(crate::common::game_common::PlayerType::Computer)
+        && h.can_crush_or_squish(victim)
+    {
+        return true; // "Always pursue if we can squish."
+    }
+    if h.weapon_is_too_close(victim) {
+        return false; // "Don't chase it if we are already too close."
+    }
+    let our_max_speed = with_ai(h, |a, h| a.get_cur_locomotor_speed(h));
+    let victim_speed = h.object_forward_speed_2d(victim);
+    if victim_speed >= our_max_speed {
+        return false; // "we can't catch them."
+    }
+    if victim_speed < our_max_speed / 10.0 && !plant(3311) {
+        return false; // "They aren't moving very fast, so don't chase."
+    }
+    let (vp, sp) = (h.find_object(victim).expect("the victim").position, h.position());
+    let (dx, dy) = (vp.x - sp.x, vp.y - sp.y);
+    let dir = h.object_unit_direction_vector_2d(victim);
+    if (dx * dir.x + dy * dir.y < 0.0) != plant(3312) {
+        return false; // "they are moving towards us."
+    }
+    true
+}
+
+/// `getMachineGoalObject()` of the attack machine.
+fn goal_id<H: AiStateHost>(sm: &Sm<H>, h: &H) -> Option<ObjectId> {
+    sm.goal_object(h).map(|o| o.id)
+}
+
+/// `AIAttackApproachTargetState::computePath()`: "Compute a valid spot to fire our weapon from" (false: none, or pursue instead).
+pub fn approach_compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
+    let mut force_repath = false;
+    // "if we're immobile we can't possibly approach the target"
+    if !h.is_mobile() {
+        return false;
+    }
+    if ai(h).is_blocked_and_stuck {
+        force_repath = true;
+    }
+    if mv(sm, id).waiting_for_path {
+        return true;
+    }
+    if !force_repath && ai(h).path.is_none() && !ai(h).waiting_for_path {
+        force_repath = true;
+    }
+    // "force minimum time between recomputation"
+    let now = StateContext::frame(h);
+    if !force_repath && now.wrapping_sub(chase(sm, id).approach_timestamp) < MIN_RECOMPUTE_TIME {
+        return true;
+    }
+    chase(sm, id).approach_timestamp = now;
+    // "if we have a goal object, move to it, otherwise move to goal position"
+    if let Some(victim) = sm.goal_object(h) {
+        let me = h.position();
+        // "if our victim's position hasn't changed, don't re-path"
+        if !force_repath && move_states::is_same_position(&me, &chase(sm, id).prev_victim_pos, &victim.position) {
+            return true;
+        }
+        if h.current_weapon_slot().is_none() {
+            return false;
+        }
+        // "remember where we think our victim is, so if it moves, we can re-path"
+        chase(sm, id).prev_victim_pos = victim.position;
+        if can_pursue(h, victim.id) {
+            return false; // "break out, and do the pursuit state."
+        }
+        mv(sm, id).adjust_destinations = true;
+        if h.weapon_is_contact() {
+            // "Weapon is basically a contact weapon, so let the attacker pathfind into the target."
+            ai(h).ignore_obstacle(victim.id);
+            mv(sm, id).adjust_destinations = false; // "We want to run into the target."
+            if !plant(3316) {
+                ai(h).set_path_extra_distance(10.0 * PATHFIND_CELL_SIZE_F); // "We don't want it to slow down."
+            }
+        }
+        let prev = chase(sm, id).prev_victim_pos;
+        mv(sm, id).goal_position = prev;
+        mv(sm, id).waiting_for_path = true;
+        let pos = h.object_center_position(victim.id, &victim.position);
+        ai_paths::request_attack_path(h, victim.id, &pos);
+        chase(sm, id).stop_if_in_range = false; // "we have calculated a position to shoot from, so go there."
+        true
+    } else {
+        // "goal position."
+        mv(sm, id).adjust_destinations = true;
+        chase(sm, id).stop_if_in_range = false; // "Attack position is used by missiles, and they hit the position."
+        let goal = *sm.goal_position();
+        mv(sm, id).goal_position = goal;
+        if !force_repath {
+            return true; // "fixed positions don't move."
+        }
+        // "must use computeAttackPath so that min ranges are considered."
+        mv(sm, id).waiting_for_path = true;
+        ai_paths::request_attack_path(h, INVALID_ID, &goal);
+        true
+    }
+}
+
+/// `AIAttackPursueTargetState::computePath()`: the victim's position, if it can still be pursued.
+pub fn pursue_compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
+    let force_repath = false;
+    // "if we're immobile we can't possibly approach the target"
+    if !h.is_mobile() {
+        return false;
+    }
+    if ai(h).is_blocked_and_stuck {
+        return false;
+    }
+    if mv(sm, id).waiting_for_path {
+        return true;
+    }
+    let mut force_repath = force_repath;
+    if !force_repath && ai(h).path.is_none() && !ai(h).waiting_for_path {
+        force_repath = true;
+    }
+    // "force minimum time between recomputation"
+    let now = StateContext::frame(h);
+    if !force_repath && now.wrapping_sub(chase(sm, id).approach_timestamp) < MIN_RECOMPUTE_TIME {
+        return true;
+    }
+    chase(sm, id).approach_timestamp = now;
+    // "if we have a goal object, move to it, otherwise fail & continue to AIAttackApproachTargetState"
+    let Some(victim) = sm.goal_object(h) else { return false };
+    let me = h.position();
+    // "if our victim's position hasn't changed, don't re-path"
+    if !force_repath && move_states::is_same_position(&me, &chase(sm, id).prev_victim_pos, &victim.position) {
+        return true;
+    }
+    if h.current_weapon_slot().is_none() {
+        return false;
+    }
+    if !can_pursue(h, victim.id) {
+        return false;
+    }
+    // "remember where we think our victim is, so if it moves, we can re-path"
+    chase(sm, id).prev_victim_pos = victim.position;
+    mv(sm, id).adjust_destinations = true;
+    mv(sm, id).goal_position = victim.position;
+    mv(sm, id).waiting_for_path = true;
+    ai_paths::request_path(h, &victim.position, false);
+    chase(sm, id).stop_if_in_range = false; // "we have calculated a position to shoot from, so go there."
+    true
+}
+
+/// The view from the owner to the victim is blocked (asked only for ground movement against a victim not well above the terrain).
+fn victim_view_blocked<H: AiStateHost>(h: &mut H, victim: &ObjectRef) -> bool {
+    if with_ai(h, |a, h| a.is_doing_ground_movement(h)) && !h.object_is_significantly_above_terrain(victim.id) {
+        return h.pf_is_attack_view_blocked(victim.id, &victim.position);
+    }
+    false
+}
+
+/// `AIAttackApproachTargetState::onEnter()`.
+pub fn approach_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    // "urg. hacky. if we are a projectile, turn on precise z-pos."
+    if h.is_kind_of(KINDOF_PROJECTILE) {
+        set_precise_z(h, true);
+    }
+    if sm.is_goal_object_destroyed(h) {
+        return Ok(StateReturn::SUCCESS); // "Already killed victim."
+    }
+    {
+        let c = chase(sm, id);
+        c.prev_victim_pos = Coord3D::default();
+        c.approach_timestamp = if plant(3310) { 0 } else { MIN_RECOMPUTE_TIME.wrapping_neg() };
+    }
+    // "See if we're close enough."
+    let victim = sm.goal_object(h);
+    if let Some(v) = &victim {
+        if h.current_weapon_slot().is_none() {
+            return Ok(StateReturn::FAILURE);
+        }
+        if h.weapon_is_within_attack_range_of_object(v.id) && !victim_view_blocked(h, v) {
+            return Ok(StateReturn::SUCCESS);
+        }
+        // "If we are a player, and we got to this state via an ai command (ie we auto-acquired), we don't want to chase the unit."
+        // "If we are retaliating... don't fail out!"
+        if frame(h).outer.current_state_id != AI_GUARD_RETALIATE {
+            let player = h.controlling_player_type().expect("upstream reads the controlling player unchecked");
+            if player == crate::common::game_common::PlayerType::Human {
+                if ai(h).last_command_source == CMD_FROM_AI && !ai(h).allowed_to_chase && !h.weapon_is_contact() {
+                    return Ok(StateReturn::FAILURE);
+                }
+            } else {
+                // "Computer player. Don't chase aircraft, unless we're hunting."
+                let hunt = frame(h).outer.current_state_id == AI_HUNT;
+                if !hunt && h.object_is_kind_of(v.id, KINDOF_AIRCRAFT) && h.object_is_airborne_target(v.id) {
+                    return Ok(StateReturn::FAILURE);
+                }
+            }
+        }
+        if can_pursue(h, v.id) {
+            return Ok(StateReturn::SUCCESS); // "break out, and do the pursuit state."
+        }
+    } else {
+        // "Attacking a position. For a varitey of reasons, we need to destroy any existing path or we spin."
+        ai(h).destroy_path();
+    }
+    // "If we have a turret, start aiming."
+    let (attacking_object, force_attacking) = { let c = chase(sm, id); (c.attacking_object, c.force_attacking) };
+    let tur = get_which_turret_for_cur_weapon(h);
+    if tur != TURRET_INVALID {
+        if attacking_object {
+            set_turret_target_object(h, tur, victim.as_ref().map(|v| v.id), force_attacking);
+        } else {
+            let p = *sm.goal_position();
+            set_turret_target_position(h, tur, Some(&p));
+        }
+    }
+    // "find a good spot to shoot from"
+    if !approach_compute_path(sm, h, id) {
+        return Ok(StateReturn::FAILURE);
+    }
+    mv(sm, id).adjust_destinations = false;
+    let ret = move_states::internal_on_enter(sm, h, id)?;
+    mv(sm, id).adjust_destinations = true;
+    Ok(ret)
+}
+
+/// `AIAttackApproachTargetState::updateInternal()`.
+fn approach_update_internal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if sm.is_goal_object_destroyed(h) {
+        // (notifyVictimIsDead: nothing)
+        with_ai(h, |a, h| a.set_current_victim(h, INVALID_ID));
+        return Ok(StateReturn::FAILURE);
+    }
+    let is_attack_path = ai(h).is_attack_path;
+    chase(sm, id).stop_if_in_range = !is_attack_path;
+    let has_weapon = h.current_weapon_slot().is_some();
+    if let Some(victim) = sm.goal_object(h) {
+        if h.controlling_player_type().expect("upstream reads the controlling player unchecked") == crate::common::game_common::PlayerType::Computer {
+            let hunt = frame(h).outer.current_state_id == AI_HUNT;
+            // "Computer player. Don't chase aircraft unless hunting."
+            if !hunt && h.object_is_kind_of(victim.id, KINDOF_AIRCRAFT) && h.object_is_airborne_target(victim.id) {
+                return Ok(StateReturn::FAILURE);
+            }
+        }
+        if h.object_test_status(victim.id, OBJECT_STATUS_STEALTHED)
+            && !h.object_test_status(victim.id, OBJECT_STATUS_DETECTED)
+            && !h.object_test_status(victim.id, OBJECT_STATUS_DISGUISED)
+        {
+            return Ok(StateReturn::FAILURE); // "If obj is stealthed, can no longer approach."
+        }
+        with_ai(h, |a, h| a.set_current_victim(h, victim.id));
+        // "Attacking an object."
+        if has_weapon && h.weapon_is_contact() && h.weapon_is_within_attack_range_of_object(victim.id) {
+            return Ok(StateReturn::SUCCESS);
+        }
+        if chase(sm, id).stop_if_in_range && has_weapon && h.weapon_is_within_attack_range_of_object(victim.id) && !victim_view_blocked(h, &victim) {
+            return Ok(StateReturn::SUCCESS);
+        }
+        // "find a good spot to shoot from"
+        if !approach_compute_path(sm, h, id) {
+            return Ok(StateReturn::SUCCESS);
+        }
+        let code = move_states::internal_update(sm, h, id)?;
+        if code != StateReturn::CONTINUE {
+            return Ok(StateReturn::SUCCESS); // "Always return state success, as state failure exits the attack."
+        }
+        Ok(code)
+    } else {
+        // "Attacking a position."
+        let goal = mv(sm, id).goal_position;
+        if chase(sm, id).stop_if_in_range && has_weapon && h.weapon_is_within_attack_range_of_position(&goal) {
+            let mut view_blocked = false;
+            if with_ai(h, |a, h| a.is_doing_ground_movement(h)) {
+                view_blocked = h.pf_is_attack_view_blocked(INVALID_ID, &goal);
+            }
+            if !view_blocked {
+                return Ok(StateReturn::SUCCESS);
+            }
+        }
+        if !approach_compute_path(sm, h, id) {
+            return Ok(StateReturn::FAILURE);
+        }
+        move_states::internal_update(sm, h, id)
+    }
+}
+
+/// While the initial approach lasts, a turreted attacker's turret takes the next mood target ("we can attack other units along
+/// the way").
+fn initial_approach_targets<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
+    if !chase(sm, id).initial_approach || plant(3317) {
+        return;
+    }
+    let tur = get_which_turret_for_cur_weapon(h);
+    if tur != TURRET_INVALID {
+        let outer = frame(h).outer.clone();
+        let temporary_target = with_ai(h, |a, h| a.get_next_mood_target(h, &outer, true, false));
+        if temporary_target != INVALID_ID {
+            let force = chase(sm, id).force_attacking;
+            set_turret_target_object(h, tur, Some(temporary_target), force);
+        }
+    }
+}
+
+/// `AIAttackApproachTargetState::update()`: following a mobile victim, it continues ("It could move (and so can we)").
+pub fn approach_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let mut code = approach_update_internal(sm, h, id)?;
+    let (follow, attacking_object) = { let c = chase(sm, id); (c.follow, c.attacking_object) };
+    if follow && attacking_object {
+        // "Basically, if the object is alive, we continue, in case the target moves."
+        if let Some(v) = goal_id(sm, h) {
+            if h.is_mobile() && !h.object_template_is_kind_of(v, KINDOF_IMMOBILE) && !plant(3313) {
+                if code != StateReturn::CONTINUE {
+                    chase(sm, id).initial_approach = false;
+                }
+                code = StateReturn::CONTINUE;
+            }
+        }
+    }
+    initial_approach_targets(sm, h, id);
+    Ok(code)
+}
+
+/// `AIAttackApproachTargetState::onExit(status)`: no ignored obstacle, a projectile's precise z off, a ground mover close to its
+/// goal put exactly on it; the initial approach over.
+pub fn approach_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
+    move_states::internal_on_exit(sm, h, id);
+    ai(h).ignore_obstacle(INVALID_ID);
+    // "urg. hacky. if we are a projectile, reset precise z-pos."
+    if h.is_kind_of(KINDOF_PROJECTILE) {
+        set_precise_z(h, false);
+    }
+    if with_ai(h, |a, h| a.is_doing_ground_movement(h)) {
+        let goal = mv(sm, id).goal_position;
+        let p = h.position();
+        let (dx, dy) = (goal.x - p.x, goal.y - p.y);
+        if dx * dx + dy * dy < PATHFIND_CELL_SIZE_F * PATHFIND_CELL_SIZE_F * 0.125 && !plant(3314) {
+            // "We are doing accurate ground movement, so make sure we end exactly at the goal."
+            h.set_position(&goal);
+        }
+    }
+    chase(sm, id).initial_approach = false;
+}
+
+/// `AIAttackPursueTargetState::onEnter()`: success (to the approach) unless a turreted attacker of a moving victim can pursue it.
+pub fn pursue_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if h.is_kind_of(KINDOF_PROJECTILE) {
+        return Ok(StateReturn::SUCCESS); // "Projectiles go directly to AIAttackApproachTargetState."
+    }
+    if sm.is_goal_object_destroyed(h) {
+        return Ok(StateReturn::SUCCESS); // "Already killed victim."
+    }
+    let (attacking_object, force_attacking) = { let c = chase(sm, id); (c.attacking_object, c.force_attacking) };
+    if !attacking_object {
+        return Ok(StateReturn::SUCCESS); // "only pursue objects - positions don't move."
+    }
+    mv(sm, id).adjust_destinations = false;
+    // "If we are retaliating... don't succeed out!"
+    if frame(h).outer.current_state_id != AI_GUARD_RETALIATE
+        && h.controlling_player_type().expect("upstream reads the controlling player unchecked") == crate::common::game_common::PlayerType::Human
+        && ai(h).last_command_source == CMD_FROM_AI
+    {
+        return Ok(StateReturn::SUCCESS);
+    }
+    {
+        let c = chase(sm, id);
+        c.prev_victim_pos = Coord3D::default();
+        c.approach_timestamp = MIN_RECOMPUTE_TIME.wrapping_neg();
+    }
+    // "See if we're close enough."
+    let Some(victim) = goal_id(sm, h) else { return Ok(StateReturn::SUCCESS) }; // "gotta have a victim."
+    if h.current_weapon_slot().is_none() {
+        return Ok(StateReturn::FAILURE);
+    }
+    if !can_pursue(h, victim) {
+        return Ok(StateReturn::SUCCESS);
+    }
+    // "If we have a turret, start aiming."
+    let tur = get_which_turret_for_cur_weapon(h);
+    if tur == TURRET_INVALID {
+        return Ok(StateReturn::SUCCESS); // "we only pursue with turrets, as non-turreted weapons can't fire on the run."
+    }
+    set_turret_target_object(h, tur, Some(victim), force_attacking);
+    // "find a good spot to shoot from"
+    if !pursue_compute_path(sm, h, id) {
+        return Ok(StateReturn::SUCCESS);
+    }
+    move_states::internal_on_enter(sm, h, id)
+}
+
+/// `AIAttackPursueTargetState::updateInternal()`: the chase, matching the victim's speed once in range.
+fn pursue_update_internal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if sm.is_goal_object_destroyed(h) {
+        with_ai(h, |a, h| a.set_current_victim(h, INVALID_ID));
+        return Ok(StateReturn::FAILURE);
+    }
+    chase(sm, id).stop_if_in_range = false;
+    let Some(victim) = sm.goal_object(h) else { return Ok(StateReturn::FAILURE) };
+    if h.object_test_status(victim.id, OBJECT_STATUS_STEALTHED)
+        && !h.object_test_status(victim.id, OBJECT_STATUS_DETECTED)
+        && !h.object_test_status(victim.id, OBJECT_STATUS_DISGUISED)
+    {
+        return Ok(StateReturn::FAILURE); // "If obj is stealthed, can no longer pursue."
+    }
+    with_ai(h, |a, h| a.set_current_victim(h, victim.id));
+    // "find a good spot to shoot from"
+    if !pursue_compute_path(sm, h, id) {
+        return Ok(StateReturn::FAILURE);
+    }
+    let code = move_states::internal_update(sm, h, id)?;
+    if code != StateReturn::CONTINUE {
+        return Ok(StateReturn::SUCCESS); // "Always return state success, as state failure exits the attack."
+    }
+    if h.current_weapon_slot().is_none() {
+        return Ok(StateReturn::FAILURE);
+    }
+    let tur = get_which_turret_for_cur_weapon(h);
+    if tur == TURRET_INVALID {
+        return Ok(StateReturn::SUCCESS); // "We currently only pursue with a turret weapon."
+    }
+    let view_blocked = victim_view_blocked(h, &victim);
+    if !view_blocked && h.object_has_physics(victim.id) && h.weapon_is_within_attack_range_of_object(victim.id) {
+        let force = chase(sm, id).force_attacking;
+        set_turret_target_object(h, tur, Some(victim.id), force);
+        // "match speeds;"
+        chase(sm, id).initial_approach = false;
+        let mut victim_speed = h.object_forward_speed_2d(victim.id);
+        let me = h.position();
+        if h.weapon_is_goal_pos_within_attack_range(&me, victim.id, &victim.position) {
+            victim_speed *= if plant(3315) { 1.0 } else { 0.95 };
+        }
+        if h.can_crush_or_squish(victim.id) {
+            victim_speed = FAST_AS_POSSIBLE;
+        }
+        ai(h).desired_speed = victim_speed;
+    } else {
+        ai(h).desired_speed = FAST_AS_POSSIBLE;
+    }
+    Ok(code)
+}
+
+/// `AIAttackPursueTargetState::update()`.
+pub fn pursue_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let code = pursue_update_internal(sm, h, id)?;
+    initial_approach_targets(sm, h, id);
+    Ok(code)
+}
+
+/// `AIAttackPursueTargetState::onExit(status)`.
+pub fn pursue_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
+    move_states::internal_on_exit(sm, h, id);
+    chase(sm, id).initial_approach = false;
 }

@@ -173,7 +173,9 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::FollowWaypointPathExact { mv, .. })
         | Some(AiState::Wander { mv, .. })
         | Some(AiState::WanderInPlace { mv, .. })
-        | Some(AiState::Panic { mv, .. }) => mv,
+        | Some(AiState::Panic { mv, .. })
+        | Some(AiState::AttackApproach { mv, .. })
+        | Some(AiState::AttackPursue { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -216,6 +218,8 @@ pub(crate) fn get_adjusts_destination<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H,
 /// The virtual `computePath()`: the base's (request a path to the goal), or the subclass's.
 pub(crate) fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
     match sm.state(id) {
+        Some(AiState::AttackApproach { .. }) => crate::logic::ai::ai_attack_states::approach_compute_path(sm, h, id),
+        Some(AiState::AttackPursue { .. }) => crate::logic::ai::ai_attack_states::pursue_compute_path(sm, h, id),
         Some(AiState::MoveOutOfTheWay { .. }) => {
             mv(sm, id).waiting_for_path = true;
             if ai(h).is_blocked_and_stuck {
@@ -642,7 +646,7 @@ fn follow_path_extra_distance<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Sta
     }
 }
 
-fn set_precise_z<H: AiStateHost>(h: &mut H, on: bool) {
+pub(crate) fn set_precise_z<H: AiStateHost>(h: &mut H, on: bool) {
     let a = ai(h);
     if let Some(cur) = a.cur_locomotor {
         a.locomotor_set.get_mut(cur).expect("the locomotor").set_use_precise_z_pos(on);

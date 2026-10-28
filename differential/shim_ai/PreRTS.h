@@ -93,6 +93,8 @@
 #define AIAttackState AiAIAttackState
 #define AIAttackAimAtTargetState AiAIAttackAimAtTargetState
 #define AIAttackFireWeaponState AiAIAttackFireWeaponState
+#define AIAttackApproachTargetState AiAIAttackApproachTargetState
+#define AIAttackPursueTargetState AiAIAttackPursueTargetState
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition
 #define wantToSquishTarget aiWantToSquishTarget
