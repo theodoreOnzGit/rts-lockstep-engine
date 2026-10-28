@@ -104,6 +104,10 @@
 #define AIHuntState AiAIHuntState
 #define AIAttackAreaState AiAIAttackAreaState
 #define AIAttackFollowWaypointPathState AiAIAttackFollowWaypointPathState
+/* batch A13 */
+#define AIExitState AiAIExitState
+#define AIExitInstantlyState AiAIExitInstantlyState
+#define AIFaceState AiAIFaceState
 #define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition

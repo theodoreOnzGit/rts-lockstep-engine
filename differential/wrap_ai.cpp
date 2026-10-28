@@ -209,6 +209,8 @@ public:
 	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
 	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
 	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
+	/* batch A13: another object's AI's (virtual upstream: the base's FREE_TO_EXIT, a subclass's other answers; here the hash's, logged) */
+	AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
 	UnsignedInt getNextMoodCheckTime() const { return m_nextMoodCheckTime; }
 	const LocomotorSet& getLocomotorSet(void) const {return m_locomotorSet;}
 	/* `virtual void addTargeter(ObjectID id, Bool add) { return; }`: what another object's AI does with it is its class's (logged) */
@@ -1026,6 +1028,29 @@ Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPosit
 const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const { return NULL; }
 void ContainModuleInterface::removeAllContained(Bool exposeStealthUnits) { L(LOG_CONTAIN, { 0u, (unsigned)exposeStealthUnits }); }
 void ContainModuleInterface::markAllPassengersDetected() { L(LOG_CONTAIN, { 1u }); }
+/* batch A13: LOG_CONTAIN 3 onObjectWantsToEnterOrExit, 4 getAiFreeToExit, 5 reserveDoorForExit, 6 exitObjectViaDoor */
+ExitInterface g_exit;
+void ContainModuleInterface::onObjectWantsToEnterOrExit(Object *obj, ObjectEnterExitType wants)
+{
+	L(LOG_CONTAIN, { 3u, (unsigned)obj->getID(), (unsigned)wants });
+}
+ExitInterface *ContainModuleInterface::getContainExitInterface() { return (g_aiEnv.exitFlags & 1) ? &g_exit : NULL; }
+Bool ExitInterface::isExitBusy() const { return (g_aiEnv.exitFlags & 2) != 0; }
+ExitDoorType ExitInterface::reserveDoorForExit(const AiTemplateView *objType, Object *specificObject)
+{
+	L(LOG_CONTAIN, { 5u, (unsigned)specificObject->getID(), (unsigned)g_aiEnv.exitDoor });
+	return (ExitDoorType)g_aiEnv.exitDoor;
+}
+void ExitInterface::exitObjectViaDoor(Object *newObj, ExitDoorType exitDoor)
+{
+	L(LOG_CONTAIN, { 6u, (unsigned)newObj->getID(), (unsigned)exitDoor });
+}
+AIFreeToExitType AIUpdateInterface::getAiFreeToExit(const Object* exiter) const
+{
+	unsigned r = p1Hash(71, { (unsigned)exiter->getID(), TheGameLogic->getFrame() }) % 3u;
+	L(LOG_CONTAIN, { 4u, (unsigned)exiter->getID(), r });
+	return (AIFreeToExitType)r;
+}
 void ContainModuleInterface::orderAllPassengersToExit(CommandSourceType src, Bool instantly) { L(LOG_CONTAIN, { 2u, (unsigned)src, (unsigned)instantly }); }
 UpdateModule *Object::findUpdateModule(UnsignedInt key) const
 {
@@ -2132,6 +2157,11 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
 				}
 			}
+			/* batch A13: the exit states' entries to clear, the face states' turn-in-place flags */
+			putU32(v, (unsigned)((const AIExitState *)sm->m_stateMap.find(AI_EXIT)->second)->m_entryToClear);
+			putU32(v, (unsigned)((const AIExitInstantlyState *)sm->m_stateMap.find(AI_EXIT_INSTANTLY)->second)->m_entryToClear);
+			putU32(v, ((const AIFaceState *)sm->m_stateMap.find(AI_FACE_OBJECT)->second)->m_canTurnInPlace ? 1u : 0u);
+			putU32(v, ((const AIFaceState *)sm->m_stateMap.find(AI_FACE_POSITION)->second)->m_canTurnInPlace ? 1u : 0u);
 #undef PUT_MOVE
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

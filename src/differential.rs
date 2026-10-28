@@ -1009,6 +1009,9 @@ pub struct AiEnv {
     pub turrets: c_int,
     // batch A12
     pub units_hunt: c_int,
+    // batch A13
+    pub exit_flags: c_int,
+    pub exit_door: c_int,
 }
 
 extern "C" {

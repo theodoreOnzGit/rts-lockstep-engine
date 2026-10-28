@@ -156,6 +156,9 @@ struct AiEnv
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 	/* ---- batch A12 (the hunt and attack-area states) */
 	Int unitsHunt;			/* the controlling player's getUnitsShouldHunt */
+	/* ---- batch A13 (the exit states) */
+	Int exitFlags;			/* the contain's getContainExitInterface (bit 0: one), the exit's isExitBusy (bit 1) */
+	Int exitDoor;			/* the exit's reserveDoorForExit */
 };
 
 extern AiEnv g_aiEnv;
@@ -453,9 +456,21 @@ public:
 	void getTeamAsAIGroup(AIGroup *group);
 };
 typedef std::list<Object*> ContainedItemsList;
+/* batch A13: the contain's exit (logged; its answers the scene's) */
+struct AiTemplateView;
+class ExitInterface
+{
+public:
+	Bool isExitBusy() const;
+	ExitDoorType reserveDoorForExit( const AiTemplateView *objType, Object *specificObject );
+	void exitObjectViaDoor( Object *newObj, ExitDoorType exitDoor );
+};
 class ContainModuleInterface
 {
 public:
+	/* batch A13 */
+	void onObjectWantsToEnterOrExit(Object *obj, ObjectEnterExitType wantsToEnterOrExit);
+	ExitInterface *getContainExitInterface();
 	Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const;
 	/* batch A10a (logged, from the hash; the scene's) */
 	Bool isEnclosingContainerFor( const Object *obj ) const;

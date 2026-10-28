@@ -72,6 +72,7 @@ use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPath
 use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
 use crate::logic::ai::ai_attack_move as attack_move;
 use crate::logic::ai::ai_hunt_states as hunt_states;
+use crate::logic::ai::ai_face_exit_states as face_exit;
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -364,6 +365,17 @@ pub trait AiStateHost: AiHost + StateContext {
     fn units_should_hunt(&self) -> Option<bool>;
     /// The attack priority info's `getPriority(obj->getTemplate())` (the info by index).
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32;
+    // ---- batch A13: the exit states (`container`: the object whose contain and exit are asked)
+    /// The container's contain's `onObjectWantsToEnterOrExit(owner, wants)` (`ObjectEnterExitType`).
+    fn contain_wants_to_enter_or_exit(&mut self, container: ObjectId, wants: i32);
+    /// The container's contain's `getContainExitInterface() != NULL`.
+    fn contain_has_exit_interface(&mut self, container: ObjectId) -> bool;
+    /// That exit's `isExitBusy()`, `reserveDoorForExit(owner's template, owner)` (`ExitDoorType`), `exitObjectViaDoor(owner, door)`.
+    fn exit_is_busy(&mut self, container: ObjectId) -> bool;
+    fn exit_reserve_door(&mut self, container: ObjectId) -> i32;
+    fn exit_object_via_door(&mut self, container: ObjectId, door: i32);
+    /// Another object's AI's `getAiFreeToExit(owner)` (`AIFreeToExitType`; `None`: it has no AI).
+    fn object_ai_free_to_exit(&mut self, id: ObjectId) -> Option<i32>;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
     /// The current weapon's `isTooClose(owner, victim)`.
@@ -446,6 +458,10 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
+    /// `AIExitState` (`instantly` false) and `AIExitInstantlyState` (batch A13): `m_entryToClear`.
+    Exit { instantly: bool, entry_to_clear: ObjectId },
+    /// `AIFaceState` (batch A13): `m_obj` (facing the goal object, not the position), `m_canTurnInPlace`.
+    Face { obj: bool, can_turn_in_place: bool },
     /// `AIPickUpCrateState`: `m_delayCounter`.
     PickUpCrate { mv: MoveToData, delay_counter: i32 },
     /// The attack machine's `ContinueState` and `FailureState`.
@@ -710,15 +726,15 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_DEAD, AiState::Dead, AI_IDLE, AI_IDLE),
         (AI_DOCK, u(AI_DOCK), AI_IDLE, AI_IDLE),
         (AI_ENTER, u(AI_ENTER), AI_IDLE, AI_IDLE),
-        (AI_EXIT, u(AI_EXIT), AI_IDLE, AI_IDLE),
-        (AI_EXIT_INSTANTLY, u(AI_EXIT_INSTANTLY), AI_IDLE, AI_IDLE),
+        (AI_EXIT, AiState::Exit { instantly: false, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
+        (AI_EXIT_INSTANTLY, AiState::Exit { instantly: true, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_GUARD, u(AI_GUARD), AI_IDLE, AI_IDLE),
         (AI_GUARD_TUNNEL_NETWORK, u(AI_GUARD_TUNNEL_NETWORK), AI_IDLE, AI_IDLE),
         (AI_GUARD_RETALIATE, u(AI_GUARD_RETALIATE), AI_IDLE, AI_IDLE),
         (AI_HUNT, hunt_states::hunt(false, kinds), AI_IDLE, AI_IDLE),
         (AI_ATTACK_AREA, hunt_states::hunt(true, kinds), AI_IDLE, AI_IDLE),
-        (AI_FACE_OBJECT, u(AI_FACE_OBJECT), AI_IDLE, AI_IDLE),
-        (AI_FACE_POSITION, u(AI_FACE_POSITION), AI_IDLE, AI_IDLE),
+        (AI_FACE_OBJECT, AiState::Face { obj: true, can_turn_in_place: false }, AI_IDLE, AI_IDLE),
+        (AI_FACE_POSITION, AiState::Face { obj: false, can_turn_in_place: false }, AI_IDLE, AI_IDLE),
         (AI_PICK_UP_CRATE, attack_move::pick_up_crate(), AI_IDLE, AI_IDLE),
         (AI_RAPPEL_INTO, u(AI_RAPPEL_INTO), AI_IDLE, AI_IDLE),
         (AI_BUSY, AiState::Busy, AI_IDLE, AI_IDLE),
@@ -913,6 +929,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_enter(sm, h, id),
             Some(AiState::PickUpCrate { .. }) => attack_move::crate_on_enter(sm, h, id),
             Some(AiState::Hunt { .. }) => hunt_states::hunt_on_enter(sm, h, id),
+            Some(AiState::Exit { instantly, .. }) => {
+                let instantly = *instantly;
+                face_exit::exit_on_enter(sm, h, id, instantly)
+            }
+            Some(AiState::Face { .. }) => face_exit::face_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -946,6 +967,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_exit(sm, h, id)?,
             Some(AiState::PickUpCrate { .. }) => move_states::internal_on_exit(sm, h, id),
             Some(AiState::Hunt { .. }) => hunt_states::hunt_on_exit(sm, h, id)?,
+            Some(AiState::Exit { .. }) => face_exit::exit_on_exit(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -980,6 +1002,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_update(sm, h, id),
             Some(AiState::PickUpCrate { .. }) => attack_move::crate_update(sm, h, id),
             Some(AiState::Hunt { .. }) => hunt_states::hunt_update(sm, h, id),
+            Some(AiState::Exit { instantly, .. }) => {
+                let instantly = *instantly;
+                face_exit::exit_state_update(sm, h, id, instantly)
+            }
+            Some(AiState::Face { .. }) => face_exit::face_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1062,6 +1089,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::PickUpCrate { mv, delay_counter } => attack_move::crate_xfer(mv, delay_counter, xfer)?,
             AiState::Hunt { kinds, machine, next_enemy_scan_time, .. } => hunt_states::hunt_xfer(*kinds, machine, next_enemy_scan_time, xfer)?,
+            AiState::Exit { entry_to_clear, .. } => face_exit::exit_xfer(entry_to_clear, xfer)?,
+            AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?
             }
