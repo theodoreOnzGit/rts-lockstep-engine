@@ -315,6 +315,9 @@ struct Host {
     /// The other objects whose height above the terrain this operation has asked (wrap_ai.cpp makes them anew every operation;
     /// a second question is answered from the object's cache, unlogged).
     others_height_asked: u32,
+    /// Batch A18: whether this operation has cleared the body's clearable last attacker (wrap_ai.cpp's scene is copied anew every
+    /// operation, so the clearing lasts the operation; the scene itself must not change before the C++ side runs it).
+    attacker_cleared: bool,
 }
 
 impl Host {
@@ -1537,11 +1540,11 @@ impl AiStateHost for Host {
     }
     // ---- batch A18
     fn clearable_last_attacker(&mut self) -> ObjectId {
-        self.env.clearable_attacker
+        if self.attacker_cleared { 0 } else { self.env.clearable_attacker }
     }
     fn clear_last_attacker(&mut self) {
         self.l(L_ATTACK, &[17]);
-        self.env.clearable_attacker = 0;
+        self.attacker_cleared = true;
     }
     fn template_is_enter_guard(&mut self) -> bool {
         self.env.guard_flags & 1 != 0
@@ -3167,6 +3170,8 @@ struct Checks {
     hunt_inner: [u64; 3],
     /// Batch A17: the docking machine's state after an operation in the dock state (approach .. rally).
     dock_inner: [u64; 8],
+    /// Batch A18: the guard machine's state after an operation in the guard state (inner, idle, outer, return, crate, aggressor).
+    guard_inner: [u64; 6],
     /// Batch A12b: the attack-follow-waypoint machines' state after an operation in those states (idle, crate, attack).
     follow_inner: [u64; 3],
     loads: u64,
@@ -3201,6 +3206,7 @@ impl Checks {
             attack_move_inner: [0; 3],
             hunt_inner: [0; 3],
             dock_inner: [0; 8],
+            guard_inner: [0; 6],
             follow_inner: [0; 3],
             loads: 0,
         }
@@ -3235,6 +3241,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         attack_frames: Vec::new(),
         max_shots: 0,
         others_height_asked: 0,
+        attacker_cleared: false,
     };
     host.max_shots = host.env.max_shots_init;
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
@@ -3408,6 +3415,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let goal = module.ai().locomotor_goal_type;
         let before_pos = *host.thing.position();
         host.others_height_asked = 0;
+        host.attacker_cleared = false;
         let r = rust_op(&mut module, &mut host, op, &fa, &ia, 0, &mut saved);
         let rlog = std::mem::take(&mut host.log);
         let mut out = vec![0u32; 1 << 16];
@@ -3462,6 +3470,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             k += 2 + n;
         }
         if let Some(sm) = &module.machine {
+            if let Some(AiState::Guard { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
+                ck.guard_inner[(m.get_current_state_id().saturating_sub(5000) as usize).min(5)] += 1;
+            }
             if let Some(AiState::Dock { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
                 ck.dock_inner[(m.get_current_state_id() as usize).min(7)] += 1;
             }
@@ -3620,6 +3631,10 @@ fn first_diff(what: &str, r: &[u32], c: &[u32]) {
     let i = r.iter().zip(c).position(|(a, b)| a != b).unwrap_or(r.len().min(c.len()));
     let lo = i.saturating_sub(6);
     println!("{what}: lengths {} / {}, first difference at {i}", r.len(), c.len());
+    if std::env::var("AI_A2_FULL").is_ok() {
+        println!("  rust full {r:?}");
+        println!("  cpp  full {c:?}");
+    }
     println!("  rust {:?}", &r[lo..(i + 8).min(r.len())]);
     println!("  cpp  {:?}", &c[lo..(i + 8).min(c.len())]);
 }
@@ -3888,6 +3903,9 @@ fn ai_update_a2_matches_upstream() {
     // (AI_A2_FROM: the first case, to re-run one)
     let from: u64 = std::env::var("AI_A2_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
     for case in from..from + cases {
+        if std::env::var("AI_A2_CASEPRINT").is_ok() {
+            eprintln!("CASE {case}");
+        }
         run_case(0xA2_0000 + case, &mut ck);
     }
     println!(
@@ -3895,9 +3913,9 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.follow_inner, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.follow_inner, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();

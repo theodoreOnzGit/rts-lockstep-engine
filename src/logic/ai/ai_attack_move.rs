@@ -113,7 +113,7 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
         original_victim_pos: Default::default(),
         attacking_object: false,
         new_victim: None,
-        ai_goal_object: None,
+        ai_goal_object: Vec::new(),
         dock_approach,
         guard,
     });
@@ -127,7 +127,7 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
         *data = lent.guard;
     }
     // the AI's machine's goal, set from inside
-    if let Some(obj) = lent.ai_goal_object {
+    for obj in lent.ai_goal_object {
         if bottom {
             crate::logic::ai::ai_paths::friend_set_goal_object(sm, h, obj);
         } else {

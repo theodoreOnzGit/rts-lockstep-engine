@@ -48,6 +48,7 @@ use crate::logic::ai::ai_states::{
     ai, aism_add_to_goal_path, aism_clear, aism_set_state, aism_set_temporary_state, with_ai, AiState, AiStateHost,
 };
 use crate::logic::ai::ai_update_types::*;
+use crate::logic::ai::ai_update::AiMachineQuery;
 use crate::logic::modules::plant;
 use crate::logic::world::player::Squad;
 
@@ -388,6 +389,48 @@ pub fn ai_follow_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, path: &[Coord3D
     parms.coords = path.to_vec();
     parms.obj = ignore;
     ai_do_command(sm, h, &parms)
+}
+
+/// `aiAttackObject(victim, maxShotsToFire, cmdSource)` given while the AI's machine is locked and lent (batch A18: from the enter
+/// state inside a guard machine, whose update locks the AI's machine; `m` is the lent view of it): the machine's own `clear`,
+/// `setGoalObject` and `setState` do nothing, the command's other effects are kept (`aiDoCommand`'s checks, `AIStateMachine::clear`'s
+/// members and notice, the command source, the notice of a different state, the shot count).
+pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
+    h: &mut H,
+    m: &M,
+    victim: ObjectId,
+    max_shots: i32,
+    src: CommandSourceType,
+) -> SmResult<()> {
+    // isAllowedToRespondToAiCommands
+    if h.is_effectively_dead() {
+        return Ok(());
+    }
+    let mood = with_ai(h, |a, h| a.get_mood_matrix_value(&*h, Some(m)));
+    if mood & MM_CONTROLLER_AI != 0 && mood & MM_MOOD_SLEEP != 0 {
+        return Ok(());
+    }
+    if src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands {
+        return Ok(());
+    }
+    // privateAttackObject
+    if !h.object_exists(victim) {
+        return Ok(());
+    }
+    // AIStateMachine::clear(): the machine's clear does nothing; its members cleared, the AI told
+    let extras = &mut ai(h).machine;
+    extras.goal_path.clear();
+    extras.goal_waypoint = None;
+    extras.goal_squad = None;
+    with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
+    // (setGoalObject: nothing)
+    set_last_command_source(h, src);
+    // AIStateMachine::setState: the machine's does nothing; the AI told when the state asked for differs
+    if m.current_state_id() != AI_ATTACK_OBJECT {
+        with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
+    }
+    h.weapon_set_max_shot_count(max_shots);
+    Ok(())
 }
 
 /// `aiAttackMoveToPosition(pos, maxShotsToFire, cmdSource)`.

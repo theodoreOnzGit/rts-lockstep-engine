@@ -141,7 +141,8 @@ pub struct AttackFrame {
     /// A victim chosen by `notifyNewVictimChosen`, for the AI's machine's goal.
     pub new_victim: Option<ObjectId>,
     /// (the bottom frame, batch A11) the AI's machine's goal set by `ai->friend_setGoalObject` from a machine inside it.
-    pub ai_goal_object: Option<ObjectId>,
+    /// (batch A18: every one, in order: an object, then none, leaves the goal position at the object's)
+    pub ai_goal_object: Vec<ObjectId>,
     /// (batch A17) the docking machine's `m_approachPosition`, while it runs.
     pub dock_approach: i32,
     /// (batch A18) the guard machine's members, while it runs.
@@ -157,7 +158,7 @@ pub fn ai_friend_set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, obj:
     match h.attack_stack().first_mut() {
         None => ai_paths::friend_set_goal_object(sm, h, obj),
         Some(bottom) => {
-            bottom.ai_goal_object = Some(obj);
+            bottom.ai_goal_object.push(obj);
             bottom.outer.goal_object_id = obj;
         }
     }
@@ -213,7 +214,7 @@ fn run_inner<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl 
         _ => unreachable!("the attack state"),
     };
     let outer = top_view(sm, h);
-    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None, dock_approach: -1, guard: Default::default() });
+    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: Vec::new(), dock_approach: -1, guard: Default::default() });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the attack frame");
     if let Some(AiState::Attack { machine, .. }) = sm.state_mut(id) {

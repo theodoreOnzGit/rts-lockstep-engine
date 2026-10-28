@@ -35,11 +35,11 @@
 //! - The guard machine's crate state's exit does not call the crate state's (nor the move's) exit.
 
 use crate::common::base_type::Coord3D;
-use crate::common::game_common::Relationship;
+use crate::common::game_common::{Relationship, ATTACK_NEW_TARGET};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::KINDOF_PROJECTILE;
 use crate::common::state_machine::{
-    SmResult, StateConditionInfo, StateContext, StateExitType, StateId, StateMachine, StateReturn,
+    SmResult, StateBehavior, StateConditionInfo, StateContext, StateExitType, StateId, StateMachine, StateReturn,
 };
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::ai::ai_attack_move::{self as attack_move, run_sub_machine};
@@ -664,10 +664,11 @@ pub fn guard_xfer<H: AiStateHost>(machine: &mut Option<Sm<H>>, data: &mut GuardD
         xfer.xfer_object_id(&mut data.target_to_guard)?;
         xfer.xfer_object_id(&mut data.nemesis_to_attack)?;
         xfer.xfer_coord3d(&mut data.position_to_guard)?;
-        let mut name = data.area_to_guard.map(|a| format!("poly{a}")).unwrap_or_default();
+        let mut name = data.area_to_guard.map(|a| format!("poly{a}").into_bytes()).unwrap_or_default();
         xfer.xfer_ascii_string(&mut name)?;
         if xfer.get_xfer_mode() == XferMode::Load && !name.is_empty() {
-            data.area_to_guard = name.strip_prefix("poly").and_then(|n| n.parse().ok());
+            // (TheTerrainLogic->getTriggerAreaByName: the stand-ins' "poly<index>")
+            data.area_to_guard = std::str::from_utf8(&name).ok().and_then(|n| n.strip_prefix("poly")).and_then(|n| n.parse().ok());
         }
     }
     Ok(())

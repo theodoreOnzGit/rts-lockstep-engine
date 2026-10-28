@@ -95,14 +95,21 @@ pub fn enter_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> S
         return Ok(StateReturn::FAILURE);
     }
     mv(sm, id).goal_position = goal.position;
-    crate::logic::ai::ai_paths::friend_set_goal_object(sm, h, goal.id);
+    // (`ai->friend_setGoalObject`: the AI's machine's goal, also when this state runs inside a guard machine; batch A18)
+    crate::logic::ai::ai_attack_states::ai_friend_set_goal_object(sm, h, goal.id);
     let src = ai(h).last_command_source;
     if !h.action_can_enter_object(goal.id, src) {
         // "special-case: if it's an enemy, try attacking it instead."
         if h.object_relationship(goal.id) == Relationship::Enemies {
             let result = h.action_can_attack_object(goal.id, src);
             if result == ATTACKRESULT_POSSIBLE || (result == ATTACKRESULT_POSSIBLE_AFTER_MOVING && !plant(3362)) {
-                ai_commands::ai_attack_object(sm, h, goal.id, NO_MAX_SHOTS_LIMIT, src)?;
+                if h.attack_stack().is_empty() {
+                    ai_commands::ai_attack_object(sm, h, goal.id, NO_MAX_SHOTS_LIMIT, src)?;
+                } else {
+                    // (inside a guard machine: the AI's machine is locked by the guard state's update; batch A18)
+                    let view = h.attack_stack()[0].outer.clone();
+                    ai_commands::ai_attack_object_on_locked_machine(h, &view, goal.id, NO_MAX_SHOTS_LIMIT, src)?;
+                }
                 // "weird but true. return state_continue, because if we're here, we're actually an attack state"
                 return Ok(StateReturn::CONTINUE);
             }

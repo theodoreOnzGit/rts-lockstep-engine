@@ -1562,6 +1562,8 @@ PolygonTrigger *TerrainLogic::getTriggerAreaByName(AsciiString name)
 	return NULL;
 }
 UnsignedInt GameLogic::getFrameObjectsChangedTriggerAreas(void) { return g_aiEnv.objectsChangedFrame; }
+AcademyStats *Player::getAcademyStats() { return NULL; }
+void AcademyStats::recordGuardAbilityUsed() {}
 ObjectID BodyModuleInterface::getClearableLastAttacker() const { return (ObjectID)g_aiEnv.clearableAttacker; }
 void BodyModuleInterface::clearLastAttacker() { L(LOG_ATTACK, { 17u }); g_aiEnv.clearableAttacker = 0; }
 Bool AiTemplateView::isEnterGuard() const { return (g_aiEnv.guardFlags & 1) != 0; }

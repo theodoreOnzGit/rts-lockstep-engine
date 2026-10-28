@@ -256,6 +256,7 @@ public:
 };
 extern GameLogic *TheGameLogic;
 
+class PolygonTrigger;
 class TerrainLogic
 {
 public:
@@ -511,6 +512,8 @@ public:
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate);
 	/* batch A9 */
 	Bool isSkirmishAIPlayer( void );
+	/* batch A18: AIGuardState::onEnter's, after its return (never reached) */
+	class AcademyStats *getAcademyStats();
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
 	/* batch A17: the existing other objects, in id order */
@@ -657,6 +660,8 @@ public:
 	Bool isRallyPointAfterDockType();
 };
 class SupplyTruckAIInterface { public: UnsignedInt getActionDelayForDock( Object *dock ); };
+/* batch A18: never reached (see Player::getAcademyStats) */
+class AcademyStats { public: void recordGuardAbilityUsed(); };
 /* batch A15: FXList.h's doFXObj (logged) */
 class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL); };
 /* batch A12: ScriptEngine.h's attack priority info, as far as the hunt state uses it (getPriority logged); two of them */
@@ -845,7 +850,8 @@ class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; In
 class PartitionFilterPolygonTrigger : public PartitionFilter
 {
 public:
-	PartitionFilterPolygonTrigger(const PolygonTrigger *trigger) : m_index(trigger->m_index) {}
+	/* (upstream keeps the pointer: the guard makes one with no area, batch A18) */
+	PartitionFilterPolygonTrigger(const PolygonTrigger *trigger) : m_index(trigger ? trigger->m_index : -1) {}
 	Int m_index;
 };
 class CommandButton { public: Int getCommandType() const; Int m_index; };
