@@ -2140,7 +2140,8 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.units_hunt = i32::from(g.below(2) == 0);
     e.exit_flags = if g.below(4) == 0 { g.below(4) as i32 } else { 1 };
     e.exit_door = g.below(6) as i32 - 2;
-    e.minor_radius = g.uniform(0.0, 30.0);
+    // (a third of the time large: the enter state's arrival test, against a goal at the origin)
+    e.minor_radius = if g.below(3) == 0 { g.uniform(200.0, 600.0) } else { g.uniform(0.0, 30.0) };
     e.geom_box = i32::from(g.below(2) == 0);
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
@@ -3287,6 +3288,18 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A14; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The enter state: 30,000 constructions and 1,798,842 operations, **0 mismatches** in the results, the call logs and the dumps
+///   (which add the enter state's move members and entry to clear). After an operation the machine was entering 10,896 times.
+///   Another object's `isAboveTerrain` is the hash's; the action manager's `getCanAttackObject` is two of its answers (possible,
+///   else possible after moving); the other objects' geometry (minor radius, box or sphere) is the scene's, the minor radius large
+///   a third of the time so that the arrival test against a goal at the origin is reached. Not generated: the enter state without
+///   a controlling player (it may attack its goal, and the attack states read the player unchecked).
+/// - Planted bugs: plants 3360-3364 at 30,000 cases, each caught (1 to 1,613 mismatches): the locomotor allowed off the map, the
+///   entry not cleared on exit, the attack after moving, the held success, the arrival radius (caught only after the minor radius
+///   was made large at times; 0 mismatches before).
+///
 /// # Results (2026-10-28, batch A13; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The exit, exit-instantly and face states (both face ids): 30,000 constructions and 1,799,025 operations, **0 mismatches** in the
