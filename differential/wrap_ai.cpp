@@ -2366,14 +2366,20 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, (unsigned)(x).m_conditionsToConsider); putPos(v, (x).m_center); putU32(v, bitsOf((x).m_radiusSqr)); \
 					putU32(v, (x).m_attackGiveUpFrame);
 					const AIGuardInnerState *gi = (const AIGuardInnerState *)gm->m_stateMap.find(AI_GUARD_INNER)->second;
+#define PUT_EMBEDDED(a) \
+					if (a) { putU32(v, (a)->m_follow ? 1u : 0u); putU32(v, (a)->m_attackMachine ? (unsigned)(a)->m_attackMachine->getCurrentStateID() : 0xffffffffu); }
 					PUT_EXIT(gi->m_exitConditions)
 					putU32(v, gi->m_attackState ? 1u : gi->m_enterState ? 2u : 0u);
+					PUT_EMBEDDED(gi->m_attackState)
 					const AIGuardOuterState *go = (const AIGuardOuterState *)gm->m_stateMap.find(AI_GUARD_OUTER)->second;
 					PUT_EXIT(go->m_exitConditions)
 					putU32(v, go->m_attackState ? 1u : 0u);
+					PUT_EMBEDDED(go->m_attackState)
 					const AIGuardAttackAggressorState *ga = (const AIGuardAttackAggressorState *)gm->m_stateMap.find(AI_GUARD_ATTACK_AGGRESSOR)->second;
 					PUT_EXIT(ga->m_exitConditions)
 					putU32(v, ga->m_attackState ? 1u : 0u);
+					PUT_EMBEDDED(ga->m_attackState)
+#undef PUT_EMBEDDED
 #undef PUT_EXIT
 					const AIGuardReturnState *gr = (const AIGuardReturnState *)gm->m_stateMap.find(AI_GUARD_RETURN)->second;
 					PUT_MOVE(gr)

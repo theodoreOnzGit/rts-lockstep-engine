@@ -2155,6 +2155,10 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                                     _ => 0,
                                 };
                                 v.push(e);
+                                // (the embedded attack state's follow flag and its machine's state)
+                                if let Some(AiState::Attack { follow, machine, .. }) = embedded.first() {
+                                    v.extend([u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())]);
+                                }
                             }
                             _ => panic!("a guard attack state"),
                         }
@@ -3644,6 +3648,30 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A18; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The guard state and its guard machine (`AIGuard.cpp`: inner, idle, outer, return, crate and attack-aggressor states, the
+///   aggressor condition, `ExitConditions`, `lookForInnerTarget`), with the inner, outer and aggressor states' embedded attack (or
+///   enter) states: 30,000 constructions and 1,799,323 operations, **0 mismatches** in the results, the call logs and the dumps
+///   (which add the guard machine's state, goal, sleep and members, the exit conditions, the embedded state's kind, follow flag and
+///   machine state, and the return, idle and crate states' members). After an operation the machine was guarding 68,983 times; its
+///   guard machine in the inner state 2,087 times, idle 1,368, outer 162, returning 65,265, attacking an aggressor 101, picking up a
+///   crate never (the crate is never found).
+/// - The guard's search is the closest-object stand-in, logged with what its filters are (`LOG_CLOSEST_OBJECT` 0xfffffffe); the
+///   template's enter and hijack guard flags, the trigger-area frame and the AI data's guard rates are the scene's; the body's
+///   clearable last attacker is the scene's, cleared for the rest of the operation. Not generated: the guard state already the
+///   machine's or the temporary state, or without a controlling player.
+/// - The first runs found, all fixed: a harness gap (the polygon filter's stand-in read its trigger, which the guard passes
+///   empty: a crash), a harness defect (the Rust host cleared the attacker in the scene that the C++ side then ran), and three port
+///   defects in shared code: the enter state's `ai->friend_setGoalObject` and its attack command must reach the AI's machine from
+///   inside the guard machine (the latter with the AI's machine locked: only the command's other effects remain), and the goal
+///   sets lent from a sub-machine must be applied in order (an object, then none, leaves the goal position at the object's).
+/// - Planted bugs: plants 3400-3408 at 30,000 cases: caught but two (2 to 5,613 mismatches): the exit's Z, the attacker cleared,
+///   flying units only, the aggressor's follow (caught only once the dump showed the embedded attack's follow flag), the team
+///   target cleared, the return's adjustment, the attack's exit check. **Not caught, unreachable here:** 3406 (a guarded object
+///   that moved in y: the other objects are always at the origin) and 3407 (the guard machine's default state failing: the inner
+///   state never fails on entry).
+///
 /// # Results (2026-10-28, batch A17; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The dock state and its docking machine (`AIDock.cpp`: approach, wait for clearance with its advance condition, advance, move
