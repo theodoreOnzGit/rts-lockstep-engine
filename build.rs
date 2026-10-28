@@ -1964,6 +1964,8 @@ mod differential {
                 through(&aiu_h, "AIUpdate.h", "enum AIFreeToExitType", "\n};"),
                 through(&upd_h, "UpdateModule.h", "enum ExitDoorType", "\n};"),
                 through(&rd(engine.join("Include/GameLogic/Module/ContainModule.h")), "ContainModule.h", "enum ObjectEnterExitType", "\n};"),
+                // batch A14: Geometry.h's GeometryType
+                through(&rd(engine.join("Include/Common/Geometry.h")), "Geometry.h", "enum GeometryType", "\n};"),
             ];
             std::fs::write(
                 gen.join("ai_defs.h"),
@@ -2102,6 +2104,8 @@ mod differential {
                 "AIAttackAreaState",
                 // batch A12b
                 "AIAttackFollowWaypointPathState",
+                // batch A14
+                "AIEnterState",
                 // batch A13
                 "AIExitState",
                 "AIExitInstantlyState",
@@ -2144,7 +2148,7 @@ mod differential {
                 edited.push_str(&line[close + 1..]);
                 placeholders += 1;
             }
-            assert_eq!(placeholders, 7, "AIStates.cpp: the constructor's 7 states not yet translated");
+            assert_eq!(placeholders, 6, "AIStates.cpp: the constructor's 6 states not yet translated");
             // batch A7: the move states (ai_states_a7.inc): isSamePosition, AIInternalMoveToState's members (to the attack-move
             // machine, a later batch's), and AIMoveToState to AIMoveAwayFromRepulsorsState's members, verbatim
             let a7 = [
@@ -2191,6 +2195,8 @@ mod differential {
                 between(&sts, "AIStates.cpp", "AIHuntState::~AIHuntState()", "void AIFaceState::crc( Xfer *xfer )"),
                 // batch A12b: AIAttackFollowWaypointPathState's members
                 between(&sts, "AIStates.cpp", "AIAttackFollowWaypointPathState::AIAttackFollowWaypointPathState (", "void AIWanderState::crc( Xfer *xfer )"),
+                // batch A14: AIEnterState's members
+                between(&sts, "AIStates.cpp", "void AIEnterState::crc( Xfer *xfer )", "void AIExitState::crc( Xfer *xfer )"),
                 // batch A13: AIExitState's and AIExitInstantlyState's members, AIFaceState's
                 between(&sts, "AIStates.cpp", "void AIExitState::crc( Xfer *xfer )", "AIGuardState::~AIGuardState()"),
                 // (to the end of the file: the face state's update is its last function)

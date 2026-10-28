@@ -159,6 +159,9 @@ struct AiEnv
 	/* ---- batch A13 (the exit states) */
 	Int exitFlags;			/* the contain's getContainExitInterface (bit 0: one), the exit's isExitBusy (bit 1) */
 	Int exitDoor;			/* the exit's reserveDoorForExit */
+	/* ---- batch A14 (the enter state) */
+	Real minorRadius;		/* the other objects' geometry's getMinorRadius */
+	Int geomBox;			/* the other objects' geometry's getGeomType is GEOMETRY_BOX (else GEOMETRY_SPHERE) */
 };
 
 extern AiEnv g_aiEnv;
@@ -399,6 +402,9 @@ class GeometryInfo
 public:
 	Real getMajorRadius() const;
 	Real getBoundingCircleRadius() const;
+	/* batch A14 */
+	Real getMinorRadius() const;
+	GeometryType getGeomType() const;
 	/* batch A7 */
 	Real getMaxHeightAbovePosition() const;
 	/* batch A10b: the position raised by half the scene's height above position */
@@ -470,6 +476,8 @@ class ContainModuleInterface
 public:
 	/* batch A13 */
 	void onObjectWantsToEnterOrExit(Object *obj, ObjectEnterExitType wantsToEnterOrExit);
+	/* batch A14 (logged) */
+	void addToContain( Object *obj );
 	ExitInterface *getContainExitInterface();
 	Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const;
 	/* batch A10a (logged, from the hash; the scene's) */
@@ -702,6 +710,8 @@ public:
 	Bool canGetRepairedAt( const Object *obj, const Object *repairDest, CommandSourceType commandSource );
 	Bool canGetHealedAt( const Object *obj, const Object *healDest, CommandSourceType commandSource );
 	Bool canEnterObject( const Object *obj, const Object *objectToEnter, CommandSourceType commandSource, Int mode );
+	/* batch A14 */
+	CanAttackResult getCanAttackObject( const Object *obj, const Object *objectToAttack, CommandSourceType commandSource, AbleToAttackType attackType );
 };
 enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };	/* ActionManager.h, verbatim */
 extern ActionManager *TheActionManager;

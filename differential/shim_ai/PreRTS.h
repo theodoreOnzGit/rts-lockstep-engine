@@ -108,6 +108,8 @@
 #define AIExitState AiAIExitState
 #define AIExitInstantlyState AiAIExitInstantlyState
 #define AIFaceState AiAIFaceState
+/* batch A14 */
+#define AIEnterState AiAIEnterState
 #define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition

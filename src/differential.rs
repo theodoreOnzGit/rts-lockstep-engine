@@ -1012,6 +1012,9 @@ pub struct AiEnv {
     // batch A13
     pub exit_flags: c_int,
     pub exit_door: c_int,
+    // batch A14
+    pub minor_radius: c_float,
+    pub geom_box: c_int,
 }
 
 extern "C" {

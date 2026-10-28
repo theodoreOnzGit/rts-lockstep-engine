@@ -33,7 +33,8 @@ use crate::logic::modules::plant;
 
 type Sm<H> = StateMachine<AiState<H>>;
 
-/// `ObjectEnterExitType`'s `WANTS_TO_EXIT`, `WANTS_NEITHER`.
+/// `ObjectEnterExitType`'s `WANTS_TO_ENTER`, `WANTS_TO_EXIT`, `WANTS_NEITHER`.
+pub const WANTS_TO_ENTER: i32 = 0;
 pub const WANTS_TO_EXIT: i32 = 1;
 pub const WANTS_NEITHER: i32 = 2;
 /// `AIFreeToExitType`'s `WAIT_TO_EXIT`.

@@ -681,6 +681,8 @@ void PhysicsBehavior::setStickToGround(Bool stick) { L(LOG_SET_STICK, { (unsigne
 Bool PhysicsBehavior::getAllowToFall() const { return g_aiEnv.allowToFall != 0; }
 
 Real GeometryInfo::getMajorRadius() const { return g_aiEnv.majorRadius; }
+Real GeometryInfo::getMinorRadius() const { return g_aiEnv.minorRadius; }
+GeometryType GeometryInfo::getGeomType() const { return g_aiEnv.geomBox ? GEOMETRY_BOX : GEOMETRY_SPHERE; }
 Real GeometryInfo::getBoundingCircleRadius() const
 {
 	/* batch A3: another object's (the container's) radius is the scene's container radius */
@@ -766,6 +768,8 @@ void Object::setEffectivelyDead(Bool dead) { L(LOG_EFFECTIVELY_DEAD, { (unsigned
 ** Thing machinery's, not the locomotor's, so it is not logged */
 Bool Object::isAboveTerrain() const
 {
+	/* batch A14: another object's from the hash */
+	if (m_otherId) return p1Pick(p1Hash(73, { (unsigned)m_otherId }), 50u);
 	++g_aiQuiet;
 	Bool r = getHeightAboveTerrain() > 0.0f;
 	--g_aiQuiet;
@@ -973,6 +977,12 @@ Bool ActionManager::canEnterObject(const Object *obj, const Object *dest, Comman
 {
 	return actionAnswer(2, dest, src);
 }
+/* batch A14: possible (kind 3), else possible after moving (kind 4), else not */
+CanAttackResult ActionManager::getCanAttackObject(const Object *obj, const Object *dest, CommandSourceType src, AbleToAttackType attackType)
+{
+	if (actionAnswer(3, dest, src)) return ATTACKRESULT_POSSIBLE;
+	return actionAnswer(4, dest, src) ? ATTACKRESULT_POSSIBLE_AFTER_MOVING : ATTACKRESULT_NOT_POSSIBLE;
+}
 /* another AI's path: getMoveAwayFromPath's stand-in makes a two-node path (from the object to an offset) at the scene's rate */
 Path *Pathfinder::getMoveAwayFromPath(Object *obj, Object *otherObj, Path *pathToAvoid, Object *otherObj2, Path *pathToAvoid2)
 {
@@ -1034,6 +1044,7 @@ void ContainModuleInterface::onObjectWantsToEnterOrExit(Object *obj, ObjectEnter
 {
 	L(LOG_CONTAIN, { 3u, (unsigned)obj->getID(), (unsigned)wants });
 }
+void ContainModuleInterface::addToContain(Object *obj) { L(LOG_CONTAIN, { 7u, (unsigned)obj->getID() }); }
 ExitInterface *ContainModuleInterface::getContainExitInterface() { return (g_aiEnv.exitFlags & 1) ? &g_exit : NULL; }
 Bool ExitInterface::isExitBusy() const { return (g_aiEnv.exitFlags & 2) != 0; }
 ExitDoorType ExitInterface::reserveDoorForExit(const AiTemplateView *objType, Object *specificObject)
@@ -2156,6 +2167,12 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, (unsigned)fa->m_attackMachine->getCurrentStateID());
 					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
 				}
+			}
+			/* batch A14: the enter state's move members and entry to clear */
+			{
+				const AIEnterState *en = (const AIEnterState *)sm->m_stateMap.find(AI_ENTER)->second;
+				PUT_MOVE(en)
+				putU32(v, (unsigned)en->m_entryToClear);
 			}
 			/* batch A13: the exit states' entries to clear, the face states' turn-in-place flags */
 			putU32(v, (unsigned)((const AIExitState *)sm->m_stateMap.find(AI_EXIT)->second)->m_entryToClear);
