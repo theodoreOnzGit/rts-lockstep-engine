@@ -1015,6 +1015,8 @@ pub struct AiEnv {
     // batch A14
     pub minor_radius: c_float,
     pub geom_box: c_int,
+    // batch A15
+    pub contained_mask: c_uint,
 }
 
 extern "C" {

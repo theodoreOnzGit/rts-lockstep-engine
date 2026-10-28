@@ -74,6 +74,7 @@ use crate::logic::ai::ai_attack_move as attack_move;
 use crate::logic::ai::ai_hunt_states as hunt_states;
 use crate::logic::ai::ai_face_exit_states as face_exit;
 use crate::logic::ai::ai_enter_state as enter_state;
+use crate::logic::ai::ai_rappel_state::{self as rappel, RappelData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -386,6 +387,31 @@ pub trait AiStateHost: AiHost + StateContext {
     fn object_geometry_radii(&mut self, id: ObjectId) -> (f32, f32, bool);
     /// The container's contain's `addToContain(owner)`.
     fn contain_add_to_contain(&mut self, container: ObjectId);
+    // ---- batch A15: the rappel state
+    /// The container's contain's `getContainedItemsList()`, in order (empty: none).
+    fn contain_items(&mut self, container: ObjectId) -> Vec<ObjectId>;
+    /// The container's contain's `removeFromContain(obj)`, `isValidContainerFor(owner, TRUE)`.
+    fn contain_remove_from_contain(&mut self, container: ObjectId, obj: ObjectId);
+    fn contain_is_valid_container_for_me(&mut self, container: ObjectId) -> bool;
+    /// The owner's `scoreTheKill(victim)`; another object's `kill()`; the owner's `kill()`.
+    fn score_the_kill(&mut self, victim: ObjectId);
+    fn object_kill(&mut self, id: ObjectId);
+    fn kill_self(&mut self);
+    /// `FXList::doFXObj(owner's template's getPerUnitFX("CombatDropKillFX"), bldg)`.
+    fn do_fx_combat_drop_kill(&mut self, bldg: ObjectId);
+    /// The physics' `resetDynamicPhysics()`, `scrubVelocityZ(rate)` (the physics used unchecked).
+    fn physics_reset_dynamic(&mut self);
+    fn physics_scrub_velocity_z(&mut self, rate: f32);
+    /// The owner's `setLayer(layer)`.
+    fn object_set_layer(&mut self, layer: PathfindLayer);
+    /// Another object's `getOrientation()`, `getPosition()`, its geometry's `getBoundingCircleRadius()`.
+    fn object_orientation(&mut self, id: ObjectId) -> f32;
+    fn object_position(&mut self, id: ObjectId) -> Coord3D;
+    fn object_bounding_circle_radius(&mut self, id: ObjectId) -> f32;
+    /// `GameLogicRandomValueReal(lo, hi)`.
+    fn logic_random_value_real(&mut self, lo: f32, hi: f32) -> f32;
+    /// `ThePartitionManager->findPositionAround(pos, options)` with no source object (`find_position_around`'s is the owner).
+    fn find_position_around_no_source(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D>;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
     /// The current weapon's `isTooClose(owner, victim)`.
@@ -468,6 +494,8 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
+    /// `AIRappelState` (batch A15).
+    Rappel(RappelData),
     /// `AIEnterState` (batch A14): `AIInternalMoveToState`'s base, `m_entryToClear`.
     Enter { mv: MoveToData, entry_to_clear: ObjectId },
     /// `AIExitState` (`instantly` false) and `AIExitInstantlyState` (batch A13): `m_entryToClear`.
@@ -748,7 +776,8 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_FACE_OBJECT, AiState::Face { obj: true, can_turn_in_place: false }, AI_IDLE, AI_IDLE),
         (AI_FACE_POSITION, AiState::Face { obj: false, can_turn_in_place: false }, AI_IDLE, AI_IDLE),
         (AI_PICK_UP_CRATE, attack_move::pick_up_crate(), AI_IDLE, AI_IDLE),
-        (AI_RAPPEL_INTO, u(AI_RAPPEL_INTO), AI_IDLE, AI_IDLE),
+        // (the constructor sets nothing: the pool's zeros)
+        (AI_RAPPEL_INTO, AiState::Rappel(RappelData::default()), AI_IDLE, AI_IDLE),
         (AI_BUSY, AiState::Busy, AI_IDLE, AI_IDLE),
     ];
     for (id, state, success, failure) in defs {
@@ -947,6 +976,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             Some(AiState::Face { .. }) => face_exit::face_on_enter(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_on_enter(sm, h, id),
+            Some(AiState::Rappel(_)) => rappel::rappel_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -982,6 +1012,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Hunt { .. }) => hunt_states::hunt_on_exit(sm, h, id)?,
             Some(AiState::Exit { .. }) => face_exit::exit_on_exit(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_on_exit(sm, h, id),
+            Some(AiState::Rappel(_)) => rappel::rappel_on_exit(h),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -1022,6 +1053,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             Some(AiState::Face { .. }) => face_exit::face_update(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_update(sm, h, id),
+            Some(AiState::Rappel(_)) => rappel::rappel_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1106,6 +1138,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::Hunt { kinds, machine, next_enemy_scan_time, .. } => hunt_states::hunt_xfer(*kinds, machine, next_enemy_scan_time, xfer)?,
             AiState::Exit { entry_to_clear, .. } => face_exit::exit_xfer(entry_to_clear, xfer)?,
             AiState::Enter { mv, entry_to_clear } => enter_state::enter_xfer(mv, entry_to_clear, xfer)?,
+            AiState::Rappel(d) => rappel::rappel_xfer(d, xfer)?,
             AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

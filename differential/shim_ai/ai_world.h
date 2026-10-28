@@ -162,6 +162,8 @@ struct AiEnv
 	/* ---- batch A14 (the enter state) */
 	Real minorRadius;		/* the other objects' geometry's getMinorRadius */
 	Int geomBox;			/* the other objects' geometry's getGeomType is GEOMETRY_BOX (else GEOMETRY_SPHERE) */
+	/* ---- batch A15 (the rappel state) */
+	UnsignedInt containedMask;	/* the contain's getContainedItemsList: the existing objects without an AI of this mask, in id order */
 };
 
 extern AiEnv g_aiEnv;
@@ -186,7 +188,8 @@ enum
 	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE,
 	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT,
 	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH,
-	LOG_ATTACK = 103	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_ATTACK = 103,	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_RAPPEL = 104	/* batch A15: { kind, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -391,6 +394,9 @@ public:
 	Real getMass() const;
 	Bool isMotive() const;
 	void setExtraFriction(Real friction);
+	/* batch A15 (logged) */
+	void resetDynamicPhysics();
+	void scrubVelocityZ(Real desiredVelocity);
 	void setAllowAirborneFriction(Bool allow);
 	void setStickToGround(Bool stick);
 	/* batch A2 */
@@ -478,6 +484,9 @@ public:
 	void onObjectWantsToEnterOrExit(Object *obj, ObjectEnterExitType wantsToEnterOrExit);
 	/* batch A14 (logged) */
 	void addToContain( Object *obj );
+	/* batch A15 (logged) */
+	Bool isValidContainerFor( const Object* obj, Bool checkCapacity ) const;
+	void removeFromContain( Object *obj, Bool exposeStealthUnits = FALSE );
 	ExitInterface *getContainExitInterface();
 	Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const;
 	/* batch A10a (logged, from the hash; the scene's) */
@@ -548,7 +557,11 @@ struct AiTemplateView
 	const class AudioEventRTS *getSoundMoveStartDamaged() const;
 	const class AudioEventRTS *getSoundMoveLoop() const;
 	const class AudioEventRTS *getSoundMoveLoopDamaged() const;
+	/* batch A15: none (the FX call is logged) */
+	const class FXList *getPerUnitFX(const char *fxName) const { return NULL; }
 };
+/* batch A15: FXList.h's doFXObj (logged) */
+class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL); };
 /* batch A12: ScriptEngine.h's attack priority info, as far as the hunt state uses it (getPriority logged); two of them */
 class AttackPriorityInfo
 {
@@ -566,6 +579,10 @@ public:
 	void setOrientation(Real angle);
 	inline const Coord3D *getPosition() const { return &m_cachedPos; }
 	inline Real getOrientation() const { return m_cachedAngle; }
+	/* batch A15 (logged) */
+	void setLayer( PathfindLayerEnum layer );
+	void scoreTheKill( const Object *victim );
+	void kill();
 	const Coord3D *getUnitDirectionVector2D() const;
 	void getUnitDirectionVector2D(Coord3D &dir) const;
 	void getUnitDirectionVector3D(Coord3D &dir) const;

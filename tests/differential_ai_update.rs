@@ -1387,6 +1387,57 @@ impl AiStateHost for Host {
         let id = self.env.object_id as u32;
         self.l(L_CONTAIN, &[7, id]);
     }
+    // ---- batch A15
+    fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
+        (1..32).filter(|&i| (self.env.contained_mask >> i) & 1 != 0 && (self.env.ai_mask >> i) & 1 == 0 && self.object_exists(i)).collect()
+    }
+    fn contain_remove_from_contain(&mut self, _container: ObjectId, obj: ObjectId) {
+        self.l(L_RAPPEL, &[7, obj as u32]);
+    }
+    fn contain_is_valid_container_for_me(&mut self, _container: ObjectId) -> bool {
+        let r = pick(p1_hash(self.env.seed, 74, &[self.env.object_id as u32, 1]), 50);
+        self.l(L_RAPPEL, &[6, 1, u32::from(r)]);
+        r
+    }
+    fn score_the_kill(&mut self, victim: ObjectId) {
+        self.l(L_RAPPEL, &[3, victim as u32]);
+    }
+    fn object_kill(&mut self, id: ObjectId) {
+        self.l(L_RAPPEL, &[4, id as u32]);
+    }
+    fn kill_self(&mut self) {
+        let id = self.env.object_id as u32;
+        self.l(L_RAPPEL, &[4, id]);
+    }
+    fn do_fx_combat_drop_kill(&mut self, bldg: ObjectId) {
+        self.l(L_RAPPEL, &[5, bldg as u32]);
+    }
+    fn physics_reset_dynamic(&mut self) {
+        self.l(L_RAPPEL, &[0]);
+    }
+    fn physics_scrub_velocity_z(&mut self, rate: f32) {
+        self.l(L_RAPPEL, &[1, rate.to_bits()]);
+    }
+    fn object_set_layer(&mut self, layer: PathfindLayer) {
+        self.l(L_RAPPEL, &[2, layer as u32]);
+    }
+    fn object_orientation(&mut self, _id: ObjectId) -> f32 {
+        0.0 // (the other objects' cached angle)
+    }
+    fn object_position(&mut self, _id: ObjectId) -> Coord3D {
+        Coord3D::default() // (the other objects' cached position)
+    }
+    fn object_bounding_circle_radius(&mut self, _id: ObjectId) -> f32 {
+        self.env.container_radius
+    }
+    fn logic_random_value_real(&mut self, lo: f32, hi: f32) -> f32 {
+        self.rng.game_logic_random_value_real(lo, hi)
+    }
+    fn find_position_around_no_source(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
+        let r = pick(p1_hash(self.env.seed, 16, &[pos.x.to_bits(), pos.y.to_bits()]), self.env.find_pos_rate);
+        self.l(L_FIND_POSITION, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), min_radius.to_bits(), max_radius.to_bits(), 0, u32::from(r)]);
+        r.then_some(Coord3D { x: pos.x + 5.0, y: pos.y + 5.0, z: pos.z })
+    }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
         self.l(L_ATTACK, &[16, info as u32, obj as u32, r]);
@@ -1945,6 +1996,11 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 _ => panic!("an attack-follow-waypoint state"),
             }
         }
+        // batch A15: the rappel state's members
+        match sm.state(35) {
+            Some(AiState::Rappel(d)) => v.extend([d.rappel_rate.to_bits(), d.dest_z.to_bits(), u32::from(d.target_is_bldg)]),
+            _ => panic!("the rappel state"),
+        }
         // batch A14: the enter state's move members and entry to clear
         match sm.state(15) {
             Some(AiState::Enter { mv, entry_to_clear }) => {
@@ -2143,6 +2199,7 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     // (a third of the time large: the enter state's arrival test, against a goal at the origin)
     e.minor_radius = if g.below(3) == 0 { g.uniform(200.0, 600.0) } else { g.uniform(0.0, 30.0) };
     e.geom_box = i32::from(g.below(2) == 0);
+    e.contained_mask = if g.below(2) == 0 { 0 } else { g.u32() };
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -2402,7 +2459,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42][g.below(49) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35][g.below(51) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2435,7 +2492,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36][g.below(41) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37][g.below(43) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -2851,7 +2908,7 @@ struct Checks {
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
     a4_logs: [u64; 34],
-    a4_states: [u64; 25],
+    a4_states: [u64; 26],
     temporary_states: u64,
     /// Batch A9: cases ended before an operation upstream would make undefined (a waypoint state without a locomotor).
     a9_undefined: u64,
@@ -2888,7 +2945,7 @@ impl Checks {
             victims: 0,
             enter_targets: 0,
             a4_logs: [0; 34],
-            a4_states: [0; 25],
+            a4_states: [0; 26],
             temporary_states: 0,
             a9_undefined: 0,
             attack_inner: [0; 4],
@@ -3049,6 +3106,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if host.env.player_type < 0 {
             host.env.team_attack_common = 0;
         }
+        // batch A15: the rappel state uses the physics unchecked (kept while it is in the machine)
+        if module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 35 || module.ai().machine.temporary_state == 35) {
+            host.env.loco.has_physics = 1;
+        }
         // (and so does the idle state's mood target: `getNextMoodTarget` reads the player unchecked, and the C++ stand-in's
         // `getPlayerType` tolerated a missing one; kept while the idle state is in the machine)
         let idle = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 0 || module.ai().machine.temporary_state == 0);
@@ -3178,6 +3239,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 33 | 34 => 22,
                 37 | 42 => 23,
                 15 => 24,
+                35 => 25,
                 _ => 4,
             }] += 1;
         }
@@ -3231,6 +3293,8 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
             || (matches!(state, 31 | 32) && e.player_type < 0)
             // batch A14: the enter state without a controlling player (it may attack the goal)
             || (state == 15 && e.player_type < 0)
+            // batch A15: the rappel state without physics (used unchecked)
+            || (state == 35 && e.loco.has_physics == 0)
             // batch A10a: an attack state already the machine's state or its temporary state (the other's exit deletes the one
             // attack machine, which the next update dereferences); batch A10b: or without a controlling player (the chase states
             // read it unchecked)
@@ -3260,6 +3324,7 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 16 => 31,
                 17 => 32,
                 23 => 15,
+                37 => 35,
                 _ => -1,
             };
             if unsafe_entry(state, ia[4] >= 0) {
@@ -3512,7 +3577,7 @@ fn ai_update_a2_matches_upstream() {
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
-         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter {:?}; A9 cases ended undefined {}; attack machine \
+         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel {:?}; A9 cases ended undefined {}; attack machine \
          chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.follow_inner, ck.temporary_states, ck.loads

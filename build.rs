@@ -2104,6 +2104,8 @@ mod differential {
                 "AIAttackAreaState",
                 // batch A12b
                 "AIAttackFollowWaypointPathState",
+                // batch A15
+                "AIRappelState",
                 // batch A14
                 "AIEnterState",
                 // batch A13
@@ -2148,7 +2150,7 @@ mod differential {
                 edited.push_str(&line[close + 1..]);
                 placeholders += 1;
             }
-            assert_eq!(placeholders, 6, "AIStates.cpp: the constructor's 6 states not yet translated");
+            assert_eq!(placeholders, 5, "AIStates.cpp: the constructor's 5 states not yet translated");
             // batch A7: the move states (ai_states_a7.inc): isSamePosition, AIInternalMoveToState's members (to the attack-move
             // machine, a later batch's), and AIMoveToState to AIMoveAwayFromRepulsorsState's members, verbatim
             let a7 = [
@@ -2195,6 +2197,8 @@ mod differential {
                 between(&sts, "AIStates.cpp", "AIHuntState::~AIHuntState()", "void AIFaceState::crc( Xfer *xfer )"),
                 // batch A12b: AIAttackFollowWaypointPathState's members
                 between(&sts, "AIStates.cpp", "AIAttackFollowWaypointPathState::AIAttackFollowWaypointPathState (", "void AIWanderState::crc( Xfer *xfer )"),
+                // batch A15: findEnemyInContainer, killEnemiesInContainer, AIRappelState's members
+                between(&sts, "AIStates.cpp", "static Object* findEnemyInContainer(Object* killer, Object* bldg)", "AIStateMachine::AIStateMachine( Object *obj, AsciiString name ) : StateMachine( obj, name )"),
                 // batch A14: AIEnterState's members
                 between(&sts, "AIStates.cpp", "void AIEnterState::crc( Xfer *xfer )", "void AIExitState::crc( Xfer *xfer )"),
                 // batch A13: AIExitState's and AIExitInstantlyState's members, AIFaceState's

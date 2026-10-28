@@ -382,6 +382,14 @@ pub fn ai_attack_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Objec
     ai_do_command(sm, h, &parms)
 }
 
+/// `aiFollowPath(path, ignoreObject, cmdSource)` (batch A15).
+pub fn ai_follow_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, path: &[Coord3D], ignore: ObjectId, src: CommandSourceType) -> SmResult<()> {
+    let mut parms = AiCommandParms::new(AICMD_FOLLOW_PATH, src);
+    parms.coords = path.to_vec();
+    parms.obj = ignore;
+    ai_do_command(sm, h, &parms)
+}
+
 /// `aiAttackMoveToPosition(pos, maxShotsToFire, cmdSource)`.
 pub fn ai_attack_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, max_shots: i32, src: CommandSourceType) -> SmResult<()> {
     let mut parms = AiCommandParms::new(AICMD_ATTACKMOVE_TO_POSITION, src);

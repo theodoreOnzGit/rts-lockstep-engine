@@ -1035,7 +1035,33 @@ Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPosit
 	if (r) { *result = *center; result->x += 5.0f; result->y += 5.0f; }
 	return r;
 }
-const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const { return NULL; }
+/* batch A15: the existing objects without an AI of the scene's mask, in id order (A5's passengers' aiIdle reaches no AI) */
+const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const
+{
+	static ContainedItemsList items;
+	items.clear();
+	for (unsigned i = 1; i < 32; ++i) {
+		if (!((g_aiEnv.containedMask >> i) & 1) || ((g_aiEnv.aiMask >> i) & 1)) continue;
+		Object *o = findObject((ObjectID)i);
+		if (o) items.push_back(o);
+	}
+	return items.empty() ? NULL : &items;
+}
+/* batch A15: LOG_RAPPEL's kinds: 0 resetDynamicPhysics, 1 scrubVelocityZ, 2 setLayer, 3 scoreTheKill, 4 kill, 5 doFXObj,
+** 6 isValidContainerFor, 7 removeFromContain */
+Bool ContainModuleInterface::isValidContainerFor(const Object *obj, Bool checkCapacity) const
+{
+	bool r = p1Pick(p1Hash(74, { (unsigned)obj->getID(), (unsigned)checkCapacity }), 50u);
+	L(LOG_RAPPEL, { 6u, (unsigned)checkCapacity, r ? 1u : 0u });
+	return r;
+}
+void ContainModuleInterface::removeFromContain(Object *obj, Bool exposeStealthUnits) { L(LOG_RAPPEL, { 7u, (unsigned)obj->getID() }); }
+void PhysicsBehavior::resetDynamicPhysics() { L(LOG_RAPPEL, { 0u }); }
+void PhysicsBehavior::scrubVelocityZ(Real desiredVelocity) { L(LOG_RAPPEL, { 1u, bitsOf(desiredVelocity) }); }
+void Object::setLayer(PathfindLayerEnum layer) { L(LOG_RAPPEL, { 2u, (unsigned)layer }); }
+void Object::scoreTheKill(const Object *victim) { L(LOG_RAPPEL, { 3u, (unsigned)victim->getID() }); }
+void Object::kill() { L(LOG_RAPPEL, { 4u, (unsigned)getID() }); }
+void FXList::doFXObj(const FXList *fx, const Object *primary, const Object *secondary) { L(LOG_RAPPEL, { 5u, (unsigned)primary->getID() }); }
 void ContainModuleInterface::removeAllContained(Bool exposeStealthUnits) { L(LOG_CONTAIN, { 0u, (unsigned)exposeStealthUnits }); }
 void ContainModuleInterface::markAllPassengersDetected() { L(LOG_CONTAIN, { 1u }); }
 /* batch A13: LOG_CONTAIN 3 onObjectWantsToEnterOrExit, 4 getAiFreeToExit, 5 reserveDoorForExit, 6 exitObjectViaDoor */
@@ -2167,6 +2193,13 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, (unsigned)fa->m_attackMachine->getCurrentStateID());
 					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
 				}
+			}
+			/* batch A15: the rappel state's members */
+			{
+				const AIRappelState *ra = (const AIRappelState *)sm->m_stateMap.find(AI_RAPPEL_INTO)->second;
+				putU32(v, bitsOf(ra->m_rappelRate));
+				putU32(v, bitsOf(ra->m_destZ));
+				putU32(v, ra->m_targetIsBldg ? 1u : 0u);
 			}
 			/* batch A14: the enter state's move members and entry to clear */
 			{

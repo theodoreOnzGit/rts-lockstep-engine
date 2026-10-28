@@ -110,6 +110,10 @@
 #define AIFaceState AiAIFaceState
 /* batch A14 */
 #define AIEnterState AiAIEnterState
+/* batch A15 */
+#define AIRappelState AiAIRappelState
+#define findEnemyInContainer aiFindEnemyInContainer
+#define killEnemiesInContainer aiKillEnemiesInContainer
 #define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition
