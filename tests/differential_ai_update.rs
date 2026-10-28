@@ -3210,6 +3210,20 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A12b; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The attack-follow-waypoint states (both ids: a waypoint path with an attack-move machine): 30,000 constructions and
+///   1,799,304 operations, **0 mismatches** in the results, the call logs and the dumps (which add both states' waypoint-path
+///   members and machines). After an operation the machine was in one of them 32,104 times (its machine idle 32,015 times,
+///   attacking 89; its crate state never: the crate is never found).
+/// - Not generated: either state without a locomotor, already the machine's state or its temporary state, or without a controlling
+///   player; the as-team one without a goal waypoint (as the as-team waypoint state).
+/// - Planted bugs: plants 3340-3346 at 30,000 cases: caught 3340 (the machine not cleared on entry, 12 mismatches), 3341 (no forced
+///   retarget, 3), 3342 (no repath, 2), 3343 (the machine not idled on exit, 20), 3344 (the waypoint update after a retargeting,
+///   63). **Not caught:** 3345 (the state's `isAttack` false): the AI's machine's attack state is asked while the machine attacks in
+///   89 operations, none of which asks it; 3346 (the machines' default states entered in the other order): it only swaps the random
+///   sleep offsets of two idle states that are never updated while idle and are not dumped, so it cannot be seen here.
+///
 /// # Results (2026-10-28, batch A12; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The hunt and attack-area states (each with its attack-then-idle machine of attack, crate and idle states): 30,000
