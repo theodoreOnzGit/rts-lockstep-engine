@@ -3166,6 +3166,25 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A12; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The hunt and attack-area states (each with its attack-then-idle machine of attack, crate and idle states): 30,000
+///   constructions and 1,799,396 operations, **0 mismatches** in the results, the call logs and the dumps (which add both states'
+///   scan times and machines: state, goal, sleep, goal position, crate state, the attack state's machine). After an operation the
+///   machine was hunting or attacking an area 142,100 times (its machine attacking 1,076 times, idle 141,024; its crate state never:
+///   the crate is never found); the attack priorities were asked 118 times. New operation 87 sets the attack priority info.
+/// - Not generated: either state entered while it is already the machine's state or its temporary state (the other's exit deletes
+///   the one machine), or without a controlling player (their machines' attack reads it).
+/// - Planted bugs: plants 3330-3337 at 30,000 cases, each caught but one (2 to 10,956 mismatches): the first scan's random range,
+///   the hunt's weapon-lock release, the attack from idle, the scan rate, the all-hunt retry without priorities, the team target's
+///   priority tie, the area's success without a victim. **3337 (the AI's machine not locked around the machine's update) is not
+///   caught, and cannot be here**: nothing inside the machine sets the AI's machine's state, and `friend_setGoalObject` unlocks it on
+///   purpose. Earlier plants re-run: all caught but 3313 and 3315 (the chase states' edge branches: see the porting graph).
+/// - The first runs found two port defects, both fixed: the idle state's first update asked whether its own machine was idle where
+///   upstream asks the AI's (`ai->isIdle()`: in a sub-machine, the AI's machine is hunting), and the view of the AI's machine lent to a
+///   sub-machine was taken after the sub-machine was taken out of its state, so the AI's machine was not in an attack state while its
+///   hunt (or attack-move) machine attacked.
+///
 /// # Results (2026-10-28, batch A11; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The attack-move state (with its machine of idle, crate and attack states) and the crate state: 30,000 constructions and
