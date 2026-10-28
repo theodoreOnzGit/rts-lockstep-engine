@@ -84,6 +84,7 @@ fn sub_machine<H: AiStateHost>(state: Option<&mut AiState<H>>) -> &mut Option<Sm
     match state {
         Some(AiState::AttackMove { machine, .. }) | Some(AiState::Hunt { machine, .. }) => machine,
         Some(AiState::AttackSquad { machine, .. }) => machine,
+        Some(AiState::Dock { machine, .. }) => machine,
         Some(AiState::FollowWaypointPath { machine, .. }) => machine,
         _ => unreachable!("a state with a sub-machine"),
     }
@@ -96,16 +97,25 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
     let outer = top_view(sm, h);
     let mut inner = sub_machine(sm.state_mut(id)).take().expect("the sub-machine");
     let bottom = h.attack_stack().is_empty();
+    // (batch A17: the docking machine's approach position, lent)
+    let dock_approach = match sm.state(id) {
+        Some(AiState::Dock { approach_position, .. }) => *approach_position,
+        _ => -1,
+    };
     h.attack_stack().push(AttackFrame {
         outer,
         original_victim_pos: Default::default(),
         attacking_object: false,
         new_victim: None,
         ai_goal_object: None,
+        dock_approach,
     });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the view frame");
     *sub_machine(sm.state_mut(id)) = Some(inner);
+    if let Some(AiState::Dock { approach_position, .. }) = sm.state_mut(id) {
+        *approach_position = lent.dock_approach;
+    }
     // the AI's machine's goal, set from inside
     if let Some(obj) = lent.ai_goal_object {
         if bottom {

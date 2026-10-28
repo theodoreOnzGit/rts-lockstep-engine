@@ -142,6 +142,8 @@ pub struct AttackFrame {
     pub new_victim: Option<ObjectId>,
     /// (the bottom frame, batch A11) the AI's machine's goal set by `ai->friend_setGoalObject` from a machine inside it.
     pub ai_goal_object: Option<ObjectId>,
+    /// (batch A17) the docking machine's `m_approachPosition`, while it runs.
+    pub dock_approach: i32,
 }
 
 /// `ai->friend_setGoalObject(obj)`: the AI's machine's goal. `sm` is the AI's machine when no frame is lent; else (a machine inside
@@ -208,7 +210,7 @@ fn run_inner<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl 
         _ => unreachable!("the attack state"),
     };
     let outer = top_view(sm, h);
-    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None });
+    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None, dock_approach: -1 });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the attack frame");
     if let Some(AiState::Attack { machine, .. }) = sm.state_mut(id) {
@@ -293,6 +295,7 @@ pub fn test<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, cond: AiCondition) -> boo
         AiCondition::WantToSquishTarget => want_to_squish_target(sm, h),
         AiCondition::OutOfWeaponRangePosition => out_of_weapon_range_position(sm, h),
         AiCondition::CannotPossiblyAttackObject(t) => cannot_possibly_attack_object(sm, h, t),
+        AiCondition::DockAbleToAdvance => crate::logic::ai::ai_dock::able_to_advance(sm, h),
     }
 }
 

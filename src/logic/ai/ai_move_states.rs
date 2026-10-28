@@ -178,7 +178,8 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::AttackPursue { mv, .. })
         | Some(AiState::AttackMove { mv, .. })
         | Some(AiState::PickUpCrate { mv, .. })
-        | Some(AiState::Enter { mv, .. }) => mv,
+        | Some(AiState::Enter { mv, .. })
+        | Some(AiState::DockMove { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }

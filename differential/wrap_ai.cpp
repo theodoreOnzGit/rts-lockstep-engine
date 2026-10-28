@@ -98,6 +98,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "ai_pathfinder_a2.inc"
 /* batch A4: the real AIStateMachine.h (its State and StateMachine are StateMachine.cpp's, compiled beside this file) */
 #include "GameLogic/AIStateMachine.h"
+#include "GameLogic/AIDock.h"
 
 /* ---- the AI ------------------------------------------------------------------------------------------------------------------ */
 
@@ -208,6 +209,8 @@ public:
 	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
 	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
 	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
+	/* batch A17 (AIUpdate.h's, virtual upstream; no supply truck here) */
+	SupplyTruckAIInterface* getSupplyTruckAIInterface() {return NULL;}
 	/* batch A15 (AIUpdate.h) */
 	Real getDesiredSpeed() const { return m_desiredSpeed; }
 	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
@@ -402,6 +405,7 @@ public:
 #include "ai_states_a10.inc"
 #include "ai_states_a11.inc"
 #include "ai_states_a12.inc"
+#include "ai_dock_a17.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -741,6 +745,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_DONT_AUTO_CRUSH_INFANTRY) return (g_aiEnv.kindMask & 32768) != 0;
 	/* batch A15 */
 	if (t == KINDOF_CAN_RAPPEL) return (g_aiEnv.kindMask & 65536) != 0;
+	/* batch A17 */
+	if (t == KINDOF_DRONE) return (g_aiEnv.kindMask & 131072) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -1081,6 +1087,88 @@ void PhysicsBehavior::scrubVelocityZ(Real desiredVelocity) { L(LOG_RAPPEL, { 1u,
 void Object::setLayer(PathfindLayerEnum layer) { L(LOG_RAPPEL, { 2u, (unsigned)layer }); }
 void Object::scoreTheKill(const Object *victim) { L(LOG_RAPPEL, { 3u, (unsigned)victim->getID() }); }
 void Object::kill() { L(LOG_RAPPEL, { 4u, (unsigned)getID() }); }
+/* batch A17: LOG_DOCK's kinds: 0 cancelDock, 1 reserveApproachPosition, 2 advanceApproachPosition, 3 isClearToEnter,
+** 4 isClearToAdvance, 5 getEnterPosition, 6 getDockPosition, 7 getExitPosition, 8 onApproachReached, 9 onEnterReached,
+** 10 onDockReached, 11 onExitReached, 12 action */
+DockUpdateInterface g_dock;
+namespace {
+bool dockAnswer(unsigned kind, std::initializer_list<unsigned> words)
+{
+	return p1Pick(p1Hash(80 + kind, words), g_aiEnv.dockRate);
+}
+void dockPosition(unsigned kind, Coord3D *position)
+{
+	position->x = g_aiEnv.dockPos[0] + 10.0f * (Real)(kind - 4);
+	position->y = g_aiEnv.dockPos[1];
+	position->z = g_aiEnv.dockPos[2];
+	L(LOG_DOCK, { kind });
+}
+}  // namespace
+DockUpdateInterface *Object::getDockUpdateInterface()
+{
+	return (m_otherId && ((g_aiEnv.dockMask >> m_otherId) & 1)) ? &g_dock : NULL;
+}
+ObjectID Object::getProducerID() const
+{
+	return (m_otherId && ((g_aiEnv.droneMask >> m_otherId) & 1)) ? (ObjectID)g_aiEnv.objectId : INVALID_ID;
+}
+ExitInterface *Object::getObjectExitInterface() const { return (g_aiEnv.dockFlags & 8) ? &g_exit : NULL; }
+Coord3D g_rallyPoint;
+const Coord3D *ExitInterface::getRallyPoint() const
+{
+	if (!(g_aiEnv.dockFlags & 16)) return NULL;
+	g_rallyPoint.x = g_aiEnv.dockPos[0] - 15.0f; g_rallyPoint.y = g_aiEnv.dockPos[1] + 5.0f; g_rallyPoint.z = g_aiEnv.dockPos[2];
+	return &g_rallyPoint;
+}
+void Player::iterateObjects(void (*func)(Object *obj, void *userData), void *userData) const
+{
+	for (unsigned i = 1; i < 32; ++i) { Object *o = findObject((ObjectID)i); if (o) func(o, userData); }
+}
+UnsignedInt SupplyTruckAIInterface::getActionDelayForDock(Object *dock) { return 0; }
+Bool DockUpdateInterface::reserveApproachPosition(Object *docker, Coord3D *position, Int *index)
+{
+	bool r = dockAnswer(1, { TheGameLogic->getFrame() });
+	if (r) { position->x = g_aiEnv.dockPos[0]; position->y = g_aiEnv.dockPos[1]; position->z = g_aiEnv.dockPos[2]; *index = g_aiEnv.dockIndex; }
+	L(LOG_DOCK, { 1u, r ? 1u : 0u });
+	return r;
+}
+Bool DockUpdateInterface::advanceApproachPosition(Object *docker, Coord3D *position, Int *index)
+{
+	bool r = dockAnswer(2, { TheGameLogic->getFrame() });
+	if (r) { position->x = g_aiEnv.dockPos[0]; position->y = g_aiEnv.dockPos[1]; position->z = g_aiEnv.dockPos[2]; *index = g_aiEnv.dockIndex; }
+	L(LOG_DOCK, { 2u, r ? 1u : 0u });
+	return r;
+}
+Bool DockUpdateInterface::isClearToEnter(Object const *docker) const
+{
+	bool r = dockAnswer(3, { TheGameLogic->getFrame() });
+	L(LOG_DOCK, { 3u, r ? 1u : 0u });
+	return r;
+}
+Bool DockUpdateInterface::isClearToAdvance(Object const *docker, Int dockerIndex) const
+{
+	bool r = dockAnswer(4, { TheGameLogic->getFrame(), (unsigned)dockerIndex });
+	L(LOG_DOCK, { 4u, (unsigned)dockerIndex, r ? 1u : 0u });
+	return r;
+}
+void DockUpdateInterface::getEnterPosition(Object *docker, Coord3D *position) { dockPosition(5, position); }
+void DockUpdateInterface::getDockPosition(Object *docker, Coord3D *position) { dockPosition(6, position); }
+void DockUpdateInterface::getExitPosition(Object *docker, Coord3D *position) { dockPosition(7, position); }
+void DockUpdateInterface::onApproachReached(Object *docker) { L(LOG_DOCK, { 8u }); }
+void DockUpdateInterface::onEnterReached(Object *docker) { L(LOG_DOCK, { 9u }); }
+void DockUpdateInterface::onDockReached(Object *docker) { L(LOG_DOCK, { 10u }); }
+void DockUpdateInterface::onExitReached(Object *docker) { L(LOG_DOCK, { 11u }); }
+Bool DockUpdateInterface::action(Object *docker, Object *drone)
+{
+	unsigned d = drone ? (unsigned)drone->getID() : 0u;
+	bool r = dockAnswer(12, { TheGameLogic->getFrame(), d });
+	L(LOG_DOCK, { 12u, d, r ? 1u : 0u });
+	return r;
+}
+void DockUpdateInterface::cancelDock(Object *docker) { L(LOG_DOCK, { 0u }); }
+Bool DockUpdateInterface::isDockOpen() { return (g_aiEnv.dockFlags & 1) != 0; }
+Bool DockUpdateInterface::isAllowPassthroughType() { return (g_aiEnv.dockFlags & 2) != 0; }
+Bool DockUpdateInterface::isRallyPointAfterDockType() { return (g_aiEnv.dockFlags & 4) != 0; }
 void FXList::doFXObj(const FXList *fx, const Object *primary, const Object *secondary) { L(LOG_RAPPEL, { 5u, (unsigned)primary->getID() }); }
 void ContainModuleInterface::removeAllContained(Bool exposeStealthUnits) { L(LOG_CONTAIN, { 0u, (unsigned)exposeStealthUnits }); }
 void ContainModuleInterface::markAllPassengersDetected() { L(LOG_CONTAIN, { 1u }); }
@@ -2214,6 +2302,30 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 				if (fa->m_attackMachine) {
 					putU32(v, (unsigned)fa->m_attackMachine->getCurrentStateID());
 					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
+				}
+			}
+			/* batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members) */
+			{
+				const AIDockState *dk = (const AIDockState *)sm->m_stateMap.find(AI_DOCK)->second;
+				const AIDockMachine *dm = (const AIDockMachine *)dk->m_dockMachine;
+				putU32(v, dm ? 1u : 0u);
+				putU32(v, dk->m_usingPrecisionMovement ? 1u : 0u);
+				if (dm) {
+					putU32(v, (unsigned)dm->getCurrentStateID());
+					putU32(v, (unsigned)dm->m_goalObjectID);
+					putU32(v, dm->m_sleepTill);
+					putU32(v, dm->m_locked ? 1u : 0u);
+					putU32(v, (unsigned)dm->m_approachPosition);
+					const StateID moves[6] = { AI_DOCK_APPROACH, AI_DOCK_ADVANCE_POSITION, AI_DOCK_MOVE_TO_ENTRY, AI_DOCK_MOVE_TO_DOCK,
+						AI_DOCK_MOVE_TO_EXIT, AI_DOCK_MOVE_TO_RALLY };
+					for (int k = 0; k < 6; ++k) {
+						const AIInternalMoveToState *dmv = (const AIInternalMoveToState *)dm->m_stateMap.find(moves[k])->second;
+						PUT_MOVE(dmv)
+					}
+					putU32(v, ((const AIDockWaitForClearanceState *)dm->m_stateMap.find(AI_DOCK_WAIT_FOR_CLEARANCE)->second)->m_enterFrame);
+					const AIDockProcessDockState *pd = (const AIDockProcessDockState *)dm->m_stateMap.find(AI_DOCK_PROCESS_DOCK)->second;
+					putU32(v, pd->m_nextDockActionFrame);
+					putU32(v, (unsigned)pd->m_droneID);
 				}
 			}
 			/* batch A16: the attack-squad state's machine (state, goal, its attack state's machine) */

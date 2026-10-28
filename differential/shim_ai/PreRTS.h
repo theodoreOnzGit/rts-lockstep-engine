@@ -114,6 +114,19 @@
 #define AIRappelState AiAIRappelState
 /* batch A16 */
 #define AIAttackSquadState AiAIAttackSquadState
+/* batch A17 */
+#define AIDockState AiAIDockState
+#define AIDockMachine AiAIDockMachine
+#define AIDockApproachState AiAIDockApproachState
+#define AIDockWaitForClearanceState AiAIDockWaitForClearanceState
+#define AIDockAdvancePositionState AiAIDockAdvancePositionState
+#define AIDockMoveToEntryState AiAIDockMoveToEntryState
+#define AIDockMoveToDockState AiAIDockMoveToDockState
+#define AIDockProcessDockState AiAIDockProcessDockState
+#define AIDockMoveToExitState AiAIDockMoveToExitState
+#define AIDockMoveToRallyState AiAIDockMoveToRallyState
+#define DroneInfo AiDroneInfo
+#define findDrone aiFindDrone
 #define findEnemyInContainer aiFindEnemyInContainer
 #define killEnemiesInContainer aiKillEnemiesInContainer
 #define JetAIUpdate AiJetAIUpdate

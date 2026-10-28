@@ -17,6 +17,7 @@ pub mod ai_hunt_states;
 pub mod ai_face_exit_states;
 pub mod ai_enter_state;
 pub mod ai_rappel_state;
+pub mod ai_dock;
 pub mod ai_fire_host;
 pub mod ai_paths;
 pub mod ai_states;

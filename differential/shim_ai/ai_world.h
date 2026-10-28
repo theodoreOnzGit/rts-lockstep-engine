@@ -167,6 +167,14 @@ struct AiEnv
 	/* ---- batch A16 (the attack-squad state) */
 	Int difficulty;			/* the controlling player's getPlayerDifficulty */
 	Int chooseNormal;		/* TheScriptEngine->getChooseVictimAlwaysUsesNormal */
+	/* ---- batch A17 (the dock state) */
+	UnsignedInt dockMask;		/* the other objects with a DockUpdateInterface (fixed for a case) */
+	Int dockFlags;			/* bit 0 isDockOpen, 1 isAllowPassthroughType, 2 isRallyPointAfterDockType, 3 the dock's object has an
+					** exit interface, 4 it has a rally point */
+	Real dockPos[3];		/* the dock's positions: the approach (reserve/advance) here, the enter, dock and exit 10, 20, 30 east */
+	Int dockIndex;			/* the approach index reserve/advance give */
+	UnsignedInt droneMask;		/* the other objects whose producer is the owner */
+	UnsignedInt dockRate;		/* the dock's answers (reserve, advance, clear to enter, clear to advance, action): TRUE at this rate */
 };
 
 extern AiEnv g_aiEnv;
@@ -192,7 +200,8 @@ enum
 	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT,
 	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH,
 	LOG_ATTACK = 103,	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
-	LOG_RAPPEL = 104	/* batch A15: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_RAPPEL = 104,	/* batch A15: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_DOCK = 105		/* batch A17: { kind, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -464,6 +473,8 @@ public:
 	Bool isSkirmishAIPlayer( void );
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
+	/* batch A17: the existing other objects, in id order */
+	void iterateObjects( void (*func)( Object *obj, void *userData ), void *userData ) const;
 	/* batch A16 */
 	GameDifficulty getPlayerDifficulty(void) const;
 };
@@ -491,6 +502,8 @@ struct AiTemplateView;
 class ExitInterface
 {
 public:
+	/* batch A17 (not logged: the scene's) */
+	const Coord3D *getRallyPoint( void ) const;
 	Bool isExitBusy() const;
 	ExitDoorType reserveDoorForExit( const AiTemplateView *objType, Object *specificObject );
 	void exitObjectViaDoor( Object *newObj, ExitDoorType exitDoor );
@@ -578,6 +591,29 @@ struct AiTemplateView
 	/* batch A15: none (the FX call is logged) */
 	const class FXList *getPerUnitFX(const char *fxName) const { return NULL; }
 };
+/* batch A17: UpdateModule.h's DockUpdateInterface (logged but isDockOpen, isAllowPassthroughType, isRallyPointAfterDockType: the
+** scene's) and the supply truck's (never one here) */
+class DockUpdateInterface
+{
+public:
+	Bool reserveApproachPosition( Object* docker, Coord3D *position, Int *index );
+	Bool advanceApproachPosition( Object* docker, Coord3D *position, Int *index );
+	Bool isClearToEnter( Object const* docker ) const;
+	Bool isClearToAdvance( Object const* docker, Int dockerIndex ) const;
+	void getEnterPosition( Object* docker, Coord3D *position );
+	void getDockPosition( Object* docker, Coord3D *position );
+	void getExitPosition( Object* docker, Coord3D *position );
+	void onApproachReached( Object* docker );
+	void onEnterReached( Object* docker );
+	void onDockReached( Object* docker );
+	void onExitReached( Object* docker );
+	Bool action( Object* docker, Object *drone = NULL );
+	void cancelDock( Object* docker );
+	Bool isDockOpen( void );
+	Bool isAllowPassthroughType();
+	Bool isRallyPointAfterDockType();
+};
+class SupplyTruckAIInterface { public: UnsignedInt getActionDelayForDock( Object *dock ); };
 /* batch A15: FXList.h's doFXObj (logged) */
 class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL); };
 /* batch A12: ScriptEngine.h's attack priority info, as far as the hunt state uses it (getPriority logged); two of them */
@@ -597,6 +633,12 @@ public:
 	void setOrientation(Real angle);
 	inline const Coord3D *getPosition() const { return &m_cachedPos; }
 	inline Real getOrientation() const { return m_cachedAngle; }
+	/* batch A17 */
+	class DockUpdateInterface *getDockUpdateInterface( void );
+	ObjectID getProducerID() const;
+	ExitInterface *getObjectExitInterface() const;
+	inline AIUpdateInterface *getAIUpdateInterface() { return getAI(); }
+	inline const AIUpdateInterface *getAIUpdateInterface() const { return getAI(); }
 	/* batch A15 (logged) */
 	void setLayer( PathfindLayerEnum layer );
 	void scoreTheKill( const Object *victim );

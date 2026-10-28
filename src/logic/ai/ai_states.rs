@@ -74,6 +74,7 @@ use crate::logic::ai::ai_attack_move as attack_move;
 use crate::logic::ai::ai_hunt_states as hunt_states;
 use crate::logic::ai::ai_face_exit_states as face_exit;
 use crate::logic::ai::ai_enter_state as enter_state;
+use crate::logic::ai::ai_dock as dock;
 use crate::logic::ai::ai_rappel_state::{self as rappel, RappelData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
@@ -421,6 +422,34 @@ pub trait AiStateHost: AiHost + StateContext {
     fn object_is_selectable(&mut self, id: ObjectId) -> bool;
     /// `ThePartitionManager->getClosestObject(owner, HUGE_DIST, FROM_CENTER_2D, {on the squad, the same map status})`.
     fn closest_object_on_squad(&mut self, squad: &[ObjectId]) -> ObjectId;
+    // ---- batch A17: the dock state (`dock`: the object whose `DockUpdateInterface` is asked)
+    /// Another object's `getDockUpdateInterface() != NULL`.
+    fn object_has_dock(&mut self, id: ObjectId) -> bool;
+    /// The dock's `isDockOpen()`, `cancelDock(owner)`.
+    fn dock_is_open(&mut self, dock: ObjectId) -> bool;
+    fn dock_cancel(&mut self, dock: ObjectId);
+    /// The dock's `reserveApproachPosition(owner, &pos, &index)` (`advance`: `advanceApproachPosition`): the position and index,
+    /// `None` for false.
+    fn dock_reserve_approach(&mut self, dock: ObjectId, advance: bool) -> Option<(Coord3D, i32)>;
+    /// The dock's `isClearToEnter(owner)`, `isClearToAdvance(owner, index)`, `isAllowPassthroughType()`,
+    /// `isRallyPointAfterDockType()`.
+    fn dock_is_clear_to_enter(&mut self, dock: ObjectId) -> bool;
+    fn dock_is_clear_to_advance(&mut self, dock: ObjectId, index: i32) -> bool;
+    fn dock_is_allow_passthrough(&mut self, dock: ObjectId) -> bool;
+    fn dock_is_rally_point_after_dock(&mut self, dock: ObjectId) -> bool;
+    /// The dock's `getEnterPosition`, `getDockPosition`, `getExitPosition` (`ai_dock::DOCK_ENTER`..).
+    fn dock_position(&mut self, dock: ObjectId, which: u32) -> Coord3D;
+    /// The dock's `onApproachReached`, `onEnterReached`, `onDockReached`, `onExitReached` (`ai_dock::REACHED_APPROACH`..).
+    fn dock_reached(&mut self, dock: ObjectId, which: u32);
+    /// The dock's `action(owner, drone)`.
+    fn dock_action(&mut self, dock: ObjectId, drone: ObjectId) -> bool;
+    /// Another object's exit interface's rally point (`None`: no exit interface or no rally point).
+    fn object_rally_point(&mut self, id: ObjectId) -> Option<Coord3D>;
+    /// The owner's AI's `getSupplyTruckAIInterface()->getActionDelayForDock(dock)` (`None`: not a supply truck).
+    fn supply_truck_action_delay(&mut self, dock: ObjectId) -> Option<u32>;
+    /// The controlling player's objects (`iterateObjects`), in order; another object's `getProducerID()`.
+    fn player_object_ids(&mut self) -> Vec<ObjectId>;
+    fn object_producer_id(&mut self, id: ObjectId) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
     /// The current weapon's `isTooClose(owner, victim)`.
@@ -503,6 +532,14 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
+    /// `AIDockState` (batch A17): `m_dockMachine`, its `m_approachPosition`, `m_usingPrecisionMovement`.
+    Dock { machine: Option<StateMachine<AiState<H>>>, approach_position: i32, using_precision_movement: bool },
+    /// The docking machine's move states (`which`: the state's id): `AIInternalMoveToState`'s base.
+    DockMove { which: StateId, mv: MoveToData },
+    /// The docking machine's `AIDockWaitForClearanceState`: `m_enterFrame`.
+    DockWait { enter_frame: u32 },
+    /// The docking machine's `AIDockProcessDockState`: `m_nextDockActionFrame`, `m_droneID`.
+    DockProcess { next_action_frame: u32, drone_id: ObjectId },
     /// `AIAttackSquadState` (batch A16): `m_attackSquadMachine` (the owner's kinds make it).
     AttackSquad { kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>> },
     /// `AIRappelState` (batch A15).
@@ -536,6 +573,8 @@ pub enum AiCondition {
     OutOfWeaponRangePosition,
     /// `cannotPossiblyAttackObject` with its attack type.
     CannotPossiblyAttackObject(AbleToAttackType),
+    /// `AIDockMachine::ableToAdvance` (batch A17: the docking machine's).
+    DockAbleToAdvance,
 }
 
 /// The static `isIdle`, `isAttack`, `isBusy` of an untranslated state's class: `AIAttackState`'s `TRUE` for the attack states;
@@ -775,7 +814,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_WANDER, wander(false), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_PANIC, wander(true), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_DEAD, AiState::Dead, AI_IDLE, AI_IDLE),
-        (AI_DOCK, u(AI_DOCK), AI_IDLE, AI_IDLE),
+        (AI_DOCK, AiState::Dock { machine: None, approach_position: -1, using_precision_movement: false }, AI_IDLE, AI_IDLE),
         (AI_ENTER, AiState::Enter { mv: MoveToData::default(), entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_EXIT, AiState::Exit { instantly: false, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_EXIT_INSTANTLY, AiState::Exit { instantly: true, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
@@ -989,6 +1028,13 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Enter { .. }) => enter_state::enter_on_enter(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_on_enter(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_enter(sm, h, id),
+            Some(AiState::Dock { .. }) => dock::dock_on_enter(sm, h, id),
+            Some(AiState::DockMove { which, .. }) => {
+                let which = *which;
+                dock::dock_move_on_enter(sm, h, id, which)
+            }
+            Some(AiState::DockWait { .. }) => dock::wait_on_enter(sm, h, id),
+            Some(AiState::DockProcess { .. }) => dock::process_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -1026,6 +1072,13 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Enter { .. }) => enter_state::enter_on_exit(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_on_exit(h),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_exit(sm, h, id)?,
+            Some(AiState::Dock { .. }) => dock::dock_on_exit(sm, h, id)?,
+            Some(AiState::DockMove { which, .. }) => {
+                let which = *which;
+                dock::dock_move_on_exit(sm, h, id, which, status)
+            }
+            Some(AiState::DockWait { .. }) => dock::wait_on_exit(sm, h, status),
+            Some(AiState::DockProcess { .. }) => dock::process_on_exit(sm),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -1068,6 +1121,13 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Enter { .. }) => enter_state::enter_update(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_update(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_update(sm, h, id),
+            Some(AiState::Dock { .. }) => dock::dock_update(sm, h, id),
+            Some(AiState::DockMove { which, .. }) => {
+                let which = *which;
+                dock::dock_move_update(sm, h, id, which)
+            }
+            Some(AiState::DockWait { .. }) => dock::wait_update(sm, h, id),
+            Some(AiState::DockProcess { .. }) => dock::process_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1154,6 +1214,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::Enter { mv, entry_to_clear } => enter_state::enter_xfer(mv, entry_to_clear, xfer)?,
             AiState::Rappel(d) => rappel::rappel_xfer(d, xfer)?,
             AiState::AttackSquad { kinds, machine } => hunt_states::squad_xfer(*kinds, machine, xfer)?,
+            AiState::Dock { machine, approach_position, using_precision_movement } => {
+                dock::dock_xfer(machine, approach_position, using_precision_movement, xfer)?
+            }
+            AiState::DockMove { which, mv } => dock::dock_move_xfer(*which, mv, xfer)?,
+            AiState::DockWait { enter_frame } => dock::wait_xfer(enter_frame, xfer)?,
             AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

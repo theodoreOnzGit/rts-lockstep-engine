@@ -1020,6 +1020,13 @@ pub struct AiEnv {
     // batch A16
     pub difficulty: c_int,
     pub choose_normal: c_int,
+    // batch A17
+    pub dock_mask: c_uint,
+    pub dock_flags: c_int,
+    pub dock_pos: [c_float; 3],
+    pub dock_index: c_int,
+    pub drone_mask: c_uint,
+    pub dock_rate: c_uint,
 }
 
 extern "C" {

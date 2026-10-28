@@ -86,7 +86,7 @@ use rts_lockstep_engine::common::kind_of::{
     KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
     KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED, KINDOF_BRIDGE, KINDOF_PORTABLE_STRUCTURE, KINDOF_CAN_ATTACK,
     KINDOF_MINE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_AIRCRAFT, KINDOF_DONT_AUTO_CRUSH_INFANTRY,
-    KINDOF_CAN_RAPPEL,
+    KINDOF_CAN_RAPPEL, KINDOF_DRONE,
 };
 use rts_lockstep_engine::common::game_common::Relationship;
 use rts_lockstep_engine::common::game_type::WeaponSlotType;
@@ -196,6 +196,8 @@ const L_SKIRMISH: u32 = 102;
 const L_ATTACK: u32 = 103;
 /// Batch A15: the rappel state's calls (`LOG_RAPPEL`).
 const L_RAPPEL: u32 = 104;
+/// Batch A17: the dock's calls (`LOG_DOCK`).
+const L_DOCK: u32 = 105;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -420,6 +422,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_AIRCRAFT && m & 16384 != 0)
             || (kind == KINDOF_DONT_AUTO_CRUSH_INFANTRY && m & 32768 != 0)
             || (kind == KINDOF_CAN_RAPPEL && m & 65536 != 0)
+            || (kind == KINDOF_DRONE && m & 131072 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -765,6 +768,10 @@ impl StateContext for Host {
 }
 
 impl Host {
+    /// Batch A17: the dock's answers (`dockAnswer`).
+    fn dock_answer(&self, kind: u32, words: &[u32]) -> bool {
+        pick(p1_hash(self.env.seed, 80 + kind, words), self.env.dock_rate)
+    }
     /// `TheAudio->addAudioEvent(event)`: logged with the sound, its object and the new handle.
     fn audio_add(&mut self, k: u32) -> u32 {
         let h = self.next_audio;
@@ -1468,6 +1475,66 @@ impl AiStateHost for Host {
         self.l(L_CLOSEST_OBJECT, &[u32::MAX, me, 1_000_000.0f32.to_bits(), 0, ans as u32]); // (FROM_CENTER_2D)
         ans
     }
+    // ---- batch A17
+    fn object_has_dock(&mut self, id: ObjectId) -> bool {
+        (1..32).contains(&id) && (self.env.dock_mask >> id) & 1 != 0
+    }
+    fn dock_is_open(&mut self, _dock: ObjectId) -> bool {
+        self.env.dock_flags & 1 != 0
+    }
+    fn dock_cancel(&mut self, _dock: ObjectId) {
+        self.l(L_DOCK, &[0]);
+    }
+    fn dock_reserve_approach(&mut self, _dock: ObjectId, advance: bool) -> Option<(Coord3D, i32)> {
+        let kind = if advance { 2 } else { 1 };
+        let r = self.dock_answer(kind, &[self.env.loco.frame]);
+        self.l(L_DOCK, &[kind, u32::from(r)]);
+        let p = self.env.dock_pos;
+        r.then_some((Coord3D { x: p[0], y: p[1], z: p[2] }, self.env.dock_index))
+    }
+    fn dock_is_clear_to_enter(&mut self, _dock: ObjectId) -> bool {
+        let r = self.dock_answer(3, &[self.env.loco.frame]);
+        self.l(L_DOCK, &[3, u32::from(r)]);
+        r
+    }
+    fn dock_is_clear_to_advance(&mut self, _dock: ObjectId, index: i32) -> bool {
+        let r = self.dock_answer(4, &[self.env.loco.frame, index as u32]);
+        self.l(L_DOCK, &[4, index as u32, u32::from(r)]);
+        r
+    }
+    fn dock_is_allow_passthrough(&mut self, _dock: ObjectId) -> bool {
+        self.env.dock_flags & 2 != 0
+    }
+    fn dock_is_rally_point_after_dock(&mut self, _dock: ObjectId) -> bool {
+        self.env.dock_flags & 4 != 0
+    }
+    fn dock_position(&mut self, _dock: ObjectId, which: u32) -> Coord3D {
+        let kind = 5 + which;
+        self.l(L_DOCK, &[kind]);
+        let p = self.env.dock_pos;
+        Coord3D { x: p[0] + 10.0 * (kind - 4) as f32, y: p[1], z: p[2] }
+    }
+    fn dock_reached(&mut self, _dock: ObjectId, which: u32) {
+        self.l(L_DOCK, &[8 + which]);
+    }
+    fn dock_action(&mut self, _dock: ObjectId, drone: ObjectId) -> bool {
+        let r = self.dock_answer(12, &[self.env.loco.frame, drone as u32]);
+        self.l(L_DOCK, &[12, drone as u32, u32::from(r)]);
+        r
+    }
+    fn object_rally_point(&mut self, _id: ObjectId) -> Option<Coord3D> {
+        let (f, p) = (self.env.dock_flags, self.env.dock_pos);
+        (f & 8 != 0 && f & 16 != 0).then_some(Coord3D { x: p[0] - 15.0, y: p[1] + 5.0, z: p[2] })
+    }
+    fn supply_truck_action_delay(&mut self, _dock: ObjectId) -> Option<u32> {
+        None // (no supply truck here)
+    }
+    fn player_object_ids(&mut self) -> Vec<ObjectId> {
+        (1..32).filter(|&i| self.object_exists(i)).collect()
+    }
+    fn object_producer_id(&mut self, id: ObjectId) -> ObjectId {
+        if (1..32).contains(&id) && (self.env.drone_mask >> id) & 1 != 0 { self.env.object_id } else { 0 }
+    }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
         self.l(L_ATTACK, &[16, info as u32, obj as u32, r]);
@@ -2026,6 +2093,31 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 _ => panic!("an attack-follow-waypoint state"),
             }
         }
+        // batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members)
+        match sm.state(14) {
+            Some(AiState::Dock { machine, approach_position, using_precision_movement }) => {
+                v.extend([u32::from(machine.is_some()), u32::from(*using_precision_movement)]);
+                if let Some(m) = machine {
+                    v.extend([m.get_current_state_id(), m.goal_object_id() as u32, m.peek_sleep_till(), u32::from(m.is_locked())]);
+                    v.push(*approach_position as u32);
+                    for id in [0u32, 2, 3, 4, 6, 7] {
+                        match m.state(id) {
+                            Some(AiState::DockMove { mv, .. }) => put_move(&mut v, mv),
+                            _ => panic!("a dock move state"),
+                        }
+                    }
+                    match m.state(1) {
+                        Some(AiState::DockWait { enter_frame }) => v.push(*enter_frame),
+                        _ => panic!("the dock wait state"),
+                    }
+                    match m.state(5) {
+                        Some(AiState::DockProcess { next_action_frame, drone_id }) => v.extend([*next_action_frame, *drone_id as u32]),
+                        _ => panic!("the dock process state"),
+                    }
+                }
+            }
+            _ => panic!("the dock state"),
+        }
         // batch A16: the attack-squad state's machine (state, goal, its attack state's machine)
         match sm.state(20) {
             Some(AiState::AttackSquad { machine, .. }) => {
@@ -2173,6 +2265,8 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.horde = g.below(512) as i32;
     e.exist_mask = g.u32() & !1;
     e.ai_mask = g.u32();
+    // batch A17: the other objects with a dock (fixed for the case: the move-to-dock state asks its goal's dock unchecked)
+    e.dock_mask = g.u32();
     e.has_machine = i32::from(g.below(10) != 0);
     e.turrets = g.below(4) as i32;
     // (batch A10b: a quarter of the scenes have the main turret, for the pursuit)
@@ -2252,6 +2346,12 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.loco.kind_mask |= i32::from(g.below(2) == 0) << 16; // (KINDOF_CAN_RAPPEL)
     e.difficulty = g.below(3) as i32;
     e.choose_normal = i32::from(g.below(4) == 0);
+    e.dock_flags = (g.below(32) as i32) | i32::from(g.below(4) != 0); // (open three times in four)
+    e.dock_pos = [g.uniform(20.0, 200.0), g.uniform(20.0, 120.0), g.uniform(0.0, 10.0)];
+    e.dock_index = g.below(4) as i32 - 1;
+    e.drone_mask = if g.below(2) == 0 { 0 } else { g.u32() };
+    e.dock_rate = [10, 50, 90][g.below(3) as usize];
+    e.loco.kind_mask |= i32::from(g.below(4) == 0) << 17; // (KINDOF_DRONE)
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -2511,7 +2611,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20][g.below(53) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14][g.below(55) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2544,7 +2644,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13][g.below(45) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24][g.below(48) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -2960,7 +3060,7 @@ struct Checks {
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
     a4_logs: [u64; 34],
-    a4_states: [u64; 27],
+    a4_states: [u64; 28],
     temporary_states: u64,
     /// Batch A9: cases ended before an operation upstream would make undefined (a waypoint state without a locomotor).
     a9_undefined: u64,
@@ -2997,7 +3097,7 @@ impl Checks {
             victims: 0,
             enter_targets: 0,
             a4_logs: [0; 34],
-            a4_states: [0; 27],
+            a4_states: [0; 28],
             temporary_states: 0,
             a9_undefined: 0,
             attack_inner: [0; 4],
@@ -3293,6 +3393,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 15 => 24,
                 35 => 25,
                 20 => 26,
+                14 => 27,
                 _ => 4,
             }] += 1;
         }
@@ -3359,6 +3460,9 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
             || (matches!(state, 17 | 28) && (in_machine(state) || e.player_type < 0))
             // batch A16: the attack-squad state likewise (its exit deletes the one machine; it reads the player unchecked)
             || (state == 20 && (in_machine(state) || e.player_type < 0))
+            // batch A17: the dock state already the machine's state or its temporary state (the other's exit deletes the one
+            // machine, which the update dereferences)
+            || (state == 14 && in_machine(state))
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
@@ -3381,6 +3485,7 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 23 => 15,
                 37 => 35,
                 13 => 20,
+                24 => 14,
                 _ => -1,
             };
             if unsafe_entry(state, ia[4] >= 0) {
@@ -3657,7 +3762,7 @@ fn ai_update_a2_matches_upstream() {
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
-         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad {:?}; A9 cases ended undefined {}; attack machine \
+         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock {:?}; A9 cases ended undefined {}; attack machine \
          chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.follow_inner, ck.temporary_states, ck.loads
