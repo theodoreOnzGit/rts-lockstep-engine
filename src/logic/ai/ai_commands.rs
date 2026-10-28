@@ -390,6 +390,21 @@ pub fn ai_attack_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos
     ai_do_command(sm, h, &parms)
 }
 
+/// `aiAttackFollowWaypointPath(way, maxShotsToFire, cmdSource)`, or `aiAttackFollowWaypointPathAsTeam` (`as_team`).
+pub fn ai_attack_follow_waypoint_path<H: AiStateHost>(
+    sm: &mut Sm<H>,
+    h: &mut H,
+    way: Option<u32>,
+    max_shots: i32,
+    as_team: bool,
+    src: CommandSourceType,
+) -> SmResult<()> {
+    let mut parms = AiCommandParms::new(if as_team { AICMD_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM } else { AICMD_ATTACKFOLLOW_WAYPOINT_PATH }, src);
+    parms.waypoint = way;
+    parms.int_value = max_shots;
+    ai_do_command(sm, h, &parms)
+}
+
 /// `aiEvacuate(exposeStealthUnits, cmdSource)`.
 pub fn ai_evacuate<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, expose_stealth_units: i32, src: CommandSourceType) -> SmResult<()> {
     let mut parms = AiCommandParms::new(AICMD_EVACUATE, src);

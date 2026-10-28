@@ -48,6 +48,10 @@
 ** Batch A8 adds the follow-path, move-and-evacuate and move-and-delete states (ai_states_a8.inc), AIUpdate.h's goal-path inlines,
 ** and logged stand-ins of the team's setActive and TheGameLogic->destroyObject.
 **
+** Batch A9 adds the waypoint, wander and panic states (ai_states_a9.inc, from `#define ALLOW_BACKTRACK`), AIUpdate.h's waypoint-id
+** setters, and stand-ins of the waypoints' second link, ids and lookup by id, the team's current waypoint (logged when set), the
+** groups' centres (the team's near the object), the skirmish player, the pathfinder's wall test (and its height from the scene).
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +126,12 @@ public:
 	const Coord3D *getLocation( void ) const;
 	Waypoint *getLink(Int ndx) const;
 	Coord3D m_location;
+	/* batch A9: a first link, then a second to (i+5)%8 when the scene says so; the id is the index */
+	Int getNumLinks(void) const;
+	UnsignedInt getID(void) const { return (UnsignedInt)m_index; }
 };
+/* TerrainLogic.h's */
+enum { INVALID_WAYPOINT_ID = 0x7FFFFFFF };
 /* batch A5: AI.h's AICommandParms and AICommandInterface, verbatim */
 #include "ai_commands_decl.inc"
 
@@ -211,6 +220,10 @@ public:
 	/* batch A8: AIUpdate.h's inlines, verbatim */
 	inline const Coord3D* friend_getGoalPathPosition( Int index ) const { return getStateMachine()->getGoalPathPosition( index ); }
 	inline void friend_setCurrentGoalPathIndex( Int index ) { m_nextGoalPathIndex = index; }
+	/* batch A9: AIUpdate.h's inlines, verbatim */
+	void setPriorWaypointID( UnsignedInt id )   { m_priorWaypointID = id; };
+	void setCurrentWaypointID( UnsignedInt id ) { m_currentWaypointID = id; };
+	void setCompletedWaypoint(const Waypoint *pWay) {m_completedWaypoint = pWay;}
 	void friend_endingMove();
 	void friend_setPath(Path *path);
 	Bool isValidLocomotorPosition(const Coord3D* pos) const;
@@ -351,6 +364,7 @@ public:
 #include "ai_states_a4.inc"
 #include "ai_states_a7.inc"
 #include "ai_states_a8.inc"
+#include "ai_states_a9.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 
@@ -753,6 +767,7 @@ const AiData *AI::getAiData()
 	g_aiData.m_attackUsesLineOfSight = g_aiEnv.attackUsesLOS != 0;
 	g_aiData.m_attackIgnoreInsignificantBuildings = g_aiEnv.ignoreInsignificant != 0;
 	g_aiData.m_repulsedDistance = g_aiEnv.repulsedDistance;
+	g_aiData.m_skirmishGroupFudgeValue = g_aiEnv.skirmishFudge;
 	return &g_aiData;
 }
 Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToConsider)
@@ -982,8 +997,39 @@ const Coord3D *Waypoint::getLocation( void ) const { return &m_location; }
 Waypoint *Waypoint::getLink(Int ndx) const
 {
 	if (ndx == 0 && m_index < 7 && ((g_aiEnv.waypointLinks >> m_index) & 1)) return &g_waypoints[m_index + 1];
+	if (ndx == 1 && getNumLinks() == 2) return &g_waypoints[(m_index + 5) % 8];
 	return NULL;
 }
+/* ---- batch A9's stand-ins (the waypoint states) */
+Int Waypoint::getNumLinks(void) const
+{
+	if (!(m_index < 7 && ((g_aiEnv.waypointLinks >> m_index) & 1))) return 0;
+	return 1 + (Int)((g_aiEnv.waypointLinks2 >> m_index) & 1);
+}
+Waypoint *TerrainLogic::getWaypointByID(UnsignedInt id) { return id < 8 ? &g_waypoints[id] : NULL; }
+const Waypoint *g_teamWaypoint = NULL;
+void Team::setCurrentWaypoint(const Waypoint *way)
+{
+	L(LOG_TEAM_WAYPOINT, { way ? (unsigned)way->m_index : 0xffffffffu });
+	g_teamWaypoint = way;
+}
+const Waypoint *Team::getCurrentWaypoint() { return g_teamWaypoint; }
+AIGroup g_teamGroup;
+AIGroup *AI::createGroup(void) { g_teamGroup.m_team = 1; return &g_teamGroup; }
+void Team::getTeamAsAIGroup(AIGroup *group) { L(LOG_TEAM_GROUP, {}); }
+void AIGroup::getCenter(Coord3D *center)
+{
+	/* the team's: the object's position moved by the scene's offset (so that the skirmish bail-out's distance is near its limit) */
+	if (m_team) {
+		const Coord3D *p = g_object.getPosition();
+		center->x = p->x + g_aiEnv.teamCenter[0]; center->y = p->y + g_aiEnv.teamCenter[1]; center->z = p->z + g_aiEnv.teamCenter[2];
+	} else {
+		center->x = g_aiEnv.groupCenter[0]; center->y = g_aiEnv.groupCenter[1]; center->z = g_aiEnv.groupCenter[2];
+	}
+	L(LOG_GROUP_CENTER, { (unsigned)m_team, bitsOf(center->x), bitsOf(center->y), bitsOf(center->z) });
+}
+Int AIGroup::getCount(void) { return m_team ? g_aiEnv.teamCount : 0; }
+Bool Player::isSkirmishAIPlayer(void) { L(LOG_SKIRMISH, { (unsigned)g_aiEnv.skirmish }); return g_aiEnv.skirmish != 0; }
 void TerrainLogic::getMaximumPathfindExtent(Region3D *r) const
 {
 	r->lo.x = 0.0f; r->lo.y = 0.0f; r->lo.z = 0.0f;
@@ -1095,6 +1141,8 @@ void Pathfinder::snapClosestGoalPosition(Object *obj, Coord3D *pos)
 	if (pfAnswer(5, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) })) pos->x += 1.0f;
 }
 void Pathfinder::removeGoal(Object *obj) { pfAnswer(6, {}); }
+/* batch A9 */
+Bool Pathfinder::isPointOnWall(const Coord3D *pos) { return pfAnswer(7, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
 void Pathfinder::moveAlliesAwayFromDestination(Object *obj, const Coord3D& destination)
 {
 	pfAnswer(0, { bitsOf(destination.x), bitsOf(destination.y), bitsOf(destination.z) });
@@ -1217,6 +1265,8 @@ void setScene(const AiEnv *env)
 {
 	g_aiEnv = *env;
 	TheGlobalData->m_gravity = env->gravity;
+	/* batch A9 */
+	TheAI->pathfinder()->m_wallHeight = env->wallHeight;
 	TheGlobalData->m_movementPenaltyDamageState = env->penalty;
 	/* batch A5 */
 	TheGlobalData->m_partitionCellSize = env->partitionCellSize;
@@ -1373,6 +1423,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	makeMap();
 	g_nextCallFrame = 0;
 	g_nextAudioHandle = 1;
+	/* batch A9 */
+	g_teamWaypoint = env->teamWaypoint >= 0 ? &g_waypoints[env->teamWaypoint] : NULL;
 	g_data = new AIUpdateModuleData;
 	unsigned k = 0, count = sets[k++];
 	for (unsigned s = 0; s < count; ++s) {
@@ -1731,6 +1783,52 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 				putPos(v, ((const AIMoveAndEvacuateState *)m)->m_origin);
 			} else {
 				putU32(v, ((const AIMoveAndDeleteState *)m)->m_appendGoalPosition ? 1u : 0u);
+			}
+		}
+		/* batch A9: the team's waypoint; the waypoint, wander and panic states' members */
+		putU32(v, g_teamWaypoint ? (unsigned)g_teamWaypoint->m_index : 0xffffffffu);
+		putU32(v, ai->m_completedWaypoint ? (unsigned)ai->m_completedWaypoint->m_index : 0xffffffffu);
+		const StateID moves9[7] = { AI_FOLLOW_WAYPOINT_PATH_AS_TEAM, AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS,
+			AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT, AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT, AI_WANDER, AI_PANIC, AI_WANDER_IN_PLACE };
+		for (int i = 0; i < 7; ++i) {
+			const AIInternalMoveToState *m = (const AIInternalMoveToState *)sm->m_stateMap.find(moves9[i])->second;
+			putPos(v, m->m_goalPosition);
+			putU32(v, (unsigned)m->m_goalLayer);
+			putPos(v, m->m_pathGoalPosition);
+			putU32(v, (unsigned)m->m_ambientPlayingHandle);
+			putU32(v, m->m_pathTimestamp);
+			putU32(v, m->m_blockedRepathTimestamp);
+			putU32(v, m->m_adjustDestinations ? 1u : 0u);
+			putU32(v, m->m_waitingForPath ? 1u : 0u);
+			putU32(v, m->m_tryOneMoreRepath ? 1u : 0u);
+			if (i == 2 || i == 3) {
+				const AIFollowWaypointPathExactState *x = (const AIFollowWaypointPathExactState *)m;
+				putU32(v, x->m_lastWaypoint ? (unsigned)x->m_lastWaypoint->m_index : 0xffffffffu);
+				putU32(v, x->m_moveAsGroup ? 1u : 0u);
+			} else if (i == 6) {
+				const AIWanderInPlaceState *w = (const AIWanderInPlaceState *)m;
+				putPos(v, w->m_origin);
+				putU32(v, (unsigned)w->m_waitFrames);
+				putU32(v, (unsigned)w->m_timer);
+			} else {
+				const AIFollowWaypointPathState *f = (const AIFollowWaypointPathState *)m;
+				putU32(v, bitsOf(f->m_groupOffset.x));
+				putU32(v, bitsOf(f->m_groupOffset.y));
+				putU32(v, bitsOf(f->m_angle));
+				putU32(v, (unsigned)f->m_framesSleeping);
+				putU32(v, f->m_currentWaypoint ? (unsigned)f->m_currentWaypoint->m_index : 0xffffffffu);
+				putU32(v, f->m_priorWaypoint ? (unsigned)f->m_priorWaypoint->m_index : 0xffffffffu);
+				putU32(v, f->m_appendGoalPosition ? 1u : 0u);
+				if (i == 4) {
+					putU32(v, (unsigned)((const AIWanderState *)f)->m_waitFrames);
+					putU32(v, (unsigned)((const AIWanderState *)f)->m_timer);
+				} else if (i == 5) {
+					putU32(v, (unsigned)((const AIPanicState *)f)->m_waitFrames);
+					putU32(v, (unsigned)((const AIPanicState *)f)->m_timer);
+				} else {
+					putU32(v, f->m_moveAsGroup ? 1u : 0u);
+					putU32(v, f->m_isFollowWaypointPathState ? 1u : 0u);
+				}
 			}
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

@@ -168,7 +168,12 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::MoveAwayFromRepulsors { mv, .. })
         | Some(AiState::FollowPath { mv, .. })
         | Some(AiState::MoveAndEvacuate { mv, .. })
-        | Some(AiState::MoveAndDelete { mv, .. }) => mv,
+        | Some(AiState::MoveAndDelete { mv, .. })
+        | Some(AiState::FollowWaypointPath { mv, .. })
+        | Some(AiState::FollowWaypointPathExact { mv, .. })
+        | Some(AiState::Wander { mv, .. })
+        | Some(AiState::WanderInPlace { mv, .. })
+        | Some(AiState::Panic { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -200,7 +205,7 @@ pub fn is_same_position(our_pos: &Coord3D, prev_target_pos: &Coord3D, cur_target
 }
 
 /// `getAdjustsDestination()`: not while parachuting, not if the AI forbids it (the base class allows it).
-fn get_adjusts_destination<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
+pub(crate) fn get_adjusts_destination<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
     if h.status_test(OBJECT_STATUS_PARACHUTING) {
         return false;
     }
@@ -209,7 +214,7 @@ fn get_adjusts_destination<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateI
 }
 
 /// The virtual `computePath()`: the base's (request a path to the goal), or the subclass's.
-fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
+pub(crate) fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> bool {
     match sm.state(id) {
         Some(AiState::MoveOutOfTheWay { .. }) => {
             mv(sm, id).waiting_for_path = true;
@@ -275,7 +280,7 @@ fn cell_under<H: AiStateHost>(h: &mut H) -> Option<(u8, bool)> {
 }
 
 /// `AIInternalMoveToState::onEnter()`: "We are initiating a moveTo action. Pathfind from m_goalPosition to goal."
-fn internal_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+pub(crate) fn internal_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     mv(sm, id).ambient_playing_handle = AHSV_ERROR;
     let waiting = ai(h).waiting_for_path;
     mv(sm, id).waiting_for_path = waiting;
@@ -328,7 +333,7 @@ fn internal_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 
 /// `AIInternalMoveToState::onExit(status)`: the move sound stopped, the move ended; accurate ground movement ends exactly at
 /// the goal when within a cell.
-fn internal_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
+pub(crate) fn internal_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
     // "stop ambient sound associated with movement"
     let handle = mv(sm, id).ambient_playing_handle;
     h.remove_audio_event(handle);
@@ -346,7 +351,7 @@ fn internal_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
 }
 
 /// `AIInternalMoveToState::update()`: "Execute the moveTo behavior towards GoalPosition."
-fn internal_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+pub(crate) fn internal_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let have_path = ai(h).path.is_some();
     if mv(sm, id).waiting_for_path {
         // "bump the timer."

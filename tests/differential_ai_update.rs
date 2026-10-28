@@ -103,6 +103,7 @@ use rts_lockstep_engine::differential::AiEnv as Env;
 use rts_lockstep_engine::logic::ai::ai_commands::AiCommandParms;
 use rts_lockstep_engine::logic::ai::ai_paths;
 use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule};
+use rts_lockstep_engine::logic::ai::ai_waypoint_states::WaypointPathData;
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiUpdate, LocoGoalType};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
@@ -182,9 +183,16 @@ const L_AUDIO_ADD: u32 = 95;
 const L_AUDIO_REMOVE: u32 = 96;
 const L_TEAM_ACTIVE: u32 = 97;
 const L_DESTROY_OBJECT: u32 = 98;
+const L_TEAM_WAYPOINT: u32 = 99;
+const L_GROUP_CENTER: u32 = 100;
+const L_TEAM_GROUP: u32 = 101;
+const L_SKIRMISH: u32 = 102;
 
-/// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
-const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
+/// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
+/// do not load each other's saves.
+fn xfer_file_path() -> String {
+    format!("{}/ai_a4_{}.bin", env!("CARGO_TARGET_TMPDIR"), std::process::id())
+}
 
 /// The map of `wrap_ai.cpp` (`MAP_W` x `MAP_H` cells from the origin).
 const MAP_W: i32 = 24;
@@ -288,6 +296,8 @@ struct Host {
     pf_ignore: ObjectId,
     /// Batch A7: TheAudio's next handle (from 1 in each case).
     next_audio: u32,
+    /// Batch A9: the team's current waypoint.
+    team_waypoint: Option<u32>,
 }
 
 impl Host {
@@ -1005,7 +1015,7 @@ impl AiStateHost for Host {
         Coord3D { x: 15.0 * way as f32, y: 25.0 * way as f32, z: 1.0 }
     }
     fn waypoint_link0(&mut self, way: u32) -> Option<u32> {
-        (way < 7 && (self.env.waypoint_links >> way) & 1 != 0).then_some(way + 1)
+        self.waypoint_link(way, 0)
     }
     fn pf_get_aircraft_path(&mut self, d: &Coord3D) -> Option<Path> {
         self.standin_path(5, d, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()])
@@ -1129,6 +1139,55 @@ impl AiStateHost for Host {
     fn remove_audio_event(&mut self, handle: u32) {
         self.l(L_AUDIO_REMOVE, &[handle]);
     }
+    // ---- batch A9
+    fn waypoint_num_links(&mut self, way: u32) -> i32 {
+        if !(way < 7 && (self.env.waypoint_links >> way) & 1 != 0) {
+            return 0;
+        }
+        1 + ((self.env.waypoint_links2 >> way) & 1) as i32
+    }
+    fn waypoint_link(&mut self, way: u32, which: i32) -> Option<u32> {
+        match which {
+            0 => (way < 7 && (self.env.waypoint_links >> way) & 1 != 0).then_some(way + 1),
+            1 => (self.waypoint_num_links(way) == 2).then_some((way + 5) % 8),
+            _ => None,
+        }
+    }
+    fn pf_is_point_on_wall(&mut self, p: &Coord3D) -> bool {
+        self.pf_answer(7, &[p.x.to_bits(), p.y.to_bits(), p.z.to_bits()])
+    }
+    fn pf_wall_height(&self) -> f32 {
+        self.env.wall_height
+    }
+    fn group_center(&mut self) -> Coord3D {
+        let c = self.env.group_center;
+        self.l(L_GROUP_CENTER, &[0, c[0].to_bits(), c[1].to_bits(), c[2].to_bits()]);
+        Coord3D { x: c[0], y: c[1], z: c[2] }
+    }
+    fn team_current_waypoint(&mut self) -> Option<u32> {
+        self.team_waypoint
+    }
+    fn team_set_current_waypoint(&mut self, way: Option<u32>) {
+        self.l(L_TEAM_WAYPOINT, &[way.unwrap_or(u32::MAX)]);
+        self.team_waypoint = way;
+    }
+    fn is_skirmish_ai_player(&mut self) -> bool {
+        assert!(self.env.player_type >= 0, "upstream reads the controlling player unchecked");
+        let s = self.env.skirmish;
+        self.l(L_SKIRMISH, &[s as u32]);
+        s != 0
+    }
+    fn team_group_center_and_count(&mut self) -> (Coord3D, i32) {
+        self.l(L_TEAM_GROUP, &[]);
+        // the object's position moved by the scene's offset (wrap_ai.cpp's)
+        let (p, o) = (*self.thing.position(), self.env.team_center);
+        let c = Coord3D { x: p.x + o[0], y: p.y + o[1], z: p.z + o[2] };
+        self.l(L_GROUP_CENTER, &[1, c.x.to_bits(), c.y.to_bits(), c.z.to_bits()]);
+        (c, self.env.team_count)
+    }
+    fn ai_data_skirmish_group_fudge_value(&self) -> f32 {
+        self.env.skirmish_fudge
+    }
     // ---- batch A8
     fn team_set_active(&mut self) {
         self.l(L_TEAM_ACTIVE, &[]);
@@ -1245,6 +1304,7 @@ fn gen_template(g: &mut Gen, name: &str, appearance: usize) -> String {
     if g.below(3) == 0 {
         put("WanderWidthFactor", format!("{:.3}", g.uniform(0.0, 2.0)));
         put("WanderLengthFactor", format!("{:.3}", g.uniform(0.3, 3.0)));
+        put("WanderAboutPointRadius", format!("{:.3}", g.uniform(0.0, 60.0)));
     }
     if g.below(3) == 0 {
         put("CloseEnoughDist", format!("{:.3}", g.uniform(0.0, 12.0)));
@@ -1453,6 +1513,38 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 _ => panic!("an A8 move state"),
             }
         }
+        // batch A9: the team's waypoint; the waypoint, wander and panic states' members
+        v.push(h.team_waypoint.unwrap_or(u32::MAX));
+        v.push(module.ai().completed_waypoint.unwrap_or(u32::MAX));
+        let way = |w: &Option<u32>| w.unwrap_or(u32::MAX);
+        let put_wp = |v: &mut Vec<u32>, wp: &WaypointPathData| {
+            v.extend([wp.group_offset.x.to_bits(), wp.group_offset.y.to_bits(), wp.angle.to_bits(), wp.frames_sleeping as u32]);
+            v.extend([way(&wp.current), way(&wp.prior), u32::from(wp.append_goal_position)]);
+        };
+        for id in [2u32, 3, 4, 5, 18, 19, 40] {
+            match sm.state(id) {
+                Some(AiState::FollowWaypointPath { mv, wp, as_group, is_follow }) => {
+                    put_move(&mut v, mv);
+                    put_wp(&mut v, wp);
+                    v.extend([u32::from(*as_group), u32::from(*is_follow)]);
+                }
+                Some(AiState::FollowWaypointPathExact { mv, last, as_group }) => {
+                    put_move(&mut v, mv);
+                    v.extend([way(last), u32::from(*as_group)]);
+                }
+                Some(AiState::Wander { mv, wp, wait_frames, timer }) | Some(AiState::Panic { mv, wp, wait_frames, timer }) => {
+                    put_move(&mut v, mv);
+                    put_wp(&mut v, wp);
+                    v.extend([*wait_frames as u32, *timer as u32]);
+                }
+                Some(AiState::WanderInPlace { mv, origin, wait_frames, timer }) => {
+                    put_move(&mut v, mv);
+                    put_pos(&mut v, origin);
+                    v.extend([*wait_frames as u32, *timer as u32]);
+                }
+                _ => panic!("an A9 state"),
+            }
+        }
         match sm.state(states_ai_idle()) {
             Some(AiState::Idle { initial_sleep_offset, should_look_for_targets, inited }) => {
                 v.extend([u32::from(*initial_sleep_offset), u32::from(*should_look_for_targets), u32::from(*inited)]);
@@ -1588,7 +1680,22 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.formation_id = if g.below(3) == 0 { 1 + g.below(3) as i32 } else { 0 };
     e.group_speed = g.uniform(0.5, 6.0);
     e.max_height_above_position = g.uniform(0.0, 30.0);
+    // batch A9
+    e.waypoint_links2 = g.u32();
+    e.team_waypoint = g.below(9) as i32 - 1;
+    gen_a9(g, &mut e);
     e
+}
+
+/// Batch A9's answers that change between operations: the wall's height, the groups' centres, the skirmish player and its fudge.
+fn gen_a9(g: &mut Gen, e: &mut Env) {
+    e.wall_height = g.uniform(0.0, 40.0);
+    e.group_center = gen_point(g);
+    e.skirmish = i32::from(g.below(2) == 0);
+    // (an offset from the object's position, so that the skirmish bail-out's distance is near its limit)
+    e.team_center = [g.uniform(-15.0, 15.0), g.uniform(-15.0, 15.0), g.uniform(-30.0, 30.0)];
+    e.team_count = g.below(7) as i32;
+    e.skirmish_fudge = g.uniform(0.0, 10.0);
 }
 
 /// Batch A6's rates (the searches, the pathfinder's answers, the weapon's ranges).
@@ -1671,6 +1778,10 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     }
     if g.below(12) == 0 {
         e.player_type = [-1, 0, 1, 1][g.below(4) as usize];
+    }
+    // batch A9
+    if g.below(8) == 0 {
+        gen_a9(g, e);
     }
 }
 
@@ -1821,7 +1932,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27][g.below(17) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18][g.below(26) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -1853,7 +1964,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25][g.below(16) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44][g.below(23) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -2255,9 +2366,11 @@ struct Checks {
     /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
-    a4_logs: [u64; 29],
-    a4_states: [u64; 12],
+    a4_logs: [u64; 33],
+    a4_states: [u64; 17],
     temporary_states: u64,
+    /// Batch A9: cases ended before an operation upstream would make undefined (a waypoint state without a locomotor).
+    a9_undefined: u64,
     loads: u64,
 }
 
@@ -2281,9 +2394,10 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
-            a4_logs: [0; 29],
-            a4_states: [0; 12],
+            a4_logs: [0; 33],
+            a4_states: [0; 17],
             temporary_states: 0,
+            a9_undefined: 0,
             loads: 0,
         }
     }
@@ -2313,14 +2427,16 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_stack: Vec::new(),
         pf_ignore: 0,
         next_audio: 1,
+        team_waypoint: None,
     };
+    host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
     host.names.reset();
     // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
     for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate"] {
         host.names.name_to_key(name.as_bytes());
     }
     unsafe { cpp::ref_ai_a2_reset() };
-    let xfer_path = cstr(XFER_FILE_PATH);
+    let xfer_path = cstr(&xfer_file_path());
     unsafe { cpp::ref_ai_a4_xfer_path(xfer_path.as_ptr()) };
     let mut saved: Vec<u8> = Vec::new();
     let mut has_saved = false;
@@ -2414,8 +2530,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let waypoint_heavy = g.below(8) == 0;
     for step in 0..60 {
         perturb(&mut g, &mut host.env);
+        // batch A9: an as-team waypoint state reads the controlling player unchecked (kept while one is in the machine)
+        if a9_states(&module).1 && host.env.player_type < 0 {
+            host.env.player_type = 0;
+        }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
-        let (op, mut fa, ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
+        let (mut op, mut fa, mut ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
+        a9_guard(&module, &host.env, &mut op, &mut ia);
+        if std::env::var("AI_A2_TRACE").is_ok() {
+            let cur = module.machine.as_ref().map(|sm| sm.get_current_state_id());
+            println!("TRACE step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?}", &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint);
+        }
         has_saved |= op == 70;
         if op == 27 && fa[0] == -1.0e30 {
             let p = *host.thing.position();
@@ -2472,7 +2597,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut k = 0;
         while k + 1 < host_log_copy.len() {
             let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
-            if (70..=98).contains(&code) {
+            if (70..=102).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
@@ -2490,6 +2615,11 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 6 | 7 => 9,
                 25 | 26 => 10,
                 27 => 11,
+                2 | 3 => 12,
+                4 | 5 => 13,
+                18 => 14,
+                40 => 15,
+                19 => 16,
                 _ => 4,
             }] += 1;
         }
@@ -2508,8 +2638,55 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             ck.ended_early += 1;
             return false;
         }
+        // batch A9: a waypoint state with no locomotor would dereference it (upstream undefined): the case ends here
+        if a9_states(&module).0 && module.ai().cur_locomotor.is_none() {
+            ck.a9_undefined += 1;
+            return true;
+        }
     }
     true
+}
+
+/// Batch A9: whether the machine (its state or its temporary state) is in a state that dereferences the locomotor unchecked (the
+/// waypoint-path, exact, wander and panic states), and whether in the as-team waypoint-path state (the controlling player too).
+fn a9_states(module: &AiUpdateModule<Host>) -> (bool, bool) {
+    let Some(sm) = &module.machine else { return (false, false) };
+    let ids = [sm.get_current_state_id(), module.ai().machine.temporary_state];
+    (ids.iter().any(|id| matches!(id, 2..=5 | 18 | 19)), ids.contains(&2))
+}
+
+/// Batch A9: what would enter those states where upstream dereferences what is not there (no locomotor; for the as-team state no
+/// goal waypoint or no controlling player; the state already the machine's state or its temporary state, whose one instance the
+/// other's end would leave without a current waypoint) is the idle state (`setState`, `setTemporaryState`) or command 0 instead;
+/// in them, `chooseLocomotorSetExplicit` (which leaves no locomotor) is the ultra-accurate setter instead.
+fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]) {
+    let no_loco = module.ai().cur_locomotor.is_none();
+    let in_machine = |state: i32| {
+        let cur = module.machine.as_ref().map(|sm| sm.get_current_state_id());
+        cur == Some(state as u32) || module.ai().machine.temporary_state == state as u32
+    };
+    let unsafe_entry = |state: i32, way: bool| {
+        matches!(state, 2..=5 | 18 | 19) && (no_loco || in_machine(state) || (state == 2 && (!way || e.player_type < 0)))
+    };
+    match *op {
+        59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
+        72 => {
+            let state = match ia[0] {
+                6 => 3,
+                7 => 2,
+                46 => 5,
+                47 => 4,
+                42 => 18,
+                44 => 19,
+                _ => -1,
+            };
+            if unsafe_entry(state, ia[4] >= 0) {
+                ia[0] = 0;
+            }
+        }
+        2 if a9_states(module).0 => *op = 86,
+        _ => {}
+    }
 }
 
 /// Prints where two word arrays first differ (`AI_A2_DEBUG`).
@@ -2529,14 +2706,35 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A9; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - The waypoint-path (as team, as individuals), exact (both), wander, wander-in-place and panic states (ids 2-5, 18, 19, 40;
+///   `setState` and the commands now pick them often): 10,000 constructions and 599,696 operations, **0 mismatches** in the results,
+///   the call logs and the dumps (which add those states' members, the team's current waypoint and the completed waypoint). After
+///   an operation the machine was on a waypoint path 8,358 times, exact 11,732, wandering 5,787, wandering in place 27,112,
+///   panicking 5,309; the team's waypoint was set 684 times, the team asked as a group 94 times, the skirmish test 180 times.
+/// - Not generated, as upstream dereferences what is not there: entering those states without a current locomotor, the as-team
+///   state without a goal waypoint or a controlling player, or a state already the machine's state or its temporary state (one
+///   instance: the other's end leaves it without a current waypoint) — such an entry is the idle state or command 0 instead;
+///   `chooseLocomotorSetExplicit` while in them is the ultra-accurate setter instead; the controlling player is kept while the
+///   as-team state is in the machine. 11 cases end early where a locomotor would still be missing (after `chooseLocomotorSet`).
+/// - Planted bugs: in the Rust source plants 3290-3297, each caught at 10,000 cases (1 to 1,247 mismatches): the goal's east clamp,
+///   the off-map goal appended every update, the panic state moving on after a failure, the random link not drawn, the wander
+///   offset's minimum, the exact state's completed waypoint (caught once the dump had it), the skirmish distance with its height
+///   (1 case, after the team's centre was put near the object), the wall's height. All earlier plants (3240-3282) re-run: caught.
+/// - Harness defect found: the C++ side's save file was shared by planted runs in parallel, which made every plant look caught;
+///   it is now one file per process.
+///
 /// # Results (2026-10-28, batch A8; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - The follow-path, move-and-evacuate and move-and-delete states (ids 6, 7, 25, 26, 27; `setState` now picks them often):
 ///   10,000 constructions and 600,000 operations, **0 mismatches** in the results, the call logs and the dumps (which add those
 ///   states' members). After an operation the machine was following a path 30,422 times, evacuating 37,979, deleting 20,244; the
 ///   evacuations activated the team 169 times and the delete state destroyed the object 103 times.
-/// - Planted bugs: in the Rust source plants 3280-3282, each caught at 3,000 cases (262 to 310 result mismatches): the follow
-///   path's retries skipped, its failed final adjustment ignored, the delete state's goal appended again every update.
+/// - Planted bugs: in the Rust source plants 3280-3282, each caught ~~at 3,000 cases (262 to 310 result mismatches)~~
+///   **CORRECTED 2026-10-28 (batch A9)**: those counts came from parallel runs sharing one save file (each loaded the others'
+///   saves); with a file per process, at 10,000 cases: 15, 3 and 91 mismatches (call logs, call logs, dumps): the follow path's
+///   retries skipped, its failed final adjustment ignored, the delete state's goal appended again every update.
 ///
 /// # Results (2026-10-28, batch A7; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
@@ -2619,15 +2817,18 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
 fn ai_update_a2_matches_upstream() {
     let cases: u64 = std::env::var("AI_A2_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
     let mut ck = Checks::new();
-    for case in 0..cases {
+    // (AI_A2_FROM: the first case, to re-run one)
+    let from: u64 = std::env::var("AI_A2_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    for case in from..from + cases {
         run_case(0xA2_0000 + case, &mut ck);
     }
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
-         A4-A8 log records 70..=98 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/delete {:?}; temporary states {}; loads {}",
+         A4-A9 log records 70..=102 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/delete/\
+         waypointPath/exact/wander/wanderInPlace/panic {:?}; A9 cases ended undefined {}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();

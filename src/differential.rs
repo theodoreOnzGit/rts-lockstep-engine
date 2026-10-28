@@ -978,6 +978,15 @@ pub struct AiEnv {
     pub formation_id: c_int,
     pub group_speed: c_float,
     pub max_height_above_position: c_float,
+    // batch A9
+    pub waypoint_links2: c_uint,
+    pub wall_height: c_float,
+    pub group_center: [c_float; 3],
+    pub team_waypoint: c_int,
+    pub skirmish: c_int,
+    pub team_center: [c_float; 3],
+    pub team_count: c_int,
+    pub skirmish_fudge: c_float,
     pub turrets: c_int,
 }
 

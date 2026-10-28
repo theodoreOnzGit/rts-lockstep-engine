@@ -68,6 +68,7 @@ use crate::common::state_machine::{
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
+use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -247,6 +248,27 @@ pub trait AiStateHost: AiHost + StateContext {
     fn team_set_active(&mut self);
     /// `TheGameLogic->destroyObject(getObject())`.
     fn destroy_object(&mut self);
+    // ---- batch A9
+    /// `way->getNumLinks()`.
+    fn waypoint_num_links(&mut self, way: u32) -> i32;
+    /// `way->getLink(which)` (none out of range).
+    fn waypoint_link(&mut self, way: u32, which: i32) -> Option<u32>;
+    /// `TheAI->pathfinder()->isPointOnWall(pos)`.
+    fn pf_is_point_on_wall(&mut self, pos: &Coord3D) -> bool;
+    /// `TheAI->pathfinder()->getWallHeight()`.
+    fn pf_wall_height(&self) -> f32;
+    /// The AI's group's `getCenter` (asked only when the AI has a group).
+    fn group_center(&mut self) -> Coord3D;
+    /// `getTeam()->getCurrentWaypoint()`.
+    fn team_current_waypoint(&mut self) -> Option<u32>;
+    /// `getTeam()->setCurrentWaypoint(way)`.
+    fn team_set_current_waypoint(&mut self, way: Option<u32>);
+    /// `getControllingPlayer()->isSkirmishAIPlayer()` (upstream reads the player unchecked).
+    fn is_skirmish_ai_player(&mut self) -> bool;
+    /// `TheAI->createGroup()` filled by `getTeam()->getTeamAsAIGroup(group)`: its `getCenter` and `getCount`.
+    fn team_group_center_and_count(&mut self) -> (Coord3D, i32);
+    /// `TheAI->getAiData()->m_skirmishGroupFudgeValue`.
+    fn ai_data_skirmish_group_fudge_value(&self) -> f32;
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -279,6 +301,17 @@ pub enum AiState<H> {
     MoveAndEvacuate { mv: MoveToData, origin: Coord3D },
     /// `AIMoveAndDeleteState`.
     MoveAndDelete { mv: MoveToData, append_goal_position: bool },
+    /// `AIFollowWaypointPathState` (batch A9; `AI_FOLLOW_WAYPOINT_PATH_AS_TEAM` and `_AS_INDIVIDUALS`): `m_moveAsGroup`,
+    /// `m_isFollowWaypointPathState`.
+    FollowWaypointPath { mv: MoveToData, wp: WaypointPathData, as_group: bool, is_follow: bool },
+    /// `AIFollowWaypointPathExactState` (`AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT` and `_AS_INDIVIDUALS_EXACT`).
+    FollowWaypointPathExact { mv: MoveToData, last: Option<u32>, as_group: bool },
+    /// `AIWanderState`.
+    Wander { mv: MoveToData, wp: WaypointPathData, wait_frames: i32, timer: i32 },
+    /// `AIWanderInPlaceState`.
+    WanderInPlace { mv: MoveToData, origin: Coord3D, wait_frames: i32, timer: i32 },
+    /// `AIPanicState`.
+    Panic { mv: MoveToData, wp: WaypointPathData, wait_frames: i32, timer: i32 },
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -467,6 +500,20 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
     // AIFollowPathState's constructor: adjust final, no override, index 0, ten retries
     let follow_path =
         || AiState::FollowPath { mv: MoveToData::default(), index: 0, adjust_final: true, adjust_final_override: false, retry_count: 10 };
+    // batch A9: the members no constructor sets are the pool's zeros (AIFollowWaypointPathState's constructor sets m_angle 0; the
+    // wander state's its timer and wait 0; the exact state's its last waypoint none)
+    let follow_waypoint_path =
+        |as_group| AiState::FollowWaypointPath { mv: MoveToData::default(), wp: WaypointPathData::default(), as_group, is_follow: true };
+    let exact = |as_group| AiState::FollowWaypointPathExact { mv: MoveToData::default(), last: None, as_group };
+    let wander = |panic: bool| {
+        let (mv, wp) = (MoveToData::default(), WaypointPathData::default());
+        if panic {
+            AiState::Panic { mv, wp, wait_frames: 0, timer: 0 }
+        } else {
+            AiState::Wander { mv, wp, wait_frames: 0, timer: 0 }
+        }
+    };
+    let wander_in_place = || AiState::WanderInPlace { mv: MoveToData::default(), origin: Coord3D::default(), wait_frames: 0, timer: 0 };
     let defs: [(StateId, AiState<H>, StateId, StateId); 41] = [
         (AI_IDLE, AiState::Idle { initial_sleep_offset: u16::MAX, should_look_for_targets: true, inited: false }, AI_IDLE, AI_IDLE),
         (AI_MOVE_TO, AiState::MoveTo { mv: MoveToData::default(), is_move_to: true }, AI_IDLE, AI_IDLE),
@@ -478,14 +525,14 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
             AI_WANDER_IN_PLACE,
             AI_WANDER_IN_PLACE,
         ),
-        (AI_WANDER_IN_PLACE, u(AI_WANDER_IN_PLACE), AI_MOVE_AWAY_FROM_REPULSORS, AI_MOVE_AWAY_FROM_REPULSORS),
+        (AI_WANDER_IN_PLACE, wander_in_place(), AI_MOVE_AWAY_FROM_REPULSORS, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_ATTACK_MOVE_TO, u(AI_ATTACK_MOVE_TO), AI_IDLE, AI_IDLE),
         (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM), AI_IDLE, AI_IDLE),
         (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM, u(AI_FOLLOW_WAYPOINT_PATH_AS_TEAM), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, u(AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT, u(AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT, u(AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM, follow_waypoint_path(true), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, follow_waypoint_path(false), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT, exact(true), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT, exact(false), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_PATH, follow_path(), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_EXITPRODUCTION_PATH, follow_path(), AI_IDLE, AI_IDLE),
         (AI_MOVE_AND_EVACUATE, AiState::MoveAndEvacuate { mv: MoveToData::default(), origin: Coord3D::default() }, AI_IDLE, AI_IDLE),
@@ -502,8 +549,8 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
         (AI_FORCE_ATTACK_OBJECT, u(AI_FORCE_ATTACK_OBJECT), AI_IDLE, AI_IDLE),
         (AI_ATTACK_AND_FOLLOW_OBJECT, u(AI_ATTACK_AND_FOLLOW_OBJECT), AI_IDLE, AI_IDLE),
         (AI_ATTACK_SQUAD, u(AI_ATTACK_SQUAD), AI_IDLE, AI_IDLE),
-        (AI_WANDER, u(AI_WANDER), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
-        (AI_PANIC, u(AI_PANIC), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
+        (AI_WANDER, wander(false), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
+        (AI_PANIC, wander(true), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_DEAD, AiState::Dead, AI_IDLE, AI_IDLE),
         (AI_DOCK, u(AI_DOCK), AI_IDLE, AI_IDLE),
         (AI_ENTER, u(AI_ENTER), AI_IDLE, AI_IDLE),
@@ -698,6 +745,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::on_enter(sm, h, id),
+            Some(AiState::FollowWaypointPath { .. })
+            | Some(AiState::FollowWaypointPathExact { .. })
+            | Some(AiState::Wander { .. })
+            | Some(AiState::WanderInPlace { .. })
+            | Some(AiState::Panic { .. }) => waypoint_states::on_enter(sm, h, id),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 Ok(h.untranslated_on_enter(id))
@@ -716,6 +768,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::on_exit(sm, h, id, status),
+            Some(AiState::FollowWaypointPath { .. })
+            | Some(AiState::FollowWaypointPathExact { .. })
+            | Some(AiState::Wander { .. })
+            | Some(AiState::WanderInPlace { .. })
+            | Some(AiState::Panic { .. }) => waypoint_states::on_exit(sm, h, id),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 h.untranslated_on_exit(id, status);
@@ -736,6 +793,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::update(sm, h, id),
+            Some(AiState::FollowWaypointPath { .. })
+            | Some(AiState::FollowWaypointPathExact { .. })
+            | Some(AiState::Wander { .. })
+            | Some(AiState::WanderInPlace { .. })
+            | Some(AiState::Panic { .. }) => waypoint_states::update(sm, h, id),
             // "@todo srj -- find a way to sleep for a number of frames here, if possible"
             Some(AiState::Wait) | Some(AiState::Busy) | None => Ok(StateReturn::CONTINUE),
             Some(AiState::Untranslated { id }) => {
@@ -791,6 +853,14 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::MoveAndEvacuate { mv, origin } => move_states::evacuate_xfer(mv, origin, xfer)?,
             AiState::MoveAndDelete { mv, append_goal_position } => move_states::delete_xfer(mv, append_goal_position, xfer)?,
+            AiState::FollowWaypointPath { mv, wp, .. } => waypoint_states::waypoint_path_xfer(mv, wp, xfer)?,
+            AiState::FollowWaypointPathExact { mv, last, .. } => waypoint_states::exact_xfer(mv, last, xfer)?,
+            AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
+                waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?
+            }
+            AiState::WanderInPlace { mv, origin, wait_frames, timer } => {
+                waypoint_states::wander_in_place_xfer(mv, origin, wait_frames, timer, xfer)?
+            }
             AiState::MoveAndTighten { mv, ok_to_repath_times, check_for_path }
             | AiState::MoveAwayFromRepulsors { mv, ok_to_repath_times, check_for_path } => {
                 move_states::tighten_xfer(mv, ok_to_repath_times, check_for_path, xfer)?

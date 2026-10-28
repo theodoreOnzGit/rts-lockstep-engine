@@ -10,6 +10,7 @@ pub mod ai_update;
 pub mod ai_update_data;
 pub mod ai_commands;
 pub mod ai_move_states;
+pub mod ai_waypoint_states;
 pub mod ai_paths;
 pub mod ai_states;
 pub mod ai_update_types;

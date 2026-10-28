@@ -120,6 +120,15 @@ struct AiEnv
 	Int formationId;		/* getFormationID */
 	Real groupSpeed;		/* the group's getSpeed */
 	Real maxHeightAbovePosition;	/* every object's geometry's getMaxHeightAbovePosition */
+	/* ---- batch A9 (the waypoint states) */
+	UnsignedInt waypointLinks2;	/* bit i: waypoint i (with a first link) has a second, to waypoint (i+5)%8 */
+	Real wallHeight;		/* the pathfinder's m_wallHeight */
+	Real groupCenter[3];		/* the AI's group's getCenter */
+	Int teamWaypoint;		/* at construction: the team's current waypoint (-1 none) */
+	Int skirmish;			/* the controlling player's isSkirmishAIPlayer */
+	Real teamCenter[3];		/* the team as a group: getCenter is the object's position moved by this */
+	Int teamCount;			/* the team as a group: getCount */
+	Real skirmishFudge;		/* TheAI->getAiData()->m_skirmishGroupFudgeValue */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -143,7 +152,8 @@ enum
 	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE,
 	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE,
 	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE,
-	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT
+	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT,
+	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -202,6 +212,8 @@ public:
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);
 	/* batch A4: AIStateMachine::xfer's (never reached: no goal waypoint is set) */
 	Waypoint *getWaypointByName(AsciiString name);
+	/* batch A9 */
+	Waypoint *getWaypointByID(UnsignedInt id);
 	/* batch A5: the commands' map edges */
 	void getExtent(Region3D *extent) const;
 	/* batch A6 */
@@ -274,6 +286,7 @@ public:
 extern PartitionManager *ThePartitionManager;
 
 class Pathfinder;
+class AIGroup;
 class AttackPriorityInfo;
 class PartitionFilter;
 /* batch A3: TheAI->getAiData()'s fields the AI reads */
@@ -284,6 +297,8 @@ struct AiData
 	Bool m_attackIgnoreInsignificantBuildings;
 	/* batch A6 */
 	Real m_repulsedDistance;
+	/* batch A9 */
+	Real m_skirmishGroupFudgeValue;
 };
 class AI
 {
@@ -297,6 +312,8 @@ public:
 		const AttackPriorityInfo *info=NULL, PartitionFilter *optionalFilter=NULL);
 	/* batch A4 */
 	Object *findClosestRepulsor( const Object *me, Real range);
+	/* batch A9: the team as a group (the scene's one group, never freed: the stand-in's) */
+	AIGroup *createGroup( void );
 };
 extern AI *TheAI;
 
@@ -361,6 +378,8 @@ class Player
 public:
 	PlayerType getPlayerType() const;
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate);
+	/* batch A9 */
+	Bool isSkirmishAIPlayer( void );
 };
 struct TeamTemplateInfo { Bool m_attackCommonTarget; };
 class TeamPrototype { public: const TeamTemplateInfo *getTemplateInfo() const; };
@@ -373,6 +392,10 @@ public:
 	DLINK_ITERATOR<Object> iterate_TeamMemberList() const;
 	/* batch A8: the move-and-evacuate state's end */
 	void setActive();
+	/* batch A9: the team's current waypoint (logged when set), the team as a group */
+	void setCurrentWaypoint(const Waypoint *way);
+	const Waypoint *getCurrentWaypoint();
+	void getTeamAsAIGroup(AIGroup *group);
 };
 typedef std::list<Object*> ContainedItemsList;
 class ContainModuleInterface
@@ -553,6 +576,10 @@ public:
 	void add(Object *obj);
 	/* batch A7 */
 	Real getSpeed( void );
+	/* batch A9: the AI's group's centre, or the team's (m_team) and its count */
+	void getCenter( Coord3D *center );
+	Int getCount( void );
+	Int m_team;
 };
 
 /* ---- batch A5: what the commands hand over to (logged) */
