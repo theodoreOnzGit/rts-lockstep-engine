@@ -27,6 +27,8 @@ class LocomotorTemplate;
 
 class Locomotor;
 class Waypoint;
+class Weapon;
+class Player;
 class AsciiString;
 
 /* The scene of one call. The Rust test has the same struct (tests/differential_ai_update_a2.rs, `Env`): same field order, 4-byte
@@ -129,6 +131,26 @@ struct AiEnv
 	Real teamCenter[3];		/* the team as a group: getCenter is the object's position moved by this */
 	Int teamCount;			/* the team as a group: getCount */
 	Real skirmishFudge;		/* TheAI->getAiData()->m_skirmishGroupFudgeValue */
+	/* ---- batch A10a (the attack machine) */
+	Int weaponStatus;		/* the weapons' getStatus (WeaponStatus) */
+	Int leechRange;			/* the weapons' hasLeechRange */
+	Int maxShotsInit;		/* at construction: the current weapon's max shot count (setMaxShotCount sets it) */
+	Real aimDelta;			/* the weapons' getAimDelta */
+	Int curSlot;			/* getCurrentWeapon(&slot)'s slot */
+	Int slotMask;			/* getWeaponInWeaponSlot: bit per slot */
+	Int ableToAttack;		/* isAbleToAttack */
+	Int outOfAmmo;			/* isOutOfAmmo */
+	Int curWeaponLocked;		/* isCurWeaponLocked */
+	Int hasAnyWeapon;		/* hasAnyWeapon */
+	Int crushesInfantry;		/* TheAI->getAiData()->m_aiCrushesInfantry */
+	UnsignedInt objectRate;		/* the objects' answers (airborne, destroyed, crush, enclosing, fire point, weapon choice, reload):
+					** TRUE at this rate (the hash) */
+	Int garrisonable;		/* the contain's isGarrisonable */
+	Int containCount;		/* the contain's getContainCount */
+	Real relAngle;			/* getRelativeAngle2D */
+	Real turretTurnRate[2];		/* the turrets' getTurnRate */
+	Int turretCurWeapon;		/* bit i: turret i holds the owner's current weapon (isOwnersCurWeaponOnTurret) */
+	Int teamEpoch;			/* the other objects' teams: one of two, by the hash of their id and this */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -153,7 +175,8 @@ enum
 	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE,
 	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE,
 	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT,
-	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH
+	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH,
+	LOG_ATTACK = 103	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -246,6 +269,13 @@ public:
 	PartitionFilterSameMapStatus(const Object *obj) : m_obj(obj) {}
 	const Object *m_obj;
 };
+/* batch A10a: the fire state's continue-attack search */
+class PartitionFilterSamePlayer : public PartitionFilter
+{
+public:
+	PartitionFilterSamePlayer(const Player *p) : m_player(p) {}
+	const Player *m_player;
+};
 enum FindPositionFlags { FPF_NONE = 0 };
 const Real RANDOM_START_ANGLE = -99999.9f;
 /* PartitionManager.h, verbatim */
@@ -282,6 +312,9 @@ public:
 	Object *getClosestObject(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
 		Real *closestDist = NULL, Coord3D *closestDistVec = NULL);
 	Bool findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result);
+	/* batch A10a (logged; the scene's angle) */
+	Real getRelativeAngle2D( const Object *obj, const Object *otherObj );
+	Real getRelativeAngle2D( const Object *obj, const Coord3D *pos );
 };
 extern PartitionManager *ThePartitionManager;
 
@@ -299,6 +332,8 @@ struct AiData
 	Real m_repulsedDistance;
 	/* batch A9 */
 	Real m_skirmishGroupFudgeValue;
+	/* batch A10a */
+	Bool m_aiCrushesInfantry;
 };
 class AI
 {
@@ -369,6 +404,16 @@ struct ObjectStatusMaskType
 };
 inline ObjectStatusMaskType makeObjectStatusMask(Int bit) { ObjectStatusMaskType m; m.m_bits = 1ULL << bit; return m; }
 #define MAKE_OBJECT_STATUS_MASK(k) makeObjectStatusMask(k)
+/* batch A10a */
+inline ObjectStatusMaskType makeObjectStatusMask(Int a, Int b, Int c = -1, Int d = -1)
+{
+	ObjectStatusMaskType m; m.m_bits = (1ULL << a) | (1ULL << b);
+	if (c >= 0) m.m_bits |= 1ULL << c;
+	if (d >= 0) m.m_bits |= 1ULL << d;
+	return m;
+}
+#define MAKE_OBJECT_STATUS_MASK2(a,b) makeObjectStatusMask(a, b)
+#define MAKE_OBJECT_STATUS_MASK4(a,b,c,d) makeObjectStatusMask(a, b, c, d)
 
 /* batch A3: the object's neighbours the AI reads, each answering from the scene */
 /* (UpgradeTemplate and UpgradeCenter: the shared shim's Common/Upgrade.h, renamed by PreRTS.h; the wrapper defines findUpgrade) */
@@ -392,6 +437,8 @@ public:
 	DLINK_ITERATOR<Object> iterate_TeamMemberList() const;
 	/* batch A8: the move-and-evacuate state's end */
 	void setActive();
+	/* batch A10a (logged) */
+	void setTeamTargetObject(const Object *target);
 	/* batch A9: the team's current waypoint (logged when set), the team as a group */
 	void setCurrentWaypoint(const Waypoint *way);
 	const Waypoint *getCurrentWaypoint();
@@ -402,6 +449,12 @@ class ContainModuleInterface
 {
 public:
 	Bool isPassengerAllowedToFire(ObjectID id = INVALID_ID) const;
+	/* batch A10a (logged, from the hash; the scene's) */
+	Bool isEnclosingContainerFor( const Object *obj ) const;
+	Bool attemptBestFirePointPosition( Object *source, Weapon *weapon, Object *victim );
+	Bool attemptBestFirePointPosition( Object *source, Weapon *weapon, const Coord3D *targetPos );
+	Bool isGarrisonable() const;
+	UnsignedInt getContainCount() const;
 	/* batch A5 (logged) */
 	const ContainedItemsList* getContainedItemsList() const;
 	void removeAllContained( Bool exposeStealthUnits = FALSE );
@@ -422,6 +475,14 @@ public:
 	Bool isWithinAttackRange(const Object *source, const Coord3D* pos) const;
 	Bool isGoalPosWithinAttackRange(const Object *source, const Coord3D* goalPos, const Object *target, const Coord3D* targetPos) const;
 	Bool computeApproachTarget(const Object *source, const Object *target, const Coord3D *pos, Real angleOffset, Coord3D& approachTargetPos) const;
+	/* batch A10a: the scene's; fireWeapon and setPreAttackFinishedFrame logged */
+	WeaponStatus getStatus() const;
+	Bool hasLeechRange() const;
+	Int getMaxShotCount() const;
+	Real getAimDelta() const;
+	Bool fireWeapon(const Object *source, const Coord3D* pos);
+	void setPreAttackFinishedFrame(UnsignedInt frame);
+	Int m_slot;
 };
 class HordeUpdateInterface
 {
@@ -526,6 +587,26 @@ public:
 	const AiTemplateView *getTemplate() const { return &m_template; }
 	/* batch A7 */
 	FormationID getFormationID(void) const;
+	/* batch A10a: the scene's and the hash's answers; the weapon calls logged */
+	Bool isAirborneTarget() const;
+	Bool isDestroyed() const;
+	Bool canCrushOrSquish(Object *otherObj, CrushSquishTestType testType = TEST_CRUSH_OR_SQUISH) const;
+	Relationship getRelationship(const Object *that) const;
+	Bool isAbleToAttack() const;
+	Bool isOutOfAmmo() const;
+	Bool isCurWeaponLocked() const;
+	Bool hasAnyWeapon() const;
+	Weapon *getCurrentWeapon(WeaponSlotType* wslot);
+	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const;
+	Bool chooseBestWeaponForTarget(const Object* target, WeaponChoiceCriteria criteria, CommandSourceType cmdSource);
+	void adjustModelConditionForWeaponStatus();
+	void clearLeechRangeModeForAllWeapons();
+	void setFiringConditionForCurrentWeapon() const;
+	void preFireCurrentWeapon( const Object *victim );
+	Bool fireCurrentWeapon(Object *target);
+	Bool fireCurrentWeapon(const Coord3D* pos);
+	void releaseWeaponLock(WeaponLockType lockType);
+	void notifyFiringTrackerShotFired( const Weapon* weaponFired, ObjectID victimID );
 	/* the team's member list (Team::iterate_TeamMemberList): the next member */
 	Object *dlink_next_TeamMemberList() const;
 	void clearAndSetModelConditionFlags( const ModelConditionFlags& clr, const ModelConditionFlags& set );

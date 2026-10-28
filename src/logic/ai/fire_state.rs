@@ -57,46 +57,46 @@ pub const SLOTS: [WeaponSlotType; 3] = [WeaponSlotType::Primary, WeaponSlotType:
 /// and the world. Weapons are named by their object and slot.
 pub trait FireHost: StateContext {
     /// The machine's owner (`getMachineOwner()`).
-    fn owner(&self) -> ObjectId;
+    fn owner(&mut self) -> ObjectId;
     /// `obj->getAI()->getMoodMatrixActionAdjustment(action)` (the owner's AI, read unchecked).
-    fn ai_mood_action_adjustment(&self, obj: ObjectId, action: i32) -> u32;
+    fn ai_mood_action_adjustment(&mut self, obj: ObjectId, action: i32) -> u32;
     /// `getAI()->areTurretsLinked()` (unchecked).
-    fn ai_are_turrets_linked(&self, obj: ObjectId) -> bool;
+    fn ai_are_turrets_linked(&mut self, obj: ObjectId) -> bool;
     /// `getAI()->getCurrentVictim()` (unchecked).
-    fn ai_current_victim(&self, obj: ObjectId) -> Option<ObjectId>;
+    fn ai_current_victim(&mut self, obj: ObjectId) -> Option<ObjectId>;
     /// `getAI()->getLastCommandSource()`; none without an AI.
-    fn ai_last_command_source(&self, obj: ObjectId) -> Option<CommandSourceType>;
+    fn ai_last_command_source(&mut self, obj: ObjectId) -> Option<CommandSourceType>;
     /// `getAI()->isDoingGroundMovement()`; none without an AI.
-    fn ai_is_doing_ground_movement(&self, obj: ObjectId) -> Option<bool>;
-    fn is_kind_of(&self, obj: ObjectId, kind: KindOfType) -> bool;
-    fn test_status(&self, obj: ObjectId, bit: ObjectStatusTypes) -> bool;
+    fn ai_is_doing_ground_movement(&mut self, obj: ObjectId) -> Option<bool>;
+    fn is_kind_of(&mut self, obj: ObjectId, kind: KindOfType) -> bool;
+    fn test_status(&mut self, obj: ObjectId, bit: ObjectStatusTypes) -> bool;
     /// `setStatus(MAKE_OBJECT_STATUS_MASK..(bits), set)` / `clearStatus(..)`: one call, its bits.
     fn set_status(&mut self, obj: ObjectId, bits: &[ObjectStatusTypes], set: bool);
-    fn is_effectively_dead(&self, obj: ObjectId) -> bool;
-    fn is_destroyed(&self, obj: ObjectId) -> bool;
-    fn contained_by(&self, obj: ObjectId) -> Option<ObjectId>;
-    fn is_airborne_target(&self, obj: ObjectId) -> bool;
-    fn is_significantly_above_terrain(&self, obj: ObjectId) -> bool;
-    fn position(&self, obj: ObjectId) -> Coord3D;
-    fn controlling_player(&self, obj: ObjectId) -> Option<PlayerIndex>;
+    fn is_effectively_dead(&mut self, obj: ObjectId) -> bool;
+    fn is_destroyed(&mut self, obj: ObjectId) -> bool;
+    fn contained_by(&mut self, obj: ObjectId) -> Option<ObjectId>;
+    fn is_airborne_target(&mut self, obj: ObjectId) -> bool;
+    fn is_significantly_above_terrain(&mut self, obj: ObjectId) -> bool;
+    fn position(&mut self, obj: ObjectId) -> Coord3D;
+    fn controlling_player(&mut self, obj: ObjectId) -> Option<PlayerIndex>;
     /// `getTeam()->getPrototype()->getTemplateInfo()->m_attackCommonTarget`.
-    fn team_attacks_common_target(&self, obj: ObjectId) -> bool;
+    fn team_attacks_common_target(&mut self, obj: ObjectId) -> bool;
     /// `getTeam()->getTeamTargetObject()`, `setTeamTargetObject(..)`.
-    fn team_target_object(&self, obj: ObjectId) -> Option<ObjectId>;
+    fn team_target_object(&mut self, obj: ObjectId) -> Option<ObjectId>;
     fn set_team_target_object(&mut self, obj: ObjectId, target: ObjectId);
     /// `getCurrentWeapon(&slot)`: the slot; none without a weapon.
-    fn current_weapon(&self, obj: ObjectId) -> Option<WeaponSlotType>;
+    fn current_weapon(&mut self, obj: ObjectId) -> Option<WeaponSlotType>;
     /// `getWeaponInWeaponSlot(slot) != NULL`.
-    fn has_weapon_in_slot(&self, obj: ObjectId, slot: WeaponSlotType) -> bool;
-    fn weapon_status(&self, obj: ObjectId, slot: WeaponSlotType) -> WeaponStatus;
-    fn weapon_is_contact(&self, obj: ObjectId, slot: WeaponSlotType) -> bool;
-    fn weapon_has_leech_range(&self, obj: ObjectId, slot: WeaponSlotType) -> bool;
+    fn has_weapon_in_slot(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool;
+    fn weapon_status(&mut self, obj: ObjectId, slot: WeaponSlotType) -> WeaponStatus;
+    fn weapon_is_contact(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool;
+    fn weapon_has_leech_range(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool;
     /// `isWithinAttackRange(obj, victim)`.
-    fn weapon_within_range_of_object(&self, obj: ObjectId, slot: WeaponSlotType, victim: ObjectId) -> bool;
+    fn weapon_within_range_of_object(&mut self, obj: ObjectId, slot: WeaponSlotType, victim: ObjectId) -> bool;
     /// `isWithinAttackRange(obj, &pos)`.
-    fn weapon_within_range_of_position(&self, obj: ObjectId, slot: WeaponSlotType, pos: &Coord3D) -> bool;
-    fn weapon_continue_attack_range(&self, obj: ObjectId, slot: WeaponSlotType) -> f32;
-    fn weapon_attack_range(&self, obj: ObjectId, slot: WeaponSlotType) -> f32;
+    fn weapon_within_range_of_position(&mut self, obj: ObjectId, slot: WeaponSlotType, pos: &Coord3D) -> bool;
+    fn weapon_continue_attack_range(&mut self, obj: ObjectId, slot: WeaponSlotType) -> f32;
+    fn weapon_attack_range(&mut self, obj: ObjectId, slot: WeaponSlotType) -> f32;
     fn weapon_set_pre_attack_finished_frame(&mut self, obj: ObjectId, slot: WeaponSlotType, frame: u32);
     /// `weapon->fireWeapon(obj, &pos)`: whether it reloaded.
     fn weapon_fire_at_position(&mut self, obj: ObjectId, slot: WeaponSlotType, pos: &Coord3D) -> bool;
@@ -107,10 +107,10 @@ pub trait FireHost: StateContext {
     fn fire_current_weapon_at_object(&mut self, obj: ObjectId, victim: Option<ObjectId>);
     fn fire_current_weapon_at_position(&mut self, obj: ObjectId, pos: &Coord3D);
     /// `TheAI->pathfinder()->isAttackViewBlockedByObstacle(obj, objPos, victim, victimPos)`.
-    fn is_attack_view_blocked(&self, obj: ObjectId, obj_pos: &Coord3D, victim: ObjectId, victim_pos: &Coord3D) -> bool;
+    fn is_attack_view_blocked(&mut self, obj: ObjectId, obj_pos: &Coord3D, victim: ObjectId, victim_pos: &Coord3D) -> bool;
     /// `ThePartitionManager->getClosestObject(pos, range, FROM_CENTER_2D, {possible to attack as a new target by obj from
     /// command source, of player, of obj's map status})`.
-    fn closest_attackable_of_player(&self, pos: &Coord3D, range: f32, obj: ObjectId, source: CommandSourceType, player: Option<PlayerIndex>) -> Option<ObjectId>;
+    fn closest_attackable_of_player(&mut self, pos: &Coord3D, range: f32, obj: ObjectId, source: CommandSourceType, player: Option<PlayerIndex>) -> Option<ObjectId>;
 }
 
 /// `NotifyWeaponFiredInterface`: what the fire state tells and asks its attacker, implemented by the machine's state type (the

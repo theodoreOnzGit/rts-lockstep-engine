@@ -224,19 +224,19 @@ impl StateContext for Host {
 }
 
 impl FireHost for Host {
-    fn owner(&self) -> ObjectId {
+    fn owner(&mut self) -> ObjectId {
         self.s.objs[0].id
     }
-    fn ai_mood_action_adjustment(&self, obj: ObjectId, action: i32) -> u32 {
+    fn ai_mood_action_adjustment(&mut self, obj: ObjectId, action: i32) -> u32 {
         if action == 0 { self.o(obj).mood_idle } else { self.o(obj).mood_attack }
     }
-    fn ai_are_turrets_linked(&self, obj: ObjectId) -> bool {
+    fn ai_are_turrets_linked(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_LINKED != 0
     }
-    fn ai_current_victim(&self, obj: ObjectId) -> Option<ObjectId> {
+    fn ai_current_victim(&mut self, obj: ObjectId) -> Option<ObjectId> {
         self.by_index_plus1(self.o(obj).victim)
     }
-    fn ai_last_command_source(&self, obj: ObjectId) -> Option<CommandSourceType> {
+    fn ai_last_command_source(&mut self, obj: ObjectId) -> Option<CommandSourceType> {
         let o = self.o(obj);
         (o.flags & F_AI != 0).then_some(match o.last_cmd {
             0 => CommandSourceType::FromPlayer,
@@ -246,15 +246,15 @@ impl FireHost for Host {
             _ => CommandSourceType::DefaultSwitchWeapon,
         })
     }
-    fn ai_is_doing_ground_movement(&self, obj: ObjectId) -> Option<bool> {
+    fn ai_is_doing_ground_movement(&mut self, obj: ObjectId) -> Option<bool> {
         let o = self.o(obj);
         (o.flags & F_AI != 0).then_some(o.flags & F_GROUND != 0)
     }
-    fn is_kind_of(&self, obj: ObjectId, kind: KindOfType) -> bool {
+    fn is_kind_of(&mut self, obj: ObjectId, kind: KindOfType) -> bool {
         let kinds = [KINDOF_BRIDGE, KINDOF_IMMOBILE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_MINE, KINDOF_VEHICLE];
         kinds.iter().position(|&k| k == kind).is_some_and(|b| self.o(obj).kinds >> b & 1 != 0)
     }
-    fn test_status(&self, obj: ObjectId, bit: ObjectStatusTypes) -> bool {
+    fn test_status(&mut self, obj: ObjectId, bit: ObjectStatusTypes) -> bool {
         let o = self.o(obj);
         if bit < 64 { o.status_lo >> bit & 1 != 0 } else { o.status_hi >> (bit - 64) & 1 != 0 }
     }
@@ -274,33 +274,33 @@ impl FireHost for Host {
         }
         self.line(1, &[obj as u32, lo as u32, (lo >> 32) as u32, hi as u32, u32::from(set)]);
     }
-    fn is_effectively_dead(&self, obj: ObjectId) -> bool {
+    fn is_effectively_dead(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_DEAD != 0
     }
-    fn is_destroyed(&self, obj: ObjectId) -> bool {
+    fn is_destroyed(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_DESTROYED != 0
     }
-    fn contained_by(&self, obj: ObjectId) -> Option<ObjectId> {
+    fn contained_by(&mut self, obj: ObjectId) -> Option<ObjectId> {
         self.by_index_plus1(self.o(obj).contained_by)
     }
-    fn is_airborne_target(&self, obj: ObjectId) -> bool {
+    fn is_airborne_target(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_AIRBORNE != 0
     }
-    fn is_significantly_above_terrain(&self, obj: ObjectId) -> bool {
+    fn is_significantly_above_terrain(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_ABOVE != 0
     }
-    fn position(&self, obj: ObjectId) -> Coord3D {
+    fn position(&mut self, obj: ObjectId) -> Coord3D {
         self.o(obj).pos
     }
-    fn controlling_player(&self, obj: ObjectId) -> Option<PlayerIndex> {
+    fn controlling_player(&mut self, obj: ObjectId) -> Option<PlayerIndex> {
         let p = self.o(obj).player;
         (p >= 0).then_some(p % 4)
     }
-    fn team_attacks_common_target(&self, obj: ObjectId) -> bool {
+    fn team_attacks_common_target(&mut self, obj: ObjectId) -> bool {
         let t = self.o(obj).team;
         t != 0 && self.team_common.get(&t).copied().unwrap_or(false)
     }
-    fn team_target_object(&self, obj: ObjectId) -> Option<ObjectId> {
+    fn team_target_object(&mut self, obj: ObjectId) -> Option<ObjectId> {
         let t = self.o(obj).team;
         self.team_targets.get(&t).copied().filter(|&id| self.find_object(id).is_some())
     }
@@ -309,7 +309,7 @@ impl FireHost for Host {
         self.team_targets.insert(t, target);
         self.line(8, &[t, target as u32]);
     }
-    fn current_weapon(&self, obj: ObjectId) -> Option<WeaponSlotType> {
+    fn current_weapon(&mut self, obj: ObjectId) -> Option<WeaponSlotType> {
         let o = self.o(obj);
         let s = o.cur_slot;
         if !(0..=2).contains(&s) || o.weapons >> s & 1 == 0 {
@@ -317,10 +317,10 @@ impl FireHost for Host {
         }
         Some([WeaponSlotType::Primary, WeaponSlotType::Secondary, WeaponSlotType::Tertiary][s as usize])
     }
-    fn has_weapon_in_slot(&self, obj: ObjectId, slot: WeaponSlotType) -> bool {
+    fn has_weapon_in_slot(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool {
         self.o(obj).weapons >> (slot as u32) & 1 != 0
     }
-    fn weapon_status(&self, obj: ObjectId, slot: WeaponSlotType) -> WeaponStatus {
+    fn weapon_status(&mut self, obj: ObjectId, slot: WeaponSlotType) -> WeaponStatus {
         match self.o(obj).wstatus >> (3 * slot as u32) & 7 {
             0 => WeaponStatus::ReadyToFire,
             1 => WeaponStatus::OutOfAmmo,
@@ -329,22 +329,22 @@ impl FireHost for Host {
             _ => WeaponStatus::PreAttack,
         }
     }
-    fn weapon_is_contact(&self, obj: ObjectId, slot: WeaponSlotType) -> bool {
+    fn weapon_is_contact(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool {
         self.o(obj).weapons >> (3 + slot as u32) & 1 != 0
     }
-    fn weapon_has_leech_range(&self, obj: ObjectId, slot: WeaponSlotType) -> bool {
+    fn weapon_has_leech_range(&mut self, obj: ObjectId, slot: WeaponSlotType) -> bool {
         self.o(obj).weapons >> (6 + slot as u32) & 1 != 0
     }
-    fn weapon_within_range_of_object(&self, obj: ObjectId, slot: WeaponSlotType, victim: ObjectId) -> bool {
+    fn weapon_within_range_of_object(&mut self, obj: ObjectId, slot: WeaponSlotType, victim: ObjectId) -> bool {
         pick(hash(self.s.seed, 45, &[obj as u32, slot as u32, victim as u32]), self.s.rates[1])
     }
-    fn weapon_within_range_of_position(&self, obj: ObjectId, slot: WeaponSlotType, pos: &Coord3D) -> bool {
+    fn weapon_within_range_of_position(&mut self, obj: ObjectId, slot: WeaponSlotType, pos: &Coord3D) -> bool {
         pick(hash(self.s.seed, 46, &[obj as u32, slot as u32, pos.x.to_bits(), pos.y.to_bits()]), self.s.rates[1])
     }
-    fn weapon_continue_attack_range(&self, obj: ObjectId, _slot: WeaponSlotType) -> f32 {
+    fn weapon_continue_attack_range(&mut self, obj: ObjectId, _slot: WeaponSlotType) -> f32 {
         self.o(obj).cont_range
     }
-    fn weapon_attack_range(&self, obj: ObjectId, slot: WeaponSlotType) -> f32 {
+    fn weapon_attack_range(&mut self, obj: ObjectId, slot: WeaponSlotType) -> f32 {
         self.o(obj).range[slot as usize]
     }
     fn weapon_set_pre_attack_finished_frame(&mut self, obj: ObjectId, slot: WeaponSlotType, frame: u32) {
@@ -373,10 +373,10 @@ impl FireHost for Host {
     fn fire_current_weapon_at_position(&mut self, obj: ObjectId, pos: &Coord3D) {
         self.line(16, &[obj as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
     }
-    fn is_attack_view_blocked(&self, obj: ObjectId, op: &Coord3D, victim: ObjectId, vp: &Coord3D) -> bool {
+    fn is_attack_view_blocked(&mut self, obj: ObjectId, op: &Coord3D, victim: ObjectId, vp: &Coord3D) -> bool {
         pick(hash(self.s.seed, 44, &[obj as u32, op.x.to_bits(), op.y.to_bits(), victim as u32, vp.x.to_bits(), vp.y.to_bits()]), self.s.rates[0])
     }
-    fn closest_attackable_of_player(&self, pos: &Coord3D, range: f32, obj: ObjectId, source: CommandSourceType, player: Option<PlayerIndex>) -> Option<ObjectId> {
+    fn closest_attackable_of_player(&mut self, pos: &Coord3D, range: f32, obj: ObjectId, source: CommandSourceType, player: Option<PlayerIndex>) -> Option<ObjectId> {
         let n = self.s.objs.len() as u32;
         let words = [pos.x.to_bits(), pos.y.to_bits(), range.to_bits(), 0, 0, obj as u32, source as u32, player.map_or(NONE, |p| p as u32), obj as u32];
         let k = (hash(self.s.seed, 49, &words) >> 8) % (n + 1);
@@ -436,7 +436,8 @@ impl TurretHost for Host {
         self.line(7, &[obj as u32, target as u32, 0, CommandSourceType::FromAi as u32]);
     }
     fn is_able_to_attack(&self, obj: ObjectId) -> bool {
-        !self.test_status(obj, OBJECT_STATUS_NO_ATTACK)
+        let (o, bit) = (self.o(obj), OBJECT_STATUS_NO_ATTACK);
+        !(if bit < 64 { o.status_lo >> bit & 1 != 0 } else { o.status_hi >> (bit - 64) & 1 != 0 })
     }
     fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: i32, target: ObjectId, source: Option<CommandSourceType>) -> CanAttackResult {
         let source = source.map_or(0, |s| s as u32);
@@ -545,10 +546,10 @@ fn rust_run(scene: &Scene, ops: &[[u32; 6]]) -> Vec<Vec<u32>> {
                 let hh = &h;
                 t.set_turret_enabled(hh, o[1] != 0)
             }
-            6 => res.push(u32::from(t.is_turret_in_natural_position(&h))),
+            6 => res.push(u32::from(t.is_turret_in_natural_position(&mut h))),
             7 => res.push(u32::from(t.is_trying_to_aim_at_target(&mut h, id_at(o[1])))),
             8 => {
-                res.push(u32::from(t.is_owners_cur_weapon_on_turret(&h)));
+                res.push(u32::from(t.is_owners_cur_weapon_on_turret(&mut h)));
                 let slot = [WeaponSlotType::Primary, WeaponSlotType::Secondary, WeaponSlotType::Tertiary][(o[1] % 3) as usize];
                 res.push(u32::from(t.is_weapon_slot_on_turret(slot)));
             }

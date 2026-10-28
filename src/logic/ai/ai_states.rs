@@ -69,6 +69,7 @@ use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
+use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -80,6 +81,13 @@ use crate::logic::modules::plant;
 use crate::logic::weapon::NO_MAX_SHOTS_LIMIT;
 use crate::logic::world::player::Squad;
 use crate::logic::world::player_squads::squad_xfer;
+use crate::common::game_common::{AbleToAttackType, Relationship};
+use crate::common::game_type::WeaponSlotType;
+use crate::common::kind_of::{KINDOF_CAN_ATTACK, KINDOF_IMMOBILE, KINDOF_PORTABLE_STRUCTURE};
+use crate::common::object_status_types::ObjectStatusTypes;
+use crate::common::state_machine::UtilityState;
+use crate::logic::weapon_set_state::WeaponChoiceCriteria;
+use crate::logic::weapon_types::WeaponStatus;
 use std::sync::Arc;
 
 /// `IDLE_COUNTDOWN_DELAY`: "reset the idle countdown so that we don't do expensive checks too often".
@@ -269,6 +277,87 @@ pub trait AiStateHost: AiHost + StateContext {
     fn team_group_center_and_count(&mut self) -> (Coord3D, i32);
     /// `TheAI->getAiData()->m_skirmishGroupFudgeValue`.
     fn ai_data_skirmish_group_fudge_value(&self) -> f32;
+    // ---- batch A10a: the attack machine (see `ai_attack_states`; the fire state's `FireHost` is answered from these)
+    /// The attack frames lent while attack machines run, the innermost last.
+    fn attack_stack(&mut self) -> &mut Vec<AttackFrame>;
+    /// `obj->getContainedBy()` of another object.
+    fn object_contained_by(&self, id: ObjectId) -> ObjectId;
+    /// `TheAI->getAiData()->m_aiCrushesInfantry`.
+    fn ai_data_crushes_infantry(&self) -> bool;
+    /// `canCrushOrSquish(victim)`.
+    fn can_crush_or_squish(&mut self, victim: ObjectId) -> bool;
+    /// `getCurrentWeapon(&slot)`: the slot, none without a current weapon.
+    fn current_weapon_slot(&self) -> Option<WeaponSlotType>;
+    /// `getWeaponInWeaponSlot(slot) != NULL`.
+    fn weapon_slot_present(&self, slot: WeaponSlotType) -> bool;
+    /// Another object's `isAirborneTarget()`.
+    fn object_is_airborne_target(&mut self, id: ObjectId) -> bool;
+    /// `isAbleToAttack()`.
+    fn is_able_to_attack(&self) -> bool;
+    /// `isOutOfAmmo()`.
+    fn is_out_of_ammo(&self) -> bool;
+    /// `isCurWeaponLocked()`.
+    fn is_cur_weapon_locked(&self) -> bool;
+    /// `hasAnyWeapon()`.
+    fn has_any_weapon(&self) -> bool;
+    /// `m_turretAI[which]->isOwnersCurWeaponOnTurret()`.
+    fn turret_holds_current_weapon(&self, which: usize) -> bool;
+    /// `m_turretAI[which]->setTurretTargetObject(o, forceAttacking)`.
+    fn turret_set_target_object(&mut self, which: usize, o: Option<ObjectId>, force_attacking: bool);
+    /// `m_turretAI[which]->setTurretTargetPosition(pos)`.
+    fn turret_set_target_position(&mut self, which: usize, pos: Option<&Coord3D>);
+    /// `m_turretAI[which]->getTurnRate()`.
+    fn turret_turn_rate(&self, which: usize) -> f32;
+    /// `chooseBestWeaponForTarget(target, criteria, cmdSource)`.
+    fn choose_best_weapon_for_target(&mut self, target: Option<ObjectId>, criteria: WeaponChoiceCriteria, src: CommandSourceType) -> bool;
+    /// `adjustModelConditionForWeaponStatus()`.
+    fn adjust_model_condition_for_weapon_status(&mut self);
+    /// `clearLeechRangeModeForAllWeapons()`.
+    fn clear_leech_range_mode_for_all_weapons(&mut self);
+    /// Another object's `isEffectivelyDead()`.
+    fn object_is_effectively_dead(&self, id: ObjectId) -> bool;
+    /// Another object's `isDestroyed()`.
+    fn object_is_destroyed(&mut self, id: ObjectId) -> bool;
+    /// Another object's team (`getTeam()`), none without one.
+    fn object_team(&self, id: ObjectId) -> Option<u32>;
+    /// Another object's `testStatus(bit)`.
+    fn object_test_status(&self, id: ObjectId, bit: ObjectStatusTypes) -> bool;
+    /// Another object's `getContain() != NULL`.
+    fn object_has_contain(&self, id: ObjectId) -> bool;
+    /// `getRelationship(that)`: the owner's to another object.
+    fn object_relationship(&mut self, that: ObjectId) -> Relationship;
+    /// `setStatus(MAKE_OBJECT_STATUS_MASK..(bits), set)`: one call, its bits.
+    fn set_status_bits(&mut self, bits: &[ObjectStatusTypes], set: bool);
+    /// `getTeam()->setTeamTargetObject(target)`.
+    fn set_team_target_object(&mut self, target: ObjectId);
+    /// The contain's (another object's: the stand-ins' one contain) `isGarrisonable()`, `getContainCount()`.
+    fn contain_is_garrisonable(&self) -> bool;
+    fn contain_count(&self) -> u32;
+    /// The owner's container's `isEnclosingContainerFor(owner)`.
+    fn contain_is_enclosing_container_for_me(&mut self) -> bool;
+    /// The owner's container's `attemptBestFirePointPosition(owner, weapon, victim)` / `(.., targetPos)`.
+    fn contain_attempt_best_fire_point_at_object(&mut self, victim: ObjectId) -> bool;
+    fn contain_attempt_best_fire_point_at_position(&mut self, pos: &Coord3D) -> bool;
+    /// `ThePartitionManager->getRelativeAngle2D(owner, other)` / `(owner, pos)`.
+    fn relative_angle_2d_to_object(&mut self, other: ObjectId) -> f32;
+    fn relative_angle_2d_to_position(&mut self, pos: &Coord3D) -> f32;
+    /// The current weapon's `getMaxShotCount()`, `getAimDelta()`, `getStatus()`, `hasLeechRange()`.
+    fn weapon_max_shot_count(&self) -> i32;
+    fn weapon_aim_delta(&self) -> f32;
+    fn weapon_status_now(&self, slot: WeaponSlotType) -> WeaponStatus;
+    fn weapon_has_leech_range_now(&self, slot: WeaponSlotType) -> bool;
+    /// The slot's weapon's `fireWeapon(owner, pos)`: whether it reloaded.
+    fn weapon_fire_at(&mut self, slot: WeaponSlotType, pos: &Coord3D) -> bool;
+    /// The slot's weapon's `setPreAttackFinishedFrame(frame)`.
+    fn weapon_set_pre_attack_finished(&mut self, slot: WeaponSlotType, frame: u32);
+    /// The owner's weapon calls (`setFiringConditionForCurrentWeapon`, `preFireCurrentWeapon`, `fireCurrentWeapon`,
+    /// `releaseWeaponLock`, `notifyFiringTrackerShotFired`).
+    fn set_firing_condition_for_current_weapon(&mut self);
+    fn pre_fire_current_weapon(&mut self, victim: Option<ObjectId>);
+    fn fire_current_weapon_at_object(&mut self, victim: Option<ObjectId>);
+    fn fire_current_weapon_at_position(&mut self, pos: &Coord3D);
+    fn release_weapon_lock(&mut self, lock: i32);
+    fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -278,7 +367,7 @@ pub trait AiStateHost: AiHost + StateContext {
 }
 
 /// The AI's states (`AIStateMachine`'s).
-pub enum AiState<H> {
+pub enum AiState<H: AiStateHost> {
     /// `AIIdleState`.
     Idle { initial_sleep_offset: u16, should_look_for_targets: bool, inited: bool },
     /// `AIDeadState`.
@@ -312,6 +401,24 @@ pub enum AiState<H> {
     WanderInPlace { mv: MoveToData, origin: Coord3D, wait_frames: i32, timer: i32 },
     /// `AIPanicState`.
     Panic { mv: MoveToData, wp: WaypointPathData, wait_frames: i32, timer: i32 },
+    /// `AIAttackState` (batch A10a; the four attack ids): `m_follow`, `m_isAttackingObject`, `m_isForceAttacking`, the owner's kinds
+    /// that make its machine, `m_attackMachine`, `m_originalVictimPos`, `m_victimTeam`, `m_lockedWeaponOnEnter` (its slot).
+    Attack {
+        follow: bool,
+        attacking_object: bool,
+        force_attacking: bool,
+        kinds: AttackOwnerKinds,
+        machine: Option<StateMachine<AiState<H>>>,
+        original_victim_pos: Coord3D,
+        victim_team: Option<u32>,
+        locked_weapon_on_enter: Option<WeaponSlotType>,
+    },
+    /// The attack machine's `AIAttackAimAtTargetState`.
+    AttackAim { attacking_object: bool, force_attacking: bool, can_turn_in_place: bool, set_locomotor: bool },
+    /// The attack machine's `AIAttackFireWeaponState`.
+    AttackFire,
+    /// The attack machine's `ContinueState` and `FailureState`.
+    Utility(UtilityState),
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -320,7 +427,18 @@ pub enum AiState<H> {
 
 /// The machine's transition conditions (none of the batch's states has one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AiCondition {}
+pub enum AiCondition {
+    /// `outOfWeaponRangeObject` (batch A10a: the attack machine's).
+    OutOfWeaponRangeObject,
+    /// `inWeaponRangeObject`.
+    InWeaponRangeObject,
+    /// `wantToSquishTarget`.
+    WantToSquishTarget,
+    /// `outOfWeaponRangePosition`.
+    OutOfWeaponRangePosition,
+    /// `cannotPossiblyAttackObject` with its attack type.
+    CannotPossiblyAttackObject(AbleToAttackType),
+}
 
 /// The static `isIdle`, `isAttack`, `isBusy` of an untranslated state's class: `AIAttackState`'s `TRUE` for the attack states;
 /// `false` for the others (whose answers are their inner machines', or the base class's).
@@ -495,7 +613,7 @@ pub fn aism_xfer<H: AiStateHost>(
 
 /// `AIStateMachine::AIStateMachine(obj, name)`'s state definitions, in upstream's order ("order matters: first state is the default
 /// state"), with each state's success and failure successors.
-pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmResult<()> {
+pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: AttackOwnerKinds) -> SmResult<()> {
     let u = |id| AiState::Untranslated { id };
     // AIFollowPathState's constructor: adjust final, no override, index 0, ten retries
     let follow_path =
@@ -514,6 +632,17 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
         }
     };
     let wander_in_place = || AiState::WanderInPlace { mv: MoveToData::default(), origin: Coord3D::default(), wait_frames: 0, timer: 0 };
+    // batch A10a: AIAttackState( machine, follow, attackingObject, forceAttacking, NULL )
+    let attack = |follow, attacking_object, force_attacking| AiState::Attack {
+        follow,
+        attacking_object,
+        force_attacking,
+        kinds,
+        machine: None,
+        original_victim_pos: Coord3D::default(),
+        victim_team: None,
+        locked_weapon_on_enter: None,
+    };
     let defs: [(StateId, AiState<H>, StateId, StateId); 41] = [
         (AI_IDLE, AiState::Idle { initial_sleep_offset: u16::MAX, should_look_for_targets: true, inited: false }, AI_IDLE, AI_IDLE),
         (AI_MOVE_TO, AiState::MoveTo { mv: MoveToData::default(), is_move_to: true }, AI_IDLE, AI_IDLE),
@@ -544,10 +673,10 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
         ),
         (AI_MOVE_AND_DELETE, AiState::MoveAndDelete { mv: MoveToData::default(), append_goal_position: false }, AI_IDLE, AI_IDLE),
         (AI_WAIT, AiState::Wait, AI_IDLE, AI_IDLE),
-        (AI_ATTACK_POSITION, u(AI_ATTACK_POSITION), AI_IDLE, AI_IDLE),
-        (AI_ATTACK_OBJECT, u(AI_ATTACK_OBJECT), AI_IDLE, AI_IDLE),
-        (AI_FORCE_ATTACK_OBJECT, u(AI_FORCE_ATTACK_OBJECT), AI_IDLE, AI_IDLE),
-        (AI_ATTACK_AND_FOLLOW_OBJECT, u(AI_ATTACK_AND_FOLLOW_OBJECT), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_POSITION, attack(false, false, false), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_OBJECT, attack(false, true, false), AI_IDLE, AI_IDLE),
+        (AI_FORCE_ATTACK_OBJECT, attack(false, true, true), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_AND_FOLLOW_OBJECT, attack(true, true, false), AI_IDLE, AI_IDLE),
         (AI_ATTACK_SQUAD, u(AI_ATTACK_SQUAD), AI_IDLE, AI_IDLE),
         (AI_WANDER, wander(false), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_PANIC, wander(true), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
@@ -750,6 +879,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Wander { .. })
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::on_enter(sm, h, id),
+            Some(AiState::Attack { .. }) => attack_states::attack_on_enter(sm, h, id),
+            Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
+            Some(AiState::AttackFire) => crate::logic::ai::fire_state::fire_on_enter(sm, h),
+            Some(AiState::Utility(u)) => Ok(u.on_enter()),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 Ok(h.untranslated_on_enter(id))
@@ -773,6 +906,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Wander { .. })
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::on_exit(sm, h, id),
+            Some(AiState::Attack { .. }) => attack_states::attack_on_exit(sm, h, id)?,
+            Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
+            Some(AiState::AttackFire) => attack_states::fire_on_exit(sm, h, status)?,
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 h.untranslated_on_exit(id, status);
@@ -798,6 +934,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::Wander { .. })
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::update(sm, h, id),
+            Some(AiState::Attack { .. }) => attack_states::attack_update(sm, h, id),
+            Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
+            Some(AiState::AttackFire) => crate::logic::ai::fire_state::fire_update(sm, h),
+            Some(AiState::Utility(u)) => Ok(u.update()),
             // "@todo srj -- find a way to sleep for a number of frames here, if possible"
             Some(AiState::Wait) | Some(AiState::Busy) | None => Ok(StateReturn::CONTINUE),
             Some(AiState::Untranslated { id }) => {
@@ -808,8 +948,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
         }
     }
 
-    fn test(_sm: &mut StateMachine<Self>, _h: &mut H, _id: StateId, condition: AiCondition) -> SmResult<bool> {
-        match condition {}
+    fn test(sm: &mut StateMachine<Self>, h: &mut H, _id: StateId, condition: AiCondition) -> SmResult<bool> {
+        Ok(attack_states::test(sm, h, condition))
     }
 
     fn is_idle(&self) -> bool {
@@ -821,6 +961,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     }
     fn is_attack(&self) -> bool {
         match self {
+            // (AIAttackState's TRUE)
+            AiState::Attack { .. } => !plant(3246),
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
             _ => false,
         }
@@ -855,6 +997,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::MoveAndDelete { mv, append_goal_position } => move_states::delete_xfer(mv, append_goal_position, xfer)?,
             AiState::FollowWaypointPath { mv, wp, .. } => waypoint_states::waypoint_path_xfer(mv, wp, xfer)?,
             AiState::FollowWaypointPathExact { mv, last, .. } => waypoint_states::exact_xfer(mv, last, xfer)?,
+            AiState::Attack { machine, original_victim_pos, attacking_object, force_attacking, kinds, .. } => {
+                attack_states::attack_xfer(machine, original_victim_pos, *attacking_object, *force_attacking, *kinds, xfer)?
+            }
+            AiState::AttackAim { can_turn_in_place, set_locomotor, .. } => attack_states::aim_xfer(can_turn_in_place, set_locomotor, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?
             }
@@ -919,7 +1065,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     pub fn on_object_created(&mut self, h: &mut H) -> SmResult<()> {
         if self.machine.is_none() {
             let mut sm = StateMachine::new();
-            define_states(&mut sm)?;
+            // (batch A10a: the owner's kinds that make the attack machines)
+            let kinds = AttackOwnerKinds {
+                immobile: h.is_kind_of(KINDOF_IMMOBILE),
+                portable_that_attacks: h.is_kind_of(KINDOF_PORTABLE_STRUCTURE) && h.is_kind_of(KINDOF_CAN_ATTACK),
+            };
+            define_states(&mut sm, kinds)?;
             self.machine = Some(sm);
             self.run(h, |sm, h| sm.init_default_state(h).map(|_| ()))?;
         }

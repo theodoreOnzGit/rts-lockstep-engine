@@ -521,7 +521,7 @@ fn is_sweep_enabled<H: TurretHost>(h: &mut H) -> bool {
 }
 
 /// `friend_getNextIdleMoodTargetFrame()`: the AI's next mood check (now without an AI: "ai can be null during object construction").
-fn next_idle_mood_target_frame<H: TurretHost>(h: &H) -> u32 {
+fn next_idle_mood_target_frame<H: TurretHost>(h: &mut H) -> u32 {
     let owner = h.owner();
     if h.has_ai(owner) {
         h.ai_next_mood_check_time(owner)
@@ -951,8 +951,9 @@ impl<H: TurretHost> TurretAi<H> {
     }
 
     /// `isTurretInNaturalPosition()`: under construction counts ("so that under-construction base-defenses do not re-center").
-    pub fn is_turret_in_natural_position(&self, h: &H) -> bool {
-        if h.test_status(h.owner(), OBJECT_STATUS_UNDER_CONSTRUCTION) {
+    pub fn is_turret_in_natural_position(&self, h: &mut H) -> bool {
+        let owner = h.owner();
+        if h.test_status(owner, OBJECT_STATUS_UNDER_CONSTRUCTION) {
             return true;
         }
         self.data.data.natural_turret_angle == self.data.angle && self.data.data.natural_turret_pitch == self.data.pitch
@@ -984,8 +985,9 @@ impl<H: TurretHost> TurretAi<H> {
     }
 
     /// `isOwnersCurWeaponOnTurret()`.
-    pub fn is_owners_cur_weapon_on_turret(&self, h: &H) -> bool {
-        h.current_weapon(h.owner()).is_some_and(|s| is_weapon_slot_on_turret(&self.data, s))
+    pub fn is_owners_cur_weapon_on_turret(&self, h: &mut H) -> bool {
+        let owner = h.owner();
+        h.current_weapon(owner).is_some_and(|s| is_weapon_slot_on_turret(&self.data, s))
     }
 
     /// `notifyNewVictimChosen(victim)`.

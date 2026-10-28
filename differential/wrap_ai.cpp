@@ -52,6 +52,11 @@
 ** setters, and stand-ins of the waypoints' second link, ids and lookup by id, the team's current waypoint (logged when set), the
 ** groups' centres (the team's near the object), the skirmish player, the pathfinder's wall test (and its height from the scene).
 **
+** Batch A10a adds the attack machine (ai_states_a10.inc: the conditions, AttackStateMachine with its pursue and approach states as
+** placeholders 1000 and 1001, the aim and fire states, AIAttackState) and AIUpdate's turret members (ai_update_a10.inc), over
+** stand-ins of the weapons by slot (status, leech range, max shots, aim delta, firing), the objects' answers (airborne, destroyed,
+** crush, relationship, two teams), the contain's fire points, the relative angle and the turrets' targets (LOG_ATTACK).
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +115,11 @@ public:
 	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) : m_which((Int)tur) {}
 	/* batch A4: the AI's update runs it (batch T1's, its own build): logged, its sleep from the hash */
 	UpdateSleepTime updateTurretAI();
+	/* batch A10a: the targets logged; the turn rate and whether it holds the current weapon the scene's */
+	void setTurretTargetObject(Object *o, Bool forceAttacking);
+	void setTurretTargetPosition(const Coord3D *pos);
+	Real getTurnRate() const;
+	Bool isOwnersCurWeaponOnTurret() const;
 	Int m_which;
 };
 
@@ -220,6 +230,16 @@ public:
 	/* batch A8: AIUpdate.h's inlines, verbatim */
 	inline const Coord3D* friend_getGoalPathPosition( Int index ) const { return getStateMachine()->getGoalPathPosition( index ); }
 	inline void friend_setCurrentGoalPathIndex( Int index ) { m_nextGoalPathIndex = index; }
+	/* batch A10a: AIUpdate.h's inlines, verbatim, and the members of ai_update_a10.inc */
+	Bool areTurretsLinked() const { return getAIUpdateModuleData()->m_turretsLinked; }
+	/* (virtual upstream; plain here: no class of this build overrides them, and the other objects' AIs are not constructed) */
+	CommandSourceType getLastCommandSource() const { return m_lastCommandSource; }
+	Bool isTemporarilyPreventingAimSuccess() const { return false; }
+	void notifyVictimIsDead() { }
+	void setTurretTargetObject(WhichTurretType tur, Object* o, Bool forceAttacking);
+	void setTurretTargetPosition(WhichTurretType tur, const Coord3D* pos);
+	Real getTurretTurnRate(WhichTurretType tur) const;
+	WhichTurretType getWhichTurretForCurWeapon() const;
 	/* batch A9: AIUpdate.h's inlines, verbatim */
 	void setPriorWaypointID( UnsignedInt id )   { m_priorWaypointID = id; };
 	void setCurrentWaypointID( UnsignedInt id ) { m_currentWaypointID = id; };
@@ -365,8 +385,10 @@ public:
 #include "ai_states_a7.inc"
 #include "ai_states_a8.inc"
 #include "ai_states_a9.inc"
+#include "ai_states_a10.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
+#include "ai_update_a10.inc"
 
 #undef private
 #undef protected
@@ -424,9 +446,12 @@ Player g_player;
 TeamTemplateInfo g_teamInfo;
 TeamPrototype g_teamPrototype;
 Team g_team;
+Team g_otherTeams[2];	/* batch A10a: the other objects' teams (by the hash of their id and the scene's epoch) */
 ContainModuleInterface g_contain;
 StealthUpdate g_stealth;
 Weapon g_weapon;
+/* batch A10a: the weapons by slot (the current weapon is the current slot's: a locked weapon is a slot) */
+Weapon g_slotWeapons[3];
 DamageInfo g_lastDamage;
 UpgradeTemplate g_nationalism, g_fanaticism, g_otherUpgrade;
 UpgradeCenter g_upgradeCenter;
@@ -687,6 +712,14 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_CAN_BE_REPULSED) return (g_aiEnv.kindMask & 128) != 0;
 	/* batch A6 */
 	if (t == KINDOF_BRIDGE) return (g_aiEnv.kindMask & 256) != 0;
+	/* batch A10a */
+	if (t == KINDOF_PORTABLE_STRUCTURE) return (g_aiEnv.kindMask & 512) != 0;
+	if (t == KINDOF_CAN_ATTACK) return (g_aiEnv.kindMask & 1024) != 0;
+	if (t == KINDOF_MINE) return (g_aiEnv.kindMask & 2048) != 0;
+	if (t == KINDOF_SPAWNS_ARE_THE_WEAPONS) return (g_aiEnv.kindMask & 4096) != 0;
+	if (t == KINDOF_STRUCTURE) return (g_aiEnv.kindMask & 8192) != 0;
+	if (t == KINDOF_AIRCRAFT) return (g_aiEnv.kindMask & 16384) != 0;
+	if (t == KINDOF_DONT_AUTO_CRUSH_INFANTRY) return (g_aiEnv.kindMask & 32768) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -768,6 +801,7 @@ const AiData *AI::getAiData()
 	g_aiData.m_attackIgnoreInsignificantBuildings = g_aiEnv.ignoreInsignificant != 0;
 	g_aiData.m_repulsedDistance = g_aiEnv.repulsedDistance;
 	g_aiData.m_skirmishGroupFudgeValue = g_aiEnv.skirmishFudge;
+	g_aiData.m_aiCrushesInfantry = g_aiEnv.crushesInfantry != 0;
 	return &g_aiData;
 }
 Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToConsider)
@@ -814,7 +848,11 @@ HordeUpdateInterface *BehaviorModule::getHordeUpdateInterface()
 }
 Bool Object::isEffectivelyDead() const { return g_aiEnv.effectivelyDead != 0; }
 Player *Object::getControllingPlayer() const { return g_aiEnv.playerType >= 0 ? &g_player : NULL; }
-Team *Object::getTeam() { return &g_team; }
+Team *Object::getTeam()
+{
+	if (!m_otherId) return &g_team;
+	return &g_otherTeams[(p1Hash(68, { (unsigned)m_otherId, (unsigned)g_aiEnv.teamEpoch }) >> 8) & 1];
+}
 CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType commandSource) const
 {
 	unsigned h = p1Hash(9, { (unsigned)t, (unsigned)target->getID(), (unsigned)commandSource });
@@ -827,8 +865,8 @@ Object *Object::getContainedBy() { return m_otherId ? NULL : findObject((ObjectI
 /* (batch A5: the AI's own object has one if the scene says so; another object always has one) */
 ContainModuleInterface *Object::getContain() const { return (m_otherId || g_aiEnv.hasContain) ? &g_contain : NULL; }
 StealthUpdate *Object::getStealth() const { return g_aiEnv.stealth >= 0 ? &g_stealth : NULL; }
-Weapon *Object::getCurrentWeapon() { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
-const Weapon *Object::getCurrentWeapon() const { return g_aiEnv.weaponAnti >= 0 ? &g_weapon : NULL; }
+Weapon *Object::getCurrentWeapon() { return g_aiEnv.weaponAnti >= 0 ? &g_slotWeapons[g_aiEnv.curSlot] : NULL; }
+const Weapon *Object::getCurrentWeapon() const { return g_aiEnv.weaponAnti >= 0 ? &g_slotWeapons[g_aiEnv.curSlot] : NULL; }
 BehaviorModule **Object::getBehaviorModules()
 {
 	for (int i = 0; i < 3; ++i) { g_modules[i].m_index = i; g_moduleList[i] = &g_modules[i]; }
@@ -951,7 +989,8 @@ Bool Pathfinder::clientSafeQuickDoesPathExist(const LocomotorSet& locomotorSet, 
 	L(LOG_PATH_EXISTS, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z), r ? 1u : 0u });
 	return r;
 }
-void Weapon::setMaxShotCount(Int maxShots) { L(LOG_MAX_SHOTS, { (unsigned)maxShots }); }
+Int g_maxShots = 0;	/* batch A10a: the current weapon's max shot count */
+void Weapon::setMaxShotCount(Int maxShots) { L(LOG_MAX_SHOTS, { (unsigned)maxShots }); g_maxShots = maxShots; }
 Real Weapon::getContinueAttackRange() const { return g_aiEnv.continueRange; }
 Bool Weapon::isContactWeapon() const { return g_aiEnv.contactWeapon != 0; }
 Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
@@ -1141,6 +1180,100 @@ void Pathfinder::snapClosestGoalPosition(Object *obj, Coord3D *pos)
 	if (pfAnswer(5, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) })) pos->x += 1.0f;
 }
 void Pathfinder::removeGoal(Object *obj) { pfAnswer(6, {}); }
+/* ---- batch A10a's stand-ins (the attack machine). LOG_ATTACK's kinds: 0 setPreAttackFinishedFrame, 1 fireWeapon, 2 releaseWeaponLock,
+** 3 notifyFiringTrackerShotFired, 4 preFireCurrentWeapon, 5 setFiringConditionForCurrentWeapon, 6 fireCurrentWeapon at an object, 7 at a
+** position, 8 chooseBestWeaponForTarget, 9 adjustModelConditionForWeaponStatus, 10 clearLeechRangeModeForAllWeapons, 11
+** setTeamTargetObject, 12 attemptBestFirePointPosition, 13 getRelativeAngle2D, 14 a turret's target object, 15 its target position */
+namespace {
+bool objectAnswer(unsigned kind, std::initializer_list<unsigned> words) { return p1Pick(p1Hash(60 + kind, words), g_aiEnv.objectRate); }
+}
+WeaponStatus Weapon::getStatus() const { return (WeaponStatus)g_aiEnv.weaponStatus; }
+Bool Weapon::hasLeechRange() const { return g_aiEnv.leechRange != 0; }
+Int Weapon::getMaxShotCount() const { return g_maxShots; }
+Real Weapon::getAimDelta() const { return g_aiEnv.aimDelta; }
+Bool Weapon::fireWeapon(const Object *source, const Coord3D* pos)
+{
+	bool r = objectAnswer(7, { (unsigned)m_slot, bitsOf(pos->x), bitsOf(pos->y) });
+	L(LOG_ATTACK, { 1u, (unsigned)m_slot, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), r ? 1u : 0u });
+	return r;
+}
+void Weapon::setPreAttackFinishedFrame(UnsignedInt frame) { L(LOG_ATTACK, { 0u, (unsigned)m_slot, frame }); }
+Bool Object::isAirborneTarget() const { return objectAnswer(0, { (unsigned)getID() }); }
+Bool Object::isDestroyed() const { return objectAnswer(1, { (unsigned)getID() }); }
+Bool Object::canCrushOrSquish(Object *otherObj, CrushSquishTestType testType) const
+{
+	return objectAnswer(2, { (unsigned)getID(), (unsigned)otherObj->getID(), (unsigned)testType });
+}
+Relationship Object::getRelationship(const Object *that) const { return (Relationship)(p1Hash(63, { (unsigned)getID(), (unsigned)that->getID() }) % 3u); }
+Bool Object::isAbleToAttack() const { return g_aiEnv.ableToAttack != 0; }
+Bool Object::isOutOfAmmo() const { return g_aiEnv.outOfAmmo != 0; }
+Bool Object::isCurWeaponLocked() const { return g_aiEnv.curWeaponLocked != 0; }
+Bool Object::hasAnyWeapon() const { return g_aiEnv.hasAnyWeapon != 0; }
+Weapon *Object::getCurrentWeapon(WeaponSlotType* wslot)
+{
+	if (wslot) *wslot = (WeaponSlotType)g_aiEnv.curSlot;
+	return getCurrentWeapon();
+}
+Weapon *Object::getWeaponInWeaponSlot(WeaponSlotType wslot) const
+{
+	if (!((g_aiEnv.slotMask >> (Int)wslot) & 1)) return NULL;
+	return &g_slotWeapons[wslot];
+}
+Bool Object::chooseBestWeaponForTarget(const Object* target, WeaponChoiceCriteria criteria, CommandSourceType cmdSource)
+{
+	unsigned id = target ? (unsigned)target->getID() : 0u;
+	bool r = objectAnswer(6, { id, (unsigned)criteria, (unsigned)cmdSource });
+	L(LOG_ATTACK, { 8u, id, (unsigned)criteria, (unsigned)cmdSource, r ? 1u : 0u });
+	return r;
+}
+void Object::adjustModelConditionForWeaponStatus() { L(LOG_ATTACK, { 9u }); }
+void Object::clearLeechRangeModeForAllWeapons() { L(LOG_ATTACK, { 10u }); }
+void Object::setFiringConditionForCurrentWeapon() const { L(LOG_ATTACK, { 5u }); }
+void Object::preFireCurrentWeapon(const Object *victim) { L(LOG_ATTACK, { 4u, victim ? (unsigned)victim->getID() : 0u }); }
+Bool Object::fireCurrentWeapon(Object *target) { L(LOG_ATTACK, { 6u, target ? (unsigned)target->getID() : 0u }); return FALSE; }
+Bool Object::fireCurrentWeapon(const Coord3D* pos) { L(LOG_ATTACK, { 7u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); return FALSE; }
+void Object::releaseWeaponLock(WeaponLockType lockType) { L(LOG_ATTACK, { 2u, (unsigned)lockType }); }
+void Object::notifyFiringTrackerShotFired(const Weapon* weaponFired, ObjectID victimID)
+{
+	L(LOG_ATTACK, { 3u, (unsigned)weaponFired->m_slot, (unsigned)victimID });
+}
+void Team::setTeamTargetObject(const Object *target) { L(LOG_ATTACK, { 11u, target ? (unsigned)target->getID() : 0u }); }
+Bool ContainModuleInterface::isEnclosingContainerFor(const Object *obj) const { return objectAnswer(4, { (unsigned)obj->getID() }); }
+Bool ContainModuleInterface::attemptBestFirePointPosition(Object *source, Weapon *weapon, Object *victim)
+{
+	bool r = objectAnswer(5, { (unsigned)victim->getID() });
+	L(LOG_ATTACK, { 12u, (unsigned)victim->getID(), r ? 1u : 0u });
+	return r;
+}
+Bool ContainModuleInterface::attemptBestFirePointPosition(Object *source, Weapon *weapon, const Coord3D *targetPos)
+{
+	bool r = objectAnswer(5, { bitsOf(targetPos->x), bitsOf(targetPos->y) });
+	L(LOG_ATTACK, { 12u, bitsOf(targetPos->x), bitsOf(targetPos->y), r ? 1u : 0u });
+	return r;
+}
+Bool ContainModuleInterface::isGarrisonable() const { return g_aiEnv.garrisonable != 0; }
+UnsignedInt ContainModuleInterface::getContainCount() const { return (UnsignedInt)g_aiEnv.containCount; }
+Real PartitionManager::getRelativeAngle2D(const Object *obj, const Object *otherObj)
+{
+	L(LOG_ATTACK, { 13u, otherObj ? (unsigned)otherObj->getID() : 0u });
+	return g_aiEnv.relAngle;
+}
+Real PartitionManager::getRelativeAngle2D(const Object *obj, const Coord3D *pos)
+{
+	L(LOG_ATTACK, { 13u, bitsOf(pos->x), bitsOf(pos->y) });
+	return g_aiEnv.relAngle;
+}
+void TurretAI::setTurretTargetObject(Object *o, Bool forceAttacking)
+{
+	L(LOG_ATTACK, { 14u, (unsigned)m_which, o ? (unsigned)o->getID() : 0u, (unsigned)forceAttacking });
+}
+void TurretAI::setTurretTargetPosition(const Coord3D *pos)
+{
+	if (pos) L(LOG_ATTACK, { 15u, (unsigned)m_which, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+	else L(LOG_ATTACK, { 15u, (unsigned)m_which });
+}
+Real TurretAI::getTurnRate() const { return g_aiEnv.turretTurnRate[m_which]; }
+Bool TurretAI::isOwnersCurWeaponOnTurret() const { return ((g_aiEnv.turretCurWeapon >> m_which) & 1) != 0; }
 /* batch A9 */
 Bool Pathfinder::isPointOnWall(const Coord3D *pos) { return pfAnswer(7, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
 void Pathfinder::moveAlliesAwayFromDestination(Object *obj, const Coord3D& destination)
@@ -1267,6 +1400,8 @@ void setScene(const AiEnv *env)
 	TheGlobalData->m_gravity = env->gravity;
 	/* batch A9 */
 	TheAI->pathfinder()->m_wallHeight = env->wallHeight;
+	/* batch A10a */
+	for (int i = 0; i < 3; ++i) g_slotWeapons[i].m_slot = i;
 	TheGlobalData->m_movementPenaltyDamageState = env->penalty;
 	/* batch A5 */
 	TheGlobalData->m_partitionCellSize = env->partitionCellSize;
@@ -1425,6 +1560,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_nextAudioHandle = 1;
 	/* batch A9 */
 	g_teamWaypoint = env->teamWaypoint >= 0 ? &g_waypoints[env->teamWaypoint] : NULL;
+	/* batch A10a */
+	g_maxShots = env->maxShotsInit;
 	g_data = new AIUpdateModuleData;
 	unsigned k = 0, count = sets[k++];
 	for (unsigned s = 0; s < count; ++s) {
@@ -1442,6 +1579,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_data->m_moodAttackCheckRate = sets[k++];
 	/* batch A5: the data's forbidden player commands */
 	g_data->m_forbidPlayerCommands = sets[k++] != 0;
+	/* batch A10a: the data's linked turrets */
+	g_data->m_turretsLinked = sets[k++] != 0;
 	g_object = Object();
 	++g_aiQuiet;
 	Coord3D p = { pos[0], pos[1], pos[2] };
@@ -1829,6 +1968,25 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, f->m_moveAsGroup ? 1u : 0u);
 					putU32(v, f->m_isFollowWaypointPathState ? 1u : 0u);
 				}
+			}
+		}
+		/* batch A10a: the attack states, their machines and their aim states */
+		const StateID attacks[4] = { AI_ATTACK_POSITION, AI_ATTACK_OBJECT, AI_FORCE_ATTACK_OBJECT, AI_ATTACK_AND_FOLLOW_OBJECT };
+		for (int i = 0; i < 4; ++i) {
+			const AIAttackState *a = (const AIAttackState *)sm->m_stateMap.find(attacks[i])->second;
+			putU32(v, a->m_attackMachine ? 1u : 0u);
+			putPos(v, a->m_originalVictimPos);
+			putU32(v, a->m_victimTeam ? 1u : 0u);
+			putU32(v, a->m_lockedWeaponOnEnter ? (unsigned)a->m_lockedWeaponOnEnter->m_slot : 0xffffffffu);
+			if (a->m_attackMachine) {
+				const AttackStateMachine *m = a->m_attackMachine;
+				putU32(v, (unsigned)m->getCurrentStateID());
+				putU32(v, (unsigned)m->m_goalObjectID);
+				putPos(v, m->m_goalPosition);
+				putU32(v, m->m_sleepTill);
+				const AIAttackAimAtTargetState *aim = (const AIAttackAimAtTargetState *)m->m_stateMap.find(AttackStateMachine::AIM_AT_TARGET)->second;
+				putU32(v, aim->m_canTurnInPlace ? 1u : 0u);
+				putU32(v, aim->m_setLocomotor ? 1u : 0u);
 			}
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

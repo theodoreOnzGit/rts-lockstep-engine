@@ -88,6 +88,15 @@
 #define PartitionFilterPossibleToAttack AiPartitionFilterPossibleToAttack
 #define PartitionFilterSameMapStatus AiPartitionFilterSameMapStatus
 #define FindPositionOptions AiFindPositionOptions
+/* batch A10a: the attack machine (the turret build has its own fire state and condition) */
+#define AttackStateMachine AiAttackStateMachine
+#define AIAttackState AiAIAttackState
+#define AIAttackAimAtTargetState AiAIAttackAimAtTargetState
+#define AIAttackFireWeaponState AiAIAttackFireWeaponState
+#define outOfWeaponRangeObject aiOutOfWeaponRangeObject
+#define outOfWeaponRangePosition aiOutOfWeaponRangePosition
+#define wantToSquishTarget aiWantToSquishTarget
+#define PartitionFilterSamePlayer AiPartitionFilterSamePlayer
 /* batch A7 */
 #define AudioEventRTS AiAudioEventRTS
 #define DynamicAudioEventRTS AiDynamicAudioEventRTS
