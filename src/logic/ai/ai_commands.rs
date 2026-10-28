@@ -382,6 +382,14 @@ pub fn ai_attack_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Objec
     ai_do_command(sm, h, &parms)
 }
 
+/// `aiAttackMoveToPosition(pos, maxShotsToFire, cmdSource)`.
+pub fn ai_attack_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, max_shots: i32, src: CommandSourceType) -> SmResult<()> {
+    let mut parms = AiCommandParms::new(AICMD_ATTACKMOVE_TO_POSITION, src);
+    parms.pos = *pos;
+    parms.int_value = max_shots;
+    ai_do_command(sm, h, &parms)
+}
+
 /// `aiEnter(obj, cmdSource)`.
 pub fn ai_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, obj: ObjectId, src: CommandSourceType) -> SmResult<()> {
     let mut parms = AiCommandParms::new(AICMD_ENTER, src);

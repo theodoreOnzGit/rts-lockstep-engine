@@ -67,6 +67,7 @@ use crate::common::state_machine::{
 };
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
+use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -194,7 +195,7 @@ pub trait AiStateHost: AiHost + StateContext {
     /// `TheAI->pathfinder()->adjustToPossibleDestination(obj, locomotorSet, pos)`.
     fn pf_adjust_to_possible_destination(&mut self, pos: &mut Coord3D);
     /// `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, pos)`.
-    fn pf_adjust_destination(&mut self, pos: &mut Coord3D);
+    fn pf_adjust_destination(&mut self, pos: &mut Coord3D) -> bool;
     /// `TheAI->pathfinder()->clientSafeQuickDoesPathExistForUI(locomotorSet, obj's position, destination)`.
     fn pf_quick_path_exists_for_ui(&mut self, destination: &Coord3D) -> bool;
     /// `TheAI->pathfinder()->isAttackViewBlockedByObstacle(obj, obj's position, victim (none: `INVALID_ID`), victimPos)`.
@@ -217,6 +218,30 @@ pub trait AiStateHost: AiHost + StateContext {
     fn bridge_attack_points(&mut self, bridge: ObjectId) -> (Coord3D, Coord3D);
     /// `ThePartitionManager->getDistanceSquared(obj, pos, FROM_BOUNDINGSPHERE_3D)`.
     fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32;
+    // ---- batch A7: the move states
+    /// `TheAI->pathfinder()->getCell(layer, x, y)`'s type and pinch (`None`: no cell).
+    fn pf_cell_at(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<(u8, bool)>;
+    /// `TheAI->pathfinder()->snapClosestGoalPosition(obj, pos)`.
+    fn pf_snap_closest_goal_position(&mut self, pos: &mut Coord3D);
+    /// `TheAI->pathfinder()->removeGoal(obj)`.
+    fn pf_remove_goal(&mut self);
+    /// `startMoveSound()`'s sounds (the template's move start sound, damaged or not, else its move loop): the loop's handle, if
+    /// one was started.
+    fn start_move_sound(&mut self, damaged: bool) -> Option<u32>;
+    /// `TheAudio->removeAudioEvent(handle)`.
+    fn remove_audio_event(&mut self, handle: u32);
+    /// `getObject()->getFormationID()` (`NO_FORMATION_ID` 0).
+    fn formation_id(&self) -> i32;
+    /// `getAI()->getGroup()->getSpeed()`, if the AI has a group.
+    fn group_speed(&mut self) -> Option<f32>;
+    /// Another object's `getGeometryInfo().getMaxHeightAbovePosition()`.
+    fn object_max_height_above_position(&self, id: ObjectId) -> f32;
+    /// Another object's `getPhysics() != NULL`.
+    fn object_has_physics(&self, id: ObjectId) -> bool;
+    /// Another object's `getPhysics()->getVelocityMagnitude()`.
+    fn object_velocity_magnitude(&self, id: ObjectId) -> f32;
+    /// Another object's `getUnitDirectionVector3D(dir)`.
+    fn object_unit_direction_vector_3d(&mut self, id: ObjectId) -> Coord3D;
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -235,6 +260,14 @@ pub enum AiState<H> {
     Wait,
     /// `AIBusyState`.
     Busy,
+    /// `AIMoveToState` (batch A7): `m_isMoveTo` ("ACTUALLY A MOVE TO"; subclasses not yet translated set it false).
+    MoveTo { mv: MoveToData, is_move_to: bool },
+    /// `AIMoveOutOfTheWayState`.
+    MoveOutOfTheWay { mv: MoveToData },
+    /// `AIMoveAndTightenState`.
+    MoveAndTighten { mv: MoveToData, ok_to_repath_times: i32, check_for_path: bool },
+    /// `AIMoveAwayFromRepulsorsState` (an `AIMoveAndTightenState`).
+    MoveAwayFromRepulsors { mv: MoveToData, ok_to_repath_times: i32, check_for_path: bool },
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -422,10 +455,15 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
     let u = |id| AiState::Untranslated { id };
     let defs: [(StateId, AiState<H>, StateId, StateId); 41] = [
         (AI_IDLE, AiState::Idle { initial_sleep_offset: u16::MAX, should_look_for_targets: true, inited: false }, AI_IDLE, AI_IDLE),
-        (AI_MOVE_TO, u(AI_MOVE_TO), AI_IDLE, AI_IDLE),
-        (AI_MOVE_OUT_OF_THE_WAY, u(AI_MOVE_OUT_OF_THE_WAY), AI_IDLE, AI_IDLE),
-        (AI_MOVE_AND_TIGHTEN, u(AI_MOVE_AND_TIGHTEN), AI_IDLE, AI_IDLE),
-        (AI_MOVE_AWAY_FROM_REPULSORS, u(AI_MOVE_AWAY_FROM_REPULSORS), AI_WANDER_IN_PLACE, AI_WANDER_IN_PLACE),
+        (AI_MOVE_TO, AiState::MoveTo { mv: MoveToData::default(), is_move_to: true }, AI_IDLE, AI_IDLE),
+        (AI_MOVE_OUT_OF_THE_WAY, AiState::MoveOutOfTheWay { mv: MoveToData::default() }, AI_IDLE, AI_IDLE),
+        (AI_MOVE_AND_TIGHTEN, AiState::MoveAndTighten { mv: MoveToData::default(), ok_to_repath_times: 0, check_for_path: false }, AI_IDLE, AI_IDLE),
+        (
+            AI_MOVE_AWAY_FROM_REPULSORS,
+            AiState::MoveAwayFromRepulsors { mv: MoveToData::default(), ok_to_repath_times: 0, check_for_path: false },
+            AI_WANDER_IN_PLACE,
+            AI_WANDER_IN_PLACE,
+        ),
         (AI_WANDER_IN_PLACE, u(AI_WANDER_IN_PLACE), AI_MOVE_AWAY_FROM_REPULSORS, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_ATTACK_MOVE_TO, u(AI_ATTACK_MOVE_TO), AI_IDLE, AI_IDLE),
         (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM), AI_IDLE, AI_IDLE),
@@ -634,6 +672,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Idle { .. }) => idle_on_enter(sm, h, id),
             Some(AiState::Dead) => dead_on_enter(h),
             Some(AiState::Wait) | Some(AiState::Busy) | None => Ok(StateReturn::CONTINUE),
+            Some(AiState::MoveTo { .. })
+            | Some(AiState::MoveOutOfTheWay { .. })
+            | Some(AiState::MoveAndTighten { .. })
+            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::on_enter(sm, h, id),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 Ok(h.untranslated_on_enter(id))
@@ -645,6 +687,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     fn on_exit(sm: &mut StateMachine<Self>, h: &mut H, id: StateId, status: StateExitType) -> SmResult<()> {
         match sm.state(id) {
             Some(AiState::Dead) => h.clear_model_condition_state(MODELCONDITION_DYING),
+            Some(AiState::MoveTo { .. })
+            | Some(AiState::MoveOutOfTheWay { .. })
+            | Some(AiState::MoveAndTighten { .. })
+            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::on_exit(sm, h, id, status),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 h.untranslated_on_exit(id, status);
@@ -658,6 +704,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
         match sm.state(id) {
             Some(AiState::Idle { .. }) => idle_update(sm, h, id),
             Some(AiState::Dead) => dead_update(h),
+            Some(AiState::MoveTo { .. })
+            | Some(AiState::MoveOutOfTheWay { .. })
+            | Some(AiState::MoveAndTighten { .. })
+            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::update(sm, h, id),
             // "@todo srj -- find a way to sleep for a number of frames here, if possible"
             Some(AiState::Wait) | Some(AiState::Busy) | None => Ok(StateReturn::CONTINUE),
             Some(AiState::Untranslated { id }) => {
@@ -698,15 +748,27 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     }
 
     fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
-        let current_version: XferVersion = 1;
-        let mut version = current_version;
-        xfer.xfer_version(&mut version, current_version)?;
-        if let AiState::Idle { initial_sleep_offset, should_look_for_targets, inited } = self {
-            xfer.xfer_unsigned_short(initial_sleep_offset)?;
-            xfer.xfer_bool(should_look_for_targets)?;
-            xfer.xfer_bool(inited)?;
+        match self {
+            AiState::Idle { initial_sleep_offset, should_look_for_targets, inited } => {
+                let current_version: XferVersion = 1;
+                let mut version = current_version;
+                xfer.xfer_version(&mut version, current_version)?;
+                xfer.xfer_unsigned_short(initial_sleep_offset)?;
+                xfer.xfer_bool(should_look_for_targets)?;
+                xfer.xfer_bool(inited)?;
+            }
+            AiState::MoveTo { mv, .. } | AiState::MoveOutOfTheWay { mv } => mv.xfer(xfer)?,
+            AiState::MoveAndTighten { mv, ok_to_repath_times, check_for_path }
+            | AiState::MoveAwayFromRepulsors { mv, ok_to_repath_times, check_for_path } => {
+                move_states::tighten_xfer(mv, ok_to_repath_times, check_for_path, xfer)?
+            }
+            _ => {
+                // ("snapshot interface STUBBED": the version only)
+                let current_version: XferVersion = 1;
+                let mut version = current_version;
+                xfer.xfer_version(&mut version, current_version)?;
+            }
         }
-        // (the others: "snapshot interface STUBBED", the version only)
         Ok(())
     }
 

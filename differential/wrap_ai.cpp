@@ -41,6 +41,10 @@
 ** PathfindServicesInterface whose searches make their paths from the hash, and logged stand-ins of the pathfinder's other answers,
 ** the weapon's range tests, the waypoints' locations and links, and the bridge's attack points.
 **
+** Batch A7 makes the move states real (ai_states_a7.inc: isSamePosition, AIInternalMoveToState to AIMoveAwayFromRepulsorsState),
+** over the AI build's own audio stand-in (TheAudio's handles logged), the template's move sounds, the pathfinder's
+** snapClosestGoalPosition and removeGoal, the formation and the group's speed.
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -252,6 +256,14 @@ public:
 	/* batch A5's members (ai_update_a5.inc), and the header's inlines they call, verbatim */
 	virtual void aiDoCommand(const AICommandParms* parms);
 	virtual Bool isAllowedToMoveAwayFromUnit() const { return true; }
+	/* batch A7: AIUpdate.h's inlines the move states call, verbatim */
+	virtual Bool isAllowedToAdjustDestination() const { return true; }
+	void setDesiredSpeed( Real speed ) { m_desiredSpeed = speed; }	///< how fast we want to go
+	Int getNumFramesBlocked(void) const {return m_blockedFrames;}
+	Bool isBlockedAndStuck(void) const {return m_isBlockedAndStuck;}
+	inline void clearMoveOutOfWay(void) {m_moveOutOfWay1 = INVALID_ID; m_moveOutOfWay2 = INVALID_ID;}
+	inline Bool getRetryPath(void) {return m_retryPath;}
+	void setPathExtraDistance(Real dist) {m_pathExtraDistance = dist;}
 	Bool canPathThroughUnits( void ) const { return m_canPathThroughUnits; }
 	void setCanPathThroughUnits( Bool canPath ) { m_canPathThroughUnits = canPath; if (canPath) m_isBlockedAndStuck=false;}
 	void setIgnoreCollisionTime(Int frames) { m_ignoreCollisionsUntil = TheGameLogic->getFrame() + frames; }
@@ -331,6 +343,7 @@ public:
 #include "ai_update_a3.inc"
 #include "ai_update_a4.inc"
 #include "ai_states_a4.inc"
+#include "ai_states_a7.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 
@@ -439,6 +452,32 @@ ControlBar *TheControlBar = &g_controlBar;
 Pathfinder *AI::pathfinder() { return (Pathfinder *)g_pathfinderMem; }
 
 UnsignedInt GameLogic::getFrame() const { return g_aiEnv.frame; }
+
+/* ---- batch A7: the move sounds (TheAudio's handles count from 1 in each case) */
+namespace { AudioHandle g_nextAudioHandle = 1; AudioEventRTS g_sounds[4]; AudioManager g_audio; }
+AudioManager *TheAudio = &g_audio;
+AudioHandle AudioManager::addAudioEvent(const AudioEventRTS *e)
+{
+	int k = -1;
+	sscanf(e->getEventName().str(), "s%d", &k);
+	AudioHandle h = g_nextAudioHandle++;
+	L(LOG_AUDIO_ADD, { (unsigned)k, (unsigned)e->getObjectID(), (unsigned)h });
+	return h;
+}
+void AudioManager::removeAudioEvent(AudioHandle h) { L(LOG_AUDIO_REMOVE, { (unsigned)h }); }
+static const AudioEventRTS *moveSound(int k)
+{
+	g_sounds[k] = AudioEventRTS();
+	if ((g_aiEnv.sounds >> k) & 1) { AsciiString n; n.format("s%d", k); g_sounds[k].setEventName(n); }
+	return &g_sounds[k];
+}
+const AudioEventRTS *AiTemplateView::getSoundMoveStart() const { return moveSound(0); }
+const AudioEventRTS *AiTemplateView::getSoundMoveStartDamaged() const { return moveSound(1); }
+const AudioEventRTS *AiTemplateView::getSoundMoveLoop() const { return moveSound(2); }
+const AudioEventRTS *AiTemplateView::getSoundMoveLoopDamaged() const { return moveSound(3); }
+Real GeometryInfo::getMaxHeightAbovePosition() const { return g_aiEnv.maxHeightAbovePosition; }
+FormationID Object::getFormationID(void) const { return (FormationID)g_aiEnv.formationId; }
+Real AIGroup::getSpeed(void) { return g_aiEnv.groupSpeed; }
 
 Real TerrainLogic::getGroundHeight(Real x, Real y, Coord3D *normal) const
 {
@@ -777,6 +816,8 @@ Bool CollideModuleInterface::wouldLikeToCollideWith(const Object *other) const {
 void Object::setWeaponBonusCondition(WeaponBonusConditionType wst) { L(LOG_SET_BONUS, { (unsigned)wst }); }
 void Object::clearWeaponBonusCondition(WeaponBonusConditionType wst) { L(LOG_CLEAR_BONUS, { (unsigned)wst }); }
 AIGroup *Object::getGroup() { return g_aiEnv.hasGroup ? &g_group : NULL; }
+/* (batch A7: the const overload, as Object.h's) */
+const AIUpdateInterface *Object::getAI() const { return const_cast<Object *>(this)->getAI(); }
 AIUpdateInterface *Object::getAI()
 {
 	if (!m_otherId) return g_ai_update;
@@ -1039,6 +1080,12 @@ Path *Pathfinder::getAircraftPath(const Object *obj, const Coord3D *to)
 {
 	return standinPath(5, obj, to, { bitsOf(to->x), bitsOf(to->y), bitsOf(to->z) });
 }
+/* batch A7 */
+void Pathfinder::snapClosestGoalPosition(Object *obj, Coord3D *pos)
+{
+	if (pfAnswer(5, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) })) pos->x += 1.0f;
+}
+void Pathfinder::removeGoal(Object *obj) { pfAnswer(6, {}); }
 void Pathfinder::moveAlliesAwayFromDestination(Object *obj, const Coord3D& destination)
 {
 	pfAnswer(0, { bitsOf(destination.x), bitsOf(destination.y), bitsOf(destination.z) });
@@ -1316,6 +1363,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_aiLog->clear();
 	makeMap();
 	g_nextCallFrame = 0;
+	g_nextAudioHandle = 1;
 	g_data = new AIUpdateModuleData;
 	unsigned k = 0, count = sets[k++];
 	for (unsigned s = 0; s < count; ++s) {
@@ -1631,6 +1679,25 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		if (sm->m_goalSquad) {
 			putU32(v, (unsigned)sm->m_goalSquad->m_objectIDs.size());
 			for (size_t i = 0; i < sm->m_goalSquad->m_objectIDs.size(); ++i) putU32(v, (unsigned)sm->m_goalSquad->m_objectIDs[i]);
+		}
+		/* batch A7: the move states' members */
+		const StateID moves[4] = { AI_MOVE_TO, AI_MOVE_OUT_OF_THE_WAY, AI_MOVE_AND_TIGHTEN, AI_MOVE_AWAY_FROM_REPULSORS };
+		for (int i = 0; i < 4; ++i) {
+			const AIInternalMoveToState *m = (const AIInternalMoveToState *)sm->m_stateMap.find(moves[i])->second;
+			putPos(v, m->m_goalPosition);
+			putU32(v, (unsigned)m->m_goalLayer);
+			putPos(v, m->m_pathGoalPosition);
+			putU32(v, (unsigned)m->m_ambientPlayingHandle);
+			putU32(v, m->m_pathTimestamp);
+			putU32(v, m->m_blockedRepathTimestamp);
+			putU32(v, m->m_adjustDestinations ? 1u : 0u);
+			putU32(v, m->m_waitingForPath ? 1u : 0u);
+			putU32(v, m->m_tryOneMoreRepath ? 1u : 0u);
+			if (i >= 2) {
+				const AIMoveAndTightenState *t = (const AIMoveAndTightenState *)m;
+				putU32(v, (unsigned)t->m_okToRepathTimes);
+				putU32(v, t->m_checkForPath ? 1u : 0u);
+			}
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;
 		putU32(v, (unsigned)idle->m_initialSleepOffset);

@@ -973,6 +973,11 @@ pub struct AiEnv {
     pub range_rate: c_uint,
     pub repulsed_distance: c_float,
     pub waypoint_links: c_uint,
+    // batch A7
+    pub sounds: c_int,
+    pub formation_id: c_int,
+    pub group_speed: c_float,
+    pub max_height_above_position: c_float,
     pub turrets: c_int,
 }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Code-to-code verification of layer 10 batches A2 to A6, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
+//! Code-to-code verification of layer 10 batches A2 to A7, `logic::ai::ai_update` (`AIUpdateInterface`'s members) and
 //! `logic::ai::ai_states` (its state machine, first states and update), against upstream `AIUpdate.cpp` and `AIStates.cpp` (commit
 //! 0a05454d) in `differential/wrap_ai.cpp`: their members cut verbatim,
 //! with `Locomotor.cpp` compiled UNCHANGED and the paths of `AIPathfind.cpp` (batch P1's cut), so that the AI drives the REAL
@@ -64,6 +64,9 @@
 //! victim or its position), the quick paths, `friend_setGoalObject`, `isQuickPathAvailable` and the current locomotor's
 //! ultra-accurate flag; the scene adds the pathfinding extent, the searches', answers' and weapon ranges' rates, the repulsed
 //! distance, the waypoints' links and bridges. The dump adds the pathfinder's ignored obstacle.
+//!
+//! Batch A7 makes the move states real (setState draws them often); the scene adds the template's move sounds, the formation,
+//! the group's speed and the objects' height above their position. The dump adds the four move states' members.
 //!
 //! # Results
 //!
@@ -175,6 +178,8 @@ const L_MODULE: u32 = 91;
 const L_SERVICE: u32 = 92;
 const L_PF_ANSWER: u32 = 93;
 const L_WEAPON_RANGE: u32 = 94;
+const L_AUDIO_ADD: u32 = 95;
+const L_AUDIO_REMOVE: u32 = 96;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
 const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
@@ -279,6 +284,8 @@ struct Host {
     ai_stack: Vec<AiUpdate>,
     /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
     pf_ignore: ObjectId,
+    /// Batch A7: TheAudio's next handle (from 1 in each case).
+    next_audio: u32,
 }
 
 impl Host {
@@ -722,6 +729,15 @@ impl StateContext for Host {
 }
 
 impl Host {
+    /// `TheAudio->addAudioEvent(event)`: logged with the sound, its object and the new handle.
+    fn audio_add(&mut self, k: u32) -> u32 {
+        let h = self.next_audio;
+        self.next_audio += 1;
+        let id = self.env.object_id as u32;
+        self.l(L_AUDIO_ADD, &[k, id, h]);
+        h
+    }
+
     /// A search's path (`standinPath` of `wrap_ai.cpp`): from the object to `to` offset by the hash, sometimes blocked by an
     /// ally; or none.
     fn standin_path(&mut self, kind: u32, to: &Coord3D, words: &[u32]) -> Option<Path> {
@@ -1025,11 +1041,13 @@ impl AiStateHost for Host {
             d.y -= 2.0;
         }
     }
-    fn pf_adjust_destination(&mut self, d: &mut Coord3D) {
-        if self.pf_answer(2, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits(), 0]) {
+    fn pf_adjust_destination(&mut self, d: &mut Coord3D) -> bool {
+        let r = self.pf_answer(2, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits(), 0]);
+        if r {
             d.x -= 3.0;
             d.y += 3.0;
         }
+        r
     }
     fn pf_quick_path_exists_for_ui(&mut self, d: &Coord3D) -> bool {
         self.pf_answer(3, &[d.x.to_bits(), d.y.to_bits(), d.z.to_bits()])
@@ -1079,6 +1097,54 @@ impl AiStateHost for Host {
     }
     fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32 {
         self.distance_squared_3d(pos)
+    }
+    // ---- batch A7
+    fn pf_cell_at(&mut self, _layer: PathfindLayer, x: i32, y: i32) -> Option<(u8, bool)> {
+        // (the scene's layers have no cells of their own: the ground's)
+        self.cell(x, y).map(|c| self.map[c])
+    }
+    fn pf_snap_closest_goal_position(&mut self, p: &mut Coord3D) {
+        if self.pf_answer(5, &[p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]) {
+            p.x += 1.0;
+        }
+    }
+    fn pf_remove_goal(&mut self) {
+        self.pf_answer(6, &[]);
+    }
+    fn start_move_sound(&mut self, damaged: bool) -> Option<u32> {
+        // the template's sounds: bit k of the scene's set is "sk" not empty
+        let has = |k: i32| (self.env.sounds >> k) & 1 != 0;
+        let (start, looped) = if damaged { (1, 3) } else { (0, 2) };
+        if has(start) {
+            self.audio_add(start as u32);
+            None
+        } else if has(looped) {
+            Some(self.audio_add(looped as u32))
+        } else {
+            None
+        }
+    }
+    fn remove_audio_event(&mut self, handle: u32) {
+        self.l(L_AUDIO_REMOVE, &[handle]);
+    }
+    fn formation_id(&self) -> i32 {
+        self.env.formation_id
+    }
+    fn group_speed(&mut self) -> Option<f32> {
+        (self.env.has_group != 0).then_some(self.env.group_speed)
+    }
+    fn object_max_height_above_position(&self, _id: ObjectId) -> f32 {
+        self.env.max_height_above_position
+    }
+    fn object_has_physics(&self, _id: ObjectId) -> bool {
+        self.env.loco.has_physics != 0
+    }
+    fn object_velocity_magnitude(&self, _id: ObjectId) -> f32 {
+        self.env.loco.vel_mag
+    }
+    fn object_unit_direction_vector_3d(&mut self, _id: ObjectId) -> Coord3D {
+        // another object of the scene: at the origin, unturned (wrap_ai.cpp resets them every operation)
+        Thing::new(Some(Arc::new(TplView))).unwrap().unit_direction_vector_3d()
     }
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn {
         let r = self.placeholder_answer(id, 0);
@@ -1347,6 +1413,18 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
             v.push(q.object_ids.len() as u32);
             v.extend(q.object_ids.iter().map(|&i| i as u32));
         }
+        // batch A7: the move states' members
+        for id in [1u32, 23, 24, 39] {
+            match sm.state(id) {
+                Some(AiState::MoveTo { mv, .. }) | Some(AiState::MoveOutOfTheWay { mv }) => put_move(&mut v, mv),
+                Some(AiState::MoveAndTighten { mv, ok_to_repath_times, check_for_path })
+                | Some(AiState::MoveAwayFromRepulsors { mv, ok_to_repath_times, check_for_path }) => {
+                    put_move(&mut v, mv);
+                    v.extend([*ok_to_repath_times as u32, u32::from(*check_for_path)]);
+                }
+                _ => panic!("a move state"),
+            }
+        }
         match sm.state(states_ai_idle()) {
             Some(AiState::Idle { initial_sleep_offset, should_look_for_targets, inited }) => {
                 v.extend([u32::from(*initial_sleep_offset), u32::from(*should_look_for_targets), u32::from(*inited)]);
@@ -1355,6 +1433,15 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
         }
     }
     v
+}
+
+/// A move state's members (the driver's `putMove`).
+fn put_move(v: &mut Vec<u32>, m: &rts_lockstep_engine::logic::ai::ai_move_states::MoveToData) {
+    put_pos(v, &m.goal_position);
+    v.push(m.goal_layer as u32);
+    put_pos(v, &m.path_goal_position);
+    v.extend([m.ambient_playing_handle, m.path_timestamp, m.blocked_repath_timestamp]);
+    v.extend([u32::from(m.adjust_destinations), u32::from(m.waiting_for_path), u32::from(m.try_one_more_repath)]);
 }
 
 fn states_ai_idle() -> StateId {
@@ -1468,6 +1555,11 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.waypoint_links = g.u32();
     e.repulsed_distance = g.uniform(0.0, 100.0);
     gen_a6(g, &mut e);
+    // batch A7
+    e.sounds = g.below(16) as i32;
+    e.formation_id = if g.below(3) == 0 { 1 + g.below(3) as i32 } else { 0 };
+    e.group_speed = g.uniform(0.5, 6.0);
+    e.max_height_above_position = g.uniform(0.0, 30.0);
     e
 }
 
@@ -1701,7 +1793,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21][g.below(7) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39][g.below(12) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2135,8 +2227,8 @@ struct Checks {
     /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
-    a4_logs: [u64; 25],
-    a4_states: [u64; 5],
+    a4_logs: [u64; 27],
+    a4_states: [u64; 9],
     temporary_states: u64,
     loads: u64,
 }
@@ -2161,8 +2253,8 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
-            a4_logs: [0; 25],
-            a4_states: [0; 5],
+            a4_logs: [0; 27],
+            a4_states: [0; 9],
             temporary_states: 0,
             loads: 0,
         }
@@ -2192,6 +2284,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         rng: RandomValues::default(),
         ai_stack: Vec::new(),
         pf_ignore: 0,
+        next_audio: 1,
     };
     host.names.reset();
     // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
@@ -2351,7 +2444,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut k = 0;
         while k + 1 < host_log_copy.len() {
             let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
-            if (70..=94).contains(&code) {
+            if (70..=96).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
@@ -2362,6 +2455,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 13 => 1,
                 8 => 2,
                 41 => 3,
+                1 => 5,
+                23 => 6,
+                24 => 7,
+                39 => 8,
                 _ => 4,
             }] += 1;
         }
@@ -2401,6 +2498,16 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A7; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - The move states (the machine's `AI_MOVE_TO`, `AI_MOVE_OUT_OF_THE_WAY`, `AI_MOVE_AND_TIGHTEN`, `AI_MOVE_AWAY_FROM_REPULSORS`,
+///   entered by `setState`, the commands and the idle state's repulsors, run by the AI's update): 10,000 constructions and
+///   600,000 operations, **0 mismatches** in the results, the call logs and the dumps (which add every move state's members).
+///   After an operation the machine was in a move state 66,493 times (46,155 move-to, 3,190 out of the way, 10,072 tighten, 7,076
+///   away from repulsors); 9,901 move sounds started and 19,211 removed.
+/// - Planted bugs: in the Rust source plants 3270-3272, each caught: the repulsors' path recomputed without limit, the early finish
+///   not continued, the ignored goal object's destination still adjusted.
+///
 /// # Results (2026-10-27, batch A6; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - 10,000 constructions and 600,000 operations, a sixth of them A6's (12,867 `requestPath`, 19,344 `doPathfind`, 12,788
@@ -2478,7 +2585,7 @@ fn ai_update_a2_matches_upstream() {
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
-         A4-A6 log records 70..=94 {:?}; current state idle/dead/wait/busy/other {:?}; temporary states {}; loads {}",
+         A4-A7 log records 70..=96 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
     );

@@ -115,6 +115,11 @@ struct AiEnv
 	UnsignedInt rangeRate;		/* the weapon's range tests: TRUE at this rate (the hash) */
 	Real repulsedDistance;		/* TheAI->getAiData()->m_repulsedDistance */
 	UnsignedInt waypointLinks;	/* bit i: waypoint i links to waypoint i+1 */
+	/* ---- batch A7 (the move states) */
+	Int sounds;			/* the template's move sounds that are not empty: bit 0 start, 1 start damaged, 2 loop, 3 loop damaged */
+	Int formationId;		/* getFormationID */
+	Real groupSpeed;		/* the group's getSpeed */
+	Real maxHeightAbovePosition;	/* every object's geometry's getMaxHeightAbovePosition */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
 };
 
@@ -136,7 +141,8 @@ enum
 	LOG_CLEAR_SET_MODEL, LOG_SCRIPT_NOTIFY, LOG_STATE_ENTER, LOG_STATE_UPDATE, LOG_STATE_EXIT,
 	LOG_EDGE_POINT = 82, LOG_ACTION, LOG_MOVE_AWAY_PATH, LOG_MOVE_ALLIES, LOG_PATH_EXISTS, LOG_MAX_SHOTS, LOG_CLOSEST_OBJECT,
 	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE,
-	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE
+	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE,
+	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -331,6 +337,8 @@ class GeometryInfo
 public:
 	Real getMajorRadius() const;
 	Real getBoundingCircleRadius() const;
+	/* batch A7 */
+	Real getMaxHeightAbovePosition() const;
 };
 
 /* ObjectStatusMaskType, as far as Locomotor.cpp and the AI use it */
@@ -413,6 +421,11 @@ struct AiTemplateView
 	Bool isKindOf(KindOfType t) const { return FALSE; }
 	/* batch A5: the command buttons' "not implemented" branches name it */
 	const AsciiString& getName() const;
+	/* batch A7: the move sounds ("s0" .. "s3", or empty: the scene's) */
+	const class AudioEventRTS *getSoundMoveStart() const;
+	const class AudioEventRTS *getSoundMoveStartDamaged() const;
+	const class AudioEventRTS *getSoundMoveLoop() const;
+	const class AudioEventRTS *getSoundMoveLoopDamaged() const;
 };
 
 class Object
@@ -471,6 +484,7 @@ public:
 	void clearWeaponBonusCondition(WeaponBonusConditionType wst);
 	AIGroup *getGroup();
 	AIUpdateInterface *getAI();
+	const AIUpdateInterface *getAI() const;
 	/* batch A4 */
 	Real getVisionRange() const;
 	/* batch A5 */
@@ -482,6 +496,8 @@ public:
 	/* the command buttons' "not implemented" branches name the object */
 	const AsciiString& getName() const;
 	const AiTemplateView *getTemplate() const { return &m_template; }
+	/* batch A7 */
+	FormationID getFormationID(void) const;
 	/* the team's member list (Team::iterate_TeamMemberList): the next member */
 	Object *dlink_next_TeamMemberList() const;
 	void clearAndSetModelConditionFlags( const ModelConditionFlags& clr, const ModelConditionFlags& set );
@@ -530,6 +546,8 @@ public:
 	/* batch A5: Squad.cpp's (not reached: no command makes a squad from a group) */
 	const std::vector<ObjectID>& getAllIDs() const;
 	void add(Object *obj);
+	/* batch A7 */
+	Real getSpeed( void );
 };
 
 /* ---- batch A5: what the commands hand over to (logged) */

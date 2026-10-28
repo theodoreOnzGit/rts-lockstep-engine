@@ -88,6 +88,11 @@
 #define PartitionFilterPossibleToAttack AiPartitionFilterPossibleToAttack
 #define PartitionFilterSameMapStatus AiPartitionFilterSameMapStatus
 #define FindPositionOptions AiFindPositionOptions
+/* batch A7 */
+#define AudioEventRTS AiAudioEventRTS
+#define DynamicAudioEventRTS AiDynamicAudioEventRTS
+#define AudioManager AiAudioManager
+#define TheAudio AiTheAudio
 /* ---- renames: Locomotor.cpp's classes, its global and its INI block handler */
 #define Locomotor AiLocomotor
 #define LocomotorTemplate AiLocomotorTemplate
