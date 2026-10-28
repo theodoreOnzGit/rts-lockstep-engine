@@ -3409,6 +3409,17 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A16; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The attack-squad state (`chooseVictim` with the AI's machine's goal squad): 30,000 constructions and 1,799,455 operations,
+///   **0 mismatches** in the results, the call logs and the dumps (which add its machine's state, goal, sleep and attack machine).
+///   After an operation the machine was attacking a squad 38,798 times. The player's difficulty and the script engine's "always
+///   normal" are the scene's; the closest squad member (normal) is the existing one with the smallest hash. Not generated: the
+///   state already the machine's or the temporary state (the other's exit deletes the one machine), or without a controlling
+///   player (read unchecked).
+/// - Planted bugs: plants 3380-3383 at 30,000 cases, each caught (1 to 1,453 mismatches): the passive mood's attacker, a player's
+///   command as hard, the hard choice's member, the attack after a new victim.
+///
 /// # Results (2026-10-28, batch A15; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The rappel state (with `findEnemyInContainer` and `killEnemiesInContainer`): 30,000 constructions and 1,799,389 operations,
