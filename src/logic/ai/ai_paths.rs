@@ -377,13 +377,13 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
     // "Contact weapon"
     if h.weapon_is_contact() {
         let vp = *victim_pos.expect("the victim's position (upstream dereferences it)");
-        let mut tmp = vp;
+        let tmp = vp;
         ai(h).destroy_path();
         let a = ai(h);
         if let Some(cur) = a.cur_locomotor {
             a.locomotor_set.get_mut(cur).expect("the locomotor").set_no_slow_down_as_approaching_dest(true);
         }
-        let ok = compute_path(sm, h, &mut tmp);
+        let ok = compute_path(sm, h, &tmp);
         let Some(path) = &ai(h).path else { return false };
         let last = *path.node(path.last_node().expect("a node")).position();
         let (dx, dy) = (vp.x - last.x, vp.y - last.y);
@@ -547,8 +547,8 @@ pub fn do_pathfind<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) {
             a.ignore_obstacle(victim);
         }
     }
-    let mut dest = ai(h).requested_destination;
-    compute_path(sm, h, &mut dest);
+    let dest = ai(h).requested_destination;
+    compute_path(sm, h, &dest);
     if ai(h).is_final_goal && with_ai(h, |a, h| a.is_doing_ground_movement(h)) {
         update_goal_to_path_end(h);
     }
