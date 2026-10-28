@@ -103,6 +103,7 @@
 #define AIAttackThenIdleStateMachine AiAIAttackThenIdleStateMachine
 #define AIHuntState AiAIHuntState
 #define AIAttackAreaState AiAIAttackAreaState
+#define AIAttackFollowWaypointPathState AiAIAttackFollowWaypointPathState
 #define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition

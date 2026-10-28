@@ -218,7 +218,7 @@ fn calc_extra_path_distance<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
 /// `computeGoal(useGroupOffsets)`: the current waypoint (on the ground, or the wall) moved by the offset, clamped into the map
 /// when the waypoint is in it; the destination adjusted at the path's end only; off the map, not adjusted, the locomotor allowed
 /// off it and the goal to be appended.
-fn compute_goal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
+pub(crate) fn compute_goal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
     let Some(cur) = wp(sm, id).current else { return };
     let mut dest = h.waypoint_location(cur);
     // "waypoints are always on the ground."

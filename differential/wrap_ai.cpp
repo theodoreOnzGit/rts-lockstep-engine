@@ -2101,6 +2101,37 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					putU32(v, (unsigned)ha->m_attackMachine->m_goalObjectID);
 				}
 			}
+			/* batch A12b: the attack-follow-waypoint states (as individuals, as a team): the waypoint path's members, their machines
+			** (state, goal, sleep, goal position, the crate state, the attack state's machine) */
+			for (int k = 0; k < 2; ++k) {
+				const AIAttackFollowWaypointPathState *af = (const AIAttackFollowWaypointPathState *)sm->m_stateMap.find(
+					k ? AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM : AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS)->second;
+				PUT_MOVE(af)
+				putU32(v, bitsOf(af->m_groupOffset.x));
+				putU32(v, bitsOf(af->m_groupOffset.y));
+				putU32(v, bitsOf(af->m_angle));
+				putU32(v, (unsigned)af->m_framesSleeping);
+				putU32(v, af->m_currentWaypoint ? (unsigned)af->m_currentWaypoint->m_index : 0xffffffffu);
+				putU32(v, af->m_priorWaypoint ? (unsigned)af->m_priorWaypoint->m_index : 0xffffffffu);
+				putU32(v, af->m_appendGoalPosition ? 1u : 0u);
+				putU32(v, af->m_moveAsGroup ? 1u : 0u);
+				putU32(v, af->m_isFollowWaypointPathState ? 1u : 0u);
+				const StateMachine *fm = af->m_attackFollowMachine;
+				putU32(v, (unsigned)fm->getCurrentStateID());
+				putU32(v, (unsigned)fm->m_goalObjectID);
+				putU32(v, fm->m_sleepTill);
+				putPos(v, fm->m_goalPosition);
+				const AIPickUpCrateState *fc = (const AIPickUpCrateState *)fm->m_stateMap.find(AI_PICK_UP_CRATE)->second;
+				PUT_MOVE(fc)
+				putU32(v, (unsigned)fc->m_delayCounter);
+				const AIAttackState *fa = (const AIAttackState *)fm->m_stateMap.find(AI_ATTACK_OBJECT)->second;
+				putU32(v, fa->m_attackMachine ? 1u : 0u);
+				putPos(v, fa->m_originalVictimPos);
+				if (fa->m_attackMachine) {
+					putU32(v, (unsigned)fa->m_attackMachine->getCurrentStateID());
+					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
+				}
+			}
 #undef PUT_MOVE
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

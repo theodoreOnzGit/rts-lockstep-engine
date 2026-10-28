@@ -410,7 +410,8 @@ pub enum AiState<H: AiStateHost> {
     MoveAndDelete { mv: MoveToData, append_goal_position: bool },
     /// `AIFollowWaypointPathState` (batch A9; `AI_FOLLOW_WAYPOINT_PATH_AS_TEAM` and `_AS_INDIVIDUALS`): `m_moveAsGroup`,
     /// `m_isFollowWaypointPathState`.
-    FollowWaypointPath { mv: MoveToData, wp: WaypointPathData, as_group: bool, is_follow: bool },
+    /// (batch A12b: `AIAttackFollowWaypointPathState` too, `is_follow` false, with its `m_attackFollowMachine`)
+    FollowWaypointPath { mv: MoveToData, wp: WaypointPathData, as_group: bool, is_follow: bool, machine: Option<StateMachine<AiState<H>>> },
     /// `AIFollowWaypointPathExactState` (`AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT` and `_AS_INDIVIDUALS_EXACT`).
     FollowWaypointPathExact { mv: MoveToData, last: Option<u32>, as_group: bool },
     /// `AIWanderState`.
@@ -650,8 +651,13 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         || AiState::FollowPath { mv: MoveToData::default(), index: 0, adjust_final: true, adjust_final_override: false, retry_count: 10 };
     // batch A9: the members no constructor sets are the pool's zeros (AIFollowWaypointPathState's constructor sets m_angle 0; the
     // wander state's its timer and wait 0; the exact state's its last waypoint none)
-    let follow_waypoint_path =
-        |as_group| AiState::FollowWaypointPath { mv: MoveToData::default(), wp: WaypointPathData::default(), as_group, is_follow: true };
+    let follow_waypoint_path = |as_group| AiState::FollowWaypointPath {
+        mv: MoveToData::default(),
+        wp: WaypointPathData::default(),
+        as_group,
+        is_follow: true,
+        machine: None,
+    };
     let exact = |as_group| AiState::FollowWaypointPathExact { mv: MoveToData::default(), last: None, as_group };
     let wander = |panic: bool| {
         let (mv, wp) = (MoveToData::default(), WaypointPathData::default());
@@ -677,8 +683,8 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         ),
         (AI_WANDER_IN_PLACE, wander_in_place(), AI_MOVE_AWAY_FROM_REPULSORS, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_ATTACK_MOVE_TO, attack_move::attack_move(kinds), AI_IDLE, AI_IDLE),
-        (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM), AI_IDLE, AI_IDLE),
-        (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS), AI_IDLE, AI_IDLE),
+        (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, attack_move::attack_follow(true, kinds), AI_IDLE, AI_IDLE),
+        (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, attack_move::attack_follow(false, kinds), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM, follow_waypoint_path(true), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, follow_waypoint_path(false), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT, exact(true), AI_IDLE, AI_IDLE),
@@ -897,6 +903,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::on_enter(sm, h, id),
+            Some(AiState::FollowWaypointPath { machine: Some(_), .. }) => attack_move::attack_follow_on_enter(sm, h, id),
             Some(AiState::FollowWaypointPath { .. })
             | Some(AiState::FollowWaypointPathExact { .. })
             | Some(AiState::Wander { .. })
@@ -929,6 +936,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::on_exit(sm, h, id, status),
+            Some(AiState::FollowWaypointPath { machine: Some(_), .. }) => attack_move::attack_follow_on_exit(sm, h, id)?,
             Some(AiState::FollowWaypointPath { .. })
             | Some(AiState::FollowWaypointPathExact { .. })
             | Some(AiState::Wander { .. })
@@ -962,6 +970,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::FollowPath { .. })
             | Some(AiState::MoveAndEvacuate { .. })
             | Some(AiState::MoveAndDelete { .. }) => move_states::update(sm, h, id),
+            Some(AiState::FollowWaypointPath { machine: Some(_), .. }) => attack_move::attack_follow_update(sm, h, id),
             Some(AiState::FollowWaypointPath { .. })
             | Some(AiState::FollowWaypointPathExact { .. })
             | Some(AiState::Wander { .. })
@@ -1005,6 +1014,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::AttackMove { machine, .. } => attack_move::is_attack(machine),
             // (batch A12: the hunt and attack-area states': their machines')
             AiState::Hunt { machine, .. } => hunt_states::is_attack(machine),
+            // (batch A12b: the attack-follow-waypoint states': their machines'; the plain waypoint state has none)
+            AiState::FollowWaypointPath { machine, .. } => attack_move::is_attack(machine) && !plant(3345),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
             _ => false,
@@ -1038,6 +1049,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::MoveAndEvacuate { mv, origin } => move_states::evacuate_xfer(mv, origin, xfer)?,
             AiState::MoveAndDelete { mv, append_goal_position } => move_states::delete_xfer(mv, append_goal_position, xfer)?,
+            AiState::FollowWaypointPath { mv, wp, machine, .. } if machine.is_some() => attack_move::attack_follow_xfer(mv, wp, machine, xfer)?,
             AiState::FollowWaypointPath { mv, wp, .. } => waypoint_states::waypoint_path_xfer(mv, wp, xfer)?,
             AiState::FollowWaypointPathExact { mv, last, .. } => waypoint_states::exact_xfer(mv, last, xfer)?,
             AiState::Attack { machine, original_victim_pos, follow, attacking_object, force_attacking, kinds, .. } => {

@@ -3,7 +3,7 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIAttackMoveStateMachine, AIPickUpCrateState,
-//     AIAttackMoveToState)
+//     AIAttackMoveToState, AIAttackFollowWaypointPathState)
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/AIStateMachine.h (those classes)
 //
 // Original copyright notice of those files:
@@ -20,6 +20,8 @@
 //! attacks the mood's targets and picks up crates through its own `AIAttackMoveStateMachine` (an idle state that does not look for
 //! targets, the crate state, an attack state); a move that ends far from its goal is retried after three seconds, five times.
 //! `AIPickUpCrateState` (`AI_PICK_UP_CRATE`, in both machines) waits three updates, then moves to the crate.
+//! `AIAttackFollowWaypointPathState` (both ids, batch A12b) follows a waypoint path as `AIFollowWaypointPathState` does (without its
+//! mood's attack-follow) with the same machine, attacking the mood's targets and picking up crates on the way.
 //!
 //! The attack-move machine is a [`StateMachine`] of [`AiState`] held by the state's variant; it is made, and its default state
 //! entered, when the AI's machine is made (upstream: by the state's constructor). While it runs, the AI's machine's view is lent
@@ -37,6 +39,7 @@ use crate::common::state_machine::{SmResult, StateContext, StateId, StateMachine
 use crate::common::xfer::{Snapshot, Xfer, XferResult, XferVersion};
 use crate::logic::ai::ai_attack_states::{top_view, AttackFrame, AttackOwnerKinds};
 use crate::logic::ai::ai_move_states::{self as move_states, mv, MoveToData, MIN_REPATH_TIME};
+use crate::logic::ai::ai_waypoint_states as waypoint_states;
 use crate::logic::ai::ai_states::{ai, with_ai, AiState, AiStateHost};
 use crate::logic::ai::ai_update_types::*;
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
@@ -80,6 +83,7 @@ pub fn attack_move<H: AiStateHost>(kinds: AttackOwnerKinds) -> AiState<H> {
 fn sub_machine<H: AiStateHost>(state: Option<&mut AiState<H>>) -> &mut Option<Sm<H>> {
     match state {
         Some(AiState::AttackMove { machine, .. }) | Some(AiState::Hunt { machine, .. }) => machine,
+        Some(AiState::FollowWaypointPath { machine, .. }) => machine,
         _ => unreachable!("a state with a sub-machine"),
     }
 }
@@ -115,8 +119,21 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
 /// The AI's machine made: every attack-move machine enters its default state (upstream: in the state's constructor, during the
 /// AI's machine's).
 pub fn init_attack_move_machines<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResult<()> {
-    if matches!(sm.state(AI_ATTACK_MOVE_TO), Some(AiState::AttackMove { .. })) {
-        run_sub_machine(sm, h, AI_ATTACK_MOVE_TO, |m, h| m.init_default_state(h).map(|_| ()))?;
+    // (in the order the states are defined; batch A12b: the attack-follow-waypoint states' too)
+    let ids = if plant(3346) {
+        [AI_ATTACK_MOVE_TO, AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM]
+    } else {
+        [AI_ATTACK_MOVE_TO, AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS]
+    };
+    for id in ids {
+        let has = match sm.state(id) {
+            Some(AiState::AttackMove { .. }) => true,
+            Some(AiState::FollowWaypointPath { machine, .. }) => machine.is_some(),
+            _ => false,
+        };
+        if has {
+            run_sub_machine(sm, h, id, |m, h| m.init_default_state(h).map(|_| ()))?;
+        }
     }
     Ok(())
 }
@@ -196,7 +213,7 @@ pub fn attack_move_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateI
 
 fn inner_idle<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> bool {
     match sm.state(id) {
-        Some(AiState::AttackMove { machine: Some(m), .. }) => m.is_in_idle_state(),
+        Some(AiState::AttackMove { machine: Some(m), .. }) | Some(AiState::FollowWaypointPath { machine: Some(m), .. }) => m.is_in_idle_state(),
         _ => unreachable!("the attack-move machine"),
     }
 }
@@ -312,10 +329,113 @@ pub fn attack_move_xfer<H: AiStateHost>(
         xfer.xfer_unsigned_int(frame_to_sleep_until)?;
         xfer.xfer_int(retry_count)?;
     }
+    machine_xfer(machine, xfer)
+}
+
+/// `AIAttackMoveStateMachine::xfer`: its version, then the machine's.
+fn machine_xfer<H: AiStateHost>(machine: &mut Option<Sm<H>>, xfer: &mut dyn Xfer) -> XferResult<()> {
     let m = machine.as_mut().expect("the attack-move machine");
-    // AIAttackMoveStateMachine::xfer: its version, then the machine's
     let cv: XferVersion = 1;
     let mut v = cv;
     xfer.xfer_version(&mut v, cv)?;
     Snapshot::xfer(m, xfer)
+}
+
+// ---- AIAttackFollowWaypointPathState
+
+/// A new `AIAttackFollowWaypointPathState(machine, asGroup)`: `AIFollowWaypointPathState(machine, asGroup, false)` with its
+/// attack-move machine made (its default state entered by [`init_attack_move_machines`]).
+pub fn attack_follow<H: AiStateHost>(as_group: bool, kinds: AttackOwnerKinds) -> AiState<H> {
+    AiState::FollowWaypointPath {
+        mv: MoveToData::default(),
+        wp: crate::logic::ai::ai_waypoint_states::WaypointPathData::default(),
+        as_group,
+        is_follow: false,
+        machine: Some(new_attack_move_machine(kinds)),
+    }
+}
+
+/// `AIAttackFollowWaypointPathState::onEnter()`: the machine cleared to idle, then the waypoint path's.
+pub fn attack_follow_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    run_sub_machine(sm, h, id, |m, h| {
+        if !plant(3340) {
+            m.clear(h)?;
+        }
+        m.set_state(h, AI_IDLE).map(|_| ())
+    })?;
+    waypoint_states::on_enter(sm, h, id)
+}
+
+/// `AIAttackFollowWaypointPathState::update()`: the machine's attack or crate while it is busy; else the next mood target or crate;
+/// else the waypoint path's (the goal and path recomputed after a retargeting: "Update the goal waypoint if we've moved along the
+/// path.").
+pub fn attack_follow_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let mut force_retarget = false;
+    let mut should_repath = false;
+    if !inner_idle(sm, id) {
+        ai(h).set_locomotor_goal_none();
+        h.clear_model_condition_state(MODELCONDITION_MOVING);
+        run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h).map(|_| ()))?;
+        // "if the machine is now idling, then we need to attempt to get a new target"
+        if inner_idle(sm, id) {
+            force_retarget = !plant(3341);
+            should_repath = true;
+        } else {
+            return Ok(StateReturn::CONTINUE);
+        }
+    }
+    if inner_idle(sm, id) {
+        // "Check to see if we have created a crate we need to pick up."
+        let crate_id = with_ai(h, |a, h| a.check_for_crate_to_pickup(h));
+        if crate_id != INVALID_ID {
+            let o = h.find_object(crate_id);
+            run_sub_machine(sm, h, id, |m, h| {
+                m.set_goal_object(o.as_ref());
+                m.set_state(h, AI_PICK_UP_CRATE).map(|_| ())
+            })?;
+            return Ok(StateReturn::CONTINUE);
+        }
+        let view = top_view(sm, h);
+        let next = with_ai(h, |a, h| a.get_next_mood_target(h, &view, !force_retarget, false));
+        if next != INVALID_ID {
+            let o = h.find_object(next);
+            run_sub_machine(sm, h, id, |m, h| {
+                m.set_goal_object(o.as_ref());
+                m.set_state(h, AI_ATTACK_OBJECT).map(|_| ())
+            })?;
+            // "we don't want an update to take place 'till next frame."
+            if !plant(3344) {
+                return Ok(StateReturn::CONTINUE);
+            }
+        }
+    }
+    if should_repath && !plant(3342) {
+        // "Update the goal waypoint if we've moved along the path."
+        waypoint_states::compute_goal(sm, h, id);
+        move_states::compute_path(sm, h, id);
+    }
+    waypoint_states::update(sm, h, id)
+}
+
+/// `AIAttackFollowWaypointPathState::onExit(status)`: the machine to idle, then the waypoint path's.
+pub fn attack_follow_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
+    if !plant(3343) {
+        run_sub_machine(sm, h, id, |m, h| m.set_state(h, AI_IDLE).map(|_| ()))?;
+    }
+    waypoint_states::on_exit(sm, h, id);
+    Ok(())
+}
+
+/// `AIAttackFollowWaypointPathState::xfer` (version 1): the waypoint path's, then the machine.
+pub fn attack_follow_xfer<H: AiStateHost>(
+    mv: &mut MoveToData,
+    wp: &mut crate::logic::ai::ai_waypoint_states::WaypointPathData,
+    machine: &mut Option<Sm<H>>,
+    xfer: &mut dyn Xfer,
+) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    waypoint_states::waypoint_path_xfer(mv, wp, xfer)?;
+    machine_xfer(machine, xfer)
 }
