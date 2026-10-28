@@ -175,6 +175,11 @@ struct AiEnv
 	Int dockIndex;			/* the approach index reserve/advance give */
 	UnsignedInt droneMask;		/* the other objects whose producer is the owner */
 	UnsignedInt dockRate;		/* the dock's answers (reserve, advance, clear to enter, clear to advance, action): TRUE at this rate */
+	/* ---- batch A18 (the guard state) */
+	Int clearableAttacker;		/* the body's getClearableLastAttacker (clearLastAttacker zeroes it) */
+	Int guardFlags;			/* the template's isEnterGuard (bit 0), isHijackGuard (bit 1) */
+	UnsignedInt objectsChangedFrame;	/* TheGameLogic->getFrameObjectsChangedTriggerAreas */
+	UnsignedInt guardScanRate, guardReturnScanRate, guardChaseFrames;	/* TheAI->getAiData()'s */
 };
 
 extern AiEnv g_aiEnv;
@@ -246,6 +251,8 @@ public:
 	Object *findObjectByID(ObjectID id) const;
 	/* batch A8: the move-and-delete state's end */
 	void destroyObject(Object *obj);
+	/* batch A18 */
+	UnsignedInt getFrameObjectsChangedTriggerAreas(void);
 };
 extern GameLogic *TheGameLogic;
 
@@ -262,6 +269,8 @@ public:
 	PathfindLayerEnum getLayerForDestination(const Coord3D *pos);
 	/* batch A4: AIStateMachine::xfer's (never reached: no goal waypoint is set) */
 	Waypoint *getWaypointByName(AsciiString name);
+	/* batch A18: "poly<index>" */
+	PolygonTrigger *getTriggerAreaByName(AsciiString name);
 	/* batch A9 */
 	Waypoint *getWaypointByID(UnsignedInt id);
 	/* batch A5: the commands' map edges */
@@ -295,6 +304,30 @@ class PartitionFilterSameMapStatus : public PartitionFilter
 public:
 	PartitionFilterSameMapStatus(const Object *obj) : m_obj(obj) {}
 	const Object *m_obj;
+};
+/* batch A18: the guard's filters (kept for the stand-in search: what they are) */
+class PartitionFilterRelationship : public PartitionFilter
+{
+public:
+	enum { ALLOW_ALLIES = (1<<ALLIES), ALLOW_ENEMIES = (1<<ENEMIES), ALLOW_NEUTRAL = (1<<NEUTRAL) };
+	PartitionFilterRelationship(const Object *obj, Int flags) : m_obj(obj), m_flags(flags) { }
+	const Object *m_obj;
+	Int m_flags;
+};
+class PartitionFilterIsFlying : public PartitionFilter { public: PartitionFilterIsFlying() { } };
+class PartitionFilterPossibleToEnter : public PartitionFilter
+{
+public:
+	PartitionFilterPossibleToEnter(const Object *obj, CommandSourceType commandSource) : m_obj(obj), m_commandSource(commandSource) { }
+	const Object *m_obj;
+	CommandSourceType m_commandSource;
+};
+class PartitionFilterPossibleToHijack : public PartitionFilter
+{
+public:
+	PartitionFilterPossibleToHijack(const Object *obj, CommandSourceType commandSource) : m_obj(obj), m_commandSource(commandSource) { }
+	const Object *m_obj;
+	CommandSourceType m_commandSource;
 };
 /* batch A16: the attack-squad state's (its squad kept for the stand-in search) */
 class Squad;
@@ -372,6 +405,10 @@ struct AiData
 	Real m_skirmishGroupFudgeValue;
 	/* batch A10a */
 	Bool m_aiCrushesInfantry;
+	/* batch A18 */
+	UnsignedInt m_guardChaseUnitFrames;
+	UnsignedInt m_guardEnemyScanRate;
+	UnsignedInt m_guardEnemyReturnScanRate;
 };
 class AI
 {
@@ -403,6 +440,9 @@ public:
 	BodyDamageType getDamageState() const;
 	/* batch A3 */
 	const DamageInfo *getLastDamageInfo() const;
+	/* batch A18 (logged) */
+	ObjectID getClearableLastAttacker() const;
+	void clearLastAttacker();
 };
 
 class PhysicsBehavior
@@ -588,6 +628,9 @@ struct AiTemplateView
 	const class AudioEventRTS *getSoundMoveStartDamaged() const;
 	const class AudioEventRTS *getSoundMoveLoop() const;
 	const class AudioEventRTS *getSoundMoveLoopDamaged() const;
+	/* batch A18: the scene's */
+	Bool isEnterGuard() const;
+	Bool isHijackGuard() const;
 	/* batch A15: none (the FX call is logged) */
 	const class FXList *getPerUnitFX(const char *fxName) const { return NULL; }
 };
@@ -795,7 +838,9 @@ extern ActionManager *TheActionManager;
 class DeliverPayloadAIUpdate { public: void deliverPayloadViaModuleData( const Coord3D *moveToPos ); };
 class ProneUpdate { public: void goProne( const DamageInfo *damageInfo ); };
 class HackInternetAIUpdate { public: void hackInternet(); };
-class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; Int m_index; };
+class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; Int m_index;
+	/* batch A18 */
+	Real getRadius(void) const; AsciiString getTriggerName(void) const; };
 /* batch A12: the attack-area state's filter (its polygon kept for the stand-in search) */
 class PartitionFilterPolygonTrigger : public PartitionFilter
 {

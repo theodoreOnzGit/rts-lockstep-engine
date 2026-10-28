@@ -85,6 +85,7 @@ fn sub_machine<H: AiStateHost>(state: Option<&mut AiState<H>>) -> &mut Option<Sm
         Some(AiState::AttackMove { machine, .. }) | Some(AiState::Hunt { machine, .. }) => machine,
         Some(AiState::AttackSquad { machine, .. }) => machine,
         Some(AiState::Dock { machine, .. }) => machine,
+        Some(AiState::Guard { machine, .. }) => machine,
         Some(AiState::FollowWaypointPath { machine, .. }) => machine,
         _ => unreachable!("a state with a sub-machine"),
     }
@@ -102,6 +103,11 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
         Some(AiState::Dock { approach_position, .. }) => *approach_position,
         _ => -1,
     };
+    // (batch A18: the guard machine's members, lent)
+    let guard = match sm.state(id) {
+        Some(AiState::Guard { data, .. }) => *data,
+        _ => Default::default(),
+    };
     h.attack_stack().push(AttackFrame {
         outer,
         original_victim_pos: Default::default(),
@@ -109,12 +115,16 @@ pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId
         new_victim: None,
         ai_goal_object: None,
         dock_approach,
+        guard,
     });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the view frame");
     *sub_machine(sm.state_mut(id)) = Some(inner);
     if let Some(AiState::Dock { approach_position, .. }) = sm.state_mut(id) {
         *approach_position = lent.dock_approach;
+    }
+    if let Some(AiState::Guard { data, .. }) = sm.state_mut(id) {
+        *data = lent.guard;
     }
     // the AI's machine's goal, set from inside
     if let Some(obj) = lent.ai_goal_object {
@@ -162,7 +172,7 @@ pub fn crate_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
     let m = mv(sm, id);
     m.adjust_destinations = true;
     m.goal_position = goal.position;
-    if let Some(AiState::PickUpCrate { delay_counter, .. }) = sm.state_mut(id) {
+    if let Some(AiState::PickUpCrate { delay_counter, .. } | AiState::GuardCrate { delay_counter, .. }) = sm.state_mut(id) {
         *delay_counter = if plant(3320) { 2 } else { 3 };
     }
     Ok(StateReturn::CONTINUE)
@@ -171,7 +181,7 @@ pub fn crate_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
 /// `AIPickUpCrateState::update()`: the delay ("find a way to sleep for a number of frames here"), then the move.
 pub fn crate_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let delay = match sm.state_mut(id) {
-        Some(AiState::PickUpCrate { delay_counter, .. }) => delay_counter,
+        Some(AiState::PickUpCrate { delay_counter, .. } | AiState::GuardCrate { delay_counter, .. }) => delay_counter,
         _ => unreachable!("the crate state"),
     };
     if *delay != 0 {

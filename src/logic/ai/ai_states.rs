@@ -75,6 +75,7 @@ use crate::logic::ai::ai_hunt_states as hunt_states;
 use crate::logic::ai::ai_face_exit_states as face_exit;
 use crate::logic::ai::ai_enter_state as enter_state;
 use crate::logic::ai::ai_dock as dock;
+use crate::logic::ai::ai_guard::{self as guard, ExitConditions, GuardData};
 use crate::logic::ai::ai_rappel_state::{self as rappel, RappelData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
@@ -449,6 +450,26 @@ pub trait AiStateHost: AiHost + StateContext {
     fn supply_truck_action_delay(&mut self, dock: ObjectId) -> Option<u32>;
     /// The controlling player's objects (`iterateObjects`), in order; another object's `getProducerID()`.
     fn player_object_ids(&mut self) -> Vec<ObjectId>;
+    // ---- batch A18: the guard state
+    /// The body module's `getClearableLastAttacker()`, `clearLastAttacker()`.
+    fn clearable_last_attacker(&mut self) -> ObjectId;
+    fn clear_last_attacker(&mut self);
+    /// The owner's template's `isEnterGuard()`, `isHijackGuard()`.
+    fn template_is_enter_guard(&mut self) -> bool;
+    fn template_is_hijack_guard(&mut self) -> bool;
+    /// `TheGameLogic->getFrameObjectsChangedTriggerAreas()`.
+    fn frame_objects_changed_trigger_areas(&mut self) -> u32;
+    /// `TheAI->getAiData()`'s `m_guardEnemyScanRate`, `m_guardEnemyReturnScanRate`, `m_guardChaseUnitFrames`.
+    fn ai_data_guard_enemy_scan_rate(&mut self) -> u32;
+    fn ai_data_guard_enemy_return_scan_rate(&mut self) -> u32;
+    fn ai_data_guard_chase_unit_frames(&mut self) -> u32;
+    /// The polygon trigger's `getRadius()`.
+    fn polygon_radius(&mut self, polygon: i32) -> f32;
+    /// `ThePartitionManager->getClosestObject(pos, range, FROM_CENTER_2D, filters)` with the guard's filters
+    /// (`ai_guard::GUARD_FILTER_*`; the polygon's index with its filter).
+    fn closest_guard_target(&mut self, pos: &Coord3D, range: f32, filters: u32, area: Option<i32>) -> ObjectId;
+    /// `getTeam() != NULL`.
+    fn has_team(&mut self) -> bool;
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
@@ -517,6 +538,8 @@ pub enum AiState<H: AiStateHost> {
         original_victim_pos: Coord3D,
         victim_team: Option<u32>,
         locked_weapon_on_enter: Option<WeaponSlotType>,
+        /// `m_attackParameters` (batch A18: a guard machine attack state's exit conditions, lent while it runs).
+        exit: Option<ExitConditions>,
     },
     /// The attack machine's `AIAttackAimAtTargetState`.
     AttackAim { attacking_object: bool, force_attacking: bool, can_turn_in_place: bool, set_locomotor: bool },
@@ -532,6 +555,17 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
+    /// `AIGuardState` (batch A18): `m_guardMachine`; the machine's members; the owner's kinds (they make it).
+    Guard { machine: Option<StateMachine<AiState<H>>>, data: GuardData, kinds: AttackOwnerKinds },
+    /// The guard machine's inner, outer and attack-aggressor states (`which`: the state's id): `m_exitConditions` and their
+    /// embedded `AIAttackState` or `AIEnterState` (none or one).
+    GuardAttack { which: StateId, kinds: AttackOwnerKinds, exit: ExitConditions, embedded: Vec<AiState<H>> },
+    /// The guard machine's `AIGuardReturnState`: `AIInternalMoveToState`'s base, `m_nextReturnScanTime`.
+    GuardReturn { mv: MoveToData, next_return_scan_time: u32 },
+    /// The guard machine's `AIGuardIdleState`: `m_nextEnemyScanTime`, `m_guardeePos`.
+    GuardIdle { next_enemy_scan_time: u32, guardee_pos: Coord3D },
+    /// The guard machine's `AIGuardPickUpCrateState`: `AIPickUpCrateState`'s members.
+    GuardCrate { mv: MoveToData, delay_counter: i32 },
     /// `AIDockState` (batch A17): `m_dockMachine`, its `m_approachPosition`, `m_usingPrecisionMovement`.
     Dock { machine: Option<StateMachine<AiState<H>>>, approach_position: i32, using_precision_movement: bool },
     /// The docking machine's move states (`which`: the state's id): `AIInternalMoveToState`'s base.
@@ -575,6 +609,8 @@ pub enum AiCondition {
     CannotPossiblyAttackObject(AbleToAttackType),
     /// `AIDockMachine::ableToAdvance` (batch A17: the docking machine's).
     DockAbleToAdvance,
+    /// `hasAttackedMeAndICanReturnFire` (batch A18: the guard machine's).
+    GuardAttackedMe,
 }
 
 /// The static `isIdle`, `isAttack`, `isBusy` of an untranslated state's class: `AIAttackState`'s `TRUE` for the attack states;
@@ -818,7 +854,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_ENTER, AiState::Enter { mv: MoveToData::default(), entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_EXIT, AiState::Exit { instantly: false, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_EXIT_INSTANTLY, AiState::Exit { instantly: true, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
-        (AI_GUARD, u(AI_GUARD), AI_IDLE, AI_IDLE),
+        (AI_GUARD, AiState::Guard { machine: None, data: GuardData::default(), kinds }, AI_IDLE, AI_IDLE),
         (AI_GUARD_TUNNEL_NETWORK, u(AI_GUARD_TUNNEL_NETWORK), AI_IDLE, AI_IDLE),
         (AI_GUARD_RETALIATE, u(AI_GUARD_RETALIATE), AI_IDLE, AI_IDLE),
         (AI_HUNT, hunt_states::hunt(false, kinds), AI_IDLE, AI_IDLE),
@@ -1029,6 +1065,14 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Rappel(_)) => rappel::rappel_on_enter(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_enter(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_on_enter(sm, h, id),
+            Some(AiState::Guard { .. }) => guard::guard_on_enter(sm, h, id),
+            Some(AiState::GuardAttack { which, kinds, .. }) => {
+                let (which, kinds) = (*which, *kinds);
+                guard::guard_attack_on_enter(sm, h, id, which, kinds)
+            }
+            Some(AiState::GuardReturn { .. }) => guard::return_on_enter(sm, h, id),
+            Some(AiState::GuardIdle { .. }) => guard::idle_on_enter(sm, h, id),
+            Some(AiState::GuardCrate { .. }) => guard::crate_on_enter(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_on_enter(sm, h, id, which)
@@ -1073,6 +1117,12 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Rappel(_)) => rappel::rappel_on_exit(h),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_exit(sm, h, id)?,
             Some(AiState::Dock { .. }) => dock::dock_on_exit(sm, h, id)?,
+            Some(AiState::Guard { .. }) => guard::guard_on_exit(sm, h, id)?,
+            Some(AiState::GuardAttack { which, .. }) => {
+                let which = *which;
+                guard::guard_attack_on_exit(sm, h, id, which)?
+            }
+            Some(AiState::GuardReturn { .. }) => move_states::internal_on_exit(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_on_exit(sm, h, id, which, status)
@@ -1122,6 +1172,14 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Rappel(_)) => rappel::rappel_update(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_update(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_update(sm, h, id),
+            Some(AiState::Guard { .. }) => guard::guard_update(sm, h, id),
+            Some(AiState::GuardAttack { which, .. }) => {
+                let which = *which;
+                guard::guard_attack_update(sm, h, id, which)
+            }
+            Some(AiState::GuardReturn { .. }) => guard::return_update(sm, h, id),
+            Some(AiState::GuardIdle { .. }) => guard::idle_update(sm, h, id),
+            Some(AiState::GuardCrate { .. }) => attack_move::crate_update(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_update(sm, h, id, which)
@@ -1162,6 +1220,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::AttackMove { machine, .. } => attack_move::is_attack(machine),
             // (batch A12: the hunt and attack-area states': their machines')
             AiState::Hunt { machine, .. } | AiState::AttackSquad { machine, .. } => hunt_states::is_attack(machine),
+            // (batch A18: the guard state's: its machine's; the guard machine's attack states': their embedded state's)
+            AiState::Guard { machine, .. } => hunt_states::is_attack(machine),
+            AiState::GuardAttack { embedded, .. } => guard::guard_attack_is_attack(embedded),
             // (batch A12b: the attack-follow-waypoint states': their machines'; the plain waypoint state has none)
             AiState::FollowWaypointPath { machine, .. } => attack_move::is_attack(machine) && !plant(3345),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
@@ -1219,6 +1280,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::DockMove { which, mv } => dock::dock_move_xfer(*which, mv, xfer)?,
             AiState::DockWait { enter_frame } => dock::wait_xfer(enter_frame, xfer)?,
+            AiState::Guard { machine, data, kinds } => guard::guard_xfer(machine, data, *kinds, xfer)?,
+            AiState::GuardAttack { .. } => guard::version_only_xfer(xfer)?,
+            AiState::GuardReturn { next_return_scan_time, .. } => guard::return_xfer(next_return_scan_time, xfer)?,
+            AiState::GuardIdle { next_enemy_scan_time, .. } => guard::idle_xfer(next_enemy_scan_time, xfer)?,
+            AiState::GuardCrate { mv, delay_counter } => attack_move::crate_xfer(mv, delay_counter, xfer)?,
             AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

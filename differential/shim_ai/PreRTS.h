@@ -127,6 +127,18 @@
 #define AIDockMoveToRallyState AiAIDockMoveToRallyState
 #define DroneInfo AiDroneInfo
 #define findDrone aiFindDrone
+/* batch A18 */
+#define AIGuardState AiAIGuardState
+#define AIGuardMachine AiAIGuardMachine
+#define AIGuardInnerState AiAIGuardInnerState
+#define AIGuardIdleState AiAIGuardIdleState
+#define AIGuardOuterState AiAIGuardOuterState
+#define AIGuardReturnState AiAIGuardReturnState
+#define AIGuardPickUpCrateState AiAIGuardPickUpCrateState
+#define AIGuardAttackAggressorState AiAIGuardAttackAggressorState
+#define ExitConditions AiExitConditions
+#define hasAttackedMeAndICanReturnFire aiHasAttackedMeAndICanReturnFire
+#define CLOSE_ENOUGH AI_GUARD_CLOSE_ENOUGH
 #define findEnemyInContainer aiFindEnemyInContainer
 #define killEnemiesInContainer aiKillEnemiesInContainer
 #define JetAIUpdate AiJetAIUpdate

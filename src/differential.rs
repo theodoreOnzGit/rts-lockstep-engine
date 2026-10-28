@@ -1027,6 +1027,13 @@ pub struct AiEnv {
     pub dock_index: c_int,
     pub drone_mask: c_uint,
     pub dock_rate: c_uint,
+    // batch A18
+    pub clearable_attacker: c_int,
+    pub guard_flags: c_int,
+    pub objects_changed_frame: c_uint,
+    pub guard_scan_rate: c_uint,
+    pub guard_return_scan_rate: c_uint,
+    pub guard_chase_frames: c_uint,
 }
 
 extern "C" {

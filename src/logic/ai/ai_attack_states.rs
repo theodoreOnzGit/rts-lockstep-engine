@@ -144,6 +144,8 @@ pub struct AttackFrame {
     pub ai_goal_object: Option<ObjectId>,
     /// (batch A17) the docking machine's `m_approachPosition`, while it runs.
     pub dock_approach: i32,
+    /// (batch A18) the guard machine's members, while it runs.
+    pub guard: crate::logic::ai::ai_guard::GuardData,
 }
 
 /// `ai->friend_setGoalObject(obj)`: the AI's machine's goal. `sm` is the AI's machine when no frame is lent; else (a machine inside
@@ -192,6 +194,7 @@ pub fn attack_state<H: AiStateHost>(follow: bool, attacking_object: bool, force_
         original_victim_pos: Coord3D::default(),
         victim_team: None,
         locked_weapon_on_enter: None,
+        exit: None,
     }
 }
 
@@ -210,7 +213,7 @@ fn run_inner<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl 
         _ => unreachable!("the attack state"),
     };
     let outer = top_view(sm, h);
-    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None, dock_approach: -1 });
+    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None, dock_approach: -1, guard: Default::default() });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the attack frame");
     if let Some(AiState::Attack { machine, .. }) = sm.state_mut(id) {
@@ -296,6 +299,7 @@ pub fn test<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, cond: AiCondition) -> boo
         AiCondition::OutOfWeaponRangePosition => out_of_weapon_range_position(sm, h),
         AiCondition::CannotPossiblyAttackObject(t) => cannot_possibly_attack_object(sm, h, t),
         AiCondition::DockAbleToAdvance => crate::logic::ai::ai_dock::able_to_advance(sm, h),
+        AiCondition::GuardAttackedMe => crate::logic::ai::ai_guard::has_attacked_me_and_i_can_return_fire(h),
     }
 }
 
@@ -419,7 +423,16 @@ pub fn attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
     if adjust & MAA_ACTION_OK == 0 {
         return Ok(StateReturn::SUCCESS);
     }
-    // (m_attackParameters: none for the AI's machine's attack states)
+    // "if we've met the conditions specified by m_attackParameters, we consider ourselves 'successful.'" (batch A18: a guard
+    // machine attack state's)
+    if let Some(Some(exit)) = match sm.state(id) {
+        Some(AiState::Attack { exit, .. }) => Some(*exit),
+        _ => None,
+    } {
+        if exit.should_exit(sm, h) && !plant(3408) {
+            return Ok(StateReturn::SUCCESS);
+        }
+    }
     // "Don't allow units under construction to attack!"
     if h.status_test(OBJECT_STATUS_UNDER_CONSTRUCTION) {
         return Ok(StateReturn::FAILURE);
@@ -487,6 +500,15 @@ fn set_machine<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, m: Option<Sm<H>>) {
 
 /// `AIAttackState::update()`.
 pub fn attack_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    // "if we've met the conditions specified by m_attackParameters, we consider ourselves 'successful.'"
+    if let Some(Some(exit)) = match sm.state(id) {
+        Some(AiState::Attack { exit, .. }) => Some(*exit),
+        _ => None,
+    } {
+        if exit.should_exit(sm, h) {
+            return Ok(StateReturn::SUCCESS);
+        }
+    }
     // "if all of our weapons are out of ammo, can't attack."
     if h.is_out_of_ammo() && !h.is_kind_of(KINDOF_PROJECTILE) {
         return Ok(StateReturn::FAILURE);
