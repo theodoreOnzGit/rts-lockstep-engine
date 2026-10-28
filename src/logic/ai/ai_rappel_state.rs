@@ -25,7 +25,8 @@
 //! - The rate is negative: `-min(desired speed, |gravity| * 30 * 2.5)`.
 
 use crate::common::base_type::Coord3D;
-use crate::common::game_common::{Relationship, LOGICFRAMES_PER_SECOND, PI};
+use crate::common::base_type::PI;
+use crate::common::game_common::{Relationship, LOGICFRAMES_PER_SECOND};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{KINDOF_CAN_RAPPEL, KINDOF_STRUCTURE};
 use crate::common::model_state::MODELCONDITION_RAPPELLING;
@@ -115,7 +116,8 @@ pub fn rappel_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
     } else {
         h.object_set_layer(layer_at_dest);
     }
-    let max_rappel_rate = h.gravity().abs() * LOGICFRAMES_PER_SECOND as f32 * if plant(3370) { 2.0 } else { 2.5 };
+    // (`fabs` is C's: the product is a double, stored as a Real)
+    let max_rappel_rate = (f64::from(h.gravity()).abs() * f64::from(LOGICFRAMES_PER_SECOND) * if plant(3370) { 2.0 } else { 2.5 }) as f32;
     let rate = -ai(h).desired_speed.min(max_rappel_rate);
     *data(sm, id) = RappelData { rappel_rate: rate, dest_z, target_is_bldg };
     Ok(StateReturn::CONTINUE)

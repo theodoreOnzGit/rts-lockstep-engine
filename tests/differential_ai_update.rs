@@ -86,6 +86,7 @@ use rts_lockstep_engine::common::kind_of::{
     KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
     KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED, KINDOF_BRIDGE, KINDOF_PORTABLE_STRUCTURE, KINDOF_CAN_ATTACK,
     KINDOF_MINE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_AIRCRAFT, KINDOF_DONT_AUTO_CRUSH_INFANTRY,
+    KINDOF_CAN_RAPPEL,
 };
 use rts_lockstep_engine::common::game_common::Relationship;
 use rts_lockstep_engine::common::game_type::WeaponSlotType;
@@ -193,6 +194,8 @@ const L_GROUP_CENTER: u32 = 100;
 const L_TEAM_GROUP: u32 = 101;
 const L_SKIRMISH: u32 = 102;
 const L_ATTACK: u32 = 103;
+/// Batch A15: the rappel state's calls (`LOG_RAPPEL`).
+const L_RAPPEL: u32 = 104;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -416,6 +419,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_STRUCTURE && m & 8192 != 0)
             || (kind == KINDOF_AIRCRAFT && m & 16384 != 0)
             || (kind == KINDOF_DONT_AUTO_CRUSH_INFANTRY && m & 32768 != 0)
+            || (kind == KINDOF_CAN_RAPPEL && m & 65536 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -2200,6 +2204,7 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.minor_radius = if g.below(3) == 0 { g.uniform(200.0, 600.0) } else { g.uniform(0.0, 30.0) };
     e.geom_box = i32::from(g.below(2) == 0);
     e.contained_mask = if g.below(2) == 0 { 0 } else { g.u32() };
+    e.loco.kind_mask |= i32::from(g.below(2) == 0) << 16; // (KINDOF_CAN_RAPPEL)
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -3353,6 +3358,19 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A15; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The rappel state (with `findEnemyInContainer` and `killEnemiesInContainer`): 30,000 constructions and 1,799,389 operations,
+///   **0 mismatches** in the results, the call logs and the dumps (which add its rate, destination height and building flag).
+///   After an operation the machine was rappelling 34,958 times. The contain lists the existing objects without an AI of the
+///   scene's mask (A5's passengers' `aiIdle` reaches none); the kills, the FX, the layer, the physics' reset and fall clamp are
+///   logged (`LOG_RAPPEL`). Not generated: the rappel state without physics (used unchecked; kept while it is in the machine).
+/// - The first runs: no rappel state persisted until the stand-in's `isKindOf` answered `KINDOF_CAN_RAPPEL` (a harness gap); then
+///   the rate differed by 1 ULP in 3,338 dumps: `fabs` is C's, so `|gravity| * 30 * 2.5f` is a double product stored as a Real, not
+///   a float product (fixed in the translation before it was committed).
+/// - Planted bugs: plants 3370-3373 at 30,000 cases, each caught (1 to 4,539 mismatches): the rate's factor, the ground height not
+///   followed, one kill fewer, the speed not restored on exit.
+///
 /// # Results (2026-10-28, batch A14; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The enter state: 30,000 constructions and 1,798,842 operations, **0 mismatches** in the results, the call logs and the dumps

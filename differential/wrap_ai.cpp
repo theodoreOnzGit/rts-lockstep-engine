@@ -208,6 +208,8 @@ public:
 	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
 	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
 	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
+	/* batch A15 (AIUpdate.h) */
+	Real getDesiredSpeed() const { return m_desiredSpeed; }
 	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
 	/* batch A13: another object's AI's (virtual upstream: the base's FREE_TO_EXIT, a subclass's other answers; here the hash's, logged) */
 	AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
@@ -737,6 +739,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_STRUCTURE) return (g_aiEnv.kindMask & 8192) != 0;
 	if (t == KINDOF_AIRCRAFT) return (g_aiEnv.kindMask & 16384) != 0;
 	if (t == KINDOF_DONT_AUTO_CRUSH_INFANTRY) return (g_aiEnv.kindMask & 32768) != 0;
+	/* batch A15 */
+	if (t == KINDOF_CAN_RAPPEL) return (g_aiEnv.kindMask & 65536) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
