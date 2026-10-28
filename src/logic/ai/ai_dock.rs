@@ -65,12 +65,15 @@ pub const REACHED_ENTER: u32 = 1;
 pub const REACHED_DOCK: u32 = 2;
 pub const REACHED_EXIT: u32 = 3;
 
+/// A docking machine state's definition: its id, the state, its success and failure successors, its conditions.
+type DockStateDef<'a, H> = (StateId, AiState<H>, StateId, StateId, &'a [StateConditionInfo<AiCondition>]);
+
 /// `AIDockMachine::AIDockMachine(obj)`: "order matters: first state is the default state."
 pub fn new_dock_machine<H: AiStateHost>() -> Sm<H> {
     let mut m = StateMachine::new();
     let dm = |which| AiState::DockMove { which, mv: MoveToData::default() };
     let wait_conditions = [StateConditionInfo { test: AiCondition::DockAbleToAdvance, to_state_id: AI_DOCK_ADVANCE_POSITION }];
-    let defs: [(StateId, AiState<H>, StateId, StateId, &[StateConditionInfo<AiCondition>]); 8] = [
+    let defs: [DockStateDef<H>; 8] = [
         (AI_DOCK_APPROACH, dm(AI_DOCK_APPROACH), AI_DOCK_WAIT_FOR_CLEARANCE, EXIT_MACHINE_WITH_FAILURE, &[]),
         (AI_DOCK_WAIT_FOR_CLEARANCE, AiState::DockWait { enter_frame: 0 }, AI_DOCK_MOVE_TO_ENTRY, EXIT_MACHINE_WITH_FAILURE, &wait_conditions),
         (AI_DOCK_ADVANCE_POSITION, dm(AI_DOCK_ADVANCE_POSITION), AI_DOCK_WAIT_FOR_CLEARANCE, EXIT_MACHINE_WITH_FAILURE, &[]),
