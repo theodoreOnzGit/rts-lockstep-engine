@@ -1512,7 +1512,7 @@ impl AiStateHost for Host {
         let kind = 5 + which;
         self.l(L_DOCK, &[kind]);
         let p = self.env.dock_pos;
-        Coord3D { x: p[0] + 10.0 * (kind - 4) as f32, y: p[1], z: p[2] }
+        Coord3D { x: p[0] + 0.1 * (kind - 4) as f32, y: p[1], z: p[2] }
     }
     fn dock_reached(&mut self, _dock: ObjectId, which: u32) {
         self.l(L_DOCK, &[8 + which]);
@@ -3071,6 +3071,8 @@ struct Checks {
     attack_move_inner: [u64; 3],
     /// Batch A12: the hunt and attack-area machines' state after an operation in those states (attack, crate, idle).
     hunt_inner: [u64; 3],
+    /// Batch A17: the docking machine's state after an operation in the dock state (approach .. rally).
+    dock_inner: [u64; 8],
     /// Batch A12b: the attack-follow-waypoint machines' state after an operation in those states (idle, crate, attack).
     follow_inner: [u64; 3],
     loads: u64,
@@ -3104,6 +3106,7 @@ impl Checks {
             attack_logs: [0; 17],
             attack_move_inner: [0; 3],
             hunt_inner: [0; 3],
+            dock_inner: [0; 8],
             follow_inner: [0; 3],
             loads: 0,
         }
@@ -3280,7 +3283,18 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         }
         // batch A10a: in an attack state, half the operations are the AI's update (which runs the attack machine)
         // (batch A12: and in the hunt and attack-area states, whose machines the update runs)
-        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 17 | 20 | 28)) && g.below(2) == 0 {
+        // (batch A17: and the dock state, whose docking machine the update runs; its waits jump frames at times)
+        let docking = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 14);
+        if docking && g.below(4) == 0 {
+            host.env.loco.frame += g.below(400);
+        }
+        // (and half the time the dock is where the owner is, so that its moves arrive: the approach position is reserved when
+        // the dock state is entered)
+        if g.below(2) == 0 {
+            let p = *host.thing.position();
+            host.env.dock_pos = [p.x, p.y, p.z];
+        }
+        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 14 | 17 | 20 | 28)) && g.below(2) == 0 {
             op = 65;
             ia.iter_mut().for_each(|x| *x = 0); // (the update takes no arguments; another op's would be read for coordinates)
         }
@@ -3354,6 +3368,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             k += 2 + n;
         }
         if let Some(sm) = &module.machine {
+            if let Some(AiState::Dock { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
+                ck.dock_inner[(m.get_current_state_id() as usize).min(7)] += 1;
+            }
             if let Some(AiState::Hunt { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
                 ck.hunt_inner[match m.get_current_state_id() { 10 => 0, 38 => 1, _ => 2 }] += 1;
             }
@@ -3514,6 +3531,23 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A17; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The dock state and its docking machine (`AIDock.cpp`: approach, wait for clearance with its advance condition, advance, move
+///   to the entry, into the dock, process, move to the exit, to the rally point): 30,000 constructions and 1,799,333 operations,
+///   **0 mismatches** in the results, the call logs and the dumps (which add the dock state, its machine's state, goal, sleep, lock
+///   and approach position, and its states' members). After an operation the machine was docking 10,635 times; its docking machine
+///   approaching 9,940, waiting 136, advancing 306, moving to the entry 141, into the dock 33, processing 31, moving to the exit 48,
+///   to the rally point never (with no rally point its entry succeeds at once; with one, the move rarely survives an operation).
+/// - The dock (`DockUpdateInterface`) is a logged stand-in (`LOG_DOCK`): its answers (reserve, advance, clear to enter, clear to
+///   advance, action) from the hash at the scene's rate, its open, passthrough and rally flags the scene's, its positions 0.1 apart
+///   from the scene's dock position, which is the owner's half the time (so that the moves arrive). The other objects with a dock
+///   are fixed for a case (the move-to-dock state asks its goal's dock unchecked). In the dock state the update is forced half the
+///   time and the frame jumps up to 400 a quarter of the time (the 30-second wait).
+/// - Planted bugs: plants 3390-3395 at 30,000 cases, each caught (1 to 779 mismatches): the approach position cleared at the entry,
+///   the machine locked into the dock, the cancel on interruption, the wait's limit, the drone, paths through units. (3391, 3393 and
+///   3394 were not caught until the dock position followed the owner and the frame jumped.)
+///
 /// # Results (2026-10-28, batch A16; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The attack-squad state (`chooseVictim` with the AI's machine's goal squad): 30,000 constructions and 1,799,455 operations,
@@ -3763,9 +3797,9 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.follow_inner, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.follow_inner, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();

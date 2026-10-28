@@ -171,7 +171,7 @@ struct AiEnv
 	UnsignedInt dockMask;		/* the other objects with a DockUpdateInterface (fixed for a case) */
 	Int dockFlags;			/* bit 0 isDockOpen, 1 isAllowPassthroughType, 2 isRallyPointAfterDockType, 3 the dock's object has an
 					** exit interface, 4 it has a rally point */
-	Real dockPos[3];		/* the dock's positions: the approach (reserve/advance) here, the enter, dock and exit 10, 20, 30 east */
+	Real dockPos[3];		/* the dock's positions: the approach (reserve/advance) here, the enter, dock and exit 0.1, 0.2, 0.3 east */
 	Int dockIndex;			/* the approach index reserve/advance give */
 	UnsignedInt droneMask;		/* the other objects whose producer is the owner */
 	UnsignedInt dockRate;		/* the dock's answers (reserve, advance, clear to enter, clear to advance, action): TRUE at this rate */

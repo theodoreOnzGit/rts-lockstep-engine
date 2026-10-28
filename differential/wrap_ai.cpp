@@ -1098,7 +1098,7 @@ bool dockAnswer(unsigned kind, std::initializer_list<unsigned> words)
 }
 void dockPosition(unsigned kind, Coord3D *position)
 {
-	position->x = g_aiEnv.dockPos[0] + 10.0f * (Real)(kind - 4);
+	position->x = g_aiEnv.dockPos[0] + 0.1f * (Real)(kind - 4);
 	position->y = g_aiEnv.dockPos[1];
 	position->z = g_aiEnv.dockPos[2];
 	L(LOG_DOCK, { kind });
