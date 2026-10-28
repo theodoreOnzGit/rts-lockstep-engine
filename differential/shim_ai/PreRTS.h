@@ -99,6 +99,10 @@
 #define AIAttackMoveStateMachine AiAIAttackMoveStateMachine
 #define AIAttackMoveToState AiAIAttackMoveToState
 #define AIPickUpCrateState AiAIPickUpCrateState
+/* batch A12 */
+#define AIAttackThenIdleStateMachine AiAIAttackThenIdleStateMachine
+#define AIHuntState AiAIHuntState
+#define AIAttackAreaState AiAIAttackAreaState
 #define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition

@@ -1007,6 +1007,8 @@ pub struct AiEnv {
     pub turret_cur_weapon: c_int,
     pub team_epoch: c_int,
     pub turrets: c_int,
+    // batch A12
+    pub units_hunt: c_int,
 }
 
 extern "C" {

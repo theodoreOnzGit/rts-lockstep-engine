@@ -212,8 +212,9 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn ai_data_attack_ignore_insignificant_buildings(&self) -> bool;
     /// `TheAI->getAdjustedVisionRangeForObject(getObject(), factors)`.
     fn adjusted_vision_range_for_object(&mut self, factors: i32) -> f32;
-    /// `TheAI->findClosestEnemy(getObject(), range, qualifiers, info)`'s id (`INVALID_ID`: none).
-    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>) -> ObjectId;
+    /// `TheAI->findClosestEnemy(getObject(), range, qualifiers, info, filter)`'s id (`INVALID_ID`: none); `area`: a
+    /// `PartitionFilterPolygonTrigger` of that polygon trigger (batch A12).
+    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>, area: Option<i32>) -> ObjectId;
     /// `getObject()->getCurrentWeapon()->getAntiMask()`, `None` without a current weapon.
     fn current_weapon_anti_mask(&self) -> Option<i32>;
     /// `player->hasUpgradeComplete(TheUpgradeCenter->findUpgrade(name))` for the controlling player.
@@ -1234,7 +1235,7 @@ impl AiUpdate {
             flags |= AI_UNFOGGED;
         }
 
-        h.find_closest_enemy(range_to_find_within, flags, self.attack_info)
+        h.find_closest_enemy(range_to_find_within, flags, self.attack_info, None)
     }
 
     /// `evaluateMoraleBonus()`: the horde, nationalism and fanaticism weapon bonuses.

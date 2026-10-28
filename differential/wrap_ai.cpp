@@ -206,6 +206,9 @@ public:
 	void setFinalPosition(const Coord3D *pos) { m_finalPosition = *pos; m_doFinalPosition = false;}
 	/* batch A3 */
 	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
+	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
+	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
+	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
 	UnsignedInt getNextMoodCheckTime() const { return m_nextMoodCheckTime; }
 	const LocomotorSet& getLocomotorSet(void) const {return m_locomotorSet;}
 	/* `virtual void addTargeter(ObjectID id, Bool add) { return; }`: what another object's AI does with it is its class's (logged) */
@@ -394,6 +397,7 @@ public:
 #include "ai_states_a9.inc"
 #include "ai_states_a10.inc"
 #include "ai_states_a11.inc"
+#include "ai_states_a12.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -473,6 +477,7 @@ ControlBar g_controlBar;
 CommandSet g_commandSet;
 CommandButton g_buttons[4];
 PolygonTrigger g_polygons[8];
+AttackPriorityInfo g_attackInfos[2] = { { 0 }, { 1 } };
 Waypoint g_waypoints[8];
 unsigned char g_moduleDummy[3];
 /* the action manager's answer: the hash of the question, the target and the source */
@@ -819,7 +824,9 @@ Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToCons
 }
 Object *AI::findClosestEnemy(const Object *me, Real range, UnsignedInt qualifiers, const AttackPriorityInfo *info, PartitionFilter *optionalFilter)
 {
-	L(LOG_CLOSEST_ENEMY, { (unsigned)me->getID(), bitsOf(range), qualifiers, info ? 1u : 0u });
+	/* batch A12: the info by index + 1, the polygon filter's polygon + 1 (0: none) */
+	unsigned poly = optionalFilter ? (unsigned)((const PartitionFilterPolygonTrigger *)optionalFilter)->m_index + 1u : 0u;
+	L(LOG_CLOSEST_ENEMY, { (unsigned)me->getID(), bitsOf(range), qualifiers, info ? (unsigned)info->m_index + 1u : 0u, poly });
 	return findObject((ObjectID)g_aiEnv.closestEnemy);
 }
 const DamageInfo *BodyModuleInterface::getLastDamageInfo() const
@@ -1076,6 +1083,7 @@ void AIGroup::getCenter(Coord3D *center)
 	L(LOG_GROUP_CENTER, { (unsigned)m_team, bitsOf(center->x), bitsOf(center->y), bitsOf(center->z) });
 }
 Int AIGroup::getCount(void) { return m_team ? g_aiEnv.teamCount : 0; }
+Bool Player::getUnitsShouldHunt() const { return g_aiEnv.unitsHunt != 0; }
 Bool Player::isSkirmishAIPlayer(void) { L(LOG_SKIRMISH, { (unsigned)g_aiEnv.skirmish }); return g_aiEnv.skirmish != 0; }
 void TerrainLogic::getMaximumPathfindExtent(Region3D *r) const
 {
@@ -1206,6 +1214,15 @@ Bool Weapon::fireWeapon(const Object *source, const Coord3D* pos)
 	return r;
 }
 void Weapon::setPreAttackFinishedFrame(UnsignedInt frame) { L(LOG_ATTACK, { 0u, (unsigned)m_slot, frame }); }
+/* batch A12: LOG_ATTACK kind 16, getPriority (the info, the template's object, the answer: the hash's, 0..3) */
+Int AttackPriorityInfo::getPriority(const AiTemplateView *tThing) const
+{
+	unsigned id = (unsigned)g_aiEnv.objectId;
+	for (int i = 0; i < 32; ++i) if (&g_others[i].m_template == tThing) id = (unsigned)i;
+	Int r = (Int)(p1Hash(70, { (unsigned)m_index, id }) % 4u);
+	L(LOG_ATTACK, { 16u, (unsigned)m_index, id, (unsigned)r });
+	return r;
+}
 Bool Object::isAirborneTarget() const { return objectAnswer(0, { (unsigned)getID() }); }
 Bool Object::isDestroyed() const { return objectAnswer(1, { (unsigned)getID() }); }
 Bool Object::canCrushOrSquish(Object *otherObj, CrushSquishTestType testType) const
@@ -1775,6 +1792,8 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 85: r.push_back(ai->computeQuickPath(&p) ? 1u : 0u); break;
 	/* what the move states set on the current locomotor (not yet translated): ultra-accurate ia[0] */
 	case 86: if (ai->m_curLocomotor) ai->m_curLocomotor->setUltraAccurate(ia[0] != 0); break;
+	/* batch A12: setAttackInfo (ia[0]: the info, -1 none) */
+	case 87: ai->setAttackInfo(ia[0] >= 0 ? &g_attackInfos[ia[0]] : NULL); break;
 	case 71: {
 		/* the last save loaded into the machine (xferSnapshot, then loadPostProcess): the status */
 		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_saved.empty()) fwrite(&g_saved[0], 1, g_saved.size(), f); fclose(f); }
@@ -2059,6 +2078,29 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 			const AIPickUpCrateState *pc = (const AIPickUpCrateState *)sm->m_stateMap.find(AI_PICK_UP_CRATE)->second;
 			PUT_MOVE(pc)
 			putU32(v, (unsigned)pc->m_delayCounter);
+			/* batch A12: the hunt and attack-area states (their machines: state, goal, sleep, goal position, the crate state, the
+			** attack state's machine) */
+			for (int k = 0; k < 2; ++k) {
+				const State *st = sm->m_stateMap.find(k ? AI_ATTACK_AREA : AI_HUNT)->second;
+				const StateMachine *hm = k ? ((const AIAttackAreaState *)st)->m_attackMachine : ((const AIHuntState *)st)->m_huntMachine;
+				putU32(v, k ? ((const AIAttackAreaState *)st)->m_nextEnemyScanTime : ((const AIHuntState *)st)->m_nextEnemyScanTime);
+				putU32(v, hm ? 1u : 0u);
+				if (!hm) continue;
+				putU32(v, (unsigned)hm->getCurrentStateID());
+				putU32(v, (unsigned)hm->m_goalObjectID);
+				putU32(v, hm->m_sleepTill);
+				putPos(v, hm->m_goalPosition);
+				const AIPickUpCrateState *hc = (const AIPickUpCrateState *)hm->m_stateMap.find(AI_PICK_UP_CRATE)->second;
+				PUT_MOVE(hc)
+				putU32(v, (unsigned)hc->m_delayCounter);
+				const AIAttackState *ha = (const AIAttackState *)hm->m_stateMap.find(AI_ATTACK_OBJECT)->second;
+				putU32(v, ha->m_attackMachine ? 1u : 0u);
+				putPos(v, ha->m_originalVictimPos);
+				if (ha->m_attackMachine) {
+					putU32(v, (unsigned)ha->m_attackMachine->getCurrentStateID());
+					putU32(v, (unsigned)ha->m_attackMachine->m_goalObjectID);
+				}
+			}
 #undef PUT_MOVE
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;

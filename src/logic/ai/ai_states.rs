@@ -71,6 +71,7 @@ use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
 use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
 use crate::logic::ai::ai_attack_move as attack_move;
+use crate::logic::ai::ai_hunt_states as hunt_states;
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -358,6 +359,11 @@ pub trait AiStateHost: AiHost + StateContext {
     fn fire_current_weapon_at_object(&mut self, victim: Option<ObjectId>);
     fn fire_current_weapon_at_position(&mut self, pos: &Coord3D);
     fn release_weapon_lock(&mut self, lock: i32);
+    // ---- batch A12: the hunt and attack-area states
+    /// The controlling player's `getUnitsShouldHunt()` (`None`: no controlling player).
+    fn units_should_hunt(&self) -> Option<bool>;
+    /// The attack priority info's `getPriority(obj->getTemplate())` (the info by index).
+    fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
     /// The current weapon's `isTooClose(owner, victim)`.
@@ -436,6 +442,9 @@ pub enum AiState<H: AiStateHost> {
     /// `AIAttackMoveToState` (batch A11): `AIMoveToState`'s base, `m_frameToSleepUntil`, `m_retryCount`, `m_commandSrc`,
     /// `m_attackMoveMachine`.
     AttackMove { mv: MoveToData, frame_to_sleep_until: u32, retry_count: i32, command_src: CommandSourceType, machine: Option<StateMachine<AiState<H>>> },
+    /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
+    /// (the owner's kinds, read at the AI's machine's creation, make the machine).
+    Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
     /// `AIPickUpCrateState`: `m_delayCounter`.
     PickUpCrate { mv: MoveToData, delay_counter: i32 },
     /// The attack machine's `ContinueState` and `FailureState`.
@@ -700,8 +709,8 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_GUARD, u(AI_GUARD), AI_IDLE, AI_IDLE),
         (AI_GUARD_TUNNEL_NETWORK, u(AI_GUARD_TUNNEL_NETWORK), AI_IDLE, AI_IDLE),
         (AI_GUARD_RETALIATE, u(AI_GUARD_RETALIATE), AI_IDLE, AI_IDLE),
-        (AI_HUNT, u(AI_HUNT), AI_IDLE, AI_IDLE),
-        (AI_ATTACK_AREA, u(AI_ATTACK_AREA), AI_IDLE, AI_IDLE),
+        (AI_HUNT, hunt_states::hunt(false, kinds), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_AREA, hunt_states::hunt(true, kinds), AI_IDLE, AI_IDLE),
         (AI_FACE_OBJECT, u(AI_FACE_OBJECT), AI_IDLE, AI_IDLE),
         (AI_FACE_POSITION, u(AI_FACE_POSITION), AI_IDLE, AI_IDLE),
         (AI_PICK_UP_CRATE, attack_move::pick_up_crate(), AI_IDLE, AI_IDLE),
@@ -727,7 +736,9 @@ fn idle_do_init<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id
     *inited = false;
 
     let ultra_accurate = ai(h).get_cur_locomotor().is_some_and(|l| l.is_ultra_accurate());
-    let idle_and_ground = with_ai(h, |a, h| a.is_idle(&*sm) && a.is_doing_ground_movement(h));
+    // (the AI's machine: when this idle state is a sub-machine's, the lent view of it; batch A12)
+    let view = attack_states::top_view(sm, h);
+    let idle_and_ground = with_ai(h, |a, h| a.is_idle(&view) && a.is_doing_ground_movement(h));
     if idle_and_ground {
         // "Update the goal."
         let mut goal_pos = h.position();
@@ -894,6 +905,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Attack { .. }) => attack_states::attack_on_enter(sm, h, id),
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_enter(sm, h, id),
             Some(AiState::PickUpCrate { .. }) => attack_move::crate_on_enter(sm, h, id),
+            Some(AiState::Hunt { .. }) => hunt_states::hunt_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -925,6 +937,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Attack { .. }) => attack_states::attack_on_exit(sm, h, id)?,
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_exit(sm, h, id)?,
             Some(AiState::PickUpCrate { .. }) => move_states::internal_on_exit(sm, h, id),
+            Some(AiState::Hunt { .. }) => hunt_states::hunt_on_exit(sm, h, id)?,
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -957,6 +970,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Attack { .. }) => attack_states::attack_update(sm, h, id),
             Some(AiState::AttackMove { .. }) => attack_move::attack_move_update(sm, h, id),
             Some(AiState::PickUpCrate { .. }) => attack_move::crate_update(sm, h, id),
+            Some(AiState::Hunt { .. }) => hunt_states::hunt_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -989,6 +1003,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::Attack { .. } => !plant(3246),
             // (AIAttackMoveToState's: its machine's)
             AiState::AttackMove { machine, .. } => attack_move::is_attack(machine),
+            // (batch A12: the hunt and attack-area states': their machines')
+            AiState::Hunt { machine, .. } => hunt_states::is_attack(machine),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
             _ => false,
@@ -1033,6 +1049,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 attack_move::attack_move_xfer(mv, frame_to_sleep_until, retry_count, machine, xfer)?
             }
             AiState::PickUpCrate { mv, delay_counter } => attack_move::crate_xfer(mv, delay_counter, xfer)?,
+            AiState::Hunt { kinds, machine, next_enemy_scan_time, .. } => hunt_states::hunt_xfer(*kinds, machine, next_enemy_scan_time, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?
             }

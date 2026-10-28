@@ -76,13 +76,20 @@ pub fn attack_move<H: AiStateHost>(kinds: AttackOwnerKinds) -> AiState<H> {
     }
 }
 
-/// Runs `f` on the attack-move machine of the state `id` (taken out of it), with the AI's machine's view lent as an attack frame.
-fn run_attack_move<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl FnOnce(&mut Sm<H>, &mut H) -> SmResult<R>) -> SmResult<R> {
-    let mut inner = match sm.state_mut(id) {
-        Some(AiState::AttackMove { machine, .. }) => machine.take().expect("the attack-move machine"),
-        _ => unreachable!("the attack-move state"),
-    };
+/// The sub-machine of a state that runs one (the attack-move, hunt and attack-area states).
+fn sub_machine<H: AiStateHost>(state: Option<&mut AiState<H>>) -> &mut Option<Sm<H>> {
+    match state {
+        Some(AiState::AttackMove { machine, .. }) | Some(AiState::Hunt { machine, .. }) => machine,
+        _ => unreachable!("a state with a sub-machine"),
+    }
+}
+
+/// Runs `f` on the sub-machine of the state `id` (taken out of it), with the AI's machine's view lent as an attack frame; a goal
+/// object set on the AI's machine from inside is applied after.
+pub fn run_sub_machine<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl FnOnce(&mut Sm<H>, &mut H) -> SmResult<R>) -> SmResult<R> {
+    // (the view before the machine is taken: the state's isAttack is its machine's)
     let outer = top_view(sm, h);
+    let mut inner = sub_machine(sm.state_mut(id)).take().expect("the sub-machine");
     let bottom = h.attack_stack().is_empty();
     h.attack_stack().push(AttackFrame {
         outer,
@@ -93,9 +100,7 @@ fn run_attack_move<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f:
     });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the view frame");
-    if let Some(AiState::AttackMove { machine, .. }) = sm.state_mut(id) {
-        *machine = Some(inner);
-    }
+    *sub_machine(sm.state_mut(id)) = Some(inner);
     // the AI's machine's goal, set from inside
     if let Some(obj) = lent.ai_goal_object {
         if bottom {
@@ -111,7 +116,7 @@ fn run_attack_move<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f:
 /// AI's machine's).
 pub fn init_attack_move_machines<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResult<()> {
     if matches!(sm.state(AI_ATTACK_MOVE_TO), Some(AiState::AttackMove { .. })) {
-        run_attack_move(sm, h, AI_ATTACK_MOVE_TO, |m, h| m.init_default_state(h).map(|_| ()))?;
+        run_sub_machine(sm, h, AI_ATTACK_MOVE_TO, |m, h| m.init_default_state(h).map(|_| ()))?;
     }
     Ok(())
 }
@@ -167,7 +172,7 @@ pub fn crate_xfer(mv: &mut MoveToData, delay_counter: &mut i32, xfer: &mut dyn X
 
 /// `AIAttackMoveToState::onEnter()`: the machine cleared to idle, the command source kept, the retries renewed; then the move.
 pub fn attack_move_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
-    run_attack_move(sm, h, id, |m, h| {
+    run_sub_machine(sm, h, id, |m, h| {
         if !plant(3325) {
             m.clear(h)?;
         }
@@ -184,7 +189,7 @@ pub fn attack_move_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
 
 /// `AIAttackMoveToState::onExit(status)`.
 pub fn attack_move_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
-    run_attack_move(sm, h, id, |m, h| m.set_state(h, AI_IDLE).map(|_| ()))?;
+    run_sub_machine(sm, h, id, |m, h| m.set_state(h, AI_IDLE).map(|_| ()))?;
     move_states::internal_on_exit(sm, h, id);
     Ok(())
 }
@@ -205,7 +210,7 @@ pub fn attack_move_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId
     if !inner_idle(sm, id) {
         ai(h).set_locomotor_goal_none();
         h.clear_model_condition_state(MODELCONDITION_MOVING);
-        run_attack_move(sm, h, id, |m, h| m.update_state_machine(h).map(|_| ()))?;
+        run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h).map(|_| ()))?;
         // "if the machine is now idling, then we need to attempt to get a new target"
         if inner_idle(sm, id) {
             force_retarget = true;
@@ -224,7 +229,7 @@ pub fn attack_move_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId
         let crate_id = with_ai(h, |a, h| a.check_for_crate_to_pickup(h));
         if crate_id != INVALID_ID {
             let o = h.find_object(crate_id);
-            run_attack_move(sm, h, id, |m, h| {
+            run_sub_machine(sm, h, id, |m, h| {
                 m.set_goal_object(o.as_ref());
                 m.set_state(h, AI_PICK_UP_CRATE).map(|_| ())
             })?;
@@ -235,7 +240,7 @@ pub fn attack_move_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId
         if next != INVALID_ID {
             ai(h).friend_ending_move();
             let o = h.find_object(next);
-            run_attack_move(sm, h, id, |m, h| {
+            run_sub_machine(sm, h, id, |m, h| {
                 m.set_goal_object(o.as_ref());
                 m.set_state(h, AI_ATTACK_OBJECT).map(|_| ())
             })?;

@@ -154,6 +154,8 @@ struct AiEnv
 	Int turretCurWeapon;		/* bit i: turret i holds the owner's current weapon (isOwnersCurWeaponOnTurret) */
 	Int teamEpoch;			/* the other objects' teams: one of two, by the hash of their id and this */
 	Int turrets;			/* at construction: the data's turrets (bit 0 main, bit 1 alt) */
+	/* ---- batch A12 (the hunt and attack-area states) */
+	Int unitsHunt;			/* the controlling player's getUnitsShouldHunt */
 };
 
 extern AiEnv g_aiEnv;
@@ -429,6 +431,8 @@ public:
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate);
 	/* batch A9 */
 	Bool isSkirmishAIPlayer( void );
+	/* batch A12 */
+	Bool getUnitsShouldHunt() const;
 };
 struct TeamTemplateInfo { Bool m_attackCommonTarget; };
 class TeamPrototype { public: const TeamTemplateInfo *getTemplateInfo() const; };
@@ -521,6 +525,13 @@ struct AiTemplateView
 	const class AudioEventRTS *getSoundMoveStartDamaged() const;
 	const class AudioEventRTS *getSoundMoveLoop() const;
 	const class AudioEventRTS *getSoundMoveLoopDamaged() const;
+};
+/* batch A12: ScriptEngine.h's attack priority info, as far as the hunt state uses it (getPriority logged); two of them */
+class AttackPriorityInfo
+{
+public:
+	Int getPriority(const AiTemplateView *tThing) const;
+	Int m_index;
 };
 
 class Object
@@ -683,6 +694,13 @@ class DeliverPayloadAIUpdate { public: void deliverPayloadViaModuleData( const C
 class ProneUpdate { public: void goProne( const DamageInfo *damageInfo ); };
 class HackInternetAIUpdate { public: void hackInternet(); };
 class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; Int m_index; };
+/* batch A12: the attack-area state's filter (its polygon kept for the stand-in search) */
+class PartitionFilterPolygonTrigger : public PartitionFilter
+{
+public:
+	PartitionFilterPolygonTrigger(const PolygonTrigger *trigger) : m_index(trigger->m_index) {}
+	Int m_index;
+};
 class CommandButton { public: Int getCommandType() const; Int m_index; };
 class CommandSet { public: const CommandButton* getCommandButton(Int i) const; };
 class ControlBar { public: const CommandSet *findCommandSet( const AsciiString& name ); };
