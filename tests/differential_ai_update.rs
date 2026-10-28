@@ -1442,6 +1442,32 @@ impl AiStateHost for Host {
         self.l(L_FIND_POSITION, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), min_radius.to_bits(), max_radius.to_bits(), 0, u32::from(r)]);
         r.then_some(Coord3D { x: pos.x + 5.0, y: pos.y + 5.0, z: pos.z })
     }
+    // ---- batch A16
+    fn player_difficulty(&mut self) -> i32 {
+        self.env.difficulty
+    }
+    fn choose_victim_always_uses_normal(&mut self) -> bool {
+        self.env.choose_normal != 0
+    }
+    fn object_is_selectable(&mut self, _id: ObjectId) -> bool {
+        true // (the stand-in's)
+    }
+    fn closest_object_on_squad(&mut self, squad: &[ObjectId]) -> ObjectId {
+        let mut best: Option<(u32, ObjectId)> = None;
+        for &id in squad {
+            if !self.object_exists(id) {
+                continue;
+            }
+            let h = p1_hash(self.env.seed, 75, &[id as u32]);
+            if best.is_none_or(|(b, _)| h < b) {
+                best = Some((h, id));
+            }
+        }
+        let ans = best.map_or(0, |(_, id)| id);
+        let me = self.env.object_id as u32;
+        self.l(L_CLOSEST_OBJECT, &[u32::MAX, me, 1_000_000.0f32.to_bits(), 0, ans as u32]); // (FROM_CENTER_2D)
+        ans
+    }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
         self.l(L_ATTACK, &[16, info as u32, obj as u32, r]);
@@ -2000,6 +2026,25 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 _ => panic!("an attack-follow-waypoint state"),
             }
         }
+        // batch A16: the attack-squad state's machine (state, goal, its attack state's machine)
+        match sm.state(20) {
+            Some(AiState::AttackSquad { machine, .. }) => {
+                v.push(u32::from(machine.is_some()));
+                if let Some(m) = machine {
+                    v.extend([m.get_current_state_id(), m.goal_object_id() as u32, m.peek_sleep_till()]);
+                    match m.state(10) {
+                        Some(AiState::Attack { machine, .. }) => {
+                            v.push(u32::from(machine.is_some()));
+                            if let Some(am) = machine {
+                                v.push(am.get_current_state_id());
+                            }
+                        }
+                        _ => panic!("the attack-squad machine's attack state"),
+                    }
+                }
+            }
+            _ => panic!("the attack-squad state"),
+        }
         // batch A15: the rappel state's members
         match sm.state(35) {
             Some(AiState::Rappel(d)) => v.extend([d.rappel_rate.to_bits(), d.dest_z.to_bits(), u32::from(d.target_is_bldg)]),
@@ -2205,6 +2250,8 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.geom_box = i32::from(g.below(2) == 0);
     e.contained_mask = if g.below(2) == 0 { 0 } else { g.u32() };
     e.loco.kind_mask |= i32::from(g.below(2) == 0) << 16; // (KINDOF_CAN_RAPPEL)
+    e.difficulty = g.below(3) as i32;
+    e.choose_normal = i32::from(g.below(4) == 0);
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -2464,7 +2511,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35][g.below(51) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20][g.below(53) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2497,7 +2544,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37][g.below(43) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13][g.below(45) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -2913,7 +2960,7 @@ struct Checks {
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
     a4_logs: [u64; 34],
-    a4_states: [u64; 26],
+    a4_states: [u64; 27],
     temporary_states: u64,
     /// Batch A9: cases ended before an operation upstream would make undefined (a waypoint state without a locomotor).
     a9_undefined: u64,
@@ -2950,7 +2997,7 @@ impl Checks {
             victims: 0,
             enter_targets: 0,
             a4_logs: [0; 34],
-            a4_states: [0; 26],
+            a4_states: [0; 27],
             temporary_states: 0,
             a9_undefined: 0,
             attack_inner: [0; 4],
@@ -3103,8 +3150,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let attacking = module.machine.as_ref().is_some_and(|sm| {
             // (batch A11: and the attack-move state, whose machine has an attack state)
             // (batch A12b: and the attack-follow-waypoint states)
-            matches!(sm.get_current_state_id(), 9..=12 | 15 | 17 | 28 | 30..=32)
-                || matches!(module.ai().machine.temporary_state, 9..=12 | 15 | 17 | 28 | 30..=32)
+            matches!(sm.get_current_state_id(), 9..=12 | 15 | 17 | 20 | 28 | 30..=32)
+                || matches!(module.ai().machine.temporary_state, 9..=12 | 15 | 17 | 20 | 28 | 30..=32)
         });
         // batch A10b: without a controlling player the team does not attack a common target (the idle state would attack it, and
         // the chase states read the player unchecked)
@@ -3133,7 +3180,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         }
         // batch A10a: in an attack state, half the operations are the AI's update (which runs the attack machine)
         // (batch A12: and in the hunt and attack-area states, whose machines the update runs)
-        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 17 | 28)) && g.below(2) == 0 {
+        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 17 | 20 | 28)) && g.below(2) == 0 {
             op = 65;
             ia.iter_mut().for_each(|x| *x = 0); // (the update takes no arguments; another op's would be read for coordinates)
         }
@@ -3245,6 +3292,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 37 | 42 => 23,
                 15 => 24,
                 35 => 25,
+                20 => 26,
                 _ => 4,
             }] += 1;
         }
@@ -3309,6 +3357,8 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
             // batch A12: the hunt and attack-area states already the machine's state or its temporary state (the other's exit
             // deletes the one machine), or without a controlling player (their machines' attack reads it)
             || (matches!(state, 17 | 28) && (in_machine(state) || e.player_type < 0))
+            // batch A16: the attack-squad state likewise (its exit deletes the one machine; it reads the player unchecked)
+            || (state == 20 && (in_machine(state) || e.player_type < 0))
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
@@ -3330,6 +3380,7 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 17 => 32,
                 23 => 15,
                 37 => 35,
+                13 => 20,
                 _ => -1,
             };
             if unsafe_entry(state, ia[4] >= 0) {
@@ -3595,7 +3646,7 @@ fn ai_update_a2_matches_upstream() {
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
-         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel {:?}; A9 cases ended undefined {}; attack machine \
+         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad {:?}; A9 cases ended undefined {}; attack machine \
          chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.follow_inner, ck.temporary_states, ck.loads

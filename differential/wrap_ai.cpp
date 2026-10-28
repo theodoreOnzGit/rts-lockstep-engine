@@ -1031,6 +1031,22 @@ Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, Dis
 	L(LOG_CLOSEST_OBJECT, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), bitsOf(maxDist), (unsigned)dc, (unsigned)f->m_commandSource });
 	return findObject((ObjectID)g_aiEnv.closestAttack);
 }
+/* batch A16: the squad's existing member with the smallest hash (the first of equals), logged with the owner and the answer */
+Object *PartitionManager::getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
+	Real *closestDist, Coord3D *closestDistVec)
+{
+	const PartitionFilterAcceptOnSquad *f = (const PartitionFilterAcceptOnSquad *)filters[0];
+	Object *best = NULL;
+	unsigned bestHash = 0;
+	for (size_t i = 0; i < f->m_squad->m_objectIDs.size(); ++i) {
+		Object *o = findObject(f->m_squad->m_objectIDs[i]);
+		if (!o) continue;
+		unsigned h = p1Hash(75, { (unsigned)o->getID() });
+		if (!best || h < bestHash) { best = o; bestHash = h; }
+	}
+	L(LOG_CLOSEST_OBJECT, { 0xffffffffu, (unsigned)obj->getID(), bitsOf(maxDist), (unsigned)dc, best ? (unsigned)best->getID() : 0u });
+	return best;
+}
 Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result)
 {
 	bool r = p1Pick(p1Hash(16, { bitsOf(center->x), bitsOf(center->y) }), g_aiEnv.findPosRate);
@@ -1150,6 +1166,8 @@ void AIGroup::getCenter(Coord3D *center)
 }
 Int AIGroup::getCount(void) { return m_team ? g_aiEnv.teamCount : 0; }
 Bool Player::getUnitsShouldHunt() const { return g_aiEnv.unitsHunt != 0; }
+GameDifficulty Player::getPlayerDifficulty(void) const { return (GameDifficulty)g_aiEnv.difficulty; }
+Bool ScriptEngine::getChooseVictimAlwaysUsesNormal() const { return g_aiEnv.chooseNormal != 0; }
 Bool Player::isSkirmishAIPlayer(void) { L(LOG_SKIRMISH, { (unsigned)g_aiEnv.skirmish }); return g_aiEnv.skirmish != 0; }
 void TerrainLogic::getMaximumPathfindExtent(Region3D *r) const
 {
@@ -2196,6 +2214,20 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 				if (fa->m_attackMachine) {
 					putU32(v, (unsigned)fa->m_attackMachine->getCurrentStateID());
 					putU32(v, (unsigned)fa->m_attackMachine->m_goalObjectID);
+				}
+			}
+			/* batch A16: the attack-squad state's machine (state, goal, its attack state's machine) */
+			{
+				const AIAttackSquadState *sq = (const AIAttackSquadState *)sm->m_stateMap.find(AI_ATTACK_SQUAD)->second;
+				const StateMachine *qm = sq->m_attackSquadMachine;
+				putU32(v, qm ? 1u : 0u);
+				if (qm) {
+					putU32(v, (unsigned)qm->getCurrentStateID());
+					putU32(v, (unsigned)qm->m_goalObjectID);
+					putU32(v, qm->m_sleepTill);
+					const AIAttackState *qa = (const AIAttackState *)qm->m_stateMap.find(AI_ATTACK_OBJECT)->second;
+					putU32(v, qa->m_attackMachine ? 1u : 0u);
+					if (qa->m_attackMachine) putU32(v, (unsigned)qa->m_attackMachine->getCurrentStateID());
 				}
 			}
 			/* batch A15: the rappel state's members */

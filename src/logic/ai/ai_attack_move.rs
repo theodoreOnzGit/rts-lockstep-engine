@@ -83,6 +83,7 @@ pub fn attack_move<H: AiStateHost>(kinds: AttackOwnerKinds) -> AiState<H> {
 fn sub_machine<H: AiStateHost>(state: Option<&mut AiState<H>>) -> &mut Option<Sm<H>> {
     match state {
         Some(AiState::AttackMove { machine, .. }) | Some(AiState::Hunt { machine, .. }) => machine,
+        Some(AiState::AttackSquad { machine, .. }) => machine,
         Some(AiState::FollowWaypointPath { machine, .. }) => machine,
         _ => unreachable!("a state with a sub-machine"),
     }

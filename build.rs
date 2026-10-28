@@ -1964,6 +1964,8 @@ mod differential {
                 through(&aiu_h, "AIUpdate.h", "enum AIFreeToExitType", "\n};"),
                 through(&upd_h, "UpdateModule.h", "enum ExitDoorType", "\n};"),
                 through(&rd(engine.join("Include/GameLogic/Module/ContainModule.h")), "ContainModule.h", "enum ObjectEnterExitType", "\n};"),
+                // batch A16: PartitionManager.h's HUGE_DIST
+                through(&pm_h, "PartitionManager.h", "const Real HUGE_DIST", ";"),
                 // batch A14: Geometry.h's GeometryType
                 through(&rd(engine.join("Include/Common/Geometry.h")), "Geometry.h", "enum GeometryType", "\n};"),
             ];
@@ -2104,6 +2106,8 @@ mod differential {
                 "AIAttackAreaState",
                 // batch A12b
                 "AIAttackFollowWaypointPathState",
+                // batch A16
+                "AIAttackSquadState",
                 // batch A15
                 "AIRappelState",
                 // batch A14
@@ -2150,7 +2154,7 @@ mod differential {
                 edited.push_str(&line[close + 1..]);
                 placeholders += 1;
             }
-            assert_eq!(placeholders, 5, "AIStates.cpp: the constructor's 5 states not yet translated");
+            assert_eq!(placeholders, 4, "AIStates.cpp: the constructor's 4 states not yet translated");
             // batch A7: the move states (ai_states_a7.inc): isSamePosition, AIInternalMoveToState's members (to the attack-move
             // machine, a later batch's), and AIMoveToState to AIMoveAwayFromRepulsorsState's members, verbatim
             let a7 = [
@@ -2197,6 +2201,8 @@ mod differential {
                 between(&sts, "AIStates.cpp", "AIHuntState::~AIHuntState()", "void AIFaceState::crc( Xfer *xfer )"),
                 // batch A12b: AIAttackFollowWaypointPathState's members
                 between(&sts, "AIStates.cpp", "AIAttackFollowWaypointPathState::AIAttackFollowWaypointPathState (", "void AIWanderState::crc( Xfer *xfer )"),
+                // batch A16: AIAttackSquadState's members
+                between(&sts, "AIStates.cpp", "AIAttackSquadState::~AIAttackSquadState()", "AIDockState::~AIDockState()"),
                 // batch A15: findEnemyInContainer, killEnemiesInContainer, AIRappelState's members
                 between(&sts, "AIStates.cpp", "static Object* findEnemyInContainer(Object* killer, Object* bldg)", "AIStateMachine::AIStateMachine( Object *obj, AsciiString name ) : StateMachine( obj, name )"),
                 // batch A14: AIEnterState's members

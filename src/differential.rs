@@ -1017,6 +1017,9 @@ pub struct AiEnv {
     pub geom_box: c_int,
     // batch A15
     pub contained_mask: c_uint,
+    // batch A16
+    pub difficulty: c_int,
+    pub choose_normal: c_int,
 }
 
 extern "C" {

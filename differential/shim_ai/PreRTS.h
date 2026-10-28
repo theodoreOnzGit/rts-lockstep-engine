@@ -112,6 +112,8 @@
 #define AIEnterState AiAIEnterState
 /* batch A15 */
 #define AIRappelState AiAIRappelState
+/* batch A16 */
+#define AIAttackSquadState AiAIAttackSquadState
 #define findEnemyInContainer aiFindEnemyInContainer
 #define killEnemiesInContainer aiKillEnemiesInContainer
 #define JetAIUpdate AiJetAIUpdate

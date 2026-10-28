@@ -412,6 +412,15 @@ pub trait AiStateHost: AiHost + StateContext {
     fn logic_random_value_real(&mut self, lo: f32, hi: f32) -> f32;
     /// `ThePartitionManager->findPositionAround(pos, options)` with no source object (`find_position_around`'s is the owner).
     fn find_position_around_no_source(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D>;
+    // ---- batch A16: the attack-squad state
+    /// The controlling player's `getPlayerDifficulty()` (`GameDifficulty`; the player read unchecked).
+    fn player_difficulty(&mut self) -> i32;
+    /// `TheScriptEngine->getChooseVictimAlwaysUsesNormal()`.
+    fn choose_victim_always_uses_normal(&mut self) -> bool;
+    /// Another object's `isSelectable()`.
+    fn object_is_selectable(&mut self, id: ObjectId) -> bool;
+    /// `ThePartitionManager->getClosestObject(owner, HUGE_DIST, FROM_CENTER_2D, {on the squad, the same map status})`.
+    fn closest_object_on_squad(&mut self, squad: &[ObjectId]) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
     /// The current weapon's `isTooClose(owner, victim)`.
@@ -494,6 +503,8 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
+    /// `AIAttackSquadState` (batch A16): `m_attackSquadMachine` (the owner's kinds make it).
+    AttackSquad { kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>> },
     /// `AIRappelState` (batch A15).
     Rappel(RappelData),
     /// `AIEnterState` (batch A14): `AIInternalMoveToState`'s base, `m_entryToClear`.
@@ -760,7 +771,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_ATTACK_OBJECT, attack(false, true, false), AI_IDLE, AI_IDLE),
         (AI_FORCE_ATTACK_OBJECT, attack(false, true, true), AI_IDLE, AI_IDLE),
         (AI_ATTACK_AND_FOLLOW_OBJECT, attack(true, true, false), AI_IDLE, AI_IDLE),
-        (AI_ATTACK_SQUAD, u(AI_ATTACK_SQUAD), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_SQUAD, hunt_states::attack_squad(kinds), AI_IDLE, AI_IDLE),
         (AI_WANDER, wander(false), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_PANIC, wander(true), AI_IDLE, AI_MOVE_AWAY_FROM_REPULSORS),
         (AI_DEAD, AiState::Dead, AI_IDLE, AI_IDLE),
@@ -977,6 +988,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Face { .. }) => face_exit::face_on_enter(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_on_enter(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_on_enter(sm, h, id),
+            Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -1013,6 +1025,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Exit { .. }) => face_exit::exit_on_exit(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_on_exit(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_on_exit(h),
+            Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_exit(sm, h, id)?,
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -1054,6 +1067,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Face { .. }) => face_exit::face_update(sm, h, id),
             Some(AiState::Enter { .. }) => enter_state::enter_update(sm, h, id),
             Some(AiState::Rappel(_)) => rappel::rappel_update(sm, h, id),
+            Some(AiState::AttackSquad { .. }) => hunt_states::squad_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1087,7 +1101,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             // (AIAttackMoveToState's: its machine's)
             AiState::AttackMove { machine, .. } => attack_move::is_attack(machine),
             // (batch A12: the hunt and attack-area states': their machines')
-            AiState::Hunt { machine, .. } => hunt_states::is_attack(machine),
+            AiState::Hunt { machine, .. } | AiState::AttackSquad { machine, .. } => hunt_states::is_attack(machine),
             // (batch A12b: the attack-follow-waypoint states': their machines'; the plain waypoint state has none)
             AiState::FollowWaypointPath { machine, .. } => attack_move::is_attack(machine) && !plant(3345),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
@@ -1139,6 +1153,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::Exit { entry_to_clear, .. } => face_exit::exit_xfer(entry_to_clear, xfer)?,
             AiState::Enter { mv, entry_to_clear } => enter_state::enter_xfer(mv, entry_to_clear, xfer)?,
             AiState::Rappel(d) => rappel::rappel_xfer(d, xfer)?,
+            AiState::AttackSquad { kinds, machine } => hunt_states::squad_xfer(*kinds, machine, xfer)?,
             AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

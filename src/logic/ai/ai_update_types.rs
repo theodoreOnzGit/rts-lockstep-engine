@@ -159,6 +159,10 @@ pub const AI_HUNT: AiStateType = 17;
 pub const AI_WANDER: AiStateType = 18;
 pub const AI_PANIC: AiStateType = 19;
 pub const AI_ATTACK_SQUAD: AiStateType = 20;
+/// `GameDifficulty` (GameCommon.h): `DIFFICULTY_EASY`, `DIFFICULTY_NORMAL`, `DIFFICULTY_HARD` (batch A16).
+pub const DIFFICULTY_EASY: i32 = 0;
+pub const DIFFICULTY_NORMAL: i32 = 1;
+pub const DIFFICULTY_HARD: i32 = 2;
 pub const AI_GUARD_TUNNEL_NETWORK: AiStateType = 21;
 pub const AI_GET_REPAIRED: AiStateType = 22;
 pub const AI_MOVE_OUT_OF_THE_WAY: AiStateType = 23;

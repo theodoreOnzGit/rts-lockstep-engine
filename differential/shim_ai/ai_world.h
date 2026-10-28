@@ -164,6 +164,9 @@ struct AiEnv
 	Int geomBox;			/* the other objects' geometry's getGeomType is GEOMETRY_BOX (else GEOMETRY_SPHERE) */
 	/* ---- batch A15 (the rappel state) */
 	UnsignedInt containedMask;	/* the contain's getContainedItemsList: the existing objects without an AI of this mask, in id order */
+	/* ---- batch A16 (the attack-squad state) */
+	Int difficulty;			/* the controlling player's getPlayerDifficulty */
+	Int chooseNormal;		/* TheScriptEngine->getChooseVictimAlwaysUsesNormal */
 };
 
 extern AiEnv g_aiEnv;
@@ -208,6 +211,8 @@ class ScriptEngine
 {
 public:
 	void notifyOfObjectCreationOrDestruction();
+	/* batch A16 */
+	Bool getChooseVictimAlwaysUsesNormal() const;
 };
 extern ScriptEngine *TheScriptEngine;
 
@@ -282,6 +287,14 @@ public:
 	PartitionFilterSameMapStatus(const Object *obj) : m_obj(obj) {}
 	const Object *m_obj;
 };
+/* batch A16: the attack-squad state's (its squad kept for the stand-in search) */
+class Squad;
+class PartitionFilterAcceptOnSquad : public PartitionFilter
+{
+public:
+	PartitionFilterAcceptOnSquad(const Squad *squad) : m_squad(squad) {}
+	const Squad *m_squad;
+};
 /* batch A10a: the fire state's continue-attack search */
 class PartitionFilterSamePlayer : public PartitionFilter
 {
@@ -322,6 +335,9 @@ public:
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
 	/* batch A5 */
+	/* batch A16: the attack-squad state's (filters[0] a PartitionFilterAcceptOnSquad) */
+	Object *getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
+		Real *closestDist = NULL, Coord3D *closestDistVec = NULL);
 	Object *getClosestObject(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
 		Real *closestDist = NULL, Coord3D *closestDistVec = NULL);
 	Bool findPositionAround(const Coord3D *center, const FindPositionOptions *options, Coord3D *result);
@@ -448,6 +464,8 @@ public:
 	Bool isSkirmishAIPlayer( void );
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
+	/* batch A16 */
+	GameDifficulty getPlayerDifficulty(void) const;
 };
 struct TeamTemplateInfo { Bool m_attackCommonTarget; };
 class TeamPrototype { public: const TeamTemplateInfo *getTemplateInfo() const; };

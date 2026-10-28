@@ -2,7 +2,8 @@
 //
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
-//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIAttackThenIdleStateMachine, AIHuntState, AIAttackAreaState)
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIAttackThenIdleStateMachine, AIHuntState, AIAttackAreaState,
+//     AIAttackSquadState)
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/AIStateMachine.h (those classes)
 //
 // Original copyright notice of those files:
@@ -20,6 +21,10 @@
 //! (the first scan at a random frame of that second) they look for the closest enemy (the attack-area state's in its area), make it
 //! the machine's goal and attack it from idle; the hunt state picks up crates and shares a team's common target by the attack
 //! priorities. The machine runs every update with the AI's machine locked.
+//!
+//! `AIAttackSquadState` (`AI_ATTACK_SQUAD`, batch A16) runs the same machine against the AI's machine's goal squad: a victim
+//! chosen by the controlling player's difficulty (easy: a random live member; normal: the closest; hard, or a player's command: the
+//! first live member), the mood permitting; crates first; done when no victim is left.
 //!
 //! The machines are [`StateMachine`]s of [`AiState`] held by the states' variants, run as the attack-move state's is
 //! ([`run_sub_machine`]).
@@ -214,6 +219,163 @@ pub fn hunt_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> Sm
     let ret = run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h));
     sm.unlock();
     Ok(ret?.convert_sleep_to_continue())
+}
+
+// ---- AIAttackSquadState (batch A16)
+
+/// `AIAttackSquadState::chooseVictim()`: none without a goal squad; the mood's (an AI's asleep: none; passive: its last attacker);
+/// else by the difficulty (a player's command: hard; the script engine's "always normal": normal).
+fn choose_victim<H: AiStateHost>(sm: &Sm<H>, h: &mut H) -> ObjectId {
+    if ai(h).machine.goal_squad.is_none() {
+        return INVALID_ID;
+    }
+    let view = crate::logic::ai::ai_attack_states::top_view(sm, h);
+    let mood = with_ai(h, |a, h| a.get_mood_matrix_value(&*h, Some(&view)));
+    if mood & MM_CONTROLLER_AI != 0 {
+        if mood & MM_MOOD_SLEEP != 0 {
+            return INVALID_ID;
+        }
+        if mood & MM_MOOD_PASSIVE != 0 && !plant(3380) {
+            // (the body module and its last damage info always exist here)
+            let (_, source) = h.last_damage_type_and_source();
+            return if h.object_exists(source) { source } else { INVALID_ID };
+        }
+    }
+    // (the controlling player read unchecked)
+    let mut difficulty = h.player_difficulty();
+    if ai(h).last_command_source == CMD_FROM_PLAYER && !plant(3381) {
+        // "if a player did this, we want to always give them the Seek and obliterate method."
+        difficulty = DIFFICULTY_HARD;
+    }
+    if h.choose_victim_always_uses_normal() {
+        difficulty = DIFFICULTY_NORMAL;
+    }
+    match difficulty {
+        DIFFICULTY_EASY => {
+            // "pick a random unit"
+            let objects = squad_live_objects(h);
+            if objects.is_empty() {
+                return INVALID_ID;
+            }
+            let unit = h.logic_random_value(0, objects.len() as i32 - 1);
+            objects[unit as usize]
+        }
+        DIFFICULTY_NORMAL => {
+            // "pick the closest unit"
+            let ids = ai(h).machine.goal_squad.as_ref().expect("the goal squad").object_ids.clone();
+            h.closest_object_on_squad(&ids)
+        }
+        DIFFICULTY_HARD => {
+            // "everyone picks the same unit"
+            let objects = squad_live_objects(h);
+            objects.get(if plant(3382) { objects.len().saturating_sub(1) } else { 0 }).copied().unwrap_or(INVALID_ID)
+        }
+        _ => INVALID_ID,
+    }
+}
+
+/// The goal squad's `getLiveObjects()`: those that still exist (the others dropped from it), the selectable ones (the cache left
+/// holding them).
+fn squad_live_objects<H: AiStateHost>(h: &mut H) -> Vec<ObjectId> {
+    let ids = ai(h).machine.goal_squad.as_ref().expect("the goal squad").object_ids.clone();
+    let existing: Vec<ObjectId> = ids.into_iter().filter(|&id| h.object_exists(id)).collect();
+    let live: Vec<ObjectId> = existing.iter().copied().filter(|&id| h.object_is_selectable(id)).collect();
+    let squad = ai(h).machine.goal_squad.as_mut().expect("the goal squad");
+    squad.object_ids = existing;
+    squad.objects_cached = live.clone();
+    live
+}
+
+/// A new `AIAttackSquadState`: no machine.
+pub fn attack_squad<H: AiStateHost>(kinds: AttackOwnerKinds) -> AiState<H> {
+    AiState::AttackSquad { kinds, machine: None }
+}
+
+/// `AIAttackSquadState::onEnter()`: the machine made, its goal the chosen victim, its default state entered (its answer the
+/// state's).
+pub fn squad_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    match sm.state_mut(id) {
+        Some(AiState::AttackSquad { kinds, machine }) => *machine = Some(new_attack_then_idle_machine(*kinds)),
+        _ => unreachable!("the attack-squad state"),
+    }
+    let victim = choose_victim(sm, h);
+    let o = h.find_object(victim);
+    run_sub_machine(sm, h, id, |m, h| {
+        m.set_goal_object(o.as_ref());
+        m.init_default_state(h)
+    })
+}
+
+/// `AIAttackSquadState::update()`: the machine's update (a sleep a continue) while it is not idle; then a crate; then the next
+/// victim, none left: done.
+pub fn squad_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if !matches!(sm.state(id), Some(AiState::AttackSquad { machine: Some(_), .. })) {
+        return Ok(StateReturn::FAILURE);
+    }
+    let status = run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h))?.convert_sleep_to_continue();
+    // "if we're in attack state,"
+    let idle = match sm.state(id) {
+        Some(AiState::AttackSquad { machine: Some(m), .. }) => m.get_current_state_id() == AI_IDLE,
+        _ => unreachable!("the attack-squad machine"),
+    };
+    if !idle {
+        return Ok(status);
+    }
+    // "Check to see if we have created a crate we need to pick up."
+    let crate_id = with_ai(h, |a, h| a.check_for_crate_to_pickup(h));
+    if crate_id != INVALID_ID {
+        let o = h.find_object(crate_id);
+        run_sub_machine(sm, h, id, |m, h| {
+            m.set_goal_object(o.as_ref());
+            m.set_state(h, AI_PICK_UP_CRATE).map(|_| ())
+        })?;
+        return Ok(StateReturn::CONTINUE);
+    }
+    // "choose a new target and start over."
+    let victim = choose_victim(sm, h);
+    if victim == INVALID_ID {
+        return Ok(StateReturn::SUCCESS);
+    }
+    let o = h.find_object(victim);
+    run_sub_machine(sm, h, id, |m, h| {
+        m.set_goal_object(o.as_ref());
+        if !plant(3383) {
+            m.set_state(h, AI_ATTACK_OBJECT)?;
+        }
+        Ok(())
+    })?;
+    Ok(StateReturn::CONTINUE)
+}
+
+/// `AIAttackSquadState::onExit(status)`: the machine deleted (its state exits, `EXIT_RESET`).
+pub fn squad_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
+    if !matches!(sm.state(id), Some(AiState::AttackSquad { machine: Some(_), .. })) {
+        return Ok(());
+    }
+    run_sub_machine(sm, h, id, |m, h| std::mem::take(m).destroy(h))?;
+    if let Some(AiState::AttackSquad { machine, .. }) = sm.state_mut(id) {
+        *machine = None;
+    }
+    Ok(())
+}
+
+/// `AIAttackSquadState::xfer` (version 1): whether there is a machine (one made to load into), the machine.
+pub fn squad_xfer<H: AiStateHost>(kinds: AttackOwnerKinds, machine: &mut Option<Sm<H>>, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    let mut has_machine = machine.is_some();
+    xfer.xfer_bool(&mut has_machine)?;
+    if has_machine && machine.is_none() {
+        *machine = Some(new_attack_then_idle_machine(kinds));
+    }
+    if let Some(m) = machine.as_mut().filter(|_| has_machine) {
+        let cv: XferVersion = 1;
+        let mut v = cv;
+        xfer.xfer_version(&mut v, cv)?;
+        Snapshot::xfer(m, xfer)?;
+    }
+    Ok(())
 }
 
 /// `xfer` (version 1, both states'): whether there is a machine (one made to load into), the machine (its own version, then the
