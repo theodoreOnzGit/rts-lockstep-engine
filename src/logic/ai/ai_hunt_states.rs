@@ -91,7 +91,7 @@ pub fn hunt_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 /// `onExit(status)`: the machine deleted (its state exits, `EXIT_RESET`); the hunt state's releases a temporary weapon lock.
 pub fn hunt_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
     run_sub_machine(sm, h, id, |m, h| {
-        let dead = std::mem::replace(m, StateMachine::new());
+        let dead = std::mem::take(m);
         dead.destroy(h)
     })?;
     let area = match sm.state_mut(id) {
@@ -102,7 +102,7 @@ pub fn hunt_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> S
         _ => unreachable!("the hunt state"),
     };
     if !area && !plant(3331) {
-        h.release_weapon_lock(LOCKED_TEMPORARILY as i32);
+        h.release_weapon_lock(LOCKED_TEMPORARILY);
     }
     Ok(())
 }
