@@ -242,6 +242,11 @@ pub trait AiStateHost: AiHost + StateContext {
     fn object_velocity_magnitude(&self, id: ObjectId) -> f32;
     /// Another object's `getUnitDirectionVector3D(dir)`.
     fn object_unit_direction_vector_3d(&mut self, id: ObjectId) -> Coord3D;
+    // ---- batch A8
+    /// `getObject()->getTeam()->setActive()`.
+    fn team_set_active(&mut self);
+    /// `TheGameLogic->destroyObject(getObject())`.
+    fn destroy_object(&mut self);
     /// An untranslated state's `onEnter`.
     fn untranslated_on_enter(&mut self, id: StateId) -> StateReturn;
     /// An untranslated state's `update`.
@@ -268,6 +273,12 @@ pub enum AiState<H> {
     MoveAndTighten { mv: MoveToData, ok_to_repath_times: i32, check_for_path: bool },
     /// `AIMoveAwayFromRepulsorsState` (an `AIMoveAndTightenState`).
     MoveAwayFromRepulsors { mv: MoveToData, ok_to_repath_times: i32, check_for_path: bool },
+    /// `AIFollowPathState` (batch A8; `AI_FOLLOW_PATH` and `AI_FOLLOW_EXITPRODUCTION_PATH`).
+    FollowPath { mv: MoveToData, index: i32, adjust_final: bool, adjust_final_override: bool, retry_count: i32 },
+    /// `AIMoveAndEvacuateState` (`AI_MOVE_AND_EVACUATE` and `AI_MOVE_AND_EVACUATE_AND_EXIT`).
+    MoveAndEvacuate { mv: MoveToData, origin: Coord3D },
+    /// `AIMoveAndDeleteState`.
+    MoveAndDelete { mv: MoveToData, append_goal_position: bool },
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -453,6 +464,9 @@ pub fn aism_xfer<H: AiStateHost>(
 /// state"), with each state's success and failure successors.
 pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmResult<()> {
     let u = |id| AiState::Untranslated { id };
+    // AIFollowPathState's constructor: adjust final, no override, index 0, ten retries
+    let follow_path =
+        || AiState::FollowPath { mv: MoveToData::default(), index: 0, adjust_final: true, adjust_final_override: false, retry_count: 10 };
     let defs: [(StateId, AiState<H>, StateId, StateId); 41] = [
         (AI_IDLE, AiState::Idle { initial_sleep_offset: u16::MAX, should_look_for_targets: true, inited: false }, AI_IDLE, AI_IDLE),
         (AI_MOVE_TO, AiState::MoveTo { mv: MoveToData::default(), is_move_to: true }, AI_IDLE, AI_IDLE),
@@ -472,11 +486,16 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>) -> SmRes
         (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, u(AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT, u(AI_FOLLOW_WAYPOINT_PATH_AS_TEAM_EXACT), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT, u(AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_PATH, u(AI_FOLLOW_PATH), AI_IDLE, AI_IDLE),
-        (AI_FOLLOW_EXITPRODUCTION_PATH, u(AI_FOLLOW_EXITPRODUCTION_PATH), AI_IDLE, AI_IDLE),
-        (AI_MOVE_AND_EVACUATE, u(AI_MOVE_AND_EVACUATE), AI_IDLE, AI_IDLE),
-        (AI_MOVE_AND_EVACUATE_AND_EXIT, u(AI_MOVE_AND_EVACUATE_AND_EXIT), AI_MOVE_AND_DELETE, AI_MOVE_AND_DELETE),
-        (AI_MOVE_AND_DELETE, u(AI_MOVE_AND_DELETE), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_PATH, follow_path(), AI_IDLE, AI_IDLE),
+        (AI_FOLLOW_EXITPRODUCTION_PATH, follow_path(), AI_IDLE, AI_IDLE),
+        (AI_MOVE_AND_EVACUATE, AiState::MoveAndEvacuate { mv: MoveToData::default(), origin: Coord3D::default() }, AI_IDLE, AI_IDLE),
+        (
+            AI_MOVE_AND_EVACUATE_AND_EXIT,
+            AiState::MoveAndEvacuate { mv: MoveToData::default(), origin: Coord3D::default() },
+            AI_MOVE_AND_DELETE,
+            AI_MOVE_AND_DELETE,
+        ),
+        (AI_MOVE_AND_DELETE, AiState::MoveAndDelete { mv: MoveToData::default(), append_goal_position: false }, AI_IDLE, AI_IDLE),
         (AI_WAIT, AiState::Wait, AI_IDLE, AI_IDLE),
         (AI_ATTACK_POSITION, u(AI_ATTACK_POSITION), AI_IDLE, AI_IDLE),
         (AI_ATTACK_OBJECT, u(AI_ATTACK_OBJECT), AI_IDLE, AI_IDLE),
@@ -675,7 +694,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::MoveTo { .. })
             | Some(AiState::MoveOutOfTheWay { .. })
             | Some(AiState::MoveAndTighten { .. })
-            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::on_enter(sm, h, id),
+            | Some(AiState::MoveAwayFromRepulsors { .. })
+            | Some(AiState::FollowPath { .. })
+            | Some(AiState::MoveAndEvacuate { .. })
+            | Some(AiState::MoveAndDelete { .. }) => move_states::on_enter(sm, h, id),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 Ok(h.untranslated_on_enter(id))
@@ -690,7 +712,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::MoveTo { .. })
             | Some(AiState::MoveOutOfTheWay { .. })
             | Some(AiState::MoveAndTighten { .. })
-            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::on_exit(sm, h, id, status),
+            | Some(AiState::MoveAwayFromRepulsors { .. })
+            | Some(AiState::FollowPath { .. })
+            | Some(AiState::MoveAndEvacuate { .. })
+            | Some(AiState::MoveAndDelete { .. }) => move_states::on_exit(sm, h, id, status),
             Some(AiState::Untranslated { id }) => {
                 let id = *id;
                 h.untranslated_on_exit(id, status);
@@ -707,7 +732,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::MoveTo { .. })
             | Some(AiState::MoveOutOfTheWay { .. })
             | Some(AiState::MoveAndTighten { .. })
-            | Some(AiState::MoveAwayFromRepulsors { .. }) => move_states::update(sm, h, id),
+            | Some(AiState::MoveAwayFromRepulsors { .. })
+            | Some(AiState::FollowPath { .. })
+            | Some(AiState::MoveAndEvacuate { .. })
+            | Some(AiState::MoveAndDelete { .. }) => move_states::update(sm, h, id),
             // "@todo srj -- find a way to sleep for a number of frames here, if possible"
             Some(AiState::Wait) | Some(AiState::Busy) | None => Ok(StateReturn::CONTINUE),
             Some(AiState::Untranslated { id }) => {
@@ -758,6 +786,11 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 xfer.xfer_bool(inited)?;
             }
             AiState::MoveTo { mv, .. } | AiState::MoveOutOfTheWay { mv } => mv.xfer(xfer)?,
+            AiState::FollowPath { mv, index, adjust_final, adjust_final_override, .. } => {
+                move_states::follow_path_xfer(mv, index, adjust_final, adjust_final_override, xfer)?
+            }
+            AiState::MoveAndEvacuate { mv, origin } => move_states::evacuate_xfer(mv, origin, xfer)?,
+            AiState::MoveAndDelete { mv, append_goal_position } => move_states::delete_xfer(mv, append_goal_position, xfer)?,
             AiState::MoveAndTighten { mv, ok_to_repath_times, check_for_path }
             | AiState::MoveAwayFromRepulsors { mv, ok_to_repath_times, check_for_path } => {
                 move_states::tighten_xfer(mv, ok_to_repath_times, check_for_path, xfer)?

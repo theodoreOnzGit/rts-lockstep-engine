@@ -180,6 +180,8 @@ const L_PF_ANSWER: u32 = 93;
 const L_WEAPON_RANGE: u32 = 94;
 const L_AUDIO_ADD: u32 = 95;
 const L_AUDIO_REMOVE: u32 = 96;
+const L_TEAM_ACTIVE: u32 = 97;
+const L_DESTROY_OBJECT: u32 = 98;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`).
 const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/ai_a4.bin");
@@ -1127,6 +1129,14 @@ impl AiStateHost for Host {
     fn remove_audio_event(&mut self, handle: u32) {
         self.l(L_AUDIO_REMOVE, &[handle]);
     }
+    // ---- batch A8
+    fn team_set_active(&mut self) {
+        self.l(L_TEAM_ACTIVE, &[]);
+    }
+    fn destroy_object(&mut self) {
+        let id = self.object_id() as u32;
+        self.l(L_DESTROY_OBJECT, &[id]);
+    }
     fn formation_id(&self) -> i32 {
         self.env.formation_id
     }
@@ -1423,6 +1433,24 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                     v.extend([*ok_to_repath_times as u32, u32::from(*check_for_path)]);
                 }
                 _ => panic!("a move state"),
+            }
+        }
+        // batch A8: the follow-path, move-and-evacuate and move-and-delete states' members
+        for id in [6u32, 7, 25, 26, 27] {
+            match sm.state(id) {
+                Some(AiState::FollowPath { mv, index, adjust_final, adjust_final_override, retry_count }) => {
+                    put_move(&mut v, mv);
+                    v.extend([*index as u32, u32::from(*adjust_final), u32::from(*adjust_final_override), *retry_count as u32]);
+                }
+                Some(AiState::MoveAndEvacuate { mv, origin }) => {
+                    put_move(&mut v, mv);
+                    put_pos(&mut v, origin);
+                }
+                Some(AiState::MoveAndDelete { mv, append_goal_position }) => {
+                    put_move(&mut v, mv);
+                    v.push(u32::from(*append_goal_position));
+                }
+                _ => panic!("an A8 move state"),
             }
         }
         match sm.state(states_ai_idle()) {
@@ -1793,7 +1821,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39][g.below(12) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27][g.below(17) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2227,8 +2255,8 @@ struct Checks {
     /// batch A4: the log records of codes 70..=81 (the pathfinder's goal, snap, update goal and queue, the turrets' updates, the
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
-    a4_logs: [u64; 27],
-    a4_states: [u64; 9],
+    a4_logs: [u64; 29],
+    a4_states: [u64; 12],
     temporary_states: u64,
     loads: u64,
 }
@@ -2253,8 +2281,8 @@ impl Checks {
             mood_targets: 0,
             victims: 0,
             enter_targets: 0,
-            a4_logs: [0; 27],
-            a4_states: [0; 9],
+            a4_logs: [0; 29],
+            a4_states: [0; 12],
             temporary_states: 0,
             loads: 0,
         }
@@ -2444,7 +2472,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut k = 0;
         while k + 1 < host_log_copy.len() {
             let (code, n) = (host_log_copy[k], host_log_copy[k + 1] as usize);
-            if (70..=96).contains(&code) {
+            if (70..=98).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
@@ -2459,6 +2487,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 23 => 6,
                 24 => 7,
                 39 => 8,
+                6 | 7 => 9,
+                25 | 26 => 10,
+                27 => 11,
                 _ => 4,
             }] += 1;
         }
@@ -2498,6 +2529,15 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-28, batch A8; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
+///
+/// - The follow-path, move-and-evacuate and move-and-delete states (ids 6, 7, 25, 26, 27; `setState` now picks them often):
+///   10,000 constructions and 600,000 operations, **0 mismatches** in the results, the call logs and the dumps (which add those
+///   states' members). After an operation the machine was following a path 30,422 times, evacuating 37,979, deleting 20,244; the
+///   evacuations activated the team 169 times and the delete state destroyed the object 103 times.
+/// - Planted bugs: in the Rust source plants 3280-3282, each caught at 3,000 cases (262 to 310 result mismatches): the follow
+///   path's retries skipped, its failed final adjustment ignored, the delete state's goal appended again every update.
+///
 /// # Results (2026-10-28, batch A7; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 10,000 cases)
 ///
 /// - The move states (the machine's `AI_MOVE_TO`, `AI_MOVE_OUT_OF_THE_WAY`, `AI_MOVE_AND_TIGHTEN`, `AI_MOVE_AWAY_FROM_REPULSORS`,
@@ -2585,7 +2625,7 @@ fn ai_update_a2_matches_upstream() {
     println!(
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
-         A4-A7 log records 70..=96 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors {:?}; temporary states {}; loads {}",
+         A4-A8 log records 70..=98 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/delete {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.temporary_states, ck.loads
     );

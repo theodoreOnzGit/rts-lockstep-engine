@@ -390,6 +390,13 @@ pub fn ai_attack_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos
     ai_do_command(sm, h, &parms)
 }
 
+/// `aiEvacuate(exposeStealthUnits, cmdSource)`.
+pub fn ai_evacuate<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, expose_stealth_units: i32, src: CommandSourceType) -> SmResult<()> {
+    let mut parms = AiCommandParms::new(AICMD_EVACUATE, src);
+    parms.int_value = expose_stealth_units;
+    ai_do_command(sm, h, &parms)
+}
+
 /// `aiEnter(obj, cmdSource)`.
 pub fn ai_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, obj: ObjectId, src: CommandSourceType) -> SmResult<()> {
     let mut parms = AiCommandParms::new(AICMD_ENTER, src);

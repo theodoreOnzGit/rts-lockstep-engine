@@ -142,7 +142,8 @@ enum
 	LOG_EDGE_POINT = 82, LOG_ACTION, LOG_MOVE_AWAY_PATH, LOG_MOVE_ALLIES, LOG_PATH_EXISTS, LOG_MAX_SHOTS, LOG_CLOSEST_OBJECT,
 	LOG_FIND_POSITION, LOG_CONTAIN, LOG_MODULE,
 	LOG_SERVICE = 92, LOG_PF_ANSWER, LOG_WEAPON_RANGE,
-	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE
+	LOG_AUDIO_ADD = 95, LOG_AUDIO_REMOVE,
+	LOG_TEAM_ACTIVE = 97, LOG_DESTROY_OBJECT
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -183,6 +184,8 @@ public:
 	UnsignedInt getFrame() const;
 	/* batch A3: the scene's objects */
 	Object *findObjectByID(ObjectID id) const;
+	/* batch A8: the move-and-delete state's end */
+	void destroyObject(Object *obj);
 };
 extern GameLogic *TheGameLogic;
 
@@ -368,6 +371,8 @@ public:
 	Object *getTeamTargetObject();
 	/* batch A5: the scene's members (teamMask) */
 	DLINK_ITERATOR<Object> iterate_TeamMemberList() const;
+	/* batch A8: the move-and-evacuate state's end */
+	void setActive();
 };
 typedef std::list<Object*> ContainedItemsList;
 class ContainModuleInterface

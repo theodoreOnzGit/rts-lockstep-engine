@@ -3,7 +3,8 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (isSamePosition; AIInternalMoveToState, AIMoveToState,
-//     AIMoveOutOfTheWayState, AIMoveAndTightenState, AIMoveAwayFromRepulsorsState)
+//     AIMoveOutOfTheWayState, AIMoveAndTightenState, AIMoveAwayFromRepulsorsState; batch A8: AIFollowPathState,
+//     AIMoveAndEvacuateState, AIMoveAndDeleteState)
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/AIStateMachine.h (those classes)
 //
 // Original copyright notice of those files:
@@ -18,7 +19,9 @@
 //! request, the model conditions on the way, the repath when the goal moves or the unit is stuck, the arrival) and the four
 //! states that are it with a goal: `AIMoveToState` (the goal object or position, a missile's lead), `AIMoveOutOfTheWayState`
 //! (the existing path), `AIMoveAndTightenState` (an approach path, one repath when stuck) and `AIMoveAwayFromRepulsorsState` (a
-//! safe path, panicking).
+//! safe path, panicking). Batch A8 adds three more: `AIFollowPathState` (the machine's goal path point by point, also the
+//! exit-production path), `AIMoveAndEvacuateState` (locked; evacuates at the goal) and `AIMoveAndDeleteState` (locked; may
+//! leave the map; destroys the object at the goal).
 //!
 //! Each state's data is [`MoveToData`] (the base class's members) in its [`AiState`] variant; the base's virtual `computePath`
 //! is [`compute_path`], which dispatches on the variant as upstream's overrides do.
@@ -124,13 +127,48 @@ pub fn tighten_xfer(mv: &mut MoveToData, ok_to_repath_times: &mut i32, check_for
     Ok(())
 }
 
+/// `AIFollowPathState::xfer` (version 1): the base's, the index and the two adjust flags (not the retry count).
+pub fn follow_path_xfer(mv: &mut MoveToData, index: &mut i32, adjust_final: &mut bool, adjust_final_override: &mut bool, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    mv.xfer(xfer)?;
+    xfer.xfer_int(index)?;
+    xfer.xfer_bool(adjust_final)?;
+    xfer.xfer_bool(adjust_final_override)?;
+    Ok(())
+}
+
+/// `AIMoveAndEvacuateState::xfer` (version 1): the base's and the origin.
+pub fn evacuate_xfer(mv: &mut MoveToData, origin: &mut Coord3D, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    mv.xfer(xfer)?;
+    xfer.xfer_coord3d(origin)?;
+    Ok(())
+}
+
+/// `AIMoveAndDeleteState::xfer` (version 1): the base's and the append flag.
+pub fn delete_xfer(mv: &mut MoveToData, append_goal_position: &mut bool, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    mv.xfer(xfer)?;
+    xfer.xfer_bool(append_goal_position)?;
+    Ok(())
+}
+
 /// The move data of the state `id`.
 pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
     match sm.state_mut(id) {
         Some(AiState::MoveTo { mv, .. })
         | Some(AiState::MoveOutOfTheWay { mv })
         | Some(AiState::MoveAndTighten { mv, .. })
-        | Some(AiState::MoveAwayFromRepulsors { mv, .. }) => mv,
+        | Some(AiState::MoveAwayFromRepulsors { mv, .. })
+        | Some(AiState::FollowPath { mv, .. })
+        | Some(AiState::MoveAndEvacuate { mv, .. })
+        | Some(AiState::MoveAndDelete { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -512,14 +550,211 @@ pub fn on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmRes
             ai_paths::request_safe_path(h, enemy);
             internal_on_enter(sm, h, id)
         }
+        Some(AiState::FollowPath { .. }) => follow_path_on_enter(sm, h, id),
+        Some(AiState::MoveAndEvacuate { .. }) => {
+            // "This state is not user interruptable."
+            sm.lock();
+            let origin = h.position();
+            if let Some(AiState::MoveAndEvacuate { origin: o, .. }) = sm.state_mut(id) {
+                *o = origin;
+            }
+            mv(sm, id).adjust_destinations = true;
+            // "if we have a goal object, move to it, otherwise move to goal position"
+            let goal = match sm.goal_object(h) {
+                Some(o) => o.position,
+                None => *sm.goal_position(),
+            };
+            mv(sm, id).goal_position = goal;
+            internal_on_enter(sm, h, id)
+        }
+        Some(AiState::MoveAndDelete { .. }) => {
+            mv(sm, id).adjust_destinations = false;
+            sm.lock();
+            let goal = match sm.goal_object(h) {
+                Some(o) => o.position,
+                None => *sm.goal_position(),
+            };
+            mv(sm, id).goal_position = goal;
+            // "We may be moving off the map."
+            if let Some(AiState::MoveAndDelete { append_goal_position, .. }) = sm.state_mut(id) {
+                *append_goal_position = true;
+            }
+            internal_on_enter(sm, h, id)
+        }
         _ => unreachable!("a move state"),
     }
 }
 
+/// `AIFollowPathState::onEnter()`: the first point of the machine's goal path (none: failure), the path's extra distance to the
+/// next ones.
+fn follow_path_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let index = 0;
+    if let Some(AiState::FollowPath { index: i, .. }) = sm.state_mut(id) {
+        *i = index;
+    }
+    let Some(pos) = goal_path_position(h, index) else { return Ok(StateReturn::FAILURE) };
+    // "set initial movement goal"
+    mv(sm, id).goal_position = pos;
+    let next_pos = goal_path_position(h, index + 1);
+    set_adjust_final(sm, id, true);
+    // friend_setCurrentGoalPathIndex
+    ai(h).next_goal_path_index = index;
+    if id == AI_FOLLOW_EXITPRODUCTION_PATH {
+        ai(h).set_can_path_through_units(true);
+        mv(sm, id).adjust_destinations = false;
+        set_adjust_final(sm, id, true);
+    }
+    let ret = internal_on_enter(sm, h, id)?;
+    if h.formation_id() != 0 {
+        if let Some(speed) = h.group_speed() {
+            ai(h).desired_speed = speed;
+        }
+    }
+    follow_path_extra_distance(sm, h, id, &pos, next_pos.as_ref(), index);
+    Ok(ret)
+}
+
+/// The path's extra distance after the point `pos` at `index` (the next segment, and four cells more if one follows it); at the
+/// last point, the final adjustment and a projectile's precise z.
+fn follow_path_extra_distance<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, pos: &Coord3D, next_pos: Option<&Coord3D>, index: i32) {
+    if let Some(next) = next_pos {
+        let (dx, dy) = (next.x - pos.x, next.y - pos.y);
+        let mut offset = (dx * dx + dy * dy).sqrt();
+        if goal_path_position(h, index + 2).is_some() {
+            offset += 4.0 * PATHFIND_CELL_SIZE_F;
+        }
+        ai(h).set_path_extra_distance(offset);
+        // "We are in the middle of a path, so don't set the final goal location yet."
+        mv(sm, id).adjust_destinations = false;
+    } else {
+        let adjust_final = follow_path_flags(sm, id).0;
+        mv(sm, id).adjust_destinations = adjust_final;
+        ai(h).set_path_extra_distance(0.0);
+        // "urg. hacky. if we are a projectile on the last segment, turn on precise z-pos."
+        if h.is_kind_of(KINDOF_PROJECTILE) {
+            set_precise_z(h, true);
+        }
+    }
+}
+
+fn set_precise_z<H: AiStateHost>(h: &mut H, on: bool) {
+    let a = ai(h);
+    if let Some(cur) = a.cur_locomotor {
+        a.locomotor_set.get_mut(cur).expect("the locomotor").set_use_precise_z_pos(on);
+    }
+}
+
+/// `friend_getGoalPathPosition(i)`.
+fn goal_path_position<H: AiStateHost>(h: &mut H, i: i32) -> Option<Coord3D> {
+    crate::logic::ai::ai_states::aism_goal_path_position(&ai(h).machine, i)
+}
+
+fn set_adjust_final<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, b: bool) {
+    if let Some(AiState::FollowPath { adjust_final, .. }) = sm.state_mut(id) {
+        *adjust_final = b;
+    }
+}
+
+/// (`m_adjustFinal`, `m_adjustFinalOverride`).
+fn follow_path_flags<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> (bool, bool) {
+    match sm.state(id) {
+        Some(AiState::FollowPath { adjust_final, adjust_final_override, .. }) => (*adjust_final, *adjust_final_override),
+        _ => unreachable!("a follow-path state"),
+    }
+}
+
+/// `AIFollowPathState::update()`: the move to the current point; at its end (or failure, once the retries are spent) the next
+/// point not within a cell, with the path recomputed; the end of the path is success.
+fn follow_path_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let goal = mv(sm, id).goal_position;
+    sm.set_goal_position(Some(&goal));
+    // "do movement"
+    let status = internal_update(sm, h, id)?;
+    // "if move to has finished, move to next point on path"
+    if status != StateReturn::SUCCESS && status != StateReturn::FAILURE {
+        return Ok(status);
+    }
+    let mut index = match sm.state_mut(id) {
+        Some(AiState::FollowPath { index, retry_count, .. }) => {
+            if status == StateReturn::FAILURE && *retry_count > 0 && !plant(3280) {
+                // "If we failed, & haven't reached retry limit, try again."
+                *retry_count -= 1;
+            } else {
+                *index += 1;
+            }
+            *index
+        }
+        _ => unreachable!("a follow-path state"),
+    };
+    let mut pos = goal_path_position(h, index);
+    let mut too_close = true;
+    while let (Some(p), true) = (pos, too_close) {
+        let here = h.position();
+        let (dx, dy) = (p.x - here.x, p.y - here.y);
+        too_close = dx * dx + dy * dy < PATHFIND_CELL_SIZE_F * PATHFIND_CELL_SIZE_F;
+        if too_close {
+            index += 1;
+            pos = goal_path_position(h, index);
+        }
+    }
+    if let Some(AiState::FollowPath { index: i, .. }) = sm.state_mut(id) {
+        *i = index;
+    }
+    ai(h).next_goal_path_index = index;
+    // "we have exited whatever object we are leaving, if any."
+    ai(h).ignore_obstacle_id(INVALID_ID);
+    let Some(pos) = pos else {
+        // "reached the end of the path"
+        return Ok(StateReturn::SUCCESS);
+    };
+    ai(h).friend_starting_move();
+    // "set next movement goal"
+    mv(sm, id).goal_position = pos;
+    let next_pos = goal_path_position(h, index + 1);
+    if next_pos.is_some() {
+        follow_path_extra_distance(sm, h, id, &pos, next_pos.as_ref(), index);
+    } else {
+        let (adjust_final, adjust_override) = follow_path_flags(sm, id);
+        let adjusts = adjust_final && (adjust_override || with_ai(h, |a, h| a.is_doing_ground_movement(h)));
+        mv(sm, id).adjust_destinations = adjusts;
+        if get_adjusts_destination(sm, h, id) {
+            let mut goal = mv(sm, id).goal_position;
+            let ok = h.pf_adjust_destination(&mut goal);
+            mv(sm, id).goal_position = goal;
+            if !ok && !plant(3281) {
+                return Ok(StateReturn::FAILURE);
+            }
+            let layer = h.layer_for_destination(&goal);
+            h.pf_update_goal(&goal, layer);
+        }
+        if h.is_kind_of(KINDOF_PROJECTILE) {
+            set_precise_z(h, true);
+        }
+    }
+    compute_path(sm, h, id);
+    Ok(StateReturn::CONTINUE)
+}
+
 /// The states' `onExit`.
 pub fn on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, _status: StateExitType) {
+    match sm.state(id) {
+        Some(AiState::MoveAndEvacuate { origin, .. }) => {
+            let origin = *origin;
+            sm.unlock();
+            // "In case we follow with a AIMoveAndDeleteState."
+            sm.set_goal_position(Some(&origin));
+        }
+        Some(AiState::MoveAndDelete { .. }) => sm.unlock(),
+        _ => {}
+    }
     internal_on_exit(sm, h, id);
     match sm.state(id) {
+        Some(AiState::FollowPath { .. }) => {
+            // "turn off precision-z-pos when we exit, just in case."
+            ai(h).set_can_path_through_units(false);
+            set_precise_z(h, false);
+            ai(h).next_goal_path_index = -1;
+        }
         Some(AiState::MoveOutOfTheWay { .. }) => {
             let a = ai(h);
             a.destroy_path();
@@ -597,6 +832,48 @@ pub fn update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResul
                 *check = false;
             }
             internal_update(sm, h, id)
+        }
+        Some(AiState::FollowPath { .. }) => follow_path_update(sm, h, id),
+        Some(AiState::MoveAndEvacuate { .. }) => {
+            if h.is_effectively_dead() {
+                return Ok(StateReturn::FAILURE);
+            }
+            // "do movement"
+            let status = internal_update(sm, h, id)?;
+            if status != StateReturn::CONTINUE {
+                if h.is_effectively_dead() {
+                    return Ok(StateReturn::FAILURE);
+                }
+                ai_commands::ai_evacuate(sm, h, 0, CMD_FROM_AI)?;
+                h.team_set_active();
+            }
+            Ok(status)
+        }
+        Some(AiState::MoveAndDelete { .. }) => {
+            if h.is_effectively_dead() {
+                return Ok(StateReturn::FAILURE);
+            }
+            // "do movement"
+            let a = ai(h);
+            if let Some(cur) = a.cur_locomotor {
+                a.locomotor_set.get_mut(cur).expect("the locomotor").set_allow_invalid_position(true);
+            }
+            let append = matches!(sm.state(id), Some(AiState::MoveAndDelete { append_goal_position: true, .. }));
+            if append && !ai(h).waiting_for_path && ai(h).path.is_some() {
+                let mut goal = mv(sm, id).goal_position;
+                goal.z = h.ground_height(goal.x, goal.y);
+                mv(sm, id).goal_position = goal;
+                ai(h).path.as_mut().expect("the path").append_node(&goal, crate::common::game_type::LAYER_GROUND);
+                // "just did it."
+                if let Some(AiState::MoveAndDelete { append_goal_position, .. }) = sm.state_mut(id) {
+                    *append_goal_position = plant(3282);
+                }
+            }
+            let status = internal_update(sm, h, id)?;
+            if status != StateReturn::CONTINUE {
+                h.destroy_object();
+            }
+            Ok(status)
         }
         Some(AiState::MoveAwayFromRepulsors { .. }) => {
             if tighten(sm, id).2.to_owned() {

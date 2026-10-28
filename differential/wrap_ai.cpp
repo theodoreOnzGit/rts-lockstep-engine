@@ -45,6 +45,9 @@
 ** over the AI build's own audio stand-in (TheAudio's handles logged), the template's move sounds, the pathfinder's
 ** snapClosestGoalPosition and removeGoal, the formation and the group's speed.
 **
+** Batch A8 adds the follow-path, move-and-evacuate and move-and-delete states (ai_states_a8.inc), AIUpdate.h's goal-path inlines,
+** and logged stand-ins of the team's setActive and TheGameLogic->destroyObject.
+**
 ** Entry points: ref_ai_a2_reset, ref_ai_a4_xfer_path, ref_ai_a2_load, ref_ai_a2_new, ref_ai_a2_op, ref_ai_a2_dump (see each). */
 #include <stdlib.h>
 #include <string.h>
@@ -205,6 +208,9 @@ public:
 	void markAsDead();
 	void destroyPath( void );
 	void friend_startingMove(void);
+	/* batch A8: AIUpdate.h's inlines, verbatim */
+	inline const Coord3D* friend_getGoalPathPosition( Int index ) const { return getStateMachine()->getGoalPathPosition( index ); }
+	inline void friend_setCurrentGoalPathIndex( Int index ) { m_nextGoalPathIndex = index; }
 	void friend_endingMove();
 	void friend_setPath(Path *path);
 	Bool isValidLocomotorPosition(const Coord3D* pos) const;
@@ -344,6 +350,7 @@ public:
 #include "ai_update_a4.inc"
 #include "ai_states_a4.inc"
 #include "ai_states_a7.inc"
+#include "ai_states_a8.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 
@@ -734,6 +741,7 @@ Object *findObject(ObjectID id)
 }
 }  // namespace
 Object *GameLogic::findObjectByID(ObjectID id) const { return findObject(id); }
+void GameLogic::destroyObject(Object *obj) { L(LOG_DESTROY_OBJECT, { obj->getID() }); }
 void AIUpdateInterface::addTargeter(ObjectID id, Bool add)
 {
 	/* (only another object's AI is asked) */
@@ -777,6 +785,7 @@ Bool Player::hasUpgradeComplete(const UpgradeTemplate *t)
 const TeamTemplateInfo *TeamPrototype::getTemplateInfo() const { g_teamInfo.m_attackCommonTarget = g_aiEnv.teamAttackCommon != 0; return &g_teamInfo; }
 const TeamPrototype *Team::getPrototype() { return &g_teamPrototype; }
 Object *Team::getTeamTargetObject() { return findObject((ObjectID)g_aiEnv.teamTarget); }
+void Team::setActive() { L(LOG_TEAM_ACTIVE, {}); }
 Bool ContainModuleInterface::isPassengerAllowedToFire(ObjectID id) const { return g_aiEnv.containerAllowsFire != 0; }
 Bool StealthUpdate::isGrantedBySpecialPower() { return g_aiEnv.stealth > 0; }
 Int Weapon::getAntiMask() const { return g_aiEnv.weaponAnti; }
@@ -1697,6 +1706,31 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 				const AIMoveAndTightenState *t = (const AIMoveAndTightenState *)m;
 				putU32(v, (unsigned)t->m_okToRepathTimes);
 				putU32(v, t->m_checkForPath ? 1u : 0u);
+			}
+		}
+		/* batch A8: the follow-path, move-and-evacuate and move-and-delete states' members */
+		const StateID moves8[5] = { AI_FOLLOW_PATH, AI_FOLLOW_EXITPRODUCTION_PATH, AI_MOVE_AND_EVACUATE, AI_MOVE_AND_EVACUATE_AND_EXIT, AI_MOVE_AND_DELETE };
+		for (int i = 0; i < 5; ++i) {
+			const AIInternalMoveToState *m = (const AIInternalMoveToState *)sm->m_stateMap.find(moves8[i])->second;
+			putPos(v, m->m_goalPosition);
+			putU32(v, (unsigned)m->m_goalLayer);
+			putPos(v, m->m_pathGoalPosition);
+			putU32(v, (unsigned)m->m_ambientPlayingHandle);
+			putU32(v, m->m_pathTimestamp);
+			putU32(v, m->m_blockedRepathTimestamp);
+			putU32(v, m->m_adjustDestinations ? 1u : 0u);
+			putU32(v, m->m_waitingForPath ? 1u : 0u);
+			putU32(v, m->m_tryOneMoreRepath ? 1u : 0u);
+			if (i < 2) {
+				const AIFollowPathState *f = (const AIFollowPathState *)m;
+				putU32(v, (unsigned)f->m_index);
+				putU32(v, f->m_adjustFinal ? 1u : 0u);
+				putU32(v, f->m_adjustFinalOverride ? 1u : 0u);
+				putU32(v, (unsigned)f->m_retryCount);
+			} else if (i < 4) {
+				putPos(v, ((const AIMoveAndEvacuateState *)m)->m_origin);
+			} else {
+				putU32(v, ((const AIMoveAndDeleteState *)m)->m_appendGoalPosition ? 1u : 0u);
 			}
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;
