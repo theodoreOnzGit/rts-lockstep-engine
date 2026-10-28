@@ -140,6 +140,23 @@ pub struct AttackFrame {
     pub attacking_object: bool,
     /// A victim chosen by `notifyNewVictimChosen`, for the AI's machine's goal.
     pub new_victim: Option<ObjectId>,
+    /// (the bottom frame, batch A11) the AI's machine's goal set by `ai->friend_setGoalObject` from a machine inside it.
+    pub ai_goal_object: Option<ObjectId>,
+}
+
+/// `ai->friend_setGoalObject(obj)`: the AI's machine's goal. `sm` is the AI's machine when no frame is lent; else (a machine inside
+/// one of its states) the goal is set when that machine returns.
+pub fn ai_friend_set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, obj: ObjectId) {
+    if plant(3327) {
+        return ai_paths::friend_set_goal_object(sm, h, obj);
+    }
+    match h.attack_stack().first_mut() {
+        None => ai_paths::friend_set_goal_object(sm, h, obj),
+        Some(bottom) => {
+            bottom.ai_goal_object = Some(obj);
+            bottom.outer.goal_object_id = obj;
+        }
+    }
 }
 
 /// The AI's machine's view (`AiMachineQuery`) for the attack machine.
@@ -151,6 +168,28 @@ fn outer_view<H: AiStateHost>(sm: &Sm<H>) -> OuterView {
         busy: sm.is_in_busy_state(),
         goal_object_id: sm.goal_object_id(),
         goal_position: *sm.goal_position(),
+    }
+}
+
+/// The AI's machine as the mood matrix sees it: the bottom lent frame's (a machine inside one of its states runs), or `sm`'s.
+pub fn top_view<H: AiStateHost>(sm: &Sm<H>, h: &mut H) -> OuterView {
+    match h.attack_stack().first() {
+        Some(f) => f.outer.clone(),
+        None => outer_view(sm),
+    }
+}
+
+/// A new `AIAttackState(machine, follow, attackingObject, forceAttacking, NULL)`.
+pub fn attack_state<H: AiStateHost>(follow: bool, attacking_object: bool, force_attacking: bool, kinds: AttackOwnerKinds) -> AiState<H> {
+    AiState::Attack {
+        follow,
+        attacking_object,
+        force_attacking,
+        kinds,
+        machine: None,
+        original_victim_pos: Coord3D::default(),
+        victim_team: None,
+        locked_weapon_on_enter: None,
     }
 }
 
@@ -168,8 +207,8 @@ fn run_inner<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl 
         }
         _ => unreachable!("the attack state"),
     };
-    let outer = outer_view(sm);
-    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None });
+    let outer = top_view(sm, h);
+    h.attack_stack().push(AttackFrame { outer, original_victim_pos, attacking_object, new_victim: None, ai_goal_object: None });
     let r = f(&mut inner, h);
     let lent = h.attack_stack().pop().expect("the attack frame");
     if let Some(AiState::Attack { machine, .. }) = sm.state_mut(id) {
@@ -372,7 +411,8 @@ fn attack_flags<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> (bool, bool, bool, A
 /// `AIAttackState::onEnter()`.
 pub fn attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     // "if we are in sleep mode, we will not attack"
-    let adjust = with_ai(h, |a, h| a.get_mood_matrix_action_adjustment(h, &*sm, MM_ACTION_ATTACK));
+    let view = top_view(sm, h);
+    let adjust = with_ai(h, |a, h| a.get_mood_matrix_action_adjustment(h, &view, MM_ACTION_ATTACK));
     if adjust & MAA_ACTION_OK == 0 {
         return Ok(StateReturn::SUCCESS);
     }
@@ -511,7 +551,7 @@ pub fn attack_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 
 /// The victim is no longer attackable: the AI's goal object none (and the team's target, if it was it), failure.
 fn stop_attacking<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: ObjectId) -> StateReturn {
-    ai_paths::friend_set_goal_object(sm, h, INVALID_ID);
+    ai_friend_set_goal_object(sm, h, INVALID_ID);
     if victim == h.team_target_object() {
         h.set_team_target_object(INVALID_ID);
     }
@@ -537,7 +577,7 @@ pub fn attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
     for i in 0..MAX_TURRETS {
         set_turret_target_object(h, i as WhichTurretType, None, false);
     }
-    ai_paths::friend_set_goal_object(sm, h, INVALID_ID);
+    ai_friend_set_goal_object(sm, h, INVALID_ID);
     Ok(())
 }
 

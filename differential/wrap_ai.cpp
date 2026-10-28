@@ -240,6 +240,10 @@ public:
 	void setTurretTargetPosition(WhichTurretType tur, const Coord3D* pos);
 	Real getTurretTurnRate(WhichTurretType tur) const;
 	WhichTurretType getWhichTurretForCurWeapon() const;
+	/* batch A11: AIUpdate.h's (virtual upstream; no subclass here: none) */
+	JetAIUpdate* getJetAIUpdate() { return NULL; }
+	/* AIUpdate.h's inline, verbatim */
+	void friend_setLastCommandSource( CommandSourceType source ) {m_lastCommandSource = source;}
 	/* batch A10b: AIUpdate.h's inlines, verbatim */
 	Bool isAttackPath(void) const {return m_isAttackPath;}
 	inline Bool isAllowedToChase() const { return m_allowedToChase; }
@@ -389,6 +393,7 @@ public:
 #include "ai_states_a8.inc"
 #include "ai_states_a9.inc"
 #include "ai_states_a10.inc"
+#include "ai_states_a11.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -2023,6 +2028,38 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 #undef PUT_CHASE
 				}
 			}
+		}
+		/* batch A11: the attack-move state (its machine: state, goal, its crate and attack states) and the crate state */
+		{
+			const AIAttackMoveToState *am = (const AIAttackMoveToState *)sm->m_stateMap.find(AI_ATTACK_MOVE_TO)->second;
+#define PUT_MOVE(mt) \
+			putPos(v, (mt)->m_goalPosition); putU32(v, (unsigned)(mt)->m_goalLayer); putPos(v, (mt)->m_pathGoalPosition); \
+			putU32(v, (unsigned)(mt)->m_ambientPlayingHandle); putU32(v, (mt)->m_pathTimestamp); putU32(v, (mt)->m_blockedRepathTimestamp); \
+			putU32(v, (mt)->m_adjustDestinations ? 1u : 0u); putU32(v, (mt)->m_waitingForPath ? 1u : 0u); \
+			putU32(v, (mt)->m_tryOneMoreRepath ? 1u : 0u);
+			PUT_MOVE(am)
+			putU32(v, am->m_frameToSleepUntil);
+			putU32(v, (unsigned)am->m_retryCount);
+			putU32(v, (unsigned)am->m_commandSrc);
+			const StateMachine *m = am->m_attackMoveMachine;
+			putU32(v, (unsigned)m->getCurrentStateID());
+			putU32(v, (unsigned)m->m_goalObjectID);
+			putU32(v, m->m_sleepTill);
+			putPos(v, m->m_goalPosition);
+			const AIPickUpCrateState *ic = (const AIPickUpCrateState *)m->m_stateMap.find(AI_PICK_UP_CRATE)->second;
+			PUT_MOVE(ic)
+			putU32(v, (unsigned)ic->m_delayCounter);
+			const AIAttackState *ia = (const AIAttackState *)m->m_stateMap.find(AI_ATTACK_OBJECT)->second;
+			putU32(v, ia->m_attackMachine ? 1u : 0u);
+			putPos(v, ia->m_originalVictimPos);
+			if (ia->m_attackMachine) {
+				putU32(v, (unsigned)ia->m_attackMachine->getCurrentStateID());
+				putU32(v, (unsigned)ia->m_attackMachine->m_goalObjectID);
+			}
+			const AIPickUpCrateState *pc = (const AIPickUpCrateState *)sm->m_stateMap.find(AI_PICK_UP_CRATE)->second;
+			PUT_MOVE(pc)
+			putU32(v, (unsigned)pc->m_delayCounter);
+#undef PUT_MOVE
 		}
 		const AIIdleState *idle = (const AIIdleState *)sm->m_stateMap.find(AI_IDLE)->second;
 		putU32(v, (unsigned)idle->m_initialSleepOffset);

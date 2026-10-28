@@ -175,7 +175,9 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::WanderInPlace { mv, .. })
         | Some(AiState::Panic { mv, .. })
         | Some(AiState::AttackApproach { mv, .. })
-        | Some(AiState::AttackPursue { mv, .. }) => mv,
+        | Some(AiState::AttackPursue { mv, .. })
+        | Some(AiState::AttackMove { mv, .. })
+        | Some(AiState::PickUpCrate { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -486,38 +488,92 @@ fn half_height<H: AiStateHost>(h: &mut H, goal: ObjectId) -> f32 {
     h.object_max_height_above_position(goal) / 2.0
 }
 
+/// `AIMoveToState::onEnter()` (the attack-move state's base, batch A11).
+pub(crate) fn move_to_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    mv(sm, id).adjust_destinations = true;
+    // "If we have a goal object and are trying to ignore it as an obstacle..."
+    let goal_obj = sm.goal_object(h).map(|o| o.id).unwrap_or(INVALID_ID);
+    if goal_obj != INVALID_ID && goal_obj == ai(h).get_ignored_obstacle_id() && !plant(3272) {
+        mv(sm, id).adjust_destinations = false;
+    }
+    // "if we have a goal object, move to it, otherwise move to goal position"
+    if let Some(o) = sm.goal_object(h) {
+        let mut goal = o.position;
+        if h.is_kind_of(KINDOF_PROJECTILE) {
+            let half = half_height(h, o.id);
+            goal.z += half;
+            if o.position.z < goal.z {
+                goal.z += half;
+            }
+        }
+        mv(sm, id).goal_position = goal;
+    } else {
+        mv(sm, id).goal_position = *sm.goal_position();
+    }
+    let ret = internal_on_enter(sm, h, id)?;
+    if h.formation_id() != 0 {
+        if let Some(speed) = h.group_speed() {
+            ai(h).desired_speed = speed;
+        }
+    }
+    Ok(ret)
+
+}
+
+/// `AIMoveToState::update()` (`m_isMoveTo`: false for the attack-move state, batch A11).
+pub(crate) fn move_to_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, is_move_to: bool) -> SmResult<StateReturn> {
+    let adjustment = with_ai(h, |a, h| a.get_mood_matrix_action_adjustment(h, &*sm, MM_ACTION_MOVE));
+    if is_move_to && adjustment & MAA_ACTION_TO_ATTACK_MOVE != 0 {
+        let goal = mv(sm, id).goal_position;
+        ai_commands::ai_attack_move_to_position(sm, h, &goal, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)?;
+    }
+    // "if we have a goal object, move to it, as it may have moved"
+    let is_missile = h.is_kind_of(KINDOF_PROJECTILE);
+    if let Some(o) = sm.goal_object(h) {
+        let mut goal = o.position;
+        let got_physics = h.has_physics() && h.object_has_physics(o.id);
+        if is_missile {
+            let half = half_height(h, o.id);
+            goal.z += half;
+            let z_delta = goal.z - h.position().z;
+            if z_delta > 0.0 {
+                goal.z += z_delta;
+            }
+        }
+        if got_physics && is_missile && !h.object_is_kind_of(o.id, KINDOF_IMMOBILE) {
+            let our_pos = h.position();
+            let (dx, dy, dz) = (goal.x - our_pos.x, goal.y - our_pos.y, goal.z - our_pos.z);
+            let mut my_speed = h.velocity_magnitude();
+            let goal_speed = h.object_velocity_magnitude(o.id);
+            if my_speed < 5.0 {
+                // "avoid divide by 0."
+                my_speed = 5.0;
+            }
+            // (0.5*delta.length()) is a double upstream
+            let lead_distance = ((0.5 * f64::from((dx * dx + dy * dy + dz * dz).sqrt())) * f64::from(goal_speed) / f64::from(my_speed)) as f32;
+            let dir = h.object_unit_direction_vector_3d(o.id);
+            goal.x += dir.x * lead_distance;
+            goal.y += dir.y * lead_distance;
+            goal.z += dir.z * lead_distance;
+        }
+        mv(sm, id).goal_position = goal;
+    } else if is_missile {
+        // "When missiles are moving uphill, they need to start up quickly to clear hills."
+        let mut goal = *sm.goal_position();
+        let z_delta = goal.z - h.position().z;
+        if z_delta > 0.0 {
+            goal.z += z_delta;
+        }
+        mv(sm, id).goal_position = goal;
+    }
+    internal_update(sm, h, id)
+
+}
+
 /// The states' `onEnter`.
 pub fn on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     match sm.state(id) {
-        Some(AiState::MoveTo { .. }) => {
-            mv(sm, id).adjust_destinations = true;
-            // "If we have a goal object and are trying to ignore it as an obstacle..."
-            let goal_obj = sm.goal_object(h).map(|o| o.id).unwrap_or(INVALID_ID);
-            if goal_obj != INVALID_ID && goal_obj == ai(h).get_ignored_obstacle_id() && !plant(3272) {
-                mv(sm, id).adjust_destinations = false;
-            }
-            // "if we have a goal object, move to it, otherwise move to goal position"
-            if let Some(o) = sm.goal_object(h) {
-                let mut goal = o.position;
-                if h.is_kind_of(KINDOF_PROJECTILE) {
-                    let half = half_height(h, o.id);
-                    goal.z += half;
-                    if o.position.z < goal.z {
-                        goal.z += half;
-                    }
-                }
-                mv(sm, id).goal_position = goal;
-            } else {
-                mv(sm, id).goal_position = *sm.goal_position();
-            }
-            let ret = internal_on_enter(sm, h, id)?;
-            if h.formation_id() != 0 {
-                if let Some(speed) = h.group_speed() {
-                    ai(h).desired_speed = speed;
-                }
-            }
-            Ok(ret)
-        }
+        Some(AiState::MoveTo { .. }) => move_to_on_enter(sm, h, id),
         Some(AiState::MoveOutOfTheWay { .. }) => {
             mv(sm, id).adjust_destinations = true;
             let Some(path) = &ai(h).path else {
@@ -782,51 +838,7 @@ pub fn update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResul
     match sm.state(id) {
         Some(AiState::MoveTo { is_move_to, .. }) => {
             let is_move_to = *is_move_to;
-            let adjustment = with_ai(h, |a, h| a.get_mood_matrix_action_adjustment(h, &*sm, MM_ACTION_MOVE));
-            if is_move_to && adjustment & MAA_ACTION_TO_ATTACK_MOVE != 0 {
-                let goal = mv(sm, id).goal_position;
-                ai_commands::ai_attack_move_to_position(sm, h, &goal, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)?;
-            }
-            // "if we have a goal object, move to it, as it may have moved"
-            let is_missile = h.is_kind_of(KINDOF_PROJECTILE);
-            if let Some(o) = sm.goal_object(h) {
-                let mut goal = o.position;
-                let got_physics = h.has_physics() && h.object_has_physics(o.id);
-                if is_missile {
-                    let half = half_height(h, o.id);
-                    goal.z += half;
-                    let z_delta = goal.z - h.position().z;
-                    if z_delta > 0.0 {
-                        goal.z += z_delta;
-                    }
-                }
-                if got_physics && is_missile && !h.object_is_kind_of(o.id, KINDOF_IMMOBILE) {
-                    let our_pos = h.position();
-                    let (dx, dy, dz) = (goal.x - our_pos.x, goal.y - our_pos.y, goal.z - our_pos.z);
-                    let mut my_speed = h.velocity_magnitude();
-                    let goal_speed = h.object_velocity_magnitude(o.id);
-                    if my_speed < 5.0 {
-                        // "avoid divide by 0."
-                        my_speed = 5.0;
-                    }
-                    // (0.5*delta.length()) is a double upstream
-                    let lead_distance = ((0.5 * f64::from((dx * dx + dy * dy + dz * dz).sqrt())) * f64::from(goal_speed) / f64::from(my_speed)) as f32;
-                    let dir = h.object_unit_direction_vector_3d(o.id);
-                    goal.x += dir.x * lead_distance;
-                    goal.y += dir.y * lead_distance;
-                    goal.z += dir.z * lead_distance;
-                }
-                mv(sm, id).goal_position = goal;
-            } else if is_missile {
-                // "When missiles are moving uphill, they need to start up quickly to clear hills."
-                let mut goal = *sm.goal_position();
-                let z_delta = goal.z - h.position().z;
-                if z_delta > 0.0 {
-                    goal.z += z_delta;
-                }
-                mv(sm, id).goal_position = goal;
-            }
-            internal_update(sm, h, id)
+            move_to_update(sm, h, id, is_move_to)
         }
         Some(AiState::MoveOutOfTheWay { .. }) => {
             if h.is_effectively_dead() {

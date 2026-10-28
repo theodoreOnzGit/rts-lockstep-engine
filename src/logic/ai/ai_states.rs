@@ -70,6 +70,7 @@ use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
 use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
+use crate::logic::ai::ai_attack_move as attack_move;
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
 use crate::common::disabled_types::DisabledType;
@@ -432,6 +433,11 @@ pub enum AiState<H: AiStateHost> {
     AttackApproach { mv: MoveToData, chase: ChaseData },
     /// The attack machine's `AIAttackPursueTargetState`.
     AttackPursue { mv: MoveToData, chase: ChaseData },
+    /// `AIAttackMoveToState` (batch A11): `AIMoveToState`'s base, `m_frameToSleepUntil`, `m_retryCount`, `m_commandSrc`,
+    /// `m_attackMoveMachine`.
+    AttackMove { mv: MoveToData, frame_to_sleep_until: u32, retry_count: i32, command_src: CommandSourceType, machine: Option<StateMachine<AiState<H>>> },
+    /// `AIPickUpCrateState`: `m_delayCounter`.
+    PickUpCrate { mv: MoveToData, delay_counter: i32 },
     /// The attack machine's `ContinueState` and `FailureState`.
     Utility(UtilityState),
     /// A state class not yet translated: the host's (see the module docs).
@@ -648,16 +654,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
     };
     let wander_in_place = || AiState::WanderInPlace { mv: MoveToData::default(), origin: Coord3D::default(), wait_frames: 0, timer: 0 };
     // batch A10a: AIAttackState( machine, follow, attackingObject, forceAttacking, NULL )
-    let attack = |follow, attacking_object, force_attacking| AiState::Attack {
-        follow,
-        attacking_object,
-        force_attacking,
-        kinds,
-        machine: None,
-        original_victim_pos: Coord3D::default(),
-        victim_team: None,
-        locked_weapon_on_enter: None,
-    };
+    let attack = |follow, attacking_object, force_attacking| attack_states::attack_state(follow, attacking_object, force_attacking, kinds);
     let defs: [(StateId, AiState<H>, StateId, StateId); 41] = [
         (AI_IDLE, AiState::Idle { initial_sleep_offset: u16::MAX, should_look_for_targets: true, inited: false }, AI_IDLE, AI_IDLE),
         (AI_MOVE_TO, AiState::MoveTo { mv: MoveToData::default(), is_move_to: true }, AI_IDLE, AI_IDLE),
@@ -670,7 +667,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
             AI_WANDER_IN_PLACE,
         ),
         (AI_WANDER_IN_PLACE, wander_in_place(), AI_MOVE_AWAY_FROM_REPULSORS, AI_MOVE_AWAY_FROM_REPULSORS),
-        (AI_ATTACK_MOVE_TO, u(AI_ATTACK_MOVE_TO), AI_IDLE, AI_IDLE),
+        (AI_ATTACK_MOVE_TO, attack_move::attack_move(kinds), AI_IDLE, AI_IDLE),
         (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM), AI_IDLE, AI_IDLE),
         (AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS, u(AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS), AI_IDLE, AI_IDLE),
         (AI_FOLLOW_WAYPOINT_PATH_AS_TEAM, follow_waypoint_path(true), AI_IDLE, AI_IDLE),
@@ -707,7 +704,7 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_ATTACK_AREA, u(AI_ATTACK_AREA), AI_IDLE, AI_IDLE),
         (AI_FACE_OBJECT, u(AI_FACE_OBJECT), AI_IDLE, AI_IDLE),
         (AI_FACE_POSITION, u(AI_FACE_POSITION), AI_IDLE, AI_IDLE),
-        (AI_PICK_UP_CRATE, u(AI_PICK_UP_CRATE), AI_IDLE, AI_IDLE),
+        (AI_PICK_UP_CRATE, attack_move::pick_up_crate(), AI_IDLE, AI_IDLE),
         (AI_RAPPEL_INTO, u(AI_RAPPEL_INTO), AI_IDLE, AI_IDLE),
         (AI_BUSY, AiState::Busy, AI_IDLE, AI_IDLE),
     ];
@@ -895,6 +892,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::on_enter(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_on_enter(sm, h, id),
+            Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_enter(sm, h, id),
+            Some(AiState::PickUpCrate { .. }) => attack_move::crate_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -924,6 +923,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::on_exit(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_on_exit(sm, h, id)?,
+            Some(AiState::AttackMove { .. }) => attack_move::attack_move_on_exit(sm, h, id)?,
+            Some(AiState::PickUpCrate { .. }) => move_states::internal_on_exit(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -954,6 +955,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | Some(AiState::WanderInPlace { .. })
             | Some(AiState::Panic { .. }) => waypoint_states::update(sm, h, id),
             Some(AiState::Attack { .. }) => attack_states::attack_update(sm, h, id),
+            Some(AiState::AttackMove { .. }) => attack_move::attack_move_update(sm, h, id),
+            Some(AiState::PickUpCrate { .. }) => attack_move::crate_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -984,6 +987,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
         match self {
             // (AIAttackState's TRUE; the chase states' TRUE)
             AiState::Attack { .. } => !plant(3246),
+            // (AIAttackMoveToState's: its machine's)
+            AiState::AttackMove { machine, .. } => attack_move::is_attack(machine),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
             _ => false,
@@ -1024,6 +1029,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::AttackApproach { mv, chase } | AiState::AttackPursue { mv, chase } => attack_states::chase_xfer(mv, chase, xfer)?,
             AiState::AttackAim { can_turn_in_place, set_locomotor, .. } => attack_states::aim_xfer(can_turn_in_place, set_locomotor, xfer)?,
+            AiState::AttackMove { mv, frame_to_sleep_until, retry_count, machine, .. } => {
+                attack_move::attack_move_xfer(mv, frame_to_sleep_until, retry_count, machine, xfer)?
+            }
+            AiState::PickUpCrate { mv, delay_counter } => attack_move::crate_xfer(mv, delay_counter, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?
             }
@@ -1094,6 +1103,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 portable_that_attacks: h.is_kind_of(KINDOF_PORTABLE_STRUCTURE) && h.is_kind_of(KINDOF_CAN_ATTACK),
             };
             define_states(&mut sm, kinds)?;
+            // (batch A11: the attack-move machine enters its default state, as its state's constructor does upstream)
+            let ai_lent = self.ai.take().expect("the AI (not lent)");
+            h.ai_stack().push(ai_lent);
+            let r = attack_move::init_attack_move_machines(&mut sm, h);
+            self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+            r?;
             self.machine = Some(sm);
             self.run(h, |sm, h| sm.init_default_state(h).map(|_| ()))?;
         }

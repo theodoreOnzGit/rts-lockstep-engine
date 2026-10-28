@@ -12,6 +12,7 @@ pub mod ai_commands;
 pub mod ai_move_states;
 pub mod ai_waypoint_states;
 pub mod ai_attack_states;
+pub mod ai_attack_move;
 pub mod ai_fire_host;
 pub mod ai_paths;
 pub mod ai_states;

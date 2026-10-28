@@ -29,6 +29,8 @@ class Locomotor;
 class Waypoint;
 class Weapon;
 class Player;
+/* batch A11: JetAIUpdate (never an AI of this build: getJetAIUpdate is NULL) */
+class JetAIUpdate { public: Bool isOutOfSpecialReloadAmmo() const; };
 class AsciiString;
 
 /* The scene of one call. The Rust test has the same struct (tests/differential_ai_update_a2.rs, `Env`): same field order, 4-byte

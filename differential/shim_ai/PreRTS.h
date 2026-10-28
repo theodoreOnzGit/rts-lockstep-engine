@@ -95,6 +95,11 @@
 #define AIAttackFireWeaponState AiAIAttackFireWeaponState
 #define AIAttackApproachTargetState AiAIAttackApproachTargetState
 #define AIAttackPursueTargetState AiAIAttackPursueTargetState
+/* batch A11 */
+#define AIAttackMoveStateMachine AiAIAttackMoveStateMachine
+#define AIAttackMoveToState AiAIAttackMoveToState
+#define AIPickUpCrateState AiAIPickUpCrateState
+#define JetAIUpdate AiJetAIUpdate
 #define outOfWeaponRangeObject aiOutOfWeaponRangeObject
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition
 #define wantToSquishTarget aiWantToSquishTarget
