@@ -1605,7 +1605,8 @@ impl AiStateHost for Host {
         self.l(L_TUNNEL, &[0, target as u32]);
     }
     fn object_ai_goal_object(&mut self, id: ObjectId) -> Option<ObjectId> {
-        if !self.object_exists(id) || (self.env.ai_mask >> id) & 1 == 0 {
+        // (`getAI()`: the scene's AI bit, as wrap_ai.cpp's; batch A23: the team's members are iterated whether or not they exist)
+        if !(1..32).contains(&id) || (self.env.ai_mask >> id) & 1 == 0 {
             return None;
         }
         let g = self.env.other_ai_goal;
@@ -1704,7 +1705,7 @@ impl AiStateHost for Host {
         p1_hash(self.env.seed, 80, &[which as u32, v]) & 1 != 0
     }
     fn turret_angle(&mut self, which: usize) -> f32 {
-        (p1_hash(self.env.seed, 81, &[which as u32]) % 628) as f32 / 100.0 - 3.14
+        (p1_hash(self.env.seed, 81, &[which as u32]) % 628) as f32 / 100.0 - 3.0
     }
     fn turret_pitch(&mut self, which: usize) -> f32 {
         (p1_hash(self.env.seed, 82, &[which as u32]) % 100) as f32 / 100.0
@@ -3996,6 +3997,9 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
+        // batch A23: joinTeam chooses the normal locomotor set (which may leave none) and then clears the machine (the waypoint states'
+        // exit reads the locomotor): not in those states (the doLocomotor op instead)
+        91 if a9_states(module).0 => *op = 0,
         72 => {
             let state = match ia[0] {
                 6 => 3,

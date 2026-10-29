@@ -1613,7 +1613,7 @@ Bool TurretAI::isTryingToAimAtTarget(const Object* victim) const
 {
 	return (p1Hash(80, { (unsigned)m_which, victim ? (unsigned)victim->getID() : 0u }) & 1) != 0;
 }
-Real TurretAI::getTurretAngle() const { return (Real)(p1Hash(81, { (unsigned)m_which }) % 628u) / 100.0f - 3.14f; }
+Real TurretAI::getTurretAngle() const { return (Real)(p1Hash(81, { (unsigned)m_which }) % 628u) / 100.0f - 3.0f; }
 Real TurretAI::getTurretPitch() const { return (Real)(p1Hash(82, { (unsigned)m_which }) % 100u) / 100.0f; }
 /* batch A9 */
 Bool Pathfinder::isPointOnWall(const Coord3D *pos) { return pfAnswer(7, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
