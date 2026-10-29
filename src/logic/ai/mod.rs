@@ -17,6 +17,7 @@ pub mod ai_data;
 pub mod ai_group;
 pub mod ai_group_moves;
 pub mod ai_player;
+pub mod ai_skirmish_player;
 pub mod ai_system;
 pub mod ai_attack_move;
 pub mod ai_hunt_states;

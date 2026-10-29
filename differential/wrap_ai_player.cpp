@@ -1,9 +1,13 @@
-/* Differential-test wrapper for AIPlayer.cpp (Phase 1 layer 10, p1w13-sonnet, batch A28; upstream commit 0a05454d).
+/* Differential-test wrapper for AIPlayer.cpp and AISkirmishPlayer.cpp (Phase 1 layer 10, p1w13-sonnet, batches A28 and A29;
+** upstream commit 0a05454d).
 **
 ** build.rs cuts verbatim into OUT_DIR/ai_player_gen:
 **   ai_player_dlink.inc  GameCommon.h's DLINK_ITERATOR, MAKE_DLINK_HEAD and MAKE_DLINK (the intrusive lists of the queues)
 **   ai_player_h.inc      AIPlayer.h from `enum { INVALID_SKILLSET_SELECTION` to its last `};` (WorkOrder, TeamInQueue, AIPlayer)
 **   ai_player_cpp.inc    AIPlayer.cpp from `#define SUPPLY_CENTER_CLOSE_DIST` to the end
+**   ai_skirmish_player_h.inc, ai_skirmish_player_cpp.inc  AISkirmishPlayer.h's class, AISkirmishPlayer.cpp from its constructor
+** (batch A29: scene.skirmish 2 makes the run's player an AISkirmishPlayer; the other players' skirmish AIs, enemies, power,
+** start positions, the approach paths and the factions' skirmish build lists are the scene's)
 ** and they are compiled here, in the namespace ap, over a world of this file's own: everything AIPlayer.cpp reaches outside
 ** itself (Player, PlayerList, ThingTemplate and ThingFactory, Object and its AI, supply truck, dozer, production, body, dock,
 ** rebuild hole, exit and command set; Team, TeamPrototype, TeamFactory; ScriptEngine, BuildAssistant, TerrainLogic, TerrainVisual,
@@ -33,6 +37,12 @@ namespace ap {
 #define DEBUG_LOG(m)
 #define CRCGEN_LOG(m)
 #define BOGUSPTR(p) (false)
+#define DEBUG_ASSERTLOG(c, m)
+/* Scripts.h's approach path labels, PartitionManager.h's HUGE_DIST */
+#define SKIRMISH_CENTER "Center"
+#define SKIRMISH_FLANK "Flank"
+#define SKIRMISH_BACKDOOR "Backdoor"
+const Real HUGE_DIST = 1000000.0f;
 
 enum {
 	AP_OBJECTS = 48, AP_TEMPLATES = 10, AP_PROTOS = 6, AP_TEAMS = 64, AP_PLAYERS = 3, AP_BUILD = 10, AP_SIDES = 2, AP_UPGRADES = 4,
@@ -55,7 +65,10 @@ enum GuardMode { GUARDMODE_NORMAL = 0 };
 enum BodyDamageType { BODY_PRISTINE = 0, BODY_DAMAGED, BODY_REALLYDAMAGED, BODY_RUBBLE };
 enum DozerTask { DOZER_TASK_INVALID = -1, DOZER_TASK_BUILD = 0, DOZER_TASK_REPAIR, DOZER_TASK_FORTIFY };
 enum UpgradeType { UPGRADE_TYPE_PLAYER = 0, UPGRADE_TYPE_OBJECT };
-enum SpecialPowerType { SPECIAL_INVALID = 0, SPECIAL_SNEAK_ATTACK = 7 };
+enum SpecialPowerType { SPECIAL_INVALID = 0, SPECIAL_SNEAK_ATTACK = 7, SPECIAL_CLUSTER_MINES, NUKE_SPECIAL_CLUSTER_MINES };
+enum PlayerType { PLAYER_HUMAN = 0, PLAYER_COMPUTER };
+enum DisabledType { DISABLED_UNMANNED = 4 };
+enum CanMakeType { CANMAKE_OK = 0, CANMAKE_NO_PREREQ };
 enum LegalBuildCode { LBC_OK = 0, LBC_RESTRICTED_TERRAIN };
 enum AIDebugOptions { AI_DEBUG_NONE = 0, AI_DEBUG_PATHS, AI_DEBUG_TERRAIN };
 enum { ALLOW_SAME_PLAYER = 0x01, ALLOW_ALLIES = 0x02, ALLOW_ENEMIES = 0x04, ALLOW_NEUTRAL = 0x08 };
@@ -67,7 +80,7 @@ enum { MAX_COMMANDS_PER_SET = 18 };
 enum KindOfType {
 	KINDOF_STRUCTURE = 0, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_REBUILD_HOLE, KINDOF_SUPPLY_SOURCE, KINDOF_CASH_GENERATOR,
 	KINDOF_COMMANDCENTER, KINDOF_FS_SUPERWEAPON, KINDOF_FS_BASE_DEFENSE, KINDOF_TECH_BASE_DEFENSE, KINDOF_VEHICLE, KINDOF_INFANTRY,
-	KINDOF_AIRCRAFT, KINDOF_CONSERVATIVE_BUILDING, KINDOF_BRIDGE,
+	KINDOF_AIRCRAFT, KINDOF_CONSERVATIVE_BUILDING, KINDOF_BRIDGE, KINDOF_FS_POWER,
 };
 enum ObjectStatusTypes { OBJECT_STATUS_UNDER_CONSTRUCTION = 0, OBJECT_STATUS_SOLD, OBJECT_STATUS_RECONSTRUCTING, OBJECT_STATUS_STEALTHED,
 	OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED };
@@ -91,10 +104,10 @@ enum {
 	AP_F_AI = 1, AP_F_IDLE = 2, AP_F_SUPPLY_AI = 4, AP_F_FERRYING = 8, AP_F_FORCED = 16, AP_F_DOZER_AI = 32, AP_F_TASK = 64,
 	AP_F_TASK_BUILD = 128, AP_F_PRODUCTION = 256, AP_F_BODY = 512, AP_F_LAST_DAMAGE = 1024, AP_F_NO_EFFECT = 2048,
 	AP_F_CENTER_DOCK = 4096, AP_F_WAREHOUSE = 8192, AP_F_HOLE = 16384, AP_F_EXIT = 32768, AP_F_RALLY = 65536, AP_F_ABOVE = 131072,
-	AP_F_DEAD = 262144, AP_F_INSIGNIFICANT = 524288,
+	AP_F_DEAD = 262144, AP_F_INSIGNIFICANT = 524288, AP_F_UNMANNED = 1048576,
 	/* the flags a world op may toggle (the others say which interfaces and modules an object has) */
 	AP_MUTABLE_FLAGS = AP_F_IDLE | AP_F_FERRYING | AP_F_FORCED | AP_F_TASK | AP_F_TASK_BUILD | AP_F_LAST_DAMAGE | AP_F_NO_EFFECT | AP_F_RALLY
-		| AP_F_ABOVE | AP_F_DEAD | AP_F_INSIGNIFICANT,
+		| AP_F_ABOVE | AP_F_DEAD | AP_F_INSIGNIFICANT | AP_F_UNMANNED,
 };
 struct ApTmpl { Int kinds, cost, equiv, newFlags; Real radius, angle; };	/* newFlags: a new object's flags (buildObjectNow) */
 struct ApProto
@@ -105,15 +118,16 @@ struct ApProto
 };
 enum { AP_P_REINFORCE = 1, AP_P_HOME = 2, AP_P_ACTIONS = 4, AP_P_SINGLETON = 8, AP_P_CONDITION = 16 };
 struct ApTeam { Int id, proto, active, idle; };	/* id 0: no team */
-struct ApPlayer { Int money, flags, side, attackedFrame, sciencePoints, defaultTeam; };
-enum { AP_PL_UNITS = 1, AP_PL_BASE = 2 };
+struct ApPlayer { Int money, flags, side, attackedFrame, sciencePoints, defaultTeam, enemy, mpStart; };	/* enemy -1: none */
+enum { AP_PL_UNITS = 1, AP_PL_BASE = 2, AP_PL_POWER = 4, AP_PL_HUMAN = 8, AP_PL_SKIRMISH = 16 };
 struct ApBuild
 {
 	Int tmpl, objectId, timestamp, numRebuilds, flags, desired, current, health, name, script;	/* tmpl -1: empty, -2: unknown */
 	Real loc[3], angle, rally[2];
 };
-enum { AP_B_INITIALLY = 1, AP_B_SUPPLY = 2, AP_B_UNDER_CONSTRUCTION = 4, AP_B_UNSELLABLE = 8, AP_B_PRIORITY = 16 };
-struct ApSide { Int side, easy, normal, hard; Int numSkills[5]; Int skills[5][4]; };
+enum { AP_B_INITIALLY = 1, AP_B_SUPPLY = 2, AP_B_UNDER_CONSTRUCTION = 4, AP_B_UNSELLABLE = 8, AP_B_PRIORITY = 16, AP_B_MANUAL = 32 };
+struct ApSide { Int side, easy, normal, hard; Int numSkills[5]; Int skills[5][4]; Int baseDefense; };	/* baseDefense -1: none */
+enum { AP_SIDE_BUILD = 6, AP_PATHS = 3, AP_WAYPOINTS = 4 };
 struct ApScene
 {
 	ApObj o[AP_OBJECTS]; ApTmpl t[AP_TEMPLATES]; ApProto pr[AP_PROTOS]; ApTeam tm[AP_TEAMS]; ApPlayer pl[AP_PLAYERS];
@@ -125,6 +139,13 @@ struct ApScene
 	Int rebuildDelaySeconds, resourcesPoor, resourcesWealthy;
 	Real structureSeconds, structuresPoorMod, structuresWealthyMod, teamResourcesToBuild, maxRecruitDistance, safeRadius,
 		teamSeconds, teamPoorMod, teamWealthyMod;
+	/* batch A29: the factions' skirmish build lists, the approach paths (Center, Flank, Backdoor and pathStart), the AI data's
+	** base rotation and defence distance */
+	ApBuild sideBuild[AP_SIDES][AP_SIDE_BUILD];
+	Int sideBuildCount[AP_SIDES];
+	Real paths[AP_PATHS][AP_WAYPOINTS][3];
+	Int pathLen[AP_PATHS], pathStart, rotateBases;
+	Real defenseExtra;
 };
 struct ApOp { Int kind, a, b, c; Real x, y, z, w; };
 
@@ -138,7 +159,7 @@ enum {
 	AP_LOG_RANDOM = 1, AP_LOG_DEBUG, AP_LOG_CACHE, AP_LOG_SCRIPT, AP_LOG_ACTION, AP_LOG_CLEAR_FLAGS, AP_LOG_CAN_BUILD, AP_LOG_PURCHASE,
 	AP_LOG_ADD_BUILD, AP_LOG_ADD_PRIORITY, AP_LOG_SET_POS, AP_LOG_SET_TEAM, AP_LOG_CLEAR_STATUS, AP_LOG_MAP_PROPS, AP_LOG_UPGRADE_MODULES,
 	AP_LOG_AI, AP_LOG_FORCE_WANTING, AP_LOG_QUEUE_UNIT, AP_LOG_QUEUE_UPGRADE, AP_LOG_TEAM_ACTIVE, AP_LOG_TEAM_TRANSFER, AP_LOG_TEAM_DELETE,
-	AP_LOG_TEAM_GUARD, AP_LOG_TEAM_CREATE, AP_LOG_BUILD_NOW, AP_LOG_LEGAL, AP_LOG_BIBS, AP_LOG_ADJUST,
+	AP_LOG_TEAM_GUARD, AP_LOG_TEAM_CREATE, AP_LOG_BUILD_NOW, AP_LOG_LEGAL, AP_LOG_BIBS, AP_LOG_ADJUST, AP_LOG_CLEAR_BUILDER, AP_LOG_UNDONE,
 };
 /* AP_LOG_AI's commands */
 enum { AP_C_DOCK = 1, AP_C_IDLE, AP_C_MOVE, AP_C_RESUME, AP_C_REPAIR, AP_C_EXIT_PATH, AP_C_JOIN };
@@ -195,7 +216,7 @@ NameKeyGenerator *TheNameKeyGenerator = &g_nameKeys;
 #define NAMEKEY(s) TheNameKeyGenerator->nameToKey(s)
 
 class Object; class Team; class TeamPrototype; class Player; class ThingTemplate; class UpgradeTemplate; class AIGroup;
-class Script; class ScriptAction; class SpecialPowerTemplate; class Waypoint; class LocomotorSet;
+class Script; class ScriptAction; class SpecialPowerTemplate; class Waypoint; class LocomotorSet; class AIPlayer;
 void logStr(unsigned kind, const AsciiString &s) { std::vector<unsigned> w = { kind, (unsigned)s.s.size() }; for (char c : s.s) w.push_back((unsigned char)c); g_log->insert(g_log->end(), w.begin(), w.end()); }
 }	/* namespace ap */
 
@@ -329,9 +350,27 @@ public:
 	Relationship getRelationship(const Team *t) const;
 	void addToBuildList(Object *obj);
 	void addToPriorityBuildList(AsciiString templateName, Coord3D *pos, Real angle);
+	/* batch A29: the skirmish AI's questions. Player 0's AI is the run's (m_ai); the others' answers are the scene's. */
+	AIPlayer *m_ai;
+	class Energy { public: Int m_p; Bool hasSufficientPower() const { return (W.pl[m_p].flags & AP_PL_POWER) != 0; } } m_energy;
+	Energy *getEnergy() { m_energy.m_p = m_i; return &m_energy; }
+	PlayerType getPlayerType() const { return (W.pl[m_i].flags & AP_PL_HUMAN) ? PLAYER_HUMAN : PLAYER_COMPUTER; }
+	Int getMpStartIndex() const { return W.pl[m_i].mpStart; }
+	Bool isSkirmishAIPlayer();
+	Player *getCurrentEnemy();
+	Bool hasAnyUnits() const;
+	Bool hasAnyObjects() const;
+	Bool hasAnyBuildFacility() const;
+	void setBuildList(BuildListInfo *list);
+	void onStructureUndone(Object *o);
 };
 Player g_players[AP_PLAYERS];
-class PlayerList { public: Player *getNthPlayer(Int i) { return (i >= 0 && i < AP_PLAYERS) ? &g_players[i] : NULL; } };
+class PlayerList
+{
+public:
+	Player *getNthPlayer(Int i) { return (i >= 0 && i < AP_PLAYERS) ? &g_players[i] : NULL; }
+	Int getPlayerCount() { return AP_PLAYERS; }
+};
 PlayerList g_playerList; PlayerList *ThePlayerList = &g_playerList;
 
 /* ---- BuildListInfo: SidesList.h's members and inline functions (as AIPlayer.cpp calls them) */
@@ -343,11 +382,11 @@ public:
 	AsciiString m_buildingName, m_templateName, m_script;
 	Coord3D m_location; Coord2D m_rallyPointOffset; Real m_angle;
 	Bool m_isInitiallyBuilt; UnsignedInt m_numRebuilds; BuildListInfo *m_nextBuildList;
-	Int m_health; Bool m_unsellable, m_underConstruction, m_isSupplyBuilding, m_priorityBuild;
+	Int m_health; Bool m_unsellable, m_underConstruction, m_isSupplyBuilding, m_priorityBuild, m_automaticallyBuild;
 	ObjectID m_objectID; UnsignedInt m_objectTimestamp; Int m_desiredGatherers, m_currentGatherers;
 	BuildListInfo() : m_angle(0), m_isInitiallyBuilt(false), m_numRebuilds(0), m_nextBuildList(NULL), m_health(100), m_unsellable(false),
 		m_underConstruction(false), m_isSupplyBuilding(false), m_priorityBuild(false), m_objectID(INVALID_ID), m_objectTimestamp(0),
-		m_desiredGatherers(0), m_currentGatherers(0) { m_location.x = m_location.y = m_location.z = 0; m_rallyPointOffset.x = m_rallyPointOffset.y = 0; }
+		m_desiredGatherers(0), m_currentGatherers(0), m_automaticallyBuild(true) { m_location.x = m_location.y = m_location.z = 0; m_rallyPointOffset.x = m_rallyPointOffset.y = 0; }
 	void setNumRebuilds(UnsignedInt n) { m_numRebuilds = n; }
 	void setNextBuildList(BuildListInfo *p) { m_nextBuildList = p; }
 	void setLocation(Coord3D loc) { m_location = loc; }
@@ -373,6 +412,27 @@ public:
 	Bool isBuildable(void) { if (getNumRebuilds() > 0 || getNumRebuilds() == BuildListInfo::UNLIMITED_REBUILDS) return true; return false; }
 	void setUnderConstruction(Bool c) { m_underConstruction = c; }
 	void markPriorityBuild(void) { m_priorityBuild = true; }
+	Bool isPriorityBuild(void) { return m_priorityBuild; }
+	Bool isAutomaticBuild(void) { return m_automaticallyBuild; }
+	void setInitiallyBuilt(Bool built) { m_isInitiallyBuilt = built; }
+	/* SidesList.cpp's */
+	BuildListInfo *duplicate(void)
+	{
+		BuildListInfo *first = new BuildListInfo;
+		*first = *this;
+		first->m_nextBuildList = NULL;
+		BuildListInfo *next = this->m_nextBuildList;
+		BuildListInfo *cur = first;
+		while (next) {
+			BuildListInfo *link = new BuildListInfo;
+			*link = *next;
+			link->m_nextBuildList = NULL;
+			cur->m_nextBuildList = link;
+			cur = link;
+			next = next->m_nextBuildList;
+		}
+		return first;
+	}
 	Bool isSupplyBuilding(void) { return m_isSupplyBuilding; }
 	void setSupplyBuilding(Bool b) { m_isSupplyBuilding = b; }
 	Int getDesiredGatherers(void) { return m_desiredGatherers; }
@@ -486,6 +546,8 @@ public:
 	void clearStatus(ObjectStatusMaskType m) { L({ AP_LOG_CLEAR_STATUS, (unsigned)s().id, m.m }); s().status &= ~(Int)m.m; }
 	ObjectID getBuilderID() const { return s().builder; }
 	Bool isSignificantlyAboveTerrain() const { return (s().flags & AP_F_ABOVE) != 0; }
+	Bool isDisabledByType(DisabledType t) const { return t == DISABLED_UNMANNED && (s().flags & AP_F_UNMANNED) != 0; }
+	void setBuilder(const Object *b) { L({ AP_LOG_CLEAR_BUILDER, (unsigned)s().id, b ? (unsigned)b->getID() : 0u }); s().builder = b ? b->getID() : INVALID_ID; }
 	void updateObjValuesFromMapProperties(Dict *d)
 	{
 		std::vector<unsigned> w = { AP_LOG_MAP_PROPS, (unsigned)s().id, (unsigned)d->health, d->unsellable ? 1u : 0u, (unsigned)d->name.s.size() };
@@ -604,8 +666,9 @@ public:
 		Int id = s().id;
 		for (Int i = 0; i < AP_OBJECTS; ++i) if (W.o[i].id && W.o[i].team == id) W.o[i].team = toId;
 	}
-	/* the slot freed; any member left has no team */
-	void deleteInstance()
+	void deleteInstance();
+	/* the rest of ~Team (after the players' AIs were told): the slot freed; any member left has no team */
+	void destroy()
 	{
 		L({ AP_LOG_TEAM_DELETE, (unsigned)s().id });
 		Int id = s().id;
@@ -669,6 +732,25 @@ TeamFactory g_teamFactory; TeamFactory *TheTeamFactory = &g_teamFactory;
 /* ---- the players' teams and relationships, their build lists */
 Team *Player::getDefaultTeam() { return teamById((TeamID)W.pl[m_i].defaultTeam); }
 Relationship Player::getRelationship(const Team *t) const { if (!t) return NEUTRAL; return (Relationship)W.rel[m_i][t->getPrototype()->s().player]; }
+/* a player's objects: the members of the instances of its prototypes; units are not structures, build facilities produce */
+template <class F> Bool anyMember(Int p, F f)
+{
+	for (Int k = 0; k < AP_TEAMS; ++k) {
+		if (!W.tm[k].id || W.pr[W.tm[k].proto].player != p) continue;
+		for (Int i = 0; i < AP_OBJECTS; ++i) if (W.o[i].id && W.o[i].team == W.tm[k].id && f(W.o[i])) return true;
+	}
+	return false;
+}
+Bool Player::hasAnyUnits() const { return anyMember(m_i, [](const ApObj &o) { return !((W.t[o.tmpl].kinds >> KINDOF_STRUCTURE) & 1); }); }
+Bool Player::hasAnyObjects() const { return anyMember(m_i, [](const ApObj &o) { return true; }); }
+Bool Player::hasAnyBuildFacility() const { return anyMember(m_i, [](const ApObj &o) { return (o.flags & AP_F_PRODUCTION) != 0; }); }
+void Player::setBuildList(BuildListInfo *list)
+{
+	while (m_pBuildList) { BuildListInfo *n = m_pBuildList->getNext(); delete m_pBuildList; m_pBuildList = n; }
+	m_pBuildList = list;
+}
+/* onStructureUndone, removeObjectFromPathfindMap, destroyObject: one log entry, the object gone at once */
+void Player::onStructureUndone(Object *o) { L({ AP_LOG_UNDONE, (unsigned)o->getID() }); }
 void Player::addToBuildList(Object *obj)
 {
 	L({ AP_LOG_ADD_BUILD, (unsigned)m_i, (unsigned)obj->getID() });
@@ -742,6 +824,12 @@ public:
 		return ok ? LBC_OK : LBC_RESTRICTED_TERRAIN;
 	}
 	Bool isPossibleToMakeUnit(Object *factory, const ThingTemplate *t) { return chance(91, (unsigned)factory->getID(), (unsigned)t->m_i, 75); }
+	/* none: CANMAKE_NO_PREREQ (BuildAssistant.cpp's sanity); else by the hash of the builder and the template */
+	CanMakeType canMakeUnit(Object *builder, const ThingTemplate *t) const
+	{
+		if (!builder || !t) return CANMAKE_NO_PREREQ;
+		return chance(96, (unsigned)builder->getID(), (unsigned)t->m_i, 70) ? CANMAKE_OK : CANMAKE_NO_PREREQ;
+	}
 };
 BuildAssistant g_buildAssistant; BuildAssistant *TheBuildAssistant = &g_buildAssistant;
 class TerrainVisual { public: void removeAllBibs() { L({ AP_LOG_BIBS }); } };
@@ -752,12 +840,23 @@ public:
 	/* the cells of 50 by 50: (column + 2 row) & 7 */
 	Real getGroundHeight(Real x, Real y) { return (Real)(((Int)floorf(x / 50.0f) + 2 * (Int)floorf(y / 50.0f)) & 7); }
 	void getExtent(Region3D *r) { r->lo.x = W.extent[0]; r->lo.y = W.extent[1]; r->lo.z = 0; r->hi.x = W.extent[2]; r->hi.y = W.extent[3]; r->hi.z = 0; }
+	void getMaximumPathfindExtent(Region3D *r) { getExtent(r); }
+	Waypoint *getClosestWaypointOnPath(const Coord3D *pos, AsciiString label);
 };
 TerrainLogic g_terrainLogic; TerrainLogic *TheTerrainLogic = &g_terrainLogic;
 class Pathfinder
 {
 public:
 	Bool clientSafeQuickDoesPathExist(const LocomotorSet &set, const Coord3D *from, const Coord3D *to);
+	/* a broken bridge (the first bridge in slot order) by the hash of the destination and the mover */
+	Bool findBrokenBridge(const LocomotorSet &set, const Coord3D *from, const Coord3D *to, ObjectID *bridge)
+	{
+		if (!chance(95, bitsOf(to->x) ^ bitsOf(to->y), (unsigned)W.o[set.m_i].id, 40)) return false;
+		for (Int i = 0; i < AP_OBJECTS; ++i)
+			if (W.o[i].id && ((W.t[W.o[i].tmpl].kinds >> KINDOF_BRIDGE) & 1)) { *bridge = W.o[i].id; return true; }
+		return false;
+	}
+	void removeObjectFromPathfindMap(Object *o) {}
 	Bool adjustToPossibleDestination(Object *o, const LocomotorSet &set, Coord3D *pos)
 	{
 		L({ AP_LOG_ADJUST, (unsigned)o->getID(), bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
@@ -774,18 +873,25 @@ Bool Pathfinder::clientSafeQuickDoesPathExist(const LocomotorSet &set, const Coo
 /* ---- the AI: its data (from the scene, built at the start of a run), the pathfinder, a group */
 enum { MAX_AI_UPGRADES = 20 };
 class TSkillSet { public: Int m_numSkills; ScienceType m_skills[MAX_AI_UPGRADES]; };
-class AISideInfo { public: AsciiString m_side; Int m_easy, m_normal, m_hard; TSkillSet m_skillSet1, m_skillSet2, m_skillSet3, m_skillSet4, m_skillSet5; AISideInfo *m_next; };
+class AISideInfo
+{
+public:
+	AsciiString m_side; Int m_easy, m_normal, m_hard; TSkillSet m_skillSet1, m_skillSet2, m_skillSet3, m_skillSet4, m_skillSet5;
+	AsciiString m_baseDefenseStructure1; AISideInfo *m_next;
+};
+class AISideBuildList { public: AsciiString m_side; BuildListInfo *m_buildList; AISideBuildList *m_next; };
 class TAiData
 {
 public:
 	Real m_structureSeconds, m_teamSeconds; Int m_resourcesWealthy, m_resourcesPoor; Real m_structuresWealthyMod, m_teamWealthyMod,
 		m_structuresPoorMod, m_teamPoorMod, m_teamResourcesToBuild, m_maxRecruitDistance, m_supplyCenterSafeRadius;
 	Int m_rebuildDelaySeconds; AISideInfo *m_sideInfo;
+	AISideBuildList *m_sideBuildLists; Bool m_rotateSkirmishBases; Real m_skirmishBaseDefenseExtraDistance;
 };
 class AI
 {
 public:
-	TAiData m_data; AISideInfo m_sides[AP_SIDES]; Pathfinder m_pathfinder; AIGroup m_group;
+	TAiData m_data; AISideInfo m_sides[AP_SIDES]; AISideBuildList m_sideBuild[AP_SIDES]; Pathfinder m_pathfinder; AIGroup m_group;
 	const TAiData *getAiData() { return &m_data; }
 	Pathfinder *pathfinder() { return &m_pathfinder; }
 	AIGroup *createGroup() { return &m_group; }
@@ -831,8 +937,38 @@ public:
 	UnsignedInt getFrame() { return (UnsignedInt)W.frame; }
 	Object *findObjectByID(ObjectID id) { return objById(id); }
 	Object *getFirstObject() { for (Int i = 0; i < AP_OBJECTS; ++i) if (W.o[i].id) return &g_objs[i]; return NULL; }
+	void destroyObject(Object *o) { o->s().id = 0; }
 };
 GameLogic g_gameLogic; GameLogic *TheGameLogic = &g_gameLogic;
+/* the approach paths: "Center", "Flank" and "Backdoor" with pathStart; a path's waypoints in order */
+class Waypoint
+{
+public:
+	Int m_path, m_k; Coord3D m_loc;
+	const Coord3D *getLocation() { m_loc.x = W.paths[m_path][m_k][0]; m_loc.y = W.paths[m_path][m_k][1]; m_loc.z = W.paths[m_path][m_k][2]; return &m_loc; }
+	Waypoint *getNext();
+};
+Waypoint g_waypoints[AP_PATHS][AP_WAYPOINTS];
+Waypoint *Waypoint::getNext() { return m_k + 1 < W.pathLen[m_path] ? &g_waypoints[m_path][m_k + 1] : NULL; }
+Int pathOf(const AsciiString &label)
+{
+	static const char *names[AP_PATHS] = { "Center", "Flank", "Backdoor" };
+	for (Int k = 0; k < AP_PATHS; ++k) if (label == nameOf(names[k], W.pathStart)) return k;
+	return -1;
+}
+/* the closest (2D, squared, the first of equals) */
+Waypoint *TerrainLogic::getClosestWaypointOnPath(const Coord3D *pos, AsciiString label)
+{
+	Int k = pathOf(label);
+	if (k < 0) return NULL;
+	Waypoint *best = NULL; Real bestD = 0;
+	for (Int j = 0; j < W.pathLen[k]; ++j) {
+		Real dx = W.paths[k][j][0] - pos->x, dy = W.paths[k][j][1] - pos->y;
+		Real d = dx * dx + dy * dy;
+		if (!best || d < bestD) { best = &g_waypoints[k][j]; bestD = d; }
+	}
+	return best;
+}
 class GlobalData { public: Int m_debugAI; Int m_baseValuePerSupplyBox; Bool m_debugSupplyCenterPlacement; };
 GlobalData g_globalData; GlobalData *TheGlobalData = &g_globalData;
 
@@ -927,10 +1063,12 @@ namespace ap {
 #define protected public
 #include "ai_player_h.inc"
 #include "ai_player_cpp.inc"
+#include "ai_skirmish_player_h.inc"
+#include "ai_skirmish_player_cpp.inc"
 #undef private
 #undef protected
 
-/* the AI player of the run: isSkirmishAI() as the scene says (AIPlayer's own is false) */
+/* the AI player of a solo run: isSkirmishAI() as the scene says (AIPlayer's own is false) */
 class ApAIPlayer : public AIPlayer
 {
 public:
@@ -938,6 +1076,26 @@ public:
 	ApAIPlayer(Player *p, Bool skirmish) : AIPlayer(p), m_skirmish(skirmish) {}
 	virtual Bool isSkirmishAI(void) { return m_skirmish; }
 };
+/* the run's AI player: scene.skirmish 2 an AISkirmishPlayer, else an ApAIPlayer */
+AIPlayer *newAI(Player *p)
+{
+	AIPlayer *a = W.skirmish == 2 ? (AIPlayer *)new AISkirmishPlayer(p) : (AIPlayer *)new ApAIPlayer(p, W.skirmish != 0);
+	p->m_ai = a;
+	return a;
+}
+/* ~Team: the players told (Player::preTeamDestroy: their AIs' aiPreTeamDestroy), then the team gone */
+void Team::deleteInstance()
+{
+	for (Int p = 0; p < AP_PLAYERS; ++p) if (g_players[p].m_ai) g_players[p].m_ai->aiPreTeamDestroy(this);
+	destroy();
+}
+/* Player.cpp's for player 0 (its AI); the scene's for the others */
+Bool Player::isSkirmishAIPlayer() { return m_ai ? m_ai->isSkirmishAI() : (W.pl[m_i].flags & AP_PL_SKIRMISH) != 0; }
+Player *Player::getCurrentEnemy()
+{
+	if (m_ai) return m_ai->getAiEnemy();
+	return (W.pl[m_i].flags & AP_PL_SKIRMISH) && W.pl[m_i].enemy >= 0 && W.pl[m_i].enemy < AP_PLAYERS ? &g_players[W.pl[m_i].enemy] : NULL;
+}
 
 std::vector<unsigned> *g_out;
 void O(unsigned w) { g_out->push_back(w); }
@@ -973,6 +1131,13 @@ void dump(AIPlayer *a)
 	O((unsigned)a->m_repairDozer); OF(a->m_repairDozerOrigin.x); OF(a->m_repairDozerOrigin.y); OF(a->m_repairDozerOrigin.z);
 	O((unsigned)a->m_structuresInQueue); O(a->m_dozerQueuedForRepair); O(a->m_dozerIsRepairing); O((unsigned)a->m_bridgeTimer);
 	O(a->m_supplySourceAttackCheckFrame); O((unsigned)a->m_attackedSupplyCenter); O((unsigned)a->m_curWarehouseID);
+	AISkirmishPlayer *sk = dynamic_cast<AISkirmishPlayer *>(a);
+	O(sk != NULL);
+	if (sk) {
+		O((unsigned)sk->m_curFrontBaseDefense); O((unsigned)sk->m_curFlankBaseDefense); OF(sk->m_curFrontLeftDefenseAngle); OF(sk->m_curFrontRightDefenseAngle);
+		OF(sk->m_curLeftFlankLeftDefenseAngle); OF(sk->m_curLeftFlankRightDefenseAngle); OF(sk->m_curRightFlankLeftDefenseAngle);
+		OF(sk->m_curRightFlankRightDefenseAngle); O(sk->m_frameToCheckEnemy); O(sk->m_currentEnemy ? (unsigned)sk->m_currentEnemy->getPlayerIndex() : 0xFFFFFFFFu);
+	}
 	const unsigned *w = (const unsigned *)W.o;
 	for (size_t i = 0; i < sizeof W.o / 4; ++i) O(w[i]);
 	w = (const unsigned *)W.tm;
@@ -985,7 +1150,7 @@ void dump(AIPlayer *a)
 	O(n);
 	for (BuildListInfo *b = g_players[0].m_pBuildList; b; b = b->getNext()) {
 		OS(b->m_buildingName); OS(b->m_templateName); OS(b->m_script); OF(b->m_location.x); OF(b->m_location.y); OF(b->m_location.z);
-		OF(b->m_rallyPointOffset.x); OF(b->m_rallyPointOffset.y); OF(b->m_angle); O(b->m_isInitiallyBuilt); O(b->m_numRebuilds);
+		OF(b->m_rallyPointOffset.x); OF(b->m_rallyPointOffset.y); OF(b->m_angle); O(b->m_isInitiallyBuilt); O(b->m_numRebuilds); O(b->m_automaticallyBuild);
 		O((unsigned)b->m_health); O(b->m_unsellable); O(b->m_underConstruction); O(b->m_isSupplyBuilding); O(b->m_priorityBuild);
 		O((unsigned)b->m_objectID); O(b->m_objectTimestamp); O((unsigned)b->m_desiredGatherers); O((unsigned)b->m_currentGatherers);
 	}
@@ -995,6 +1160,22 @@ const ThingTemplate *tmplOrNull(Int i) { return (i >= 0 && i < AP_TEMPLATES) ? &
 TeamPrototype *protoOrNull(Int i) { return (i >= 0 && i < AP_PROTOS) ? &g_protos[i] : NULL; }
 BuildListInfo *entryAt(Int k) { if (k < 0) return NULL; BuildListInfo *b = g_players[0].m_pBuildList; while (b && k-- > 0) b = b->getNext(); return b; }
 Coord3D posOf(const ApOp &op) { Coord3D c; c.x = op.x; c.y = op.y; c.z = op.z; return c; }
+
+/* a build list entry of the scene */
+BuildListInfo *entryOf(const ApBuild &e)
+{
+	BuildListInfo *b = new BuildListInfo;
+	b->m_buildingName = buildingName(e.name); b->m_templateName = e.tmpl == -1 ? AsciiString() : tmplName(e.tmpl < 0 ? -1 : e.tmpl);
+	b->m_script = scriptName(e.script);
+	b->m_location.x = e.loc[0]; b->m_location.y = e.loc[1]; b->m_location.z = e.loc[2]; b->m_angle = e.angle;
+	b->m_rallyPointOffset.x = e.rally[0]; b->m_rallyPointOffset.y = e.rally[1];
+	b->m_isInitiallyBuilt = (e.flags & AP_B_INITIALLY) != 0; b->m_numRebuilds = (UnsignedInt)e.numRebuilds;
+	b->m_health = e.health; b->m_unsellable = (e.flags & AP_B_UNSELLABLE) != 0; b->m_underConstruction = (e.flags & AP_B_UNDER_CONSTRUCTION) != 0;
+	b->m_isSupplyBuilding = (e.flags & AP_B_SUPPLY) != 0; b->m_priorityBuild = (e.flags & AP_B_PRIORITY) != 0;
+	b->m_automaticallyBuild = (e.flags & AP_B_MANUAL) == 0;
+	b->m_objectID = e.objectId; b->m_objectTimestamp = (UnsignedInt)e.timestamp; b->m_desiredGatherers = e.desired; b->m_currentGatherers = e.current;
+	return b;
+}
 
 /* the world at the start of a run */
 void setUp(const ApScene *scene)
@@ -1009,25 +1190,13 @@ void setUp(const ApScene *scene)
 	for (Int j = 0; j < MAX_COMMANDS_PER_SET; ++j) g_buttons[j].m_j = j;
 	for (Int p = 0; p < AP_PLAYERS; ++p) {
 		Player &pl = g_players[p];
-		pl.m_i = p; pl.m_money.m_p = p; pl.m_teams.clear();
+		pl.m_i = p; pl.m_money.m_p = p; pl.m_teams.clear(); pl.m_ai = NULL;
 		for (Int i = 0; i < AP_PROTOS; ++i) if (W.pr[i].player == p) pl.m_teams.push_back(&g_protos[i]);
 		while (pl.m_pBuildList) { BuildListInfo *n = pl.m_pBuildList->getNext(); delete pl.m_pBuildList; pl.m_pBuildList = n; }
 	}
 	/* player 0's build list, the scene's entries in order */
 	BuildListInfo **tail = &g_players[0].m_pBuildList;
-	for (Int i = 0; i < W.numBuild; ++i) {
-		const ApBuild &e = W.b[i];
-		BuildListInfo *b = new BuildListInfo;
-		b->m_buildingName = buildingName(e.name); b->m_templateName = e.tmpl == -1 ? AsciiString() : tmplName(e.tmpl < 0 ? -1 : e.tmpl);
-		b->m_script = scriptName(e.script);
-		b->m_location.x = e.loc[0]; b->m_location.y = e.loc[1]; b->m_location.z = e.loc[2]; b->m_angle = e.angle;
-		b->m_rallyPointOffset.x = e.rally[0]; b->m_rallyPointOffset.y = e.rally[1];
-		b->m_isInitiallyBuilt = (e.flags & AP_B_INITIALLY) != 0; b->m_numRebuilds = (UnsignedInt)e.numRebuilds;
-		b->m_health = e.health; b->m_unsellable = (e.flags & AP_B_UNSELLABLE) != 0; b->m_underConstruction = (e.flags & AP_B_UNDER_CONSTRUCTION) != 0;
-		b->m_isSupplyBuilding = (e.flags & AP_B_SUPPLY) != 0; b->m_priorityBuild = (e.flags & AP_B_PRIORITY) != 0;
-		b->m_objectID = e.objectId; b->m_objectTimestamp = (UnsignedInt)e.timestamp; b->m_desiredGatherers = e.desired; b->m_currentGatherers = e.current;
-		*tail = b; tail = &b->m_nextBuildList;
-	}
+	for (Int i = 0; i < W.numBuild; ++i) { *tail = entryOf(W.b[i]); tail = &(*tail)->m_nextBuildList; }
 	/* the AI data */
 	TAiData &d = g_ai.m_data;
 	d.m_structureSeconds = W.structureSeconds; d.m_teamSeconds = W.teamSeconds; d.m_resourcesWealthy = W.resourcesWealthy;
@@ -1045,13 +1214,26 @@ void setUp(const ApScene *scene)
 			sets[k]->m_numSkills = as.numSkills[k];
 			for (Int j = 0; j < 4; ++j) sets[k]->m_skills[j] = as.skills[k][j];
 		}
+		si.m_baseDefenseStructure1 = as.baseDefense < 0 ? AsciiString() : tmplName(as.baseDefense);
 		si.m_next = d.m_sideInfo; d.m_sideInfo = &si;
 	}
+	/* the factions' skirmish build lists (the old ones dropped), sides[0]'s first */
+	d.m_sideBuildLists = NULL;
+	for (Int s = AP_SIDES - 1; s >= 0; --s) {
+		AISideBuildList &bl = g_ai.m_sideBuild[s];
+		while (bl.m_buildList) { BuildListInfo *n = bl.m_buildList->getNext(); delete bl.m_buildList; bl.m_buildList = n; }
+		bl.m_side = sideName(W.sides[s].side);
+		BuildListInfo **t = &bl.m_buildList;
+		for (Int i = 0; i < W.sideBuildCount[s]; ++i) { *t = entryOf(W.sideBuild[s][i]); t = &(*t)->m_nextBuildList; }
+		bl.m_next = d.m_sideBuildLists; d.m_sideBuildLists = &bl;
+	}
+	d.m_rotateSkirmishBases = W.rotateBases != 0; d.m_skirmishBaseDefenseExtraDistance = W.defenseExtra;
+	for (Int k = 0; k < AP_PATHS; ++k) for (Int j = 0; j < AP_WAYPOINTS; ++j) { g_waypoints[k][j].m_path = k; g_waypoints[k][j].m_k = j; }
 	g_globalData.m_debugAI = W.debugAI; g_globalData.m_baseValuePerSupplyBox = W.boxValue;
 }
 
 /* one op: its answer words */
-void runOp(ApAIPlayer *&a, const ApOp &op)
+void runOp(AIPlayer *&a, const ApOp &op)
 {
 	Coord3D pos = posOf(op);
 	switch (op.kind) {
@@ -1076,7 +1258,9 @@ void runOp(ApAIPlayer *&a, const ApOp &op)
 		case 18: { Team *t = teamById((TeamID)op.a); if (!t) { O(0xFFFFFFFFu); break; } a->guardSupplyCenter(t, op.b); break; }
 		case 19: { Bool ok = a->calcClosestConstructionZoneLocation(tmplOrNull(op.a), &pos); O(ok); OF(pos.x); OF(pos.y); OF(pos.z); break; }
 		case 20: {
-			SpecialPowerTemplate sp; sp.m_type = op.a ? SPECIAL_SNEAK_ATTACK : SPECIAL_INVALID;
+			/* a: 0 none, 1 a sneak attack, 2 cluster mines, 3 the nuke's cluster mines */
+			static const SpecialPowerType types[4] = { SPECIAL_INVALID, SPECIAL_SNEAK_ATTACK, SPECIAL_CLUSTER_MINES, NUKE_SPECIAL_CLUSTER_MINES };
+			SpecialPowerTemplate sp; sp.m_type = types[op.a & 3];
 			Coord3D r; r.x = r.y = r.z = 0;
 			Bool ok = a->computeSuperweaponTarget(&sp, &r, op.b, op.x);
 			O(ok); OF(r.x); OF(r.y); OF(r.z);
@@ -1102,7 +1286,7 @@ void runOp(ApAIPlayer *&a, const ApOp &op)
 			for (unsigned char c : s.m_bytes) O(c);
 			Player *p = a->m_player;
 			delete a;
-			a = new ApAIPlayer(p, W.skirmish != 0);
+			a = newAI(p);
 			Xfer l(XFER_LOAD);
 			l.m_bytes = s.m_bytes;
 			a->xfer(&l);
@@ -1181,6 +1365,15 @@ void runOp(ApAIPlayer *&a, const ApOp &op)
 			if (k >= 0 && k < AP_OBJECTS) W.o[k].player = op.b;
 			break;
 		}
+		case 59: {
+			/* checkBridges(unit, the first waypoint of path b) */
+			Object *u = objById(op.a);
+			if (!u || op.b < 0 || op.b >= AP_PATHS) { O(0xFFFFFFFFu); break; }
+			O(a->checkBridges(u, W.pathLen[op.b] > 0 ? &g_waypoints[op.b][0] : NULL));
+			break;
+		}
+		case 60: { Player *e = a->getAiEnemy(); O(e ? (unsigned)e->getPlayerIndex() : 0xFFFFFFFFu); break; }
+		case 61: { AISkirmishPlayer *sk = dynamic_cast<AISkirmishPlayer *>(a); O(sk ? (unsigned)sk->getMyEnemyPlayerIndex() : 0xFFFFFFFFu); break; }
 		case 57: {
 			/* a < 0: the AI player's first structure to repair */
 			Object *o = op.a < 0 && a->m_structuresInQueue > 0 ? objById(a->m_structuresToRepair[0]) : NULL;
@@ -1203,7 +1396,7 @@ extern "C" int ref_ai_player_run(const ap::ApScene *scene, const ap::ApOp *ops, 
 	g_out = &o; g_log = &lg;
 	setUp(scene);
 	int status = 0;
-	ApAIPlayer *a = new ApAIPlayer(&g_players[0], W.skirmish != 0);
+	AIPlayer *a = newAI(&g_players[0]);
 	try {
 		for (int i = 0; i < nOps; ++i) {
 			size_t at = o.size(); O(0);

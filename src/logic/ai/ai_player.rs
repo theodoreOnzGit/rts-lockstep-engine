@@ -47,6 +47,7 @@ use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::*;
 use crate::common::object_status_types::{OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::common::science::ScienceType;
+use crate::common::special_power_type::{SpecialPowerType, SPECIAL_SNEAK_ATTACK};
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::ai::ai_data::AiDataEntry;
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
@@ -267,6 +268,36 @@ pub trait AiPlayerHost {
     fn upgrade_is_object_type(&mut self, u: UpgradeRef) -> bool;
     fn upgrade_name(&mut self, u: UpgradeRef) -> Vec<u8>;
     fn can_afford_upgrade(&mut self, p: PlayerRef, u: UpgradeRef) -> bool;
+    // ---- batch A29: the skirmish AI's questions
+    /// `getEnergy()->hasSufficientPower()`.
+    fn has_sufficient_power(&mut self, p: PlayerRef) -> bool;
+    /// `isDisabledByType(DISABLED_UNMANNED)`.
+    fn is_disabled_unmanned(&mut self, o: ObjectId) -> bool;
+    /// `setBuilder(NULL)`.
+    fn clear_builder(&mut self, o: ObjectId);
+    /// `TheBuildAssistant->canMakeUnit(builder, whatToBuild) == CANMAKE_OK` (none: `CANMAKE_NO_PREREQ`).
+    fn can_make_unit(&mut self, builder: ObjectId, t: Option<TemplateRef>) -> bool;
+    /// `ThePlayerList->getPlayerCount()`.
+    fn player_count(&mut self) -> i32;
+    /// `getPlayerType() == PLAYER_HUMAN`.
+    fn player_is_human(&mut self, p: PlayerRef) -> bool;
+    /// `hasAnyUnits()`, `hasAnyBuildFacility()`, `hasAnyObjects()`.
+    fn player_has_any_units(&mut self, p: PlayerRef) -> bool;
+    fn player_has_any_build_facility(&mut self, p: PlayerRef) -> bool;
+    fn player_has_any_objects(&mut self, p: PlayerRef) -> bool;
+    /// `isSkirmishAIPlayer()` and `getCurrentEnemy()` of a player other than this AI's.
+    fn player_is_skirmish_ai(&mut self, p: PlayerRef) -> bool;
+    fn player_current_enemy(&mut self, p: PlayerRef) -> Option<PlayerRef>;
+    /// `getMpStartIndex()`.
+    fn mp_start_index(&mut self, p: PlayerRef) -> i32;
+    /// `TheTerrainLogic->getClosestWaypointOnPath(pos, label)`'s location (`None`: no such path).
+    fn closest_waypoint_on_path(&mut self, pos: &Coord3D, label: &[u8]) -> Option<Coord3D>;
+    /// `TheTerrainLogic->getMaximumPathfindExtent()` in x and y.
+    fn maximum_pathfind_extent(&mut self) -> Region2D;
+    /// `TheAI->pathfinder()->findBrokenBridge(unit's locomotor set, unit's position, to, &bridge)`.
+    fn find_broken_bridge(&mut self, unit: ObjectId, to: &Coord3D) -> Option<ObjectId>;
+    /// `onStructureUndone(obj)`, `removeObjectFromPathfindMap(obj)` and `destroyObject(obj)` of the player's start structure.
+    fn undo_and_destroy_structure(&mut self, o: ObjectId);
 }
 
 /// `WorkOrder`: one unit type of a team to build, the factory building it, how many are built and needed.
@@ -408,21 +439,26 @@ impl TeamInQueue {
         self.work_orders.iter().all(|o| o.factory_id == INVALID_ID)
     }
 
-    /// `disband()`: the units to the prototype's player's default team, the team deleted (not a singleton's) and forgotten.
-    pub fn disband<H: AiPlayerHost>(&mut self, h: &mut H) {
+    /// `disband()`: the units to the prototype's player's default team, the team forgotten; returns it when it is to be deleted
+    /// (not a singleton's): the caller deletes it with [`AiPlayer::delete_world_team`] (upstream's `m_team->deleteInstance()`,
+    /// whose destructor tells every player's AI first).
+    #[must_use]
+    pub fn disband<H: AiPlayerHost>(&mut self, h: &mut H) -> Option<TeamRef> {
         let proto = h.team_proto(self.team);
         let owner = h.proto_controlling_player(proto);
         let new_team = h.default_team(owner);
         let mut name = h.proto_name(proto);
         name.extend_from_slice(b" - team disbanded, build time expired.");
         h.append_debug_message(&name);
+        let mut deleted = None;
         if self.team != new_team {
             h.team_transfer_units_to(self.team, new_team);
             if !h.proto_is_singleton(proto) {
-                h.team_delete(self.team);
+                deleted = Some(self.team);
             }
             self.team = 0;
         }
+        deleted
     }
 
     /// `~TeamInQueue()`: its team activated.
@@ -510,6 +546,8 @@ pub struct AiPlayer {
     pub supply_source_attack_check_frame: u32,
     pub attacked_supply_center: ObjectId,
     pub cur_warehouse_id: ObjectId,
+    /// An `AISkirmishPlayer`'s own members (batch A29): its overrides are taken where this is set.
+    pub skirmish_state: Option<crate::logic::ai::ai_skirmish_player::SkirmishState>,
 }
 
 /// `(Int)f`, x86 (`cvttss2si`): the indefinite value out of range.
@@ -651,6 +689,7 @@ impl AiPlayer {
             supply_source_attack_check_frame: 0,
             attacked_supply_center: INVALID_ID,
             cur_warehouse_id: INVALID_ID,
+            skirmish_state: None,
         }
     }
 
@@ -975,7 +1014,7 @@ impl AiPlayer {
 
 impl AiPlayer {
     /// The structure timer after a building is started: the structure seconds, divided by the poor or wealthy rate.
-    fn reset_structure_timer<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
+    pub(crate) fn reset_structure_timer<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
         let d = &data.data;
         self.structure_timer = c_int(d.structure_seconds * LOGICFRAMES_PER_SECOND as f32);
         let money = h.money(self.player);
@@ -990,6 +1029,9 @@ impl AiPlayer {
     /// building under construction gets its dozer back to work, another player's is forgotten; after the rebuild delay the first
     /// missing buildable one is started with a dozer (and the structure timer reset).
     pub fn process_base_building<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_process_base_building(h, data);
+        }
         if !self.ready_to_build_structure {
             return;
         }
@@ -1082,6 +1124,15 @@ impl AiPlayer {
             }
             i += 1;
         }
+    }
+
+    /// A team deleted (`Team::~Team`): this AI player's queued teams for it go first (`Player::preTeamDestroy`, its
+    /// [`AiPlayer::ai_pre_team_destroy`]), then the world deletes it. (The other players' AIs are the host's to tell.)
+    pub fn delete_world_team<H: AiPlayerHost>(&mut self, h: &mut H, team: TeamRef) {
+        if !plant(3596) {
+            self.ai_pre_team_destroy(h, team);
+        }
+        h.team_delete(team);
     }
 
     /// `aiPreTeamDestroy(deletedTeam)`: the queued teams for it deleted.
@@ -1236,10 +1287,25 @@ impl AiPlayer {
     pub fn compute_superweapon_target<H: AiPlayerHost>(
         &mut self,
         h: &mut H,
-        sneak_attack: bool,
+        power: SpecialPowerType,
+        player_ndx: PlayerRef,
+        weapon_radius: f32,
+    ) -> Result<(Coord3D, bool), AiPlayerUndefined> {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_compute_superweapon_target(h, power, player_ndx, weapon_radius);
+        }
+        self.base_compute_superweapon_target(h, power, player_ndx, weapon_radius)
+    }
+
+    /// `AIPlayer::computeSuperweaponTarget`.
+    pub(crate) fn base_compute_superweapon_target<H: AiPlayerHost>(
+        &mut self,
+        h: &mut H,
+        power: SpecialPowerType,
         player_ndx: PlayerRef,
         mut weapon_radius: f32,
     ) -> Result<(Coord3D, bool), AiPlayerUndefined> {
+        let sneak_attack = power == SPECIAL_SNEAK_ATTACK;
         let mut bounds = Self::get_player_structure_bounds(h, player_ndx, false);
         if bounds.hi.x == 0.0 && bounds.lo.x == 0.0 && bounds.hi.y == 0.0 && bounds.lo.y == 0.0 {
             bounds = h.extent();
@@ -1645,6 +1711,9 @@ impl AiPlayer {
 
     /// `buildSpecificAIBuilding(thingName)`: the solo AI does not ("Error : Solo ai doesn't support BuildSpecificBuilding.").
     pub fn build_specific_ai_building<H: AiPlayerHost>(&mut self, h: &mut H, thing_name: &[u8]) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_build_specific_ai_building(h, thing_name);
+        }
         let mut s = b"Error : Solo ai doesn't support BuildSpecificBuilding. '".to_vec();
         s.extend_from_slice(thing_name);
         s.extend_from_slice(b"' not built.");
@@ -1878,16 +1947,26 @@ impl AiPlayer {
         best
     }
 
-    /// `getAiEnemy()`: none for the solo AI (the skirmish AI's is batch A31's).
-    pub fn get_ai_enemy<H: AiPlayerHost>(&mut self, _h: &mut H) -> Option<PlayerRef> {
+    /// `getAiEnemy()`: none for the solo AI; the skirmish AI's ([`AiPlayer::skirmish_get_ai_enemy`]).
+    pub fn get_ai_enemy<H: AiPlayerHost>(&mut self, h: &mut H) -> Option<PlayerRef> {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_get_ai_enemy(h);
+        }
         None
     }
 
-    /// `buildAIBaseDefense(flank)`, `buildAIBaseDefenseStructure(thingName, flank)`: the solo AI does not.
-    pub fn build_ai_base_defense<H: AiPlayerHost>(&mut self, h: &mut H) {
+    /// `buildAIBaseDefense(flank)`, `buildAIBaseDefenseStructure(thingName, flank)`: the solo AI does not (the skirmish AI's:
+    /// batch A29).
+    pub fn build_ai_base_defense<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry, flank: bool) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_build_ai_base_defense(h, data, flank);
+        }
         h.append_debug_message(b"Error : Solo ai doesn't support buildAIBaseDefense. '");
     }
-    pub fn build_ai_base_defense_structure<H: AiPlayerHost>(&mut self, h: &mut H) {
+    pub fn build_ai_base_defense_structure<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry, thing_name: &[u8], flank: bool) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_build_ai_base_defense_structure(h, data, thing_name, flank);
+        }
         h.append_debug_message(b"Error : Solo ai doesn't support buildAIBaseDefenseStructure. '");
     }
 
@@ -2107,7 +2186,8 @@ impl AiPlayer {
             }
         }
         let info = h.proto_info(proto);
-        if !info.has_home_location && !self.skirmish {
+        // (the skirmish AI's copy reports it for itself too)
+        if !info.has_home_location && (!self.skirmish || self.skirmish_state.is_some()) {
             let mut s = b"Error : team '".to_vec();
             s.extend_from_slice(&name);
             s.extend_from_slice(b"' has no Home Position (or Origin).");
@@ -2147,7 +2227,7 @@ impl AiPlayer {
         } else {
             let tp = h.team_proto(the_team);
             if !h.proto_is_singleton(tp) {
-                h.team_delete(the_team);
+                self.delete_world_team(h, the_team);
             }
             h.append_debug_message(&concat(&name, b" - Recruited 0 units, disbanding."));
         }
@@ -2214,6 +2294,9 @@ impl AiPlayer {
     /// `doBaseBuilding()`: the structure timer counts down to readiness; the build delay to the next base building pass (then two
     /// seconds, unless the pass set it).
     pub fn do_base_building<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_do_base_building(h, data);
+        }
         if !h.can_build_base(self.player) {
             return;
         }
@@ -2314,7 +2397,9 @@ impl AiPlayer {
                     }
                 } else {
                     let mut t = self.build_queue.remove(i);
-                    t.disband(h);
+                    if let Some(team) = t.disband(h) {
+                        self.delete_world_team(h, team);
+                    }
                     Self::delete_team(h, t);
                     if self.skirmish {
                         h.clear_team_flags();
@@ -2357,6 +2442,9 @@ impl AiPlayer {
     /// `doTeamBuilding()`: the team timer counts down to readiness; every 5 seconds the queues are updated and, when ready, a team
     /// chosen.
     pub fn do_team_building<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_do_team_building(h, data);
+        }
         if !h.can_build_units(self.player) {
             return;
         }
@@ -2443,6 +2531,9 @@ impl AiPlayer {
     /// `newMap()`: the player's producing objects join its build list, the base's centre and radius are found, and the entries
     /// built initially are built now (the others get a rebuild for the build that will consume one).
     pub fn new_map<H: AiPlayerHost>(&mut self, h: &mut H, data: &AiDataEntry) {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_new_map(h, data);
+        }
         let p = self.player;
         // (the list's head as it was: `addToBuildList` prepends, so the entries added here are not walked below)
         let before = h.build_list(p).len();
@@ -2671,6 +2762,14 @@ impl AiPlayer {
     /// `xfer(xfer)` (version 1): the two queues (a load reads into empty queues, each team prepended and the queue reversed), the
     /// player's index (checked on load), the timers and flags, the difficulty, the base and the repairs.
     pub fn xfer<H: AiPlayerHost>(&mut self, h: &mut H, xfer: &mut dyn Xfer) -> XferResult<()> {
+        if self.skirmish_state.is_some() {
+            return self.skirmish_xfer(h, xfer);
+        }
+        self.base_xfer(h, xfer)
+    }
+
+    /// `AIPlayer::xfer`.
+    pub(crate) fn base_xfer<H: AiPlayerHost>(&mut self, h: &mut H, xfer: &mut dyn Xfer) -> XferResult<()> {
         let current: XferVersion = 1;
         let mut version = current;
         xfer.xfer_version(&mut version, current)?;

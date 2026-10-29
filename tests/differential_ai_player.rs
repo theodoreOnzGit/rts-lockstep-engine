@@ -32,13 +32,14 @@ use rts_lockstep_engine::common::kind_of::*;
 use rts_lockstep_engine::common::object_status_types::*;
 use rts_lockstep_engine::common::name_key_generator::NameKeyGenerator;
 use rts_lockstep_engine::common::science::ScienceType;
+use rts_lockstep_engine::common::special_power_type::{NUKE_SPECIAL_CLUSTER_MINES, SPECIAL_CLUSTER_MINES, SPECIAL_SNEAK_ATTACK};
 use rts_lockstep_engine::common::well_known_keys::WellKnownKeys;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::{ApOp, ApScene, AP_BUILD, AP_OBJECTS, AP_PLAYERS, AP_PROTOS, AP_SIDES, AP_TEAMS, AP_TEMPLATES, AP_UPGRADES};
-use rts_lockstep_engine::logic::ai::ai_data::{AiDataEntry, AiSideInfo};
+use rts_lockstep_engine::logic::ai::ai_data::{AiDataEntry, AiSideBuildList, AiSideInfo};
 use rts_lockstep_engine::logic::ai::ai_player::{
     AiPlayer, AiPlayerHost, ClosestQuery, PlayerAiCommand, PlayerRef, ProtoRef, TeamRef, TemplateRef, UpgradeRef, WorkOrder,
 };
@@ -70,8 +71,9 @@ const F_RALLY: i32 = 65536;
 const F_ABOVE: i32 = 131072;
 const F_DEAD: i32 = 262144;
 const F_INSIGNIFICANT: i32 = 524288;
+const F_UNMANNED: i32 = 1048576;
 const F_MUTABLE: i32 =
-    F_IDLE | F_FERRYING | F_FORCED | F_TASK | F_TASK_BUILD | F_LAST_DAMAGE | F_NO_EFFECT | F_RALLY | F_ABOVE | F_DEAD | F_INSIGNIFICANT;
+    F_IDLE | F_FERRYING | F_FORCED | F_TASK | F_TASK_BUILD | F_LAST_DAMAGE | F_NO_EFFECT | F_RALLY | F_ABOVE | F_DEAD | F_INSIGNIFICANT | F_UNMANNED;
 // the prototypes' flags (AP_P_*), the players' (AP_PL_*), the build entries' (AP_B_*)
 const P_REINFORCE: i32 = 1;
 const P_HOME: i32 = 2;
@@ -80,11 +82,15 @@ const P_SINGLETON: i32 = 8;
 const P_CONDITION: i32 = 16;
 const PL_UNITS: i32 = 1;
 const PL_BASE: i32 = 2;
+const PL_POWER: i32 = 4;
+const PL_HUMAN: i32 = 8;
+const PL_SKIRMISH: i32 = 16;
 const B_INITIALLY: i32 = 1;
 const B_SUPPLY: i32 = 2;
 const B_UNDER_CONSTRUCTION: i32 = 4;
 const B_UNSELLABLE: i32 = 8;
 const B_PRIORITY: i32 = 16;
+const B_MANUAL: i32 = 32;
 
 // the log's entries (AP_LOG_*) and AI commands (AP_C_*)
 const LOG_RANDOM: u32 = 1;
@@ -115,6 +121,8 @@ const LOG_BUILD_NOW: u32 = 25;
 const LOG_LEGAL: u32 = 26;
 const LOG_BIBS: u32 = 27;
 const LOG_ADJUST: u32 = 28;
+const LOG_CLEAR_BUILDER: u32 = 29;
+const LOG_UNDONE: u32 = 30;
 const C_DOCK: u32 = 1;
 const C_IDLE: u32 = 2;
 const C_MOVE: u32 = 3;
@@ -145,6 +153,7 @@ fn kind_bit(k: KindOfType) -> u32 {
         KINDOF_AIRCRAFT => 12,
         KINDOF_CONSERVATIVE_BUILDING => 13,
         KINDOF_BRIDGE => 14,
+        KINDOF_FS_POWER => 15,
         _ => panic!("a kind the wrapper has no bit for: {k}"),
     }
 }
@@ -205,6 +214,35 @@ fn c_int_of(f: f32) -> i32 {
     f as i32
 }
 
+/// A build list entry of the scene (the wrapper's `entryOf`).
+fn entry_of(e: &cpp::ApBuild) -> BuildListInfo {
+    BuildListInfo {
+        building_name: if e.name < 0 { Vec::new() } else { name_of("Bldg", e.name) },
+        template_name: match e.tmpl {
+            -1 => Vec::new(),
+            t if t < 0 || t >= AP_TEMPLATES as i32 => b"Nothing".to_vec(),
+            t => name_of("Tmpl", t),
+        },
+        script: script_name(e.script),
+        location: Coord3D { x: e.loc[0], y: e.loc[1], z: e.loc[2] },
+        angle: e.angle,
+        rally_point_offset: Coord2D { x: e.rally[0], y: e.rally[1] },
+        is_initially_built: e.flags & B_INITIALLY != 0,
+        num_rebuilds: e.num_rebuilds as u32,
+        health: e.health,
+        unsellable: e.flags & B_UNSELLABLE != 0,
+        under_construction: e.flags & B_UNDER_CONSTRUCTION != 0,
+        is_supply_building: e.flags & B_SUPPLY != 0,
+        priority_build: e.flags & B_PRIORITY != 0,
+        automatically_build: e.flags & B_MANUAL == 0,
+        object_id: e.object_id,
+        object_timestamp: e.timestamp as u32,
+        desired_gatherers: e.desired,
+        current_gatherers: e.current,
+        ..Default::default()
+    }
+}
+
 /// The world, by the wrapper's rules.
 struct Host {
     w: ApScene,
@@ -215,39 +253,14 @@ struct Host {
     build: Vec<BuildListInfo>,
     empty: Vec<BuildListInfo>,
     log: Vec<u32>,
+    /// A deleted team was used (undefined upstream): the run is not compared.
+    stale: std::cell::Cell<bool>,
 }
 
 impl Host {
     fn new(s: &ApScene) -> Self {
-        let mut build = Vec::new();
-        for e in &s.b[..s.num_build as usize] {
-            let b = BuildListInfo {
-                building_name: if e.name < 0 { Vec::new() } else { name_of("Bldg", e.name) },
-                template_name: match e.tmpl {
-                    -1 => Vec::new(),
-                    t if t < 0 || t >= AP_TEMPLATES as i32 => b"Nothing".to_vec(),
-                    t => name_of("Tmpl", t),
-                },
-                script: script_name(e.script),
-                location: Coord3D { x: e.loc[0], y: e.loc[1], z: e.loc[2] },
-                angle: e.angle,
-                rally_point_offset: Coord2D { x: e.rally[0], y: e.rally[1] },
-                is_initially_built: e.flags & B_INITIALLY != 0,
-                num_rebuilds: e.num_rebuilds as u32,
-                health: e.health,
-                unsellable: e.flags & B_UNSELLABLE != 0,
-                under_construction: e.flags & B_UNDER_CONSTRUCTION != 0,
-                is_supply_building: e.flags & B_SUPPLY != 0,
-                priority_build: e.flags & B_PRIORITY != 0,
-                object_id: e.object_id,
-                object_timestamp: e.timestamp as u32,
-                desired_gatherers: e.desired,
-                current_gatherers: e.current,
-                ..Default::default()
-            };
-            build.push(b);
-        }
-        Host { w: *s, seed: s.seed as u32, rand: (s.seed as u32) ^ 0x5bd1_e995, unit_id: 0, build, empty: Vec::new(), log: Vec::new() }
+        let build = s.b[..s.num_build as usize].iter().map(entry_of).collect();
+        Host { w: *s, seed: s.seed as u32, rand: (s.seed as u32) ^ 0x5bd1_e995, unit_id: 0, build, empty: Vec::new(), log: Vec::new(), stale: std::cell::Cell::new(false) }
     }
 
     fn chance(&self, kind: u32, a: u32, b: u32, pct: u32) -> bool {
@@ -278,8 +291,13 @@ impl Host {
         (0..AP_TEAMS).find(|&k| self.w.tm[k].id as u32 == t)
     }
 
+    /// A team's slot. A deleted team still named (upstream's dangling `Team *`: `aiPreTeamDestroy` skips the queue's new head
+    /// after a removal) marks the run stale and answers with slot 0.
     fn tk(&self, t: TeamRef) -> usize {
-        self.team_slot(t).unwrap_or_else(|| panic!("no team {t}"))
+        self.team_slot(t).unwrap_or_else(|| {
+            self.stale.set(true);
+            0
+        })
     }
 
     fn has(&self, o: ObjectId, f: i32) -> bool {
@@ -295,6 +313,19 @@ impl Host {
             return Vec::new();
         }
         (0..AP_OBJECTS).filter(|&i| self.w.o[i].id != 0 && self.w.o[i].team as u32 == t).collect()
+    }
+
+    /// Whether a member of an instance of the player's prototypes passes `f` (the wrapper's `anyMember`).
+    fn any_member(&self, p: PlayerRef, f: impl Fn(&cpp::ApObj) -> bool) -> bool {
+        for t in &self.w.tm {
+            if t.id == 0 || self.w.pr[t.proto as usize].player != p {
+                continue;
+            }
+            if self.w.o.iter().any(|o| o.id != 0 && o.team == t.id && f(o)) {
+                return true;
+            }
+        }
+        false
     }
 
     fn proto_player(&self, t: TeamRef) -> i32 {
@@ -901,6 +932,77 @@ impl AiPlayerHost for Host {
     fn can_afford_upgrade(&mut self, p: PlayerRef, u: UpgradeRef) -> bool {
         self.chance(93, p as u32, u, 70)
     }
+    fn has_sufficient_power(&mut self, p: PlayerRef) -> bool {
+        self.w.pl[p as usize].flags & PL_POWER != 0
+    }
+    fn is_disabled_unmanned(&mut self, o: ObjectId) -> bool {
+        self.has(o, F_UNMANNED)
+    }
+    fn clear_builder(&mut self, o: ObjectId) {
+        self.log.extend([LOG_CLEAR_BUILDER, o as u32, 0]);
+        let i = self.slot(o);
+        self.w.o[i].builder = INVALID_ID;
+    }
+    fn can_make_unit(&mut self, builder: ObjectId, t: Option<TemplateRef>) -> bool {
+        t.is_some_and(|t| self.chance(96, builder as u32, t, 70))
+    }
+    fn player_count(&mut self) -> i32 {
+        AP_PLAYERS as i32
+    }
+    fn player_is_human(&mut self, p: PlayerRef) -> bool {
+        self.w.pl[p as usize].flags & PL_HUMAN != 0
+    }
+    fn player_has_any_units(&mut self, p: PlayerRef) -> bool {
+        self.any_member(p, |o| (self.w.t[o.tmpl as usize].kinds as u32 >> kind_bit(KINDOF_STRUCTURE)) & 1 == 0)
+    }
+    fn player_has_any_build_facility(&mut self, p: PlayerRef) -> bool {
+        self.any_member(p, |o| o.flags & F_PRODUCTION != 0)
+    }
+    fn player_has_any_objects(&mut self, p: PlayerRef) -> bool {
+        self.any_member(p, |_| true)
+    }
+    fn player_is_skirmish_ai(&mut self, p: PlayerRef) -> bool {
+        assert_ne!(p, 0, "player 0's AI answers for itself");
+        self.w.pl[p as usize].flags & PL_SKIRMISH != 0
+    }
+    fn player_current_enemy(&mut self, p: PlayerRef) -> Option<PlayerRef> {
+        assert_ne!(p, 0, "player 0's AI answers for itself");
+        let pl = self.w.pl[p as usize];
+        (pl.flags & PL_SKIRMISH != 0 && (0..AP_PLAYERS as i32).contains(&pl.enemy)).then_some(pl.enemy)
+    }
+    fn mp_start_index(&mut self, p: PlayerRef) -> i32 {
+        self.w.pl[p as usize].mp_start
+    }
+    fn closest_waypoint_on_path(&mut self, pos: &Coord3D, label: &[u8]) -> Option<Coord3D> {
+        let k = ["Center", "Flank", "Backdoor"].iter().position(|n| name_of(n, self.w.path_start) == label)?;
+        let mut best: Option<(usize, f32)> = None;
+        for j in 0..self.w.path_len[k] as usize {
+            let w = self.w.paths[k][j];
+            let (dx, dy) = (w[0] - pos.x, w[1] - pos.y);
+            let d = dx * dx + dy * dy;
+            if best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((j, d));
+            }
+        }
+        best.map(|(j, _)| {
+            let w = self.w.paths[k][j];
+            Coord3D { x: w[0], y: w[1], z: w[2] }
+        })
+    }
+    fn maximum_pathfind_extent(&mut self) -> Region2D {
+        self.extent()
+    }
+    fn find_broken_bridge(&mut self, unit: ObjectId, to: &Coord3D) -> Option<ObjectId> {
+        if !self.chance(95, bits(to.x) ^ bits(to.y), unit as u32, 40) {
+            return None;
+        }
+        (0..AP_OBJECTS).find(|&i| self.w.o[i].id != 0 && (self.kinds_of_slot(i) >> kind_bit(KINDOF_BRIDGE)) & 1 != 0).map(|i| self.w.o[i].id)
+    }
+    fn undo_and_destroy_structure(&mut self, o: ObjectId) {
+        self.log.extend([LOG_UNDONE, o as u32]);
+        let i = self.slot(o);
+        self.w.o[i].id = 0;
+    }
 }
 
 /// The AI data of the scene (the wrapper's `setUp`).
@@ -928,9 +1030,26 @@ fn ai_data(s: &ApScene) -> AiDataEntry {
                 si.skill_sets[k].skills[j] = ScienceType(side.skills[k][j]);
             }
         }
+        si.base_defense_structure1 = if side.base_defense < 0 { Vec::new() } else { name_of("Tmpl", side.base_defense) };
         e.lists.side_info.push(si);
     }
+    e.lists.side_build_lists = (0..AP_SIDES)
+        .map(|k| AiSideBuildList { side: name_of("Side", s.sides[k].side), build_list: s.side_build[k][..s.side_build_count[k] as usize].iter().map(entry_of).collect() })
+        .collect();
+    e.data.rotate_skirmish_bases = s.rotate_bases != 0;
+    e.data.skirmish_base_defense_extra_distance = s.defense_extra;
     e
+}
+
+/// The run's AI player: an `AISkirmishPlayer` for scene.skirmish 2, else an `AIPlayer` answering `isSkirmishAI()` as the scene
+/// says (the wrapper's `newAI`).
+fn new_ai(h: &mut Host, data: &AiDataEntry) -> AiPlayer {
+    let d = difficulty(h.w.difficulty);
+    if h.w.skirmish == 2 {
+        AiPlayer::new_skirmish(h, 0, d, data)
+    } else {
+        AiPlayer::new(h, 0, h.w.skirmish != 0, d, data)
+    }
 }
 
 fn difficulty(d: i32) -> GameDifficulty {
@@ -951,6 +1070,11 @@ fn dump(a: &AiPlayer, h: &Host, out: &mut Vec<u32>) {
             out.push(w.is_resource_gatherer as u32);
         }
     };
+    for t in a.build_queue.iter().chain(&a.ready_queue) {
+        if t.team != 0 && h.team_slot(t.team).is_none() {
+            h.stale.set(true); // (a queued team deleted: upstream's dangling pointer)
+        }
+    }
     out.push(a.build_queue.len() as u32);
     for t in &a.build_queue {
         team(out, t);
@@ -966,6 +1090,12 @@ fn dump(a: &AiPlayer, h: &Host, out: &mut Vec<u32>) {
     out.extend([a.repair_dozer as u32, bits(a.repair_dozer_origin.x), bits(a.repair_dozer_origin.y), bits(a.repair_dozer_origin.z)]);
     out.extend([a.structures_in_queue as u32, a.dozer_queued_for_repair as u32, a.dozer_is_repairing as u32, a.bridge_timer as u32]);
     out.extend([a.supply_source_attack_check_frame, a.attacked_supply_center as u32, a.cur_warehouse_id as u32]);
+    out.push(a.skirmish_state.is_some() as u32);
+    if let Some(s) = &a.skirmish_state {
+        out.extend([s.cur_front_base_defense as u32, s.cur_flank_base_defense as u32, bits(s.cur_front_left_defense_angle), bits(s.cur_front_right_defense_angle)]);
+        out.extend([bits(s.cur_left_flank_left_defense_angle), bits(s.cur_left_flank_right_defense_angle), bits(s.cur_right_flank_left_defense_angle)]);
+        out.extend([bits(s.cur_right_flank_right_defense_angle), s.frame_to_check_enemy, s.current_enemy.map_or(u32::MAX, |e| e as u32)]);
+    }
     for o in &h.w.o {
         out.extend([o.id, o.tmpl, o.player, o.team, o.flags, o.status].map(|v| v as u32));
         out.extend([bits(o.pos[0]), bits(o.pos[1]), bits(o.pos[2]), bits(o.radius)]);
@@ -976,7 +1106,7 @@ fn dump(a: &AiPlayer, h: &Host, out: &mut Vec<u32>) {
         out.extend([t.id, t.proto, t.active, t.idle].map(|v| v as u32));
     }
     for p in &h.w.pl {
-        out.extend([p.money, p.flags, p.side, p.attacked_frame, p.science_points, p.default_team].map(|v| v as u32));
+        out.extend([p.money, p.flags, p.side, p.attacked_frame, p.science_points, p.default_team, p.enemy, p.mp_start].map(|v| v as u32));
     }
     out.extend([h.w.next_object_id as u32, h.w.next_team_id as u32, h.unit_id, h.rand]);
     out.push(h.build.len() as u32);
@@ -989,7 +1119,7 @@ fn dump(a: &AiPlayer, h: &Host, out: &mut Vec<u32>) {
         s(out, &b.template_name);
         s(out, &b.script);
         out.extend([bits(b.location.x), bits(b.location.y), bits(b.location.z), bits(b.rally_point_offset.x), bits(b.rally_point_offset.y)]);
-        out.extend([bits(b.angle), b.is_initially_built as u32, b.num_rebuilds, b.health as u32, b.unsellable as u32]);
+        out.extend([bits(b.angle), b.is_initially_built as u32, b.num_rebuilds, b.automatically_build as u32, b.health as u32, b.unsellable as u32]);
         out.extend([b.under_construction as u32, b.is_supply_building as u32, b.priority_build as u32, b.object_id as u32, b.object_timestamp]);
         out.extend([b.desired_gatherers as u32, b.current_gatherers as u32]);
     }
@@ -1033,8 +1163,15 @@ fn rust_op(a: &mut AiPlayer, h: &mut Host, data: &AiDataEntry, op: &ApOp, seen: 
         }
         4 => a.build_specific_ai_team(h, data, proto(op.a), op.b != 0),
         5 => a.recruit_specific_ai_team(h, proto(op.a), op.x),
-        6 => a.build_ai_base_defense(h),
-        7 => a.build_ai_base_defense_structure(h),
+        6 | 7 => {
+            let before = h.build.len();
+            if op.kind == 6 {
+                a.build_ai_base_defense(h, data, op.a != 0);
+            } else {
+                a.build_ai_base_defense_structure(h, data, &tmpl_name(op.a), op.b != 0);
+            }
+            seen[4] += (h.build.len() - before) as u64;
+        }
         8 => a.build_specific_ai_building(h, &tmpl_name(op.a)),
         9 => a.repair_structure(h, op.a),
         10 => a.select_skillset(op.a),
@@ -1067,9 +1204,10 @@ fn rust_op(a: &mut AiPlayer, h: &mut Host, data: &AiDataEntry, op: &ApOp, seen: 
             let ok = a.calc_closest_construction_zone_location(h, tmpl(op.a), &mut pos);
             r.extend([ok as u32, bits(pos.x), bits(pos.y), bits(pos.z)]);
         }
-        20 => match a.compute_superweapon_target(h, op.a != 0, op.b, op.x) {
+        20 => match a.compute_superweapon_target(h, [0, SPECIAL_SNEAK_ATTACK, SPECIAL_CLUSTER_MINES, NUKE_SPECIAL_CLUSTER_MINES][(op.a & 3) as usize], op.b, op.x) {
             Ok((p, ok)) => {
                 seen[0] += 1;
+                seen[6] += (a.skirmish_state.is_some() && op.a & 3 >= 2) as u64;
                 r.extend([ok as u32, bits(p.x), bits(p.y), bits(p.z)]);
             }
             Err(_) => {
@@ -1109,7 +1247,7 @@ fn rust_op(a: &mut AiPlayer, h: &mut Host, data: &AiDataEntry, op: &ApOp, seen: 
             r.push(bytes.len() as u32);
             r.extend(bytes.iter().map(|&c| c as u32));
             a.clear_teams_in_queue(h);
-            *a = AiPlayer::new(h, a.player, h.w.skirmish != 0, difficulty(h.w.difficulty), data);
+            *a = new_ai(h, data);
             let mut l = XferLoad::new(bytes);
             l.open(b"ai").expect("open");
             a.xfer(h, &mut l).expect("load");
@@ -1229,6 +1367,21 @@ fn rust_op(a: &mut AiPlayer, h: &mut Host, data: &AiDataEntry, op: &ApOp, seen: 
                 h.w.o[k as usize].player = op.b;
             }
         }
+        59 => {
+            if !h.object_exists(op.a) || !(0..3).contains(&op.b) {
+                r.push(u32::MAX);
+            } else {
+                let k = op.b as usize;
+                let way: Vec<Coord3D> = h.w.paths[k][..h.w.path_len[k] as usize].iter().map(|w| Coord3D { x: w[0], y: w[1], z: w[2] }).collect();
+                r.push(a.check_bridges(h, op.a, &way) as u32);
+            }
+        }
+        60 => {
+            let e = a.get_ai_enemy(h);
+            seen[5] += e.is_some() as u64;
+            r.push(e.map_or(u32::MAX, |e| e as u32));
+        }
+        61 => r.push(if a.skirmish_state.is_some() { a.get_my_enemy_player_index(h) as u32 } else { u32::MAX }),
         57 => {
             let first = (a.structures_in_queue > 0).then(|| a.structures_to_repair[0]);
             let k = if op.a < 0 { first.and_then(|id| h.try_slot(id)).map_or(-1, |k| k as i32) } else { op.a };
@@ -1245,10 +1398,10 @@ fn rust_op(a: &mut AiPlayer, h: &mut Host, data: &AiDataEntry, op: &ApOp, seen: 
 type OpResult = (Option<Vec<u32>>, Vec<u32>);
 
 /// The run as `ref_ai_player_run` makes it: per op its answer and the dump; the log.
-fn rust_run(s: &ApScene, ops: &[ApOp], seen: &mut [u64; 8]) -> (Vec<OpResult>, Vec<u32>) {
+fn rust_run(s: &ApScene, ops: &[ApOp], seen: &mut [u64; 8]) -> (Vec<OpResult>, Vec<u32>, bool) {
     let mut h = Host::new(s);
     let data = ai_data(s);
-    let mut a = AiPlayer::new(&mut h, 0, s.skirmish != 0, difficulty(s.difficulty), &data);
+    let mut a = new_ai(&mut h, &data);
     let mut v = Vec::new();
     for op in ops {
         let r = rust_op(&mut a, &mut h, &data, op, seen);
@@ -1257,7 +1410,8 @@ fn rust_run(s: &ApScene, ops: &[ApOp], seen: &mut [u64; 8]) -> (Vec<OpResult>, V
         v.push((r, d));
     }
     a.clear_teams_in_queue(&mut h);
-    (v, h.log)
+    let stale = h.stale.get();
+    (v, h.log, stale)
 }
 
 /// Tallies the log's entries by kind (AI commands by command, at 32 + the command); panics on a malformed log.
@@ -1291,6 +1445,8 @@ fn tally(log: &[u32], kinds: &mut [u64; 48]) {
                 }
             }
             LOG_TEAM_GUARD => 7,
+            LOG_CLEAR_BUILDER => 3,
+            LOG_UNDONE => 2,
             LOG_BUILD_NOW => 9,
             LOG_LEGAL => 10,
             _ => panic!("log kind {k} at {i}"),
@@ -1327,7 +1483,7 @@ fn gen_scene(g: &mut Gen) -> ApScene {
     // templates: kinds by a few patterns
     for t in s.t.iter_mut() {
         let mut k = 0i32;
-        for b in 0..15 {
+        for b in 0..16 {
             if g.below(5) == 0 {
                 k |= 1 << b;
             }
@@ -1406,7 +1562,7 @@ fn gen_scene(g: &mut Gen) -> ApScene {
             }
         };
         let tmpl = g.below(AP_TEMPLATES as u32) as i32;
-        let flags = (g.u32() as i32) & ((1 << 20) - 1) & !(if g.below(4) == 0 { 0 } else { F_DEAD });
+        let flags = (g.u32() as i32) & ((1 << 20) - 1) & !(if g.below(4) == 0 { 0 } else { F_DEAD }) | if g.below(8) == 0 { F_UNMANNED } else { 0 };
         s.o[i] = cpp::ApObj {
             id: ids[k],
             tmpl,
@@ -1443,6 +1599,9 @@ fn gen_scene(g: &mut Gen) -> ApScene {
         p.side = g.below(3) as i32;
         p.attacked_frame = g.below(1000) as i32;
         p.science_points = g.below(4) as i32;
+        p.flags |= (g.below(8) as i32) << 2; // power, human, skirmish AI
+        p.enemy = g.below(4) as i32 - 1;
+        p.mp_start = g.below(4) as i32;
     }
     // player 0's build list
     s.num_build = g.below(AP_BUILD as u32 + 1) as i32;
@@ -1508,13 +1667,48 @@ fn gen_scene(g: &mut Gen) -> ApScene {
             side.num_skills[j] = if g.below(3) == 0 { 0 } else { g.below(5) as i32 };
             side.skills[j] = [0; 4].map(|_: i32| g.below(8) as i32 - 1);
         }
+        side.base_defense = g.below(AP_TEMPLATES as u32 + 1) as i32 - 1;
     }
     s.frame = g.below(2000) as i32;
     s.seed = g.u32() as i32;
     s.debug_ai = g.below(3) as i32;
     s.box_value = 50 + g.below(150) as i32;
     s.difficulty = g.below(3) as i32;
-    s.skirmish = g.below(2) as i32;
+    s.skirmish = g.below(3) as i32;
+    // batch A29: the factions' skirmish build lists (never empty: upstream copies the list unchecked), mostly command centre first;
+    // the approach paths; the base rotation and defence distance
+    let cc: Vec<i32> = (0..AP_TEMPLATES as i32).filter(|&t| (s.t[t as usize].kinds as u32 >> kind_bit(KINDOF_COMMANDCENTER)) & 1 != 0).collect();
+    for k in 0..AP_SIDES {
+        let n = 1 + g.below(6) as usize;
+        s.side_build_count[k] = n as i32;
+        for i in 0..n {
+            let tmpl = if i == 0 && !cc.is_empty() && g.below(4) != 0 { cc[g.below(cc.len() as u32) as usize] } else { g.below(AP_TEMPLATES as u32 + 1) as i32 - 1 };
+            s.side_build[k][i] = cpp::ApBuild {
+                tmpl,
+                object_id: 0,
+                timestamp: 0,
+                num_rebuilds: g.below(3) as i32,
+                flags: g.below(64) as i32 & !B_UNDER_CONSTRUCTION,
+                desired: g.below(4) as i32,
+                current: 0,
+                health: 100,
+                name: g.below(6) as i32 - 1,
+                script: g.below(8) as i32 - 2,
+                loc: gen_pos(g),
+                angle: g.uniform(-3.2, 3.2),
+                rally: [g.uniform(-3.0, 3.0), g.uniform(-3.0, 3.0)],
+            };
+        }
+    }
+    for k in 0..3 {
+        s.path_len[k] = g.below(5) as i32;
+        for j in 0..4 {
+            s.paths[k][j] = gen_pos(g);
+        }
+    }
+    s.path_start = 1 + g.below(4) as i32;
+    s.rotate_bases = g.below(2) as i32;
+    s.defense_extra = g.uniform(0.0, 100.0);
     s.enemy = g.below(3) as i32;
     s.legal_pct = 10 + g.below(80) as i32;
     for p in 0..AP_PLAYERS {
@@ -1548,7 +1742,7 @@ fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
         (2, 1..=7) => 38,
         (2, 8) => [25, 57, 37, 0][g.below(4) as usize],
         (_, 3) => [1, 23, 23, 25, 26, 28, 55, 24, 56, 57][g.below(10) as usize],
-        _ => g.below(59) as i32,
+        _ => g.below(62) as i32,
     };
     let any_id = |g: &mut Gen| -> i32 {
         let live: Vec<i32> = s.o.iter().filter(|o| o.id != 0).map(|o| o.id).collect();
@@ -1570,13 +1764,15 @@ fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
         13 => (g.below(AP_UPGRADES as u32 + 1) as i32 - 1, 0),
         14 | 18 => (any_team(g), g.below(3000) as i32),
         15 | 40 => (g.below(3000) as i32, 0),
-        20 => (g.below(2) as i32, g.below(AP_PLAYERS as u32) as i32),
         21 | 22 => (g.below(AP_PLAYERS as u32) as i32, g.below(2) as i32),
         23 => (if g.below(3) == 0 { g.below(1500) as i32 } else { g.below(60) as i32 }, 0),
         56 => (0, (g.u32() as i32) & (F_AI | F_SUPPLY_AI | F_IDLE | F_DOZER_AI)),
         // (in repair runs mostly the first structure to repair)
         57 if mode == 2 && g.below(2) == 0 => (-1, g.below(2) as i32),
         58 => (if g.below(2) == 0 { -1 } else { g.below(AP_OBJECTS as u32 / 2) as i32 }, g.below(4) as i32 - 1),
+        6 => (g.below(2) as i32, 0),
+        20 => (g.below(4) as i32, g.below(AP_PLAYERS as u32) as i32),
+        59 => (any_id(g), g.below(4) as i32),
         57 => (g.below(AP_OBJECTS as u32 / 2) as i32, g.below(4) as i32),
         24 => (g.below(AP_OBJECTS as u32 / 2) as i32, 0),
         // (in repair runs mostly the repair dozer's task flags)
@@ -1610,11 +1806,12 @@ fn ai_player_matches_upstream() {
     let cases: u64 = std::env::var("AI_PLAYER_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(CASES);
     let mut results = Check::new("AI player results (each operation's answer; the AI player and the world after it)");
     let mut logs = Check::new("AI player calls (debug messages, scripts, AI commands, teams, the build assistant, random values)");
-    let mut by_kind = [0u64; 59];
+    let mut by_kind = [0u64; 62];
     let mut seen = [0u64; 8];
     let mut log_words = 0u64;
     let mut kinds = [0u64; 48];
     let (mut queued, mut ready) = (0u64, 0u64);
+    let mut stale_cases = 0u64;
     for case in 0..cases {
         let mut g = Gen::new(0xA28_0000 + case);
         let s = gen_scene(&mut g);
@@ -1637,7 +1834,7 @@ fn ai_player_matches_upstream() {
         if std::env::var("AI_PLAYER_TRACE").is_ok() {
             eprintln!("case {case} ops {:?}", ops.iter().map(|o| o.kind).collect::<Vec<_>>());
         }
-        let (r, rl) = rust_run(&s, &ops, &mut seen);
+        let (r, rl, stale) = rust_run(&s, &ops, &mut seen);
         let mut out = vec![0u32; 1 << 20];
         let mut log = vec![0u32; 1 << 20];
         let (mut out_len, mut log_len): (c_int, c_int) = (0, 0);
@@ -1651,6 +1848,13 @@ fn ai_player_matches_upstream() {
         log_words += log.len() as u64;
         tally(&log, &mut kinds);
         let c = split(&out, ops.len());
+        if stale {
+            stale_cases += 1;
+            if std::env::var("AI_PLAYER_STALE").is_ok() {
+                println!("stale case {case}: ops {:?}", ops.iter().map(|o| o.kind).collect::<Vec<_>>());
+            }
+            continue;
+        }
         // the ops after which a team was being built, or gathering
         for (_, d) in &r {
             let mut i = 1;
@@ -1682,7 +1886,8 @@ fn ai_player_matches_upstream() {
         logs.eq(rl, log, tag);
     }
     println!("COVERAGE: {cases} cases; operations per kind {by_kind:?}; {log_words} log words");
-    println!("COVERAGE (superweapon targets defined, undefined; xfer round trips; units produced): {seen:?}");
+    println!("COVERAGE (superweapon targets defined, undefined; xfer round trips; units produced; skirmish: base defences placed, enemies answered, cluster-mine targets): {seen:?}");
+    println!("NOT COMPARED: {stale_cases} cases that used a deleted team (undefined upstream)");
     println!("COVERAGE (log entries by kind, AI commands by command from 33): {kinds:?}; ops after which teams were being built {queued}, gathering {ready}");
     results.finish();
     logs.finish();

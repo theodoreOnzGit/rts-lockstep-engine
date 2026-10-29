@@ -1184,7 +1184,7 @@ extern "C" {
     pub fn grpAnswer(seed: c_uint, kind: c_uint, obj: c_uint, arg: c_uint) -> c_uint;
 }
 
-// --- p1w13-sonnet --- (batch A28: the AI player, differential/wrap_ai_player.cpp; field for field its ApScene)
+// --- p1w13-sonnet --- (batches A28 and A29: the AI player and the skirmish AI player, differential/wrap_ai_player.cpp; field for field its ApScene)
 /// Batch A28: the AI player's world, table sizes.
 pub const AP_OBJECTS: usize = 48;
 pub const AP_TEMPLATES: usize = 10;
@@ -1194,6 +1194,10 @@ pub const AP_PLAYERS: usize = 3;
 pub const AP_BUILD: usize = 10;
 pub const AP_SIDES: usize = 2;
 pub const AP_UPGRADES: usize = 4;
+/// Batch A29: a faction's skirmish build list's entries, the approach paths, their waypoints.
+pub const AP_SIDE_BUILD: usize = 6;
+pub const AP_PATHS: usize = 3;
+pub const AP_WAYPOINTS: usize = 4;
 
 /// Batch A28: an object (`ApObj`; `id` 0: none, `player` -1: none, `cmd_buttons` -1: no command set).
 #[repr(C)]
@@ -1268,6 +1272,9 @@ pub struct ApPlayer {
     pub attacked_frame: c_int,
     pub science_points: c_int,
     pub default_team: c_int,
+    /// Batch A29: the skirmish AI's enemy (-1: none) and the start position.
+    pub enemy: c_int,
+    pub mp_start: c_int,
 }
 
 /// Batch A28: an entry of player 0's build list (`ApBuild`; `tmpl` -1: no name, -2: a name no template has).
@@ -1299,6 +1306,8 @@ pub struct ApSide {
     pub hard: c_int,
     pub num_skills: [c_int; 5],
     pub skills: [[c_int; 4]; 5],
+    /// Batch A29: the base defence structure's template (-1: none).
+    pub base_defense: c_int,
 }
 
 /// Batch A28: the AI player's scene (`ApScene`).
@@ -1337,6 +1346,15 @@ pub struct ApScene {
     pub team_seconds: c_float,
     pub team_poor_mod: c_float,
     pub team_wealthy_mod: c_float,
+    /// Batch A29: the factions' skirmish build lists, the approach paths (Center, Flank, Backdoor, numbered `path_start`), the AI
+    /// data's base rotation and defence distance.
+    pub side_build: [[ApBuild; AP_SIDE_BUILD]; AP_SIDES],
+    pub side_build_count: [c_int; AP_SIDES],
+    pub paths: [[[c_float; 3]; AP_WAYPOINTS]; AP_PATHS],
+    pub path_len: [c_int; AP_PATHS],
+    pub path_start: c_int,
+    pub rotate_bases: c_int,
+    pub defense_extra: c_float,
 }
 
 impl Default for ApScene {
@@ -1374,6 +1392,13 @@ impl Default for ApScene {
             team_seconds: 0.0,
             team_poor_mod: 0.0,
             team_wealthy_mod: 0.0,
+            side_build: [[ApBuild::default(); AP_SIDE_BUILD]; AP_SIDES],
+            side_build_count: [0; AP_SIDES],
+            paths: [[[0.0; 3]; AP_WAYPOINTS]; AP_PATHS],
+            path_len: [0; AP_PATHS],
+            path_start: 0,
+            rotate_bases: 0,
+            defense_extra: 0.0,
         }
     }
 }
