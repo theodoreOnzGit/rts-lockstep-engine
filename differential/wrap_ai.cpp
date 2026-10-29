@@ -514,6 +514,7 @@ AIGroup g_group;
 /* batch A3: the other objects of the scene (ids 1..31), the AIs they may have, the objects' neighbours */
 Object g_others[32];
 alignas(16) unsigned char g_otherAiMem[sizeof(AIUpdateInterface)];
+AIStateMachine *g_otherMachine = NULL;	/* batch A23: the other AIs' one machine (see ref_ai_a4_xfer_path) */
 AiData g_aiData;
 Player g_player;
 TeamTemplateInfo g_teamInfo;
@@ -1790,11 +1791,7 @@ void setScene(const AiEnv *env)
 	/* batch A23: the other objects' AIs' one machine: a real AIStateMachine (made once, on another object), its current state set
 	** from the scene without entering it, its goal position the scene's (its goal object stays the scene's otherAiGoal) */
 	{
-		static AIStateMachine *otherMachine = NULL;
-		if (!otherMachine) {
-			g_others[1].m_otherId = (ObjectID)1;
-			otherMachine = newInstance(AIStateMachine)(&g_others[1], AsciiString("other"));
-		}
+		AIStateMachine *otherMachine = g_otherMachine;
 		((AIUpdateInterface *)g_otherAiMem)->m_stateMachine = otherMachine;
 		otherMachine->m_currentState = otherMachine->internalGetState((StateID)env->otherAiState);
 		otherMachine->m_goalPosition.x = env->otherAiGoalPos[0];
@@ -1913,7 +1910,17 @@ void ref_ai_a2_reset(void)
 }
 
 /* batch A4: the file the machine's xfer goes through (one per test thread) */
-void ref_ai_a4_xfer_path(const char *path) { g_xferPath = path; g_saved.clear(); g_aiSaved.clear(); }
+/* (batch A23: and the other AIs' machine, made once here, before a case seeds the logic's random values: AIIdleState's constructor
+** draws one) */
+void ref_ai_a4_xfer_path(const char *path)
+{
+	g_xferPath = path; g_saved.clear(); g_aiSaved.clear();
+	if (!g_otherMachine) {
+		g_others[1].m_otherId = (ObjectID)1;
+		g_otherMachine = newInstance(AIStateMachine)(&g_others[1], AsciiString("other"));
+		((AIUpdateInterface *)g_otherAiMem)->m_stateMachine = g_otherMachine;
+	}
+}
 
 /* INI::load's loop over `filename` (load type `loadType`), each Locomotor block to this build's handler (see the header); 0, or 1
 ** if it threw */
