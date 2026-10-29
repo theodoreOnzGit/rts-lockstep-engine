@@ -3848,6 +3848,22 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A20; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The tunnel-network guard state and its machine (`AITNGuard.cpp`): 30,000 constructions and 1,799,163 operations, **0
+///   mismatches** in the results, the call logs and the dumps (which add the machine's state, goal, sleep and members, its attack
+///   states' give-up frames and embedded attacks, the return state's enter members and scan time, the idle and crate states'). After
+///   an operation the machine was in the inner state 2,078 times, idle 7,908, outer 8, returning 6,630, attacking an aggressor 10,
+///   picking up a crate never; the network's nemesis was offered 50 times and the owner left a tunnel in a hurry 63 times. The
+///   tunnels are the owner's container then the scene's; their damage is a hash of their id (source, time) and the scene's
+///   no-effect bits; other objects' AIs share the scene's goal. Not generated: the state already the machine's or the temporary
+///   state, or without a controlling player (the inner state offers to the network unchecked). One case ended where upstream is
+///   undefined: the transition-depth limit (20) left an attack state without its attack, which the next update dereferences.
+/// - The first full run found one port defect, fixed in both guard machines: after the idle state's `setState` to the crate state,
+///   the returned sleep reads `m_nextEnemyScanTime` anew (the transitions may have entered the idle state again).
+/// - Planted bugs at 30,000 cases: 3420, 3422-3430 caught (1 to 3,830 mismatches); 3421 (the nearest tunnel) unobservable, every
+///   other object standing at the one stand-in position; 3409 (the guard's re-read) not reached, its twin 3430 caught.
+///
 /// # Results (2026-10-29, batch A19; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The guard-retaliate state and its machine (`AIGuardRetaliate.cpp`): 30,000 constructions and 1,799,536 operations, **0

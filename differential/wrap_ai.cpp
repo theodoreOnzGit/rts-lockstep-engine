@@ -153,7 +153,7 @@ enum { INVALID_WAYPOINT_ID = 0x7FFFFFFF };
 ** isIdle/isAttack/isBusy are its class's static answers (AIAttackState's TRUE for the four attack states; FALSE for the others,
 ** whose answers are their inner machines' or the base's); its onEnter, update and onExit are logged, and onEnter and update
 ** answer from the hash (the scene's stateRate); its snapshot is the version only. The Rust side is AiState::Untranslated with the
-** host's callbacks. */
+** host's callbacks. (Since batch A20 build.rs leaves no placeholder: the class remains, unused.) */
 class AIPlaceholderState : public State
 {
 	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE(AIPlaceholderState, "AIPlaceholderState")

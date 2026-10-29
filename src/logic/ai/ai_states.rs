@@ -27,7 +27,8 @@
 //!
 //! **The states not yet translated** are [`AiState::Untranslated`]: their callbacks are the host's (the cut point), and their
 //! `isIdle`/`isAttack`/`isBusy` the static answers of their classes ([`untranslated_flags`]: an attack state's `TRUE`; a state
-//! whose answer is its inner machine's answers `false` until it is translated).
+//! whose answer is its inner machine's answers `false` until it is translated). Since batch A20 every state of the AI's machine is translated: `define_states`
+//! defines none, and the variant and its host callbacks remain only as the cut point's shape.
 //!
 //! # Upstream facts kept
 //!
