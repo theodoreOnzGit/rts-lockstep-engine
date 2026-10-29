@@ -1856,7 +1856,8 @@ fn ai_player_matches_upstream() {
     let mut kinds = [0u64; 48];
     let (mut queued, mut ready) = (0u64, 0u64);
     let mut stale_cases = 0u64;
-    for case in 0..cases {
+    let from: u64 = std::env::var("AI_PLAYER_FROM").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    for case in from..cases {
         let mut g = Gen::new(0xA28_0000 + case);
         let s = gen_scene(&mut g);
         assert_eq!(ap_answer(s.seed as u32, 7, 3, 11), unsafe { cpp::apAnswer(s.seed as u32, 7, 3, 11) }, "the hash");

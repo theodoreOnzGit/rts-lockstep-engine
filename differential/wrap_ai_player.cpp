@@ -1357,10 +1357,13 @@ void runOp(AIPlayer *&a, const ApOp &op)
 			/* a capture: the object's player (a < 0: the factory of the first work order in a factory) */
 			Int k = op.a;
 			if (op.a < 0) {
-				k = -1;
-				for (TeamInQueue *t = a->getFirstItemIn_TeamBuildQueue(); t && k < 0; t = t->dlink_next_TeamBuildQueue())
+				/* (the first work order in a factory, whether or not the factory still exists) */
+				WorkOrder *first = NULL;
+				for (TeamInQueue *t = a->getFirstItemIn_TeamBuildQueue(); t && !first; t = t->dlink_next_TeamBuildQueue())
 					for (WorkOrder *o = t->m_workOrders; o; o = o->m_next)
-						if (o->m_factoryID != INVALID_ID) { Object *f = objById(o->m_factoryID); k = f ? f->m_i : -2; break; }
+						if (o->m_factoryID != INVALID_ID) { first = o; break; }
+				Object *f = first ? objById(first->m_factoryID) : NULL;
+				k = f ? f->m_i : -1;
 			}
 			if (k >= 0 && k < AP_OBJECTS) W.o[k].player = op.b;
 			break;
