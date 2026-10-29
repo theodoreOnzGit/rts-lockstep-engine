@@ -1043,6 +1043,60 @@ pub struct AiEnv {
     pub other_ai_goal: c_int,
 }
 
+/// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ColParty {
+    pub id: c_int,
+    pub pos: [c_float; 3],
+    pub dir: [c_float; 3],
+    pub kinds: c_int,
+    pub using_ability: c_int,
+    pub formation: c_int,
+    pub has_physics: c_int,
+    pub vel: [c_float; 3],
+    pub crush: [c_int; 3],
+    pub angle_to_other: c_float,
+    pub angle_to_path: c_float,
+    pub has_ai: c_int,
+    pub ignore_until: c_uint,
+    pub can_path_through: c_int,
+    pub is_blocked: c_int,
+    pub cur_max_blocked_speed: c_float,
+    pub blocked_frames: c_int,
+    pub is_blocked_and_stuck: c_int,
+    pub loco_goal_type: c_int,
+    pub goal_pos: [c_float; 3],
+    pub goal_cell: [c_int; 2],
+    pub moving: c_int,
+    pub ground: c_int,
+    pub waiting: c_int,
+    pub moving_away: c_int,
+    pub busy: c_int,
+    pub idle: c_int,
+    pub dead: c_int,
+    pub state_id: c_int,
+    pub has_loco: c_int,
+    pub backwards: c_int,
+    pub wander: c_float,
+    pub has_path: c_int,
+    pub path_pos: [c_float; 3],
+    pub adjust: [c_float; 2],
+}
+
+/// Batch A22: the collisions' scene (`ColScene`): the AI asked (0) and the other (1), the frame.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ColScene {
+    pub p: [ColParty; 2],
+    pub frame: c_uint,
+}
+
+extern "C" {
+    // batch A22: the AI's collisions (wrap_ai_collide.cpp)
+    pub fn ref_ai_collide(op: c_int, scene: *const ColScene, out: *mut c_uint, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
+}
+
 extern "C" {
     // Locomotor.cpp, LocomotorSet and the INI block (wrap_locomotor.cpp). The meaning of every
     // argument is in differential/wrap_locomotor.cpp and tests/differential_locomotor.rs.
