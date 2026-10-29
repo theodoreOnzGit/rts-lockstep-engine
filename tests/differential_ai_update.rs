@@ -2171,7 +2171,7 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                         _ => panic!("the guard return state"),
                     }
                     match m.state(5001) {
-                        Some(AiState::GuardIdle { next_enemy_scan_time, guardee_pos }) => {
+                        Some(AiState::GuardIdle { next_enemy_scan_time, guardee_pos, .. }) => {
                             v.push(*next_enemy_scan_time);
                             put_pos(&mut v, guardee_pos);
                         }

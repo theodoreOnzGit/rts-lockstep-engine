@@ -564,7 +564,8 @@ pub enum AiState<H: AiStateHost> {
     /// The guard machine's `AIGuardReturnState`: `AIInternalMoveToState`'s base, `m_nextReturnScanTime`.
     GuardReturn { mv: MoveToData, next_return_scan_time: u32 },
     /// The guard machine's `AIGuardIdleState`: `m_nextEnemyScanTime`, `m_guardeePos`.
-    GuardIdle { next_enemy_scan_time: u32, guardee_pos: Coord3D },
+    /// (`retaliate`: the guard-retaliate machine's, which is never a guard idle state; batch A19)
+    GuardIdle { next_enemy_scan_time: u32, guardee_pos: Coord3D, retaliate: bool },
     /// The guard machine's `AIGuardPickUpCrateState`: `AIPickUpCrateState`'s members.
     GuardCrate { mv: MoveToData, delay_counter: i32 },
     /// `AIDockState` (batch A17): `m_dockMachine`, its `m_approachPosition`, `m_usingPrecisionMovement`.
@@ -1222,6 +1223,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     }
     fn is_attack(&self) -> bool {
         match self {
+            // (batch A19: an attack state embedded in a guard-retaliate machine's state, swapped into its place while it runs, answers
+            // for that state, which does not override isAttack)
+            AiState::Attack { exit: Some(x), .. } if x.retaliate => false,
             // (AIAttackState's TRUE; the chase states' TRUE)
             AiState::Attack { .. } => !plant(3246),
             // (AIAttackMoveToState's: its machine's)
@@ -1230,11 +1234,20 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::Hunt { machine, .. } | AiState::AttackSquad { machine, .. } => hunt_states::is_attack(machine),
             // (batch A18: the guard state's: its machine's; the guard machine's attack states': their embedded state's)
             AiState::Guard { machine, .. } => hunt_states::is_attack(machine),
-            AiState::GuardAttack { embedded, .. } => guard::guard_attack_is_attack(embedded),
+            AiState::GuardAttack { embedded, exit, .. } => guard::guard_attack_is_attack(embedded, exit),
             // (batch A12b: the attack-follow-waypoint states': their machines'; the plain waypoint state has none)
             AiState::FollowWaypointPath { machine, .. } => attack_move::is_attack(machine) && !plant(3345),
             AiState::AttackApproach { .. } | AiState::AttackPursue { .. } => true,
             AiState::Untranslated { id } => untranslated_flags(*id).1 && !plant(3246),
+            _ => false,
+        }
+    }
+    /// `isGuardIdle()` (batch A18/A19): the guard machine's idle state; the guard state's, its machine's (the guard-retaliate
+    /// machine's states and state do not override it).
+    fn is_guard_idle(&self) -> bool {
+        match self {
+            AiState::GuardIdle { retaliate, .. } => !retaliate,
+            AiState::Guard { machine: Some(m), data, .. } if !data.retaliate => m.is_in_guard_idle_state(),
             _ => false,
         }
     }

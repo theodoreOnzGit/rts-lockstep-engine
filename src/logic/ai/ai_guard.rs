@@ -57,6 +57,7 @@ use crate::logic::ai::ai_move_states::{self as move_states, mv, MoveToData};
 use crate::logic::ai::ai_states::{ai, with_ai, AiCondition, AiState, AiStateHost};
 use crate::logic::ai::ai_update_types::*;
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
+use crate::logic::damage::DAMAGE_HEALING;
 use crate::logic::modules::plant;
 
 type Sm<H> = StateMachine<AiState<H>>;
@@ -164,7 +165,8 @@ pub fn new_guard_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> Sm<H> {
         m.define_state(AI_GUARD_INNER, attack(AI_GUARD_INNER), AI_GUARD_OUTER, AI_GUARD_OUTER, &aggressors)?;
         m.define_state(AI_GUARD_RETURN, AiState::GuardReturn { mv: MoveToData::default(), next_return_scan_time: 0 }, AI_GUARD_IDLE, AI_GUARD_INNER, &aggressors)?;
         // (the idle state's members: the pool's zeros)
-        m.define_state(AI_GUARD_IDLE, AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default() }, AI_GUARD_INNER, AI_GUARD_RETURN, &aggressors)?;
+        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), retaliate: false };
+        m.define_state(AI_GUARD_IDLE, idle, AI_GUARD_INNER, AI_GUARD_RETURN, &aggressors)?;
         m.define_state(AI_GUARD_OUTER, attack(AI_GUARD_OUTER), AI_GUARD_GET_CRATE, AI_GUARD_GET_CRATE, &[])?;
         m.define_state(AI_GUARD_GET_CRATE, AiState::GuardCrate { mv: MoveToData::default(), delay_counter: 0 }, AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
         m.define_state(AI_GUARD_ATTACK_AGGRESSOR, attack(AI_GUARD_ATTACK_AGGRESSOR), AI_GUARD_INNER, AI_GUARD_INNER, &[])?;
@@ -183,7 +185,7 @@ pub fn new_guard_retaliate_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> S
     let r = (|| -> SmResult<()> {
         m.define_state(AI_GUARD_ATTACK_AGGRESSOR, attack(AI_GUARD_ATTACK_AGGRESSOR), AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
         m.define_state(AI_GUARD_RETURN, AiState::GuardReturn { mv: MoveToData::default(), next_return_scan_time: 0 }, AI_GUARD_IDLE, AI_GUARD_INNER, &aggressors)?;
-        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default() };
+        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), retaliate: true };
         m.define_state(AI_GUARD_IDLE, idle, AI_GUARD_INNER, crate::common::state_machine::EXIT_MACHINE_WITH_SUCCESS, &aggressors)?;
         m.define_state(AI_GUARD_INNER, attack(AI_GUARD_INNER), AI_GUARD_OUTER, AI_GUARD_OUTER, &[])?;
         m.define_state(AI_GUARD_OUTER, attack(AI_GUARD_OUTER), AI_GUARD_GET_CRATE, AI_GUARD_GET_CRATE, &[])?;
@@ -595,9 +597,10 @@ pub fn guard_attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
     Ok(())
 }
 
-/// The inner, outer and attack-aggressor states' `isAttack`: their embedded attack state's.
-pub fn guard_attack_is_attack<H: AiStateHost>(embedded: &[AiState<H>]) -> bool {
-    embedded.first().is_some_and(|e| e.is_attack())
+/// The inner, outer and attack-aggressor states' `isAttack`: their embedded attack state's (the guard-retaliate machine's states do
+/// not override it: false).
+pub fn guard_attack_is_attack<H: AiStateHost>(embedded: &[AiState<H>], exit: &ExitConditions) -> bool {
+    !exit.retaliate && embedded.first().is_some_and(|e| e.is_attack())
 }
 
 // ---- AIGuardReturnState
@@ -670,7 +673,7 @@ pub fn idle_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 pub fn idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let now = StateContext::frame(h);
     let (next, guardee) = match sm.state(id) {
-        Some(AiState::GuardIdle { next_enemy_scan_time, guardee_pos }) => (*next_enemy_scan_time, *guardee_pos),
+        Some(AiState::GuardIdle { next_enemy_scan_time, guardee_pos, .. }) => (*next_enemy_scan_time, *guardee_pos),
         _ => unreachable!("the guard idle state"),
     };
     if now < next {

@@ -211,6 +211,8 @@ public:
 	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
 	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
 	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
+	/* batch A19 (AIUpdate.h) */
+	inline Object* getGoalObject() { return getStateMachine()->getGoalObject(); }
 	/* batch A18 (AIUpdate.h's; virtual upstream, no subclass here) */
 	const Coord3D *getGuardLocation( void ) const { return &m_locationToGuard;	}
 	const ObjectID getGuardObject( void ) const { return m_objectToGuard; }
