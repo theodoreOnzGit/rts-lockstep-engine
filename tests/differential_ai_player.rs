@@ -1732,8 +1732,46 @@ fn gen_scene(g: &mut Gen) -> ApScene {
     s
 }
 
+/// Mode 3's scene: player 0 a skirmish AI with approach paths for its start, the other players skirmish AIs with enemies, some
+/// of the build list's buildings power plants under construction, and a rebuild hole for an entry with its rebuilt building.
+fn skirmish_scene(g: &mut Gen, s: &mut ApScene) {
+    s.skirmish = 2;
+    s.path_start = s.pl[0].mp_start + 1;
+    for k in 0..3 {
+        s.path_len[k] = 1 + g.below(4) as i32;
+    }
+    for p in 1..AP_PLAYERS {
+        s.pl[p].flags |= PL_SKIRMISH;
+        s.pl[p].enemy = g.below(AP_PLAYERS as u32) as i32;
+    }
+    for e in s.b[..s.num_build as usize].iter().copied() {
+        if let Some(o) = s.o.iter_mut().find(|o| o.id != 0 && o.id == e.object_id && o.player == 0) {
+            if g.below(3) == 0 {
+                o.status |= 1 << 0; // under construction
+                let t = o.tmpl as usize;
+                s.t[t].kinds |= 1 << kind_bit(KINDOF_FS_POWER);
+            }
+        }
+    }
+    // a hole (its template a rebuild hole's) for an entry, and the building it spawned
+    let live: Vec<usize> = (0..AP_OBJECTS).filter(|&i| s.o[i].id != 0).collect();
+    if live.len() >= 2 && s.num_build > 0 {
+        let (hi, bi) = (live[g.below(live.len() as u32) as usize], live[g.below(live.len() as u32) as usize]);
+        if hi != bi {
+            let ht = s.o[hi].tmpl as usize;
+            s.t[ht].kinds |= 1 << kind_bit(KINDOF_REBUILD_HOLE);
+            s.o[hi].flags |= F_HOLE;
+            s.o[hi].reconstructed = s.o[bi].id;
+            let e = g.below(s.num_build as u32) as usize;
+            s.b[e].tmpl = s.o[bi].tmpl;
+            s.b[e].object_id = s.o[hi].id;
+        }
+    }
+}
+
 /// The kinds of runs: 0 every op alike; 1 team building (updates, frames, production); 2 repairs (repair requests, the bridge
-/// repair step, the dozers' tasks and the damage states).
+/// repair step, the dozers' tasks and the damage states); 3 a skirmish AI (its enemy, defences, cluster mines, build list, base
+/// building).
 fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
     let kind = match (mode, g.below(10)) {
         (0, 0..=2) | (1, 0..=3) => 0, // update
@@ -1741,6 +1779,8 @@ fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
         (2, 0) => 9,
         (2, 1..=7) => 38,
         (2, 8) => [25, 57, 37, 0][g.below(4) as usize],
+        (3, 0..=1) => [0, 30, 52, 60][g.below(4) as usize],
+        (3, 2..=3) => [23, 60, 20, 6, 7, 1, 3, 61][g.below(8) as usize],
         (_, 3) => [1, 23, 23, 25, 26, 28, 55, 24, 56, 57][g.below(10) as usize],
         _ => g.below(62) as i32,
     };
@@ -1754,6 +1794,8 @@ fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
     };
     let any_team = |g: &mut Gen| -> i32 { if g.below(5) == 0 { 77 } else { 1 + g.below(12) as i32 } };
     let (a, b) = match kind {
+        // (in skirmish runs a rebuilt hole's building now and then)
+        3 if mode == 3 && g.below(2) == 0 => (0, s.o.iter().find(|o| o.id != 0 && o.flags & F_HOLE != 0).map_or(0, |o| o.reconstructed)),
         2 | 3 => (any_id(g), any_id(g)),
         4 | 5 => (g.below(AP_PROTOS as u32 + 1) as i32 - (g.below(6) == 0) as i32, g.below(2) as i32),
         7 | 8 | 17 | 19 => (g.below(AP_TEMPLATES as u32 + 2) as i32 - 1, g.below(2) as i32),
@@ -1765,12 +1807,14 @@ fn gen_op(g: &mut Gen, s: &ApScene, mode: u32) -> ApOp {
         14 | 18 => (any_team(g), g.below(3000) as i32),
         15 | 40 => (g.below(3000) as i32, 0),
         21 | 22 => (g.below(AP_PLAYERS as u32) as i32, g.below(2) as i32),
+        23 if mode == 3 => (150 + g.below(300) as i32, 0),
         23 => (if g.below(3) == 0 { g.below(1500) as i32 } else { g.below(60) as i32 }, 0),
         56 => (0, (g.u32() as i32) & (F_AI | F_SUPPLY_AI | F_IDLE | F_DOZER_AI)),
         // (in repair runs mostly the first structure to repair)
         57 if mode == 2 && g.below(2) == 0 => (-1, g.below(2) as i32),
         58 => (if g.below(2) == 0 { -1 } else { g.below(AP_OBJECTS as u32 / 2) as i32 }, g.below(4) as i32 - 1),
         6 => (g.below(2) as i32, 0),
+        20 if mode == 3 => (2 + g.below(2) as i32, g.below(AP_PLAYERS as u32) as i32),
         20 => (g.below(4) as i32, g.below(AP_PLAYERS as u32) as i32),
         59 => (any_id(g), g.below(4) as i32),
         57 => (g.below(AP_OBJECTS as u32 / 2) as i32, g.below(4) as i32),
@@ -1816,12 +1860,17 @@ fn ai_player_matches_upstream() {
         let mut g = Gen::new(0xA28_0000 + case);
         let s = gen_scene(&mut g);
         assert_eq!(ap_answer(s.seed as u32, 7, 3, 11), unsafe { cpp::apAnswer(s.seed as u32, 7, 3, 11) }, "the hash");
-        let mode = g.below(3);
+        let mode = g.below(4);
+        let mut s = s;
+        if mode == 3 {
+            skirmish_scene(&mut g, &mut s);
+        }
         // (a bridge repair checks once a second: 30 steps between its checks)
         let n = match mode {
             0 => 4 + g.below(21),
             1 => 4 + g.below(40),
-            _ => 60 + g.below(60),
+            2 => 60 + g.below(60),
+            _ => 30 + g.below(25),
         } as usize;
         let mut ops: Vec<ApOp> = (0..n).map(|_| gen_op(&mut g, &s, mode)).collect();
         if mode != 0 || g.below(2) == 0 {
