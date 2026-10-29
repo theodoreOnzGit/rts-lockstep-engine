@@ -347,10 +347,11 @@ public:
 	Bool isMoving() const;
 	AIGroup *getGroup(void);
 
-	/* batch A4's members (ai_update_a4.inc) */
-	AIStateMachine* makeStateMachine();
+	/* batch A4's members (ai_update_a4.inc); batch A30: makeStateMachine and update virtual again (as upstream: the subclasses
+	** override them) */
+	virtual AIStateMachine* makeStateMachine();
 	void onObjectCreated();
-	UpdateSleepTime update( void );
+	virtual UpdateSleepTime update( void );
 
 	/* batch A5's members (ai_update_a5.inc), and the header's inlines they call, verbatim */
 	virtual void aiDoCommand(const AICommandParms* parms);
@@ -386,11 +387,12 @@ public:
 	void privateFollowWaypointPathAsTeamExact( const Waypoint *way, CommandSourceType cmdSource );
 	void privateFollowPathAppend( const Coord3D *pos, CommandSourceType cmdSource );
 	void privateFollowPath( const std::vector<Coord3D>* path, Object *ignoreObject, CommandSourceType cmdSource, Bool exitProduction );
-	void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
-	void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	/* (batch A30: the attacks virtual again, as upstream: TransportAIUpdate overrides them) */
+	virtual void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	virtual void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
 	void privateGuardRetaliate( Object *victim, const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	void privateAttackTeam( const Team *team, Int maxShotsToFire, CommandSourceType cmdSource );
-	void privateAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	virtual void privateAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	void privateAttackMoveToPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	void privateAttackFollowWaypointPath( const Waypoint *way, Int maxShotsToFire, Bool asTeam, CommandSourceType cmdSource );
 	void privateHunt( CommandSourceType cmdSource );
@@ -452,6 +454,9 @@ public:
 #include "ai_guard_a18.inc"
 #include "ai_guard_retaliate_a19.inc"
 #include "ai_tn_guard_a20.inc"
+/* batch A30: privateIdle's passengers' aiIdle, a logged cut point (LOG_PASSENGER kind 3; defined at the end of this file) */
+void passengerAiCommand(unsigned kind, const Object *passenger, const Object *victim, const Coord3D *pos, Int shots, CommandSourceType src);
+inline void passengerAiIdle(const Object *p, AIUpdateInterface *, CommandSourceType src) { passengerAiCommand(3, p, NULL, NULL, 0, src); }
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -462,6 +467,42 @@ enum { SC_INVALID_DATA = 6 };
 static const char *TheLocomotorSetNames[] = { "SET_NORMAL", "SET_NORMAL_UPGRADED", "SET_FREEFALL", "SET_WANDER", "SET_PANIC", "SET_TAXIING",
 	"SET_SUPERSONIC", "SET_SLUGGISH", NULL };
 #include "ai_update_a21.inc"
+
+/* batch A30: WanderAIUpdate and TransportAIUpdate, declared as their headers declare them (without the pool and module macros),
+** and their .cpp files from makeStateMachine, verbatim (ai_subclasses_a30.inc). The transport's passengers' commands are cut
+** points: LOG_PASSENGER { 0 attack object, 1 force attack object, 2 attack position; the passenger; the victim; the position's
+** bits; the shot count; the source }. */
+inline void passengerAiAttackObject(const Object *p, AIUpdateInterface *, Object *v, Int shots, CommandSourceType src) { passengerAiCommand(0, p, v, NULL, shots, src); }
+inline void passengerAiForceAttackObject(const Object *p, AIUpdateInterface *, Object *v, Int shots, CommandSourceType src) { passengerAiCommand(1, p, v, NULL, shots, src); }
+inline void passengerAiAttackPosition(const Object *p, AIUpdateInterface *, const Coord3D *pos, Int shots, CommandSourceType src) { passengerAiCommand(2, p, NULL, pos, shots, src); }
+class WanderAIUpdate : public AIUpdateInterface
+{
+public:
+	WanderAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~WanderAIUpdate( void );
+	virtual UpdateSleepTime update();
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+protected:
+	virtual AIStateMachine* makeStateMachine();
+};
+class TransportAIUpdate : public AIUpdateInterface
+{
+public:
+	TransportAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~TransportAIUpdate( void );
+	AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+protected:
+	virtual AIStateMachine* makeStateMachine();
+	virtual void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+	virtual void privateAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	virtual void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+};
+#include "ai_subclasses_a30.inc"
 
 #undef private
 #undef protected
@@ -1174,16 +1215,18 @@ Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPosit
 	return r;
 }
 /* batch A15: the existing objects without an AI of the scene's mask, in id order (A5's passengers' aiIdle reaches no AI) */
+/* batch A30: for the transport, those with an AI too, and the list even when empty (the real contain's) */
 const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const
 {
 	static ContainedItemsList items;
 	items.clear();
+	Bool transport = g_aiEnv.subclass == 2;
 	for (unsigned i = 1; i < 32; ++i) {
-		if (!((g_aiEnv.containedMask >> i) & 1) || ((g_aiEnv.aiMask >> i) & 1)) continue;
+		if (!((g_aiEnv.containedMask >> i) & 1) || (!transport && ((g_aiEnv.aiMask >> i) & 1))) continue;
 		Object *o = findObject((ObjectID)i);
 		if (o) items.push_back(o);
 	}
-	return items.empty() ? NULL : &items;
+	return items.empty() && !transport ? NULL : &items;
 }
 /* batch A15: LOG_RAPPEL's kinds: 0 resetDynamicPhysics, 1 scrubVelocityZ, 2 setLayer, 3 scoreTheKill, 4 kill, 5 doFXObj,
 ** 6 isValidContainerFor, 7 removeFromContain */
@@ -1989,7 +2032,12 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_object.setPosition(&p);
 	g_object.setOrientation(angle);
 	--g_aiQuiet;
-	g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL);
+	/* batch A30: the scene's class (1 WanderAIUpdate, 2 TransportAIUpdate) */
+	switch (g_aiEnv.subclass) {
+		case 1: g_ai_update = new (ShimZeroFill{}) WanderAIUpdate(NULL, NULL); break;
+		case 2: g_ai_update = new (ShimZeroFill{}) TransportAIUpdate(NULL, NULL); break;
+		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
+	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
 	if (g_aiEnv.hasMachine) g_ai_update->onObjectCreated();
 	int n = (int)g_aiLog->size();
@@ -2748,3 +2796,11 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 }
 
 }  /* extern "C" */
+
+/* batch A30: a transport's passenger's command (LOG_PASSENGER, see the subclasses above) */
+void passengerAiCommand(unsigned kind, const Object *passenger, const Object *victim, const Coord3D *pos, Int shots, CommandSourceType src)
+{
+	unsigned b[3] = { 0, 0, 0 };
+	if (pos) { b[0] = bitsOf(pos->x); b[1] = bitsOf(pos->y); b[2] = bitsOf(pos->z); }
+	L(LOG_PASSENGER, { kind, (unsigned)passenger->getID(), victim ? (unsigned)victim->getID() : 0u, b[0], b[1], b[2], (unsigned)shots, (unsigned)src });
+}

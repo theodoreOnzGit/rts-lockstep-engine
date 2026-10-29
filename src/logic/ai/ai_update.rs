@@ -312,6 +312,21 @@ pub struct AiUpdate {
     pub fix_loco_in_post_process: bool,
     /// `AIStateMachine`'s own members (batch A4).
     pub machine: AiMachineExtras,
+    /// The module's class (batch A30): its overrides are taken where it is not `AIUpdateInterface` itself.
+    pub subclass: AiSubclass,
+}
+
+/// Which `AIUpdateInterface` the module is (batch A30): the base, or a subclass whose overrides `ai_states` and `ai_commands`
+/// take where upstream's virtual members differ.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AiSubclass {
+    /// `AIUpdateInterface`.
+    #[default]
+    Plain,
+    /// `WanderAIUpdate`: when idle, a random move of 5 to 50 in x and y; never asleep.
+    Wander,
+    /// `TransportAIUpdate`: the passengers allowed to fire attack what the transport is told to attack.
+    Transport,
 }
 
 impl AiUpdate {
@@ -389,6 +404,7 @@ impl AiUpdate {
             is_in_update: false,
             fix_loco_in_post_process: false,
             machine: AiMachineExtras { temporary_state: INVALID_STATE_ID, ..AiMachineExtras::default() },
+            subclass: AiSubclass::Plain,
         };
         for i in 0..2 {
             ai.has_turret_ai[i] = ai.data.turret_data[i].is_some();

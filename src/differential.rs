@@ -1044,6 +1044,8 @@ pub struct AiEnv {
     // batch A23: other objects' AIs' machine: its current state (set, not entered) and goal position
     pub other_ai_state: c_int,
     pub other_ai_goal_pos: [c_float; 3],
+    // batch A30: the AI's class (0 AIUpdateInterface, 1 WanderAIUpdate, 2 TransportAIUpdate)
+    pub subclass: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

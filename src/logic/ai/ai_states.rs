@@ -106,9 +106,26 @@ pub const IDLE_COUNTDOWN_DELAY: u32 = LOGICFRAMES_PER_SECOND as u32 * 2;
 /// What the machine's states, the AI's update and its commands reach beyond the AI's members: the AI's lent state, the
 /// pathfinder's goal bookkeeping, the turrets' updates (until the turrets' AIs are held by the AI), the object's repulsors, model
 /// condition and the script engine, the states not yet translated, and (batch A5) what the commands hand over to.
+/// A command a transport gives its passengers' AIs (batch A30, `TransportAIUpdate`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PassengerCommand {
+    /// `aiAttackObject(victim, maxShotsToFire, cmdSource)`.
+    AttackObject { victim: ObjectId, max_shots: i32, src: CommandSourceType },
+    /// `aiForceAttackObject(victim, maxShotsToFire, cmdSource)`.
+    ForceAttackObject { victim: ObjectId, max_shots: i32, src: CommandSourceType },
+    /// `aiAttackPosition(pos, maxShotsToFire, cmdSource)`.
+    AttackPosition { pos: Coord3D, max_shots: i32, src: CommandSourceType },
+}
+
 pub trait AiStateHost: AiHost + StateContext {
     /// The AIs whose machines are running, the innermost last.
     fn ai_stack(&mut self) -> &mut Vec<AiUpdate>;
+    /// Batch A30: `getObject()->getContain()->isPassengerAllowedToFire()` (the transport's own contain).
+    fn contain_passenger_allowed_to_fire(&mut self) -> bool;
+    /// Batch A30: whether another object has an AI (`getAIUpdateInterface()`).
+    fn object_has_ai(&self, id: ObjectId) -> bool;
+    /// Batch A30: a command to a passenger's AI.
+    fn passenger_ai_command(&mut self, passenger: ObjectId, cmd: PassengerCommand);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1422,6 +1439,13 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None }
     }
 
+    /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
+    pub fn new_subclass(h: &mut H, data: Arc<AiUpdateModuleData>, subclass: crate::logic::ai::ai_update::AiSubclass) -> Self {
+        let mut m = Self::new(h, data);
+        m.ai_mut().subclass = subclass;
+        m
+    }
+
     /// The AI's state.
     pub fn ai(&self) -> &AiUpdate {
         self.ai.as_ref().expect("the AI (not lent)")
@@ -1472,8 +1496,30 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         self.run(h, crate::logic::ai::ai_paths::do_pathfind);
     }
 
-    /// `update()`: "The "main loop" of the AI subsystem".
+    /// `update()` of the module's class: `WanderAIUpdate`'s for a wanderer, else `AIUpdateInterface`'s.
     pub fn update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
+        if self.ai().subclass == crate::logic::ai::ai_update::AiSubclass::Wander {
+            return self.wander_update(h);
+        }
+        self.base_update(h)
+    }
+
+    /// `WanderAIUpdate::update()` (batch A30): "If I'm standing still, move somewhere" (5 to 50 in x, then in y), then
+    /// `AIUpdateInterface`'s; "someday, make sleepy. for now, must not sleep."
+    fn wander_update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
+        let idle = self.ai().is_idle(self.machine.as_ref().expect("the AI's machine"));
+        if idle && !plant(3610) {
+            let mut dest = h.position();
+            dest.x += h.logic_random_value(5, 50) as f32;
+            dest.y += h.logic_random_value(5, 50) as f32;
+            self.run(h, |sm, h| commands::ai_move_to_position(sm, h, &dest, CMD_FROM_AI))?;
+        }
+        self.base_update(h)?;
+        Ok(UPDATE_SLEEP_NONE)
+    }
+
+    /// `AIUpdateInterface::update()`: "The "main loop" of the AI subsystem".
+    pub fn base_update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
         self.ai_mut().is_in_update = true;
         // "Reset so state machine update can set it if we just completed the path."
         self.ai_mut().completed_waypoint = None;

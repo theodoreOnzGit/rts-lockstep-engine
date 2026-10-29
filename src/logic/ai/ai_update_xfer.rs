@@ -79,8 +79,25 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         self.xfer(h, xfer, waypoint_name, waypoint_by_name)
     }
 
-    /// `AIUpdateInterface::xfer(xfer)` (version 4).
+    /// `xfer(xfer)` of the module's class: a subclass's (batch A30: `WanderAIUpdate`, `TransportAIUpdate`, version 1) then
+    /// `AIUpdateInterface`'s. (`crc` calls it, as upstream's virtual `xfer(x)`.)
     pub fn xfer(
+        &mut self,
+        h: &mut H,
+        xfer: &mut dyn Xfer,
+        waypoint_name: impl Fn(u32) -> Vec<u8>,
+        waypoint_by_name: impl Fn(&[u8]) -> Option<u32>,
+    ) -> SmResult<()> {
+        if self.ai().subclass != crate::logic::ai::ai_update::AiSubclass::Plain && !plant(3613) {
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+        }
+        self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)
+    }
+
+    /// `AIUpdateInterface::xfer(xfer)` (version 4).
+    pub fn base_xfer(
         &mut self,
         h: &mut H,
         xfer: &mut dyn Xfer,

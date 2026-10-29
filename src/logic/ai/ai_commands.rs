@@ -45,10 +45,12 @@ use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_NO_COLLIDE, KINDOF_PROJECTI
 use crate::common::object_status_types::OBJECT_STATUS_IGNORING_STEALTH;
 use crate::common::state_machine::{SmResult, StateMachine};
 use crate::logic::ai::ai_states::{
-    ai, aism_add_to_goal_path, aism_clear, aism_set_state, aism_set_temporary_state, with_ai, AiState, AiStateHost,
+    ai, aism_add_to_goal_path, aism_clear, aism_set_state, aism_set_temporary_state, with_ai, AiState, AiStateHost, PassengerCommand,
 };
 use crate::logic::ai::ai_update_types::*;
-use crate::logic::ai::ai_update::AiMachineQuery;
+use crate::logic::ai::ai_update::{AiMachineQuery, AiSubclass};
+use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED};
+use crate::common::kind_of::KINDOF_PORTABLE_STRUCTURE;
 use crate::logic::modules::plant;
 use crate::logic::world::player::Squad;
 
@@ -744,8 +746,46 @@ fn private_follow_path<H: AiStateHost>(
     aism_set_state(sm, h, if exit_production { AI_FOLLOW_EXITPRODUCTION_PATH } else { AI_FOLLOW_PATH }).map(|_| ())
 }
 
-/// `privateAttackObject`, `privateForceAttackObject`: the victim (none: nothing), the state, the weapon's shot count.
+/// A transport's passengers' share of an attack (batch A30): `TransportAIUpdate`'s `privateAttackObject`,
+/// `privateForceAttackObject` and `privateAttackPosition` give the command to each passenger with an AI first, when the
+/// transport's contain lets its passengers fire and the command is the player's or a script's (a portable structure not when
+/// hacked, EMP-ed, subdued or paralyzed).
+fn transport_passengers_attack<H: AiStateHost>(h: &mut H, src: CommandSourceType, cmd: PassengerCommand) {
+    if ai(h).subclass != AiSubclass::Transport {
+        return;
+    }
+    if !(h.has_contain() && h.contain_passenger_allowed_to_fire()) {
+        return;
+    }
+    if !(src == CMD_FROM_PLAYER || src == CMD_FROM_SCRIPT) && !plant(3611) {
+        return;
+    }
+    let me = h.object_id();
+    for passenger in h.contain_items(me) {
+        if h.object_is_kind_of(passenger, KINDOF_PORTABLE_STRUCTURE)
+            && (h.object_is_disabled_by_type(passenger, DISABLED_HACKED)
+                || h.object_is_disabled_by_type(passenger, DISABLED_EMP)
+                || h.object_is_disabled_by_type(passenger, DISABLED_SUBDUED)
+                || h.object_is_disabled_by_type(passenger, DISABLED_PARALYZED))
+            && !plant(3612)
+        {
+            continue;
+        }
+        if h.object_has_ai(passenger) {
+            h.passenger_ai_command(passenger, cmd);
+        }
+    }
+}
+
+/// `privateAttackObject`, `privateForceAttackObject`: the victim (none: nothing), the state, the weapon's shot count. (A
+/// transport's passengers first: [`transport_passengers_attack`].)
 fn private_attack_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: ObjectId, max_shots: i32, src: CommandSourceType, state: u32) -> SmResult<()> {
+    let cmd = if state == AI_FORCE_ATTACK_OBJECT {
+        PassengerCommand::ForceAttackObject { victim, max_shots, src }
+    } else {
+        PassengerCommand::AttackObject { victim, max_shots, src }
+    };
+    transport_passengers_attack(h, src, cmd);
     if !h.object_exists(victim) {
         return Ok(());
     }
@@ -784,6 +824,7 @@ fn private_attack_team<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, team: Option<u
 /// `privateAttackPosition(pos, maxShotsToFire, cmdSource)`: a weapon with a continue range attacks the closest attackable object
 /// there instead (else fires once); a contact weapon goes to a reachable place around an unreachable position.
 fn private_attack_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, mut max_shots: i32, src: CommandSourceType) -> SmResult<()> {
+    transport_passengers_attack(h, src, PassengerCommand::AttackPosition { pos: *pos, max_shots, src });
     let mut local_pos = *pos;
     let continue_range = h.weapon_continue_attack_range();
     if continue_range > 0.0 {

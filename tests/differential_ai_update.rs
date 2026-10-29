@@ -109,9 +109,9 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::AiEnv as Env;
 use rts_lockstep_engine::logic::ai::ai_commands::AiCommandParms;
 use rts_lockstep_engine::logic::ai::ai_paths;
-use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule};
+use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule, PassengerCommand};
 use rts_lockstep_engine::logic::ai::ai_waypoint_states::WaypointPathData;
-use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiUpdate, LocoGoalType};
+use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiSubclass, AiUpdate, LocoGoalType};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -203,6 +203,8 @@ const L_DOCK: u32 = 105;
 const L_TUNNEL: u32 = 106;
 /// Batch A21: the AI's snapshot's calls (`LOG_AI_SNAPSHOT`).
 const L_AI_SNAPSHOT: u32 = 107;
+/// Batch A30: a transport's passenger's command (`LOG_PASSENGER`).
+const L_PASSENGER: u32 = 108;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -869,6 +871,23 @@ impl AiStateHost for Host {
     fn ai_stack(&mut self) -> &mut Vec<AiUpdate> {
         &mut self.ai_stack
     }
+    // batch A30: the transport's own contain (the stand-in's one answer), another object's AI, a passenger's command (logged)
+    fn contain_passenger_allowed_to_fire(&mut self) -> bool {
+        self.env.container_allows_fire != 0
+    }
+    fn object_has_ai(&self, id: ObjectId) -> bool {
+        id == self.env.object_id || (1..32).contains(&id) && (self.env.ai_mask >> id) & 1 != 0
+    }
+    fn passenger_ai_command(&mut self, passenger: ObjectId, cmd: PassengerCommand) {
+        let (kind, victim, pos, shots, src) = match cmd {
+            PassengerCommand::AttackObject { victim, max_shots, src } => (0, victim, None, max_shots, src),
+            PassengerCommand::ForceAttackObject { victim, max_shots, src } => (1, victim, None, max_shots, src),
+            PassengerCommand::AttackPosition { pos, max_shots, src } => (2, 0, Some(pos), max_shots, src),
+        };
+        let v = if self.object_exists(victim) { victim as u32 } else { 0 };
+        let b = pos.map_or([0; 3], |p: Coord3D| [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]);
+        self.l(L_PASSENGER, &[kind, passenger as u32, v, b[0], b[1], b[2], shots as u32, src as u32]);
+    }
     fn pf_goal_position(&mut self) -> Option<Coord3D> {
         let has = self.env.pf_has_goal;
         self.l(L_PF_GOAL_POSITION, &[has as u32]);
@@ -1023,8 +1042,18 @@ impl AiStateHost for Host {
     fn has_contain(&self) -> bool {
         self.env.has_contain != 0
     }
-    fn contain_idle_passengers(&mut self, _src: CommandSourceType) {
-        // (the stand-in container lists no passengers)
+    fn contain_idle_passengers(&mut self, src: CommandSourceType) {
+        // (the stand-in container lists passengers with an AI only for a transport: batch A30's cut point, logged; no contain, no
+        // loop)
+        if self.env.has_contain == 0 {
+            return;
+        }
+        let me = self.env.object_id;
+        for p in self.contain_items(me) {
+            if self.object_has_ai(p) {
+                self.l(L_PASSENGER, &[3, p as u32, 0, 0, 0, 0, 0, src as u32]);
+            }
+        }
     }
     fn contain_remove_all_contained(&mut self) {
         self.l(L_CONTAIN, &[0, 0]);
@@ -1412,7 +1441,9 @@ impl AiStateHost for Host {
     }
     // ---- batch A15
     fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
-        (1..32).filter(|&i| (self.env.contained_mask >> i) & 1 != 0 && (self.env.ai_mask >> i) & 1 == 0 && self.object_exists(i)).collect()
+        // (batch A30: the transport's passengers with an AI too)
+        let transport = self.env.subclass == 2;
+        (1..32).filter(|&i| (self.env.contained_mask >> i) & 1 != 0 && (transport || (self.env.ai_mask >> i) & 1 == 0) && self.object_exists(i)).collect()
     }
     fn contain_remove_from_contain(&mut self, _container: ObjectId, obj: ObjectId) {
         self.l(L_RAPPEL, &[7, obj as u32]);
@@ -2641,6 +2672,15 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.crushes_infantry = i32::from(g.below(2) == 0);
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
+    // batch A30: the AI's class, for the whole case (half the AIs AIUpdateInterface itself)
+    e.subclass = [0, 0, 1, 2][g.below(4) as usize];
+    if e.subclass == 2 && g.below(2) == 0 {
+        // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
+        e.loco.kind_mask |= 512;
+        if g.below(2) == 0 {
+            e.disabled_mask = [1 << DISABLED_PARALYZED, 1 << DISABLED_EMP, 1 << DISABLED_SUBDUED, 1 << DISABLED_HACKED][g.below(4) as usize];
+        }
+    }
     e
 }
 
@@ -3649,7 +3689,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     host.make_map();
     let _ = host.thing.set_position(&TCtx::new(&host.env), Some(&start_pos)).unwrap();
     let _ = host.thing.set_orientation(&TCtx::new(&host.env), angle).unwrap();
-    let mut module = AiUpdateModule::new(&mut host, data);
+    let subclass = [AiSubclass::Plain, AiSubclass::Wander, AiSubclass::Transport][host.env.subclass as usize];
+    let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass);
     if host.env.has_machine != 0 {
         // batch A4: the object's creation makes the machine
         module.on_object_created(&mut host).expect("onObjectCreated");
@@ -4055,6 +4096,18 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A30; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The AI's class per case (half `AIUpdateInterface`, a quarter each `WanderAIUpdate` and `TransportAIUpdate`, cut verbatim
+///   from WanderAIUpdate.cpp and TransportAIUpdate.cpp; the passengers' commands and `privateIdle`'s passengers' `aiIdle` are
+///   logged cut points, `LOG_PASSENGER`): 30,000 constructions and 1,798,557 operations, **0 mismatches** in the results, the
+///   call logs and the dumps (with the subclasses' version byte before the base's snapshot).
+/// - The first runs found harness defects, fixed: the passenger list for a transport (with AI passengers, never NULL) reached
+///   `privateIdle`'s `aiIdle` of another object's unconstructed AI (a SIGSEGV), and the class was drawn again with some ops'
+///   scenes (a transport whose list then came back NULL); the host's idle-passengers call ignored the contain's absence.
+/// - Planted bugs: 3610 (the wanderer's move; 5 mismatches at 5,000 cases), 3611 (the command's source; 7), 3612 (a disabled
+///   portable passenger; 1), 3613 (the subclass's version byte; 1,758) caught.
+///
 /// # Results (2026-10-29, batch A23; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `joinTeam` (op 91) and the AI's turret members (ops 92-99): 30,000 constructions and 1,798,300 operations, **0 mismatches** in
