@@ -3706,6 +3706,19 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A19; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The guard-retaliate state and its machine (`AIGuardRetaliate.cpp`): 30,000 constructions and 1,799,536 operations, **0
+///   mismatches** in the results, the call logs and the dumps (which add the retaliate machine as the guard machine's). After an
+///   operation the machine was retaliating 84,053 times. Not generated: the state already the machine's or the temporary state, or
+///   without a controlling player; an enter guard while it is entered or runs (it does not lock the AI's machine, so its enter
+///   state's attack command would switch the AI's state and delete the machine it runs in: undefined upstream).
+/// - The first runs found one port defect, fixed: the retaliate machine's states do not override `isAttack` (nor `isGuardIdle`), so
+///   they answer false while their embedded attack runs; the swapped-in attack state answered true, and the approach state's
+///   `getNextMoodTarget` then took the AI as attacking.
+/// - Planted bugs: plants 3410-3414 at 30,000 cases, each caught (16 to 3,296 mismatches): the owner's guard range in the exit
+///   conditions, the buildings rejected, the inner radius's factor, the aggressor made the nemesis, the idle state's failure.
+///
 /// # Results (2026-10-29, batch A18; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The guard state and its guard machine (`AIGuard.cpp`: inner, idle, outer, return, crate and attack-aggressor states, the
