@@ -504,6 +504,64 @@ protected:
 };
 #include "ai_subclasses_a30.inc"
 
+/* batch A31: DeployStyleAIUpdate. DeployStateTypes is cut from its header verbatim (ai_deploy_style_a31.inc, with the .cpp); the
+** module data is the header's fields and constructor (its field parse is the INI's), and the class as the header declares it
+** without the pool and module macros: MAKE_STANDARD_MODULE_MACRO_WITH_MODULE_DATA's getter returns the scene's data
+** (g_deployData, set by setScene from deployTimes and deployFlags). ThingTemplate is the object's template view here. */
+class DeployStyleAIUpdateModuleData
+{
+public:
+	UnsignedInt			m_unpackTime;
+	UnsignedInt			m_packTime;
+	Bool						m_resetTurretBeforePacking;
+	Bool						m_turretsFunctionOnlyWhenDeployed;
+	Bool						m_turretsMustCenterBeforePacking;
+	Bool						m_manualDeployAnimations;
+
+	DeployStyleAIUpdateModuleData()
+	{
+		m_unpackTime = 0;
+		m_packTime = 0;
+		m_resetTurretBeforePacking = false;
+		m_turretsFunctionOnlyWhenDeployed = false;
+		m_turretsMustCenterBeforePacking = FALSE;
+		m_manualDeployAnimations = FALSE;
+	}
+};
+static DeployStyleAIUpdateModuleData g_deployData;
+/* AI.h's AICommandParmsStorage, as far as the xfer of a version before 4 reaches it: not reached (this harness writes version 4) */
+class AICommandParmsStorage { public: void doXfer(Xfer *xfer) { abort(); } };
+#include "ai_deploy_style_enum_a31.inc"
+class DeployStyleAIUpdate : public AIUpdateInterface
+{
+public:
+	DeployStyleAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~DeployStyleAIUpdate( void );
+	const DeployStyleAIUpdateModuleData *getDeployStyleAIUpdateModuleData() const { return &g_deployData; }
+
+ 	virtual void aiDoCommand(const AICommandParms* parms);
+	virtual Bool isIdle() const;
+	virtual UpdateSleepTime update();
+
+	UnsignedInt getUnpackTime()					const { return getDeployStyleAIUpdateModuleData()->m_unpackTime; }
+	UnsignedInt getPackTime()						const { return getDeployStyleAIUpdateModuleData()->m_packTime; }
+	Bool doTurretsFunctionOnlyWhenDeployed() const { return getDeployStyleAIUpdateModuleData()->m_turretsFunctionOnlyWhenDeployed; }
+	Bool doTurretsHaveToCenterBeforePacking() const { return getDeployStyleAIUpdateModuleData()->m_turretsMustCenterBeforePacking; }
+	void setMyState( DeployStateTypes StateID, Bool reverseDeploy = FALSE );
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	DeployStateTypes				m_state;
+	UnsignedInt							m_frameToWaitForDeploy;
+};
+#define ThingTemplate AiTemplateView
+#include "ai_deploy_style_a31.inc"
+#undef ThingTemplate
+
 #undef private
 #undef protected
 
@@ -1077,6 +1135,28 @@ void Object::clearAndSetModelConditionFlags(const ModelConditionFlags &clr, cons
 	for (unsigned x : w) g_aiLog->push_back(x);
 }
 void ScriptEngine::notifyOfObjectCreationOrDestruction() { L(LOG_SCRIPT_NOTIFY, {}); }
+/* batch A31: DeployStyleAIUpdate's reach: the drawable's animation frame (LOG_ANIM_FRAME; the object has a drawable when the scene
+** says so), the cleared model conditions (LOG_CLEAR_MODEL_FLAGS, in increasing order), the per-unit sounds ("Deploy" is "s4",
+** "Undeploy" "s5", when the scene's sound bits 4 and 5 say so; else the empty sound, an unknown name's) */
+namespace { Drawable g_drawable; AudioEventRTS g_unitSound; }
+Drawable *Object::getDrawable() const { return ((g_aiEnv.deployFlags >> 4) & 1) ? &g_drawable : NULL; }
+void Drawable::setAnimationFrame(int frame) { L(LOG_ANIM_FRAME, { (unsigned)frame }); }
+void Object::clearModelConditionFlags(const ModelConditionFlags &clr)
+{
+	std::vector<unsigned> w;
+	for (Int i = 0; i < MODELCONDITION_COUNT; ++i) if (clr.test(i)) w.push_back((unsigned)i);
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_CLEAR_MODEL_FLAGS);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+const AudioEventRTS *AiTemplateView::getPerUnitSound(const AsciiString& soundName) const
+{
+	g_unitSound = AudioEventRTS();
+	int k = strcmp(soundName.str(), "Deploy") == 0 ? 4 : strcmp(soundName.str(), "Undeploy") == 0 ? 5 : -1;
+	if (k >= 0 && ((g_aiEnv.sounds >> k) & 1)) { AsciiString n; n.format("s%d", k); g_unitSound.setEventName(n); }
+	return &g_unitSound;
+}
 /* ---- batch A5's stand-ins (the commands' reach) */
 Bool Object::isMobile() const { return g_aiEnv.mobile != 0; }
 void TerrainLogic::getExtent(Region3D *r) const
@@ -1823,6 +1903,13 @@ void setScene(const AiEnv *env)
 {
 	g_aiEnv = *env;
 	TheGlobalData->m_gravity = env->gravity;
+	/* batch A31: a DeployStyleAIUpdate's data */
+	g_deployData.m_unpackTime = env->deployTimes[0];
+	g_deployData.m_packTime = env->deployTimes[1];
+	g_deployData.m_resetTurretBeforePacking = (env->deployFlags & 1) != 0;
+	g_deployData.m_turretsFunctionOnlyWhenDeployed = (env->deployFlags & 2) != 0;
+	g_deployData.m_turretsMustCenterBeforePacking = (env->deployFlags & 4) != 0;
+	g_deployData.m_manualDeployAnimations = (env->deployFlags & 8) != 0;
 	/* batch A9 */
 	TheAI->pathfinder()->m_wallHeight = env->wallHeight;
 	/* batch A10a */
@@ -2032,10 +2119,11 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_object.setPosition(&p);
 	g_object.setOrientation(angle);
 	--g_aiQuiet;
-	/* batch A30: the scene's class (1 WanderAIUpdate, 2 TransportAIUpdate) */
+	/* batch A30: the scene's class (1 WanderAIUpdate, 2 TransportAIUpdate; batch A31: 3 DeployStyleAIUpdate) */
 	switch (g_aiEnv.subclass) {
 		case 1: g_ai_update = new (ShimZeroFill{}) WanderAIUpdate(NULL, NULL); break;
 		case 2: g_ai_update = new (ShimZeroFill{}) TransportAIUpdate(NULL, NULL); break;
+		case 3: g_ai_update = new (ShimZeroFill{}) DeployStyleAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2789,6 +2877,12 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, (unsigned)idle->m_initialSleepOffset);
 		putU32(v, idle->m_shouldLookForTargets ? 1u : 0u);
 		putU32(v, idle->m_inited ? 1u : 0u);
+	}
+	/* batch A31: a DeployStyleAIUpdate's members */
+	if (g_aiEnv.subclass == 3) {
+		const DeployStyleAIUpdate *d = (const DeployStyleAIUpdate *)ai;
+		putU32(v, (unsigned)d->m_state);
+		putU32(v, d->m_frameToWaitForDeploy);
 	}
 	int n = (int)v.size();
 	if (n <= cap && n > 0) memcpy(buf, &v[0], 4 * n);

@@ -79,8 +79,9 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         self.xfer(h, xfer, waypoint_name, waypoint_by_name)
     }
 
-    /// `xfer(xfer)` of the module's class: a subclass's (batch A30: `WanderAIUpdate`, `TransportAIUpdate`, version 1) then
-    /// `AIUpdateInterface`'s. (`crc` calls it, as upstream's virtual `xfer(x)`.)
+    /// `xfer(xfer)` of the module's class: a subclass's (batch A30: `WanderAIUpdate`, `TransportAIUpdate`, version 1; batch A31:
+    /// `DeployStyleAIUpdate`, version 4, its state and frame after the base's) then `AIUpdateInterface`'s. (`crc` calls it, as
+    /// upstream's virtual `xfer(x)`.)
     pub fn xfer(
         &mut self,
         h: &mut H,
@@ -88,6 +89,21 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         waypoint_name: impl Fn(u32) -> Vec<u8>,
         waypoint_by_name: impl Fn(&[u8]) -> Option<u32>,
     ) -> SmResult<()> {
+        if let crate::logic::ai::ai_update::AiSubclass::DeployStyle(_) = self.ai().subclass {
+            let current_version: XferVersion = 4;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            // "extend base class"
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            if version < 4 {
+                // ("Good riddance!!!": an AICommandParmsStorage, not translated; this port writes version 4)
+                return Err(XferStatus::InvalidVersion.into());
+            }
+            if let crate::logic::ai::ai_update::AiSubclass::DeployStyle(d) = &mut self.ai_mut().subclass {
+                crate::logic::ai::deploy_style_ai_update::deploy_style_xfer_members(d, xfer)?;
+            }
+            return Ok(());
+        }
         if self.ai().subclass != crate::logic::ai::ai_update::AiSubclass::Plain && !plant(3613) {
             let current_version: XferVersion = 1;
             let mut version = current_version;

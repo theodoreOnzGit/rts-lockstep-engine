@@ -194,8 +194,12 @@ struct AiEnv
 	/* batch A23 */
 	Int otherAiState;		/* another object's AI's machine's current state (set, not entered) */
 	Real otherAiGoalPos[3];	/* and its goal position */
-	/* batch A30: the AI's class (0 AIUpdateInterface, 1 WanderAIUpdate, 2 TransportAIUpdate) */
+	/* batch A30: the AI's class (0 AIUpdateInterface, 1 WanderAIUpdate, 2 TransportAIUpdate; batch A31: 3 DeployStyleAIUpdate) */
 	Int subclass;
+	/* batch A31: a DeployStyleAIUpdate's data's bits (reset turret before packing, turrets function only when deployed, turrets
+	** must center before packing, manual deploy animations) and the object's drawable (bit 4); its unpack and pack times */
+	Int deployFlags;
+	UnsignedInt deployTimes[2];
 };
 
 extern AiEnv g_aiEnv;
@@ -225,7 +229,9 @@ enum
 	LOG_DOCK = 105,		/* batch A17: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_TUNNEL = 106,	/* batch A20: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_AI_SNAPSHOT = 107,	/* batch A21: { kind, words.. } (see wrap_ai.cpp) */
-	LOG_PASSENGER = 108	/* batch A30: a transport's passenger's command (see wrap_ai.cpp) */
+	LOG_PASSENGER = 108,	/* batch A30: a transport's passenger's command (see wrap_ai.cpp) */
+	LOG_ANIM_FRAME = 109,	/* batch A31: the drawable's setAnimationFrame { frame } */
+	LOG_CLEAR_MODEL_FLAGS = 110	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -238,6 +244,9 @@ struct ModelConditionFlags
 };
 inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType t) { ModelConditionFlags f; f.set(t); return f; }
 #define MAKE_MODELCONDITION_MASK(k) makeModelConditionMask(k)
+/* batch A31 (ModelState.h's MAKE_MODELCONDITION_MASK2) */
+inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType a, ModelConditionFlagType b) { ModelConditionFlags f; f.set(a); f.set(b); return f; }
+#define MAKE_MODELCONDITION_MASK2(a,b) makeModelConditionMask(a, b)
 
 /* batch A4: TheScriptEngine, as far as AIDeadState uses it (logged) */
 class AttackPriorityInfo;
@@ -676,6 +685,14 @@ struct AiTemplateView
 	Bool isHijackGuard() const;
 	/* batch A15: none (the FX call is logged) */
 	const class FXList *getPerUnitFX(const char *fxName) const { return NULL; }
+	/* batch A31: "Deploy" and "Undeploy" ("s4", "s5", or empty: the scene's) */
+	const class AudioEventRTS *getPerUnitSound(const AsciiString& soundName) const;
+};
+/* batch A31: Drawable.h's, as far as DeployStyleAIUpdate reaches it (logged) */
+class Drawable
+{
+public:
+	void setAnimationFrame( int frame );
 };
 /* batch A17: UpdateModule.h's DockUpdateInterface (logged but isDockOpen, isAllowPassthroughType, isRallyPointAfterDockType: the
 ** scene's) and the supply truck's (never one here) */
@@ -758,6 +775,9 @@ public:
 	Bool isDisabledByType(DisabledType type) const;
 	void setModelConditionState(ModelConditionFlagType a);
 	void clearModelConditionState(ModelConditionFlagType a);
+	/* batch A31 */
+	void clearModelConditionFlags(const ModelConditionFlags& clr);
+	Drawable *getDrawable() const;
 	/* batch A2 */
 	ObjectID getID() const;
 	UnsignedByte getCrusherLevel() const;

@@ -112,6 +112,7 @@ use rts_lockstep_engine::logic::ai::ai_paths;
 use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule, PassengerCommand};
 use rts_lockstep_engine::logic::ai::ai_waypoint_states::WaypointPathData;
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiSubclass, AiUpdate, LocoGoalType};
+use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -205,6 +206,8 @@ const L_TUNNEL: u32 = 106;
 const L_AI_SNAPSHOT: u32 = 107;
 /// Batch A30: a transport's passenger's command (`LOG_PASSENGER`).
 const L_PASSENGER: u32 = 108;
+const L_ANIM_FRAME: u32 = 109;
+const L_CLEAR_MODEL_FLAGS: u32 = 110;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -887,6 +890,28 @@ impl AiStateHost for Host {
         let v = if self.object_exists(victim) { victim as u32 } else { 0 };
         let b = pos.map_or([0; 3], |p: Coord3D| [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]);
         self.l(L_PASSENGER, &[kind, passenger as u32, v, b[0], b[1], b[2], shots as u32, src as u32]);
+    }
+    // batch A31: DeployStyleAIUpdate's reach (the wrapper's stand-ins: the cleared conditions in increasing order; "Deploy" is
+    // "s4", "Undeploy" "s5", when the scene's sound bits say so, else the empty sound; the drawable when the scene gives one)
+    fn clear_model_condition_flags(&mut self, clear: &[ModelConditionFlagType]) {
+        let mut w: Vec<u32> = clear.iter().map(|&c| c as u32).collect();
+        w.sort_unstable();
+        w.dedup();
+        self.l(L_CLEAR_MODEL_FLAGS, &w);
+    }
+    fn play_per_unit_sound(&mut self, name: &[u8]) {
+        let k = match name {
+            b"Deploy" => 4,
+            b"Undeploy" => 5,
+            _ => -1,
+        };
+        let named = k >= 0 && (self.env.sounds >> k) & 1 != 0;
+        self.audio_add(if named { k as u32 } else { u32::MAX });
+    }
+    fn set_drawable_animation_frame(&mut self, frame: i32) {
+        if (self.env.deploy_flags >> 4) & 1 != 0 {
+            self.l(L_ANIM_FRAME, &[frame as u32]);
+        }
     }
     fn pf_goal_position(&mut self) -> Option<Coord3D> {
         let has = self.env.pf_has_goal;
@@ -2525,6 +2550,10 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
             _ => panic!("the idle state"),
         }
     }
+    // batch A31: a DeployStyleAIUpdate's members
+    if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
+        v.extend([d.state, d.frame_to_wait_for_deploy]);
+    }
     v
 }
 
@@ -2657,7 +2686,8 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.repulsed_distance = g.uniform(0.0, 100.0);
     gen_a6(g, &mut e);
     // batch A7
-    e.sounds = g.below(16) as i32;
+    // (batch A31: bits 4 and 5 the per-unit deploy and undeploy sounds)
+    e.sounds = g.below(64) as i32;
     e.formation_id = if g.below(3) == 0 { 1 + g.below(3) as i32 } else { 0 };
     e.group_speed = g.uniform(0.5, 6.0);
     e.max_height_above_position = g.uniform(0.0, 30.0);
@@ -2672,8 +2702,11 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.crushes_infantry = i32::from(g.below(2) == 0);
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
-    // batch A30: the AI's class, for the whole case (half the AIs AIUpdateInterface itself)
-    e.subclass = [0, 0, 1, 2][g.below(4) as usize];
+    // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
+    e.subclass = [0, 0, 1, 2, 3, 3][g.below(6) as usize];
+    // batch A31: a deployer's data and drawable, its times now and then zero
+    e.deploy_flags = g.below(32) as i32;
+    e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -3689,7 +3722,19 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     host.make_map();
     let _ = host.thing.set_position(&TCtx::new(&host.env), Some(&start_pos)).unwrap();
     let _ = host.thing.set_orientation(&TCtx::new(&host.env), angle).unwrap();
-    let subclass = [AiSubclass::Plain, AiSubclass::Wander, AiSubclass::Transport][host.env.subclass as usize];
+    let subclass = match host.env.subclass {
+        1 => AiSubclass::Wander,
+        2 => AiSubclass::Transport,
+        3 => AiSubclass::DeployStyle(DeployStyle::new(DeployStyleData {
+            unpack_time: host.env.deploy_times[0],
+            pack_time: host.env.deploy_times[1],
+            reset_turret_before_packing: host.env.deploy_flags & 1 != 0,
+            turrets_function_only_when_deployed: host.env.deploy_flags & 2 != 0,
+            turrets_must_center_before_packing: host.env.deploy_flags & 4 != 0,
+            manual_deploy_animations: host.env.deploy_flags & 8 != 0,
+        })),
+        _ => AiSubclass::Plain,
+    };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass);
     if host.env.has_machine != 0 {
         // batch A4: the object's creation makes the machine
@@ -4096,6 +4141,20 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A31; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `DeployStyleAIUpdate` (DeployStyleAIUpdate.cpp cut verbatim, its header's `DeployStateTypes` too; the module data the
+///   scene's: times of 0 to 39 frames, a quarter of each zero, the four flags and the drawable drawn per case; the per-unit sounds
+///   "s4"/"s5" or empty; `setAnimationFrame` and `clearModelConditionFlags` logged): a third of the cases (now a third
+///   `AIUpdateInterface`, a sixth each wanderer and transport): 30,000 constructions and 1,798,455 operations, **0 mismatches** in
+///   the results, the call logs and the dumps (the deployer's state and wait frame added to the dump; its version-4 snapshot).
+/// - The first 3,000-case run found a **port defect from batch A30**: `ai_attack_object_on_locked_machine` (an enter state's
+///   attack inside a guard machine) inlines `privateAttackObject` and so skipped `TransportAIUpdate`'s override (the passengers'
+///   attack, 4 `LOG_PASSENGER` records missing); fixed.
+/// - Planted bugs (5,000 cases each): 3620 (the wait's end; 39 mismatches), 3621 (guarding idle deploys; 7), 3622 (centre the
+///   turrets first; 8), 3623 (the deploy's animation frame; 13), 3624 (a reversed undeploy's unpack time; 7), 3625 (the deployed
+///   status; 27), 3626 (the snapshot's wait frame; 1,201) caught.
+///
 /// # Results (2026-10-29, batch A30; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The AI's class per case (half `AIUpdateInterface`, a quarter each `WanderAIUpdate` and `TransportAIUpdate`, cut verbatim

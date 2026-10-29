@@ -27,6 +27,7 @@ pub mod ai_rappel_state;
 pub mod ai_dock;
 pub mod ai_guard;
 pub mod ai_tn_guard;
+pub mod deploy_style_ai_update;
 pub mod ai_update_xfer;
 pub mod ai_fire_host;
 pub mod ai_paths;

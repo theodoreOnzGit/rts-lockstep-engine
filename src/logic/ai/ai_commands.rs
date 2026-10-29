@@ -239,6 +239,10 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A31: `DeployStyleAIUpdate::aiDoCommand` (the virtual every command reaches): its own check, then the base's
+    if matches!(ai(h).subclass, AiSubclass::DeployStyle(_)) && !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
+        return Ok(());
+    }
     if !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
     }
@@ -471,7 +475,8 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     if src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands {
         return Ok(());
     }
-    // privateAttackObject
+    // privateAttackObject (a transport's: its passengers first; batch A31, found by the deployers' run)
+    transport_passengers_attack(h, src, PassengerCommand::AttackObject { victim, max_shots, src });
     if !h.object_exists(victim) {
         return Ok(());
     }

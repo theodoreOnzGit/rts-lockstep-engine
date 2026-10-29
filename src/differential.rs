@@ -1044,8 +1044,12 @@ pub struct AiEnv {
     // batch A23: other objects' AIs' machine: its current state (set, not entered) and goal position
     pub other_ai_state: c_int,
     pub other_ai_goal_pos: [c_float; 3],
-    // batch A30: the AI's class (0 AIUpdateInterface, 1 WanderAIUpdate, 2 TransportAIUpdate)
+    // batch A30: the AI's class (0 AIUpdateInterface, 1 WanderAIUpdate, 2 TransportAIUpdate; batch A31: 3 DeployStyleAIUpdate)
     pub subclass: c_int,
+    // batch A31: a DeployStyleAIUpdate's data's bits (reset turret before packing, turrets function only when deployed, turrets
+    // must center before packing, manual deploy animations) and the object's drawable (bit 4); its unpack and pack times
+    pub deploy_flags: c_int,
+    pub deploy_times: [c_uint; 2],
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

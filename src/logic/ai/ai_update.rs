@@ -65,6 +65,7 @@ use crate::common::kind_of::{
 };
 use crate::common::object_status_types::{OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_STEALTHED};
 use crate::logic::damage::{DamageType, DAMAGE_HEALING};
+use crate::logic::ai::deploy_style_ai_update::DeployStyle;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
 use crate::common::name_key_generator::NameKeyType;
@@ -327,6 +328,8 @@ pub enum AiSubclass {
     Wander,
     /// `TransportAIUpdate`: the passengers allowed to fire attack what the transport is told to attack.
     Transport,
+    /// `DeployStyleAIUpdate` (batch A31): unpacks before it attacks, packs up before it moves (its members and data).
+    DeployStyle(DeployStyle),
 }
 
 impl AiUpdate {

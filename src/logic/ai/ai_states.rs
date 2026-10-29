@@ -126,6 +126,13 @@ pub trait AiStateHost: AiHost + StateContext {
     fn object_has_ai(&self, id: ObjectId) -> bool;
     /// Batch A30: a command to a passenger's AI.
     fn passenger_ai_command(&mut self, passenger: ObjectId, cmd: PassengerCommand);
+    /// Batch A31: `clearModelConditionFlags(MAKE_MODELCONDITION_MASK..(clear))`.
+    fn clear_model_condition_flags(&mut self, clear: &[ModelConditionFlagType]);
+    /// Batch A31: `TheAudio->addAudioEvent` of a copy of `getTemplate()->getPerUnitSound(name)` named with the object's id (never
+    /// `NULL`: an unknown name's is the empty sound).
+    fn play_per_unit_sound(&mut self, name: &[u8]);
+    /// Batch A31: `getDrawable()->setAnimationFrame(frame)`, when the object has a drawable.
+    fn set_drawable_animation_frame(&mut self, frame: i32);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1496,12 +1503,20 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         self.run(h, crate::logic::ai::ai_paths::do_pathfind);
     }
 
-    /// `update()` of the module's class: `WanderAIUpdate`'s for a wanderer, else `AIUpdateInterface`'s.
+    /// `update()` of the module's class: `WanderAIUpdate`'s for a wanderer, `DeployStyleAIUpdate`'s for a deployer, else
+    /// `AIUpdateInterface`'s.
     pub fn update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
-        if self.ai().subclass == crate::logic::ai::ai_update::AiSubclass::Wander {
-            return self.wander_update(h);
+        match self.ai().subclass {
+            crate::logic::ai::ai_update::AiSubclass::Wander => self.wander_update(h),
+            crate::logic::ai::ai_update::AiSubclass::DeployStyle(_) => {
+                // batch A31: its own part, then `AIUpdateInterface::update()`; "We can't sleep the deploy AI because any new
+                // commands need to be caught and sent into busy state during the update."
+                self.run(h, crate::logic::ai::deploy_style_ai_update::deploy_style_update)?;
+                self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            _ => self.base_update(h),
         }
-        self.base_update(h)
     }
 
     /// `WanderAIUpdate::update()` (batch A30): "If I'm standing still, move somewhere" (5 to 50 in x, then in y), then
