@@ -76,6 +76,7 @@ use crate::logic::ai::ai_face_exit_states as face_exit;
 use crate::logic::ai::ai_enter_state as enter_state;
 use crate::logic::ai::ai_dock as dock;
 use crate::logic::ai::ai_guard::{self as guard, ExitConditions, GuardData};
+use crate::logic::ai::ai_tn_guard as tn_guard;
 use crate::logic::ai::ai_rappel_state::{self as rappel, RappelData};
 use crate::logic::ai::ai_update::{AiHost, AiMachineExtras, AiUpdate};
 use crate::logic::ai::path::Path;
@@ -470,6 +471,19 @@ pub trait AiStateHost: AiHost + StateContext {
     fn closest_guard_target(&mut self, pos: &Coord3D, range: f32, filters: u32, area: Option<i32>) -> ObjectId;
     /// `getTeam() != NULL`.
     fn has_team(&mut self) -> bool;
+    // ---- batch A20: the tunnel-network guard state
+    /// The controlling player's `getTunnelSystem()` (false: no controlling player).
+    fn tunnel_system(&mut self) -> bool;
+    /// The tunnel system's `getContainerList()`, in order; its `getCurNemesis()`; its `updateNemesis(target)`.
+    fn tunnel_container_list(&mut self) -> Vec<ObjectId>;
+    fn tunnel_cur_nemesis(&mut self) -> ObjectId;
+    fn tunnel_update_nemesis(&mut self, target: ObjectId);
+    /// Another object's AI's `getGoalObject()` (`None`: no AI).
+    fn object_ai_goal_object(&mut self, id: ObjectId) -> Option<ObjectId>;
+    /// Another object's body's last damage: `out.m_noEffect`, `in.m_sourceID`, `getLastDamageTimestamp()` (`None`: no body).
+    fn object_last_damage(&mut self, id: ObjectId) -> Option<(bool, ObjectId, u32)>;
+    /// The container's exit interface's `exitObjectInAHurry(owner)`.
+    fn exit_object_in_a_hurry(&mut self, container: ObjectId);
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states
@@ -564,10 +578,13 @@ pub enum AiState<H: AiStateHost> {
     /// The guard machine's `AIGuardReturnState`: `AIInternalMoveToState`'s base, `m_nextReturnScanTime`.
     GuardReturn { mv: MoveToData, next_return_scan_time: u32 },
     /// The guard machine's `AIGuardIdleState`: `m_nextEnemyScanTime`, `m_guardeePos`.
-    /// (`retaliate`: the guard-retaliate machine's, which is never a guard idle state; batch A19)
-    GuardIdle { next_enemy_scan_time: u32, guardee_pos: Coord3D, retaliate: bool },
+    /// (`guard_idle`: whether it is a guard idle state; not the guard-retaliate machine's (batch A19), nor the tunnel-network guard
+    /// machine's `AITNGuardIdleState` (batch A20))
+    GuardIdle { next_enemy_scan_time: u32, guardee_pos: Coord3D, guard_idle: bool },
     /// The guard machine's `AIGuardPickUpCrateState`: `AIPickUpCrateState`'s members.
     GuardCrate { mv: MoveToData, delay_counter: i32 },
+    /// The tunnel-network guard machine's `AITNGuardReturnState` (batch A20): `AIEnterState`'s members, `m_nextReturnScanTime`.
+    TnGuardReturn { mv: MoveToData, entry_to_clear: ObjectId, next_return_scan_time: u32 },
     /// `AIDockState` (batch A17): `m_dockMachine`, its `m_approachPosition`, `m_usingPrecisionMovement`.
     Dock { machine: Option<StateMachine<AiState<H>>>, approach_position: i32, using_precision_movement: bool },
     /// The docking machine's move states (`which`: the state's id): `AIInternalMoveToState`'s base.
@@ -613,6 +630,8 @@ pub enum AiCondition {
     DockAbleToAdvance,
     /// `hasAttackedMeAndICanReturnFire` (batch A18: the guard machine's).
     GuardAttackedMe,
+    /// AITNGuard.cpp's `hasAttackedMeAndICanReturnFire` (batch A20: the tunnel-network guard machine's).
+    TnGuardAttackedMe,
 }
 
 /// The static `isIdle`, `isAttack`, `isBusy` of an untranslated state's class: `AIAttackState`'s `TRUE` for the attack states;
@@ -789,7 +808,6 @@ pub fn aism_xfer<H: AiStateHost>(
 /// `AIStateMachine::AIStateMachine(obj, name)`'s state definitions, in upstream's order ("order matters: first state is the default
 /// state"), with each state's success and failure successors.
 pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: AttackOwnerKinds) -> SmResult<()> {
-    let u = |id| AiState::Untranslated { id };
     // AIFollowPathState's constructor: adjust final, no override, index 0, ten retries
     let follow_path =
         || AiState::FollowPath { mv: MoveToData::default(), index: 0, adjust_final: true, adjust_final_override: false, retry_count: 10 };
@@ -857,7 +875,12 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_EXIT, AiState::Exit { instantly: false, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_EXIT_INSTANTLY, AiState::Exit { instantly: true, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_GUARD, AiState::Guard { machine: None, data: GuardData::default(), kinds }, AI_IDLE, AI_IDLE),
-        (AI_GUARD_TUNNEL_NETWORK, u(AI_GUARD_TUNNEL_NETWORK), AI_IDLE, AI_IDLE),
+        (
+            AI_GUARD_TUNNEL_NETWORK,
+            AiState::Guard { machine: None, data: GuardData { tunnel: true, ..GuardData::default() }, kinds },
+            AI_IDLE,
+            AI_IDLE,
+        ),
         (
             AI_GUARD_RETALIATE,
             AiState::Guard { machine: None, data: GuardData { retaliate: true, ..GuardData::default() }, kinds },
@@ -1073,6 +1096,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_enter(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_on_enter(sm, h, id),
             Some(AiState::Guard { data, .. }) if data.retaliate => guard::retaliate_on_enter(sm, h, id),
+            Some(AiState::Guard { data, .. }) if data.tunnel => tn_guard::tn_guard_on_enter(sm, h, id),
             Some(AiState::Guard { .. }) => guard::guard_on_enter(sm, h, id),
             Some(AiState::GuardAttack { which, kinds, .. }) => {
                 let (which, kinds) = (*which, *kinds);
@@ -1081,6 +1105,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::GuardReturn { .. }) => guard::return_on_enter(sm, h, id),
             Some(AiState::GuardIdle { .. }) => guard::idle_on_enter(sm, h, id),
             Some(AiState::GuardCrate { .. }) => guard::crate_on_enter(sm, h, id),
+            Some(AiState::TnGuardReturn { .. }) => tn_guard::tn_return_on_enter(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_on_enter(sm, h, id, which)
@@ -1131,6 +1156,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 guard::guard_attack_on_exit(sm, h, id, which)?
             }
             Some(AiState::GuardReturn { .. }) => move_states::internal_on_exit(sm, h, id),
+            Some(AiState::TnGuardReturn { .. }) => enter_state::enter_on_exit(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_on_exit(sm, h, id, which, status)
@@ -1181,6 +1207,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_update(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_update(sm, h, id),
             Some(AiState::Guard { data, .. }) if data.retaliate => guard::retaliate_update(sm, h, id),
+            Some(AiState::Guard { data, .. }) if data.tunnel => tn_guard::tn_guard_update(sm, h, id),
             Some(AiState::Guard { .. }) => guard::guard_update(sm, h, id),
             Some(AiState::GuardAttack { which, .. }) => {
                 let which = *which;
@@ -1189,6 +1216,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::GuardReturn { .. }) => guard::return_update(sm, h, id),
             Some(AiState::GuardIdle { .. }) => guard::idle_update(sm, h, id),
             Some(AiState::GuardCrate { .. }) => attack_move::crate_update(sm, h, id),
+            Some(AiState::TnGuardReturn { .. }) => tn_guard::tn_return_update(sm, h, id),
             Some(AiState::DockMove { which, .. }) => {
                 let which = *which;
                 dock::dock_move_update(sm, h, id, which)
@@ -1224,8 +1252,8 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
     fn is_attack(&self) -> bool {
         match self {
             // (batch A19: an attack state embedded in a guard-retaliate machine's state, swapped into its place while it runs, answers
-            // for that state, which does not override isAttack)
-            AiState::Attack { exit: Some(x), .. } if x.retaliate => false,
+            // for that state, which does not override isAttack; batch A20: so does one in a tunnel-network guard machine's)
+            AiState::Attack { exit: Some(x), .. } if x.retaliate || x.tunnel => false,
             // (AIAttackState's TRUE; the chase states' TRUE)
             AiState::Attack { .. } => !plant(3246),
             // (AIAttackMoveToState's: its machine's)
@@ -1242,12 +1270,12 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             _ => false,
         }
     }
-    /// `isGuardIdle()` (batch A18/A19): the guard machine's idle state; the guard state's, its machine's (the guard-retaliate
-    /// machine's states and state do not override it).
+    /// `isGuardIdle()` (batch A18/A19/A20): the guard machine's idle state; the guard state's, its machine's (the guard-retaliate
+    /// and tunnel-network guard machines' states and states do not override it).
     fn is_guard_idle(&self) -> bool {
         match self {
-            AiState::GuardIdle { retaliate, .. } => !retaliate,
-            AiState::Guard { machine: Some(m), data, .. } if !data.retaliate => m.is_in_guard_idle_state(),
+            AiState::GuardIdle { guard_idle, .. } => *guard_idle,
+            AiState::Guard { machine: Some(m), data, .. } if !data.retaliate && !data.tunnel => m.is_in_guard_idle_state(),
             _ => false,
         }
     }
@@ -1302,11 +1330,15 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             AiState::DockMove { which, mv } => dock::dock_move_xfer(*which, mv, xfer)?,
             AiState::DockWait { enter_frame } => dock::wait_xfer(enter_frame, xfer)?,
             AiState::Guard { machine, data, kinds } if data.retaliate => guard::retaliate_xfer(machine, data, *kinds, xfer)?,
+            AiState::Guard { machine, data, kinds } if data.tunnel => tn_guard::tn_guard_xfer(machine, data, *kinds, xfer)?,
             AiState::Guard { machine, data, kinds } => guard::guard_xfer(machine, data, *kinds, xfer)?,
             AiState::GuardAttack { .. } => guard::version_only_xfer(xfer)?,
             AiState::GuardReturn { next_return_scan_time, .. } => guard::return_xfer(next_return_scan_time, xfer)?,
             AiState::GuardIdle { next_enemy_scan_time, .. } => guard::idle_xfer(next_enemy_scan_time, xfer)?,
             AiState::GuardCrate { mv, delay_counter } => attack_move::crate_xfer(mv, delay_counter, xfer)?,
+            AiState::TnGuardReturn { mv, entry_to_clear, next_return_scan_time } => {
+                tn_guard::tn_return_xfer(mv, entry_to_clear, next_return_scan_time, xfer)?
+            }
             AiState::Face { can_turn_in_place, .. } => face_exit::face_xfer(can_turn_in_place, xfer)?,
             AiState::Wander { mv, wp, wait_frames, timer } | AiState::Panic { mv, wp, wait_frames, timer } => {
                 waypoint_states::wander_xfer(mv, wp, wait_frames, timer, xfer)?

@@ -35,6 +35,9 @@
 //! exit conditions also give up when the owner is beyond the guard range of the centre. It does not lock the AI's machine. It is
 //! the same [`AiState::Guard`] with [`GuardData::retaliate`] (and [`ExitConditions::retaliate`]).
 //!
+//! `AITunnelNetworkGuardState` (`AI_GUARD_TUNNEL_NETWORK`, batch A20) is the same [`AiState::Guard`] with [`GuardData::tunnel`]: its
+//! machine and states are in [`ai_tn_guard`](crate::logic::ai::ai_tn_guard), those shared with this machine's dispatched there.
+//!
 //! # Upstream facts kept
 //!
 //! - `getGuardTargetType()` answers `m_guardTargetType[1]`; `clearGuardTargetType()` moves `[0]` to `[1]`.
@@ -55,6 +58,7 @@ use crate::logic::ai::ai_attack_move::{self as attack_move, run_sub_machine};
 use crate::logic::ai::ai_attack_states::{self as attack_states, attack_state, AttackOwnerKinds};
 use crate::logic::ai::ai_move_states::{self as move_states, mv, MoveToData};
 use crate::logic::ai::ai_states::{ai, with_ai, AiCondition, AiState, AiStateHost};
+use crate::logic::ai::ai_tn_guard as tn_guard;
 use crate::logic::ai::ai_update_types::*;
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
 use crate::logic::damage::DAMAGE_HEALING;
@@ -85,11 +89,16 @@ pub struct ExitConditions {
     pub attack_give_up_frame: u32,
     /// `GuardRetaliateExitConditions` (batch A19): the owner, too, must stay within the guard range of the centre.
     pub retaliate: bool,
+    /// `TunnelNetworkExitConditions` (batch A20): only the give-up time counts (not even the goal).
+    pub tunnel: bool,
 }
 
 impl ExitConditions {
     /// `ExitConditions::shouldExit(machine)`.
     pub fn should_exit<H: AiStateHost>(&self, sm: &Sm<H>, h: &mut H) -> bool {
+        if self.tunnel {
+            return StateContext::frame(h) >= self.attack_give_up_frame;
+        }
         let Some(goal) = sm.goal_object(h) else { return self.conditions_to_consider & ATTACK_EXIT_IF_NO_UNIT_FOUND != 0 };
         if self.conditions_to_consider & ATTACK_EXIT_IF_EXPIRED_DURATION != 0 && StateContext::frame(h) >= self.attack_give_up_frame {
             return true;
@@ -135,6 +144,8 @@ pub struct GuardData {
     pub guard_mode: GuardMode,
     /// The machine is an `AIGuardRetaliateMachine` (batch A19).
     pub retaliate: bool,
+    /// The machine is an `AITNGuardMachine` (batch A20).
+    pub tunnel: bool,
 }
 
 impl Default for GuardData {
@@ -147,12 +158,13 @@ impl Default for GuardData {
             nemesis_to_attack: INVALID_ID,
             guard_mode: GUARDMODE_NORMAL,
             retaliate: false,
+            tunnel: false,
         }
     }
 }
 
 /// The lent guard machine's members.
-fn gd<H: AiStateHost>(h: &mut H) -> &mut GuardData {
+pub(crate) fn gd<H: AiStateHost>(h: &mut H) -> &mut GuardData {
     &mut h.attack_stack().last_mut().expect("the guard machine's frame").guard
 }
 
@@ -165,7 +177,7 @@ pub fn new_guard_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> Sm<H> {
         m.define_state(AI_GUARD_INNER, attack(AI_GUARD_INNER), AI_GUARD_OUTER, AI_GUARD_OUTER, &aggressors)?;
         m.define_state(AI_GUARD_RETURN, AiState::GuardReturn { mv: MoveToData::default(), next_return_scan_time: 0 }, AI_GUARD_IDLE, AI_GUARD_INNER, &aggressors)?;
         // (the idle state's members: the pool's zeros)
-        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), retaliate: false };
+        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), guard_idle: true };
         m.define_state(AI_GUARD_IDLE, idle, AI_GUARD_INNER, AI_GUARD_RETURN, &aggressors)?;
         m.define_state(AI_GUARD_OUTER, attack(AI_GUARD_OUTER), AI_GUARD_GET_CRATE, AI_GUARD_GET_CRATE, &[])?;
         m.define_state(AI_GUARD_GET_CRATE, AiState::GuardCrate { mv: MoveToData::default(), delay_counter: 0 }, AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
@@ -185,7 +197,7 @@ pub fn new_guard_retaliate_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> S
     let r = (|| -> SmResult<()> {
         m.define_state(AI_GUARD_ATTACK_AGGRESSOR, attack(AI_GUARD_ATTACK_AGGRESSOR), AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
         m.define_state(AI_GUARD_RETURN, AiState::GuardReturn { mv: MoveToData::default(), next_return_scan_time: 0 }, AI_GUARD_IDLE, AI_GUARD_INNER, &aggressors)?;
-        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), retaliate: true };
+        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default(), guard_idle: false };
         m.define_state(AI_GUARD_IDLE, idle, AI_GUARD_INNER, crate::common::state_machine::EXIT_MACHINE_WITH_SUCCESS, &aggressors)?;
         m.define_state(AI_GUARD_INNER, attack(AI_GUARD_INNER), AI_GUARD_OUTER, AI_GUARD_OUTER, &[])?;
         m.define_state(AI_GUARD_OUTER, attack(AI_GUARD_OUTER), AI_GUARD_GET_CRATE, AI_GUARD_GET_CRATE, &[])?;
@@ -224,7 +236,7 @@ pub fn has_attacked_me_and_i_can_return_fire<H: AiStateHost>(h: &mut H) -> bool 
 }
 
 /// `AIGuardMachine::getStdGuardRange(obj)`.
-fn std_guard_range<H: AiStateHost>(h: &mut H) -> f32 {
+pub(crate) fn std_guard_range<H: AiStateHost>(h: &mut H) -> f32 {
     h.adjusted_vision_range_for_object(AI_VISIONFACTOR_OWNERTYPE | AI_VISIONFACTOR_MOOD | AI_VISIONFACTOR_GUARDINNER)
 }
 
@@ -316,7 +328,7 @@ pub const GUARD_FILTER_REJECT_BUILDINGS: u32 = 256;
 // ---- the embedded attack and enter states
 
 /// Runs `f` with the guard state `id`'s embedded state in its place (its exit conditions lent), then puts the guard state back.
-fn with_embedded<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl FnOnce(&mut Sm<H>, &mut H) -> SmResult<R>) -> SmResult<R> {
+pub(crate) fn with_embedded<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl FnOnce(&mut Sm<H>, &mut H) -> SmResult<R>) -> SmResult<R> {
     let mut embedded = match sm.state_mut(id) {
         Some(AiState::GuardAttack { embedded, exit, .. }) => {
             let mut e = embedded.pop().expect("an embedded state");
@@ -343,7 +355,7 @@ fn has_embedded<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> Option<bool> {
     }
 }
 
-fn set_exit<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, f: impl FnOnce(&mut ExitConditions)) {
+pub(crate) fn set_exit<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, f: impl FnOnce(&mut ExitConditions)) {
     if let Some(AiState::GuardAttack { exit, .. }) = sm.state_mut(id) {
         f(exit);
     }
@@ -351,7 +363,7 @@ fn set_exit<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, f: impl FnOnce(&mut Exi
 
 /// The embedded state made (an attack state with the exit conditions, or an enter state), the machine's goal the nemesis, and
 /// entered: a continue keeps it.
-fn enter_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, state: AiState<H>, nemesis: ObjectId) -> SmResult<StateReturn> {
+pub(crate) fn enter_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, state: AiState<H>, nemesis: ObjectId) -> SmResult<StateReturn> {
     if let Some(AiState::GuardAttack { embedded, .. }) = sm.state_mut(id) {
         embedded.clear();
         embedded.push(state);
@@ -371,7 +383,7 @@ fn enter_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, state:
 }
 
 /// The embedded state's update (none: success).
-fn update_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+pub(crate) fn update_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     match has_embedded(sm, id) {
         None => Ok(StateReturn::SUCCESS),
         Some(true) => with_embedded(sm, h, id, |sm, h| attack_states::attack_update(sm, h, id)),
@@ -380,7 +392,7 @@ fn update_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> Sm
 }
 
 /// The embedded state's exit, then it is deleted.
-fn exit_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
+pub(crate) fn exit_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<()> {
     match has_embedded(sm, id) {
         None => {}
         Some(true) => with_embedded(sm, h, id, |sm, h| attack_states::attack_on_exit(sm, h, id))?,
@@ -475,6 +487,9 @@ pub fn guard_attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Stat
     if gd(h).retaliate {
         return retaliate_attack_on_enter(sm, h, id, which, kinds);
     }
+    if gd(h).tunnel {
+        return tn_guard::tn_attack_on_enter(sm, h, id, which, kinds);
+    }
     let now = StateContext::frame(h);
     match which {
         AI_GUARD_INNER => {
@@ -556,6 +571,9 @@ pub fn guard_attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Stat
 /// The inner, outer and attack-aggressor states' `update`: the centre follows a guarded object; the outer state's give-up time
 /// renewed while its goal is within the guard range of the centre; the embedded state's update.
 pub fn guard_attack_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, which: StateId) -> SmResult<StateReturn> {
+    if gd(h).tunnel {
+        return tn_guard::tn_attack_update(sm, h, id, which);
+    }
     if which != AI_GUARD_INNER && has_embedded(sm, id).is_none() {
         return Ok(StateReturn::SUCCESS);
     }
@@ -588,6 +606,9 @@ pub fn guard_attack_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateI
 /// The inner, outer and attack-aggressor states' `onExit`: the embedded state's exit and deletion; the inner and aggressor
 /// states clear the team's target.
 pub fn guard_attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, which: StateId) -> SmResult<()> {
+    if gd(h).tunnel {
+        return tn_guard::tn_attack_on_exit(sm, h, id, which);
+    }
     exit_embedded(sm, h, id)?;
     if which != AI_GUARD_OUTER && h.has_team() && !plant(3404) {
         h.set_team_target_object(INVALID_ID); // "clear the target."
@@ -595,10 +616,10 @@ pub fn guard_attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
     Ok(())
 }
 
-/// The inner, outer and attack-aggressor states' `isAttack`: their embedded attack state's (the guard-retaliate machine's states do
-/// not override it: false).
+/// The inner, outer and attack-aggressor states' `isAttack`: their embedded attack state's (the guard-retaliate and tunnel-network
+/// guard machines' states do not override it: false).
 pub fn guard_attack_is_attack<H: AiStateHost>(embedded: &[AiState<H>], exit: &ExitConditions) -> bool {
-    !exit.retaliate && embedded.first().is_some_and(|e| e.is_attack())
+    !exit.retaliate && !exit.tunnel && embedded.first().is_some_and(|e| e.is_attack())
 }
 
 // ---- AIGuardReturnState
@@ -657,6 +678,9 @@ pub fn return_xfer(next_return_scan_time: &mut u32, xfer: &mut dyn Xfer) -> Xfer
 
 /// `AIGuardIdleState::onEnter()`: the first scan at a random time ("so that everyone doesn't scan on the same frame").
 pub fn idle_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if gd(h).tunnel {
+        return tn_guard::tn_idle_on_enter(sm, h, id);
+    }
     let now = StateContext::frame(h);
     let rate = h.ai_data_guard_enemy_scan_rate();
     let next = now.wrapping_add(h.logic_random_value(0, rate as i32) as u32);
@@ -669,6 +693,9 @@ pub fn idle_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 /// `AIGuardIdleState::update()`: asleep until the scan; then a crate, an inner target (success), or the guarded object moved more
 /// than two cells (failure, to the return).
 pub fn idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if gd(h).tunnel {
+        return tn_guard::tn_idle_update(sm, h, id);
+    }
     let now = StateContext::frame(h);
     let (next, guardee) = match sm.state(id) {
         Some(AiState::GuardIdle { next_enemy_scan_time, guardee_pos, .. }) => (*next_enemy_scan_time, *guardee_pos),
@@ -684,6 +711,8 @@ pub fn idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> Sm
     // "Check to see if we have created a crate we need to pick up."
     if ai(h).crate_created != INVALID_ID {
         sm.set_state(h, AI_GUARD_GET_CRATE)?;
+        // (`m_nextEnemyScanTime`, read after the transitions: they may have entered this state again; batch A20)
+        let next = if plant(3409) { next } else { idle_next_enemy_scan_time(sm, id) };
         return Ok(StateReturn::sleep(next.wrapping_sub(now)));
     }
     // "if anyone is in the inner area, return success."
@@ -708,6 +737,14 @@ pub fn idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> Sm
         }
     }
     Ok(StateReturn::sleep(next.wrapping_sub(now)))
+}
+
+/// The idle state's `m_nextEnemyScanTime`.
+pub(crate) fn idle_next_enemy_scan_time<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> u32 {
+    match sm.state(id) {
+        Some(AiState::GuardIdle { next_enemy_scan_time, .. }) => *next_enemy_scan_time,
+        _ => unreachable!("a guard idle state"),
+    }
 }
 
 /// `AIGuardIdleState::xfer` (version 1): the scan time.

@@ -29,6 +29,11 @@ class Locomotor;
 class Waypoint;
 class Weapon;
 class Player;
+/* batch A20: another object's AI (the scene's one memory) and its goal */
+class Object;
+class AIUpdateInterface;
+Bool isOtherAi(const AIUpdateInterface *ai);
+Object *otherAiGoalObject();
 /* batch A11: JetAIUpdate (never an AI of this build: getJetAIUpdate is NULL) */
 class JetAIUpdate { public: Bool isOutOfSpecialReloadAmmo() const; };
 class AsciiString;
@@ -180,6 +185,12 @@ struct AiEnv
 	Int guardFlags;			/* the template's isEnterGuard (bit 0), isHijackGuard (bit 1) */
 	UnsignedInt objectsChangedFrame;	/* TheGameLogic->getFrameObjectsChangedTriggerAreas */
 	UnsignedInt guardScanRate, guardReturnScanRate, guardChaseFrames;	/* TheAI->getAiData()'s */
+	/* batch A20 */
+	Int tunnelIds[4];		/* the tunnel network's tunnels after the owner's container (0: none) */
+	Int tunnelNemesis;		/* its getCurNemesis */
+	UnsignedInt tunnelStamp;	/* another object's last damage's time: this plus a hash of the object below 64 */
+	UnsignedInt tunnelNoEffect;	/* another object's last damage's out.m_noEffect (bit by object id) */
+	Int otherAiGoal;		/* another object's AI's getGoalObject */
 };
 
 extern AiEnv g_aiEnv;
@@ -206,7 +217,8 @@ enum
 	LOG_TEAM_WAYPOINT = 99, LOG_GROUP_CENTER, LOG_TEAM_GROUP, LOG_SKIRMISH,
 	LOG_ATTACK = 103,	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_RAPPEL = 104,	/* batch A15: { kind, words.. } (see wrap_ai.cpp) */
-	LOG_DOCK = 105		/* batch A17: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_DOCK = 105,		/* batch A17: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_TUNNEL = 106	/* batch A20: { kind, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -435,6 +447,8 @@ class DamageInfo
 {
 public:
 	struct { DamageType m_damageType; ObjectID m_sourceID; } in;
+	/* batch A20 */
+	struct { Bool m_noEffect; } out;
 };
 
 class BodyModuleInterface
@@ -446,6 +460,8 @@ public:
 	/* batch A18 (logged) */
 	ObjectID getClearableLastAttacker() const;
 	void clearLastAttacker();
+	/* batch A20 */
+	UnsignedInt getLastDamageTimestamp() const;
 };
 
 class PhysicsBehavior
@@ -507,9 +523,19 @@ inline ObjectStatusMaskType makeObjectStatusMask(Int a, Int b, Int c = -1, Int d
 /* batch A3: the object's neighbours the AI reads, each answering from the scene */
 /* (UpgradeTemplate and UpgradeCenter: the shared shim's Common/Upgrade.h, renamed by PreRTS.h; the wrapper defines findUpgrade) */
 #include "Common/Upgrade.h"
+/* batch A20: TunnelTracker.h's, as far as AITNGuard.cpp uses it (the scene's; updateNemesis logged) */
+class TunnelTracker
+{
+public:
+	Object *getCurNemesis(void);
+	void updateNemesis(const Object *target);
+	const std::list<ObjectID> *getContainerList() const;
+};
 class Player
 {
 public:
+	/* batch A20 (always one: the player makes it) */
+	TunnelTracker *getTunnelSystem(void);
 	PlayerType getPlayerType() const;
 	Bool hasUpgradeComplete(const UpgradeTemplate *upgradeTemplate);
 	/* batch A9 */
@@ -552,6 +578,8 @@ public:
 	Bool isExitBusy() const;
 	ExitDoorType reserveDoorForExit( const AiTemplateView *objType, Object *specificObject );
 	void exitObjectViaDoor( Object *newObj, ExitDoorType exitDoor );
+	/* batch A20 (logged) */
+	void exitObjectInAHurry( Object *newObj );
 };
 class ContainModuleInterface
 {

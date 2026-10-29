@@ -42,7 +42,7 @@ type Sm<H> = StateMachine<AiState<H>>;
 
 fn entry_to_clear<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut ObjectId {
     match sm.state_mut(id) {
-        Some(AiState::Enter { entry_to_clear, .. }) => entry_to_clear,
+        Some(AiState::Enter { entry_to_clear, .. }) | Some(AiState::TnGuardReturn { entry_to_clear, .. }) => entry_to_clear,
         _ => unreachable!("the enter state"),
     }
 }

@@ -151,6 +151,21 @@
 #define GuardRetaliateExitConditions AiGuardRetaliateExitConditions
 #define hasAttackedMeAndICanReturnFireRetaliate aiHasAttackedMeAndICanReturnFireRetaliate
 #define CLOSE_ENOUGH_RETALIATE AI_GUARD_RETALIATE_CLOSE_ENOUGH
+/* batch A20 */
+#define AITunnelNetworkGuardState AiAITunnelNetworkGuardState
+#define AITNGuardMachine AiAITNGuardMachine
+#define AITNGuardInnerState AiAITNGuardInnerState
+#define AITNGuardIdleState AiAITNGuardIdleState
+#define AITNGuardOuterState AiAITNGuardOuterState
+#define AITNGuardReturnState AiAITNGuardReturnState
+#define AITNGuardPickUpCrateState AiAITNGuardPickUpCrateState
+#define AITNGuardAttackAggressorState AiAITNGuardAttackAggressorState
+#define TunnelNetworkExitConditions AiTunnelNetworkExitConditions
+#define TunnelTracker AiTunnelTracker
+#define findBestTunnel aiFindBestTunnel
+#define TunnelNetworkScan aiTunnelNetworkScan
+#define hasAttackedMeAndICanReturnFireTN aiHasAttackedMeAndICanReturnFireTN
+#define CLOSE_ENOUGH_TN AI_TN_GUARD_CLOSE_ENOUGH
 #define findEnemyInContainer aiFindEnemyInContainer
 #define killEnemiesInContainer aiKillEnemiesInContainer
 #define JetAIUpdate AiJetAIUpdate

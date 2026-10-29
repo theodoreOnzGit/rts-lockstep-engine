@@ -301,6 +301,7 @@ pub fn test<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, cond: AiCondition) -> boo
         AiCondition::CannotPossiblyAttackObject(t) => cannot_possibly_attack_object(sm, h, t),
         AiCondition::DockAbleToAdvance => crate::logic::ai::ai_dock::able_to_advance(sm, h),
         AiCondition::GuardAttackedMe => crate::logic::ai::ai_guard::has_attacked_me_and_i_can_return_fire(h),
+        AiCondition::TnGuardAttackedMe => crate::logic::ai::ai_tn_guard::tn_has_attacked_me_and_i_can_return_fire(h),
     }
 }
 

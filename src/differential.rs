@@ -1034,6 +1034,13 @@ pub struct AiEnv {
     pub guard_scan_rate: c_uint,
     pub guard_return_scan_rate: c_uint,
     pub guard_chase_frames: c_uint,
+    // batch A20: the tunnel network's tunnels (after the owner's container), current nemesis, the tunnels' damage times and
+    // no-effect bits, other objects' AIs' goal
+    pub tunnel_ids: [c_int; 4],
+    pub tunnel_nemesis: c_int,
+    pub tunnel_stamp: c_uint,
+    pub tunnel_no_effect: c_uint,
+    pub other_ai_goal: c_int,
 }
 
 extern "C" {

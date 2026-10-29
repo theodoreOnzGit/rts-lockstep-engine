@@ -101,6 +101,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "GameLogic/AIDock.h"
 #include "GameLogic/AIGuard.h"
 #include "GameLogic/AIGuardRetaliate.h"
+#include "GameLogic/AITNGuard.h"
 
 /* ---- the AI ------------------------------------------------------------------------------------------------------------------ */
 
@@ -211,8 +212,8 @@ public:
 	const AttackPriorityInfo *getAttackInfo(void) {return m_attackInfo;}
 	/* batch A12 (AIUpdate.h's; getAreaToGuard virtual upstream, no subclass here) */
 	void setAttackInfo(const AttackPriorityInfo *info) {m_attackInfo = info;}
-	/* batch A19 (AIUpdate.h) */
-	inline Object* getGoalObject() { return getStateMachine()->getGoalObject(); }
+	/* batch A19 (AIUpdate.h); batch A20: another object's AI (no machine here) answers the scene's */
+	inline Object* getGoalObject() { return isOtherAi(this) ? otherAiGoalObject() : getStateMachine()->getGoalObject(); }
 	/* batch A18 (AIUpdate.h's; virtual upstream, no subclass here) */
 	const Coord3D *getGuardLocation( void ) const { return &m_locationToGuard;	}
 	const ObjectID getGuardObject( void ) const { return m_objectToGuard; }
@@ -419,6 +420,7 @@ public:
 #include "ai_dock_a17.inc"
 #include "ai_guard_a18.inc"
 #include "ai_guard_retaliate_a19.inc"
+#include "ai_tn_guard_a20.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -861,12 +863,49 @@ Object *AI::findClosestEnemy(const Object *me, Real range, UnsignedInt qualifier
 	L(LOG_CLOSEST_ENEMY, { (unsigned)me->getID(), bitsOf(range), qualifiers, info ? (unsigned)info->m_index + 1u : 0u, poly });
 	return findObject((ObjectID)g_aiEnv.closestEnemy);
 }
+/* batch A20: another object's body (its id; 0: the AI's own) */
+unsigned bodyOwner(const BodyModuleInterface *body)
+{
+	for (unsigned k = 1; k < 32; ++k)
+		if (body == g_others[k].getBodyModule()) return k;
+	return 0;
+}
+DamageInfo g_otherDamage;
 const DamageInfo *BodyModuleInterface::getLastDamageInfo() const
 {
+	/* batch A20: another object's: a source by hash, the scene's no-effect bit */
+	if (unsigned k = bodyOwner(this)) {
+		g_otherDamage.in.m_damageType = (DamageType)0;
+		g_otherDamage.in.m_sourceID = (ObjectID)(p1Hash(73, { k }) % 32u);
+		g_otherDamage.out.m_noEffect = ((g_aiEnv.tunnelNoEffect >> k) & 1u) != 0;
+		return &g_otherDamage;
+	}
 	g_lastDamage.in.m_damageType = (DamageType)g_aiEnv.lastDamageType;
 	g_lastDamage.in.m_sourceID = (ObjectID)g_aiEnv.lastDamageSource;
+	g_lastDamage.out.m_noEffect = false;
 	return &g_lastDamage;
 }
+UnsignedInt BodyModuleInterface::getLastDamageTimestamp() const
+{
+	unsigned k = bodyOwner(this);
+	return k ? g_aiEnv.tunnelStamp + p1Hash(74, { k }) % 64u : 0u;
+}
+/* batch A20: the tunnel network (the owner's container, if any, then the scene's tunnels) */
+AiTunnelTracker g_tunnels;
+std::list<ObjectID> g_tunnelList;
+TunnelTracker *Player::getTunnelSystem(void) { return &g_tunnels; }
+Object *TunnelTracker::getCurNemesis(void) { return findObject((ObjectID)g_aiEnv.tunnelNemesis); }
+void TunnelTracker::updateNemesis(const Object *target) { L(LOG_TUNNEL, { 0u, target ? (unsigned)target->getID() : 0u }); }
+const std::list<ObjectID> *TunnelTracker::getContainerList() const
+{
+	g_tunnelList.clear();
+	if (g_aiEnv.containerId) g_tunnelList.push_back((ObjectID)g_aiEnv.containerId);
+	for (int i = 0; i < 4; ++i)
+		if (g_aiEnv.tunnelIds[i]) g_tunnelList.push_back((ObjectID)g_aiEnv.tunnelIds[i]);
+	return &g_tunnelList;
+}
+Object *otherAiGoalObject() { return findObject((ObjectID)g_aiEnv.otherAiGoal); }
+Bool isOtherAi(const AIUpdateInterface *ai) { return ai == (const AIUpdateInterface *)g_otherAiMem; }
 const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &name)
 {
 	if (name == "Upgrade_Nationalism") return &g_nationalism;
@@ -1224,6 +1263,7 @@ void ExitInterface::exitObjectViaDoor(Object *newObj, ExitDoorType exitDoor)
 {
 	L(LOG_CONTAIN, { 6u, (unsigned)newObj->getID(), (unsigned)exitDoor });
 }
+void ExitInterface::exitObjectInAHurry(Object *newObj) { L(LOG_CONTAIN, { 8u, (unsigned)newObj->getID() }); }
 AIFreeToExitType AIUpdateInterface::getAiFreeToExit(const Object* exiter) const
 {
 	unsigned r = p1Hash(71, { (unsigned)exiter->getID(), TheGameLogic->getFrame() }) % 3u;
@@ -1435,7 +1475,11 @@ Bool Object::canCrushOrSquish(Object *otherObj, CrushSquishTestType testType) co
 {
 	return objectAnswer(2, { (unsigned)getID(), (unsigned)otherObj->getID(), (unsigned)testType });
 }
-Relationship Object::getRelationship(const Object *that) const { return (Relationship)(p1Hash(63, { (unsigned)getID(), (unsigned)that->getID() }) % 3u); }
+Relationship Object::getRelationship(const Object *that) const
+{
+	if (!that) return NEUTRAL;	/* (batch A20: upstream's answer without one) */
+	return (Relationship)(p1Hash(63, { (unsigned)getID(), (unsigned)that->getID() }) % 3u);
+}
 Bool Object::isAbleToAttack() const { return g_aiEnv.ableToAttack != 0; }
 Bool Object::isOutOfAmmo() const { return g_aiEnv.outOfAmmo != 0; }
 Bool Object::isCurWeaponLocked() const { return g_aiEnv.curWeaponLocked != 0; }
@@ -2434,6 +2478,42 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					const AIGuardRetaliatePickUpCrateState *rc = (const AIGuardRetaliatePickUpCrateState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_GET_CRATE)->second;
 					PUT_MOVE(rc)
 					putU32(v, (unsigned)rc->m_delayCounter);
+				}
+			}
+			/* batch A20: the tunnel-network guard state (its machine: state, goal, sleep, members; its states' members) */
+			{
+				const AITunnelNetworkGuardState *ts = (const AITunnelNetworkGuardState *)sm->m_stateMap.find(AI_GUARD_TUNNEL_NETWORK)->second;
+				const AITNGuardMachine *tm = ts->m_guardMachine;
+				putU32(v, tm ? 1u : 0u);
+				if (tm) {
+					putU32(v, (unsigned)tm->getCurrentStateID());
+					putU32(v, (unsigned)tm->m_goalObjectID);
+					putU32(v, tm->m_sleepTill);
+					putPos(v, tm->m_positionToGuard);
+					putU32(v, (unsigned)tm->m_nemesisToAttack);
+					putU32(v, (unsigned)tm->m_guardMode);
+#define PUT_EMBEDDED(a) \
+					putU32(v, (a) ? 1u : 0u); \
+					if (a) { putU32(v, (a)->m_follow ? 1u : 0u); putU32(v, (a)->m_attackMachine ? (unsigned)(a)->m_attackMachine->getCurrentStateID() : 0xffffffffu); }
+					const AITNGuardInnerState *ti = (const AITNGuardInnerState *)tm->m_stateMap.find(AI_TN_GUARD_INNER)->second;
+					putU32(v, ti->m_exitConditions.m_attackGiveUpFrame);
+					putU32(v, ti->m_scanForEnemy ? 1u : 0u);
+					PUT_EMBEDDED(ti->m_attackState)
+					const AITNGuardOuterState *to = (const AITNGuardOuterState *)tm->m_stateMap.find(AI_TN_GUARD_OUTER)->second;
+					putU32(v, to->m_exitConditions.m_attackGiveUpFrame);
+					PUT_EMBEDDED(to->m_attackState)
+					const AITNGuardAttackAggressorState *ta = (const AITNGuardAttackAggressorState *)tm->m_stateMap.find(AI_TN_GUARD_ATTACK_AGGRESSOR)->second;
+					putU32(v, ta->m_exitConditions.m_attackGiveUpFrame);
+					PUT_EMBEDDED(ta->m_attackState)
+#undef PUT_EMBEDDED
+					const AITNGuardReturnState *tr = (const AITNGuardReturnState *)tm->m_stateMap.find(AI_TN_GUARD_RETURN)->second;
+					PUT_MOVE(tr)
+					putU32(v, (unsigned)tr->m_entryToClear);
+					putU32(v, tr->m_nextReturnScanTime);
+					putU32(v, ((const AITNGuardIdleState *)tm->m_stateMap.find(AI_TN_GUARD_IDLE)->second)->m_nextEnemyScanTime);
+					const AITNGuardPickUpCrateState *tc = (const AITNGuardPickUpCrateState *)tm->m_stateMap.find(AI_TN_GUARD_GET_CRATE)->second;
+					PUT_MOVE(tc)
+					putU32(v, (unsigned)tc->m_delayCounter);
 				}
 			}
 			/* batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members) */

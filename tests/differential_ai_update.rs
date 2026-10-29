@@ -198,6 +198,8 @@ const L_ATTACK: u32 = 103;
 const L_RAPPEL: u32 = 104;
 /// Batch A17: the dock's calls (`LOG_DOCK`).
 const L_DOCK: u32 = 105;
+/// Batch A20: the tunnel network's calls (`LOG_TUNNEL`).
+const L_TUNNEL: u32 = 106;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -1576,6 +1578,42 @@ impl AiStateHost for Host {
     fn has_team(&mut self) -> bool {
         true // (the stand-in's team)
     }
+    // ---- batch A20
+    fn tunnel_system(&mut self) -> bool {
+        self.env.player_type >= 0 // (the player's, always made)
+    }
+    fn tunnel_container_list(&mut self) -> Vec<ObjectId> {
+        let mut list = Vec::new();
+        if self.env.container_id != 0 {
+            list.push(self.env.container_id as ObjectId);
+        }
+        list.extend(self.env.tunnel_ids.iter().filter(|&&t| t != 0).map(|&t| t as ObjectId));
+        list
+    }
+    fn tunnel_cur_nemesis(&mut self) -> ObjectId {
+        let id = self.env.tunnel_nemesis;
+        if self.object_exists(id) { id } else { 0 }
+    }
+    fn tunnel_update_nemesis(&mut self, target: ObjectId) {
+        self.l(L_TUNNEL, &[0, target as u32]);
+    }
+    fn object_ai_goal_object(&mut self, id: ObjectId) -> Option<ObjectId> {
+        if !self.object_exists(id) || (self.env.ai_mask >> id) & 1 == 0 {
+            return None;
+        }
+        let g = self.env.other_ai_goal;
+        Some(if self.object_exists(g) { g } else { 0 })
+    }
+    fn object_last_damage(&mut self, id: ObjectId) -> Option<(bool, ObjectId, u32)> {
+        let k = id as u32;
+        let source = (p1_hash(self.env.seed, 73, &[k]) % 32) as ObjectId;
+        let stamp = self.env.tunnel_stamp.wrapping_add(p1_hash(self.env.seed, 74, &[k]) % 64);
+        Some(((self.env.tunnel_no_effect >> k) & 1 != 0, source, stamp))
+    }
+    fn exit_object_in_a_hurry(&mut self, _container: ObjectId) {
+        let id = self.env.object_id as u32;
+        self.l(L_CONTAIN, &[8, id]);
+    }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
         self.l(L_ATTACK, &[16, info as u32, obj as u32, r]);
@@ -2236,6 +2274,53 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
             }
             _ => panic!("the guard-retaliate state"),
         }
+        // batch A20: the tunnel-network guard state (its machine: state, goal, sleep, members; its states' members)
+        match sm.state(21) {
+            Some(AiState::Guard { machine, data, .. }) => {
+                v.push(u32::from(machine.is_some()));
+                if let Some(m) = machine {
+                    v.extend([m.get_current_state_id(), m.goal_object_id() as u32, m.peek_sleep_till()]);
+                    put_pos(&mut v, &data.position_to_guard);
+                    v.extend([data.nemesis_to_attack as u32, data.guard_mode as u32]);
+                    for (gid, inner) in [(5000u32, true), (5002, false), (5005, false)] {
+                        match m.state(gid) {
+                            Some(AiState::GuardAttack { exit, embedded, .. }) => {
+                                v.push(exit.attack_give_up_frame);
+                                if inner {
+                                    v.push(0); // (m_scanForEnemy: never set)
+                                }
+                                match embedded.first() {
+                                    Some(AiState::Attack { follow, machine, .. }) => {
+                                        v.extend([1, u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())])
+                                    }
+                                    _ => v.push(0),
+                                }
+                            }
+                            _ => panic!("a tunnel-network guard attack state"),
+                        }
+                    }
+                    match m.state(5003) {
+                        Some(AiState::TnGuardReturn { mv, entry_to_clear, next_return_scan_time }) => {
+                            put_move(&mut v, mv);
+                            v.extend([*entry_to_clear as u32, *next_return_scan_time]);
+                        }
+                        _ => panic!("the tunnel-network guard return state"),
+                    }
+                    match m.state(5001) {
+                        Some(AiState::GuardIdle { next_enemy_scan_time, .. }) => v.push(*next_enemy_scan_time),
+                        _ => panic!("the tunnel-network guard idle state"),
+                    }
+                    match m.state(5004) {
+                        Some(AiState::GuardCrate { mv, delay_counter }) => {
+                            put_move(&mut v, mv);
+                            v.push(*delay_counter as u32);
+                        }
+                        _ => panic!("the tunnel-network guard crate state"),
+                    }
+                }
+            }
+            _ => panic!("the tunnel-network guard state"),
+        }
         // batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members)
         match sm.state(14) {
             Some(AiState::Dock { machine, approach_position, using_precision_movement }) => {
@@ -2501,6 +2586,14 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.guard_scan_rate = [0, 1, 5, 30][g.below(4) as usize];
     e.guard_return_scan_rate = [0, 1, 5, 30][g.below(4) as usize];
     e.guard_chase_frames = [0, 10, 100, 1000][g.below(4) as usize];
+    // batch A20: the tunnel network (tunnels, current nemesis, the tunnels' damage times and no-effect bits), others' AIs' goal
+    for t in e.tunnel_ids.iter_mut() {
+        *t = if g.below(3) == 0 { 0 } else { g.below(32) as i32 };
+    }
+    e.tunnel_nemesis = if g.below(3) == 0 { g.below(32) as i32 } else { 0 };
+    e.tunnel_stamp = e.loco.frame.wrapping_sub(g.below(80));
+    e.tunnel_no_effect = if g.below(2) == 0 { 0 } else { g.u32() };
+    e.other_ai_goal = g.below(32) as i32;
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -2760,7 +2853,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16, 43, 43, 43][g.below(61) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16, 43, 43, 43, 21, 21, 21][g.below(64) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2793,7 +2886,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24, 54, 54][g.below(50) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24, 54, 54, 51, 51, 51][g.below(53) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3224,6 +3317,9 @@ struct Checks {
     dock_inner: [u64; 8],
     /// Batch A18: the guard machine's state after an operation in the guard state (inner, idle, outer, return, crate, aggressor).
     guard_inner: [u64; 6],
+    /// Batch A20: the tunnel-network guard machine's likewise; the network's nemesis offered, exits in a hurry, cases ended where upstream is undefined.
+    tn_inner: [u64; 6],
+    tn_logs: [u64; 3],
     /// Batch A12b: the attack-follow-waypoint machines' state after an operation in those states (idle, crate, attack).
     follow_inner: [u64; 3],
     loads: u64,
@@ -3259,6 +3355,8 @@ impl Checks {
             hunt_inner: [0; 3],
             dock_inner: [0; 8],
             guard_inner: [0; 6],
+            tn_inner: [0; 6],
+            tn_logs: [0; 3],
             follow_inner: [0; 3],
             loads: 0,
         }
@@ -3406,8 +3504,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let attacking = module.machine.as_ref().is_some_and(|sm| {
             // (batch A11: and the attack-move state, whose machine has an attack state)
             // (batch A12b: and the attack-follow-waypoint states)
-            matches!(sm.get_current_state_id(), 9..=12 | 15..=17 | 20 | 28 | 30..=32 | 43)
-                || matches!(module.ai().machine.temporary_state, 9..=12 | 15..=17 | 20 | 28 | 30..=32 | 43)
+            // (batch A20: and the tunnel-network guard state, whose inner state offers to the network unchecked)
+            matches!(sm.get_current_state_id(), 9..=12 | 15..=17 | 20 | 21 | 28 | 30..=32 | 43)
+                || matches!(module.ai().machine.temporary_state, 9..=12 | 15..=17 | 20 | 21 | 28 | 30..=32 | 43)
         });
         // batch A10b: without a controlling player the team does not attack a common target (the idle state would attack it, and
         // the chase states read the player unchecked)
@@ -3443,6 +3542,19 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // batch A10a: in an attack state, half the operations are the AI's update (which runs the attack machine)
         // (batch A12: and in the hunt and attack-area states, whose machines the update runs)
         // (batch A17: and the dock state, whose docking machine the update runs; its waits jump frames at times)
+        // (batch A20: in the tunnel-network guard state, at times its nemesis is gone, and half those times the team has no target:
+        // the inner state then takes the network's nemesis)
+        if let Some(AiState::Guard { machine: Some(_), data, .. }) = module.machine.as_ref().and_then(|sm| sm.state(21)) {
+            let n = data.nemesis_to_attack;
+            if g.below(3) == 0 {
+                if (1..32).contains(&n) {
+                    host.env.exist_mask &= !(1u32 << n);
+                }
+                if g.below(2) == 0 {
+                    host.env.team_target = 0;
+                }
+            }
+        }
         let docking = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 14);
         if docking && g.below(4) == 0 {
             host.env.loco.frame += g.below(400);
@@ -3522,14 +3634,23 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             if code == L_ATTACK && n > 0 {
                 ck.attack_logs[host_log_copy[k + 2] as usize] += 1;
             }
+            if code == L_TUNNEL {
+                ck.tn_logs[0] += 1;
+            }
+            if code == L_CONTAIN && n > 0 && host_log_copy[k + 2] == 8 {
+                ck.tn_logs[1] += 1;
+            }
             if (70..=103).contains(&code) {
                 ck.a4_logs[(code - 70) as usize] += 1;
             }
             k += 2 + n;
         }
         if let Some(sm) = &module.machine {
-            if let Some(AiState::Guard { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
+            if let Some(AiState::Guard { machine: Some(m), data, .. }) = sm.state(sm.get_current_state_id()) {
                 ck.guard_inner[(m.get_current_state_id().saturating_sub(5000) as usize).min(5)] += 1;
+                if data.tunnel {
+                    ck.tn_inner[(m.get_current_state_id().saturating_sub(5000) as usize).min(5)] += 1;
+                }
             }
             if let Some(AiState::Dock { machine: Some(m), .. }) = sm.state(sm.get_current_state_id()) {
                 ck.dock_inner[(m.get_current_state_id() as usize).min(7)] += 1;
@@ -3599,8 +3720,26 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             ck.a9_undefined += 1;
             return true;
         }
+        // batch A20: the tunnel-network guard machine left (by the transition-depth limit, 20) in its inner, outer or attack-aggressor
+        // state without an attack state: its next update dereferences it (upstream undefined; AIGuard's states check, AITNGuard's
+        // do not): the case ends here
+        if tn_attack_state_missing(&module) {
+            ck.tn_logs[2] += 1;
+            return true;
+        }
     }
     true
+}
+
+/// Batch A20: whether the tunnel-network guard state's machine is in an attack state (inner, outer, aggressor) with none embedded.
+fn tn_attack_state_missing(module: &AiUpdateModule<Host>) -> bool {
+    let Some(sm) = &module.machine else { return false };
+    match sm.state(21) {
+        Some(AiState::Guard { machine: Some(m), .. }) => {
+            matches!(m.state(m.get_current_state_id()), Some(AiState::GuardAttack { embedded, .. }) if embedded.is_empty())
+        }
+        _ => false,
+    }
 }
 
 /// Batch A9: whether the machine (its state or its temporary state) is in a state that dereferences the locomotor unchecked (the
@@ -3649,6 +3788,8 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
             || (state == 16 && (in_machine(state) || e.player_type < 0))
             // batch A19: the guard-retaliate state likewise
             || (state == 43 && (in_machine(state) || e.player_type < 0))
+            // batch A20: the tunnel-network guard state likewise (its machine reads the player's tunnels unchecked)
+            || (state == 21 && (in_machine(state) || e.player_type < 0))
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
@@ -3674,6 +3815,7 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 24 => 14,
                 29..=31 => 16,
                 54 => 43,
+                51 => 21,
                 _ => -1,
             };
             if unsafe_entry(state, ia[4] >= 0) {
@@ -4012,9 +4154,9 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.follow_inner, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.follow_inner, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();

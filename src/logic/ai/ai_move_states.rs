@@ -181,6 +181,7 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::Enter { mv, .. })
         | Some(AiState::DockMove { mv, .. })
         | Some(AiState::GuardReturn { mv, .. })
+        | Some(AiState::TnGuardReturn { mv, .. })
         | Some(AiState::GuardCrate { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
