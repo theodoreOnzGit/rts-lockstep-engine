@@ -16,6 +16,15 @@
 //!
 //! Not run: a `INI_LOAD_CREATE_OVERRIDES` load when a faction's build list is empty (upstream duplicates a null list): the
 //! session stops there before the C++ runs (counted).
+//!
+//! # Results (2026-10-29, batch A27; upstream commit 0a05454d, seeds `0xA27_0000 + session`, 20,000 sessions)
+//!
+//! - 73,606 loads (12,882 of which threw, 17,279 with overrides), **0 mismatches** in the load outcome and the INI CRC, the whole
+//!   chain after each load, and the current data's `crc` and `xfer` CRCs. At the sessions' ends: 37,691 sides, 172,065 counted
+//!   skills, 58,464 build list entries. 2,900 sessions stopped at the undefined override of an empty build list.
+//! - No port defect found.
+//! - Planted bugs at 5,000 sessions: 3570 (the override's side info not reversed), 3571 (the 20-skill limit: a panic), 3572 (a free
+//!   science counted), 3573 (a structure prepended) each caught.
 #![cfg(feature = "differential")]
 
 mod support;
