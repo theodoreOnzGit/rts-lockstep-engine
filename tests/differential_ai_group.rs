@@ -29,15 +29,20 @@
 
 mod support;
 
-use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D};
+use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D, Region3D};
+use rts_lockstep_engine::common::game_common::PlayerType;
 use rts_lockstep_engine::common::game_common::AbleToAttackType;
 use rts_lockstep_engine::common::game_type::{ObjectId, INVALID_ID};
-use rts_lockstep_engine::common::kind_of::{KindOfType, KINDOF_AIRCRAFT, KINDOF_ALWAYS_SELECTABLE, KINDOF_IMMOBILE, KINDOF_STRUCTURE};
+use rts_lockstep_engine::common::kind_of::{
+    KindOfType, KINDOF_AIRCRAFT, KINDOF_ALWAYS_SELECTABLE, KINDOF_CLIFF_JUMPER, KINDOF_IMMOBILE, KINDOF_INFANTRY, KINDOF_MOB_NEXUS, KINDOF_PRODUCED_AT_HELIPAD,
+    KINDOF_STRUCTURE, KINDOF_VEHICLE,
+};
 use rts_lockstep_engine::common::object_status_types::{ObjectStatusTypes, OBJECT_STATUS_CAN_STEALTH, OBJECT_STATUS_DETECTED, OBJECT_STATUS_STEALTHED};
 use rts_lockstep_engine::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferState};
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::differential::{GrpObj, GrpOp, GrpScene, GRP_OBJECTS};
 use rts_lockstep_engine::logic::ai::ai_group::{AiGroup, AiGroupHost, GroupAiCommand, GroupButtonCall};
+use rts_lockstep_engine::logic::ai::ai_group_moves::{get_helicopter_offset, AiGroupMoveHost};
 use rts_lockstep_engine::logic::ai::ai_update_types::{AttitudeType, CanAttackResultValue, CommandSourceType};
 use rts_lockstep_engine::logic::module::body_module::BodyDamageType;
 use std::os::raw::c_int;
@@ -61,6 +66,7 @@ const F_IDLE: i32 = 2048;
 const F_BUSY: i32 = 4096;
 const F_DRAWABLE: i32 = 8192;
 const F_PRODUCTION: i32 = 16384;
+const F_GROUND: i32 = 32768;
 
 // the log's records (GRP_LOG_*) and the AI commands (GC_*)
 const L_ENTER: u32 = 1;
@@ -84,6 +90,15 @@ const L_EMOTICON: u32 = 18;
 const L_OVERRIDE: u32 = 19;
 const L_FORMATION: u32 = 20;
 const L_RANDOM: u32 = 21;
+// batch A25: the pathfinder
+const L_REMOVE_GOAL: u32 = 22;
+const L_ADJUST: u32 = 23;
+const L_UPDATE_GOAL: u32 = 24;
+const L_UPDATE_POS: u32 = 25;
+const L_LINE: u32 = 26;
+const L_GROUND_PATH: u32 = 27;
+/// `LAYER_GROUND` as the wrapper logs it.
+const LAYER_GROUND: u32 = 1;
 
 /// `grpAnswer`: the hash both sides answer the world's questions with.
 fn grp_answer(seed: u32, kind: u32, obj: u32, arg: u32) -> u32 {
@@ -103,6 +118,10 @@ struct Host {
     rand: u32,
     next_group: u32,
     next_formation: u32,
+    /// the AIs' `m_tmpInt` (batch A25)
+    tmp: [i32; GRP_OBJECTS],
+    /// (coverage) column and formation paths given, their points, ground paths found, tightens, move commands
+    seen: [u64; 5],
 }
 
 fn b(f: f32) -> u32 {
@@ -111,7 +130,10 @@ fn b(f: f32) -> u32 {
 
 impl Host {
     fn new(s: &GrpScene) -> Self {
-        Host { s: *s, log: Vec::new(), rand: s.seed, next_group: s.next_group_id as u32, next_formation: s.next_formation_id as u32 }
+        Host { s: *s, log: Vec::new(), rand: s.seed, next_group: s.next_group_id as u32, next_formation: s.next_formation_id as u32, tmp: s.o.map(|o| o.tmp), seen: [0; 5] }
+    }
+    fn idx(&self, id: ObjectId) -> usize {
+        self.s.o.iter().position(|o| o.id == id && id != 0).expect("an object of the scene")
     }
     fn o(&self, id: ObjectId) -> &GrpObj {
         self.s.o.iter().find(|o| o.id == id && id != 0).expect("an object of the scene")
@@ -174,6 +196,16 @@ impl AiGroupHost for Host {
             2
         } else if k == KINDOF_AIRCRAFT {
             3
+        } else if k == KINDOF_INFANTRY {
+            4
+        } else if k == KINDOF_VEHICLE {
+            5
+        } else if k == KINDOF_MOB_NEXUS {
+            6
+        } else if k == KINDOF_PRODUCED_AT_HELIPAD {
+            7
+        } else if k == KINDOF_CLIFF_JUMPER {
+            8
         } else {
             panic!("kind {k:?} not in the scene")
         };
@@ -256,6 +288,7 @@ impl AiGroupHost for Host {
                 w.push(max_shots as u32);
             }
             C::MoveToPosition { pos } => {
+                self.seen[4] += 1;
                 w.push(6);
                 w.extend(p3(&pos));
             }
@@ -285,6 +318,20 @@ impl AiGroupHost for Host {
             C::HackInternet => w.push(23),
             C::CombatDrop { target, pos } => {
                 w.extend([24, target as u32]);
+                w.extend(p3(&pos));
+            }
+            C::FollowPathAppend { pos } => {
+                w.push(26);
+                w.extend(p3(&pos));
+            }
+            C::TightenToPosition { pos } => {
+                self.seen[3] += 1;
+                w.push(27);
+                w.extend(p3(&pos));
+            }
+            C::FollowWaypointPath { way, exact, as_team } => w.extend([28, way, u32::from(exact), u32::from(as_team)]),
+            C::MoveToAndEvacuateAndExit { pos } => {
+                w.push(29);
                 w.extend(p3(&pos));
             }
         }
@@ -457,6 +504,144 @@ impl AiGroupHost for Host {
     }
 }
 
+impl AiGroupMoveHost for Host {
+    fn debug_ai_terrain(&mut self) -> bool {
+        self.s.debug_terrain != 0
+    }
+    fn group_move_click_to_gather_factor(&mut self) -> f32 {
+        self.s.gather_factor
+    }
+    fn ai_distance_requires_group(&mut self) -> f32 {
+        self.s.distance_requires_group
+    }
+    fn ai_min_distance_for_group(&mut self) -> f32 {
+        self.s.min_distance_for_group
+    }
+    fn ai_min_infantry_for_group(&mut self) -> i32 {
+        self.s.min_infantry_for_group
+    }
+    fn ai_min_vehicles_for_group(&mut self) -> i32 {
+        self.s.min_vehicles_for_group
+    }
+    fn formation_offset(&mut self, o: ObjectId) -> Coord2D {
+        let f = self.o(o).formation_offset;
+        Coord2D { x: f[0], y: f[1] }
+    }
+    fn bounding_circle_radius(&mut self, o: ObjectId) -> f32 {
+        self.o(o).bounding_radius
+    }
+    fn major_radius(&mut self, o: ObjectId) -> f32 {
+        self.o(o).major_radius
+    }
+    fn player_type(&mut self, o: ObjectId) -> Option<PlayerType> {
+        let p = self.o(o).player & 3;
+        Some(if (self.s.player_types >> p) & 1 != 0 { PlayerType::Computer } else { PlayerType::Human })
+    }
+    fn ai_is_doing_ground_movement(&mut self, o: ObjectId) -> bool {
+        self.f(o, F_GROUND)
+    }
+    fn ai_tmp_value(&mut self, o: ObjectId) -> i32 {
+        self.tmp[self.idx(o)]
+    }
+    fn ai_set_tmp_value(&mut self, o: ObjectId, v: i32) {
+        let i = self.idx(o);
+        self.tmp[i] = v;
+    }
+    fn ai_cur_locomotor_priority(&mut self, o: ObjectId) -> Option<i32> {
+        let p = self.o(o).loco_priority;
+        (p >= 0).then_some(p)
+    }
+    fn ai_follow_path(&mut self, o: ObjectId, path: &[Coord3D], src: CommandSourceType) {
+        self.seen[0] += 1;
+        self.seen[1] += path.len() as u64;
+        let mut w = vec![L_AI, o as u32, 25, path.len() as u32];
+        for p in path {
+            w.extend([b(p.x), b(p.y), b(p.z)]);
+        }
+        w.extend([0, src as u32]);
+        self.l(&w);
+    }
+    fn pf_remove_goal(&mut self, o: ObjectId) {
+        self.l(&[L_REMOVE_GOAL, o as u32]);
+    }
+    fn pf_adjust_destination(&mut self, o: ObjectId, dest: &mut Coord3D, group_dest: Option<&Coord3D>) {
+        let mut w = vec![L_ADJUST, o as u32, b(dest.x), b(dest.y), b(dest.z), u32::from(group_dest.is_some())];
+        if let Some(g) = group_dest {
+            w.extend([b(g.x), b(g.y), b(g.z)]);
+        }
+        self.l(&w);
+        if self.ans(57, o as u32, b(dest.x)) {
+            dest.x += 1.0;
+            dest.y -= 0.5;
+        }
+    }
+    fn pf_update_goal(&mut self, o: ObjectId, dest: &Coord3D) {
+        self.l(&[L_UPDATE_GOAL, o as u32, b(dest.x), b(dest.y), b(dest.z), LAYER_GROUND]);
+    }
+    fn pf_update_pos(&mut self, o: ObjectId, pos: &Coord3D) {
+        self.l(&[L_UPDATE_POS, o as u32, b(pos.x), b(pos.y), b(pos.z)]);
+    }
+    fn pf_is_line_passable(&mut self, o: ObjectId, from: &Coord3D, to: &Coord3D) -> bool {
+        self.l(&[L_LINE, o as u32, b(from.x), b(from.y), b(to.x), b(to.y)]);
+        self.ans(53, o as u32, b(to.x))
+    }
+    fn pf_find_ground_path(&mut self, from: &Coord3D, to: &Coord3D) -> Option<Vec<Coord3D>> {
+        // (the wrapper's: 2 to 8 nodes from `from` toward `to`, each off the line by the hash's jitter; none for an eighth)
+        self.l(&[L_GROUND_PATH, b(from.x), b(from.y), b(from.z), b(to.x), b(to.y), b(to.z), 6]);
+        let h = grp_answer(self.s.seed, 54, b(from.x) ^ b(to.y), b(to.x));
+        if h & 7 == 0 {
+            return None;
+        }
+        self.seen[2] += 1;
+        let n = 2 + ((h >> 3) % 7) as usize;
+        Some(
+            (0..n)
+                .map(|k| {
+                    let t = k as f32 / (n - 1) as f32;
+                    let jx = (grp_answer(self.s.seed, 55, k as u32, h) % 401) as f32 * 0.1 - 20.0;
+                    let jy = (grp_answer(self.s.seed, 56, k as u32, h) % 401) as f32 * 0.1 - 20.0;
+                    Coord3D { x: from.x + (to.x - from.x) * t + jx, y: from.y + (to.y - from.y) * t + jy, z: from.z }
+                })
+                .collect(),
+        )
+    }
+    fn layer_for_destination(&mut self, pos: &Coord3D) -> i32 {
+        (grp_answer(self.s.seed, 51, b(pos.x), b(pos.y)) % 3) as i32
+    }
+    fn ground_height(&mut self, x: f32, y: f32) -> f32 {
+        x * 0.01 + y * 0.02
+    }
+    fn map_extent(&mut self) -> Region3D {
+        region(self.s.extent)
+    }
+    fn max_pathfind_extent(&mut self) -> Region3D {
+        region(self.s.path_extent)
+    }
+}
+
+fn region(r: [f32; 4]) -> Region3D {
+    Region3D { lo: Coord3D { x: r[0], y: r[1], z: 0.0 }, hi: Coord3D { x: r[2], y: r[3], z: 0.0 } }
+}
+
+/// A member not held without an AI: the formation move commands it through its null AI (undefined upstream), so the moves that may
+/// reach it (ops 60 and 72) are not run on such a group.
+fn member_without_ai(h: &mut Host, g: &AiGroup) -> bool {
+    g.members.iter().any(|&m| !h.is_held(m) && !h.has_ai(m))
+}
+
+/// The group's ground path: its node count and their positions (0: none).
+fn path_words(g: &AiGroup, r: &mut Vec<u32>) {
+    match &g.ground_path {
+        None => r.push(0),
+        Some(p) => {
+            r.push(p.len() as u32);
+            for n in p {
+                r.extend([b(n.x), b(n.y), b(n.z)]);
+            }
+        }
+    }
+}
+
 /// The save (or CRC) into bytes.
 struct MemXfer {
     state: XferState,
@@ -495,7 +680,7 @@ impl Xfer for MemXfer {
 }
 
 /// The Rust group over the scene: (the answer words, the log).
-fn rust_run(s: &GrpScene, ops: &[GrpOp]) -> (Vec<u32>, Vec<u32>) {
+fn rust_run(s: &GrpScene, ops: &[GrpOp], seen: &mut [u64; 5]) -> (Vec<u32>, Vec<u32>) {
     let mut h = Host::new(s);
     let mut r: Vec<u32> = Vec::new();
     let mut g = AiGroup::new(&mut h);
@@ -585,12 +770,62 @@ fn rust_run(s: &GrpScene, ops: &[GrpOp]) -> (Vec<u32>, Vec<u32>) {
                 r.push(ids.len() as u32);
                 r.extend(ids.iter().map(|&i| i as u32));
             }
+            // batch A25
+            60 => {
+                if !member_without_ai(&mut h, &g) {
+                    g.group_move_to_position(&mut h, &p, op.b != 0, src)
+                }
+            }
+            61 => g.group_scatter(&mut h, src),
+            62 => g.group_tighten_to_position(&mut h, &p, op.b != 0, src),
+            63 => g.group_follow_waypoint_path(&mut h, op.b as u32, false, false, src),
+            64 => g.group_follow_waypoint_path(&mut h, op.b as u32, true, false, src),
+            65 => g.group_command(&mut h, GroupAiCommand::MoveToAndEvacuate { pos: p }, src),
+            66 => g.group_command(&mut h, GroupAiCommand::MoveToAndEvacuateAndExit { pos: p }, src),
+            67 => g.group_follow_waypoint_path(&mut h, op.b as u32, false, true, src),
+            68 => g.group_follow_waypoint_path(&mut h, op.b as u32, true, true, src),
+            69 => {
+                let ok = g.friend_compute_ground_path(&mut h, &p);
+                r.push(u32::from(ok));
+                path_words(&g, &mut r);
+            }
+            70 => {
+                r.push(u32::from(g.friend_move_infantry_to_pos(&mut h, &p, src)));
+                path_words(&g, &mut r);
+            }
+            71 => {
+                r.push(u32::from(g.friend_move_vehicle_to_pos(&mut h, &p, src)));
+                path_words(&g, &mut r);
+            }
+            72 => {
+                if !member_without_ai(&mut h, &g) {
+                    g.friend_move_formation_to_pos(&mut h, &p, src);
+                    path_words(&g, &mut r);
+                }
+            }
+            73 => {
+                let c = Coord3D { x: op.w, y: op.w * 0.5, z: 0.0 };
+                if oa != INVALID_ID && h.has_ai(oa) {
+                    let d = AiGroup::compute_individual_destination(&mut h, &p, oa, &c, op.b != 0);
+                    r.extend([b(d.x), b(d.y), b(d.z)]);
+                }
+            }
+            74 => {
+                let mut ho = p;
+                get_helicopter_offset(&mut ho, op.a);
+                r.extend([b(ho.x), b(ho.y)]);
+            }
             _ => unreachable!("op {}", op.kind),
         }
     }
     r.push(g.members.len() as u32);
     r.extend(g.members.iter().map(|&m| m as u32));
+    path_words(&g, &mut r);
+    r.extend(h.tmp.iter().map(|&t| t as u32));
     r.extend([g.member_list_size, b(g.speed), u32::from(g.dirty), g.id]);
+    for (t, v) in seen.iter_mut().zip(h.seen) {
+        *t += v;
+    }
     (r, h.log)
 }
 
@@ -619,13 +854,15 @@ fn gen_scene(g: &mut Gen) -> GrpScene {
             (F_BUSY, 2),
             (F_DRAWABLE, 3),
             (F_PRODUCTION, 2),
+            (F_GROUND, 3),
         ] {
             if g.below(5) < chance {
                 flags |= bit;
             }
         }
         o.flags = flags;
-        o.kinds = (0..4).filter(|_| g.below(4) == 0).fold(0, |k, bit| k | (1 << bit));
+        // (structure, always selectable, immobile, aircraft; infantry, vehicle (more often); mob nexus, helipad, cliff jumper)
+        o.kinds = (0..9).filter(|&bit| g.below(if bit == 4 || bit == 5 { 2 } else { 6 }) == 0).fold(0, |k, bit| k | (1 << bit));
         o.status = (0..3).filter(|_| g.below(2) == 0).fold(0, |k, bit| k | (1 << bit));
         o.pos = if g.below(8) == 0 && i > 0 {
             prev_pos
@@ -643,12 +880,30 @@ fn gen_scene(g: &mut Gen) -> GrpScene {
         }
         o.stealth_delay = if g.below(3) == 0 { -1 } else { g.below(120) as i32 };
         o.command_set = if g.below(4) == 0 { -1 } else { g.below(256) as i32 };
+        // batch A25
+        o.formation_offset = [g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0)];
+        o.bounding_radius = g.uniform(2.0, 20.0);
+        o.major_radius = g.uniform(2.0, 30.0);
+        o.tmp = g.below(7) as i32 - 3;
+        o.loco_priority = g.below(4) as i32 - 1;
     }
     s.frame = 1000 + g.below(5000);
     s.seed = g.u32();
     s.penalty = g.below(4) as i32;
     s.next_group_id = g.below(100) as i32;
     s.next_formation_id = 1 + g.below(50) as i32;
+    // batch A25: the map (sometimes smaller than the group's spread), the AI's group-move data, the players' types
+    for e in [&mut s.extent, &mut s.path_extent] {
+        let lo = [g.uniform(-50.0, 100.0), g.uniform(-50.0, 100.0)];
+        *e = [lo[0], lo[1], lo[0] + g.uniform(150.0, 1500.0), lo[1] + g.uniform(150.0, 1500.0)];
+    }
+    s.gather_factor = if g.below(3) == 0 { 0.0 } else { g.uniform(0.5, 3.0) };
+    s.debug_terrain = i32::from(g.below(20) == 0);
+    s.distance_requires_group = g.uniform(50.0, 400.0);
+    s.min_distance_for_group = g.uniform(0.0, 200.0);
+    s.min_infantry_for_group = 1 + g.below(5) as i32;
+    s.min_vehicles_for_group = 1 + g.below(4) as i32;
+    s.player_types = g.below(16) as i32;
     s
 }
 
@@ -657,6 +912,9 @@ fn gen_op(g: &mut Gen, i: usize) -> GrpOp {
         0
     } else if g.below(8) == 0 {
         1
+    } else if g.below(2) == 0 {
+        // batch A25: the moves
+        60 + g.below(15) as i32
     } else {
         g.below(60) as i32
     };
@@ -686,8 +944,9 @@ fn ai_group_matches_upstream() {
     let cases: u64 = std::env::var("AI_GRP_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(CASES);
     let mut results = Check::new("AI group results (each operation's answer; members, count, speed, dirty, id)");
     let mut logs = Check::new("AI group calls (commands, members' calls, enter/leave, destroy, random)");
-    let mut by_kind = [0u64; 60];
+    let mut by_kind = [0u64; 75];
     let mut log_words = 0u64;
+    let mut seen = [0u64; 5];
     for case in 0..cases {
         let mut g = Gen::new(0xA24_0000 + case);
         let s = gen_scene(&mut g);
@@ -697,7 +956,7 @@ fn ai_group_matches_upstream() {
         for op in &ops {
             by_kind[op.kind as usize] += 1;
         }
-        let (r, rl) = rust_run(&s, &ops);
+        let (r, rl) = rust_run(&s, &ops, &mut seen);
         let mut out = vec![0u32; 4096];
         let mut log = vec![0u32; 16384];
         let mut log_len: c_int = 0;
@@ -714,6 +973,7 @@ fn ai_group_matches_upstream() {
         logs.eq(rl, log, tag);
     }
     println!("COVERAGE: {cases} cases; operations per kind {by_kind:?}; {log_words} log words");
+    println!("COVERAGE (moves): column and formation paths given, their points, ground paths found, tightens, move commands {seen:?}");
     results.finish();
     logs.finish();
 }

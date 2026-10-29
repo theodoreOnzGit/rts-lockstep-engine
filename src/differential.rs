@@ -1100,7 +1100,7 @@ extern "C" {
     pub fn ref_ai_collide(op: c_int, scene: *const ColScene, out: *mut c_uint, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
 }
 
-/// Batch A24: the AI group's scene's objects (`differential/wrap_ai_group.cpp`'s `GrpObj`, field for field).
+/// Batches A24 and A25: the AI group's scene's objects (`differential/wrap_ai_group.cpp`'s `GrpObj`, field for field).
 pub const GRP_OBJECTS: usize = 12;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -1124,6 +1124,14 @@ pub struct GrpObj {
     pub stealth_delay: c_int,
     /// -1: no command set; else a bit per command type 0..7
     pub command_set: c_int,
+    // batch A25
+    pub formation_offset: [c_float; 2],
+    pub bounding_radius: c_float,
+    pub major_radius: c_float,
+    /// the AI's `m_tmpInt` at the start
+    pub tmp: c_int,
+    /// -1: no current locomotor; else its `LocomotorPriority`
+    pub loco_priority: c_int,
 }
 
 /// Batch A24: the AI group's scene (`GrpScene`).
@@ -1136,6 +1144,17 @@ pub struct GrpScene {
     pub penalty: c_int,
     pub next_group_id: c_int,
     pub next_formation_id: c_int,
+    // batch A25: the map's extent and the pathable one (lo.x, lo.y, hi.x, hi.y), the gather factor, AI_DEBUG_TERRAIN, the AI's
+    // group-move data, the players' types (bit p: a computer)
+    pub extent: [c_float; 4],
+    pub path_extent: [c_float; 4],
+    pub gather_factor: c_float,
+    pub debug_terrain: c_int,
+    pub distance_requires_group: c_float,
+    pub min_distance_for_group: c_float,
+    pub min_infantry_for_group: c_int,
+    pub min_vehicles_for_group: c_int,
+    pub player_types: c_int,
 }
 
 /// Batch A24: one operation on the group (`GrpOp`; its meaning per kind in `ref_ai_group_run`).

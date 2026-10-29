@@ -25,9 +25,8 @@
 //! leave the member's former group (which may destroy it) and, inside `remove`, call this group's `remove` again, which finds the
 //! member gone. The destructor (each member leaving) is `TheAI->destroyGroup`'s business (AI.cpp).
 //!
-//! Not here (batch A25): the moves (`computeIndividualDestination`, `friend_computeGroundPath`, `friend_moveInfantryToPos`,
-//! `friend_moveFormationToPos`, `friend_moveVehicleToPos`, `groupMoveToPosition`, `groupScatter`, `groupTightenToPosition`, the
-//! waypoint and evacuate moves) and the ground path they keep (`m_groundPath`, cleared by `recompute`: [`AiGroupHost::ground_path_clear`]).
+//! The moves (`computeIndividualDestination` .. `groupFollowWaypointPathAsTeamExact`, batch A25) are in
+//! [`super::ai_group_moves`]; the ground path they keep is [`AiGroup::ground_path`], which `recompute` clears.
 //!
 //! # Upstream facts kept
 //!
@@ -81,6 +80,12 @@ pub enum GroupAiCommand {
     Exit { obj: ObjectId },
     MoveToAndEvacuate { pos: Coord3D },
     Evacuate { expose_stealth_units: bool },
+    // batch A25
+    FollowPathAppend { pos: Coord3D },
+    TightenToPosition { pos: Coord3D },
+    /// `aiFollowWaypointPath`, `..Exact`, `..AsTeam`, `..ExactAsTeam`.
+    FollowWaypointPath { way: u32, exact: bool, as_team: bool },
+    MoveToAndEvacuateAndExit { pos: Coord3D },
     ExecuteRailedTransport,
     GoProne { damage: u32 },
     GuardPosition { pos: Coord3D, mode: GuardMode },
@@ -209,12 +214,14 @@ pub struct AiGroup {
     pub speed: f32,
     pub dirty: bool,
     pub id: u32,
+    /// `m_groundPath` (batch A25): its nodes' positions in their optimised order.
+    pub ground_path: Option<Vec<Coord3D>>,
 }
 
 impl AiGroup {
     /// `AIGroup()`: no members, speed 0, the AI's next id.
     pub fn new<H: AiGroupHost>(h: &mut H) -> Self {
-        AiGroup { members: Vec::new(), member_list_size: 0, speed: 0.0, dirty: false, id: h.ai_next_group_id() }
+        AiGroup { members: Vec::new(), member_list_size: 0, speed: 0.0, dirty: false, id: h.ai_next_group_id(), ground_path: None }
     }
 
     /// `getID()`.
@@ -373,7 +380,7 @@ impl AiGroup {
     pub fn recompute<H: AiGroupHost>(&mut self, h: &mut H) {
         let mut close_dist = 999_999_999.9f32;
         let (center, _) = self.get_center(h);
-        // (m_groundPath deleted: batch A25's)
+        self.ground_path = None;
         self.speed = 9_999_999_999.9f32;
         let penalty = h.movement_penalty_damage_state();
         for &o in &self.members.clone() {
