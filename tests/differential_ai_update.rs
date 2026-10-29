@@ -3961,6 +3961,19 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A21; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - The AI's snapshot (`AIUpdateInterface::crc`, `xfer`, `loadPostProcess`; ops 88-90: save, load then post-process, CRC):
+///   30,000 constructions and 1,798,811 operations, **0 mismatches** in the results (the saved bytes, the statuses, the CRCs), the
+///   call logs and the dumps. 27,669 saves and 2,334 loads succeeded. A load is generated only into a machine in the save's state
+///   and temporary state; 6 cases ended at a failed load (the object half loaded) and 21 at a load of the machine (op 71) that
+///   made one state both current and temporary (undefined, as `a9_guard` keeps from the setters).
+/// - The first runs found one port defect, fixed: `LocomotorSet::xferSelfAndCurLocoPtr` goes through `xferSnapshot`, so a CRC
+///   visits the set's (empty) `crc`; the port transferred it.
+/// - Planted bugs at 30,000 cases: 3501 (the path made anew on load), 3502 (the pathfinder told the position after a load) and 3503
+///   (the set's CRC) caught (150 to 6,671 mismatches); 3500 (the guard target types' overrun into `m_locationToGuard`) unobservable,
+///   the location's own transfer overwriting it at once.
+///
 /// # Results (2026-10-29, batch A20; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The tunnel-network guard state and its machine (`AITNGuard.cpp`): 30,000 constructions and 1,799,163 operations, **0
