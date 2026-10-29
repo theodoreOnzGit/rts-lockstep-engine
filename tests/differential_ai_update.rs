@@ -2188,6 +2188,54 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
             }
             _ => panic!("the guard state"),
         }
+        // batch A19: the guard-retaliate state (its machine: state, goal, sleep, members; its states' members)
+        match sm.state(43) {
+            Some(AiState::Guard { machine, data, .. }) => {
+                v.push(u32::from(machine.is_some()));
+                if let Some(m) = machine {
+                    v.extend([m.get_current_state_id(), m.goal_object_id() as u32, m.peek_sleep_till()]);
+                    put_pos(&mut v, &data.position_to_guard);
+                    v.push(data.nemesis_to_attack as u32);
+                    for (gid, kinds) in [(5000u32, 3u32), (5002, 1), (5005, 1)] {
+                        match m.state(gid) {
+                            Some(AiState::GuardAttack { exit, embedded, .. }) => {
+                                v.push(exit.conditions_to_consider as u32);
+                                put_pos(&mut v, &exit.center);
+                                v.extend([exit.radius_sqr.to_bits(), exit.attack_give_up_frame]);
+                                v.push(match embedded.first() {
+                                    Some(AiState::Attack { .. }) => 1,
+                                    Some(_) if kinds == 3 => 2,
+                                    _ => 0,
+                                });
+                                if let Some(AiState::Attack { follow, machine, .. }) = embedded.first() {
+                                    v.extend([u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())]);
+                                }
+                            }
+                            _ => panic!("a guard-retaliate attack state"),
+                        }
+                    }
+                    match m.state(5003) {
+                        Some(AiState::GuardReturn { mv, next_return_scan_time }) => {
+                            put_move(&mut v, mv);
+                            v.push(*next_return_scan_time);
+                        }
+                        _ => panic!("the guard-retaliate return state"),
+                    }
+                    match m.state(5001) {
+                        Some(AiState::GuardIdle { next_enemy_scan_time, .. }) => v.push(*next_enemy_scan_time),
+                        _ => panic!("the guard-retaliate idle state"),
+                    }
+                    match m.state(5004) {
+                        Some(AiState::GuardCrate { mv, delay_counter }) => {
+                            put_move(&mut v, mv);
+                            v.push(*delay_counter as u32);
+                        }
+                        _ => panic!("the guard-retaliate crate state"),
+                    }
+                }
+            }
+            _ => panic!("the guard-retaliate state"),
+        }
         // batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members)
         match sm.state(14) {
             Some(AiState::Dock { machine, approach_position, using_precision_movement }) => {
@@ -2712,7 +2760,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A4: the translated states often (idle, dead, wait, busy), else any id (22, 29, 36 and above 43 are not the
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
-            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16][g.below(58) as usize] } else { g.below(46) as i32 };
+            ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16, 43, 43, 43][g.below(61) as usize] } else { g.below(46) as i32 };
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -2745,7 +2793,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // batch A5: a command's parms (see ref_ai_a2_op): any command (55, 8 and 32 are unhandled), its source, an object, a team, a
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
-            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24][g.below(48) as usize] };
+            let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24, 54, 54][g.below(50) as usize] };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3161,7 +3209,7 @@ struct Checks {
     /// commands, the repulsor, the dead state's model condition and script notice, the placeholder states' callbacks); the
     /// current state after an operation (idle, dead, wait, busy, another); temporary states set (continuing); saves loaded
     a4_logs: [u64; 34],
-    a4_states: [u64; 29],
+    a4_states: [u64; 30],
     temporary_states: u64,
     /// Batch A9: cases ended before an operation upstream would make undefined (a waypoint state without a locomotor).
     a9_undefined: u64,
@@ -3202,7 +3250,7 @@ impl Checks {
             victims: 0,
             enter_targets: 0,
             a4_logs: [0; 34],
-            a4_states: [0; 29],
+            a4_states: [0; 30],
             temporary_states: 0,
             a9_undefined: 0,
             attack_inner: [0; 4],
@@ -3358,8 +3406,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let attacking = module.machine.as_ref().is_some_and(|sm| {
             // (batch A11: and the attack-move state, whose machine has an attack state)
             // (batch A12b: and the attack-follow-waypoint states)
-            matches!(sm.get_current_state_id(), 9..=12 | 15..=17 | 20 | 28 | 30..=32)
-                || matches!(module.ai().machine.temporary_state, 9..=12 | 15..=17 | 20 | 28 | 30..=32)
+            matches!(sm.get_current_state_id(), 9..=12 | 15..=17 | 20 | 28 | 30..=32 | 43)
+                || matches!(module.ai().machine.temporary_state, 9..=12 | 15..=17 | 20 | 28 | 30..=32 | 43)
         });
         // batch A10b: without a controlling player the team does not attack a common target (the idle state would attack it, and
         // the chase states read the player unchecked)
@@ -3379,6 +3427,12 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
         let (mut op, mut fa, mut ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
         a9_guard(&module, &host.env, &mut op, &mut ia);
+        // batch A19: no enter guard while the guard-retaliate state is entered or runs (it does not lock the AI's machine, so its
+        // enter state's attack command would switch the AI's state, deleting the machine it runs in: undefined upstream)
+        let retaliating = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 43 || module.ai().machine.temporary_state == 43);
+        if retaliating || (op == 72 && ia[0] == 54) || (matches!(op, 59 | 60) && ia[0] == 43) {
+            host.env.guard_flags &= !1;
+        }
         // batch A10b: an attack-position command a third of the time at the object (the approach's exact goal on exit)
         if op == 72 && ia[0] == 14 && g.below(3) == 0 {
             let p = *host.thing.position();
@@ -3399,7 +3453,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             let p = *host.thing.position();
             host.env.dock_pos = [p.x, p.y, p.z];
         }
-        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 14 | 16 | 17 | 20 | 28)) && g.below(2) == 0 {
+        if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 14 | 16 | 17 | 20 | 28 | 43)) && g.below(2) == 0 {
             op = 65;
             ia.iter_mut().for_each(|x| *x = 0); // (the update takes no arguments; another op's would be read for coordinates)
         }
@@ -3521,6 +3575,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 20 => 26,
                 14 => 27,
                 16 => 28,
+                43 => 29,
                 _ => 4,
             }] += 1;
         }
@@ -3592,6 +3647,8 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
             || (state == 14 && in_machine(state))
             // batch A18: the guard state likewise, or without a controlling player (its machine's attack states read it)
             || (state == 16 && (in_machine(state) || e.player_type < 0))
+            // batch A19: the guard-retaliate state likewise
+            || (state == 43 && (in_machine(state) || e.player_type < 0))
     };
     match *op {
         59 | 60 if unsafe_entry(ia[0], module.ai().machine.goal_waypoint.is_some()) => ia[0] = 0,
@@ -3616,6 +3673,7 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 13 => 20,
                 24 => 14,
                 29..=31 => 16,
+                54 => 43,
                 _ => -1,
             };
             if unsafe_entry(state, ia[4] >= 0) {
@@ -3940,7 +3998,7 @@ fn ai_update_a2_matches_upstream() {
         "COVERAGE: {} cases ({} ended at a mismatch); ops {:?}; doLocomotor sleeps none/longer {:?}; moved by goal none/path/explicit/angle {:?}; \
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
-         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard {:?}; A9 cases ended undefined {}; attack machine \
+         delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
          chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.follow_inner, ck.temporary_states, ck.loads

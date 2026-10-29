@@ -4,7 +4,10 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIGuard.cpp (ExitConditions, AIGuardMachine and its states)
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/AIGuard.h
-//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIGuardState)
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIStates.cpp (AIGuardState, AIGuardRetaliateState)
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AIGuardRetaliate.cpp (GuardRetaliateExitConditions, AIGuardRetaliateMachine and its
+//     states)
+//   GeneralsMD/Code/GameEngine/Include/GameLogic/AIGuardRetaliate.h
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -25,6 +28,12 @@
 //! guard machine, with their `ExitConditions`. Here that state is held by the guard state ([`AiState::GuardAttack`]'s
 //! `embedded`) and put in the guard state's place in the machine while it runs ([`with_embedded`]), the exit conditions lent to it.
 //! The machine's members ([`GuardData`]) are the guard state's, lent on the attack frame while the machine runs.
+//!
+//! `AIGuardRetaliateState` (`AI_GUARD_RETALIATE`, batch A19) runs an `AIGuardRetaliateMachine`: the same states (the same ids) from
+//! the attack-aggressor state, about the AI's machine's goal position and against its goal object, without an area, a guarded
+//! object or a mode; its idle state ends the machine when it finds no target, its search rejects buildings, its radii differ and its
+//! exit conditions also give up when the owner is beyond the guard range of the centre. It does not lock the AI's machine. It is
+//! the same [`AiState::Guard`] with [`GuardData::retaliate`] (and [`ExitConditions::retaliate`]).
 //!
 //! # Upstream facts kept
 //!
@@ -73,6 +82,8 @@ pub struct ExitConditions {
     pub center: Coord3D,
     pub radius_sqr: f32,
     pub attack_give_up_frame: u32,
+    /// `GuardRetaliateExitConditions` (batch A19): the owner, too, must stay within the guard range of the centre.
+    pub retaliate: bool,
 }
 
 impl ExitConditions {
@@ -81,6 +92,23 @@ impl ExitConditions {
         let Some(goal) = sm.goal_object(h) else { return self.conditions_to_consider & ATTACK_EXIT_IF_NO_UNIT_FOUND != 0 };
         if self.conditions_to_consider & ATTACK_EXIT_IF_EXPIRED_DURATION != 0 && StateContext::frame(h) >= self.attack_give_up_frame {
             return true;
+        }
+        if self.conditions_to_consider & ATTACK_EXIT_IF_OUTSIDE_RADIUS != 0 && self.retaliate {
+            let p = goal.position;
+            let me = h.position();
+            let guard_range_sqr = {
+                let r = std_guard_range(h);
+                r * r
+            };
+            let (dx, dy) = (p.x - self.center.x, p.y - self.center.y);
+            if dx * dx + dy * dy > self.radius_sqr {
+                return true; // "The aggressor is too far away now... give up retaliation."
+            }
+            let (mx, my) = (me.x - self.center.x, me.y - self.center.y);
+            if mx * mx + my * my > guard_range_sqr && !plant(3410) {
+                return true; // "Never go beyond standard guard radius."
+            }
+            return false;
         }
         if self.conditions_to_consider & ATTACK_EXIT_IF_OUTSIDE_RADIUS != 0 {
             // "BGC - when we search for a target we don't account for Z"
@@ -104,6 +132,8 @@ pub struct GuardData {
     pub position_to_guard: Coord3D,
     pub nemesis_to_attack: ObjectId,
     pub guard_mode: GuardMode,
+    /// The machine is an `AIGuardRetaliateMachine` (batch A19).
+    pub retaliate: bool,
 }
 
 impl Default for GuardData {
@@ -115,6 +145,7 @@ impl Default for GuardData {
             position_to_guard: Coord3D::default(),
             nemesis_to_attack: INVALID_ID,
             guard_mode: GUARDMODE_NORMAL,
+            retaliate: false,
         }
     }
 }
@@ -140,6 +171,26 @@ pub fn new_guard_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> Sm<H> {
         Ok(())
     })();
     r.expect("the guard machine");
+    m
+}
+
+/// `AIGuardRetaliateMachine::AIGuardRetaliateMachine(owner)`: from the attack-aggressor state; the idle state's failure ends the
+/// machine.
+pub fn new_guard_retaliate_machine<H: AiStateHost>(kinds: AttackOwnerKinds) -> Sm<H> {
+    let mut m = StateMachine::new();
+    let aggressors = [StateConditionInfo { test: AiCondition::GuardAttackedMe, to_state_id: AI_GUARD_ATTACK_AGGRESSOR }];
+    let attack = |which| AiState::GuardAttack { which, kinds, exit: ExitConditions::default(), embedded: Vec::new() };
+    let r = (|| -> SmResult<()> {
+        m.define_state(AI_GUARD_ATTACK_AGGRESSOR, attack(AI_GUARD_ATTACK_AGGRESSOR), AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
+        m.define_state(AI_GUARD_RETURN, AiState::GuardReturn { mv: MoveToData::default(), next_return_scan_time: 0 }, AI_GUARD_IDLE, AI_GUARD_INNER, &aggressors)?;
+        let idle = AiState::GuardIdle { next_enemy_scan_time: 0, guardee_pos: Coord3D::default() };
+        m.define_state(AI_GUARD_IDLE, idle, AI_GUARD_INNER, crate::common::state_machine::EXIT_MACHINE_WITH_SUCCESS, &aggressors)?;
+        m.define_state(AI_GUARD_INNER, attack(AI_GUARD_INNER), AI_GUARD_OUTER, AI_GUARD_OUTER, &[])?;
+        m.define_state(AI_GUARD_OUTER, attack(AI_GUARD_OUTER), AI_GUARD_GET_CRATE, AI_GUARD_GET_CRATE, &[])?;
+        m.define_state(AI_GUARD_GET_CRATE, AiState::GuardCrate { mv: MoveToData::default(), delay_counter: 0 }, AI_GUARD_RETURN, AI_GUARD_RETURN, &[])?;
+        Ok(())
+    })();
+    r.expect("the guard-retaliate machine");
     m
 }
 
@@ -201,12 +252,28 @@ pub fn look_for_inner_target<H: AiStateHost>(h: &mut H) -> bool {
     }
     let (_, mut pos) = guard_position(h);
     let area = gd(h).area_to_guard;
+    let retaliate = gd(h).retaliate;
     let mut filters = 0u32;
     if h.template_is_enter_guard() {
         filters |= GUARD_FILTER_POSSIBLE_TO_ENTER;
         filters |= if h.template_is_hijack_guard() { GUARD_FILTER_ENEMIES | GUARD_FILTER_POSSIBLE_TO_HIJACK } else { GUARD_FILTER_NEUTRAL };
     } else {
         filters |= GUARD_FILTER_ENEMIES | GUARD_FILTER_POSSIBLE_TO_ATTACK;
+        if retaliate && !plant(3411) {
+            // "Different than guard... we won't allow acquiring of structures (unless base defenses)"
+            filters |= GUARD_FILTER_REJECT_BUILDINGS;
+        }
+    }
+    if retaliate {
+        filters |= GUARD_FILTER_SAME_MAP_STATUS;
+        let vision_range = std_guard_range(h);
+        let pos = gd(h).position_to_guard;
+        let target = h.closest_guard_target(&pos, vision_range, filters, None);
+        if target != INVALID_ID {
+            gd(h).nemesis_to_attack = target;
+            return true;
+        }
+        return false;
     }
     filters |= GUARD_FILTER_SAME_MAP_STATUS;
     let mut vision_range = std_guard_range(h);
@@ -241,6 +308,8 @@ pub const GUARD_FILTER_IS_FLYING: u32 = 16;
 pub const GUARD_FILTER_NEUTRAL: u32 = 32;
 pub const GUARD_FILTER_POSSIBLE_TO_ENTER: u32 = 64;
 pub const GUARD_FILTER_POSSIBLE_TO_HIJACK: u32 = 128;
+/// (batch A19: the guard-retaliate search's `PartitionFilterRejectBuildings`)
+pub const GUARD_FILTER_REJECT_BUILDINGS: u32 = 256;
 
 // ---- the embedded attack and enter states
 
@@ -326,8 +395,86 @@ fn exit_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmRe
 
 // ---- the guard machine's attack states (inner, outer, attack aggressor)
 
+/// The guard-retaliate machine's inner, outer and attack-aggressor states' `onEnter`.
+fn retaliate_attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, which: StateId, kinds: AttackOwnerKinds) -> SmResult<StateReturn> {
+    let now = StateContext::frame(h);
+    let set = |sm: &mut Sm<H>, center: Coord3D, radius_sqr: f32, give_up: u32, conditions: i32| {
+        set_exit(sm, id, |x| {
+            x.center = center;
+            x.radius_sqr = radius_sqr;
+            x.attack_give_up_frame = give_up;
+            x.conditions_to_consider = conditions;
+            x.retaliate = true;
+        });
+    };
+    match which {
+        AI_GUARD_INNER => {
+            if h.template_is_enter_guard() {
+                let nemesis = gd(h).nemesis_to_attack;
+                if !h.object_exists(nemesis) {
+                    return Ok(StateReturn::SUCCESS); // "Unexpected NULL nemesis in AIGuardRetaliateInnerState."
+                }
+                let enter = AiState::Enter { mv: MoveToData::default(), entry_to_clear: INVALID_ID };
+                return enter_embedded(sm, h, id, enter, nemesis);
+            }
+            let pos = gd(h).position_to_guard;
+            let nemesis = gd(h).nemesis_to_attack;
+            if !h.object_exists(nemesis) {
+                return Ok(StateReturn::SUCCESS);
+            }
+            let r = (if plant(3412) { 1.0 } else { 1.5 }) * std_guard_range(h);
+            let give_up = match sm.state(id) {
+                Some(AiState::GuardAttack { exit, .. }) => exit.attack_give_up_frame,
+                _ => 0,
+            };
+            set(sm, pos, r * r, give_up, ATTACK_EXIT_IF_OUTSIDE_RADIUS | ATTACK_EXIT_IF_NO_UNIT_FOUND);
+            enter_embedded(sm, h, id, attack_state(false, true, false, kinds), nemesis)
+        }
+        AI_GUARD_OUTER => {
+            let pos = gd(h).position_to_guard;
+            let nemesis = gd(h).nemesis_to_attack;
+            if !h.object_exists(nemesis) {
+                return Ok(StateReturn::SUCCESS);
+            }
+            let range = h.adjusted_vision_range_for_object(AI_VISIONFACTOR_OWNERTYPE | AI_VISIONFACTOR_MOOD);
+            let r = 0.67 * (range + std_guard_range(h));
+            let give_up = now.wrapping_add(h.ai_data_guard_chase_unit_frames());
+            set(sm, pos, r * r, give_up, ATTACK_EXIT_IF_EXPIRED_DURATION | ATTACK_EXIT_IF_OUTSIDE_RADIUS | ATTACK_EXIT_IF_NO_UNIT_FOUND);
+            enter_embedded(sm, h, id, attack_state(false, true, false, kinds), nemesis)
+        }
+        _ => {
+            // AI_GUARD_ATTACK_AGGRESSOR: the nemesis, else the last damage's source (not a healing), made the nemesis if an enemy
+            let mut nemesis = gd(h).nemesis_to_attack;
+            if !h.object_exists(nemesis) {
+                nemesis = INVALID_ID;
+                let (damage_type, source) = h.last_damage_type_and_source();
+                if source != INVALID_ID && damage_type != DAMAGE_HEALING {
+                    if h.object_exists(source) {
+                        nemesis = source;
+                        if h.object_relationship(source) == Relationship::Enemies && !plant(3413) {
+                            gd(h).nemesis_to_attack = source;
+                        }
+                    }
+                }
+            }
+            if nemesis == INVALID_ID {
+                return Ok(StateReturn::SUCCESS); // "Unexpected NULL nemesis in AIGuardRetaliateAttackAggressorState."
+            }
+            let pos = gd(h).position_to_guard;
+            let range = h.adjusted_vision_range_for_object(AI_VISIONFACTOR_OWNERTYPE | AI_VISIONFACTOR_MOOD);
+            let give_up = now.wrapping_add(h.ai_data_guard_chase_unit_frames());
+            let r = range + std_guard_range(h);
+            set(sm, pos, r * r, give_up, ATTACK_EXIT_IF_EXPIRED_DURATION | ATTACK_EXIT_IF_OUTSIDE_RADIUS | ATTACK_EXIT_IF_NO_UNIT_FOUND);
+            enter_embedded(sm, h, id, attack_state(false, true, false, kinds), nemesis)
+        }
+    }
+}
+
 /// The inner, outer and attack-aggressor states' `onEnter`.
 pub fn guard_attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, which: StateId, kinds: AttackOwnerKinds) -> SmResult<StateReturn> {
+    if gd(h).retaliate {
+        return retaliate_attack_on_enter(sm, h, id, which, kinds);
+    }
     let now = StateContext::frame(h);
     match which {
         AI_GUARD_INNER => {
@@ -542,6 +689,10 @@ pub fn idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> Sm
     if look_for_inner_target(h) {
         return Ok(StateReturn::SUCCESS);
     }
+    if gd(h).retaliate {
+        // (the guard-retaliate machine's idle state: none, the machine ends)
+        return Ok(if plant(3414) { StateReturn::sleep(next.wrapping_sub(now)) } else { StateReturn::FAILURE });
+    }
     // "See if the object we are guarding moved."
     let (target, pos) = guard_position(h);
     if target != INVALID_ID {
@@ -670,6 +821,59 @@ pub fn guard_xfer<H: AiStateHost>(machine: &mut Option<Sm<H>>, data: &mut GuardD
             // (TheTerrainLogic->getTriggerAreaByName: the stand-ins' "poly<index>")
             data.area_to_guard = std::str::from_utf8(&name).ok().and_then(|n| n.strip_prefix("poly")).and_then(|n| n.parse().ok());
         }
+    }
+    Ok(())
+}
+
+// ---- AIGuardRetaliateState (batch A19)
+
+/// `AIGuardRetaliateState::onEnter()`: the machine made about the AI's machine's goal position, its nemesis the AI's machine's
+/// goal object; its default state entered (its answer the state's).
+pub fn retaliate_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    let mut data = GuardData { retaliate: true, ..GuardData::default() };
+    data.position_to_guard = *sm.goal_position();
+    if let Some(goal) = sm.goal_object(h) {
+        data.nemesis_to_attack = goal.id;
+    }
+    match sm.state_mut(id) {
+        Some(AiState::Guard { machine, data: d, kinds }) => {
+            *machine = Some(new_guard_retaliate_machine(*kinds));
+            *d = data;
+        }
+        _ => unreachable!("the guard-retaliate state"),
+    }
+    run_sub_machine(sm, h, id, |m, h| m.init_default_state(h))
+}
+
+/// `AIGuardRetaliateState::update()`: the machine's update (the AI's machine not locked); none: failure.
+pub fn retaliate_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
+    if !matches!(sm.state(id), Some(AiState::Guard { machine: Some(_), .. })) {
+        return Ok(StateReturn::FAILURE); // "We actually already exited."
+    }
+    run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h))
+}
+
+/// `AIGuardRetaliateState::xfer` (version 1): whether there is a machine (one made to load into), the machine
+/// (`AIGuardRetaliateMachine::xfer`, version 2: the machine's, the nemesis, the guarded position).
+pub fn retaliate_xfer<H: AiStateHost>(machine: &mut Option<Sm<H>>, data: &mut GuardData, kinds: AttackOwnerKinds, xfer: &mut dyn Xfer) -> XferResult<()> {
+    let current_version: XferVersion = 1;
+    let mut version = current_version;
+    xfer.xfer_version(&mut version, current_version)?;
+    let mut has_machine = machine.is_some();
+    xfer.xfer_bool(&mut has_machine)?;
+    if has_machine && machine.is_none() {
+        *machine = Some(new_guard_retaliate_machine(kinds));
+        *data = GuardData { retaliate: true, ..GuardData::default() };
+    }
+    if let Some(m) = machine.as_mut().filter(|_| has_machine) {
+        let cv: XferVersion = 2;
+        let mut v = cv;
+        xfer.xfer_version(&mut v, cv)?;
+        if v >= 2 {
+            Snapshot::xfer(m, xfer)?;
+        }
+        xfer.xfer_object_id(&mut data.nemesis_to_attack)?;
+        xfer.xfer_coord3d(&mut data.position_to_guard)?;
     }
     Ok(())
 }

@@ -100,6 +100,7 @@ Bool p1IsGroundPathPassable( Pathfinder *pf, Bool isCrusher, const Coord3D& star
 #include "GameLogic/AIStateMachine.h"
 #include "GameLogic/AIDock.h"
 #include "GameLogic/AIGuard.h"
+#include "GameLogic/AIGuardRetaliate.h"
 
 /* ---- the AI ------------------------------------------------------------------------------------------------------------------ */
 
@@ -415,6 +416,7 @@ public:
 #include "ai_states_a12.inc"
 #include "ai_dock_a17.inc"
 #include "ai_guard_a18.inc"
+#include "ai_guard_retaliate_a19.inc"
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -1057,6 +1059,7 @@ Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, Dis
 			else if (dynamic_cast<const PartitionFilterIsFlying *>(filters[i])) mask |= 16u;
 			else if (dynamic_cast<const PartitionFilterPossibleToEnter *>(filters[i])) mask |= 64u;
 			else if (dynamic_cast<const PartitionFilterPossibleToHijack *>(filters[i])) mask |= 128u;
+			else if (dynamic_cast<const PartitionFilterRejectBuildings *>(filters[i])) mask |= 256u;
 		}
 		L(LOG_CLOSEST_OBJECT, { 0xfffffffeu, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), bitsOf(maxDist), (unsigned)dc, mask, poly });
 		return findObject((ObjectID)g_aiEnv.closestAttack);
@@ -2390,6 +2393,45 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 					const AIGuardPickUpCrateState *gc = (const AIGuardPickUpCrateState *)gm->m_stateMap.find(AI_GUARD_GET_CRATE)->second;
 					PUT_MOVE(gc)
 					putU32(v, (unsigned)gc->m_delayCounter);
+				}
+			}
+			/* batch A19: the guard-retaliate state (its machine: state, goal, sleep, members; its states' members) */
+			{
+				const AIGuardRetaliateState *rs = (const AIGuardRetaliateState *)sm->m_stateMap.find(AI_GUARD_RETALIATE)->second;
+				const AIGuardRetaliateMachine *rm = rs->m_guardRetaliateMachine;
+				putU32(v, rm ? 1u : 0u);
+				if (rm) {
+					putU32(v, (unsigned)rm->getCurrentStateID());
+					putU32(v, (unsigned)rm->m_goalObjectID);
+					putU32(v, rm->m_sleepTill);
+					putPos(v, rm->m_positionToGuard);
+					putU32(v, (unsigned)rm->m_nemesisToAttack);
+#define PUT_EXIT(x) \
+					putU32(v, (unsigned)(x).m_conditionsToConsider); putPos(v, (x).m_center); putU32(v, bitsOf((x).m_radiusSqr)); \
+					putU32(v, (x).m_attackGiveUpFrame);
+#define PUT_EMBEDDED(a) \
+					if (a) { putU32(v, (a)->m_follow ? 1u : 0u); putU32(v, (a)->m_attackMachine ? (unsigned)(a)->m_attackMachine->getCurrentStateID() : 0xffffffffu); }
+					const AIGuardRetaliateInnerState *ri = (const AIGuardRetaliateInnerState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_INNER)->second;
+					PUT_EXIT(ri->m_exitConditions)
+					putU32(v, ri->m_attackState ? 1u : ri->m_enterState ? 2u : 0u);
+					PUT_EMBEDDED(ri->m_attackState)
+					const AIGuardRetaliateOuterState *ro = (const AIGuardRetaliateOuterState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_OUTER)->second;
+					PUT_EXIT(ro->m_exitConditions)
+					putU32(v, ro->m_attackState ? 1u : 0u);
+					PUT_EMBEDDED(ro->m_attackState)
+					const AIGuardRetaliateAttackAggressorState *ra = (const AIGuardRetaliateAttackAggressorState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_ATTACK_AGGRESSOR)->second;
+					PUT_EXIT(ra->m_exitConditions)
+					putU32(v, ra->m_attackState ? 1u : 0u);
+					PUT_EMBEDDED(ra->m_attackState)
+#undef PUT_EMBEDDED
+#undef PUT_EXIT
+					const AIGuardRetaliateReturnState *rr = (const AIGuardRetaliateReturnState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_RETURN)->second;
+					PUT_MOVE(rr)
+					putU32(v, rr->m_nextReturnScanTime);
+					putU32(v, ((const AIGuardRetaliateIdleState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_IDLE)->second)->m_nextEnemyScanTime);
+					const AIGuardRetaliatePickUpCrateState *rc = (const AIGuardRetaliatePickUpCrateState *)rm->m_stateMap.find(AI_GUARD_RETALIATE_GET_CRATE)->second;
+					PUT_MOVE(rc)
+					putU32(v, (unsigned)rc->m_delayCounter);
 				}
 			}
 			/* batch A17: the dock state (its machine: state, goal, sleep, lock, approach position; its states' members) */

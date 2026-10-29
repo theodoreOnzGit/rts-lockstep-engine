@@ -555,7 +555,8 @@ pub enum AiState<H: AiStateHost> {
     /// `AIHuntState` (`area` false) and `AIAttackAreaState` (batch A12): `m_huntMachine` / `m_attackMachine`, `m_nextEnemyScanTime`
     /// (the owner's kinds, read at the AI's machine's creation, make the machine).
     Hunt { area: bool, kinds: AttackOwnerKinds, machine: Option<StateMachine<AiState<H>>>, next_enemy_scan_time: u32 },
-    /// `AIGuardState` (batch A18): `m_guardMachine`; the machine's members; the owner's kinds (they make it).
+    /// `AIGuardState` (batch A18): `m_guardMachine`; the machine's members; the owner's kinds (they make it). (Batch A19: also
+    /// `AIGuardRetaliateState`, its `m_guardRetaliateMachine`, with `data.retaliate`.)
     Guard { machine: Option<StateMachine<AiState<H>>>, data: GuardData, kinds: AttackOwnerKinds },
     /// The guard machine's inner, outer and attack-aggressor states (`which`: the state's id): `m_exitConditions` and their
     /// embedded `AIAttackState` or `AIEnterState` (none or one).
@@ -856,7 +857,12 @@ pub fn define_states<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, kinds: A
         (AI_EXIT_INSTANTLY, AiState::Exit { instantly: true, entry_to_clear: INVALID_ID }, AI_IDLE, AI_IDLE),
         (AI_GUARD, AiState::Guard { machine: None, data: GuardData::default(), kinds }, AI_IDLE, AI_IDLE),
         (AI_GUARD_TUNNEL_NETWORK, u(AI_GUARD_TUNNEL_NETWORK), AI_IDLE, AI_IDLE),
-        (AI_GUARD_RETALIATE, u(AI_GUARD_RETALIATE), AI_IDLE, AI_IDLE),
+        (
+            AI_GUARD_RETALIATE,
+            AiState::Guard { machine: None, data: GuardData { retaliate: true, ..GuardData::default() }, kinds },
+            AI_IDLE,
+            AI_IDLE,
+        ),
         (AI_HUNT, hunt_states::hunt(false, kinds), AI_IDLE, AI_IDLE),
         (AI_ATTACK_AREA, hunt_states::hunt(true, kinds), AI_IDLE, AI_IDLE),
         (AI_FACE_OBJECT, AiState::Face { obj: true, can_turn_in_place: false }, AI_IDLE, AI_IDLE),
@@ -1065,6 +1071,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Rappel(_)) => rappel::rappel_on_enter(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_on_enter(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_on_enter(sm, h, id),
+            Some(AiState::Guard { data, .. }) if data.retaliate => guard::retaliate_on_enter(sm, h, id),
             Some(AiState::Guard { .. }) => guard::guard_on_enter(sm, h, id),
             Some(AiState::GuardAttack { which, kinds, .. }) => {
                 let (which, kinds) = (*which, *kinds);
@@ -1172,6 +1179,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::Rappel(_)) => rappel::rappel_update(sm, h, id),
             Some(AiState::AttackSquad { .. }) => hunt_states::squad_update(sm, h, id),
             Some(AiState::Dock { .. }) => dock::dock_update(sm, h, id),
+            Some(AiState::Guard { data, .. }) if data.retaliate => guard::retaliate_update(sm, h, id),
             Some(AiState::Guard { .. }) => guard::guard_update(sm, h, id),
             Some(AiState::GuardAttack { which, .. }) => {
                 let which = *which;
@@ -1280,6 +1288,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::DockMove { which, mv } => dock::dock_move_xfer(*which, mv, xfer)?,
             AiState::DockWait { enter_frame } => dock::wait_xfer(enter_frame, xfer)?,
+            AiState::Guard { machine, data, kinds } if data.retaliate => guard::retaliate_xfer(machine, data, *kinds, xfer)?,
             AiState::Guard { machine, data, kinds } => guard::guard_xfer(machine, data, *kinds, xfer)?,
             AiState::GuardAttack { .. } => guard::version_only_xfer(xfer)?,
             AiState::GuardReturn { next_return_scan_time, .. } => guard::return_xfer(next_return_scan_time, xfer)?,

@@ -316,6 +316,8 @@ public:
 	Int m_flags;
 };
 class PartitionFilterIsFlying : public PartitionFilter { public: PartitionFilterIsFlying() { } };
+/* batch A19 */
+class PartitionFilterRejectBuildings : public PartitionFilter { public: PartitionFilterRejectBuildings(const Object *o) : m_self(o) { } const Object *m_self; };
 class PartitionFilterPossibleToEnter : public PartitionFilter
 {
 public:
