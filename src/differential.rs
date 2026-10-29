@@ -1184,6 +1184,232 @@ extern "C" {
     pub fn grpAnswer(seed: c_uint, kind: c_uint, obj: c_uint, arg: c_uint) -> c_uint;
 }
 
+// --- p1w13-sonnet --- (batch A28: the AI player, differential/wrap_ai_player.cpp; field for field its ApScene)
+/// Batch A28: the AI player's world, table sizes.
+pub const AP_OBJECTS: usize = 48;
+pub const AP_TEMPLATES: usize = 10;
+pub const AP_PROTOS: usize = 6;
+pub const AP_TEAMS: usize = 64;
+pub const AP_PLAYERS: usize = 3;
+pub const AP_BUILD: usize = 10;
+pub const AP_SIDES: usize = 2;
+pub const AP_UPGRADES: usize = 4;
+
+/// Batch A28: an object (`ApObj`; `id` 0: none, `player` -1: none, `cmd_buttons` -1: no command set).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApObj {
+    pub id: c_int,
+    pub tmpl: c_int,
+    pub player: c_int,
+    pub team: c_int,
+    pub flags: c_int,
+    pub status: c_int,
+    pub pos: [c_float; 3],
+    pub radius: c_float,
+    pub builder: c_int,
+    pub spawner: c_int,
+    pub reconstructed: c_int,
+    pub dock: c_int,
+    pub boxes: c_int,
+    pub prod_count: c_int,
+    pub damage_state: c_int,
+    pub damage_stamp: c_int,
+    pub cmd_buttons: c_int,
+    pub rally: [c_float; 3],
+}
+
+/// Batch A28: a template (`ApTmpl`; `new_flags`: a new object's flags).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApTmpl {
+    pub kinds: c_int,
+    pub cost: c_int,
+    pub equiv: c_int,
+    pub new_flags: c_int,
+    pub radius: c_float,
+    pub angle: c_float,
+}
+
+/// Batch A28: a team prototype (`ApProto`; `unit_tmpl` -1: a name no template has, `condition` -1: none).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApProto {
+    pub player: c_int,
+    pub max_instances: c_int,
+    pub priority: c_int,
+    pub idle_frames: c_int,
+    pub flags: c_int,
+    pub num_units: c_int,
+    pub condition: c_int,
+    pub unit_tmpl: [c_int; 4],
+    pub unit_min: [c_int; 4],
+    pub unit_max: [c_int; 4],
+    pub home: [c_float; 3],
+}
+
+/// Batch A28: a team (`ApTeam`; `id` 0: none).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApTeam {
+    pub id: c_int,
+    pub proto: c_int,
+    pub active: c_int,
+    pub idle: c_int,
+}
+
+/// Batch A28: a player (`ApPlayer`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApPlayer {
+    pub money: c_int,
+    pub flags: c_int,
+    pub side: c_int,
+    pub attacked_frame: c_int,
+    pub science_points: c_int,
+    pub default_team: c_int,
+}
+
+/// Batch A28: an entry of player 0's build list (`ApBuild`; `tmpl` -1: no name, -2: a name no template has).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApBuild {
+    pub tmpl: c_int,
+    pub object_id: c_int,
+    pub timestamp: c_int,
+    pub num_rebuilds: c_int,
+    pub flags: c_int,
+    pub desired: c_int,
+    pub current: c_int,
+    pub health: c_int,
+    pub name: c_int,
+    pub script: c_int,
+    pub loc: [c_float; 3],
+    pub angle: c_float,
+    pub rally: [c_float; 2],
+}
+
+/// Batch A28: a side of the AI data (`ApSide`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApSide {
+    pub side: c_int,
+    pub easy: c_int,
+    pub normal: c_int,
+    pub hard: c_int,
+    pub num_skills: [c_int; 5],
+    pub skills: [[c_int; 4]; 5],
+}
+
+/// Batch A28: the AI player's scene (`ApScene`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ApScene {
+    pub o: [ApObj; AP_OBJECTS],
+    pub t: [ApTmpl; AP_TEMPLATES],
+    pub pr: [ApProto; AP_PROTOS],
+    pub tm: [ApTeam; AP_TEAMS],
+    pub pl: [ApPlayer; AP_PLAYERS],
+    pub b: [ApBuild; AP_BUILD],
+    pub sides: [ApSide; AP_SIDES],
+    pub num_build: c_int,
+    pub frame: c_int,
+    pub seed: c_int,
+    pub debug_ai: c_int,
+    pub box_value: c_int,
+    pub difficulty: c_int,
+    pub skirmish: c_int,
+    pub enemy: c_int,
+    pub next_object_id: c_int,
+    pub next_team_id: c_int,
+    pub legal_pct: c_int,
+    pub rel: [[c_int; AP_PLAYERS]; AP_PLAYERS],
+    pub extent: [c_float; 4],
+    pub rebuild_delay_seconds: c_int,
+    pub resources_poor: c_int,
+    pub resources_wealthy: c_int,
+    pub structure_seconds: c_float,
+    pub structures_poor_mod: c_float,
+    pub structures_wealthy_mod: c_float,
+    pub team_resources_to_build: c_float,
+    pub max_recruit_distance: c_float,
+    pub safe_radius: c_float,
+    pub team_seconds: c_float,
+    pub team_poor_mod: c_float,
+    pub team_wealthy_mod: c_float,
+}
+
+impl Default for ApScene {
+    fn default() -> Self {
+        ApScene {
+            o: [ApObj::default(); AP_OBJECTS],
+            t: [ApTmpl::default(); AP_TEMPLATES],
+            pr: [ApProto::default(); AP_PROTOS],
+            tm: [ApTeam::default(); AP_TEAMS],
+            pl: [ApPlayer::default(); AP_PLAYERS],
+            b: [ApBuild::default(); AP_BUILD],
+            sides: [ApSide::default(); AP_SIDES],
+            num_build: 0,
+            frame: 0,
+            seed: 0,
+            debug_ai: 0,
+            box_value: 0,
+            difficulty: 0,
+            skirmish: 0,
+            enemy: 0,
+            next_object_id: 0,
+            next_team_id: 0,
+            legal_pct: 0,
+            rel: [[0; AP_PLAYERS]; AP_PLAYERS],
+            extent: [0.0; 4],
+            rebuild_delay_seconds: 0,
+            resources_poor: 0,
+            resources_wealthy: 0,
+            structure_seconds: 0.0,
+            structures_poor_mod: 0.0,
+            structures_wealthy_mod: 0.0,
+            team_resources_to_build: 0.0,
+            max_recruit_distance: 0.0,
+            safe_radius: 0.0,
+            team_seconds: 0.0,
+            team_poor_mod: 0.0,
+            team_wealthy_mod: 0.0,
+        }
+    }
+}
+
+/// Batch A28: one operation on the AI player (`ApOp`; its meaning per kind in `ref_ai_player_run`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ApOp {
+    pub kind: c_int,
+    pub a: c_int,
+    pub b: c_int,
+    pub c: c_int,
+    pub x: c_float,
+    pub y: c_float,
+    pub z: c_float,
+    pub w: c_float,
+}
+
+extern "C" {
+    // batch A28: the AI player (wrap_ai_player.cpp)
+    pub fn ref_ai_player_run(
+        scene: *const ApScene,
+        ops: *const ApOp,
+        n_ops: c_int,
+        out: *mut c_uint,
+        cap: c_int,
+        out_len: *mut c_int,
+        log: *mut c_uint,
+        log_cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
+    pub fn ref_ai_player_scene_size() -> c_int;
+    pub fn apAnswer(seed: c_uint, kind: c_uint, a: c_uint, b: c_uint) -> c_uint;
+}
+// --- end p1w13-sonnet ---
+
 extern "C" {
     // Locomotor.cpp, LocomotorSet and the INI block (wrap_locomotor.cpp). The meaning of every
     // argument is in differential/wrap_locomotor.cpp and tests/differential_locomotor.rs.
