@@ -518,7 +518,7 @@ pub const SCENARIO_GROUND_LAYER: PathfindLayer = LAYER_GROUND;
 
 /// Batch A26: the AI system's questions (`crate::logic::ai::ai_system`), by the rules `wrap_partition.cpp`'s stand-ins answer
 /// them: the attack priority lists a hash of (list, template) (list 0 the script engine's default); the contained objects the
-/// container's one member (`first_contained_detected`), of the container's template; an AI on the objects whose id is not a
+/// container's one member (`first_contained_detected`), of a template of its own (the container's key + 1000); an AI on the objects whose id is not a
 /// multiple of 5, its mood matrix value a hash; a quarter of the objects contained; the largest weapon range three quarters of
 /// the vision range.
 impl crate::logic::ai::ai_system::AiQueryHost for ScenarioHost {
@@ -533,7 +533,7 @@ impl crate::logic::ai::ai_system::AiQueryHost for ScenarioHost {
     }
     fn contained_templates(&self, id: ObjectId) -> Vec<i32> {
         match self.obj(id) {
-            Some(o) if o.contain.is_some_and(|c| c.first_contained_detected.is_some()) => vec![o.template],
+            Some(o) if o.contain.is_some_and(|c| c.first_contained_detected.is_some()) => vec![o.template + 1000],
             _ => Vec::new(),
         }
     }

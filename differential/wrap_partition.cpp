@@ -741,6 +741,9 @@ void installScenario(const int *ig, const float *fg, const unsigned char *rel, c
 			SObj *m = new SObj(*s);
 			m->id = -s->id;
 			m->status = ObjectStatusMaskType();
+			/* batch A26: a template of its own (the container's key + 1000; only AI.cpp's priorityFunc reads it) */
+			m->tmplPtr = new ThingTemplate(*s->tmplPtr);
+			m->tmplPtr->m_key = s->tmpl + 1000;
 			if (s->firstDetected == 2) m->status.set(OBJECT_STATUS_DETECTED);
 			m->obj.m_idx = (int)g->objs.size();
 			g->objs.push_back(m);

@@ -1437,9 +1437,22 @@ fn partition_manager_matches_upstream() {
 /// (`logic::ai::ai_system`), cut verbatim into this harness (`ai_queries.inc`) and run against the real partition manager on the
 /// same scenarios, with programs in which about 45 operations in 100 are these queries.
 ///
-/// # Results
+/// The stand-ins answer AI.cpp's questions by `scenario.rs`'s `impl AiQueryHost for ScenarioHost` (weapons in range, attack
+/// priorities, the passenger's own template, vision, mood, containment); the AI data (the distance modifier, repulsors, the guard
+/// and mood modifiers) is each operation's. Not run: `findClosestEnemy` for an object without a controlling player (upstream
+/// reads its player index for the fog filter before knowing whether it needs it).
 ///
-/// See `ai_queries_match_upstream`'s `DIFF AI queries` line; recorded in `docs/phase1-porting-graph.md` (batch A26).
+/// # Results (2026-10-29, batch A26; upstream commit 0a05454d, seeds `0xA26_0000 + case`, 20,000 cases)
+///
+/// - 268,560 `findClosestEnemy` (44,156 answering an enemy), 107,323 `findClosestAlly` (35,201), 53,368 `findClosestRepulsor`
+///   (23,957) and 107,822 `getAdjustedVisionRangeForObject` (20,550 non-zero), with the partition manager's own operations
+///   between them: **0 mismatches** over every word of every case.
+/// - The first plant run found one harness gap, fixed: the container's passenger had the container's template, so a passenger
+///   could never raise the priority (plant 3561 was invisible); it now has a template of its own (key + 1000), read only by
+///   AI.cpp's `priorityFunc` (the partition test's 5,000 cases are unchanged: 436,339 operations, 33,827,114 words).
+/// - Planted bugs at 5,000 cases: 3560 (the stealth filter dropped), 3561 (the passenger's priority), 3562 (the tie to the higher
+///   raw priority), 3563 (the ally's line of sight), 3564 (the repulsor's disguise), 3565 (the contained object's weapon range)
+///   each caught (the test's five-case stop reached).
 #[test]
 fn ai_queries_match_upstream() {
     let cases: u64 = std::env::var("AI_QUERY_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
