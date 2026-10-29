@@ -218,7 +218,8 @@ enum
 	LOG_ATTACK = 103,	/* batch A10a: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_RAPPEL = 104,	/* batch A15: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_DOCK = 105,		/* batch A17: { kind, words.. } (see wrap_ai.cpp) */
-	LOG_TUNNEL = 106	/* batch A20: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_TUNNEL = 106,	/* batch A20: { kind, words.. } (see wrap_ai.cpp) */
+	LOG_AI_SNAPSHOT = 107	/* batch A21: { kind, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -233,12 +234,15 @@ inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType t) { Mo
 #define MAKE_MODELCONDITION_MASK(k) makeModelConditionMask(k)
 
 /* batch A4: TheScriptEngine, as far as AIDeadState uses it (logged) */
+class AttackPriorityInfo;
 class ScriptEngine
 {
 public:
 	void notifyOfObjectCreationOrDestruction();
 	/* batch A16 */
 	Bool getChooseVictimAlwaysUsesNormal() const;
+	/* batch A21: by name ("ap<index>") */
+	const AttackPriorityInfo *getAttackInfo(const AsciiString& name);
 };
 extern ScriptEngine *TheScriptEngine;
 
@@ -699,6 +703,8 @@ class AttackPriorityInfo
 {
 public:
 	Int getPriority(const AiTemplateView *tThing) const;
+	/* batch A21: "ap<index>" */
+	AsciiString getName() const;
 	Int m_index;
 };
 
@@ -832,11 +838,17 @@ public:
 
 /* ---- batch A2: the AI's neighbours */
 
+/* (batch A21: a snapshot) */
+#include "Common/Snapshot.h"
 /* UpdateModule (layer 8), as the AI's base: its object and the sleepy update's wake frame (a stand-in kept in the scene) */
-class UpdateModule
+class UpdateModule : public Snapshot
 {
 public:
 	UpdateModule(class Thing *thing, const class ModuleData *moduleData) {}
+	/* batch A21: the base's snapshot (the stand-in's: its version and the sleepy update's next call frame) */
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
 	UpdateSleepTime getWakeFrame() const;
 	void setWakeFrame(Object *obj, UpdateSleepTime wakeDelay);
 	Object *getObject() const;

@@ -113,10 +113,14 @@ class Waypoint;
 class TurretAIData;
 /* TurretAI (batch T1, its own build): the AI makes one per turret its data has; here an empty object, whose presence the mood
 ** matrix asks */
-class TurretAI
+class TurretAI : public Snapshot
 {
 public:
 	TurretAI(Object *owner, const TurretAIData *data, WhichTurretType tur) : m_which((Int)tur) {}
+	/* batch A21: its snapshot (batch T1's, its own build): logged; the version and its turret */
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void ) {}
 	/* batch A4: the AI's update runs it (batch T1's, its own build): logged, its sleep from the hash */
 	UpdateSleepTime updateTurretAI();
 	/* batch A10a: the targets logged; the turn rate and whether it holds the current weapon the scene's */
@@ -191,6 +195,10 @@ class AIUpdateInterface : public UpdateModule, public AICommandInterface
 {
 public:
 	AIUpdateInterface( Thing *thing, const ModuleData* moduleData );
+	/* batch A21: the snapshot (AIUpdate.cpp's, verbatim in ai_update_a21.inc) */
+	virtual void crc( Xfer *x );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
 	/* MAKE_STANDARD_MODULE_DATA_MACRO_ABC's getAIUpdateModuleData: the driver's data */
 	const AIUpdateModuleData* getAIUpdateModuleData() const;
 
@@ -424,6 +432,13 @@ public:
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
+/* batch A21: what the snapshot's text names: CRCGEN_LOG (a release build's: nothing), GameState.h's SC_INVALID_DATA (upstream's
+** value), AIUpdate.h's TheLocomotorSetNames (DEFINE_LOCOMOTORSET_NAMES's: ai_defs.h was included without it) */
+#define CRCGEN_LOG(x)
+enum { SC_INVALID_DATA = 6 };
+static const char *TheLocomotorSetNames[] = { "SET_NORMAL", "SET_NORMAL_UPGRADED", "SET_FREEFALL", "SET_WANDER", "SET_PANIC", "SET_TAXIING",
+	"SET_SUPERSONIC", "SET_SLUGGISH", NULL };
+#include "ai_update_a21.inc"
 
 #undef private
 #undef protected
@@ -518,6 +533,7 @@ AIUpdateInterface *g_ai_update = 0;
 /* batch A4: the file the machine's xfer goes through, and the last save */
 std::string g_xferPath;
 std::vector<unsigned char> g_saved;
+std::vector<unsigned char> g_aiSaved;	/* batch A21: the AI's last save */
 
 }  // namespace
 
@@ -1645,9 +1661,35 @@ void Pathfinder::snapPosition(Object *obj, Coord3D *pos)
 	pos->x = floorf(pos->x / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2;
 	pos->y = floorf(pos->y / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2;
 }
+/* (batch A21: the goal's z is not logged: upstream's updateGoal does not read it, and AIUpdateInterface::loadPostProcess leaves it
+** unset) */
 void Pathfinder::updateGoal(Object *obj, const Coord3D *newGoalPos, PathfindLayerEnum layer)
 {
-	L(LOG_PF_UPDATE_GOAL, { bitsOf(newGoalPos->x), bitsOf(newGoalPos->y), bitsOf(newGoalPos->z), (unsigned)layer });
+	L(LOG_PF_UPDATE_GOAL, { bitsOf(newGoalPos->x), bitsOf(newGoalPos->y), (unsigned)layer });
+}
+/* batch A21: LOG_AI_SNAPSHOT's kinds: 0 updatePos {x, y, z}, 1 a turret's crc {which}, 2 its xfer {which} */
+void Pathfinder::updatePos(Object *obj, const Coord3D *newPos) { L(LOG_AI_SNAPSHOT, { 0u, bitsOf(newPos->x), bitsOf(newPos->y), bitsOf(newPos->z) }); }
+void TurretAI::crc(Xfer *xfer) { L(LOG_AI_SNAPSHOT, { 1u, (unsigned)m_which }); }
+void TurretAI::xfer(Xfer *xfer)
+{
+	L(LOG_AI_SNAPSHOT, { 2u, (unsigned)m_which });
+	XferVersion v = 1;
+	xfer->xferVersion(&v, 1);
+	xfer->xferInt(&m_which);
+}
+void UpdateModule::crc(Xfer *xfer) {}
+void UpdateModule::xfer(Xfer *xfer)
+{
+	XferVersion v = 1;
+	xfer->xferVersion(&v, 1);
+	xfer->xferUnsignedInt(&g_nextCallFrame);
+}
+void UpdateModule::loadPostProcess(void) {}
+AsciiString AttackPriorityInfo::getName() const { AsciiString n; n.format("ap%d", m_index); return n; }
+const AttackPriorityInfo *ScriptEngine::getAttackInfo(const AsciiString& name)
+{
+	for (int i = 0; i < 2; ++i) if (g_attackInfos[i].getName() == name) return &g_attackInfos[i];
+	return NULL;
 }
 Bool Pathfinder::queueForPath(ObjectID id) { L(LOG_PF_QUEUE, { (unsigned)id }); return TRUE; }
 UpdateSleepTime TurretAI::updateTurretAI()
@@ -1815,7 +1857,7 @@ void ref_ai_a2_reset(void)
 }
 
 /* batch A4: the file the machine's xfer goes through (one per test thread) */
-void ref_ai_a4_xfer_path(const char *path) { g_xferPath = path; g_saved.clear(); }
+void ref_ai_a4_xfer_path(const char *path) { g_xferPath = path; g_saved.clear(); g_aiSaved.clear(); }
 
 /* INI::load's loop over `filename` (load type `loadType`), each Locomotor block to this build's handler (see the header); 0, or 1
 ** if it threw */
@@ -2059,6 +2101,44 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 86: if (ai->m_curLocomotor) ai->m_curLocomotor->setUltraAccurate(ia[0] != 0); break;
 	/* batch A12: setAttackInfo (ia[0]: the info, -1 none) */
 	case 87: ai->setAttackInfo(ia[0] >= 0 ? &g_attackInfos[ia[0]] : NULL); break;
+	case 88: {
+		/* batch A21: the AI saved (xferSnapshot: AIUpdateInterface::xfer): the status, then the bytes */
+		XferSave x;
+		int st = 0;
+		try { x.open(AsciiString(g_xferPath.c_str())); x.xferSnapshot(ai); } catch (...) { st = 1; }
+		try { x.close(); } catch (...) {}
+		g_aiSaved.clear();
+		if (FILE *f = fopen(g_xferPath.c_str(), "rb")) {
+			unsigned char b[65536];
+			size_t m = fread(b, 1, sizeof b, f);
+			fclose(f);
+			g_aiSaved.assign(b, b + m);
+		}
+		r.push_back((unsigned)st);
+		r.push_back((unsigned)g_aiSaved.size());
+		for (unsigned char c : g_aiSaved) r.push_back(c);
+		break;
+	}
+	case 89: {
+		/* batch A21: the AI's last save loaded into it (xferSnapshot, then loadPostProcess): the status */
+		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_aiSaved.empty()) fwrite(&g_aiSaved[0], 1, g_aiSaved.size(), f); fclose(f); }
+		XferLoad x;
+		int st = 0;
+		try { x.open(AsciiString(g_xferPath.c_str())); x.xferSnapshot(ai); } catch (...) { st = 1; }
+		try { x.close(); } catch (...) {}
+		ai->loadPostProcess();
+		r.push_back((unsigned)st);
+		break;
+	}
+	case 90: {
+		/* batch A21: the AI's CRC (XferCRC::xferSnapshot: AIUpdateInterface::crc) */
+		XferCRC x;
+		x.open(AsciiString("ai_a21_crc"));
+		x.xferSnapshot(ai);
+		x.close();
+		r.push_back(x.getCRC());
+		break;
+	}
 	case 71: {
 		/* the last save loaded into the machine (xferSnapshot, then loadPostProcess): the status */
 		if (FILE *f = fopen(g_xferPath.c_str(), "wb")) { if (!g_saved.empty()) fwrite(&g_saved[0], 1, g_saved.size(), f); fclose(f); }

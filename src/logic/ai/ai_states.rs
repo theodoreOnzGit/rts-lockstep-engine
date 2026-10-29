@@ -67,6 +67,7 @@ use crate::common::state_machine::{
     SmResult, StateBehavior, StateContext, StateExitType, StateId, StateMachine, StateReturn, INVALID_STATE_ID,
 };
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
+use crate::logic::locomotor::{LocomotorSet, LocomotorSetError};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
@@ -485,6 +486,25 @@ pub trait AiStateHost: AiHost + StateContext {
     fn object_last_damage(&mut self, id: ObjectId) -> Option<(bool, ObjectId, u32)>;
     /// The container's exit interface's `exitObjectInAHurry(owner)`.
     fn exit_object_in_a_hurry(&mut self, container: ObjectId);
+    // ---- batch A21: the AI's snapshot
+    /// The `UpdateModule` base's `xfer`, `crc` and `loadPostProcess` (the module's slot in the logic).
+    fn update_module_xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()>;
+    fn update_module_crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()>;
+    fn update_module_load_post_process(&mut self);
+    /// A polygon trigger's `getTriggerName()`; `TheTerrainLogic->getTriggerAreaByName(name)`.
+    fn polygon_trigger_name(&mut self, polygon: i32) -> Vec<u8>;
+    fn polygon_trigger_by_name(&mut self, name: &[u8]) -> Option<i32>;
+    /// An attack priority info's `getName()`; `TheScriptEngine->getAttackInfo(name)`.
+    fn attack_info_name(&mut self, info: usize) -> Vec<u8>;
+    fn attack_info_by_name(&mut self, name: &[u8]) -> Option<usize>;
+    /// `TheTerrainLogic->getWaypointByID(id)`.
+    fn waypoint_by_id(&mut self, id: u32) -> Option<u32>;
+    /// The locomotor set's `xferSelfAndCurLocoPtr(xfer, &m_curLocomotor)` (the store's locomotors).
+    fn locomotor_set_xfer(&mut self, set: &mut LocomotorSet, cur: &mut Option<usize>, xfer: &mut dyn Xfer) -> Result<(), LocomotorSetError>;
+    /// `xferSnapshot(m_turretAI[which])` (in CRC mode its `crc`).
+    fn turret_ai_snapshot(&mut self, which: usize, xfer: &mut dyn Xfer) -> XferResult<()>;
+    /// `TheAI->pathfinder()->updatePos(getObject(), pos)`.
+    fn pf_update_pos(&mut self, pos: &Coord3D);
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states

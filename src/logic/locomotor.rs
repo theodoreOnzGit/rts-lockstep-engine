@@ -3249,6 +3249,9 @@ impl LocomotorSet {
 
     /// `xferSelfAndCurLocoPtr(xfer, &loco)`: the set, then the template name of
     /// the current locomotor (given and returned as an index; empty name = none).
+    /// The set goes through `xferSnapshot(this)`: in CRC mode its `crc`, which is
+    /// empty upstream, and then neither name branch runs (corrected in batch A21
+    /// of the AI, whose CRC is the first to reach this; it xfered the set).
     pub fn xfer_self_and_cur_loco_ptr(
         &mut self,
         xfer: &mut dyn Xfer,
@@ -3258,6 +3261,10 @@ impl LocomotorSet {
         frame: u32,
         loco: &mut Option<usize>,
     ) -> Result<(), LocomotorSetError> {
+        if xfer.get_xfer_mode() == XferMode::Crc && !crate::logic::modules::plant(3503) {
+            // (LocomotorSet::crc: empty)
+            return Ok(());
+        }
         self.xfer_with_store(xfer, store, names, rng, frame)?;
 
         if xfer.get_xfer_mode() == XferMode::Save {

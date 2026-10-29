@@ -101,7 +101,8 @@ use rts_lockstep_engine::common::name_key_generator::{NameKeyGenerator, NameKeyT
 use rts_lockstep_engine::common::object_status_types::ObjectStatusTypes;
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::state_machine::{ObjectRef, StateContext, StateExitType, StateId, StateReturn};
-use rts_lockstep_engine::common::xfer::Xfer;
+use rts_lockstep_engine::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
+use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::common::xfer_load::XferLoad;
 use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::differential as cpp;
@@ -200,6 +201,8 @@ const L_RAPPEL: u32 = 104;
 const L_DOCK: u32 = 105;
 /// Batch A20: the tunnel network's calls (`LOG_TUNNEL`).
 const L_TUNNEL: u32 = 106;
+/// Batch A21: the AI's snapshot's calls (`LOG_AI_SNAPSHOT`).
+const L_AI_SNAPSHOT: u32 = 107;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -317,6 +320,9 @@ struct Host {
     /// The other objects whose height above the terrain this operation has asked (wrap_ai.cpp makes them anew every operation;
     /// a second question is answered from the object's cache, unlogged).
     others_height_asked: u32,
+    /// Batch A21: the AI's last save (op 88), and its machine's state and temporary state then.
+    ai_saved: Vec<u8>,
+    ai_saved_states: Option<(u32, u32)>,
     /// Batch A18: whether this operation has cleared the body's clearable last attacker (wrap_ai.cpp's scene is copied anew every
     /// operation, so the clearing lasts the operation; the scene itself must not change before the C++ side runs it).
     attacker_cleared: bool,
@@ -875,7 +881,8 @@ impl AiStateHost for Host {
         pos.y = (pos.y / 10.0).floor() * 10.0 + 10.0 / 2.0;
     }
     fn pf_update_goal(&mut self, pos: &Coord3D, layer: PathfindLayer) {
-        self.l(L_PF_UPDATE_GOAL, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), layer as u32]);
+        // (batch A21: not the goal's z, which upstream's updateGoal does not read)
+        self.l(L_PF_UPDATE_GOAL, &[pos.x.to_bits(), pos.y.to_bits(), layer as u32]);
     }
     fn pf_queue_for_path(&mut self) {
         let id = self.env.object_id;
@@ -1613,6 +1620,49 @@ impl AiStateHost for Host {
     fn exit_object_in_a_hurry(&mut self, _container: ObjectId) {
         let id = self.env.object_id as u32;
         self.l(L_CONTAIN, &[8, id]);
+    }
+    // ---- batch A21
+    fn update_module_xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let mut v: XferVersion = 1;
+        xfer.xfer_version(&mut v, 1)?;
+        xfer.xfer_unsigned_int(&mut self.next_call_frame)
+    }
+    fn update_module_crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    fn update_module_load_post_process(&mut self) {}
+    fn polygon_trigger_name(&mut self, polygon: i32) -> Vec<u8> {
+        format!("poly{polygon}").into_bytes()
+    }
+    fn polygon_trigger_by_name(&mut self, name: &[u8]) -> Option<i32> {
+        (0..8).find(|i| format!("poly{i}").as_bytes() == name)
+    }
+    fn attack_info_name(&mut self, info: usize) -> Vec<u8> {
+        format!("ap{info}").into_bytes()
+    }
+    fn attack_info_by_name(&mut self, name: &[u8]) -> Option<usize> {
+        (0..2).find(|i| format!("ap{i}").as_bytes() == name)
+    }
+    fn waypoint_by_id(&mut self, id: u32) -> Option<u32> {
+        (id < 8).then_some(id)
+    }
+    fn locomotor_set_xfer(&mut self, set: &mut LocomotorSet, cur: &mut Option<usize>, xfer: &mut dyn Xfer) -> Result<(), LocomotorSetError> {
+        let frame = self.env.loco.frame;
+        set.xfer_self_and_cur_loco_ptr(xfer, &self.store, &mut self.names, &mut self.rng, frame, cur)
+    }
+    fn turret_ai_snapshot(&mut self, which: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
+        if xfer.get_xfer_mode() == XferMode::Crc {
+            self.l(L_AI_SNAPSHOT, &[1, which as u32]);
+            return Ok(());
+        }
+        self.l(L_AI_SNAPSHOT, &[2, which as u32]);
+        let mut v: XferVersion = 1;
+        xfer.xfer_version(&mut v, 1)?;
+        let mut w = which as i32;
+        xfer.xfer_int(&mut w)
+    }
+    fn pf_update_pos(&mut self, pos: &Coord3D) {
+        self.l(L_AI_SNAPSHOT, &[0, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
     }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
@@ -2720,6 +2770,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
     } else if g.below(40) == 0 {
         // batch A12: setAttackInfo
         87
+    } else if g.below(40) == 0 {
+        // batch A21: the AI saved, loaded (its last save; else saved), its CRC
+        [88, 88, 89, 89, 90][g.below(5) as usize]
     } else if g.below(5) == 0 {
         // batch A6: the paths
         [74, 74, 75, 76, 77, 78, 78, 78, 79, 80, 80, 81, 81, 82, 83, 84, 85, 86][g.below(18) as usize]
@@ -2783,7 +2836,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=90);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -3150,6 +3203,32 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
     let coords = &coords[..];
     let ret = |r: StateReturn| vec![r.0 as u32];
     match op {
+        // batch A21: the AI's snapshot
+        88 => {
+            let mut x = XferSave::new();
+            x.open(b"ai_a21.bin").expect("open");
+            let st = module.xfer(h, &mut x, waypoint_name, waypoint_by_name).is_err();
+            let _ = x.close();
+            h.ai_saved = x.bytes().to_vec();
+            let mut r = vec![u32::from(st), h.ai_saved.len() as u32];
+            r.extend(h.ai_saved.iter().map(|&c| u32::from(c)));
+            r
+        }
+        89 => {
+            let mut x = XferLoad::new(h.ai_saved.clone());
+            x.open(b"ai_a21.bin").expect("open");
+            let st = module.xfer(h, &mut x, waypoint_name, waypoint_by_name).is_err();
+            let _ = x.close();
+            module.load_post_process(h);
+            vec![u32::from(st)]
+        }
+        90 => {
+            let mut x = XferCrc::new();
+            x.open(b"ai_a21_crc").expect("open");
+            let _ = module.crc(h, &mut x, waypoint_name, waypoint_by_name);
+            let _ = x.close();
+            vec![x.get_crc()]
+        }
         59 => ret(module.run(h, |sm, h| states::aism_set_state(sm, h, ia[0] as StateId)).expect("setState")),
         60 => ret(module.run(h, |sm, h| states::aism_set_temporary_state(sm, h, ia[0] as StateId, ia[1])).expect("setTemporaryState")),
         61 => {
@@ -3286,7 +3365,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 88],
+    ops: [u64; 91],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -3320,6 +3399,9 @@ struct Checks {
     /// Batch A20: the tunnel-network guard machine's likewise; the network's nemesis offered, exits in a hurry, cases ended where upstream is undefined.
     tn_inner: [u64; 6],
     tn_logs: [u64; 3],
+    /// Batch A21: the AI's saves and loads that succeeded; cases ended at a failed load, and at one state both current and
+    /// temporary.
+    ai_snapshot: [u64; 4],
     /// Batch A12b: the attack-follow-waypoint machines' state after an operation in those states (idle, crate, attack).
     follow_inner: [u64; 3],
     loads: u64,
@@ -3334,7 +3416,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 88],
+            ops: [0; 91],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -3357,6 +3439,7 @@ impl Checks {
             guard_inner: [0; 6],
             tn_inner: [0; 6],
             tn_logs: [0; 3],
+            ai_snapshot: [0; 4],
             follow_inner: [0; 3],
             loads: 0,
         }
@@ -3392,6 +3475,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         max_shots: 0,
         others_height_asked: 0,
         attacker_cleared: false,
+        ai_saved: Vec::new(),
+        ai_saved_states: None,
     };
     host.max_shots = host.env.max_shots_init;
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
@@ -3574,6 +3659,15 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             println!("TRACE step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?}", &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint);
         }
         has_saved |= op == 70;
+        // (batch A21: a load of the AI needs its save, made with the machine in the same state and temporary state: upstream loads
+        // only into a new object, whose machine the snapshot's shape matches; another state's reads the stream misaligned)
+        let states_now = module.machine.as_ref().map(|sm| (sm.get_current_state_id(), module.ai().machine.temporary_state));
+        if op == 89 && (host.ai_saved.is_empty() || host.ai_saved_states != states_now) {
+            op = 88;
+        }
+        if op == 88 {
+            host.ai_saved_states = states_now;
+        }
         if op == 27 && fa[0] == -1.0e30 {
             let p = *host.thing.position();
             fa[0] = p.x + g.uniform(-0.6, 0.6);
@@ -3701,6 +3795,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             }] += 1;
         }
         match op {
+            88 if r[0] == 0 => ck.ai_snapshot[0] += 1,
+            89 if r[0] == 0 => ck.ai_snapshot[1] += 1,
             60 if r[0] == 0 => ck.temporary_states += 1,
             71 => ck.loads += 1,
             48 if r[0] != 0 => ck.mood_targets += 1,
@@ -3726,6 +3822,23 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if tn_attack_state_missing(&module) {
             ck.tn_logs[2] += 1;
             return true;
+        }
+        // batch A21: a load of the AI that failed (the stream read past what was saved: a save of another state, or another
+        // machine) leaves it half loaded, its later members garbage (a waypoint count out of range, say), which upstream never runs
+        // on (a failed load ends the game's): the case ends here
+        if op == 89 && r.first() == Some(&1) {
+            ck.ai_snapshot[2] += 1;
+            return true;
+        }
+        // (and a load of the machine (op 71) that made one state both its state and its temporary state: the one instance's two
+        // roles, which the other's end leaves without its members (a sub-machine, a path), undefined as in a9_guard: the case ends)
+        if let Some(sm) = &module.machine {
+            let cur = sm.get_current_state_id();
+            // (the states a9_guard keeps from both roles: with a sub-machine, a path or waypoint members of their own)
+            if cur == module.ai().machine.temporary_state && matches!(cur, 2..=5 | 9..=12 | 14 | 16..=21 | 28 | 30..=32 | 43) {
+                ck.ai_snapshot[3] += 1;
+                return true;
+            }
         }
     }
     true
@@ -4170,9 +4283,9 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.follow_inner, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads
     );
     ck.construction.finish();
     ck.results.finish();
