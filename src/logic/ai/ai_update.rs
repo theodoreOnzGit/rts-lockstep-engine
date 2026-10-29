@@ -67,6 +67,7 @@ use crate::common::object_status_types::{OBJECT_STATUS_IS_ATTACKING, OBJECT_STAT
 use crate::logic::damage::{DamageType, DAMAGE_HEALING};
 use crate::logic::ai::assault_transport_ai_update::AssaultTransport;
 use crate::logic::ai::deploy_style_ai_update::DeployStyle;
+use crate::logic::ai::railed_transport_ai_update::RailedTransport;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
 use crate::common::name_key_generator::NameKeyType;
@@ -320,7 +321,7 @@ pub struct AiUpdate {
 
 /// Which `AIUpdateInterface` the module is (batch A30): the base, or a subclass whose overrides `ai_states` and `ai_commands`
 /// take where upstream's virtual members differ.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum AiSubclass {
     /// `AIUpdateInterface`.
     #[default]
@@ -333,6 +334,8 @@ pub enum AiSubclass {
     DeployStyle(DeployStyle),
     /// `AssaultTransportAIUpdate` (batch A32): its passengers are its assault members (its members and data).
     AssaultTransport(AssaultTransport),
+    /// `RailedTransportAIUpdate` (batch A33): shuttles along the map's named waypoint paths (its members and data).
+    RailedTransport(RailedTransport),
 }
 
 impl AiUpdate {

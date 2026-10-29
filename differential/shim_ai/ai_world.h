@@ -202,6 +202,10 @@ struct AiEnv
 	UnsignedInt deployTimes[2];
 	/* batch A32: an AssaultTransportAIUpdate's data's members-get-healed-at life ratio */
 	Real assaultRatio;
+	/* batch A33: the railed transport's named waypoints ("railStartNN", "railEndNN": bit NN-1) and its docks (bit 0 the object's
+	** dock, bit 1 a railed transport dock) */
+	UnsignedInt railStartMask, railEndMask;
+	Int railFlags;
 };
 
 extern AiEnv g_aiEnv;
@@ -234,7 +238,8 @@ enum
 	LOG_PASSENGER = 108,	/* batch A30: a transport's passenger's command (see wrap_ai.cpp) */
 	LOG_ANIM_FRAME = 109,	/* batch A31: the drawable's setAnimationFrame { frame } */
 	LOG_CLEAR_MODEL_FLAGS = 110,	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
-	LOG_MEMBER_AI = 111	/* batch A32: an assault member's AI { kind, the member, words.. } (see wrap_ai.cpp) */
+	LOG_MEMBER_AI = 111,	/* batch A32: an assault member's AI { kind, the member, words.. } (see wrap_ai.cpp) */
+	LOG_RAILED = 112	/* batch A33: the railed transport's docks { 0 setDockOpen, open; 1 isLoadingOrUnloading, answer; 2 unloadAll } */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -669,6 +674,8 @@ public:
 	HordeUpdateInterface *getHordeUpdateInterface();
 	/* (checkForCrateToPickup's: never reached, it looks the crate up after clearing its id) */
 	CollideModuleInterface *getCollide();
+	/* batch A33: the second module's, when the scene says so */
+	class RailedTransportDockUpdateInterface *getRailedTransportDockUpdateInterface();
 	int m_index;
 };
 class AIGroup;
@@ -721,6 +728,15 @@ public:
 	Bool isDockOpen( void );
 	Bool isAllowPassthroughType();
 	Bool isRallyPointAfterDockType();
+	/* batch A33 (logged) */
+	void setDockOpen( Bool open );
+};
+/* batch A33: RailedTransportDockUpdate's interface, as far as RailedTransportAIUpdate reaches it (logged; the answer the hash's) */
+class RailedTransportDockUpdateInterface
+{
+public:
+	Bool isLoadingOrUnloading( void );
+	void unloadAll( void );
 };
 class SupplyTruckAIInterface { public: UnsignedInt getActionDelayForDock( Object *dock ); };
 /* batch A18: never reached (see Player::getAcademyStats) */

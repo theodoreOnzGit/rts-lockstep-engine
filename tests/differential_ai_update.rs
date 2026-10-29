@@ -115,6 +115,7 @@ use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiSubclass, AiUpdate, Lo
 use rts_lockstep_engine::logic::ai::ai_update_types::{AiStateType, CMD_FROM_AI, CMD_FROM_PLAYER};
 use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTransport, AssaultTransportData, MemberCommand};
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
+use rts_lockstep_engine::logic::ai::railed_transport_ai_update::{RailedTransport, RailedTransportData};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -211,6 +212,7 @@ const L_PASSENGER: u32 = 108;
 const L_ANIM_FRAME: u32 = 109;
 const L_CLEAR_MODEL_FLAGS: u32 = 110;
 const L_MEMBER_AI: u32 = 111;
+const L_RAILED: u32 = 112;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -334,6 +336,8 @@ struct Host {
     /// Batch A18: whether this operation has cleared the body's clearable last attacker (wrap_ai.cpp's scene is copied anew every
     /// operation, so the clearing lasts the operation; the scene itself must not change before the C++ side runs it).
     attacker_cleared: bool,
+    /// Batch A33: the last op reached what upstream leaves undefined (`StateMachineError::Undefined`): the case ends before the C++.
+    undefined: bool,
 }
 
 impl Host {
@@ -950,6 +954,44 @@ impl AiStateHost for Host {
         let g = if self.object_exists(g) { g } else { 0 };
         self.l(L_MEMBER_AI, &[6, id as u32, g as u32]);
         g
+    }
+    // batch A33: the railed transport's waypoints (the wrapper's names: "wpN", and "railStartNN"/"railEndNN" at waypoints
+    // (3 NN) % 8 and (3 NN + 1) % 8 when the scene's masks say so; the id is the index) and docks (logged)
+    fn waypoint_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        let name = std::str::from_utf8(name).ok()?;
+        let num = |rest: &str| -> Option<u32> {
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse().ok()
+        };
+        if let Some(i) = name.strip_prefix("wp").and_then(num) {
+            return (i < 8).then_some(i);
+        }
+        if let Some(i) = name.strip_prefix("railStart").and_then(num) {
+            return ((1..=32).contains(&i) && (self.env.rail_start_mask >> (i - 1)) & 1 != 0).then_some((3 * i) % 8);
+        }
+        if let Some(i) = name.strip_prefix("railEnd").and_then(num) {
+            return ((1..=32).contains(&i) && (self.env.rail_end_mask >> (i - 1)) & 1 != 0).then_some((3 * i + 1) % 8);
+        }
+        None
+    }
+    fn waypoint_id(&mut self, way: u32) -> u32 {
+        way
+    }
+    fn railed_set_dock_open(&mut self, open: bool) {
+        if self.env.rail_flags & 1 != 0 {
+            self.l(L_RAILED, &[0, u32::from(open)]);
+        }
+    }
+    fn railed_dock_present(&mut self) -> bool {
+        self.env.rail_flags & 2 != 0
+    }
+    fn railed_dock_is_loading_or_unloading(&mut self) -> bool {
+        let r = pick(p1_hash(self.env.seed, 133, &[self.env.loco.frame]), 30);
+        self.l(L_RAILED, &[1, u32::from(r)]);
+        r
+    }
+    fn railed_dock_unload_all(&mut self) {
+        self.l(L_RAILED, &[2]);
     }
     fn member_ai_command(&mut self, id: ObjectId, cmd: MemberCommand) {
         let w = match cmd {
@@ -2609,6 +2651,14 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A33: a RailedTransportAIUpdate's members
+    if let AiSubclass::RailedTransport(t) = &module.ai().subclass {
+        v.push(u32::from(t.in_transit));
+        for p in &t.path {
+            v.extend([p.0, p.1]);
+        }
+        v.extend([t.num_paths as u32, t.current_path as u32, u32::from(t.waypoint_data_loaded)]);
+    }
     // batch A32: an AssaultTransportAIUpdate's members
     if let AiSubclass::AssaultTransport(a) = &module.ai().subclass {
         v.push(a.current_members as u32);
@@ -2768,12 +2818,16 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4][g.below(8) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5][g.below(10) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
     // batch A32: an assault transport's healing ratio
     e.assault_ratio = [0.0, 0.3, 0.6, 1.0][g.below(4) as usize];
+    // batch A33: the railed transport's named waypoints (mostly among the first eight numbers, now and then none) and docks
+    e.rail_start_mask = if g.below(6) == 0 { 0 } else { g.below(256) | if g.below(4) == 0 { g.u32() } else { 0 } };
+    e.rail_end_mask = if g.below(3) == 0 { e.rail_start_mask } else { g.below(256) | e.rail_start_mask & g.u32() };
+    e.rail_flags = g.below(4) as i32;
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -3140,6 +3194,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // waypoint, a polygon, an int value, a button and coords; what upstream dereferences unchecked is always given
         72 | 73 => {
             let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24, 54, 54, 51, 51, 51][g.below(53) as usize] };
+            // (batch A33: a railed transport's two commands, often)
+            let cmd = if e.subclass == 5 && g.below(3) == 0 { [26, 27, 27][g.below(3) as usize] } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3480,7 +3536,15 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             module.machine.as_mut().expect("the machine").set_goal_position(Some(p));
             vec![]
         }
-        65 => vec![module.update(h).expect("update").0],
+        65 => match module.update(h) {
+            Ok(s) => vec![s.0],
+            // (batch A33: a railed transport's path followed without a locomotor)
+            Err(e) if e.is_undefined_upstream() => {
+                h.undefined = true;
+                vec![]
+            }
+            Err(e) => panic!("update: {e}"),
+        },
         // batch A32: the weapon's beginAssault
         100 => {
             let t = ia[0];
@@ -3716,6 +3780,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         max_shots: 0,
         others_height_asked: 0,
         attacker_cleared: false,
+        undefined: false,
         ai_saved: Vec::new(),
         ai_saved_states: None,
     };
@@ -3752,16 +3817,19 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let mut sets_words = vec![0u32];
     {
         let mut map = data.locomotor_templates.write().unwrap();
+        // (batch A33: a railed transport has every set, each with a locomotor: its update follows its path after the base's update,
+        // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
+        let railed = host.env.subclass == 5;
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
                 1 => g.below(3) == 0,
                 _ => g.below(5) == 0,
             };
-            if !wanted {
+            if !wanted && !railed {
                 continue;
             }
-            let n = g.below(4) as usize;
+            let n = if railed { 1 + g.below(3) as usize } else { g.below(4) as usize };
             let chosen: Vec<NameKeyType> = (0..n).map(|_| keys[g.below(keys.len() as u32) as usize]).collect();
             sets_words[0] += 1;
             sets_words.push(set as u32);
@@ -3802,6 +3870,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let subclass = match host.env.subclass {
         1 => AiSubclass::Wander,
         2 => AiSubclass::Transport,
+        5 => AiSubclass::RailedTransport(RailedTransport::new(RailedTransportData { path_prefix_name: "rail".to_string() })),
         4 => AiSubclass::AssaultTransport(AssaultTransport::new(AssaultTransportData {
             members_get_healed_at_life_ratio: host.env.assault_ratio,
             ..Default::default()
@@ -3911,10 +3980,12 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if module.machine.as_ref().is_some_and(|sm| matches!(sm.get_current_state_id(), 9..=12 | 14 | 16 | 17 | 20 | 28 | 43)) && g.below(2) == 0 {
             op = 65;
             ia.iter_mut().for_each(|x| *x = 0); // (the update takes no arguments; another op's would be read for coordinates)
+            // (batch A33: the guard again, for a railed transport's update)
+            a9_guard(&module, &host.env, &mut op, &mut ia);
         }
         if std::env::var("AI_A2_TRACE").is_ok() {
             let cur = module.machine.as_ref().map(|sm| sm.get_current_state_id());
-            println!("TRACE step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?}", &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint);
+            println!("TRACE step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?} loco {:?}", &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint, module.ai().cur_locomotor);
         }
         has_saved |= op == 70;
         // (batch A21: a load of the AI needs its save, made with the machine in the same state and temporary state: upstream loads
@@ -3939,6 +4010,11 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         host.others_height_asked = 0;
         host.attacker_cleared = false;
         let r = rust_op(&mut module, &mut host, op, &fa, &ia, 0, &mut saved);
+        if host.undefined {
+            // (batch A33: undefined upstream: the case ends before the C++ runs the op)
+            ck.a9_undefined += 1;
+            return true;
+        }
         let rlog = std::mem::take(&mut host.log);
         let mut out = vec![0u32; 1 << 16];
         let mut log = vec![0u32; 1 << 16];
@@ -4192,10 +4268,13 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
                 51 => 21,
                 _ => -1,
             };
-            if unsafe_entry(state, ia[4] >= 0) {
+            if unsafe_entry(state, ia[4] >= 0) || (ia[0] == 27 && e.subclass == 5 && unsafe_entry(3, true)) {
                 ia[0] = 0;
             }
         }
+        // batch A33: a railed transport's update (which may follow its path: the follow-waypoint-path state, 3) where that entry
+        // is undefined: op 66 instead (its transit command, 27, is command 0 instead above)
+        65 if e.subclass == 5 && unsafe_entry(3, true) => *op = 66,
         2 if a9_states(module).0 => *op = 86,
         _ => {}
     }
@@ -4222,6 +4301,21 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A33; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `RailedTransportAIUpdate` (RailedTransportAIUpdate.cpp cut verbatim, its `INVALID_PATH` too, but for the object's own dock,
+///   the scene's: `railedOwnDock`; the prefix "rail"; the waypoints "railStartNN"/"railEndNN" present by the scene's masks; a
+///   railed transport dock on the second behavior module when the scene says so, `isLoadingOrUnloading` by hash, `LOG_RAILED`; its
+///   two commands, 26 and 27, drawn often; every locomotor set present): a fifth of the cases: 30,000 constructions and 1,798,121
+///   operations, **0 mismatches** in the results, the call logs and the dumps (its members added).
+/// - Not compared (undefined upstream): following its path with no locomotor (the waypoint state's `onEnter` dereferences it).
+///   Before the op, `a9_guard` makes such an update op 66 and such a transit command command 0; when the base's update leaves no
+///   locomotor before the railed part follows its path, the Rust side refuses it (`StateMachineError::Undefined`), and the case
+///   ends before the C++ runs the op (37 cases ended undefined in all, A9's and these).
+/// - Planted bugs (5,000 cases each): 3640 (the player's commands filter; 339 mismatches), 3641 (a path's slot; 133), 3642 (the
+///   closest path's tie; 172), 3643 (ultra-accurate; 78), 3644 (no unloading in transit; 82), 3645 (the snapshot's loaded flag; 682)
+///   caught.
+///
 /// # Results (2026-10-29, batch A32; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `AssaultTransportAIUpdate` (AssaultTransportAIUpdate.cpp cut verbatim but for its members' AIs, other objects' and not

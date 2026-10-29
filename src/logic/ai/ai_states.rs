@@ -149,6 +149,18 @@ pub trait AiStateHost: AiHost + StateContext {
     fn member_ai_goal_object(&mut self, id: ObjectId) -> ObjectId;
     /// Batch A32: a command to another object's AI.
     fn member_ai_command(&mut self, id: ObjectId, cmd: crate::logic::ai::assault_transport_ai_update::MemberCommand);
+    /// Batch A33: `TheTerrainLogic->getWaypointByName(name)`.
+    fn waypoint_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A33: a waypoint's `getID()`.
+    fn waypoint_id(&mut self, way: u32) -> u32;
+    /// Batch A33: the object's `getDockUpdateInterface()->setDockOpen(open)`, when it has one.
+    fn railed_set_dock_open(&mut self, open: bool);
+    /// Batch A33: whether a behavior module of the object answers `getRailedTransportDockUpdateInterface()`.
+    fn railed_dock_present(&mut self) -> bool;
+    /// Batch A33: that railed dock's `isLoadingOrUnloading()`.
+    fn railed_dock_is_loading_or_unloading(&mut self) -> bool;
+    /// Batch A33: that railed dock's `unloadAll()`.
+    fn railed_dock_unload_all(&mut self);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1538,6 +1550,13 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                     return Ok(sleep);
                 }
                 self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::RailedTransport(_) => {
+                // batch A33: the waypoint data loaded, the base's update, then its own part; never asleep
+                self.run(h, |_, h| crate::logic::ai::railed_transport_ai_update::railed_transport_pre_update(h));
+                self.base_update(h)?;
+                self.run(h, crate::logic::ai::railed_transport_ai_update::railed_transport_update)?;
                 Ok(UPDATE_SLEEP_NONE)
             }
             crate::logic::ai::ai_update::AiSubclass::DeployStyle(_) => {

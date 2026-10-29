@@ -406,9 +406,10 @@ public:
 	void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
 	void privateExit( Object *objectToExit, CommandSourceType cmdSource );
 	void privateExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
-	void privateEvacuate( Int exposeStealthUnits, CommandSourceType cmdSource );
+	/* (batch A33: virtual again, as upstream: RailedTransportAIUpdate overrides them) */
+	virtual void privateEvacuate( Int exposeStealthUnits, CommandSourceType cmdSource );
 	void privateEvacuateInstantly( Int exposeStealthUnits, CommandSourceType cmdSource );
-	void privateExecuteRailedTransport( CommandSourceType cmdSource );
+	virtual void privateExecuteRailedTransport( CommandSourceType cmdSource );
 	void privateGoProne( const DamageInfo *damageInfo, CommandSourceType );
 	void privateWander( const Waypoint *way, CommandSourceType cmdSource );
 	void privateWanderInPlace( CommandSourceType cmdSource );
@@ -640,6 +641,62 @@ protected:
 };
 #include "ai_assault_transport_a32.inc"
 
+/* batch A33: RailedTransportAIUpdate. The module data is the header's field (its prefix "rail" here; the field parse is the INI's);
+** the class as the header declares it without the pool and module macros; its .cpp from the constructor, verbatim but for the
+** object's own dock (`us->getDockUpdateInterface()` is railedOwnDock(us): the scene's, since the AI build's other paths ask other
+** objects only). The waypoints "railStartNN"/"railEndNN" exist when the scene's masks say so (TerrainLogic::getWaypointByName). */
+class RailedTransportAIUpdateModuleData
+{
+public:
+	RailedTransportAIUpdateModuleData( void ) { m_pathPrefixName = "rail"; }
+	AsciiString m_pathPrefixName;		///< prefix to use for waypont start and end points we'll look for
+};
+static RailedTransportAIUpdateModuleData g_railedData;
+DockUpdateInterface *railedOwnDock(Object *us);
+class RailedTransportAIUpdate : public AIUpdateInterface
+{
+public:
+
+	RailedTransportAIUpdate( Thing *thing, const ModuleData *moduleData );
+	virtual ~RailedTransportAIUpdate( void );
+	const RailedTransportAIUpdateModuleData *getRailedTransportAIUpdateModuleData() const { return &g_railedData; }
+
+	// AIUpdate interface methods
+	virtual void aiDoCommand( const AICommandParms *parms );
+	virtual UpdateSleepTime update( void );
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	// ai module methods
+	virtual void privateExecuteRailedTransport( CommandSourceType cmdSource );
+	virtual void privateEvacuate( Int exposeStealthUnits, CommandSourceType cmdSource );
+
+	// our methods
+	void setInTransit( Bool inTransit );
+	void loadWaypointData( void );
+	void pickAndMoveToInitialLocation( void );
+
+	// our data
+	Bool m_inTransit;								///< in transit
+	struct WaypointPathInfo
+	{
+		UnsignedInt startWaypointID;
+		UnsignedInt endWaypointID;
+	};
+	enum { MAX_WAYPOINT_PATHS = 32 };
+	WaypointPathInfo m_path[ MAX_WAYPOINT_PATHS ];		///< transit paths we can use
+	Int m_numPaths;								///< how many waypoint paths are in m_path
+	Int m_currentPath;						///< index into m_path for our current path
+
+	Bool m_waypointDataLoaded;		///< TRUE once we've searched the map to load m_path
+
+};
+#include "ai_railed_transport_a33.inc"
+
 #undef private
 #undef protected
 
@@ -821,6 +878,9 @@ Waypoint *TerrainLogic::getWaypointByName(AsciiString name)
 {
 	int i = -1;
 	if (sscanf(name.str(), "wp%d", &i) == 1 && i >= 0 && i < 8) return &g_waypoints[i];
+	/* batch A33: the railed transport's paths' ends (waypoint (3 NN) % 8 and (3 NN + 1) % 8) */
+	if (sscanf(name.str(), "railStart%d", &i) == 1 && i >= 1 && i <= 32 && ((g_aiEnv.railStartMask >> (i - 1)) & 1)) return &g_waypoints[(3 * i) % 8];
+	if (sscanf(name.str(), "railEnd%d", &i) == 1 && i >= 1 && i <= 32 && ((g_aiEnv.railEndMask >> (i - 1)) & 1)) return &g_waypoints[(3 * i + 1) % 8];
 	return NULL;
 }
 
@@ -2210,6 +2270,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 2: g_ai_update = new (ShimZeroFill{}) TransportAIUpdate(NULL, NULL); break;
 		case 3: g_ai_update = new (ShimZeroFill{}) DeployStyleAIUpdate(NULL, NULL); break;
 		case 4: g_ai_update = new (ShimZeroFill{}) AssaultTransportAIUpdate(NULL, NULL); break;
+		case 5: g_ai_update = new (ShimZeroFill{}) RailedTransportAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2989,6 +3050,15 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A33: a RailedTransportAIUpdate's members */
+	if (g_aiEnv.subclass == 5) {
+		const RailedTransportAIUpdate *t = (const RailedTransportAIUpdate *)ai;
+		putU32(v, t->m_inTransit ? 1u : 0u);
+		for (int i = 0; i < 32; ++i) { putU32(v, t->m_path[i].startWaypointID); putU32(v, t->m_path[i].endWaypointID); }
+		putU32(v, (unsigned)t->m_numPaths);
+		putU32(v, (unsigned)t->m_currentPath);
+		putU32(v, t->m_waypointDataLoaded ? 1u : 0u);
+	}
 	int n = (int)v.size();
 	if (n <= cap && n > 0) memcpy(buf, &v[0], 4 * n);
 	return n;
@@ -3059,3 +3129,19 @@ Bool Object::isContained() const
 {
 	return m_otherId && g_aiEnv.subclass == 4 && ((g_aiEnv.containedMask >> m_otherId) & 1) != 0;
 }
+
+/* batch A33: the railed transport's docks (LOG_RAILED) */
+static RailedTransportDockUpdateInterface g_railedDock;
+DockUpdateInterface *railedOwnDock(Object *us) { return (g_aiEnv.railFlags & 1) ? &g_dock : NULL; }
+void DockUpdateInterface::setDockOpen(Bool open) { L(LOG_RAILED, { 0, open ? 1u : 0u }); }
+RailedTransportDockUpdateInterface *BehaviorModule::getRailedTransportDockUpdateInterface()
+{
+	return (m_index == 1 && (g_aiEnv.railFlags & 2)) ? &g_railedDock : NULL;
+}
+Bool RailedTransportDockUpdateInterface::isLoadingOrUnloading()
+{
+	bool r = p1Pick(p1Hash(133, { g_aiEnv.frame }), 30);
+	L(LOG_RAILED, { 1, r ? 1u : 0u });
+	return r;
+}
+void RailedTransportDockUpdateInterface::unloadAll() { L(LOG_RAILED, { 2 }); }

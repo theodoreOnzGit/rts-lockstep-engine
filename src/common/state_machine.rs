@@ -295,13 +295,15 @@ pub enum StateMachineError {
     DuplicateStateId(StateId),
     /// Undefined upstream: nesting deeper than [`MAX_NESTING`].
     RecursionLimit,
+    /// Undefined upstream: a caller's dereference of what is not there (what, named).
+    Undefined(&'static str),
 }
 
 impl StateMachineError {
     /// Whether this is one of the inputs the C++ does not define (and the
     /// differential test therefore does not compare).
     pub fn is_undefined_upstream(&self) -> bool {
-        matches!(self, StateMachineError::DuplicateStateId(_) | StateMachineError::RecursionLimit)
+        matches!(self, StateMachineError::DuplicateStateId(_) | StateMachineError::RecursionLimit | StateMachineError::Undefined(_))
     }
 }
 

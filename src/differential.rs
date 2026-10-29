@@ -1052,6 +1052,11 @@ pub struct AiEnv {
     pub deploy_times: [c_uint; 2],
     // batch A32: an AssaultTransportAIUpdate's data's members-get-healed-at life ratio
     pub assault_ratio: c_float,
+    // batch A33: the railed transport's named waypoints ("railStartNN", "railEndNN": bit NN-1) and its docks (bit 0 the object's
+    // dock, bit 1 a railed transport dock)
+    pub rail_start_mask: c_uint,
+    pub rail_end_mask: c_uint,
+    pub rail_flags: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

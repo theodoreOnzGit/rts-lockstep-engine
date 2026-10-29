@@ -239,6 +239,12 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A33: `RailedTransportAIUpdate::aiDoCommand`: the base's check, its own filter, then the base's
+    if matches!(ai(h).subclass, AiSubclass::RailedTransport(_))
+        && (!is_allowed_to_respond_to_ai_commands(sm, h, parms) || !crate::logic::ai::railed_transport_ai_update::railed_transport_allows(parms))
+    {
+        return Ok(());
+    }
     // batch A32: `AssaultTransportAIUpdate::aiDoCommand` (the virtual every command reaches): its own part, then the base's
     if matches!(ai(h).subclass, AiSubclass::AssaultTransport(_)) {
         crate::logic::ai::assault_transport_ai_update::assault_transport_do_command(h, parms);
@@ -294,9 +300,18 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
         AICMD_DOCK => private_goal_object_state(sm, h, p.obj, src, AI_DOCK, false),
         AICMD_EXIT => private_exit(sm, h, p.obj, src, AI_EXIT),
         AICMD_EXIT_INSTANTLY => private_exit(sm, h, p.obj, src, AI_EXIT_INSTANTLY),
+        AICMD_EVACUATE if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) => {
+            // (batch A33: `RailedTransportAIUpdate::privateEvacuate`)
+            crate::logic::ai::railed_transport_ai_update::private_evacuate(h);
+            Ok(())
+        }
         AICMD_EVACUATE => private_evacuate(h, p.int_value, src, false),
         AICMD_EVACUATE_INSTANTLY => private_evacuate(h, p.int_value, src, true),
         // privateExecuteRailedTransport: empty
+        // (batch A33: `RailedTransportAIUpdate::privateExecuteRailedTransport`; the base's does nothing)
+        AICMD_EXECUTE_RAILED_TRANSPORT if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) => {
+            crate::logic::ai::railed_transport_ai_update::private_execute_railed_transport(sm, h)
+        }
         AICMD_EXECUTE_RAILED_TRANSPORT => Ok(()),
         AICMD_GO_PRONE => {
             h.go_prone();
@@ -468,6 +483,10 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     max_shots: i32,
     src: CommandSourceType,
 ) -> SmResult<()> {
+    // (batch A33: a railed transport's aiDoCommand ignores the player's attack)
+    if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) && src == CMD_FROM_PLAYER {
+        return Ok(());
+    }
     // (batch A32: an assault transport's aiDoCommand first)
     if matches!(ai(h).subclass, AiSubclass::AssaultTransport(_)) {
         let mut parms = AiCommandParms::new(AICMD_ATTACK_OBJECT, src);
