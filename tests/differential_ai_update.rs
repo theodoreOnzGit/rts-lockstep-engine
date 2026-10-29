@@ -4055,6 +4055,17 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A23; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `joinTeam` (op 91) and the AI's turret members (ops 92-99): 30,000 constructions and 1,798,300 operations, **0 mismatches** in
+///   the results, the call logs and the dumps; 2,346 joins and 3,554 to 7,490 of each turret op. Not generated: `joinTeam` in the
+///   waypoint states (undefined: their exit reads the locomotor its normal set may leave unset).
+/// - The first runs found two harness defects, fixed: the other AIs' machine was made at the first case's first operation, after
+///   the random values were seeded (AIIdleState's constructor draws one); the host's other-object `getAI()` also required the
+///   object to exist, which the team's members need not.
+/// - Planted bugs at 30,000 cases: 3520 (the other's goal object taken), 3521 (the turret's aim), 3522 (the turret for a weapon
+///   slot) caught (409 to 1,720 mismatches).
+///
 /// # Results (2026-10-29, batch A21; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - The AI's snapshot (`AIUpdateInterface::crc`, `xfer`, `loadPostProcess`; ops 88-90: save, load then post-process, CRC):
