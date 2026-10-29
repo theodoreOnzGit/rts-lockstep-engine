@@ -504,7 +504,53 @@ impl PartitionFilterHost for ScenarioHost {
     fn build_cost(&self, id: ObjectId) -> i32 {
         self.obj(id).map_or(0, |o| o.build_cost)
     }
+    fn weapon_within_attack_range(&self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool> {
+        // a third of the slots empty; a weapon reaches half of the others
+        if mix(obj as u32, slot as u32, 40).is_multiple_of(3) {
+            return None;
+        }
+        Some(mix(obj as u32, other as u32, 41 + slot as u32).is_multiple_of(2))
+    }
 }
 
 /// The `LAYER_GROUND` the scenario's pathfinder numbers its ground layer with.
 pub const SCENARIO_GROUND_LAYER: PathfindLayer = LAYER_GROUND;
+
+/// Batch A26: the AI system's questions (`crate::logic::ai::ai_system`), by the rules `wrap_partition.cpp`'s stand-ins answer
+/// them: the attack priority lists a hash of (list, template) (list 0 the script engine's default); the contained objects the
+/// container's one member (`first_contained_detected`), of the container's template; an AI on the objects whose id is not a
+/// multiple of 5, its mood matrix value a hash; a quarter of the objects contained; the largest weapon range three quarters of
+/// the vision range.
+impl crate::logic::ai::ai_system::AiQueryHost for ScenarioHost {
+    fn template_of(&self, id: ObjectId) -> i32 {
+        self.obj(id).map_or(0, |o| o.template)
+    }
+    fn attack_priority(&self, info: i32, template: i32) -> i32 {
+        (mix(info as u32, template as u32, 42) % 6) as i32
+    }
+    fn is_default_attack_info(&self, info: i32) -> bool {
+        info == 0
+    }
+    fn contained_templates(&self, id: ObjectId) -> Vec<i32> {
+        match self.obj(id) {
+            Some(o) if o.contain.is_some_and(|c| c.first_contained_detected.is_some()) => vec![o.template],
+            _ => Vec::new(),
+        }
+    }
+    fn vision_range(&self, id: ObjectId) -> f32 {
+        self.obj(id).map_or(0.0, |o| o.vision)
+    }
+    fn has_ai(&self, id: ObjectId) -> bool {
+        id % 5 != 0
+    }
+    fn mood_matrix_value(&self, id: ObjectId) -> u32 {
+        let m = mix(id as u32, 0, 44);
+        (m & 1) | [0x100, 0x200, 0x400, 0x800, 0x1000, 0][((m >> 1) % 6) as usize]
+    }
+    fn is_contained(&self, id: ObjectId) -> bool {
+        mix(id as u32, 0, 45).is_multiple_of(4)
+    }
+    fn largest_weapon_range(&self, id: ObjectId) -> f32 {
+        self.obj(id).map_or(0.0, |o| o.vision) * 0.75
+    }
+}

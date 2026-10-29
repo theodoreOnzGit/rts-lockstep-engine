@@ -266,6 +266,9 @@ pub trait PartitionFilterHost: PartitionHost {
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool;
     /// `obj->getTemplate()->friend_getBuildCost()`, for the two cost sort orders.
     fn build_cost(&self, id: ObjectId) -> i32;
+    /// Batch A26 (AI.cpp's `PartitionFilterWithinAttackRange`): `obj->getWeaponInWeaponSlot(slot)->isWithinAttackRange(obj,
+    /// other)`, `None` for an empty slot.
+    fn weapon_within_attack_range(&self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool>;
 }
 
 /// What a query needs to know about how distance is measured, kept here so the

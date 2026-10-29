@@ -8,6 +8,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Line2D.cpp
 //   (`IntersectLine2D`, `PointInsideArea2D`, the two functions the irregular
 //   area filter calls; and `ClipLine2D`, the pathfinder's `clip`)
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AI.cpp
+//   (`PartitionFilterLiveMapEnemies`, `PartitionFilterWithinAttackRange`: AI.cpp's own two)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -39,6 +41,7 @@ use super::host::{CanAttackResult, PartitionFilterHost};
 use super::manager::PartitionManager;
 use crate::common::base_type::{Coord2D, Coord3D};
 use crate::common::game_common::{AbleToAttackType, CommandSourceType, ObjectShroudStatus, Relationship};
+use crate::common::game_type::WEAPONSLOT_COUNT;
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{
     KindOfMaskType, KINDOF_DISGUISER, KINDOF_FS_BASE_DEFENSE, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_STRUCTURE, KINDOF_VEHICLE,
@@ -174,6 +177,10 @@ pub enum PartitionFilter {
     UnmannedObject { match_: bool },
     /// `PartitionFilterValidCommandButtonTarget`.
     ValidCommandButtonTarget { source: ObjectId, command_button: i32, match_: bool, command_source: CommandSourceType },
+    /// AI.cpp's `PartitionFilterLiveMapEnemies` (batch A26): alive, on the map as `obj` is, and its enemy.
+    LiveMapEnemies { obj: ObjectId },
+    /// AI.cpp's `PartitionFilterWithinAttackRange` (batch A26): within the attack range of one of `obj`'s weapons.
+    WithinAttackRange { obj: ObjectId },
 }
 
 impl PartitionFilter {
@@ -393,6 +400,22 @@ impl PartitionFilter {
 
             PartitionFilter::ValidCommandButtonTarget { source, command_button, match_, command_source } => {
                 host.command_button_valid_target(*command_button, *source, other, *command_source) == *match_
+            }
+
+            PartitionFilter::LiveMapEnemies { obj } => {
+                // "this is way fast (bit test) so do it first."
+                if host.is_effectively_dead(other) {
+                    return false;
+                }
+                if host.is_off_map(other) != host.is_off_map(*obj) {
+                    return false;
+                }
+                host.relationship(*obj, other) == Relationship::Enemies
+            }
+
+            PartitionFilter::WithinAttackRange { obj } => {
+                // (each weapon slot, an empty one ignored)
+                (0..WEAPONSLOT_COUNT).any(|slot| host.weapon_within_attack_range(*obj, slot, other) == Some(true))
             }
         }
     }

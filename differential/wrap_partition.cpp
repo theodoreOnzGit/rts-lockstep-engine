@@ -69,6 +69,9 @@
 #undef private
 #undef protected
 #include "../upstream/GeneralsMD/Code/GameEngine/Source/GameClient/Line2D.cpp"
+/* batch A26: AI.cpp's queries, verbatim (build.rs: from PartitionFilterLiveMapEnemies to the end of
+** getAdjustedVisionRangeForObject), over pm_world.h's AI, TAiData, Weapon, AttackPriorityInfo and ScriptEngine */
+#include "ai_queries.inc"
 
 /* ------------------------------------------------------------------------- */
 /* The scenario                                                               */
@@ -131,6 +134,7 @@ struct SObj
 	AIUpdateInterface ai;
 	Object::XMatrix xm;
 	ThingTemplate *tmplPtr;
+	Weapon weapons[WEAPONSLOT_COUNT];	/* batch A26 */
 	SObj() : geom(GEOMETRY_SPHERE, false, 1.0f, 1.0f, 1.0f), tmplPtr(NULL) {}
 };
 
@@ -232,6 +236,7 @@ PlayerList *ThePlayerList = NULL;
 ActionManager *TheActionManager = NULL;
 TerrainLogic *TheTerrainLogic = NULL;
 AI *TheAI = NULL;
+ScriptEngine *TheScriptEngine = NULL;
 Display *TheDisplay = NULL;
 Radar *TheRadar = NULL;
 GhostObjectManager *TheGhostObjectManager = NULL;
@@ -458,6 +463,28 @@ ContainModuleInterface *Object::getContain() const { SObj *s = objOf(this); retu
 StealthUpdate *Object::getStealth() const { SObj *s = objOf(this); return s->stealthKind ? &s->stealth : NULL; }
 BodyModuleInterface *Object::getBodyModule() const { SObj *s = objOf(this); return (s->id % 4 != 0) ? &s->body : NULL; }
 AIUpdateInterface *Object::getAIUpdateInterface() const { SObj *s = objOf(this); return (s->id % 5 != 0) ? &s->ai : NULL; }
+/* batch A26: AI.cpp's questions, by scenario.rs's rules (`impl AiQueryHost for ScenarioHost`) */
+const Weapon *Object::getWeaponInWeaponSlot(WeaponSlotType slot) const
+{
+	SObj *s = objOf(this);
+	if (mix((unsigned)s->id, (unsigned)slot, 40) % 3 == 0) return NULL;	/* a third of the slots empty */
+	s->weapons[slot].m_slot = slot;
+	return &s->weapons[slot];
+}
+Bool Weapon::isWithinAttackRange(const Object *source, const Object *target) const
+{
+	return mix((unsigned)source->getID(), (unsigned)target->getID(), 41 + (unsigned)m_slot) % 2 == 0;
+}
+Int AttackPriorityInfo::getPriority(const ThingTemplate *tmpl) const { return (Int)(mix((unsigned)m_key, (unsigned)tmpl->m_key, 42) % 6); }
+Real Object::getVisionRange() const { return objOf(this)->vision; }
+Object *Object::getContainedBy() const { SObj *s = objOf(this); return (mix((unsigned)s->id, 0, 45) % 4 == 0) ? &s->obj : NULL; }
+Real Object::getLargestWeaponRange() const { return objOf(this)->vision * 0.75f; }
+UnsignedInt AIUpdateInterface::getMoodMatrixValue() const
+{
+	static const UnsignedInt moods[6] = { 0x100, 0x200, 0x400, 0x800, 0x1000, 0 };
+	unsigned m = mix((unsigned)m_set.m_source, 0, 44);
+	return (m & 1) | moods[(m >> 1) % 6];
+}
 CanAttackResult Object::getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType cs) const
 {
 	switch (mix((unsigned)getID(), (unsigned)target->getID(), 22 + (unsigned)t * 7 + (unsigned)cs) % 4)
@@ -662,6 +689,9 @@ void installScenario(const int *ig, const float *fg, const unsigned char *rel, c
 	TheActionManager = &g->actions;
 	TheTerrainLogic = g->hasTerrain ? &g->terrain : NULL;
 	TheAI = &g->ai;
+	static ScriptEngine scriptEngine;
+	scriptEngine.m_default.m_key = 0;
+	TheScriptEngine = &scriptEngine;
 	TheDisplay = &g->display;
 	TheRadar = &g->radar;
 	TheGhostObjectManager = &g->ghostMgr;
@@ -1053,6 +1083,27 @@ int ref_partition_run(const int *ig, const float *fg, const unsigned char *rel, 
 				if (it != g->ghosts.end()) pm->unRegisterGhostObject(it->second);
 				break; }
 			case 31: break;	/* NOP */
+			/* batch A26: AI.cpp's queries */
+			case 32: { /* AI_ENEMY me qualifiers info nf filters / range distMod */
+				int me = *ip++; UnsignedInt qual = (UnsignedInt)*ip++; int info = *ip++; int nf = *ip++;
+				PartitionFilter **fl = buildFilters(nf, ip, fp, filters);
+				TheAI->m_aiData.m_attackPriorityDistanceModifier = fp[1];
+				AttackPriorityInfo custom; custom.m_key = info;
+				const AttackPriorityInfo *ai = info < 0 ? NULL : (info == 0 ? TheScriptEngine->getDefaultAttackInfo() : &custom);
+				Object *r = TheAI->findClosestEnemy(objectById(me), fp[0], qual, ai, nf ? fl[0] : NULL);
+				fp += 2;
+				o.put(r ? (unsigned)r->getID() : 0u);
+				break; }
+			case 33: { int me = *ip++; UnsignedInt qual = (UnsignedInt)*ip++; Object *r = TheAI->findClosestAlly(objectById(me), *fp++, qual); o.put(r ? (unsigned)r->getID() : 0u); break; }
+			case 34: { int me = *ip++; TheAI->m_aiData.m_enableRepulsors = *ip++ != 0; Object *r = TheAI->findClosestRepulsor(objectById(me), *fp++); o.put(r ? (unsigned)r->getID() : 0u); break; }
+			case 35: { /* AI_VISION obj factors / guard inner AI, outer AI, inner human, outer human, alert, aggressive */
+				int id = *ip++; int factors = *ip++;
+				TAiData &d = TheAI->m_aiData;
+				d.m_guardInnerModifierAI = fp[0]; d.m_guardOuterModifierAI = fp[1]; d.m_guardInnerModifierHuman = fp[2]; d.m_guardOuterModifierHuman = fp[3];
+				d.m_alertRangeModifier = fp[4]; d.m_aggressiveRangeModifier = fp[5];
+				fp += 6;
+				o.putf(TheAI->getAdjustedVisionRangeForObject(objectById(id), factors));
+				break; }
 			default: return -3;
 		}
 		if (!flushLogs(o)) return -5;

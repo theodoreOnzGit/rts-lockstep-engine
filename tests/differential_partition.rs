@@ -90,10 +90,12 @@ use rts_lockstep_engine::common::object_status_types::{
 use rts_lockstep_engine::common::xfer::Snapshot;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::differential as cpp;
+use rts_lockstep_engine::logic::ai::ai_system::{self, TAiData};
 use rts_lockstep_engine::logic::object_iter::IterOrderType;
 use rts_lockstep_engine::logic::world::partition::scenario::{sflag, ScenarioHost, ScenarioLog, ScenarioObject};
 use rts_lockstep_engine::logic::world::partition::{
-    fpf, ContainFacts, DistanceCalculationType, FindPositionOptions, PartitionClientEvent, PartitionFilter, PartitionManager, ShroudStatusStoreRestore,
+    fpf, ContainFacts, DistanceCalculationType, FindPositionOptions, PartitionClientEvent, PartitionFilter, PartitionFilterHost, PartitionManager,
+    ShroudStatusStoreRestore,
     StealthFacts, ValueOrThreat,
 };
 use support::Gen;
@@ -148,6 +150,11 @@ enum Op {
     FindPosition { flags: i32, ignore: i32, src: i32, rel: i32, f: [f32; 7] },
     UnregisterGhost(i32),
     Nop,
+    // batch A26: AI.cpp's queries
+    AiEnemy { me: i32, qualifiers: i32, info: i32, filters: Vec<FilterSpec>, range: f32, dist_mod: f32 },
+    AiAlly { me: i32, qualifiers: i32, range: f32 },
+    AiRepulsor { me: i32, enable: i32, range: f32 },
+    AiVision { obj: i32, factors: i32, f: [f32; 6] },
 }
 
 fn push_filters(ints: &mut Vec<i32>, floats: &mut Vec<f32>, filters: &[FilterSpec]) {
@@ -251,6 +258,23 @@ impl Op {
             }
             Op::UnregisterGhost(h) => ints.extend([30, *h]),
             Op::Nop => ints.push(31),
+            Op::AiEnemy { me, qualifiers, info, filters, range, dist_mod } => {
+                ints.extend([32, *me, *qualifiers, *info]);
+                push_filters(ints, floats, filters);
+                floats.extend([*range, *dist_mod]);
+            }
+            Op::AiAlly { me, qualifiers, range } => {
+                ints.extend([33, *me, *qualifiers]);
+                floats.push(*range);
+            }
+            Op::AiRepulsor { me, enable, range } => {
+                ints.extend([34, *me, *enable]);
+                floats.push(*range);
+            }
+            Op::AiVision { obj, factors, f } => {
+                ints.extend([35, *obj, *factors]);
+                floats.extend_from_slice(f);
+            }
         }
     }
 }
@@ -771,6 +795,40 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
                 }
             }
             Op::Nop => {}
+            Op::AiEnemy { me, qualifiers, info, filters, range, dist_mod } => {
+                // (upstream reads `me`'s player index for the fog filter whether or not it is needed: a null player is undefined)
+                if host.controlling_player(*me).is_none() {
+                    flagged[n] = true;
+                    out.push(0);
+                } else {
+                    let data = TAiData { attack_priority_distance_modifier: *dist_mod, ..TAiData::default() };
+                    let opt = filters.first().map(|f| build_filter(f, &host));
+                    let info = if *info < 0 { None } else { Some(*info) };
+                    let r = ai_system::find_closest_enemy(&mut pm, &host, &data, *me, *range, *qualifiers as u32, info, opt);
+                    out.push(r.map_or(0, |i| i as u32));
+                }
+            }
+            Op::AiAlly { me, qualifiers, range } => {
+                let r = ai_system::find_closest_ally(&mut pm, &host, *me, *range, *qualifiers as u32);
+                out.push(r.map_or(0, |i| i as u32));
+            }
+            Op::AiRepulsor { me, enable, range } => {
+                let data = TAiData { enable_repulsors: *enable != 0, ..TAiData::default() };
+                let r = ai_system::find_closest_repulsor(&mut pm, &host, &data, *me, *range);
+                out.push(r.map_or(0, |i| i as u32));
+            }
+            Op::AiVision { obj, factors, f } => {
+                let data = TAiData {
+                    guard_inner_modifier_ai: f[0],
+                    guard_outer_modifier_ai: f[1],
+                    guard_inner_modifier_human: f[2],
+                    guard_outer_modifier_human: f[3],
+                    alert_range_modifier: f[4],
+                    aggressive_range_modifier: f[5],
+                    ..TAiData::default()
+                };
+                put_bits(&mut out, ai_system::get_adjusted_vision_range_for_object(&host, &data, *obj, *factors));
+            }
         }
         flush_logs(&mut out, &mut host, &mut pm, &mut logs);
     }
@@ -1016,7 +1074,32 @@ fn gen_filters(g: &mut Gen, ids: &[i32], owned: &[i32], players: i32) -> Vec<Fil
     (0..n).map(|_| gen_filter(g, ids, owned, players)).collect()
 }
 
+/// Batch A26: one of AI.cpp's queries (the enemy's `me` an owned object; the attack priority list none, the default or one of
+/// five; at most one optional filter).
+fn gen_ai_op(g: &mut Gen, ids: &[i32], owned: &[i32], players: i32, dists: &[f32]) -> Op {
+    let id = ids[g.below(ids.len() as u32) as usize];
+    match g.below(10) {
+        0..=4 => Op::AiEnemy {
+            me: owned[g.below(owned.len() as u32) as usize],
+            qualifiers: g.below(64) as i32,
+            info: pick(g, &[-1, 0, 0, 1, 2, 3, 4, 5]),
+            filters: if chance(g, 30) { vec![gen_filter(g, ids, owned, players)] } else { Vec::new() },
+            range: pick(g, dists),
+            dist_mod: pick(g, &[0.5f32, 10.0, 50.0, 100.0, 200.5]),
+        },
+        5..=6 => Op::AiAlly { me: id, qualifiers: g.below(64) as i32, range: pick(g, dists) },
+        7 => Op::AiRepulsor { me: id, enable: g.below(4).min(1) as i32, range: pick(g, dists) },
+        _ => Op::AiVision { obj: id, factors: g.below(8) as i32, f: [0; 6].map(|_| g.uniform(0.25, 2.5)) },
+    }
+}
+
 fn gen_case(seed: u64) -> Case {
+    gen_case_with(seed, false)
+}
+
+/// The case for `seed`; with `ai`, about 45 in 100 of the program's operations are AI.cpp's queries (batch A26), and the other
+/// operations are drawn as `gen_case`'s are.
+fn gen_case_with(seed: u64, ai: bool) -> Case {
     let mut g = Gen::new(seed);
     let scn = gen_scenario(&mut g);
     let ids: Vec<i32> = scn.objects.keys().copied().collect();
@@ -1047,6 +1130,10 @@ fn gen_case(seed: u64) -> Case {
     };
     let dists = [3.0f32, 25.0, 60.0, 120.0, 250.0, 700.0, 2.0e6];
     for _ in 0..n_ops {
+        if ai && chance(g, 45) {
+            ops.push(gen_ai_op(g, &ids, &owned, players, &dists));
+            continue;
+        }
         let id = ids[g.below(ids.len() as u32) as usize];
         let other = ids[g.below(ids.len() as u32) as usize];
         let op = match g.below(100) {
@@ -1181,7 +1268,11 @@ fn support_random_angle() -> f32 {
 // The comparison
 // ---------------------------------------------------------------------------
 
+/// The C++ harness keeps its scenario and manager in globals: one run at a time (the two tests of this file run on two threads).
+static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn run_cpp(scn: &ScenarioHost, ops: &[Op]) -> Vec<u32> {
+    let _one_at_a_time = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let EncodedScenario { ig, fg, rel, io, fo } = encode_scenario(scn);
     let mut ints = Vec::new();
     let mut floats = Vec::new();
@@ -1339,5 +1430,51 @@ fn partition_manager_matches_upstream() {
         stats.cell_changes, stats.collisions, stats.ghosts_made, stats.shroud_events, stats.ghost_calls
     );
     println!("DIFF partition filter uses by type 0..32: {:?}", stats.filter_uses);
+    assert_eq!(mismatches, 0, "{mismatches} cases differ from upstream");
+}
+
+/// Batch A26: AI.cpp's `findClosestEnemy`, `findClosestAlly`, `findClosestRepulsor` and `getAdjustedVisionRangeForObject`
+/// (`logic::ai::ai_system`), cut verbatim into this harness (`ai_queries.inc`) and run against the real partition manager on the
+/// same scenarios, with programs in which about 45 operations in 100 are these queries.
+///
+/// # Results
+///
+/// See `ai_queries_match_upstream`'s `DIFF AI queries` line; recorded in `docs/phase1-porting-graph.md` (batch A26).
+#[test]
+fn ai_queries_match_upstream() {
+    let cases: u64 = std::env::var("AI_QUERY_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    let mut stats = Stats { filter_uses: vec![0; 33], ..Default::default() };
+    let mut mismatches = 0;
+    let (mut queries, mut found, mut withheld) = ([0u64; 4], [0u64; 4], 0u64);
+    for c in 0..cases {
+        let seed = 0xA26_0000 + c;
+        let case = gen_case_with(seed, true);
+        let rust = run_rust(&case.scn, &case.ops);
+        for (n, op) in case.ops.iter().enumerate() {
+            let k = match op {
+                Op::AiEnemy { .. } => 0,
+                Op::AiAlly { .. } => 1,
+                Op::AiRepulsor { .. } => 2,
+                Op::AiVision { .. } => 3,
+                _ => continue,
+            };
+            if rust.flagged[n] {
+                withheld += 1;
+                continue;
+            }
+            queries[k] += 1;
+            if rust.out[rust.starts[n]] != 0 {
+                found[k] += 1;
+            }
+        }
+        mismatches += compare(seed, &case, &mut stats);
+        if mismatches >= 5 {
+            break;
+        }
+    }
+    println!(
+        "COVERAGE AI queries: (enemy, ally, repulsor, vision) asked {queries:?}, answered with an object or a non-zero range {found:?}; {withheld} withheld (no player)"
+    );
+    println!("DIFF AI queries (and the partition manager under them) compared {:>9}  mismatches {:>6}", stats.cases, mismatches);
     assert_eq!(mismatches, 0, "{mismatches} cases differ from upstream");
 }

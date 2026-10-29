@@ -158,9 +158,12 @@ public:
 	Int getDisguisedPlayerIndex() const { return m_idx; }
 };
 typedef std::list<Object*> ContainedItemsList;
+typedef void (*ContainIterateFunc)( Object *obj, void *userData );	/* ContainModule.h */
 class ContainModuleInterface
 {
 public:
+	/* batch A26 (AI.cpp's findClosestEnemy): the items, forward */
+	void iterateContained(ContainIterateFunc func, void *userData, Bool reverse) { for (ContainedItemsList::iterator i = m_items.begin(); i != m_items.end(); ++i) func(*i, userData); }
 	Bool m_garrisonable;
 	Int m_count;
 	Int m_stealthUnits;
@@ -178,7 +181,60 @@ class AIUpdateInterface
 public:
 	LocomotorSet m_set;
 	const LocomotorSet &getLocomotorSet() const { return m_set; }
+	/* batch A26: the mood matrix value (scenario.rs: a hash of the object's id, m_set.m_source) */
+	UnsignedInt getMoodMatrixValue() const;
 };
+/* ---- batch A26: AI.cpp's queries (the cut ai_queries.inc): the weapons, the attack priority lists, the script engine's default
+** list, the AI's data and qualifiers (AI.h), the mood matrix bits (AIUpdate.h) */
+class Weapon
+{
+public:
+	Int m_slot;
+	Bool isWithinAttackRange(const Object *source, const Object *target) const;
+};
+class AttackPriorityInfo
+{
+public:
+	Int m_key;
+	Int getPriority(const ThingTemplate *tmpl) const;
+};
+class ScriptEngine
+{
+public:
+	AttackPriorityInfo m_default;
+	const AttackPriorityInfo *getDefaultAttackInfo() { return &m_default; }
+};
+extern ScriptEngine *TheScriptEngine;
+class TAiData	/* AI.h: the members AI.cpp's queries read */
+{
+public:
+	Real m_attackPriorityDistanceModifier;
+	Bool m_enableRepulsors;
+	Real m_guardInnerModifierAI, m_guardOuterModifierAI, m_guardInnerModifierHuman, m_guardOuterModifierHuman;
+	Real m_alertRangeModifier, m_aggressiveRangeModifier;
+};
+enum	/* AI.h lines 253-261, verbatim values */
+{
+	CAN_SEE = 1 << 0,
+	CAN_ATTACK = 1 << 1,
+	IGNORE_INSIGNIFICANT_BUILDINGS = 1 << 2,
+	ATTACK_BUILDINGS = 1 << 3,
+	WITHIN_ATTACK_RANGE = 1 << 4,
+	UNFOGGED = 1 << 5
+};
+enum { AI_VISIONFACTOR_OWNERTYPE = 0x01, AI_VISIONFACTOR_MOOD = 0x02, AI_VISIONFACTOR_GUARDINNER = 0x04 };	/* AI.h */
+enum	/* AIUpdate.h lines 140-160 */
+{
+	MM_Controller_Player = 0x00000001,
+	MM_Controller_AI = 0x00000002,
+	MM_Mood_Sleep = 0x00000100,
+	MM_Mood_Passive = 0x00000200,
+	MM_Mood_Normal = 0x00000400,
+	MM_Mood_Alert = 0x00000800,
+	MM_Mood_Aggressive = 0x00001000,
+	MM_Mood_Bitmask = (MM_Mood_Sleep | MM_Mood_Passive | MM_Mood_Normal | MM_Mood_Alert | MM_Mood_Aggressive)
+};
+class PartitionFilter;
 
 /* ---- the command bar's buttons and the action manager */
 class CommandButton
@@ -238,6 +294,13 @@ class AI
 public:
 	Pathfinder *pathfinder() { return &m_pathfinder; }
 	Pathfinder m_pathfinder;
+	/* batch A26: AI.cpp's queries (defined by the cut ai_queries.inc) and the data they read */
+	TAiData m_aiData;
+	const TAiData *getAiData() const { return &m_aiData; }
+	Object *findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers, const AttackPriorityInfo *info = NULL, PartitionFilter *optionalFilter = NULL );
+	Object *findClosestAlly( const Object *me, Real range, UnsignedInt qualifiers );
+	Object *findClosestRepulsor( const Object *me, Real range );
+	Real getAdjustedVisionRangeForObject( const Object *object, Int factorsToConsider );
 };
 extern AI *TheAI;
 
@@ -326,6 +389,12 @@ public:
 	BodyModuleInterface *getBodyModule() const;
 	AIUpdateInterface *getAIUpdateInterface() const;
 	CanAttackResult getAbleToAttackSpecificObject(AbleToAttackType t, const Object *target, CommandSourceType commandSource) const;
+	/* batch A26 */
+	const Weapon *getWeaponInWeaponSlot(WeaponSlotType slot) const;
+	Real getVisionRange() const;
+	AIUpdateInterface *getAI() const { return getAIUpdateInterface(); }
+	Object *getContainedBy() const;
+	Real getLargestWeaponRange() const;
 	ObjectShroudStatus getShroudedStatus(Int playerIndex) const;
 	void onPartitionCellChange();
 	void onCollide(Object *other, const Coord3D *loc, const Coord3D *normal);
