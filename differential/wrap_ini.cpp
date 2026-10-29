@@ -459,7 +459,10 @@ WEAK void INI::parseScienceDefinition(INI *ini) /* p1w2-science: WEAK, Science.c
 
 #define STUB(F) void F(INI *) { throw ERROR_BUG; }
 #define WEAK_STUB(F) WEAK void F(INI *) { throw ERROR_BUG; }
-STUB(INI::parseAIDataDefinition) STUB(INI::parseAnim2DDefinition)
+/* p1w13-sonnet batch A27: the AIData block reaches AI.cpp's parser (wrap_ai_data.cpp) when its fixture sets the hook */
+extern "C" { void (*ref_ai_data_block_hook)(INI *) = 0; }
+void INI::parseAIDataDefinition(INI *ini) { if (!ref_ai_data_block_hook) throw ERROR_BUG; ref_ai_data_block_hook(ini); }
+STUB(INI::parseAnim2DDefinition)
 STUB(INI::parseAudioEventDefinition) STUB(INI::parseAudioSettingsDefinition)
 STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCampaignDefinition)
 STUB(INI::parseChallengeModeDefinition) STUB(INI::parseCommandButtonDefinition)

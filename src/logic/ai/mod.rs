@@ -13,6 +13,7 @@ pub mod ai_move_states;
 pub mod ai_waypoint_states;
 pub mod ai_attack_states;
 pub mod ai_collision;
+pub mod ai_data;
 pub mod ai_group;
 pub mod ai_group_moves;
 pub mod ai_system;

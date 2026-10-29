@@ -1172,6 +1172,13 @@ pub struct GrpOp {
 }
 
 extern "C" {
+    // batch A27: the AI's data (wrap_ai_data.cpp), loaded through ref_science_load
+    pub fn ref_ai_data_reset();
+    pub fn ref_ai_data_dump(buf: *mut u8, cap: c_int) -> c_int;
+    pub fn ref_ai_data_crc(crc: *mut c_uint, xfer_crc: *mut c_uint);
+}
+
+extern "C" {
     // batch A24: the AI group (wrap_ai_group.cpp)
     pub fn ref_ai_group_run(scene: *const GrpScene, ops: *const GrpOp, n_ops: c_int, out: *mut c_uint, out_cap: c_int, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
     pub fn grpAnswer(seed: c_uint, kind: c_uint, obj: c_uint, arg: c_uint) -> c_uint;
