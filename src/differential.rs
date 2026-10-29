@@ -1100,6 +1100,64 @@ extern "C" {
     pub fn ref_ai_collide(op: c_int, scene: *const ColScene, out: *mut c_uint, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
 }
 
+/// Batch A24: the AI group's scene's objects (`differential/wrap_ai_group.cpp`'s `GrpObj`, field for field).
+pub const GRP_OBJECTS: usize = 12;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GrpObj {
+    pub id: c_int,
+    /// `GRP_F_*`
+    pub flags: c_int,
+    /// bits: structure, always selectable, immobile, aircraft
+    pub kinds: c_int,
+    /// bits: can stealth, stealthed, detected
+    pub status: c_int,
+    pub pos: [c_float; 3],
+    /// 0..3
+    pub player: c_int,
+    pub formation: c_int,
+    pub damage: c_int,
+    pub loco_speed: c_float,
+    /// passengers' ids (0: none)
+    pub contained: [c_int; 3],
+    /// -1: no stealth module
+    pub stealth_delay: c_int,
+    /// -1: no command set; else a bit per command type 0..7
+    pub command_set: c_int,
+}
+
+/// Batch A24: the AI group's scene (`GrpScene`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GrpScene {
+    pub o: [GrpObj; GRP_OBJECTS],
+    pub frame: c_uint,
+    pub seed: c_uint,
+    pub penalty: c_int,
+    pub next_group_id: c_int,
+    pub next_formation_id: c_int,
+}
+
+/// Batch A24: one operation on the group (`GrpOp`; its meaning per kind in `ref_ai_group_run`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GrpOp {
+    pub kind: c_int,
+    pub a: c_int,
+    pub b: c_int,
+    pub c: c_int,
+    pub x: c_float,
+    pub y: c_float,
+    pub z: c_float,
+    pub w: c_float,
+}
+
+extern "C" {
+    // batch A24: the AI group (wrap_ai_group.cpp)
+    pub fn ref_ai_group_run(scene: *const GrpScene, ops: *const GrpOp, n_ops: c_int, out: *mut c_uint, out_cap: c_int, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
+    pub fn grpAnswer(seed: c_uint, kind: c_uint, obj: c_uint, arg: c_uint) -> c_uint;
+}
+
 extern "C" {
     // Locomotor.cpp, LocomotorSet and the INI block (wrap_locomotor.cpp). The meaning of every
     // argument is in differential/wrap_locomotor.cpp and tests/differential_locomotor.rs.
