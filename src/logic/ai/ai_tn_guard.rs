@@ -159,18 +159,16 @@ pub fn tn_look_for_inner_target<H: AiStateHost>(h: &mut H) -> bool {
             if no_effect && !plant(3422) {
                 continue;
             }
-            if stamp.wrapping_add(h.ai_data_guard_enemy_scan_rate()) > StateContext::frame(h) {
-                if h.object_exists(source) {
-                    if h.object_relationship(source) != Relationship::Enemies {
-                        continue;
-                    }
-                    let result = h.able_to_attack_specific_object(ATTACK_TUNNEL_NETWORK_GUARD, source, CMD_FROM_AI);
-                    if result == ATTACKRESULT_POSSIBLE || result == ATTACKRESULT_POSSIBLE_AFTER_MOVING {
-                        gd(h).nemesis_to_attack = source;
-                        h.set_team_target_object(source);
-                        h.tunnel_update_nemesis(source);
-                        return true;
-                    }
+            if stamp.wrapping_add(h.ai_data_guard_enemy_scan_rate()) > StateContext::frame(h) && h.object_exists(source) {
+                if h.object_relationship(source) != Relationship::Enemies {
+                    continue;
+                }
+                let result = h.able_to_attack_specific_object(ATTACK_TUNNEL_NETWORK_GUARD, source, CMD_FROM_AI);
+                if result == ATTACKRESULT_POSSIBLE || result == ATTACKRESULT_POSSIBLE_AFTER_MOVING {
+                    gd(h).nemesis_to_attack = source;
+                    h.set_team_target_object(source);
+                    h.tunnel_update_nemesis(source);
+                    return true;
                 }
             }
         }
