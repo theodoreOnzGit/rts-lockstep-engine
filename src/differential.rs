@@ -1057,6 +1057,15 @@ pub struct AiEnv {
     pub rail_start_mask: c_uint,
     pub rail_end_mask: c_uint,
     pub rail_flags: c_int,
+    // batch A34: a HackInternetAIUpdate's data (unpack, pack, cash delay, fast cash delay; regular, veteran, elite, heroic cash;
+    // xp; variation factor), the hacker's world (bit 0 the player's money, 1 an experience tracker, 2 the hacker locally
+    // controlled, 3 its container locally controlled) and its veterancy level
+    pub hack_times: [c_uint; 4],
+    pub hack_cash: [c_uint; 4],
+    pub hack_xp: c_uint,
+    pub hack_variation: c_float,
+    pub hack_flags: c_int,
+    pub hack_level: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

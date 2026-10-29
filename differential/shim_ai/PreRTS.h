@@ -173,6 +173,12 @@
 #define outOfWeaponRangePosition aiOutOfWeaponRangePosition
 #define wantToSquishTarget aiWantToSquishTarget
 #define PartitionFilterSamePlayer AiPartitionFilterSamePlayer
+/* batch A34: the hacker's world (other harnesses compile these classes) */
+#define Money AiMoney
+#define ScoreKeeper AiScoreKeeper
+#define ExperienceTracker AiExperienceTracker
+#define TeamFactory AiTeamFactory
+#define TheTeamFactory AiTheTeamFactory
 /* batch A7 */
 #define AudioEventRTS AiAudioEventRTS
 #define DynamicAudioEventRTS AiDynamicAudioEventRTS

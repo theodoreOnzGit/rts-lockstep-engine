@@ -104,6 +104,21 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::HackInternet(_) = self.ai().subclass {
+            // batch A34: `HackInternetAIUpdate::xfer` (version 1): the base's, then the waiting command
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut k = match &mut self.ai_mut().subclass {
+                crate::logic::ai::ai_update::AiSubclass::HackInternet(k) => std::mem::take(k),
+                _ => unreachable!(),
+            };
+            let r = crate::logic::ai::hack_internet_ai_update::hack_internet_xfer_members(&mut k, h, xfer);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::HackInternet(k);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::RailedTransport(_) = self.ai().subclass {
             // batch A33: `RailedTransportAIUpdate::xfer` (version 1): the base's, then its members
             let current_version: XferVersion = 1;

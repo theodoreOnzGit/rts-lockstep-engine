@@ -116,6 +116,8 @@ use rts_lockstep_engine::logic::ai::ai_update_types::{AiStateType, CMD_FROM_AI, 
 use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTransport, AssaultTransportData, MemberCommand};
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::railed_transport_ai_update::{RailedTransport, RailedTransportData};
+use rts_lockstep_engine::logic::ai::hack_internet_ai_update::{HackInternet, HackInternetData};
+use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -213,6 +215,7 @@ const L_ANIM_FRAME: u32 = 109;
 const L_CLEAR_MODEL_FLAGS: u32 = 110;
 const L_MEMBER_AI: u32 = 111;
 const L_RAILED: u32 = 112;
+const L_HACK: u32 = 113;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -908,15 +911,16 @@ impl AiStateHost for Host {
     }
     fn play_per_unit_sound(&mut self, name: &[u8]) {
         let k = match name {
-            b"Deploy" => 4,
-            b"Undeploy" => 5,
+            b"Deploy" | b"UnitUnpack" => 4,
+            b"Undeploy" | b"UnitPack" => 5,
+            b"UnitCashPing" => 6,
             _ => -1,
         };
         let named = k >= 0 && (self.env.sounds >> k) & 1 != 0;
         self.audio_add(if named { k as u32 } else { u32::MAX });
     }
     fn set_drawable_animation_frame(&mut self, frame: i32) {
-        if (self.env.deploy_flags >> 4) & 1 != 0 {
+        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
             self.l(L_ANIM_FRAME, &[frame as u32]);
         }
     }
@@ -976,6 +980,49 @@ impl AiStateHost for Host {
     }
     fn waypoint_id(&mut self, way: u32) -> u32 {
         way
+    }
+    // batch A34: the hacker's world (the wrapper's stand-ins: the scene's one team "team0", buttons "btnN", the money, tracker and
+    // locally-controlled bits, LOG_HACK)
+    fn team_name(&mut self, _team: u32) -> Vec<u8> {
+        b"team0".to_vec()
+    }
+    fn team_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        (name == b"team0").then_some(0)
+    }
+    fn command_button_name(&mut self, button: u32) -> Vec<u8> {
+        format!("btn{button}").into_bytes()
+    }
+    fn command_button_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        (0..4).find(|i| format!("btn{i}").as_bytes() == name)
+    }
+    fn set_drawable_animation_loop_duration(&mut self, frames: u32) {
+        self.l(L_HACK, &[5, frames]);
+    }
+    fn player_has_money(&mut self) -> bool {
+        self.env.hack_flags & 1 != 0
+    }
+    fn veterancy_level(&mut self) -> Option<VeterancyLevel> {
+        (self.env.hack_flags & 2 != 0).then(|| {
+            [VeterancyLevel::Regular, VeterancyLevel::Veteran, VeterancyLevel::Elite, VeterancyLevel::Heroic][self.env.hack_level as usize]
+        })
+    }
+    fn money_deposit(&mut self, amount: u32) {
+        self.l(L_HACK, &[0, amount]);
+    }
+    fn score_add_money_earned(&mut self, amount: u32) {
+        self.l(L_HACK, &[1, amount]);
+    }
+    fn add_experience_points(&mut self, xp: u32) {
+        self.l(L_HACK, &[2, xp, 1]);
+    }
+    fn is_locally_controlled(&mut self, id: ObjectId) -> bool {
+        let bit = if id == self.env.object_id { 4 } else { 8 };
+        let r = self.env.hack_flags & bit != 0;
+        self.l(L_HACK, &[3, id as u32, u32::from(r)]);
+        r
+    }
+    fn hack_cash_floating_text(&mut self, amount: u32) {
+        self.l(L_HACK, &[4, amount]);
     }
     fn railed_set_dock_open(&mut self, open: bool) {
         if self.env.rail_flags & 1 != 0 {
@@ -1190,11 +1237,6 @@ impl AiStateHost for Host {
     fn go_prone(&mut self) {
         if self.env.modules & 2 != 0 {
             self.l(L_MODULE, &[1]);
-        }
-    }
-    fn hack_internet(&mut self) {
-        if self.env.modules & 4 != 0 {
-            self.l(L_MODULE, &[2]);
         }
     }
     fn polygon_center(&mut self, polygon: i32) -> Coord3D {
@@ -2651,6 +2693,28 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A34: a HackInternetAIUpdate's members (the waiting command's storage) and its machine's three states' frames
+    if let AiSubclass::HackInternet(k) = &module.ai().subclass {
+        let c = &k.pending_command;
+        v.extend([u32::from(k.has_pending_command), c.cmd as u32, c.cmd_source as u32]);
+        put_pos(&mut v, &c.pos);
+        v.extend([c.obj as u32, c.other_obj as u32, c.team_name.len() as u32, c.coords.len() as u32]);
+        for p in &c.coords {
+            put_pos(&mut v, p);
+        }
+        v.extend([c.waypoint.unwrap_or(u32::MAX), c.polygon.map_or(u32::MAX, |p| p as u32), c.int_value as u32]);
+        v.extend([c.command_button.unwrap_or(u32::MAX), u32::from(c.path.is_some())]);
+        if let Some(sm) = module.machine.as_ref() {
+            for id in [1000u32, 1001, 1002] {
+                match sm.state(id) {
+                    Some(AiState::HackUnpacking { frames_remaining })
+                    | Some(AiState::HackInternet { frames_remaining })
+                    | Some(AiState::HackPacking { frames_remaining }) => v.push(*frames_remaining),
+                    _ => panic!("a hacking state"),
+                }
+            }
+        }
+    }
     // batch A33: a RailedTransportAIUpdate's members
     if let AiSubclass::RailedTransport(t) = &module.ai().subclass {
         v.push(u32::from(t.in_transit));
@@ -2801,8 +2865,8 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.repulsed_distance = g.uniform(0.0, 100.0);
     gen_a6(g, &mut e);
     // batch A7
-    // (batch A31: bits 4 and 5 the per-unit deploy and undeploy sounds)
-    e.sounds = g.below(64) as i32;
+    // (batch A31: bits 4 and 5 the per-unit deploy and undeploy sounds; batch A34: 6 the cash ping)
+    e.sounds = g.below(128) as i32;
     e.formation_id = if g.below(3) == 0 { 1 + g.below(3) as i32 } else { 0 };
     e.group_speed = g.uniform(0.5, 6.0);
     e.max_height_above_position = g.uniform(0.0, 30.0);
@@ -2818,7 +2882,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5][g.below(10) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6][g.below(12) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -2828,6 +2892,15 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.rail_start_mask = if g.below(6) == 0 { 0 } else { g.below(256) | if g.below(4) == 0 { g.u32() } else { 0 } };
     e.rail_end_mask = if g.below(3) == 0 { e.rail_start_mask } else { g.below(256) | e.rail_start_mask & g.u32() };
     e.rail_flags = g.below(4) as i32;
+    // batch A34: a hacker's data (short times, often zero; cash amounts often zero, to fall through), world and level; its
+    // controlling player always (the hacking state reads it unchecked)
+    let short = |g: &mut Gen| if g.below(3) == 0 { 0 } else { g.below(12) };
+    e.hack_times = [short(g), short(g), short(g), short(g)];
+    e.hack_cash = [short(g), short(g), short(g), short(g)];
+    e.hack_xp = g.below(5);
+    e.hack_variation = [0.0, 0.1, 0.5][g.below(3) as usize];
+    e.hack_flags = g.below(16) as i32;
+    e.hack_level = g.below(4) as i32;
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -3196,6 +3269,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if g.below(5) == 0 { g.below(56) as i32 } else { [0, 1, 5, 11, 14, 29, 30, 48, 49, 9, 54, 41, 40, 23, 21, 25, 6, 7, 46, 47, 42, 43, 44, 15, 15, 18, 18, 33, 33, 16, 16, 17, 17, 25, 25, 53, 53, 35, 35, 36, 36, 37, 37, 13, 13, 24, 24, 24, 54, 54, 51, 51, 51][g.below(53) as usize] };
             // (batch A33: a railed transport's two commands, often)
             let cmd = if e.subclass == 5 && g.below(3) == 0 { [26, 27, 27][g.below(3) as usize] } else { cmd };
+            // (batch A34: a hacker's command, often)
+            let cmd = if e.subclass == 6 && g.below(3) == 0 { 34 } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3870,6 +3945,18 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let subclass = match host.env.subclass {
         1 => AiSubclass::Wander,
         2 => AiSubclass::Transport,
+        6 => AiSubclass::HackInternet(HackInternet::new(HackInternetData {
+            unpack_time: host.env.hack_times[0],
+            pack_time: host.env.hack_times[1],
+            cash_update_delay: host.env.hack_times[2],
+            cash_update_delay_fast: host.env.hack_times[3],
+            regular_cash_amount: host.env.hack_cash[0],
+            veteran_cash_amount: host.env.hack_cash[1],
+            elite_cash_amount: host.env.hack_cash[2],
+            heroic_cash_amount: host.env.hack_cash[3],
+            xp_per_cash_update: host.env.hack_xp,
+            pack_unpack_variation_factor: host.env.hack_variation,
+        })),
         5 => AiSubclass::RailedTransport(RailedTransport::new(RailedTransportData { path_prefix_name: "rail".to_string() })),
         4 => AiSubclass::AssaultTransport(AssaultTransport::new(AssaultTransportData {
             members_get_healed_at_life_ratio: host.env.assault_ratio,
@@ -3932,7 +4019,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // (and so does the idle state's mood target: `getNextMoodTarget` reads the player unchecked, and the C++ stand-in's
         // `getPlayerType` tolerated a missing one; kept while the idle state is in the machine)
         let idle = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 0 || module.ai().machine.temporary_state == 0);
-        if (a9_states(&module).1 || attacking || idle) && host.env.player_type < 0 {
+        // (batch A34: and so does the hacking state: a hacker keeps its player)
+        if (a9_states(&module).1 || attacking || idle || host.env.subclass == 6) && host.env.player_type < 0 {
             host.env.player_type = 0;
         }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
@@ -4301,6 +4389,21 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A34; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `HackInternetAIUpdate` (HackInternetAIUpdate.cpp cut verbatim with its header's states and machine, but for the floating cash
+///   text, the client's: `hackCashText`, `LOG_HACK`; AI.h's `AICommandParmsStorage` and AIStates.cpp's members verbatim, the stored
+///   damage upstream's default; Damage.h's classes and Damage.cpp's xfer verbatim, renamed `Stored*`, for it; the money, tracker,
+///   locally-controlled bits and level the scene's; its command, 34, often; the controlling player kept): a sixth of the cases:
+///   30,000 constructions and 1,798,178 operations, **0 mismatches** in the results, the call logs and the dumps (the waiting
+///   command's storage and the three states' frames added).
+/// - `isIdle` is virtual upstream and the hacker overrides it: making it virtual in the harness crashed on another object's AI (not
+///   constructed: no vtable), so the harness dispatches it explicitly (`baseIsIdle`, `hackIsIdle`). The old stand-in (a non-hacker's
+///   `HackInternetAIUpdate` module answering `hackInternet`, `modules` bit 2) is gone: only a hacker has that module.
+/// - Planted bugs (5,000 cases each): 3650 (the storage's second word; 14 mismatches), 3651 (the fast delay; 16), 3652 (the
+///   veterancy's cash; 2), 3653 (the floating text; 3), 3654 (packing on a command; 41), 3655 (the storage saved; 14), 3656
+///   (`isIdle` with a command waiting; 2) caught.
+///
 /// # Results (2026-10-29, batch A33; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `RailedTransportAIUpdate` (RailedTransportAIUpdate.cpp cut verbatim, its `INVALID_PATH` too, but for the object's own dock,

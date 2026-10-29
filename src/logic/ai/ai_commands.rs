@@ -239,6 +239,12 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A34: `HackInternetAIUpdate::aiDoCommand`: the base's check, a command while hacking or packing kept, then the base's
+    if matches!(ai(h).subclass, AiSubclass::HackInternet(_))
+        && (!is_allowed_to_respond_to_ai_commands(sm, h, parms) || crate::logic::ai::hack_internet_ai_update::hack_internet_do_command(sm, h, parms)?)
+    {
+        return Ok(());
+    }
     // batch A33: `RailedTransportAIUpdate::aiDoCommand`: the base's check, its own filter, then the base's
     if matches!(ai(h).subclass, AiSubclass::RailedTransport(_))
         && (!is_allowed_to_respond_to_ai_commands(sm, h, parms) || !crate::logic::ai::railed_transport_ai_update::railed_transport_allows(parms))
@@ -332,7 +338,11 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
         AICMD_HACK_INTERNET => {
             aism_clear(sm, h)?;
             set_last_command_source(h, src);
-            h.hack_internet();
+            // (batch A34: `findUpdateModule("HackInternetAIUpdate")` is this AI for a hacker, and none for another class: a
+            // `DEBUG_CRASH`, nothing)
+            if matches!(ai(h).subclass, AiSubclass::HackInternet(_)) {
+                return crate::logic::ai::hack_internet_ai_update::hack_internet(sm, h);
+            }
             Ok(())
         }
         AICMD_FACE_OBJECT => private_goal_object_state(sm, h, p.obj, src, AI_FACE_OBJECT, true),
@@ -483,6 +493,10 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     max_shots: i32,
     src: CommandSourceType,
 ) -> SmResult<()> {
+    // (batch A34: a hacker's aiDoCommand: no command waits any more (its machine is not hacking or packing here: it runs a guard))
+    if let AiSubclass::HackInternet(k) = &mut ai(h).subclass {
+        k.has_pending_command = false;
+    }
     // (batch A33: a railed transport's aiDoCommand ignores the player's attack)
     if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) && src == CMD_FROM_PLAYER {
         return Ok(());

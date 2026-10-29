@@ -68,6 +68,7 @@ use crate::logic::damage::{DamageType, DAMAGE_HEALING};
 use crate::logic::ai::assault_transport_ai_update::AssaultTransport;
 use crate::logic::ai::deploy_style_ai_update::DeployStyle;
 use crate::logic::ai::railed_transport_ai_update::RailedTransport;
+use crate::logic::ai::hack_internet_ai_update::HackInternet;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
 use crate::common::name_key_generator::NameKeyType;
@@ -336,6 +337,8 @@ pub enum AiSubclass {
     AssaultTransport(AssaultTransport),
     /// `RailedTransportAIUpdate` (batch A33): shuttles along the map's named waypoint paths (its members and data).
     RailedTransport(RailedTransport),
+    /// `HackInternetAIUpdate` (batch A34): unpacks, hacks cash, packs up; a command meanwhile waits (its members and data).
+    HackInternet(HackInternet),
 }
 
 impl AiUpdate {
@@ -1300,6 +1303,17 @@ impl AiUpdate {
 
     /// `isIdle()`: the idle state, or a current state that is idle.
     pub fn is_idle<M: AiMachineQuery>(&self, m: &M) -> bool {
+        // (batch A34: `HackInternetAIUpdate::isIdle`: "scripting relies on us never claiming to be 'idle'" with a command waiting)
+        if let AiSubclass::HackInternet(k) = &self.subclass {
+            if k.has_pending_command && !crate::logic::modules::plant(3656) {
+                return false;
+            }
+        }
+        self.base_is_idle(m)
+    }
+
+    /// `AIUpdateInterface::isIdle()` (the base's, which a subclass's override calls).
+    pub fn base_is_idle<M: AiMachineQuery>(&self, m: &M) -> bool {
         if m.current_state_id() == AI_IDLE {
             return true;
         }

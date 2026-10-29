@@ -329,7 +329,10 @@ public:
 	Bool canAutoAcquireWhileStealthed() const;
 	Object* getNextMoodTarget( Bool calledByAI, Bool calledDuringIdle );
 	void evaluateMoraleBonus( void );
+	/* (batch A34: virtual upstream, and HackInternetAIUpdate overrides it; here its dispatch is explicit, since another object's AI
+	** is not constructed (no vtable): defined after HackInternetAIUpdate, the base's body is baseIsIdle) */
 	Bool isIdle() const;
+	Bool baseIsIdle() const;
 	/* batch A23 */
 	void joinTeam( void );
 	Object* getTurretTargetObject( WhichTurretType tur, Bool clearDeadTargets = TRUE );
@@ -458,6 +461,85 @@ public:
 /* batch A30: privateIdle's passengers' aiIdle, a logged cut point (LOG_PASSENGER kind 3; defined at the end of this file) */
 void passengerAiCommand(unsigned kind, const Object *passenger, const Object *victim, const Coord3D *pos, Int shots, CommandSourceType src);
 inline void passengerAiIdle(const Object *p, AIUpdateInterface *, CommandSourceType src) { passengerAiCommand(3, p, NULL, NULL, 0, src); }
+/* batch A34: HackInternetAIUpdate, declared before the commands (privateHackInternet finds it): the stored damage (Damage.h's
+** classes and Damage.cpp's xfer, renamed Stored*; a template found by name in none), the command storage (AI.h's and AIStates.cpp's,
+** its damage upstream's default), HackInternetAIUpdate.h's states and machine (verbatim), its module data (the header's fields and
+** constructor; the field parse is the INI's: the scene's, g_hackData) and the class as the header declares it without the pool and
+** module macros and without HackInternetAIInterface (the control bar's); its .cpp after the other subclasses. */
+#define ThingTemplate AiTemplateView
+static const AiTemplateView *storedDamageTemplate(const AsciiString &) { return NULL; }
+#include "ai_stored_damage_a34.inc"
+#undef ThingTemplate
+#include "ai_parms_storage_a34.inc"
+#include "ai_hack_internet_h_a34.inc"
+class HackInternetAIUpdateModuleData
+{
+public:
+	UnsignedInt		m_unpackTime;
+	UnsignedInt		m_packTime;
+	UnsignedInt		m_cashUpdateDelay;
+	UnsignedInt		m_cashUpdateDelayFast;
+	UnsignedInt		m_regularCashAmount;
+	UnsignedInt		m_veteranCashAmount;
+	UnsignedInt		m_eliteCashAmount;
+	UnsignedInt		m_heroicCashAmount;
+	UnsignedInt		m_xpPerCashUpdate;
+	Real					m_packUnpackVariationFactor;
+
+	HackInternetAIUpdateModuleData()
+	{
+		m_unpackTime = 0;
+		m_packTime = 0;
+		m_cashUpdateDelay = 0;
+		m_cashUpdateDelayFast = 0;
+		m_regularCashAmount = 0;
+		m_veteranCashAmount = 0;
+		m_eliteCashAmount = 0;
+		m_heroicCashAmount = 0;
+		m_xpPerCashUpdate = 0;
+		m_packUnpackVariationFactor = 0.0f;
+	}
+};
+static HackInternetAIUpdateModuleData g_hackData;
+class HackInternetAIUpdate : public AIUpdateInterface
+{
+public:
+	HackInternetAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~HackInternetAIUpdate( void );
+	const HackInternetAIUpdateModuleData *getHackInternetAIUpdateModuleData() const { return &g_hackData; }
+
+ 	virtual void aiDoCommand(const AICommandParms* parms);
+
+	Real getPackUnpackVariationFactor() const { return getHackInternetAIUpdateModuleData()->m_packUnpackVariationFactor; }
+	UnsignedInt getUnpackTime()					const;
+	UnsignedInt getPackTime()						const;
+	UnsignedInt getCashUpdateDelay()		const;
+	UnsignedInt getRegularCashAmount()	const { return getHackInternetAIUpdateModuleData()->m_regularCashAmount; }
+	UnsignedInt getVeteranCashAmount()	const { return getHackInternetAIUpdateModuleData()->m_veteranCashAmount; }
+	UnsignedInt getEliteCashAmount()		const { return getHackInternetAIUpdateModuleData()->m_eliteCashAmount; }
+	UnsignedInt getHeroicCashAmount()		const { return getHackInternetAIUpdateModuleData()->m_heroicCashAmount; }
+	UnsignedInt getXpPerCashUpdate()		const { return getHackInternetAIUpdateModuleData()->m_xpPerCashUpdate; }
+
+	void hackInternet();
+	virtual UpdateSleepTime update();
+
+	Bool hackIsIdle() const;	/* (its isIdle: see AIUpdateInterface's) */
+
+	virtual Bool isHacking() const;
+	virtual Bool isHackingPackingOrUnpacking() const;
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual AIStateMachine* makeStateMachine();
+	
+	AICommandParmsStorage		m_pendingCommand;
+	Bool m_hasPendingCommand;	
+};
+void hackCashText(const Object *owner, UnsignedInt amount);
 #include "ai_update_a5.inc"
 #include "ai_update_a6.inc"
 #include "ai_update_a10.inc"
@@ -530,8 +612,8 @@ public:
 	}
 };
 static DeployStyleAIUpdateModuleData g_deployData;
-/* AI.h's AICommandParmsStorage, as far as the xfer of a version before 4 reaches it: not reached (this harness writes version 4) */
-class AICommandParmsStorage { public: void doXfer(Xfer *xfer) { abort(); } };
+/* (its xfer of a version before 4 reaches AI.h's AICommandParmsStorage, compiled for batch A34 above; not reached: this harness
+** writes version 4) */
 #include "ai_deploy_style_enum_a31.inc"
 class DeployStyleAIUpdate : public AIUpdateInterface
 {
@@ -696,6 +778,8 @@ protected:
 
 };
 #include "ai_railed_transport_a33.inc"
+/* batch A34: HackInternetAIUpdate.cpp (declared above) */
+#include "ai_hack_internet_a34.inc"
 
 #undef private
 #undef protected
@@ -1277,7 +1361,8 @@ void ScriptEngine::notifyOfObjectCreationOrDestruction() { L(LOG_SCRIPT_NOTIFY, 
 ** says so), the cleared model conditions (LOG_CLEAR_MODEL_FLAGS, in increasing order), the per-unit sounds ("Deploy" is "s4",
 ** "Undeploy" "s5", when the scene's sound bits 4 and 5 say so; else the empty sound, an unknown name's) */
 namespace { Drawable g_drawable; AudioEventRTS g_unitSound; }
-Drawable *Object::getDrawable() const { return ((g_aiEnv.deployFlags >> 4) & 1) ? &g_drawable : NULL; }
+/* (batch A34: a hacker always has one: its states use it unchecked) */
+Drawable *Object::getDrawable() const { return (g_aiEnv.subclass == 6 || ((g_aiEnv.deployFlags >> 4) & 1)) ? &g_drawable : NULL; }
 void Drawable::setAnimationFrame(int frame) { L(LOG_ANIM_FRAME, { (unsigned)frame }); }
 void Object::clearModelConditionFlags(const ModelConditionFlags &clr)
 {
@@ -1291,7 +1376,10 @@ void Object::clearModelConditionFlags(const ModelConditionFlags &clr)
 const AudioEventRTS *AiTemplateView::getPerUnitSound(const AsciiString& soundName) const
 {
 	g_unitSound = AudioEventRTS();
-	int k = strcmp(soundName.str(), "Deploy") == 0 ? 4 : strcmp(soundName.str(), "Undeploy") == 0 ? 5 : -1;
+	/* (batch A34: "UnitUnpack" is "s4" too, "UnitPack" "s5", "UnitCashPing" "s6") */
+	const char *n0 = soundName.str();
+	int k = (strcmp(n0, "Deploy") == 0 || strcmp(n0, "UnitUnpack") == 0) ? 4
+		: (strcmp(n0, "Undeploy") == 0 || strcmp(n0, "UnitPack") == 0) ? 5 : strcmp(n0, "UnitCashPing") == 0 ? 6 : -1;
 	if (k >= 0 && ((g_aiEnv.sounds >> k) & 1)) { AsciiString n; n.format("s%d", k); g_unitSound.setEventName(n); }
 	return &g_unitSound;
 }
@@ -1581,13 +1669,15 @@ UpdateModule *Object::findUpdateModule(UnsignedInt key) const
 {
 	static const char *const names[3] = { "DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate" };
 	for (int i = 0; i < 3; ++i)
-		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(names[i])))
+		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(names[i]))) {
+			/* (batch A34: the HackInternetAIUpdate is the hacker's own AI, and none another class's) */
+			if (i == 2) return g_aiEnv.subclass == 6 ? (UpdateModule *)g_ai_update : NULL;
 			return ((g_aiEnv.modules >> i) & 1) ? (UpdateModule *)&g_moduleDummy[i] : NULL;
+		}
 	return NULL;
 }
 void DeliverPayloadAIUpdate::deliverPayloadViaModuleData(const Coord3D *pos) { L(LOG_MODULE, { 0u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
 void ProneUpdate::goProne(const DamageInfo *damageInfo) { L(LOG_MODULE, { 1u }); }
-void HackInternetAIUpdate::hackInternet() { L(LOG_MODULE, { 2u }); }
 const AsciiString& Object::getCommandSetString() const { static AsciiString name("AiCommandSet"); return name; }
 const CommandSet *ControlBar::findCommandSet(const AsciiString& name) { return g_aiEnv.hasCommandSet ? &g_commandSet : NULL; }
 const CommandButton* CommandSet::getCommandButton(Int i) const
@@ -2055,6 +2145,17 @@ void setScene(const AiEnv *env)
 	g_deployData.m_manualDeployAnimations = (env->deployFlags & 8) != 0;
 	/* batch A32: an AssaultTransportAIUpdate's data */
 	g_assaultData.m_membersGetHealedAtLifeRatio = env->assaultRatio;
+	/* batch A34: a HackInternetAIUpdate's data */
+	g_hackData.m_unpackTime = env->hackTimes[0];
+	g_hackData.m_packTime = env->hackTimes[1];
+	g_hackData.m_cashUpdateDelay = env->hackTimes[2];
+	g_hackData.m_cashUpdateDelayFast = env->hackTimes[3];
+	g_hackData.m_regularCashAmount = env->hackCash[0];
+	g_hackData.m_veteranCashAmount = env->hackCash[1];
+	g_hackData.m_eliteCashAmount = env->hackCash[2];
+	g_hackData.m_heroicCashAmount = env->hackCash[3];
+	g_hackData.m_xpPerCashUpdate = env->hackXp;
+	g_hackData.m_packUnpackVariationFactor = env->hackVariation;
 	/* batch A9 */
 	TheAI->pathfinder()->m_wallHeight = env->wallHeight;
 	/* batch A10a */
@@ -2271,6 +2372,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 3: g_ai_update = new (ShimZeroFill{}) DeployStyleAIUpdate(NULL, NULL); break;
 		case 4: g_ai_update = new (ShimZeroFill{}) AssaultTransportAIUpdate(NULL, NULL); break;
 		case 5: g_ai_update = new (ShimZeroFill{}) RailedTransportAIUpdate(NULL, NULL); break;
+		case 6: g_ai_update = new (ShimZeroFill{}) HackInternetAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -3050,6 +3152,31 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A34: a HackInternetAIUpdate's members (the waiting command's storage) and its machine's three states' frames */
+	if (g_aiEnv.subclass == 6) {
+		const HackInternetAIUpdate *k = (const HackInternetAIUpdate *)ai;
+		const AICommandParmsStorage &c = k->m_pendingCommand;
+		putU32(v, k->m_hasPendingCommand ? 1u : 0u);
+		putU32(v, (unsigned)c.m_cmd);
+		putU32(v, (unsigned)c.m_cmdSource);
+		putPos(v, c.m_pos);
+		putU32(v, (unsigned)c.m_obj);
+		putU32(v, (unsigned)c.m_otherObj);
+		putU32(v, (unsigned)c.m_teamName.getLength());
+		putU32(v, (unsigned)c.m_coords.size());
+		for (size_t i = 0; i < c.m_coords.size(); ++i) putPos(v, c.m_coords[i]);
+		putU32(v, c.m_waypoint ? (unsigned)c.m_waypoint->m_index : 0xffffffffu);
+		putU32(v, c.m_polygon ? (unsigned)c.m_polygon->m_index : 0xffffffffu);
+		putU32(v, (unsigned)c.m_intValue);
+		putU32(v, c.m_commandButton ? (unsigned)c.m_commandButton->m_index : 0xffffffffu);
+		putU32(v, c.m_path ? 1u : 0u);
+		if (sm) {
+			const StateID ids[3] = { UNPACKING, HACK_INTERNET, PACKING };
+			putU32(v, ((const UnpackingState *)sm->m_stateMap.find(ids[0])->second)->m_framesRemaining);
+			putU32(v, ((const HackInternetState *)sm->m_stateMap.find(ids[1])->second)->m_framesRemaining);
+			putU32(v, ((const PackingState *)sm->m_stateMap.find(ids[2])->second)->m_framesRemaining);
+		}
+	}
 	/* batch A33: a RailedTransportAIUpdate's members */
 	if (g_aiEnv.subclass == 5) {
 		const RailedTransportAIUpdate *t = (const RailedTransportAIUpdate *)ai;
@@ -3145,3 +3272,46 @@ Bool RailedTransportDockUpdateInterface::isLoadingOrUnloading()
 	return r;
 }
 void RailedTransportDockUpdateInterface::unloadAll() { L(LOG_RAILED, { 2 }); }
+
+/* batch A34: the hacker's world (LOG_HACK): the money, the score, the experience (the scene's), locally controlled (the scene's), the
+** floating cash text (a cut point), the drawable's loop; the team's name and the factory's one team, the buttons' names */
+static Money g_money;
+static ScoreKeeper g_scoreKeeper;
+static ExperienceTracker g_experience;
+Money *Player::getMoney() { return (g_aiEnv.hackFlags & 1) ? &g_money : NULL; }
+ScoreKeeper *Player::getScoreKeeper() { return &g_scoreKeeper; }
+void Money::deposit(UnsignedInt amount, Bool playSound) { L(LOG_HACK, { 0, amount }); }
+void ScoreKeeper::addMoneyEarned(Int earned) { L(LOG_HACK, { 1, (unsigned)earned }); }
+ExperienceTracker *Object::getExperienceTracker() const { return (g_aiEnv.hackFlags & 2) ? &g_experience : NULL; }
+VeterancyLevel ExperienceTracker::getVeterancyLevel() const { return (VeterancyLevel)g_aiEnv.hackLevel; }
+void ExperienceTracker::addExperiencePoints(Int xp, Bool canScale) { L(LOG_HACK, { 2, (unsigned)xp, canScale ? 1u : 0u }); }
+Bool Object::isLocallyControlled() const
+{
+	Bool r = m_otherId ? (g_aiEnv.hackFlags & 8) != 0 : (g_aiEnv.hackFlags & 4) != 0;
+	L(LOG_HACK, { 3, (unsigned)getID(), r ? 1u : 0u });
+	return r;
+}
+void hackCashText(const Object *owner, UnsignedInt amount) { L(LOG_HACK, { 4, amount }); }
+void Drawable::setAnimationLoopDuration(UnsignedInt numFrames) { L(LOG_HACK, { 5, numFrames }); }
+static AsciiString g_teamName("team0");
+const AsciiString& Team::getName() const { return g_teamName; }
+static TeamFactory g_teamFactory;
+TeamFactory *TheTeamFactory = &g_teamFactory;
+Team *TeamFactory::findTeam(const AsciiString& name) { return name == g_teamName ? &g_team : NULL; }
+const AsciiString& CommandButton::getName() const
+{
+	const_cast<CommandButton *>(this)->m_name.format("btn%d", m_index);
+	return m_name;
+}
+const CommandButton *ControlBar::findCommandButton(const AsciiString& name)
+{
+	for (int i = 0; i < 4; ++i) if (g_buttons[i].getName() == name) return &g_buttons[i];
+	return NULL;
+}
+
+/* batch A34: the virtual isIdle's dispatch (see AIUpdateInterface's declaration): a hacker's own override, else the base's */
+Bool AIUpdateInterface::isIdle() const
+{
+	if (this == g_ai_update && g_aiEnv.subclass == 6) return ((const HackInternetAIUpdate *)this)->hackIsIdle();
+	return baseIsIdle();
+}

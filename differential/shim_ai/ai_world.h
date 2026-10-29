@@ -112,7 +112,7 @@ struct AiEnv
 	Int closestAttack;		/* getClosestObject's answer (0: none) */
 	UnsignedInt findPosRate;	/* findPositionAround: found at this rate (the hash) */
 	Int hasContain;			/* the object has a contain module */
-	Int modules;			/* bit 0 DeliverPayloadAIUpdate, bit 1 ProneUpdate, bit 2 HackInternetAIUpdate */
+	Int modules;			/* bit 0 DeliverPayloadAIUpdate, bit 1 ProneUpdate, bit 2 HackInternetAIUpdate (batch A34: unused: the hacker is its own AI, subclass 6) */
 	Int hasCommandSet;		/* TheControlBar finds the object's command set */
 	Int commandSlots[18];		/* the set's slots: a button's index (0..3), -1 empty */
 	Int buttonTypes[4];		/* the buttons' GUI command types */
@@ -206,6 +206,15 @@ struct AiEnv
 	** dock, bit 1 a railed transport dock) */
 	UnsignedInt railStartMask, railEndMask;
 	Int railFlags;
+	/* batch A34: a HackInternetAIUpdate's data (unpack, pack, cash delay, fast cash delay; regular, veteran, elite, heroic cash; xp;
+	** variation factor), the hacker's world (bit 0 the player's money, 1 an experience tracker, 2 the hacker locally controlled,
+	** 3 its container locally controlled) and its veterancy level */
+	UnsignedInt hackTimes[4];
+	UnsignedInt hackCash[4];
+	UnsignedInt hackXp;
+	Real hackVariation;
+	Int hackFlags;
+	Int hackLevel;
 };
 
 extern AiEnv g_aiEnv;
@@ -239,7 +248,9 @@ enum
 	LOG_ANIM_FRAME = 109,	/* batch A31: the drawable's setAnimationFrame { frame } */
 	LOG_CLEAR_MODEL_FLAGS = 110,	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
 	LOG_MEMBER_AI = 111,	/* batch A32: an assault member's AI { kind, the member, words.. } (see wrap_ai.cpp) */
-	LOG_RAILED = 112	/* batch A33: the railed transport's docks { 0 setDockOpen, open; 1 isLoadingOrUnloading, answer; 2 unloadAll } */
+	LOG_RAILED = 112,	/* batch A33: the railed transport's docks { 0 setDockOpen, open; 1 isLoadingOrUnloading, answer; 2 unloadAll } */
+	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
+			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -255,6 +266,9 @@ inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType t) { Mo
 /* batch A31 (ModelState.h's MAKE_MODELCONDITION_MASK2) */
 inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType a, ModelConditionFlagType b) { ModelConditionFlags f; f.set(a); f.set(b); return f; }
 #define MAKE_MODELCONDITION_MASK2(a,b) makeModelConditionMask(a, b)
+/* batch A34 (ModelState.h's MAKE_MODELCONDITION_MASK3) */
+inline ModelConditionFlags makeModelConditionMask(ModelConditionFlagType a, ModelConditionFlagType b, ModelConditionFlagType c) { ModelConditionFlags f; f.set(a); f.set(b); f.set(c); return f; }
+#define MAKE_MODELCONDITION_MASK3(a,b,c) makeModelConditionMask(a, b, c)
 
 /* batch A4: TheScriptEngine, as far as AIDeadState uses it (logged) */
 class AttackPriorityInfo;
@@ -572,6 +586,9 @@ public:
 	Bool isSkirmishAIPlayer( void );
 	/* batch A18: AIGuardState::onEnter's, after its return (never reached) */
 	class AcademyStats *getAcademyStats();
+	/* batch A34 (the hacker's: the scene's) */
+	class Money *getMoney();
+	class ScoreKeeper *getScoreKeeper();
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
 	/* batch A17: the existing other objects, in id order */
@@ -584,6 +601,8 @@ class TeamPrototype { public: const TeamTemplateInfo *getTemplateInfo() const; }
 class Team
 {
 public:
+	/* batch A34: the scene's one team, "team0" */
+	const AsciiString& getName() const;
 	const TeamPrototype *getPrototype();
 	Object *getTeamTargetObject();
 	/* batch A5: the scene's members (teamMask) */
@@ -597,6 +616,9 @@ public:
 	const Waypoint *getCurrentWaypoint();
 	void getTeamAsAIGroup(AIGroup *group);
 };
+/* batch A34: TeamFactory.h's findTeam (the scene's one team) */
+class TeamFactory { public: Team *findTeam( const AsciiString& name ); };
+extern TeamFactory *TheTeamFactory;
 typedef std::list<Object*> ContainedItemsList;
 /* batch A13: the contain's exit (logged; its answers the scene's) */
 struct AiTemplateView;
@@ -706,6 +728,17 @@ class Drawable
 {
 public:
 	void setAnimationFrame( int frame );
+	/* batch A34 (logged) */
+	void setAnimationLoopDuration( UnsignedInt numFrames );
+};
+/* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
+class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE ); };
+class ScoreKeeper { public: void addMoneyEarned( Int earned ); };
+class ExperienceTracker
+{
+public:
+	VeterancyLevel getVeterancyLevel() const;
+	void addExperiencePoints( Int experienceGain, Bool canScaleForBonus = TRUE );
 };
 /* batch A17: UpdateModule.h's DockUpdateInterface (logged but isDockOpen, isAllowPassthroughType, isRallyPointAfterDockType: the
 ** scene's) and the supply truck's (never one here) */
@@ -803,6 +836,9 @@ public:
 	/* batch A31 */
 	void clearModelConditionFlags(const ModelConditionFlags& clr);
 	Drawable *getDrawable() const;
+	/* batch A34 */
+	ExperienceTracker *getExperienceTracker() const;
+	Bool isLocallyControlled() const;
 	/* batch A2 */
 	ObjectID getID() const;
 	UnsignedByte getCrusherLevel() const;
@@ -935,7 +971,8 @@ enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };	/* A
 extern ActionManager *TheActionManager;
 class DeliverPayloadAIUpdate { public: void deliverPayloadViaModuleData( const Coord3D *moveToPos ); };
 class ProneUpdate { public: void goProne( const DamageInfo *damageInfo ); };
-class HackInternetAIUpdate { public: void hackInternet(); };
+/* (batch A34: HackInternetAIUpdate is the real class, wrap_ai.cpp) */
+class HackInternetAIUpdate;
 class PolygonTrigger { public: void getCenterPoint(Coord3D* pOutCoord) const; Int m_index;
 	/* batch A18 */
 	Real getRadius(void) const; AsciiString getTriggerName(void) const; };
@@ -947,9 +984,13 @@ public:
 	PartitionFilterPolygonTrigger(const PolygonTrigger *trigger) : m_index(trigger ? trigger->m_index : -1) {}
 	Int m_index;
 };
-class CommandButton { public: Int getCommandType() const; Int m_index; };
+class CommandButton { public: Int getCommandType() const; Int m_index;
+	/* batch A34: "btn" and the index */
+	const AsciiString& getName() const; AsciiString m_name; };
 class CommandSet { public: const CommandButton* getCommandButton(Int i) const; };
-class ControlBar { public: const CommandSet *findCommandSet( const AsciiString& name ); };
+class ControlBar { public: const CommandSet *findCommandSet( const AsciiString& name );
+	/* batch A34 */
+	const CommandButton *findCommandButton( const AsciiString& name ); };
 extern ControlBar *TheControlBar;
 
 #endif

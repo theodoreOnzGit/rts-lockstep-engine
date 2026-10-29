@@ -161,6 +161,28 @@ pub trait AiStateHost: AiHost + StateContext {
     fn railed_dock_is_loading_or_unloading(&mut self) -> bool;
     /// Batch A33: that railed dock's `unloadAll()`.
     fn railed_dock_unload_all(&mut self);
+    /// Batch A34: a team's `getName()`; `TheTeamFactory->findTeam(name)`.
+    fn team_name(&mut self, team: u32) -> Vec<u8>;
+    fn team_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A34: a command button's `getName()`; `TheControlBar->findCommandButton(name)`.
+    fn command_button_name(&mut self, button: u32) -> Vec<u8>;
+    fn command_button_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A34: `getDrawable()->setAnimationLoopDuration(frames)` (unchecked upstream).
+    fn set_drawable_animation_loop_duration(&mut self, frames: u32);
+    /// Batch A34: `getControllingPlayer()->getMoney() != NULL` (the player unchecked upstream).
+    fn player_has_money(&mut self) -> bool;
+    /// Batch A34: `getExperienceTracker()`'s `getVeterancyLevel()` (`None`: no tracker).
+    fn veterancy_level(&mut self) -> Option<crate::common::game_common::VeterancyLevel>;
+    /// Batch A34: the controlling player's `getMoney()->deposit(amount)`.
+    fn money_deposit(&mut self, amount: u32);
+    /// Batch A34: the controlling player's `getScoreKeeper()->addMoneyEarned(amount)`.
+    fn score_add_money_earned(&mut self, amount: u32);
+    /// Batch A34: `getExperienceTracker()->addExperiencePoints(xp)`.
+    fn add_experience_points(&mut self, xp: u32);
+    /// Batch A34: an object's `isLocallyControlled()`.
+    fn is_locally_controlled(&mut self, id: ObjectId) -> bool;
+    /// Batch A34: the hacker's floating "+cash" text (the client's `TheInGameUI->addFloatingText`).
+    fn hack_cash_floating_text(&mut self, amount: u32);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -233,8 +255,6 @@ pub trait AiStateHost: AiHost + StateContext {
     fn deliver_payload_via_module_data(&mut self, pos: &Coord3D) -> bool;
     /// A `ProneUpdate`'s `goProne(damageInfo)`, if the object has one.
     fn go_prone(&mut self);
-    /// A `HackInternetAIUpdate`'s `hackInternet()`, if the object has one (else a `DEBUG_CRASH`).
-    fn hack_internet(&mut self);
     /// The polygon trigger's `getCenterPoint`.
     fn polygon_center(&mut self, polygon: i32) -> Coord3D;
     /// `TheControlBar->findCommandSet(getCommandSetString())`: how many of its slots hold the button (0 without a set), and the
@@ -683,6 +703,12 @@ pub enum AiState<H: AiStateHost> {
     DockMove { which: StateId, mv: MoveToData },
     /// The docking machine's `AIDockWaitForClearanceState`: `m_enterFrame`.
     DockWait { enter_frame: u32 },
+    /// `HackInternetStateMachine`'s `UnpackingState` (batch A34): `m_framesRemaining`.
+    HackUnpacking { frames_remaining: u32 },
+    /// Its `HackInternetState`: `m_framesRemaining`, "frames till next cash update".
+    HackInternet { frames_remaining: u32 },
+    /// Its `PackingState`: `m_framesRemaining`.
+    HackPacking { frames_remaining: u32 },
     /// The docking machine's `AIDockProcessDockState`: `m_nextDockActionFrame`, `m_droneID`.
     DockProcess { next_action_frame: u32, drone_id: ObjectId },
     /// `AIAttackSquadState` (batch A16): `m_attackSquadMachine` (the owner's kinds make it).
@@ -1203,6 +1229,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 dock::dock_move_on_enter(sm, h, id, which)
             }
             Some(AiState::DockWait { .. }) => dock::wait_on_enter(sm, h, id),
+            Some(AiState::HackUnpacking { .. }) => crate::logic::ai::hack_internet_ai_update::unpacking_on_enter(sm, h, id),
+            Some(AiState::HackInternet { .. }) => crate::logic::ai::hack_internet_ai_update::hack_on_enter(sm, h, id),
+            Some(AiState::HackPacking { .. }) => crate::logic::ai::hack_internet_ai_update::packing_on_enter(sm, h, id),
             Some(AiState::DockProcess { .. }) => dock::process_on_enter(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
@@ -1254,6 +1283,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 dock::dock_move_on_exit(sm, h, id, which, status)
             }
             Some(AiState::DockWait { .. }) => dock::wait_on_exit(sm, h, status),
+            Some(AiState::HackUnpacking { .. }) | Some(AiState::HackInternet { .. }) | Some(AiState::HackPacking { .. }) => {
+                crate::logic::ai::hack_internet_ai_update::hack_states_on_exit(h, id)
+            }
             Some(AiState::DockProcess { .. }) => dock::process_on_exit(sm),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
@@ -1314,6 +1346,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 dock::dock_move_update(sm, h, id, which)
             }
             Some(AiState::DockWait { .. }) => dock::wait_update(sm, h, id),
+            Some(AiState::HackUnpacking { .. }) => crate::logic::ai::hack_internet_ai_update::unpacking_update(sm, h, id),
+            Some(AiState::HackInternet { .. }) => crate::logic::ai::hack_internet_ai_update::hack_update(sm, h, id),
+            Some(AiState::HackPacking { .. }) => crate::logic::ai::hack_internet_ai_update::packing_update(sm, id),
             Some(AiState::DockProcess { .. }) => dock::process_update(sm, h, id),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
@@ -1421,6 +1456,9 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             }
             AiState::DockMove { which, mv } => dock::dock_move_xfer(*which, mv, xfer)?,
             AiState::DockWait { enter_frame } => dock::wait_xfer(enter_frame, xfer)?,
+            AiState::HackUnpacking { frames_remaining } | AiState::HackInternet { frames_remaining } | AiState::HackPacking { frames_remaining } => {
+                crate::logic::ai::hack_internet_ai_update::hack_state_xfer(frames_remaining, xfer)?
+            }
             AiState::Guard { machine, data, kinds } if data.retaliate => guard::retaliate_xfer(machine, data, *kinds, xfer)?,
             AiState::Guard { machine, data, kinds } if data.tunnel => tn_guard::tn_guard_xfer(machine, data, *kinds, xfer)?,
             AiState::Guard { machine, data, kinds } => guard::guard_xfer(machine, data, *kinds, xfer)?,
@@ -1516,6 +1554,10 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 portable_that_attacks: h.is_kind_of(KINDOF_PORTABLE_STRUCTURE) && h.is_kind_of(KINDOF_CAN_ATTACK),
             };
             define_states(&mut sm, kinds)?;
+            // (batch A34: `HackInternetAIUpdate::makeStateMachine`'s `HackInternetStateMachine`: three more states)
+            if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::HackInternet(_)) {
+                crate::logic::ai::hack_internet_ai_update::define_hack_states(&mut sm)?;
+            }
             // (batch A11: the attack-move machine enters its default state, as its state's constructor does upstream)
             let ai_lent = self.ai.take().expect("the AI (not lent)");
             h.ai_stack().push(ai_lent);
@@ -1549,6 +1591,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 if let Some(sleep) = self.run(h, crate::logic::ai::assault_transport_ai_update::assault_transport_update)? {
                     return Ok(sleep);
                 }
+                self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::HackInternet(_) => {
+                // batch A34: the waiting command given when idle, then the base's update; "for now, must not sleep."
+                self.run(h, crate::logic::ai::hack_internet_ai_update::hack_internet_pre_update)?;
                 self.base_update(h)?;
                 Ok(UPDATE_SLEEP_NONE)
             }
