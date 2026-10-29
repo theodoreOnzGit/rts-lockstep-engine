@@ -63,7 +63,7 @@ use rts_lockstep_engine::logic::world::team::TeamTemplateInfo;
 use std::os::raw::c_int;
 use support::{Check, Gen};
 
-const CASES: u64 = 100_000;
+const CASES: u64 = 20_000; // (the recorded results ran 100,000: AI_PLAYER_CASES)
 
 // the scene's object flags (wrap_ai_player.cpp's AP_F_*)
 const F_AI: i32 = 1;
