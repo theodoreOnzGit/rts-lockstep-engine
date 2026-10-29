@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Differential test of the AI group (`logic::ai::ai_group`, Phase 1 layer 10, `p1w13-sonnet`, batch A24) against AIGroup.cpp's
-//! group, members, centre, speed and commands (all but the moves), cut verbatim and compiled over a world of the wrapper's own
+//! Differential test of the AI group (`logic::ai::ai_group` and `ai_group_moves`, Phase 1 layer 10, `p1w13-sonnet`, batches A24
+//! and A25) against AIGroup.cpp's group, members, centre, speed, commands and moves, cut verbatim and compiled over a world of the
+//! wrapper's own
 //! (`differential/wrap_ai_group.cpp`).
 //!
 //! Each case is one scene ([`GrpScene`]: twelve objects with their AI, held, dead, contain, spawn, production, drawable and other
@@ -13,6 +14,16 @@
 //!
 //! Not generated: a member added twice (upstream keeps it twice; the callers check first), a null member, and the destructor
 //! (`TheAI->destroyGroup`'s, AI.cpp).
+//!
+//! # Results (2026-10-29, batch A25; upstream commit 0a05454d, seeds `0xA24_0000 + case`, 1,000,000 cases)
+//!
+//! - With the moves (ops 60-74, about 405,000 of each): 21,498,281 operations, **0 mismatches** in the answers, the final group
+//!   (with its ground path and the AIs' `m_tmpInt`) and the call log (176,750,026 words). The moves reached: 153,641 column and
+//!   formation paths given (582,124 points), 285,707 ground paths found, 246,365 tightens, 1,857,459 move commands. Not run: ops
+//!   60 and 72 on a group with a member not held and without an AI (undefined upstream).
+//! - Planted bugs at 100,000 cases: 3550 (the infantry's line-of-sight test), 3551 (the end vector), 3552 (the formation's end node
+//!   before its start: a panic), 3553 (the small vehicle column's offset), 3554 (the gather tighten), 3555 (the helicopters' rings)
+//!   each caught (11 to 3,187 mismatches, or the panic).
 //!
 //! # Results (2026-10-29, batch A24; upstream commit 0a05454d, seeds `0xA24_0000 + case`, 1,000,000 cases)
 //!
