@@ -1050,6 +1050,8 @@ pub struct AiEnv {
     // must center before packing, manual deploy animations) and the object's drawable (bit 4); its unpack and pack times
     pub deploy_flags: c_int,
     pub deploy_times: [c_uint; 2],
+    // batch A32: an AssaultTransportAIUpdate's data's members-get-healed-at life ratio
+    pub assault_ratio: c_float,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

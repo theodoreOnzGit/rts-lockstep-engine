@@ -562,6 +562,84 @@ protected:
 #include "ai_deploy_style_a31.inc"
 #undef ThingTemplate
 
+/* batch A32: AssaultTransportAIUpdate. The module data is the header's fields and constructor (its field parse is the INI's); the
+** class as the header declares it, without the pool and module macros and without AssaultTransportAIInterface (whose one member,
+** beginAssault, the weapon calls: here op 100): MAKE_STANDARD_MODULE_MACRO_WITH_MODULE_DATA's getter returns the scene's data.
+** Its .cpp from the constructor, verbatim (ai_assault_transport_a32.inc) but for its members' AIs, other objects' and not constructed
+** in this build: build.rs makes each an AssaultMemberAi (memberAiOf), whose every call is a logged cut point (LOG_MEMBER_AI
+** { kind, the member, words.. }; defined at the end of this file): 0 getLastCommandSource (CMD_FROM_AI at the scene's object rate,
+** else CMD_FROM_PLAYER), 1 setAllowedToChase, 2 aiExit, 3 aiEnter, 4 getAIStateType (the other AIs' machine's state), 5 isMoving
+** (the hash), 6 getGoalObject (the scene's), 7 aiAttackObject, 8 aiAttackMoveToPosition. */
+class AssaultTransportAIUpdateModuleData
+{
+public:
+	Real m_membersGetHealedAtLifeRatio;
+	Real m_clearRangeRequiredToContinueAttackMove;
+
+	AssaultTransportAIUpdateModuleData()
+	{
+		m_membersGetHealedAtLifeRatio = 0.0f;
+		m_clearRangeRequiredToContinueAttackMove = 50.0f;
+	}
+};
+static AssaultTransportAIUpdateModuleData g_assaultData;
+class AssaultMemberAi
+{
+public:
+	const Object *m_member;
+	CommandSourceType getLastCommandSource() const;
+	void setAllowedToChase(Bool allowed);
+	void aiExit(Object *objectToExit, CommandSourceType cmdSource);
+	void aiEnter(Object *obj, CommandSourceType cmdSource);
+	AIStateType getAIStateType() const;
+	Bool isMoving() const;
+	Object *getGoalObject();
+	void aiAttackObject(Object *victim, Int maxShotsToFire, CommandSourceType cmdSource);
+	void aiAttackMoveToPosition(const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource);
+};
+AssaultMemberAi *memberAiOf(const Object *o);
+#include "ai_assault_transport_enum_a32.inc"
+class AssaultTransportAIUpdate : public AIUpdateInterface
+{
+public:
+	AssaultTransportAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~AssaultTransportAIUpdate( void );
+	const AssaultTransportAIUpdateModuleData *getAssaultTransportAIUpdateModuleData() const { return &g_assaultData; }
+
+ 	virtual void aiDoCommand(const AICommandParms* parms);
+	virtual Bool isIdle() const;
+	virtual UpdateSleepTime update();
+	virtual void beginAssault( const Object *designatedTarget ) const;
+
+	UpdateSleepTime calcSleepTime();
+
+	void reset();
+	Bool isMemberWounded( const Object *member ) const;	//Member requires medical attention?
+	Bool isMemberHealthy( const Object *member ) const; //Member has full health?
+	void retrieveMembers();
+	void giveFinalOrders();
+  Bool isAttackPointless() const;
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+  ObjectID					m_memberIDs[ MAX_TRANSPORT_SLOTS ];
+	Bool							m_memberHealing[ MAX_TRANSPORT_SLOTS ];
+	Bool							m_newMember[ MAX_TRANSPORT_SLOTS ];
+  Coord3D						m_attackMoveGoalPos;
+  mutable ObjectID	m_designatedTarget;
+	AssaultStateTypes	m_state;
+	UnsignedInt				m_framesRemaining;
+	Int								m_currentMembers;
+	Bool							m_isAttackMove;
+	Bool							m_isAttackObject;
+	Bool							m_newOccupantsAreNewMembers;
+};
+#include "ai_assault_transport_a32.inc"
+
 #undef private
 #undef protected
 
@@ -1301,12 +1379,17 @@ const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const
 	static ContainedItemsList items;
 	items.clear();
 	Bool transport = g_aiEnv.subclass == 2;
+	/* batch A32: for the assault transport, those with an AI only (its members' AIs are reached unchecked upstream), the list
+	** even when empty */
+	Bool assault = g_aiEnv.subclass == 4;
 	for (unsigned i = 1; i < 32; ++i) {
-		if (!((g_aiEnv.containedMask >> i) & 1) || (!transport && ((g_aiEnv.aiMask >> i) & 1))) continue;
+		if (!((g_aiEnv.containedMask >> i) & 1)) continue;
+		Bool hasAi = ((g_aiEnv.aiMask >> i) & 1) != 0;
+		if (assault ? !hasAi : (!transport && hasAi)) continue;
 		Object *o = findObject((ObjectID)i);
 		if (o) items.push_back(o);
 	}
-	return items.empty() && !transport ? NULL : &items;
+	return items.empty() && !transport && !assault ? NULL : &items;
 }
 /* batch A15: LOG_RAPPEL's kinds: 0 resetDynamicPhysics, 1 scrubVelocityZ, 2 setLayer, 3 scoreTheKill, 4 kill, 5 doFXObj,
 ** 6 isValidContainerFor, 7 removeFromContain */
@@ -1910,6 +1993,8 @@ void setScene(const AiEnv *env)
 	g_deployData.m_turretsFunctionOnlyWhenDeployed = (env->deployFlags & 2) != 0;
 	g_deployData.m_turretsMustCenterBeforePacking = (env->deployFlags & 4) != 0;
 	g_deployData.m_manualDeployAnimations = (env->deployFlags & 8) != 0;
+	/* batch A32: an AssaultTransportAIUpdate's data */
+	g_assaultData.m_membersGetHealedAtLifeRatio = env->assaultRatio;
 	/* batch A9 */
 	TheAI->pathfinder()->m_wallHeight = env->wallHeight;
 	/* batch A10a */
@@ -2124,6 +2209,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 1: g_ai_update = new (ShimZeroFill{}) WanderAIUpdate(NULL, NULL); break;
 		case 2: g_ai_update = new (ShimZeroFill{}) TransportAIUpdate(NULL, NULL); break;
 		case 3: g_ai_update = new (ShimZeroFill{}) DeployStyleAIUpdate(NULL, NULL); break;
+		case 4: g_ai_update = new (ShimZeroFill{}) AssaultTransportAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2239,6 +2325,8 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 63: ai->getStateMachine()->setGoalObject(findObject((ObjectID)ia[0])); break;
 	case 64: ai->getStateMachine()->setGoalPosition(&p); break;
 	case 65: r.push_back((unsigned)ai->update()); break;
+	/* batch A32: the weapon's beginAssault (an assault transport's; nothing for another class) */
+	case 100: if (g_aiEnv.subclass == 4) ((AssaultTransportAIUpdate *)ai)->beginAssault(findObject((ObjectID)ia[0])); break;
 	case 66: ai->onObjectCreated(); break;
 	case 67: if (ia[0]) ai->getStateMachine()->lock("op"); else ai->getStateMachine()->unlock(); break;
 	case 68: ai->getStateMachine()->addToGoalPath(&p); break;
@@ -2884,6 +2972,23 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, (unsigned)d->m_state);
 		putU32(v, d->m_frameToWaitForDeploy);
 	}
+	/* batch A32: an AssaultTransportAIUpdate's members */
+	if (g_aiEnv.subclass == 4) {
+		const AssaultTransportAIUpdate *a = (const AssaultTransportAIUpdate *)ai;
+		putU32(v, (unsigned)a->m_currentMembers);
+		for (int i = 0; i < MAX_TRANSPORT_SLOTS; ++i) {
+			putU32(v, (unsigned)a->m_memberIDs[i]);
+			putU32(v, a->m_memberHealing[i] ? 1u : 0u);
+			putU32(v, a->m_newMember[i] ? 1u : 0u);
+		}
+		putPos(v, a->m_attackMoveGoalPos);
+		putU32(v, (unsigned)a->m_designatedTarget);
+		putU32(v, (unsigned)a->m_state);
+		putU32(v, a->m_framesRemaining);
+		putU32(v, a->m_isAttackMove ? 1u : 0u);
+		putU32(v, a->m_isAttackObject ? 1u : 0u);
+		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
+	}
 	int n = (int)v.size();
 	if (n <= cap && n > 0) memcpy(buf, &v[0], 4 * n);
 	return n;
@@ -2897,4 +3002,60 @@ void passengerAiCommand(unsigned kind, const Object *passenger, const Object *vi
 	unsigned b[3] = { 0, 0, 0 };
 	if (pos) { b[0] = bitsOf(pos->x); b[1] = bitsOf(pos->y); b[2] = bitsOf(pos->z); }
 	L(LOG_PASSENGER, { kind, (unsigned)passenger->getID(), victim ? (unsigned)victim->getID() : 0u, b[0], b[1], b[2], (unsigned)shots, (unsigned)src });
+}
+
+/* batch A32: an assault member's AI (LOG_MEMBER_AI, see AssaultTransportAIUpdate above); other objects' bodies' health (the hash's,
+** over 100), their isContained (the assault transport's passengers) */
+static AssaultMemberAi g_memberAi;
+AssaultMemberAi *memberAiOf(const Object *o)
+{
+	if (!o || !const_cast<Object *>(o)->getAI()) return NULL;
+	g_memberAi.m_member = o;
+	return &g_memberAi;
+}
+static unsigned memberId(const AssaultMemberAi *a) { return (unsigned)a->m_member->getID(); }
+CommandSourceType AssaultMemberAi::getLastCommandSource() const
+{
+	CommandSourceType s = p1Pick(p1Hash(130, { memberId(this), g_aiEnv.frame }), g_aiEnv.objectRate) ? CMD_FROM_AI : CMD_FROM_PLAYER;
+	L(LOG_MEMBER_AI, { 0, memberId(this), (unsigned)s });
+	return s;
+}
+void AssaultMemberAi::setAllowedToChase(Bool allowed) { L(LOG_MEMBER_AI, { 1, memberId(this), allowed ? 1u : 0u }); }
+void AssaultMemberAi::aiExit(Object *o, CommandSourceType s) { L(LOG_MEMBER_AI, { 2, memberId(this), o ? (unsigned)o->getID() : 0u, (unsigned)s }); }
+void AssaultMemberAi::aiEnter(Object *o, CommandSourceType s) { L(LOG_MEMBER_AI, { 3, memberId(this), o ? (unsigned)o->getID() : 0u, (unsigned)s }); }
+AIStateType AssaultMemberAi::getAIStateType() const
+{
+	L(LOG_MEMBER_AI, { 4, memberId(this), (unsigned)g_aiEnv.otherAiState });
+	return (AIStateType)g_aiEnv.otherAiState;
+}
+Bool AssaultMemberAi::isMoving() const
+{
+	bool r = p1Pick(p1Hash(131, { memberId(this), g_aiEnv.frame }), 50);
+	L(LOG_MEMBER_AI, { 5, memberId(this), r ? 1u : 0u });
+	return r;
+}
+Object *AssaultMemberAi::getGoalObject()
+{
+	Object *g = otherAiGoalObject();
+	L(LOG_MEMBER_AI, { 6, memberId(this), g ? (unsigned)g->getID() : 0u });
+	return g;
+}
+void AssaultMemberAi::aiAttackObject(Object *v, Int shots, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 7, memberId(this), v ? (unsigned)v->getID() : 0u, (unsigned)shots, (unsigned)s });
+}
+void AssaultMemberAi::aiAttackMoveToPosition(const Coord3D *p, Int shots, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 8, memberId(this), bitsOf(p->x), bitsOf(p->y), bitsOf(p->z), (unsigned)shots, (unsigned)s });
+}
+static Real healthOf(unsigned k)
+{
+	static const Real h[4] = { 100.0f, 100.0f, 55.0f, 15.0f };
+	return h[(p1Hash(132, { k, g_aiEnv.frame >> 5 }) >> 8) & 3];
+}
+Real BodyModuleInterface::getHealth() const { return healthOf(bodyOwner(this)); }
+Real BodyModuleInterface::getMaxHealth() const { return 100.0f; }
+Bool Object::isContained() const
+{
+	return m_otherId && g_aiEnv.subclass == 4 && ((g_aiEnv.containedMask >> m_otherId) & 1) != 0;
 }

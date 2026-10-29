@@ -104,6 +104,17 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::AssaultTransport(_) = self.ai().subclass {
+            // batch A32: `AssaultTransportAIUpdate::xfer` (version 1): the base's, then its members
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            if let crate::logic::ai::ai_update::AiSubclass::AssaultTransport(a) = &mut self.ai_mut().subclass {
+                crate::logic::ai::assault_transport_ai_update::assault_transport_xfer_members(a, xfer)?;
+            }
+            return Ok(());
+        }
         if self.ai().subclass != crate::logic::ai::ai_update::AiSubclass::Plain && !plant(3613) {
             let current_version: XferVersion = 1;
             let mut version = current_version;

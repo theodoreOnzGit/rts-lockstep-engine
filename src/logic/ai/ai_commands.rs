@@ -239,6 +239,10 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A32: `AssaultTransportAIUpdate::aiDoCommand` (the virtual every command reaches): its own part, then the base's
+    if matches!(ai(h).subclass, AiSubclass::AssaultTransport(_)) {
+        crate::logic::ai::assault_transport_ai_update::assault_transport_do_command(h, parms);
+    }
     // batch A31: `DeployStyleAIUpdate::aiDoCommand` (the virtual every command reaches): its own check, then the base's
     if matches!(ai(h).subclass, AiSubclass::DeployStyle(_)) && !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
@@ -464,6 +468,13 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     max_shots: i32,
     src: CommandSourceType,
 ) -> SmResult<()> {
+    // (batch A32: an assault transport's aiDoCommand first)
+    if matches!(ai(h).subclass, AiSubclass::AssaultTransport(_)) {
+        let mut parms = AiCommandParms::new(AICMD_ATTACK_OBJECT, src);
+        parms.obj = victim;
+        parms.int_value = max_shots;
+        crate::logic::ai::assault_transport_ai_update::assault_transport_do_command(h, &parms);
+    }
     // isAllowedToRespondToAiCommands
     if h.is_effectively_dead() {
         return Ok(());

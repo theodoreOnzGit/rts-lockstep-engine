@@ -200,6 +200,8 @@ struct AiEnv
 	** must center before packing, manual deploy animations) and the object's drawable (bit 4); its unpack and pack times */
 	Int deployFlags;
 	UnsignedInt deployTimes[2];
+	/* batch A32: an AssaultTransportAIUpdate's data's members-get-healed-at life ratio */
+	Real assaultRatio;
 };
 
 extern AiEnv g_aiEnv;
@@ -231,7 +233,8 @@ enum
 	LOG_AI_SNAPSHOT = 107,	/* batch A21: { kind, words.. } (see wrap_ai.cpp) */
 	LOG_PASSENGER = 108,	/* batch A30: a transport's passenger's command (see wrap_ai.cpp) */
 	LOG_ANIM_FRAME = 109,	/* batch A31: the drawable's setAnimationFrame { frame } */
-	LOG_CLEAR_MODEL_FLAGS = 110	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
+	LOG_CLEAR_MODEL_FLAGS = 110,	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
+	LOG_MEMBER_AI = 111	/* batch A32: an assault member's AI { kind, the member, words.. } (see wrap_ai.cpp) */
 };
 
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
@@ -481,6 +484,9 @@ public:
 	void clearLastAttacker();
 	/* batch A20 */
 	UnsignedInt getLastDamageTimestamp() const;
+	/* batch A32 (another object's: the hash's) */
+	Real getHealth() const;
+	Real getMaxHealth() const;
 };
 
 class PhysicsBehavior
@@ -766,6 +772,9 @@ public:
 	PhysicsBehavior *getPhysics();
 	const PhysicsBehavior *getPhysics() const;
 	BodyModuleInterface *getBodyModule();
+	/* batch A32: Object.h's const getter */
+	BodyModuleInterface *getBodyModule() const { return const_cast<Object *>(this)->getBodyModule(); }
+	Bool isContained() const;
 	PathfindLayerEnum getLayer() const;
 	Bool isKindOf(KindOfType t) const;
 	ObjectStatusMaskType getStatusBits() const;

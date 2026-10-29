@@ -112,6 +112,8 @@ use rts_lockstep_engine::logic::ai::ai_paths;
 use rts_lockstep_engine::logic::ai::ai_states::{self as states, AiState, AiStateHost, AiUpdateModule, PassengerCommand};
 use rts_lockstep_engine::logic::ai::ai_waypoint_states::WaypointPathData;
 use rts_lockstep_engine::logic::ai::ai_update::{AiHost, AiSubclass, AiUpdate, LocoGoalType};
+use rts_lockstep_engine::logic::ai::ai_update_types::{AiStateType, CMD_FROM_AI, CMD_FROM_PLAYER};
+use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTransport, AssaultTransportData, MemberCommand};
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
@@ -208,6 +210,7 @@ const L_AI_SNAPSHOT: u32 = 107;
 const L_PASSENGER: u32 = 108;
 const L_ANIM_FRAME: u32 = 109;
 const L_CLEAR_MODEL_FLAGS: u32 = 110;
+const L_MEMBER_AI: u32 = 111;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -913,6 +916,52 @@ impl AiStateHost for Host {
             self.l(L_ANIM_FRAME, &[frame as u32]);
         }
     }
+    // batch A32: the assault members (the wrapper's stand-ins: their bodies' health by hash over 100, contained when the assault
+    // transport's passengers, their AIs logged cut points answering by hash and the scene)
+    fn object_health(&mut self, id: ObjectId) -> Option<(f32, f32)> {
+        let k = if (1..32).contains(&id) { id as u32 } else { 0 };
+        let h = [100.0f32, 100.0, 55.0, 15.0][((p1_hash(self.env.seed, 132, &[k, self.env.loco.frame >> 5]) >> 8) & 3) as usize];
+        Some((h, 100.0))
+    }
+    fn object_is_contained(&mut self, id: ObjectId) -> bool {
+        self.env.subclass == 4 && (1..32).contains(&id) && (self.env.contained_mask >> id) & 1 != 0
+    }
+    fn member_ai_last_command_source(&mut self, id: ObjectId) -> CommandSourceType {
+        let ai_src = pick(p1_hash(self.env.seed, 130, &[id as u32, self.env.loco.frame]), self.env.object_rate);
+        let s = if ai_src { CMD_FROM_AI } else { CMD_FROM_PLAYER };
+        self.l(L_MEMBER_AI, &[0, id as u32, s as u32]);
+        s
+    }
+    fn member_ai_set_allowed_to_chase(&mut self, id: ObjectId, allowed: bool) {
+        self.l(L_MEMBER_AI, &[1, id as u32, u32::from(allowed)]);
+    }
+    fn member_ai_state_type(&mut self, id: ObjectId) -> AiStateType {
+        let s = self.env.other_ai_state;
+        self.l(L_MEMBER_AI, &[4, id as u32, s as u32]);
+        s as AiStateType
+    }
+    fn member_ai_is_moving(&mut self, id: ObjectId) -> bool {
+        let r = pick(p1_hash(self.env.seed, 131, &[id as u32, self.env.loco.frame]), 50);
+        self.l(L_MEMBER_AI, &[5, id as u32, u32::from(r)]);
+        r
+    }
+    fn member_ai_goal_object(&mut self, id: ObjectId) -> ObjectId {
+        let g = self.env.other_ai_goal;
+        let g = if self.object_exists(g) { g } else { 0 };
+        self.l(L_MEMBER_AI, &[6, id as u32, g as u32]);
+        g
+    }
+    fn member_ai_command(&mut self, id: ObjectId, cmd: MemberCommand) {
+        let w = match cmd {
+            MemberCommand::Exit { transport, src } => vec![2, id as u32, transport as u32, src as u32],
+            MemberCommand::Enter { transport, src } => vec![3, id as u32, transport as u32, src as u32],
+            MemberCommand::AttackObject { victim, max_shots, src } => vec![7, id as u32, victim as u32, max_shots as u32, src as u32],
+            MemberCommand::AttackMoveToPosition { pos, max_shots, src } => {
+                vec![8, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), max_shots as u32, src as u32]
+            }
+        };
+        self.l(L_MEMBER_AI, &w);
+    }
     fn pf_goal_position(&mut self) -> Option<Coord3D> {
         let has = self.env.pf_has_goal;
         self.l(L_PF_GOAL_POSITION, &[has as u32]);
@@ -1466,9 +1515,15 @@ impl AiStateHost for Host {
     }
     // ---- batch A15
     fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
-        // (batch A30: the transport's passengers with an AI too)
+        // (batch A30: the transport's passengers with an AI too; batch A32: the assault transport's with an AI only)
         let transport = self.env.subclass == 2;
-        (1..32).filter(|&i| (self.env.contained_mask >> i) & 1 != 0 && (transport || (self.env.ai_mask >> i) & 1 == 0) && self.object_exists(i)).collect()
+        let assault = self.env.subclass == 4;
+        (1..32)
+            .filter(|&i| {
+                let has_ai = (self.env.ai_mask >> i) & 1 != 0;
+                (self.env.contained_mask >> i) & 1 != 0 && (if assault { has_ai } else { transport || !has_ai }) && self.object_exists(i)
+            })
+            .collect()
     }
     fn contain_remove_from_contain(&mut self, _container: ObjectId, obj: ObjectId) {
         self.l(L_RAPPEL, &[7, obj as u32]);
@@ -2554,6 +2609,16 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A32: an AssaultTransportAIUpdate's members
+    if let AiSubclass::AssaultTransport(a) = &module.ai().subclass {
+        v.push(a.current_members as u32);
+        for i in 0..10 {
+            v.extend([a.member_ids[i] as u32, u32::from(a.member_healing[i]), u32::from(a.new_member[i])]);
+        }
+        put_pos(&mut v, &a.attack_move_goal_pos);
+        v.extend([a.designated_target as u32, a.state as u32, a.frames_remaining]);
+        v.extend([u32::from(a.is_attack_move), u32::from(a.is_attack_object), u32::from(a.new_occupants_are_new_members)]);
+    }
     v
 }
 
@@ -2703,10 +2768,12 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3][g.below(6) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4][g.below(8) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
+    // batch A32: an assault transport's healing ratio
+    e.assault_ratio = [0.0, 0.3, 0.6, 1.0][g.below(4) as usize];
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -2889,6 +2956,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if e.subclass == 4 && g.below(10) == 0 {
+        // batch A32: the weapon's beginAssault, at an object (or none)
+        100
     } else if g.below(40) == 0 {
         // batch A12: setAttackInfo
         87
@@ -3094,6 +3164,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
                 fa[1] = g.uniform(-100.0, 400.0);
             }
         }
+        100 => ia[0] = g.below(32) as i32,
         _ => {}
     }
     (op, fa, ia)
@@ -3410,6 +3481,12 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             vec![]
         }
         65 => vec![module.update(h).expect("update").0],
+        // batch A32: the weapon's beginAssault
+        100 => {
+            let t = ia[0];
+            module.begin_assault(h.object_exists(t).then_some(t));
+            vec![]
+        }
         66 => {
             module.on_object_created(h).expect("onObjectCreated");
             vec![]
@@ -3529,7 +3606,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 100],
+    ops: [u64; 101],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -3580,7 +3657,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 100],
+            ops: [0; 101],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -3725,6 +3802,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let subclass = match host.env.subclass {
         1 => AiSubclass::Wander,
         2 => AiSubclass::Transport,
+        4 => AiSubclass::AssaultTransport(AssaultTransport::new(AssaultTransportData {
+            members_get_healed_at_life_ratio: host.env.assault_ratio,
+            ..Default::default()
+        })),
         3 => AiSubclass::DeployStyle(DeployStyle::new(DeployStyleData {
             unpack_time: host.env.deploy_times[0],
             pack_time: host.env.deploy_times[1],
@@ -4141,6 +4222,17 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-29, batch A32; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `AssaultTransportAIUpdate` (AssaultTransportAIUpdate.cpp cut verbatim but for its members' AIs, other objects' and not
+///   constructed in this build: each an `AssaultMemberAi` whose calls are logged cut points, `LOG_MEMBER_AI`; its header's
+///   `AssaultStateTypes` and `MAX_TRANSPORT_SLOTS` verbatim; the healing ratio of 0, 0.3, 0.6 or 1 per case; the members' health by
+///   hash over 100; the passengers with an AI only listed, and contained; the weapon's `beginAssault` as op 100, 38,550 times): a
+///   quarter of the cases (a quarter `AIUpdateInterface`, an eighth each wanderer and transport, a quarter deployers): 30,000
+///   constructions and 1,798,463 operations, **0 mismatches** in the results, the call logs and the dumps (its members added).
+/// - Planted bugs (5,000 cases each): 3630 (an attack order's flag; 144 mismatches), 3631 (a member's removal; 119), 3632 (a new
+///   occupant's mark; 27), 3633 (a wounded member called back; 20), 3634 (the snapshot's attack-object flag; 850) caught.
+///
 /// # Results (2026-10-29, batch A31; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `DeployStyleAIUpdate` (DeployStyleAIUpdate.cpp cut verbatim, its header's `DeployStateTypes` too; the module data the

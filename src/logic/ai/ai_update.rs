@@ -65,6 +65,7 @@ use crate::common::kind_of::{
 };
 use crate::common::object_status_types::{OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_IS_USING_ABILITY, OBJECT_STATUS_STEALTHED};
 use crate::logic::damage::{DamageType, DAMAGE_HEALING};
+use crate::logic::ai::assault_transport_ai_update::AssaultTransport;
 use crate::logic::ai::deploy_style_ai_update::DeployStyle;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
@@ -319,7 +320,7 @@ pub struct AiUpdate {
 
 /// Which `AIUpdateInterface` the module is (batch A30): the base, or a subclass whose overrides `ai_states` and `ai_commands`
 /// take where upstream's virtual members differ.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum AiSubclass {
     /// `AIUpdateInterface`.
     #[default]
@@ -330,6 +331,8 @@ pub enum AiSubclass {
     Transport,
     /// `DeployStyleAIUpdate` (batch A31): unpacks before it attacks, packs up before it moves (its members and data).
     DeployStyle(DeployStyle),
+    /// `AssaultTransportAIUpdate` (batch A32): its passengers are its assault members (its members and data).
+    AssaultTransport(AssaultTransport),
 }
 
 impl AiUpdate {

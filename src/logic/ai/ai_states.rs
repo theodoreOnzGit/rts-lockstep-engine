@@ -133,6 +133,22 @@ pub trait AiStateHost: AiHost + StateContext {
     fn play_per_unit_sound(&mut self, name: &[u8]);
     /// Batch A31: `getDrawable()->setAnimationFrame(frame)`, when the object has a drawable.
     fn set_drawable_animation_frame(&mut self, frame: i32);
+    /// Batch A32: another object's body's `getHealth()` and `getMaxHealth()` (`None`: no body).
+    fn object_health(&mut self, id: ObjectId) -> Option<(f32, f32)>;
+    /// Batch A32: another object's `isContained()`.
+    fn object_is_contained(&mut self, id: ObjectId) -> bool;
+    /// Batch A32: another object's AI's `getLastCommandSource()` (the object has an AI).
+    fn member_ai_last_command_source(&mut self, id: ObjectId) -> CommandSourceType;
+    /// Batch A32: another object's AI's `setAllowedToChase(allowed)`.
+    fn member_ai_set_allowed_to_chase(&mut self, id: ObjectId, allowed: bool);
+    /// Batch A32: another object's AI's `getAIStateType()`.
+    fn member_ai_state_type(&mut self, id: ObjectId) -> AiStateType;
+    /// Batch A32: another object's AI's `isMoving()`.
+    fn member_ai_is_moving(&mut self, id: ObjectId) -> bool;
+    /// Batch A32: another object's AI's `getGoalObject()`'s id (`INVALID_ID`: none).
+    fn member_ai_goal_object(&mut self, id: ObjectId) -> ObjectId;
+    /// Batch A32: a command to another object's AI.
+    fn member_ai_command(&mut self, id: ObjectId, cmd: crate::logic::ai::assault_transport_ai_update::MemberCommand);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1471,6 +1487,13 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         r
     }
 
+    /// `getAssaultTransportAIInterface()->beginAssault(designatedTarget)` (batch A32; the weapon's): nothing for another class.
+    pub fn begin_assault(&mut self, designated_target: Option<ObjectId>) {
+        if let crate::logic::ai::ai_update::AiSubclass::AssaultTransport(a) = &mut self.ai_mut().subclass {
+            crate::logic::ai::assault_transport_ai_update::begin_assault(a, designated_target);
+        }
+    }
+
     /// `onObjectCreated()`: "create the behavior state machine" (`makeStateMachine()`), then its default state.
     pub fn on_object_created(&mut self, h: &mut H) -> SmResult<()> {
         if self.machine.is_none() {
@@ -1508,6 +1531,15 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     pub fn update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
         match self.ai().subclass {
             crate::logic::ai::ai_update::AiSubclass::Wander => self.wander_update(h),
+            crate::logic::ai::ai_update::AiSubclass::AssaultTransport(_) => {
+                // batch A32: its own part (returning at once when dead or when the attack is pointless), then
+                // `AIUpdateInterface::update()`; "someday, make sleepy. for now, must not sleep."
+                if let Some(sleep) = self.run(h, crate::logic::ai::assault_transport_ai_update::assault_transport_update)? {
+                    return Ok(sleep);
+                }
+                self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
             crate::logic::ai::ai_update::AiSubclass::DeployStyle(_) => {
                 // batch A31: its own part, then `AIUpdateInterface::update()`; "We can't sleep the deploy AI because any new
                 // commands need to be caught and sent into busy state during the update."
