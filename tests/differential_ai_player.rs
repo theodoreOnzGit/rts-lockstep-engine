@@ -20,6 +20,21 @@
 //! answers `u32::MAX` and does nothing on both sides when its object or team is missing. Nor the worlds it does: a dozer, or a
 //! building's builder, without an AI (`updateBridgeRepair` and `processBaseBuilding` reach it unchecked), a recruit without a
 //! team.
+//!
+//! Batch A29 extends the world for `AISkirmishPlayer` (`logic::ai::ai_skirmish_player`): scene.skirmish 2 makes the run's player
+//! one (cut verbatim with AISkirmishPlayer.h); the other players' skirmish AIs, enemies, power and start positions, the approach
+//! paths and the factions' skirmish build lists are the scene's; ops 59-61 (`checkBridges`, `getAiEnemy`,
+//! `getMyEnemyPlayerIndex`). A run that uses a team upstream has deleted (`aiPreTeamDestroy`'s restart can leave one queued: a
+//! dangling pointer) is counted and not compared.
+//!
+//! # Results (2026-10-29, batches A28 and A29; upstream commit 0a05454d)
+//!
+//! - 100,000 cases (seeds `0xA28_0000 + case`, four kinds of run: every op alike, team building, repairs, a skirmish AI), 4,295,884 operations, **0 mismatches** in the answers, the AI player and the world after each, and 0 in the call log (46,285,918 words); reached: 45,277 superweapon targets (683 more undefined upstream, not compared), 20,184 save-and-load round trips, 11,870 units produced into work orders, 40,714 skirmish base defences placed, 24,420 enemies answered, 37,937 cluster-mine targets; no case used a deleted team. Plants 3580-3596 and 3600-3608 caught (3596 at 20,000 cases, 1 mismatch; the others at 2,000 to 4,000 cases, 1 to 796).
+//! - The runs found two port defects, fixed: `buildBySupplies`' legal-position search stops at a legal top or right cell (the
+//!   other three searches do not; 20,000 cases, every mismatch this); deleting a team tells the AI player first
+//!   (`Team::~Team` -> `aiPreTeamDestroy`: a ready reinforcement kept a disbanded team; a 100,000-case run, one case). And harness
+//!   defects, fixed: a negative build-list index, recruits without a team, dozers and builders without an AI (a SIGSEGV in
+//!   `updateBridgeRepair`), the capture op's first factory (the C++ went on past a missing one: 2 mismatches in 100,000 cases).
 #![cfg(feature = "differential")]
 
 mod support;
