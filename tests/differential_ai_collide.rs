@@ -9,9 +9,18 @@
 //! commands, the pathfinder's adjustments and the path queries. The scenes favour the branches: the two objects a cell or less apart
 //! (sometimes on one spot), directions often parallel, angles about the 45- and 90-degree limits.
 //!
-//! # Results
+//! Not generated: a direct `blockedBy` whose other object has no AI (upstream asks that AI before checking for it;
+//! `processCollision` never asks without one).
 //!
-//! (filled in by the batch's docs commit)
+//! # Results (2026-10-29, batch A22; upstream commit 0a05454d, seeds `0xA22_0000 + case`, 200,000 cases)
+//!
+//! - 200,000 scenes (processCollision 88,779, blockedBy 44,220, needToRotate 22,551, hasHigherPathPriority 22,335,
+//!   calculateMaxBlockedSpeed 22,115), **0 mismatches** in the answers and the parties' blocked members, and 0 in the log of the
+//!   commands, adjustments and path points. Each function answered both ways (processCollision's push 726 times).
+//! - No port defect found.
+//! - Planted bugs: 3510 (the tie of the one ahead), 3511 (the formation's crowding factor), 3512 (the reversing locomotor), 3513
+//!   (the rotation's limit), 3514 (the other told to move away), 3515 (the idle other moved off) each caught (75 to 11,397
+//!   mismatches).
 #![cfg(feature = "differential")]
 
 mod support;
