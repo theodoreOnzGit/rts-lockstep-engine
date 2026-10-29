@@ -13,6 +13,18 @@
 //!
 //! Not generated: a member added twice (upstream keeps it twice; the callers check first), a null member, and the destructor
 //! (`TheAI->destroyGroup`'s, AI.cpp).
+//!
+//! # Results (2026-10-29, batch A24; upstream commit 0a05454d, seeds `0xA24_0000 + case`, 1,000,000 cases)
+//!
+//! - 1,000,000 cases of 4 to 39 operations (21,479,973 in all: 7,821,564 adds, 1,934,485 removes, about 202,000 of each other kind), **0 mismatches**
+//!   in the answers and the final group, and 0 in the call log (about 134 million words).
+//! - The first run found one harness defect, fixed: the `SimpleObjectIterator` stand-in appended where upstream's `insert`
+//!   prepends, so members at one distance from the victim were attacked in the other order (778 log mismatches in 100,000 cases).
+//!   No port defect found.
+//! - Planted bugs at 100,000 cases: 3530 (the empty group not destroyed), 3531 (the centre without AI members), 3532 (one member a
+//!   formation), 3533 (the speed's damage test), 3534 (the garrison's stop), 3535 (the member's own attack), 3536 (attack-move for
+//!   the unable), 3537 (the aircraft's landing), 3538 (the formation id kept), 3539 (the special power at a location), 3540 (the
+//!   weapon set's template test), 3541 (the full production queue) each caught (428 to 16,742 mismatches).
 #![cfg(feature = "differential")]
 
 mod support;
