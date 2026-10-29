@@ -394,6 +394,72 @@ pub fn get_turret_turn_rate<H: AiStateHost>(h: &mut H, tur: WhichTurretType) -> 
     if tur != TURRET_INVALID && ai(h).has_turret_ai[tur as usize] { h.turret_turn_rate(tur as usize) } else { 0.0 }
 }
 
+/// `getTurretTargetObject(tur, clearDeadTargets)` (batch A23): the turret's target when it is an object (`tur` a turret: upstream
+/// indexes unchecked).
+pub fn get_turret_target_object<H: AiStateHost>(h: &mut H, tur: WhichTurretType, clear_dead_targets: bool) -> Option<ObjectId> {
+    if ai(h).has_turret_ai[tur as usize] {
+        return h.turret_target_object(tur as usize, clear_dead_targets);
+    }
+    None
+}
+
+/// `setTurretEnabled(tur, enabled)` (batch A23).
+pub fn set_turret_enabled<H: AiStateHost>(h: &mut H, tur: WhichTurretType, enabled: bool) {
+    if ai(h).has_turret_ai[tur as usize] {
+        h.turret_set_enabled(tur as usize, enabled);
+    }
+}
+
+/// `recenterTurret(tur)` (batch A23).
+pub fn recenter_turret<H: AiStateHost>(h: &mut H, tur: WhichTurretType) {
+    if ai(h).has_turret_ai[tur as usize] {
+        h.turret_recenter(tur as usize);
+    }
+}
+
+/// `isTurretEnabled(tur)` (batch A23).
+pub fn is_turret_enabled<H: AiStateHost>(h: &mut H, tur: WhichTurretType) -> bool {
+    ai(h).has_turret_ai[tur as usize] && h.turret_is_enabled(tur as usize)
+}
+
+/// `isTurretInNaturalPosition(tur)` (batch A23).
+pub fn is_turret_in_natural_position<H: AiStateHost>(h: &mut H, tur: WhichTurretType) -> bool {
+    ai(h).has_turret_ai[tur as usize] && h.turret_is_in_natural_position(tur as usize)
+}
+
+/// `isWeaponSlotOnTurretAndAimingAtTarget(wslot, victim)` (batch A23): the first turret holding the slot, trying to aim at the
+/// victim.
+pub fn is_weapon_slot_on_turret_and_aiming_at_target<H: AiStateHost>(h: &mut H, wslot: WeaponSlotType, victim: ObjectId) -> bool {
+    for i in 0..MAX_TURRETS as usize {
+        if ai(h).has_turret_ai[i] && h.turret_is_weapon_slot_on(i, wslot) {
+            return h.turret_is_trying_to_aim_at(i, victim) && !plant(3521);
+        }
+    }
+    false
+}
+
+/// `getTurretRotAndPitch(tur, &angle, &pitch)` (batch A23): the turret's angle and pitch, if it has one.
+pub fn get_turret_rot_and_pitch<H: AiStateHost>(h: &mut H, tur: WhichTurretType) -> Option<(f32, f32)> {
+    if ai(h).has_turret_ai[tur as usize] {
+        let angle = h.turret_angle(tur as usize);
+        let pitch = h.turret_pitch(tur as usize);
+        return Some((angle, pitch));
+    }
+    None
+}
+
+/// `getWhichTurretForWeaponSlot(wslot, &angle, &pitch)` (batch A23): the first turret holding the slot, with its angle and pitch.
+pub fn get_which_turret_for_weapon_slot<H: AiStateHost>(h: &mut H, wslot: WeaponSlotType) -> (WhichTurretType, Option<(f32, f32)>) {
+    for i in 0..MAX_TURRETS as usize {
+        if ai(h).has_turret_ai[i] && h.turret_is_weapon_slot_on(i, wslot) && !plant(3522) {
+            let angle = h.turret_angle(i);
+            let pitch = h.turret_pitch(i);
+            return (i as WhichTurretType, Some((angle, pitch)));
+        }
+    }
+    (TURRET_INVALID, None)
+}
+
 // ---- AIAttackState
 
 /// `chooseWeapon()`: the best weapon for the victim (none attacking a position), then the weapon status's model conditions.

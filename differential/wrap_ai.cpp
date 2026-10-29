@@ -113,6 +113,8 @@ class Waypoint;
 class TurretAIData;
 /* TurretAI (batch T1, its own build): the AI makes one per turret its data has; here an empty object, whose presence the mood
 ** matrix asks */
+/* batch A23: TurretAI.h's */
+enum TurretTargetType { TARGET_NONE, TARGET_OBJECT, TARGET_POSITION };
 class TurretAI : public Snapshot
 {
 public:
@@ -128,6 +130,17 @@ public:
 	void setTurretTargetPosition(const Coord3D *pos);
 	Real getTurnRate() const;
 	Bool isOwnersCurWeaponOnTurret() const;
+	/* batch A23 (batch T1's, its own build): the mutators and the target's query logged (LOG_AI_SNAPSHOT 3..5); the answers the
+	** hash's */
+	TurretTargetType friend_getTurretTarget( Object*& obj, Coord3D& pos, Bool clearDeadTargets = TRUE ) const;
+	void setTurretEnabled( Bool enabled );
+	void recenterTurret();
+	Bool isTurretEnabled() const;
+	Bool isTurretInNaturalPosition() const;
+	Bool isWeaponSlotOnTurret(WeaponSlotType wslot) const;
+	Bool isTryingToAimAtTarget(const Object* victim) const;
+	Real getTurretAngle() const;
+	Real getTurretPitch() const;
 	Int m_which;
 };
 
@@ -317,6 +330,16 @@ public:
 	Object* getNextMoodTarget( Bool calledByAI, Bool calledDuringIdle );
 	void evaluateMoraleBonus( void );
 	Bool isIdle() const;
+	/* batch A23 */
+	void joinTeam( void );
+	Object* getTurretTargetObject( WhichTurretType tur, Bool clearDeadTargets = TRUE );
+	void setTurretEnabled(WhichTurretType tur, Bool enabled);
+	void recenterTurret(WhichTurretType tur);
+	Bool isTurretEnabled( WhichTurretType tur ) const;
+	Bool isTurretInNaturalPosition(WhichTurretType tur) const;
+	Bool isWeaponSlotOnTurretAndAimingAtTarget(WeaponSlotType wslot, const Object* victim) const;
+	Bool getTurretRotAndPitch(WhichTurretType tur, Real* turretAngle, Real* turretPitch) const;
+	WhichTurretType getWhichTurretForWeaponSlot(WeaponSlotType wslot, Real* turretAngle, Real* turretPitch) const;
 	Bool isAttacking() const;
 	Bool isBusy() const;
 	Bool isClearingMines() const;
@@ -1572,6 +1595,25 @@ void GeometryInfo::getCenterPosition(const Coord3D& pos, Coord3D& center) const
 	center.z += g_aiEnv.maxHeightAbovePosition * 0.5f;
 }
 Bool TurretAI::isOwnersCurWeaponOnTurret() const { return ((g_aiEnv.turretCurWeapon >> m_which) & 1) != 0; }
+/* batch A23 */
+TurretTargetType TurretAI::friend_getTurretTarget(Object*& obj, Coord3D& pos, Bool clearDeadTargets) const
+{
+	unsigned h = p1Hash(76, { (unsigned)m_which, clearDeadTargets ? 1u : 0u });
+	L(LOG_AI_SNAPSHOT, { 5u, (unsigned)m_which, clearDeadTargets ? 1u : 0u });
+	obj = findObject((ObjectID)((h >> 4) % 32u));
+	return (TurretTargetType)(h % 3u);
+}
+void TurretAI::setTurretEnabled(Bool enabled) { L(LOG_AI_SNAPSHOT, { 3u, (unsigned)m_which, enabled ? 1u : 0u }); }
+void TurretAI::recenterTurret() { L(LOG_AI_SNAPSHOT, { 4u, (unsigned)m_which }); }
+Bool TurretAI::isTurretEnabled() const { return (p1Hash(77, { (unsigned)m_which }) & 1) != 0; }
+Bool TurretAI::isTurretInNaturalPosition() const { return (p1Hash(78, { (unsigned)m_which }) & 1) != 0; }
+Bool TurretAI::isWeaponSlotOnTurret(WeaponSlotType wslot) const { return (p1Hash(79, { (unsigned)m_which, (unsigned)wslot }) & 1) != 0; }
+Bool TurretAI::isTryingToAimAtTarget(const Object* victim) const
+{
+	return (p1Hash(80, { (unsigned)m_which, victim ? (unsigned)victim->getID() : 0u }) & 1) != 0;
+}
+Real TurretAI::getTurretAngle() const { return (Real)(p1Hash(81, { (unsigned)m_which }) % 628u) / 100.0f - 3.14f; }
+Real TurretAI::getTurretPitch() const { return (Real)(p1Hash(82, { (unsigned)m_which }) % 100u) / 100.0f; }
 /* batch A9 */
 Bool Pathfinder::isPointOnWall(const Coord3D *pos) { return pfAnswer(7, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
 void Pathfinder::moveAlliesAwayFromDestination(Object *obj, const Coord3D& destination)
@@ -1745,6 +1787,20 @@ void setScene(const AiEnv *env)
 	/* batch A5 */
 	TheGlobalData->m_partitionCellSize = env->partitionCellSize;
 	((AIUpdateInterface *)g_otherAiMem)->m_path = env->otherAiPath ? (Path *)g_otherAiMem : NULL;
+	/* batch A23: the other objects' AIs' one machine: a real AIStateMachine (made once, on another object), its current state set
+	** from the scene without entering it, its goal position the scene's (its goal object stays the scene's otherAiGoal) */
+	{
+		static AIStateMachine *otherMachine = NULL;
+		if (!otherMachine) {
+			g_others[1].m_otherId = (ObjectID)1;
+			otherMachine = newInstance(AIStateMachine)(&g_others[1], AsciiString("other"));
+		}
+		((AIUpdateInterface *)g_otherAiMem)->m_stateMachine = otherMachine;
+		otherMachine->m_currentState = otherMachine->internalGetState((StateID)env->otherAiState);
+		otherMachine->m_goalPosition.x = env->otherAiGoalPos[0];
+		otherMachine->m_goalPosition.y = env->otherAiGoalPos[1];
+		otherMachine->m_goalPosition.z = env->otherAiGoalPos[2];
+	}
 	for (int i = 0; i < 4; ++i) g_buttons[i].m_index = i;
 	for (int i = 0; i < 8; ++i) { g_polygons[i].m_index = i; g_waypoints[i].m_index = i; }
 	/* batch A6: the waypoints' locations; the other objects anew (their cached heights are asked) */
@@ -2128,6 +2184,26 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 		try { x.close(); } catch (...) {}
 		ai->loadPostProcess();
 		r.push_back((unsigned)st);
+		break;
+	}
+	case 91: ai->joinTeam(); break;
+	/* batch A23: the turrets' members (ia[0] the turret or the weapon slot, ia[1] the flag or the victim) */
+	case 92: { Object *o = ai->getTurretTargetObject((WhichTurretType)ia[0], ia[1] != 0); r.push_back(o ? (unsigned)o->getID() : 0u); break; }
+	case 93: ai->setTurretEnabled((WhichTurretType)ia[0], ia[1] != 0); break;
+	case 94: ai->recenterTurret((WhichTurretType)ia[0]); break;
+	case 95: r.push_back(ai->isTurretEnabled((WhichTurretType)ia[0]) ? 1u : 0u); break;
+	case 96: r.push_back(ai->isTurretInNaturalPosition((WhichTurretType)ia[0]) ? 1u : 0u); break;
+	case 97: r.push_back(ai->isWeaponSlotOnTurretAndAimingAtTarget((WeaponSlotType)ia[0], findObject((ObjectID)ia[1])) ? 1u : 0u); break;
+	case 98: {
+		Real angle = -9.0f, pitch = -9.0f;
+		r.push_back(ai->getTurretRotAndPitch((WhichTurretType)ia[0], &angle, &pitch) ? 1u : 0u);
+		r.push_back(bitsOf(angle)); r.push_back(bitsOf(pitch));
+		break;
+	}
+	case 99: {
+		Real angle = -9.0f, pitch = -9.0f;
+		r.push_back((unsigned)ai->getWhichTurretForWeaponSlot((WeaponSlotType)ia[0], &angle, &pitch));
+		r.push_back(bitsOf(angle)); r.push_back(bitsOf(pitch));
 		break;
 	}
 	case 90: {

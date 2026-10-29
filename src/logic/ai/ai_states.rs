@@ -505,6 +505,25 @@ pub trait AiStateHost: AiHost + StateContext {
     fn turret_ai_snapshot(&mut self, which: usize, xfer: &mut dyn Xfer) -> XferResult<()>;
     /// `TheAI->pathfinder()->updatePos(getObject(), pos)`.
     fn pf_update_pos(&mut self, pos: &Coord3D);
+    // ---- batch A23: joinTeam
+    /// `getObject()->getTeam()->iterate_TeamMemberList()`, in its order.
+    fn own_team_member_ids(&mut self) -> Vec<ObjectId>;
+    /// Another object's AI's `isIdle()`, `getGoalPosition()` (only asked of one with an AI).
+    fn object_ai_is_idle(&mut self, id: ObjectId) -> bool;
+    fn object_ai_goal_position(&mut self, id: ObjectId) -> Coord3D;
+    // ---- batch A23: the turrets' members
+    /// A turret's `friend_getTurretTarget(obj, pos, clearDeadTargets)`: the object when it answers `TARGET_OBJECT`.
+    fn turret_target_object(&mut self, which: usize, clear_dead_targets: bool) -> Option<ObjectId>;
+    /// A turret's `setTurretEnabled(enabled)`, `recenterTurret()`, `isTurretEnabled()`, `isTurretInNaturalPosition()`.
+    fn turret_set_enabled(&mut self, which: usize, enabled: bool);
+    fn turret_recenter(&mut self, which: usize);
+    fn turret_is_enabled(&mut self, which: usize) -> bool;
+    fn turret_is_in_natural_position(&mut self, which: usize) -> bool;
+    /// A turret's `isWeaponSlotOnTurret(wslot)`, `isTryingToAimAtTarget(victim)`, `getTurretAngle()`, `getTurretPitch()`.
+    fn turret_is_weapon_slot_on(&mut self, which: usize, wslot: WeaponSlotType) -> bool;
+    fn turret_is_trying_to_aim_at(&mut self, which: usize, victim: ObjectId) -> bool;
+    fn turret_angle(&mut self, which: usize) -> f32;
+    fn turret_pitch(&mut self, which: usize) -> f32;
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId;
     fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId);
     // ---- batch A10b: the chase states

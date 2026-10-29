@@ -2383,6 +2383,16 @@ mod differential {
                 "void AIUpdateInterface::crc( Xfer *x )",
                 "void AIUpdateInterface::xfer( Xfer *xfer )",
                 "void AIUpdateInterface::loadPostProcess( void )",
+                // batch A23
+                "void AIUpdateInterface::joinTeam( void )",
+                "Object* AIUpdateInterface::getTurretTargetObject( WhichTurretType tur, Bool clearDeadTargets )",
+                "void AIUpdateInterface::setTurretEnabled(WhichTurretType tur, Bool enabled)",
+                "void AIUpdateInterface::recenterTurret(WhichTurretType tur)",
+                "Bool AIUpdateInterface::isTurretEnabled( WhichTurretType tur ) const",
+                "Bool AIUpdateInterface::isTurretInNaturalPosition(WhichTurretType tur) const",
+                "Bool AIUpdateInterface::isWeaponSlotOnTurretAndAimingAtTarget(WeaponSlotType wslot, const Object* victim) const",
+                "Bool AIUpdateInterface::getTurretRotAndPitch(WhichTurretType tur, Real* turretAngle, Real* turretPitch) const",
+                "WhichTurretType AIUpdateInterface::getWhichTurretForWeaponSlot(WeaponSlotType wslot, Real* turretAngle, Real* turretPitch) const",
             ]
             .iter()
             .map(|sig| function(&aiu, "AIUpdate.cpp", sig))

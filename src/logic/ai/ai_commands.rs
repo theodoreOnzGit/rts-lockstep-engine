@@ -38,7 +38,7 @@
 //! - The command buttons only answer `GUI_COMMAND_STOP` (idle) and, with an object, `GUI_COMMAND_COMBATDROP`.
 
 use crate::common::base_type::Coord3D;
-use crate::common::disabled_types::DISABLED_SUBDUED;
+use crate::common::disabled_types::{DISABLED_HELD, DISABLED_SUBDUED};
 use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_NO_COLLIDE, KINDOF_PROJECTILE};
@@ -366,6 +366,62 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
 /// `aiIdle(cmdSource)`.
 pub fn ai_idle<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, src: CommandSourceType) -> SmResult<()> {
     ai_do_command(sm, h, &AiCommandParms::new(AICMD_IDLE, src))
+}
+
+/// `aiMoveToPosition(pos, cmdSource)`.
+pub fn ai_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, src: CommandSourceType) -> SmResult<()> {
+    let mut parms = AiCommandParms::new(AICMD_MOVE_TO_POSITION, src);
+    parms.pos = *pos;
+    ai_do_command(sm, h, &parms)
+}
+
+/// `joinTeam()` (batch A23): the machine cleared, then the AI joins the first other member of its team with an AI that is not
+/// held: moving to it when it is idle; else taking its goal (object, else position) and setting its own current state again
+/// ("Match the state": its own, upstream's, which the clear has left the default).
+pub fn join_team<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResult<()> {
+    // "the dead don't listen very well"
+    if ai(h).is_ai_dead {
+        return Ok(());
+    }
+    if !h.is_mobile() {
+        return Ok(());
+    }
+    with_ai(h, |a, h| a.choose_locomotor_set(h, LOCOMOTORSET_NORMAL));
+    aism_clear(sm, h)?;
+    // (getStateMachine()->setGoalWaypoint(NULL))
+    ai(h).machine.goal_waypoint = None;
+    let me = h.object_id();
+    let mut other = INVALID_ID;
+    for o in h.own_team_member_ids() {
+        if o == me {
+            continue; // "it's us."
+        }
+        if h.object_ai_goal_object(o).is_some() && !h.object_is_disabled_by_type(o, DISABLED_HELD) {
+            other = o;
+            break;
+        }
+    }
+    if other != INVALID_ID {
+        if h.object_ai_is_idle(other) {
+            let pos = h.object_position(other);
+            return ai_move_to_position(sm, h, &pos, CMD_FROM_AI);
+        }
+        match h.object_ai_goal_object(other) {
+            Some(g) if g != INVALID_ID && !plant(3520) => {
+                let o = h.find_object(g);
+                sm.set_goal_object(o.as_ref());
+            }
+            _ => {
+                let p = h.object_ai_goal_position(other);
+                sm.set_goal_position(Some(&p));
+            }
+        }
+        let state = sm.get_current_state_id();
+        set_last_command_source(h, CMD_FROM_AI);
+        // "Match the state."
+        aism_set_state(sm, h, state)?;
+    }
+    Ok(())
 }
 
 /// `aiMoveToObject(obj, cmdSource)`.

@@ -1664,6 +1664,51 @@ impl AiStateHost for Host {
     fn pf_update_pos(&mut self, pos: &Coord3D) {
         self.l(L_AI_SNAPSHOT, &[0, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
     }
+    // ---- batch A23
+    fn own_team_member_ids(&mut self) -> Vec<ObjectId> {
+        (1..32).filter(|i| (self.env.team_mask >> i) & 1 != 0).collect()
+    }
+    fn object_ai_is_idle(&mut self, _id: ObjectId) -> bool {
+        // (the other AIs' machine: AI_IDLE is idle; its other states (move-to, busy) are not)
+        self.env.other_ai_state == 0
+    }
+    fn object_ai_goal_position(&mut self, _id: ObjectId) -> Coord3D {
+        let p = self.env.other_ai_goal_pos;
+        Coord3D { x: p[0], y: p[1], z: p[2] }
+    }
+    fn turret_target_object(&mut self, which: usize, clear_dead_targets: bool) -> Option<ObjectId> {
+        let h = p1_hash(self.env.seed, 76, &[which as u32, u32::from(clear_dead_targets)]);
+        self.l(L_AI_SNAPSHOT, &[5, which as u32, u32::from(clear_dead_targets)]);
+        let o = ((h >> 4) % 32) as ObjectId;
+        let o = if self.object_exists(o) { o } else { 0 };
+        // (TARGET_OBJECT: 1)
+        (h % 3 == 1).then_some(o).filter(|&o| o != 0)
+    }
+    fn turret_set_enabled(&mut self, which: usize, enabled: bool) {
+        self.l(L_AI_SNAPSHOT, &[3, which as u32, u32::from(enabled)]);
+    }
+    fn turret_recenter(&mut self, which: usize) {
+        self.l(L_AI_SNAPSHOT, &[4, which as u32]);
+    }
+    fn turret_is_enabled(&mut self, which: usize) -> bool {
+        p1_hash(self.env.seed, 77, &[which as u32]) & 1 != 0
+    }
+    fn turret_is_in_natural_position(&mut self, which: usize) -> bool {
+        p1_hash(self.env.seed, 78, &[which as u32]) & 1 != 0
+    }
+    fn turret_is_weapon_slot_on(&mut self, which: usize, wslot: WeaponSlotType) -> bool {
+        p1_hash(self.env.seed, 79, &[which as u32, wslot as u32]) & 1 != 0
+    }
+    fn turret_is_trying_to_aim_at(&mut self, which: usize, victim: ObjectId) -> bool {
+        let v = if self.object_exists(victim) { victim as u32 } else { 0 };
+        p1_hash(self.env.seed, 80, &[which as u32, v]) & 1 != 0
+    }
+    fn turret_angle(&mut self, which: usize) -> f32 {
+        (p1_hash(self.env.seed, 81, &[which as u32]) % 628) as f32 / 100.0 - 3.14
+    }
+    fn turret_pitch(&mut self, which: usize) -> f32 {
+        (p1_hash(self.env.seed, 82, &[which as u32]) % 100) as f32 / 100.0
+    }
     fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
         let r = p1_hash(self.env.seed, 70, &[info as u32, obj as u32]) % 4;
         self.l(L_ATTACK, &[16, info as u32, obj as u32, r]);
@@ -2644,6 +2689,9 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.tunnel_stamp = e.loco.frame.wrapping_sub(g.below(80));
     e.tunnel_no_effect = if g.below(2) == 0 { 0 } else { g.u32() };
     e.other_ai_goal = g.below(32) as i32;
+    // batch A23: the other AIs' machine's state (idle, move-to, busy) and goal position
+    e.other_ai_state = [0, 0, 1, 41][g.below(4) as usize];
+    e.other_ai_goal_pos = [g.uniform(0.0, 200.0), g.uniform(0.0, 200.0), 0.0];
     // (a quarter: the main turret holds the current weapon, for the pursuit)
     if g.below(4) == 0 {
         e.turret_cur_weapon |= 1;
@@ -2773,6 +2821,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
     } else if g.below(40) == 0 {
         // batch A21: the AI saved, loaded (its last save; else saved), its CRC
         [88, 88, 89, 89, 90][g.below(5) as usize]
+    } else if g.below(40) == 0 {
+        // batch A23: joinTeam, the turrets' members
+        [91, 91, 92, 93, 94, 95, 96, 97, 98, 99][g.below(10) as usize]
     } else if g.below(5) == 0 {
         // batch A6: the paths
         [74, 74, 75, 76, 77, 78, 78, 78, 79, 80, 80, 81, 81, 82, 83, 84, 85, 86][g.below(18) as usize]
@@ -2836,7 +2887,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=90);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -2930,6 +2981,11 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             ia[0] = g.below(32) as i32;
             // (upstream dereferences a contact weapon's victim position)
             ia[1] = i32::from(g.below(3) != 0 || e.contact_weapon != 0 || ia[0] == 0);
+        }
+        // batch A23: a turret (a weapon slot for 97 and 99), a flag or an object
+        92..=99 => {
+            ia[0] = g.below(if matches!(op, 97 | 99) { 3 } else { 2 }) as i32;
+            ia[1] = g.below(32) as i32;
         }
         79 => {
             ia[0] = g.below(9) as i32 - 1;
@@ -3203,6 +3259,40 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
     let coords = &coords[..];
     let ret = |r: StateReturn| vec![r.0 as u32];
     match op {
+        // batch A23
+        91 => {
+            module.run(h, rts_lockstep_engine::logic::ai::ai_commands::join_team).expect("joinTeam");
+            vec![]
+        }
+        92..=99 => {
+            use rts_lockstep_engine::logic::ai::ai_attack_states as at;
+            let (a, b) = (ia[0], ia[1]);
+            let slot = |s: i32| [WeaponSlotType::Primary, WeaponSlotType::Secondary, WeaponSlotType::Tertiary][s as usize];
+            module.run(h, |_, h| match op {
+                92 => vec![at::get_turret_target_object(h, a, b != 0).map_or(0, |o| o as u32)],
+                93 => {
+                    at::set_turret_enabled(h, a, b != 0);
+                    vec![]
+                }
+                94 => {
+                    at::recenter_turret(h, a);
+                    vec![]
+                }
+                95 => vec![u32::from(at::is_turret_enabled(h, a))],
+                96 => vec![u32::from(at::is_turret_in_natural_position(h, a))],
+                97 => vec![u32::from(at::is_weapon_slot_on_turret_and_aiming_at_target(h, slot(a), b))],
+                98 => {
+                    let r = at::get_turret_rot_and_pitch(h, a);
+                    let (an, pi) = r.unwrap_or((-9.0, -9.0));
+                    vec![u32::from(r.is_some()), an.to_bits(), pi.to_bits()]
+                }
+                _ => {
+                    let (t, r) = at::get_which_turret_for_weapon_slot(h, slot(a));
+                    let (an, pi) = r.unwrap_or((-9.0, -9.0));
+                    vec![t as u32, an.to_bits(), pi.to_bits()]
+                }
+            })
+        }
         // batch A21: the AI's snapshot
         88 => {
             let mut x = XferSave::new();
@@ -3365,7 +3455,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 91],
+    ops: [u64; 100],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -3416,7 +3506,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 91],
+            ops: [0; 100],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,

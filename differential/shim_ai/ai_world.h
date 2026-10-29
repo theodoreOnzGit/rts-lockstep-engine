@@ -191,6 +191,9 @@ struct AiEnv
 	UnsignedInt tunnelStamp;	/* another object's last damage's time: this plus a hash of the object below 64 */
 	UnsignedInt tunnelNoEffect;	/* another object's last damage's out.m_noEffect (bit by object id) */
 	Int otherAiGoal;		/* another object's AI's getGoalObject */
+	/* batch A23 */
+	Int otherAiState;		/* another object's AI's machine's current state (set, not entered) */
+	Real otherAiGoalPos[3];	/* and its goal position */
 };
 
 extern AiEnv g_aiEnv;
