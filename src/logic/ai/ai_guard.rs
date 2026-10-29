@@ -450,12 +450,10 @@ fn retaliate_attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Stat
             if !h.object_exists(nemesis) {
                 nemesis = INVALID_ID;
                 let (damage_type, source) = h.last_damage_type_and_source();
-                if source != INVALID_ID && damage_type != DAMAGE_HEALING {
-                    if h.object_exists(source) {
-                        nemesis = source;
-                        if h.object_relationship(source) == Relationship::Enemies && !plant(3413) {
-                            gd(h).nemesis_to_attack = source;
-                        }
+                if source != INVALID_ID && damage_type != DAMAGE_HEALING && h.object_exists(source) {
+                    nemesis = source;
+                    if h.object_relationship(source) == Relationship::Enemies && !plant(3413) {
+                        gd(h).nemesis_to_attack = source;
                     }
                 }
             }
