@@ -243,7 +243,10 @@ public:
 	GuardMode getGuardMode() const { return m_guardMode; }
 	ObjectID getCrateID(void) const { return m_crateCreated; }
 	/* batch A17 (AIUpdate.h's, virtual upstream; no supply truck here) */
-	SupplyTruckAIInterface* getSupplyTruckAIInterface() {return NULL;}
+	/* (batch A35: virtual upstream, and SupplyTruckAIUpdate answers itself; here dispatched explicitly, as isIdle (see it)) */
+	SupplyTruckAIInterface* getSupplyTruckAIInterface();
+	/* batch A35 (AIUpdate.h's, virtual upstream: none for the classes of this build) */
+	WorkerAIInterface* getWorkerAIInterface() { return NULL; }
 	/* batch A15 (AIUpdate.h) */
 	Real getDesiredSpeed() const { return m_desiredSpeed; }
 	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
@@ -381,7 +384,8 @@ public:
 	void privateRappelInto( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
 	void privateMoveToAndEvacuate( const Coord3D *pos, CommandSourceType cmdSource );
 	void privateMoveToAndEvacuateAndExit( const Coord3D *pos, CommandSourceType cmdSource );
-	void privateIdle(CommandSourceType cmdSource);
+	/* (batch A35: virtual again, as upstream: SupplyTruckAIUpdate overrides it and privateDock) */
+	virtual void privateIdle(CommandSourceType cmdSource);
 	void privateTightenToPosition( const Coord3D *pos, CommandSourceType cmdSource );
 	void privateMoveAwayFromUnit( Object *unit, CommandSourceType cmdSource );
 	void privateFollowWaypointPath( const Waypoint *way, CommandSourceType cmdSource );
@@ -405,7 +409,7 @@ public:
 	void privateGetHealed( Object *healDepot, CommandSourceType cmdSource );
 	void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
 	void privateEnter( Object *obj, CommandSourceType cmdSource );
-	void privateDock( Object *obj, CommandSourceType cmdSource );
+	virtual void privateDock( Object *obj, CommandSourceType cmdSource );
 	void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
 	void privateExit( Object *objectToExit, CommandSourceType cmdSource );
 	void privateExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
@@ -780,6 +784,77 @@ protected:
 #include "ai_railed_transport_a33.inc"
 /* batch A34: HackInternetAIUpdate.cpp (declared above) */
 #include "ai_hack_internet_a34.inc"
+/* batch A35: SupplyTruckAIUpdate. Its header's machine, states and state ids, verbatim (ai_supply_truck_h_a35.inc); its module data
+** the header's fields and constructor (the field parse is the INI's: the scene's, g_supplyData; its depleted voice "s7" when the
+** scene names one); the class as the header declares it without the pool and module macros; its .cpp from makeStateMachine,
+** verbatim, with its REGROUP_SUCCESS_DISTANCE_SQUARED (ai_supply_truck_a35.inc). */
+#include "ai_supply_truck_h_a35.inc"
+class SupplyTruckAIUpdateModuleData
+{
+public:
+	Int m_maxBoxesData;
+	UnsignedInt m_centerDelay;
+	UnsignedInt m_warehouseDelay;
+	Real m_warehouseScanDistance;
+ 	AudioEventRTS m_suppliesDepletedVoice;						///< Sound played when I take the last box.
+
+	SupplyTruckAIUpdateModuleData()
+	{
+		m_maxBoxesData = 0;
+		m_centerDelay = 0;
+		m_warehouseDelay = 0;
+		m_warehouseScanDistance = 100;
+	}
+};
+static SupplyTruckAIUpdateModuleData g_supplyData;
+class SupplyTruckAIUpdate : public AIUpdateInterface, public SupplyTruckAIInterface
+{
+public:
+
+	SupplyTruckAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~SupplyTruckAIUpdate( void );
+	const SupplyTruckAIUpdateModuleData *getSupplyTruckAIUpdateModuleData() const { return &g_supplyData; }
+
+	virtual Int getNumberBoxes() const { return m_numberBoxes; }
+	virtual Bool loseOneBox();
+	virtual Bool gainOneBox( Int remainingStock );
+
+	virtual Bool isAvailableForSupplying() const;
+	virtual Bool isCurrentlyFerryingSupplies() const;
+	virtual Real getWarehouseScanDistance() const; ///< How far can I look for a warehouse?
+
+	virtual void setForceWantingState(Bool v) { m_forcePending = v; } // When a Supply Center creates us (or maybe other sources later), we need to hop into autopilot mode.
+	virtual Bool isForcedIntoWantingState() const { return m_forcePending; }
+
+	virtual void setForceBusyState(Bool v) { m_forcedBusyPending = v; } 
+	virtual Bool isForcedIntoBusyState() const { return m_forcedBusyPending; }
+
+	virtual ObjectID getPreferredDockID() const { return m_preferredDock; }
+	virtual UnsignedInt getActionDelayForDock( Object *dock );
+	virtual Int getUpgradedSupplyBoost() const { return 0; }
+	
+	virtual UpdateSleepTime update();
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual AIStateMachine* makeStateMachine();
+	virtual void privateDock( Object *obj, CommandSourceType cmdSource );
+	virtual void privateIdle(CommandSourceType cmdSource);						///< Enter idle state.	
+
+private:
+	SupplyTruckStateMachine*	m_supplyTruckStateMachine;
+	ObjectID									m_preferredDock;			///< Instead of searching, try this one first
+	Int												m_numberBoxes;
+	Bool											m_forcePending;				// To prevent a function from doing a setState, 
+	Bool											m_forcedBusyPending;	// A supply truck can't tell the difference between Idle since
+ 	AudioEventRTS m_suppliesDepletedVoice;						///< Sound played when I take the last box.
+
+};
+#include "ai_supply_truck_a35.inc"
 
 #undef private
 #undef protected
@@ -1591,7 +1666,6 @@ void Player::iterateObjects(void (*func)(Object *obj, void *userData), void *use
 {
 	for (unsigned i = 1; i < 32; ++i) { Object *o = findObject((ObjectID)i); if (o) func(o, userData); }
 }
-UnsignedInt SupplyTruckAIInterface::getActionDelayForDock(Object *dock) { return 0; }
 Bool DockUpdateInterface::reserveApproachPosition(Object *docker, Coord3D *position, Int *index)
 {
 	bool r = dockAnswer(1, { TheGameLogic->getFrame() });
@@ -1667,6 +1741,11 @@ AIFreeToExitType AIUpdateInterface::getAiFreeToExit(const Object* exiter) const
 void ContainModuleInterface::orderAllPassengersToExit(CommandSourceType src, Bool instantly) { L(LOG_CONTAIN, { 2u, (unsigned)src, (unsigned)instantly }); }
 UpdateModule *Object::findUpdateModule(UnsignedInt key) const
 {
+	/* batch A35: a dock's supply modules (another object's: the scene's masks) */
+	static const char *const supplyNames[2] = { "SupplyWarehouseDockUpdate", "SupplyCenterDockUpdate" };
+	for (int i = 0; i < 2; ++i)
+		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(supplyNames[i])))
+			return (m_otherId && ((g_aiEnv.supplyDockMasks[i] >> m_otherId) & 1)) ? (UpdateModule *)&g_moduleDummy[0] : NULL;
 	static const char *const names[3] = { "DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate" };
 	for (int i = 0; i < 3; ++i)
 		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(names[i]))) {
@@ -2145,6 +2224,13 @@ void setScene(const AiEnv *env)
 	g_deployData.m_manualDeployAnimations = (env->deployFlags & 8) != 0;
 	/* batch A32: an AssaultTransportAIUpdate's data */
 	g_assaultData.m_membersGetHealedAtLifeRatio = env->assaultRatio;
+	/* batch A35: a SupplyTruckAIUpdate's data */
+	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
+	g_supplyData.m_centerDelay = env->supplyDelays[0];
+	g_supplyData.m_warehouseDelay = env->supplyDelays[1];
+	g_supplyData.m_warehouseScanDistance = env->supplyScan;
+	g_supplyData.m_suppliesDepletedVoice = AudioEventRTS();
+	if (env->supplyFlags & 1) g_supplyData.m_suppliesDepletedVoice.setEventName(AsciiString("s7"));
 	/* batch A34: a HackInternetAIUpdate's data */
 	g_hackData.m_unpackTime = env->hackTimes[0];
 	g_hackData.m_packTime = env->hackTimes[1];
@@ -2373,6 +2459,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 4: g_ai_update = new (ShimZeroFill{}) AssaultTransportAIUpdate(NULL, NULL); break;
 		case 5: g_ai_update = new (ShimZeroFill{}) RailedTransportAIUpdate(NULL, NULL); break;
 		case 6: g_ai_update = new (ShimZeroFill{}) HackInternetAIUpdate(NULL, NULL); break;
+		/* (batch A35: the object has no AI while its AI is made: the machine's default state asks) */
+		case 7: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) SupplyTruckAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2490,6 +2578,10 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 65: r.push_back((unsigned)ai->update()); break;
 	/* batch A32: the weapon's beginAssault (an assault transport's; nothing for another class) */
 	case 100: if (g_aiEnv.subclass == 4) ((AssaultTransportAIUpdate *)ai)->beginAssault(findObject((ObjectID)ia[0])); break;
+	/* batch A35: the docks' calls to a supply truck (nothing for another class) */
+	case 101: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->gainOneBox(ia[0]) ? 1u : 0u); break;
+	case 102: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->loseOneBox() ? 1u : 0u); break;
+	case 103: if (g_aiEnv.subclass == 7) ((SupplyTruckAIUpdate *)ai)->setForceWantingState(ia[0] != 0); break;
 	case 66: ai->onObjectCreated(); break;
 	case 67: if (ia[0]) ai->getStateMachine()->lock("op"); else ai->getStateMachine()->unlock(); break;
 	case 68: ai->getStateMachine()->addToGoalPath(&p); break;
@@ -3152,6 +3244,18 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A35: a SupplyTruckAIUpdate's members and its machine's */
+	if (g_aiEnv.subclass == 7) {
+		const SupplyTruckAIUpdate *t = (const SupplyTruckAIUpdate *)ai;
+		putU32(v, (unsigned)t->m_preferredDock);
+		putU32(v, (unsigned)t->m_numberBoxes);
+		putU32(v, t->m_forcePending ? 1u : 0u);
+		putU32(v, t->m_forcedBusyPending ? 1u : 0u);
+		const SupplyTruckStateMachine *m = t->m_supplyTruckStateMachine;
+		putU32(v, m->m_currentState ? (unsigned)m->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+		putU32(v, m->m_sleepTill);
+		putU32(v, m->m_defaultStateInited ? 1u : 0u);
+	}
 	/* batch A34: a HackInternetAIUpdate's members (the waiting command's storage) and its machine's three states' frames */
 	if (g_aiEnv.subclass == 6) {
 		const HackInternetAIUpdate *k = (const HackInternetAIUpdate *)ai;
@@ -3314,4 +3418,48 @@ Bool AIUpdateInterface::isIdle() const
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 6) return ((const HackInternetAIUpdate *)this)->hackIsIdle();
 	return baseIsIdle();
+}
+
+/* batch A35: the supply truck's world (LOG_SUPPLY) and the virtual getSupplyTruckAIInterface's dispatch (a supply truck itself) */
+static ResourceGatheringManager g_resources;
+ResourceGatheringManager *Player::getResourceGatheringManager() { return &g_resources; }
+Object *ResourceGatheringManager::findBestSupplyCenter(Object *queryObject)
+{
+	Object *o = findObject((ObjectID)g_aiEnv.supplyBest[0]);
+	L(LOG_SUPPLY, { 0, o ? (unsigned)o->getID() : 0u });
+	return o;
+}
+Object *ResourceGatheringManager::findBestSupplyWarehouse(Object *queryObject)
+{
+	Object *o = findObject((ObjectID)g_aiEnv.supplyBest[1]);
+	L(LOG_SUPPLY, { 1, o ? (unsigned)o->getID() : 0u });
+	return o;
+}
+Object *Player::findClosestByKindOf(Object *queryObject, KindOfMaskType setKindOf, KindOfMaskType clearKindOf)
+{
+	const KindOfType kinds[3] = { KINDOF_CASH_GENERATOR, KINDOF_COMMANDCENTER, KINDOF_STRUCTURE };
+	for (int i = 0; i < 3; ++i) {
+		if (!setKindOf.test(kinds[i])) continue;
+		Object *o = findObject((ObjectID)g_aiEnv.supplyClosest[i]);
+		L(LOG_SUPPLY, { 2, (unsigned)kinds[i], o ? (unsigned)o->getID() : 0u });
+		return o;
+	}
+	abort();
+}
+Real PartitionManager::getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec)
+{
+	/* (the stand-in's: FROM_BOUNDINGSPHERE_2D as the centres' 2-D distance) */
+	if (dc != FROM_BOUNDINGSPHERE_2D) abort();
+	const Coord3D *a = obj->getPosition();
+	const Coord3D *b = otherObj->getPosition();
+	Real dx = b->x - a->x, dy = b->y - a->y;
+	Real d = dx * dx + dy * dy;
+	L(LOG_SUPPLY, { 3, (unsigned)otherObj->getID(), bitsOf(d) });
+	return d;
+}
+void Drawable::updateDrawableSupplyStatus(Int maxSupply, Int currentSupply) { L(LOG_SUPPLY, { 4, (unsigned)maxSupply, (unsigned)currentSupply }); }
+SupplyTruckAIInterface *AIUpdateInterface::getSupplyTruckAIInterface()
+{
+	if (this == g_ai_update && g_aiEnv.subclass == 7) return (SupplyTruckAIUpdate *)this;
+	return NULL;
 }

@@ -17,6 +17,9 @@ public:
 	const AsciiString& getEventName() const { return m_eventName; }
 	void setObjectID(ObjectID id) { m_objectID = id; }
 	ObjectID getObjectID() const { return m_objectID; }
+	/* batch A35 (the depleted voice keeps its handle) */
+	void setPlayingHandle(AudioHandle h) { m_playingHandle = h; }
+	AudioHandle m_playingHandle;
 	AsciiString m_eventName;
 	ObjectID m_objectID;
 };

@@ -215,6 +215,16 @@ struct AiEnv
 	Real hackVariation;
 	Int hackFlags;
 	Int hackLevel;
+	/* batch A35: a SupplyTruckAIUpdate's data (max boxes; center and warehouse delays; scan distance; bit 0 of the flags: its
+	** depleted voice named) and the truck's world (the resource manager's best center and warehouse, the player's closest cash
+	** generator, command center and structure; the objects with a warehouse's or a center's dock module) */
+	Int supplyMaxBoxes;
+	UnsignedInt supplyDelays[2];
+	Real supplyScan;
+	Int supplyFlags;
+	Int supplyBest[2];
+	Int supplyClosest[3];
+	UnsignedInt supplyDockMasks[2];
 };
 
 extern AiEnv g_aiEnv;
@@ -249,10 +259,22 @@ enum
 	LOG_CLEAR_MODEL_FLAGS = 110,	/* batch A31: clearModelConditionFlags { the conditions, in increasing order } */
 	LOG_MEMBER_AI = 111,	/* batch A32: an assault member's AI { kind, the member, words.. } (see wrap_ai.cpp) */
 	LOG_RAILED = 112,	/* batch A33: the railed transport's docks { 0 setDockOpen, open; 1 isLoadingOrUnloading, answer; 2 unloadAll } */
+	LOG_SUPPLY = 114,	/* batch A35: the supply truck's world { 0 findBestSupplyCenter, answer; 1 findBestSupplyWarehouse, answer;
+			** 2 findClosestByKindOf, kind, answer; 3 getDistanceSquared to an object (2-D), it, bits; 4 updateDrawableSupplyStatus,
+			** max, boxes } */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
 
+/* batch A35: KindOf.h's KindOfMaskType (BitFlags<KINDOF_COUNT>), as far as the supply truck's regrouping uses it */
+struct KindOfMaskType
+{
+	unsigned long long m_bits[4];
+	KindOfMaskType() { clear(); }
+	void set(KindOfType t) { m_bits[t >> 6] |= 1ULL << (t & 63); }
+	void clear() { m_bits[0] = m_bits[1] = m_bits[2] = m_bits[3] = 0; }
+	Bool test(KindOfType t) const { return (m_bits[t >> 6] >> (t & 63)) & 1; }
+};
 /* batch A4: ModelConditionFlags (ModelState.h's BitFlags<MODELCONDITION_COUNT>), as far as AIDeadState uses it */
 struct ModelConditionFlags
 {
@@ -432,6 +454,8 @@ public:
 	Real getGroundOrStructureHeight(Real posx, Real posy);
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
+	/* batch A35: object to object (FROM_BOUNDINGSPHERE_2D only; logged) */
+	Real getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec = NULL);
 	/* batch A5 */
 	/* batch A16: the attack-squad state's (filters[0] a PartitionFilterAcceptOnSquad) */
 	Object *getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
@@ -589,6 +613,9 @@ public:
 	/* batch A34 (the hacker's: the scene's) */
 	class Money *getMoney();
 	class ScoreKeeper *getScoreKeeper();
+	/* batch A35 (the supply truck's: logged) */
+	class ResourceGatheringManager *getResourceGatheringManager();
+	Object *findClosestByKindOf( Object *queryObject, KindOfMaskType setKindOf, KindOfMaskType clearKindOf );
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
 	/* batch A17: the existing other objects, in id order */
@@ -730,6 +757,8 @@ public:
 	void setAnimationFrame( int frame );
 	/* batch A34 (logged) */
 	void setAnimationLoopDuration( UnsignedInt numFrames );
+	/* batch A35 (logged) */
+	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
 class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE ); };
@@ -771,7 +800,18 @@ public:
 	Bool isLoadingOrUnloading( void );
 	void unloadAll( void );
 };
-class SupplyTruckAIInterface { public: UnsignedInt getActionDelayForDock( Object *dock ); };
+/* batch A35: SupplyTruckAIUpdate.h's SupplyTruckAIInterface and WorkerAIUpdate.h's WorkerAIInterface, verbatim (the stand-in
+** before batch A35 answered the dock's delay 0) */
+#include "ai_supply_iface_a35.inc"
+/* batch A35: the player's ResourceGatheringManager, as far as the supply truck reaches it (logged) */
+class ResourceGatheringManager
+{
+public:
+	Object *findBestSupplyWarehouse( Object *queryObject );
+	Object *findBestSupplyCenter( Object *queryObject );
+};
+class SupplyWarehouseDockUpdate;
+class SupplyCenterDockUpdate;
 /* batch A18: never reached (see Player::getAcademyStats) */
 class AcademyStats { public: void recordGuardAbilityUsed(); };
 /* batch A15: FXList.h's doFXObj (logged) */

@@ -31,6 +31,7 @@ pub mod assault_transport_ai_update;
 pub mod deploy_style_ai_update;
 pub mod hack_internet_ai_update;
 pub mod railed_transport_ai_update;
+pub mod supply_truck_ai_update;
 pub mod ai_update_xfer;
 pub mod ai_fire_host;
 pub mod ai_paths;

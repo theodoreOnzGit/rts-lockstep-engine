@@ -1066,6 +1066,16 @@ pub struct AiEnv {
     pub hack_variation: c_float,
     pub hack_flags: c_int,
     pub hack_level: c_int,
+    // batch A35: a SupplyTruckAIUpdate's data (max boxes; center and warehouse delays; scan distance; bit 0 of the flags: its
+    // depleted voice named) and the truck's world (the resource manager's best center and warehouse, the player's closest cash
+    // generator, command center and structure; the objects with a warehouse's or a center's dock module)
+    pub supply_max_boxes: c_int,
+    pub supply_delays: [c_uint; 2],
+    pub supply_scan: c_float,
+    pub supply_flags: c_int,
+    pub supply_best: [c_int; 2],
+    pub supply_closest: [c_int; 3],
+    pub supply_dock_masks: [c_uint; 2],
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

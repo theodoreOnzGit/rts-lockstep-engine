@@ -83,7 +83,7 @@ use rts_lockstep_engine::common::game_type::{ObjectId, PathfindLayer, LAYER_GROU
 use rts_lockstep_engine::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, TYPE_TABLE};
 use rts_lockstep_engine::common::game_common::{AbleToAttackType, PlayerType};
 use rts_lockstep_engine::common::kind_of::{
-    KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
+    KindOfMaskType, KindOfType, KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT, KINDOF_CASH_GENERATOR, KINDOF_COMMANDCENTER, KINDOF_DOZER, KINDOF_IGNORED_IN_GUI, KINDOF_IMMOBILE, KINDOF_INFANTRY,
     KINDOF_PRODUCED_AT_HELIPAD, KINDOF_PROJECTILE, KINDOF_CAN_BE_REPULSED, KINDOF_BRIDGE, KINDOF_PORTABLE_STRUCTURE, KINDOF_CAN_ATTACK,
     KINDOF_MINE, KINDOF_SPAWNS_ARE_THE_WEAPONS, KINDOF_STRUCTURE, KINDOF_AIRCRAFT, KINDOF_DONT_AUTO_CRUSH_INFANTRY,
     KINDOF_CAN_RAPPEL, KINDOF_DRONE,
@@ -117,6 +117,8 @@ use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTranspo
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::railed_transport_ai_update::{RailedTransport, RailedTransportData};
 use rts_lockstep_engine::logic::ai::hack_internet_ai_update::{HackInternet, HackInternetData};
+use rts_lockstep_engine::common::state_machine::StateMachine;
+use rts_lockstep_engine::logic::ai::supply_truck_ai_update::{self as supply, SupplyDockKind, SupplyTruck, SupplyTruckData};
 use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
@@ -216,6 +218,7 @@ const L_CLEAR_MODEL_FLAGS: u32 = 110;
 const L_MEMBER_AI: u32 = 111;
 const L_RAILED: u32 = 112;
 const L_HACK: u32 = 113;
+const L_SUPPLY: u32 = 114;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -321,6 +324,8 @@ struct Host {
     rng: RandomValues,
     /// Batch A4: the AIs whose machines are running (the AI's state, lent while its machine runs).
     ai_stack: Vec<AiUpdate>,
+    /// Batch A35: the AI's machine, lent while the supply truck's machine runs.
+    ai_machines: Vec<StateMachine<AiState<Host>>>,
     /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
     pf_ignore: ObjectId,
     /// Batch A7: TheAudio's next handle (from 1 in each case).
@@ -1023,6 +1028,59 @@ impl AiStateHost for Host {
     }
     fn hack_cash_floating_text(&mut self, amount: u32) {
         self.l(L_HACK, &[4, amount]);
+    }
+    // batch A35: the supply truck's world (the wrapper's stand-ins: the scene's objects; the 2-D distance of the centres; LOG_SUPPLY)
+    fn ai_machine_stack(&mut self) -> &mut Vec<StateMachine<AiState<Host>>> {
+        &mut self.ai_machines
+    }
+    fn supply_find_best_center(&mut self) -> ObjectId {
+        let o = self.env.supply_best[0];
+        let o = if self.object_exists(o) { o } else { 0 };
+        self.l(L_SUPPLY, &[0, o as u32]);
+        o
+    }
+    fn supply_find_best_warehouse(&mut self) -> ObjectId {
+        let o = self.env.supply_best[1];
+        let o = if self.object_exists(o) { o } else { 0 };
+        self.l(L_SUPPLY, &[1, o as u32]);
+        o
+    }
+    fn player_find_closest_by_kind_of(&mut self, kind: KindOfType) -> ObjectId {
+        let i = match kind {
+            KINDOF_CASH_GENERATOR => 0,
+            KINDOF_COMMANDCENTER => 1,
+            _ => 2,
+        };
+        let o = self.env.supply_closest[i];
+        let o = if self.object_exists(o) { o } else { 0 };
+        self.l(L_SUPPLY, &[2, kind as u32, o as u32]);
+        o
+    }
+    fn distance_squared_to_object_2d(&mut self, other: ObjectId) -> f32 {
+        let a = *self.thing.position();
+        let b = self.object_position(other);
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let d = dx * dx + dy * dy;
+        self.l(L_SUPPLY, &[3, other as u32, d.to_bits()]);
+        d
+    }
+    fn dock_supply_kind(&mut self, dock: ObjectId) -> SupplyDockKind {
+        let other = (1..32).contains(&dock);
+        if other && (self.env.supply_dock_masks[0] >> dock) & 1 != 0 {
+            SupplyDockKind::Warehouse
+        } else if other && (self.env.supply_dock_masks[1] >> dock) & 1 != 0 {
+            SupplyDockKind::Center
+        } else {
+            SupplyDockKind::None
+        }
+    }
+    fn drawable_update_supply_status(&mut self, max_boxes: i32, boxes: i32) {
+        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
+            self.l(L_SUPPLY, &[4, max_boxes as u32, boxes as u32]);
+        }
+    }
+    fn play_supplies_depleted_voice(&mut self) {
+        self.audio_add(7);
     }
     fn railed_set_dock_open(&mut self, open: bool) {
         if self.env.rail_flags & 1 != 0 {
@@ -2693,6 +2751,12 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A35: a SupplyTruckAIUpdate's members and its machine's
+    if let AiSubclass::SupplyTruck(t) = &module.ai().subclass {
+        v.extend([t.preferred_dock as u32, t.number_boxes as u32, u32::from(t.force_pending), u32::from(t.forced_busy_pending)]);
+        let m = module.supply_machine.as_ref().expect("the supply truck's machine");
+        v.extend([m.get_current_state_id(), m.peek_sleep_till(), u32::from(m.is_default_state_inited())]);
+    }
     // batch A34: a HackInternetAIUpdate's members (the waiting command's storage) and its machine's three states' frames
     if let AiSubclass::HackInternet(k) = &module.ai().subclass {
         let c = &k.pending_command;
@@ -2882,7 +2946,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6][g.below(12) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7][g.below(14) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -2901,6 +2965,15 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.hack_variation = [0.0, 0.1, 0.5][g.below(3) as usize];
     e.hack_flags = g.below(16) as i32;
     e.hack_level = g.below(4) as i32;
+    // batch A35: a supply truck's data and world (the scene's objects, now and then none)
+    e.supply_max_boxes = g.below(5) as i32;
+    e.supply_delays = [g.below(20), g.below(20)];
+    e.supply_scan = [100.0, 40.0, 400.0][g.below(3) as usize];
+    e.supply_flags = g.below(2) as i32;
+    let some = |g: &mut Gen| if g.below(4) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    e.supply_best = [some(g), some(g)];
+    e.supply_closest = [some(g), some(g), some(g)];
+    e.supply_dock_masks = [g.u32(), g.u32()];
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -3083,6 +3156,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if e.subclass == 7 && g.below(6) == 0 {
+        // batch A35: the docks' calls to a supply truck
+        [101, 101, 102, 103][g.below(4) as usize]
     } else if e.subclass == 4 && g.below(10) == 0 {
         // batch A32: the weapon's beginAssault, at an object (or none)
         100
@@ -3296,6 +3372,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             }
         }
         100 => ia[0] = g.below(32) as i32,
+        101 => ia[0] = [0, 0, 1, 5][g.below(4) as usize],
+        103 => ia[0] = g.below(2) as i32,
         _ => {}
     }
     (op, fa, ia)
@@ -3620,6 +3698,21 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             }
             Err(e) => panic!("update: {e}"),
         },
+        // batch A35: the docks' calls to a supply truck
+        101..=103 => {
+            let mut r = vec![];
+            let mut s = match &module.ai().subclass {
+                AiSubclass::SupplyTruck(s) => *s,
+                _ => return vec![],
+            };
+            match op {
+                101 => r.push(u32::from(supply::gain_one_box(h, &mut s, ia[0]))),
+                102 => r.push(u32::from(supply::lose_one_box(h, &mut s))),
+                _ => s.force_pending = ia[0] != 0,
+            }
+            module.ai_mut().subclass = AiSubclass::SupplyTruck(s);
+            r
+        }
         // batch A32: the weapon's beginAssault
         100 => {
             let t = ia[0];
@@ -3745,7 +3838,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 101],
+    ops: [u64; 104],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -3796,7 +3889,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 101],
+            ops: [0; 104],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -3848,6 +3941,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         names: NameKeyGenerator::new(),
         rng: RandomValues::default(),
         ai_stack: Vec::new(),
+        ai_machines: Vec::new(),
         pf_ignore: 0,
         next_audio: 1,
         team_waypoint: None,
@@ -3945,6 +4039,13 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let subclass = match host.env.subclass {
         1 => AiSubclass::Wander,
         2 => AiSubclass::Transport,
+        7 => AiSubclass::SupplyTruck(SupplyTruck::new(SupplyTruckData {
+            max_boxes: host.env.supply_max_boxes,
+            center_delay: host.env.supply_delays[0],
+            warehouse_delay: host.env.supply_delays[1],
+            warehouse_scan_distance: host.env.supply_scan,
+            has_depleted_voice: host.env.supply_flags & 1 != 0,
+        })),
         6 => AiSubclass::HackInternet(HackInternet::new(HackInternetData {
             unpack_time: host.env.hack_times[0],
             pack_time: host.env.hack_times[1],
@@ -3972,7 +4073,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         })),
         _ => AiSubclass::Plain,
     };
-    let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass);
+    let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
     if host.env.has_machine != 0 {
         // batch A4: the object's creation makes the machine
         module.on_object_created(&mut host).expect("onObjectCreated");
@@ -4389,6 +4490,23 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A35; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `SupplyTruckAIUpdate` (SupplyTruckAIUpdate.cpp cut verbatim with its header's machine, states and interface, and
+///   WorkerAIUpdate.h's interface; the resource manager's best center and warehouse, the player's closest by kind, the 2-D distance
+///   to an object and the drawable's supply status the scene's stand-ins, `LOG_SUPPLY`; the dock's warehouse and center modules by
+///   the scene's masks; the depleted voice "s7"; the docks' calls `gainOneBox`, `loseOneBox`, `setForceWantingState` as ops
+///   101-103): a seventh of the cases: 30,000 constructions and 1,797,876 operations, **0 mismatches** in the results, the call
+///   logs and the dumps (its members and its machine's state, sleep and default-state flag added).
+/// - The first runs found two mistakes of the translation, fixed: the transitions checked on entering the default state in the AI's
+///   constructor reached the AI (upstream: none yet, so every condition answers false), and the CRC took the machine's `xfer`
+///   (upstream's `xferSnapshot` in CRC mode is its `crc`, which writes nothing). `getSupplyTruckAIInterface` is dispatched
+///   explicitly in the harness, as `isIdle` (another object's AI has no vtable); the stand-in interface answering the dock's
+///   delay 0 is gone.
+/// - Planted bugs (5,000 cases each): 3660 (the wanting state's dock; 57 mismatches), 3661 (regrouping near the base; 1), 3662
+///   (forced busy; 2), 3663 (a full truck; 421), 3664 (the player's idle; 9), 3665 (the preferred dock; 18), 3666 (the snapshot's
+///   forced-wanting flag; 445), 3667 (the snapshot's machine; 383) caught.
+///
 /// # Results (2026-10-29, batch A34; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `HackInternetAIUpdate` (HackInternetAIUpdate.cpp cut verbatim with its header's states and machine, but for the floating cash

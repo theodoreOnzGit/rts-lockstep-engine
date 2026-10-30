@@ -270,7 +270,16 @@ pub fn wait_xfer(enter_frame: &mut u32, xfer: &mut dyn Xfer) -> XferResult<()> {
 fn set_next_dock_action_frame<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
     let now = StateContext::frame(h);
     let goal = sm.goal_object_id();
-    let next = match h.supply_truck_action_delay(goal) {
+    // (batch A35: a supply truck's own; another's the host's)
+    let own = match &ai(h).subclass {
+        crate::logic::ai::ai_update::AiSubclass::SupplyTruck(s) => Some(*s),
+        _ => None,
+    };
+    let delay = match own {
+        Some(s) => Some(crate::logic::ai::supply_truck_ai_update::action_delay_for_dock(h, &s, goal)),
+        None => h.supply_truck_action_delay(goal),
+    };
+    let next = match delay {
         Some(delay) => now.wrapping_add(delay),
         None => now,
     };

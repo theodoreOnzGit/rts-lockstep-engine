@@ -270,7 +270,15 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
         AICMD_TIGHTEN_TO_POSITION => private_tighten_to_position(sm, h, &p.pos, src),
         AICMD_MOVE_TO_POSITION_AND_EVACUATE => private_move_to_and_evacuate(sm, h, &p.pos, src, false),
         AICMD_MOVE_TO_POSITION_AND_EVACUATE_AND_EXIT => private_move_to_and_evacuate(sm, h, &p.pos, src, true),
-        AICMD_IDLE => private_idle(sm, h, src),
+        AICMD_IDLE => {
+            // (batch A35: `SupplyTruckAIUpdate::privateIdle`: the player's idle forces it busy)
+            if let AiSubclass::SupplyTruck(s) = &mut ai(h).subclass {
+                if src == CMD_FROM_PLAYER && !plant(3664) {
+                    s.forced_busy_pending = true;
+                }
+            }
+            private_idle(sm, h, src)
+        }
         AICMD_FOLLOW_WAYPOINT_PATH => private_follow_waypoint_path(sm, h, p.waypoint, src, AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS),
         AICMD_FOLLOW_WAYPOINT_PATH_AS_TEAM => private_follow_waypoint_path(sm, h, p.waypoint, src, AI_FOLLOW_WAYPOINT_PATH_AS_TEAM),
         AICMD_FOLLOW_WAYPOINT_PATH_EXACT => private_follow_waypoint_path(sm, h, p.waypoint, src, AI_FOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS_EXACT),
@@ -303,7 +311,17 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
             ai_dock(sm, h, p.obj, src)
         }
         AICMD_ENTER => private_enter(sm, h, p.obj, src),
-        AICMD_DOCK => private_goal_object_state(sm, h, p.obj, src, AI_DOCK, false),
+        AICMD_DOCK => {
+            private_goal_object_state(sm, h, p.obj, src, AI_DOCK, false)?;
+            // (batch A35: `SupplyTruckAIUpdate::privateDock`: the player's dock is preferred)
+            let dock = if h.object_exists(p.obj) { p.obj } else { INVALID_ID };
+            if let AiSubclass::SupplyTruck(s) = &mut ai(h).subclass {
+                if src == CMD_FROM_PLAYER && dock != INVALID_ID && !plant(3665) {
+                    s.preferred_dock = dock;
+                }
+            }
+            Ok(())
+        }
         AICMD_EXIT => private_exit(sm, h, p.obj, src, AI_EXIT),
         AICMD_EXIT_INSTANTLY => private_exit(sm, h, p.obj, src, AI_EXIT_INSTANTLY),
         AICMD_EVACUATE if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) => {

@@ -183,6 +183,24 @@ pub trait AiStateHost: AiHost + StateContext {
     fn is_locally_controlled(&mut self, id: ObjectId) -> bool;
     /// Batch A34: the hacker's floating "+cash" text (the client's `TheInGameUI->addFloatingText`).
     fn hack_cash_floating_text(&mut self, amount: u32);
+    /// Batch A35: the AI's machines lent to the host while a machine beside them runs (the supply truck's), the innermost last.
+    fn ai_machine_stack(&mut self) -> &mut Vec<StateMachine<AiState<Self>>>
+    where
+        Self: Sized;
+    /// Batch A35: the controlling player's `getResourceGatheringManager()->findBestSupplyCenter(owner)` (`INVALID_ID`: none).
+    fn supply_find_best_center(&mut self) -> ObjectId;
+    /// Batch A35: its `findBestSupplyWarehouse(owner)` (`INVALID_ID`: none).
+    fn supply_find_best_warehouse(&mut self) -> ObjectId;
+    /// Batch A35: the controlling player's `findClosestByKindOf(owner, kind, none)` (`INVALID_ID`: none).
+    fn player_find_closest_by_kind_of(&mut self, kind: crate::common::kind_of::KindOfType) -> ObjectId;
+    /// Batch A35: `ThePartitionManager->getDistanceSquared(owner, other, FROM_BOUNDINGSPHERE_2D)`.
+    fn distance_squared_to_object_2d(&mut self, other: ObjectId) -> f32;
+    /// Batch A35: a dock's supply module (`findUpdateModule` of the warehouse's, then the center's).
+    fn dock_supply_kind(&mut self, dock: ObjectId) -> crate::logic::ai::supply_truck_ai_update::SupplyDockKind;
+    /// Batch A35: `getDrawable()->updateDrawableSupplyStatus(maxBoxes, boxes)`, when the object has a drawable.
+    fn drawable_update_supply_status(&mut self, max_boxes: i32, boxes: i32);
+    /// Batch A35: the supplies-depleted voice (the data's), with the object's id, added to `TheAudio`.
+    fn play_supplies_depleted_voice(&mut self);
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1504,19 +1522,29 @@ pub struct AiUpdateModule<H: AiStateHost> {
     pub ai: Option<AiUpdate>,
     /// `m_stateMachine`.
     pub machine: Option<StateMachine<AiState<H>>>,
+    /// Batch A35: a supply truck's `m_supplyTruckStateMachine` (none for another class).
+    pub supply_machine: Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<H>>>,
 }
 
 impl<H: AiStateHost> AiUpdateModule<H> {
     /// `AIUpdateInterface(thing, moduleData)`: the AI's state (the machine is made by `onObjectCreated`).
     pub fn new(h: &mut H, data: Arc<AiUpdateModuleData>) -> Self {
-        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None }
+        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None }
     }
 
     /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
-    pub fn new_subclass(h: &mut H, data: Arc<AiUpdateModuleData>, subclass: crate::logic::ai::ai_update::AiSubclass) -> Self {
+    pub fn new_subclass(h: &mut H, data: Arc<AiUpdateModuleData>, subclass: crate::logic::ai::ai_update::AiSubclass) -> SmResult<Self> {
         let mut m = Self::new(h, data);
+        let supply = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_));
         m.ai_mut().subclass = subclass;
-        m
+        if supply {
+            // (batch A35: `SupplyTruckAIUpdate`'s constructor makes its machine and enters its default state; the object has no AI
+            // yet: nothing is lent)
+            let mut sm = crate::logic::ai::supply_truck_ai_update::make_supply_machine()?;
+            sm.init_default_state(h)?;
+            m.supply_machine = Some(sm);
+        }
+        Ok(m)
     }
 
     /// The AI's state.
@@ -1593,6 +1621,20 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 }
                 self.base_update(h)?;
                 Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) => {
+                // batch A35: the autopilot machine (the AI and its machine lent), then the base's update; the earlier wake
+                let mut supply = self.supply_machine.take().expect("the supply truck's machine");
+                h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
+                h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
+                let r = supply.update_state_machine(h);
+                self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+                self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+                self.supply_machine = Some(supply);
+                let st_ret = r?;
+                let mine = if st_ret.is_sleep() { update_sleep(st_ret.sleep_frames()) } else { UPDATE_SLEEP_NONE };
+                let ret = self.base_update(h)?;
+                Ok(if mine < ret { mine } else { ret })
             }
             crate::logic::ai::ai_update::AiSubclass::HackInternet(_) => {
                 // batch A34: the waiting command given when idle, then the base's update; "for now, must not sleep."

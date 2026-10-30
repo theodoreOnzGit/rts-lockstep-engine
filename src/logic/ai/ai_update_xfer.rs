@@ -104,6 +104,26 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) = self.ai().subclass {
+            // batch A35: `SupplyTruckAIUpdate::xfer` (version 1): the base's, its machine, the preferred dock, the boxes, the
+            // forced-wanting flag
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            // (`xferSnapshot`: in CRC mode the machine's `crc`, `StateMachine::crc`'s nothing)
+            if xfer.get_xfer_mode() != XferMode::Crc && !plant(3667) {
+                crate::logic::ai::supply_truck_ai_update::supply_machine_xfer(self.supply_machine.as_mut().expect("the supply truck's machine"), xfer)?;
+            }
+            if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(s) = &mut self.ai_mut().subclass {
+                xfer.xfer_object_id(&mut s.preferred_dock)?;
+                xfer.xfer_int(&mut s.number_boxes)?;
+                if !plant(3666) {
+                    xfer.xfer_bool(&mut s.force_pending)?;
+                }
+            }
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::HackInternet(_) = self.ai().subclass {
             // batch A34: `HackInternetAIUpdate::xfer` (version 1): the base's, then the waiting command
             let current_version: XferVersion = 1;
