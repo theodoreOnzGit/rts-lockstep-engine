@@ -12,7 +12,8 @@ typedef UnsignedInt AudioHandle;
 class AudioEventRTS
 {
 public:
-	AudioEventRTS() : m_objectID(INVALID_ID) {}
+	/* (batch A41: the handle 0, as upstream's constructor) */
+	AudioEventRTS() : m_playingHandle(0), m_objectID(INVALID_ID) {}
 	void setEventName(AsciiString name) { m_eventName = name; }
 	const AsciiString& getEventName() const { return m_eventName; }
 	void setObjectID(ObjectID id) { m_objectID = id; }
@@ -23,6 +24,8 @@ public:
 	void setPlayingHandle(AudioHandle h) { m_playingHandle = h; }
 	/* batch A38 */
 	AudioHandle getPlayingHandle() const { return m_playingHandle; }
+	/* batch A41 (the scene's, logged) */
+	Bool isCurrentlyPlaying() const;
 	AudioHandle m_playingHandle;
 	AsciiString m_eventName;
 	ObjectID m_objectID;
@@ -37,6 +40,9 @@ class AudioManager
 public:
 	AudioHandle addAudioEvent( const AudioEventRTS *eventToAdd );
 	void removeAudioEvent( AudioHandle audioEvent );
+	/* batch A41: the wheels' screech ("s10") and the lock-on's tick ("s11") */
+	struct MiscAudio { AudioEventRTS m_aircraftWheelScreech; AudioEventRTS m_lockonTickSound; };
+	MiscAudio *getMiscAudio();
 };
 extern AudioManager *TheAudio;
 #endif

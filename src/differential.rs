@@ -1133,6 +1133,20 @@ pub struct AiEnv {
     pub chinook_world: [c_int; 3],
     pub chinook_masks: [c_uint; 2],
     pub chinook_rider: c_int,
+    // batch A41: a JetAIUpdate's data (reals: the out-of-ammo damage, the take-off distance for full lift, the minimum height, the
+    // parking offset, the sneaky offset, the lock-on's initial distance, frequency and spin; ints: flags (1 keeps its parking space
+    // airborne, 2 needs a runway, 4 the lock-on blinks, 8 the lock-on cursor "lockon"), the take-off pause, the attacking and the
+    // returning locomotor sets, the attack locomotor's and the attackers' miss persist times, the lock-on time, the idle time before
+    // returning to base, its producer), its parking places' world (the reserve-space, reserve-runway and better-parking rates; flags:
+    // 1 a space reserved, 2 taxi locations, 4 creation locations, 8 the deck height status, 16 the reassign-parking status,
+    // 32 countermeasures, 64 a drawable, 128 attacking; the runway count and its two reservations (bytes 0-2); the suitable airfield),
+    // the parking place's reals (the approach height, the landing deck's height offset, the take-off distance) and the weapons' (per
+    // slot: 1 returns to base to reload, the clip (bits 1-4), the ammunition (bits 5-8), the clip's reload time (bits 9-16))
+    pub jet_reals: [c_float; 8],
+    pub jet_ints: [c_int; 10],
+    pub jet_world: [c_int; 6],
+    pub jet_pp: [c_float; 3],
+    pub jet_weapons: [c_int; 3],
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

@@ -130,6 +130,7 @@ use rts_lockstep_engine::logic::radius_decal::RadiusDecalTemplate;
 use rts_lockstep_engine::logic::ai::dozer_ai_update::{self as dozer, Dozer, DozerActionState, DozerData, DozerPrimaryState};
 use rts_lockstep_engine::logic::ai::worker_ai_update::{self as worker, Worker, WorkerData, WorkerState};
 use rts_lockstep_engine::logic::ai::chinook_ai_update::{self as chinook, Chinook, ChinookData, RopeCall};
+use rts_lockstep_engine::logic::ai::jet_ai_update::{self as jet, Jet, JetData, PpInfo};
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::logic::ai::supply_truck_ai_update::SupplyState;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
@@ -235,6 +236,8 @@ const L_DELIVER: u32 = 116;
 const L_DOZER: u32 = 117;
 /// Batch A40: the chinook's world (the wrapper's LOG_CHINOOK).
 const L_CHINOOK: u32 = 118;
+/// Batch A41: the jet's world (the wrapper's LOG_JET).
+const L_JET: u32 = 119;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -348,6 +351,9 @@ struct Host {
     /// Batch A38: the dozer's machine, lent while its AI runs; the goal objects' construction percents set this operation (the
     /// wrapper's objects are made anew every operation) and the constructed object's position.
     dozer_machines: Vec<Option<StateMachine<DozerPrimaryState<Host>>>>,
+    /// Batch A41: the jet's producer and its weapons' ammunition (the case's, from the scene's).
+    jet_producer: ObjectId,
+    jet_ammo: [i32; 3],
     /// Batch A40: the chinook's ropes' next drawable (ids 1 ..= 63, from 1 in each case, as the wrapper's).
     next_rope: u32,
     /// Batch A39: the worker's supply truck machine and its own, lent while its AI runs.
@@ -394,7 +400,41 @@ impl Host {
     /// The object's drawable (the wrapper's `getDrawable`): a hacker's, a deployer's or (batch A37) a delivering AI's when the scene
     /// says so.
     fn drawable(&self) -> bool {
-        self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 || (self.env.subclass == 9 && self.env.deliver_flags & 1 != 0)
+        self.env.subclass == 6
+            || (self.env.deploy_flags >> 4) & 1 != 0
+            || (self.env.subclass == 9 && self.env.deliver_flags & 1 != 0)
+            // (batch A41: a jet's when the scene says so)
+            || (self.env.subclass == 13 && self.env.jet_world[3] & 64 != 0)
+    }
+
+    /// Batch A41: the wrapper's parking place's `calcPPInfo` (logged): from the airfield's position and the hash of it and the jet.
+    fn jet_pp_info(&mut self, airfield: ObjectId, id: ObjectId) -> PpInfo {
+        self.l(L_JET, &[6, airfield as u32, id as u32]);
+        let a = if self.object_exists(airfield) { self.object_position(airfield) } else { Coord3D::default() };
+        let hh = p1_hash(self.env.seed, 151, &[airfield as u32, id as u32]);
+        let at = |x: f32, y: f32, z: f32| Coord3D { x: a.x + x, y: a.y + y, z: a.z + z };
+        PpInfo {
+            parking_space: at(10.0 * (1 + hh % 3) as f32, 5.0, 0.0),
+            parking_orientation: ((hh >> 2) % 8) as f32 * (rts_lockstep_engine::common::base_type::PI / 4.0),
+            runway_prep: at(20.0, 10.0, 0.0),
+            runway_start: at(30.0, 0.0, 0.0),
+            runway_end: at(80.0, 0.0, 0.0),
+            runway_exit: at(100.0, 0.0, 10.0),
+            runway_landing_start: at(30.0, -10.0, 0.0),
+            runway_landing_end: at(80.0, -10.0, 0.0),
+            runway_approach: at(150.0, 0.0, self.env.jet_pp[0]),
+            hangar_internal: a,
+            runway_takeoff_dist: self.env.jet_pp[2],
+            hangar_internal_orient: 0.0,
+        }
+    }
+
+    /// Batch A41: an audio event added (the wrapper's: its name's number, -1 unnamed; its object), its handle.
+    fn audio_add_for(&mut self, k: i32, object: ObjectId) -> u32 {
+        let h = self.next_audio;
+        self.next_audio += 1;
+        self.l(L_AUDIO_ADD, &[k as u32, object as u32, h]);
+        h
     }
 
     /// Batch A37: a `LOG_DELIVER` record of `w` then a name (its length, its bytes).
@@ -1274,6 +1314,149 @@ impl AiStateHost for Host {
     fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<DozerPrimaryState<Host>>>> {
         &mut self.dozer_machines
     }
+    // batch A41: the jet's world (the wrapper's stand-ins, LOG_JET)
+    fn pp_has_reserved_space(&mut self, airfield: ObjectId, id: ObjectId) -> bool {
+        let r = self.env.jet_world[3] & 1 != 0;
+        self.l(L_JET, &[7, airfield as u32, id as u32, u32::from(r)]);
+        r
+    }
+    fn pp_reserve_space(&mut self, airfield: ObjectId, id: ObjectId, parking_offset: f32, want_info: bool) -> Option<PpInfo> {
+        let r = pick(p1_hash(self.env.seed, 152, &[airfield as u32, id as u32, self.env.loco.frame]), self.env.jet_world[0] as u32);
+        self.l(L_JET, &[0, airfield as u32, id as u32, parking_offset.to_bits(), u32::from(want_info), u32::from(r)]);
+        if !r {
+            return None;
+        }
+        Some(if want_info { self.jet_pp_info(airfield, id) } else { PpInfo::default() })
+    }
+    fn pp_release_space(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.l(L_JET, &[1, airfield as u32, id as u32]);
+    }
+    fn pp_reserve_runway(&mut self, airfield: ObjectId, id: ObjectId, for_landing: bool) -> bool {
+        let w = [airfield as u32, id as u32, self.env.loco.frame, u32::from(for_landing)];
+        let r = pick(p1_hash(self.env.seed, 153, &w), self.env.jet_world[1] as u32);
+        self.l(L_JET, &[2, airfield as u32, id as u32, u32::from(for_landing), u32::from(r)]);
+        r
+    }
+    fn pp_release_runway(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.l(L_JET, &[3, airfield as u32, id as u32]);
+    }
+    fn pp_calc_pp_info(&mut self, airfield: ObjectId, id: ObjectId) -> PpInfo {
+        self.jet_pp_info(airfield, id)
+    }
+    fn pp_runway_count(&mut self, airfield: ObjectId) -> i32 {
+        let n = self.env.jet_world[4] & 3;
+        self.l(L_JET, &[19, airfield as u32, n as u32]);
+        n
+    }
+    fn pp_runway_reservation(&mut self, airfield: ObjectId, r: i32) -> ObjectId {
+        let a = (self.env.jet_world[4] >> (8 * (1 + (r & 1)))) & 255;
+        self.l(L_JET, &[10, airfield as u32, r as u32, 0, a as u32]);
+        a
+    }
+    fn pp_transfer_runway_reservation(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.l(L_JET, &[5, airfield as u32, id as u32]);
+    }
+    fn pp_approach_height(&mut self, _airfield: ObjectId) -> f32 {
+        self.env.jet_pp[0]
+    }
+    fn pp_landing_deck_height_offset(&mut self, _airfield: ObjectId) -> f32 {
+        self.env.jet_pp[1]
+    }
+    fn pp_calc_best_parking_assignment(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Coord3D> {
+        let r = pick(p1_hash(self.env.seed, 154, &[airfield as u32, id as u32, self.env.loco.frame]), self.env.jet_world[2] as u32);
+        self.l(L_JET, &[4, airfield as u32, id as u32, u32::from(r)]);
+        r.then(|| {
+            let mut pos = self.jet_pp_info(airfield, id).parking_space;
+            pos.x += 5.0;
+            pos
+        })
+    }
+    fn pp_taxi_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>> {
+        let r = self.env.jet_world[3] & 2 != 0;
+        self.l(L_JET, &[8, airfield as u32, id as u32, u32::from(r)]);
+        let a = self.object_position(airfield);
+        r.then(|| (0..2).map(|i| Coord3D { x: a.x + 15.0 * (i + 1) as f32, y: a.y - 5.0, z: a.z }).collect())
+    }
+    fn pp_creation_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>> {
+        let r = self.env.jet_world[3] & 4 != 0;
+        self.l(L_JET, &[9, airfield as u32, id as u32, u32::from(r)]);
+        let a = self.object_position(airfield);
+        r.then(|| (0..3).map(|i| Coord3D { x: a.x - 6.0 * (i + 1) as f32, y: a.y + 4.0, z: a.z }).collect())
+    }
+    fn jet_airfield_candidate(&mut self) -> Option<ObjectId> {
+        let c = self.env.jet_world[5];
+        self.object_exists(c).then_some(c)
+    }
+    fn log_find_suitable_airfield(&mut self, jet: ObjectId, found: ObjectId) {
+        self.l(L_JET, &[16, jet as u32, found as u32]);
+    }
+    fn weapon_returns_to_base_to_reload(&mut self, slot: WeaponSlotType) -> bool {
+        self.env.jet_weapons[slot as usize] & 1 != 0
+    }
+    fn weapon_remaining_ammo(&mut self, slot: WeaponSlotType) -> i32 {
+        self.jet_ammo[slot as usize]
+    }
+    fn weapon_clip_size(&mut self, slot: WeaponSlotType) -> i32 {
+        (self.env.jet_weapons[slot as usize] >> 1) & 15
+    }
+    fn weapon_clip_reload_time(&mut self, slot: WeaponSlotType) -> i32 {
+        (self.env.jet_weapons[slot as usize] >> 9) & 255
+    }
+    fn weapon_set_clip_percent_full(&mut self, slot: WeaponSlotType, percent: f32, allow_reduction: bool) {
+        // (the wrapper's: Weapon.cpp's rule)
+        let clip = self.weapon_clip_size(slot);
+        let s = slot as usize;
+        if clip != 0 {
+            let ammo = (clip as f32 * percent).floor() as i32;
+            if ammo > self.jet_ammo[s] || (allow_reduction && ammo < self.jet_ammo[s]) {
+                self.jet_ammo[s] = ammo;
+            }
+        }
+        self.l(L_JET, &[14, s as u32, percent.to_bits(), u32::from(allow_reduction), self.jet_ammo[s] as u32]);
+    }
+    fn has_countermeasures(&mut self) -> bool {
+        self.env.jet_world[3] & 32 != 0
+    }
+    fn reload_countermeasures(&mut self) {
+        self.l(L_JET, &[15]);
+    }
+    fn play_per_unit_sound_for(&mut self, _name: &[u8], object: ObjectId) -> u32 {
+        // (the jet's names are not the scene's: unnamed)
+        self.audio_add_for(-1, object)
+    }
+    fn play_wheel_screech(&mut self, pos: &Coord3D) {
+        self.l(L_DELIVER, &[3, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        self.audio_add_for(10, 0);
+    }
+    fn play_lockon_tick(&mut self, object: ObjectId) {
+        self.audio_add_for(11, object);
+    }
+    fn audio_is_currently_playing(&mut self, handle: u32) -> bool {
+        let r = handle != 0 && pick(p1_hash(self.env.seed, 155, &[handle, self.env.loco.frame]), 50);
+        self.l(L_JET, &[18, handle, u32::from(r)]);
+        r
+    }
+    fn drawable_set_instance_matrix(&mut self, z: Option<f32>) {
+        self.l(L_JET, &[11, u32::from(z.is_some()), z.map_or(0, f32::to_bits)]);
+    }
+    fn drawable_enable_ambient_sound(&mut self, enable: bool) {
+        self.l(L_JET, &[12, u32::from(enable)]);
+    }
+    fn drawable_stop_ambient_sound(&mut self) {
+        self.l(L_JET, &[13]);
+    }
+    fn drawable_set_orientation(&mut self, drawable: u32, angle: f32) {
+        self.l(L_JET, &[17, drawable, angle.to_bits()]);
+    }
+    fn lockon_set_hidden(&mut self, hidden: bool) {
+        self.l(L_MISSILE, &[1, u32::from(hidden)]);
+    }
+    fn destroy_drawable(&mut self, drawable: u32) {
+        self.l(L_JET, &[21, drawable]);
+    }
+    fn other_ai_current_state_id(&mut self, _id: ObjectId) -> StateId {
+        self.env.other_ai_state as StateId
+    }
     // batch A40: the chinook's world (the wrapper's stand-ins, LOG_CHINOOK)
     fn contain_is_special_overlord_style_container(&mut self) -> bool {
         let r = self.env.chinook_world[0] & 4 != 0;
@@ -1485,6 +1668,10 @@ impl AiStateHost for Host {
     }
     fn object_set_producer(&mut self, id: ObjectId, producer: ObjectId) {
         self.l(L_DOZER, &[4, id as u32, producer as u32]);
+        // (batch A41: a jet's own, kept)
+        if id == self.env.object_id && self.env.subclass == 13 {
+            self.jet_producer = producer;
+        }
     }
     fn object_builder_id(&mut self, id: ObjectId) -> ObjectId {
         let r = if p1_hash(self.env.seed, 142, &[id as u32, self.env.loco.frame >> 5]) & 7 != 0 { self.env.object_id } else { 0 };
@@ -2548,6 +2735,10 @@ impl AiStateHost for Host {
         (1..32).filter(|&i| self.object_exists(i)).collect()
     }
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId {
+        // (batch A41: a jet's own)
+        if id == self.env.object_id && self.env.subclass == 13 {
+            return self.jet_producer;
+        }
         if (1..32).contains(&id) && (self.env.drone_mask >> id) & 1 != 0 { self.env.object_id } else { 0 }
     }
     // ---- batch A18
@@ -3644,6 +3835,61 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
             }
         }
     }
+    // batch A41: a JetAIUpdate's members, its machine's own states' (the pause's, the reload's, the heli's take-off and landing, the
+    // take-off and landing's), the case's producer and ammunition
+    if let AiSubclass::Jet(j) = &module.ai().subclass {
+        put_pos(&mut v, &j.producer_location);
+        let c = &j.most_recent_command;
+        v.extend([c.cmd as u32, c.cmd_source as u32]);
+        put_pos(&mut v, &c.pos);
+        v.push(c.obj as u32);
+        v.extend([j.attack_loco_expire_frame, j.attackers_miss_expire_frame, j.return_to_base_frame, j.targeted_by.len() as u32]);
+        v.extend(j.targeted_by.iter().map(|&t| t as u32));
+        v.extend([j.untargetable_expire_frame, j.lockon_drawable.map_or(0, |d| d + 1), j.flags as u32]);
+        put_pos(&mut v, &j.landing_pos_for_helipad_stuff);
+        v.extend([u32::from(j.engines_on), j.afterburner_handle]);
+        if let Some(m) = module.machine.as_ref() {
+            if j.data.needs_runway {
+                match m.state(jet::PAUSE_BEFORE_TAKEOFF) {
+                    Some(AiState::JetPause { when, when_transfer, waited_for_taxi_id, reset_timer, afterburners, .. }) => {
+                        v.extend([*when, *when_transfer, *waited_for_taxi_id as u32, u32::from(*reset_timer), u32::from(*afterburners)]);
+                    }
+                    _ => panic!("the pause"),
+                }
+                for s in [jet::TAKING_OFF, jet::LANDING] {
+                    match m.state(s) {
+                        Some(AiState::JetTakeoffOrLanding { max_lift, max_speed, landing_sound_played, .. }) => {
+                            v.extend([max_lift.to_bits(), max_speed.to_bits(), u32::from(*landing_sound_played)]);
+                        }
+                        _ => panic!("the take-off or landing"),
+                    }
+                }
+            } else {
+                for s in [jet::TAKING_OFF, jet::LANDING] {
+                    match m.state(s) {
+                        Some(AiState::HeliTakeoffOrLanding { path, index, parking_loc, parking_orientation, .. }) => {
+                            put_pos(&mut v, &path[0]);
+                            put_pos(&mut v, &path[1]);
+                            v.push(*index as u32);
+                            put_pos(&mut v, parking_loc);
+                            v.push(parking_orientation.to_bits());
+                        }
+                        _ => panic!("the helicopter's take-off or landing"),
+                    }
+                }
+            }
+            match m.state(jet::RELOAD_AMMO) {
+                Some(AiState::JetReload { reload_time, reload_done_frame }) => v.extend([*reload_time, *reload_done_frame]),
+                _ => panic!("the reload"),
+            }
+            match m.state(jet::CIRCLING_DEAD_AIRFIELD) {
+                Some(AiState::JetCircling { check_airfield }) => v.push(*check_airfield as u32),
+                _ => panic!("the circling"),
+            }
+        }
+        v.push(h.jet_producer as u32);
+        v.extend(h.jet_ammo.map(|a| a as u32));
+    }
     // batch A35: a SupplyTruckAIUpdate's members and its machine's (batch A40: and a chinook's)
     if let AiSubclass::SupplyTruck(t) | AiSubclass::Chinook(Chinook { supply: t, .. }) = &module.ai().subclass {
         v.extend([t.preferred_dock as u32, t.number_boxes as u32, u32::from(t.force_pending), u32::from(t.forced_busy_pending)]);
@@ -3904,7 +4150,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12][g.below(24) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13][g.below(26) as usize];
     // (batch A39: a worker's shoes, half the time)
     if e.subclass == 11 {
         e.upgrades |= (g.below(2) as i32) << 2;
@@ -4022,6 +4268,63 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.chinook_world = [g.below(8) as i32, (g.below(5) | g.below(5) << 8) as i32, 0];
     e.chinook_masks = [g.u32(), g.u32()];
     e.chinook_rider = if g.below(3) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    // batch A41: a jet's data (the out-of-ammo damage now and then none; persist and lock-on times short or none; a runway half the
+    // time), its parking places' world (the rates, the flags, the runways and their reservations, the suitable airfield), the
+    // parking place's reals, its weapons (some returning to base, clips mostly not full); its producer an airfield (a scene's object,
+    // now and then none); the scene's objects airfields (kinds are the scene's) and helipads' sometimes
+    let some = |g: &mut Gen| if g.below(5) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    e.jet_reals = [
+        [0.0, 0.2, 1.0][g.below(3) as usize],
+        g.uniform(0.1, 1.0),
+        [0.0, 5.0, 20.0][g.below(3) as usize],
+        [0.0, 2.0][g.below(2) as usize],
+        [0.0, 10.0][g.below(2) as usize],
+        [100.0, 50.0][g.below(2) as usize],
+        [0.5, 2.0][g.below(2) as usize],
+        [720.0, 6.25][g.below(2) as usize],
+    ];
+    e.jet_ints = [
+        g.below(16) as i32,
+        [0, 1, 5, 30][g.below(4) as usize],
+        [0, 0, 3, 5][g.below(4) as usize],
+        [0, 0, 4, 6][g.below(4) as usize],
+        [0, 5, 30][g.below(3) as usize],
+        [0, 5, 30][g.below(3) as usize],
+        [0, 0, 10, 40][g.below(4) as usize],
+        [0, 0, 20][g.below(3) as usize],
+        some(g),
+        0,
+    ];
+    e.jet_world = [
+        [0, 50, 90, 100][g.below(4) as usize],
+        [0, 50, 100][g.below(3) as usize],
+        [0, 30, 100][g.below(3) as usize],
+        g.below(256) as i32,
+        (g.below(3) | (g.below(32) << 8) | (g.below(32) << 16)) as i32,
+        some(g),
+    ];
+    e.jet_pp = [[0.0, 20.0, 50.0][g.below(3) as usize], [0.0, 3.0][g.below(2) as usize], [50.0, 100.0][g.below(2) as usize]];
+    for w in e.jet_weapons.iter_mut() {
+        let clip = g.below(8);
+        let ammo = if g.below(4) == 0 { clip } else { g.below(clip + 1) };
+        *w = (g.below(2) | clip << 1 | ammo << 5 | g.below(60) << 9) as i32;
+    }
+    if e.subclass == 13 {
+        // (its states use the physics and the locomotor unchecked: it has physics, and a locomotor in every set)
+        e.loco.has_physics = 1;
+        if g.below(4) != 0 {
+            e.loco.kind_mask |= 524288;
+        }
+        if g.below(3) == 0 {
+            e.loco.kind_mask |= 8;
+        }
+        // (its producer's parking place, mostly)
+        let pr = e.jet_ints[8];
+        if (1..32).contains(&pr) && g.below(4) != 0 {
+            e.exist_mask |= 1 << pr;
+            e.chinook_masks[0] |= 1 << pr;
+        }
+    }
     if e.subclass == 12 {
         // (its taking-off and landing states use the physics unchecked; a rope without a drawable leaves its lengths
         // uninitialised, which the drop's update reads: the rope's template always found)
@@ -4240,15 +4543,18 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
-    } else if matches!(e.subclass, 10..=12) && g.below(2) == 0 {
+    } else if matches!(e.subclass, 10..=13) && g.below(2) == 0 {
         // batch A38: a dozer's work takes many updates (moving to the site, to its dock, building up) (batch A39: a worker's too)
-        // (batch A40: and a chinook's flights, landings and drops)
+        // (batch A40: and a chinook's flights, landings and drops; batch A41: a jet's taxis, pauses, take-offs and landings)
         65
     } else if e.subclass == 11 && g.below(3) == 0 {
         // batch A39: a worker's members: the dozer's (the constructions most), the docks' calls (a forced supply run most), its own
         const WORKER_OPS: [i32; 36] =
             [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 101, 101, 102, 103, 103, 103, 103, 103, 103, 133, 133, 134, 135, 136, 137, 138, 139, 140];
         WORKER_OPS[g.below(WORKER_OPS.len() as u32) as usize]
+    } else if e.subclass == 13 && g.below(5) == 0 {
+        // batch A41: a jet's members
+        [143, 143, 144, 144, 144, 145, 146, 147, 148, 148, 149][g.below(11) as usize]
     } else if e.subclass == 12 && g.below(5) == 0 {
         // batch A40: a chinook's members, the docks' calls
         [141, 141, 142, 142, 101, 102, 103][g.below(7) as usize]
@@ -4339,7 +4645,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=142);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=149);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -4410,6 +4716,10 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
             ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16, 43, 43, 43, 21, 21, 21][g.below(64) as usize] } else { g.below(46) as i32 };
+            // (batch A41: a jet's own states often)
+            if e.subclass == 13 && g.below(2) == 0 {
+                ia[0] = 1001 + g.below(13) as i32;
+            }
             // (batch A40: a chinook's own states often, the combat drop most)
             if e.subclass == 12 && g.below(2) == 0 {
                 ia[0] = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1013, 1013, 1014][g.below(16) as usize];
@@ -4464,6 +4774,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if e.subclass == 11 && g.below(3) == 0 { [19, 19, 20, 48, 24, 24][g.below(6) as usize] } else { cmd };
             // (batch A40: a chinook's evacuations, repair, exit, combat drop, idle, dock, often)
             let cmd = if e.subclass == 12 && g.below(2) == 0 { [3, 4, 22, 22, 25, 26, 38, 38, 38, 5, 24][g.below(11) as usize] } else { cmd };
+            // (batch A41: a jet's move, idle, enter, repair, leaving production, guard, hunt, attack, often)
+            let cmd = if e.subclass == 13 && g.below(2) == 0 { [0, 0, 5, 5, 23, 22, 10, 10, 29, 18, 11][g.below(11) as usize] } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -4509,7 +4821,12 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
         // (batch A39: a worker forced into a supply run most times)
         103 if e.subclass == 11 => ia[0] = i32::from(g.below(4) != 0),
-        103 | 139 => ia[0] = g.below(2) as i32,
+        103 | 139 | 148 => ia[0] = g.below(2) as i32,
+        // batch A41: a targeter (one of a few ids, so that removals find it; now and then any) and whether added
+        144 => {
+            ia[0] = if g.below(5) == 0 { g.below(32) as i32 } else { 1 + g.below(3) as i32 };
+            ia[1] = i32::from(g.below(3) != 0);
+        }
         // batch A39: a dock (an existing object, now and then none: undefined upstream, the case ends) (batch A40: an exiter, now
         // and then none: nothing)
         138 | 142 => {
@@ -4576,7 +4893,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
             vec![]
         }
         6 => {
-            ai.set_locomotor_goal_none();
+            ai.set_locomotor_goal_none(h);
             vec![]
         }
         7 => vec![ai.get_locomotor_distance_to_goal(h, m.unwrap()).to_bits()],
@@ -4602,7 +4919,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
             vec![]
         }
         17 => {
-            ai.destroy_path();
+            ai.destroy_path(h);
             vec![]
         }
         18 => {
@@ -4625,7 +4942,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
                 2 => path.optimize_ground_path(h, ia[2 + n] != 0, ia[3 + n]),
                 _ => {}
             }
-            ai.friend_set_path(Some(path));
+            ai.friend_set_path(h, Some(path));
             vec![]
         }
         21 => vec![ai.get_cur_locomotor_speed(h).to_bits()],
@@ -4841,8 +5158,22 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             let _ = x.close();
             vec![x.get_crc()]
         }
-        59 => ret(module.run(h, |sm, h| states::aism_set_state(sm, h, ia[0] as StateId)).expect("setState")),
-        60 => ret(module.run(h, |sm, h| states::aism_set_temporary_state(sm, h, ia[0] as StateId, ia[1])).expect("setTemporaryState")),
+        // (batch A41: a state entered where upstream is undefined: the case ends)
+        59 | 60 => {
+            let r = if op == 59 {
+                module.run(h, |sm, h| states::aism_set_state(sm, h, ia[0] as StateId))
+            } else {
+                module.run(h, |sm, h| states::aism_set_temporary_state(sm, h, ia[0] as StateId, ia[1]))
+            };
+            match r {
+                Ok(r) => ret(r),
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("setState: {e}"),
+            }
+        }
         61 => {
             module.run(h, states::aism_clear).expect("clear");
             vec![]
@@ -4955,6 +5286,66 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                     vec![]
                 }
                 Err(e) => panic!("a dozer's call: {e}"),
+            }
+        }
+        // batch A41: a jet's own members (undefined upstream: the case ends)
+        143..=149 => {
+            if !matches!(module.ai().subclass, AiSubclass::Jet(_)) {
+                return vec![];
+            }
+            let (a, b) = (ia[0], ia[1]);
+            let r = module.run(h, |sm, h| -> SmResult<Vec<u32>> {
+                match op {
+                    143 => {
+                        let state = sm.get_current_state_id();
+                        let mut v = vec![u32::from(jet::is_taxiing_to_parking(state)), u32::from(jet::is_reloading(state))];
+                        v.push(u32::from(jet::is_out_of_special_reload_ammo(h)));
+                        let j = jet::jt(h).clone();
+                        v.push(u32::from(jet::is_allowed_to_move_away_from_unit(&j)));
+                        v.push(u32::from(jet::is_temporarily_preventing_aim_success(h)));
+                        let off = jet::get_sneaky_targeting_offset(h);
+                        v.push(u32::from(off.is_some()));
+                        put_pos(&mut v, &off.unwrap_or_default());
+                        v.push(jet::pending_command_type(&j) as u32);
+                        v.push(u32::from(states::with_ai(h, |a, h| a.is_doing_ground_movement(h))));
+                        v.push(u32::from(states::with_ai(h, |a, h| a.get_treat_as_aircraft_for_loco_dist_to_goal(h))));
+                        v.push(u32::from(j.get_flag(jet::TAKEOFF_IN_PROGRESS) || j.get_flag(jet::LANDING_IN_PROGRESS)));
+                        Ok(v)
+                    }
+                    144 => {
+                        jet::add_targeter(h, a, b != 0);
+                        Ok(vec![])
+                    }
+                    145 => {
+                        jet::notify_victim_is_dead(h);
+                        Ok(vec![])
+                    }
+                    146 => {
+                        jet::jet_on_delete(h);
+                        Ok(vec![])
+                    }
+                    147 => {
+                        jet::jt(h).set_flag(jet::HAS_PENDING_COMMAND, false);
+                        Ok(vec![])
+                    }
+                    148 => {
+                        jet::enable_afterburners(h, a != 0);
+                        Ok(vec![])
+                    }
+                    _ => {
+                        let pos = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
+                        rts_lockstep_engine::logic::ai::ai_commands::private_follow_path_append(sm, h, &pos, CMD_FROM_AI)?;
+                        Ok(vec![])
+                    }
+                }
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a jet's call: {e}"),
             }
         }
         // batch A40: a chinook's own members (undefined upstream: the case ends)
@@ -5233,7 +5624,11 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 143],
+    ops: [u64; 150],
+    /// Batch A41: the jet's machine's own states after an operation (1001 ..= 1013), its flags (taking off, landing, taxiing, in the
+    /// air, a command waiting), its lock-on cursors made.
+    jet_states: [u64; 13],
+    jet_flags: [u64; 5],
     /// Batch A40: the chinook's flight status after an operation (flying .. landed .. doing a combat drop .. heading off the map),
     /// its machine's own states (1001 ..= 1014), and its ropes made.
     chinook_status: [u64; 5],
@@ -5301,7 +5696,9 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 143],
+            ops: [0; 150],
+            jet_states: [0; 13],
+            jet_flags: [0; 5],
             chinook_status: [0; 5],
             chinook_states: [0; 14],
             chinook_ropes: 0,
@@ -5368,6 +5765,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         supply_machines: Vec::new(),
         worker_machines: Vec::new(),
         next_rope: 1,
+        jet_producer: 0,
+        jet_ammo: [0; 3],
         op_percents: Vec::new(),
         structure_pos: None,
         structure_stand_in: None,
@@ -5387,7 +5786,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     };
     // batch A40: a chinook's locomotors all on the ground too (with a locomotor in every set, it always has one: its move states'
     // `isAllowedToAdjustDestination` uses it unchecked)
-    if host.env.subclass == 12 {
+    if matches!(host.env.subclass, 12 | 13) {
         ini = ini
             .lines()
             .map(|l| match l.strip_prefix("  Surfaces = ") {
@@ -5395,6 +5794,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 _ => format!("{l}\n"),
             })
             .collect();
+    }
+    // batch A41: the jet's producer, ammunition and status bits (the wrapper's resetJet)
+    host.jet_producer = host.env.jet_ints[8];
+    host.jet_ammo = host.env.jet_weapons.map(|w| (w >> 5) & 15);
+    if host.env.subclass == 13 {
+        use rts_lockstep_engine::common::object_status_types::{OBJECT_STATUS_DECK_HEIGHT_OFFSET, OBJECT_STATUS_IS_ATTACKING, OBJECT_STATUS_REASSIGN_PARKING};
+        for (bit, s) in [(8, OBJECT_STATUS_DECK_HEIGHT_OFFSET), (16, OBJECT_STATUS_REASSIGN_PARKING), (128, OBJECT_STATUS_IS_ATTACKING)] {
+            if host.env.jet_world[3] & bit != 0 {
+                host.status |= 1 << s;
+            }
+        }
     }
     host.max_shots = host.env.max_shots_init;
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
@@ -5434,7 +5844,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
         // (batch A37: a delivering AI likewise: its states use the locomotor unchecked) (batch A40: a chinook too: its move states
         // ask `isAllowedToAdjustDestination`, which uses it unchecked)
-        let railed = matches!(host.env.subclass, 5 | 9 | 10 | 11 | 12);
+        let railed = matches!(host.env.subclass, 5 | 9 | 10 | 11 | 12 | 13);
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
@@ -5599,6 +6009,31 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
                 ..ChinookData::new(supply, host.env.loco.gravity)
             }))
         }
+        // batch A41: a jet
+        13 => {
+            let (r, i) = (host.env.jet_reals, host.env.jet_ints);
+            AiSubclass::Jet(Jet::new(JetData {
+                out_of_ammo_damage_per_second: r[0],
+                takeoff_dist_for_max_lift: r[1],
+                min_height: r[2],
+                parking_offset: r[3],
+                sneaky_offset_when_attacking: r[4],
+                lockon_initial_dist: r[5],
+                lockon_freq: r[6],
+                lockon_angle_spin: r[7],
+                keeps_parking_space_when_airborne: i[0] & 1 != 0,
+                needs_runway: i[0] & 2 != 0,
+                lockon_blinky: i[0] & 4 != 0,
+                lockon_cursor: i[0] & 8 != 0,
+                takeoff_pause: i[1] as u32,
+                attacking_loco: i[2],
+                returning_loco: i[3],
+                attack_loco_persist_time: i[4] as u32,
+                attackers_miss_persist_time: i[5] as u32,
+                lockon_time: i[6] as u32,
+                return_to_base_idle_time: i[7] as u32,
+            }))
+        }
         _ => AiSubclass::Plain,
     };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
@@ -5654,11 +6089,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // (batch A34: and so does the hacking state: a hacker keeps its player)
         // (batch A39: and a dozer or a worker keeps its player: its bored idle brain attacks a mine inside an update, entering the
         // attack machine's chase states)
-        if (a9_states(&module).1 || attacking || idle || matches!(host.env.subclass, 6 | 10 | 11)) && host.env.player_type < 0 {
+        // (batch A41: and a jet: its update gives a waiting attack command again)
+        if (a9_states(&module).1 || attacking || idle || matches!(host.env.subclass, 6 | 10 | 11 | 13)) && host.env.player_type < 0 {
             host.env.player_type = 0;
         }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
         let (mut op, mut fa, mut ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
+        // batch A41: a jet pausing before take-off mostly left to its updates and locomotor (the pause runs out)
+        if host.env.subclass == 13 && module.machine.as_ref().is_some_and(|m| m.get_current_state_id() == jet::PAUSE_BEFORE_TAKEOFF) && g.below(5) != 0 {
+            op = [65, 65, 0][g.below(3) as usize];
+            ia.iter_mut().for_each(|x| *x = 0);
+        }
         if healing_heavy && matches!(&module.ai().subclass, AiSubclass::Chinook(c) if c.airfield_for_healing != 0) && g.below(6) != 0 {
             ia.iter_mut().for_each(|x| *x = 0);
             op = [59, 59, 65, 65][g.below(4) as usize];
@@ -5714,7 +6155,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         }
         if std::env::var("AI_A2_TRACE").is_ok() {
             let cur = module.machine.as_ref().map(|sm| sm.get_current_state_id());
-            println!("TRACE step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?} loco {:?}", &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint, module.ai().cur_locomotor);
+            println!("TRACE sub {} step {step} op {op} ia {:?} state {cur:?} temp {} goal_waypoint {:?} loco {:?}", host.env.subclass, &ia[..6], module.ai().machine.temporary_state, module.ai().machine.goal_waypoint, module.ai().cur_locomotor);
         }
         has_saved |= op == 70;
         // (batch A21: a load of the AI needs its save, made with the machine in the same state and temporary state: upstream loads
@@ -5779,6 +6220,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if let AiSubclass::DeliverPayload(_) = module.ai().subclass {
             let s = module.deliver_machine.as_ref().map_or(6, |m| (m.get_current_state_id() as usize).min(6));
             ck.deliver_states[s] += 1;
+        }
+        if let AiSubclass::Jet(j) = &module.ai().subclass {
+            if let Some(m) = module.machine.as_ref() {
+                let s = m.get_current_state_id();
+                if (1001..=1013).contains(&s) {
+                    ck.jet_states[(s - 1001) as usize] += 1;
+                }
+            }
+            for (k, f) in [jet::TAKEOFF_IN_PROGRESS, jet::LANDING_IN_PROGRESS, jet::TAXI_IN_PROGRESS, jet::ALLOW_AIR_LOCO, jet::HAS_PENDING_COMMAND].iter().enumerate() {
+                ck.jet_flags[k] += u64::from(j.get_flag(*f));
+            }
         }
         if let AiSubclass::Chinook(c) = &module.ai().subclass {
             ck.chinook_status[(c.flight_status as usize).min(4)] += 1;
@@ -6071,6 +6523,37 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A41; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `JetAIUpdate` (JetAIUpdate.cpp cut verbatim from its taxi modes, its module data's field parse removed; its module data the
+///   scene's; cut points: the members AIUpdateInterface dispatches explicitly (`isIdle`, `setLocomotorGoalNone`,
+///   `isDoingGroundMovement`, `getTreatAsAircraftForLocoDistToGoal`, `notifyVictimIsDead`, `getJetAIUpdate`; the base's bodies
+///   `base*`), an airfield's parking place (`airfieldParkingPlace`, one per airfield), `doLandingCommand`'s module loop, its vectors'
+///   iterators (pointers in the shipped STL); its state ids, `getPP` and `calcDistSqr` renamed around its `#include` (the chinook's
+///   names); the parking places, the weapons' clips and ammunition, the drawable's instance matrix and ambient sound, the lock-on
+///   cursor, the afterburner and the misc sounds, the countermeasures and the airfield search the scene's stand-ins, `LOG_JET`; the
+///   AI's members as ops 143-149; half a jet's operations updates; moves, idles, entering and repairs, leaving production, guards,
+///   hunts and attacks often; its own states often set; a pausing jet mostly updated): a thirteenth of the cases: 30,000
+///   constructions and 1,748,239 operations, **0 mismatches** in the results, the call logs and the dumps (its members, its
+///   machine's pause, take-off and landing, reload and circling states, the case's producer and ammunition added). After an
+///   operation its own states were current (1001..=1013) 291 / 1,998 / 1,225 / 41 / 2,912 / 215 / 409 / 30 / 287 / 1,023 /
+///   3,775 / 15,540 / 1,426 times; taking off 6,456, landing 975, taxiing 2,116, allowed in the air 105,664, a command waiting
+///   8,019. Ops 143-149 ran 2,092 / 3,119 / 1,040 / 1,004 / 973 / 2,086 / 1,127 times.
+/// - Found on the way: `setLocomotorGoalNone`, which `destroyPath` calls, is virtual upstream: the port's now takes the host (the
+///   jet's override flies on, 1000 ahead). A jet's attack given by an enter state inside a guard machine (the AI's machine locked)
+///   goes through the jet's own `aiDoCommand` first (it may wait or take off instead). The jet's `atan2`s on floats are the double
+///   one, rounded (a float one differed by an ulp). The harness's parking places are one per airfield (the landing command
+///   compares them), and its `AudioEventRTS` starts with handle 0, as upstream's constructor. A jet has physics, a locomotor in
+///   every set (all on the ground too) and keeps its player (its update gives a waiting attack again).
+/// - Not compared: undefined upstream (refused, the case ends): a carrier's taxi to parking with no better place (the position
+///   uninitialised), a take-off's lift without a parking place, the locomotor or physics used unchecked (1,570 cases ended
+///   undefined in all, with the earlier batches'). The pause's wait for another jet taxiing to take off is never reached here (the
+///   other objects' AIs are never in that state).
+/// - Planted bugs, 3760-3768, all caught: the special ammunition, the runway reserved, the helicopter's point reached, the pause's
+///   end (at 30,000 cases; the others at 5,000), the reload's end, a waiting command not idle, the healed helicopter's take-off,
+///   the straight-on goal, the last targeter removed. A40's 3750-3759 and a sample of A39's re-run on the changed cases: all caught,
+///   3753 and 3756 at 30,000.
+///
 /// # Results (2026-10-30, batch A40; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `ChinookAIUpdate` (ChinookAIUpdate.cpp cut verbatim from its state enum, its module data's field parse removed; its module
@@ -6627,11 +7110,12 @@ fn ai_update_a2_matches_upstream() {
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
          chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}; worker machine dozer/supply truck {:?}, its supply machine idle/busy/wanting/regrouping/docking {:?}; \
-         chinook flight status taking off/flying/dropping/landing/landed {:?}, its states 1001..=1014 {:?}, ropes made (summed per operation) {}, an airfield healing it (and landed) {:?}",
+         chinook flight status taking off/flying/dropping/landing/landed {:?}, its states 1001..=1014 {:?}, ropes made (summed per operation) {}, an airfield healing it (and landed) {:?}; \
+         jet states 1001..=1013 {:?}, flags taking off/landing/taxiing/air/pending {:?}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads,
         ck.deliver_states, ck.dozer_states, ck.dozer_actions, ck.worker_states, ck.worker_supply_states, ck.chinook_status,
-        ck.chinook_states, ck.chinook_ropes, ck.chinook_healing
+        ck.chinook_states, ck.chinook_ropes, ck.chinook_healing, ck.jet_states, ck.jet_flags
     );
     ck.construction.finish();
     ck.results.finish();

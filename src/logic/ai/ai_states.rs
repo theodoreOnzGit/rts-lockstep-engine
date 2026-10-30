@@ -71,6 +71,7 @@ use crate::logic::locomotor::{LocomotorSet, LocomotorSetError};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
 use crate::logic::ai::chinook_ai_update as chinook;
+use crate::logic::ai::jet_ai_update as jet;
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
 use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
 use crate::logic::ai::ai_attack_move as attack_move;
@@ -292,6 +293,64 @@ pub trait AiStateHost: AiHost + StateContext {
     fn client_random_value_real(&mut self, lo: f32, hi: f32) -> f32;
     /// Batch A40: the rotor wash's particle system created at `pos` (its template found).
     fn rotor_wash(&mut self, pos: &Coord3D);
+    // ---- batch A41: the jet's world
+    /// An airfield's parking place's `hasReservedSpace(id)`.
+    fn pp_has_reserved_space(&mut self, airfield: ObjectId, id: ObjectId) -> bool;
+    /// Its `reserveSpace(id, parkingOffset, info)`: the space's `PPInfo` (filled only when `want_info`), `None` when refused.
+    fn pp_reserve_space(&mut self, airfield: ObjectId, id: ObjectId, parking_offset: f32, want_info: bool) -> Option<crate::logic::ai::jet_ai_update::PpInfo>;
+    /// Its `releaseSpace(id)`.
+    fn pp_release_space(&mut self, airfield: ObjectId, id: ObjectId);
+    /// Its `reserveRunway(id, forLanding)`.
+    fn pp_reserve_runway(&mut self, airfield: ObjectId, id: ObjectId, for_landing: bool) -> bool;
+    /// Its `releaseRunway(id)`.
+    fn pp_release_runway(&mut self, airfield: ObjectId, id: ObjectId);
+    /// Its `calcPPInfo(id, info)`.
+    fn pp_calc_pp_info(&mut self, airfield: ObjectId, id: ObjectId) -> crate::logic::ai::jet_ai_update::PpInfo;
+    /// Its `getRunwayCount()`.
+    fn pp_runway_count(&mut self, airfield: ObjectId) -> i32;
+    /// Its `getRunwayReservation(r, RESERVATION_TAKEOFF)`.
+    fn pp_runway_reservation(&mut self, airfield: ObjectId, r: i32) -> ObjectId;
+    /// Its `transferRunwayReservationToNextInLineForTakeoff(id)`.
+    fn pp_transfer_runway_reservation(&mut self, airfield: ObjectId, id: ObjectId);
+    /// Its `getApproachHeight()`, `getLandingDeckHeightOffset()`.
+    fn pp_approach_height(&mut self, airfield: ObjectId) -> f32;
+    fn pp_landing_deck_height_offset(&mut self, airfield: ObjectId) -> f32;
+    /// Its `calcBestParkingAssignment(id, &pos)`: the better place, `None` when there is none.
+    fn pp_calc_best_parking_assignment(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Coord3D>;
+    /// Its `getTaxiLocations(id)`, `getCreationLocations(id)` (none: `None`).
+    fn pp_taxi_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>>;
+    fn pp_creation_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>>;
+    /// `findSuitableAirfield`'s search: the partition manager's closest candidate (before the parking-place filter), and its answer
+    /// (logged).
+    fn jet_airfield_candidate(&mut self) -> Option<ObjectId>;
+    fn log_find_suitable_airfield(&mut self, jet: ObjectId, found: ObjectId);
+    /// A weapon slot's `getReloadType() == RETURN_TO_BASE_TO_RELOAD`, `getRemainingAmmo()`, `getClipSize()`, `getClipReloadTime()`,
+    /// `setClipPercentFull(percent, allowReduction)`.
+    fn weapon_returns_to_base_to_reload(&mut self, slot: WeaponSlotType) -> bool;
+    fn weapon_remaining_ammo(&mut self, slot: WeaponSlotType) -> i32;
+    fn weapon_clip_size(&mut self, slot: WeaponSlotType) -> i32;
+    fn weapon_clip_reload_time(&mut self, slot: WeaponSlotType) -> i32;
+    fn weapon_set_clip_percent_full(&mut self, slot: WeaponSlotType, percent: f32, allow_reduction: bool);
+    /// `getCountermeasuresBehaviorInterface() != NULL`, its `reloadCountermeasures()`.
+    fn has_countermeasures(&mut self) -> bool;
+    fn reload_countermeasures(&mut self);
+    /// The template's per-unit sound `name`, its object `object`, given to the audio: its handle.
+    fn play_per_unit_sound_for(&mut self, name: &[u8], object: ObjectId) -> u32;
+    /// The misc audio's wheel screech at `pos`, and its lock-on tick on `object`, given to the audio.
+    fn play_wheel_screech(&mut self, pos: &Coord3D);
+    fn play_lockon_tick(&mut self, object: ObjectId);
+    /// `AudioEventRTS::isCurrentlyPlaying()` of a sound with that handle.
+    fn audio_is_currently_playing(&mut self, handle: u32) -> bool;
+    /// The drawable's `setInstanceMatrix` (a lift by `z`, or none), `enableAmbientSound(enable)`, `stopAmbientSound()`.
+    fn drawable_set_instance_matrix(&mut self, z: Option<f32>);
+    fn drawable_enable_ambient_sound(&mut self, enable: bool);
+    fn drawable_stop_ambient_sound(&mut self);
+    /// The lock-on drawable's `setOrientation(angle)`, `setDrawableHidden(hidden)`; `TheGameClient->destroyDrawable` of it.
+    fn drawable_set_orientation(&mut self, drawable: u32, angle: f32);
+    fn lockon_set_hidden(&mut self, hidden: bool);
+    fn destroy_drawable(&mut self, drawable: u32);
+    /// Another object's AI's `getCurrentStateID()`.
+    fn other_ai_current_state_id(&mut self, id: ObjectId) -> StateId;
     /// Batch A39: the workers' supply truck machines lent to the host while their AIs run (none: running), the innermost last.
     fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<Self>>>>
     where
@@ -1049,6 +1108,38 @@ pub enum AiState<H: AiStateHost> {
     ChinookHeadOffMap,
     /// Batch A40: `ChinookRecordCreationState`.
     ChinookRecordCreation,
+    /// Batch A41: `JetAwaitingRunwayState`: `m_landing`.
+    JetAwaitingRunway { landing: bool },
+    /// Batch A41: `JetOrHeliCirclingDeadAirfieldState`: `m_checkAirfield`.
+    JetCircling { check_airfield: i32 },
+    /// Batch A41: `JetOrHeliReturningToDeadAirfieldState` (an `AIInternalMoveToState`).
+    JetReturnToDeadAirfield { mv: MoveToData },
+    /// Batch A41: `JetOrHeliReturnForLandingState` (an `AIInternalMoveToState`).
+    JetReturnForLanding { mv: MoveToData },
+    /// Batch A41: `JetOrHeliTaxiState` (an `AIMoveOutOfTheWayState`): `m_taxiMode`.
+    JetTaxi { mv: MoveToData, mode: i32 },
+    /// Batch A41: `JetTakeoffOrLandingState` (an `AIFollowPathState`: its members first): `m_maxLift`, `m_maxSpeed`, `m_landing`,
+    /// `m_landingSoundPlayed`.
+    JetTakeoffOrLanding {
+        mv: MoveToData,
+        index: i32,
+        adjust_final: bool,
+        adjust_final_override: bool,
+        retry_count: i32,
+        max_lift: f32,
+        max_speed: f32,
+        landing: bool,
+        landing_sound_played: bool,
+    },
+    /// Batch A41: `HeliTakeoffOrLandingState`: `m_path`, `m_index`, `m_parkingLoc`, `m_parkingOrientation`, `m_landing`.
+    HeliTakeoffOrLanding { path: [Coord3D; 2], index: i32, parking_loc: Coord3D, parking_orientation: f32, landing: bool },
+    /// Batch A41: `JetOrHeliParkOrientState`.
+    JetParkOrient,
+    /// Batch A41: `JetPauseBeforeTakeoffState` (an `AIFaceState`: its members first): `m_when`, `m_whenTransfer`,
+    /// `m_waitedForTaxiID`, `m_resetTimer`, `m_afterburners`.
+    JetPause { obj: bool, can_turn_in_place: bool, when: u32, when_transfer: u32, waited_for_taxi_id: ObjectId, reset_timer: bool, afterburners: bool },
+    /// Batch A41: `JetOrHeliReloadAmmoState`: `m_reloadTime`, `m_reloadDoneFrame`.
+    JetReload { reload_time: u32, reload_done_frame: u32 },
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -1381,7 +1472,7 @@ fn idle_do_init<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id
         }
     }
 
-    ai(h).set_locomotor_goal_none();
+    crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
     with_ai(h, |a, h| a.set_current_victim(h, INVALID_ID));
 }
 
@@ -1490,7 +1581,7 @@ fn dead_on_enter<H: AiStateHost>(h: &mut H) -> SmResult<StateReturn> {
 
 /// `AIDeadState::update()`.
 fn dead_update<H: AiStateHost>(h: &mut H) -> SmResult<StateReturn> {
-    ai(h).set_locomotor_goal_none();
+    crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
     // "re-mark this every time, just in case our health miraculously heals from 0 to nonzero..."
     h.set_effectively_dead(true);
     if h.is_kind_of(KINDOF_INFANTRY) && h.has_physics() {
@@ -1564,6 +1655,23 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::ChinookEvacuate) => Ok(chinook::evacuate_on_enter(h)),
             Some(AiState::ChinookHeadOffMap) => chinook::head_off_map_on_enter(sm, h),
             Some(AiState::ChinookRecordCreation) => Ok(chinook::record_creation_on_enter(h)),
+            // (batch A41: the jet's)
+            Some(AiState::JetAwaitingRunway { landing }) => {
+                let landing = *landing;
+                Ok(jet::awaiting_runway_on_enter(h, landing))
+            }
+            Some(AiState::JetCircling { .. }) => Ok(jet::circling_on_enter(sm, h, id)),
+            Some(AiState::JetReturnToDeadAirfield { .. }) => jet::return_to_dead_on_enter(sm, h, id),
+            Some(AiState::JetReturnForLanding { .. }) => jet::return_for_landing_on_enter(sm, h, id),
+            Some(AiState::JetTaxi { mode, .. }) => {
+                let mode = *mode;
+                jet::taxi_on_enter(sm, h, id, mode)
+            }
+            Some(AiState::JetTakeoffOrLanding { .. }) => jet::takeoff_or_landing_on_enter(sm, h, id),
+            Some(AiState::HeliTakeoffOrLanding { .. }) => jet::heli_on_enter(sm, h, id),
+            Some(AiState::JetParkOrient) => Ok(jet::park_orient_on_enter(h)),
+            Some(AiState::JetPause { .. }) => jet::pause_on_enter(sm, h, id),
+            Some(AiState::JetReload { .. }) => Ok(jet::reload_on_enter(sm, h, id)),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -1622,6 +1730,15 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::ChinookTakeoffOrLanding { .. }) => chinook::takeoff_or_landing_on_exit(sm, h, id),
             Some(AiState::ChinookCombatDrop { .. }) => chinook::combat_drop_on_exit(sm, h, id),
             Some(AiState::ChinookMoveToBldg { .. }) => chinook::move_to_bldg_on_exit(sm, h, id, status)?,
+            // (batch A41: the jet's)
+            Some(AiState::JetAwaitingRunway { .. }) => jet::awaiting_runway_on_exit(h),
+            Some(AiState::JetReturnToDeadAirfield { .. }) | Some(AiState::JetReturnForLanding { .. }) => move_states::internal_on_exit(sm, h, id),
+            Some(AiState::JetTaxi { .. }) => jet::taxi_on_exit(sm, h, id, status)?,
+            Some(AiState::JetTakeoffOrLanding { .. }) => jet::takeoff_or_landing_on_exit(sm, h, id, status),
+            Some(AiState::HeliTakeoffOrLanding { .. }) => jet::heli_on_exit(sm, h, id),
+            Some(AiState::JetParkOrient) => jet::park_orient_on_exit(h),
+            Some(AiState::JetPause { .. }) => jet::pause_on_exit(h),
+            Some(AiState::JetReload { .. }) => jet::reload_on_exit(h),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -1691,6 +1808,22 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::ChinookMoveToBldg { .. }) => chinook::move_to_bldg_update(sm, h, id),
             Some(AiState::ChinookEvacuate) | Some(AiState::ChinookRecordCreation) => Ok(StateReturn::SUCCESS),
             Some(AiState::ChinookHeadOffMap) => Ok(chinook::head_off_map_update(h)),
+            // (batch A41: the jet's)
+            Some(AiState::JetAwaitingRunway { landing }) => {
+                let landing = *landing;
+                jet::awaiting_runway_update(h, landing)
+            }
+            Some(AiState::JetCircling { .. }) => Ok(jet::circling_update(sm, h, id)),
+            Some(AiState::JetReturnToDeadAirfield { .. }) | Some(AiState::JetReturnForLanding { .. }) => move_states::internal_update(sm, h, id),
+            Some(AiState::JetTaxi { mode, .. }) => {
+                let mode = *mode;
+                jet::taxi_update(sm, h, id, mode)
+            }
+            Some(AiState::JetTakeoffOrLanding { .. }) => jet::takeoff_or_landing_update(sm, h, id),
+            Some(AiState::HeliTakeoffOrLanding { .. }) => Ok(jet::heli_update(sm, h, id)),
+            Some(AiState::JetParkOrient) => jet::park_orient_update(h),
+            Some(AiState::JetPause { .. }) => jet::pause_update(sm, h, id),
+            Some(AiState::JetReload { .. }) => Ok(jet::reload_update(sm, h, id)),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1769,7 +1902,7 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 xfer.xfer_bool(should_look_for_targets)?;
                 xfer.xfer_bool(inited)?;
             }
-            AiState::MoveTo { mv, .. } | AiState::MoveOutOfTheWay { mv } => mv.xfer(xfer)?,
+            AiState::MoveTo { mv, .. } | AiState::MoveOutOfTheWay { mv, .. } => mv.xfer(xfer)?,
             AiState::FollowPath { mv, index, adjust_final, adjust_final_override, .. } => {
                 move_states::follow_path_xfer(mv, index, adjust_final, adjust_final_override, xfer)?
             }
@@ -1828,6 +1961,18 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | AiState::ChinookEvacuate
             | AiState::ChinookHeadOffMap
             | AiState::ChinookRecordCreation => chinook::chinook_state_xfer(self, xfer)?,
+            // (batch A41: the jet's; its stubbed states' the version only, below)
+            AiState::JetReturnToDeadAirfield { mv } | AiState::JetReturnForLanding { mv } | AiState::JetTaxi { mv, .. } => mv.xfer(xfer)?,
+            AiState::JetTakeoffOrLanding { mv, index, adjust_final, adjust_final_override, .. } => {
+                move_states::follow_path_xfer(mv, index, adjust_final, adjust_final_override, xfer)?
+            }
+            AiState::HeliTakeoffOrLanding { path, index, parking_loc, parking_orientation, .. } => {
+                jet::heli_xfer(path, index, parking_loc, parking_orientation, xfer)?
+            }
+            AiState::JetPause { when, when_transfer, waited_for_taxi_id, reset_timer, afterburners, .. } => {
+                jet::pause_xfer(when, when_transfer, afterburners, reset_timer, waited_for_taxi_id, xfer)?
+            }
+            AiState::JetReload { reload_time, reload_done_frame } => jet::reload_xfer(reload_time, reload_done_frame, xfer)?,
             _ => {
                 // ("snapshot interface STUBBED": the version only)
                 let current_version: XferVersion = 1;
@@ -1988,6 +2133,11 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Chinook(_)) {
                 chinook::define_chinook_states(&mut sm)?;
             }
+            // (batch A41: `JetAIUpdate::makeStateMachine`'s `JetAIStateMachine`, or `HeliAIStateMachine` without a runway)
+            if let crate::logic::ai::ai_update::AiSubclass::Jet(j) = &self.ai().subclass {
+                let needs_runway = j.data.needs_runway;
+                jet::define_jet_states(&mut sm, needs_runway)?;
+            }
             // (batch A11: the attack-move machine enters its default state, as its state's constructor does upstream)
             let ai_lent = self.ai.take().expect("the AI (not lent)");
             h.ai_stack().push(ai_lent);
@@ -1996,6 +2146,10 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             r?;
             self.machine = Some(sm);
             self.run(h, |sm, h| sm.init_default_state(h).map(|_| ()))?;
+        }
+        // (batch A41: `JetAIUpdate::onObjectCreated`'s own part, after the base's: grounded, taxiing)
+        if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Jet(_)) {
+            self.run(h, |_, h| jet::jet_on_object_created(h));
         }
         Ok(())
     }
@@ -2113,6 +2267,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 let ret = self.base_update(h)?;
                 Ok(if mine < ret { mine } else { ret })
             }
+            crate::logic::ai::ai_update::AiSubclass::Jet(_) => {
+                // batch A41: its own part (the AI and its machine lent), then the base's update; "for now, must not sleep."
+                self.run(h, jet::jet_pre_update)?;
+                self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
             crate::logic::ai::ai_update::AiSubclass::HackInternet(_) => {
                 // batch A34: the waiting command given when idle, then the base's update; "for now, must not sleep."
                 self.run(h, crate::logic::ai::hack_internet_ai_update::hack_internet_pre_update)?;
@@ -2175,8 +2335,8 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             let a = self.ai_mut();
             a.set_queue_for_path_time(h, 0);
             // "destroy path"
-            a.destroy_path();
-            a.set_locomotor_goal_none();
+            a.destroy_path(h);
+            a.set_locomotor_goal_none(h);
             h.clear_model_condition_state(MODELCONDITION_MOVING);
 
             if let Some(mut goal_pos) = h.pf_goal_position() {

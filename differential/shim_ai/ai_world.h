@@ -38,8 +38,9 @@ class Object;
 class AIUpdateInterface;
 Bool isOtherAi(const AIUpdateInterface *ai);
 Object *otherAiGoalObject();
-/* batch A11: JetAIUpdate (never an AI of this build: getJetAIUpdate is NULL) */
-class JetAIUpdate { public: Bool isOutOfSpecialReloadAmmo() const; };
+/* batch A11: JetAIUpdate (batch A41: declared in wrap_ai.cpp, from its header) */
+class JetAIUpdate;
+Bool jetOutOfSpecialReloadAmmo(JetAIUpdate *jet);
 class AsciiString;
 
 /* The scene of one call. The Rust test has the same struct (tests/differential_ai_update_a2.rs, `Env`): same field order, 4-byte
@@ -286,6 +287,20 @@ struct AiEnv
 	Int chinookWorld[3];
 	UnsignedInt chinookMasks[2];
 	Int chinookRider;
+	/* batch A41: a JetAIUpdate's data (reals: the out-of-ammo damage, the take-off distance for full lift, the minimum height, the
+	** parking offset, the sneaky offset, the lock-on's initial distance, frequency and spin; ints: flags (1 keeps its parking space
+	** airborne, 2 needs a runway, 4 the lock-on blinks, 8 the lock-on cursor "lockon"), the take-off pause, the attacking and the
+	** returning locomotor sets, the attack locomotor's and the attackers' miss persist times, the lock-on time, the idle time before
+	** returning to base, its producer), its parking places' world (the reserve-space, reserve-runway and better-parking rates; flags:
+	** 1 a space reserved, 2 taxi locations, 4 creation locations, 8 the deck height status, 16 the reassign-parking status,
+	** 32 countermeasures, 64 a drawable, 128 attacking; the runway count and its two reservations (bytes 0-2); the suitable airfield),
+	** the parking place's reals (the approach height, the landing deck's height offset, the take-off distance) and the weapons' (per
+	** slot: 1 returns to base to reload, the clip (bits 1-4), the ammunition (bits 5-8), the clip's reload time (bits 9-16)) */
+	Real jetReals[8];
+	Int jetInts[10];
+	Int jetWorld[6];
+	Real jetPP[3];
+	Int jetWeapons[3];
 };
 
 extern AiEnv g_aiEnv;
@@ -331,6 +346,7 @@ enum
 	LOG_DELIVER = 116,	/* batch A37: the delivery's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_DOZER = 117,	/* batch A38: the dozer's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_CHINOOK = 118,	/* batch A40: the chinook's world { kind, words.. } (see wrap_ai.cpp) */
+	LOG_JET = 119,		/* batch A41: the jet's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
@@ -671,6 +687,9 @@ struct ObjectStatusMaskType
 	void set(Int bit) { m_bits |= 1ULL << bit; }
 };
 inline ObjectStatusMaskType makeObjectStatusMask(Int bit) { ObjectStatusMaskType m; m.m_bits = 1ULL << bit; return m; }
+/* batch A41 */
+inline ObjectStatusMaskType makeObjectStatusMaskNone() { ObjectStatusMaskType m; m.m_bits = 0; return m; }
+#define OBJECT_STATUS_MASK_NONE makeObjectStatusMaskNone()
 #define MAKE_OBJECT_STATUS_MASK(k) makeObjectStatusMask(k)
 /* batch A10a */
 inline ObjectStatusMaskType makeObjectStatusMask(Int a, Int b, Int c = -1, Int d = -1)
@@ -853,6 +872,12 @@ public:
 	Real getAimDelta() const;
 	Bool fireWeapon(const Object *source, const Coord3D* pos);
 	void setPreAttackFinishedFrame(UnsignedInt frame);
+	/* batch A41: the jet's (the scene's per slot; the ammunition the case's) */
+	WeaponReloadType getReloadType() const;
+	Int getRemainingAmmo() const;
+	Int getClipSize() const;
+	Int getClipReloadTime(const Object *source) const;
+	void setClipPercentFull(Real percent, Bool allowReduction);
 	Int m_slot;
 };
 class HordeUpdateInterface
@@ -924,6 +949,12 @@ public:
 	void setPosition( const Coord3D *pos );
 	void setExpirationDate( UnsignedInt frame );
 	DrawableID getID() const { return m_ropeId; }
+	/* batch A41: the jet's (logged; a lock-on drawable's template "lockon") */
+	void setInstanceMatrix( const Matrix3D *instance );
+	void enableAmbientSound( Bool enable );
+	void stopAmbientSound( void );
+	void setOrientation( Real angle );
+	const class AiTemplateView *getTemplate() const;
 	DrawableID m_ropeId;
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
@@ -1128,6 +1159,8 @@ public:
 	Bool hasAnyWeapon() const;
 	Weapon *getCurrentWeapon(WeaponSlotType* wslot);
 	Weapon *getWeaponInWeaponSlot(WeaponSlotType wslot) const;
+	/* batch A41: the scene's (logged) */
+	class CountermeasuresBehaviorInterface *getCountermeasuresBehaviorInterface();
 	Bool chooseBestWeaponForTarget(const Object* target, WeaponChoiceCriteria criteria, CommandSourceType cmdSource);
 	void adjustModelConditionForWeaponStatus();
 	void clearLeechRangeModeForAllWeapons();
@@ -1181,6 +1214,8 @@ public:
 	UpdateSleepTime getWakeFrame() const;
 	void setWakeFrame(Object *obj, UpdateSleepTime wakeDelay);
 	Object *getObject() const;
+	/* batch A41: BehaviorModule's (nothing) */
+	void onDelete( void ) { }
 };
 
 /* AIGroup (AIGroup.cpp, not yet translated): the speed recomputation a locomotor change asks for (logged) */

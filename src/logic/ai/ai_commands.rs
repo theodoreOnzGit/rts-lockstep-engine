@@ -239,6 +239,10 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A41: `JetAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the base's
+    if matches!(ai(h).subclass, AiSubclass::Jet(_)) {
+        return crate::logic::ai::jet_ai_update::jet_ai_do_command(sm, h, parms);
+    }
     // batch A40: `ChinookAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the supply truck's (the base's)
     if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
         return crate::logic::ai::chinook_ai_update::chinook_ai_do_command(sm, h, parms);
@@ -285,6 +289,12 @@ pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiC
     }
     let p = parms;
     let src = p.cmd_source;
+    // (batch A41: a jet's own `privateFollowPath` leaving production, `privateEnter` and `privateGetRepaired`)
+    if matches!(ai(h).subclass, AiSubclass::Jet(_)) {
+        if let Some(r) = crate::logic::ai::jet_ai_update::jet_private_command(sm, h, p) {
+            return r;
+        }
+    }
     // (batch A40: a chinook's own `privateGetRepaired` and `privateCombatDrop`)
     if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
         if let Some(r) = crate::logic::ai::chinook_ai_update::chinook_private_command(sm, h, p) {
@@ -556,11 +566,78 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
             return Err(StateMachineError::NotTranslated("a player's attack reaching a dozer's aiDoCommand inside a guard machine"));
         }
     }
+    // (batch A41: a jet's aiDoCommand: its own part first, which may keep the command or take off instead)
+    if matches!(ai(h).subclass, AiSubclass::Jet(_)) && !jet_attack_on_locked_machine(h, m, victim, max_shots, src)? {
+        return Ok(());
+    }
     let allowed = attack_object_on_locked_machine(h, m, victim, max_shots, src)?;
     if allowed && matches!(ai(h).subclass, AiSubclass::Worker(_)) {
         crate::logic::ai::worker_ai_update::drop_boxes_if_clearing_mines(h);
     }
     Ok(())
+}
+
+/// `isAllowedToRespondToAiCommands(parms)` for a command while the AI's machine is locked (`m` its view).
+fn allowed_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(h: &mut H, m: &M, src: CommandSourceType) -> bool {
+    if h.is_effectively_dead() {
+        return false;
+    }
+    let mood = with_ai(h, |a, h| a.get_mood_matrix_value(&*h, Some(m)));
+    if mood & MM_CONTROLLER_AI != 0 && mood & MM_MOOD_SLEEP != 0 {
+        return false;
+    }
+    !(src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands)
+}
+
+/// Batch A41: `JetAIUpdate::aiDoCommand`'s own part for an attack while the AI's machine is locked: the producer's location; not
+/// allowed: nothing; the command kept; taking off or landing, it waits; grounded, it waits while we take off (the machine's clear
+/// and state do nothing, their other effects kept); else not resumable, nothing waiting: true (the base's follows).
+fn jet_attack_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
+    h: &mut H,
+    m: &M,
+    victim: ObjectId,
+    max_shots: i32,
+    src: CommandSourceType,
+) -> SmResult<bool> {
+    use crate::logic::ai::jet_ai_update as jet;
+    jet::get_producer_location(h);
+    if !allowed_on_locked_machine(h, m, src) {
+        return Ok(false);
+    }
+    let mut parms = AiCommandParms::new(AICMD_ATTACK_OBJECT, src);
+    parms.obj = victim;
+    parms.int_value = max_shots;
+    let mut storage = std::mem::take(&mut jet::jt(h).most_recent_command);
+    storage.store(h, &parms);
+    jet::jt(h).most_recent_command = storage;
+    let j = jet::jt(h);
+    if j.get_flag(jet::TAKEOFF_IN_PROGRESS) || j.get_flag(jet::LANDING_IN_PROGRESS) {
+        j.set_flag(jet::HAS_PENDING_COMMAND, true);
+        return Ok(false);
+    }
+    if !j.get_flag(jet::ALLOW_AIR_LOCO) {
+        // "nuke any existing pending cmd"
+        let mut storage = std::mem::take(&mut jet::jt(h).most_recent_command);
+        storage.store(h, &parms);
+        jet::jt(h).most_recent_command = storage;
+        jet::jt(h).set_flag(jet::HAS_PENDING_COMMAND, true);
+        // getStateMachine()->clear(): the machine's does nothing; its members cleared, the AI told
+        let extras = &mut ai(h).machine;
+        extras.goal_path.clear();
+        extras.goal_waypoint = None;
+        extras.goal_squad = None;
+        with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
+        set_last_command_source(h, CMD_FROM_AI);
+        // setState(TAKING_OFF_AWAIT_CLEARANCE): the machine's does nothing; the AI told when the state asked for differs
+        if m.current_state_id() != jet::TAKING_OFF_AWAIT_CLEARANCE {
+            with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
+        }
+        return Ok(false);
+    }
+    let j = jet::jt(h);
+    j.set_flag(jet::ALLOW_INTERRUPT_AND_RESUME_OF_CUR_STATE_FOR_RELOAD, false);
+    j.set_flag(jet::HAS_PENDING_COMMAND, false);
+    Ok(true)
 }
 
 /// The rest of [`ai_attack_object_on_locked_machine`] (whether the AI was allowed to respond).
@@ -587,14 +664,7 @@ fn attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
         crate::logic::ai::assault_transport_ai_update::assault_transport_do_command(h, &parms);
     }
     // isAllowedToRespondToAiCommands
-    if h.is_effectively_dead() {
-        return Ok(false);
-    }
-    let mood = with_ai(h, |a, h| a.get_mood_matrix_value(&*h, Some(m)));
-    if mood & MM_CONTROLLER_AI != 0 && mood & MM_MOOD_SLEEP != 0 {
-        return Ok(false);
-    }
-    if src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands {
+    if !allowed_on_locked_machine(h, m, src) {
         return Ok(false);
     }
     // privateAttackObject (a transport's: its passengers first; batch A31, found by the deployers' run) (batch A40: a chinook's own
@@ -769,8 +839,12 @@ fn private_tighten_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &
 /// `privateMoveAwayFromUnit(unit, cmdSource)`: a path out of the unit's way (and the previous one's), followed as the temporary
 /// state for ten seconds.
 fn private_move_away_from_unit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, unit: ObjectId, _src: CommandSourceType) -> SmResult<()> {
-    // (isAllowedToMoveAwayFromUnit: the base class's TRUE)
-    if ai(h).is_ai_in_dead_state() || !h.is_mobile() {
+    // (isAllowedToMoveAwayFromUnit: the base class's TRUE; batch A41: a jet's, not parked, taking off or landing)
+    let allowed = match &ai(h).subclass {
+        AiSubclass::Jet(j) => crate::logic::ai::jet_ai_update::is_allowed_to_move_away_from_unit(j),
+        _ => true,
+    };
+    if ai(h).is_ai_in_dead_state() || !h.is_mobile() || !allowed {
         return Ok(());
     }
     let id = unit;
@@ -802,9 +876,10 @@ fn private_move_away_from_unit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, unit: 
         new_path = h.pf_move_away_from_path(id, obj2, path2);
     }
     if let Some(path) = new_path {
-        let a = ai(h);
-        a.destroy_path();
-        a.path = Some(path);
+        with_ai(h, |a, h| {
+            a.destroy_path(h);
+            a.path = Some(path);
+        });
         with_ai(h, |a, h| a.wake_up_now(h));
         aism_set_temporary_state(sm, h, AI_MOVE_OUT_OF_THE_WAY, 10 * LOGICFRAMES_PER_SECOND)?;
         // "If I don't collide with things, I don't need to tell them to get out of the way"
@@ -845,7 +920,7 @@ fn private_waypoint_state<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, way: Option
 
 /// `privateFollowPathAppend(pos, cmdSource)`: appended to the path being followed, else a new path (from the goal position if
 /// moving).
-fn private_follow_path_append<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, src: CommandSourceType) -> SmResult<()> {
+pub fn private_follow_path_append<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, src: CommandSourceType) -> SmResult<()> {
     let effectively_moving = with_ai(h, |a, h| a.is_moving(&*sm, h)) || ai(h).waiting_for_path;
     let a = ai(h);
     if a.get_ai_state_type(&*sm) == AI_FOLLOW_PATH && !a.machine.goal_path.is_empty() && effectively_moving {
@@ -992,7 +1067,7 @@ fn private_attack_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coor
         }
     }
     aism_clear(sm, h)?;
-    ai(h).destroy_path();
+    crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
     set_goal_position_clipped(sm, h, Some(&local_pos), src);
     set_last_command_source(h, src);
     aism_set_state(sm, h, AI_ATTACK_POSITION)?;

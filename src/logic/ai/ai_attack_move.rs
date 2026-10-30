@@ -244,9 +244,14 @@ fn inner_idle<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> bool {
 pub fn attack_move_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let mut force_retarget = false;
     let mut should_repath = false;
-    // (getJetAIUpdate(): none for AIUpdateInterface)
+    // (getJetAIUpdate(): none for AIUpdateInterface; batch A41: a jet out of its special ammunition)
+    if matches!(crate::logic::ai::ai_states::ai(h).subclass, crate::logic::ai::ai_update::AiSubclass::Jet(_))
+        && crate::logic::ai::jet_ai_update::is_out_of_special_reload_ammo(h)
+    {
+        return Ok(StateReturn::SUCCESS); // "We need to return to base to reload!"
+    }
     if !inner_idle(sm, id) {
-        ai(h).set_locomotor_goal_none();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
         h.clear_model_condition_state(MODELCONDITION_MOVING);
         run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h).map(|_| ()))?;
         // "if the machine is now idling, then we need to attempt to get a new target"
@@ -394,7 +399,7 @@ pub fn attack_follow_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
     let mut force_retarget = false;
     let mut should_repath = false;
     if !inner_idle(sm, id) {
-        ai(h).set_locomotor_goal_none();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
         h.clear_model_condition_state(MODELCONDITION_MOVING);
         run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h).map(|_| ()))?;
         // "if the machine is now idling, then we need to attempt to get a new target"

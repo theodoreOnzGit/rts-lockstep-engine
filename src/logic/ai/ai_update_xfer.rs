@@ -221,6 +221,21 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             r?;
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::Jet(_) = self.ai().subclass {
+            // batch A41: `JetAIUpdate::xfer` (version 2): the base's, then its members
+            let current_version: XferVersion = 2;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut j = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::Jet(j) => j.clone(),
+                _ => unreachable!(),
+            };
+            let r = crate::logic::ai::jet_ai_update::jet_xfer_members(&mut j, h, xfer);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::Jet(j);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) = self.ai().subclass {
             return self.supply_truck_xfer(h, xfer, waypoint_name, waypoint_by_name);
         }
@@ -477,6 +492,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     /// `AIUpdateInterface::loadPostProcess()`: a locomotor set read by name chosen again; not moving: the goal and current cells
     /// forgotten and the pathfinder told the object's position; moving: the goal cell's centre (once) given to the pathfinder.
     pub fn load_post_process(&mut self, h: &mut H) {
+        // (batch A41: `JetAIUpdate::loadPostProcess`'s own part first: "only turn off the ambient sound if the engine is off")
+        if let crate::logic::ai::ai_update::AiSubclass::Jet(j) = &self.ai().subclass {
+            if !j.engines_on && h.has_drawable() {
+                h.drawable_stop_ambient_sound();
+            }
+        }
         // (UpdateModule::loadPostProcess: the base's)
         h.update_module_load_post_process();
         let ai = self.ai_mut();

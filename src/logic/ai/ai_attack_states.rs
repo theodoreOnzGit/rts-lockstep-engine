@@ -518,7 +518,8 @@ pub fn attack_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
         let victim = sm.goal_object(h);
         let Some(v) = victim.filter(|v| !h.object_is_effectively_dead(v.id)) else {
             set_machine(sm, id, Some(inner));
-            // (notifyVictimIsDead: AIUpdateInterface's does nothing)
+            // (notifyVictimIsDead: AIUpdateInterface's does nothing; batch A41: a jet's returns to base)
+            crate::logic::ai::jet_ai_update::notify_victim_is_dead_hook(h);
             return Ok(StateReturn::FAILURE); // "we have nothing to attack!"
         };
         let team = h.object_team(v.id);
@@ -584,7 +585,8 @@ pub fn attack_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
     let (_, attacking_object, _, _) = attack_flags(sm, id);
     if attacking_object {
         let Some(victim) = sm.goal_object(h).filter(|v| !h.object_is_effectively_dead(v.id)) else {
-            // (notifyVictimIsDead: nothing)
+            // (notifyVictimIsDead: batch A41: a jet's)
+            crate::logic::ai::jet_ai_update::notify_victim_is_dead_hook(h);
             return Ok(StateReturn::SUCCESS); // "my, that was easy"
         };
         with_ai(h, |a, h| a.set_current_victim(h, victim.id));
@@ -649,6 +651,7 @@ fn stop_attacking<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: ObjectId) -
         h.set_team_target_object(INVALID_ID);
     }
     // (notifyVictimIsDead: "well, not "dead", but longer attackable")
+    crate::logic::ai::jet_ai_update::notify_victim_is_dead_hook(h);
     StateReturn::FAILURE
 }
 
@@ -867,7 +870,7 @@ pub fn aim_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) {
     let (_, _, can_turn_in_place, set_locomotor) = aim_flags(sm, id);
     // "Tell the ai we are done moving, if we set the locomotor goal."
     if can_turn_in_place && set_locomotor && !plant(3301) {
-        ai(h).set_locomotor_goal_none();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
     }
     h.set_status_bits(&[OBJECT_STATUS_IS_AIMING_WEAPON], false);
 }
@@ -1171,7 +1174,7 @@ pub fn approach_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId)
         }
     } else {
         // "Attacking a position. For a varitey of reasons, we need to destroy any existing path or we spin."
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
     }
     // "If we have a turret, start aiming."
     let (attacking_object, force_attacking) = { let c = chase(sm, id); (c.attacking_object, c.force_attacking) };
@@ -1197,7 +1200,8 @@ pub fn approach_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId)
 /// `AIAttackApproachTargetState::updateInternal()`.
 fn approach_update_internal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     if sm.is_goal_object_destroyed(h) {
-        // (notifyVictimIsDead: nothing)
+        // (notifyVictimIsDead: batch A41: a jet's)
+        crate::logic::ai::jet_ai_update::notify_victim_is_dead_hook(h);
         with_ai(h, |a, h| a.set_current_victim(h, INVALID_ID));
         return Ok(StateReturn::FAILURE);
     }
@@ -1360,6 +1364,8 @@ pub fn pursue_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
 /// `AIAttackPursueTargetState::updateInternal()`: the chase, matching the victim's speed once in range.
 fn pursue_update_internal<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     if sm.is_goal_object_destroyed(h) {
+        // (notifyVictimIsDead: batch A41: a jet's)
+        crate::logic::ai::jet_ai_update::notify_victim_is_dead_hook(h);
         with_ai(h, |a, h| a.set_current_victim(h, INVALID_ID));
         return Ok(StateReturn::FAILURE);
     }

@@ -279,19 +279,23 @@ public:
 	void friend_startingMove(void);
 	/* batch A8: AIUpdate.h's inlines, verbatim */
 	inline const Coord3D* friend_getGoalPathPosition( Int index ) const { return getStateMachine()->getGoalPathPosition( index ); }
+	/* batch A41: AIUpdate.h's inline, verbatim */
+	Path* friend_getPath() { return m_path; }
 	inline void friend_setCurrentGoalPathIndex( Int index ) { m_nextGoalPathIndex = index; }
 	/* batch A10a: AIUpdate.h's inlines, verbatim, and the members of ai_update_a10.inc */
 	Bool areTurretsLinked() const { return getAIUpdateModuleData()->m_turretsLinked; }
 	/* (virtual upstream; plain here: no class of this build overrides them, and the other objects' AIs are not constructed) */
 	CommandSourceType getLastCommandSource() const { return m_lastCommandSource; }
 	Bool isTemporarilyPreventingAimSuccess() const { return false; }
-	void notifyVictimIsDead() { }
+	/* (batch A41: JetAIUpdate overrides it; dispatched explicitly (see isIdle), the base's doing nothing) */
+	void notifyVictimIsDead();
 	void setTurretTargetObject(WhichTurretType tur, Object* o, Bool forceAttacking);
 	void setTurretTargetPosition(WhichTurretType tur, const Coord3D* pos);
 	Real getTurretTurnRate(WhichTurretType tur) const;
 	WhichTurretType getWhichTurretForCurWeapon() const;
 	/* batch A11: AIUpdate.h's (virtual upstream; no subclass here: none) */
-	JetAIUpdate* getJetAIUpdate() { return NULL; }
+	/* (batch A41: a jet's itself, dispatched explicitly (see isIdle)) */
+	JetAIUpdate* getJetAIUpdate();
 	/* AIUpdate.h's inline, verbatim */
 	void friend_setLastCommandSource( CommandSourceType source ) {m_lastCommandSource = source;}
 	/* batch A10b: AIUpdate.h's inlines, verbatim */
@@ -308,10 +312,14 @@ public:
 	void setLocomotorGoalPositionOnPath();
 	void setLocomotorGoalPositionExplicit(const Coord3D& newPos);
 	void setLocomotorGoalOrientation(Real angle);
+	/* (batch A41: virtual upstream, and JetAIUpdate overrides them; dispatched explicitly (see isIdle), the base's bodies base*) */
 	void setLocomotorGoalNone();
+	void baseSetLocomotorGoalNone();
 	Bool isDoingGroundMovement(void) const;
+	Bool baseIsDoingGroundMovement(void) const;
 	Bool isAircraftThatAdjustsDestination(void) const;
 	Bool getTreatAsAircraftForLocoDistToGoal() const;
+	Bool baseGetTreatAsAircraftForLocoDistToGoal() const;
 	Real getLocomotorDistanceToGoal();
 	void setAttitude( AttitudeType tude );
 	void ignoreObstacleID( ObjectID id );
@@ -360,7 +368,8 @@ public:
 	/* batch A4's members (ai_update_a4.inc); batch A30: makeStateMachine and update virtual again (as upstream: the subclasses
 	** override them) */
 	virtual AIStateMachine* makeStateMachine();
-	void onObjectCreated();
+	/* (batch A41: virtual again, as upstream: JetAIUpdate overrides it) */
+	virtual void onObjectCreated();
 	virtual UpdateSleepTime update( void );
 
 	/* batch A5's members (ai_update_a5.inc), and the header's inlines they call, verbatim */
@@ -399,8 +408,9 @@ public:
 	void privateFollowWaypointPathExact( const Waypoint *way, CommandSourceType cmdSource );
 	void privateFollowWaypointPathAsTeam( const Waypoint *way, CommandSourceType cmdSource );
 	void privateFollowWaypointPathAsTeamExact( const Waypoint *way, CommandSourceType cmdSource );
-	void privateFollowPathAppend( const Coord3D *pos, CommandSourceType cmdSource );
-	void privateFollowPath( const std::vector<Coord3D>* path, Object *ignoreObject, CommandSourceType cmdSource, Bool exitProduction );
+	/* (batch A41: virtual again, as upstream: JetAIUpdate overrides them and privateEnter) */
+	virtual void privateFollowPathAppend( const Coord3D *pos, CommandSourceType cmdSource );
+	virtual void privateFollowPath( const std::vector<Coord3D>* path, Object *ignoreObject, CommandSourceType cmdSource, Bool exitProduction );
 	/* (batch A30: the attacks virtual again, as upstream: TransportAIUpdate overrides them) */
 	virtual void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
 	virtual void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
@@ -416,7 +426,7 @@ public:
 	void privateGetHealed( Object *healDepot, CommandSourceType cmdSource );
 	/* (batch A40: virtual again, as upstream: ChinookAIUpdate overrides it and privateCombatDrop) */
 	virtual void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
-	void privateEnter( Object *obj, CommandSourceType cmdSource );
+	virtual void privateEnter( Object *obj, CommandSourceType cmdSource );
 	virtual void privateDock( Object *obj, CommandSourceType cmdSource );
 	virtual void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
 	void privateExit( Object *objectToExit, CommandSourceType cmdSource );
@@ -1237,6 +1247,13 @@ public:
 	PartitionFilterAcceptByKindOf(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) : m_mustBeSet(mustBeSet), m_mustBeClear(mustBeClear) {}
 	KindOfMaskType m_mustBeSet, m_mustBeClear;
 };
+/* batch A41: the jet's airfield search's */
+class PartitionFilterRejectByObjectStatus : public PartitionFilter
+{
+public:
+	PartitionFilterRejectByObjectStatus(ObjectStatusMaskType mustBeSet, ObjectStatusMaskType mustBeClear) { }
+};
+class PartitionFilterAlive : public PartitionFilter { public: PartitionFilterAlive() { } };
 /* (the bored dozer's search: the scene's repair candidates, in id order) */
 class ObjectIterator
 {
@@ -1540,7 +1557,47 @@ enum ChinookFlightStatus // Stored in save file, don't renumber.  jba.
 	CHINOOK_LANDING						= 3,
 	CHINOOK_LANDED						= 4
 };
-class ParkingPlaceBehaviorInterface { public: void setHealee( Object *healee, Bool add ); ObjectID m_airfield; };
+/* (batch A41: and the jet's members: BehaviorModule.h's PPInfo and RunwayReservationType, verbatim; the scene's (logged)) */
+enum RunwayReservationType
+{
+	RESERVATION_TAKEOFF,
+	RESERVATION_LANDING,
+};
+class ParkingPlaceBehaviorInterface
+{
+public:
+	struct PPInfo
+	{
+		Coord3D		parkingSpace; 
+		Real			parkingOrientation;
+		Coord3D		runwayPrep; 
+		Coord3D		runwayStart;
+		Coord3D		runwayEnd;
+		Coord3D		runwayExit;
+		Coord3D	  runwayLandingStart;
+		Coord3D	  runwayLandingEnd;
+		Coord3D		runwayApproach;
+		Coord3D		hangarInternal;
+		Real			runwayTakeoffDist;
+		Real			hangarInternalOrient;
+	};
+	void setHealee( Object *healee, Bool add );
+	Bool hasReservedSpace(ObjectID id) const;
+	Bool reserveSpace(ObjectID id, Real parkingOffset, PPInfo* info);
+	void releaseSpace(ObjectID id);
+	Bool reserveRunway(ObjectID id, Bool forLanding);
+	void calcPPInfo( ObjectID id, PPInfo *info );
+	void releaseRunway(ObjectID id);
+	Int getRunwayCount() const;
+	ObjectID getRunwayReservation( Int r, RunwayReservationType type = RESERVATION_TAKEOFF );
+	void transferRunwayReservationToNextInLineForTakeoff(ObjectID id);
+	Real getApproachHeight() const;
+	Real getLandingDeckHeightOffset() const;
+	Bool calcBestParkingAssignment( ObjectID id, Coord3D *pos, Int *oldIndex = NULL, Int *newIndex = NULL );
+	const std::vector<Coord3D>* getTaxiLocations( ObjectID id ) const;
+	const std::vector<Coord3D>* getCreationLocations( ObjectID id ) const;
+	ObjectID m_airfield;
+};
 /* (the ropes' draw modules' rope interface; the local player; the client's random values, never the logic's (logged)) */
 class RopeDrawInterface
 {
@@ -1554,13 +1611,19 @@ class DrawModule { public: RopeDrawInterface *getRopeDrawInterface() { return &m
 /* (renamed: the module wrapper has its own) */
 #define GameClient AiGameClient
 #define TheGameClient TheAiGameClient
-class GameClient { public: Drawable *findDrawableByID( const DrawableID id ); };
+class GameClient { public: Drawable *findDrawableByID( const DrawableID id ); /* batch A41 (logged) */ void destroyDrawable( Drawable *draw ); };
 extern GameClient *TheGameClient;
 class PlayerList { public: Player *getLocalPlayer(); };
 extern PlayerList *ThePlayerList;
 Real GameClientRandomValueReal( Real lo, Real hi );
 void logChinook(std::vector<unsigned> w);
 void resetChinookRopes();
+void resetJet();
+void logJet(std::vector<unsigned> w);
+void setJetProducer(ObjectID id);
+const AiTemplateView *lockonTemplate();
+ObjectID jetProducerNow();
+Int jetAmmoNow(Int slot);
 ParkingPlaceBehaviorInterface *airfieldParkingPlace( Object *airfield );
 void rappellerSetTransformMatrix( Object *rappeller, const Matrix3D *mtx );
 class ChinookAIUpdate : public SupplyTruckAIUpdate
@@ -1616,6 +1679,154 @@ private:
 	Bool										m_hasPendingCommand;
 };
 #include "ai_chinook_a40.inc"
+/* batch A41: JetAIUpdate. Its module data the header's fields (the constructor its .cpp's; the field parse is the INI's: the scene's,
+** g_jetData); the class as the header declares it without the pool and module macros (the members AIUpdateInterface dispatches
+** explicitly `jet*`: see its isIdle); its .cpp from its taxi modes, verbatim but its module data's field parse, with its cut points
+** (ai_jet_a41.inc; its state ids TAKING_OFF and LANDING, its getPP and calcDistSqr renamed here: the chinook's names). Its world:
+** LOG_JET (see wrap_ai.cpp's end). */
+class JetAIUpdateModuleData : public AIUpdateModuleData
+{
+public:
+	Real										m_outOfAmmoDamagePerSecond;
+	Real										m_takeoffDistForMaxLift;
+	Real										m_minHeight;
+	Real										m_parkingOffset;
+	Real										m_sneakyOffsetWhenAttacking;
+	Bool										m_keepsParkingSpaceWhenAirborne;
+	Bool										m_needsRunway;
+	UnsignedInt							m_takeoffPause;
+	LocomotorSetType				m_attackingLoco;
+	LocomotorSetType				m_returningLoco;
+	UnsignedInt							m_attackLocoPersistTime;
+	UnsignedInt							m_attackersMissPersistTime;
+	UnsignedInt							m_lockonTime;
+	AsciiString							m_lockonCursor;
+	Real										m_lockonInitialDist;
+	Real										m_lockonFreq;
+	Real										m_lockonAngleSpin;
+	Bool										m_lockonBlinky;
+	UnsignedInt							m_returnToBaseIdleTime;
+
+	JetAIUpdateModuleData();
+};
+static JetAIUpdateModuleData *g_jetData;
+/* (the parking place's: the jet's members, the scene's (logged)) */
+class CountermeasuresBehaviorInterface { public: void reloadCountermeasures(); };
+class JetAIUpdate : public AIUpdateInterface
+{
+public:
+
+	JetAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~JetAIUpdate();
+	const JetAIUpdateModuleData *getJetAIUpdateModuleData() const { return g_jetData; }
+
+	virtual UpdateSleepTime update();
+
+	virtual void onObjectCreated();
+	void onDelete();
+
+ 	virtual void aiDoCommand(const AICommandParms* parms);
+	virtual Bool chooseLocomotorSet(LocomotorSetType wst);
+	void jetSetLocomotorGoalNone();
+	Bool jetIsIdle() const;
+	Bool isTaxiingToParking() const;
+	Bool isReloading() const;
+
+	virtual Bool isAllowedToMoveAwayFromUnit() const;
+	Bool getSneakyTargetingOffset(Coord3D* offset) const;
+	void jetAddTargeter(ObjectID id, Bool add);
+	Bool jetIsTemporarilyPreventingAimSuccess() const;
+	Bool jetIsDoingGroundMovement() const;
+	void jetNotifyVictimIsDead();
+	Bool isOutOfSpecialReloadAmmo() const;
+
+	const Coord3D* friend_getProducerLocation() const { return &m_producerLocation; }
+	Real friend_getOutOfAmmoDamagePerSecond() const { return getJetAIUpdateModuleData()->m_outOfAmmoDamagePerSecond; }
+	Bool friend_keepsParkingSpaceWhenAirborne() const { return getJetAIUpdateModuleData()->m_keepsParkingSpaceWhenAirborne; }
+	Bool friend_needsRunway() const { return getJetAIUpdateModuleData()->m_needsRunway; }
+	Real friend_getTakeoffDistForMaxLift() const { return getJetAIUpdateModuleData()->m_takeoffDistForMaxLift; }
+	Real friend_getMinHeight() const { return getJetAIUpdateModuleData()->m_minHeight; }
+	Real friend_getParkingOffset() const { return getJetAIUpdateModuleData()->m_parkingOffset; }
+	UnsignedInt friend_getTakeoffPause() const { return getJetAIUpdateModuleData()->m_takeoffPause; }
+	void friend_setGoalPath( const std::vector<Coord3D>* path ) { getStateMachine()->setGoalPath(path); }
+	void friend_setTakeoffInProgress(Bool v) { setFlag(TAKEOFF_IN_PROGRESS, v); }
+	void friend_setLandingInProgress(Bool v) { setFlag(LANDING_IN_PROGRESS, v); }
+	void friend_setTaxiInProgress(Bool v) { setFlag(TAXI_IN_PROGRESS, v); }
+	void friend_setUseSpecialReturnLoco(Bool v) { setFlag(USE_SPECIAL_RETURN_LOCO, v); }
+	void friend_setAllowCircling(Bool v) { setFlag(ALLOW_CIRCLING, v); }
+	const Coord3D& friend_getLandingPosForHelipadStuff() const { return m_landingPosForHelipadStuff; }
+	void friend_enableAfterburners(Bool v);
+	void friend_setAllowAirLoco(Bool a);
+	Bool friend_isTakeoffOrLandingInProgress() const
+	{
+		return (getFlag(TAKEOFF_IN_PROGRESS) || getFlag(LANDING_IN_PROGRESS));
+	}
+	void friend_addWaypointToGoalPath( const Coord3D &pos );
+	AICommandType friend_getPendingCommandType() const;
+	void friend_purgePendingCommand();
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual AIStateMachine* makeStateMachine();
+
+	virtual void privateFollowPath( const std::vector<Coord3D>* path, Object *ignoreObject, CommandSourceType cmdSource, Bool exitProduction );
+	virtual void privateFollowPathAppend( const Coord3D *pos, CommandSourceType cmdSource );
+	virtual void privateEnter( Object *obj, CommandSourceType cmdSource );
+	virtual void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
+
+	void pruneDeadTargeters();
+	void positionLockon();
+
+	Bool jetGetTreatAsAircraftForLocoDistToGoal() const;
+	Bool isParkedAt(const Object* obj) const;
+
+private:
+
+	enum FlagType
+	{
+		HAS_PENDING_COMMAND,
+		ALLOW_AIR_LOCO,
+		HAS_PRODUCER_LOCATION,
+		TAKEOFF_IN_PROGRESS,
+		LANDING_IN_PROGRESS,
+		USE_SPECIAL_RETURN_LOCO,
+		ALLOW_CIRCLING,
+		ALLOW_INTERRUPT_AND_RESUME_OF_CUR_STATE_FOR_RELOAD,
+		TAXI_IN_PROGRESS
+	};
+
+	Coord3D									m_producerLocation;
+	AICommandParmsStorage		m_mostRecentCommand;
+	AudioEventRTS						m_afterburnerSound;
+	UnsignedInt							m_attackLocoExpireFrame;
+	UnsignedInt							m_attackersMissExpireFrame;
+	UnsignedInt							m_returnToBaseFrame;
+	std::list<ObjectID>			m_targetedBy;
+	UnsignedInt							m_untargetableExpireFrame;
+	Drawable*								m_lockonDrawable;
+	Int											m_flags;
+	Coord3D									m_landingPosForHelipadStuff;
+	Bool										m_enginesOn;
+
+	void getProducerLocation();
+	void buildLockonDrawableIfNecessary();
+	void doLandingCommand(Object *airfield, CommandSourceType cmdSource);
+	Bool getFlag(FlagType f) const;
+	void setFlag(FlagType f, Bool v);
+};
+#define TAKING_OFF JET_TAKING_OFF
+#define LANDING JET_LANDING
+#define getPP jetGetPP
+#define calcDistSqr jetCalcDistSqr
+#include "ai_jet_a41.inc"
+#undef TAKING_OFF
+#undef LANDING
+#undef getPP
+#undef calcDistSqr
 /* (the delivery's world's objects, defined with it below) */
 static AiTemplateView g_payloadTemplates[2];
 /* (batch A40: the chinook's rope's template) */
@@ -2249,7 +2460,9 @@ namespace { Drawable g_drawable; AudioEventRTS g_unitSound; }
 /* (batch A37: a delivering AI's object when the scene says so) */
 Drawable *Object::getDrawable() const
 {
-	return (g_aiEnv.subclass == 6 || ((g_aiEnv.deployFlags >> 4) & 1) || (g_aiEnv.subclass == 9 && (g_aiEnv.deliverFlags & 1))) ? &g_drawable : NULL;
+	/* (batch A41: a jet's when the scene says so) */
+	return (g_aiEnv.subclass == 6 || ((g_aiEnv.deployFlags >> 4) & 1) || (g_aiEnv.subclass == 9 && (g_aiEnv.deliverFlags & 1))
+		|| (g_aiEnv.subclass == 13 && (g_aiEnv.jetWorld[3] & 64))) ? &g_drawable : NULL;
 }
 void Drawable::setAnimationFrame(int frame) { L(LOG_ANIM_FRAME, { (unsigned)frame }); }
 void Object::clearModelConditionFlags(const ModelConditionFlags &clr)
@@ -2351,7 +2564,12 @@ Bool Pathfinder::moveAllies(Object *obj, Path *path)
 	return TRUE;
 }
 const AsciiString& Object::getName() const { return AsciiString::TheEmptyString; }
-const AsciiString& AiTemplateView::getName() const { return AsciiString::TheEmptyString; }
+/* (batch A41: the jet's lock-on cursor's "lockon") */
+const AsciiString& AiTemplateView::getName() const
+{
+	static const AsciiString lockon("lockon");
+	return this == lockonTemplate() ? lockon : AsciiString::TheEmptyString;
+}
 Bool Pathfinder::clientSafeQuickDoesPathExist(const LocomotorSet& locomotorSet, const Coord3D *from, const Coord3D *to)
 {
 	bool r = p1Pick(p1Hash(15, { bitsOf(to->x), bitsOf(to->y) }), g_aiEnv.pathExistsRate);
@@ -2390,6 +2608,14 @@ Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, Dis
 Object *PartitionManager::getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
 	Real *closestDist, Coord3D *closestDistVec)
 {
+	/* (batch A41: the jet's airfield search: the scene's airfield, if its parking-place filter (upstream's, which reserves a space)
+	** allows it; logged) */
+	if (dynamic_cast<const PartitionFilterAcceptByKindOf *>(filters[0])) {
+		Object *o = findObject((ObjectID)g_aiEnv.jetWorld[5]);
+		if (o && !static_cast<PartitionFilterHasParkingPlace *>(filters[5])->allow(o)) o = NULL;
+		logJet({ 16u, (unsigned)obj->getID(), o ? (unsigned)o->getID() : 0u });
+		return o;
+	}
 	/* (batch A38: the bored dozer's mine: the scene's attack answer, logged with the filters) */
 	if (dynamic_cast<const PartitionFilterRelationship *>(filters[0])) {
 		const PartitionFilterRelationship *rel = (const PartitionFilterRelationship *)filters[0];
@@ -2480,6 +2706,8 @@ DockUpdateInterface *Object::getDockUpdateInterface()
 }
 ObjectID Object::getProducerID() const
 {
+	/* (batch A41: a jet's own: the case's) */
+	if (!m_otherId && g_aiEnv.subclass == 13) return jetProducerNow();
 	return (m_otherId && ((g_aiEnv.droneMask >> m_otherId) & 1)) ? (ObjectID)g_aiEnv.objectId : INVALID_ID;
 }
 extern ExitInterface g_exit;
@@ -3125,6 +3353,28 @@ void setScene(const AiEnv *env)
 	g_chinookData->m_ropeName = (env->chinookInts[3] & 2) ? "rope" : "norope";
 	g_chinookData->m_rotorWashParticleSystem = (env->chinookInts[3] & 4) ? "ps0" : "";
 	g_chinookData->m_upgradedSupplyBoost = env->chinookInts[4];
+	/* batch A41: a JetAIUpdate's data (its constructor's defaults, then the scene's; the lock-on's cursor "lockon" when found) */
+	delete g_jetData;
+	g_jetData = new JetAIUpdateModuleData();
+	g_jetData->m_outOfAmmoDamagePerSecond = env->jetReals[0];
+	g_jetData->m_takeoffDistForMaxLift = env->jetReals[1];
+	g_jetData->m_minHeight = env->jetReals[2];
+	g_jetData->m_parkingOffset = env->jetReals[3];
+	g_jetData->m_sneakyOffsetWhenAttacking = env->jetReals[4];
+	g_jetData->m_lockonInitialDist = env->jetReals[5];
+	g_jetData->m_lockonFreq = env->jetReals[6];
+	g_jetData->m_lockonAngleSpin = env->jetReals[7];
+	g_jetData->m_keepsParkingSpaceWhenAirborne = (env->jetInts[0] & 1) != 0;
+	g_jetData->m_needsRunway = (env->jetInts[0] & 2) != 0;
+	g_jetData->m_lockonBlinky = (env->jetInts[0] & 4) != 0;
+	g_jetData->m_lockonCursor = (env->jetInts[0] & 8) ? "lockon" : "";
+	g_jetData->m_takeoffPause = (UnsignedInt)env->jetInts[1];
+	g_jetData->m_attackingLoco = (LocomotorSetType)env->jetInts[2];
+	g_jetData->m_returningLoco = (LocomotorSetType)env->jetInts[3];
+	g_jetData->m_attackLocoPersistTime = (UnsignedInt)env->jetInts[4];
+	g_jetData->m_attackersMissPersistTime = (UnsignedInt)env->jetInts[5];
+	g_jetData->m_lockonTime = (UnsignedInt)env->jetInts[6];
+	g_jetData->m_returnToBaseIdleTime = (UnsignedInt)env->jetInts[7];
 	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
@@ -3365,6 +3615,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_object.setPosition(&p);
 	g_object.setOrientation(angle);
 	--g_aiQuiet;
+	/* batch A41: the jet's producer, its weapons' ammunition and its status bits, the scene's */
+	resetJet();
 	/* batch A30: the scene's class (1 WanderAIUpdate, 2 TransportAIUpdate; batch A31: 3 DeployStyleAIUpdate) */
 	switch (g_aiEnv.subclass) {
 		case 1: g_ai_update = new (ShimZeroFill{}) WanderAIUpdate(NULL, NULL); break;
@@ -3383,6 +3635,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 11: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) WorkerAIUpdate(NULL, NULL); break;
 		/* (batch A40: likewise; the supply truck's machine's default state asks) */
 		case 12: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) ChinookAIUpdate(NULL, NULL); break;
+		case 13: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) JetAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -3565,6 +3818,32 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 			if (op == 130) { putF(r, d->getRepairHealthPerSecond()); putF(r, d->getBoredTime()); putF(r, d->getBoredRange()); }
 			if (op == 131) d->createBridgeScaffolding(findObject((ObjectID)ia[0]));
 			if (op == 132) d->removeBridgeScaffolding(findObject((ObjectID)ia[0]));
+		}
+		break;
+	/* batch A41: a jet's own members (ia[0]: a targeter, ia[1] add; ia[0] the afterburners) (nothing for another class) */
+	case 143: case 144: case 145: case 146: case 147: case 148: case 149:
+		if (g_aiEnv.subclass == 13) {
+			JetAIUpdate *j = (JetAIUpdate *)ai;
+			if (op == 143) {
+				r.push_back(j->isTaxiingToParking() ? 1u : 0u);
+				r.push_back(j->isReloading() ? 1u : 0u);
+				r.push_back(j->isOutOfSpecialReloadAmmo() ? 1u : 0u);
+				r.push_back(j->isAllowedToMoveAwayFromUnit() ? 1u : 0u);
+				r.push_back(j->jetIsTemporarilyPreventingAimSuccess() ? 1u : 0u);
+				Coord3D off; off.zero();
+				r.push_back(j->getSneakyTargetingOffset(&off) ? 1u : 0u);
+				putPos(r, off);
+				r.push_back((unsigned)j->friend_getPendingCommandType());
+				r.push_back(j->isDoingGroundMovement() ? 1u : 0u);
+				r.push_back(j->getTreatAsAircraftForLocoDistToGoal() ? 1u : 0u);
+				r.push_back(j->friend_isTakeoffOrLandingInProgress() ? 1u : 0u);
+			}
+			if (op == 144) j->jetAddTargeter((ObjectID)ia[0], ia[1] != 0);
+			if (op == 145) j->notifyVictimIsDead();
+			if (op == 146) j->onDelete();
+			if (op == 147) j->friend_purgePendingCommand();
+			if (op == 148) j->friend_enableAfterburners(ia[0] != 0);
+			if (op == 149) j->friend_addWaypointToGoalPath(p);
 		}
 		break;
 	/* batch A40: a chinook's own members (ia[0]: an exiter) (nothing for another class) */
@@ -4432,6 +4711,62 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 			}
 		}
 	}
+	/* batch A41: a JetAIUpdate's members, its machine's own states' (the pause's, the reload's, the heli's take-off and landing, the
+	** take-off and landing's) */
+	if (g_aiEnv.subclass == 13) {
+		const JetAIUpdate *j = (const JetAIUpdate *)ai;
+		putPos(v, j->m_producerLocation);
+		const AICommandParmsStorage &c = j->m_mostRecentCommand;
+		putU32(v, (unsigned)c.m_cmd);
+		putU32(v, (unsigned)c.m_cmdSource);
+		putPos(v, c.m_pos);
+		putU32(v, (unsigned)c.m_obj);
+		putU32(v, j->m_attackLocoExpireFrame);
+		putU32(v, j->m_attackersMissExpireFrame);
+		putU32(v, j->m_returnToBaseFrame);
+		putU32(v, (unsigned)j->m_targetedBy.size());
+		for (ObjectID id : j->m_targetedBy) putU32(v, (unsigned)id);
+		putU32(v, j->m_untargetableExpireFrame);
+		putU32(v, j->m_lockonDrawable ? (unsigned)j->m_lockonDrawable->getID() + 1u : 0u);
+		putU32(v, (unsigned)j->m_flags);
+		putPos(v, j->m_landingPosForHelipadStuff);
+		putU32(v, j->m_enginesOn ? 1u : 0u);
+		putU32(v, j->m_afterburnerSound.getPlayingHandle());
+		const StateMachine *m = j->m_stateMachine;
+		if (m) {
+			const Bool runway = g_jetData->m_needsRunway;
+			if (runway) {
+				const JetPauseBeforeTakeoffState *ps = (const JetPauseBeforeTakeoffState *)m->m_stateMap.find(1004)->second;
+				putU32(v, ps->m_when);
+				putU32(v, ps->m_whenTransfer);
+				putU32(v, (unsigned)ps->m_waitedForTaxiID);
+				putU32(v, ps->m_resetTimer ? 1u : 0u);
+				putU32(v, ps->m_afterburners ? 1u : 0u);
+				for (StateID s : { (StateID)1005, (StateID)1007 }) {
+					const JetTakeoffOrLandingState *t = (const JetTakeoffOrLandingState *)m->m_stateMap.find(s)->second;
+					putF(v, t->m_maxLift);
+					putF(v, t->m_maxSpeed);
+					putU32(v, t->m_landingSoundPlayed ? 1u : 0u);
+				}
+			} else {
+				for (StateID s : { (StateID)1005, (StateID)1007 }) {
+					const HeliTakeoffOrLandingState *t = (const HeliTakeoffOrLandingState *)m->m_stateMap.find(s)->second;
+					putPos(v, t->m_path[0]);
+					putPos(v, t->m_path[1]);
+					putU32(v, (unsigned)t->m_index);
+					putPos(v, t->m_parkingLoc);
+					putF(v, t->m_parkingOrientation);
+				}
+			}
+			const JetOrHeliReloadAmmoState *rs = (const JetOrHeliReloadAmmoState *)m->m_stateMap.find(1010)->second;
+			putU32(v, rs->m_reloadTime);
+			putU32(v, rs->m_reloadDoneFrame);
+			const JetOrHeliCirclingDeadAirfieldState *cs = (const JetOrHeliCirclingDeadAirfieldState *)m->m_stateMap.find(1013)->second;
+			putU32(v, (unsigned)cs->m_checkAirfield);
+		}
+		putU32(v, (unsigned)jetProducerNow());
+		for (int i = 0; i < 3; ++i) putU32(v, (unsigned)jetAmmoNow(i));
+	}
 	/* batch A35: a SupplyTruckAIUpdate's members and its machine's (batch A40: and a chinook's) */
 	if (g_aiEnv.subclass == 7 || g_aiEnv.subclass == 12) {
 		const SupplyTruckAIUpdate *t = (const SupplyTruckAIUpdate *)ai;
@@ -4612,7 +4947,28 @@ Bool AIUpdateInterface::isIdle() const
 	if (this == g_ai_update && g_aiEnv.subclass == 6) return ((const HackInternetAIUpdate *)this)->hackIsIdle();
 	/* (batch A40: a chinook's own) */
 	if (this == g_ai_update && g_aiEnv.subclass == 12) return ((const ChinookAIUpdate *)this)->chinookIsIdle();
+	/* (batch A41: a jet's own) */
+	if (this == g_ai_update && g_aiEnv.subclass == 13) return ((const JetAIUpdate *)this)->jetIsIdle();
 	return baseIsIdle();
+}
+/* batch A41: the jet's members AIUpdateInterface dispatches explicitly (virtual upstream; another object's AI is not constructed) */
+JetAIUpdate* AIUpdateInterface::getJetAIUpdate() { return (this == g_ai_update && g_aiEnv.subclass == 13) ? (JetAIUpdate *)this : NULL; }
+Bool jetOutOfSpecialReloadAmmo(JetAIUpdate *jet) { return jet->isOutOfSpecialReloadAmmo(); }
+void AIUpdateInterface::notifyVictimIsDead() { if (JetAIUpdate *j = getJetAIUpdate()) j->jetNotifyVictimIsDead(); }
+void AIUpdateInterface::setLocomotorGoalNone()
+{
+	if (JetAIUpdate *j = getJetAIUpdate()) j->jetSetLocomotorGoalNone();
+	else baseSetLocomotorGoalNone();
+}
+Bool AIUpdateInterface::isDoingGroundMovement(void) const
+{
+	if (JetAIUpdate *j = const_cast<AIUpdateInterface *>(this)->getJetAIUpdate()) return j->jetIsDoingGroundMovement();
+	return baseIsDoingGroundMovement();
+}
+Bool AIUpdateInterface::getTreatAsAircraftForLocoDistToGoal() const
+{
+	if (JetAIUpdate *j = const_cast<AIUpdateInterface *>(this)->getJetAIUpdate()) return j->jetGetTreatAsAircraftForLocoDistToGoal();
+	return baseGetTreatAsAircraftForLocoDistToGoal();
 }
 
 /* batch A35: the supply truck's world (LOG_SUPPLY) and the virtual getSupplyTruckAIInterface's dispatch (a supply truck itself) */
@@ -4831,6 +5187,8 @@ const AiTemplateView *ThingFactory::findTemplate(const AsciiString& name)
 	if (strcmp(name.str(), "pt1") == 0) return &g_payloadTemplates[1];
 	/* (batch A40: the chinook's rope) */
 	if (strcmp(name.str(), "rope") == 0) return &g_ropeTemplate;
+	/* (batch A41: the jet's lock-on cursor) */
+	if (strcmp(name.str(), "lockon") == 0) return lockonTemplate();
 	return NULL;
 }
 PayloadObject *ThingFactory::newObject(const AiTemplateView *tmplate, Team *team)
@@ -4941,7 +5299,12 @@ ObjectID Object::getBuilderID() const
 	return r;
 }
 void Object::setBuilder(const Object *obj) { logDozer({ 3u, (unsigned)getID(), obj ? (unsigned)obj->getID() : 0u }); }
-void Object::setProducer(const Object *obj) { logDozer({ 4u, (unsigned)getID(), obj ? (unsigned)obj->getID() : 0u }); }
+void Object::setProducer(const Object *obj)
+{
+	logDozer({ 4u, (unsigned)getID(), obj ? (unsigned)obj->getID() : 0u });
+	/* (batch A41: a jet's own, kept) */
+	if (!m_otherId && g_aiEnv.subclass == 13) setJetProducer(obj ? obj->getID() : INVALID_ID);
+}
 void Object::setConstructionPercent(Real percent)
 {
 	m_constructionPercent = percent;
@@ -5127,6 +5490,165 @@ Drawable *ThingFactory::newDrawable(const AiTemplateView *tmplate)
 }
 DrawModule **Drawable::getDrawModules() { return g_ropeModuleLists[m_ropeId % 64]; }
 void resetChinookRopes() { g_nextRope = 1; }
+/* ---- batch A41: the jet's world (LOG_JET): its producer and its weapons' ammunition (the case's, from the scene's); its parking
+** place's answers (the hash's at the scene's rates; its PPInfo from the airfield's position and the hash of the airfield and the jet);
+** its drawable's, the lock-on's, the audio's calls (logged) */
+namespace { ObjectID g_jetProducer; Int g_jetAmmo[3]; CountermeasuresBehaviorInterface g_countermeasures; AiTemplateView g_lockonTemplate;
+	AudioManager::MiscAudio g_miscAudio; std::vector<Coord3D> g_jetLocations; }
+void logJet(std::vector<unsigned> w)
+{
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_JET);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+void setJetProducer(ObjectID id) { g_jetProducer = id; }
+void resetJet()
+{
+	g_jetProducer = (ObjectID)g_aiEnv.jetInts[8];
+	for (int i = 0; i < 3; ++i) g_jetAmmo[i] = (g_aiEnv.jetWeapons[i] >> 5) & 15;
+	if (g_aiEnv.subclass == 13) {
+		if (g_aiEnv.jetWorld[3] & 8) g_object.m_status |= 1ULL << OBJECT_STATUS_DECK_HEIGHT_OFFSET;
+		if (g_aiEnv.jetWorld[3] & 16) g_object.m_status |= 1ULL << OBJECT_STATUS_REASSIGN_PARKING;
+		if (g_aiEnv.jetWorld[3] & 128) g_object.m_status |= 1ULL << OBJECT_STATUS_IS_ATTACKING;
+	}
+}
+const AiTemplateView *lockonTemplate() { return &g_lockonTemplate; }
+ObjectID jetProducerNow() { return g_jetProducer; }
+Int jetAmmoNow(Int slot) { return g_jetAmmo[slot]; }
+static Bool jetPick(unsigned salt, std::initializer_list<unsigned> w, Int rate) { return p1Pick(p1Hash(salt, w), (unsigned)rate); }
+Bool ParkingPlaceBehaviorInterface::hasReservedSpace(ObjectID id) const
+{
+	Bool r = (g_aiEnv.jetWorld[3] & 1) != 0;
+	logJet({ 7u, (unsigned)m_airfield, (unsigned)id, r ? 1u : 0u });
+	return r;
+}
+void ParkingPlaceBehaviorInterface::calcPPInfo(ObjectID id, PPInfo *info)
+{
+	logJet({ 6u, (unsigned)m_airfield, (unsigned)id });
+	Object *af = findObject(m_airfield);
+	Coord3D a = af ? *af->getPosition() : Coord3D();
+	if (!af) a.zero();
+	unsigned h = p1Hash(151, { (unsigned)m_airfield, (unsigned)id });
+	auto at = [&](Real x, Real y, Real z) { Coord3D c; c.x = a.x + x; c.y = a.y + y; c.z = a.z + z; return c; };
+	info->parkingSpace = at(10.0f * (Real)(1 + h % 3), 5.0f, 0.0f);
+	info->parkingOrientation = (Real)((h >> 2) % 8) * (PI / 4.0f);
+	info->runwayPrep = at(20.0f, 10.0f, 0.0f);
+	info->runwayStart = at(30.0f, 0.0f, 0.0f);
+	info->runwayEnd = at(80.0f, 0.0f, 0.0f);
+	info->runwayExit = at(100.0f, 0.0f, 10.0f);
+	info->runwayLandingStart = at(30.0f, -10.0f, 0.0f);
+	info->runwayLandingEnd = at(80.0f, -10.0f, 0.0f);
+	info->runwayApproach = at(150.0f, 0.0f, g_aiEnv.jetPP[0]);
+	info->hangarInternal = a;
+	info->runwayTakeoffDist = g_aiEnv.jetPP[2];
+	info->hangarInternalOrient = 0.0f;
+}
+Bool ParkingPlaceBehaviorInterface::reserveSpace(ObjectID id, Real parkingOffset, PPInfo *info)
+{
+	Bool r = jetPick(152, { (unsigned)m_airfield, (unsigned)id, g_aiEnv.frame }, g_aiEnv.jetWorld[0]);
+	logJet({ 0u, (unsigned)m_airfield, (unsigned)id, bitsOf(parkingOffset), info ? 1u : 0u, r ? 1u : 0u });
+	if (r && info) calcPPInfo(id, info);
+	return r;
+}
+void ParkingPlaceBehaviorInterface::releaseSpace(ObjectID id) { logJet({ 1u, (unsigned)m_airfield, (unsigned)id }); }
+Bool ParkingPlaceBehaviorInterface::reserveRunway(ObjectID id, Bool forLanding)
+{
+	Bool r = jetPick(153, { (unsigned)m_airfield, (unsigned)id, g_aiEnv.frame, forLanding ? 1u : 0u }, g_aiEnv.jetWorld[1]);
+	logJet({ 2u, (unsigned)m_airfield, (unsigned)id, forLanding ? 1u : 0u, r ? 1u : 0u });
+	return r;
+}
+void ParkingPlaceBehaviorInterface::releaseRunway(ObjectID id) { logJet({ 3u, (unsigned)m_airfield, (unsigned)id }); }
+Int ParkingPlaceBehaviorInterface::getRunwayCount() const
+{
+	Int n = g_aiEnv.jetWorld[4] & 3;
+	logJet({ 19u, (unsigned)m_airfield, (unsigned)n });
+	return n;
+}
+ObjectID ParkingPlaceBehaviorInterface::getRunwayReservation(Int r, RunwayReservationType type)
+{
+	ObjectID a = (ObjectID)((g_aiEnv.jetWorld[4] >> (8 * (1 + (r & 1)))) & 255);
+	logJet({ 10u, (unsigned)m_airfield, (unsigned)r, (unsigned)type, (unsigned)a });
+	return a;
+}
+void ParkingPlaceBehaviorInterface::transferRunwayReservationToNextInLineForTakeoff(ObjectID id) { logJet({ 5u, (unsigned)m_airfield, (unsigned)id }); }
+Real ParkingPlaceBehaviorInterface::getApproachHeight() const { return g_aiEnv.jetPP[0]; }
+Real ParkingPlaceBehaviorInterface::getLandingDeckHeightOffset() const { return g_aiEnv.jetPP[1]; }
+Bool ParkingPlaceBehaviorInterface::calcBestParkingAssignment(ObjectID id, Coord3D *pos, Int *oldIndex, Int *newIndex)
+{
+	Bool r = jetPick(154, { (unsigned)m_airfield, (unsigned)id, g_aiEnv.frame }, g_aiEnv.jetWorld[2]);
+	logJet({ 4u, (unsigned)m_airfield, (unsigned)id, r ? 1u : 0u });
+	if (r) {
+		PPInfo info;
+		calcPPInfo(id, &info);
+		*pos = info.parkingSpace;
+		pos->x += 5.0f;
+		if (oldIndex) *oldIndex = 1;
+		if (newIndex) *newIndex = 0;
+	}
+	return r;
+}
+const std::vector<Coord3D> *ParkingPlaceBehaviorInterface::getTaxiLocations(ObjectID id) const
+{
+	Bool r = (g_aiEnv.jetWorld[3] & 2) != 0;
+	logJet({ 8u, (unsigned)m_airfield, (unsigned)id, r ? 1u : 0u });
+	if (!r) return NULL;
+	Object *af = findObject(m_airfield);
+	Coord3D a = *af->getPosition();
+	g_jetLocations.clear();
+	for (int i = 0; i < 2; ++i) { Coord3D c = a; c.x += 15.0f * (Real)(i + 1); c.y -= 5.0f; g_jetLocations.push_back(c); }
+	return &g_jetLocations;
+}
+const std::vector<Coord3D> *ParkingPlaceBehaviorInterface::getCreationLocations(ObjectID id) const
+{
+	Bool r = (g_aiEnv.jetWorld[3] & 4) != 0;
+	logJet({ 9u, (unsigned)m_airfield, (unsigned)id, r ? 1u : 0u });
+	if (!r) return NULL;
+	Object *af = findObject(m_airfield);
+	Coord3D a = *af->getPosition();
+	g_jetLocations.clear();
+	for (int i = 0; i < 3; ++i) { Coord3D c = a; c.x -= 6.0f * (Real)(i + 1); c.y += 4.0f; g_jetLocations.push_back(c); }
+	return &g_jetLocations;
+}
+WeaponReloadType Weapon::getReloadType() const { return (g_aiEnv.jetWeapons[m_slot] & 1) ? RETURN_TO_BASE_TO_RELOAD : AUTO_RELOAD; }
+Int Weapon::getRemainingAmmo() const { return g_jetAmmo[m_slot]; }
+Int Weapon::getClipSize() const { return (g_aiEnv.jetWeapons[m_slot] >> 1) & 15; }
+Int Weapon::getClipReloadTime(const Object *source) const { return (g_aiEnv.jetWeapons[m_slot] >> 9) & 255; }
+void Weapon::setClipPercentFull(Real percent, Bool allowReduction)
+{
+	/* (Weapon.cpp's rule: the clip's share, floored, when more, or less if allowed) */
+	Int clip = getClipSize();
+	if (clip != 0) {
+		Int ammo = REAL_TO_INT_FLOOR(clip * percent);
+		if (ammo > g_jetAmmo[m_slot] || (allowReduction && ammo < g_jetAmmo[m_slot])) g_jetAmmo[m_slot] = ammo;
+	}
+	logJet({ 14u, (unsigned)m_slot, bitsOf(percent), allowReduction ? 1u : 0u, (unsigned)g_jetAmmo[m_slot] });
+}
+void Drawable::setInstanceMatrix(const Matrix3D *instance) { logJet({ 11u, instance ? 1u : 0u, instance ? bitsOf(instance->Get_Z_Translation()) : 0u }); }
+void Drawable::enableAmbientSound(Bool enable) { logJet({ 12u, enable ? 1u : 0u }); }
+void Drawable::stopAmbientSound(void) { logJet({ 13u }); }
+void Drawable::setOrientation(Real angle) { logJet({ 17u, (unsigned)m_ropeId, bitsOf(angle) }); }
+const AiTemplateView *Drawable::getTemplate() const { return &g_lockonTemplate; }
+void GameClient::destroyDrawable(Drawable *draw) { logJet({ 21u, (unsigned)draw->getID() }); }
+CountermeasuresBehaviorInterface *Object::getCountermeasuresBehaviorInterface()
+{
+	return (!m_otherId && (g_aiEnv.jetWorld[3] & 32)) ? &g_countermeasures : NULL;
+}
+void CountermeasuresBehaviorInterface::reloadCountermeasures() { logJet({ 15u }); }
+Bool AudioEventRTS::isCurrentlyPlaying() const
+{
+	Bool r = m_playingHandle != 0 && p1Pick(p1Hash(155, { (unsigned)m_playingHandle, g_aiEnv.frame }), 50u);
+	logJet({ 18u, (unsigned)m_playingHandle, r ? 1u : 0u });
+	return r;
+}
+AudioManager::MiscAudio *AudioManager::getMiscAudio()
+{
+	g_miscAudio.m_aircraftWheelScreech = AudioEventRTS();
+	g_miscAudio.m_aircraftWheelScreech.setEventName(AsciiString("s10"));
+	g_miscAudio.m_lockonTickSound = AudioEventRTS();
+	g_miscAudio.m_lockonTickSound.setEventName(AsciiString("s11"));
+	return &g_miscAudio;
+}
 namespace { GameClient g_gameClient; }
 GameClient *TheGameClient = &g_gameClient;
 Drawable *GameClient::findDrawableByID(const DrawableID id) { return id ? &g_ropes[id % 64] : NULL; }
@@ -5142,14 +5664,15 @@ void RopeDrawInterface::setRopeSpeed(Real curSpeed, Real maxSpeed, Real accel)
 	logChinook({ 5u, (unsigned)m_rope, bitsOf(curSpeed), bitsOf(maxSpeed), bitsOf(accel) });
 }
 void Drawable::setExpirationDate(UnsignedInt frame) { logChinook({ 6u, (unsigned)m_ropeId, frame }); }
-namespace { ParkingPlaceBehaviorInterface g_parkingPlace; }
+/* (batch A41: one per airfield, as upstream's modules: the jet compares them) */
+namespace { ParkingPlaceBehaviorInterface g_parkingPlaces[32]; }
 ParkingPlaceBehaviorInterface *airfieldParkingPlace(Object *airfield)
 {
 	Bool r = airfield->getID() < 32 && ((g_aiEnv.chinookMasks[0] >> airfield->getID()) & 1);
 	logChinook({ 7u, (unsigned)airfield->getID(), r ? 1u : 0u });
 	if (!r) return NULL;
-	g_parkingPlace.m_airfield = airfield->getID();
-	return &g_parkingPlace;
+	g_parkingPlaces[airfield->getID()].m_airfield = airfield->getID();
+	return &g_parkingPlaces[airfield->getID()];
 }
 void ParkingPlaceBehaviorInterface::setHealee(Object *healee, Bool add) { logChinook({ 8u, (unsigned)m_airfield, add ? 1u : 0u }); }
 Bool ContainModuleInterface::hasObjectsWantingToEnterOrExit() const

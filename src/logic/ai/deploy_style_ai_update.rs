@@ -204,7 +204,7 @@ pub fn deploy_style_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResul
                 h.set_drawable_animation_frame(frame as i32);
             }
             aism_set_temporary_state(sm, h, AI_BUSY, UPDATE_SLEEP_NONE.0 as i32)?;
-            ai(h).set_locomotor_goal_none();
+            crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
         }
         _ => {}
     }

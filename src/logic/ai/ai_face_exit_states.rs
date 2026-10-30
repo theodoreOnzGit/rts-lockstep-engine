@@ -134,7 +134,7 @@ pub fn exit_xfer(entry_to_clear: &mut ObjectId, xfer: &mut dyn Xfer) -> XferResu
 pub fn face_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let in_place = ai(h).get_cur_locomotor().is_some_and(|l| l.get_min_speed() == 0.0);
     let obj = match sm.state_mut(id) {
-        Some(AiState::Face { obj, can_turn_in_place }) => {
+        Some(AiState::Face { obj, can_turn_in_place }) | Some(AiState::JetPause { obj, can_turn_in_place, .. }) => {
             *can_turn_in_place = in_place != plant(3355);
             *obj
         }
@@ -150,7 +150,7 @@ pub fn face_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
 /// `AIFaceState::update()`: done within two degrees; else the orientation goal (in place) or the position goal.
 pub fn face_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let (obj, in_place) = match sm.state(id) {
-        Some(AiState::Face { obj, can_turn_in_place }) => (*obj, *can_turn_in_place),
+        Some(AiState::Face { obj, can_turn_in_place }) | Some(AiState::JetPause { obj, can_turn_in_place, .. }) => (*obj, *can_turn_in_place),
         _ => unreachable!("the face state"),
     };
     let mut pos = *sm.goal_position();

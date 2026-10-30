@@ -164,9 +164,10 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
     match sm.state_mut(id) {
         Some(AiState::MoveTo { mv, .. })
         | Some(AiState::MoveOutOfTheWay { mv })
+        | Some(AiState::JetTaxi { mv, .. })
         | Some(AiState::MoveAndTighten { mv, .. })
         | Some(AiState::MoveAwayFromRepulsors { mv, .. })
-        | Some(AiState::FollowPath { mv, .. })
+        | Some(AiState::FollowPath { mv, .. }) | Some(AiState::JetTakeoffOrLanding { mv, .. })
         | Some(AiState::MoveAndEvacuate { mv, .. })
         | Some(AiState::MoveAndDelete { mv, .. })
         | Some(AiState::FollowWaypointPath { mv, .. })
@@ -183,7 +184,9 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::GuardReturn { mv, .. })
         | Some(AiState::TnGuardReturn { mv, .. })
         | Some(AiState::GuardCrate { mv, .. })
-        | Some(AiState::ChinookMoveToBldg { mv, .. }) => mv,
+        | Some(AiState::ChinookMoveToBldg { mv, .. })
+        | Some(AiState::JetReturnToDeadAirfield { mv })
+        | Some(AiState::JetReturnForLanding { mv }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -234,7 +237,7 @@ pub(crate) fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateI
     match sm.state(id) {
         Some(AiState::AttackApproach { .. }) => crate::logic::ai::ai_attack_states::approach_compute_path(sm, h, id),
         Some(AiState::AttackPursue { .. }) => crate::logic::ai::ai_attack_states::pursue_compute_path(sm, h, id),
-        Some(AiState::MoveOutOfTheWay { .. }) => {
+        Some(AiState::MoveOutOfTheWay { .. }) | Some(AiState::JetTaxi { .. }) => {
             mv(sm, id).waiting_for_path = true;
             if ai(h).is_blocked_and_stuck {
                 ai(h).set_can_path_through_units(true);
@@ -484,7 +487,7 @@ pub(crate) fn internal_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Sta
             }
             // "we have reached the end of the path"
             if get_adjusts_destination(sm, h, id) {
-                ai(h).set_locomotor_goal_none();
+                crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
             }
             return Ok(StateReturn::SUCCESS);
         }
@@ -586,7 +589,7 @@ pub(crate) fn move_to_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Stat
 pub fn on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     match sm.state(id) {
         Some(AiState::MoveTo { .. }) => move_to_on_enter(sm, h, id),
-        Some(AiState::MoveOutOfTheWay { .. }) => {
+        Some(AiState::MoveOutOfTheWay { .. }) | Some(AiState::JetTaxi { .. }) => {
             mv(sm, id).adjust_destinations = true;
             let Some(path) = &ai(h).path else {
                 // "Must have existing path."
@@ -627,7 +630,7 @@ pub fn on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmRes
             ai_paths::request_safe_path(h, enemy);
             internal_on_enter(sm, h, id)
         }
-        Some(AiState::FollowPath { .. }) => follow_path_on_enter(sm, h, id),
+        Some(AiState::FollowPath { .. }) | Some(AiState::JetTakeoffOrLanding { .. }) => follow_path_on_enter(sm, h, id),
         Some(AiState::MoveAndEvacuate { .. }) => {
             // "This state is not user interruptable."
             sm.lock();
@@ -666,7 +669,7 @@ pub fn on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmRes
 /// next ones.
 fn follow_path_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     let index = 0;
-    if let Some(AiState::FollowPath { index: i, .. }) = sm.state_mut(id) {
+    if let Some(AiState::FollowPath { index: i, .. }) | Some(AiState::JetTakeoffOrLanding { index: i, .. }) = sm.state_mut(id) {
         *i = index;
     }
     let Some(pos) = goal_path_position(h, index) else { return Ok(StateReturn::FAILURE) };
@@ -727,7 +730,7 @@ fn goal_path_position<H: AiStateHost>(h: &mut H, i: i32) -> Option<Coord3D> {
 }
 
 fn set_adjust_final<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, b: bool) {
-    if let Some(AiState::FollowPath { adjust_final, .. }) = sm.state_mut(id) {
+    if let Some(AiState::FollowPath { adjust_final, .. }) | Some(AiState::JetTakeoffOrLanding { adjust_final, .. }) = sm.state_mut(id) {
         *adjust_final = b;
     }
 }
@@ -735,7 +738,7 @@ fn set_adjust_final<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, b: bool) {
 /// (`m_adjustFinal`, `m_adjustFinalOverride`).
 fn follow_path_flags<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> (bool, bool) {
     match sm.state(id) {
-        Some(AiState::FollowPath { adjust_final, adjust_final_override, .. }) => (*adjust_final, *adjust_final_override),
+        Some(AiState::FollowPath { adjust_final, adjust_final_override, .. }) | Some(AiState::JetTakeoffOrLanding { adjust_final, adjust_final_override, .. }) => (*adjust_final, *adjust_final_override),
         _ => unreachable!("a follow-path state"),
     }
 }
@@ -752,7 +755,7 @@ fn follow_path_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
         return Ok(status);
     }
     let mut index = match sm.state_mut(id) {
-        Some(AiState::FollowPath { index, retry_count, .. }) => {
+        Some(AiState::FollowPath { index, retry_count, .. }) | Some(AiState::JetTakeoffOrLanding { index, retry_count, .. }) => {
             if status == StateReturn::FAILURE && *retry_count > 0 && !plant(3280) {
                 // "If we failed, & haven't reached retry limit, try again."
                 *retry_count -= 1;
@@ -774,7 +777,7 @@ fn follow_path_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
             pos = goal_path_position(h, index);
         }
     }
-    if let Some(AiState::FollowPath { index: i, .. }) = sm.state_mut(id) {
+    if let Some(AiState::FollowPath { index: i, .. }) | Some(AiState::JetTakeoffOrLanding { index: i, .. }) = sm.state_mut(id) {
         *i = index;
     }
     ai(h).next_goal_path_index = index;
@@ -826,15 +829,15 @@ pub fn on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, _status: 
     }
     internal_on_exit(sm, h, id);
     match sm.state(id) {
-        Some(AiState::FollowPath { .. }) => {
+        Some(AiState::FollowPath { .. }) | Some(AiState::JetTakeoffOrLanding { .. }) => {
             // "turn off precision-z-pos when we exit, just in case."
             ai(h).set_can_path_through_units(false);
             set_precise_z(h, false);
             ai(h).next_goal_path_index = -1;
         }
-        Some(AiState::MoveOutOfTheWay { .. }) => {
+        Some(AiState::MoveOutOfTheWay { .. }) | Some(AiState::JetTaxi { .. }) => {
+            with_ai(h, |a, h| a.destroy_path(h));
             let a = ai(h);
-            a.destroy_path();
             a.set_can_path_through_units(false);
             // clearMoveOutOfWay()
             a.move_out_of_way1 = INVALID_ID;
@@ -852,7 +855,7 @@ pub fn update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResul
             let is_move_to = *is_move_to;
             move_to_update(sm, h, id, is_move_to)
         }
-        Some(AiState::MoveOutOfTheWay { .. }) => {
+        Some(AiState::MoveOutOfTheWay { .. }) | Some(AiState::JetTaxi { .. }) => {
             if h.is_effectively_dead() {
                 return Ok(StateReturn::SUCCESS);
             }
@@ -866,7 +869,7 @@ pub fn update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResul
             }
             internal_update(sm, h, id)
         }
-        Some(AiState::FollowPath { .. }) => follow_path_update(sm, h, id),
+        Some(AiState::FollowPath { .. }) | Some(AiState::JetTakeoffOrLanding { .. }) => follow_path_update(sm, h, id),
         Some(AiState::MoveAndEvacuate { .. }) => {
             if h.is_effectively_dead() {
                 return Ok(StateReturn::FAILURE);

@@ -361,6 +361,8 @@ pub enum AiSubclass {
     Worker(Worker),
     /// `ChinookAIUpdate` (batch A40): a supply truck's members (its machine is `AiUpdateModule::supply_machine`) and its own.
     Chinook(Chinook),
+    /// `JetAIUpdate` (batch A41): an aircraft's members and data (its states on its own machine).
+    Jet(crate::logic::ai::jet_ai_update::Jet),
 }
 
 impl AiUpdate {
@@ -507,6 +509,10 @@ impl AiUpdate {
     pub fn choose_locomotor_set<H: AiHost>(&mut self, h: &mut H, wst: LocomotorSetType) -> bool {
         // (batch A40: `ChinookAIUpdate::chooseLocomotorSet`: landed, the taxiing set; then the supply truck's, the base's)
         let mut wst = crate::logic::ai::chinook_ai_update::chinook_locomotor_set(&self.subclass, wst);
+        // (batch A41: `JetAIUpdate::chooseLocomotorSet`: grounded, taxiing; the attack's or the return's set; then the base's)
+        if let AiSubclass::Jet(j) = &self.subclass {
+            wst = crate::logic::ai::jet_ai_update::locomotor_set_for(j, wst);
+        }
         if wst == LOCOMOTORSET_NORMAL && self.upgraded_locomotors && !plant(3200) {
             wst = LOCOMOTORSET_NORMAL_UPGRADED;
         }
@@ -631,11 +637,11 @@ impl AiUpdate {
     }
 
     /// `destroyPath()`.
-    pub fn destroy_path(&mut self) {
+    pub fn destroy_path<H: AiHost>(&mut self, h: &mut H) {
         self.path = None;
         self.waiting_for_path = false;
         self.is_attack_path = false;
-        self.set_locomotor_goal_none();
+        self.set_locomotor_goal_none(h);
     }
 
     /// `friend_startingMove()`.
@@ -653,8 +659,8 @@ impl AiUpdate {
     }
 
     /// `friend_setPath(path)`.
-    pub fn friend_set_path(&mut self, path: Option<Path>) {
-        self.destroy_path();
+    pub fn friend_set_path<H: AiHost>(&mut self, h: &mut H, path: Option<Path>) {
+        self.destroy_path(h);
         self.path = path;
     }
 
@@ -855,13 +861,25 @@ impl AiUpdate {
         self.locomotor_goal_data.x = angle;
     }
 
-    /// `setLocomotorGoalNone()`.
-    pub fn set_locomotor_goal_none(&mut self) {
+    /// `setLocomotorGoalNone()` (virtual upstream; batch A41: `JetAIUpdate`'s override, taking off or landing in the air: straight
+    /// on).
+    pub fn set_locomotor_goal_none<H: AiHost>(&mut self, h: &mut H) {
+        if let AiSubclass::Jet(j) = &self.subclass {
+            let (pos, dir) = (h.position(), h.unit_direction_vector_2d());
+            if let Some(goal) = crate::logic::ai::jet_ai_update::goal_none_override(j, &pos, &dir) {
+                self.set_locomotor_goal_position_explicit(&goal);
+                return;
+            }
+        }
         self.locomotor_goal_type = LocoGoalType::None;
     }
 
     /// `isDoingGroundMovement()`.
     pub fn is_doing_ground_movement<H: AiHost>(&self, h: &mut H) -> bool {
+        // (batch A41: `JetAIUpdate::isDoingGroundMovement`: "Air units should never be doing ground movement, even when taxiing...")
+        if matches!(self.subclass, AiSubclass::Jet(_)) {
+            return false;
+        }
         if h.is_disabled_by_type(DISABLED_UNMANNED) && h.is_kind_of(KINDOF_PRODUCED_AT_HELIPAD) {
             return true; // "an unmanned helicopter gets grounded, eventually."
         }
@@ -902,6 +920,12 @@ impl AiUpdate {
 
     /// `getTreatAsAircraftForLocoDistToGoal()`.
     pub fn get_treat_as_aircraft_for_loco_dist_to_goal<H: AiHost>(&self, h: &mut H) -> bool {
+        // (batch A41: `JetAIUpdate`'s: never while taxiing, else the base's)
+        if let AiSubclass::Jet(j) = &self.subclass {
+            if let Some(r) = crate::logic::ai::jet_ai_update::treat_as_aircraft_override(j) {
+                return r;
+            }
+        }
         let mut treat_as_aircraft = !self.is_doing_ground_movement(h);
         if self.get_path_extra_distance() > PATHFIND_CLOSE_ENOUGH {
             // "We are following a waypoint or other multiple point path, so use the "easy" success criteria."
@@ -1342,6 +1366,10 @@ impl AiUpdate {
         // (batch A40: `ChinookAIUpdate::isIdle`: likewise, and landed not while passengers want in or out)
         if let AiSubclass::Chinook(c) = &self.subclass {
             return crate::logic::ai::chinook_ai_update::chinook_is_idle(h, c.has_pending_command, c.flight_status, self.base_is_idle(m));
+        }
+        // (batch A41: `JetAIUpdate::isIdle`: likewise never with a command waiting)
+        if let AiSubclass::Jet(j) = &self.subclass {
+            return crate::logic::ai::jet_ai_update::jet_is_idle(j, self.base_is_idle(m));
         }
         self.base_is_idle(m)
     }

@@ -844,12 +844,23 @@ pub fn guard_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> S
     if !matches!(sm.state(id), Some(AiState::Guard { machine: Some(_), .. })) {
         return Ok(StateReturn::FAILURE); // "We actually already exited."
     }
-    // (getJetAIUpdate(): none here; the out-of-ammo check is a jet's)
-    let _ = KINDOF_PROJECTILE;
+    // "if all of our weapons are out of ammo, can't attack." (batch A41: a jet's, not an enter guard's)
+    if jet_out_of_ammo(h) {
+        return Ok(StateReturn::FAILURE);
+    }
     sm.lock();
     let ret = run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h));
     sm.unlock();
     ret
+}
+
+/// The guard states' check (`AIGuardState`'s, `AIGuardRetaliateState`'s): a jet out of ammunition (not a projectile, nor an enter
+/// guard): "this should probably never happen, since this case should be intercepted by JetAIUpdate".
+fn jet_out_of_ammo<H: AiStateHost>(h: &mut H) -> bool {
+    matches!(ai(h).subclass, crate::logic::ai::ai_update::AiSubclass::Jet(_))
+        && h.is_out_of_ammo()
+        && !h.is_kind_of(KINDOF_PROJECTILE)
+        && !h.template_is_enter_guard()
 }
 
 /// `AIGuardState::xfer` (version 1): whether there is a machine (one made to load into), the machine (`AIGuardMachine::xfer`,
@@ -908,6 +919,10 @@ pub fn retaliate_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId
 pub fn retaliate_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResult<StateReturn> {
     if !matches!(sm.state(id), Some(AiState::Guard { machine: Some(_), .. })) {
         return Ok(StateReturn::FAILURE); // "We actually already exited."
+    }
+    // (batch A41: a jet out of ammunition)
+    if jet_out_of_ammo(h) {
+        return Ok(StateReturn::FAILURE);
     }
     run_sub_machine(sm, h, id, |m, h| m.update_state_machine(h))
 }

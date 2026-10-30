@@ -98,7 +98,7 @@ pub fn request_attack_path<H: AiStateHost>(h: &mut H, victim_id: ObjectId, victi
     a.waiting_for_path = true;
     if repathing_too_soon(h) {
         with_ai(h, |a, h| a.set_queue_for_path_time(h, 2 * LOGICFRAMES_PER_SECOND));
-        ai(h).set_locomotor_goal_none();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
         return;
     }
     h.pf_queue_for_path();
@@ -148,7 +148,7 @@ pub const WAYPOINT_PATH_LIMIT: i32 = 1024;
 /// `setPathFromWaypoint(way, offset)`: from the object along the waypoints' first links (offset; the last snapped), already
 /// optimized.
 pub fn set_path_from_waypoint<H: AiStateHost>(h: &mut H, way: Option<u32>, offset_x: f32, offset_y: f32) {
-    ai(h).destroy_path();
+    crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
     let mut path = Path::new();
     let pos = h.position();
     path.prepend_node(&pos, LAYER_GROUND);
@@ -206,7 +206,7 @@ pub fn compute_quick_path<H: AiStateHost>(h: &mut H, destination: &Coord3D) -> b
             }
         }
     }
-    ai(h).destroy_path();
+    crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
     let new_path = if h.is_kind_of(KINDOF_AIRCRAFT) && !h.is_kind_of(KINDOF_PROJECTILE) {
         h.pf_get_aircraft_path(destination)
     } else {
@@ -235,7 +235,7 @@ pub fn compute_quick_path<H: AiStateHost>(h: &mut H, destination: &Coord3D) -> b
 /// found, else the closest), with the allies moved out of the way.
 pub fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, destination: &Coord3D) -> bool {
     if !ai(h).is_blocked_and_stuck {
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
     }
     if can_compute_quick_path(h) {
         return compute_quick_path(h, destination);
@@ -292,7 +292,7 @@ pub fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, destination: &Coo
     }
     h.pf_set_ignore_obstacle_id(INVALID_ID);
     if let Some(mut path) = new_path {
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         if ai(h).get_cur_locomotor().is_some_and(|l| l.is_ultra_accurate()) && !plant(3262) {
             // "Move exactly to the destination. Normal ground pathfinding moves to a gridded location."
             path.update_last_node(h, &original_destination);
@@ -307,13 +307,14 @@ pub fn compute_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, destination: &Coo
         }
     } else if ai(h).path.is_some() && ai(h).is_blocked_and_stuck {
         // "Keep using the old path." ... "Stop and wait one second."
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         with_ai(h, |a, h| a.set_queue_for_path_time(h, LOGICFRAMES_PER_SECOND));
         let mut goal_pos = h.position();
         h.pf_snap_position(&mut goal_pos);
         let a = ai(h);
         a.set_final_position(&goal_pos);
-        a.set_locomotor_goal_none();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.set_locomotor_goal_none(h));
+        let a = ai(h);
         a.blocked_frames = 0;
         a.is_blocked = false;
         a.is_blocked_and_stuck = false;
@@ -358,7 +359,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
                 view_blocked = h.pf_is_attack_view_blocked(victim, &vpos);
             }
             if !view_blocked {
-                ai(h).destroy_path();
+                crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
                 return true;
             }
         }
@@ -369,7 +370,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
                 view_blocked = h.pf_is_attack_view_blocked(INVALID_ID, vp);
             }
             if !view_blocked {
-                ai(h).destroy_path();
+                crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
                 return true;
             }
         }
@@ -378,7 +379,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
     if h.weapon_is_contact() {
         let vp = *victim_pos.expect("the victim's position (upstream dereferences it)");
         let tmp = vp;
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         let a = ai(h);
         if let Some(cur) = a.cur_locomotor {
             a.locomotor_set.get_mut(cur).expect("the locomotor").set_no_slow_down_as_approaching_dest(true);
@@ -399,7 +400,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
         let (dx, dy) = (pos.x - last.x, pos.y - last.y);
         if dx * dx + dy * dy < PATHFIND_CELL_SIZE_F * PATHFIND_CELL_SIZE_F {
             // "Very short path - we can't get to the goal."
-            ai(h).destroy_path();
+            crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
             return false;
         }
         return ok;
@@ -438,7 +439,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
                 }
             }
         }
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         let mut path = Path::new();
         path.prepend_node(&local_victim_pos, LAYER_GROUND);
         let mut pos = h.position();
@@ -449,7 +450,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
         path.set_next_optimized(first, next);
         ai(h).path = Some(path);
     } else {
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         let ignored = ai(h).get_ignored_obstacle_id();
         h.pf_set_ignore_obstacle_id(ignored);
         // "compute a ground-based path"
@@ -464,7 +465,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
                 goal.y -= obj_pos.y;
                 goal.z -= obj_pos.z;
                 if (goal.x * goal.x + goal.y * goal.y + goal.z * goal.z).sqrt() < 3.0 * PATHFIND_CELL_SIZE_F && !plant(3263) {
-                    ai(h).destroy_path();
+                    crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
                     h.pf_adjust_destination(&mut obj_pos);
                     ai(h).path = h.pf_find_closest_path(&obj_pos, false, 0.2, true);
                 }
@@ -499,7 +500,7 @@ pub fn do_pathfind<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) {
     }
     ai(h).waiting_for_path = false;
     if ai(h).is_safe_path {
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         let mut pos1 = Coord3D { x: -1000.0, y: -1000.0, z: 0.0 };
         let r1 = ai(h).repulsor1;
         if let Some(o) = h.find_object(r1) {
@@ -520,7 +521,7 @@ pub fn do_pathfind<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) {
         ai(h).is_approach_path = false;
     }
     if ai(h).is_approach_path {
-        ai(h).destroy_path();
+        crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
         let (dest, stuck) = (ai(h).requested_destination, ai(h).is_blocked_and_stuck);
         ai(h).path = h.pf_find_closest_path(&dest, stuck, 0.2, false);
         if with_ai(h, |a, h| a.is_doing_ground_movement(h)) {
