@@ -69,6 +69,8 @@ pub enum MemberCommand {
     AttackObject { victim: ObjectId, max_shots: i32, src: CommandSourceType },
     /// `aiAttackMoveToPosition(pos, maxShots, src)`.
     AttackMoveToPosition { pos: Coord3D, max_shots: i32, src: CommandSourceType },
+    /// Batch A37 (a delivered item's): `aiMoveToPosition(pos, src)`.
+    MoveToPosition { pos: Coord3D, src: CommandSourceType },
 }
 
 /// `AssaultTransportAIUpdateModuleData`'s own fields.

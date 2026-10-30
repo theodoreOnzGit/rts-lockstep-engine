@@ -375,7 +375,10 @@ public:
 	void setIgnoreCollisionTime(Int frames) { m_ignoreCollisionsUntil = TheGameLogic->getFrame() + frames; }
 	void setGoalPositionClipped(const Coord3D* in, CommandSourceType cmdSource);
 	Bool isPathAvailable( const Coord3D *destination ) const;
+	/* (batch A37: virtual upstream, and DeliverPayloadAIUpdate overrides it; here its dispatch is explicit (see isIdle), the base's
+	** body baseIsAllowedToRespondToAiCommands) */
 	Bool isAllowedToRespondToAiCommands(const AICommandParms* parms) const;
+	Bool baseIsAllowedToRespondToAiCommands(const AICommandParms* parms) const;
 	void doQuickExit( const std::vector<Coord3D>* path );
 	void privateMoveToPosition( const Coord3D *pos, CommandSourceType cmdSource );
 	void privateMoveToObject( Object *obj, CommandSourceType cmdSource );
@@ -683,6 +686,8 @@ public:
 	Object *getGoalObject();
 	void aiAttackObject(Object *victim, Int maxShotsToFire, CommandSourceType cmdSource);
 	void aiAttackMoveToPosition(const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource);
+	/* batch A37 (a delivered item's) */
+	void aiMoveToPosition(const Coord3D *pos, CommandSourceType cmdSource);
 };
 AssaultMemberAi *memberAiOf(const Object *o);
 #include "ai_assault_transport_enum_a32.inc"
@@ -937,6 +942,240 @@ private:
 extern WeaponTemplate g_weaponTemplates[3];
 extern ParticleSystemTemplate g_particleTemplates[3];
 extern FXList g_missileFx[2];
+#define ThingTemplate AiTemplateView
+/* batch A37: DeliverPayloadAIUpdate. The client's RadiusDecal and RadiusDecalTemplate as RadiusDecal.h declares them (renamed Ai*
+** in PreRTS.h: other builds compile them), their constructor, xferRadiusDecalTemplate and xferRadiusDecal verbatim
+** (ai_radius_decal_a37.inc), createRadiusDecal, clear and update logged stand-ins (LOG_DELIVER 0, 2, 1: the client draws them);
+** the header's machine, states, state ids and DeliverPayloadData, verbatim (ai_deliver_payload_h_a37.inc); the module data the
+** header's fields and constructor (the field parse is the INI's: the scene's, g_deliverData); the class as the header declares it
+** without the pool and module macros, its isAllowedToRespondToAiCommands `deliverIsAllowedToRespondToAiCommands` (the base's
+** dispatches to it: see AIUpdateInterface::isAllowedToRespondToAiCommands); its .cpp from makeStateMachine, verbatim
+** (ai_deliver_payload_a37.inc) but for its cut points: the items' AIs are AssaultMemberAis (memberAiOf, LOG_MEMBER_AI), an item's
+** setPosition is setItemPosition (logged), and the visible payload a PayloadObject (logged). */
+typedef Int Color;
+enum ShadowType { SHADOW_ALPHA_DECAL = 0x20 };
+struct FieldParse;
+class RadiusDecalTemplate;
+class RadiusDecal
+{
+	friend class RadiusDecalTemplate;
+public:
+	RadiusDecal() : m_empty(true) {}
+	void xferRadiusDecal( Xfer *xfer );
+	Bool isEmpty() const { return m_empty; }
+	void clear();
+	void update();
+	Bool m_empty;
+};
+class RadiusDecalTemplate
+{
+	friend class RadiusDecal;
+public:
+	AsciiString		m_name;
+	ShadowType		m_shadowType;
+	Real					m_minOpacity;
+	Real					m_maxOpacity;
+	UnsignedInt		m_opacityThrobTime;
+	Color					m_color;
+	Bool					m_onlyVisibleToOwningPlayer;
+	RadiusDecalTemplate();
+	Bool valid() const { return m_name.isNotEmpty(); }
+	void xferRadiusDecalTemplate( Xfer *xfer );
+	void createRadiusDecal(const Coord3D& pos, Real radius, const Player* owningPlayer, RadiusDecal& result) const;
+};
+#include "ai_radius_decal_a37.inc"
+/* the items' modules the delivery aims (another object's: the scene's masks; logged) */
+class GenerateMinefieldBehavior { public: void setMinefieldTarget(const Coord3D* pos); ObjectID m_id; };
+class SmartBombTargetHomingUpdate { public: void SetTargetPosition( const Coord3D& target ); ObjectID m_id; };
+void setItemPosition(Object *item, const Coord3D *pos);
+/* the visible payload: a new object of the scene's (ids from 40 in each case), its physics, behaviour modules and AI (logged) */
+class PayloadPhysics
+{
+public:
+	Real getMass() const;
+	void applyMotiveForce(const Coord3D *force);
+	Real getCenterOfMassOffset() const;
+	void setPitchRate(Real pitch);
+};
+class PayloadAi { public: void aiMoveToPosition(const Coord3D *pos, CommandSourceType cmdSource); };
+class ProjectileUpdateInterface
+{
+public:
+	void projectileFireAtObjectOrPosition( const Object *victim, const Coord3D *victimPos, const WeaponTemplate *detWeap,
+		const ParticleSystemTemplate* exhaustSysOverride );
+};
+class PayloadObject
+{
+public:
+	void setProducer(const Object* obj);
+	void setPosition(const Coord3D *pos);
+	const Coord3D *getPosition() const { return &m_pos; }
+	void setOrientation(Real angle);
+	PayloadPhysics *getPhysics() { return &m_physics; }
+	BehaviorModule **getBehaviorModules();
+	PayloadAi *getAIUpdateInterface();
+	ObjectID m_id;
+	Coord3D m_pos;
+	PayloadPhysics m_physics;
+	PayloadAi m_ai;
+};
+class ThingFactory
+{
+public:
+	const ThingTemplate *findTemplate( const AsciiString& name );
+	PayloadObject *newObject( const ThingTemplate *tmplate, Team *team );
+};
+extern ThingFactory *TheThingFactory;
+#include "ai_deliver_payload_h_a37.inc"
+class DeliverPayloadAIUpdateModuleData
+{
+public:
+	UnsignedInt		m_doorDelay;
+	Real					m_maxDistanceToTarget;				///< How far away from target I can unload, plus how far after target I need to turn around at
+	Int						m_maxNumberAttempts;					///< How many times I can re-approach
+	UnsignedInt		m_dropDelay;									///< How long to wait after entering Deliver state (to allow for doors opening)
+	Coord3D				m_dropOffset;									///< where to disgorge the guys, relative to me
+	Coord3D				m_dropVariance;								///< variance in dropping position among guys that I am dropping
+	AsciiString		m_putInContainerName;
+	RadiusDecalTemplate	m_deliveryDecalTemplate;
+	Real					m_deliveryDecalRadius;
+
+	DeliverPayloadAIUpdateModuleData()
+	{
+		m_doorDelay = 0;
+		m_maxDistanceToTarget = 0.0f;
+		m_maxNumberAttempts = 0;
+		m_dropDelay = 0;
+		m_dropOffset.zero();
+		m_dropVariance.zero();
+		m_deliveryDecalRadius = 0;
+		m_putInContainerName.clear();
+	}
+};
+static DeliverPayloadAIUpdateModuleData g_deliverData;
+class DeliverPayloadAIUpdate : public AIUpdateInterface
+{
+public:
+
+	DeliverPayloadAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~DeliverPayloadAIUpdate( void );
+	const DeliverPayloadAIUpdateModuleData *getDeliverPayloadAIUpdateModuleData() const { return &g_deliverData; }
+
+	virtual AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
+
+	const Coord3D* getTargetPos() const { return &m_targetPos; }
+	const Coord3D* getMoveToPos() const { return &m_moveToPos; }
+	UnsignedInt getDoorDelay() const { return getDeliverPayloadAIUpdateModuleData()->m_doorDelay; }
+	Bool isDeliveringPayload() const { return m_deliverPayloadStateMachine != NULL; }
+	const ThingTemplate* getPutInContainerTemplateViaModuleData() const;
+
+	Real getAllowedDistanceToTarget() const { return m_data.m_distToTarget; }
+	Real getPreOpenDistance() const { return m_data.m_preOpenDistance; }
+	Int getMaxNumberAttempts() const { return m_data.m_maxAttempts; }
+	UnsignedInt getDropDelay() const { return m_data.m_dropDelay; }
+	const Coord3D& getDropOffset() const { return m_data.m_dropOffset; }
+	const Coord3D& getDropVariance() const { return m_data.m_dropVariance; }
+	Bool isFireWeapon() const { return m_data.m_fireWeapon; }
+	Int getVisibleItemsDelivered() const { return m_visibleItemsDelivered; }
+	void setVisibleItemsDelivered( Int num ) { m_visibleItemsDelivered = num; }
+
+	Bool isCloseEnoughToTarget();
+	Bool isOffMap() const;
+	Real calcMinTurnRadius(Real* timeToTravelThatDist) const;
+
+	void deliverPayload( const Coord3D *moveToPos, const Coord3D *targetPos, const DeliverPayloadData *data );
+	void deliverPayloadViaModuleData( const Coord3D *moveToPos );
+	const DeliverPayloadData* getData() { return &m_data; }
+
+	virtual UpdateSleepTime update();
+
+	void killDeliveryDecal();
+
+	void friend_setFreeToExit(Bool f) { m_freeToExit = f; }
+	void friend_setAcceptingCommands(Bool f) { m_acceptingCommands = f; }
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual AIStateMachine* makeStateMachine();
+	/* (its isAllowedToRespondToAiCommands, virtual upstream: see AIUpdateInterface's) */
+	Bool deliverIsAllowedToRespondToAiCommands(const AICommandParms* parms) const;
+
+	DeliverPayloadStateMachine*		m_deliverPayloadStateMachine;	///< Controls my special logic
+	Coord3D												m_targetPos;									///< Where I plan to deliver my little friends, if obj is null
+	Coord3D												m_moveToPos;									///< Where I am moving to.
+	DeliverPayloadData						m_data;
+	Int														m_visibleItemsDelivered;
+	RadiusDecal										m_deliveryDecal;
+	Real													m_previousDistanceSqr;
+	Bool													m_freeToExit;
+	Bool													m_acceptingCommands;
+
+	enum DiveState	// Stored in save file as int, don't renumber!  jba.
+	{
+		DIVESTATE_PREDIVE=0,
+		DIVESTATE_DIVING=1,
+		DIVESTATE_POSTDIVE=2,
+	};
+	DiveState											m_diveState;
+};
+#include "ai_deliver_payload_a37.inc"
+/* the scene's delivery: a template's name (0 none, 1 "pt0", 2 "pt1", 3 "ptx"), the decals' template, the data op 109 delivers */
+static AsciiString deliverTemplateName(Int k)
+{
+	static const char *const n[4] = { "", "pt0", "pt1", "ptx" };
+	return AsciiString(n[k & 3]);
+}
+static void sceneDecalTemplate(RadiusDecalTemplate *t)
+{
+	t->m_name = g_aiEnv.deliverDecal[0] ? "decal0" : "";
+	t->m_shadowType = (ShadowType)g_aiEnv.deliverDecal[1];
+	t->m_opacityThrobTime = (UnsignedInt)g_aiEnv.deliverDecal[2];
+	t->m_color = g_aiEnv.deliverDecal[3];
+	t->m_onlyVisibleToOwningPlayer = g_aiEnv.deliverDecal[4] != 0;
+	t->m_minOpacity = g_aiEnv.deliverOpacity[0];
+	t->m_maxOpacity = g_aiEnv.deliverOpacity[1];
+}
+static void sceneDeliverData(DeliverPayloadData *d)
+{
+	const Real *r = g_aiEnv.deliverDataReals;
+	const Int *k = g_aiEnv.deliverDataInts;
+	const Int f = g_aiEnv.deliverFlags;
+	d->m_distToTarget = r[0];
+	d->m_preOpenDistance = r[1];
+	d->m_dropOffset.set(r[2], r[3], r[4]);
+	d->m_dropVariance.set(r[5], r[6], r[7]);
+	d->m_diveStartDistance = r[8];
+	d->m_diveEndDistance = r[9];
+	d->m_exitPitchRate = r[10];
+	d->m_strafeLength = r[11];
+	d->m_deliveryDecalRadius = r[12];
+	d->m_maxAttempts = k[0];
+	d->m_dropDelay = (UnsignedInt)k[1];
+	d->m_visibleNumBones = k[2];
+	d->m_strafingWeaponSlot = (WeaponSlotType)k[3];
+	d->m_visibleItemsDroppedPerInterval = k[4];
+	d->m_visiblePayloadWeaponTemplate = k[5] >= 0 ? &g_weaponTemplates[k[5]] : NULL;
+	d->m_strafeFX = k[6] >= 0 ? &g_missileFx[k[6]] : NULL;
+	d->m_visibleDropBoneName = k[7] ? "bone" : "";
+	d->m_visibleSubObjectName = k[8] ? "sub" : "";
+	d->m_visiblePayloadTemplateName = deliverTemplateName(k[9]);
+	d->m_fireWeapon = ((f >> 3) & 1) != 0;
+	d->m_selfDestructObject = ((f >> 4) & 1) != 0;
+	d->m_inheritTransportVelocity = ((f >> 5) & 1) != 0;
+	d->m_isParachuteDirectly = ((f >> 6) & 1) != 0;
+	sceneDecalTemplate(&d->m_deliveryDecalTemplate);
+}
+/* (the delivery's world's objects, defined with it below) */
+static AiTemplateView g_payloadTemplates[2];
+static PayloadObject g_payload;
+static unsigned g_nextPayloadId = 40;
+static GenerateMinefieldBehavior g_minefield;
+static SmartBombTargetHomingUpdate g_smartBomb;
+#undef ThingTemplate
 
 #undef private
 #undef protected
@@ -1525,7 +1764,11 @@ void ScriptEngine::notifyOfObjectCreationOrDestruction() { L(LOG_SCRIPT_NOTIFY, 
 ** "Undeploy" "s5", when the scene's sound bits 4 and 5 say so; else the empty sound, an unknown name's) */
 namespace { Drawable g_drawable; AudioEventRTS g_unitSound; }
 /* (batch A34: a hacker always has one: its states use it unchecked) */
-Drawable *Object::getDrawable() const { return (g_aiEnv.subclass == 6 || ((g_aiEnv.deployFlags >> 4) & 1)) ? &g_drawable : NULL; }
+/* (batch A37: a delivering AI's object when the scene says so) */
+Drawable *Object::getDrawable() const
+{
+	return (g_aiEnv.subclass == 6 || ((g_aiEnv.deployFlags >> 4) & 1) || (g_aiEnv.subclass == 9 && (g_aiEnv.deliverFlags & 1))) ? &g_drawable : NULL;
+}
 void Drawable::setAnimationFrame(int frame) { L(LOG_ANIM_FRAME, { (unsigned)frame }); }
 void Object::clearModelConditionFlags(const ModelConditionFlags &clr)
 {
@@ -1541,8 +1784,10 @@ const AudioEventRTS *AiTemplateView::getPerUnitSound(const AsciiString& soundNam
 	g_unitSound = AudioEventRTS();
 	/* (batch A34: "UnitUnpack" is "s4" too, "UnitPack" "s5", "UnitCashPing" "s6") */
 	const char *n0 = soundName.str();
+	/* (batch A37: "StartDive" is "s8") */
 	int k = (strcmp(n0, "Deploy") == 0 || strcmp(n0, "UnitUnpack") == 0) ? 4
-		: (strcmp(n0, "Undeploy") == 0 || strcmp(n0, "UnitPack") == 0) ? 5 : strcmp(n0, "UnitCashPing") == 0 ? 6 : -1;
+		: (strcmp(n0, "Undeploy") == 0 || strcmp(n0, "UnitPack") == 0) ? 5 : strcmp(n0, "UnitCashPing") == 0 ? 6
+		: strcmp(n0, "StartDive") == 0 ? 8 : -1;
 	if (k >= 0 && ((g_aiEnv.sounds >> k) & 1)) { AsciiString n; n.format("s%d", k); g_unitSound.setEventName(n); }
 	return &g_unitSound;
 }
@@ -1693,14 +1938,16 @@ const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const
 	/* batch A32: for the assault transport, those with an AI only (its members' AIs are reached unchecked upstream), the list
 	** even when empty */
 	Bool assault = g_aiEnv.subclass == 4;
+	/* batch A37: for the delivering AI, those with an AI too, the list even when empty */
+	Bool deliver = g_aiEnv.subclass == 9;
 	for (unsigned i = 1; i < 32; ++i) {
 		if (!((g_aiEnv.containedMask >> i) & 1)) continue;
 		Bool hasAi = ((g_aiEnv.aiMask >> i) & 1) != 0;
-		if (assault ? !hasAi : (!transport && hasAi)) continue;
+		if (assault ? !hasAi : (!transport && !deliver && hasAi)) continue;
 		Object *o = findObject((ObjectID)i);
 		if (o) items.push_back(o);
 	}
-	return items.empty() && !transport && !assault ? NULL : &items;
+	return items.empty() && !transport && !assault && !deliver ? NULL : &items;
 }
 /* batch A15: LOG_RAPPEL's kinds: 0 resetDynamicPhysics, 1 scrubVelocityZ, 2 setLayer, 3 scoreTheKill, 4 kill, 5 doFXObj,
 ** 6 isValidContainerFor, 7 removeFromContain */
@@ -1834,16 +2081,26 @@ UpdateModule *Object::findUpdateModule(UnsignedInt key) const
 	for (int i = 0; i < 2; ++i)
 		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(supplyNames[i])))
 			return (m_otherId && ((g_aiEnv.supplyDockMasks[i] >> m_otherId) & 1)) ? (UpdateModule *)&g_moduleDummy[0] : NULL;
+	/* batch A37: a delivered item's minefield and smart bomb modules (another object's: the scene's masks) */
+	static const char *const itemNames[2] = { "GenerateMinefieldBehavior", "SmartBombTargetHomingUpdate" };
+	for (int i = 0; i < 2; ++i)
+		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(itemNames[i]))) {
+			if (!m_otherId || !((g_aiEnv.deliverModuleMasks[i] >> m_otherId) & 1)) return NULL;
+			if (i == 0) { g_minefield.m_id = m_otherId; return (UpdateModule *)(void *)&g_minefield; }
+			g_smartBomb.m_id = m_otherId;
+			return (UpdateModule *)(void *)&g_smartBomb;
+		}
 	static const char *const names[3] = { "DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate" };
 	for (int i = 0; i < 3; ++i)
 		if (key == (UnsignedInt)TheNameKeyGenerator->nameToKey(AsciiString(names[i]))) {
 			/* (batch A34: the HackInternetAIUpdate is the hacker's own AI, and none another class's) */
 			if (i == 2) return g_aiEnv.subclass == 6 ? (UpdateModule *)g_ai_update : NULL;
+			/* (batch A37: the DeliverPayloadAIUpdate likewise the delivering AI's own; the scene's module bit 0 is unused) */
+			if (i == 0) return (!m_otherId && g_aiEnv.subclass == 9) ? (UpdateModule *)g_ai_update : NULL;
 			return ((g_aiEnv.modules >> i) & 1) ? (UpdateModule *)&g_moduleDummy[i] : NULL;
 		}
 	return NULL;
 }
-void DeliverPayloadAIUpdate::deliverPayloadViaModuleData(const Coord3D *pos) { L(LOG_MODULE, { 0u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
 void ProneUpdate::goProne(const DamageInfo *damageInfo) { L(LOG_MODULE, { 1u }); }
 const AsciiString& Object::getCommandSetString() const { static AsciiString name("AiCommandSet"); return name; }
 const CommandSet *ControlBar::findCommandSet(const AsciiString& name) { return g_aiEnv.hasCommandSet ? &g_commandSet : NULL; }
@@ -2333,6 +2590,17 @@ void setScene(const AiEnv *env)
 		if ((env->missileGarrison[1] >> k) & 1) g_missileData.m_garrisonHitKillKindof.set((KindOfType)k);
 		if ((env->missileGarrison[2] >> k) & 1) g_missileData.m_garrisonHitKillKindofNot.set((KindOfType)k);
 	}
+	/* batch A37: a DeliverPayloadAIUpdate's data (the template names the scene's) */
+	g_deliverData = DeliverPayloadAIUpdateModuleData();
+	g_deliverData.m_doorDelay = env->deliverTimes[0];
+	g_deliverData.m_dropDelay = env->deliverTimes[1];
+	g_deliverData.m_maxDistanceToTarget = env->deliverReals[0];
+	g_deliverData.m_dropOffset.set(env->deliverReals[1], env->deliverReals[2], env->deliverReals[3]);
+	g_deliverData.m_dropVariance.set(env->deliverReals[4], env->deliverReals[5], env->deliverReals[6]);
+	g_deliverData.m_deliveryDecalRadius = env->deliverReals[7];
+	g_deliverData.m_maxNumberAttempts = env->deliverInts[0];
+	g_deliverData.m_putInContainerName = deliverTemplateName(env->deliverInts[1]);
+	sceneDecalTemplate(&g_deliverData.m_deliveryDecalTemplate);
 	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
@@ -2473,6 +2741,9 @@ void ref_ai_a2_reset(void)
 	gen->nameToKey(AsciiString("DeliverPayloadAIUpdate"));
 	gen->nameToKey(AsciiString("ProneUpdate"));
 	gen->nameToKey(AsciiString("HackInternetAIUpdate"));
+	/* batch A37: the delivered items' modules */
+	gen->nameToKey(AsciiString("GenerateMinefieldBehavior"));
+	gen->nameToKey(AsciiString("SmartBombTargetHomingUpdate"));
 	g_ai_update = 0;	/* (leaked: its locomotors point into the store deleted below) */
 	delete TheLocomotorStore;
 	TheLocomotorStore = new LocomotorStore;
@@ -2533,6 +2804,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	g_nextCallFrame = 0;
 	g_nextAudioHandle = 1;
 	g_nextParticleId = 1;
+	/* batch A37: the visible payloads' ids count from 40 in each case */
+	g_nextPayloadId = 40;
 	/* batch A9 */
 	g_teamWaypoint = env->teamWaypoint >= 0 ? &g_waypoints[env->teamWaypoint] : NULL;
 	/* batch A10a */
@@ -2573,6 +2846,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		/* (batch A35: the object has no AI while its AI is made: the machine's default state asks) */
 		case 7: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) SupplyTruckAIUpdate(NULL, NULL); break;
 		case 8: g_ai_update = new (ShimZeroFill{}) MissileAIUpdate(NULL, NULL); break;
+		case 9: g_ai_update = new (ShimZeroFill{}) DeliverPayloadAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2707,6 +2981,27 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 			if (op == 106) r.push_back(m->projectileHandleCollision(victim) ? 1u : 0u);
 			if (op == 107) m->setFramesTillCountermeasureDiversionOccurs((UnsignedInt)ia[0]);
 			if (op == 108) m->projectileNowJammed();
+		}
+		break;
+	/* batch A37: a delivering AI's members (ia[0]: the exiter; fa[3..5]: the target; the data op 109 delivers the scene's)
+	** (nothing for another class) */
+	case 109: case 110: case 111: case 112: case 113: case 114: case 115: case 116: case 117:
+		if (g_aiEnv.subclass == 9) {
+			DeliverPayloadAIUpdate *d = (DeliverPayloadAIUpdate *)ai;
+			if (op == 109) {
+				DeliverPayloadData data;
+				sceneDeliverData(&data);
+				Coord3D t = { fa[3], fa[4], fa[5] };
+				d->deliverPayload(&p, &t, &data);
+			}
+			if (op == 110) d->deliverPayloadViaModuleData(&p);
+			if (op == 111) r.push_back((unsigned)d->getAiFreeToExit(findObject((ObjectID)ia[0])));
+			if (op == 112) r.push_back(d->isCloseEnoughToTarget() ? 1u : 0u);
+			if (op == 113) { Real t = 0.0f; Real radius = d->calcMinTurnRadius(&t); putF(r, radius); putF(r, t); }
+			if (op == 114) d->killDeliveryDecal();
+			if (op == 115) { const AiTemplateView *t = d->getPutInContainerTemplateViaModuleData(); r.push_back(t ? (unsigned)(t - g_payloadTemplates) : 0xffffffffu); }
+			if (op == 116) r.push_back(d->isOffMap() ? 1u : 0u);
+			if (op == 117) r.push_back(d->isDeliveringPayload() ? 1u : 0u);
 		}
 		break;
 	case 66: ai->onObjectCreated(); break;
@@ -3371,6 +3666,63 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A37: a DeliverPayloadAIUpdate's members, data and machine */
+	if (g_aiEnv.subclass == 9) {
+		const DeliverPayloadAIUpdate *d = (const DeliverPayloadAIUpdate *)ai;
+		putPos(v, d->m_targetPos);
+		putPos(v, d->m_moveToPos);
+		putU32(v, (unsigned)d->m_visibleItemsDelivered);
+		putU32(v, d->m_deliveryDecal.m_empty ? 1u : 0u);
+		putF(v, d->m_previousDistanceSqr);
+		putU32(v, d->m_freeToExit ? 1u : 0u);
+		putU32(v, d->m_acceptingCommands ? 1u : 0u);
+		putU32(v, (unsigned)d->m_diveState);
+		const DeliverPayloadData &a = d->m_data;
+		putU32(v, (unsigned)a.m_visibleDropBoneName.getLength());
+		putU32(v, (unsigned)a.m_visibleSubObjectName.getLength());
+		putU32(v, (unsigned)a.m_visiblePayloadTemplateName.getLength());
+		putF(v, a.m_distToTarget);
+		putF(v, a.m_preOpenDistance);
+		putU32(v, (unsigned)a.m_maxAttempts);
+		putPos(v, a.m_dropOffset);
+		putPos(v, a.m_dropVariance);
+		putU32(v, a.m_dropDelay);
+		putU32(v, a.m_fireWeapon ? 1u : 0u);
+		putU32(v, a.m_selfDestructObject ? 1u : 0u);
+		putU32(v, (unsigned)a.m_visibleNumBones);
+		putF(v, a.m_diveStartDistance);
+		putF(v, a.m_diveEndDistance);
+		putU32(v, (unsigned)a.m_strafingWeaponSlot);
+		putU32(v, (unsigned)a.m_visibleItemsDroppedPerInterval);
+		putU32(v, a.m_inheritTransportVelocity ? 1u : 0u);
+		putU32(v, a.m_isParachuteDirectly ? 1u : 0u);
+		putF(v, a.m_exitPitchRate);
+		putU32(v, a.m_strafeFX ? (unsigned)(a.m_strafeFX - g_missileFx) : 0xffffffffu);
+		putF(v, a.m_strafeLength);
+		putU32(v, a.m_visiblePayloadWeaponTemplate ? (unsigned)a.m_visiblePayloadWeaponTemplate->m_index : 0xffffffffu);
+		const RadiusDecalTemplate &t = a.m_deliveryDecalTemplate;
+		putU32(v, (unsigned)t.m_name.getLength());
+		putU32(v, (unsigned)t.m_shadowType);
+		putF(v, t.m_minOpacity);
+		putF(v, t.m_maxOpacity);
+		putU32(v, t.m_opacityThrobTime);
+		putU32(v, (unsigned)t.m_color);
+		putU32(v, t.m_onlyVisibleToOwningPlayer ? 1u : 0u);
+		putF(v, a.m_deliveryDecalRadius);
+		const DeliverPayloadStateMachine *m = d->m_deliverPayloadStateMachine;
+		putU32(v, m ? 1u : 0u);
+		if (m) {
+			putU32(v, m->m_currentState ? (unsigned)m->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+			putU32(v, m->m_sleepTill);
+			putU32(v, m->m_defaultStateInited ? 1u : 0u);
+			const DeliveringState *ds = (const DeliveringState *)m->m_stateMap.find(DELIVERING)->second;
+			putU32(v, ds->m_dropDelayLeft);
+			putU32(v, ds->m_didOpen ? 1u : 0u);
+			putU32(v, (unsigned)((const ConsiderNewApproachState *)m->m_stateMap.find(CONSIDER_NEW_APPROACH)->second)->m_numberEntriesToState);
+			putU32(v, ((const RecoverFromOffMapState *)m->m_stateMap.find(RECOVER_FROM_OFF_MAP)->second)->m_reEntryFrame);
+			putPos(v, ((const HeadOffMapState *)m->m_stateMap.find(HEAD_OFF_MAP)->second)->facingDirectionUponDelivery);
+		}
+	}
 	/* batch A36: a MissileAIUpdate's members */
 	if (g_aiEnv.subclass == 8) {
 		const MissileAIUpdate *m = (const MissileAIUpdate *)ai;
@@ -3496,6 +3848,11 @@ void AssaultMemberAi::aiAttackObject(Object *v, Int shots, CommandSourceType s)
 void AssaultMemberAi::aiAttackMoveToPosition(const Coord3D *p, Int shots, CommandSourceType s)
 {
 	L(LOG_MEMBER_AI, { 8, memberId(this), bitsOf(p->x), bitsOf(p->y), bitsOf(p->z), (unsigned)shots, (unsigned)s });
+}
+/* batch A37: a delivered item's */
+void AssaultMemberAi::aiMoveToPosition(const Coord3D *p, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 9, memberId(this), bitsOf(p->x), bitsOf(p->y), bitsOf(p->z), (unsigned)s });
 }
 static Real healthOf(unsigned k)
 {
@@ -3687,4 +4044,152 @@ static Real missileDistance(int kind, unsigned it, const Coord3D *a, const Coord
 	Real d = kind == 1 ? dx * dx + dy * dy + dz * dz : dx * dx + dy * dy;
 	L(LOG_MISSILE, { 7, (unsigned)kind, it, bitsOf(d) });
 	return d;
+}
+
+/* batch A37: the delivery's world (LOG_DELIVER): the decal, the dive's sound position, the weapon lock, the strafe FX, the drawable's
+** subobjects and bones, an item's position, contain, modules and force, the visible payload (a new object: its template, producer,
+** position, orientation, physics, projectile, AI), the partition, the physics' turning; the explicit dispatch of
+** isAllowedToRespondToAiCommands and deliverPayloadViaModuleData (the delivering AI itself, subclass 9) */
+static void putName(std::vector<unsigned> &w, const char *s) { size_t n = strlen(s); w.push_back((unsigned)n); for (size_t i = 0; i < n; ++i) w.push_back((unsigned)(unsigned char)s[i]); }
+static void logDeliver(std::vector<unsigned> w)
+{
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_DELIVER);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, const Player* owningPlayer, RadiusDecal& result) const
+{
+	std::vector<unsigned> w = { 0u, bitsOf(pos.x), bitsOf(pos.y), bitsOf(pos.z), bitsOf(radius), owningPlayer ? 1u : 0u, (unsigned)m_shadowType,
+		bitsOf(m_minOpacity), bitsOf(m_maxOpacity), m_opacityThrobTime, (unsigned)m_color, m_onlyVisibleToOwningPlayer ? 1u : 0u };
+	putName(w, m_name.str());
+	logDeliver(w);
+	/* (upstream: result cleared, then not empty with a player, a texture and a radius) */
+	result.m_empty = !(owningPlayer && m_name.isNotEmpty() && radius > 0.0f);
+}
+void RadiusDecal::clear() { m_empty = true; logDeliver({ 2u }); }
+void RadiusDecal::update() { logDeliver({ 1u }); }
+void AudioEventRTS::setPosition(const Coord3D *pos) { logDeliver({ 3u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+Bool Object::setWeaponLock(WeaponSlotType weaponSlot, WeaponLockType lockType)
+{
+	logDeliver({ 4u, (unsigned)weaponSlot, (unsigned)lockType });
+	return TRUE;
+}
+void FXList::doFXPos(const FXList* fx, const Coord3D *primary, const Matrix3D* primaryMtx, const Real primarySpeed, const Coord3D *secondary, const Real overrideRadius)
+{
+	/* (FXList.h's inline: nothing without a list) */
+	if (fx) logDeliver({ 5u, (unsigned)(fx - g_missileFx), bitsOf(primary->x), bitsOf(primary->y), bitsOf(primary->z) });
+}
+void Drawable::showSubObject(const AsciiString& name, Bool show)
+{
+	std::vector<unsigned> w = { 6u, show ? 1u : 0u };
+	putName(w, name.str());
+	logDeliver(w);
+}
+void Drawable::updateSubObjects() { logDeliver({ 7u }); }
+/* the bones: found at the hash's rate, at (2 * index, 3, 1) */
+Int Drawable::getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
+{
+	Int n = (p1Hash(140, { (unsigned)startIndex, g_aiEnv.frame }) & 1) ? 1 : 0;
+	if (n) { positions[0].x = 2.0f * (Real)startIndex; positions[0].y = 3.0f; positions[0].z = 1.0f; }
+	std::vector<unsigned> w = { 8u, (unsigned)startIndex, (unsigned)maxBones, (unsigned)n };
+	putName(w, boneNamePrefix);
+	logDeliver(w);
+	return n;
+}
+/* (Thing's: the stand-in moves the bone by the owner's position) */
+void Drawable::convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const
+{
+	Coord3D b = *bonePos;
+	const Coord3D *o = g_object.getPosition();
+	worldPos->x = b.x + o->x; worldPos->y = b.y + o->y; worldPos->z = b.z + o->z;
+	logDeliver({ 9u, bitsOf(worldPos->x), bitsOf(worldPos->y), bitsOf(worldPos->z) });
+}
+void setItemPosition(Object *item, const Coord3D *pos) { logDeliver({ 10u, (unsigned)item->getID(), bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void ContainModuleInterface::setOverrideDestination(const Coord3D *pos) { logDeliver({ 11u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void GenerateMinefieldBehavior::setMinefieldTarget(const Coord3D* pos) { logDeliver({ 12u, (unsigned)m_id, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void SmartBombTargetHomingUpdate::SetTargetPosition(const Coord3D& target) { logDeliver({ 13u, (unsigned)m_id, bitsOf(target.x), bitsOf(target.y), bitsOf(target.z) }); }
+void PhysicsBehavior::applyForce(const Coord3D *force) { logDeliver({ 14u, bitsOf(force->x), bitsOf(force->y), bitsOf(force->z) }); }
+/* the visible payload: "pt0" and "pt1" are templates (the scene's), others not; each new object's id counts from 40 in each case */
+namespace { ThingFactory g_thingFactory; BehaviorModule g_payloadModules[2]; BehaviorModule *g_payloadModuleList[3];
+ProjectileUpdateInterface g_payloadProjectile; }
+ThingFactory *TheThingFactory = &g_thingFactory;
+const AiTemplateView *ThingFactory::findTemplate(const AsciiString& name)
+{
+	if (strcmp(name.str(), "pt0") == 0) return &g_payloadTemplates[0];
+	if (strcmp(name.str(), "pt1") == 0) return &g_payloadTemplates[1];
+	return NULL;
+}
+PayloadObject *ThingFactory::newObject(const AiTemplateView *tmplate, Team *team)
+{
+	g_payload.m_id = (ObjectID)g_nextPayloadId++;
+	g_payload.m_pos.zero();
+	logDeliver({ 15u, (unsigned)(tmplate - g_payloadTemplates), (unsigned)g_payload.m_id });
+	return &g_payload;
+}
+void PayloadObject::setProducer(const Object* obj) { logDeliver({ 16u, (unsigned)m_id, obj ? (unsigned)obj->getID() : 0u }); }
+void PayloadObject::setPosition(const Coord3D *pos) { m_pos = *pos; logDeliver({ 17u, (unsigned)m_id, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void PayloadObject::setOrientation(Real angle) { logDeliver({ 18u, (unsigned)m_id, bitsOf(angle) }); }
+Real PayloadPhysics::getMass() const { return g_aiEnv.deliverWorld[1]; }
+void PayloadPhysics::applyMotiveForce(const Coord3D *force) { logDeliver({ 20u, (unsigned)g_payload.m_id, bitsOf(force->x), bitsOf(force->y), bitsOf(force->z) }); }
+Real PayloadPhysics::getCenterOfMassOffset() const { return g_aiEnv.deliverWorld[2]; }
+void PayloadPhysics::setPitchRate(Real pitch) { logDeliver({ 23u, (unsigned)g_payload.m_id, bitsOf(pitch) }); }
+/* (its modules: a projectile's when the scene says so, after another) */
+BehaviorModule **PayloadObject::getBehaviorModules()
+{
+	g_payloadModules[0].m_index = 101;
+	g_payloadModules[1].m_index = 100;
+	g_payloadModuleList[0] = &g_payloadModules[0];
+	g_payloadModuleList[1] = ((g_aiEnv.deliverFlags >> 1) & 1) ? &g_payloadModules[1] : NULL;
+	g_payloadModuleList[2] = NULL;
+	return g_payloadModuleList;
+}
+ProjectileUpdateInterface *BehaviorModule::getProjectileUpdateInterface() { return m_index == 100 ? &g_payloadProjectile : NULL; }
+void ProjectileUpdateInterface::projectileFireAtObjectOrPosition(const Object *victim, const Coord3D *victimPos, const WeaponTemplate *detWeap,
+	const ParticleSystemTemplate* exhaustSysOverride)
+{
+	logDeliver({ 21u, (unsigned)g_payload.m_id, victim ? (unsigned)victim->getID() : 0u, bitsOf(victimPos->x), bitsOf(victimPos->y), bitsOf(victimPos->z),
+		detWeap ? (unsigned)detWeap->m_index : 0xffffffffu, exhaustSysOverride ? (unsigned)exhaustSysOverride->m_index : 0xffffffffu });
+}
+PayloadAi *PayloadObject::getAIUpdateInterface() { return ((g_aiEnv.deliverFlags >> 2) & 1) ? &m_ai : NULL; }
+void PayloadAi::aiMoveToPosition(const Coord3D *pos, CommandSourceType cmdSource)
+{
+	logDeliver({ 24u, (unsigned)g_payload.m_id, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), (unsigned)cmdSource });
+}
+/* (the exhaust per veterancy: (template + level) % 4, none for 3) */
+const ParticleSystemTemplate *WeaponTemplate::getProjectileExhaust(VeterancyLevel v) const
+{
+	unsigned k = ((unsigned)m_index + (unsigned)v) % 4u;
+	return k == 3 ? NULL : &g_particleTemplates[k];
+}
+VeterancyLevel Object::getVeterancyLevel() const
+{
+	/* (Object.cpp's: `m_experienceTracker ? m_experienceTracker->getVeterancyLevel() : LEVEL_REGULAR`) */
+	ExperienceTracker *t = getExperienceTracker();
+	return t ? t->getVeterancyLevel() : LEVEL_REGULAR;
+}
+Team *Player::getDefaultTeam() { return g_object.getTeam(); }
+void TerrainLogic::getExtentIncludingBorder(Region3D *r) const
+{
+	Real b = g_aiEnv.deliverWorld[0];
+	r->lo.x = -b; r->lo.y = -b; r->lo.z = 0.0f;
+	r->hi.x = g_aiEnv.extentHi[0] + b; r->hi.y = g_aiEnv.extentHi[1] + b; r->hi.z = 0.0f;
+}
+void PartitionManager::registerObject(Object *obj) { logDeliver({ 25u, (unsigned)obj->getID() }); }
+void PartitionManager::unRegisterObject(Object *obj) { logDeliver({ 26u, (unsigned)obj->getID() }); }
+PhysicsTurningType PhysicsBehavior::getTurning(void) const { return (PhysicsTurningType)g_aiEnv.deliverTurning; }
+/* (Object.cpp's: the drawable's clearAndSetModelConditionState, if any; the stand-in's log is clearAndSetModelConditionFlags') */
+void Object::clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set)
+{
+	if (getDrawable()) clearAndSetModelConditionFlags(MAKE_MODELCONDITION_MASK(clr), MAKE_MODELCONDITION_MASK(set));
+}
+Bool AIUpdateInterface::isAllowedToRespondToAiCommands(const AICommandParms* parms) const
+{
+	if (this == g_ai_update && g_aiEnv.subclass == 9) return ((const DeliverPayloadAIUpdate *)this)->deliverIsAllowedToRespondToAiCommands(parms);
+	return baseIsAllowedToRespondToAiCommands(parms);
+}
+void deliverPayloadViaModuleDataOf(DeliverPayloadAIUpdate *dp, const Coord3D *pos)
+{
+	/* (findUpdateModule answered the delivering AI itself) */
+	((DeliverPayloadAIUpdate *)g_ai_update)->deliverPayloadViaModuleData(pos);
 }

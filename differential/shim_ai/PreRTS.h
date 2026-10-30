@@ -186,6 +186,25 @@
 #define ExperienceTracker AiExperienceTracker
 #define TeamFactory AiTeamFactory
 #define TheTeamFactory AiTheTeamFactory
+/* batch A37: the delivery's world (other builds compile these classes) */
+#define DeliverPayloadAIUpdateModuleData AiDeliverPayloadAIUpdateModuleData
+#define DeliverPayloadData AiDeliverPayloadData
+#define DeliverPayloadStateMachine AiDeliverPayloadStateMachine
+#define ApproachState AiApproachState
+#define DeliveringState AiDeliveringState
+#define ConsiderNewApproachState AiConsiderNewApproachState
+#define RecoverFromOffMapState AiRecoverFromOffMapState
+#define HeadOffMapState AiHeadOffMapState
+#define CleanUpState AiCleanUpState
+#define RadiusDecal AiRadiusDecal
+#define RadiusDecalTemplate AiRadiusDecalTemplate
+#define GenerateMinefieldBehavior AiGenerateMinefieldBehavior
+#define SmartBombTargetHomingUpdate AiSmartBombTargetHomingUpdate
+#define ProjectileUpdateInterface AiProjectileUpdateInterface
+#define ThingFactory AiThingFactory
+#define TheThingFactory AiTheThingFactory
+#define ShadowType AiShadowType
+#define SHADOW_ALPHA_DECAL AI_SHADOW_ALPHA_DECAL
 /* batch A7 */
 #define AudioEventRTS AiAudioEventRTS
 #define DynamicAudioEventRTS AiDynamicAudioEventRTS

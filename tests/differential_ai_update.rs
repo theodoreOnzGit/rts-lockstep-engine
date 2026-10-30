@@ -123,6 +123,10 @@ use rts_lockstep_engine::logic::ai::ai_states::DistanceKind;
 use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::ai::supply_truck_ai_update::{self as supply, SupplyDockKind, SupplyTruck, SupplyTruckData};
 use rts_lockstep_engine::common::game_common::VeterancyLevel;
+use rts_lockstep_engine::common::damage_fx::FxListName;
+use rts_lockstep_engine::logic::ai::deliver_payload_ai_update::{self as deliver, DeliverPayload, DeliverPayloadModuleData, DeliverState, ItemModule};
+use rts_lockstep_engine::logic::modules::deliver_payload_data::DeliverPayloadData;
+use rts_lockstep_engine::logic::radius_decal::RadiusDecalTemplate;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -223,6 +227,7 @@ const L_RAILED: u32 = 112;
 const L_HACK: u32 = 113;
 const L_SUPPLY: u32 = 114;
 const L_MISSILE: u32 = 115;
+const L_DELIVER: u32 = 116;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -330,6 +335,11 @@ struct Host {
     ai_stack: Vec<AiUpdate>,
     /// Batch A35: the AI's machine, lent while the supply truck's machine runs.
     ai_machines: Vec<StateMachine<AiState<Host>>>,
+    /// Batch A37: the delivering AI's machine, lent while its AI runs; the visible payloads' next id (from 40 in each case, as the
+    /// wrapper's) and the last one's position.
+    deliver_machines: Vec<Option<StateMachine<DeliverState<Host>>>>,
+    next_payload: u32,
+    payload_pos: Coord3D,
     /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
     pf_ignore: ObjectId,
     /// Batch A7: TheAudio's next handle (from 1 in each case).
@@ -359,6 +369,19 @@ impl Host {
         self.log.push(code);
         self.log.push(w.len() as u32);
         self.log.extend_from_slice(w);
+    }
+
+    /// The object's drawable (the wrapper's `getDrawable`): a hacker's, a deployer's or (batch A37) a delivering AI's when the scene
+    /// says so.
+    fn drawable(&self) -> bool {
+        self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 || (self.env.subclass == 9 && self.env.deliver_flags & 1 != 0)
+    }
+
+    /// Batch A37: a `LOG_DELIVER` record of `w` then a name (its length, its bytes).
+    fn l_named(&mut self, mut w: Vec<u32>, name: &[u8]) {
+        w.push(name.len() as u32);
+        w.extend(name.iter().map(|&b| u32::from(b)));
+        self.l(L_DELIVER, &w);
     }
 
     /// The owner's reaction to a transform change (`reactToTransformChange`): logged with the NEW transform, cached position
@@ -925,13 +948,14 @@ impl AiStateHost for Host {
             b"Deploy" | b"UnitUnpack" => 4,
             b"Undeploy" | b"UnitPack" => 5,
             b"UnitCashPing" => 6,
+            b"StartDive" => 8,
             _ => -1,
         };
         let named = k >= 0 && (self.env.sounds >> k) & 1 != 0;
         self.audio_add(if named { k as u32 } else { u32::MAX });
     }
     fn set_drawable_animation_frame(&mut self, frame: i32) {
-        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
+        if self.drawable() {
             self.l(L_ANIM_FRAME, &[frame as u32]);
         }
     }
@@ -1039,6 +1063,167 @@ impl AiStateHost for Host {
     fn ai_machine_stack(&mut self) -> &mut Vec<StateMachine<AiState<Host>>> {
         &mut self.ai_machines
     }
+    // batch A37: the delivery's world (the wrapper's stand-ins, LOG_DELIVER)
+    fn deliver_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<DeliverState<Host>>>> {
+        &mut self.deliver_machines
+    }
+    fn delivery_decal_create(&mut self, t: &RadiusDecalTemplate, pos: &Coord3D, radius: f32, has_player: bool) {
+        let w = vec![
+            0,
+            pos.x.to_bits(),
+            pos.y.to_bits(),
+            pos.z.to_bits(),
+            radius.to_bits(),
+            u32::from(has_player),
+            t.shadow_type,
+            t.min_opacity.to_bits(),
+            t.max_opacity.to_bits(),
+            t.opacity_throb_time,
+            t.color as u32,
+            u32::from(t.only_visible_to_owning_player),
+        ];
+        self.l_named(w, &t.name.clone());
+    }
+    fn delivery_decal_update(&mut self) {
+        self.l(L_DELIVER, &[1]);
+    }
+    fn delivery_decal_clear(&mut self) {
+        self.l(L_DELIVER, &[2]);
+    }
+    fn play_per_unit_sound_at(&mut self, name: &[u8], pos: &Coord3D) {
+        let k = if name == b"StartDive" { 8 } else { -1 };
+        if k >= 0 && (self.env.sounds >> k) & 1 != 0 {
+            self.l(L_DELIVER, &[3, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+            let h = self.next_audio;
+            self.next_audio += 1;
+            self.l(L_AUDIO_ADD, &[k as u32, 0, h]);
+        }
+    }
+    fn set_weapon_lock(&mut self, slot: i32, lock: i32) {
+        self.l(L_DELIVER, &[4, slot as u32, lock as u32]);
+    }
+    fn fx_do_pos(&mut self, fx: &FxListName, pos: &Coord3D) {
+        if let Some(name) = fx {
+            let k = u32::from(name.as_slice() == b"fx1");
+            self.l(L_DELIVER, &[5, k, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        }
+    }
+    fn has_drawable(&mut self) -> bool {
+        self.drawable()
+    }
+    fn drawable_show_sub_object(&mut self, name: &[u8], show: bool) {
+        self.l_named(vec![6, u32::from(show)], name);
+    }
+    fn drawable_update_sub_objects(&mut self) {
+        self.l(L_DELIVER, &[7]);
+    }
+    fn drawable_pristine_bone_position(&mut self, prefix: &[u8], start_index: i32) -> Option<Coord3D> {
+        let n = p1_hash(self.env.seed, 140, &[start_index as u32, self.env.loco.frame]) & 1;
+        self.l_named(vec![8, start_index as u32, 1, n], prefix);
+        (n != 0).then_some(Coord3D { x: 2.0 * start_index as f32, y: 3.0, z: 1.0 })
+    }
+    fn drawable_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D {
+        let o = *self.thing.position();
+        let w = Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z };
+        self.l(L_DELIVER, &[9, w.x.to_bits(), w.y.to_bits(), w.z.to_bits()]);
+        w
+    }
+    fn object_destroy(&mut self, id: ObjectId) {
+        self.l(L_DESTROY_OBJECT, &[id as u32]);
+    }
+    fn object_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.l(L_DELIVER, &[10, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+    }
+    fn object_contain_set_override_destination(&mut self, _id: ObjectId, pos: &Coord3D) {
+        self.l(L_DELIVER, &[11, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+    }
+    fn object_aim_update_module(&mut self, id: ObjectId, module: ItemModule, pos: &Coord3D) {
+        let i = match module {
+            ItemModule::GenerateMinefield => 0,
+            ItemModule::SmartBombTargetHoming => 1,
+        };
+        if (1..32).contains(&id) && (self.env.deliver_module_masks[i] >> id) & 1 != 0 {
+            self.l(L_DELIVER, &[12 + i as u32, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        }
+    }
+    fn object_apply_force(&mut self, _id: ObjectId, force: &Coord3D) {
+        self.l(L_DELIVER, &[14, force.x.to_bits(), force.y.to_bits(), force.z.to_bits()]);
+    }
+    fn thing_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        match name {
+            b"pt0" => Some(0),
+            b"pt1" => Some(1),
+            _ => None,
+        }
+    }
+    fn payload_new(&mut self, name: &[u8]) -> ObjectId {
+        let t = self.thing_template_by_name(name).expect("a payload template");
+        let id = self.next_payload;
+        self.next_payload += 1;
+        self.payload_pos = Coord3D::default();
+        self.l(L_DELIVER, &[15, t, id]);
+        id as ObjectId
+    }
+    fn payload_set_producer(&mut self, id: ObjectId) {
+        let me = self.env.object_id as u32;
+        self.l(L_DELIVER, &[16, id as u32, me]);
+    }
+    fn payload_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.payload_pos = *pos;
+        self.l(L_DELIVER, &[17, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+    }
+    fn payload_position(&mut self, _id: ObjectId) -> Coord3D {
+        self.payload_pos
+    }
+    fn payload_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        self.l(L_DELIVER, &[18, id as u32, angle.to_bits()]);
+    }
+    fn payload_mass(&mut self, _id: ObjectId) -> f32 {
+        self.env.deliver_world[1]
+    }
+    fn payload_apply_motive_force(&mut self, id: ObjectId, f: &Coord3D) {
+        self.l(L_DELIVER, &[20, id as u32, f.x.to_bits(), f.y.to_bits(), f.z.to_bits()]);
+    }
+    fn payload_is_projectile(&mut self, _id: ObjectId) -> bool {
+        self.env.deliver_flags & 2 != 0
+    }
+    fn payload_projectile_fire(&mut self, id: ObjectId, pos: &Coord3D, weapon: u32, exhaust: Option<u32>) {
+        self.l(L_DELIVER, &[21, id as u32, 0, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), weapon, exhaust.unwrap_or(u32::MAX)]);
+    }
+    fn payload_center_of_mass_offset(&mut self, _id: ObjectId) -> f32 {
+        self.env.deliver_world[2]
+    }
+    fn payload_set_pitch_rate(&mut self, id: ObjectId, rate: f32) {
+        self.l(L_DELIVER, &[23, id as u32, rate.to_bits()]);
+    }
+    fn payload_has_ai(&mut self, _id: ObjectId) -> bool {
+        self.env.deliver_flags & 4 != 0
+    }
+    fn payload_ai_move_to_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.l(L_DELIVER, &[24, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), CMD_FROM_AI as u32]);
+    }
+    fn weapon_template_projectile_exhaust(&mut self, template: u32, level: VeterancyLevel) -> Option<u32> {
+        let k = (template + level as u32) % 4;
+        (k != 3).then_some(k)
+    }
+    fn terrain_extent_including_border(&mut self) -> (Coord3D, Coord3D) {
+        let b = self.env.deliver_world[0];
+        (Coord3D { x: -b, y: -b, z: 0.0 }, Coord3D { x: self.env.extent_hi[0] + b, y: self.env.extent_hi[1] + b, z: 0.0 })
+    }
+    fn partition_register(&mut self) {
+        let me = self.env.object_id as u32;
+        self.l(L_DELIVER, &[25, me]);
+    }
+    fn partition_unregister(&mut self) {
+        let me = self.env.object_id as u32;
+        self.l(L_DELIVER, &[26, me]);
+    }
+    fn physics_turning(&mut self) -> i32 {
+        self.env.deliver_turning
+    }
+    fn unit_direction_vector_3d(&mut self) -> Coord3D {
+        self.thing.unit_direction_vector_3d()
+    }
     fn supply_find_best_center(&mut self) -> ObjectId {
         let o = self.env.supply_best[0];
         let o = if self.object_exists(o) { o } else { 0 };
@@ -1081,7 +1266,7 @@ impl AiStateHost for Host {
         }
     }
     fn drawable_update_supply_status(&mut self, max_boxes: i32, boxes: i32) {
-        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
+        if self.drawable() {
             self.l(L_SUPPLY, &[4, max_boxes as u32, boxes as u32]);
         }
     }
@@ -1162,7 +1347,7 @@ impl AiStateHost for Host {
         self.l(L_MISSILE, &[0, i.damage_type as u32, i.death_type as u32, i.source_id as u32, i.amount.to_bits()]);
     }
     fn set_drawable_hidden(&mut self, hidden: bool) {
-        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
+        if self.drawable() {
             self.l(L_MISSILE, &[1, u32::from(hidden)]);
         }
     }
@@ -1214,6 +1399,7 @@ impl AiStateHost for Host {
             MemberCommand::AttackMoveToPosition { pos, max_shots, src } => {
                 vec![8, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), max_shots as u32, src as u32]
             }
+            MemberCommand::MoveToPosition { pos, src } => vec![9, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), src as u32],
         };
         self.l(L_MEMBER_AI, &w);
     }
@@ -1392,13 +1578,6 @@ impl AiStateHost for Host {
     }
     fn contain_order_all_passengers_to_exit(&mut self, src: CommandSourceType, instantly: bool) {
         self.l(L_CONTAIN, &[2, src as u32, u32::from(instantly)]);
-    }
-    fn deliver_payload_via_module_data(&mut self, pos: &Coord3D) -> bool {
-        if self.env.modules & 1 == 0 {
-            return false;
-        }
-        self.l(L_MODULE, &[0, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
-        true
     }
     fn go_prone(&mut self) {
         if self.env.modules & 2 != 0 {
@@ -1765,8 +1944,9 @@ impl AiStateHost for Host {
     }
     // ---- batch A15
     fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
-        // (batch A30: the transport's passengers with an AI too; batch A32: the assault transport's with an AI only)
-        let transport = self.env.subclass == 2;
+        // (batch A30: the transport's passengers with an AI too; batch A32: the assault transport's with an AI only; batch A37: the
+        // delivering AI's with an AI too)
+        let transport = self.env.subclass == 2 || self.env.subclass == 9;
         let assault = self.env.subclass == 4;
         (1..32)
             .filter(|&i| {
@@ -2859,6 +3039,46 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A37: a DeliverPayloadAIUpdate's members, data and machine
+    if let AiSubclass::DeliverPayload(d) = &module.ai().subclass {
+        put_pos(&mut v, &d.target_pos);
+        put_pos(&mut v, &d.move_to_pos);
+        v.extend([d.visible_items_delivered as u32, u32::from(d.delivery_decal.empty), d.previous_distance_sqr.to_bits()]);
+        v.extend([u32::from(d.free_to_exit), u32::from(d.accepting_commands), d.dive_state as u32]);
+        let a = &d.data;
+        v.extend([a.visible_drop_bone_name.len() as u32, a.visible_sub_object_name.len() as u32, a.visible_payload_template_name.len() as u32]);
+        v.extend([a.dist_to_target.to_bits(), a.pre_open_distance.to_bits(), a.max_attempts as u32]);
+        put_pos(&mut v, &a.drop_offset);
+        put_pos(&mut v, &a.drop_variance);
+        v.extend([a.drop_delay, u32::from(a.fire_weapon), u32::from(a.self_destruct_object), a.visible_num_bones as u32]);
+        v.extend([a.dive_start_distance.to_bits(), a.dive_end_distance.to_bits(), a.strafing_weapon_slot as u32]);
+        v.extend([a.visible_items_dropped_per_interval as u32, u32::from(a.inherit_transport_velocity), u32::from(a.is_parachute_directly)]);
+        v.extend([a.exit_pitch_rate.to_bits(), a.strafe_fx.as_ref().map_or(u32::MAX, |n| u32::from(n.as_slice() == b"fx1"))]);
+        v.extend([a.strafe_length.to_bits(), a.visible_payload_weapon_template.unwrap_or(u32::MAX)]);
+        let t = &a.delivery_decal_template;
+        v.extend([t.name.len() as u32, t.shadow_type, t.min_opacity.to_bits(), t.max_opacity.to_bits(), t.opacity_throb_time]);
+        v.extend([t.color as u32, u32::from(t.only_visible_to_owning_player), a.delivery_decal_radius.to_bits()]);
+        v.push(u32::from(module.deliver_machine.is_some()));
+        if let Some(m) = module.deliver_machine.as_ref() {
+            v.extend([m.get_current_state_id(), m.peek_sleep_till(), u32::from(m.is_default_state_inited())]);
+            match m.state(deliver::DELIVERING) {
+                Some(DeliverState::Delivering { drop_delay_left, did_open }) => v.extend([*drop_delay_left, u32::from(*did_open)]),
+                _ => panic!("the delivering state"),
+            }
+            match m.state(deliver::CONSIDER_NEW_APPROACH) {
+                Some(DeliverState::ConsiderNewApproach { number_entries_to_state }) => v.push(*number_entries_to_state as u32),
+                _ => panic!("the considering state"),
+            }
+            match m.state(deliver::RECOVER_FROM_OFF_MAP) {
+                Some(DeliverState::RecoverFromOffMap { re_entry_frame }) => v.push(*re_entry_frame),
+                _ => panic!("the recovering state"),
+            }
+            match m.state(deliver::HEAD_OFF_MAP) {
+                Some(DeliverState::HeadOffMap { facing_direction_upon_delivery }) => put_pos(&mut v, facing_direction_upon_delivery),
+                _ => panic!("the heading-off state"),
+            }
+        }
+    }
     // batch A36: a MissileAIUpdate's members
     if let AiSubclass::Missile(m) = &module.ai().subclass {
         v.extend([m.state, m.state_timestamp, m.next_target_track_time, m.launcher_id as u32, m.victim_id as u32, m.fuel_expiration_date]);
@@ -2915,6 +3135,71 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
         v.extend([u32::from(a.is_attack_move), u32::from(a.is_attack_object), u32::from(a.new_occupants_are_new_members)]);
     }
     v
+}
+
+/// Batch A37: the scene's delivering AI's module data (the wrapper's `setScene`).
+fn scene_deliver_module_data(e: &Env) -> DeliverPayloadModuleData {
+    let r = e.deliver_reals;
+    DeliverPayloadModuleData {
+        door_delay: e.deliver_times[0],
+        drop_delay: e.deliver_times[1],
+        max_distance_to_target: r[0],
+        drop_offset: Coord3D { x: r[1], y: r[2], z: r[3] },
+        drop_variance: Coord3D { x: r[4], y: r[5], z: r[6] },
+        delivery_decal_radius: r[7],
+        max_number_attempts: e.deliver_ints[0],
+        put_in_container_name: deliver_template_name(e.deliver_ints[1]),
+        delivery_decal_template: scene_decal_template(e),
+    }
+}
+
+/// Batch A37: a template's name (0 none, 1 "pt0", 2 "pt1", 3 "ptx").
+fn deliver_template_name(k: i32) -> Vec<u8> {
+    [&b""[..], b"pt0", b"pt1", b"ptx"][(k & 3) as usize].to_vec()
+}
+
+/// Batch A37: the scene's decals' template (the wrapper's `sceneDecalTemplate`).
+fn scene_decal_template(e: &Env) -> RadiusDecalTemplate {
+    RadiusDecalTemplate {
+        name: if e.deliver_decal[0] != 0 { b"decal0".to_vec() } else { Vec::new() },
+        shadow_type: e.deliver_decal[1] as u32,
+        opacity_throb_time: e.deliver_decal[2] as u32,
+        color: e.deliver_decal[3],
+        only_visible_to_owning_player: e.deliver_decal[4] != 0,
+        min_opacity: e.deliver_opacity[0],
+        max_opacity: e.deliver_opacity[1],
+    }
+}
+
+/// Batch A37: the data op 109 delivers (the wrapper's `sceneDeliverData`).
+fn scene_deliver_data(e: &Env) -> DeliverPayloadData {
+    let (r, k, f) = (e.deliver_data_reals, e.deliver_data_ints, e.deliver_flags);
+    DeliverPayloadData {
+        dist_to_target: r[0],
+        pre_open_distance: r[1],
+        drop_offset: Coord3D { x: r[2], y: r[3], z: r[4] },
+        drop_variance: Coord3D { x: r[5], y: r[6], z: r[7] },
+        dive_start_distance: r[8],
+        dive_end_distance: r[9],
+        exit_pitch_rate: r[10],
+        strafe_length: r[11],
+        delivery_decal_radius: r[12],
+        max_attempts: k[0],
+        drop_delay: k[1] as u32,
+        visible_num_bones: k[2],
+        strafing_weapon_slot: k[3],
+        visible_items_dropped_per_interval: k[4],
+        visible_payload_weapon_template: (k[5] >= 0).then_some(k[5] as u32),
+        strafe_fx: (k[6] >= 0).then(|| format!("fx{}", k[6]).into_bytes()),
+        visible_drop_bone_name: if k[7] != 0 { b"bone".to_vec() } else { Vec::new() },
+        visible_sub_object_name: if k[8] != 0 { b"sub".to_vec() } else { Vec::new() },
+        visible_payload_template_name: deliver_template_name(k[9]),
+        fire_weapon: (f >> 3) & 1 != 0,
+        self_destruct_object: (f >> 4) & 1 != 0,
+        inherit_transport_velocity: (f >> 5) & 1 != 0,
+        is_parachute_directly: (f >> 6) & 1 != 0,
+        delivery_decal_template: scene_decal_template(e),
+    }
 }
 
 /// A move state's members (the driver's `putMove`).
@@ -3063,7 +3348,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8][g.below(16) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9][g.below(18) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -3102,6 +3387,57 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.missile_collide_rate = 40 + g.below(61);
     e.missile_countermeasure = if g.below(3) == 0 { 0 } else { 1 + g.below(31) as i32 };
     e.missile_garrison_immune = i32::from(g.below(4) == 0);
+    // batch A37: a delivering AI's data (short delays; distances around the scene's), the data op 109 delivers, the decals' template,
+    // its flags (the drawable mostly), its world; the "StartDive" sound now and then
+    let short4 = |g: &mut Gen| if g.below(3) == 0 { 0 } else { g.below(4) };
+    e.deliver_times = [short4(g), short4(g)];
+    e.deliver_reals = [
+        g.uniform(20.0, 300.0),
+        g.uniform(-5.0, 5.0),
+        g.uniform(-5.0, 5.0),
+        g.uniform(-10.0, 0.0),
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        [0.0, 50.0][g.below(2) as usize],
+    ];
+    e.deliver_ints = [g.below(4) as i32, [0, 1, 1, 2, 3][g.below(5) as usize]];
+    e.deliver_decal = [g.below(2) as i32, [0x20, 0x40][g.below(2) as usize], [30, 60][g.below(2) as usize], g.below(3) as i32, g.below(2) as i32];
+    e.deliver_opacity = [g.uniform(0.0, 0.5), g.uniform(0.5, 1.0)];
+    e.deliver_data_reals = [
+        g.uniform(20.0, 300.0),
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 100.0) },
+        g.uniform(-5.0, 5.0),
+        g.uniform(-5.0, 5.0),
+        g.uniform(-10.0, 0.0),
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        if g.below(2) == 0 { 0.0 } else { g.uniform(0.0, 8.0) },
+        if g.below(3) == 0 { 0.0 } else { g.uniform(30.0, 400.0) },
+        g.uniform(0.0, 100.0),
+        if g.below(2) == 0 { 0.0 } else { g.uniform(-2.0, 2.0) },
+        g.uniform(0.0, 50.0),
+        [0.0, 50.0][g.below(2) as usize],
+    ];
+    e.deliver_data_ints = [
+        g.below(4) as i32,
+        g.below(4) as i32,
+        g.below(5) as i32,
+        g.below(4) as i32 - 1,
+        g.below(4) as i32 - 1,
+        g.below(4) as i32 - 1,
+        g.below(3) as i32 - 1,
+        g.below(2) as i32,
+        g.below(2) as i32,
+        [0, 1, 1, 2, 2, 3][g.below(6) as usize],
+    ];
+    e.deliver_flags = (g.below(128) as i32) | i32::from(g.below(4) != 0);
+    e.deliver_world = [[0.0, 20.0, 60.0][g.below(3) as usize], g.uniform(1.0, 10.0), g.uniform(-2.0, 2.0)];
+    e.deliver_turning = g.below(3) as i32 - 1;
+    e.deliver_module_masks = [g.u32(), g.u32()];
+    if e.subclass == 9 && g.below(2) == 0 {
+        e.sounds |= 1 << 8;
+    }
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -3290,6 +3626,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if e.subclass == 9 && g.below(5) == 0 {
+        // batch A37: a delivering AI's members (the deliveries most)
+        [109, 109, 109, 110, 110, 111, 112, 113, 114, 115, 116, 117][g.below(12) as usize]
     } else if e.subclass == 8 && g.below(5) == 0 {
         // batch A36: the weapon's calls to a missile
         [104, 104, 105, 106, 106, 106, 106, 107, 108][g.below(9) as usize]
@@ -3371,7 +3710,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=108);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=117);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -3484,6 +3823,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if e.subclass == 5 && g.below(3) == 0 { [26, 27, 27][g.below(3) as usize] } else { cmd };
             // (batch A34: a hacker's command, often)
             let cmd = if e.subclass == 6 && g.below(3) == 0 { 34 } else { cmd };
+            // (batch A37: a delivering AI's scripted reinforcement, the move-and-evacuate-and-exit, often)
+            let cmd = if e.subclass == 9 && g.below(4) == 0 { 4 } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3520,6 +3861,14 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             ia[5] = g.below(4) as i32 - 1;
         }
         103 => ia[0] = g.below(2) as i32,
+        // batch A37: the exiter; the target near the move position, now and then far
+        109..=117 => {
+            ia[0] = g.below(32) as i32;
+            let far = g.below(4) == 0;
+            for k in 0..3 {
+                fa[3 + k] = fa[k] + if far { g.uniform(-300.0, 300.0) } else { g.uniform(-20.0, 20.0) };
+            }
+        }
         _ => {}
     }
     (op, fa, ia)
@@ -3873,6 +4222,50 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                 Err(e) => panic!("a missile's call: {e}"),
             }
         }
+        // batch A37: a delivering AI's members (undefined upstream: the case ends)
+        109..=117 => {
+            if !matches!(module.ai().subclass, AiSubclass::DeliverPayload(_)) {
+                return vec![];
+            }
+            let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
+            let target = Coord3D { x: fa[3], y: fa[4], z: fa[5] };
+            let data = scene_deliver_data(&h.env);
+            let r = module.run(h, |sm, h| -> SmResult<Vec<u32>> {
+                let d = |h: &mut Host| match &states::ai(h).subclass {
+                    AiSubclass::DeliverPayload(d) => d.clone(),
+                    _ => unreachable!(),
+                };
+                match op {
+                    109 => deliver::deliver_payload(sm, h, &p, &target, &data).map(|_| vec![]),
+                    110 => deliver::deliver_payload_via_module_data(sm, h, &p).map(|_| vec![]),
+                    111 => {
+                        let dead = h.is_effectively_dead();
+                        // (FREE_TO_EXIT 0, NOT_FREE_TO_EXIT 1)
+                        Ok(vec![u32::from(!d(h).ai_free_to_exit(dead))])
+                    }
+                    112 => Ok(vec![u32::from(deliver::is_close_enough_to_target(h))]),
+                    113 => deliver::calc_min_turn_radius(h).map(|(r, t)| vec![r.to_bits(), t.to_bits()]),
+                    114 => {
+                        deliver::kill_delivery_decal(h);
+                        Ok(vec![])
+                    }
+                    115 => {
+                        let dd = d(h);
+                        Ok(vec![deliver::put_in_container_template(h, &dd).unwrap_or(u32::MAX)])
+                    }
+                    116 => Ok(vec![u32::from(deliver::is_off_map(h))]),
+                    _ => Ok(vec![u32::from(h.deliver_machine_stack().last().expect("the lent deliver machine").is_some())]),
+                }
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a delivery's call: {e}"),
+            }
+        }
         // batch A35: the docks' calls to a supply truck
         101..=103 => {
             let mut r = vec![];
@@ -3986,7 +4379,12 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             parms.int_value = ia[6];
             parms.command_button = (ia[7] >= 0).then_some(ia[7] as u32);
             parms.coords = coords.to_vec();
-            module.ai_do_command(h, &parms).expect("aiDoCommand");
+            // (batch A37: a delivery remade by the command may reach what upstream leaves undefined: the case ends)
+            match module.ai_do_command(h, &parms) {
+                Ok(()) => {}
+                Err(e) if e.is_undefined_upstream() => h.undefined = true,
+                Err(e) => panic!("aiDoCommand: {e}"),
+            }
             vec![]
         }
         73 => {
@@ -4013,7 +4411,9 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 109],
+    ops: [u64; 118],
+    /// Batch A37: the delivering AI's machine's state after an operation (approach .. clean up, none).
+    deliver_states: [u64; 7],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -4064,7 +4464,8 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 109],
+            ops: [0; 118],
+            deliver_states: [0; 7],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -4117,6 +4518,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         rng: RandomValues::default(),
         ai_stack: Vec::new(),
         ai_machines: Vec::new(),
+        deliver_machines: Vec::new(),
+        next_payload: 40,
+        payload_pos: Coord3D::default(),
         pf_ignore: 0,
         next_audio: 1,
         next_particle: 1,
@@ -4133,7 +4537,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
     host.names.reset();
     // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
-    for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate"] {
+    for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate", "GenerateMinefieldBehavior", "SmartBombTargetHomingUpdate"] {
         host.names.name_to_key(name.as_bytes());
     }
     unsafe { cpp::ref_ai_a2_reset() };
@@ -4164,7 +4568,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut map = data.locomotor_templates.write().unwrap();
         // (batch A33: a railed transport has every set, each with a locomotor: its update follows its path after the base's update,
         // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
-        let railed = host.env.subclass == 5;
+        // (batch A37: a delivering AI likewise: its states use the locomotor unchecked)
+        let railed = host.env.subclass == 5 || host.env.subclass == 9;
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
@@ -4281,6 +4686,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             turrets_must_center_before_packing: host.env.deploy_flags & 4 != 0,
             manual_deploy_animations: host.env.deploy_flags & 8 != 0,
         })),
+        9 => AiSubclass::DeliverPayload(DeliverPayload::new(scene_deliver_module_data(&host.env))),
         _ => AiSubclass::Plain,
     };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
@@ -4442,6 +4848,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         }
         ck.dump_bug.eq(rust_dump(&module, &mut host, 1), cd.clone(), tag);
         ck.dump.eq(rd, cd, tag);
+        if let AiSubclass::DeliverPayload(_) = module.ai().subclass {
+            let s = module.deliver_machine.as_ref().map_or(6, |m| (m.get_current_state_id() as usize).min(6));
+            ck.deliver_states[s] += 1;
+        }
         if op == 0 {
             ck.sleeps[usize::from(r[0] != 1)] += 1;
             if *host.thing.position() != before_pos || module.ai().blocked_frames > 0 {
@@ -4700,6 +5110,26 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A37; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `DeliverPayloadAIUpdate` (DeliverPayloadAIUpdate.cpp cut verbatim with its header's machine, states and `DeliverPayloadData`,
+///   RadiusDecal.cpp's template constructor and xfers; the decal, the bones, the subobjects, the items' positions, contains,
+///   modules and forces, the visible payload (a new object), the partition and the physics' turning the scene's stand-ins,
+///   `LOG_DELIVER`; the AI's calls as ops 109-117, which need the AI's machine; the move-and-evacuate-and-exit command often): a
+///   ninth of the cases: 30,000 constructions and 1,762,739 operations, **0 mismatches** in the results, the call logs and the
+///   dumps (its members, data and machine added). The delivery machine after an operation: approach 116,617, delivering 20,218,
+///   considering 3,646, recovering 2,597, heading off 6,442, cleaning up 1,287, none 33,130.
+/// - Not compared (undefined upstream; refused, `StateMachineError::Undefined`, the case ends before the C++): a locomotor call
+///   without a current locomotor, a physics call without physics, the first item of an empty contain list, a visible payload of
+///   an unknown template (`newObject` throws) or with no controlling player; 1,211 cases ended undefined in all (with the earlier
+///   batches'). The stand-in templates have no build variations (upstream's `newObject` would draw one at random).
+/// - Planted bugs (5,000 cases each): 3680 (off the map), 3681 (the pre-open distance), 3682 (the turn radius), 3683 (no dive),
+///   3684 (the dive's sound), 3685 (the strafe), 3686 (the approach's move again), 3687 (the drop delay), 3688 (the weapon
+///   delivery), 3689 (the attempts), 3690 (the re-entry frame), 3691 (the self-destruction), 3692 (the turned-away kill), 3693 (the
+///   decal's update), 3694 (commands refused heading off), 3695 (the scripted delivery's attempts), 3696 (the machine's snapshot)
+///   caught. Five first placed where they skipped a refusal (the dive, the approach, the delivery's end, the machine's update, the
+///   scripted delivery) let the C++ reach a null locomotor and crash; they were moved.
+///
 /// # Results (2026-10-30, batch A36; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `MissileAIUpdate` (MissileAIUpdate.cpp cut verbatim with its header's module data; the weapon templates, the store, the
@@ -5146,9 +5576,10 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
-        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads
+        ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads,
+        ck.deliver_states
     );
     ck.construction.finish();
     ck.results.finish();

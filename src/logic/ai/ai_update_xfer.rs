@@ -104,6 +104,35 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_) = self.ai().subclass {
+            // batch A37: `DeliverPayloadAIUpdate::xfer` (version 5): the base's, its members, its machine (made on a load if saved;
+            // its snapshot whenever there is one; in CRC mode `StateMachine::crc`'s nothing), the decal, the flags
+            let current_version: XferVersion = 5;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut d = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::DeliverPayload(d) => d.clone(),
+                _ => unreachable!(),
+            };
+            let r = crate::logic::ai::deliver_payload_ai_update::deliver_xfer_members(&mut d, h, xfer, version);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::DeliverPayload(d.clone());
+            r?;
+            let mut has_state_machine = self.deliver_machine.is_some();
+            xfer.xfer_bool(&mut has_state_machine)?;
+            if has_state_machine && self.deliver_machine.is_none() {
+                self.deliver_machine = Some(crate::logic::ai::deliver_payload_ai_update::make_deliver_machine()?);
+            }
+            if version >= 2 && xfer.get_xfer_mode() != XferMode::Crc && !plant(3696) {
+                if let Some(m) = self.deliver_machine.as_mut() {
+                    crate::logic::ai::deliver_payload_ai_update::deliver_machine_xfer(m, xfer)?;
+                }
+            }
+            let r = crate::logic::ai::deliver_payload_ai_update::deliver_xfer_tail(&mut d, h, xfer, version);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::DeliverPayload(d);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::Missile(_) = self.ai().subclass {
             // batch A36: `MissileAIUpdate::xfer` (version 6): the base's, then its members
             let current_version: XferVersion = 6;

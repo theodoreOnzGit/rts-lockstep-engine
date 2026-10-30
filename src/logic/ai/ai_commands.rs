@@ -259,6 +259,12 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
     if matches!(ai(h).subclass, AiSubclass::DeployStyle(_)) && !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
     }
+    // batch A37: `DeliverPayloadAIUpdate::isAllowedToRespondToAiCommands`: nothing once heading off the map, then the base's
+    if let AiSubclass::DeliverPayload(d) = &ai(h).subclass {
+        if !d.accepting_commands && !plant(3694) {
+            return Ok(());
+        }
+    }
     if !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
     }
@@ -656,7 +662,7 @@ fn private_goal_object_state<H: AiStateHost>(
 }
 
 /// `privateMoveToAndEvacuate(pos, cmdSource)` and `privateMoveToAndEvacuateAndExit` (whose payload a `DeliverPayloadAIUpdate`
-/// delivers, if the object has one).
+/// delivers, if the object has one: batch A37, the AI itself).
 fn private_move_to_and_evacuate<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, src: CommandSourceType, and_exit: bool) -> SmResult<()> {
     if !h.is_mobile() {
         return Ok(());
@@ -667,7 +673,10 @@ fn private_move_to_and_evacuate<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: 
     set_last_command_source(h, src);
     if !and_exit {
         aism_set_state(sm, h, AI_MOVE_AND_EVACUATE)?;
-    } else if !h.deliver_payload_via_module_data(pos) {
+    } else if matches!(ai(h).subclass, AiSubclass::DeliverPayload(_)) {
+        // (batch A37: `findUpdateModule("DeliverPayloadAIUpdate")` is the AI itself, a delivering one)
+        crate::logic::ai::deliver_payload_ai_update::deliver_payload_via_module_data(sm, h, pos)?;
+    } else {
         aism_set_state(sm, h, AI_MOVE_AND_EVACUATE_AND_EXIT)?;
     }
     Ok(())

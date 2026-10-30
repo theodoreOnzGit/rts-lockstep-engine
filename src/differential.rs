@@ -1091,6 +1091,27 @@ pub struct AiEnv {
     pub missile_collide_rate: c_uint,
     pub missile_countermeasure: c_int,
     pub missile_garrison_immune: c_int,
+    // batch A37: a DeliverPayloadAIUpdate's module data (door and drop delays; the maximum distance, the drop offset and variance,
+    // the decal radius; the maximum attempts and the put-in-container name (0 none, 1 "pt0", 2 "pt1", 3 "ptx": unknown)), the
+    // delivery decals' template (its name (0 none, 1 "decal0"), style, throb time, colour, owner-only flag; its opacities), the data
+    // op 109 delivers (reals: the distance, the pre-open distance, the drop offset and variance, the dive's start and end, the exit
+    // pitch rate, the strafe length, the decal radius; ints: the maximum attempts, the drop delay, the visible bones, the strafing
+    // slot (-1 none), the items per interval, the visible payload weapon (-1 none), the strafe FX (-1 none), the bone name (0 none,
+    // 1 "bone"), the subobject name (0 none, 1 "sub"), the payload template (as the container's)), the flags (bit 0 the object's
+    // drawable, 1 the payload a projectile, 2 the payload with an AI, 3 fire the weapon, 4 self-destruct, 5 inherit the velocity,
+    // 6 parachute directly) and the world (the map's border, the payload's mass and centre-of-mass offset; the physics' turning;
+    // the items with a minefield module, with a smart bomb module)
+    pub deliver_times: [c_uint; 2],
+    pub deliver_reals: [c_float; 8],
+    pub deliver_ints: [c_int; 2],
+    pub deliver_decal: [c_int; 5],
+    pub deliver_opacity: [c_float; 2],
+    pub deliver_data_reals: [c_float; 13],
+    pub deliver_data_ints: [c_int; 10],
+    pub deliver_flags: c_int,
+    pub deliver_world: [c_float; 3],
+    pub deliver_turning: c_int,
+    pub deliver_module_masks: [c_uint; 2],
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

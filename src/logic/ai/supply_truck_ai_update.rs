@@ -160,7 +160,7 @@ fn st<H: AiStateHost>(h: &mut H) -> &mut SupplyTruck {
 }
 
 /// Runs `f` on the AI's machine (lent to the host while the supply machine runs).
-fn with_ai_machine<H: AiStateHost, R>(h: &mut H, f: impl FnOnce(&mut Sm<H>, &mut H) -> R) -> R {
+pub(crate) fn with_ai_machine<H: AiStateHost, R>(h: &mut H, f: impl FnOnce(&mut Sm<H>, &mut H) -> R) -> R {
     let mut sm = h.ai_machine_stack().pop().expect("the AI's machine, lent");
     let r = f(&mut sm, h);
     h.ai_machine_stack().push(sm);

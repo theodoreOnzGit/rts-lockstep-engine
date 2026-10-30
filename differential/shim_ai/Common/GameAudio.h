@@ -16,6 +16,8 @@ public:
 	void setEventName(AsciiString name) { m_eventName = name; }
 	const AsciiString& getEventName() const { return m_eventName; }
 	void setObjectID(ObjectID id) { m_objectID = id; }
+	/* batch A37 (logged) */
+	void setPosition(const Coord3D *pos);
 	ObjectID getObjectID() const { return m_objectID; }
 	/* batch A35 (the depleted voice keeps its handle) */
 	void setPlayingHandle(AudioHandle h) { m_playingHandle = h; }

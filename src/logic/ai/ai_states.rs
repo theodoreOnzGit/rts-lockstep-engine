@@ -243,6 +243,82 @@ pub trait AiStateHost: AiHost + StateContext {
     fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32;
     /// Batch A36: the owner's `calculateCountermeasureToDivertTo(victim)` (`INVALID_ID`: none).
     fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId;
+    /// Batch A37: the delivering AIs' machines lent to the host while their AIs run (none: not made), the innermost last.
+    fn deliver_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<Self>>>>
+    where
+        Self: Sized;
+    /// Batch A37: `template.createRadiusDecal(pos, radius, getControllingPlayer(), m_deliveryDecal)` (the client's drawing).
+    fn delivery_decal_create(&mut self, template: &crate::logic::radius_decal::RadiusDecalTemplate, pos: &Coord3D, radius: f32, has_player: bool);
+    /// Batch A37: `m_deliveryDecal.update()` (the client's throb).
+    fn delivery_decal_update(&mut self);
+    /// Batch A37: `m_deliveryDecal.clear()` (the client's shadow let go).
+    fn delivery_decal_clear(&mut self);
+    /// Batch A37: the template's per-unit sound `name` at `pos`, if it names one (`setPosition`, `addAudioEvent`).
+    fn play_per_unit_sound_at(&mut self, name: &[u8], pos: &Coord3D);
+    /// Batch A37: the owner's `setWeaponLock(slot, lock)`.
+    fn set_weapon_lock(&mut self, slot: i32, lock: i32);
+    /// Batch A37: `FXList::doFXPos(fx, pos)` (none: nothing).
+    fn fx_do_pos(&mut self, fx: &crate::common::damage_fx::FxListName, pos: &Coord3D);
+    /// Batch A37: the owner has a drawable (`getDrawable()`).
+    fn has_drawable(&mut self) -> bool;
+    /// Batch A37: the drawable's `showSubObject(name, show)`.
+    fn drawable_show_sub_object(&mut self, name: &[u8], show: bool);
+    /// Batch A37: the drawable's `updateSubObjects()`.
+    fn drawable_update_sub_objects(&mut self);
+    /// Batch A37: the drawable's `getPristineBonePositions(prefix, startIndex, &pos, NULL, 1)` (none: not found).
+    fn drawable_pristine_bone_position(&mut self, prefix: &[u8], start_index: i32) -> Option<Coord3D>;
+    /// Batch A37: the drawable's `convertBonePosToWorldPos(&pos, NULL, &world, NULL)`.
+    fn drawable_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D;
+    /// Batch A37: `TheGameLogic->destroyObject(other)`.
+    fn object_destroy(&mut self, id: ObjectId);
+    /// Batch A37: another object's `setPosition(pos)`.
+    fn object_set_position(&mut self, id: ObjectId, pos: &Coord3D);
+    /// Batch A37: another object's `getContain()->setOverrideDestination(pos)`.
+    fn object_contain_set_override_destination(&mut self, id: ObjectId, pos: &Coord3D);
+    /// Batch A37: another object's minefield or smart bomb module aimed at `pos`, if it has one (`findUpdateModule`).
+    fn object_aim_update_module(&mut self, id: ObjectId, module: crate::logic::ai::deliver_payload_ai_update::ItemModule, pos: &Coord3D);
+    /// Batch A37: another object's `getPhysics()->applyForce(force)`.
+    fn object_apply_force(&mut self, id: ObjectId, force: &Coord3D);
+    /// Batch A37: `TheThingFactory->findTemplate(name)` (its index; none: not found).
+    fn thing_template_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A37: `TheThingFactory->newObject(findTemplate(name), owner's player's default team)`: the new object's id.
+    fn payload_new(&mut self, name: &[u8]) -> ObjectId;
+    /// Batch A37: the new object's `setProducer(owner)`.
+    fn payload_set_producer(&mut self, id: ObjectId);
+    /// Batch A37: the new object's `setPosition(pos)`.
+    fn payload_set_position(&mut self, id: ObjectId, pos: &Coord3D);
+    /// Batch A37: the new object's `getPosition()`.
+    fn payload_position(&mut self, id: ObjectId) -> Coord3D;
+    /// Batch A37: the new object's `setOrientation(angle)`.
+    fn payload_set_orientation(&mut self, id: ObjectId, angle: f32);
+    /// Batch A37: the new object's physics' `getMass()`.
+    fn payload_mass(&mut self, id: ObjectId) -> f32;
+    /// Batch A37: the new object's physics' `applyMotiveForce(force)`.
+    fn payload_apply_motive_force(&mut self, id: ObjectId, force: &Coord3D);
+    /// Batch A37: one of the new object's behaviour modules has a projectile interface.
+    fn payload_is_projectile(&mut self, id: ObjectId) -> bool;
+    /// Batch A37: its `projectileFireAtObjectOrPosition(NULL, pos, weapon, exhaust)`.
+    fn payload_projectile_fire(&mut self, id: ObjectId, pos: &Coord3D, weapon: u32, exhaust: Option<u32>);
+    /// Batch A37: the new object's physics' `getCenterOfMassOffset()`.
+    fn payload_center_of_mass_offset(&mut self, id: ObjectId) -> f32;
+    /// Batch A37: the new object's physics' `setPitchRate(rate)`.
+    fn payload_set_pitch_rate(&mut self, id: ObjectId, rate: f32);
+    /// Batch A37: the new object has an AI.
+    fn payload_has_ai(&mut self, id: ObjectId) -> bool;
+    /// Batch A37: its AI's `aiMoveToPosition(pos, CMD_FROM_AI)`.
+    fn payload_ai_move_to_position(&mut self, id: ObjectId, pos: &Coord3D);
+    /// Batch A37: a weapon template's `getProjectileExhaust(level)` (none: none).
+    fn weapon_template_projectile_exhaust(&mut self, template: u32, level: crate::common::game_common::VeterancyLevel) -> Option<u32>;
+    /// Batch A37: `TheTerrainLogic->getExtentIncludingBorder(&region)`: its low and high corners.
+    fn terrain_extent_including_border(&mut self) -> (Coord3D, Coord3D);
+    /// Batch A37: `ThePartitionManager->registerObject(owner)`.
+    fn partition_register(&mut self);
+    /// Batch A37: `ThePartitionManager->unRegisterObject(owner)`.
+    fn partition_unregister(&mut self);
+    /// Batch A37: the owner's physics' `getTurning()` (0 not turning, -1 negative, 1 positive).
+    fn physics_turning(&mut self) -> i32;
+    /// Batch A37: the owner's `getUnitDirectionVector3D(dir)`.
+    fn unit_direction_vector_3d(&mut self) -> Coord3D;
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -311,8 +387,6 @@ pub trait AiStateHost: AiHost + StateContext {
     fn contain_mark_all_passengers_detected(&mut self);
     /// `getContain()->orderAllPassengersToExit(cmdSource, instantly)`.
     fn contain_order_all_passengers_to_exit(&mut self, src: CommandSourceType, instantly: bool);
-    /// A `DeliverPayloadAIUpdate`'s `deliverPayloadViaModuleData(pos)`: false if the object has none.
-    fn deliver_payload_via_module_data(&mut self, pos: &Coord3D) -> bool;
     /// A `ProneUpdate`'s `goProne(damageInfo)`, if the object has one.
     fn go_prone(&mut self);
     /// The polygon trigger's `getCenterPoint`.
@@ -1575,18 +1649,24 @@ pub struct AiUpdateModule<H: AiStateHost> {
     pub machine: Option<StateMachine<AiState<H>>>,
     /// Batch A35: a supply truck's `m_supplyTruckStateMachine` (none for another class).
     pub supply_machine: Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<H>>>,
+    /// Batch A37: a delivering AI's `m_deliverPayloadStateMachine` (none until `deliverPayload` makes it; none for another class).
+    pub deliver_machine: Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<H>>>,
 }
 
 impl<H: AiStateHost> AiUpdateModule<H> {
     /// `AIUpdateInterface(thing, moduleData)`: the AI's state (the machine is made by `onObjectCreated`).
     pub fn new(h: &mut H, data: Arc<AiUpdateModuleData>) -> Self {
-        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None }
+        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None, deliver_machine: None }
     }
 
     /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
     pub fn new_subclass(h: &mut H, data: Arc<AiUpdateModuleData>, subclass: crate::logic::ai::ai_update::AiSubclass) -> SmResult<Self> {
         let mut m = Self::new(h, data);
         let supply = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_));
+        // (batch A37: `DeliverPayloadAIUpdate`'s constructor clears its decal)
+        if matches!(subclass, crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_)) {
+            h.delivery_decal_clear();
+        }
         m.ai_mut().subclass = subclass;
         if supply {
             // (batch A35: `SupplyTruckAIUpdate`'s constructor makes its machine and enters its default state; the object has no AI
@@ -1608,11 +1688,18 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         self.ai.as_mut().expect("the AI (not lent)")
     }
 
-    /// Runs `f` on the machine with the AI lent to the host.
+    /// Runs `f` on the machine with the AI lent to the host (batch A37: and a delivering AI's machine, which a command can remake).
     pub fn run<R>(&mut self, h: &mut H, f: impl FnOnce(&mut StateMachine<AiState<H>>, &mut H) -> R) -> R {
+        let deliver = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_));
+        if deliver {
+            h.deliver_machine_stack().push(self.deliver_machine.take());
+        }
         h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
         let r = f(self.machine.as_mut().expect("the AI's machine"), h);
         self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+        if deliver {
+            self.deliver_machine = h.deliver_machine_stack().pop().expect("the lent deliver machine");
+        }
         r
     }
 
@@ -1670,6 +1757,32 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 if let Some(sleep) = self.run(h, crate::logic::ai::assault_transport_ai_update::assault_transport_update)? {
                     return Ok(sleep);
                 }
+                self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_) => {
+                // batch A37: the decal's throb, the delivery's machine (not while the AI is dead; the AI and its machine lent; its own
+                // slot empty while it runs), the dive, then the base's update; "ignore our parent, and never sleep"
+                if !plant(3693) {
+                    h.delivery_decal_update();
+                }
+                if !self.ai().is_ai_in_dead_state() && self.deliver_machine.is_some() {
+                    if self.machine.is_none() {
+                        return Err(crate::common::state_machine::StateMachineError::Undefined("a delivery's machine without the AI's"));
+                    }
+                    let mut m = self.deliver_machine.take().expect("the deliver machine");
+                    h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
+                    h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
+                    h.deliver_machine_stack().push(None);
+                    let r = m.update_state_machine(h);
+                    let remade = h.deliver_machine_stack().pop().expect("the lent deliver machine slot");
+                    self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+                    self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+                    debug_assert!(remade.is_none(), "nothing remakes a running delivery");
+                    self.deliver_machine = Some(m);
+                    r?;
+                }
+                self.run(h, |_, h| crate::logic::ai::deliver_payload_ai_update::deliver_dive(h))?;
                 self.base_update(h)?;
                 Ok(UPDATE_SLEEP_NONE)
             }

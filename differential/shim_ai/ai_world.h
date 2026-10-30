@@ -112,7 +112,7 @@ struct AiEnv
 	Int closestAttack;		/* getClosestObject's answer (0: none) */
 	UnsignedInt findPosRate;	/* findPositionAround: found at this rate (the hash) */
 	Int hasContain;			/* the object has a contain module */
-	Int modules;			/* bit 0 DeliverPayloadAIUpdate, bit 1 ProneUpdate, bit 2 HackInternetAIUpdate (batch A34: unused: the hacker is its own AI, subclass 6) */
+	Int modules;			/* bit 0 DeliverPayloadAIUpdate (batch A37: unused: the delivering AI is its own, subclass 9), bit 1 ProneUpdate, bit 2 HackInternetAIUpdate (batch A34: unused: the hacker is its own AI, subclass 6) */
 	Int hasCommandSet;		/* TheControlBar finds the object's command set */
 	Int commandSlots[18];		/* the set's slots: a button's index (0..3), -1 empty */
 	Int buttonTypes[4];		/* the buttons' GUI command types */
@@ -240,6 +240,27 @@ struct AiEnv
 	UnsignedInt missileCollideRate;
 	Int missileCountermeasure;
 	Int missileGarrisonImmune;
+	/* batch A37: a DeliverPayloadAIUpdate's module data (door and drop delays; the maximum distance, the drop offset and variance,
+	** the decal radius; the maximum attempts and the put-in-container name (0 none, 1 "pt0", 2 "pt1", 3 "ptx": unknown)), the
+	** delivery decals' template (its name (0 none, 1 "decal0"), style, throb time, colour, owner-only flag; its opacities), the data
+	** op 109 delivers (reals: the distance, the pre-open distance, the drop offset and variance, the dive's start and end, the exit
+	** pitch rate, the strafe length, the decal radius; ints: the maximum attempts, the drop delay, the visible bones, the strafing
+	** slot (-1 none), the items per interval, the visible payload weapon (-1 none), the strafe FX (-1 none), the bone name (0 none,
+	** 1 "bone"), the subobject name (0 none, 1 "sub"), the payload template (as the container's)), the flags (bit 0 the object's
+	** drawable, 1 the payload a projectile, 2 the payload with an AI, 3 fire the weapon, 4 self-destruct, 5 inherit the velocity,
+	** 6 parachute directly) and the world (the map's border, the payload's mass and centre-of-mass offset; the physics' turning;
+	** the items with a minefield module, with a smart bomb module) */
+	UnsignedInt deliverTimes[2];
+	Real deliverReals[8];
+	Int deliverInts[2];
+	Int deliverDecal[5];
+	Real deliverOpacity[2];
+	Real deliverDataReals[13];
+	Int deliverDataInts[10];
+	Int deliverFlags;
+	Real deliverWorld[3];
+	Int deliverTurning;
+	UnsignedInt deliverModuleMasks[2];
 };
 
 extern AiEnv g_aiEnv;
@@ -282,6 +303,7 @@ enum
 			** answer; 4 handleProjectileDetonation, weapon, bonus, damage; 5 createAttachedParticleSystemID, template, id;
 			** 6 destroyParticleSystemByID, id; 7 getDistanceSquared, kind, it, bits; 8 calculateCountermeasureToDivertTo, victim,
 			** answer } */
+	LOG_DELIVER = 116,	/* batch A37: the delivery's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
@@ -377,6 +399,8 @@ public:
 	void getMaximumPathfindExtent(Region3D *extent) const;
 	void getBridgeAttackPoints(const Object *bridge, TBridgeAttackInfo *info);
 	Coord3D findClosestEdgePoint(const Coord3D *closestTo) const;
+	/* batch A37: the extent and the scene's border */
+	void getExtentIncludingBorder(Region3D *extent) const;
 };
 extern TerrainLogic *TheTerrainLogic;
 
@@ -474,6 +498,9 @@ class PartitionManager
 {
 public:
 	Real getGroundOrStructureHeight(Real posx, Real posy);
+	/* batch A37 (logged) */
+	void registerObject(Object *obj);
+	void unRegisterObject(Object *obj);
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
 	/* batch A35: object to object (FROM_BOUNDINGSPHERE_2D only; logged) */
@@ -577,6 +604,9 @@ public:
 	void setStickToGround(Bool stick);
 	/* batch A2 */
 	Bool getAllowToFall() const;
+	/* batch A37 (an item's force logged; the turning the scene's) */
+	void applyForce( const Coord3D *force );
+	PhysicsTurningType getTurning(void) const;
 };
 
 class GeometryInfo
@@ -639,6 +669,8 @@ public:
 	class ScoreKeeper *getScoreKeeper();
 	/* batch A35 (the supply truck's: logged) */
 	class ResourceGatheringManager *getResourceGatheringManager();
+	/* batch A37 (the scene's one team) */
+	class Team *getDefaultTeam();
 	Object *findClosestByKindOf( Object *queryObject, KindOfMaskType setKindOf, KindOfMaskType clearKindOf );
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
@@ -709,6 +741,8 @@ public:
 	void removeAllContained( Bool exposeStealthUnits = FALSE );
 	void markAllPassengersDetected();
 	void orderAllPassengersToExit( CommandSourceType, Bool instantly );
+	/* batch A37 (an item's, logged) */
+	void setOverrideDestination( const Coord3D * );
 };
 class StealthUpdate { public: Bool isGrantedBySpecialPower(); };
 /* batch A36: the missile's weapons, particle systems (renamed Ai* in PreRTS.h: other builds compile these classes): the scene's three
@@ -721,6 +755,8 @@ public:
 		ObjectID intendedVictimID ) const;
 	Bool getDieOnDetonate() const;
 	const AsciiString& getName() const;
+	/* batch A37 (the scene's) */
+	const class ParticleSystemTemplate* getProjectileExhaust(VeterancyLevel v) const;
 	Int m_index; AsciiString m_name;
 };
 class WeaponStore
@@ -783,6 +819,8 @@ public:
 	CollideModuleInterface *getCollide();
 	/* batch A33: the second module's, when the scene says so */
 	class RailedTransportDockUpdateInterface *getRailedTransportDockUpdateInterface();
+	/* batch A37: a delivered payload's projectile module's */
+	class ProjectileUpdateInterface *getProjectileUpdateInterface();
 	int m_index;
 };
 class AIGroup;
@@ -819,6 +857,11 @@ public:
 	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );
 	/* batch A36 (logged) */
 	void setDrawableHidden( Bool hidden );
+	/* batch A37 (logged; the bones the hash's) */
+	void showSubObject( const AsciiString& name, Bool show );
+	void updateSubObjects();
+	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const;
+	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
 class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE ); };
@@ -875,7 +918,10 @@ class SupplyCenterDockUpdate;
 /* batch A18: never reached (see Player::getAcademyStats) */
 class AcademyStats { public: void recordGuardAbilityUsed(); };
 /* batch A15: FXList.h's doFXObj (logged) */
-class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL); };
+class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL);
+	/* batch A37 (logged) */
+	static void doFXPos(const FXList* fx, const Coord3D *primary, const Matrix3D* primaryMtx = NULL, const Real primarySpeed = 0.0f,
+		const Coord3D *secondary = NULL, const Real overrideRadius = 0.0f); };
 /* batch A12: ScriptEngine.h's attack priority info, as far as the hunt state uses it (getPriority logged); two of them */
 class AttackPriorityInfo
 {
@@ -939,6 +985,10 @@ public:
 	/* batch A34 */
 	ExperienceTracker *getExperienceTracker() const;
 	Bool isLocallyControlled() const;
+	/* batch A37 (the delivery's: logged; Object.cpp's) */
+	Bool setWeaponLock( WeaponSlotType weaponSlot, WeaponLockType lockType );
+	VeterancyLevel getVeterancyLevel() const;
+	void clearAndSetModelConditionState( ModelConditionFlagType clr, ModelConditionFlagType set );
 	/* batch A36 (the missile's: the scene's, logged) */
 	void attemptDamage( DamageInfo *damageInfo );
 	WeaponBonusConditionFlags getWeaponBonusCondition() const;
@@ -1074,7 +1124,9 @@ public:
 };
 enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };	/* ActionManager.h, verbatim */
 extern ActionManager *TheActionManager;
-class DeliverPayloadAIUpdate { public: void deliverPayloadViaModuleData( const Coord3D *moveToPos ); };
+/* (batch A37: DeliverPayloadAIUpdate is the real class, wrap_ai.cpp; privateMoveToAndEvacuateAndExit's call of it a cut point) */
+class DeliverPayloadAIUpdate;
+void deliverPayloadViaModuleDataOf(DeliverPayloadAIUpdate *dp, const Coord3D *moveToPos);
 class ProneUpdate { public: void goProne( const DamageInfo *damageInfo ); };
 /* (batch A34: HackInternetAIUpdate is the real class, wrap_ai.cpp) */
 class HackInternetAIUpdate;
