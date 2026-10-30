@@ -4421,6 +4421,58 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // p1w13-sonnet, layer 11 batches A1..: ScriptActions (differential/wrap_actions.cpp), with the real PartitionSolver.cpp. Into
+        // OUT_DIR/actions_gen, copies with mechanical edits, each asserted once: GameLogic/ScriptActions.h's opaque `enum AudioAffect;`
+        // gets the underlying type `int` (clang refuses it without one; the stand-in's enum has it), and in ScriptActions.cpp
+        // (1) doDisplayCinematicText's `for( c = buf; c != '\0'; *c++ )` compares the pointer with `NULL`, as old MSVC read `'\0'` (a
+        // null pointer constant then); (2) doMoveTeamTowardsNearest's second member loop declares its `iter`, which old MSVC's `for`
+        // scope let it reuse from the first. On the stand-ins of differential/shim_actions (every other header the file includes is
+        // sa_world.h), inside namespace saw; `-fno-delete-null-pointer-checks` for the pool's `deleteInstance` on NULL.
+        {
+            let gen = out_dir.join("actions_gen");
+            std::fs::create_dir_all(gen.join("GameLogic")).expect("create actions_gen");
+            std::fs::write(
+                gen.join("GameLogic/ScriptActions.h"),
+                patch_copy(&up.join("GameEngine/Include/GameLogic/ScriptActions.h"), "ScriptActions.h", &[("\nenum AudioAffect;", "\nenum AudioAffect : int;", 1)]),
+            )
+            .expect("write ScriptActions.h copy");
+            let copy = gen.join("ScriptActions_edit.cpp");
+            std::fs::write(
+                &copy,
+                patch_copy(
+                    &up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp"),
+                    "ScriptActions.cpp",
+                    &[
+                        ("\tfor( c = buf; c != '\\0'; *c++ )", "\tfor( c = buf; c != NULL; *c++ )", 1),
+                        (
+                            "\n\tfor( iter = team->iterate_TeamMemberList(); !iter.done(); iter.advance() )",
+                            "\n\tfor( DLINK_ITERATOR<Object> iter = team->iterate_TeamMemberList(); !iter.done(); iter.advance() )",
+                            1,
+                        ),
+                    ],
+                ),
+            )
+            .expect("write ScriptActions copy");
+            let mut ab = cc::Build::new();
+            base(&mut ab);
+            ab.compiler("clang++")
+                .flag("-fno-delete-null-pointer-checks")
+                .include(&gen)
+                .include(dif.join("shim_actions"))
+                .include(up.join("GameEngine/Include"))
+                .define("SA_SOURCE", Some(format!("\"{}\"", copy.display()).as_str()))
+                .file(dif.join("wrap_actions.cpp"));
+            ab.compile("upstream_actions");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ScriptActions.h",
+                "upstream/GeneralsMD/Code/GameEngine/Source/Common/PartitionSolver.cpp",
+                "differential/wrap_actions.cpp",
+                "differential/shim_actions",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // p1w13-sonnet batch A27: the AI's data (differential/wrap_ai_data.cpp), in the science build's setup: AI.cpp's data parsers,
         // newOverride, TAiData's constructor, crc and xfer, and SidesList.cpp's BuildListInfo members, verbatim (ai_data_a27.inc),
         // with the real AI.h and SidesList.h. Generated into OUT_DIR/ai_data_gen: the four cuts, and GameLogic/AI.h, a copy with one
