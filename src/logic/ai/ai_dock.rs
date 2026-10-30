@@ -273,6 +273,8 @@ fn set_next_dock_action_frame<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Sta
     // (batch A35: a supply truck's own; another's the host's)
     let own = match &ai(h).subclass {
         crate::logic::ai::ai_update::AiSubclass::SupplyTruck(s) => Some(*s),
+        // (batch A39: a worker's, the same)
+        crate::logic::ai::ai_update::AiSubclass::Worker(w) => Some(w.supply),
         _ => None,
     };
     let delay = match own {

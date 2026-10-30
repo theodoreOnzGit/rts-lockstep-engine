@@ -239,8 +239,9 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
-    // batch A38: `DozerAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the base's
-    if matches!(ai(h).subclass, AiSubclass::Dozer(_)) {
+    // batch A38: `DozerAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the base's (batch A39: and
+    // `WorkerAIUpdate::aiDoCommand`, the same but where it differs)
+    if matches!(ai(h).subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_)) {
         return crate::logic::ai::dozer_ai_update::dozer_ai_do_command(sm, h, parms);
     }
     // batch A34: `HackInternetAIUpdate::aiDoCommand`: the base's check, a command while hacking or packing kept, then the base's
@@ -335,6 +336,10 @@ pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiC
                 if src == CMD_FROM_PLAYER && dock != INVALID_ID && !plant(3665) {
                     s.preferred_dock = dock;
                 }
+            }
+            // (batch A39: `WorkerAIUpdate::privateDock`: likewise)
+            if matches!(ai(h).subclass, AiSubclass::Worker(_)) {
+                crate::logic::ai::worker_ai_update::remember_dock(h, dock, src == CMD_FROM_PLAYER);
             }
             Ok(())
         }
@@ -527,21 +532,38 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     max_shots: i32,
     src: CommandSourceType,
 ) -> SmResult<()> {
-    // (batch A38: a dozer's aiDoCommand: no longer actively constructing; a player's attack cancelling its current task would idle
-    // and reset the machines while the AI's machine is locked: not translated)
-    if matches!(ai(h).subclass, AiSubclass::Dozer(_)) {
+    // (batch A38: a dozer's aiDoCommand: no longer actively constructing; a player's attack (cancelling its current task, and then
+    // resetting the dozer's machine, whose transitions ask the AI's locked machine) while the AI's machine is locked: not
+    // translated; batch A39: a worker's likewise, and after the base's part (if allowed) its boxes dropped when clearing mines)
+    let dozer = matches!(ai(h).subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_));
+    if dozer {
         h.clear_model_condition_state(crate::common::model_state::MODELCONDITION_ACTIVELY_CONSTRUCTING);
-        if src == CMD_FROM_PLAYER && crate::logic::ai::dozer_ai_update::dz(h).current_task != crate::logic::ai::dozer_ai_update::DOZER_TASK_INVALID {
-            return Err(StateMachineError::NotTranslated("a dozer's task cancelled by a player's attack inside a guard machine"));
+        if src == CMD_FROM_PLAYER {
+            return Err(StateMachineError::NotTranslated("a player's attack reaching a dozer's aiDoCommand inside a guard machine"));
         }
     }
+    let allowed = attack_object_on_locked_machine(h, m, victim, max_shots, src)?;
+    if allowed && matches!(ai(h).subclass, AiSubclass::Worker(_)) {
+        crate::logic::ai::worker_ai_update::drop_boxes_if_clearing_mines(h);
+    }
+    Ok(())
+}
+
+/// The rest of [`ai_attack_object_on_locked_machine`] (whether the AI was allowed to respond).
+fn attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
+    h: &mut H,
+    m: &M,
+    victim: ObjectId,
+    max_shots: i32,
+    src: CommandSourceType,
+) -> SmResult<bool> {
     // (batch A34: a hacker's aiDoCommand: no command waits any more (its machine is not hacking or packing here: it runs a guard))
     if let AiSubclass::HackInternet(k) = &mut ai(h).subclass {
         k.has_pending_command = false;
     }
     // (batch A33: a railed transport's aiDoCommand ignores the player's attack)
     if matches!(ai(h).subclass, AiSubclass::RailedTransport(_)) && src == CMD_FROM_PLAYER {
-        return Ok(());
+        return Ok(false);
     }
     // (batch A32: an assault transport's aiDoCommand first)
     if matches!(ai(h).subclass, AiSubclass::AssaultTransport(_)) {
@@ -552,19 +574,19 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     }
     // isAllowedToRespondToAiCommands
     if h.is_effectively_dead() {
-        return Ok(());
+        return Ok(false);
     }
     let mood = with_ai(h, |a, h| a.get_mood_matrix_value(&*h, Some(m)));
     if mood & MM_CONTROLLER_AI != 0 && mood & MM_MOOD_SLEEP != 0 {
-        return Ok(());
+        return Ok(false);
     }
     if src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands {
-        return Ok(());
+        return Ok(false);
     }
     // privateAttackObject (a transport's: its passengers first; batch A31, found by the deployers' run)
     transport_passengers_attack(h, src, PassengerCommand::AttackObject { victim, max_shots, src });
     if !h.object_exists(victim) {
-        return Ok(());
+        return Ok(true);
     }
     // AIStateMachine::clear(): the machine's clear does nothing; its members cleared, the AI told
     let extras = &mut ai(h).machine;
@@ -579,7 +601,7 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
         with_ai(h, |a, h| a.friend_notify_state_machine_changed(h));
     }
     h.weapon_set_max_shot_count(max_shots);
-    Ok(())
+    Ok(true)
 }
 
 /// `aiAttackMoveToPosition(pos, maxShotsToFire, cmdSource)`.

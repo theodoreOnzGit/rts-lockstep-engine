@@ -247,8 +247,9 @@ public:
 	SupplyTruckAIInterface* getSupplyTruckAIInterface();
 	/* (batch A38: virtual upstream, and DozerAIUpdate answers itself; here dispatched explicitly) */
 	class DozerAIInterface* getDozerAIInterface();
-	/* batch A35 (AIUpdate.h's, virtual upstream: none for the classes of this build) */
-	WorkerAIInterface* getWorkerAIInterface() { return NULL; }
+	/* batch A35 (AIUpdate.h's, virtual upstream: none for the classes of this build; batch A39: WorkerAIUpdate answers itself,
+	** dispatched explicitly) */
+	WorkerAIInterface* getWorkerAIInterface();
 	/* batch A15 (AIUpdate.h) */
 	Real getDesiredSpeed() const { return m_desiredSpeed; }
 	const PolygonTrigger *getAreaToGuard( void ) const { return m_areaToGuard; }
@@ -1336,6 +1337,163 @@ private:
 
 };
 #include "ai_dozer_a38.inc"
+/* batch A39: WorkerAIUpdate. Its header's machine, verbatim (ai_worker_h_a39.inc; its WorkerAIInterface A35's); its module data the
+** header's fields and constructor (the field parse is the INI's: the scene's, g_workerData: the dozer's and the supply truck's
+** fields, the boost the scene's workerBoost); the class as the header declares it without the pool and module macros (its
+** interfaces' getters the base's, dispatched explicitly: see AIUpdateInterface::getDozerAIInterface); its .cpp from its role enum,
+** verbatim but for a constructed object's placement (newStructureSetPosition, newStructureSetOrientation, logged)
+** (ai_worker_a39.inc). Its world is the dozer's and the supply truck's. */
+#include "ai_worker_h_a39.inc"
+class WorkerAIUpdateModuleData
+{
+public:
+	Int m_maxBoxesData;
+	Real m_repairHealthPercentPerSecond;	///< how many health points per second the dozer repairs at
+	Real m_boredTime;											///< after this many frames, a dozer will try to find something to do on its own
+	Real m_boredRange;										///< range the dozers try to auto repair when they're bored
+	UnsignedInt m_centerDelay;
+	UnsignedInt m_warehouseDelay;
+	Real m_warehouseScanDistance;
+ 	AudioEventRTS m_suppliesDepletedVoice;						///< Sound played when I take the last box.
+	Int m_upgradedSupplyBoost;
+
+	WorkerAIUpdateModuleData()
+	{
+		m_maxBoxesData = 0;
+		m_repairHealthPercentPerSecond = 0.0f;
+		m_boredTime = 0.0f;
+		m_boredRange = 0.0f;
+		m_centerDelay = 0;
+		m_warehouseDelay = 0;
+		m_warehouseScanDistance = 100;
+		m_upgradedSupplyBoost = 0;
+	}
+};
+static WorkerAIUpdateModuleData g_workerData;
+class WorkerAIUpdate : public AIUpdateInterface, public DozerAIInterface, public SupplyTruckAIInterface, public WorkerAIInterface
+{
+public:
+	WorkerAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~WorkerAIUpdate( void );
+	const WorkerAIUpdateModuleData *getWorkerAIUpdateModuleData() const { return &g_workerData; }
+
+	// Dozer side
+	virtual void onDelete( void );
+	virtual Real getRepairHealthPerSecond( void ) const;	///< get health to repair per second
+	virtual Real getBoredTime( void ) const;							///< how long till we're bored
+	virtual Real getBoredRange( void ) const;							///< when we're bored, we look this far away to do things
+	virtual Object *construct( const ThingTemplate *what,
+														 const Coord3D *pos, Real angle,
+														 Player *owningPlayer,
+														 Bool isRebuild );			///< construct a building
+
+	// get task information
+	virtual DozerTask getMostRecentCommand( void );				///< return task that was most recently issued
+	virtual Bool isTaskPending( DozerTask task );					///< is there a desire to do the requested task
+	virtual ObjectID getTaskTarget( DozerTask task );			///< get target of task
+	virtual Bool isAnyTaskPending( void );								///< is there any dozer task pending
+	virtual DozerTask getCurrentTask( void ) const { return m_currentTask; }	///< return the current task we're doing
+	virtual void setCurrentTask( DozerTask task ) { m_currentTask = task; }		///< set the current task of the dozer
+	virtual Bool getIsRebuild( void ) { return m_isRebuild; } ///< get whether or not our task is a rebuild.
+
+	// task actions
+	virtual void newTask( DozerTask task, Object* target );	///< set a desire to do the requrested task
+	virtual void cancelTask( DozerTask task );						///< cancel this task from the queue, if it's the current task the dozer will stop working on it
+
+	// internal methods to manage behavior from within the dozer state machine
+	virtual void internalTaskComplete( DozerTask task );					///< set a dozer task as successfully completed
+	virtual void internalCancelTask( DozerTask task );						///< cancel this task from the dozer
+	virtual void internalTaskCompleteOrCancelled( DozerTask task );	///< this is called when tasks are cancelled or completed
+
+	virtual const Coord3D* getDockPoint( DozerTask task, DozerDockPoint point );
+
+	virtual void setBuildSubTask( DozerBuildSubTask subTask ) { m_buildSubTask = subTask; };
+	virtual DozerBuildSubTask getBuildSubTask( void ) { return m_buildSubTask; }
+
+	virtual void aiDoCommand(const AICommandParms* parms);
+
+// Supply truck stuff
+	virtual Int getNumberBoxes() const { return m_numberBoxes; }
+	virtual Bool loseOneBox();
+	virtual Bool gainOneBox( Int remainingStock );
+	virtual Bool isAvailableForSupplying() const;
+	virtual Bool isCurrentlyFerryingSupplies() const;
+	virtual Real getWarehouseScanDistance() const; ///< How far can I look for a warehouse?
+	virtual void setForceBusyState(Bool v) { m_forcedBusyPending = v; }
+	virtual Bool isForcedIntoBusyState() const { return m_forcedBusyPending; }
+	virtual void setForceWantingState(Bool v){ m_forcePending = v; }
+	virtual Bool isForcedIntoWantingState() const { return m_forcePending; }
+	virtual ObjectID getPreferredDockID() const { return m_preferredDock; }
+	virtual UnsignedInt getActionDelayForDock( Object *dock );
+
+// worker specific
+	Bool isSupplyTruckBrainActiveAndBusy();
+	void resetSupplyTruckBrain();
+	void resetDozerBrain();
+	virtual void exitingSupplyTruckState(); ///< This worker is leaving a supply truck task and should go back to Dozer mode.
+
+	virtual UpdateSleepTime update();				///< the update entry point
+
+	// repairing
+	virtual Bool canAcceptNewRepair( Object *obj );
+	virtual void createBridgeScaffolding( Object *bridgeTower );
+	virtual void removeBridgeScaffolding( Object *bridgeTower );
+
+	virtual void startBuildingSound( const AudioEventRTS *sound, ObjectID constructionSiteID );
+	virtual void finishBuildingSound();
+
+	virtual Int getUpgradedSupplyBoost() const;
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+// Dozer data
+	struct DozerTaskInfo
+	{
+		ObjectID m_targetObjectID;				///< target object ID of task
+		UnsignedInt m_taskOrderFrame;			///< logic frame we decided we wanted to do this task
+	} m_task[ DOZER_NUM_TASKS ];				///< tasks we want to do indexed by DozerTask
+
+	DozerTask m_currentTask;						///< current task the dozer is attending to (if any)
+
+	struct DozerDockPointInfo
+	{
+		Bool valid;						///< this point has been set and is valid
+		Coord3D location;			///< WORLD location
+	} m_dockPoint[ DOZER_NUM_TASKS ][ DOZER_NUM_DOCK_POINTS ];
+
+	DozerBuildSubTask m_buildSubTask;		///< for building and actually docking for the build
+
+// Supply Truck data
+	Int m_numberBoxes;
+	ObjectID									m_preferredDock;			///< Instead of searching, try this one first
+	Bool m_forcePending; // To prevent a function from doing a setState, forceWanting will latch into here until serviced.
+	Bool m_isRebuild;	// is our current construction task a rebuild?
+	Bool m_forcedBusyPending;	// A supply truck can't tell the difference between Idle since
+														// I'm between docking states, or a Stop command without help.
+
+	WorkerStateMachine *m_workerMachine;
+	DozerPrimaryStateMachine *m_dozerMachine;  ///< the custom state machine for Dozer behavior
+	SupplyTruckStateMachine *m_supplyTruckStateMachine;
+	AudioEventRTS	m_buildingSound;			///< sound is pulled from the object we are building!
+
+protected:
+
+	virtual void privateRepair( Object *obj, CommandSourceType cmdSource );	///< repair the target
+	virtual void privateResumeConstruction( Object *obj, CommandSourceType cmdSource );  ///< resume construction on obj
+	virtual void privateDock( Object *obj, CommandSourceType cmdSource );
+	virtual void privateIdle(CommandSourceType cmdSource);						///< Enter idle state.
+
+private:
+
+	void createMachines( void );		///< create our behavior machines we need
+ 	AudioEventRTS m_suppliesDepletedVoice;						///< Sound played when I take the last box.
+
+};
+#include "ai_worker_a39.inc"
 /* (the delivery's world's objects, defined with it below) */
 static AiTemplateView g_payloadTemplates[2];
 static PayloadObject g_payload;
@@ -1409,6 +1567,8 @@ Weapon g_weapon;
 Weapon g_slotWeapons[3];
 DamageInfo g_lastDamage;
 UpgradeTemplate g_nationalism, g_fanaticism, g_otherUpgrade;
+/* batch A39: the worker's shoes */
+UpgradeTemplate g_workerShoes;
 UpgradeCenter g_upgradeCenter;
 HordeUpdateInterface g_horde[3];
 BehaviorModule g_modules[3];
@@ -1854,12 +2014,14 @@ const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &name)
 {
 	if (name == "Upgrade_Nationalism") return &g_nationalism;
 	if (name == "Upgrade_Fanaticism") return &g_fanaticism;
+	if (name == "Upgrade_GLAWorkerShoes") return &g_workerShoes;
 	return &g_otherUpgrade;
 }
 PlayerType Player::getPlayerType() const { return (PlayerType)g_aiEnv.playerType; }
 Bool Player::hasUpgradeComplete(const UpgradeTemplate *t)
 {
-	return (t == &g_nationalism && (g_aiEnv.upgrades & 1)) || (t == &g_fanaticism && (g_aiEnv.upgrades & 2));
+	return (t == &g_nationalism && (g_aiEnv.upgrades & 1)) || (t == &g_fanaticism && (g_aiEnv.upgrades & 2))
+		|| (t == &g_workerShoes && (g_aiEnv.upgrades & 4));
 }
 const TeamTemplateInfo *TeamPrototype::getTemplateInfo() const { g_teamInfo.m_attackCommonTarget = g_aiEnv.teamAttackCommon != 0; return &g_teamInfo; }
 const TeamPrototype *Team::getPrototype() { return &g_teamPrototype; }
@@ -2798,6 +2960,17 @@ void setScene(const AiEnv *env)
 	g_dozerData.m_repairHealthPercentPerSecond = env->dozerReals[0];
 	g_dozerData.m_boredTime = env->dozerReals[1];
 	g_dozerData.m_boredRange = env->dozerReals[2];
+	/* batch A39: a WorkerAIUpdate's data (the dozer's and the supply truck's fields; the boost) */
+	g_workerData = WorkerAIUpdateModuleData();
+	g_workerData.m_repairHealthPercentPerSecond = env->dozerReals[0];
+	g_workerData.m_boredTime = env->dozerReals[1];
+	g_workerData.m_boredRange = env->dozerReals[2];
+	g_workerData.m_maxBoxesData = env->supplyMaxBoxes;
+	g_workerData.m_centerDelay = env->supplyDelays[0];
+	g_workerData.m_warehouseDelay = env->supplyDelays[1];
+	g_workerData.m_warehouseScanDistance = env->supplyScan;
+	if (env->supplyFlags & 1) g_workerData.m_suppliesDepletedVoice.setEventName(AsciiString("s7"));
+	g_workerData.m_upgradedSupplyBoost = env->workerBoost;
 	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
@@ -2942,6 +3115,9 @@ void ref_ai_a2_reset(void)
 	gen->nameToKey(AsciiString("GenerateMinefieldBehavior"));
 	gen->nameToKey(AsciiString("SmartBombTargetHomingUpdate"));
 	/* batch A38: the dozer's goal objects' creation dispatches no module by name */
+	/* batch A39: a dock's supply modules (the supply truck's and the worker's dock delays keep their keys in statics) */
+	gen->nameToKey(AsciiString("SupplyWarehouseDockUpdate"));
+	gen->nameToKey(AsciiString("SupplyCenterDockUpdate"));
 	g_ai_update = 0;	/* (leaked: its locomotors point into the store deleted below) */
 	delete TheLocomotorStore;
 	TheLocomotorStore = new LocomotorStore;
@@ -3047,6 +3223,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 9: g_ai_update = new (ShimZeroFill{}) DeliverPayloadAIUpdate(NULL, NULL); break;
 		/* (batch A38: the object has no AI while its AI is made: the machine's default state's transitions ask) */
 		case 10: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) DozerAIUpdate(NULL, NULL); break;
+		/* (batch A39: likewise; the worker's machine's transitions ask) */
+		case 11: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) WorkerAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -3164,10 +3342,10 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 65: r.push_back((unsigned)ai->update()); break;
 	/* batch A32: the weapon's beginAssault (an assault transport's; nothing for another class) */
 	case 100: if (g_aiEnv.subclass == 4) ((AssaultTransportAIUpdate *)ai)->beginAssault(findObject((ObjectID)ia[0])); break;
-	/* batch A35: the docks' calls to a supply truck (nothing for another class) */
-	case 101: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->gainOneBox(ia[0]) ? 1u : 0u); break;
-	case 102: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->loseOneBox() ? 1u : 0u); break;
-	case 103: if (g_aiEnv.subclass == 7) ((SupplyTruckAIUpdate *)ai)->setForceWantingState(ia[0] != 0); break;
+	/* batch A35: the docks' calls to a supply truck (nothing for another class; batch A39: a worker's, through its interface) */
+	case 101: if (ai->getSupplyTruckAIInterface()) r.push_back(ai->getSupplyTruckAIInterface()->gainOneBox(ia[0]) ? 1u : 0u); break;
+	case 102: if (ai->getSupplyTruckAIInterface()) r.push_back(ai->getSupplyTruckAIInterface()->loseOneBox() ? 1u : 0u); break;
+	case 103: if (ai->getSupplyTruckAIInterface()) ai->getSupplyTruckAIInterface()->setForceWantingState(ia[0] != 0); break;
 	/* batch A36: the weapon's calls to a missile (ia: the victim, the launcher, the slot, the barrel, the detonation weapon (-1 none),
 	** the exhaust (-1 none); fa: the victim's position) (nothing for another class) */
 	case 104: case 105: case 106: case 107: case 108:
@@ -3205,11 +3383,11 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 		}
 		break;
 	/* batch A38: a dozer's members (ia[0]: a task, an object, a template (-1 none); ia[1]: an object, a point, the rebuild flag;
-	** fa[3]: the angle) (nothing for another class) */
+	** fa[3]: the angle) (nothing for another class; batch A39: a worker's, through its interface) */
 	case 118: case 119: case 120: case 121: case 122: case 123: case 124: case 125: case 126: case 127: case 128: case 129: case 130:
 	case 131: case 132:
-		if (g_aiEnv.subclass == 10) {
-			DozerAIUpdate *d = (DozerAIUpdate *)ai;
+		if (ai->getDozerAIInterface()) {
+			DozerAIInterface *d = ai->getDozerAIInterface();
 			DozerTask t = (DozerTask)ia[0];
 			if (op == 118) {
 				Object *o = d->construct(ia[0] >= 0 ? &g_payloadTemplates[ia[0]] : NULL, &p, fa[3], g_object.getControllingPlayer(), ia[1] != 0);
@@ -3229,6 +3407,29 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 			if (op == 130) { putF(r, d->getRepairHealthPerSecond()); putF(r, d->getBoredTime()); putF(r, d->getBoredRange()); }
 			if (op == 131) d->createBridgeScaffolding(findObject((ObjectID)ia[0]));
 			if (op == 132) d->removeBridgeScaffolding(findObject((ObjectID)ia[0]));
+		}
+		break;
+	/* batch A39: a worker's own members (ia[0]: a dock, the forced-busy flag) (nothing for another class) */
+	case 133: case 134: case 135: case 136: case 137: case 138: case 139: case 140:
+		if (g_aiEnv.subclass == 11) {
+			WorkerAIUpdate *w = (WorkerAIUpdate *)ai;
+			if (op == 133) w->exitingSupplyTruckState();
+			if (op == 134) r.push_back(w->isSupplyTruckBrainActiveAndBusy() ? 1u : 0u);
+			if (op == 135) w->resetSupplyTruckBrain();
+			if (op == 136) w->resetDozerBrain();
+			if (op == 137) {
+				r.push_back(w->isCurrentlyFerryingSupplies() ? 1u : 0u);
+				r.push_back(w->isAvailableForSupplying() ? 1u : 0u);
+				putF(r, w->getWarehouseScanDistance());
+				r.push_back((unsigned)w->getUpgradedSupplyBoost());
+				r.push_back((unsigned)w->getNumberBoxes());
+				r.push_back(w->isForcedIntoBusyState() ? 1u : 0u);
+				r.push_back(w->isForcedIntoWantingState() ? 1u : 0u);
+				r.push_back(w->getIsRebuild() ? 1u : 0u);
+			}
+			if (op == 138) r.push_back(w->getActionDelayForDock(findObject((ObjectID)ia[0])));
+			if (op == 139) w->setForceBusyState(ia[0] != 0);
+			if (op == 140) r.push_back((unsigned)w->getPreferredDockID());
 		}
 		break;
 	case 66: ai->onObjectCreated(); break;
@@ -3372,6 +3573,38 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 /* The AI and its object (the Rust test's `dump`): every data member of AIUpdateInterface that batch A2 sets, in the header's order;
 ** the locomotor set (its locomotors, the current one's index, the valid surfaces, downhill); the path; the object (transform,
 ** cached position and angle, status bits); the wake frame. Length returned (may exceed cap). */
+/* batch A38: a DozerAIUpdate's members and machines (batch A39: and a WorkerAIUpdate's, the same members; a template, of C++
+** linkage) */
+extern "C++" {
+template <class D> static void dumpDozer(std::vector<unsigned> &v, const D *d)
+{
+	for (int i = 0; i < DOZER_NUM_TASKS; ++i) { putU32(v, (unsigned)d->m_task[i].m_targetObjectID); putU32(v, d->m_task[i].m_taskOrderFrame); }
+	putU32(v, (unsigned)d->m_currentTask);
+	for (int i = 0; i < DOZER_NUM_TASKS; ++i)
+		for (int j = 0; j < DOZER_NUM_DOCK_POINTS; ++j) { putU32(v, d->m_dockPoint[i][j].valid ? 1u : 0u); putPos(v, d->m_dockPoint[i][j].location); }
+	putU32(v, (unsigned)d->m_buildSubTask);
+	putU32(v, d->m_isRebuild ? 1u : 0u);
+	putU32(v, d->m_buildingSound.m_playingHandle);
+	const DozerPrimaryStateMachine *m = d->m_dozerMachine;
+	putU32(v, m->m_currentState ? (unsigned)m->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+	putU32(v, m->m_sleepTill);
+	putU32(v, m->m_defaultStateInited ? 1u : 0u);
+	const DozerPrimaryIdleState *idle = (const DozerPrimaryIdleState *)m->m_stateMap.find(DOZER_PRIMARY_IDLE)->second;
+	putU32(v, idle->m_idleTooLongTimestamp);
+	putU32(v, (unsigned)idle->m_idlePlayerNumber);
+	putU32(v, idle->m_isMarkedAsIdle ? 1u : 0u);
+	for (int s = DOZER_PRIMARY_BUILD; s <= DOZER_PRIMARY_FORTIFY; ++s) {
+		const DozerActionState *a = (const DozerActionState *)m->m_stateMap.find(s)->second;
+		const StateMachine *am = a->m_actionMachine;
+		putU32(v, am->m_currentState ? (unsigned)am->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+		putU32(v, am->m_sleepTill);
+		putU32(v, (unsigned)am->m_goalObjectID);
+		putPos(v, am->m_goalPosition);
+		putU32(v, (unsigned)((const DozerActionPickActionPosState *)am->m_stateMap.find(DOZER_ACTION_PICK_ACTION_POS)->second)->m_failedAttempts);
+		putU32(v, ((const DozerActionDoActionState *)am->m_stateMap.find(DOZER_ACTION_DO_ACTION)->second)->m_enterFrame);
+	}
+}
+}
 int ref_ai_a2_dump(unsigned *buf, int cap)
 {
 	const AIUpdateInterface *ai = g_ai_update;
@@ -3893,34 +4126,23 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
-	/* batch A38: a DozerAIUpdate's members and machines */
-	if (g_aiEnv.subclass == 10) {
-		const DozerAIUpdate *d = (const DozerAIUpdate *)ai;
-		for (int i = 0; i < DOZER_NUM_TASKS; ++i) { putU32(v, (unsigned)d->m_task[i].m_targetObjectID); putU32(v, d->m_task[i].m_taskOrderFrame); }
-		putU32(v, (unsigned)d->m_currentTask);
-		for (int i = 0; i < DOZER_NUM_TASKS; ++i)
-			for (int j = 0; j < DOZER_NUM_DOCK_POINTS; ++j) { putU32(v, d->m_dockPoint[i][j].valid ? 1u : 0u); putPos(v, d->m_dockPoint[i][j].location); }
-		putU32(v, (unsigned)d->m_buildSubTask);
-		putU32(v, d->m_isRebuild ? 1u : 0u);
-		putU32(v, d->m_buildingSound.m_playingHandle);
-		const DozerPrimaryStateMachine *m = d->m_dozerMachine;
+	/* batch A38: a DozerAIUpdate's members and machines (batch A39: and a WorkerAIUpdate's, then its supply truck's and its own) */
+	if (g_aiEnv.subclass == 10) dumpDozer(v, (const DozerAIUpdate *)ai);
+	if (g_aiEnv.subclass == 11) {
+		const WorkerAIUpdate *w = (const WorkerAIUpdate *)ai;
+		dumpDozer(v, w);
+		putU32(v, (unsigned)w->m_preferredDock);
+		putU32(v, (unsigned)w->m_numberBoxes);
+		putU32(v, w->m_forcePending ? 1u : 0u);
+		putU32(v, w->m_forcedBusyPending ? 1u : 0u);
+		const SupplyTruckStateMachine *s = w->m_supplyTruckStateMachine;
+		putU32(v, s->m_currentState ? (unsigned)s->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+		putU32(v, s->m_sleepTill);
+		putU32(v, s->m_defaultStateInited ? 1u : 0u);
+		const WorkerStateMachine *m = w->m_workerMachine;
 		putU32(v, m->m_currentState ? (unsigned)m->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
 		putU32(v, m->m_sleepTill);
 		putU32(v, m->m_defaultStateInited ? 1u : 0u);
-		const DozerPrimaryIdleState *idle = (const DozerPrimaryIdleState *)m->m_stateMap.find(DOZER_PRIMARY_IDLE)->second;
-		putU32(v, idle->m_idleTooLongTimestamp);
-		putU32(v, (unsigned)idle->m_idlePlayerNumber);
-		putU32(v, idle->m_isMarkedAsIdle ? 1u : 0u);
-		for (int s = DOZER_PRIMARY_BUILD; s <= DOZER_PRIMARY_FORTIFY; ++s) {
-			const DozerActionState *a = (const DozerActionState *)m->m_stateMap.find(s)->second;
-			const StateMachine *am = a->m_actionMachine;
-			putU32(v, am->m_currentState ? (unsigned)am->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
-			putU32(v, am->m_sleepTill);
-			putU32(v, (unsigned)am->m_goalObjectID);
-			putPos(v, am->m_goalPosition);
-			putU32(v, (unsigned)((const DozerActionPickActionPosState *)am->m_stateMap.find(DOZER_ACTION_PICK_ACTION_POS)->second)->m_failedAttempts);
-			putU32(v, ((const DozerActionDoActionState *)am->m_stateMap.find(DOZER_ACTION_DO_ACTION)->second)->m_enterFrame);
-		}
 	}
 	/* batch A37: a DeliverPayloadAIUpdate's members, data and machine */
 	if (g_aiEnv.subclass == 9) {
@@ -4225,6 +4447,14 @@ void Drawable::updateDrawableSupplyStatus(Int maxSupply, Int currentSupply) { L(
 SupplyTruckAIInterface *AIUpdateInterface::getSupplyTruckAIInterface()
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 7) return (SupplyTruckAIUpdate *)this;
+	/* (batch A39: a worker's) */
+	if (this == g_ai_update && g_aiEnv.subclass == 11) return (WorkerAIUpdate *)this;
+	return NULL;
+}
+/* batch A39: the virtual getWorkerAIInterface's dispatch (a worker itself) */
+WorkerAIInterface *AIUpdateInterface::getWorkerAIInterface()
+{
+	if (this == g_ai_update && g_aiEnv.subclass == 11) return (WorkerAIUpdate *)this;
 	return NULL;
 }
 
@@ -4463,6 +4693,8 @@ static void logDozer(std::vector<unsigned> w)
 DozerAIInterface *AIUpdateInterface::getDozerAIInterface()
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 10) return (DozerAIUpdate *)this;
+	/* (batch A39: a worker's) */
+	if (this == g_ai_update && g_aiEnv.subclass == 11) return (WorkerAIUpdate *)this;
 	return NULL;
 }
 void Object::setWeaponSetFlag(WeaponSetType wst) { logDozer({ 0u, (unsigned)wst, 1u }); }

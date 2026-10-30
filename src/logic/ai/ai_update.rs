@@ -72,6 +72,7 @@ use crate::logic::ai::hack_internet_ai_update::HackInternet;
 use crate::logic::ai::supply_truck_ai_update::SupplyTruck;
 use crate::logic::ai::deliver_payload_ai_update::DeliverPayload;
 use crate::logic::ai::dozer_ai_update::Dozer;
+use crate::logic::ai::worker_ai_update::Worker;
 use crate::logic::ai::missile_ai_update::Missile;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
@@ -352,6 +353,9 @@ pub enum AiSubclass {
     DeliverPayload(DeliverPayload),
     /// `DozerAIUpdate` (batch A38): the builder's tasks and data (its machine is `AiUpdateModule::dozer_machine`).
     Dozer(Dozer),
+    /// `WorkerAIUpdate` (batch A39): a dozer's and a supply truck's members and data (its machines are
+    /// `AiUpdateModule::{dozer_machine, supply_machine, worker_machine}`).
+    Worker(Worker),
 }
 
 impl AiUpdate {

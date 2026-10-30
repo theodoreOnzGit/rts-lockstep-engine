@@ -1121,6 +1121,8 @@ pub struct AiEnv {
     pub dozer_masks: [c_uint; 4],
     pub dozer_bridge: c_int,
     pub dozer_towers: [c_int; 4],
+    // batch A39: a WorkerAIUpdate's upgraded supply boost (its other data the dozer's and the supply truck's fields)
+    pub worker_boost: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

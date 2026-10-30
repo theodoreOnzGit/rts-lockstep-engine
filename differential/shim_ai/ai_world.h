@@ -274,6 +274,8 @@ struct AiEnv
 	UnsignedInt dozerMasks[4];
 	Int dozerBridge;
 	Int dozerTowers[4];
+	/* batch A39: a WorkerAIUpdate's upgraded supply boost (its other data the dozer's and the supply truck's fields) */
+	Int workerBoost;
 };
 
 extern AiEnv g_aiEnv;

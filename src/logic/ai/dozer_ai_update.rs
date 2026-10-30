@@ -33,9 +33,14 @@
 //! - The action machine's `xfer` saves its version and task only, not the machine; the going-home state saves nothing.
 //! - `getMostRecentCommand` takes the latest order frame strictly after 0: a task ordered on frame 0 is never the most recent.
 //! - `internalCancelTask` ignores an invalid task; `internalTaskComplete` does not check (its callers pass their own task).
-//! - `m_isRebuild` is set only by `construct`: a build completed before any is undefined upstream (refused here).
+//! - `m_isRebuild` is set only by `construct`; before it, false: the memory pool zeroes every object it makes
+//!   (`MemoryPool::allocateBlockImplementation`). (Corrected in batch A39: batch A38 refused a build completed before any
+//!   `construct` as undefined.)
 //! - Refused as undefined (`StateMachineError::Undefined`): the idle state's player index without a player, a bridge tower without
 //!   its interfaces during a repair, construction without the player's money.
+//!
+//! Batch A39: the machines and the members are the worker's too ([`dz`] reaches a `WorkerAIUpdate`'s, its `DozerAIInterface`);
+//! where the worker's virtual members differ (see `worker_ai_update`), these branch on [`is_worker`].
 
 use std::convert::Infallible;
 use std::marker::PhantomData;
@@ -60,6 +65,8 @@ use crate::logic::ai::ai_update::AiSubclass;
 use crate::logic::ai::ai_update_types::{CommandSourceType, CMD_FROM_AI, CMD_FROM_DOZER, CMD_FROM_PLAYER};
 use crate::logic::ai::path::PATHFIND_CELL_SIZE_F;
 use crate::logic::ai::supply_truck_ai_update::with_ai_machine;
+pub use crate::logic::ai::worker_ai_update::is_worker;
+use crate::logic::ai::worker_ai_update as worker;
 use crate::logic::locomotor::LOCOMOTORSURFACE_AIR;
 use crate::logic::modules::plant;
 use crate::logic::weapon_types::WEAPONSET_MINE_CLEARING_DETAIL;
@@ -115,6 +122,12 @@ const MIN_ACTION_TOLERANCE: f32 = 70.0;
 pub const CONSTRUCTION_COMPLETE: f32 = -1.0;
 /// `BRIDGE_MAX_TOWERS` (`BridgeBehavior.h`).
 pub const BRIDGE_MAX_TOWERS: usize = 4;
+/// `BuildAssistant::CLEAR_PATH`.
+pub const CLEAR_PATH: u32 = 0x02;
+/// `BuildAssistant::NO_OBJECT_OVERLAP`.
+pub const NO_OBJECT_OVERLAP: u32 = 0x04;
+/// A player's construction's checks: `TERRAIN_RESTRICTIONS | CLEAR_PATH | NO_OBJECT_OVERLAP | SHROUD_REVEALED`.
+pub const BUILD_CHECKS: u32 = 0x01 | CLEAR_PATH | NO_OBJECT_OVERLAP | 0x10;
 
 /// `DozerAIUpdateModuleData`'s own fields.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -147,8 +160,8 @@ pub struct DozerMembers {
     pub dock_point: [[(bool, Coord3D); DOZER_NUM_DOCK_POINTS]; DOZER_NUM_TASKS],
     /// `m_buildSubTask`.
     pub build_sub_task: i32,
-    /// `m_isRebuild` (none: not initialised upstream until `construct`).
-    pub is_rebuild: Option<bool>,
+    /// `m_isRebuild` (false until `construct`: the pool's block is zeroed).
+    pub is_rebuild: bool,
     /// `m_buildingSound`'s playing handle.
     pub building_sound_handle: u32,
     /// A reset of the primary machine asked for while it runs (see the module docs).
@@ -163,7 +176,7 @@ impl Default for DozerMembers {
             current_task: DOZER_TASK_INVALID,
             dock_point: [[(false, Coord3D::default()); DOZER_NUM_DOCK_POINTS]; DOZER_NUM_TASKS],
             build_sub_task: DOZER_SELECT_BUILD_DOCK_LOCATION,
-            is_rebuild: None,
+            is_rebuild: false,
             building_sound_handle: 0,
             machine_reset_pending: false,
         }
@@ -225,11 +238,12 @@ pub enum DozerActionState<H: AiStateHost> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoCondition {}
 
-/// The running AI's dozer members (a `DozerAIUpdate`'s).
+/// The running AI's dozer members (a `DozerAIUpdate`'s; batch A39: or a `WorkerAIUpdate`'s).
 pub fn dz<H: AiStateHost>(h: &mut H) -> &mut DozerMembers {
     match &mut ai(h).subclass {
         AiSubclass::Dozer(d) => &mut d.m,
-        _ => unreachable!("a DozerAIUpdate"),
+        AiSubclass::Worker(w) => &mut w.dozer.m,
+        _ => unreachable!("a DozerAIUpdate or a WorkerAIUpdate"),
     }
 }
 
@@ -237,7 +251,8 @@ pub fn dz<H: AiStateHost>(h: &mut H) -> &mut DozerMembers {
 fn dz_data<H: AiStateHost>(h: &mut H) -> DozerData {
     match &ai(h).subclass {
         AiSubclass::Dozer(d) => d.data,
-        _ => unreachable!("a DozerAIUpdate"),
+        AiSubclass::Worker(w) => w.dozer.data,
+        _ => unreachable!("a DozerAIUpdate or a WorkerAIUpdate"),
     }
 }
 
@@ -363,19 +378,27 @@ pub fn get_dock_point<H: AiStateHost>(h: &mut H, task: i32, point: i32) -> Optio
     valid.then_some(location)
 }
 
-/// `getBoredRange()`: a computer player's scaled by the AI data's modifier.
+/// `getBoredRange()`: a computer player's scaled by the AI data's modifier (batch A39: the worker's never).
 pub fn get_bored_range<H: AiStateHost>(h: &mut H) -> f32 {
     let range = dz_data(h).bored_range;
-    if h.controlling_player_type() == Some(PlayerType::Computer) {
+    if !is_worker(h) && h.controlling_player_type() == Some(PlayerType::Computer) {
         return h.ai_data_dozer_bored_radius_modifier() * range;
     }
     range
 }
 
-/// `internalTaskCompleteOrCancelled(task)`: building or repairing, no longer actively constructing.
+/// `internalTaskCompleteOrCancelled(task)`: building or repairing, no longer actively constructing (batch A39: the worker's, a
+/// repaired bridge tower's scaffolding then removed; the dozer's has that commented out).
 fn internal_task_complete_or_cancelled<H: AiStateHost>(h: &mut H, task: i32) {
     if (task == DOZER_TASK_BUILD || task == DOZER_TASK_REPAIR) && !plant(3701) {
         h.clear_model_condition_state(MODELCONDITION_ACTIVELY_CONSTRUCTING);
+    }
+    if task == DOZER_TASK_REPAIR && is_worker(h) {
+        let obj = dz(h).task[task as usize].target_object_id;
+        // "when we're done repairing bridges, tell the scaffolding to go away"
+        if h.object_exists(obj) && h.object_is_kind_of(obj, KINDOF_BRIDGE_TOWER) && !plant(3736) {
+            bridge_scaffolding(h, obj, false);
+        }
     }
 }
 
@@ -394,13 +417,19 @@ pub fn internal_task_complete<H: AiStateHost>(h: &mut H, task: i32) {
     clear_task(h, task);
 }
 
-/// `internalCancelTask(task)`: an invalid task ignored; else removed, and the AI told to idle.
+/// `internalCancelTask(task)`: an invalid task ignored; else removed, and the AI told to idle (batch A39: the worker's, to move to
+/// where it is).
 pub fn internal_cancel_task<H: AiStateHost>(h: &mut H, task: i32) -> SmResult<()> {
     if !(0..DOZER_NUM_TASKS as i32).contains(&task) {
         return Ok(());
     }
     internal_task_complete_or_cancelled(h, task);
     clear_task(h, task);
+    if is_worker(h) {
+        // "@todo we really need a stop command instead of making it move to it's current location"
+        let pos = h.position();
+        return with_ai_machine(h, |sm, h| commands::ai_move_to_position(sm, h, &pos, CMD_FROM_AI));
+    }
     // "stop the dozer from moving"
     with_ai_machine(h, |sm, h| commands::ai_idle(sm, h, CMD_FROM_AI))
 }
@@ -470,10 +499,15 @@ pub fn find_good_build_or_repair_position_and_target<H: AiStateHost>(h: &mut H, 
 
 /// `newTask(task, target)`: a build or repair replaces its pending one, goes to the target's good position (a bridge's tower), the
 /// builder set for a build, its dock points the position and one 5 cells further from the target; the order and the frame noted;
-/// the machine reset.
+/// the machine reset. (Batch A39: the worker's forgets its preferred dock first, its dock points all the position, and it leaves
+/// the supply truck role last.)
 pub fn new_task<H: AiStateHost>(h: &mut H, task: i32, target: ObjectId) -> SmResult<()> {
     if target == INVALID_ID {
         return Ok(());
+    }
+    let is_worker = is_worker(h);
+    if is_worker {
+        worker::forget_preferred_dock(h);
     }
     let mut target = target;
     if task == DOZER_TASK_BUILD || task == DOZER_TASK_REPAIR {
@@ -490,21 +524,33 @@ pub fn new_task<H: AiStateHost>(h: &mut H, task: i32, target: ObjectId) -> SmRes
             let me = h.object_id();
             h.object_set_builder(target, me);
         }
-        let tp = h.object_position(target);
-        let m = dz(h);
-        m.dock_point[task as usize][DOZER_DOCK_POINT_START as usize] = (true, position);
-        m.dock_point[task as usize][DOZER_DOCK_POINT_ACTION as usize] = (true, position);
-        let mut offset = Coord3D { x: position.x - tp.x, y: position.y - tp.y, z: 0.0 };
-        offset.normalize();
-        offset.scale(5.0 * PATHFIND_CELL_SIZE_F);
-        // "move away from the dock point at the end of build."
-        position.add(&offset);
-        dz(h).dock_point[task as usize][DOZER_DOCK_POINT_END as usize] = (true, position);
+        if is_worker {
+            let m = dz(h);
+            for p in [DOZER_DOCK_POINT_START, DOZER_DOCK_POINT_ACTION, DOZER_DOCK_POINT_END] {
+                m.dock_point[task as usize][p as usize] = (true, position);
+            }
+        } else {
+            let tp = h.object_position(target);
+            let m = dz(h);
+            m.dock_point[task as usize][DOZER_DOCK_POINT_START as usize] = (true, position);
+            m.dock_point[task as usize][DOZER_DOCK_POINT_ACTION as usize] = (true, position);
+            let mut offset = Coord3D { x: position.x - tp.x, y: position.y - tp.y, z: 0.0 };
+            offset.normalize();
+            offset.scale(5.0 * PATHFIND_CELL_SIZE_F);
+            // "move away from the dock point at the end of build."
+            position.add(&offset);
+            dz(h).dock_point[task as usize][DOZER_DOCK_POINT_END as usize] = (true, position);
+        }
     }
     let f = frame(h);
     dz(h).task[task as usize] = DozerTaskInfo { target_object_id: target, task_order_frame: f };
     // "reset the dozer behavior so that it can re-evluate which task to continue working on"
-    reset_dozer_machine(h)
+    reset_dozer_machine(h)?;
+    if is_worker {
+        // "reset the workermachine, if we've been acting like a supply truck"
+        worker::exiting_supply_truck_state(h)?;
+    }
+    Ok(())
 }
 
 /// `canAcceptNewRepair(obj)`: not the target being repaired, nor a tower of its bridge.
@@ -533,12 +579,20 @@ pub fn can_accept_new_repair<H: AiStateHost>(h: &mut H, obj: ObjectId) -> bool {
     true
 }
 
-/// `privateRepair(obj, cmdSource)`: unless already repairing it, unable to, or another dozer heals it, a repair task.
+/// `privateRepair(obj, cmdSource)`: unless already repairing it, unable to, or another dozer heals it, a repair task (batch A39:
+/// the worker's asks whether it is able first).
 pub fn private_repair<H: AiStateHost>(h: &mut H, obj: ObjectId, src: CommandSourceType) -> SmResult<()> {
+    if is_worker(h) {
+        let target = if h.object_exists(obj) { obj } else { INVALID_ID };
+        // "sanity, if we can't repair the object then get out of there"
+        if !h.action_can_repair_object(target, src) {
+            return Ok(());
+        }
+    }
     if !can_accept_new_repair(h, obj) {
         return Ok(());
     }
-    if !h.action_can_repair_object(obj, src) {
+    if !is_worker(h) && !h.action_can_repair_object(obj, src) {
         return Ok(());
     }
     let current_repairer = h.object_sole_healing_benefactor(obj);
@@ -562,21 +616,32 @@ pub fn private_resume_construction<H: AiStateHost>(h: &mut H, obj: ObjectId, src
 
 /// `aiDoCommand(parms)` (`DozerAIUpdate`'s): no longer actively constructing; if allowed, a move away (not while on a task, unless
 /// from a dozer), a repair or resumed construction (idle first when on no task), else the base's (the player's command cancelling
-/// the current task first, resetting the machine after).
+/// the current task first, resetting the machine after). (Batch A39: the worker's has no move-away case, and drops its boxes
+/// after a command that leaves it clearing mines.)
 pub fn dozer_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
     h.clear_model_condition_state(MODELCONDITION_ACTIVELY_CONSTRUCTING);
     if !commands::is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
     }
-    match parms.cmd {
-        AICMD_MOVE_AWAY_FROM_UNIT => {
-            let other_is_dozer = h.object_exists(parms.obj) && h.object_is_kind_of(parms.obj, KINDOF_DOZER);
-            // "We only want to do this if we aren't busy doing dozer things. jba."
-            if !other_is_dozer && dz(h).current_task != DOZER_TASK_INVALID && !plant(3705) {
-                return Ok(());
-            }
-            commands::base_ai_do_command(sm, h, parms)
+    if is_worker(h) {
+        do_command(sm, h, parms)?;
+        worker::drop_boxes_if_clearing_mines(h);
+        return Ok(());
+    }
+    if parms.cmd == AICMD_MOVE_AWAY_FROM_UNIT {
+        let other_is_dozer = h.object_exists(parms.obj) && h.object_is_kind_of(parms.obj, KINDOF_DOZER);
+        // "We only want to do this if we aren't busy doing dozer things. jba."
+        if !other_is_dozer && dz(h).current_task != DOZER_TASK_INVALID && !plant(3705) {
+            return Ok(());
         }
+        return commands::base_ai_do_command(sm, h, parms);
+    }
+    do_command(sm, h, parms)
+}
+
+/// `aiDoCommand`'s switch but the dozer's move away: a repair or resumed construction, else the base's.
+fn do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    match parms.cmd {
         AICMD_REPAIR | AICMD_RESUME_CONSTRUCTION => {
             // "if we have no task right now, go idle so we can immediately respond to this"
             if dz(h).current_task == DOZER_TASK_INVALID {
@@ -994,9 +1059,7 @@ fn do_build<H: AiStateHost>(h: &mut H, goal: ObjectId) -> SmResult<Option<bool>>
     h.object_set_construction_percent(goal, CONSTRUCTION_COMPLETE);
     h.object_evaluate_visual_condition(goal);
     if h.controlling_player_type().is_some() {
-        let Some(is_rebuild) = dz(h).is_rebuild else {
-            return Err(StateMachineError::Undefined("a dozer's build completed before any construct set its rebuild flag"));
-        };
+        let is_rebuild = dz(h).is_rebuild;
         h.player_on_structure_construction_complete(goal, is_rebuild);
         h.academy_record_production(goal);
         // "Now at finish is when we want the Game side of OnCreate"
@@ -1210,29 +1273,42 @@ pub fn dozer_xfer_members(m: &mut DozerMembers, xfer: &mut dyn Xfer, machine: im
 /// the terrain flattened under it and the object put on it, in the pathfinder's map, announced, at 0 % and one hit point,
 /// awaiting construction; then our build task. The new object's id (none: `INVALID_ID`).
 pub fn construct<H: AiStateHost>(h: &mut H, what: Option<u32>, pos: &Coord3D, angle: f32, is_rebuild: bool) -> SmResult<ObjectId> {
-    dz(h).is_rebuild = Some(is_rebuild);
+    dz(h).is_rebuild = is_rebuild;
     let Some(what) = what else { return Ok(INVALID_ID) };
     let Some(player_type) = h.controlling_player_type() else { return Ok(INVALID_ID) };
+    let is_worker = is_worker(h);
     if !is_rebuild {
         // "AI has weaker restriction on building"
         if player_type != PlayerType::Computer {
             if !h.build_assistant_can_make_unit(what) {
                 return Ok(INVALID_ID);
             }
-            if !h.build_assistant_is_location_legal_to_build(what, pos, angle) && !plant(3720) {
+            if !h.build_assistant_is_location_legal_to_build(what, pos, angle, BUILD_CHECKS) && !plant(3720) {
                 return Ok(INVALID_ID);
             }
+        } else if is_worker && !h.build_assistant_is_location_legal_to_build(what, pos, angle, CLEAR_PATH | NO_OBJECT_OVERLAP) && !plant(3737) {
+            // (batch A39: the worker's checks a computer player's location, weakly)
+            return Ok(INVALID_ID);
         }
     }
     let obj = h.thing_factory_new_structure(what, is_rebuild);
     let me = h.object_id();
     h.object_set_producer(obj, me);
     h.object_set_builder(obj, me);
+    if is_worker {
+        // "leave the supply truck state and now behave like a dozer."
+        worker::exiting_supply_truck_state(h)?;
+    }
     if !is_rebuild {
         let cost = h.template_cost_to_build(what);
         if !h.player_money_withdraw(cost) {
             return Err(StateMachineError::Undefined("a dozer's construction without the player's money"));
         }
+    }
+    if is_worker && !plant(3738) {
+        // "set a bit that this object is under construction, it is important to do this early before the hooks add/subtract power
+        // from a player are executed"
+        h.object_set_status(obj, OBJECT_STATUS_UNDER_CONSTRUCTION);
     }
     h.new_structure_set_position(obj, pos);
     h.new_structure_set_orientation(obj, angle);

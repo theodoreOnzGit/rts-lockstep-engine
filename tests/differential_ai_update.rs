@@ -117,7 +117,7 @@ use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTranspo
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::railed_transport_ai_update::{RailedTransport, RailedTransportData};
 use rts_lockstep_engine::logic::ai::hack_internet_ai_update::{HackInternet, HackInternetData};
-use rts_lockstep_engine::common::state_machine::{SmResult, StateMachine};
+use rts_lockstep_engine::common::state_machine::{SmResult, StateMachine, StateMachineError};
 use rts_lockstep_engine::logic::ai::missile_ai_update::{self as missile, Missile, MissileData};
 use rts_lockstep_engine::logic::ai::ai_states::DistanceKind;
 use rts_lockstep_engine::logic::damage::DamageInfo;
@@ -128,6 +128,8 @@ use rts_lockstep_engine::logic::ai::deliver_payload_ai_update::{self as deliver,
 use rts_lockstep_engine::logic::modules::deliver_payload_data::DeliverPayloadData;
 use rts_lockstep_engine::logic::radius_decal::RadiusDecalTemplate;
 use rts_lockstep_engine::logic::ai::dozer_ai_update::{self as dozer, Dozer, DozerActionState, DozerData, DozerPrimaryState};
+use rts_lockstep_engine::logic::ai::worker_ai_update::{self as worker, Worker, WorkerData, WorkerState};
+use rts_lockstep_engine::logic::ai::supply_truck_ai_update::SupplyState;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -343,8 +345,14 @@ struct Host {
     /// Batch A38: the dozer's machine, lent while its AI runs; the goal objects' construction percents set this operation (the
     /// wrapper's objects are made anew every operation) and the constructed object's position.
     dozer_machines: Vec<Option<StateMachine<DozerPrimaryState<Host>>>>,
+    /// Batch A39: the worker's supply truck machine and its own, lent while its AI runs.
+    supply_machines: Vec<Option<StateMachine<SupplyState<Host>>>>,
+    worker_machines: Vec<Option<StateMachine<WorkerState<Host>>>>,
     op_percents: Vec<(ObjectId, f32)>,
     structure_pos: Option<(ObjectId, Coord3D)>,
+    /// Batch A39: the constructed object when it is not one of the scene's (the wrapper's stand-in object, made this operation,
+    /// whose body is the AI's own: owner 0).
+    structure_stand_in: Option<ObjectId>,
     next_payload: u32,
     payload_pos: Coord3D,
     /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
@@ -807,6 +815,8 @@ impl AiHost for Host {
             && match name {
                 "Upgrade_Nationalism" => self.env.upgrades & 1 != 0,
                 "Upgrade_Fanaticism" => self.env.upgrades & 2 != 0,
+                // (batch A39)
+                "Upgrade_GLAWorkerShoes" => self.env.upgrades & 4 != 0,
                 _ => false,
             }
     }
@@ -971,7 +981,7 @@ impl AiStateHost for Host {
     // batch A32: the assault members (the wrapper's stand-ins: their bodies' health by hash over 100, contained when the assault
     // transport's passengers, their AIs logged cut points answering by hash and the scene)
     fn object_health(&mut self, id: ObjectId) -> Option<(f32, f32)> {
-        let k = if (1..32).contains(&id) { id as u32 } else { 0 };
+        let k = if (1..32).contains(&id) && self.structure_stand_in != Some(id) { id as u32 } else { 0 };
         let h = [100.0f32, 100.0, 55.0, 15.0][((p1_hash(self.env.seed, 132, &[k, self.env.loco.frame >> 5]) >> 8) & 3) as usize];
         Some((h, 100.0))
     }
@@ -1237,6 +1247,16 @@ impl AiStateHost for Host {
     fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<DozerPrimaryState<Host>>>> {
         &mut self.dozer_machines
     }
+    // batch A39: the worker's machines; a constructed object's status (the stand-in logs the bit)
+    fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<SupplyState<Host>>>> {
+        &mut self.supply_machines
+    }
+    fn worker_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<WorkerState<Host>>>> {
+        &mut self.worker_machines
+    }
+    fn object_set_status(&mut self, _id: ObjectId, status: ObjectStatusTypes) {
+        self.l(L_SET_STATUS, &[status as u32, 1]);
+    }
     fn ai_data_dozer_bored_radius_modifier(&mut self) -> f32 {
         self.env.dozer_reals[3]
     }
@@ -1356,10 +1376,13 @@ impl AiStateHost for Host {
         100.0
     }
     fn object_internal_change_health(&mut self, id: ObjectId, delta: f32) {
-        self.l(L_DOZER, &[7, id as u32, delta.to_bits()]);
+        // (batch A39: the stand-in constructed object's body is the AI's own: owner 0)
+        let owner = if self.structure_stand_in == Some(id) { 0 } else { id as u32 };
+        self.l(L_DOZER, &[7, owner, delta.to_bits()]);
     }
     fn object_evaluate_visual_condition(&mut self, id: ObjectId) {
-        self.l(L_DOZER, &[8, id as u32]);
+        let owner = if self.structure_stand_in == Some(id) { 0 } else { id as u32 };
+        self.l(L_DOZER, &[8, owner]);
     }
     fn object_clear_status(&mut self, _id: ObjectId, status: ObjectStatusTypes) {
         self.l(L_SET_STATUS, &[status as u32, 0]);
@@ -1452,15 +1475,18 @@ impl AiStateHost for Host {
         self.l(L_DOZER, &[24, template, u32::from(r)]);
         r
     }
-    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32) -> bool {
+    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32, options: u32) -> bool {
         let r = p1_hash(self.env.seed, 147, &[self.env.loco.frame]) & 3 != 0;
         let me = self.env.object_id as u32;
-        // (the options TERRAIN_RESTRICTIONS | CLEAR_PATH | NO_OBJECT_OVERLAP | SHROUD_REVEALED; the player passed none)
-        self.l(L_DOZER, &[25, template, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), angle.to_bits(), 0x17, me, 0, u32::from(r)]);
+        // (the player passed none)
+        self.l(L_DOZER, &[25, template, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), angle.to_bits(), options, me, 0, u32::from(r)]);
         r
     }
     fn thing_factory_new_structure(&mut self, template: u32, is_rebuild: bool) -> ObjectId {
         let id = self.env.dozer_ints[3];
+        if !self.object_exists(id) {
+            self.structure_stand_in = Some(id);
+        }
         let bits = (1u32 << 3) | if is_rebuild { 1 << 21 } else { 0 };
         self.l(L_DOZER, &[26, template, bits, id as u32]);
         id
@@ -3312,9 +3338,13 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
-    // batch A38: a DozerAIUpdate's members and machines
-    if let AiSubclass::Dozer(d) = &module.ai().subclass {
-        let m = &d.m;
+    // batch A38: a DozerAIUpdate's members and machines (batch A39: and a WorkerAIUpdate's)
+    let dozer_members = match &module.ai().subclass {
+        AiSubclass::Dozer(d) => Some(d.m),
+        AiSubclass::Worker(w) => Some(w.dozer.m),
+        _ => None,
+    };
+    if let Some(m) = dozer_members.as_ref() {
         for t in &m.task {
             v.extend([t.target_object_id as u32, t.task_order_frame]);
         }
@@ -3325,7 +3355,7 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 put_pos(&mut v, location);
             }
         }
-        v.extend([m.build_sub_task as u32, u32::from(m.is_rebuild.unwrap_or(false)), m.building_sound_handle]);
+        v.extend([m.build_sub_task as u32, u32::from(m.is_rebuild), m.building_sound_handle]);
         let sm = module.dozer_machine.as_ref().expect("the dozer's machine");
         v.extend([sm.get_current_state_id(), sm.peek_sleep_till(), u32::from(sm.is_default_state_inited())]);
         match sm.state(dozer::DOZER_PRIMARY_IDLE) {
@@ -3347,6 +3377,15 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                 _ => panic!("the doing state"),
             }
         }
+    }
+    // batch A39: a WorkerAIUpdate's supply truck's members and machine, and its own machine
+    if let AiSubclass::Worker(w) = &module.ai().subclass {
+        let t = &w.supply;
+        v.extend([t.preferred_dock as u32, t.number_boxes as u32, u32::from(t.force_pending), u32::from(t.forced_busy_pending)]);
+        let m = module.supply_machine.as_ref().expect("the worker's supply machine");
+        v.extend([m.get_current_state_id(), m.peek_sleep_till(), u32::from(m.is_default_state_inited())]);
+        let m = module.worker_machine.as_ref().expect("the worker's machine");
+        v.extend([m.get_current_state_id(), m.peek_sleep_till(), u32::from(m.is_default_state_inited())]);
     }
     // batch A37: a DeliverPayloadAIUpdate's members, data and machine
     if let AiSubclass::DeliverPayload(d) = &module.ai().subclass {
@@ -3657,7 +3696,11 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10][g.below(20) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11][g.below(22) as usize];
+    // (batch A39: a worker's shoes, half the time)
+    if e.subclass == 11 {
+        e.upgrades |= (g.below(2) as i32) << 2;
+    }
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -3756,7 +3799,9 @@ fn gen_scene(g: &mut Gen) -> Env {
     let some = |g: &mut Gen| if g.below(4) == 0 { 0 } else { 1 + g.below(31) as i32 };
     e.dozer_bridge = some(g);
     e.dozer_towers = [some(g), some(g), some(g), some(g)];
-    if e.subclass == 10 {
+    // batch A39: a worker's boost (its other data the dozer's and the supply truck's)
+    e.worker_boost = [0, 5, 30][g.below(3) as usize];
+    if e.subclass == 10 || e.subclass == 11 {
         e.exist_mask |= 1 << construct_id;
         if g.below(3) == 0 {
             e.loco.kind_mask |= 262144;
@@ -3927,7 +3972,7 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     }
     if g.below(10) == 0 {
         e.horde = g.below(512) as i32;
-        e.upgrades = g.below(4) as i32;
+        e.upgrades = g.below(if e.subclass == 11 { 8 } else { 4 }) as i32;
     }
     if g.below(12) == 0 {
         e.player_type = [-1, 0, 1, 1][g.below(4) as usize];
@@ -3956,9 +4001,14 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
-    } else if e.subclass == 10 && g.below(2) == 0 {
-        // batch A38: a dozer's work takes many updates (moving to the site, to its dock, building up)
+    } else if (e.subclass == 10 || e.subclass == 11) && g.below(2) == 0 {
+        // batch A38: a dozer's work takes many updates (moving to the site, to its dock, building up) (batch A39: a worker's too)
         65
+    } else if e.subclass == 11 && g.below(3) == 0 {
+        // batch A39: a worker's members: the dozer's (the constructions most), the docks' calls (a forced supply run most), its own
+        const WORKER_OPS: [i32; 36] =
+            [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 101, 101, 102, 103, 103, 103, 103, 103, 103, 133, 133, 134, 135, 136, 137, 138, 139, 140];
+        WORKER_OPS[g.below(WORKER_OPS.len() as u32) as usize]
     } else if e.subclass == 10 && g.below(3) == 0 {
         // batch A38: a dozer's members (the constructions most)
         [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132][g.below(18) as usize]
@@ -4046,7 +4096,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=132);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=140);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -4163,6 +4213,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if e.subclass == 9 && g.below(4) == 0 { 4 } else { cmd };
             // (batch A38: a dozer's repair, resumed construction and move away, often)
             let cmd = if e.subclass == 10 && g.below(3) == 0 { [19, 19, 20, 48][g.below(4) as usize] } else { cmd };
+            // (batch A39: a worker's repair, resumed construction, move away and dock, often)
+            let cmd = if e.subclass == 11 && g.below(3) == 0 { [19, 19, 20, 48, 24, 24][g.below(6) as usize] } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -4198,7 +4250,14 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             ia[4] = if g.below(10) == 0 { -1 } else { g.below(3) as i32 };
             ia[5] = g.below(4) as i32 - 1;
         }
-        103 => ia[0] = g.below(2) as i32,
+        // (batch A39: a worker forced into a supply run most times)
+        103 if e.subclass == 11 => ia[0] = i32::from(g.below(4) != 0),
+        103 | 139 => ia[0] = g.below(2) as i32,
+        // batch A39: a dock (an existing object, now and then none: undefined upstream, the case ends)
+        138 => {
+            let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
+            ia[0] = if ids.is_empty() || g.below(10) == 0 { g.below(32) as i32 } else { ids[g.below(ids.len() as u32) as usize] };
+        }
         // batch A38: a template, a task, an object; the rebuild flag, a point, an object; the angle
         118..=132 => {
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -4580,7 +4639,8 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
         }
         // batch A38: a dozer's members (undefined upstream: the case ends)
         118..=132 => {
-            if !matches!(module.ai().subclass, AiSubclass::Dozer(_)) {
+            // (batch A39: a worker's too, through its interface)
+            if !matches!(module.ai().subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_)) {
                 return vec![];
             }
             let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
@@ -4616,6 +4676,7 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                         130 => {
                             let d = match &states::ai(h).subclass {
                                 AiSubclass::Dozer(d) => d.data,
+                                AiSubclass::Worker(w) => w.dozer.data,
                                 _ => unreachable!(),
                             };
                             let range = dozer::get_bored_range(h);
@@ -4636,6 +4697,59 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                     vec![]
                 }
                 Err(e) => panic!("a dozer's call: {e}"),
+            }
+        }
+        // batch A39: a worker's own members (undefined upstream: the case ends)
+        133..=140 => {
+            if !matches!(module.ai().subclass, AiSubclass::Worker(_)) {
+                return vec![];
+            }
+            let a = ia[0];
+            let r = module.run(h, |sm, h| {
+                dozer::lend_ai_machine(sm, h, |h| -> SmResult<Vec<u32>> {
+                    match op {
+                        133 => worker::exiting_supply_truck_state(h).map(|_| vec![]),
+                        134 => Ok(vec![u32::from(worker::is_supply_truck_brain_active_and_busy(h))]),
+                        135 | 136 => worker::reset_brain(h, op == 135).map(|_| vec![]),
+                        137 => {
+                            let ferrying = worker::is_currently_ferrying_supplies(h);
+                            let w = *worker::wk(h);
+                            let scan = supply::warehouse_scan_distance(h, &w.supply);
+                            let boost = worker::upgraded_supply_boost(h);
+                            let s = &w.supply;
+                            Ok(vec![
+                                u32::from(ferrying),
+                                1,
+                                scan.to_bits(),
+                                boost as u32,
+                                s.number_boxes as u32,
+                                u32::from(s.forced_busy_pending),
+                                u32::from(s.force_pending),
+                                u32::from(w.dozer.m.is_rebuild),
+                            ])
+                        }
+                        138 => {
+                            if !h.object_exists(a) {
+                                return Err(StateMachineError::Undefined("a worker's dock delay without a dock"));
+                            }
+                            let w = *worker::wk(h);
+                            Ok(vec![supply::action_delay_for_dock(h, &w.supply, a)])
+                        }
+                        139 => {
+                            worker::wk(h).supply.forced_busy_pending = a != 0;
+                            Ok(vec![])
+                        }
+                        _ => Ok(vec![worker::wk(h).supply.preferred_dock as u32]),
+                    }
+                })
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a worker's call: {e}"),
             }
         }
         // batch A37: a delivering AI's members (undefined upstream: the case ends)
@@ -4687,6 +4801,8 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             let mut r = vec![];
             let mut s = match &module.ai().subclass {
                 AiSubclass::SupplyTruck(s) => *s,
+                // (batch A39: a worker's, through its interface)
+                AiSubclass::Worker(w) => w.supply,
                 _ => return vec![],
             };
             match op {
@@ -4694,7 +4810,10 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                 102 => r.push(u32::from(supply::lose_one_box(h, &mut s))),
                 _ => s.force_pending = ia[0] != 0,
             }
-            module.ai_mut().subclass = AiSubclass::SupplyTruck(s);
+            match &mut module.ai_mut().subclass {
+                AiSubclass::Worker(w) => w.supply = s,
+                c => *c = AiSubclass::SupplyTruck(s),
+            }
             r
         }
         // batch A32: the weapon's beginAssault
@@ -4827,7 +4946,11 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 133],
+    ops: [u64; 141],
+    /// Batch A39: the worker's machine's state after an operation (as a dozer, as a supply truck), and its supply truck machine's
+    /// (idle, busy, wanting, regrouping, docking).
+    worker_states: [u64; 2],
+    worker_supply_states: [u64; 5],
     /// Batch A38: the dozer's machine's state after an operation (idle, build, repair, fortify, going home), and its action machines'
     /// (picking, moving, doing, none) when in an action state.
     dozer_states: [u64; 5],
@@ -4884,7 +5007,9 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 133],
+            ops: [0; 141],
+            worker_states: [0; 2],
+            worker_supply_states: [0; 5],
             dozer_states: [0; 5],
             dozer_actions: [0; 4],
             deliver_states: [0; 7],
@@ -4942,8 +5067,11 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_machines: Vec::new(),
         deliver_machines: Vec::new(),
         dozer_machines: Vec::new(),
+        supply_machines: Vec::new(),
+        worker_machines: Vec::new(),
         op_percents: Vec::new(),
         structure_pos: None,
+        structure_stand_in: None,
         next_payload: 40,
         payload_pos: Coord3D::default(),
         pf_ignore: 0,
@@ -4962,7 +5090,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
     host.names.reset();
     // batch A5: the modules the commands look up, first (as ref_ai_a2_reset)
-    for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate", "GenerateMinefieldBehavior", "SmartBombTargetHomingUpdate"] {
+    // (batch A39: and a dock's supply modules)
+    for name in ["DeliverPayloadAIUpdate", "ProneUpdate", "HackInternetAIUpdate", "GenerateMinefieldBehavior", "SmartBombTargetHomingUpdate", "SupplyWarehouseDockUpdate", "SupplyCenterDockUpdate"] {
         host.names.name_to_key(name.as_bytes());
     }
     unsafe { cpp::ref_ai_a2_reset() };
@@ -4994,7 +5123,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // (batch A33: a railed transport has every set, each with a locomotor: its update follows its path after the base's update,
         // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
         // (batch A37: a delivering AI likewise: its states use the locomotor unchecked)
-        let railed = host.env.subclass == 5 || host.env.subclass == 9 || host.env.subclass == 10;
+        let railed = host.env.subclass == 5 || host.env.subclass == 9 || host.env.subclass == 10 || host.env.subclass == 11;
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
@@ -5034,7 +5163,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     // (batch A10b: a quarter at negative x, where the other objects, at the origin facing +x, move away: pursued)
     let start = [if g.below(4) == 0 { g.uniform(-60.0, -1.0) } else { g.uniform(-20.0, 260.0) }, g.uniform(-20.0, 180.0), 0.0];
     // (batch A38: a dozer half the time near the other objects, at the origin: its goals)
-    let start = if host.env.subclass == 10 && g.below(2) == 0 { [g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0), 0.0] } else { start };
+    let start = if (host.env.subclass == 10 || host.env.subclass == 11) && g.below(2) == 0 { [g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0), 0.0] } else { start };
     let start_pos = Coord3D { x: start[0], y: start[1], z: host.ground(start[0], start[1]) + if g.below(3) == 0 { g.uniform(0.0, 50.0) } else { 0.0 } };
     let angle = g.uniform(-3.1, 3.1);
     let rng_seed = g.u32();
@@ -5119,6 +5248,21 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             bored_time: host.env.dozer_reals[1],
             bored_range: host.env.dozer_reals[2],
         })),
+        11 => AiSubclass::Worker(Worker::new(WorkerData {
+            dozer: DozerData {
+                repair_health_percent_per_second: host.env.dozer_reals[0],
+                bored_time: host.env.dozer_reals[1],
+                bored_range: host.env.dozer_reals[2],
+            },
+            supply: SupplyTruckData {
+                max_boxes: host.env.supply_max_boxes,
+                center_delay: host.env.supply_delays[0],
+                warehouse_delay: host.env.supply_delays[1],
+                warehouse_scan_distance: host.env.supply_scan,
+                has_depleted_voice: host.env.supply_flags & 1 != 0,
+            },
+            upgraded_supply_boost: host.env.worker_boost,
+        })),
         _ => AiSubclass::Plain,
     };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
@@ -5169,7 +5313,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // `getPlayerType` tolerated a missing one; kept while the idle state is in the machine)
         let idle = module.machine.as_ref().is_some_and(|sm| sm.get_current_state_id() == 0 || module.ai().machine.temporary_state == 0);
         // (batch A34: and so does the hacking state: a hacker keeps its player)
-        if (a9_states(&module).1 || attacking || idle || host.env.subclass == 6) && host.env.player_type < 0 {
+        // (batch A39: and a dozer or a worker keeps its player: its bored idle brain attacks a mine inside an update, entering the
+        // attack machine's chase states)
+        if (a9_states(&module).1 || attacking || idle || matches!(host.env.subclass, 6 | 10 | 11)) && host.env.player_type < 0 {
             host.env.player_type = 0;
         }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
@@ -5249,6 +5395,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // (batch A38: the wrapper's other objects are made anew every operation)
         host.op_percents.clear();
         host.structure_pos = None;
+        host.structure_stand_in = None;
         let r = rust_op(&mut module, &mut host, op, &fa, &ia, 0, &mut saved);
         if host.undefined {
             // (batch A33: undefined upstream: the case ends before the C++ runs the op)
@@ -5286,6 +5433,10 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if let AiSubclass::DeliverPayload(_) = module.ai().subclass {
             let s = module.deliver_machine.as_ref().map_or(6, |m| (m.get_current_state_id() as usize).min(6));
             ck.deliver_states[s] += 1;
+        }
+        if let (Some(m), Some(s)) = (module.worker_machine.as_ref(), module.supply_machine.as_ref()) {
+            ck.worker_states[(m.get_current_state_id() as usize).min(1)] += 1;
+            ck.worker_supply_states[(s.get_current_state_id() as usize).min(4)] += 1;
         }
         if let Some(m) = module.dozer_machine.as_ref() {
             let s = m.get_current_state_id() as usize;
@@ -5552,6 +5703,37 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A39; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `WorkerAIUpdate` (WorkerAIUpdate.cpp cut verbatim from its role enum, with its header's machine; its module data the dozer's
+///   and the supply truck's scene fields and the boost; cut point: a constructed object's placement; the dozer's and the supply
+///   truck's machines and worlds theirs; the AI's members as ops 118-132 and 101-103 through its interfaces, its own as ops
+///   133-140; half a worker's operations updates; repairs, resumed constructions, moves away and docks often; forced supply runs
+///   often): an eleventh of the cases: 30,000 constructions and 1,743,862 operations, **0 mismatches** in the results, the call
+///   logs and the dumps (its members and its three machines added). After an operation the worker machine was a dozer 133,202
+///   times and a supply truck 22,055; its supply machine idle 23,379, busy 116,992, wanting 7,232, regrouping 4,406, docking
+///   3,248. The dozer machines (the dozers' and the workers') were idle 210,999 times, building 35,575, repairing 40,223,
+///   fortifying 12,101; the action machines picking 40,605, moving 37,311, doing 9,983.
+/// - Found on the way: the supply truck's and the worker's dock delays keep their `NAMEKEY`s in function-local statics, which
+///   outlive the name key generator's reset between cases (A35's got the right keys by the order of its first calls): both supply
+///   dock module names are now requested first, as the other modules' are. A `construct` whose object is not one of the scene's
+///   gets the wrapper's stand-in object, whose body is the AI's own (owner 0): the test host now answers so too (A38's dozer never
+///   reached it). A dozer or a worker keeps its player, as a hacker does: its bored idle brain attacks a mine inside an update, and
+///   the attack machine's chase states read the player unchecked.
+/// - Corrected: batch A38 refused a build completed before any `construct` as undefined, taking `m_isRebuild` for uninitialised;
+///   the memory pool zeroes every object it makes (`MemoryPool::allocateBlockImplementation`, from the pooled `operator new`), so
+///   it is false, and such builds are now compared. The worker's `m_preferredDock`, which its constructor does not set, is
+///   `INVALID_ID` likewise.
+/// - Not compared: undefined upstream (refused, the case ends): a dock delay asked without a dock (1,792 cases ended undefined in
+///   all, with the earlier batches'). Not translated (refused as such, never reached here): a player's attack reaching a dozer's or
+///   a worker's `aiDoCommand` inside a guard machine (A38 refused it only when it cancelled a task, missing the dozer machine's
+///   reset that follows a player's command).
+/// - Planted bugs (5,000 cases each), 3730-3740, all caught: the supply brain ready to leave, leaving the supply truck role, the
+///   worker's shoes, the remembered dock, the boxes dropped while clearing mines, the update's repair check, the scaffolding
+///   removed, a computer player's legal location, the under-construction status, the dozer machine's and the worker machine's
+///   snapshots. A38's 3700-3721 re-run on the changed cases: all caught at 5,000 cases but 3718 (a scaffold in motion), caught at
+///   30,000.
+///
 /// # Results (2026-10-30, batch A38; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `DozerAIUpdate` (DozerAIUpdate.cpp cut verbatim but its module data's field parse, with its header's primary machine, task
@@ -5566,8 +5748,9 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
 /// - The garrison exit's search (`AIExitState`'s rappel path, batch A15) now logs its start angle too: the stand-in logs the start
 ///   angle, z delta and object ignored when not the defaults (`LOG_DOZER` 33), which only it and the dozer set.
 /// - Not compared: undefined upstream (refused, the case ends): the idle state's player index without a player, a bridge tower
-///   without its interfaces during a repair, a construction without the player's money, a build completed before any `construct`
-///   set its rebuild flag (1,758 cases ended undefined in all, with the earlier batches'). Not translated (refused as such, never
+///   without its interfaces during a repair, a construction without the player's money, ~~a build completed before any `construct`
+///   set its rebuild flag~~ (**corrected in A39**: defined, false: the pool zeroes the object) (1,758 cases ended undefined in all,
+///   with the earlier batches'). Not translated (refused as such, never
 ///   reached here): a player's attack cancelling a dozer's task inside a guard machine (the locked machine's attack).
 /// - Planted bugs (5,000 cases each), 3700-3721, all caught: the most recent command, the constructing condition, the good
 ///   position, the repair's acceptance, another healer, the move away, the player's reset, the update's repair check, the closest
@@ -6042,10 +6225,10 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}; worker machine dozer/supply truck {:?}, its supply machine idle/busy/wanting/regrouping/docking {:?}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads,
-        ck.deliver_states, ck.dozer_states, ck.dozer_actions
+        ck.deliver_states, ck.dozer_states, ck.dozer_actions, ck.worker_states, ck.worker_supply_states
     );
     ck.construction.finish();
     ck.results.finish();

@@ -243,6 +243,16 @@ pub trait AiStateHost: AiHost + StateContext {
     fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32;
     /// Batch A36: the owner's `calculateCountermeasureToDivertTo(victim)` (`INVALID_ID`: none).
     fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId;
+    /// Batch A39: the workers' supply truck machines lent to the host while their AIs run (none: running), the innermost last.
+    fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<Self>>>>
+    where
+        Self: Sized;
+    /// Batch A39: the workers' own machines lent to the host while their AIs run (none: running), the innermost last.
+    fn worker_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::worker_ai_update::WorkerState<Self>>>>
+    where
+        Self: Sized;
+    /// Batch A39: another object's `setStatus(MAKE_OBJECT_STATUS_MASK(status))`.
+    fn object_set_status(&mut self, id: ObjectId, status: crate::common::object_status_types::ObjectStatusTypes);
     /// Batch A38: the dozer's primary machines lent to the host while their AIs run (none: running), the innermost last.
     fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::dozer_ai_update::DozerPrimaryState<Self>>>>
     where
@@ -345,7 +355,7 @@ pub trait AiStateHost: AiHost + StateContext {
     /// Batch A38: `TheBuildAssistant->canMakeUnit(owner, template) == CANMAKE_OK`.
     fn build_assistant_can_make_unit(&mut self, template: u32) -> bool;
     /// Batch A38: `TheBuildAssistant->isLocationLegalToBuild(pos, template, angle, the four checks, owner, NULL) == LBC_OK`.
-    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32) -> bool;
+    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32, options: u32) -> bool;
     /// Batch A38: `TheThingFactory->newObject(template, player's default team, under construction (and reconstructing))`: its id.
     fn thing_factory_new_structure(&mut self, template: u32, is_rebuild: bool) -> ObjectId;
     /// Batch A38: a template's `calcCostToBuild(owner's player)`.
@@ -1772,14 +1782,16 @@ pub struct AiUpdateModule<H: AiStateHost> {
     pub supply_machine: Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<H>>>,
     /// Batch A37: a delivering AI's `m_deliverPayloadStateMachine` (none until `deliverPayload` makes it; none for another class).
     pub deliver_machine: Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<H>>>,
-    /// Batch A38: a dozer's `m_dozerMachine` (made by its constructor; none for another class).
+    /// Batch A38: a dozer's `m_dozerMachine` (made by its constructor; none for another class; batch A39: and a worker's).
     pub dozer_machine: Option<StateMachine<crate::logic::ai::dozer_ai_update::DozerPrimaryState<H>>>,
+    /// Batch A39: a worker's `m_workerMachine` (made by its constructor; none for another class).
+    pub worker_machine: Option<StateMachine<crate::logic::ai::worker_ai_update::WorkerState<H>>>,
 }
 
 impl<H: AiStateHost> AiUpdateModule<H> {
     /// `AIUpdateInterface(thing, moduleData)`: the AI's state (the machine is made by `onObjectCreated`).
     pub fn new(h: &mut H, data: Arc<AiUpdateModuleData>) -> Self {
-        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None, deliver_machine: None, dozer_machine: None }
+        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None, deliver_machine: None, dozer_machine: None, worker_machine: None }
     }
 
     /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
@@ -1791,7 +1803,21 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             h.delivery_decal_clear();
         }
         let dozer = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::Dozer(_));
+        let worker = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::Worker(_));
         m.ai_mut().subclass = subclass;
+        if worker {
+            // (batch A39: `WorkerAIUpdate`'s constructor's `createMachines`: the worker's machine made, the dozer's made and entered,
+            // the supply truck's made and entered, then the worker's entered; the object has no AI yet: nothing is lent)
+            let mut wm = crate::logic::ai::worker_ai_update::make_worker_machine()?;
+            let mut dm = crate::logic::ai::dozer_ai_update::make_dozer_machine(h)?;
+            dm.init_default_state(h)?;
+            let mut sm = crate::logic::ai::supply_truck_ai_update::make_supply_machine()?;
+            sm.init_default_state(h)?;
+            wm.init_default_state(h)?;
+            m.dozer_machine = Some(dm);
+            m.supply_machine = Some(sm);
+            m.worker_machine = Some(wm);
+        }
         if dozer {
             // (batch A38: `DozerAIUpdate`'s constructor makes its machine (each action state's machine made and entered) and enters
             // its default state; the object has no AI yet: nothing is lent)
@@ -1825,14 +1851,23 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         if deliver {
             h.deliver_machine_stack().push(self.deliver_machine.take());
         }
-        // (batch A38: and a dozer's machine, which a command resets)
-        let dozer = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Dozer(_));
+        // (batch A38: and a dozer's machine, which a command resets; batch A39: and a worker's three)
+        let dozer = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Dozer(_) | crate::logic::ai::ai_update::AiSubclass::Worker(_));
+        let worker = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Worker(_));
         if dozer {
             h.dozer_machine_stack().push(self.dozer_machine.take());
+        }
+        if worker {
+            h.supply_machine_stack().push(self.supply_machine.take());
+            h.worker_machine_stack().push(self.worker_machine.take());
         }
         h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
         let r = f(self.machine.as_mut().expect("the AI's machine"), h);
         self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+        if worker {
+            self.worker_machine = h.worker_machine_stack().pop().expect("the lent worker machine");
+            self.supply_machine = h.supply_machine_stack().pop().expect("the lent supply machine");
+        }
         if dozer {
             self.dozer_machine = h.dozer_machine_stack().pop().expect("the lent dozer machine");
         }
@@ -1927,6 +1962,13 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
                 self.dozer_machine = Some(m);
                 r?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::Worker(_) => {
+                // batch A39: the base's update first; then (the AI, its machine and the three machines lent; a running one's slot
+                // empty) the worker's machine and its role's; never asleep
+                self.base_update(h)?;
+                self.run(h, |sm, h| crate::logic::ai::dozer_ai_update::lend_ai_machine(sm, h, crate::logic::ai::worker_ai_update::worker_update))?;
                 Ok(UPDATE_SLEEP_NONE)
             }
             crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_) => {

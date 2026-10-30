@@ -34,6 +34,9 @@
 //!   distance; the scan distance is doubled for a computer player.
 //! - `isAvailableForSupplying` is always true; the wanting state's check of it never fails.
 //!
+//! Batch A39: the machine and the members are the worker's too ([`st`] reaches a `WorkerAIUpdate`'s); its idle state then tells
+//! the worker it is leaving the supply truck role.
+//!
 //! [`AiUpdateModule::update`]: crate::logic::ai::ai_states::AiUpdateModule::update
 
 use std::convert::Infallible;
@@ -151,11 +154,12 @@ pub enum SupplyCondition {
     OwnerPlayerCommanded,
 }
 
-/// The running AI's `SupplyTruckAIUpdate` members.
+/// The running AI's `SupplyTruckAIUpdate` members (batch A39: or a `WorkerAIUpdate`'s, its `SupplyTruckAIInterface`).
 fn st<H: AiStateHost>(h: &mut H) -> &mut SupplyTruck {
     match &mut ai(h).subclass {
         AiSubclass::SupplyTruck(s) => s,
-        _ => unreachable!("a SupplyTruckAIUpdate"),
+        AiSubclass::Worker(w) => &mut w.supply,
+        _ => unreachable!("a SupplyTruckAIUpdate or a WorkerAIUpdate"),
     }
 }
 
@@ -265,8 +269,17 @@ impl<H: AiStateHost> StateBehavior for SupplyState<H> {
                     st(h).forced_busy_pending = false;
                 }
             }
-            // (the supply truck's `getWorkerAIInterface()` is none)
-            Some(SupplyState::Idle) => {}
+            // (the supply truck's `getWorkerAIInterface()` is none; batch A39: a worker's `exitingSupplyTruckState()`, this running
+            // machine re-lent to its slot meanwhile)
+            Some(SupplyState::Idle) => {
+                if !h.ai_stack().is_empty() && crate::logic::ai::worker_ai_update::is_worker(h) {
+                    let slot = h.supply_machine_stack().last_mut().expect("the supply machine's slot").replace(std::mem::take(sm));
+                    debug_assert!(slot.is_none(), "the running supply machine's slot is empty");
+                    let r = crate::logic::ai::worker_ai_update::exiting_supply_truck_state(h);
+                    *sm = h.supply_machine_stack().last_mut().expect("the supply machine's slot").take().expect("the re-lent supply machine");
+                    r?;
+                }
+            }
             Some(SupplyState::Wanting) | Some(SupplyState::Docking) => st(h).force_pending = false,
             Some(SupplyState::Regrouping) => return regrouping_on_enter(h),
             Some(SupplyState::_Host(never, _)) => match *never {},

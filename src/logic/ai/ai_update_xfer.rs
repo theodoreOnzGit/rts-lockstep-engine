@@ -104,6 +104,42 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::Worker(_) = self.ai().subclass {
+            // batch A39: `WorkerAIUpdate::xfer` (version 1): the base's; the dozer's members around the dozer's machine; the supply
+            // truck's machine, preferred dock, boxes and forced-wanting flag; the worker's machine
+            // (each machine's snapshot in CRC mode its `crc`, `StateMachine::crc`'s nothing)
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut w = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::Worker(w) => *w,
+                _ => unreachable!(),
+            };
+            let crc = xfer.get_xfer_mode() == XferMode::Crc;
+            let dozer_machine = self.dozer_machine.as_mut().expect("the worker's dozer machine");
+            let r = crate::logic::ai::dozer_ai_update::dozer_xfer_members(&mut w.dozer.m, xfer, |x| {
+                if crc || plant(3739) {
+                    return Ok(());
+                }
+                crate::logic::ai::dozer_ai_update::dozer_machine_xfer(dozer_machine, x)
+            })
+            .and_then(|_| {
+                if !crc {
+                    crate::logic::ai::supply_truck_ai_update::supply_machine_xfer(self.supply_machine.as_mut().expect("the worker's supply machine"), xfer)?;
+                }
+                xfer.xfer_object_id(&mut w.supply.preferred_dock)?;
+                xfer.xfer_int(&mut w.supply.number_boxes)?;
+                xfer.xfer_bool(&mut w.supply.force_pending)?;
+                if !crc && !plant(3740) {
+                    crate::logic::ai::worker_ai_update::worker_machine_xfer(self.worker_machine.as_mut().expect("the worker's machine"), xfer)?;
+                }
+                Ok(())
+            });
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::Worker(w);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::Dozer(_) = self.ai().subclass {
             // batch A38: `DozerAIUpdate::xfer` (version 1): the base's, then its members around its machine's snapshot (in CRC mode the
             // machine's `crc`, nothing)
