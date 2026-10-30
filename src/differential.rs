@@ -2846,8 +2846,8 @@ extern "C" {
         msg_cap: c_int,
         code: *mut c_uint,
     ) -> c_int;
-    /// p1w13-sonnet, batch R79: RailroadBehavior (differential/l9_railroad_r79.inc).
-    pub fn ref_l9r79_run(
+    /// p1w13-sonnet, batch R80: RailroadBehavior (differential/l9_railroad_r80.inc).
+    pub fn ref_l9r80_run(
         filename: *const c_char,
         xfer_path: *const c_char,
         cfg: *const c_uint,

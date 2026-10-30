@@ -51,7 +51,7 @@
 //! wait that counts below `INT_MIN` (`SignedIntOverflow`); a carriage the factory cannot make (`NewObjectFailed`). Recorded in
 //! `world.cuts.module_errors`.
 //!
-//! `p1w13-sonnet`, batch R79, 2026-10-30.
+//! `p1w13-sonnet`, batch R80, 2026-10-30.
 
 use std::sync::Arc;
 

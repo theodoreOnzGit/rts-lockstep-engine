@@ -271,7 +271,7 @@ impl World {
         self.cuts.last_audio_handle
     }
 
-    /// batch R79: `TheAudio->addAudioEvent(&event)` for an event with the object it is attached to, and the position, player index and
+    /// batch R80: `TheAudio->addAudioEvent(&event)` for an event with the object it is attached to, and the position, player index and
     /// volume set on it (if any): the handle (never 0).
     pub fn audio_add_event_full(&mut self, name: Vec<u8>, object_id: ObjectId, position: Option<Coord3D>, player_index: Option<i32>, volume: Option<f32>) -> u32 {
         match volume {
@@ -549,7 +549,7 @@ impl World {
         self.objects.find(id).map(|_| id)
     }
 
-    /// batch R79: `ThePartitionManager->getClosestObject(&position, range, dc, filters)` with the caller's own filters: the candidates the
+    /// batch R80: `ThePartitionManager->getClosestObject(&position, range, dc, filters)` with the caller's own filters: the candidates the
     /// manager would test them on, nearest first (`ObjectCuts::range_scan` answers; the caller takes the first that passes).
     pub fn partition_closest_candidates_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionGetClosestObjectAt { position, range, dc });
@@ -1718,7 +1718,7 @@ pub struct ObjectCuts {
     /// A [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes the lines `pause`, `extendrods` and `extendradar` to `trace`
     /// (off by default: `differential_object` compares the probe's trace to the C++ log, which has no such lines).
     pub probe_effect_trace: bool,
-    /// batch R79: a [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes `exitall <object> <source> <instantly>` to `trace` for
+    /// batch R80: a [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes `exitall <object> <source> <instantly>` to `trace` for
     /// `orderAllPassengersToExit` (off by default).
     pub probe_trace_exit_all: bool,
     /// The function-local `static` of `MoneyCrateCollide::getUpgradedSupplyBoost`: `None` until control first reaches it, then the upgrade mask of

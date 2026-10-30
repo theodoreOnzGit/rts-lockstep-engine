@@ -214,7 +214,7 @@ static FIELD_PARSE: [FieldParse<PhysicsBehaviorModuleData>; 19] = [
     FieldParse::end(),
 ];
 
-/// batch R79: the table's tokens, for a derived class's table (`RailroadBehaviorModuleData`).
+/// batch R80: the table's tokens, for a derived class's table (`RailroadBehaviorModuleData`).
 pub const PHYSICS_FIELD_TOKENS: [&str; 18] = [
     "Mass",
     "ShockResistance",
@@ -236,7 +236,7 @@ pub const PHYSICS_FIELD_TOKENS: [&str; 18] = [
     "VehicleCrashesIntoNonBuildingWeaponTemplate",
 ];
 
-/// batch R79: the `k`th entry of the table on the data (a derived class's table calls it on its base).
+/// batch R80: the `k`th entry of the table on the data (a derived class's table calls it on its base).
 pub fn physics_field(k: usize, i: &mut Ini<'_>, d: &mut PhysicsBehaviorModuleData, u: &UserData) -> IniResult<()> {
     debug_assert_eq!(FIELD_PARSE[k].token, Some(PHYSICS_FIELD_TOKENS[k]));
     (FIELD_PARSE[k].parse.expect("an entry"))(i, d, u)
@@ -355,7 +355,7 @@ impl PhysicsBehavior {
         &self.update
     }
 
-    /// The `UpdateModule` base, to change (batch R79: a derived class's `xfer`).
+    /// The `UpdateModule` base, to change (batch R80: a derived class's `xfer`).
     pub fn update_module_mut(&mut self) -> &mut UpdateModule {
         &mut self.update
     }

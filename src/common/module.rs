@@ -568,7 +568,7 @@ pub enum ModuleDataKind {
     JetSlowDeathBehavior(Arc<crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehaviorModuleData>),
     /// `PhysicsBehavior` (batch R50).
     PhysicsBehavior(Arc<crate::logic::modules::physics_behavior::PhysicsBehaviorModuleData>),
-    /// `RailroadBehavior` (batch R79).
+    /// `RailroadBehavior` (batch R80).
     RailroadBehavior(Arc<crate::logic::modules::railroad_behavior::RailroadBehaviorModuleData>),
     /// `NeutronMissileSlowDeathBehavior` (batch R49).
     NeutronMissileSlowDeathBehavior(Arc<crate::logic::modules::neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehaviorModuleData>),

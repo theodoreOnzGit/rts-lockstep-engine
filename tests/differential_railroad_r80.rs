@@ -8,12 +8,12 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! `RailroadBehavior` (`logic::modules::railroad_behavior`) against the unchanged C++, `p1w13-sonnet`, batch R79.
+//! `RailroadBehavior` (`logic::modules::railroad_behavior`) against the unchanged C++, `p1w13-sonnet`, batch R80.
 //!
 //! # Method
 //!
 //! The C++ side is `RailroadGuideAIUpdate.cpp` and its header, compiled into `wrap_module.cpp`'s unit on batch R50's real `PhysicsBehavior`
-//! (`differential/l9_railroad_r79.inc`, `ref_l9r79_run`), on the module build's stand-ins: six objects (ids 1-6). Objects 1-4 are train cars
+//! (`differential/l9_railroad_r80.inc`, `ref_l9r80_run`), on the module build's stand-ins: six objects (ids 1-6). Objects 1-4 are train cars
 //! (1 always, with the module of the data the case reads; 2-4 maybe, with that data made a carriage), maybe with a drawable and a contain;
 //! objects 5-6 are what a train hits (their kinds, maybe a demo trap, a `PhysicsBehavior` with or without a bounce sound, an AI whose enter
 //! target may be the train, a body; under construction, effectively dead, contained by object 1); every object a position, an angle, a
@@ -111,8 +111,8 @@ use support::Gen;
 use up_common::*;
 
 static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r79.bin");
-const XFER_FILE: &str = "l9_r79.bin";
+const XFER_FILE_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/l9_r80.bin");
+const XFER_FILE: &str = "l9_r80.bin";
 /// The driver's tables: the radii, the ground heights, the waypoint names' suffixes, the victims' kinds.
 const RADII: [f32; 8] = [1.0, 2.5, 5.0, 8.0, 12.0, 0.5, 3.0, 6.0];
 const GROUNDS: [f32; 8] = [0.0, 1.0, -2.0, 4.0, -5.0, 0.5, 8.0, -10.0];
@@ -583,7 +583,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     for s in [&d.running_sound, &d.clickety_clack_sound, &d.big_metal_impact_default_sound, &d.small_metal_impact_default_sound, &d.meaty_impact_default_sound, &d.whistle_sound] {
         put_str(&mut v, s);
     }
-    if std::env::var("R79_TRACE").is_ok() {
+    if std::env::var("R80_TRACE").is_ok() {
         eprintln!("rust case cfg {cfg:x?} ops {ops:?} data {d:?}");
     }
     let car_data = ModuleDataKind::RailroadBehavior(Arc::new(RailroadBehaviorModuleData { is_locomotive: false, ..(**d).clone() }));
@@ -598,9 +598,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     {
         let info = factory.friend_find_template_mut(b"CAR_A").unwrap().data.friend_behavior_module_info_mut();
         info.add_module_info(b"RailroadBehavior", b"ModuleTag_Rail", ModuleInfoData::Logic(car_data.clone()), RailroadBehavior::get_interface_mask(), false, false);
-        info.add_module_info(b"R79Body", b"ModuleTag_Body", plain(), MODULEINTERFACE_BODY, false, false);
+        info.add_module_info(b"R80Body", b"ModuleTag_Body", plain(), MODULEINTERFACE_BODY, false, false);
     }
-    factory.friend_find_template_mut(b"CAR_B").unwrap().data.friend_behavior_module_info_mut().add_module_info(b"R79Body", b"ModuleTag_Body", plain(), MODULEINTERFACE_BODY, false, false);
+    factory.friend_find_template_mut(b"CAR_B").unwrap().data.friend_behavior_module_info_mut().add_module_info(b"R80Body", b"ModuleTag_Body", plain(), MODULEINTERFACE_BODY, false, false);
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, thing_factory: factory, ..Default::default() });
     w.set_frame(cfg[0]);
     w.random.init_game_logic_random(cfg[1]);
@@ -657,9 +657,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
                 let dk = if k == 0 { &data } else { &car_data };
                 modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"RailroadBehavior", b"ModuleTag_Rail", dk).unwrap().unwrap());
             }
-            modules.push(probe(b"R79Body", ProbeAnswers { no_death: true, ..Default::default() }, MODULEINTERFACE_BODY));
+            modules.push(probe(b"R80Body", ProbeAnswers { no_death: true, ..Default::default() }, MODULEINTERFACE_BODY));
             if fl >> 2 & 1 != 0 {
-                modules.push(probe(b"R79Contain", ProbeAnswers::default(), MODULEINTERFACE_CONTAIN));
+                modules.push(probe(b"R80Contain", ProbeAnswers::default(), MODULEINTERFACE_CONTAIN));
             }
         } else {
             for (b, kk) in KINDS.iter().enumerate() {
@@ -671,10 +671,10 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
                 modules.push(rts_lockstep_engine::logic::modules::new_module(w.next_object_id(), b"PhysicsBehavior", b"ModuleTag_Physics", &phys_data).unwrap().unwrap());
             }
             if fl >> 22 & 1 != 0 {
-                modules.push(probe(b"R79Body", ProbeAnswers { no_death: true, ..Default::default() }, MODULEINTERFACE_BODY));
+                modules.push(probe(b"R80Body", ProbeAnswers { no_death: true, ..Default::default() }, MODULEINTERFACE_BODY));
             }
             if fl >> 13 & 1 != 0 {
-                let mut ai = probe(b"R79Ai", ProbeAnswers::default(), 0);
+                let mut ai = probe(b"R80Ai", ProbeAnswers::default(), 0);
                 ai.is_ai = true;
                 ai_at = Some(modules.len());
                 modules.push(ai);
@@ -687,7 +687,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
         let made = w.new_object(NewObject { template, status: Default::default(), team: None, modules }).unwrap();
         assert_eq!(made, id);
         if ai_at.is_some() {
-            ais[k - 4] = w.find_module(id, b"R79Ai");
+            ais[k - 4] = w.find_module(id, b"R80Ai");
         }
         let team = if k < 4 { fl >> 3 & 3 } else { fl >> 16 & 3 };
         let r = if k < 4 { RADII[(fl >> 5 & 7) as usize] } else { RADII[(fl >> 19 & 7) as usize] };
@@ -715,7 +715,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
         if o[0] == 2 {
             w.set_frame(o[1]);
         }
-        if std::env::var("R79_TRACE").is_ok() {
+        if std::env::var("R80_TRACE").is_ok() {
             eprintln!("rust op {o:?}");
         }
         let errors_before = w.cuts.module_errors.len();
@@ -793,7 +793,7 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
         };
         let mut t = tally.borrow_mut();
         let trace = w.cuts.trace.take().unwrap();
-        if std::env::var("R79_TRACE").is_ok() {
+        if std::env::var("R80_TRACE").is_ok() {
             for l in &trace {
                 eprintln!("  trace {l}");
             }
@@ -963,15 +963,15 @@ fn railroad_behavior_matches_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tally = RefCell::new(Tally::default());
     let h = Harness {
-        label: "R79 RailroadBehavior",
+        label: "R80 RailroadBehavior",
         seed: 0x0079_7a11,
-        cases_var: "L9R79_CASES",
+        cases_var: "L9R80_CASES",
         ini_stem: "Rr",
         gen_data: &gen_data,
         rust_read: &rust_read,
         gen_case: &gen_case,
         rust_run: &|ctx, data, cfg, ops| rust_run(ctx, data, cfg, ops, &tally),
-        cpp_run: &|name, xfer, cfg, ops| call_driver(cpp::ref_l9r79_run, name, xfer, cfg, ops),
+        cpp_run: &|name, xfer, cfg, ops| call_driver(cpp::ref_l9r80_run, name, xfer, cfg, ops),
         decode: &decode,
         probe: &[],
         xfer_path: XFER_FILE_PATH,
@@ -979,7 +979,7 @@ fn railroad_behavior_matches_upstream() {
     let c = h.run();
     let t = tally.borrow();
     println!(
-        "R79: {} cases, {} data blocks threw, {} excluded, {} ops; in the compared cases {} updates, {} xfers, {} collisions, {} effect lines, {} cars \
+        "R80: {} cases, {} data blocks threw, {} excluded, {} ops; in the compared cases {} updates, {} xfers, {} collisions, {} effect lines, {} cars \
          made, {} tracks ({} looping, {} special points), {} whistles, {} clickety-clacks, {} impact sounds, {} damages and kills, {} walls, {} \
          passenger exits, {} destroys",
         c.cases, c.read_failed, c.excluded, c.ops_run, t.updates, t.xfers, t.collides, t.effects, t.made, t.tracks, t.looping, t.stations, t.whistles,

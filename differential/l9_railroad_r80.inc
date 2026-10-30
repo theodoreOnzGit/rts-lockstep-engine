@@ -1,7 +1,7 @@
-/* Differential-test driver for RailroadBehavior (p1w13-sonnet, batch R79; upstream commit 0a05454d):
-**   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/RailroadGuideAIUpdate.h                (mod_gen/RailroadGuideAIUpdate_r79.h: its include
+/* Differential-test driver for RailroadBehavior (p1w13-sonnet, batch R80; upstream commit 0a05454d):
+**   GeneralsMD/Code/GameEngine/Include/GameLogic/Module/RailroadGuideAIUpdate.h                (mod_gen/RailroadGuideAIUpdate_r80.h: its include
 **     of PhysicsUpdate.h dropped, batch R50's being in already; build.rs)
-**   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate/RailroadGuideAIUpdate.cpp (mod_gen/RailroadGuideAIUpdate_r79.cpp: its
+**   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Update/AIUpdate/RailroadGuideAIUpdate.cpp (mod_gen/RailroadGuideAIUpdate_r80.cpp: its
 **     include of the header edited; build.rs)
 **   GeneralsMD/Code/GameEngine/Source/GameClient/Statistics.cpp                                 (MuLaw, Normalize, NormalizeToRange, verbatim below)
 ** in wrap_module.cpp's unit, at its end. RailroadBehavior is a PhysicsBehavior: the class is compiled on batch R50's real PhysicsBehavior
@@ -53,21 +53,21 @@ Real NormalizeToRange(Real valueToNormalize, Real minRange, Real maxRange, Real 
 /* The file keeps its name keys in function-local statics, made the first time each function runs; the test's name key generator starts
 ** over in most cases, so a key made in one case names nothing (or another name) in the next. While the file is included NAMEKEY gives the
 ** two names the stand-ins answer to keys of their own, the same in every case. */
-const NameKeyType kR79KeyRailroad = (NameKeyType)0x7F790001;
-const NameKeyType kR79KeyDemoTrap = (NameKeyType)0x7F790002;
-inline NameKeyType r79NameKey(const char *name)
+const NameKeyType kR80KeyRailroad = (NameKeyType)0x7F790001;
+const NameKeyType kR80KeyDemoTrap = (NameKeyType)0x7F790002;
+inline NameKeyType r80NameKey(const char *name)
 {
-	if (strcmp(name, "RailroadBehavior") == 0) return kR79KeyRailroad;
-	if (strcmp(name, "DemoTrapUpdate") == 0) return kR79KeyDemoTrap;
+	if (strcmp(name, "RailroadBehavior") == 0) return kR80KeyRailroad;
+	if (strcmp(name, "DemoTrapUpdate") == 0) return kR80KeyDemoTrap;
 	return TheNameKeyGenerator->nameToKey(name);
 }
-#define NAMEKEY r79NameKey
+#define NAMEKEY r80NameKey
 #define PhysicsBehavior R50PhysicsBehavior
 #define PhysicsBehaviorModuleData R50PhysicsBehaviorModuleData
 #define getPhysicsBehaviorModuleData getR50PhysicsBehaviorModuleData
 #define getPhysics r50GetPhysics
 #define destroyObject r50DestroyObject
-#include "RailroadGuideAIUpdate_r79.cpp"
+#include "RailroadGuideAIUpdate_r80.cpp"
 #undef destroyObject
 #undef getPhysics
 #undef getPhysicsBehaviorModuleData
@@ -77,20 +77,20 @@ inline NameKeyType r79NameKey(const char *name)
 
 const Coord3D *Drawable::getPosition() const { return m_ownerObject->getPosition(); }
 const AudioEventRTS *AudioManager::getValidSilentAudioEvent() const { static AudioEventRTS silent; return &silent; }
-Waypoint *g_r79First = 0;
-Waypoint *TerrainLogic::getFirstWaypoint(void) { return g_r79First; }
+Waypoint *g_r80First = 0;
+Waypoint *TerrainLogic::getFirstWaypoint(void) { return g_r80First; }
 
 /* a contain whose orderAllPassengersToExit is a line */
-class R79Contain : public UpgContain
+class R80Contain : public UpgContain
 {
 public:
-	Object *m_r79Owner = 0;
-	virtual void orderAllPassengersToExit(CommandSourceType s, Bool instantly) { ulog("exitall %d %d %d", (int)m_r79Owner->m_oid, (int)s, (int)instantly); }
+	Object *m_r80Owner = 0;
+	virtual void orderAllPassengersToExit(CommandSourceType s, Bool instantly) { ulog("exitall %d %d %d", (int)m_r80Owner->m_oid, (int)s, (int)instantly); }
 };
 
 namespace {
 
-ModuleData *l9r79Read(const char *filename)
+ModuleData *l9r80Read(const char *filename)
 {
 	INI ini;
 	ini.prepFile(AsciiString(filename), INI_LOAD_OVERWRITE);
@@ -113,93 +113,93 @@ ModuleData *l9r79Read(const char *filename)
 	return data;
 }
 
-std::vector<unsigned char> g_r79Saved;
-Object *g_r79Objs[6];
-std::vector<Object *> g_r79Made;
-std::vector<MBody *> g_r79MadeBodies;
-std::vector<Drawable *> g_r79MadeDraws;
-std::vector<BehaviorModule **> g_r79MadeLists;
-std::map<const Object *, RailroadBehavior *> g_r79Mods;
-const ModuleData *g_r79CarData = 0;
-bool g_r79Trap[2] = { false, false };
-Waypoint g_r79Ways[8];
-int g_r79NumWays = 0;
-Team g_r79Teams[3];
-Player g_r79Players[3];
-int g_r79Rel[3][3];
-std::vector<Object *> g_r79Candidates;
-ThingTemplate g_r79Templates[2];
-const Real kR79Radii[8] = { 1.0f, 2.5f, 5.0f, 8.0f, 12.0f, 0.5f, 3.0f, 6.0f };
-const Real kR79Grounds[8] = { 0.0f, 1.0f, -2.0f, 4.0f, -5.0f, 0.5f, 8.0f, -10.0f };
-const char *const kR79Suffix[6] = { "", "Tunnel", "Station", "Disembark", "PingPong", "StationX" };
-const KindOfType kR79Kinds[9] = { KINDOF_INFANTRY, KINDOF_VEHICLE, KINDOF_HUGE_VEHICLE, KINDOF_STRUCTURE, KINDOF_FS_POWER, KINDOF_FS_FACTORY,
+std::vector<unsigned char> g_r80Saved;
+Object *g_r80Objs[6];
+std::vector<Object *> g_r80Made;
+std::vector<MBody *> g_r80MadeBodies;
+std::vector<Drawable *> g_r80MadeDraws;
+std::vector<BehaviorModule **> g_r80MadeLists;
+std::map<const Object *, RailroadBehavior *> g_r80Mods;
+const ModuleData *g_r80CarData = 0;
+bool g_r80Trap[2] = { false, false };
+Waypoint g_r80Ways[8];
+int g_r80NumWays = 0;
+Team g_r80Teams[3];
+Player g_r80Players[3];
+int g_r80Rel[3][3];
+std::vector<Object *> g_r80Candidates;
+ThingTemplate g_r80Templates[2];
+const Real kR80Radii[8] = { 1.0f, 2.5f, 5.0f, 8.0f, 12.0f, 0.5f, 3.0f, 6.0f };
+const Real kR80Grounds[8] = { 0.0f, 1.0f, -2.0f, 4.0f, -5.0f, 0.5f, 8.0f, -10.0f };
+const char *const kR80Suffix[6] = { "", "Tunnel", "Station", "Disembark", "PingPong", "StationX" };
+const KindOfType kR80Kinds[9] = { KINDOF_INFANTRY, KINDOF_VEHICLE, KINDOF_HUGE_VEHICLE, KINDOF_STRUCTURE, KINDOF_FS_POWER, KINDOF_FS_FACTORY,
 	KINDOF_FS_BASE_DEFENSE, KINDOF_FS_TECHNOLOGY, KINDOF_REBUILD_HOLE };
 
-Object *r79Find(ObjectID id)
+Object *r80Find(ObjectID id)
 {
-	if ((int)id >= 1 && (int)id <= 6) return g_r79Objs[(int)id - 1];
+	if ((int)id >= 1 && (int)id <= 6) return g_r80Objs[(int)id - 1];
 	size_t k = (size_t)((int)id - 7);
-	if ((int)id >= 7 && k < g_r79Made.size()) return g_r79Made[k];
+	if ((int)id >= 7 && k < g_r80Made.size()) return g_r80Made[k];
 	return 0;
 }
-RailroadBehavior *r79Module(const Object *o)
+RailroadBehavior *r80Module(const Object *o)
 {
-	std::map<const Object *, RailroadBehavior *>::const_iterator it = g_r79Mods.find(o);
-	return it == g_r79Mods.end() ? 0 : it->second;
+	std::map<const Object *, RailroadBehavior *>::const_iterator it = g_r80Mods.find(o);
+	return it == g_r80Mods.end() ? 0 : it->second;
 }
-UpdateModule *r79FindUpdate(const Object *obj, NameKeyType key)
+UpdateModule *r80FindUpdate(const Object *obj, NameKeyType key)
 {
 	static char trap[16];
-	if (key == kR79KeyRailroad) return r79Module(obj);
-	if (key == kR79KeyDemoTrap) {
-		for (int k = 0; k < 2; ++k) if (obj == g_r79Objs[4 + k] && g_r79Trap[k]) return (UpdateModule *)(void *)trap;
+	if (key == kR80KeyRailroad) return r80Module(obj);
+	if (key == kR80KeyDemoTrap) {
+		for (int k = 0; k < 2; ++k) if (obj == g_r80Objs[4 + k] && g_r80Trap[k]) return (UpdateModule *)(void *)trap;
 	}
 	return 0;
 }
-Relationship r79TeamRel(const Team *from, const Team *to)
+Relationship r80TeamRel(const Team *from, const Team *to)
 {
 	if (!from || !to) return NEUTRAL;
-	return (Relationship)g_r79Rel[from->m_dummy - 1][to->m_dummy - 1];
+	return (Relationship)g_r80Rel[from->m_dummy - 1][to->m_dummy - 1];
 }
-Waypoint *r79WaypointById(UnsignedInt id)
+Waypoint *r80WaypointById(UnsignedInt id)
 {
-	for (int k = 0; k < g_r79NumWays; ++k) if ((UnsignedInt)g_r79Ways[k].m_id == id) return &g_r79Ways[k];
+	for (int k = 0; k < g_r80NumWays; ++k) if ((UnsignedInt)g_r80Ways[k].m_id == id) return &g_r80Ways[k];
 	return NULL;
 }
-Object *r79Closest(PartitionFilter **filters)
+Object *r80Closest(PartitionFilter **filters)
 {
-	for (size_t i = 0; i < g_r79Candidates.size(); ++i) {
-		Object *c = g_r79Candidates[i];
+	for (size_t i = 0; i < g_r80Candidates.size(); ++i) {
+		Object *c = g_r80Candidates[i];
 		bool ok = true;
 		for (PartitionFilter **f = filters; f && *f; ++f) if (!(*f)->allow(c)) { ok = false; break; }
 		if (ok) return c;
 	}
 	return 0;
 }
-const ThingTemplate *r79FindTemplate(const AsciiString &name)
+const ThingTemplate *r80FindTemplate(const AsciiString &name)
 {
-	for (int k = 0; k < 2; ++k) if (g_r79Templates[k].m_name.compare(name) == 0) return &g_r79Templates[k];
+	for (int k = 0; k < 2; ++k) if (g_r80Templates[k].m_name.compare(name) == 0) return &g_r80Templates[k];
 	return 0;
 }
-UpdateModule *g_r79Updating = 0;
+UpdateModule *g_r80Updating = 0;
 /* GameLogic::friend_awakenUpdateModule as batch R50's driver applies it */
-void r79Awaken(Object *, UpdateModule *u, UnsignedInt whenToWakeUp)
+void r80Awaken(Object *, UpdateModule *u, UnsignedInt whenToWakeUp)
 {
 	UnsignedInt now = TheGameLogic->getFrame();
-	if (u == g_r79Updating) return;
+	if (u == g_r80Updating) return;
 	if (whenToWakeUp == u->friend_getNextCallFrame()) return;
 	if ((now > 0) && (u->friend_getNextCallFrame() == now) && (whenToWakeUp == now + 1)) return;
 	u->friend_setNextCallFrame(whenToWakeUp);
 }
 /* the Rust world schedules an update module when it makes the object (the frame, or 1 at frame 0) for a constructor that sets no wake frame */
-void r79Schedule(UpdateModule *u)
+void r80Schedule(UpdateModule *u)
 {
 	if (u->friend_getNextCallFrame() == 0) u->friend_setNextCallFrame(TheGameLogic->getFrame() ? TheGameLogic->getFrame() : 1);
 }
-Object *r79NewObject(const ThingTemplate *tmplate, Team *team)
+Object *r80NewObject(const ThingTemplate *tmplate, Team *team)
 {
 	Object *o = newObject();
-	o->m_oid = (ObjectID)(7 + g_r79Made.size());
+	o->m_oid = (ObjectID)(7 + g_r80Made.size());
 	o->m_team = team;
 	o->m_player = team ? team->m_controller : 0;
 	o->poseMatrix();
@@ -209,24 +209,24 @@ Object *r79NewObject(const ThingTemplate *tmplate, Team *team)
 	Drawable *dr = new Drawable;   /* (ThingFactory::newObject makes the object's drawable) */
 	dr->m_ownerObject = o;
 	o->m_drawable = dr;
-	g_r79MadeDraws.push_back(dr);
+	g_r80MadeDraws.push_back(dr);
 	BehaviorModule **list = new BehaviorModule *[2];
 	list[0] = list[1] = 0;
-	if (tmplate == &g_r79Templates[0]) {
-		RailroadBehavior *rb = newInstance(RailroadBehavior)(o, g_r79CarData);
-		r79Schedule(rb);
+	if (tmplate == &g_r80Templates[0]) {
+		RailroadBehavior *rb = newInstance(RailroadBehavior)(o, g_r80CarData);
+		r80Schedule(rb);
 		list[0] = rb;
-		g_r79Mods[o] = rb;
+		g_r80Mods[o] = rb;
 	}
 	o->m_behaviors = list;
-	g_r79Made.push_back(o);
-	g_r79MadeBodies.push_back(b);
-	g_r79MadeLists.push_back(list);
+	g_r80Made.push_back(o);
+	g_r80MadeBodies.push_back(b);
+	g_r80MadeLists.push_back(list);
 	return o;
 }
-Real r79F(unsigned u) { Real r; memcpy(&r, &u, 4); return r; }
+Real r80F(unsigned u) { Real r; memcpy(&r, &u, 4); return r; }
 /* FNV-1a over words */
-unsigned r79Hash(const std::vector<unsigned> &w)
+unsigned r80Hash(const std::vector<unsigned> &w)
 {
 	unsigned h = 2166136261u;
 	for (size_t i = 0; i < w.size(); ++i) for (int b = 0; b < 4; ++b) { h ^= (w[i] >> (8 * b)) & 255u; h *= 16777619u; }
@@ -239,13 +239,13 @@ extern "C" {
 
 /* Read `filename` (block `D`) as the data of a RailroadBehavior (and again, made a carriage, as the data of objects 2-4 and CAR_A's), make the
 ** scene and the module on object 1. `cfg` (32 words; * settable by op 1): 0 the frame, 1 the random seed, 2 the number of waypoints (1-8),
-** 3-10 the waypoints (bits 0-7 x / 8 and 8-15 y / 8, signed bytes; 16-19 z * 2; 20-22 the name's suffix, of kR79Suffix; 23-26 the waypoint it
+** 3-10 the waypoints (bits 0-7 x / 8 and 8-15 y / 8, signed bytes; 16-19 z * 2; 20-22 the name's suffix, of kR80Suffix; 23-26 the waypoint it
 ** links to, 1-8, or 0 none), 11-16* objects 1-6's x, 17-22* their y (float bits; z 0), 23* their angles (nibbles: 0.4 k - 3.0), 24 objects 1-4
-** (a byte each: 0 a RailroadBehavior (object 1's always), 1 a drawable, 2 a contain, 3-4 the team, 0 none, 5-7 the radius, of kR79Radii), 25-26
-** objects 5-6 (bits 0-8 the kinds of kR79Kinds, 9 a DemoTrapUpdate, 10* under construction, 11* effectively dead, 12 a PhysicsBehavior, 13 an
+** (a byte each: 0 a RailroadBehavior (object 1's always), 1 a drawable, 2 a contain, 3-4 the team, 0 none, 5-7 the radius, of kR80Radii), 25-26
+** objects 5-6 (bits 0-8 the kinds of kR80Kinds, 9 a DemoTrapUpdate, 10* under construction, 11* effectively dead, 12 a PhysicsBehavior, 13 an
 ** AI, 14* its enter target object 1, 15* contained by object 1, 16-17 the team, 18 a bounce sound, 19-21 the radius, 22 a body), 27* the
 ** candidates (nibbles of object numbers, 0 ends), 28 the teams' relationships (2 bits each, row-major), 29* bit 0 the audio is playing,
-** bits 1-24 the eight ground cells' heights (of kR79Grounds). The data dump goes first. Then `n` ops of 5 words [op, a, b, c, d] ("object a's
+** bits 1-24 the eight ground cells' heights (of kR80Grounds). The data dump goes first. Then `n` ops of 5 words [op, a, b, c, d] ("object a's
 ** module" its RailroadBehavior; none, nothing): 0 its update()  1 cfg[a] = b  2 the frame = a  3 xfer save (object 1's)  4 xfer load of the
 ** last save, then loadPostProcess  5 xfer CRC  6 its onCollide(object b or NULL, d bit 0: NULL else b's position, d bit 1: NULL else (0, 0, 1))
 ** 7 its isRailroad()  8 its setHeld(b)  9 its destroyTheWholeTrainNow()  10 its disembark()  11 its makeAWallOutOfThisTrain(b)
@@ -253,20 +253,20 @@ extern "C" {
 ** out), the xfer status, bytes and CRC; then the number of objects and, per object: its transform and angle, its producer, its RailroadBehavior
 ** (0, or 1 then its 57 state words and its track: whether it has one, then if so whether it loops, its length, its points and their hash), its
 ** PhysicsBehavior (objects 5-6: 0, or 1 then its velocity and the three rates). */
-static int l9r79RunInner(const char *filename, const char *xfer_path, const unsigned *cfg_in, int n, const unsigned *ops, unsigned char *buf, int cap,
+static int l9r80RunInner(const char *filename, const char *xfer_path, const unsigned *cfg_in, int n, const unsigned *ops, unsigned char *buf, int cap,
 	int *len, char *msg, int msgCap, unsigned *code)
 {
 	g_dump.clear();
-	g_r79Saved.clear();
+	g_r80Saved.clear();
 	*len = 0;
 	int status = 0;
 	ModuleData *d = 0;
 	ModuleData *cd = 0;
-	try { d = l9r79Read(filename); cd = l9r79Read(filename); }
+	try { d = l9r80Read(filename); cd = l9r80Read(filename); }
 	CATCH_ALL(status, code, msg, msgCap)
 	if (status) { delete d; return status; }
 	((RailroadBehaviorModuleData *)cd)->m_isLocomotive = FALSE;
-	g_r79CarData = cd;
+	g_r80CarData = cd;
 	unsigned cfg[32];
 	memcpy(cfg, cfg_in, sizeof(cfg));
 	{
@@ -299,142 +299,142 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 	g_modDestroyHook = r50Destroy;
 	g_xformHook = r50Xform;
 	g_objXformSyncPos = true;
-	g_modFindHook = r79Find;
-	g_findUpdateHook = r79FindUpdate;
-	g_teamRelHook = r79TeamRel;
-	g_findTemplateHook = r79FindTemplate;
-	g_newObjectHook = r79NewObject;
-	g_waypointByIdHook = r79WaypointById;
-	g_closestAtHook = r79Closest;
-	gl.m_awakenHook = r79Awaken;
-	g_r79Made.clear();
-	g_r79MadeBodies.clear();
-	g_r79MadeLists.clear();
-	g_r79MadeDraws.clear();
-	g_r79Mods.clear();
-	g_r79Templates[0].m_name = AsciiString("CAR_A");
-	g_r79Templates[1].m_name = AsciiString("CAR_B");
+	g_modFindHook = r80Find;
+	g_findUpdateHook = r80FindUpdate;
+	g_teamRelHook = r80TeamRel;
+	g_findTemplateHook = r80FindTemplate;
+	g_newObjectHook = r80NewObject;
+	g_waypointByIdHook = r80WaypointById;
+	g_closestAtHook = r80Closest;
+	gl.m_awakenHook = r80Awaken;
+	g_r80Made.clear();
+	g_r80MadeBodies.clear();
+	g_r80MadeLists.clear();
+	g_r80MadeDraws.clear();
+	g_r80Mods.clear();
+	g_r80Templates[0].m_name = AsciiString("CAR_A");
+	g_r80Templates[1].m_name = AsciiString("CAR_B");
 	for (int t = 0; t < 3; ++t) {
-		g_r79Players[t].m_idx = t;
-		g_r79Teams[t].m_dummy = t + 1;
-		g_r79Teams[t].m_controller = &g_r79Players[t];
+		g_r80Players[t].m_idx = t;
+		g_r80Teams[t].m_dummy = t + 1;
+		g_r80Teams[t].m_controller = &g_r80Players[t];
 	}
-	for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) g_r79Rel[a][b] = (int)(cfg[28] >> (2 * (3 * a + b)) & 3);
+	for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) g_r80Rel[a][b] = (int)(cfg[28] >> (2 * (3 * a + b)) & 3);
 	/* the waypoints, in list order */
-	g_r79NumWays = (int)(cfg[2] & 255);
-	if (g_r79NumWays > 8) g_r79NumWays = 8;
+	g_r80NumWays = (int)(cfg[2] & 255);
+	if (g_r80NumWays > 8) g_r80NumWays = 8;
 	for (int k = 0; k < 8; ++k) {
-		Waypoint &w = g_r79Ways[k];
+		Waypoint &w = g_r80Ways[k];
 		unsigned c = cfg[3 + k];
 		w.m_id = 21 + k;
 		w.m_location.x = (Real)(signed char)(c & 255) * 8.0f;
 		w.m_location.y = (Real)(signed char)(c >> 8 & 255) * 8.0f;
 		w.m_location.z = (Real)(c >> 16 & 15) * 0.5f;
 		char name[32];
-		sprintf(name, "WP%d%s", k + 1, kR79Suffix[(c >> 20 & 7) % 6]);
+		sprintf(name, "WP%d%s", k + 1, kR80Suffix[(c >> 20 & 7) % 6]);
 		w.m_name = AsciiString(name);
 		for (int l = 0; l <= Waypoint::MAX_LINKS; ++l) w.m_links[l] = 0;
 		w.m_numLinks = 0;
 		unsigned link = c >> 23 & 15;
-		if (k < g_r79NumWays && link >= 1 && (int)link <= g_r79NumWays && (int)link != k + 1) {   /* (TerrainLogic::addWaypointLink links no waypoint to itself) */ w.m_links[0] = &g_r79Ways[link - 1]; w.m_numLinks = 1; }
-		w.m_pNext = (k + 1 < g_r79NumWays) ? &g_r79Ways[k + 1] : 0;
+		if (k < g_r80NumWays && link >= 1 && (int)link <= g_r80NumWays && (int)link != k + 1) {   /* (TerrainLogic::addWaypointLink links no waypoint to itself) */ w.m_links[0] = &g_r80Ways[link - 1]; w.m_numLinks = 1; }
+		w.m_pNext = (k + 1 < g_r80NumWays) ? &g_r80Ways[k + 1] : 0;
 	}
-	g_r79First = g_r79NumWays > 0 ? &g_r79Ways[0] : 0;
+	g_r80First = g_r80NumWays > 0 ? &g_r80Ways[0] : 0;
 	/* the objects */
 	MBody bodies[6];
 	Drawable draws[4];
-	R79Contain contains[4];
+	R80Contain contains[4];
 	AIUpdateInterface ais[2];
 	BehaviorModule *lists[6][2] = { { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 }, { 0, 0 } };
 	R50PhysicsBehaviorModuleData physData;
 	R50PhysicsBehavior *phys[2] = { 0, 0 };
 	AudioEventRTS bounce(AsciiString("SND_B"), INVALID_ID);
 	for (int k = 0; k < 6; ++k) {
-		Object *o = g_r79Objs[k] = newObject();
+		Object *o = g_r80Objs[k] = newObject();
 		o->m_oid = (ObjectID)(k + 1);
 		o->m_behaviors = lists[k];
 		bodies[k].m_owner = o;
 		unsigned f = k < 4 ? (cfg[24] >> (8 * k) & 255) : cfg[21 + k];
 		unsigned team = k < 4 ? (f >> 3 & 3) : (f >> 16 & 3);
-		o->m_team = team ? &g_r79Teams[team - 1] : 0;
-		o->m_player = team ? &g_r79Players[team - 1] : 0;
-		Real r = k < 4 ? kR79Radii[f >> 5 & 7] : kR79Radii[f >> 19 & 7];
+		o->m_team = team ? &g_r80Teams[team - 1] : 0;
+		o->m_player = team ? &g_r80Players[team - 1] : 0;
+		Real r = k < 4 ? kR80Radii[f >> 5 & 7] : kR80Radii[f >> 19 & 7];
 		o->m_geometry = GeometryInfo(GEOMETRY_SPHERE, false, r, r, r);
 		o->m_kindOf.clear();
 		if (k < 4) {
 			o->m_body = &bodies[k];
 			draws[k].m_ownerObject = o;
 			o->m_drawable = (f >> 1 & 1) ? &draws[k] : 0;
-			contains[k].m_r79Owner = o;
+			contains[k].m_r80Owner = o;
 			o->m_contain = (f >> 2 & 1) ? &contains[k] : 0;
 		} else {
-			for (int b = 0; b < 9; ++b) if (f >> b & 1) o->m_kindOf.set(kR79Kinds[b]);
-			g_r79Trap[k - 4] = (f >> 9 & 1) != 0;
+			for (int b = 0; b < 9; ++b) if (f >> b & 1) o->m_kindOf.set(kR80Kinds[b]);
+			g_r80Trap[k - 4] = (f >> 9 & 1) != 0;
 			o->m_body = (f >> 22 & 1) ? &bodies[k] : 0;
 			ais[k - 4].m_owner = o;
 			o->m_ai = (f >> 13 & 1) ? &ais[k - 4] : 0;
 		}
 		o->m_tmpl.m_kindOf = o->m_kindOf;
-		o->m_pos.x = r79F(cfg[11 + k]);
-		o->m_pos.y = r79F(cfg[17 + k]);
+		o->m_pos.x = r80F(cfg[11 + k]);
+		o->m_pos.y = r80F(cfg[17 + k]);
 		o->m_pos.z = 0.0f;
 		o->m_orientation = (Real)(cfg[23] >> (4 * k) & 15) * 0.4f - 3.0f;
 		o->poseMatrix();
 	}
-	Object *me = g_r79Objs[0];
+	Object *me = g_r80Objs[0];
 	/* the words op 1 may set */
 	auto apply = [&](unsigned a) {
 		if (a >= 11 && a <= 23) {
 			for (int k = 0; k < 6; ++k) {
-				Object *o = g_r79Objs[k];
-				o->m_pos.x = r79F(cfg[11 + k]);
-				o->m_pos.y = r79F(cfg[17 + k]);
+				Object *o = g_r80Objs[k];
+				o->m_pos.x = r80F(cfg[11 + k]);
+				o->m_pos.y = r80F(cfg[17 + k]);
 				o->m_pos.z = 0.0f;
 				o->m_orientation = (Real)(cfg[23] >> (4 * k) & 15) * 0.4f - 3.0f;
 				o->poseMatrix();
 			}
 		} else if (a == 25 || a == 26) {
 			int k = (int)a - 21;
-			Object *o = g_r79Objs[k];
+			Object *o = g_r80Objs[k];
 			unsigned f = cfg[a];
 			o->m_status.set(OBJECT_STATUS_UNDER_CONSTRUCTION, (f >> 10 & 1) ? 1 : 0);
 			o->m_effDead = (f >> 11 & 1) != 0;
 			ais[k - 4].m_enterTarget = (f >> 14 & 1) ? me : 0;
 			o->m_containedBy = (f >> 15 & 1) ? me : 0;
 		} else if (a == 27) {
-			g_r79Candidates.clear();
-			for (int k = 0; k < 8; ++k) { unsigned id = cfg[27] >> (4 * k) & 15; if (id == 0) break; if (id <= 6) g_r79Candidates.push_back(g_r79Objs[id - 1]); }
+			g_r80Candidates.clear();
+			for (int k = 0; k < 8; ++k) { unsigned id = cfg[27] >> (4 * k) & 15; if (id == 0) break; if (id <= 6) g_r80Candidates.push_back(g_r80Objs[id - 1]); }
 		} else if (a == 29) {
 			g_r34Playing = (cfg[29] & 1) != 0;
-			for (int c = 0; c < 8; ++c) g_hdGround[c] = kR79Grounds[cfg[29] >> (1 + 3 * c) & 7];
+			for (int c = 0; c < 8; ++c) g_hdGround[c] = kR80Grounds[cfg[29] >> (1 + 3 * c) & 7];
 		}
 	};
 	for (unsigned a = 25; a <= 29; ++a) apply(a);
 	RailroadBehavior *m = 0;
 	try {
 		m = newInstance(RailroadBehavior)(me, d);
-		g_r79Mods[me] = m;
+		g_r80Mods[me] = m;
 		lists[0][0] = m;
 		for (int k = 1; k < 4; ++k) {
 			if (cfg[24] >> (8 * k) & 1) {
-				RailroadBehavior *rb = newInstance(RailroadBehavior)(g_r79Objs[k], cd);
-				g_r79Mods[g_r79Objs[k]] = rb;
+				RailroadBehavior *rb = newInstance(RailroadBehavior)(g_r80Objs[k], cd);
+				g_r80Mods[g_r80Objs[k]] = rb;
 				lists[k][0] = rb;
 			}
 		}
 		for (int k = 0; k < 2; ++k) {
 			if (cfg[25 + k] >> 12 & 1) {
-				phys[k] = newInstance(R50PhysicsBehavior)(g_r79Objs[4 + k], &physData);
+				phys[k] = newInstance(R50PhysicsBehavior)(g_r80Objs[4 + k], &physData);
 				if (cfg[25 + k] >> 18 & 1) phys[k]->setBounceSound(&bounce);
 				lists[4 + k][0] = phys[k];
-				g_r79Objs[4 + k]->m_r50Physics = phys[k];
+				g_r80Objs[4 + k]->m_r50Physics = phys[k];
 			}
 		}
 	}
 	CATCH_ALL(status, code, msg, msgCap)
 	if (status) return 5;   /* (the data is never NULL here: not reached) */
-	for (std::map<const Object *, RailroadBehavior *>::iterator it = g_r79Mods.begin(); it != g_r79Mods.end(); ++it) r79Schedule(it->second);
-	for (int k = 0; k < 2; ++k) if (phys[k]) r79Schedule(phys[k]);
+	for (std::map<const Object *, RailroadBehavior *>::iterator it = g_r80Mods.begin(); it != g_r80Mods.end(); ++it) r80Schedule(it->second);
+	for (int k = 0; k < 2; ++k) if (phys[k]) r80Schedule(phys[k]);
 	auto putLog = [&]() {
 		std::vector<std::string> log;
 		for (size_t j = 0; j < g_events.size(); ++j) {
@@ -495,7 +495,7 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 				w.insert(w.end(), pw, pw + 7);
 			}
 			putU32((unsigned)pl->size());
-			putU32(r79Hash(w));
+			putU32(r80Hash(w));
 		}
 	};
 	for (int i = 0; i < n; ++i) {
@@ -512,15 +512,15 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 		int blen = 0;
 		int xst = -2;
 		unsigned res = 0;
-		Object *objA = r79Find((ObjectID)o[1]);
-		RailroadBehavior *ma = objA ? r79Module(objA) : 0;
-		Object *objB = (o[2] >= 1) ? r79Find((ObjectID)o[2]) : 0;
+		Object *objA = r80Find((ObjectID)o[1]);
+		RailroadBehavior *ma = objA ? r80Module(objA) : 0;
+		Object *objB = (o[2] >= 1) ? r80Find((ObjectID)o[2]) : 0;
 		try {
 			switch (o[0]) {
-			case 0: if (ma) { g_r79Updating = ma; res = (unsigned)ma->update(); } break;
-			case 3: xst = runXfer(m, 0, xfer_path, bytes, 1024, &blen, &crc); g_r79Saved.assign(bytes, bytes + blen); break;
+			case 0: if (ma) { g_r80Updating = ma; res = (unsigned)ma->update(); } break;
+			case 3: xst = runXfer(m, 0, xfer_path, bytes, 1024, &blen, &crc); g_r80Saved.assign(bytes, bytes + blen); break;
 			case 4: {
-				std::vector<unsigned char> b = g_r79Saved;
+				std::vector<unsigned char> b = g_r80Saved;
 				if (b.size() > 1024) b.resize(1024);
 				xst = runXfer(m, 1, xfer_path, b.empty() ? bytes : &b[0], (int)b.size(), &blen, &crc);
 				m->loadPostProcess();
@@ -544,7 +544,7 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 			}
 		}
 		CATCH_ALL(st, &c2, m2, 16)
-		g_r79Updating = 0;
+		g_r80Updating = 0;
 		putI32(st);
 		putU32(res);
 		putLog();
@@ -552,14 +552,14 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 		putU32((unsigned)blen);
 		for (int j = 0; j < blen; ++j) putU32(bytes[j]);
 		putU32(crc);
-		putU32((unsigned)(6 + g_r79Made.size()));
-		for (size_t k = 0; k < 6 + g_r79Made.size(); ++k) {
-			Object *x = k < 6 ? g_r79Objs[k] : g_r79Made[k - 6];
+		putU32((unsigned)(6 + g_r80Made.size()));
+		for (size_t k = 0; k < 6 + g_r80Made.size(); ++k) {
+			Object *x = k < 6 ? g_r80Objs[k] : g_r80Made[k - 6];
 			const Matrix3D &mx = *x->getTransformMatrix();
 			for (int r = 0; r < 3; ++r) for (int c = 0; c < 4; ++c) putU32(realBits(mx[r][c]));
 			putU32(realBits(x->m_orientation));
 			putU32((unsigned)x->getProducerID());
-			RailroadBehavior *rb = r79Module(x);
+			RailroadBehavior *rb = r80Module(x);
 			putU32(rb ? 1 : 0);
 			if (rb) putModule(rb);
 			if (k == 4 || k == 5) {
@@ -586,34 +586,34 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 	g_newObjectHook = 0;
 	g_waypointByIdHook = 0;
 	g_closestAtHook = 0;
-	g_r79First = 0;
-	g_r79Candidates.clear();
+	g_r80First = 0;
+	g_r80Candidates.clear();
 	g_r34Playing = false;
-	for (std::map<const Object *, RailroadBehavior *>::iterator it = g_r79Mods.begin(); it != g_r79Mods.end(); ++it) delete it->second;
-	g_r79Mods.clear();
+	for (std::map<const Object *, RailroadBehavior *>::iterator it = g_r80Mods.begin(); it != g_r80Mods.end(); ++it) delete it->second;
+	g_r80Mods.clear();
 	for (int k = 0; k < 2; ++k) delete phys[k];
 	for (int k = 0; k < 6; ++k) {
-		Object *x = g_r79Objs[k];
+		Object *x = g_r80Objs[k];
 		x->m_body = 0; x->m_team = 0; x->m_player = 0; x->m_behaviors = 0; x->m_drawable = 0; x->m_contain = 0; x->m_ai = 0; x->m_containedBy = 0;
 		x->m_r50Physics = 0;
 		delete x;
-		g_r79Objs[k] = 0;
+		g_r80Objs[k] = 0;
 	}
-	for (size_t k = 0; k < g_r79Made.size(); ++k) {
-		Object *x = g_r79Made[k];
+	for (size_t k = 0; k < g_r80Made.size(); ++k) {
+		Object *x = g_r80Made[k];
 		x->m_body = 0; x->m_team = 0; x->m_player = 0; x->m_behaviors = 0; x->m_drawable = 0;
 		delete x;
-		delete g_r79MadeBodies[k];
-		delete g_r79MadeDraws[k];
-		delete[] g_r79MadeLists[k];
+		delete g_r80MadeBodies[k];
+		delete g_r80MadeDraws[k];
+		delete[] g_r80MadeLists[k];
 	}
-	g_r79Made.clear();
-	g_r79MadeBodies.clear();
-	g_r79MadeLists.clear();
-	g_r79MadeDraws.clear();
+	g_r80Made.clear();
+	g_r80MadeBodies.clear();
+	g_r80MadeLists.clear();
+	g_r80MadeDraws.clear();
 	delete d;
 	delete cd;
-	g_r79CarData = 0;
+	g_r80CarData = 0;
 	TheGameLogic = 0;
 	TheAudio = 0;
 	TheAI = 0;
@@ -622,10 +622,10 @@ static int l9r79RunInner(const char *filename, const char *xfer_path, const unsi
 	return 0;
 }
 
-int ref_l9r79_run(const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap, int *len, char *msg,
+int ref_l9r80_run(const char *filename, const char *xfer_path, const unsigned *cfg, int n, const unsigned *ops, unsigned char *buf, int cap, int *len, char *msg,
 	int msgCap, unsigned *code)
 {
-	return l9TrappedRun(l9r79RunInner, filename, xfer_path, cfg, n, ops, buf, cap, len, msg, msgCap, code);
+	return l9TrappedRun(l9r80RunInner, filename, xfer_path, cfg, n, ops, buf, cap, len, msg, msgCap, code);
 }
 
 }  /* extern "C" */

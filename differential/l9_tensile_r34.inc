@@ -72,7 +72,7 @@ class R34Audio : public AudioManager { public: virtual void stopAudio(AudioAffec
 
 void Pathfinder::createAWallFromMyFootprint( Object *obj ) { ulog("wallcreate %d", (int)obj->m_oid); }
 void Pathfinder::removeWallFromMyFootprint( Object *obj ) { ulog("wallremove %d", (int)obj->m_oid); }
-Object *(*g_closestAtHook)(PartitionFilter **filters) = 0;   /* batch R79: the candidates the test lists, through the caller's filters */
+Object *(*g_closestAtHook)(PartitionFilter **filters) = 0;   /* batch R80: the candidates the test lists, through the caller's filters */
 Object *PartitionManager::getClosestObject( const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters )
 {
 	ulog("closestat %08x %08x %08x %08x %d", realBits(pos->x), realBits(pos->y), realBits(pos->z), realBits(maxDist), (int)dc);

@@ -78,7 +78,7 @@ void PartitionManager::undoShroudReveal( Real centerX, Real centerY, Real radius
 }
 /* the waypoints: four nodes, ids 11-14, at the test's places, linked as the test says */
 Waypoint g_r75Ways[4];
-Waypoint *(*g_waypointByIdHook)(UnsignedInt id) = 0;   /* batch R79: the railroad test's waypoints */
+Waypoint *(*g_waypointByIdHook)(UnsignedInt id) = 0;   /* batch R80: the railroad test's waypoints */
 Waypoint *TerrainLogic::getWaypointByID( UnsignedInt id )
 {
 	if (g_waypointByIdHook) return g_waypointByIdHook(id);

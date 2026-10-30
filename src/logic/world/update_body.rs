@@ -401,7 +401,7 @@ pub enum UpdateBody {
     JetSlowDeathBehavior(crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehavior),
     /// `PhysicsBehavior` (batch R50).
     PhysicsBehavior(crate::logic::modules::physics_behavior::PhysicsBehavior),
-    /// `RailroadBehavior` (batch R79).
+    /// `RailroadBehavior` (batch R80).
     RailroadBehavior(crate::logic::modules::railroad_behavior::RailroadBehavior),
     /// `NeutronMissileSlowDeathBehavior` (batch R49).
     NeutronMissileSlowDeathBehavior(crate::logic::modules::neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehavior),

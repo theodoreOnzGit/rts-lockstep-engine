@@ -5167,9 +5167,9 @@ mod differential {
                 let hcut = htext.replace(once, "").replace(guard, "#ifndef _PHYSICSUPDATE_R50_H_\n#define _PHYSICSUPDATE_R50_H_\n");
                 std::fs::write(mod_gen.join("PhysicsUpdate_r50.h"), hcut).expect("write PhysicsUpdate_r50.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
-                // batch R79 (differential/l9_railroad_r79.inc): RailroadGuideAIUpdate.cpp and its header, compiled after R50's PhysicsBehavior,
-                // whose names the driver's macros give them: the header as mod_gen/RailroadGuideAIUpdate_r79.h without its include of
-                // PhysicsUpdate.h (R50's is in already), the .cpp as mod_gen/RailroadGuideAIUpdate_r79.cpp with its include of the header
+                // batch R80 (differential/l9_railroad_r80.inc): RailroadGuideAIUpdate.cpp and its header, compiled after R50's PhysicsBehavior,
+                // whose names the driver's macros give them: the header as mod_gen/RailroadGuideAIUpdate_r80.h without its include of
+                // PhysicsUpdate.h (R50's is in already), the .cpp as mod_gen/RailroadGuideAIUpdate_r80.cpp with its include of the header
                 // edited, its include of GameClient/Statistics.h dropped (the header names "Lib/Basetype.h", which a case-sensitive file
                 // system does not find; the driver has the three functions, verbatim from Statistics.cpp), and the constructor's
                 // `m_carriageTemplateNameIterator = 0;` made a value-initialised iterator (MSVC 6's vector iterator was a pointer; the member
@@ -5177,20 +5177,20 @@ mod differential {
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/RailroadGuideAIUpdate.cpp");
                 let mut text = std::fs::read_to_string(&path).expect("read RailroadGuideAIUpdate.cpp");
                 for (from, to) in [
-                    ("#include \"GameLogic/Module/RailroadGuideAIUpdate.h\"", "#include \"RailroadGuideAIUpdate_r79.h\""),
+                    ("#include \"GameLogic/Module/RailroadGuideAIUpdate.h\"", "#include \"RailroadGuideAIUpdate_r80.h\""),
                     ("#include \"GameClient/Statistics.h\"", ""),
                     ("m_carriageTemplateNameIterator = 0;", "m_carriageTemplateNameIterator = TemplateNameIterator();"),
                 ] {
                     assert_eq!(text.matches(from).count(), 1, "RailroadGuideAIUpdate.cpp: `{from}` must occur once");
                     text = text.replace(from, to);
                 }
-                std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r79.cpp"), text).expect("write RailroadGuideAIUpdate_r79.cpp");
+                std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r80.cpp"), text).expect("write RailroadGuideAIUpdate_r80.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/RailroadGuideAIUpdate.h");
                 let htext = std::fs::read_to_string(&hpath).expect("read RailroadGuideAIUpdate.h");
                 let from = "#include \"GameLogic/Module/PhysicsUpdate.h\"\n";
                 assert_eq!(htext.matches(from).count(), 1, "RailroadGuideAIUpdate.h: `{from}` must occur once");
-                std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r79.h"), htext.replace(from, "")).expect("write RailroadGuideAIUpdate_r79.h");
+                std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r80.h"), htext.replace(from, "")).expect("write RailroadGuideAIUpdate_r80.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
                 // and `Object::canCrushOrSquish`, cut out of Object.cpp verbatim (from its first line to the end of the function, asserted once), into
                 // mod_gen/ObjectCrush.inc, as batch O cuts `Object::kill`.

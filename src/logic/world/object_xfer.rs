@@ -656,7 +656,7 @@ impl World {
         r
     }
 
-    /// batch R79: `module->loadPostProcess()` for one module of an object, as the game's post-process after a load runs it (the module tests
+    /// batch R80: `module->loadPostProcess()` for one module of an object, as the game's post-process after a load runs it (the module tests
     /// run it after a module's own load).
     pub fn load_post_process_module_slot(&mut self, id: ObjectId, idx: usize) {
         let mut snap = self.take_slot_snapshot(id, idx);

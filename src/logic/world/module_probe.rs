@@ -519,7 +519,7 @@ impl ProbeModule {
             ModuleCall::RailedTransportDockIsLoadingOrUnloading | ModuleCall::RailedTransportDockUnloadAll | ModuleCall::RailedTransportDockUnloadSingleObject(_) => {
                 ModuleReply::Unhandled
             }
-            // batch R79: the call is a line of the trace, when `probe_trace_exit_all` asks
+            // batch R80: the call is a line of the trace, when `probe_trace_exit_all` asks
             ModuleCall::OrderAllPassengersToExit { command_source, instantly } => {
                 if world.cuts.probe_trace_exit_all {
                     if let Some(t) = &mut world.cuts.trace {
@@ -528,7 +528,7 @@ impl ProbeModule {
                 }
                 ModuleReply::Unhandled
             }
-            // batch R79: a probe is neither a physics module nor a train car
+            // batch R80: a probe is neither a physics module nor a train car
             ModuleCall::PhysicsGetBounceSound
             | ModuleCall::RailroadGetPulled(_)
             | ModuleCall::RailroadHitchByTemplate { .. }
