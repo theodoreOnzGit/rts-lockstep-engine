@@ -81,6 +81,10 @@ pub enum EvaMessage {
     VehicleStolen,
     /// batch R76: `EVA_UpgradeComplete`.
     UpgradeComplete,
+    /// batch R81: `EVA_BuildingBeingStolen`.
+    BuildingBeingStolen,
+    /// batch R81: `EVA_BuildingStolen`.
+    BuildingStolen,
 }
 
 // --- p1w11-sonnet ---
@@ -350,6 +354,8 @@ pub enum ObjectClientEvent {
     // --- p1w11-sonnet ---
     /// `draw->flashAsSelected(&color)` (`ObjectDefectionHelper`'s white flash when the period ends).
     DrawableFlashAsSelectedColor { object_id: ObjectId, r: f32, g: f32, b: f32 },
+    /// batch R81: `draw->setAnimationCompletionTime(frames)`.
+    DrawableSetAnimationCompletionTime { object_id: ObjectId, frames: u32 },
     /// `TheEva->setShouldPlay(EVA_SuperweaponLaunched_<whose>_<weapon>)` (`SpecialPowerModule::aboutToDoSpecialPower`).
     EvaSuperweaponLaunched { weapon: EvaSuperweapon, whose: EvaWhose },
     /// `TheInGameUI->addSuperweapon(playerIndex, powerName, id, powerTemplate)` (`SpecialPowerModule`'s constructor, `onSpecialPowerCreation`

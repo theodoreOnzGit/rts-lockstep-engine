@@ -90,6 +90,10 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	void aiExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
 	void aiHackInternet( CommandSourceType cmdSource );
 	void aiMoveToPosition( const Coord3D *pos, CommandSourceType cmdSource );
+	/* batch R81: SpecialAbilityUpdate (lines: differential/l9_special_ability_r81.inc) */
+	void aiMoveToObject( Object *obj, CommandSourceType cmdSource );
+	void aiFaceObject( Object *obj, CommandSourceType cmdSource );
+	void aiFacePosition( const Coord3D *pos, CommandSourceType cmdSource );
 	void ignoreObstacle( const Object *obj );
 	void setIgnoreCollisionTime( Int frames );
 	void aiFollowPath( const std::vector<Coord3D> *path, Object *ignoreObject, CommandSourceType cmdSource );

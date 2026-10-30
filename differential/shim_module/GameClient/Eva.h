@@ -13,7 +13,8 @@ enum EvaMessage
 	EVA_SuperweaponLaunched_Own_Sneak_Attack, EVA_SuperweaponLaunched_Ally_Sneak_Attack, EVA_SuperweaponLaunched_Enemy_Sneak_Attack,
 	EVA_BuildingSabotaged, EVA_CashStolen,   /* p1w13-sonnet, batch R13: the sabotage crates */
 	EVA_VehicleStolen,   /* batch R13e: the hijacker */
-	EVA_UpgradeComplete   /* batch R76: ProductionUpdate */
+	EVA_UpgradeComplete,   /* batch R76: ProductionUpdate */
+	EVA_BuildingBeingStolen, EVA_BuildingStolen   /* batch R81: SpecialAbilityUpdate */
 };
 class Eva
 {

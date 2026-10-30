@@ -308,6 +308,7 @@ public:
 	UnsignedByte getCrusherLevel() const { return m_crusher; }
 	PhysicsBehavior *getPhysics() const { return m_physics; }
 	SpecialAbilityUpdate *findSpecialAbilityUpdate( SpecialPowerType type ) const { return (m_sauType == type) ? m_sau : 0; }
+	class R81SpecialAbilityUpdate *r81FindSpecialAbilityUpdate( SpecialPowerType type ) const;   /* batch R81: Object.cpp's, for the real class (differential/l9_special_ability_r81.inc) */
 	Relationship getRelationship( const Object *that ) const;   /* Object.cpp, cut by build.rs (mod_gen/ObjectRelationship.inc) */
 	UnsignedByte m_crusher = 0;
 	PhysicsBehavior *m_physics = 0;

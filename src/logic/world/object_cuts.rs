@@ -657,6 +657,13 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
+    /// batch R81: `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_BOUNDINGSPHERE_2D, { PartitionFilterLineOfSight(obj) },
+    /// ITER_SORTED_NEAR_TO_FAR)` (`SpecialAbilityUpdate::isWithinStartAbilityRange`): the objects, nearest first.
+    pub fn partition_iterate_line_of_sight_near_to_far(&mut self, object: ObjectId, range: f32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionIterateLineOfSightNearToFar { object, range });
+        self.cuts.range_scan.clone()
+    }
+
     /// batch R72: `SpectreGunshipUpdate`'s scans (see [`CutCall::PartitionIterateSpectreTargets`]; the partition manager is layer 12's):
     /// the objects of `cuts.range_scan` (those the stealth, attack and fog filters pass) whose centres are within `range` of `position`
     /// in 2D, nearest first (ties in list order). The live-map-enemies filter is the caller's.
@@ -1294,6 +1301,19 @@ pub enum CutCall {
     ScriptNotifyOfTriggeredSpecialPower { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// `player->getAcademyStats()->recordSpecialPowerUsed(template)` (`SpecialPowerModule::initiateIntentToDoSpecialPower`), the template by id.
     PlayerAcademyRecordSpecialPowerUsed { player: PlayerIndex, template: u32 },
+    // --- p1w13-sonnet --- (batch R81: SpecialAbilityUpdate)
+    /// `player->addSkillPoints(points)`.
+    PlayerAddSkillPoints { player: PlayerIndex, points: i32 },
+    /// `ThePartitionManager->iterateObjectsInRange(obj, range, FROM_BOUNDINGSPHERE_2D, { PartitionFilterLineOfSight(obj) }, ITER_SORTED_NEAR_TO_FAR)`;
+    /// `ObjectCuts::range_scan` answers.
+    PartitionIterateLineOfSightNearToFar { object: ObjectId, range: f32 },
+    /// `player->getAcademyStats()->recordBuildingCapture()`.
+    PlayerAcademyRecordBuildingCapture { player: PlayerIndex },
+    /// `obj->getExperienceTracker()->setExperienceSink(sink)` (the field is set too).
+    ObjectSetExperienceSink { object: ObjectId, sink: ObjectId },
+    /// `obj->getExperienceTracker()->addExperiencePoints(points, canScaleForBonus)` under `crate_stub_object_calls`.
+    ExperienceAddPoints { object: ObjectId, points: i32, can_scale_for_bonus: bool },
+    // --- end p1w13-sonnet ---
     /// `TheAnim2DCollection->findTemplate(name)` and `TheInGameUI->addWorldAnimation(template, pos, WORLD_ANIM_FADE_ON_EXPIRE, time, zRise)`
     /// (`CrateCollide::onCollide`).
     InGameUiAddWorldAnimation { template: Vec<u8>, position: crate::common::base_type::Coord3D, display_time_in_seconds: f32, z_rise_per_second: f32 },
@@ -1575,6 +1595,8 @@ pub enum CutCall {
 /// the real stores; the defaults are the headless run's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ObjectGlobals {
+    /// batch R81: `TheGlobalData->m_selectionFlashSaturationFactor` (0.5 by default).
+    pub selection_flash_saturation_factor: f32,
     /// `TheGlobalData->m_gravity` (`GlobalData::m_gravity`, -1 by default).
     pub gravity: f32,
     /// `TheGlobalData->m_forceModelsToFollowTimeOfDay`.
@@ -1629,6 +1651,7 @@ impl Default for ObjectGlobals {
     fn default() -> Self {
         ObjectGlobals {
             gravity: -1.0,
+            selection_flash_saturation_factor: 0.5,
             force_models_to_follow_time_of_day: true,
             time_of_day_is_night: false,
             force_models_to_follow_weather: true,
@@ -1922,6 +1945,12 @@ pub struct ObjectCuts {
     /// batch R60: a probe writes its special power calls (`setReadyFrame`, `markSpecialPowerTriggered`, `doSpecialPowerAtLocation`) to the
     /// trace as `bt` lines (off by default).
     pub probe_power_trace: bool,
+    /// batch R81: a probe writes the calls `SpecialAbilityUpdate` makes of a sticky bomb, a contain and a stealth update (`initStickyBomb`,
+    /// `detonate`, `removeAllContained`, `disguiseAsObject`) to the trace as `bt` lines (off by default).
+    pub probe_ability_trace: bool,
+    /// batch R81: `obj->checkAndDetonateBoobyTrap(victim)` answers from this set (the objects whose trap goes off) and is a record, instead of
+    /// the real search (`None`, the default).
+    pub booby_trap_answers: Option<BTreeSet<ObjectId>>,
     /// batch R34: what `TheAudio->isCurrentlyPlaying(handle)` answers, for every handle.
     pub audio_playing: bool,
     /// The cut points of `ActiveBody`: see `body_cuts`.
@@ -2070,6 +2099,8 @@ impl Default for ObjectCuts {
             untranslated_probe_by_name: BTreeMap::new(),
             untranslated_probe: None,
             probe_power_trace: false,
+            probe_ability_trace: false,
+            booby_trap_answers: None,
             audio_playing: false,
             body: Default::default(),
             contain: Default::default(),
@@ -2432,6 +2463,16 @@ impl World {
         false
     }
     // --- end p1w13-sonnet ---
+
+    /// batch R81: `obj->getExperienceTracker()->addExperiencePoints(points, canScaleForBonus)`: a record under `crate_stub_object_calls`, else
+    /// the tracker's logic.
+    pub fn experience_add_points(&mut self, id: ObjectId, points: i32, can_scale_for_bonus: bool) {
+        if self.cuts.crate_stub_object_calls {
+            self.cut(CutCall::ExperienceAddPoints { object: id, points, can_scale_for_bonus });
+        } else {
+            self.cut_experience_add_points(id, points, can_scale_for_bonus);
+        }
+    }
 
     /// `ExperienceTracker::addExperiencePoints(experienceGain, canScaleForBonus)`.
     pub fn cut_experience_add_points(&mut self, id: ObjectId, experience_gain: i32, can_scale_for_bonus: bool) {

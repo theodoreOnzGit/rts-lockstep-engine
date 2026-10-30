@@ -35,6 +35,7 @@ public:
 	Real m_groundStiffness = 0.5f, m_structureStiffness = 0.5f;   /* batch R50: PhysicsBehavior (GlobalData.cpp's values) */
 	Real m_standardMinefieldDensity = 0.01f, m_standardMinefieldDistance = 40.0f;
 	Int m_baseValuePerSupplyBox = 100;   /* batch R44: the supply docks (set by the test) */   /* batch R41: GenerateMinefieldBehavior (GlobalData.cpp's values) */
+	Real m_selectionFlashSaturationFactor = 0.5f;   /* batch R81: SpecialAbilityUpdate's capture flash (GlobalData.cpp's value) */
 	/* --- end p1w13-sonnet --- */
 };
 extern GlobalData *TheGlobalData;

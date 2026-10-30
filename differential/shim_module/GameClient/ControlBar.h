@@ -67,6 +67,7 @@ enum GUICommandType
 	GUI_COMMAND_NUM_COMMANDS							// keep this last
 };
 enum { MAX_COMMANDS_PER_SET = 18 };  // user interface max is 14 (but internally it's 18 for script only buttons!)
+enum { CONTEXTMODE_COMMAND = 0x00000200 };   /* batch R81: ControlBar.h line 90 (the one CommandOption SpecialAbilityUpdate names) */
 class CommandButton
 {
 public:
@@ -74,6 +75,8 @@ public:
 	GUICommandType getCommandType() const { return m_command; }
 	const SpecialPowerTemplate* getSpecialPowerTemplate() const { return m_specialPower; }
 	WeaponSlotType getWeaponSlot() const { return m_weaponSlot; }
+	UnsignedInt getOptions() const { return m_options; }   /* batch R81: SpecialAbilityUpdate::isPowerCurrentlyInUse (never with a button here) */
+	UnsignedInt m_options = 0;
 	AsciiString m_name;
 	GUICommandType m_command;
 	WeaponSlotType m_weaponSlot;

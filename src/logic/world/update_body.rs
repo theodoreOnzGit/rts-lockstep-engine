@@ -236,7 +236,9 @@ pub enum UpdateBody {
     /// `FireOCLAfterWeaponCooldownUpdate`.
     FireOCLAfterWeaponCooldownUpdate(crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdate),
     /// `MissileLauncherBuildingUpdate` (batch R53).
+    /// `SpecialAbilityUpdate` (batch R81).
     MissileLauncherBuildingUpdate(crate::logic::modules::missile_launcher_building_update::MissileLauncherBuildingUpdate),
+    SpecialAbilityUpdate(crate::logic::modules::special_ability_update::SpecialAbilityUpdate),
     /// `SpectreGunshipDeploymentUpdate` (batch R60).
     SpectreGunshipDeploymentUpdate(crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate),
     /// `SpectreGunshipUpdate` (batch R72).
@@ -543,6 +545,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_update(world, me),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.world_update(world, me),
+            UpdateBody::SpecialAbilityUpdate(m) => m.world_update(world, me),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.world_update(world, me),
             UpdateBody::SpectreGunshipUpdate(m) => m.world_update(world, me),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.world_update(world, me),
@@ -750,6 +753,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.module_call(world, me, call),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.module_call(world, me, call),
+            UpdateBody::SpecialAbilityUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.module_call(world, me, call),
             UpdateBody::SpectreGunshipUpdate(m) => m.module_call(world, me, call),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.module_call(world, me, call),
@@ -935,6 +939,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::SpecialAbilityUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::SpectreGunshipUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::ParticleUplinkCannonUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
@@ -1094,6 +1099,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::SpecialAbilityUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::SpectreGunshipUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::ParticleUplinkCannonUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
@@ -1253,6 +1259,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::MissileLauncherBuildingUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::SpecialAbilityUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::SpectreGunshipUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::ParticleUplinkCannonUpdate(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
@@ -1452,6 +1459,7 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.crc(xfer),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.crc(xfer),
+            UpdateBody::SpecialAbilityUpdate(m) => m.crc(xfer),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.crc(xfer),
             UpdateBody::SpectreGunshipUpdate(m) => m.crc(xfer),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.crc(xfer),
@@ -1655,6 +1663,7 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.xfer(xfer),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.xfer(xfer),
+            UpdateBody::SpecialAbilityUpdate(m) => m.xfer(xfer),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.xfer(xfer),
             UpdateBody::SpectreGunshipUpdate(m) => m.xfer(xfer),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.xfer(xfer),
@@ -1858,6 +1867,7 @@ impl Snapshot for UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.load_post_process(),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.load_post_process(),
+            UpdateBody::SpecialAbilityUpdate(m) => m.load_post_process(),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.load_post_process(),
             UpdateBody::SpectreGunshipUpdate(m) => m.load_post_process(),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.load_post_process(),
@@ -2133,6 +2143,7 @@ impl UpdateBody {
 // --- p1w12-sonnet ---
             UpdateBody::FireOCLAfterWeaponCooldownUpdate(m) => m.world_construct(world, me),
             UpdateBody::MissileLauncherBuildingUpdate(m) => m.world_construct(world, me),
+            UpdateBody::SpecialAbilityUpdate(m) => m.world_construct(world, me),
             UpdateBody::SpectreGunshipDeploymentUpdate(m) => m.world_construct(world, me),
             UpdateBody::SpectreGunshipUpdate(m) => m.world_construct(world, me),
             UpdateBody::ParticleUplinkCannonUpdate(m) => m.world_construct(world, me),

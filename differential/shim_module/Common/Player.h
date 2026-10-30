@@ -92,6 +92,7 @@ public:
 	/* update batch M: Player::iterateObjects over the objects the test lists, in order */
 	void iterateObjects( void (*func)( Object *, void * ), void *userData );
 	void changeBattlePlan( Int plan, Int delta, class BattlePlanBonuses *bonus );   /* batch R71: a line (differential/l9_battle_plan_r71.inc) */
+	Bool addSkillPoints( Int delta );   /* batch R81: SpecialAbilityUpdate (a line: differential/l9_special_ability_r81.inc) */
 	std::vector<Object *> m_objects;
 	/* update batch N: OCLUpdate */
 	Bool isPlayableSide() const { return m_playable; }
@@ -123,6 +124,7 @@ class PowerAcademyStats { public: void recordSpecialPowerUsed(const SpecialPower
 	/* --- p1w13-sonnet --- (batch P: ActiveBody; differential/l9_active_body_p.inc) */
 	void recordVehicleSniped();
 	void recordFirestormCreated();   /* batch R32: differential/l9_firestorm_r32.inc */
+	void recordBuildingCapture();   /* batch R81: SpecialAbilityUpdate (a line: differential/l9_special_ability_r81.inc) */
 	void recordClearedGarrisonedBuilding();
 	void recordUnitEnteredTunnelNetwork();   /* batch R10: TunnelContain (differential/l9_open_contain_r.inc) */
 	void recordBuildingGarrisoned();   /* batch R12: GarrisonContain (differential/l9_open_contain_r.inc) */

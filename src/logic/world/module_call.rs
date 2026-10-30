@@ -491,6 +491,16 @@ pub enum ModuleCall {
     AiHackInternet { command_source: i32 },
     /// `aiMoveToPosition(pos, commandSource)`.
     AiMoveToPosition { pos: Coord3D, command_source: i32 },
+    // --- p1w13-sonnet --- (batch R81: SpecialAbilityUpdate)
+    /// `aiMoveToObject(obj, commandSource)`.
+    AiMoveToObject { target: ObjectId, command_source: i32 },
+    /// `aiFaceObject(obj, commandSource)`.
+    AiFaceObject { target: ObjectId, command_source: i32 },
+    /// `aiFacePosition(pos, commandSource)`.
+    AiFacePosition { pos: Coord3D, command_source: i32 },
+    /// `SpecialAbilityUpdate::onExit(cleanup)`.
+    SpecialAbilityOnExit { cleanup: bool },
+    // --- end p1w13-sonnet ---
     // --- p1w13-sonnet --- (batch R13e: HijackerUpdate, set by ConvertToHijackedVehicleCrateCollide)
     /// `HijackerUpdate::setTargetObject(object)` (`INVALID_ID` for `NULL`).
     HijackerSetTargetObject(ObjectId),

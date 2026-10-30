@@ -12,6 +12,7 @@ public:
 	EvaMessage getOwnDetectionEvaEvent() const { return (EvaMessage)m_ownEva; }
 	int m_enemyEva = -1, m_ownEva = -1;
 	void markAsDetected( UnsignedInt numFrames = 0 );
+	void disguiseAsObject( const Object *target );   /* p1w13-sonnet, batch R81: SpecialAbilityUpdate (a line: differential/l9_special_ability_r81.inc) */
 	Bool isTemporaryGrant() const { return m_temporaryGrant; }   /* p1w13-sonnet, batch R44: SupplyCenterDockUpdate (the test's) */
 	Bool m_temporaryGrant = false;
 	void receiveGrant( Bool active = TRUE, UnsignedInt frames = 0 );   /* p1w13-sonnet, batch R4: HelixContain grants stealth to its portable structure */

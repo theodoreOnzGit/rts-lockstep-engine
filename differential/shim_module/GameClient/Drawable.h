@@ -54,6 +54,9 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* --- p1w12-sonnet --- (PowerPlantUpdate, RadarUpdate: l9_updates_e.inc) */
 	void clearModelConditionFlags(const ModelConditionFlags &clr); void clearAndSetModelConditionState(ModelConditionFlagType clr, ModelConditionFlagType set);
 	void flashAsSelected(const RGBColor *color = 0);   /* the crates' sabotage feedback */
+	/* batch R81: SpecialAbilityUpdate (Drawable.cpp's saturateRGB, verbatim; setAnimationCompletionTime a line: differential/l9_special_ability_r81.inc) */
+	void saturateRGB(RGBColor& color, Real factor);
+	void setAnimationCompletionTime(UnsignedInt numFrames);
 	/* --- end p1w12-sonnet --- */
 	/* --- p1w12-sonnet --- (update batch N) */
 	void reactToGeometryChange();

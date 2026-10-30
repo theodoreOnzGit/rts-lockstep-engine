@@ -120,6 +120,7 @@ pub mod auto_deposit_update;
 // --- p1w12-sonnet ---
 pub mod fire_ocl_after_weapon_cooldown_update;
 pub mod missile_launcher_building_update;
+pub mod special_ability_update;
 pub mod spectre_gunship_deployment_update;
 pub mod spectre_gunship_update;
 pub mod particle_uplink_cannon_update;
@@ -577,6 +578,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::MissileLauncherBuildingUpdate(d) => Some(made_update(
             missile_launcher_building_update::MissileLauncherBuildingUpdate::get_interface_mask(),
             missile_launcher_building_update::MissileLauncherBuildingUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::MissileLauncherBuildingUpdate(m))),
+        )),
+        ModuleDataKind::SpecialAbilityUpdate(d) => Some(made_update(
+            special_ability_update::SpecialAbilityUpdate::get_interface_mask(),
+            special_ability_update::SpecialAbilityUpdate::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::SpecialAbilityUpdate(m))),
         )),
         ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => Some(made_update(
             spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdate::get_interface_mask(),

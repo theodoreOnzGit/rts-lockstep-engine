@@ -19,6 +19,7 @@ public:
 	void setVeterancyLevel( VeterancyLevel newLevel, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setVeterancyLevel");
 	void setExperienceAndLevel( Int experienceIn, Bool provideFeedback = TRUE ) __asm__("l9m_ExperienceTracker_setExperienceAndLevel");
 	void setExperienceSink( ObjectID sink ) __asm__("l9m_ExperienceTracker_setExperienceSink");   /* batch R6: OverlordContain */
+	void addExperiencePoints( Int experienceGain, Bool canScaleForBonus = TRUE ) __asm__("l9m_ExperienceTracker_addExperiencePoints");   /* batch R81: SpecialAbilityUpdate (a line) */
 	/* batch R13b: VeterancyCrateCollide asks whether the object can train and gain levels, and gives them (differential/l9_crates_r13b.inc) */
 	Bool isTrainable() const __asm__("l9m_ExperienceTracker_isTrainable");
 	Bool canGainExpForLevel(Int levelsToGain) const __asm__("l9m_ExperienceTracker_canGainExpForLevel");

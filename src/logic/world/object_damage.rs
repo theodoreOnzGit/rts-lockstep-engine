@@ -320,6 +320,12 @@ impl World {
     /// detonates it, unless the victim is the bomb owner's ally. True if one
     /// went off.
     pub fn check_and_detonate_booby_trap(&mut self, id: ObjectId, victim: Option<ObjectId>) -> bool {
+        if let Some(answers) = &self.cuts.booby_trap_answers {
+            // batch R81: the test's answer, a record
+            let result = answers.contains(&id);
+            self.cut(crate::logic::world::object_cuts::CutCall::ObjectCheckAndDetonateBoobyTrap { object: id, victim: victim.unwrap_or(INVALID_ID), result });
+            return result;
+        }
         let Some(o) = self.objects.find(id) else { return false };
         if !o.test_status(OBJECT_STATUS_BOOBY_TRAPPED) {
             return false;
@@ -726,6 +732,16 @@ impl World {
                 v
             };
             self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op: ModelConditionOp::ClearAndSet { clear: sorted(clr), set: sorted(set) } });
+        }
+    }
+
+    /// `clearModelConditionFlags(clr)` (batch R81): the drawable's, nothing without one; the flags in index order.
+    pub fn clear_model_condition_flags(&mut self, id: ObjectId, clr: &[i32]) {
+        if self.has_drawable(id) {
+            let mut v = clr.to_vec();
+            v.sort_unstable();
+            v.dedup();
+            self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op: ModelConditionOp::Clear(v) });
         }
     }
 

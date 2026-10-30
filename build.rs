@@ -5192,6 +5192,32 @@ mod differential {
                 assert_eq!(htext.matches(from).count(), 1, "RailroadGuideAIUpdate.h: `{from}` must occur once");
                 std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r80.h"), htext.replace(from, "")).expect("write RailroadGuideAIUpdate_r80.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
+                // batch R81 (differential/l9_special_ability_r81.inc): SpecialAbilityUpdate.cpp and its header (the module build's
+                // GameLogic/Module/SpecialAbilityUpdate.h is batch O's stand-in, which the include would find): the header as
+                // mod_gen/SpecialAbilityUpdate_r81.h, its include guard renamed and its field table's `INI::parseParticleSystemTemplate` the
+                // unit's l9ahParsePsTemplate (as batch M's AutoHealBehavior.h), declared after the guard; the .cpp as
+                // mod_gen/SpecialAbilityUpdate_r81.cpp with its include of the header edited; each asserted once.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Update/SpecialAbilityUpdate.cpp");
+                let text = std::fs::read_to_string(&path).expect("read SpecialAbilityUpdate.cpp");
+                let from = "#include \"GameLogic/Module/SpecialAbilityUpdate.h\"";
+                assert_eq!(text.matches(from).count(), 1, "SpecialAbilityUpdate.cpp: `{from}` must occur once");
+                std::fs::write(mod_gen.join("SpecialAbilityUpdate_r81.cpp"), text.replace(from, "#include \"SpecialAbilityUpdate_r81.h\""))
+                    .expect("write SpecialAbilityUpdate_r81.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
+                let hpath = up.join("GameEngine/Include/GameLogic/Module/SpecialAbilityUpdate.h");
+                let mut htext = std::fs::read_to_string(&hpath).expect("read SpecialAbilityUpdate.h");
+                for (from, to) in [
+                    (
+                        "#ifndef __SPECIAL_ABILITY_UPDATE_H\n#define __SPECIAL_ABILITY_UPDATE_H\n",
+                        "#ifndef __SPECIAL_ABILITY_UPDATE_R81_H\n#define __SPECIAL_ABILITY_UPDATE_R81_H\nclass INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );\n",
+                    ),
+                    ("INI::parseParticleSystemTemplate", "l9ahParsePsTemplate"),
+                ] {
+                    assert_eq!(htext.matches(from).count(), 1, "SpecialAbilityUpdate.h: `{from}` must occur once");
+                    htext = htext.replace(from, to);
+                }
+                std::fs::write(mod_gen.join("SpecialAbilityUpdate_r81.h"), htext).expect("write SpecialAbilityUpdate_r81.h");
+                println!("cargo:rerun-if-changed={}", hpath.display());
                 // and `Object::canCrushOrSquish`, cut out of Object.cpp verbatim (from its first line to the end of the function, asserted once), into
                 // mod_gen/ObjectCrush.inc, as batch O cuts `Object::kill`.
                 let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");

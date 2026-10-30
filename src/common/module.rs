@@ -418,6 +418,8 @@ pub enum ModuleDataKind {
     FireOCLAfterWeaponCooldownUpdate(Arc<crate::logic::modules::fire_ocl_after_weapon_cooldown_update::FireOCLAfterWeaponCooldownUpdateModuleData>),
     /// `MissileLauncherBuildingUpdate` (batch R53).
     MissileLauncherBuildingUpdate(Arc<crate::logic::modules::missile_launcher_building_update::MissileLauncherBuildingUpdateModuleData>),
+    /// `SpecialAbilityUpdate` (batch R81).
+    SpecialAbilityUpdate(Arc<crate::logic::modules::special_ability_update::SpecialAbilityUpdateModuleData>),
     /// `SpectreGunshipDeploymentUpdate` (batch R60).
     SpectreGunshipDeploymentUpdate(Arc<crate::logic::modules::spectre_gunship_deployment_update::SpectreGunshipDeploymentUpdateModuleData>),
     /// `SpectreGunshipUpdate` (batch R72).
@@ -707,6 +709,7 @@ impl ModuleDataKind {
             // --- p1w12-sonnet ---
             ModuleDataKind::FireOCLAfterWeaponCooldownUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::MissileLauncherBuildingUpdate(d) => &d.update.behavior.module_data,
+            ModuleDataKind::SpecialAbilityUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpectreGunshipDeploymentUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::SpectreGunshipUpdate(d) => &d.update.behavior.module_data,
             ModuleDataKind::ParticleUplinkCannonUpdate(d) => &d.update.behavior.module_data,
@@ -1169,6 +1172,13 @@ impl ModuleDataKind {
                 None => false,
             },
             ModuleDataKind::MissileLauncherBuildingUpdate(d) => match Arc::get_mut(d) {
+                Some(d) => {
+                    d.update.behavior.module_data.set_module_tag_name_key(key);
+                    true
+                }
+                None => false,
+            },
+            ModuleDataKind::SpecialAbilityUpdate(d) => match Arc::get_mut(d) {
                 Some(d) => {
                     d.update.behavior.module_data.set_module_tag_name_key(key);
                     true

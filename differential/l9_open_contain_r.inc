@@ -571,10 +571,12 @@ void Object::setOrientation(Real angle)
 	if (g_r28ThingPose) { m_orientation = angle; poseMatrix(); m_orientation = normalizeAngle(angle); }
 }
 void Object::leaveGroup() { ulog("leavegroup %d", (int)m_oid); }
+Bool (*g_boobyHook)(const Object *, const Object *) = 0;   /* batch R81: the answer, the test's */
 Bool Object::checkAndDetonateBoobyTrap(const Object *victim)
 {
 	CtObj *v = victim ? ctOf(victim) : 0;
 	Bool r = v ? v->boobyTrapped != 0 : false;
+	if (g_boobyHook) r = g_boobyHook(this, victim);
 	ulog("booby %d %d %d", (int)m_oid, victim ? (int)victim->m_oid : 0, (int)r);
 	return r;
 }

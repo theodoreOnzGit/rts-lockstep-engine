@@ -42,6 +42,8 @@ public:
 	const AsciiString &getName() const { return m_name; }
 	/* --- end p1w13-sonnet --- */
 	const AudioEventRTS *getPerUnitSound(const AsciiString &soundNameToGet) const;
+	const AudioEventRTS *getVoiceTaskComplete() const { return &m_voiceTaskComplete; }   /* p1w13-sonnet, batch R81: SpecialAbilityUpdate (the test's) */
+	AudioEventRTS m_voiceTaskComplete;
 	/* p1w13-sonnet, batch R26: StealthUpdate's two template sounds (the test's templates have none: an empty event, as the Rust test's) */
 	const AudioEventRTS *getSoundStealthOn() const { return &m_soundStealthOn; }
 	const AudioEventRTS *getSoundStealthOff() const { return &m_soundStealthOff; }

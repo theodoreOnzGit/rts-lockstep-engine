@@ -349,6 +349,23 @@ impl ProbeModule {
             t.push(format!("mod {}", &text[..end]));
         }
         match call {
+            // batch R81: the calls SpecialAbilityUpdate makes, as lines when the test asks
+            ModuleCall::StickyBombInit { target, bomber, .. } if world.cuts.probe_ability_trace => {
+                world.body_trace(format!("stickyinit {} {target} {bomber}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::Detonate if world.cuts.probe_ability_trace => {
+                world.body_trace(format!("detonate {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::RemoveAllContained { expose_stealth_units } if world.cuts.probe_ability_trace => {
+                world.body_trace(format!("removeall {} {}", me.object, i32::from(expose_stealth_units)));
+                ModuleReply::Done
+            }
+            ModuleCall::StealthDisguiseAsObject(target) if world.cuts.probe_ability_trace => {
+                world.body_trace(format!("disguise {} {target}", me.object));
+                ModuleReply::Done
+            }
             // ---- the ones with an answer ----
             ModuleCall::IsSalvageCrateCollide => ModuleReply::Bool(self.answers.salvage),
             // batch R73 (SpawnBehavior): an exit interface, a slaved update and a stealth update the test describes
@@ -1112,6 +1129,18 @@ impl ProbeModule {
                 world.body_trace(format!("aimove {} {:08x} {:08x} {:08x} {command_source}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
                 ModuleReply::Done
             }
+            ModuleCall::AiMoveToObject { target, command_source } => {
+                world.body_trace(format!("aimoveobj {} {target} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiFaceObject { target, command_source } => {
+                world.body_trace(format!("aifaceobj {} {target} {command_source}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiFacePosition { pos, command_source } => {
+                world.body_trace(format!("aifacepos {} {:08x} {:08x} {:08x} {command_source}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Done
+            }
             ModuleCall::AiIgnoreObstacle { obstacle } => {
                 world.body_trace(format!("aiignore {} {obstacle}", me.object));
                 ModuleReply::Done
@@ -1555,6 +1584,10 @@ impl ProbeModule {
                 } else {
                     ModuleReply::Unhandled
                 }
+            }
+            ModuleCall::SpecialAbilityOnExit { cleanup } => {
+                world.body_trace(format!("abilityexit {} {} {}", me.object, me.index, i32::from(cleanup)));
+                ModuleReply::Done
             }
             // --- p1w7-sonnet ---
             ModuleCall::IsClearToApproach { .. } => ModuleReply::Bool(self.answers.clear_to_approach),
