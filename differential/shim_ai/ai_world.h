@@ -24,6 +24,10 @@
 class LocomotorTemplate;
 /* AIUpdate.h's, AI.h's, UpdateModule.h's and PartitionManager.h's enums (ai_gen, verbatim) */
 #include "ai_defs.h"
+/* batch A38 (upstream's, standalone) */
+#include "GameLogic/WeaponSetType.h"
+/* batch A38 (ObjectIter.h's) */
+enum IterOrderType { ITER_FASTEST, ITER_SORTED_NEAR_TO_FAR, ITER_SORTED_FAR_TO_NEAR, ITER_SORTED_CHEAP_TO_EXPENSIVE, ITER_SORTED_EXPENSIVE_TO_CHEAP };
 
 class Locomotor;
 class Waypoint;
@@ -261,6 +265,15 @@ struct AiEnv
 	Real deliverWorld[3];
 	Int deliverTurning;
 	UnsignedInt deliverModuleMasks[2];
+	/* batch A38: a DozerAIUpdate's data (repair percent per second, bored time, bored range) and its world (the AI data's bored
+	** radius modifier, every object's bounding sphere radius; the templates' time and cost to build, the player's index, the
+	** constructed object's id; the objects with a bridge tower interface, with a bridge interface, the repair candidates, the create
+	** modules (bit i: module i); the towers' bridge, the bridges' towers) */
+	Real dozerReals[5];
+	Int dozerInts[4];
+	UnsignedInt dozerMasks[4];
+	Int dozerBridge;
+	Int dozerTowers[4];
 };
 
 extern AiEnv g_aiEnv;
@@ -304,6 +317,7 @@ enum
 			** 6 destroyParticleSystemByID, id; 7 getDistanceSquared, kind, it, bits; 8 calculateCountermeasureToDivertTo, victim,
 			** answer } */
 	LOG_DELIVER = 116,	/* batch A37: the delivery's world { kind, words.. } (see wrap_ai.cpp) */
+	LOG_DOZER = 117,	/* batch A38: the dozer's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
@@ -401,6 +415,8 @@ public:
 	Coord3D findClosestEdgePoint(const Coord3D *closestTo) const;
 	/* batch A37: the extent and the scene's border */
 	void getExtentIncludingBorder(Region3D *extent) const;
+	/* batch A38 (logged) */
+	void flattenTerrain(Object *obj);
 };
 extern TerrainLogic *TheTerrainLogic;
 
@@ -501,6 +517,9 @@ public:
 	/* batch A37 (logged) */
 	void registerObject(Object *obj);
 	void unRegisterObject(Object *obj);
+	/* batch A38: the bored dozer's search (logged; the scene's) */
+	class ObjectIterator *iterateObjectsInRange(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
+		IterOrderType order = ITER_FASTEST);
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
 	/* batch A35: object to object (FROM_BOUNDINGSPHERE_2D only; logged) */
@@ -534,6 +553,8 @@ struct AiData
 	Real m_skirmishGroupFudgeValue;
 	/* batch A10a */
 	Bool m_aiCrushesInfantry;
+	/* batch A38 */
+	Real m_aiDozerBoredRadiusModifier;
 	/* batch A18 */
 	UnsignedInt m_guardChaseUnitFrames;
 	UnsignedInt m_guardEnemyScanRate;
@@ -578,6 +599,9 @@ public:
 	void clearLastAttacker();
 	/* batch A20 */
 	UnsignedInt getLastDamageTimestamp() const;
+	/* batch A38 (another object's: logged) */
+	void internalChangeHealth( Real delta );
+	void evaluateVisualCondition();
 	/* batch A32 (another object's: the hash's) */
 	Real getHealth() const;
 	Real getMaxHealth() const;
@@ -616,6 +640,8 @@ public:
 	Real getBoundingCircleRadius() const;
 	/* batch A14 */
 	Real getMinorRadius() const;
+	/* batch A38: the scene's */
+	Real getBoundingSphereRadius() const;
 	GeometryType getGeomType() const;
 	/* batch A7 */
 	Real getMaxHeightAbovePosition() const;
@@ -628,6 +654,8 @@ struct ObjectStatusMaskType
 {
 	UnsignedInt64 m_bits;
 	Bool test(Int bit) const { return ((m_bits >> bit) & 1) != 0; }
+	/* batch A38 */
+	void set(Int bit) { m_bits |= 1ULL << bit; }
 };
 inline ObjectStatusMaskType makeObjectStatusMask(Int bit) { ObjectStatusMaskType m; m.m_bits = 1ULL << bit; return m; }
 #define MAKE_OBJECT_STATUS_MASK(k) makeObjectStatusMask(k)
@@ -671,6 +699,10 @@ public:
 	class ResourceGatheringManager *getResourceGatheringManager();
 	/* batch A37 (the scene's one team) */
 	class Team *getDefaultTeam();
+	/* batch A38 (logged; the index the scene's) */
+	void onStructureConstructionComplete( Object *builder, Object *structure, Bool isRebuild );
+	void onStructureCreated( Object *builder, Object *structure );
+	Int getPlayerIndex() const;
 	Object *findClosestByKindOf( Object *queryObject, KindOfMaskType setKindOf, KindOfMaskType clearKindOf );
 	/* batch A12 */
 	Bool getUnitsShouldHunt() const;
@@ -819,6 +851,8 @@ public:
 	CollideModuleInterface *getCollide();
 	/* batch A33: the second module's, when the scene says so */
 	class RailedTransportDockUpdateInterface *getRailedTransportDockUpdateInterface();
+	/* batch A38: a goal object's create modules (the scene's) */
+	class CreateModuleInterface *getCreate();
 	/* batch A37: a delivered payload's projectile module's */
 	class ProjectileUpdateInterface *getProjectileUpdateInterface();
 	int m_index;
@@ -841,6 +875,9 @@ struct AiTemplateView
 	/* batch A18: the scene's */
 	Bool isEnterGuard() const;
 	Bool isHijackGuard() const;
+	/* batch A38: the scene's */
+	Int calcTimeToBuild( const Player* player ) const;
+	Int calcCostToBuild( const Player* player ) const;
 	/* batch A15: none (the FX call is logged) */
 	const class FXList *getPerUnitFX(const char *fxName) const { return NULL; }
 	/* batch A31: "Deploy" and "Undeploy" ("s4", "s5", or empty: the scene's) */
@@ -864,7 +901,9 @@ public:
 	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
-class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE ); };
+class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE );
+	/* batch A38 (logged) */
+	void withdraw( UnsignedInt amountToWithdraw, Bool playSound = TRUE ); };
 class ScoreKeeper { public: void addMoneyEarned( Int earned ); };
 class ExperienceTracker
 {
@@ -916,7 +955,9 @@ public:
 class SupplyWarehouseDockUpdate;
 class SupplyCenterDockUpdate;
 /* batch A18: never reached (see Player::getAcademyStats) */
-class AcademyStats { public: void recordGuardAbilityUsed(); };
+class AcademyStats { public: void recordGuardAbilityUsed();
+	/* batch A38 (logged) */
+	void recordProduction( const Object *obj, const Object *constructor ); };
 /* batch A15: FXList.h's doFXObj (logged) */
 class FXList { public: static void doFXObj(const FXList* fx, const Object* primary, const Object* secondary = NULL);
 	/* batch A37 (logged) */
@@ -985,6 +1026,21 @@ public:
 	/* batch A34 */
 	ExperienceTracker *getExperienceTracker() const;
 	Bool isLocallyControlled() const;
+	/* batch A38 (the dozer's: logged; a goal object's answers the hash's) */
+	void setWeaponSetFlag( WeaponSetType wst );
+	void clearWeaponSetFlag( WeaponSetType wst );
+	ObjectID getSoleHealingBenefactor( void ) const;
+	ObjectID getBuilderID() const;
+	void setBuilder( const Object *obj );
+	void setProducer( const Object *obj );
+	void setConstructionPercent( Real percent );
+	Real getConstructionPercent() const;
+	void handlePartitionCellMaintenance();
+	void updateUpgradeModules();
+	Bool attemptHealingFromSoleBenefactor( Real amount, const Object* source, UnsignedInt duration );
+	Bool isUsingAirborneLocomotor( void ) const;
+	Real m_constructionPercent;
+	Bool m_constructionPercentSet;
 	/* batch A37 (the delivery's: logged; Object.cpp's) */
 	Bool setWeaponLock( WeaponSlotType weaponSlot, WeaponLockType lockType );
 	VeterancyLevel getVeterancyLevel() const;
@@ -1121,6 +1177,9 @@ public:
 	Bool canEnterObject( const Object *obj, const Object *objectToEnter, CommandSourceType commandSource, Int mode );
 	/* batch A14 */
 	CanAttackResult getCanAttackObject( const Object *obj, const Object *objectToAttack, CommandSourceType commandSource, AbleToAttackType attackType );
+	/* batch A38 */
+	Bool canRepairObject( const Object *obj, const Object *objectToRepair, CommandSourceType commandSource );
+	Bool canResumeConstructionOf( const Object *obj, const Object *objectBeingConstructed, CommandSourceType commandSource );
 };
 enum CanEnterType { CHECK_CAPACITY, DONT_CHECK_CAPACITY, COMBATDROP_INTO };	/* ActionManager.h, verbatim */
 extern ActionManager *TheActionManager;

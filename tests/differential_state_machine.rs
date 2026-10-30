@@ -524,6 +524,7 @@ fn status_words(e: &StateMachineError) -> [u32; 2] {
         StateMachineError::InvalidData => [3, 6], // SC_INVALID_DATA
         StateMachineError::Xfer(s) => [2, *s as u32],
         StateMachineError::DuplicateStateId(_) | StateMachineError::RecursionLimit | StateMachineError::Undefined(_) => [4, 0],
+        StateMachineError::NotTranslated(what) => panic!("not translated: {what}"),
     }
 }
 

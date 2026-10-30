@@ -43,7 +43,7 @@ use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_NO_COLLIDE, KINDOF_PROJECTILE};
 use crate::common::object_status_types::OBJECT_STATUS_IGNORING_STEALTH;
-use crate::common::state_machine::{SmResult, StateMachine};
+use crate::common::state_machine::{SmResult, StateMachine, StateMachineError};
 use crate::logic::ai::ai_states::{
     ai, aism_add_to_goal_path, aism_clear, aism_set_state, aism_set_temporary_state, with_ai, AiState, AiStateHost, PassengerCommand,
 };
@@ -239,6 +239,10 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A38: `DozerAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the base's
+    if matches!(ai(h).subclass, AiSubclass::Dozer(_)) {
+        return crate::logic::ai::dozer_ai_update::dozer_ai_do_command(sm, h, parms);
+    }
     // batch A34: `HackInternetAIUpdate::aiDoCommand`: the base's check, a command while hacking or packing kept, then the base's
     if matches!(ai(h).subclass, AiSubclass::HackInternet(_))
         && (!is_allowed_to_respond_to_ai_commands(sm, h, parms) || crate::logic::ai::hack_internet_ai_update::hack_internet_do_command(sm, h, parms)?)
@@ -259,6 +263,12 @@ pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiComman
     if matches!(ai(h).subclass, AiSubclass::DeployStyle(_)) && !is_allowed_to_respond_to_ai_commands(sm, h, parms) {
         return Ok(());
     }
+    base_ai_do_command(sm, h, parms)
+}
+
+/// `AIUpdateInterface::aiDoCommand(parms)`, the base's (a subclass's override calls it): refused if not allowed to respond (batch
+/// A37: a delivering AI's override of that), else dispatched to its `private*` member.
+pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
     // batch A37: `DeliverPayloadAIUpdate::isAllowedToRespondToAiCommands`: nothing once heading off the map, then the base's
     if let AiSubclass::DeliverPayload(d) = &ai(h).subclass {
         if !d.accepting_commands && !plant(3694) {
@@ -517,6 +527,14 @@ pub fn ai_attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     max_shots: i32,
     src: CommandSourceType,
 ) -> SmResult<()> {
+    // (batch A38: a dozer's aiDoCommand: no longer actively constructing; a player's attack cancelling its current task would idle
+    // and reset the machines while the AI's machine is locked: not translated)
+    if matches!(ai(h).subclass, AiSubclass::Dozer(_)) {
+        h.clear_model_condition_state(crate::common::model_state::MODELCONDITION_ACTIVELY_CONSTRUCTING);
+        if src == CMD_FROM_PLAYER && crate::logic::ai::dozer_ai_update::dz(h).current_task != crate::logic::ai::dozer_ai_update::DOZER_TASK_INVALID {
+            return Err(StateMachineError::NotTranslated("a dozer's task cancelled by a player's attack inside a guard machine"));
+        }
+    }
     // (batch A34: a hacker's aiDoCommand: no command waits any more (its machine is not hacking or packing here: it runs a guard))
     if let AiSubclass::HackInternet(k) = &mut ai(h).subclass {
         k.has_pending_command = false;

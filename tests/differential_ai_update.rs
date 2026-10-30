@@ -127,6 +127,7 @@ use rts_lockstep_engine::common::damage_fx::FxListName;
 use rts_lockstep_engine::logic::ai::deliver_payload_ai_update::{self as deliver, DeliverPayload, DeliverPayloadModuleData, DeliverState, ItemModule};
 use rts_lockstep_engine::logic::modules::deliver_payload_data::DeliverPayloadData;
 use rts_lockstep_engine::logic::radius_decal::RadiusDecalTemplate;
+use rts_lockstep_engine::logic::ai::dozer_ai_update::{self as dozer, Dozer, DozerActionState, DozerData, DozerPrimaryState};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
 use rts_lockstep_engine::logic::ai::path::{Path, PathHost};
@@ -228,6 +229,7 @@ const L_HACK: u32 = 113;
 const L_SUPPLY: u32 = 114;
 const L_MISSILE: u32 = 115;
 const L_DELIVER: u32 = 116;
+const L_DOZER: u32 = 117;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -338,6 +340,11 @@ struct Host {
     /// Batch A37: the delivering AI's machine, lent while its AI runs; the visible payloads' next id (from 40 in each case, as the
     /// wrapper's) and the last one's position.
     deliver_machines: Vec<Option<StateMachine<DeliverState<Host>>>>,
+    /// Batch A38: the dozer's machine, lent while its AI runs; the goal objects' construction percents set this operation (the
+    /// wrapper's objects are made anew every operation) and the constructed object's position.
+    dozer_machines: Vec<Option<StateMachine<DozerPrimaryState<Host>>>>,
+    op_percents: Vec<(ObjectId, f32)>,
+    structure_pos: Option<(ObjectId, Coord3D)>,
     next_payload: u32,
     payload_pos: Coord3D,
     /// Batch A6: the pathfinder's ignored obstacle (`m_ignoreObstacleID`).
@@ -483,6 +490,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_DONT_AUTO_CRUSH_INFANTRY && m & 32768 != 0)
             || (kind == KINDOF_CAN_RAPPEL && m & 65536 != 0)
             || (kind == KINDOF_DRONE && m & 131072 != 0)
+            || (kind == rts_lockstep_engine::common::kind_of::KINDOF_BRIDGE_TOWER && m & 262144 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -949,6 +957,7 @@ impl AiStateHost for Host {
             b"Undeploy" | b"UnitPack" => 5,
             b"UnitCashPing" => 6,
             b"StartDive" => 8,
+            b"UnderConstruction" => 9,
             _ => -1,
         };
         let named = k >= 0 && (self.env.sounds >> k) & 1 != 0;
@@ -1224,6 +1233,265 @@ impl AiStateHost for Host {
     fn unit_direction_vector_3d(&mut self) -> Coord3D {
         self.thing.unit_direction_vector_3d()
     }
+    // batch A38: the dozer's world (the wrapper's stand-ins, LOG_DOZER)
+    fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<DozerPrimaryState<Host>>>> {
+        &mut self.dozer_machines
+    }
+    fn ai_data_dozer_bored_radius_modifier(&mut self) -> f32 {
+        self.env.dozer_reals[3]
+    }
+    fn set_weapon_set_flag(&mut self, flag: rts_lockstep_engine::logic::weapon_types::WeaponSetType, set: bool) {
+        self.l(L_DOZER, &[0, flag as u32, u32::from(set)]);
+    }
+    fn object_major_radius(&mut self, _id: ObjectId) -> f32 {
+        self.env.loco.major_radius
+    }
+    fn object_bounding_sphere_radius(&mut self, _id: ObjectId) -> f32 {
+        self.env.dozer_reals[4]
+    }
+    fn bounding_sphere_radius(&mut self) -> f32 {
+        self.env.dozer_reals[4]
+    }
+    fn find_position_around_options(
+        &mut self,
+        pos: &Coord3D,
+        min_radius: f32,
+        max_radius: f32,
+        source: bool,
+        start_angle: Option<f32>,
+        max_z_delta: f32,
+        ignore: ObjectId,
+    ) -> Option<Coord3D> {
+        let r = pick(p1_hash(self.env.seed, 16, &[pos.x.to_bits(), pos.y.to_bits()]), self.env.find_pos_rate);
+        let id = if source { self.env.object_id as u32 } else { 0 };
+        self.l(L_FIND_POSITION, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), min_radius.to_bits(), max_radius.to_bits(), id, u32::from(r)]);
+        const RANDOM_START_ANGLE: f32 = -99999.9;
+        let angle = start_angle.unwrap_or(RANDOM_START_ANGLE);
+        if angle != RANDOM_START_ANGLE || max_z_delta != 1e10 || ignore != 0 {
+            self.l(L_DOZER, &[33, angle.to_bits(), max_z_delta.to_bits(), ignore as u32]);
+        }
+        r.then_some(Coord3D { x: pos.x + 5.0, y: pos.y + 5.0, z: pos.z })
+    }
+    fn distance_squared_to_position(&mut self, pos: &Coord3D, kind: DistanceKind) -> f32 {
+        match kind {
+            DistanceKind::BoundingSphere2d => {
+                let q = *self.thing.position();
+                let (dx, dy) = (pos.x - q.x, pos.y - q.y);
+                let d = dx * dx + dy * dy;
+                self.l(L_DOZER, &[35, pos.x.to_bits(), pos.y.to_bits(), d.to_bits()]);
+                d
+            }
+            DistanceKind::Center2d => self.distance_squared_to_position_2d(pos),
+            DistanceKind::BoundingSphere3d => unreachable!("the stand-in's distances to a position"),
+        }
+    }
+    fn bridge_tower_ids(&mut self, bridge: ObjectId) -> Option<[ObjectId; 4]> {
+        let r = (1..32).contains(&bridge) && (self.env.dozer_masks[1] >> bridge) & 1 != 0;
+        self.l(L_DOZER, &[19, bridge as u32, u32::from(r)]);
+        r.then_some(self.env.dozer_towers)
+    }
+    fn bridge_tower_bridge_id(&mut self, tower: ObjectId) -> Option<ObjectId> {
+        if self.env.loco.kind_mask & 262144 == 0 {
+            return None;
+        }
+        let r = (1..32).contains(&tower) && (self.env.dozer_masks[0] >> tower) & 1 != 0;
+        self.l(L_DOZER, &[18, tower as u32, u32::from(r)]);
+        r.then_some(self.env.dozer_bridge)
+    }
+    fn bridge_scaffold_in_motion(&mut self, bridge: ObjectId) -> Option<bool> {
+        self.bridge_tower_ids(bridge)?;
+        let r = p1_hash(self.env.seed, 145, &[bridge as u32, self.env.loco.frame]) & 1 != 0;
+        self.l(L_DOZER, &[20, bridge as u32, u32::from(r)]);
+        Some(r)
+    }
+    fn bridge_scaffolding(&mut self, bridge: ObjectId, create: bool) {
+        self.l(L_DOZER, &[21, bridge as u32, u32::from(create)]);
+    }
+    fn object_set_builder(&mut self, id: ObjectId, builder: ObjectId) {
+        self.l(L_DOZER, &[3, id as u32, builder as u32]);
+    }
+    fn object_set_producer(&mut self, id: ObjectId, producer: ObjectId) {
+        self.l(L_DOZER, &[4, id as u32, producer as u32]);
+    }
+    fn object_builder_id(&mut self, id: ObjectId) -> ObjectId {
+        let r = if p1_hash(self.env.seed, 142, &[id as u32, self.env.loco.frame >> 5]) & 7 != 0 { self.env.object_id } else { 0 };
+        self.l(L_DOZER, &[2, id as u32, r as u32]);
+        r
+    }
+    fn object_sole_healing_benefactor(&mut self, id: ObjectId) -> ObjectId {
+        let r = match p1_hash(self.env.seed, 141, &[id as u32, self.env.loco.frame >> 5]) % 8 {
+            0..=3 => 0,
+            4..=6 => self.env.object_id,
+            _ => id + 1,
+        };
+        self.l(L_DOZER, &[1, id as u32, r as u32]);
+        r
+    }
+    fn action_can_repair_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        self.action_answer(5, target, src)
+    }
+    fn action_can_resume_construction_of(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        self.action_answer(6, target, src)
+    }
+    fn object_same_controlling_player(&mut self, _id: ObjectId) -> bool {
+        true // (every object's player is the scene's one)
+    }
+    fn object_time_to_build(&mut self, _id: ObjectId) -> i32 {
+        self.env.dozer_ints[0]
+    }
+    fn object_construction_percent(&mut self, id: ObjectId) -> f32 {
+        let r = match self.op_percents.iter().find(|(o, _)| *o == id) {
+            Some((_, p)) => *p,
+            None => [0.0f32, 50.0, 99.5, 120.0][(p1_hash(self.env.seed, 143, &[id as u32, self.env.loco.frame]) & 3) as usize],
+        };
+        self.l(L_DOZER, &[6, id as u32, r.to_bits()]);
+        r
+    }
+    fn object_set_construction_percent(&mut self, id: ObjectId, percent: f32) {
+        self.op_percents.retain(|(o, _)| *o != id);
+        self.op_percents.push((id, percent));
+        self.l(L_DOZER, &[5, id as u32, percent.to_bits()]);
+    }
+    fn object_max_health(&mut self, _id: ObjectId) -> f32 {
+        100.0
+    }
+    fn object_internal_change_health(&mut self, id: ObjectId, delta: f32) {
+        self.l(L_DOZER, &[7, id as u32, delta.to_bits()]);
+    }
+    fn object_evaluate_visual_condition(&mut self, id: ObjectId) {
+        self.l(L_DOZER, &[8, id as u32]);
+    }
+    fn object_clear_status(&mut self, _id: ObjectId, status: ObjectStatusTypes) {
+        self.l(L_SET_STATUS, &[status as u32, 0]);
+    }
+    fn object_clear_model_condition_flags(&mut self, _id: ObjectId, conditions: &[ModelConditionFlagType]) {
+        self.clear_model_condition_flags(conditions);
+    }
+    fn object_clear_and_set_model_condition_flags(&mut self, _id: ObjectId, clear: &[ModelConditionFlagType], set: &[ModelConditionFlagType]) {
+        let mut c: Vec<u32> = clear.iter().map(|&x| x as u32).collect();
+        c.sort_unstable();
+        c.dedup();
+        let mut s: Vec<u32> = set.iter().map(|&x| x as u32).collect();
+        s.sort_unstable();
+        s.dedup();
+        c.push(u32::MAX);
+        c.extend(s);
+        self.l(L_CLEAR_SET_MODEL, &c);
+    }
+    fn object_clear_model_condition_state(&mut self, _id: ObjectId, condition: ModelConditionFlagType) {
+        self.l(L_CLEAR_MODEL_COND, &[condition as u32]);
+    }
+    fn player_on_structure_construction_complete(&mut self, structure: ObjectId, is_rebuild: bool) {
+        let me = self.env.object_id as u32;
+        self.l(L_DOZER, &[9, me, structure as u32, u32::from(is_rebuild)]);
+    }
+    fn academy_record_production(&mut self, structure: ObjectId) {
+        let me = self.env.object_id as u32;
+        self.l(L_DOZER, &[10, structure as u32, me]);
+    }
+    fn object_on_build_complete(&mut self, _id: ObjectId) {
+        for i in 0..3u32 {
+            if (self.env.dozer_masks[3] >> i) & 1 != 0 {
+                self.l(L_DOZER, &[11, i]);
+            }
+        }
+    }
+    fn object_handle_partition_cell_maintenance(&mut self, id: ObjectId) {
+        self.l(L_DOZER, &[12, id as u32]);
+    }
+    fn object_update_upgrade_modules(&mut self, id: ObjectId) {
+        self.l(L_DOZER, &[13, id as u32]);
+    }
+    fn dozer_construction_complete_ui(&mut self, structure: ObjectId) {
+        self.l(L_DOZER, &[14, structure as u32]);
+    }
+    fn in_game_ui_message(&mut self, label: &[u8]) {
+        let mut w = vec![15, label.len() as u32];
+        w.extend(label.iter().map(|&b| u32::from(b)));
+        self.l(L_DOZER, &w);
+    }
+    fn in_game_ui_idle_worker(&mut self, add: bool, player_number: i32) {
+        let me = self.env.object_id as u32;
+        if add {
+            self.l(L_DOZER, &[16, me]);
+        } else {
+            self.l(L_DOZER, &[17, me, player_number as u32]);
+        }
+    }
+    fn player_index(&mut self) -> Option<i32> {
+        (self.env.player_type >= 0).then_some(self.env.dozer_ints[2])
+    }
+    fn object_attempt_healing_from_sole_benefactor(&mut self, id: ObjectId, amount: f32, healer: ObjectId, frames: u32) -> bool {
+        let r = p1_hash(self.env.seed, 144, &[id as u32, self.env.loco.frame]) & 3 != 0;
+        self.l(L_DOZER, &[22, id as u32, amount.to_bits(), healer as u32, frames, u32::from(r)]);
+        r
+    }
+    fn partition_repair_candidates(&mut self, pos: &Coord3D, range: f32) -> Vec<ObjectId> {
+        let ids: Vec<ObjectId> = (1..32).filter(|&i| (self.env.dozer_masks[2] >> i) & 1 != 0 && self.object_exists(i)).collect();
+        // (FROM_CENTER_2D is 0)
+        self.l(L_DOZER, &[23, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), range.to_bits(), 0, ids.len() as u32]);
+        ids
+    }
+    fn partition_closest_mine(&mut self, range: f32) -> ObjectId {
+        let c = self.env.closest_attack;
+        let o = if self.object_exists(c) { c } else { 0 };
+        let me = self.env.object_id as u32;
+        // (FROM_CENTER_2D is 0; ALLOW_ENEMIES | ALLOW_NEUTRAL is 3)
+        self.l(L_DOZER, &[34, me, range.to_bits(), 0, 3, rts_lockstep_engine::logic::ai::ai_update_types::CMD_FROM_DOZER as u32, o as u32]);
+        o
+    }
+    fn play_under_construction_sound(&mut self, site: ObjectId) -> u32 {
+        let k = if (self.env.sounds >> 9) & 1 != 0 { 9 } else { u32::MAX };
+        let h = self.next_audio;
+        self.next_audio += 1;
+        self.l(L_AUDIO_ADD, &[k, site as u32, h]);
+        h
+    }
+    fn build_assistant_can_make_unit(&mut self, template: u32) -> bool {
+        let r = p1_hash(self.env.seed, 146, &[self.env.loco.frame]) & 3 != 0;
+        self.l(L_DOZER, &[24, template, u32::from(r)]);
+        r
+    }
+    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32) -> bool {
+        let r = p1_hash(self.env.seed, 147, &[self.env.loco.frame]) & 3 != 0;
+        let me = self.env.object_id as u32;
+        // (the options TERRAIN_RESTRICTIONS | CLEAR_PATH | NO_OBJECT_OVERLAP | SHROUD_REVEALED; the player passed none)
+        self.l(L_DOZER, &[25, template, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), angle.to_bits(), 0x17, me, 0, u32::from(r)]);
+        r
+    }
+    fn thing_factory_new_structure(&mut self, template: u32, is_rebuild: bool) -> ObjectId {
+        let id = self.env.dozer_ints[3];
+        let bits = (1u32 << 3) | if is_rebuild { 1 << 21 } else { 0 };
+        self.l(L_DOZER, &[26, template, bits, id as u32]);
+        id
+    }
+    fn template_cost_to_build(&mut self, _template: u32) -> i32 {
+        self.env.dozer_ints[1]
+    }
+    fn player_money_withdraw(&mut self, amount: i32) -> bool {
+        if self.env.hack_flags & 1 == 0 {
+            return false;
+        }
+        self.l(L_DOZER, &[27, amount as u32]);
+        true
+    }
+    fn new_structure_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.structure_pos = Some((id, *pos));
+        self.l(L_DOZER, &[31, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+    }
+    fn new_structure_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        self.l(L_DOZER, &[32, id as u32, angle.to_bits()]);
+    }
+    fn terrain_flatten(&mut self, id: ObjectId) {
+        self.l(L_DOZER, &[28, id as u32]);
+    }
+    fn pf_add_object_to_pathfind_map(&mut self, id: ObjectId) {
+        self.l(L_DOZER, &[29, id as u32, 1]);
+    }
+    fn player_on_structure_created(&mut self, structure: ObjectId) {
+        let me = self.env.object_id as u32;
+        self.l(L_DOZER, &[30, me, structure as u32]);
+    }
     fn supply_find_best_center(&mut self) -> ObjectId {
         let o = self.env.supply_best[0];
         let o = if self.object_exists(o) { o } else { 0 };
@@ -1358,6 +1626,7 @@ impl AiStateHost for Host {
         let (k, d) = match kind {
             DistanceKind::Center2d => (0, dx * dx + dy * dy),
             DistanceKind::BoundingSphere3d => (1, dx * dx + dy * dy + dz * dz),
+            DistanceKind::BoundingSphere2d => unreachable!("the stand-in's distances to an object"),
         };
         self.l(L_MISSILE, &[7, k, other as u32, d.to_bits()]);
         d
@@ -1988,8 +2257,12 @@ impl AiStateHost for Host {
     fn object_orientation(&mut self, _id: ObjectId) -> f32 {
         0.0 // (the other objects' cached angle)
     }
-    fn object_position(&mut self, _id: ObjectId) -> Coord3D {
-        Coord3D::default() // (the other objects' cached position)
+    fn object_position(&mut self, id: ObjectId) -> Coord3D {
+        // (the other objects' cached position; batch A38: the constructed object's, as placed this operation)
+        match self.structure_pos {
+            Some((s, p)) if s == id => p,
+            _ => Coord3D::default(),
+        }
     }
     fn object_bounding_circle_radius(&mut self, _id: ObjectId) -> f32 {
         self.env.container_radius
@@ -3039,6 +3312,42 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A38: a DozerAIUpdate's members and machines
+    if let AiSubclass::Dozer(d) = &module.ai().subclass {
+        let m = &d.m;
+        for t in &m.task {
+            v.extend([t.target_object_id as u32, t.task_order_frame]);
+        }
+        v.push(m.current_task as u32);
+        for task in &m.dock_point {
+            for (valid, location) in task {
+                v.push(u32::from(*valid));
+                put_pos(&mut v, location);
+            }
+        }
+        v.extend([m.build_sub_task as u32, u32::from(m.is_rebuild.unwrap_or(false)), m.building_sound_handle]);
+        let sm = module.dozer_machine.as_ref().expect("the dozer's machine");
+        v.extend([sm.get_current_state_id(), sm.peek_sleep_till(), u32::from(sm.is_default_state_inited())]);
+        match sm.state(dozer::DOZER_PRIMARY_IDLE) {
+            Some(DozerPrimaryState::Idle { idle_too_long_timestamp, idle_player_number, is_marked_as_idle }) => {
+                v.extend([*idle_too_long_timestamp, *idle_player_number as u32, u32::from(*is_marked_as_idle)]);
+            }
+            _ => panic!("the idle state"),
+        }
+        for s in [dozer::DOZER_PRIMARY_BUILD, dozer::DOZER_PRIMARY_REPAIR, dozer::DOZER_PRIMARY_FORTIFY] {
+            let Some(DozerPrimaryState::Action { machine: am, .. }) = sm.state(s) else { panic!("an action state") };
+            v.extend([am.get_current_state_id(), am.peek_sleep_till(), am.goal_object_id() as u32]);
+            put_pos(&mut v, am.goal_position());
+            match am.state(dozer::DOZER_ACTION_PICK_ACTION_POS) {
+                Some(DozerActionState::PickActionPos { failed_attempts, .. }) => v.push(*failed_attempts as u32),
+                _ => panic!("the picking state"),
+            }
+            match am.state(dozer::DOZER_ACTION_DO_ACTION) {
+                Some(DozerActionState::DoAction { enter_frame, .. }) => v.push(*enter_frame),
+                _ => panic!("the doing state"),
+            }
+        }
+    }
     // batch A37: a DeliverPayloadAIUpdate's members, data and machine
     if let AiSubclass::DeliverPayload(d) = &module.ai().subclass {
         put_pos(&mut v, &d.target_pos);
@@ -3348,7 +3657,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9][g.below(18) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10][g.below(20) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -3437,6 +3746,27 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.deliver_module_masks = [g.u32(), g.u32()];
     if e.subclass == 9 && g.below(2) == 0 {
         e.sounds |= 1 << 8;
+    }
+    // batch A38: a dozer's data (short bored times and ranges, now and then none) and world (an existing object constructed; now and
+    // then bridges and towers; the "UnderConstruction" sound)
+    e.dozer_reals = [g.uniform(0.0, 1.0), [0.0, 0.0, 30.0, 300.0][g.below(4) as usize], [0.0, 100.0, 300.0][g.below(3) as usize], [1.0, 2.0][g.below(2) as usize], g.uniform(5.0, 40.0)];
+    let construct_id = 1 + g.below(31) as i32;
+    e.dozer_ints = [[0, 1, 1, 10, 60][g.below(5) as usize], [0, 500][g.below(2) as usize], g.below(4) as i32, construct_id];
+    e.dozer_masks = [g.u32(), g.u32(), g.u32(), g.below(8)];
+    let some = |g: &mut Gen| if g.below(4) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    e.dozer_bridge = some(g);
+    e.dozer_towers = [some(g), some(g), some(g), some(g)];
+    if e.subclass == 10 {
+        e.exist_mask |= 1 << construct_id;
+        if g.below(3) == 0 {
+            e.loco.kind_mask |= 262144;
+        }
+        if g.below(4) == 0 {
+            e.loco.kind_mask |= 256;
+        }
+        if g.below(2) == 0 {
+            e.sounds |= 1 << 9;
+        }
     }
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
@@ -3626,6 +3956,12 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if e.subclass == 10 && g.below(2) == 0 {
+        // batch A38: a dozer's work takes many updates (moving to the site, to its dock, building up)
+        65
+    } else if e.subclass == 10 && g.below(3) == 0 {
+        // batch A38: a dozer's members (the constructions most)
+        [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132][g.below(18) as usize]
     } else if e.subclass == 9 && g.below(5) == 0 {
         // batch A37: a delivering AI's members (the deliveries most)
         [109, 109, 109, 110, 110, 111, 112, 113, 114, 115, 116, 117][g.below(12) as usize]
@@ -3710,7 +4046,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=117);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=132);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -3825,6 +4161,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if e.subclass == 6 && g.below(3) == 0 { 34 } else { cmd };
             // (batch A37: a delivering AI's scripted reinforcement, the move-and-evacuate-and-exit, often)
             let cmd = if e.subclass == 9 && g.below(4) == 0 { 4 } else { cmd };
+            // (batch A38: a dozer's repair, resumed construction and move away, often)
+            let cmd = if e.subclass == 10 && g.below(3) == 0 { [19, 19, 20, 48][g.below(4) as usize] } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -3861,6 +4199,24 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             ia[5] = g.below(4) as i32 - 1;
         }
         103 => ia[0] = g.below(2) as i32,
+        // batch A38: a template, a task, an object; the rebuild flag, a point, an object; the angle
+        118..=132 => {
+            let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
+            let some_object = |g: &mut Gen| if ids.is_empty() || g.below(5) == 0 { g.below(32) as i32 } else { ids[g.below(ids.len() as u32) as usize] };
+            ia[0] = match op {
+                118 => [-1, 0, 0, 1][g.below(4) as usize],
+                124 | 126 => g.below(4) as i32 - 1,
+                127 => g.below(5) as i32 - 1,
+                128 | 131 | 132 => some_object(g),
+                _ => g.below(3) as i32,
+            };
+            ia[1] = match op {
+                118 => g.below(2) as i32,
+                127 => g.below(5) as i32 - 1,
+                _ => some_object(g),
+            };
+            fa[3] = g.uniform(-3.0, 3.0);
+        }
         // batch A37: the exiter; the target near the move position, now and then far
         109..=117 => {
             ia[0] = g.below(32) as i32;
@@ -4222,6 +4578,66 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                 Err(e) => panic!("a missile's call: {e}"),
             }
         }
+        // batch A38: a dozer's members (undefined upstream: the case ends)
+        118..=132 => {
+            if !matches!(module.ai().subclass, AiSubclass::Dozer(_)) {
+                return vec![];
+            }
+            let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
+            let (a, b, angle) = (ia[0], ia[1], fa[3]);
+            let r = module.run(h, |sm, h| {
+                dozer::lend_ai_machine(sm, h, |h| -> SmResult<Vec<u32>> {
+                    let obj = |h: &mut Host, id: i32| if h.object_exists(id) { id } else { 0 };
+                    match op {
+                        118 => dozer::construct(h, (a >= 0).then_some(a as u32), &p, angle, b != 0).map(|o| vec![o as u32]),
+                        119 => Ok(vec![dozer::get_most_recent_command(h) as u32]),
+                        120 => Ok(vec![u32::from(dozer::is_task_pending(h, a))]),
+                        121 => Ok(vec![dozer::get_task_target(h, a) as u32]),
+                        122 => Ok(vec![u32::from(dozer::is_any_task_pending(h))]),
+                        123 => {
+                            let o = obj(h, b);
+                            dozer::new_task(h, a, o).map(|_| vec![])
+                        }
+                        124 => dozer::cancel_task(h, a).map(|_| vec![]),
+                        125 => {
+                            dozer::internal_task_complete(h, a);
+                            Ok(vec![])
+                        }
+                        126 => dozer::internal_cancel_task(h, a).map(|_| vec![]),
+                        127 => Ok(match dozer::get_dock_point(h, a, b) {
+                            Some(q) => vec![1, q.x.to_bits(), q.y.to_bits(), q.z.to_bits()],
+                            None => vec![0],
+                        }),
+                        128 => {
+                            let o = obj(h, a);
+                            Ok(vec![u32::from(dozer::can_accept_new_repair(h, o))])
+                        }
+                        129 => dozer::on_delete(h).map(|_| vec![]),
+                        130 => {
+                            let d = match &states::ai(h).subclass {
+                                AiSubclass::Dozer(d) => d.data,
+                                _ => unreachable!(),
+                            };
+                            let range = dozer::get_bored_range(h);
+                            Ok(vec![d.repair_health_percent_per_second.to_bits(), d.bored_time.to_bits(), range.to_bits()])
+                        }
+                        _ => {
+                            let o = obj(h, a);
+                            dozer::bridge_scaffolding(h, o, op == 131);
+                            Ok(vec![])
+                        }
+                    }
+                })
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a dozer's call: {e}"),
+            }
+        }
         // batch A37: a delivering AI's members (undefined upstream: the case ends)
         109..=117 => {
             if !matches!(module.ai().subclass, AiSubclass::DeliverPayload(_)) {
@@ -4411,7 +4827,11 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 118],
+    ops: [u64; 133],
+    /// Batch A38: the dozer's machine's state after an operation (idle, build, repair, fortify, going home), and its action machines'
+    /// (picking, moving, doing, none) when in an action state.
+    dozer_states: [u64; 5],
+    dozer_actions: [u64; 4],
     /// Batch A37: the delivering AI's machine's state after an operation (approach .. clean up, none).
     deliver_states: [u64; 7],
     sleeps: [u64; 2],
@@ -4464,7 +4884,9 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 118],
+            ops: [0; 133],
+            dozer_states: [0; 5],
+            dozer_actions: [0; 4],
             deliver_states: [0; 7],
             sleeps: [0; 2],
             goals_moved: [0; 4],
@@ -4519,6 +4941,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_stack: Vec::new(),
         ai_machines: Vec::new(),
         deliver_machines: Vec::new(),
+        dozer_machines: Vec::new(),
+        op_percents: Vec::new(),
+        structure_pos: None,
         next_payload: 40,
         payload_pos: Coord3D::default(),
         pf_ignore: 0,
@@ -4569,7 +4994,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         // (batch A33: a railed transport has every set, each with a locomotor: its update follows its path after the base's update,
         // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
         // (batch A37: a delivering AI likewise: its states use the locomotor unchecked)
-        let railed = host.env.subclass == 5 || host.env.subclass == 9;
+        let railed = host.env.subclass == 5 || host.env.subclass == 9 || host.env.subclass == 10;
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
@@ -4608,6 +5033,8 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     // the object and the AI: the constructor draws the locomotors' random values
     // (batch A10b: a quarter at negative x, where the other objects, at the origin facing +x, move away: pursued)
     let start = [if g.below(4) == 0 { g.uniform(-60.0, -1.0) } else { g.uniform(-20.0, 260.0) }, g.uniform(-20.0, 180.0), 0.0];
+    // (batch A38: a dozer half the time near the other objects, at the origin: its goals)
+    let start = if host.env.subclass == 10 && g.below(2) == 0 { [g.uniform(-40.0, 40.0), g.uniform(-40.0, 40.0), 0.0] } else { start };
     let start_pos = Coord3D { x: start[0], y: start[1], z: host.ground(start[0], start[1]) + if g.below(3) == 0 { g.uniform(0.0, 50.0) } else { 0.0 } };
     let angle = g.uniform(-3.1, 3.1);
     let rng_seed = g.u32();
@@ -4687,6 +5114,11 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             manual_deploy_animations: host.env.deploy_flags & 8 != 0,
         })),
         9 => AiSubclass::DeliverPayload(DeliverPayload::new(scene_deliver_module_data(&host.env))),
+        10 => AiSubclass::Dozer(Dozer::new(DozerData {
+            repair_health_percent_per_second: host.env.dozer_reals[0],
+            bored_time: host.env.dozer_reals[1],
+            bored_range: host.env.dozer_reals[2],
+        })),
         _ => AiSubclass::Plain,
     };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
@@ -4814,6 +5246,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let before_pos = *host.thing.position();
         host.others_height_asked = 0;
         host.attacker_cleared = false;
+        // (batch A38: the wrapper's other objects are made anew every operation)
+        host.op_percents.clear();
+        host.structure_pos = None;
         let r = rust_op(&mut module, &mut host, op, &fa, &ia, 0, &mut saved);
         if host.undefined {
             // (batch A33: undefined upstream: the case ends before the C++ runs the op)
@@ -4851,6 +5286,13 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if let AiSubclass::DeliverPayload(_) = module.ai().subclass {
             let s = module.deliver_machine.as_ref().map_or(6, |m| (m.get_current_state_id() as usize).min(6));
             ck.deliver_states[s] += 1;
+        }
+        if let Some(m) = module.dozer_machine.as_ref() {
+            let s = m.get_current_state_id() as usize;
+            ck.dozer_states[s.min(4)] += 1;
+            if let Some(DozerPrimaryState::Action { machine, .. }) = m.state(s as u32) {
+                ck.dozer_actions[(machine.get_current_state_id() as usize).min(3)] += 1;
+            }
         }
         if op == 0 {
             ck.sleeps[usize::from(r[0] != 1)] += 1;
@@ -5110,6 +5552,30 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A38; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `DozerAIUpdate` (DozerAIUpdate.cpp cut verbatim but its module data's field parse, with its header's primary machine, task
+///   enums and `DozerAIInterface`; its goal objects' healer, builder and construction percent the hash's (the first two the same for
+///   32 frames), the bridges, the build assistant, the constructed object, the player's notices, the UI and the bored search the
+///   scene's stand-ins, `LOG_DOZER`; cut points: the locally controlled player's completion UI, a constructed object's placement, the
+///   pooled iterator's holder; the AI's members as ops 118-132; half a dozer's operations updates; repairs, resumed constructions and
+///   moves away often): a tenth of the cases: 30,000 constructions and 1,744,943 operations, **0 mismatches** in the results, the
+///   call logs and the dumps (its members and three machines added). After an operation the dozer machine was idle 108,632 times,
+///   building 24,135, repairing 20,559, fortifying 7,803 (going home is never entered); the action machine picking 23,930, moving
+///   22,679, doing 5,887.
+/// - The garrison exit's search (`AIExitState`'s rappel path, batch A15) now logs its start angle too: the stand-in logs the start
+///   angle, z delta and object ignored when not the defaults (`LOG_DOZER` 33), which only it and the dozer set.
+/// - Not compared: undefined upstream (refused, the case ends): the idle state's player index without a player, a bridge tower
+///   without its interfaces during a repair, a construction without the player's money, a build completed before any `construct`
+///   set its rebuild flag (1,758 cases ended undefined in all, with the earlier batches'). Not translated (refused as such, never
+///   reached here): a player's attack cancelling a dozer's task inside a guard machine (the locked machine's attack).
+/// - Planted bugs (5,000 cases each), 3700-3721, all caught: the most recent command, the constructing condition, the good
+///   position, the repair's acceptance, another healer, the move away, the player's reset, the update's repair check, the closest
+///   repair candidate (made observable: the candidates tie, all at the origin), the idle unmarking, the bored timer, the start dock
+///   point, another healer and another builder while moving, near enough, the dock's arrival, the build's completion, full health,
+///   the scaffold, the refused healing, the legal location, the machine's snapshot. The doing state's five went uncaught until the
+///   goal objects' answers held for 32 frames and half a dozer's operations were updates.
+///
 /// # Results (2026-10-30, batch A37; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `DeliverPayloadAIUpdate` (DeliverPayloadAIUpdate.cpp cut verbatim with its header's machine, states and `DeliverPayloadData`,
@@ -5576,10 +6042,10 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads,
-        ck.deliver_states
+        ck.deliver_states, ck.dozer_states, ck.dozer_actions
     );
     ck.construction.finish();
     ck.results.finish();

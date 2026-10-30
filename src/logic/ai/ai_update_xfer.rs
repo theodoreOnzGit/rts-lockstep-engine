@@ -104,6 +104,28 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::Dozer(_) = self.ai().subclass {
+            // batch A38: `DozerAIUpdate::xfer` (version 1): the base's, then its members around its machine's snapshot (in CRC mode the
+            // machine's `crc`, nothing)
+            let current_version: XferVersion = 1;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut d = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::Dozer(d) => *d,
+                _ => unreachable!(),
+            };
+            let machine = self.dozer_machine.as_mut().expect("the dozer's machine");
+            let r = crate::logic::ai::dozer_ai_update::dozer_xfer_members(&mut d.m, xfer, |x| {
+                if x.get_xfer_mode() == XferMode::Crc || plant(3721) {
+                    return Ok(());
+                }
+                crate::logic::ai::dozer_ai_update::dozer_machine_xfer(machine, x)
+            });
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::Dozer(d);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_) = self.ai().subclass {
             // batch A37: `DeliverPayloadAIUpdate::xfer` (version 5): the base's, its members, its machine (made on a load if saved;
             // its snapshot whenever there is one; in CRC mode `StateMachine::crc`'s nothing), the decal, the flags

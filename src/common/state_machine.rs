@@ -297,6 +297,8 @@ pub enum StateMachineError {
     RecursionLimit,
     /// Undefined upstream: a caller's dereference of what is not there (what, named).
     Undefined(&'static str),
+    /// Defined upstream but not translated (what, named): never reached by the differential tests.
+    NotTranslated(&'static str),
 }
 
 impl StateMachineError {

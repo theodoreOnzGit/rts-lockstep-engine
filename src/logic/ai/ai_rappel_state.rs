@@ -169,8 +169,9 @@ pub fn rappel_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
                 start.z = h.ground_height(start.x, start.y);
                 h.set_position(&start);
                 h.set_orientation(exit_angle);
-                // (options: startAngle 1.5 PI, "Down."; maxRadius 200; the stand-in search logs the radii only)
-                if let Some(end) = h.find_position_around_no_source(&start, 0.0, 200.0) {
+                // (options: startAngle `(Real)(1.5 * PI)`, "Down." (the product a double); maxRadius 200)
+                let down = (1.5f64 * f64::from(PI)) as f32;
+                if let Some(end) = h.find_position_around_options(&start, 0.0, 200.0, false, Some(down), 1e10, 0) {
                     let path = [end];
                     ai_commands::ai_follow_path(sm, h, &path, bldg, CMD_FROM_AI)?;
                 }

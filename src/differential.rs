@@ -1112,6 +1112,15 @@ pub struct AiEnv {
     pub deliver_world: [c_float; 3],
     pub deliver_turning: c_int,
     pub deliver_module_masks: [c_uint; 2],
+    // batch A38: a DozerAIUpdate's data (repair percent per second, bored time, bored range) and its world (the AI data's bored
+    // radius modifier, every object's bounding sphere radius; the templates' time and cost to build, the player's index, the
+    // constructed object's id; the objects with a bridge tower interface, with a bridge interface, the repair candidates, the create
+    // modules (bit i: module i); the towers' bridge, the bridges' towers)
+    pub dozer_reals: [c_float; 5],
+    pub dozer_ints: [c_int; 4],
+    pub dozer_masks: [c_uint; 4],
+    pub dozer_bridge: c_int,
+    pub dozer_towers: [c_int; 4],
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

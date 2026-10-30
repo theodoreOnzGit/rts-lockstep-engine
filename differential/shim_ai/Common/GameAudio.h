@@ -21,6 +21,8 @@ public:
 	ObjectID getObjectID() const { return m_objectID; }
 	/* batch A35 (the depleted voice keeps its handle) */
 	void setPlayingHandle(AudioHandle h) { m_playingHandle = h; }
+	/* batch A38 */
+	AudioHandle getPlayingHandle() const { return m_playingHandle; }
 	AudioHandle m_playingHandle;
 	AsciiString m_eventName;
 	ObjectID m_objectID;

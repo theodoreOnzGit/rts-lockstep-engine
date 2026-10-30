@@ -243,6 +243,125 @@ pub trait AiStateHost: AiHost + StateContext {
     fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32;
     /// Batch A36: the owner's `calculateCountermeasureToDivertTo(victim)` (`INVALID_ID`: none).
     fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId;
+    /// Batch A38: the dozer's primary machines lent to the host while their AIs run (none: running), the innermost last.
+    fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::dozer_ai_update::DozerPrimaryState<Self>>>>
+    where
+        Self: Sized;
+    /// Batch A38: `TheAI->getAiData()->m_aiDozerBoredRadiusModifier`.
+    fn ai_data_dozer_bored_radius_modifier(&mut self) -> f32;
+    /// Batch A38: the owner's `setWeaponSetFlag(flag)` (`set`) or `clearWeaponSetFlag(flag)`.
+    fn set_weapon_set_flag(&mut self, flag: crate::logic::weapon_types::WeaponSetType, set: bool);
+    /// Batch A38: another object's geometry's `getMajorRadius()`.
+    fn object_major_radius(&mut self, id: ObjectId) -> f32;
+    /// Batch A38: another object's geometry's `getBoundingSphereRadius()`.
+    fn object_bounding_sphere_radius(&mut self, id: ObjectId) -> f32;
+    /// Batch A38: the owner's geometry's `getBoundingSphereRadius()`.
+    fn bounding_sphere_radius(&mut self) -> f32;
+    /// Batch A38: `ThePartitionManager->findPositionAround(pos, options, &out)` with the options' radii, the owner as the source to
+    /// path from (`source`), the start angle (none: random), the z delta and the object ignored (`INVALID_ID`: none).
+    #[allow(clippy::too_many_arguments)]
+    fn find_position_around_options(
+        &mut self,
+        pos: &Coord3D,
+        min_radius: f32,
+        max_radius: f32,
+        source: bool,
+        start_angle: Option<f32>,
+        max_z_delta: f32,
+        ignore: ObjectId,
+    ) -> Option<Coord3D>;
+    /// Batch A38: `ThePartitionManager->getDistanceSquared(owner, pos, kind)` (`DistanceKind::BoundingSphere2d`: the dozer's).
+    fn distance_squared_to_position(&mut self, pos: &Coord3D, kind: DistanceKind) -> f32;
+    /// Batch A38: a bridge's `BridgeBehaviorInterface` (`getBridgeBehaviorInterfaceFromObject`): its four towers' ids (none: no
+    /// interface).
+    fn bridge_tower_ids(&mut self, bridge: ObjectId) -> Option<[ObjectId; 4]>;
+    /// Batch A38: a tower's `BridgeTowerBehaviorInterface` (none for another kind): its bridge's id (none: no interface).
+    fn bridge_tower_bridge_id(&mut self, tower: ObjectId) -> Option<ObjectId>;
+    /// Batch A38: a bridge's interface's `isScaffoldInMotion()` (none: no interface).
+    fn bridge_scaffold_in_motion(&mut self, bridge: ObjectId) -> Option<bool>;
+    /// Batch A38: a bridge's interface's `createScaffolding()` (`create`) or `removeScaffolding()`.
+    fn bridge_scaffolding(&mut self, bridge: ObjectId, create: bool);
+    /// Batch A38: another object's `setBuilder(builder)`.
+    fn object_set_builder(&mut self, id: ObjectId, builder: ObjectId);
+    /// Batch A38: another object's `setProducer(producer)`.
+    fn object_set_producer(&mut self, id: ObjectId, producer: ObjectId);
+    /// Batch A38: another object's `getBuilderID()`.
+    fn object_builder_id(&mut self, id: ObjectId) -> ObjectId;
+    /// Batch A38: another object's `getSoleHealingBenefactor()`.
+    fn object_sole_healing_benefactor(&mut self, id: ObjectId) -> ObjectId;
+    /// Batch A38: `TheActionManager->canRepairObject(owner, target, src)` (`INVALID_ID`: none).
+    fn action_can_repair_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool;
+    /// Batch A38: `TheActionManager->canResumeConstructionOf(owner, target, src)`.
+    fn action_can_resume_construction_of(&mut self, target: ObjectId, src: CommandSourceType) -> bool;
+    /// Batch A38: the owner's and another object's controlling players are the same.
+    fn object_same_controlling_player(&mut self, id: ObjectId) -> bool;
+    /// Batch A38: another object's template's `calcTimeToBuild(owner's player)` (frames).
+    fn object_time_to_build(&mut self, id: ObjectId) -> i32;
+    /// Batch A38: another object's `getConstructionPercent()`.
+    fn object_construction_percent(&mut self, id: ObjectId) -> f32;
+    /// Batch A38: another object's `setConstructionPercent(percent)`.
+    fn object_set_construction_percent(&mut self, id: ObjectId, percent: f32);
+    /// Batch A38: another object's body's `getMaxHealth()`.
+    fn object_max_health(&mut self, id: ObjectId) -> f32;
+    /// Batch A38: another object's body's `internalChangeHealth(delta)`.
+    fn object_internal_change_health(&mut self, id: ObjectId, delta: f32);
+    /// Batch A38: another object's body's `evaluateVisualCondition()`.
+    fn object_evaluate_visual_condition(&mut self, id: ObjectId);
+    /// Batch A38: another object's `clearStatus(MAKE_OBJECT_STATUS_MASK(status))`.
+    fn object_clear_status(&mut self, id: ObjectId, status: crate::common::object_status_types::ObjectStatusTypes);
+    /// Batch A38: another object's `clearModelConditionFlags(conditions)`.
+    fn object_clear_model_condition_flags(&mut self, id: ObjectId, conditions: &[ModelConditionFlagType]);
+    /// Batch A38: another object's `clearAndSetModelConditionFlags(clear, set)`.
+    fn object_clear_and_set_model_condition_flags(&mut self, id: ObjectId, clear: &[ModelConditionFlagType], set: &[ModelConditionFlagType]);
+    /// Batch A38: another object's `clearModelConditionState(condition)`.
+    fn object_clear_model_condition_state(&mut self, id: ObjectId, condition: ModelConditionFlagType);
+    /// Batch A38: the controlling player's `onStructureConstructionComplete(owner, structure, isRebuild)`.
+    fn player_on_structure_construction_complete(&mut self, structure: ObjectId, is_rebuild: bool);
+    /// Batch A38: the controlling player's `getAcademyStats()->recordProduction(structure, owner)`.
+    fn academy_record_production(&mut self, structure: ObjectId);
+    /// Batch A38: every create module of another object's `onBuildComplete()`.
+    fn object_on_build_complete(&mut self, id: ObjectId);
+    /// Batch A38: another object's `handlePartitionCellMaintenance()`.
+    fn object_handle_partition_cell_maintenance(&mut self, id: ObjectId);
+    /// Batch A38: another object's `updateUpgradeModules()`.
+    fn object_update_upgrade_modules(&mut self, id: ObjectId);
+    /// Batch A38: the locally controlled player's construction-complete message, voice and radar event (the client's).
+    fn dozer_construction_complete_ui(&mut self, structure: ObjectId);
+    /// Batch A38: `TheInGameUI->message(label)`.
+    fn in_game_ui_message(&mut self, label: &[u8]);
+    /// Batch A38: `TheInGameUI->addIdleWorker(owner)` (`add`) or `removeIdleWorker(owner, playerNumber)`.
+    fn in_game_ui_idle_worker(&mut self, add: bool, player_number: i32);
+    /// Batch A38: the controlling player's `getPlayerIndex()` (none: no player).
+    fn player_index(&mut self) -> Option<i32>;
+    /// Batch A38: another object's `attemptHealingFromSoleBenefactor(amount, healer, frames)`.
+    fn object_attempt_healing_from_sole_benefactor(&mut self, id: ObjectId, amount: f32, healer: ObjectId, frames: u32) -> bool;
+    /// Batch A38: the bored search's candidates (`iterateObjectsInRange` with the dozer's filters: the player's structures).
+    fn partition_repair_candidates(&mut self, pos: &Coord3D, range: f32) -> Vec<ObjectId>;
+    /// Batch A38: the bored search's mine (`getClosestObject(owner, range, FROM_CENTER_2D, enemies or neutral, attackable, same map
+    /// status)`; `INVALID_ID`: none).
+    fn partition_closest_mine(&mut self, range: f32) -> ObjectId;
+    /// Batch A38: the site's template's per-unit "UnderConstruction" sound added (its object the site): its handle.
+    fn play_under_construction_sound(&mut self, site: ObjectId) -> u32;
+    /// Batch A38: `TheBuildAssistant->canMakeUnit(owner, template) == CANMAKE_OK`.
+    fn build_assistant_can_make_unit(&mut self, template: u32) -> bool;
+    /// Batch A38: `TheBuildAssistant->isLocationLegalToBuild(pos, template, angle, the four checks, owner, NULL) == LBC_OK`.
+    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32) -> bool;
+    /// Batch A38: `TheThingFactory->newObject(template, player's default team, under construction (and reconstructing))`: its id.
+    fn thing_factory_new_structure(&mut self, template: u32, is_rebuild: bool) -> ObjectId;
+    /// Batch A38: a template's `calcCostToBuild(owner's player)`.
+    fn template_cost_to_build(&mut self, template: u32) -> i32;
+    /// Batch A38: the controlling player's `getMoney()->withdraw(amount)` (false: no money).
+    fn player_money_withdraw(&mut self, amount: i32) -> bool;
+    /// Batch A38: the constructed object's `setPosition(pos)`.
+    fn new_structure_set_position(&mut self, id: ObjectId, pos: &Coord3D);
+    /// Batch A38: the constructed object's `setOrientation(angle)`.
+    fn new_structure_set_orientation(&mut self, id: ObjectId, angle: f32);
+    /// Batch A38: `TheTerrainLogic->flattenTerrain(obj)`.
+    fn terrain_flatten(&mut self, id: ObjectId);
+    /// Batch A38: `TheAI->pathfinder()->addObjectToPathfindMap(obj)`.
+    fn pf_add_object_to_pathfind_map(&mut self, id: ObjectId);
+    /// Batch A38: the controlling player's `onStructureCreated(owner, structure)`.
+    fn player_on_structure_created(&mut self, structure: ObjectId);
     /// Batch A37: the delivering AIs' machines lent to the host while their AIs run (none: not made), the innermost last.
     fn deliver_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<Self>>>>
     where
@@ -1638,6 +1757,8 @@ pub enum DistanceKind {
     Center2d,
     /// `FROM_BOUNDINGSPHERE_3D`.
     BoundingSphere3d,
+    /// `FROM_BOUNDINGSPHERE_2D` (batch A38).
+    BoundingSphere2d,
 }
 
 /// `AIUpdateInterface` with its state machine: the AI's state ([`AiUpdate`], lent to the host while the machine runs) and the
@@ -1651,12 +1772,14 @@ pub struct AiUpdateModule<H: AiStateHost> {
     pub supply_machine: Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<H>>>,
     /// Batch A37: a delivering AI's `m_deliverPayloadStateMachine` (none until `deliverPayload` makes it; none for another class).
     pub deliver_machine: Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<H>>>,
+    /// Batch A38: a dozer's `m_dozerMachine` (made by its constructor; none for another class).
+    pub dozer_machine: Option<StateMachine<crate::logic::ai::dozer_ai_update::DozerPrimaryState<H>>>,
 }
 
 impl<H: AiStateHost> AiUpdateModule<H> {
     /// `AIUpdateInterface(thing, moduleData)`: the AI's state (the machine is made by `onObjectCreated`).
     pub fn new(h: &mut H, data: Arc<AiUpdateModuleData>) -> Self {
-        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None, deliver_machine: None }
+        AiUpdateModule { ai: Some(AiUpdate::new(h, data)), machine: None, supply_machine: None, deliver_machine: None, dozer_machine: None }
     }
 
     /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
@@ -1667,7 +1790,15 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         if matches!(subclass, crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_)) {
             h.delivery_decal_clear();
         }
+        let dozer = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::Dozer(_));
         m.ai_mut().subclass = subclass;
+        if dozer {
+            // (batch A38: `DozerAIUpdate`'s constructor makes its machine (each action state's machine made and entered) and enters
+            // its default state; the object has no AI yet: nothing is lent)
+            let mut sm = crate::logic::ai::dozer_ai_update::make_dozer_machine(h)?;
+            sm.init_default_state(h)?;
+            m.dozer_machine = Some(sm);
+        }
         if supply {
             // (batch A35: `SupplyTruckAIUpdate`'s constructor makes its machine and enters its default state; the object has no AI
             // yet: nothing is lent)
@@ -1694,9 +1825,17 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         if deliver {
             h.deliver_machine_stack().push(self.deliver_machine.take());
         }
+        // (batch A38: and a dozer's machine, which a command resets)
+        let dozer = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Dozer(_));
+        if dozer {
+            h.dozer_machine_stack().push(self.dozer_machine.take());
+        }
         h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
         let r = f(self.machine.as_mut().expect("the AI's machine"), h);
         self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+        if dozer {
+            self.dozer_machine = h.dozer_machine_stack().pop().expect("the lent dozer machine");
+        }
         if deliver {
             self.deliver_machine = h.deliver_machine_stack().pop().expect("the lent deliver machine");
         }
@@ -1758,6 +1897,36 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                     return Ok(sleep);
                 }
                 self.base_update(h)?;
+                Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::Dozer(_) => {
+                // batch A38: the base's update first; then (unless dead) the current task checked, and the dozer's machine (the AI and
+                // its machine lent; its own slot empty while it runs); never asleep
+                self.base_update(h)?;
+                let alive = self.run(h, |sm, h| {
+                    crate::logic::ai::dozer_ai_update::lend_ai_machine(sm, h, crate::logic::ai::dozer_ai_update::dozer_validate_task)
+                })?;
+                if !alive {
+                    return Ok(UPDATE_SLEEP_NONE);
+                }
+                let mut m = self.dozer_machine.take().expect("the dozer machine");
+                h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
+                h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
+                h.dozer_machine_stack().push(None);
+                let r = m.update_state_machine(h);
+                let _ = h.dozer_machine_stack().pop().expect("the lent dozer machine slot");
+                // (a reset still asked for: the running state's caller had none to give it to; done now, as upstream did then)
+                let r = r.and_then(|_| {
+                    if std::mem::take(&mut crate::logic::ai::dozer_ai_update::dz(h).machine_reset_pending) {
+                        m.reset_to_default_state(h).map(|_| ())
+                    } else {
+                        Ok(())
+                    }
+                });
+                self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+                self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
+                self.dozer_machine = Some(m);
+                r?;
                 Ok(UPDATE_SLEEP_NONE)
             }
             crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_) => {

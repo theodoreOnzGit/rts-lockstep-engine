@@ -205,6 +205,33 @@
 #define TheThingFactory AiTheThingFactory
 #define ShadowType AiShadowType
 #define SHADOW_ALPHA_DECAL AI_SHADOW_ALPHA_DECAL
+/* batch A38: the dozer's world (other builds compile these classes) */
+#define DozerPrimaryStateMachine AiDozerPrimaryStateMachine
+#define DozerActionStateMachine AiDozerActionStateMachine
+#define DozerActionPickActionPosState AiDozerActionPickActionPosState
+#define DozerActionMoveToActionPosState AiDozerActionMoveToActionPosState
+#define DozerActionDoActionState AiDozerActionDoActionState
+#define DozerPrimaryIdleState AiDozerPrimaryIdleState
+#define DozerActionState AiDozerActionState
+#define DozerPrimaryGoingHomeState AiDozerPrimaryGoingHomeState
+#define DozerAIInterface AiDozerAIInterface
+#define DozerAIUpdate AiDozerAIUpdate
+#define DozerAIUpdateModuleData AiDozerAIUpdateModuleData
+#define findObjectToRepair aiFindObjectToRepair
+#define findMine aiFindMine
+#define MIN_ACTION_TOLERANCE AI_DOZER_MIN_ACTION_TOLERANCE
+#define BridgeTowerBehaviorInterface AiBridgeTowerBehaviorInterface
+#define BridgeTowerBehavior AiBridgeTowerBehavior
+#define BridgeBehaviorInterface AiBridgeBehaviorInterface
+#define BridgeBehavior AiBridgeBehavior
+#define CreateModuleInterface AiCreateModuleInterface
+#define InGameUI AiInGameUI
+#define TheInGameUI AiTheInGameUI
+#define BuildAssistant AiBuildAssistant
+#define TheBuildAssistant AiTheBuildAssistant
+#define PartitionFilterAcceptByKindOf AiPartitionFilterAcceptByKindOf
+#define ObjectIterator AiObjectIterator
+#define AcademyStats AiAcademyStats
 /* batch A7 */
 #define AudioEventRTS AiAudioEventRTS
 #define DynamicAudioEventRTS AiDynamicAudioEventRTS

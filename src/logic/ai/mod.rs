@@ -30,6 +30,7 @@ pub mod ai_tn_guard;
 pub mod assault_transport_ai_update;
 pub mod deliver_payload_ai_update;
 pub mod deploy_style_ai_update;
+pub mod dozer_ai_update;
 pub mod hack_internet_ai_update;
 pub mod missile_ai_update;
 pub mod railed_transport_ai_update;

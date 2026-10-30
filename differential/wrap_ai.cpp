@@ -245,6 +245,8 @@ public:
 	/* batch A17 (AIUpdate.h's, virtual upstream; no supply truck here) */
 	/* (batch A35: virtual upstream, and SupplyTruckAIUpdate answers itself; here dispatched explicitly, as isIdle (see it)) */
 	SupplyTruckAIInterface* getSupplyTruckAIInterface();
+	/* (batch A38: virtual upstream, and DozerAIUpdate answers itself; here dispatched explicitly) */
+	class DozerAIInterface* getDozerAIInterface();
 	/* batch A35 (AIUpdate.h's, virtual upstream: none for the classes of this build) */
 	WorkerAIInterface* getWorkerAIInterface() { return NULL; }
 	/* batch A15 (AIUpdate.h) */
@@ -1024,6 +1026,8 @@ class ThingFactory
 public:
 	const ThingTemplate *findTemplate( const AsciiString& name );
 	PayloadObject *newObject( const ThingTemplate *tmplate, Team *team );
+	/* batch A38: the dozer's construction */
+	Object *newObject( const ThingTemplate *tmplate, Team *team, ObjectStatusMaskType statusBits );
 };
 extern ThingFactory *TheThingFactory;
 #include "ai_deliver_payload_h_a37.inc"
@@ -1169,6 +1173,169 @@ static void sceneDeliverData(DeliverPayloadData *d)
 	d->m_isParachuteDirectly = ((f >> 6) & 1) != 0;
 	sceneDecalTemplate(&d->m_deliveryDecalTemplate);
 }
+/* batch A38: DozerAIUpdate. Its header's primary machine, task enums and DozerAIInterface, verbatim (ai_dozer_h_a38.inc); its module
+** data the header's fields and the .cpp's constructor (the field parse is the INI's: the scene's, g_dozerData); the class as the
+** header declares it without the pool and module macros (its getDozerAIInterface the base's, dispatched explicitly: see
+** AIUpdateInterface::getDozerAIInterface); its .cpp verbatim but its module data's field parse (ai_dozer_a38.inc), with its cut
+** points: the locally controlled player's completion UI (dozerConstructionCompleteUi, logged) and a constructed object's placement
+** (newStructureSetPosition, newStructureSetOrientation, logged). Its world: LOG_DOZER (see wrap_ai.cpp's end). */
+class BridgeTowerBehaviorInterface { public: ObjectID getBridgeID( void ); ObjectID m_tower; };
+class BridgeTowerBehavior { public: static BridgeTowerBehaviorInterface *getBridgeTowerBehaviorInterfaceFromObject( Object *obj ); };
+enum BridgeTowerType { BRIDGE_TOWER_FROM_LEFT = 0, BRIDGE_TOWER_FROM_RIGHT, BRIDGE_TOWER_TO_LEFT, BRIDGE_TOWER_TO_RIGHT, BRIDGE_MAX_TOWERS };
+class BridgeBehaviorInterface
+{
+public:
+	ObjectID getTowerID( BridgeTowerType towerType );
+	Bool isScaffoldInMotion( void );
+	void createScaffolding( void );
+	void removeScaffolding( void );
+	ObjectID m_bridge;
+};
+class BridgeBehavior { public: static BridgeBehaviorInterface *getBridgeBehaviorInterfaceFromObject( Object *obj ); };
+class CreateModuleInterface { public: void onBuildComplete(); int m_index; };
+class InGameUI
+{
+public:
+	void message( const char *stringToLookup );
+	void addIdleWorker( Object *obj );
+	void removeIdleWorker( Object *obj, Int playerNumber );
+};
+extern InGameUI *TheInGameUI;
+enum CanMakeType { CANMAKE_OK, CANMAKE_NO_PREREQ, CANMAKE_NO_MONEY, CANMAKE_FACTORY_IS_DISABLED, CANMAKE_QUEUE_FULL, CANMAKE_PARKING_PLACES_FULL,
+	CANMAKE_MAXED_OUT_FOR_PLAYER };
+enum LegalBuildCode { LBC_OK = 0, LBC_RESTRICTED_TERRAIN, LBC_NOT_FLAT_ENOUGH, LBC_OBJECTS_IN_THE_WAY, LBC_NO_CLEAR_PATH, LBC_SHROUD,
+	LBC_TOO_CLOSE_TO_SUPPLIES };
+class BuildAssistant
+{
+public:
+	enum { TERRAIN_RESTRICTIONS = 0x00000001, CLEAR_PATH = 0x00000002, NO_OBJECT_OVERLAP = 0x00000004, USE_QUICK_PATHFIND = 0x00000008,
+		SHROUD_REVEALED = 0x00000010, IGNORE_STEALTHED = 0x00000020, FAIL_STEALTHED_WITHOUT_FEEDBACK = 0x00000040 };
+	CanMakeType canMakeUnit( Object *builder, const ThingTemplate *whatToBuild ) const;
+	LegalBuildCode isLocationLegalToBuild( const Coord3D *worldPos, const ThingTemplate *build, Real angle, UnsignedInt options,
+		Object *builderObject, Player *player );
+};
+extern BuildAssistant *TheBuildAssistant;
+enum { CONSTRUCTION_COMPLETE = -1 };
+inline KindOfMaskType makeKindOfMask(KindOfType k) { KindOfMaskType m; m.set(k); return m; }
+#define MAKE_KINDOF_MASK(k) makeKindOfMask(k)
+#define KINDOFMASK_NONE KindOfMaskType()
+class PartitionFilterAcceptByKindOf : public PartitionFilter
+{
+public:
+	PartitionFilterAcceptByKindOf(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) : m_mustBeSet(mustBeSet), m_mustBeClear(mustBeClear) {}
+	KindOfMaskType m_mustBeSet, m_mustBeClear;
+};
+/* (the bored dozer's search: the scene's repair candidates, in id order) */
+class ObjectIterator
+{
+public:
+	Object *first();
+	Object *next();
+	std::vector<ObjectID> m_ids;
+	size_t m_at;
+};
+class MemoryPoolObjectHolder { public: MemoryPoolObjectHolder( ObjectIterator * ) {} };
+void dozerConstructionCompleteUi(Object *dozer, Object *goalObject);
+void newStructureSetPosition(Object *obj, const Coord3D *pos);
+void newStructureSetOrientation(Object *obj, Real angle);
+#include "ai_dozer_h_a38.inc"
+class DozerAIUpdateModuleData
+{
+public:
+	DozerAIUpdateModuleData( void );
+
+	Real m_repairHealthPercentPerSecond;	///< how many health points per second the dozer repairs at
+	Real m_boredTime;											///< after this many frames, a dozer will try to find something to do on its own
+	Real m_boredRange;										///< range the dozers try to auto repair when they're bored
+};
+static DozerAIUpdateModuleData g_dozerData;
+class DozerAIUpdate : public AIUpdateInterface, public DozerAIInterface
+{
+public:
+	static Bool findGoodBuildOrRepairPosition(const Object* me, const Object* target, Coord3D& positionOut);
+	static Object* findGoodBuildOrRepairPositionAndTarget(Object* me, Object* target, Coord3D& positionOut);
+
+	DozerAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~DozerAIUpdate( void );
+	const DozerAIUpdateModuleData *getDozerAIUpdateModuleData() const { return &g_dozerData; }
+
+	virtual void onDelete( void );
+
+	virtual Real getRepairHealthPerSecond( void ) const;	///< get health to repair per second
+	virtual Real getBoredTime( void ) const;							///< how long till we're bored
+	virtual Real getBoredRange( void ) const;							///< when we're bored, we look this far away to do things
+
+	virtual Object* construct( const ThingTemplate *what,
+														 const Coord3D *pos, Real angle,
+														 Player *owningPlayer,
+														 Bool isRebuild );								///< construct an object
+
+	virtual DozerTask getMostRecentCommand( void );				///< return task that was most recently issued
+	virtual Bool isTaskPending( DozerTask task );					///< is there a desire to do the requested task
+	virtual ObjectID getTaskTarget( DozerTask task );			///< get target of task
+	virtual Bool isAnyTaskPending( void );								///< is there any dozer task pending
+	virtual DozerTask getCurrentTask( void ) const { return m_currentTask; }	///< return the current task we're doing
+	virtual void setCurrentTask( DozerTask task ) { m_currentTask = task; }	///< set the current task of the dozer
+
+	virtual Bool getIsRebuild( void ) { return m_isRebuild; }	///< get whether or not this building is a rebuild.
+
+	virtual void newTask( DozerTask task, Object *target );	///< set a desire to do the requrested task
+	virtual void cancelTask( DozerTask task );							///< cancel this task from the queue, if it's the current task the dozer will stop working on it
+
+	virtual void internalTaskComplete( DozerTask task );					///< set a dozer task as successfully completed
+	virtual void internalCancelTask( DozerTask task );						///< cancel this task from the dozer
+	virtual void internalTaskCompleteOrCancelled( DozerTask task );	///< this is called when tasks are cancelled or completed
+
+	virtual const Coord3D* getDockPoint( DozerTask task, DozerDockPoint point );
+
+	virtual void setBuildSubTask( DozerBuildSubTask subTask ) { m_buildSubTask = subTask; };
+	virtual DozerBuildSubTask getBuildSubTask( void ) { return m_buildSubTask; }
+
+	virtual UpdateSleepTime update( void );											///< the update entry point
+
+	virtual Bool canAcceptNewRepair( Object *obj );
+	virtual void createBridgeScaffolding( Object *bridgeTower );
+	virtual void removeBridgeScaffolding( Object *bridgeTower );
+
+	virtual void startBuildingSound( const AudioEventRTS *sound, ObjectID constructionSiteID );
+	virtual void finishBuildingSound();
+
+	virtual void aiDoCommand(const AICommandParms* parms);
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual void privateRepair( Object *obj, CommandSourceType cmdSource );	///< repair the target
+	virtual void privateResumeConstruction( Object *obj, CommandSourceType cmdSource );  ///< resume construction on obj
+
+	struct DozerTaskInfo
+	{
+		ObjectID m_targetObjectID;				///< target object ID of task
+		UnsignedInt m_taskOrderFrame;			///< logic frame we decided we wanted to do this task
+	} m_task[ DOZER_NUM_TASKS ];				///< tasks we want to do indexed by DozerTask
+
+	DozerPrimaryStateMachine *m_dozerMachine;  ///< the custom state machine for Dozer behavior
+	DozerTask m_currentTask;						///< current task the dozer is attending to (if any)
+	AudioEventRTS	m_buildingSound;			///< sound is pulled from the object we are building!
+	Bool m_isRebuild;										///< is this a rebuild of a previous building?
+
+	struct DozerDockPointInfo
+	{
+		Bool valid;						///< this point has been set and is valid
+		Coord3D location;			///< WORLD location
+	} m_dockPoint[ DOZER_NUM_TASKS ][ DOZER_NUM_DOCK_POINTS ];
+
+	DozerBuildSubTask m_buildSubTask;		///< for building and actually docking for the build
+
+private:
+
+	void createMachines( void );		///< create our behavior machines we need
+
+};
+#include "ai_dozer_a38.inc"
 /* (the delivery's world's objects, defined with it below) */
 static AiTemplateView g_payloadTemplates[2];
 static PayloadObject g_payload;
@@ -1388,6 +1555,14 @@ Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos,
 {
 	/* (batch A36: FROM_CENTER_2D, the missile's) */
 	if (dc == FROM_CENTER_2D) return missileDistance(0, 0, obj->getPosition(), pos);
+	/* (batch A38: FROM_BOUNDINGSPHERE_2D, the dozer's: the centres' 2-D, logged) */
+	if (dc == FROM_BOUNDINGSPHERE_2D) {
+		const Coord3D *q = obj->getPosition();
+		Real dx = pos->x - q->x, dy = pos->y - q->y;
+		Real d = dx * dx + dy * dy;
+		L(LOG_DOZER, { 35u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(d) });
+		return d;
+	}
 	/* (batch A6: FROM_BOUNDINGSPHERE_3D too, computed alike by the stand-in) */
 	if (dc != FROM_CENTER_3D && dc != FROM_BOUNDINGSPHERE_3D) abort();
 	const Coord3D *p = obj->getPosition();
@@ -1493,6 +1668,8 @@ Object::Object()
 	m_cacheFlags = 0;
 	m_status = 0;
 	m_otherId = INVALID_ID;
+	m_constructionPercent = 0.0f;
+	m_constructionPercentSet = FALSE;
 }
 
 PhysicsBehavior *Object::getPhysics() { return g_aiEnv.hasPhysics ? &m_physics : 0; }
@@ -1525,6 +1702,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_CAN_RAPPEL) return (g_aiEnv.kindMask & 65536) != 0;
 	/* batch A17 */
 	if (t == KINDOF_DRONE) return (g_aiEnv.kindMask & 131072) != 0;
+	/* batch A38 */
+	if (t == KINDOF_BRIDGE_TOWER) return (g_aiEnv.kindMask & 262144) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -1609,6 +1788,8 @@ const AiData *AI::getAiData()
 	g_aiData.m_repulsedDistance = g_aiEnv.repulsedDistance;
 	g_aiData.m_skirmishGroupFudgeValue = g_aiEnv.skirmishFudge;
 	g_aiData.m_aiCrushesInfantry = g_aiEnv.crushesInfantry != 0;
+	/* batch A38 */
+	g_aiData.m_aiDozerBoredRadiusModifier = g_aiEnv.dozerReals[3];
 	g_aiData.m_guardChaseUnitFrames = g_aiEnv.guardChaseFrames;
 	g_aiData.m_guardEnemyScanRate = g_aiEnv.guardScanRate;
 	g_aiData.m_guardEnemyReturnScanRate = g_aiEnv.guardReturnScanRate;
@@ -1787,7 +1968,7 @@ const AudioEventRTS *AiTemplateView::getPerUnitSound(const AsciiString& soundNam
 	/* (batch A37: "StartDive" is "s8") */
 	int k = (strcmp(n0, "Deploy") == 0 || strcmp(n0, "UnitUnpack") == 0) ? 4
 		: (strcmp(n0, "Undeploy") == 0 || strcmp(n0, "UnitPack") == 0) ? 5 : strcmp(n0, "UnitCashPing") == 0 ? 6
-		: strcmp(n0, "StartDive") == 0 ? 8 : -1;
+		: strcmp(n0, "StartDive") == 0 ? 8 : strcmp(n0, "UnderConstruction") == 0 ? 9 : -1;
 	if (k >= 0 && ((g_aiEnv.sounds >> k) & 1)) { AsciiString n; n.format("s%d", k); g_unitSound.setEventName(n); }
 	return &g_unitSound;
 }
@@ -1908,6 +2089,15 @@ Object *PartitionManager::getClosestObject(const Coord3D *pos, Real maxDist, Dis
 Object *PartitionManager::getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
 	Real *closestDist, Coord3D *closestDistVec)
 {
+	/* (batch A38: the bored dozer's mine: the scene's attack answer, logged with the filters) */
+	if (dynamic_cast<const PartitionFilterRelationship *>(filters[0])) {
+		const PartitionFilterRelationship *rel = (const PartitionFilterRelationship *)filters[0];
+		const PartitionFilterPossibleToAttack *att = dynamic_cast<const PartitionFilterPossibleToAttack *>(filters[1]);
+		Object *o = findObject((ObjectID)g_aiEnv.closestAttack);
+		L(LOG_DOZER, { 34u, (unsigned)obj->getID(), bitsOf(maxDist), (unsigned)dc, (unsigned)rel->m_flags, att ? (unsigned)att->m_commandSource : 0xffffffffu,
+			o ? (unsigned)o->getID() : 0u });
+		return o;
+	}
 	const PartitionFilterAcceptOnSquad *f = (const PartitionFilterAcceptOnSquad *)filters[0];
 	Object *best = NULL;
 	unsigned bestHash = 0;
@@ -1925,6 +2115,9 @@ Bool PartitionManager::findPositionAround(const Coord3D *center, const FindPosit
 	bool r = p1Pick(p1Hash(16, { bitsOf(center->x), bitsOf(center->y) }), g_aiEnv.findPosRate);
 	L(LOG_FIND_POSITION, { bitsOf(center->x), bitsOf(center->y), bitsOf(center->z), bitsOf(options->minRadius), bitsOf(options->maxRadius),
 		options->sourceToPathToDest ? (unsigned)options->sourceToPathToDest->getID() : 0u, r ? 1u : 0u });
+	/* (batch A38: the start angle, the z delta, the object ignored, when not the defaults: the dozer's) */
+	if (options->startAngle != RANDOM_START_ANGLE || options->maxZDelta != 1e10f || options->ignoreObject)
+		L(LOG_DOZER, { 33u, bitsOf(options->startAngle), bitsOf(options->maxZDelta), options->ignoreObject ? (unsigned)options->ignoreObject->getID() : 0u });
 	if (r) { *result = *center; result->x += 5.0f; result->y += 5.0f; }
 	return r;
 }
@@ -2601,6 +2794,10 @@ void setScene(const AiEnv *env)
 	g_deliverData.m_maxNumberAttempts = env->deliverInts[0];
 	g_deliverData.m_putInContainerName = deliverTemplateName(env->deliverInts[1]);
 	sceneDecalTemplate(&g_deliverData.m_deliveryDecalTemplate);
+	/* batch A38: a DozerAIUpdate's data */
+	g_dozerData.m_repairHealthPercentPerSecond = env->dozerReals[0];
+	g_dozerData.m_boredTime = env->dozerReals[1];
+	g_dozerData.m_boredRange = env->dozerReals[2];
 	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
@@ -2744,6 +2941,7 @@ void ref_ai_a2_reset(void)
 	/* batch A37: the delivered items' modules */
 	gen->nameToKey(AsciiString("GenerateMinefieldBehavior"));
 	gen->nameToKey(AsciiString("SmartBombTargetHomingUpdate"));
+	/* batch A38: the dozer's goal objects' creation dispatches no module by name */
 	g_ai_update = 0;	/* (leaked: its locomotors point into the store deleted below) */
 	delete TheLocomotorStore;
 	TheLocomotorStore = new LocomotorStore;
@@ -2847,6 +3045,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 7: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) SupplyTruckAIUpdate(NULL, NULL); break;
 		case 8: g_ai_update = new (ShimZeroFill{}) MissileAIUpdate(NULL, NULL); break;
 		case 9: g_ai_update = new (ShimZeroFill{}) DeliverPayloadAIUpdate(NULL, NULL); break;
+		/* (batch A38: the object has no AI while its AI is made: the machine's default state's transitions ask) */
+		case 10: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) DozerAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -3002,6 +3202,33 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 			if (op == 115) { const AiTemplateView *t = d->getPutInContainerTemplateViaModuleData(); r.push_back(t ? (unsigned)(t - g_payloadTemplates) : 0xffffffffu); }
 			if (op == 116) r.push_back(d->isOffMap() ? 1u : 0u);
 			if (op == 117) r.push_back(d->isDeliveringPayload() ? 1u : 0u);
+		}
+		break;
+	/* batch A38: a dozer's members (ia[0]: a task, an object, a template (-1 none); ia[1]: an object, a point, the rebuild flag;
+	** fa[3]: the angle) (nothing for another class) */
+	case 118: case 119: case 120: case 121: case 122: case 123: case 124: case 125: case 126: case 127: case 128: case 129: case 130:
+	case 131: case 132:
+		if (g_aiEnv.subclass == 10) {
+			DozerAIUpdate *d = (DozerAIUpdate *)ai;
+			DozerTask t = (DozerTask)ia[0];
+			if (op == 118) {
+				Object *o = d->construct(ia[0] >= 0 ? &g_payloadTemplates[ia[0]] : NULL, &p, fa[3], g_object.getControllingPlayer(), ia[1] != 0);
+				r.push_back(o ? (unsigned)o->getID() : 0u);
+			}
+			if (op == 119) r.push_back((unsigned)d->getMostRecentCommand());
+			if (op == 120) r.push_back(d->isTaskPending(t) ? 1u : 0u);
+			if (op == 121) r.push_back((unsigned)d->getTaskTarget(t));
+			if (op == 122) r.push_back(d->isAnyTaskPending() ? 1u : 0u);
+			if (op == 123) d->newTask(t, findObject((ObjectID)ia[1]));
+			if (op == 124) d->cancelTask(t);
+			if (op == 125) d->internalTaskComplete(t);
+			if (op == 126) d->internalCancelTask(t);
+			if (op == 127) { const Coord3D *q = d->getDockPoint(t, (DozerDockPoint)ia[1]); r.push_back(q ? 1u : 0u); if (q) putPos(r, *q); }
+			if (op == 128) r.push_back(d->canAcceptNewRepair(findObject((ObjectID)ia[0])) ? 1u : 0u);
+			if (op == 129) d->onDelete();
+			if (op == 130) { putF(r, d->getRepairHealthPerSecond()); putF(r, d->getBoredTime()); putF(r, d->getBoredRange()); }
+			if (op == 131) d->createBridgeScaffolding(findObject((ObjectID)ia[0]));
+			if (op == 132) d->removeBridgeScaffolding(findObject((ObjectID)ia[0]));
 		}
 		break;
 	case 66: ai->onObjectCreated(); break;
@@ -3666,6 +3893,35 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A38: a DozerAIUpdate's members and machines */
+	if (g_aiEnv.subclass == 10) {
+		const DozerAIUpdate *d = (const DozerAIUpdate *)ai;
+		for (int i = 0; i < DOZER_NUM_TASKS; ++i) { putU32(v, (unsigned)d->m_task[i].m_targetObjectID); putU32(v, d->m_task[i].m_taskOrderFrame); }
+		putU32(v, (unsigned)d->m_currentTask);
+		for (int i = 0; i < DOZER_NUM_TASKS; ++i)
+			for (int j = 0; j < DOZER_NUM_DOCK_POINTS; ++j) { putU32(v, d->m_dockPoint[i][j].valid ? 1u : 0u); putPos(v, d->m_dockPoint[i][j].location); }
+		putU32(v, (unsigned)d->m_buildSubTask);
+		putU32(v, d->m_isRebuild ? 1u : 0u);
+		putU32(v, d->m_buildingSound.m_playingHandle);
+		const DozerPrimaryStateMachine *m = d->m_dozerMachine;
+		putU32(v, m->m_currentState ? (unsigned)m->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+		putU32(v, m->m_sleepTill);
+		putU32(v, m->m_defaultStateInited ? 1u : 0u);
+		const DozerPrimaryIdleState *idle = (const DozerPrimaryIdleState *)m->m_stateMap.find(DOZER_PRIMARY_IDLE)->second;
+		putU32(v, idle->m_idleTooLongTimestamp);
+		putU32(v, (unsigned)idle->m_idlePlayerNumber);
+		putU32(v, idle->m_isMarkedAsIdle ? 1u : 0u);
+		for (int s = DOZER_PRIMARY_BUILD; s <= DOZER_PRIMARY_FORTIFY; ++s) {
+			const DozerActionState *a = (const DozerActionState *)m->m_stateMap.find(s)->second;
+			const StateMachine *am = a->m_actionMachine;
+			putU32(v, am->m_currentState ? (unsigned)am->m_currentState->getID() : (unsigned)INVALID_STATE_ID);
+			putU32(v, am->m_sleepTill);
+			putU32(v, (unsigned)am->m_goalObjectID);
+			putPos(v, am->m_goalPosition);
+			putU32(v, (unsigned)((const DozerActionPickActionPosState *)am->m_stateMap.find(DOZER_ACTION_PICK_ACTION_POS)->second)->m_failedAttempts);
+			putU32(v, ((const DozerActionDoActionState *)am->m_stateMap.find(DOZER_ACTION_DO_ACTION)->second)->m_enterFrame);
+		}
+	}
 	/* batch A37: a DeliverPayloadAIUpdate's members, data and machine */
 	if (g_aiEnv.subclass == 9) {
 		const DeliverPayloadAIUpdate *d = (const DeliverPayloadAIUpdate *)ai;
@@ -4192,4 +4448,193 @@ void deliverPayloadViaModuleDataOf(DeliverPayloadAIUpdate *dp, const Coord3D *po
 {
 	/* (findUpdateModule answered the delivering AI itself) */
 	((DeliverPayloadAIUpdate *)g_ai_update)->deliverPayloadViaModuleData(pos);
+}
+
+/* batch A38: the dozer's world (LOG_DOZER): its goal objects (another object's: their healer, builder and construction percent the
+** hash's, the percent set kept for the operation; their health A32's), the player's notices, the bridges (the scene's), the UI,
+** the build assistant, the constructed object, the bored search; the explicit dispatch of getDozerAIInterface */
+static void logDozer(std::vector<unsigned> w)
+{
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_DOZER);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+DozerAIInterface *AIUpdateInterface::getDozerAIInterface()
+{
+	if (this == g_ai_update && g_aiEnv.subclass == 10) return (DozerAIUpdate *)this;
+	return NULL;
+}
+void Object::setWeaponSetFlag(WeaponSetType wst) { logDozer({ 0u, (unsigned)wst, 1u }); }
+void Object::clearWeaponSetFlag(WeaponSetType wst) { logDozer({ 0u, (unsigned)wst, 0u }); }
+/* (another object's: INVALID_ID, the dozer, or the next id, by the hash, the same for 32 frames) */
+ObjectID Object::getSoleHealingBenefactor() const
+{
+	unsigned k = p1Hash(141, { (unsigned)getID(), g_aiEnv.frame >> 5 }) % 8u;
+	ObjectID r = k < 4 ? INVALID_ID : k < 7 ? (ObjectID)g_aiEnv.objectId : (ObjectID)(getID() + 1);
+	logDozer({ 1u, (unsigned)getID(), (unsigned)r });
+	return r;
+}
+ObjectID Object::getBuilderID() const
+{
+	ObjectID r = (p1Hash(142, { (unsigned)getID(), g_aiEnv.frame >> 5 }) & 7) ? (ObjectID)g_aiEnv.objectId : INVALID_ID;
+	logDozer({ 2u, (unsigned)getID(), (unsigned)r });
+	return r;
+}
+void Object::setBuilder(const Object *obj) { logDozer({ 3u, (unsigned)getID(), obj ? (unsigned)obj->getID() : 0u }); }
+void Object::setProducer(const Object *obj) { logDozer({ 4u, (unsigned)getID(), obj ? (unsigned)obj->getID() : 0u }); }
+void Object::setConstructionPercent(Real percent)
+{
+	m_constructionPercent = percent;
+	m_constructionPercentSet = TRUE;
+	logDozer({ 5u, (unsigned)getID(), bitsOf(percent) });
+}
+Real Object::getConstructionPercent() const
+{
+	static const Real start[4] = { 0.0f, 50.0f, 99.5f, 120.0f };
+	Real r = m_constructionPercentSet ? m_constructionPercent : start[p1Hash(143, { (unsigned)getID(), g_aiEnv.frame }) & 3];
+	logDozer({ 6u, (unsigned)getID(), bitsOf(r) });
+	return r;
+}
+void BodyModuleInterface::internalChangeHealth(Real delta) { logDozer({ 7u, bodyOwner(this), bitsOf(delta) }); }
+void BodyModuleInterface::evaluateVisualCondition() { logDozer({ 8u, bodyOwner(this) }); }
+void Player::onStructureConstructionComplete(Object *builder, Object *structure, Bool isRebuild)
+{
+	logDozer({ 9u, builder ? (unsigned)builder->getID() : 0u, (unsigned)structure->getID(), isRebuild ? 1u : 0u });
+}
+void AcademyStats::recordProduction(const Object *obj, const Object *constructor)
+{
+	logDozer({ 10u, (unsigned)obj->getID(), constructor ? (unsigned)constructor->getID() : 0u });
+}
+/* (the goal object's create modules: module i when the scene's bit i says so) */
+namespace { CreateModuleInterface g_creates[3]; }
+CreateModuleInterface *BehaviorModule::getCreate()
+{
+	if (m_index < 0 || m_index >= 3 || !((g_aiEnv.dozerMasks[3] >> m_index) & 1)) return NULL;
+	g_creates[m_index].m_index = m_index;
+	return &g_creates[m_index];
+}
+void CreateModuleInterface::onBuildComplete() { logDozer({ 11u, (unsigned)m_index }); }
+void Object::handlePartitionCellMaintenance() { logDozer({ 12u, (unsigned)getID() }); }
+void Object::updateUpgradeModules() { logDozer({ 13u, (unsigned)getID() }); }
+void dozerConstructionCompleteUi(Object *dozer, Object *goalObject) { logDozer({ 14u, (unsigned)goalObject->getID() }); }
+namespace { InGameUI g_inGameUi; BuildAssistant g_buildAssistant; }
+InGameUI *TheInGameUI = &g_inGameUi;
+BuildAssistant *TheBuildAssistant = &g_buildAssistant;
+void InGameUI::message(const char *stringToLookup)
+{
+	std::vector<unsigned> w = { 15u };
+	size_t n = strlen(stringToLookup);
+	w.push_back((unsigned)n);
+	for (size_t i = 0; i < n; ++i) w.push_back((unsigned)(unsigned char)stringToLookup[i]);
+	logDozer(w);
+}
+void InGameUI::addIdleWorker(Object *obj) { logDozer({ 16u, (unsigned)obj->getID() }); }
+void InGameUI::removeIdleWorker(Object *obj, Int playerNumber) { logDozer({ 17u, (unsigned)obj->getID(), (unsigned)playerNumber }); }
+/* the bridges: towers (the scene's mask; and BRIDGE_TOWER, as upstream asks) with their bridge (the scene's), bridges (the scene's
+** mask) with their four towers (the scene's), the scaffold moving by the hash */
+namespace { BridgeTowerBehaviorInterface g_towerInterface; BridgeBehaviorInterface g_bridgeInterface; }
+BridgeTowerBehaviorInterface *BridgeTowerBehavior::getBridgeTowerBehaviorInterfaceFromObject(Object *obj)
+{
+	if (obj == NULL || obj->isKindOf(KINDOF_BRIDGE_TOWER) == FALSE) return NULL;
+	Bool r = obj->getID() < 32 && ((g_aiEnv.dozerMasks[0] >> obj->getID()) & 1);
+	logDozer({ 18u, (unsigned)obj->getID(), r ? 1u : 0u });
+	if (!r) return NULL;
+	g_towerInterface.m_tower = obj->getID();
+	return &g_towerInterface;
+}
+ObjectID BridgeTowerBehaviorInterface::getBridgeID(void) { return (ObjectID)g_aiEnv.dozerBridge; }
+BridgeBehaviorInterface *BridgeBehavior::getBridgeBehaviorInterfaceFromObject(Object *obj)
+{
+	if (obj == NULL) return NULL;
+	Bool r = obj->getID() < 32 && ((g_aiEnv.dozerMasks[1] >> obj->getID()) & 1);
+	logDozer({ 19u, (unsigned)obj->getID(), r ? 1u : 0u });
+	if (!r) return NULL;
+	g_bridgeInterface.m_bridge = obj->getID();
+	return &g_bridgeInterface;
+}
+ObjectID BridgeBehaviorInterface::getTowerID(BridgeTowerType towerType) { return (ObjectID)g_aiEnv.dozerTowers[towerType]; }
+Bool BridgeBehaviorInterface::isScaffoldInMotion(void)
+{
+	Bool r = (p1Hash(145, { (unsigned)m_bridge, g_aiEnv.frame }) & 1) != 0;
+	logDozer({ 20u, (unsigned)m_bridge, r ? 1u : 0u });
+	return r;
+}
+void BridgeBehaviorInterface::createScaffolding(void) { logDozer({ 21u, (unsigned)m_bridge, 1u }); }
+void BridgeBehaviorInterface::removeScaffolding(void) { logDozer({ 21u, (unsigned)m_bridge, 0u }); }
+Bool Object::attemptHealingFromSoleBenefactor(Real amount, const Object* source, UnsignedInt duration)
+{
+	Bool r = (p1Hash(144, { (unsigned)getID(), g_aiEnv.frame }) & 3) != 0;
+	logDozer({ 22u, (unsigned)getID(), bitsOf(amount), source ? (unsigned)source->getID() : 0u, duration, r ? 1u : 0u });
+	return r;
+}
+Real GeometryInfo::getBoundingSphereRadius() const { return g_aiEnv.dozerReals[4]; }
+Bool Object::isUsingAirborneLocomotor( void ) const
+{
+	/* (Object.cpp's, its m_ai the object's AI) */
+	const AIUpdateInterface *m_ai = getAI();
+	return ( m_ai && m_ai->getCurLocomotor() && ((m_ai->getCurLocomotor()->getLegalSurfaces() & LOCOMOTORSURFACE_AIR) != 0) );
+}
+/* the bored dozer's search: the existing objects of the scene's repair mask, in id order */
+ObjectIterator *PartitionManager::iterateObjectsInRange(const Coord3D *pos, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters,
+	IterOrderType order)
+{
+	static ObjectIterator iter;
+	iter.m_ids.clear();
+	iter.m_at = 0;
+	for (unsigned i = 1; i < 32; ++i)
+		if (((g_aiEnv.dozerMasks[2] >> i) & 1) && findObject((ObjectID)i)) iter.m_ids.push_back((ObjectID)i);
+	logDozer({ 23u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), bitsOf(maxDist), (unsigned)dc, (unsigned)iter.m_ids.size() });
+	return &iter;
+}
+Object *ObjectIterator::first() { m_at = 0; return next(); }
+Object *ObjectIterator::next() { return m_at < m_ids.size() ? findObject(m_ids[m_at++]) : NULL; }
+CanMakeType BuildAssistant::canMakeUnit(Object *builder, const AiTemplateView *whatToBuild) const
+{
+	Bool r = (p1Hash(146, { g_aiEnv.frame }) & 3) != 0;
+	logDozer({ 24u, (unsigned)(whatToBuild - g_payloadTemplates), r ? 1u : 0u });
+	return r ? CANMAKE_OK : CANMAKE_NO_PREREQ;
+}
+LegalBuildCode BuildAssistant::isLocationLegalToBuild(const Coord3D *worldPos, const AiTemplateView *build, Real angle, UnsignedInt options,
+	Object *builderObject, Player *player)
+{
+	Bool r = (p1Hash(147, { g_aiEnv.frame }) & 3) != 0;
+	logDozer({ 25u, (unsigned)(build - g_payloadTemplates), bitsOf(worldPos->x), bitsOf(worldPos->y), bitsOf(worldPos->z), bitsOf(angle),
+		options, builderObject ? (unsigned)builderObject->getID() : 0u, player ? 1u : 0u, r ? 1u : 0u });
+	return r ? LBC_OK : LBC_RESTRICTED_TERRAIN;
+}
+/* the constructed object: the scene's id (an object of the scene, or else one only this operation knows) */
+namespace { Object g_newStructure; }
+Object *ThingFactory::newObject(const AiTemplateView *tmplate, Team *team, ObjectStatusMaskType statusBits)
+{
+	ObjectID id = (ObjectID)g_aiEnv.dozerInts[3];
+	Object *o = findObject(id);
+	if (!o) { g_newStructure = Object(); g_newStructure.m_otherId = id; o = &g_newStructure; }
+	logDozer({ 26u, (unsigned)(tmplate - g_payloadTemplates), (unsigned)statusBits.m_bits, (unsigned)id });
+	return o;
+}
+Int AiTemplateView::calcTimeToBuild(const Player *player) const { return g_aiEnv.dozerInts[0]; }
+Int AiTemplateView::calcCostToBuild(const Player *player) const { return g_aiEnv.dozerInts[1]; }
+void Money::withdraw(UnsignedInt amountToWithdraw, Bool playSound) { logDozer({ 27u, amountToWithdraw }); }
+void TerrainLogic::flattenTerrain(Object *obj) { logDozer({ 28u, (unsigned)obj->getID() }); }
+/* (Pathfinder::addObjectToPathfindMap is AIPathfind.h's inline: classifyObjectFootprint(obj, true), here logged) */
+void Pathfinder::classifyObjectFootprint(Object *obj, Bool insert) { logDozer({ 29u, (unsigned)obj->getID(), insert ? 1u : 0u }); }
+void Player::onStructureCreated(Object *builder, Object *structure)
+{
+	logDozer({ 30u, builder ? (unsigned)builder->getID() : 0u, (unsigned)structure->getID() });
+}
+void newStructureSetPosition(Object *obj, const Coord3D *pos)
+{
+	obj->m_cachedPos = *pos;
+	logDozer({ 31u, (unsigned)obj->getID(), bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+}
+void newStructureSetOrientation(Object *obj, Real angle) { logDozer({ 32u, (unsigned)obj->getID(), bitsOf(angle) }); }
+Int Player::getPlayerIndex() const { return g_aiEnv.dozerInts[2]; }
+Bool ActionManager::canRepairObject(const Object *obj, const Object *objectToRepair, CommandSourceType commandSource)
+{
+	return actionAnswer(5, objectToRepair, commandSource);
+}
+Bool ActionManager::canResumeConstructionOf(const Object *obj, const Object *objectBeingConstructed, CommandSourceType commandSource)
+{
+	return actionAnswer(6, objectBeingConstructed, commandSource);
 }
