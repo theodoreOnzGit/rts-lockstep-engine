@@ -4371,6 +4371,23 @@ mod differential {
             .file(up.join("GameEngine/Source/Common/RTS/Science.cpp"))
             .file(up.join("GameEngine/Source/GameLogic/System/RankInfo.cpp"));
         sci.compile("upstream_science");
+        // p1w13-sonnet, layer 11 batch V1: VictoryConditions (differential/wrap_victory.cpp): VictoryConditions.cpp and its header unchanged,
+        // on the stand-ins of differential/shim_victory (every other header the file includes is vc_world.h), inside namespace vc.
+        {
+            let shim_victory = dif.join("shim_victory");
+            let mut vb = cc::Build::new();
+            base(&mut vb);
+            vb.compiler("clang++").include(&shim_victory).include(up.join("GameEngine/Include")).file(dif.join("wrap_victory.cpp"));
+            vb.compile("upstream_victory");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/VictoryConditions.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/VictoryConditions.h",
+                "differential/wrap_victory.cpp",
+                "differential/shim_victory",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // p1w13-sonnet batch A27: the AI's data (differential/wrap_ai_data.cpp), in the science build's setup: AI.cpp's data parsers,
         // newOverride, TAiData's constructor, crc and xfer, and SidesList.cpp's BuildListInfo members, verbatim (ai_data_a27.inc),
         // with the real AI.h and SidesList.h. Generated into OUT_DIR/ai_data_gen: the four cuts, and GameLogic/AI.h, a copy with one
