@@ -152,6 +152,9 @@ class AIUpdateInterface { public: void setLocomotorUpgrade(Bool set);
 	void aiForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );   /* batch R73: SpawnBehavior (a line) */
 	/* batch R63: FireWeaponPower's attack and turrets (lines: differential/l9_powers_h.inc) */
 	void aiAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
+	/* batch R82: FlightDeckBehavior passes its orders on (lines: differential/l9_flight_deck_r82.inc) */
+	void aiGuardPosition( const Coord3D *pos, GuardMode guardMode, CommandSourceType cmdSource );
+	void aiAttackMoveToPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );
 	void setTurretTargetObject( WhichTurretType tur, Object *o, Bool isForceAttacking = FALSE );
 	void setTurretTargetPosition( WhichTurretType tur, const Coord3D *pos );
 	/* --- end p1w13-sonnet --- */

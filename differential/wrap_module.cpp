@@ -884,5 +884,6 @@ int ref_mod_die_run(const char *filename, int n, const unsigned *queries, unsign
 #include "l9_bridge_r77.inc"   /* p1w13-sonnet, batch R77: BridgeBehavior */
 #include "l9_railroad_r80.inc"   /* p1w13-sonnet, batch R80: RailroadBehavior */
 #include "l9_special_ability_r81.inc"   /* p1w13-sonnet, batch R81: SpecialAbilityUpdate */
+#include "l9_flight_deck_r82.inc"   /* p1w13-sonnet, batch R82: FlightDeckBehavior */
 #include "l9_ocl_power_r22.inc"   /* p1w13-sonnet, batch R22: OCLSpecialPower (run by l9_powers_h.inc, kind 7) */
 /* --- end p1w13-sonnet --- */

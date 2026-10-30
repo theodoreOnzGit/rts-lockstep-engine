@@ -5218,6 +5218,58 @@ mod differential {
                 }
                 std::fs::write(mod_gen.join("SpecialAbilityUpdate_r81.h"), htext).expect("write SpecialAbilityUpdate_r81.h");
                 println!("cargo:rerun-if-changed={}", hpath.display());
+                // batch R82 (differential/l9_flight_deck_r82.inc): FlightDeckBehavior.cpp and its header, the class's AI base the driver's stand-in
+                // (R82AiBase, an UpdateModule, and R82AiData; the module build's AIUpdateInterface is a bag of calls, not a module): the header as
+                // mod_gen/FlightDeckBehavior_r82.h with its two bases renamed; the .cpp as mod_gen/FlightDeckBehavior_r82.cpp with its include of
+                // the header, the base's constructor, field table and xfer calls renamed, the field table's `INI::parseParticleSystemTemplate` the
+                // unit's l9ahParsePsTemplate, and MSVC 6's vector iterators, which were pointers, made portable: `return it;` as a pointer
+                // (findPPI, findEmptyPPI), `bestIt` a pointer, `myIt` and update()'s `it` declared before their loops (MSVC 6 kept a for
+                // loop's variable after it), and `setPosition( pCreationLocations->begin() )` given the element's address; and xfer's uninitialised
+                // `Int commandType` given the command (below); each asserted.
+                let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/FlightDeckBehavior.cpp");
+                let mut text = std::fs::read_to_string(&path).expect("read FlightDeckBehavior.cpp");
+                for (from, to, n) in [
+                    ("#include \"GameLogic/Module/FlightDeckBehavior.h\"", "#include \"FlightDeckBehavior_r82.h\"\nclass INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );", 1),
+                    ("INI::parseParticleSystemTemplate", "l9ahParsePsTemplate", 2),
+                    ("AIUpdateModuleData::buildFieldParse(p);", "R82AiData::buildFieldParse(p);", 1),
+                    (": AIUpdateInterface( thing, moduleData )", ": R82AiBase( thing, moduleData )", 1),
+                    ("\tAIUpdateInterface::crc( xfer );", "\tR82AiBase::crc( xfer );", 1),
+                    ("\tAIUpdateInterface::xfer( xfer );", "\tR82AiBase::xfer( xfer );", 1),
+                    ("\tAIUpdateInterface::loadPostProcess();", "\tR82AiBase::loadPostProcess();", 1),
+                    ("\t\t\treturn it;\n", "\t\t\treturn &(*it);\n", 2),
+                    ("std::vector<FlightDeckInfo>::iterator bestIt = NULL;", "FlightDeckInfo *bestIt = NULL;", 1),
+                    ("\t\t\t\t\tbestIt = thatIt;", "\t\t\t\t\tbestIt = &(*thatIt);", 1),
+                    (
+                        "\tfor( std::vector<FlightDeckInfo>::iterator myIt = m_spaces.begin();",
+                        "\tstd::vector<FlightDeckInfo>::iterator myIt;\n\tfor( myIt = m_spaces.begin();",
+                        1,
+                    ),
+                    (
+                        "\tfor( std::vector<FlightDeckInfo>::iterator it = m_spaces.begin(); it != m_spaces.end(); it++ )\n\t{\n\t\t//Unassigned space",
+                        "\tstd::vector<FlightDeckInfo>::iterator it;\n\tfor( it = m_spaces.begin(); it != m_spaces.end(); it++ )\n\t{\n\t\t//Unassigned space",
+                        1,
+                    ),
+                    ("newObj->setPosition( pCreationLocations->begin() );", "newObj->setPosition( &*pCreationLocations->begin() );", 1),
+                    // (xfer's `Int commandType;`, which a save writes and then assigns to m_designatedCommand, uninitialised: given the
+                    // command, the one value that leaves a save defined, as the Rust module behaves)
+                    ("\tInt commandType;\n", "\tInt commandType = m_designatedCommand;   /* build.rs: was uninitialised */\n", 1),
+                ] {
+                    assert_eq!(text.matches(from).count(), n, "FlightDeckBehavior.cpp: `{from}` must occur {n} times");
+                    text = text.replace(from, to);
+                }
+                std::fs::write(mod_gen.join("FlightDeckBehavior_r82.cpp"), text).expect("write FlightDeckBehavior_r82.cpp");
+                println!("cargo:rerun-if-changed={}", path.display());
+                let hpath = up.join("GameEngine/Include/GameLogic/Module/FlightDeckBehavior.h");
+                let mut htext = std::fs::read_to_string(&hpath).expect("read FlightDeckBehavior.h");
+                for (from, to) in [
+                    ("class FlightDeckBehaviorModuleData : public AIUpdateModuleData", "class FlightDeckBehaviorModuleData : public R82AiData"),
+                    ("class FlightDeckBehavior : public AIUpdateInterface,", "class FlightDeckBehavior : public R82AiBase,"),
+                ] {
+                    assert_eq!(htext.matches(from).count(), 1, "FlightDeckBehavior.h: `{from}` must occur once");
+                    htext = htext.replace(from, to);
+                }
+                std::fs::write(mod_gen.join("FlightDeckBehavior_r82.h"), htext).expect("write FlightDeckBehavior_r82.h");
+                println!("cargo:rerun-if-changed={}", hpath.display());
                 // and `Object::canCrushOrSquish`, cut out of Object.cpp verbatim (from its first line to the end of the function, asserted once), into
                 // mod_gen/ObjectCrush.inc, as batch O cuts `Object::kill`.
                 let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");

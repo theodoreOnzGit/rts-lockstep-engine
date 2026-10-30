@@ -89,7 +89,7 @@ fn parse_turret(ini: &mut Ini<'_>, d: &mut AiUpdateModuleData, k: usize) -> IniR
 }
 
 /// `AIUpdateModuleData::buildFieldParse`'s own table.
-static OWN_FIELD_PARSE: [FieldParse<AiUpdateModuleData>; 7] = [
+pub(crate) static OWN_FIELD_PARSE: [FieldParse<AiUpdateModuleData>; 7] = [
     FieldParse::new("Turret", |i, d, _| parse_turret(i, d, 0), UserData::None),
     FieldParse::new("AltTurret", |i, d, _| parse_turret(i, d, 1), UserData::None),
     FieldParse::new(

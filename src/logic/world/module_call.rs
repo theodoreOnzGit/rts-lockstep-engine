@@ -999,6 +999,20 @@ pub enum ModuleCall {
     JetGetParkingOffset,
     /// batch R74: `JetAIUpdate::friend_isTakeoffOrLandingInProgress()`; replies [`ModuleReply::Bool`].
     JetIsTakeoffOrLandingInProgress,
+    /// batch R82: `JetAIUpdate::isTaxiingToParking()`; replies [`ModuleReply::Bool`].
+    JetIsTaxiingToParking,
+    /// batch R82: `JetAIUpdate::friend_getPendingCommandType()`; replies [`ModuleReply::Int`].
+    JetGetPendingCommandType,
+    /// batch R82: `JetAIUpdate::friend_purgePendingCommand()`.
+    JetPurgePendingCommand,
+    /// batch R82: `JetAIUpdate::isReloading()`; replies [`ModuleReply::Bool`].
+    JetIsReloading,
+    /// batch R82: `aiGuardPosition(pos, guardMode, commandSource)`.
+    AiGuardPosition { pos: Coord3D, guard_mode: i32, command_source: i32 },
+    /// batch R82: `aiAttackMoveToPosition(pos, maxShotsToFire, commandSource)`.
+    AiAttackMoveToPosition { pos: Coord3D, max_shots: i32, command_source: i32 },
+    /// batch R82: `aiDoCommand(parms)` with the parms' command, source, object (`INVALID_ID`: `NULL`) and position.
+    AiDoCommand { cmd: i32, command_source: i32, obj: ObjectId, pos: Coord3D },
     /// batch R74: `ParkingPlaceBehaviorInterface::shouldReserveDoorWhenQueued(thing)`; replies [`ModuleReply::Bool`].
     ParkingPlaceShouldReserveDoorWhenQueued { template: u16 },
     /// batch R74: `ParkingPlaceBehaviorInterface::hasAvailableSpaceFor(thing)`; replies [`ModuleReply::Bool`].

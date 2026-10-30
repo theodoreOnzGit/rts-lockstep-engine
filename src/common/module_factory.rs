@@ -895,6 +895,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::parking_place_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::parking_place_behavior::ParkingPlaceBehavior::get_interface_mask()),
         }),
+        "FlightDeckBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::flight_deck_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::flight_deck_behavior::FlightDeckBehavior::get_interface_mask()),
+        }),
         "ProductionUpdate" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::production_update::new_module_data),
@@ -1363,6 +1368,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::GenerateMinefieldBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),
         Some(ModuleDataKind::SpawnBehavior(d)) => Some(std::sync::Arc::new(crate::logic::module::update_module::UpdateModuleData { behavior: d.behavior.clone() })),
         Some(ModuleDataKind::ParkingPlaceBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::FlightDeckBehavior(d)) => Some(std::sync::Arc::new(d.ai.update.clone())),
         Some(ModuleDataKind::ProductionUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::MinefieldBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::StickyBombUpdate(d)) => Some(std::sync::Arc::new(d.update.clone())),

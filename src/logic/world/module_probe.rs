@@ -212,6 +212,11 @@ pub struct ProbeAnswers {
     pub trace_initial_health: bool,
     /// batch R74: a `JetAIUpdate`: its parking offset and whether a takeoff or a landing is in progress.
     pub jet: Option<(f32, bool)>,
+    /// batch R82: a `JetAIUpdate` on a carrier: `isTaxiingToParking()`, `friend_getPendingCommandType()` and `isReloading()`
+    /// (`friend_purgePendingCommand()` is a line).
+    pub jet_deck: Option<(bool, i32, bool)>,
+    /// batch R82: a production update's `getProductionCount()` and `requestUniqueUnitID()` (a line), `queueCreateUnit` a line.
+    pub production: Option<(i32, i32)>,
     /// batch R76: a parking place behaviour's `shouldReserveDoorWhenQueued` and `hasAvailableSpaceFor` (both lines; `has` bit 6 makes the
     /// probe one).
     pub parking: Option<(bool, bool)>,
@@ -404,6 +409,23 @@ impl ProbeModule {
             }
             ModuleCall::JetGetParkingOffset => self.answers.jet.map_or(ModuleReply::Unhandled, |(o, _)| ModuleReply::Real(o)),
             ModuleCall::JetIsTakeoffOrLandingInProgress => self.answers.jet.map_or(ModuleReply::Unhandled, |(_, b)| ModuleReply::Bool(b)),
+            // batch R82 (FlightDeckBehavior): the jet's carrier answers, its purged command and the carrier's orders (lines)
+            ModuleCall::JetIsTaxiingToParking => self.answers.jet_deck.map_or(ModuleReply::Unhandled, |(t, _, _)| ModuleReply::Bool(t)),
+            ModuleCall::JetGetPendingCommandType => self.answers.jet_deck.map_or(ModuleReply::Unhandled, |(_, c, _)| ModuleReply::Int(c)),
+            ModuleCall::JetIsReloading => self.answers.jet_deck.map_or(ModuleReply::Unhandled, |(_, _, r)| ModuleReply::Bool(r)),
+            ModuleCall::JetPurgePendingCommand => {
+                world.body_trace(format!("jetpurge {}", me.object));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGuardPosition { pos, guard_mode, command_source } => {
+                world.body_trace(format!("aiguardpos {} {:08x} {:08x} {:08x} {guard_mode} {command_source}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiAttackMoveToPosition { pos, max_shots, command_source } => {
+                world.body_trace(format!("aiattackmove {} {:08x} {:08x} {:08x} {max_shots} {command_source}", me.object, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()));
+                ModuleReply::Done
+            }
+            ModuleCall::AiDoCommand { .. } => ModuleReply::Unhandled,
             ModuleCall::ParkingPlaceShouldReserveDoorWhenQueued { template } if self.answers.parking.is_some() => {
                 world.body_trace(format!("ppreserve {} {template}", me.object));
                 ModuleReply::Bool(self.answers.parking.is_some_and(|p| p.0))
@@ -411,6 +433,16 @@ impl ProbeModule {
             ModuleCall::ParkingPlaceHasAvailableSpaceFor { template } if self.answers.parking.is_some() => {
                 world.body_trace(format!("ppspace {} {template}", me.object));
                 ModuleReply::Bool(self.answers.parking.is_some_and(|p| p.1))
+            }
+            // batch R82: a carrier's production (its count and next unit id; the unit id asked for and the queued unit lines)
+            ModuleCall::ProductionGetCount if self.answers.production.is_some() => ModuleReply::Int(self.answers.production.map_or(0, |p| p.0)),
+            ModuleCall::ProductionRequestUniqueUnitId if self.answers.production.is_some() => {
+                world.body_trace("produniqueid".to_string());
+                ModuleReply::Int(self.answers.production.map_or(0, |p| p.1))
+            }
+            ModuleCall::ProductionQueueCreateUnit { template, production_id } if self.answers.production.is_some() => {
+                world.body_trace(format!("prodqueue {} {production_id}", template.map_or(-1, i32::from)));
+                ModuleReply::Bool(true)
             }
             ModuleCall::ProductionCanQueueCreateUnit { .. }
             | ModuleCall::ProductionCanQueueUpgrade { .. }
