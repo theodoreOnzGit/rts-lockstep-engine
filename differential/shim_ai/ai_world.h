@@ -276,6 +276,16 @@ struct AiEnv
 	Int dozerTowers[4];
 	/* batch A39: a WorkerAIUpdate's upgraded supply boost (its other data the dozer's and the supply truck's fields) */
 	Int workerBoost;
+	/* batch A40: a ChinookAIUpdate's data (rope drop speed, minimum drop height, rope final height, rappel speed; ropes, the
+	** per-rope delays (min, max), flags (1 wait for the ropes to drop, 2 the rope's template found, 4 the rotor wash's), the boost)
+	** and its world (flags: 1 the local player sees it, 2 its contain has passengers wanting in or out, 4 it is an overlord-style
+	** container; the bones: RopeStart's count, RopeEnd's count; the airfields with a parking place; the passengers allowed to fire;
+	** the rider) */
+	Real chinookReals[4];
+	Int chinookInts[5];
+	Int chinookWorld[3];
+	UnsignedInt chinookMasks[2];
+	Int chinookRider;
 };
 
 extern AiEnv g_aiEnv;
@@ -320,6 +330,7 @@ enum
 			** answer } */
 	LOG_DELIVER = 116,	/* batch A37: the delivery's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_DOZER = 117,	/* batch A38: the dozer's world { kind, words.. } (see wrap_ai.cpp) */
+	LOG_CHINOOK = 118,	/* batch A40: the chinook's world { kind, words.. } (see wrap_ai.cpp) */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
@@ -777,6 +788,10 @@ public:
 	void orderAllPassengersToExit( CommandSourceType, Bool instantly );
 	/* batch A37 (an item's, logged) */
 	void setOverrideDestination( const Coord3D * );
+	/* batch A40 (the chinook's, logged) */
+	Bool hasObjectsWantingToEnterOrExit() const;
+	Bool isSpecialOverlordStyleContainer() const;
+	const Object *friend_getRider() const;
 };
 class StealthUpdate { public: Bool isGrantedBySpecialPower(); };
 /* batch A36: the missile's weapons, particle systems (renamed Ai* in PreRTS.h: other builds compile these classes): the scene's three
@@ -803,9 +818,12 @@ public:
 extern WeaponStore *TheWeaponStore;
 enum ParticleSystemID { INVALID_PARTICLE_SYSTEM_ID = 0, PARTICLE_SYSTEM_ID_MAX = 0x7fffffff };
 class ParticleSystemTemplate { public: const AsciiString& getName() const; Int m_index; AsciiString m_name; };
+class ParticleSystem { public: void setPosition( const Coord3D *pos ); };
 class ParticleSystemManager
 {
 public:
+	/* batch A40 (logged) */
+	ParticleSystem *createParticleSystem( const ParticleSystemTemplate *sysTemplate, Bool createSlaves = TRUE );
 	ParticleSystemID createAttachedParticleSystemID( const ParticleSystemTemplate *sysTemplate, Object* attachTo, Bool createSlaves = FALSE );
 	void destroyParticleSystemByID( ParticleSystemID id );
 	const ParticleSystemTemplate *findTemplate( const AsciiString &name ) const;
@@ -901,6 +919,12 @@ public:
 	void updateSubObjects();
 	Int getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const;
 	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
+	/* batch A40: a rope's (logged; the owner's drawable is id 0) */
+	class DrawModule** getDrawModules();
+	void setPosition( const Coord3D *pos );
+	void setExpirationDate( UnsignedInt frame );
+	DrawableID getID() const { return m_ropeId; }
+	DrawableID m_ropeId;
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
 class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE );
@@ -1001,6 +1025,11 @@ public:
 	Real getHeightAboveTerrainOrWater() const;
 	void setTransformMatrix(const Matrix3D *mx);
 	const Matrix3D *getTransformMatrix() const { return &m_transform; }
+	/* batch A40: Thing.cpp's, verbatim (thing_bones_a40.inc); the HELD disabling and the local player's shroud (logged) */
+	void convertBonePosToWorldPos(const Coord3D* bonePos, const Matrix3D* boneTransform, Coord3D* worldPos, Matrix3D* worldTransform) const;
+	void setDisabled( DisabledType type );
+	void clearDisabled( DisabledType type );
+	enum ObjectShroudStatus getShroudedStatus( Int playerIndex ) const;
 	Real calculateHeightAboveTerrain(void) const;
 	void reactToTransformChange(const Matrix3D *oldMtx, const Coord3D *oldPos, Real oldAngle);
 	/* isAboveTerrain, quiet: the ground-height query of the Thing machinery is not logged */

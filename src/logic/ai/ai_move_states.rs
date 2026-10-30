@@ -182,7 +182,8 @@ pub fn mv<H: AiStateHost>(sm: &mut Sm<H>, id: StateId) -> &mut MoveToData {
         | Some(AiState::DockMove { mv, .. })
         | Some(AiState::GuardReturn { mv, .. })
         | Some(AiState::TnGuardReturn { mv, .. })
-        | Some(AiState::GuardCrate { mv, .. }) => mv,
+        | Some(AiState::GuardCrate { mv, .. })
+        | Some(AiState::ChinookMoveToBldg { mv, .. }) => mv,
         _ => unreachable!("a move state"),
     }
 }
@@ -218,7 +219,13 @@ pub(crate) fn get_adjusts_destination<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H,
     if h.status_test(OBJECT_STATUS_PARACHUTING) {
         return false;
     }
-    // (isAllowedToAdjustDestination: AIUpdateInterface's TRUE)
+    // (isAllowedToAdjustDestination: AIUpdateInterface's TRUE; batch A40: a chinook's own (its locomotor unchecked: none is
+    // undefined upstream, a crash; taken as allowed here, and the differential test gives a chinook a locomotor in every set))
+    if matches!(ai(h).subclass, crate::logic::ai::ai_update::AiSubclass::Chinook(_))
+        && !crate::logic::ai::chinook_ai_update::is_allowed_to_adjust_destination(h).unwrap_or(true)
+    {
+        return false;
+    }
     mv(sm, id).adjust_destinations
 }
 

@@ -108,8 +108,9 @@ pub fn rappel_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -
         None => false,
     };
     let pos = h.position();
-    // "ignore dead bridges."
-    let layer_at_dest = h.highest_layer_for_destination(&pos);
+    // "ignore dead bridges." (`onlyHealthyBridges = true`; corrected in batch A40: the port asked the default, unseen while the
+    // stand-in logged no flag)
+    let layer_at_dest = h.highest_layer_for_healthy_destination(&pos);
     let mut dest_z = h.layer_height(pos.x, pos.y, layer_at_dest);
     if target_is_bldg {
         dest_z += h.object_max_height_above_position(bldg.expect("the building"));

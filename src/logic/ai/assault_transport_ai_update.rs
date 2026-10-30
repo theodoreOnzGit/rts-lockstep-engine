@@ -71,6 +71,16 @@ pub enum MemberCommand {
     AttackMoveToPosition { pos: Coord3D, max_shots: i32, src: CommandSourceType },
     /// Batch A37 (a delivered item's): `aiMoveToPosition(pos, src)`.
     MoveToPosition { pos: Coord3D, src: CommandSourceType },
+    /// Batch A40 (a chinook's passengers' and rider's): `aiForceAttackObject(victim, maxShots, src)`.
+    ForceAttackObject { victim: ObjectId, max_shots: i32, src: CommandSourceType },
+    /// Batch A40: `aiAttackPosition(pos, maxShots, src)`.
+    AttackPosition { pos: Coord3D, max_shots: i32, src: CommandSourceType },
+    /// Batch A40: `aiIdle(src)`.
+    Idle { src: CommandSourceType },
+    /// Batch A40 (a rappeller's): `setDesiredSpeed(speed)`.
+    SetDesiredSpeed(f32),
+    /// Batch A40 (a rappeller's): `aiRappelInto(target, pos, src)`.
+    RappelInto { target: ObjectId, pos: Coord3D, src: CommandSourceType },
 }
 
 /// `AssaultTransportAIUpdateModuleData`'s own fields.

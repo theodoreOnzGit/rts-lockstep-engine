@@ -32,6 +32,7 @@ pub mod deliver_payload_ai_update;
 pub mod deploy_style_ai_update;
 pub mod dozer_ai_update;
 pub mod worker_ai_update;
+pub mod chinook_ai_update;
 pub mod hack_internet_ai_update;
 pub mod missile_ai_update;
 pub mod railed_transport_ai_update;

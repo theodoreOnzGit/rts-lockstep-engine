@@ -584,7 +584,7 @@ fn do_kill_state<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResult<()> {
     h.set_status_bits(&[OBJECT_STATUS_BRAKING], true);
     let max_accel = ms(h).max_accel;
     set_loco_accel_turn(h, max_accel, BIGNUM);
-    let idle = ai(h).is_idle(&*sm);
+    let idle = crate::logic::ai::ai_states::with_ai(h, |a, h| a.is_idle(&*sm, h));
     if idle {
         if let Some(goal) = sm.goal_object(h).map(|o| o.id) {
             let mut close_enough = 1.0f32;

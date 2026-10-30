@@ -73,6 +73,7 @@ use crate::logic::ai::supply_truck_ai_update::SupplyTruck;
 use crate::logic::ai::deliver_payload_ai_update::DeliverPayload;
 use crate::logic::ai::dozer_ai_update::Dozer;
 use crate::logic::ai::worker_ai_update::Worker;
+use crate::logic::ai::chinook_ai_update::Chinook;
 use crate::logic::ai::missile_ai_update::Missile;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
@@ -228,6 +229,8 @@ pub trait AiHost: LocomotorHost + PathHost {
     fn current_weapon_anti_mask(&self) -> Option<i32>;
     /// `player->hasUpgradeComplete(TheUpgradeCenter->findUpgrade(name))` for the controlling player.
     fn player_has_upgrade_complete(&self, name: &str) -> bool;
+    /// Batch A40: the owner's contain's `hasObjectsWantingToEnterOrExit()` (none: no contain).
+    fn contain_has_objects_wanting_to_enter_or_exit(&mut self) -> Option<bool>;
     /// The object's behavior modules' horde interfaces, in order: `(isInHorde(), isAllowedNationalism())` of each that has one.
     fn horde_update_interfaces(&self) -> Vec<(bool, bool)>;
     /// `getObject()->setWeaponBonusCondition(c)`.
@@ -356,6 +359,8 @@ pub enum AiSubclass {
     /// `WorkerAIUpdate` (batch A39): a dozer's and a supply truck's members and data (its machines are
     /// `AiUpdateModule::{dozer_machine, supply_machine, worker_machine}`).
     Worker(Worker),
+    /// `ChinookAIUpdate` (batch A40): a supply truck's members (its machine is `AiUpdateModule::supply_machine`) and its own.
+    Chinook(Chinook),
 }
 
 impl AiUpdate {
@@ -465,6 +470,12 @@ impl AiUpdate {
     pub fn get_cur_locomotor(&self) -> Option<&crate::logic::locomotor::Locomotor> {
         self.cur_locomotor.and_then(|i| self.locomotor_set.get(i))
     }
+
+    /// `getCurLocomotor()`, mutably (batch A40).
+    pub fn get_cur_locomotor_mut(&mut self) -> Option<&mut crate::logic::locomotor::Locomotor> {
+        let cur = self.cur_locomotor?;
+        self.locomotor_set.get_mut(cur)
+    }
     /// `setFinalPosition(pos)`: the position, and no move towards it.
     pub fn set_final_position(&mut self, pos: &Coord3D) {
         self.final_position = *pos;
@@ -493,7 +504,9 @@ impl AiUpdate {
     }
 
     /// `chooseLocomotorSet(wst)`: the normal set is the upgraded one once upgraded; a new set takes a good locomotor of it.
-    pub fn choose_locomotor_set<H: AiHost>(&mut self, h: &mut H, mut wst: LocomotorSetType) -> bool {
+    pub fn choose_locomotor_set<H: AiHost>(&mut self, h: &mut H, wst: LocomotorSetType) -> bool {
+        // (batch A40: `ChinookAIUpdate::chooseLocomotorSet`: landed, the taxiing set; then the supply truck's, the base's)
+        let mut wst = crate::logic::ai::chinook_ai_update::chinook_locomotor_set(&self.subclass, wst);
         if wst == LOCOMOTORSET_NORMAL && self.upgraded_locomotors && !plant(3200) {
             wst = LOCOMOTORSET_NORMAL_UPGRADED;
         }
@@ -1158,7 +1171,7 @@ impl AiUpdate {
 
     /// `wakeUpAndAttemptToTarget()`: an idle AI checks its mood now, randomly offset.
     pub fn wake_up_and_attempt_to_target<H: AiHost, M: AiMachineQuery>(&mut self, h: &mut H, m: &M) {
-        if !self.is_idle(m) {
+        if !self.is_idle(m, h) {
             return;
         }
         self.next_mood_check_time = h.frame();
@@ -1318,13 +1331,17 @@ impl AiUpdate {
         }
     }
 
-    /// `isIdle()`: the idle state, or a current state that is idle.
-    pub fn is_idle<M: AiMachineQuery>(&self, m: &M) -> bool {
+    /// `isIdle()`: the idle state, or a current state that is idle (batch A40: the owner's contain asked by a chinook's).
+    pub fn is_idle<M: AiMachineQuery, H: AiHost>(&self, m: &M, h: &mut H) -> bool {
         // (batch A34: `HackInternetAIUpdate::isIdle`: "scripting relies on us never claiming to be 'idle'" with a command waiting)
         if let AiSubclass::HackInternet(k) = &self.subclass {
             if k.has_pending_command && !crate::logic::modules::plant(3656) {
                 return false;
             }
+        }
+        // (batch A40: `ChinookAIUpdate::isIdle`: likewise, and landed not while passengers want in or out)
+        if let AiSubclass::Chinook(c) = &self.subclass {
+            return crate::logic::ai::chinook_ai_update::chinook_is_idle(h, c.has_pending_command, c.flight_status, self.base_is_idle(m));
         }
         self.base_is_idle(m)
     }
@@ -1370,8 +1387,8 @@ impl AiUpdate {
     }
 
     /// `isMoving()`.
-    pub fn is_moving<M: AiMachineQuery>(&self, m: &M) -> bool {
-        if self.is_idle(m) {
+    pub fn is_moving<M: AiMachineQuery, H: AiHost>(&self, m: &M, h: &mut H) -> bool {
+        if self.is_idle(m, h) {
             return false;
         }
         self.locomotor_goal_type != LocoGoalType::None || self.is_moving

@@ -32,7 +32,8 @@
 //!   busy states save nothing (not even a version).
 //! - `gainOneBox` with the last stock plays the depleted voice unless the best warehouse is within a quarter of the scan
 //!   distance; the scan distance is doubled for a computer player.
-//! - `isAvailableForSupplying` is always true; the wanting state's check of it never fails.
+//! - `isAvailableForSupplying` is always true; the wanting state's check of it never fails (batch A40: a chinook's is its own, and
+//!   can).
 //!
 //! Batch A39: the machine and the members are the worker's too ([`st`] reaches a `WorkerAIUpdate`'s); its idle state then tells
 //! the worker it is leaving the supply truck role.
@@ -159,7 +160,9 @@ fn st<H: AiStateHost>(h: &mut H) -> &mut SupplyTruck {
     match &mut ai(h).subclass {
         AiSubclass::SupplyTruck(s) => s,
         AiSubclass::Worker(w) => &mut w.supply,
-        _ => unreachable!("a SupplyTruckAIUpdate or a WorkerAIUpdate"),
+        // (batch A40: a `ChinookAIUpdate`'s, a supply truck's)
+        AiSubclass::Chinook(c) => &mut c.supply,
+        _ => unreachable!("a SupplyTruckAIUpdate, a WorkerAIUpdate or a ChinookAIUpdate"),
     }
 }
 
@@ -173,7 +176,7 @@ pub(crate) fn with_ai_machine<H: AiStateHost, R>(h: &mut H, f: impl FnOnce(&mut 
 
 /// `ai->isIdle()` (the AI's override, as upstream's virtual).
 fn ai_is_idle<H: AiStateHost>(h: &mut H) -> bool {
-    with_ai_machine(h, |sm, h| ai(h).is_idle(&*sm))
+    with_ai_machine(h, |sm, h| crate::logic::ai::ai_states::with_ai(h, |a, h| a.is_idle(&*sm, h)))
 }
 
 /// `ai->getAIStateType()`.
@@ -211,8 +214,20 @@ pub fn make_supply_machine<H: AiStateHost>() -> SmResult<StateMachine<SupplyStat
     Ok(m)
 }
 
+/// `isAvailableForSupplying()`: always (batch A40: a chinook's own).
+fn is_available_for_supplying<H: AiStateHost>(h: &mut H) -> bool {
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
+        return crate::logic::ai::chinook_ai_update::is_available_for_supplying(h);
+    }
+    true
+}
+
 /// The wanting state's update: dock with the best supply center (with boxes) or warehouse (without).
 fn wanting_update<H: AiStateHost>(h: &mut H) -> SmResult<StateReturn> {
+    // (batch A40: "isAvailableForSupplying==false; should not get here" (a DEBUG_CRASH): a chinook's can fail)
+    if !is_available_for_supplying(h) {
+        return Ok(StateReturn::FAILURE);
+    }
     let num_boxes = st(h).number_boxes;
     let best = if num_boxes > 0 { h.supply_find_best_center() } else { h.supply_find_best_warehouse() };
     if best != INVALID_ID && !plant(3660) {
@@ -312,7 +327,7 @@ impl<H: AiStateHost> StateBehavior for SupplyState<H> {
             SupplyCondition::OwnerDocking => ai_state_type(h) == AI_DOCK,
             SupplyCondition::OwnerPlayerCommanded => ai(h).last_command_source == CMD_FROM_PLAYER,
             SupplyCondition::OwnerIdle => ai_is_idle(h),
-            SupplyCondition::OwnerAvailableForSupplying => ai_is_idle(h),
+            SupplyCondition::OwnerAvailableForSupplying => is_available_for_supplying(h) && ai_is_idle(h),
             SupplyCondition::OwnerNotDockingOrIdle => !ai_is_idle(h) && ai_state_type(h) != AI_DOCK,
         })
     }

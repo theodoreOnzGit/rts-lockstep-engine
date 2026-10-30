@@ -27,6 +27,8 @@
 //! The inner, outer and attack-aggressor states run an `AIAttackState` (or the inner an `AIEnterState`) of their own on the
 //! guard machine, with their `ExitConditions`. Here that state is held by the guard state ([`AiState::GuardAttack`]'s
 //! `embedded`) and put in the guard state's place in the machine while it runs ([`with_embedded`]), the exit conditions lent to it.
+//! As upstream's two members (`m_attackState`, `m_enterState`), it holds at most one of each: a new one replaces only its own
+//! kind, and the update and exit take the attack first (batch A40 correction, below).
 //! The machine's members ([`GuardData`]) are the guard state's, lent on the attack frame while the machine runs.
 //!
 //! `AIGuardRetaliateState` (`AI_GUARD_RETALIATE`, batch A19) runs an `AIGuardRetaliateMachine`: the same states (the same ids) from
@@ -44,6 +46,9 @@
 //! - The return state's `xfer` saves its scan time only (not the move's); the idle state's `m_guardeePos` is not saved and no
 //!   constructor sets it (the pool's zeros); the embedded attack and enter states are not saved.
 //! - `AIGuardState::onEnter` returns before `recordGuardAbilityUsed`.
+//! - The inner state's `onExit` deletes its attack state, or else its enter state: with both (an enter state left by a load, which
+//!   sets the machine's state without exiting, then an attack made), the enter state stays. ~~One embedded state, a new one
+//!   replacing it~~ (corrected in batch A40: a differential case found the stale enter state kept upstream).
 //! - The guard machine's crate state's exit does not call the crate state's (nor the move's) exit.
 
 use crate::common::base_type::Coord3D;
@@ -327,11 +332,18 @@ pub const GUARD_FILTER_REJECT_BUILDINGS: u32 = 256;
 
 // ---- the embedded attack and enter states
 
-/// Runs `f` with the guard state `id`'s embedded state in its place (its exit conditions lent), then puts the guard state back.
+/// The embedded state upstream's update and exit take: the attack state, else the enter state.
+fn embedded_index<H: AiStateHost>(embedded: &[AiState<H>]) -> Option<usize> {
+    embedded.iter().position(|e| matches!(e, AiState::Attack { .. })).or(if embedded.is_empty() { None } else { Some(0) })
+}
+
+/// Runs `f` with the guard state `id`'s embedded state (the attack state, else the enter state) in its place (its exit conditions
+/// lent), then puts the guard state back.
 pub(crate) fn with_embedded<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: StateId, f: impl FnOnce(&mut Sm<H>, &mut H) -> SmResult<R>) -> SmResult<R> {
     let mut embedded = match sm.state_mut(id) {
         Some(AiState::GuardAttack { embedded, exit, .. }) => {
-            let mut e = embedded.pop().expect("an embedded state");
+            let i = embedded_index(embedded).expect("an embedded state");
+            let mut e = embedded.remove(i);
             if let AiState::Attack { exit: x, .. } = &mut e {
                 *x = Some(*exit);
             }
@@ -350,7 +362,7 @@ pub(crate) fn with_embedded<H: AiStateHost, R>(sm: &mut Sm<H>, h: &mut H, id: St
 
 fn has_embedded<H: AiStateHost>(sm: &Sm<H>, id: StateId) -> Option<bool> {
     match sm.state(id) {
-        Some(AiState::GuardAttack { embedded, .. }) => embedded.first().map(|e| matches!(e, AiState::Attack { .. })),
+        Some(AiState::GuardAttack { embedded, .. }) => embedded_index(embedded).map(|i| matches!(embedded[i], AiState::Attack { .. })),
         _ => unreachable!("a guard attack state"),
     }
 }
@@ -361,23 +373,30 @@ pub(crate) fn set_exit<H: AiStateHost>(sm: &mut Sm<H>, id: StateId, f: impl FnOn
     }
 }
 
-/// The embedded state made (an attack state with the exit conditions, or an enter state), the machine's goal the nemesis, and
-/// entered: a continue keeps it.
+/// The embedded state made (an attack state with the exit conditions, or an enter state; replacing one of its kind, without its
+/// exit, as upstream's member assigned anew), the machine's goal the nemesis, and entered: a continue keeps it.
 pub(crate) fn enter_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, state: AiState<H>, nemesis: ObjectId) -> SmResult<StateReturn> {
+    let enter = !matches!(state, AiState::Attack { .. });
     if let Some(AiState::GuardAttack { embedded, .. }) = sm.state_mut(id) {
-        embedded.clear();
+        embedded.retain(|e| matches!(e, AiState::Attack { .. }) == enter);
         embedded.push(state);
     }
     let o = h.find_object(nemesis);
     sm.set_goal_object(o.as_ref());
-    let enter = matches!(sm.state(id), Some(AiState::GuardAttack { embedded, .. }) if matches!(embedded.first(), Some(AiState::Enter { .. })));
-    let r = with_embedded(sm, h, id, |sm, h| {
-        if enter {
-            crate::logic::ai::ai_enter_state::enter_on_enter(sm, h, id)
-        } else {
-            attack_states::attack_on_enter(sm, h, id)
+    let r = if enter {
+        // (the new enter state run with an attack state also held set aside: the update and exit would take the attack)
+        let attack = match sm.state_mut(id) {
+            Some(AiState::GuardAttack { embedded, .. }) => embedded.iter().position(|e| matches!(e, AiState::Attack { .. })).map(|i| embedded.remove(i)),
+            _ => None,
+        };
+        let r = with_embedded(sm, h, id, |sm, h| crate::logic::ai::ai_enter_state::enter_on_enter(sm, h, id));
+        if let (Some(a), Some(AiState::GuardAttack { embedded, .. })) = (attack, sm.state_mut(id)) {
+            embedded.push(a);
         }
-    })?;
+        r?
+    } else {
+        with_embedded(sm, h, id, |sm, h| attack_states::attack_on_enter(sm, h, id))?
+    };
     // "if we had no one to attack, we were successful, so go to the next state." (the embedded state is kept either way)
     Ok(if r == StateReturn::CONTINUE { StateReturn::CONTINUE } else { StateReturn::SUCCESS })
 }
@@ -402,7 +421,9 @@ pub(crate) fn exit_embedded<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
         })?,
     }
     if let Some(AiState::GuardAttack { embedded, .. }) = sm.state_mut(id) {
-        embedded.clear();
+        if let Some(i) = embedded_index(embedded) {
+            embedded.remove(i);
+        }
     }
     Ok(())
 }
@@ -619,7 +640,7 @@ pub fn guard_attack_on_exit<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: State
 /// The inner, outer and attack-aggressor states' `isAttack`: their embedded attack state's (the guard-retaliate and tunnel-network
 /// guard machines' states do not override it: false).
 pub fn guard_attack_is_attack<H: AiStateHost>(embedded: &[AiState<H>], exit: &ExitConditions) -> bool {
-    !exit.retaliate && !exit.tunnel && embedded.first().is_some_and(|e| e.is_attack())
+    !exit.retaliate && !exit.tunnel && embedded.iter().find(|e| matches!(e, AiState::Attack { .. })).is_some_and(|e| e.is_attack())
 }
 
 // ---- AIGuardReturnState

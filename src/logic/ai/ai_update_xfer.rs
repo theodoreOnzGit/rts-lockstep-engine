@@ -206,25 +206,23 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             r?;
             return Ok(());
         }
-        if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) = self.ai().subclass {
-            // batch A35: `SupplyTruckAIUpdate::xfer` (version 1): the base's, its machine, the preferred dock, the boxes, the
-            // forced-wanting flag
-            let current_version: XferVersion = 1;
+        if let crate::logic::ai::ai_update::AiSubclass::Chinook(_) = self.ai().subclass {
+            // batch A40: `ChinookAIUpdate::xfer` (version 2): the supply truck's, then its own members
+            let current_version: XferVersion = 2;
             let mut version = current_version;
             xfer.xfer_version(&mut version, current_version)?;
-            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
-            // (`xferSnapshot`: in CRC mode the machine's `crc`, `StateMachine::crc`'s nothing)
-            if xfer.get_xfer_mode() != XferMode::Crc && !plant(3667) {
-                crate::logic::ai::supply_truck_ai_update::supply_machine_xfer(self.supply_machine.as_mut().expect("the supply truck's machine"), xfer)?;
-            }
-            if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(s) = &mut self.ai_mut().subclass {
-                xfer.xfer_object_id(&mut s.preferred_dock)?;
-                xfer.xfer_int(&mut s.number_boxes)?;
-                if !plant(3666) {
-                    xfer.xfer_bool(&mut s.force_pending)?;
-                }
-            }
+            self.supply_truck_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut c = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::Chinook(c) => c.clone(),
+                _ => unreachable!(),
+            };
+            let r = crate::logic::ai::chinook_ai_update::chinook_xfer_members(&mut c, h, xfer, version);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::Chinook(c);
+            r?;
             return Ok(());
+        }
+        if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) = self.ai().subclass {
+            return self.supply_truck_xfer(h, xfer, waypoint_name, waypoint_by_name);
         }
         if let crate::logic::ai::ai_update::AiSubclass::HackInternet(_) = self.ai().subclass {
             // batch A34: `HackInternetAIUpdate::xfer` (version 1): the base's, then the waiting command
@@ -269,6 +267,35 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             xfer.xfer_version(&mut version, current_version)?;
         }
         self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)
+    }
+
+    /// `SupplyTruckAIUpdate::xfer(xfer)` (batch A35; version 1): the base's, its machine, the preferred dock, the boxes, the
+    /// forced-wanting flag (batch A40: a chinook's too, inside its own).
+    fn supply_truck_xfer(
+        &mut self,
+        h: &mut H,
+        xfer: &mut dyn Xfer,
+        waypoint_name: impl Fn(u32) -> Vec<u8>,
+        waypoint_by_name: impl Fn(&[u8]) -> Option<u32>,
+    ) -> SmResult<()> {
+        let current_version: XferVersion = 1;
+        let mut version = current_version;
+        xfer.xfer_version(&mut version, current_version)?;
+        self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+        // (`xferSnapshot`: in CRC mode the machine's `crc`, `StateMachine::crc`'s nothing)
+        if xfer.get_xfer_mode() != XferMode::Crc && !plant(3667) {
+            crate::logic::ai::supply_truck_ai_update::supply_machine_xfer(self.supply_machine.as_mut().expect("the supply truck's machine"), xfer)?;
+        }
+        if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(s)
+        | crate::logic::ai::ai_update::AiSubclass::Chinook(crate::logic::ai::chinook_ai_update::Chinook { supply: s, .. }) = &mut self.ai_mut().subclass
+        {
+            xfer.xfer_object_id(&mut s.preferred_dock)?;
+            xfer.xfer_int(&mut s.number_boxes)?;
+            if !plant(3666) {
+                xfer.xfer_bool(&mut s.force_pending)?;
+            }
+        }
+        Ok(())
     }
 
     /// `AIUpdateInterface::xfer(xfer)` (version 4).
@@ -464,7 +491,7 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         }
         let moving = {
             let (ai, sm) = (self.ai.as_ref().expect("the AI"), self.machine.as_ref().expect("the AI's machine"));
-            ai.is_moving(sm)
+            ai.is_moving(sm, h)
         };
         let layer = h.layer();
         let pos = h.position();

@@ -1123,6 +1123,16 @@ pub struct AiEnv {
     pub dozer_towers: [c_int; 4],
     // batch A39: a WorkerAIUpdate's upgraded supply boost (its other data the dozer's and the supply truck's fields)
     pub worker_boost: c_int,
+    // batch A40: a ChinookAIUpdate's data (rope drop speed, minimum drop height, rope final height, rappel speed; ropes, the
+    // per-rope delays (min, max), flags (1 wait for the ropes to drop, 2 the rope's template found, 4 the rotor wash's), the boost)
+    // and its world (flags: 1 the local player sees it, 2 its contain has passengers wanting in or out, 4 it is an overlord-style
+    // container; the bones: RopeStart's count, RopeEnd's count; the airfields with a parking place; the passengers allowed to fire;
+    // the rider)
+    pub chinook_reals: [c_float; 4],
+    pub chinook_ints: [c_int; 5],
+    pub chinook_world: [c_int; 3],
+    pub chinook_masks: [c_uint; 2],
+    pub chinook_rider: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

@@ -208,7 +208,7 @@ pub fn railed_transport_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmR
         let end = h.waypoint_location(waypoint);
         let v = Coord3D { x: end.x - start.x, y: end.y - start.y, z: end.z - start.z };
         let dist = v.length();
-        let idle = ai(h).is_idle(&*sm);
+        let idle = crate::logic::ai::ai_states::with_ai(h, |a, h| a.is_idle(&*sm, h));
         if dist <= 5.0 || idle {
             // "we are no longer in transit"
             set_in_transit(h, false);

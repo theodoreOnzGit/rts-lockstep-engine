@@ -129,6 +129,8 @@ use rts_lockstep_engine::logic::modules::deliver_payload_data::DeliverPayloadDat
 use rts_lockstep_engine::logic::radius_decal::RadiusDecalTemplate;
 use rts_lockstep_engine::logic::ai::dozer_ai_update::{self as dozer, Dozer, DozerActionState, DozerData, DozerPrimaryState};
 use rts_lockstep_engine::logic::ai::worker_ai_update::{self as worker, Worker, WorkerData, WorkerState};
+use rts_lockstep_engine::logic::ai::chinook_ai_update::{self as chinook, Chinook, ChinookData, RopeCall};
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use rts_lockstep_engine::logic::ai::supply_truck_ai_update::SupplyState;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::movement::valid_locomotor_surfaces_for_cell_type;
@@ -138,7 +140,6 @@ use rts_lockstep_engine::logic::module::body_module::BodyDamageType;
 use rts_lockstep_engine::logic::module::update_module::{update_sleep, UpdateSleepTime, UPDATE_SLEEP_FOREVER, UPDATE_SLEEP_NONE};
 use rts_lockstep_engine::logic::terrain_logic::Underwater;
 use rts_lockstep_engine::logic::thing::{Thing, ThingContext, ThingTemplateView};
-use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 use std::cell::RefCell;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
@@ -232,6 +233,8 @@ const L_SUPPLY: u32 = 114;
 const L_MISSILE: u32 = 115;
 const L_DELIVER: u32 = 116;
 const L_DOZER: u32 = 117;
+/// Batch A40: the chinook's world (the wrapper's LOG_CHINOOK).
+const L_CHINOOK: u32 = 118;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -345,6 +348,8 @@ struct Host {
     /// Batch A38: the dozer's machine, lent while its AI runs; the goal objects' construction percents set this operation (the
     /// wrapper's objects are made anew every operation) and the constructed object's position.
     dozer_machines: Vec<Option<StateMachine<DozerPrimaryState<Host>>>>,
+    /// Batch A40: the chinook's ropes' next drawable (ids 1 ..= 63, from 1 in each case, as the wrapper's).
+    next_rope: u32,
     /// Batch A39: the worker's supply truck machine and its own, lent while its AI runs.
     supply_machines: Vec<Option<StateMachine<SupplyState<Host>>>>,
     worker_machines: Vec<Option<StateMachine<WorkerState<Host>>>>,
@@ -393,6 +398,15 @@ impl Host {
     }
 
     /// Batch A37: a `LOG_DELIVER` record of `w` then a name (its length, its bytes).
+    /// Batch A40: the wrapper's `getPristineBonePositions(prefix, 1, .., max)` with more than one bone asked: the
+    /// scene's count (logged as the deliver stand-in's).
+    fn chinook_bones(&mut self, prefix: &[u8], max: usize) -> usize {
+        let w = self.env.chinook_world[1];
+        let count = if prefix == b"RopeStart" { w & 0xff } else { (w >> 8) & 0xff } as usize;
+        let n = count.min(max);
+        self.l_named(vec![8, 1, max as u32, n as u32], prefix);
+        n
+    }
     fn l_named(&mut self, mut w: Vec<u32>, name: &[u8]) {
         w.push(name.len() as u32);
         w.extend(name.iter().map(|&b| u32::from(b)));
@@ -499,6 +513,7 @@ impl LocomotorHost for Host {
             || (kind == KINDOF_CAN_RAPPEL && m & 65536 != 0)
             || (kind == KINDOF_DRONE && m & 131072 != 0)
             || (kind == rts_lockstep_engine::common::kind_of::KINDOF_BRIDGE_TOWER && m & 262144 != 0)
+            || (kind == rts_lockstep_engine::common::kind_of::KINDOF_FS_AIRFIELD && m & 524288 != 0)
     }
     fn status_test(&self, status: ObjectStatusTypes) -> bool {
         (self.status >> status) & 1 != 0
@@ -609,7 +624,8 @@ impl LocomotorHost for Host {
         }
     }
     fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
-        self.l(L_HIGHEST_LAYER, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        // (batch A40: and the healthy-bridges flag)
+        self.l(L_HIGHEST_LAYER, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), 0]);
         self.env.loco.highest_layer
     }
     fn ground_or_structure_height(&mut self, x: f32, y: f32) -> f32 {
@@ -659,6 +675,15 @@ impl PathHost for Host {
 }
 
 impl AiHost for Host {
+    fn contain_has_objects_wanting_to_enter_or_exit(&mut self) -> Option<bool> {
+        // (batch A40: the chinook's, logged)
+        if self.env.has_contain == 0 {
+            return None;
+        }
+        let r = self.env.chinook_world[0] & 2 != 0;
+        self.l(L_CHINOOK, &[9, u32::from(r)]);
+        Some(r)
+    }
     fn object_id(&self) -> ObjectId {
         self.env.object_id
     }
@@ -817,6 +842,8 @@ impl AiHost for Host {
                 "Upgrade_Fanaticism" => self.env.upgrades & 2 != 0,
                 // (batch A39)
                 "Upgrade_GLAWorkerShoes" => self.env.upgrades & 4 != 0,
+                // (batch A40)
+                "Upgrade_AmericaSupplyLines" => self.env.upgrades & 8 != 0,
                 _ => false,
             }
     }
@@ -1246,6 +1273,132 @@ impl AiStateHost for Host {
     // batch A38: the dozer's world (the wrapper's stand-ins, LOG_DOZER)
     fn dozer_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<DozerPrimaryState<Host>>>> {
         &mut self.dozer_machines
+    }
+    // batch A40: the chinook's world (the wrapper's stand-ins, LOG_CHINOOK)
+    fn contain_is_special_overlord_style_container(&mut self) -> bool {
+        let r = self.env.chinook_world[0] & 4 != 0;
+        self.l(L_CHINOOK, &[10, u32::from(r)]);
+        r
+    }
+    fn contain_passenger_allowed_to_fire_id(&mut self, passenger: ObjectId) -> bool {
+        let r = (1..32).contains(&passenger) && (self.env.chinook_masks[1] >> passenger) & 1 != 0;
+        self.l(L_CHINOOK, &[11, passenger as u32, u32::from(r)]);
+        r
+    }
+    fn contain_rider(&mut self) -> ObjectId {
+        let r = self.env.chinook_rider;
+        let r = if self.object_exists(r) { r } else { 0 };
+        self.l(L_CHINOOK, &[12, r as u32]);
+        r
+    }
+    fn parking_place_exists(&mut self, airfield: ObjectId) -> bool {
+        let r = (1..32).contains(&airfield) && (self.env.chinook_masks[0] >> airfield) & 1 != 0;
+        self.l(L_CHINOOK, &[7, airfield as u32, u32::from(r)]);
+        r
+    }
+    fn parking_place_set_healee(&mut self, airfield: ObjectId, add: bool) {
+        self.l(L_CHINOOK, &[8, airfield as u32, u32::from(add)]);
+    }
+    fn member_ai_current_victim(&mut self, id: ObjectId) -> ObjectId {
+        let none = pick(p1_hash(self.env.seed, 149, &[id as u32, self.env.loco.frame]), 50);
+        let v = if none || !self.object_exists(self.env.closest_enemy) { 0 } else { self.env.closest_enemy };
+        self.l(L_MEMBER_AI, &[10, id as u32, v as u32]);
+        v
+    }
+    fn set_disabled_held(&mut self, held: bool) {
+        self.l(L_CHINOOK, &[0, DISABLED_HELD as u32, u32::from(held)]);
+    }
+    fn highest_layer_for_healthy_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
+        self.l(L_HIGHEST_LAYER, &[pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), 1]);
+        self.env.loco.highest_layer
+    }
+    fn pf_adjust_to_landing_destination(&mut self, pos: &mut Coord3D) {
+        self.l(L_CHINOOK, &[14, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
+        pos.x = (pos.x / 10.0).floor() * 10.0 + 10.0 / 2.0;
+        pos.y = (pos.y / 10.0).floor() * 10.0 + 10.0 / 2.0;
+    }
+    fn body_health(&mut self) -> f32 {
+        // (the owner's body: the wrapper's owner 0)
+        [100.0f32, 100.0, 55.0, 15.0][((p1_hash(self.env.seed, 132, &[0, self.env.loco.frame >> 5]) >> 8) & 3) as usize]
+    }
+    fn action_can_enter_object_combat_drop(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        // (the stand-in answers whatever the mode)
+        self.action_answer(2, target, src)
+    }
+    fn drawable_pristine_bone_positions(&mut self, prefix: &[u8], max: usize) -> Vec<Coord3D> {
+        let n = self.chinook_bones(prefix, max);
+        (0..n).map(|i| Coord3D { x: 2.0 * (1 + i) as f32, y: 3.0, z: 1.0 }).collect()
+    }
+    fn drawable_pristine_bone_transforms(&mut self, prefix: &[u8], max: usize) -> Vec<Matrix3D> {
+        let n = self.chinook_bones(prefix, max);
+        (0..n)
+            .map(|i| {
+                let mut m = Matrix3D::default();
+                m.make_identity();
+                m.set_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(2.0 * (1 + i) as f32, -3.0, 1.0));
+                m
+            })
+            .collect()
+    }
+    fn own_convert_bone_transform_to_world(&mut self, mtx: &Matrix3D) -> Matrix3D {
+        self.thing.convert_bone_pos_to_world_pos(&Coord3D::default(), mtx).1
+    }
+    fn own_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D {
+        self.thing.convert_bone_pos_to_world_pos(pos, &Matrix3D::default()).0
+    }
+    fn new_rope_drawable(&mut self) -> Option<u32> {
+        let k = 1 + (self.next_rope - 1) % 63;
+        self.next_rope += 1;
+        self.l(L_CHINOOK, &[1, k]);
+        Some(k)
+    }
+    fn rope_call(&mut self, drawable: u32, call: RopeCall) {
+        let w = match call {
+            RopeCall::SetPosition(p) => vec![2, drawable, p.x.to_bits(), p.y.to_bits(), p.z.to_bits()],
+            RopeCall::InitParms { length, width, color, wobble_len, wobble_amp, wobble_rate } => vec![
+                3,
+                drawable,
+                length.to_bits(),
+                width.to_bits(),
+                color[0].to_bits(),
+                color[1].to_bits(),
+                color[2].to_bits(),
+                wobble_len.to_bits(),
+                wobble_amp.to_bits(),
+                wobble_rate.to_bits(),
+            ],
+            RopeCall::SetCurLen(len) => vec![4, drawable, len.to_bits()],
+            RopeCall::SetSpeed { cur, max, accel } => vec![5, drawable, cur.to_bits(), max.to_bits(), accel.to_bits()],
+            RopeCall::SetExpirationDate(frame) => vec![6, drawable, frame],
+        };
+        self.l(L_CHINOOK, &w);
+    }
+    fn own_exit_reserve_door(&mut self, exiter: ObjectId) -> i32 {
+        if self.env.dock_flags & 8 == 0 {
+            return -1;
+        }
+        self.l(L_CONTAIN, &[5, exiter as u32, self.env.exit_door as u32]);
+        self.env.exit_door
+    }
+    fn own_exit_object_via_door(&mut self, exiter: ObjectId, door: i32) {
+        self.l(L_CONTAIN, &[6, exiter as u32, door as u32]);
+    }
+    fn object_set_transform_matrix(&mut self, id: ObjectId, mtx: &Matrix3D) {
+        let t = mtx.get_translation();
+        self.l(L_CHINOOK, &[13, id as u32, t.x.to_bits(), t.y.to_bits(), t.z.to_bits()]);
+    }
+    fn local_player_shroud_clear(&mut self) -> bool {
+        let clear = self.env.chinook_world[0] & 1 != 0;
+        self.l(L_CHINOOK, &[15, self.env.dozer_ints[2] as u32, u32::from(clear)]);
+        clear
+    }
+    fn client_random_value_real(&mut self, lo: f32, hi: f32) -> f32 {
+        let r = lo + (hi - lo) * (p1_hash(self.env.seed, 148, &[self.env.loco.frame]) % 1000) as f32 / 1000.0;
+        self.l(L_CHINOOK, &[16, lo.to_bits(), hi.to_bits(), r.to_bits()]);
+        r
+    }
+    fn rotor_wash(&mut self, pos: &Coord3D) {
+        self.l(L_CHINOOK, &[17, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits()]);
     }
     // batch A39: the worker's machines; a constructed object's status (the stand-in logs the bit)
     fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<SupplyState<Host>>>> {
@@ -1695,6 +1848,16 @@ impl AiStateHost for Host {
                 vec![8, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), max_shots as u32, src as u32]
             }
             MemberCommand::MoveToPosition { pos, src } => vec![9, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), src as u32],
+            // (batch A40)
+            MemberCommand::ForceAttackObject { victim, max_shots, src } => vec![11, id as u32, victim as u32, max_shots as u32, src as u32],
+            MemberCommand::AttackPosition { pos, max_shots, src } => {
+                vec![12, id as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), max_shots as u32, src as u32]
+            }
+            MemberCommand::Idle { src } => vec![13, id as u32, src as u32],
+            MemberCommand::SetDesiredSpeed(speed) => vec![14, id as u32, speed.to_bits()],
+            MemberCommand::RappelInto { target, pos, src } => {
+                vec![15, id as u32, target as u32, pos.x.to_bits(), pos.y.to_bits(), pos.z.to_bits(), src as u32]
+            }
         };
         self.l(L_MEMBER_AI, &w);
     }
@@ -2241,7 +2404,7 @@ impl AiStateHost for Host {
     fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
         // (batch A30: the transport's passengers with an AI too; batch A32: the assault transport's with an AI only; batch A37: the
         // delivering AI's with an AI too)
-        let transport = self.env.subclass == 2 || self.env.subclass == 9;
+        let transport = self.env.subclass == 2 || self.env.subclass == 9 || self.env.subclass == 12;
         let assault = self.env.subclass == 4;
         (1..32)
             .filter(|&i| {
@@ -3123,14 +3286,14 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                                 v.extend([exit.conditions_to_consider as u32]);
                                 put_pos(&mut v, &exit.center);
                                 v.extend([exit.radius_sqr.to_bits(), exit.attack_give_up_frame]);
-                                let e = match embedded.first() {
+                                let e = match guard_embedded(embedded) {
                                     Some(AiState::Attack { .. }) => 1,
                                     Some(_) if kinds == 3 => 2,
                                     _ => 0,
                                 };
                                 v.push(e);
                                 // (the embedded attack state's follow flag and its machine's state)
-                                if let Some(AiState::Attack { follow, machine, .. }) = embedded.first() {
+                                if let Some(AiState::Attack { follow, machine, .. }) = guard_embedded(embedded) {
                                     v.extend([u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())]);
                                 }
                             }
@@ -3176,12 +3339,12 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                                 v.push(exit.conditions_to_consider as u32);
                                 put_pos(&mut v, &exit.center);
                                 v.extend([exit.radius_sqr.to_bits(), exit.attack_give_up_frame]);
-                                v.push(match embedded.first() {
+                                v.push(match guard_embedded(embedded) {
                                     Some(AiState::Attack { .. }) => 1,
                                     Some(_) if kinds == 3 => 2,
                                     _ => 0,
                                 });
-                                if let Some(AiState::Attack { follow, machine, .. }) = embedded.first() {
+                                if let Some(AiState::Attack { follow, machine, .. }) = guard_embedded(embedded) {
                                     v.extend([u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())]);
                                 }
                             }
@@ -3225,7 +3388,7 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
                                 if inner {
                                     v.push(0); // (m_scanForEnemy: never set)
                                 }
-                                match embedded.first() {
+                                match guard_embedded(embedded) {
                                     Some(AiState::Attack { follow, machine, .. }) => {
                                         v.extend([1, u32::from(*follow), machine.as_ref().map_or(u32::MAX, |m| m.get_current_state_id())])
                                     }
@@ -3436,8 +3599,53 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
         v.extend([m.extra_bonus_flags, m.detonation_weapon.unwrap_or(u32::MAX), m.exhaust_sys.unwrap_or(u32::MAX), m.exhaust_id]);
         v.extend([m.frames_till_decoyed, u32::from(m.is_tracking_target), u32::from(m.is_armed), u32::from(m.no_damage), u32::from(m.is_jammed)]);
     }
-    // batch A35: a SupplyTruckAIUpdate's members and its machine's
-    if let AiSubclass::SupplyTruck(t) = &module.ai().subclass {
+    // batch A40: a ChinookAIUpdate's members, its machine's own states' (the taking-off and landing states', the move to the
+    // drop's, the drop's: its ropes, a rope's lengths only with a drawable), then (below) the supply truck's
+    if let AiSubclass::Chinook(c) = &module.ai().subclass {
+        v.extend([c.flight_status as u32, c.airfield_for_healing as u32]);
+        put_pos(&mut v, &c.original_pos);
+        let p = &c.pending_command;
+        v.extend([u32::from(c.has_pending_command), p.cmd as u32, p.cmd_source as u32]);
+        put_pos(&mut v, &p.pos);
+        v.push(p.obj as u32);
+        if let Some(m) = module.machine.as_ref() {
+            for s in [1001, 1002, 1005, 1008, 1010] {
+                match m.state(s) {
+                    Some(AiState::ChinookTakeoffOrLanding { dest_loc, landing }) => {
+                        put_pos(&mut v, dest_loc);
+                        v.push(u32::from(*landing));
+                    }
+                    _ => panic!("a landing state"),
+                }
+            }
+            match m.state(1012) {
+                Some(AiState::ChinookMoveToBldg { old_preferred_height, new_preferred_height, dest_z, .. }) => {
+                    v.extend([old_preferred_height.to_bits(), new_preferred_height.to_bits(), dest_z.to_bits()]);
+                }
+                _ => panic!("the move to the drop"),
+            }
+            match m.state(1013) {
+                Some(AiState::ChinookCombatDrop { ropes }) => {
+                    v.push(ropes.len() as u32);
+                    for rope in ropes {
+                        v.push(rope.rope_drawable.unwrap_or(0));
+                        for row in &rope.drop_start_mtx.row {
+                            v.extend([row.x.to_bits(), row.y.to_bits(), row.z.to_bits(), row.w.to_bits()]);
+                        }
+                        if rope.rope_drawable.is_some() {
+                            let (speed, len, len_max) = rope.rope.expect("a rope's lengths");
+                            v.extend([speed.to_bits(), len.to_bits(), len_max.to_bits()]);
+                        }
+                        v.extend([rope.next_drop_time, rope.rappeller_ids.len() as u32]);
+                        v.extend(rope.rappeller_ids.iter().map(|&id| id as u32));
+                    }
+                }
+                _ => panic!("the drop"),
+            }
+        }
+    }
+    // batch A35: a SupplyTruckAIUpdate's members and its machine's (batch A40: and a chinook's)
+    if let AiSubclass::SupplyTruck(t) | AiSubclass::Chinook(Chinook { supply: t, .. }) = &module.ai().subclass {
         v.extend([t.preferred_dock as u32, t.number_boxes as u32, u32::from(t.force_pending), u32::from(t.forced_busy_pending)]);
         let m = module.supply_machine.as_ref().expect("the supply truck's machine");
         v.extend([m.get_current_state_id(), m.peek_sleep_till(), u32::from(m.is_default_state_inited())]);
@@ -3696,7 +3904,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11][g.below(22) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12][g.below(24) as usize];
     // (batch A39: a worker's shoes, half the time)
     if e.subclass == 11 {
         e.upgrades |= (g.below(2) as i32) << 2;
@@ -3801,6 +4009,29 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.dozer_towers = [some(g), some(g), some(g), some(g)];
     // batch A39: a worker's boost (its other data the dozer's and the supply truck's)
     e.worker_boost = [0, 5, 30][g.below(3) as usize];
+    // batch A40: a chinook's data (the rope fast or slow; few ropes, short delays, or the defaults; its flags: waiting for the
+    // ropes, the rope's template, the rotor wash's), its world (shroud, passengers wanting in or out, an overlord-style contain;
+    // the bones' counts), its airfields with a parking place and passengers allowed to fire, its rider; its supply lines half the
+    // time, the scene's objects airfields half the time (kinds are the scene's)
+    e.chinook_reals = [[1e10, 2.0, 6.0][g.below(3) as usize], [30.0, 0.0, 10.0][g.below(3) as usize], [0.0, 2.0][g.below(2) as usize], g.uniform(1.0, 20.0)];
+    let (delay_min, delay_max) = if g.below(4) == 0 { (0x7fff_ffff, 0x7fff_ffff) } else {
+        let lo = [0, 1, 3][g.below(3) as usize];
+        (lo, lo + g.below(5) as i32)
+    };
+    e.chinook_ints = [g.below(5) as i32, delay_min, delay_max, g.below(8) as i32, [0, 5, 30][g.below(3) as usize]];
+    e.chinook_world = [g.below(8) as i32, (g.below(5) | g.below(5) << 8) as i32, 0];
+    e.chinook_masks = [g.u32(), g.u32()];
+    e.chinook_rider = if g.below(3) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    if e.subclass == 12 {
+        // (its taking-off and landing states use the physics unchecked; a rope without a drawable leaves its lengths
+        // uninitialised, which the drop's update reads: the rope's template always found)
+        e.loco.has_physics = 1;
+        e.chinook_ints[3] |= 2;
+        e.upgrades |= (g.below(2) as i32) << 3;
+        if g.below(2) == 0 {
+            e.loco.kind_mask |= 524288;
+        }
+    }
     if e.subclass == 10 || e.subclass == 11 {
         e.exist_mask |= 1 << construct_id;
         if g.below(3) == 0 {
@@ -3970,9 +4201,17 @@ fn perturb(g: &mut Gen, e: &mut Env) {
     if g.below(15) == 0 {
         e.effectively_dead ^= 1;
     }
+    // (batch A40: the chinook's world)
+    if g.below(10) == 0 {
+        e.chinook_world[0] = g.below(8) as i32;
+    }
     if g.below(10) == 0 {
         e.horde = g.below(512) as i32;
-        e.upgrades = g.below(if e.subclass == 11 { 8 } else { 4 }) as i32;
+        e.upgrades = g.below(match e.subclass {
+            11 => 8,
+            12 => 16,
+            _ => 4,
+        }) as i32;
     }
     if g.below(12) == 0 {
         e.player_type = [-1, 0, 1, 1][g.below(4) as usize];
@@ -4001,14 +4240,18 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
-    } else if (e.subclass == 10 || e.subclass == 11) && g.below(2) == 0 {
+    } else if matches!(e.subclass, 10..=12) && g.below(2) == 0 {
         // batch A38: a dozer's work takes many updates (moving to the site, to its dock, building up) (batch A39: a worker's too)
+        // (batch A40: and a chinook's flights, landings and drops)
         65
     } else if e.subclass == 11 && g.below(3) == 0 {
         // batch A39: a worker's members: the dozer's (the constructions most), the docks' calls (a forced supply run most), its own
         const WORKER_OPS: [i32; 36] =
             [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 101, 101, 102, 103, 103, 103, 103, 103, 103, 133, 133, 134, 135, 136, 137, 138, 139, 140];
         WORKER_OPS[g.below(WORKER_OPS.len() as u32) as usize]
+    } else if e.subclass == 12 && g.below(5) == 0 {
+        // batch A40: a chinook's members, the docks' calls
+        [141, 141, 142, 142, 101, 102, 103][g.below(7) as usize]
     } else if e.subclass == 10 && g.below(3) == 0 {
         // batch A38: a dozer's members (the constructions most)
         [118, 118, 118, 119, 120, 121, 122, 123, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132][g.below(18) as usize]
@@ -4096,7 +4339,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=140);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=142);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -4167,6 +4410,10 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // machine's: upstream's internalGetState gives the default state)
         59 | 60 => {
             ia[0] = if g.below(2) == 0 { [0, 0, 13, 8, 41, 15, 21, 1, 1, 23, 24, 39, 6, 7, 25, 26, 27, 2, 3, 4, 5, 18, 19, 40, 3, 18, 9, 10, 11, 12, 10, 10, 2, 2, 30, 30, 38, 17, 17, 28, 28, 31, 31, 32, 32, 33, 34, 37, 42, 35, 35, 20, 20, 14, 14, 16, 16, 16, 43, 43, 43, 21, 21, 21][g.below(64) as usize] } else { g.below(46) as i32 };
+            // (batch A40: a chinook's own states often, the combat drop most)
+            if e.subclass == 12 && g.below(2) == 0 {
+                ia[0] = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1013, 1013, 1014][g.below(16) as usize];
+            }
             if op == 60 {
                 if g.below(2) == 0 {
                     ia[0] = 23;
@@ -4215,6 +4462,8 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             let cmd = if e.subclass == 10 && g.below(3) == 0 { [19, 19, 20, 48][g.below(4) as usize] } else { cmd };
             // (batch A39: a worker's repair, resumed construction, move away and dock, often)
             let cmd = if e.subclass == 11 && g.below(3) == 0 { [19, 19, 20, 48, 24, 24][g.below(6) as usize] } else { cmd };
+            // (batch A40: a chinook's evacuations, repair, exit, combat drop, idle, dock, often)
+            let cmd = if e.subclass == 12 && g.below(2) == 0 { [3, 4, 22, 22, 25, 26, 38, 38, 38, 5, 24][g.below(11) as usize] } else { cmd };
             ia[0] = cmd;
             ia[1] = g.below(4) as i32;
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
@@ -4222,6 +4471,14 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
             ia[2] = if g.below(4) == 0 { g.below(32) as i32 } else { some_object(g) };
             if matches!(cmd, 30 | 40 | 48) {
                 ia[2] = some_object(g);
+            }
+            // (batch A40: a chinook's repair at a depot: upstream's own uses it unchecked; none, the idle command)
+            if cmd == 22 && e.subclass == 12 {
+                if ids.is_empty() {
+                    ia[0] = 5;
+                } else {
+                    ia[2] = some_object(g);
+                }
             }
             ia[3] = if g.below(3) == 0 { -1 } else { 0 };
             ia[4] = g.below(9) as i32 - 1;
@@ -4253,8 +4510,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         // (batch A39: a worker forced into a supply run most times)
         103 if e.subclass == 11 => ia[0] = i32::from(g.below(4) != 0),
         103 | 139 => ia[0] = g.below(2) as i32,
-        // batch A39: a dock (an existing object, now and then none: undefined upstream, the case ends)
-        138 => {
+        // batch A39: a dock (an existing object, now and then none: undefined upstream, the case ends) (batch A40: an exiter, now
+        // and then none: nothing)
+        138 | 142 => {
             let ids: Vec<i32> = (1..32).filter(|i| (e.exist_mask >> i) & 1 != 0).collect();
             ia[0] = if ids.is_empty() || g.below(10) == 0 { g.below(32) as i32 } else { ids[g.below(ids.len() as u32) as usize] };
         }
@@ -4462,7 +4720,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
             ai.evaluate_morale_bonus(h);
             vec![]
         }
-        50 => b(ai.is_idle(m.unwrap())),
+        50 => b(ai.is_idle(m.unwrap(), h)),
         51 => b(ai.is_attacking(m.unwrap())),
         52 => b(ai.is_busy(m.unwrap())),
         53 => b(ai.is_clearing_mines(h)),
@@ -4473,7 +4731,7 @@ fn rust_op(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f32],
                 vec![]
             }
         }
-        55 => b(ai.is_moving(m.unwrap())),
+        55 => b(ai.is_moving(m.unwrap(), h)),
         56 => {
             ai.notify_crate(ia[0]);
             vec![]
@@ -4699,6 +4957,32 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                 Err(e) => panic!("a dozer's call: {e}"),
             }
         }
+        // batch A40: a chinook's own members (undefined upstream: the case ends)
+        141 | 142 => {
+            if !matches!(module.ai().subclass, AiSubclass::Chinook(_)) {
+                return vec![];
+            }
+            let ferrying = module.supply_machine.as_ref().is_some_and(|m| matches!(m.get_current_state_id(), supply::ST_WANTING | supply::ST_DOCKING));
+            let a = ia[0];
+            let r = module.run(h, |sm, h| -> SmResult<Vec<u32>> {
+                if op == 142 {
+                    return Ok(if h.object_exists(a) { vec![chinook::ai_free_to_exit(h, a) as u32] } else { vec![] });
+                }
+                let available = chinook::is_available_for_supplying(h);
+                let adjust = chinook::is_allowed_to_adjust_destination(h)?;
+                let building = chinook::building_to_not_path_around(sm, h);
+                let boost = chinook::upgraded_supply_boost(h);
+                Ok(vec![u32::from(available), u32::from(ferrying), u32::from(adjust), building as u32, boost as u32])
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a chinook's call: {e}"),
+            }
+        }
         // batch A39: a worker's own members (undefined upstream: the case ends)
         133..=140 => {
             if !matches!(module.ai().subclass, AiSubclass::Worker(_)) {
@@ -4803,6 +5087,8 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
                 AiSubclass::SupplyTruck(s) => *s,
                 // (batch A39: a worker's, through its interface)
                 AiSubclass::Worker(w) => w.supply,
+                // (batch A40: a chinook's)
+                AiSubclass::Chinook(c) => c.supply,
                 _ => return vec![],
             };
             match op {
@@ -4812,6 +5098,7 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             }
             match &mut module.ai_mut().subclass {
                 AiSubclass::Worker(w) => w.supply = s,
+                AiSubclass::Chinook(c) => c.supply = s,
                 c => *c = AiSubclass::SupplyTruck(s),
             }
             r
@@ -4946,7 +5233,14 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 141],
+    ops: [u64; 143],
+    /// Batch A40: the chinook's flight status after an operation (flying .. landed .. doing a combat drop .. heading off the map),
+    /// its machine's own states (1001 ..= 1014), and its ropes made.
+    chinook_status: [u64; 5],
+    chinook_states: [u64; 14],
+    chinook_ropes: u64,
+    /// Batch A40: the chinook's airfield healing it after an operation, and that while landed.
+    chinook_healing: [u64; 2],
     /// Batch A39: the worker's machine's state after an operation (as a dozer, as a supply truck), and its supply truck machine's
     /// (idle, busy, wanting, regrouping, docking).
     worker_states: [u64; 2],
@@ -5007,7 +5301,11 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 141],
+            ops: [0; 143],
+            chinook_status: [0; 5],
+            chinook_states: [0; 14],
+            chinook_ropes: 0,
+            chinook_healing: [0; 2],
             worker_states: [0; 2],
             worker_supply_states: [0; 5],
             dozer_states: [0; 5],
@@ -5069,6 +5367,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         dozer_machines: Vec::new(),
         supply_machines: Vec::new(),
         worker_machines: Vec::new(),
+        next_rope: 1,
         op_percents: Vec::new(),
         structure_pos: None,
         structure_stand_in: None,
@@ -5086,6 +5385,17 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_saved: Vec::new(),
         ai_saved_states: None,
     };
+    // batch A40: a chinook's locomotors all on the ground too (with a locomotor in every set, it always has one: its move states'
+    // `isAllowedToAdjustDestination` uses it unchecked)
+    if host.env.subclass == 12 {
+        ini = ini
+            .lines()
+            .map(|l| match l.strip_prefix("  Surfaces = ") {
+                Some(v) if !v.contains("GROUND") => format!("  Surfaces = GROUND {v}\n"),
+                _ => format!("{l}\n"),
+            })
+            .collect();
+    }
     host.max_shots = host.env.max_shots_init;
     host.team_waypoint = (host.env.team_waypoint >= 0).then_some(host.env.team_waypoint as u32);
     host.names.reset();
@@ -5122,8 +5432,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         let mut map = data.locomotor_templates.write().unwrap();
         // (batch A33: a railed transport has every set, each with a locomotor: its update follows its path after the base's update,
         // whose states may change the set, and a waypoint state without a locomotor is undefined upstream)
-        // (batch A37: a delivering AI likewise: its states use the locomotor unchecked)
-        let railed = host.env.subclass == 5 || host.env.subclass == 9 || host.env.subclass == 10 || host.env.subclass == 11;
+        // (batch A37: a delivering AI likewise: its states use the locomotor unchecked) (batch A40: a chinook too: its move states
+        // ask `isAllowedToAdjustDestination`, which uses it unchecked)
+        let railed = matches!(host.env.subclass, 5 | 9 | 10 | 11 | 12);
         for set in [0, 1, 2, 3, 4, 5, 6, 7] {
             let wanted = match set {
                 0 => g.below(8) != 0,
@@ -5263,6 +5574,31 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
             },
             upgraded_supply_boost: host.env.worker_boost,
         })),
+        // batch A40: a chinook (its supply truck's data the scene's: the wrapper's class reads the supply truck's)
+        12 => {
+            let supply = SupplyTruckData {
+                max_boxes: host.env.supply_max_boxes,
+                center_delay: host.env.supply_delays[0],
+                warehouse_delay: host.env.supply_delays[1],
+                warehouse_scan_distance: host.env.supply_scan,
+                has_depleted_voice: host.env.supply_flags & 1 != 0,
+            };
+            let (r, i) = (host.env.chinook_reals, host.env.chinook_ints);
+            AiSubclass::Chinook(Chinook::new(ChinookData {
+                rope_drop_speed: r[0],
+                min_drop_height: r[1],
+                rope_final_height: r[2],
+                rappel_speed: r[3],
+                num_ropes: i[0] as u32,
+                per_rope_delay_min: i[1] as u32,
+                per_rope_delay_max: i[2] as u32,
+                wait_for_ropes_to_drop: i[3] & 1 != 0,
+                rope_template: i[3] & 2 != 0,
+                rotor_wash: i[3] & 4 != 0,
+                upgraded_supply_boost: i[4],
+                ..ChinookData::new(supply, host.env.loco.gravity)
+            }))
+        }
         _ => AiSubclass::Plain,
     };
     let mut module = AiUpdateModule::new_subclass(&mut host, data, subclass).expect("the AI's construction");
@@ -5289,6 +5625,9 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     }
 
     let waypoint_heavy = g.below(8) == 0;
+    // batch A40: a quarter of the chinooks, while an airfield heals them, landed (the landing state entered, then left: its exit lands
+    // it; the stand-ins' moves do not reach the airfield) and updated (where a healed chinook takes off)
+    let healing_heavy = host.env.subclass == 12 && g.below(4) == 0;
     for step in 0..60 {
         perturb(&mut g, &mut host.env);
         // batch A9: an as-team waypoint state reads the controlling player unchecked (kept while one is in the machine); batch
@@ -5320,6 +5659,13 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         }
         let moving_away = (module.ai().move_out_of_way1, module.ai().move_out_of_way2);
         let (mut op, mut fa, mut ia) = gen_op(&mut g, &host.env, waypoint_heavy, moving_away, module.machine.is_some(), has_saved);
+        if healing_heavy && matches!(&module.ai().subclass, AiSubclass::Chinook(c) if c.airfield_for_healing != 0) && g.below(6) != 0 {
+            ia.iter_mut().for_each(|x| *x = 0);
+            op = [59, 59, 65, 65][g.below(4) as usize];
+            if op == 59 {
+                ia[0] = [1002, 0][g.below(2) as usize];
+            }
+        }
         a9_guard(&module, &host.env, &mut op, &mut ia);
         // batch A19: no enter guard while the guard-retaliate state is entered or runs (it does not lock the AI's machine, so its
         // enter state's attack command would switch the AI's state, deleting the machine it runs in: undefined upstream)
@@ -5433,6 +5779,22 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         if let AiSubclass::DeliverPayload(_) = module.ai().subclass {
             let s = module.deliver_machine.as_ref().map_or(6, |m| (m.get_current_state_id() as usize).min(6));
             ck.deliver_states[s] += 1;
+        }
+        if let AiSubclass::Chinook(c) = &module.ai().subclass {
+            ck.chinook_status[(c.flight_status as usize).min(4)] += 1;
+            if c.airfield_for_healing != 0 {
+                ck.chinook_healing[0] += 1;
+                ck.chinook_healing[usize::from(c.flight_status == chinook::CHINOOK_LANDED)] += u64::from(c.flight_status == chinook::CHINOOK_LANDED);
+            }
+            if let Some(m) = module.machine.as_ref() {
+                let s = m.get_current_state_id();
+                if (1001..=1014).contains(&s) {
+                    ck.chinook_states[(s - 1001) as usize] += 1;
+                }
+                if let Some(AiState::ChinookCombatDrop { ropes }) = m.state(1013) {
+                    ck.chinook_ropes += ropes.iter().filter(|r| r.rope_drawable.is_some()).count() as u64;
+                }
+            }
         }
         if let (Some(m), Some(s)) = (module.worker_machine.as_ref(), module.supply_machine.as_ref()) {
             ck.worker_states[(m.get_current_state_id() as usize).min(1)] += 1;
@@ -5683,6 +6045,12 @@ fn a9_guard(module: &AiUpdateModule<Host>, e: &Env, op: &mut i32, ia: &mut [i32]
 }
 
 /// Prints where two word arrays first differ (`AI_A2_DEBUG`).
+/// A guard machine attack state's embedded state as the wrapper dumps it: its attack state, else its enter state (batch A40: it may
+/// hold both, as upstream's two members).
+fn guard_embedded(embedded: &[AiState<Host>]) -> Option<&AiState<Host>> {
+    embedded.iter().find(|e| matches!(e, AiState::Attack { .. })).or(embedded.first())
+}
+
 fn first_diff(what: &str, r: &[u32], c: &[u32]) {
     if r == c {
         return;
@@ -5703,6 +6071,39 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A40; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `ChinookAIUpdate` (ChinookAIUpdate.cpp cut verbatim from its state enum, its module data's field parse removed; its module
+///   data the scene's, the supply truck's fields the supply truck's; cut points: `isIdle` (the base's and the supply truck's called
+///   by name, dispatched explicitly), other objects' AIs (the member AI stand-in), the airfield's parking place, a rappeller's
+///   transform, `HEAD_OFF_MAP` renamed; the ropes, the rotor wash, the shroud, the client's random value, the airfield, the contain's
+///   riders and the bones the scene's stand-ins, `LOG_CHINOOK`; the AI's members as ops 141-142 and 101-103 through its interface;
+///   half a chinook's operations updates; evacuations, repairs, exits, combat drops, idles and docks often; its own states often
+///   set; a quarter of the cases landed at an airfield): a twelfth of the cases: 30,000 constructions and 1,748,639 operations,
+///   **0 mismatches** in the results, the call logs and the dumps (its members, its machine's landing, move-to-drop and drop
+///   states, the ropes, and the supply truck's members and machine added). After an operation the chinook was taking off 6,083
+///   times, flying 117,322, dropping 174, landing 10,977, landed 19,944; its own states current (1001..=1014) 5,158 / 10,058 /
+///   2,557 / 2,741 / 353 / 0 / 3,443 / 466 / 0 / 842 / 1,110 / 7,403 / 160 / 0 (the evacuations and the record of its creation
+///   succeed at once); 303 ropes made (summed over the operations); an airfield healed it after 656 operations, 75 of them landed.
+/// - Found on the way: a chinook's move states ask `isAllowedToAdjustDestination`, which uses its locomotor unchecked: a chinook
+///   gets a locomotor in every set, all on the ground too (`chooseGoodLocomotorFromCurrentSet` then always finds one). Its taking-off
+///   and landing states use the physics unchecked (a chinook has physics); a rope made without a drawable leaves its lengths
+///   uninitialised, which the drop's update reads (the rope's template always found); its own repair uses the depot unchecked once
+///   the action manager allows it (upstream's refuses none; the stand-in answers by its hash, so a chinook's repair names a scene
+///   object). `getAiFreeToExit` answers `WAIT_TO_EXIT` (2), not 1. The chinook's `findPositionAround`s pass no source object.
+/// - Corrected (port defects found by the new cases, both from earlier batches): A15's rappel state asked
+///   `getHighestLayerForDestination` without `onlyHealthyBridges = true` (unseen while the stand-in logged no flag; it now logs
+///   it). A18's guard machine attack states held one embedded state where upstream holds two members, `m_attackState` and
+///   `m_enterState`: the inner state's `onExit` deletes the attack state, or else the enter state, so an enter state left by a load
+///   (which sets the machine's state without an exit) outlives an attack made after it (case `0xa23072`).
+/// - Not compared: undefined upstream (refused, the case ends): as before (1,587 cases ended undefined in all, with the earlier
+///   batches').
+/// - Planted bugs, 3750-3759, all caught: the map's edge, the landing's arrival, the move to the drop's height, a rope's drop time
+///   (at 30,000 cases; the others at 5,000), a pending command not idle, a landed chinook's destination, a healed chinook taking
+///   off, the take-off once landed with nothing waiting, the landing before an exit or evacuation, an attack refused to a chinook
+///   that cannot attack. A39's 3730-3740 and a sample
+///   of A38's (3700, 3705, 3710, 3718, 3721) re-run on the changed cases: all caught at 5,000.
+///
 /// # Results (2026-10-30, batch A39; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `WorkerAIUpdate` (WorkerAIUpdate.cpp cut verbatim from its role enum, with its header's machine; its module data the dozer's
@@ -6225,10 +6626,12 @@ fn ai_update_a2_matches_upstream() {
          path frames {}; final-position moves {}; locomotor changes {}; mood targets {}, victims {}, enter targets {}; \
          A4-A10 log records 70..=103 {:?}; current state idle/dead/wait/busy/other/moveTo/outOfWay/tighten/repulsors/followPath/evacuate/\
          delete/waypointPath/exact/wander/wanderInPlace/panic/attack/attackMove/crate/hunt/attackFollow/face/exit/enter/rappel/squad/dock/guard/retaliate {:?}; A9 cases ended undefined {}; attack machine \
-         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}; worker machine dozer/supply truck {:?}, its supply machine idle/busy/wanting/regrouping/docking {:?}",
+         chase/approach/aim/fire {:?}; LOG_ATTACK kinds {:?}; attack-move machine idle/crate/attack {:?}; hunt machines attack/crate/idle {:?}; docking machine approach..rally {:?}; guard machine inner/idle/outer/return/crate/aggressor {:?}; tunnel-network guard machine likewise {:?}, network nemesis offers/hurried exits/cases ended undefined {:?}; AI saves/loads that succeeded, cases ended at a failed load, at a state both current and temporary {:?}; attack-follow machines idle/crate/attack {:?}; temporary states {}; loads {}; delivery machine approach..clean up/none {:?}; dozer machine idle/build/repair/fortify/home {:?}, action machines pick/move/do/none {:?}; worker machine dozer/supply truck {:?}, its supply machine idle/busy/wanting/regrouping/docking {:?}; \
+         chinook flight status taking off/flying/dropping/landing/landed {:?}, its states 1001..=1014 {:?}, ropes made (summed per operation) {}, an airfield healing it (and landed) {:?}",
         ck.cases, ck.ended_early, ck.ops, ck.sleeps, ck.goals_moved, ck.paths_followed, ck.final_pops, ck.loco_changes, ck.mood_targets, ck.victims,
         ck.enter_targets, ck.a4_logs, ck.a4_states, ck.a9_undefined, ck.attack_inner, ck.attack_logs, ck.attack_move_inner, ck.hunt_inner, ck.dock_inner, ck.guard_inner, ck.tn_inner, ck.tn_logs, ck.ai_snapshot, ck.follow_inner, ck.temporary_states, ck.loads,
-        ck.deliver_states, ck.dozer_states, ck.dozer_actions, ck.worker_states, ck.worker_supply_states
+        ck.deliver_states, ck.dozer_states, ck.dozer_actions, ck.worker_states, ck.worker_supply_states, ck.chinook_status,
+        ck.chinook_states, ck.chinook_ropes, ck.chinook_healing
     );
     ck.construction.finish();
     ck.results.finish();

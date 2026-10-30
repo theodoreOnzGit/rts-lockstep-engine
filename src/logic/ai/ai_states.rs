@@ -70,6 +70,7 @@ use crate::common::xfer::{Xfer, XferMode, XferResult, XferVersion};
 use crate::logic::locomotor::{LocomotorSet, LocomotorSetError};
 use crate::logic::ai::ai_commands::{self as commands, AiCommandParms};
 use crate::logic::ai::ai_move_states::{self as move_states, MoveToData};
+use crate::logic::ai::chinook_ai_update as chinook;
 use crate::logic::ai::ai_waypoint_states::{self as waypoint_states, WaypointPathData};
 use crate::logic::ai::ai_attack_states::{self as attack_states, AttackFrame, AttackOwnerKinds, ChaseData};
 use crate::logic::ai::ai_attack_move as attack_move;
@@ -243,6 +244,54 @@ pub trait AiStateHost: AiHost + StateContext {
     fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32;
     /// Batch A36: the owner's `calculateCountermeasureToDivertTo(victim)` (`INVALID_ID`: none).
     fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId;
+    /// Batch A40: the owner's contain's `isSpecialOverlordStyleContainer()` (it has one).
+    fn contain_is_special_overlord_style_container(&mut self) -> bool;
+    /// Batch A40: the owner's contain's `isPassengerAllowedToFire(passenger)` (it has one).
+    fn contain_passenger_allowed_to_fire_id(&mut self, passenger: ObjectId) -> bool;
+    /// Batch A40: the owner's contain's `friend_getRider()` (it has one; `INVALID_ID`: none).
+    fn contain_rider(&mut self) -> ObjectId;
+    /// Batch A40: an airfield's parking place behavior (`getParkingPlaceBehaviorInterface` of its first behavior module that has
+    /// one).
+    fn parking_place_exists(&mut self, airfield: ObjectId) -> bool;
+    /// Batch A40: an airfield's parking place's `setHealee(owner, add)`.
+    fn parking_place_set_healee(&mut self, airfield: ObjectId, add: bool);
+    /// Batch A40: another object's AI's `getCurrentVictim()` (`INVALID_ID`: none).
+    fn member_ai_current_victim(&mut self, id: ObjectId) -> ObjectId;
+    /// Batch A40: the owner's `setDisabled(DISABLED_HELD)` (`held`) or `clearDisabled(DISABLED_HELD)`.
+    fn set_disabled_held(&mut self, held: bool);
+    /// Batch A40: `TheTerrainLogic->getHighestLayerForDestination(pos, TRUE)` ("ignore dead bridges").
+    fn highest_layer_for_healthy_destination(&mut self, pos: &Coord3D) -> crate::common::game_type::PathfindLayer;
+    /// Batch A40: `TheAI->pathfinder()->adjustToLandingDestination(owner, &pos)`.
+    fn pf_adjust_to_landing_destination(&mut self, pos: &mut Coord3D);
+    /// Batch A40: the owner's body's `getHealth()`.
+    fn body_health(&mut self) -> f32;
+    /// Batch A40: `TheActionManager->canEnterObject(owner, target, cmdSource, COMBATDROP_INTO)`.
+    fn action_can_enter_object_combat_drop(&mut self, target: ObjectId, src: CommandSourceType) -> bool;
+    /// Batch A40: the drawable's `getPristineBonePositions(prefix, 1, positions, NULL, max)`: the positions found.
+    fn drawable_pristine_bone_positions(&mut self, prefix: &[u8], max: usize) -> Vec<Coord3D>;
+    /// Batch A40: the drawable's `getPristineBonePositions(prefix, 1, NULL, transforms, max)`: the transforms found.
+    fn drawable_pristine_bone_transforms(&mut self, prefix: &[u8], max: usize) -> Vec<crate::ww::matrix3d::Matrix3D>;
+    /// Batch A40: the owner's `convertBonePosToWorldPos(NULL, &mtx, NULL, &out)` (Thing's: through its transform).
+    fn own_convert_bone_transform_to_world(&mut self, mtx: &crate::ww::matrix3d::Matrix3D) -> crate::ww::matrix3d::Matrix3D;
+    /// Batch A40: the owner's `convertBonePosToWorldPos(&pos, NULL, &out, NULL)` (Thing's: through its transform).
+    fn own_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D;
+    /// Batch A40: `TheThingFactory->newDrawable(ropeTemplate)`: its id (none: none made).
+    fn new_rope_drawable(&mut self) -> Option<u32>;
+    /// Batch A40: a rope drawable's call.
+    fn rope_call(&mut self, drawable: u32, call: crate::logic::ai::chinook_ai_update::RopeCall);
+    /// Batch A40: the owner's `getObjectExitInterface()->reserveDoorForExit(exiter's template, exiter)` (no exit interface:
+    /// `DOOR_NONE_AVAILABLE`).
+    fn own_exit_reserve_door(&mut self, exiter: ObjectId) -> i32;
+    /// Batch A40: the owner's exit interface's `exitObjectViaDoor(exiter, door)`.
+    fn own_exit_object_via_door(&mut self, exiter: ObjectId, door: i32);
+    /// Batch A40: another object's `setTransformMatrix(mtx)`.
+    fn object_set_transform_matrix(&mut self, id: ObjectId, mtx: &crate::ww::matrix3d::Matrix3D);
+    /// Batch A40: the owner's `getShroudedStatus(ThePlayerList->getLocalPlayer()->getPlayerIndex()) == OBJECTSHROUD_CLEAR`.
+    fn local_player_shroud_clear(&mut self) -> bool;
+    /// Batch A40: `GameClientRandomValueReal(lo, hi)` (the client's random values: never the logic's).
+    fn client_random_value_real(&mut self, lo: f32, hi: f32) -> f32;
+    /// Batch A40: the rotor wash's particle system created at `pos` (its template found).
+    fn rotor_wash(&mut self, pos: &Coord3D);
     /// Batch A39: the workers' supply truck machines lent to the host while their AIs run (none: running), the innermost last.
     fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<Self>>>>
     where
@@ -988,6 +1037,18 @@ pub enum AiState<H: AiStateHost> {
     PickUpCrate { mv: MoveToData, delay_counter: i32 },
     /// The attack machine's `ContinueState` and `FailureState`.
     Utility(UtilityState),
+    /// Batch A40: `ChinookTakeoffOrLandingState`: `m_destLoc`, `m_landing`.
+    ChinookTakeoffOrLanding { dest_loc: Coord3D, landing: bool },
+    /// Batch A40: `ChinookCombatDropState`: `m_ropes`.
+    ChinookCombatDrop { ropes: Vec<crate::logic::ai::chinook_ai_update::RopeInfo> },
+    /// Batch A40: `ChinookMoveToBldgState` (an `AIMoveToState`): `m_oldPreferredHeight`, `m_newPreferredHeight`, `m_destZ`.
+    ChinookMoveToBldg { mv: MoveToData, old_preferred_height: f32, new_preferred_height: f32, dest_z: f32 },
+    /// Batch A40: `ChinookEvacuateState`.
+    ChinookEvacuate,
+    /// Batch A40: `ChinookHeadOffMapState`.
+    ChinookHeadOffMap,
+    /// Batch A40: `ChinookRecordCreationState`.
+    ChinookRecordCreation,
     /// A state class not yet translated: the host's (see the module docs).
     Untranslated { id: StateId },
     #[doc(hidden)]
@@ -1298,7 +1359,7 @@ fn idle_do_init<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id
     let ultra_accurate = ai(h).get_cur_locomotor().is_some_and(|l| l.is_ultra_accurate());
     // (the AI's machine: when this idle state is a sub-machine's, the lent view of it; batch A12)
     let view = attack_states::top_view(sm, h);
-    let idle_and_ground = with_ai(h, |a, h| a.is_idle(&view) && a.is_doing_ground_movement(h));
+    let idle_and_ground = with_ai(h, |a, h| a.is_idle(&view, h) && a.is_doing_ground_movement(h));
     if idle_and_ground {
         // "Update the goal."
         let mut goal_pos = h.position();
@@ -1348,7 +1409,7 @@ fn idle_update<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H, id:
     // "This state is used internally some places, so we don't necessarily want to be looking for targets"
     if should_look && !sm.is_locked() {
         // "do repulsor logic"
-        if h.is_kind_of(KINDOF_CAN_BE_REPULSED) && ai(h).is_idle(&*sm) {
+        if h.is_kind_of(KINDOF_CAN_BE_REPULSED) && with_ai(h, |a, h| a.is_idle(&*sm, h)) {
             let range = h.object_vision_range();
             let enemy = h.find_closest_repulsor(range);
             if enemy != INVALID_ID {
@@ -1496,6 +1557,13 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::HackInternet { .. }) => crate::logic::ai::hack_internet_ai_update::hack_on_enter(sm, h, id),
             Some(AiState::HackPacking { .. }) => crate::logic::ai::hack_internet_ai_update::packing_on_enter(sm, h, id),
             Some(AiState::DockProcess { .. }) => dock::process_on_enter(sm, h, id),
+            // (batch A40: the chinook's)
+            Some(AiState::ChinookTakeoffOrLanding { .. }) => chinook::takeoff_or_landing_on_enter(sm, h, id),
+            Some(AiState::ChinookCombatDrop { .. }) => chinook::combat_drop_on_enter(sm, h, id),
+            Some(AiState::ChinookMoveToBldg { .. }) => chinook::move_to_bldg_on_enter(sm, h, id),
+            Some(AiState::ChinookEvacuate) => Ok(chinook::evacuate_on_enter(h)),
+            Some(AiState::ChinookHeadOffMap) => chinook::head_off_map_on_enter(sm, h),
+            Some(AiState::ChinookRecordCreation) => Ok(chinook::record_creation_on_enter(h)),
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_enter(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_enter(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_enter(sm, h, id),
@@ -1550,6 +1618,10 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
                 crate::logic::ai::hack_internet_ai_update::hack_states_on_exit(h, id)
             }
             Some(AiState::DockProcess { .. }) => dock::process_on_exit(sm),
+            // (batch A40: the chinook's; the heading-off state's `onExit()` overrides nothing)
+            Some(AiState::ChinookTakeoffOrLanding { .. }) => chinook::takeoff_or_landing_on_exit(sm, h, id),
+            Some(AiState::ChinookCombatDrop { .. }) => chinook::combat_drop_on_exit(sm, h, id),
+            Some(AiState::ChinookMoveToBldg { .. }) => chinook::move_to_bldg_on_exit(sm, h, id, status)?,
             Some(AiState::AttackAim { .. }) => attack_states::aim_on_exit(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_on_exit(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_on_exit(sm, h, id),
@@ -1613,6 +1685,12 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             Some(AiState::HackInternet { .. }) => crate::logic::ai::hack_internet_ai_update::hack_update(sm, h, id),
             Some(AiState::HackPacking { .. }) => crate::logic::ai::hack_internet_ai_update::packing_update(sm, id),
             Some(AiState::DockProcess { .. }) => dock::process_update(sm, h, id),
+            // (batch A40: the chinook's)
+            Some(AiState::ChinookTakeoffOrLanding { .. }) => Ok(chinook::takeoff_or_landing_update(sm, h, id)),
+            Some(AiState::ChinookCombatDrop { .. }) => chinook::combat_drop_update(sm, h, id),
+            Some(AiState::ChinookMoveToBldg { .. }) => chinook::move_to_bldg_update(sm, h, id),
+            Some(AiState::ChinookEvacuate) | Some(AiState::ChinookRecordCreation) => Ok(StateReturn::SUCCESS),
+            Some(AiState::ChinookHeadOffMap) => Ok(chinook::head_off_map_update(h)),
             Some(AiState::AttackAim { .. }) => attack_states::aim_update(sm, h, id),
             Some(AiState::AttackApproach { .. }) => attack_states::approach_update(sm, h, id),
             Some(AiState::AttackPursue { .. }) => attack_states::pursue_update(sm, h, id),
@@ -1743,6 +1821,13 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
             | AiState::MoveAwayFromRepulsors { mv, ok_to_repath_times, check_for_path } => {
                 move_states::tighten_xfer(mv, ok_to_repath_times, check_for_path, xfer)?
             }
+            // (batch A40: the chinook's; the evacuating and heading-off states' are stubbed: nothing at all)
+            AiState::ChinookTakeoffOrLanding { .. }
+            | AiState::ChinookCombatDrop { .. }
+            | AiState::ChinookMoveToBldg { .. }
+            | AiState::ChinookEvacuate
+            | AiState::ChinookHeadOffMap
+            | AiState::ChinookRecordCreation => chinook::chinook_state_xfer(self, xfer)?,
             _ => {
                 // ("snapshot interface STUBBED": the version only)
                 let current_version: XferVersion = 1;
@@ -1797,7 +1882,8 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     /// A subclass's constructor (batch A30): `AIUpdateInterface`'s, the module's class noted.
     pub fn new_subclass(h: &mut H, data: Arc<AiUpdateModuleData>, subclass: crate::logic::ai::ai_update::AiSubclass) -> SmResult<Self> {
         let mut m = Self::new(h, data);
-        let supply = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_));
+        // (batch A40: and a chinook's, a supply truck)
+        let supply = matches!(subclass, crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) | crate::logic::ai::ai_update::AiSubclass::Chinook(_));
         // (batch A37: `DeliverPayloadAIUpdate`'s constructor clears its decal)
         if matches!(subclass, crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_)) {
             h.delivery_decal_clear();
@@ -1897,6 +1983,10 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             // (batch A34: `HackInternetAIUpdate::makeStateMachine`'s `HackInternetStateMachine`: three more states)
             if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::HackInternet(_)) {
                 crate::logic::ai::hack_internet_ai_update::define_hack_states(&mut sm)?;
+            }
+            // (batch A40: `ChinookAIUpdate::makeStateMachine`'s `ChinookAIStateMachine`: fourteen more states)
+            if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Chinook(_)) {
+                chinook::define_chinook_states(&mut sm)?;
             }
             // (batch A11: the attack-move machine enters its default state, as its state's constructor does upstream)
             let ai_lent = self.ai.take().expect("the AI (not lent)");
@@ -2005,7 +2095,11 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 self.base_update(h)?;
                 Ok(self.run(h, |_, h| crate::logic::ai::missile_ai_update::missile_post_update(h)))
             }
-            crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) => {
+            crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) | crate::logic::ai::ai_update::AiSubclass::Chinook(_) => {
+                // batch A40: a chinook's own part first (the AI and its machine lent), then the supply truck's
+                if matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::Chinook(_)) {
+                    self.run(h, chinook::chinook_pre_update)?;
+                }
                 // batch A35: the autopilot machine (the AI and its machine lent), then the base's update; the earlier wake
                 let mut supply = self.supply_machine.take().expect("the supply truck's machine");
                 h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
@@ -2046,7 +2140,7 @@ impl<H: AiStateHost> AiUpdateModule<H> {
     /// `WanderAIUpdate::update()` (batch A30): "If I'm standing still, move somewhere" (5 to 50 in x, then in y), then
     /// `AIUpdateInterface`'s; "someday, make sleepy. for now, must not sleep."
     fn wander_update(&mut self, h: &mut H) -> SmResult<UpdateSleepTime> {
-        let idle = self.ai().is_idle(self.machine.as_ref().expect("the AI's machine"));
+        let idle = self.ai.as_ref().expect("the AI (not lent)").is_idle(self.machine.as_ref().expect("the AI's machine"), h);
         if idle && !plant(3610) {
             let mut dest = h.position();
             dest.x += h.logic_random_value(5, 50) as f32;

@@ -268,7 +268,7 @@ fn frame<H: AiStateHost>(h: &H) -> u32 {
 
 /// `ai->isIdle()` (the AI's machine lent).
 fn ai_is_idle<H: AiStateHost>(h: &mut H) -> bool {
-    with_ai_machine(h, |sm, h| ai(h).is_idle(&*sm))
+    with_ai_machine(h, |sm, h| crate::logic::ai::ai_states::with_ai(h, |a, h| a.is_idle(&*sm, h)))
 }
 
 /// Runs `f` with the AI's machine `sm` lent to the host (the dozer's code reaches it there).

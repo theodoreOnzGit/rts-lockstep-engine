@@ -264,7 +264,8 @@ public:
 	/* batch A2's members (ai_update_a2.inc) */
 	Real getCurLocomotorSpeed() const;
 	void setLocomotorUpgrade(Bool set);
-	Bool chooseLocomotorSet(LocomotorSetType wst);
+	/* (batch A40: virtual again, as upstream: ChinookAIUpdate overrides it) */
+	virtual Bool chooseLocomotorSet(LocomotorSetType wst);
 	Bool chooseLocomotorSetExplicit(LocomotorSetType wst);
 	void chooseGoodLocomotorFromCurrentSet( void );
 	void setQueueForPathTime(Int frames);
@@ -413,10 +414,11 @@ public:
 	void privateRepair( Object *obj, CommandSourceType cmdSource );
 	void privateResumeConstruction( Object *obj, CommandSourceType cmdSource );
 	void privateGetHealed( Object *healDepot, CommandSourceType cmdSource );
-	void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
+	/* (batch A40: virtual again, as upstream: ChinookAIUpdate overrides it and privateCombatDrop) */
+	virtual void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );
 	void privateEnter( Object *obj, CommandSourceType cmdSource );
 	virtual void privateDock( Object *obj, CommandSourceType cmdSource );
-	void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
+	virtual void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
 	void privateExit( Object *objectToExit, CommandSourceType cmdSource );
 	void privateExitInstantly( Object *objectToExit, CommandSourceType cmdSource );
 	/* (batch A33: virtual again, as upstream: RailedTransportAIUpdate overrides them) */
@@ -691,6 +693,13 @@ public:
 	void aiAttackMoveToPosition(const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource);
 	/* batch A37 (a delivered item's) */
 	void aiMoveToPosition(const Coord3D *pos, CommandSourceType cmdSource);
+	/* batch A40 (a chinook's passengers', rider's and rappellers') */
+	Object *getCurrentVictim() const;
+	void aiForceAttackObject(Object *victim, Int maxShotsToFire, CommandSourceType cmdSource);
+	void aiAttackPosition(const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource);
+	void aiIdle(CommandSourceType cmdSource);
+	void setDesiredSpeed(Real speed);
+	void aiRappelInto(Object *target, const Coord3D& pos, CommandSourceType cmdSource);
 };
 AssaultMemberAi *memberAiOf(const Object *o);
 #include "ai_assault_transport_enum_a32.inc"
@@ -1027,6 +1036,8 @@ class ThingFactory
 public:
 	const ThingTemplate *findTemplate( const AsciiString& name );
 	PayloadObject *newObject( const ThingTemplate *tmplate, Team *team );
+	/* batch A40: a rope (logged) */
+	Drawable *newDrawable( const ThingTemplate *tmplate );
 	/* batch A38: the dozer's construction */
 	Object *newObject( const ThingTemplate *tmplate, Team *team, ObjectStatusMaskType statusBits );
 };
@@ -1494,8 +1505,121 @@ private:
 
 };
 #include "ai_worker_a39.inc"
+/* batch A40: ChinookAIUpdate. Its module data the header's fields (the constructor its .cpp's; the field parse is the INI's: the
+** scene's, g_chinookData, made with the scene, since its constructor reads the gravity); the class as the header declares it
+** without the pool and module macros (its isIdle `chinookIsIdle`: see AIUpdateInterface's); its .cpp from its state ids, verbatim
+** but its module data's field parse, with its cut points (ai_chinook_a40.inc). Its world: LOG_CHINOOK (see wrap_ai.cpp's end). */
+class ChinookAIUpdateModuleData : public SupplyTruckAIUpdateModuleData
+{
+public:
+	AsciiString		m_ropeName;
+  AsciiString   m_rotorWashParticleSystem;
+  Real					m_rappelSpeed;
+	Real					m_ropeDropSpeed;
+	Real					m_ropeWidth;
+	Real					m_ropeFinalHeight;
+	Real					m_ropeWobbleLen;
+	Real					m_ropeWobbleAmp;
+	Real					m_ropeWobbleRate;
+	RGBColor			m_ropeColor;
+	UnsignedInt		m_numRopes;
+	UnsignedInt		m_perRopeDelayMin;
+	UnsignedInt		m_perRopeDelayMax;
+	Real					m_minDropHeight;
+	Bool					m_waitForRopesToDrop;
+	Int						m_upgradedSupplyBoost;
+
+	ChinookAIUpdateModuleData();
+};
+static ChinookAIUpdateModuleData *g_chinookData;
+enum ChinookFlightStatus // Stored in save file, don't renumber.  jba.
+{
+	CHINOOK_TAKING_OFF				= 0,
+	CHINOOK_FLYING						= 1,
+	CHINOOK_DOING_COMBAT_DROP	= 2,
+	CHINOOK_LANDING						= 3,
+	CHINOOK_LANDED						= 4
+};
+class ParkingPlaceBehaviorInterface { public: void setHealee( Object *healee, Bool add ); ObjectID m_airfield; };
+/* (the ropes' draw modules' rope interface; the local player; the client's random values, never the logic's (logged)) */
+class RopeDrawInterface
+{
+public:
+	void initRopeParms(Real length, Real width, const RGBColor& color, Real wobbleLen, Real wobbleAmp, Real wobbleRate);
+	void setRopeCurLen(Real length);
+	void setRopeSpeed(Real curSpeed, Real maxSpeed, Real accel);
+	DrawableID m_rope;
+};
+class DrawModule { public: RopeDrawInterface *getRopeDrawInterface() { return &m_rope; } RopeDrawInterface m_rope; };
+/* (renamed: the module wrapper has its own) */
+#define GameClient AiGameClient
+#define TheGameClient TheAiGameClient
+class GameClient { public: Drawable *findDrawableByID( const DrawableID id ); };
+extern GameClient *TheGameClient;
+class PlayerList { public: Player *getLocalPlayer(); };
+extern PlayerList *ThePlayerList;
+Real GameClientRandomValueReal( Real lo, Real hi );
+void logChinook(std::vector<unsigned> w);
+void resetChinookRopes();
+ParkingPlaceBehaviorInterface *airfieldParkingPlace( Object *airfield );
+void rappellerSetTransformMatrix( Object *rappeller, const Matrix3D *mtx );
+class ChinookAIUpdate : public SupplyTruckAIUpdate
+{
+public:
+
+	ChinookAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~ChinookAIUpdate( void );
+	const ChinookAIUpdateModuleData *getChinookAIUpdateModuleData() const { return g_chinookData; }
+
+	virtual UpdateSleepTime update();
+ 	virtual void aiDoCommand(const AICommandParms* parms);
+	virtual Bool chooseLocomotorSet(LocomotorSetType wst);
+
+	AIFreeToExitType getAiFreeToExit(const Object* exiter) const;
+	virtual Bool isAllowedToAdjustDestination() const;
+	ObjectID getBuildingToNotPathAround() const;
+
+	virtual Bool isAvailableForSupplying() const;
+	virtual Bool isCurrentlyFerryingSupplies() const;
+	Bool chinookIsIdle() const;	/* (its isIdle: see AIUpdateInterface's) */
+
+	const ChinookAIUpdateModuleData* friend_getData() const { return getChinookAIUpdateModuleData(); }
+	void friend_setFlightStatus(ChinookFlightStatus a) { m_flightStatus = a; }
+	void recordOriginalPosition( const Coord3D &pos ) { m_originalPos.set( &pos ); }
+	const Coord3D* getOriginalPosition() const { return &m_originalPos; }
+	virtual Int getUpgradedSupplyBoost() const;
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+
+	virtual AIStateMachine* makeStateMachine();
+
+	virtual void privateCombatDrop( Object *target, const Coord3D& pos, CommandSourceType cmdSource );
+	virtual void privateGetRepaired( Object *repairDepot, CommandSourceType cmdSource );///< get repaired at repair depot
+	virtual void privateAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );///< Extension.  Also tell occupants to attackObject
+	virtual void privateAttackPosition( const Coord3D *pos, Int maxShotsToFire, CommandSourceType cmdSource );///< Extension.  Also tell occupants to attackPosition
+	virtual void privateForceAttackObject( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );///< Extension.  Also tell occupants to forceAttackObject
+  virtual void privateIdle(CommandSourceType cmdSource);
+  void private___TellPortableStructureToAttackWithMe( Object *victim, Int maxShotsToFire, CommandSourceType cmdSource );
+
+private:
+	void setMyState( StateID cmd, Object* target, const Coord3D* pos, CommandSourceType cmdSource );
+	void setAirfieldForHealing(ObjectID id);
+
+	AICommandParmsStorage		m_pendingCommand;
+	ChinookFlightStatus			m_flightStatus;
+	ObjectID								m_airfieldForHealing;
+	Coord3D									m_originalPos;
+	Bool										m_hasPendingCommand;
+};
+#include "ai_chinook_a40.inc"
 /* (the delivery's world's objects, defined with it below) */
 static AiTemplateView g_payloadTemplates[2];
+/* (batch A40: the chinook's rope's template) */
+static AiTemplateView g_ropeTemplate;
 static PayloadObject g_payload;
 static unsigned g_nextPayloadId = 40;
 static GenerateMinefieldBehavior g_minefield;
@@ -1569,6 +1693,8 @@ DamageInfo g_lastDamage;
 UpgradeTemplate g_nationalism, g_fanaticism, g_otherUpgrade;
 /* batch A39: the worker's shoes */
 UpgradeTemplate g_workerShoes;
+/* batch A40: the chinook's boost's */
+UpgradeTemplate g_supplyLines;
 UpgradeCenter g_upgradeCenter;
 HordeUpdateInterface g_horde[3];
 BehaviorModule g_modules[3];
@@ -1673,7 +1799,8 @@ Bool TerrainLogic::isUnderwater(Real x, Real y, Real *waterZ, Real *terrainZ)
 
 PathfindLayerEnum TerrainLogic::getHighestLayerForDestination(const Coord3D *pos, Bool onlyHealthyBridges)
 {
-	L(LOG_HIGHEST_LAYER, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) });
+	/* (batch A40: and the healthy-bridges flag, the chinook's) */
+	L(LOG_HIGHEST_LAYER, { bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z), onlyHealthyBridges ? 1u : 0u });
 	return (PathfindLayerEnum)g_aiEnv.highestLayer;
 }
 
@@ -1864,6 +1991,8 @@ Bool Object::isKindOf(KindOfType t) const
 	if (t == KINDOF_DRONE) return (g_aiEnv.kindMask & 131072) != 0;
 	/* batch A38 */
 	if (t == KINDOF_BRIDGE_TOWER) return (g_aiEnv.kindMask & 262144) != 0;
+	/* batch A40 */
+	if (t == KINDOF_FS_AIRFIELD) return (g_aiEnv.kindMask & 524288) != 0;
 	return FALSE;
 }
 ObjectStatusMaskType Object::getStatusBits() const { ObjectStatusMaskType m; m.m_bits = m_status; return m; }
@@ -2015,19 +2144,29 @@ const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &name)
 	if (name == "Upgrade_Nationalism") return &g_nationalism;
 	if (name == "Upgrade_Fanaticism") return &g_fanaticism;
 	if (name == "Upgrade_GLAWorkerShoes") return &g_workerShoes;
+	if (name == "Upgrade_AmericaSupplyLines") return &g_supplyLines;
 	return &g_otherUpgrade;
 }
 PlayerType Player::getPlayerType() const { return (PlayerType)g_aiEnv.playerType; }
 Bool Player::hasUpgradeComplete(const UpgradeTemplate *t)
 {
 	return (t == &g_nationalism && (g_aiEnv.upgrades & 1)) || (t == &g_fanaticism && (g_aiEnv.upgrades & 2))
-		|| (t == &g_workerShoes && (g_aiEnv.upgrades & 4));
+		|| (t == &g_workerShoes && (g_aiEnv.upgrades & 4)) || (t == &g_supplyLines && (g_aiEnv.upgrades & 8));
 }
 const TeamTemplateInfo *TeamPrototype::getTemplateInfo() const { g_teamInfo.m_attackCommonTarget = g_aiEnv.teamAttackCommon != 0; return &g_teamInfo; }
 const TeamPrototype *Team::getPrototype() { return &g_teamPrototype; }
 Object *Team::getTeamTargetObject() { return findObject((ObjectID)g_aiEnv.teamTarget); }
 void Team::setActive() { L(LOG_TEAM_ACTIVE, {}); }
-Bool ContainModuleInterface::isPassengerAllowedToFire(ObjectID id) const { return g_aiEnv.containerAllowsFire != 0; }
+Bool ContainModuleInterface::isPassengerAllowedToFire(ObjectID id) const
+{
+	/* (batch A40: one passenger's, the chinook's: the scene's mask, logged) */
+	if (id != INVALID_ID) {
+		Bool r = id < 32 && ((g_aiEnv.chinookMasks[1] >> id) & 1);
+		logChinook({ 11u, (unsigned)id, r ? 1u : 0u });
+		return r;
+	}
+	return g_aiEnv.containerAllowsFire != 0;
+}
 Bool StealthUpdate::isGrantedBySpecialPower() { return g_aiEnv.stealth > 0; }
 Int Weapon::getAntiMask() const { return g_aiEnv.weaponAnti; }
 Bool HordeUpdateInterface::isInHorde() const { return (g_aiEnv.horde >> (3 + m_index)) & 1; }
@@ -2293,8 +2432,8 @@ const ContainedItemsList* ContainModuleInterface::getContainedItemsList() const
 	/* batch A32: for the assault transport, those with an AI only (its members' AIs are reached unchecked upstream), the list
 	** even when empty */
 	Bool assault = g_aiEnv.subclass == 4;
-	/* batch A37: for the delivering AI, those with an AI too, the list even when empty */
-	Bool deliver = g_aiEnv.subclass == 9;
+	/* batch A37: for the delivering AI, those with an AI too, the list even when empty (batch A40: and for the chinook) */
+	Bool deliver = g_aiEnv.subclass == 9 || g_aiEnv.subclass == 12;
 	for (unsigned i = 1; i < 32; ++i) {
 		if (!((g_aiEnv.containedMask >> i) & 1)) continue;
 		Bool hasAi = ((g_aiEnv.aiMask >> i) & 1) != 0;
@@ -2971,6 +3110,21 @@ void setScene(const AiEnv *env)
 	g_workerData.m_warehouseScanDistance = env->supplyScan;
 	if (env->supplyFlags & 1) g_workerData.m_suppliesDepletedVoice.setEventName(AsciiString("s7"));
 	g_workerData.m_upgradedSupplyBoost = env->workerBoost;
+	/* batch A40: a ChinookAIUpdate's data (its constructor's defaults, then the scene's; the rope's template "rope" and the rotor
+	** wash's "ps0" when found) */
+	delete g_chinookData;
+	g_chinookData = new ChinookAIUpdateModuleData();
+	g_chinookData->m_ropeDropSpeed = env->chinookReals[0];
+	g_chinookData->m_minDropHeight = env->chinookReals[1];
+	g_chinookData->m_ropeFinalHeight = env->chinookReals[2];
+	g_chinookData->m_rappelSpeed = env->chinookReals[3];
+	g_chinookData->m_numRopes = (UnsignedInt)env->chinookInts[0];
+	g_chinookData->m_perRopeDelayMin = (UnsignedInt)env->chinookInts[1];
+	g_chinookData->m_perRopeDelayMax = (UnsignedInt)env->chinookInts[2];
+	g_chinookData->m_waitForRopesToDrop = (env->chinookInts[3] & 1) != 0;
+	g_chinookData->m_ropeName = (env->chinookInts[3] & 2) ? "rope" : "norope";
+	g_chinookData->m_rotorWashParticleSystem = (env->chinookInts[3] & 4) ? "ps0" : "";
+	g_chinookData->m_upgradedSupplyBoost = env->chinookInts[4];
 	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
@@ -3115,6 +3269,8 @@ void ref_ai_a2_reset(void)
 	gen->nameToKey(AsciiString("GenerateMinefieldBehavior"));
 	gen->nameToKey(AsciiString("SmartBombTargetHomingUpdate"));
 	/* batch A38: the dozer's goal objects' creation dispatches no module by name */
+	/* batch A40: the chinook's ropes' ids from 1 again */
+	resetChinookRopes();
 	/* batch A39: a dock's supply modules (the supply truck's and the worker's dock delays keep their keys in statics) */
 	gen->nameToKey(AsciiString("SupplyWarehouseDockUpdate"));
 	gen->nameToKey(AsciiString("SupplyCenterDockUpdate"));
@@ -3225,6 +3381,8 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 10: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) DozerAIUpdate(NULL, NULL); break;
 		/* (batch A39: likewise; the worker's machine's transitions ask) */
 		case 11: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) WorkerAIUpdate(NULL, NULL); break;
+		/* (batch A40: likewise; the supply truck's machine's default state asks) */
+		case 12: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) ChinookAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -3407,6 +3565,20 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 			if (op == 130) { putF(r, d->getRepairHealthPerSecond()); putF(r, d->getBoredTime()); putF(r, d->getBoredRange()); }
 			if (op == 131) d->createBridgeScaffolding(findObject((ObjectID)ia[0]));
 			if (op == 132) d->removeBridgeScaffolding(findObject((ObjectID)ia[0]));
+		}
+		break;
+	/* batch A40: a chinook's own members (ia[0]: an exiter) (nothing for another class) */
+	case 141: case 142:
+		if (g_aiEnv.subclass == 12) {
+			ChinookAIUpdate *c = (ChinookAIUpdate *)ai;
+			if (op == 141) {
+				r.push_back(c->isAvailableForSupplying() ? 1u : 0u);
+				r.push_back(c->isCurrentlyFerryingSupplies() ? 1u : 0u);
+				r.push_back(c->isAllowedToAdjustDestination() ? 1u : 0u);
+				r.push_back((unsigned)c->getBuildingToNotPathAround());
+				r.push_back((unsigned)c->getUpgradedSupplyBoost());
+			}
+			if (op == 142) { Object *o = findObject((ObjectID)ia[0]); if (o) r.push_back((unsigned)c->getAiFreeToExit(o)); }
 		}
 		break;
 	/* batch A39: a worker's own members (ia[0]: a dock, the forced-busy flag) (nothing for another class) */
@@ -4222,8 +4394,46 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		const Bool flags[] = { m->m_isTrackingTarget, m->m_isArmed, m->m_noDamage, m->m_isJammed };
 		for (Bool f : flags) putU32(v, f ? 1u : 0u);
 	}
-	/* batch A35: a SupplyTruckAIUpdate's members and its machine's */
-	if (g_aiEnv.subclass == 7) {
+	/* batch A40: a ChinookAIUpdate's members, its machine's own states' (the taking-off and landing states', the move to the drop's,
+	** the drop's: its ropes, a rope's lengths only with a drawable), then (below) the supply truck's */
+	if (g_aiEnv.subclass == 12) {
+		const ChinookAIUpdate *c = (const ChinookAIUpdate *)ai;
+		putU32(v, (unsigned)c->m_flightStatus);
+		putU32(v, (unsigned)c->m_airfieldForHealing);
+		putPos(v, c->m_originalPos);
+		putU32(v, c->m_hasPendingCommand ? 1u : 0u);
+		putU32(v, (unsigned)c->m_pendingCommand.m_cmd);
+		putU32(v, (unsigned)c->m_pendingCommand.m_cmdSource);
+		putPos(v, c->m_pendingCommand.m_pos);
+		putU32(v, (unsigned)c->m_pendingCommand.m_obj);
+		const StateMachine *m = c->m_stateMachine;
+		if (m) {
+			const StateID landings[5] = { 1001, 1002, 1005, 1008, 1010 };
+			for (StateID s : landings) {
+				const ChinookTakeoffOrLandingState *l = (const ChinookTakeoffOrLandingState *)m->m_stateMap.find(s)->second;
+				putPos(v, l->m_destLoc);
+				putU32(v, l->m_landing ? 1u : 0u);
+			}
+			const ChinookMoveToBldgState *b = (const ChinookMoveToBldgState *)m->m_stateMap.find(1012)->second;
+			putF(v, b->m_oldPreferredHeight);
+			putF(v, b->m_newPreferredHeight);
+			putF(v, b->m_destZ);
+			const ChinookCombatDropState *d = (const ChinookCombatDropState *)m->m_stateMap.find(1013)->second;
+			putU32(v, (unsigned)d->m_ropes.size());
+			for (const ChinookCombatDropState::RopeInfo &rope : d->m_ropes) {
+				putU32(v, rope.ropeDrawable ? (unsigned)rope.ropeDrawable->getID() : 0u);
+				Real mtx[12];
+				for (int i = 0; i < 3; ++i) for (int j = 0; j < 4; ++j) mtx[4 * i + j] = rope.dropStartMtx[i][j];
+				for (Real x : mtx) putF(v, x);
+				if (rope.ropeDrawable) { putF(v, rope.ropeSpeed); putF(v, rope.ropeLen); putF(v, rope.ropeLenMax); }
+				putU32(v, rope.nextDropTime);
+				putU32(v, (unsigned)rope.rappellerIDs.size());
+				for (ObjectID id : rope.rappellerIDs) putU32(v, (unsigned)id);
+			}
+		}
+	}
+	/* batch A35: a SupplyTruckAIUpdate's members and its machine's (batch A40: and a chinook's) */
+	if (g_aiEnv.subclass == 7 || g_aiEnv.subclass == 12) {
 		const SupplyTruckAIUpdate *t = (const SupplyTruckAIUpdate *)ai;
 		putU32(v, (unsigned)t->m_preferredDock);
 		putU32(v, (unsigned)t->m_numberBoxes);
@@ -4400,6 +4610,8 @@ const CommandButton *ControlBar::findCommandButton(const AsciiString& name)
 Bool AIUpdateInterface::isIdle() const
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 6) return ((const HackInternetAIUpdate *)this)->hackIsIdle();
+	/* (batch A40: a chinook's own) */
+	if (this == g_ai_update && g_aiEnv.subclass == 12) return ((const ChinookAIUpdate *)this)->chinookIsIdle();
 	return baseIsIdle();
 }
 
@@ -4447,6 +4659,8 @@ void Drawable::updateDrawableSupplyStatus(Int maxSupply, Int currentSupply) { L(
 SupplyTruckAIInterface *AIUpdateInterface::getSupplyTruckAIInterface()
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 7) return (SupplyTruckAIUpdate *)this;
+	/* (batch A40: a chinook's, a supply truck) */
+	if (this == g_ai_update && g_aiEnv.subclass == 12) return (ChinookAIUpdate *)this;
 	/* (batch A39: a worker's) */
 	if (this == g_ai_update && g_aiEnv.subclass == 11) return (WorkerAIUpdate *)this;
 	return NULL;
@@ -4577,7 +4791,18 @@ void Drawable::updateSubObjects() { logDeliver({ 7u }); }
 Int Drawable::getPristineBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
 {
 	Int n = (p1Hash(140, { (unsigned)startIndex, g_aiEnv.frame }) & 1) ? 1 : 0;
-	if (n) { positions[0].x = 2.0f * (Real)startIndex; positions[0].y = 3.0f; positions[0].z = 1.0f; }
+	/* (batch A40: the chinook's ropes, more than one asked: the scene's counts; bone i at (2 * (index + i), 3, 1), its transform
+	** a translation there (y -3)) */
+	if (maxBones > 1) {
+		Int count = strcmp(boneNamePrefix, "RopeStart") == 0 ? g_aiEnv.chinookWorld[1] & 0xff : (g_aiEnv.chinookWorld[1] >> 8) & 0xff;
+		n = count < maxBones ? count : maxBones;
+		for (Int i = 0; i < n; ++i) {
+			Real x = 2.0f * (Real)(startIndex + i);
+			if (positions) { positions[i].x = x; positions[i].y = 3.0f; positions[i].z = 1.0f; }
+			if (transforms) { transforms[i].Make_Identity(); transforms[i].Set_Translation(Vector3(x, -3.0f, 1.0f)); }
+		}
+	}
+	else if (n) { positions[0].x = 2.0f * (Real)startIndex; positions[0].y = 3.0f; positions[0].z = 1.0f; }
 	std::vector<unsigned> w = { 8u, (unsigned)startIndex, (unsigned)maxBones, (unsigned)n };
 	putName(w, boneNamePrefix);
 	logDeliver(w);
@@ -4604,6 +4829,8 @@ const AiTemplateView *ThingFactory::findTemplate(const AsciiString& name)
 {
 	if (strcmp(name.str(), "pt0") == 0) return &g_payloadTemplates[0];
 	if (strcmp(name.str(), "pt1") == 0) return &g_payloadTemplates[1];
+	/* (batch A40: the chinook's rope) */
+	if (strcmp(name.str(), "rope") == 0) return &g_ropeTemplate;
 	return NULL;
 }
 PayloadObject *ThingFactory::newObject(const AiTemplateView *tmplate, Team *team)
@@ -4869,4 +5096,130 @@ Bool ActionManager::canRepairObject(const Object *obj, const Object *objectToRep
 Bool ActionManager::canResumeConstructionOf(const Object *obj, const Object *objectBeingConstructed, CommandSourceType commandSource)
 {
 	return actionAnswer(6, objectBeingConstructed, commandSource);
+}
+
+/* batch A40: the chinook's world (LOG_CHINOOK): 0 its HELD disabling, 1-6 the ropes (a new drawable, its position, its
+** parameters, its length, its speed, its expiration), 7 an airfield's parking place, 8 its healee, 9 its contain's passengers wanting
+** in or out, 10 an overlord-style container, 11 a passenger allowed to fire, 12 the rider, 13 a rappeller placed, 14 the pathfinder's
+** landing spot, 15 the local player's shroud, 16 the client's random value, 17 the rotor wash; the member AIs' new calls
+** (LOG_MEMBER_AI 10-15) */
+static void logChinookImpl(std::vector<unsigned> w)
+{
+	if (g_aiQuiet) return;
+	g_aiLog->push_back((unsigned)LOG_CHINOOK);
+	g_aiLog->push_back((unsigned)w.size());
+	for (unsigned x : w) g_aiLog->push_back(x);
+}
+void logChinook(std::vector<unsigned> w) { logChinookImpl(w); }
+void Object::setDisabled(DisabledType type) { logChinook({ 0u, (unsigned)type, 1u }); }
+void Object::clearDisabled(DisabledType type) { logChinook({ 0u, (unsigned)type, 0u }); }
+/* (the ropes: drawables 1 ..= 63, from 1 in each case; a loaded rope found again by its id) */
+namespace { Drawable g_ropes[64]; DrawModule g_ropeModules[64]; DrawModule *g_ropeModuleLists[64][2]; unsigned g_nextRope = 1; }
+Drawable *ThingFactory::newDrawable(const AiTemplateView *tmplate)
+{
+	unsigned k = 1u + (g_nextRope++ - 1u) % 63u;
+	g_ropes[k].m_ropeId = (DrawableID)k;
+	g_ropeModules[k].m_rope.m_rope = (DrawableID)k;
+	g_ropeModuleLists[k][0] = &g_ropeModules[k];
+	g_ropeModuleLists[k][1] = NULL;
+	logChinook({ 1u, k });
+	return &g_ropes[k];
+}
+DrawModule **Drawable::getDrawModules() { return g_ropeModuleLists[m_ropeId % 64]; }
+void resetChinookRopes() { g_nextRope = 1; }
+namespace { GameClient g_gameClient; }
+GameClient *TheGameClient = &g_gameClient;
+Drawable *GameClient::findDrawableByID(const DrawableID id) { return id ? &g_ropes[id % 64] : NULL; }
+void Drawable::setPosition(const Coord3D *pos) { logChinook({ 2u, (unsigned)m_ropeId, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+void RopeDrawInterface::initRopeParms(Real length, Real width, const RGBColor& color, Real wobbleLen, Real wobbleAmp, Real wobbleRate)
+{
+	logChinook({ 3u, (unsigned)m_rope, bitsOf(length), bitsOf(width), bitsOf(color.red), bitsOf(color.green), bitsOf(color.blue),
+		bitsOf(wobbleLen), bitsOf(wobbleAmp), bitsOf(wobbleRate) });
+}
+void RopeDrawInterface::setRopeCurLen(Real length) { logChinook({ 4u, (unsigned)m_rope, bitsOf(length) }); }
+void RopeDrawInterface::setRopeSpeed(Real curSpeed, Real maxSpeed, Real accel)
+{
+	logChinook({ 5u, (unsigned)m_rope, bitsOf(curSpeed), bitsOf(maxSpeed), bitsOf(accel) });
+}
+void Drawable::setExpirationDate(UnsignedInt frame) { logChinook({ 6u, (unsigned)m_ropeId, frame }); }
+namespace { ParkingPlaceBehaviorInterface g_parkingPlace; }
+ParkingPlaceBehaviorInterface *airfieldParkingPlace(Object *airfield)
+{
+	Bool r = airfield->getID() < 32 && ((g_aiEnv.chinookMasks[0] >> airfield->getID()) & 1);
+	logChinook({ 7u, (unsigned)airfield->getID(), r ? 1u : 0u });
+	if (!r) return NULL;
+	g_parkingPlace.m_airfield = airfield->getID();
+	return &g_parkingPlace;
+}
+void ParkingPlaceBehaviorInterface::setHealee(Object *healee, Bool add) { logChinook({ 8u, (unsigned)m_airfield, add ? 1u : 0u }); }
+Bool ContainModuleInterface::hasObjectsWantingToEnterOrExit() const
+{
+	Bool r = (g_aiEnv.chinookWorld[0] & 2) != 0;
+	logChinook({ 9u, r ? 1u : 0u });
+	return r;
+}
+Bool ContainModuleInterface::isSpecialOverlordStyleContainer() const
+{
+	Bool r = (g_aiEnv.chinookWorld[0] & 4) != 0;
+	logChinook({ 10u, r ? 1u : 0u });
+	return r;
+}
+const Object *ContainModuleInterface::friend_getRider() const
+{
+	Object *o = findObject((ObjectID)g_aiEnv.chinookRider);
+	logChinook({ 12u, o ? (unsigned)o->getID() : 0u });
+	return o;
+}
+void rappellerSetTransformMatrix(Object *rappeller, const Matrix3D *mtx)
+{
+	logChinook({ 13u, (unsigned)rappeller->getID(), bitsOf((*mtx)[0][3]), bitsOf((*mtx)[1][3]), bitsOf((*mtx)[2][3]) });
+}
+/* (the pathfinder's landing spot: the cell's centre) */
+Bool Pathfinder::adjustToLandingDestination(Object *obj, Coord3D *dest)
+{
+	logChinook({ 14u, bitsOf(dest->x), bitsOf(dest->y), bitsOf(dest->z) });
+	dest->x = floorf(dest->x / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2.0f;
+	dest->y = floorf(dest->y / PATHFIND_CELL_SIZE_F) * PATHFIND_CELL_SIZE_F + PATHFIND_CELL_SIZE_F / 2.0f;
+	return TRUE;
+}
+namespace { PlayerList g_playerList; }
+PlayerList *ThePlayerList = &g_playerList;
+Player *PlayerList::getLocalPlayer() { return &g_player; }
+ObjectShroudStatus Object::getShroudedStatus(Int playerIndex) const
+{
+	Bool clear = (g_aiEnv.chinookWorld[0] & 1) != 0;
+	logChinook({ 15u, (unsigned)playerIndex, clear ? 1u : 0u });
+	return clear ? OBJECTSHROUD_CLEAR : OBJECTSHROUD_FOGGED;
+}
+Real GameClientRandomValueReal(Real lo, Real hi)
+{
+	Real r = lo + (hi - lo) * (Real)(p1Hash(148, { g_aiEnv.frame }) % 1000u) / 1000.0f;
+	logChinook({ 16u, bitsOf(lo), bitsOf(hi), bitsOf(r) });
+	return r;
+}
+ParticleSystem *ParticleSystemManager::createParticleSystem(const ParticleSystemTemplate *sysTemplate, Bool createSlaves)
+{
+	static ParticleSystem system;
+	return &system;
+}
+void ParticleSystem::setPosition(const Coord3D *pos) { logChinook({ 17u, bitsOf(pos->x), bitsOf(pos->y), bitsOf(pos->z) }); }
+Object *AssaultMemberAi::getCurrentVictim() const
+{
+	Object *v = p1Pick(p1Hash(149, { memberId(this), g_aiEnv.frame }), 50) ? NULL : findObject((ObjectID)g_aiEnv.closestEnemy);
+	L(LOG_MEMBER_AI, { 10, memberId(this), v ? (unsigned)v->getID() : 0u });
+	return v;
+}
+void AssaultMemberAi::aiForceAttackObject(Object *v, Int shots, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 11, memberId(this), v ? (unsigned)v->getID() : 0u, (unsigned)shots, (unsigned)s });
+}
+void AssaultMemberAi::aiAttackPosition(const Coord3D *p, Int shots, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 12, memberId(this), bitsOf(p->x), bitsOf(p->y), bitsOf(p->z), (unsigned)shots, (unsigned)s });
+}
+void AssaultMemberAi::aiIdle(CommandSourceType s) { L(LOG_MEMBER_AI, { 13, memberId(this), (unsigned)s }); }
+void AssaultMemberAi::setDesiredSpeed(Real speed) { L(LOG_MEMBER_AI, { 14, memberId(this), bitsOf(speed) }); }
+void AssaultMemberAi::aiRappelInto(Object *target, const Coord3D& p, CommandSourceType s)
+{
+	L(LOG_MEMBER_AI, { 15, memberId(this), target ? (unsigned)target->getID() : 0u, bitsOf(p.x), bitsOf(p.y), bitsOf(p.z), (unsigned)s });
 }

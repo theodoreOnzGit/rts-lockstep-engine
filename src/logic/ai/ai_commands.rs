@@ -208,7 +208,7 @@ pub fn set_goal_position_clipped<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos:
     sm.set_goal_position(Some(&tmp));
 }
 
-fn set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &H, obj: ObjectId) {
+pub(crate) fn set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &H, obj: ObjectId) {
     let o = h.find_object(obj);
     sm.set_goal_object(o.as_ref());
 }
@@ -220,7 +220,7 @@ fn unblock<H: AiStateHost>(h: &mut H) {
     a.is_blocked_and_stuck = false;
 }
 
-fn set_last_command_source<H: AiStateHost>(h: &mut H, src: CommandSourceType) {
+pub(crate) fn set_last_command_source<H: AiStateHost>(h: &mut H, src: CommandSourceType) {
     ai(h).set_last_command_source(src);
 }
 
@@ -239,6 +239,10 @@ pub fn aism_set_goal_team<H: AiStateHost>(h: &mut H, team: Option<u32>) {
 /// `aiDoCommand(parms)`: refused if not allowed to respond, else dispatched to its `private*` member (an unknown command does
 /// nothing: a `DEBUG_CRASH`).
 pub fn ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiCommandParms) -> SmResult<()> {
+    // batch A40: `ChinookAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the supply truck's (the base's)
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
+        return crate::logic::ai::chinook_ai_update::chinook_ai_do_command(sm, h, parms);
+    }
     // batch A38: `DozerAIUpdate::aiDoCommand` (the virtual every command reaches): its own, calling the base's (batch A39: and
     // `WorkerAIUpdate::aiDoCommand`, the same but where it differs)
     if matches!(ai(h).subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_)) {
@@ -281,6 +285,12 @@ pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiC
     }
     let p = parms;
     let src = p.cmd_source;
+    // (batch A40: a chinook's own `privateGetRepaired` and `privateCombatDrop`)
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
+        if let Some(r) = crate::logic::ai::chinook_ai_update::chinook_private_command(sm, h, p) {
+            return r;
+        }
+    }
     match p.cmd {
         AICMD_MOVE_TO_POSITION | AICMD_MOVE_TO_POSITION_EVEN_IF_SLEEPING => private_move_to_position(sm, h, &p.pos, src),
         AICMD_MOVE_TO_OBJECT => private_move_to_object(sm, h, p.obj, src),
@@ -288,8 +298,12 @@ pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiC
         AICMD_MOVE_TO_POSITION_AND_EVACUATE => private_move_to_and_evacuate(sm, h, &p.pos, src, false),
         AICMD_MOVE_TO_POSITION_AND_EVACUATE_AND_EXIT => private_move_to_and_evacuate(sm, h, &p.pos, src, true),
         AICMD_IDLE => {
+            // (batch A40: `ChinookAIUpdate::privateIdle`: its rider told to idle first, then the supply truck's)
+            if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
+                crate::logic::ai::chinook_ai_update::rider_idle(h, src);
+            }
             // (batch A35: `SupplyTruckAIUpdate::privateIdle`: the player's idle forces it busy)
-            if let AiSubclass::SupplyTruck(s) = &mut ai(h).subclass {
+            if let AiSubclass::SupplyTruck(s) | AiSubclass::Chinook(crate::logic::ai::chinook_ai_update::Chinook { supply: s, .. }) = &mut ai(h).subclass {
                 if src == CMD_FROM_PLAYER && !plant(3664) {
                     s.forced_busy_pending = true;
                 }
@@ -332,7 +346,7 @@ pub fn base_ai_do_command<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, parms: &AiC
             private_goal_object_state(sm, h, p.obj, src, AI_DOCK, false)?;
             // (batch A35: `SupplyTruckAIUpdate::privateDock`: the player's dock is preferred)
             let dock = if h.object_exists(p.obj) { p.obj } else { INVALID_ID };
-            if let AiSubclass::SupplyTruck(s) = &mut ai(h).subclass {
+            if let AiSubclass::SupplyTruck(s) | AiSubclass::Chinook(crate::logic::ai::chinook_ai_update::Chinook { supply: s, .. }) = &mut ai(h).subclass {
                 if src == CMD_FROM_PLAYER && dock != INVALID_ID && !plant(3665) {
                     s.preferred_dock = dock;
                 }
@@ -583,7 +597,13 @@ fn attack_object_on_locked_machine<H: AiStateHost, M: AiMachineQuery>(
     if src == CMD_FROM_PLAYER && ai(h).data.forbid_player_commands {
         return Ok(false);
     }
-    // privateAttackObject (a transport's: its passengers first; batch A31, found by the deployers' run)
+    // privateAttackObject (a transport's: its passengers first; batch A31, found by the deployers' run) (batch A40: a chinook's own
+    // part first: it may not attack at all)
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_))
+        && !crate::logic::ai::chinook_ai_update::chinook_attack(h, crate::logic::ai::chinook_ai_update::ChinookAttack::Object { victim, max_shots }, src)
+    {
+        return Ok(true);
+    }
     transport_passengers_attack(h, src, PassengerCommand::AttackObject { victim, max_shots, src });
     if !h.object_exists(victim) {
         return Ok(true);
@@ -653,7 +673,7 @@ fn private_move_to_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coo
     if !h.is_mobile() {
         return Ok(());
     }
-    let idle = ai(h).is_idle(&*sm);
+    let idle = with_ai(h, |a, h| a.is_idle(&*sm, h));
     if !idle && src == CMD_FROM_AI && !plant(3253) {
         // "This is an internally generated move to, and we are in a non-idle state. ... Move for 20 seconds"
         set_goal_position_clipped(sm, h, Some(pos), src);
@@ -826,8 +846,8 @@ fn private_waypoint_state<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, way: Option
 /// `privateFollowPathAppend(pos, cmdSource)`: appended to the path being followed, else a new path (from the goal position if
 /// moving).
 fn private_follow_path_append<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, src: CommandSourceType) -> SmResult<()> {
+    let effectively_moving = with_ai(h, |a, h| a.is_moving(&*sm, h)) || ai(h).waiting_for_path;
     let a = ai(h);
-    let effectively_moving = a.is_moving(&*sm) || a.waiting_for_path;
     if a.get_ai_state_type(&*sm) == AI_FOLLOW_PATH && !a.machine.goal_path.is_empty() && effectively_moving {
         aism_add_to_goal_path(&mut ai(h).machine, pos);
         Ok(())
@@ -901,6 +921,14 @@ fn private_attack_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Obje
     } else {
         PassengerCommand::AttackObject { victim, max_shots, src }
     };
+    // (batch A40: a chinook's own part first: it may not attack at all)
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
+        use crate::logic::ai::chinook_ai_update::{chinook_attack, ChinookAttack};
+        let attack = if state == AI_FORCE_ATTACK_OBJECT { ChinookAttack::ForceObject { victim, max_shots } } else { ChinookAttack::Object { victim, max_shots } };
+        if !chinook_attack(h, attack, src) {
+            return Ok(());
+        }
+    }
     transport_passengers_attack(h, src, cmd);
     if !h.object_exists(victim) {
         return Ok(());
@@ -940,6 +968,12 @@ fn private_attack_team<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, team: Option<u
 /// `privateAttackPosition(pos, maxShotsToFire, cmdSource)`: a weapon with a continue range attacks the closest attackable object
 /// there instead (else fires once); a contact weapon goes to a reachable place around an unreachable position.
 fn private_attack_position<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, pos: &Coord3D, mut max_shots: i32, src: CommandSourceType) -> SmResult<()> {
+    // (batch A40: a chinook's own part first: it may not attack at all)
+    if matches!(ai(h).subclass, AiSubclass::Chinook(_))
+        && !crate::logic::ai::chinook_ai_update::chinook_attack(h, crate::logic::ai::chinook_ai_update::ChinookAttack::Position { pos: *pos, max_shots }, src)
+    {
+        return Ok(());
+    }
     transport_passengers_attack(h, src, PassengerCommand::AttackPosition { pos: *pos, max_shots, src });
     let mut local_pos = *pos;
     let continue_range = h.weapon_continue_attack_range();
