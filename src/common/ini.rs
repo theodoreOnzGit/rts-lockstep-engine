@@ -269,6 +269,9 @@ pub enum Undefined {
     /// `OpenContain::processDamageToContained` loops `while( *it )`, so after the last rider it reads the value of `list::end()`, which holds none. The shipped game
     /// reads it as NULL (the loop ends); recorded here, not acted on.
     EndIteratorDereferenced,
+    /// A script condition reads a parameter its condition does not have (`Condition::getParameter` returns NULL past `m_numParms`,
+    /// and the evaluation dereferences it).
+    NullParameter,
     /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
     /// save).
     InvalidBoolLoaded,

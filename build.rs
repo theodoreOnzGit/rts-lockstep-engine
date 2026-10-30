@@ -4388,6 +4388,39 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // p1w13-sonnet, layer 11 batch C1: ScriptConditions (differential/wrap_conditions.cpp): its header unchanged, the file a copy with one
+        // mechanical edit (OUT_DIR/conditions_gen/ScriptConditions_c1.cpp, asserted once): `rts::sum`'s `std::vector<T>::iterator it;` gets
+        // the `typename` MSVC did not ask for. On the stand-ins of differential/shim_conditions (every other header the file includes is
+        // sc_world.h), inside namespace scw. `-fno-delete-null-pointer-checks`: the pool's `deleteInstance` on NULL (`reset` deletes
+        // `s_transportStatuses` unchecked) does nothing, as the pool's.
+        {
+            let gen = out_dir.join("conditions_gen");
+            std::fs::create_dir_all(&gen).expect("create conditions_gen");
+            let src = up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptConditions.cpp");
+            let copy = gen.join("ScriptConditions_c1.cpp");
+            std::fs::write(
+                &copy,
+                patch_copy(&src, "ScriptConditions.cpp", &[("\t\tstd::vector<T>::iterator it;", "\t\ttypename std::vector<T>::iterator it;", 1)]),
+            )
+            .expect("write ScriptConditions copy");
+            let mut cb = cc::Build::new();
+            base(&mut cb);
+            cb.compiler("clang++")
+                .flag("-fno-delete-null-pointer-checks")
+                .include(dif.join("shim_conditions"))
+                .include(up.join("GameEngine/Include"))
+                .define("SC_SOURCE", Some(format!("\"{}\"", copy.display()).as_str()))
+                .file(dif.join("wrap_conditions.cpp"));
+            cb.compile("upstream_conditions");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptConditions.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ScriptConditions.h",
+                "differential/wrap_conditions.cpp",
+                "differential/shim_conditions",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // p1w13-sonnet batch A27: the AI's data (differential/wrap_ai_data.cpp), in the science build's setup: AI.cpp's data parsers,
         // newOverride, TAiData's constructor, crc and xfer, and SidesList.cpp's BuildListInfo members, verbatim (ai_data_a27.inc),
         // with the real AI.h and SidesList.h. Generated into OUT_DIR/ai_data_gen: the four cuts, and GameLogic/AI.h, a copy with one

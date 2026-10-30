@@ -49,6 +49,7 @@ pub mod player_list;
 pub mod player_xfer;
 pub mod player_ops;
 pub mod victory_conditions;
+pub mod script_conditions;
 pub mod build_assistant;
 pub mod create_host_world;
 pub mod weapon_host_world; // layer 12, batch W1b: WeaponHost for World
