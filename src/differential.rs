@@ -1076,6 +1076,21 @@ pub struct AiEnv {
     pub supply_best: [c_int; 2],
     pub supply_closest: [c_int; 3],
     pub supply_dock_masks: [c_uint; 2],
+    // batch A36: a MissileAIUpdate's data (flags: bit 0 try to follow the target, 1 use the weapon's speed, 2 detonate on no fuel,
+    // 3 detonate calls kill, 4 an ignition FX, 5 a garrison-hit-kill FX; times: fuel lifetime, ignition delay; reals: initial
+    // velocity, distance before turning, before diving, scatter when jammed, lock distance; the garrison-hit-kill count, its
+    // required and forbidden kinds (bit k: kind k), the kill-self delay) and its world (the weapon templates' speeds, their
+    // die-on-detonate bits, the collide rate, the countermeasure, the garrison-immune bit)
+    pub missile_flags: c_int,
+    pub missile_times: [c_uint; 2],
+    pub missile_reals: [c_float; 5],
+    pub missile_garrison: [c_int; 3],
+    pub missile_kill_self_delay: c_int,
+    pub missile_weapon_speeds: [c_float; 3],
+    pub missile_die_mask: c_int,
+    pub missile_collide_rate: c_uint,
+    pub missile_countermeasure: c_int,
+    pub missile_garrison_immune: c_int,
 }
 
 /// Batch A22: one party of the collisions' scene (`differential/wrap_ai_collide.cpp`'s `ColParty`, field for field).

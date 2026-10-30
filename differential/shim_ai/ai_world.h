@@ -225,6 +225,21 @@ struct AiEnv
 	Int supplyBest[2];
 	Int supplyClosest[3];
 	UnsignedInt supplyDockMasks[2];
+	/* batch A36: a MissileAIUpdate's data (flags: bit 0 try to follow the target, 1 use the weapon's speed, 2 detonate on no fuel,
+	** 3 detonate calls kill, 4 an ignition FX, 5 a garrison-hit-kill FX; times: fuel lifetime, ignition delay; reals: initial
+	** velocity, distance before turning, before diving, scatter when jammed, lock distance; the garrison-hit-kill count, its
+	** required and forbidden kinds (bit k: kind k), the kill-self delay) and its world (the weapon templates' speeds, their
+	** die-on-detonate bits, the collide rate, the countermeasure, the garrison-immune bit) */
+	Int missileFlags;
+	UnsignedInt missileTimes[2];
+	Real missileReals[5];
+	Int missileGarrison[3];
+	Int missileKillSelfDelay;
+	Real missileWeaponSpeeds[3];
+	Int missileDieMask;
+	UnsignedInt missileCollideRate;
+	Int missileCountermeasure;
+	Int missileGarrisonImmune;
 };
 
 extern AiEnv g_aiEnv;
@@ -262,10 +277,17 @@ enum
 	LOG_SUPPLY = 114,	/* batch A35: the supply truck's world { 0 findBestSupplyCenter, answer; 1 findBestSupplyWarehouse, answer;
 			** 2 findClosestByKindOf, kind, answer; 3 getDistanceSquared to an object (2-D), it, bits; 4 updateDrawableSupplyStatus,
 			** max, boxes } */
+	LOG_MISSILE = 115,	/* batch A36: the missile's world { 0 attemptDamage, type, death, source, amount; 1 setDrawableHidden, hide;
+			** 2 positionProjectileForLaunch, launcher, slot, barrel; 3 shouldProjectileCollideWith, weapon, launcher, other, victim,
+			** answer; 4 handleProjectileDetonation, weapon, bonus, damage; 5 createAttachedParticleSystemID, template, id;
+			** 6 destroyParticleSystemByID, id; 7 getDistanceSquared, kind, it, bits; 8 calculateCountermeasureToDivertTo, victim,
+			** answer } */
 	LOG_HACK = 113	/* batch A34: the hacker's world { 0 deposit, amount; 1 addMoneyEarned, amount; 2 addExperiencePoints, xp, canScale;
 			** 3 isLocallyControlled, the object, answer; 4 the floating cash text, amount; 5 setAnimationLoopDuration, frames } */
 };
 
+/* batch A36: Weapon.h's `typedef UnsignedInt WeaponBonusConditionFlags;` */
+typedef UnsignedInt WeaponBonusConditionFlags;
 /* batch A35: KindOf.h's KindOfMaskType (BitFlags<KINDOF_COUNT>), as far as the supply truck's regrouping uses it */
 struct KindOfMaskType
 {
@@ -455,7 +477,7 @@ public:
 	/* batch A2 */
 	Real getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec = NULL);
 	/* batch A35: object to object (FROM_BOUNDINGSPHERE_2D only; logged) */
-	Real getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec = NULL);
+	Real getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec = NULL);	/* (batch A36: FROM_CENTER_2D and FROM_BOUNDINGSPHERE_3D too) */
 	/* batch A5 */
 	/* batch A16: the attack-squad state's (filters[0] a PartitionFilterAcceptOnSquad) */
 	Object *getClosestObject(const Object *obj, Real maxDist, DistanceCalculationType dc, PartitionFilter **filters = NULL,
@@ -511,7 +533,9 @@ extern AI *TheAI;
 class DamageInfo
 {
 public:
-	struct { DamageType m_damageType; ObjectID m_sourceID; } in;
+	struct { DamageType m_damageType; ObjectID m_sourceID;
+		/* batch A36 (the missile's own death) */
+		Int m_deathType; Real m_amount; } in;
 	/* batch A20 */
 	struct { Bool m_noEffect; } out;
 };
@@ -678,6 +702,8 @@ public:
 	Bool attemptBestFirePointPosition( Object *source, Weapon *weapon, const Coord3D *targetPos );
 	Bool isGarrisonable() const;
 	UnsignedInt getContainCount() const;
+	/* batch A36 (the scene's) */
+	Bool isImmuneToClearBuildingAttacks() const;
 	/* batch A5 (logged) */
 	const ContainedItemsList* getContainedItemsList() const;
 	void removeAllContained( Bool exposeStealthUnits = FALSE );
@@ -685,9 +711,41 @@ public:
 	void orderAllPassengersToExit( CommandSourceType, Bool instantly );
 };
 class StealthUpdate { public: Bool isGrantedBySpecialPower(); };
+/* batch A36: the missile's weapons, particle systems (renamed Ai* in PreRTS.h: other builds compile these classes): the scene's three
+** detonation weapon templates ("wt0".."wt2") and exhaust templates ("ps0".."ps2"), logged */
+class WeaponTemplate
+{
+public:
+	Real getWeaponSpeed() const;
+	Bool shouldProjectileCollideWith( const Object* projectileLauncher, const Object* projectile, const Object* thingWeCollidedWith,
+		ObjectID intendedVictimID ) const;
+	Bool getDieOnDetonate() const;
+	const AsciiString& getName() const;
+	Int m_index; AsciiString m_name;
+};
+class WeaponStore
+{
+public:
+	void handleProjectileDetonation( const WeaponTemplate* w, const Object *source, const Coord3D* pos, WeaponBonusConditionFlags extraBonusFlags,
+		Bool inflictDamage = TRUE );
+	const WeaponTemplate *findWeaponTemplate( AsciiString name ) const;
+};
+extern WeaponStore *TheWeaponStore;
+enum ParticleSystemID { INVALID_PARTICLE_SYSTEM_ID = 0, PARTICLE_SYSTEM_ID_MAX = 0x7fffffff };
+class ParticleSystemTemplate { public: const AsciiString& getName() const; Int m_index; AsciiString m_name; };
+class ParticleSystemManager
+{
+public:
+	ParticleSystemID createAttachedParticleSystemID( const ParticleSystemTemplate *sysTemplate, Object* attachTo, Bool createSlaves = FALSE );
+	void destroyParticleSystemByID( ParticleSystemID id );
+	const ParticleSystemTemplate *findTemplate( const AsciiString &name ) const;
+};
+extern ParticleSystemManager *TheParticleSystemManager;
 class Weapon
 {
 public:
+	/* batch A36 (logged) */
+	static void positionProjectileForLaunch( Object *projectile, const Object *launcher, WeaponSlotType wslot, Int specificBarrelToUse );
 	Int getAntiMask() const;
 	/* batch A5 */
 	void setMaxShotCount(Int maxShots);
@@ -759,6 +817,8 @@ public:
 	void setAnimationLoopDuration( UnsignedInt numFrames );
 	/* batch A35 (logged) */
 	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );
+	/* batch A36 (logged) */
+	void setDrawableHidden( Bool hidden );
 };
 /* batch A34: Money.h's, ScoreKeeper.h's, ExperienceTracker.h's, as far as the hacker reaches them (logged) */
 class Money { public: void deposit( UnsignedInt amountToDeposit, Bool playSound = TRUE ); };
@@ -879,6 +939,11 @@ public:
 	/* batch A34 */
 	ExperienceTracker *getExperienceTracker() const;
 	Bool isLocallyControlled() const;
+	/* batch A36 (the missile's: the scene's, logged) */
+	void attemptDamage( DamageInfo *damageInfo );
+	WeaponBonusConditionFlags getWeaponBonusCondition() const;
+	ObjectID calculateCountermeasureToDivertTo( const Object& victim );
+	Bool isKindOfMulti( const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear ) const;
 	/* batch A2 */
 	ObjectID getID() const;
 	UnsignedByte getCrusherLevel() const;

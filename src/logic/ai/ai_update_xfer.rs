@@ -104,6 +104,21 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             }
             return Ok(());
         }
+        if let crate::logic::ai::ai_update::AiSubclass::Missile(_) = self.ai().subclass {
+            // batch A36: `MissileAIUpdate::xfer` (version 6): the base's, then its members
+            let current_version: XferVersion = 6;
+            let mut version = current_version;
+            xfer.xfer_version(&mut version, current_version)?;
+            self.base_xfer(h, xfer, waypoint_name, waypoint_by_name)?;
+            let mut m = match &self.ai().subclass {
+                crate::logic::ai::ai_update::AiSubclass::Missile(m) => m.clone(),
+                _ => unreachable!(),
+            };
+            let r = crate::logic::ai::missile_ai_update::missile_xfer_members(&mut m, h, xfer, version);
+            self.ai_mut().subclass = crate::logic::ai::ai_update::AiSubclass::Missile(m);
+            r?;
+            return Ok(());
+        }
         if let crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) = self.ai().subclass {
             // batch A35: `SupplyTruckAIUpdate::xfer` (version 1): the base's, its machine, the preferred dock, the boxes, the
             // forced-wanting flag

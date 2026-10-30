@@ -855,6 +855,88 @@ private:
 
 };
 #include "ai_supply_truck_a35.inc"
+/* batch A36: MissileAIUpdate. Its module data the header's fields and constructor (MissileAIUpdate.cpp's, verbatim; the field
+** parse is the INI's: the scene's, g_missileData); the class as the header declares it, without the pool and module macros and
+** without ProjectileUpdateInterface (the weapon's: here ops 104-108); its .cpp from the constructor, verbatim (its BIGNUM is
+** Locomotor.cpp's, the same) (ai_missile_a36.inc). */
+#include "ai_missile_data_a36.inc"
+static MissileAIUpdateModuleData g_missileData;
+class MissileAIUpdate : public AIUpdateInterface
+{
+public:
+	MissileAIUpdate( Thing *thing, const ModuleData* moduleData );
+	virtual ~MissileAIUpdate( void );
+	const MissileAIUpdateModuleData *getMissileAIUpdateModuleData() const { return &g_missileData; }
+
+	enum MissileStateType	 // Stored in save file, don't renumber.
+	{
+		PRELAUNCH			= 0,
+		LAUNCH				= 1, ///< released from launcher, falling
+		IGNITION			= 2, ///< engines ignite
+		ATTACK_NOTURN	= 3, ///< fly toward victim
+		ATTACK				= 4, ///< fly toward victim
+		DEAD					= 5,
+		KILL					= 6, ///< Hit victim (cheat).
+		KILL_SELF			= 7, ///< Destroy self.
+	};
+
+	virtual void projectileFireAtObjectOrPosition( const Object *victim, const Coord3D *victimPos, const WeaponTemplate *detWeap, const ParticleSystemTemplate* exhaustSysOverride );
+	virtual void projectileLaunchAtObjectOrPosition(const Object *victim, const Coord3D* victimPos, const Object *launcher, WeaponSlotType wslot, Int specificBarrelToUse, const WeaponTemplate* detWeap, const ParticleSystemTemplate* exhaustSysOverride);
+	virtual Bool projectileHandleCollision( Object *other );
+	virtual Bool projectileIsArmed() const { return m_isArmed; }
+	virtual ObjectID projectileGetLauncherID() const { return m_launcherID; }
+	virtual void setFramesTillCountermeasureDiversionOccurs( UnsignedInt frames ); ///< Number of frames till missile diverts to countermeasures.
+	virtual void projectileNowJammed();///< We lose our Object target and scatter to the ground
+
+	virtual Bool processCollision(PhysicsBehavior *physics, Object *other); ///< Returns true if the physics collide should apply the force.  Normally not.  jba.
+
+	virtual UpdateSleepTime update();
+	virtual void onDelete( void );
+
+	virtual void crc( Xfer *xfer );
+	virtual void xfer( Xfer *xfer );
+	virtual void loadPostProcess( void );
+
+protected:
+	void detonate();
+
+private:
+	MissileStateType			m_state;									///< the behavior state of the missile
+	UnsignedInt						m_stateTimestamp;					///< time of state change
+	UnsignedInt						m_nextTargetTrackTime;		///< if nonzero, how often we update our target pos
+	ObjectID							m_launcherID;							///< ID of object that launched us (INVALID_ID if not yet launched)
+	ObjectID							m_victimID;								///< ID of object that I am rocketing towards (INVALID_ID if not yet launched)
+	UnsignedInt						m_fuelExpirationDate;			///< how long 'til we run out of fuel
+	Real									m_noTurnDistLeft;					///< when zero, ok to start turning
+	Real									m_maxAccel;
+	Coord3D								m_originalTargetPos;			///< When firing uphill, we aim high to clear the brow of the hill.  jba.
+	Coord3D								m_prevPos;
+	WeaponBonusConditionFlags		m_extraBonusFlags;
+	const WeaponTemplate*	m_detonationWeaponTmpl;		///< weapon to fire at end (or null)
+	const ParticleSystemTemplate* m_exhaustSysTmpl;
+	ParticleSystemID			m_exhaustID;								///< our exhaust particle system (if any)
+	UnsignedInt						m_framesTillDecoyed;			///< Number of frames before missile will get distracted by decoy countermeasures.
+	Bool									m_isTrackingTarget;				///< Was I originally shot at a moving object?
+	Bool									m_isArmed;								///< if true, missile will explode on contact
+	Bool									m_noDamage;								///< if true, missile will not cause damage when it detonates. (Used for flares).
+	Bool									m_isJammed;								///< No target, just shooting at a scattered position
+
+	void doPrelaunchState();
+	void doLaunchState();
+	void doIgnitionState();
+	void doAttackState(Bool turnOK);
+	void doKillState();
+	void doKillSelfState();
+	void doDeadState();
+
+	void airborneTargetGone();											///< My airborne target has died, so I have to do something cool to make up for that
+	void tossExhaust();
+	void switchToState(MissileStateType s);
+};
+#include "ai_missile_a36.inc"
+extern WeaponTemplate g_weaponTemplates[3];
+extern ParticleSystemTemplate g_particleTemplates[3];
+extern FXList g_missileFx[2];
 
 #undef private
 #undef protected
@@ -969,7 +1051,9 @@ Pathfinder *AI::pathfinder() { return (Pathfinder *)g_pathfinderMem; }
 UnsignedInt GameLogic::getFrame() const { return g_aiEnv.frame; }
 
 /* ---- batch A7: the move sounds (TheAudio's handles count from 1 in each case) */
-namespace { AudioHandle g_nextAudioHandle = 1; AudioEventRTS g_sounds[4]; AudioManager g_audio; }
+namespace { AudioHandle g_nextAudioHandle = 1; AudioEventRTS g_sounds[4]; AudioManager g_audio;
+/* batch A36: the particle systems' ids count from 1 in each case */
+unsigned g_nextParticleId = 1; }
 AudioManager *TheAudio = &g_audio;
 AudioHandle AudioManager::addAudioEvent(const AudioEventRTS *e)
 {
@@ -1058,9 +1142,13 @@ Real PartitionManager::getGroundOrStructureHeight(Real posx, Real posy)
 	return groundAt(posx, posy) + g_aiEnv.structOffset;
 }
 
+/* (batch A36: the missile's distances, defined at the end of this file) */
+static Real missileDistance(int kind, unsigned it, const Coord3D *a, const Coord3D *b);
 /* PartitionManager::getDistanceSquared(obj, pos, FROM_CENTER_3D) (layer 8, translated): the 3-D distance from the object's centre */
 Real PartitionManager::getDistanceSquared(const Object *obj, const Coord3D *pos, DistanceCalculationType dc, Coord3D *vec)
 {
+	/* (batch A36: FROM_CENTER_2D, the missile's) */
+	if (dc == FROM_CENTER_2D) return missileDistance(0, 0, obj->getPosition(), pos);
 	/* (batch A6: FROM_BOUNDINGSPHERE_3D too, computed alike by the stand-in) */
 	if (dc != FROM_CENTER_3D && dc != FROM_BOUNDINGSPHERE_3D) abort();
 	const Coord3D *p = obj->getPosition();
@@ -2224,6 +2312,28 @@ void setScene(const AiEnv *env)
 	g_deployData.m_manualDeployAnimations = (env->deployFlags & 8) != 0;
 	/* batch A32: an AssaultTransportAIUpdate's data */
 	g_assaultData.m_membersGetHealedAtLifeRatio = env->assaultRatio;
+	/* batch A36: a MissileAIUpdate's data (the FX lists the scene's two, the kinds by bit) */
+	for (int i = 0; i < 3; ++i) { g_weaponTemplates[i].m_index = i; g_particleTemplates[i].m_index = i; }
+	g_missileData = MissileAIUpdateModuleData();
+	g_missileData.m_tryToFollowTarget = (env->missileFlags & 1) != 0;
+	g_missileData.m_useWeaponSpeed = (env->missileFlags & 2) != 0;
+	g_missileData.m_detonateOnNoFuel = (env->missileFlags & 4) != 0;
+	g_missileData.m_detonateCallsKill = (env->missileFlags & 8) != 0;
+	g_missileData.m_ignitionFX = (env->missileFlags & 16) ? &g_missileFx[0] : NULL;
+	g_missileData.m_garrisonHitKillFX = (env->missileFlags & 32) ? &g_missileFx[1] : NULL;
+	g_missileData.m_fuelLifetime = env->missileTimes[0];
+	g_missileData.m_ignitionDelay = env->missileTimes[1];
+	g_missileData.m_initialVel = env->missileReals[0];
+	g_missileData.m_initialDist = env->missileReals[1];
+	g_missileData.m_diveDistance = env->missileReals[2];
+	g_missileData.m_distanceScatterWhenJammed = env->missileReals[3];
+	g_missileData.m_lockDistance = env->missileReals[4];
+	g_missileData.m_garrisonHitKillCount = env->missileGarrison[0];
+	for (int k = 0; k < 31; ++k) {
+		if ((env->missileGarrison[1] >> k) & 1) g_missileData.m_garrisonHitKillKindof.set((KindOfType)k);
+		if ((env->missileGarrison[2] >> k) & 1) g_missileData.m_garrisonHitKillKindofNot.set((KindOfType)k);
+	}
+	g_missileData.m_killSelfDelay = env->missileKillSelfDelay;
 	/* batch A35: a SupplyTruckAIUpdate's data */
 	g_supplyData.m_maxBoxesData = env->supplyMaxBoxes;
 	g_supplyData.m_centerDelay = env->supplyDelays[0];
@@ -2422,6 +2532,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 	makeMap();
 	g_nextCallFrame = 0;
 	g_nextAudioHandle = 1;
+	g_nextParticleId = 1;
 	/* batch A9 */
 	g_teamWaypoint = env->teamWaypoint >= 0 ? &g_waypoints[env->teamWaypoint] : NULL;
 	/* batch A10a */
@@ -2461,6 +2572,7 @@ int ref_ai_a2_new(const unsigned *sets, const AiEnv *env, const float *pos, floa
 		case 6: g_ai_update = new (ShimZeroFill{}) HackInternetAIUpdate(NULL, NULL); break;
 		/* (batch A35: the object has no AI while its AI is made: the machine's default state asks) */
 		case 7: g_ai_update = NULL; g_ai_update = new (ShimZeroFill{}) SupplyTruckAIUpdate(NULL, NULL); break;
+		case 8: g_ai_update = new (ShimZeroFill{}) MissileAIUpdate(NULL, NULL); break;
 		default: g_ai_update = new (ShimZeroFill{}) AIUpdateInterface(NULL, NULL); break;
 	}
 	/* batch A4: the object's creation makes the AI's machine (onObjectCreated), unless the scene says not yet */
@@ -2582,6 +2694,21 @@ int ref_ai_a2_op(int op, const float *fa, const int *ia, const AiEnv *env, unsig
 	case 101: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->gainOneBox(ia[0]) ? 1u : 0u); break;
 	case 102: if (g_aiEnv.subclass == 7) r.push_back(((SupplyTruckAIUpdate *)ai)->loseOneBox() ? 1u : 0u); break;
 	case 103: if (g_aiEnv.subclass == 7) ((SupplyTruckAIUpdate *)ai)->setForceWantingState(ia[0] != 0); break;
+	/* batch A36: the weapon's calls to a missile (ia: the victim, the launcher, the slot, the barrel, the detonation weapon (-1 none),
+	** the exhaust (-1 none); fa: the victim's position) (nothing for another class) */
+	case 104: case 105: case 106: case 107: case 108:
+		if (g_aiEnv.subclass == 8) {
+			MissileAIUpdate *m = (MissileAIUpdate *)ai;
+			const WeaponTemplate *det = ia[4] >= 0 ? &g_weaponTemplates[ia[4]] : NULL;
+			const ParticleSystemTemplate *exhaust = ia[5] >= 0 ? &g_particleTemplates[ia[5]] : NULL;
+			Object *victim = findObject((ObjectID)ia[0]);
+			if (op == 104) m->projectileLaunchAtObjectOrPosition(victim, &p, findObject((ObjectID)ia[1]), (WeaponSlotType)ia[2], ia[3], det, exhaust);
+			if (op == 105) m->projectileFireAtObjectOrPosition(victim, &p, det, exhaust);
+			if (op == 106) r.push_back(m->projectileHandleCollision(victim) ? 1u : 0u);
+			if (op == 107) m->setFramesTillCountermeasureDiversionOccurs((UnsignedInt)ia[0]);
+			if (op == 108) m->projectileNowJammed();
+		}
+		break;
 	case 66: ai->onObjectCreated(); break;
 	case 67: if (ia[0]) ai->getStateMachine()->lock("op"); else ai->getStateMachine()->unlock(); break;
 	case 68: ai->getStateMachine()->addToGoalPath(&p); break;
@@ -3244,6 +3371,27 @@ int ref_ai_a2_dump(unsigned *buf, int cap)
 		putU32(v, a->m_isAttackObject ? 1u : 0u);
 		putU32(v, a->m_newOccupantsAreNewMembers ? 1u : 0u);
 	}
+	/* batch A36: a MissileAIUpdate's members */
+	if (g_aiEnv.subclass == 8) {
+		const MissileAIUpdate *m = (const MissileAIUpdate *)ai;
+		putU32(v, (unsigned)m->m_state);
+		putU32(v, m->m_stateTimestamp);
+		putU32(v, m->m_nextTargetTrackTime);
+		putU32(v, (unsigned)m->m_launcherID);
+		putU32(v, (unsigned)m->m_victimID);
+		putU32(v, m->m_fuelExpirationDate);
+		putF(v, m->m_noTurnDistLeft);
+		putF(v, m->m_maxAccel);
+		putPos(v, m->m_originalTargetPos);
+		putPos(v, m->m_prevPos);
+		putU32(v, m->m_extraBonusFlags);
+		putU32(v, m->m_detonationWeaponTmpl ? (unsigned)m->m_detonationWeaponTmpl->m_index : 0xffffffffu);
+		putU32(v, m->m_exhaustSysTmpl ? (unsigned)m->m_exhaustSysTmpl->m_index : 0xffffffffu);
+		putU32(v, (unsigned)m->m_exhaustID);
+		putU32(v, m->m_framesTillDecoyed);
+		const Bool flags[] = { m->m_isTrackingTarget, m->m_isArmed, m->m_noDamage, m->m_isJammed };
+		for (Bool f : flags) putU32(v, f ? 1u : 0u);
+	}
 	/* batch A35: a SupplyTruckAIUpdate's members and its machine's */
 	if (g_aiEnv.subclass == 7) {
 		const SupplyTruckAIUpdate *t = (const SupplyTruckAIUpdate *)ai;
@@ -3448,6 +3596,9 @@ Object *Player::findClosestByKindOf(Object *queryObject, KindOfMaskType setKindO
 }
 Real PartitionManager::getDistanceSquared(const Object *obj, const Object *otherObj, DistanceCalculationType dc, Coord3D *vec)
 {
+	/* (batch A36: FROM_CENTER_2D and FROM_BOUNDINGSPHERE_3D, the missile's) */
+	if (dc == FROM_CENTER_2D || dc == FROM_BOUNDINGSPHERE_3D)
+		return missileDistance(dc == FROM_CENTER_2D ? 0 : 1, (unsigned)otherObj->getID(), obj->getPosition(), otherObj->getPosition());
 	/* (the stand-in's: FROM_BOUNDINGSPHERE_2D as the centres' 2-D distance) */
 	if (dc != FROM_BOUNDINGSPHERE_2D) abort();
 	const Coord3D *a = obj->getPosition();
@@ -3462,4 +3613,78 @@ SupplyTruckAIInterface *AIUpdateInterface::getSupplyTruckAIInterface()
 {
 	if (this == g_ai_update && g_aiEnv.subclass == 7) return (SupplyTruckAIUpdate *)this;
 	return NULL;
+}
+
+/* batch A36: the missile's world (LOG_MISSILE): the weapon templates and the store, the particle systems, the launcher's bonus, the
+** countermeasure, the garrison's immunity, the kinds, the distances, the damage, the drawable */
+WeaponTemplate g_weaponTemplates[3];
+ParticleSystemTemplate g_particleTemplates[3];
+FXList g_missileFx[2];
+static WeaponStore g_weaponStore;
+WeaponStore *TheWeaponStore = &g_weaponStore;
+static ParticleSystemManager g_particles;
+ParticleSystemManager *TheParticleSystemManager = &g_particles;
+Real WeaponTemplate::getWeaponSpeed() const { return g_aiEnv.missileWeaponSpeeds[m_index]; }
+Bool WeaponTemplate::shouldProjectileCollideWith(const Object* launcher, const Object* projectile, const Object* other, ObjectID victim) const
+{
+	bool r = p1Pick(p1Hash(134, { (unsigned)m_index, launcher ? (unsigned)launcher->getID() : 0u, (unsigned)other->getID(), (unsigned)victim }), g_aiEnv.missileCollideRate);
+	L(LOG_MISSILE, { 3, (unsigned)m_index, launcher ? (unsigned)launcher->getID() : 0u, (unsigned)other->getID(), (unsigned)victim, r ? 1u : 0u });
+	return r;
+}
+Bool WeaponTemplate::getDieOnDetonate() const { return ((g_aiEnv.missileDieMask >> m_index) & 1) != 0; }
+const AsciiString& WeaponTemplate::getName() const { const_cast<WeaponTemplate *>(this)->m_name.format("wt%d", m_index); return m_name; }
+void WeaponStore::handleProjectileDetonation(const WeaponTemplate* w, const Object *source, const Coord3D* pos, WeaponBonusConditionFlags bonus, Bool inflictDamage)
+{
+	L(LOG_MISSILE, { 4, (unsigned)w->m_index, (unsigned)bonus, inflictDamage ? 1u : 0u });
+}
+const WeaponTemplate *WeaponStore::findWeaponTemplate(AsciiString name) const
+{
+	for (int i = 0; i < 3; ++i) if (g_weaponTemplates[i].getName() == name) return &g_weaponTemplates[i];
+	return NULL;
+}
+const AsciiString& ParticleSystemTemplate::getName() const { const_cast<ParticleSystemTemplate *>(this)->m_name.format("ps%d", m_index); return m_name; }
+ParticleSystemID ParticleSystemManager::createAttachedParticleSystemID(const ParticleSystemTemplate *t, Object* attachTo, Bool createSlaves)
+{
+	unsigned id = g_nextParticleId++;
+	L(LOG_MISSILE, { 5, (unsigned)t->m_index, id });
+	return (ParticleSystemID)id;
+}
+void ParticleSystemManager::destroyParticleSystemByID(ParticleSystemID id) { L(LOG_MISSILE, { 6, (unsigned)id }); }
+const ParticleSystemTemplate *ParticleSystemManager::findTemplate(const AsciiString &name) const
+{
+	for (int i = 0; i < 3; ++i) if (g_particleTemplates[i].getName() == name) return &g_particleTemplates[i];
+	return NULL;
+}
+void Weapon::positionProjectileForLaunch(Object *projectile, const Object *launcher, WeaponSlotType wslot, Int barrel)
+{
+	L(LOG_MISSILE, { 2, launcher ? (unsigned)launcher->getID() : 0u, (unsigned)wslot, (unsigned)barrel });
+}
+WeaponBonusConditionFlags Object::getWeaponBonusCondition() const { return p1Hash(135, { (unsigned)getID() }) & 0xff; }
+ObjectID Object::calculateCountermeasureToDivertTo(const Object& victim)
+{
+	Object *o = findObject((ObjectID)g_aiEnv.missileCountermeasure);
+	L(LOG_MISSILE, { 8, (unsigned)victim.getID(), o ? (unsigned)o->getID() : 0u });
+	return o ? o->getID() : INVALID_ID;
+}
+Bool ContainModuleInterface::isImmuneToClearBuildingAttacks() const { return g_aiEnv.missileGarrisonImmune != 0; }
+Bool Object::isKindOfMulti(const KindOfMaskType& mustBeSet, const KindOfMaskType& mustBeClear) const
+{
+	for (int k = 0; k < 256; ++k) {
+		if (mustBeSet.test((KindOfType)k) && !isKindOf((KindOfType)k)) return FALSE;
+		if (mustBeClear.test((KindOfType)k) && isKindOf((KindOfType)k)) return FALSE;
+	}
+	return TRUE;
+}
+void Object::attemptDamage(DamageInfo *d)
+{
+	L(LOG_MISSILE, { 0, (unsigned)d->in.m_damageType, (unsigned)d->in.m_deathType, (unsigned)d->in.m_sourceID, bitsOf(d->in.m_amount) });
+}
+void Drawable::setDrawableHidden(Bool hidden) { L(LOG_MISSILE, { 1, hidden ? 1u : 0u }); }
+/* (the stand-in's distances: FROM_CENTER_2D the centres' 2-D, FROM_BOUNDINGSPHERE_3D the centres' 3-D, LOG_MISSILE kind 7) */
+static Real missileDistance(int kind, unsigned it, const Coord3D *a, const Coord3D *b)
+{
+	Real dx = b->x - a->x, dy = b->y - a->y, dz = b->z - a->z;
+	Real d = kind == 1 ? dx * dx + dy * dy + dz * dz : dx * dx + dy * dy;
+	L(LOG_MISSILE, { 7, (unsigned)kind, it, bitsOf(d) });
+	return d;
 }

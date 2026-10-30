@@ -174,6 +174,13 @@
 #define wantToSquishTarget aiWantToSquishTarget
 #define PartitionFilterSamePlayer AiPartitionFilterSamePlayer
 /* batch A34: the hacker's world (other harnesses compile these classes) */
+/* batch A36: the missile's world (other builds compile these classes) */
+#define WeaponTemplate AiWeaponTemplate
+#define WeaponStore AiWeaponStore
+#define TheWeaponStore AiTheWeaponStore
+#define ParticleSystemTemplate AiParticleSystemTemplate
+#define ParticleSystemManager AiParticleSystemManager
+#define TheParticleSystemManager AiTheParticleSystemManager
 #define Money AiMoney
 #define ScoreKeeper AiScoreKeeper
 #define ExperienceTracker AiExperienceTracker

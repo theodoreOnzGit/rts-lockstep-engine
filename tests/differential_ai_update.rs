@@ -117,7 +117,10 @@ use rts_lockstep_engine::logic::ai::assault_transport_ai_update::{AssaultTranspo
 use rts_lockstep_engine::logic::ai::deploy_style_ai_update::{DeployStyle, DeployStyleData};
 use rts_lockstep_engine::logic::ai::railed_transport_ai_update::{RailedTransport, RailedTransportData};
 use rts_lockstep_engine::logic::ai::hack_internet_ai_update::{HackInternet, HackInternetData};
-use rts_lockstep_engine::common::state_machine::StateMachine;
+use rts_lockstep_engine::common::state_machine::{SmResult, StateMachine};
+use rts_lockstep_engine::logic::ai::missile_ai_update::{self as missile, Missile, MissileData};
+use rts_lockstep_engine::logic::ai::ai_states::DistanceKind;
+use rts_lockstep_engine::logic::damage::DamageInfo;
 use rts_lockstep_engine::logic::ai::supply_truck_ai_update::{self as supply, SupplyDockKind, SupplyTruck, SupplyTruckData};
 use rts_lockstep_engine::common::game_common::VeterancyLevel;
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
@@ -219,6 +222,7 @@ const L_MEMBER_AI: u32 = 111;
 const L_RAILED: u32 = 112;
 const L_HACK: u32 = 113;
 const L_SUPPLY: u32 = 114;
+const L_MISSILE: u32 = 115;
 
 /// The machine's xfer file of the C++ side (`ref_ai_a4_xfer_path`): one per process, so that runs in parallel (the planted bugs)
 /// do not load each other's saves.
@@ -330,6 +334,8 @@ struct Host {
     pf_ignore: ObjectId,
     /// Batch A7: TheAudio's next handle (from 1 in each case).
     next_audio: u32,
+    /// Batch A36: the next particle system's id (from 1 in each case, as the wrapper's).
+    next_particle: u32,
     /// Batch A9: the team's current waypoint.
     team_waypoint: Option<u32>,
     /// Batch A10a: the attack frames lent while attack machines run; the current weapon's max shot count.
@@ -1081,6 +1087,108 @@ impl AiStateHost for Host {
     }
     fn play_supplies_depleted_voice(&mut self) {
         self.audio_add(7);
+    }
+    // batch A36: the missile's world (the wrapper's stand-ins: three weapon templates "wtN" and exhaust templates "psN", the
+    // scene's speeds, bits and rates; LOG_MISSILE)
+    fn object_weapon_bonus_condition(&mut self, id: ObjectId) -> u32 {
+        p1_hash(self.env.seed, 135, &[id as u32]) & 0xff
+    }
+    fn position_projectile_for_launch(&mut self, launcher: ObjectId, wslot: i32, barrel: i32) {
+        self.l(L_MISSILE, &[2, launcher as u32, wslot as u32, barrel as u32]);
+    }
+    fn weapon_template_speed(&mut self, template: u32) -> f32 {
+        self.env.missile_weapon_speeds[template as usize]
+    }
+    fn weapon_template_should_projectile_collide_with(&mut self, template: u32, launcher: ObjectId, other: ObjectId, victim: ObjectId) -> bool {
+        let w = [template, launcher as u32, other as u32, victim as u32];
+        let r = pick(p1_hash(self.env.seed, 134, &w), self.env.missile_collide_rate);
+        self.l(L_MISSILE, &[3, w[0], w[1], w[2], w[3], u32::from(r)]);
+        r
+    }
+    fn weapon_template_die_on_detonate(&mut self, template: u32) -> bool {
+        (self.env.missile_die_mask >> template) & 1 != 0
+    }
+    fn weapon_store_handle_projectile_detonation(&mut self, template: u32, bonus: u32, inflict_damage: bool) {
+        self.l(L_MISSILE, &[4, template, bonus, u32::from(inflict_damage)]);
+    }
+    fn weapon_template_name(&mut self, template: u32) -> Vec<u8> {
+        format!("wt{template}").into_bytes()
+    }
+    fn weapon_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        (0..3).find(|i| format!("wt{i}").as_bytes() == name)
+    }
+    fn particle_system_create_attached(&mut self, template: u32) -> u32 {
+        let id = self.next_particle;
+        self.next_particle += 1;
+        self.l(L_MISSILE, &[5, template, id]);
+        id
+    }
+    fn particle_system_destroy(&mut self, id: u32) {
+        self.l(L_MISSILE, &[6, id]);
+    }
+    fn particle_template_name(&mut self, template: u32) -> Vec<u8> {
+        format!("ps{template}").into_bytes()
+    }
+    fn particle_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        (0..3).find(|i| format!("ps{i}").as_bytes() == name)
+    }
+    fn object_garrison_hit_killable(&mut self, _id: ObjectId) -> bool {
+        // (the other objects' one contain stand-in)
+        self.env.contain_count > 0 && self.env.garrisonable != 0 && self.env.missile_garrison_immune == 0
+    }
+    fn object_is_kind_of_multi(&mut self, id: ObjectId, must_be_set: &KindOfMaskType, must_be_clear: &KindOfMaskType) -> bool {
+        for k in 0..31 {
+            if must_be_set.test(k) && !self.object_is_kind_of(id, k) {
+                return false;
+            }
+            if must_be_clear.test(k) && self.object_is_kind_of(id, k) {
+                return false;
+            }
+        }
+        true
+    }
+    fn object_score_the_kill(&mut self, _killer: ObjectId, victim: ObjectId) {
+        // (the stand-in's scoreTheKill: whoever scores)
+        self.l(L_RAPPEL, &[3, victim as u32]);
+    }
+    fn fx_do_obj(&mut self, _fx: Option<u32>, primary: ObjectId) {
+        self.l(L_RAPPEL, &[5, primary as u32]);
+    }
+    fn body_max_health(&mut self) -> f32 {
+        100.0
+    }
+    fn attempt_damage(&mut self, d: &mut DamageInfo) {
+        let i = &d.input;
+        self.l(L_MISSILE, &[0, i.damage_type as u32, i.death_type as u32, i.source_id as u32, i.amount.to_bits()]);
+    }
+    fn set_drawable_hidden(&mut self, hidden: bool) {
+        if self.env.subclass == 6 || (self.env.deploy_flags >> 4) & 1 != 0 {
+            self.l(L_MISSILE, &[1, u32::from(hidden)]);
+        }
+    }
+    fn distance_squared_to_object(&mut self, other: ObjectId, kind: DistanceKind) -> f32 {
+        let a = *self.thing.position();
+        let b = self.object_position(other);
+        let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
+        let (k, d) = match kind {
+            DistanceKind::Center2d => (0, dx * dx + dy * dy),
+            DistanceKind::BoundingSphere3d => (1, dx * dx + dy * dy + dz * dz),
+        };
+        self.l(L_MISSILE, &[7, k, other as u32, d.to_bits()]);
+        d
+    }
+    fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32 {
+        let a = *self.thing.position();
+        let (dx, dy) = (pos.x - a.x, pos.y - a.y);
+        let d = dx * dx + dy * dy;
+        self.l(L_MISSILE, &[7, 0, 0, d.to_bits()]);
+        d
+    }
+    fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId {
+        let o = self.env.missile_countermeasure;
+        let o = if self.object_exists(o) { o } else { 0 };
+        self.l(L_MISSILE, &[8, victim as u32, o as u32]);
+        o
     }
     fn railed_set_dock_open(&mut self, open: bool) {
         if self.env.rail_flags & 1 != 0 {
@@ -2751,6 +2859,15 @@ fn rust_dump(module: &AiUpdateModule<Host>, h: &mut Host, bug: u32) -> Vec<u32> 
     if let AiSubclass::DeployStyle(d) = &module.ai().subclass {
         v.extend([d.state, d.frame_to_wait_for_deploy]);
     }
+    // batch A36: a MissileAIUpdate's members
+    if let AiSubclass::Missile(m) = &module.ai().subclass {
+        v.extend([m.state, m.state_timestamp, m.next_target_track_time, m.launcher_id as u32, m.victim_id as u32, m.fuel_expiration_date]);
+        v.extend([m.no_turn_dist_left.to_bits(), m.max_accel.to_bits()]);
+        put_pos(&mut v, &m.original_target_pos);
+        put_pos(&mut v, &m.prev_pos);
+        v.extend([m.extra_bonus_flags, m.detonation_weapon.unwrap_or(u32::MAX), m.exhaust_sys.unwrap_or(u32::MAX), m.exhaust_id]);
+        v.extend([m.frames_till_decoyed, u32::from(m.is_tracking_target), u32::from(m.is_armed), u32::from(m.no_damage), u32::from(m.is_jammed)]);
+    }
     // batch A35: a SupplyTruckAIUpdate's members and its machine's
     if let AiSubclass::SupplyTruck(t) = &module.ai().subclass {
         v.extend([t.preferred_dock as u32, t.number_boxes as u32, u32::from(t.force_pending), u32::from(t.forced_busy_pending)]);
@@ -2946,7 +3063,7 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.turret_turn_rate = [if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }, if g.below(2) == 0 { 0.0 } else { g.uniform(0.1, 2.0) }];
     gen_a10(g, &mut e);
     // batch A30: the AI's class, for the whole case (a third of the AIs AIUpdateInterface itself; batch A31: a third deployers)
-    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7][g.below(14) as usize];
+    e.subclass = [0, 0, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8][g.below(16) as usize];
     // batch A31: a deployer's data and drawable, its times now and then zero
     e.deploy_flags = g.below(32) as i32;
     e.deploy_times = [if g.below(4) == 0 { 0 } else { g.below(40) }, if g.below(4) == 0 { 0 } else { g.below(40) }];
@@ -2974,6 +3091,17 @@ fn gen_scene(g: &mut Gen) -> Env {
     e.supply_best = [some(g), some(g)];
     e.supply_closest = [some(g), some(g), some(g)];
     e.supply_dock_masks = [g.u32(), g.u32()];
+    // batch A36: a missile's data and world (short times, distances around the scene's, a few kinds)
+    e.missile_flags = g.below(64) as i32;
+    e.missile_times = [if g.below(3) == 0 { 0 } else { g.below(40) }, g.below(6)];
+    e.missile_reals = [g.uniform(0.0, 30.0), [0.0, 20.0, 60.0][g.below(3) as usize], g.uniform(0.0, 80.0), [0.0, 30.0, 75.0][g.below(3) as usize], [0.0, 40.0, 75.0, 200.0][g.below(4) as usize]];
+    e.missile_garrison = [g.below(4) as i32, if g.below(3) != 0 { 0 } else { (g.below(4) as i32) << 1 }, if g.below(3) != 0 { 0 } else { 1 << 3 }];
+    e.missile_kill_self_delay = [0, 3, 10][g.below(3) as usize];
+    e.missile_weapon_speeds = [g.uniform(5.0, 40.0), g.uniform(5.0, 40.0), g.uniform(5.0, 40.0)];
+    e.missile_die_mask = g.below(8) as i32;
+    e.missile_collide_rate = 40 + g.below(61);
+    e.missile_countermeasure = if g.below(3) == 0 { 0 } else { 1 + g.below(31) as i32 };
+    e.missile_garrison_immune = i32::from(g.below(4) == 0);
     if e.subclass == 2 && g.below(2) == 0 {
         // (the scene's kinds and disabled types are every object's: portable structures, now and then disabled, as passengers)
         e.loco.kind_mask |= 512;
@@ -2998,6 +3126,12 @@ fn gen_a10(g: &mut Gen, e: &mut Env) {
     e.garrisonable = i32::from(g.below(3) == 0);
     e.contain_count = g.below(3) as i32;
     e.rel_angle = if g.below(2) == 0 { g.uniform(-0.05, 0.05) } else { g.uniform(-1.0, 1.0) };
+    // (batch A36: a missile's targets mostly garrisoned buildings, holding some)
+    if e.subclass == 8 && g.below(3) != 0 {
+        e.garrisonable = 1;
+        e.contain_count = 1 + g.below(2) as i32;
+        e.contained_mask |= g.u32() & !e.ai_mask;
+    }
     e.turret_cur_weapon = g.below(4) as i32;
     e.team_epoch = g.below(3) as i32;
     e.units_hunt = i32::from(g.below(2) == 0);
@@ -3156,6 +3290,9 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         [14, 14, 14, 15, 16][g.below(5) as usize]
     } else if g.below(25) == 0 {
         32
+    } else if e.subclass == 8 && g.below(5) == 0 {
+        // batch A36: the weapon's calls to a missile
+        [104, 104, 105, 106, 106, 106, 106, 107, 108][g.below(9) as usize]
     } else if e.subclass == 7 && g.below(6) == 0 {
         // batch A35: the docks' calls to a supply truck
         [101, 101, 102, 103][g.below(4) as usize]
@@ -3234,7 +3371,7 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
     };
     // the operations that need the AI's machine: none before onObjectCreated makes it (upstream dereferences it); a load needs a save
-    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99);
+    let needs_machine = matches!(op, 7 | 36 | 38 | 41 | 43 | 44 | 48 | 50..=52 | 54 | 55 | 59..=65 | 67..=86 | 88..=99 | 104..=108);
     let op = if needs_machine && !has_machine { 66 } else if op == 71 && !has_saved { 70 } else { op };
     match op {
         1 => ia[0] = [0, 0, 1, 2, 3, 4, 5, 6, 7, -1, 8][g.below(11) as usize],
@@ -3373,6 +3510,15 @@ fn gen_op(g: &mut Gen, e: &Env, waypoint_heavy: bool, moving_away: (i32, i32), h
         }
         100 => ia[0] = g.below(32) as i32,
         101 => ia[0] = [0, 0, 1, 5][g.below(4) as usize],
+        104..=108 => {
+            ia[0] = if op == 107 { g.below(20) as i32 } else if g.below(5) == 0 { -1 } else { g.below(32) as i32 };
+            ia[1] = g.below(32) as i32;
+            ia[2] = g.below(3) as i32;
+            ia[3] = g.below(3) as i32;
+            // (the detonation weapon now and then none: a collision with an object then is undefined, the case ends)
+            ia[4] = if g.below(10) == 0 { -1 } else { g.below(3) as i32 };
+            ia[5] = g.below(4) as i32 - 1;
+        }
         103 => ia[0] = g.below(2) as i32,
         _ => {}
     }
@@ -3698,6 +3844,35 @@ fn rust_op_a4(module: &mut AiUpdateModule<Host>, h: &mut Host, op: i32, fa: &[f3
             }
             Err(e) => panic!("update: {e}"),
         },
+        // batch A36: the weapon's calls to a missile (undefined upstream: the case ends)
+        104..=108 => {
+            if !matches!(module.ai().subclass, AiSubclass::Missile(_)) {
+                return vec![];
+            }
+            let p = Coord3D { x: fa[0], y: fa[1], z: fa[2] };
+            let det = (ia[4] >= 0).then_some(ia[4] as u32);
+            let exhaust = (ia[5] >= 0).then_some(ia[5] as u32);
+            let r = module.run(h, |sm, h| -> SmResult<Vec<u32>> {
+                match op {
+                    104 => missile::projectile_launch_at_object_or_position(sm, h, ia[0], &p, ia[1], ia[2], ia[3], det, exhaust).map(|_| vec![]),
+                    105 => missile::projectile_fire_at_object_or_position(sm, h, ia[0], &p, det, exhaust).map(|_| vec![]),
+                    106 => missile::projectile_handle_collision(sm, h, ia[0]).map(|b| vec![u32::from(b)]),
+                    107 => {
+                        missile::set_frames_till_countermeasure_diversion_occurs(h, ia[0] as u32);
+                        Ok(vec![])
+                    }
+                    _ => missile::projectile_now_jammed(sm, h).map(|_| vec![]),
+                }
+            });
+            match r {
+                Ok(v) => v,
+                Err(e) if e.is_undefined_upstream() => {
+                    h.undefined = true;
+                    vec![]
+                }
+                Err(e) => panic!("a missile's call: {e}"),
+            }
+        }
         // batch A35: the docks' calls to a supply truck
         101..=103 => {
             let mut r = vec![];
@@ -3838,7 +4013,7 @@ struct Checks {
     log: Check,
     dump: Check,
     dump_bug: Check,
-    ops: [u64; 104],
+    ops: [u64; 109],
     sleeps: [u64; 2],
     goals_moved: [u64; 4],
     loco_changes: u64,
@@ -3889,7 +4064,7 @@ impl Checks {
             log: Check::new("AI call logs (every cut-point call)"),
             dump: Check::new("AI, locomotors, path, object after each operation"),
             dump_bug: Check::new("AI blocked frames"),
-            ops: [0; 104],
+            ops: [0; 109],
             sleeps: [0; 2],
             goals_moved: [0; 4],
             loco_changes: 0,
@@ -3944,6 +4119,7 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
         ai_machines: Vec::new(),
         pf_ignore: 0,
         next_audio: 1,
+        next_particle: 1,
         team_waypoint: None,
         attack_frames: Vec::new(),
         max_shots: 0,
@@ -4039,6 +4215,40 @@ fn run_case(seed: u64, ck: &mut Checks) -> bool {
     let subclass = match host.env.subclass {
         1 => AiSubclass::Wander,
         2 => AiSubclass::Transport,
+        8 => AiSubclass::Missile(Missile::new(
+            {
+                let (f, r, gk) = (host.env.missile_flags, host.env.missile_reals, host.env.missile_garrison);
+                let mut d = MissileData {
+                    try_to_follow_target: f & 1 != 0,
+                    use_weapon_speed: f & 2 != 0,
+                    detonate_on_no_fuel: f & 4 != 0,
+                    detonate_calls_kill: f & 8 != 0,
+                    ignition_fx: (f & 16 != 0).then_some(0),
+                    garrison_hit_kill_fx: (f & 32 != 0).then_some(1),
+                    fuel_lifetime: host.env.missile_times[0],
+                    ignition_delay: host.env.missile_times[1],
+                    initial_vel: r[0],
+                    initial_dist: r[1],
+                    dive_distance: r[2],
+                    distance_scatter_when_jammed: r[3],
+                    lock_distance: r[4],
+                    garrison_hit_kill_count: gk[0],
+                    kill_self_delay: host.env.missile_kill_self_delay,
+                    ..Default::default()
+                };
+                for k in 0..31 {
+                    if (gk[1] >> k) & 1 != 0 {
+                        d.garrison_hit_kill_kindof.set(k, 1);
+                    }
+                    if (gk[2] >> k) & 1 != 0 {
+                        d.garrison_hit_kill_kindof_not.set(k, 1);
+                    }
+                }
+                d
+            },
+            host.env.loco.frame,
+            start_pos,
+        )),
         7 => AiSubclass::SupplyTruck(SupplyTruck::new(SupplyTruckData {
             max_boxes: host.env.supply_max_boxes,
             center_delay: host.env.supply_delays[0],
@@ -4490,6 +4700,22 @@ fn rust_op_bug_view(r: &[u32]) -> Vec<u32> {
     r.iter().map(|x| x ^ 1).collect()
 }
 
+/// # Results (2026-10-30, batch A36; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
+///
+/// - `MissileAIUpdate` (MissileAIUpdate.cpp cut verbatim with its header's module data; the weapon templates, the store, the
+///   particle systems, the launcher's bonus, the countermeasure, the garrison's immunity, the 2-D and 3-D distances, the damage and
+///   the drawable the scene's stand-ins, `LOG_MISSILE`; the weapon's calls as ops 104-108, which need the AI's machine): an eighth
+///   of the cases: 30,000 constructions and 1,777,193 operations, **0 mismatches** in the results, the call logs and the dumps
+///   (its members added).
+/// - Not compared (undefined upstream; the Rust side refuses them, `StateMachineError::Undefined`, and the case ends before the
+///   C++): a collision with an object or the weapon's speed without a detonation weapon, a countermeasure that is not there, the
+///   garrison kill loop reaching its list's end (its `*it != NULL` test reads the end); 752 cases ended undefined in all (with
+///   A9's and A33's). The first plant of the garrison loop, which skipped the loop and so the refusal, let the C++ loop for ever on
+///   its circular list.
+/// - Planted bugs (5,000 cases each): 3670 (the launcher's kill score; 4 mismatches), 3671 (the missile's own death; 6), 3672 (the
+///   lock; 10), 3673 (the countermeasure's diversion; 6), 3674 (the bridge's detonation; 24), 3675 (the snapshot's jammed flag; 338)
+///   caught.
+///
 /// # Results (2026-10-30, batch A35; upstream commit 0a05454d, seeds `0xA2_0000 + case`, 30,000 cases)
 ///
 /// - `SupplyTruckAIUpdate` (SupplyTruckAIUpdate.cpp cut verbatim with its header's machine, states and interface, and

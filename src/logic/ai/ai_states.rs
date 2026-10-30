@@ -201,6 +201,48 @@ pub trait AiStateHost: AiHost + StateContext {
     fn drawable_update_supply_status(&mut self, max_boxes: i32, boxes: i32);
     /// Batch A35: the supplies-depleted voice (the data's), with the object's id, added to `TheAudio`.
     fn play_supplies_depleted_voice(&mut self);
+    /// Batch A36: another object's `getWeaponBonusCondition()`.
+    fn object_weapon_bonus_condition(&mut self, id: ObjectId) -> u32;
+    /// Batch A36: `Weapon::positionProjectileForLaunch(owner, launcher, wslot, barrel)` (`launcher` `INVALID_ID`: none).
+    fn position_projectile_for_launch(&mut self, launcher: ObjectId, wslot: i32, specific_barrel_to_use: i32);
+    /// Batch A36: a weapon template's `getWeaponSpeed()`.
+    fn weapon_template_speed(&mut self, template: u32) -> f32;
+    /// Batch A36: its `shouldProjectileCollideWith(launcher, owner, other, intendedVictim)` (`launcher` `INVALID_ID`: none).
+    fn weapon_template_should_projectile_collide_with(&mut self, template: u32, launcher: ObjectId, other: ObjectId, victim: ObjectId) -> bool;
+    /// Batch A36: its `getDieOnDetonate()`.
+    fn weapon_template_die_on_detonate(&mut self, template: u32) -> bool;
+    /// Batch A36: `TheWeaponStore->handleProjectileDetonation(template, owner, ownerPos, bonus, inflictDamage)`.
+    fn weapon_store_handle_projectile_detonation(&mut self, template: u32, bonus: u32, inflict_damage: bool);
+    /// Batch A36: a weapon template's `getName()`; `TheWeaponStore->findWeaponTemplate(name)`.
+    fn weapon_template_name(&mut self, template: u32) -> Vec<u8>;
+    fn weapon_template_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A36: `TheParticleSystemManager->createAttachedParticleSystemID(template, owner)`.
+    fn particle_system_create_attached(&mut self, template: u32) -> u32;
+    /// Batch A36: `TheParticleSystemManager->destroyParticleSystemByID(id)`.
+    fn particle_system_destroy(&mut self, id: u32);
+    /// Batch A36: a particle system template's `getName()`; `TheParticleSystemManager->findTemplate(name)`.
+    fn particle_template_name(&mut self, template: u32) -> Vec<u8>;
+    fn particle_template_by_name(&mut self, name: &[u8]) -> Option<u32>;
+    /// Batch A36: another object's contain: there, holding some, garrisonable and not immune to clear-building attacks.
+    fn object_garrison_hit_killable(&mut self, id: ObjectId) -> bool;
+    /// Batch A36: another object's `isKindOfMulti(mustBeSet, mustBeClear)`.
+    fn object_is_kind_of_multi(&mut self, id: ObjectId, must_be_set: &crate::common::kind_of::KindOfMaskType, must_be_clear: &crate::common::kind_of::KindOfMaskType) -> bool;
+    /// Batch A36: another object's `scoreTheKill(victim)`.
+    fn object_score_the_kill(&mut self, killer: ObjectId, victim: ObjectId);
+    /// Batch A36: `FXList::doFXObj(fx, primary)` (none: nothing upstream; the stand-in logs it alike).
+    fn fx_do_obj(&mut self, fx: Option<u32>, primary: ObjectId);
+    /// Batch A36: the owner's `getBodyModule()->getMaxHealth()`.
+    fn body_max_health(&mut self) -> f32;
+    /// Batch A36: the owner's `attemptDamage(damageInfo)`.
+    fn attempt_damage(&mut self, damage_info: &mut crate::logic::damage::DamageInfo);
+    /// Batch A36: `getDrawable()->setDrawableHidden(hidden)`, when the owner has a drawable.
+    fn set_drawable_hidden(&mut self, hidden: bool);
+    /// Batch A36: `ThePartitionManager->getDistanceSquared(owner, other, kind)`.
+    fn distance_squared_to_object(&mut self, other: ObjectId, kind: DistanceKind) -> f32;
+    /// Batch A36: `ThePartitionManager->getDistanceSquared(owner, pos, FROM_CENTER_2D)`.
+    fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32;
+    /// Batch A36: the owner's `calculateCountermeasureToDivertTo(victim)` (`INVALID_ID`: none).
+    fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId;
     /// `TheAI->pathfinder()->goalPosition(obj, &pos)`: the position, `None` for false.
     fn pf_goal_position(&mut self) -> Option<Coord3D>;
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)`.
@@ -1515,6 +1557,15 @@ impl<H: AiStateHost> StateBehavior for AiState<H> {
 // The AI with its machine
 // ---------------------------------------------------------------------------
 
+/// Batch A36: the partition's distance calculations the missile asks for (`DistanceCalculationType`'s).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DistanceKind {
+    /// `FROM_CENTER_2D`.
+    Center2d,
+    /// `FROM_BOUNDINGSPHERE_3D`.
+    BoundingSphere3d,
+}
+
 /// `AIUpdateInterface` with its state machine: the AI's state ([`AiUpdate`], lent to the host while the machine runs) and the
 /// machine (none until `onObjectCreated`).
 pub struct AiUpdateModule<H: AiStateHost> {
@@ -1621,6 +1672,14 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 }
                 self.base_update(h)?;
                 Ok(UPDATE_SLEEP_NONE)
+            }
+            crate::logic::ai::ai_update::AiSubclass::Missile(_) => {
+                // batch A36: its own part (below the ground: destroyed, returning at once), the base's update, then the layer
+                if let Some(sleep) = self.run(h, crate::logic::ai::missile_ai_update::missile_pre_update)? {
+                    return Ok(sleep);
+                }
+                self.base_update(h)?;
+                Ok(self.run(h, |_, h| crate::logic::ai::missile_ai_update::missile_post_update(h)))
             }
             crate::logic::ai::ai_update::AiSubclass::SupplyTruck(_) => {
                 // batch A35: the autopilot machine (the AI and its machine lent), then the base's update; the earlier wake

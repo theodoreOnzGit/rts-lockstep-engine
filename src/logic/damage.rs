@@ -322,6 +322,8 @@ pub const DEATH_CRUSHED: DeathType = 2;
 pub const DEATH_BURNED: DeathType = 3;
 /// `DEATH_EXPLODED` (batch R49: the neutron missile's blasts).
 pub const DEATH_EXPLODED: DeathType = 4;
+/// `DEATH_DETONATED`: "the 'death' that occurs when a missile/warhead/etc detonates normally".
+pub const DEATH_DETONATED: DeathType = 10;
 /// `DEATH_EXTRA_4` (batch R47: the battle bus's empty-hulk kill).
 pub const DEATH_EXTRA_4: DeathType = 15;
 // --- end p1w13-sonnet ---

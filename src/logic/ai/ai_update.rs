@@ -70,6 +70,7 @@ use crate::logic::ai::deploy_style_ai_update::DeployStyle;
 use crate::logic::ai::railed_transport_ai_update::RailedTransport;
 use crate::logic::ai::hack_internet_ai_update::HackInternet;
 use crate::logic::ai::supply_truck_ai_update::SupplyTruck;
+use crate::logic::ai::missile_ai_update::Missile;
 use crate::logic::weapon::WEAPON_ANTI_MINE;
 use crate::logic::weapon_bonus::condition;
 use crate::common::name_key_generator::NameKeyType;
@@ -342,6 +343,8 @@ pub enum AiSubclass {
     HackInternet(HackInternet),
     /// `SupplyTruckAIUpdate` (batch A35): its members (its autopilot machine is `AiUpdateModule::supply_machine`).
     SupplyTruck(SupplyTruck),
+    /// `MissileAIUpdate` (batch A36): a guided missile's flight (its members and data).
+    Missile(Missile),
 }
 
 impl AiUpdate {
