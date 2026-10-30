@@ -214,6 +214,34 @@ static FIELD_PARSE: [FieldParse<PhysicsBehaviorModuleData>; 19] = [
     FieldParse::end(),
 ];
 
+/// batch R79: the table's tokens, for a derived class's table (`RailroadBehaviorModuleData`).
+pub const PHYSICS_FIELD_TOKENS: [&str; 18] = [
+    "Mass",
+    "ShockResistance",
+    "ShockMaxYaw",
+    "ShockMaxPitch",
+    "ShockMaxRoll",
+    "ForwardFriction",
+    "LateralFriction",
+    "ZFriction",
+    "AerodynamicFriction",
+    "CenterOfMassOffset",
+    "AllowBouncing",
+    "AllowCollideForce",
+    "KillWhenRestingOnGround",
+    "MinFallHeightForDamage",
+    "FallHeightDamageFactor",
+    "PitchRollYawFactor",
+    "VehicleCrashesIntoBuildingWeaponTemplate",
+    "VehicleCrashesIntoNonBuildingWeaponTemplate",
+];
+
+/// batch R79: the `k`th entry of the table on the data (a derived class's table calls it on its base).
+pub fn physics_field(k: usize, i: &mut Ini<'_>, d: &mut PhysicsBehaviorModuleData, u: &UserData) -> IniResult<()> {
+    debug_assert_eq!(FIELD_PARSE[k].token, Some(PHYSICS_FIELD_TOKENS[k]));
+    (FIELD_PARSE[k].parse.expect("an entry"))(i, d, u)
+}
+
 impl PhysicsBehaviorModuleData {
     /// `buildFieldParse(p)`: `UpdateModuleData`'s, then this class's.
     pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, PhysicsBehaviorModuleData>) -> IniResult<()> {
@@ -325,6 +353,11 @@ impl PhysicsBehavior {
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
     pub fn update_module(&self) -> &UpdateModule {
         &self.update
+    }
+
+    /// The `UpdateModule` base, to change (batch R79: a derived class's `xfer`).
+    pub fn update_module_mut(&mut self) -> &mut UpdateModule {
+        &mut self.update
     }
 
     /// The state the test compares: the rates, the three vectors, the turning, the ids, the flags, the mass, the frames and the
@@ -1493,6 +1526,7 @@ impl UpdateBehavior for PhysicsBehavior {
                 self.extra_friction = f;
                 ModuleReply::Done
             }
+            ModuleCall::PhysicsGetBounceSound => ModuleReply::Sound(self.bounce_sound.clone()),
             ModuleCall::PhysicsSetBounceSound(s) => {
                 self.bounce_sound = s;
                 ModuleReply::Done

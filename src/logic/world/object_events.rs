@@ -250,6 +250,8 @@ pub enum ObjectClientEvent {
     /// it is attached to (`INVALID_ID` for none), the position it was set to and the player index it was set to, if any.
     AudioAddEvent { name: Vec<u8>, object_id: ObjectId, position: Option<Coord3D>, player_index: Option<i32> },
     // --- end p1w11-sonnet ---
+    /// batch R79: `TheAudio->addAudioEvent(&event)` for an event a volume was set on (`RailroadBehavior`'s impact and clickety-clack sounds).
+    AudioAddEventVolume { name: Vec<u8>, object_id: ObjectId, position: Option<Coord3D>, player_index: Option<i32>, volume: f32 },
     // --- p1w13-sonnet ---
     /// `m_drawable->setShadowsEnabled(enabled)`.
     DrawableSetShadowsEnabled { object_id: ObjectId, enabled: bool },

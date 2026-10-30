@@ -271,6 +271,16 @@ impl World {
         self.cuts.last_audio_handle
     }
 
+    /// batch R79: `TheAudio->addAudioEvent(&event)` for an event with the object it is attached to, and the position, player index and
+    /// volume set on it (if any): the handle (never 0).
+    pub fn audio_add_event_full(&mut self, name: Vec<u8>, object_id: ObjectId, position: Option<Coord3D>, player_index: Option<i32>, volume: Option<f32>) -> u32 {
+        match volume {
+            None => self.emit(ObjectClientEvent::AudioAddEvent { name, object_id, position, player_index }),
+            Some(volume) => self.emit(ObjectClientEvent::AudioAddEventVolume { name, object_id, position, player_index, volume }),
+        }
+        self.cuts.last_audio_handle
+    }
+
     /// `TheAudio->removeAudioEvent(handle)`.
     pub fn audio_remove_event(&mut self, handle: u32) {
         self.emit(ObjectClientEvent::AudioRemoveEvent { handle });
@@ -537,6 +547,13 @@ impl World {
         self.cut(CutCall::PartitionGetClosestObjectAt { position, range, dc });
         let id = self.cuts.closest_object_at;
         self.objects.find(id).map(|_| id)
+    }
+
+    /// batch R79: `ThePartitionManager->getClosestObject(&position, range, dc, filters)` with the caller's own filters: the candidates the
+    /// manager would test them on, nearest first (`ObjectCuts::range_scan` answers; the caller takes the first that passes).
+    pub fn partition_closest_candidates_at(&mut self, position: Coord3D, range: f32, dc: i32) -> Vec<ObjectId> {
+        self.cut(CutCall::PartitionGetClosestObjectAt { position, range, dc });
+        self.cuts.range_scan.clone()
     }
 
     /// batch R35: `ThePartitionManager->iterateObjectsInRange(&position, range, dc, { PartitionFilterAlive, PartitionFilterSameMapStatus(obj) })`:
@@ -1701,6 +1718,9 @@ pub struct ObjectCuts {
     /// A [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes the lines `pause`, `extendrods` and `extendradar` to `trace`
     /// (off by default: `differential_object` compares the probe's trace to the C++ log, which has no such lines).
     pub probe_effect_trace: bool,
+    /// batch R79: a [`ModuleProbe`](crate::logic::world::module_probe::ProbeModule) writes `exitall <object> <source> <instantly>` to `trace` for
+    /// `orderAllPassengersToExit` (off by default).
+    pub probe_trace_exit_all: bool,
     /// The function-local `static` of `MoneyCrateCollide::getUpgradedSupplyBoost`: `None` until control first reaches it, then the upgrade mask of
     /// the template the first pair named (`Some(None)` for a name that is no upgrade). See `modules::money_crate_collide`.
     pub money_crate_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
@@ -1953,6 +1973,7 @@ impl Default for ObjectCuts {
             // --- p1w11-sonnet ---
             untranslated_modules: Vec::new(),
             probe_effect_trace: false,
+            probe_trace_exit_all: false,
             money_crate_upgrade_static: None,
             crate_booby_trapped: false,
             crate_new_object_contain: None,
@@ -2289,7 +2310,7 @@ impl World {
     /// Sends one `Object` notification to the client.
     pub fn emit(&mut self, e: ObjectClientEvent) {
         // every `addAudioEvent` gets the next handle, whether the caller keeps it or not (batch R48: `EjectPilotDie::ejectPilot`'s two)
-        if let ObjectClientEvent::AudioAddEvent { .. } | ObjectClientEvent::AudioAddEventAtDrawable { .. } = e {
+        if let ObjectClientEvent::AudioAddEvent { .. } | ObjectClientEvent::AudioAddEventAtDrawable { .. } | ObjectClientEvent::AudioAddEventVolume { .. } = e {
             self.cuts.last_audio_handle = self.cuts.last_audio_handle.wrapping_add(1);
         }
         if let Some(t) = &mut self.cuts.trace {

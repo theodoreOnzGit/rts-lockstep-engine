@@ -519,6 +519,25 @@ impl ProbeModule {
             ModuleCall::RailedTransportDockIsLoadingOrUnloading | ModuleCall::RailedTransportDockUnloadAll | ModuleCall::RailedTransportDockUnloadSingleObject(_) => {
                 ModuleReply::Unhandled
             }
+            // batch R79: the call is a line of the trace, when `probe_trace_exit_all` asks
+            ModuleCall::OrderAllPassengersToExit { command_source, instantly } => {
+                if world.cuts.probe_trace_exit_all {
+                    if let Some(t) = &mut world.cuts.trace {
+                        t.push(format!("exitall {} {command_source} {}", me.object, i32::from(instantly)));
+                    }
+                }
+                ModuleReply::Unhandled
+            }
+            // batch R79: a probe is neither a physics module nor a train car
+            ModuleCall::PhysicsGetBounceSound
+            | ModuleCall::RailroadGetPulled(_)
+            | ModuleCall::RailroadHitchByTemplate { .. }
+            | ModuleCall::RailroadHitchByProximity { .. }
+            | ModuleCall::RailroadDisembark
+            | ModuleCall::RailroadMakeAWallOutOfThisTrain(_)
+            | ModuleCall::RailroadDestroyTheWholeTrainNow
+            | ModuleCall::RailroadHasEverBeenHitched
+            | ModuleCall::RailroadSetHeld(_) => ModuleReply::Unhandled,
             ModuleCall::GetSubdualDamageHealRate => ModuleReply::Int(self.answers.subdual_rate as i32),
             ModuleCall::GetSubdualDamageHealAmount => ModuleReply::Real(self.answers.subdual_amount),
             ModuleCall::HasAnySubdualDamage => ModuleReply::Bool(self.answers.subdual_has),
@@ -1245,7 +1264,6 @@ impl ProbeModule {
             | ModuleCall::OnRemoving(_)
             | ModuleCall::OnSelling
             | ModuleCall::GetContainMax
-            | ModuleCall::OrderAllPassengersToExit { .. }
             | ModuleCall::OrderAllPassengersToIdleFrom { .. }
             | ModuleCall::OrderAllPassengersToHackInternetFrom { .. }
             | ModuleCall::MarkAllPassengersDetected

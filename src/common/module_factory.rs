@@ -1192,6 +1192,11 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::physics_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::physics_behavior::PhysicsBehavior::get_interface_mask()),
         }),
+        "RailroadBehavior" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::modules::railroad_behavior::new_module_data),
+            which_interfaces: Some(crate::logic::modules::railroad_behavior::RailroadBehavior::get_interface_mask()),
+        }),
         "NeutronMissileSlowDeathBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::neutron_missile_slow_death_behavior::new_module_data),
@@ -1402,6 +1407,7 @@ fn new_update_base(object: ObjectId, data: Option<ModuleDataKind>) -> Result<Mod
         Some(ModuleDataKind::SlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
         Some(ModuleDataKind::JetSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
         Some(ModuleDataKind::PhysicsBehavior(d)) => Some(std::sync::Arc::new(d.update.clone())),
+        Some(ModuleDataKind::RailroadBehavior(d)) => Some(std::sync::Arc::new(d.physics.update.clone())),
         Some(ModuleDataKind::NeutronMissileSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
         Some(ModuleDataKind::HelicopterSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),
         Some(ModuleDataKind::BattleBusSlowDeathBehavior(d)) => Some(std::sync::Arc::new(d.slow.update.clone())),

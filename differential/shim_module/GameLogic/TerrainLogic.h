@@ -8,6 +8,10 @@
 #include "GameLogic/Module/BridgeBehavior.h"   /* BridgeTowerType (batch R77) */
 /* --- p1w13-sonnet --- (batch R70: WaveGuideUpdate's waypoint path and bridges; differential/l9_wave_guide_r70.inc) TerrainLogic.h's Waypoint getters,
 ** verbatim, on the test's nodes; the bridge's info's two ends (the rest of BridgeInfo is unused) */
+/* batch R79: TerrainLogic.h lines 55-58 declare `enum WaypointID { INVALID_WAYPOINT_ID = 0x7FFFFFFF };`, to which RailroadBehavior assigns a
+** waypoint's id (MSVC takes the conversion, clang does not): the same four bytes as an unsigned integer here */
+typedef UnsignedInt WaypointID;
+enum { INVALID_WAYPOINT_ID = 0x7FFFFFFF };
 class Waypoint
 {
 public:
@@ -20,6 +24,11 @@ public:
 	Coord3D m_location;
 	Waypoint *m_links[MAX_LINKS + 1];
 	Int m_numLinks;
+	/* batch R79: RailroadBehavior reads the names and walks the list (TerrainLogic.h lines 100, 104, verbatim) */
+	const AsciiString& getName(void) const {return m_name;}
+	Waypoint *getNext(void) const {return m_pNext;}
+	AsciiString m_name;
+	Waypoint *m_pNext = 0;
 };
 class BridgeInfo { public: Coord3D from, to;
 	Coord3D fromLeft, fromRight, toLeft, toRight;   /* batch R77: BridgeBehavior's corners */ };
@@ -38,6 +47,7 @@ class TerrainLogic
 public:
 	/* --- p1w13-sonnet --- (batch R70: the test's) */
 	Waypoint *getWaypointByName( AsciiString name );
+	Waypoint *getFirstWaypoint(void);   /* batch R79: the test's list (differential/l9_railroad_r79.inc) */
 	Bridge *findBridgeAt(const Coord3D *pLoc) const;
 	void deleteBridge( Bridge *bridge );
 	/* --- end p1w13-sonnet --- */

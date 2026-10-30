@@ -39,6 +39,10 @@ public:
 	/* batch R75: an event placed at a client drawable (ParticleUplinkCannonUpdate's annihilation sound; the audio line names it) */
 	UnsignedInt m_drawableID = 0;
 	void setDrawableID(UnsignedInt drawID) { m_drawableID = drawID; }
+	/* batch R79: RailroadBehavior's impact and clickety-clack sounds set a volume (the audio line gives it) */
+	void setVolume(Real vol) { m_volume = vol; m_hasVolume = true; }
+	Real m_volume = 0.0f;
+	Bool m_hasVolume = false;
 	/* --- end p1w13-sonnet --- */
 };
 /* --- p1w12-sonnet --- */

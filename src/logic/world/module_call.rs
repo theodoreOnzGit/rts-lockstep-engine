@@ -1163,6 +1163,32 @@ pub enum ModuleCall {
     /// batch R61: `RailedTransportDockUpdateInterface::unloadSingleObject(obj)`.
     RailedTransportDockUnloadSingleObject(ObjectId),
     // --- end p1w11-sonnet ---
+    // --- p1w13-sonnet --- (batch R79: RailroadBehavior; a train's cars call each other's)
+    /// `PhysicsBehavior::getBounceSound()`; replies [`ModuleReply::Sound`] (the event's name, `None` for `NULL`).
+    PhysicsGetBounceSound,
+    /// `RailroadBehavior::getPulled(&info)`; replies [`ModuleReply::Bool`]: whether the car read `info` (it has a track), when the caller's
+    /// `previousWaypoint` becomes its `currentWaypoint`.
+    RailroadGetPulled(crate::logic::modules::railroad_behavior::PullInfo),
+    /// `RailroadBehavior::hitchNewCarriagebyTemplate(locoID, list, iter, track)`: `next` the index of `iter` in `names`.
+    RailroadHitchByTemplate {
+        locomotive: ObjectId,
+        names: Vec<Vec<u8>>,
+        next: usize,
+        track: std::sync::Arc<crate::logic::modules::railroad_behavior::TrainTrack>,
+    },
+    /// `RailroadBehavior::hitchNewCarriagebyProximity(locoID, track)`.
+    RailroadHitchByProximity { locomotive: ObjectId, track: std::sync::Arc<crate::logic::modules::railroad_behavior::TrainTrack> },
+    /// `RailroadBehavior::disembark()`.
+    RailroadDisembark,
+    /// `RailroadBehavior::makeAWallOutOfThisTrain(on)`.
+    RailroadMakeAWallOutOfThisTrain(bool),
+    /// `RailroadBehavior::destroyTheWholeTrainNow()`.
+    RailroadDestroyTheWholeTrainNow,
+    /// `RailroadBehavior::hasEverBeenHitched()`; replies [`ModuleReply::Bool`].
+    RailroadHasEverBeenHitched,
+    /// `RailroadBehavior::setHeld(held)`.
+    RailroadSetHeld(bool),
+    // --- end p1w13-sonnet ---
 }
 
 /// batch R74: `ParkingPlaceBehaviorInterface::PPInfo`.
@@ -1213,6 +1239,8 @@ pub enum ModuleReply {
     Turret { turret: i32, angle: f32, pitch: f32 },
     /// batch R74: `reserveSpace` / `calcPPInfo`: the answer, and the `PPInfo` written (`None`: the caller's left as it was).
     PPInfo { ok: bool, info: Option<PPInfo> },
+    /// batch R79: an audio event's name (`None`: `NULL`).
+    Sound(Option<Vec<u8>>),
     // --- end p1w13-sonnet ---
 }
 

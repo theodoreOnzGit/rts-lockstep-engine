@@ -79,6 +79,7 @@ class Drawable { public: void setTerrainDecal(TerrainDecalType t); void setModel
 	/* --- p1w13-sonnet --- (batch R: OpenContain; differential/l9_open_contain_r.inc) */
 	Bool isSelected() const { return m_selected; }
 	void setDrawableHidden(Bool hidden);
+	const Coord3D *getPosition() const;   /* batch R79: its object's (differential/l9_railroad_r79.inc) */
 	const ModelConditionFlags &getModelConditionFlags() const { return m_condFlags; }
 	void updateDrawableSupplyStatus( Int maxSupply, Int currentSupply );   /* p1w13-sonnet, batch R44: a line (differential/l9_supply_docks_r44.inc) */
 	/* --- p1w13-sonnet --- (batch R2: TransportContain) */

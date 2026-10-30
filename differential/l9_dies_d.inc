@@ -61,6 +61,8 @@ UnsignedInt AudioManager::addAudioEvent(const AudioEventRTS *eventToAdd)
 	else strcpy(pos, "-");
 	if (eventToAdd->m_drawableID)   /* batch R75: an event at a client drawable */
 		ulog("audio %s %s %d %d draw %u", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID, eventToAdd->m_drawableID);
+	else if (eventToAdd->m_hasVolume)   /* batch R79: an event a volume was set on */
+		ulog("audio %s %s %d %d vol %08x", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID, realBits(eventToAdd->m_volume));
 	else
 		ulog("audio %s %s %d %d", eventToAdd->getEventName().str(), pos, (int)eventToAdd->m_playerIndex, (int)eventToAdd->m_objectID);
 	return ++g_audioHandleLast;

@@ -202,6 +202,7 @@ pub mod inactive_body;
 pub mod slow_death_behavior;
 pub mod jet_slow_death_behavior;
 pub mod physics_behavior;
+pub mod railroad_behavior;
 pub mod neutron_missile_slow_death_behavior;
 pub mod helicopter_slow_death_behavior;
 pub mod battle_bus_slow_death_behavior;
@@ -946,6 +947,10 @@ pub fn new_module(object: ObjectId, name: &[u8], tag: &[u8], data: &ModuleDataKi
         ModuleDataKind::PhysicsBehavior(d) => Some(made_update(
             physics_behavior::PhysicsBehavior::get_interface_mask(),
             physics_behavior::PhysicsBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::PhysicsBehavior(m))),
+        )),
+        ModuleDataKind::RailroadBehavior(d) => Some(made_update(
+            railroad_behavior::RailroadBehavior::get_interface_mask(),
+            railroad_behavior::RailroadBehavior::unconstructed(object, Some(d.clone())).map(|m| (m.update_module().clone(), UpdateBody::RailroadBehavior(m))),
         )),
         ModuleDataKind::NeutronMissileSlowDeathBehavior(d) => Some(made_update(
             neutron_missile_slow_death_behavior::NeutronMissileSlowDeathBehavior::get_interface_mask(),
