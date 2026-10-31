@@ -2895,6 +2895,8 @@ extern "C" {
     pub fn ref_gsmap_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch L1: GameLogic's frame (differential/wrap_game_logic_frame.cpp): the log's length.
     pub fn ref_glframe_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// layer 12 batch L3b: GameLogic::startNewGame (differential/wrap_game_logic_new_game.cpp): the log's length.
+    pub fn ref_glnew_run(cfg: *const c_uint, slots: *const c_uint, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch L3a: startNewGame's helpers (differential/wrap_game_logic_start.cpp): the log's length.
     pub fn ref_glstart_run(cfg: *const c_uint, slots: *const c_uint, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch L2: GameLogic::xfer (differential/wrap_game_logic_frame.cpp): the log's length.

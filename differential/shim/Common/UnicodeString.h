@@ -72,6 +72,13 @@ public:
 	}
 	/* --- end p1w10-sonnet --- */
 	/* --- layer 12 batch G1 --- */
+	/* compare (UnicodeString.h: wcscmp of str() and s): the 16-bit units compared in order (batch L3b) */
+	int compare(const WideChar *s) const
+	{
+		const WideChar *a = str();
+		while (*a && *a == *s) { ++a; ++s; }
+		return (int)*a - (int)*s;
+	}
 	/* compareNoCase (UnicodeString.h: _wcsicmp): ASCII letters folded to lower case, then the units compared */
 	int compareNoCase(const UnicodeString &o) const
 	{
