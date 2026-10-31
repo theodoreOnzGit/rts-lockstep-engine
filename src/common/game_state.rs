@@ -115,12 +115,15 @@ pub struct SaveGameInfo {
     pub save_file_type: i32,
     pub mission_map_name: Vec<u8>,
     pub pristine_map_name: Vec<u8>,
+    /// `saveGameMapName`: the map in the save directory (set by `GameStateMap`'s xfer; not in this block's data).
+    pub save_game_map_name: Vec<u8>,
 }
 
 /// The world as `GameState.cpp` reaches it.
 pub trait GameStateHost<B> {
-    /// `xfer->xferSnapshot(block's snapshot)`'s `snapshot->xfer(xfer)`.
-    fn xfer_block(&mut self, block: B, xfer: &mut dyn Xfer) -> XferResult<()>;
+    /// `xfer->xferSnapshot(block's snapshot)`'s `snapshot->xfer(xfer)`; `gs` is `TheGameState` (a block such as
+    /// `GameStateMap`'s reaches it).
+    fn xfer_block(&mut self, block: B, gs: &mut GameState<B>, xfer: &mut dyn Xfer) -> XferResult<()>;
     /// `snapshot->loadPostProcess()`.
     fn load_post_process(&mut self, block: B);
     /// `ThePartitionManager->update()`.
@@ -203,6 +206,7 @@ pub fn map_leaf_and_dir_name(s: &[u8]) -> Vec<u8> {
 /// A block's snapshot as `xferSnapshot` sees it.
 struct BlockSnapshot<'a, B: Copy, H: GameStateHost<B>> {
     block: B,
+    gs: &'a mut GameState<B>,
     host: &'a mut H,
 }
 
@@ -211,7 +215,7 @@ impl<B: Copy, H: GameStateHost<B>> Snapshot for BlockSnapshot<'_, B, H> {
         Ok(())
     }
     fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
-        self.host.xfer_block(self.block, xfer)
+        self.host.xfer_block(self.block, self.gs, xfer)
     }
     fn load_post_process(&mut self) {}
 }
@@ -270,7 +274,7 @@ impl<B: Copy> GameState<B> {
                     let mut name = b.block_name.clone();
                     xfer.xfer_ascii_string(&mut name)?;
                     xfer.begin_block()?;
-                    xfer.xfer_snapshot(&mut BlockSnapshot { block: b.block, host: h })?;
+                    xfer.xfer_snapshot(&mut BlockSnapshot { block: b.block, gs: self, host: h })?;
                     xfer.end_block()?;
                 }
             }
@@ -290,7 +294,7 @@ impl<B: Copy> GameState<B> {
                     }
                     Some(block) => {
                         xfer.begin_block()?;
-                        xfer.xfer_snapshot(&mut BlockSnapshot { block, host: h })?;
+                        xfer.xfer_snapshot(&mut BlockSnapshot { block, gs: self, host: h })?;
                         // XferLoad::xferSnapshot adds what it loaded, unless told not to
                         if xfer.get_xfer_mode() == XferMode::Load && xfer.get_options() & XO_NO_POST_PROCESSING == 0 && !plant(3983) {
                             self.add_post_process(block);

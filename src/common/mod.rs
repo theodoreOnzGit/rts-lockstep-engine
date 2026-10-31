@@ -84,6 +84,7 @@ pub mod thing_template;
 // --- layer 12 ---
 pub mod game_info;
 pub mod game_state;
+pub mod game_state_map;
 pub mod message_stream;
 pub mod message_types;
 pub mod recorder;

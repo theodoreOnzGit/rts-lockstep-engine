@@ -284,6 +284,9 @@ pub enum Undefined {
     /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
     /// save).
     InvalidBoolLoaded,
+    /// layer 12: `new char[n]` of a size the shipped 32-bit build cannot allocate (`GameStateMap`'s map buffer: a
+    /// negative `Int` size, or an `UnsignedInt` block size of 2^31 or more): `std::bad_alloc`, which nothing catches.
+    AllocationFailed,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no

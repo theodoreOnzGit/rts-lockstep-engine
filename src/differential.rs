@@ -2889,9 +2889,10 @@ extern "C" {
     /// p1w13-sonnet, layer 11 batch E1: ScriptEngine::init's templates (differential/wrap_script_templates.cpp): the dump's
     /// length (written up to `cap`).
     pub fn ref_script_templates(out: *mut c_uchar, cap: usize) -> usize;
-    /// p1w13-sonnet, layer 11 batch E2: ScriptEngine (differential/wrap_engine.cpp): the log's length (written when it fits).
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.
+    pub fn ref_gsmap_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch D1: GameLogic::logicMessageDispatcher (differential/wrap_dispatch.cpp): the log's length.
     pub fn ref_dispatch_run(world: *const c_uint, nworld: c_int, msgs: *const c_uint, nmsgs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch R1: Recorder (differential/wrap_recorder.cpp): the log's length (written when it fits).
@@ -2904,6 +2905,7 @@ extern "C" {
     pub fn ref_msgs_type_value(i: c_int) -> c_int;
     /// `GameMessage::getCommandTypeAsAsciiString(t)`: its length (written when it fits).
     pub fn ref_msgs_type_name(t: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// p1w13-sonnet, layer 11 batch E2: ScriptEngine (differential/wrap_engine.cpp): the log's length (written when it fits).
     pub fn ref_engine_run(cfg: *const c_uint, scripts: *const c_uint, nscripts: c_int, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// p1w13-sonnet, layer 11 batch C1: ScriptConditions (differential/wrap_conditions.cpp).
     pub fn ref_conditions_run(

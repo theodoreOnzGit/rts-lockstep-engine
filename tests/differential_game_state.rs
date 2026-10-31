@@ -96,7 +96,7 @@ fn lossy(b: &[u8]) -> String {
 }
 
 impl GameStateHost<u32> for Host {
-    fn xfer_block(&mut self, block: u32, xfer: &mut dyn Xfer) -> XferResult<()> {
+    fn xfer_block(&mut self, block: u32, _gs: &mut GameState<u32>, xfer: &mut dyn Xfer) -> XferResult<()> {
         let b = &mut self.blocks[block as usize];
         xfer.xfer_int(&mut b.0)?;
         xfer.xfer_ascii_string(&mut b.1)?;
