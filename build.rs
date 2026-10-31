@@ -1290,6 +1290,62 @@ mod differential {
                 .file(dif.join("wrap_message_stream.cpp"));
             msgs.compile("upstream_message_stream");
 
+            // Layer 12 batch G1: GameInfo.cpp (differential/wrap_game_info.cpp), on shim_ginfo. One mechanical edit in a
+            // copy: adjustSlotsForMap declares `i` in its first loop and reuses it in the second (MSVC's pre-standard
+            // for-scope); the copy declares it before the first. And FileTransfer.cpp's map-derived paths (lines 138-239,
+            // GetBasePathFromPath through GetReadmeFromMap), cut verbatim (the rest of the file is the network transfer).
+            // Each text must occur once.
+            let gi_src = std::fs::read_to_string(up.join("GameEngine/Source/GameNetwork/GameInfo.cpp")).expect("read GameInfo.cpp");
+            let gi_old = "\t\tfor (Int i = 0; i < MAX_SLOTS; ++i)\n\t\t{\n\t\t\tGameSlot *tempSlot = getSlot(i);\n";
+            let gi_new = "\t\tInt i;\n\t\tfor (i = 0; i < MAX_SLOTS; ++i)\n\t\t{\n\t\t\tGameSlot *tempSlot = getSlot(i);\n";
+            assert_eq!(gi_src.matches(gi_old).count(), 1, "GameInfo.cpp: adjustSlotsForMap's first loop must occur once");
+            let ginfo_gen = out_dir.join("ginfo_gen");
+            std::fs::create_dir_all(&ginfo_gen).expect("create ginfo_gen");
+            std::fs::write(ginfo_gen.join("GameInfo.cpp"), gi_src.replacen(gi_old, gi_new, 1)).expect("write GameInfo.cpp");
+            let ft_src = std::fs::read_to_string(up.join("GameEngine/Source/GameNetwork/FileTransfer.cpp")).expect("read FileTransfer.cpp");
+            let ft_from = "AsciiString GetBasePathFromPath( AsciiString path )\n";
+            let ft_to = "\tout.format(\"%s\\\\readme.txt\", base.str());\n\treturn out;\n}\n";
+            assert_eq!((ft_src.matches(ft_from).count(), ft_src.matches(ft_to).count()), (1, 1), "FileTransfer.cpp: the path helpers' ends must occur once");
+            let ft_i = ft_src.find(ft_from).expect("from");
+            let ft_j = ft_src.find(ft_to).expect("to") + ft_to.len();
+            std::fs::write(ginfo_gen.join("file_transfer_paths.inc"), &ft_src[ft_i..ft_j]).expect("write file_transfer_paths.inc");
+            let shim_ginfo = dif.join("shim_ginfo");
+            let mut ginfo = cc::Build::new();
+            base(&mut ginfo);
+            ginfo.include(&shim_ginfo)
+                .include(&ginfo_gen)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_game_info.cpp"));
+            ginfo.compile("upstream_game_info");
+
+            // Layer 12 batch R1: Recorder.cpp (differential/wrap_recorder.cpp), on shim_rec, linked to the message stream and
+            // GameInfo builds above under the same names. One edit in a copy: readUnicodeString's `UnsignedShort str[1024] =
+            // L"";` initialises 16-bit units from a wide literal (MSVC's 16-bit wchar_t; g++'s is 32-bit and rejects it); the
+            // copy writes `= {0}`, the same all-zero array. The text must occur once.
+            let rec_src = std::fs::read_to_string(up.join("GameEngine/Source/Common/Recorder.cpp")).expect("read Recorder.cpp");
+            let rec_old = "\tUnsignedShort str[1024] = L\"\";\n";
+            let rec_new = "\tUnsignedShort str[1024] = {0};\n";
+            assert_eq!(rec_src.matches(rec_old).count(), 1, "Recorder.cpp: readUnicodeString's buffer must occur once");
+            let rec_gen = out_dir.join("rec_gen");
+            std::fs::create_dir_all(&rec_gen).expect("create rec_gen");
+            std::fs::write(rec_gen.join("Recorder.cpp"), rec_src.replacen(rec_old, rec_new, 1)).expect("write Recorder.cpp");
+            let shim_rec = dif.join("shim_rec");
+            let mut rec = cc::Build::new();
+            base(&mut rec);
+            rec.include(&shim_rec)
+                .include(&rec_gen)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_recorder.cpp"));
+            rec.compile("upstream_recorder");
+
             let mut handicap = cc::Build::new();
             base(&mut handicap);
             handicap

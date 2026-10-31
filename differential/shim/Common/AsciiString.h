@@ -110,6 +110,12 @@ public:
 	}
 	bool nextToken(AsciiString *tok) { return nextToken(tok, NULL); }
 	/* --- end p1w4-sides --- */
+	/* --- layer 12 batch G1 --- */
+	/* reverseFind (AsciiString.cpp): strrchr of the C string; removeLastChar: the last character dropped, nothing
+	** on an empty string */
+	const char *reverseFind(char c) const { return strrchr(str(), c); }
+	void removeLastChar() { size_t n = strlen(str()); if (n > 0) m_s.resize(n - 1); }
+	/* --- end layer 12 batch G1 --- */
 private:
 	std::string m_s;
 };

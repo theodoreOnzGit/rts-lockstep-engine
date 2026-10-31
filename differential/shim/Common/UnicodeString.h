@@ -71,6 +71,22 @@ public:
 		setWide(buf);
 	}
 	/* --- end p1w10-sonnet --- */
+	/* --- layer 12 batch G1 --- */
+	/* compareNoCase (UnicodeString.h: _wcsicmp): ASCII letters folded to lower case, then the units compared */
+	int compareNoCase(const UnicodeString &o) const
+	{
+		size_t i = 0;
+		for (;; ++i) {
+			WideChar a = i < m_s.size() ? m_s[i] : 0, b = i < o.m_s.size() ? o.m_s[i] : 0;
+			if (a >= 'A' && a <= 'Z') a += 32;
+			if (b >= 'A' && b <= 'Z') b += 32;
+			if (a != b) return a < b ? -1 : 1;
+			if (a == 0) return 0;
+		}
+	}
+	/* operator!= (UnicodeString.h: wcscmp of the two strings), for Recorder.cpp's version checks (batch R1) */
+	bool operator!=(const UnicodeString &o) const { return m_s != o.m_s; }
+	/* --- end layer 12 batch G1 --- */
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }
 	std::basic_string<WideChar> m_s;

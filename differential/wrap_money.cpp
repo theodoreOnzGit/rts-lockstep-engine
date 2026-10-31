@@ -196,3 +196,6 @@ unsigned ref_money_deep_crc(const char *path, unsigned money0, int player0)
 }
 
 } /* extern "C" */
+
+/* layer 12 batch G1 (differential/wrap_game_info.cpp): the income records so far (GameInfo's starting cash deposits) */
+extern "C" int ref_money_record_income_calls(void) { return g_recordIncomeCalls; }

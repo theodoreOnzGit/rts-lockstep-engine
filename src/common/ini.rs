@@ -278,6 +278,9 @@ pub enum Undefined {
     /// layer 12: a `GameMessage` used after `deleteInstance` freed it (a list still linking a message that another list's
     /// destruction freed, or a handle kept past `propagateMessages`).
     UseAfterFree,
+    /// layer 12: `AsciiString::toLower` of a byte of 0x80 or more (`tolower` of a negative `char`: MSVC indexes its table
+    /// with it).
+    TolowerNonAscii,
     /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
     /// save).
     InvalidBoolLoaded,

@@ -50,8 +50,12 @@ UpgradeTemplate *UpgradeCenter::firstUpgradeTemplate() { abort(); }
 const UpgradeTemplate *UpgradeCenter::findUpgrade(const AsciiString &) { abort(); }
 AsciiString KindOfMaskType::getNameFromSingleBit(int i) { return AsciiString(ref_kindof_name_from_single_bit(i)); }
 int KindOfMaskType::getSingleBitFromName(const char *token) { return ref_kindof_single_bit_from_name(token); }
-AsciiString GameState::realMapPathToPortableMapPath(const AsciiString &) const { abort(); }
-AsciiString GameState::portableMapPathToRealMapPath(const AsciiString &) const { abort(); }
+/* layer 12 batch G1: a test that saves a map name through Xfer::xferMapName (virtual, so this build's) sets these hooks
+** (differential/wrap_game_info.cpp); without them the two conversions abort, as before */
+AsciiString (*g_xferRealToPortableHook)(const AsciiString &) = 0;
+AsciiString (*g_xferPortableToRealHook)(const AsciiString &) = 0;
+AsciiString GameState::realMapPathToPortableMapPath(const AsciiString &in) const { if (!g_xferRealToPortableHook) abort(); return g_xferRealToPortableHook(in); }
+AsciiString GameState::portableMapPathToRealMapPath(const AsciiString &in) const { if (!g_xferPortableToRealHook) abort(); return g_xferPortableToRealHook(in); }
 void GameState::addPostProcessSnapshot(Snapshot *) { ++m_postProcessCount; }
 
 /* ---- the script interpreter ------------------------------------------- */
