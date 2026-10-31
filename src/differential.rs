@@ -2893,6 +2893,10 @@ extern "C" {
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gsmap_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// layer 12 batch L1: GameLogic's frame (differential/wrap_game_logic_frame.cpp): the log's length.
+    pub fn ref_glframe_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// layer 12 batch L2: GameLogic::xfer (differential/wrap_game_logic_frame.cpp): the log's length.
+    pub fn ref_glsave_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch D1: GameLogic::logicMessageDispatcher (differential/wrap_dispatch.cpp): the log's length.
     pub fn ref_dispatch_run(world: *const c_uint, nworld: c_int, msgs: *const c_uint, nmsgs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch R1: Recorder (differential/wrap_recorder.cpp): the log's length (written when it fits).

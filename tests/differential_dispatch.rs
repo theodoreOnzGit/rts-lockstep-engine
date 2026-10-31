@@ -568,7 +568,7 @@ struct Msg {
 }
 
 fn end_line(s: &DispatchState) -> String {
-    let crcs: String = s.cached_crcs.iter().map(|c| format!(" {c:X}")).collect();
+    let crcs: String = s.cached_crcs.iter().map(|(p, c)| format!(" {p}:{c:X}")).collect();
     format!("end plan {} validate {} crcs{crcs}\n", i32::from(s.build_plan), i32::from(s.should_validate_crcs))
 }
 

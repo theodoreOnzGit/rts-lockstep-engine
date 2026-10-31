@@ -22,7 +22,7 @@
 //!
 //! [`xfer_game_state_map`] is `GameStateMap::xfer`; a world registers the block with [`GameState::add_snapshot_block`]
 //! and calls it from [`GameStateHost::xfer_block`], which is handed the `GameState`. Upstream throws
-//! `SC_INVALID_DATA` (a `SaveCode`) where an `XferStatus` cannot say it, so the function returns a [`MapXferError`];
+//! `SC_INVALID_DATA` (a `SaveCode`) where an `XferStatus` cannot say it, so the function returns a [`SaveError`];
 //! a block's xfer can only return an `XferStatus`, so the world maps the others to one and keeps the whole error, as
 //! [`crate::common::state_machine`] does.
 //!
@@ -40,35 +40,15 @@
 //! - `clearScratchPadMaps` returns without restoring the current directory when the save directory has no entries.
 
 use crate::common::game_info::{GameInfo, GameInfoHost, SkirmishXfer};
-use crate::common::game_state::{map_leaf_name, GameState, GameStateHost};
+use crate::common::game_state::{map_leaf_name, GameState, GameStateHost, SaveError};
 use crate::common::game_type::{DrawableId, ObjectId};
 use crate::common::ini::{IniError, Undefined};
 use crate::common::recorder::game_mode;
-use crate::common::xfer::{Xfer, XferMode, XferStatus, XferVersion, XO_NO_POST_PROCESSING};
+use crate::common::xfer::{Xfer, XferMode, XferVersion, XO_NO_POST_PROCESSING};
 use crate::logic::modules::plant;
 
-/// What `GameStateMap::xfer` throws.
-#[derive(Clone, Debug, PartialEq)]
-pub enum MapXferError {
-    /// An `XferStatus` (the xfer's own).
-    Xfer(XferStatus),
-    /// `SC_INVALID_DATA`.
-    InvalidData,
-    /// Undefined upstream.
-    Undefined(IniError),
-}
-
-impl From<XferStatus> for MapXferError {
-    fn from(s: XferStatus) -> Self {
-        MapXferError::Xfer(s)
-    }
-}
-
-impl From<IniError> for MapXferError {
-    fn from(e: IniError) -> Self {
-        MapXferError::Undefined(e)
-    }
-}
+/// What `GameStateMap::xfer` throws (the save blocks' [`SaveError`]).
+pub type MapXferError = SaveError;
 
 type MapResult<T> = Result<T, MapXferError>;
 

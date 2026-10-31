@@ -142,6 +142,31 @@ pub trait GameStateHost<B> {
     fn file_exists(&self, path: &[u8]) -> bool;
 }
 
+/// What a save block's xfer throws: an `XferStatus`, `SC_INVALID_DATA` (a `SaveCode`), or a step undefined upstream.
+/// A block's `Snapshot::xfer` can only return an `XferStatus`, so a world maps the others to
+/// `XferStatus::ErrorUnknown` there and keeps the whole error (as `StateMachine` does).
+#[derive(Clone, Debug, PartialEq)]
+pub enum SaveError {
+    /// An `XferStatus` (the xfer's own).
+    Xfer(XferStatus),
+    /// `SC_INVALID_DATA`.
+    InvalidData,
+    /// Undefined upstream.
+    Undefined(IniError),
+}
+
+impl From<XferStatus> for SaveError {
+    fn from(s: XferStatus) -> Self {
+        SaveError::Xfer(s)
+    }
+}
+
+impl From<IniError> for SaveError {
+    fn from(e: IniError) -> Self {
+        SaveError::Undefined(e)
+    }
+}
+
 /// One of a [`SaveDate`]'s fields.
 type DateField = fn(&mut SaveDate) -> &mut u16;
 

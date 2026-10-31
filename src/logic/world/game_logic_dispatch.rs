@@ -42,13 +42,15 @@
 //! - `MSG_SELF_DESTRUCT`'s search for an ally reads its loop variable after the loop (MSVC's for-scope): the player
 //!   dies alone only when the loop ran to the end; a `break` after a transfer stops it, a `continue` past a defeated
 //!   ally does not.
-//! - The network's `m_cachedCRCs[playerIndex]` is written unchecked ([`Undefined::ArrayIndexOutOfRange`] past
-//!   `MAX_SLOTS`).
+//! - The network's `m_cachedCRCs[playerIndex]` is a `std::map`: any player index is a key. ~~(written unchecked,
+//!   [`Undefined::ArrayIndexOutOfRange`] past `MAX_SLOTS`)~~ **CORRECTED 2026-10-31** (batch L1): batch D1 took it for
+//!   an array; upstream's member is `std::map<Int, UnsignedInt>`, whose size and order `processCommandList` reads.
 //! - `doMoveTo` is never called, so the build plan never gains a subject; `MSG_META_END_PATH_BUILD`'s loop runs over
 //!   none.
 //! - The issuing player (`ThePlayerList->getNthPlayer(msg->getPlayerIndex())`) is dereferenced unchecked by most cases
 //!   ([`Undefined::NullObject`] when there is none).
 
+use std::collections::BTreeMap;
 use crate::common::base_type::{Coord3D, ICoord2D};
 use crate::common::ini::{IniError, Undefined};
 use crate::common::message_stream::*;
@@ -84,7 +86,7 @@ pub enum StatusAsked {
 }
 
 /// The file's statics and the two `GameLogic` members the dispatcher writes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DispatchState {
     /// `theBuildPlan`.
     pub build_plan: bool,
@@ -92,15 +94,10 @@ pub struct DispatchState {
     pub plan_subjects: Vec<u32>,
     /// `GameLogic::m_shouldValidateCRCs`.
     pub should_validate_crcs: bool,
-    /// `GameLogic::m_cachedCRCs`.
-    pub cached_crcs: [u32; MAX_SLOTS],
+    /// `GameLogic::m_cachedCRCs` (a `std::map<Int, UnsignedInt>`: by player index, in order).
+    pub cached_crcs: BTreeMap<i32, u32>,
 }
 
-impl Default for DispatchState {
-    fn default() -> Self {
-        DispatchState { build_plan: false, plan_subjects: Vec::new(), should_validate_crcs: false, cached_crcs: [0; MAX_SLOTS] }
-    }
-}
 
 /// A group command (`AIGroup::...`, every one `CMD_FROM_PLAYER` where it takes a source).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -846,8 +843,7 @@ pub fn logic_message_dispatcher(state: &mut DispatchState, msg: &GameMessage, h:
                     state.should_validate_crcs = true;
                 }
                 let crc = arg(0).integer() as u32;
-                let at = usize::try_from(player_index).ok().filter(|&i| i < MAX_SLOTS).ok_or_else(|| IniError::undefined(Undefined::ArrayIndexOutOfRange))?;
-                state.cached_crcs[at] = crc;
+                state.cached_crcs.insert(player_index, crc);
             }
         } else if h.d_has_recorder() && h.d_recorder_playback() {
             let crc = arg(0).integer() as u32;

@@ -490,7 +490,7 @@ class GameLogic
 {
 public:
 	Bool m_shouldValidateCRCs;
-	UnsignedInt m_cachedCRCs[MAX_SLOTS];
+	std::map<Int, UnsignedInt> m_cachedCRCs;   /* GameLogic.h line 297 */
 	Bool isInGame() { return g_inGame; }
 	Object *findObjectByID(ObjectID id) { return (id >= 1 && id <= 12 && g_obj[id].exists) ? &g_objects[id] : NULL; }
 	void selectObject(Object *o, Bool createNew, UnsignedInt mask) { logf("select %u %d %X", o->m_id, (int)createNew, mask); }
@@ -552,7 +552,7 @@ extern "C" int ref_dispatch_run(const unsigned *world, int nworld, const unsigne
 	g_nextGroup = 100;
 	g_nextObject = 20;
 	g_logic.m_shouldValidateCRCs = FALSE;
-	memset(g_logic.m_cachedCRCs, 0, sizeof g_logic.m_cachedCRCs);
+	g_logic.m_cachedCRCs.clear();
 	theBuildPlan = false;
 	thePlanSubjectCount = 0;
 	TheStatsCollector = g_stats ? &g_stats_c : NULL;
@@ -577,8 +577,8 @@ extern "C" int ref_dispatch_run(const unsigned *world, int nworld, const unsigne
 		msg->deleteInstance();
 	}
 	std::string crcs;
-	char b[16];
-	for (int s = 0; s < MAX_SLOTS; ++s) { snprintf(b, sizeof b, " %X", g_logic.m_cachedCRCs[s]); crcs += b; }
+	char b[32];
+	for (std::map<Int, UnsignedInt>::iterator it = g_logic.m_cachedCRCs.begin(); it != g_logic.m_cachedCRCs.end(); ++it) { snprintf(b, sizeof b, " %d:%X", (int)it->first, it->second); crcs += b; }
 	logf("end plan %d validate %d crcs%s", (int)theBuildPlan, (int)g_logic.m_shouldValidateCRCs, crcs.c_str());
 	int len = (int)g_log.size();
 	if (len <= cap) memcpy(out, g_log.data(), len);
