@@ -168,6 +168,12 @@ pub struct World {
     /// constructors and of gameplay. Seeded by `init_game_logic_random` at the start of a game.
     pub random: crate::common::random_value::RandomValues,
     // --- end p1w10-sonnet ---
+    // --- batch I3 ---
+    /// The well-known name keys (`TheKey_*`), looked up in `names` on first use.
+    pub keys: crate::common::well_known_keys::WellKnownKeys,
+    /// `TheSidesList`: the map's sides, teams and build lists.
+    pub sides: crate::logic::sides_list::SidesList,
+    // --- end batch I3 ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -217,6 +223,10 @@ impl World {
             // --- p1w10-sonnet ---
             random: crate::common::random_value::RandomValues::default(),
             // --- end p1w10-sonnet ---
+            // --- batch I3 ---
+            keys: crate::common::well_known_keys::WellKnownKeys::new(),
+            sides: crate::logic::sides_list::SidesList::new(),
+            // --- end batch I3 ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

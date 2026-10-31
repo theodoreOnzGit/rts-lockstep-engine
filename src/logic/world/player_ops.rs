@@ -461,9 +461,9 @@ pub trait PlayerHost: TeamHost {
     fn obj_clear_disabled_underpowered(&mut self, o: ObjectId);
     /// The object's behaviour modules that have a special power interface, in module order (`getBehaviorModules()`
     /// then `getSpecialPower()`, the others skipped).
-    fn obj_special_power_modules(&self, o: ObjectId) -> Vec<SpecialPowerModuleRef>;
+    fn obj_special_power_modules(&mut self, o: ObjectId) -> Vec<SpecialPowerModuleRef>;
     /// `sp->getRequiredScience()`.
-    fn sp_required_science(&self, m: SpecialPowerModuleRef) -> ScienceType;
+    fn sp_required_science(&mut self, m: SpecialPowerModuleRef) -> ScienceType;
     /// `sp->onSpecialPowerCreation()`.
     fn sp_on_special_power_creation(&mut self, m: SpecialPowerModuleRef);
     /// `sp->setReadyFrame(frame)`.

@@ -78,7 +78,7 @@ impl World {
     }
 
     /// The AI's answer, `None` without an AI.
-    fn ai_ask(&mut self, o: ObjectId, call: ModuleCall) -> Option<ModuleReply> {
+    pub(crate) fn ai_ask(&mut self, o: ObjectId, call: ModuleCall) -> Option<ModuleReply> {
         let ai = self.objects.find(o)?.ai?;
         Some(self.module_call(o, ai, call))
     }

@@ -1223,6 +1223,12 @@ impl World {
 /// What `Object` does to a unit that is not translated. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CutCall {
+    // --- batch I3 ---
+    /// A call of the team and player hosts into a unit the world does not hold yet (the script engine, an AI player,
+    /// the victory conditions, the message stream, the in-game UI, the game text): upstream's name for it, its numeric
+    /// arguments (a `Real` as its bits) and its text argument (`player_host_world.rs`).
+    Host { call: &'static str, args: Vec<i64>, text: Vec<u8> },
+    // --- end batch I3 ---
     // ---- Player ----
     /// `player->becomingTeamMember(obj, incoming)`.
     PlayerBecomingTeamMember { player: PlayerIndex, object: ObjectId, incoming: bool },
@@ -2069,6 +2075,20 @@ pub struct ObjectCuts {
     /// `setActiveBoundary`'s `ShroudStatusStoreRestore partitionStore`, from [`World::before_map_boundary_change`] to
     /// `after_map_boundary_change`.
     pub boundary_store: crate::logic::world::partition::ShroudStatusStoreRestore,
+    // --- batch I3 ---
+    /// The answers of the units the team and player hosts reach that the world does not hold yet
+    /// (`player_host_world.rs`).
+    pub player_host: crate::logic::world::player_host_world::PlayerHostCuts,
+    /// `getAI()->isIdle()` of the objects whose AI is idle, as the player and team code ask it (the AI update is not a
+    /// module of the world until batch I9).
+    pub ai_idle: BTreeSet<ObjectId>,
+    /// `getAI()->getLocomotorSet()->getValidSurfaces()` (none listed: 0).
+    pub ai_valid_surfaces: BTreeMap<ObjectId, u32>,
+    /// The objects whose AI is not recruitable (`isRecruitable()`).
+    pub ai_not_recruitable: BTreeSet<ObjectId>,
+    /// The objects whose AI has a supply truck interface (`getSupplyTruckAIInterface() != NULL`).
+    pub supply_truck_ais: BTreeSet<ObjectId>,
+    // --- end batch I3 ---
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2216,6 +2236,11 @@ impl Default for ObjectCuts {
             terrain_lent: false,
             terrain_lost_writes: 0,
             boundary_store: Default::default(),
+            player_host: Default::default(),
+            ai_idle: BTreeSet::new(),
+            ai_valid_surfaces: BTreeMap::new(),
+            ai_not_recruitable: BTreeSet::new(),
+            supply_truck_ais: BTreeSet::new(),
             next_drawable_id: 1,
         }
     }

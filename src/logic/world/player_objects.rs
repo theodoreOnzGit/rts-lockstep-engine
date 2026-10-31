@@ -107,7 +107,7 @@ pub trait PlayerObjectHost: PlayerHost {
     /// `obj->friend_adjustPowerForPlayer(yes)`.
     fn obj_friend_adjust_power_for_player(&mut self, o: ObjectId, yes: bool);
     /// `obj->findUpdateModule(key) != NULL` for the `AutoDepositUpdate` key.
-    fn obj_has_auto_deposit_update(&self, o: ObjectId, key: NameKeyType) -> bool;
+    fn obj_has_auto_deposit_update(&mut self, o: ObjectId, key: NameKeyType) -> bool;
     /// `adu->awardInitialCaptureBonus(player)`.
     fn auto_deposit_award_initial_capture_bonus(&mut self, o: ObjectId, p: PlayerIndex);
     /// `obj->areModulesReady()`.
@@ -122,7 +122,7 @@ pub trait PlayerObjectHost: PlayerHost {
     fn obj_has_drawable(&self, o: ObjectId) -> bool;
     /// `obj->getStealth()` that `isDisguised()`: its `getDisguisedPlayerIndex()`; `None` for no stealth update or one
     /// that is not disguised.
-    fn obj_stealth_disguised_player_index(&self, o: ObjectId) -> Option<PlayerIndex>;
+    fn obj_stealth_disguised_player_index(&mut self, o: ObjectId) -> Option<PlayerIndex>;
     /// `obj->getNightIndicatorColor()`.
     fn obj_night_indicator_color(&self, o: ObjectId) -> u32;
     /// `obj->getIndicatorColor()`.
@@ -130,25 +130,25 @@ pub trait PlayerObjectHost: PlayerHost {
     /// `obj->isDisabled()`.
     fn obj_is_disabled(&self, o: ObjectId) -> bool;
     /// `obj->hasAnySpecialPower()`.
-    fn obj_has_any_special_power(&self, o: ObjectId) -> bool;
+    fn obj_has_any_special_power(&mut self, o: ObjectId) -> bool;
     /// `obj->findAnyShortcutSpecialPowerModuleInterface()`.
-    fn obj_find_any_shortcut_special_power(&self, o: ObjectId) -> Option<SpecialPowerModuleRef>;
+    fn obj_find_any_shortcut_special_power(&mut self, o: ObjectId) -> Option<SpecialPowerModuleRef>;
     /// `obj->hasSpecialPower(type)`.
-    fn obj_has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool;
+    fn obj_has_special_power(&mut self, o: ObjectId, t: SpecialPowerType) -> bool;
     /// `obj->findSpecialPowerModuleInterface(type)`.
-    fn obj_find_special_power(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef>;
+    fn obj_find_special_power(&mut self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef>;
     /// `sp->isScriptOnly()`.
-    fn sp_is_script_only(&self, m: SpecialPowerModuleRef) -> bool;
+    fn sp_is_script_only(&mut self, m: SpecialPowerModuleRef) -> bool;
     /// `sp->getReadyFrame()`.
-    fn sp_ready_frame(&self, m: SpecialPowerModuleRef) -> u32;
+    fn sp_ready_frame(&mut self, m: SpecialPowerModuleRef) -> u32;
     /// `sp->getPercentReady()`.
-    fn sp_percent_ready(&self, m: SpecialPowerModuleRef) -> u32;
+    fn sp_percent_ready(&mut self, m: SpecialPowerModuleRef) -> u32;
     /// `sp->getSpecialPowerTemplate()->isSharedNSync()`.
-    fn sp_is_shared_n_sync(&self, m: SpecialPowerModuleRef) -> bool;
+    fn sp_is_shared_n_sync(&mut self, m: SpecialPowerModuleRef) -> bool;
     /// `obj->hasAnyWeapon()`.
     fn obj_has_any_weapon(&self, o: ObjectId) -> bool;
     /// `obj->getMostPercentReadyToFireAnyWeapon()`.
-    fn obj_most_percent_ready_to_fire_any_weapon(&self, o: ObjectId) -> u32;
+    fn obj_most_percent_ready_to_fire_any_weapon(&mut self, o: ObjectId) -> u32;
     /// `obj->leaveGroup()`.
     fn obj_leave_group(&mut self, o: ObjectId);
     /// `obj->isAnyKindOf(mask)`.
@@ -178,9 +178,9 @@ pub trait PlayerObjectHost: PlayerHost {
     /// (STRUCTURE)}, ITER_SORTED_NEAR_TO_FAR)`, in iteration order, taken once.
     fn partition_structures_near_to_far(&mut self, pos: Coord3D) -> Vec<ObjectId>;
     /// `ThePartitionManager->iterateAllObjects()`: every object, in the partition manager's order.
-    fn partition_all_objects(&self) -> Vec<ObjectId>;
+    fn partition_all_objects(&mut self) -> Vec<ObjectId>;
     /// `building->getContain()->getPlayerWhoEntered()`: `None` without a contain module.
-    fn contain_player_who_entered(&self, building: ObjectId) -> Option<u32>;
+    fn contain_player_who_entered(&mut self, building: ObjectId) -> Option<u32>;
     /// `contain->recalcApparentControllingPlayer()`.
     fn contain_recalc_apparent_controlling_player(&mut self, o: ObjectId);
     /// `obj->getContain() != NULL`.
@@ -204,7 +204,7 @@ pub trait PlayerObjectHost: PlayerHost {
     /// `obj->getProducerID()`.
     fn obj_producer_id(&self, o: ObjectId) -> ObjectId;
     /// `body->getMaxHealth()`.
-    fn obj_body_max_health(&self, o: ObjectId) -> f32;
+    fn obj_body_max_health(&mut self, o: ObjectId) -> f32;
     /// `body->setMaxHealth(health, PRESERVE_RATIO)`.
     fn obj_body_set_max_health(&mut self, o: ObjectId, health: f32);
     /// `body->applyDamageScalar(scalar)`.
@@ -233,9 +233,9 @@ pub trait PlayerObjectHost: PlayerHost {
     fn tmpl_max_simultaneous_link_key(&self, t: TemplateRef) -> NameKeyType;
     /// `ProductionUpdate::getProductionUpdateInterfaceFromObject(obj)->countUnitTypeInQueue(type)`: `None` without the
     /// production interface.
-    fn obj_production_queue_count(&self, o: ObjectId, t: TemplateRef) -> Option<u32>;
+    fn obj_production_queue_count(&mut self, o: ObjectId, t: TemplateRef) -> Option<u32>;
     /// `ThePlayerTemplateStore->findPlayerTemplate(key)`.
-    fn player_template_find(&self, key: NameKeyType) -> Option<PlayerTemplateRef>;
+    fn player_template_find(&mut self, key: NameKeyType) -> Option<PlayerTemplateRef>;
 }
 
 

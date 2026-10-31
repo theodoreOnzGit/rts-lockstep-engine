@@ -237,7 +237,7 @@ pub trait TeamHost {
     /// `obj->handlePartitionCellMaintenance()`.
     fn obj_handle_partition_cell_maintenance(&mut self, o: ObjectId);
     /// `obj->getContain()` and `->getContainCount()`: `None` without a contain module.
-    fn obj_contain_count(&self, o: ObjectId) -> Option<i32>;
+    fn obj_contain_count(&mut self, o: ObjectId) -> Option<i32>;
     /// `obj->getContain()->removeAllContained()`.
     fn obj_remove_all_contained(&mut self, o: ObjectId);
     /// `obj->didEnter(trigger)`.

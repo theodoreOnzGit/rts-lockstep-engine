@@ -61,6 +61,7 @@ pub mod action_host_world;
 pub mod partition_host_world; // layer 12, batch I1: PartitionHost for World
 pub mod terrain_host_world; // batch I2: TerrainWorld for World
 pub mod object_map_props; // layer 8, batch O1: updateObjValuesFromMapProperties
+pub mod player_host_world; // batch I3: the team and player hosts for World
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;

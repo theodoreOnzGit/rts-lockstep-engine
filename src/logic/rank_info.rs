@@ -101,7 +101,7 @@ fn rank_fields<'a>() -> [FieldParse<RankFill<'a>>; 5] {
 }
 
 /// `class RankInfoStore` (`TheRankInfoStore`).
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RankInfoStore {
     /// `m_rankInfos`: level - 1 is the index.
     rank_infos: Vec<Overridable<RankInfo>>,

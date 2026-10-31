@@ -67,6 +67,12 @@ pub struct GameStatics {
     /// batch W1b: `TheGlobalData` (the weapon code reads its weapon bonus set and historic damage limit; empty: `NULL`).
     pub global_data: crate::common::global_data::GlobalDataStore,
     // --- end p1w13-sonnet ---
+    // --- batch I3 ---
+    /// `ThePlayerTemplateStore` (a player's template is its index here).
+    pub player_template_store: crate::common::player_template::PlayerTemplateStore,
+    /// `TheRankInfoStore`.
+    pub rank_info_store: crate::logic::rank_info::RankInfoStore,
+    // --- end batch I3 ---
     // New stores go here, each in its translator's marked block.
 }
 

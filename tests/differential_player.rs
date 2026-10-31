@@ -779,7 +779,7 @@ impl TeamHost for Sim {
     fn obj_handle_partition_cell_maintenance(&mut self, o: ObjectId) {
         self.rec(format!("pcm {o}"));
     }
-    fn obj_contain_count(&self, o: ObjectId) -> Option<i32> {
+    fn obj_contain_count(&mut self, o: ObjectId) -> Option<i32> {
         let c = self.obj(o).contain_count;
         if c >= 0 {
             Some(c)
@@ -1080,10 +1080,10 @@ impl PlayerHost for Sim {
     fn obj_clear_disabled_underpowered(&mut self, o: ObjectId) {
         self.rec(format!("enable {o} {}", DISABLED_UNDERPOWERED));
     }
-    fn obj_special_power_modules(&self, o: ObjectId) -> Vec<SpecialPowerModuleRef> {
+    fn obj_special_power_modules(&mut self, o: ObjectId) -> Vec<SpecialPowerModuleRef> {
         self.obj(o).modules.iter().filter(|m| m.has_sp).map(|m| m.serial as u32).collect()
     }
-    fn sp_required_science(&self, m: SpecialPowerModuleRef) -> ScienceType {
+    fn sp_required_science(&mut self, m: SpecialPowerModuleRef) -> ScienceType {
         for o in &self.objs {
             for md in &o.modules {
                 if md.has_sp && md.serial as u32 == m {
@@ -1122,7 +1122,7 @@ impl PlayerObjectHost for Sim {
     fn obj_friend_adjust_power_for_player(&mut self, o: ObjectId, yes: bool) {
         self.rec(format!("adjustpower {o} {}", yes as u32));
     }
-    fn obj_has_auto_deposit_update(&self, o: ObjectId, _key: NameKeyType) -> bool {
+    fn obj_has_auto_deposit_update(&mut self, o: ObjectId, _key: NameKeyType) -> bool {
         self.obj(o).has_auto_deposit
     }
     fn auto_deposit_award_initial_capture_bonus(&mut self, o: ObjectId, p: PlayerIndex) {
@@ -1143,7 +1143,7 @@ impl PlayerObjectHost for Sim {
     fn obj_has_drawable(&self, o: ObjectId) -> bool {
         self.obj(o).has_drawable
     }
-    fn obj_stealth_disguised_player_index(&self, o: ObjectId) -> Option<PlayerIndex> {
+    fn obj_stealth_disguised_player_index(&mut self, o: ObjectId) -> Option<PlayerIndex> {
         let d = self.obj(o).disguised;
         if d >= 0 {
             Some(d)
@@ -1160,34 +1160,34 @@ impl PlayerObjectHost for Sim {
     fn obj_is_disabled(&self, o: ObjectId) -> bool {
         self.obj(o).disabled
     }
-    fn obj_has_any_special_power(&self, o: ObjectId) -> bool {
+    fn obj_has_any_special_power(&mut self, o: ObjectId) -> bool {
         self.obj(o).modules.iter().any(|m| m.has_sp)
     }
-    fn obj_find_any_shortcut_special_power(&self, o: ObjectId) -> Option<SpecialPowerModuleRef> {
+    fn obj_find_any_shortcut_special_power(&mut self, o: ObjectId) -> Option<SpecialPowerModuleRef> {
         self.obj(o).modules.iter().find(|m| m.has_sp).map(|m| m.serial as u32)
     }
-    fn obj_has_special_power(&self, o: ObjectId, t: SpecialPowerType) -> bool {
+    fn obj_has_special_power(&mut self, o: ObjectId, t: SpecialPowerType) -> bool {
         self.obj(o).modules.iter().any(|m| m.has_sp && m.ty == t)
     }
-    fn obj_find_special_power(&self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef> {
+    fn obj_find_special_power(&mut self, o: ObjectId, t: SpecialPowerType) -> Option<SpecialPowerModuleRef> {
         self.obj(o).modules.iter().find(|m| m.has_sp && m.ty == t).map(|m| m.serial as u32)
     }
-    fn sp_is_script_only(&self, m: SpecialPowerModuleRef) -> bool {
+    fn sp_is_script_only(&mut self, m: SpecialPowerModuleRef) -> bool {
         self.module(m).script_only
     }
-    fn sp_ready_frame(&self, m: SpecialPowerModuleRef) -> u32 {
+    fn sp_ready_frame(&mut self, m: SpecialPowerModuleRef) -> u32 {
         self.module(m).ready
     }
-    fn sp_percent_ready(&self, m: SpecialPowerModuleRef) -> u32 {
+    fn sp_percent_ready(&mut self, m: SpecialPowerModuleRef) -> u32 {
         self.module(m).percent
     }
-    fn sp_is_shared_n_sync(&self, m: SpecialPowerModuleRef) -> bool {
+    fn sp_is_shared_n_sync(&mut self, m: SpecialPowerModuleRef) -> bool {
         self.module(m).shared
     }
     fn obj_has_any_weapon(&self, o: ObjectId) -> bool {
         self.obj(o).has_weapon
     }
-    fn obj_most_percent_ready_to_fire_any_weapon(&self, o: ObjectId) -> u32 {
+    fn obj_most_percent_ready_to_fire_any_weapon(&mut self, o: ObjectId) -> u32 {
         self.obj(o).weapon_percent
     }
     fn obj_leave_group(&mut self, o: ObjectId) {
@@ -1239,10 +1239,10 @@ impl PlayerObjectHost for Sim {
         v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         v.into_iter().map(|x| x.1).collect()
     }
-    fn partition_all_objects(&self) -> Vec<ObjectId> {
+    fn partition_all_objects(&mut self) -> Vec<ObjectId> {
         self.objs.iter().map(|o| o.id).collect()
     }
-    fn contain_player_who_entered(&self, building: ObjectId) -> Option<u32> {
+    fn contain_player_who_entered(&mut self, building: ObjectId) -> Option<u32> {
         if self.obj(building).contain_count >= 0 {
             Some(self.obj(building).who_entered)
         } else {
@@ -1274,7 +1274,7 @@ impl PlayerObjectHost for Sim {
     fn obj_producer_id(&self, o: ObjectId) -> ObjectId {
         self.obj(o).producer
     }
-    fn obj_body_max_health(&self, o: ObjectId) -> f32 {
+    fn obj_body_max_health(&mut self, o: ObjectId) -> f32 {
         self.obj(o).health
     }
     fn obj_body_set_max_health(&mut self, o: ObjectId, health: f32) {
@@ -1321,7 +1321,7 @@ impl PlayerObjectHost for Sim {
     fn tmpl_max_simultaneous_link_key(&self, t: TemplateRef) -> NameKeyType {
         self.tpls[t as usize].link_key
     }
-    fn obj_production_queue_count(&self, o: ObjectId, _t: TemplateRef) -> Option<u32> {
+    fn obj_production_queue_count(&mut self, o: ObjectId, _t: TemplateRef) -> Option<u32> {
         let q = self.obj(o).prod_queue;
         if q >= 0 {
             Some(q as u32)
@@ -1329,7 +1329,7 @@ impl PlayerObjectHost for Sim {
             None
         }
     }
-    fn player_template_find(&self, key: NameKeyType) -> Option<PlayerTemplateRef> {
+    fn player_template_find(&mut self, key: NameKeyType) -> Option<PlayerTemplateRef> {
         // `ThePlayerTemplateStore->findPlayerTemplate(NAMEKEY("FactionObserver"))`: the key was made by the caller
         let name = self.names.key_to_name(key);
         if name == b"FactionObserver" {

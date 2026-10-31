@@ -1094,6 +1094,10 @@ impl ProbeModule {
                 world.body_trace(format!("aienter {} {target} {command_source}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::AiEvacuate { expose_stealth_units, command_source } => {
+                world.body_trace(format!("aievacuate {} {} {command_source}", me.object, expose_stealth_units as u8));
+                ModuleReply::Done
+            }
             ModuleCall::AiFollowExitProductionPath { path, ignore_object, command_source } => {
                 let pts: Vec<String> = path.iter().map(|p| format!("{:08x},{:08x},{:08x}", p.x.to_bits(), p.y.to_bits(), p.z.to_bits())).collect();
                 world.body_trace(format!("aiexitpath {} {ignore_object} {command_source} {}", me.object, pts.join(";")));

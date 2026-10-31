@@ -522,6 +522,8 @@ pub enum ModuleCall {
     AiGetHealed { target: ObjectId, command_source: i32 },
     /// `getAIUpdateInterface()->aiEnter(obj, cmdSource)` (`PilotFindVehicleUpdate`, batch R19).
     AiEnter { target: ObjectId, command_source: i32 },
+    /// batch I3: `aiEvacuate(exposeStealthUnits, cmdSource)` (`Player::evacuateAll...`).
+    AiEvacuate { expose_stealth_units: bool, command_source: i32 },
     /// `RadiusDecalUpdate::createRadiusDecal(tmpl, radius, pos)` (batch R20; `ObjectCreationList`'s attack nugget calls it).
     RadiusDecalCreate { template: crate::logic::radius_decal::RadiusDecalTemplate, radius: f32, pos: Coord3D },
     /// `RadiusDecalUpdate::killRadiusDecal()` (batch R20).

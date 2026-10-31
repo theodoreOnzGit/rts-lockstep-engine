@@ -557,7 +557,7 @@ impl TeamHost for Sim {
     fn obj_handle_partition_cell_maintenance(&mut self, o: ObjectId) {
         self.rec(format!("pcm {o}"));
     }
-    fn obj_contain_count(&self, o: ObjectId) -> Option<i32> {
+    fn obj_contain_count(&mut self, o: ObjectId) -> Option<i32> {
         let c = self.obj(o).contain_count;
         if c >= 0 {
             Some(c)
