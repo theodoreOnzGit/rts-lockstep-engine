@@ -575,6 +575,8 @@ pub enum ModuleCall {
     PhysicsSetPitchRate(f32),
     /// `AIUpdateInterface::setAttitude(attitude)` (`AttitudeType`).
     AiSetAttitude(i32),
+    /// batch O1: `AIUpdateInterface::setIsRecruitable(isRecruitable)` (`updateObjValuesFromMapProperties`).
+    AiSetIsRecruitable(bool),
     /// `AIUpdateInterface::wakeUpAndAttemptToTarget()`.
     AiWakeUpAndAttemptToTarget,
     /// `AIUpdateInterface::getAiFreeToExit(exiter)`; replies [`ModuleReply::Int`] (`AIFreeToExitType`).

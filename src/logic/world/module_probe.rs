@@ -1039,6 +1039,10 @@ impl ProbeModule {
                 world.body_trace(format!("aiattitude {} {a}", me.object));
                 ModuleReply::Done
             }
+            ModuleCall::AiSetIsRecruitable(r) => {
+                world.body_trace(format!("airecruitable {} {}", me.object, i32::from(r)));
+                ModuleReply::Done
+            }
             ModuleCall::AiWakeUpAndAttemptToTarget => {
                 world.body_trace(format!("aiwake {}", me.object));
                 ModuleReply::Done

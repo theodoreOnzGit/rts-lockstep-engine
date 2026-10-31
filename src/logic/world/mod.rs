@@ -59,6 +59,7 @@ pub mod update_host_world;
 pub mod helper_host_world;
 pub mod action_host_world;
 pub mod partition_host_world; // layer 12, batch I1: PartitionHost for World
+pub mod object_map_props; // layer 8, batch O1: updateObjValuesFromMapProperties
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;
