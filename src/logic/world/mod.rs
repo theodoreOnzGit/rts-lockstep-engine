@@ -100,5 +100,6 @@ pub mod contain_cuts;
 // --- end p1w13-sonnet ---
 // --- layer 12 ---
 pub mod game_logic_dispatch;
+pub mod game_logic_start;
 pub mod game_logic_update;
 pub mod game_logic_xfer;
