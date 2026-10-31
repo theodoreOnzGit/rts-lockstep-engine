@@ -186,7 +186,7 @@ fn c_real_to_int(f: f32) -> i32 {
 #[allow(clippy::too_many_arguments)]
 pub fn find_closest_enemy<H: AiQueryHost>(
     pm: &mut PartitionManager,
-    h: &H,
+    h: &mut H,
     data: &TAiData,
     me: ObjectId,
     range: f32,
@@ -283,7 +283,7 @@ fn petir_sqrt(x: f32) -> f32 {
 
 /// `findClosestAlly(me, range, qualifiers)`: the closest live ally, not a building (unless it may be acquired), on the map as `me`
 /// is (and seen, for `CAN_SEE`).
-pub fn find_closest_ally<H: AiQueryHost>(pm: &mut PartitionManager, h: &H, me: ObjectId, range: f32, qualifiers: u32) -> Option<ObjectId> {
+pub fn find_closest_ally<H: AiQueryHost>(pm: &mut PartitionManager, h: &mut H, me: ObjectId, range: f32, qualifiers: u32) -> Option<ObjectId> {
     let mut filters = vec![
         PartitionFilter::reject_buildings(h, me),
         PartitionFilter::Relationship { obj: me, flags: crate::logic::world::partition::filters::ALLOW_ALLIES },
@@ -298,7 +298,7 @@ pub fn find_closest_ally<H: AiQueryHost>(pm: &mut PartitionManager, h: &H, me: O
 
 /// `findClosestRepulsor(me, range)`: the closest repulsor not stealthed (or else detected or disguised); none when repulsors are
 /// off.
-pub fn find_closest_repulsor<H: AiQueryHost>(pm: &mut PartitionManager, h: &H, data: &TAiData, me: ObjectId, range: f32) -> Option<ObjectId> {
+pub fn find_closest_repulsor<H: AiQueryHost>(pm: &mut PartitionManager, h: &mut H, data: &TAiData, me: ObjectId, range: f32) -> Option<ObjectId> {
     if !data.enable_repulsors {
         return None;
     }

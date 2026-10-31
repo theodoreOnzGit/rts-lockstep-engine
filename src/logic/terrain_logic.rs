@@ -2109,13 +2109,26 @@ impl TerrainLogic {
     /// [`TerrainLogic::layer_for_destination`], but always the highest layer
     /// that is at or below the position.
     pub fn highest_layer_for_destination<W: TerrainWorld>(&mut self, world: &W, pos: &Coord3D, only_healthy_bridges: bool) -> TlResult<PathfindLayer> {
+        self.highest_layer_for_destination_with(|| world.pathfinder_wall_height(), |p| world.pathfinder_is_point_on_wall(p), pos, only_healthy_bridges)
+    }
+
+    /// [`TerrainLogic::highest_layer_for_destination`] with the pathfinder's two answers given as closures (`getWallHeight()`,
+    /// `isPointOnWall(pos)`), asked at the same points: for an owner of the terrain that is also the world it would ask
+    /// (`World`, whose `PartitionHost` answers `getHighestLayerForDestination` for `findPositionAround`).
+    pub fn highest_layer_for_destination_with(
+        &mut self,
+        wall_height: impl Fn() -> f32,
+        is_point_on_wall: impl Fn(&Coord3D) -> bool,
+        pos: &Coord3D,
+        only_healthy_bridges: bool,
+    ) -> TlResult<PathfindLayer> {
         let mut best_layer = LAYER_GROUND;
         let mut best_distance = pos.z - self.ground_height(pos.x, pos.y, false).0; // NOT fabs in this case.
 
-        if best_distance > world.pathfinder_wall_height() / 2.0f32 {
+        if best_distance > wall_height() / 2.0f32 {
             // check wall.
-            if world.pathfinder_is_point_on_wall(pos) {
-                let delta = pos.z - world.pathfinder_wall_height();
+            if is_point_on_wall(pos) {
+                let delta = pos.z - wall_height();
                 // must be ABOVE (or on) the wall for this call. (srj)
                 if delta >= 0.0 && delta.abs() < best_distance.abs() {
                     best_layer = LAYER_WALL;

@@ -363,19 +363,19 @@ impl PartitionHost for ScenarioHost {
             None => Region3D::default(),
         }
     }
-    fn highest_layer_for_destination(&self, pos: &Coord3D) -> PathfindLayer {
+    fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
         1 + (mix(pos.x as i32 as u32, pos.y as i32 as u32, 11) % 3) as i32
     }
-    fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
+    fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
         ScenarioHost::terrain_height(x, y) + layer as f32 * 0.5
     }
-    fn is_cliff_cell(&self, x: f32, y: f32) -> bool {
+    fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
         mix(x as i32 as u32, y as i32 as u32, 12).is_multiple_of(11)
     }
-    fn is_underwater(&self, x: f32, y: f32) -> bool {
+    fn is_underwater(&mut self, x: f32, y: f32) -> bool {
         ScenarioHost::terrain_height(x, y) < -2.0
     }
-    fn pathfind_cell_type(&self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType> {
+    fn pathfind_cell_type(&mut self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType> {
         if cell_x < 0 || cell_y < 0 {
             return None;
         }
@@ -385,7 +385,7 @@ impl PartitionHost for ScenarioHost {
             _ => Some(PathfindCellType::Clear),
         }
     }
-    fn quick_does_path_exist(&self, source: ObjectId, to: &Coord3D) -> Option<bool> {
+    fn quick_does_path_exist(&mut self, source: ObjectId, to: &Coord3D) -> Option<bool> {
         if source % 5 == 0 {
             return None; // no AI update
         }
@@ -415,10 +415,10 @@ impl PartitionFilterHost for ScenarioHost {
     fn is_off_map(&self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::OFF_MAP))
     }
-    fn is_view_blocked_by_obstacle(&self, obj: ObjectId, other: ObjectId) -> bool {
+    fn is_view_blocked_by_obstacle(&mut self, obj: ObjectId, other: ObjectId) -> bool {
         mix(obj as u32, other as u32, 21).is_multiple_of(5)
     }
-    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult {
+    fn able_to_attack_specific_object(&mut self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult {
         match mix(obj as u32, other as u32, 22 + attack_type as u32 * 7 + source as u32) % 4 {
             0 => CanAttackResult::Possible,
             1 => CanAttackResult::PossibleAfterMoving,
@@ -426,13 +426,13 @@ impl PartitionFilterHost for ScenarioHost {
             _ => CanAttackResult::OtherRefusal,
         }
     }
-    fn can_enter_object(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
+    fn can_enter_object(&mut self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
         mix(obj as u32, other as u32, 23 + source as u32).is_multiple_of(3)
     }
-    fn can_hijack_vehicle(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
+    fn can_hijack_vehicle(&mut self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool {
         mix(obj as u32, other as u32, 24 + source as u32).is_multiple_of(3)
     }
-    fn last_damage_source(&self, id: ObjectId) -> Option<ObjectId> {
+    fn last_damage_source(&mut self, id: ObjectId) -> Option<ObjectId> {
         if id % 4 == 0 {
             None
         } else {
@@ -453,13 +453,13 @@ impl PartitionFilterHost for ScenarioHost {
     fn is_non_faction_structure(&self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::NON_FACTION))
     }
-    fn is_able_to_attack(&self, id: ObjectId) -> bool {
+    fn is_able_to_attack(&mut self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::CAN_ATTACK))
     }
-    fn contain_facts(&self, id: ObjectId) -> Option<ContainFacts> {
+    fn contain_facts(&mut self, id: ObjectId) -> Option<ContainFacts> {
         self.obj(id).and_then(|o| o.contain)
     }
-    fn apparent_controlling_player(&self, id: ObjectId, observer_player: Option<i32>) -> Option<i32> {
+    fn apparent_controlling_player(&mut self, id: ObjectId, observer_player: Option<i32>) -> Option<i32> {
         let o = self.obj(id)?;
         o.contain?;
         // depends on the observer a little, as the real one does for disguised containers
@@ -476,7 +476,7 @@ impl PartitionFilterHost for ScenarioHost {
         // the odd-numbered players are computer players
         self.player_of(id).is_some_and(|p| p & 1 == 1)
     }
-    fn stealth_facts(&self, id: ObjectId) -> Option<StealthFacts> {
+    fn stealth_facts(&mut self, id: ObjectId) -> Option<StealthFacts> {
         self.obj(id).and_then(|o| o.stealth)
     }
     fn team_relationship_to_player(&self, obj: ObjectId, player: i32) -> Relationship {
@@ -485,13 +485,13 @@ impl PartitionFilterHost for ScenarioHost {
     fn template_is_equivalent_to(&self, template_key: i32, other: ObjectId) -> bool {
         self.obj(other).is_some_and(|o| o.template == template_key)
     }
-    fn can_player_garrison(&self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool {
+    fn can_player_garrison(&mut self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool {
         mix(player.unwrap_or(-1) as u32, other as u32, 26 + source as u32).is_multiple_of(2)
     }
     fn is_disabled_unmanned(&self, id: ObjectId) -> bool {
         self.obj(id).is_some_and(|o| o.flag(sflag::UNMANNED))
     }
-    fn command_button_valid_target(&self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool {
+    fn command_button_valid_target(&mut self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool {
         mix(button as u32, source as u32 ^ (other as u32).rotate_left(9), 27 + command_source as u32).is_multiple_of(2)
     }
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool {
@@ -504,7 +504,7 @@ impl PartitionFilterHost for ScenarioHost {
     fn build_cost(&self, id: ObjectId) -> i32 {
         self.obj(id).map_or(0, |o| o.build_cost)
     }
-    fn weapon_within_attack_range(&self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool> {
+    fn weapon_within_attack_range(&mut self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool> {
         // a third of the slots empty; a weapon reaches half of the others
         if mix(obj as u32, slot as u32, 40).is_multiple_of(3) {
             return None;

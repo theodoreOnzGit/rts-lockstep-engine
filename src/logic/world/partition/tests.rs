@@ -80,7 +80,7 @@ fn no_terrain_leaves_the_manager_empty() {
     host.add(ScenarioObject::new(1, at(5.0, 5.0), sphere(1.0)));
     pm.register_object(&mut host, 1);
     pm.update(&mut host);
-    let r = pm.get_closest_object_at(&host, &at(0.0, 0.0), 100.0, DistanceCalculationType::FromCenter2D, &[]);
+    let r = pm.get_closest_object_at(&mut host, &at(0.0, 0.0), 100.0, DistanceCalculationType::FromCenter2D, &[]);
     assert_eq!(r.object, None, "an empty ring table finds nothing");
 }
 
@@ -127,17 +127,17 @@ fn the_closest_object_has_its_distance_and_vector_and_a_miss_returns_the_range()
     put(&mut host, &mut pm, 2, 180.0, 100.0, 2.0);
     put(&mut host, &mut pm, 3, 100.0, 250.0, 2.0);
     pm.update(&mut host);
-    let r = pm.get_closest_object_at(&host, &at(110.0, 100.0), 500.0, DistanceCalculationType::FromCenter2D, &[]);
+    let r = pm.get_closest_object_at(&mut host, &at(110.0, 100.0), 500.0, DistanceCalculationType::FromCenter2D, &[]);
     assert_eq!(r.object, Some(1));
     assert_eq!(r.dist, 10.0);
     assert_eq!(r.vec, Coord3D { x: -10.0, y: 0.0, z: 0.0 });
-    let r = pm.get_closest_object(&host, 1, 500.0, DistanceCalculationType::FromCenter2D, &[]);
+    let r = pm.get_closest_object(&mut host, 1, 500.0, DistanceCalculationType::FromCenter2D, &[]);
     assert_eq!(r.object, Some(2), "never the object itself");
     assert_eq!(r.dist, 80.0);
     // boundary distance: 80 - 2 - 2
-    let r = pm.get_closest_object(&host, 1, 500.0, DistanceCalculationType::FromBoundingSphere2D, &[]);
+    let r = pm.get_closest_object(&mut host, 1, 500.0, DistanceCalculationType::FromBoundingSphere2D, &[]);
     assert_eq!(r.dist, 76.0);
-    let r = pm.get_closest_object(&host, 1, 50.0, DistanceCalculationType::FromCenter2D, &[]);
+    let r = pm.get_closest_object(&mut host, 1, 50.0, DistanceCalculationType::FromCenter2D, &[]);
     assert_eq!((r.object, r.dist), (None, 50.0), "nothing within range: the range back");
 }
 
@@ -159,24 +159,24 @@ fn a_range_query_lists_the_reverse_of_the_visit_order_until_sorted() {
         }
         v
     };
-    let near = walk(pm.iterate_objects_in_range_at(&host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedNearToFar));
+    let near = walk(pm.iterate_objects_in_range_at(&mut host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedNearToFar));
     assert_eq!(near, vec![(1, 0.0), (2, 2500.0), (3, 16900.0)]);
-    let far = walk(pm.iterate_objects_in_range_at(&host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedFarToNear));
+    let far = walk(pm.iterate_objects_in_range_at(&mut host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedFarToNear));
     assert_eq!(far.iter().map(|p| p.0).collect::<Vec<_>>(), vec![3, 2, 1]);
-    let fastest = walk(pm.iterate_objects_in_range_at(&host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::Fastest));
+    let fastest = walk(pm.iterate_objects_in_range_at(&mut host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::Fastest));
     assert_eq!(fastest.iter().map(|p| p.0).collect::<Vec<_>>(), vec![3, 2, 1], "prepended while walking outwards: farthest first");
     // by cost
     host.objects.get_mut(&1).unwrap().build_cost = 300;
     host.objects.get_mut(&2).unwrap().build_cost = 100;
     host.objects.get_mut(&3).unwrap().build_cost = 200;
-    let cheap = walk(pm.iterate_objects_in_range_at(&host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedCheapToExpensive));
+    let cheap = walk(pm.iterate_objects_in_range_at(&mut host, &origin, 500.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedCheapToExpensive));
     assert_eq!(cheap.iter().map(|p| p.0).collect::<Vec<_>>(), vec![2, 3, 1]);
     // the range cuts
-    let few = walk(pm.iterate_objects_in_range_at(&host, &origin, 60.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedNearToFar));
+    let few = walk(pm.iterate_objects_in_range_at(&mut host, &origin, 60.0, DistanceCalculationType::FromCenter2D, &[], IterOrderType::SortedNearToFar));
     assert_eq!(few.iter().map(|p| p.0).collect::<Vec<_>>(), vec![1, 2]);
     // all objects: the module list runs newest registration first and the iterator prepends each
     // insert, so the iterator lists the oldest registration first
-    let mut all = pm.iterate_all_objects(&host, &[]);
+    let mut all = pm.iterate_all_objects(&mut host, &[]);
     assert_eq!((all.first(), all.next(), all.next(), all.next()), (Some(1), Some(2), Some(3), None));
 }
 
@@ -196,7 +196,7 @@ fn filters_drop_objects_and_the_first_refusal_wins() {
     pm.update(&mut host);
     let mut inf = KindOfMaskType::new();
     inf.set(KINDOF_INFANTRY, 1);
-    let ids = |pm: &mut PartitionManager, host: &ScenarioHost, f: &[PartitionFilter]| {
+    let ids = |pm: &mut PartitionManager, host: &mut ScenarioHost, f: &[PartitionFilter]| {
         let mut it = pm.iterate_objects_in_range(host, 1, 500.0, DistanceCalculationType::FromCenter2D, f, IterOrderType::SortedNearToFar);
         let mut w = Vec::new();
         let mut o = it.first();
@@ -207,20 +207,20 @@ fn filters_drop_objects_and_the_first_refusal_wins() {
         w
     };
     let f_inf = [PartitionFilter::AcceptByKindOf { must_be_set: inf, must_be_clear: KindOfMaskType::new() }];
-    assert_eq!(ids(&mut pm, &host, &f_inf), vec![2, 4]);
+    assert_eq!(ids(&mut pm, &mut host, &f_inf), vec![2, 4]);
     let f_inf_alive = [f_inf[0].clone(), PartitionFilter::Alive];
-    assert_eq!(ids(&mut pm, &host, &f_inf_alive), vec![2, 4]);
+    assert_eq!(ids(&mut pm, &mut host, &f_inf_alive), vec![2, 4]);
     let f_alive = [PartitionFilter::Alive];
-    assert_eq!(ids(&mut pm, &host, &f_alive), vec![2, 4], "3 is dead; 1 is the origin");
+    assert_eq!(ids(&mut pm, &mut host, &f_alive), vec![2, 4], "3 is dead; 1 is the origin");
     let f_enemy = [PartitionFilter::Relationship { obj: 1, flags: filters::ALLOW_ENEMIES }];
-    assert_eq!(ids(&mut pm, &host, &f_enemy), vec![4]);
+    assert_eq!(ids(&mut pm, &mut host, &f_enemy), vec![4]);
     let f_player = [PartitionFilter::Player { player: Some(2), match_: true }];
-    assert_eq!(ids(&mut pm, &host, &f_player), vec![4]);
+    assert_eq!(ids(&mut pm, &mut host, &f_player), vec![4]);
     let f_rej = [PartitionFilter::RejectByKindOf { must_be_set: inf, must_be_clear: KindOfMaskType::new() }];
-    assert_eq!(ids(&mut pm, &host, &f_rej), vec![3]);
+    assert_eq!(ids(&mut pm, &mut host, &f_rej), vec![3]);
     // a would-collide filter against a sphere that overlaps object 2 only
     let f_collide = [PartitionFilter::WouldCollide { position: at(141.0, 100.0), geom: sphere(3.0), angle: 0.0, desired: true }];
-    assert_eq!(ids(&mut pm, &host, &f_collide), vec![2]);
+    assert_eq!(ids(&mut pm, &mut host, &f_collide), vec![2]);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn potential_collisions_and_the_geometry_test_agree() {
     put(&mut host, &mut pm, 2, 108.0, 100.0, 5.0);
     put(&mut host, &mut pm, 3, 130.0, 100.0, 5.0);
     pm.update(&mut host);
-    let mut it = pm.iterate_potential_collisions(&host, &at(104.0, 100.0), &sphere(5.0), 0.0, false);
+    let mut it = pm.iterate_potential_collisions(&mut host, &at(104.0, 100.0), &sphere(5.0), 0.0, false);
     let mut got = Vec::new();
     let mut o = it.first();
     while let Some(id) = o {
@@ -378,7 +378,7 @@ fn an_immobile_object_with_a_ghost_keeps_its_module_while_a_player_remembers_it(
     assert!(!pm.is_registered(1));
     assert_eq!(pm.objects_in_cell(2, 2), vec![None]);
     // queries skip it
-    let r = pm.get_closest_object_at(&host, &at(100.0, 100.0), 100.0, DistanceCalculationType::FromCenter2D, &[]);
+    let r = pm.get_closest_object_at(&mut host, &at(100.0, 100.0), 100.0, DistanceCalculationType::FromCenter2D, &[]);
     assert_eq!(r.object, None);
     // and the ghost manager releases it later
     pm.unregister_ghost_object(1);
@@ -489,8 +489,8 @@ fn ground_or_structure_height_adds_the_tallest_structure() {
     put(&mut host, &mut pm, 2, 100.0, 100.0, 30.0); // not a structure: ignored
     pm.update(&mut host);
     let ground = ScenarioHost::terrain_height(100.0, 100.0);
-    assert_eq!(pm.get_ground_or_structure_height(&host, 100.0, 100.0), ground + 12.0);
-    assert_eq!(pm.get_ground_or_structure_height(&host, 300.0, 300.0), ScenarioHost::terrain_height(300.0, 300.0));
+    assert_eq!(pm.get_ground_or_structure_height(&mut host, 100.0, 100.0), ground + 12.0);
+    assert_eq!(pm.get_ground_or_structure_height(&mut host, 300.0, 300.0), ScenarioHost::terrain_height(300.0, 300.0));
 }
 
 #[test]

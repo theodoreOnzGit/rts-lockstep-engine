@@ -183,21 +183,21 @@ pub trait PartitionHost {
     /// `TheTerrainLogic->getMaximumPathfindExtent(&extent)`.
     fn maximum_pathfind_extent(&self) -> Region3D;
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)`.
-    fn highest_layer_for_destination(&self, pos: &Coord3D) -> PathfindLayer;
+    fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer;
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
-    fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32;
+    fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32;
     /// `TheTerrainLogic->isCliffCell(x, y)`.
-    fn is_cliff_cell(&self, x: f32, y: f32) -> bool;
+    fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool;
     /// `TheTerrainLogic->isUnderwater(x, y)`.
-    fn is_underwater(&self, x: f32, y: f32) -> bool;
+    fn is_underwater(&mut self, x: f32, y: f32) -> bool;
     /// `TheAI->pathfinder()->getCell(layer, cellX, cellY)->getType()`; `None`
     /// when the cell is null.
-    fn pathfind_cell_type(&self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType>;
+    fn pathfind_cell_type(&mut self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType>;
     /// `ai != NULL` for `options->sourceToPathToDest->getAIUpdateInterface()`,
     /// then `TheAI->pathfinder()->clientSafeQuickDoesPathExist(locomotorSet,
     /// source->getPosition(), &pos)`: `None` when the source has no AI
     /// update, else the answer.
-    fn quick_does_path_exist(&self, source: ObjectId, to: &Coord3D) -> Option<bool>;
+    fn quick_does_path_exist(&mut self, source: ObjectId, to: &Coord3D) -> Option<bool>;
     /// `obj->getRelationship(other)`.
     fn relationship(&self, obj: ObjectId, other: ObjectId) -> Relationship;
 }
@@ -217,16 +217,16 @@ pub trait PartitionFilterHost: PartitionHost {
     /// `obj->isOffMap()`.
     fn is_off_map(&self, id: ObjectId) -> bool;
     /// `TheAI && TheAI->pathfinder()->isViewBlockedByObstacle(obj, other)`.
-    fn is_view_blocked_by_obstacle(&self, obj: ObjectId, other: ObjectId) -> bool;
+    fn is_view_blocked_by_obstacle(&mut self, obj: ObjectId, other: ObjectId) -> bool;
     /// `obj->getAbleToAttackSpecificObject(type, other, source)`.
-    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult;
+    fn able_to_attack_specific_object(&mut self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult;
     /// `TheActionManager->canEnterObject(obj, other, source, DONT_CHECK_CAPACITY)`.
-    fn can_enter_object(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
+    fn can_enter_object(&mut self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
     /// `TheActionManager->canHijackVehicle(obj, other, source)`.
-    fn can_hijack_vehicle(&self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
+    fn can_hijack_vehicle(&mut self, obj: ObjectId, other: ObjectId, source: CommandSourceType) -> bool;
     /// `obj->getBodyModule()->getLastDamageInfo()->in.m_sourceID`, `None` when
     /// the object (or its body) is null.
-    fn last_damage_source(&self, id: ObjectId) -> Option<ObjectId>;
+    fn last_damage_source(&mut self, id: ObjectId) -> Option<ObjectId>;
     /// `obj->getKindOfMask()`: the template's kind mask, for `isKindOfMulti`.
     fn kind_of_mask(&self, id: ObjectId) -> KindOfMaskType;
     /// `obj->getTransformMatrix()->Get_X_Vector()`.
@@ -236,18 +236,18 @@ pub trait PartitionFilterHost: PartitionHost {
     /// `obj->isNonFactionStructure()`.
     fn is_non_faction_structure(&self, id: ObjectId) -> bool;
     /// `obj->isAbleToAttack()`.
-    fn is_able_to_attack(&self, id: ObjectId) -> bool;
+    fn is_able_to_attack(&mut self, id: ObjectId) -> bool;
     /// `obj->getContain()` as the facts the filters read; `None` if no container.
-    fn contain_facts(&self, id: ObjectId) -> Option<ContainFacts>;
+    fn contain_facts(&mut self, id: ObjectId) -> Option<ContainFacts>;
     /// `contain->getApparentControllingPlayer(player)`, as a player index;
     /// `None` when the container has none (or there is no container).
-    fn apparent_controlling_player(&self, id: ObjectId, observer_player: Option<i32>) -> Option<i32>;
+    fn apparent_controlling_player(&mut self, id: ObjectId, observer_player: Option<i32>) -> Option<i32>;
     /// `a->getRelationship(b->getDefaultTeam())` for two players.
     fn player_relationship_to_player(&self, a: i32, b: i32) -> Relationship;
     /// `m_self->getControllingPlayer()->getPlayerType() == PLAYER_COMPUTER`.
     fn controlling_player_is_computer(&self, id: ObjectId) -> bool;
     /// `obj->getStealth()`; `None` when the object has no `StealthUpdate`.
-    fn stealth_facts(&self, id: ObjectId) -> Option<StealthFacts>;
+    fn stealth_facts(&mut self, id: ObjectId) -> Option<StealthFacts>;
     /// `m_obj->getTeam()->getRelationship(player->getDefaultTeam())`.
     fn team_relationship_to_player(&self, obj: ObjectId, player: i32) -> Relationship;
     /// `m_player->getRelationship(other->getTeam())` (player index).
@@ -257,18 +257,18 @@ pub trait PartitionFilterHost: PartitionHost {
     /// `m_tThing->isEquivalentTo(other->getTemplate())`, for a template named by `key`.
     fn template_is_equivalent_to(&self, template_key: i32, other: ObjectId) -> bool;
     /// `TheActionManager->canPlayerGarrison(player, other, source)`.
-    fn can_player_garrison(&self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool;
+    fn can_player_garrison(&mut self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool;
     /// `other->isDisabledByType(DISABLED_UNMANNED)`.
     fn is_disabled_unmanned(&self, id: ObjectId) -> bool;
     /// `commandButton->isValidToUseOn(source, other, NULL, commandSource)`.
-    fn command_button_valid_target(&self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool;
+    fn command_button_valid_target(&mut self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool;
     /// `m_trigger->pointInTrigger(iPos)` for the trigger named by `trigger`.
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool;
     /// `obj->getTemplate()->friend_getBuildCost()`, for the two cost sort orders.
     fn build_cost(&self, id: ObjectId) -> i32;
     /// Batch A26 (AI.cpp's `PartitionFilterWithinAttackRange`): `obj->getWeaponInWeaponSlot(slot)->isWithinAttackRange(obj,
     /// other)`, `None` for an empty slot.
-    fn weapon_within_attack_range(&self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool>;
+    fn weapon_within_attack_range(&mut self, obj: ObjectId, slot: i32, other: ObjectId) -> Option<bool>;
 }
 
 /// What a query needs to know about how distance is measured, kept here so the

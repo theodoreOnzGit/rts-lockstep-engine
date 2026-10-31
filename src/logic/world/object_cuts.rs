@@ -1978,6 +1978,19 @@ pub struct ObjectCuts {
     pub script_topple_directions: Vec<(Vec<u8>, Coord3D)>,
     /// `pathfinder->getWallHeight()`, for `getLayerHeight` on the wall layer.
     pub wall_height: f32,
+    // --- p1w13-sonnet --- (batch I1)
+    /// The integration switch of the partition manager: when set, [`World::cut`] also runs every `Partition*` call on
+    /// `world.partition` with the world as its host, and a range scan's answer replaces `range_scan` (see
+    /// `world::partition_host_world`). Off by default: the tests of the object and module code answer from these tables.
+    pub live_partition: bool,
+    /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` for `findPositionAround` (the pathfinder is not in the world
+    /// yet): the cells that are not `CELL_CLEAR`.
+    pub pathfind_cells: BTreeMap<(i32, i32, i32), crate::logic::world::partition::PathfindCellType>,
+    /// `clientSafeQuickDoesPathExist` for `findPositionAround`'s path check: `None` for "the source has no AI update".
+    pub partition_quick_path: Option<bool>,
+    /// `TheAI->pathfinder()->isViewBlockedByObstacle(obj, other)`: the (obj, other) pairs for which it is true.
+    pub view_blocked: BTreeSet<(ObjectId, ObjectId)>,
+    // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
 }
@@ -2115,6 +2128,10 @@ impl Default for ObjectCuts {
             potential_collisions: Vec::new(),
             booby_traps_in_range: Vec::new(),
             wall_height: 0.0,
+            live_partition: false,
+            pathfind_cells: BTreeMap::new(),
+            partition_quick_path: None,
+            view_blocked: BTreeSet::new(),
             next_drawable_id: 1,
         }
     }
@@ -2332,6 +2349,9 @@ impl World {
     pub fn cut(&mut self, call: CutCall) {
         if let Some(t) = &mut self.cuts.trace {
             t.push(format!("cut {call:?}"));
+        }
+        if self.cuts.live_partition {
+            self.live_partition_call(&call);
         }
         if let Some(log) = &mut self.cuts.log {
             log.push(call);

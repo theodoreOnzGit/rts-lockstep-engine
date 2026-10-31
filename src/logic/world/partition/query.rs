@@ -152,7 +152,7 @@ impl PartitionManager {
     #[allow(clippy::too_many_arguments)] // the signature of upstream's `getClosestObjects`
     pub fn get_closest_objects<H: PartitionFilterHost>(
         &mut self,
-        host: &H,
+        host: &mut H,
         obj: Option<ObjectId>,
         pos: Option<&Coord3D>,
         max_dist: f32,
@@ -266,19 +266,19 @@ impl PartitionManager {
     }
 
     /// `getClosestObject(obj, maxDist, dc, filters, &closestDist, &closestDistVec)`.
-    pub fn get_closest_object<H: PartitionFilterHost>(&mut self, host: &H, obj: ObjectId, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
+    pub fn get_closest_object<H: PartitionFilterHost>(&mut self, host: &mut H, obj: ObjectId, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
         self.get_closest_objects(host, Some(obj), None, max_dist, dc, filters, None)
     }
 
     /// `getClosestObject(pos, maxDist, dc, filters, &closestDist, &closestDistVec)`.
-    pub fn get_closest_object_at<H: PartitionFilterHost>(&mut self, host: &H, pos: &Coord3D, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
+    pub fn get_closest_object_at<H: PartitionFilterHost>(&mut self, host: &mut H, pos: &Coord3D, max_dist: f32, dc: DistanceCalculationType, filters: &[PartitionFilter]) -> ClosestObject {
         self.get_closest_objects(host, None, Some(pos), max_dist, dc, filters, None)
     }
 
     /// `iterateObjectsInRange(obj, maxDist, dc, filters, order)`.
     pub fn iterate_objects_in_range<H: PartitionFilterHost>(
         &mut self,
-        host: &H,
+        host: &mut H,
         obj: ObjectId,
         max_dist: f32,
         dc: DistanceCalculationType,
@@ -294,7 +294,7 @@ impl PartitionManager {
     /// `iterateObjectsInRange(pos, maxDist, dc, filters, order)`.
     pub fn iterate_objects_in_range_at<H: PartitionFilterHost>(
         &mut self,
-        host: &H,
+        host: &mut H,
         pos: &Coord3D,
         max_dist: f32,
         dc: DistanceCalculationType,
@@ -309,7 +309,7 @@ impl PartitionManager {
 
     /// `iteratePotentialCollisions(pos, geom, angle, use2D)`: the objects that
     /// would collide with the given geometry (a little slop is added to the range).
-    pub fn iterate_potential_collisions<H: PartitionFilterHost>(&mut self, host: &H, pos: &Coord3D, geom: &GeometryInfo, angle: f32, use_2d: bool) -> SimpleObjectIterator<ObjectId> {
+    pub fn iterate_potential_collisions<H: PartitionFilterHost>(&mut self, host: &mut H, pos: &Coord3D, geom: &GeometryInfo, angle: f32, use_2d: bool) -> SimpleObjectIterator<ObjectId> {
         let mut max_dist = geom.get_bounding_sphere_radius();
         max_dist *= 1.1; // just a little slop
 
@@ -325,7 +325,7 @@ impl PartitionManager {
 
     /// `iterateAllObjects(filters)`: every registered object that passes, in
     /// module-list order (newest registration first), with numeric key 0.
-    pub fn iterate_all_objects<H: PartitionFilterHost>(&mut self, host: &H, filters: &[PartitionFilter]) -> SimpleObjectIterator<ObjectId> {
+    pub fn iterate_all_objects<H: PartitionFilterHost>(&mut self, host: &mut H, filters: &[PartitionFilter]) -> SimpleObjectIterator<ObjectId> {
         let mut iter = SimpleObjectIterator::new();
 
         // no distance constraints; we're gonna have to process 'em all anyway,
@@ -659,7 +659,7 @@ impl PartitionManager {
 
     /// `getGroundOrStructureHeight(posx, posy)`: the terrain height there, plus
     /// the height of the tallest structure within a cell-ish radius.
-    pub fn get_ground_or_structure_height<H: PartitionFilterHost>(&mut self, host: &H, posx: f32, posy: f32) -> f32 {
+    pub fn get_ground_or_structure_height<H: PartitionFilterHost>(&mut self, host: &mut H, posx: f32, posy: f32) -> f32 {
         // get the terrain height
         let terrain_height_here = host.ground_height(posx, posy);
 
@@ -692,7 +692,7 @@ impl PartitionManager {
     /// `tryPosition(center, dist, angle, options, &result)`: whether the spot
     /// `dist` from `center` at `angle` is legal under `options` (terrain, cliffs,
     /// impassable cells, water, objects, and a path from the source object).
-    pub fn try_position<H: PartitionFilterHost>(&mut self, host: &H, center: &Coord3D, dist: f32, angle: f32, options: &FindPositionOptions) -> Option<Coord3D> {
+    pub fn try_position<H: PartitionFilterHost>(&mut self, host: &mut H, center: &Coord3D, dist: f32, angle: f32, options: &FindPositionOptions) -> Option<Coord3D> {
         // compute the spot on the terrain we've picked
         let mut pos = Coord3D { x: dist * trig::cos(angle) + center.x, y: dist * trig::sin(angle) + center.y, z: 0.0 };
 
@@ -837,14 +837,14 @@ impl PartitionManager {
             let mut i = 0;
             while i < samples {
                 // try one "side"
-                if let Some(r) = self.try_position(&*host, center, dist, start_angle + angle_spacing * i as f32, options) {
+                if let Some(r) = self.try_position(&mut *host, center, dist, start_angle + angle_spacing * i as f32, options) {
                     return Some(r);
                 }
 
                 // try the other "side" ... note for the first point at minRadius this position is
                 // the same so we won't test it again in that case
                 if i != 0 {
-                    if let Some(r) = self.try_position(&*host, center, dist, start_angle - angle_spacing * i as f32, options) {
+                    if let Some(r) = self.try_position(&mut *host, center, dist, start_angle - angle_spacing * i as f32, options) {
                         return Some(r);
                     }
                 }

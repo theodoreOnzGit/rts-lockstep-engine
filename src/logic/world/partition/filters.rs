@@ -186,7 +186,7 @@ pub enum PartitionFilter {
 impl PartitionFilter {
     /// `PartitionFilterLastAttackedBy(obj)`: remembers who last damaged `obj`
     /// (`INVALID_ID` when it has no body).
-    pub fn last_attacked_by<H: PartitionFilterHost>(host: &H, obj: Option<ObjectId>) -> PartitionFilter {
+    pub fn last_attacked_by<H: PartitionFilterHost>(host: &mut H, obj: Option<ObjectId>) -> PartitionFilter {
         let last = obj.and_then(|o| host.last_damage_source(o)).unwrap_or(crate::logic::world::ids::INVALID_ID);
         PartitionFilter::LastAttackedBy { last_attacked_by: last }
     }
@@ -199,7 +199,7 @@ impl PartitionFilter {
 
     /// `allow(objOther)`: whether `other` passes. Takes the manager mutably
     /// because `PartitionFilterFreeOfFog` recomputes a shroudedness.
-    pub fn allow<H: PartitionFilterHost>(&self, pm: &mut PartitionManager, host: &H, other: ObjectId) -> bool {
+    pub fn allow<H: PartitionFilterHost>(&self, pm: &mut PartitionManager, host: &mut H, other: ObjectId) -> bool {
         match self {
             PartitionFilter::IsFlying => host.is_using_airborne_locomotor(other),
 
@@ -422,7 +422,7 @@ impl PartitionFilter {
 }
 
 /// `PartitionFilterRejectBuildings::allow`.
-fn reject_buildings_allow<H: PartitionFilterHost>(host: &H, self_obj: ObjectId, acquire_enemies: bool, other: ObjectId) -> bool {
+fn reject_buildings_allow<H: PartitionFilterHost>(host: &mut H, self_obj: ObjectId, acquire_enemies: bool, other: ObjectId) -> bool {
     // this filter allows all non-buildings (and, um, no longer does)
     if !host.is_kind_of(other, KINDOF_STRUCTURE) {
         return true;
@@ -468,7 +468,7 @@ fn reject_buildings_allow<H: PartitionFilterHost>(host: &H, self_obj: ObjectId, 
 }
 
 /// `PartitionFilterStealthedAndUndetected::allow`.
-fn stealthed_and_undetected<H: PartitionFilterHost>(host: &H, m_obj: ObjectId, m_allow: bool, obj_other: ObjectId) -> bool {
+fn stealthed_and_undetected<H: PartitionFilterHost>(host: &mut H, m_obj: ObjectId, m_allow: bool, obj_other: ObjectId) -> bool {
     let status = host.status_bits(obj_other);
     let stealthed = status.test(OBJECT_STATUS_STEALTHED);
     let detected = status.test(OBJECT_STATUS_DETECTED);
@@ -530,7 +530,7 @@ fn stealthed_and_undetected<H: PartitionFilterHost>(host: &H, m_obj: ObjectId, m
 }
 
 /// `filtersAllow(filters, objOther)`: every filter must accept, in order.
-pub fn filters_allow<H: PartitionFilterHost>(pm: &mut PartitionManager, host: &H, filters: &[PartitionFilter], obj_other: ObjectId) -> bool {
+pub fn filters_allow<H: PartitionFilterHost>(pm: &mut PartitionManager, host: &mut H, filters: &[PartitionFilter], obj_other: ObjectId) -> bool {
     for f in filters {
         if !f.allow(pm, host, obj_other) {
             return false;
@@ -541,7 +541,7 @@ pub fn filters_allow<H: PartitionFilterHost>(pm: &mut PartitionManager, host: &H
 }
 
 /// The "infantry or vehicle" test `tryPosition` applies to a unit.
-pub(super) fn is_unit<H: PartitionFilterHost>(host: &H, id: ObjectId) -> bool {
+pub(super) fn is_unit<H: PartitionFilterHost>(host: &mut H, id: ObjectId) -> bool {
     host.is_kind_of(id, KINDOF_INFANTRY) || host.is_kind_of(id, KINDOF_VEHICLE)
 }
 

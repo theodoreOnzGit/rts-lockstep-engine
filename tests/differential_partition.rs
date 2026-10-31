@@ -430,7 +430,7 @@ fn status_mask(a: &[i32]) -> ObjectStatusMaskType {
 }
 
 /// The Rust filter a spec stands for: the same construction `buildFilters` makes in C++.
-fn build_filter(spec: &FilterSpec, host: &ScenarioHost) -> PartitionFilter {
+fn build_filter(spec: &FilterSpec, host: &mut ScenarioHost) -> PartitionFilter {
     let a = &spec.a;
     let f = &spec.f;
     match spec.ty {
@@ -591,25 +591,25 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
             Op::Update => pm.update(&mut host),
             Op::SetFrame(f) => host.frame = *f,
             Op::ClosestObj { origin, dc, filters, max } => {
-                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &host)).collect();
-                let r = pm.get_closest_object(&host, *origin, *max, dc_of(*dc), &fl);
+                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &mut host)).collect();
+                let r = pm.get_closest_object(&mut host, *origin, *max, dc_of(*dc), &fl);
                 out.push(r.object.map_or(0, |i| i as u32));
                 put_bits(&mut out, r.dist);
                 let v = if r.object.is_some() { r.vec } else { Coord3D::default() };
                 out.extend([v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]);
             }
             Op::ClosestPos { dc, filters, pos, max } => {
-                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &host)).collect();
+                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &mut host)).collect();
                 let p = Coord3D { x: pos[0], y: pos[1], z: pos[2] };
-                let r = pm.get_closest_object_at(&host, &p, *max, dc_of(*dc), &fl);
+                let r = pm.get_closest_object_at(&mut host, &p, *max, dc_of(*dc), &fl);
                 out.push(r.object.map_or(0, |i| i as u32));
                 put_bits(&mut out, r.dist);
                 let v = if r.object.is_some() { r.vec } else { Coord3D::default() };
                 out.extend([v.x.to_bits(), v.y.to_bits(), v.z.to_bits()]);
             }
             Op::RangeObj { origin, dc, order, filters, max } => {
-                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &host)).collect();
-                let mut it = pm.iterate_objects_in_range(&host, *origin, *max, dc_of(*dc), &fl, order_of(*order));
+                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &mut host)).collect();
+                let mut it = pm.iterate_objects_in_range(&mut host, *origin, *max, dc_of(*dc), &fl, order_of(*order));
                 out.push(it.count() as u32);
                 let (mut o, mut num) = it.first_with_numeric();
                 while let Some(id) = o {
@@ -618,9 +618,9 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
                 }
             }
             Op::RangePos { dc, order, filters, pos, max } => {
-                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &host)).collect();
+                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &mut host)).collect();
                 let p = Coord3D { x: pos[0], y: pos[1], z: pos[2] };
-                let mut it = pm.iterate_objects_in_range_at(&host, &p, *max, dc_of(*dc), &fl, order_of(*order));
+                let mut it = pm.iterate_objects_in_range_at(&mut host, &p, *max, dc_of(*dc), &fl, order_of(*order));
                 out.push(it.count() as u32);
                 let (mut o, mut num) = it.first_with_numeric();
                 while let Some(id) = o {
@@ -629,8 +629,8 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
                 }
             }
             Op::AllObjects { filters } => {
-                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &host)).collect();
-                let mut it = pm.iterate_all_objects(&host, &fl);
+                let fl: Vec<PartitionFilter> = filters.iter().map(|f| build_filter(f, &mut host)).collect();
+                let mut it = pm.iterate_all_objects(&mut host, &fl);
                 out.push(it.count() as u32);
                 let mut o = it.first();
                 while let Some(id) = o {
@@ -641,7 +641,7 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
             Op::PotentialColl { gtype, small, use2d, f } => {
                 let p = Coord3D { x: f[0], y: f[1], z: f[2] };
                 let g = GeometryInfo::new(GeometryType::from_index(*gtype).expect("geometry"), *small != 0, f[3], f[4], f[5]);
-                let mut it = pm.iterate_potential_collisions(&host, &p, &g, f[6], *use2d != 0);
+                let mut it = pm.iterate_potential_collisions(&mut host, &p, &g, f[6], *use2d != 0);
                 out.push(it.count() as u32);
                 let mut o = it.first();
                 while let Some(id) = o {
@@ -680,7 +680,7 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
                 out.push(u32::from(pm.geom_collides_with_geom(&p1, &ge1, f[6], &p2, &ge2, f[13])));
             }
             Op::GroundStruct(x, y) => {
-                let h = pm.get_ground_or_structure_height(&host, *x, *y);
+                let h = pm.get_ground_or_structure_height(&mut host, *x, *y);
                 put_bits(&mut out, h);
             }
             Op::Los { a, b, f } => {
@@ -802,19 +802,19 @@ fn run_rust(scn: &ScenarioHost, ops: &[Op]) -> RustRun {
                     out.push(0);
                 } else {
                     let data = TAiData { attack_priority_distance_modifier: *dist_mod, ..TAiData::default() };
-                    let opt = filters.first().map(|f| build_filter(f, &host));
+                    let opt = filters.first().map(|f| build_filter(f, &mut host));
                     let info = if *info < 0 { None } else { Some(*info) };
-                    let r = ai_system::find_closest_enemy(&mut pm, &host, &data, *me, *range, *qualifiers as u32, info, opt);
+                    let r = ai_system::find_closest_enemy(&mut pm, &mut host, &data, *me, *range, *qualifiers as u32, info, opt);
                     out.push(r.map_or(0, |i| i as u32));
                 }
             }
             Op::AiAlly { me, qualifiers, range } => {
-                let r = ai_system::find_closest_ally(&mut pm, &host, *me, *range, *qualifiers as u32);
+                let r = ai_system::find_closest_ally(&mut pm, &mut host, *me, *range, *qualifiers as u32);
                 out.push(r.map_or(0, |i| i as u32));
             }
             Op::AiRepulsor { me, enable, range } => {
                 let data = TAiData { enable_repulsors: *enable != 0, ..TAiData::default() };
-                let r = ai_system::find_closest_repulsor(&mut pm, &host, &data, *me, *range);
+                let r = ai_system::find_closest_repulsor(&mut pm, &mut host, &data, *me, *range);
                 out.push(r.map_or(0, |i| i as u32));
             }
             Op::AiVision { obj, factors, f } => {
