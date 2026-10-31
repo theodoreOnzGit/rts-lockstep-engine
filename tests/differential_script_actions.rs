@@ -8,7 +8,7 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! `ScriptActions` (`logic::world::script_actions`) against the C++, `p1w13-sonnet`, layer 11 (batches A1..).
+//! `ScriptActions` (`logic::world::script_actions`) against the C++, `p1w13-sonnet`, layer 11 (batches A1-A10).
 //!
 //! # Method
 //!
@@ -27,42 +27,61 @@
 //! configuration word, `init`, or rebuild the world. Compared after each: the lines, the window, `m_suppressNewWindows` and the global
 //! data the actions write. When the Rust side finds upstream undefined at an operation, the C++ runs the operations before it.
 //!
-//! # Results (2026-10-30, `ACTIONS_CASES=20000`, the default; batches A1-A4, 150 types)
+//! # Results (2026-10-30, `ACTIONS_CASES=40000`, the default; batches A1-A10, all 344 types of `executeAction`)
 //!
-//! 20,000 programs, 350,537 operations compared (244,210 executions, every translated type executed), 3,925,397 output words:
-//! **0 mismatches**. 3,164 programs were cut at an operation upstream does not define (their prefix compared): 1,891 an action with
-//! too few parameters; 373 an uninitialised local (`getHumanPlayerMask`'s mask when revealing or shrouding at a waypoint without a
-//! player, and `doDisplayCinematicText` reading past its string); 311 the local player missing (victory, defeat, sounds, speech,
-//! music); 250 a NULL object (`doCameoFlash`'s missing button, the hunt's template-less member); 173 a camera time `sec*1000` an
-//! `Int` cannot hold; 104 an `Int` overflow (`30*seconds`); 42 a font string longer than `buf[256]`; 20 a team with no player
-//! (`doTeamGarrisonSpecificBuilding`). Every effect in `REACH` occurs (windows, reinforcements, the payload delivery, name transfers,
-//! craters, groups, the skirmish paths, the hunt's update, the cinematic font, subtitles, the garrison search, team changes, panic,
-//! the music, the motion blur).
+//! 40,000 programs, 719,958 operations compared (502,310 executions, every one of the 344 types executed), 7,564,577 output words:
+//! **0 mismatches**. 5,483 programs were cut at an operation upstream does not define (their prefix compared): 3,422 an action with
+//! too few parameters; 581 an uninitialised local (`doDisplayCinematicText` reading past its string, `getHumanPlayerMask`'s mask when
+//! revealing or shrouding at a waypoint without a player, the position of `doSkirmishAttackNearestGroupWithValue` for any comparison
+//! but `>=` and `>`, the capture's search); 291 a NULL object (`doCameoFlash`'s missing button, the unmanned actions without a
+//! neutral player); 254 the local player missing; 210 a unit or team with no player (the garrison actions); 203 `doC3CameraShake`'s
+//! waypoint missing (it is not checked); 181 a `Real` an `Int` cannot hold (camera times, hulk lifetimes); 178 a disbanded team's
+//! player with no default team; 117 an `Int` overflow (`doCameoFlash`'s `30*seconds`); 46 an array index out of range. Every effect
+//! in `REACH` occurs.
+//!
+//! The first 40,000-program run of A5-A10 had one mismatch, a defect of this test, not of the module: the C++ stand-in builds each
+//! player's team list once, in `scene()`, and the Rust host read the prototype's owner from the live configuration, so a program that
+//! changed a prototype word and then fired `SKIRMISH_FIRE_SPECIAL_POWER_AT_MOST_COST` saw different teams. The host now keeps the
+//! owners `scene()` saw.
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>`, 20,000 programs: 16 of 17 caught; 3867 is in `changeObjectPanelFlagForSingleObject`, which no translated action
-//! reaches yet.
+//! `L9_PLANT=<id>`, 40,000 programs: all 29 caught. 3868 needs the 40,000 (at 20,000 it was missed once all 344 types shared the
+//! programs); 3881 needed a configuration bit (`cfg[0]` bit 11) that names the last player `ReplayObserver`, and 3882 the generator
+//! to put half the objects on the first four teams. A plant must not change what the Rust side finds undefined, or the C++ runs past
+//! it: the first 3882 (the highest id selected) crashed the C++ that way, as the selection is read later, so it moves the camera only.
 //!
 //! | id | planted bug | mismatches |
 //! |---|---|---|
-//! | 3861 | the reinforcements' transports exit when told not to | 23 |
-//! | 3862 | a team without a transport not moved to its goal | 37 |
+//! | 3861 | the reinforcements' transports exit when told not to | 19 |
+//! | 3862 | a team without a transport not moved to its goal | 26 |
 //! | 3863 | the hunt refuses a special power that needs an object target | 1 |
-//! | 3864 | wander and panic swapped | 176 |
-//! | 3865 | the reinforcements' rows `2.25` radii apart | 30 |
-//! | 3866 | the observer window not shown after the local defeat window | 208 |
-//! | 3867 | the unsellable flag inverted | (not reached) |
-//! | 3868 | the selection's mean height not divided | 4 |
-//! | 3869 | a name that existed not transferred | 62 |
-//! | 3870 | 0 transport slots read as "lots" when loading | 4 |
-//! | 3871 | the hunt's message reworded | 2 |
-//! | 3872 | bold read anywhere in the font string | 17 |
-//! | 3873 | the merge's first member moved once | 83 |
-//! | 3874 | the garrison search stops at the first member that cannot garrison | 15 |
-//! | 3875 | a structure nobody entered not garrisoned | 5 |
-//! | 3876 | the subtitle shown when the text does not exist | 93 |
-//! | 3877 | the camera's time rounded | 20 |
+//! | 3864 | wander and panic swapped | 136 |
+//! | 3865 | the reinforcements' rows `2.25` radii apart | 23 |
+//! | 3866 | the observer window not shown after the local defeat window | 199 |
+//! | 3867 | the unsellable flag inverted | 50 |
+//! | 3868 | the selection's mean height not divided | 2 |
+//! | 3869 | a name that existed not transferred | 57 |
+//! | 3870 | 0 transport slots read as "lots" when loading | 14 |
+//! | 3871 | the hunt's message reworded | 3 |
+//! | 3872 | bold read anywhere in the font string | 25 |
+//! | 3873 | the merge's first member moved once | 65 |
+//! | 3874 | the garrison search stops at the first member that cannot garrison | 13 |
+//! | 3875 | a structure nobody entered not garrisoned | 4 |
+//! | 3876 | the subtitle shown when the text does not exist | 88 |
+//! | 3877 | the camera's time rounded | 17 |
+//! | 3878 | the skirmish special power fired by every ready member, not the first | 8 |
+//! | 3879 | a disbanded team's members made unrecruitable | 5 |
+//! | 3880 | the projectile follows its path as a team | 25 |
+//! | 3881 | the border switch leaves the observer's map revealed | 174 |
+//! | 3882 | the forced selection's camera on the highest id | 2 |
+//! | 3883 | the team moving to the nearest object skips a member without AI | 25 |
+//! | 3884 | the most valuable target searched 1 further | 36 |
+//! | 3885 | one member more uses the partial command button | 24 |
+//! | 3886 | the global difficulty bonus flag inverted | 360 |
+//! | 3887 | the face actions keep the waypoint queue | 264 |
+//! | 3888 | the stopping distance never set | 69 |
+//! | 3889 | the unmanned unit deselected without affecting the client | 266 |
 
 use rts_lockstep_engine::common::base_type::{Coord2D, Coord3D};
 use rts_lockstep_engine::common::disabled_types::{DisabledType, DISABLED_HELD, DISABLED_UNMANNED};
@@ -123,8 +142,9 @@ fn st(s: &[u8]) -> String {
 struct Obj {
     name: Vec<u8>,
     tmpl: Option<i32>,
-    team: i32,
+    team: Option<i32>,
     pos: Coord3D,
+    angle: f32,
     killed: bool,
     contained_by: Option<i32>,
     contained: Vec<i32>,
@@ -134,6 +154,7 @@ struct Obj {
 struct Team {
     proto: Option<i32>,
     members: Vec<i32>,
+    controller: Option<i32>,
 }
 
 /// The world a program runs on (the stand-ins' `g_cfg`, `g_world` and the rest).
@@ -143,6 +164,8 @@ struct Sim {
     objs: Vec<Obj>,
     teams: Vec<Team>,
     protos: Vec<Vec<i32>>,
+    /// Each prototype's owning player as `scene()` saw it (the stand-ins build `Player::m_teams` once, there).
+    proto_owner: [i32; 8],
     next_group: i32,
     next_window: i32,
     light_scale: f32,
@@ -152,11 +175,17 @@ struct Sim {
     night: bool,
     /// `TheGlobalData->m_clearAlpha`, `m_shroudAlpha` (set when the world is built).
     alphas: (u8, u8),
+    /// Each player's money.
+    money: Vec<u32>,
+    /// Each AI group's members (as `getTeamAsAIGroup` set them).
+    groups: Vec<Vec<ObjH>>,
+    /// `TheWritableGlobalData->m_useFpsLimit`.
+    use_fps: bool,
 }
 
 impl Sim {
     fn new(cfg: &[u32; NCFG]) -> Sim {
-        let mut s = Sim { cfg: *cfg, log: Vec::new(), objs: Vec::new(), teams: Vec::new(), protos: Vec::new(), next_group: 0, next_window: 0, light_scale: -1.0, campaign: true, night: false, alphas: (0, 0) };
+        let mut s = Sim { cfg: *cfg, log: Vec::new(), objs: Vec::new(), teams: Vec::new(), protos: Vec::new(), proto_owner: [-1; 8], next_group: 0, next_window: 0, light_scale: -1.0, campaign: true, night: false, alphas: (0, 0), money: Vec::new(), groups: Vec::new(), use_fps: true };
         s.scene();
         s
     }
@@ -180,10 +209,14 @@ impl Sim {
         self.objs.clear();
         self.teams.clear();
         self.protos = vec![Vec::new(); 8];
+        for k in 0..8 {
+            self.proto_owner[k] = (self.cfg[96 + k] & 15) as i32;
+        }
         self.next_group = 0;
+        self.groups.clear();
         self.next_window = 0;
         for _ in 0..16 {
-            self.teams.push(Team { proto: None, members: Vec::new() });
+            self.teams.push(Team { proto: None, members: Vec::new(), controller: None });
         }
         for k in 0..8 {
             for t in 0..16 {
@@ -202,14 +235,17 @@ impl Sim {
             self.objs.push(Obj {
                 name: if w0 & 1 != 0 { format!("unit{j}").into_bytes() } else { Vec::new() },
                 tmpl: (t < self.ntemplates()).then_some(t),
-                team,
+                team: Some(team),
                 pos: Coord3D { x: (w3 & 255) as f32 * 1.5, y: ((w3 >> 8) & 255) as f32 * 1.5, z: 0.0 },
+                angle: 0.0,
                 killed: false,
                 contained_by: None,
                 contained: Vec::new(),
             });
         }
         self.light_scale = -1.0;
+        self.use_fps = true;
+        self.money = (0..8).map(|p| self.cfg[128 + 4 * p + 2]).collect();
         self.campaign = (self.cfg[0] >> 10) & 1 == 0;
         self.night = (self.cfg[15] >> 4) & 7 == 4;
         self.alphas = (((self.cfg[15] >> 8) & 255) as u8, ((self.cfg[15] >> 16) & 255) as u8);
@@ -475,6 +511,7 @@ impl ScriptActionsHost for Sim {
     }
     fn sa_team_as_ai_group(&mut self, t: TeamH, g: GroupH) {
         let ids: String = self.teams[(t - 1) as usize].members.iter().map(|m| format!(" {m}")).collect();
+        self.groups[(g - 1) as usize] = self.teams[(t - 1) as usize].members.clone();
         self.log.push(format!("team {t} asgroup {g}{ids}"));
     }
     fn sa_team_members(&self, t: TeamH) -> Vec<ObjH> {
@@ -504,6 +541,7 @@ impl ScriptActionsHost for Sim {
 
     fn sa_create_group(&mut self) -> Option<GroupH> {
         self.next_group += 1;
+        self.groups.push(Vec::new());
         self.log.push(format!("ai creategroup {}", self.next_group));
         Some(self.next_group)
     }
@@ -545,19 +583,22 @@ impl ScriptActionsHost for Sim {
         let k = num(name, "tmpl");
         (k >= 0 && k < self.ntemplates()).then_some(k)
     }
-    fn sa_new_object(&mut self, t: TemplateH, team: TeamH) -> Option<ObjH> {
+    fn sa_new_object(&mut self, t: TemplateH, team: Option<TeamH>) -> Option<ObjH> {
         let id = self.objs.len() as i32 + 1;
         self.objs.push(Obj {
             name: Vec::new(),
             tmpl: Some(t),
-            team: team - 1,
+            team: team.map(|t| t - 1),
             pos: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+            angle: 0.0,
             killed: false,
             contained_by: None,
             contained: Vec::new(),
         });
-        self.teams[(team - 1) as usize].members.push(id);
-        self.log.push(format!("factory newobject {id} {t} {team}"));
+        if let Some(tm) = team {
+            self.teams[(tm - 1) as usize].members.push(id);
+        }
+        self.log.push(format!("factory newobject {id} {t} {}", team.unwrap_or(0)));
         Some(id)
     }
     fn sa_obj_template(&self, o: ObjH) -> Option<TemplateH> {
@@ -593,6 +634,7 @@ impl ScriptActionsHost for Sim {
         self.log.push(format!("obj {o} setpos {} {} {}", fb(p.x), fb(p.y), fb(p.z)));
     }
     fn sa_obj_set_orientation(&mut self, o: ObjH, a: f32) {
+        self.objs[(o - 1) as usize].angle = a;
         self.log.push(format!("obj {o} setangle {}", fb(a)));
     }
     fn sa_obj_major_radius(&self, o: ObjH) -> f32 {
@@ -948,14 +990,18 @@ impl ScriptActionsHost for Sim {
         let t = self.cfg[128 + 4 * p as usize + 1] & 255;
         ((t as usize) < self.teams.len()).then_some(t as i32 + 1)
     }
-    fn sa_obj_set_team(&mut self, o: ObjH, t: TeamH) {
-        let old = self.objs[(o - 1) as usize].team as usize;
-        if let Some(i) = self.teams[old].members.iter().position(|m| *m == o) {
-            self.teams[old].members.remove(i);
+    fn sa_obj_set_team(&mut self, o: ObjH, t: Option<TeamH>) {
+        if let Some(old) = self.objs[(o - 1) as usize].team {
+            let old = old as usize;
+            if let Some(i) = self.teams[old].members.iter().position(|m| *m == o) {
+                self.teams[old].members.remove(i);
+            }
         }
-        self.objs[(o - 1) as usize].team = t - 1;
-        self.teams[(t - 1) as usize].members.push(o);
-        self.log.push(format!("obj {o} setteam {t}"));
+        self.objs[(o - 1) as usize].team = t.map(|t| t - 1);
+        if let Some(t) = t {
+            self.teams[(t - 1) as usize].members.push(o);
+        }
+        self.log.push(format!("obj {o} setteam {}", t.unwrap_or(0)));
     }
     fn sa_obj_update_upgrade_modules(&mut self, o: ObjH) {
         self.log.push(format!("obj {o} updateupgrades"));
@@ -1076,6 +1122,9 @@ impl ScriptActionsHost for Sim {
     }
     fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
         let tm = &self.teams[(t - 1) as usize];
+        if tm.controller.is_some() {
+            return tm.controller;
+        }
         match tm.proto {
             Some(k) => self.player((self.cfg[96 + k as usize] & 15) as i32),
             None => self.player(((if t <= 16 { self.cfg[64 + (t - 1) as usize] } else { 4 } >> 8) & 15) as i32),
@@ -1091,11 +1140,550 @@ impl ScriptActionsHost for Sim {
     fn sa_partition_garrison_candidates(&mut self, leader: ObjH, money_hacker: bool) -> Vec<ObjH> {
         let range: f32 = 100_000.0 * 10.0;
         self.log.push(format!("partition iterateobj {leader} {} 1 1", fb(range)));
-        let salt = 2000 + if money_hacker { 7 } else { 0 };
+        // filters: [internet centres (kind 99) or garrisonable, same map]
+        let salt = 2000 + if money_hacker { (1 + 8 * 99) * 7 } else { 0 };
         (0..self.objs.len()).filter(|i| hh(self.seed() ^ self.cfg[16], *i as u32, salt) & 1 != 0).map(|i| i as i32 + 1).collect()
     }
     fn sa_ai_exit(&mut self, o: ObjH, cmd: i32) {
         self.log.push(format!("ai {o} exit 0 {cmd}"));
+    }
+
+    // --- batch A5 ---
+    fn sa_partition_unit_garrison_candidates(&mut self, unit: ObjH, money_hacker: bool) -> Vec<ObjH> {
+        let range: f32 = 100_000.0 * 10.0;
+        self.log.push(format!("partition iterateobj {unit} {} 1 1", fb(range)));
+        // filters: [structures (kind 7), same map, internet centres (kind 99) or not]
+        let s = (1 + 8 * 7) * 49;
+        let salt = 2000 + if money_hacker { s + 1 + 8 * 99 } else { s };
+        (0..self.objs.len()).filter(|i| hh(self.seed() ^ self.cfg[16], *i as u32, salt) & 1 != 0).map(|i| i as i32 + 1).collect()
+    }
+    fn sa_obj_controlling_player(&self, o: ObjH) -> Option<PlayerH> {
+        if o <= 16 {
+            self.player(((self.cfg[40 + 4 * (o - 1) as usize] >> 16) & 15) as i32)
+        } else {
+            self.o(o).team.and_then(|t| self.sa_team_controlling_player(t + 1))
+        }
+    }
+    fn sa_obj_team(&self, o: ObjH) -> Option<TeamH> {
+        self.o(o).team.map(|t| t + 1)
+    }
+    fn sa_obj_set_disabled(&mut self, o: ObjH, t: DisabledType) {
+        self.log.push(format!("obj {o} disable {t}"));
+    }
+    fn sa_obj_set_disabled_until(&mut self, o: ObjH, t: DisabledType, f: u32) {
+        self.log.push(format!("obj {o} disableuntil {t} {f}"));
+    }
+    fn sa_logic_deselect_object(&mut self, o: ObjH, mask: u32, affect: bool) {
+        self.log.push(format!("logic deselect {o} {mask:x} {}", u8::from(affect)));
+    }
+    fn sa_neutral_player(&self) -> Option<PlayerH> {
+        self.player(((self.cfg[4] >> 8) & 15) as i32)
+    }
+    fn sa_obj_has_sticky_bomb_update(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 52) & 1 != 0
+    }
+    fn sa_obj_random_offset_on_perimeter(&mut self, o: ObjH) -> Coord3D {
+        Coord3D { x: self.sa_obj_major_radius(o), y: 0.0, z: 0.0 }
+    }
+    fn sa_obj_transform_vector(&self, o: ObjH, v: &Coord3D) -> Coord3D {
+        let ob = self.o(o);
+        let (c, s) = (f64::from(ob.angle).cos() as f32, f64::from(ob.angle).sin() as f32);
+        Coord3D { x: c * v.x - s * v.y + ob.pos.x, y: s * v.x + c * v.y + ob.pos.y, z: v.z + ob.pos.z }
+    }
+    fn sa_sticky_bomb_init(&mut self, bomb: ObjH, target: ObjH, p: &Coord3D) {
+        self.log.push(format!("sticky {bomb} init {target} 0 {} {} {}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_player_garrison_all(&mut self, p: PlayerH, garrison: bool, cmd: i32) {
+        self.log.push(format!("player {p} {}garrisonall {cmd}", if garrison { "" } else { "un" }));
+    }
+    fn sa_control_bar_show(&mut self, hide: bool, immediate: bool) {
+        self.log.push(format!("controlbar {} {}", if hide { "hide" } else { "show" }, u8::from(immediate)));
+    }
+    fn sa_display_enable_letter_box(&mut self, e: bool) {
+        self.log.push(format!("display letterbox {}", u8::from(e)));
+    }
+    fn sa_view_set_fade_parameters(&mut self, frames: i32, dir: i32) {
+        self.log.push(format!("view fade {frames} {dir}"));
+    }
+    fn sa_view_filter_type(&self) -> i32 {
+        (self.cfg[15] & 3) as i32
+    }
+    fn sa_sky_box_set(&mut self, draw: bool) {
+        self.log.push(format!("skybox {}", u8::from(draw)));
+    }
+    fn sa_snow_set_visible(&mut self, v: bool) {
+        self.log.push(format!("snow {}", u8::from(v)));
+    }
+    fn sa_freeze_time(&mut self, freeze: bool) {
+        self.log.push(if freeze { "se freeze".into() } else { "se unfreeze".into() });
+    }
+    fn sa_ai_has_cur_locomotor(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 40) & 1 != 0
+    }
+    fn sa_locomotor_set_close_enough_dist(&mut self, o: ObjH, d: f32) {
+        self.log.push(format!("loco {o} closeenough {}", fb(d)));
+    }
+    fn sa_ui_set_superweapon_display_enabled(&mut self, e: bool) {
+        self.log.push(format!("ui superweapondisplay {}", u8::from(e)));
+    }
+    fn sa_ui_object_superweapon_display(&mut self, o: ObjH, hide: bool) {
+        self.log.push(format!("ui {}superweapon {o}", if hide { "hide" } else { "show" }));
+    }
+    fn sa_audio_set_volume(&mut self, v: f32, affect: i32) {
+        self.log.push(format!("audio volume {} {affect}", fb(v)));
+    }
+    fn sa_team_set_controlling_player(&mut self, t: TeamH, p: PlayerH) {
+        self.teams[(t - 1) as usize].controller = Some(p);
+        self.log.push(format!("team {t} controller {p}"));
+    }
+    fn sa_money_count(&self, p: PlayerH) -> u32 {
+        self.money[p as usize]
+    }
+    fn sa_money_withdraw(&mut self, p: PlayerH, a: u32) {
+        let a = a.min(self.money[p as usize]);
+        self.money[p as usize] -= a;
+        self.log.push(format!("money {p} withdraw {a}"));
+    }
+    fn sa_money_deposit(&mut self, p: PlayerH, a: u32) {
+        self.money[p as usize] = self.money[p as usize].wrapping_add(a);
+        self.log.push(format!("money {p} deposit {a}"));
+    }
+    fn sa_ui_add_named_timer(&mut self, name: &[u8], text: &[u16], countdown: bool) {
+        let t: String = text.iter().map(|c| *c as u8 as char).collect();
+        self.log.push(format!("ui addtimer {} {t} {}", st(name), u8::from(countdown)));
+    }
+    fn sa_ui_remove_named_timer(&mut self, name: &[u8]) {
+        self.log.push(format!("ui removetimer {}", st(name)));
+    }
+    fn sa_ui_show_named_timer_display(&mut self, show: bool) {
+        self.log.push(format!("ui showtimers {}", u8::from(show)));
+    }
+    fn sa_find_special_power(&self, name: &[u8]) -> Option<SpecialPowerH> {
+        let k = num(name, "power");
+        (k >= 0 && k < ((self.cfg[11] >> 4) & 15) as i32).then_some(k)
+    }
+    fn sa_obj_has_special_power_module(&self, o: ObjH, p: SpecialPowerH) -> bool {
+        hh(self.seed(), o as u32, 410 + p as u32) & 1 != 0
+    }
+    fn sa_spm_pause_countdown(&mut self, o: ObjH, p: SpecialPowerH, pause: bool) {
+        self.log.push(format!("spm {o} {p} pause {}", u8::from(pause)));
+    }
+    fn sa_spm_ready_frame(&self, o: ObjH, p: SpecialPowerH) -> u32 {
+        (hh(self.seed(), o as u32, 400 + p as u32) >> 8) % 2000
+    }
+    fn sa_spm_set_ready_frame(&mut self, o: ObjH, p: SpecialPowerH, f: u32) {
+        self.log.push(format!("spm {o} {p} readyframe {f}"));
+    }
+    fn sa_spm_do_at_location(&mut self, o: ObjH, p: SpecialPowerH, l: &Coord3D, angle: f32, opts: u32) {
+        self.log.push(format!("spm {o} {p} atloc {} {} {} {} {opts}", fb(l.x), fb(l.y), fb(l.z), fb(angle)));
+    }
+    fn sa_frame(&self) -> u32 {
+        self.cfg[1]
+    }
+
+    // --- batch A6 ---
+    fn sa_player_teams(&self, p: PlayerH) -> Vec<Vec<TeamH>> {
+        (0..8).filter(|&k| self.proto_owner[k] == p).map(|k| self.protos[k].iter().map(|t| t + 1).collect()).collect()
+    }
+    fn sa_special_power_radius_cursor(&self, sp: SpecialPowerH) -> f32 {
+        (sp * 10 + 5) as f32
+    }
+    fn sa_special_power_type(&self, sp: SpecialPowerH) -> i32 {
+        sp + 1
+    }
+    fn sa_spm_is_ready(&self, o: ObjH, sp: SpecialPowerH) -> bool {
+        hh(self.seed(), o as u32, 400 + sp as u32) & 2 != 0
+    }
+    fn sa_spm_reference_template(&self, o: ObjH, sp: SpecialPowerH) -> Option<TemplateH> {
+        let t = ((hh(self.seed(), o as u32, 400 + sp as u32) >> 4) & 7) as i32;
+        (t < self.ntemplates()).then_some(t)
+    }
+    fn sa_spm_do_at_object(&mut self, o: ObjH, sp: SpecialPowerH, target: ObjH, opts: u32) {
+        self.log.push(format!("spm {o} {sp} atobj {target} {opts}"));
+    }
+    fn sa_player_compute_superweapon_target(&mut self, p: PlayerH, sp: SpecialPowerH, index: i32, weight: f32) -> Option<Coord3D> {
+        self.log.push(format!("player {p} superweapontarget {sp} {index} {}", fb(weight)));
+        (hh(self.seed(), p as u32, 110 + sp as u32) & 1 != 0).then_some(Coord3D { x: 50.0 + p as f32, y: 60.0 + sp as f32, z: 0.0 })
+    }
+    fn sa_player_closest_construction_zone(&mut self, p: PlayerH, t: TemplateH) -> Option<Coord3D> {
+        (hh(self.seed(), p as u32, 100 + t as u32) & 1 != 0).then_some(Coord3D { x: p as f32 * 7.0, y: t as f32 * 3.0, z: 0.0 })
+    }
+    fn sa_button_name(&self, b: ButtonH) -> Vec<u8> {
+        format!("btn{b}").into_bytes()
+    }
+    fn sa_obj_do_command_button(&mut self, o: ObjH, b: ButtonH, cmd: i32) {
+        self.log.push(format!("obj {o} button {b} {cmd}"));
+    }
+    fn sa_obj_do_command_button_at_object(&mut self, o: ObjH, b: ButtonH, t: ObjH, cmd: i32) {
+        self.log.push(format!("obj {o} buttonobj {b} {t} {cmd}"));
+    }
+    fn sa_obj_do_command_button_at_position(&mut self, o: ObjH, b: ButtonH, p: &Coord3D, cmd: i32) {
+        self.log.push(format!("obj {o} buttonpos {b} {} {} {} {cmd}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_obj_do_command_button_using_waypoints(&mut self, o: ObjH, b: ButtonH, w: WaypointH, cmd: i32) {
+        self.log.push(format!("obj {o} buttonpath {b} {w} {cmd}"));
+    }
+    fn sa_group_do_command_button(&mut self, g: GroupH, b: ButtonH, cmd: i32) {
+        self.log.push(format!("group {g} button {b} {cmd}"));
+    }
+    fn sa_group_do_command_button_at_object(&mut self, g: GroupH, b: ButtonH, t: ObjH, cmd: i32) {
+        self.log.push(format!("group {g} buttonobj {b} {t} {cmd}"));
+    }
+    fn sa_group_do_command_button_at_position(&mut self, g: GroupH, b: ButtonH, p: &Coord3D, cmd: i32) {
+        self.log.push(format!("group {g} buttonpos {b} {} {} {} {cmd}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_radar_refresh_terrain(&mut self) {
+        self.log.push("radar refresh".into());
+    }
+    fn sa_view_set_default_view(&mut self, p: f32, a: f32, m: f32) {
+        self.log.push(format!("view default {} {} {}", fb(p), fb(a), fb(m)));
+    }
+    fn sa_ai_idle(&mut self, o: ObjH, cmd: i32) {
+        self.log.push(format!("ai {o} idle {cmd}"));
+    }
+    fn sa_group_idle(&mut self, g: GroupH, cmd: i32) {
+        self.log.push(format!("group {g} idle {cmd}"));
+    }
+    fn sa_team_name(&self, t: TeamH) -> Vec<u8> {
+        match self.teams[(t - 1) as usize].proto {
+            Some(k) => format!("team{k}").into_bytes(),
+            None => format!("lone{}", t - 1).into_bytes(),
+        }
+    }
+    fn sa_team_set_override_team_relationship(&mut self, t: TeamH, o: TeamH, r: i32) {
+        self.log.push(format!("team {t} overrideteam {o} {r}"));
+    }
+    fn sa_team_remove_override_team_relationship(&mut self, t: TeamH, o: TeamH) {
+        self.log.push(format!("team {t} removeoverrideteam {o}"));
+    }
+    fn sa_team_set_override_player_relationship(&mut self, t: TeamH, p: PlayerH, r: i32) {
+        self.log.push(format!("team {t} overrideplayer {p} {r}"));
+    }
+    fn sa_team_remove_override_player_relationship(&mut self, t: TeamH, p: PlayerH) {
+        self.log.push(format!("team {t} removeoverrideplayer {p}"));
+    }
+    fn sa_player_with_name_key(&self, name: &[u8]) -> Option<PlayerH> {
+        let key = |s: &[u8]| strhash(s) & 0x7fff_ffff;
+        if (self.cfg[0] >> 11) & 1 != 0 && key(name) == key(b"ReplayObserver") && self.nplayers() > 0 {
+            return Some(self.nplayers() - 1);
+        }
+        (0..self.nplayers()).find(|i| key(format!("player{i}").as_bytes()) == key(name))
+    }
+    fn sa_player_set_team_relationship(&mut self, p: PlayerH, t: TeamH, r: i32) {
+        self.log.push(format!("player {p} teamrel {t} {r}"));
+    }
+    fn sa_player_remove_team_relationship(&mut self, p: PlayerH, t: TeamH) {
+        self.log.push(format!("player {p} removeteamrel {t}"));
+    }
+    fn sa_find_script(&self, name: &[u8]) -> bool {
+        num(name, "script") >= 0
+    }
+    fn sa_append_sequential_script(&mut self, team: Option<TeamH>, object: ObjectId, script: &[u8], times: i32) {
+        self.log.push(format!("se appendseq {} {object} {} {times}", team.unwrap_or(0), st(script)));
+    }
+    fn sa_remove_all_sequential_scripts_obj(&mut self, o: ObjH) {
+        self.log.push(format!("se removeseqobj {o}"));
+    }
+    fn sa_remove_all_sequential_scripts_team(&mut self, t: TeamH) {
+        self.log.push(format!("se removeseqteam {t}"));
+    }
+    fn sa_set_sequential_timer_obj(&mut self, o: ObjH, f: i32) {
+        self.log.push(format!("se seqtimerobj {o} {f}"));
+    }
+    fn sa_set_sequential_timer_team(&mut self, t: TeamH, f: i32) {
+        self.log.push(format!("se seqtimerteam {t} {f}"));
+    }
+    fn sa_obj_has_waypoint_following_weapon(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 60) & 1 != 0
+    }
+    fn sa_weapon_force_fire(&mut self, o: ObjH, p: &Coord3D) -> Option<ObjH> {
+        self.log.push(format!("weapon {o} forcefire {} {} {}", fb(p.x), fb(p.y), fb(p.z)));
+        (hh(self.seed(), o as u32, 61) & 1 != 0).then_some(o)
+    }
+
+    // --- batch A7 ---
+    fn sa_water_handle(&self, name: &[u8]) -> Option<i32> {
+        let k = num(name, "water");
+        (0..4).contains(&k).then_some(k)
+    }
+    fn sa_set_water_height(&mut self, w: i32, ht: f32, dmg: f32, force: bool) {
+        self.log.push(format!("terrain waterheight {w} {} {} {}", fb(ht), fb(dmg), u8::from(force)));
+    }
+    fn sa_change_water_height_over_time(&mut self, w: i32, ht: f32, t: f32, dmg: f32) {
+        self.log.push(format!("terrain waterover {w} {} {} {}", fb(ht), fb(t), fb(dmg)));
+    }
+    fn sa_set_active_boundary(&mut self, b: i32) {
+        self.log.push(format!("terrain boundary {b}"));
+    }
+    fn sa_refresh_shroud_for_local_player(&mut self) {
+        self.log.push("partition refreshshroud".into());
+    }
+    fn sa_ui_select_drawable(&mut self, o: ObjH) {
+        self.log.push(format!("ui select {o}"));
+    }
+    fn sa_view_position(&self) -> Coord3D {
+        Coord3D { x: 100.0, y: 200.0, z: 0.0 }
+    }
+    fn sa_view_shake(&mut self, p: &Coord3D, t: i32) {
+        self.log.push(format!("view shake {} {} {} {t}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_contained(&self, o: ObjH) -> Vec<ObjH> {
+        self.o(o).contained.clone()
+    }
+    fn sa_logic_set_buildable_status_override(&mut self, t: TemplateH, s: i32) {
+        self.log.push(format!("logic buildable {t} {s}"));
+    }
+    fn sa_obj_has_cave(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 50) & 1 != 0
+    }
+    fn sa_cave_try_set_index(&mut self, o: ObjH, i: i32) {
+        self.log.push(format!("cave {o} index {i}"));
+    }
+    fn sa_obj_has_warehouse(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 53) & 1 != 0
+    }
+    fn sa_warehouse_set_cash_value(&mut self, o: ObjH, v: i32) {
+        self.log.push(format!("warehouse {o} cash {v}"));
+    }
+    fn sa_audio_set_event_enabled(&mut self, n: &[u8], e: bool) {
+        self.log.push(format!("audio enabled {} {}", st(n), u8::from(e)));
+    }
+    fn sa_audio_remove_disabled_events(&mut self) {
+        self.log.push("audio removedisabled".into());
+    }
+    fn sa_audio_remove_event_named(&mut self, n: &[u8]) {
+        self.log.push(format!("audio remove {}", st(n)));
+    }
+    fn sa_audio_set_event_volume_override(&mut self, n: &[u8], v: f32) {
+        self.log.push(format!("audio volumeoverride {} {}", st(n), fb(v)));
+    }
+    fn sa_set_topple_direction(&mut self, n: &[u8], d: &Coord3D) {
+        self.log.push(format!("se topple {} {} {} {}", st(n), fb(d.x), fb(d.y), fb(d.z)));
+    }
+    fn sa_radar_force_on(&mut self, on: bool) {
+        self.log.push(format!("radar forceon {}", u8::from(on)));
+    }
+
+    // --- batch A8 ---
+    fn sa_partition_closest_of_template(&self, p: &Coord3D, t: TemplateH, _trig: TriggerH, _obj: ObjH) -> Option<(ObjH, f32)> {
+        let salt = 3000 + (3 + 8 * t as u32) * 49;
+        let o = (0..self.objs.len()).find(|i| hh(self.seed() ^ self.cfg[16], *i as u32, salt) & 1 != 0)? as i32 + 1;
+        Some((o, (hh(self.seed(), o as u32, p.x.to_bits()) % 1000) as f32))
+    }
+    fn sa_object_types(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
+        let k = num(name, "list");
+        if !(0..4).contains(&k) {
+            return None;
+        }
+        Some((0..9u32).filter(|j| hh(self.seed(), k as u32, 120 + j) & 1 != 0).map(|j| format!("tmpl{j}").into_bytes()).collect())
+    }
+    fn sa_ai_move_to_object(&mut self, o: ObjH, t: Option<ObjH>, cmd: i32) {
+        self.log.push(format!("ai {o} moveobj {} {cmd}", t.unwrap_or(0)));
+    }
+    fn sa_find_upgrade(&self, name: &[u8]) -> Option<i32> {
+        let k = num(name, "upg");
+        (0..4).contains(&k).then_some(k)
+    }
+    fn sa_obj_give_upgrade(&mut self, o: ObjH, u: i32) {
+        self.log.push(format!("obj {o} giveupgrade {u}"));
+    }
+    fn sa_group_center(&self, g: GroupH) -> Option<Coord3D> {
+        let m = &self.groups[(g - 1) as usize];
+        if m.is_empty() {
+            return None;
+        }
+        let mut c = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        for o in m {
+            let p = self.o(*o).pos;
+            c.x += p.x;
+            c.y += p.y;
+            c.z += p.z;
+        }
+        let n = m.len() as f32;
+        Some(Coord3D { x: c.x / n, y: c.y / n, z: c.z / n })
+    }
+    fn sa_partition_nearest_group_with_value(&mut self, index: i32, src: &Coord3D, value: i32, greater: bool) -> Option<Coord3D> {
+        self.log.push(format!("partition nearestgroup {index} 1 1 {} {} {value} {}", fb(src.x), fb(src.y), u8::from(greater)));
+        (hh(self.seed(), index as u32, 130u32.wrapping_add(value as u32)) & 1 != 0).then_some(Coord3D { x: src.x + 10.0, y: src.y - 10.0, z: 0.0 })
+    }
+    fn sa_group_attack_move_to_position(&mut self, g: GroupH, p: &Coord3D, max: i32, cmd: i32) {
+        self.log.push(format!("group {g} attackmove {} {} {} {max} {cmd}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_button_special_power_id(&self, b: ButtonH) -> Option<u32> {
+        let n = (self.cfg[11] >> 4) & 15;
+        (hh(self.seed(), b as u32, 82) & 1 != 0 && n > 0).then(|| (b as u32 % n) + 1)
+    }
+    fn sa_group_special_power_source(&self, g: GroupH, id: u32) -> Option<ObjH> {
+        self.groups[(g - 1) as usize].iter().copied().find(|o| hh(self.seed(), *o as u32, 600 + id) & 1 != 0)
+    }
+    fn sa_group_command_button_source(&self, g: GroupH, t: i32) -> Option<ObjH> {
+        self.groups[(g - 1) as usize].iter().copied().find(|o| hh(self.seed(), *o as u32, 700 + t as u32) & 1 != 0)
+    }
+    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32) -> Option<ObjH> {
+        self.log.push(format!("partition iterate {} {} {} 0 4", fb(p.x), fb(p.y), fb(range)));
+        (0..self.objs.len()).find(|i| hh(self.seed() ^ self.cfg[16], *i as u32, 1000 + 98) & 1 != 0).map(|i| i as i32 + 1)
+    }
+
+    // --- batch A9 ---
+    fn sa_button_is_valid_to_use_on(&self, b: ButtonH, src: ObjH, target: Option<ObjH>, _cmd: i32) -> bool {
+        hh(self.seed(), (b * 64 + src) as u32, 83 + target.unwrap_or(0) as u32) & 1 != 0
+    }
+    fn sa_partition_closest_for_button(&self, p: &Coord3D, search: ButtonSearch) -> Option<(ObjH, f32)> {
+        // the filters' salt: the player's affiliation (2), then as the stand-ins' kinds (a kind-of filter 1 + 8 * its bit, a thing
+        // filter 3 + 8 * its template, the others 0)
+        let salt: u32 = match search {
+            ButtonSearch::Enemy | ButtonSearch::Unmanned => 98,
+            ButtonSearch::GarrisonedBuilding => (2 * 7 + 57) * 343,
+            ButtonSearch::KindOf(k) => (14 + 1 + 8 * k as u32) * 49,
+            ButtonSearch::Building => (14 + 57) * 49,
+            ButtonSearch::BuildingClass(k) => ((14 + 57) * 7 + 1 + 8 * k as u32) * 49,
+            ButtonSearch::Template(t) => (14 + 3 + 8 * t as u32) * 49,
+        };
+        let o = (0..self.objs.len()).find(|i| hh(self.seed() ^ self.cfg[16], *i as u32, 3000 + salt) & 1 != 0)? as i32 + 1;
+        Some((o, (hh(self.seed(), o as u32, p.x.to_bits()) % 1000) as f32))
+    }
+    fn sa_group_do_command_button_at_object_opt(&mut self, g: GroupH, b: ButtonH, t: Option<ObjH>, cmd: i32) {
+        self.log.push(format!("group {g} buttonobj {b} {} {cmd}", t.unwrap_or(0)));
+    }
+
+    // --- batch A10 ---
+    fn sa_view_camera_mod_freeze(&mut self, time: bool) {
+        self.log.push(format!("view freeze{}", if time { "time" } else { "angle" }));
+    }
+    fn sa_view_camera_mod_final_time_multiplier(&mut self, m: i32) {
+        self.log.push(format!("view modtimemult {m}"));
+    }
+    fn sa_view_camera_mod_rolling_average(&mut self, n: i32) {
+        self.log.push(format!("view modrolling {n}"));
+    }
+    fn sa_view_set_time_multiplier(&mut self, m: i32) {
+        self.log.push(format!("view timemult {m}"));
+    }
+    fn sa_audio_pause(&mut self, pause: bool, affect: i32) {
+        self.log.push(format!("audio {} {affect}", if pause { "pause" } else { "resume" }));
+    }
+    fn sa_global_fps_limit(&self) -> i32 {
+        30
+    }
+    fn sa_engine_set_fps_limit(&mut self, fps: i32) {
+        self.log.push(format!("engine fps {fps}"));
+    }
+    fn sa_set_use_fps_limit(&mut self, u: bool) {
+        self.use_fps = u;
+    }
+    fn sa_player_add_skill_points(&mut self, p: PlayerH, d: i32) {
+        self.log.push(format!("player {p} addskill {d}"));
+    }
+    fn sa_player_rank_level(&self, p: PlayerH) -> i32 {
+        ((self.cfg[128 + 4 * p as usize] >> 12) & 7) as i32
+    }
+    fn sa_player_set_rank_level(&mut self, p: PlayerH, l: i32) {
+        self.log.push(format!("player {p} ranklevel {l}"));
+    }
+    fn sa_logic_set_rank_level_limit(&mut self, l: i32) {
+        self.log.push(format!("logic ranklimit {l}"));
+    }
+    fn sa_science_from_name(&self, name: &[u8]) -> Option<i32> {
+        let k = num(name, "sci");
+        (0..6).contains(&k).then_some(k)
+    }
+    fn sa_player_grant_science(&mut self, p: PlayerH, s: i32) {
+        self.log.push(format!("player {p} grantscience {s}"));
+    }
+    fn sa_player_purchase_science(&mut self, p: PlayerH, s: i32) {
+        self.log.push(format!("player {p} purchasescience {s}"));
+    }
+    fn sa_player_science_availability_from_string(&self, _p: PlayerH, name: &[u8]) -> Option<i32> {
+        match name {
+            b"Available" => Some(0),
+            b"Disabled" => Some(1),
+            b"Hidden" => Some(2),
+            _ => None,
+        }
+    }
+    fn sa_player_set_science_availability(&mut self, p: PlayerH, s: i32, a: i32) {
+        self.log.push(format!("player {p} scienceavail {s} {a}"));
+    }
+    fn sa_group_set_emoticon(&mut self, g: GroupH, n: &[u8], f: i32) {
+        self.log.push(format!("group {g} emoticon {} {f}", st(n)));
+    }
+    fn sa_drawable_set_emoticon(&mut self, o: ObjH, n: &[u8], f: i32) {
+        self.log.push(format!("draw {o} emoticon {} {f}", st(n)));
+    }
+    fn sa_object_type_list_maintenance(&mut self, l: &[u8], t: &[u8], add: bool) {
+        self.log.push(format!("se objlist {} {} {}", st(l), st(t), u8::from(add)));
+    }
+    fn sa_named_map_reveal(&mut self, look: &[u8], w: &[u8], r: f32, p: &[u8]) {
+        self.log.push(format!("se createreveal {} {} {} {}", st(look), st(w), fb(r), st(p)));
+        self.log.push(format!("se doreveal {}", st(look)));
+    }
+    fn sa_undo_named_map_reveal(&mut self, look: &[u8]) {
+        self.log.push(format!("se undoreveal {}", st(look)));
+        self.log.push(format!("se removereveal {}", st(look)));
+    }
+    fn sa_eva_set_enabled(&mut self, e: bool) {
+        self.log.push(format!("eva {}", u8::from(e)));
+    }
+    fn sa_logic_set_option(&mut self, which: i32, e: bool) {
+        let n = ["behindbuilding", "drawicon", "dynamiclod"][which as usize];
+        self.log.push(format!("logic {n} {}", u8::from(e)));
+    }
+    fn sa_logic_set_hulk_max_lifetime_override(&mut self, f: i32) {
+        self.log.push(format!("logic hulk {f}"));
+    }
+    fn sa_view_camera_slave_mode(&mut self, slave: Option<(&[u8], &[u8])>) {
+        match slave {
+            Some((t, b)) => self.log.push(format!("view slave {} {}", st(t), st(b))),
+            None => self.log.push("view unslave".into()),
+        }
+    }
+    fn sa_view_add_camera_shake(&mut self, p: &Coord3D, r: f32, d: f32, a: f32) {
+        self.log.push(format!("view addshake {} {} {} {} {} {}", fb(p.x), fb(p.y), fb(p.z), fb(r), fb(d), fb(a)));
+    }
+    fn sa_ai_face_object(&mut self, o: ObjH, t: ObjH, cmd: i32) {
+        self.log.push(format!("ai {o} faceobj {t} {cmd}"));
+    }
+    fn sa_ai_face_position(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
+        self.log.push(format!("ai {o} facepos {} {} {} {cmd}", fb(p.x), fb(p.y), fb(p.z)));
+    }
+    fn sa_player_set_skillset(&mut self, p: PlayerH, s: i32) {
+        self.log.push(format!("player {p} skillset {s}"));
+    }
+    fn sa_player_guard_supply_center(&mut self, p: PlayerH, t: TeamH, s: i32) {
+        self.log.push(format!("player {p} guardsupply {t} {s}"));
+    }
+    fn sa_ai_guard_tunnel_network(&mut self, o: ObjH, m: i32, cmd: i32) {
+        self.log.push(format!("ai {o} guardtunnel {m} {cmd}"));
+    }
+    fn sa_template_command_set_string(&self, t: TemplateH) -> Vec<u8> {
+        format!("cs{t}").into_bytes()
+    }
+    fn sa_logic_set_control_bar_override(&mut self, cs: &[u8], slot: i32, b: Option<ButtonH>) {
+        self.log.push(format!("logic controlbaroverride {} {slot} {}", st(cs), b.unwrap_or(-1)));
+    }
+    fn sa_player_set_skill_points_modifier(&mut self, p: PlayerH, m: f32) {
+        self.log.push(format!("player {p} skillmod {}", fb(m)));
+    }
+    fn sa_view_set_guard_band_bias(&mut self, x: f32, y: f32) {
+        self.log.push(format!("view guardband {} {}", fb(x), fb(y)));
+    }
+    fn sa_all_objects(&self) -> Vec<ObjH> {
+        (1..=self.objs.len() as i32).collect()
+    }
+    fn sa_obj_set_receiving_difficulty_bonus(&mut self, o: ObjH, b: bool) {
+        self.log.push(format!("obj {o} difficultybonus {}", u8::from(b)));
+    }
+    fn sa_set_objects_should_receive_difficulty_bonus(&mut self, b: bool) {
+        self.log.push(format!("se difficultybonus {}", u8::from(b)));
+    }
+    fn sa_set_choose_victim_always_uses_normal(&mut self, b: bool) {
+        self.log.push(format!("se victimnormal {}", u8::from(b)));
+    }
+    fn sa_obj_has_railroad(&self, o: ObjH) -> bool {
+        hh(self.seed(), o as u32, 54) & 1 != 0
+    }
+    fn sa_railroad_set_held(&mut self, o: ObjH, h: bool) {
+        self.log.push(format!("railroad {o} held {}", u8::from(h)));
     }
 }
 
@@ -1108,7 +1696,7 @@ impl Sim {
             return None;
         }
         let id = self.teams.len() as i32 + 1;
-        self.teams.push(Team { proto: Some(k), members: Vec::new() });
+        self.teams.push(Team { proto: Some(k), members: Vec::new(), controller: None });
         self.protos[k as usize].push(id - 1);
         self.log.push(format!("teamfactory {how} {} {id}", st(name)));
         Some(id)
@@ -1194,7 +1782,7 @@ fn rust_run(cfg: &[u32; NCFG], acts: &[A], ops: &[[u32; 3]]) -> (Vec<u32>, Optio
         out.push(sa.message_window.unwrap_or(0) as u32);
         out.push(sim.light_scale.to_bits());
         out.push(30);
-        out.push(1);
+        out.push(u32::from(sim.use_fps));
     }
     (out, None)
 }
@@ -1303,7 +1891,118 @@ fn kinds(ty: i32) -> Option<&'static str> {
         EXIT_SPECIFIC_BUILDING => "U",
         CAMERA_MOTION_BLUR => "II",
         CAMERA_MOTION_BLUR_JUMP => "WI",
-        _ => return None,
+        // batch A5
+        NAMED_SET_STEALTH_ENABLED | SHOW_MILITARY_CAPTION | NAMED_SET_HELD => "UI",
+        TEAM_SET_STEALTH_ENABLED => "TI",
+        NAMED_SET_UNMANNED_STATUS | NAMED_GARRISON_NEAREST_BUILDING | NAMED_EXIT_BUILDING | NAMED_HIDE_SPECIAL_POWER_DISPLAY
+        | NAMED_SHOW_SPECIAL_POWER_DISPLAY => "U",
+        TEAM_SET_UNMANNED_STATUS => "T",
+        NAMED_SET_BOOBYTRAPPED => "MU",
+        TEAM_SET_BOOBYTRAPPED => "MT",
+        NAMED_GARRISON_SPECIFIC_BUILDING => "UU",
+        PLAYER_GARRISON_ALL_BUILDINGS | PLAYER_EXIT_ALL_BUILDINGS => "P",
+        CAMERA_LETTERBOX_BEGIN | CAMERA_LETTERBOX_END | DRAW_SKYBOX_BEGIN | DRAW_SKYBOX_END | FREEZE_TIME | UNFREEZE_TIME
+        | DISABLE_SPECIAL_POWER_DISPLAY | ENABLE_SPECIAL_POWER_DISPLAY | DISABLE_COUNTDOWN_TIMER_DISPLAY | ENABLE_COUNTDOWN_TIMER_DISPLAY => "",
+        CAMERA_BW_MODE_BEGIN | CAMERA_BW_MODE_END | SHOW_WEATHER => "I",
+        CAMERA_SET_AUDIBLE_DISTANCE | MUSIC_SET_VOLUME | SOUND_SET_VOLUME | SPEECH_SET_VOLUME => "R",
+        SET_STOPPING_DISTANCE => "TR",
+        NAMED_SET_STOPPING_DISTANCE => "UR",
+        TEAM_TRANSFER_TO_PLAYER => "TP",
+        PLAYER_SET_MONEY | PLAYER_GIVE_MONEY => "PI",
+        DISPLAY_COUNTDOWN_TIMER | DISPLAY_COUNTER => "NN",
+        HIDE_COUNTDOWN_TIMER | HIDE_COUNTER => "N",
+        NAMED_STOP_SPECIAL_POWER_COUNTDOWN | NAMED_START_SPECIAL_POWER_COUNTDOWN => "UO",
+        NAMED_SET_SPECIAL_POWER_COUNTDOWN | NAMED_ADD_SPECIAL_POWER_COUNTDOWN => "UOI",
+        NAMED_FIRE_SPECIAL_POWER_AT_WAYPOINT => "UOW",
+        // batch A6
+        SKIRMISH_FIRE_SPECIAL_POWER_AT_MOST_COST => "PO",
+        NAMED_FIRE_SPECIAL_POWER_AT_NAMED => "UOU",
+        REFRESH_RADAR | CAMERA_STOP_TETHER_NAMED => "",
+        NAMED_STOP | UNIT_STOP_SEQUENTIAL_SCRIPT => "U",
+        TEAM_STOP | TEAM_STOP_AND_DISBAND | TEAM_REMOVE_ALL_OVERRIDE_RELATIONS | TEAM_STOP_SEQUENTIAL_SCRIPT => "T",
+        CAMERA_TETHER_NAMED => "UIR",
+        CAMERA_SET_DEFAULT => "RRR",
+        TEAM_SET_OVERRIDE_RELATION_TO_TEAM => "TTI",
+        TEAM_REMOVE_OVERRIDE_RELATION_TO_TEAM => "TT",
+        TEAM_SET_OVERRIDE_RELATION_TO_PLAYER => "TPI",
+        TEAM_REMOVE_OVERRIDE_RELATION_TO_PLAYER => "TP",
+        PLAYER_SET_OVERRIDE_RELATION_TO_TEAM => "PTI",
+        PLAYER_REMOVE_OVERRIDE_RELATION_TO_TEAM => "PT",
+        NAMED_FIRE_WEAPON_FOLLOWING_WAYPOINT_PATH => "UL",
+        NAMED_USE_COMMANDBUTTON_ABILITY => "UK",
+        NAMED_USE_COMMANDBUTTON_ABILITY_ON_NAMED => "UKU",
+        NAMED_USE_COMMANDBUTTON_ABILITY_AT_WAYPOINT => "UKW",
+        NAMED_USE_COMMANDBUTTON_ABILITY_USING_WAYPOINT_PATH => "UKL",
+        TEAM_USE_COMMANDBUTTON_ABILITY => "TK",
+        TEAM_USE_COMMANDBUTTON_ABILITY_ON_NAMED => "TKU",
+        TEAM_USE_COMMANDBUTTON_ABILITY_AT_WAYPOINT => "TKW",
+        UNIT_EXECUTE_SEQUENTIAL_SCRIPT => "US",
+        UNIT_EXECUTE_SEQUENTIAL_SCRIPT_LOOPING => "USI",
+        TEAM_EXECUTE_SEQUENTIAL_SCRIPT => "TS",
+        TEAM_EXECUTE_SEQUENTIAL_SCRIPT_LOOPING => "TSI",
+        UNIT_GUARD_FOR_FRAMECOUNT | UNIT_IDLE_FOR_FRAMECOUNT => "UI",
+        TEAM_GUARD_FOR_FRAMECOUNT | TEAM_IDLE_FOR_FRAMECOUNT => "TI",
+        // batch A7
+        WATER_CHANGE_HEIGHT => "VR",
+        WATER_CHANGE_HEIGHT_OVER_TIME => "VRRR",
+        MAP_SWITCH_BORDER | SCREEN_SHAKE => "I",
+        OBJECT_FORCE_SELECT => "TMIN",
+        UNIT_DESTROY_ALL_CONTAINED => "U",
+        RADAR_FORCE_ENABLE | RADAR_REVERT_TO_NORMAL | SOUND_ENABLE_ALL | SOUND_REMOVE_ALL_DISABLED | AUDIO_RESTORE_VOLUME_ALL_TYPE => "",
+        TECHTREE_MODIFY_BUILDABILITY_OBJECT => "MI",
+        SET_CAVE_INDEX | WAREHOUSE_SET_VALUE => "UI",
+        SOUND_DISABLE_TYPE | SOUND_ENABLE_TYPE | SOUND_REMOVE_TYPE | AUDIO_RESTORE_VOLUME_TYPE => "N",
+        AUDIO_OVERRIDE_VOLUME_TYPE => "NR",
+        NAMED_SET_TOPPLE_DIRECTION => "UC",
+        // batch A8
+        UNIT_MOVE_TOWARDS_NEAREST_OBJECT_TYPE => "UJG",
+        TEAM_MOVE_TOWARDS_NEAREST_OBJECT_TYPE => "TJG",
+        NAMED_RECEIVE_UPGRADE => "UZ",
+        SKIRMISH_ATTACK_NEAREST_GROUP_WITH_VALUE => "TcI",
+        SKIRMISH_PERFORM_COMMANDBUTTON_ON_MOST_VALUABLE_OBJECT => "TKRI",
+        // batch A9
+        TEAM_SPIN_FOR_FRAMECOUNT => "TI",
+        TEAM_ALL_USE_COMMANDBUTTON_ON_NAMED => "TKU",
+        TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_ENEMY_UNIT | TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_GARRISONED_BUILDING
+        | TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_ENEMY_BUILDING => "TK",
+        TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_KINDOF | TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_ENEMY_BUILDING_CLASS => "TKk",
+        TEAM_ALL_USE_COMMANDBUTTON_ON_NEAREST_OBJECTTYPE => "TKJ",
+        TEAM_PARTIAL_USE_COMMANDBUTTON => "RTK",
+        TEAM_CAPTURE_NEAREST_UNOWNED_FACTION_UNIT => "T",
+        PLAYER_CREATE_TEAM_FROM_CAPTURED_UNITS => "PT",
+        // batch A10
+        CAMERA_MOD_FREEZE_TIME | CAMERA_MOD_FREEZE_ANGLE | SUSPEND_BACKGROUND_SOUNDS | RESUME_BACKGROUND_SOUNDS | CAMERA_MOTION_BLUR_END_FOLLOW
+        | SKIRMISH_WAIT_FOR_COMMANDBUTTON_AVAILABLE_ALL | SKIRMISH_WAIT_FOR_COMMANDBUTTON_AVAILABLE_PARTIAL | TEAM_WAIT_FOR_NOT_CONTAINED_ALL
+        | TEAM_WAIT_FOR_NOT_CONTAINED_PARTIAL | CAMERA_DISABLE_SLAVE_MODE | DELETE_ALL_UNMANNED => "",
+        CAMERA_MOD_SET_FINAL_ZOOM | CAMERA_MOD_SET_FINAL_PITCH => "REE",
+        CAMERA_MOD_SET_FINAL_SPEED_MULTIPLIER | CAMERA_MOD_SET_ROLLING_AVERAGE | SET_VISUAL_SPEED_MULTIPLIER | CAMERA_MOTION_BLUR_FOLLOW
+        | SET_FPS_LIMIT | PLAYER_SET_RANKLEVELLIMIT | EVA_SET_ENABLED_DISABLED | OPTIONS_SET_OCCLUSION_MODE | OPTIONS_SET_DRAWICON_UI_MODE
+        | OPTIONS_SET_PARTICLE_CAP_MODE | OBJECT_ALLOW_BONUSES | CHOOSE_VICTIM_ALWAYS_USES_NORMAL => "I",
+        PLAYER_ADD_SKILLPOINTS | PLAYER_ADD_RANKLEVEL | PLAYER_SET_RANKLEVEL | PLAYER_SELECT_SKILLSET => "PI",
+        PLAYER_GRANT_SCIENCE | PLAYER_PURCHASE_SCIENCE => "Ps",
+        PLAYER_SCIENCE_AVAILABILITY => "Psa",
+        TEAM_SET_EMOTICON => "TNX",
+        NAMED_SET_EMOTICON => "UNX",
+        OBJECTLIST_ADDOBJECTTYPE | OBJECTLIST_REMOVEOBJECTTYPE => "JM",
+        MAP_REVEAL_PERMANENTLY_AT_WAYPOINT => "WRPN",
+        MAP_UNDO_REVEAL_PERMANENTLY_AT_WAYPOINT => "N",
+        CAMERA_ENABLE_SLAVE_MODE => "MN",
+        CAMERA_ADD_SHAKER_AT => "WRRR",
+        SCRIPTING_OVERRIDE_HULK_LIFETIME => "X",
+        NAMED_FACE_NAMED => "UU",
+        NAMED_FACE_WAYPOINT => "UW",
+        TEAM_FACE_NAMED => "TU",
+        TEAM_FACE_WAYPOINT => "TW",
+        UNIT_AFFECT_OBJECT_PANEL_FLAGS => "UFI",
+        TEAM_AFFECT_OBJECT_PANEL_FLAGS => "TFI",
+        COMMANDBAR_REMOVE_BUTTON_OBJECTTYPE => "KM",
+        COMMANDBAR_ADD_BUTTON_OBJECTTYPE_SLOT => "KMI",
+        PLAYER_AFFECT_RECEIVING_EXPERIENCE => "PR",
+        TEAM_GUARD_SUPPLY_CENTER => "TI",
+        TEAM_GUARD_IN_TUNNEL_NETWORK => "T",
+        RESIZE_VIEW_GUARDBAND => "RR",
+        SET_TRAIN_HELD => "UI",
+        _ => "",
     })
 }
 
@@ -1324,7 +2023,7 @@ fn gen_parm(g: &mut Gen, k: char) -> Parameter {
         }
         'U' => p.string = if g.below(10) == 0 { Vec::new() } else { sv(format!("unit{}", g.below(20))) },
         'W' => p.string = sv(format!("wp{}", g.below(9))),
-        'S' => p.string = sv(format!("state{}", g.below(4))),
+        'S' => p.string = if g.below(2) == 0 { sv(format!("state{}", g.below(4))) } else { sv(format!("script{}", g.below(3))) },
         'P' => {
             p.string = match g.below(8) {
                 0 => sv("<This Player>".into()),
@@ -1357,6 +2056,14 @@ fn gen_parm(g: &mut Gen, k: char) -> Parameter {
         'Q' => p.string = if g.below(8) == 0 { sv("x".into()) } else { sv("path".into()) },
         'A' => p.string = sv(format!("set{}", g.below(4))),
         'G' => p.string = sv(format!("trig{}", g.below(9))),
+        'O' => p.string = sv(format!("power{}", g.below(8))),
+        'V' => p.string = sv(format!("water{}", g.below(5))),
+        'J' => p.string = if g.below(3) == 0 { sv(format!("list{}", g.below(5))) } else { sv(format!("tmpl{}", g.below(9))) },
+        'Z' => p.string = sv(format!("upg{}", g.below(5))),
+        'c' => p.int = g.below(6) as i32,
+        'k' => p.int = [7, 8, 18, 24, 65, 99, 100][g.below(7) as usize],
+        's' => p.string = if g.below(6) == 0 { sv("bad".into()) } else { sv(format!("sci{}", g.below(7))) },
+        'a' => p.string = sv(["Available", "Disabled", "Hidden", "Other"][g.below(4) as usize].into()),
         'K' => p.string = sv(format!("btn{}", g.below(10))),
         'Y' => {
             p.string = match g.below(9) {
@@ -1388,7 +2095,7 @@ fn gen_program(g: &mut Gen, types: &[i32]) -> ([u32; NCFG], Vec<A>, Vec<[u32; 3]
         *w = g.u32();
     }
     let np = 1 + g.below(6);
-    cfg[0] &= 0x7ff;
+    cfg[0] &= 0xfff;
     cfg[1] = g.below(1000);
     cfg[4] = np | (if g.below(10) == 0 { 15 } else { g.below(np) }) << 4 | g.below(np + 1) << 8;
     cfg[5] = (if g.below(5) == 0 { 255 } else { g.below(16) }) | g.below(np + 1) << 8 | g.below(np + 1) << 12;
@@ -1406,6 +2113,10 @@ fn gen_program(g: &mut Gen, types: &[i32]) -> ([u32; NCFG], Vec<A>, Vec<[u32; 3]
         }
         if g.below(3) != 0 {
             w0 &= !2;
+        }
+        if g.below(2) == 0 {
+            // most of the objects on the first four teams, so teams have several members (of one template, too)
+            w0 &= !(0xc << 20);
         }
         cfg[40 + 4 * j] = w0;
     }
@@ -1477,7 +2188,7 @@ const REACH: [&str; 24] = [
 
 #[test]
 fn script_actions_match_upstream() {
-    let cases: usize = std::env::var("ACTIONS_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
+    let cases: usize = std::env::var("ACTIONS_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(40_000);
     let types = translated();
     let mut g = Gen::new(0x5AC7_0001);
     let (mut cut, mut ops_run, mut execs, mut lines, mut mismatches) = (0u64, 0u64, 0u64, 0u64, 0u64);

@@ -4421,7 +4421,7 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
-        // p1w13-sonnet, layer 11 batches A1..: ScriptActions (differential/wrap_actions.cpp), with the real PartitionSolver.cpp. Into
+        // p1w13-sonnet, layer 11 batches A1-A10: ScriptActions (differential/wrap_actions.cpp), with the real PartitionSolver.cpp. Into
         // OUT_DIR/actions_gen, copies with mechanical edits, each asserted once: GameLogic/ScriptActions.h's opaque `enum AudioAffect;`
         // gets the underlying type `int` (clang refuses it without one; the stand-in's enum has it), and in ScriptActions.cpp
         // (1) doDisplayCinematicText's `for( c = buf; c != '\0'; *c++ )` compares the pointer with `NULL`, as old MSVC read `'\0'` (a
@@ -5898,6 +5898,23 @@ mod differential {
             &[("if (theInputStream.open(path)) {", "if (sides_open_skirmish_stream(theInputStream, path)) {", 1)],
         );
         let sides_copy = write("SidesList.cpp", &sides_cpp);
+        // p1w13-sonnet layer 11 batch E1: ScriptEngine::init's template tables (differential/wrap_script_templates.cpp). The cut,
+        // unchanged: from "// Set up the script action templates." up to the `reset();` that ends init (the tables and the two
+        // loops that append "[index]" and make the name keys), each end asserted once, into
+        // OUT_DIR/script_templates_gen/init_templates.inc.
+        let templates_gen = out_dir.join("script_templates_gen");
+        {
+            let engine_cpp = std::fs::read(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp")).expect("read ScriptEngine.cpp");
+            let engine_cpp = String::from_utf8_lossy(&engine_cpp).into_owned();
+            let from = "\t// Set up the script action templates.";
+            let to = "\n\n\n\treset();\n\n}  // end init";
+            assert_eq!(engine_cpp.matches(from).count(), 1, "ScriptEngine.cpp: the start of init's templates");
+            assert_eq!(engine_cpp.matches(to).count(), 1, "ScriptEngine.cpp: the end of init");
+            let i = engine_cpp.find(from).expect("start");
+            let j = engine_cpp.find(to).expect("end");
+            std::fs::create_dir_all(&templates_gen).expect("create script_templates_gen");
+            std::fs::write(templates_gen.join("init_templates.inc"), &engine_cpp[i..j]).expect("write init_templates.inc");
+        }
         let mut sides = cc::Build::new();
         base(&mut sides);
         sides
@@ -5911,7 +5928,9 @@ mod differential {
             .include(up.join("Libraries/Source/Compression"))
             .flag("-include")
             .flag(shim_sides.join("sides_prelude.h").to_str().expect("UTF-8 path"))
+            .include(&templates_gen)
             .file(dif.join("wrap_sides.cpp"))
+            .file(dif.join("wrap_script_templates.cpp"))
             .file(&sides_copy)
             .file(up.join("GameEngine/Source/GameLogic/ScriptEngine/Scripts.cpp"));
         sides.compile("upstream_sides");
@@ -6099,6 +6118,8 @@ mod differential {
             "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GameText.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/SidesList.cpp", // p1w4-sides
             "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/Scripts.cpp", // p1w4-sides
+            "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp", // p1w13-sonnet E1
+            "differential/wrap_script_templates.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp",
             "upstream/GeneralsMD/Code/GameEngine/Include/Common/AsciiString.h",

@@ -2886,6 +2886,9 @@ extern "C" {
         cap: c_int,
         len: *mut c_int,
     ) -> c_int;
+    /// p1w13-sonnet, layer 11 batch E1: ScriptEngine::init's templates (differential/wrap_script_templates.cpp): the dump's
+    /// length (written up to `cap`).
+    pub fn ref_script_templates(out: *mut c_uchar, cap: usize) -> usize;
     /// p1w13-sonnet, layer 11 batch C1: ScriptConditions (differential/wrap_conditions.cpp).
     pub fn ref_conditions_run(
         cfg: *const c_uint,

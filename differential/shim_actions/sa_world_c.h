@@ -31,7 +31,7 @@ public:
 	void appendSequentialScript(const SequentialScript *s)
 	{
 		SA_SE("appendseq %d %d %s %d", s->m_teamToExecOn ? s->m_teamToExecOn->getID() : 0, s->m_objectID, s->m_scriptToExecuteSequentially->getName().str(), s->m_timesToLoop);
-		const_cast<SequentialScript *>(s)->deleteInstance();
+		/* (the engine keeps its own copy: the caller deletes this one) */
 	}
 	void removeAllSequentialScripts(Object *o) { SA_SE("removeseqobj %d", o->getID()); }
 	void removeAllSequentialScripts(Team *t) { SA_SE("removeseqteam %d", t->getID()); }
@@ -125,7 +125,14 @@ extern View *TheTacticalView;
 
 /* the partition's searches answer from the world: see the test's host */
 class PartitionFilter { public: virtual ~PartitionFilter() {} virtual int kind() const { return 0; } };
-class PartitionFilterAcceptByKindOf : public PartitionFilter { public: PartitionFilterAcceptByKindOf(const KindOfMaskType &m, const KindOfMaskType &n) : m_m(m) {} int kind() const { return 1; } KindOfMaskType m_m; };
+/* (the search depends on the kind accepted: its lowest bit) */
+class PartitionFilterAcceptByKindOf : public PartitionFilter
+{
+public:
+	PartitionFilterAcceptByKindOf(const KindOfMaskType &m, const KindOfMaskType &n) : m_m(m) {}
+	int kind() const { for (int i = 0; i < 128; ++i) if (m_m.test(i)) return 1 + 8 * i; return 1; }
+	KindOfMaskType m_m;
+};
 class PartitionFilterRejectByKindOf : public PartitionFilter { public: PartitionFilterRejectByKindOf(const KindOfMaskType &m, const KindOfMaskType &n) {} };
 class PartitionFilterGarrisonable : public PartitionFilter { public: PartitionFilterGarrisonable(Bool b) {} };
 class PartitionFilterGarrisonableByPlayer : public PartitionFilter { public: PartitionFilterGarrisonableByPlayer(Player *p, Bool a, CommandSourceType c) {} };
@@ -133,7 +140,7 @@ class PartitionFilterOnMap : public PartitionFilter {};
 class PartitionFilterPlayerAffiliation : public PartitionFilter { public: PartitionFilterPlayerAffiliation(const Player *p, Int flags, Bool self) : m_p(p), m_flags(flags) {} int kind() const { return 2; } const Player *m_p; Int m_flags; };
 class PartitionFilterPolygonTrigger : public PartitionFilter { public: PartitionFilterPolygonTrigger(const PolygonTrigger *t) {} };
 class PartitionFilterSameMapStatus : public PartitionFilter { public: PartitionFilterSameMapStatus(const Object *o) {} };
-class PartitionFilterThing : public PartitionFilter { public: PartitionFilterThing(const ThingTemplate *t, Bool match) : m_t(t) {} int kind() const { return 3; } const ThingTemplate *m_t; };
+class PartitionFilterThing : public PartitionFilter { public: PartitionFilterThing(const ThingTemplate *t, Bool match) : m_t(t) {} int kind() const { return 3 + (m_t ? m_t->m_index : 0) * 8; } const ThingTemplate *m_t; };
 class PartitionFilterUnmannedObject : public PartitionFilter { public: PartitionFilterUnmannedObject(Bool b) {} };
 class PartitionFilterValidCommandButtonTarget : public PartitionFilter { public: PartitionFilterValidCommandButtonTarget(Object *o, const CommandButton *b, Bool, CommandSourceType) {} };
 class ObjectIterator : public MemoryPoolObject

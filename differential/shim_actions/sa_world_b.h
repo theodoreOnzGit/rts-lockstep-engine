@@ -329,6 +329,7 @@ public:
 	mutable CommandButtonHuntUpdate m_cbh;
 	mutable StickyBombUpdate m_sticky;
 	mutable SupplyWarehouseDockUpdate m_ware;
+	mutable RailroadBehavior m_rail;
 };
 inline Object *Drawable::getObject() const { return g_world.objects[m_obj - 1]; }
 inline const Coord3D *Drawable::getPosition() const { return getObject()->getPosition(); }
@@ -515,7 +516,7 @@ public:
 	Player *getNeutralPlayer() { return saPlayer((int)(g_cfg[4] >> 8 & 15)); }
 	Player *getNthPlayer(Int i) { return saPlayer(i); }
 	Int getPlayerCount() { return saNumPlayers(); }
-	Player *findPlayerWithNameKey(NameKeyType key) { for (int i = 0; i < saNumPlayers(); ++i) if (NAMEKEY(saName("player", i)) == key) return &g_players[i]; return NULL; }
+	Player *findPlayerWithNameKey(NameKeyType key) { if ((g_cfg[0] >> 11 & 1) && key == NAMEKEY(AsciiString("ReplayObserver")) && saNumPlayers() > 0) return &g_players[saNumPlayers() - 1]; for (int i = 0; i < saNumPlayers(); ++i) if (NAMEKEY(saName("player", i)) == key) return &g_players[i]; return NULL; }
 };
 extern PlayerList *ThePlayerList;
 #include "sa_world_c.h"

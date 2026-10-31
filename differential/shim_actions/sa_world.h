@@ -166,8 +166,10 @@ public:
 	/* a rotation about z by m_angle, then the translation */
 	static void Transform_Vector(const Matrix3D &m, const Vector3 &in, Vector3 *out)
 	{
+		/* (as WWMath's: the input copied first, so it may be the output) */
+		Vector3 v = in;
 		Real c = (Real)cos(m.m_angle), s = (Real)sin(m.m_angle);
-		out->X = c * in.X - s * in.Y + m.m_pos.x; out->Y = s * in.X + c * in.Y + m.m_pos.y; out->Z = in.Z + m.m_pos.z;
+		out->X = c * v.X - s * v.Y + m.m_pos.x; out->Y = s * v.X + c * v.Y + m.m_pos.y; out->Z = v.Z + m.m_pos.z;
 	}
 	Real m_angle;
 	Coord3D m_pos;

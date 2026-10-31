@@ -146,7 +146,7 @@ const ThingTemplate *DeliverPayloadAIUpdate::getPutInContainerTemplateViaModuleD
 	int t = me->m_tmpl ? (int)(me->m_tmpl->w() >> 24 & 7) : 7;
 	return t < saNumTemplates() ? &g_templates[t] : NULL;
 }
-void StickyBombUpdate::initStickyBomb(Object *target, const Object *bomber, const Coord3D *pos) { saLog("sticky %d init %d %d", m_obj, oid(target), oid(bomber)); }
+void StickyBombUpdate::initStickyBomb(Object *target, const Object *bomber, const Coord3D *pos) { saLog("sticky %d init %d %d %08x %08x %08x", m_obj, oid(target), oid(bomber), fb(pos->x), fb(pos->y), fb(pos->z)); }
 Object *Weapon::forceFireWeapon(Object *src, const Coord3D *p)
 {
 	saLog("weapon %d forcefire %08x %08x %08x", m_obj, fb(p->x), fb(p->y), fb(p->z));
@@ -160,6 +160,7 @@ UpdateModule *Object::findUpdateModule(NameKeyType key) const
 	if (key == NAMEKEY("CommandButtonHuntUpdate")) { if (!(saHash(SA_SEED, (unsigned)getID(), 51u) & 1)) return NULL; m_cbh.m_obj = getID(); return &m_cbh; }
 	if (key == NAMEKEY("StickyBombUpdate")) { if (!(saHash(SA_SEED, (unsigned)getID(), 52u) & 1)) return NULL; m_sticky.m_obj = getID(); return &m_sticky; }
 	if (key == NAMEKEY("SupplyWarehouseDockUpdate")) { if (!(saHash(SA_SEED, (unsigned)getID(), 53u) & 1)) return NULL; m_ware.m_obj = getID(); return &m_ware; }
+	if (key == NAMEKEY("RailroadBehavior")) { if (!(saHash(SA_SEED, (unsigned)getID(), 54u) & 1)) return NULL; m_rail.m_obj = getID(); return &m_rail; }
 	(void)me;
 	return NULL;
 }

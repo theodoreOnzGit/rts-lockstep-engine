@@ -43,6 +43,9 @@ pub mod weapon_set;
 // --- p1w4-sides ---
 pub mod scripts;
 // --- end p1w4-sides ---
+// --- p1w13-sonnet layer 11 E1 ---
+pub mod script_templates;
+// --- end p1w13-sonnet layer 11 E1 ---
 // --- p1w4-sides ---
 pub mod sides_list;
 // --- end p1w4-sides ---
