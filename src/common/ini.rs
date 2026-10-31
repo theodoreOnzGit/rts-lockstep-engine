@@ -275,6 +275,9 @@ pub enum Undefined {
     /// A container modified under an iterator in use (`ScriptEngine::evaluateAndProgressAllSequentialScripts`: an action adds a
     /// sequential script when the vector is full, so it reallocates, or removes one at or before the loop's place).
     InvalidatedIterator,
+    /// layer 12: a `GameMessage` used after `deleteInstance` freed it (a list still linking a message that another list's
+    /// destruction freed, or a handle kept past `propagateMessages`).
+    UseAfterFree,
     /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
     /// save).
     InvalidBoolLoaded,

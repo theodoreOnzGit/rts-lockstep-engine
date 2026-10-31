@@ -81,3 +81,6 @@ pub mod production_prerequisite;
 pub mod thing_factory;
 pub mod thing_template;
 // --- end p1w4-thingtemplate ---
+// --- layer 12 ---
+pub mod message_stream;
+pub mod message_types;

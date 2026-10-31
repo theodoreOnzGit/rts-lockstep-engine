@@ -2890,6 +2890,12 @@ extern "C" {
     /// length (written up to `cap`).
     pub fn ref_script_templates(out: *mut c_uchar, cap: usize) -> usize;
     /// p1w13-sonnet, layer 11 batch E2: ScriptEngine (differential/wrap_engine.cpp): the log's length (written when it fits).
+    /// layer 12 batch M1: MessageStream (differential/wrap_message_stream.cpp): the log's length (written when it fits).
+    pub fn ref_msgs_run(ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
+    /// The value of the i-th name of differential/msg_types.inc, -1 past the end.
+    pub fn ref_msgs_type_value(i: c_int) -> c_int;
+    /// `GameMessage::getCommandTypeAsAsciiString(t)`: its length (written when it fits).
+    pub fn ref_msgs_type_name(t: c_int, out: *mut c_char, cap: c_int) -> c_int;
     pub fn ref_engine_run(cfg: *const c_uint, scripts: *const c_uint, nscripts: c_int, ops: *const c_uint, n: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// p1w13-sonnet, layer 11 batch C1: ScriptConditions (differential/wrap_conditions.cpp).
     pub fn ref_conditions_run(

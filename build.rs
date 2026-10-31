@@ -1265,6 +1265,31 @@ mod differential {
                 .file(dif.join("wrap_money.cpp"));
             money.compile("upstream_money");
 
+            // Layer 12 batch M1: MessageStream.cpp (differential/wrap_message_stream.cpp), on shim_msg: the local player's
+            // index, and empty stand-ins for the headers only the debug build's isInvalidDebugCommand uses. One mechanical
+            // edit, in a copy (the upstream file is never edited): getArgumentDataType declares its loop variable in the
+            // for and reads it after the loop (MSVC's pre-standard scope, which g++ rejects); the copy declares it before.
+            // The text must occur once.
+            let ms_src = std::fs::read_to_string(up.join("GameEngine/Source/Common/MessageStream.cpp")).expect("read MessageStream.cpp");
+            let ms_old = "\tfor (GameMessageArgument *a = m_argList; a && (i < argIndex); a=a->m_next, ++i );\n";
+            let ms_new = "\tGameMessageArgument *a;\n\tfor (a = m_argList; a && (i < argIndex); a=a->m_next, ++i );\n";
+            assert_eq!(ms_src.matches(ms_old).count(), 1, "MessageStream.cpp: getArgumentDataType's loop must occur once");
+            let msg_gen = out_dir.join("msg_gen");
+            std::fs::create_dir_all(&msg_gen).expect("create msg_gen");
+            std::fs::write(msg_gen.join("MessageStream.cpp"), ms_src.replacen(ms_old, ms_new, 1)).expect("write MessageStream.cpp");
+            let shim_msg = dif.join("shim_msg");
+            let mut msgs = cc::Build::new();
+            base(&mut msgs);
+            msgs.include(&msg_gen)
+                .include(&shim_msg)
+                .include(&shim)
+                .include(up.join("GameEngine/Include"))
+                .include(up.join("Libraries/Include"))
+                .include(ww.join("WWMath"))
+                .include(ww.join("WWLib"))
+                .file(dif.join("wrap_message_stream.cpp"));
+            msgs.compile("upstream_message_stream");
+
             let mut handicap = cc::Build::new();
             base(&mut handicap);
             handicap
