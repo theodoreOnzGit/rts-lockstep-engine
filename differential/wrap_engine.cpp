@@ -53,11 +53,15 @@ unsigned g_rng;
 std::vector<std::string> g_log;
 void seLog(const char *fmt, ...)
 {
-	char buf[512];
-	va_list ap;
+	va_list ap, ap2;
 	va_start(ap, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_copy(ap2, ap);
+	int n = vsnprintf(NULL, 0, fmt, ap);
 	va_end(ap);
+	std::string buf((size_t)n + 1, '\0');
+	vsnprintf(&buf[0], buf.size(), fmt, ap2);
+	va_end(ap2);
+	buf.resize((size_t)n);
 	g_log.push_back(buf);
 }
 AsciiString AsciiString::TheEmptyString;
@@ -354,6 +358,7 @@ static void dumpState(ScriptEngine *e)
 	dp(" fade %d %08x %08x %08x %d %d %d %d", (int)e->m_fade, fb(e->m_minFade), fb(e->m_maxFade), fb(e->m_curFadeValue), e->m_curFadeFrame, e->m_fadeFramesIncrease, e->m_fadeFramesHold, e->m_fadeFramesDecrease);
 	BreezeInfo &b = e->m_breezeInfo;
 	dp(" breeze %08x %08x %08x %08x %08x %08x %d %d", fb(b.m_direction), fb(b.m_directionVec.x), fb(b.m_directionVec.y), fb(b.m_intensity), fb(b.m_lean), fb(b.m_randomness), b.m_breezePeriod, b.m_breezeVersion);
+	dp(" track %s", e->m_currentTrackName.str());
 	dp(" changed %u diff %d freeze %d bonus %d victim %d mpdefeat %d", e->m_frameObjectCountChanged, (int)e->m_gameDifficulty, (int)e->m_freezeByScript, (int)e->m_objectsShouldReceiveDifficultyBonus, (int)e->m_ChooseVictimAlwaysUsesNormal, (int)e->m_shownMPLocalDefeatWindow);
 	dp(" names");
 	for (VecNamedRequestsIt it = e->m_namedObjects.begin(); it != e->m_namedObjects.end(); ++it) dp(" %s:%d", it->first.str(), oid(it->second));
@@ -391,6 +396,7 @@ static void dumpState(ScriptEngine *e)
 
 static Script *seScript(unsigned id) { return TheScriptEngine->findScript(seStr(id)); }
 static ScriptEngine *g_engine;
+static Bool g_stop;
 
 /* One operation (three words: kind, a, b); the table is the test's. */
 static void runOp(const unsigned *op)
@@ -495,7 +501,7 @@ static void runOp(const unsigned *op)
 		case 14: { Script *s = seScript(a); if (s) e->friend_executeAction((b & 1) ? s->getFalseAction() : s->getAction(), seTeam((int)(b >> 1) - 1)); break; }
 		case 15: { Script *s = seScript(a); if (s) seLog("evaluate %d", (int)e->evaluateConditions(s, seTeam((int)(b & 15) - 1), g_playerList.getNthPlayer((Int)(b >> 4 & 15) - 1))); break; }
 		case 16:
-			switch (a % 9) {
+			switch (a % 10) {
 				case 0: e->startEndGameTimer(); break;
 				case 1: e->startQuickEndGameTimer(); break;
 				case 2: e->startCloseWindowTimer(); break;
@@ -504,7 +510,8 @@ static void runOp(const unsigned *op)
 				case 5: e->setGlobalDifficulty((GameDifficulty)(b % 3)); break;
 				case 6: e->clearTeamFlags(); break;
 				case 7: e->clearFlag(seStr(b & 0xfff)); break;
-				default: e->markMPLocalDefeatWindowShown(); break;
+				case 8: e->markMPLocalDefeatWindowShown(); break;
+				default: e->setCurrentTrackName(seStr(1000 + (b & 7))); break;
 			}
 			break;
 		case 17:
@@ -531,6 +538,27 @@ static void runOp(const unsigned *op)
 				default: e->createNamedCache(); break;
 			}
 			break;
+		case 21: {
+			Xfer x(XFER_SAVE);
+			e->xfer(&x);
+			std::string h;
+			for (size_t i = 0; i < x.m_buf.size(); ++i) { char c[3]; snprintf(c, sizeof(c), "%02x", x.m_buf[i]); h += c; }
+			seLog("save %s", h.c_str());
+			break;
+		}
+		case 22: {
+			Xfer save(XFER_SAVE);
+			e->xfer(&save);
+			Xfer load(XFER_LOAD);
+			load.m_buf = save.m_buf;
+			if ((a & 1) && !load.m_buf.empty()) load.m_buf[b % load.m_buf.size()] ^= (unsigned char)((b >> 8) | 1);
+			if (a & 2) load.m_buf.resize(load.m_buf.size() * (b & 7) / 8);
+			e->reset();
+			try { e->xfer(&load); }
+			catch (...) { seLog("load failed"); g_stop = true; break; }
+			e->loadPostProcess();
+			break;
+		}
 		default: { Script *s = seScript(a); if (s) e->executeScript(s); break; }
 	}
 }
@@ -561,7 +589,8 @@ extern "C" int ref_engine_run(const unsigned *cfg, const unsigned *scripts, int 
 	TheScriptEngine = g_engine;
 	g_engine->init();
 	dumpState(g_engine);
-	for (int i = 0; i < n; ++i) { runOp(ops + 3 * i); dumpState(g_engine); }
+	g_stop = false;
+	for (int i = 0; i < n; ++i) { runOp(ops + 3 * i); if (g_stop) break; dumpState(g_engine); }
 	std::string s;
 	for (size_t i = 0; i < g_log.size(); ++i) { s += g_log[i]; s += '\n'; }
 	if ((int)s.size() <= cap) memcpy(out, s.data(), s.size());

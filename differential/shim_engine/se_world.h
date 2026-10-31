@@ -129,24 +129,64 @@ class Xfer;
 class Snapshot { public: virtual ~Snapshot() {} virtual void crc(Xfer *) = 0; virtual void xfer(Xfer *) = 0; virtual void loadPostProcess() = 0; };
 typedef UnsignedByte XferVersion;
 enum XferMode { XFER_INVALID = 0, XFER_SAVE, XFER_LOAD, XFER_CRC };
-/* save and load are batch E4's; until then the calls do nothing */
+/* Xfer: an in-memory stand-in with XferSave's and XferLoad's formats (Xfer.cpp, XferSave.cpp, XferLoad.cpp): little-endian
+** values, an AsciiString as an UnsignedByte length and its bytes (at most 255 on save; cut at a NUL on load), a version as one
+** byte (a newer one than the code's is XFER_INVALID_VERSION); reading past the end throws XFER_READ_ERROR. In CRC mode the values
+** are counted, not kept. xferSnapshot: the snapshot's xfer (save, load) or crc (CRC). */
+enum { XFER_READ_ERROR = 6, XFER_STRING_ERROR = 12, XFER_INVALID_VERSION = 13, XFER_UNKNOWN_STRING = 16 };
 class Xfer
 {
 public:
-	XferMode getXferMode() const { return XFER_SAVE; }
-	void xferVersion(XferVersion *, XferVersion) {}
-	void xferAsciiString(AsciiString *) {}
-	void xferUnsignedShort(UnsignedShort *) {}
-	void xferShort(Short *) {}
-	void xferInt(Int *) {}
-	void xferUnsignedInt(UnsignedInt *) {}
-	void xferReal(Real *) {}
-	void xferBool(Bool *) {}
-	void xferObjectID(ObjectID *) {}
-	void xferCoord3D(Coord3D *) {}
-	void xferUser(void *, Int) {}
-	void xferSnapshot(Snapshot *) {}
-	void xferScienceVec(ScienceVec *) {}
+	Xfer(XferMode m) : m_mode(m), m_pos(0) {}
+	XferMode getXferMode() const { return m_mode; }
+	void xferImplementation(void *p, size_t n)
+	{
+		unsigned char *b = (unsigned char *)p;
+		if (m_mode == XFER_LOAD) { if (m_pos + n > m_buf.size()) throw (int)XFER_READ_ERROR; memcpy(b, &m_buf[m_pos], n); m_pos += n; }
+		else if (m_mode == XFER_SAVE) m_buf.insert(m_buf.end(), b, b + n);
+		else m_pos += n;
+	}
+	void xferVersion(XferVersion *v, XferVersion cur) { xferImplementation(v, 1); if (*v > cur) throw (int)XFER_INVALID_VERSION; }
+	void xferAsciiString(AsciiString *s)
+	{
+		if (m_mode == XFER_LOAD) {
+			unsigned char n = 0; xferImplementation(&n, 1);
+			std::string t(n, '\0'); if (n) xferImplementation(&t[0], n);
+			*s = AsciiString(t.c_str());
+		} else {
+			if (s->getLength() > 255) throw (int)XFER_STRING_ERROR;
+			unsigned char n = (unsigned char)s->getLength(); xferImplementation(&n, 1);
+			if (n) xferImplementation((void *)s->str(), n);
+		}
+	}
+	void xferUnsignedShort(UnsignedShort *v) { xferImplementation(v, 2); }
+	void xferShort(Short *v) { xferImplementation(v, 2); }
+	void xferInt(Int *v) { xferImplementation(v, 4); }
+	void xferUnsignedInt(UnsignedInt *v) { xferImplementation(v, 4); }
+	void xferReal(Real *v) { xferImplementation(v, 4); }
+	void xferBool(Bool *v) { unsigned char b = *v ? 1 : 0; xferImplementation(&b, 1); *v = b != 0; }
+	void xferObjectID(ObjectID *v) { xferImplementation(v, 4); }
+	void xferCoord3D(Coord3D *c) { xferReal(&c->x); xferReal(&c->y); xferReal(&c->z); }
+	void xferUser(void *p, Int n) { xferImplementation(p, (size_t)n); }
+	void xferSnapshot(Snapshot *s) { if (m_mode == XFER_CRC) s->crc(this); else s->xfer(this); }
+	/* Xfer::xferScienceVec and xferScienceType, on the stand-in science store: "sci<k>" for 0 <= k < 8 */
+	void xferScienceVec(ScienceVec *v)
+	{
+		XferVersion version = 1; xferVersion(&version, 1);
+		UnsignedShort count = (UnsignedShort)v->size(); xferUnsignedShort(&count);
+		if (m_mode == XFER_SAVE) {
+			for (size_t i = 0; i < v->size(); ++i) { char b[32]; snprintf(b, sizeof(b), "sci%d", (*v)[i]); AsciiString n(b); xferAsciiString(&n); }
+		} else if (m_mode == XFER_LOAD) {
+			v->clear();
+			for (UnsignedShort i = 0; i < count; ++i) {
+				AsciiString n; xferAsciiString(&n);
+				int k = seNum(n.str(), "sci");
+				if (k < 0 || k >= 8) throw (int)XFER_UNKNOWN_STRING;
+				v->push_back(k);
+			}
+		}
+	}
+	XferMode m_mode; std::vector<unsigned char> m_buf; size_t m_pos;
 };
 class INI;
 struct FieldParse { const char *token; void (*parse)(INI *, void *, void *, const void *); const void *userData; int offset; };
@@ -428,7 +468,15 @@ public:
 	ObjectTypes() {}
 	ObjectTypes(const AsciiString &n) : m_name(n) {}
 	void crc(Xfer *) {}
-	void xfer(Xfer *) {}
+	/* ObjectTypes::xfer (ObjectTypes.cpp, version 1): the name, the count, the types */
+	void xfer(Xfer *x)
+	{
+		XferVersion v = 1; x->xferVersion(&v, 1);
+		x->xferAsciiString(&m_name);
+		UnsignedShort n = (UnsignedShort)m_types.size(); x->xferUnsignedShort(&n);
+		if (x->getXferMode() == XFER_SAVE) { for (size_t i = 0; i < m_types.size(); ++i) x->xferAsciiString(&m_types[i]); }
+		else { if (!m_types.empty()) throw (int)XFER_UNKNOWN_STRING + 100; for (UnsignedShort i = 0; i < n; ++i) { AsciiString t; x->xferAsciiString(&t); m_types.push_back(t); } }
+	}
 	void loadPostProcess() {}
 	AsciiString getListName() const { return m_name; }
 	void addObjectType(const AsciiString &t) { if (std::find(m_types.begin(), m_types.end(), t) == m_types.end()) m_types.push_back(t); }
@@ -437,12 +485,12 @@ public:
 	AsciiString getNthInList(Int i) const { return i >= 0 && i < (Int)m_types.size() ? m_types[i] : AsciiString(); }
 	AsciiString m_name; std::vector<AsciiString> m_types;
 };
-class AudioEventRTS { public: AudioEventRTS(const AsciiString &n) : m_name(n) {} void setPlayerIndex(Int) {} AsciiString m_name; };
+class AudioEventRTS { public: AudioEventRTS(const AsciiString &n) : m_name(n), m_player(-1) {} void setPlayerIndex(Int p) { m_player = p; } AsciiString m_name; Int m_player; };
 class GameAudio
 {
 public:
 	Real getAudioLengthMS(const AudioEventRTS *e) { return (Real)(seStrHash(e->m_name.str()) % 4000) * 0.75f; }
-	void addAudioEvent(AudioEventRTS *e) { seLog("audio add %s", e->m_name.str()); }
+	void addAudioEvent(AudioEventRTS *e) { seLog("audio add %s %d", e->m_name.str(), e->m_player); }
 };
 extern GameAudio *TheAudio;
 class GameMessage { public: enum { MSG_CLEAR_GAME_DATA = 7 }; };

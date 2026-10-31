@@ -8,7 +8,8 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! `ScriptEngine` at run time (`logic::world::script_engine`) against the C++, `p1w13-sonnet`, layer 11 batch E2.
+//! `ScriptEngine` at run time and its save and load (`logic::world::script_engine`) against the C++, `p1w13-sonnet`, layer 11
+//! batches E2 and E4.
 //!
 //! # Method
 //!
@@ -28,49 +29,64 @@
 //! engine's own types and others, with parameters that name things that exist or not), and 1 to 40 operations: an update, frames
 //! passing, a configuration word, running scripts for a team or an object, the notifications and their questions, the named
 //! object cache, named reveals, topple directions, object type lists, the lookups, reset, newMap, `friend_executeAction`,
-//! `evaluateConditions`, the timers and flags, object counts, sequential scripts appended, removed and timed, the named cache,
-//! `executeScript`. When the Rust side finds upstream undefined at an operation, the C++ runs the operations before it.
+//! `evaluateConditions`, the timers and flags, the music track, object counts, sequential scripts appended, removed and timed,
+//! the named cache, `executeScript`, a save, a save and load round trip (the bytes as they are, or damaged). The C++ `Xfer` is an
+//! in-memory stand-in with `XferSave`'s and `XferLoad`'s formats; the Rust side uses the crate's `XferSave` and `XferLoad`. When the Rust side finds upstream undefined at an operation, the C++ runs the operations before it.
 //!
-//! # Results (2026-10-31, `ENGINE_CASES=20000`, the default)
+//! # Results (2026-10-31, `ENGINE_CASES=20000`, the default; batches E2 and E4)
 //!
-//! 20,000 programs, 312,562 operations compared (68,812 updates; every operation kind 9,500 times or more), 816,982 log lines:
-//! **0 mismatches**. 6,249 programs were cut at an operation upstream does not define (their prefix compared): 3,317 a counter,
-//! flag or timer index a parameter caches outside `0..256`, or a notification's player index outside the 16; 1,454 a missing
-//! parameter; 656 `setToppleDirection` with no direction for a new name; 542 `getObjectCount` of a player that does not exist;
-//! 199 a random or millisecond timer's `Real` an `Int` cannot hold; 66 a counter's `Int` overflow; 1 a subroutine calling
-//! itself without end ([`MAX_CALL_DEPTH`]). (No program met an action adding or removing a sequential script under the
-//! progress loop's iterator: that path is modelled from the vector's growth policy, not seen.)
+//! 20,000 programs, 330,759 operations compared (68,054 updates; every operation kind 9,700 times or more, saves and save-load
+//! round trips about 10,000 each), 716,430 log lines: **0 mismatches**. A round trip saves, resets, and loads the bytes, as they
+//! are or with a byte flipped or the end cut off (a load that throws ends the program on both sides, with "load failed"); a save
+//! is compared byte for byte. 5,064 programs were cut at an operation upstream does not define (their prefix compared): 2,679 a
+//! counter, flag or timer index a parameter caches outside `0..256`, or a notification's player index outside the 16; 1,241 a
+//! missing parameter; 497 `setToppleDirection` with no direction for a new name; 364 `getObjectCount` of a player that does not
+//! exist; 153 a random or millisecond timer's `Real` an `Int` cannot hold; 55 a load into a state upstream cannot use
+//! ([`LOAD_UNDEFINED`]); 35 the local player missing (`loadPostProcess` with a music track, the challenge's `teamThePlayer`); 40 a
+//! counter's `Int` overflow. (No program met an action adding or removing a sequential script under the progress loop's iterator:
+//! that path is modelled from the vector's growth policy, not seen; and none called a subroutine 1,000 deep in this run.)
 //!
-//! Two defects of the fixture were found on the way, both in the stand-ins: an object without a thing template (real objects
-//! always have one: `addObjectToCache` formats its name), and the Rust test's thread stack, too small for the 1,000 nested
-//! subroutine calls both sides make before the Rust side calls it an overflow (the test runs in a thread with a 1 GiB stack).
+//! Defects of the fixture found on the way, all in the stand-ins or the test: an object without a thing template (real objects
+//! always have one: `addObjectToCache` formats its name); the Rust test's thread stack, too small for the 1,000 nested subroutine
+//! calls both sides make before the Rust side calls it an overflow (the test runs in a thread with a 1 GiB stack); the C++ log's
+//! 512-byte lines, which cut the saves short.
 //!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>`, 20,000 programs: all 12 caught. A plant must only make the Rust side do more, or change state and lines: one
+//! `L9_PLANT=<id>`, 20,000 programs: all 19 caught. A plant must only make the Rust side do more, or change state and lines: one
 //! that makes it skip work the C++ does can hide upstream's undefined behaviour from it, and the unplanted C++ then crashes (the
-//! first 3902, 3907 and 3913, which changed one-shot clearing, sequential waits and empty or-terms, did; replaced).
+//! first 3902, 3907, 3913, 3924 and 3926, which changed one-shot clearing, sequential waits, empty or-terms, the save's format and
+//! the music track's playing, did; replaced).
 //!
 //! | id | planted bug | mismatches |
 //! |---|---|---|
-//! | 3901 | `setFade` with no increase frames does not update the fade at once | 1,438 |
-//! | 3902 | a transferred name never carries the old object's colour | 72 |
-//! | 3905 | a singleton team returned when inactive | 7 |
-//! | 3907 | completed videos noted at the front | 34 |
-//! | 3908 | an appended sequential script keeps its instruction | 363 |
-//! | 3909 | a power or upgrade question ignores the source object | 4 |
-//! | 3911 | `<Local Player>` names no player | 5 |
-//! | 3913 | object counts stored one more | 4,141 |
-//! | 3914 | the fade's decrease divides by its frames, not frames + 1 | 9,611 |
-//! | 3915 | attack priorities set on the template, not its final override | 44 |
-//! | 3916 | a named reveal twice its radius | 5 |
-//! | 3917 | a named reveal never removed | 37 |
+//! | 3901 | `setFade` with no increase frames does not update the fade at once | 1,209 |
+//! | 3902 | a transferred name never carries the old object's colour | 54 |
+//! | 3905 | a singleton team returned when inactive | 6 |
+//! | 3907 | completed videos noted at the front | 16 |
+//! | 3908 | an appended sequential script keeps its instruction | 271 |
+//! | 3909 | a power or upgrade question ignores the source object | 2 |
+//! | 3911 | `<Local Player>` names no player | 3 |
+//! | 3913 | object counts stored one more | 3,326 |
+//! | 3914 | the fade's decrease divides by its frames, not frames + 1 | 8,761 |
+//! | 3915 | attack priorities set on the template, not its final override | 35 |
+//! | 3916 | a named reveal twice its radius | 1 |
+//! | 3917 | a named reveal never removed | 26 |
+//! | 3921 | a loaded attack priority set on the template, not its final override | 28 |
+//! | 3922 | a load without a fade does not start the fade in | 801 |
+//! | 3923 | named objects saved without their ids | 4,290 |
+//! | 3924 | a loaded named reveal twice its radius | 147 |
+//! | 3925 | the breeze's version not loaded | 53 |
+//! | 3926 | the music track played for the next player index | 48 |
 
 use std::collections::BTreeMap;
 
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_type::ObjectId;
-use rts_lockstep_engine::common::ini::IniError;
+use rts_lockstep_engine::common::ini::{IniError, Undefined};
+use rts_lockstep_engine::common::xfer::Xfer;
+use rts_lockstep_engine::common::xfer_load::XferLoad;
+use rts_lockstep_engine::common::xfer_save::XferSave;
 use rts_lockstep_engine::common::name_key_generator::NameKeyType;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::scripts::{action_type as at, condition_type as ct, parameter_type as pt, Condition, OrCondition, Parameter, Script, ScriptAction, ScriptGroup, ScriptList, MAX_PARMS};
@@ -267,6 +283,7 @@ struct Sim {
     names: Vec<Vec<u8>>,
     colors: Vec<(bool, i32)>,
     groups: Vec<i32>,
+    stop: bool,
 }
 
 impl Sim {
@@ -579,6 +596,25 @@ impl ScriptEngineHost for Sim {
     fn se_template_final_override(&self, t: TemplateH) -> TemplateH {
         (t * 5 + 1) % self.ntemplates()
     }
+    fn se_team_exists(&self, id: TeamH) -> bool {
+        self.team(id - 1).is_some()
+    }
+    fn se_template_name(&self, t: TemplateH) -> Vec<u8> {
+        format!("tmpl{t}").into_bytes()
+    }
+    fn se_science_name(&self, s: i32) -> Vec<u8> {
+        format!("sci{s}").into_bytes()
+    }
+    fn se_science_from_name(&self, name: &[u8]) -> Option<i32> {
+        let k = num(name, "sci");
+        (0..8).contains(&k).then_some(k)
+    }
+    fn se_actions_enable_difficulty_bonuses(&mut self, enable: bool) {
+        self.log.push(format!("actions bonuses {}", u8::from(enable)));
+    }
+    fn se_audio_add_event(&mut self, name: &[u8], player: i32) {
+        self.log.push(format!("audio add {} {player}", st(name)));
+    }
 }
 
 /// `dumpState`.
@@ -612,7 +648,7 @@ fn dump(e: &ScriptEngine, h: &Sim) -> String {
     );
     s += &format!(
         " fade {} {} {} {} {} {} {} {}",
-        e.fade as i32,
+        e.fade,
         fb(e.min_fade),
         fb(e.max_fade),
         fb(e.cur_fade_value),
@@ -633,6 +669,7 @@ fn dump(e: &ScriptEngine, h: &Sim) -> String {
         b.breeze_period,
         b.breeze_version
     );
+    s += &format!(" track {}", st(&e.current_track_name));
     s += &format!(
         " changed {} diff {} freeze {} bonus {} victim {} mpdefeat {}",
         e.frame_object_count_changed,
@@ -866,7 +903,7 @@ fn run_op(e: &mut ScriptEngine, h: &mut Sim, op: [u32; 3]) -> Result<(), IniErro
                 h.log.push(format!("evaluate {}", u8::from(v)));
             }
         }
-        16 => match a % 9 {
+        16 => match a % 10 {
             0 => e.start_end_game_timer(),
             1 => e.start_quick_end_game_timer(),
             2 => e.start_close_window_timer(),
@@ -875,7 +912,8 @@ fn run_op(e: &mut ScriptEngine, h: &mut Sim, op: [u32; 3]) -> Result<(), IniErro
             5 => e.set_global_difficulty((b % 3) as i32),
             6 => e.clear_team_flags(),
             7 => e.clear_flag(&se_str(b & 0xfff)),
-            _ => e.mark_mp_local_defeat_window_shown(),
+            8 => e.mark_mp_local_defeat_window_shown(),
+            _ => e.current_track_name = se_str(1000 + (b & 7)),
         },
         17 => {
             let (p, name) = ((b & 7) as i32, se_str(600 + ((b >> 4) & 7)));
@@ -922,6 +960,40 @@ fn run_op(e: &mut ScriptEngine, h: &mut Sim, op: [u32; 3]) -> Result<(), IniErro
             }
             _ => e.create_named_cache(h),
         },
+        21 => {
+            let mut x = XferSave::new();
+            x.open(b"engine").expect("open");
+            e.xfer(h, &mut x).expect("a save does not fail");
+            let hex: String = x.bytes().iter().map(|b| format!("{b:02x}")).collect();
+            h.log.push(format!("save {hex}"));
+        }
+        22 => {
+            let mut x = XferSave::new();
+            x.open(b"engine").expect("open");
+            e.xfer(h, &mut x).expect("a save does not fail");
+            let mut bytes = x.bytes().to_vec();
+            if a & 1 != 0 && !bytes.is_empty() {
+                let n = bytes.len();
+                bytes[b as usize % n] ^= ((b >> 8) | 1) as u8;
+            }
+            if a & 2 != 0 {
+                bytes.truncate(bytes.len() * (b & 7) as usize / 8);
+            }
+            e.reset(h);
+            let mut l = XferLoad::new(bytes);
+            l.open(b"engine").expect("open");
+            match e.xfer(h, &mut l) {
+                Ok(()) => e.load_post_process(h)?,
+                Err(s) if s == LOAD_UNDEFINED => return Err(IniError::undefined(Undefined::NullObject)),
+                Err(_s) => {
+                    if std::env::var("ENGINE_DEBUG").is_ok() {
+                        eprintln!("load failed: {_s:?} at {:?}", l.position());
+                    }
+                    h.log.push("load failed".into());
+                    h.stop = true;
+                }
+            }
+        }
         _ => {
             if let Some(r) = e.find_script(h, &se_str(a)) {
                 e.execute_script(h, r)?;
@@ -943,6 +1015,7 @@ fn rust_run(cfg: &[u32; NCFG], scripts: &[u32], ops: &[[u32; 3]]) -> (String, Op
         names: (0..16).map(|o| if (cfg[64 + o] >> 12) & 1 != 0 { format!("unit{}", (cfg[64 + o] >> 8) & 15).into_bytes() } else { Vec::new() }).collect(),
         colors: (0..16).map(|o| (hh(cfg[7], 100, o) & 1 != 0, (hh(cfg[7], 101, o) & 0xff_ffff) as i32)).collect(),
         groups: Vec::new(),
+        stop: false,
     };
     let mut e = ScriptEngine::new();
     // init: TheScriptActions->init(), TheScriptConditions->init(), the templates (batch E1), reset()
@@ -957,6 +1030,9 @@ fn rust_run(cfg: &[u32; NCFG], scripts: &[u32], ops: &[[u32; 3]]) -> (String, Op
         if let Err(err) = run_op(&mut e, &mut h, *op) {
             h.log.truncate(before);
             undefined_at = Some((i, format!("op {} {:?}", op[0], err)));
+            break;
+        }
+        if h.stop {
             break;
         }
         let d = dump(&e, &h);
@@ -1128,7 +1204,7 @@ fn gen_program(g: &mut Gen) -> ([u32; NCFG], Vec<u32>, Vec<[u32; 3]>) {
         ops.push([13, 0, 0]);
     }
     for _ in 0..n {
-        let k = match g.below(30) {
+        let k = match g.below(32) {
             0..=6 => 0,
             7..=9 => 1,
             k => k - 8,
@@ -1171,7 +1247,7 @@ fn run() {
     let mut g = Gen::new(0x5E_0002);
     let (mut mismatches, mut cut, mut ops_run, mut lines) = (0usize, 0usize, 0usize, 0usize);
     let mut cut_why: BTreeMap<String, usize> = BTreeMap::new();
-    let mut by_op = [0usize; 22];
+    let mut by_op = [0usize; 24];
     for case in 0..cases {
         let (cfg, scripts, ops) = gen_program(&mut g);
         let (r, undefined_at) = rust_run(&cfg, &scripts, &ops);

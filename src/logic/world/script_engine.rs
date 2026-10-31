@@ -3,7 +3,7 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Include/GameLogic/ScriptEngine.h
-//   GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp (lines 143-362 and 5270-8140, 8400-8530, 9318-9350)
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp (lines 143-362 and 5270-9350)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -52,10 +52,22 @@
 //! profiling of `SPECIAL_SCRIPT_PROFILING` and `getStats` (internal builds), and the counter of `getTeamNamed`'s warnings (it only
 //! limits debug messages). The text built for those messages (`getUiText`) has no effect and is not built.
 //!
-//! Differential-verified in `tests/differential_script_engine.rs` (the file with three mechanical edits about the debugger and
-//! particle editor DLLs, on stand-ins): 20,000 programs, 312,562 operations, 0 mismatches; 12 planted bugs (3901-3917), all caught.
+//! # Save and load (batch E4)
 //!
-//! `p1w13-sonnet`, layer 11, batch E2, 2026-10-31.
+//! [`ScriptEngine::xfer`] (version 5) and [`ScriptEngine::load_post_process`], with `SequentialScript::xfer`,
+//! `AttackPriorityInfo::xfer` and the list helpers. Upstream facts kept: only the head of each sequential script chain is saved
+//! (what follows it is lost on load); the attack priority map is saved in the order of its keys, template pointers upstream (the
+//! host's handle order here); a count is an `UnsignedShort` (a longer list saves a wrapped count and every element); a named
+//! object, team or template that is gone, a list that is not empty, or a count of players other than 16 throws `SC_INVALID_DATA`
+//! (here [`XferStatus::ErrorUnknown`]), an unknown science `XFER_UNKNOWN_STRING`; a script that is gone loads as a NULL script,
+//! and counter, flag and priority counts load unchecked: both are undefined at their first use, reported as [`LOAD_UNDEFINED`];
+//! the named reveals load through one `NamedReveal`; a load with no fade starts the fade in from black.
+//!
+//! Differential-verified in `tests/differential_script_engine.rs` (the file with three mechanical edits about the debugger and
+//! particle editor DLLs, on stand-ins): 20,000 programs, 330,759 operations (saves compared byte for byte, and loads), 0
+//! mismatches; 19 planted bugs (3901-3926), all caught.
+//!
+//! `p1w13-sonnet`, layer 11, batches E2 and E4, 2026-10-31.
 
 use std::collections::BTreeMap;
 
@@ -66,6 +78,7 @@ use crate::common::game_type::ObjectId;
 use crate::common::ini::{IniError, Undefined};
 use crate::common::name_key_generator::NameKeyType;
 use crate::common::trig::{cos, sin};
+use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::logic::modules::plant;
 use crate::logic::object_types::ObjectTypes;
 use crate::logic::scripts::{action_type as at, condition_type as ct, parameter_type, Condition, Parameter, Script, ScriptAction, ScriptGroup, ScriptList};
@@ -158,19 +171,18 @@ pub mod difficulty {
     pub const HARD: i32 = 2;
 }
 
-/// `TFade`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Fade {
+/// `TFade` (an `Int` here: a load takes any value, as upstream's enum does).
+pub mod fade {
     /// `FADE_NONE`.
-    None = 0,
+    pub const NONE: i32 = 0;
     /// `FADE_SUBTRACT`.
-    Subtract = 1,
+    pub const SUBTRACT: i32 = 1;
     /// `FADE_ADD`.
-    Add = 2,
+    pub const ADD: i32 = 2;
     /// `FADE_SATURATE`.
-    Saturate = 3,
+    pub const SATURATE: i32 = 3;
     /// `FADE_MULTIPLY`.
-    Multiply = 4,
+    pub const MULTIPLY: i32 = 4;
 }
 
 /// `struct BreezeInfo`.
@@ -448,6 +460,20 @@ pub trait ScriptEngineHost {
     fn se_template_is_kind_of(&self, t: TemplateH, kind: i32) -> R<bool>;
     /// `tmpl->getFinalOverride()`.
     fn se_template_final_override(&self, t: TemplateH) -> TemplateH;
+
+    // --- save and load (batch E4) ---
+    /// `TheTeamFactory->findTeamByID(id)` (`TeamH` is the team's id).
+    fn se_team_exists(&self, id: TeamH) -> bool;
+    /// `tmpl->getName()`.
+    fn se_template_name(&self, t: TemplateH) -> Vec<u8>;
+    /// `TheScienceStore->getInternalNameForScience(science)`.
+    fn se_science_name(&self, science: i32) -> Vec<u8>;
+    /// `TheScienceStore->getScienceFromInternalName(name)` (`None`: `SCIENCE_INVALID`).
+    fn se_science_from_name(&self, name: &[u8]) -> Option<i32>;
+    /// `TheScriptActions->doEnableOrDisableObjectDifficultyBonuses(enable)`.
+    fn se_actions_enable_difficulty_bonuses(&mut self, enable: bool);
+    /// `TheAudio->addAudioEvent(&event)` of an `AudioEventRTS(name)` for the player index.
+    fn se_audio_add_event(&mut self, name: &[u8], player: i32);
 }
 
 /// `(Int)` of a `Real` (truncation): undefined out of range.
@@ -525,7 +551,7 @@ pub struct ScriptEngine {
     /// `m_currentTrackName`.
     pub current_track_name: Vec<u8>,
     /// `m_fade`.
-    pub fade: Fade,
+    pub fade: i32,
     /// `m_minFade`.
     pub min_fade: f32,
     /// `m_maxFade`.
@@ -617,7 +643,7 @@ impl ScriptEngine {
             current_player: None,
             skirmish_human_player: None,
             current_track_name: Vec::new(),
-            fade: Fade::None,
+            fade: fade::NONE,
             min_fade: 0.0,
             max_fade: 0.0,
             cur_fade_value: 0.0,
@@ -742,7 +768,7 @@ impl ScriptEngine {
             }
         }
         self.first_update = true;
-        self.fade = Fade::Multiply;
+        self.fade = fade::MULTIPLY;
         self.cur_fade_frame = 0;
         self.min_fade = 1.0;
         self.max_fade = 0.0;
@@ -805,7 +831,7 @@ impl ScriptEngine {
                 h.se_append_clear_game_data();
             }
         }
-        if self.fade != Fade::None {
+        if self.fade != fade::NONE {
             self.update_fades();
         }
         if self.end_game_timer >= 0 {
@@ -883,7 +909,7 @@ impl ScriptEngine {
             self.cur_fade_value = self.max_fade + factor * (self.min_fade - self.max_fade);
             return;
         }
-        self.fade = Fade::None;
+        self.fade = fade::NONE;
     }
 
     // --------------------------------------------------------------------------------------------------------------------
@@ -1296,12 +1322,12 @@ impl ScriptEngine {
     /// `setFade(pAction)`.
     fn set_fade<H: ScriptEngineHost>(&mut self, h: &mut H, at: ItemRef, action_type: i32) -> R<()> {
         self.fade = match action_type {
-            at::CAMERA_FADE_ADD => Fade::Add,
-            at::CAMERA_FADE_SUBTRACT => Fade::Subtract,
-            at::CAMERA_FADE_SATURATE => Fade::Saturate,
-            at::CAMERA_FADE_MULTIPLY => Fade::Multiply,
+            at::CAMERA_FADE_ADD => fade::ADD,
+            at::CAMERA_FADE_SUBTRACT => fade::SUBTRACT,
+            at::CAMERA_FADE_SATURATE => fade::SATURATE,
+            at::CAMERA_FADE_MULTIPLY => fade::MULTIPLY,
             _ => {
-                self.fade = Fade::None;
+                self.fade = fade::NONE;
                 return Ok(());
             }
         };
@@ -2270,6 +2296,450 @@ impl ScriptEngine {
             }
         }
         self.current_player = None;
+        Ok(())
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// batch E4: save and load
+// ------------------------------------------------------------------------------------------------------------------------
+
+/// `throw SC_INVALID_DATA` (a `SaveCode`, not an `XferStatus`: `ErrorUnknown`, as `StateMachine` maps it).
+const SC_INVALID_DATA: XferStatus = XferStatus::ErrorUnknown;
+
+/// A load that upstream completes into a state it cannot use without undefined behaviour, reported as this status, which the
+/// caller must take as such: a sequential script whose script the map no longer has (loaded as NULL, dereferenced at its first
+/// use, progressing or saving it), or a counter, flag or attack priority count beyond its array (`m_numCounters` is a loop bound
+/// over `m_counters`, and a negative one its index when a name is added).
+pub const LOAD_UNDEFINED: XferStatus = XferStatus::InvalidParameters;
+
+/// A nested `xferSnapshot`: the closure is the snapshot's `xfer`; its `crc` and `loadPostProcess` do nothing (as every snapshot
+/// the engine nests: `SequentialScript`, `AttackPriorityInfo`, `ObjectTypes`).
+struct Nested<F: FnMut(&mut dyn Xfer) -> XferResult<()>>(F);
+
+impl<F: FnMut(&mut dyn Xfer) -> XferResult<()>> Snapshot for Nested<F> {
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        (self.0)(xfer)
+    }
+    fn load_post_process(&mut self) {}
+}
+
+fn xfer_list_string(x: &mut dyn Xfer, list: &mut Vec<Vec<u8>>) -> XferResult<()> {
+    let mut version: XferVersion = 1;
+    x.xfer_version(&mut version, 1)?;
+    let mut count = list.len() as u16;
+    x.xfer_unsigned_short(&mut count)?;
+    if x.get_xfer_mode() == XferMode::Save {
+        for s in list.iter() {
+            let mut s = s.clone();
+            x.xfer_ascii_string(&mut s)?;
+        }
+    } else {
+        if !list.is_empty() {
+            return Err(SC_INVALID_DATA);
+        }
+        for _ in 0..count {
+            let mut s = Vec::new();
+            x.xfer_ascii_string(&mut s)?;
+            list.push(s);
+        }
+    }
+    Ok(())
+}
+
+fn xfer_list_string_u32(x: &mut dyn Xfer, list: &mut Vec<(Vec<u8>, u32)>) -> XferResult<()> {
+    let mut version: XferVersion = 1;
+    x.xfer_version(&mut version, 1)?;
+    let mut count = list.len() as u16;
+    x.xfer_unsigned_short(&mut count)?;
+    if x.get_xfer_mode() == XferMode::Save {
+        for (s, v) in list.iter() {
+            let (mut s, mut v) = (s.clone(), *v);
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_unsigned_int(&mut v)?;
+        }
+    } else {
+        if !list.is_empty() {
+            return Err(SC_INVALID_DATA);
+        }
+        for _ in 0..count {
+            let (mut s, mut v) = (Vec::new(), 0u32);
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_unsigned_int(&mut v)?;
+            list.push((s, v));
+        }
+    }
+    Ok(())
+}
+
+fn xfer_list_string_id(x: &mut dyn Xfer, list: &mut Vec<(Vec<u8>, ObjectId)>) -> XferResult<()> {
+    let mut version: XferVersion = 1;
+    x.xfer_version(&mut version, 1)?;
+    let mut count = list.len() as u16;
+    x.xfer_unsigned_short(&mut count)?;
+    if x.get_xfer_mode() == XferMode::Save {
+        for (s, v) in list.iter() {
+            let (mut s, mut v) = (s.clone(), *v);
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_object_id(&mut v)?;
+        }
+    } else {
+        if !list.is_empty() {
+            return Err(SC_INVALID_DATA);
+        }
+        for _ in 0..count {
+            let (mut s, mut v) = (Vec::new(), INVALID_ID);
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_object_id(&mut v)?;
+            list.push((s, v));
+        }
+    }
+    Ok(())
+}
+
+fn xfer_list_string_coord(x: &mut dyn Xfer, list: &mut Vec<(Vec<u8>, Coord3D)>) -> XferResult<()> {
+    let mut version: XferVersion = 1;
+    x.xfer_version(&mut version, 1)?;
+    let mut count = list.len() as u16;
+    x.xfer_unsigned_short(&mut count)?;
+    if x.get_xfer_mode() == XferMode::Save {
+        for (s, c) in list.iter() {
+            let (mut s, mut c) = (s.clone(), *c);
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_coord3d(&mut c)?;
+        }
+    } else {
+        if !list.is_empty() {
+            return Err(SC_INVALID_DATA);
+        }
+        for _ in 0..count {
+            let (mut s, mut c) = (Vec::new(), Coord3D::default());
+            x.xfer_ascii_string(&mut s)?;
+            x.xfer_coord3d(&mut c)?;
+            list.push((s, c));
+        }
+    }
+    Ok(())
+}
+
+impl ScriptEngine {
+    /// `xferScienceVec`: a science by its internal name (an unknown one on load is `XFER_UNKNOWN_STRING`; CRC: version and
+    /// count only, as upstream's branches).
+    fn xfer_science_vec<H: ScriptEngineHost>(h: &H, x: &mut dyn Xfer, v: &mut Vec<i32>) -> XferResult<()> {
+        let mut version: XferVersion = 1;
+        x.xfer_version(&mut version, 1)?;
+        let mut count = v.len() as u16;
+        x.xfer_unsigned_short(&mut count)?;
+        match x.get_xfer_mode() {
+            XferMode::Save => {
+                for s in v.iter() {
+                    let mut name = h.se_science_name(*s);
+                    x.xfer_ascii_string(&mut name)?;
+                }
+            }
+            XferMode::Load => {
+                v.clear();
+                for _ in 0..count {
+                    let mut name = Vec::new();
+                    x.xfer_ascii_string(&mut name)?;
+                    v.push(h.se_science_from_name(&name).ok_or(XferStatus::UnknownString)?);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// `SequentialScript::xfer`: team id, object id, the script's name (found again by name on load: one that is gone is
+    /// [`LOAD_UNDEFINED`]), instruction, loops, wait, the flag.
+    fn xfer_sequential<H: ScriptEngineHost>(&self, h: &H, x: &mut dyn Xfer, q: &mut SequentialScript) -> XferResult<()> {
+        let mut version: XferVersion = 1;
+        x.xfer_version(&mut version, 1)?;
+        let mut team_id = q.team_to_exec_on.unwrap_or(0);
+        let mut b = team_id.to_le_bytes();
+        x.xfer_user(&mut b)?;
+        team_id = i32::from_le_bytes(b);
+        if x.get_xfer_mode() == XferMode::Load {
+            q.team_to_exec_on = (team_id != 0 && h.se_team_exists(team_id)).then_some(team_id);
+            if team_id != 0 && q.team_to_exec_on.is_none() {
+                return Err(SC_INVALID_DATA);
+            }
+        }
+        x.xfer_object_id(&mut q.object_id)?;
+        if x.get_xfer_mode() == XferMode::Save {
+            let mut name = Self::script(h, q.script).map(|s| s.script_name.clone()).unwrap_or_default();
+            x.xfer_ascii_string(&mut name)?;
+        } else {
+            let mut name = Vec::new();
+            x.xfer_ascii_string(&mut name)?;
+            if x.get_xfer_mode() == XferMode::Load {
+                q.script = self.find_script(h, &name).ok_or(LOAD_UNDEFINED)?;
+            }
+        }
+        x.xfer_int(&mut q.current_instruction)?;
+        x.xfer_int(&mut q.times_to_loop)?;
+        x.xfer_int(&mut q.frames_to_wait)?;
+        x.xfer_bool(&mut q.dont_advance_instruction)
+    }
+
+    /// `AttackPriorityInfo::xfer`: name, default, the map's count and each template by name with its priority.
+    fn xfer_attack_info<H: ScriptEngineHost>(h: &H, x: &mut dyn Xfer, a: &mut AttackPriorityInfo) -> XferResult<()> {
+        let mut version: XferVersion = 1;
+        x.xfer_version(&mut version, 1)?;
+        x.xfer_ascii_string(&mut a.name)?;
+        x.xfer_int(&mut a.default_priority)?;
+        let mut count = a.priority_map.as_ref().map_or(0, |m| m.len()) as u16;
+        x.xfer_unsigned_short(&mut count)?;
+        if x.get_xfer_mode() == XferMode::Save {
+            for (t, p) in a.priority_map.iter().flatten() {
+                let (mut name, mut p) = (h.se_template_name(*t), *p);
+                x.xfer_ascii_string(&mut name)?;
+                x.xfer_int(&mut p)?;
+            }
+        } else {
+            for _ in 0..count {
+                let mut name = Vec::new();
+                x.xfer_ascii_string(&mut name)?;
+                let t = h.se_find_template(&name).ok_or(SC_INVALID_DATA)?;
+                let mut p = 0;
+                x.xfer_int(&mut p)?;
+                let t = if plant(3921) { t } else { h.se_template_final_override(t) };
+                a.set_priority(t, p);
+            }
+        }
+        Ok(())
+    }
+
+    /// `xfer` (version 5): the sequential scripts (each chain's head only: what follows a head is not saved), the counters, the
+    /// flags, the attack priority sets, the timers, the named objects (by id), the fade, the notifications, the topple
+    /// directions, the breeze, the difficulty, the freeze, the named reveals, the object type lists, the bonus flag, the music
+    /// track, the victim flag; a load with no fade starts the fade in from black.
+    pub fn xfer<H: ScriptEngineHost>(&mut self, h: &mut H, x: &mut dyn Xfer) -> XferResult<()> {
+        let mut version: XferVersion = 5;
+        x.xfer_version(&mut version, 5)?;
+        let mut count = self.sequential_scripts.len() as u16;
+        x.xfer_unsigned_short(&mut count)?;
+        if x.get_xfer_mode() == XferMode::Save {
+            for i in 0..self.sequential_scripts.len() {
+                let mut head = self.sequential_scripts[i][0];
+                let me = &*self;
+                x.xfer_snapshot(&mut Nested(|x: &mut dyn Xfer| me.xfer_sequential(h, x, &mut head)))?;
+            }
+        } else {
+            if !self.sequential_scripts.is_empty() {
+                return Err(SC_INVALID_DATA);
+            }
+            for _ in 0..count {
+                // `newInstance(SequentialScript)` pushed, then filled
+                let mut q = SequentialScript::new(ScriptRef { side: 0, group: None, index: 0 });
+                let me = &*self;
+                let r = x.xfer_snapshot(&mut Nested(|x: &mut dyn Xfer| me.xfer_sequential(h, x, &mut q)));
+                self.push_chain(vec![q]);
+                r?;
+            }
+        }
+        let mut n = self.num_counters as u16;
+        x.xfer_unsigned_short(&mut n)?;
+        if usize::from(n) > MAX_COUNTERS {
+            return Err(SC_INVALID_DATA);
+        }
+        for c in &mut self.counters[..usize::from(n)] {
+            x.xfer_int(&mut c.value)?;
+            x.xfer_ascii_string(&mut c.name)?;
+            x.xfer_bool(&mut c.is_countdown_timer)?;
+        }
+        x.xfer_int(&mut self.num_counters)?;
+        let mut n = self.num_flags as u16;
+        x.xfer_unsigned_short(&mut n)?;
+        if usize::from(n) > MAX_FLAGS {
+            return Err(SC_INVALID_DATA);
+        }
+        for f in &mut self.flags[..usize::from(n)] {
+            x.xfer_bool(&mut f.value)?;
+            x.xfer_ascii_string(&mut f.name)?;
+        }
+        x.xfer_int(&mut self.num_flags)?;
+        let mut n = self.num_attack_info as u16;
+        x.xfer_unsigned_short(&mut n)?;
+        if usize::from(n) > MAX_ATTACK_PRIORITIES {
+            return Err(SC_INVALID_DATA);
+        }
+        for a in &mut self.attack_priority_info[..usize::from(n)] {
+            let hh = &*h;
+            x.xfer_snapshot(&mut Nested(|x: &mut dyn Xfer| Self::xfer_attack_info(hh, x, a)))?;
+        }
+        x.xfer_int(&mut self.num_attack_info)?;
+        x.xfer_int(&mut self.end_game_timer)?;
+        x.xfer_int(&mut self.close_window_timer)?;
+        let mut n = self.named_objects.len() as u16;
+        x.xfer_unsigned_short(&mut n)?;
+        if x.get_xfer_mode() == XferMode::Save {
+            for (name, o) in &self.named_objects {
+                let (mut name, mut id) = (name.clone(), if plant(3923) { INVALID_ID } else { o.unwrap_or(INVALID_ID) });
+                x.xfer_ascii_string(&mut name)?;
+                x.xfer_object_id(&mut id)?;
+            }
+        } else {
+            self.named_objects.clear();
+            for _ in 0..n {
+                let (mut name, mut id) = (Vec::new(), INVALID_ID);
+                x.xfer_ascii_string(&mut name)?;
+                x.xfer_object_id(&mut id)?;
+                let o = h.se_find_object(id);
+                if o.is_none() && id != INVALID_ID {
+                    return Err(SC_INVALID_DATA);
+                }
+                self.named_objects.push((name, o));
+            }
+        }
+        x.xfer_bool(&mut self.first_update)?;
+        let mut f = self.fade.to_le_bytes();
+        x.xfer_user(&mut f)?;
+        self.fade = i32::from_le_bytes(f);
+        x.xfer_real(&mut self.min_fade)?;
+        x.xfer_real(&mut self.max_fade)?;
+        x.xfer_real(&mut self.cur_fade_value)?;
+        x.xfer_int(&mut self.cur_fade_frame)?;
+        x.xfer_int(&mut self.fade_frames_increase)?;
+        x.xfer_int(&mut self.fade_frames_hold)?;
+        x.xfer_int(&mut self.fade_frames_decrease)?;
+        xfer_list_string(x, &mut self.completed_video)?;
+        xfer_list_string_u32(x, &mut self.testing_speech)?;
+        xfer_list_string_u32(x, &mut self.testing_audio)?;
+        xfer_list_string(x, &mut self.ui_interactions)?;
+        for which in 0..4 {
+            let mut n = MAX_PLAYER_COUNT as u16;
+            x.xfer_unsigned_short(&mut n)?;
+            if usize::from(n) != MAX_PLAYER_COUNT {
+                return Err(SC_INVALID_DATA);
+            }
+            let lists = match which {
+                0 => &mut self.triggered_special_powers,
+                1 => &mut self.midway_special_powers,
+                2 => &mut self.finished_special_powers,
+                _ => &mut self.completed_upgrades,
+            };
+            for l in lists.iter_mut() {
+                xfer_list_string_id(x, l)?;
+            }
+        }
+        let mut n = MAX_PLAYER_COUNT as u16;
+        x.xfer_unsigned_short(&mut n)?;
+        if usize::from(n) != MAX_PLAYER_COUNT {
+            return Err(SC_INVALID_DATA);
+        }
+        for v in self.acquired_sciences.iter_mut() {
+            Self::xfer_science_vec(h, x, v)?;
+        }
+        xfer_list_string_coord(x, &mut self.topple_directions)?;
+        let b = &mut self.breeze_info;
+        x.xfer_real(&mut b.direction)?;
+        x.xfer_real(&mut b.direction_vec.x)?;
+        x.xfer_real(&mut b.direction_vec.y)?;
+        x.xfer_real(&mut b.intensity)?;
+        x.xfer_real(&mut b.lean)?;
+        x.xfer_real(&mut b.randomness)?;
+        x.xfer_short(&mut b.breeze_period)?;
+        if plant(3925) {
+            let mut v = b.breeze_version;
+            x.xfer_short(&mut v)?;
+        } else {
+            x.xfer_short(&mut b.breeze_version)?;
+        }
+        let mut d = self.game_difficulty.to_le_bytes();
+        x.xfer_user(&mut d)?;
+        self.game_difficulty = i32::from_le_bytes(d);
+        x.xfer_bool(&mut self.freeze_by_script)?;
+        if version >= 2 {
+            let mut n = self.named_reveals.len() as u16;
+            x.xfer_unsigned_short(&mut n)?;
+            if x.get_xfer_mode() == XferMode::Save {
+                for r in self.named_reveals.iter_mut() {
+                    x.xfer_ascii_string(&mut r.reveal_name)?;
+                    x.xfer_ascii_string(&mut r.waypoint_name)?;
+                    x.xfer_real(&mut r.radius_to_reveal)?;
+                    x.xfer_ascii_string(&mut r.player_name)?;
+                }
+            } else {
+                if !self.named_reveals.is_empty() {
+                    return Err(SC_INVALID_DATA);
+                }
+                // one `NamedReveal` read into for all: a field a short read leaves keeps the previous reveal's
+                let mut r = NamedReveal::default();
+                for _ in 0..n {
+                    x.xfer_ascii_string(&mut r.reveal_name)?;
+                    x.xfer_ascii_string(&mut r.waypoint_name)?;
+                    x.xfer_real(&mut r.radius_to_reveal)?;
+                    x.xfer_ascii_string(&mut r.player_name)?;
+                    let mut kept = r.clone();
+                    if plant(3924) {
+                        kept.radius_to_reveal *= 2.0;
+                    }
+                    self.named_reveals.push(kept);
+                }
+            }
+            let mut n = self.all_object_type_lists.len() as u16;
+            x.xfer_unsigned_short(&mut n)?;
+            if x.get_xfer_mode() == XferMode::Save {
+                for t in self.all_object_type_lists.iter_mut() {
+                    x.xfer_snapshot(&mut Nested(|x: &mut dyn Xfer| t.xfer(x)))?;
+                }
+            } else {
+                if !self.all_object_type_lists.is_empty() {
+                    return Err(SC_INVALID_DATA);
+                }
+                for _ in 0..n {
+                    let mut t = ObjectTypes::new();
+                    x.xfer_snapshot(&mut Nested(|x: &mut dyn Xfer| t.xfer(x)))?;
+                    self.all_object_type_lists.push(t);
+                }
+            }
+        }
+        if version >= 3 {
+            x.xfer_bool(&mut self.objects_should_receive_difficulty_bonus)?;
+        } else {
+            self.objects_should_receive_difficulty_bonus = true;
+        }
+        if version >= 4 {
+            x.xfer_ascii_string(&mut self.current_track_name)?;
+        }
+        if version >= 5 {
+            x.xfer_bool(&mut self.choose_victim_always_uses_normal)?;
+        } else {
+            self.choose_victim_always_uses_normal = false;
+        }
+        if x.get_xfer_mode() == XferMode::Load
+            && (!(0..=MAX_COUNTERS as i32).contains(&self.num_counters)
+                || !(0..=MAX_FLAGS as i32).contains(&self.num_flags)
+                || !(0..=MAX_ATTACK_PRIORITIES as i32).contains(&self.num_attack_info))
+        {
+            return Err(LOAD_UNDEFINED);
+        }
+        if x.get_xfer_mode() == XferMode::Load && self.fade == fade::NONE && !plant(3922) {
+            self.fade = fade::MULTIPLY;
+            self.cur_fade_frame = 0;
+            self.min_fade = 1.0;
+            self.max_fade = 0.0;
+            self.fade_frames_increase = 0;
+            self.fade_frames_hold = 0;
+            self.fade_frames_decrease = FRAMES_TO_FADE_IN_AT_START;
+            self.cur_fade_value = 0.0;
+        }
+        Ok(())
+    }
+
+    /// `loadPostProcess()`: the difficulty bonuses set again; the music track (if any) played for the local player (read
+    /// unchecked).
+    pub fn load_post_process<H: ScriptEngineHost>(&mut self, h: &mut H) -> R<()> {
+        h.se_actions_enable_difficulty_bonuses(self.objects_should_receive_difficulty_bonus);
+        if !self.current_track_name.is_empty() {
+            let p = h.se_local_player().ok_or_else(|| undefined(Undefined::NullLocalPlayer))?;
+            let name = self.current_track_name.clone();
+            h.se_audio_add_event(&name, p + i32::from(plant(3926)));
+        }
         Ok(())
     }
 }
