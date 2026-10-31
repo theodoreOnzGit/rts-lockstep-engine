@@ -289,7 +289,10 @@ void TerrainLogic::getExtent(Region3D* r)
 {
 	r->lo.x = 0; r->lo.y = 0; r->lo.z = 0; r->hi.x = g_cfg.extentHiX; r->hi.y = g_cfg.extentHiY; r->hi.z = 0;
 }
-Real TerrainLogic::getLayerHeight(Real x, Real y, PathfindLayerEnum layer) { return layer == LAYER_WALL ? g_cfg.wallHeight : 0.0f; }
+// W3DTerrainLogic::getLayerHeight (clipped) on the flat ground at 0 with no bridges: on LAYER_WALL the pathfinder's wall
+// height only where isPointOnWall, and the stand-in pathfinder has no wall pieces (as the Rust world's), so the ground.
+// (Until batch I2 this answered the wall height anywhere on LAYER_WALL, as the Rust side did; upstream does not.)
+Real TerrainLogic::getLayerHeight(Real x, Real y, PathfindLayerEnum layer) { (void)g_cfg.wallHeight; return 0.0f; }
 void TerrainLogic::alignOnTerrain(Real angle, const Coord3D& pos, Bool stick, Matrix3D& mtx) { /* flat terrain: not reached by the programs */ mtx.Make_Identity(); }
 PolygonTrigger* TerrainLogic::getTriggerAreaByName(AsciiString name)
 {
