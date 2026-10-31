@@ -56,7 +56,10 @@ AsciiString (*g_xferRealToPortableHook)(const AsciiString &) = 0;
 AsciiString (*g_xferPortableToRealHook)(const AsciiString &) = 0;
 AsciiString GameState::realMapPathToPortableMapPath(const AsciiString &in) const { if (!g_xferRealToPortableHook) abort(); return g_xferRealToPortableHook(in); }
 AsciiString GameState::portableMapPathToRealMapPath(const AsciiString &in) const { if (!g_xferPortableToRealHook) abort(); return g_xferPortableToRealHook(in); }
-void GameState::addPostProcessSnapshot(Snapshot *) { ++m_postProcessCount; }
+/* layer 12 batch S1: a test of GameState's post-process list (differential/wrap_game_state.cpp) sets this hook; without it the
+** requests are counted, as before */
+void (*g_xferAddPostProcessHook)(Snapshot *) = 0;
+void GameState::addPostProcessSnapshot(Snapshot *s) { ++m_postProcessCount; if (g_xferAddPostProcessHook) g_xferAddPostProcessHook(s); }
 
 /* ---- the script interpreter ------------------------------------------- */
 namespace {

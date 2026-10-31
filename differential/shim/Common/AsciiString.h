@@ -115,6 +115,23 @@ public:
 	** on an empty string */
 	const char *reverseFind(char c) const { return strrchr(str(), c); }
 	void removeLastChar() { size_t n = strlen(str()); if (n > 0) m_s.resize(n - 1); }
+	/* startsWithNoCase / endsWithNoCase (AsciiString.cpp: strnicmp of the first / last strlen(p) characters), for
+	** GameState.cpp (batch S1) */
+	bool startsWithNoCase(const char *p) const
+	{
+		if (*p == 0) return true;
+		int lenThis = getLength(), lenThat = (int)strlen(p);
+		if (lenThis < lenThat) return false;
+		return strncasecmp(str(), p, lenThat) == 0;
+	}
+	bool startsWithNoCase(const AsciiString &p) const { return startsWithNoCase(p.str()); }
+	bool endsWithNoCase(const char *p) const
+	{
+		if (*p == 0) return true;
+		int lenThis = getLength(), lenThat = (int)strlen(p);
+		if (lenThis < lenThat) return false;
+		return strncasecmp(str() + lenThis - lenThat, p, lenThat) == 0;
+	}
 	/* --- end layer 12 batch G1 --- */
 private:
 	std::string m_s;

@@ -86,6 +86,9 @@ public:
 	}
 	/* operator!= (UnicodeString.h: wcscmp of the two strings), for Recorder.cpp's version checks (batch R1) */
 	bool operator!=(const UnicodeString &o) const { return m_s != o.m_s; }
+	/* concat(WideChar) (UnicodeString.h line 380: concat of { c, 0 }, so a 0 appends nothing), for the dispatcher's
+	** beacon text (batch D1) */
+	void concat(WideChar c) { if (c) m_s += c; }
 	/* --- end layer 12 batch G1 --- */
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }

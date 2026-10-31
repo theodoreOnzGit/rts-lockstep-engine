@@ -83,6 +83,7 @@ pub mod thing_template;
 // --- end p1w4-thingtemplate ---
 // --- layer 12 ---
 pub mod game_info;
+pub mod game_state;
 pub mod message_stream;
 pub mod message_types;
 pub mod recorder;
