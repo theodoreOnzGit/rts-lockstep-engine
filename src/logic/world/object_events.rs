@@ -348,6 +348,10 @@ pub enum ObjectClientEvent {
     TerrainVisualAddWaterVelocity { x: f32, y: f32, velocity: f32, preferred_height: f32 },
     /// batch R70: `TheRadar->refreshTerrain(TheTerrainLogic)`.
     RadarRefreshTerrain,
+    /// batch I2: `TheRadar->newMap(TheTerrainLogic)` (`TerrainLogic::setActiveBoundary`).
+    RadarNewMap,
+    /// batch I2: `TheTacticalView->forceCameraConstraintRecalc()` (`TerrainLogic::setActiveBoundary`).
+    TacticalViewForceCameraConstraintRecalc,
     /// batch R71: `TheRadar->createPlayerEvent(player, pos, type)` (`None`: a `NULL` player).
     RadarCreatePlayerEvent { player: Option<i32>, position: Coord3D, event_type: i32 },
     // --- end p1w13-sonnet ---

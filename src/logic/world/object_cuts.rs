@@ -254,13 +254,23 @@ impl World {
 
     /// `TheTerrainLogic->findFarthestEdgePoint(&pos)` (batch R22): `pos` moved by `cuts.farthest_edge_point_offset` (the real terrain logic is the
     /// adapter's).
-    pub fn terrain_find_farthest_edge_point(&self, pos: Coord3D) -> Coord3D {
+    pub fn terrain_find_farthest_edge_point(&mut self, pos: Coord3D) -> Coord3D {
+        if self.cuts.live_terrain {
+            if let Ok(p) = self.terrain.find_farthest_edge_point(&pos) {
+                return p;
+            }
+        }
         let o = self.cuts.farthest_edge_point_offset;
         Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
     }
 
     /// `TheTerrainLogic->findClosestEdgePoint(&pos)`: `pos` moved by `cuts.edge_point_offset` (the real terrain logic is the adapter's).
-    pub fn terrain_find_closest_edge_point(&self, pos: crate::common::base_type::Coord3D) -> crate::common::base_type::Coord3D {
+    pub fn terrain_find_closest_edge_point(&mut self, pos: crate::common::base_type::Coord3D) -> crate::common::base_type::Coord3D {
+        if self.cuts.live_terrain {
+            if let Ok(p) = self.terrain.find_closest_edge_point(&pos) {
+                return p;
+            }
+        }
         let o = self.cuts.edge_point_offset;
         crate::common::base_type::Coord3D { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z }
     }
@@ -388,12 +398,18 @@ impl World {
     /// (`ObjectCuts::bridge_at`).
     pub fn terrain_find_bridge_at(&mut self, position: Coord3D) -> Option<(Coord3D, Coord3D)> {
         self.cut(CutCall::TerrainFindBridgeAt { position });
+        if self.cuts.live_terrain {
+            return self.live_terrain_find_bridge_at(&position);
+        }
         self.cuts.bridge_at[terrain_cell(position.x, position.y)]
     }
 
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)` (`None`: `NULL`).
     pub fn terrain_delete_bridge(&mut self, bridge: Option<(Coord3D, Coord3D)>) {
         self.cut(CutCall::TerrainDeleteBridge { bridge });
+        if self.cuts.live_terrain {
+            self.live_terrain_delete_bridge(bridge);
+        }
     }
 
     /// batch R33: `system->setSystemLifetime(frames)`.
@@ -502,6 +518,8 @@ pub struct BridgeTemplateDetails {
     pub num_fx_per_type: i32,
     pub scaffold_object_name: Vec<u8>,
     pub scaffold_support_object_name: Vec<u8>,
+    /// batch I2: `getTowerObjectName(type)` by `BridgeTowerType`, which `Bridge::Bridge(Object*)` reads.
+    pub tower_object_names: [Vec<u8>; 4],
 }
 
 /// The cell of the cut-point terrain tables a position falls in: an integer hash of the bits of (x, y), so that both sides of a differential test
@@ -514,12 +532,19 @@ impl World {
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
     pub fn terrain_get_ground_height(&mut self, x: f32, y: f32) -> f32 {
         self.cut(CutCall::TerrainGetGroundHeight { x, y });
+        if self.cuts.live_terrain {
+            return self.terrain.ground_height(x, y, false).0;
+        }
         self.cuts.terrain_ground[terrain_cell(x, y)]
     }
 
     /// batch R34: `TheTerrainLogic->getGroundHeight(x, y, &normal)`: the height and the normal it assigns.
     pub fn terrain_get_ground_height_and_normal(&mut self, x: f32, y: f32) -> (f32, Coord3D) {
         self.cut(CutCall::TerrainGetGroundHeight { x, y });
+        if self.cuts.live_terrain {
+            let (height, normal) = self.terrain.ground_height(x, y, true);
+            return (height, normal.unwrap_or_default());
+        }
         let cell = terrain_cell(x, y);
         (self.cuts.terrain_ground[cell], self.cuts.terrain_normal[cell])
     }
@@ -579,18 +604,27 @@ impl World {
     /// `TheTerrainLogic->getHighestLayerForDestination(pos)`.
     pub fn terrain_get_highest_layer_for_destination(&mut self, pos: &crate::common::base_type::Coord3D) -> crate::common::game_type::PathfindLayer {
         self.cut(CutCall::TerrainGetHighestLayerForDestination { x: pos.x, y: pos.y, z: pos.z });
+        if self.cuts.live_terrain {
+            return self.live_terrain_highest_layer(pos);
+        }
         self.cuts.terrain_layer[terrain_cell(pos.x, pos.y)]
     }
 
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
     pub fn terrain_get_layer_height(&mut self, x: f32, y: f32, layer: crate::common::game_type::PathfindLayer) -> f32 {
         self.cut(CutCall::TerrainGetLayerHeight { x, y, layer });
+        if self.cuts.live_terrain {
+            return self.live_terrain_layer_height(x, y, layer);
+        }
         self.cuts.terrain_layer_height[terrain_cell(x, y)]
     }
 
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ)`: the water height if there is water at (x, y), `None` if the call leaves `waterZ` as it was.
     pub fn terrain_is_underwater_water_z(&mut self, x: f32, y: f32) -> Option<f32> {
         self.cut(CutCall::TerrainIsUnderwater { x, y });
+        if self.cuts.live_terrain {
+            return self.terrain.is_underwater(x, y).ok().and_then(|u| u.water_z);
+        }
         let cell = terrain_cell(x, y);
         self.cuts.terrain_has_water[cell].then(|| self.cuts.terrain_water[cell])
     }
@@ -598,6 +632,12 @@ impl World {
     /// batch R41: `TheTerrainLogic->isCliffCell(x, y)`.
     pub fn terrain_is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
         self.cut(CutCall::TerrainIsCliffCell { x, y });
+        if self.cuts.live_terrain {
+            // the render object's answer (not translated); the table answers when it is not
+            if let Ok(cliff) = self.terrain.is_cliff_cell(x, y) {
+                return cliff;
+            }
+        }
         self.cuts.terrain_cliff[terrain_cell(x, y)]
     }
 
@@ -869,6 +909,9 @@ impl World {
     /// `None` for `NULL` (`ObjectCuts::bridge_details`; the same call as [`World::terrain_find_bridge_at`]).
     pub fn terrain_find_bridge_details(&mut self, position: Coord3D) -> Option<BridgeDetails> {
         self.cut(CutCall::TerrainFindBridgeAt { position });
+        if self.cuts.live_terrain {
+            return self.live_terrain_find_bridge_details(&position);
+        }
         self.cuts.bridge_details[terrain_cell(position.x, position.y)].clone()
     }
 
@@ -881,16 +924,25 @@ impl World {
     /// batch R77: `bridge->setBridgeObjectID(id)` on the bridge `findBridgeAt(position)` found.
     pub fn bridge_set_bridge_object_id(&mut self, position: Coord3D, id: ObjectId) {
         self.cut(CutCall::BridgeSetBridgeObjectId { position, id });
+        if self.cuts.live_terrain {
+            self.live_bridge_set_bridge_object_id(&position, id);
+        }
     }
 
     /// batch R77: `bridge->setTowerObjectID(id, tower)` on the bridge `findBridgeAt(position)` found.
     pub fn bridge_set_tower_object_id(&mut self, position: Coord3D, id: ObjectId, tower: i32) {
         self.cut(CutCall::BridgeSetTowerObjectId { position, id, tower });
+        if self.cuts.live_terrain {
+            self.live_bridge_set_tower_object_id(&position, id, tower);
+        }
     }
 
     /// batch R77: `TheTerrainLogic->updateBridgeDamageStates()`.
     pub fn terrain_update_bridge_damage_states(&mut self) {
         self.cut(CutCall::TerrainUpdateBridgeDamageStates);
+        if self.cuts.live_terrain {
+            self.live_terrain_update_bridge_damage_states();
+        }
     }
 
     /// batch R77: `TheRadar->queueTerrainRefresh()`.
@@ -943,6 +995,11 @@ impl World {
 
     /// batch R72: `TheTerrainLogic->getExtentIncludingBorder(&region)`: `cuts.extent_including_border`.
     pub fn terrain_get_extent_including_border(&self) -> crate::common::base_type::Region2D {
+        if self.cuts.live_terrain {
+            if let Ok(r) = self.terrain.extent_including_border() {
+                return r;
+            }
+        }
         self.cuts.extent_including_border
     }
 
@@ -1556,6 +1613,10 @@ pub enum CutCall {
     ObjectGetAbleToUseWeaponAgainstTarget { object: ObjectId, attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32 },
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
     TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
+    /// batch I2: `TheAI->pathfinder()->addBridge(bridge)`, the bridge by its object's id.
+    PathfinderAddBridge { bridge_object: ObjectId },
+    /// batch I2: `TheAI->pathfinder()->forceMapRecalculation()`.
+    PathfinderForceMapRecalculation,
     /// batch R71: `player->changeBattlePlan(plan, delta, bonuses)` (the player's object operations are not on `World` yet): the bonuses'
     /// numbers as passed.
     PlayerChangeBattlePlan {
@@ -1991,6 +2052,24 @@ pub struct ObjectCuts {
     /// `TheAI->pathfinder()->isViewBlockedByObstacle(obj, other)`: the (obj, other) pairs for which it is true.
     pub view_blocked: BTreeSet<(ObjectId, ObjectId)>,
     // --- end p1w13-sonnet ---
+    // --- p1w13-sonnet --- (batch I2)
+    /// The integration switch of the terrain logic: when set, the `terrain_*` and `bridge_set_*` calls of the object and
+    /// module code answer from (and act on) `world.terrain`, with the world as its host, instead of the `terrain_*` and
+    /// `bridge_*` tables (see `world::terrain_host_world`). Off by default, as `live_partition`.
+    pub live_terrain: bool,
+    /// The bridges `TheAI->pathfinder()->addBridge` has been given (the pathfinder is not in the world yet; see
+    /// [`World::pathfinder_add_bridge_stand_in`]).
+    pub pathfinder_bridges_added: i32,
+    /// Set while object code runs on a copy of the terrain logic lent to it from inside a terrain call
+    /// ([`World::lend_terrain`]).
+    pub terrain_lent: bool,
+    /// The changes object code made to a lent copy of the terrain logic, which are dropped when the call returns. Upstream
+    /// has one terrain logic, so a non-zero count is a divergence; no translated module makes one.
+    pub terrain_lost_writes: u32,
+    /// `setActiveBoundary`'s `ShroudStatusStoreRestore partitionStore`, from [`World::before_map_boundary_change`] to
+    /// `after_map_boundary_change`.
+    pub boundary_store: crate::logic::world::partition::ShroudStatusStoreRestore,
+    // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
 }
@@ -2132,6 +2211,11 @@ impl Default for ObjectCuts {
             pathfind_cells: BTreeMap::new(),
             partition_quick_path: None,
             view_blocked: BTreeSet::new(),
+            live_terrain: false,
+            pathfinder_bridges_added: 0,
+            terrain_lent: false,
+            terrain_lost_writes: 0,
+            boundary_store: Default::default(),
             next_drawable_id: 1,
         }
     }

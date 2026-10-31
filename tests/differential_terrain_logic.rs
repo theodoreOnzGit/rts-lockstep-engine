@@ -597,7 +597,7 @@ impl TerrainWorld for TestWorld {
         self.existing().into_iter().map(|k| self.view(k)).collect()
     }
 
-    fn objects_in_range_2d(&self, center: &Coord3D, range: f32) -> Vec<ObjectView> {
+    fn objects_in_range_2d(&mut self, center: &Coord3D, range: f32) -> Vec<ObjectView> {
         self.rec(16, &[fb(center.x), fb(center.y), fb(center.z), fb(range), 0]);
         let mut v = Vec::new();
         for k in self.existing() {
@@ -617,12 +617,12 @@ impl TerrainWorld for TestWorld {
         found
     }
 
-    fn object_damage_state(&self, id: ObjectId) -> BodyDamageType {
+    fn object_damage_state(&mut self, id: ObjectId) -> BodyDamageType {
         self.rec(11, &[id as u32]);
         self.objs.borrow()[self.find(id).expect("object")].body
     }
 
-    fn bridge_scaffold_present(&self, id: ObjectId) -> Option<bool> {
+    fn bridge_scaffold_present(&mut self, id: ObjectId) -> Option<bool> {
         let code = self.objs.borrow()[self.find(id).expect("object")].scaffold;
         self.rec(12, &[id as u32, code as u32]);
         match code {
@@ -640,11 +640,11 @@ impl TerrainWorld for TestWorld {
         (d != 0).then_some(d)
     }
 
-    fn attempt_damage(&mut self, id: ObjectId, info: &DamageInfo) {
+    fn attempt_damage(&mut self, _terrain: &TerrainLogic, id: ObjectId, info: &DamageInfo) {
         self.rec(14, &[id as u32, info.input.damage_type as u32, info.input.death_type as u32, info.input.source_id as u32, fb(info.input.amount)]);
     }
 
-    fn destroy_object(&mut self, id: ObjectId) {
+    fn destroy_object(&mut self, _terrain: &TerrainLogic, id: ObjectId) {
         self.rec(15, &[id as u32]);
         let k = self.find(id).expect("object");
         self.objs.get_mut()[k].exists = false;
@@ -677,7 +677,7 @@ impl TerrainWorld for TestWorld {
         on
     }
 
-    fn create_generic_bridge_object(&mut self, center: &Coord3D, orientation: f32, _props: &Dict) -> Option<ObjectId> {
+    fn create_generic_bridge_object(&mut self, _terrain: &TerrainLogic, center: &Coord3D, orientation: f32, _props: &Dict) -> Option<ObjectId> {
         self.rec(40, &[hash_of(b"GenericBridge"), u32::from(self.generic)]);
         if !self.generic {
             return None;
@@ -701,7 +701,7 @@ impl TerrainWorld for TestWorld {
         found.then_some(self.tower_major[t])
     }
 
-    fn create_bridge_tower(&mut self, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId {
+    fn create_bridge_tower(&mut self, _terrain: &TerrainLogic, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId {
         let id = self.new_object(vocab(&format!("BridgeTower{}", tower as usize)));
         self.set_pos(id, [pos.x, pos.y, pos.z]);
         self.set_orient(id, angle);

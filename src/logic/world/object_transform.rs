@@ -24,7 +24,7 @@
 //! bridge layer), the trigger areas the object is in, and the map boundary.
 
 use crate::common::base_type::{fast_float2long_round, fast_float_trunc, Coord2D, Coord3D, ICoord3D, Region3D};
-use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID, LAYER_GROUND};
+use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID};
 use crate::common::kind_of::{
     KINDOF_IMMOBILE, KINDOF_INERT, KINDOF_INFANTRY, KINDOF_PROJECTILE, KINDOF_STICK_TO_TERRAIN_SLOPE, KINDOF_VEHICLE,
 };
@@ -90,27 +90,19 @@ impl ThingContext for SetterContext {
     }
 }
 
-/// `TheTerrainLogic->getLayerHeight(x, y, layer)` (clipped, no normal): the
-/// ground height, or on a bridge layer the bridge's height where it is above
-/// the ground. The wall layer's height is the pathfinder's (a cut point,
-/// `cuts.wall_height`).
+/// `TheTerrainLogic->getLayerHeight(x, y, layer)` (clipped, no normal):
+/// [`TerrainLogic::layer_height_with`]. The wall layer's height is the
+/// pathfinder's (a cut point, `cuts.wall_height`), and no point is on a wall
+/// (the pathfinder is not in the world yet; with no wall pieces upstream's
+/// `isPointOnWall` is false too). ~~The wall layer answered the wall height
+/// at every point~~ **corrected in batch I2**: clipped, upstream answers the
+/// ground height at a point that is not on a wall. A vertical deck (an
+/// undefined input upstream) answers the ground height.
 pub fn layer_height(terrain: &TerrainLogic, wall_height: f32, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-    let (height, _) = terrain.ground_height(x, y, false);
-    if layer == LAYER_GROUND {
-        return height;
+    match terrain.layer_height_with(|| wall_height, |_| false, x, y, layer, false, true) {
+        Ok((height, _)) => height,
+        Err(_) => terrain.ground_height(x, y, false).0,
     }
-    let loc = Coord3D { x, y, z: height };
-    if layer == crate::common::game_type::LAYER_WALL {
-        return wall_height;
-    }
-    if let Some(bi) = terrain.find_bridge_layer_at(&loc, layer, true) {
-        if let Ok((bridge_height, _)) = terrain.bridges()[bi].bridge_height(&loc) {
-            if bridge_height > height {
-                return bridge_height; // Don't return bridge height if it's in the ground.
-            }
-        }
-    }
-    height
 }
 
 impl World {

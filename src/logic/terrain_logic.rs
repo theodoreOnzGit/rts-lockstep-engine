@@ -102,8 +102,9 @@
 //! 6. **The file system** (`CachedFileInputStream::open`): `loadMap` takes
 //!    the file's bytes.
 //! 7. **`TheGlobalData`**: `enableWaterGrid` takes the [`GlobalData`].
-//! 8. **Not translated** (no logic reaches them here): `Bridge::createTower`'s
-//!    object work beyond the call, the `W3DTerrainLogic::isClearLineOfSight`
+//! 8. **Not translated** (no logic reaches them here): ~~`Bridge::createTower`'s
+//!    object work beyond the call~~ (**since batch I2** the world does it:
+//!    `world::terrain_host_world`), the `W3DTerrainLogic::isClearLineOfSight`
 //!    and `isCliffCell` (they read the render object: [`TerrainLogicError::
 //!    NotTranslated`]), the time-of-day line of `W3DTerrainLogic::loadMap`,
 //!    and `TheTerrainRenderObject->loadRoadsAndBridges` (the client reads
@@ -808,7 +809,7 @@ impl Bridge {
     /// bridge drawn in the map. Creates the `GenericBridge` object through
     /// the world (cut point 2); when that template does not exist the
     /// bridge keeps the object id of `info`.
-    pub fn from_map<W: TerrainWorld>(world: &mut W, info: &BridgeInfo, props: &Dict, bridge_template_name: &AsciiString) -> Bridge {
+    pub fn from_map<W: TerrainWorld>(world: &mut W, terrain: &TerrainLogic, info: &BridgeInfo, props: &Dict, bridge_template_name: &AsciiString) -> Bridge {
         let mut b = Bridge { template_name: bridge_template_name.clone(), info: *info, bounds: Region2D::default(), layer: 0 };
         b.bounds = Bridge::compute_bounds(&b.info);
         b.info.cur_damage_state = BODY_PRISTINE;
@@ -823,7 +824,7 @@ impl Bridge {
         // the 'from' side to the 'to' side.
         let v = Coord2D { x: i.to_left.x - i.from_left.x, y: i.to_left.y - i.from_left.y };
         let orientation = v.to_angle();
-        match world.create_generic_bridge_object(&center, orientation, props) {
+        match world.create_generic_bridge_object(terrain, &center, orientation, props) {
             None => return b, // "GenericBridge template not found"
             Some(id) => b.info.bridge_object_id = id,
         }
@@ -835,7 +836,7 @@ impl Bridge {
 
     /// `Bridge(Object *bridgeObj)`: a landmark bridge. Looks the bridge
     /// template and the four tower templates up and creates the towers.
-    pub fn from_landmark<W: TerrainWorld>(world: &mut W, obj: &LandmarkBridgeObject) -> Bridge {
+    pub fn from_landmark<W: TerrainWorld>(world: &mut W, terrain: &TerrainLogic, obj: &LandmarkBridgeObject) -> Bridge {
         let mut b = Bridge { template_name: obj.template_name.clone(), info: BridgeInfo::default(), bounds: Region2D::default(), layer: 0 };
         let pos = obj.position;
         let angle = obj.orientation;
@@ -899,7 +900,7 @@ impl Bridge {
                     BridgeTowerType::FromLeft | BridgeTowerType::FromRight => angle + PI,
                     BridgeTowerType::ToLeft | BridgeTowerType::ToRight => angle,
                 };
-                let id = world.create_bridge_tower(obj.id, tower_type, &pos, tower_angle);
+                let id = world.create_bridge_tower(terrain, obj.id, tower_type, &pos, tower_angle);
                 // store the tower object ID
                 b.info.tower_object_id[i] = id;
             }
@@ -1224,23 +1225,26 @@ pub trait TerrainWorld {
     fn objects(&self) -> Vec<ObjectView>;
     /// `ThePartitionManager->iterateObjectsInRange(center, range,
     /// FROM_CENTER_2D, NULL)`, in iteration order.
-    fn objects_in_range_2d(&self, center: &Coord3D, range: f32) -> Vec<ObjectView>;
+    fn objects_in_range_2d(&mut self, center: &Coord3D, range: f32) -> Vec<ObjectView>;
     /// `TheGameLogic->findObjectByID(id) != NULL`.
     fn object_exists(&self, id: ObjectId) -> bool;
     /// `findObjectByID(id)->getBodyModule()->getDamageState()`; asked only
     /// of an object that exists.
-    fn object_damage_state(&self, id: ObjectId) -> BodyDamageType;
+    fn object_damage_state(&mut self, id: ObjectId) -> BodyDamageType;
     /// `BridgeBehavior::getBridgeBehaviorInterfaceFromObject(obj)` and, if
     /// there is one, `isScaffoldPresent()`; `None` when there is no
     /// interface.
-    fn bridge_scaffold_present(&self, id: ObjectId) -> Option<bool>;
+    fn bridge_scaffold_present(&mut self, id: ObjectId) -> Option<bool>;
     /// `findObjectByID(id)->getDrawable()`; `None` when there is no such
     /// object or it has no drawable.
     fn object_drawable(&self, id: ObjectId) -> Option<DrawableId>;
-    /// `obj->attemptDamage(&damageInfo)`.
-    fn attempt_damage(&mut self, id: ObjectId, info: &DamageInfo);
+    /// `obj->attemptDamage(&damageInfo)`. `terrain` is the terrain logic as
+    /// it stands at the call, for the object code the call runs (which reads
+    /// `TheTerrainLogic`); the same holds for every method below that takes
+    /// one.
+    fn attempt_damage(&mut self, terrain: &TerrainLogic, id: ObjectId, info: &DamageInfo);
     /// `TheGameLogic->destroyObject(obj)`.
-    fn destroy_object(&mut self, id: ObjectId);
+    fn destroy_object(&mut self, terrain: &TerrainLogic, id: ObjectId);
     /// `TheAI->pathfinder()->addBridge(pBridge)`: the layer it assigns. The
     /// bridge is already first in the list.
     fn pathfinder_add_bridge(&mut self, bridge: &Bridge) -> PathfindLayer;
@@ -1256,7 +1260,7 @@ pub trait TerrainWorld {
     /// "GenericBridge")` (`None` if there is none), then `newObject`,
     /// `setPosition(center)`, `updateObjValuesFromMapProperties(props)` and
     /// `setOrientation(orientation)`; the new object's id.
-    fn create_generic_bridge_object(&mut self, center: &Coord3D, orientation: f32, props: &Dict) -> Option<ObjectId>;
+    fn create_generic_bridge_object(&mut self, terrain: &TerrainLogic, center: &Coord3D, orientation: f32, props: &Dict) -> Option<ObjectId>;
     /// `TheTerrainRoads->findBridge(name) != NULL`.
     fn find_bridge_road_template(&self, name: &AsciiString) -> bool;
     /// `TheThingFactory->findTemplate(findBridge(bridge)->getTowerObjectName(
@@ -1267,7 +1271,7 @@ pub trait TerrainWorld {
     /// exists: `newObject(template, bridge->getTeam())`,
     /// `setPosition(pos)`, `setOrientation(angle)`, the behaviour
     /// interfaces, and the indestructible flag; the new object's id.
-    fn create_bridge_tower(&mut self, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId;
+    fn create_bridge_tower(&mut self, terrain: &TerrainLogic, bridge: ObjectId, tower: BridgeTowerType, pos: &Coord3D, angle: f32) -> ObjectId;
     /// `setActiveBoundary`, before the boundary index changes:
     /// `processEntirePendingUndoShroudRevealQueue()` and
     /// `storeFoggedCells(store, TRUE)`.
@@ -1816,6 +1820,25 @@ impl TerrainLogic {
 
     /// `getLayerHeight(x, y, layer, normal, clip)`.
     pub fn layer_height<W: TerrainWorld>(&mut self, world: &W, x: f32, y: f32, layer: PathfindLayer, want_normal: bool, clip: bool) -> TlResult<(f32, Option<Coord3D>)> {
+        let r = self.layer_height_with(|| world.pathfinder_wall_height(), |p| world.pathfinder_is_point_on_wall(p), x, y, layer, want_normal, clip);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::layer_height`] with the pathfinder's two answers as
+    /// closures (asked in the same order, only when upstream asks them), and
+    /// the undefined input returned rather than counted: for a caller that
+    /// holds the terrain but no [`TerrainWorld`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn layer_height_with(
+        &self,
+        wall_height: impl FnOnce() -> f32,
+        is_point_on_wall: impl FnOnce(&Coord3D) -> bool,
+        x: f32,
+        y: f32,
+        layer: PathfindLayer,
+        want_normal: bool,
+        clip: bool,
+    ) -> Result<(f32, Option<Coord3D>), TerrainUndefined> {
         match self.ground {
             GroundSource::Base => Ok((0.0, want_normal.then(Coord3D::default))),
             GroundSource::LogicHeightMap => {
@@ -1827,15 +1850,14 @@ impl TerrainLogic {
                 if layer != LAYER_GROUND {
                     let loc = Coord3D { x, y, z: height };
                     if layer == LAYER_WALL {
-                        if !clip || world.pathfinder_is_point_on_wall(&loc) {
-                            return Ok((world.pathfinder_wall_height(), normal));
+                        if !clip || is_point_on_wall(&loc) {
+                            return Ok((wall_height(), normal));
                         } else {
                             return Ok((height, normal));
                         }
                     }
                     if let Some(bi) = self.find_bridge_layer_at_index(&loc, layer, clip) {
-                        let r = self.bridges[bi].bridge_height(&loc);
-                        let (bridge_height, bridge_normal) = self.count(r)?;
+                        let (bridge_height, bridge_normal) = self.bridges[bi].bridge_height(&loc)?;
                         if want_normal {
                             normal = Some(bridge_normal);
                         }
@@ -2025,9 +2047,15 @@ impl TerrainLogic {
         &self.bridges
     }
 
+    /// The bridge at position `i` of the list, to change (`setBridgeObjectID`,
+    /// `setTowerObjectID` through a `Bridge*` upstream's callers hold).
+    pub fn bridge_mut(&mut self, i: usize) -> Option<&mut Bridge> {
+        self.bridges.get_mut(i)
+    }
+
     /// `addBridgeToLogic(pInfo, props, bridgeTemplateName)`.
     pub fn add_bridge_to_logic<W: TerrainWorld>(&mut self, world: &mut W, info: &BridgeInfo, props: &Dict, bridge_template_name: &AsciiString) {
-        let bridge = Bridge::from_map(world, info, props, bridge_template_name);
+        let bridge = Bridge::from_map(world, self, info, props, bridge_template_name);
         self.bridges.insert(0, bridge);
         let layer = world.pathfinder_add_bridge(&self.bridges[0]);
         self.bridges[0].layer = layer;
@@ -2035,7 +2063,7 @@ impl TerrainLogic {
 
     /// `addLandmarkBridgeToLogic(bridgeObj)`.
     pub fn add_landmark_bridge_to_logic<W: TerrainWorld>(&mut self, world: &mut W, bridge_obj: &LandmarkBridgeObject) {
-        let bridge = Bridge::from_landmark(world, bridge_obj);
+        let bridge = Bridge::from_landmark(world, self, bridge_obj);
         self.bridges.insert(0, bridge);
         let layer = world.pathfinder_add_bridge(&self.bridges[0]);
         self.bridges[0].layer = layer;
@@ -2286,7 +2314,7 @@ impl TerrainLogic {
                                 extra.input.death_type = DEATH_SPLATTED;
                                 extra.input.source_id = obj.id;
                                 extra.input.amount = HUGE_DAMAGE_AMOUNT;
-                                world.attempt_damage(obj.id, &extra);
+                                world.attempt_damage(self, obj.id, &extra);
                             }
                         }
                     }
@@ -2404,7 +2432,7 @@ impl TerrainLogic {
         world.pathfinder_change_bridge_state(bridge.layer, false);
 
         if world.object_exists(bridge.info.bridge_object_id) {
-            world.destroy_object(bridge.info.bridge_object_id);
+            world.destroy_object(self, bridge.info.bridge_object_id);
         }
     }
 
@@ -2759,7 +2787,7 @@ impl TerrainLogic {
                     damage_info.input.death_type = DEATH_NORMAL;
                     damage_info.input.source_id = INVALID_ID;
                     damage_info.input.amount = damage_amount;
-                    world.attempt_damage(obj.id, &damage_info);
+                    world.attempt_damage(self, obj.id, &damage_info);
                 }
             }
         }
@@ -3378,23 +3406,23 @@ mod tests {
         fn objects(&self) -> Vec<ObjectView> {
             Vec::new()
         }
-        fn objects_in_range_2d(&self, _c: &Coord3D, _r: f32) -> Vec<ObjectView> {
+        fn objects_in_range_2d(&mut self, _c: &Coord3D, _r: f32) -> Vec<ObjectView> {
             Vec::new()
         }
         fn object_exists(&self, _id: ObjectId) -> bool {
             false
         }
-        fn object_damage_state(&self, _id: ObjectId) -> BodyDamageType {
+        fn object_damage_state(&mut self, _id: ObjectId) -> BodyDamageType {
             BODY_PRISTINE
         }
-        fn bridge_scaffold_present(&self, _id: ObjectId) -> Option<bool> {
+        fn bridge_scaffold_present(&mut self, _id: ObjectId) -> Option<bool> {
             None
         }
         fn object_drawable(&self, _id: ObjectId) -> Option<DrawableId> {
             None
         }
-        fn attempt_damage(&mut self, _id: ObjectId, _info: &DamageInfo) {}
-        fn destroy_object(&mut self, _id: ObjectId) {}
+        fn attempt_damage(&mut self, _t: &TerrainLogic, _id: ObjectId, _info: &DamageInfo) {}
+        fn destroy_object(&mut self, _t: &TerrainLogic, _id: ObjectId) {}
         fn pathfinder_add_bridge(&mut self, _b: &Bridge) -> PathfindLayer {
             2
         }
@@ -3406,7 +3434,7 @@ mod tests {
         fn pathfinder_is_point_on_wall(&self, _p: &Coord3D) -> bool {
             false
         }
-        fn create_generic_bridge_object(&mut self, _c: &Coord3D, _o: f32, _p: &Dict) -> Option<ObjectId> {
+        fn create_generic_bridge_object(&mut self, _t: &TerrainLogic, _c: &Coord3D, _o: f32, _p: &Dict) -> Option<ObjectId> {
             None
         }
         fn find_bridge_road_template(&self, _n: &AsciiString) -> bool {
@@ -3415,7 +3443,7 @@ mod tests {
         fn find_bridge_tower_template(&self, _b: &AsciiString, _t: BridgeTowerType) -> Option<f32> {
             None
         }
-        fn create_bridge_tower(&mut self, _b: ObjectId, _t: BridgeTowerType, _p: &Coord3D, _a: f32) -> ObjectId {
+        fn create_bridge_tower(&mut self, _tl: &TerrainLogic, _b: ObjectId, _t: BridgeTowerType, _p: &Coord3D, _a: f32) -> ObjectId {
             0
         }
         fn before_map_boundary_change(&mut self) {}

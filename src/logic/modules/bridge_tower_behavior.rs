@@ -100,11 +100,6 @@ impl BridgeTowerBehavior {
         self.tower_type
     }
 
-    /// The bridge's `BridgeBehaviorInterface`: the first module of the bridge that has one.
-    fn bridge_interface(world: &mut World, bridge: ObjectId) -> Option<ModuleIndex> {
-        world.all_modules(bridge).into_iter().find(|&idx| world.module_call(bridge, idx, ModuleCall::HasBridgeBehaviorInterface).as_bool())
-    }
-
     /// `getBodyModule()->getMaxHealth()` of `id`; [`Undefined::NullBodyModule`] without a body.
     fn max_health(world: &mut World, id: ObjectId) -> Result<f32, Undefined> {
         let body = world.get_body_module(id).ok_or(Undefined::NullBodyModule)?;
@@ -122,7 +117,7 @@ impl BridgeTowerBehavior {
         // "get our body info so we now how much damage percent is being done to us"
         let percentage = info.input.amount / Self::max_health(world, me.object)?;
         // get the bridge behavior module for our bridge
-        let Some(bbi) = Self::bridge_interface(world, bridge) else { return Ok(None) };
+        let Some(bbi) = world.bridge_behavior_interface(bridge) else { return Ok(None) };
         // "damage each of the other towers if the source of this damage isn't from the bridge or other towers"
         let from_bridge = world.objects.find(info.input.source_id).is_some_and(|s| {
             s.is_kind_of(KINDOF_BRIDGE) || (s.is_kind_of(KINDOF_BRIDGE_TOWER) && !crate::logic::modules::plant(2085))
@@ -235,6 +230,12 @@ impl BridgeTowerBehavior {
 }
 
 impl World {
+    /// `BridgeBehavior::getBridgeBehaviorInterfaceFromObject(obj)`: the first behaviour module of the object with a
+    /// `BridgeBehaviorInterface`; `None` for no object or no such module.
+    pub fn bridge_behavior_interface(&mut self, id: ObjectId) -> Option<ModuleIndex> {
+        self.all_modules(id).into_iter().find(|&idx| self.module_call(id, idx, ModuleCall::HasBridgeBehaviorInterface).as_bool())
+    }
+
     /// `BridgeTowerBehavior::getBridgeTowerBehaviorInterfaceFromObject(obj)`: `None` for no object or one that is not a
     /// `KINDOF_BRIDGE_TOWER`; otherwise the first behaviour module with the interface, which only this module has.
     pub fn bridge_tower_interface(&self, id: ObjectId) -> Option<ModuleIndex> {
