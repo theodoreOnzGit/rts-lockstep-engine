@@ -4473,6 +4473,53 @@ mod differential {
                 println!("cargo:rerun-if-changed={p}");
             }
         }
+        // p1w13-sonnet, layer 11 batch E2: ScriptEngine (differential/wrap_engine.cpp), the real ScriptEngine.h, on the stand-ins of
+        // differential/shim_engine (se_world.h), inside namespace sew. Into OUT_DIR/engine_gen, a copy of ScriptEngine.cpp with three
+        // mechanical edits, each asserted once: (1) the file ends before `_appendMessage`'s definition: what follows is the script
+        // debugger's and the particle editor's helpers (`_appendMessage` .. `_cleanUpVTune`), which talk to DebugWindow.dll and
+        // ParticleEditor.dll; the wrapper defines the four the engine calls as doing nothing, which is what they do without the DLLs,
+        // which only developer command line switches load; (2) particleEditorUpdate keeps its first statement, `if (!st_ParticleDLL)
+        // return;`, and loses the rest, which it reaches only with that DLL; (3) the include of the W3D device's
+        // W3DAssetManagerExposed.h (for `ReloadAllTextures`, used only by the helpers cut by (1)) is removed.
+        {
+            let gen = out_dir.join("engine_gen");
+            std::fs::create_dir_all(&gen).expect("create engine_gen");
+            let src = std::fs::read(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp")).expect("read ScriptEngine.cpp");
+            let mut src = String::from_utf8_lossy(&src).into_owned();
+            let end = "void _appendMessage(const AsciiString& str, Bool isTrueMessage, Bool shouldPause)\n";
+            assert_eq!(src.matches(end).count(), 1, "ScriptEngine.cpp: _appendMessage's definition");
+            src.truncate(src.find(end).expect("end"));
+            let pe = src.find("void ScriptEngine::particleEditorUpdate( void )").expect("particleEditorUpdate");
+            let from = "\t_updateCurrentParticleCount();\n";
+            let to = "\t} while (busyWait);\n";
+            let i = pe + src[pe..].find(from).expect("particleEditorUpdate's second statement");
+            let j = i + src[i..].find(to).expect("particleEditorUpdate's loop end") + to.len();
+            assert_eq!(src[i..j].matches(to).count(), 1);
+            src.replace_range(i..j, "");
+            let inc = "#include \"../../GameEngineDevice/Include/W3DDevice/GameClient/W3DAssetManagerExposed.h\"\n";
+            assert_eq!(src.matches(inc).count(), 1, "ScriptEngine.cpp: the W3D include");
+            src = src.replace(inc, "");
+            let copy = gen.join("ScriptEngine_edit.cpp");
+            std::fs::write(&copy, src).expect("write ScriptEngine copy");
+            let mut eb = cc::Build::new();
+            base(&mut eb);
+            eb.compiler("clang++")
+                .flag("-fno-delete-null-pointer-checks")
+                .flag("-Wno-unused-function")
+                .include(dif.join("shim_engine"))
+                .include(up.join("GameEngine/Include"))
+                .define("SE_SOURCE", Some(format!("\"{}\"", copy.display()).as_str()))
+                .file(dif.join("wrap_engine.cpp"));
+            eb.compile("upstream_engine");
+            for p in [
+                "upstream/GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp",
+                "upstream/GeneralsMD/Code/GameEngine/Include/GameLogic/ScriptEngine.h",
+                "differential/wrap_engine.cpp",
+                "differential/shim_engine",
+            ] {
+                println!("cargo:rerun-if-changed={p}");
+            }
+        }
         // p1w13-sonnet batch A27: the AI's data (differential/wrap_ai_data.cpp), in the science build's setup: AI.cpp's data parsers,
         // newOverride, TAiData's constructor, crc and xfer, and SidesList.cpp's BuildListInfo members, verbatim (ai_data_a27.inc),
         // with the real AI.h and SidesList.h. Generated into OUT_DIR/ai_data_gen: the four cuts, and GameLogic/AI.h, a copy with one

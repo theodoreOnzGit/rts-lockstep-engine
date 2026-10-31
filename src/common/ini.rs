@@ -272,6 +272,9 @@ pub enum Undefined {
     /// A script condition reads a parameter its condition does not have (`Condition::getParameter` returns NULL past `m_numParms`,
     /// and the evaluation dereferences it).
     NullParameter,
+    /// A container modified under an iterator in use (`ScriptEngine::evaluateAndProgressAllSequentialScripts`: an action adds a
+    /// sequential script when the vector is full, so it reallocates, or removes one at or before the loop's place).
+    InvalidatedIterator,
     /// batch R12: a load reads a byte other than 0 or 1 into a `Bool` (a C++ `bool`: an invalid value; seen when a container loads another class's
     /// save).
     InvalidBoolLoaded,
