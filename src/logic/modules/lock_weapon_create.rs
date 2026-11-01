@@ -109,9 +109,8 @@ impl LockWeaponCreate {
     pub fn on_create(&mut self) {}
 
     /// `onBuildComplete()`: the base first, then `setWeaponLock(slot, LOCKED_PERMANENTLY)`.
-    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H) {
+    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H, obj: ObjectId) {
         self.create.on_build_complete(); // extend
-        let obj = self.create.behavior().object();
         host.set_weapon_lock(obj, self.data.slot_to_lock, LOCKED_PERMANENTLY);
     }
 }
@@ -148,7 +147,7 @@ impl LockWeaponCreate {
                 ModuleReply::Done
             }
             ModuleCall::OnBuildComplete => {
-                self.on_build_complete(world);
+                self.on_build_complete(world, me.object);
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -167,7 +166,7 @@ mod tests {
         let data = LockWeaponCreateModuleData { slot_to_lock: 1, ..Default::default() };
         let mut m = LockWeaponCreate::new(8, Some(Arc::new(data))).unwrap();
         let mut h = Recorder::default();
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert_eq!(h.log, vec![format!("lock 8 1 {LOCKED_PERMANENTLY}")]);
         assert!(!m.create().should_do_on_build_complete());
     }

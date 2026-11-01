@@ -56,12 +56,11 @@ impl SupplyCenterCreate {
     pub fn on_create(&mut self) {}
 
     /// `onBuildComplete()`.
-    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H) {
+    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H, obj: ObjectId) {
         if !self.create.should_do_on_build_complete() {
             return;
         }
         self.create.on_build_complete(); // extend
-        let obj = self.create.behavior().object();
         let Some(count) = host.player_count() else {
             return;
         };
@@ -85,7 +84,7 @@ impl SupplyCenterCreate {
                 ModuleReply::Done
             }
             ModuleCall::OnBuildComplete => {
-                self.on_build_complete(world);
+                self.on_build_complete(world, me.object);
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -103,11 +102,11 @@ mod tests {
     fn centers_are_recorded_last_player_first_after_the_base() {
         let mut m = SupplyCenterCreate::new(9, Some(Arc::new(CreateModuleData::new()))).unwrap();
         let mut h = Recorder { players: Some(3), ..Default::default() };
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert_eq!(h.log, vec!["center 2 9", "center 1 9", "center 0 9"]);
         assert!(!m.create().should_do_on_build_complete());
         h.log.clear();
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert!(h.log.is_empty());
     }
 
@@ -115,7 +114,7 @@ mod tests {
     fn no_player_list_records_nothing_but_still_clears_the_flag() {
         let mut m = SupplyCenterCreate::new(9, Some(Arc::new(CreateModuleData::new()))).unwrap();
         let mut h = Recorder::default();
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert!(h.log.is_empty());
         assert!(!m.create().should_do_on_build_complete());
     }

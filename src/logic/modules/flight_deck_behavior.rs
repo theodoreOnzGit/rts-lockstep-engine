@@ -1164,7 +1164,7 @@ impl FlightDeckBehavior {
     }
 
     /// `aiDoCommand(parms)`: a command not from the AI is taken as the carrier's orders and passed on (the base's is never run).
-    fn ai_do_command(&mut self, world: &mut World, cmd: i32, command_source: i32, obj: ObjectId, pos: Coord3D) {
+    fn ai_do_command(&mut self, world: &mut World, us: ObjectId, cmd: i32, command_source: i32, obj: ObjectId, pos: Coord3D) {
         if command_source == CMD_FROM_AI {
             return;
         }
@@ -1173,20 +1173,20 @@ impl FlightDeckBehavior {
                 self.designated_target = INVALID_ID;
                 self.designated_position = pos;
                 self.designated_command = cmd;
-                self.propagate_orders_to_planes(world);
+                self.propagate_orders_to_planes(world, us);
             }
             AICMD_FORCE_ATTACK_OBJECT | AICMD_ATTACK_OBJECT => {
                 self.designated_target = if world.objects.find(obj).is_some() { obj } else { INVALID_ID };
                 self.designated_position = Coord3D::default();
                 self.designated_command = cmd;
-                self.propagate_orders_to_planes(world);
+                self.propagate_orders_to_planes(world, us);
             }
             AICMD_IDLE => {
                 self.designated_target = INVALID_ID;
                 self.designated_position = Coord3D::default();
                 self.designated_command = cmd;
                 if !plant(3827) {
-                    self.propagate_orders_to_planes(world);
+                    self.propagate_orders_to_planes(world, us);
                 }
             }
             _ => self.designated_command = AICMD_NO_COMMAND,
@@ -1194,8 +1194,7 @@ impl FlightDeckBehavior {
     }
 
     /// `propagateOrdersToPlanes()`.
-    fn propagate_orders_to_planes(&mut self, world: &mut World) {
-        let us = self.base.behavior().object();
+    fn propagate_orders_to_planes(&mut self, world: &mut World, us: ObjectId) {
         for i in 0..self.spaces.len() {
             let jet = self.spaces[i].object_in_space;
             if jet != INVALID_ID && world.objects.find(jet).is_some() && self.is_able_to_give_up_parking_space(world, jet) {
@@ -1367,7 +1366,7 @@ impl UpdateBehavior for FlightDeckBehavior {
             }
             ModuleCall::HasParkingPlaceInterface | ModuleCall::HasUpdateExitInterface => ModuleReply::Bool(true),
             ModuleCall::AiDoCommand { cmd, command_source, obj, pos } => {
-                self.ai_do_command(world, cmd, command_source, obj, pos);
+                self.ai_do_command(world, us, cmd, command_source, obj, pos);
                 ModuleReply::Done
             }
             // ExitInterface

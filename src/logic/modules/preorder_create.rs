@@ -63,8 +63,7 @@ impl PreorderCreate {
     /// `onBuildComplete()`: the preorder model condition follows the
     /// controlling player's `didPlayerPreorder()`. No base call, no
     /// `shouldDoOnBuildComplete()` test (both absent upstream).
-    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H) -> Result<(), CreateError> {
-        let obj = self.create.behavior().object();
+    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H, obj: crate::common::game_type::ObjectId) -> Result<(), CreateError> {
         let player = host.controlling_player(obj).ok_or(CreateError::NoControllingPlayer)?;
         if host.player_did_preorder(player) {
             host.set_model_condition_state(obj, MODELCONDITION_PREORDER);
@@ -89,7 +88,7 @@ impl PreorderCreate {
                 ModuleReply::Done
             }
             ModuleCall::OnBuildComplete => {
-                let r = self.on_build_complete(world);
+                let r = self.on_build_complete(world, me.object);
                 report_create_error(world, me, r);
                 ModuleReply::Done
             }
@@ -108,9 +107,9 @@ mod tests {
     fn preorder_sets_or_clears_the_condition_from_the_controller() {
         let mut m = PreorderCreate::new(7, Some(Arc::new(CreateModuleData::new()))).unwrap();
         let mut h = Recorder { controller: Some(1), preorder: true, ..Default::default() };
-        m.on_build_complete(&mut h).unwrap();
+        m.on_build_complete(&mut h, m.create().behavior().object()).unwrap();
         h.preorder = false;
-        m.on_build_complete(&mut h).unwrap();
+        m.on_build_complete(&mut h, m.create().behavior().object()).unwrap();
         assert_eq!(h.log, vec![format!("set 7 {MODELCONDITION_PREORDER}"), format!("clear 7 {MODELCONDITION_PREORDER}")]);
         // no base call: the flag is still set
         assert!(m.create().should_do_on_build_complete());
@@ -120,7 +119,7 @@ mod tests {
     fn no_controlling_player_is_an_undefined_input() {
         let mut m = PreorderCreate::new(7, Some(Arc::new(CreateModuleData::new()))).unwrap();
         let mut h = Recorder::default();
-        assert_eq!(m.on_build_complete(&mut h), Err(CreateError::NoControllingPlayer));
+        assert_eq!(m.on_build_complete(&mut h, m.create().behavior().object()), Err(CreateError::NoControllingPlayer));
         assert!(h.log.is_empty());
     }
 }

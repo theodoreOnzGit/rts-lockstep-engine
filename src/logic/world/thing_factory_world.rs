@@ -89,7 +89,9 @@ impl World {
             if let crate::common::module::ModuleDataKind::AiUpdate(d) = data {
                 if self.cuts.live_ai && crate::logic::ai::ai_subclass_data::AiSubclassModuleData::for_module(name).is_some() {
                     let base = std::sync::Arc::new(d.update.clone());
-                    let update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Normal)
+                    // (batch I9f: `AIUpdateInterface::getUpdatePhase()` is `PHASE_INITIAL`, AIUpdate.h, for every subclass: the AI runs
+                    // before the physics it drives; it was `PHASE_NORMAL` here)
+                    let update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Initial)
                         .map_err(|e| NewObjectError::Module(name.to_vec(), e))?;
                     let mut m = NewModule::plain(name, tag);
                     m.interfaces = info.nuggets()[i as usize].interface_mask;

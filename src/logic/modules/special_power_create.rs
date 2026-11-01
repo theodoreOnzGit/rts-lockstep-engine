@@ -56,12 +56,12 @@ impl SpecialPowerCreate {
     pub fn on_create(&mut self) {}
 
     /// `onBuildComplete()`.
-    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H) {
+    pub fn on_build_complete<H: CreateHost>(&mut self, host: &mut H, obj: ObjectId) {
         if !self.create.should_do_on_build_complete() {
             return;
         }
         self.create.on_build_complete(); // extend
-        host.special_power_creation(self.create.behavior().object());
+        host.special_power_creation(obj);
     }
 }
 
@@ -79,7 +79,7 @@ impl SpecialPowerCreate {
                 ModuleReply::Done
             }
             ModuleCall::OnBuildComplete => {
-                self.on_build_complete(world);
+                self.on_build_complete(world, me.object);
                 ModuleReply::Done
             }
             _ => ModuleReply::Unhandled,
@@ -101,9 +101,9 @@ mod tests {
     fn countdown_starts_once_when_the_base_allows() {
         let mut m = module();
         let mut h = Recorder::default();
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert_eq!(h.log, vec!["sp 3".to_string()]);
-        m.on_build_complete(&mut h);
+        m.on_build_complete(&mut h, m.create().behavior().object());
         assert_eq!(h.log.len(), 1, "the second build-complete does nothing");
     }
 }

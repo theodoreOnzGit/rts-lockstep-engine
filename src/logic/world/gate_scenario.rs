@@ -443,8 +443,9 @@ mod script_order_tests {
     /// (260, 380); the waypoint is at (250, 200). Predicted: after 240 frames both are within 40 of it (they move about one
     /// unit a frame; the group's formation spreads them), with no live error. Before this batch the order was a cut.
     ///
-    /// **Result** (2026-11-01, native, release): after 240 frames the soldiers are at (255.0, 205.9) and (258.8, 205.2), 7.7 and
-    /// 10.3 from the waypoint; no live error. **Not first time:** the first run found no team: the gate world's singleton
+    /// **Result** (2026-11-01, native, release): after 240 frames the soldiers are at (255.0, 205.9) and ~~(258.8, 205.2)~~
+    /// (258.3, 205.2), 7.7 and ~~10.3~~ 9.8 from the waypoint; no live error (**re-measured, batch I9f:** the AI now updates
+    /// in its upstream phase, before physics). **Not first time:** the first run found no team: the gate world's singleton
     /// teams were never made active (`Player::setDefaultTeam` does it), and `getTeamNamed` skips an inactive singleton.
     #[test]
     fn a_script_moves_a_team() {

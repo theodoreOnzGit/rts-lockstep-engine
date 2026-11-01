@@ -376,11 +376,11 @@ impl Under {
     /// `onBuildComplete()`, for the kinds that have one (the others have none upstream).
     fn on_build_complete(&mut self, host: &mut Host) {
         match self {
-            Under::Preorder(m) => m.on_build_complete(host).expect("the controller is present in every differential program"),
-            Under::Special(m) => m.on_build_complete(host),
+            Under::Preorder(m) => m.on_build_complete(host, m.create().behavior().object()).expect("the controller is present in every differential program"),
+            Under::Special(m) => m.on_build_complete(host, m.create().behavior().object()),
             Under::Warehouse(_) | Under::Veterancy(_) => {}
-            Under::Center(m) => m.on_build_complete(host),
-            Under::Lock(m) => m.on_build_complete(host),
+            Under::Center(m) => m.on_build_complete(host, m.create().behavior().object()),
+            Under::Lock(m) => m.on_build_complete(host, m.create().behavior().object()),
             Under::Grant(m) => m.on_build_complete(host).expect("the controller is present in every differential program"),
         }
     }

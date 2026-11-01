@@ -882,7 +882,10 @@ mod tests {
     /// moved toward the goal (both coordinates up by more than 50), with no live error. (Measured: about 1 unit a frame along
     /// the diagonal, at (177, 177) after 135 frames. A first fixture with a `FOUR_WHEELS` locomotor and the wheels' fields at
     /// their defaults turned about 2e-6 radians a frame and drove straight along x; with `TREADS` it turns at its turn rate.
-    /// The locomotor is verified against the C++ by `differential_locomotor`; the wheels' case was not looked into further.)
+    /// The locomotor is verified against the C++ by `differential_locomotor`; ~~the wheels' case was not looked into further~~
+    /// **explained, batch I9f:** a wheeled vehicle turns `forward speed / max(MinTurnSpeed, max speed / 4)` of its turn rate,
+    /// and `LocomotorTemplate`'s `MinTurnSpeed` defaults to `BIGNUM` (Locomotor.cpp); that fixture set no `MinTurnSpeed`, so
+    /// it turned about 1e-5 of its rate, upstream as here.)
     #[test]
     fn a_unit_pathfinds_and_moves() {
         use crate::common::base_type::Coord3D;
