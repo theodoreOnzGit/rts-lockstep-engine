@@ -218,6 +218,9 @@ pub struct World {
     pub ai_prone_damage: Option<crate::logic::damage::DamageInfo>,
     /// Batch I9c-2: `TheAI`'s groups (with `cuts.live_ai`).
     pub ai_groups: crate::logic::world::ai_group_world::AiGroups,
+    /// Batch I9c-4: the other object of the AI collision being answered, and the commands to the asking AI it waits to run.
+    pub collision_other: crate::common::game_type::ObjectId,
+    pub collision_self_commands: Vec<crate::logic::ai::ai_commands::AiCommandParms>,
     /// The AI module's `UpdateModule` base, lent while its snapshot runs (`ai_module_world.rs`).
     pub ai_update_base: Option<crate::logic::module::update_module::UpdateModule>,
     // --- end batch I9b ---
@@ -303,6 +306,8 @@ impl World {
             turret_ais: Default::default(),
             ai_prone_damage: None,
             ai_groups: Default::default(),
+            collision_other: crate::common::game_type::INVALID_ID,
+            collision_self_commands: Vec::new(),
             ai_update_base: None,
             // --- end batch I9b ---
             frame: 0,

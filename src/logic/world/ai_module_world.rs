@@ -239,6 +239,14 @@ impl AiModuleBody {
                 p.pos = pos;
                 command(m, world, me, p)
             }
+            // batch I9c-4: `processCollision(physics, other)`, the AI lent; its commands to itself after
+            ModuleCall::AiProcessCollision { other } => {
+                let r = lent(m, world, me, |w| w.ai_process_collision(me.object, other));
+                for p in std::mem::take(&mut world.collision_self_commands) {
+                    command(m, world, me, p);
+                }
+                ModuleReply::Bool(r)
+            }
             ModuleCall::AiDoPathfind => {
                 world.with_ai_self(me.object, |w| m.do_pathfind(w));
                 ModuleReply::Done
@@ -385,7 +393,7 @@ impl AiModuleBody {
                 world.ai_prone_damage = prev;
                 r
             }
-            // (not routed yet: construct, transferAttack (TheAI's), processCollision, getAttackInfo)
+            // (not routed yet: construct, transferAttack (TheAI's), getAttackInfo)
             _ => ModuleReply::Unhandled,
         }
     }

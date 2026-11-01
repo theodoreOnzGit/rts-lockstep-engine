@@ -2392,7 +2392,7 @@ impl AiStateHost for Host {
     fn object_is_airborne_target(&mut self, id: ObjectId) -> bool {
         self.object_answer(0, &[id as u32])
     }
-    fn is_able_to_attack(&self) -> bool {
+    fn is_able_to_attack(&mut self) -> bool {
         self.env.able_to_attack != 0
     }
     fn is_out_of_ammo(&self) -> bool {
@@ -2469,10 +2469,10 @@ impl AiStateHost for Host {
     fn set_team_target_object(&mut self, target: ObjectId) {
         self.l(L_ATTACK, &[11, target as u32]);
     }
-    fn contain_is_garrisonable(&self) -> bool {
+    fn contain_is_garrisonable(&mut self) -> bool {
         self.env.garrisonable != 0
     }
-    fn contain_count(&self) -> u32 {
+    fn contain_count(&mut self) -> u32 {
         self.env.contain_count as u32
     }
     fn contain_is_enclosing_container_for_me(&mut self) -> bool {
@@ -2916,7 +2916,7 @@ impl AiStateHost for Host {
     fn weapon_is_too_close(&mut self, victim: ObjectId) -> bool {
         self.range_answer(3, &[victim as u32])
     }
-    fn object_forward_speed_2d(&self, _id: ObjectId) -> f32 {
+    fn object_forward_speed_2d(&mut self, _id: ObjectId) -> f32 {
         self.env.loco.fwd2d // (the scene's physics is every object's)
     }
     fn object_unit_direction_vector_2d(&mut self, _id: ObjectId) -> Coord3D {
@@ -2998,7 +2998,7 @@ impl AiStateHost for Host {
     fn object_has_physics(&self, _id: ObjectId) -> bool {
         self.env.loco.has_physics != 0
     }
-    fn object_velocity_magnitude(&self, _id: ObjectId) -> f32 {
+    fn object_velocity_magnitude(&mut self, _id: ObjectId) -> f32 {
         self.env.loco.vel_mag
     }
     fn object_unit_direction_vector_3d(&mut self, _id: ObjectId) -> Coord3D {

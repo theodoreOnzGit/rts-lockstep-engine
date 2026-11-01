@@ -701,7 +701,7 @@ pub trait AiStateHost: AiHost + StateContext {
     /// Another object's `getPhysics() != NULL`.
     fn object_has_physics(&self, id: ObjectId) -> bool;
     /// Another object's `getPhysics()->getVelocityMagnitude()`.
-    fn object_velocity_magnitude(&self, id: ObjectId) -> f32;
+    fn object_velocity_magnitude(&mut self, id: ObjectId) -> f32;
     /// Another object's `getUnitDirectionVector3D(dir)`.
     fn object_unit_direction_vector_3d(&mut self, id: ObjectId) -> Coord3D;
     // ---- batch A8
@@ -746,7 +746,7 @@ pub trait AiStateHost: AiHost + StateContext {
     /// Another object's `isAirborneTarget()`.
     fn object_is_airborne_target(&mut self, id: ObjectId) -> bool;
     /// `isAbleToAttack()`.
-    fn is_able_to_attack(&self) -> bool;
+    fn is_able_to_attack(&mut self) -> bool;
     /// `isOutOfAmmo()`.
     fn is_out_of_ammo(&self) -> bool;
     /// `isCurWeaponLocked()`.
@@ -784,8 +784,8 @@ pub trait AiStateHost: AiHost + StateContext {
     /// `getTeam()->setTeamTargetObject(target)`.
     fn set_team_target_object(&mut self, target: ObjectId);
     /// The contain's (another object's: the stand-ins' one contain) `isGarrisonable()`, `getContainCount()`.
-    fn contain_is_garrisonable(&self) -> bool;
-    fn contain_count(&self) -> u32;
+    fn contain_is_garrisonable(&mut self) -> bool;
+    fn contain_count(&mut self) -> u32;
     /// The owner's container's `isEnclosingContainerFor(owner)`.
     fn contain_is_enclosing_container_for_me(&mut self) -> bool;
     /// The owner's container's `attemptBestFirePointPosition(owner, weapon, victim)` / `(.., targetPos)`.
@@ -973,7 +973,7 @@ pub trait AiStateHost: AiHost + StateContext {
     /// The current weapon's `isTooClose(owner, victim)`.
     fn weapon_is_too_close(&mut self, victim: ObjectId) -> bool;
     /// Another object's physics' `getForwardSpeed2D()`.
-    fn object_forward_speed_2d(&self, id: ObjectId) -> f32;
+    fn object_forward_speed_2d(&mut self, id: ObjectId) -> f32;
     /// Another object's `getUnitDirectionVector2D()`.
     fn object_unit_direction_vector_2d(&mut self, id: ObjectId) -> Coord3D;
     /// Another object's `getGeometryInfo().getCenterPosition(pos, center)`.

@@ -906,7 +906,7 @@ impl AiStateHost for World {
         World::is_mobile(self, self.ai_self)
     }
     fn partition_cell_size(&self) -> f32 {
-        0.0
+        self.statics.global_data.the_global_data().map_or(0.0, |g| g.partition_cell_size)
     }
     fn is_significantly_above_terrain(&mut self) -> bool {
         let id = self.ai_self;
@@ -936,8 +936,8 @@ impl AiStateHost for World {
     fn object_is_disabled_by_type(&self, id: ObjectId, t: DisabledType) -> bool {
         self.find_object(id).is_some_and(|o| o.is_disabled_by_type(t))
     }
-    fn object_ai_has_path(&self, _id: ObjectId) -> bool {
-        Default::default()
+    fn object_ai_has_path(&self, id: ObjectId) -> bool {
+        self.ai_peek(id).is_some_and(|a| a.path.is_some())
     }
     fn pf_move_away_from_path(&mut self, unit: ObjectId, other: ObjectId, other_has_path: bool) -> Option<Path> {
         // `getMoveAwayFromPath(obj, unit, unit's AI's path, obj2, obj2's AI's path)` (none without the unit's path)
@@ -957,10 +957,10 @@ impl AiStateHost for World {
         self.ais_cut("weapon_set_max_shot_count");
     }
     fn weapon_continue_attack_range(&self) -> f32 {
-        0.0
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).and_then(|w| self.statics.weapon_store.templates().get(w.template())).map_or(0.0, |t| t.continue_attack_range)
     }
     fn weapon_is_contact(&self) -> bool {
-        Default::default()
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).and_then(|w| self.statics.weapon_store.templates().get(w.template())).is_some_and(|t| t.is_contact_weapon())
     }
     fn partition_closest_attack_target(&mut self, _pos: &Coord3D, _range: f32, _src: CommandSourceType) -> ObjectId {
         self.ais_cut("partition_closest_attack_target");
@@ -1115,7 +1115,7 @@ impl AiStateHost for World {
         self.ais_cut("remove_audio_event");
     }
     fn formation_id(&self) -> i32 {
-        Default::default()
+        self.objects.find(self.ai_self).map_or(0, |o| o.formation_id)
     }
     fn group_speed(&mut self) -> Option<f32> {
         self.ais_cut("group_speed");
@@ -1127,8 +1127,9 @@ impl AiStateHost for World {
     fn object_has_physics(&self, id: ObjectId) -> bool {
         self.find_object(id).is_some_and(|o| o.physics.is_some())
     }
-    fn object_velocity_magnitude(&self, _id: ObjectId) -> f32 {
-        0.0
+    fn object_velocity_magnitude(&mut self, id: ObjectId) -> f32 {
+        let Some(ph) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };
+        self.module_call(id, ph, crate::logic::world::module_call::ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)
     }
     fn object_unit_direction_vector_3d(&mut self, _id: ObjectId) -> Coord3D {
         self.ais_cut("object_unit_direction_vector_3d");
@@ -1193,26 +1194,37 @@ impl AiStateHost for World {
         World::can_crush_or_squish(self, self.ai_self, Some(victim), crate::logic::world::object_damage::CrushSquishTestType::CrushOrSquish)
     }
     fn current_weapon_slot(&self) -> Option<WeaponSlotType> {
-        Default::default()
+        let o = self.objects.find(self.ai_self)?;
+        if !o.weapon_set.has_any_weapon() {
+            return None;
+        }
+        match o.weapon_set.get_cur_weapon_slot() {
+            0 => Some(WeaponSlotType::Primary),
+            1 => Some(WeaponSlotType::Secondary),
+            2 => Some(WeaponSlotType::Tertiary),
+            _ => None,
+        }
     }
-    fn weapon_slot_present(&self, _slot: WeaponSlotType) -> bool {
-        Default::default()
+    fn weapon_slot_present(&self, slot: WeaponSlotType) -> bool {
+        self.objects.find(self.ai_self).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(slot as i32).is_some())
     }
     fn object_is_airborne_target(&mut self, _id: ObjectId) -> bool {
         self.ais_cut("object_is_airborne_target");
         Default::default()
     }
-    fn is_able_to_attack(&self) -> bool {
-        Default::default()
+    fn is_able_to_attack(&mut self) -> bool {
+        let id = self.ai_self;
+        World::is_able_to_attack(self, id)
     }
     fn is_out_of_ammo(&self) -> bool {
-        Default::default()
+        let now = crate::common::state_machine::StateContext::frame(self);
+        self.objects.find(self.ai_self).is_some_and(|o| o.weapon_set.is_out_of_ammo(now))
     }
     fn is_cur_weapon_locked(&self) -> bool {
-        Default::default()
+        self.objects.find(self.ai_self).is_some_and(|o| o.weapon_set.is_cur_weapon_locked())
     }
     fn has_any_weapon(&self) -> bool {
-        Default::default()
+        self.objects.find(self.ai_self).is_some_and(|o| o.weapon_set.has_any_weapon())
     }
     fn turret_holds_current_weapon(&self, which: usize) -> bool {
         let slot = AiStateHost::current_weapon_slot(self);
@@ -1273,11 +1285,15 @@ impl AiStateHost for World {
             x.common_attack_target = target;
         }
     }
-    fn contain_is_garrisonable(&self) -> bool {
-        Default::default()
+    fn contain_is_garrisonable(&mut self) -> bool {
+        let id = self.ai_self;
+        let Some(c) = self.get_contain(id) else { return false };
+        self.module_call(id, c, crate::logic::world::module_call::ModuleCall::IsGarrisonable).as_bool()
     }
-    fn contain_count(&self) -> u32 {
-        Default::default()
+    fn contain_count(&mut self) -> u32 {
+        let id = self.ai_self;
+        let Some(c) = self.get_contain(id) else { return 0 };
+        self.module_call(id, c, crate::logic::world::module_call::ModuleCall::GetContainCount).as_int(0) as u32
     }
     fn contain_is_enclosing_container_for_me(&mut self) -> bool {
         self.ais_cut("contain_is_enclosing_container_for_me");
@@ -1300,16 +1316,17 @@ impl AiStateHost for World {
         0.0
     }
     fn weapon_max_shot_count(&self) -> i32 {
-        Default::default()
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).map_or(0, |w| w.max_shot_count())
     }
     fn weapon_aim_delta(&self) -> f32 {
-        0.0
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).and_then(|w| self.statics.weapon_store.templates().get(w.template())).map_or(0.0, |t| t.aim_delta)
     }
-    fn weapon_status_now(&self, _slot: WeaponSlotType) -> WeaponStatus {
-        WeaponStatus::ReadyToFire
+    fn weapon_status_now(&self, slot: WeaponSlotType) -> WeaponStatus {
+        let now = crate::common::state_machine::StateContext::frame(self);
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(slot as i32)).map_or(WeaponStatus::ReadyToFire, |w| w.get_status(now))
     }
-    fn weapon_has_leech_range_now(&self, _slot: WeaponSlotType) -> bool {
-        Default::default()
+    fn weapon_has_leech_range_now(&self, slot: WeaponSlotType) -> bool {
+        self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(slot as i32)).is_some_and(|w| w.has_leech_range())
     }
     fn weapon_fire_at(&mut self, _slot: WeaponSlotType, _pos: &Coord3D) -> bool {
         self.ais_cut("weapon_fire_at");
@@ -1334,7 +1351,8 @@ impl AiStateHost for World {
         self.ais_cut("release_weapon_lock");
     }
     fn units_should_hunt(&self) -> Option<bool> {
-        Default::default()
+        let p = self.get_controlling_player(self.ai_self)?;
+        self.players.get_nth(p).map(|x| x.units_should_hunt)
     }
     fn attack_priority(&mut self, _info: usize, _obj: ObjectId) -> i32 {
         self.ais_cut("attack_priority");
@@ -1665,8 +1683,9 @@ impl AiStateHost for World {
         self.ais_cut("weapon_is_too_close");
         Default::default()
     }
-    fn object_forward_speed_2d(&self, _id: ObjectId) -> f32 {
-        0.0
+    fn object_forward_speed_2d(&mut self, id: ObjectId) -> f32 {
+        let Some(ph) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };
+        self.module_call(id, ph, crate::logic::world::module_call::ModuleCall::PhysicsGetForwardSpeed2D).as_real(0.0)
     }
     fn object_unit_direction_vector_2d(&mut self, id: ObjectId) -> Coord3D {
         self.find_object_mut(id).map_or_else(Coord3D::default, |o| o.thing.unit_direction_vector_2d())
