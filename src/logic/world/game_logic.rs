@@ -196,6 +196,10 @@ pub struct World {
     /// `TheScriptConditions` (the transports `UNIT_EMPTIED` has seen).
     pub script_conditions: crate::logic::world::script_conditions::ScriptConditions,
     // --- end batch I8b ---
+    // --- batch I8c ---
+    /// `TheScriptActions`.
+    pub script_actions: crate::logic::world::script_actions::ScriptActions,
+    // --- end batch I8c ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -265,6 +269,9 @@ impl World {
             // --- batch I8b ---
             script_conditions: crate::logic::world::script_conditions::ScriptConditions::new(),
             // --- end batch I8b ---
+            // --- batch I8c ---
+            script_actions: crate::logic::world::script_actions::ScriptActions::new(),
+            // --- end batch I8c ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

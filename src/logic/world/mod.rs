@@ -72,6 +72,7 @@ pub mod start_host_world; // batch I7c: StartHost for World (the starting buildi
 pub mod new_game_host_world; // batch I7c: NewGameHost for World (GameLogic::startNewGame)
 pub mod script_engine_host_world; // batch I8a: ScriptEngineHost for World, TheScriptEngine in the world
 pub mod script_conditions_host_world; // batch I8b: ScriptConditionsHost for World, TheScriptConditions in the world
+pub mod script_actions_host_world; // batch I8c: ScriptActionsHost for World, TheScriptActions in the world
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;

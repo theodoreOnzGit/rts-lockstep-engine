@@ -370,7 +370,7 @@ impl ScriptActionsHost for Sim {
     fn sa_current_player(&self) -> Option<PlayerH> {
         self.player(((self.cfg[5] >> 8) & 15) as i32)
     }
-    fn sa_player_from_name(&self, name: &[u8]) -> Option<PlayerH> {
+    fn sa_player_from_name(&mut self, name: &[u8]) -> Option<PlayerH> {
         if name == b"<This Player>" {
             return self.sa_current_player();
         }
@@ -792,7 +792,7 @@ impl ScriptActionsHost for Sim {
     fn sa_group_follow_waypoint_path(&mut self, g: GroupH, w: WaypointH, as_team: bool, exact: bool, cmd: i32) {
         self.log.push(format!("group {g} followpath{}{} {w} {cmd}", if as_team { "team" } else { "" }, if exact { "exact" } else { "" }));
     }
-    fn sa_skirmish_enemy_player(&self) -> Option<PlayerH> {
+    fn sa_skirmish_enemy_player(&mut self) -> Option<PlayerH> {
         self.player(((self.cfg[5] >> 12) & 15) as i32)
     }
     fn sa_player_mp_start_index(&self, p: PlayerH) -> i32 {

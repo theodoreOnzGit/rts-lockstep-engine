@@ -92,26 +92,28 @@ impl ScriptEngineHost for World {
         self.names.name_to_key(name)
     }
     fn se_actions_reset(&mut self) {
-        self.se_cut("ScriptActions::reset", &[], &[]);
+        // batch I8c: the world's own actions
+        self.script_actions_reset();
     }
     fn se_conditions_reset(&mut self) {
         // batch I8b: the world's own conditions
         self.script_conditions.reset();
     }
     fn se_actions_update(&mut self) {
-        self.se_cut("ScriptActions::update", &[], &[]);
+        // batch I8c: the world's own actions (`update()` is empty upstream)
+        self.script_actions.update();
     }
     fn se_conditions_update(&mut self) {
         // batch I8b: the world's own conditions (`update()` is empty upstream)
         self.script_conditions.update();
     }
     fn se_actions_close_windows(&mut self) {
-        self.se_cut("ScriptActions::closeWindows", &[], &[]);
+        // batch I8c: `TheScriptActions->closeWindows(FALSE)`
+        self.script_actions_close_windows(false);
     }
-    fn se_execute_action(&mut self, _engine: &mut ScriptEngine, action: &ScriptAction) -> R<()> {
-        // `TheScriptActions` comes in with batch I8c
-        self.se_cut("ScriptActions::executeAction", &[i64::from(action.action_type)], &[]);
-        Ok(())
+    fn se_execute_action(&mut self, engine: &mut ScriptEngine, action: &ScriptAction) -> R<()> {
+        // batch I8c: the world's own actions
+        self.execute_action_with(engine, action)
     }
     fn se_evaluate_condition(&mut self, engine: &mut ScriptEngine, condition: &mut Condition) -> R<bool> {
         // batch I8b: the world's own conditions
@@ -332,7 +334,7 @@ mod tests {
 
     /// The world's frame runs the engine (`TheScriptEngine->update()`). A constructed engine does nothing until a map
     /// is started (upstream's constructor leaves `m_endGameTimer` 0; `newMap` sets it to -1). After `newMap` the update
-    /// runs `TheScriptActions->update()` and `TheScriptConditions->update()`, logged until batches I8b and I8c.
+    /// runs `TheScriptActions->update()` and `TheScriptConditions->update()` (the world's since batches I8b and I8c).
     #[test]
     fn the_frame_runs_the_script_engine() {
         let (mut w, _) = world();
@@ -345,8 +347,8 @@ mod tests {
         w.logic_update().unwrap();
         let calls: Vec<&'static str> = w.cuts.log.as_ref().unwrap().iter().filter_map(|c| if let CutCall::Host { call, .. } = c { Some(*call) } else { None }).collect();
         assert!(!calls.contains(&"ScriptEngine::update"), "{calls:?}");
-        // (`TheScriptConditions->update()` is the world's since batch I8b, and empty)
-        assert!(calls.contains(&"ScriptActions::update"), "{calls:?}");
+        // (`TheScriptConditions->update()` and `TheScriptActions->update()` are the world's since batches I8b and I8c)
+        assert!(!calls.contains(&"ScriptActions::update"), "{calls:?}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

@@ -1,0 +1,1352 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
+// commit 0a05454d8574207440a5fb15241b98ad0b435590):
+//   GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp (the calls the actions make out of
+//   `ScriptActions`)
+//
+// Original copyright notice of those files:
+//   Command & Conquer Generals Zero Hour(tm)
+//   Copyright 2025 Electronic Arts Inc.
+//   (c) 2001-2003 Electronic Arts Inc.
+//
+// Licensed under the GNU General Public License version 3 (GPL-3.0-only for
+// this translation), with the additional terms in NOTICE.md.
+// Translated to Rust and modified; not the original program.
+
+//! Integration batch I8c: `TheScriptActions` in the world ([`World::script_actions`]) and the world as
+//! `ScriptActionsHost`. The engine's `executeAction` and the actions' `reset`, `update` and `closeWindows` (batch I8a's cut
+//! points) are now the actions'. As for the conditions (batch I8b), the engine evaluating a script is lent back to the
+//! world while its action runs, so the actions' questions to `TheScriptEngine` reach it.
+//!
+//! The 381 host methods were written from the trait's own signatures: the 142 the world answers have their bodies here (41 more `&self` cut points answer a default without a log, 198 `&mut self` ones log)
+//! (the script engine's lookups and timers, the waypoints, the ground height, the team factory and teams, the players'
+//! orders, relationships, money, ranks, sciences and skill points, the objects' names, positions, statuses, teams,
+//! colours and upgrades, the command sets and buttons of the control bar's tables, the special power store, the water,
+//! the boundary, the scoring, the hulk lifetime and the buildable overrides). **The rest are cut points**: each `&mut
+//! self` one is logged as [`CutCall::Host`] with its name and answers its type's default (false, 0, none, empty); a
+//! `&self` one answers the default without a log. They are the client (the camera and view, the in-game UI, the display,
+//! drawables, the radar, the audio, EVA, the window manager, the control bar's flashes and display), the AI and its groups
+//! (batch I9: every order to an object's AI or a group), containers, special power modules and the partition manager's
+//! searches the actions make. Making each of them live is later work, in the same file.
+//!
+//! `p1w13-sonnet`, integration batch I8c, 2026-11-01.
+
+#![allow(clippy::needless_return)]
+
+use crate::common::ascii_string::AsciiString;
+use crate::common::base_type::{Coord2D, Coord3D};
+use crate::common::disabled_types::DisabledType;
+use crate::common::game_common::Relationship;
+use crate::common::game_type::ObjectId;
+use crate::common::ini::IniError;
+use crate::common::kind_of::KindOfType;
+use crate::logic::scripts::ScriptAction;
+use crate::logic::world::game_logic::World;
+use crate::logic::world::object_cuts::CutCall;
+use crate::logic::world::script_actions::{
+    AudioEvent, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
+    TemplateH, TriggerH, WaypointH, WindowH,
+};
+use crate::logic::world::script_engine::ScriptEngine;
+
+type R<T> = Result<T, IniError>;
+
+/// A script's relationship number as a `Relationship` (`ENEMIES` 0, `NEUTRAL` 1, `ALLIES` 2).
+fn rel(r: i32) -> Relationship {
+    match r {
+        0 => Relationship::Enemies,
+        2 => Relationship::Allies,
+        _ => Relationship::Neutral,
+    }
+}
+
+impl World {
+    /// `TheScriptActions->executeAction(action)`, with the engine that runs it put back in the world for the action's
+    /// questions to it.
+    pub(crate) fn execute_action_with(&mut self, engine: &mut ScriptEngine, action: &ScriptAction) -> R<()> {
+        std::mem::swap(&mut self.script_engine, engine);
+        let mut sa = std::mem::take(&mut self.script_actions);
+        let r = sa.execute_action(self, action);
+        self.script_actions = sa;
+        std::mem::swap(&mut self.script_engine, engine);
+        match r {
+            Ok(()) => Ok(()),
+            Err(crate::logic::world::script_actions::ActionError::Undefined(e)) => Err(e),
+            // (internal to the dispatch: every type is translated)
+            Err(crate::logic::world::script_actions::ActionError::NotTranslated(t)) => {
+                self.cuts.team_live_errors.push(format!("ScriptActions::executeAction: type {t} not translated"));
+                Ok(())
+            }
+        }
+    }
+
+    /// `TheScriptActions->reset()`.
+    pub(crate) fn script_actions_reset(&mut self) {
+        let mut sa = std::mem::take(&mut self.script_actions);
+        sa.reset(self);
+        self.script_actions = sa;
+    }
+
+    /// `TheScriptActions->closeWindows(suppress)`.
+    pub(crate) fn script_actions_close_windows(&mut self, suppress: bool) {
+        let mut sa = std::mem::take(&mut self.script_actions);
+        sa.close_windows(self, suppress);
+        self.script_actions = sa;
+    }
+
+    /// Logs one of the actions' calls into a unit the world does not hold.
+    fn sa_cut(&mut self, call: &'static str) {
+        self.cut(CutCall::Host { call, args: Vec::new(), text: Vec::new() });
+    }
+}
+
+impl ScriptActionsHost for World {
+    fn sa_win_create_from_script(&mut self, _name: &[u8]) -> WindowH {
+        self.sa_cut("win_create_from_script");
+        Default::default()
+    }
+    fn sa_win_destroy(&mut self, _w: WindowH) {
+        self.sa_cut("win_destroy");
+    }
+    fn sa_logic_close_windows(&mut self) {
+        self.sa_cut("logic_close_windows");
+    }
+    fn sa_find_object_by_id(&self, id: ObjectId) -> Option<ObjH> {
+        self.find_object(id).map(|o| o.id)
+    }
+    fn sa_ui_set_input_enabled(&mut self, _enabled: bool) {
+        self.sa_cut("ui_set_input_enabled");
+    }
+    fn sa_mouse_set_visibility(&mut self, _visible: bool) {
+        self.sa_cut("mouse_set_visibility");
+    }
+    fn sa_ui_deselect_all_drawables(&mut self) {
+        self.sa_cut("ui_deselect_all_drawables");
+    }
+    fn sa_ui_clear_attack_move_to_mode(&mut self) {
+        self.sa_cut("ui_clear_attack_move_to_mode");
+    }
+    fn sa_ui_set_waypoint_mode(&mut self, _on: bool) {
+        self.sa_cut("ui_set_waypoint_mode");
+    }
+    fn sa_control_bar_delete_build_tooltip_layout(&mut self) {
+        self.sa_cut("control_bar_delete_build_tooltip_layout");
+    }
+    fn sa_look_at_reset_modes(&mut self) {
+        self.sa_cut("look_at_reset_modes");
+    }
+    fn sa_has_campaign_manager(&self) -> bool {
+        Default::default()
+    }
+    fn sa_campaign_set_victorious(&mut self, _victorious: bool) {
+        self.sa_cut("campaign_set_victorious");
+    }
+    fn sa_am_i_observer(&self) -> bool {
+        self.victory.am_i_observer()
+    }
+    fn sa_set_infantry_light_scale(&mut self, _setting: f32) {
+        self.sa_cut("set_infantry_light_scale");
+    }
+    fn sa_is_night(&self) -> bool {
+        self.statics.global_data.the_global_data().is_some_and(|g| g.time_of_day == crate::common::game_type::TimeOfDay::Night as i32)
+    }
+    fn sa_start_quick_end_game_timer(&mut self) {
+        self.script_engine.start_quick_end_game_timer();
+    }
+    fn sa_start_end_game_timer(&mut self) {
+        self.script_engine.start_end_game_timer();
+    }
+    fn sa_start_close_window_timer(&mut self) {
+        self.script_engine.start_close_window_timer();
+    }
+    fn sa_has_shown_mp_local_defeat_window(&self) -> bool {
+        self.script_engine.has_shown_mp_local_defeat_window()
+    }
+    fn sa_mark_mp_local_defeat_window_shown(&mut self) {
+        self.script_engine.mark_mp_local_defeat_window_shown();
+    }
+    fn sa_append_debug_message(&mut self, _message: &[u8], _pause: bool) {
+        self.sa_cut("append_debug_message");
+    }
+    fn sa_unit_named(&self, name: &[u8]) -> Option<ObjH> {
+        self.script_engine.get_unit_named(name)
+    }
+    fn sa_team_named(&self, name: &[u8]) -> Option<TeamH> {
+        self.script_engine.get_team_named(self, name).ok().flatten()
+    }
+    fn sa_did_unit_exist(&self, name: &[u8]) -> bool {
+        self.script_engine.did_unit_exist(name)
+    }
+    fn sa_transfer_object_name(&mut self, name: &[u8], o: ObjH) {
+        let mut se = std::mem::take(&mut self.script_engine);
+        se.transfer_object_name(self, name, o);
+        self.script_engine = se;
+    }
+    fn sa_add_object_to_cache(&mut self, o: ObjH) {
+        let mut se = std::mem::take(&mut self.script_engine);
+        se.add_object_to_cache(self, o);
+        self.script_engine = se;
+    }
+    fn sa_current_player(&self) -> Option<PlayerH> {
+        self.script_engine.get_current_player()
+    }
+    fn sa_player_from_name(&mut self, name: &[u8]) -> Option<PlayerH> {
+        let se = std::mem::take(&mut self.script_engine);
+        let r = se.get_player_from_ascii_string(self, name);
+        self.script_engine = se;
+        r
+    }
+    fn sa_local_player(&self) -> Option<PlayerH> {
+        (0..16).find(|&i| crate::logic::world::player_ops::player_is_local_player(self, i))
+    }
+    fn sa_player_is_observer(&self, p: PlayerH) -> bool {
+        crate::logic::world::player_ops::player_is_player_observer(self, p).unwrap_or(false)
+    }
+    fn sa_player_build_specific_building(&mut self, _p: PlayerH, _building: &[u8]) {
+        self.sa_cut("player_build_specific_building");
+    }
+    fn sa_player_build_by_supplies(&mut self, _p: PlayerH, _cash: i32, _building: &[u8]) {
+        self.sa_cut("player_build_by_supplies");
+    }
+    fn sa_player_build_specific_building_nearest_team(&mut self, _p: PlayerH, _building: &[u8], _t: TeamH) {
+        self.sa_cut("player_build_specific_building_nearest_team");
+    }
+    fn sa_player_build_upgrade(&mut self, _p: PlayerH, _upgrade: &[u8]) {
+        self.sa_cut("player_build_upgrade");
+    }
+    fn sa_player_build_base_defense(&mut self, _p: PlayerH, _flank: bool) {
+        self.sa_cut("player_build_base_defense");
+    }
+    fn sa_player_build_base_defense_structure(&mut self, _p: PlayerH, _building: &[u8], _flank: bool) {
+        self.sa_cut("player_build_base_defense_structure");
+    }
+    fn sa_audio_add_event(&mut self, _e: &AudioEvent) {
+        self.sa_cut("audio_add_event");
+    }
+    fn sa_waypoint_by_name(&self, name: &[u8]) -> Option<WaypointH> {
+        AsciiString::try_from_bytes(name).ok().and_then(|n| self.terrain.waypoint_by_name(&n)).and_then(|h| self.terrain.waypoint(h)).map(|w| w.id())
+    }
+    fn sa_first_waypoint(&self) -> Option<WaypointH> {
+        self.terrain.first_waypoint().and_then(|h| self.terrain.waypoint(h)).map(|w| w.id())
+    }
+    fn sa_waypoint_next(&self, w: WaypointH) -> Option<WaypointH> {
+        let h = self.terrain.waypoint_by_id(w as u32)?;
+        self.terrain.next_waypoint(h).and_then(|n| self.terrain.waypoint(n)).map(|x| x.id())
+    }
+    fn sa_waypoint_name(&self, w: WaypointH) -> Vec<u8> {
+        self.terrain.waypoint_by_id(w as u32).and_then(|h| self.terrain.waypoint(h)).map(|x| x.name().str().to_vec()).unwrap_or_default()
+    }
+    fn sa_waypoint_location(&self, w: WaypointH) -> Coord3D {
+        self.terrain.waypoint_by_id(w as u32).and_then(|h| self.terrain.waypoint(h)).map(|x| *x.location()).unwrap_or_default()
+    }
+    fn sa_ground_height(&self, x: f32, y: f32) -> f32 {
+        self.terrain.ground_height(x, y, false).0
+    }
+    fn sa_create_crater_in_terrain(&mut self, _o: ObjH) {
+        self.sa_cut("create_crater_in_terrain");
+    }
+    fn sa_pathfinder_add_object(&mut self, _o: ObjH) {
+        self.sa_cut("pathfinder_add_object");
+    }
+    fn sa_oversize_the_terrain(&mut self, _amount: i32) {
+        self.sa_cut("oversize_the_terrain");
+    }
+    fn sa_view_set_camera_lock(&mut self, _id: ObjectId) {
+        self.sa_cut("view_set_camera_lock");
+    }
+    fn sa_view_snap_to_camera_lock(&mut self) {
+        self.sa_cut("view_snap_to_camera_lock");
+    }
+    fn sa_view_set_snap_mode(&mut self, _lock_type: i32, _dist: f32) {
+        self.sa_cut("view_set_snap_mode");
+    }
+    fn sa_view_move_camera_to(&mut self, _p: &Coord3D, _frames: i32, _shutter: i32, _orient: bool, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_move_camera_to");
+    }
+    fn sa_view_move_camera_along_waypoint_path(&mut self, _w: WaypointH, _frames: i32, _shutter: i32, _orient: bool, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_move_camera_along_waypoint_path");
+    }
+    fn sa_view_zoom_camera(&mut self, _zoom: f32, _ms: i32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_zoom_camera");
+    }
+    fn sa_view_pitch_camera(&mut self, _pitch: f32, _ms: i32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_pitch_camera");
+    }
+    fn sa_view_rotate_camera(&mut self, _rotations: f32, _frames: i32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_rotate_camera");
+    }
+    fn sa_view_rotate_camera_toward_object(&mut self, _id: ObjectId, _ms: i32, _hold: i32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_rotate_camera_toward_object");
+    }
+    fn sa_view_rotate_camera_toward_position(&mut self, _p: &Coord3D, _ms: i32, _ease_in: f32, _ease_out: f32, _reverse: bool) {
+        self.sa_cut("view_rotate_camera_toward_position");
+    }
+    fn sa_view_reset_camera(&mut self, _p: &Coord3D, _frames: i32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_reset_camera");
+    }
+    fn sa_view_scroll_by(&mut self, _d: &Coord2D) {
+        self.sa_cut("view_scroll_by");
+    }
+    fn sa_view_camera_mod_look_toward(&mut self, _p: &Coord3D) {
+        self.sa_cut("view_camera_mod_look_toward");
+    }
+    fn sa_view_camera_mod_final_look_toward(&mut self, _p: &Coord3D) {
+        self.sa_cut("view_camera_mod_final_look_toward");
+    }
+    fn sa_view_camera_mod_final_move_to(&mut self, _p: &Coord3D) {
+        self.sa_cut("view_camera_mod_final_move_to");
+    }
+    fn sa_view_camera_mod_final_pitch(&mut self, _pitch: f32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_camera_mod_final_pitch");
+    }
+    fn sa_view_camera_mod_final_zoom(&mut self, _zoom: f32, _ease_in: f32, _ease_out: f32) {
+        self.sa_cut("view_camera_mod_final_zoom");
+    }
+    fn sa_drawables(&self) -> Vec<(bool, Coord3D)> {
+        Default::default()
+    }
+    fn sa_team_damage_members(&mut self, t: TeamH, amount: f32) {
+        let _ = crate::logic::world::team_ops::team_damage_team_members(self, t as u32, amount);
+    }
+    fn sa_team_set_state(&mut self, t: TeamH, state: &[u8]) {
+        if let Some(x) = self.teams.team_mut(t as u32) {
+            x.state = state.to_vec();
+        }
+    }
+    fn sa_team_set_active(&mut self, t: TeamH) {
+        let _ = crate::logic::world::team_ops::team_set_active(self, t as u32);
+    }
+    fn sa_team_as_ai_group(&mut self, _t: TeamH, _g: GroupH) {
+        self.sa_cut("team_as_ai_group");
+    }
+    fn sa_team_members(&self, t: TeamH) -> Vec<ObjH> {
+        self.teams.members(t as u32)
+    }
+    fn sa_find_team_prototype(&self, name: &[u8]) -> Option<ProtoH> {
+        self.teams.prototypes().find(|p| p.name == name).map(|p| p.id as ProtoH)
+    }
+    fn sa_proto_template_info(&self, _p: ProtoH) -> TeamTemplateInfo {
+        Default::default()
+    }
+    fn sa_create_inactive_team(&mut self, name: &[u8]) -> Option<TeamH> {
+        crate::logic::world::team_ops::factory_create_inactive_team(self, name).ok().map(|t| t as TeamH)
+    }
+    fn sa_create_team(&mut self, name: &[u8]) -> Option<TeamH> {
+        crate::logic::world::team_ops::factory_create_team(self, name).ok().map(|t| t as TeamH)
+    }
+    fn sa_create_group(&mut self) -> Option<GroupH> {
+        Some(crate::logic::world::game_logic_update::GameLogicHost::u_create_group(self) as GroupH)
+    }
+    fn sa_group_move_to_position(&mut self, _g: GroupH, _p: &Coord3D, _add_waypoint: bool, _cmd: i32) {
+        self.sa_cut("group_move_to_position");
+    }
+    fn sa_group_attack_team(&mut self, _g: GroupH, _t: TeamH, _max_shots: i32, _cmd: i32) {
+        self.sa_cut("group_attack_team");
+    }
+    fn sa_obj_has_ai(&self, o: ObjH) -> bool {
+        self.find_object(o).is_some_and(|x| x.ai.is_some())
+    }
+    fn sa_ai_clear_waypoint_queue(&mut self, _o: ObjH) {
+        self.sa_cut("ai_clear_waypoint_queue");
+    }
+    fn sa_ai_choose_locomotor_set(&mut self, _o: ObjH, _set: i32) {
+        self.sa_cut("ai_choose_locomotor_set");
+    }
+    fn sa_ai_move_to_position(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("ai_move_to_position");
+    }
+    fn sa_ai_move_to_and_evacuate(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("ai_move_to_and_evacuate");
+    }
+    fn sa_ai_move_to_and_evacuate_and_exit(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("ai_move_to_and_evacuate_and_exit");
+    }
+    fn sa_ai_force_attack_object(&mut self, _o: ObjH, _victim: ObjH, _max_shots: i32, _cmd: i32) {
+        self.sa_cut("ai_force_attack_object");
+    }
+    fn sa_ai_set_is_recruitable(&mut self, _o: ObjH, _recruitable: bool) {
+        self.sa_cut("ai_set_is_recruitable");
+    }
+    fn sa_find_template(&self, name: &[u8]) -> Option<TemplateH> {
+        World::thing_factory_find_template(self, name).map(TemplateH::from)
+    }
+    fn sa_new_object(&mut self, t: TemplateH, team: Option<TeamH>) -> Option<ObjH> {
+        let t = u16::try_from(t).ok()?;
+        World::thing_factory_new_object(self, t, team.map(|t| t as u32), Default::default()).ok()
+    }
+    fn sa_obj_template(&self, o: ObjH) -> Option<TemplateH> {
+        self.find_object(o).map(|x| TemplateH::from(x.template().get_template_id()))
+    }
+    fn sa_template_is_equivalent_to(&self, a: TemplateH, b: Option<TemplateH>) -> bool {
+        match (u16::try_from(a), b.map(u16::try_from)) {
+            (Ok(a), Some(Ok(b))) => self.thing_template_is_equivalent_to(a, b),
+            _ => false,
+        }
+    }
+    fn sa_obj_is_effectively_dead(&self, o: ObjH) -> bool {
+        self.find_object(o).is_some_and(|x| x.is_effectively_dead())
+    }
+    fn sa_obj_is_kind_of(&self, o: ObjH, k: KindOfType) -> bool {
+        self.find_object(o).is_some_and(|x| x.is_kind_of(k))
+    }
+    fn sa_obj_is_disabled_by_type(&self, o: ObjH, t: DisabledType) -> bool {
+        self.find_object(o).is_some_and(|x| x.is_disabled_by_type(t))
+    }
+    fn sa_obj_set_name(&mut self, o: ObjH, name: &[u8]) {
+        if let Some(x) = self.find_object_mut(o) {
+            x.name = name.to_vec();
+        }
+    }
+    fn sa_obj_set_position(&mut self, o: ObjH, p: &Coord3D) {
+        self.set_position(o, p);
+    }
+    fn sa_obj_set_orientation(&mut self, o: ObjH, angle: f32) {
+        self.set_orientation(o, angle);
+    }
+    fn sa_obj_major_radius(&self, o: ObjH) -> f32 {
+        self.find_object(o).map_or(0.0, |x| x.geometry_info.get_major_radius())
+    }
+    fn sa_obj_transport_slot_count(&self, _o: ObjH) -> i32 {
+        Default::default()
+    }
+    fn sa_obj_is_contained(&self, o: ObjH) -> bool {
+        self.is_contained(o)
+    }
+    fn sa_obj_leave_group(&mut self, o: ObjH) {
+        self.leave_group(o);
+    }
+    fn sa_obj_set_script_status(&mut self, o: ObjH, bit: i32, value: bool) {
+        self.set_script_status(o, bit as u8, value);
+    }
+    fn sa_obj_has_body(&self, o: ObjH) -> bool {
+        self.get_body_module(o).is_some()
+    }
+    fn sa_body_set_indestructible(&mut self, _o: ObjH, _value: bool) {
+        self.sa_cut("body_set_indestructible");
+    }
+    fn sa_obj_is_selectable(&self, o: ObjH) -> bool {
+        self.is_selectable(o)
+    }
+    fn sa_obj_set_selectable(&mut self, o: ObjH, value: bool) {
+        self.set_selectable(o, value);
+    }
+    fn sa_obj_has_drawable(&self, o: ObjH) -> bool {
+        self.has_drawable(o)
+    }
+    fn sa_drawable_enable_ambient_sound(&mut self, _o: ObjH, _enable: bool) {
+        self.sa_cut("drawable_enable_ambient_sound");
+    }
+    fn sa_obj_has_contain(&self, o: ObjH) -> bool {
+        self.get_contain(o).is_some()
+    }
+    fn sa_contain_max(&self, _o: ObjH) -> u32 {
+        Default::default()
+    }
+    fn sa_contain_is_valid_container_for(&self, _c: ObjH, _o: ObjH, _check_capacity: bool) -> bool {
+        Default::default()
+    }
+    fn sa_contain_add(&mut self, _c: ObjH, _o: ObjH) {
+        self.sa_cut("contain_add");
+    }
+    fn sa_obj_has_deliver_payload(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_deliver_payload_put_in_container_template(&self, _o: ObjH) -> Option<TemplateH> {
+        Default::default()
+    }
+    fn sa_deliver_payload(&mut self, _o: ObjH, _p: &Coord3D) {
+        self.sa_cut("deliver_payload");
+    }
+    fn sa_attack_info(&self, _name: &[u8]) -> Vec<u8> {
+        Default::default()
+    }
+    fn sa_team_set_attack_priority_name(&mut self, _t: TeamH, _name: &[u8]) {
+        self.sa_cut("team_set_attack_priority_name");
+    }
+    fn sa_ai_set_attack_info(&mut self, _o: ObjH, _info: &[u8]) {
+        self.sa_cut("ai_set_attack_info");
+    }
+    fn sa_player_set_team_delay_seconds(&mut self, _p: PlayerH, _seconds: i32) {
+        self.sa_cut("player_set_team_delay_seconds");
+    }
+    fn sa_ai_set_attitude(&mut self, _o: ObjH, _attitude: i32) {
+        self.sa_cut("ai_set_attitude");
+    }
+    fn sa_group_set_attitude(&mut self, _g: GroupH, _attitude: i32) {
+        self.sa_cut("group_set_attitude");
+    }
+    fn sa_obj_set_status(&mut self, o: ObjH, status: i32, value: bool) {
+        self.set_status(o, crate::logic::world::object_state::mask_of(status), value);
+    }
+    fn sa_trigger_named(&self, name: &[u8]) -> Option<TriggerH> {
+        self.script_engine.get_qualified_trigger_area_by_name(self, name).map(|t| t as TriggerH)
+    }
+    fn sa_ai_attack_area(&mut self, _o: ObjH, _trig: TriggerH, _cmd: i32) {
+        self.sa_cut("ai_attack_area");
+    }
+    fn sa_ai_attack_team(&mut self, _o: ObjH, _t: TeamH, _max_shots: i32, _cmd: i32) {
+        self.sa_cut("ai_attack_team");
+    }
+    fn sa_group_attack_area(&mut self, _g: GroupH, _trig: TriggerH, _cmd: i32) {
+        self.sa_cut("group_attack_area");
+    }
+    fn sa_group_attack_object(&mut self, _g: GroupH, _victim: ObjH, _max_shots: i32, _cmd: i32) {
+        self.sa_cut("group_attack_object");
+    }
+    fn sa_ai_enter(&mut self, _o: ObjH, _target: ObjH, _cmd: i32) {
+        self.sa_cut("ai_enter");
+    }
+    fn sa_group_enter(&mut self, _g: GroupH, _target: ObjH, _cmd: i32) {
+        self.sa_cut("group_enter");
+    }
+    fn sa_ai_evacuate(&mut self, _o: ObjH, _expose: bool, _cmd: i32) {
+        self.sa_cut("ai_evacuate");
+    }
+    fn sa_group_evacuate(&mut self, _g: GroupH, _cmd: i32) {
+        self.sa_cut("group_evacuate");
+    }
+    fn sa_contain_set_evac_disposition(&mut self, _o: ObjH, _disposition: u32) {
+        self.sa_cut("contain_set_evac_disposition");
+    }
+    fn sa_obj_position(&self, o: ObjH) -> Coord3D {
+        self.find_object(o).map(|x| x.get_position()).unwrap_or_default()
+    }
+    fn sa_closest_waypoint_on_path(&self, p: &Coord3D, label: &[u8]) -> Option<WaypointH> {
+        let h = self.terrain.closest_waypoint_on_path(p, &AsciiString::try_from_bytes(label).ok()?)?;
+        self.terrain.waypoint(h).map(|w| w.id())
+    }
+    fn sa_ai_follow_waypoint_path(&mut self, _o: ObjH, _w: WaypointH, _exact: bool, _cmd: i32) {
+        self.sa_cut("ai_follow_waypoint_path");
+    }
+    fn sa_group_follow_waypoint_path(&mut self, _g: GroupH, _w: WaypointH, _as_team: bool, _exact: bool, _cmd: i32) {
+        self.sa_cut("group_follow_waypoint_path");
+    }
+    fn sa_skirmish_enemy_player(&mut self) -> Option<PlayerH> {
+        let se = std::mem::take(&mut self.script_engine);
+        let r = se.get_skirmish_enemy_player(self);
+        self.script_engine = se;
+        r
+    }
+    fn sa_player_mp_start_index(&self, p: PlayerH) -> i32 {
+        self.players.get_nth(p).map_or(0, |x| x.mp_start_index)
+    }
+    fn sa_player_check_bridges(&mut self, _p: PlayerH, _o: ObjH, _w: WaypointH) {
+        self.sa_cut("player_check_bridges");
+    }
+    fn sa_ai_guard_position(&mut self, _o: ObjH, _p: &Coord3D, _mode: i32, _cmd: i32) {
+        self.sa_cut("ai_guard_position");
+    }
+    fn sa_group_guard_position(&mut self, _g: GroupH, _p: &Coord3D, _mode: i32, _cmd: i32) {
+        self.sa_cut("group_guard_position");
+    }
+    fn sa_group_guard_object(&mut self, _g: GroupH, _o: ObjH, _mode: i32, _cmd: i32) {
+        self.sa_cut("group_guard_object");
+    }
+    fn sa_group_guard_area(&mut self, _g: GroupH, _trig: TriggerH, _mode: i32, _cmd: i32) {
+        self.sa_cut("group_guard_area");
+    }
+    fn sa_ai_hunt(&mut self, _o: ObjH, _cmd: i32) {
+        self.sa_cut("ai_hunt");
+    }
+    fn sa_group_hunt(&mut self, _g: GroupH, _cmd: i32) {
+        self.sa_cut("group_hunt");
+    }
+    fn sa_find_command_button(&self, name: &[u8]) -> Option<ButtonH> {
+        self.cuts.command_buttons.iter().position(|b| b.name == name).map(|i| i as ButtonH)
+    }
+    fn sa_button_command_type(&self, b: ButtonH) -> i32 {
+        self.cuts.command_buttons.get(b as usize).map_or(0, |x| x.command_type)
+    }
+    fn sa_button_has_special_power(&self, b: ButtonH) -> bool {
+        self.cuts.command_buttons.get(b as usize).is_some_and(|x| x.special_power.is_some())
+    }
+    fn sa_button_options(&self, _b: ButtonH) -> u32 {
+        Default::default()
+    }
+    fn sa_obj_command_set_string(&self, o: ObjH) -> Vec<u8> {
+        self.object_get_command_set_string(o)
+    }
+    fn sa_find_command_set(&self, name: &[u8]) -> Option<CommandSetH> {
+        self.control_bar_find_command_set(name).map(|s| s as CommandSetH)
+    }
+    fn sa_command_set_button(&self, s: CommandSetH, i: i32) -> Option<ButtonH> {
+        self.command_set_get_command_button(usize::try_from(s).ok()?, usize::try_from(i).ok()?).map(|b| b as ButtonH)
+    }
+    fn sa_template_name(&self, t: TemplateH) -> Vec<u8> {
+        u16::try_from(t).ok().and_then(|t| self.statics.thing_factory.find_by_template_id(t)).map(|o| o.data.get_name().to_vec()).unwrap_or_default()
+    }
+    fn sa_obj_has_command_button_hunt(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_command_button_hunt_set(&mut self, _o: ObjH, _ability: &[u8]) {
+        self.sa_cut("command_button_hunt_set");
+    }
+    fn sa_player_set_units_should_hunt(&mut self, p: PlayerH, hunt: bool, cmd: i32) {
+        let _ = crate::logic::world::player_objects::player_set_units_should_hunt(self, p, hunt, cmd);
+    }
+    fn sa_player_sell_everything(&mut self, p: PlayerH) {
+        let _ = crate::logic::world::player_objects::player_sell_everything_under_the_sun(self, p);
+    }
+    fn sa_player_set_can_build_base(&mut self, p: PlayerH, can: bool) {
+        if let Some(x) = self.players.get_nth_mut(p) {
+            x.can_build_base = can;
+        }
+    }
+    fn sa_player_set_can_build_units(&mut self, p: PlayerH, can: bool) {
+        if let Some(x) = self.players.get_nth_mut(p) {
+            x.can_build_units = can;
+        }
+    }
+    fn sa_player_set_objects_enabled(&mut self, p: PlayerH, name: &[u8], enable: bool) {
+        let _ = crate::logic::world::player_ops::player_set_objects_enabled(self, p, name, enable);
+    }
+    fn sa_player_repair_structure(&mut self, _p: PlayerH, _id: ObjectId) {
+        self.sa_cut("player_repair_structure");
+    }
+    fn sa_proto_controlling_player(&self, p: ProtoH) -> Option<PlayerH> {
+        self.teams.prototype(p as u32).and_then(|x| x.owning_player)
+    }
+    fn sa_player_build_specific_team(&mut self, _p: PlayerH, _proto: ProtoH) {
+        self.sa_cut("player_build_specific_team");
+    }
+    fn sa_player_recruit_specific_team(&mut self, _p: PlayerH, _proto: ProtoH, _radius: f32) {
+        self.sa_cut("player_recruit_specific_team");
+    }
+    fn sa_obj_attempt_damage(&mut self, _o: ObjH, _source: ObjectId, _damage_type: i32, _death_type: i32, _amount: f32) {
+        self.sa_cut("obj_attempt_damage");
+    }
+    fn sa_logic_destroy_object(&mut self, o: ObjH) {
+        self.destroy_object(o);
+    }
+    fn sa_team_delete(&mut self, t: TeamH, ignore_dead: bool) {
+        let _ = crate::logic::world::team_ops::team_delete_team(self, t as u32, ignore_dead);
+    }
+    fn sa_ai_wander(&mut self, _o: ObjH, _w: WaypointH, _cmd: i32) {
+        self.sa_cut("ai_wander");
+    }
+    fn sa_ai_wander_in_place(&mut self, _o: ObjH, _cmd: i32) {
+        self.sa_cut("ai_wander_in_place");
+    }
+    fn sa_ai_panic(&mut self, _o: ObjH, _w: WaypointH, _cmd: i32) {
+        self.sa_cut("ai_panic");
+    }
+    fn sa_team_prototype(&self, t: TeamH) -> Option<ProtoH> {
+        self.teams.team(t as u32).map(|x| x.proto as ProtoH)
+    }
+    fn sa_proto_change_priority(&mut self, _p: ProtoH, _up: bool) {
+        self.sa_cut("proto_change_priority");
+    }
+    fn sa_proto_production_priority(&self, _p: ProtoH) -> i32 {
+        Default::default()
+    }
+    fn sa_obj_kill(&mut self, o: ObjH) {
+        self.kill(o, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
+    }
+    fn sa_team_kill(&mut self, t: TeamH) {
+        let _ = crate::logic::world::team_ops::team_kill_team(self, t as u32);
+    }
+    fn sa_player_kill(&mut self, p: PlayerH) {
+        let _ = crate::logic::world::player_objects::player_kill_player(self, p);
+    }
+    fn sa_ui_message(&mut self, _text: &[u8]) {
+        self.sa_cut("ui_message");
+    }
+    fn sa_ui_popup_message(&mut self, _message: &[u8], _x: i32, _y: i32, _width: i32, _pause: bool, _pause_music: bool) {
+        self.sa_cut("ui_popup_message");
+    }
+    fn sa_game_text_fetch(&self, _label: &[u8]) -> (Vec<u16>, bool) {
+        Default::default()
+    }
+    fn sa_display_set_cinematic_text(&mut self, _text: &[u8]) {
+        self.sa_cut("display_set_cinematic_text");
+    }
+    fn sa_display_set_cinematic_font(&mut self, _name: &[u8], _size: i32, _bold: bool) {
+        self.sa_cut("display_set_cinematic_font");
+    }
+    fn sa_adjust_font_size(&self, _size: i32) -> i32 {
+        Default::default()
+    }
+    fn sa_display_set_cinematic_text_frames(&mut self, _frames: i32) {
+        self.sa_cut("display_set_cinematic_text_frames");
+    }
+    fn sa_button_set_flash_count(&mut self, _b: ButtonH, _count: i32) {
+        self.sa_cut("button_set_flash_count");
+    }
+    fn sa_control_bar_set_flash(&mut self, _on: bool) {
+        self.sa_cut("control_bar_set_flash");
+    }
+    fn sa_obj_set_custom_indicator_color(&mut self, o: ObjH, c: i32) {
+        self.set_custom_indicator_color(o, c);
+    }
+    fn sa_obj_indicator_color(&self, o: ObjH) -> i32 {
+        self.get_indicator_color(o)
+    }
+    fn sa_obj_night_indicator_color(&self, o: ObjH) -> i32 {
+        self.get_night_indicator_color(o)
+    }
+    fn sa_drawable_set_flash_color(&mut self, _o: ObjH, _c: i32) {
+        self.sa_cut("drawable_set_flash_color");
+    }
+    fn sa_drawable_set_flash_count(&mut self, _o: ObjH, _count: i32) {
+        self.sa_cut("drawable_set_flash_count");
+    }
+    fn sa_drawable_set_indicator_color(&mut self, _o: ObjH, _c: i32) {
+        self.sa_cut("drawable_set_indicator_color");
+    }
+    fn sa_team_has_any_objects(&self, t: TeamH) -> bool {
+        crate::logic::world::team_ops::team_has_any_objects(self, t as u32)
+    }
+    fn sa_display_play_movie(&mut self, _name: &[u8]) {
+        self.sa_cut("display_play_movie");
+    }
+    fn sa_ui_play_movie(&mut self, _name: &[u8]) {
+        self.sa_cut("ui_play_movie");
+    }
+    fn sa_ui_military_subtitle(&mut self, _label: &[u8], _duration: i32) {
+        self.sa_cut("ui_military_subtitle");
+    }
+    fn sa_player_transfer_assets_from(&mut self, dest: PlayerH, src: PlayerH) {
+        let _ = crate::logic::world::player_objects::player_transfer_assets_from_that(self, dest, src);
+    }
+    fn sa_player_default_team(&self, p: PlayerH) -> Option<TeamH> {
+        self.players.get_nth(p).and_then(|x| x.default_team).map(|t| t as TeamH)
+    }
+    fn sa_obj_set_team(&mut self, o: ObjH, t: Option<TeamH>) {
+        self.set_team(o, t.map(|t| t as u32));
+    }
+    fn sa_obj_update_upgrade_modules(&mut self, o: ObjH) {
+        self.update_upgrade_modules(o);
+    }
+    fn sa_player_set_list_in_score_screen(&mut self, p: PlayerH, list: bool) {
+        if let Some(x) = self.players.get_nth_mut(p) {
+            x.list_in_score_screen = list;
+        }
+    }
+    fn sa_logic_enable_scoring(&mut self, score: bool) {
+        self.game_logic.scoring_enabled = score;
+    }
+    fn sa_player_set_player_relationship(&mut self, p: PlayerH, other: PlayerH, r: i32) {
+        let r = match r {
+            0 => crate::common::game_common::Relationship::Enemies,
+            2 => crate::common::game_common::Relationship::Allies,
+            _ => crate::common::game_common::Relationship::Neutral,
+        };
+        let _ = crate::logic::world::player_ops::player_set_player_relationship(self, p, Some(other), r);
+    }
+    fn sa_radar_create_event(&mut self, _p: &Coord3D, _event_type: i32) {
+        self.sa_cut("radar_create_event");
+    }
+    fn sa_team_has_any_units(&self, t: TeamH) -> bool {
+        crate::logic::world::team_ops::team_has_any_units(self, t as u32)
+    }
+    fn sa_team_estimate_position(&self, t: TeamH) -> Option<Coord3D> {
+        crate::logic::world::team_ops::team_get_estimate_team_position(self, t as u32)
+    }
+    fn sa_radar_hide(&mut self, _hide: bool) {
+        self.sa_cut("radar_hide");
+    }
+    fn sa_view_set_view_filter(&mut self, _filter: i32) -> bool {
+        self.sa_cut("view_set_view_filter");
+        Default::default()
+    }
+    fn sa_view_set_view_filter_mode(&mut self, _mode: i32) -> bool {
+        self.sa_cut("view_set_view_filter_mode");
+        Default::default()
+    }
+    fn sa_view_set_view_filter_pos(&mut self, _p: &Coord3D) {
+        self.sa_cut("view_set_view_filter_pos");
+    }
+    fn sa_view_look_at(&mut self, _p: &Coord3D) {
+        self.sa_cut("view_look_at");
+    }
+    fn sa_player_count(&self) -> i32 {
+        self.players.player_count()
+    }
+    fn sa_nth_player(&self, i: i32) -> Option<PlayerH> {
+        self.players.get_nth(i).map(|x| x.player_index)
+    }
+    fn sa_player_is_human(&self, p: PlayerH) -> bool {
+        self.players.get_nth(p).is_some_and(|x| x.player_type == crate::common::game_common::PlayerType::Human)
+    }
+    fn sa_player_mask(&self, p: PlayerH) -> u32 {
+        1u32.checked_shl(p as u32).unwrap_or(0)
+    }
+    fn sa_partition_shroud(&mut self, _cover: bool, _undo: bool, _x: f32, _y: f32, _r: f32, _mask: u32) {
+        self.sa_cut("partition_shroud");
+    }
+    fn sa_partition_reveal_map(&mut self, _i: i32) {
+        self.sa_cut("partition_reveal_map");
+    }
+    fn sa_partition_reveal_map_permanently(&mut self, _i: i32, _undo: bool) {
+        self.sa_cut("partition_reveal_map_permanently");
+    }
+    fn sa_partition_shroud_map(&mut self, _i: i32) {
+        self.sa_cut("partition_shroud_map");
+    }
+    fn sa_team_set_recruitable(&mut self, _t: TeamH, _recruitable: bool) {
+        self.sa_cut("team_set_recruitable");
+    }
+    fn sa_find_team(&self, name: &[u8]) -> Option<TeamH> {
+        self.script_engine.get_team_named(self, name).ok().flatten()
+    }
+    fn sa_global_alpha(&self, _shroud: bool) -> u8 {
+        Default::default()
+    }
+    fn sa_display_set_border_shroud_level(&mut self, _level: u8) {
+        self.sa_cut("display_set_border_shroud_level");
+    }
+    fn sa_player_set_units_should_idle_or_resume(&mut self, p: PlayerH, idle: bool) {
+        let _ = crate::logic::world::player_objects::player_set_units_should_idle_or_resume(self, p, idle);
+    }
+    fn sa_audio_pause_ambient(&mut self, _pause: bool) {
+        self.sa_cut("audio_pause_ambient");
+    }
+    fn sa_audio_remove_event_handle(&mut self, _handle: i32) {
+        self.sa_cut("audio_remove_event_handle");
+    }
+    fn sa_set_current_track_name(&mut self, _name: &[u8]) {
+        self.sa_cut("set_current_track_name");
+    }
+    fn sa_contain_player_who_entered(&self, _o: ObjH) -> u32 {
+        Default::default()
+    }
+    fn sa_contain_count(&self, _o: ObjH) -> u32 {
+        Default::default()
+    }
+    fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
+        crate::logic::world::team_ops::team_get_controlling_player(self, t as u32).ok().flatten()
+    }
+    fn sa_contain_remove_all_contained(&mut self, _o: ObjH, _expose: bool) {
+        self.sa_cut("contain_remove_all_contained");
+    }
+    fn sa_partition_garrison_candidates(&mut self, _leader: ObjH, _money_hacker: bool) -> Vec<ObjH> {
+        self.sa_cut("partition_garrison_candidates");
+        Default::default()
+    }
+    fn sa_ai_exit(&mut self, _o: ObjH, _cmd: i32) {
+        self.sa_cut("ai_exit");
+    }
+    fn sa_partition_unit_garrison_candidates(&mut self, _unit: ObjH, _money_hacker: bool) -> Vec<ObjH> {
+        self.sa_cut("partition_unit_garrison_candidates");
+        Default::default()
+    }
+    fn sa_obj_controlling_player(&self, o: ObjH) -> Option<PlayerH> {
+        self.get_controlling_player(o)
+    }
+    fn sa_obj_team(&self, o: ObjH) -> Option<TeamH> {
+        self.get_team(o).map(|t| t as TeamH)
+    }
+    fn sa_obj_set_disabled(&mut self, o: ObjH, t: DisabledType) {
+        self.set_disabled(o, t);
+    }
+    fn sa_obj_set_disabled_until(&mut self, o: ObjH, t: DisabledType, frame: u32) {
+        self.set_disabled_until(o, t, frame);
+    }
+    fn sa_logic_deselect_object(&mut self, o: ObjH, mask: u32, affect_client: bool) {
+        self.game_logic_deselect_object(o, mask as u16, affect_client);
+    }
+    fn sa_neutral_player(&self) -> Option<PlayerH> {
+        self.players.get_nth(0).map(|x| x.player_index)
+    }
+    fn sa_obj_has_sticky_bomb_update(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_obj_random_offset_on_perimeter(&mut self, _o: ObjH) -> Coord3D {
+        self.sa_cut("obj_random_offset_on_perimeter");
+        Default::default()
+    }
+    fn sa_obj_transform_vector(&self, _o: ObjH, _v: &Coord3D) -> Coord3D {
+        Default::default()
+    }
+    fn sa_sticky_bomb_init(&mut self, _bomb: ObjH, _target: ObjH, _pos: &Coord3D) {
+        self.sa_cut("sticky_bomb_init");
+    }
+    fn sa_player_garrison_all(&mut self, p: PlayerH, garrison: bool, cmd: i32) {
+        let _ = if garrison {
+            crate::logic::world::player_objects::player_garrison_all_units(self, p, cmd)
+        } else {
+            crate::logic::world::player_objects::player_ungarrison_all_units(self, p, cmd)
+        };
+    }
+    fn sa_control_bar_show(&mut self, _hide: bool, _immediate: bool) {
+        self.sa_cut("control_bar_show");
+    }
+    fn sa_display_enable_letter_box(&mut self, _enable: bool) {
+        self.sa_cut("display_enable_letter_box");
+    }
+    fn sa_view_set_fade_parameters(&mut self, _frames: i32, _direction: i32) {
+        self.sa_cut("view_set_fade_parameters");
+    }
+    fn sa_view_filter_type(&self) -> i32 {
+        Default::default()
+    }
+    fn sa_sky_box_set(&mut self, _draw: bool) {
+        self.sa_cut("sky_box_set");
+    }
+    fn sa_snow_set_visible(&mut self, _visible: bool) {
+        self.sa_cut("snow_set_visible");
+    }
+    fn sa_freeze_time(&mut self, freeze: bool) {
+        if freeze {
+            self.script_engine.do_freeze_time();
+        } else {
+            self.script_engine.do_unfreeze_time();
+        }
+    }
+    fn sa_ai_has_cur_locomotor(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_locomotor_set_close_enough_dist(&mut self, _o: ObjH, _dist: f32) {
+        self.sa_cut("locomotor_set_close_enough_dist");
+    }
+    fn sa_ui_set_superweapon_display_enabled(&mut self, _enabled: bool) {
+        self.sa_cut("ui_set_superweapon_display_enabled");
+    }
+    fn sa_ui_object_superweapon_display(&mut self, _o: ObjH, _hide: bool) {
+        self.sa_cut("ui_object_superweapon_display");
+    }
+    fn sa_audio_set_volume(&mut self, _volume: f32, _affect: i32) {
+        self.sa_cut("audio_set_volume");
+    }
+    fn sa_team_set_controlling_player(&mut self, t: TeamH, p: PlayerH) {
+        let _ = crate::logic::world::team_ops::team_set_controlling_player(self, t as u32, Some(p));
+    }
+    fn sa_money_count(&self, p: PlayerH) -> u32 {
+        self.players.get_nth(p).map_or(0, |x| x.money.count_money())
+    }
+    fn sa_money_withdraw(&mut self, p: PlayerH, amount: u32) {
+        let _ = crate::logic::world::player_objects::player_money_withdraw(self, p, amount, true);
+    }
+    fn sa_money_deposit(&mut self, p: PlayerH, amount: u32) {
+        let _ = crate::logic::world::player_objects::player_money_deposit(self, p, amount, true);
+    }
+    fn sa_ui_add_named_timer(&mut self, _name: &[u8], _text: &[u16], _countdown: bool) {
+        self.sa_cut("ui_add_named_timer");
+    }
+    fn sa_ui_remove_named_timer(&mut self, _name: &[u8]) {
+        self.sa_cut("ui_remove_named_timer");
+    }
+    fn sa_ui_show_named_timer_display(&mut self, _show: bool) {
+        self.sa_cut("ui_show_named_timer_display");
+    }
+    fn sa_find_special_power(&self, name: &[u8]) -> Option<SpecialPowerH> {
+        self.statics.special_power_store.find_special_power_template(name).map(|t| t.id() as SpecialPowerH)
+    }
+    fn sa_obj_has_special_power_module(&self, _o: ObjH, _power: SpecialPowerH) -> bool {
+        Default::default()
+    }
+    fn sa_spm_pause_countdown(&mut self, _o: ObjH, _power: SpecialPowerH, _pause: bool) {
+        self.sa_cut("spm_pause_countdown");
+    }
+    fn sa_spm_ready_frame(&self, _o: ObjH, _power: SpecialPowerH) -> u32 {
+        Default::default()
+    }
+    fn sa_spm_set_ready_frame(&mut self, _o: ObjH, _power: SpecialPowerH, _frame: u32) {
+        self.sa_cut("spm_set_ready_frame");
+    }
+    fn sa_spm_do_at_location(&mut self, _o: ObjH, _power: SpecialPowerH, _p: &Coord3D, _angle: f32, _options: u32) {
+        self.sa_cut("spm_do_at_location");
+    }
+    fn sa_frame(&self) -> u32 {
+        self.frame()
+    }
+    fn sa_player_teams(&self, p: PlayerH) -> Vec<Vec<TeamH>> {
+        let protos = self.players.get_nth(p).map(|x| x.team_prototypes.clone()).unwrap_or_default();
+        protos.into_iter().map(|pr| self.teams.instances(pr).into_iter().map(|t| t as TeamH).collect()).collect()
+    }
+    fn sa_special_power_radius_cursor(&self, _power: SpecialPowerH) -> f32 {
+        Default::default()
+    }
+    fn sa_special_power_type(&self, power: SpecialPowerH) -> i32 {
+        self.statics.special_power_store.find_special_power_template_by_id(power as u32).map_or(-1, |t| t.special_power_type())
+    }
+    fn sa_spm_is_ready(&self, _o: ObjH, _power: SpecialPowerH) -> bool {
+        Default::default()
+    }
+    fn sa_spm_reference_template(&self, _o: ObjH, _power: SpecialPowerH) -> Option<TemplateH> {
+        Default::default()
+    }
+    fn sa_spm_do_at_object(&mut self, _o: ObjH, _power: SpecialPowerH, _target: ObjH, _options: u32) {
+        self.sa_cut("spm_do_at_object");
+    }
+    fn sa_player_compute_superweapon_target(&mut self, _p: PlayerH, _power: SpecialPowerH, _index: i32, _weight: f32) -> Option<Coord3D> {
+        self.sa_cut("player_compute_superweapon_target");
+        Default::default()
+    }
+    fn sa_player_closest_construction_zone(&mut self, _p: PlayerH, _t: TemplateH) -> Option<Coord3D> {
+        self.sa_cut("player_closest_construction_zone");
+        Default::default()
+    }
+    fn sa_button_name(&self, b: ButtonH) -> Vec<u8> {
+        self.cuts.command_buttons.get(b as usize).map(|x| x.name.clone()).unwrap_or_default()
+    }
+    fn sa_obj_do_command_button(&mut self, _o: ObjH, _b: ButtonH, _cmd: i32) {
+        self.sa_cut("obj_do_command_button");
+    }
+    fn sa_obj_do_command_button_at_object(&mut self, _o: ObjH, _b: ButtonH, _target: ObjH, _cmd: i32) {
+        self.sa_cut("obj_do_command_button_at_object");
+    }
+    fn sa_obj_do_command_button_at_position(&mut self, _o: ObjH, _b: ButtonH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("obj_do_command_button_at_position");
+    }
+    fn sa_obj_do_command_button_using_waypoints(&mut self, _o: ObjH, _b: ButtonH, _w: WaypointH, _cmd: i32) {
+        self.sa_cut("obj_do_command_button_using_waypoints");
+    }
+    fn sa_group_do_command_button(&mut self, _g: GroupH, _b: ButtonH, _cmd: i32) {
+        self.sa_cut("group_do_command_button");
+    }
+    fn sa_group_do_command_button_at_object(&mut self, _g: GroupH, _b: ButtonH, _target: ObjH, _cmd: i32) {
+        self.sa_cut("group_do_command_button_at_object");
+    }
+    fn sa_group_do_command_button_at_position(&mut self, _g: GroupH, _b: ButtonH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("group_do_command_button_at_position");
+    }
+    fn sa_radar_refresh_terrain(&mut self) {
+        self.sa_cut("radar_refresh_terrain");
+    }
+    fn sa_view_set_default_view(&mut self, _pitch: f32, _angle: f32, _max_height: f32) {
+        self.sa_cut("view_set_default_view");
+    }
+    fn sa_ai_idle(&mut self, _o: ObjH, _cmd: i32) {
+        self.sa_cut("ai_idle");
+    }
+    fn sa_group_idle(&mut self, _g: GroupH, _cmd: i32) {
+        self.sa_cut("group_idle");
+    }
+    fn sa_team_name(&self, t: TeamH) -> Vec<u8> {
+        let teams = &self.teams;
+        teams.team(t as u32).and_then(|x| teams.prototype(x.proto)).map(|p| p.name.clone()).unwrap_or_default()
+    }
+    fn sa_team_set_override_team_relationship(&mut self, t: TeamH, other: TeamH, r: i32) {
+        let _ = crate::logic::world::team_ops::team_set_override_team_relationship(self, t as u32, other as u32, rel(r));
+    }
+    fn sa_team_remove_override_team_relationship(&mut self, t: TeamH, other: TeamH) {
+        let _ = crate::logic::world::team_ops::team_remove_override_team_relationship(self, t as u32, other as u32);
+    }
+    fn sa_team_set_override_player_relationship(&mut self, t: TeamH, p: PlayerH, r: i32) {
+        let _ = crate::logic::world::team_ops::team_set_override_player_relationship(self, t as u32, p, rel(r));
+    }
+    fn sa_team_remove_override_player_relationship(&mut self, t: TeamH, p: PlayerH) {
+        let _ = crate::logic::world::team_ops::team_remove_override_player_relationship(self, t as u32, p);
+    }
+    fn sa_player_with_name_key(&self, name: &[u8]) -> Option<PlayerH> {
+        let key = (0..self.players.player_count()).find(|&i| self.players.get_nth(i).is_some_and(|x| self.names.key_to_name(crate::common::name_key_generator::NameKeyType(x.name_key as u32)) == name));
+        key
+    }
+    fn sa_player_set_team_relationship(&mut self, p: PlayerH, t: TeamH, r: i32) {
+        let _ = crate::logic::world::player_ops::player_set_team_relationship(self, p, Some(t as u32), rel(r));
+    }
+    fn sa_player_remove_team_relationship(&mut self, p: PlayerH, t: TeamH) {
+        let _ = crate::logic::world::player_ops::player_remove_team_relationship(self, p, Some(t as u32));
+    }
+    fn sa_find_script(&self, name: &[u8]) -> bool {
+        self.script_engine.find_script(self, name).is_some()
+    }
+    fn sa_append_sequential_script(&mut self, _team: Option<TeamH>, _object: ObjectId, _script: &[u8], _times_to_loop: i32) {
+        self.sa_cut("append_sequential_script");
+    }
+    fn sa_remove_all_sequential_scripts_obj(&mut self, _o: ObjH) {
+        self.sa_cut("remove_all_sequential_scripts_obj");
+    }
+    fn sa_remove_all_sequential_scripts_team(&mut self, _t: TeamH) {
+        self.sa_cut("remove_all_sequential_scripts_team");
+    }
+    fn sa_set_sequential_timer_obj(&mut self, _o: ObjH, _frames: i32) {
+        self.sa_cut("set_sequential_timer_obj");
+    }
+    fn sa_set_sequential_timer_team(&mut self, _t: TeamH, _frames: i32) {
+        self.sa_cut("set_sequential_timer_team");
+    }
+    fn sa_obj_has_waypoint_following_weapon(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_weapon_force_fire(&mut self, _o: ObjH, _p: &Coord3D) -> Option<ObjH> {
+        self.sa_cut("weapon_force_fire");
+        Default::default()
+    }
+    fn sa_water_handle(&self, name: &[u8]) -> Option<i32> {
+        self.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(name).ok()?).map(|i| i as i32)
+    }
+    fn sa_set_water_height(&mut self, w: i32, height: f32, damage: f32, force: bool) {
+        let water = usize::try_from(w).ok().map(crate::logic::terrain_logic::WaterHandle::Polygon);
+        let _ = self.terrain_set_water_height(water, height, damage, force);
+    }
+    fn sa_change_water_height_over_time(&mut self, w: i32, height: f32, time: f32, damage: f32) {
+        let water = usize::try_from(w).ok().map(crate::logic::terrain_logic::WaterHandle::Polygon);
+        let _ = self.terrain_change_water_height_over_time(water, height, time, damage);
+    }
+    fn sa_set_active_boundary(&mut self, border: i32) {
+        self.terrain_set_active_boundary(border);
+    }
+    fn sa_refresh_shroud_for_local_player(&mut self) {
+        self.sa_cut("refresh_shroud_for_local_player");
+    }
+    fn sa_ui_select_drawable(&mut self, _o: ObjH) {
+        self.sa_cut("ui_select_drawable");
+    }
+    fn sa_view_position(&self) -> Coord3D {
+        Default::default()
+    }
+    fn sa_view_shake(&mut self, _p: &Coord3D, _shake_type: i32) {
+        self.sa_cut("view_shake");
+    }
+    fn sa_contained(&self, _o: ObjH) -> Vec<ObjH> {
+        Default::default()
+    }
+    fn sa_logic_set_buildable_status_override(&mut self, t: TemplateH, status: i32) {
+        let name = self.statics.thing_factory.find_by_template_id(t as u16).map(|x| x.data.get_name().to_vec());
+        crate::logic::world::game_logic_update::set_buildable_status_override(&mut self.game_logic, name.as_deref(), status);
+    }
+    fn sa_obj_has_cave(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_cave_try_set_index(&mut self, _o: ObjH, _index: i32) {
+        self.sa_cut("cave_try_set_index");
+    }
+    fn sa_obj_has_warehouse(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_warehouse_set_cash_value(&mut self, _o: ObjH, _value: i32) {
+        self.sa_cut("warehouse_set_cash_value");
+    }
+    fn sa_audio_set_event_enabled(&mut self, _name: &[u8], _enable: bool) {
+        self.sa_cut("audio_set_event_enabled");
+    }
+    fn sa_audio_remove_disabled_events(&mut self) {
+        self.sa_cut("audio_remove_disabled_events");
+    }
+    fn sa_audio_remove_event_named(&mut self, _name: &[u8]) {
+        self.sa_cut("audio_remove_event_named");
+    }
+    fn sa_audio_set_event_volume_override(&mut self, _name: &[u8], _volume: f32) {
+        self.sa_cut("audio_set_event_volume_override");
+    }
+    fn sa_set_topple_direction(&mut self, _name: &[u8], _dir: &Coord3D) {
+        self.sa_cut("set_topple_direction");
+    }
+    fn sa_radar_force_on(&mut self, _on: bool) {
+        self.sa_cut("radar_force_on");
+    }
+    fn sa_partition_closest_of_template(&self, _p: &Coord3D, _t: TemplateH, _trig: TriggerH, _obj: ObjH) -> Option<(ObjH, f32)> {
+        Default::default()
+    }
+    fn sa_object_types(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
+        let t = &self.script_engine.all_object_type_lists[self.script_engine.get_object_types(name)?];
+        Some((0..t.list_size() as i32).map(|i| t.get_nth_in_list(i).str().to_vec()).collect())
+    }
+    fn sa_ai_move_to_object(&mut self, _o: ObjH, _target: Option<ObjH>, _cmd: i32) {
+        self.sa_cut("ai_move_to_object");
+    }
+    fn sa_find_upgrade(&self, name: &[u8]) -> Option<i32> {
+        // `findUpgrade(name)`: an upgrade whose name it is (a name never made a key names none)
+        self.statics.upgrade_center.templates().find(|u| u.upgrade_name() == name).map(|u| u.upgrade_name_key().0 as i32)
+    }
+    fn sa_obj_give_upgrade(&mut self, o: ObjH, upgrade: i32) {
+        let mask = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade as u32)).map(|u| u.upgrade_mask());
+        self.give_upgrade(o, mask.as_ref());
+    }
+    fn sa_group_center(&self, _g: GroupH) -> Option<Coord3D> {
+        Default::default()
+    }
+    fn sa_partition_nearest_group_with_value(&mut self, _index: i32, _src: &Coord3D, _value: i32, _greater: bool) -> Option<Coord3D> {
+        self.sa_cut("partition_nearest_group_with_value");
+        Default::default()
+    }
+    fn sa_group_attack_move_to_position(&mut self, _g: GroupH, _p: &Coord3D, _max_shots: i32, _cmd: i32) {
+        self.sa_cut("group_attack_move_to_position");
+    }
+    fn sa_button_special_power_id(&self, b: ButtonH) -> Option<u32> {
+        self.cuts.command_buttons.get(b as usize).and_then(|x| x.special_power)
+    }
+    fn sa_group_special_power_source(&self, _g: GroupH, _id: u32) -> Option<ObjH> {
+        Default::default()
+    }
+    fn sa_group_command_button_source(&self, _g: GroupH, _command_type: i32) -> Option<ObjH> {
+        Default::default()
+    }
+    fn sa_partition_most_valuable_target(&mut self, _p: &Coord3D, _range: f32) -> Option<ObjH> {
+        self.sa_cut("partition_most_valuable_target");
+        Default::default()
+    }
+    fn sa_button_is_valid_to_use_on(&self, _b: ButtonH, _src: ObjH, _target: Option<ObjH>, _cmd: i32) -> bool {
+        Default::default()
+    }
+    fn sa_partition_closest_for_button(&self, _p: &Coord3D, _search: ButtonSearch) -> Option<(ObjH, f32)> {
+        Default::default()
+    }
+    fn sa_group_do_command_button_at_object_opt(&mut self, _g: GroupH, _b: ButtonH, _target: Option<ObjH>, _cmd: i32) {
+        self.sa_cut("group_do_command_button_at_object_opt");
+    }
+    fn sa_view_camera_mod_freeze(&mut self, _time: bool) {
+        self.sa_cut("view_camera_mod_freeze");
+    }
+    fn sa_view_camera_mod_final_time_multiplier(&mut self, _m: i32) {
+        self.sa_cut("view_camera_mod_final_time_multiplier");
+    }
+    fn sa_view_camera_mod_rolling_average(&mut self, _n: i32) {
+        self.sa_cut("view_camera_mod_rolling_average");
+    }
+    fn sa_view_set_time_multiplier(&mut self, _m: i32) {
+        self.sa_cut("view_set_time_multiplier");
+    }
+    fn sa_audio_pause(&mut self, _pause: bool, _affect: i32) {
+        self.sa_cut("audio_pause");
+    }
+    fn sa_global_fps_limit(&self) -> i32 {
+        Default::default()
+    }
+    fn sa_engine_set_fps_limit(&mut self, _fps: i32) {
+        self.sa_cut("engine_set_fps_limit");
+    }
+    fn sa_set_use_fps_limit(&mut self, _use_limit: bool) {
+        self.sa_cut("set_use_fps_limit");
+    }
+    fn sa_player_add_skill_points(&mut self, p: PlayerH, delta: i32) {
+        let _ = crate::logic::world::player_ops::player_add_skill_points(self, p, delta);
+    }
+    fn sa_player_rank_level(&self, p: PlayerH) -> i32 {
+        self.players.get_nth(p).map_or(0, |x| x.rank_level)
+    }
+    fn sa_player_set_rank_level(&mut self, p: PlayerH, level: i32) {
+        let _ = crate::logic::world::player_ops::player_set_rank_level(self, p, level);
+    }
+    fn sa_logic_set_rank_level_limit(&mut self, level: i32) {
+        self.cuts.player_host.rank_level_limit = level;
+    }
+    fn sa_science_from_name(&self, name: &[u8]) -> Option<i32> {
+        let store = &self.statics.science_store;
+        store.infos().map(|i| i.science()).find(|s| store.get_internal_name_for_science(&self.names, *s) == name).map(|s| s.0)
+    }
+    fn sa_player_grant_science(&mut self, p: PlayerH, science: i32) {
+        let _ = crate::logic::world::player_ops::player_grant_science(self, p, crate::common::science::ScienceType(science));
+    }
+    fn sa_player_purchase_science(&mut self, p: PlayerH, science: i32) {
+        let _ = crate::logic::world::player_ops::player_attempt_to_purchase_science(self, p, crate::common::science::ScienceType(science));
+    }
+    fn sa_player_science_availability_from_string(&self, _p: PlayerH, _name: &[u8]) -> Option<i32> {
+        Default::default()
+    }
+    fn sa_player_set_science_availability(&mut self, _p: PlayerH, _science: i32, _availability: i32) {
+        self.sa_cut("player_set_science_availability");
+    }
+    fn sa_group_set_emoticon(&mut self, _g: GroupH, _name: &[u8], _frames: i32) {
+        self.sa_cut("group_set_emoticon");
+    }
+    fn sa_drawable_set_emoticon(&mut self, _o: ObjH, _name: &[u8], _frames: i32) {
+        self.sa_cut("drawable_set_emoticon");
+    }
+    fn sa_object_type_list_maintenance(&mut self, _list: &[u8], _object_type: &[u8], _add: bool) {
+        self.sa_cut("object_type_list_maintenance");
+    }
+    fn sa_named_map_reveal(&mut self, _look: &[u8], _waypoint: &[u8], _radius: f32, _player: &[u8]) {
+        self.sa_cut("named_map_reveal");
+    }
+    fn sa_undo_named_map_reveal(&mut self, _look: &[u8]) {
+        self.sa_cut("undo_named_map_reveal");
+    }
+    fn sa_eva_set_enabled(&mut self, _enabled: bool) {
+        self.sa_cut("eva_set_enabled");
+    }
+    fn sa_logic_set_option(&mut self, _which: i32, _enabled: bool) {
+        self.sa_cut("logic_set_option");
+    }
+    fn sa_logic_set_hulk_max_lifetime_override(&mut self, frames: i32) {
+        self.game_logic.script_hulk_max_lifetime_override = frames;
+    }
+    fn sa_view_camera_slave_mode(&mut self, _slave: Option<(&[u8], &[u8])>) {
+        self.sa_cut("view_camera_slave_mode");
+    }
+    fn sa_view_add_camera_shake(&mut self, _p: &Coord3D, _radius: f32, _duration: f32, _amplitude: f32) {
+        self.sa_cut("view_add_camera_shake");
+    }
+    fn sa_ai_face_object(&mut self, _o: ObjH, _target: ObjH, _cmd: i32) {
+        self.sa_cut("ai_face_object");
+    }
+    fn sa_ai_face_position(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
+        self.sa_cut("ai_face_position");
+    }
+    fn sa_player_set_skillset(&mut self, _p: PlayerH, _skillset: i32) {
+        self.sa_cut("player_set_skillset");
+    }
+    fn sa_player_guard_supply_center(&mut self, _p: PlayerH, _t: TeamH, _supplies: i32) {
+        self.sa_cut("player_guard_supply_center");
+    }
+    fn sa_ai_guard_tunnel_network(&mut self, _o: ObjH, _mode: i32, _cmd: i32) {
+        self.sa_cut("ai_guard_tunnel_network");
+    }
+    fn sa_template_command_set_string(&self, _t: TemplateH) -> Vec<u8> {
+        Default::default()
+    }
+    fn sa_logic_set_control_bar_override(&mut self, _command_set: &[u8], _slot: i32, _b: Option<ButtonH>) {
+        self.sa_cut("logic_set_control_bar_override");
+    }
+    fn sa_player_set_skill_points_modifier(&mut self, p: PlayerH, m: f32) {
+        if let Some(x) = self.players.get_nth_mut(p) {
+            x.skill_points_modifier = m;
+        }
+    }
+    fn sa_view_set_guard_band_bias(&mut self, _x: f32, _y: f32) {
+        self.sa_cut("view_set_guard_band_bias");
+    }
+    fn sa_all_objects(&self) -> Vec<ObjH> {
+        self.objects.ids_in_order()
+    }
+    fn sa_obj_set_receiving_difficulty_bonus(&mut self, o: ObjH, b: bool) {
+        self.set_receiving_difficulty_bonus(o, b);
+    }
+    fn sa_set_objects_should_receive_difficulty_bonus(&mut self, _b: bool) {
+        self.sa_cut("set_objects_should_receive_difficulty_bonus");
+    }
+    fn sa_set_choose_victim_always_uses_normal(&mut self, _b: bool) {
+        self.sa_cut("set_choose_victim_always_uses_normal");
+    }
+    fn sa_obj_has_railroad(&self, _o: ObjH) -> bool {
+        Default::default()
+    }
+    fn sa_railroad_set_held(&mut self, _o: ObjH, _held: bool) {
+        self.sa_cut("railroad_set_held");
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    //! The actions themselves are checked against the compiled ScriptActions.cpp by `tests/differential_script_actions.rs`
+    //! with a recording host; this checks one executed on the world, with the engine lent back for its player lookup.
+    use super::*;
+    use crate::logic::scripts::{action_type as at, Parameter};
+    use crate::logic::world::player_host_world::tests::world;
+
+    fn give_money(side: &[u8], amount: i32) -> ScriptAction {
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = at::PLAYER_GIVE_MONEY;
+        a.num_parms = 2;
+        let mut p = Parameter::new(0, 0);
+        p.string = side.to_vec();
+        a.parms[0] = Some(p);
+        a.parms[1] = Some(Parameter::new(0, amount));
+        a
+    }
+
+    /// `PLAYER_GIVE_MONEY` (`Player1`, 300) twice, then -200: player 1 holds 300, 600, 400. The player is found by the
+    /// engine's `getPlayerFromAsciiString` while the engine executing the action is lent back to the world, and the
+    /// engine is out of the world again afterwards. A side no player has gives nothing (upstream returns quietly).
+    #[test]
+    fn an_action_is_carried_out_on_the_world() {
+        let (mut w, _) = world();
+        let mut engine = std::mem::take(&mut w.script_engine);
+        engine.counters[0].value = 42; // marks this engine
+        let money = |w: &World| w.players.get_nth(1).unwrap().money.count_money();
+        w.execute_action_with(&mut engine, &give_money(b"Player1", 300)).unwrap();
+        assert_eq!(money(&w), 300);
+        w.execute_action_with(&mut engine, &give_money(b"Player1", 300)).unwrap();
+        assert_eq!(money(&w), 600);
+        w.execute_action_with(&mut engine, &give_money(b"Player1", -200)).unwrap();
+        assert_eq!(money(&w), 400);
+        w.execute_action_with(&mut engine, &give_money(b"NoSuchPlayer", 300)).unwrap();
+        assert_eq!(money(&w), 400);
+        assert_eq!((engine.counters[0].value, w.script_engine.counters[0].value), (42, 0));
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}

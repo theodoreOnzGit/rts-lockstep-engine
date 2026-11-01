@@ -376,7 +376,7 @@ pub trait ScriptActionsHost {
     /// `getCurrentPlayer()`.
     fn sa_current_player(&self) -> Option<PlayerH>;
     /// `getPlayerFromAsciiString(name)`.
-    fn sa_player_from_name(&self, name: &[u8]) -> Option<PlayerH>;
+    fn sa_player_from_name(&mut self, name: &[u8]) -> Option<PlayerH>;
 
     // --- players ---
     /// `ThePlayerList->getLocalPlayer()`.
@@ -602,7 +602,7 @@ pub trait ScriptActionsHost {
     /// `groupFollowWaypointPath`, `..Exact`, `..AsTeam`, `..AsTeamExact` (way, cmdSource).
     fn sa_group_follow_waypoint_path(&mut self, g: GroupH, w: WaypointH, as_team: bool, exact: bool, cmd: i32);
     /// `TheScriptEngine->getSkirmishEnemyPlayer()`.
-    fn sa_skirmish_enemy_player(&self) -> Option<PlayerH>;
+    fn sa_skirmish_enemy_player(&mut self) -> Option<PlayerH>;
     /// `getMpStartIndex()`.
     fn sa_player_mp_start_index(&self, p: PlayerH) -> i32;
     /// `checkBridges(unit, way)`.
@@ -1804,7 +1804,7 @@ impl ScriptActions {
     }
 
     /// The skirmish approach path's label: the label and the enemy's start position, from 1.
-    fn skirmish_path_label<H: ScriptActionsHost>(h: &H, label: &[u8]) -> Option<Vec<u8>> {
+    fn skirmish_path_label<H: ScriptActionsHost>(h: &mut H, label: &[u8]) -> Option<Vec<u8>> {
         let enemy = h.sa_skirmish_enemy_player()?;
         let mp = h.sa_player_mp_start_index(enemy).wrapping_add(1);
         let mut l = label.to_vec();
