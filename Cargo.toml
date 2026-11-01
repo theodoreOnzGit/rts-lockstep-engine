@@ -29,3 +29,8 @@ petir = { version = "=0.0.1", default-features = false }
 
 [build-dependencies]
 cc = { version = "1", optional = true }
+
+# Phase 1 gate (a) (batch I9d): the wasm side of the scripted game, a module with no imports (`scripts/gate_a.sh`).
+[[example]]
+name = "gate_wasm"
+crate-type = ["cdylib"]
