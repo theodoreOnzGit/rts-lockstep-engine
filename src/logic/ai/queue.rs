@@ -244,16 +244,32 @@ impl Pathfinder {
     }
 
     /// `processPathfindQueue()` at `frame`: see the module's notes; `do_pathfind` is the queued unit's AI's `doPathfind(this)` (for a
-    /// unit that exists and has an AI).
+    /// unit that exists and has an AI). (Batch I9b-6/I9c-1: its three parts are [`Pathfinder::process_pathfind_queue_begin`],
+    /// [`Pathfinder::process_pathfind_queue_next`] and [`Pathfinder::process_pathfind_queue_advance`], for a host that runs the
+    /// AI with the pathfinder in place between them.)
     pub fn process_pathfind_queue<H: AlliesHost>(&mut self, host: &mut H, frame: u32, mut do_pathfind: impl FnMut(&mut Pathfinder, &mut H, ObjectId)) {
-        if !self.is_map_ready {
+        if !self.process_pathfind_queue_begin(host, frame) {
             return;
+        }
+        while let Some((id, go)) = self.process_pathfind_queue_next(host) {
+            if go {
+                do_pathfind(self, host, id);
+            }
+            self.process_pathfind_queue_advance();
+        }
+    }
+
+    /// `processPathfindQueue()`'s start: false when it stops there (the map not ready; the zones recalculated instead);
+    /// otherwise the logical extent is the terrain's and the cell count is reset.
+    pub fn process_pathfind_queue_begin<H: AlliesHost>(&mut self, host: &mut H, frame: u32) -> bool {
+        if !self.is_map_ready {
+            return false;
         }
         if self.zone_manager.need_to_calculate_zones(frame) {
             let ground = self.ground();
             let e = self.extent;
             self.zone_manager.calculate_zones(&mut self.store, &ground, &mut self.layers, &e);
-            return;
+            return false;
         }
         // "Get the current logical extent."
         let t = host.terrain_extent();
@@ -267,17 +283,26 @@ impl Pathfinder {
         bounds.hi.y -= 1;
         self.logical_extent = bounds;
         self.cumulative_cells_allocated = 0; // "Number of pathfind cells examined."
-        while self.cumulative_cells_allocated < PATHFIND_CELLS_PER_FRAME && self.queue_pr_tail != self.queue_pr_head {
-            let head = self.queue_pr_head as usize;
-            let id = self.queued_pathfind_requests[head];
-            self.queued_pathfind_requests[head] = INVALID_ID;
-            if host.object(id).is_some_and(|o| o.ai.is_some()) {
-                do_pathfind(self, host, id);
-            }
-            self.queue_pr_head += 1;
-            if self.queue_pr_head >= PATHFIND_QUEUE_LEN as i32 {
-                self.queue_pr_head = 0;
-            }
+        true
+    }
+
+    /// The queue loop's test and head: none when the frame's cells are spent or the queue is empty; else the queued id (its slot
+    /// cleared) and whether its AI pathfinds (it exists and has an AI).
+    pub fn process_pathfind_queue_next<H: AlliesHost>(&mut self, host: &H) -> Option<(ObjectId, bool)> {
+        if !(self.cumulative_cells_allocated < PATHFIND_CELLS_PER_FRAME && self.queue_pr_tail != self.queue_pr_head) {
+            return None;
+        }
+        let head = self.queue_pr_head as usize;
+        let id = self.queued_pathfind_requests[head];
+        self.queued_pathfind_requests[head] = INVALID_ID;
+        Some((id, host.object(id).is_some_and(|o| o.ai.is_some())))
+    }
+
+    /// The queue loop's advance (after the AI's `doPathfind`).
+    pub fn process_pathfind_queue_advance(&mut self) {
+        self.queue_pr_head += 1;
+        if self.queue_pr_head >= PATHFIND_QUEUE_LEN as i32 {
+            self.queue_pr_head = 0;
         }
     }
 

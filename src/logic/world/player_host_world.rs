@@ -1307,6 +1307,11 @@ pub(crate) mod tests {
         weapons: WeaponTemplateTable,
         sciences: ScienceStore,
         player_templates: crate::common::player_template::PlayerTemplateStore,
+        /// batch I9c-1: the fixture's locomotors (the `Locomotor` blocks, read before the objects that name them)
+        locomotors: crate::logic::locomotor::LocomotorStore,
+    }
+    fn locomotor_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
+        c.locomotors.parse_locomotor_template_definition(ini, &mut c.names)
     }
     fn player_template_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         c.player_templates.parse_player_template_definition(ini, &mut c.names, &c.sciences, &Text)
@@ -1320,7 +1325,7 @@ pub(crate) mod tests {
             weapons: &c.weapons,
             sciences: &c.sciences,
             text: &Text,
-            locomotors: &crate::logic::locomotor::LocomotorStore::new(),
+            locomotors: &c.locomotors,
         };
         c.factory.parse_object_block(ini, &mut env, 0)
     }
@@ -1344,6 +1349,11 @@ pub(crate) mod tests {
                        Object Dozer\n KindOf = VEHICLE DOZER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
                        \x20Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\nEnd\n\
+                       Locomotor RunnerLoco\n Surfaces = GROUND\n Speed = 30\n Acceleration = 100\n Braking = 100\n TurnRate = 360\n Appearance = TREADS\nEnd\n\
+                       Object Runner\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+                       \x20Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL RunnerLoco\nEnd\n\
                        Object Gun\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
                        \x20Behavior = AIUpdateInterface ModuleTag_AI\n  Turret\n   TurretTurnRate = 60\n   ControlledWeaponSlots = PRIMARY\n   NaturalTurretAngle = 0\n  End\n End\nEnd\n\
@@ -1374,15 +1384,20 @@ pub(crate) mod tests {
             weapons: WeaponTemplateTable::new(),
             sciences: ScienceStore::new(),
             player_templates: Default::default(),
+            locomotors: crate::logic::locomotor::LocomotorStore::new(),
         };
-        static BLOCKS: [BlockParse<Ctx>; 2] =
-            [BlockParse { token: "Object", parse: object_block }, BlockParse { token: "PlayerTemplate", parse: player_template_block }];
+        static BLOCKS: [BlockParse<Ctx>; 3] = [
+            BlockParse { token: "Object", parse: object_block },
+            BlockParse { token: "PlayerTemplate", parse: player_template_block },
+            BlockParse { token: "Locomotor", parse: locomotor_block },
+        ];
         Ini::load(b"Data\\INI\\Test.ini", INI.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("load");
         c.factory.post_process_load();
 
         let mut w = World::new();
         w.names = c.names;
-        let mut st = GameStatics { thing_factory: c.factory, player_template_store: c.player_templates, ..Default::default() };
+        let mut st =
+            GameStatics { thing_factory: c.factory, player_template_store: c.player_templates, locomotor_store: c.locomotors, ..Default::default() };
         let g = st.global_data.create_original();
         g.partition_cell_size = 40.0;
         w.statics = Arc::new(st);

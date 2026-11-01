@@ -608,6 +608,8 @@ pub enum ModuleCall {
     SpawnRevealSlaves,
     /// `AIUpdateInterface::getLastCommandSource()`; replies [`ModuleReply::Int`] (a `CommandSourceType`).
     AiGetLastCommandSource,
+    /// batch I9c-1: `AIUpdateInterface::doPathfind(pathfinder)` (the pathfinder's queue, `AI::update`): the World's pathfinder.
+    AiDoPathfind,
     /// batch R59: `AssistedTargetingUpdate::isFreeToAssist()`; replies [`ModuleReply::Bool`].
     AssistedTargetingIsFreeToAssist,
     /// batch R59: `AssistedTargetingUpdate::assistAttack(requestingObject, victimObject)`.

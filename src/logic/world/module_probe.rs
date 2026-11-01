@@ -1220,6 +1220,8 @@ impl ProbeModule {
                 world.body_trace(format!("revealslaves {}", me.object));
                 ModuleReply::Done
             }
+            // (batch I9c-1: the World's AI module's; a probe has no AI to pathfind)
+            ModuleCall::AiDoPathfind => ModuleReply::Unhandled,
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(self.answers.last_command_source),
             // batch R69: `AttackPriorityInfo::getPriority`: the listed priority, else the default
             ModuleCall::AiGetAttackPriority { other } => match &self.answers.attack_priority {

@@ -352,8 +352,11 @@ impl AiStateHost for World {
     fn highest_layer_for_healthy_destination(&mut self, pos: &Coord3D) -> crate::common::game_type::PathfindLayer {
         self.terrain.layer_for_destination_uncounted(&*self, pos).unwrap_or(crate::common::game_type::LAYER_GROUND)
     }
-    fn pf_adjust_to_landing_destination(&mut self, _pos: &mut Coord3D) {
-        self.ais_cut("pf_adjust_to_landing_destination");
+    fn pf_adjust_to_landing_destination(&mut self, pos: &mut Coord3D) {
+        let mut p = *pos;
+        if self.ai_pf(|pf, w, o, _| pf.adjust_to_landing_destination(w, o, &mut p)).is_some() {
+            *pos = p;
+        }
     }
     fn body_health(&mut self) -> f32 {
         let id = self.ai_self;
@@ -848,8 +851,8 @@ impl AiStateHost for World {
         Coord3D::default()
     }
     fn pf_goal_position(&mut self) -> Option<Coord3D> {
-        self.ais_cut("pf_goal_position");
-        Default::default()
+        let mut p = Coord3D::default();
+        (self.ai_pf(|pf, w, o, _| pf.goal_position(w, o, &mut p)) == Some(true)).then_some(p)
     }
     fn pf_snap_position(&mut self, pos: &mut Coord3D) {
         let id = self.ai_self;
@@ -860,7 +863,10 @@ impl AiStateHost for World {
         self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::UpdateGoal(id, *pos, layer));
     }
     fn pf_queue_for_path(&mut self) {
-        self.ais_cut("pf_queue_for_path");
+        let id = self.ai_self;
+        if self.pf_ready().is_some() {
+            self.with_pathfinder(|pf, _| pf.queue_for_path(id));
+        }
     }
     fn turret_update(&mut self, which: usize) -> UpdateSleepTime {
         // (batch I9b-6: the turret's AI, with the AI lent: `AIUpdateInterface::update` lends it around the turrets)
@@ -928,12 +934,15 @@ impl AiStateHost for World {
     fn object_ai_has_path(&self, _id: ObjectId) -> bool {
         Default::default()
     }
-    fn pf_move_away_from_path(&mut self, _unit: ObjectId, _other: ObjectId, _other_has_path: bool) -> Option<Path> {
-        self.ais_cut("pf_move_away_from_path");
-        Default::default()
+    fn pf_move_away_from_path(&mut self, unit: ObjectId, other: ObjectId, other_has_path: bool) -> Option<Path> {
+        // `getMoveAwayFromPath(obj, unit, unit's AI's path, obj2, obj2's AI's path)` (none without the unit's path)
+        let avoid = self.ai_peek(unit)?.path.clone()?;
+        let avoid2 = if other_has_path { self.ai_peek(other).and_then(|a| a.path.clone()) } else { None };
+        let unit_facts = self.pf_object_facts(unit);
+        self.ai_pf(|pf, w, o, _| pf.get_move_away_from_path(w, o, unit_facts.as_ref(), &avoid, avoid2.as_ref())).flatten()
     }
-    fn pf_move_allies(&mut self, _path: &Path) {
-        self.ais_cut("pf_move_allies");
+    fn pf_move_allies(&mut self, path: &Path) {
+        self.ai_pf_mut(|pf, w, o, _| pf.move_allies(w, o, path));
     }
     fn is_path_available(&mut self, _destination: &Coord3D) -> bool {
         self.ais_cut("is_path_available");
@@ -996,38 +1005,37 @@ impl AiStateHost for World {
         let l = w.link(0).ok().flatten()?;
         self.terrain.waypoint(l).map(|x| x.id() as u32)
     }
-    fn pf_get_aircraft_path(&mut self, _destination: &Coord3D) -> Option<Path> {
-        self.ais_cut("pf_get_aircraft_path");
-        Default::default()
+    fn pf_get_aircraft_path(&mut self, destination: &Coord3D) -> Option<Path> {
+        self.ai_pf(|pf, w, o, _| pf.get_aircraft_path(w, o, destination))
     }
     fn terrain_max_pathfind_extent(&mut self) -> (Coord3D, Coord3D) {
         self.terrain.maximum_pathfind_extent().map_or((Coord3D::default(), Coord3D::default()), |r| (r.lo, r.hi))
     }
-    fn pf_move_allies_away_from_destination(&mut self, _destination: &Coord3D) {
-        self.ais_cut("pf_move_allies_away_from_destination");
+    fn pf_move_allies_away_from_destination(&mut self, destination: &Coord3D) {
+        self.ai_pf_mut(|pf, w, o, _| pf.move_allies_away_from_destination(w, o, destination));
     }
-    fn pf_set_ignore_obstacle_id(&mut self, _id: ObjectId) {
-        self.ais_cut("pf_set_ignore_obstacle_id");
+    fn pf_set_ignore_obstacle_id(&mut self, id: ObjectId) {
+        if let Some(pf) = self.pathfinder.as_mut() {
+            pf.ignore_obstacle_id = id;
+        }
     }
-    fn pf_patch_path(&mut self, _path: Option<&Path>, _blocked: bool) -> Option<Path> {
-        self.ais_cut("pf_patch_path");
-        Default::default()
+    fn pf_patch_path(&mut self, path: Option<&Path>, blocked: bool) -> Option<Path> {
+        self.ai_pf(|pf, w, o, loco| pf.patch_path(w, o, loco, path, blocked)).flatten()
     }
-    fn pf_find_path(&mut self, _destination: &Coord3D) -> Option<Path> {
-        self.ais_cut("pf_find_path");
-        Default::default()
+    fn pf_find_path(&mut self, destination: &Coord3D) -> Option<Path> {
+        self.ai_pf(|pf, w, o, loco| pf.find_path(w, Some(o), loco, &o.pos, destination)).flatten()
     }
-    fn pf_find_closest_path(&mut self, _destination: &Coord3D, _blocked: bool, _path_cost_multiplier: f32, _move_allies: bool) -> Option<Path> {
-        self.ais_cut("pf_find_closest_path");
-        Default::default()
+    fn pf_find_closest_path(&mut self, destination: &Coord3D, blocked: bool, path_cost_multiplier: f32, _move_allies: bool) -> Option<Path> {
+        // (`findClosestPath`'s `moveAllies` is not used upstream)
+        let mut to = *destination;
+        self.ai_pf(|pf, w, o, loco| pf.find_closest_path(w, Some(o), loco, &o.pos, &mut to, blocked, path_cost_multiplier)).flatten()
     }
-    fn pf_find_safe_path(&mut self, _repulsor_pos1: &Coord3D, _repulsor_pos2: &Coord3D, _radius: f32) -> Option<Path> {
-        self.ais_cut("pf_find_safe_path");
-        Default::default()
+    fn pf_find_safe_path(&mut self, repulsor_pos1: &Coord3D, repulsor_pos2: &Coord3D, radius: f32) -> Option<Path> {
+        self.ai_pf(|pf, w, o, loco| pf.find_safe_path(w, o, loco, &o.pos, repulsor_pos1, repulsor_pos2, radius)).flatten()
     }
-    fn pf_find_attack_path(&mut self, _victim: ObjectId, _victim_pos: &Coord3D) -> Option<Path> {
-        self.ais_cut("pf_find_attack_path");
-        Default::default()
+    fn pf_find_attack_path(&mut self, victim: ObjectId, victim_pos: &Coord3D) -> Option<Path> {
+        let v = self.pf_object_facts(victim);
+        self.ai_pf(|pf, w, o, loco| pf.find_attack_path(w, o, loco, &o.pos, v.as_ref(), victim_pos)).flatten()
     }
     fn pf_adjust_to_possible_destination(&mut self, pos: &mut Coord3D) {
         let id = self.ai_self;
@@ -1037,13 +1045,12 @@ impl AiStateHost for World {
         let id = self.ai_self;
         self.pathfinder_adjust_destination(id, pos).unwrap_or(false)
     }
-    fn pf_quick_path_exists_for_ui(&mut self, _destination: &Coord3D) -> bool {
-        self.ais_cut("pf_quick_path_exists_for_ui");
-        Default::default()
+    fn pf_quick_path_exists_for_ui(&mut self, destination: &Coord3D) -> bool {
+        self.ai_pf(|pf, w, o, loco| pf.client_safe_quick_does_path_exist(w, loco.valid_surfaces, &o.pos, destination)).unwrap_or(false)
     }
-    fn pf_is_attack_view_blocked(&mut self, _victim: ObjectId, _victim_pos: &Coord3D) -> bool {
-        self.ais_cut("pf_is_attack_view_blocked");
-        Default::default()
+    fn pf_is_attack_view_blocked(&mut self, victim: ObjectId, victim_pos: &Coord3D) -> bool {
+        let v = self.pf_object_facts(victim);
+        self.ai_pf(|pf, w, o, _| pf.is_attack_view_blocked_by_obstacle(w, o, &o.pos, v.as_ref(), victim_pos)).unwrap_or(false)
     }
     fn ai_data_repulsed_distance(&self) -> f32 {
         self.statics.ai_data.repulsed_distance
@@ -1083,11 +1090,17 @@ impl AiStateHost for World {
         let c = &pf.store.cells[pf.get_cell(layer, x, y)? as usize];
         Some((c.get_type(), c.get_pinched()))
     }
-    fn pf_snap_closest_goal_position(&mut self, _pos: &mut Coord3D) {
-        self.ais_cut("pf_snap_closest_goal_position");
+    fn pf_snap_closest_goal_position(&mut self, pos: &mut Coord3D) {
+        let mut p = *pos;
+        if self.ai_pf(|pf, w, o, _| pf.snap_closest_goal_position(w, o, &mut p)).is_some() {
+            *pos = p;
+        }
     }
     fn pf_remove_goal(&mut self) {
-        self.ais_cut("pf_remove_goal");
+        let id = self.ai_self;
+        if self.pf_ready().is_some() {
+            self.with_pathfinder(|pf, w| pf.remove_goal(w, id));
+        }
     }
     fn start_move_sound(&mut self, _damaged: bool) -> Option<u32> {
         self.ais_cut("start_move_sound");

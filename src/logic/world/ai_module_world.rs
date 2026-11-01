@@ -232,6 +232,10 @@ impl AiModuleBody {
                 ModuleReply::Bool(r)
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(m.ai().last_command_source),
+            ModuleCall::AiDoPathfind => {
+                world.with_ai_self(me.object, |w| m.do_pathfind(w));
+                ModuleReply::Done
+            }
             // `getStateMachine()->getGoalObject()`: `findObjectByID` of the goal
             ModuleCall::AiGetGoalObject => {
                 let id = m.machine.as_ref().map_or(INVALID_ID, |sm| sm.goal_object_id());
@@ -841,6 +845,32 @@ mod tests {
             _ => panic!("no prone module"),
         }
         assert!(w.ai_prone_damage.is_none());
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+    /// batch I9c-1: a unit pathfinds and moves. A runner (a ground locomotor of speed 30, physics) at (50, 50) on the
+    /// pathfinder's map is told by its player to move to (250, 250). Its AI queues for a path; the World's `AI::update` runs
+    /// the pathfinder's queue, where the AI's `doPathfind` finds the path; its locomotor then moves it. After 150 frames it has
+    /// moved toward the goal (both coordinates up by more than 50), with no live error. (Measured: about 1 unit a frame along
+    /// the diagonal, at (177, 177) after 135 frames. A first fixture with a `FOUR_WHEELS` locomotor and the wheels' fields at
+    /// their defaults turned about 2e-6 radians a frame and drove straight along x; with `TREADS` it turns at its turn rate.
+    /// The locomotor is verified against the C++ by `differential_locomotor`; the wheels' case was not looked into further.)
+    #[test]
+    fn a_unit_pathfinds_and_moves() {
+        use crate::common::base_type::Coord3D;
+        use crate::logic::world::pathfinder_host_world::PfOp;
+        let (mut w, team) = world();
+        w.cuts.live_ai = true;
+        w.cuts.live_teams = true;
+        w.cuts.live_pathfinder = true;
+        let r = crate::logic::world::player_host_world::tests::make(&mut w, b"Runner", team, Coord3D { x: 50.0, y: 50.0, z: 0.0 });
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let index = w.find_object(r).unwrap().ai.unwrap();
+        w.module_call(r, index, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 250.0, y: 250.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..150 {
+            w.logic_update().unwrap();
+        }
+        let p = w.find_object(r).unwrap().get_position();
+        assert!(p.x > 100.0 && p.y > 100.0, "the runner is at {p:?}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

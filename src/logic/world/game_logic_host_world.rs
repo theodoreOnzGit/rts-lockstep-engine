@@ -306,7 +306,12 @@ impl GameLogicHost for World {
         self.cuts.game_loop.has_stats_collector
     }
     fn u_ai_update(&mut self) {
-        self.loop_cut("AI::update", &[]);
+        // batch I9c-1: the world's own AI update with `cuts.live_ai`
+        if self.cuts.live_ai {
+            self.ai_update();
+        } else {
+            self.loop_cut("AI::update", &[]);
+        }
     }
     fn u_build_assistant_update(&mut self) {
         // batch I6: the world's own build assistant

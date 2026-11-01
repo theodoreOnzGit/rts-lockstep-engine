@@ -165,6 +165,48 @@ impl World {
         Some(r)
     }
 
+    /// The pathfinder as the running AI asks it (`TheAI->pathfinder()`, batch I9c-1): `f` gets the AI's object's facts, its
+    /// locomotor set and position; none when the pathfinder is not ready ([`World::pf_ready`]) or the object is gone.
+    pub(crate) fn ai_pf<T>(&mut self, f: impl FnOnce(&mut Pathfinder, &World, &PfObjectFacts, PfLocomotorSet) -> T) -> Option<T> {
+        self.pf_ready()?;
+        let id = self.ai_self;
+        let loco = self.ai_locomotor_set(id);
+        let obj = self.pf_object_facts(id)?;
+        self.with_pathfinder(|pf, w| f(pf, w, &obj, loco))
+    }
+
+    /// [`World::ai_pf`] for a query that changes the world (`moveAllies`, `removeGoal`).
+    pub(crate) fn ai_pf_mut<T>(&mut self, f: impl FnOnce(&mut Pathfinder, &mut World, &PfObjectFacts, PfLocomotorSet) -> T) -> Option<T> {
+        self.pf_ready()?;
+        let id = self.ai_self;
+        let loco = self.ai_locomotor_set(id);
+        let obj = self.pf_object_facts(id)?;
+        self.with_pathfinder(|pf, w| f(pf, w, &obj, loco))
+    }
+
+    /// `TheAI->update()` (batch I9c-1): `m_pathfinder->processPathfindQueue()`, then `ThePlayerList->UPDATE()`. The queue runs
+    /// in its three parts ([`Pathfinder::process_pathfind_queue_begin`] and the rest), with the pathfinder back in the World
+    /// while each queued unit's AI pathfinds (`doPathfind`, which asks the pathfinder for its path), as upstream's AI reaches
+    /// `TheAI->pathfinder()` from inside the queue. The pathfinder runs only when it is ready ([`World::pf_ready`]).
+    pub fn ai_update(&mut self) {
+        if self.pf_ready().is_some() {
+            let frame = self.frame();
+            if self.with_pathfinder(|pf, w| pf.process_pathfind_queue_begin(w, frame)) == Some(true) {
+                while let Some(Some((id, go))) = self.with_pathfinder(|pf, w| pf.process_pathfind_queue_next(w)) {
+                    if go {
+                        if let Some(index) = self.find_object(id).and_then(|o| o.ai) {
+                            self.module_call(id, index, crate::logic::world::module_call::ModuleCall::AiDoPathfind);
+                        }
+                    }
+                    self.with_pathfinder(|pf, _| pf.process_pathfind_queue_advance());
+                }
+            }
+        }
+        if let Err(e) = crate::logic::world::player_list::player_list_update(self) {
+            self.cuts.team_live_errors.push(format!("ThePlayerList->update: {e:?}"));
+        }
+    }
+
     /// Runs the calls deferred while the pathfinder was out, oldest first (a call they defer in turn joins the queue).
     fn pathfinder_run_deferred(&mut self) {
         while self.pathfinder.is_some() && !self.cuts.pathfinder.deferred.is_empty() {
@@ -395,6 +437,10 @@ impl World {
 
     /// `getAIUpdateInterface()->getLocomotorSet()`: its valid surfaces (`cuts.ai_valid_surfaces`) and `isDownhillOnly()`.
     fn ai_locomotor_set(&self, id: ObjectId) -> PfLocomotorSet {
+        // (batch I9c-1: the live AI's `getLocomotorSet()`; the cut tables for an object without one)
+        if let Some(a) = self.ai_peek(id) {
+            return PfLocomotorSet { valid_surfaces: a.locomotor_set.get_valid_surfaces() as _, downhill_only: a.locomotor_set.is_downhill_only() };
+        }
         PfLocomotorSet {
             valid_surfaces: self.cuts.ai_valid_surfaces.get(&id).copied().unwrap_or(0) as _,
             downhill_only: self.cuts.pathfinder.ai_downhill_only.contains(&id),
