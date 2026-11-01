@@ -873,4 +873,36 @@ mod tests {
         assert!(p.x > 100.0 && p.y > 100.0, "the runner is at {p:?}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
+    /// batch I9c-1: the AI in the logic's CRC (`xferSnapshot(TheAI)`). The runner's game run twice gives the same CRC at every
+    /// one of 30 frames. The AI's part is in it: the same game with the AI's part left out of the CRC (`live_ai` off while the
+    /// CRC is taken: the cut point) gives a different CRC at every frame. (This shows the part is included and deterministic,
+    /// not that each of its fields is right: the pathfinder's and the AI data's CRCs are the verified ones of their batches.)
+    #[test]
+    fn the_ai_is_in_the_logics_crc() {
+        use crate::common::base_type::Coord3D;
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        use crate::logic::world::pathfinder_host_world::PfOp;
+        let run = |crc_ai: bool| {
+            let (mut w, team) = world();
+            w.cuts.live_ai = true;
+            w.cuts.live_teams = true;
+            w.cuts.live_pathfinder = true;
+            let r = crate::logic::world::player_host_world::tests::make(&mut w, b"Runner", team, Coord3D { x: 50.0, y: 50.0, z: 0.0 });
+            assert!(w.pathfinder_op(PfOp::NewMap));
+            let index = w.find_object(r).unwrap().ai.unwrap();
+            w.module_call(r, index, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 250.0, y: 250.0, z: 0.0 }, command_source: 0 });
+            let mut crcs = Vec::new();
+            for _ in 0..30 {
+                w.logic_update().unwrap();
+                w.cuts.live_ai = crc_ai;
+                crcs.push(w.logic_crc(CRC_RECALC, None).unwrap());
+                w.cuts.live_ai = true;
+            }
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+            crcs
+        };
+        let (a, b, without) = (run(true), run(true), run(false));
+        assert_eq!(a, b);
+        assert!(a.iter().zip(&without).all(|(x, y)| x != y), "{a:?} {without:?}");
+    }
 }

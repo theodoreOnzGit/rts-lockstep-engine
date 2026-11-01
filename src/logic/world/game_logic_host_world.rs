@@ -36,8 +36,10 @@
 //!
 //! # Deviation until batch I9
 //!
-//! `xferSnapshot(TheAI)` in a CRC: the world has no AI yet, so the AI adds nothing to the CRC. A CRC the world takes is
-//! therefore not upstream's for the same game; it is reproducible, and it is what the native-versus-wasm gate compares.
+//! `xferSnapshot(TheAI)` in a CRC: ~~the world has no AI yet, so the AI adds nothing to the CRC~~ **since batch I9c-1, with
+//! `cuts.live_ai`**, the pathfinder's CRC and the AI data's; the AI groups are not live yet, so they add nothing (without
+//! `live_ai` the AI adds nothing, as before). A CRC the world takes is therefore not upstream's for the same game; it is
+//! reproducible, and it is what the native-versus-wasm gate compares.
 //!
 //! `p1w13-sonnet`, integration batch I4, 2026-10-31.
 
@@ -362,10 +364,26 @@ impl GameLogicHost for World {
             }
         }
     }
-    fn u_crc_ai(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
-        // the world has no AI until batch I9 (see the module docs)
-        self.loop_cut("AI::crc", &[]);
-        Ok(())
+    fn u_crc_ai(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        // batch I9c-1: with `live_ai`, `xferSnapshot(TheAI)`: in a CRC `AI::crc` (the pathfinder's, then each AI data entry's
+        // after its marker, then each group's; the World has one AI data entry and no live groups yet), in a save `AI::xfer`
+        // (its version). Without it, the cut point (see the module docs).
+        if !self.cuts.live_ai {
+            self.loop_cut("AI::crc", &[]);
+            return Ok(());
+        }
+        if xfer.get_xfer_mode() != crate::common::xfer::XferMode::Crc {
+            let current: crate::common::xfer::XferVersion = 1;
+            let mut version = current;
+            return xfer.xfer_version(&mut version, current);
+        }
+        if let Some(pf) = self.pathfinder.as_mut() {
+            xfer.xfer_snapshot(pf)?;
+        }
+        let mut marker = b"MARKER:TAiData".to_vec();
+        xfer.xfer_ascii_string(&mut marker)?;
+        let mut data = self.statics.ai_data.clone();
+        data.crc(xfer)
     }
     fn u_crc_game_state(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
         self.loop_cut("GameState::friend_xferSaveDataForCRC", &[]);
