@@ -180,6 +180,10 @@ pub struct World {
     /// The command dispatcher's state (`theBuildPlan`, the cached CRCs).
     pub dispatch: crate::logic::world::game_logic_dispatch::DispatchState,
     // --- end batch I4 ---
+    // --- batch I5 ---
+    /// `TheVictoryConditions`.
+    pub victory: crate::logic::world::victory_conditions::VictoryConditions,
+    // --- end batch I5 ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -237,6 +241,9 @@ impl World {
             game_logic: crate::logic::world::game_logic_update::GameLogicState::new(),
             dispatch: Default::default(),
             // --- end batch I4 ---
+            // --- batch I5 ---
+            victory: crate::logic::world::victory_conditions::VictoryConditions::new(),
+            // --- end batch I5 ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

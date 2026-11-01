@@ -174,8 +174,6 @@ pub struct PlayerHostCuts {
     pub global_difficulty: GameDifficulty,
     /// The AI players, by player index.
     pub ai: BTreeMap<PlayerIndex, AiPlayerStandIn>,
-    /// `TheVictoryConditions->hasSinglePlayerBeenDefeated(p)`.
-    pub defeated: BTreeSet<PlayerIndex>,
     /// `TheAI->getAiData()->m_forceSkirmishAI`.
     pub force_skirmish_ai: bool,
     /// `TheGameInfo` (`None`: `NULL`): its starting cash.
@@ -209,7 +207,6 @@ impl Default for PlayerHostCuts {
             skirmish_side_scripts: BTreeMap::new(),
             global_difficulty: GameDifficulty::Normal,
             ai: BTreeMap::new(),
-            defeated: BTreeSet::new(),
             force_skirmish_ai: false,
             game_info_starting_cash: None,
             in_single_player_game: false,
@@ -663,7 +660,8 @@ impl PlayerHost for World {
         self.host_cut("ScriptEngine::notifyOfAcquiredScience", &[i64::from(player_index), i64::from(science.0)], &[]);
     }
     fn victory_has_single_player_been_defeated(&self, p: PlayerIndex) -> bool {
-        self.cuts.player_host.defeated.contains(&p)
+        // batch I5: the world's own conditions
+        self.victory.has_single_player_been_defeated(self, Some(p))
     }
     fn message_enable_retaliation_mode(&mut self, player_index: PlayerIndex, enabled: bool) {
         self.host_cut("MessageStream::appendMessage(MSG_ENABLE_RETALIATION_MODE)", &[i64::from(player_index), i64::from(enabled)], &[]);
@@ -1314,6 +1312,10 @@ pub(crate) mod tests {
         dfx: DamageFxStore,
         weapons: WeaponTemplateTable,
         sciences: ScienceStore,
+        player_templates: crate::common::player_template::PlayerTemplateStore,
+    }
+    fn player_template_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
+        c.player_templates.parse_player_template_definition(ini, &mut c.names, &c.sciences, &Text)
     }
     fn object_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
         let mut env = ThingParseEnv {
@@ -1329,7 +1331,7 @@ pub(crate) mod tests {
         c.factory.parse_object_block(ini, &mut env, 0)
     }
 
-    /// A tank that needs a barracks, a barracks, and a garrisonable bunker.
+    /// A tank that needs a barracks, a barracks, a garrisonable bunker, and two player templates (America, the civilians).
     const INI: &str = "Object Tank\n KindOf = VEHICLE\n BuildCost = 900\n Prerequisites\n  Object = Barracks\n End\n\
                        \x20Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\nEnd\n\
@@ -1337,7 +1339,8 @@ pub(crate) mod tests {
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n\
                        Object Bunker\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\
-                       \x20Behavior = GarrisonContain ModuleTag_Contain\n  ContainMax = 5\n End\nEnd\n";
+                       \x20Behavior = GarrisonContain ModuleTag_Contain\n  ContainMax = 5\n End\nEnd\n\
+                       PlayerTemplate FactionAmerica\n Side = America\nEnd\nPlayerTemplate FactionCivilian\n Side = Civilian\nEnd\n";
 
     /// A world over a flat 40 x 40 height map (400 x 400) with the templates of [`INI`], two players (the neutral player and `Player1`), the singleton team `team1`
     /// of `Player1` made by the team factory on the world, the cut log on and the partition manager initialised and live.
@@ -1354,14 +1357,16 @@ pub(crate) mod tests {
             dfx: DamageFxStore::new(),
             weapons: WeaponTemplateTable::new(),
             sciences: ScienceStore::new(),
+            player_templates: Default::default(),
         };
-        static BLOCKS: [BlockParse<Ctx>; 1] = [BlockParse { token: "Object", parse: object_block }];
+        static BLOCKS: [BlockParse<Ctx>; 2] =
+            [BlockParse { token: "Object", parse: object_block }, BlockParse { token: "PlayerTemplate", parse: player_template_block }];
         Ini::load(b"Data\\INI\\Test.ini", INI.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("load");
         c.factory.post_process_load();
 
         let mut w = World::new();
         w.names = c.names;
-        let mut st = GameStatics { thing_factory: c.factory, ..Default::default() };
+        let mut st = GameStatics { thing_factory: c.factory, player_template_store: c.player_templates, ..Default::default() };
         let g = st.global_data.create_original();
         g.partition_cell_size = 40.0;
         w.statics = Arc::new(st);
@@ -1514,14 +1519,19 @@ pub(crate) mod tests {
         );
     }
 
-    /// `findPlayerTemplate` makes the fifteen legacy faction keys on its first call, as upstream's statics do.
+    /// `findPlayerTemplate` finds a template by its name key, and an old map's sub-faction finds its base faction.
     #[test]
-    fn finding_a_player_template_makes_the_legacy_faction_keys() {
+    fn finding_a_player_template_maps_an_old_sub_faction() {
         let (mut w, _) = world();
-        let before = w.names.name_to_key(b"Nothing").0;
-        assert_eq!(w.player_template_find(NameKeyType(before)), None);
-        let after = w.names.name_to_key(b"Nothing2").0;
-        assert_eq!(after, before + 16);
+        let america = w.names.name_to_key(b"FactionAmerica");
+        let tank_command = w.names.name_to_key(b"FactionAmericaTankCommand");
+        let civilian = w.names.name_to_key(b"FactionCivilian");
+        let nothing = w.names.name_to_key(b"FactionNothing");
+        assert_eq!(w.player_template_find(america), Some(0));
+        assert_eq!(w.player_template_find(tank_command), Some(0));
+        assert_eq!(w.player_template_find(civilian), Some(1));
+        assert_eq!(w.player_template_find(nothing), None);
+        assert_eq!(w.player_template(1).side, b"Civilian");
     }
 
     /// A special power module's handle carries its object and module index, and is refused past the limits.

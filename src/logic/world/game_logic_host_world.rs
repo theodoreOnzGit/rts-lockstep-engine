@@ -91,6 +91,8 @@ pub struct GameLoopCuts {
     pub recorder_playback: bool,
     /// `TheGameInfo->getCRCInterval()`, `None` when there is no `TheGameInfo`.
     pub game_info_crc_interval: Option<i32>,
+    /// batch I5: `TheGameInfo`'s slots, whether each is an AI's (`None`: no `TheGameInfo`).
+    pub game_info_slots_ai: Option<Vec<bool>>,
     /// `REPLAY_CRC_INTERVAL` (100 until the recorder or the command line sets it, `Recorder.cpp`).
     pub replay_crc_interval: i32,
     /// `TheStatsCollector != NULL`.
@@ -129,6 +131,7 @@ impl Default for GameLoopCuts {
             recorder_multiplayer: false,
             recorder_playback: false,
             game_info_crc_interval: None,
+            game_info_slots_ai: None,
             replay_crc_interval: 100,
             has_stats_collector: false,
             has_network: false,
@@ -315,7 +318,10 @@ impl GameLogicHost for World {
         // `LocomotorStore::update()` is empty upstream
     }
     fn u_victory_conditions_update(&mut self) {
-        self.loop_cut("VictoryConditions::update", &[]);
+        // batch I5: the world's own conditions
+        if let Err(e) = self.victory_update() {
+            self.cuts.team_live_errors.push(format!("VictoryConditions::update: {e:?}"));
+        }
     }
     fn u_crc_object(&mut self, id: u32, xfer: &mut dyn Xfer) -> XferResult<()> {
         let statics = self.statics.clone();
@@ -477,7 +483,6 @@ mod tests {
                 "Recorder::update",
                 "AI::update",
                 "BuildAssistant::update",
-                "VictoryConditions::update",
             ]
         );
         assert_ne!(w.game_logic.crc, 0);
