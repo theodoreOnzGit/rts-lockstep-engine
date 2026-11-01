@@ -302,7 +302,7 @@ impl LocomotorHost for Host {
     fn damage_state(&self) -> BodyDamageType {
         self.env.body_state
     }
-    fn is_stunned(&self) -> bool {
+    fn is_stunned(&mut self) -> bool {
         self.env.stunned != 0
     }
     fn apply_motive_force(&mut self, force: &Coord3D) {
@@ -314,22 +314,22 @@ impl LocomotorHost for Host {
     fn set_turning(&mut self, turning: PhysicsTurningType) {
         self.l(L_SET_TURNING, &[turning as i32 as u32]);
     }
-    fn velocity(&self) -> Coord3D {
+    fn velocity(&mut self) -> Coord3D {
         Coord3D { x: self.env.vel[0], y: self.env.vel[1], z: self.env.vel[2] }
     }
-    fn velocity_magnitude(&self) -> f32 {
+    fn velocity_magnitude(&mut self) -> f32 {
         self.env.vel_mag
     }
-    fn forward_speed_2d(&self) -> f32 {
+    fn forward_speed_2d(&mut self) -> f32 {
         self.env.fwd2d
     }
-    fn forward_speed_3d(&self) -> f32 {
+    fn forward_speed_3d(&mut self) -> f32 {
         self.env.fwd3d
     }
-    fn mass(&self) -> f32 {
+    fn mass(&mut self) -> f32 {
         self.env.mass
     }
-    fn is_motive(&self) -> bool {
+    fn is_motive(&mut self) -> bool {
         self.env.motive != 0
     }
     fn set_extra_friction(&mut self, friction: f32) {

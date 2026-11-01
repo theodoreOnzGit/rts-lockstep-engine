@@ -73,6 +73,12 @@ pub struct GameStatics {
     /// `TheRankInfoStore`.
     pub rank_info_store: crate::logic::rank_info::RankInfoStore,
     // --- end batch I3 ---
+    // --- batch I9b ---
+    /// `TheLocomotorStore` (an AI's locomotor sets are made from it).
+    pub locomotor_store: crate::logic::locomotor::LocomotorStore,
+    /// `TheAI->getAiData()` (`TAiData`'s constructor values until `AIData.ini` is read).
+    pub ai_data: crate::logic::ai::ai_system::TAiData,
+    // --- end batch I9b ---
     // New stores go here, each in its translator's marked block.
 }
 

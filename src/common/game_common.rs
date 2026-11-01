@@ -223,6 +223,20 @@ pub enum CommandSourceType {
     DefaultSwitchWeapon = 4,
 }
 
+impl CommandSourceType {
+    /// The command source a value names (`CMD_FROM_PLAYER` 0 .. `CMD_DEFAULT_SWITCH_WEAPON` 4); any other value is the
+    /// player's.
+    pub fn from_i32(v: i32) -> CommandSourceType {
+        match v {
+            1 => CommandSourceType::FromScript,
+            2 => CommandSourceType::FromAi,
+            3 => CommandSourceType::FromDozer,
+            4 => CommandSourceType::DefaultSwitchWeapon,
+            _ => CommandSourceType::FromPlayer,
+        }
+    }
+}
+
 /// `enum AbleToAttackType`: a bit set (`_ATTACK_FORCED`, `_ATTACK_CONTINUED`,
 /// `_ATTACK_TUNNELNETWORK_GUARD`); the named values are its combinations.
 pub type AbleToAttackType = i32;

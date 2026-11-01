@@ -201,7 +201,7 @@ pub trait AiHost: LocomotorHost + PathHost {
     /// `getObject()->getTeam()->getPrototype()->getTemplateInfo()->m_attackCommonTarget`.
     fn team_attack_common_target(&self) -> bool;
     /// `getObject()->getTeam()->getTeamTargetObject()`'s id (`INVALID_ID`: none).
-    fn team_target_object(&self) -> ObjectId;
+    fn team_target_object(&mut self) -> ObjectId;
     /// `getObject()->getAbleToAttackSpecificObject(type, target, commandSource)`.
     fn able_to_attack_specific_object(&mut self, t: AbleToAttackType, target: ObjectId, command_source: CommandSourceType) -> CanAttackResultValue;
     /// `getObject()->getStealth()->isGrantedBySpecialPower()`, `None` without a stealth module.

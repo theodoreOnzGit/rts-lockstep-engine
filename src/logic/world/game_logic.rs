@@ -207,6 +207,10 @@ pub struct World {
     /// The pathfinder's `isPointOnWall`, as it stood when it was last put back (answered while it is out).
     pub pf_wall: crate::logic::ai::pathfinder::WallView,
     // --- end batch I9a ---
+    // --- batch I9b ---
+    /// The object whose AI is running: the one the object-centred AI hosts answer for (`ai_host_world.rs`).
+    pub ai_self: ObjectId,
+    // --- end batch I9b ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -283,6 +287,9 @@ impl World {
             pathfinder: Some(crate::logic::ai::pathfinder::Pathfinder::new(None)),
             pf_wall: Default::default(),
             // --- end batch I9a ---
+            // --- batch I9b ---
+            ai_self: INVALID_ID,
+            // --- end batch I9b ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

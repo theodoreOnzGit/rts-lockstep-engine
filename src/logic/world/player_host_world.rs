@@ -1023,13 +1023,7 @@ impl PlayerObjectHost for World {
         self.get_contain(o).is_some()
     }
     fn action_can_enter_object(&mut self, o: ObjectId, building: ObjectId, source: CommandSource) -> bool {
-        let source = match source {
-            1 => CommandSourceType::FromScript,
-            2 => CommandSourceType::FromAi,
-            3 => CommandSourceType::FromDozer,
-            4 => CommandSourceType::DefaultSwitchWeapon,
-            _ => CommandSourceType::FromPlayer,
-        };
+        let source = CommandSourceType::from_i32(source);
         // (an error is upstream's undefined behaviour: recorded, and answered no)
         match crate::logic::action_manager::can_enter_object(self, Some(o), Some(building), source, crate::logic::action_manager::CanEnterType::CheckCapacity) {
             Ok(b) => b,

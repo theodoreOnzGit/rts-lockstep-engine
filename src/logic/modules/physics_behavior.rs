@@ -351,6 +351,11 @@ impl PhysicsBehavior {
     }
 
     /// The `UpdateModule` base, for the scheduler's bookkeeping.
+    /// `getAllowToFall()` (batch I9b-1: read in place by the AI host).
+    pub fn get_allow_to_fall(&self) -> bool {
+        self.get_flag(ALLOW_TO_FALL)
+    }
+
     pub fn update_module(&self) -> &UpdateModule {
         &self.update
     }

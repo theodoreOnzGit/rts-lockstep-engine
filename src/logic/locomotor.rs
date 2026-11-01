@@ -393,7 +393,7 @@ pub trait LocomotorHost: LocomotorGlobals {
 
     // ---- PhysicsBehavior (layer 9) ----
     /// `getIsStunned()`.
-    fn is_stunned(&self) -> bool;
+    fn is_stunned(&mut self) -> bool;
     /// `applyMotiveForce(&force)`.
     fn apply_motive_force(&mut self, force: &Coord3D);
     /// `scrubVelocity2D(desiredSpeed)`.
@@ -401,17 +401,17 @@ pub trait LocomotorHost: LocomotorGlobals {
     /// `setTurning(turning)`.
     fn set_turning(&mut self, turning: PhysicsTurningType);
     /// `*getVelocity()`.
-    fn velocity(&self) -> Coord3D;
+    fn velocity(&mut self) -> Coord3D;
     /// `getVelocityMagnitude()`.
-    fn velocity_magnitude(&self) -> f32;
+    fn velocity_magnitude(&mut self) -> f32;
     /// `getForwardSpeed2D()`.
-    fn forward_speed_2d(&self) -> f32;
+    fn forward_speed_2d(&mut self) -> f32;
     /// `getForwardSpeed3D()`.
-    fn forward_speed_3d(&self) -> f32;
+    fn forward_speed_3d(&mut self) -> f32;
     /// `getMass()`.
-    fn mass(&self) -> f32;
+    fn mass(&mut self) -> f32;
     /// `isMotive()`.
-    fn is_motive(&self) -> bool;
+    fn is_motive(&mut self) -> bool;
     /// `setExtraFriction(friction)`.
     fn set_extra_friction(&mut self, friction: f32);
     /// `setAllowAirborneFriction(allow)`.
@@ -545,7 +545,7 @@ fn try_to_orient_in_this_direction_3d<H: LocomotorHost>(obj: &mut H, max_turn_ra
 }
 
 /// `calcDirectionToApplyThrust`.
-fn calc_direction_to_apply_thrust<H: LocomotorHost>(obj: &H, ingoal_pos: &Coord3D, max_accel: f32, goal_dir: &mut Vector3) {
+fn calc_direction_to_apply_thrust<H: LocomotorHost>(obj: &mut H, ingoal_pos: &Coord3D, max_accel: f32, goal_dir: &mut Vector3) {
     /*
         our meta-goal here is to calculate the direction we should apply our motive force
         in order to minimize the angle between (our velocity) and (direction towards goalpos).
@@ -2574,7 +2574,7 @@ impl Locomotor {
     }
 
     /// `calcLiftToUseAtPt(obj, physics, curZ, surfaceAtPt, preferredHeight)`.
-    fn calc_lift_to_use_at_pt<H: LocomotorHost>(&self, obj: &H, cur_z: f32, _surface_at_pt: f32, preferred_height: f32) -> f32 {
+    fn calc_lift_to_use_at_pt<H: LocomotorHost>(&self, obj: &mut H, cur_z: f32, _surface_at_pt: f32, preferred_height: f32) -> f32 {
         /*
             take the classic equation:
 
@@ -3402,7 +3402,7 @@ mod tests {
         fn damage_state(&self) -> BodyDamageType {
             BODY_PRISTINE
         }
-        fn is_stunned(&self) -> bool {
+        fn is_stunned(&mut self) -> bool {
             false
         }
         fn apply_motive_force(&mut self, force: &Coord3D) {
@@ -3414,23 +3414,23 @@ mod tests {
         fn set_turning(&mut self, turning: PhysicsTurningType) {
             self.calls.push(Call::Turning(turning));
         }
-        fn velocity(&self) -> Coord3D {
+        fn velocity(&mut self) -> Coord3D {
             self.vel
         }
-        fn velocity_magnitude(&self) -> f32 {
+        fn velocity_magnitude(&mut self) -> f32 {
             self.vel.length()
         }
-        fn forward_speed_2d(&self) -> f32 {
+        fn forward_speed_2d(&mut self) -> f32 {
             let d = Coord3D { x: trig::cos(self.angle), y: trig::sin(self.angle), z: 0.0 };
             self.vel.x * d.x + self.vel.y * d.y
         }
-        fn forward_speed_3d(&self) -> f32 {
+        fn forward_speed_3d(&mut self) -> f32 {
             self.vel.length()
         }
-        fn mass(&self) -> f32 {
+        fn mass(&mut self) -> f32 {
             self.mass
         }
-        fn is_motive(&self) -> bool {
+        fn is_motive(&mut self) -> bool {
             self.motive
         }
         fn set_extra_friction(&mut self, _f: f32) {}

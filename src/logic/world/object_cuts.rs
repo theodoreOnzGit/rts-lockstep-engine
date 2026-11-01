@@ -2164,6 +2164,8 @@ pub struct ObjectCuts {
     pub live_pathfinder: bool,
     /// batch I9a: the pathfinder's questions to the units the world does not hold yet (the AI), and its deferred calls.
     pub pathfinder: crate::logic::world::pathfinder_host_world::PathfinderCuts,
+    /// batch I9b-1: the AI hosts' questions to the units the world does not hold yet.
+    pub ai_host: crate::logic::world::ai_host_world::AiHostCuts,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2337,6 +2339,7 @@ impl Default for ObjectCuts {
             music_tracks_completed: BTreeMap::new(),
             live_pathfinder: false,
             pathfinder: Default::default(),
+            ai_host: Default::default(),
             next_drawable_id: 1,
         }
     }

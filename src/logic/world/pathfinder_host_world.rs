@@ -302,7 +302,7 @@ impl World {
     }
 
     /// The body's `getDamageState()`, read in place (a body that is out, or none: pristine; a probe: its answer).
-    fn peek_damage_state(&self, id: ObjectId) -> BodyDamageType {
+    pub(crate) fn peek_damage_state(&self, id: ObjectId) -> BodyDamageType {
         let Some(index) = self.objects.find(id).and_then(|o| o.body) else { return BODY_PRISTINE };
         match self.peek_module_body(ModuleHandle { object: id, index }) {
             Some(UpdateBody::ActiveBody(b)) => b.get_damage_state(),
@@ -313,6 +313,20 @@ impl World {
             Some(UpdateBody::HiveStructureBody(b)) => b.active_body().get_damage_state(),
             Some(UpdateBody::ModuleProbe(p)) => p.answers.damage_state.unwrap_or(BODY_PRISTINE),
             _ => BODY_PRISTINE,
+        }
+    }
+
+    /// The body's `getLastDamageInfo()`, read in place (`None`: no active body there, or it is out).
+    pub(crate) fn peek_last_damage(&self, id: ObjectId) -> Option<&DamageInfo> {
+        let index = self.objects.find(id).and_then(|o| o.body)?;
+        match self.peek_module_body(ModuleHandle { object: id, index })? {
+            UpdateBody::ActiveBody(b) => Some(b.get_last_damage_info()),
+            UpdateBody::HighlanderBody(b) => Some(b.active_body().get_last_damage_info()),
+            UpdateBody::ImmortalBody(b) => Some(b.active_body().get_last_damage_info()),
+            UpdateBody::StructureBody(b) => Some(b.active_body().get_last_damage_info()),
+            UpdateBody::UndeadBody(b) => Some(b.active_body().get_last_damage_info()),
+            UpdateBody::HiveStructureBody(b) => Some(b.active_body().get_last_damage_info()),
+            _ => None,
         }
     }
 

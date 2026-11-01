@@ -591,7 +591,7 @@ impl LocomotorHost for Host {
     fn damage_state(&self) -> BodyDamageType {
         self.env.loco.body_state
     }
-    fn is_stunned(&self) -> bool {
+    fn is_stunned(&mut self) -> bool {
         self.env.loco.stunned != 0
     }
     fn apply_motive_force(&mut self, force: &Coord3D) {
@@ -603,23 +603,23 @@ impl LocomotorHost for Host {
     fn set_turning(&mut self, turning: PhysicsTurningType) {
         self.l(L_SET_TURNING, &[turning as i32 as u32]);
     }
-    fn velocity(&self) -> Coord3D {
+    fn velocity(&mut self) -> Coord3D {
         let v = self.env.loco.vel;
         Coord3D { x: v[0], y: v[1], z: v[2] }
     }
-    fn velocity_magnitude(&self) -> f32 {
+    fn velocity_magnitude(&mut self) -> f32 {
         self.env.loco.vel_mag
     }
-    fn forward_speed_2d(&self) -> f32 {
+    fn forward_speed_2d(&mut self) -> f32 {
         self.env.loco.fwd2d
     }
-    fn forward_speed_3d(&self) -> f32 {
+    fn forward_speed_3d(&mut self) -> f32 {
         self.env.loco.fwd3d
     }
-    fn mass(&self) -> f32 {
+    fn mass(&mut self) -> f32 {
         self.env.loco.mass
     }
-    fn is_motive(&self) -> bool {
+    fn is_motive(&mut self) -> bool {
         self.env.loco.motive != 0
     }
     fn set_extra_friction(&mut self, friction: f32) {
@@ -819,7 +819,7 @@ impl AiHost for Host {
     fn team_attack_common_target(&self) -> bool {
         self.env.team_attack_common != 0
     }
-    fn team_target_object(&self) -> ObjectId {
+    fn team_target_object(&mut self) -> ObjectId {
         let id = self.env.team_target;
         if self.object_exists(id) { id } else { 0 }
     }
