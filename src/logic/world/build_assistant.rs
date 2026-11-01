@@ -376,7 +376,7 @@ pub trait BuildAssistantHost {
     /// `tmpl->getRefundValue()`.
     fn tmpl_refund_value(&self, t: TemplateRef) -> i32;
     /// `tmpl->calcCostToBuild(player)`.
-    fn tmpl_calc_cost_to_build(&self, t: TemplateRef, player: PlayerIndex) -> i32;
+    fn tmpl_calc_cost_to_build(&mut self, t: TemplateRef, player: PlayerIndex) -> i32;
     /// `a->isEquivalentTo(b)`.
     fn tmpl_is_equivalent_to(&self, a: TemplateRef, b: TemplateRef) -> bool;
     /// `AudioEventRTS sound = *tmpl->getPerUnitSound("VoiceCreated"); sound.setObjectID(id); TheAudio->addAudioEvent(&sound)`.
@@ -412,7 +412,7 @@ pub trait BuildAssistantHost {
     /// `TheTerrainLogic->getMaximumPathfindExtent(&region)`.
     fn terrain_maximum_pathfind_extent(&self) -> Region3D;
     /// `TheTerrainLogic->getLayerForDestination(&pos)`.
-    fn terrain_layer_for_destination(&self, pos: Coord3D) -> PathfindLayer;
+    fn terrain_layer_for_destination(&mut self, pos: Coord3D) -> PathfindLayer;
     /// `TheTerrainVisual->getTerrainTile(x, y)->getRestrictConstruction()` (`None` when there is no tile).
     fn terrain_tile_restricts_construction(&self, x: f32, y: f32) -> Option<bool>;
     /// `TheTerrainVisual->addFactionBib(obj, highlight, extra)`.

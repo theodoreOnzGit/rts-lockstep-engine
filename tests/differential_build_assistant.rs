@@ -867,7 +867,7 @@ impl BuildAssistantHost for Sim {
     fn tmpl_refund_value(&self, t: TemplateRef) -> i32 {
         self.tmpls[t as usize].refund
     }
-    fn tmpl_calc_cost_to_build(&self, t: TemplateRef, _player: PlayerIndex) -> i32 {
+    fn tmpl_calc_cost_to_build(&mut self, t: TemplateRef, _player: PlayerIndex) -> i32 {
         self.tmpls[t as usize].cost
     }
     fn tmpl_is_equivalent_to(&self, a: TemplateRef, b: TemplateRef) -> bool {
@@ -927,7 +927,7 @@ impl BuildAssistantHost for Sim {
     fn terrain_maximum_pathfind_extent(&self) -> Region3D {
         self.pf_extent
     }
-    fn terrain_layer_for_destination(&self, pos: Coord3D) -> PathfindLayer {
+    fn terrain_layer_for_destination(&mut self, pos: Coord3D) -> PathfindLayer {
         let seed = self.seed_h ^ 0x4444;
         if self.layer_density > 0 && h3(cell_of(pos.x) as u32, cell_of(pos.y) as u32, seed).is_multiple_of(self.layer_density) {
             15

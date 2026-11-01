@@ -300,7 +300,8 @@ impl GameLogicHost for World {
         self.loop_cut("AI::update", &[]);
     }
     fn u_build_assistant_update(&mut self) {
-        self.loop_cut("BuildAssistant::update", &[]);
+        // batch I6: the world's own build assistant
+        self.build_assistant_update();
     }
     fn u_partition_update(&mut self) {
         if self.cuts.live_partition {
@@ -482,7 +483,6 @@ mod tests {
                 "MessageStream::appendMessage(MSG_LOGIC_CRC)",
                 "Recorder::update",
                 "AI::update",
-                "BuildAssistant::update",
             ]
         );
         assert_ne!(w.game_logic.crc, 0);

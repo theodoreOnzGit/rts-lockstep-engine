@@ -184,6 +184,10 @@ pub struct World {
     /// `TheVictoryConditions`.
     pub victory: crate::logic::world::victory_conditions::VictoryConditions,
     // --- end batch I5 ---
+    // --- batch I6 ---
+    /// `TheBuildAssistant`'s own data (the line-build scratch and the sell list).
+    pub build_assistant: crate::logic::world::build_assistant::BuildAssistant,
+    // --- end batch I6 ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -244,6 +248,9 @@ impl World {
             // --- batch I5 ---
             victory: crate::logic::world::victory_conditions::VictoryConditions::new(),
             // --- end batch I5 ---
+            // --- batch I6 ---
+            build_assistant: crate::logic::world::build_assistant::BuildAssistant::new(),
+            // --- end batch I6 ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

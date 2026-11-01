@@ -237,7 +237,7 @@ fn sp_unref(m: SpecialPowerModuleRef) -> (ObjectId, ModuleIndex) {
 }
 
 /// The objects of an iterator, in its order.
-fn iterator_ids(mut it: crate::logic::object_iter::SimpleObjectIterator<ObjectId>) -> Vec<ObjectId> {
+pub(crate) fn iterator_ids(mut it: crate::logic::object_iter::SimpleObjectIterator<ObjectId>) -> Vec<ObjectId> {
     let mut v = Vec::new();
     let mut cur = it.first();
     while let Some(o) = cur {
@@ -1040,8 +1040,8 @@ impl PlayerObjectHost for World {
         }
     }
     fn build_assistant_sell_object(&mut self, o: ObjectId) {
-        // the build assistant is not in the world yet (batch I6): the object code's cut point for the same call
-        self.cut(CutCall::BuildAssistantSellObject { object: o });
+        // batch I6: the world's own build assistant
+        self.build_assistant_sell(o);
     }
     fn obj_is_faction_structure(&self, o: ObjectId) -> bool {
         self.is_faction_structure(o)
@@ -1335,7 +1335,7 @@ pub(crate) mod tests {
     const INI: &str = "Object Tank\n KindOf = VEHICLE\n BuildCost = 900\n Prerequisites\n  Object = Barracks\n End\n\
                        \x20Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\nEnd\n\
-                       Object Barracks\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
+                       Object Barracks\n KindOf = STRUCTURE\n BuildCost = 600\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n\
                        Object Bunker\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\

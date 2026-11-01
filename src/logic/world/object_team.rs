@@ -279,6 +279,10 @@ impl World {
             // The skirmish ai doesn't know what to do with captured faction buildings except sell them.
             if self.is_faction_structure(id) {
                 self.cut(CutCall::BuildAssistantSellObject { object: id });
+                // batch I6: with `live_build_assistant`, the world's own build assistant
+                if self.cuts.live_build_assistant {
+                    self.build_assistant_sell(id);
+                }
             }
         }
     }

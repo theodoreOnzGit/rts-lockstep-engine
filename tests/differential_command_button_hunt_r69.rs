@@ -357,6 +357,7 @@ fn set_scene(w: &mut World, cfg: &[u32], slots: &Slots) {
                 command_type: TYPES[(f >> 2 & 7) as usize],
                 weapon_slot: (f >> 5 & 3) as i32,
                 special_power: power_id(&store, f >> 7 & 7),
+                thing_template: None,
             }
         })
         .collect();

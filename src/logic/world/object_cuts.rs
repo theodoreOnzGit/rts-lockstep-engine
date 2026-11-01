@@ -1782,6 +1782,8 @@ pub struct CommandButtonFacts {
     pub weapon_slot: i32,
     /// `getSpecialPowerTemplate()`: the template's id, `None` for `NULL`.
     pub special_power: Option<u32>,
+    /// batch I6: `getThingTemplate()`: the template's id, `None` for `NULL`.
+    pub thing_template: Option<u16>,
 }
 
 /// The tables and logs behind the cut points. See the module docs.
@@ -2118,6 +2120,18 @@ pub struct ObjectCuts {
     /// batch I4: the answers of the units `GameLogic::update` reaches that the world does not hold yet
     /// (`game_logic_host_world.rs`).
     pub game_loop: crate::logic::world::game_logic_host_world::GameLoopCuts,
+    /// batch I6: the object code's `TheBuildAssistant->sellObject(obj)` (a captured faction structure of a skirmish AI) is
+    /// the world's own build assistant's, not only a cut call. Off by default.
+    pub live_build_assistant: bool,
+    /// batch I6: `getAI()->isBusy()` of the objects whose AI is busy (the AI update is not a module of the world until I9).
+    pub ai_busy: BTreeSet<ObjectId>,
+    /// batch I6: the objects whose AI has no quick path (`isQuickPathAvailable` false).
+    pub ai_no_quick_path: BTreeSet<ObjectId>,
+    /// batch I6: a production queue's special power construction command button (its name), by object.
+    pub special_power_construction_buttons: BTreeMap<ObjectId, Vec<u8>>,
+    /// batch I6: the terrain visual's tiles that restrict construction (`getRestrictConstruction()`), by
+    /// [`terrain_cell`].
+    pub restricted_construction_cells: BTreeSet<usize>,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2273,6 +2287,11 @@ impl Default for ObjectCuts {
             live_teams: false,
             team_live_errors: Vec::new(),
             game_loop: Default::default(),
+            live_build_assistant: false,
+            ai_busy: BTreeSet::new(),
+            ai_no_quick_path: BTreeSet::new(),
+            special_power_construction_buttons: BTreeMap::new(),
+            restricted_construction_cells: BTreeSet::new(),
             next_drawable_id: 1,
         }
     }
