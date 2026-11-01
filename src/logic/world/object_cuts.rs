@@ -2132,6 +2132,8 @@ pub struct ObjectCuts {
     /// batch I6: the terrain visual's tiles that restrict construction (`getRestrictConstruction()`), by
     /// [`terrain_cell`].
     pub restricted_construction_cells: BTreeSet<usize>,
+    /// batch I7a: `TheCampaignManager` outside a campaign (what its `xfer` saves).
+    pub campaign: crate::logic::world::game_logic_save_host_world::CampaignStandIn,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2292,6 +2294,7 @@ impl Default for ObjectCuts {
             ai_no_quick_path: BTreeSet::new(),
             special_power_construction_buttons: BTreeMap::new(),
             restricted_construction_cells: BTreeSet::new(),
+            campaign: Default::default(),
             next_drawable_id: 1,
         }
     }

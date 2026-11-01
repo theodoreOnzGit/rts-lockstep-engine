@@ -66,6 +66,7 @@ pub mod team_live_world; // batch I3b: the world's own team and player answers (
 pub mod game_logic_host_world; // batch I4: GameLogicHost for World (the frame and the CRC)
 pub mod victory_host_world; // batch I5: VictoryHost for World, TheVictoryConditions in the world
 pub mod build_assistant_host_world; // batch I6: BuildAssistantHost for World, TheBuildAssistant in the world
+pub mod game_logic_save_host_world; // batch I7a: GameLogicSaveHost for World (the GameLogic save block)
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;
