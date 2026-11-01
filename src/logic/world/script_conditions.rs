@@ -161,65 +161,65 @@ pub struct SpecialPowerModuleInfo {
 pub trait ScriptConditionsHost {
     // --- the player list and players ---
     /// `ThePlayerList->getPlayerFromMask(mask)`.
-    fn sc_player_from_mask(&self, mask: u32) -> Option<PlayerH>;
+    fn sc_player_from_mask(&mut self, mask: u32) -> Option<PlayerH>;
     /// `ThePlayerList->getNeutralPlayer()`.
-    fn sc_neutral_player(&self) -> Option<PlayerH>;
+    fn sc_neutral_player(&mut self) -> Option<PlayerH>;
     /// `getPlayerMask()`.
-    fn sc_player_mask(&self, p: PlayerH) -> u32;
+    fn sc_player_mask(&mut self, p: PlayerH) -> u32;
     /// `hasAnyObjects()`.
-    fn sc_player_has_any_objects(&self, p: PlayerH) -> bool;
+    fn sc_player_has_any_objects(&mut self, p: PlayerH) -> bool;
     /// `hasAnyBuildFacility()`.
-    fn sc_player_has_any_build_facility(&self, p: PlayerH) -> bool;
+    fn sc_player_has_any_build_facility(&mut self, p: PlayerH) -> bool;
     /// `getMoney()->countMoney()`.
-    fn sc_player_money(&self, p: PlayerH) -> u32;
+    fn sc_player_money(&mut self, p: PlayerH) -> u32;
     /// `countBuildings()`.
-    fn sc_player_count_buildings(&self, p: PlayerH) -> i32;
+    fn sc_player_count_buildings(&mut self, p: PlayerH) -> i32;
     /// `countObjects(must, mustNot)`.
-    fn sc_player_count_objects(&self, p: PlayerH, must: &KindOfMaskType, must_not: &KindOfMaskType) -> i32;
+    fn sc_player_count_objects(&mut self, p: PlayerH, must: &KindOfMaskType, must_not: &KindOfMaskType) -> i32;
     /// `getEnergy()->hasSufficientPower()`.
-    fn sc_player_has_sufficient_power(&self, p: PlayerH) -> bool;
+    fn sc_player_has_sufficient_power(&mut self, p: PlayerH) -> bool;
     /// `getEnergy()->getEnergySupplyRatio()`.
-    fn sc_player_energy_supply_ratio(&self, p: PlayerH) -> f32;
+    fn sc_player_energy_supply_ratio(&mut self, p: PlayerH) -> f32;
     /// `getEnergy()->getProduction()`.
-    fn sc_player_energy_production(&self, p: PlayerH) -> i32;
+    fn sc_player_energy_production(&mut self, p: PlayerH) -> i32;
     /// `getEnergy()->getConsumption()`.
-    fn sc_player_energy_consumption(&self, p: PlayerH) -> i32;
+    fn sc_player_energy_consumption(&mut self, p: PlayerH) -> i32;
     /// `getPlayerTeams()`: each prototype's instance list, in order.
-    fn sc_player_teams(&self, p: PlayerH) -> Vec<Vec<TeamH>>;
+    fn sc_player_teams(&mut self, p: PlayerH) -> Vec<Vec<TeamH>>;
     /// `countObjectsByThingTemplate(n, templates, ignoreDead, counts)`: the count of each template, in order.
-    fn sc_player_count_objects_by_thing_template(&self, p: PlayerH, templates: &[TemplateH], ignore_dead: bool) -> Vec<i32>;
+    fn sc_player_count_objects_by_thing_template(&mut self, p: PlayerH, templates: &[TemplateH], ignore_dead: bool) -> Vec<i32>;
     /// `getSciencePurchasePoints()`.
-    fn sc_player_science_purchase_points(&self, p: PlayerH) -> i32;
+    fn sc_player_science_purchase_points(&mut self, p: PlayerH) -> i32;
     /// `isCapableOfPurchasingScience(science)`.
-    fn sc_player_is_capable_of_purchasing_science(&self, p: PlayerH, science: ScienceType) -> bool;
+    fn sc_player_is_capable_of_purchasing_science(&mut self, p: PlayerH, science: ScienceType) -> bool;
     /// `getSide()`.
-    fn sc_player_side(&self, p: PlayerH) -> AsciiString;
+    fn sc_player_side(&mut self, p: PlayerH) -> AsciiString;
     /// `getSupplyBoxValue()`.
-    fn sc_player_supply_box_value(&self, p: PlayerH) -> i32;
+    fn sc_player_supply_box_value(&mut self, p: PlayerH) -> i32;
     /// `isSupplySourceSafe(minSupplies)`.
     fn sc_player_is_supply_source_safe(&mut self, p: PlayerH, min_supplies: i32) -> bool;
     /// `isSupplySourceAttacked()`.
     fn sc_player_is_supply_source_attacked(&mut self, p: PlayerH) -> bool;
     /// `getMpStartIndex()`.
-    fn sc_player_mp_start_index(&self, p: PlayerH) -> i32;
+    fn sc_player_mp_start_index(&mut self, p: PlayerH) -> i32;
     /// `getAttackedBy(index)`.
-    fn sc_player_attacked_by(&self, p: PlayerH, index: i32) -> bool;
+    fn sc_player_attacked_by(&mut self, p: PlayerH, index: i32) -> bool;
 
     // --- the script engine ---
     /// `TheScriptEngine->getPlayerFromAsciiString(name)`.
-    fn sc_player_from_name(&self, name: &[u8]) -> Option<PlayerH>;
+    fn sc_player_from_name(&mut self, name: &[u8]) -> Option<PlayerH>;
     /// `TheScriptEngine->getTeamNamed(name)`.
-    fn sc_team_named(&self, name: &[u8]) -> Option<TeamH>;
+    fn sc_team_named(&mut self, name: &[u8]) -> Option<TeamH>;
     /// `TheScriptEngine->getUnitNamed(name)`.
-    fn sc_unit_named(&self, name: &[u8]) -> Option<ObjH>;
+    fn sc_unit_named(&mut self, name: &[u8]) -> Option<ObjH>;
     /// `TheScriptEngine->didUnitExist(name)`.
-    fn sc_did_unit_exist(&self, name: &[u8]) -> bool;
+    fn sc_did_unit_exist(&mut self, name: &[u8]) -> bool;
     /// `TheScriptEngine->getQualifiedTriggerAreaByName(name)`.
-    fn sc_trigger_named(&self, name: &[u8]) -> Option<TriggerH>;
+    fn sc_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH>;
     /// `TheScriptEngine->getFrameObjectCountChanged()`.
-    fn sc_frame_object_count_changed(&self) -> u32;
+    fn sc_frame_object_count_changed(&mut self) -> u32;
     /// `TheScriptEngine->getObjectTypes(name)` (a copy of the list).
-    fn sc_object_types(&self, name: &AsciiString) -> Option<ObjectTypes>;
+    fn sc_object_types(&mut self, name: &AsciiString) -> Option<ObjectTypes>;
     /// `TheScriptEngine->isVideoComplete(name, removeIfSo)`.
     fn sc_is_video_complete(&mut self, name: &[u8], remove: bool) -> bool;
     /// `TheScriptEngine->isSpeechComplete(name, removeIfSo)`.
@@ -237,90 +237,90 @@ pub trait ScriptConditionsHost {
     /// `TheScriptEngine->isScienceAcquired(playerIndex, science, removeIfSo)`.
     fn sc_is_science_acquired(&mut self, index: i32, science: ScienceType, remove: bool) -> bool;
     /// `TheScriptEngine->getObjectCount(playerIndex, name)`.
-    fn sc_object_count(&self, index: i32, name: &[u8]) -> i32;
+    fn sc_object_count(&mut self, index: i32, name: &[u8]) -> i32;
     /// `TheScriptEngine->setObjectCount(playerIndex, name, count)`.
     fn sc_set_object_count(&mut self, index: i32, name: &[u8], count: i32);
     /// `TheTeamFactory->findTeamPrototype(name)`: its instance list.
-    fn sc_team_prototype_instances(&self, name: &[u8]) -> Option<Vec<TeamH>>;
+    fn sc_team_prototype_instances(&mut self, name: &[u8]) -> Option<Vec<TeamH>>;
 
     // --- teams ---
     /// `hasAnyObjects()`.
-    fn sc_team_has_any_objects(&self, t: TeamH) -> bool;
+    fn sc_team_has_any_objects(&mut self, t: TeamH) -> bool;
     /// `hasAnyUnits()`.
-    fn sc_team_has_any_units(&self, t: TeamH) -> bool;
+    fn sc_team_has_any_units(&mut self, t: TeamH) -> bool;
     /// `getName()`.
-    fn sc_team_name(&self, t: TeamH) -> AsciiString;
+    fn sc_team_name(&mut self, t: TeamH) -> AsciiString;
     /// `someInsideSomeOutside(trigger, whichToConsider)`.
-    fn sc_team_some_inside_some_outside(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_some_inside_some_outside(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `allInside(trigger, whichToConsider)`.
-    fn sc_team_all_inside(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_all_inside(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `didAllEnter(trigger, whichToConsider)`.
-    fn sc_team_did_all_enter(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_did_all_enter(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `didPartialEnter(trigger, whichToConsider)`.
-    fn sc_team_did_partial_enter(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_did_partial_enter(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `didAllExit(trigger, whichToConsider)`.
-    fn sc_team_did_all_exit(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_did_all_exit(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `didPartialExit(trigger, whichToConsider)`.
-    fn sc_team_did_partial_exit(&self, t: TeamH, trig: TriggerH, which: u32) -> bool;
+    fn sc_team_did_partial_exit(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool;
     /// `didEnterOrExit()`.
-    fn sc_team_did_enter_or_exit(&self, t: TeamH) -> bool;
+    fn sc_team_did_enter_or_exit(&mut self, t: TeamH) -> bool;
     /// `getState()`.
-    fn sc_team_state(&self, t: TeamH) -> AsciiString;
+    fn sc_team_state(&mut self, t: TeamH) -> AsciiString;
     /// `isCreated()`.
-    fn sc_team_is_created(&self, t: TeamH) -> bool;
+    fn sc_team_is_created(&mut self, t: TeamH) -> bool;
     /// `getControllingPlayer()`.
-    fn sc_team_controlling_player(&self, t: TeamH) -> Option<PlayerH>;
+    fn sc_team_controlling_player(&mut self, t: TeamH) -> Option<PlayerH>;
     /// `iterate_TeamMemberList()`, in order.
-    fn sc_team_members(&self, t: TeamH) -> Vec<ObjH>;
+    fn sc_team_members(&mut self, t: TeamH) -> Vec<ObjH>;
 
     // --- objects ---
     /// `TheGameLogic->findObjectByID(id)`.
-    fn sc_find_object(&self, id: ObjectId) -> Option<ObjH>;
+    fn sc_find_object(&mut self, id: ObjectId) -> Option<ObjH>;
     /// `isEffectivelyDead()`.
-    fn sc_obj_is_effectively_dead(&self, o: ObjH) -> bool;
+    fn sc_obj_is_effectively_dead(&mut self, o: ObjH) -> bool;
     /// `getPosition()`.
-    fn sc_obj_position(&self, o: ObjH) -> Coord3D;
+    fn sc_obj_position(&mut self, o: ObjH) -> Coord3D;
     /// `getTemplate()`.
     fn sc_obj_template(&self, o: ObjH) -> Option<TemplateH>;
     /// `isKindOf(kind)`.
-    fn sc_obj_is_kind_of(&self, o: ObjH, kind: KindOfType) -> bool;
+    fn sc_obj_is_kind_of(&mut self, o: ObjH, kind: KindOfType) -> bool;
     /// `isInside(trigger)`.
-    fn sc_obj_is_inside(&self, o: ObjH, trig: TriggerH) -> bool;
+    fn sc_obj_is_inside(&mut self, o: ObjH, trig: TriggerH) -> bool;
     /// `didEnter(trigger)`.
-    fn sc_obj_did_enter(&self, o: ObjH, trig: TriggerH) -> bool;
+    fn sc_obj_did_enter(&mut self, o: ObjH, trig: TriggerH) -> bool;
     /// `didExit(trigger)`.
-    fn sc_obj_did_exit(&self, o: ObjH, trig: TriggerH) -> bool;
+    fn sc_obj_did_exit(&mut self, o: ObjH, trig: TriggerH) -> bool;
     /// `getBodyModule()` is not NULL.
-    fn sc_obj_has_body(&self, o: ObjH) -> bool;
+    fn sc_obj_has_body(&mut self, o: ObjH) -> bool;
     /// `getBodyModule()->getHealth()` and `getInitialHealth()` (with a body).
-    fn sc_obj_health(&self, o: ObjH) -> (f32, f32);
+    fn sc_obj_health(&mut self, o: ObjH) -> (f32, f32);
     /// `getBodyModule()->getLastDamageInfo()` (with a body).
-    fn sc_obj_last_damage(&self, o: ObjH) -> Option<LastDamage>;
+    fn sc_obj_last_damage(&mut self, o: ObjH) -> Option<LastDamage>;
     /// `getControllingPlayer()`.
-    fn sc_obj_controlling_player(&self, o: ObjH) -> Option<PlayerH>;
+    fn sc_obj_controlling_player(&mut self, o: ObjH) -> Option<PlayerH>;
     /// `getContain()`.
-    fn sc_obj_contain(&self, o: ObjH) -> Option<ContainInfo>;
+    fn sc_obj_contain(&mut self, o: ObjH) -> Option<ContainInfo>;
     /// `getStatusBits()`.
-    fn sc_obj_status(&self, o: ObjH) -> ObjectStatusMaskType;
+    fn sc_obj_status(&mut self, o: ObjH) -> ObjectStatusMaskType;
     /// `isDisabledByType(type)`.
-    fn sc_obj_is_disabled_by_type(&self, o: ObjH, t: DisabledType) -> bool;
+    fn sc_obj_is_disabled_by_type(&mut self, o: ObjH, t: DisabledType) -> bool;
     /// `isDisabled()`.
-    fn sc_obj_is_disabled(&self, o: ObjH) -> bool;
+    fn sc_obj_is_disabled(&mut self, o: ObjH) -> bool;
     /// `getShroudedStatus(playerIndex)`.
-    fn sc_obj_shrouded_status(&self, o: ObjH, index: i32) -> ObjectShroudStatus;
+    fn sc_obj_shrouded_status(&mut self, o: ObjH, index: i32) -> ObjectShroudStatus;
     /// `getAIUpdateInterface()->getCompletedWaypoint()`: `None` without an AI, `Some(None)` with no waypoint, else the waypoint's
     /// three path labels.
-    fn sc_obj_completed_waypoint(&self, o: ObjH) -> Option<Option<[AsciiString; 3]>>;
+    fn sc_obj_completed_waypoint(&mut self, o: ObjH) -> Option<Option<[AsciiString; 3]>>;
     /// `getContainedBy()` is not NULL.
-    fn sc_obj_is_contained(&self, o: ObjH) -> bool;
+    fn sc_obj_is_contained(&mut self, o: ObjH) -> bool;
     /// `isCaptured()`.
-    fn sc_obj_is_captured(&self, o: ObjH) -> bool;
+    fn sc_obj_is_captured(&mut self, o: ObjH) -> bool;
     /// `getSpecialPowerModule(power)`.
-    fn sc_obj_special_power_module(&self, o: ObjH, power: SpecialPowerH) -> Option<SpecialPowerModuleInfo>;
+    fn sc_obj_special_power_module(&mut self, o: ObjH, power: SpecialPowerH) -> Option<SpecialPowerModuleInfo>;
     /// `hasSpecialPower(type)`.
     fn sc_obj_has_special_power(&self, o: ObjH, power_type: i32) -> bool;
     /// `findUpdateModule("SupplyWarehouseDockUpdate")`'s `getBoxesStored()`, or `None` without one.
-    fn sc_obj_warehouse_boxes(&self, o: ObjH) -> Option<i32>;
+    fn sc_obj_warehouse_boxes(&mut self, o: ObjH) -> Option<i32>;
 
     // --- templates and stores ---
     /// `TheThingFactory->findTemplate(name)`.
@@ -328,68 +328,68 @@ pub trait ScriptConditionsHost {
     /// `getName()`.
     fn sc_template_name(&self, t: TemplateH) -> AsciiString;
     /// `friend_getBuildCost()`.
-    fn sc_template_build_cost(&self, t: TemplateH) -> i32;
+    fn sc_template_build_cost(&mut self, t: TemplateH) -> i32;
     /// `player->canBuild(template)` (for `ObjectTypes::canBuildAny`).
-    fn sc_player_can_build(&self, p: PlayerH, t: TemplateH) -> bool;
+    fn sc_player_can_build(&mut self, p: PlayerH, t: TemplateH) -> bool;
     /// `TheSpecialPowerStore->findSpecialPowerTemplate(name)`.
-    fn sc_find_special_power(&self, name: &[u8]) -> Option<SpecialPowerH>;
+    fn sc_find_special_power(&mut self, name: &[u8]) -> Option<SpecialPowerH>;
     /// `TheSpecialPowerStore->canUseSpecialPower(obj, power)`.
-    fn sc_can_use_special_power(&self, o: ObjH, power: SpecialPowerH) -> bool;
+    fn sc_can_use_special_power(&mut self, o: ObjH, power: SpecialPowerH) -> bool;
     /// `getSpecialPowerType()`.
     fn sc_special_power_type(&self, power: SpecialPowerH) -> i32;
     /// `TheScienceStore->getScienceFromInternalName(name)`.
-    fn sc_science_from_name(&self, name: &[u8]) -> ScienceType;
+    fn sc_science_from_name(&mut self, name: &[u8]) -> ScienceType;
     /// `TheControlBar->findCommandButton(name)`.
-    fn sc_find_command_button(&self, name: &[u8]) -> Option<ButtonH>;
+    fn sc_find_command_button(&mut self, name: &[u8]) -> Option<ButtonH>;
     /// `getSpecialPowerTemplate()`.
-    fn sc_button_special_power(&self, b: ButtonH) -> Option<SpecialPowerH>;
+    fn sc_button_special_power(&mut self, b: ButtonH) -> Option<SpecialPowerH>;
     /// `getUpgradeTemplate()` is not NULL.
-    fn sc_button_has_upgrade(&self, b: ButtonH) -> bool;
+    fn sc_button_has_upgrade(&mut self, b: ButtonH) -> bool;
     /// `isReady(obj)`.
-    fn sc_button_is_ready(&self, b: ButtonH, o: ObjH) -> bool;
+    fn sc_button_is_ready(&mut self, b: ButtonH, o: ObjH) -> bool;
 
     // --- trigger areas and the partition ---
     /// `pointInTrigger(point)`.
-    fn sc_trigger_point_in(&self, trig: TriggerH, p: ICoord3D) -> bool;
+    fn sc_trigger_point_in(&mut self, trig: TriggerH, p: ICoord3D) -> bool;
     /// `getCenterPoint()`.
-    fn sc_trigger_center(&self, trig: TriggerH) -> Coord3D;
+    fn sc_trigger_center(&mut self, trig: TriggerH) -> Coord3D;
     /// `getRadius()`.
-    fn sc_trigger_radius(&self, trig: TriggerH) -> f32;
+    fn sc_trigger_radius(&mut self, trig: TriggerH) -> f32;
     /// `iterateObjectsInRange(obj, visionRange, FROM_CENTER_2D, filters)`: with `relation` (an `ALLOW_*` set) the relationship filter
     /// first, then alive, not stealthed (unless detected or disguised) and on the same map side as `obj`.
-    fn sc_partition_seen_by(&self, o: ObjH, relation: Option<i32>) -> Vec<ObjH>;
+    fn sc_partition_seen_by(&mut self, o: ObjH, relation: Option<i32>) -> Vec<ObjH>;
     /// `iterateObjectsInRange(&center, distance, FROM_CENTER_2D, {structure, player affiliation (neutral, with self), on map})`.
-    fn sc_partition_supply_structures(&self, center: Coord3D, distance: f32, p: PlayerH) -> Vec<ObjH>;
+    fn sc_partition_supply_structures(&mut self, center: Coord3D, distance: f32, p: PlayerH) -> Vec<ObjH>;
     /// `getClosestObject(&center, radius, FROM_CENTER_2D, {tech building, allies, not own, on map})` is not NULL.
-    fn sc_partition_tech_building_near(&self, center: Coord3D, radius: f32, p: PlayerH) -> bool;
+    fn sc_partition_tech_building_near(&mut self, center: Coord3D, radius: f32, p: PlayerH) -> bool;
 
     // --- bridges (the terrain logic) ---
     /// `TheTerrainLogic->anyBridgesDamageStatesChanged()`.
-    fn sc_any_bridges_damage_states_changed(&self) -> bool;
+    fn sc_any_bridges_damage_states_changed(&mut self) -> bool;
     /// `TheTerrainLogic->isBridgeBroken(bridge)`.
-    fn sc_is_bridge_broken(&self, o: ObjH) -> bool;
+    fn sc_is_bridge_broken(&mut self, o: ObjH) -> bool;
     /// `TheTerrainLogic->isBridgeRepaired(bridge)`.
-    fn sc_is_bridge_repaired(&self, o: ObjH) -> bool;
+    fn sc_is_bridge_repaired(&mut self, o: ObjH) -> bool;
 
     // --- the rest ---
     /// `TheGameLogic->getFrame()`.
-    fn sc_frame(&self) -> u32;
+    fn sc_frame(&mut self) -> u32;
     /// `TheGameEngine->isMultiplayerSession()`.
-    fn sc_is_multiplayer_session(&self) -> bool;
+    fn sc_is_multiplayer_session(&mut self) -> bool;
     /// `TheInGameUI->getFrameSelectionChanged()`.
-    fn sc_frame_selection_changed(&self) -> u32;
+    fn sc_frame_selection_changed(&mut self) -> u32;
     /// `TheInGameUI->getAllSelectedDrawables()`: each drawable's object's name (`None`: a drawable with no object).
-    fn sc_selected_object_names(&self) -> Vec<Option<AsciiString>>;
+    fn sc_selected_object_names(&mut self) -> Vec<Option<AsciiString>>;
     /// `TheTacticalView->isCameraMovementFinished()`.
-    fn sc_camera_movement_finished(&self) -> bool;
+    fn sc_camera_movement_finished(&mut self) -> bool;
     /// `TheVictoryConditions->isLocalAlliedVictory()`.
-    fn sc_is_local_allied_victory(&self) -> Result<bool, IniError>;
+    fn sc_is_local_allied_victory(&mut self) -> Result<bool, IniError>;
     /// `TheVictoryConditions->isLocalAlliedDefeat()`.
-    fn sc_is_local_allied_defeat(&self) -> Result<bool, IniError>;
+    fn sc_is_local_allied_defeat(&mut self) -> Result<bool, IniError>;
     /// `TheVictoryConditions->isLocalDefeat()`.
-    fn sc_is_local_defeat(&self) -> bool;
+    fn sc_is_local_defeat(&mut self) -> bool;
     /// `TheAudio->hasMusicTrackCompleted(name, numberOfTimes)`.
-    fn sc_music_track_completed(&self, name: &[u8], times: i32) -> bool;
+    fn sc_music_track_completed(&mut self, name: &[u8], times: i32) -> bool;
 }
 
 /// `TransportStatus`: what `UNIT_EMPTIED` last saw of a transport.
@@ -472,7 +472,7 @@ impl ScriptConditions {
     pub fn update(&mut self) {}
 
     /// `playerFromParam(pSideParm)`. See the module docs for the cached mask.
-    pub fn player_from_param<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, i: usize) -> R<Option<PlayerH>> {
+    pub fn player_from_param<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, i: usize) -> R<Option<PlayerH>> {
         let parm = parm_mut(c, i)?;
         let mut mask = parm.int as u32;
         let player;
@@ -495,7 +495,7 @@ impl ScriptConditions {
 
     /// `objectTypesFromParam(pTypeParm, outObjectTypes)`: the list the script engine has by the parameter's name, else a list of that
     /// one name; an empty name leaves the list empty.
-    pub fn object_types_from_param<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, i: usize) -> R<ObjectTypes> {
+    pub fn object_types_from_param<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, i: usize) -> R<ObjectTypes> {
         let mut out = ObjectTypes::new();
         let st = ascii(&s(c, i)?);
         if st.is_empty() {
@@ -514,7 +514,7 @@ impl ScriptConditions {
     }
 
     /// `prepForPlayerCounting` then `countObjectsByThingTemplate`: `None` when no name is a template.
-    fn count_types<H: ScriptConditionsHost>(h: &H, p: PlayerH, types: &ObjectTypes, ignore_dead: bool) -> Option<i32> {
+    fn count_types<H: ScriptConditionsHost>(h: &mut H, p: PlayerH, types: &ObjectTypes, ignore_dead: bool) -> Option<i32> {
         let mut templates = Vec::new();
         let mut counts = Vec::new();
         let n = types.prep_for_player_counting(|name| h.sc_find_template(name), &mut templates, &mut counts);
@@ -527,12 +527,12 @@ impl ScriptConditions {
     }
 
     /// Whether any team of the player entered or exited an area since the last check (the area-counting conditions' "any changes").
-    fn any_team_entered_or_exited<H: ScriptConditionsHost>(h: &H, p: PlayerH) -> bool {
+    fn any_team_entered_or_exited<H: ScriptConditionsHost>(h: &mut H, p: PlayerH) -> bool {
         h.sc_player_teams(p).iter().any(|proto| proto.iter().any(|t| h.sc_team_did_enter_or_exit(*t)))
     }
 
     /// Every member of every team of the player, in order.
-    fn player_members<H: ScriptConditionsHost>(h: &H, p: PlayerH) -> Vec<ObjH> {
+    fn player_members<H: ScriptConditionsHost>(h: &mut H, p: PlayerH) -> Vec<ObjH> {
         let mut out = Vec::new();
         for proto in h.sc_player_teams(p) {
             for t in proto {
@@ -542,28 +542,28 @@ impl ScriptConditions {
         out
     }
 
-    fn all_destroyed<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize) -> R<bool> {
+    fn all_destroyed<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize) -> R<bool> {
         Ok(match self.player_from_param(h, c, sp)? {
             Some(p) => !h.sc_player_has_any_objects(p),
             None => true, // Non existent player is all destroyed.
         })
     }
 
-    fn all_build_facilities_destroyed<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize) -> R<bool> {
+    fn all_build_facilities_destroyed<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize) -> R<bool> {
         Ok(match self.player_from_param(h, c, sp)? {
             Some(p) => !h.sc_player_has_any_build_facility(p),
             None => true,
         })
     }
 
-    fn is_destroyed<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize) -> R<bool> {
+    fn is_destroyed<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize) -> R<bool> {
         Ok(match h.sc_team_named(&s(c, tp)?) {
             Some(t) => !h.sc_team_has_any_objects(t),
             None => false, // Non existent team is not destroyed.
         })
     }
 
-    fn named_unit_destroyed<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn named_unit_destroyed<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         let name = s(c, up)?;
         if let Some(o) = h.sc_unit_named(&name) {
             return Ok(h.sc_obj_is_effectively_dead(o));
@@ -571,14 +571,14 @@ impl ScriptConditions {
         Ok(h.sc_did_unit_exist(&name))
     }
 
-    fn named_unit_exists<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn named_unit_exists<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         Ok(match h.sc_unit_named(&s(c, up)?) {
             Some(o) => !h.sc_obj_is_effectively_dead(o),
             None => false,
         })
     }
 
-    fn named_unit_dying<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn named_unit_dying<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         let name = s(c, up)?;
         if let Some(o) = h.sc_unit_named(&name) {
             return Ok(h.sc_obj_is_effectively_dead(o));
@@ -588,7 +588,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn named_unit_totally_dead<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn named_unit_totally_dead<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         let name = s(c, up)?;
         if h.sc_unit_named(&name).is_some() {
             return Ok(false); // if the unit still exists, it isn't totally dead.
@@ -596,7 +596,7 @@ impl ScriptConditions {
         Ok(h.sc_did_unit_exist(&name) != plant(3842))
     }
 
-    fn has_units<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize) -> R<bool> {
+    fn has_units<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize) -> R<bool> {
         let desired = s(c, tp)?;
         if desired == THIS_TEAM {
             return Ok(match h.sc_team_named(&desired) {
@@ -619,7 +619,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn team_inside_area_partially<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, ap: usize, kp: usize) -> R<bool> {
+    fn team_inside_area_partially<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, ap: usize, kp: usize) -> R<bool> {
         let team = h.sc_team_named(&s(c, tp)?);
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         if let Some(t) = team {
@@ -629,7 +629,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn named_inside_area<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, ap: usize) -> R<bool> {
+    fn named_inside_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, ap: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         let p = h.sc_obj_position(o);
@@ -640,7 +640,7 @@ impl ScriptConditions {
     #[allow(clippy::too_many_arguments)]
     fn player_has_unit_type_in_area<H: ScriptConditionsHost>(
         &self,
-        h: &H,
+        h: &mut H,
         c: &mut Condition,
         pp: usize,
         cp: usize,
@@ -684,7 +684,7 @@ impl ScriptConditions {
     #[allow(clippy::too_many_arguments)]
     fn player_has_unit_kind_in_area<H: ScriptConditionsHost>(
         &self,
-        h: &H,
+        h: &mut H,
         c: &mut Condition,
         pp: usize,
         cp: usize,
@@ -729,7 +729,7 @@ impl ScriptConditions {
         Ok(comparison)
     }
 
-    fn team_state_is<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, stp: usize, want: bool) -> R<bool> {
+    fn team_state_is<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, stp: usize, want: bool) -> R<bool> {
         let team = h.sc_team_named(&s(c, tp)?);
         let state = s(c, stp)?;
         Ok(match team {
@@ -738,7 +738,7 @@ impl ScriptConditions {
         })
     }
 
-    fn team_inside_area_entirely<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, ap: usize, kp: usize) -> R<bool> {
+    fn team_inside_area_entirely<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, ap: usize, kp: usize) -> R<bool> {
         let team = h.sc_team_named(&s(c, tp)?);
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         Ok(match team {
@@ -747,7 +747,7 @@ impl ScriptConditions {
         })
     }
 
-    fn named_attacked_by_type<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, typ: usize) -> R<bool> {
+    fn named_attacked_by_type<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, typ: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         if !h.sc_obj_has_body(o) {
             return Ok(false);
@@ -769,7 +769,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn team_attacked_by_type<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, typ: usize) -> R<bool> {
+    fn team_attacked_by_type<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, typ: usize) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let _outer = self.object_types_from_param(h, c, typ)?;
         for o in h.sc_team_members(team) {
@@ -793,7 +793,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn named_attacked_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, up: usize, pp: usize) -> R<bool> {
+    fn named_attacked_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, up: usize, pp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         if !h.sc_obj_has_body(o) {
             return Ok(false);
@@ -815,7 +815,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn team_attacked_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
+    fn team_attacked_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         for o in h.sc_team_members(team) {
             if !h.sc_obj_has_body(o) {
@@ -830,7 +830,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn built_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, typ: usize, pp: usize) -> R<bool> {
+    fn built_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, typ: usize, pp: usize) -> R<bool> {
         if c.custom_data != 0 && h.sc_frame_object_count_changed() == c.custom_frame {
             // object count hasn't changed.  Use cached value.
             if c.custom_data == 1 {
@@ -851,14 +851,14 @@ impl ScriptConditions {
         Ok(sum != 0)
     }
 
-    fn team_created<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize) -> R<bool> {
+    fn team_created<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize) -> R<bool> {
         Ok(match h.sc_team_named(&s(c, tp)?) {
             Some(t) => h.sc_team_is_created(t),
             None => false,
         })
     }
 
-    fn unit_health<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, cp: usize, hp: usize) -> R<bool> {
+    fn unit_health<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, cp: usize, hp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         if !h.sc_obj_has_body(o) {
             return Ok(false);
@@ -868,7 +868,7 @@ impl ScriptConditions {
         Ok(compare(int(c, cp)?, cur_percent, int(c, hp)?).unwrap_or(false))
     }
 
-    fn player_has_credits<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, crp: usize, cp: usize, pp: usize) -> R<bool> {
+    fn player_has_credits<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, crp: usize, cp: usize, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         // (the parameter's Int against the money's UnsignedInt: compared unsigned)
         if plant(3850) {
@@ -878,7 +878,7 @@ impl ScriptConditions {
         Ok(compare(int(c, cp)?, credits, h.sc_player_money(p)).unwrap_or(false))
     }
 
-    fn building_entered<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, ip: usize) -> R<bool> {
+    fn building_entered<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, ip: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, ip)?) else { return Ok(false) };
         let Some(contain) = h.sc_obj_contain(o) else { return Ok(false) };
         let mask = contain.player_who_entered;
@@ -889,13 +889,13 @@ impl ScriptConditions {
         Ok(mask == h.sc_player_mask(p))
     }
 
-    fn is_building_empty<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, ip: usize) -> R<bool> {
+    fn is_building_empty<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, ip: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, ip)?) else { return Ok(false) };
         let Some(contain) = h.sc_obj_contain(o) else { return Ok(false) };
         Ok(contain.count == 0)
     }
 
-    fn enemy_sighted<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, ip: usize, ap: usize, pp: usize) -> R<bool> {
+    fn enemy_sighted<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, ip: usize, ap: usize, pp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, ip)?) else { return Ok(false) };
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let relation = match int(c, ap)? {
@@ -918,7 +918,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn type_sighted<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, ip: usize, typ: usize, pp: usize) -> R<bool> {
+    fn type_sighted<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, ip: usize, typ: usize, pp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, ip)?) else { return Ok(false) };
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let types = self.object_types_from_param(h, c, typ)?;
@@ -934,7 +934,7 @@ impl ScriptConditions {
     }
 
     /// Visible to the player: not held, not stealthed unless detected or disguised, and its shroud clear or partly clear.
-    fn discovered_by<H: ScriptConditionsHost>(h: &H, o: ObjH, index: i32) -> Option<bool> {
+    fn discovered_by<H: ScriptConditionsHost>(h: &mut H, o: ObjH, index: i32) -> Option<bool> {
         if h.sc_obj_is_disabled_by_type(o, DISABLED_HELD) {
             return None;
         }
@@ -946,13 +946,13 @@ impl ScriptConditions {
         Some(shroud == ObjectShroudStatus::Clear || shroud == ObjectShroudStatus::PartialClear)
     }
 
-    fn named_discovered<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, ip: usize, pp: usize) -> R<bool> {
+    fn named_discovered<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, ip: usize, pp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, ip)?) else { return Ok(false) };
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         Ok(Self::discovered_by(h, o, p).unwrap_or(false))
     }
 
-    fn team_discovered<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
+    fn team_discovered<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         for o in h.sc_team_members(team) {
@@ -963,24 +963,24 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn named_owned_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, up: usize, pp: usize) -> R<bool> {
+    fn named_owned_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, up: usize, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         Ok(h.sc_obj_controlling_player(o) == Some(p))
     }
 
-    fn team_owned_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
+    fn team_owned_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, tp: usize, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let Some(t) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         Ok(h.sc_team_controlling_player(t) == Some(p))
     }
 
-    fn player_has_n_or_fewer_buildings<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, np: usize, pp: usize) -> R<bool> {
+    fn player_has_n_or_fewer_buildings<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, np: usize, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         Ok(int(c, np)? >= h.sc_player_count_buildings(p))
     }
 
-    fn player_has_n_or_fewer_faction_buildings<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, np: usize, pp: usize) -> R<bool> {
+    fn player_has_n_or_fewer_faction_buildings<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, np: usize, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let mut mask = KindOfMaskType::new();
         mask.set(KINDOF_MP_COUNT_FOR_VICTORY, 1);
@@ -988,7 +988,7 @@ impl ScriptConditions {
         Ok(int(c, np)? >= h.sc_player_count_objects(p, &mask, &KindOfMaskType::new()))
     }
 
-    fn player_has_power<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize) -> R<bool> {
+    fn player_has_power<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         Ok(h.sc_player_has_sufficient_power(p))
     }
@@ -997,13 +997,13 @@ impl ScriptConditions {
         labels.iter().any(|l| l.str() == path)
     }
 
-    fn named_reached_waypoints_end<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, wp: usize) -> R<bool> {
+    fn named_reached_waypoints_end<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, wp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         let Some(Some(labels)) = h.sc_obj_completed_waypoint(o) else { return Ok(false) };
         Ok(Self::on_path(&labels, &s(c, wp)?))
     }
 
-    fn team_reached_waypoints_end<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, wp: usize) -> R<bool> {
+    fn team_reached_waypoints_end<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, wp: usize) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let path = s(c, wp)?;
         let mut any_at_end = false;
@@ -1018,7 +1018,7 @@ impl ScriptConditions {
         Ok(any_at_end)
     }
 
-    fn named_selected<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, up: usize) -> R<bool> {
+    fn named_selected<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, up: usize) -> R<bool> {
         if h.sc_is_multiplayer_session() {
             return Ok(false);
         }
@@ -1049,7 +1049,7 @@ impl ScriptConditions {
     }
 
     /// The four "from unit" queries: the unit's id when one is named (a named unit that is gone answers false).
-    fn source_id<H: ScriptConditionsHost>(h: &H, c: &Condition, up: Option<usize>) -> R<Option<ObjectId>> {
+    fn source_id<H: ScriptConditionsHost>(h: &mut H, c: &Condition, up: Option<usize>) -> R<Option<ObjectId>> {
         match up {
             None => Ok(Some(0)),
             Some(i) => Ok(h.sc_unit_named(&s(c, i)?)),
@@ -1082,7 +1082,7 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn can_purchase_science<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, scp: usize) -> R<bool> {
+    fn can_purchase_science<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, scp: usize) -> R<bool> {
         if let Some(p) = self.player_from_param(h, c, pp)? {
             let science = h.sc_science_from_name(&s(c, scp)?);
             if science == SCIENCE_INVALID {
@@ -1093,14 +1093,14 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn science_purchase_points<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, np: usize) -> R<bool> {
+    fn science_purchase_points<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, np: usize) -> R<bool> {
         if let Some(p) = self.player_from_param(h, c, pp)? {
             return Ok(h.sc_player_science_purchase_points(p) >= int(c, np)?);
         }
         Ok(false)
     }
 
-    fn named_has_free_container_slots<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn named_has_free_container_slots<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         Ok(match h.sc_obj_contain(o) {
             Some(contain) => contain.count < contain.max,
@@ -1108,7 +1108,7 @@ impl ScriptConditions {
         })
     }
 
-    fn named_entered_area<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, ap: usize) -> R<bool> {
+    fn named_entered_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, ap: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         if h.sc_obj_is_kind_of(o, KINDOF_INERT) {
             return Ok(false);
@@ -1117,14 +1117,14 @@ impl ScriptConditions {
         Ok(h.sc_obj_did_enter(o, trig))
     }
 
-    fn named_exited_area<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, ap: usize) -> R<bool> {
+    fn named_exited_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, ap: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         Ok(h.sc_obj_did_exit(o, trig))
     }
 
     /// The four team enter/exit questions (`which`: 0 all enter, 1 partial enter, 2 all exit, 3 partial exit).
-    fn team_entered_exited<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, ap: usize, kp: usize, which: u8) -> R<bool> {
+    fn team_entered_exited<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, ap: usize, kp: usize, which: u8) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         let k = int(c, kp)? as u32;
@@ -1136,7 +1136,7 @@ impl ScriptConditions {
         })
     }
 
-    fn player_unit_condition<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, cp: usize, np: usize, typ: usize) -> R<bool> {
+    fn player_unit_condition<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, cp: usize, np: usize, typ: usize) -> R<bool> {
         if c.custom_data != 0 && h.sc_frame_object_count_changed() == c.custom_frame {
             if c.custom_data == 1 {
                 return Ok(true);
@@ -1154,14 +1154,14 @@ impl ScriptConditions {
         Ok(comparison)
     }
 
-    fn percent_power<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, cp: usize, pcp: usize) -> R<bool> {
+    fn percent_power<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, cp: usize, pcp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let ratio = h.sc_player_energy_supply_ratio(p);
         let test = int(c, pcp)? as f32 / 100.0f32;
         Ok(compare(int(c, cp)?, ratio, test).unwrap_or(false))
     }
 
-    fn excess_power<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, cp: usize, kp: usize) -> R<bool> {
+    fn excess_power<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, cp: usize, kp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, pp)? else { return Ok(false) };
         let desired = int(c, kp)?;
         let actual = h
@@ -1171,7 +1171,7 @@ impl ScriptConditions {
         Ok(compare(int(c, cp)?, actual, desired).unwrap_or(false))
     }
 
-    fn skirmish_special_power_is_ready<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, pwp: usize) -> R<bool> {
+    fn skirmish_special_power_is_ready<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, pwp: usize) -> R<bool> {
         let v = int(c, pwp)?;
         if v == -1 {
             return Ok(false);
@@ -1206,13 +1206,13 @@ impl ScriptConditions {
         Ok(false)
     }
 
-    fn player_destroyed_n_or_more_buildings<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, pp: usize, op: usize) -> R<bool> {
+    fn player_destroyed_n_or_more_buildings<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, pp: usize, op: usize) -> R<bool> {
         let _player = self.player_from_param(h, c, pp)?;
         let _opponent = self.player_from_param(h, c, op)?;
         Ok(false)
     }
 
-    fn unit_has_emptied<H: ScriptConditionsHost>(&mut self, h: &H, c: &Condition, up: usize) -> R<bool> {
+    fn unit_has_emptied<H: ScriptConditionsHost>(&mut self, h: &mut H, c: &Condition, up: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         let idx = self.transport_statuses.iter().position(|st| st.obj_id == o);
         let num_peeps = h.sc_obj_contain(o).map(|c| c.count as i32).unwrap_or(0);
@@ -1232,7 +1232,7 @@ impl ScriptConditions {
     }
 
     /// `evaluateTeamIsContained(pTeamParm, allContained)`.
-    pub fn team_is_contained<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, all_contained: bool) -> R<bool> {
+    pub fn team_is_contained<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, all_contained: bool) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let mut any_considered = false;
         for o in h.sc_team_members(team) {
@@ -1250,12 +1250,12 @@ impl ScriptConditions {
         Ok((any_considered || plant(3848)) && all_contained)
     }
 
-    fn unit_has_object_status<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, up: usize, stp: usize) -> R<bool> {
+    fn unit_has_object_status<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, up: usize, stp: usize) -> R<bool> {
         let Some(o) = h.sc_unit_named(&s(c, up)?) else { return Ok(false) };
         Ok(h.sc_obj_status(o).test_for_any(&parm(c, stp)?.object_status))
     }
 
-    fn team_has_object_status<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, stp: usize, entire: bool) -> R<bool> {
+    fn team_has_object_status<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, stp: usize, entire: bool) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         for o in h.sc_team_members(team) {
             let has = h.sc_obj_status(o).test_for_any(&parm(c, stp)?.object_status);
@@ -1268,7 +1268,7 @@ impl ScriptConditions {
         Ok(entire)
     }
 
-    fn skirmish_value_in_area<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, cp: usize, mp: usize, ap: usize) -> R<bool> {
+    fn skirmish_value_in_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, cp: usize, mp: usize, ap: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         let mut any_changes = c.custom_data == 0;
@@ -1299,12 +1299,12 @@ impl ScriptConditions {
         Ok(comparison)
     }
 
-    fn skirmish_player_is_faction<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, fp: usize) -> R<bool> {
+    fn skirmish_player_is_faction<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, fp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         Ok(h.sc_player_side(p).str() == s(c, fp)?.as_slice())
     }
 
-    fn skirmish_supplies_within<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, dp: usize, lp: usize, vp: usize) -> R<bool> {
+    fn skirmish_supplies_within<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, dp: usize, lp: usize, vp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let Some(trig) = h.sc_trigger_named(&s(c, lp)?) else { return Ok(false) };
         let center = h.sc_trigger_center(trig);
@@ -1321,7 +1321,7 @@ impl ScriptConditions {
         Ok(max_value > compare_to)
     }
 
-    fn skirmish_tech_building_within<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, dp: usize, lp: usize) -> R<bool> {
+    fn skirmish_tech_building_within<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, dp: usize, lp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         if c.custom_data == 1 {
             return Ok(true);
@@ -1338,7 +1338,7 @@ impl ScriptConditions {
     }
 
     /// `evaluateSkirmishCommandButtonIsReady(pSkirmishPlayerParm, pTeamParm, pCommandButtonParm, allReady)` (the player is not read).
-    pub fn skirmish_command_button_is_ready<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, tp: usize, bp: usize, all_ready: bool) -> R<bool> {
+    pub fn skirmish_command_button_is_ready<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, tp: usize, bp: usize, all_ready: bool) -> R<bool> {
         let Some(team) = h.sc_team_named(&s(c, tp)?) else { return Ok(false) };
         let Some(button) = h.sc_find_command_button(&s(c, bp)?) else { return Ok(false) };
         for o in h.sc_team_members(team) {
@@ -1360,19 +1360,27 @@ impl ScriptConditions {
         Ok(all_ready)
     }
 
-    fn skirmish_unowned_faction_unit_comparison<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, cp: usize, np: usize) -> R<bool> {
+    fn skirmish_unowned_faction_unit_comparison<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, cp: usize, np: usize) -> R<bool> {
         let Some(p) = h.sc_neutral_player() else { return Ok(false) };
         let n = Self::player_members(h, p).into_iter().filter(|o| h.sc_obj_is_disabled_by_type(*o, DISABLED_UNMANNED)).count() as i32;
         Ok(compare(int(c, cp)?, n, int(c, np)?).unwrap_or(false))
     }
 
-    fn skirmish_has_prereqs_to_build<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, typ: usize) -> R<bool> {
+    fn skirmish_has_prereqs_to_build<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, typ: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let types = self.object_types_from_param(h, c, typ)?;
-        Ok(types.can_build_any(|name| h.sc_find_template(name), |t| h.sc_player_can_build(p, t)))
+        // `ObjectTypes::canBuildAny(player)`: the first name that is a template the player can build (in list order)
+        for i in 0..types.list_size() {
+            if let Some(t) = h.sc_find_template(&types.get_nth_in_list(i as i32)) {
+                if h.sc_player_can_build(p, t) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
-    fn skirmish_comparison_garrisoned<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, cp: usize, np: usize) -> R<bool> {
+    fn skirmish_comparison_garrisoned<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, cp: usize, np: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let n = Self::player_members(h, p)
             .into_iter()
@@ -1381,13 +1389,13 @@ impl ScriptConditions {
         Ok(compare(int(c, cp)?, n, int(c, np)?).unwrap_or(false))
     }
 
-    fn skirmish_comparison_captured<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, cp: usize, np: usize) -> R<bool> {
+    fn skirmish_comparison_captured<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, cp: usize, np: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let n = Self::player_members(h, p).into_iter().filter(|o| h.sc_obj_is_captured(*o)).count() as i32;
         Ok(compare(int(c, cp)?, n, int(c, np)?).unwrap_or(false))
     }
 
-    fn skirmish_player_has_units_in_area<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
+    fn skirmish_player_has_units_in_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
         let Some(trig) = h.sc_trigger_named(&s(c, ap)?) else { return Ok(false) };
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let mut any_changes = c.custom_data == 0;
@@ -1442,19 +1450,19 @@ impl ScriptConditions {
         Ok(h.sc_player_is_supply_source_attacked(p))
     }
 
-    fn skirmish_start_position<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, np: usize) -> R<bool> {
+    fn skirmish_start_position<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, np: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let ndx = int(c, np)?.wrapping_sub(1); // externally 1, 2, 3, internally 0, 1, 2.
         Ok(ndx == h.sc_player_mp_start_index(p))
     }
 
-    fn skirmish_attacked_by_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
+    fn skirmish_attacked_by_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let Some(src) = self.player_from_param(h, c, ap)? else { return Ok(false) };
         Ok(h.sc_player_attacked_by(p, src))
     }
 
-    fn skirmish_player_is_outside_area<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
+    fn skirmish_player_is_outside_area<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, ap: usize) -> R<bool> {
         if self.player_from_param(h, c, sp)?.is_none() {
             return Ok(false);
         }
@@ -1464,7 +1472,7 @@ impl ScriptConditions {
         Ok(!self.skirmish_player_has_units_in_area(h, c, sp, ap)?)
     }
 
-    fn skirmish_has_discovered_player<H: ScriptConditionsHost>(&self, h: &H, c: &mut Condition, sp: usize, dp: usize) -> R<bool> {
+    fn skirmish_has_discovered_player<H: ScriptConditionsHost>(&self, h: &mut H, c: &mut Condition, sp: usize, dp: usize) -> R<bool> {
         let Some(p) = self.player_from_param(h, c, sp)? else { return Ok(false) };
         let Some(by) = self.player_from_param(h, c, dp)? else { return Ok(false) };
         for o in Self::player_members(h, p) {
@@ -1624,7 +1632,7 @@ impl ScriptConditions {
     }
 
     /// `evaluateBridgeBroken` / `evaluateBridgeRepaired`: nothing to check while no bridge changed its damage state.
-    fn bridge<H: ScriptConditionsHost>(&self, h: &H, c: &Condition, bp: usize, broken: bool) -> R<bool> {
+    fn bridge<H: ScriptConditionsHost>(&self, h: &mut H, c: &Condition, bp: usize, broken: bool) -> R<bool> {
         if !h.sc_any_bridges_damage_states_changed() {
             return Ok(false);
         }

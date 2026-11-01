@@ -192,6 +192,10 @@ pub struct World {
     /// `TheScriptEngine` (the scripts themselves are the sides list's).
     pub script_engine: crate::logic::world::script_engine::ScriptEngine,
     // --- end batch I8a ---
+    // --- batch I8b ---
+    /// `TheScriptConditions` (the transports `UNIT_EMPTIED` has seen).
+    pub script_conditions: crate::logic::world::script_conditions::ScriptConditions,
+    // --- end batch I8b ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -258,6 +262,9 @@ impl World {
             // --- batch I8a ---
             script_engine: crate::logic::world::script_engine::ScriptEngine::new(),
             // --- end batch I8a ---
+            // --- batch I8b ---
+            script_conditions: crate::logic::world::script_conditions::ScriptConditions::new(),
+            // --- end batch I8b ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

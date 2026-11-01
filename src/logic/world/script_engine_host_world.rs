@@ -23,8 +23,8 @@
 //!   factory's prototypes and teams, the objects (names, indicator colours, controlling players, AI, death), the
 //!   terrain's trigger areas and waypoints, the partition manager's shroud reveals, the thing factory and templates,
 //!   and the science store.
-//! - **Cut points** ([`CutCall::Host`], answers in tables): `TheScriptConditions` and `TheScriptActions` (batches I8b and
-//!   I8c: a condition is false, an action is logged), the AI's groups and its enemies (batch I9), the audio, the
+//! - **Cut points** ([`CutCall::Host`], answers in tables): ~~`TheScriptConditions` (batch I8b: a condition is false)~~ (the
+//!   world's since batch I8b), `TheScriptActions` (batch I8c: an action is logged), the AI's groups and its enemies (batch I9), the audio, the
 //!   campaign, the message stream and the game engine's frame limit.
 //!
 //! `p1w13-sonnet`, integration batch I8a, 2026-11-01.
@@ -95,13 +95,15 @@ impl ScriptEngineHost for World {
         self.se_cut("ScriptActions::reset", &[], &[]);
     }
     fn se_conditions_reset(&mut self) {
-        self.se_cut("ScriptConditions::reset", &[], &[]);
+        // batch I8b: the world's own conditions
+        self.script_conditions.reset();
     }
     fn se_actions_update(&mut self) {
         self.se_cut("ScriptActions::update", &[], &[]);
     }
     fn se_conditions_update(&mut self) {
-        self.se_cut("ScriptConditions::update", &[], &[]);
+        // batch I8b: the world's own conditions (`update()` is empty upstream)
+        self.script_conditions.update();
     }
     fn se_actions_close_windows(&mut self) {
         self.se_cut("ScriptActions::closeWindows", &[], &[]);
@@ -111,18 +113,23 @@ impl ScriptEngineHost for World {
         self.se_cut("ScriptActions::executeAction", &[i64::from(action.action_type)], &[]);
         Ok(())
     }
-    fn se_evaluate_condition(&mut self, _engine: &mut ScriptEngine, condition: &mut Condition) -> R<bool> {
-        // `TheScriptConditions` comes in with batch I8b
-        self.se_cut("ScriptConditions::evaluateCondition", &[i64::from(condition.condition_type)], &[]);
-        Ok(false)
+    fn se_evaluate_condition(&mut self, engine: &mut ScriptEngine, condition: &mut Condition) -> R<bool> {
+        // batch I8b: the world's own conditions
+        self.evaluate_condition_with(engine, condition)
     }
-    fn se_skirmish_command_button_is_ready(&mut self, _engine: &mut ScriptEngine, _p1: Option<&Parameter>, _p2: Option<&Parameter>, all: bool) -> R<bool> {
-        self.se_cut("ScriptConditions::evaluateSkirmishCommandButtonIsReady", &[i64::from(all)], &[]);
-        Ok(false)
+    fn se_skirmish_command_button_is_ready(&mut self, engine: &mut ScriptEngine, p1: Option<&Parameter>, p2: Option<&Parameter>, all: bool) -> R<bool> {
+        // `evaluateSkirmishCommandButtonIsReady(NULL, p1, p2, allReady)`: the parameters as a condition's 1 and 2
+        let mut c = Condition::new_for_read();
+        c.num_parms = 3;
+        c.parms[1] = p1.cloned();
+        c.parms[2] = p2.cloned();
+        self.with_conditions_and_engine(engine, |sc, w| sc.skirmish_command_button_is_ready(w, &c, 1, 2, all))
     }
-    fn se_team_is_contained(&mut self, _engine: &mut ScriptEngine, _p0: Option<&Parameter>, all: bool) -> R<bool> {
-        self.se_cut("ScriptConditions::evaluateTeamIsContained", &[i64::from(all)], &[]);
-        Ok(false)
+    fn se_team_is_contained(&mut self, engine: &mut ScriptEngine, p0: Option<&Parameter>, all: bool) -> R<bool> {
+        let mut c = Condition::new_for_read();
+        c.num_parms = 1;
+        c.parms[0] = p0.cloned();
+        self.with_conditions_and_engine(engine, |sc, w| sc.team_is_contained(w, &c, 0, all))
     }
     fn se_num_sides(&self) -> i32 {
         self.sides.get_num_sides()
@@ -332,13 +339,14 @@ mod tests {
         w.cuts.game_loop.game_mode = game_mode::SINGLE_PLAYER;
         w.logic_update().unwrap();
         let calls: Vec<&'static str> = w.cuts.log.as_ref().unwrap().iter().filter_map(|c| if let CutCall::Host { call, .. } = c { Some(*call) } else { None }).collect();
-        assert!(!calls.contains(&"ScriptConditions::update"), "{calls:?}");
+        assert!(!calls.contains(&"ScriptActions::update"), "{calls:?}");
         w.script_engine_new_map().unwrap();
         w.cuts.log = Some(Vec::new());
         w.logic_update().unwrap();
         let calls: Vec<&'static str> = w.cuts.log.as_ref().unwrap().iter().filter_map(|c| if let CutCall::Host { call, .. } = c { Some(*call) } else { None }).collect();
         assert!(!calls.contains(&"ScriptEngine::update"), "{calls:?}");
-        assert!(calls.contains(&"ScriptConditions::update") && calls.contains(&"ScriptActions::update"), "{calls:?}");
+        // (`TheScriptConditions->update()` is the world's since batch I8b, and empty)
+        assert!(calls.contains(&"ScriptActions::update"), "{calls:?}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

@@ -178,50 +178,50 @@ impl Sim {
 }
 
 impl ScriptConditionsHost for Sim {
-    fn sc_player_from_mask(&self, mask: u32) -> Option<PlayerH> {
+    fn sc_player_from_mask(&mut self, mask: u32) -> Option<PlayerH> {
         (0..self.nplayers()).find(|p| 1u32 << p == mask)
     }
-    fn sc_neutral_player(&self) -> Option<PlayerH> {
+    fn sc_neutral_player(&mut self) -> Option<PlayerH> {
         self.player_or_none(((self.cfg[4] >> 8) & 15) as i32)
     }
-    fn sc_player_mask(&self, p: PlayerH) -> u32 {
+    fn sc_player_mask(&mut self, p: PlayerH) -> u32 {
         1 << p
     }
-    fn sc_player_has_any_objects(&self, p: PlayerH) -> bool {
+    fn sc_player_has_any_objects(&mut self, p: PlayerH) -> bool {
         self.pw(p, 0) & 1 != 0
     }
-    fn sc_player_has_any_build_facility(&self, p: PlayerH) -> bool {
+    fn sc_player_has_any_build_facility(&mut self, p: PlayerH) -> bool {
         (self.pw(p, 0) >> 1) & 1 != 0
     }
-    fn sc_player_money(&self, p: PlayerH) -> u32 {
+    fn sc_player_money(&mut self, p: PlayerH) -> u32 {
         self.pw(p, 1)
     }
-    fn sc_player_count_buildings(&self, p: PlayerH) -> i32 {
+    fn sc_player_count_buildings(&mut self, p: PlayerH) -> i32 {
         (self.pw(p, 2) & 255) as i32
     }
-    fn sc_player_count_objects(&self, p: PlayerH, must: &KindOfMaskType, _must_not: &KindOfMaskType) -> i32 {
+    fn sc_player_count_objects(&mut self, p: PlayerH, must: &KindOfMaskType, _must_not: &KindOfMaskType) -> i32 {
         if must.test(KINDOF_MP_COUNT_FOR_VICTORY) && must.test(KINDOF_STRUCTURE) {
             ((self.pw(p, 2) >> 8) & 255) as i32
         } else {
             -1
         }
     }
-    fn sc_player_has_sufficient_power(&self, p: PlayerH) -> bool {
+    fn sc_player_has_sufficient_power(&mut self, p: PlayerH) -> bool {
         (self.pw(p, 0) >> 2) & 1 != 0
     }
-    fn sc_player_energy_supply_ratio(&self, p: PlayerH) -> f32 {
+    fn sc_player_energy_supply_ratio(&mut self, p: PlayerH) -> f32 {
         (self.pw(p, 2) >> 24) as f32 / 100.0f32
     }
-    fn sc_player_energy_production(&self, p: PlayerH) -> i32 {
+    fn sc_player_energy_production(&mut self, p: PlayerH) -> i32 {
         (self.pw(p, 3) & 0xffff) as i32
     }
-    fn sc_player_energy_consumption(&self, p: PlayerH) -> i32 {
+    fn sc_player_energy_consumption(&mut self, p: PlayerH) -> i32 {
         (self.pw(p, 3) >> 16) as i32
     }
-    fn sc_player_teams(&self, p: PlayerH) -> Vec<Vec<TeamH>> {
+    fn sc_player_teams(&mut self, p: PlayerH) -> Vec<Vec<TeamH>> {
         self.protos().into_iter().filter(|(o, _)| *o == p && *o < self.nplayers()).map(|(_, i)| i).collect()
     }
-    fn sc_player_count_objects_by_thing_template(&self, p: PlayerH, templates: &[TemplateH], ignore_dead: bool) -> Vec<i32> {
+    fn sc_player_count_objects_by_thing_template(&mut self, p: PlayerH, templates: &[TemplateH], ignore_dead: bool) -> Vec<i32> {
         templates
             .iter()
             .map(|t| {
@@ -235,16 +235,16 @@ impl ScriptConditionsHost for Sim {
             })
             .collect()
     }
-    fn sc_player_science_purchase_points(&self, p: PlayerH) -> i32 {
+    fn sc_player_science_purchase_points(&mut self, p: PlayerH) -> i32 {
         (self.pw(p, 0) >> 24) as i32
     }
-    fn sc_player_is_capable_of_purchasing_science(&self, p: PlayerH, science: ScienceType) -> bool {
+    fn sc_player_is_capable_of_purchasing_science(&mut self, p: PlayerH, science: ScienceType) -> bool {
         hh(self.seed_c(), p as u32, 1300u32.wrapping_add(science.0 as u32)) & 1 != 0
     }
-    fn sc_player_side(&self, p: PlayerH) -> AsciiString {
+    fn sc_player_side(&mut self, p: PlayerH) -> AsciiString {
         name("side", ((self.pw(p, 0) >> 4) & 15) as i32)
     }
-    fn sc_player_supply_box_value(&self, p: PlayerH) -> i32 {
+    fn sc_player_supply_box_value(&mut self, p: PlayerH) -> i32 {
         ((self.pw(p, 0) >> 12) & 15) as i32
     }
     fn sc_player_is_supply_source_safe(&mut self, p: PlayerH, min_supplies: i32) -> bool {
@@ -257,21 +257,21 @@ impl ScriptConditionsHost for Sim {
         self.log.push(format!("supplyattacked {p} {}", u8::from(r)));
         r
     }
-    fn sc_player_mp_start_index(&self, p: PlayerH) -> i32 {
+    fn sc_player_mp_start_index(&mut self, p: PlayerH) -> i32 {
         ((self.pw(p, 0) >> 8) & 15) as i32
     }
-    fn sc_player_attacked_by(&self, p: PlayerH, index: i32) -> bool {
+    fn sc_player_attacked_by(&mut self, p: PlayerH, index: i32) -> bool {
         (0..8).contains(&index) && (self.pw(p, 0) >> (16 + index)) & 1 != 0
     }
 
-    fn sc_player_from_name(&self, n: &[u8]) -> Option<PlayerH> {
+    fn sc_player_from_name(&mut self, n: &[u8]) -> Option<PlayerH> {
         if n == THIS_PLAYER_ENEMY {
             return self.player_or_none(((self.cfg[4] >> 4) & 15) as i32);
         }
         let k = num(n, "player");
         (k >= 0 && k < self.nplayers()).then_some(k)
     }
-    fn sc_team_named(&self, n: &[u8]) -> Option<TeamH> {
+    fn sc_team_named(&mut self, n: &[u8]) -> Option<TeamH> {
         if n == b"<This Team>" {
             let t = self.cfg[5] & 255;
             return (t < 16).then_some(t);
@@ -283,22 +283,22 @@ impl ScriptConditionsHost for Sim {
         let t = (self.cfg[48 + k as usize] >> 20) & 255;
         (t < 16).then_some(t)
     }
-    fn sc_unit_named(&self, n: &[u8]) -> Option<ObjH> {
+    fn sc_unit_named(&mut self, n: &[u8]) -> Option<ObjH> {
         let k = num(n, "unit");
         ((0..16).contains(&k) && self.exists(k)).then_some(k + 1)
     }
-    fn sc_did_unit_exist(&self, n: &[u8]) -> bool {
+    fn sc_did_unit_exist(&mut self, n: &[u8]) -> bool {
         let k = num(n, "unit");
         (0..32).contains(&k) && (self.cfg[10] >> k) & 1 != 0
     }
-    fn sc_trigger_named(&self, n: &[u8]) -> Option<TriggerH> {
+    fn sc_trigger_named(&mut self, n: &[u8]) -> Option<TriggerH> {
         let k = num(n, "trig");
         ((0..8).contains(&k) && (self.cfg[6] >> k) & 1 != 0).then_some(k as u32)
     }
-    fn sc_frame_object_count_changed(&self) -> u32 {
+    fn sc_frame_object_count_changed(&mut self) -> u32 {
         self.cfg[2]
     }
-    fn sc_object_types(&self, n: &AsciiString) -> Option<ObjectTypes> {
+    fn sc_object_types(&mut self, n: &AsciiString) -> Option<ObjectTypes> {
         let k = num(n.str(), "list");
         if k < 0 || k >= (self.cfg[12] & 7) as i32 {
             return None;
@@ -337,7 +337,7 @@ impl ScriptConditionsHost for Sim {
         self.log.push(format!("science {index} {} {} {}", science.0, u8::from(remove), u8::from(r)));
         r
     }
-    fn sc_object_count(&self, index: i32, n: &[u8]) -> i32 {
+    fn sc_object_count(&mut self, index: i32, n: &[u8]) -> i32 {
         if let Some(c) = self.counts.iter().find(|c| c.0 == index && c.1 == n) {
             return c.2;
         }
@@ -351,18 +351,18 @@ impl ScriptConditionsHost for Sim {
             self.counts.push((index, n.to_vec(), count));
         }
     }
-    fn sc_team_prototype_instances(&self, n: &[u8]) -> Option<Vec<TeamH>> {
+    fn sc_team_prototype_instances(&mut self, n: &[u8]) -> Option<Vec<TeamH>> {
         let k = num(n, "team");
         (0..8).contains(&k).then(|| self.protos()[k as usize].1.clone())
     }
 
-    fn sc_team_has_any_objects(&self, t: TeamH) -> bool {
+    fn sc_team_has_any_objects(&mut self, t: TeamH) -> bool {
         self.tw(t) & 1 != 0
     }
-    fn sc_team_has_any_units(&self, t: TeamH) -> bool {
+    fn sc_team_has_any_units(&mut self, t: TeamH) -> bool {
         (self.tw(t) >> 1) & 1 != 0
     }
-    fn sc_team_name(&self, t: TeamH) -> AsciiString {
+    fn sc_team_name(&mut self, t: TeamH) -> AsciiString {
         for (k, (_, inst)) in self.protos().iter().enumerate() {
             if inst.contains(&t) {
                 return name("team", k as i32);
@@ -370,47 +370,47 @@ impl ScriptConditionsHost for Sim {
         }
         name("lone", t as i32)
     }
-    fn sc_team_some_inside_some_outside(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_some_inside_some_outside(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 1 != 0
     }
-    fn sc_team_all_inside(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_all_inside(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 2 != 0
     }
-    fn sc_team_did_all_enter(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_did_all_enter(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 4 != 0
     }
-    fn sc_team_did_partial_enter(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_did_partial_enter(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 8 != 0
     }
-    fn sc_team_did_all_exit(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_did_all_exit(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 16 != 0
     }
-    fn sc_team_did_partial_exit(&self, t: TeamH, trig: TriggerH, which: u32) -> bool {
+    fn sc_team_did_partial_exit(&mut self, t: TeamH, trig: TriggerH, which: u32) -> bool {
         self.ths(t, trig, which) & 32 != 0
     }
-    fn sc_team_did_enter_or_exit(&self, t: TeamH) -> bool {
+    fn sc_team_did_enter_or_exit(&mut self, t: TeamH) -> bool {
         (self.tw(t) >> 3) & 1 != 0
     }
-    fn sc_team_state(&self, t: TeamH) -> AsciiString {
+    fn sc_team_state(&mut self, t: TeamH) -> AsciiString {
         name("state", ((self.tw(t) >> 4) & 15) as i32)
     }
-    fn sc_team_is_created(&self, t: TeamH) -> bool {
+    fn sc_team_is_created(&mut self, t: TeamH) -> bool {
         (self.tw(t) >> 2) & 1 != 0
     }
-    fn sc_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
+    fn sc_team_controlling_player(&mut self, t: TeamH) -> Option<PlayerH> {
         self.player_or_none(((self.tw(t) >> 8) & 15) as i32)
     }
-    fn sc_team_members(&self, t: TeamH) -> Vec<ObjH> {
+    fn sc_team_members(&mut self, t: TeamH) -> Vec<ObjH> {
         (0..16).filter(|j| (self.tw(t) >> (16 + j)) & 1 != 0).map(|j| j + 1).collect()
     }
 
-    fn sc_find_object(&self, id: ObjectId) -> Option<ObjH> {
+    fn sc_find_object(&mut self, id: ObjectId) -> Option<ObjH> {
         (1..=16).contains(&id).then_some(id)
     }
-    fn sc_obj_is_effectively_dead(&self, o: ObjH) -> bool {
+    fn sc_obj_is_effectively_dead(&mut self, o: ObjH) -> bool {
         (self.ow(o, 0) >> 1) & 1 != 0
     }
-    fn sc_obj_position(&self, o: ObjH) -> Coord3D {
+    fn sc_obj_position(&mut self, o: ObjH) -> Coord3D {
         let w = self.ow(o, 3);
         Coord3D { x: ((w >> 16) & 255) as f32 * 0.75, y: (w >> 24) as f32 * 0.75, z: (o - 1) as f32 * 0.25 }
     }
@@ -418,26 +418,26 @@ impl ScriptConditionsHost for Sim {
         let t = (self.ow(o, 0) >> 12) & 7;
         (t < 7).then_some(t)
     }
-    fn sc_obj_is_kind_of(&self, o: ObjH, kind: KindOfType) -> bool {
+    fn sc_obj_is_kind_of(&mut self, o: ObjH, kind: KindOfType) -> bool {
         (self.ow(o, 1) >> (kind as u32 & 15)) & 1 != 0
     }
-    fn sc_obj_is_inside(&self, o: ObjH, trig: TriggerH) -> bool {
+    fn sc_obj_is_inside(&mut self, o: ObjH, trig: TriggerH) -> bool {
         hh(self.seed_b(), (o - 1) as u32, 200 + trig) & 1 != 0
     }
-    fn sc_obj_did_enter(&self, o: ObjH, trig: TriggerH) -> bool {
+    fn sc_obj_did_enter(&mut self, o: ObjH, trig: TriggerH) -> bool {
         hh(self.seed_b(), (o - 1) as u32, 200 + trig) & 2 != 0
     }
-    fn sc_obj_did_exit(&self, o: ObjH, trig: TriggerH) -> bool {
+    fn sc_obj_did_exit(&mut self, o: ObjH, trig: TriggerH) -> bool {
         hh(self.seed_b(), (o - 1) as u32, 200 + trig) & 4 != 0
     }
-    fn sc_obj_has_body(&self, o: ObjH) -> bool {
+    fn sc_obj_has_body(&mut self, o: ObjH) -> bool {
         (self.ow(o, 0) >> 2) & 1 != 0
     }
-    fn sc_obj_health(&self, o: ObjH) -> (f32, f32) {
+    fn sc_obj_health(&mut self, o: ObjH) -> (f32, f32) {
         let w = self.ow(o, 1);
         (((w >> 16) & 255) as f32, (w >> 24) as f32)
     }
-    fn sc_obj_last_damage(&self, o: ObjH) -> Option<LastDamage> {
+    fn sc_obj_last_damage(&mut self, o: ObjH) -> Option<LastDamage> {
         let w = self.ow(o, 0);
         if (w >> 10) & 1 == 0 {
             return None;
@@ -450,10 +450,10 @@ impl ScriptConditionsHost for Sim {
             source_player_mask: if p == 15 { 0 } else { 1 << p },
         })
     }
-    fn sc_obj_controlling_player(&self, o: ObjH) -> Option<PlayerH> {
+    fn sc_obj_controlling_player(&mut self, o: ObjH) -> Option<PlayerH> {
         self.player_or_none(((self.ow(o, 0) >> 16) & 15) as i32)
     }
-    fn sc_obj_contain(&self, o: ObjH) -> Option<ContainInfo> {
+    fn sc_obj_contain(&mut self, o: ObjH) -> Option<ContainInfo> {
         if (self.ow(o, 0) >> 3) & 1 == 0 {
             return None;
         }
@@ -461,10 +461,10 @@ impl ScriptConditionsHost for Sim {
         let p = (w >> 9) & 15;
         Some(ContainInfo { player_who_entered: if p == 15 { 0 } else { 1 << p }, count: w & 15, max: (w >> 4) & 15, garrisonable: (w >> 8) & 1 != 0 })
     }
-    fn sc_obj_status(&self, o: ObjH) -> ObjectStatusMaskType {
+    fn sc_obj_status(&mut self, o: ObjH) -> ObjectStatusMaskType {
         status_of(self.ow(o, 2))
     }
-    fn sc_obj_is_disabled_by_type(&self, o: ObjH, t: DisabledType) -> bool {
+    fn sc_obj_is_disabled_by_type(&mut self, o: ObjH, t: DisabledType) -> bool {
         if t == DISABLED_HELD {
             (self.ow(o, 0) >> 7) & 1 != 0
         } else if t == DISABLED_UNMANNED {
@@ -473,10 +473,10 @@ impl ScriptConditionsHost for Sim {
             false
         }
     }
-    fn sc_obj_is_disabled(&self, o: ObjH) -> bool {
+    fn sc_obj_is_disabled(&mut self, o: ObjH) -> bool {
         (self.ow(o, 0) >> 9) & 1 != 0
     }
-    fn sc_obj_shrouded_status(&self, o: ObjH, index: i32) -> ObjectShroudStatus {
+    fn sc_obj_shrouded_status(&mut self, o: ObjH, index: i32) -> ObjectShroudStatus {
         match hh(self.seed_b(), (o - 1) as u32, 300u32.wrapping_add(index as u32)) % 6 {
             0 => ObjectShroudStatus::Invalid,
             1 => ObjectShroudStatus::Clear,
@@ -486,27 +486,27 @@ impl ScriptConditionsHost for Sim {
             _ => ObjectShroudStatus::InvalidButPreviousValid,
         }
     }
-    fn sc_obj_completed_waypoint(&self, o: ObjH) -> Option<Option<[AsciiString; 3]>> {
+    fn sc_obj_completed_waypoint(&mut self, o: ObjH) -> Option<Option<[AsciiString; 3]>> {
         if (self.ow(o, 0) >> 4) & 1 == 0 {
             return None;
         }
         let k = ((self.ow(o, 3) >> 13) & 7) as i32;
         Some((k != 7).then(|| [name("path", k), name("path", k + 1), name("path", k * 2 % 7)]))
     }
-    fn sc_obj_is_contained(&self, o: ObjH) -> bool {
+    fn sc_obj_is_contained(&mut self, o: ObjH) -> bool {
         (self.ow(o, 0) >> 5) & 1 != 0
     }
-    fn sc_obj_is_captured(&self, o: ObjH) -> bool {
+    fn sc_obj_is_captured(&mut self, o: ObjH) -> bool {
         (self.ow(o, 0) >> 6) & 1 != 0
     }
-    fn sc_obj_special_power_module(&self, o: ObjH, power: SpecialPowerH) -> Option<SpecialPowerModuleInfo> {
+    fn sc_obj_special_power_module(&mut self, o: ObjH, power: SpecialPowerH) -> Option<SpecialPowerModuleInfo> {
         let h = hh(self.seed_c(), (o - 1) as u32, 400 + power);
         (h & 1 != 0).then_some(SpecialPowerModuleInfo { ready: h & 2 != 0, ready_frame: (h >> 8) % 2000 })
     }
     fn sc_obj_has_special_power(&self, o: ObjH, power_type: i32) -> bool {
         hh(self.seed_c(), (o - 1) as u32, 600u32.wrapping_add(power_type as u32)) & 1 != 0
     }
-    fn sc_obj_warehouse_boxes(&self, o: ObjH) -> Option<i32> {
+    fn sc_obj_warehouse_boxes(&mut self, o: ObjH) -> Option<i32> {
         let h = hh(self.seed_b(), (o - 1) as u32, 700);
         (h & 1 != 0).then_some(((h >> 4) % 20) as i32)
     }
@@ -518,23 +518,23 @@ impl ScriptConditionsHost for Sim {
     fn sc_template_name(&self, t: TemplateH) -> AsciiString {
         name("tmpl", t as i32)
     }
-    fn sc_template_build_cost(&self, t: TemplateH) -> i32 {
+    fn sc_template_build_cost(&mut self, t: TemplateH) -> i32 {
         t as i32 * 100 + 50
     }
-    fn sc_player_can_build(&self, p: PlayerH, t: TemplateH) -> bool {
+    fn sc_player_can_build(&mut self, p: PlayerH, t: TemplateH) -> bool {
         hh(self.seed_c(), p as u32, 1000 + t) & 1 != 0
     }
-    fn sc_find_special_power(&self, n: &[u8]) -> Option<SpecialPowerH> {
+    fn sc_find_special_power(&mut self, n: &[u8]) -> Option<SpecialPowerH> {
         let k = num(n, "power");
         (k >= 0 && k < ((self.cfg[11] >> 8) & 7) as i32).then_some(k as u32)
     }
-    fn sc_can_use_special_power(&self, o: ObjH, power: SpecialPowerH) -> bool {
+    fn sc_can_use_special_power(&mut self, o: ObjH, power: SpecialPowerH) -> bool {
         hh(self.seed_c(), (o - 1) as u32, 500 + power) & 1 != 0
     }
     fn sc_special_power_type(&self, power: SpecialPowerH) -> i32 {
         power as i32 + 1
     }
-    fn sc_science_from_name(&self, n: &[u8]) -> ScienceType {
+    fn sc_science_from_name(&mut self, n: &[u8]) -> ScienceType {
         let k = num(n, "sci");
         if k >= 0 && k < ((self.cfg[11] >> 16) & 255) as i32 {
             ScienceType(k)
@@ -542,34 +542,34 @@ impl ScriptConditionsHost for Sim {
             SCIENCE_INVALID
         }
     }
-    fn sc_find_command_button(&self, n: &[u8]) -> Option<ButtonH> {
+    fn sc_find_command_button(&mut self, n: &[u8]) -> Option<ButtonH> {
         let k = num(n, "btn");
         (k >= 0 && k < ((self.cfg[11] >> 24) & 7) as i32).then_some(k as u32)
     }
-    fn sc_button_special_power(&self, b: ButtonH) -> Option<SpecialPowerH> {
+    fn sc_button_special_power(&mut self, b: ButtonH) -> Option<SpecialPowerH> {
         let n = (self.cfg[11] >> 8) & 7;
         (hh(self.seed_c(), b, 1100) % 3 == 2 && n > 0).then_some(b % n.max(1))
     }
-    fn sc_button_has_upgrade(&self, b: ButtonH) -> bool {
+    fn sc_button_has_upgrade(&mut self, b: ButtonH) -> bool {
         let kind = hh(self.seed_c(), b, 1100) % 3;
         kind == 0 || (kind == 2 && self.sc_button_special_power(b).is_none())
     }
-    fn sc_button_is_ready(&self, b: ButtonH, o: ObjH) -> bool {
+    fn sc_button_is_ready(&mut self, b: ButtonH, o: ObjH) -> bool {
         hh(self.seed_c(), b * 64 + (o - 1) as u32, 1200) & 1 != 0
     }
 
-    fn sc_trigger_point_in(&self, trig: TriggerH, p: ICoord3D) -> bool {
+    fn sc_trigger_point_in(&mut self, trig: TriggerH, p: ICoord3D) -> bool {
         let a = (trig as i32).wrapping_mul(1000).wrapping_add(p.x) as u32;
         let b = p.y.wrapping_mul(31).wrapping_add(p.z) as u32;
         hh(self.seed_b(), a, b) & 1 != 0
     }
-    fn sc_trigger_center(&self, trig: TriggerH) -> Coord3D {
+    fn sc_trigger_center(&mut self, trig: TriggerH) -> Coord3D {
         Coord3D { x: trig as f32 * 10.0, y: trig as f32 * 5.0, z: 0.0 }
     }
-    fn sc_trigger_radius(&self, trig: TriggerH) -> f32 {
+    fn sc_trigger_radius(&mut self, trig: TriggerH) -> f32 {
         trig as f32 * 2.0 + 1.0
     }
-    fn sc_partition_seen_by(&self, o: ObjH, relation: Option<i32>) -> Vec<ObjH> {
+    fn sc_partition_seen_by(&mut self, o: ObjH, relation: Option<i32>) -> Vec<ObjH> {
         let rel = relation.map(|r| r as u32).unwrap_or(9);
         let i = o - 1;
         (0..16)
@@ -577,52 +577,52 @@ impl ScriptConditionsHost for Sim {
             .map(|j| j + 1)
             .collect()
     }
-    fn sc_partition_supply_structures(&self, _center: Coord3D, _distance: f32, p: PlayerH) -> Vec<ObjH> {
+    fn sc_partition_supply_structures(&mut self, _center: Coord3D, _distance: f32, p: PlayerH) -> Vec<ObjH> {
         (0..16).filter(|j| hh(self.seed_b(), *j as u32, 900 + p as u32) & 1 != 0).map(|j| j + 1).collect()
     }
-    fn sc_partition_tech_building_near(&self, _center: Coord3D, _radius: f32, p: PlayerH) -> bool {
+    fn sc_partition_tech_building_near(&mut self, _center: Coord3D, _radius: f32, p: PlayerH) -> bool {
         (hh(self.seed_b(), p as u32, 950) ^ self.cfg[14] >> p) & 1 != 0
     }
 
-    fn sc_any_bridges_damage_states_changed(&self) -> bool {
+    fn sc_any_bridges_damage_states_changed(&mut self) -> bool {
         (self.cfg[0] >> 2) & 1 != 0
     }
-    fn sc_is_bridge_broken(&self, o: ObjH) -> bool {
+    fn sc_is_bridge_broken(&mut self, o: ObjH) -> bool {
         hh(self.seed_b(), (o - 1) as u32, 2200) & 1 != 0
     }
-    fn sc_is_bridge_repaired(&self, o: ObjH) -> bool {
+    fn sc_is_bridge_repaired(&mut self, o: ObjH) -> bool {
         hh(self.seed_b(), (o - 1) as u32, 2200) & 2 != 0
     }
 
-    fn sc_frame(&self) -> u32 {
+    fn sc_frame(&mut self) -> u32 {
         self.cfg[1]
     }
-    fn sc_is_multiplayer_session(&self) -> bool {
+    fn sc_is_multiplayer_session(&mut self) -> bool {
         self.cfg[0] & 1 != 0
     }
-    fn sc_frame_selection_changed(&self) -> u32 {
+    fn sc_frame_selection_changed(&mut self) -> u32 {
         self.cfg[3]
     }
-    fn sc_selected_object_names(&self) -> Vec<Option<AsciiString>> {
+    fn sc_selected_object_names(&mut self) -> Vec<Option<AsciiString>> {
         let mut v: Vec<Option<AsciiString>> = (0..16).filter(|j| (self.cfg[13] >> j) & 1 != 0).map(|j| Some(name("unit", j))).collect();
         if self.cfg[13] >> 31 != 0 {
             v.push(None);
         }
         v
     }
-    fn sc_camera_movement_finished(&self) -> bool {
+    fn sc_camera_movement_finished(&mut self) -> bool {
         (self.cfg[0] >> 1) & 1 != 0
     }
-    fn sc_is_local_allied_victory(&self) -> Result<bool, IniError> {
+    fn sc_is_local_allied_victory(&mut self) -> Result<bool, IniError> {
         Ok((self.cfg[0] >> 3) & 1 != 0)
     }
-    fn sc_is_local_allied_defeat(&self) -> Result<bool, IniError> {
+    fn sc_is_local_allied_defeat(&mut self) -> Result<bool, IniError> {
         Ok((self.cfg[0] >> 4) & 1 != 0)
     }
-    fn sc_is_local_defeat(&self) -> bool {
+    fn sc_is_local_defeat(&mut self) -> bool {
         (self.cfg[0] >> 5) & 1 != 0
     }
-    fn sc_music_track_completed(&self, n: &[u8], times: i32) -> bool {
+    fn sc_music_track_completed(&mut self, n: &[u8], times: i32) -> bool {
         hh(self.seed_c(), strhash(n), 2000u32.wrapping_add(times as u32)) & 1 != 0
     }
 }
@@ -751,7 +751,7 @@ fn rust_run(cfg: &[u32; NCFG], cs: &[C], ops: &[[u32; 3]]) -> (Vec<u32>, Option<
         }
         if (o[0] == 3 || o[0] == 4) && (o[1] as usize) < conds.len() {
             let cd = &conds[o[1] as usize];
-            let r = if o[0] == 3 { sc.team_is_contained(&sim, cd, 0, o[2] != 0) } else { sc.skirmish_command_button_is_ready(&sim, cd, 1, 2, o[2] != 0) };
+            let r = if o[0] == 3 { sc.team_is_contained(&mut sim, cd, 0, o[2] != 0) } else { sc.skirmish_command_button_is_ready(&mut sim, cd, 1, 2, o[2] != 0) };
             match r {
                 Ok(r) => res = u32::from(r),
                 Err(e) => return (out, Some((i, format!("direct{} {e:?}", o[0])))),

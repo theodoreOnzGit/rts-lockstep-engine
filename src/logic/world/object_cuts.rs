@@ -1784,6 +1784,10 @@ pub struct CommandButtonFacts {
     pub special_power: Option<u32>,
     /// batch I6: `getThingTemplate()`: the template's id, `None` for `NULL`.
     pub thing_template: Option<u16>,
+    /// batch I8b: `getUpgradeTemplate()`: the upgrade's name key, `None` for `NULL`.
+    pub upgrade: Option<u32>,
+    /// batch I8b: the objects `isReady(obj)` answers true for.
+    pub ready_for: BTreeSet<ObjectId>,
 }
 
 /// The tables and logs behind the cut points. See the module docs.
@@ -2150,6 +2154,10 @@ pub struct ObjectCuts {
     pub pending_rank_points: Option<i32>,
     /// batch I8a: `TheAudio->getAudioLengthMS(name)`, by event name (none listed: 0).
     pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
+    /// batch I8b: `TheInGameUI->getFrameSelectionChanged()`.
+    pub frame_selection_changed: u32,
+    /// batch I8b: `TheAudio->hasMusicTrackCompleted(name, n)`: how many times each track has completed.
+    pub music_tracks_completed: BTreeMap<Vec<u8>, i32>,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2319,6 +2327,8 @@ impl Default for ObjectCuts {
             new_game: crate::logic::world::new_game_host_world::NewGameCuts { shroud_in_multiplayer: true, ..Default::default() },
             pending_rank_points: None,
             audio_lengths_ms: BTreeMap::new(),
+            frame_selection_changed: 0,
+            music_tracks_completed: BTreeMap::new(),
             next_drawable_id: 1,
         }
     }

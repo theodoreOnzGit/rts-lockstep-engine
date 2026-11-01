@@ -59,7 +59,7 @@ pub struct CampaignStandIn {
 
 /// `PolygonTrigger::updateBounds`: the points' bounds and the radius it computes from them (`halfHeight` adds the two
 /// y bounds, as upstream does).
-fn polygon_bounds(points: &[ICoord3D]) -> (IRegion2D, f32) {
+pub(crate) fn polygon_bounds(points: &[ICoord3D]) -> (IRegion2D, f32) {
     const BIG_INT: i32 = 0x7ffff0;
     let mut b = IRegion2D { lo: ICoord2D { x: BIG_INT, y: BIG_INT }, hi: ICoord2D { x: -BIG_INT, y: -BIG_INT } };
     for p in points {
