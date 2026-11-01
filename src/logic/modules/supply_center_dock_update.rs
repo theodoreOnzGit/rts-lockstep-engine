@@ -236,7 +236,7 @@ impl SupplyCenterDockUpdate {
                 position.z = ground;
             }
             let player = owner.ok_or(Undefined::NullControllingPlayer)?;
-            let color = world.cuts.player_color(player) | FLOATING_ALPHA;
+            let color = world.tq().player_color(player) | FLOATING_ALPHA;
             world.cut(CutCall::InGameUiAddFloatingText { amount: value as i32, position, color });
         }
         Ok(false)

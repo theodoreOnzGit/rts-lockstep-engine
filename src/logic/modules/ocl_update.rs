@@ -287,8 +287,8 @@ impl UpdateBehavior for OclUpdate {
 
             // Test for when a player captures the building
             if self.is_faction_neutral {
-                if let Some(p) = player.filter(|p| world.cuts.player_is_playable_side(*p) || crate::logic::modules::plant(1007)) {
-                    self.current_player_color = world.cuts.player_color(p);
+                if let Some(p) = player.filter(|p| world.tq().player_is_playable_side(*p) || crate::logic::modules::plant(1007)) {
+                    self.current_player_color = world.tq().player_color(p);
                     self.is_faction_neutral = false;
                     self.set_next_creation_frame(world);
                 }
@@ -296,12 +296,12 @@ impl UpdateBehavior for OclUpdate {
             // Test for when the building has been made neutral or when it changes faction
             else {
                 // If this is no longer under player control, then we set the faction to neutral
-                match player.filter(|p| world.cuts.player_is_playable_side(*p)) {
+                match player.filter(|p| world.tq().player_is_playable_side(*p)) {
                     None => self.is_faction_neutral = true,
                     // If another player has taken control, reset the timer
                     Some(p) => {
-                        if world.cuts.player_color(p) != self.current_player_color && !crate::logic::modules::plant(1008) {
-                            self.current_player_color = world.cuts.player_color(p);
+                        if world.tq().player_color(p) != self.current_player_color && !crate::logic::modules::plant(1008) {
+                            self.current_player_color = world.tq().player_color(p);
                             self.set_next_creation_frame(world);
                         }
                     }
@@ -330,7 +330,7 @@ impl UpdateBehavior for OclUpdate {
             // If this is faction triggered, search through the faction specific OCLs to find the match
             if data.is_faction_triggered {
                 let Some(player) = world.get_controlling_player(me.object) else { return UPDATE_SLEEP_NONE };
-                let Some(side) = world.cuts.player_side(player) else { return UPDATE_SLEEP_NONE };
+                let Some(side) = world.tq().player_side(player) else { return UPDATE_SLEEP_NONE };
 
                 // Loop through the list of faction ocls to find the matching faction that triggeres the specific ocls
                 for info in &data.faction_ocl {

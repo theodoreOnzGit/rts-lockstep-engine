@@ -51,7 +51,7 @@ impl World {
     /// `getControllingPlayer()`: the controlling player of the object's team.
     pub fn get_controlling_player(&self, id: ObjectId) -> Option<PlayerIndex> {
         let team = self.get_team(id)?;
-        self.cuts.team_player(team)
+        self.tq().team_player(team)
     }
 
     /// `getRelationship(that)`: `NEUTRAL` without a team; an undetected
@@ -71,7 +71,7 @@ impl World {
         if other.is_undetected_defector() {
             return Relationship::Allies;
         }
-        self.cuts.team_relationship(me.team, Some(other.team).filter(|&t| t != 0))
+        self.tq().team_relationship(me.team, Some(other.team).filter(|&t| t != 0))
     }
 
     /// `isLocallyControlled()`: the controlling player is the local player
@@ -91,15 +91,15 @@ impl World {
     pub fn set_team(&mut self, id: ObjectId, team: Option<TeamId>) {
         let mut team = team;
         if let Some(t) = team {
-            if let Some(p) = self.cuts.team_player(t) {
-                if !self.cuts.player_is_active(p) {
+            if let Some(p) = self.tq().team_player(t) {
+                if !self.tq().player_is_active(p) {
                     team = Some(self.cuts.neutral_default_team);
                 }
             }
         }
         self.set_temporary_team(id, team);
         let name = match self.get_team(id) {
-            Some(t) => self.cuts.team_name(t),
+            Some(t) => self.tq().team_name(t),
             None => Vec::new(),
         };
         if let Some(o) = self.objects.find_mut(id) {
@@ -121,7 +121,7 @@ impl World {
         }
         let name = o.original_team_name.clone();
         let current = o.team;
-        let Some(orig) = self.cuts.find_team_by_name(&name) else {
+        let Some(orig) = self.find_team_by_name(&name) else {
             return; // "Object original team could not be found or created!"
         };
         if current == orig {
@@ -144,9 +144,9 @@ impl World {
         let old_team = o.team;
 
         // Before Switch //////////////////////////
-        if old_team != 0 && self.cuts.team_member_list_contains(old_team, id) {
-            self.cuts.team_member_list_remove(old_team, id);
-            if let Some(p) = self.cuts.team_player(old_team) {
+        if old_team != 0 && self.team_member_list_contains(old_team, id) {
+            self.team_member_list_remove(old_team, id);
+            if let Some(p) = self.tq().team_player(old_team) {
                 self.cut(CutCall::PlayerBecomingTeamMember { player: p, object: id, incoming: false });
             }
         }
@@ -158,16 +158,16 @@ impl World {
 
         // After Switch //////////////////////////
         if new_team != 0 {
-            if !self.cuts.team_member_list_contains(new_team, id) {
-                self.cuts.team_member_list_prepend(new_team, id);
-                if let Some(p) = self.cuts.team_player(new_team) {
+            if !self.team_member_list_contains(new_team, id) {
+                self.team_member_list_prepend(new_team, id);
+                if let Some(p) = self.tq().team_player(new_team) {
                     self.cut(CutCall::PlayerBecomingTeamMember { player: p, object: id, incoming: true });
                 }
             }
             // now, adjust the attitude of the unit to its new team.
-            if self.cuts.team_has_template_info(new_team) && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+            if self.tq().team_has_template_info(new_team) && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
                 self.cut(CutCall::AiSetAttitude { object: id, team: new_team });
-                if self.cuts.team_attack_info(new_team) {
+                if self.tq().team_attack_info(new_team) {
                     self.cut(CutCall::AiSetAttackInfo { object: id, team: new_team });
                 }
             }
@@ -181,7 +181,7 @@ impl World {
         // setting a new team needs to tell the modules and do other important stuff.
         // And it needs to happen after the switch.
         if old_team != 0 && new_team != 0 && !restoring {
-            if let (Some(old_p), Some(new_p)) = (self.cuts.team_player(old_team), self.cuts.team_player(new_team)) {
+            if let (Some(old_p), Some(new_p)) = (self.tq().team_player(old_team), self.tq().team_player(new_team)) {
                 self.on_capture(id, old_p, new_p);
             }
         }
@@ -195,8 +195,8 @@ impl World {
         }
 
         // Tell TheInGameUI that the object has changed hands
-        let old_player_index = if old_team != 0 { self.cuts.team_player(old_team).unwrap_or(-1) } else { -1 };
-        let new_player_index = if new_team != 0 { self.cuts.team_player(new_team).unwrap_or(-1) } else { -1 };
+        let old_player_index = if old_team != 0 { self.tq().team_player(old_team).unwrap_or(-1) } else { -1 };
+        let new_player_index = if new_team != 0 { self.tq().team_player(new_team).unwrap_or(-1) } else { -1 };
         if old_player_index != new_player_index {
             self.emit(ObjectClientEvent::ObjectChangedTeam { object_id: id, old_player: old_player_index, new_player: new_player_index });
         }
@@ -215,7 +215,7 @@ impl World {
         let Some(o) = self.objects.find(id) else { return 0 };
         if o.indicator_color == 0 {
             if let Some(p) = self.get_controlling_player(id) {
-                return self.cuts.player_color(p);
+                return self.tq().player_color(p);
             }
             return crate::common::ini::game_make_color(0, 0, 0, 255);
         }
@@ -227,7 +227,7 @@ impl World {
         let Some(o) = self.objects.find(id) else { return 0 };
         if o.indicator_color == 0 {
             if let Some(p) = self.get_controlling_player(id) {
-                return self.cuts.player_night_color(p);
+                return self.tq().player_night_color(p);
             }
             return crate::common::ini::game_make_color(0, 0, 0, 255);
         }
@@ -275,7 +275,7 @@ impl World {
         self.clear_script_status(id, OBJECT_STATUS_SCRIPT_UNSELLABLE);
         // mark the command bar to redraw
         self.emit(ObjectClientEvent::ControlBarMarkUiDirty);
-        if old_owner != new_owner && self.cuts.player_is_skirmish_ai(new_owner) {
+        if old_owner != new_owner && self.tq().player_is_skirmish_ai(new_owner) {
             // The skirmish ai doesn't know what to do with captured faction buildings except sell them.
             if self.is_faction_structure(id) {
                 self.cut(CutCall::BuildAssistantSellObject { object: id });
@@ -312,7 +312,7 @@ impl World {
             return; // @todo make contained units unselectable, until then... lorenzen
         }
         let Some(player) = self.get_controlling_player(id) else { return };
-        let my_team = self.cuts.player_default_team(player);
+        let my_team = self.tq().player_default_team(player);
         if my_team == new_team {
             return; // can't defect from my own team, that would be silly
         }
@@ -334,8 +334,8 @@ impl World {
         // do this first, since after setTeam() the infiltrator becomes the controllingplayer, not me
         // But don't do this is if the new team is not a real team.
         if self.objects.find(id).is_some_and(|o| o.on_radar) {
-            let new_playable = self.cuts.team_player(new_team).is_some_and(|p| self.cuts.player_is_playable_side(p));
-            let mine_playable = self.cuts.team_player(my_team).is_some_and(|p| self.cuts.player_is_playable_side(p));
+            let new_playable = self.tq().team_player(new_team).is_some_and(|p| self.tq().player_is_playable_side(p));
+            let mine_playable = self.tq().team_player(my_team).is_some_and(|p| self.tq().player_is_playable_side(p));
             if new_playable && mine_playable {
                 self.emit(ObjectClientEvent::Radar { call: RadarCall::TryInfiltrationEvent, object_id: id, position: None });
             }

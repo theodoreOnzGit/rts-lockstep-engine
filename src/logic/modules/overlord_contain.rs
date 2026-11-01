@@ -404,7 +404,7 @@ impl TransportContainVirtuals for OverlordContain {
             undefined(world, me, Undefined::NullControllingPlayer);
             return;
         }
-        let team = world.cuts.player_default_team(new_owner);
+        let team = world.tq().player_default_team(new_owner);
         if !crate::logic::modules::plant(1493) {
             out(self, world, me, |w| w.contain_set_team(my_guy, team));
         }

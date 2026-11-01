@@ -75,7 +75,7 @@ impl ActionHost for World {
     }
     fn player_relationship_to_team_of(&mut self, player_index: i32, o: ObjectId) -> Relationship {
         let team = self.get_team(o);
-        self.cuts.player_relationship_to_team(player_index, team)
+        self.tq().player_relationship_to_team(player_index, team)
     }
 
     // ---- special powers -------------------------------------------------------------------------------------------

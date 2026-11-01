@@ -26,6 +26,9 @@
 //!
 //! # What is cut, by unit (the list the lead asked for)
 //!
+//! The `Player`, `Team` and academy rows are the team and player lists' when `live_teams` is on (batch I3b,
+//! `team_live_world.rs`); the call sites ask the queries through `World::tq`.
+//!
 //! | unit (upstream) | calls | here |
 //! |---|---|---|
 //! | `Player` (layer 7) | `becomingTeamMember`, `getScoreKeeper()->add*`, `addSkillPointsForKill`, `doBountyForKill`, `friend_applyDifficultyBonusesForObject`, `applyBattlePlanBonusesForObject`, `removeRadar/addRadar`, `getRelationship`, `getPlayerMask`, `getPlayerColor`, `getCompletedUpgradeMask`, `isPlayableSide`, `isPlayerActive`, `isSkirmishAIPlayer`, `getDefaultTeam`, `getProductionVeterancyLevel`, `getNumBattlePlansActive` | `CutCall::Player*` and the player queries |
@@ -835,11 +838,17 @@ impl World {
 
     /// batch R76: `player->hasUpgradeComplete(upgrade)`.
     pub fn player_has_upgrade_complete(&self, p: PlayerIndex, mask: &UpgradeMaskType) -> bool {
+        if self.cuts.live_teams {
+            return self.live_player_has_upgrade_complete(p, mask);
+        }
         self.cuts.player_completed_upgrade_mask(p).test_for_all(mask)
     }
 
     /// batch R76: `player->hasUpgradeInProduction(upgrade)`.
     pub fn player_has_upgrade_in_production(&self, p: PlayerIndex, mask: &UpgradeMaskType) -> bool {
+        if self.cuts.live_teams {
+            return self.live_player_has_upgrade_in_production(p, mask);
+        }
         self.cuts.player_upgrades_in_production.get(&p).is_some_and(|m| m.test_for_all(mask))
     }
 
@@ -847,6 +856,9 @@ impl World {
     /// (the completed upgrade's effects on the player's objects are the player's, a later layer's).
     pub fn player_add_upgrade(&mut self, p: PlayerIndex, key: u32, mask: &UpgradeMaskType, status: i32) {
         self.cut(CutCall::PlayerAddUpgrade { player: p, upgrade: key, status });
+        if self.cuts.live_teams {
+            return; // the player's own list (`cut` ran `Player::addUpgrade`)
+        }
         if status == crate::common::upgrade::UPGRADE_STATUS_IN_PRODUCTION {
             self.cuts.player_upgrades_in_production.entry(p).or_default().set_mask(mask);
         } else if status == crate::common::upgrade::UPGRADE_STATUS_COMPLETE {
@@ -859,6 +871,9 @@ impl World {
     /// the player has it in either (its upgrade list, which the masks stand for here).
     pub fn player_remove_upgrade(&mut self, p: PlayerIndex, key: u32, mask: &UpgradeMaskType) {
         self.cut(CutCall::PlayerRemoveUpgrade { player: p, upgrade: key });
+        if self.cuts.live_teams {
+            return; // the player's own list (`cut` ran `Player::removeUpgrade`)
+        }
         if self.player_has_upgrade_in_production(p, mask) || self.player_has_upgrade_complete(p, mask) {
             self.cuts.player_upgrades_in_production.entry(p).or_default().clear_mask(mask);
             self.cuts.player_upgrades.entry(p).or_default().clear_mask(mask);
@@ -867,6 +882,9 @@ impl World {
 
     /// batch R76: `player->allowedToBuild(tmplate)`: no structure without `m_canBuildBase`, no unit without `m_canBuildUnits`.
     pub fn player_allowed_to_build(&self, p: PlayerIndex, template: u16) -> bool {
+        if self.cuts.live_teams {
+            return self.live_player_allowed_to_build(p, template);
+        }
         let (base, units) = self.cuts.player_build_permissions.get(&p).copied().unwrap_or((true, true));
         let structure = self.statics.thing_factory.find_by_template_id(template).is_some_and(|t| t.data.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE));
         if !base && structure {
@@ -1055,6 +1073,9 @@ impl World {
     /// `player->getAiBaseCenter(&pos)` (batch R19): the centre of the player AI's base, `None` for `FALSE` (`ObjectCuts::ai_base_center`).
     pub fn player_get_ai_base_center(&mut self, player: PlayerIndex) -> Option<Coord3D> {
         self.cut(CutCall::PlayerGetAiBaseCenter { player });
+        if self.cuts.live_teams {
+            return self.live_player_get_ai_base_center(player);
+        }
         self.cuts.ai_base_center.get(&player).copied()
     }
 
@@ -2088,7 +2109,15 @@ pub struct ObjectCuts {
     pub ai_not_recruitable: BTreeSet<ObjectId>,
     /// The objects whose AI has a supply truck interface (`getSupplyTruckAIInterface() != NULL`).
     pub supply_truck_ais: BTreeSet<ObjectId>,
+    /// batch I3b: the team and player questions and notifications of `Object` and its modules are the team and player
+    /// lists' (`team_live_world.rs`) instead of these tables. Off by default.
+    pub live_teams: bool,
+    /// batch I3b: the errors of the player code run for a cut call under `live_teams` (upstream's undefined behaviour).
+    pub team_live_errors: Vec<String>,
     // --- end batch I3 ---
+    /// batch I4: the answers of the units `GameLogic::update` reaches that the world does not hold yet
+    /// (`game_logic_host_world.rs`).
+    pub game_loop: crate::logic::world::game_logic_host_world::GameLoopCuts,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2241,6 +2270,9 @@ impl Default for ObjectCuts {
             ai_valid_surfaces: BTreeMap::new(),
             ai_not_recruitable: BTreeSet::new(),
             supply_truck_ais: BTreeSet::new(),
+            live_teams: false,
+            team_live_errors: Vec::new(),
+            game_loop: Default::default(),
             next_drawable_id: 1,
         }
     }
@@ -2461,6 +2493,9 @@ impl World {
         }
         if self.cuts.live_partition {
             self.live_partition_call(&call);
+        }
+        if self.cuts.live_teams {
+            self.live_team_call(&call);
         }
         if let Some(log) = &mut self.cuts.log {
             log.push(call);

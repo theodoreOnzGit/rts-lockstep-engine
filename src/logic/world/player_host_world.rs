@@ -180,16 +180,12 @@ pub struct PlayerHostCuts {
     pub force_skirmish_ai: bool,
     /// `TheGameInfo` (`None`: `NULL`): its starting cash.
     pub game_info_starting_cash: Option<Money>,
-    /// `TheGameLogic->isInSinglePlayerGame()`, `isInShellGame()`, `getRankLevelLimit()`, `isScoringEnabled()`.
+    /// `TheGameLogic->isInSinglePlayerGame()`, `isInShellGame()`, `getRankLevelLimit()`.
     pub in_single_player_game: bool,
     /// See `in_single_player_game`.
     pub in_shell_game: bool,
     /// See `in_single_player_game`.
     pub rank_level_limit: i32,
-    /// See `in_single_player_game`.
-    pub scoring_enabled: bool,
-    /// `TheGameLogic->getSuperweaponRestriction()`.
-    pub superweapon_restriction: u32,
     /// `TheInGameUI->isClientQuiet()`.
     pub client_quiet: bool,
     /// `TheNetwork != NULL`.
@@ -219,8 +215,6 @@ impl Default for PlayerHostCuts {
             in_single_player_game: false,
             in_shell_game: false,
             rank_level_limit: 1000,
-            scoring_enabled: true,
-            superweapon_restriction: 0,
             client_quiet: false,
             network_present: false,
             general_name: "General".encode_utf16().collect(),
@@ -711,14 +705,14 @@ impl PlayerHost for World {
         }
     }
     fn score_add_object_built(&mut self, p: PlayerIndex, o: Option<ObjectId>) {
-        let scoring = self.cuts.player_host.scoring_enabled;
+        let scoring = self.game_logic.scoring_enabled;
         let Some(so) = o.and_then(|o| self.scored_object(o)) else { return };
         if let Some(pl) = self.players.get_nth_mut(p) {
             pl.score_keeper.add_object_built(&so, scoring);
         }
     }
     fn score_remove_object_built(&mut self, p: PlayerIndex, o: Option<ObjectId>) {
-        let scoring = self.cuts.player_host.scoring_enabled;
+        let scoring = self.game_logic.scoring_enabled;
         let Some(so) = o.and_then(|o| self.scored_object(o)) else { return };
         if let Some(pl) = self.players.get_nth_mut(p) {
             pl.score_keeper.remove_object_built(&so, scoring);
@@ -1048,8 +1042,8 @@ impl PlayerObjectHost for World {
         }
     }
     fn build_assistant_sell_object(&mut self, o: ObjectId) {
-        // the build assistant is not in the world yet (batch I6)
-        self.host_cut("BuildAssistant::sellObject", &[i64::from(o)], &[]);
+        // the build assistant is not in the world yet (batch I6): the object code's cut point for the same call
+        self.cut(CutCall::BuildAssistantSellObject { object: o });
     }
     fn obj_is_faction_structure(&self, o: ObjectId) -> bool {
         self.is_faction_structure(o)
@@ -1118,7 +1112,7 @@ impl PlayerObjectHost for World {
         self.prereq_is_satisfied(t, i, p)
     }
     fn tmpl_max_simultaneous_of_type(&self, t: TemplateRef) -> u32 {
-        let restriction = self.cuts.player_host.superweapon_restriction;
+        let restriction = u32::from(self.game_logic.superweapon_restriction);
         self.tmpl_ref(t).map_or(0, |t| t.get_max_simultaneous_of_type(Some(restriction)))
     }
     fn tmpl_max_simultaneous_link_key(&self, t: TemplateRef) -> NameKeyType {
@@ -1283,7 +1277,7 @@ impl PlayerInitHost for World {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! The world as the team and player host: the team and player code itself is checked against the compiled C++ by
     //! `tests/differential_team.rs` and `tests/differential_player.rs` with stand-in hosts; these check that the world's
     //! answers are its own objects, templates, modules and stores, and that the calls into units it does not hold yet are
@@ -1347,7 +1341,7 @@ mod tests {
 
     /// A world over a flat 40 x 40 height map (400 x 400) with the templates of [`INI`], two players (the neutral player and `Player1`), the singleton team `team1`
     /// of `Player1` made by the team factory on the world, the cut log on and the partition manager initialised and live.
-    fn world() -> (World, TeamId) {
+    pub(crate) fn world() -> (World, TeamId) {
         let mut names = NameKeyGenerator::new();
         names.reset();
         let mut modules = ModuleFactory::new();
@@ -1387,13 +1381,15 @@ mod tests {
         (w, team)
     }
 
-    /// A new object of the template `name` on `team` at `pos`, a member of the team in the team arena (until batch I3b
-    /// makes `setTeam` do that) and registered with the partition manager.
-    fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
+    /// A new object of the template `name` on `team` at `pos`, a member of the team in the team arena (`setTeam` does
+    /// that with `cuts.live_teams`, batch I3b) and registered with the partition manager.
+    pub(crate) fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
         let t = World::thing_factory_find_template(w, name).expect("template");
         let id = w.thing_factory_new_object(t, Some(team), ObjectStatusMaskType::default()).expect("object");
         w.set_position(id, &pos);
-        w.teams.prepend_member(team, id);
+        if !w.teams.is_in_member_list(team, id) {
+            w.teams.prepend_member(team, id);
+        }
         w.partition_register_object(id);
         w.partition_update();
         id

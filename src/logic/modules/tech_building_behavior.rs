@@ -162,7 +162,7 @@ impl UpdateBehavior for TechBuildingBehavior {
         let d = self.data.clone();
 
         let player = world.get_controlling_player(us);
-        let captured = if let Some(p) = player.filter(|&p| world.cuts.player_is_playable_side(p)) {
+        let captured = if let Some(p) = player.filter(|&p| world.tq().player_is_playable_side(p)) {
             let _ = p;
             world.set_model_condition_state(us, MODELCONDITION_CAPTURED);
             true
@@ -199,7 +199,7 @@ impl UpdateBehavior for TechBuildingBehavior {
                     |w, _m| {
                         let us = me.object;
                         w.clear_model_condition_state(us, MODELCONDITION_CAPTURED);
-                        let neutral = w.cuts.player_default_team(if crate::logic::modules::plant(1195) { 1 } else { 0 });
+                        let neutral = w.tq().player_default_team(if crate::logic::modules::plant(1195) { 1 } else { 0 });
                         if !crate::logic::modules::plant(1192) {
                             w.set_team(us, Some(neutral));
                         }

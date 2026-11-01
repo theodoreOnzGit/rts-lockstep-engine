@@ -464,7 +464,7 @@ impl OpenContainVirtuals for MobNexusContain {
                 undefined(world, me, Undefined::NullControllingPlayer);
                 return;
             };
-            let team = world.cuts.player_default_team(player);
+            let team = world.tq().player_default_team(player);
             let Some(template) = payload_template else {
                 // `newObject(NULL)` throws ERROR_BAD_ARG out of `onObjectCreated`
                 world.cuts.module_errors.push((me, IniError::new(IniErrorKind::BadArg)));

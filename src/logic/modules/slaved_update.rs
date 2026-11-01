@@ -358,7 +358,7 @@ impl SlavedUpdate {
         // "slaver must have been hijacked or something.. we will join his team"
         let master_team = world.get_team(master).ok_or(Undefined::NullTeam)?;
         let my_team = world.get_team(us);
-        if world.cuts.team_relationship(master_team, my_team) != Relationship::Allies {
+        if world.tq().team_relationship(master_team, my_team) != Relationship::Allies {
             world.defect(us, master_team, 0);
         }
         if d.stay_on_same_layer_as_master {

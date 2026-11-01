@@ -647,8 +647,9 @@ impl BattlePlanUpdate {
         Ok(())
     }
 
-    /// `Player::changeBattlePlan(plan, delta, m_bonuses)` (a record: see the module's doc).
-    fn change_battle_plan(&self, world: &mut World, player: i32, plan: i32, delta: i32) {
+    /// `Player::changeBattlePlan(plan, delta, m_bonuses)`: a record (see the module's doc); with `cuts.live_teams` (batch I3b)
+    /// also the player's, on the module's own bonuses, which it rewrites when the last plan of a kind goes.
+    fn change_battle_plan(&mut self, world: &mut World, player: i32, plan: i32, delta: i32) {
         let b = &self.bonuses;
         world.cut(CutCall::PlayerChangeBattlePlan {
             player,
@@ -660,6 +661,18 @@ impl BattlePlanUpdate {
             hold_the_line: b.hold_the_line,
             sight_range_scalar: b.sight_range_scalar,
         });
+        if world.cuts.live_teams {
+            use crate::logic::world::player_objects::{player_change_battle_plan, BattlePlanStatus};
+            let status = match plan {
+                1 => BattlePlanStatus::Bombardment,
+                2 => BattlePlanStatus::HoldTheLine,
+                3 => BattlePlanStatus::SearchAndDestroy,
+                _ => BattlePlanStatus::None,
+            };
+            if let Err(e) = player_change_battle_plan(world, player, status, delta, &mut self.bonuses) {
+                world.cuts.team_live_errors.push(format!("changeBattlePlan: {e:?}"));
+            }
+        }
     }
 
     /// The building's body's `setMaxHealth(getMaxHealth() * factor, changeType)` (the body read unchecked).

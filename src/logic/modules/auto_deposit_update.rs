@@ -230,7 +230,7 @@ impl AutoDepositUpdate {
         if bonus > 0 {
             let mut position = world.objects.find(me).map(|o| o.get_position()).unwrap_or_default();
             position.z += 10.0; // add a little z to make it show up above the unit.
-            let color = world.cuts.player_color(player) | floating_alpha();
+            let color = world.tq().player_color(player) | floating_alpha();
             world.cut(CutCall::InGameUiAddFloatingText { amount: bonus, position, color });
         }
         self.award_initial_capture_bonus = false;
@@ -277,7 +277,7 @@ impl AutoDepositUpdate {
                 position.y += world.random.game_client_random_value(dl, dh) as f32;
             }
             let player = player.ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-            let color = world.cuts.player_color(player) | floating_alpha();
+            let color = world.tq().player_color(player) | floating_alpha();
             world.cut(CutCall::InGameUiAddFloatingText { amount: money_amount, position, color });
         }
         Ok(UPDATE_SLEEP_NONE)

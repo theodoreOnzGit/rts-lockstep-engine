@@ -322,7 +322,7 @@ impl GenerateMinefieldBehavior {
     /// `obj->getControllingPlayer()->getDefaultTeam()`.
     fn team(world: &World, id: ObjectId) -> Result<TeamId, Undefined> {
         let player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
-        Ok(world.cuts.player_default_team(player))
+        Ok(world.tq().player_default_team(player))
     }
 
     /// `offsetBySmallRandomAmount(pt, maxAmt)`.

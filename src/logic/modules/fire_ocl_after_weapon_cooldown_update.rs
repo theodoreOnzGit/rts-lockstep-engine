@@ -305,7 +305,7 @@ impl FireOCLAfterWeaponCooldownUpdate {
 
         let object_mask = world.objects.find(me.object).map(|o| o.object_upgrades_completed).unwrap_or_default();
         let player = world.get_controlling_player(me.object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let player_mask = world.cuts.player_completed_upgrade_mask(player);
+        let player_mask = world.tq().player_completed_upgrade_mask(player);
         let mut mask_to_check = player_mask;
         if !crate::logic::modules::plant(929) {
             mask_to_check.set_mask(&object_mask);

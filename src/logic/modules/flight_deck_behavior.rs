@@ -543,7 +543,7 @@ impl FlightDeckBehavior {
         if let (Some(template), true) = (self.thing_template, create_units) {
             for i in first_new..first_new + made {
                 let Some(player) = world.get_controlling_player(us) else { return Err(IniError::undefined(Undefined::NullControllingPlayer)) };
-                let team = world.cuts.player_default_team(player);
+                let team = world.tq().player_default_team(player);
                 let Ok(jet) = world.thing_factory_new_object(template, Some(team).filter(|t| *t != 0), Default::default()) else { continue };
                 world.set_producer(jet, us);
                 world.body_set_status(jet, mask(OBJECT_STATUS_DECK_HEIGHT_OFFSET), true);

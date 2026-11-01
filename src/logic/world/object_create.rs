@@ -229,10 +229,10 @@ impl World {
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
             // `getTeam()`, not the team asked for: `setTeam` puts an object of an inactive player on the neutral team
             if let Some(team) = self.get_team(id) {
-                if self.cuts.team_has_template_info(team) {
+                if self.tq().team_has_template_info(team) {
                     self.cut(CutCall::AiSetAttitude { object: id, team });
                 }
-                if self.cuts.team_attack_info(team) {
+                if self.tq().team_attack_info(team) {
                     self.cut(CutCall::AiSetAttackInfo { object: id, team });
                 }
             }
@@ -241,7 +241,7 @@ impl World {
         // allocate experience tracker (the record exists from `with_template`).
         // If a valid team has been assigned me, then I have a Player I can ask about my starting level
         if let Some(controller) = self.get_controlling_player(id) {
-            let level = self.cuts.player_production_veterancy_level(controller, tt.get_name());
+            let level = self.player_production_veterancy_level(controller, tt.get_name());
             self.cut_experience_set_veterancy_level(id, level, true);
         }
 
@@ -384,7 +384,7 @@ impl World {
             if !receiving && self.cuts.globals.objects_should_receive_difficulty_bonus {
                 self.set_receiving_difficulty_bonus(id, true);
             }
-            if self.cuts.player_num_battle_plans_active(controller) > 0 {
+            if self.tq().player_num_battle_plans_active(controller) > 0 {
                 self.cut(CutCall::PlayerApplyBattlePlanBonusesForObject { player: controller, object: id });
             }
         }
@@ -579,7 +579,7 @@ impl World {
 
     /// The player mask of the object's controlling player (0 without one).
     pub fn controlling_player_mask(&self, id: ObjectId) -> PlayerMaskType {
-        self.get_controlling_player(id).map_or(0, |p| self.cuts.player_mask(p))
+        self.get_controlling_player(id).map_or(0, |p| self.tq().player_mask(p))
     }
 
     /// `m_constructionPercent` is complete (`CONSTRUCTION_COMPLETE`).

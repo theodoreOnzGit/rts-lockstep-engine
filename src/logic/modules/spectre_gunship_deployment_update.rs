@@ -287,7 +287,7 @@ impl SpectreGunshipDeploymentUpdate {
             }
         }
         let player = world.get_controlling_player(us).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        let mask = world.cuts.player_mask(player);
+        let mask = world.tq().player_mask(player);
         world.game_logic_select_object(gunship, !crate::logic::modules::plant(2299), mask, true);
         if let Some(own) = world.get_special_power_module(us, Some(template)) {
             world.module_call(us, own, ModuleCall::MarkSpecialPowerTriggered { location: Some(initial) });

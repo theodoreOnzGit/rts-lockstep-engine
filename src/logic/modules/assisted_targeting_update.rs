@@ -217,7 +217,7 @@ impl AssistedTargetingUpdate {
     /// `makeFeedbackLaser(laserTemplate, from, to)`.
     fn make_feedback_laser(&self, world: &mut World, us: ObjectId, template: u16, from: ObjectId, to: ObjectId) -> Result<(), Undefined> {
         let Some(player) = world.get_controlling_player(us) else { return Ok(()) };
-        let laser_team = world.cuts.player_default_team(player);
+        let laser_team = world.tq().player_default_team(player);
         let Ok(laser) = world.thing_factory_new_object(template, Some(laser_team), Default::default()) else { return Ok(()) };
         // (upstream dereferences `from` here, and `to` only once the laser has its update: a null one is undefined behaviour)
         let Some(from_pos) = world.objects.find(from).map(|o| o.get_position()) else { return Err(Undefined::NullObject) };

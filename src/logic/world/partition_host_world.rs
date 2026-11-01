@@ -276,7 +276,7 @@ impl PartitionHost for World {
         self.players.player_count()
     }
     fn player_mask(&self, index: i32) -> Option<PlayerMaskType> {
-        self.players.get_nth(index).map(|_| self.cuts.player_mask(index))
+        self.players.get_nth(index).map(|_| self.tq().player_mask(index))
     }
     fn local_player_index(&self) -> Option<i32> {
         self.players.local_index()
@@ -285,7 +285,7 @@ impl PartitionHost for World {
         self.cuts.players_with_relationship(player_index, self.players.player_count(), which_player_types)
     }
     fn player_relationship_to_object_team(&self, player_index: i32, object: ObjectId) -> Relationship {
-        self.cuts.player_relationship_to_team(player_index, self.get_team(object))
+        self.tq().player_relationship_to_team(player_index, self.get_team(object))
     }
 
     fn object_geometry(&self, id: ObjectId) -> Option<ObjectGeometry> {
@@ -433,7 +433,7 @@ impl PartitionFilterHost for World {
         }
     }
     fn player_relationship_to_player(&self, a: i32, b: i32) -> Relationship {
-        self.cuts.player_relationship_to_player_default_team(a, b)
+        self.tq().player_relationship_to_player_default_team(a, b)
     }
     fn controlling_player_is_computer(&self, id: ObjectId) -> bool {
         self.get_controlling_player(id).and_then(|p| self.players.get_nth(p)).is_some_and(|p| p.player_type == PlayerType::Computer)
@@ -447,7 +447,7 @@ impl PartitionFilterHost for World {
     }
     fn team_relationship_to_player(&self, obj: ObjectId, player: i32) -> Relationship {
         match self.get_team(obj) {
-            Some(team) => self.cuts.team_relationship(team, Some(self.cuts.player_default_team(player))),
+            Some(team) => self.tq().team_relationship(team, Some(self.tq().player_default_team(player))),
             None => Relationship::Neutral,
         }
     }

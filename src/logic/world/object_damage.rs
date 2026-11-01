@@ -117,7 +117,7 @@ impl World {
         if info.out.actual_damage_dealt > 0.0 && info.input.damage_type != DAMAGE_PENALTY && info.input.damage_type != DAMAGE_HEALING {
             if let Some(player) = self.get_controlling_player(id) {
                 let o = self.objects.find(id).expect("checked above");
-                if info.input.source_player_mask & self.cuts.player_mask(player) == 0
+                if info.input.source_player_mask & self.tq().player_mask(player) == 0
                     && o.on_radar
                     && self.players.local_index() == Some(player)
                 {
@@ -346,7 +346,7 @@ impl World {
                     let trap_player = self.get_controlling_player(trap);
                     let victim_team = self.get_team(victim);
                     if let Some(p) = trap_player {
-                        if self.cuts.player_relationship_to_team(p, victim_team) == Relationship::Allies {
+                        if self.tq().player_relationship_to_team(p, victim_team) == Relationship::Allies {
                             return false;
                         }
                     }
@@ -376,7 +376,7 @@ impl World {
         let Some(victim_controller) = self.get_controlling_player(victim) else { return };
         // if the other player is not a playable side (i.e. they are civilian, observer, whatever)
         // we shouldn't count the kill.
-        if !self.cuts.player_is_playable_side(victim_controller) {
+        if !self.tq().player_is_playable_side(victim_controller) {
             return;
         }
         if v.is_kind_of(KINDOF_IGNORED_IN_GUI) {

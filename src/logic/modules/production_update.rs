@@ -746,7 +746,7 @@ impl ProductionUpdate {
     /// One unit made: on the player's default team, its producer the factory, out through the door; its voice, the player's
     /// `onUnitCreated`, its `onBuildComplete`s, the first one's `VoiceCreate`, the academy's record, and one more produced.
     fn make_unit(&mut self, world: &mut World, us: ObjectId, player: PlayerIndex, exit: u16, template: u16, exit_door: ExitDoorType) -> Result<(), IniError> {
-        let team = world.cuts.player_default_team(player);
+        let team = world.tq().player_default_team(player);
         // (`newObject` throws on failure; the world's errors are not upstream's)
         let new_obj = world.thing_factory_new_object(template, Some(team), Default::default()).map_err(|_| IniError::new(IniErrorKind::BadArg))?;
         world.set_producer(new_obj, us);

@@ -743,12 +743,12 @@ impl StealthUpdate {
         let local = world.players.local_index();
         let team = o.team;
         let mut r = if team != 0 {
-            let default_team = world.cuts.player_default_team(local?);
-            world.cuts.team_relationship(team, Some(default_team).filter(|&t| t != 0))
+            let default_team = world.tq().player_default_team(local?);
+            world.tq().team_relationship(team, Some(default_team).filter(|&t| t != 0))
         } else {
             Relationship::Neutral
         };
-        if !world.cuts.player_is_active(local?) {
+        if !world.tq().player_is_active(local?) {
             // Observer players are friends to everyone!
             r = Relationship::Allies;
         }
@@ -820,7 +820,7 @@ impl StealthUpdate {
                 if world.players.get_nth(n).is_none() {
                     continue;
                 }
-                if world.cuts.player_relationship_to_player_default_team(n, this_player) != Relationship::Enemies {
+                if world.tq().player_relationship_to_player_default_team(n, this_player) != Relationship::Enemies {
                     continue;
                 }
                 for obj in world.player_iterate_objects(n) {
@@ -914,15 +914,15 @@ impl StealthUpdate {
             // the colour: the disguise player's to neutrals and enemies of the local player (if active), the object's own otherwise
             let me_player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
             let local = world.players.local_index().ok_or(Undefined::NullLocalPlayer)?;
-            let color = if world.cuts.player_relationship_to_player_default_team(me_player, local) != Relationship::Allies && world.cuts.player_is_active(local) {
+            let color = if world.tq().player_relationship_to_player_default_team(me_player, local) != Relationship::Allies && world.tq().player_is_active(local) {
                 // Neutrals and enemies will see this disguised unit as the team it's disguised as.
                 if world.players.get_nth(self.disguise_as_player_index).is_none() {
                     return Err(Undefined::NullControllingPlayer);
                 }
                 if night {
-                    world.cuts.player_night_color(self.disguise_as_player_index)
+                    world.tq().player_night_color(self.disguise_as_player_index)
                 } else {
-                    world.cuts.player_color(self.disguise_as_player_index)
+                    world.tq().player_color(self.disguise_as_player_index)
                 }
             } else if night {
                 world.get_night_indicator_color(id)

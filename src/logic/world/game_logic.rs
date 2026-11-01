@@ -174,6 +174,12 @@ pub struct World {
     /// `TheSidesList`: the map's sides, teams and build lists.
     pub sides: crate::logic::sides_list::SidesList,
     // --- end batch I3 ---
+    // --- batch I4 ---
+    /// `GameLogic`'s own members (`m_CRC`, the pause, the progress, the overrides, what `GameLogic::xfer` saves).
+    pub game_logic: crate::logic::world::game_logic_update::GameLogicState,
+    /// The command dispatcher's state (`theBuildPlan`, the cached CRCs).
+    pub dispatch: crate::logic::world::game_logic_dispatch::DispatchState,
+    // --- end batch I4 ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -227,6 +233,10 @@ impl World {
             keys: crate::common::well_known_keys::WellKnownKeys::new(),
             sides: crate::logic::sides_list::SidesList::new(),
             // --- end batch I3 ---
+            // --- batch I4 ---
+            game_logic: crate::logic::world::game_logic_update::GameLogicState::new(),
+            dispatch: Default::default(),
+            // --- end batch I4 ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),
@@ -252,6 +262,16 @@ impl World {
     /// `m_startNewGame`: while set, the frame counter does not advance.
     pub fn set_start_new_game(&mut self, v: bool) {
         self.start_new_game = v;
+    }
+
+    /// batch I4: `m_startNewGame`.
+    pub fn start_new_game_pending(&self) -> bool {
+        self.start_new_game
+    }
+
+    /// batch I4: `m_isInUpdate = on` (`GameLogic::update` sets it around the frame's work).
+    pub fn set_in_game_logic_update(&mut self, on: bool) {
+        self.in_update = on;
     }
 
     /// `isInGameLogicUpdate()`.

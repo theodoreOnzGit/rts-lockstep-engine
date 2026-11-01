@@ -980,7 +980,7 @@ impl GarrisonContain {
     fn get_apparent_controlling_player(&self, world: &World, me: ModuleHandle, observing_player: Option<PlayerIndex>) -> Option<PlayerIndex> {
         let my_player = world.get_controlling_player(me.object);
         if let (true, Some(team), Some(mine), Some(observer)) = (self.hide_garrisoned_state_from_nonallies, self.original_team, my_player, observing_player) {
-            let r = world.cuts.player_relationship_to_player_default_team(mine, observer);
+            let r = world.tq().player_relationship_to_player_default_team(mine, observer);
             if (r != Relationship::Allies) != crate::logic::modules::plant(1617) {
                 return world.contain_team_controlling_player(team);
             }
@@ -1009,7 +1009,7 @@ impl GarrisonContain {
             self.hide_garrisoned_state_from_nonallies = !detected && (self.oc.stealth_units_contained() == count || crate::logic::modules::plant(1618));
             let controller = world.get_controlling_player(rider);
             if let Some(p) = controller {
-                let team = world.cuts.player_default_team(p);
+                let team = world.tq().player_default_team(p);
                 if !crate::logic::modules::plant(1619) {
                     out(self, world, me, |w| w.contain_set_team(us, team));
                 }
@@ -1038,7 +1038,7 @@ impl GarrisonContain {
         }
         out(self, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_GARRISONED, set_model_garrisoned));
         if let Some(controller) = self.get_apparent_controlling_player(world, me, local) {
-            let color = if world.cuts.globals.time_of_day_is_night { world.cuts.player_night_color(controller) } else { world.cuts.player_color(controller) };
+            let color = if world.cuts.globals.time_of_day_is_night { world.tq().player_night_color(controller) } else { world.tq().player_color(controller) };
             world.contain_drawable_set_indicator_color(us, color);
         }
         if count > 0 {
@@ -1428,7 +1428,7 @@ impl OpenContainVirtuals for GarrisonContain {
                 undefined(world, me, Undefined::NullControllingPlayer);
                 return;
             };
-            let team = world.cuts.player_default_team(player);
+            let team = world.tq().player_default_team(player);
             let Some(template) = roster_template else {
                 // `newObject(NULL)` throws ERROR_BAD_ARG
                 world.cuts.module_errors.push((me, IniError::new(IniErrorKind::BadArg)));

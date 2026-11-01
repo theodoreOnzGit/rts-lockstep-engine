@@ -751,7 +751,7 @@ pub fn tc_create_payload<T: TransportContainVirtuals>(t: &mut T, world: &mut Wor
             undefined(world, me, Undefined::NullControllingPlayer);
             return Ok(());
         };
-        let team = world.cuts.player_default_team(player);
+        let team = world.tq().player_default_team(player);
         let Some(template) = payload_template else {
             // `newObject(NULL)` throws ERROR_BAD_ARG out of update: the load sounds stay off, the payload is not marked created
             return Err(IniError::new(IniErrorKind::BadArg));

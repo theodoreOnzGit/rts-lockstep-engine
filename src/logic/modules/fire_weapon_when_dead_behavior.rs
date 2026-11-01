@@ -198,7 +198,7 @@ impl FireWeaponWhenDeadBehavior {
             return;
         }
         if let Some(player) = world.get_controlling_player(me.object) {
-            if world.cuts.player_completed_upgrade_mask(player).test_for_any(&conflicting) && !crate::logic::modules::plant(895) {
+            if world.tq().player_completed_upgrade_mask(player).test_for_any(&conflicting) && !crate::logic::modules::plant(895) {
                 return;
             }
         }

@@ -122,6 +122,24 @@ pub struct GameLogicState {
     pub superweapon_restriction: u16,
 }
 
+impl GameLogicState {
+    /// batch I4: the members as `GameLogic::GameLogic()` and `GameLogic::reset()` set them (`m_isScoringEnabled`,
+    /// `m_showBehindBuildingMarkers`, `m_drawIconUI`, `m_showDynamicLOD`, `m_inputEnabledMemory` and
+    /// `m_mouseVisibleMemory` are `TRUE`, `m_scriptHulkMaxLifetimeOverride` is -1, the rest 0 or `FALSE`).
+    pub fn new() -> GameLogicState {
+        GameLogicState {
+            input_enabled_memory: true,
+            mouse_visible_memory: true,
+            scoring_enabled: true,
+            show_behind_building_markers: true,
+            draw_icon_ui: true,
+            show_dynamic_lod: true,
+            script_hulk_max_lifetime_override: -1,
+            ..GameLogicState::default()
+        }
+    }
+}
+
 /// The world as `GameLogic::update` and its neighbours reach it. Objects are named by id, players by index.
 pub trait GameLogicHost {
     // --- the world's own (GameLogic's other members) ---

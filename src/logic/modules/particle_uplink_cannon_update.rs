@@ -763,7 +763,7 @@ impl ParticleUplinkCannonUpdate {
                     }
                     // "Also reveal vision because the owning player has full rights to watch the carnage he created!"
                     let player = world.get_controlling_player(us).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-                    let mask = world.cuts.player_mask(player);
+                    let mask = world.tq().player_mask(player);
                     let (x, y) = (self.current_target_position.x, self.current_target_position.y);
                     world.partition_do_shroud_reveal(x, y, d.reveal_range, mask);
                     world.partition_undo_shroud_reveal(x, y, d.reveal_range, mask);

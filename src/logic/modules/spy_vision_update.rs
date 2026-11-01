@@ -276,7 +276,7 @@ impl SpyVisionUpdate {
         let Some(by_whom) = player_to_set_for else { return };
         for i in 0..world.players.player_count() {
             let team = world.players.get_nth(i).and_then(|p| p.default_team);
-            let related = world.cuts.player_relationship_to_team(by_whom, team);
+            let related = world.tq().player_relationship_to_team(by_whom, team);
             if related == Relationship::Enemies || (related == Relationship::Neutral && crate::logic::modules::plant(865)) {
                 let which_units = self.data.spy_on_kindof;
                 world.cut(CutCall::PlayerSetUnitsVisionSpied { player: i, setting, which_units, by_whom });

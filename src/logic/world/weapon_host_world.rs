@@ -376,8 +376,8 @@ impl WeaponHost for World {
     }
     fn team_relationship_to_player_index(&self, o: ObjectId, player_index: i32) -> Relationship {
         let team = self.objects.find(o).map_or(0, |x| x.team);
-        let default_team = self.cuts.player_default_team(player_index);
-        self.cuts.team_relationship(team, (default_team != 0).then_some(default_team))
+        let default_team = self.tq().player_default_team(player_index);
+        self.tq().team_relationship(team, (default_team != 0).then_some(default_team))
     }
     fn find_weapon_template_set(&mut self, o: ObjectId) -> Option<WeaponTemplateSetRef> {
         let (t, flags) = self.objects.find(o).map(|x| (x.thing.template().get_template_id(), x.cur_weapon_set_flags))?;
@@ -399,10 +399,10 @@ impl WeaponHost for World {
         self.get_controlling_player(o)
     }
     fn controlling_player_mask(&self, o: ObjectId) -> Option<PlayerMaskType> {
-        self.get_controlling_player(o).map(|p| self.cuts.player_mask(p))
+        self.get_controlling_player(o).map(|p| self.tq().player_mask(p))
     }
     fn controlling_player_battle_plans(&self, o: ObjectId) -> i32 {
-        self.get_controlling_player(o).map_or(0, |p| self.cuts.player_num_battle_plans_active(p))
+        self.get_controlling_player(o).map_or(0, |p| self.tq().player_num_battle_plans_active(p))
     }
     fn apply_battle_plan_bonuses(&mut self, source: ObjectId, projectile: ObjectId) {
         if let Some(player) = self.get_controlling_player(source) {
@@ -467,7 +467,7 @@ impl WeaponHost for World {
         let observer = observer?;
         self.players.get_nth(other_index)?;
         self.players.get_nth(observer)?;
-        Some(self.cuts.player_relationship_to_player_default_team(observer, other_index))
+        Some(self.tq().player_relationship_to_player_default_team(observer, other_index))
     }
     fn spawn_slaves_can_use_weapon_against_target(
         &mut self,
@@ -580,7 +580,7 @@ impl WeaponHost for World {
     // ---- the thing factory, projectiles and what they carry ----------------------------------------------------------
 
     fn new_object_for_player_of(&mut self, template: u16, source: ObjectId) -> ObjectId {
-        let team = self.get_controlling_player(source).map(|p| self.cuts.player_default_team(p)).filter(|&t| t != 0);
+        let team = self.get_controlling_player(source).map(|p| self.tq().player_default_team(p)).filter(|&t| t != 0);
         self.thing_factory_new_object(template, team, Default::default()).unwrap_or(INVALID_ID)
     }
     fn set_producer(&mut self, projectile: ObjectId, source: ObjectId) {

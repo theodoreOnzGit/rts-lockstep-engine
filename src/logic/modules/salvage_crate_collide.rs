@@ -215,7 +215,7 @@ impl SalvageCrateCollide {
             // "Display cash income floating over the crate. Position is me, everything else is them."
             let mut pos = world.objects.find(me).map(|o| *o.thing.position()).unwrap_or_default();
             pos.z += if crate::logic::modules::plant(1688) { 0.0 } else { 10.0 };
-            let color = world.cuts.player_color(player) | FLOATING_ALPHA;
+            let color = world.tq().player_color(player) | FLOATING_ALPHA;
             world.cut(CutCall::InGameUiAddFloatingTextNamed { text: b"GUI:AddCash".to_vec(), amount: money, position: pos, color });
         }
         Ok(())

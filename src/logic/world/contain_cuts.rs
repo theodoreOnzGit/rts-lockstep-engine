@@ -712,7 +712,7 @@ impl World {
 
     /// `team->getControllingPlayer()`: the world's team-to-player table (what `getControllingPlayer` of an object reads).
     pub fn contain_team_controlling_player(&self, team: crate::logic::world::ids::TeamId) -> Option<crate::logic::world::ids::PlayerIndex> {
-        self.cuts.team_player(team)
+        self.tq().team_player(team)
     }
 
     /// `obj->setTeam(team)` for a team that may be `NULL` (the stub records -1 for it).

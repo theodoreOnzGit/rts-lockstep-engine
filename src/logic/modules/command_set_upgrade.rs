@@ -186,7 +186,7 @@ impl UpgradeBehavior for CommandSetUpgrade {
             let upgrade_mask = upgrade_template.upgrade_mask();
             // "See if upgrade is found in the player completed upgrades"
             if let Some(player) = world.get_controlling_player(me.object) {
-                let player_mask = world.cuts.player_completed_upgrade_mask(player);
+                let player_mask = world.tq().player_completed_upgrade_mask(player);
                 if player_mask.test_for_any(&upgrade_mask) {
                     CommandSetUpgrade::give_command_set(world, me, &d.new_command_set_alt);
                     return Ok(());

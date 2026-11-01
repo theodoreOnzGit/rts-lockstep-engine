@@ -432,7 +432,7 @@ impl World {
         let Some(player) = self.get_controlling_player(id) else {
             return; // "This can only happen in game teardown."
         };
-        let player_mask = self.cuts.player_completed_upgrade_mask(player);
+        let player_mask = self.tq().player_completed_upgrade_mask(player);
         let object_mask = self.objects.find(id).map_or(UpgradeMaskType::new(), |o| o.object_upgrades_completed);
         let mut mask_to_check = player_mask;
         mask_to_check.set_mask(&object_mask);
@@ -463,7 +463,7 @@ impl World {
     pub fn affected_by_upgrade(&mut self, id: ObjectId, upgrade_mask: &UpgradeMaskType) -> bool {
         let object_mask = self.objects.find(id).map_or(UpgradeMaskType::new(), |o| o.object_upgrades_completed);
         let player_mask = match self.get_controlling_player(id) {
-            Some(p) => self.cuts.player_completed_upgrade_mask(p),
+            Some(p) => self.tq().player_completed_upgrade_mask(p),
             None => UpgradeMaskType::new(),
         };
         let mut mask_to_check = player_mask;

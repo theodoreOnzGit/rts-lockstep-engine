@@ -254,7 +254,7 @@ impl PropagandaTowerBehavior {
         // `getObject()->getControllingPlayer()->hasUpgradeComplete(m_upgradeRequired)`: both dereferenced
         let player = world.get_controlling_player(us).ok_or(Undefined::NullControllingPlayer)?;
         let upgrade = self.upgrade_required.ok_or(Undefined::NullUpgradeTemplate)?;
-        let effect_upgraded = world.cuts.player_completed_upgrade_mask(player).test_for_all(&upgrade.mask);
+        let effect_upgraded = world.tq().player_completed_upgrade_mask(player).test_for_all(&upgrade.mask);
         if giving {
             if world.objects.find(obj).is_some_and(|o| o.weapon_set.has_any_damage_weapon()) {
                 let test = |world: &World, c| world.objects.find(obj).is_some_and(|o| o.test_weapon_bonus_condition(c));
@@ -298,7 +298,7 @@ impl PropagandaTowerBehavior {
             upgrade_present = match upgrade.upgrade_type {
                 UpgradeType::Player => {
                     let player = world.get_controlling_player(us).ok_or(Undefined::NullControllingPlayer)?;
-                    world.cuts.player_completed_upgrade_mask(player).test_for_all(&upgrade.mask)
+                    world.tq().player_completed_upgrade_mask(player).test_for_all(&upgrade.mask)
                 }
                 UpgradeType::Object => world.objects.find(us).is_some_and(|o| o.object_upgrades_completed.test_for_all(&upgrade.mask)),
             };

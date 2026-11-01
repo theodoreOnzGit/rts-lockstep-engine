@@ -967,7 +967,7 @@ impl World {
             return;
         }
         let player = self.get_controlling_player(id).expect("may_affect_maps checked it");
-        let mask = self.cuts.player_mask(player);
+        let mask = self.tq().player_mask(player);
         let range = self.get_vision_range(id); // we are valuable all the way to where we can target.
         let o = self.objects.find_mut(id).expect("checked above");
         o.partition_last_value.where_ = o.thing.position().to_owned();
@@ -1003,7 +1003,7 @@ impl World {
             return;
         }
         let player = self.get_controlling_player(id).expect("may_affect_maps checked it");
-        let mask = self.cuts.player_mask(player);
+        let mask = self.tq().player_mask(player);
         let range = self.get_vision_range(id); // we are threatening all the way to where we can target.
         let o = self.objects.find_mut(id).expect("checked above");
         o.partition_last_threat.where_ = o.thing.position().to_owned();
@@ -1063,8 +1063,8 @@ impl World {
                 let count = self.players.player_count();
                 for current_index in (0..count).rev() {
                     // Build mask of of allies who can see me.
-                    if self.cuts.player_relationship_to_player_default_team(controller, current_index) == Relationship::Allies {
-                        looking_mask |= self.cuts.player_mask(current_index);
+                    if self.tq().player_relationship_to_player_default_team(controller, current_index) == Relationship::Allies {
+                        looking_mask |= self.tq().player_mask(current_index);
                     }
                 }
                 // Other players can also be looking through our eyes.
@@ -1130,8 +1130,8 @@ impl World {
         let count = self.players.player_count();
         for current_index in (0..count).rev() {
             // Build mask of NON-allies.
-            if self.cuts.player_relationship_to_player_default_team(controller, current_index) != Relationship::Allies {
-                shrouding_mask |= self.cuts.player_mask(current_index);
+            if self.tq().player_relationship_to_player_default_team(controller, current_index) != Relationship::Allies {
+                shrouding_mask |= self.tq().player_mask(current_index);
             }
         }
         let pos = self.objects.find(id).expect("checked above").get_position();

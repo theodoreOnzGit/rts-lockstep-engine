@@ -324,9 +324,9 @@ fn about_to_do_special_power<M: SpecialPowerBehavior>(m: &M, world: &mut World, 
             let local = local.ok_or_else(|| IniError::undefined(Undefined::NullLocalPlayer))?;
             let team = world.get_team(me.object);
             let ally = if crate::logic::modules::plant(843) {
-                world.cuts.player_relationship_to_team(local, team) == crate::common::game_common::Relationship::Allies
+                world.tq().player_relationship_to_team(local, team) == crate::common::game_common::Relationship::Allies
             } else {
-                world.cuts.player_relationship_to_team(local, team) != crate::common::game_common::Relationship::Enemies
+                world.tq().player_relationship_to_team(local, team) != crate::common::game_common::Relationship::Enemies
             };
             if ally {
                 EvaWhose::Ally

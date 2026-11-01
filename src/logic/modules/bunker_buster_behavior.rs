@@ -258,7 +258,7 @@ impl BunkerBusterBehavior {
         let d = self.data.clone();
         if let Some(mask) = self.upgrade_required {
             let player = world.get_controlling_player(us).ok_or(Undefined::NullControllingPlayer)?;
-            let weapon_upgraded = world.cuts.player_completed_upgrade_mask(player).test_for_all(&mask);
+            let weapon_upgraded = world.tq().player_completed_upgrade_mask(player).test_for_all(&mask);
             if weapon_upgraded == crate::logic::modules::plant(2243) {
                 return Ok(());
             }
@@ -280,7 +280,7 @@ impl BunkerBusterBehavior {
                             info.input.death_type = death_type;
                             info.input.source_id = us;
                             let player = world.get_controlling_player(us).ok_or(Undefined::NullControllingPlayer)?;
-                            info.input.source_player_mask = world.cuts.player_mask(player);
+                            info.input.source_player_mask = world.tq().player_mask(player);
                             info.input.amount = if crate::logic::modules::plant(2247) { 50.0 } else { 100.0 };
                             // "Ouch!"
                             world.module_call(target, contain, ModuleCall::HarmAndForceExitAllContained(info));

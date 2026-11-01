@@ -1115,7 +1115,7 @@ impl SpecialAbilityUpdate {
                     world.emit(ObjectClientEvent::Eva { message: EvaMessage::BuildingStolen });
                 }
                 let Some(player) = world.get_controlling_player(us) else { return Err(Undefined::NullControllingPlayer) };
-                let team = world.cuts.player_default_team(player);
+                let team = world.tq().player_default_team(player);
                 world.crate_defect(target, Some(team), 1); // "one frame of flash!"
                 if t == SPECIAL_BLACKLOTUS_CAPTURE_BUILDING {
                     if let Some(spm) = self.get_my_spm(world, us) {

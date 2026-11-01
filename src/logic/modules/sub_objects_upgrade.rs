@@ -159,7 +159,7 @@ impl UpgradeBehavior for SubObjectsUpgrade {
             return Ok(());
         }
         let player = world.get_controlling_player(object).ok_or_else(|| IniError::undefined(Undefined::NullControllingPlayer))?;
-        if !crate::logic::modules::plant(618) && world.cuts.player_completed_upgrade_mask(player).test_for_any(&conflicting) {
+        if !crate::logic::modules::plant(618) && world.tq().player_completed_upgrade_mask(player).test_for_any(&conflicting) {
             return Ok(());
         }
 

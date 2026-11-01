@@ -350,7 +350,7 @@ impl StickyBombUpdate {
             info.input.death_type = wt.death_type;
             info.input.source_id = id;
             let player = world.get_controlling_player(id).ok_or(Undefined::NullControllingPlayer)?;
-            info.input.source_player_mask = world.cuts.player_mask(player);
+            info.input.source_player_mask = world.tq().player_mask(player);
             info.input.damage_status_type = wt.damage_status_type;
             for (victim, dist_sqr) in victims {
                 let inside = crate::logic::modules::plant(2097) || dist_sqr <= primary_damage_range_sqr;

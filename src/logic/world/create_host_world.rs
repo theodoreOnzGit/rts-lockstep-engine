@@ -331,7 +331,7 @@ mod tests {
         let statics = w.statics.clone();
         let up_p = statics.upgrade_center.find_upgrade(&mut w.names, b"UpP").unwrap().unwrap().upgrade_mask();
         let up_o = statics.upgrade_center.find_upgrade(&mut w.names, b"UpO").unwrap().unwrap().upgrade_mask();
-        assert!(w.cuts.player_completed_upgrade_mask(0).test_for_all(&up_p), "the player has UpP");
+        assert!(w.tq().player_completed_upgrade_mask(0).test_for_all(&up_p), "the player has UpP");
         assert!(w.objects.find(id).unwrap().object_upgrades_completed.test_for_all(&up_o), "the object has UpO");
         assert!(w.cuts.log.as_ref().unwrap().iter().any(|c| matches!(c, CutCall::PlayerAddUpgradeComplete { player: 0, .. })));
         // build complete runs once

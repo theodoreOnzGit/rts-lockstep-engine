@@ -557,7 +557,7 @@ impl CaveContain {
                 return;
             };
             if let Some(p) = world.get_controlling_player(rider) {
-                let team = world.cuts.player_default_team(p);
+                let team = world.tq().player_default_team(p);
                 self.change_team_on_all_connected_caves(world, me, Some(team), true);
             }
         } else if count == 0 && !crate::logic::modules::plant(1590) {
