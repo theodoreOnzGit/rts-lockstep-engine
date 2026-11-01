@@ -203,23 +203,29 @@ impl ScriptActionsHost for World {
     fn sa_player_is_observer(&self, p: PlayerH) -> bool {
         crate::logic::world::player_ops::player_is_player_observer(self, p).unwrap_or(false)
     }
-    fn sa_player_build_specific_building(&mut self, _p: PlayerH, _building: &[u8]) {
-        self.sa_cut("player_build_specific_building");
+    fn sa_player_build_specific_building(&mut self, p: PlayerH, building: &[u8]) {
+        let r = crate::logic::world::player_ops::player_build_specific_building(self, p, building);
+        self.script_player("Player::buildSpecificBuilding", r);
     }
-    fn sa_player_build_by_supplies(&mut self, _p: PlayerH, _cash: i32, _building: &[u8]) {
-        self.sa_cut("player_build_by_supplies");
+    fn sa_player_build_by_supplies(&mut self, p: PlayerH, cash: i32, building: &[u8]) {
+        let r = crate::logic::world::player_ops::player_build_by_supplies(self, p, cash, building);
+        self.script_player("Player::buildBySupplies", r);
     }
-    fn sa_player_build_specific_building_nearest_team(&mut self, _p: PlayerH, _building: &[u8], _t: TeamH) {
-        self.sa_cut("player_build_specific_building_nearest_team");
+    fn sa_player_build_specific_building_nearest_team(&mut self, p: PlayerH, building: &[u8], t: TeamH) {
+        let r = crate::logic::world::player_ops::player_build_specific_building_nearest_team(self, p, building, u32::try_from(t).ok());
+        self.script_player("Player::buildSpecificBuildingNearestTeam", r);
     }
-    fn sa_player_build_upgrade(&mut self, _p: PlayerH, _upgrade: &[u8]) {
-        self.sa_cut("player_build_upgrade");
+    fn sa_player_build_upgrade(&mut self, p: PlayerH, upgrade: &[u8]) {
+        let r = crate::logic::world::player_ops::player_build_upgrade(self, p, upgrade);
+        self.script_player("Player::buildUpgrade", r);
     }
-    fn sa_player_build_base_defense(&mut self, _p: PlayerH, _flank: bool) {
-        self.sa_cut("player_build_base_defense");
+    fn sa_player_build_base_defense(&mut self, p: PlayerH, flank: bool) {
+        let r = crate::logic::world::player_ops::player_build_base_defense(self, p, flank);
+        self.script_player("Player::buildBaseDefense", r);
     }
-    fn sa_player_build_base_defense_structure(&mut self, _p: PlayerH, _building: &[u8], _flank: bool) {
-        self.sa_cut("player_build_base_defense_structure");
+    fn sa_player_build_base_defense_structure(&mut self, p: PlayerH, building: &[u8], flank: bool) {
+        let r = crate::logic::world::player_ops::player_build_base_defense_structure(self, p, building, flank);
+        self.script_player("Player::buildBaseDefenseStructure", r);
     }
     fn sa_audio_add_event(&mut self, _e: &AudioEvent) {
         self.sa_cut("audio_add_event");
@@ -317,8 +323,10 @@ impl ScriptActionsHost for World {
     fn sa_team_set_active(&mut self, t: TeamH) {
         let _ = crate::logic::world::team_ops::team_set_active(self, t as u32);
     }
-    fn sa_team_as_ai_group(&mut self, _t: TeamH, _g: GroupH) {
-        self.sa_cut("team_as_ai_group");
+    fn sa_team_as_ai_group(&mut self, t: TeamH, g: GroupH) {
+        if let (Ok(t), Ok(g)) = (u32::try_from(t), u32::try_from(g)) {
+            crate::logic::world::team_ops::team_get_team_as_ai_group(self, t, Some(g));
+        }
     }
     fn sa_team_members(&self, t: TeamH) -> Vec<ObjH> {
         self.teams.members(t as u32)
@@ -338,11 +346,11 @@ impl ScriptActionsHost for World {
     fn sa_create_group(&mut self) -> Option<GroupH> {
         Some(crate::logic::world::game_logic_update::GameLogicHost::u_create_group(self) as GroupH)
     }
-    fn sa_group_move_to_position(&mut self, _g: GroupH, _p: &Coord3D, _add_waypoint: bool, _cmd: i32) {
-        self.sa_cut("group_move_to_position");
+    fn sa_group_move_to_position(&mut self, g: GroupH, p: &Coord3D, add_waypoint: bool, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_move_to_position(w, p, add_waypoint, cmd));
     }
-    fn sa_group_attack_team(&mut self, _g: GroupH, _t: TeamH, _max_shots: i32, _cmd: i32) {
-        self.sa_cut("group_attack_team");
+    fn sa_group_attack_team(&mut self, g: GroupH, t: TeamH, max_shots: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_attack_team(w, u32::try_from(t).ok(), max_shots, cmd));
     }
     fn sa_obj_has_ai(&self, o: ObjH) -> bool {
         self.find_object(o).is_some_and(|x| x.ai.is_some())
@@ -350,23 +358,26 @@ impl ScriptActionsHost for World {
     fn sa_ai_clear_waypoint_queue(&mut self, _o: ObjH) {
         self.sa_cut("ai_clear_waypoint_queue");
     }
-    fn sa_ai_choose_locomotor_set(&mut self, _o: ObjH, _set: i32) {
-        self.sa_cut("ai_choose_locomotor_set");
+    fn sa_ai_choose_locomotor_set(&mut self, o: ObjH, set: i32) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiChooseLocomotorSet(set));
     }
-    fn sa_ai_move_to_position(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("ai_move_to_position");
+    fn sa_ai_move_to_position(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_MOVE_TO_POSITION, cmd, |q| q.pos = *p);
     }
-    fn sa_ai_move_to_and_evacuate(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("ai_move_to_and_evacuate");
+    fn sa_ai_move_to_and_evacuate(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_MOVE_TO_POSITION_AND_EVACUATE, cmd, |q| q.pos = *p);
     }
-    fn sa_ai_move_to_and_evacuate_and_exit(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("ai_move_to_and_evacuate_and_exit");
+    fn sa_ai_move_to_and_evacuate_and_exit(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_MOVE_TO_POSITION_AND_EVACUATE_AND_EXIT, cmd, |q| q.pos = *p);
     }
-    fn sa_ai_force_attack_object(&mut self, _o: ObjH, _victim: ObjH, _max_shots: i32, _cmd: i32) {
-        self.sa_cut("ai_force_attack_object");
+    fn sa_ai_force_attack_object(&mut self, o: ObjH, victim: ObjH, max_shots: i32, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_FORCE_ATTACK_OBJECT, cmd, |q| {
+            q.obj = victim;
+            q.int_value = max_shots;
+        });
     }
-    fn sa_ai_set_is_recruitable(&mut self, _o: ObjH, _recruitable: bool) {
-        self.sa_cut("ai_set_is_recruitable");
+    fn sa_ai_set_is_recruitable(&mut self, o: ObjH, recruitable: bool) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiSetIsRecruitable(recruitable));
     }
     fn sa_find_template(&self, name: &[u8]) -> Option<TemplateH> {
         World::thing_factory_find_template(self, name).map(TemplateH::from)
@@ -467,14 +478,15 @@ impl ScriptActionsHost for World {
     fn sa_ai_set_attack_info(&mut self, _o: ObjH, _info: &[u8]) {
         self.sa_cut("ai_set_attack_info");
     }
-    fn sa_player_set_team_delay_seconds(&mut self, _p: PlayerH, _seconds: i32) {
-        self.sa_cut("player_set_team_delay_seconds");
+    fn sa_player_set_team_delay_seconds(&mut self, p: PlayerH, seconds: i32) {
+        let r = crate::logic::world::player_ops::player_set_team_delay_seconds(self, p, seconds);
+        self.script_player("Player::setTeamDelaySeconds", r);
     }
-    fn sa_ai_set_attitude(&mut self, _o: ObjH, _attitude: i32) {
-        self.sa_cut("ai_set_attitude");
+    fn sa_ai_set_attitude(&mut self, o: ObjH, attitude: i32) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiSetAttitude(attitude));
     }
-    fn sa_group_set_attitude(&mut self, _g: GroupH, _attitude: i32) {
-        self.sa_cut("group_set_attitude");
+    fn sa_group_set_attitude(&mut self, g: GroupH, attitude: i32) {
+        self.script_group(g, |gr, w| gr.set_attitude(w, attitude));
     }
     fn sa_obj_set_status(&mut self, o: ObjH, status: i32, value: bool) {
         self.set_status(o, crate::logic::world::object_state::mask_of(status), value);
@@ -482,29 +494,32 @@ impl ScriptActionsHost for World {
     fn sa_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH> {
         crate::logic::world::script_engine::ScriptEngine::qualified_trigger_area_by_name(self.script_engine.current_player, self, name).map(|t| t as TriggerH)
     }
-    fn sa_ai_attack_area(&mut self, _o: ObjH, _trig: TriggerH, _cmd: i32) {
-        self.sa_cut("ai_attack_area");
+    fn sa_ai_attack_area(&mut self, o: ObjH, trig: TriggerH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_ATTACK_AREA, cmd, |q| q.polygon = Some(trig));
     }
-    fn sa_ai_attack_team(&mut self, _o: ObjH, _t: TeamH, _max_shots: i32, _cmd: i32) {
-        self.sa_cut("ai_attack_team");
+    fn sa_ai_attack_team(&mut self, o: ObjH, t: TeamH, max_shots: i32, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_ATTACK_TEAM, cmd, |q| {
+            q.team = u32::try_from(t).ok();
+            q.int_value = max_shots;
+        });
     }
-    fn sa_group_attack_area(&mut self, _g: GroupH, _trig: TriggerH, _cmd: i32) {
-        self.sa_cut("group_attack_area");
+    fn sa_group_attack_area(&mut self, g: GroupH, trig: TriggerH, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_command(w, crate::logic::ai::ai_group::GroupAiCommand::AttackArea { area: trig }, cmd));
     }
-    fn sa_group_attack_object(&mut self, _g: GroupH, _victim: ObjH, _max_shots: i32, _cmd: i32) {
-        self.sa_cut("group_attack_object");
+    fn sa_group_attack_object(&mut self, g: GroupH, victim: ObjH, max_shots: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_attack_object(w, victim, max_shots, cmd));
     }
-    fn sa_ai_enter(&mut self, _o: ObjH, _target: ObjH, _cmd: i32) {
-        self.sa_cut("ai_enter");
+    fn sa_ai_enter(&mut self, o: ObjH, target: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_ENTER, cmd, |q| q.obj = target);
     }
-    fn sa_group_enter(&mut self, _g: GroupH, _target: ObjH, _cmd: i32) {
-        self.sa_cut("group_enter");
+    fn sa_group_enter(&mut self, g: GroupH, target: ObjH, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_command(w, crate::logic::ai::ai_group::GroupAiCommand::Enter { obj: target }, cmd));
     }
-    fn sa_ai_evacuate(&mut self, _o: ObjH, _expose: bool, _cmd: i32) {
-        self.sa_cut("ai_evacuate");
+    fn sa_ai_evacuate(&mut self, o: ObjH, expose: bool, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_EVACUATE, cmd, |q| q.int_value = i32::from(expose));
     }
-    fn sa_group_evacuate(&mut self, _g: GroupH, _cmd: i32) {
-        self.sa_cut("group_evacuate");
+    fn sa_group_evacuate(&mut self, g: GroupH, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_evacuate(w, cmd));
     }
     fn sa_contain_set_evac_disposition(&mut self, _o: ObjH, _disposition: u32) {
         self.sa_cut("contain_set_evac_disposition");
@@ -516,11 +531,13 @@ impl ScriptActionsHost for World {
         let h = self.terrain.closest_waypoint_on_path(p, &AsciiString::try_from_bytes(label).ok()?)?;
         self.terrain.waypoint(h).map(|w| w.id())
     }
-    fn sa_ai_follow_waypoint_path(&mut self, _o: ObjH, _w: WaypointH, _exact: bool, _cmd: i32) {
-        self.sa_cut("ai_follow_waypoint_path");
+    fn sa_ai_follow_waypoint_path(&mut self, o: ObjH, w: WaypointH, exact: bool, cmd: i32) {
+        let c = if exact { crate::logic::ai::ai_commands::AICMD_FOLLOW_WAYPOINT_PATH_EXACT } else { crate::logic::ai::ai_commands::AICMD_FOLLOW_WAYPOINT_PATH };
+        self.script_order(o, c, cmd, |q| q.waypoint = u32::try_from(w).ok());
     }
-    fn sa_group_follow_waypoint_path(&mut self, _g: GroupH, _w: WaypointH, _as_team: bool, _exact: bool, _cmd: i32) {
-        self.sa_cut("group_follow_waypoint_path");
+    fn sa_group_follow_waypoint_path(&mut self, g: GroupH, w: WaypointH, as_team: bool, exact: bool, cmd: i32) {
+        let Ok(way) = u32::try_from(w) else { return };
+        self.script_group(g, |gr, w| gr.group_follow_waypoint_path(w, way, exact, as_team, cmd));
     }
     fn sa_skirmish_enemy_player(&mut self) -> Option<PlayerH> {
         let se = std::mem::take(&mut self.script_engine);
@@ -531,26 +548,30 @@ impl ScriptActionsHost for World {
     fn sa_player_mp_start_index(&self, p: PlayerH) -> i32 {
         self.players.get_nth(p).map_or(0, |x| x.mp_start_index)
     }
-    fn sa_player_check_bridges(&mut self, _p: PlayerH, _o: ObjH, _w: WaypointH) {
-        self.sa_cut("player_check_bridges");
+    fn sa_player_check_bridges(&mut self, p: PlayerH, o: ObjH, w: WaypointH) {
+        let r = crate::logic::world::player_ops::player_check_bridges(self, p, Some(o), u32::try_from(w).ok());
+        self.script_player("Player::checkBridges", r);
     }
-    fn sa_ai_guard_position(&mut self, _o: ObjH, _p: &Coord3D, _mode: i32, _cmd: i32) {
-        self.sa_cut("ai_guard_position");
+    fn sa_ai_guard_position(&mut self, o: ObjH, p: &Coord3D, mode: i32, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_GUARD_POSITION, cmd, |q| {
+            q.pos = *p;
+            q.int_value = mode;
+        });
     }
-    fn sa_group_guard_position(&mut self, _g: GroupH, _p: &Coord3D, _mode: i32, _cmd: i32) {
-        self.sa_cut("group_guard_position");
+    fn sa_group_guard_position(&mut self, g: GroupH, p: &Coord3D, mode: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_guard(w, Some(crate::logic::ai::ai_group::GroupAiCommand::GuardPosition { pos: *p, mode }), cmd));
     }
-    fn sa_group_guard_object(&mut self, _g: GroupH, _o: ObjH, _mode: i32, _cmd: i32) {
-        self.sa_cut("group_guard_object");
+    fn sa_group_guard_object(&mut self, g: GroupH, o: ObjH, mode: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_guard(w, Some(crate::logic::ai::ai_group::GroupAiCommand::GuardObject { obj: o, mode }), cmd));
     }
-    fn sa_group_guard_area(&mut self, _g: GroupH, _trig: TriggerH, _mode: i32, _cmd: i32) {
-        self.sa_cut("group_guard_area");
+    fn sa_group_guard_area(&mut self, g: GroupH, trig: TriggerH, mode: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_guard(w, Some(crate::logic::ai::ai_group::GroupAiCommand::GuardArea { area: trig, mode }), cmd));
     }
-    fn sa_ai_hunt(&mut self, _o: ObjH, _cmd: i32) {
-        self.sa_cut("ai_hunt");
+    fn sa_ai_hunt(&mut self, o: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_HUNT, cmd, |_| {});
     }
-    fn sa_group_hunt(&mut self, _g: GroupH, _cmd: i32) {
-        self.sa_cut("group_hunt");
+    fn sa_group_hunt(&mut self, g: GroupH, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_command(w, crate::logic::ai::ai_group::GroupAiCommand::Hunt, cmd));
     }
     fn sa_find_command_button(&self, name: &[u8]) -> Option<ButtonH> {
         self.cuts.command_buttons.iter().position(|b| b.name == name).map(|i| i as ButtonH)
@@ -601,17 +622,20 @@ impl ScriptActionsHost for World {
     fn sa_player_set_objects_enabled(&mut self, p: PlayerH, name: &[u8], enable: bool) {
         let _ = crate::logic::world::player_ops::player_set_objects_enabled(self, p, name, enable);
     }
-    fn sa_player_repair_structure(&mut self, _p: PlayerH, _id: ObjectId) {
-        self.sa_cut("player_repair_structure");
+    fn sa_player_repair_structure(&mut self, p: PlayerH, id: ObjectId) {
+        let r = crate::logic::world::player_ops::player_repair_structure(self, p, id);
+        self.script_player("Player::repairStructure", r);
     }
     fn sa_proto_controlling_player(&self, p: ProtoH) -> Option<PlayerH> {
         self.teams.prototype(p as u32).and_then(|x| x.owning_player)
     }
-    fn sa_player_build_specific_team(&mut self, _p: PlayerH, _proto: ProtoH) {
-        self.sa_cut("player_build_specific_team");
+    fn sa_player_build_specific_team(&mut self, p: PlayerH, proto: ProtoH) {
+        let r = crate::logic::world::player_ops::player_build_specific_team(self, p, u32::try_from(proto).ok());
+        self.script_player("Player::buildSpecificTeam", r);
     }
-    fn sa_player_recruit_specific_team(&mut self, _p: PlayerH, _proto: ProtoH, _radius: f32) {
-        self.sa_cut("player_recruit_specific_team");
+    fn sa_player_recruit_specific_team(&mut self, p: PlayerH, proto: ProtoH, radius: f32) {
+        let r = crate::logic::world::player_ops::player_recruit_specific_team(self, p, u32::try_from(proto).ok(), radius);
+        self.script_player("Player::recruitSpecificTeam", r);
     }
     fn sa_obj_attempt_damage(&mut self, _o: ObjH, _source: ObjectId, _damage_type: i32, _death_type: i32, _amount: f32) {
         self.sa_cut("obj_attempt_damage");
@@ -622,14 +646,14 @@ impl ScriptActionsHost for World {
     fn sa_team_delete(&mut self, t: TeamH, ignore_dead: bool) {
         let _ = crate::logic::world::team_ops::team_delete_team(self, t as u32, ignore_dead);
     }
-    fn sa_ai_wander(&mut self, _o: ObjH, _w: WaypointH, _cmd: i32) {
-        self.sa_cut("ai_wander");
+    fn sa_ai_wander(&mut self, o: ObjH, w: WaypointH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_WANDER, cmd, |q| q.waypoint = u32::try_from(w).ok());
     }
-    fn sa_ai_wander_in_place(&mut self, _o: ObjH, _cmd: i32) {
-        self.sa_cut("ai_wander_in_place");
+    fn sa_ai_wander_in_place(&mut self, o: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_WANDER_IN_PLACE, cmd, |_| {});
     }
-    fn sa_ai_panic(&mut self, _o: ObjH, _w: WaypointH, _cmd: i32) {
-        self.sa_cut("ai_panic");
+    fn sa_ai_panic(&mut self, o: ObjH, w: WaypointH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_PANIC, cmd, |q| q.waypoint = u32::try_from(w).ok());
     }
     fn sa_team_prototype(&self, t: TeamH) -> Option<ProtoH> {
         self.teams.team(t as u32).map(|x| x.proto as ProtoH)
@@ -824,8 +848,8 @@ impl ScriptActionsHost for World {
         self.sa_cut("partition_garrison_candidates");
         Default::default()
     }
-    fn sa_ai_exit(&mut self, _o: ObjH, _cmd: i32) {
-        self.sa_cut("ai_exit");
+    fn sa_ai_exit(&mut self, o: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_EXIT, cmd, |_| {});
     }
     fn sa_partition_unit_garrison_candidates(&mut self, _unit: ObjH, _money_hacker: bool) -> Vec<ObjH> {
         self.sa_cut("partition_unit_garrison_candidates");
@@ -897,8 +921,8 @@ impl ScriptActionsHost for World {
     fn sa_ai_has_cur_locomotor(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_locomotor_set_close_enough_dist(&mut self, _o: ObjH, _dist: f32) {
-        self.sa_cut("locomotor_set_close_enough_dist");
+    fn sa_locomotor_set_close_enough_dist(&mut self, o: ObjH, dist: f32) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiLocomotorSetCloseEnoughDist(dist));
     }
     fn sa_ui_set_superweapon_display_enabled(&mut self, _enabled: bool) {
         self.sa_cut("ui_set_superweapon_display_enabled");
@@ -1008,11 +1032,11 @@ impl ScriptActionsHost for World {
     fn sa_view_set_default_view(&mut self, _pitch: f32, _angle: f32, _max_height: f32) {
         self.sa_cut("view_set_default_view");
     }
-    fn sa_ai_idle(&mut self, _o: ObjH, _cmd: i32) {
-        self.sa_cut("ai_idle");
+    fn sa_ai_idle(&mut self, o: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_IDLE, cmd, |_| {});
     }
-    fn sa_group_idle(&mut self, _g: GroupH, _cmd: i32) {
-        self.sa_cut("group_idle");
+    fn sa_group_idle(&mut self, g: GroupH, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_idle(w, cmd));
     }
     fn sa_team_name(&self, t: TeamH) -> Vec<u8> {
         let teams = &self.teams;
@@ -1135,8 +1159,8 @@ impl ScriptActionsHost for World {
         let t = &self.script_engine.all_object_type_lists[self.script_engine.get_object_types(name)?];
         Some((0..t.list_size() as i32).map(|i| t.get_nth_in_list(i).str().to_vec()).collect())
     }
-    fn sa_ai_move_to_object(&mut self, _o: ObjH, _target: Option<ObjH>, _cmd: i32) {
-        self.sa_cut("ai_move_to_object");
+    fn sa_ai_move_to_object(&mut self, o: ObjH, target: Option<ObjH>, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_MOVE_TO_OBJECT, cmd, |q| q.obj = target.unwrap_or(crate::common::game_type::INVALID_ID));
     }
     fn sa_find_upgrade(&self, name: &[u8]) -> Option<i32> {
         // `findUpgrade(name)`: an upgrade whose name it is (a name never made a key names none)
@@ -1153,8 +1177,8 @@ impl ScriptActionsHost for World {
         self.sa_cut("partition_nearest_group_with_value");
         Default::default()
     }
-    fn sa_group_attack_move_to_position(&mut self, _g: GroupH, _p: &Coord3D, _max_shots: i32, _cmd: i32) {
-        self.sa_cut("group_attack_move_to_position");
+    fn sa_group_attack_move_to_position(&mut self, g: GroupH, p: &Coord3D, max_shots: i32, cmd: i32) {
+        self.script_group(g, |gr, w| gr.group_attack_move_to_position(w, p, max_shots, cmd));
     }
     fn sa_button_special_power_id(&self, b: ButtonH) -> Option<u32> {
         self.cuts.command_buttons.get(b as usize).and_then(|x| x.special_power)
@@ -1230,8 +1254,8 @@ impl ScriptActionsHost for World {
     fn sa_player_set_science_availability(&mut self, _p: PlayerH, _science: i32, _availability: i32) {
         self.sa_cut("player_set_science_availability");
     }
-    fn sa_group_set_emoticon(&mut self, _g: GroupH, _name: &[u8], _frames: i32) {
-        self.sa_cut("group_set_emoticon");
+    fn sa_group_set_emoticon(&mut self, g: GroupH, name: &[u8], frames: i32) {
+        self.script_group(g, |gr, w| gr.group_set_emoticon(w, name, frames));
     }
     fn sa_drawable_set_emoticon(&mut self, _o: ObjH, _name: &[u8], _frames: i32) {
         self.sa_cut("drawable_set_emoticon");
@@ -1260,20 +1284,21 @@ impl ScriptActionsHost for World {
     fn sa_view_add_camera_shake(&mut self, _p: &Coord3D, _radius: f32, _duration: f32, _amplitude: f32) {
         self.sa_cut("view_add_camera_shake");
     }
-    fn sa_ai_face_object(&mut self, _o: ObjH, _target: ObjH, _cmd: i32) {
-        self.sa_cut("ai_face_object");
+    fn sa_ai_face_object(&mut self, o: ObjH, target: ObjH, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_FACE_OBJECT, cmd, |q| q.obj = target);
     }
-    fn sa_ai_face_position(&mut self, _o: ObjH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("ai_face_position");
+    fn sa_ai_face_position(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_FACE_POSITION, cmd, |q| q.pos = *p);
     }
     fn sa_player_set_skillset(&mut self, _p: PlayerH, _skillset: i32) {
         self.sa_cut("player_set_skillset");
     }
-    fn sa_player_guard_supply_center(&mut self, _p: PlayerH, _t: TeamH, _supplies: i32) {
-        self.sa_cut("player_guard_supply_center");
+    fn sa_player_guard_supply_center(&mut self, p: PlayerH, t: TeamH, supplies: i32) {
+        let r = crate::logic::world::player_ops::player_guard_supply_center(self, p, u32::try_from(t).ok(), supplies);
+        self.script_player("Player::guardSupplyCenter", r);
     }
-    fn sa_ai_guard_tunnel_network(&mut self, _o: ObjH, _mode: i32, _cmd: i32) {
-        self.sa_cut("ai_guard_tunnel_network");
+    fn sa_ai_guard_tunnel_network(&mut self, o: ObjH, mode: i32, cmd: i32) {
+        self.script_order(o, crate::logic::ai::ai_commands::AICMD_GUARD_TUNNEL_NETWORK, cmd, |q| q.int_value = mode);
     }
     fn sa_template_command_set_string(&self, _t: TemplateH) -> Vec<u8> {
         Default::default()

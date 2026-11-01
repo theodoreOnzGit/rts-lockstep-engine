@@ -193,6 +193,10 @@ pub fn gate_world() -> World {
     // (each player's default team, as `Player::initFromDict` makes one: the look's mask asks it)
     w.players.get_nth_mut(1).expect("the player").default_team = Some(team);
     w.players.get_nth_mut(2).expect("the player").default_team = Some(enemy);
+    // (batch I8c: and active, as `Player::setDefaultTeam` leaves it: a script finds a singleton team only when active)
+    for t in [team, enemy] {
+        crate::logic::world::team_ops::team_set_active(&mut w, t).expect("the team active");
+    }
     // (the player allied to itself, as `Player::initFromDict` and `PlayerList::newGame` leave it)
     // (and the two players enemies, as a skirmish's `PlayerList::newGame` leaves them)
     {
@@ -392,6 +396,53 @@ mod computer_player_tests {
         let done = done.expect("the dozer finishes the depot");
         assert_eq!(w.find_object(site).map(|o| o.construction_percent), Some(crate::logic::world::object::CONSTRUCTION_COMPLETE));
         assert!(done < 600, "finished on frame {done}");
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}
+
+#[cfg(test)]
+mod script_order_tests {
+    use super::*;
+    use crate::logic::scripts::{action_type as at, Parameter, ScriptAction};
+
+    fn move_team_to(team: &[u8], waypoint: &[u8]) -> ScriptAction {
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = at::MOVE_TEAM_TO;
+        a.num_parms = 2;
+        for (i, s) in [team, waypoint].into_iter().enumerate() {
+            let mut p = Parameter::new(0, 0);
+            p.string = s.to_vec();
+            a.parms[i] = Some(p);
+        }
+        a
+    }
+
+    /// batch I8c: a script moves a team. `MOVE_TEAM_TO` (`team2`, `GateWP`): the team becomes a group (`getTeamAsAIGroup`)
+    /// whose members are moved (`groupMoveToPosition`, from the script). `team2`'s two soldiers start at (250, 380) and
+    /// (260, 380); the waypoint is at (250, 200). Predicted: after 240 frames both are within 40 of it (they move about one
+    /// unit a frame; the group's formation spreads them), with no live error. Before this batch the order was a cut.
+    ///
+    /// **Result** (2026-11-01, native, release): after 240 frames the soldiers are at (255.0, 205.9) and (258.8, 205.2), 7.7 and
+    /// 10.3 from the waypoint; no live error. **Not first time:** the first run found no team: the gate world's singleton
+    /// teams were never made active (`Player::setDefaultTeam` does it), and `getTeamNamed` skips an inactive singleton.
+    #[test]
+    fn a_script_moves_a_team() {
+        let mut w = gate_world();
+        w.terrain.friend_push_waypoint(900, b"GateWP", Coord3D { x: 250.0, y: 200.0, z: 0.0 });
+        let team2 = w.players.get_nth(2).and_then(|p| p.default_team).expect("team2");
+        let soldiers: Vec<ObjectId> = w.teams.members(team2).into_iter().filter(|&id| w.find_object(id).is_some_and(|o| o.template().get_name() == b"Soldier")).collect();
+        assert_eq!(soldiers.len(), 2);
+        let mut engine = std::mem::take(&mut w.script_engine);
+        w.execute_action_with(&mut engine, &move_team_to(b"team2", b"GateWP")).expect("the action");
+        w.script_engine = engine;
+        for _ in 0..240 {
+            w.logic_update().unwrap();
+        }
+        for &s in &soldiers {
+            let p = w.find_object(s).map(|o| o.get_position()).expect("the soldier lives");
+            let d = ((p.x - 250.0).powi(2) + (p.y - 200.0).powi(2)).sqrt();
+            assert!(d < 40.0, "soldier {s} at ({:.0}, {:.0}), {d:.0} from the waypoint", p.x, p.y);
+        }
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
