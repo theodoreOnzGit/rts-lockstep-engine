@@ -587,6 +587,11 @@ impl World {
         self.objects.rekey(old, new).map_err(|_| ObjectXferError::IdTaken(new))?;
         self.sched.rename_object(old, new);
         self.rename_in_destroy_list(old, new);
+        // (batch I10: and its partition module, and its AI's turrets, which the World keeps by owner: upstream's hold pointers)
+        self.partition.rename_object(old, new);
+        if let Some(t) = self.turret_ais.map.remove(&old) {
+            self.turret_ais.map.insert(new, t);
+        }
         Ok(new)
     }
 

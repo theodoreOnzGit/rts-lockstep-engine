@@ -138,6 +138,41 @@ fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
 
 /// The game at frame 0: the world, its map, its player's team and its objects, the runners' orders given.
 pub fn gate_world() -> World {
+    let mut w = gate_map_world();
+    let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+    let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+
+    make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+    let mut runners = Vec::new();
+    for i in 0..6 {
+        let y = 50.0 + 60.0 * i as f32;
+        runners.push((make(&mut w, b"Runner", team, Coord3D { x: 40.0, y, z: 0.0 }), Coord3D { x: 360.0, y: 350.0 - 60.0 * i as f32, z: 0.0 }));
+    }
+    make(&mut w, b"Gun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
+    make(&mut w, b"Dozer", team, Coord3D { x: 300.0, y: 100.0, z: 0.0 });
+    // (batch I9c-5: a skirmish on the north edge, two soldiers of each player 90 apart: within sight and range; a human
+    // player's idle units take a mood target only within weapon range and out of the fog)
+    for (t, x) in [(team, 150.0), (team, 160.0), (enemy, 250.0), (enemy, 260.0)] {
+        make(&mut w, b"Soldier", t, Coord3D { x, y: 380.0, z: 0.0 });
+    }
+    w.pathfinder_op(PfOp::NewMap);
+    // (the first three each by its own order; batch I9c-2: the last three as a group, by the player's group order)
+    for &(r, goal) in &runners[..3] {
+        if let Some(index) = w.find_object(r).and_then(|o| o.ai) {
+            w.module_call(r, index, ModuleCall::AiMoveToPosition { pos: goal, command_source: 0 });
+        }
+    }
+    let g = w.ai_create_group();
+    for &(r, _) in &runners[3..] {
+        w.with_group(g, |gr, w| gr.add(w, r));
+    }
+    w.live_group_call(g, crate::logic::world::game_logic_dispatch::GroupCall::MoveTo { pos: Coord3D { x: 360.0, y: 100.0, z: 0.0 }, add_waypoint: false });
+    w
+}
+
+/// The gate's game before its units: the map, the players and teams, the subsystems live, no object (batch I10: a saved
+/// game loads into a World made from the same map, as upstream's `loadGame` loads into the map it has just started).
+pub fn gate_map_world() -> World {
     let mut names = NameKeyGenerator::new();
     names.reset();
     let mut modules = ModuleFactory::new();
@@ -182,6 +217,11 @@ pub fn gate_world() -> World {
     t.set_boundaries(vec![size], 0);
     w.terrain = t;
     w.players.set_player_count(3);
+    // (batch I10: each player initialised, as `PlayerList::init` does before the map's sides are read: its hotkey squads,
+    // which a save writes, are made here)
+    for p in 0..3 {
+        crate::logic::world::player_ops::player_init(&mut w, p, None).expect("the player");
+    }
     for (i, name) in [(1, &b"Player1"[..]), (2, &b"Player2"[..])] {
         let key = w.names.name_to_key(name);
         w.players.get_nth_mut(i).expect("the player").name_key = key.0 as i32;
@@ -207,36 +247,14 @@ pub fn gate_world() -> World {
         }
     }
     w.partition_init();
+    // (batch I10: the map's name and file, which a save embeds: the gate World is made from its INI and this code, and its
+    // map file is that INI's text)
+    w.save_side.map_name = b"Maps\\Gate\\Gate.map".to_vec();
+    w.save_side.disk.insert(w.save_side.map_name.to_ascii_lowercase(), INI.as_bytes().to_vec());
     w.cuts.live_partition = true;
     w.cuts.live_teams = true;
     w.cuts.live_ai = true;
     w.cuts.live_pathfinder = true;
-
-    make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
-    let mut runners = Vec::new();
-    for i in 0..6 {
-        let y = 50.0 + 60.0 * i as f32;
-        runners.push((make(&mut w, b"Runner", team, Coord3D { x: 40.0, y, z: 0.0 }), Coord3D { x: 360.0, y: 350.0 - 60.0 * i as f32, z: 0.0 }));
-    }
-    make(&mut w, b"Gun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
-    make(&mut w, b"Dozer", team, Coord3D { x: 300.0, y: 100.0, z: 0.0 });
-    // (batch I9c-5: a skirmish on the north edge, two soldiers of each player 90 apart: within sight and range; a human
-    // player's idle units take a mood target only within weapon range and out of the fog)
-    for (t, x) in [(team, 150.0), (team, 160.0), (enemy, 250.0), (enemy, 260.0)] {
-        make(&mut w, b"Soldier", t, Coord3D { x, y: 380.0, z: 0.0 });
-    }
-    w.pathfinder_op(PfOp::NewMap);
-    // (the first three each by its own order; batch I9c-2: the last three as a group, by the player's group order)
-    for &(r, goal) in &runners[..3] {
-        if let Some(index) = w.find_object(r).and_then(|o| o.ai) {
-            w.module_call(r, index, ModuleCall::AiMoveToPosition { pos: goal, command_source: 0 });
-        }
-    }
-    let g = w.ai_create_group();
-    for &(r, _) in &runners[3..] {
-        w.with_group(g, |gr, w| gr.add(w, r));
-    }
-    w.live_group_call(g, crate::logic::world::game_logic_dispatch::GroupCall::MoveTo { pos: Coord3D { x: 360.0, y: 100.0, z: 0.0 }, add_waypoint: false });
     w
 }
 
@@ -286,8 +304,11 @@ mod combat_tests {
     /// within 300 frames some soldier has lost health, with no live error; and the whole gate scenario reaches no cut of the
     /// logic, only the client's and the UI's (the frame given to the client, the recorder, the idle-worker button).
     ///
-    /// **Result** (2026-11-01, native, release): health after 300 frames `[60, 0, 0, 100]`: one soldier of each side killed,
-    /// the first soldier hit twice. Before this batch the soldiers took their mood targets every frame but never attacked:
+    /// **Result** (2026-11-01, native, release): ~~health after 300 frames `[60, 0, 0, 100]`: one soldier of each side killed,
+    /// the first soldier hit twice~~ **CORRECTED, batch I10:** `[0, 0, 20, 100]`: both of `Player1`'s soldiers killed,
+    /// `Player2`'s first hit four times. The gate world's players are now initialised (`Player::init`, which upstream's
+    /// `PlayerList::init` runs before the map's sides are read), which changed the fight; the move sounds are now reached
+    /// too (`startMoveSound`, `removeAudioEvent`: the client's audio, cut points). Before this batch the soldiers took their mood targets every frame but never attacked:
     /// the attack state's `chooseBestWeaponForTarget` was a cut answering false, so each attack failed back to idle at once.
     #[test]
     fn the_soldiers_fight() {
@@ -301,7 +322,7 @@ mod combat_tests {
         let mut calls: Vec<String> = w.cuts.trace.take().unwrap().into_iter().filter_map(|t| t.split("call: \"").nth(1).map(|c| c.split('"').next().unwrap().to_string())).collect();
         calls.sort();
         calls.dedup();
-        assert_eq!(calls, ["GameClient::setFrame", "Recorder::update", "in_game_ui_idle_worker"]);
+        assert_eq!(calls, ["GameClient::setFrame", "Recorder::update", "in_game_ui_idle_worker", "remove_audio_event", "start_move_sound"]);
         let health: Vec<f32> = soldiers.iter().map(|&s| w.body_health(s).map_or(0.0, |h| h.0)).collect();
         assert!(health.iter().any(|&h| h < 100.0), "health {health:?}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
@@ -444,5 +465,97 @@ mod script_order_tests {
             assert!(d < 40.0, "soldier {s} at ({:.0}, {:.0}), {d:.0} from the waypoint", p.x, p.y);
         }
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}
+
+#[cfg(test)]
+mod save_load_tests {
+    use super::*;
+
+    /// A save file's blocks by name (`xferSaveData`'s layout: each block's name as an ASCII string, its size, its data;
+    /// `SG_EOF` last).
+    fn blocks(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            let n = bytes[i] as usize;
+            let name = String::from_utf8_lossy(&bytes[i + 1..i + 1 + n]).to_string();
+            i += 1 + n;
+            if name == "SG_EOF" {
+                break;
+            }
+            let size = u32::from_le_bytes(bytes[i..i + 4].try_into().expect("a block size")) as usize;
+            i += 4;
+            out.insert(name, bytes[i..i + size].to_vec());
+            i += size;
+        }
+        out
+    }
+
+    fn step(w: &mut World) -> u32 {
+        w.logic_update().expect("the frame");
+        w.logic_crc(CRC_RECALC, None).expect("the CRC")
+    }
+
+    /// batch I10, gate (b): the whole game saved and loaded. The gate game is run to frame 150 and saved
+    /// (`GameState::saveGame`'s blocks); the save is loaded into a World made from the same map (`gate_map_world`: the
+    /// map, players and teams, no units), and that game saved and loaded again.
+    ///
+    /// **What upstream guarantees, and so what is checked** (decided before the final runs; see the record below):
+    /// (1) the save carries the durable logic state: after two loads (which restore the object list's order: each load
+    /// prepends the objects it makes, as upstream's `registerObject` does) the twice-loaded game saves the same terrain,
+    /// players, game logic (every object and module) and sides list as the original does at the save frame, once the
+    /// original is given the load's re-look (below: each object re-sighted where it stands); (2) a save continues one way only: two Worlds loaded from the same bytes give the same CRC at every one of
+    /// the next 150 frames; (3) no load or frame records an error.
+    ///
+    /// **Not checked, because upstream does not have it:** that a loaded game continues as the uninterrupted one would.
+    /// Upstream's save leaves out transient state its load recomputes or resets: the closest-point-on-path cache
+    /// (`Path::xfer` sets `m_cpopValid = FALSE` on a load), the logic's random state, the pathfinder (rebuilt by `newMap`),
+    /// the script engine's screen fade (`ScriptEngine::newMap`'s fade in, not saved) and the team id counter
+    /// (`TeamFactory::loadPostProcess` sets it past the highest id, one past what the running game holds), so the team
+    /// factory and script engine blocks differ; and a load re-registers each object with the partition, whose re-look of a
+    /// seeing object adds its sighting at once while the matching unlook waits in the pending-undo queue, so the partition
+    /// block, and a whole-state CRC taken at the load, carry one extra look per seeing object until the queue runs.
+    /// Measured here: a moving unit's first frame after a load steers from a recomputed closest point, and the CRCs part
+    /// on that frame.
+    ///
+    /// **Result** (2026-11-01, native, release): (1) after two loads the four blocks equal the original's at frame 150;
+    /// (2) the two loaded games agree at all 150 frames; (3) no error. **Not first time:** the first runs found the gate
+    /// world's players uninitialised (`Player::init` makes the hotkey squads a save writes), the object id counter not saved
+    /// (it is `CHUNK_GameStateMap`'s, now registered with an in-memory map file), and two id-keyed tables that `setID` did
+    /// not follow (the turrets' AIs, the partition modules: a load makes each object under a temporary id, then gives it its
+    /// saved one). ~~Predicted: the loaded game CRCs as the uninterrupted one from the load on~~ **WITHDRAWN, same batch**:
+    /// upstream's own load does not give that (above); the criterion is now (1)-(3). ~~(1) as the deep logic CRC~~
+    /// **WITHDRAWN, same batch**: once the partition rename registered the loaded objects, the re-look above made the CRC
+    /// at the load the wrong instrument; (1) compares the durable blocks instead.
+    #[test]
+    fn a_saved_game_loads_and_runs_on() {
+        let mut a = gate_world();
+        for _ in 0..150 {
+            step(&mut a);
+        }
+        let bytes = a.save_game().unwrap_or_else(|e| panic!("the save: {e:?} {:?}", a.cuts.team_live_errors));
+        let mut b = gate_map_world();
+        b.load_game(bytes.clone()).unwrap_or_else(|e| panic!("the load: {e:?} {:?}", b.cuts.team_live_errors));
+        let mut c = gate_map_world();
+        c.load_game(b.save_game().expect("the second save")).expect("the second load");
+        // (the load's re-look, applied to the original: each object re-sighted where it stands, see above)
+        for id in a.objects.ids_in_order() {
+            a.handle_partition_cell_maintenance(id);
+        }
+        let (sa, sc) = (blocks(&a.save_game().expect("the save")), blocks(&c.save_game().expect("the save")));
+        for name in ["CHUNK_TerrainLogic", "CHUNK_Players", "CHUNK_GameLogic", "CHUNK_SidesList"] {
+            assert!(sa.contains_key(name), "{name} saved");
+            assert!(sa[name] == sc[name], "{name}: the twice-loaded game's is the original's");
+        }
+        let mut d = gate_map_world();
+        d.load_game(bytes).expect("the load again");
+        for f in 150..300 {
+            let (cb, cd) = (step(&mut b), step(&mut d));
+            assert_eq!(cb, cd, "two games loaded from one save part at frame {f}");
+        }
+        for w in [&a, &b, &c, &d] {
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
     }
 }

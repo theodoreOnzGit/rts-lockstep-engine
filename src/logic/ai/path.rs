@@ -210,6 +210,15 @@ impl Path {
         }
     }
 
+    /// The closest-point cache as a load leaves it (batch I10): `Path::xfer` on a load sets `m_cpopValid = FALSE` on a path
+    /// made new (`m_cpopCountdown(MAX_CPOP)`), so a loaded unit computes its closest point afresh. A test that compares a
+    /// loaded game with the one it was saved from clears the original's caches with this, so that what remains is what the
+    /// save does not carry.
+    pub fn friend_forget_closest_point(&mut self) {
+        self.cpop_valid = false;
+        self.cpop_countdown = MAX_CPOP;
+    }
+
     // ---- the inline members -----------------------------------------------------------------------------------------
     /// `getFirstNode()`.
     pub fn first_node(&self) -> Option<usize> {

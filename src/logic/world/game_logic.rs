@@ -220,6 +220,8 @@ pub struct World {
     pub ai_groups: crate::logic::world::ai_group_world::AiGroups,
     /// Batch I9e: the players' `m_ai` (with `cuts.live_ai`).
     pub ai_players: crate::logic::world::ai_player_world::AiPlayers,
+    /// Batch I10: the save's side (the map file and the client's counters a save carries).
+    pub save_side: crate::logic::world::game_state_world::SaveSide,
     /// Batch I9c-4: the other object of the AI collision being answered, and the commands to the asking AI it waits to run.
     pub collision_other: crate::common::game_type::ObjectId,
     pub collision_self_commands: Vec<crate::logic::ai::ai_commands::AiCommandParms>,
@@ -309,6 +311,7 @@ impl World {
             ai_prone_damage: None,
             ai_groups: Default::default(),
             ai_players: Default::default(),
+            save_side: Default::default(),
             collision_other: crate::common::game_type::INVALID_ID,
             collision_self_commands: Vec::new(),
             ai_update_base: None,
@@ -368,6 +371,11 @@ impl World {
     /// `m_nextObjID` (the id the next allocation returns).
     pub fn next_object_id(&self) -> ObjectId {
         self.next_object_id
+    }
+
+    /// `setObjectIDCounter(id)` (batch I10: a load's `GameStateMap` block, read before the objects).
+    pub fn set_next_object_id(&mut self, id: ObjectId) {
+        self.next_object_id = id;
     }
 
     /// `findObjectByID(id)`. Finds destroyed objects, see [`ObjectArena`].

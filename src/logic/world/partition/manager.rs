@@ -778,6 +778,17 @@ impl PartitionManager {
 
     /// `unRegisterObject(object)`: remove a thing from the system. A fogged
     /// building some player remembers keeps its module (for its ghost).
+    /// An object's id changed (`Object::setID`, as a load gives each object its saved id): its module follows it (batch I10;
+    /// upstream's module and the object point at each other, and the object's id is read through the pointer).
+    pub fn rename_object(&mut self, old: ObjectId, new: ObjectId) {
+        if let Some(slot) = self.by_object.remove(&old) {
+            self.by_object.insert(new, slot);
+            if self.md(slot).object == Some(old) {
+                self.md_mut(slot).object = Some(new);
+            }
+        }
+    }
+
     pub fn unregister_object(&mut self, object: ObjectId) {
         // get the partition module
         let Some(&slot) = self.by_object.get(&object) else {

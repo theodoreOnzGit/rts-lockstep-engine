@@ -127,6 +127,7 @@ pub mod gate_scenario; // batch I9d: the scripted game of Phase 1 gate (a)
 pub mod ai_group_world; // batch I9c-2: TheAI's groups in the World
 pub mod ai_query_world; // batch I9c-3: TheAI's queries in the World
 pub mod ai_player_world;
+pub mod game_state_world; // batch I10: the whole game saved and loaded (GameStateHost)
 pub mod script_orders_world; // batch I8c: the script actions' orders to units, groups and players // batch I9e: the computer players in the World
 pub mod ai_combat_world; // batch I9c-5: the attack machine's weapon, body and partition calls in the World
 pub mod collision_world; // batch I9c-4: the AI's collisions in the World

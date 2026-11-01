@@ -2798,6 +2798,86 @@ fn read_action<C: ScriptsContext>(file: &mut DataChunkInput<C>, info: &DataChunk
     Ok(a)
 }
 
+// --- batch I10: the scripts' save (Scripts.cpp's `xfer`s) ---
+
+use crate::common::xfer::{Snapshot, Xfer, XferResult};
+
+/// The count of a list as `xfer` writes it (an `UnsignedShort`; a longer list's count wraps, as upstream's).
+fn count_u16(n: usize) -> u16 {
+    n as u16
+}
+
+/// `xfer->xferSnapshot` of the first `count` of `items` (upstream stops when the count it read runs out), then of a fresh
+/// stand-in for each one the list lacks ("Stripping out extra ... - Bad...": upstream's recovery, kept).
+fn xfer_list<T: Snapshot>(xfer: &mut dyn Xfer, items: &mut [T], mut count: u16, stand_in: impl FnOnce() -> T) -> XferResult<()> {
+    for item in items.iter_mut() {
+        if count == 0 {
+            break;
+        }
+        xfer.xfer_snapshot(item)?;
+        count -= 1;
+    }
+    if count == 0 {
+        return Ok(());
+    }
+    let mut stand_in = stand_in();
+    while count > 0 {
+        xfer.xfer_snapshot(&mut stand_in)?;
+        count -= 1;
+    }
+    Ok(())
+}
+
+impl Snapshot for Script {
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    /// `Script::xfer`: version 1, whether it is active.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let mut version = 1u8;
+        xfer.xfer_version(&mut version, 1)?;
+        xfer.xfer_bool(&mut self.is_active)
+    }
+    fn load_post_process(&mut self) {}
+}
+
+impl Snapshot for ScriptGroup {
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    /// `ScriptGroup::xfer`: version 2 (2 adds whether the group is active), the count of its scripts, each script.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let mut version = 2u8;
+        xfer.xfer_version(&mut version, 2)?;
+        if version >= 2 {
+            xfer.xfer_bool(&mut self.is_group_active)?;
+        }
+        // ("Script list count has changed, attempting to recover.": a different count is not refused)
+        let mut count = count_u16(self.scripts.len());
+        xfer.xfer_unsigned_short(&mut count)?;
+        xfer_list(xfer, &mut self.scripts, count, Script::default)
+    }
+    fn load_post_process(&mut self) {}
+}
+
+impl Snapshot for ScriptList {
+    fn crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
+        Ok(())
+    }
+    /// `ScriptList::xfer`: version 1, the count of its scripts and each, the count of its groups and each.
+    fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let mut version = 1u8;
+        xfer.xfer_version(&mut version, 1)?;
+        let mut count = count_u16(self.scripts.len());
+        xfer.xfer_unsigned_short(&mut count)?;
+        xfer_list(xfer, &mut self.scripts, count, Script::default)?;
+        let mut count = count_u16(self.groups.len());
+        xfer.xfer_unsigned_short(&mut count)?;
+        xfer_list(xfer, &mut self.groups, count, || ScriptGroup::new(&mut 0))
+    }
+    fn load_post_process(&mut self) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

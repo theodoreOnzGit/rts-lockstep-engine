@@ -770,6 +770,30 @@ impl SidesList {
         false
     }
 
+    /// `SidesList::xfer` (batch I10): version 1, the number of sides (which must be this list's: `SC_INVALID_DATA`
+    /// otherwise, as `Err(None)`), then each side's script list, present or not (a mismatch is `SC_INVALID_DATA`).
+    pub fn xfer(&mut self, xfer: &mut dyn crate::common::xfer::Xfer) -> Result<(), Option<crate::common::xfer::XferStatus>> {
+        let mut version = 1u8;
+        xfer.xfer_version(&mut version, 1).map_err(Some)?;
+        let mut side_count = self.num_sides;
+        xfer.xfer_int(&mut side_count).map_err(Some)?;
+        if side_count != self.num_sides {
+            return Err(None); // "The sides list size has changed"
+        }
+        for i in 0..side_count.max(0) as usize {
+            let list = &mut self.sides[i].scripts;
+            let mut present = list.is_some();
+            xfer.xfer_bool(&mut present).map_err(Some)?;
+            if present != list.is_some() {
+                return Err(None); // "script list missing/present mismatch"
+            }
+            if let Some(l) = list {
+                xfer.xfer_snapshot(l).map_err(Some)?;
+            }
+        }
+        Ok(())
+    }
+
     /// `ScriptList::updateDefaults()`: give every side without a script list
     /// an empty one.
     pub fn update_script_defaults(&mut self) {
