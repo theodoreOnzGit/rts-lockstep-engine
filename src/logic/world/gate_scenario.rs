@@ -146,6 +146,9 @@ pub fn gate_world() -> World {
     w.players.get_nth_mut(1).expect("the player").name_key = key.0 as i32;
     factory_init_team(&mut w, b"team1", b"Player1", true, &Dict::new()).expect("the team");
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+    // (the player allied to itself, as `Player::initFromDict` and `PlayerList::newGame` leave it)
+    crate::logic::world::player_ops::player_set_player_relationship(&mut w, 1, Some(1), crate::common::game_common::Relationship::Allies)
+        .expect("the player's relationship");
     w.partition_init();
     w.cuts.live_partition = true;
     w.cuts.live_teams = true;

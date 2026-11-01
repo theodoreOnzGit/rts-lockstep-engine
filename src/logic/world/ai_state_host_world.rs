@@ -880,7 +880,12 @@ impl AiStateHost for World {
             None => crate::logic::module::update_module::UPDATE_SLEEP_FOREVER,
         }
     }
-    fn find_closest_repulsor(&mut self, _range: f32) -> ObjectId {
+    fn find_closest_repulsor(&mut self, range: f32) -> ObjectId {
+        // (batch I9c-3: with `live_ai`, `TheAI`'s own query)
+        if self.cuts.live_ai {
+            let id = self.ai_self;
+            return self.ai_find_closest_repulsor_live(id, range);
+        }
         self.ais_cut("find_closest_repulsor");
         INVALID_ID
     }

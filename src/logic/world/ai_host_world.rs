@@ -83,6 +83,9 @@ pub struct AiHostCuts {
     /// The FX lists the AIs' data name (batch I9b-5), by the index an AI keeps for one: the FX is the client's, and its cut
     /// points log the name.
     pub fx_names: Vec<Vec<u8>>,
+    /// Batch I9c-3: the largest weapon range of the object whose adjusted vision range is being computed (see
+    /// `world::ai_query_world`).
+    pub largest_weapon_range: Option<(ObjectId, f32)>,
 }
 
 impl World {
@@ -420,14 +423,23 @@ impl AiHost for World {
     }
     fn adjusted_vision_range_for_object(&mut self, factors: i32) -> f32 {
         let id = self.ai_self;
+        // (batch I9c-3: with `live_ai`, `TheAI`'s own query)
+        if self.cuts.live_ai {
+            return self.ai_adjusted_vision_range(id, factors);
+        }
         self.ai_host_cut("AI::getAdjustedVisionRangeForObject", vec![i64::from(id), i64::from(factors)]);
         match self.cuts.ai_host.adjusted_vision_range.get(&id) {
             Some(r) => *r,
             None => self.get_vision_range(id),
         }
     }
-    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, _info: Option<usize>, _area: Option<i32>) -> ObjectId {
+    fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>, area: Option<i32>) -> ObjectId {
         let id = self.ai_self;
+        // (batch I9c-3: with `live_ai`, `TheAI`'s own query; the area filter (a polygon trigger, `PartitionFilterPolygonTrigger`)
+        // is not live yet: with one the query stays the cut table)
+        if self.cuts.live_ai && area.is_none() {
+            return self.ai_find_closest_enemy_live(id, range, qualifiers, info);
+        }
         self.ai_host_cut("AI::findClosestEnemy", vec![i64::from(id), i64::from(range.to_bits()), i64::from(qualifiers)]);
         self.cuts.ai_host.closest_enemy.get(&id).copied().unwrap_or(INVALID_ID)
     }

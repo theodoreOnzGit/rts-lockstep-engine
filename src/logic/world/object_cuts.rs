@@ -301,6 +301,10 @@ impl World {
 
     /// `TheAI->findClosestEnemy(obj, range, qualifiers) != NULL`.
     pub fn ai_find_closest_enemy(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
+        // (batch I9c-3: with `live_ai`, `TheAI`'s own query)
+        if self.cuts.live_ai {
+            return self.ai_find_closest_enemy_live(id, range, qualifiers, None) != crate::common::game_type::INVALID_ID;
+        }
         let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
         self.cut(CutCall::AiFindClosestEnemy { object: id, range, qualifiers, minor_radius });
         self.cuts.ai_enemy_near.contains(&id)
@@ -308,6 +312,9 @@ impl World {
 
     /// `TheAI->findClosestAlly(obj, range, qualifiers) != NULL`.
     pub fn ai_find_closest_ally(&mut self, id: ObjectId, range: f32, qualifiers: u32) -> bool {
+        if self.cuts.live_ai {
+            return self.ai_find_closest_ally_live(id, range, qualifiers) != crate::common::game_type::INVALID_ID;
+        }
         let minor_radius = self.objects.find(id).map_or(0.0, |o| o.geometry_info.get_minor_radius());
         self.cut(CutCall::AiFindClosestAlly { object: id, range, qualifiers, minor_radius });
         self.cuts.ai_ally_near.contains(&id)
