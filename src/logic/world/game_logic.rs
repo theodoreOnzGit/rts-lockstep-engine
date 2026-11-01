@@ -200,6 +200,13 @@ pub struct World {
     /// `TheScriptActions`.
     pub script_actions: crate::logic::world::script_actions::ScriptActions,
     // --- end batch I8c ---
+    // --- batch I9a ---
+    /// `TheAI->pathfinder()`, live with `cuts.live_pathfinder`; out of the world (none) while it runs (see
+    /// `pathfinder_host_world.rs`).
+    pub pathfinder: Option<crate::logic::ai::pathfinder::Pathfinder>,
+    /// The pathfinder's `isPointOnWall`, as it stood when it was last put back (answered while it is out).
+    pub pf_wall: crate::logic::ai::pathfinder::WallView,
+    // --- end batch I9a ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -272,6 +279,10 @@ impl World {
             // --- batch I8c ---
             script_actions: crate::logic::world::script_actions::ScriptActions::new(),
             // --- end batch I8c ---
+            // --- batch I9a ---
+            pathfinder: Some(crate::logic::ai::pathfinder::Pathfinder::new(None)),
+            pf_wall: Default::default(),
+            // --- end batch I9a ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),
@@ -748,7 +759,7 @@ impl World {
         self.note(Hook::RemoveWallPiece(id));
         // --- p1w6-object ---
         if self.objects.find(id).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_WALK_ON_TOP_OF_WALL)) {
-            self.cut(crate::logic::world::object_cuts::CutCall::PathfinderRemoveWallPiece { object: id });
+            self.pathfinder_remove_wall_piece(id);
         }
         // --- end p1w6-object ---
     }

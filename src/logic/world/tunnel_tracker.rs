@@ -81,7 +81,6 @@ use crate::logic::damage::{DamageInfo, DAMAGE_HEALING, DEATH_NONE};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::ModuleCall;
 use crate::logic::world::object_events::ObjectClientEvent;
-use crate::logic::world::object_cuts::CutCall;
 
 /// `LOGICFRAMES_PER_SECOND`.
 const LOGICFRAMES_PER_SECOND: u32 = 30;
@@ -435,7 +434,7 @@ impl TunnelTracker {
                 world.emit(ObjectClientEvent::DrawableSetHidden { object_id: id, hidden: true });
             }
             // remove object from pathfind map
-            world.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object: id });
+            world.pathfinder_remove_object_from_map(id);
         }
         // we're done with the xfer contain list now
         self.xfer_contain_list.clear();

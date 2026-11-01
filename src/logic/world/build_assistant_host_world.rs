@@ -427,8 +427,12 @@ impl BuildAssistantHost for World {
     fn partition_shroud_status_for_player(&self, player_index: i32, x: i32, y: i32) -> CellShroudStatus {
         self.partition.get_shroud_status_for_player_at_cell(player_index, x, y)
     }
-    fn pathfinder_cell_type(&self, _layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
-        let t = self.cuts.contain.cell_types[crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)];
+    fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
+        // (batch I9a: the world's pathfinder with `live_pathfinder`)
+        let t = match self.pathfinder_cell_type(layer, x, y) {
+            Some(cell) => cell?,
+            None => self.cuts.contain.cell_types[crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)],
+        };
         match t {
             0 => Some(PathfindCellType::Clear),
             1 => Some(PathfindCellType::Water),

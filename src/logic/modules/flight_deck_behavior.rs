@@ -1155,7 +1155,7 @@ impl FlightDeckBehavior {
         let r = self.spaces[i].runway as usize;
         let orient = self.runways.get(r).and_then(|r| r.start_orient).ok_or_else(|| IniError::undefined(Undefined::UninitialisedLocal))?;
         world.set_orientation(new_obj, orient);
-        world.cut(crate::logic::world::object_cuts::CutCall::PathfinderAddObjectToPathfindMap { object: new_obj });
+        world.pathfinder_add_object_to_map(new_obj);
         if let Some(ai) = Self::jet_ai(world, new_obj) {
             let prep = self.spaces[i].prep;
             world.module_call(new_obj, ai, ModuleCall::AiFollowExitProductionPath { path: vec![prep], ignore_object: us, command_source: CMD_FROM_AI });

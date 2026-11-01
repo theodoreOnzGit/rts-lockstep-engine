@@ -818,7 +818,7 @@ impl ParkingPlaceBehavior {
         };
         world.set_position(new_obj, &hangar_internal);
         world.set_orientation(new_obj, hangar_internal_orient);
-        world.cut(crate::logic::world::object_cuts::CutCall::PathfinderAddObjectToPathfindMap { object: new_obj });
+        world.pathfinder_add_object_to_map(new_obj);
         if let Some(ai) = world.objects.find(new_obj).and_then(|o| o.ai) {
             let mut moved_to_rally_point = false;
             if produced_at_helipad && self.heli_rally_point_exists {

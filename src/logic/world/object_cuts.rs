@@ -2077,8 +2077,8 @@ pub struct ObjectCuts {
     /// `world.partition` with the world as its host, and a range scan's answer replaces `range_scan` (see
     /// `world::partition_host_world`). Off by default: the tests of the object and module code answer from these tables.
     pub live_partition: bool,
-    /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` for `findPositionAround` (the pathfinder is not in the world
-    /// yet): the cells that are not `CELL_CLEAR`.
+    /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` for `findPositionAround` ~~(the pathfinder is not in the world
+    /// yet)~~ (without `live_pathfinder`; batch I9a put the pathfinder in the world): the cells that are not `CELL_CLEAR`.
     pub pathfind_cells: BTreeMap<(i32, i32, i32), crate::logic::world::partition::PathfindCellType>,
     /// `clientSafeQuickDoesPathExist` for `findPositionAround`'s path check: `None` for "the source has no AI update".
     pub partition_quick_path: Option<bool>,
@@ -2090,8 +2090,9 @@ pub struct ObjectCuts {
     /// module code answer from (and act on) `world.terrain`, with the world as its host, instead of the `terrain_*` and
     /// `bridge_*` tables (see `world::terrain_host_world`). Off by default, as `live_partition`.
     pub live_terrain: bool,
-    /// The bridges `TheAI->pathfinder()->addBridge` has been given (the pathfinder is not in the world yet; see
-    /// [`World::pathfinder_add_bridge_stand_in`]).
+    /// The bridges `TheAI->pathfinder()->addBridge` has been given ~~(the pathfinder is not in the world yet; see
+    /// [`World::pathfinder_add_bridge_stand_in`])~~ without `live_pathfinder` (see [`World::pathfinder_add_bridge_stand_in`];
+    /// batch I9a put the pathfinder in the world).
     pub pathfinder_bridges_added: i32,
     /// Set while object code runs on a copy of the terrain logic lent to it from inside a terrain call
     /// ([`World::lend_terrain`]).
@@ -2158,6 +2159,11 @@ pub struct ObjectCuts {
     pub frame_selection_changed: u32,
     /// batch I8b: `TheAudio->hasMusicTrackCompleted(name, n)`: how many times each track has completed.
     pub music_tracks_completed: BTreeMap<Vec<u8>, i32>,
+    /// batch I9a: the world's pathfinder (`World::pathfinder`) answers and does what the world asks of
+    /// `TheAI->pathfinder()`, rather than the cut points and their tables. Off by default.
+    pub live_pathfinder: bool,
+    /// batch I9a: the pathfinder's questions to the units the world does not hold yet (the AI), and its deferred calls.
+    pub pathfinder: crate::logic::world::pathfinder_host_world::PathfinderCuts,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2329,6 +2335,8 @@ impl Default for ObjectCuts {
             audio_lengths_ms: BTreeMap::new(),
             frame_selection_changed: 0,
             music_tracks_completed: BTreeMap::new(),
+            live_pathfinder: false,
+            pathfinder: Default::default(),
             next_drawable_id: 1,
         }
     }

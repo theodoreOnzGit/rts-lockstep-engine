@@ -23,6 +23,7 @@
 //! change of transform, the height above the terrain (which accounts for the
 //! bridge layer), the trigger areas the object is in, and the map boundary.
 
+use crate::logic::ai::pathfinder::WallView;
 use crate::common::base_type::{fast_float2long_round, fast_float_trunc, Coord2D, Coord3D, ICoord3D, Region3D};
 use crate::common::game_type::{ObjectId, PathfindLayer, INVALID_ID};
 use crate::common::kind_of::{
@@ -92,14 +93,16 @@ impl ThingContext for SetterContext {
 
 /// `TheTerrainLogic->getLayerHeight(x, y, layer)` (clipped, no normal):
 /// [`TerrainLogic::layer_height_with`]. The wall layer's height is the
-/// pathfinder's (a cut point, `cuts.wall_height`), and no point is on a wall
+/// pathfinder's (a cut point, `cuts.wall_height`). ~~No point is on a wall
 /// (the pathfinder is not in the world yet; with no wall pieces upstream's
-/// `isPointOnWall` is false too). ~~The wall layer answered the wall height
+/// `isPointOnWall` is false too).~~ **Batch I9a:** `isPointOnWall` is the
+/// world pathfinder's, through its [`WallView`] (`World::pf_wall`; empty, so
+/// no point on a wall, until the pathfinder has wall pieces). ~~The wall layer answered the wall height
 /// at every point~~ **corrected in batch I2**: clipped, upstream answers the
 /// ground height at a point that is not on a wall. A vertical deck (an
 /// undefined input upstream) answers the ground height.
-pub fn layer_height(terrain: &TerrainLogic, wall_height: f32, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-    match terrain.layer_height_with(|| wall_height, |_| false, x, y, layer, false, true) {
+pub fn layer_height(terrain: &TerrainLogic, wall_height: f32, wall: &WallView, x: f32, y: f32, layer: PathfindLayer) -> f32 {
+    match terrain.layer_height_with(|| wall_height, |p| wall.is_point_on_wall(p), x, y, layer, false, true) {
         Ok((height, _)) => height,
         Err(_) => terrain.ground_height(x, y, false).0,
     }
@@ -224,20 +227,29 @@ impl World {
     pub fn calculate_height_above_terrain(&self, id: ObjectId) -> f32 {
         let Some(o) = self.objects.find(id) else { return 0.0 };
         let pos = o.thing.position();
-        let terrain_z = layer_height(&self.terrain, self.cuts.wall_height, pos.x, pos.y, o.layer);
+        let terrain_z = layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, pos.x, pos.y, o.layer);
         pos.z - terrain_z
     }
 
     /// `getHeightAboveTerrain()`: cached, with the layer-aware calculation.
     pub fn get_height_above_terrain(&mut self, id: ObjectId) -> f32 {
         let wall = self.cuts.wall_height;
-        let terrain = &self.terrain;
+        let (terrain, wall_view) = (&self.terrain, &self.pf_wall);
         let Some(o) = self.objects.find_mut(id) else { return 0.0 };
         let layer = o.layer;
         o.thing.height_above_terrain_by(|t| {
             let pos = t.position();
-            pos.z - layer_height(terrain, wall, pos.x, pos.y, layer)
+            pos.z - layer_height(terrain, wall, wall_view, pos.x, pos.y, layer)
         })
+    }
+
+    /// `getHeightAboveTerrain()` for a caller that holds the world shared (the pathfinder's host): the cached height when
+    /// the cache is valid, else the calculation the cache would store (and does not store it).
+    pub fn peek_height_above_terrain(&self, id: ObjectId) -> f32 {
+        match self.objects.find(id).and_then(|o| o.thing.cached_height_above_terrain()) {
+            Some(h) => h,
+            None => self.calculate_height_above_terrain(id),
+        }
     }
 
     // ---- trigger areas -----------------------------------------------------------------------------
@@ -286,7 +298,7 @@ impl World {
             self.emit(ObjectClientEvent::TerrainObjectMoved { object_id: id });
         }
         if has_ai {
-            self.cut(CutCall::PathfinderUpdatePos { object: id });
+            self.pathfinder_update_pos(id);
         }
         let now = self.frame();
         let o = self.objects.find(id).expect("checked above");
@@ -413,7 +425,7 @@ impl World {
     pub fn friend_notify_of_new_map_boundary(&mut self, id: ObjectId) {
         self.partition_register_object(id);
         self.radar_add_object(id);
-        self.cut(CutCall::PathfinderAddObjectToPathfindMap { object: id });
+        self.pathfinder_add_object_to_map(id);
         // Now that the PartitionManager has finished its reset, we need to relook
         self.handle_partition_cell_maintenance(id);
         let Some(o) = self.objects.find(id) else { return };
@@ -431,11 +443,11 @@ impl World {
     pub fn set_layer(&mut self, id: ObjectId, layer: PathfindLayer) {
         let Some(o) = self.objects.find(id) else { return };
         if layer != o.layer {
-            self.cut(CutCall::PathfinderRemovePos { object: id });
+            self.pathfinder_remove_pos(id);
             if let Some(o) = self.objects.find_mut(id) {
                 o.layer = layer;
             }
-            self.cut(CutCall::PathfinderUpdatePos { object: id });
+            self.pathfinder_update_pos(id);
         }
     }
 

@@ -29,6 +29,7 @@
 //!
 //! `p1w13-sonnet`, 2026-10-22.
 
+use crate::logic::world::pathfinder_host_world::PfOp;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::base_type::Coord3D;
@@ -272,26 +273,41 @@ impl World {
 
     /// `TheAI->pathfinder()->addObjectToPathfindMap(obj)`.
     pub fn contain_pathfind_add_object(&mut self, id: ObjectId) {
+        if self.pathfinder_op(PfOp::AddObject(id)) {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindAddObject { object: id });
     }
 
     /// `TheAI->pathfinder()->removeObjectFromPathfindMap(obj)`.
     pub fn contain_pathfind_remove_object(&mut self, id: ObjectId) {
+        if self.pathfinder_op(PfOp::RemoveObject(id)) {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindRemoveObject { object: id });
     }
 
     /// `TheAI->pathfinder()->removeUnitFromPathfindMap(obj)`.
     pub fn contain_pathfind_remove_unit(&mut self, id: ObjectId) {
+        if self.pathfinder_op(PfOp::RemoveUnit(id)) {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindRemoveUnit { object: id });
     }
 
     /// `TheAI->pathfinder()->updatePos(obj, pos)`.
     pub fn contain_pathfind_update_pos(&mut self, id: ObjectId, pos: &Coord3D) {
+        if self.pathfinder_op(PfOp::UpdatePos(id, *pos)) {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindUpdatePos { object: id, position: *pos });
     }
 
     /// `TheAI->pathfinder()->updateGoal(obj, pos, layer)`.
     pub fn contain_pathfind_update_goal(&mut self, id: ObjectId, pos: &Coord3D, layer: PathfindLayer) {
+        if self.pathfinder_op(PfOp::UpdateGoal(id, *pos, layer)) {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindUpdateGoal { object: id, position: *pos, layer });
     }
 
@@ -299,6 +315,9 @@ impl World {
     /// `TheAI->pathfinder()->adjustDestination(obj, locomotorSet, &pos)` (the production exits, batch R18): true and `pos` moved where the table
     /// says ([`ContainCutTables::adjust_destination`]).
     pub fn contain_pathfind_adjust_destination(&mut self, id: ObjectId, pos: &mut Coord3D) -> bool {
+        if let Some(r) = self.pathfinder_adjust_destination(id, pos) {
+            return r;
+        }
         self.contain_cut(ContainCall::PathfindAdjustDestination { object: id, before: *pos });
         match self.cuts.contain.adjust_destination.get(&id) {
             Some(p) => {
@@ -312,6 +331,9 @@ impl World {
     /// `TheAI->pathfinder()->snapPosition(obj, &pos)` (`QueueProductionExitUpdate`, batch R18): `pos` moved where the table says
     /// ([`ContainCutTables::snap_position`]).
     pub fn contain_pathfind_snap_position(&mut self, id: ObjectId, pos: &mut Coord3D) {
+        if self.pathfinder_snap_position(id, pos).is_some() {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindSnapPosition { object: id, before: *pos });
         if let Some(p) = self.cuts.contain.snap_position {
             *pos = p;
@@ -319,6 +341,9 @@ impl World {
     }
 
     pub fn contain_pathfind_adjust_to_possible_destination(&mut self, id: ObjectId, pos: &mut Coord3D) {
+        if self.pathfinder_adjust_to_possible_destination(id, pos).is_some() {
+            return;
+        }
         self.contain_cut(ContainCall::PathfindAdjustToPossibleDestination { object: id, before: *pos });
         if let Some(p) = self.cuts.contain.adjusted_destination.get(&id) {
             *pos = *p;
@@ -572,6 +597,9 @@ impl World {
 
     /// `TheAI->pathfinder()->getCell(layer, x, y)`, then `getType()`: `None` for a `NULL` cell (see [`ContainCutTables::cell_types`]).
     pub fn contain_pathfind_cell_type(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<i32> {
+        if let Some(cell) = self.pathfinder_cell_type(layer, x, y) {
+            return cell;
+        }
         self.contain_cut(ContainCall::PathfindGetCell { layer, x, y });
         let t = self.cuts.contain.cell_types[crate::logic::world::object_cuts::terrain_cell(x as f32, y as f32)];
         (t >= 0).then_some(t)

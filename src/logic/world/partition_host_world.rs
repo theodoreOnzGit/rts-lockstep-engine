@@ -331,7 +331,7 @@ impl PartitionHost for World {
         self.terrain.highest_layer_for_destination_with(|| wall_height, |_| false, pos, false).unwrap_or(crate::logic::world::partition::LAYER_GROUND)
     }
     fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-        layer_height(&self.terrain, self.cuts.wall_height, x, y, layer)
+        layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, x, y, layer)
     }
     fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
         match self.terrain.is_cliff_cell(x, y) {
@@ -343,6 +343,14 @@ impl PartitionHost for World {
         self.terrain.is_underwater(x, y).is_ok_and(|u| u.underwater)
     }
     fn pathfind_cell_type(&mut self, layer: PathfindLayer, cell_x: i32, cell_y: i32) -> Option<PathfindCellType> {
+        // (batch I9a: the world's pathfinder with `live_pathfinder`)
+        if let Some(cell) = World::pathfinder_cell_type(self, layer, cell_x, cell_y) {
+            return cell.map(|t| match t as u8 {
+                crate::logic::ai::cell::CELL_CLEAR => PathfindCellType::Clear,
+                crate::logic::ai::cell::CELL_IMPASSABLE => PathfindCellType::Impassable,
+                _ => PathfindCellType::Other,
+            });
+        }
         if cell_x < 0 || cell_y < 0 {
             return None;
         }

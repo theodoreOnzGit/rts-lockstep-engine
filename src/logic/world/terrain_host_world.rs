@@ -20,10 +20,13 @@
 //! - **The terrain roads** (the client's INI, read by no layer yet) are the
 //!   `cuts.bridge_templates` table, which batch I2 extends with the tower
 //!   object names.
-//! - **The pathfinder** is not in the world yet: `addBridge`,
-//!   `changeBridgeState` and `forceMapRecalculation` are cut calls, its wall
-//!   height is `cuts.wall_height`, no point is on a wall, and the layer
-//!   `addBridge` assigns is [`World::pathfinder_add_bridge_stand_in`]'s.
+//! - **The pathfinder** ~~is not in the world yet~~ is the world's since batch
+//!   I9a (`pathfinder_host_world.rs`): with `live_pathfinder`, `addBridge` is
+//!   its own and `changeBridgeState` and `forceMapRecalculation` run once the
+//!   terrain is back in the world; without it they are cut calls and the layer
+//!   `addBridge` assigns is [`World::pathfinder_add_bridge_stand_in`]'s. Its
+//!   wall height is `cuts.wall_height`; ~~no point is on a wall~~ a point is on
+//!   a wall as its `isPointOnWall` answers (`World::pf_wall`).
 //! - **`setActiveBoundary`** stores and restores the fog through the world's
 //!   partition manager, takes every object out of it and back in
 //!   (`friend_prepareForMapBoundaryAdjust`, `friend_notifyOfNewMapBoundary`),
@@ -82,6 +85,8 @@ impl World {
         let mut terrain = std::mem::take(&mut self.terrain);
         let r = f(&mut terrain, self);
         self.terrain = terrain;
+        // (batch I9a: the pathfinder's bridge calls the terrain made, now that it can be asked about its bridges)
+        self.pathfinder_run_deferred_bridge_calls();
         r
     }
 
@@ -150,7 +155,8 @@ impl World {
         self.with_terrain(|t, w| t.set_active_boundary(w, new_active_boundary));
     }
 
-    /// `TheAI->pathfinder()->addBridge(bridge)`'s layer, until the pathfinder is in the world: the next layer above the
+    /// `TheAI->pathfinder()->addBridge(bridge)`'s layer ~~until the pathfinder is in the world~~ without `live_pathfinder`
+    /// (batch I9a): the next layer above the
     /// ground, up to and including the wall layer as upstream's loop runs, then the ground ("Ran out of bridge
     /// layers."). Upstream also answers the ground when the layer's `init` fails (a bridge off the map), which this
     /// stand-in does not see.
@@ -297,15 +303,31 @@ impl TerrainWorld for World {
         self.lend_terrain(terrain, |w| World::destroy_object(w, id));
     }
 
+    /// Batch I9a: with `live_pathfinder`, the world pathfinder's `addBridge` (it records the bridge only; the handle is the
+    /// bridge object's id, see `pathfinder_host_world.rs`).
     fn pathfinder_add_bridge(&mut self, bridge: &Bridge) -> PathfindLayer {
-        self.pathfinder_add_bridge_stand_in(bridge.info().bridge_object_id)
+        let id = bridge.info().bridge_object_id;
+        if self.cuts.live_pathfinder {
+            if let Some(pf) = self.pathfinder.as_mut() {
+                return pf.add_bridge(id as crate::logic::ai::layer::BridgeHandle);
+            }
+            self.cuts.team_live_errors.push("Pathfinder::addBridge: the pathfinder is out".into());
+        }
+        self.pathfinder_add_bridge_stand_in(id)
     }
 
+    /// Batch I9a: with `live_pathfinder`, deferred until the terrain is back (it asks about the bridges).
     fn pathfinder_change_bridge_state(&mut self, layer: PathfindLayer, enable: bool) {
+        if self.pathfinder_bridge_op(crate::logic::world::pathfinder_host_world::PfOp::ChangeBridgeState(layer, enable)) {
+            return;
+        }
         World::pathfinder_change_bridge_state(self, layer, enable);
     }
 
     fn pathfinder_force_map_recalculation(&mut self) {
+        if self.pathfinder_bridge_op(crate::logic::world::pathfinder_host_world::PfOp::ForceMapRecalculation) {
+            return;
+        }
         self.cut(CutCall::PathfinderForceMapRecalculation);
     }
 
@@ -313,9 +335,11 @@ impl TerrainWorld for World {
         self.cuts.wall_height
     }
 
-    /// No point is on a wall until the pathfinder is in the world (see the module docs).
-    fn pathfinder_is_point_on_wall(&self, _pos: &Coord3D) -> bool {
-        false
+    /// ~~No point is on a wall until the pathfinder is in the world (see the module docs).~~ **Batch I9a:** the world
+    /// pathfinder's `isPointOnWall`, through its [`WallView`](crate::logic::ai::pathfinder::WallView) (answered while the
+    /// pathfinder is checked out too).
+    fn pathfinder_is_point_on_wall(&self, pos: &Coord3D) -> bool {
+        self.pf_wall.is_point_on_wall(pos)
     }
 
     /// Upstream caches the template in a function-local `static`, looked up on the first call; the templates do not
@@ -414,7 +438,7 @@ impl TerrainWorld for World {
 }
 
 /// What the terrain logic reads of object `id`; `None` for no such object.
-fn object_view(w: &World, id: ObjectId) -> Option<ObjectView> {
+pub(crate) fn object_view(w: &World, id: ObjectId) -> Option<ObjectView> {
     let o = w.objects.find(id)?;
     Some(ObjectView { id, position: o.get_position(), orientation: o.thing.orientation(), layer: o.layer, geometry: o.geometry_info.clone() })
 }
@@ -704,7 +728,7 @@ mod tests {
         // the wall layer away from any wall is the ground (the wall height only on a wall)
         w.cuts.wall_height = 99.0;
         assert_eq!(w.terrain_get_layer_height(5.0, 5.0, LAYER_WALL), expect);
-        assert_eq!(crate::logic::world::object_transform::layer_height(&w.terrain, 99.0, 5.0, 5.0, LAYER_WALL), expect);
+        assert_eq!(crate::logic::world::object_transform::layer_height(&w.terrain, 99.0, &w.pf_wall, 5.0, 5.0, LAYER_WALL), expect);
         assert_eq!(w.terrain_get_highest_layer_for_destination(&Coord3D { x: 5.0, y: 5.0, z: 50.0 }), LAYER_GROUND);
         assert_eq!(w.terrain_get_extent_including_border(), w.terrain.extent_including_border().unwrap());
         let edge = w.terrain_find_closest_edge_point(Coord3D { x: 5.0, y: 200.0, z: 0.0 });

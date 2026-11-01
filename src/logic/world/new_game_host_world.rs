@@ -406,6 +406,9 @@ impl NewGameHost for World {
         self.terrain_add_landmark_bridge_to_logic(obj as ObjectId);
     }
     fn sn_add_wall_piece(&mut self, obj: u32) {
+        if self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::AddWallPiece(obj as ObjectId)) {
+            return;
+        }
         self.ng_cut("Pathfinder::addWallPiece", &[i64::from(obj)]);
     }
     fn sn_update_obj_from_map(&mut self, obj: u32, map_object: usize) {
@@ -415,6 +418,11 @@ impl NewGameHost for World {
         }
     }
     fn sn_radar_refresh_and_pathfinder_new_map(&mut self) {
+        if self.cuts.live_pathfinder {
+            self.ng_cut("Radar::refreshTerrain", &[]);
+            self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap);
+            return;
+        }
         self.ng_cut("Radar::refreshTerrain, Pathfinder::newMap", &[]);
     }
     fn sn_find_player(&self, name: &[u8]) -> Option<i32> {

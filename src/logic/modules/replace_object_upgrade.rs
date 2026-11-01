@@ -164,7 +164,7 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
         };
         // Remove us first since occupation of cells is apparently not a refcount, but a flag.
         if !crate::logic::modules::plant(681) {
-            world.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object });
+            world.pathfinder_remove_object_from_map(object);
         }
         trace(world, "replace destroy".to_string());
         if !crate::logic::modules::plant(682) {
@@ -178,7 +178,7 @@ impl UpgradeBehavior for ReplaceObjectUpgrade {
         if !crate::logic::modules::plant(683) {
             world.set_transform_matrix(replacement, &my_matrix);
         }
-        world.cut(CutCall::PathfinderAddObjectToPathfindMap { object: replacement });
+        world.pathfinder_add_object_to_map(replacement);
         // Now onCreates were called at the constructor. This magically created thing needs to be considered as Built for Game specific stuff.
         for idx in world.modules_with(replacement, MODULEINTERFACE_CREATE) {
             if crate::logic::modules::plant(684) {

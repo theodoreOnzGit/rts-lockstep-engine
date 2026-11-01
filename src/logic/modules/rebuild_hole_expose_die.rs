@@ -164,7 +164,7 @@ impl RebuildHoleExposeDie {
         // "Transfer the structure's name to the hole."
         world.cut(CutCall::ScriptEngineTransferObjectName { name, object: hole });
         // "add the hole to the pathfind map"
-        world.cut(CutCall::PathfinderAddObjectToPathfindMap { object: hole });
+        world.pathfinder_add_object_to_map(hole);
         // "set the max health of the hole"
         let body = world.objects.find(hole).and_then(|o| o.body).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
         world.module_call(hole, body, ModuleCall::SetMaxHealth(modd.hole_max_health));

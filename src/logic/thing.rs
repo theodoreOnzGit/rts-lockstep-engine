@@ -307,6 +307,11 @@ impl<T: ThingTemplateView> Thing<T> {
         self.height_above_terrain_by(|t| t.calculate_height_above_terrain(ctx))
     }
 
+    /// The cached `getHeightAboveTerrain()`, when the cache is valid.
+    pub fn cached_height_above_terrain(&self) -> Option<f32> {
+        (self.cache_flags & VALID_ALTITUDE_TERRAIN != 0).then_some(self.cached_altitude_above_terrain)
+    }
+
     /// `getHeightAboveTerrain()` with the owner's own calculation (cut point 4).
     pub fn height_above_terrain_by(&mut self, calc: impl FnOnce(&Self) -> f32) -> f32 {
         if self.cache_flags & VALID_ALTITUDE_TERRAIN == 0 {

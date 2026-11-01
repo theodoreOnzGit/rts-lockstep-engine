@@ -492,8 +492,8 @@ fn set_correct_damage_state_of(ab: &mut ActiveBody, world: &mut World, me: Modul
         world.set_geometry_info_z(id, rubble_height);
 
         // Have to tell pathfind as well, as rubble pathfinds differently.
-        world.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object: id });
-        world.cut(CutCall::PathfinderAddObjectToPathfindMap { object: id });
+        world.pathfinder_remove_object_from_map(id);
+        world.pathfinder_add_object_to_map(id);
 
         // here we make sure nobody collides with us, ever again...
         // This allows projectiles shot from infantry that are inside rubble to get out of said rubble safely

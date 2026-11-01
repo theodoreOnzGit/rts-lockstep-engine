@@ -53,7 +53,6 @@ use crate::logic::modules::crate_collide::CrateCollideModuleData;
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
@@ -358,7 +357,7 @@ impl ToppleUpdate {
             self.topple_direction.y = crate::common::trig::sin(topple_angle);
             // go ahead and remove it from the pathfinder now, rather than waiting for the topple to finish
             if !crate::logic::modules::plant(1984) {
-                world.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object: id });
+                world.pathfinder_remove_object_from_map(id);
             }
         }
         // desired angle is toppleAngle +/- pi/2, whichever is closer to curangle

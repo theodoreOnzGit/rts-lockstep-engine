@@ -2105,6 +2105,12 @@ impl TerrainLogic {
     /// `getLayerForDestination(pos)`: the layer whose surface is closest to
     /// the position's height.
     pub fn layer_for_destination<W: TerrainWorld>(&mut self, world: &W, pos: &Coord3D) -> TlResult<PathfindLayer> {
+        let r = self.layer_for_destination_uncounted(world, pos);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::layer_for_destination`], the undefined input returned rather than counted (for a caller that holds the terrain shared).
+    pub fn layer_for_destination_uncounted<W: TerrainWorld>(&self, world: &W, pos: &Coord3D) -> Result<PathfindLayer, TerrainUndefined> {
         let mut best_layer = LAYER_GROUND;
         let mut best_distance = (pos.z - self.ground_height(pos.x, pos.y, false).0).abs();
 
@@ -2122,7 +2128,7 @@ impl TerrainLogic {
         for i in 0..self.bridges.len() {
             if self.bridges[i].is_point_on_bridge(pos) {
                 let r = self.bridges[i].bridge_height(pos);
-                let (h, _) = self.count(r)?;
+                let (h, _) = r?;
                 let delta = (pos.z - h).abs();
                 if delta < best_distance {
                     best_layer = self.bridges[i].layer;
@@ -2202,6 +2208,12 @@ impl TerrainLogic {
     /// whether the object is close enough to the bridge on that layer to
     /// interact with it for pathfinding.
     pub fn object_interacts_with_bridge_layer<W: TerrainWorld>(&mut self, world: &W, obj: &ObjectView, layer: i32, consider_bridge_health: bool) -> TlResult<bool> {
+        let r = self.object_interacts_with_bridge_layer_uncounted(world, obj, layer, consider_bridge_health);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::object_interacts_with_bridge_layer`], the undefined input returned rather than counted (for a caller that holds the terrain shared).
+    pub fn object_interacts_with_bridge_layer_uncounted<W: TerrainWorld>(&self, world: &W, obj: &ObjectView, layer: i32, consider_bridge_health: bool) -> Result<bool, TerrainUndefined> {
         if layer == LAYER_GROUND {
             return Ok(false);
         }
@@ -2228,7 +2240,7 @@ impl TerrainLogic {
 
                 if matched {
                     let r = self.bridges[i].bridge_height(&obj.position);
-                    let (bridge_height, _) = self.count(r)?;
+                    let (bridge_height, _) = r?;
                     let delta = (obj.position.z - bridge_height).abs();
                     if delta > LAYER_Z_CLOSE_ENOUGH_F {
                         return Ok(false);
@@ -2250,6 +2262,12 @@ impl TerrainLogic {
     /// close to one end of the bridge on that layer. (Returns `NULL` for the
     /// ground layer, upstream's way of writing false.)
     pub fn object_interacts_with_bridge_end(&mut self, obj: &ObjectView, layer: i32) -> TlResult<bool> {
+        let r = self.object_interacts_with_bridge_end_uncounted(obj, layer);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::object_interacts_with_bridge_end`], the undefined input returned rather than counted (for a caller that holds the terrain shared).
+    pub fn object_interacts_with_bridge_end_uncounted(&self, obj: &ObjectView, layer: i32) -> Result<bool, TerrainUndefined> {
         if layer == LAYER_GROUND {
             return Ok(false);
         }
@@ -2264,7 +2282,7 @@ impl TerrainLogic {
 
                 if matched {
                     let r = self.bridges[i].bridge_height(&obj.position);
-                    let (bridge_height, _) = self.count(r)?;
+                    let (bridge_height, _) = r?;
                     let delta = (obj.position.z - bridge_height).abs();
                     if delta > LAYER_Z_CLOSE_ENOUGH_F {
                         return Ok(false);
@@ -2603,17 +2621,17 @@ impl TerrainLogic {
         self.water_grid_enabled
     }
 
-    /// `getWaterGridHeight(x, y)` as the terrain asks it (the logic-owned
-    /// grid).
-    fn water_grid_sample(&mut self, x: f32, y: f32) -> TlResult<WaterGridSample> {
-        let r = self.visual.water_grid.water_grid_height(x, y);
+    /// `isUnderwater(x, y, &waterZ, &terrainZ)`.
+    pub fn is_underwater(&mut self, x: f32, y: f32) -> TlResult<Underwater> {
+        let r = self.is_underwater_uncounted(x, y);
         self.count(r)
     }
 
-    /// `isUnderwater(x, y, &waterZ, &terrainZ)`.
-    pub fn is_underwater(&mut self, x: f32, y: f32) -> TlResult<Underwater> {
+    /// [`TerrainLogic::is_underwater`] with the undefined input returned rather than counted: for a caller that holds the
+    /// terrain shared (the pathfinder's host).
+    pub fn is_underwater_uncounted(&self, x: f32, y: f32) -> Result<Underwater, TerrainUndefined> {
         // get the water handle at this location
-        let Some(water_handle) = self.water_handle(x, y)? else {
+        let Some(water_handle) = self.water_handle_uncounted(x, y)? else {
             // if no water here, no height, no nuttin; but we have to return the terrain Z
             return Ok(Underwater { underwater: false, water_z: None, terrain_z: self.ground_height(x, y, false).0 });
         };
@@ -2622,11 +2640,11 @@ impl TerrainLogic {
         // the polygon trigger
         let mut w_z = 0.0f32;
         if water_handle == WaterHandle::Grid {
-            if let WaterGridSample::OnGrid(z) = self.water_grid_sample(x, y)? {
+            if let WaterGridSample::OnGrid(z) = self.visual.water_grid.water_grid_height(x, y)? {
                 w_z = z;
             }
         } else {
-            w_z = self.water_height(Some(water_handle))?;
+            w_z = self.water_height_uncounted(Some(water_handle))?;
         }
 
         // see if the terrain height here is below the water
@@ -2637,6 +2655,12 @@ impl TerrainLogic {
     /// `getWaterHandle(x, y)`: the water table with the highest water Z value
     /// at the location (a polygon water area, or the grid).
     pub fn water_handle(&mut self, x: f32, y: f32) -> TlResult<Option<WaterHandle>> {
+        let r = self.water_handle_uncounted(x, y);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::water_handle`], the undefined input returned rather than counted.
+    pub fn water_handle_uncounted(&self, x: f32, y: f32) -> Result<Option<WaterHandle>, TerrainUndefined> {
         let mut water_handle: Option<WaterHandle> = None;
         let mut water_z = 0.0f32;
 
@@ -2656,7 +2680,7 @@ impl TerrainLogic {
         }
 
         // For now do special check for water grid mesh.
-        match self.water_grid_sample(x, y)? {
+        match self.visual.water_grid.water_grid_height(x, y)? {
             WaterGridSample::NotOnGrid => {}
             WaterGridSample::OnGrid(mesh_z) => {
                 // point falls on water grid, return the special handle for the grid water, since we
@@ -2666,7 +2690,7 @@ impl TerrainLogic {
                 }
             }
             // `Real meshZ;` is read without having been written
-            WaterGridSample::OnGridUnset => return Err(self.undef(TerrainUndefined::WaterGridHeightUnset)),
+            WaterGridSample::OnGridUnset => return Err(TerrainUndefined::WaterGridHeightUnset),
         }
 
         Ok(water_handle)
@@ -2689,6 +2713,12 @@ impl TerrainLogic {
     /// `getWaterHeight(water)`: the height of a polygon water table; 0 for
     /// `NULL` and for the grid (which has no single height).
     pub fn water_height(&mut self, water: Option<WaterHandle>) -> TlResult<f32> {
+        let r = self.water_height_uncounted(water);
+        self.count(r)
+    }
+
+    /// [`TerrainLogic::water_height`], the undefined input returned rather than counted.
+    pub fn water_height_uncounted(&self, water: Option<WaterHandle>) -> Result<f32, TerrainUndefined> {
         // sanity
         let Some(water) = water else {
             return Ok(0.0);
@@ -2701,7 +2731,7 @@ impl TerrainLogic {
             WaterHandle::Polygon(ti) => match self.triggers.get(ti) {
                 // return the height of the water using the polygon trigger
                 Some(t) if t.is_water_area() => Ok(t.point(0).z as f32),
-                _ => Err(self.undef(TerrainUndefined::StaleWaterHandle)),
+                _ => Err(TerrainUndefined::StaleWaterHandle),
             },
         }
     }

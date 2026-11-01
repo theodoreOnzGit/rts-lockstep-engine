@@ -151,9 +151,15 @@ impl GameLogicSaveHost for World {
         World::thing_factory_new_object(self, t, team, ObjectStatusMaskType::default()).map(|o| o as u32).map_err(|_| SaveError::InvalidData)
     }
     fn x_add_wall_piece(&mut self, id: u32) {
+        if self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::AddWallPiece(id as ObjectId)) {
+            return;
+        }
         self.save_cut("Pathfinder::addWallPiece", &[i64::from(id)]);
     }
     fn x_pathfinder_new_map(&mut self) {
+        if self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap) {
+            return;
+        }
         self.save_cut("Pathfinder::newMap", &[]);
     }
     fn x_xfer_campaign_manager(&mut self, xfer: &mut dyn Xfer) -> SaveResult<()> {

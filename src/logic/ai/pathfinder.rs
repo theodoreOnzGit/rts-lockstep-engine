@@ -273,29 +273,7 @@ impl Pathfinder {
 
     /// `worldToCell(pos, cell)`: the cell, clamped to the extent; true when it was outside.
     pub fn world_to_cell(&self, pos: &Coord3D) -> (ICoord2D, bool) {
-        let mut cell = ICoord2D {
-            x: real_to_int_floor(pos.x / PATHFIND_CELL_SIZE as f32),
-            y: real_to_int_floor(pos.y / PATHFIND_CELL_SIZE as f32),
-        };
-        let e = &self.extent;
-        let mut overflow = false;
-        if cell.x < e.lo.x {
-            overflow = true;
-            cell.x = e.lo.x;
-        }
-        if cell.y < e.lo.y {
-            overflow = true;
-            cell.y = e.lo.y;
-        }
-        if cell.x > e.hi.x {
-            overflow = !plant(3062);
-            cell.x = e.hi.x;
-        }
-        if cell.y > e.hi.y {
-            overflow = true;
-            cell.y = e.hi.y;
-        }
-        (cell, overflow)
+        world_to_cell_in(&self.extent, pos)
     }
 
     /// `getCell(layer, pos)`: none outside the extent.
@@ -345,6 +323,24 @@ impl Pathfinder {
             Some(c) => self.store.cells[c as usize].get_layer() == LAYER_WALL && self.store.cells[c as usize].get_type() == CELL_CLEAR,
             None => false,
         }
+    }
+
+    /// A copy of what [`Pathfinder::is_point_on_wall`] reads: the extent and, for each cell of the wall layer, whether
+    /// `isPointOnWall` answers true there. For a host that is asked `isPointOnWall` while the pathfinder itself is running
+    /// (upstream's `getLayerHeight` and `getLayerForDestination` ask it of `TheAI->pathfinder()`, re-entering it).
+    pub fn wall_view(&self) -> WallView {
+        let wall = &self.layers[LAYER_WALL as usize];
+        if self.num_wall_pieces == 0 || wall.is_unused() || wall.block.is_none() {
+            return WallView::default();
+        }
+        let mut on_wall = Vec::with_capacity((wall.width * wall.height).max(0) as usize);
+        for i in 0..wall.width {
+            for j in 0..wall.height {
+                let c = &self.store.cells[wall.layer_cell(i, j) as usize];
+                on_wall.push(c.get_layer() == LAYER_WALL && c.get_type() == CELL_CLEAR);
+            }
+        }
+        WallView { extent: self.extent, x_origin: wall.x_origin, y_origin: wall.y_origin, width: wall.width, height: wall.height, on_wall }
     }
 
     /// `addBridge(theBridge)`: the first unused layer above the ground (the wall's included); the ground when the layer will not take
@@ -972,5 +968,61 @@ impl Pathfinder {
     pub fn remove_unit_from_pathfind_map(&mut self, host: &mut impl PathfinderHost, id: ObjectId) {
         self.remove_pos(host, id);
         self.remove_goal(host, id);
+    }
+}
+
+/// `worldToCell(pos, cell)` within an extent (the pathfinder's, or a [`WallView`]'s copy of it).
+fn world_to_cell_in(e: &IRegion2D, pos: &Coord3D) -> (ICoord2D, bool) {
+    let mut cell = ICoord2D {
+        x: real_to_int_floor(pos.x / PATHFIND_CELL_SIZE as f32),
+        y: real_to_int_floor(pos.y / PATHFIND_CELL_SIZE as f32),
+    };
+    let mut overflow = false;
+    if cell.x < e.lo.x {
+        overflow = true;
+        cell.x = e.lo.x;
+    }
+    if cell.y < e.lo.y {
+        overflow = true;
+        cell.y = e.lo.y;
+    }
+    if cell.x > e.hi.x {
+        overflow = !plant(3062);
+        cell.x = e.hi.x;
+    }
+    if cell.y > e.hi.y {
+        overflow = true;
+        cell.y = e.hi.y;
+    }
+    (cell, overflow)
+}
+
+/// [`Pathfinder::wall_view`]: `isPointOnWall` answered from a copy of the wall layer (empty: no point is on a wall).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct WallView {
+    extent: IRegion2D,
+    x_origin: i32,
+    y_origin: i32,
+    width: i32,
+    height: i32,
+    /// By the layer's cell (`i * height + j`).
+    on_wall: Vec<bool>,
+}
+
+impl WallView {
+    /// `isPointOnWall(pos)`, as [`Pathfinder::is_point_on_wall`] answers it for the pathfinder the view was taken of.
+    pub fn is_point_on_wall(&self, pos: &Coord3D) -> bool {
+        if self.on_wall.is_empty() {
+            return false;
+        }
+        let (cell, overflow) = world_to_cell_in(&self.extent, pos);
+        if overflow {
+            return false;
+        }
+        let (i, j) = (cell.x - self.x_origin, cell.y - self.y_origin);
+        if i < 0 || i >= self.width || j < 0 || j >= self.height {
+            return false; // the ground's cell
+        }
+        self.on_wall[(i * self.height + j) as usize]
     }
 }

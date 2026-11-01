@@ -512,7 +512,7 @@ impl World {
             return;
         }
         // tell the AI the building is gone
-        self.cut(CutCall::PathfinderRemoveObjectFromPathfindMap { object: id });
+        self.pathfinder_remove_object_from_map(id);
 
         let o = self.objects.find(id).expect("inserted above");
         if !o.is_kind_of(KINDOF_PROJECTILE) && !o.is_kind_of(KINDOF_INERT) {
