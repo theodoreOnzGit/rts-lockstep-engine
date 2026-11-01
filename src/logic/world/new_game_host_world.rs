@@ -33,7 +33,7 @@
 //!   the map properties (batch O1).
 //! - **Cut points** ([`CutCall::Host`], answers in [`NewGameCuts`]): the map and its INI and string files, the save
 //!   directory, the campaign manager, the game's options by source, the multiplayer settings (colours, shroud), the
-//!   map's multiplayer scripts, the script engine, the radar, the ghost objects, the pathfinder, the network, the game
+//!   map's multiplayer scripts, ~~the script engine~~ (its `newMap` is the world's since batch I8a), the radar, the ghost objects, the pathfinder, the network, the game
 //!   engine, the client (load screen, background, shell, control bar, view, drawables, props, trees, transitions,
 //!   window manager, display) and the stats collector.
 //!
@@ -315,7 +315,10 @@ impl NewGameHost for World {
         }
     }
     fn sn_script_engine_new_map(&mut self) {
-        self.ng_cut("ScriptEngine::newMap", &[]);
+        // batch I8a: the world's own script engine
+        if let Err(e) = self.script_engine_new_map() {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::newMap: {e:?}"));
+        }
     }
     fn sn_add_multiplayer_scripts(&mut self) -> Option<bool> {
         self.ng_cut("MultiplayerScripts.scb", &[]);

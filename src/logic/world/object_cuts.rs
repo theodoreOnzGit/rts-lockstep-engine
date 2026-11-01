@@ -2148,6 +2148,8 @@ pub struct ObjectCuts {
     pub new_game: crate::logic::world::new_game_host_world::NewGameCuts,
     /// batch I7c: `m_rankPointsToAddAtGameStart` as a dispatched `prepareNewGame` set it, until the frame ends.
     pub pending_rank_points: Option<i32>,
+    /// batch I8a: `TheAudio->getAudioLengthMS(name)`, by event name (none listed: 0).
+    pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2316,6 +2318,7 @@ impl Default for ObjectCuts {
             map_cache: BTreeMap::new(),
             new_game: crate::logic::world::new_game_host_world::NewGameCuts { shroud_in_multiplayer: true, ..Default::default() },
             pending_rank_points: None,
+            audio_lengths_ms: BTreeMap::new(),
             next_drawable_id: 1,
         }
     }

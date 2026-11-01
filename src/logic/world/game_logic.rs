@@ -188,6 +188,10 @@ pub struct World {
     /// `TheBuildAssistant`'s own data (the line-build scratch and the sell list).
     pub build_assistant: crate::logic::world::build_assistant::BuildAssistant,
     // --- end batch I6 ---
+    // --- batch I8a ---
+    /// `TheScriptEngine` (the scripts themselves are the sides list's).
+    pub script_engine: crate::logic::world::script_engine::ScriptEngine,
+    // --- end batch I8a ---
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -251,6 +255,9 @@ impl World {
             // --- batch I6 ---
             build_assistant: crate::logic::world::build_assistant::BuildAssistant::new(),
             // --- end batch I6 ---
+            // --- batch I8a ---
+            script_engine: crate::logic::world::script_engine::ScriptEngine::new(),
+            // --- end batch I8a ---
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

@@ -29,7 +29,8 @@
 //! - **Cut points** ([`CutCall::Host`] with upstream's name; answers in [`GameLoopCuts`]): the units the world does not
 //!   hold yet. ~~The command list and its dispatcher (batch I7: the commands are stand-ins, each a type, a player and a
 //!   CRC, and dispatching one is logged)~~ (**corrected in I7b**: the command list is real messages and the world's
-//!   dispatcher runs them, `dispatch_host_world.rs`), `startNewGame` (I7c), the script engine (I8), the AI and its groups (I9), the
+//!   dispatcher runs them, `dispatch_host_world.rs`), ~~`startNewGame` (I7c), the script engine (I8)~~ (the world's
+//!   since batches I7c and I8a), the AI and its groups (I9), the
 //!   build assistant (I6), the victory conditions (I5), the recorder, `TheGameInfo`, the network, the stats collector,
 //!   the game state's deep CRC, and the client (display, tactical view, in-game UI, mouse, audio, load screen).
 //!
@@ -251,7 +252,10 @@ impl GameLogicHost for World {
         self.loop_cut("GameClient::setFrame", &[i64::from(frame)]);
     }
     fn u_script_engine_update(&mut self) {
-        self.loop_cut("ScriptEngine::update", &[]);
+        // batch I8a: the world's own script engine
+        if let Err(e) = self.script_engine_update() {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::update: {e:?}"));
+        }
     }
     fn u_view_time_frozen(&self) -> bool {
         self.cuts.game_loop.view_time_frozen
@@ -263,10 +267,12 @@ impl GameLogicHost for World {
         self.cuts.game_loop.script_time_frozen_debug
     }
     fn u_script_time_frozen_script(&self) -> bool {
-        self.cuts.game_loop.script_time_frozen_script
+        // batch I8a: the engine's (the table still freezes time for the tests that set it)
+        self.script_engine.is_time_frozen_script() || self.cuts.game_loop.script_time_frozen_script
     }
     fn u_script_force_unfreeze_time(&mut self) {
-        self.loop_cut("ScriptEngine::forceUnfreezeTime", &[]);
+        // `forceUnfreezeTime()`: `m_freezeByScript = FALSE`
+        self.script_engine.do_unfreeze_time();
         self.cuts.game_loop.script_time_frozen_script = false;
     }
     fn u_terrain_update(&mut self) {
@@ -468,7 +474,8 @@ mod tests {
         w.cuts.log.as_ref().unwrap().iter().filter_map(|c| if let CutCall::Host { call, .. } = c { Some(*call) } else { None }).collect()
     }
 
-    /// A solo game's frame 0 (a multiple of the replay CRC interval): the client frame, the script engine, a CRC sent,
+    /// A solo game's frame 0 (a multiple of the replay CRC interval): the client frame, the script engine (with no map
+    /// started it does nothing, batch I8a), a CRC sent,
     /// the recorder, then the AI, the build assistant and the victory conditions, and the frame advances; the CRC is
     /// kept as `m_CRC`.
     #[test]
@@ -481,7 +488,6 @@ mod tests {
             hosts(&w),
             [
                 "GameClient::setFrame",
-                "ScriptEngine::update",
                 "AI::crc",
                 "MessageStream::appendMessage(MSG_LOGIC_CRC)",
                 "Recorder::update",
@@ -502,7 +508,11 @@ mod tests {
         let (mut w, _) = world();
         w.cuts.game_loop.script_time_frozen_script = true;
         w.logic_update().unwrap();
-        assert_eq!((w.frame(), hosts(&w)), (0, vec!["GameClient::setFrame", "ScriptEngine::update"]));
+        let h = hosts(&w);
+        assert_eq!(w.frame(), 0);
+        assert_eq!(h.first(), Some(&"GameClient::setFrame"));
+        // the script engine's update runs (its own calls are logged), and nothing after it
+        assert!(!h.contains(&"TerrainLogic::update (undefined)") && !h.contains(&"Recorder::update"), "{h:?}");
         assert!(!w.is_in_game_logic_update());
     }
 
