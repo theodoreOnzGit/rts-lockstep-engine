@@ -377,7 +377,7 @@ pub trait ScriptEngineHost {
     /// `ThePlayerList->updateTeamStates()`.
     fn se_update_team_states(&mut self);
     /// `player->getCurrentEnemy()`.
-    fn se_player_current_enemy(&self, p: PlayerH) -> Option<PlayerH>;
+    fn se_player_current_enemy(&mut self, p: PlayerH) -> Option<PlayerH>;
     /// `player->getPlayerType() == PLAYER_HUMAN`.
     fn se_player_is_human(&self, p: PlayerH) -> bool;
     /// `player->getPlayerNameKey()`.
@@ -1015,16 +1015,22 @@ impl ScriptEngine {
     }
 
     /// `getQualifiedTriggerAreaByName(name)`: the skirmish perimeters named for the current player's (or its enemy's) start.
-    pub fn get_qualified_trigger_area_by_name<H: ScriptEngineHost>(&self, h: &H, name: &[u8]) -> Option<TriggerH> {
+    pub fn get_qualified_trigger_area_by_name<H: ScriptEngineHost>(&self, h: &mut H, name: &[u8]) -> Option<TriggerH> {
+        Self::qualified_trigger_area_by_name(self.current_player, h, name)
+    }
+
+    /// [`ScriptEngine::get_qualified_trigger_area_by_name`] with the engine's `m_currentPlayer` given (batch I9e: the enemy is
+    /// asked of the AI player, which may acquire one, so the host is needed mutably while the engine is the host's).
+    pub fn qualified_trigger_area_by_name<H: ScriptEngineHost>(current_player: Option<PlayerH>, h: &mut H, name: &[u8]) -> Option<TriggerH> {
         let mut name = name.to_vec();
         if name == names::MY_INNER_PERIMETER || name == names::MY_OUTER_PERIMETER {
-            let p = self.current_player?;
+            let p = current_player?;
             let ndx = h.se_player_mp_start_index(p).wrapping_add(1);
             let base = if name == names::MY_INNER_PERIMETER { names::INNER_PERIMETER } else { names::OUTER_PERIMETER };
             name = [base, ndx.to_string().as_bytes()].concat();
         } else if name == names::ENEMY_INNER_PERIMETER || name == names::ENEMY_OUTER_PERIMETER {
             let mut ndx = -1;
-            if let Some(p) = self.current_player {
+            if let Some(p) = current_player {
                 if let Some(e) = h.se_player_current_enemy(p) {
                     ndx = h.se_player_mp_start_index(e).wrapping_add(1);
                 }

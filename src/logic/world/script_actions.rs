@@ -574,7 +574,7 @@ pub trait ScriptActionsHost {
     /// `setStatus(MAKE_OBJECT_STATUS_MASK(status), value)`.
     fn sa_obj_set_status(&mut self, o: ObjH, status: i32, value: bool);
     /// `TheScriptEngine->getQualifiedTriggerAreaByName(name)`.
-    fn sa_trigger_named(&self, name: &[u8]) -> Option<TriggerH>;
+    fn sa_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH>;
     /// `aiAttackArea(trigger, cmdSource)`.
     fn sa_ai_attack_area(&mut self, o: ObjH, trig: TriggerH, cmd: i32);
     /// `aiAttackTeam(team, maxShots, cmdSource)`.

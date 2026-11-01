@@ -170,6 +170,20 @@ impl AiModuleBody {
             ModuleCall::AiFaceObject { target, command_source } => command(m, world, me, with_obj(AICMD_FACE_OBJECT, target, command_source)),
             ModuleCall::AiGetHealed { target, command_source } => command(m, world, me, with_obj(AICMD_GET_HEALED, target, command_source)),
             ModuleCall::AiEnter { target, command_source } => command(m, world, me, with_obj(AICMD_ENTER, target, command_source)),
+            // (batch I9e: `construct(what, pos, angle, owner, isRebuild)`: a dozer's or worker's; the base's makes nothing)
+            ModuleCall::AiConstruct { template, pos, angle, owner: _, is_rebuild } => {
+                use crate::logic::ai::ai_update::AiSubclass;
+                if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(AiSubclass::Dozer(_) | AiSubclass::Worker(_))) {
+                    return ModuleReply::Id(INVALID_ID);
+                }
+                match world.with_ai_self(me.object, |w| m.run_lent(w, |h| crate::logic::ai::dozer_ai_update::construct(h, template.map(u32::from), &pos, angle, is_rebuild))) {
+                    Ok(id) => ModuleReply::Id(id),
+                    Err(e) => {
+                        world.cuts.team_live_errors.push(format!("DozerAIUpdate::construct: {e:?}"));
+                        ModuleReply::Id(INVALID_ID)
+                    }
+                }
+            }
             ModuleCall::AiResumeConstruction { object, command_source } => {
                 command(m, world, me, with_obj(AICMD_RESUME_CONSTRUCTION, object, command_source))
             }
@@ -565,7 +579,7 @@ fn parms(cmd: AiCommandType, command_source: i32) -> AiCommandParms {
 }
 
 /// The parms with `m_obj`.
-fn with_obj(cmd: AiCommandType, obj: ObjectId, command_source: i32) -> AiCommandParms {
+pub(crate) fn with_obj(cmd: AiCommandType, obj: ObjectId, command_source: i32) -> AiCommandParms {
     let mut p = parms(cmd, command_source);
     p.obj = obj;
     p

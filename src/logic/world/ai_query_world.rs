@@ -83,7 +83,7 @@ impl World {
     pub fn ai_find_closest_enemy_live(&mut self, me: ObjectId, range: f32, qualifiers: u32, info: Option<usize>) -> ObjectId {
         let data = self.statics.clone();
         let info = info.map(|i| i as i32);
-        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_enemy(pm, w, &data.ai_data, me, range, qualifiers, info, None)))
+        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_enemy(pm, w, &data.ai_data.data, me, range, qualifiers, info, None)))
             .unwrap_or(INVALID_ID)
     }
 
@@ -95,7 +95,7 @@ impl World {
     /// `TheAI->findClosestRepulsor(me, range)` (`INVALID_ID`: none).
     pub fn ai_find_closest_repulsor_live(&mut self, me: ObjectId, range: f32) -> ObjectId {
         let data = self.statics.clone();
-        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_repulsor(pm, w, &data.ai_data, me, range))).unwrap_or(INVALID_ID)
+        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_repulsor(pm, w, &data.ai_data.data, me, range))).unwrap_or(INVALID_ID)
     }
 
     /// `TheAI->getAdjustedVisionRangeForObject(object, factors)`, its largest weapon range computed first (see the module's
@@ -104,7 +104,7 @@ impl World {
         let r = crate::logic::world::object_weapons::get_largest_weapon_range(self, object);
         self.cuts.ai_host.largest_weapon_range = Some((object, r));
         let data = self.statics.clone();
-        let v = self.with_ai_self(object, |w| ai_system::get_adjusted_vision_range_for_object(w, &data.ai_data, object, factors));
+        let v = self.with_ai_self(object, |w| ai_system::get_adjusted_vision_range_for_object(w, &data.ai_data.data, object, factors));
         self.cuts.ai_host.largest_weapon_range = None;
         v
     }

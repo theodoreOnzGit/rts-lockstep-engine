@@ -479,8 +479,8 @@ impl ScriptActionsHost for World {
     fn sa_obj_set_status(&mut self, o: ObjH, status: i32, value: bool) {
         self.set_status(o, crate::logic::world::object_state::mask_of(status), value);
     }
-    fn sa_trigger_named(&self, name: &[u8]) -> Option<TriggerH> {
-        self.script_engine.get_qualified_trigger_area_by_name(self, name).map(|t| t as TriggerH)
+    fn sa_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH> {
+        crate::logic::world::script_engine::ScriptEngine::qualified_trigger_area_by_name(self.script_engine.current_player, self, name).map(|t| t as TriggerH)
     }
     fn sa_ai_attack_area(&mut self, _o: ObjH, _trig: TriggerH, _cmd: i32) {
         self.sa_cut("ai_attack_area");

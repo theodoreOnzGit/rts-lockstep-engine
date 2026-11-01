@@ -413,13 +413,13 @@ impl AiHost for World {
         self.peek_last_damage(self.ai_self).map_or((0, INVALID_ID), |d| (d.input.damage_type, d.input.source_id))
     }
     fn ai_data_force_idle_frames(&self) -> u32 {
-        self.statics.ai_data.force_idle_frames_count
+        self.statics.ai_data.data.force_idle_frames_count
     }
     fn ai_data_attack_uses_line_of_sight(&self) -> bool {
-        self.statics.ai_data.attack_uses_line_of_sight
+        self.statics.ai_data.data.attack_uses_line_of_sight
     }
     fn ai_data_attack_ignore_insignificant_buildings(&self) -> bool {
-        self.statics.ai_data.attack_ignore_insignificant_buildings
+        self.statics.ai_data.data.attack_ignore_insignificant_buildings
     }
     fn adjusted_vision_range_for_object(&mut self, factors: i32) -> f32 {
         let id = self.ai_self;

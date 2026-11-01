@@ -507,16 +507,16 @@ impl crate::logic::ai::ai_group_moves::AiGroupMoveHost for World {
         self.statics.global_data.the_global_data().map_or(0.0, |g| g.group_move_click_to_gather_factor)
     }
     fn ai_distance_requires_group(&mut self) -> f32 {
-        self.statics.ai_data.distance_requires_group
+        self.statics.ai_data.data.distance_requires_group
     }
     fn ai_min_distance_for_group(&mut self) -> f32 {
-        self.statics.ai_data.min_distance_for_group
+        self.statics.ai_data.data.min_distance_for_group
     }
     fn ai_min_infantry_for_group(&mut self) -> i32 {
-        self.statics.ai_data.min_infantry_for_group
+        self.statics.ai_data.data.min_infantry_for_group
     }
     fn ai_min_vehicles_for_group(&mut self) -> i32 {
-        self.statics.ai_data.min_vehicles_for_group
+        self.statics.ai_data.data.min_vehicles_for_group
     }
     fn formation_offset(&mut self, o: ObjectId) -> Coord2D {
         self.find_object(o).map(|x| x.formation_offset).unwrap_or_default()

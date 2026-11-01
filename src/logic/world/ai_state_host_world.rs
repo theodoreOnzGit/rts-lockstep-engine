@@ -540,7 +540,7 @@ impl AiStateHost for World {
         &mut self.ai_stacks.dozer
     }
     fn ai_data_dozer_bored_radius_modifier(&mut self) -> f32 {
-        self.statics.ai_data.ai_dozer_bored_radius_modifier
+        self.statics.ai_data.data.ai_dozer_bored_radius_modifier
     }
     fn set_weapon_set_flag(&mut self, flag: crate::logic::weapon_types::WeaponSetType, set: bool) {
         let o = self.ai_self;
@@ -609,25 +609,31 @@ impl AiStateHost for World {
     fn object_same_controlling_player(&mut self, id: ObjectId) -> bool {
         self.get_controlling_player(self.ai_self) == self.get_controlling_player(id)
     }
-    fn object_time_to_build(&mut self, _id: ObjectId) -> i32 {
-        self.ais_cut("object_time_to_build");
-        Default::default()
+    fn object_time_to_build(&mut self, id: ObjectId) -> i32 {
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return 0 };
+        let Some(t) = self.find_object(id).map(|o| u32::from(o.template().get_template_id())) else { return 0 };
+        self.calc_time_to_build(t, p)
     }
-    fn object_construction_percent(&mut self, _id: ObjectId) -> f32 {
-        self.ais_cut("object_construction_percent");
-        0.0
+    fn object_construction_percent(&mut self, id: ObjectId) -> f32 {
+        self.find_object(id).map_or(0.0, |o| o.construction_percent)
     }
-    fn object_set_construction_percent(&mut self, _id: ObjectId, _percent: f32) {
-        self.ais_cut("object_set_construction_percent");
+    fn object_set_construction_percent(&mut self, id: ObjectId, percent: f32) {
+        if let Some(o) = self.find_object_mut(id) {
+            o.construction_percent = percent;
+        }
     }
     fn object_max_health(&mut self, id: ObjectId) -> f32 {
         World::body_health(self, id).map_or(0.0, |h| h.1)
     }
-    fn object_internal_change_health(&mut self, _id: ObjectId, _delta: f32) {
-        self.ais_cut("object_internal_change_health");
+    fn object_internal_change_health(&mut self, id: ObjectId, delta: f32) {
+        if let Some(b) = self.get_body_module(id) {
+            self.module_call(id, b, crate::logic::world::module_call::ModuleCall::InternalChangeHealth(delta));
+        }
     }
-    fn object_evaluate_visual_condition(&mut self, _id: ObjectId) {
-        self.ais_cut("object_evaluate_visual_condition");
+    fn object_evaluate_visual_condition(&mut self, id: ObjectId) {
+        if let Some(b) = self.get_body_module(id) {
+            self.module_call(id, b, crate::logic::world::module_call::ModuleCall::EvaluateVisualCondition);
+        }
     }
     fn object_clear_status(&mut self, id: ObjectId, status: crate::common::object_status_types::ObjectStatusTypes) {
         World::set_status(self, id, crate::logic::world::object_state::mask_of(status), false);
@@ -648,14 +654,20 @@ impl AiStateHost for World {
     fn object_clear_model_condition_state(&mut self, id: ObjectId, condition: ModelConditionFlagType) {
         World::clear_model_condition_state(self, id, condition);
     }
-    fn player_on_structure_construction_complete(&mut self, _structure: ObjectId, _is_rebuild: bool) {
-        self.ais_cut("player_on_structure_construction_complete");
+    fn player_on_structure_construction_complete(&mut self, structure: ObjectId, is_rebuild: bool) {
+        let me = self.ai_self;
+        let Some(p) = self.get_controlling_player(me) else { return };
+        if let Err(e) = crate::logic::world::player_objects::player_on_structure_construction_complete(self, p, Some(me), structure, is_rebuild) {
+            self.cuts.team_live_errors.push(format!("Player::onStructureConstructionComplete: {e:?}"));
+        }
     }
     fn academy_record_production(&mut self, _structure: ObjectId) {
         self.ais_cut("academy_record_production");
     }
-    fn object_on_build_complete(&mut self, _id: ObjectId) {
-        self.ais_cut("object_on_build_complete");
+    fn object_on_build_complete(&mut self, id: ObjectId) {
+        for n in 0..crate::logic::world::build_assistant::BuildAssistantHost::obj_create_module_count(self, id) {
+            crate::logic::world::build_assistant::BuildAssistantHost::create_module_on_build_complete(self, id, n);
+        }
     }
     fn object_handle_partition_cell_maintenance(&mut self, id: ObjectId) {
         self.handle_partition_cell_maintenance(id);
@@ -689,31 +701,35 @@ impl AiStateHost for World {
         self.ais_cut("play_under_construction_sound");
         Default::default()
     }
-    fn build_assistant_can_make_unit(&mut self, _template: u32) -> bool {
-        self.ais_cut("build_assistant_can_make_unit");
-        Default::default()
+    fn build_assistant_can_make_unit(&mut self, template: u32) -> bool {
+        let me = self.ai_self;
+        matches!(crate::logic::world::build_assistant::build_assistant_can_make_unit(self, me, template), Ok(crate::logic::world::build_assistant::CanMakeType::Ok))
     }
-    fn build_assistant_is_location_legal_to_build(&mut self, _template: u32, _pos: &Coord3D, _angle: f32, _options: u32) -> bool {
-        self.ais_cut("build_assistant_is_location_legal_to_build");
-        Default::default()
+    fn build_assistant_is_location_legal_to_build(&mut self, template: u32, pos: &Coord3D, angle: f32, options: u32) -> bool {
+        let me = self.ai_self;
+        let p = self.get_controlling_player(me);
+        crate::logic::world::build_assistant::build_assistant_is_location_legal_to_build(self, *pos, template, angle, options, Some(me), p) == crate::logic::world::build_assistant::LegalBuildCode::Ok
     }
-    fn thing_factory_new_structure(&mut self, _template: u32, _is_rebuild: bool) -> ObjectId {
-        self.ais_cut("thing_factory_new_structure");
-        INVALID_ID
+    fn thing_factory_new_structure(&mut self, template: u32, is_rebuild: bool) -> ObjectId {
+        use crate::common::object_status_types::{OBJECT_STATUS_RECONSTRUCTING, OBJECT_STATUS_UNDER_CONSTRUCTION};
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return INVALID_ID };
+        let status: &[ObjectStatusTypes] = if is_rebuild { &[OBJECT_STATUS_UNDER_CONSTRUCTION, OBJECT_STATUS_RECONSTRUCTING] } else { &[OBJECT_STATUS_UNDER_CONSTRUCTION] };
+        crate::logic::world::build_assistant::BuildAssistantHost::thing_factory_new_object(self, template, p, status)
     }
-    fn template_cost_to_build(&mut self, _template: u32) -> i32 {
-        self.ais_cut("template_cost_to_build");
-        Default::default()
+    fn template_cost_to_build(&mut self, template: u32) -> i32 {
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return 0 };
+        crate::logic::world::build_assistant::BuildAssistantHost::tmpl_calc_cost_to_build(self, template, p)
     }
     fn player_money_withdraw(&mut self, amount: i32) -> bool {
+        // (false only without the player's money: upstream does not look at what was withdrawn)
         let Some(p) = self.get_controlling_player(self.ai_self) else { return false };
-        crate::logic::world::player_objects::player_money_withdraw(self, p, amount as u32, true).is_ok_and(|w| w > 0)
+        crate::logic::world::player_objects::player_money_withdraw(self, p, amount as u32, true).is_ok()
     }
-    fn new_structure_set_position(&mut self, _id: ObjectId, _pos: &Coord3D) {
-        self.ais_cut("new_structure_set_position");
+    fn new_structure_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        crate::logic::world::build_assistant::BuildAssistantHost::obj_set_position(self, id, *pos);
     }
-    fn new_structure_set_orientation(&mut self, _id: ObjectId, _angle: f32) {
-        self.ais_cut("new_structure_set_orientation");
+    fn new_structure_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        crate::logic::world::build_assistant::BuildAssistantHost::obj_set_orientation(self, id, angle);
     }
     fn terrain_flatten(&mut self, _id: ObjectId) {
         self.ais_cut("terrain_flatten");
@@ -722,7 +738,7 @@ impl AiStateHost for World {
         self.pathfinder_add_object_to_map(id);
     }
     fn player_on_structure_created(&mut self, _structure: ObjectId) {
-        self.ais_cut("player_on_structure_created");
+        // `Player::onStructureCreated` is empty upstream
     }
     fn deliver_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<Self>>>> where Self: Sized {
         &mut self.ai_stacks.deliver
@@ -1060,7 +1076,7 @@ impl AiStateHost for World {
         self.ai_pf(|pf, w, o, _| pf.is_attack_view_blocked_by_obstacle(w, o, &o.pos, v.as_ref(), victim_pos)).unwrap_or(false)
     }
     fn ai_data_repulsed_distance(&self) -> f32 {
-        self.statics.ai_data.repulsed_distance
+        self.statics.ai_data.data.repulsed_distance
     }
     fn weapon_is_within_attack_range_of_object(&mut self, victim: ObjectId) -> bool {
         self.ai_weapon_within_range_of_object(self.ai_self, victim)
@@ -1175,7 +1191,7 @@ impl AiStateHost for World {
         Default::default()
     }
     fn ai_data_skirmish_group_fudge_value(&self) -> f32 {
-        self.statics.ai_data.skirmish_group_fudge_value
+        self.statics.ai_data.data.skirmish_group_fudge_value
     }
     fn attack_stack(&mut self) -> &mut Vec<AttackFrame> {
         &mut self.ai_stacks.attack
@@ -1184,7 +1200,7 @@ impl AiStateHost for World {
         self.find_object(id).map_or(INVALID_ID, |o| o.contained_by)
     }
     fn ai_data_crushes_infantry(&self) -> bool {
-        self.statics.ai_data.ai_crushes_infantry
+        self.statics.ai_data.data.ai_crushes_infantry
     }
     fn can_crush_or_squish(&mut self, victim: ObjectId) -> bool {
         World::can_crush_or_squish(self, self.ai_self, Some(victim), crate::logic::world::object_damage::CrushSquishTestType::CrushOrSquish)
@@ -1530,13 +1546,13 @@ impl AiStateHost for World {
         Default::default()
     }
     fn ai_data_guard_enemy_scan_rate(&mut self) -> u32 {
-        self.statics.ai_data.guard_enemy_scan_rate
+        self.statics.ai_data.data.guard_enemy_scan_rate
     }
     fn ai_data_guard_enemy_return_scan_rate(&mut self) -> u32 {
-        self.statics.ai_data.guard_enemy_return_scan_rate
+        self.statics.ai_data.data.guard_enemy_return_scan_rate
     }
     fn ai_data_guard_chase_unit_frames(&mut self) -> u32 {
-        self.statics.ai_data.guard_chase_unit_frames
+        self.statics.ai_data.data.guard_chase_unit_frames
     }
     fn polygon_radius(&mut self, _polygon: i32) -> f32 {
         self.ais_cut("polygon_radius");

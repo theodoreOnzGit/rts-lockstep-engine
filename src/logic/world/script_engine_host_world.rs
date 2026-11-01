@@ -167,9 +167,9 @@ impl ScriptEngineHost for World {
             self.cuts.team_live_errors.push(format!("PlayerList::updateTeamStates: {e:?}"));
         }
     }
-    fn se_player_current_enemy(&self, p: PlayerH) -> Option<PlayerH> {
-        // the AI player's (batch I9)
-        self.cuts.player_host.ai.get(&p).and_then(|a| a.enemy)
+    fn se_player_current_enemy(&mut self, p: PlayerH) -> Option<PlayerH> {
+        // (batch I9e: `Player::getCurrentEnemy()`, the AI player's, live with `cuts.live_ai`)
+        crate::logic::world::player_ops::player_get_current_enemy(self, p).ok().flatten()
     }
     fn se_player_is_human(&self, p: PlayerH) -> bool {
         self.players.get_nth(p).is_some_and(|x| x.player_type == PlayerType::Human)

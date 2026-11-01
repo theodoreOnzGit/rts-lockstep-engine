@@ -733,7 +733,7 @@ impl ScriptActionsHost for Sim {
     fn sa_obj_set_status(&mut self, o: ObjH, status: i32, v: bool) {
         self.log.push(format!("obj {o} status {:x} {}", 1u64 << status, u8::from(v)));
     }
-    fn sa_trigger_named(&self, name: &[u8]) -> Option<TriggerH> {
+    fn sa_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH> {
         let k = num(name, "trig");
         ((0..8).contains(&k) && (self.cfg[13] >> k) & 1 != 0).then_some(k)
     }

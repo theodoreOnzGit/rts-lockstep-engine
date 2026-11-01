@@ -2113,6 +2113,18 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         r
     }
 
+    /// [`run`](Self::run) with the AI's machine lent too (batch I9e): for a call made of the AI from outside its own update whose
+    /// subclass machines ask the AI's machine (a dozer's `construct`, whose new task resets the dozer's machine, whose states ask
+    /// whether the AI is idle).
+    pub fn run_lent<R>(&mut self, h: &mut H, f: impl FnOnce(&mut H) -> R) -> R {
+        h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
+        // (`run` asks for the machine in its slot: an empty machine stands in while the real one is lent)
+        self.machine = Some(StateMachine::new());
+        let r = self.run(h, |_, h| f(h));
+        self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+        r
+    }
+
     /// `getAssaultTransportAIInterface()->beginAssault(designatedTarget)` (batch A32; the weapon's): nothing for another class.
     pub fn begin_assault(&mut self, designated_target: Option<ObjectId>) {
         if let crate::logic::ai::ai_update::AiSubclass::AssaultTransport(a) = &mut self.ai_mut().subclass {

@@ -980,7 +980,7 @@ impl PlayerHost for Sim {
         }
         c.super_ok
     }
-    fn ai_enemy(&self, p: PlayerIndex) -> Option<PlayerIndex> {
+    fn ai_enemy(&mut self, p: PlayerIndex) -> Option<PlayerIndex> {
         let e = self.ai_cfg_of(p).enemy;
         if e >= 0 {
             Some(e % self.np as i32)

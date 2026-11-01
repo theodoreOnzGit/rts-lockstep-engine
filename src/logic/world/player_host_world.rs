@@ -292,6 +292,81 @@ impl World {
         })
     }
 
+    /// `ThingTemplate::calcTimeToBuild(player)` (batch I9e), in frames. Each step assigns to the `Int` build time, so each
+    /// truncates, as upstream: the build time, the player's handicap, its production time change, the low-energy penalty
+    /// (the global data's modifiers), and for a unit that appears at its factory's rally point, the multiple-factory bonus per
+    /// extra factory of the kind the player owns (`getBuildFacilityTemplate`: the first prerequisite's first owned alternative).
+    /// The debug build's instant-build cheat is not in the release build.
+    pub(crate) fn calc_time_to_build(&mut self, t: TemplateRef, p: PlayerIndex) -> i32 {
+        use crate::common::handicap::HandicapType;
+        let Some(tt) = self.tmpl_ref(t) else { return 0 };
+        let (secs, is_structure, name, at_rally) = (
+            tt.get_build_time(),
+            tt.is_kind_of(crate::common::kind_of::KINDOF_STRUCTURE),
+            tt.get_name().to_vec(),
+            tt.get_build_completion() == crate::common::thing_template::BC_APPEARS_AT_RALLY_POINT,
+        );
+        let Some(pl) = self.players.get_nth(p) else { return 0 };
+        let handicap = pl.handicap.get_handicap(HandicapType::BuildTime, is_structure);
+        let frame = crate::common::state_machine::StateContext::frame(self);
+        let mut energy_percent = pl.energy.energy_supply_ratio(frame);
+        let mut build_time = (secs * 30.0) as i32;
+        build_time = (build_time as f32 * handicap) as i32;
+        let faction_modifier = 1.0 + crate::logic::world::player_ops::player_get_production_time_change_percent(self, p, &name).unwrap_or(0.0);
+        build_time = (build_time as f32 * faction_modifier) as i32;
+        // "Adjust build time based on energy supply."
+        let (low_energy_penalty_modifier, min_low_energy_production_speed, max_low_energy_production_speed, multiple_factory) = self
+            .statics
+            .global_data
+            .the_global_data()
+            .map_or((0.0, 0.0, 0.0, 0.0), |g| (g.low_energy_penalty_modifier, g.min_low_energy_production_speed, g.max_low_energy_production_speed, g.multiple_factory));
+        if energy_percent > 1.0 {
+            energy_percent = 1.0; // "getEnergySupplyRatio() returns a true ratio, but we don't care about excess."
+        }
+        let energy_short = (1.0 - energy_percent) * low_energy_penalty_modifier;
+        let mut penalty_rate = (1.0 - energy_short).max(min_low_energy_production_speed);
+        if energy_percent < 1.0 {
+            penalty_rate = penalty_rate.min(max_low_energy_production_speed);
+        }
+        if penalty_rate <= 0.0 {
+            penalty_rate = 0.01; // "Design won't make the minimum 0, they promise"
+        }
+        build_time = (build_time as f32 / penalty_rate) as i32;
+        // "Multiple build facilities can have an added production bonus."
+        if at_rally {
+            if let Some(facility) = self.build_facility_template(t, p) {
+                let mut count = [0];
+                let _ = player_count_objects_by_thing_template(self, p, &[Some(facility)], false, &mut count, true);
+                if multiple_factory > 0.0 {
+                    for _ in 0..count[0] - 1 {
+                        build_time = (build_time as f32 * multiple_factory) as i32;
+                    }
+                }
+            }
+        }
+        build_time
+    }
+
+    /// `getBuildFacilityTemplate(player)`: the first prerequisite's `getExistingBuildFacilityTemplate(player)`, the first of its
+    /// leading alternatives the player owns one of.
+    fn build_facility_template(&self, t: TemplateRef, p: PlayerIndex) -> Option<TemplateRef> {
+        let pre = self.tmpl_ref(t)?.get_nth_prereq(0)?;
+        let units = pre.prereq_units();
+        let cnt = units.len().min(MAX_PREREQ);
+        let things: Vec<Option<TemplateRef>> = units[..cnt].iter().map(|u| u.unit.map(TemplateRef::from)).collect();
+        let mut own = [0i32; MAX_PREREQ];
+        player_count_objects_by_thing_template(self, p, &things, false, &mut own[..cnt], true).ok()?;
+        for i in 0..cnt {
+            if i > 0 && units[i].flags & UNIT_OR_WITH_PREV == 0 {
+                break;
+            }
+            if own[i] != 0 {
+                return things[i];
+            }
+        }
+        None
+    }
+
     /// `ProductionPrerequisite::isSatisfied(player)`, of the template's prerequisite `i`.
     fn prereq_is_satisfied(&self, t: TemplateRef, i: i32, p: PlayerIndex) -> bool {
         let Some(pre) = self.tmpl_ref(t).and_then(|tt| usize::try_from(i).ok().and_then(|i| tt.get_nth_prereq(i))) else {
@@ -722,26 +797,46 @@ impl PlayerHost for World {
         }
     }
     fn ai_create(&mut self, p: PlayerIndex, skirmish: bool) {
+        if self.cuts.live_ai {
+            return self.ai_player_create(p, skirmish);
+        }
         self.host_cut("newInstance(AIPlayer)", &[i64::from(p), i64::from(skirmish)], &[]);
         self.cuts.player_host.ai.insert(p, AiPlayerStandIn::default());
     }
     fn ai_delete(&mut self, p: PlayerIndex) {
+        if self.cuts.live_ai {
+            return self.ai_player_delete(p);
+        }
         self.host_cut("deleteInstance(AIPlayer)", &[i64::from(p)], &[]);
         self.cuts.player_host.ai.remove(&p);
     }
     fn ai_update(&mut self, p: PlayerIndex) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.update(w, d));
+            return;
+        }
         self.host_cut("AIPlayer::update", &[i64::from(p)], &[]);
     }
     fn ai_new_map(&mut self, p: PlayerIndex) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.new_map(w, d));
+            return;
+        }
         self.host_cut("AIPlayer::newMap", &[i64::from(p)], &[]);
     }
     fn ai_difficulty(&self, p: PlayerIndex) -> GameDifficulty {
+        if self.cuts.live_ai {
+            return self.ai_players.by_player.get(&p).map_or(GameDifficulty::Normal, |a| a.get_ai_difficulty());
+        }
         self.cuts.player_host.ai.get(&p).map_or(GameDifficulty::Normal, |a| a.difficulty)
     }
     fn ai_is_skirmish(&self, p: PlayerIndex) -> bool {
         self.players.get_nth(p).and_then(|x| x.ai).is_some_and(|a| a.skirmish)
     }
     fn ai_compute_superweapon_target(&mut self, p: PlayerIndex, power: SpecialPowerTemplateRef, pos: &mut Coord3D, player_ndx: i32, weapon_radius: f32) -> bool {
+        if self.cuts.live_ai {
+            return self.ai_player_superweapon_target(p, power, pos, player_ndx, weapon_radius);
+        }
         self.host_cut("AIPlayer::computeSuperweaponTarget", &[i64::from(p), i64::from(power), i64::from(player_ndx), i64::from(weapon_radius.to_bits())], &[]);
         match self.cuts.player_host.ai.get(&p).and_then(|a| a.superweapon_target) {
             Some(t) => {
@@ -751,14 +846,25 @@ impl PlayerHost for World {
             None => false,
         }
     }
-    fn ai_enemy(&self, p: PlayerIndex) -> Option<PlayerIndex> {
+    fn ai_enemy(&mut self, p: PlayerIndex) -> Option<PlayerIndex> {
+        if self.cuts.live_ai {
+            return self.with_ai_player(p, |a, w, _| a.get_ai_enemy(w)).flatten();
+        }
         self.cuts.player_host.ai.get(&p).and_then(|a| a.enemy)
     }
     fn ai_check_bridges(&mut self, p: PlayerIndex, unit: Option<ObjectId>, way: Option<WaypointId>) -> bool {
+        if self.cuts.live_ai {
+            return self.ai_player_check_bridges(p, unit, way);
+        }
         self.host_cut("AIPlayer::checkBridges", &[i64::from(p), i64::from(unit.unwrap_or(0)), i64::from(way.unwrap_or(0))], &[]);
         self.cuts.player_host.ai.get(&p).is_some_and(|a| a.bridges)
     }
     fn ai_base_center(&mut self, p: PlayerIndex, pos: &mut Coord3D) -> bool {
+        if self.cuts.live_ai {
+            let Some((c, set)) = self.ai_players.by_player.get(&p).map(|a| a.get_base_center()) else { return false };
+            *pos = c;
+            return set;
+        }
         self.host_cut("AIPlayer::getBaseCenter", &[i64::from(p)], &[]);
         match self.cuts.player_host.ai.get(&p).and_then(|a| a.base_center) {
             Some(c) => {
@@ -769,59 +875,142 @@ impl PlayerHost for World {
         }
     }
     fn ai_repair_structure(&mut self, p: PlayerIndex, id: ObjectId) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, _| a.repair_structure(w, id));
+            return;
+        }
         self.host_cut("AIPlayer::repairStructure", &[i64::from(p), i64::from(id)], &[]);
     }
     fn ai_on_unit_produced(&mut self, p: PlayerIndex, factory: Option<ObjectId>, unit: Option<ObjectId>) {
+        if self.cuts.live_ai {
+            if let Some(unit) = unit {
+                self.with_ai_player(p, |a, w, _| a.on_unit_produced(w, factory, unit));
+            }
+            return;
+        }
         self.host_cut("AIPlayer::onUnitProduced", &[i64::from(p), i64::from(factory.unwrap_or(0)), i64::from(unit.unwrap_or(0))], &[]);
     }
     fn ai_on_structure_produced(&mut self, p: PlayerIndex, builder: Option<ObjectId>, structure: Option<ObjectId>) {
+        if self.cuts.live_ai {
+            if let Some(structure) = structure {
+                self.with_ai_player(p, |a, w, d| a.on_structure_produced(w, d, structure));
+            }
+            return;
+        }
         self.host_cut("AIPlayer::onStructureProduced", &[i64::from(p), i64::from(builder.unwrap_or(0)), i64::from(structure.unwrap_or(0))], &[]);
     }
     fn ai_is_supply_source_safe(&mut self, p: PlayerIndex, min_supplies: i32) -> bool {
+        if self.cuts.live_ai {
+            return self.with_ai_player(p, |a, w, d| a.is_supply_source_safe(w, d, min_supplies)).unwrap_or(true);
+        }
         self.host_cut("AIPlayer::isSupplySourceSafe", &[i64::from(p), i64::from(min_supplies)], &[]);
         self.cuts.player_host.ai.get(&p).is_none_or(|a| a.supply_source_safe)
     }
     fn ai_is_supply_source_attacked(&mut self, p: PlayerIndex) -> bool {
+        if self.cuts.live_ai {
+            return self.with_ai_player(p, |a, w, _| a.is_supply_source_attacked(w)).unwrap_or(false);
+        }
         self.host_cut("AIPlayer::isSupplySourceAttacked", &[i64::from(p)], &[]);
         self.cuts.player_host.ai.get(&p).is_some_and(|a| a.supply_source_attacked)
     }
     fn ai_set_team_delay_seconds(&mut self, p: PlayerIndex, delay: i32) {
+        if self.cuts.live_ai {
+            if let Some(a) = self.ai_players.by_player.get_mut(&p) {
+                a.team_seconds = delay;
+            }
+            return;
+        }
         self.host_cut("AIPlayer::setTeamDelaySeconds", &[i64::from(p), i64::from(delay)], &[]);
     }
     fn ai_guard_supply_center(&mut self, p: PlayerIndex, team: Option<TeamId>, min_supplies: i32) {
+        if self.cuts.live_ai {
+            if let Some(team) = team {
+                self.with_ai_player(p, |a, w, d| a.guard_supply_center(w, d, team, min_supplies));
+            }
+            return;
+        }
         self.host_cut("AIPlayer::guardSupplyCenter", &[i64::from(p), i64::from(team.unwrap_or(0)), i64::from(min_supplies)], &[]);
     }
     fn ai_pre_team_destroy(&mut self, p: PlayerIndex, team: Option<TeamId>) {
+        if self.cuts.live_ai {
+            if let Some(team) = team {
+                self.with_ai_player(p, |a, w, _| a.ai_pre_team_destroy(w, team));
+            }
+            return;
+        }
         self.host_cut("AIPlayer::aiPreTeamDestroy", &[i64::from(p), i64::from(team.unwrap_or(0))], &[]);
     }
     fn ai_select_skillset(&mut self, p: PlayerIndex, skill_set: i32) {
+        if self.cuts.live_ai {
+            if let Some(a) = self.ai_players.by_player.get_mut(&p) {
+                a.select_skillset(skill_set);
+            }
+            return;
+        }
         self.host_cut("AIPlayer::selectSkillset", &[i64::from(p), i64::from(skill_set)], &[]);
     }
     fn ai_build_specific_team(&mut self, p: PlayerIndex, proto: Option<TeamPrototypeId>, priority: bool) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.build_specific_ai_team(w, d, proto, priority));
+            return;
+        }
         self.host_cut("AIPlayer::buildSpecificAITeam", &[i64::from(p), i64::from(proto.unwrap_or(0)), i64::from(priority)], &[]);
     }
     fn ai_build_base_defense(&mut self, p: PlayerIndex, flank: bool) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.build_ai_base_defense(w, d, flank));
+            return;
+        }
         self.host_cut("AIPlayer::buildAIBaseDefense", &[i64::from(p), i64::from(flank)], &[]);
     }
     fn ai_build_base_defense_structure(&mut self, p: PlayerIndex, name: &[u8], flank: bool) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.build_ai_base_defense_structure(w, d, name, flank));
+            return;
+        }
         self.host_cut("AIPlayer::buildAIBaseDefenseStructure", &[i64::from(p), i64::from(flank)], name);
     }
     fn ai_build_specific_building(&mut self, p: PlayerIndex, name: &[u8]) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, _| a.build_specific_ai_building(w, name));
+            return;
+        }
         self.host_cut("AIPlayer::buildSpecificAIBuilding", &[i64::from(p)], name);
     }
     fn ai_build_by_supplies(&mut self, p: PlayerIndex, minimum_cash: i32, name: &[u8]) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, d| a.build_by_supplies(w, d, minimum_cash, name));
+            return;
+        }
         self.host_cut("AIPlayer::buildBySupplies", &[i64::from(p), i64::from(minimum_cash)], name);
     }
     fn ai_build_specific_building_nearest_team(&mut self, p: PlayerIndex, name: &[u8], team: Option<TeamId>) {
+        if self.cuts.live_ai {
+            if let Some(team) = team {
+                self.with_ai_player(p, |a, w, _| a.build_specific_building_nearest_team(w, name, team));
+            }
+            return;
+        }
         self.host_cut("AIPlayer::buildSpecificBuildingNearestTeam", &[i64::from(p), i64::from(team.unwrap_or(0))], name);
     }
     fn ai_build_upgrade(&mut self, p: PlayerIndex, name: &[u8]) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, _| a.build_upgrade(w, name));
+            return;
+        }
         self.host_cut("AIPlayer::buildUpgrade", &[i64::from(p)], name);
     }
     fn ai_recruit_specific_team(&mut self, p: PlayerIndex, proto: Option<TeamPrototypeId>, radius: f32) {
+        if self.cuts.live_ai {
+            self.with_ai_player(p, |a, w, _| a.recruit_specific_ai_team(w, proto, radius));
+            return;
+        }
         self.host_cut("AIPlayer::recruitSpecificAITeam", &[i64::from(p), i64::from(proto.unwrap_or(0)), i64::from(radius.to_bits())], &[]);
     }
     fn ai_calc_closest_construction_zone_location(&mut self, p: PlayerIndex, template: TemplateRef, location: &mut Coord3D) -> bool {
+        if self.cuts.live_ai {
+            return self.with_ai_player(p, |a, w, _| a.calc_closest_construction_zone_location(w, Some(template), location)).unwrap_or(false);
+        }
         self.host_cut("AIPlayer::calcClosestConstructionZoneLocation", &[i64::from(p), i64::from(template)], &[]);
         match self.cuts.player_host.ai.get(&p).and_then(|a| a.construction_zone) {
             Some(c) => {
@@ -1176,7 +1365,13 @@ impl PlayerXferHost for World {
         Ok(())
     }
     fn xfer_ai(&mut self, p: PlayerIndex, xfer: &mut dyn Xfer) -> PResult<()> {
-        // the AI player is not in the world yet (batch I9): its version only
+        // (batch I9e: the AI player's, live with `cuts.live_ai`; without it, its version only)
+        if self.cuts.live_ai {
+            if let Some(r) = self.with_ai_player(p, |a, w, _| a.xfer(w, xfer)) {
+                r?;
+                return Ok(());
+            }
+        }
         self.host_cut("AIPlayer::xfer", &[i64::from(p)], &[]);
         let mut version = 1u8;
         xfer.xfer_version(&mut version, 1)?;

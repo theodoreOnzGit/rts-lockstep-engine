@@ -382,7 +382,7 @@ impl GameLogicHost for World {
         }
         let mut marker = b"MARKER:TAiData".to_vec();
         xfer.xfer_ascii_string(&mut marker)?;
-        let mut data = self.statics.ai_data.clone();
+        let mut data = self.statics.ai_data.data.clone();
         data.crc(xfer)?;
         // (batch I9c-2: the groups, in the list's order)
         self.ai_groups_crc(xfer)

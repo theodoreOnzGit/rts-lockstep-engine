@@ -405,7 +405,7 @@ pub trait PlayerHost: TeamHost {
     /// `m_ai->computeSuperweaponTarget(power, pos, playerNdx, weaponRadius)`; the AI may write `pos`.
     fn ai_compute_superweapon_target(&mut self, p: PlayerIndex, power: SpecialPowerTemplateRef, pos: &mut Coord3D, player_ndx: i32, weapon_radius: f32) -> bool;
     /// `m_ai->getAiEnemy()`.
-    fn ai_enemy(&self, p: PlayerIndex) -> Option<PlayerIndex>;
+    fn ai_enemy(&mut self, p: PlayerIndex) -> Option<PlayerIndex>;
     /// `m_ai->checkBridges(unit, way)`.
     fn ai_check_bridges(&mut self, p: PlayerIndex, unit: Option<ObjectId>, way: Option<WaypointId>) -> bool;
     /// `m_ai->getBaseCenter(pos)`; the AI may write `pos`.
@@ -882,7 +882,7 @@ pub fn player_compute_superweapon_target<H: PlayerHost>(
 }
 
 /// `Player::getCurrentEnemy()`.
-pub fn player_get_current_enemy<H: PlayerHost>(h: &H, p: PlayerIndex) -> PResult<Option<PlayerIndex>> {
+pub fn player_get_current_enemy<H: PlayerHost>(h: &mut H, p: PlayerIndex) -> PResult<Option<PlayerIndex>> {
     Ok(if pl(h, p)?.ai.is_some() { h.ai_enemy(p) } else { None })
 }
 

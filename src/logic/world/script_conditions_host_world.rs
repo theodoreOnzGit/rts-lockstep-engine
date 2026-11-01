@@ -204,7 +204,7 @@ impl ScriptConditionsHost for World {
         self.script_engine.did_unit_exist(name)
     }
     fn sc_trigger_named(&mut self, name: &[u8]) -> Option<TriggerH> {
-        self.script_engine.get_qualified_trigger_area_by_name(self, name).map(|t| t as TriggerH)
+        crate::logic::world::script_engine::ScriptEngine::qualified_trigger_area_by_name(self.script_engine.current_player, self, name).map(|t| t as TriggerH)
     }
     fn sc_frame_object_count_changed(&mut self) -> u32 {
         self.script_engine.frame_object_count_changed

@@ -66,7 +66,7 @@ Object Soldier\n KindOf = VEHICLE\n VisionRange = 150\n Geometry = CYLINDER\n Ge
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
  Behavior = AIUpdateInterface ModuleTag_AI\n  AutoAcquireEnemiesWhenIdle = Yes\n End\n\
  Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
-Object Depot\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
+Object Depot\n KindOf = STRUCTURE IMMOBILE\n BuildTime = 2.0\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n";
 
 /// What the game's INI is read into.
@@ -165,8 +165,16 @@ pub fn gate_world() -> World {
 
     let mut w = World::new();
     w.names = c.names;
-    let mut st = GameStatics { thing_factory: c.factory, locomotor_store: c.locomotors, weapon_store: c.weapon_store, ai_data: c.ai_data.current().data.clone(), ..Default::default() };
-    st.global_data.create_original().partition_cell_size = 40.0;
+    let mut st = GameStatics { thing_factory: c.factory, locomotor_store: c.locomotors, weapon_store: c.weapon_store, ai_data: c.ai_data.current().clone(), ..Default::default() };
+    {
+        let g = st.global_data.create_original();
+        g.partition_cell_size = 40.0;
+        // (batch I9e: the low-energy production penalty, test values: the shipped `GameData.ini` is not in the source release;
+        // all 0, an unpowered player's build times are divided by upstream's floor of 0.01)
+        g.low_energy_penalty_modifier = 0.4;
+        g.min_low_energy_production_speed = 0.5;
+        g.max_low_energy_production_speed = 0.8;
+    }
     w.statics = Arc::new(st);
     let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
     let size = ICoord2D { x: 40, y: 40 };
@@ -292,6 +300,98 @@ mod combat_tests {
         assert_eq!(calls, ["GameClient::setFrame", "Recorder::update", "in_game_ui_idle_worker"]);
         let health: Vec<f32> = soldiers.iter().map(|&s| w.body_health(s).map_or(0.0, |h| h.0)).collect();
         assert!(health.iter().any(|&h| h < 100.0), "health {health:?}");
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}
+
+#[cfg(test)]
+mod computer_player_tests {
+    use super::*;
+    use crate::common::game_common::PlayerType;
+    use crate::logic::sides_list::BuildListInfo;
+    use crate::logic::world::player_ops::{player_new_map, player_set_build_list, player_set_player_type};
+
+    /// The objects of `template` controlled by player `p`, with their positions.
+    fn owned(w: &World, template: &[u8], p: i32) -> Vec<(ObjectId, Coord3D)> {
+        w.objects
+            .ids_in_order()
+            .into_iter()
+            .filter_map(|id| w.find_object(id).map(|o| (id, o)))
+            .filter(|(id, o)| o.template().get_name() == template && w.get_controlling_player(*id) == Some(p))
+            .map(|(id, o)| (id, o.get_position()))
+            .collect()
+    }
+
+    /// batch I9e: a computer player builds its base. `Player2` of the gate world becomes a computer player (`AIPlayer`, not the
+    /// skirmish AI) with a dozer and a build list of two depots: one built initially at (300, 60), one to be built at (340, 120).
+    /// Predicted: `newMap` builds the first at once (`buildStructureNow`); within 600 frames the AI player's update has its dozer
+    /// start the second (`processBaseBuilding`, `buildStructureWithDozer`) and finish it; no live error.
+    ///
+    /// **Result** (2026-11-01, native, release): the first depot stands after `newMap`; the dozer starts the second on frame 1
+    /// (the structure timer's two frames), teleported to the site (it has no locomotor: `buildStructureWithDozer` teleports a
+    /// dozer with no path). The depot's build time is 99 frames (2 s, the unpowered player's rate 0.6 of the gate's test
+    /// low-energy values; `calcTimeToBuild` truncates 100.0's float error to 99, as upstream's `Int` does); it is complete on
+    /// frame 232. **Not first time:** the first runs found the World's AI module did not route `construct` to the dozer, the
+    /// test's dozer had no command set (`isPossibleToMakeUnit` refuses a dozer whose command set cannot build the depot: the
+    /// control bar's table now gives it one), the dozer's host answered a zero-cost withdraw as no money, and `construct` ran
+    /// without the AI's machine lent (the dozer's states ask whether the AI is idle).
+    #[test]
+    fn a_computer_player_builds_its_base() {
+        let mut w = gate_world();
+        let team2 = w.players.get_nth(2).and_then(|p| p.default_team).expect("Player2's team");
+        let dozer = make(&mut w, b"Dozer", team2, Coord3D { x: 320.0, y: 40.0, z: 0.0 });
+        // (its command set, with a button to construct a depot: the control bar's data, which the World takes as a table;
+        // `buildObjectNow` with a dozer requires the dozer can make the building, `isPossibleToMakeUnit`)
+        let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
+        w.cuts.command_buttons.push(crate::logic::world::object_cuts::CommandButtonFacts {
+            name: b"GateDozerBuildDepot".to_vec(),
+            command_type: crate::logic::world::build_assistant::GUI_COMMAND_DOZER_CONSTRUCT,
+            weapon_slot: 0,
+            special_power: None,
+            thing_template: depot,
+            upgrade: None,
+            ready_for: Default::default(),
+        });
+        w.cuts.command_sets.push((b"GateDozerSet".to_vec(), vec![Some(w.cuts.command_buttons.len() - 1)]));
+        w.objects.find_mut(dozer).expect("the dozer").command_set_string_override = b"GateDozerSet".to_vec();
+        player_set_player_type(&mut w, 2, PlayerType::Computer, false).expect("Player2 a computer player");
+        assert!(w.ai_players.by_player.contains_key(&2), "the World holds Player2's AI player");
+        let entry = |x: f32, y: f32, initially: bool| BuildListInfo {
+            template_name: b"Depot".to_vec(),
+            location: Coord3D { x, y, z: 0.0 },
+            is_initially_built: initially,
+            ..BuildListInfo::new()
+        };
+        player_set_build_list(&mut w, 2, vec![entry(300.0, 60.0, true), entry(340.0, 120.0, false)]).expect("the build list");
+        player_new_map(&mut w, 2).expect("the new map");
+        let built = owned(&w, b"Depot", 2);
+        assert_eq!(built.len(), 1, "newMap builds the initial depot: {built:?}");
+        assert_eq!((built[0].1.x, built[0].1.y), (300.0, 60.0));
+        let mut started = None;
+        for f in 0..600 {
+            w.logic_update().unwrap();
+            if let Some(&(_, pos)) = owned(&w, b"Depot", 2).iter().find(|(_, p)| (p.x, p.y) != (300.0, 60.0)) {
+                started = Some((f, pos));
+                break;
+            }
+        }
+        let (frame, pos) = started.expect("the AI player's dozer starts the second depot");
+        assert!((pos.x - 340.0).abs() < 1.0 && (pos.y - 120.0).abs() < 1.0, "at the list's place: {pos:?} (frame {frame})");
+        // (the dozer builds it: under construction until done)
+        let site = owned(&w, b"Depot", 2).into_iter().find(|(_, p)| (p.x, p.y) != (300.0, 60.0)).map(|(id, _)| id).expect("the site");
+        let under = |w: &World| w.find_object(site).is_some_and(|o| o.test_status(crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION));
+        assert!(under(&w), "the new depot starts under construction");
+        let mut done = None;
+        for f in frame..600 {
+            w.logic_update().unwrap();
+            if !under(&w) {
+                done = Some(f);
+                break;
+            }
+        }
+        let done = done.expect("the dozer finishes the depot");
+        assert_eq!(w.find_object(site).map(|o| o.construction_percent), Some(crate::logic::world::object::CONSTRUCTION_COMPLETE));
+        assert!(done < 600, "finished on frame {done}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
