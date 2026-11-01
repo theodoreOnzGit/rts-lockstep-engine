@@ -716,6 +716,37 @@ impl GarrisonContain {
         self.put_object_at_garrison_point(world, me, obj, target, condition_index as i32, place_index);
     }
 
+    /// Batch I9h: `attemptBestFirePointPosition(source, weapon, victim)` and its `targetPos` overload (`victim` `INVALID_ID`), the weapon
+    /// being the source's current one (the AI's aim state passes `getCurrentWeapon()`). Out of its point, to the best point for the
+    /// target, then the weapon's range check; out of range, it leaves the point again.
+    fn attempt_best_fire_point_position(&mut self, world: &mut World, me: ModuleHandle, source: ObjectId, victim: ObjectId, pos: Option<Coord3D>) -> bool {
+        // "Sanity"
+        if source == INVALID_ID || (victim == INVALID_ID && pos.is_none()) || world.contain_current_weapon(source).is_none() {
+            return false;
+        }
+        // "If this object is already at a garrison point, remove him."
+        let existing = self.get_object_garrison_point_index(source);
+        if existing != GARRISON_INDEX_INVALID {
+            self.remove_object_from_garrison_point(world, me, source, Some(existing as usize));
+        }
+        self.put_object_at_best_garrison_point(world, me, source, victim, if victim == INVALID_ID { pos } else { None });
+        let in_range = if victim != INVALID_ID {
+            out(self, world, me, |w| w.ai_weapon_within_range_of_object(source, victim))
+        } else {
+            let p = pos.expect("checked above");
+            out(self, world, me, |w| w.ai_weapon_within_range_of_position(source, &p))
+        };
+        if in_range {
+            return true;
+        }
+        // "Crap, we failed... so remove the object from the garrison point."
+        let existing = self.get_object_garrison_point_index(source);
+        if existing != GARRISON_INDEX_INVALID {
+            self.remove_object_from_garrison_point(world, me, source, Some(existing as usize));
+        }
+        false
+    }
+
     /// `removeObjectFromGarrisonPoint(obj, index)` (`None` is `SEARCH_FOR_REMOVE`): back to the centre of the building.
     fn remove_object_from_garrison_point(&mut self, world: &mut World, me: ModuleHandle, obj: ObjectId, index: Option<usize>) {
         if !self.enclosing() {
@@ -1462,6 +1493,7 @@ impl OpenContainVirtuals for GarrisonContain {
                 let observer = (observer >= 0).then_some(observer as PlayerIndex);
                 ModuleReply::Int(self.get_apparent_controlling_player(world, me, observer).map_or(-1, |p| p))
             }
+            ModuleCall::AttemptBestFirePointPosition { source, victim, pos } => ModuleReply::Bool(self.attempt_best_fire_point_position(world, me, source, victim, pos)),
             _ => ModuleReply::Unhandled,
         }
     }

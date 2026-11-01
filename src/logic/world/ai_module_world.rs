@@ -134,6 +134,10 @@ impl AiModuleBody {
     /// `Unhandled`): the ones listed at the end of the match.
     pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let Some(m) = self.module.as_mut() else { return ModuleReply::Unhandled };
+        // the commands: `AICommandInterface`'s inline builders of `AICommandParms`, then `aiDoCommand` (AI.h)
+        if let Some(p) = ai_command_parms(&call) {
+            return command(m, world, me, p);
+        }
         match call {
             ModuleCall::OnObjectCreated => {
                 if let Err(e) = world.with_ai_self(me.object, |w| m.on_object_created(w)) {
@@ -141,41 +145,12 @@ impl AiModuleBody {
                 }
                 ModuleReply::Done
             }
-            // the commands: `AICommandInterface`'s inline builders of `AICommandParms`, then `aiDoCommand` (AI.h)
-            ModuleCall::AiIdle => command(m, world, me, AiCommandParms::new(AICMD_IDLE, CMD_FROM_AI)),
             ModuleCall::AiJoinTeam => {
                 if let Err(e) = world.with_ai_self(me.object, |w| m.run(w, crate::logic::ai::ai_commands::join_team)) {
                     world.cuts.team_live_errors.push(format!("AIUpdateInterface::joinTeam: {e:?}"));
                 }
                 ModuleReply::Done
             }
-            ModuleCall::AiIdleFrom { command_source } => command(m, world, me, parms(AICMD_IDLE, command_source)),
-            ModuleCall::AiBusy { command_source } => command(m, world, me, parms(AICMD_BUSY, command_source)),
-            ModuleCall::AiHunt { command_source } => command(m, world, me, parms(AICMD_HUNT, command_source)),
-            ModuleCall::AiHackInternet { command_source } => command(m, world, me, parms(AICMD_HACK_INTERNET, command_source)),
-            ModuleCall::AiEvacuate { expose_stealth_units, command_source } => {
-                let mut p = parms(AICMD_EVACUATE, command_source);
-                p.int_value = i32::from(expose_stealth_units);
-                command(m, world, me, p)
-            }
-            ModuleCall::AiEvacuateInstantly { expose_stealth_units } => {
-                let mut p = AiCommandParms::new(AICMD_EVACUATE_INSTANTLY, CMD_FROM_AI);
-                p.int_value = i32::from(expose_stealth_units);
-                command(m, world, me, p)
-            }
-            ModuleCall::AiGuardRetaliate { victim, pos } => {
-                let mut p = AiCommandParms::new(AICMD_GUARD_RETALIATE, CMD_FROM_AI);
-                p.obj = victim;
-                p.pos = pos;
-                p.int_value = NO_MAX_SHOTS_LIMIT;
-                command(m, world, me, p)
-            }
-            ModuleCall::AiExit { container, command_source } => command(m, world, me, with_obj(AICMD_EXIT, container, command_source)),
-            ModuleCall::AiExitInstantly { container, command_source } => command(m, world, me, with_obj(AICMD_EXIT_INSTANTLY, container, command_source)),
-            ModuleCall::AiMoveToObject { target, command_source } => command(m, world, me, with_obj(AICMD_MOVE_TO_OBJECT, target, command_source)),
-            ModuleCall::AiFaceObject { target, command_source } => command(m, world, me, with_obj(AICMD_FACE_OBJECT, target, command_source)),
-            ModuleCall::AiGetHealed { target, command_source } => command(m, world, me, with_obj(AICMD_GET_HEALED, target, command_source)),
-            ModuleCall::AiEnter { target, command_source } => command(m, world, me, with_obj(AICMD_ENTER, target, command_source)),
             // (batch I9e: `construct(what, pos, angle, owner, isRebuild)`: a dozer's or worker's; the base's makes nothing)
             ModuleCall::AiConstruct { template, pos, angle, owner: _, is_rebuild } => {
                 use crate::logic::ai::ai_update::AiSubclass;
@@ -190,40 +165,10 @@ impl AiModuleBody {
                     }
                 }
             }
-            ModuleCall::AiResumeConstruction { object, command_source } => {
-                command(m, world, me, with_obj(AICMD_RESUME_CONSTRUCTION, object, command_source))
-            }
-            ModuleCall::AiMoveToPosition { pos, command_source } => command(m, world, me, with_pos(AICMD_MOVE_TO_POSITION, pos, command_source)),
-            ModuleCall::AiFacePosition { pos, command_source } => command(m, world, me, with_pos(AICMD_FACE_POSITION, pos, command_source)),
-            ModuleCall::AiAttackObject { victim, max_shots, command_source } => {
-                let mut p = with_obj(AICMD_ATTACK_OBJECT, victim, command_source);
-                p.int_value = max_shots;
-                command(m, world, me, p)
-            }
-            ModuleCall::AiAttackPosition { pos: Some(pos), max_shots, command_source } => {
-                let mut p = with_pos(AICMD_ATTACK_POSITION, pos, command_source);
-                p.int_value = max_shots;
-                command(m, world, me, p)
-            }
             // (upstream dereferences the `NULL`: undefined behaviour, recorded rather than guessed at)
             ModuleCall::AiAttackPosition { pos: None, .. } => {
                 world.cuts.team_live_errors.push("AIUpdateInterface::aiAttackPosition: NULL position".to_string());
                 ModuleReply::Done
-            }
-            ModuleCall::AiFollowPath { path, ignore_object, command_source } => {
-                let mut p = with_obj(AICMD_FOLLOW_PATH, ignore_object, command_source);
-                p.coords = path;
-                command(m, world, me, p)
-            }
-            ModuleCall::AiFollowExitProductionPath { path, ignore_object, command_source } => {
-                let mut p = with_obj(AICMD_FOLLOW_EXITPRODUCTION_PATH, ignore_object, command_source);
-                p.coords = path;
-                command(m, world, me, p)
-            }
-            ModuleCall::AiFollowWaypointPath { waypoint, command_source } => {
-                let mut p = parms(AICMD_FOLLOW_WAYPOINT_PATH, command_source);
-                p.waypoint = u32::try_from(waypoint).ok();
-                command(m, world, me, p)
             }
             ModuleCall::AiDoQuickExit { path } => {
                 if let Err(e) = world.with_ai_self(me.object, |w| m.run(w, |sm, h| commands::do_quick_exit(sm, h, &path))) {
@@ -252,13 +197,6 @@ impl AiModuleBody {
                 ModuleReply::Bool(r)
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(m.ai().last_command_source),
-            ModuleCall::AiDoCommandParms(p) => command(m, world, me, p),
-            ModuleCall::AiDoCommand { cmd, command_source, obj, pos } => {
-                let mut p = parms(cmd, command_source);
-                p.obj = obj;
-                p.pos = pos;
-                command(m, world, me, p)
-            }
             // batch I9c-4: `processCollision(physics, other)`, the AI lent; its commands to itself after
             ModuleCall::AiProcessCollision { other } => {
                 let r = lent(m, world, me, |w| w.ai_process_collision(me.object, other));
@@ -610,6 +548,74 @@ fn lent<R>(m: &mut AiUpdateModule<World>, world: &mut World, me: ModuleHandle, f
 }
 
 /// `aiDoCommand(&parms)` with the object as `this`; an error of the machine is recorded in `team_live_errors`.
+/// `AICommandInterface`'s inline builders (AI.h): the `AICommandParms` of a command call, `None` for any other call (batch I9h:
+/// shared by the module and by a running AI's own commands, [`World::lent_ai_call`]). `aiForceAttackObject` and
+/// `aiAttackMoveToPosition` (AI.h:571, :604) were not routed before.
+pub(crate) fn ai_command_parms(call: &ModuleCall) -> Option<AiCommandParms> {
+    let with_shots = |mut p: AiCommandParms, max_shots: i32| {
+        p.int_value = max_shots;
+        p
+    };
+    let with_path = |mut p: AiCommandParms, path: &[Coord3D]| {
+        p.coords = path.to_vec();
+        p
+    };
+    Some(match call {
+        ModuleCall::AiIdle => AiCommandParms::new(AICMD_IDLE, CMD_FROM_AI),
+        ModuleCall::AiIdleFrom { command_source } => parms(AICMD_IDLE, *command_source),
+        ModuleCall::AiBusy { command_source } => parms(AICMD_BUSY, *command_source),
+        ModuleCall::AiHunt { command_source } => parms(AICMD_HUNT, *command_source),
+        ModuleCall::AiHackInternet { command_source } => parms(AICMD_HACK_INTERNET, *command_source),
+        ModuleCall::AiEvacuate { expose_stealth_units, command_source } => {
+            with_shots(parms(AICMD_EVACUATE, *command_source), i32::from(*expose_stealth_units))
+        }
+        ModuleCall::AiEvacuateInstantly { expose_stealth_units } => {
+            with_shots(AiCommandParms::new(AICMD_EVACUATE_INSTANTLY, CMD_FROM_AI), i32::from(*expose_stealth_units))
+        }
+        ModuleCall::AiGuardRetaliate { victim, pos } => {
+            let mut p = AiCommandParms::new(AICMD_GUARD_RETALIATE, CMD_FROM_AI);
+            p.obj = *victim;
+            p.pos = *pos;
+            p.int_value = NO_MAX_SHOTS_LIMIT;
+            p
+        }
+        ModuleCall::AiExit { container, command_source } => with_obj(AICMD_EXIT, *container, *command_source),
+        ModuleCall::AiExitInstantly { container, command_source } => with_obj(AICMD_EXIT_INSTANTLY, *container, *command_source),
+        ModuleCall::AiMoveToObject { target, command_source } => with_obj(AICMD_MOVE_TO_OBJECT, *target, *command_source),
+        ModuleCall::AiFaceObject { target, command_source } => with_obj(AICMD_FACE_OBJECT, *target, *command_source),
+        ModuleCall::AiGetHealed { target, command_source } => with_obj(AICMD_GET_HEALED, *target, *command_source),
+        ModuleCall::AiEnter { target, command_source } => with_obj(AICMD_ENTER, *target, *command_source),
+        ModuleCall::AiResumeConstruction { object, command_source } => with_obj(AICMD_RESUME_CONSTRUCTION, *object, *command_source),
+        ModuleCall::AiMoveToPosition { pos, command_source } => with_pos(AICMD_MOVE_TO_POSITION, *pos, *command_source),
+        ModuleCall::AiFacePosition { pos, command_source } => with_pos(AICMD_FACE_POSITION, *pos, *command_source),
+        ModuleCall::AiAttackObject { victim, max_shots, command_source } => with_shots(with_obj(AICMD_ATTACK_OBJECT, *victim, *command_source), *max_shots),
+        ModuleCall::AiForceAttackObject { victim, max_shots, command_source } => {
+            with_shots(with_obj(AICMD_FORCE_ATTACK_OBJECT, *victim, *command_source), *max_shots)
+        }
+        ModuleCall::AiAttackPosition { pos: Some(pos), max_shots, command_source } => with_shots(with_pos(AICMD_ATTACK_POSITION, *pos, *command_source), *max_shots),
+        ModuleCall::AiAttackMoveToPosition { pos, max_shots, command_source } => {
+            with_shots(with_pos(AICMD_ATTACKMOVE_TO_POSITION, *pos, *command_source), *max_shots)
+        }
+        ModuleCall::AiFollowPath { path, ignore_object, command_source } => with_path(with_obj(AICMD_FOLLOW_PATH, *ignore_object, *command_source), path),
+        ModuleCall::AiFollowExitProductionPath { path, ignore_object, command_source } => {
+            with_path(with_obj(AICMD_FOLLOW_EXITPRODUCTION_PATH, *ignore_object, *command_source), path)
+        }
+        ModuleCall::AiFollowWaypointPath { waypoint, command_source } => {
+            let mut p = parms(AICMD_FOLLOW_WAYPOINT_PATH, *command_source);
+            p.waypoint = u32::try_from(*waypoint).ok();
+            p
+        }
+        ModuleCall::AiDoCommandParms(p) => p.clone(),
+        ModuleCall::AiDoCommand { cmd, command_source, obj, pos } => {
+            let mut p = parms(*cmd, *command_source);
+            p.obj = *obj;
+            p.pos = *pos;
+            p
+        }
+        _ => return None,
+    })
+}
+
 fn command(m: &mut AiUpdateModule<World>, world: &mut World, me: ModuleHandle, p: AiCommandParms) -> ModuleReply {
     if let Err(e) = world.with_ai_self(me.object, |w| m.ai_do_command(w, &p)) {
         world.cuts.team_live_errors.push(format!("AIUpdateInterface::aiDoCommand({}): {e:?}", p.cmd));
@@ -637,6 +643,52 @@ fn locomotor(m: &mut AiUpdateModule<World>, f: impl FnOnce(&mut Locomotor)) -> M
 }
 
 impl World {
+    /// Batch I9h: a call to the AI module of `ai_self` while that AI is running (its states call into the world, which calls back:
+    /// a transport's `exitObjectViaDoor` asks the exiting rider's `getCurLocomotor()` and orders it along its exit path). Its body is
+    /// out of the slot then, its AI lent on top of `ai_stacks.ai` (every command and update runs through `AiUpdateModule::run`) and
+    /// its machine borrowed by the running state. Upstream makes the call in place. Here: what the module answers from the AI alone
+    /// is answered from the lent one, and its setters set it; the commands and `wakeUpAndAttemptToTarget`, which need the machine,
+    /// are queued for the AI's code to apply ([`crate::logic::ai::ai_states::apply_own_calls`]); a call the module does not handle
+    /// (`onDisabledEdge`, `SpyVisionUpdate`'s alone) is unhandled. `None`: any other call, which stays a re-entrant skip.
+    pub(crate) fn lent_ai_call(&mut self, id: ObjectId, idx: crate::logic::world::object::ModuleIndex, call: &ModuleCall) -> Option<ModuleReply> {
+        use crate::logic::ai::ai_states::OwnCall;
+        if id != self.ai_self || self.objects.find(id)?.ai != Some(idx) || self.ai_stacks.ai.is_empty() {
+            return None;
+        }
+        if let Some(p) = ai_command_parms(call) {
+            self.ai_own_calls.push((id, OwnCall::Command(p)));
+            return Some(ModuleReply::Done);
+        }
+        let now = self.frame();
+        let a = self.ai_stacks.ai.last_mut()?;
+        Some(match call {
+            ModuleCall::AiWakeUpAndAttemptToTarget => {
+                self.ai_own_calls.push((id, OwnCall::WakeUpAndAttemptToTarget));
+                ModuleReply::Done
+            }
+            ModuleCall::AiIgnoreObstacle { obstacle } => {
+                a.ignore_obstacle_id(*obstacle);
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetIgnoreCollisionTime { frames } => {
+                a.set_ignore_collision_time(now, *frames);
+                ModuleReply::Done
+            }
+            ModuleCall::OnDisabledEdge { .. } => ModuleReply::Unhandled,
+            ModuleCall::AiGetLastCommandSource => ModuleReply::Int(a.last_command_source),
+            ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(a.is_ai_in_dead_state()),
+            ModuleCall::AiGetIgnoredObstacleId => ModuleReply::Id(a.get_ignored_obstacle_id()),
+            ModuleCall::AiGetCurLocomotorSetType => ModuleReply::Int(a.cur_locomotor_set),
+            ModuleCall::AiHasLocomotorForSurface(s) => ModuleReply::Bool(a.has_locomotor_for_surface(*s as i32)),
+            ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(a.get_cur_locomotor().is_some()),
+            ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(matches!(a.subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_))),
+            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(matches!(a.subclass, AiSubclass::SupplyTruck(_) | AiSubclass::Worker(_))),
+            // (the chinook's and the deliverer's overrides need more than the AI)
+            ModuleCall::AiGetFreeToExit { .. } if !matches!(a.subclass, AiSubclass::Chinook(_) | AiSubclass::DeliverPayload(_)) => ModuleReply::Int(FREE_TO_EXIT),
+            _ => return None,
+        })
+    }
+
     /// The AI module's `xfer` with the world as its host: the slot's `UpdateModule` base lent as `ai_update_base` (the
     /// AI's `xfer` saves it first, through the host), the waypoints' names and ids from the terrain. An error of the AI's
     /// snapshot is its `XferStatus`, or `ErrorUnknown` for `SC_INVALID_DATA` (a throw code, not an `XferStatus`); an

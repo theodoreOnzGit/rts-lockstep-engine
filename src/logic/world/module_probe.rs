@@ -1107,7 +1107,8 @@ impl ProbeModule {
             | ModuleCall::ExitObjectByBudding { .. }
             | ModuleCall::GetExitPosition
             | ModuleCall::GetNaturalRallyPointWithOffset(_)
-            | ModuleCall::AiJoinTeam => ModuleReply::Unhandled,
+            | ModuleCall::AiJoinTeam
+            | ModuleCall::AttemptBestFirePointPosition { .. } => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(
                     "construct {} {} {:08x} {:08x} {:08x} {:08x} {} {}",

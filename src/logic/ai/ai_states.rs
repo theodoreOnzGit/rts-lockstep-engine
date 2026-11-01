@@ -119,9 +119,27 @@ pub enum PassengerCommand {
     AttackPosition { pos: Coord3D, max_shots: i32, src: CommandSourceType },
 }
 
+/// Batch I9h: a call that reached a running AI from the world (its states called out, the world called back: a transport's
+/// `exitObjectViaDoor` orders the exiting rider to follow its exit path). Upstream makes it in place on the running AI; here its
+/// machine is borrowed by the running state, so the host queues it and the AI's code applies it where it holds the machine
+/// ([`apply_own_calls`]).
+#[derive(Debug, Clone)]
+pub enum OwnCall {
+    /// `aiDoCommand(parms)`.
+    Command(AiCommandParms),
+    /// `wakeUpAndAttemptToTarget()`.
+    WakeUpAndAttemptToTarget,
+}
+
 pub trait AiStateHost: AiHost + StateContext {
     /// The AIs whose machines are running, the innermost last.
     fn ai_stack(&mut self) -> &mut Vec<AiUpdate>;
+    /// Batch I9h: the calls the host queued for the running AI ([`OwnCall`]), in order; none for a host that queues none.
+    fn take_own_calls(&mut self) -> Vec<OwnCall> {
+        Vec::new()
+    }
+    /// Batch I9h: a queued call failed where nothing could return the error ([`AiUpdateModule::run`]'s catch-all).
+    fn own_call_failed(&mut self, _e: crate::common::state_machine::StateMachineError) {}
     /// Batch A30: `getObject()->getContain()->isPassengerAllowedToFire()` (the transport's own contain).
     fn contain_passenger_allowed_to_fire(&mut self) -> bool;
     /// Batch A30: whether another object has an AI (`getAIUpdateInterface()`).
@@ -1185,6 +1203,17 @@ pub fn ai<H: AiStateHost>(h: &mut H) -> &mut AiUpdate {
 }
 
 /// Runs an AI member on the lent AI (taken from the host for the call, then given back).
+/// Batch I9h: the calls the host queued for the running AI ([`OwnCall`]) applied in order on its machine.
+pub fn apply_own_calls<H: AiStateHost>(sm: &mut StateMachine<AiState<H>>, h: &mut H) -> SmResult<()> {
+    for c in h.take_own_calls() {
+        match c {
+            OwnCall::Command(p) => commands::ai_do_command(sm, h, &p)?,
+            OwnCall::WakeUpAndAttemptToTarget => with_ai(h, |a, h| a.wake_up_and_attempt_to_target(h, &*sm)),
+        }
+    }
+    Ok(())
+}
+
 pub fn with_ai<H: AiStateHost, R>(h: &mut H, f: impl FnOnce(&mut AiUpdate, &mut H) -> R) -> R {
     let mut a = h.ai_stack().pop().expect("a running AI");
     let r = f(&mut a, h);
@@ -2083,6 +2112,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
 
     /// Runs `f` on the machine with the AI lent to the host (batch A37: and a delivering AI's machine, which a command can remake).
     pub fn run<R>(&mut self, h: &mut H, f: impl FnOnce(&mut StateMachine<AiState<H>>, &mut H) -> R) -> R {
+        self.run_inner(h, true, f)
+    }
+
+    /// [`run`](Self::run); `own_calls`: the host's queued calls ([`OwnCall`]) applied on the machine before the AI is taken back
+    /// (not while a stand-in machine is there, [`run_lent`](Self::run_lent)).
+    fn run_inner<R>(&mut self, h: &mut H, own_calls: bool, f: impl FnOnce(&mut StateMachine<AiState<H>>, &mut H) -> R) -> R {
         let deliver = matches!(self.ai().subclass, crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_));
         if deliver {
             h.deliver_machine_stack().push(self.deliver_machine.take());
@@ -2099,6 +2134,12 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         }
         h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
         let r = f(self.machine.as_mut().expect("the AI's machine"), h);
+        // (batch I9h: the world's calls to this AI made while it ran and not yet applied by its code)
+        if own_calls {
+            if let Err(e) = apply_own_calls(self.machine.as_mut().expect("the AI's machine"), h) {
+                h.own_call_failed(e);
+            }
+        }
         self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
         if worker {
             self.worker_machine = h.worker_machine_stack().pop().expect("the lent worker machine");
@@ -2120,8 +2161,10 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
         // (`run` asks for the machine in its slot: an empty machine stands in while the real one is lent)
         self.machine = Some(StateMachine::new());
-        let r = self.run(h, |_, h| f(h));
+        let r = self.run_inner(h, false, |_, h| f(h));
         self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+        // (batch I9h: the queued calls on the real machine, now back)
+        self.run(h, |_, _| ());
         r
     }
 

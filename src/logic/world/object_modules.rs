@@ -110,8 +110,10 @@ impl World {
     /// Sends `call` to module `idx` of object `id` and returns its answer.
     /// [`ModuleReply::Unhandled`] if the object or module is missing, or the
     /// module has no body. A call to a module that is running delivers at once
-    /// if the module lent itself ([`World::lend_body`]); if it did not, the
-    /// call is recorded in `cuts.reentrant_skips` (a defect of that module).
+    /// if the module lent itself ([`World::lend_body`]), or (batch I9h) is the
+    /// running AI of `ai_self` asked what the lent AI alone answers
+    /// ([`World::lent_ai_call`]); otherwise the call is recorded in
+    /// `cuts.reentrant_skips` (a defect of that module).
     pub fn module_call(&mut self, id: ObjectId, idx: ModuleIndex, call: ModuleCall) -> ModuleReply {
         let h = ModuleHandle { object: id, index: idx };
         let had_body = match self.objects.find(id).and_then(|o| o.modules.get(idx as usize)) {
@@ -120,6 +122,10 @@ impl World {
         };
         let Some(mut body) = self.take_module_body(h) else {
             if had_body {
+                // (batch I9h: a running AI's own questions, answered from the lent AI)
+                if let Some(r) = self.lent_ai_call(id, idx, &call) {
+                    return r;
+                }
                 self.cuts.reentrant_skips.push((h, call));
             }
             return ModuleReply::Unhandled;

@@ -173,6 +173,11 @@ pub fn gate_world() -> World {
 /// The gate's game before its units: the map, the players and teams, the subsystems live, no object (batch I10: a saved
 /// game loads into a World made from the same map, as upstream's `loadGame` loads into the map it has just started).
 pub fn gate_map_world() -> World {
+    gate_map_world_with("")
+}
+
+/// [`gate_map_world`] with `extra` read after the game's INI (batch I9h: a test's own templates; the game's are unchanged).
+pub fn gate_map_world_with(extra: &str) -> World {
     let mut names = NameKeyGenerator::new();
     names.reset();
     let mut modules = ModuleFactory::new();
@@ -196,6 +201,9 @@ pub fn gate_map_world() -> World {
         BlockParse { token: "Weapon", parse: weapon_block },
     ];
     Ini::load(b"Data\\INI\\Gate.ini", INI.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("the game's INI");
+    if !extra.is_empty() {
+        Ini::load(b"Data\\INI\\GateTest.ini", extra.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("the test's INI");
+    }
     c.factory.post_process_load();
 
     let mut w = World::new();
@@ -622,5 +630,83 @@ mod save_load_tests {
         for w in [&a, &b, &c, &d] {
             assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
         }
+    }
+}
+
+#[cfg(test)]
+mod contain_tests {
+    use super::*;
+    use crate::common::game_type::INVALID_ID;
+    use crate::logic::world::module_call::ModuleCall;
+
+    /// A truck that carries two vehicles, with an AI and the game's treads; and a rider, the game's soldier with a transport slot
+    /// (`TransportContain::isValidContainerFor` refuses a rider whose `TransportSlotCount` is 0, the default, as the soldier's is).
+    const TRUCK: &str = "\
+Object Rider\n KindOf = VEHICLE\n TransportSlotCount = 1\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY GateGun\n End\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+Object Truck\n KindOf = VEHICLE TRANSPORT\n Geometry = CYLINDER\n GeometryMajorRadius = 8\n GeometryHeight = 6\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = TransportContain ModuleTag_Contain\n  Slots = 2\n  AllowInsideKindOf = VEHICLE\n  AllowAlliesInside = Yes\n  ExitDelay = 0\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 100\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+
+    /// Batch I9h, the AI's contain and exit calls live. A soldier ordered into a truck 40 away walks to it and is contained
+    /// (the enter state asks the truck's contain whether it is valid, says it wants to enter, and adds itself); ordered out,
+    /// it leaves through the truck's exit (busy, reserve a door, exit via the door). Predicted before the run: in within 90
+    /// frames (40 at 30 a second is 40 frames, plus turning and the approach), out within 30 (`ExitDelay = 0`); the
+    /// contain's list is the soldier while it rides; no AI call reaches a cut point and no call is skipped as re-entrant.
+    #[test]
+    fn a_soldier_rides_a_truck() {
+        let mut w = gate_map_world_with(TRUCK);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let soldier = make(&mut w, b"Rider", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        let truck = make(&mut w, b"Truck", team, Coord3D { x: 100.0, y: 60.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        w.cuts.trace = Some(Vec::new());
+        let ai = w.find_object(soldier).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(soldier, ai, ModuleCall::AiEnter { target: truck, command_source: 0 });
+        let mut entered = None;
+        for f in 0..90 {
+            w.logic_update().unwrap();
+            if w.find_object(soldier).is_some_and(|o| o.contained_by == truck) {
+                entered = Some(f);
+                break;
+            }
+        }
+        let entered = entered.expect("the soldier is in the truck");
+        let c = w.get_contain(truck).expect("the truck's contain");
+        let items = match w.module_call(truck, c, ModuleCall::GetContainedItems) {
+            crate::logic::world::module_call::ModuleReply::Ids(ids) => ids,
+            r => panic!("{r:?}"),
+        };
+        assert_eq!(items, [soldier]);
+        let ai = w.find_object(soldier).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(soldier, ai, ModuleCall::AiExit { container: truck, command_source: 0 });
+        let mut left = None;
+        for f in 0..30 {
+            w.logic_update().unwrap();
+            if w.find_object(soldier).is_some_and(|o| o.contained_by == INVALID_ID) {
+                left = Some(f);
+                break;
+            }
+        }
+        let left = left.expect("the soldier is out of the truck");
+        // (out: no longer held, and its AI past the exit state: the exit's follow-path order reached it while it ran)
+        assert!(w.find_object(soldier).is_some_and(|o| !o.disabled.any()));
+        let state = match w.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: soldier, index: ai }) {
+            Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) => m.module.as_ref().and_then(|m| m.machine.as_ref()).map(|sm| sm.get_current_state_id()),
+            _ => None,
+        };
+        assert_ne!(state, Some(crate::logic::ai::ai_update_types::AI_EXIT));
+        let mut calls: Vec<String> = w.cuts.trace.take().unwrap().into_iter().filter_map(|t| t.split("call: \"").nth(1).map(|c| c.split('"').next().unwrap().to_string())).collect();
+        calls.sort();
+        calls.dedup();
+        eprintln!("entered on frame {entered}, out {left} frames after the order; calls cut: {calls:?}");
+        assert!(calls.iter().all(|c| !c.starts_with("contain_") && !c.starts_with("exit_") && !c.starts_with("own_exit") && c != "object_ai_free_to_exit"), "{calls:?}");
+        assert!(w.cuts.reentrant_skips.is_empty(), "{:?}", w.cuts.reentrant_skips);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

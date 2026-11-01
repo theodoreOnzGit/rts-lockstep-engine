@@ -54,6 +54,8 @@ use crate::logic::weapon_set_state::WeaponChoiceCriteria;
 use crate::logic::weapon_types::WeaponStatus;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_cuts::CutCall;
+use crate::logic::world::module_call::{ModuleCall as MC, ModuleReply};
+use crate::logic::ai::ai_face_exit_states::DOOR_NONE_AVAILABLE;
 
 /// The stacks the AI's state and machines are lent on while they run (upstream's objects are reached by pointer; here
 /// the module lends them to the world for the run and takes them back). Empty between runs: a copy of the world (`Clone`)
@@ -84,6 +86,25 @@ impl std::fmt::Debug for AiStacks {
 }
 
 impl World {
+    /// Batch I9h: `obj->getContain()` asked `call`; `None` when there is no such object or it has no contain.
+    fn ai_contain_call(&mut self, obj: ObjectId, call: MC) -> Option<ModuleReply> {
+        let c = self.get_contain(obj)?;
+        Some(self.module_call(obj, c, call))
+    }
+
+    /// Batch I9h: the AI's own object's contain asked `call` (`getObject()->getContain()`).
+    fn ai_own_contain_call(&mut self, call: MC) -> Option<ModuleReply> {
+        self.ai_contain_call(self.ai_self, call)
+    }
+
+    /// Batch I9h: `obj->getContain()->getContainedItemsList()`, in order (empty: no contain).
+    fn ai_contained_items(&mut self, obj: ObjectId) -> Vec<ObjectId> {
+        match self.ai_contain_call(obj, MC::GetContainedItems) {
+            Some(ModuleReply::Ids(ids)) => ids,
+            _ => Vec::new(),
+        }
+    }
+
     /// Logs one of the AI states' calls into a unit the world does not hold.
     fn ais_cut(&mut self, call: &'static str) {
         let id = self.ai_self;
@@ -95,15 +116,28 @@ impl AiStateHost for World {
     fn ai_stack(&mut self) -> &mut Vec<AiUpdate> {
         &mut self.ai_stacks.ai
     }
+    fn take_own_calls(&mut self) -> Vec<crate::logic::ai::ai_states::OwnCall> {
+        let us = self.ai_self;
+        let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut self.ai_own_calls).into_iter().partition(|(id, _)| *id == us);
+        self.ai_own_calls = others;
+        mine.into_iter().map(|(_, c)| c).collect()
+    }
+    fn own_call_failed(&mut self, e: crate::common::state_machine::StateMachineError) {
+        self.cuts.team_live_errors.push(format!("AIUpdateInterface (a call made while it ran): {e:?}"));
+    }
     fn contain_passenger_allowed_to_fire(&mut self) -> bool {
-        self.ais_cut("contain_passenger_allowed_to_fire");
-        Default::default()
+        self.ai_own_contain_call(MC::IsPassengerAllowedToFire(INVALID_ID)).is_some_and(|r| r.as_bool())
     }
     fn object_has_ai(&self, id: ObjectId) -> bool {
         self.find_object(id).is_some_and(|o| o.ai.is_some())
     }
-    fn passenger_ai_command(&mut self, _passenger: ObjectId, _cmd: PassengerCommand) {
-        self.ais_cut("passenger_ai_command");
+    fn passenger_ai_command(&mut self, passenger: ObjectId, cmd: PassengerCommand) {
+        let call = match cmd {
+            PassengerCommand::AttackObject { victim, max_shots, src } => MC::AiAttackObject { victim, max_shots, command_source: src },
+            PassengerCommand::ForceAttackObject { victim, max_shots, src } => MC::AiForceAttackObject { victim, max_shots, command_source: src },
+            PassengerCommand::AttackPosition { pos, max_shots, src } => MC::AiAttackPosition { pos: Some(pos), max_shots, command_source: src },
+        };
+        self.ai_ask(passenger, call);
     }
     fn clear_model_condition_flags(&mut self, clear: &[ModelConditionFlagType]) {
         let id = self.ai_self;
@@ -318,16 +352,13 @@ impl AiStateHost for World {
         INVALID_ID
     }
     fn contain_is_special_overlord_style_container(&mut self) -> bool {
-        self.ais_cut("contain_is_special_overlord_style_container");
-        Default::default()
+        self.ai_own_contain_call(MC::IsSpecialOverlordStyleContainer).is_some_and(|r| r.as_bool())
     }
-    fn contain_passenger_allowed_to_fire_id(&mut self, _passenger: ObjectId) -> bool {
-        self.ais_cut("contain_passenger_allowed_to_fire_id");
-        Default::default()
+    fn contain_passenger_allowed_to_fire_id(&mut self, passenger: ObjectId) -> bool {
+        self.ai_own_contain_call(MC::IsPassengerAllowedToFire(passenger)).is_some_and(|r| r.as_bool())
     }
     fn contain_rider(&mut self) -> ObjectId {
-        self.ais_cut("contain_rider");
-        INVALID_ID
+        self.ai_own_contain_call(MC::GetRider).map_or(INVALID_ID, |r| r.as_id())
     }
     fn parking_place_exists(&mut self, _airfield: ObjectId) -> bool {
         self.ais_cut("parking_place_exists");
@@ -389,12 +420,19 @@ impl AiStateHost for World {
     fn rope_call(&mut self, _drawable: u32, _call: crate::logic::ai::chinook_ai_update::RopeCall) {
         self.ais_cut("rope_call");
     }
-    fn own_exit_reserve_door(&mut self, _exiter: ObjectId) -> i32 {
-        self.ais_cut("own_exit_reserve_door");
-        Default::default()
+    fn own_exit_reserve_door(&mut self, exiter: ObjectId) -> i32 {
+        let us = self.ai_self;
+        let template = self.find_object(exiter).map(|o| o.template().get_template_id());
+        match self.get_object_exit_interface(us) {
+            Some(exit) => self.module_call(us, exit, MC::ReserveDoorForExit { template, specific: exiter }).as_int(DOOR_NONE_AVAILABLE),
+            None => DOOR_NONE_AVAILABLE,
+        }
     }
-    fn own_exit_object_via_door(&mut self, _exiter: ObjectId, _door: i32) {
-        self.ais_cut("own_exit_object_via_door");
+    fn own_exit_object_via_door(&mut self, exiter: ObjectId, door: i32) {
+        let us = self.ai_self;
+        if let Some(exit) = self.get_object_exit_interface(us) {
+            self.module_call(us, exit, MC::ExitObjectViaDoor { obj: exiter, door });
+        }
     }
     fn object_set_transform_matrix(&mut self, id: ObjectId, mtx: &crate::ww::matrix3d::Matrix3D) {
         World::set_transform_matrix(self, id, mtx);
@@ -785,8 +823,8 @@ impl AiStateHost for World {
     fn object_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
         World::set_position(self, id, pos);
     }
-    fn object_contain_set_override_destination(&mut self, _id: ObjectId, _pos: &Coord3D) {
-        self.ais_cut("object_contain_set_override_destination");
+    fn object_contain_set_override_destination(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.ai_contain_call(id, MC::SetOverrideDestination(*pos));
     }
     fn object_aim_update_module(&mut self, _id: ObjectId, _module: crate::logic::ai::deliver_payload_ai_update::ItemModule, _pos: &Coord3D) {
         self.ais_cut("object_aim_update_module");
@@ -991,17 +1029,20 @@ impl AiStateHost for World {
     fn has_contain(&self) -> bool {
         self.get_contain(self.ai_self).is_some()
     }
-    fn contain_idle_passengers(&mut self, _src: CommandSourceType) {
-        self.ais_cut("contain_idle_passengers");
+    fn contain_idle_passengers(&mut self, src: CommandSourceType) {
+        let us = self.ai_self;
+        for rider in self.ai_contained_items(us) {
+            self.ai_ask(rider, MC::AiIdleFrom { command_source: src });
+        }
     }
     fn contain_remove_all_contained(&mut self) {
-        self.ais_cut("contain_remove_all_contained");
+        self.ai_own_contain_call(MC::RemoveAllContained { expose_stealth_units: false });
     }
     fn contain_mark_all_passengers_detected(&mut self) {
-        self.ais_cut("contain_mark_all_passengers_detected");
+        self.ai_own_contain_call(MC::MarkAllPassengersDetected);
     }
-    fn contain_order_all_passengers_to_exit(&mut self, _src: CommandSourceType, _instantly: bool) {
-        self.ais_cut("contain_order_all_passengers_to_exit");
+    fn contain_order_all_passengers_to_exit(&mut self, src: CommandSourceType, instantly: bool) {
+        self.ai_own_contain_call(MC::OrderAllPassengersToExit { command_source: src, instantly });
     }
     fn go_prone(&mut self) {
         // (batch I9b-6: `privateGoProne(&parms->m_damage)`: the object's `ProneUpdate`, if it has one, with the damage the
@@ -1309,16 +1350,19 @@ impl AiStateHost for World {
         self.module_call(id, c, crate::logic::world::module_call::ModuleCall::GetContainCount).as_int(0) as u32
     }
     fn contain_is_enclosing_container_for_me(&mut self) -> bool {
-        self.ais_cut("contain_is_enclosing_container_for_me");
-        Default::default()
+        let us = self.ai_self;
+        let container = self.find_object(us).map_or(INVALID_ID, |o| o.contained_by);
+        self.ai_contain_call(container, MC::IsEnclosingContainerFor(us)).is_some_and(|r| r.as_bool())
     }
-    fn contain_attempt_best_fire_point_at_object(&mut self, _victim: ObjectId) -> bool {
-        self.ais_cut("contain_attempt_best_fire_point_at_object");
-        Default::default()
+    fn contain_attempt_best_fire_point_at_object(&mut self, victim: ObjectId) -> bool {
+        let us = self.ai_self;
+        let container = self.find_object(us).map_or(INVALID_ID, |o| o.contained_by);
+        self.ai_contain_call(container, MC::AttemptBestFirePointPosition { source: us, victim, pos: None }).is_some_and(|r| r.as_bool())
     }
-    fn contain_attempt_best_fire_point_at_position(&mut self, _pos: &Coord3D) -> bool {
-        self.ais_cut("contain_attempt_best_fire_point_at_position");
-        Default::default()
+    fn contain_attempt_best_fire_point_at_position(&mut self, pos: &Coord3D) -> bool {
+        let us = self.ai_self;
+        let container = self.find_object(us).map_or(INVALID_ID, |o| o.contained_by);
+        self.ai_contain_call(container, MC::AttemptBestFirePointPosition { source: us, victim: INVALID_ID, pos: Some(*pos) }).is_some_and(|r| r.as_bool())
     }
     fn relative_angle_2d_to_object(&mut self, other: ObjectId) -> f32 {
         self.ai_relative_angle(self.ai_self, other)
@@ -1371,27 +1415,28 @@ impl AiStateHost for World {
         let template = AiQueryHost::template_of(self, obj);
         AiQueryHost::attack_priority(self, i32::try_from(info).unwrap_or(0), template)
     }
-    fn contain_wants_to_enter_or_exit(&mut self, _container: ObjectId, _wants: i32) {
-        self.ais_cut("contain_wants_to_enter_or_exit");
+    fn contain_wants_to_enter_or_exit(&mut self, container: ObjectId, wants: i32) {
+        let us = self.ai_self;
+        self.ai_contain_call(container, MC::OnObjectWantsToEnterOrExit { obj: us, wants });
     }
-    fn contain_has_exit_interface(&mut self, _container: ObjectId) -> bool {
-        self.ais_cut("contain_has_exit_interface");
-        Default::default()
+    fn contain_has_exit_interface(&mut self, container: ObjectId) -> bool {
+        self.ai_contain_call(container, MC::HasContainExitInterface).is_some_and(|r| r.as_bool())
     }
-    fn exit_is_busy(&mut self, _container: ObjectId) -> bool {
-        self.ais_cut("exit_is_busy");
-        Default::default()
+    fn exit_is_busy(&mut self, container: ObjectId) -> bool {
+        self.ai_contain_call(container, MC::IsExitBusy).is_some_and(|r| r.as_bool())
     }
-    fn exit_reserve_door(&mut self, _container: ObjectId) -> i32 {
-        self.ais_cut("exit_reserve_door");
-        Default::default()
+    fn exit_reserve_door(&mut self, container: ObjectId) -> i32 {
+        let us = self.ai_self;
+        let template = self.find_object(us).map(|o| o.template().get_template_id());
+        self.ai_contain_call(container, MC::ReserveDoorForExit { template, specific: us }).map_or(DOOR_NONE_AVAILABLE, |r| r.as_int(DOOR_NONE_AVAILABLE))
     }
-    fn exit_object_via_door(&mut self, _container: ObjectId, _door: i32) {
-        self.ais_cut("exit_object_via_door");
+    fn exit_object_via_door(&mut self, container: ObjectId, door: i32) {
+        let us = self.ai_self;
+        self.ai_contain_call(container, MC::ExitObjectViaDoor { obj: us, door });
     }
-    fn object_ai_free_to_exit(&mut self, _id: ObjectId) -> Option<i32> {
-        self.ais_cut("object_ai_free_to_exit");
-        Default::default()
+    fn object_ai_free_to_exit(&mut self, id: ObjectId) -> Option<i32> {
+        let us = self.ai_self;
+        self.ai_ask(id, MC::AiGetFreeToExit { exiter: us }).map(|r| r.as_int(0))
     }
     fn object_is_above_terrain(&mut self, id: ObjectId) -> bool {
         self.get_height_above_terrain(id) > 0.0
@@ -1402,19 +1447,19 @@ impl AiStateHost for World {
     fn object_geometry_radii(&mut self, id: ObjectId) -> (f32, f32, bool) {
         self.find_object(id).map_or((0.0, 0.0, false), |o| (o.geometry_info.get_major_radius(), o.geometry_info.get_minor_radius(), o.geometry_info.get_geom_type() == crate::common::geometry::GeometryType::Sphere))
     }
-    fn contain_add_to_contain(&mut self, _container: ObjectId) {
-        self.ais_cut("contain_add_to_contain");
+    fn contain_add_to_contain(&mut self, container: ObjectId) {
+        let us = self.ai_self;
+        self.ai_contain_call(container, MC::AddToContain(us));
     }
-    fn contain_items(&mut self, _container: ObjectId) -> Vec<ObjectId> {
-        self.ais_cut("contain_items");
-        Default::default()
+    fn contain_items(&mut self, container: ObjectId) -> Vec<ObjectId> {
+        self.ai_contained_items(container)
     }
-    fn contain_remove_from_contain(&mut self, _container: ObjectId, _obj: ObjectId) {
-        self.ais_cut("contain_remove_from_contain");
+    fn contain_remove_from_contain(&mut self, container: ObjectId, obj: ObjectId) {
+        self.ai_contain_call(container, MC::RemoveFromContain(obj));
     }
-    fn contain_is_valid_container_for_me(&mut self, _container: ObjectId) -> bool {
-        self.ais_cut("contain_is_valid_container_for_me");
-        Default::default()
+    fn contain_is_valid_container_for_me(&mut self, container: ObjectId) -> bool {
+        let us = self.ai_self;
+        self.ai_contain_call(container, MC::IsValidContainerFor { obj: us, check_capacity: true }).is_some_and(|r| r.as_bool())
     }
     fn score_the_kill(&mut self, _victim: ObjectId) {
         self.ais_cut("score_the_kill");
@@ -1586,8 +1631,9 @@ impl AiStateHost for World {
     fn object_last_damage(&mut self, id: ObjectId) -> Option<(bool, ObjectId, u32)> {
         self.ai_object_last_damage(id)
     }
-    fn exit_object_in_a_hurry(&mut self, _container: ObjectId) {
-        self.ais_cut("exit_object_in_a_hurry");
+    fn exit_object_in_a_hurry(&mut self, container: ObjectId) {
+        let us = self.ai_self;
+        self.ai_contain_call(container, MC::ExitObjectInAHurry(us));
     }
     fn update_module_xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
         match self.ai_update_base.as_mut() {

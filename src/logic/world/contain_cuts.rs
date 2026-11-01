@@ -722,9 +722,18 @@ impl World {
         self.cuts.contain.cur_weapon_damage_type.get(&id).copied()
     }
 
-    /// `obj->getCurrentWeapon()->isWithinAttackRange(obj, victim)` (`victim` `INVALID_ID`: `(obj, pos)`): the range check is layer 10's weapon host,
-    /// not on the world yet; the table answers ([`ContainCutTables::in_range`]). The caller checks the weapon.
+    /// `obj->getCurrentWeapon()->isWithinAttackRange(obj, victim)` (`victim` `INVALID_ID`: `(obj, pos)`). ~~The range check is layer 10's
+    /// weapon host, not on the world yet; the table answers~~ **Corrected (batch I9h):** the World has had the range check since batch
+    /// I9c-5 (`ai_combat_world.rs`); with `cuts.live_ai` it answers, otherwise the table does ([`ContainCutTables::in_range`], for the
+    /// differential tests' units, which hold no weapon). The caller checks the weapon.
     pub fn contain_weapon_within_attack_range(&mut self, source: ObjectId, victim: ObjectId, position: Option<Coord3D>) -> bool {
+        if self.cuts.live_ai {
+            return match (victim, position) {
+                (INVALID_ID, Some(p)) => self.ai_weapon_within_range_of_position(source, &p),
+                (INVALID_ID, None) => false,
+                _ => self.ai_weapon_within_range_of_object(source, victim),
+            };
+        }
         self.contain_cut(ContainCall::WeaponWithinAttackRange { source, victim, position });
         self.cuts.contain.in_range.contains(&(source, victim))
     }
@@ -797,8 +806,15 @@ impl World {
         self.contain_cut(ContainCall::DrawableSetInstanceMatrix { object: id, matrix: matrix.copied() });
     }
 
-    /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)` (see [`ContainCutTables::valid_movement_terrain`]).
-    pub fn contain_valid_movement_terrain(&mut self, _transport: ObjectId, rider: ObjectId, pos: &Coord3D) -> bool {
+    /// `TheAI->pathfinder()->validMovementTerrain(transport's layer, rider's locomotor, pos)`: batch I9h, the World's pathfinder when it
+    /// answers ([`World::pf_ready`]; a rider with no current locomotor: false, as the caller has already refused it), else the
+    /// table ([`ContainCutTables::valid_movement_terrain`]).
+    pub fn contain_valid_movement_terrain(&mut self, transport: ObjectId, rider: ObjectId, pos: &Coord3D) -> bool {
+        if self.pf_ready().is_some() {
+            let layer = self.objects.find(transport).map_or(crate::common::game_type::LAYER_GROUND, |o| o.layer);
+            let Some(surfaces) = self.ai_peek(rider).and_then(|a| a.get_cur_locomotor()).map(|l| l.get_legal_surfaces()) else { return false };
+            return self.pf_ready().is_some_and(|pf| pf.valid_movement_terrain(layer, surfaces, pos));
+        }
         let cells = self.cuts.contain.valid_movement_cells;
         self.cuts.contain.valid_movement_terrain.contains(&rider) && (cells == 0 || cells >> crate::logic::world::object_cuts::terrain_cell(pos.x, pos.y) & 1 != 0)
     }

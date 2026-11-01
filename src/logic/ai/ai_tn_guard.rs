@@ -418,6 +418,8 @@ pub fn tn_idle_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) ->
                 return Ok(StateReturn::sleep(0)); // "Just wait a sec."
             }
             h.exit_object_in_a_hurry(best);
+            // (batch I9h: the exit's orders to this AI, in place as upstream's)
+            crate::logic::ai::ai_states::apply_own_calls(sm, h)?;
             return Ok(StateReturn::sleep(0));
         }
         return Ok(StateReturn::SUCCESS);

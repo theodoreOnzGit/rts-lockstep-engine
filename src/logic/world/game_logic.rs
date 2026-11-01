@@ -225,6 +225,8 @@ pub struct World {
     /// Batch I9c-4: the other object of the AI collision being answered, and the commands to the asking AI it waits to run.
     pub collision_other: crate::common::game_type::ObjectId,
     pub collision_self_commands: Vec<crate::logic::ai::ai_commands::AiCommandParms>,
+    /// Batch I9h: the calls to a running AI made by what its states called (`World::lent_ai_call`), for its code to apply.
+    pub ai_own_calls: Vec<(crate::common::game_type::ObjectId, crate::logic::ai::ai_states::OwnCall)>,
     /// The AI module's `UpdateModule` base, lent while its snapshot runs (`ai_module_world.rs`).
     pub ai_update_base: Option<crate::logic::module::update_module::UpdateModule>,
     // --- end batch I9b ---
@@ -314,6 +316,7 @@ impl World {
             save_side: Default::default(),
             collision_other: crate::common::game_type::INVALID_ID,
             collision_self_commands: Vec::new(),
+            ai_own_calls: Vec::new(),
             ai_update_base: None,
             // --- end batch I9b ---
             frame: 0,

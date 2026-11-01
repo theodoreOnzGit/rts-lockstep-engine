@@ -69,6 +69,8 @@ pub fn exit_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, ins
         return Ok(StateReturn::FAILURE);
     }
     h.exit_object_via_door(goal.id, if plant(3350) { 1 } else { DOOR_1 });
+    // (batch I9h: the exit's orders to this AI, in place as upstream's)
+    crate::logic::ai::ai_states::apply_own_calls(sm, h)?;
     // "Not success, because exitViaDoor has changed us to FollowPath, and if we say Success, our machine will think FollowPath
     // succeeded"
     Ok(StateReturn::CONTINUE)
@@ -92,6 +94,8 @@ fn exit_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> SmResu
         return Ok(StateReturn::FAILURE);
     }
     h.exit_object_via_door(goal.id, door);
+    // (batch I9h: the exit's orders to this AI, in place as upstream's: the check below sees them)
+    crate::logic::ai::ai_states::apply_own_calls(sm, h)?;
     if sm.get_current_state_id() != id {
         // "Not sucess, because exitViaDoor has changed us to FollowPath"
         Ok(StateReturn::CONTINUE)

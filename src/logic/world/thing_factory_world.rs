@@ -91,8 +91,13 @@ impl World {
                     let base = std::sync::Arc::new(d.update.clone());
                     // (batch I9f: `AIUpdateInterface::getUpdatePhase()` is `PHASE_INITIAL`, AIUpdate.h, for every subclass: the AI runs
                     // before the physics it drives; it was `PHASE_NORMAL` here)
-                    let update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Initial)
+                    let mut update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Initial)
                         .map_err(|e| NewObjectError::Module(name.to_vec(), e))?;
+                    // (batch I9h: `AIUpdateInterface::getDisabledTypesToProcess()` is `MAKE_DISABLED_MASK(DISABLED_HELD)`, AIUpdate.h, for
+                    // every subclass: a rider held in a transport still runs its AI, which is how it gets out; the mask was empty here)
+                    let mut held = crate::common::disabled_types::DisabledMaskType::default();
+                    held.set(crate::common::disabled_types::DISABLED_HELD, 1);
+                    update.set_disabled_types_to_process(held);
                     let mut m = NewModule::plain(name, tag);
                     m.interfaces = info.nuggets()[i as usize].interface_mask;
                     m.update = Some(update);
