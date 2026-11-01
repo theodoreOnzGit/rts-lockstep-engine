@@ -306,9 +306,8 @@ impl AiStateHost for World {
     fn set_drawable_hidden(&mut self, _hidden: bool) {
         self.ais_cut("set_drawable_hidden");
     }
-    fn distance_squared_to_object(&mut self, _other: ObjectId, _kind: DistanceKind) -> f32 {
-        self.ais_cut("distance_squared_to_object");
-        0.0
+    fn distance_squared_to_object(&mut self, other: ObjectId, kind: DistanceKind) -> f32 {
+        self.ai_distance_squared(self.ai_self, other, kind)
     }
     fn distance_squared_to_position_2d(&mut self, pos: &Coord3D) -> f32 {
         let p = LocomotorHost::position(self);
@@ -362,9 +361,10 @@ impl AiStateHost for World {
         let id = self.ai_self;
         World::body_health(self, id).map_or(0.0, |h| h.0)
     }
-    fn action_can_enter_object_combat_drop(&mut self, _target: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_enter_object_combat_drop");
-        Default::default()
+    fn action_can_enter_object_combat_drop(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        let r = crate::logic::action_manager::can_enter_object(self, Some(o), Some(target), crate::logic::world::ai_combat_world::source(src), crate::logic::action_manager::CanEnterType::CombatDropInto);
+        self.ai_action_answer("ActionManager::canEnterObject", r)
     }
     fn drawable_pristine_bone_positions(&mut self, _prefix: &[u8], _max: usize) -> Vec<Coord3D> {
         self.ais_cut("drawable_pristine_bone_positions");
@@ -470,24 +470,20 @@ impl AiStateHost for World {
     fn log_find_suitable_airfield(&mut self, _jet: ObjectId, _found: ObjectId) {
         self.ais_cut("log_find_suitable_airfield");
     }
-    fn weapon_returns_to_base_to_reload(&mut self, _slot: WeaponSlotType) -> bool {
-        self.ais_cut("weapon_returns_to_base_to_reload");
-        Default::default()
+    fn weapon_returns_to_base_to_reload(&mut self, slot: WeaponSlotType) -> bool {
+        self.ai_weapon_clip(self.ai_self, slot).is_some_and(|c| c.0)
     }
-    fn weapon_remaining_ammo(&mut self, _slot: WeaponSlotType) -> i32 {
-        self.ais_cut("weapon_remaining_ammo");
-        Default::default()
+    fn weapon_remaining_ammo(&mut self, slot: WeaponSlotType) -> i32 {
+        self.ai_weapon_clip(self.ai_self, slot).map_or(0, |c| c.1)
     }
-    fn weapon_clip_size(&mut self, _slot: WeaponSlotType) -> i32 {
-        self.ais_cut("weapon_clip_size");
-        Default::default()
+    fn weapon_clip_size(&mut self, slot: WeaponSlotType) -> i32 {
+        self.ai_weapon_clip(self.ai_self, slot).map_or(0, |c| c.2)
     }
-    fn weapon_clip_reload_time(&mut self, _slot: WeaponSlotType) -> i32 {
-        self.ais_cut("weapon_clip_reload_time");
-        Default::default()
+    fn weapon_clip_reload_time(&mut self, slot: WeaponSlotType) -> i32 {
+        self.ai_weapon_clip(self.ai_self, slot).map_or(0, |c| c.3)
     }
-    fn weapon_set_clip_percent_full(&mut self, _slot: WeaponSlotType, _percent: f32, _allow_reduction: bool) {
-        self.ais_cut("weapon_set_clip_percent_full");
+    fn weapon_set_clip_percent_full(&mut self, slot: WeaponSlotType, percent: f32, allow_reduction: bool) {
+        self.ai_weapon_set_clip_percent_full(self.ai_self, slot, percent, allow_reduction);
     }
     fn has_countermeasures(&mut self) -> bool {
         self.ais_cut("has_countermeasures");
@@ -528,9 +524,8 @@ impl AiStateHost for World {
     fn destroy_drawable(&mut self, _drawable: u32) {
         self.ais_cut("destroy_drawable");
     }
-    fn other_ai_current_state_id(&mut self, _id: ObjectId) -> StateId {
-        self.ais_cut("other_ai_current_state_id");
-        Default::default()
+    fn other_ai_current_state_id(&mut self, id: ObjectId) -> StateId {
+        self.ai_machine_query(id).map_or(crate::logic::ai::ai_update_types::AI_IDLE, |m| m.get_current_state_id())
     }
     fn supply_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::supply_truck_ai_update::SupplyState<Self>>>> where Self: Sized {
         &mut self.ai_stacks.supply
@@ -547,8 +542,13 @@ impl AiStateHost for World {
     fn ai_data_dozer_bored_radius_modifier(&mut self) -> f32 {
         self.statics.ai_data.ai_dozer_bored_radius_modifier
     }
-    fn set_weapon_set_flag(&mut self, _flag: crate::logic::weapon_types::WeaponSetType, _set: bool) {
-        self.ais_cut("set_weapon_set_flag");
+    fn set_weapon_set_flag(&mut self, flag: crate::logic::weapon_types::WeaponSetType, set: bool) {
+        let o = self.ai_self;
+        if set {
+            World::set_weapon_set_flag(self, o, flag);
+        } else {
+            World::clear_weapon_set_flag(self, o, flag);
+        }
     }
     fn object_major_radius(&mut self, id: ObjectId) -> f32 {
         self.find_object(id).map_or(0.0, |o| o.geometry_info.get_major_radius())
@@ -557,16 +557,14 @@ impl AiStateHost for World {
         self.find_object(id).map_or(0.0, |o| o.geometry_info.get_bounding_sphere_radius())
     }
     fn bounding_sphere_radius(&mut self) -> f32 {
-        self.ais_cut("bounding_sphere_radius");
-        0.0
+        self.find_object(self.ai_self).map_or(0.0, |o| o.geometry_info.get_bounding_sphere_radius())
     }
     fn find_position_around_options( &mut self, _pos: &Coord3D, _min_radius: f32, _max_radius: f32, _source: bool, _start_angle: Option<f32>, _max_z_delta: f32, _ignore: ObjectId, ) -> Option<Coord3D> {
         self.ais_cut("find_position_around_options");
         Default::default()
     }
-    fn distance_squared_to_position(&mut self, _pos: &Coord3D, _kind: DistanceKind) -> f32 {
-        self.ais_cut("distance_squared_to_position");
-        0.0
+    fn distance_squared_to_position(&mut self, pos: &Coord3D, kind: DistanceKind) -> f32 {
+        self.ai_distance_squared_pos(self.ai_self, pos, kind)
     }
     fn bridge_tower_ids(&mut self, _bridge: ObjectId) -> Option<[ObjectId; 4]> {
         self.ais_cut("bridge_tower_ids");
@@ -599,13 +597,14 @@ impl AiStateHost for World {
     fn object_sole_healing_benefactor(&mut self, id: ObjectId) -> ObjectId {
         self.get_sole_healing_benefactor(id)
     }
-    fn action_can_repair_object(&mut self, _target: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_repair_object");
-        Default::default()
+    fn action_can_repair_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        let r = crate::logic::action_manager::can_repair_object(self, Some(o), Some(target), crate::logic::world::ai_combat_world::source(src));
+        self.ai_action_answer("ActionManager::canRepairObject", r)
     }
-    fn action_can_resume_construction_of(&mut self, _target: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_resume_construction_of");
-        Default::default()
+    fn action_can_resume_construction_of(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        crate::logic::action_manager::can_resume_construction_of(self, Some(o), Some(target), crate::logic::world::ai_combat_world::source(src))
     }
     fn object_same_controlling_player(&mut self, id: ObjectId) -> bool {
         self.get_controlling_player(self.ai_self) == self.get_controlling_player(id)
@@ -680,13 +679,11 @@ impl AiStateHost for World {
         self.ais_cut("object_attempt_healing_from_sole_benefactor");
         Default::default()
     }
-    fn partition_repair_candidates(&mut self, _pos: &Coord3D, _range: f32) -> Vec<ObjectId> {
-        self.ais_cut("partition_repair_candidates");
-        Default::default()
+    fn partition_repair_candidates(&mut self, pos: &Coord3D, range: f32) -> Vec<ObjectId> {
+        self.ai_repair_candidates(self.ai_self, pos, range)
     }
-    fn partition_closest_mine(&mut self, _range: f32) -> ObjectId {
-        self.ais_cut("partition_closest_mine");
-        INVALID_ID
+    fn partition_closest_mine(&mut self, range: f32) -> ObjectId {
+        self.ai_closest_mine(self.ai_self, range)
     }
     fn play_under_construction_sound(&mut self, _site: ObjectId) -> u32 {
         self.ais_cut("play_under_construction_sound");
@@ -742,8 +739,9 @@ impl AiStateHost for World {
     fn play_per_unit_sound_at(&mut self, _name: &[u8], _pos: &Coord3D) {
         self.ais_cut("play_per_unit_sound_at");
     }
-    fn set_weapon_lock(&mut self, _slot: i32, _lock: i32) {
-        self.ais_cut("set_weapon_lock");
+    fn set_weapon_lock(&mut self, slot: i32, lock: i32) {
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::set_weapon_lock(self, o, slot, lock);
     }
     fn fx_do_pos(&mut self, _fx: &crate::common::damage_fx::FxListName, _pos: &Coord3D) {
         self.ais_cut("fx_do_pos");
@@ -843,12 +841,10 @@ impl AiStateHost for World {
         self.ais_cut("partition_unregister");
     }
     fn physics_turning(&mut self) -> i32 {
-        self.ais_cut("physics_turning");
-        Default::default()
+        self.ai_physics_call(crate::logic::world::module_call::ModuleCall::PhysicsGetTurning).map_or(0, |r| r.as_int(0))
     }
     fn unit_direction_vector_3d(&mut self) -> Coord3D {
-        self.ais_cut("unit_direction_vector_3d");
-        Coord3D::default()
+        self.find_object(self.ai_self).map(|o| o.thing.unit_direction_vector_3d()).unwrap_or_default()
     }
     fn pf_goal_position(&mut self) -> Option<Coord3D> {
         let mut p = Coord3D::default();
@@ -921,17 +917,19 @@ impl AiStateHost for World {
     fn team_member_ids(&mut self, team: u32) -> Vec<ObjectId> {
         self.teams.members(team)
     }
-    fn action_can_get_healed_at(&mut self, _depot: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_get_healed_at");
-        Default::default()
+    fn action_can_get_healed_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        crate::logic::action_manager::can_get_healed_at(self, Some(o), Some(depot), crate::logic::world::ai_combat_world::source(src))
     }
-    fn action_can_get_repaired_at(&mut self, _depot: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_get_repaired_at");
-        Default::default()
+    fn action_can_get_repaired_at(&mut self, depot: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        let r = crate::logic::action_manager::can_get_repaired_at(self, Some(o), Some(depot), crate::logic::world::ai_combat_world::source(src));
+        self.ai_action_answer("ActionManager::canGetRepairedAt", r)
     }
-    fn action_can_enter_object(&mut self, _target: ObjectId, _src: CommandSourceType) -> bool {
-        self.ais_cut("action_can_enter_object");
-        Default::default()
+    fn action_can_enter_object(&mut self, target: ObjectId, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        let r = crate::logic::action_manager::can_enter_object(self, Some(o), Some(target), crate::logic::world::ai_combat_world::source(src), crate::logic::action_manager::CanEnterType::DontCheckCapacity);
+        self.ai_action_answer("ActionManager::canEnterObject", r)
     }
     fn object_is_disabled_by_type(&self, id: ObjectId, t: DisabledType) -> bool {
         self.find_object(id).is_some_and(|o| o.is_disabled_by_type(t))
@@ -949,12 +947,11 @@ impl AiStateHost for World {
     fn pf_move_allies(&mut self, path: &Path) {
         self.ai_pf_mut(|pf, w, o, _| pf.move_allies(w, o, path));
     }
-    fn is_path_available(&mut self, _destination: &Coord3D) -> bool {
-        self.ais_cut("is_path_available");
-        Default::default()
+    fn is_path_available(&mut self, destination: &Coord3D) -> bool {
+        self.ai_pf(|pf, w, o, loco| pf.client_safe_quick_does_path_exist(w, loco.valid_surfaces, &o.pos, destination)).unwrap_or(false)
     }
-    fn weapon_set_max_shot_count(&mut self, _n: i32) {
-        self.ais_cut("weapon_set_max_shot_count");
+    fn weapon_set_max_shot_count(&mut self, n: i32) {
+        self.ai_weapon_set_max_shot_count(self.ai_self, n);
     }
     fn weapon_continue_attack_range(&self) -> f32 {
         self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).and_then(|w| self.statics.weapon_store.templates().get(w.template())).map_or(0.0, |t| t.continue_attack_range)
@@ -962,9 +959,14 @@ impl AiStateHost for World {
     fn weapon_is_contact(&self) -> bool {
         self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).and_then(|w| self.statics.weapon_store.templates().get(w.template())).is_some_and(|t| t.is_contact_weapon())
     }
-    fn partition_closest_attack_target(&mut self, _pos: &Coord3D, _range: f32, _src: CommandSourceType) -> ObjectId {
-        self.ais_cut("partition_closest_attack_target");
-        INVALID_ID
+    fn partition_closest_attack_target(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType) -> ObjectId {
+        self.ai_closest_attack_target(self.ai_self, pos, range, src, None)
+    }
+    fn partition_closest_attack_target_of_player(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType, player: Option<crate::logic::world::ids::PlayerIndex>) -> ObjectId {
+        self.ai_closest_attack_target(self.ai_self, pos, range, src, Some(player))
+    }
+    fn object_controlling_player(&mut self, id: ObjectId) -> Option<crate::logic::world::ids::PlayerIndex> {
+        self.get_controlling_player(id)
     }
     fn find_position_around(&mut self, _pos: &Coord3D, _min_radius: f32, _max_radius: f32) -> Option<Coord3D> {
         self.ais_cut("find_position_around");
@@ -1060,21 +1062,17 @@ impl AiStateHost for World {
     fn ai_data_repulsed_distance(&self) -> f32 {
         self.statics.ai_data.repulsed_distance
     }
-    fn weapon_is_within_attack_range_of_object(&mut self, _victim: ObjectId) -> bool {
-        self.ais_cut("weapon_is_within_attack_range_of_object");
-        Default::default()
+    fn weapon_is_within_attack_range_of_object(&mut self, victim: ObjectId) -> bool {
+        self.ai_weapon_within_range_of_object(self.ai_self, victim)
     }
-    fn weapon_is_within_attack_range_of_position(&mut self, _pos: &Coord3D) -> bool {
-        self.ais_cut("weapon_is_within_attack_range_of_position");
-        Default::default()
+    fn weapon_is_within_attack_range_of_position(&mut self, pos: &Coord3D) -> bool {
+        self.ai_weapon_within_range_of_position(self.ai_self, pos)
     }
-    fn weapon_compute_approach_target(&mut self, _victim: ObjectId, _pos: &Coord3D) -> Coord3D {
-        self.ais_cut("weapon_compute_approach_target");
-        Coord3D::default()
+    fn weapon_compute_approach_target(&mut self, victim: ObjectId, pos: &Coord3D) -> Coord3D {
+        self.ai_weapon_approach_target(self.ai_self, victim, pos)
     }
-    fn weapon_is_goal_pos_within_attack_range(&mut self, _goal: &Coord3D, _victim: ObjectId, _victim_pos: &Coord3D) -> bool {
-        self.ais_cut("weapon_is_goal_pos_within_attack_range");
-        Default::default()
+    fn weapon_is_goal_pos_within_attack_range(&mut self, goal: &Coord3D, victim: ObjectId, victim_pos: &Coord3D) -> bool {
+        self.ai_weapon_goal_within_range(self.ai_self, goal, victim, victim_pos)
     }
     fn object_is_significantly_above_terrain(&mut self, id: ObjectId) -> bool {
         World::is_significantly_above_terrain(self, id)
@@ -1086,9 +1084,8 @@ impl AiStateHost for World {
         self.ais_cut("bridge_attack_points");
         Default::default()
     }
-    fn distance_squared_bounding_sphere_3d(&mut self, _pos: &Coord3D) -> f32 {
-        self.ais_cut("distance_squared_bounding_sphere_3d");
-        0.0
+    fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32 {
+        self.ai_distance_squared_pos(self.ai_self, pos, DistanceKind::BoundingSphere3d)
     }
     fn pf_cell_at(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<(u8, bool)> {
         let pf = self.pf_ready()?;
@@ -1131,9 +1128,8 @@ impl AiStateHost for World {
         let Some(ph) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };
         self.module_call(id, ph, crate::logic::world::module_call::ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)
     }
-    fn object_unit_direction_vector_3d(&mut self, _id: ObjectId) -> Coord3D {
-        self.ais_cut("object_unit_direction_vector_3d");
-        Coord3D::default()
+    fn object_unit_direction_vector_3d(&mut self, id: ObjectId) -> Coord3D {
+        self.find_object(id).map(|o| o.thing.unit_direction_vector_3d()).unwrap_or_default()
     }
     fn team_set_active(&mut self) {
         let t = self.find_object(self.ai_self).map(|o| o.team);
@@ -1208,9 +1204,8 @@ impl AiStateHost for World {
     fn weapon_slot_present(&self, slot: WeaponSlotType) -> bool {
         self.objects.find(self.ai_self).is_some_and(|o| o.weapon_set.get_weapon_in_weapon_slot(slot as i32).is_some())
     }
-    fn object_is_airborne_target(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("object_is_airborne_target");
-        Default::default()
+    fn object_is_airborne_target(&mut self, id: ObjectId) -> bool {
+        crate::logic::weapon_host::WeaponHost::is_airborne_target(self, id)
     }
     fn is_able_to_attack(&mut self) -> bool {
         let id = self.ai_self;
@@ -1245,15 +1240,17 @@ impl AiStateHost for World {
     fn turret_turn_rate(&self, which: usize) -> f32 {
         self.turret_peek(self.ai_self, which).map_or(0.0, |d| d.data.turn_rate)
     }
-    fn choose_best_weapon_for_target(&mut self, _target: Option<ObjectId>, _criteria: WeaponChoiceCriteria, _src: CommandSourceType) -> bool {
-        self.ais_cut("choose_best_weapon_for_target");
-        Default::default()
+    fn choose_best_weapon_for_target(&mut self, target: Option<ObjectId>, criteria: WeaponChoiceCriteria, src: CommandSourceType) -> bool {
+        let o = self.ai_self;
+        self.ai_choose_best_weapon(o, target, criteria, src)
     }
     fn adjust_model_condition_for_weapon_status(&mut self) {
-        self.ais_cut("adjust_model_condition_for_weapon_status");
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::adjust_model_condition_for_weapon_status(self, o);
     }
     fn clear_leech_range_mode_for_all_weapons(&mut self) {
-        self.ais_cut("clear_leech_range_mode_for_all_weapons");
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::clear_leech_range_mode_for_all_weapons(self, o);
     }
     fn object_is_effectively_dead(&self, id: ObjectId) -> bool {
         self.find_object(id).is_some_and(|o| o.is_effectively_dead())
@@ -1307,13 +1304,11 @@ impl AiStateHost for World {
         self.ais_cut("contain_attempt_best_fire_point_at_position");
         Default::default()
     }
-    fn relative_angle_2d_to_object(&mut self, _other: ObjectId) -> f32 {
-        self.ais_cut("relative_angle_2d_to_object");
-        0.0
+    fn relative_angle_2d_to_object(&mut self, other: ObjectId) -> f32 {
+        self.ai_relative_angle(self.ai_self, other)
     }
-    fn relative_angle_2d_to_position(&mut self, _pos: &Coord3D) -> f32 {
-        self.ais_cut("relative_angle_2d_to_position");
-        0.0
+    fn relative_angle_2d_to_position(&mut self, pos: &Coord3D) -> f32 {
+        self.partition_relative_angle_2d(self.ai_self, pos)
     }
     fn weapon_max_shot_count(&self) -> i32 {
         self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_cur_weapon()).map_or(0, |w| w.max_shot_count())
@@ -1328,35 +1323,37 @@ impl AiStateHost for World {
     fn weapon_has_leech_range_now(&self, slot: WeaponSlotType) -> bool {
         self.objects.find(self.ai_self).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(slot as i32)).is_some_and(|w| w.has_leech_range())
     }
-    fn weapon_fire_at(&mut self, _slot: WeaponSlotType, _pos: &Coord3D) -> bool {
-        self.ais_cut("weapon_fire_at");
-        Default::default()
+    fn weapon_fire_at(&mut self, slot: WeaponSlotType, pos: &Coord3D) -> bool {
+        self.ai_weapon_fire_at(self.ai_self, slot, pos)
     }
-    fn weapon_set_pre_attack_finished(&mut self, _slot: WeaponSlotType, _frame: u32) {
-        self.ais_cut("weapon_set_pre_attack_finished");
+    fn weapon_set_pre_attack_finished(&mut self, slot: WeaponSlotType, frame: u32) {
+        self.ai_weapon_set_pre_attack_finished(self.ai_self, slot, frame);
     }
     fn set_firing_condition_for_current_weapon(&mut self) {
-        self.ais_cut("set_firing_condition_for_current_weapon");
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::set_firing_condition_for_current_weapon(self, o);
     }
-    fn pre_fire_current_weapon(&mut self, _victim: Option<ObjectId>) {
-        self.ais_cut("pre_fire_current_weapon");
+    fn pre_fire_current_weapon(&mut self, victim: Option<ObjectId>) {
+        self.ai_pre_fire(self.ai_self, victim);
     }
-    fn fire_current_weapon_at_object(&mut self, _victim: Option<ObjectId>) {
-        self.ais_cut("fire_current_weapon_at_object");
+    fn fire_current_weapon_at_object(&mut self, victim: Option<ObjectId>) {
+        self.ai_fire(self.ai_self, crate::logic::world::object_weapons::FireAt::Object(victim));
     }
-    fn fire_current_weapon_at_position(&mut self, _pos: &Coord3D) {
-        self.ais_cut("fire_current_weapon_at_position");
+    fn fire_current_weapon_at_position(&mut self, pos: &Coord3D) {
+        self.ai_fire(self.ai_self, crate::logic::world::object_weapons::FireAt::Position(Some(*pos)));
     }
-    fn release_weapon_lock(&mut self, _lock: i32) {
-        self.ais_cut("release_weapon_lock");
+    fn release_weapon_lock(&mut self, lock: i32) {
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::release_weapon_lock(self, o, lock);
     }
     fn units_should_hunt(&self) -> Option<bool> {
         let p = self.get_controlling_player(self.ai_self)?;
         self.players.get_nth(p).map(|x| x.units_should_hunt)
     }
-    fn attack_priority(&mut self, _info: usize, _obj: ObjectId) -> i32 {
-        self.ais_cut("attack_priority");
-        Default::default()
+    fn attack_priority(&mut self, info: usize, obj: ObjectId) -> i32 {
+        use crate::logic::ai::ai_system::AiQueryHost;
+        let template = AiQueryHost::template_of(self, obj);
+        AiQueryHost::attack_priority(self, i32::try_from(info).unwrap_or(0), template)
     }
     fn contain_wants_to_enter_or_exit(&mut self, _container: ObjectId, _wants: i32) {
         self.ais_cut("contain_wants_to_enter_or_exit");
@@ -1383,9 +1380,8 @@ impl AiStateHost for World {
     fn object_is_above_terrain(&mut self, id: ObjectId) -> bool {
         self.get_height_above_terrain(id) > 0.0
     }
-    fn action_can_attack_object(&mut self, _target: ObjectId, _src: CommandSourceType) -> CanAttackResultValue {
-        self.ais_cut("action_can_attack_object");
-        Default::default()
+    fn action_can_attack_object(&mut self, target: ObjectId, src: CommandSourceType) -> CanAttackResultValue {
+        self.ai_action_can_attack(self.ai_self, target, src)
     }
     fn object_geometry_radii(&mut self, id: ObjectId) -> (f32, f32, bool) {
         self.find_object(id).map_or((0.0, 0.0, false), |o| (o.geometry_info.get_major_radius(), o.geometry_info.get_minor_radius(), o.geometry_info.get_geom_type() == crate::common::geometry::GeometryType::Sphere))
@@ -1444,8 +1440,9 @@ impl AiStateHost for World {
         Default::default()
     }
     fn player_difficulty(&mut self) -> i32 {
-        self.ais_cut("player_difficulty");
-        Default::default()
+        use crate::logic::world::team_ops::TeamHost;
+        let p = self.get_controlling_player(self.ai_self).unwrap_or(0);
+        TeamHost::player_difficulty(self, p) as i32
     }
     fn choose_victim_always_uses_normal(&mut self) -> bool {
         self.ais_cut("choose_victim_always_uses_normal");
@@ -1515,11 +1512,10 @@ impl AiStateHost for World {
         }
     }
     fn clearable_last_attacker(&mut self) -> ObjectId {
-        self.ais_cut("clearable_last_attacker");
-        INVALID_ID
+        self.ai_clearable_last_attacker(self.ai_self)
     }
     fn clear_last_attacker(&mut self) {
-        self.ais_cut("clear_last_attacker");
+        self.ai_clear_last_attacker(self.ai_self);
     }
     fn template_is_enter_guard(&mut self) -> bool {
         self.ais_cut("template_is_enter_guard");
@@ -1568,13 +1564,11 @@ impl AiStateHost for World {
     fn tunnel_update_nemesis(&mut self, _target: ObjectId) {
         self.ais_cut("tunnel_update_nemesis");
     }
-    fn object_ai_goal_object(&mut self, _id: ObjectId) -> Option<ObjectId> {
-        self.ais_cut("object_ai_goal_object");
-        Default::default()
+    fn object_ai_goal_object(&mut self, id: ObjectId) -> Option<ObjectId> {
+        self.ai_machine_query(id).map(|m| m.goal_object_id())
     }
-    fn object_last_damage(&mut self, _id: ObjectId) -> Option<(bool, ObjectId, u32)> {
-        self.ais_cut("object_last_damage");
-        Default::default()
+    fn object_last_damage(&mut self, id: ObjectId) -> Option<(bool, ObjectId, u32)> {
+        self.ai_object_last_damage(id)
     }
     fn exit_object_in_a_hurry(&mut self, _container: ObjectId) {
         self.ais_cut("exit_object_in_a_hurry");
@@ -1630,13 +1624,11 @@ impl AiStateHost for World {
         let t = self.find_object(self.ai_self).map(|o| o.team);
         t.map(|t| self.teams.members(t)).unwrap_or_default()
     }
-    fn object_ai_is_idle(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("object_ai_is_idle");
-        Default::default()
+    fn object_ai_is_idle(&mut self, id: ObjectId) -> bool {
+        self.ai_other_is_idle(id)
     }
-    fn object_ai_goal_position(&mut self, _id: ObjectId) -> Coord3D {
-        self.ais_cut("object_ai_goal_position");
-        Coord3D::default()
+    fn object_ai_goal_position(&mut self, id: ObjectId) -> Coord3D {
+        self.ai_machine_query(id).map(|m| *m.goal_position()).unwrap_or_default()
     }
     fn turret_target_object(&mut self, which: usize, clear_dead_targets: bool) -> Option<ObjectId> {
         let id = self.ai_self;
@@ -1676,12 +1668,12 @@ impl AiStateHost for World {
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId {
         self.find_object(id).map_or(INVALID_ID, |o| o.producer_id)
     }
-    fn notify_firing_tracker_shot_fired(&mut self, _slot: WeaponSlotType, _victim: ObjectId) {
-        self.ais_cut("notify_firing_tracker_shot_fired");
+    fn notify_firing_tracker_shot_fired(&mut self, slot: WeaponSlotType, victim: ObjectId) {
+        let o = self.ai_self;
+        crate::logic::world::object_weapons::notify_firing_tracker_shot_fired(self, o, slot as i32, victim);
     }
-    fn weapon_is_too_close(&mut self, _victim: ObjectId) -> bool {
-        self.ais_cut("weapon_is_too_close");
-        Default::default()
+    fn weapon_is_too_close(&mut self, victim: ObjectId) -> bool {
+        self.ai_weapon_too_close(self.ai_self, victim)
     }
     fn object_forward_speed_2d(&mut self, id: ObjectId) -> f32 {
         let Some(ph) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };

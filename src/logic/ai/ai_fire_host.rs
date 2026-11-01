@@ -99,9 +99,9 @@ impl<H: AiStateHost> FireHost for H {
             StateContext::find_object(self, obj).expect("the object").position
         }
     }
-    /// (the scene's one player, or none: every object's)
-    fn controlling_player(&mut self, _obj: ObjectId) -> Option<PlayerIndex> {
-        AiHost::controlling_player_type(self).map(|_| PlayerIndex::default())
+    /// (batch I9c-5: the object's own; it was the scene's one player, which dropped the retarget's player filter)
+    fn controlling_player(&mut self, obj: ObjectId) -> Option<PlayerIndex> {
+        AiStateHost::object_controlling_player(self, obj)
     }
     fn team_attacks_common_target(&mut self, _obj: ObjectId) -> bool {
         AiHost::team_attack_common_target(self)
@@ -169,8 +169,8 @@ impl<H: AiStateHost> FireHost for H {
         AiStateHost::pf_is_attack_view_blocked(self, victim, victim_pos)
     }
     /// (the scene's closest attackable object: the stand-in's search reads its first filter only)
-    fn closest_attackable_of_player(&mut self, pos: &Coord3D, range: f32, _obj: ObjectId, source: CommandSourceType, _player: Option<PlayerIndex>) -> Option<ObjectId> {
-        let c = AiStateHost::partition_closest_attack_target(self, pos, range, source as i32);
+    fn closest_attackable_of_player(&mut self, pos: &Coord3D, range: f32, _obj: ObjectId, source: CommandSourceType, player: Option<PlayerIndex>) -> Option<ObjectId> {
+        let c = AiStateHost::partition_closest_attack_target_of_player(self, pos, range, source as i32, player);
         (c != INVALID_ID).then_some(c)
     }
 }

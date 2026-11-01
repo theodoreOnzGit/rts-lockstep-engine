@@ -114,7 +114,7 @@ impl World {
     }
 
     /// A call to `this` object's physics module (`None` without one).
-    fn ai_physics_call(&mut self, call: ModuleCall) -> Option<crate::logic::world::module_call::ModuleReply> {
+    pub(crate) fn ai_physics_call(&mut self, call: ModuleCall) -> Option<crate::logic::world::module_call::ModuleReply> {
         let p = self.ai_physics()?;
         Some(self.module_call(self.ai_self, p, call))
     }
@@ -369,7 +369,7 @@ impl AiHost for World {
         self.objects.find(id).is_some()
     }
     fn ai_add_targeter(&mut self, target: ObjectId, targeter: ObjectId, add: bool) {
-        self.ai_host_cut("AIUpdateInterface::addTargeter", vec![i64::from(target), i64::from(targeter), i64::from(add)]);
+        self.ai_add_targeter_live(target, targeter, add);
     }
     fn is_effectively_dead(&self) -> bool {
         self.objects.find(self.ai_self).is_some_and(|o| o.is_effectively_dead())

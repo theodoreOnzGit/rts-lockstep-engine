@@ -408,7 +408,7 @@ impl World {
         }
 
         // Everything (like weaponSet flags) is inited, so check if the WeaponSet needs to change.
-        self.cut(CutCall::WeaponSetUpdate { object: id });
+        self.object_update_weapon_set(id);
 
         let o = self.objects.find(id).expect("checked above");
         if o.is_kind_of(KINDOF_MINE) || o.is_kind_of(KINDOF_BOOBY_TRAP) || o.is_kind_of(KINDOF_DEMOTRAP) {

@@ -142,6 +142,11 @@ fn with_set<H: ObjectWeaponHost, T>(host: &mut H, o: ObjectId, f: impl FnOnce(&m
     r
 }
 
+/// `m_weaponSet.updateWeaponSet(obj)` (batch I9c-5): the weapon set matching the object's weapon-set flags.
+pub fn update_weapon_set<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) {
+    with_set(host, o, |host, set| set.update_weapon_set(host, o));
+}
+
 /// `Object::reloadAllAmmo(now)`.
 pub fn reload_all_ammo<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, now: bool) {
     with_set(host, o, |host, set| set.reload_all_ammo(host, o, now));

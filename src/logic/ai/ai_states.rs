@@ -612,6 +612,11 @@ pub trait AiStateHost: AiHost + StateContext {
     /// `ThePartitionManager->getClosestObject(pos, range, FROM_CENTER_2D, {possible to attack (ATTACK_NEW_TARGET, src), same map
     /// status})`'s id.
     fn partition_closest_attack_target(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType) -> ObjectId;
+    /// The same with `PartitionFilterSamePlayer(player)` after the attack filter (`AIAttackFireWeaponState::update`'s
+    /// continue-range retarget: only the victim's own player's objects).
+    fn partition_closest_attack_target_of_player(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType, player: Option<crate::logic::world::ids::PlayerIndex>) -> ObjectId;
+    /// Another object's `getControllingPlayer()` (`None`: `NULL`).
+    fn object_controlling_player(&mut self, id: ObjectId) -> Option<crate::logic::world::ids::PlayerIndex>;
     /// `ThePartitionManager->findPositionAround(pos, {minRadius, maxRadius, sourceToPathToDest: the object}, &result)`.
     fn find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D>;
     /// `getObject()->getContain() != NULL`.

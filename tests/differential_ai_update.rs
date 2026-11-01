@@ -2193,6 +2193,14 @@ impl AiStateHost for Host {
         let c = self.env.closest_attack;
         if self.object_exists(c) { c } else { 0 }
     }
+    /// (the scene has one player: the query and its log are the unfiltered one's)
+    fn partition_closest_attack_target_of_player(&mut self, pos: &Coord3D, range: f32, src: CommandSourceType, _player: Option<i32>) -> ObjectId {
+        self.partition_closest_attack_target(pos, range, src)
+    }
+    /// (the scene's one player, or none: every object's)
+    fn object_controlling_player(&mut self, _id: ObjectId) -> Option<i32> {
+        self.controlling_player_type().map(|_| 0)
+    }
     fn find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
         let r = pick(p1_hash(self.env.seed, 16, &[pos.x.to_bits(), pos.y.to_bits()]), self.env.find_pos_rate);
         let id = self.env.object_id as u32;

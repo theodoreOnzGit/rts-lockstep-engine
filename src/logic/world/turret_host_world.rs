@@ -133,7 +133,7 @@ impl World {
     }
 
     /// Whether `obj`'s AI is lent to the World now (on top of `ai_stacks`: `obj` is `this` and its module holds no AI).
-    fn ai_is_lent(&self, obj: ObjectId) -> bool {
+    pub(crate) fn ai_is_lent(&self, obj: ObjectId) -> bool {
         obj == self.ai_self && !self.ai_stacks.ai.is_empty() && !self.ai_module_holds_ai(obj)
     }
 

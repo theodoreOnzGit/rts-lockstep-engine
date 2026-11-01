@@ -535,12 +535,22 @@ impl World {
 
     // ---- weapon set, weapon bonus and armor set flags ----------------------------------------
 
+    /// `m_weaponSet.updateWeaponSet(this)`: with `cuts.live_ai` (batch I9c-5) the object's own weapon set; otherwise the cut
+    /// point, as before.
+    pub fn object_update_weapon_set(&mut self, id: ObjectId) {
+        if self.cuts.live_ai {
+            crate::logic::world::object_weapons::update_weapon_set(self, id);
+        } else {
+            self.cut(CutCall::WeaponSetUpdate { object: id });
+        }
+    }
+
     /// `setWeaponSetFlag(wst)`: the flag, the weapon set refresh (a cut
-    /// point) and the drawable's model condition.
+    /// point; live with `cuts.live_ai`, batch I9c-5) and the drawable's model condition.
     pub fn set_weapon_set_flag(&mut self, id: ObjectId, wst: i32) {
         let Some(o) = self.objects.find_mut(id) else { return };
         o.cur_weapon_set_flags.set(wst, 1);
-        self.cut(CutCall::WeaponSetUpdate { object: id });
+        self.object_update_weapon_set(id);
         self.drawable_model_condition_single(id, wst, true);
     }
 
@@ -548,7 +558,7 @@ impl World {
     pub fn clear_weapon_set_flag(&mut self, id: ObjectId, wst: i32) {
         let Some(o) = self.objects.find_mut(id) else { return };
         o.cur_weapon_set_flags.set(wst, 0);
-        self.cut(CutCall::WeaponSetUpdate { object: id });
+        self.object_update_weapon_set(id);
         self.drawable_model_condition_single(id, wst, false);
     }
 
