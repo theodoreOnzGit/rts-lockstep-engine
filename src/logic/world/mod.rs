@@ -121,3 +121,4 @@ pub mod game_logic_update;
 pub mod game_logic_xfer;
 pub mod pathfinder_host_world;
 pub mod ai_host_world;
+pub mod ai_state_host_world;

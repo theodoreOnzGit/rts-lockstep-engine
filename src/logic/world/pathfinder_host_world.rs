@@ -292,12 +292,16 @@ impl World {
         Some(())
     }
 
-    /// `getCell(layer, x, y)`, then `getType()`: `Some(None)` for a `NULL` cell; `None` without `live_pathfinder`.
+    /// The world's pathfinder when it answers: with `live_pathfinder`, in the world (not running) and with its map made
+    /// (`newMap`; upstream every unit's AI runs after it). `None` otherwise: the callers answer as their stand-ins did.
+    pub fn pf_ready(&self) -> Option<&Pathfinder> {
+        self.pathfinder.as_ref().filter(|pf| self.cuts.live_pathfinder && pf.is_map_ready)
+    }
+
+    /// `getCell(layer, x, y)`, then `getType()`: `Some(None)` for a `NULL` cell; `None` when the pathfinder does not answer
+    /// ([`World::pf_ready`]).
     pub fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<Option<i32>> {
-        if !self.cuts.live_pathfinder {
-            return None;
-        }
-        let pf = self.pathfinder.as_ref()?;
+        let pf = self.pf_ready()?;
         Some(pf.get_cell(layer, x, y).map(|c| i32::from(pf.store.cells[c as usize].get_type())))
     }
 

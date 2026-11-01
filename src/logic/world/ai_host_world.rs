@@ -24,7 +24,8 @@
 //!   containment, effective death, its height above the terrain), its body's damage state and last damage, its
 //!   `PhysicsBehavior` (through module calls: the mass counts the contained items'), the terrain (ground, layer and
 //!   unclipped layer heights, water, the highest layer for a destination), the partition manager's ground or structure
-//!   height (`live_partition`), the pathfinder (I9a: surfaces, movement positions and lines, cells, `updateLayer`), the
+//!   height (`live_partition`), the pathfinder (I9a: surfaces, movement positions and lines, cells, `updateLayer`; only
+//!   when it answers, `World::pf_ready`: else every position is valid, every surface there, no cell), the
 //!   locomotor store (`statics.locomotor_store`), the AI data (`statics.ai_data`), the team's common target, the weapons'
 //!   `getAbleToAttackSpecificObject`, the player's upgrades and type, the weapon bonus conditions, the logic's random
 //!   values and the AI module's wake frame.
@@ -252,7 +253,7 @@ impl LocomotorHost for World {
     }
     /// `TheAI->pathfinder()->validMovementTerrain(layer, loco, pos)`: true without the pathfinder (as a stand-in host's).
     fn valid_movement_terrain(&mut self, layer: PathfindLayer, loco: &Locomotor, pos: &Coord3D) -> bool {
-        let Some(pf) = self.pathfinder.as_ref() else { return true };
+        let Some(pf) = self.pf_ready() else { return true };
         pf.valid_movement_terrain(layer, loco.get_legal_surfaces(), pos)
     }
 }
@@ -260,15 +261,15 @@ impl LocomotorHost for World {
 impl PathHost for World {
     fn is_line_passable(&mut self, obj: ObjectId, surfaces: LocomotorSurfaceTypeMask, layer: PathfindLayer, start: &Coord3D, end: &Coord3D, blocked: bool, allow_pinched: bool) -> bool {
         let facts = self.pf_object_facts(obj);
-        let Some(pf) = self.pathfinder.as_ref() else { return true };
+        let Some(pf) = self.pf_ready() else { return true };
         pf.is_line_passable(self, facts.as_ref(), surfaces, layer, start, end, blocked, allow_pinched)
     }
     fn is_ground_path_passable(&mut self, crusher: bool, start: &Coord3D, layer: PathfindLayer, end: &Coord3D, diameter: i32) -> bool {
-        let Some(pf) = self.pathfinder.as_ref() else { return true };
+        let Some(pf) = self.pf_ready() else { return true };
         pf.is_ground_path_passable(self, crusher, start, layer, end, diameter)
     }
     fn cell_type_and_pinched(&mut self, layer: PathfindLayer, pos: &Coord3D) -> Option<(i32, bool)> {
-        let pf = self.pathfinder.as_ref()?;
+        let pf = self.pf_ready()?;
         let c = &pf.store.cells[pf.get_cell_at(layer, pos)? as usize];
         Some((i32::from(c.get_type()), c.get_pinched()))
     }
@@ -321,14 +322,18 @@ impl AiHost for World {
         self.ai_host_cut("AIGroup::recomputeGroupSpeed", vec![i64::from(self.ai_self)]);
     }
     fn pf_surfaces_for_position(&mut self, layer: PathfindLayer, pos: &Coord3D) -> LocomotorSurfaceTypeMask {
-        self.pathfinder.as_ref().map_or(0, |pf| pf.surfaces_for_position(layer, pos))
+        use crate::logic::locomotor::{LOCOMOTORSURFACE_AIR, LOCOMOTORSURFACE_CLIFF, LOCOMOTORSURFACE_GROUND, LOCOMOTORSURFACE_RUBBLE, LOCOMOTORSURFACE_WATER};
+        let all = LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_WATER | LOCOMOTORSURFACE_CLIFF | LOCOMOTORSURFACE_AIR | LOCOMOTORSURFACE_RUBBLE;
+        self.pf_ready().map_or(all, |pf| pf.surfaces_for_position(layer, pos))
     }
     fn pf_update_layer(&mut self, layer: PathfindLayer) {
         let id = self.ai_self;
-        self.with_pathfinder(|pf, w| pf.update_layer(w, id, layer));
+        if self.pf_ready().is_some() {
+            self.with_pathfinder(|pf, w| pf.update_layer(w, id, layer));
+        }
     }
     fn pf_valid_movement_position(&mut self, is_crusher: bool, layer: PathfindLayer, surfaces: LocomotorSurfaceTypeMask, pos: &Coord3D) -> bool {
-        let Some(pf) = self.pathfinder.as_ref() else { return true };
+        let Some(pf) = self.pf_ready() else { return true };
         pf.valid_movement_position(is_crusher, surfaces, pf.get_cell_at(layer, pos))
     }
     /// `ThePartitionManager->getDistanceSquared(obj, dest, FROM_CENTER_3D)`.

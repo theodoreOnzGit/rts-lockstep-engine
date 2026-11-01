@@ -210,6 +210,8 @@ pub struct World {
     // --- batch I9b ---
     /// The object whose AI is running: the one the object-centred AI hosts answer for (`ai_host_world.rs`).
     pub ai_self: ObjectId,
+    /// The stacks the AI's state and machines are lent on while they run (`ai_state_host_world.rs`).
+    pub ai_stacks: crate::logic::world::ai_state_host_world::AiStacks,
     // --- end batch I9b ---
     /// `m_frame`.
     frame: u32,
@@ -289,6 +291,7 @@ impl World {
             // --- end batch I9a ---
             // --- batch I9b ---
             ai_self: INVALID_ID,
+            ai_stacks: Default::default(),
             // --- end batch I9b ---
             frame: 0,
             next_object_id: 1,
