@@ -68,6 +68,8 @@ pub mod victory_host_world; // batch I5: VictoryHost for World, TheVictoryCondit
 pub mod build_assistant_host_world; // batch I6: BuildAssistantHost for World, TheBuildAssistant in the world
 pub mod game_logic_save_host_world; // batch I7a: GameLogicSaveHost for World (the GameLogic save block)
 pub mod dispatch_host_world; // batch I7b: DispatchHost for World (the command list's dispatcher)
+pub mod start_host_world; // batch I7c: StartHost for World (the starting buildings and units)
+pub mod new_game_host_world; // batch I7c: NewGameHost for World (GameLogic::startNewGame)
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;

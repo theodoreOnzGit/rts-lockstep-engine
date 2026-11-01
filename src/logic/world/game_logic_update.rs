@@ -157,8 +157,9 @@ pub trait GameLogicHost {
     fn u_set_in_update(&mut self, on: bool);
     /// `m_gameMode`.
     fn u_game_mode(&self) -> i32;
-    /// `startNewGame(loadingSaveGame)`.
-    fn u_start_new_game(&mut self, loading_save_game: bool);
+    /// `startNewGame(loadingSaveGame)`, on `GameLogic`'s own members (batch I4's host needs them: `startNewGame` sets
+    /// some of them and reads the rank points).
+    fn u_start_new_game(&mut self, state: &mut GameLogicState, loading_save_game: bool);
     /// The objects in `m_objList`'s order.
     fn u_objects(&self) -> Vec<u32>;
     /// `obj->isDisabled()`.
@@ -325,7 +326,7 @@ pub fn game_logic_update(state: &mut GameLogicState, dispatch: &mut DispatchStat
 fn update_frame(state: &mut GameLogicState, dispatch: &mut DispatchState, h: &mut impl GameLogicHost) -> R<()> {
     h.u_set_fp_mode();
     if h.u_start_new_game_pending() && !h.u_movie_playing() {
-        h.u_start_new_game(false);
+        h.u_start_new_game(state, false);
         h.u_set_start_new_game_pending(false);
     }
     let now = h.u_frame();

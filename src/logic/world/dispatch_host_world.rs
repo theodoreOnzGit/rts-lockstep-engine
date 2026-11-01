@@ -27,8 +27,8 @@
 //!   production queue), the thing factory and upgrade center, the build assistant (batch I6), the terrain (clamping a
 //!   position), and the victory conditions (batch I5).
 //! - **Cut points** ([`CutCall::Host`], answers in tables): the AI's groups (their members in `cuts.player_host.groups`;
-//!   a group command is logged and answers false, batch I9), the pathfinder's quick path check, a new game
-//!   (`prepareNewGame`, `startNewGame`, `clearGameData`: batch I7c), the multiplayer settings' beacon limit, the
+//!   a group command is logged and answers false, batch I9), the pathfinder's quick path check, `clearGameData`
+//!   (~~a new game, `prepareNewGame`, `startNewGame`~~: the world's since batch I7c), the multiplayer settings' beacon limit, the
 //!   recorder, the network, the stats collector, the in-game UI and the rest of the client ([`ClientCall`]).
 //!
 //! `p1w13-sonnet`, integration batch I7b, 2026-11-01.
@@ -316,10 +316,31 @@ impl DispatchHost for World {
         let _ = player_attempt_to_purchase_science(self, player, ScienceType(science));
     }
     fn d_prepare_new_game(&mut self, mode: i32, diff: i32, rank_points: i32) {
-        self.dispatch_cut("GameLogic::prepareNewGame", &[i64::from(mode), i64::from(diff), i64::from(rank_points)]);
+        // batch I7c: `GameLogic::prepareNewGame` (GameLogicDispatch.cpp); the background window and the shell are the
+        // client's
+        self.dispatch_cut("GameLogic::prepareNewGame (client: background, shell)", &[i64::from(mode), i64::from(diff), i64::from(rank_points)]);
+        self.cuts.player_host.global_difficulty = match diff {
+            0 => crate::common::game_common::GameDifficulty::Easy,
+            2 => crate::common::game_common::GameDifficulty::Hard,
+            _ => crate::common::game_common::GameDifficulty::Normal,
+        };
+        self.cuts.game_loop.game_mode = mode;
+        if !self.cuts.new_game.pending_file.is_empty() {
+            self.cuts.new_game.map_name = std::mem::take(&mut self.cuts.new_game.pending_file);
+        }
+        // `m_rankPointsToAddAtGameStart`: `GameLogic`'s member, held by the frame now; written when the frame ends,
+        // before the next frame's `startNewGame` reads it (see `World::logic_update`)
+        self.cuts.pending_rank_points = Some(rank_points);
+        self.set_start_new_game(false);
     }
     fn d_start_new_game(&mut self) {
-        self.dispatch_cut("GameLogic::startNewGame", &[0]);
+        // batch I7c: `startNewGame(FALSE)` right after `prepareNewGame` (no game pending): its first call only marks the
+        // game pending (and makes a single-player game's load screen), touching none of `GameLogic`'s members
+        debug_assert!(!self.start_new_game_pending());
+        let mut untouched = crate::logic::world::game_logic_update::GameLogicState::new();
+        if let Err(e) = crate::logic::world::game_logic_new_game::start_new_game(&mut untouched, false, self) {
+            self.cuts.team_live_errors.push(format!("GameLogic::startNewGame: {e:?}"));
+        }
     }
     fn d_clear_game_data(&mut self) {
         self.dispatch_cut("GameLogic::clearGameData", &[]);

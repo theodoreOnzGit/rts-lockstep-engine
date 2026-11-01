@@ -145,6 +145,10 @@ impl World {
         let mut state = std::mem::take(&mut self.game_logic);
         let mut dispatch = std::mem::take(&mut self.dispatch);
         let r = game_logic_update(&mut state, &mut dispatch, self);
+        // batch I7c: the rank points a dispatched `prepareNewGame` set while the frame held `GameLogic`'s members
+        if let Some(points) = self.cuts.pending_rank_points.take() {
+            state.rank_points_to_add_at_game_start = points;
+        }
         self.game_logic = state;
         self.dispatch = dispatch;
         r
@@ -188,8 +192,11 @@ impl GameLogicHost for World {
     fn u_game_mode(&self) -> i32 {
         self.cuts.game_loop.game_mode
     }
-    fn u_start_new_game(&mut self, loading_save_game: bool) {
-        self.loop_cut("GameLogic::startNewGame", &[i64::from(loading_save_game)]);
+    fn u_start_new_game(&mut self, state: &mut crate::logic::world::game_logic_update::GameLogicState, loading_save_game: bool) {
+        // batch I7c: the world's own new game, on the frame's `GameLogic` members
+        if let Err(e) = crate::logic::world::game_logic_new_game::start_new_game(state, loading_save_game, self) {
+            self.cuts.team_live_errors.push(format!("GameLogic::startNewGame: {e:?}"));
+        }
     }
     fn u_objects(&self) -> Vec<u32> {
         self.objects.ids_in_order().into_iter().map(|o| o as u32).collect()

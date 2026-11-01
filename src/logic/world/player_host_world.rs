@@ -1340,7 +1340,7 @@ pub(crate) mod tests {
                        Object Bunker\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\
                        \x20Behavior = GarrisonContain ModuleTag_Contain\n  ContainMax = 5\n End\nEnd\n\
-                       PlayerTemplate FactionAmerica\n Side = America\nEnd\nPlayerTemplate FactionCivilian\n Side = Civilian\nEnd\n";
+                       PlayerTemplate FactionAmerica\n Side = America\n StartingBuilding = Barracks\n StartingUnit0 = Tank\nEnd\nPlayerTemplate FactionCivilian\n Side = Civilian\nEnd\n";
 
     /// A world over a flat 40 x 40 height map (400 x 400) with the templates of [`INI`], two players (the neutral player and `Player1`), the singleton team `team1`
     /// of `Player1` made by the team factory on the world, the cut log on and the partition manager initialised and live.

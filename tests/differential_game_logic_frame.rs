@@ -148,7 +148,7 @@ impl GameLogicHost for Host {
     fn u_game_mode(&self) -> i32 {
         self.mode
     }
-    fn u_start_new_game(&mut self, loading_save_game: bool) {
+    fn u_start_new_game(&mut self, _state: &mut GameLogicState, loading_save_game: bool) {
         self.line(format!("startnewgame {}", i32::from(loading_save_game)));
     }
     fn u_objects(&self) -> Vec<u32> {
