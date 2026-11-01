@@ -299,7 +299,7 @@ impl World {
 
     /// A question to the pathfinder about object `id`: `f` with the pathfinder and the object's facts; `None` without
     /// `live_pathfinder`, for an object that does not exist, or while the pathfinder is out.
-    fn pathfinder_ask<T>(&mut self, id: ObjectId, f: impl FnOnce(&mut Pathfinder, &World, &PfObjectFacts) -> T) -> Option<T> {
+    pub(crate) fn pathfinder_ask<T>(&mut self, id: ObjectId, f: impl FnOnce(&mut Pathfinder, &World, &PfObjectFacts) -> T) -> Option<T> {
         if !self.cuts.live_pathfinder {
             return None;
         }
@@ -436,7 +436,7 @@ impl World {
     }
 
     /// `getAIUpdateInterface()->getLocomotorSet()`: its valid surfaces (`cuts.ai_valid_surfaces`) and `isDownhillOnly()`.
-    fn ai_locomotor_set(&self, id: ObjectId) -> PfLocomotorSet {
+    pub(crate) fn ai_locomotor_set(&self, id: ObjectId) -> PfLocomotorSet {
         // (batch I9c-1: the live AI's `getLocomotorSet()`; the cut tables for an object without one)
         if let Some(a) = self.ai_peek(id) {
             return PfLocomotorSet { valid_surfaces: a.locomotor_set.get_valid_surfaces() as _, downhill_only: a.locomotor_set.is_downhill_only() };

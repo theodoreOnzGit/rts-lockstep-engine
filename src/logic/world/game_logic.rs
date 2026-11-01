@@ -216,6 +216,8 @@ pub struct World {
     pub turret_ais: crate::logic::world::turret_host_world::TurretAis,
     /// Batch I9b-6: the damage an `aiGoProne` command carries while it runs (`AICommandParms::m_damage`).
     pub ai_prone_damage: Option<crate::logic::damage::DamageInfo>,
+    /// Batch I9c-2: `TheAI`'s groups (with `cuts.live_ai`).
+    pub ai_groups: crate::logic::world::ai_group_world::AiGroups,
     /// The AI module's `UpdateModule` base, lent while its snapshot runs (`ai_module_world.rs`).
     pub ai_update_base: Option<crate::logic::module::update_module::UpdateModule>,
     // --- end batch I9b ---
@@ -300,6 +302,7 @@ impl World {
             ai_stacks: Default::default(),
             turret_ais: Default::default(),
             ai_prone_damage: None,
+            ai_groups: Default::default(),
             ai_update_base: None,
             // --- end batch I9b ---
             frame: 0,

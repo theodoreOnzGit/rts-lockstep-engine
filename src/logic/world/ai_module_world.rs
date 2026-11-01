@@ -232,6 +232,13 @@ impl AiModuleBody {
                 ModuleReply::Bool(r)
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(m.ai().last_command_source),
+            ModuleCall::AiDoCommandParms(p) => command(m, world, me, p),
+            ModuleCall::AiDoCommand { cmd, command_source, obj, pos } => {
+                let mut p = parms(cmd, command_source);
+                p.obj = obj;
+                p.pos = pos;
+                command(m, world, me, p)
+            }
             ModuleCall::AiDoPathfind => {
                 world.with_ai_self(me.object, |w| m.do_pathfind(w));
                 ModuleReply::Done

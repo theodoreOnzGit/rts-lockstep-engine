@@ -383,7 +383,9 @@ impl GameLogicHost for World {
         let mut marker = b"MARKER:TAiData".to_vec();
         xfer.xfer_ascii_string(&mut marker)?;
         let mut data = self.statics.ai_data.clone();
-        data.crc(xfer)
+        data.crc(xfer)?;
+        // (batch I9c-2: the groups, in the list's order)
+        self.ai_groups_crc(xfer)
     }
     fn u_crc_game_state(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
         self.loop_cut("GameState::friend_xferSaveDataForCRC", &[]);
@@ -418,20 +420,34 @@ impl GameLogicHost for World {
         player_list_get_each_player_from_mask(self, mask)
     }
     fn u_create_group(&mut self) -> u32 {
+        // batch I9c-2: with `live_ai`, `TheAI`'s own groups
+        if self.cuts.live_ai {
+            return self.ai_create_group();
+        }
         self.cuts.game_loop.groups_made += 1;
         let g = self.cuts.game_loop.groups_made;
         self.loop_cut("AI::createGroup", &[i64::from(g)]);
         g
     }
     fn u_destroy_group(&mut self, group: u32) {
+        if self.cuts.live_ai {
+            return self.ai_destroy_group_live(group);
+        }
         self.loop_cut("AI::destroyGroup", &[i64::from(group)]);
         self.cuts.player_host.groups.remove(&group);
     }
     fn u_group_add(&mut self, group: u32, id: u32) {
+        if self.cuts.live_ai {
+            self.with_group(group, |g, w| g.add(w, id as ObjectId));
+            return;
+        }
         self.loop_cut("AIGroup::add", &[i64::from(group), i64::from(id)]);
         self.cuts.player_host.groups.entry(group).or_default().push(id as ObjectId);
     }
     fn u_group_remove(&mut self, group: u32, id: u32) -> bool {
+        if self.cuts.live_ai {
+            return self.with_group(group, |g, w| g.remove(w, id as ObjectId)).unwrap_or(false);
+        }
         self.loop_cut("AIGroup::remove", &[i64::from(group), i64::from(id)]);
         let members = self.cuts.player_host.groups.entry(group).or_default();
         members.retain(|o| *o != id as ObjectId);

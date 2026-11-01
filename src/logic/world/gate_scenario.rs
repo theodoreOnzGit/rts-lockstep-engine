@@ -8,7 +8,8 @@
 //!
 //! The game: a flat 400 x 400 map (40 x 40 cells) with the pathfinder, the partition manager, the teams and the AI live; an
 //! immobile depot in the middle (an obstacle on the pathfinder's map); six runners (a ground locomotor, physics) on the west
-//! side, each told by its player to cross to the east side along paths that cross around the depot; a gun whose AI has a turret;
+//! side told by their player to cross to the east side along paths that cross around the depot, the first three each by its
+//! own order and the last three as an AI group (batch I9c-2: `groupMoveToPosition`); a gun whose AI has a turret;
 //! an idle dozer. Every frame is `GameLogic::update`, then `getCRC(CRC_RECALC)`.
 //!
 //! [`run_gate_scenario`] gives the CRCs; `examples/gate_native.rs` prints them, `examples/gate_wasm.rs` exports them from a
@@ -160,11 +161,17 @@ pub fn gate_world() -> World {
     make(&mut w, b"Gun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
     make(&mut w, b"Dozer", team, Coord3D { x: 300.0, y: 100.0, z: 0.0 });
     w.pathfinder_op(PfOp::NewMap);
-    for (r, goal) in runners {
+    // (the first three each by its own order; batch I9c-2: the last three as a group, by the player's group order)
+    for &(r, goal) in &runners[..3] {
         if let Some(index) = w.find_object(r).and_then(|o| o.ai) {
             w.module_call(r, index, ModuleCall::AiMoveToPosition { pos: goal, command_source: 0 });
         }
     }
+    let g = w.ai_create_group();
+    for &(r, _) in &runners[3..] {
+        w.with_group(g, |gr, w| gr.add(w, r));
+    }
+    w.live_group_call(g, crate::logic::world::game_logic_dispatch::GroupCall::MoveTo { pos: Coord3D { x: 360.0, y: 100.0, z: 0.0 }, add_waypoint: false });
     w
 }
 

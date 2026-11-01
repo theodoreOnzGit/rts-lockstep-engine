@@ -610,6 +610,8 @@ pub enum ModuleCall {
     AiGetLastCommandSource,
     /// batch I9c-1: `AIUpdateInterface::doPathfind(pathfinder)` (the pathfinder's queue, `AI::update`): the World's pathfinder.
     AiDoPathfind,
+    /// batch I9c-2: `aiDoCommand(&parms)` with the parms a caller built (the AI groups' commands to their members).
+    AiDoCommandParms(crate::logic::ai::ai_commands::AiCommandParms),
     /// batch R59: `AssistedTargetingUpdate::isFreeToAssist()`; replies [`ModuleReply::Bool`].
     AssistedTargetingIsFreeToAssist,
     /// batch R59: `AssistedTargetingUpdate::assistAttack(requestingObject, victimObject)`.

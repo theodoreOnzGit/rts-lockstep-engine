@@ -225,11 +225,21 @@ impl ScriptEngineHost for World {
         g as GroupH
     }
     fn se_group_is_idle(&self, g: GroupH) -> bool {
-        // `AIGroup::isIdle()`: every member's AI idle (the AI's tables until batch I9)
+        // `AIGroup::isIdle()`: every member's AI idle (the AI's tables until batch I9; since I9c-2, with live groups, each
+        // member's AI's base `isIdle` on its machine: a subclass's override of `isIdle` is not seen here)
+        if self.cuts.live_ai {
+            return self.ai_group_members(g as u32).iter().all(|&o| match (self.ai_peek(o), self.ai_machine_query(o)) {
+                (Some(a), Some(m)) => a.base_is_idle(m),
+                _ => true,
+            });
+        }
         self.cuts.player_host.groups.get(&(g as u32)).is_none_or(|m| m.iter().all(|o| self.cuts.ai_idle.contains(o)))
     }
     fn se_group_is_ai_dead(&self, g: GroupH) -> bool {
         // `AIGroup::isGroupAiDead()`: no member alive with an AI
+        if self.cuts.live_ai {
+            return self.ai_group_members(g as u32).iter().all(|o| self.find_object(*o).is_none_or(|x| x.ai.is_none() || x.is_effectively_dead()));
+        }
         self.cuts.player_host.groups.get(&(g as u32)).is_none_or(|m| {
             m.iter().all(|o| self.find_object(*o).is_none_or(|x| x.ai.is_none() || x.is_effectively_dead()))
         })

@@ -124,4 +124,5 @@ pub mod ai_host_world;
 pub mod ai_state_host_world;
 pub mod ai_module_world;
 pub mod gate_scenario; // batch I9d: the scripted game of Phase 1 gate (a)
+pub mod ai_group_world; // batch I9c-2: TheAI's groups in the World
 pub mod turret_host_world; // batch I9b-6: the turrets' AIs, the World as TurretHost

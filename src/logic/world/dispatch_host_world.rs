@@ -116,10 +116,16 @@ impl DispatchHost for World {
         let _ = player_get_current_selection_as_ai_group(self, player, Some(g));
     }
     fn d_group_is_empty(&self, g: u32) -> bool {
+        if self.cuts.live_ai {
+            return self.ai_group_members(g).is_empty();
+        }
         self.cuts.player_host.groups.get(&g).is_none_or(|m| m.is_empty())
     }
     fn d_group_remove_not_owned(&mut self, g: u32, player: i32) -> bool {
         // `removeAnyObjectsNotOwnedByPlayer`: answers whether the group is now empty (and so deleted)
+        if self.cuts.live_ai {
+            return self.with_group(g, |gr, w| gr.remove_any_objects_not_owned_by_player(w, Some(player as u32))).unwrap_or(true);
+        }
         let members = self.cuts.player_host.groups.get(&g).cloned().unwrap_or_default();
         let kept: Vec<ObjectId> = members.into_iter().filter(|&o| self.get_controlling_player(o) == Some(player)).collect();
         let empty = kept.is_empty();
@@ -131,13 +137,19 @@ impl DispatchHost for World {
         empty
     }
     fn d_group_ids(&self, g: u32) -> Vec<u32> {
+        if self.cuts.live_ai {
+            return self.ai_group_members(g).into_iter().map(|o| o as u32).collect();
+        }
         self.cuts.player_host.groups.get(&g).map(|m| m.iter().map(|o| *o as u32).collect()).unwrap_or_default()
     }
     fn d_group_add(&mut self, g: u32, obj: u32) {
         crate::logic::world::game_logic_update::GameLogicHost::u_group_add(self, g, obj);
     }
     fn d_group(&mut self, g: u32, call: GroupCall) -> R<bool> {
-        // the AI's groups come in with batch I9: the command is logged
+        // batch I9c-2: with live groups, the group's command; else (the AI's groups not live) the command is logged
+        if self.cuts.live_ai {
+            return Ok(self.live_group_call(g, call));
+        }
         self.cut(CutCall::Host { call: "AIGroup command", args: vec![i64::from(g)], text: format!("{call:?}").into_bytes() });
         Ok(false)
     }

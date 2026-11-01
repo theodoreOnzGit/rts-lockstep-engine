@@ -566,6 +566,11 @@ impl TeamHost for World {
         !self.cuts.ai_not_recruitable.contains(&o)
     }
     fn ai_group_add(&mut self, group: GroupRef, o: ObjectId) {
+        if self.cuts.live_ai {
+            // (batch I9c-2: the live group's `add`)
+            self.with_group(group, |g, w| g.add(w, o));
+            return;
+        }
         self.host_cut("AIGroup::add", &[i64::from(group), i64::from(o)], &[]);
         self.cuts.player_host.groups.entry(group).or_default().push(o);
     }
@@ -1142,6 +1147,9 @@ impl PlayerSquadHost for World {
         self.is_selectable(o)
     }
     fn ai_group_all_ids(&self, group: GroupRef) -> Vec<ObjectId> {
+        if self.cuts.live_ai {
+            return self.ai_group_members(group);
+        }
         self.cuts.player_host.groups.get(&group).cloned().unwrap_or_default()
     }
     fn message_argument_count(&self, msg: MessageRef) -> u8 {

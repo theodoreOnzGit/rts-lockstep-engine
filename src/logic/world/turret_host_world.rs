@@ -157,6 +157,10 @@ impl World {
     }
 
     /// `obj->getAI()`'s machine: in its module, or lent (the top of `ai_stacks.machine`).
+    pub(crate) fn ai_machine_query(&self, obj: ObjectId) -> Option<&StateMachine<AiState<World>>> {
+        self.ai_machine_peek(obj)
+    }
+
     fn ai_machine_peek(&self, obj: ObjectId) -> Option<&StateMachine<AiState<World>>> {
         let index = self.find_object(obj).and_then(|o| o.ai)?;
         if let Some(UpdateBody::AiUpdate(m)) = self.peek_module_body(ModuleHandle { object: obj, index }) {

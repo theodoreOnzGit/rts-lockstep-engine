@@ -464,7 +464,12 @@ impl World {
         if o.group != 0 {
             let group = o.group;
             o.group = 0;
-            self.cut(CutCall::AiGroupRemove { group, object: id });
+            // (batch I9c-2: with live groups, `group->remove(this)`)
+            if self.cuts.live_ai {
+                self.leave_group_live(id, group);
+            } else {
+                self.cut(CutCall::AiGroupRemove { group, object: id });
+            }
         }
     }
 
