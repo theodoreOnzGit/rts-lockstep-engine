@@ -39,7 +39,6 @@ use crate::logic::sides_list::BuildListInfo;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::ids::PlayerIndex;
 use crate::logic::world::module_call::ModuleCall;
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::team::TeamTemplateInfo;
 
 /// The players' `m_ai`, by player index.
@@ -61,10 +60,6 @@ impl World {
         Some(r)
     }
 
-    fn apl_cut(&mut self, call: &'static str) {
-        self.cut(CutCall::Host { call, args: Vec::new(), text: Vec::new() });
-    }
-
     /// The final override of the template a handle names.
     fn apl_tmpl(&self, t: TemplateRef) -> Option<&crate::common::thing_template::ThingTemplate> {
         u16::try_from(t).ok().and_then(|id| self.statics.thing_factory.find_by_template_id(id)).map(|o| &o.get_final_override().data)
@@ -82,10 +77,7 @@ impl World {
             PlayerAiCommand::ResumeConstruction(b) => ModuleCall::AiResumeConstruction { object: b, command_source: CMD_FROM_AI },
             PlayerAiCommand::Repair(b) => ModuleCall::AiDoCommandParms(with_obj(AICMD_REPAIR, b, CMD_FROM_AI)),
             PlayerAiCommand::FollowExitProductionPath(path) => ModuleCall::AiFollowExitProductionPath { path, ignore_object: INVALID_ID, command_source: CMD_FROM_AI },
-            PlayerAiCommand::JoinTeam => {
-                self.apl_cut("AIUpdateInterface::joinTeam");
-                return;
-            }
+            PlayerAiCommand::JoinTeam => ModuleCall::AiJoinTeam,
         };
         self.ai_ask(o, call);
     }
@@ -116,6 +108,46 @@ impl World {
         let Some(i) = self.get_production_update_interface(o) else { return false };
         let id = self.module_call(o, i, ModuleCall::ProductionRequestUniqueUnitId).as_int(0);
         self.module_call(o, i, ModuleCall::ProductionQueueCreateUnit { template: u16::try_from(t).ok(), production_id: id }).as_bool()
+    }
+
+    /// The AI player's three closest-object questions, with `AIPlayer.cpp`'s filters, from the bounding circles in 2-D:
+    /// a supply source not the player's, on the map (`queueSupplyTruck`); a cash generator of the player's, on the map
+    /// (`findSupplyCenter`); an enemy: not allied or neutral, alive, not stealthed undetected, not an insignificant building,
+    /// not a harvester or a dozer (`isLocationSafe`).
+    fn apl_closest(&mut self, q: ClosestQuery, p: PlayerRef, center: &Coord3D, radius: f32) -> Option<ObjectId> {
+        use crate::common::kind_of::{KindOfMaskType, KINDOF_CASH_GENERATOR, KINDOF_DOZER, KINDOF_HARVESTER, KINDOF_SUPPLY_SOURCE};
+        use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_DETECTED, OBJECT_STATUS_DISGUISED, OBJECT_STATUS_STEALTHED};
+        use crate::logic::world::partition::filters::{allow_player, PartitionFilter as F};
+        let kind = |k| KindOfMaskType::from_indices(&[k]);
+        let filters = match q {
+            ClosestQuery::SupplySourceNotMine => vec![
+                F::AcceptByKindOf { must_be_set: kind(KINDOF_SUPPLY_SOURCE), must_be_clear: KindOfMaskType::new() },
+                F::Player { player: Some(p), match_: false },
+                F::OnMap,
+            ],
+            ClosestQuery::MyCashGenerator => vec![
+                F::AcceptByKindOf { must_be_set: kind(KINDOF_CASH_GENERATOR), must_be_clear: KindOfMaskType::new() },
+                F::Player { player: Some(p), match_: true },
+                F::OnMap,
+            ],
+            ClosestQuery::Threat => {
+                let mut stealthed = ObjectStatusMaskType::default();
+                stealthed.set(OBJECT_STATUS_STEALTHED, 1);
+                let mut seen = ObjectStatusMaskType::default();
+                seen.set(OBJECT_STATUS_DETECTED, 1);
+                seen.set(OBJECT_STATUS_DISGUISED, 1);
+                vec![
+                    F::PlayerAffiliation { player: p, affiliation: allow_player::ALLIES | allow_player::NEUTRAL, match_: false },
+                    F::Alive,
+                    F::RejectByObjectStatus { must_be_set: stealthed, must_be_clear: seen },
+                    F::InsignificantBuildings { allow_non_buildings: true, allow_insignificant: false },
+                    F::RejectByKindOf { must_be_set: kind(KINDOF_HARVESTER), must_be_clear: KindOfMaskType::new() },
+                    F::RejectByKindOf { must_be_set: kind(KINDOF_DOZER), must_be_clear: KindOfMaskType::new() },
+                ]
+            }
+        };
+        let dc = crate::logic::world::partition::collide::DistanceCalculationType::FromBoundingSphere2D;
+        self.with_partition(|pm, w| pm.get_closest_object_at(w, center, radius, dc, &filters).object)
     }
 
     // ---- the player's calls of its `m_ai`, live
@@ -200,19 +232,31 @@ impl AiPlayerHost for World {
             self.cuts.team_live_errors.push(format!("ScriptEngine::runObjectScript: {e:?}"));
         }
     }
-    fn find_script(&mut self, _name: &[u8]) -> (bool, bool) {
-        self.apl_cut("find_script");
-        Default::default()
+    fn find_script(&mut self, name: &[u8]) -> (bool, bool) {
+        let se = std::mem::take(&mut self.script_engine);
+        let r = se.find_script(self, name).map(|r| crate::logic::world::script_engine::ScriptEngine::script(self, r).is_some_and(|s| !s.actions.is_empty()));
+        self.script_engine = se;
+        (r.is_some(), r.unwrap_or(false))
     }
-    fn execute_action(&mut self, _script: &[u8], _team: TeamRef) {
-        self.apl_cut("execute_action");
+    fn execute_action(&mut self, script: &[u8], team: TeamRef) {
+        let mut se = std::mem::take(&mut self.script_engine);
+        let r = match se.find_script(self, script) {
+            Some(s) => se.friend_execute_action(self, s, true, i32::try_from(team).ok()),
+            None => Ok(()),
+        };
+        self.script_engine = se;
+        if let Err(e) = r {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::friend_executeAction: {e:?}"));
+        }
     }
     fn clear_team_flags(&mut self) {
-        self.apl_cut("clear_team_flags");
+        self.script_engine.clear_team_flags();
     }
     fn skirmish_enemy_player(&mut self) -> PlayerRef {
-        self.apl_cut("skirmish_enemy_player");
-        Default::default()
+        let se = std::mem::take(&mut self.script_engine);
+        let r = se.get_skirmish_enemy_player(self);
+        self.script_engine = se;
+        r.unwrap_or(-1)
     }
     fn player_exists(&mut self, p: PlayerRef) -> bool {
         self.players.get_nth(p).is_some()
@@ -286,12 +330,12 @@ impl AiPlayerHost for World {
         self.statics.thing_factory.find_template(name).map(|t| u32::from(t.data.get_template_id()))
     }
     fn first_template(&mut self) -> Option<TemplateRef> {
-        self.apl_cut("first_template");
-        Default::default()
+        self.statics.thing_factory.templates().next().map(|t| u32::from(t.data.get_template_id()))
     }
-    fn next_template(&mut self, _t: TemplateRef) -> Option<TemplateRef> {
-        self.apl_cut("next_template");
-        Default::default()
+    fn next_template(&mut self, t: TemplateRef) -> Option<TemplateRef> {
+        let mut it = self.statics.thing_factory.templates().map(|x| u32::from(x.data.get_template_id()));
+        it.position(|x| x == t)?;
+        it.next()
     }
     fn template_name(&mut self, t: TemplateRef) -> Vec<u8> {
         self.apl_tmpl(t).map(|x| x.get_name().to_vec()).unwrap_or_default()
@@ -379,13 +423,24 @@ impl AiPlayerHost for World {
     fn preferred_dock(&mut self, o: ObjectId) -> ObjectId {
         self.ai_ask(o, ModuleCall::GetSupplyTruckPreferredDockId).map_or(INVALID_ID, |r| r.as_id())
     }
-    fn ferrying_supplies(&mut self, _o: ObjectId) -> bool {
-        self.apl_cut("ferrying_supplies");
-        Default::default()
+    fn ferrying_supplies(&mut self, o: ObjectId) -> bool {
+        let Some(index) = self.find_object(o).and_then(|x| x.ai) else { return false };
+        match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index }) {
+            Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) => m.module.as_ref().and_then(|m| m.supply_machine.as_ref()).is_some_and(|sm| {
+                use crate::logic::ai::supply_truck_ai_update::{ST_DOCKING, ST_WANTING};
+                matches!(sm.get_current_state_id(), ST_WANTING | ST_DOCKING)
+            }),
+            _ => false,
+        }
     }
-    fn forced_into_wanting_state(&mut self, _o: ObjectId) -> bool {
-        self.apl_cut("forced_into_wanting_state");
-        Default::default()
+    fn forced_into_wanting_state(&mut self, o: ObjectId) -> bool {
+        use crate::logic::ai::ai_update::AiSubclass;
+        match self.ai_peek(o).map(|a| &a.subclass) {
+            Some(AiSubclass::SupplyTruck(s)) => s.force_pending,
+            Some(AiSubclass::Chinook(c)) => c.supply.force_pending,
+            Some(AiSubclass::Worker(w)) => w.supply.force_pending,
+            _ => false,
+        }
     }
     fn set_force_wanting_state(&mut self, o: ObjectId, b: bool) {
         self.ai_ask(o, ModuleCall::SupplyTruckSetForceWantingState(b));
@@ -426,25 +481,40 @@ impl AiPlayerHost for World {
         let b = self.get_body_module(o)?;
         Some((no_effect, self.module_call(o, b, ModuleCall::GetLastDamageTimestamp).as_int(0) as u32))
     }
-    fn has_supply_center_dock(&mut self, _o: ObjectId) -> bool {
-        self.apl_cut("has_supply_center_dock");
-        Default::default()
+    fn has_supply_center_dock(&mut self, o: ObjectId) -> bool {
+        let n = self.find_object(o).map_or(0, |x| x.modules.len());
+        (0..n).any(|i| matches!(self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: i as crate::logic::world::object::ModuleIndex }), Some(crate::logic::world::update_body::UpdateBody::SupplyCenterDockUpdate(_))))
     }
-    fn warehouse_boxes(&mut self, _o: ObjectId) -> Option<i32> {
-        self.apl_cut("warehouse_boxes");
-        Default::default()
+    fn warehouse_boxes(&mut self, o: ObjectId) -> Option<i32> {
+        let n = self.find_object(o)?.modules.len();
+        (0..n).find(|&i| matches!(self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: i as crate::logic::world::object::ModuleIndex }), Some(crate::logic::world::update_body::UpdateBody::SupplyWarehouseDockUpdate(_))))
+        .map(|i| self.module_call(o, i as crate::logic::world::object::ModuleIndex, ModuleCall::SupplyWarehouseGetBoxesStored).as_int(0))
     }
-    fn rebuild_hole(&mut self, _o: ObjectId) -> Option<(ObjectId, ObjectId)> {
-        self.apl_cut("rebuild_hole");
-        Default::default()
+    fn rebuild_hole(&mut self, o: ObjectId) -> Option<(ObjectId, ObjectId)> {
+        let n = self.find_object(o)?.modules.len();
+        (0..n).find_map(|i| match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: i as crate::logic::world::object::ModuleIndex }) {
+            Some(crate::logic::world::update_body::UpdateBody::RebuildHoleBehavior(b)) => Some((b.get_spawner_id(), b.get_reconstructed_building_id())),
+            _ => None,
+        })
     }
-    fn exit_natural_rally_point(&mut self, _o: ObjectId) -> Option<Option<Coord3D>> {
-        self.apl_cut("exit_natural_rally_point");
-        Default::default()
+    fn exit_natural_rally_point(&mut self, o: ObjectId) -> Option<Option<Coord3D>> {
+        let e = self.get_object_exit_interface(o)?;
+        Some(match self.module_call(o, e, ModuleCall::GetNaturalRallyPointWithOffset(true)) {
+            crate::logic::world::module_call::ModuleReply::Coord(c) => Some(c),
+            _ => None,
+        })
     }
-    fn command_set_upgrades(&mut self, _o: ObjectId) -> Option<Vec<Vec<u8>>> {
-        self.apl_cut("command_set_upgrades");
-        Default::default()
+    fn command_set_upgrades(&mut self, o: ObjectId) -> Option<Vec<Vec<u8>>> {
+        let set = crate::logic::world::build_assistant::BuildAssistantHost::find_command_set(self, o)? as usize;
+        let mut out = Vec::new();
+        for i in 0..crate::logic::world::build_assistant::MAX_COMMANDS_PER_SET as usize {
+            let Some(b) = self.command_set_get_command_button(set, i) else { continue };
+            let Some(k) = self.cuts.command_buttons.get(b).and_then(|b| b.upgrade) else { continue };
+            if let Some(u) = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(k)) {
+                out.push(u.upgrade_name().to_vec());
+            }
+        }
+        Some(out)
     }
     fn team_proto(&mut self, team: TeamRef) -> ProtoRef {
         self.teams.team(team).map_or(0, |t| t.proto)
@@ -490,8 +560,10 @@ impl AiPlayerHost for World {
     fn team_estimate_position(&mut self, team: TeamRef) -> Option<Coord3D> {
         crate::logic::world::team_ops::team_get_estimate_team_position(self, team)
     }
-    fn team_guard_position(&mut self, _team: TeamRef, _pos: &Coord3D) {
-        self.apl_cut("team_guard_position");
+    fn team_guard_position(&mut self, team: TeamRef, pos: &Coord3D) {
+        let g = crate::logic::world::game_logic_update::GameLogicHost::u_create_group(self);
+        crate::logic::world::team_ops::team_get_team_as_ai_group(self, team, Some(g));
+        self.with_group(g, |gr, w| gr.group_guard(w, Some(crate::logic::ai::ai_group::GroupAiCommand::GuardPosition { pos: *pos, mode: crate::logic::ai::ai_update_types::GUARDMODE_NORMAL }), crate::logic::ai::ai_update_types::CMD_FROM_SCRIPT));
     }
     fn proto_name(&mut self, proto: ProtoRef) -> Vec<u8> {
         self.teams.prototype(proto).map(|x| x.name.clone()).unwrap_or_default()
@@ -544,15 +616,14 @@ impl AiPlayerHost for World {
     fn remove_all_bibs(&mut self) {
         // (the terrain visual's bibs are the client's)
     }
-    fn closest_object(&mut self, _q: ClosestQuery, _p: PlayerRef, _center: &Coord3D, _radius: f32) -> Option<ObjectId> {
-        self.apl_cut("closest_object");
-        Default::default()
+    fn closest_object(&mut self, q: ClosestQuery, p: PlayerRef, center: &Coord3D, radius: f32) -> Option<ObjectId> {
+        self.apl_closest(q, p, center, radius)
     }
     fn quick_does_path_exist(&mut self, o: ObjectId, to: &Coord3D) -> bool {
         crate::logic::world::partition::host::PartitionHost::quick_does_path_exist(self, o, to).unwrap_or(false)
     }
-    fn adjust_to_possible_destination(&mut self, _o: ObjectId, _pos: &mut Coord3D) {
-        self.apl_cut("adjust_to_possible_destination");
+    fn adjust_to_possible_destination(&mut self, o: ObjectId, pos: &mut Coord3D) {
+        self.pathfinder_adjust_to_possible_destination(o, pos);
     }
     fn ground_height(&mut self, x: f32, y: f32) -> f32 {
         self.terrain.ground_height(x, y, false).0
@@ -571,9 +642,10 @@ impl AiPlayerHost for World {
     fn upgrade_name(&mut self, u: UpgradeRef) -> Vec<u8> {
         self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(u)).map(|t| t.upgrade_name().to_vec()).unwrap_or_default()
     }
-    fn can_afford_upgrade(&mut self, _p: PlayerRef, _u: UpgradeRef) -> bool {
-        self.apl_cut("can_afford_upgrade");
-        Default::default()
+    fn can_afford_upgrade(&mut self, p: PlayerRef, u: UpgradeRef) -> bool {
+        // (`UpgradeCenter::canAffordUpgrade`: `countMoney() < calcCostToBuild(player)`, the `Int` cost compared as unsigned)
+        let Some(cost) = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(u)).map(|t| t.cost_to_build()) else { return false };
+        self.players.get_nth(p).is_some_and(|x| x.money.count_money() >= cost as u32)
     }
     fn has_sufficient_power(&mut self, p: PlayerRef) -> bool {
         let now = crate::common::state_machine::StateContext::frame(self);
@@ -615,19 +687,24 @@ impl AiPlayerHost for World {
     fn mp_start_index(&mut self, p: PlayerRef) -> i32 {
         self.players.get_nth(p).map_or(0, |x| x.mp_start_index)
     }
-    fn closest_waypoint_on_path(&mut self, _pos: &Coord3D, _label: &[u8]) -> Option<Coord3D> {
-        self.apl_cut("closest_waypoint_on_path");
-        Default::default()
+    fn closest_waypoint_on_path(&mut self, pos: &Coord3D, label: &[u8]) -> Option<Coord3D> {
+        let label = crate::common::ascii_string::AsciiString::try_from_bytes(label).ok()?;
+        let h = self.terrain.closest_waypoint_on_path(pos, &label)?;
+        self.terrain.waypoint(h).map(|w| *w.location())
     }
     fn maximum_pathfind_extent(&mut self) -> Region2D {
         let r = self.terrain.maximum_pathfind_extent().unwrap_or_default();
         Region2D { lo: crate::common::base_type::Coord2D { x: r.lo.x, y: r.lo.y }, hi: crate::common::base_type::Coord2D { x: r.hi.x, y: r.hi.y } }
     }
-    fn find_broken_bridge(&mut self, _unit: ObjectId, _to: &Coord3D) -> Option<ObjectId> {
-        self.apl_cut("find_broken_bridge");
-        Default::default()
+    fn find_broken_bridge(&mut self, unit: ObjectId, to: &Coord3D) -> Option<ObjectId> {
+        let r = self.with_ai_self(unit, |w| w.ai_pf(|pf, w, o, loco| pf.find_broken_bridge(w, loco.valid_surfaces, &o.pos, to)))?;
+        r.0.then_some(r.1)
     }
-    fn undo_and_destroy_structure(&mut self, _o: ObjectId) {
-        self.apl_cut("undo_and_destroy_structure");
+    fn undo_and_destroy_structure(&mut self, o: ObjectId) {
+        if let Some(p) = self.get_controlling_player(o) {
+            crate::logic::world::player_ops::player_on_structure_undone(self, p, Some(o));
+        }
+        self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::RemoveObject(o));
+        self.destroy_object(o);
     }
 }

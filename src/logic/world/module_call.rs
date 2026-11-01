@@ -379,6 +379,8 @@ pub enum ModuleCall {
     AiIsIdle,
     /// `aiIdle(CMD_FROM_AI)`.
     AiIdle,
+    /// `joinTeam()` (batch I9g: the AI players' `PlayerAiCommand::JoinTeam`).
+    AiJoinTeam,
     /// `aiEvacuateInstantly(exposeStealthUnits, CMD_FROM_AI)`.
     AiEvacuateInstantly { expose_stealth_units: bool },
     /// `aiGuardRetaliate(victim, pos, NO_MAX_SHOTS_LIMIT, CMD_FROM_AI)`.

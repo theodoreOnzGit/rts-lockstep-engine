@@ -143,6 +143,12 @@ impl AiModuleBody {
             }
             // the commands: `AICommandInterface`'s inline builders of `AICommandParms`, then `aiDoCommand` (AI.h)
             ModuleCall::AiIdle => command(m, world, me, AiCommandParms::new(AICMD_IDLE, CMD_FROM_AI)),
+            ModuleCall::AiJoinTeam => {
+                if let Err(e) = world.with_ai_self(me.object, |w| m.run(w, crate::logic::ai::ai_commands::join_team)) {
+                    world.cuts.team_live_errors.push(format!("AIUpdateInterface::joinTeam: {e:?}"));
+                }
+                ModuleReply::Done
+            }
             ModuleCall::AiIdleFrom { command_source } => command(m, world, me, parms(AICMD_IDLE, command_source)),
             ModuleCall::AiBusy { command_source } => command(m, world, me, parms(AICMD_BUSY, command_source)),
             ModuleCall::AiHunt { command_source } => command(m, world, me, parms(AICMD_HUNT, command_source)),

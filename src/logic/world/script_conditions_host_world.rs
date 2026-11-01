@@ -456,7 +456,7 @@ impl ScriptConditionsHost for World {
         }
         let filters = [
             PartitionFilter::AcceptByKindOf { must_be_set: KindOfMaskType::from_indices(&[KINDOF_STRUCTURE]), must_be_clear: KindOfMaskType::new() },
-            PartitionFilter::PlayerAffiliation { player: p, affiliation: crate::logic::world::partition::filters::ALLOW_NEUTRAL as u32, match_: true },
+            PartitionFilter::PlayerAffiliation { player: p, affiliation: crate::logic::world::partition::filters::allow_player::NEUTRAL, match_: true },
             PartitionFilter::OnMap,
         ];
         let it = self.with_partition(|pm, w| pm.iterate_objects_in_range_at(w, &center, distance, DistanceCalculationType::FromCenter2D, &filters, crate::logic::object_iter::IterOrderType::Fastest));
@@ -468,7 +468,7 @@ impl ScriptConditionsHost for World {
         }
         let filters = [
             PartitionFilter::AcceptByKindOf { must_be_set: KindOfMaskType::from_indices(&[KINDOF_TECH_BUILDING]), must_be_clear: KindOfMaskType::new() },
-            PartitionFilter::PlayerAffiliation { player: p, affiliation: crate::logic::world::partition::filters::ALLOW_ALLIES as u32, match_: false },
+            PartitionFilter::PlayerAffiliation { player: p, affiliation: crate::logic::world::partition::filters::allow_player::ALLIES, match_: false },
             PartitionFilter::OnMap,
         ];
         self.with_partition(|pm, w| pm.get_closest_object_at(w, &center, radius, DistanceCalculationType::FromCenter2D, &filters).object.is_some())

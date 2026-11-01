@@ -419,6 +419,70 @@ mod computer_player_tests {
         assert!(done < 600, "finished on frame {done}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
+
+    /// batch I9g: the AI players' remaining questions of the World, on the gate world. Predicted: the templates enumerate
+    /// as the factory lists them (newest first, every one once: the gate's five; ~~six~~ **corrected after the first run**, a
+    /// miscount of the INI); around `Player2`'s soldier at (250, 380) the threat query
+    /// finds `Player1`'s nearest soldier at (160, 380) within 100 (90 away) and nothing within 50; neither player has a cash
+    /// generator or a supply source near it; a soldier has no exit interface, a runner no rebuild hole; `joinTeam` of a
+    /// `Player2` soldier runs with no live error.
+    #[test]
+    fn the_ai_players_questions_are_answered() {
+        use crate::logic::ai::ai_player::{AiPlayerHost, ClosestQuery};
+        let mut w = gate_world();
+        let mut names = Vec::new();
+        let mut t = AiPlayerHost::first_template(&mut w);
+        while let Some(x) = t {
+            names.push(AiPlayerHost::template_name(&mut w, x));
+            t = AiPlayerHost::next_template(&mut w, x);
+        }
+        let expected: Vec<Vec<u8>> = w.statics.thing_factory.templates().map(|x| x.data.get_name().to_vec()).collect();
+        assert_eq!(names, expected);
+        assert_eq!(names.len(), 5, "{names:?}");
+        let soldiers = |w: &World, p: i32| -> Vec<ObjectId> {
+            w.objects.ids_in_order().into_iter().filter(|&id| w.find_object(id).is_some_and(|o| o.template().get_name() == b"Soldier") && w.get_controlling_player(id) == Some(p)).collect()
+        };
+        let here = Coord3D { x: 250.0, y: 380.0, z: 0.0 };
+        let threat = AiPlayerHost::closest_object(&mut w, ClosestQuery::Threat, 2, &here, 100.0).expect("a threat within 100");
+        assert_eq!(w.find_object(threat).map(|o| o.get_position().x), Some(160.0));
+        assert!(soldiers(&w, 1).contains(&threat));
+        assert_eq!(AiPlayerHost::closest_object(&mut w, ClosestQuery::Threat, 2, &here, 50.0), None);
+        assert_eq!(AiPlayerHost::closest_object(&mut w, ClosestQuery::MyCashGenerator, 2, &here, 500.0), None);
+        assert_eq!(AiPlayerHost::closest_object(&mut w, ClosestQuery::SupplySourceNotMine, 2, &here, 500.0), None);
+        let s2 = soldiers(&w, 2)[0];
+        assert_eq!(AiPlayerHost::exit_natural_rally_point(&mut w, s2), None);
+        assert_eq!(AiPlayerHost::rebuild_hole(&mut w, s2), None);
+        AiPlayerHost::ai_command(&mut w, s2, crate::logic::ai::ai_player::PlayerAiCommand::JoinTeam);
+        for _ in 0..30 {
+            w.logic_update().unwrap();
+        }
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+
+    /// `PartitionFilterPlayerAffiliation` takes `AllowPlayerRelationship` flags (0x02 allies, 0x08 neutral), not the
+    /// `PartitionFilterRelationship` ones (`1 << Relationship`); the script conditions' supply-structure scan
+    /// (`ScriptConditions.cpp:2228`, `ALLOW_NEUTRAL, true`) once passed the latter, which reads as "allies". The Depot
+    /// counts for player `p` exactly when `p` owns it or is neutral to its team; at least one player must be neutral to it,
+    /// or the test could not tell the two flag sets apart.
+    #[test]
+    fn the_supply_structure_scan_keeps_neutral_structures() {
+        use crate::common::game_common::Relationship;
+        use crate::logic::world::partition::host::PartitionFilterHost;
+        use crate::logic::world::script_conditions::ScriptConditionsHost;
+        let mut w = gate_world();
+        let depot = w.objects.ids_in_order().into_iter().find(|&id| w.find_object(id).is_some_and(|o| o.template().get_name() == b"Depot")).expect("the Depot");
+        let at = Coord3D { x: 200.0, y: 200.0, z: 0.0 };
+        let mut neutral_seen = false;
+        for p in 0..w.players.player_count() {
+            let rel = PartitionFilterHost::player_relationship_to_team_of(&w, p, depot);
+            neutral_seen |= rel == Relationship::Neutral;
+            let expected = rel == Relationship::Neutral || w.get_controlling_player(depot) == Some(p);
+            assert_eq!(w.sc_partition_supply_structures(at, 50.0, p).contains(&depot), expected, "player {p}, {rel:?}");
+            // `ScriptConditions.cpp:2277` (`ALLOW_ALLIES, false`) wants tech buildings; the Depot is not one.
+            assert!(!w.sc_partition_tech_building_near(at, 50.0, p));
+        }
+        assert!(neutral_seen);
+    }
 }
 
 #[cfg(test)]

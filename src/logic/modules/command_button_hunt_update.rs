@@ -87,10 +87,10 @@ pub const GUICOMMANDMODE_CONVERT_TO_CARBOMB: i32 = 28;
 /// `GUICOMMANDMODE_SABOTAGE_BUILDING`.
 pub const GUICOMMANDMODE_SABOTAGE_BUILDING: i32 = 29;
 
-/// `PartitionFilterRelationship::ALLOW_ENEMIES`.
-pub const ALLOW_ENEMIES: i32 = 1;
-/// `PartitionFilterRelationship::ALLOW_NEUTRAL`.
-pub const ALLOW_NEUTRAL: i32 = 4;
+/// `PartitionFilterRelationship::ALLOW_ENEMIES` (`1 << ENEMIES`).
+pub const ALLOW_ENEMIES: i32 = crate::logic::world::partition::filters::ALLOW_ENEMIES;
+/// `PartitionFilterRelationship::ALLOW_NEUTRAL` (`1 << NEUTRAL`). ~~4~~ **Corrected**: was 4, which is `ALLOW_ALLIES`.
+pub const ALLOW_NEUTRAL: i32 = crate::logic::world::partition::filters::ALLOW_NEUTRAL;
 
 /// The kinds of [`World::action_manager_can`]: `canDoSpecialPowerAtObject`.
 pub const CAN_DO_SPECIAL_POWER: i32 = 0;
