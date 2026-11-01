@@ -2166,6 +2166,9 @@ pub struct ObjectCuts {
     pub pathfinder: crate::logic::world::pathfinder_host_world::PathfinderCuts,
     /// batch I9b-1: the AI hosts' questions to the units the world does not hold yet.
     pub ai_host: crate::logic::world::ai_host_world::AiHostCuts,
+    /// batch I9b-3: the thing factory makes `AIUpdateInterface` as the world's AI module (`ai_module_world.rs`) rather than
+    /// the untranslated module stub. Off by default.
+    pub live_ai: bool,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2340,6 +2343,7 @@ impl Default for ObjectCuts {
             live_pathfinder: false,
             pathfinder: Default::default(),
             ai_host: Default::default(),
+            live_ai: false,
             next_drawable_id: 1,
         }
     }

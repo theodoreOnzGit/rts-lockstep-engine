@@ -51,7 +51,7 @@ use crate::logic::world::module_probe::ProbeModule;
 // One value per module slot; the containers' variants (`OpenContain` holds its 32 fire-point matrices inline, as upstream) are much larger than
 // most. Boxing them would add a heap indirection to every call into a container for a memory saving that does not matter at module counts.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum UpdateBody {
     /// The scripted module of the tests and of `docs/world-design.md`.
     Probe(ProbeUpdate),
@@ -405,6 +405,8 @@ pub enum UpdateBody {
     JetSlowDeathBehavior(crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehavior),
     /// `PhysicsBehavior` (batch R50).
     PhysicsBehavior(crate::logic::modules::physics_behavior::PhysicsBehavior),
+    /// `AIUpdateInterface` (batch I9b-3, with `cuts.live_ai`).
+    AiUpdate(crate::logic::world::ai_module_world::AiModuleBody),
     /// `RailroadBehavior` (batch R80).
     RailroadBehavior(crate::logic::modules::railroad_behavior::RailroadBehavior),
     /// `NeutronMissileSlowDeathBehavior` (batch R49).
@@ -632,6 +634,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.world_update(world, me),
             UpdateBody::JetSlowDeathBehavior(m) => m.world_update(world, me),
             UpdateBody::PhysicsBehavior(m) => m.world_update(world, me),
+            UpdateBody::AiUpdate(m) => m.world_update(world, me),
             UpdateBody::RailroadBehavior(m) => m.world_update(world, me),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.world_update(world, me),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.world_update(world, me),
@@ -841,6 +844,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.module_call(world, me, call),
             UpdateBody::JetSlowDeathBehavior(m) => m.module_call(world, me, call),
             UpdateBody::PhysicsBehavior(m) => m.module_call(world, me, call),
+            UpdateBody::AiUpdate(m) => m.module_call(world, me, call),
             UpdateBody::RailroadBehavior(m) => m.module_call(world, me, call),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.module_call(world, me, call),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.module_call(world, me, call),
@@ -1020,6 +1024,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::JetSlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::PhysicsBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
+            UpdateBody::AiUpdate(m) => match update { Some(u) => m.xfer_with(u, xfer), None => Err(crate::common::xfer::XferStatus::InvalidParameters) },
             UpdateBody::RailroadBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
             UpdateBody::HelicopterSlowDeathBehavior(m) => match update { Some(u) => m.xfer_with(u, xfer), None => m.xfer(xfer) },
@@ -1181,6 +1186,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::JetSlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::PhysicsBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
+            UpdateBody::AiUpdate(m) => match update { Some(u) => m.crc_with(u, xfer), None => Err(crate::common::xfer::XferStatus::InvalidParameters) },
             UpdateBody::RailroadBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
             UpdateBody::HelicopterSlowDeathBehavior(m) => match update { Some(u) => m.crc_with(u, xfer), None => m.crc(xfer) },
@@ -1342,6 +1348,11 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::JetSlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::PhysicsBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
+            UpdateBody::AiUpdate(m) => {
+                if let Some(u) = update {
+                    m.load_post_process_with(u);
+                }
+            }
             UpdateBody::RailroadBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
             UpdateBody::HelicopterSlowDeathBehavior(m) => match update { Some(u) => m.load_post_process_with(u), None => m.load_post_process() },
@@ -1551,6 +1562,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.crc(xfer),
             UpdateBody::JetSlowDeathBehavior(m) => m.crc(xfer),
             UpdateBody::PhysicsBehavior(m) => m.crc(xfer),
+            UpdateBody::AiUpdate(_) => Err(crate::common::xfer::XferStatus::InvalidParameters),
             UpdateBody::RailroadBehavior(m) => m.crc(xfer),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.crc(xfer),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.crc(xfer),
@@ -1756,6 +1768,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.xfer(xfer),
             UpdateBody::JetSlowDeathBehavior(m) => m.xfer(xfer),
             UpdateBody::PhysicsBehavior(m) => m.xfer(xfer),
+            UpdateBody::AiUpdate(_) => Err(crate::common::xfer::XferStatus::InvalidParameters),
             UpdateBody::RailroadBehavior(m) => m.xfer(xfer),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.xfer(xfer),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.xfer(xfer),
@@ -1961,6 +1974,7 @@ impl Snapshot for UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.load_post_process(),
             UpdateBody::JetSlowDeathBehavior(m) => m.load_post_process(),
             UpdateBody::PhysicsBehavior(m) => m.load_post_process(),
+            UpdateBody::AiUpdate(_) => {}
             UpdateBody::RailroadBehavior(m) => m.load_post_process(),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.load_post_process(),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.load_post_process(),
@@ -2237,6 +2251,7 @@ impl UpdateBody {
             UpdateBody::SlowDeathBehavior(m) => m.world_construct(world, me),
             UpdateBody::JetSlowDeathBehavior(m) => m.world_construct(world, me),
             UpdateBody::PhysicsBehavior(m) => m.world_construct(world, me),
+            UpdateBody::AiUpdate(m) => m.world_construct(world, me),
             UpdateBody::RailroadBehavior(m) => m.world_construct(world, me),
             UpdateBody::NeutronMissileSlowDeathBehavior(m) => m.world_construct(world, me),
             UpdateBody::HelicopterSlowDeathBehavior(m) => m.world_construct(world, me),

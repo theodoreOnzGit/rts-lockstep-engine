@@ -212,6 +212,8 @@ pub struct World {
     pub ai_self: ObjectId,
     /// The stacks the AI's state and machines are lent on while they run (`ai_state_host_world.rs`).
     pub ai_stacks: crate::logic::world::ai_state_host_world::AiStacks,
+    /// The AI module's `UpdateModule` base, lent while its snapshot runs (`ai_module_world.rs`).
+    pub ai_update_base: Option<crate::logic::module::update_module::UpdateModule>,
     // --- end batch I9b ---
     /// `m_frame`.
     frame: u32,
@@ -292,6 +294,7 @@ impl World {
             // --- batch I9b ---
             ai_self: INVALID_ID,
             ai_stacks: Default::default(),
+            ai_update_base: None,
             // --- end batch I9b ---
             frame: 0,
             next_object_id: 1,

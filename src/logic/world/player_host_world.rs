@@ -1325,7 +1325,8 @@ pub(crate) mod tests {
         c.factory.parse_object_block(ini, &mut env, 0)
     }
 
-    /// A tank that needs a barracks, a barracks, a garrisonable bunker, a wall piece and an immobile depot (batch I9a), and two player templates (America,
+    /// A tank that needs a barracks, a barracks, a garrisonable bunker, a wall piece and an immobile depot (batch I9a), a scout with an `AIUpdateInterface`
+    /// (batch I9b-3), and two player templates (America,
     /// the civilians).
     const INI: &str = "Object Tank\n KindOf = VEHICLE\n BuildCost = 900\n Prerequisites\n  Object = Barracks\n End\n\
                        \x20Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
@@ -1337,6 +1338,9 @@ pub(crate) mod tests {
                        \x20Behavior = GarrisonContain ModuleTag_Contain\n  ContainMax = 5\n End\nEnd\n\
                        Object Wall\n KindOf = STRUCTURE IMMOBILE WALK_ON_TOP_OF_WALL\n Geometry = BOX\n GeometryMajorRadius = 30\n GeometryMinorRadius = 25\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\nEnd\n\
+                       Object Scout\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = AIUpdateInterface ModuleTag_AI\n End\nEnd\n\
                        Object Depot\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n\
                        PlayerTemplate FactionAmerica\n Side = America\n StartingBuilding = Barracks\n StartingUnit0 = Tank\nEnd\nPlayerTemplate FactionCivilian\n Side = Civilian\nEnd\n";

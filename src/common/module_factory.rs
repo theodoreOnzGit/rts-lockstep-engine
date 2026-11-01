@@ -1197,6 +1197,13 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::modules::jet_slow_death_behavior::new_module_data),
             which_interfaces: Some(crate::logic::modules::jet_slow_death_behavior::JetSlowDeathBehavior::get_interface_mask()),
         }),
+        // batch I9b-3: the base class `AIUpdateInterface` (the world makes its module with `cuts.live_ai`; see
+        // `world::ai_module_world`)
+        "AIUpdateInterface" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_update_data::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         "PhysicsBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::physics_behavior::new_module_data),

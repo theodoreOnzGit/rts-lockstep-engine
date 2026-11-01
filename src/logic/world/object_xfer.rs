@@ -493,7 +493,7 @@ impl World {
                 // begin a data block
                 xfer.begin_block()?;
                 // xfer data
-                let r = xfer.xfer_snapshot(&mut snap);
+                let r = self.xfer_slot(id, &mut snap, xfer);
                 self.put_slot_snapshot(id, idx, snap);
                 r?;
                 // end a data block
@@ -515,7 +515,7 @@ impl World {
                     None => xfer.skip(data_size)?,
                     Some(idx) => {
                         let mut snap = self.take_slot_snapshot(id, idx);
-                        let r = xfer.xfer_snapshot(&mut snap);
+                        let r = self.xfer_slot(id, &mut snap, xfer);
                         self.put_slot_snapshot(id, idx, snap);
                         r?;
                     }
@@ -623,7 +623,7 @@ impl World {
                 m.stage_load_names(self);
             }
         }
-        let r = xfer.xfer_snapshot(&mut snap);
+        let r = self.xfer_slot(id, &mut snap, xfer);
         if let Some(crate::logic::world::update_body::UpdateBody::ParkingPlaceBehavior(m)) = &mut snap.body {
             if let Some(e) = m.finish_staged_build(self, id) {
                 let me = crate::logic::world::module_call::ModuleHandle { object: id, index: idx as u16 };
@@ -670,10 +670,23 @@ impl World {
     /// run it after a module's own load).
     pub fn load_post_process_module_slot(&mut self, id: ObjectId, idx: usize) {
         let mut snap = self.take_slot_snapshot(id, idx);
-        snap.load_post_process();
+        // (batch I9b-3: the AI module's with the world as its host)
+        if let Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) = &mut snap.body {
+            self.load_post_process_ai_slot(id, &mut snap.update, m);
+        } else {
+            snap.load_post_process();
+        }
         self.put_slot_snapshot(id, idx, snap);
     }
     // --- end p1w11-sonnet ---
+
+    /// `xferSnapshot` of a module slot; the AI module's with the world as its host (batch I9b-3).
+    fn xfer_slot(&mut self, id: ObjectId, snap: &mut SlotSnapshot, xfer: &mut dyn Xfer) -> XferResult<()> {
+        if let Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) = &mut snap.body {
+            return self.xfer_ai_slot(id, &mut snap.update, m, xfer);
+        }
+        xfer.xfer_snapshot(snap)
+    }
 
     fn take_slot_snapshot(&mut self, id: ObjectId, idx: usize) -> SlotSnapshot {
         let o = self.objects.find_mut(id).expect("kept");

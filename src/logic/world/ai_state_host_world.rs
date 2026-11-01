@@ -41,6 +41,7 @@ use crate::common::kind_of::KindOfType;
 use crate::common::model_state::ModelConditionFlagType;
 use crate::common::object_status_types::ObjectStatusTypes;
 use crate::common::state_machine::{StateExitType, StateId, StateMachine, StateReturn};
+use crate::common::xfer::Snapshot;
 use crate::common::xfer::{Xfer, XferResult};
 use crate::logic::ai::ai_attack_states::AttackFrame;
 use crate::logic::ai::ai_states::{AiState, AiStateHost, DistanceKind, PassengerCommand};
@@ -1517,16 +1518,22 @@ impl AiStateHost for World {
     fn exit_object_in_a_hurry(&mut self, _container: ObjectId) {
         self.ais_cut("exit_object_in_a_hurry");
     }
-    fn update_module_xfer(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
-        self.ais_cut("update_module_xfer");
-        Ok(())
+    fn update_module_xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        match self.ai_update_base.as_mut() {
+            Some(u) => u.xfer(xfer),
+            None => Ok(()),
+        }
     }
-    fn update_module_crc(&mut self, _xfer: &mut dyn Xfer) -> XferResult<()> {
-        self.ais_cut("update_module_crc");
-        Ok(())
+    fn update_module_crc(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        match self.ai_update_base.as_mut() {
+            Some(u) => u.crc(xfer),
+            None => Ok(()),
+        }
     }
     fn update_module_load_post_process(&mut self) {
-        self.ais_cut("update_module_load_post_process");
+        if let Some(u) = self.ai_update_base.as_mut() {
+            u.load_post_process();
+        }
     }
     fn polygon_trigger_name(&mut self, _polygon: i32) -> Vec<u8> {
         self.ais_cut("polygon_trigger_name");

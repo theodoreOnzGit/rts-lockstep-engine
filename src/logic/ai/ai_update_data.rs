@@ -108,6 +108,11 @@ pub(crate) static OWN_FIELD_PARSE: [FieldParse<AiUpdateModuleData>; 7] = [
     FieldParse::end(),
 ];
 
+/// `AIUpdateModuleData::friendNewModuleData` as the module factory's data procedure for `AIUpdateInterface` (batch I9b-3).
+pub fn new_module_data(ini: Option<&mut Ini<'_>>) -> IniResult<crate::common::module::ModuleDataKind> {
+    Ok(crate::common::module::ModuleDataKind::AiUpdate(Arc::new(AiUpdateModuleData::friend_new_module_data(ini)?)))
+}
+
 impl AiUpdateModuleData {
     /// `buildFieldParse(p)`: `ModuleData`'s (nothing), then its own.
     pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AiUpdateModuleData>) -> IniResult<()> {

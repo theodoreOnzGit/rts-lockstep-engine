@@ -84,6 +84,22 @@ impl World {
             }
             let tag = info.get_nth_tag(i);
             let Some(ModuleInfoData::Logic(data)) = info.get_nth_data(i) else { continue };
+            // (batch I9b-3: with `live_ai`, `AIUpdateInterface` is the world's AI module; its constructor runs in
+            // `world_construct`)
+            if let crate::common::module::ModuleDataKind::AiUpdate(d) = data {
+                if self.cuts.live_ai && name == b"AIUpdateInterface" {
+                    let base = std::sync::Arc::new(d.update.clone());
+                    let update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Normal)
+                        .map_err(|e| NewObjectError::Module(name.to_vec(), e))?;
+                    let mut m = NewModule::plain(name, tag);
+                    m.interfaces = info.nuggets()[i as usize].interface_mask;
+                    m.update = Some(update);
+                    m.body = Some(UpdateBody::AiUpdate(crate::logic::world::ai_module_world::AiModuleBody::new(d.clone())));
+                    m.is_ai = true;
+                    modules.push(m);
+                    continue;
+                }
+            }
             match crate::logic::modules::new_module(id_to_be, name, tag, data) {
                 Some(Ok(m)) => modules.push(m),
                 Some(Err(e)) => return Err(NewObjectError::Module(name.to_vec(), e)),
