@@ -31,7 +31,11 @@
 //! tables until they are routed here; routed so far: `getCurrentVictim`, `isDoingGroundMovement`,
 //! `getLastCommandSource`)~~ **Since batch I9b-4** the object's calls to its AI are routed here (see
 //! [`AiModuleBody::module_call`] for the few that are not; there were no AI cut tables, the callers took their defaults),
-//! and the turrets' AIs (`TurretHost`) are not run.
+//! ~~and the turrets' AIs (`TurretHost`) are not run~~ **since batch I9b-6** the turrets' AIs are made with the AI and run
+//! with it (`world::turret_host_world`).
+//!
+//! **Open:** upstream's `~AIUpdateInterface` halts its machine (the current state exits) before it deletes the turrets; the
+//! World deletes the turrets (batch I9b-6) but does not halt the AI's machine when the object is deleted.
 //!
 //! `p1w13-sonnet`, integration batches I9b-3 to I9b-5, 2026-11-01.
 
@@ -103,6 +107,12 @@ impl AiModuleBody {
         match made {
             Ok(m) => self.module = Some(m),
             Err(e) => world.cuts.team_live_errors.push(format!("{}: constructor: {e:?}", String::from_utf8_lossy(&self.name))),
+        }
+        // (batch I9b-6: `m_turretAI[i] = newInstance(TurretAI)(...)` for each turret of the data. Upstream makes them before
+        // `chooseLocomotorSet(LOCOMOTORSET_NORMAL)` and `setWakeFrame`, which `AiUpdate::new` has run already; neither draws a
+        // random value nor reads a turret, so the order is the same to the logic.)
+        if self.module.is_some() {
+            world.make_turrets(me.object, &self.data);
         }
     }
 
@@ -335,8 +345,36 @@ impl AiModuleBody {
             ModuleCall::AiLocomotorSetMaxLift(v) => locomotor(m, |l| l.set_max_lift(v)),
             ModuleCall::AiLocomotorSetMaxTurnRate(v) => locomotor(m, |l| l.set_max_turn_rate(v)),
             ModuleCall::AiLocomotorSetMaxBraking(v) => locomotor(m, |l| l.set_max_braking(v)),
-            // (not routed yet: aiGoProne (the parms' damage is the host's), construct, the turrets, transferAttack (TheAI's),
-            // processCollision, getAttackInfo, getWhichTurretForCurWeapon)
+            // the turrets (batch I9b-6), with the AI lent to the World (the turrets ask their AI)
+            ModuleCall::AiSetTurretTargetPosition { turret, pos } => {
+                lent(m, world, me, |w| crate::logic::ai::ai_attack_states::set_turret_target_position(w, turret, Some(&pos)));
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetTurretTargetObject { turret, target, force_attacking } => {
+                let o = (target != INVALID_ID).then_some(target);
+                lent(m, world, me, |w| crate::logic::ai::ai_attack_states::set_turret_target_object(w, turret, o, force_attacking));
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetWhichTurretForCurWeapon => ModuleReply::Int(lent(m, world, me, crate::logic::ai::ai_attack_states::get_which_turret_for_cur_weapon)),
+            ModuleCall::AiSetTurretEnabled { turret, enabled } => {
+                lent(m, world, me, |w| crate::logic::ai::ai_attack_states::set_turret_enabled(w, turret, enabled));
+                ModuleReply::Done
+            }
+            ModuleCall::AiRecenterTurret { turret } => {
+                lent(m, world, me, |w| crate::logic::ai::ai_attack_states::recenter_turret(w, turret));
+                ModuleReply::Done
+            }
+            ModuleCall::AiIsTurretInNaturalPosition { turret } => {
+                ModuleReply::Bool(lent(m, world, me, |w| crate::logic::ai::ai_attack_states::is_turret_in_natural_position(w, turret)))
+            }
+            // `aiGoProne(damageInfo, cmdSource)` (batch I9b-6): the parms' `m_damage` is the World's while the command runs
+            ModuleCall::AiGoProne { info, command_source } => {
+                let prev = world.ai_prone_damage.replace(info);
+                let r = command(m, world, me, parms(AICMD_GO_PRONE, command_source));
+                world.ai_prone_damage = prev;
+                r
+            }
+            // (not routed yet: construct, transferAttack (TheAI's), processCollision, getAttackInfo)
             _ => ModuleReply::Unhandled,
         }
     }
@@ -519,6 +557,17 @@ fn with_pos(cmd: AiCommandType, pos: Coord3D, command_source: i32) -> AiCommandP
     let mut p = parms(cmd, command_source);
     p.pos = pos;
     p
+}
+
+/// Runs `f` with the module's AI and machine lent to the World (on `ai_stacks.ai` and `ai_stacks.machine`) and the object as
+/// `this`, as `AIUpdateInterface::update` lends them around its turrets (batch I9b-6).
+fn lent<R>(m: &mut AiUpdateModule<World>, world: &mut World, me: ModuleHandle, f: impl FnOnce(&mut World) -> R) -> R {
+    world.ai_stacks.ai.push(m.ai.take().expect("the AI (not lent)"));
+    world.ai_stacks.machine.push(m.machine.take().expect("the AI's machine"));
+    let r = world.with_ai_self(me.object, f);
+    m.machine = Some(world.ai_stacks.machine.pop().expect("the lent machine"));
+    m.ai = Some(world.ai_stacks.ai.pop().expect("the lent AI"));
+    r
 }
 
 /// `aiDoCommand(&parms)` with the object as `this`; an error of the machine is recorded in `team_live_errors`.
@@ -738,6 +787,60 @@ mod tests {
         for _ in 0..3 {
             w.logic_update().unwrap();
         }
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+    /// batch I9b-6: the turrets. A gun's AI (a `Turret` block: turn rate 60, the primary slot) has its turret made with it,
+    /// kept by the World: in its natural position, enabled. The object's turret calls reach it with the AI lent:
+    /// `setTurretEnabled(0, false)` disables it, `isTurretInNaturalPosition(0)` holds. A hundred frames of the World's update run
+    /// the AI and its turret (past the 60-frame mood check, which asks the AI for a mood target) without a live error, with the
+    /// stacks empty after. Destroying the gun deletes its turret.
+    #[test]
+    fn the_turrets_run_with_their_ai() {
+        let (mut w, team) = world();
+        w.cuts.live_ai = true;
+        w.cuts.live_teams = true;
+        let t = World::thing_factory_find_template(&w, b"Gun").unwrap();
+        let g = World::thing_factory_new_object(&mut w, t, Some(team), ObjectStatusMaskType::default()).unwrap();
+        let d = w.turret_peek(g, 0).expect("the turret is made with the AI").clone();
+        assert!(d.enabled);
+        assert_eq!(d.angle, 0.0);
+        assert!(w.turret_peek(g, 1).is_none());
+        let index = w.find_object(g).unwrap().ai.unwrap();
+        assert!(w.module_call(g, index, ModuleCall::AiIsTurretInNaturalPosition { turret: 0 }).as_bool());
+        w.module_call(g, index, ModuleCall::AiSetTurretEnabled { turret: 0, enabled: false });
+        assert!(!w.turret_peek(g, 0).unwrap().enabled);
+        w.module_call(g, index, ModuleCall::AiSetTurretEnabled { turret: 0, enabled: true });
+        for _ in 0..100 {
+            w.logic_update().unwrap();
+        }
+        assert!(w.turret_peek(g, 0).is_some());
+        assert!(w.ai_stacks.ai.is_empty() && w.ai_stacks.machine.is_empty() && w.ai_stacks.turret.is_empty());
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        w.destroy_object(g);
+        w.process_destroy_list();
+        assert!(w.turret_peek(g, 0).is_none() && w.turret_ais.map.is_empty());
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+    /// batch I9b-6: `aiGoProne(damageInfo, cmdSource)` reaches the object's `ProneUpdate` with the damage the command carries:
+    /// 10 dealt at a ratio of 2 is 20 prone frames. (The prone effects need a drawable, which the test's objects have not: that
+    /// refusal is the prone module's, recorded in `module_errors`.)
+    #[test]
+    fn going_prone_carries_the_damage() {
+        let (mut w, team) = world();
+        w.cuts.live_ai = true;
+        w.cuts.live_teams = true;
+        let t = World::thing_factory_find_template(&w, b"Infantry").unwrap();
+        let i = World::thing_factory_new_object(&mut w, t, Some(team), ObjectStatusMaskType::default()).unwrap();
+        let mut info = crate::logic::damage::DamageInfo::default();
+        info.out.actual_damage_dealt = 10.0;
+        let index = w.find_object(i).unwrap().ai.unwrap();
+        w.module_call(i, index, ModuleCall::AiGoProne { info, command_source: 2 });
+        let prone = w.find_module(i, b"ProneUpdate").unwrap();
+        match w.peek_module_body(ModuleHandle { object: i, index: prone }) {
+            Some(UpdateBody::ProneUpdate(p)) => assert_eq!(p.prone_frames, 20),
+            _ => panic!("no prone module"),
+        }
+        assert!(w.ai_prone_damage.is_none());
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

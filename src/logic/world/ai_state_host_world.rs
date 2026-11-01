@@ -67,6 +67,8 @@ pub struct AiStacks {
     pub dozer: Vec<Option<StateMachine<crate::logic::ai::dozer_ai_update::DozerPrimaryState<World>>>>,
     pub deliver: Vec<Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<World>>>>,
     pub attack: Vec<AttackFrame>,
+    /// Batch I9b-6: the turrets' fields while their machines run (`TurretHost::turret_stack`).
+    pub turret: Vec<crate::logic::ai::turret::TurretData>,
 }
 
 impl Clone for AiStacks {
@@ -860,9 +862,17 @@ impl AiStateHost for World {
     fn pf_queue_for_path(&mut self) {
         self.ais_cut("pf_queue_for_path");
     }
-    fn turret_update(&mut self, _which: usize) -> UpdateSleepTime {
-        self.ais_cut("turret_update");
-        crate::logic::module::update_module::UPDATE_SLEEP_NONE
+    fn turret_update(&mut self, which: usize) -> UpdateSleepTime {
+        // (batch I9b-6: the turret's AI, with the AI lent: `AIUpdateInterface::update` lends it around the turrets)
+        let id = self.ai_self;
+        match self.with_turret(id, which, |t, w| t.update_turret_ai(w)) {
+            Some(Ok(sleep)) => sleep,
+            Some(Err(e)) => {
+                self.cuts.team_live_errors.push(format!("TurretAI({which})::updateTurretAI: {e:?}"));
+                crate::logic::module::update_module::UPDATE_SLEEP_NONE
+            }
+            None => crate::logic::module::update_module::UPDATE_SLEEP_FOREVER,
+        }
     }
     fn find_closest_repulsor(&mut self, _range: f32) -> ObjectId {
         self.ais_cut("find_closest_repulsor");
@@ -962,7 +972,13 @@ impl AiStateHost for World {
         self.ais_cut("contain_order_all_passengers_to_exit");
     }
     fn go_prone(&mut self) {
-        self.ais_cut("go_prone");
+        // (batch I9b-6: `privateGoProne(&parms->m_damage)`: the object's `ProneUpdate`, if it has one, with the damage the
+        // command carries; a go-prone command without one (no `aiGoProne` running) is the default `DamageInfo`)
+        let id = self.ai_self;
+        if let Some(idx) = self.find_module(id, b"ProneUpdate") {
+            let info = self.ai_prone_damage.clone().unwrap_or_default();
+            self.module_call(id, idx, crate::logic::world::module_call::ModuleCall::ProneGoProne(info));
+        }
     }
     fn polygon_center(&mut self, _polygon: i32) -> Coord3D {
         self.ais_cut("polygon_center");
@@ -1180,17 +1196,24 @@ impl AiStateHost for World {
     fn has_any_weapon(&self) -> bool {
         Default::default()
     }
-    fn turret_holds_current_weapon(&self, _which: usize) -> bool {
-        Default::default()
+    fn turret_holds_current_weapon(&self, which: usize) -> bool {
+        let slot = AiStateHost::current_weapon_slot(self);
+        self.turret_peek(self.ai_self, which).is_some_and(|d| slot.is_some_and(|s| crate::logic::ai::turret::is_weapon_slot_on_turret(d, s)))
     }
-    fn turret_set_target_object(&mut self, _which: usize, _o: Option<ObjectId>, _force_attacking: bool) {
-        self.ais_cut("turret_set_target_object");
+    fn turret_set_target_object(&mut self, which: usize, o: Option<ObjectId>, force_attacking: bool) {
+        let id = self.ai_self;
+        if let Some(Err(e)) = self.with_turret(id, which, |t, w| t.set_turret_target_object(w, o, force_attacking)) {
+            self.cuts.team_live_errors.push(format!("TurretAI({which})::setTurretTargetObject: {e:?}"));
+        }
     }
-    fn turret_set_target_position(&mut self, _which: usize, _pos: Option<&Coord3D>) {
-        self.ais_cut("turret_set_target_position");
+    fn turret_set_target_position(&mut self, which: usize, pos: Option<&Coord3D>) {
+        let id = self.ai_self;
+        if let Some(Err(e)) = self.with_turret(id, which, |t, w| t.set_turret_target_position(w, pos)) {
+            self.cuts.team_live_errors.push(format!("TurretAI({which})::setTurretTargetPosition: {e:?}"));
+        }
     }
-    fn turret_turn_rate(&self, _which: usize) -> f32 {
-        0.0
+    fn turret_turn_rate(&self, which: usize) -> f32 {
+        self.turret_peek(self.ai_self, which).map_or(0.0, |d| d.data.turn_rate)
     }
     fn choose_best_weapon_for_target(&mut self, _target: Option<ObjectId>, _criteria: WeaponChoiceCriteria, _src: CommandSourceType) -> bool {
         self.ais_cut("choose_best_weapon_for_target");
@@ -1559,9 +1582,9 @@ impl AiStateHost for World {
         self.ais_cut("locomotor_set_xfer");
         Ok(())
     }
-    fn turret_ai_snapshot(&mut self, _which: usize, _xfer: &mut dyn Xfer) -> XferResult<()> {
-        self.ais_cut("turret_ai_snapshot");
-        Ok(())
+    fn turret_ai_snapshot(&mut self, which: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let id = self.ai_self;
+        self.with_turret(id, which, |t, _| t.xfer(xfer)).unwrap_or(Ok(()))
     }
     fn pf_update_pos(&mut self, pos: &Coord3D) {
         let id = self.ai_self;
@@ -1579,39 +1602,40 @@ impl AiStateHost for World {
         self.ais_cut("object_ai_goal_position");
         Coord3D::default()
     }
-    fn turret_target_object(&mut self, _which: usize, _clear_dead_targets: bool) -> Option<ObjectId> {
-        self.ais_cut("turret_target_object");
-        Default::default()
+    fn turret_target_object(&mut self, which: usize, clear_dead_targets: bool) -> Option<ObjectId> {
+        let id = self.ai_self;
+        self.with_turret(id, which, |t, w| t.friend_get_turret_target(w, clear_dead_targets))
+            .and_then(|(kind, obj, _)| if kind == crate::logic::ai::turret::TurretTargetType::Object { obj } else { None })
     }
-    fn turret_set_enabled(&mut self, _which: usize, _enabled: bool) {
-        self.ais_cut("turret_set_enabled");
+    fn turret_set_enabled(&mut self, which: usize, enabled: bool) {
+        let id = self.ai_self;
+        self.with_turret(id, which, |t, w| t.set_turret_enabled(w, enabled));
     }
-    fn turret_recenter(&mut self, _which: usize) {
-        self.ais_cut("turret_recenter");
+    fn turret_recenter(&mut self, which: usize) {
+        let id = self.ai_self;
+        if let Some(Err(e)) = self.with_turret(id, which, |t, w| t.recenter_turret(w)) {
+            self.cuts.team_live_errors.push(format!("TurretAI({which})::recenterTurret: {e:?}"));
+        }
     }
-    fn turret_is_enabled(&mut self, _which: usize) -> bool {
-        self.ais_cut("turret_is_enabled");
-        Default::default()
+    fn turret_is_enabled(&mut self, which: usize) -> bool {
+        self.turret_peek(self.ai_self, which).is_some_and(|d| d.enabled)
     }
-    fn turret_is_in_natural_position(&mut self, _which: usize) -> bool {
-        self.ais_cut("turret_is_in_natural_position");
-        Default::default()
+    fn turret_is_in_natural_position(&mut self, which: usize) -> bool {
+        let id = self.ai_self;
+        self.with_turret(id, which, |t, w| t.is_turret_in_natural_position(w)).unwrap_or(false)
     }
-    fn turret_is_weapon_slot_on(&mut self, _which: usize, _wslot: WeaponSlotType) -> bool {
-        self.ais_cut("turret_is_weapon_slot_on");
-        Default::default()
+    fn turret_is_weapon_slot_on(&mut self, which: usize, wslot: WeaponSlotType) -> bool {
+        self.turret_peek(self.ai_self, which).is_some_and(|d| crate::logic::ai::turret::is_weapon_slot_on_turret(d, wslot))
     }
-    fn turret_is_trying_to_aim_at(&mut self, _which: usize, _victim: ObjectId) -> bool {
-        self.ais_cut("turret_is_trying_to_aim_at");
-        Default::default()
+    fn turret_is_trying_to_aim_at(&mut self, which: usize, victim: ObjectId) -> bool {
+        let id = self.ai_self;
+        self.with_turret(id, which, |t, w| t.is_trying_to_aim_at_target(w, victim)).unwrap_or(false)
     }
-    fn turret_angle(&mut self, _which: usize) -> f32 {
-        self.ais_cut("turret_angle");
-        0.0
+    fn turret_angle(&mut self, which: usize) -> f32 {
+        self.turret_peek(self.ai_self, which).map_or(0.0, |d| d.angle)
     }
-    fn turret_pitch(&mut self, _which: usize) -> f32 {
-        self.ais_cut("turret_pitch");
-        0.0
+    fn turret_pitch(&mut self, which: usize) -> f32 {
+        self.turret_peek(self.ai_self, which).map_or(0.0, |d| d.pitch)
     }
     fn object_producer_id(&mut self, id: ObjectId) -> ObjectId {
         self.find_object(id).map_or(INVALID_ID, |o| o.producer_id)

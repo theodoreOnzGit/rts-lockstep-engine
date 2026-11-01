@@ -647,7 +647,8 @@ impl World {
     pub fn react_to_turret_change(&mut self, id: ObjectId, turret: i32, old_rotation: f32, _old_pitch: f32) {
         let mut current_rotation = 0.0f32;
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
-            current_rotation = self.cuts.ai_turret_rotation(id, turret);
+            // (batch I9b-6: `getAI()->getTurretRotAndPitch(turret, ..)`: the live turret's, else the cut table's)
+            current_rotation = self.ai_turret_rot_and_pitch(id, turret).map_or_else(|| self.cuts.ai_turret_rotation(id, turret), |r| r.0);
         }
         let rotation_change = current_rotation != old_rotation;
         if rotation_change {

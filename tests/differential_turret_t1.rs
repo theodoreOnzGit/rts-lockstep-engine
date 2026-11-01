@@ -429,17 +429,17 @@ impl TurretHost for Host {
     fn ai_add_targeter(&mut self, target: ObjectId, attacker: ObjectId, add: bool) {
         self.line(6, &[target as u32, attacker as u32, u32::from(add)]);
     }
-    fn ai_is_temporarily_preventing_aim_success(&self, obj: ObjectId) -> bool {
+    fn ai_is_temporarily_preventing_aim_success(&mut self, obj: ObjectId) -> bool {
         self.o(obj).flags & F_PREVENTING != 0
     }
     fn choose_best_weapon_for_target(&mut self, obj: ObjectId, target: ObjectId) {
         self.line(7, &[obj as u32, target as u32, 0, CommandSourceType::FromAi as u32]);
     }
-    fn is_able_to_attack(&self, obj: ObjectId) -> bool {
+    fn is_able_to_attack(&mut self, obj: ObjectId) -> bool {
         let (o, bit) = (self.o(obj), OBJECT_STATUS_NO_ATTACK);
         !(if bit < 64 { o.status_lo >> bit & 1 != 0 } else { o.status_hi >> (bit - 64) & 1 != 0 })
     }
-    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: i32, target: ObjectId, source: Option<CommandSourceType>) -> CanAttackResult {
+    fn able_to_attack_specific_object(&mut self, obj: ObjectId, attack_type: i32, target: ObjectId, source: Option<CommandSourceType>) -> CanAttackResult {
         let source = source.map_or(0, |s| s as u32);
         match (hash(self.s.seed, 47, &[obj as u32, attack_type as u32, target as u32, source]) >> 8) % 4 {
             0 => CanAttackResult::NotPossible,
@@ -488,7 +488,7 @@ impl TurretHost for Host {
         self.line(21, &[lo.to_bits(), hi.to_bits(), r.to_bits()]);
         r
     }
-    fn audio_is_playing(&self, handle: u32) -> bool {
+    fn audio_is_playing(&mut self, handle: u32) -> bool {
         self.playing.contains(&handle)
     }
     fn audio_add_turret_sound(&mut self, obj: ObjectId) -> u32 {

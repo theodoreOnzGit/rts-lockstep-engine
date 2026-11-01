@@ -165,7 +165,7 @@ pub fn ai_friend_set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, obj:
 }
 
 /// The AI's machine's view (`AiMachineQuery`) for the attack machine.
-fn outer_view<H: AiStateHost>(sm: &Sm<H>) -> OuterView {
+pub(crate) fn outer_view<H: AiStateHost>(sm: &Sm<H>) -> OuterView {
     OuterView {
         current_state_id: sm.get_current_state_id(),
         idle: sm.is_in_idle_state(),

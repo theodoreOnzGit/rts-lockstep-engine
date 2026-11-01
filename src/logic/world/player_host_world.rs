@@ -1344,6 +1344,13 @@ pub(crate) mod tests {
                        Object Dozer\n KindOf = VEHICLE DOZER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
                        \x20Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\nEnd\n\
+                       Object Gun\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = AIUpdateInterface ModuleTag_AI\n  Turret\n   TurretTurnRate = 60\n   ControlledWeaponSlots = PRIMARY\n   NaturalTurretAngle = 0\n  End\n End\nEnd\n\
+                       Object Infantry\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+                       \x20Behavior = ProneUpdate ModuleTag_Prone\n  DamageToFramesRatio = 2\n End\nEnd\n\
                        Object Wanderer\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
                        \x20Behavior = WanderAIUpdate ModuleTag_AI\n End\nEnd\n\

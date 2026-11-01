@@ -16,7 +16,7 @@ use crate::common::game_type::{ObjectId, WeaponSlotType, INVALID_ID};
 use crate::common::kind_of::KindOfType;
 use crate::common::object_status_types::ObjectStatusTypes;
 use crate::common::state_machine::StateContext;
-use crate::logic::ai::ai_attack_states::frame;
+use crate::logic::ai::ai_attack_states::{frame, outer_view};
 use crate::logic::ai::ai_states::{with_ai, AiStateHost};
 use crate::logic::ai::ai_update::AiHost;
 use crate::logic::ai::fire_state::FireHost;
@@ -40,9 +40,13 @@ impl<H: AiStateHost> FireHost for H {
     fn owner(&mut self) -> ObjectId {
         AiHost::object_id(self)
     }
-    /// The AI's mood matrix, with the AI's machine as the attack frame saw it.
+    /// The AI's mood matrix, with the AI's machine as the attack frame saw it; outside an attack machine (a turret's states,
+    /// batch I9b-6), the AI's machine itself, lent while the turrets run.
     fn ai_mood_action_adjustment(&mut self, _obj: ObjectId, action: i32) -> u32 {
-        let outer = frame(self).outer.clone();
+        let outer = match self.attack_stack().last() {
+            Some(_) => frame(self).outer.clone(),
+            None => outer_view(self.ai_machine_stack().last().expect("the AI's machine, lent")),
+        };
         with_ai(self, |a, h| a.get_mood_matrix_action_adjustment(h, &outer, action))
     }
     fn ai_are_turrets_linked(&mut self, _obj: ObjectId) -> bool {

@@ -2380,14 +2380,20 @@ impl<H: AiStateHost> AiUpdateModule<H> {
             && !h.is_disabled_by_type(DISABLED_HACKED)
         {
             // "If we are dead, don't let the turrets do anything anymore, or else they will keep attacking"
-            for i in 0..2 {
-                if self.ai().has_turret_ai[i] {
+            // (batch I9b-6: the AI and its machine are lent to the host while the turrets run, which ask their AI)
+            let turrets = self.ai().has_turret_ai;
+            h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
+            h.ai_machine_stack().push(self.machine.take().expect("the AI's machine"));
+            for (i, has) in turrets.into_iter().enumerate() {
+                if has {
                     let tmp = h.turret_update(i);
                     if tmp < sub_machine_sleep {
                         sub_machine_sleep = tmp;
                     }
                 }
             }
+            self.machine = Some(h.ai_machine_stack().pop().expect("the lent machine"));
+            self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
         }
 
         // "must do death check outside of the state machine update, to avoid corruption"

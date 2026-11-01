@@ -99,7 +99,7 @@ pub struct ProneUpdate {
     /// `getProneUpdateModuleData()`.
     data: Arc<ProneUpdateModuleData>,
     /// `m_proneFrames`.
-    prone_frames: i32,
+    pub(crate) prone_frames: i32,
 }
 
 impl PartialEq for ProneUpdate {

@@ -553,6 +553,18 @@ impl World {
             self.cut(CutCall::AiGroupRemove { group, object: id });
         }
 
+        // (batch I9b-6: the AI module's destructor deletes its turrets: `~TurretAI` stops the rotation sound and destroys the
+        // machine, whose current state exits; the World keeps them by owner)
+        if let Some(turrets) = self.turret_ais.map.remove(&id) {
+            for (i, t) in turrets.into_iter().enumerate() {
+                if let Some(t) = t {
+                    if let Err(e) = self.with_ai_self(id, |w| t.destroy(w)) {
+                        self.cuts.team_live_errors.push(format!("~TurretAI({i}): {e:?}"));
+                    }
+                }
+            }
+        }
+
         // delete any modules present (the borrow checker's `delete`: dropping them), the experience tracker,
         // the helper pointers; "reset id to zero so we never mistaken grab 'dead' objects"
         let _ = self.objects.remove(id);

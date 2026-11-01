@@ -123,3 +123,4 @@ pub mod pathfinder_host_world;
 pub mod ai_host_world;
 pub mod ai_state_host_world;
 pub mod ai_module_world;
+pub mod turret_host_world; // batch I9b-6: the turrets' AIs, the World as TurretHost

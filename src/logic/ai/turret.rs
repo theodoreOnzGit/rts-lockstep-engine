@@ -226,7 +226,8 @@ pub struct TurretData {
 
 /// What the turret asks beyond the fire state: its fields while its machine runs, the owner's model condition and turret
 /// reaction, the owner's AI, the attack tests, teams, the bridge's attack points, the partition's geometry, the logic's random
-/// values and the rotation sound.
+/// values and the rotation sound. (Batch I9b-6: the attack tests, the aim-success test and the sound's test take the host
+/// mutably, as the World answers them.)
 pub trait TurretHost: FireHost {
     /// The turrets whose machines are running, the innermost last.
     fn turret_stack(&mut self) -> &mut Vec<TurretData>;
@@ -246,11 +247,11 @@ pub trait TurretHost: FireHost {
     fn ai_next_mood_target(&mut self, obj: ObjectId, called_by_ai: bool, called_during_idle: bool) -> Option<ObjectId>;
     /// `target->getAI()->addTargeter(attacker, add)`.
     fn ai_add_targeter(&mut self, target: ObjectId, attacker: ObjectId, add: bool);
-    fn ai_is_temporarily_preventing_aim_success(&self, obj: ObjectId) -> bool;
+    fn ai_is_temporarily_preventing_aim_success(&mut self, obj: ObjectId) -> bool;
     /// `chooseBestWeaponForTarget(target, PREFER_MOST_DAMAGE, CMD_FROM_AI)`.
     fn choose_best_weapon_for_target(&mut self, obj: ObjectId, target: ObjectId);
-    fn is_able_to_attack(&self, obj: ObjectId) -> bool;
-    fn able_to_attack_specific_object(&self, obj: ObjectId, attack_type: i32, target: ObjectId, source: Option<CommandSourceType>) -> CanAttackResult;
+    fn is_able_to_attack(&mut self, obj: ObjectId) -> bool;
+    fn able_to_attack_specific_object(&mut self, obj: ObjectId, attack_type: i32, target: ObjectId, source: Option<CommandSourceType>) -> CanAttackResult;
     /// `getTeam()`, as an id (none for `NULL`).
     fn team(&self, obj: ObjectId) -> Option<TeamId>;
     /// `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`: its two points.
@@ -267,7 +268,7 @@ pub trait TurretHost: FireHost {
     fn random_value(&mut self, lo: i32, hi: i32) -> i32;
     fn random_value_real(&mut self, lo: f32, hi: f32) -> f32;
     /// `TheAudio->isCurrentlyPlaying(handle)`, `addAudioEvent(&turretMoveLoop of obj)`, `removeAudioEvent(handle)`.
-    fn audio_is_playing(&self, handle: u32) -> bool;
+    fn audio_is_playing(&mut self, handle: u32) -> bool;
     fn audio_add_turret_sound(&mut self, obj: ObjectId) -> u32;
     fn audio_remove(&mut self, handle: u32);
 }
@@ -408,13 +409,18 @@ fn is_owners_cur_weapon_on_turret<H: TurretHost>(h: &mut H) -> bool {
 /// `friend_getTurretTarget(obj, pos, clearDeadTargets = TRUE)`: the target's kind, object and position; a dead or vanished object
 /// target is cleared.
 fn get_turret_target<H: TurretHost>(sm: &mut StateMachine<TurretState<H>>, h: &mut H) -> (TurretTargetType, Option<ObjectId>, Coord3D) {
+    friend_get_turret_target(sm, h, true)
+}
+
+/// `friend_getTurretTarget(obj, pos, clearDeadTargets)` (batch I9b-6: the clearing optional, as upstream's argument).
+fn friend_get_turret_target<H: TurretHost>(sm: &mut StateMachine<TurretState<H>>, h: &mut H, clear_dead_targets: bool) -> (TurretTargetType, Option<ObjectId>, Coord3D) {
     let mut obj = None;
     let mut pos = Coord3D::default();
     match t(h).target {
         TurretTargetType::Object => {
             obj = sm.goal_object(h).map(|o| o.id);
             // "clear it explicitly if null -- could be deceased but holding the old (bogus) objectid internally"
-            if obj.is_none_or(|o| h.is_effectively_dead(o)) {
+            if clear_dead_targets && obj.is_none_or(|o| h.is_effectively_dead(o)) {
                 sm.set_goal_object(None);
                 t(h).target = TurretTargetType::None;
                 t(h).target_was_set_by_idle_mood = false;
@@ -917,6 +923,16 @@ impl<H: TurretHost> TurretAi<H> {
         let r = f(&mut self.machine, h);
         self.data = h.turret_stack().pop().expect("the lent turret");
         r
+    }
+
+    /// `friend_getTurretTarget(obj, pos, clearDeadTargets)` (batch I9b-6): the target's kind, object and position.
+    pub fn friend_get_turret_target(&mut self, h: &mut H, clear_dead_targets: bool) -> (TurretTargetType, Option<ObjectId>, Coord3D) {
+        self.run(h, |sm, h| friend_get_turret_target(sm, h, clear_dead_targets))
+    }
+
+    /// `getTurnRate()`: the data's.
+    pub fn get_turn_rate(&self) -> f32 {
+        self.data.data.turn_rate
     }
 
     pub fn get_turret_angle(&self) -> f32 {
