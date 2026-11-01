@@ -283,7 +283,7 @@ pub trait DispatchHost {
     fn d_build_object_line_now(&mut self, constructor: u32, template_id: i32, start: &Coord3D, end: &Coord3D, angle: f32);
     // --- beacons ---
     /// The position clamped into the terrain: `getExtent`, `isInRegionNoZ`, else `findClosestEdgePoint`.
-    fn d_clamp_to_terrain(&self, pos: &Coord3D) -> Coord3D;
+    fn d_clamp_to_terrain(&mut self, pos: &Coord3D) -> Coord3D;
     /// `TheThingFactory->findTemplate(player->getPlayerTemplate()->getBeaconTemplate())`'s id, if any (the player's
     /// template dereferenced unchecked).
     fn d_beacon_template(&self, player: i32) -> R<Option<i32>>;

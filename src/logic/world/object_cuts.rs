@@ -2134,6 +2134,12 @@ pub struct ObjectCuts {
     pub restricted_construction_cells: BTreeSet<usize>,
     /// batch I7a: `TheCampaignManager` outside a campaign (what its `xfer` saves).
     pub campaign: crate::logic::world::game_logic_save_host_world::CampaignStandIn,
+    /// batch I7b: the objects whose drawable is selected (`getDrawable()->isSelected()`, the client's).
+    pub selected_drawables: BTreeSet<ObjectId>,
+    /// batch I7b: `TheMultiplayerSettings->getMaxBeaconsPerPlayer()` (3, its constructor's).
+    pub max_beacons_per_player: i32,
+    /// batch I7b: the network's slots whose player name is the player's display name (by slot).
+    pub network_slot_players: BTreeMap<i32, i32>,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2295,6 +2301,9 @@ impl Default for ObjectCuts {
             special_power_construction_buttons: BTreeMap::new(),
             restricted_construction_cells: BTreeSet::new(),
             campaign: Default::default(),
+            selected_drawables: BTreeSet::new(),
+            max_beacons_per_player: 3,
+            network_slot_players: BTreeMap::new(),
             next_drawable_id: 1,
         }
     }

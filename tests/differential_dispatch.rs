@@ -347,7 +347,7 @@ impl DispatchHost for Host {
         self.line(format!("buildline {c} {t} {} {owner}{}", hexf(angle), coord(start)));
         self.line(format!(" to{}", coord(end)));
     }
-    fn d_clamp_to_terrain(&self, p: &Coord3D) -> Coord3D {
+    fn d_clamp_to_terrain(&mut self, p: &Coord3D) -> Coord3D {
         let inside = p.x >= 0.0 && p.y >= 0.0 && p.x <= 1000.0 && p.y <= 800.0;
         if inside {
             return *p;

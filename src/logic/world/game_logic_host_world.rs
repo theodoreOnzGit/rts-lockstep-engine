@@ -27,8 +27,9 @@
 //!   player list (`getEachPlayerFromMask`, `setCurrentlySelectedAIGroup`, ...), and the CRC: every object's `crc`, the
 //!   random seeds' CRC, the partition manager's and the player list's snapshots.
 //! - **Cut points** ([`CutCall::Host`] with upstream's name; answers in [`GameLoopCuts`]): the units the world does not
-//!   hold yet. The command list and its dispatcher (batch I7: the commands are stand-ins, each a type, a player and a
-//!   CRC, and dispatching one is logged), `startNewGame` (I7), the script engine (I8), the AI and its groups (I9), the
+//!   hold yet. ~~The command list and its dispatcher (batch I7: the commands are stand-ins, each a type, a player and a
+//!   CRC, and dispatching one is logged)~~ (**corrected in I7b**: the command list is real messages and the world's
+//!   dispatcher runs them, `dispatch_host_world.rs`), `startNewGame` (I7c), the script engine (I8), the AI and its groups (I9), the
 //!   build assistant (I6), the victory conditions (I5), the recorder, `TheGameInfo`, the network, the stats collector,
 //!   the game state's deep CRC, and the client (display, tactical view, in-game UI, mouse, audio, load screen).
 //!
@@ -54,25 +55,15 @@ use crate::logic::world::player_squads::{
 
 type R<T> = Result<T, IniError>;
 
-/// A command of the command list, until batch I7 brings the message stream in: its type, the player it came from and,
-/// for `MSG_LOGIC_CRC`, the CRC it carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CommandStandIn {
-    /// `getType()`.
-    pub ty: MessageType,
-    /// `getPlayerIndex()`.
-    pub player: i32,
-    /// The CRC argument of a `MSG_LOGIC_CRC`.
-    pub crc: u32,
-}
-
 /// The answers of the units `GameLogic` reaches that the world does not hold yet. See the module docs.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct GameLoopCuts {
     /// `m_gameMode` (`GAME_NONE` until a game starts, as `GameLogic::GameLogic()` sets it).
     pub game_mode: i32,
-    /// `TheCommandList`.
-    pub commands: Vec<CommandStandIn>,
+    /// batch I7b: the messages of `TheCommandList` (and of the stream, unused here).
+    pub messages: crate::common::message_stream::Messages,
+    /// batch I7b: `TheCommandList`, first to last.
+    pub commands: Vec<crate::common::message_stream::MessageId>,
     /// `TheDisplay->isMoviePlaying()`.
     pub movie_playing: bool,
     /// `TheTacticalView->isTimeFrozen()`, `isCameraMovementFinished()`.
@@ -121,6 +112,7 @@ impl Default for GameLoopCuts {
     fn default() -> Self {
         GameLoopCuts {
             game_mode: crate::common::recorder::game_mode::NONE,
+            messages: crate::common::message_stream::Messages::new(),
             commands: Vec::new(),
             movie_playing: false,
             view_time_frozen: false,
@@ -221,19 +213,23 @@ impl GameLogicHost for World {
         self.process_destroy_list();
     }
     fn u_command_list_contains(&self, t: MessageType) -> bool {
-        self.cuts.game_loop.commands.iter().any(|c| c.ty == t)
+        let gl = &self.cuts.game_loop;
+        gl.commands.iter().any(|id| gl.messages.get(*id).is_some_and(|m| m.get_type() == t))
     }
     fn u_command_list(&self) -> Vec<u32> {
         (0..self.cuts.game_loop.commands.len() as u32).collect()
     }
-    fn u_dispatch(&mut self, _state: &mut DispatchState, msg: u32) -> R<()> {
-        let c = self.cuts.game_loop.commands.get(msg as usize).copied();
-        let (t, p, crc) = c.map_or((0, -1, 0), |c| (i64::from(c.ty.0), c.player, c.crc));
-        self.loop_cut("GameLogic::logicMessageDispatcher", &[t, i64::from(p), i64::from(crc)]);
-        Ok(())
+    fn u_dispatch(&mut self, state: &mut DispatchState, msg: u32) -> R<()> {
+        // batch I7b: the world's own dispatcher
+        let gl = &self.cuts.game_loop;
+        let Some(m) = gl.commands.get(msg as usize).and_then(|id| gl.messages.get(*id)).cloned() else { return Ok(()) };
+        crate::logic::world::game_logic_dispatch::logic_message_dispatcher(state, &m, self)
     }
     fn u_command_list_reset(&mut self) {
-        self.cuts.game_loop.commands.clear();
+        let gl = &mut self.cuts.game_loop;
+        for id in std::mem::take(&mut gl.commands) {
+            let _ = gl.messages.delete_message(id);
+        }
     }
     fn u_send_logic_crc(&mut self, crc: u32, playback: bool) {
         self.loop_cut("MessageStream::appendMessage(MSG_LOGIC_CRC)", &[i64::from(crc), i64::from(playback)]);

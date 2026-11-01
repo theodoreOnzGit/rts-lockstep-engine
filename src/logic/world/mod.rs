@@ -67,6 +67,7 @@ pub mod game_logic_host_world; // batch I4: GameLogicHost for World (the frame a
 pub mod victory_host_world; // batch I5: VictoryHost for World, TheVictoryConditions in the world
 pub mod build_assistant_host_world; // batch I6: BuildAssistantHost for World, TheBuildAssistant in the world
 pub mod game_logic_save_host_world; // batch I7a: GameLogicSaveHost for World (the GameLogic save block)
+pub mod dispatch_host_world; // batch I7b: DispatchHost for World (the command list's dispatcher)
 // --- end p1w10-sonnet ---
 pub mod sleepy;
 pub mod team;
