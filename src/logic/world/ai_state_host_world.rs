@@ -288,8 +288,10 @@ impl AiStateHost for World {
     fn object_score_the_kill(&mut self, _killer: ObjectId, _victim: ObjectId) {
         self.ais_cut("object_score_the_kill");
     }
-    fn fx_do_obj(&mut self, _fx: Option<u32>, _primary: ObjectId) {
-        self.ais_cut("fx_do_obj");
+    fn fx_do_obj(&mut self, fx: Option<u32>, primary: ObjectId) {
+        // (batch I9b-5: the FX list by its name, `cuts.ai_host.fx_names`)
+        let text = fx.and_then(|i| self.cuts.ai_host.fx_names.get(i as usize)).cloned().unwrap_or_default();
+        self.cut(CutCall::Host { call: "fx_do_obj", args: vec![i64::from(primary)], text });
     }
     fn body_max_health(&mut self) -> f32 {
         let id = self.ai_self;

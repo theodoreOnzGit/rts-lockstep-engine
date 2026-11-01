@@ -17,21 +17,23 @@
 //! Integration batch I9b-3: `AIUpdateInterface` as a module of the world's objects ([`AiModuleBody`], the update body
 //! `UpdateBody::AiUpdate`).
 //!
-//! **Live with `cuts.live_ai`** (off by default: an `AIUpdateInterface` stays the untranslated module stub, so every
-//! test's objects behave as before). With it, the thing factory makes the module (`ModuleDataKind::AiUpdate` data, the
-//! base class `AIUpdateInterface`; the subclasses are still stubs), the world's `world_construct` runs its constructor with
-//! the object as [`World::ai_self`], the object's `onObjectCreated` makes its machine, and the scheduler's update runs the
-//! machine. The world is the AI's host throughout (batches I9b-1 and I9b-2).
+//! **Live with `cuts.live_ai`** (off by default: an AI module stays the untranslated module stub, so every test's objects
+//! behave as before). With it, the thing factory makes the module for every AI class (`ModuleDataKind::AiUpdate` data:
+//! ~~the base class `AIUpdateInterface`; the subclasses are still stubs~~ **since batch I9b-5** `AIUpdateInterface` and its
+//! subclasses, made by [`AiModuleBody::world_construct`] from their data), the world's `world_construct` runs its
+//! constructor with the object as [`World::ai_self`], the object's `onObjectCreated` makes its machine, and the scheduler's
+//! update runs the machine. The world is the AI's host throughout (batches I9b-1 and I9b-2).
 //!
 //! **The snapshot** (`xfer`, `loadPostProcess`) needs its host: the world's slot snapshot (`xfer_module_slot`, an
 //! object's save and load) runs it with the world as the host ([`World::xfer_ai_slot`]); the update body's own snapshot
 //! calls, which have no world, answer `XferStatus::InvalidParameters`. `Object::crc` does not include modules, so the
-//! logic's CRC is unaffected. The
-//! other `ModuleCall`s an object makes of its AI answer `Unhandled` (they are the AI cut tables until they are routed
-//! here; routed so far: `getCurrentVictim`, `isDoingGroundMovement`, `getLastCommandSource`), and the turrets' AIs
-//! (`TurretHost`) are not run.
+//! logic's CRC is unaffected. ~~The other `ModuleCall`s an object makes of its AI answer `Unhandled` (they are the AI cut
+//! tables until they are routed here; routed so far: `getCurrentVictim`, `isDoingGroundMovement`,
+//! `getLastCommandSource`)~~ **Since batch I9b-4** the object's calls to its AI are routed here (see
+//! [`AiModuleBody::module_call`] for the few that are not; there were no AI cut tables, the callers took their defaults),
+//! and the turrets' AIs (`TurretHost`) are not run.
 //!
-//! `p1w13-sonnet`, integration batch I9b-3, 2026-11-01.
+//! `p1w13-sonnet`, integration batches I9b-3 to I9b-5, 2026-11-01.
 
 use std::sync::Arc;
 
@@ -61,6 +63,8 @@ use crate::logic::world::sleepy::UpdateHandle;
 /// `AIUpdateInterface` in its object's module list: its data and, once the world has constructed it, the AI's state and
 /// machines.
 pub struct AiModuleBody {
+    /// The module's class name (`AIUpdateInterface`, `JetAIUpdate`, ...; batch I9b-5).
+    pub name: Vec<u8>,
     pub data: Arc<AiUpdateModuleData>,
     /// None until `world_construct`.
     pub module: Option<AiUpdateModule<World>>,
@@ -70,26 +74,36 @@ impl Clone for AiModuleBody {
     /// A copy of the module's data, unconstructed: the AI's machines cannot be copied (their states hold no `Clone`), and
     /// the world copies no running AI (see the module docs).
     fn clone(&self) -> Self {
-        AiModuleBody { data: self.data.clone(), module: None }
+        AiModuleBody { name: self.name.clone(), data: self.data.clone(), module: None }
     }
 }
 
 impl std::fmt::Debug for AiModuleBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AiModuleBody {{ constructed: {} }}", self.module.is_some())
+        write!(f, "AiModuleBody {{ {}, constructed: {} }}", String::from_utf8_lossy(&self.name), self.module.is_some())
     }
 }
 
 impl AiModuleBody {
-    /// The module as the factory makes it (the constructor runs in `world_construct`).
-    pub fn new(data: Arc<AiUpdateModuleData>) -> Self {
-        AiModuleBody { data, module: None }
+    /// The module of class `name` as the factory makes it (the constructor runs in `world_construct`).
+    pub fn new(name: &[u8], data: Arc<AiUpdateModuleData>) -> Self {
+        AiModuleBody { name: name.to_vec(), data, module: None }
     }
 
-    /// `AIUpdateInterface(thing, moduleData)`, with the object as the AI's host's `this`.
+    /// The class's constructor (`AIUpdateInterface(thing, moduleData)`, or the subclass's), with the object as the AI's host's
+    /// `this`. A subclass's constructor that fails (its machines' default states, upstream's undefined behaviour) is recorded
+    /// in `team_live_errors` and leaves the module unconstructed.
     pub fn world_construct(&mut self, world: &mut World, me: ModuleHandle) {
         let data = self.data.clone();
-        self.module = Some(world.with_ai_self(me.object, |w| AiUpdateModule::new(w, data)));
+        let subclass = make_subclass(world, me.object, &self.name, &data);
+        let made = world.with_ai_self(me.object, |w| match subclass {
+            AiSubclass::Plain => Ok(AiUpdateModule::new(w, data)),
+            sub => AiUpdateModule::new_subclass(w, data, sub),
+        });
+        match made {
+            Ok(m) => self.module = Some(m),
+            Err(e) => world.cuts.team_live_errors.push(format!("{}: constructor: {e:?}", String::from_utf8_lossy(&self.name))),
+        }
     }
 
     /// `update()`: the AI's machine, run with the object as `this`. An error of the machine (upstream's undefined
@@ -105,7 +119,9 @@ impl AiModuleBody {
         }
     }
 
-    /// The object's calls: `onObjectCreated` makes the machine; the others are not routed here yet.
+    /// The object's calls: `onObjectCreated` makes the machine; ~~the others are not routed here yet~~ (batch I9b-4) the commands
+    /// go through `aiDoCommand`, and the AI's and its machine's getters and setters answer here. Not routed (they answer
+    /// `Unhandled`): the ones listed at the end of the match.
     pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
         let Some(m) = self.module.as_mut() else { return ModuleReply::Unhandled };
         match call {
@@ -337,6 +353,155 @@ impl AiModuleBody {
     pub fn load_post_process_with(&mut self, _update: &mut UpdateModule) {}
 }
 
+/// The AI's subclass part as the class's constructor makes it from its module data (batch I9b-5): the data the AI keeps, the
+/// names it resolves. `LockonCursor` and `RopeName` are thing templates of the World's factory (found or not, as the AI
+/// keeps them). `RotorWashParticleSystem` names a client particle system template, which the World has not: never found
+/// (a cut point; the rotor wash is the client's). An FX list is kept by an index into `cuts.ai_host.fx_names`, which the FX
+/// cut points log. A missile is made at the frame and its object's position. `WanderAIUpdate` and `TransportAIUpdate` have
+/// the plain data and their own class.
+fn make_subclass(world: &mut World, id: ObjectId, name: &[u8], data: &AiUpdateModuleData) -> AiSubclass {
+    use crate::logic::ai::ai_subclass_data::AiSubclassModuleData as D;
+    use crate::logic::ai::{
+        assault_transport_ai_update as at, chinook_ai_update as ch, deliver_payload_ai_update as dp, deploy_style_ai_update as ds,
+        dozer_ai_update as dz, hack_internet_ai_update as hi, jet_ai_update as jt, missile_ai_update as mi, railed_transport_ai_update as rt,
+        supply_truck_ai_update as st, worker_ai_update as wk,
+    };
+    let supply = |s: &crate::logic::ai::ai_subclass_data::SupplyTruckAiModuleData| st::SupplyTruckData {
+        max_boxes: s.max_boxes_data,
+        center_delay: s.center_delay,
+        warehouse_delay: s.warehouse_delay,
+        warehouse_scan_distance: s.warehouse_scan_distance,
+        has_depleted_voice: !s.supplies_depleted_voice.event_name.is_empty(),
+    };
+    match &data.subclass {
+        D::Plain => match name {
+            b"WanderAIUpdate" => AiSubclass::Wander,
+            b"TransportAIUpdate" => AiSubclass::Transport,
+            _ => AiSubclass::Plain,
+        },
+        D::Jet(j) => AiSubclass::Jet(jt::Jet::new(jt::JetData {
+            out_of_ammo_damage_per_second: j.out_of_ammo_damage_per_second,
+            needs_runway: j.needs_runway,
+            keeps_parking_space_when_airborne: j.keeps_parking_space_when_airborne,
+            takeoff_dist_for_max_lift: j.takeoff_dist_for_max_lift,
+            min_height: j.min_height,
+            parking_offset: j.parking_offset,
+            sneaky_offset_when_attacking: j.sneaky_offset_when_attacking,
+            takeoff_pause: j.takeoff_pause,
+            attacking_loco: j.attacking_loco,
+            returning_loco: j.returning_loco,
+            attack_loco_persist_time: j.attack_loco_persist_time,
+            attackers_miss_persist_time: j.attackers_miss_persist_time,
+            lockon_time: j.lockon_time,
+            lockon_cursor: world.thing_factory_find_template(&j.lockon_cursor).is_some(),
+            lockon_initial_dist: j.lockon_initial_dist,
+            lockon_freq: j.lockon_freq,
+            lockon_angle_spin: j.lockon_angle_spin,
+            lockon_blinky: j.lockon_blinky,
+            return_to_base_idle_time: j.return_to_base_idle_time,
+        })),
+        D::Missile(m) => {
+            let ignition_fx = world.ai_fx_handle(&m.ignition_fx);
+            let garrison_hit_kill_fx = world.ai_fx_handle(&m.garrison_hit_kill_fx);
+            let pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
+            let data = mi::MissileData {
+                try_to_follow_target: m.try_to_follow_target,
+                fuel_lifetime: m.fuel_lifetime,
+                ignition_delay: m.ignition_delay,
+                initial_vel: m.initial_vel,
+                initial_dist: m.initial_dist,
+                dive_distance: m.dive_distance,
+                ignition_fx,
+                use_weapon_speed: m.use_weapon_speed,
+                detonate_on_no_fuel: m.detonate_on_no_fuel,
+                garrison_hit_kill_count: m.garrison_hit_kill_count,
+                garrison_hit_kill_kindof: m.garrison_hit_kill_kindof,
+                garrison_hit_kill_kindof_not: m.garrison_hit_kill_kindof_not,
+                garrison_hit_kill_fx,
+                distance_scatter_when_jammed: m.distance_scatter_when_jammed,
+                lock_distance: m.lock_distance,
+                detonate_calls_kill: m.detonate_calls_kill,
+                kill_self_delay: m.kill_self_delay,
+            };
+            AiSubclass::Missile(mi::Missile::new(data, world.frame(), pos))
+        }
+        D::SupplyTruck(s) => AiSubclass::SupplyTruck(st::SupplyTruck::new(supply(s))),
+        D::Chinook(c) => AiSubclass::Chinook(ch::Chinook::new(ch::ChinookData {
+            supply: supply(&c.supply),
+            rope_template: world.thing_factory_find_template(&c.rope_name).is_some(),
+            rotor_wash: false,
+            rappel_speed: c.rappel_speed,
+            rope_drop_speed: c.rope_drop_speed,
+            rope_width: c.rope_width,
+            rope_final_height: c.rope_final_height,
+            rope_wobble_len: c.rope_wobble_len,
+            rope_wobble_amp: c.rope_wobble_amp,
+            rope_wobble_rate: c.rope_wobble_rate,
+            rope_color: [c.rope_color.red, c.rope_color.green, c.rope_color.blue],
+            num_ropes: c.num_ropes,
+            per_rope_delay_min: c.per_rope_delay_min,
+            per_rope_delay_max: c.per_rope_delay_max,
+            min_drop_height: c.min_drop_height,
+            wait_for_ropes_to_drop: c.wait_for_ropes_to_drop,
+            upgraded_supply_boost: c.upgraded_supply_boost,
+        })),
+        D::Dozer(z) => AiSubclass::Dozer(dz::Dozer::new(dz::DozerData {
+            repair_health_percent_per_second: z.repair_health_percent_per_second,
+            bored_time: z.bored_time,
+            bored_range: z.bored_range,
+        })),
+        D::Worker(w) => AiSubclass::Worker(wk::Worker::new(wk::WorkerData {
+            dozer: dz::DozerData { repair_health_percent_per_second: w.repair_health_percent_per_second, bored_time: w.bored_time, bored_range: w.bored_range },
+            supply: st::SupplyTruckData {
+                max_boxes: w.max_boxes_data,
+                center_delay: w.center_delay,
+                warehouse_delay: w.warehouse_delay,
+                warehouse_scan_distance: w.warehouse_scan_distance,
+                has_depleted_voice: !w.supplies_depleted_voice.event_name.is_empty(),
+            },
+            upgraded_supply_boost: w.upgraded_supply_boost,
+        })),
+        D::DeliverPayload(p) => AiSubclass::DeliverPayload(dp::DeliverPayload::new(dp::DeliverPayloadModuleData {
+            door_delay: p.door_delay,
+            max_distance_to_target: p.max_distance_to_target,
+            max_number_attempts: p.max_number_attempts,
+            drop_delay: p.drop_delay,
+            drop_offset: p.drop_offset,
+            drop_variance: p.drop_variance,
+            put_in_container_name: p.put_in_container_name.clone(),
+            delivery_decal_template: p.delivery_decal_template.clone(),
+            delivery_decal_radius: p.delivery_decal_radius,
+        })),
+        D::DeployStyle(d) => AiSubclass::DeployStyle(ds::DeployStyle::new(ds::DeployStyleData {
+            unpack_time: d.unpack_time,
+            pack_time: d.pack_time,
+            reset_turret_before_packing: d.reset_turret_before_packing,
+            turrets_function_only_when_deployed: d.turrets_function_only_when_deployed,
+            turrets_must_center_before_packing: d.turrets_must_center_before_packing,
+            manual_deploy_animations: d.manual_deploy_animations,
+        })),
+        D::HackInternet(h) => AiSubclass::HackInternet(hi::HackInternet::new(hi::HackInternetData {
+            unpack_time: h.unpack_time,
+            pack_time: h.pack_time,
+            cash_update_delay: h.cash_update_delay,
+            cash_update_delay_fast: h.cash_update_delay_fast,
+            regular_cash_amount: h.regular_cash_amount,
+            veteran_cash_amount: h.veteran_cash_amount,
+            elite_cash_amount: h.elite_cash_amount,
+            heroic_cash_amount: h.heroic_cash_amount,
+            xp_per_cash_update: h.xp_per_cash_update,
+            pack_unpack_variation_factor: h.pack_unpack_variation_factor,
+        })),
+        D::AssaultTransport(a) => AiSubclass::AssaultTransport(at::AssaultTransport::new(at::AssaultTransportData {
+            members_get_healed_at_life_ratio: a.members_get_healed_at_life_ratio,
+            clear_range_required_to_continue_attack_move: a.clear_range_required_to_continue_attack_move,
+        })),
+        D::RailedTransport { path_prefix_name } => AiSubclass::RailedTransport(rt::RailedTransport::new(rt::RailedTransportData {
+            path_prefix_name: String::from_utf8_lossy(path_prefix_name).into_owned(),
+        })),
+    }
+}
+
 /// `AICommandParms(cmd, cmdSource)` with the source as the call carries it.
 fn parms(cmd: AiCommandType, command_source: i32) -> AiCommandParms {
     AiCommandParms::new(cmd, command_source)
@@ -530,6 +695,49 @@ mod tests {
         }
         assert_eq!(w.module_call(s, index, ModuleCall::AiGetFreeToExit { exiter: s }).as_int(-1), FREE_TO_EXIT);
         assert!(!w.module_call(s, index, ModuleCall::AiGetDozerAIInterface).as_bool());
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+    /// batch I9b-5: the subclasses. A dozer's `DozerAIUpdate` block is read into its data (2% a second, 5000 ms of boredom
+    /// as 150 frames, a range of 150), and with `live_ai` the World makes its AI as a dozer: the subclass with that data,
+    /// the dozer's own machine made, the AI's machine idle, `getDozerAIInterface` answered. A wanderer's `WanderAIUpdate`
+    /// has the plain data and the wanderer's class. Three frames run both (on `Player1`'s team) without a live error.
+    #[test]
+    fn the_subclasses_are_made_from_their_data() {
+        use crate::logic::ai::ai_update::AiSubclass;
+        let (mut w, team) = world();
+        w.cuts.live_ai = true;
+        w.cuts.live_teams = true;
+        // (on `Player1`'s team, the teams live: a dozer's idle state asks its player, and upstream every object has a team)
+        let make = |w: &mut World, name: &[u8]| {
+            let t = World::thing_factory_find_template(w, name).unwrap();
+            World::thing_factory_new_object(w, t, Some(team), ObjectStatusMaskType::default()).unwrap()
+        };
+        let d = make(&mut w, b"Dozer");
+        let wd = make(&mut w, b"Wanderer");
+        let body = |w: &World, id| {
+            let index = w.find_object(id).unwrap().ai.unwrap();
+            match w.peek_module_body(ModuleHandle { object: id, index }) {
+                Some(UpdateBody::AiUpdate(m)) => (m.name.clone(), m.module.as_ref().map(|m| (m.ai().subclass.clone(), m.dozer_machine.is_some()))),
+                _ => panic!("no AI module"),
+            }
+        };
+        let (name, made) = body(&w, d);
+        assert_eq!(name, b"DozerAIUpdate");
+        match made {
+            Some((AiSubclass::Dozer(z), true)) => {
+                assert_eq!(z.data.repair_health_percent_per_second, 0.02);
+                assert_eq!(z.data.bored_time, 150.0);
+                assert_eq!(z.data.bored_range, 150.0);
+            }
+            m => panic!("{m:?}"),
+        }
+        assert!(matches!(body(&w, wd).1, Some((AiSubclass::Wander, false))));
+        assert_eq!(ai_state(&w, d), Some(AI_IDLE));
+        let index = w.find_object(d).unwrap().ai.unwrap();
+        assert!(w.module_call(d, index, ModuleCall::AiGetDozerAIInterface).as_bool());
+        for _ in 0..3 {
+            w.logic_update().unwrap();
+        }
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

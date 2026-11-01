@@ -82,6 +82,20 @@
 #define TheWeaponStore TtTheWeaponStore
 #define AIUpdateModuleData TtAIUpdateModuleData
 #define TurretAIData TtTurretAIData
+/* batch I9b-5: the AI subclasses' module data (ai_subclass_data.inc) */
+#define RadiusDecalTemplate TtRadiusDecalTemplate
+#define RadiusDecal TtRadiusDecal
+#define JetAIUpdateModuleData TtJetAIUpdateModuleData
+#define MissileAIUpdateModuleData TtMissileAIUpdateModuleData
+#define SupplyTruckAIUpdateModuleData TtSupplyTruckAIUpdateModuleData
+#define ChinookAIUpdateModuleData TtChinookAIUpdateModuleData
+#define DozerAIUpdateModuleData TtDozerAIUpdateModuleData
+#define WorkerAIUpdateModuleData TtWorkerAIUpdateModuleData
+#define DeliverPayloadAIUpdateModuleData TtDeliverPayloadAIUpdateModuleData
+#define DeployStyleAIUpdateModuleData TtDeployStyleAIUpdateModuleData
+#define HackInternetAIUpdateModuleData TtHackInternetAIUpdateModuleData
+#define AssaultTransportAIUpdateModuleData TtAssaultTransportAIUpdateModuleData
+#define RailedTransportAIUpdateModuleData TtRailedTransportAIUpdateModuleData
 #define BehaviorModuleData TtBehaviorModuleData
 #define UpdateModuleData TtUpdateModuleData
 #define LocomotorStore TtLocomotorStore

@@ -87,14 +87,14 @@ impl World {
             // (batch I9b-3: with `live_ai`, `AIUpdateInterface` is the world's AI module; its constructor runs in
             // `world_construct`)
             if let crate::common::module::ModuleDataKind::AiUpdate(d) = data {
-                if self.cuts.live_ai && name == b"AIUpdateInterface" {
+                if self.cuts.live_ai && crate::logic::ai::ai_subclass_data::AiSubclassModuleData::for_module(name).is_some() {
                     let base = std::sync::Arc::new(d.update.clone());
                     let update = crate::logic::module::update_module::UpdateModule::new(id_to_be, Some(base), crate::logic::module::update_module::SleepyUpdatePhase::Normal)
                         .map_err(|e| NewObjectError::Module(name.to_vec(), e))?;
                     let mut m = NewModule::plain(name, tag);
                     m.interfaces = info.nuggets()[i as usize].interface_mask;
                     m.update = Some(update);
-                    m.body = Some(UpdateBody::AiUpdate(crate::logic::world::ai_module_world::AiModuleBody::new(d.clone())));
+                    m.body = Some(UpdateBody::AiUpdate(crate::logic::world::ai_module_world::AiModuleBody::new(name, d.clone())));
                     m.is_ai = true;
                     modules.push(m);
                     continue;

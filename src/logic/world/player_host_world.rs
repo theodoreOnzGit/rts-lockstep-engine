@@ -1341,6 +1341,12 @@ pub(crate) mod tests {
                        Object Scout\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
                        \x20Behavior = AIUpdateInterface ModuleTag_AI\n End\nEnd\n\
+                       Object Dozer\n KindOf = VEHICLE DOZER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\nEnd\n\
+                       Object Wanderer\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 5\n\
+                       \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       \x20Behavior = WanderAIUpdate ModuleTag_AI\n End\nEnd\n\
                        Object Depot\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n\
                        PlayerTemplate FactionAmerica\n Side = America\n StartingBuilding = Barracks\n StartingUnit0 = Tank\nEnd\nPlayerTemplate FactionCivilian\n Side = Civilian\nEnd\n";

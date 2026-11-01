@@ -7,6 +7,7 @@
 
 pub mod adjust;
 pub mod ai_update;
+pub mod ai_subclass_data;
 pub mod ai_update_data;
 pub mod ai_commands;
 pub mod ai_move_states;

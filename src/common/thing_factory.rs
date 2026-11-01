@@ -895,14 +895,15 @@ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY Rifle\n End\nEnd\n",
     }
 
     #[test]
-    fn a_module_that_is_not_translated_is_an_error_never_skipped() {
+    fn a_module_that_is_not_known_is_an_error_never_skipped() {
         let mut c = Ctx::new();
         c.modules.init(&mut c.names).unwrap();
+        // (batch I9b-5: every behavior module is translated, the AI subclasses last: an AI's block now reads its own fields,
+        // and an unknown field in it is the INI's error)
         let e = load(&mut c, "Object M\n Behavior = JetAIUpdate ModuleTag_X\n  HealingAmount = 3\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"JetAIUpdate".to_vec()));
-        assert_eq!(root(&c, "M").get_behavior_module_info().get_count(), 0);
-        let e = load(&mut c, "Object M2\n Body = JetAIUpdate ModuleTag_B\n End\nEnd\n").unwrap_err();
-        assert_eq!(e.kind, IniErrorKind::ModuleNotTranslated(b"JetAIUpdate".to_vec()));
+        assert_eq!(e.kind, IniErrorKind::UnknownToken);
+        load(&mut c, "Object M2\n Behavior = JetAIUpdate ModuleTag_X\n  NeedsRunway = No\n End\nEnd\n").unwrap();
+        assert_eq!(root(&c, "M2").get_behavior_module_info().get_count(), 1);
         let e = load(&mut c, "Object M3\n Behavior = NoSuchThing ModuleTag_B\n End\nEnd\n").unwrap_err();
         assert_eq!(e.kind, IniErrorKind::ModuleUnknown(b"NoSuchThing".to_vec()));
         let e = load(&mut c, "Object M4\n Behavior = PrisonBehavior ModuleTag_B\n End\nEnd\n").unwrap_err();

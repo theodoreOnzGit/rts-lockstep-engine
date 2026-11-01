@@ -37,6 +37,7 @@ use crate::common::game_common::LOGICFRAMES_PER_SECOND;
 use crate::common::ini::{FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, MultiIniFieldParse, UserData};
 use crate::common::module::ModuleData;
 use crate::common::name_key_generator::{NameKeyGenerator, NameKeyType};
+use crate::logic::ai::ai_subclass_data::AiSubclassModuleData;
 use crate::logic::ai::ai_update_types::{LocomotorSetType, AUTO_ACQUIRE_ENEMIES_NAMES, LOCOMOTOR_SET_NAMES};
 use crate::logic::ai::turret::TurretAiData;
 use crate::logic::locomotor::LocomotorStore;
@@ -60,6 +61,8 @@ pub struct AiUpdateModuleData {
     pub forbid_player_commands: bool,
     pub turrets_linked: bool,
     pub auto_acquire_enemies_when_idle: u32,
+    /// The subclass's own members (batch I9b-5, [`AiSubclassModuleData`]): `Plain` for `AIUpdateModuleData` itself.
+    pub subclass: AiSubclassModuleData,
 }
 
 impl Default for AiUpdateModuleData {
@@ -73,6 +76,7 @@ impl Default for AiUpdateModuleData {
             forbid_player_commands: false,
             turrets_linked: false,
             auto_acquire_enemies_when_idle: 0,
+            subclass: AiSubclassModuleData::Plain,
         }
     }
 }
@@ -118,6 +122,13 @@ impl AiUpdateModuleData {
     pub fn build_field_parse(p: &mut MultiIniFieldParse<'_, AiUpdateModuleData>) -> IniResult<()> {
         ModuleData::build_field_parse(p)?;
         p.add(&OWN_FIELD_PARSE)
+    }
+
+    /// A subclass's `buildFieldParse(p)` (batch I9b-5): this one's, then the subclass's own tables. The table builder has no
+    /// data to look at, so the subclass is the one the data proc names before the read starts.
+    pub fn build_field_parse_for(subclass: &AiSubclassModuleData, p: &mut MultiIniFieldParse<'_, AiUpdateModuleData>) -> IniResult<()> {
+        AiUpdateModuleData::build_field_parse(p)?;
+        subclass.add_field_parse(p)
     }
 
     /// `friend_newModuleData(ini)`: the defaults, filled from `ini` if there is one.

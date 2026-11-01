@@ -75,6 +75,39 @@
 //!
 //! Each comparison also runs a planted bug, which must be caught.
 //!
+//! **The AI subclasses' module data (batch I9b-5, 2026-11-01).** Thirteen more behavior modules: the eleven AI subclasses
+//! with data of their own (`JetAIUpdate`, `MissileAIUpdate`, `SupplyTruckAIUpdate`, `ChinookAIUpdate`, `DozerAIUpdate`,
+//! `WorkerAIUpdate`, `DeliverPayloadAIUpdate`, `DeployStyleAIUpdate`, `HackInternetAIUpdate`, `AssaultTransportAIUpdate`,
+//! `RailedTransportAIUpdate`), each with its REAL data class on the C++ side (the class from its header, the constructor
+//! and `buildFieldParse` from its .cpp, and `RadiusDecalTemplate` with its parser, cut verbatim by build.rs:
+//! `ai_subclass_data.inc`), and `WanderAIUpdate` and `TransportAIUpdate` with `AIUpdateModuleData`. The Rust is
+//! `logic::ai::ai_subclass_data` through the module factory's own data procedures. Three in four generated
+//! `AIUpdateInterface` blocks become a subclass's (and, in the module lists, one behavior block in eight besides), with up to
+//! five of the subclass's own fields (each well formed three times in four), a field of another class's table a share of the
+//! time, and a `DeliveryDecal` sub-block. The dump adds the subclass's tag and every member of its own. Harness edits: the
+//! jet's `m_lockonBlinky` (a `Real` no constructor sets, which `parseBool` writes one byte of) is zeroed before the read;
+//! the gravity the chinook's constructor reads is `GlobalData()`'s (-1); the two FX list names a missile may name are keyed
+//! at the reset on both sides (`findFXList` keys a name, which the Rust leaves to the client), and the C++ FX pointers are
+//! the Armor build's store's (the INI archive's `parseFXList` resolves through it), mapped back to names by
+//! `ref_armor_fx_name`.
+//!
+//! # Results (2026-11-01, batch I9b-5: the AI subclasses' module data; upstream commit 0a05454d, same seeds)
+//!
+//! - `object_blocks_...`: 7662 loads, 9445 dumps, AI module data compared 255 times, by subclass (base, jet, missile,
+//!   supply truck, chinook, dozer, worker, deliver payload, deploy style, hack internet, assault transport, railed
+//!   transport) 183, 7, 17, 9, 1, 4, 0, 7, 4, 5, 18, 0: **0 mismatches** in every comparison.
+//! - `module_lists_...`: 8386 loads (525 ok), 10206 dumps, AI module data compared 1145 times, by subclass 651, 42, 46,
+//!   32, 29, 43, 19, 52, 63, 70, 46, 52: **0 mismatches** in every comparison.
+//! - Planted: a jet's `LockonBlinky` dumped inverted (caught in 5 and 31 dumps); in the Rust source, a missile's
+//!   `KillSelfDelay` default 0 (plant 4047: 27 dumps) and `ReturnForAmmoLocomotorType` written into the attack locomotor
+//!   (plant 4048: 4 dumps), each caught, then switched off.
+//! - **Correction found by the first run:** the C++ dump read a missile's FX lists through this build's `FXList`
+//!   stand-in, whose names were empty: the pointers were the Armor build's store's. Not a defect of the port.
+//! - The first runs compared too few of some subclasses in the module lists (1 railed transport, 0 chinooks): a block
+//!   throws at its first malformed line, and each dump counts the templates a session keeps. The generator now makes the
+//!   subclass lines well formed three times in four, and the floor (each subclass compared more than 10 times in the
+//!   module lists) is asserted.
+//!
 //! # Results (2026-10-27, batch A1: the AI's module data; upstream commit 0a05454d, same seeds)
 //!
 //! - `object_blocks_...`: 3000 sessions, 7612 loads (977 ok), 9359 dumps, AI module data compared 203 times (123
@@ -145,6 +178,8 @@ use rts_lockstep_engine::common::unicode_string::UnicodeString;
 use rts_lockstep_engine::common::xfer::Xfer;
 use rts_lockstep_engine::common::xfer_crc::XferCrc;
 use rts_lockstep_engine::differential as cpp;
+use rts_lockstep_engine::common::base_type::Coord3D;
+use rts_lockstep_engine::logic::ai::ai_subclass_data::{AiSubclassModuleData, SupplyTruckAiModuleData};
 use rts_lockstep_engine::logic::ai::ai_update_data::AiUpdateModuleData;
 use rts_lockstep_engine::logic::ai::ai_update_types::AUTO_ACQUIRE_ENEMIES_NAMES;
 use rts_lockstep_engine::logic::ai::turret::TurretAiData;
@@ -181,7 +216,7 @@ impl GameTextFetch for StandInText {
 
 /// The test modules, in the order `wrap_thingtemplate.cpp` registers them (each assigns a decorated name
 /// key): name, type, interface mask.
-const TEST_MODULES: [(&str, ModuleType, i32); 13] = [
+const TEST_MODULES: [(&str, ModuleType, i32); 26] = [
     ("TestUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
     ("TestUpdate2", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
     ("TestDie", ModuleType::Behavior, MODULEINTERFACE_DIE),
@@ -196,7 +231,62 @@ const TEST_MODULES: [(&str, ModuleType, i32); 13] = [
     // batch A1: the AI's real module data (`AIUpdateInterface`'s), under its own name and another
     ("AIUpdateInterface", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
     ("TestAI2", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    // batch I9b-5: the AI subclasses, each with its real module data
+    ("JetAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("MissileAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("SupplyTruckAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("ChinookAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("DozerAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("WorkerAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("DeliverPayloadAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("DeployStyleAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("HackInternetAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("AssaultTransportAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("RailedTransportAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("WanderAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
+    ("TransportAIUpdate", ModuleType::Behavior, MODULEINTERFACE_UPDATE),
 ];
+/// batch I9b-5: the AI subclasses' module names (the generator's, and the data procs').
+const AI_SUBCLASSES: [&str; 13] = [
+    "JetAIUpdate",
+    "MissileAIUpdate",
+    "SupplyTruckAIUpdate",
+    "ChinookAIUpdate",
+    "DozerAIUpdate",
+    "WorkerAIUpdate",
+    "DeliverPayloadAIUpdate",
+    "DeployStyleAIUpdate",
+    "HackInternetAIUpdate",
+    "AssaultTransportAIUpdate",
+    "RailedTransportAIUpdate",
+    "WanderAIUpdate",
+    "TransportAIUpdate",
+];
+/// batch I9b-5: the FX list names a missile's data may name, keyed at the reset on both sides (`findFXList` keys a name;
+/// the Rust leaves that to the client, `common::damage_fx`'s note).
+const TEST_FX: [&str; 2] = ["FxIgnite", "FxGarrison"];
+/// An AI module's name: the base's two, or a subclass's.
+fn is_ai(name: &str) -> bool {
+    name == "AIUpdateInterface" || name == "TestAI2" || AI_SUBCLASSES.contains(&name)
+}
+/// The real data procedure of a test module whose data is an AI's.
+fn ai_proc(name: &str) -> rts_lockstep_engine::common::module_factory::NewModuleDataProc {
+    use rts_lockstep_engine::logic::ai::ai_subclass_data as sd;
+    match name {
+        "JetAIUpdate" => sd::new_jet_module_data,
+        "MissileAIUpdate" => sd::new_missile_module_data,
+        "SupplyTruckAIUpdate" => sd::new_supply_truck_module_data,
+        "ChinookAIUpdate" => sd::new_chinook_module_data,
+        "DozerAIUpdate" => sd::new_dozer_module_data,
+        "WorkerAIUpdate" => sd::new_worker_module_data,
+        "DeliverPayloadAIUpdate" => sd::new_deliver_payload_module_data,
+        "DeployStyleAIUpdate" => sd::new_deploy_style_module_data,
+        "HackInternetAIUpdate" => sd::new_hack_internet_module_data,
+        "AssaultTransportAIUpdate" => sd::new_assault_transport_module_data,
+        "RailedTransportAIUpdate" => sd::new_railed_transport_module_data,
+        _ => ai_data,
+    }
+}
 const TEST_WEAPONS: [&str; 3] = ["Rifle", "Cannon", "Missile"];
 
 fn never(_: ObjectId, _: Option<ModuleDataKind>) -> Result<Module, IniError> {
@@ -232,7 +322,7 @@ impl Ctx {
         let mut modules = ModuleFactory::new();
         for (name, module_type, mask) in TEST_MODULES {
             if module_type == ModuleType::Behavior {
-                let data = if name == "AIUpdateInterface" || name == "TestAI2" { ai_data } else { base_data };
+                let data = if is_ai(name) { ai_proc(name) } else { base_data };
                 let t = ModuleTemplate { create_proc: Some(never), create_data_proc: Some(data), which_interfaces: Some(mask) };
                 modules.add_module_internal(&mut names, t, module_type, name).unwrap();
             } else {
@@ -243,6 +333,9 @@ impl Ctx {
         let mut weapons = WeaponTemplateTable::new();
         for w in TEST_WEAPONS {
             weapons.add(names.name_to_key(w.as_bytes()));
+        }
+        for f in TEST_FX {
+            names.name_to_key(f.as_bytes());
         }
         Ctx {
             factory: ThingFactory::new(),
@@ -405,6 +498,169 @@ fn dump_ai_module_data(v: &mut Vec<u8>, c: &Ctx, d: &AiUpdateModuleData, bug: u3
     v.push(u8::from(d.forbid_player_commands));
     v.push(u8::from(d.turrets_linked));
     put_u32(v, d.auto_acquire_enemies_when_idle);
+    dump_ai_subclass(v, &d.subclass, bug);
+}
+
+/// batch I9b-5: `dumpAiSubclass`, the subclass's own members (its tag, then the members in declaration order). `bug` 8 plants the
+/// jet's `LockonBlinky` inverted.
+fn dump_ai_subclass(v: &mut Vec<u8>, sub: &AiSubclassModuleData, bug: u32) {
+    use AiSubclassModuleData as D;
+    let fx = |v: &mut Vec<u8>, f: &Option<Vec<u8>>| match f {
+        None => v.push(0),
+        Some(n) => {
+            v.push(1);
+            put_ascii(v, n);
+        }
+    };
+    let coord = |v: &mut Vec<u8>, c: &Coord3D| {
+        put_f32(v, c.x);
+        put_f32(v, c.y);
+        put_f32(v, c.z);
+    };
+    let supply = |v: &mut Vec<u8>, s: &SupplyTruckAiModuleData| {
+        put_i32(v, s.max_boxes_data);
+        put_u32(v, s.center_delay);
+        put_u32(v, s.warehouse_delay);
+        put_f32(v, s.warehouse_scan_distance);
+        put_ascii(v, &s.supplies_depleted_voice.event_name);
+    };
+    match sub {
+        D::Plain => v.push(0),
+        D::Jet(j) => {
+            v.push(1);
+            for x in [j.out_of_ammo_damage_per_second, j.takeoff_dist_for_max_lift, j.min_height, j.parking_offset, j.sneaky_offset_when_attacking] {
+                put_f32(v, x);
+            }
+            v.push(u8::from(j.keeps_parking_space_when_airborne));
+            v.push(u8::from(j.needs_runway));
+            put_u32(v, j.takeoff_pause);
+            put_i32(v, j.attacking_loco);
+            put_i32(v, j.returning_loco);
+            put_u32(v, j.attack_loco_persist_time);
+            put_u32(v, j.attackers_miss_persist_time);
+            put_u32(v, j.lockon_time);
+            put_ascii(v, &j.lockon_cursor);
+            put_f32(v, j.lockon_initial_dist);
+            put_f32(v, j.lockon_freq);
+            put_f32(v, j.lockon_angle_spin);
+            v.push(u8::from(j.lockon_blinky ^ (bug == 8)));
+            put_u32(v, j.return_to_base_idle_time);
+        }
+        D::Missile(m) => {
+            v.push(2);
+            v.push(u8::from(m.try_to_follow_target));
+            put_u32(v, m.fuel_lifetime);
+            put_u32(v, m.ignition_delay);
+            put_f32(v, m.initial_vel);
+            put_f32(v, m.initial_dist);
+            put_f32(v, m.dive_distance);
+            fx(v, &m.ignition_fx);
+            v.push(u8::from(m.use_weapon_speed));
+            v.push(u8::from(m.detonate_on_no_fuel));
+            put_i32(v, m.garrison_hit_kill_count);
+            put_flags(v, &m.garrison_hit_kill_kindof);
+            put_flags(v, &m.garrison_hit_kill_kindof_not);
+            fx(v, &m.garrison_hit_kill_fx);
+            put_f32(v, m.distance_scatter_when_jammed);
+            put_f32(v, m.lock_distance);
+            v.push(u8::from(m.detonate_calls_kill));
+            put_i32(v, m.kill_self_delay);
+        }
+        D::SupplyTruck(s) => {
+            v.push(3);
+            supply(v, s);
+        }
+        D::Chinook(c) => {
+            v.push(4);
+            supply(v, &c.supply);
+            put_ascii(v, &c.rope_name);
+            put_ascii(v, &c.rotor_wash_particle_system);
+            for x in [c.rappel_speed, c.rope_drop_speed, c.rope_width, c.rope_final_height, c.rope_wobble_len, c.rope_wobble_amp, c.rope_wobble_rate] {
+                put_f32(v, x);
+            }
+            put_f32(v, c.rope_color.red);
+            put_f32(v, c.rope_color.green);
+            put_f32(v, c.rope_color.blue);
+            put_u32(v, c.num_ropes);
+            put_u32(v, c.per_rope_delay_min);
+            put_u32(v, c.per_rope_delay_max);
+            put_f32(v, c.min_drop_height);
+            v.push(u8::from(c.wait_for_ropes_to_drop));
+            put_i32(v, c.upgraded_supply_boost);
+        }
+        D::Dozer(z) => {
+            v.push(5);
+            put_f32(v, z.repair_health_percent_per_second);
+            put_f32(v, z.bored_time);
+            put_f32(v, z.bored_range);
+        }
+        D::Worker(w) => {
+            v.push(6);
+            put_i32(v, w.max_boxes_data);
+            put_f32(v, w.repair_health_percent_per_second);
+            put_f32(v, w.bored_time);
+            put_f32(v, w.bored_range);
+            put_u32(v, w.center_delay);
+            put_u32(v, w.warehouse_delay);
+            put_f32(v, w.warehouse_scan_distance);
+            put_ascii(v, &w.supplies_depleted_voice.event_name);
+            put_i32(v, w.upgraded_supply_boost);
+        }
+        D::DeliverPayload(p) => {
+            v.push(7);
+            put_u32(v, p.door_delay);
+            put_f32(v, p.max_distance_to_target);
+            put_i32(v, p.max_number_attempts);
+            put_u32(v, p.drop_delay);
+            coord(v, &p.drop_offset);
+            coord(v, &p.drop_variance);
+            put_ascii(v, &p.put_in_container_name);
+            let t = &p.delivery_decal_template;
+            put_ascii(v, &t.name);
+            put_u32(v, t.shadow_type);
+            put_f32(v, t.min_opacity);
+            put_f32(v, t.max_opacity);
+            put_u32(v, t.opacity_throb_time);
+            put_i32(v, t.color);
+            v.push(u8::from(t.only_visible_to_owning_player));
+            put_f32(v, p.delivery_decal_radius);
+        }
+        D::DeployStyle(d) => {
+            v.push(8);
+            put_u32(v, d.unpack_time);
+            put_u32(v, d.pack_time);
+            v.push(u8::from(d.reset_turret_before_packing));
+            v.push(u8::from(d.turrets_function_only_when_deployed));
+            v.push(u8::from(d.turrets_must_center_before_packing));
+            v.push(u8::from(d.manual_deploy_animations));
+        }
+        D::HackInternet(h) => {
+            v.push(9);
+            for x in [
+                h.unpack_time,
+                h.pack_time,
+                h.cash_update_delay,
+                h.cash_update_delay_fast,
+                h.regular_cash_amount,
+                h.veteran_cash_amount,
+                h.elite_cash_amount,
+                h.heroic_cash_amount,
+                h.xp_per_cash_update,
+            ] {
+                put_u32(v, x);
+            }
+            put_f32(v, h.pack_unpack_variation_factor);
+        }
+        D::AssaultTransport(a) => {
+            v.push(10);
+            put_f32(v, a.members_get_healed_at_life_ratio);
+            put_f32(v, a.clear_range_required_to_continue_attack_move);
+        }
+        D::RailedTransport { path_prefix_name } => {
+            v.push(11);
+            put_ascii(v, path_prefix_name);
+        }
+    }
 }
 
 fn dump_module_info(v: &mut Vec<u8>, c: &Ctx, mi: &ModuleInfo, bug: u32) {
@@ -857,6 +1113,7 @@ impl Gx<'_> {
 
     /// One module sub-block: the line and its `End`.
     fn module_block(&mut self, out: &mut Vec<String>, kind: &str) {
+        let modules_only = self.modules_only;
         let g = &mut *self.g;
         let tag = if g.below(10) == 0 { String::new() } else { pick(g, &TAGS).to_string() };
         let (field, name): (&str, String) = match kind {
@@ -870,15 +1127,18 @@ impl Gx<'_> {
                 } else if self.allow_ghost_modules && g.below(30) == 0 {
                     pick(g, &["NoSuchModule", "AutoHealBehavior", "TestDraw"]).to_string()
                 } else {
-                    pick(g, &BEHAVIORS).to_string()
+                    // (batch I9b-5: three in four of the base's blocks are a subclass's; in the module lists, one block in eight
+                    // is a subclass's besides)
+                    let b = if modules_only && g.below(8) == 0 { "AIUpdateInterface" } else { pick(g, &BEHAVIORS) };
+                    if b == "AIUpdateInterface" && g.below(4) != 0 { pick(g, &AI_SUBCLASSES).to_string() } else { b.to_string() }
                 },
             ),
         };
         let s = sep(g);
         let head = if tag.is_empty() { format!("{field}{s}{name}") } else { format!("{field}{s}{name} {tag}") };
         out.push(self.line(head));
-        if name == "AIUpdateInterface" || name == "TestAI2" {
-            self.ai_lines(out);
+        if is_ai(&name) {
+            self.ai_lines(out, &name);
         } else if kind == "Draw" || kind == "ClientUpdate" {
             for _ in 0..self.g.below(5) {
                 match self.g.below(5) {
@@ -909,14 +1169,14 @@ impl Gx<'_> {
         }
         // batch A1: an AI's locomotor sets follow its block, mostly; sometimes after a second AI module, which replaces
         // the first (`clearAiModuleInfo`: a template has at most one)
-        if (name == "AIUpdateInterface" || name == "TestAI2") && self.g.below(5) == 0 {
-            let other = if name == "TestAI2" { "AIUpdateInterface" } else { "TestAI2" };
+        if is_ai(&name) && self.g.below(5) == 0 {
+            let other = if name == "AIUpdateInterface" { "TestAI2" } else { "AIUpdateInterface" };
             let tag = pick(self.g, &["ModuleTag_AI2", "ModuleTag_AI3"]);
             out.push(self.line(format!("Behavior = {other} {tag}")));
-            self.ai_lines(out);
+            self.ai_lines(out, other);
             out.push(self.line("End".to_string()));
         }
-        if (name == "AIUpdateInterface" || name == "TestAI2") && self.g.below(3) != 0 {
+        if is_ai(&name) && self.g.below(3) != 0 {
             for _ in 0..1 + self.g.below(3) {
                 self.field(out, "Locomotor");
             }
@@ -924,8 +1184,14 @@ impl Gx<'_> {
     }
 
     /// batch A1: the body of an AI module block (`AIUpdateModuleData`'s fields, `Turret` and `AltTurret` blocks).
-    fn ai_lines(&mut self, out: &mut Vec<String>) {
+    fn ai_lines(&mut self, out: &mut Vec<String>, name: &str) {
         let clean = self.clean;
+        // (batch I9b-5: a subclass's own fields, mixed in with the base's)
+        if AI_SUBCLASSES.contains(&name) {
+            for _ in 0..self.g.below(6) {
+                self.ai_subclass_line(out, name);
+            }
+        }
         for _ in 0..self.g.below(6) {
             let g = &mut *self.g;
             let s = sep(g);
@@ -951,6 +1217,129 @@ impl Gx<'_> {
             };
             out.push(self.line(l));
         }
+    }
+
+    /// batch I9b-5: one field line of a subclass's own table (a chinook's, or the supply truck's), a field of another
+    /// subclass's, or a mistake; a `DeliveryDecal` is a nested block.
+    fn ai_subclass_line(&mut self, out: &mut Vec<String>, name: &str) {
+        // (a line is well formed three times in four: a block throws at its first bad line, and a subclass's block has several)
+        let clean = self.clean || self.g.below(4) != 0;
+        const SUPPLY: [&str; 5] = ["MaxBoxes", "SupplyCenterActionDelay", "SupplyWarehouseActionDelay", "SupplyWarehouseScanDistance", "SuppliesDepletedVoice"];
+        let fields: &[&str] = match name {
+            "JetAIUpdate" => &[
+                "OutOfAmmoDamagePerSecond", "NeedsRunway", "KeepsParkingSpaceWhenAirborne", "TakeoffDistForMaxLift", "TakeoffPause", "MinHeight",
+                "ParkingOffset", "SneakyOffsetWhenAttacking", "AttackLocomotorType", "AttackLocomotorPersistTime", "AttackersMissPersistTime",
+                "ReturnForAmmoLocomotorType", "LockonTime", "LockonCursor", "LockonInitialDist", "LockonFreq", "LockonAngleSpin", "LockonBlinky",
+                "ReturnToBaseIdleTime",
+            ],
+            "MissileAIUpdate" => &[
+                "TryToFollowTarget", "FuelLifetime", "IgnitionDelay", "InitialVelocity", "DistanceToTravelBeforeTurning",
+                "DistanceToTargetBeforeDiving", "DistanceToTargetForLock", "IgnitionFX", "UseWeaponSpeed", "DetonateOnNoFuel",
+                "DistanceScatterWhenJammed", "GarrisonHitKillRequiredKindOf", "GarrisonHitKillForbiddenKindOf", "GarrisonHitKillCount",
+                "GarrisonHitKillFX", "DetonateCallsKill", "KillSelfDelay",
+            ],
+            "SupplyTruckAIUpdate" => &SUPPLY,
+            "ChinookAIUpdate" => &[
+                "MaxBoxes", "SupplyCenterActionDelay", "SupplyWarehouseScanDistance", "SuppliesDepletedVoice", "RappelSpeed", "RopeDropSpeed",
+                "RopeName", "RopeFinalHeight", "RopeWidth", "RopeWobbleLen", "RopeWobbleAmplitude", "RopeWobbleRate", "RopeColor", "NumRopes",
+                "PerRopeDelayMin", "PerRopeDelayMax", "MinDropHeight", "WaitForRopesToDrop", "RotorWashParticleSystem", "UpgradedSupplyBoost",
+            ],
+            "DozerAIUpdate" => &["RepairHealthPercentPerSecond", "BoredTime", "BoredRange"],
+            "WorkerAIUpdate" => &[
+                "MaxBoxes", "RepairHealthPercentPerSecond", "BoredTime", "BoredRange", "SupplyCenterActionDelay", "SupplyWarehouseActionDelay",
+                "SupplyWarehouseScanDistance", "SuppliesDepletedVoice", "UpgradedSupplyBoost",
+            ],
+            "DeliverPayloadAIUpdate" => &[
+                "DoorDelay", "PutInContainer", "DeliveryDistance", "MaxAttempts", "DropDelay", "DropOffset", "DropVariance", "DeliveryDecal",
+                "DeliveryDecalRadius",
+            ],
+            "DeployStyleAIUpdate" => &[
+                "UnpackTime", "PackTime", "ResetTurretBeforePacking", "TurretsFunctionOnlyWhenDeployed", "TurretsMustCenterBeforePacking",
+                "ManualDeployAnimations",
+            ],
+            "HackInternetAIUpdate" => &[
+                "UnpackTime", "PackTime", "PackUnpackVariationFactor", "CashUpdateDelay", "CashUpdateDelayFast", "RegularCashAmount",
+                "VeteranCashAmount", "EliteCashAmount", "HeroicCashAmount", "XpPerCashUpdate",
+            ],
+            "AssaultTransportAIUpdate" => &["MembersGetHealedAtLifeRatio", "ClearRangeRequiredToContinueAttackMove"],
+            "RailedTransportAIUpdate" => &["PathPrefixName"],
+            _ => &[],
+        };
+        let g = &mut *self.g;
+        // (a field of another class's table, or of none, a share of the time: unknown here)
+        let f = if fields.is_empty() || (!clean && g.below(12) == 0) {
+            pick(g, &["NeedsRunway", "MaxBoxes", "PathPrefixName", "Bogus", "RopeName", "UnpackTime"])
+        } else {
+            pick(g, fields)
+        };
+        let s = sep(g);
+        let value = match f {
+            "NeedsRunway" | "KeepsParkingSpaceWhenAirborne" | "LockonBlinky" | "TryToFollowTarget" | "UseWeaponSpeed" | "DetonateOnNoFuel"
+            | "DetonateCallsKill" | "WaitForRopesToDrop" | "ResetTurretBeforePacking" | "TurretsFunctionOnlyWhenDeployed"
+            | "TurretsMustCenterBeforePacking" | "ManualDeployAnimations" => gen_bool(g, clean),
+            "OutOfAmmoDamagePerSecond" | "TakeoffDistForMaxLift" | "RepairHealthPercentPerSecond" => {
+                if clean || g.below(3) != 0 { format!("{}%", g.below(200)) } else { gen_real(g, clean) }
+            }
+            "AttackLocomotorType" | "ReturnForAmmoLocomotorType" => gen_index(g, &LOCO_SETS[..8], clean),
+            "LockonCursor" | "RopeName" | "RotorWashParticleSystem" | "PutInContainer" | "PathPrefixName" => {
+                // (mostly a plain name: a malformed one throws, and a railed transport has no other field)
+                let c = clean || g.below(4) != 0;
+                gen_string(g, c)
+            }
+            "IgnitionFX" | "GarrisonHitKillFX" => pick(g, &["FxIgnite", "FxGarrison", "None", "NONE", "FxIgnite"]).to_string(),
+            "GarrisonHitKillRequiredKindOf" | "GarrisonHitKillForbiddenKindOf" => gen_bits(g, KindOfMaskType::get_bit_names(), clean, true),
+            "SuppliesDepletedVoice" => pick(g, &SOUNDS).to_string(),
+            "RopeColor" => gen_color(g, clean),
+            "DropOffset" | "DropVariance" => {
+                if clean || g.below(4) != 0 {
+                    format!("X:{:.1} Y:{:.1} Z:{:.1}", g.uniform(-50.0, 50.0), g.uniform(-50.0, 50.0), g.uniform(-50.0, 50.0))
+                } else {
+                    pick(g, &["X:1 Y:2", "", "1 2 3", "Y:1 X:2 Z:3"]).to_string()
+                }
+            }
+            "DeliveryDecal" => {
+                out.push(self.line(f.to_string()));
+                for _ in 0..self.g.below(6) {
+                    let g = &mut *self.g;
+                    let s = sep(g);
+                    let l = match g.below(8) {
+                        0 => format!("Texture{s}{}", gen_string(g, clean)),
+                        1 => format!(
+                            "Style{s}{}",
+                            gen_bits(
+                                g,
+                                &["SHADOW_DECAL", "SHADOW_VOLUME", "SHADOW_PROJECTION", "SHADOW_DYNAMIC_PROJECTION", "SHADOW_DIRECTIONAL_PROJECTION", "SHADOW_ALPHA_DECAL", "SHADOW_ADDITIVE_DECAL"],
+                                clean,
+                                false
+                            )
+                        ),
+                        2 | 3 => format!("{}{s}{}%", pick(g, &["OpacityMin", "OpacityMax"]), g.below(101)),
+                        4 => format!("OpacityThrobTime{s}{}", g.below(5000)),
+                        5 => format!("Color{s}{}", gen_color(g, clean)),
+                        6 => format!("OnlyVisibleToOwningPlayer{s}{}", gen_bool(g, clean)),
+                        _ if !clean => "Bogus = 1".to_string(),
+                        _ => format!("OpacityThrobTime{s}{}", g.below(100)),
+                    };
+                    out.push(self.line(l));
+                }
+                if clean || self.g.below(30) != 0 {
+                    out.push(self.line("End".to_string()));
+                }
+                return;
+            }
+            "MaxBoxes" | "MaxAttempts" | "UpgradedSupplyBoost" => gen_int(g, clean),
+            "NumRopes" | "GarrisonHitKillCount" | "RegularCashAmount" | "VeteranCashAmount" | "EliteCashAmount" | "HeroicCashAmount"
+            | "XpPerCashUpdate" => {
+                if clean || g.below(4) != 0 { format!("{}", g.below(500)) } else { gen_int(g, false) }
+            }
+            "TakeoffPause" | "AttackLocomotorPersistTime" | "AttackersMissPersistTime" | "LockonTime" | "ReturnToBaseIdleTime" | "FuelLifetime"
+            | "IgnitionDelay" | "KillSelfDelay" | "SupplyCenterActionDelay" | "SupplyWarehouseActionDelay" | "PerRopeDelayMin" | "PerRopeDelayMax"
+            | "DoorDelay" | "DropDelay" | "UnpackTime" | "PackTime" | "CashUpdateDelay" | "CashUpdateDelayFast" | "BoredTime" => {
+                if clean || g.below(4) != 0 { format!("{}", g.below(10000)) } else { gen_int(g, false) }
+            }
+            _ => gen_real(g, clean),
+        };
+        out.push(self.line(format!("{f}{s}{value}")));
     }
 
     /// One field line of a `Turret` block.
@@ -1327,6 +1716,7 @@ struct Checks {
     dump_bug_inheritable: Check,
     dump_bug_reskin: Check,
     dump_bug_ai: Check,
+    dump_bug_ai_sub: Check,
     keys: Check,
     find: Check,
     find_bug: Check,
@@ -1355,6 +1745,7 @@ impl Checks {
             dump_bug_inheritable: Check::new("module inheritable flag"),
             dump_bug_reskin: Check::new("reskinnedFrom"),
             dump_bug_ai: Check::new("AI mood check rate"),
+            dump_bug_ai_sub: Check::new("a jet's LockonBlinky"),
             keys: Check::new("NAMEKEY of the probe names"),
             find: Check::new("findTemplate"),
             find_bug: Check::new("findTemplate"),
@@ -1398,6 +1789,8 @@ struct Tally {
     loco_sets_filled: u64,
     turrets: u64,
     ai_fields_set: u64,
+    /// batch I9b-5: AI module data dumped by subclass (the dump's tag: 0 the base's, 1 a jet's, ... 11 a railed transport's)
+    ai_subclasses: [u64; 12],
     armor_sets: u64,
     weapon_sets: u64,
     prereqs: u64,
@@ -1639,6 +2032,9 @@ fn tally_dump(c: &Ctx, t: &mut Tally) {
                         t.loco_sets_filled += map.values().filter(|v| !v.is_empty()).count() as u64;
                         t.turrets += ai.turret_data.iter().filter(|x| x.is_some()).count() as u64;
                         t.ai_fields_set += u64::from(ai.mood_attack_check_rate != 60 || ai.forbid_player_commands || ai.turrets_linked || ai.auto_acquire_enemies_when_idle != 0);
+                        let mut tag = Vec::new();
+                        dump_ai_subclass(&mut tag, &ai.subclass, 0);
+                        t.ai_subclasses[tag[0] as usize] += 1;
                     }
                 }
             }
@@ -1809,7 +2205,10 @@ fn run_sessions(seed: u64, sessions: usize, modules_only: bool, label: &str) -> 
             ck.dump_bug_audio.eq(rust_dump(&c, 3), cd.clone(), file);
             ck.dump_bug_inheritable.eq(rust_dump(&c, 4), cd.clone(), file);
             ck.dump_bug_reskin.eq(rust_dump(&c, 5), cd.clone(), file);
-            ck.dump_bug_ai.eq(rust_dump(&c, 7), cd, file);
+            ck.dump_bug_ai.eq(rust_dump(&c, 7), cd.clone(), file);
+            if t.ai_subclasses[1] > 0 {
+                ck.dump_bug_ai_sub.eq(rust_dump(&c, 8), cd, file);
+            }
             tally_dump(&c, &mut t);
             probe(&mut c, &mut ck, &mut t, &mut g, &tag, step + session as u32);
         }
@@ -1829,6 +2228,10 @@ fn finish(ck: Checks, full: bool) {
     ck.dump_bug_inheritable.finish_planted();
     ck.dump_bug_reskin.finish_planted();
     ck.dump_bug_ai.finish_planted();
+    // (a jet's data in this run, which `module_lists_match_upstream` asserts)
+    if ck.dump_bug_ai_sub.compared > 0 {
+        ck.dump_bug_ai_sub.finish_planted();
+    }
     ck.keys.finish();
     ck.find.finish();
     ck.find_bug.finish_planted();
@@ -1853,6 +2256,7 @@ fn report(label: &str, t: &Tally, excluded: &Excluded) {
         "{label}: AI module data compared {} times ({} locomotor sets, {} with locomotors; {} turrets; {} with a field set)",
         t.ai_modules, t.loco_sets, t.loco_sets_filled, t.turrets, t.ai_fields_set
     );
+    println!("{label}: AI module data by subclass (base, jet, missile, supply truck, chinook, dozer, worker, deliver payload, deploy style, hack internet, assault transport, railed transport): {:?}", t.ai_subclasses);
     println!(
         "{label}: {} sessions, {} loads ({} overrides, {} ok, {} threw, {} with a message), {} resets, {} postProcessLoad, {} init/update; \
          compared {} template objects in {} chains ({} override copies, {} templates made for a map, {} reskins, {} with modules: {} modules of which {} client, \
@@ -1907,6 +2311,7 @@ fn module_lists_match_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (ck, t, excluded) = run_sessions(0xB0DE, 3_000, true, "module lists");
     assert!(t.ai_modules > 500 && t.loco_sets_filled > 100 && t.turrets > 150, "too few AI module data compared (batch A1)");
+    assert!(t.ai_subclasses[1..].iter().all(|&n| n > 10), "too few of each AI subclass's data compared (batch I9b-5): {:?}", t.ai_subclasses);
     report("module lists", &t, &excluded);
     assert!(t.loads_ok > 500 && t.loads_failed > 1000, "the generator must reach both outcomes: {} ok, {} threw", t.loads_ok, t.loads_failed);
     assert!(t.modules > 8000 && t.client_modules > 1500 && t.override_nodes > 800, "too few modules compared");

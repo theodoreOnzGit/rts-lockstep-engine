@@ -1204,6 +1204,68 @@ pub fn translated_module(name: &str) -> Option<ModuleTemplate> {
             create_data_proc: Some(crate::logic::ai::ai_update_data::new_module_data),
             which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
         }),
+        // batch I9b-5: the AI subclasses, their data `AIUpdateModuleData` with the subclass's members
+        // (`logic::ai::ai_subclass_data`); `WanderAIUpdate` and `TransportAIUpdate` have `AIUpdateInterface`'s
+        "WanderAIUpdate" | "TransportAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_update_data::new_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "JetAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_jet_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "MissileAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_missile_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "SupplyTruckAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_supply_truck_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "ChinookAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_chinook_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "DozerAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_dozer_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "WorkerAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_worker_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "DeliverPayloadAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_deliver_payload_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "DeployStyleAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_deploy_style_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "HackInternetAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_hack_internet_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "AssaultTransportAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_assault_transport_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
+        "RailedTransportAIUpdate" => Some(ModuleTemplate {
+            create_proc: Some(new_update_base),
+            create_data_proc: Some(crate::logic::ai::ai_subclass_data::new_railed_transport_module_data),
+            which_interfaces: Some(crate::logic::module::update_module::UpdateModule::get_interface_mask()),
+        }),
         "PhysicsBehavior" => Some(ModuleTemplate {
             create_proc: Some(new_update_base),
             create_data_proc: Some(crate::logic::modules::physics_behavior::new_module_data),
@@ -1971,9 +2033,11 @@ mod tests {
         f.init(&mut names).unwrap();
         let name = |s: &str| s.as_bytes().to_vec();
         let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| f.find_module_template(names, n.as_bytes(), t).unwrap_err();
+        // (batch I9b-5: with the AI subclasses every behavior module is translated; the client updates are not)
+        assert!(f.find_module_template(&mut names, b"JetAIUpdate", ModuleType::Behavior).is_ok());
         assert_eq!(
-            find(&f, &mut names, "JetAIUpdate", ModuleType::Behavior),
-            ModuleFactoryError::NotTranslated { name: name("JetAIUpdate"), module_type: ModuleType::Behavior }
+            find(&f, &mut names, "SwayClientUpdate", ModuleType::ClientUpdate),
+            ModuleFactoryError::NotTranslated { name: name("SwayClientUpdate"), module_type: ModuleType::ClientUpdate }
         );
         assert_eq!(
             find(&f, &mut names, "BeaconClientUpdate", ModuleType::ClientUpdate),
@@ -1992,13 +2056,14 @@ mod tests {
         assert!(matches!(find(&f, &mut names, "NoSuchModule", ModuleType::Behavior), ModuleFactoryError::UnknownModule { .. }));
         assert!(matches!(find(&f, &mut names, "autohealbehavior", ModuleType::Behavior), ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }));
         // the three public entry points, for an untranslated name
-        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::Behavior && r.in_shipped_build && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
+        // (batch I9b-5: no behavior module is left untranslated; a client update is)
+        let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::ClientUpdate && r.in_shipped_build && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
         let pending = &pending[..];
-        let e = f.new_module(&mut names, 1, pending, None, ModuleType::Behavior).unwrap_err();
+        let e = f.new_module(&mut names, 1, pending, None, ModuleType::ClientUpdate).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f.new_module_data_from_ini(&mut names, None, pending, ModuleType::Behavior, b"ModuleTag_01").unwrap_err();
+        let e = f.new_module_data_from_ini(&mut names, None, pending, ModuleType::ClientUpdate, b"ModuleTag_01").unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
-        let e = f.find_module_interface_mask(&mut names, pending, ModuleType::Behavior).unwrap_err();
+        let e = f.find_module_interface_mask(&mut names, pending, ModuleType::ClientUpdate).unwrap_err();
         assert!(matches!(e, ModuleFactoryError::NotTranslated { .. }));
         assert!(f.module_data_list().is_empty());
         // an empty name

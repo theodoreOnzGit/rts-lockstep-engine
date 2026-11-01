@@ -80,9 +80,23 @@ pub struct AiHostCuts {
     pub passenger_allowed_to_fire: BTreeMap<ObjectId, bool>,
     /// The object's horde updates (`isTrueHordeMember()`, `isAllowedNationalism()`), by object.
     pub horde_updates: BTreeMap<ObjectId, Vec<(bool, bool)>>,
+    /// The FX lists the AIs' data name (batch I9b-5), by the index an AI keeps for one: the FX is the client's, and its cut
+    /// points log the name.
+    pub fx_names: Vec<Vec<u8>>,
 }
 
 impl World {
+    /// The index an AI keeps for the FX list `name` (`None` for `NULL`): its place in `cuts.ai_host.fx_names`, added once.
+    pub fn ai_fx_handle(&mut self, name: &crate::common::damage_fx::FxListName) -> Option<u32> {
+        let name = name.as_ref()?;
+        let names = &mut self.cuts.ai_host.fx_names;
+        let i = names.iter().position(|n| n == name).unwrap_or_else(|| {
+            names.push(name.clone());
+            names.len() - 1
+        });
+        Some(i as u32)
+    }
+
     /// Runs `f` with `id` as the object the AI hosts answer for ([`World::ai_self`]), then puts the previous one back.
     pub fn with_ai_self<T>(&mut self, id: ObjectId, f: impl FnOnce(&mut World) -> T) -> T {
         let prev = std::mem::replace(&mut self.ai_self, id);

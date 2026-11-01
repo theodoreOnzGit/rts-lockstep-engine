@@ -1,6 +1,6 @@
 /* Stand-in for GameEngine/Include/Common/GlobalData.h, ThingTemplate build
 ** only (differential tests, p1w4-thingtemplate): the five members that
-** ThingTemplate.cpp reads. (Renamed TtGlobalData by thingtemplate_prelude.h.) */
+** ThingTemplate.cpp reads, and the gravity ChinookAIUpdateModuleData() reads (batch I9b-5). (Renamed TtGlobalData by thingtemplate_prelude.h.) */
 #ifndef SHIM_TT_GLOBALDATA_H
 #define SHIM_TT_GLOBALDATA_H
 #include "Lib/BaseType.h"
@@ -12,6 +12,7 @@ public:
 	Real m_MinLowEnergyProductionSpeed;
 	Real m_MaxLowEnergyProductionSpeed;
 	Real m_MultipleFactory;
+	Real m_gravity;   /* batch I9b-5: ChinookAIUpdateModuleData's constructor */
 };
 extern GlobalData *TheGlobalData;
 #endif

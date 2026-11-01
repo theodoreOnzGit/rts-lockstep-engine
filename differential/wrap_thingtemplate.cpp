@@ -216,6 +216,10 @@ static LocomotorStore *const TheLocomotorStore = &g_locomotorStoreView;
 #include "weapon_template_set.inc"
 #include "production_prerequisite.inc"
 #include "ai_update_data.inc"
+/* batch I9b-5: the AI subclasses' module data (their members dumped, RadiusDecalTemplate's private ones too) */
+#define private public
+#include "ai_subclass_data.inc"
+#undef private
 #include "module_factory_methods.inc"
 void ModuleFactory::init(void) {}
 
@@ -283,6 +287,34 @@ ModuleData *aiDataProc(INI *ini)
 	if (ini) ini->initFromINIMultiProc(data, AIUpdateModuleData::buildFieldParse);
 	return data;
 }
+/* batch I9b-5: a subclass's data, real (its friend_newModuleData, MAKE_STANDARD_MODULE_DATA_MACRO_ABC). The jet's
+** m_lockonBlinky (a Real no constructor sets, which parseBool writes one byte of) is zeroed first: its other bytes are
+** uninitialised upstream, and the Rust keeps the Bool the INI wrote. */
+inline void aiSubPrep(void *) {}
+inline void aiSubPrep(JetAIUpdateModuleData *d) { d->m_lockonBlinky = 0.0f; }
+template<class D> ModuleData *aiSubDataProc(INI *ini)
+{
+	D *data = MSGNEW( "AllModuleData" ) D;
+	aiSubPrep(data);
+	if (ini) ini->initFromINIMultiProc(data, D::buildFieldParse);
+	return data;
+}
+typedef ModuleData *(*DataProc)(INI *);
+DataProc aiProcFor(const char *name)
+{
+	if (!strcmp(name, "JetAIUpdate")) return aiSubDataProc<JetAIUpdateModuleData>;
+	if (!strcmp(name, "MissileAIUpdate")) return aiSubDataProc<MissileAIUpdateModuleData>;
+	if (!strcmp(name, "SupplyTruckAIUpdate")) return aiSubDataProc<SupplyTruckAIUpdateModuleData>;
+	if (!strcmp(name, "ChinookAIUpdate")) return aiSubDataProc<ChinookAIUpdateModuleData>;
+	if (!strcmp(name, "DozerAIUpdate")) return aiSubDataProc<DozerAIUpdateModuleData>;
+	if (!strcmp(name, "WorkerAIUpdate")) return aiSubDataProc<WorkerAIUpdateModuleData>;
+	if (!strcmp(name, "DeliverPayloadAIUpdate")) return aiSubDataProc<DeliverPayloadAIUpdateModuleData>;
+	if (!strcmp(name, "DeployStyleAIUpdate")) return aiSubDataProc<DeployStyleAIUpdateModuleData>;
+	if (!strcmp(name, "HackInternetAIUpdate")) return aiSubDataProc<HackInternetAIUpdateModuleData>;
+	if (!strcmp(name, "AssaultTransportAIUpdate")) return aiSubDataProc<AssaultTransportAIUpdateModuleData>;
+	if (!strcmp(name, "RailedTransportAIUpdate")) return aiSubDataProc<RailedTransportAIUpdateModuleData>;
+	return aiDataProc;   /* AIUpdateInterface, TestAI2, WanderAIUpdate, TransportAIUpdate */
+}
 
 struct TestModule
 {
@@ -304,7 +336,23 @@ const TestModule g_testModules[] = {
 	{ "TestClient", MODULETYPE_CLIENT_UPDATE, MODULEINTERFACE_CLIENT_UPDATE },
 	{ "AIUpdateInterface", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
 	{ "TestAI2", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	/* batch I9b-5 */
+	{ "JetAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "MissileAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "SupplyTruckAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "ChinookAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "DozerAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "WorkerAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "DeliverPayloadAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "DeployStyleAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "HackInternetAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "AssaultTransportAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "RailedTransportAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "WanderAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
+	{ "TransportAIUpdate", MODULETYPE_BEHAVIOR, MODULEINTERFACE_UPDATE },
 };
+/* batch I9b-5: the FX list names a missile's data may name, keyed at the reset (findFXList keys them) */
+const char *const g_testFx[] = { "FxIgnite", "FxGarrison" };
 const char *const g_testWeapons[] = { "Rifle", "Cannon", "Missile" };
 
 /* ---- dump helpers */
@@ -397,6 +445,98 @@ void dumpTurretAiData(const TurretAIData *td)
 	put8(td->m_firesWhileTurning ? 1 : 0);
 	put8(td->m_isAllowsPitch ? 1 : 0);
 }
+/* batch I9b-5: the subclass's own members, its tag first (0 the base's); the chinook's before the supply truck's, which it
+** derives from */
+/* INI::parseFXList is the INI archive's: it resolves through the one strong FXListStore::findFXList of the test binary,
+** the Armor build's (wrap_armor.cpp: a distinct pointer per name, NULL for None), whose pointers ref_armor_fx_name maps back
+** to their names. (That store keys no name; the FX names the generator uses are keyed at the reset on both sides.) */
+extern "C" const char *ref_armor_fx_name(const void *fx);
+void putFx(const FXList *fx)
+{
+	if (!fx) { put8(0); return; }
+	put8(1);
+	const char *n = ref_armor_fx_name(fx);
+	putStr(n ? std::string(n) : std::string("?"));
+}
+void putCoord(const Coord3D &c) { putF32(c.x); putF32(c.y); putF32(c.z); }
+void putSupply(const SupplyTruckAIUpdateModuleData *s)
+{
+	putI32(s->m_maxBoxesData); putU32(s->m_centerDelay); putU32(s->m_warehouseDelay); putF32(s->m_warehouseScanDistance);
+	putAscii(s->m_suppliesDepletedVoice.getEventName());
+}
+void dumpAiSubclass(const AIUpdateModuleData *d)
+{
+	if (const JetAIUpdateModuleData *j = dynamic_cast<const JetAIUpdateModuleData *>(d)) {
+		put8(1);
+		putF32(j->m_outOfAmmoDamagePerSecond); putF32(j->m_takeoffDistForMaxLift); putF32(j->m_minHeight); putF32(j->m_parkingOffset);
+		putF32(j->m_sneakyOffsetWhenAttacking);
+		put8(j->m_keepsParkingSpaceWhenAirborne ? 1 : 0); put8(j->m_needsRunway ? 1 : 0);
+		putU32(j->m_takeoffPause); putI32((int)j->m_attackingLoco); putI32((int)j->m_returningLoco);
+		putU32(j->m_attackLocoPersistTime); putU32(j->m_attackersMissPersistTime); putU32(j->m_lockonTime);
+		putAscii(j->m_lockonCursor);
+		putF32(j->m_lockonInitialDist); putF32(j->m_lockonFreq); putF32(j->m_lockonAngleSpin);
+		put8(j->m_lockonBlinky != 0.0f ? 1 : 0);   /* the Real as its readers see it (the byte parseBool wrote) */
+		putU32(j->m_returnToBaseIdleTime);
+	} else if (const MissileAIUpdateModuleData *m = dynamic_cast<const MissileAIUpdateModuleData *>(d)) {
+		put8(2);
+		put8(m->m_tryToFollowTarget ? 1 : 0); putU32(m->m_fuelLifetime); putU32(m->m_ignitionDelay);
+		putF32(m->m_initialVel); putF32(m->m_initialDist); putF32(m->m_diveDistance);
+		putFx(m->m_ignitionFX);
+		put8(m->m_useWeaponSpeed ? 1 : 0); put8(m->m_detonateOnNoFuel ? 1 : 0);
+		putI32(m->m_garrisonHitKillCount);
+		putFlags(m->m_garrisonHitKillKindof); putFlags(m->m_garrisonHitKillKindofNot);
+		putFx(m->m_garrisonHitKillFX);
+		putF32(m->m_distanceScatterWhenJammed); putF32(m->m_lockDistance);
+		put8(m->m_detonateCallsKill ? 1 : 0); putI32(m->m_killSelfDelay);
+	} else if (const ChinookAIUpdateModuleData *c = dynamic_cast<const ChinookAIUpdateModuleData *>(d)) {
+		put8(4);
+		putSupply(c);
+		putAscii(c->m_ropeName); putAscii(c->m_rotorWashParticleSystem);
+		putF32(c->m_rappelSpeed); putF32(c->m_ropeDropSpeed); putF32(c->m_ropeWidth); putF32(c->m_ropeFinalHeight);
+		putF32(c->m_ropeWobbleLen); putF32(c->m_ropeWobbleAmp); putF32(c->m_ropeWobbleRate);
+		putF32(c->m_ropeColor.red); putF32(c->m_ropeColor.green); putF32(c->m_ropeColor.blue);
+		putU32(c->m_numRopes); putU32(c->m_perRopeDelayMin); putU32(c->m_perRopeDelayMax);
+		putF32(c->m_minDropHeight); put8(c->m_waitForRopesToDrop ? 1 : 0); putI32(c->m_upgradedSupplyBoost);
+	} else if (const SupplyTruckAIUpdateModuleData *st = dynamic_cast<const SupplyTruckAIUpdateModuleData *>(d)) {
+		put8(3);
+		putSupply(st);
+	} else if (const DozerAIUpdateModuleData *z = dynamic_cast<const DozerAIUpdateModuleData *>(d)) {
+		put8(5);
+		putF32(z->m_repairHealthPercentPerSecond); putF32(z->m_boredTime); putF32(z->m_boredRange);
+	} else if (const WorkerAIUpdateModuleData *w = dynamic_cast<const WorkerAIUpdateModuleData *>(d)) {
+		put8(6);
+		putI32(w->m_maxBoxesData); putF32(w->m_repairHealthPercentPerSecond); putF32(w->m_boredTime); putF32(w->m_boredRange);
+		putU32(w->m_centerDelay); putU32(w->m_warehouseDelay); putF32(w->m_warehouseScanDistance);
+		putAscii(w->m_suppliesDepletedVoice.getEventName()); putI32(w->m_upgradedSupplyBoost);
+	} else if (const DeliverPayloadAIUpdateModuleData *p = dynamic_cast<const DeliverPayloadAIUpdateModuleData *>(d)) {
+		put8(7);
+		putU32(p->m_doorDelay); putF32(p->m_maxDistanceToTarget); putI32(p->m_maxNumberAttempts); putU32(p->m_dropDelay);
+		putCoord(p->m_dropOffset); putCoord(p->m_dropVariance);
+		putAscii(p->m_putInContainerName);
+		const RadiusDecalTemplate &t = p->m_deliveryDecalTemplate;
+		putAscii(t.m_name); putU32((unsigned)t.m_shadowType); putF32(t.m_minOpacity); putF32(t.m_maxOpacity);
+		putU32(t.m_opacityThrobTime); putI32((int)t.m_color); put8(t.m_onlyVisibleToOwningPlayer ? 1 : 0);
+		putF32(p->m_deliveryDecalRadius);
+	} else if (const DeployStyleAIUpdateModuleData *ds = dynamic_cast<const DeployStyleAIUpdateModuleData *>(d)) {
+		put8(8);
+		putU32(ds->m_unpackTime); putU32(ds->m_packTime);
+		put8(ds->m_resetTurretBeforePacking ? 1 : 0); put8(ds->m_turretsFunctionOnlyWhenDeployed ? 1 : 0);
+		put8(ds->m_turretsMustCenterBeforePacking ? 1 : 0); put8(ds->m_manualDeployAnimations ? 1 : 0);
+	} else if (const HackInternetAIUpdateModuleData *h = dynamic_cast<const HackInternetAIUpdateModuleData *>(d)) {
+		put8(9);
+		putU32(h->m_unpackTime); putU32(h->m_packTime); putU32(h->m_cashUpdateDelay); putU32(h->m_cashUpdateDelayFast);
+		putU32(h->m_regularCashAmount); putU32(h->m_veteranCashAmount); putU32(h->m_eliteCashAmount); putU32(h->m_heroicCashAmount);
+		putU32(h->m_xpPerCashUpdate); putF32(h->m_packUnpackVariationFactor);
+	} else if (const AssaultTransportAIUpdateModuleData *a = dynamic_cast<const AssaultTransportAIUpdateModuleData *>(d)) {
+		put8(10);
+		putF32(a->m_membersGetHealedAtLifeRatio); putF32(a->m_clearRangeRequiredToContinueAttackMove);
+	} else if (const RailedTransportAIUpdateModuleData *r = dynamic_cast<const RailedTransportAIUpdateModuleData *>(d)) {
+		put8(11);
+		putAscii(r->m_pathPrefixName);
+	} else {
+		put8(0);
+	}
+}
 void dumpAiModuleData(const AIUpdateModuleData *d)
 {
 	putU32((unsigned)d->m_locomotorTemplates.size());
@@ -410,6 +550,7 @@ void dumpAiModuleData(const AIUpdateModuleData *d)
 	put8(d->m_forbidPlayerCommands ? 1 : 0);
 	put8(d->m_turretsLinked ? 1 : 0);
 	putU32(d->m_autoAcquireEnemiesWhenIdle);
+	dumpAiSubclass(d);
 }
 
 void dumpModuleInfo(const ModuleInfo &mi)
@@ -683,7 +824,7 @@ void ref_tt_reset(unsigned defaultOcclusionDelay, unsigned superweaponRestrictio
 	TheModuleFactory = new ModuleFactory;
 	for (size_t i = 0; i < sizeof(g_testModules) / sizeof(g_testModules[0]); ++i) {
 		const TestModule &m = g_testModules[i];
-		ModuleData *(*proc)(INI *) = m.type != MODULETYPE_BEHAVIOR ? clientDataProc : strncmp(m.name, "Test", 4) ? aiDataProc
+		ModuleData *(*proc)(INI *) = m.type != MODULETYPE_BEHAVIOR ? clientDataProc : strncmp(m.name, "Test", 4) ? aiProcFor(m.name)
 			: !strcmp(m.name, "TestAI2") ? aiDataProc : baseDataProc;
 		TheModuleFactory->addModuleInternal(0, proc, m.type, AsciiString(m.name), m.mask);
 	}
@@ -693,6 +834,8 @@ void ref_tt_reset(unsigned defaultOcclusionDelay, unsigned superweaponRestrictio
 		w->m_name = g_testWeapons[i];
 		g_weapons[TheNameKeyGenerator->nameToKey(g_testWeapons[i])] = w;
 	}
+	for (size_t i = 0; i < sizeof(g_testFx) / sizeof(g_testFx[0]); ++i) TheNameKeyGenerator->nameToKey(g_testFx[i]);
+	g_globalData.m_gravity = -1.0f;   /* GlobalData()'s (batch I9b-5) */
 	g_lastObjectTemplate = 0;
 	g_lastDrawableTemplate = 0;
 }
