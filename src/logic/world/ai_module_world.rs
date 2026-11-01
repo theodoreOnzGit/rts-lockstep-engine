@@ -35,7 +35,20 @@
 
 use std::sync::Arc;
 
-use crate::common::game_type::ObjectId;
+use crate::common::base_type::Coord3D;
+use crate::logic::ai::ai_update_types::CMD_FROM_AI;
+use crate::common::game_type::{ObjectId, INVALID_ID};
+use crate::common::state_machine::StateMachine;
+use crate::logic::ai::ai_commands::{self as commands, *};
+use crate::logic::ai::ai_states::AiState;
+use crate::logic::ai::ai_update::{AiSubclass, AiUpdate};
+use crate::logic::ai::chinook_ai_update::ai_free_to_exit as chinook_ai_free_to_exit;
+use crate::logic::locomotor::Locomotor;
+use crate::logic::modules::transport_contain::FREE_TO_EXIT;
+use crate::logic::weapon::NO_MAX_SHOTS_LIMIT;
+
+/// `AIFreeToExitType`'s `NOT_FREE_TO_EXIT`.
+const NOT_FREE_TO_EXIT: i32 = 1;
 use crate::common::state_machine::StateMachineError;
 use crate::common::xfer::{Xfer, XferResult, XferStatus};
 use crate::logic::ai::ai_states::AiUpdateModule;
@@ -102,12 +115,89 @@ impl AiModuleBody {
                 }
                 ModuleReply::Done
             }
-            // the getters routed so far (the other calls of the object to its AI still answer from the AI cut tables)
+            // the commands: `AICommandInterface`'s inline builders of `AICommandParms`, then `aiDoCommand` (AI.h)
+            ModuleCall::AiIdle => command(m, world, me, AiCommandParms::new(AICMD_IDLE, CMD_FROM_AI)),
+            ModuleCall::AiIdleFrom { command_source } => command(m, world, me, parms(AICMD_IDLE, command_source)),
+            ModuleCall::AiBusy { command_source } => command(m, world, me, parms(AICMD_BUSY, command_source)),
+            ModuleCall::AiHunt { command_source } => command(m, world, me, parms(AICMD_HUNT, command_source)),
+            ModuleCall::AiHackInternet { command_source } => command(m, world, me, parms(AICMD_HACK_INTERNET, command_source)),
+            ModuleCall::AiEvacuate { expose_stealth_units, command_source } => {
+                let mut p = parms(AICMD_EVACUATE, command_source);
+                p.int_value = i32::from(expose_stealth_units);
+                command(m, world, me, p)
+            }
+            ModuleCall::AiEvacuateInstantly { expose_stealth_units } => {
+                let mut p = AiCommandParms::new(AICMD_EVACUATE_INSTANTLY, CMD_FROM_AI);
+                p.int_value = i32::from(expose_stealth_units);
+                command(m, world, me, p)
+            }
+            ModuleCall::AiGuardRetaliate { victim, pos } => {
+                let mut p = AiCommandParms::new(AICMD_GUARD_RETALIATE, CMD_FROM_AI);
+                p.obj = victim;
+                p.pos = pos;
+                p.int_value = NO_MAX_SHOTS_LIMIT;
+                command(m, world, me, p)
+            }
+            ModuleCall::AiExit { container, command_source } => command(m, world, me, with_obj(AICMD_EXIT, container, command_source)),
+            ModuleCall::AiExitInstantly { container, command_source } => command(m, world, me, with_obj(AICMD_EXIT_INSTANTLY, container, command_source)),
+            ModuleCall::AiMoveToObject { target, command_source } => command(m, world, me, with_obj(AICMD_MOVE_TO_OBJECT, target, command_source)),
+            ModuleCall::AiFaceObject { target, command_source } => command(m, world, me, with_obj(AICMD_FACE_OBJECT, target, command_source)),
+            ModuleCall::AiGetHealed { target, command_source } => command(m, world, me, with_obj(AICMD_GET_HEALED, target, command_source)),
+            ModuleCall::AiEnter { target, command_source } => command(m, world, me, with_obj(AICMD_ENTER, target, command_source)),
+            ModuleCall::AiResumeConstruction { object, command_source } => {
+                command(m, world, me, with_obj(AICMD_RESUME_CONSTRUCTION, object, command_source))
+            }
+            ModuleCall::AiMoveToPosition { pos, command_source } => command(m, world, me, with_pos(AICMD_MOVE_TO_POSITION, pos, command_source)),
+            ModuleCall::AiFacePosition { pos, command_source } => command(m, world, me, with_pos(AICMD_FACE_POSITION, pos, command_source)),
+            ModuleCall::AiAttackObject { victim, max_shots, command_source } => {
+                let mut p = with_obj(AICMD_ATTACK_OBJECT, victim, command_source);
+                p.int_value = max_shots;
+                command(m, world, me, p)
+            }
+            ModuleCall::AiAttackPosition { pos: Some(pos), max_shots, command_source } => {
+                let mut p = with_pos(AICMD_ATTACK_POSITION, pos, command_source);
+                p.int_value = max_shots;
+                command(m, world, me, p)
+            }
+            // (upstream dereferences the `NULL`: undefined behaviour, recorded rather than guessed at)
+            ModuleCall::AiAttackPosition { pos: None, .. } => {
+                world.cuts.team_live_errors.push("AIUpdateInterface::aiAttackPosition: NULL position".to_string());
+                ModuleReply::Done
+            }
+            ModuleCall::AiFollowPath { path, ignore_object, command_source } => {
+                let mut p = with_obj(AICMD_FOLLOW_PATH, ignore_object, command_source);
+                p.coords = path;
+                command(m, world, me, p)
+            }
+            ModuleCall::AiFollowExitProductionPath { path, ignore_object, command_source } => {
+                let mut p = with_obj(AICMD_FOLLOW_EXITPRODUCTION_PATH, ignore_object, command_source);
+                p.coords = path;
+                command(m, world, me, p)
+            }
+            ModuleCall::AiFollowWaypointPath { waypoint, command_source } => {
+                let mut p = parms(AICMD_FOLLOW_WAYPOINT_PATH, command_source);
+                p.waypoint = u32::try_from(waypoint).ok();
+                command(m, world, me, p)
+            }
+            ModuleCall::AiDoQuickExit { path } => {
+                if let Err(e) = world.with_ai_self(me.object, |w| m.run(w, |sm, h| commands::do_quick_exit(sm, h, &path))) {
+                    world.cuts.team_live_errors.push(format!("AIUpdateInterface::doQuickExit: {e:?}"));
+                }
+                ModuleReply::Done
+            }
+            // the getters and setters of the AI and its machine
             ModuleCall::AiGetCurrentVictim => {
                 let ai = m.ai.take();
-                let r = ai.as_ref().map_or(crate::common::game_type::INVALID_ID, |a| world.with_ai_self(me.object, |w| a.get_current_victim(w)));
+                let r = ai.as_ref().map_or(INVALID_ID, |a| world.with_ai_self(me.object, |w| a.get_current_victim(w)));
                 m.ai = ai;
                 ModuleReply::Id(r)
+            }
+            ModuleCall::AiGetCurrentVictimPos => {
+                let (Some(a), Some(sm)) = (m.ai.as_ref(), m.machine.as_ref()) else { return ModuleReply::Unhandled };
+                match world.with_ai_self(me.object, |w| a.get_current_victim_pos(w, sm)) {
+                    Some(p) => ModuleReply::Coord(p),
+                    None => ModuleReply::Unhandled,
+                }
             }
             ModuleCall::AiIsDoingGroundMovement => {
                 let ai = m.ai.take();
@@ -116,6 +206,121 @@ impl AiModuleBody {
                 ModuleReply::Bool(r)
             }
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(m.ai().last_command_source),
+            // `getStateMachine()->getGoalObject()`: `findObjectByID` of the goal
+            ModuleCall::AiGetGoalObject => {
+                let id = m.machine.as_ref().map_or(INVALID_ID, |sm| sm.goal_object_id());
+                ModuleReply::Id(if world.objects.find(id).is_some() { id } else { INVALID_ID })
+            }
+            ModuleCall::AiGetGoalPosition => ModuleReply::Coord(m.machine.as_ref().map(|sm| *sm.goal_position()).unwrap_or_default()),
+            ModuleCall::AiIsMoving => machine_bool(m, world, me, |a, sm, w| a.is_moving(sm, w)),
+            ModuleCall::AiIsIdle => machine_bool(m, world, me, |a, sm, w| a.is_idle(sm, w)),
+            ModuleCall::AiIsBusy => machine_bool(m, world, me, |a, sm, _| a.is_busy(sm)),
+            ModuleCall::AiIsAttacking => machine_bool(m, world, me, |a, sm, _| a.is_attacking(sm)),
+            ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(m.ai().is_ai_in_dead_state()),
+            ModuleCall::AiIsClearingMines => {
+                let a = m.ai();
+                ModuleReply::Bool(world.with_ai_self(me.object, |w| a.is_clearing_mines(w)))
+            }
+            ModuleCall::AiGetEnterTarget => {
+                let (Some(a), Some(sm)) = (m.ai.as_ref(), m.machine.as_ref()) else { return ModuleReply::Id(INVALID_ID) };
+                ModuleReply::Id(world.with_ai_self(me.object, |w| a.get_enter_target(w, sm)))
+            }
+            ModuleCall::AiGetLocomotorDistanceToGoal => {
+                let (Some(a), Some(sm)) = (m.ai.as_mut(), m.machine.as_ref()) else { return ModuleReply::Real(0.0) };
+                ModuleReply::Real(world.with_ai_self(me.object, |w| a.get_locomotor_distance_to_goal(w, sm)))
+            }
+            ModuleCall::AiGetNextMoodTarget { called_by_ai, called_during_idle } => {
+                let (Some(a), Some(sm)) = (m.ai.as_mut(), m.machine.as_ref()) else { return ModuleReply::Id(INVALID_ID) };
+                ModuleReply::Id(world.with_ai_self(me.object, |w| a.get_next_mood_target(w, sm, called_by_ai, called_during_idle)))
+            }
+            ModuleCall::AiWakeUpAndAttemptToTarget => {
+                if let (Some(a), Some(sm)) = (m.ai.as_mut(), m.machine.as_ref()) {
+                    world.with_ai_self(me.object, |w| a.wake_up_and_attempt_to_target(w, sm));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::AiMarkAsDead => {
+                let a = m.ai_mut();
+                world.with_ai_self(me.object, |w| a.mark_as_dead(w));
+                ModuleReply::Done
+            }
+            ModuleCall::AiEvaluateMoraleBonus => {
+                let a = m.ai_mut();
+                world.with_ai_self(me.object, |w| a.evaluate_morale_bonus(w));
+                ModuleReply::Done
+            }
+            ModuleCall::AiChooseLocomotorSet(set) => {
+                let a = m.ai_mut();
+                ModuleReply::Bool(world.with_ai_self(me.object, |w| a.choose_locomotor_set(w, set)))
+            }
+            ModuleCall::AiSetIgnoreCollisionTime { frames } => {
+                let now = world.frame();
+                m.ai_mut().set_ignore_collision_time(now, frames);
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetAttitude(tude) => {
+                m.ai_mut().set_attitude(tude);
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetIsRecruitable(r) => {
+                m.ai_mut().is_recruitable = r;
+                ModuleReply::Done
+            }
+            ModuleCall::AiNotifyCrate(id) => {
+                m.ai_mut().notify_crate(id);
+                ModuleReply::Done
+            }
+            ModuleCall::AiIgnoreObstacle { obstacle } => {
+                m.ai_mut().ignore_obstacle_id(obstacle);
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetIgnoredObstacleId => ModuleReply::Id(m.ai().get_ignored_obstacle_id()),
+            ModuleCall::AiSetPathExtraDistance(d) => {
+                m.ai_mut().set_path_extra_distance(d);
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetCurLocomotorSetType => ModuleReply::Int(m.ai().cur_locomotor_set),
+            ModuleCall::AiHasLocomotorForSurface(s) => ModuleReply::Bool(m.ai().has_locomotor_for_surface(s as i32)),
+            ModuleCall::AiGetPathLastNodePosition => match m.ai().path.as_ref().and_then(|p| p.last_node().map(|i| *p.node(i).position())) {
+                Some(p) => ModuleReply::Coord(p),
+                None => ModuleReply::Unhandled,
+            },
+            // `getAiFreeToExit(exiter)`: the base's FREE_TO_EXIT, or the chinook's and the deliverer's overrides
+            ModuleCall::AiGetFreeToExit { exiter } => match &m.ai().subclass {
+                AiSubclass::Chinook(_) => ModuleReply::Int(world.with_ai_self(me.object, |w| m.run(w, |_, h| chinook_ai_free_to_exit(h, exiter)))),
+                AiSubclass::DeliverPayload(d) => {
+                    let dead = world.objects.find(me.object).is_none_or(|o| o.is_effectively_dead());
+                    ModuleReply::Int(if d.ai_free_to_exit(dead) { FREE_TO_EXIT } else { NOT_FREE_TO_EXIT })
+                }
+                _ => ModuleReply::Int(FREE_TO_EXIT),
+            },
+            ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(matches!(m.ai().subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_))),
+            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(matches!(m.ai().subclass, AiSubclass::SupplyTruck(_) | AiSubclass::Worker(_))),
+            // the current locomotor's
+            ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(m.ai().get_cur_locomotor().is_some()),
+            ModuleCall::AiGetCurLocomotorPreferredHeight => match m.ai().get_cur_locomotor() {
+                Some(l) => ModuleReply::Real(l.get_preferred_height()),
+                None => ModuleReply::Unhandled,
+            },
+            ModuleCall::AiLocomotorSway(which) => match m.ai().get_cur_locomotor() {
+                Some(l) => ModuleReply::Real(match which {
+                    0 => l.get_pitch_stiffness(),
+                    1 => l.get_roll_stiffness(),
+                    2 => l.get_pitch_damping(),
+                    _ => l.get_roll_damping(),
+                }),
+                None => ModuleReply::Unhandled,
+            },
+            ModuleCall::AiLocomotorSetUltraAccurate(v) => locomotor(m, |l| l.set_ultra_accurate(v)),
+            ModuleCall::AiLocomotorSetAllowInvalidPosition(v) => locomotor(m, |l| l.set_allow_invalid_position(v)),
+            ModuleCall::AiLocomotorSetCloseEnoughDist(v) => locomotor(m, |l| l.set_close_enough_dist(v)),
+            ModuleCall::AiLocomotorSetCloseEnoughDist3D(v) => locomotor(m, |l| l.set_close_enough_dist_3d(v)),
+            ModuleCall::AiLocomotorSetUsePreciseZPos(v) => locomotor(m, |l| l.set_use_precise_z_pos(v)),
+            ModuleCall::AiLocomotorSetMaxLift(v) => locomotor(m, |l| l.set_max_lift(v)),
+            ModuleCall::AiLocomotorSetMaxTurnRate(v) => locomotor(m, |l| l.set_max_turn_rate(v)),
+            ModuleCall::AiLocomotorSetMaxBraking(v) => locomotor(m, |l| l.set_max_braking(v)),
+            // (not routed yet: aiGoProne (the parms' damage is the host's), construct, the turrets, transferAttack (TheAI's),
+            // processCollision, getAttackInfo, getWhichTurretForCurWeapon)
             _ => ModuleReply::Unhandled,
         }
     }
@@ -130,6 +335,52 @@ impl AiModuleBody {
     }
 
     pub fn load_post_process_with(&mut self, _update: &mut UpdateModule) {}
+}
+
+/// `AICommandParms(cmd, cmdSource)` with the source as the call carries it.
+fn parms(cmd: AiCommandType, command_source: i32) -> AiCommandParms {
+    AiCommandParms::new(cmd, command_source)
+}
+
+/// The parms with `m_obj`.
+fn with_obj(cmd: AiCommandType, obj: ObjectId, command_source: i32) -> AiCommandParms {
+    let mut p = parms(cmd, command_source);
+    p.obj = obj;
+    p
+}
+
+/// The parms with `m_pos`.
+fn with_pos(cmd: AiCommandType, pos: Coord3D, command_source: i32) -> AiCommandParms {
+    let mut p = parms(cmd, command_source);
+    p.pos = pos;
+    p
+}
+
+/// `aiDoCommand(&parms)` with the object as `this`; an error of the machine is recorded in `team_live_errors`.
+fn command(m: &mut AiUpdateModule<World>, world: &mut World, me: ModuleHandle, p: AiCommandParms) -> ModuleReply {
+    if let Err(e) = world.with_ai_self(me.object, |w| m.ai_do_command(w, &p)) {
+        world.cuts.team_live_errors.push(format!("AIUpdateInterface::aiDoCommand({}): {e:?}", p.cmd));
+    }
+    ModuleReply::Done
+}
+
+/// A predicate of the AI that asks its machine; false without a machine.
+fn machine_bool(
+    m: &mut AiUpdateModule<World>,
+    world: &mut World,
+    me: ModuleHandle,
+    f: impl FnOnce(&AiUpdate, &StateMachine<AiState<World>>, &mut World) -> bool,
+) -> ModuleReply {
+    let (Some(a), Some(sm)) = (m.ai.as_ref(), m.machine.as_ref()) else { return ModuleReply::Bool(false) };
+    ModuleReply::Bool(world.with_ai_self(me.object, |w| f(a, sm, w)))
+}
+
+/// `getCurLocomotor()->set...(..)`: nothing without a locomotor (upstream dereferences it; its callers check first).
+fn locomotor(m: &mut AiUpdateModule<World>, f: impl FnOnce(&mut Locomotor)) -> ModuleReply {
+    if let Some(l) = m.ai_mut().get_cur_locomotor_mut() {
+        f(l);
+    }
+    ModuleReply::Done
 }
 
 impl World {
@@ -245,6 +496,40 @@ mod tests {
         save.open(b"ai").unwrap();
         assert!(matches!(crate::common::xfer::Snapshot::xfer(&mut body, &mut save), Err(XferStatus::InvalidParameters)));
         w.put_module_body(h, body);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+    /// The object's calls routed to its AI module. A player's `aiMoveToPosition` takes the idle machine out of its idle
+    /// state and sets its goal position; `aiIdle` returns it to idle, which `isIdle` and `isBusy` then report. The
+    /// setters reach the AI (`setIsRecruitable`), the base's `getAiFreeToExit` is FREE_TO_EXIT, a scout is no dozer, and
+    /// no live error is recorded.
+    #[test]
+    fn the_objects_calls_reach_its_ai() {
+        let (mut w, _) = world();
+        w.cuts.live_ai = true;
+        let s = scout(&mut w);
+        let index = w.find_object(s).unwrap().ai.unwrap();
+        let goal = Coord3D { x: 40.0, y: 30.0, z: 0.0 };
+        assert!(w.module_call(s, index, ModuleCall::AiIsIdle).as_bool());
+        w.module_call(s, index, ModuleCall::AiMoveToPosition { pos: goal, command_source: 0 });
+        assert_ne!(ai_state(&w, s), Some(AI_IDLE));
+        assert!(!w.module_call(s, index, ModuleCall::AiIsIdle).as_bool());
+        match w.module_call(s, index, ModuleCall::AiGetGoalPosition) {
+            ModuleReply::Coord(c) => assert_eq!((c.x, c.y), (goal.x, goal.y)),
+            r => panic!("{r:?}"),
+        }
+        assert_eq!(w.module_call(s, index, ModuleCall::AiGetLastCommandSource).as_int(-1), 0);
+        w.module_call(s, index, ModuleCall::AiIdleFrom { command_source: 0 });
+        assert_eq!(ai_state(&w, s), Some(AI_IDLE));
+        assert!(w.module_call(s, index, ModuleCall::AiIsIdle).as_bool());
+        assert!(!w.module_call(s, index, ModuleCall::AiIsBusy).as_bool());
+        w.module_call(s, index, ModuleCall::AiSetIsRecruitable(false));
+        let h = ModuleHandle { object: s, index };
+        match w.peek_module_body(h) {
+            Some(UpdateBody::AiUpdate(m)) => assert!(!m.module.as_ref().unwrap().ai().is_recruitable),
+            _ => panic!("no AI module"),
+        }
+        assert_eq!(w.module_call(s, index, ModuleCall::AiGetFreeToExit { exiter: s }).as_int(-1), FREE_TO_EXIT);
+        assert!(!w.module_call(s, index, ModuleCall::AiGetDozerAIInterface).as_bool());
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
