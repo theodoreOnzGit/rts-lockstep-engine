@@ -1064,21 +1064,35 @@ impl ScriptActionsHost for World {
     fn sa_find_special_power(&self, name: &[u8]) -> Option<SpecialPowerH> {
         self.statics.special_power_store.find_special_power_template(name).map(|t| t.id() as SpecialPowerH)
     }
-    fn sa_obj_has_special_power_module(&self, _o: ObjH, _power: SpecialPowerH) -> bool {
-        Default::default()
+    fn sa_obj_has_special_power_module(&mut self, o: ObjH, power: SpecialPowerH) -> bool {
+        // (integration batch I23: was a stub)
+        self.get_special_power_module(o, u32::try_from(power).ok()).is_some()
     }
-    fn sa_spm_pause_countdown(&mut self, _o: ObjH, _power: SpecialPowerH, _pause: bool) {
-        self.sa_cut("spm_pause_countdown");
+
+    fn sa_spm_pause_countdown(&mut self, o: ObjH, power: SpecialPowerH, pause: bool) {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::PauseCountdown { disabling: pause });
     }
-    fn sa_spm_ready_frame(&self, _o: ObjH, _power: SpecialPowerH) -> u32 {
-        Default::default()
+
+    fn sa_spm_ready_frame(&mut self, o: ObjH, power: SpecialPowerH) -> u32 {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::GetReadyFrame).as_int(0) as u32
     }
-    fn sa_spm_set_ready_frame(&mut self, _o: ObjH, _power: SpecialPowerH, _frame: u32) {
-        self.sa_cut("spm_set_ready_frame");
+
+    fn sa_spm_set_ready_frame(&mut self, o: ObjH, power: SpecialPowerH, frame: u32) {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::SetReadyFrame { frame });
     }
-    fn sa_spm_do_at_location(&mut self, _o: ObjH, _power: SpecialPowerH, _p: &Coord3D, _angle: f32, _options: u32) {
-        self.sa_cut("spm_do_at_location");
+
+    fn sa_spm_do_at_location(&mut self, o: ObjH, power: SpecialPowerH, p: &Coord3D, angle: f32, options: u32) {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::DoSpecialPowerAtLocation { loc: *p, angle, command_options: options });
     }
+
     fn sa_frame(&self) -> u32 {
         self.frame()
     }
@@ -1086,21 +1100,35 @@ impl ScriptActionsHost for World {
         let protos = self.players.get_nth(p).map(|x| x.team_prototypes.clone()).unwrap_or_default();
         protos.into_iter().map(|pr| self.teams.instances(pr).into_iter().map(|t| t as TeamH).collect()).collect()
     }
-    fn sa_special_power_radius_cursor(&self, _power: SpecialPowerH) -> f32 {
-        Default::default()
+    fn sa_special_power_radius_cursor(&self, power: SpecialPowerH) -> f32 {
+        // (integration batch I23: was a stub)
+        u32::try_from(power).ok().and_then(|p| self.statics.special_power_store.find_special_power_template_by_id(p)).map_or(0.0, |t| t.radius_cursor_radius())
     }
+
     fn sa_special_power_type(&self, power: SpecialPowerH) -> i32 {
         self.statics.special_power_store.find_special_power_template_by_id(power as u32).map_or(-1, |t| t.special_power_type())
     }
-    fn sa_spm_is_ready(&self, _o: ObjH, _power: SpecialPowerH) -> bool {
-        Default::default()
+    fn sa_spm_is_ready(&mut self, o: ObjH, power: SpecialPowerH) -> bool {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::IsReady).as_bool()
     }
-    fn sa_spm_reference_template(&self, _o: ObjH, _power: SpecialPowerH) -> Option<TemplateH> {
-        Default::default()
+
+    fn sa_spm_reference_template(&mut self, o: ObjH, power: SpecialPowerH) -> Option<TemplateH> {
+        // (integration batch I23: was a stub)
+        let m = self.get_special_power_module(o, u32::try_from(power).ok())?;
+        match self.module_call(o, m, crate::logic::world::module_call::ModuleCall::GetReferenceThingTemplate) {
+            crate::logic::world::module_call::ModuleReply::Int(t) => Some(t as TemplateH),
+            _ => None,
+        }
     }
-    fn sa_spm_do_at_object(&mut self, _o: ObjH, _power: SpecialPowerH, _target: ObjH, _options: u32) {
-        self.sa_cut("spm_do_at_object");
+
+    fn sa_spm_do_at_object(&mut self, o: ObjH, power: SpecialPowerH, target: ObjH, options: u32) {
+        // (integration batch I23: was a stub)
+        let Some(m) = self.get_special_power_module(o, u32::try_from(power).ok()) else { return Default::default() };
+        self.module_call(o, m, crate::logic::world::module_call::ModuleCall::DoSpecialPowerAtObject { target, command_options: options });
     }
+
     fn sa_player_compute_superweapon_target(&mut self, _p: PlayerH, _power: SpecialPowerH, _index: i32, _weight: f32) -> Option<Coord3D> {
         self.sa_cut("player_compute_superweapon_target");
         Default::default()
@@ -1112,27 +1140,52 @@ impl ScriptActionsHost for World {
     fn sa_button_name(&self, b: ButtonH) -> Vec<u8> {
         self.cuts.command_buttons.get(b as usize).map(|x| x.name.clone()).unwrap_or_default()
     }
-    fn sa_obj_do_command_button(&mut self, _o: ObjH, _b: ButtonH, _cmd: i32) {
-        self.sa_cut("obj_do_command_button");
+    fn sa_obj_do_command_button(&mut self, o: ObjH, b: ButtonH, cmd: i32) {
+        // (integration batch I23: was a stub)
+        if let Ok(b) = usize::try_from(b) {
+            self.do_command_button(o, b, cmd);
+        }
     }
-    fn sa_obj_do_command_button_at_object(&mut self, _o: ObjH, _b: ButtonH, _target: ObjH, _cmd: i32) {
-        self.sa_cut("obj_do_command_button_at_object");
+
+    fn sa_obj_do_command_button_at_object(&mut self, o: ObjH, b: ButtonH, target: ObjH, cmd: i32) {
+        // (integration batch I23: was a stub)
+        if let Ok(b) = usize::try_from(b) {
+            self.do_command_button_at_object(o, b, Some(target), cmd);
+        }
     }
-    fn sa_obj_do_command_button_at_position(&mut self, _o: ObjH, _b: ButtonH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("obj_do_command_button_at_position");
+
+    fn sa_obj_do_command_button_at_position(&mut self, o: ObjH, b: ButtonH, p: &Coord3D, cmd: i32) {
+        // (integration batch I23: was a stub)
+        if let Ok(b) = usize::try_from(b) {
+            self.do_command_button_at_position(o, b, p, cmd);
+        }
     }
-    fn sa_obj_do_command_button_using_waypoints(&mut self, _o: ObjH, _b: ButtonH, _w: WaypointH, _cmd: i32) {
-        self.sa_cut("obj_do_command_button_using_waypoints");
+
+    fn sa_obj_do_command_button_using_waypoints(&mut self, o: ObjH, b: ButtonH, w: WaypointH, cmd: i32) {
+        // (integration batch I23: was a stub)
+        if let (Ok(b), Ok(w)) = (usize::try_from(b), u32::try_from(w)) {
+            self.do_command_button_using_waypoints(o, b, w, cmd);
+        }
     }
-    fn sa_group_do_command_button(&mut self, _g: GroupH, _b: ButtonH, _cmd: i32) {
-        self.sa_cut("group_do_command_button");
+
+    fn sa_group_do_command_button(&mut self, g: GroupH, b: ButtonH, cmd: i32) {
+        // (integration batch I23: was a stub)
+        let (Ok(g), Ok(b)) = (u32::try_from(g), u32::try_from(b)) else { return };
+        self.with_group(g, |gr, w| gr.group_do_command_button(w, b, crate::logic::ai::ai_group::GroupButtonCall::Plain, cmd));
     }
-    fn sa_group_do_command_button_at_object(&mut self, _g: GroupH, _b: ButtonH, _target: ObjH, _cmd: i32) {
-        self.sa_cut("group_do_command_button_at_object");
+
+    fn sa_group_do_command_button_at_object(&mut self, g: GroupH, b: ButtonH, target: ObjH, cmd: i32) {
+        // (integration batch I23: was a stub)
+        let (Ok(g), Ok(b)) = (u32::try_from(g), u32::try_from(b)) else { return };
+        self.with_group(g, |gr, w| gr.group_do_command_button(w, b, crate::logic::ai::ai_group::GroupButtonCall::AtObject(target), cmd));
     }
-    fn sa_group_do_command_button_at_position(&mut self, _g: GroupH, _b: ButtonH, _p: &Coord3D, _cmd: i32) {
-        self.sa_cut("group_do_command_button_at_position");
+
+    fn sa_group_do_command_button_at_position(&mut self, g: GroupH, b: ButtonH, p: &Coord3D, cmd: i32) {
+        // (integration batch I23: was a stub)
+        let (Ok(g), Ok(b)) = (u32::try_from(g), u32::try_from(b)) else { return };
+        self.with_group(g, |gr, w| gr.group_do_command_button(w, b, crate::logic::ai::ai_group::GroupButtonCall::AtPosition(*p), cmd));
     }
+
     fn sa_radar_refresh_terrain(&mut self) {
         self.sa_cut("radar_refresh_terrain");
     }
@@ -1317,12 +1370,16 @@ impl ScriptActionsHost for World {
     fn sa_button_special_power_id(&self, b: ButtonH) -> Option<u32> {
         self.cuts.command_buttons.get(b as usize).and_then(|x| x.special_power)
     }
-    fn sa_group_special_power_source(&self, _g: GroupH, _id: u32) -> Option<ObjH> {
-        Default::default()
+    fn sa_group_special_power_source(&mut self, g: GroupH, id: u32) -> Option<ObjH> {
+        // (integration batch I23: was a stub)
+        self.with_group(u32::try_from(g).ok()?, |gr, w| gr.get_special_power_source_object(w, id)).flatten()
     }
-    fn sa_group_command_button_source(&self, _g: GroupH, _command_type: i32) -> Option<ObjH> {
-        Default::default()
+
+    fn sa_group_command_button_source(&mut self, g: GroupH, command_type: i32) -> Option<ObjH> {
+        // (integration batch I23: was a stub)
+        self.with_group(u32::try_from(g).ok()?, |gr, w| gr.get_command_button_source_object(w, command_type)).flatten()
     }
+
     fn sa_partition_most_valuable_target(&mut self, _p: &Coord3D, _range: f32) -> Option<ObjH> {
         self.sa_cut("partition_most_valuable_target");
         Default::default()
@@ -1333,9 +1390,12 @@ impl ScriptActionsHost for World {
     fn sa_partition_closest_for_button(&self, _p: &Coord3D, _search: ButtonSearch) -> Option<(ObjH, f32)> {
         Default::default()
     }
-    fn sa_group_do_command_button_at_object_opt(&mut self, _g: GroupH, _b: ButtonH, _target: Option<ObjH>, _cmd: i32) {
-        self.sa_cut("group_do_command_button_at_object_opt");
+    fn sa_group_do_command_button_at_object_opt(&mut self, g: GroupH, b: ButtonH, target: Option<ObjH>, cmd: i32) {
+        // (integration batch I23: was a stub)
+        let (Ok(g), Ok(b)) = (u32::try_from(g), u32::try_from(b)) else { return };
+        self.with_group(g, |gr, w| gr.group_do_command_button(w, b, crate::logic::ai::ai_group::GroupButtonCall::AtObject(target.unwrap_or(crate::common::game_type::INVALID_ID)), cmd));
     }
+
     fn sa_view_camera_mod_freeze(&mut self, _time: bool) {
         self.sa_cut("view_camera_mod_freeze");
     }

@@ -191,6 +191,7 @@ pub fn gate_map_world_with(extra: &str) -> World {
     w.cuts.live_partition = true;
     w.cuts.live_teams = true;
     w.cuts.live_ai = true;
+    w.cuts.live_special_powers = true;
     w.cuts.live_pathfinder = true;
     w.cuts.live_ocl = true;
     w
@@ -315,6 +316,7 @@ mod computer_player_tests {
             upgrade: None,
             ready_for: Default::default(),
             options: 0,
+            max_shots_to_fire: 0,
         });
         w.cuts.command_sets.push((b"GateDozerSet".to_vec(), vec![Some(w.cuts.command_buttons.len() - 1)]));
         w.objects.find_mut(dozer).expect("the dozer").command_set_string_override = b"GateDozerSet".to_vec();
@@ -1451,4 +1453,73 @@ mod script_query_tests {
         assert_eq!((v.x, v.y, v.z), (101.0, 62.0, 3.0));
         assert_eq!(killed, (true, false));
     }
+}
+
+#[cfg(test)]
+mod command_button_object_tests {
+    use super::*;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// A caster with an `OCLSpecialPower` (its OCL drops a pup at the target location) and an AI; its command set holds the power's
+    /// button and a stop button.
+    const CASTER: &str = "\
+ObjectCreationList OCL_Drop\n CreateObject\n  ObjectNames = Pup\n  Count = 1\n End\nEnd\n\
+SpecialPower DropPower\n Enum = SPECIAL_DAISY_CUTTER\n ReloadTime = 0\n RadiusCursorRadius = 40\nEnd\n\
+Object Pup\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 2\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+Object Caster\n KindOf = VEHICLE\n CommandSet = CasterSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = OCLSpecialPower ModuleTag_Drop\n  SpecialPowerTemplate = DropPower\n  OCL = OCL_Drop\n  CreateLocation = CREATE_AT_LOCATION\n  ReferenceObject = Pup\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+CommandButton Command_Drop\n Command = SPECIAL_POWER\n SpecialPower = DropPower\n Options = NEED_TARGET_POS\nEnd\n\
+CommandButton Command_Halt\n Command = STOP\nEnd\n\
+CommandSet CasterSet\n 1 = Command_Drop\n 2 = Command_Halt\nEnd\n";
+
+    /// Batch I23, an object carrying out command buttons and the special power store's check, live. Predicted before the run: the
+    /// caster can use `DropPower` (it has the module; the power needs no science) and the soldier cannot (no module); the caster's module
+    /// is ready (reload 0), its reference template is the pup's, the power's cursor radius 40; `Command_Drop` at (200, 200), as a script
+    /// orders it, makes one pup there (`CREATE_AT_LOCATION`; before this batch `doCommandButtonAtPosition` was a cut and nothing was
+    /// made); a group of the caster finds it as the source of the power and of a stop button (its command set); the caster ordered to
+    /// move and then `Command_Halt` by the group is idle after a frame. Ablated, the table's check allows the soldier.
+    #[test]
+    fn an_object_carries_out_its_command_buttons() {
+        let mut w = gate_map_world_with(CASTER);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let caster = make(&mut w, b"Caster", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 60.0, y: 100.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let power = w.statics.special_power_store.find_special_power_template(b"DropPower").map(|p| p.id()).expect("the power");
+        let button = |w: &World, n: &[u8]| w.cuts.command_buttons.iter().position(|b| b.name == n).expect("the button") as i32;
+        let (drop, halt) = (button(&w, b"Command_Drop"), button(&w, b"Command_Halt"));
+        let pup = World::thing_factory_find_template(&w, b"Pup").expect("the pup's template");
+        let can = (w.can_use_special_power(caster, Some(power)), w.can_use_special_power(soldier, Some(power)));
+        let module = (w.sa_spm_is_ready(caster, power as i32), w.sa_spm_reference_template(caster, power as i32), w.sa_special_power_radius_cursor(power as i32));
+        let pups = |w: &World| w.objects.ids_in_order().into_iter().filter(|&id| w.objects.find(id).is_some_and(|o| o.template().get_name() == b"Pup")).collect::<Vec<_>>();
+        w.sa_obj_do_command_button_at_position(caster, drop, &Coord3D { x: 200.0, y: 200.0, z: 0.0 }, CMD_FROM_SCRIPT_I32);
+        let made = pups(&w);
+        let at = made.first().and_then(|&p| w.find_object(p)).map(|o| o.get_position());
+        let g = w.ai_create_group();
+        w.with_group(g, |gr, w| gr.add(w, caster));
+        let sources = (w.sa_group_special_power_source(g as i32, power), w.sa_group_command_button_source(g as i32, 12));
+        w.with_ai_self(soldier, |w| crate::logic::ai::ai_states::AiStateHost::member_ai_command(w, caster, crate::logic::ai::assault_transport_ai_update::MemberCommand::MoveToPosition { pos: Coord3D { x: 100.0, y: 300.0, z: 0.0 }, src: 2 }));
+        w.logic_update().unwrap();
+        let moving = w.with_ai_self(soldier, |w| crate::logic::ai::ai_states::AiStateHost::member_ai_state_type(w, caster));
+        w.sa_group_do_command_button(g as i32, halt, CMD_FROM_SCRIPT_I32);
+        w.logic_update().unwrap();
+        let after = w.with_ai_self(soldier, |w| crate::logic::ai::ai_states::AiStateHost::member_ai_state_type(w, caster));
+        eprintln!("can {can:?}; module {module:?}; pups {made:?} at {at:?}; sources {sources:?}; state {moving} then {after}; errors {:?} {:?}", w.cuts.team_live_errors, w.cuts.module_errors);
+        assert_eq!(can, (true, false));
+        assert_eq!(module, (true, Some(i32::from(pup)), 40.0));
+        assert_eq!(made.len(), 1);
+        assert_eq!(at.map(|p| (p.x, p.y)), Some((200.0, 200.0)));
+        assert_eq!(sources, (Some(caster), Some(caster)));
+        assert_ne!(moving, crate::logic::ai::ai_update_types::AI_IDLE);
+        assert_eq!(after, crate::logic::ai::ai_update_types::AI_IDLE);
+        // ablation: without `live_special_powers` the store's check is the table, whose empty deny list allows the soldier too
+        w.cuts.live_special_powers = false;
+        assert!(w.can_use_special_power(soldier, Some(power)));
+    }
+
+    const CMD_FROM_SCRIPT_I32: i32 = 1;
 }

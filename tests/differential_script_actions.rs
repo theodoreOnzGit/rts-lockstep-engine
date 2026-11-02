@@ -1262,13 +1262,13 @@ impl ScriptActionsHost for Sim {
         let k = num(name, "power");
         (k >= 0 && k < ((self.cfg[11] >> 4) & 15) as i32).then_some(k)
     }
-    fn sa_obj_has_special_power_module(&self, o: ObjH, p: SpecialPowerH) -> bool {
+    fn sa_obj_has_special_power_module(&mut self, o: ObjH, p: SpecialPowerH) -> bool {
         hh(self.seed(), o as u32, 410 + p as u32) & 1 != 0
     }
     fn sa_spm_pause_countdown(&mut self, o: ObjH, p: SpecialPowerH, pause: bool) {
         self.log.push(format!("spm {o} {p} pause {}", u8::from(pause)));
     }
-    fn sa_spm_ready_frame(&self, o: ObjH, p: SpecialPowerH) -> u32 {
+    fn sa_spm_ready_frame(&mut self, o: ObjH, p: SpecialPowerH) -> u32 {
         (hh(self.seed(), o as u32, 400 + p as u32) >> 8) % 2000
     }
     fn sa_spm_set_ready_frame(&mut self, o: ObjH, p: SpecialPowerH, f: u32) {
@@ -1291,10 +1291,10 @@ impl ScriptActionsHost for Sim {
     fn sa_special_power_type(&self, sp: SpecialPowerH) -> i32 {
         sp + 1
     }
-    fn sa_spm_is_ready(&self, o: ObjH, sp: SpecialPowerH) -> bool {
+    fn sa_spm_is_ready(&mut self, o: ObjH, sp: SpecialPowerH) -> bool {
         hh(self.seed(), o as u32, 400 + sp as u32) & 2 != 0
     }
-    fn sa_spm_reference_template(&self, o: ObjH, sp: SpecialPowerH) -> Option<TemplateH> {
+    fn sa_spm_reference_template(&mut self, o: ObjH, sp: SpecialPowerH) -> Option<TemplateH> {
         let t = ((hh(self.seed(), o as u32, 400 + sp as u32) >> 4) & 7) as i32;
         (t < self.ntemplates()).then_some(t)
     }
@@ -1513,10 +1513,10 @@ impl ScriptActionsHost for Sim {
         let n = (self.cfg[11] >> 4) & 15;
         (hh(self.seed(), b as u32, 82) & 1 != 0 && n > 0).then(|| (b as u32 % n) + 1)
     }
-    fn sa_group_special_power_source(&self, g: GroupH, id: u32) -> Option<ObjH> {
+    fn sa_group_special_power_source(&mut self, g: GroupH, id: u32) -> Option<ObjH> {
         self.groups[(g - 1) as usize].iter().copied().find(|o| hh(self.seed(), *o as u32, 600 + id) & 1 != 0)
     }
-    fn sa_group_command_button_source(&self, g: GroupH, t: i32) -> Option<ObjH> {
+    fn sa_group_command_button_source(&mut self, g: GroupH, t: i32) -> Option<ObjH> {
         self.groups[(g - 1) as usize].iter().copied().find(|o| hh(self.seed(), *o as u32, 700 + t as u32) & 1 != 0)
     }
     fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32) -> Option<ObjH> {

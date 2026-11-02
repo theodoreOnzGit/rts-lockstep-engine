@@ -1119,6 +1119,7 @@ impl ProbeModule {
             | ModuleCall::AiSetAttackInfo(_)
             | ModuleCall::AiClearWaypointQueue
             | ModuleCall::AiDeliverPayloadViaModuleData(_)
+            | ModuleCall::GetReferenceThingTemplate
             | ModuleCall::AiGetCurLocomotorMaxSpeedForCondition(_) => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(

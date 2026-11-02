@@ -394,44 +394,66 @@ impl AiGroupHost for World {
     fn layer_height(&mut self, x: f32, y: f32, layer: i32) -> f32 {
         self.terrain_get_layer_height(x, y, layer)
     }
-    fn special_power_required_science(&mut self, _sp: u32) -> Option<i32> {
-        self.grp_cut("special_power_required_science");
-        Default::default()
+    fn special_power_required_science(&mut self, sp: u32) -> Option<i32> {
+        // (integration batch I23: the cuts below were stubs)
+        let statics = self.statics.clone();
+        statics.special_power_store.find_special_power_template_by_id(sp).map(|t| t.required_science().0)
     }
-    fn player_has_science(&mut self, _o: ObjectId, _science: i32) -> bool {
-        self.grp_cut("player_has_science");
-        Default::default()
+    fn player_has_science(&mut self, o: ObjectId, science: i32) -> bool {
+        // `getControllingPlayer()->hasScience(science)`
+        let Some(p) = self.get_controlling_player(o) else { return false };
+        crate::logic::world::player_ops::player_has_science(self, p, crate::common::science::ScienceType(science)).unwrap_or(false)
     }
-    fn has_special_power_module(&mut self, _o: ObjectId, _sp: u32) -> bool {
-        self.grp_cut("has_special_power_module");
-        Default::default()
+    fn has_special_power_module(&mut self, o: ObjectId, sp: u32) -> bool {
+        self.get_special_power_module(o, Some(sp)).is_some()
     }
-    fn can_do_special_power(&mut self, _o: ObjectId, _sp: u32, _options: u32) -> bool {
-        self.grp_cut("can_do_special_power");
-        Default::default()
+    fn can_do_special_power(&mut self, o: ObjectId, sp: u32, options: u32) -> bool {
+        // `TheActionManager->canDoSpecialPower(object, spTemplate, CMD_FROM_PLAYER, commandOptions)` (checking the source)
+        let statics = self.statics.clone();
+        let Some(t) = statics.special_power_store.find_special_power_template_by_id(sp).map(|t| crate::logic::action_manager::SpecialPowerTemplateRef { id: sp, sp_type: t.special_power_type() }) else { return false };
+        crate::logic::action_manager::can_do_special_power(self, o, &t, crate::common::game_common::CommandSourceType::FromPlayer, options, true)
     }
-    fn can_do_special_power_at_location(&mut self, _o: ObjectId, _sp: u32, _pos: &Coord3D, _object_in_way: ObjectId, _options: u32) -> bool {
-        self.grp_cut("can_do_special_power_at_location");
-        Default::default()
+    fn can_do_special_power_at_location(&mut self, o: ObjectId, sp: u32, pos: &Coord3D, object_in_way: ObjectId, options: u32) -> bool {
+        let statics = self.statics.clone();
+        let Some(t) = statics.special_power_store.find_special_power_template_by_id(sp).map(|t| crate::logic::action_manager::SpecialPowerTemplateRef { id: sp, sp_type: t.special_power_type() }) else { return false };
+        let in_way = Some(object_in_way).filter(|&x| x != INVALID_ID);
+        match crate::logic::action_manager::can_do_special_power_at_location(self, o, pos, crate::common::game_common::CommandSourceType::FromPlayer, &t, in_way, options, true) {
+            Ok(b) => b,
+            Err(e) => {
+                self.cuts.team_live_errors.push(format!("ActionManager::canDoSpecialPowerAtLocation: {e:?}"));
+                false
+            }
+        }
     }
-    fn can_do_special_power_at_object(&mut self, _o: ObjectId, _sp: u32, _target: ObjectId, _options: u32) -> bool {
-        self.grp_cut("can_do_special_power_at_object");
-        Default::default()
+    fn can_do_special_power_at_object(&mut self, o: ObjectId, sp: u32, target: ObjectId, options: u32) -> bool {
+        let statics = self.statics.clone();
+        let Some(t) = statics.special_power_store.find_special_power_template_by_id(sp).map(|t| crate::logic::action_manager::SpecialPowerTemplateRef { id: sp, sp_type: t.special_power_type() }) else { return false };
+        match crate::logic::action_manager::can_do_special_power_at_object(self, o, target, crate::common::game_common::CommandSourceType::FromPlayer, &t, options, true) {
+            Ok(b) => b,
+            Err(e) => {
+                self.cuts.team_live_errors.push(format!("ActionManager::canDoSpecialPowerAtObject: {e:?}"));
+                false
+            }
+        }
     }
-    fn do_special_power(&mut self, _o: ObjectId, _sp: u32, _options: u32) {
-        self.grp_cut("do_special_power");
+    fn do_special_power(&mut self, o: ObjectId, sp: u32, options: u32) {
+        // `object->doSpecialPower(spTemplate, commandOptions)` (not forced)
+        World::do_special_power(self, o, Some(sp), crate::logic::world::object_modules::SpecialPowerTarget::None, options, false);
     }
-    fn do_special_power_at_location(&mut self, _o: ObjectId, _sp: u32, _pos: &Coord3D, _angle: f32, _options: u32) {
-        self.grp_cut("do_special_power_at_location");
+    fn do_special_power_at_location(&mut self, o: ObjectId, sp: u32, pos: &Coord3D, angle: f32, options: u32) {
+        World::do_special_power(self, o, Some(sp), crate::logic::world::object_modules::SpecialPowerTarget::Location { loc: *pos, angle }, options, false);
     }
-    fn do_special_power_at_object(&mut self, _o: ObjectId, _sp: u32, _target: ObjectId, _options: u32) {
-        self.grp_cut("do_special_power_at_object");
+    fn do_special_power_at_object(&mut self, o: ObjectId, sp: u32, target: ObjectId, options: u32) {
+        World::do_special_power(self, o, Some(sp), crate::logic::world::object_modules::SpecialPowerTarget::Object(target), options, false);
     }
     fn clear_undetected_defector(&mut self, o: ObjectId) {
         self.friend_set_undetected_defector(o, false);
     }
-    fn override_special_power_destination(&mut self, _o: ObjectId, _sp_type: i32, _loc: &Coord3D) {
-        self.grp_cut("override_special_power_destination");
+    fn override_special_power_destination(&mut self, o: ObjectId, _sp_type: i32, loc: &Coord3D) {
+        // (the type is unused upstream)
+        if let Some(m) = self.find_special_power_with_overridable_destination_active(o) {
+            self.module_call(o, m, crate::logic::world::module_call::ModuleCall::SetSpecialPowerOverridableDestination(*loc));
+        }
     }
     fn set_cheering(&mut self, _o: ObjectId, _frames: i32) {
         self.grp_cut("set_cheering");
@@ -442,8 +464,14 @@ impl AiGroupHost for World {
     fn toggle_overcharge(&mut self, _o: ObjectId) {
         self.grp_cut("toggle_overcharge");
     }
-    fn do_command_button(&mut self, _o: ObjectId, _button: u32, _call: GroupButtonCall, _src: CommandSourceType) {
-        self.grp_cut("do_command_button");
+    fn do_command_button(&mut self, o: ObjectId, button: u32, call: GroupButtonCall, src: CommandSourceType) {
+        let b = button as usize;
+        match call {
+            GroupButtonCall::Plain => World::do_command_button(self, o, b, src),
+            GroupButtonCall::AtPosition(pos) => World::do_command_button_at_position(self, o, b, &pos, src),
+            GroupButtonCall::UsingWaypoints(w) => World::do_command_button_using_waypoints(self, o, b, w, src),
+            GroupButtonCall::AtObject(t) => World::do_command_button_at_object(self, o, b, Some(t).filter(|&t| t != INVALID_ID), src),
+        }
     }
     fn set_weapon_set_flag(&mut self, o: ObjectId, wst: i32) {
         self.set_weapon_set_flag(o, wst);
@@ -455,12 +483,11 @@ impl AiGroupHost for World {
         self.grp_cut("template_has_weapon_set");
         Default::default()
     }
-    fn set_weapon_lock(&mut self, _o: ObjectId, _slot: i32, _lock: i32) -> bool {
-        self.grp_cut("set_weapon_lock");
-        Default::default()
+    fn set_weapon_lock(&mut self, o: ObjectId, slot: i32, lock: i32) -> bool {
+        crate::logic::world::object_weapons::set_weapon_lock(self, o, slot, lock)
     }
-    fn release_weapon_lock(&mut self, _o: ObjectId, _lock: i32) {
-        self.grp_cut("release_weapon_lock");
+    fn release_weapon_lock(&mut self, o: ObjectId, lock: i32) {
+        crate::logic::world::object_weapons::release_weapon_lock(self, o, lock);
     }
     fn can_afford_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> bool {
         self.grp_cut("can_afford_upgrade");
@@ -489,10 +516,15 @@ impl AiGroupHost for World {
     fn production_queue_upgrade(&mut self, _o: ObjectId, _upgrade: u32) {
         self.grp_cut("production_queue_upgrade");
     }
-    fn command_set_has_button_type(&mut self, _o: ObjectId, _command_type: i32) -> Option<bool> {
-        self.grp_cut("command_set_has_button_type");
-        Default::default()
+    fn command_set_has_button_type(&mut self, o: ObjectId, command_type: i32) -> Option<bool> {
+        // (integration batch I23) `TheControlBar->findCommandSet(obj->getCommandSetString())`, its buttons
+        let set = self.control_bar_find_command_set(&self.object_get_command_set_string(o))?;
+        let found = (0..crate::logic::command_button::MAX_COMMANDS_PER_SET)
+            .filter_map(|i| self.command_set_get_command_button(set, i))
+            .any(|b| self.cuts.command_buttons.get(b).is_some_and(|x| x.command_type == command_type));
+        Some(found)
     }
+
     fn set_emoticon(&mut self, _o: ObjectId, _name: &[u8], _duration: i32) {
         self.grp_cut("set_emoticon");
     }

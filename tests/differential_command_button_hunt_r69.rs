@@ -361,6 +361,7 @@ fn set_scene(w: &mut World, cfg: &[u32], slots: &Slots) {
                 upgrade: None,
                 ready_for: Default::default(),
                 options: 0,
+                max_shots_to_fire: 0,
             }
         })
         .collect();

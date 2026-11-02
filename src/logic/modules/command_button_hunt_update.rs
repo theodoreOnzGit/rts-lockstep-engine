@@ -33,7 +33,8 @@
 //!
 //! The command buttons and sets are the client's (not translated): `cuts.command_buttons` and `cuts.command_sets`. The action manager's
 //! tests are [`World::action_manager_can`] (it is not on `World` yet), the scan [`World::partition_iterate_hunt_targets`], the distance
-//! [`World::body_get_distance_squared`] and `doCommandButtonAtObject` a [`CutCall::ObjectDoCommandButtonAtObject`] record.
+//! [`World::body_get_distance_squared`] and `doCommandButtonAtObject` a [`CutCall::ObjectDoCommandButtonAtObject`] record (~~always~~
+//! **since integration batch I23** only without `live_ai`; with it, `World::do_command_button_at_object`).
 //!
 //! # Upstream facts kept
 //!
@@ -334,7 +335,15 @@ impl CommandButtonHuntUpdate {
     }
 
     /// `obj->doCommandButtonAtObject(m_commandButton, victim, CMD_FROM_AI)`.
+    /// Integration batch I23: with `live_ai`, the object's own (`World::do_command_button_at_object`); else a record, as the differential
+    /// of this module has it (its C++ side stands in for `Object`).
     fn do_command_button_at_object(&self, world: &mut World, me: ObjectId, victim: ObjectId) {
+        if world.cuts.live_ai {
+            if let Some(b) = self.command_button {
+                world.do_command_button_at_object(me, b, Some(victim), CMD_FROM_AI);
+            }
+            return;
+        }
         let button = self.command_button.map(|b| world.cuts.command_buttons[b].name.clone()).unwrap_or_default();
         world.cut(CutCall::ObjectDoCommandButtonAtObject { object: me, button, victim, source: CMD_FROM_AI });
     }

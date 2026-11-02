@@ -400,7 +400,8 @@ impl ScriptConditionsHost for World {
         self.statics.special_power_store.find_special_power_template(name).map(|t| t.id())
     }
     fn sc_can_use_special_power(&mut self, o: ObjH, power: SpecialPowerH) -> bool {
-        self.cuts.special_power_can_use(o, Some(power))
+        // (integration batch I23: the store's own check with `live_special_powers`)
+        self.can_use_special_power(o, Some(power))
     }
     fn sc_special_power_type(&self, power: SpecialPowerH) -> i32 {
         self.statics.special_power_store.find_special_power_template_by_id(power).map_or(-1, |t| t.special_power_type())

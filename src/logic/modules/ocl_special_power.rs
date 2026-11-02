@@ -208,7 +208,11 @@ impl OCLSpecialPower {
 
     /// The module's answer to one of `Object`'s calls.
     pub fn module_call(&mut self, world: &mut World, me: ModuleHandle, call: ModuleCall) -> ModuleReply {
-        special_power_module_call(self, world, me, call)
+        match call {
+            // (integration batch I23: the override of the base module's `NULL`)
+            ModuleCall::GetReferenceThingTemplate => self.get_reference_thing_template(world).map_or(ModuleReply::Unhandled, |t| ModuleReply::Int(i32::from(t))),
+            call => special_power_module_call(self, world, me, call),
+        }
     }
 
     /// `findOCL()`: the list of the first upgrade whose science the controlling player has, else `OCL`.

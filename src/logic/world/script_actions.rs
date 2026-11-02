@@ -866,11 +866,11 @@ pub trait ScriptActionsHost {
     /// `TheSpecialPowerStore->findSpecialPowerTemplate(name)`.
     fn sa_find_special_power(&self, name: &[u8]) -> Option<SpecialPowerH>;
     /// `getSpecialPowerModule(power)` is not NULL.
-    fn sa_obj_has_special_power_module(&self, o: ObjH, power: SpecialPowerH) -> bool;
+    fn sa_obj_has_special_power_module(&mut self, o: ObjH, power: SpecialPowerH) -> bool;
     /// That module's `pauseCountdown(pause)`.
     fn sa_spm_pause_countdown(&mut self, o: ObjH, power: SpecialPowerH, pause: bool);
     /// That module's `getReadyFrame()`.
-    fn sa_spm_ready_frame(&self, o: ObjH, power: SpecialPowerH) -> u32;
+    fn sa_spm_ready_frame(&mut self, o: ObjH, power: SpecialPowerH) -> u32;
     /// That module's `setReadyFrame(frame)`.
     fn sa_spm_set_ready_frame(&mut self, o: ObjH, power: SpecialPowerH, frame: u32);
     /// That module's `doSpecialPowerAtLocation(&pos, angle, options)`.
@@ -886,9 +886,9 @@ pub trait ScriptActionsHost {
     /// `getSpecialPowerType()`.
     fn sa_special_power_type(&self, power: SpecialPowerH) -> i32;
     /// The module's `isReady()`.
-    fn sa_spm_is_ready(&self, o: ObjH, power: SpecialPowerH) -> bool;
+    fn sa_spm_is_ready(&mut self, o: ObjH, power: SpecialPowerH) -> bool;
     /// The module's `getReferenceThingTemplate()`.
-    fn sa_spm_reference_template(&self, o: ObjH, power: SpecialPowerH) -> Option<TemplateH>;
+    fn sa_spm_reference_template(&mut self, o: ObjH, power: SpecialPowerH) -> Option<TemplateH>;
     /// The module's `doSpecialPowerAtObject(target, options)`.
     fn sa_spm_do_at_object(&mut self, o: ObjH, power: SpecialPowerH, target: ObjH, options: u32);
     /// `computeSuperweaponTarget(power, &pos, playerIndex, weight)`.
@@ -1015,9 +1015,9 @@ pub trait ScriptActionsHost {
     /// The button's `getSpecialPowerTemplate()->getID()` (`None`: no special power).
     fn sa_button_special_power_id(&self, b: ButtonH) -> Option<u32>;
     /// `AIGroup::getSpecialPowerSourceObject(id)`.
-    fn sa_group_special_power_source(&self, g: GroupH, id: u32) -> Option<ObjH>;
+    fn sa_group_special_power_source(&mut self, g: GroupH, id: u32) -> Option<ObjH>;
     /// `AIGroup::getCommandButtonSourceObject(type)`.
-    fn sa_group_command_button_source(&self, g: GroupH, command_type: i32) -> Option<ObjH>;
+    fn sa_group_command_button_source(&mut self, g: GroupH, command_type: i32) -> Option<ObjH>;
     /// `iterateObjectsInRange(&pos, range, FROM_CENTER_2D, {the player's enemies, valid targets of the button from `src`, same map
     /// status}, ITER_SORTED_EXPENSIVE_TO_CHEAP)`'s first object.
     fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32) -> Option<ObjH>;
@@ -2871,7 +2871,7 @@ impl ScriptActions {
     }
 
     /// The named unit's module for the special power (`None`: no unit, no power, or no module).
-    fn special_power_module<H: ScriptActionsHost>(h: &H, unit: &[u8], power: &[u8]) -> Option<(ObjH, SpecialPowerH)> {
+    fn special_power_module<H: ScriptActionsHost>(h: &mut H, unit: &[u8], power: &[u8]) -> Option<(ObjH, SpecialPowerH)> {
         let o = h.sa_unit_named(unit);
         let p = h.sa_find_special_power(power);
         let (o, p) = (o?, p?);

@@ -28,6 +28,7 @@ pub mod object;
 // --- p1w6-object ---
 pub mod module_call;
 pub mod module_probe;
+pub mod object_command_button;
 pub mod object_create;
 pub mod object_cuts;
 pub mod object_damage;

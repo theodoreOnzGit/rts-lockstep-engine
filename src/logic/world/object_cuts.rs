@@ -1088,6 +1088,7 @@ impl World {
                 upgrade: b.upgrade.map(|k| k.0),
                 ready_for: Default::default(),
                 options: b.options,
+                max_shots_to_fire: b.max_shots_to_fire,
             });
         }
         for chain in &store.sets {
@@ -1855,6 +1856,8 @@ pub struct CommandButtonFacts {
     pub ready_for: BTreeSet<ObjectId>,
     /// Integration batch I22: `getOptions()` (`CommandOption` bits).
     pub options: u32,
+    /// Integration batch I23: `getMaxShotsToFire()`.
+    pub max_shots_to_fire: i32,
 }
 
 /// Integration batch I20: a `GameLogic` member set by a script action.
@@ -2253,6 +2256,9 @@ pub struct ObjectCuts {
     /// batch I9b-3: the thing factory makes `AIUpdateInterface` as the world's AI module (`ai_module_world.rs`) rather than
     /// the untranslated module stub. Off by default.
     pub live_ai: bool,
+    /// Integration batch I23: `TheSpecialPowerStore->canUseSpecialPower` translated (`World::can_use_special_power`) rather than the
+    /// `special_power_denied` table. Off by default, as the other `live_*` switches: the object differential answers from the table.
+    pub live_special_powers: bool,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2430,6 +2436,7 @@ impl Default for ObjectCuts {
             pathfinder: Default::default(),
             ai_host: Default::default(),
             live_ai: false,
+            live_special_powers: false,
             next_drawable_id: 1,
         }
     }
@@ -2705,8 +2712,9 @@ impl World {
     }
 
     /// `TheSpecialPowerStore->canUseSpecialPower(this, template)`.
-    pub fn cut_special_power_can_use(&self, obj: ObjectId, template: Option<u32>) -> bool {
-        self.cuts.special_power_can_use(obj, template)
+    pub fn cut_special_power_can_use(&mut self, obj: ObjectId, template: Option<u32>) -> bool {
+        // (integration batch I23: with `live_special_powers`, the store's own check)
+        self.can_use_special_power(obj, template)
     }
 
     // ---- ExperienceTracker (default copies of its logic) -------------------------------------------

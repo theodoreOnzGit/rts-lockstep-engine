@@ -1129,6 +1129,9 @@ pub enum ModuleCall {
     /// [`ModuleReply::Int`] with the id, or anything else when the pointer is `NULL` (`UnpauseSpecialPowerUpgrade` compares it with its
     /// own pointer, `NULL` included).
     GetSpecialPowerTemplateId,
+    /// Integration batch I23: `SpecialPowerModuleInterface::getReferenceThingTemplate()` as a template id: replies [`ModuleReply::Int`],
+    /// anything else for `NULL` (the base module's answer; `OCLSpecialPower` overrides it).
+    GetReferenceThingTemplate,
     /// `SpecialPowerCompletionDie::setCreator(creatorID)` (the object creation list, on the die `findSpecialPowerCompletionDie` finds).
     SetCreator { creator: ObjectId },
     /// `getSubdualDamageHealRate()` of the body; replies [`ModuleReply::Int`] (`SubdualDamageHelper`).
