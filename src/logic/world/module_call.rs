@@ -1200,6 +1200,9 @@ pub enum ModuleCall {
     },
     /// batch W1b: `ProjectileUpdateInterface::projectileGetLauncherID()`; replies [`ModuleReply::Id`].
     ProjectileGetLauncherId,
+    /// Integration batch I14: `ProjectileUpdateInterface::projectileFireAtObjectOrPosition(victim, &pos, template, exhaust)` (`INVALID_ID`
+    /// for no victim): fired without a launcher (`DeliverPayloadAIUpdate`'s visible payload missile).
+    ProjectileFireAtObjectOrPosition { victim: ObjectId, pos: Coord3D, template: usize, exhaust: crate::logic::weapon::FxName },
     /// batch W1b: `getLandMineInterface() != NULL`; replies [`ModuleReply::Bool`].
     HasLandMineInterface,
     /// batch W1b: `ParkingPlaceBehaviorInterface::hasReservedSpace(id)`; replies [`ModuleReply::Bool`].

@@ -156,6 +156,49 @@ impl AiModuleBody {
                 ModuleReply::Done
             }
             // (batch I9e: `construct(what, pos, angle, owner, isRebuild)`: a dozer's or worker's; the base's makes nothing)
+            // (batch I14: `MissileAIUpdate` is a `ProjectileUpdateInterface`; none of its calls reached it, so a missile was never launched.
+            // The exhaust override is a client particle system: `None`, its template's own)
+            ModuleCall::HasProjectileUpdateInterface => ModuleReply::Bool(m.ai.as_ref().is_some_and(|a| matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::Missile(_)))),
+            ModuleCall::ProjectileGetLauncherId => match m.ai.as_ref().map(|a| &a.subclass) {
+                Some(crate::logic::ai::ai_update::AiSubclass::Missile(ms)) => ModuleReply::Id(ms.launcher_id),
+                _ => ModuleReply::Unhandled,
+            },
+            ModuleCall::ProjectileLaunchAtObjectOrPosition { victim, destination, source, wslot, barrel, template, .. } if is_missile(m) => {
+                use crate::logic::ai::missile_ai_update::projectile_launch_at_object_or_position as launch;
+                let r = world.with_ai_self(me.object, |w| m.run(w, |sm, h| launch(sm, h, victim, &destination, source, wslot, barrel, Some(template as u32), None)));
+                if let Err(e) = r {
+                    world.cuts.team_live_errors.push(format!("MissileAIUpdate::projectileLaunchAtObjectOrPosition: {e:?}"));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::ProjectileFireAtObjectOrPosition { victim, pos, template, .. } if is_missile(m) => {
+                use crate::logic::ai::missile_ai_update::projectile_fire_at_object_or_position as fire;
+                let r = world.with_ai_self(me.object, |w| m.run(w, |sm, h| fire(sm, h, victim, &pos, Some(template as u32), None)));
+                if let Err(e) = r {
+                    world.cuts.team_live_errors.push(format!("MissileAIUpdate::projectileFireAtObjectOrPosition: {e:?}"));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::ProjectileHandleCollision { other } if is_missile(m) => {
+                use crate::logic::ai::missile_ai_update::projectile_handle_collision as collide;
+                match world.with_ai_self(me.object, |w| m.run(w, |sm, h| collide(sm, h, other))) {
+                    Ok(b) => ModuleReply::Bool(b),
+                    Err(e) => {
+                        world.cuts.team_live_errors.push(format!("MissileAIUpdate::projectileHandleCollision: {e:?}"));
+                        ModuleReply::Bool(true)
+                    }
+                }
+            }
+            ModuleCall::ProjectileNowJammed if is_missile(m) => {
+                if let Err(e) = world.with_ai_self(me.object, |w| m.run(w, crate::logic::ai::missile_ai_update::projectile_now_jammed)) {
+                    world.cuts.team_live_errors.push(format!("MissileAIUpdate::projectileNowJammed: {e:?}"));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::ProjectileSetFramesTillCountermeasureDiversion(frames) if is_missile(m) => {
+                world.with_ai_self(me.object, |w| m.run(w, |_, h| crate::logic::ai::missile_ai_update::set_frames_till_countermeasure_diversion_occurs(h, frames)));
+                ModuleReply::Done
+            }
             // (batch I11: the `DeliverPayload` OCL nugget's calls)
             ModuleCall::AiDeliverPayload { move_to, target, data } => {
                 if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_))) {
@@ -646,6 +689,11 @@ pub(crate) fn ai_command_parms(call: &ModuleCall) -> Option<AiCommandParms> {
 }
 
 /// Batch I9i: one of `SupplyTruckAIInterface`'s calls (SupplyTruckAIUpdate.h:166-182).
+/// Whether the module's AI is a `MissileAIUpdate` (integration batch I14).
+fn is_missile(m: &crate::logic::ai::ai_states::AiUpdateModule<World>) -> bool {
+    m.ai.as_ref().is_some_and(|a| matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::Missile(_)))
+}
+
 fn is_supply_call(call: &ModuleCall) -> bool {
     matches!(
         call,

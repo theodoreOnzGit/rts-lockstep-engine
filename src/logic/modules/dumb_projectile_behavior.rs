@@ -638,6 +638,15 @@ impl UpdateBehavior for DumbProjectileBehavior {
                 }
                 ModuleReply::Done
             }
+            // (integration batch I14: the payload's fire without a launcher)
+            ModuleCall::ProjectileFireAtObjectOrPosition { victim, pos, template, .. } => {
+                self.detonation_weapon_tmpl = Some(template);
+                let victim = (victim != INVALID_ID).then_some(victim);
+                if let Err(u) = self.projectile_fire(world, me, victim, pos, template) {
+                    world.cuts.module_errors.push((me, IniError::undefined(u)));
+                }
+                ModuleReply::Done
+            }
             ModuleCall::ProjectileHandleCollision { other } => match self.handle_collision(world, me, other) {
                 Ok(b) => ModuleReply::Bool(b),
                 Err(u) => {

@@ -325,56 +325,70 @@ impl AiStateHost for World {
     fn object_weapon_bonus_condition(&mut self, id: ObjectId) -> u32 {
         self.find_object(id).map_or(0, |o| o.weapon_bonus_condition)
     }
-    fn position_projectile_for_launch(&mut self, _launcher: ObjectId, _wslot: i32, _specific_barrel_to_use: i32) {
-        self.ais_cut("position_projectile_for_launch");
+    fn position_projectile_for_launch(&mut self, launcher: ObjectId, wslot: i32, specific_barrel_to_use: i32) {
+        let me = self.ai_self;
+        let launcher = (launcher != INVALID_ID).then_some(launcher);
+        self.module_position_projectile_for_launch(me, launcher, wslot, specific_barrel_to_use)
     }
-    fn weapon_template_speed(&mut self, _template: u32) -> f32 {
-        self.ais_cut("weapon_template_speed");
-        0.0
+    fn weapon_template_speed(&mut self, template: u32) -> f32 {
+        self.statics.weapon_store.templates().get(template as usize).map_or(0.0, |t| t.weapon_speed)
     }
-    fn weapon_template_should_projectile_collide_with(&mut self, _template: u32, _launcher: ObjectId, _other: ObjectId, _victim: ObjectId) -> bool {
-        self.ais_cut("weapon_template_should_projectile_collide_with");
-        Default::default()
+    fn weapon_template_should_projectile_collide_with(&mut self, template: u32, launcher: ObjectId, other: ObjectId, victim: ObjectId) -> bool {
+        let me = self.ai_self;
+        let launcher = (launcher != INVALID_ID).then_some(launcher);
+        self.module_should_projectile_collide_with(template as usize, launcher, me, other, victim)
     }
-    fn weapon_template_die_on_detonate(&mut self, _template: u32) -> bool {
-        self.ais_cut("weapon_template_die_on_detonate");
-        Default::default()
+    fn weapon_template_die_on_detonate(&mut self, template: u32) -> bool {
+        self.statics.weapon_store.templates().get(template as usize).is_some_and(|t| t.die_on_detonate)
     }
-    fn weapon_store_handle_projectile_detonation(&mut self, _template: u32, _bonus: u32, _inflict_damage: bool) {
-        self.ais_cut("weapon_store_handle_projectile_detonation");
+    fn weapon_store_handle_projectile_detonation(&mut self, template: u32, bonus: u32, inflict_damage: bool) {
+        let me = self.ai_self;
+        let pos = self.find_object(me).map(|o| o.get_position()).unwrap_or_default();
+        if self.cuts.stub_weapon_calls {
+            self.cut(CutCall::WeaponHandleProjectileDetonation { template: template as usize, source: me, pos, extra_bonus_flags: bonus });
+            return;
+        }
+        if let Err(e) = crate::logic::weapon_fire::handle_projectile_detonation(self, template as usize, me, &pos, bonus, inflict_damage) {
+            self.cuts.team_live_errors.push(format!("WeaponStore::handleProjectileDetonation (missile): {e:?}"));
+        }
     }
-    fn weapon_template_name(&mut self, _template: u32) -> Vec<u8> {
-        self.ais_cut("weapon_template_name");
-        Default::default()
+    fn weapon_template_name(&mut self, template: u32) -> Vec<u8> {
+        self.statics.weapon_store.templates().get(template as usize).map(|t| t.name.clone()).unwrap_or_default()
     }
-    fn weapon_template_by_name(&mut self, _name: &[u8]) -> Option<u32> {
-        self.ais_cut("weapon_template_by_name");
-        Default::default()
+    fn weapon_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        let statics = self.statics.clone();
+        statics.weapon_store.templates().iter().position(|t| t.name.as_slice() == name).map(|i| i as u32)
     }
-    fn particle_system_create_attached(&mut self, _template: u32) -> u32 {
-        self.ais_cut("particle_system_create_attached");
-        Default::default()
+    fn particle_system_create_attached(&mut self, template: u32) -> u32 {
+        // (batch I14: the client's particle system, attached to the owner; the logic keeps no id of it: 0, none)
+        if let Some(name) = self.cuts.body.particle_templates.iter().nth(template as usize).cloned() {
+            let me = self.ai_self;
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::ParticleSystemCreateAttached { template: name, object_id: me });
+        }
+        0
     }
     fn particle_system_destroy(&mut self, _id: u32) {
-        self.ais_cut("particle_system_destroy");
+        // (batch I14: the client's; the logic made none, 0)
     }
-    fn particle_template_name(&mut self, _template: u32) -> Vec<u8> {
-        self.ais_cut("particle_template_name");
-        Default::default()
+    fn particle_template_name(&mut self, template: u32) -> Vec<u8> {
+        self.cuts.body.particle_templates.iter().nth(template as usize).cloned().unwrap_or_default()
     }
-    fn particle_template_by_name(&mut self, _name: &[u8]) -> Option<u32> {
-        self.ais_cut("particle_template_by_name");
-        Default::default()
+    fn particle_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        // (batch I14: the templates the body tables know, by index, as `OclHost::particle_system_find_template`)
+        self.cuts.body.particle_templates.iter().position(|n| n.as_slice() == name).map(|i| i as u32)
     }
-    fn object_garrison_hit_killable(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("object_garrison_hit_killable");
-        Default::default()
+    fn object_garrison_hit_killable(&mut self, id: ObjectId) -> bool {
+        // (batch I14: as `DumbProjectileBehavior::projectileHandleCollision` asks it: holding some, garrisonable, not immune)
+        let Some(c) = self.find_object(id).and_then(|o| o.contain) else { return false };
+        self.module_call(id, c, crate::logic::world::module_call::ModuleCall::GetContainCount).as_int(0) > 0
+            && self.module_call(id, c, crate::logic::world::module_call::ModuleCall::IsGarrisonable).as_bool()
+            && !self.module_call(id, c, crate::logic::world::module_call::ModuleCall::IsImmuneToClearBuildingAttacks).as_bool()
     }
     fn object_is_kind_of_multi(&mut self, id: ObjectId, must_be_set: &crate::common::kind_of::KindOfMaskType, must_be_clear: &crate::common::kind_of::KindOfMaskType) -> bool {
         self.find_object(id).is_some_and(|o| o.template().is_kind_of_multi(must_be_set, must_be_clear))
     }
-    fn object_score_the_kill(&mut self, _killer: ObjectId, _victim: ObjectId) {
-        self.ais_cut("object_score_the_kill");
+    fn object_score_the_kill(&mut self, killer: ObjectId, victim: ObjectId) {
+        self.body_score_the_kill(killer, victim)
     }
     fn fx_do_obj(&mut self, fx: Option<u32>, primary: ObjectId) {
         // (batch I9b-5: the FX list by its name, `cuts.ai_host.fx_names`)
@@ -389,8 +403,11 @@ impl AiStateHost for World {
         let id = self.ai_self;
         self.attempt_damage(id, damage_info);
     }
-    fn set_drawable_hidden(&mut self, _hidden: bool) {
-        self.ais_cut("set_drawable_hidden");
+    fn set_drawable_hidden(&mut self, hidden: bool) {
+        let me = self.ai_self;
+        if World::has_drawable(self, me) {
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableSetHidden { object_id: me, hidden });
+        }
     }
     fn distance_squared_to_object(&mut self, other: ObjectId, kind: DistanceKind) -> f32 {
         self.ai_distance_squared(self.ai_self, other, kind)
@@ -399,9 +416,9 @@ impl AiStateHost for World {
         let p = LocomotorHost::position(self);
         (p.x - pos.x) * (p.x - pos.x) + (p.y - pos.y) * (p.y - pos.y)
     }
-    fn calculate_countermeasure_to_divert_to(&mut self, _victim: ObjectId) -> ObjectId {
-        self.ais_cut("calculate_countermeasure_to_divert_to");
-        INVALID_ID
+    fn calculate_countermeasure_to_divert_to(&mut self, victim: ObjectId) -> ObjectId {
+        let me = self.ai_self;
+        World::calculate_countermeasure_to_divert_to(self, me, victim)
     }
     fn contain_is_special_overlord_style_container(&mut self) -> bool {
         self.ai_own_contain_call(MC::IsSpecialOverlordStyleContainer).is_some_and(|r| r.as_bool())
@@ -862,13 +879,13 @@ impl AiStateHost for World {
         &mut self.ai_stacks.deliver
     }
     fn delivery_decal_create(&mut self, _template: &crate::logic::radius_decal::RadiusDecalTemplate, _pos: &Coord3D, _radius: f32, _has_player: bool) {
-        self.ais_cut("delivery_decal_create");
+        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
     }
     fn delivery_decal_update(&mut self) {
-        self.ais_cut("delivery_decal_update");
+        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
     }
     fn delivery_decal_clear(&mut self) {
-        self.ais_cut("delivery_decal_clear");
+        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
     }
     fn play_per_unit_sound_at(&mut self, _name: &[u8], _pos: &Coord3D) {
         self.ais_cut("play_per_unit_sound_at");
@@ -915,54 +932,63 @@ impl AiStateHost for World {
     fn thing_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
         World::thing_factory_find_template(self, name).map(u32::from)
     }
-    fn payload_new(&mut self, _name: &[u8]) -> ObjectId {
-        self.ais_cut("payload_new");
-        INVALID_ID
+    fn payload_new(&mut self, name: &[u8]) -> ObjectId {
+        // `TheThingFactory->newObject(findTemplate(name), owner->getControllingPlayer()->getDefaultTeam())`
+        let Some(t) = self.thing_factory_find_template(name) else { return INVALID_ID };
+        let team = self.get_controlling_player(self.ai_self).map(|p| self.tq().player_default_team(p)).filter(|&t| t != 0);
+        self.thing_factory_new_object(t, team, Default::default()).unwrap_or(INVALID_ID)
     }
-    fn payload_set_producer(&mut self, _id: ObjectId) {
-        self.ais_cut("payload_set_producer");
+    fn payload_set_producer(&mut self, id: ObjectId) {
+        let owner = self.ai_self;
+        self.set_producer(id, owner)
     }
-    fn payload_set_position(&mut self, _id: ObjectId, _pos: &Coord3D) {
-        self.ais_cut("payload_set_position");
+    fn payload_set_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        self.set_position(id, pos)
     }
-    fn payload_position(&mut self, _id: ObjectId) -> Coord3D {
-        self.ais_cut("payload_position");
-        Coord3D::default()
+    fn payload_position(&mut self, id: ObjectId) -> Coord3D {
+        self.find_object(id).map(|o| o.get_position()).unwrap_or_default()
     }
-    fn payload_set_orientation(&mut self, _id: ObjectId, _angle: f32) {
-        self.ais_cut("payload_set_orientation");
+    fn payload_set_orientation(&mut self, id: ObjectId, angle: f32) {
+        self.set_orientation(id, angle)
     }
-    fn payload_mass(&mut self, _id: ObjectId) -> f32 {
-        self.ais_cut("payload_mass");
-        0.0
+    fn payload_mass(&mut self, id: ObjectId) -> f32 {
+        let Some(p) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };
+        self.module_call(id, p, crate::logic::world::module_call::ModuleCall::PhysicsGetMass).as_real(0.0)
     }
-    fn payload_apply_motive_force(&mut self, _id: ObjectId, _force: &Coord3D) {
-        self.ais_cut("payload_apply_motive_force");
+    fn payload_apply_motive_force(&mut self, id: ObjectId, force: &Coord3D) {
+        if let Some(p) = self.find_object(id).and_then(|o| o.physics) {
+            self.module_call(id, p, crate::logic::world::module_call::ModuleCall::PhysicsApplyMotiveForce(*force));
+        }
     }
-    fn payload_is_projectile(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("payload_is_projectile");
-        Default::default()
+    fn payload_is_projectile(&mut self, id: ObjectId) -> bool {
+        self.module_with_interface(id, crate::logic::world::module_call::ModuleCall::HasProjectileUpdateInterface).is_some()
     }
-    fn payload_projectile_fire(&mut self, _id: ObjectId, _pos: &Coord3D, _weapon: u32, _exhaust: Option<u32>) {
-        self.ais_cut("payload_projectile_fire");
+    fn payload_projectile_fire(&mut self, id: ObjectId, pos: &Coord3D, weapon: u32, _exhaust: Option<u32>) {
+        // (the exhaust override is a client particle system: its template's own)
+        if let Some(m) = self.module_with_interface(id, crate::logic::world::module_call::ModuleCall::HasProjectileUpdateInterface) {
+            self.module_call(id, m, crate::logic::world::module_call::ModuleCall::ProjectileFireAtObjectOrPosition { victim: INVALID_ID, pos: *pos, template: weapon as usize, exhaust: None });
+        }
     }
-    fn payload_center_of_mass_offset(&mut self, _id: ObjectId) -> f32 {
-        self.ais_cut("payload_center_of_mass_offset");
-        0.0
+    fn payload_center_of_mass_offset(&mut self, id: ObjectId) -> f32 {
+        let Some(p) = self.find_object(id).and_then(|o| o.physics) else { return 0.0 };
+        self.module_call(id, p, crate::logic::world::module_call::ModuleCall::PhysicsGetCenterOfMassOffset).as_real(0.0)
     }
-    fn payload_set_pitch_rate(&mut self, _id: ObjectId, _rate: f32) {
-        self.ais_cut("payload_set_pitch_rate");
+    fn payload_set_pitch_rate(&mut self, id: ObjectId, rate: f32) {
+        if let Some(p) = self.find_object(id).and_then(|o| o.physics) {
+            self.module_call(id, p, crate::logic::world::module_call::ModuleCall::PhysicsSetPitchRate(rate));
+        }
     }
-    fn payload_has_ai(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("payload_has_ai");
-        Default::default()
+    fn payload_has_ai(&mut self, id: ObjectId) -> bool {
+        self.find_object(id).is_some_and(|o| o.ai.is_some())
     }
-    fn payload_ai_move_to_position(&mut self, _id: ObjectId, _pos: &Coord3D) {
-        self.ais_cut("payload_ai_move_to_position");
+    fn payload_ai_move_to_position(&mut self, id: ObjectId, pos: &Coord3D) {
+        if let Some(ai) = self.find_object(id).and_then(|o| o.ai) {
+            self.module_call(id, ai, crate::logic::world::module_call::ModuleCall::AiMoveToPosition { pos: *pos, command_source: crate::common::game_common::CommandSourceType::FromAi as i32 });
+        }
     }
     fn weapon_template_projectile_exhaust(&mut self, _template: u32, _level: crate::common::game_common::VeterancyLevel) -> Option<u32> {
-        self.ais_cut("weapon_template_projectile_exhaust");
-        Default::default()
+        // (batch I14: a particle system template, the client's; the payload's fire takes its template's own)
+        None
     }
     fn terrain_extent_including_border(&mut self) -> (Coord3D, Coord3D) {
         // W3DTerrainLogic::getExtentIncludingBorder writes only x and y; both callers read only x and y, so z is 0 here

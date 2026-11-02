@@ -638,6 +638,11 @@ impl UpdateBehavior for NeutronMissileUpdate {
                 self.projectile_launch(world, me.object, victim, destination, source, wslot, barrel, exhaust);
                 ModuleReply::Done
             }
+            // (integration batch I14: the payload's fire without a launcher)
+            ModuleCall::ProjectileFireAtObjectOrPosition { victim, pos, exhaust, .. } => {
+                self.projectile_fire(world, me.object, victim, pos, exhaust);
+                ModuleReply::Done
+            }
             ModuleCall::ProjectileHandleCollision { other } => ModuleReply::Bool(self.handle_collision(world, me.object, other)),
             // `setFramesTillCountermeasureDiversionOccurs` and `projectileNowJammed` are empty
             ModuleCall::ProjectileSetFramesTillCountermeasureDiversion(_) | ModuleCall::ProjectileNowJammed => ModuleReply::Done,

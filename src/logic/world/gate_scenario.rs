@@ -922,3 +922,70 @@ Object Plane\n KindOf = AIRCRAFT\n Geometry = CYLINDER\n GeometryMajorRadius = 5
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
+
+#[cfg(test)]
+mod missile_tests {
+    use super::*;
+    use crate::logic::world::module_call::ModuleCall;
+
+    /// A rocket (a `MissileAIUpdate` projectile at a thrust locomotor) and a launcher whose gun fires it.
+    const ROCKET: &str = "\
+Locomotor RocketThrust\n Surfaces = AIR\n Speed = 200\n Acceleration = 1000\n Braking = 1000\n TurnRate = 720\n Appearance = THRUST\nEnd\n\
+Weapon RocketGun\n PrimaryDamage = 30\n PrimaryDamageRadius = 5\n AttackRange = 150\n DamageType = EXPLOSION\n DeathType = NORMAL\n WeaponSpeed = 200\n DelayBetweenShots = 5000\n ProjectileObject = Rocket\nEnd\n\
+Object Rocket\n KindOf = PROJECTILE\n Geometry = CYLINDER\n GeometryMajorRadius = 1\n GeometryHeight = 1\n\
+ Behavior = MissileAIUpdate ModuleTag_AI\n  TryToFollowTarget = Yes\n  FuelLifetime = 5000\n  InitialVelocity = 100\n  IgnitionDelay = 0\n  DistanceToTravelBeforeTurning = 0\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 1\n End\n Locomotor = SET_NORMAL RocketThrust\nEnd\n\
+Object Launcher\n KindOf = VEHICLE\n VisionRange = 200\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY RocketGun\n End\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+
+    /// Batch I14: `MissileAIUpdate` as the world's projectile interface (none of its `ProjectileUpdateInterface` calls reached it, so a
+    /// fired missile was never launched). A launcher of team 1 at (100, 200) is ordered to attack an enemy soldier 100 east. Predicted
+    /// before the run: within 60 frames a rocket whose launcher is the launcher; ten frames after it appears it is east of the
+    /// launcher; within 150 frames the soldier has lost 30 health (the gun's damage).
+    #[test]
+    fn a_launched_missile_flies_to_its_target() {
+        let mut w = gate_map_world_with(ROCKET);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let launcher = make(&mut w, b"Launcher", team, Coord3D { x: 100.0, y: 200.0, z: 0.0 });
+        let target = make(&mut w, b"Soldier", enemy, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let ai = w.find_object(launcher).and_then(|o| o.ai).expect("the launcher's AI");
+        w.module_call(launcher, ai, ModuleCall::AiAttackObject { victim: target, max_shots: 1, command_source: 0 });
+        let rocket = |w: &World| w.objects.ids_in_order().into_iter().find(|&id| w.objects.find(id).is_some_and(|o| o.template().get_name() == b"Rocket"));
+        let health = |w: &World| w.find_object(target).map(|o| o.body).and_then(|b| b).map_or(-1.0, |_| 0.0);
+        let _ = health;
+        let mut fired = None;
+        for f in 0..60 {
+            w.logic_update().unwrap();
+            if let Some(r) = rocket(&w) {
+                fired = Some((f, r));
+                break;
+            }
+        }
+        let (f0, r) = fired.expect("a rocket within 60 frames");
+        let b = w.find_object(r).and_then(|o| o.ai).expect("the rocket's AI");
+        let launched_by = w.module_call(r, b, ModuleCall::ProjectileGetLauncherId);
+        for _ in 0..10 {
+            w.logic_update().unwrap();
+        }
+        let at = w.find_object(r).map(|o| o.get_position());
+        let body = w.find_object(target).and_then(|o| o.body).expect("the soldier's body");
+        let mut hit = None;
+        for f in 0..150 {
+            let h = w.module_call(target, body, ModuleCall::GetHealth).as_real(-1.0);
+            if h < 100.0 {
+                hit = Some((f, h));
+                break;
+            }
+            w.logic_update().unwrap();
+        }
+        eprintln!("rocket {r} on frame {f0}, launcher {launched_by:?}, 10 frames later at {at:?}; hit {hit:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(launched_by, crate::logic::world::module_call::ModuleReply::Id(launcher));
+        assert!(at.is_some_and(|p| p.x > 105.0), "{at:?}");
+        assert_eq!(hit.map(|(_, h)| h), Some(70.0));
+    }
+}

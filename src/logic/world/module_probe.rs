@@ -1112,6 +1112,7 @@ impl ProbeModule {
             | ModuleCall::AiJoinTeam
             | ModuleCall::AttemptBestFirePointPosition { .. }
             | ModuleCall::AiDeliverPayload { .. }
+            | ModuleCall::ProjectileFireAtObjectOrPosition { .. }
             | ModuleCall::AiGetCurLocomotorMaxSpeedForCondition(_) => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(
