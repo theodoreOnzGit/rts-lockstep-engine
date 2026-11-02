@@ -137,6 +137,18 @@ impl World {
         self.cut(CutCall::Host { call, args: vec![i64::from(id)], text: Vec::new() });
     }
 
+    /// Integration batch I13: an airfield's parking place behavior, `getParkingPlaceBehaviorInterface()` of its first behavior module that
+    /// has one (`None`: `NULL`).
+    fn ai_pp(&mut self, airfield: ObjectId) -> Option<crate::logic::world::object::ModuleIndex> {
+        self.module_with_interface(airfield, crate::logic::world::module_call::ModuleCall::HasParkingPlaceInterface)
+    }
+
+    /// A call to an airfield's parking place behavior, `None` when it has none (upstream's callers test the interface first).
+    fn ai_pp_call(&mut self, airfield: ObjectId, call: crate::logic::world::module_call::ModuleCall) -> Option<crate::logic::world::module_call::ModuleReply> {
+        let pp = self.ai_pp(airfield)?;
+        Some(self.module_call(airfield, pp, call))
+    }
+
     /// Integration batch I9j: `ThePartitionManager->findPositionAround(pos, &options, &result)` for the AI's sites, the partition
     /// manager's with `cuts.live_partition` (none of them sets `flags`: `FPF_NONE`), otherwise the cut `call` answering none.
     fn ai_find_position_around(&mut self, call: &'static str, pos: &Coord3D, options: FindPositionOptions) -> Option<Coord3D> {
@@ -400,12 +412,12 @@ impl AiStateHost for World {
     fn contain_rider(&mut self) -> ObjectId {
         self.ai_own_contain_call(MC::GetRider).map_or(INVALID_ID, |r| r.as_id())
     }
-    fn parking_place_exists(&mut self, _airfield: ObjectId) -> bool {
-        self.ais_cut("parking_place_exists");
-        Default::default()
+    fn parking_place_exists(&mut self, airfield: ObjectId) -> bool {
+        self.ai_pp(airfield).is_some()
     }
-    fn parking_place_set_healee(&mut self, _airfield: ObjectId, _add: bool) {
-        self.ais_cut("parking_place_set_healee");
+    fn parking_place_set_healee(&mut self, airfield: ObjectId, add: bool) {
+        let id = self.ai_self;
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceSetHealee { id, add });
     }
     fn member_ai_current_victim(&mut self, _id: ObjectId) -> ObjectId {
         self.ais_cut("member_ai_current_victim");
@@ -488,58 +500,67 @@ impl AiStateHost for World {
     fn rotor_wash(&mut self, _pos: &Coord3D) {
         self.ais_cut("rotor_wash");
     }
-    fn pp_has_reserved_space(&mut self, _airfield: ObjectId, _id: ObjectId) -> bool {
-        self.ais_cut("pp_has_reserved_space");
-        Default::default()
+    fn pp_has_reserved_space(&mut self, airfield: ObjectId, id: ObjectId) -> bool {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceHasReservedSpace { intended: id }).is_some_and(|r| r.as_bool())
     }
-    fn pp_reserve_space(&mut self, _airfield: ObjectId, _id: ObjectId, _parking_offset: f32, _want_info: bool) -> Option<crate::logic::ai::jet_ai_update::PpInfo> {
-        self.ais_cut("pp_reserve_space");
-        Default::default()
+    fn pp_reserve_space(&mut self, airfield: ObjectId, id: ObjectId, parking_offset: f32, want_info: bool) -> Option<crate::logic::ai::jet_ai_update::PpInfo> {
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceReserveSpace { id, parking_offset, want_info }) {
+            Some(crate::logic::world::module_call::ModuleReply::PPInfo { ok: true, info }) => Some(info.unwrap_or_default()),
+            _ => None,
+        }
     }
-    fn pp_release_space(&mut self, _airfield: ObjectId, _id: ObjectId) {
-        self.ais_cut("pp_release_space");
+    fn pp_release_space(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceReleaseSpace { id });
     }
-    fn pp_reserve_runway(&mut self, _airfield: ObjectId, _id: ObjectId, _for_landing: bool) -> bool {
-        self.ais_cut("pp_reserve_runway");
-        Default::default()
+    fn pp_reserve_runway(&mut self, airfield: ObjectId, id: ObjectId, for_landing: bool) -> bool {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceReserveRunway { id, for_landing }).is_some_and(|r| r.as_bool())
     }
-    fn pp_release_runway(&mut self, _airfield: ObjectId, _id: ObjectId) {
-        self.ais_cut("pp_release_runway");
+    fn pp_release_runway(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceReleaseRunway { id });
     }
-    fn pp_calc_pp_info(&mut self, _airfield: ObjectId, _id: ObjectId) -> crate::logic::ai::jet_ai_update::PpInfo {
-        self.ais_cut("pp_calc_pp_info");
-        Default::default()
+    fn pp_calc_pp_info(&mut self, airfield: ObjectId, id: ObjectId) -> crate::logic::ai::jet_ai_update::PpInfo {
+        // (upstream's `info` is a local the call fills; one it does not fill reads as zero here)
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceCalcPPInfo { id, info: Default::default() }) {
+            Some(crate::logic::world::module_call::ModuleReply::PPInfo { info: Some(info), .. }) => info,
+            _ => Default::default(),
+        }
     }
-    fn pp_runway_count(&mut self, _airfield: ObjectId) -> i32 {
-        self.ais_cut("pp_runway_count");
-        Default::default()
+    fn pp_runway_count(&mut self, airfield: ObjectId) -> i32 {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceGetRunwayCount).map_or(0, |r| r.as_int(0))
     }
-    fn pp_runway_reservation(&mut self, _airfield: ObjectId, _r: i32) -> ObjectId {
-        self.ais_cut("pp_runway_reservation");
-        INVALID_ID
+    fn pp_runway_reservation(&mut self, airfield: ObjectId, r: i32) -> ObjectId {
+        // `RESERVATION_TAKEOFF` (BehaviorModule.h: 0)
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceGetRunwayReservation { runway: r, kind: 0 }) {
+            Some(crate::logic::world::module_call::ModuleReply::Id(id)) => id,
+            _ => INVALID_ID,
+        }
     }
-    fn pp_transfer_runway_reservation(&mut self, _airfield: ObjectId, _id: ObjectId) {
-        self.ais_cut("pp_transfer_runway_reservation");
+    fn pp_transfer_runway_reservation(&mut self, airfield: ObjectId, id: ObjectId) {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceTransferRunwayReservation { id });
     }
-    fn pp_approach_height(&mut self, _airfield: ObjectId) -> f32 {
-        self.ais_cut("pp_approach_height");
-        0.0
+    fn pp_approach_height(&mut self, airfield: ObjectId) -> f32 {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceGetApproachHeight).map_or(0.0, |r| r.as_real(0.0))
     }
-    fn pp_landing_deck_height_offset(&mut self, _airfield: ObjectId) -> f32 {
-        self.ais_cut("pp_landing_deck_height_offset");
-        0.0
+    fn pp_landing_deck_height_offset(&mut self, airfield: ObjectId) -> f32 {
+        self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::GetLandingDeckHeightOffset).map_or(0.0, |r| r.as_real(0.0))
     }
-    fn pp_calc_best_parking_assignment(&mut self, _airfield: ObjectId, _id: ObjectId) -> Option<Coord3D> {
-        self.ais_cut("pp_calc_best_parking_assignment");
-        Default::default()
+    fn pp_calc_best_parking_assignment(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Coord3D> {
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceCalcBestParkingAssignment { id }) {
+            Some(crate::logic::world::module_call::ModuleReply::Approach { ok: true, position, .. }) => position,
+            _ => None,
+        }
     }
-    fn pp_taxi_locations(&mut self, _airfield: ObjectId, _id: ObjectId) -> Option<Vec<Coord3D>> {
-        self.ais_cut("pp_taxi_locations");
-        Default::default()
+    fn pp_taxi_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>> {
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceGetTaxiLocations { id }) {
+            Some(crate::logic::world::module_call::ModuleReply::Coords(c)) => c,
+            _ => None,
+        }
     }
-    fn pp_creation_locations(&mut self, _airfield: ObjectId, _id: ObjectId) -> Option<Vec<Coord3D>> {
-        self.ais_cut("pp_creation_locations");
-        Default::default()
+    fn pp_creation_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>> {
+        match self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceGetCreationLocations { id }) {
+            Some(crate::logic::world::module_call::ModuleReply::Coords(c)) => c,
+            _ => None,
+        }
     }
     fn jet_airfield_candidate(&mut self) -> Option<ObjectId> {
         self.ais_cut("jet_airfield_candidate");

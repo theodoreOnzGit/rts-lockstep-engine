@@ -864,3 +864,61 @@ Object Popper\n KindOf = VEHICLE\n VisionRange = 150\n Geometry = CYLINDER\n Geo
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
+
+#[cfg(test)]
+mod parking_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+
+    /// An airfield of one row of two spaces with runways, and a plane to park there.
+    const AIRFIELD: &str = "\
+Object Airfield\n KindOf = STRUCTURE IMMOBILE FS_AIRFIELD\n Geometry = BOX\n GeometryMajorRadius = 30\n GeometryMinorRadius = 30\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\n\
+ Behavior = ParkingPlaceBehavior ModuleTag_Parking\n  NumRows = 1\n  NumCols = 2\n  HasRunways = Yes\n  ApproachHeight = 50\n End\nEnd\n\
+Object Plane\n KindOf = AIRCRAFT\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+
+    /// Batch I13, the AI's parking place calls live. With no art the bones fall back to the airfield's own position. Predicted
+    /// before the run: the airfield has a parking place and the depot none; ~~two runways~~ (**missed:** `getRunwayCount()` is
+    /// `m_runways.size()` with no `buildInfo()`, ParkingPlaceBehavior.h:145, and the runways are built at the first reservation:
+    /// 0 before it, as upstream, and 2 after, two columns with runways); two planes get
+    /// spaces, each at the airfield's position, and a third is refused (one row of two); once the first releases its space it has
+    /// none and the third gets one; the plain parking place answers no better assignment and no taxi or creation locations (the base
+    /// class's `FALSE` and `NULL`); the approach height is the data's 50.
+    #[test]
+    fn planes_reserve_and_release_parking_spaces() {
+        let mut w = gate_map_world_with(AIRFIELD);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let field_pos = Coord3D { x: 200.0, y: 100.0, z: 0.0 };
+        let field = make(&mut w, b"Airfield", team, field_pos);
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
+        let planes: Vec<ObjectId> = (0..3).map(|i| make(&mut w, b"Plane", team, Coord3D { x: 60.0 + 20.0 * i as f32, y: 60.0, z: 0.0 })).collect();
+        let a = planes[0];
+        let r = w.with_ai_self(a, |w| {
+            let exists = (w.parking_place_exists(field), w.parking_place_exists(depot));
+            let runways_before = w.pp_runway_count(field);
+            let approach = w.pp_approach_height(field);
+            let first: Vec<_> = planes.iter().map(|&p| w.pp_reserve_space(field, p, 0.0, true)).collect();
+            let runways = (runways_before, w.pp_runway_count(field));
+            let held = planes.iter().map(|&p| w.pp_has_reserved_space(field, p)).collect::<Vec<_>>();
+            w.pp_release_space(field, a);
+            let after_release = (w.pp_has_reserved_space(field, a), w.pp_reserve_space(field, planes[2], 0.0, false).is_some());
+            let base = (w.pp_calc_best_parking_assignment(field, a), w.pp_taxi_locations(field, a), w.pp_creation_locations(field, a));
+            (exists, runways, approach, first, held, after_release, base)
+        });
+        eprintln!("{r:?}");
+        let (exists, runways, approach, first, held, after_release, base) = r;
+        assert_eq!(exists, (true, false));
+        assert_eq!(runways, (0, 2));
+        assert_eq!(approach, 50.0);
+        for info in &first[..2] {
+            let p = info.expect("a space").parking_space;
+            assert_eq!((p.x, p.y), (field_pos.x, field_pos.y));
+        }
+        assert!(first[2].is_none(), "a third space: {:?}", first[2]);
+        assert_eq!(held, [true, true, false]);
+        assert_eq!(after_release, (false, true));
+        assert_eq!(base, (None, None, None));
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}

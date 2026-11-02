@@ -109,22 +109,8 @@ pub const TAXI_IN_PROGRESS: u32 = 8;
 /// `JetOrHeliCirclingDeadAirfieldState`'s `HOW_OFTEN_TO_CHECK`: "only recheck for new airfields every second or so".
 const HOW_OFTEN_TO_CHECK: i32 = LOGICFRAMES_PER_SECOND;
 
-/// `ParkingPlaceBehaviorInterface::PPInfo`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct PpInfo {
-    pub parking_space: Coord3D,
-    pub parking_orientation: f32,
-    pub runway_prep: Coord3D,
-    pub runway_start: Coord3D,
-    pub runway_end: Coord3D,
-    pub runway_exit: Coord3D,
-    pub runway_landing_start: Coord3D,
-    pub runway_landing_end: Coord3D,
-    pub runway_approach: Coord3D,
-    pub hangar_internal: Coord3D,
-    pub runway_takeoff_dist: f32,
-    pub hangar_internal_orient: f32,
-}
+/// `ParkingPlaceBehaviorInterface::PPInfo` (integration batch I13: the module call's own struct, which had the same fields).
+pub type PpInfo = crate::logic::world::module_call::PPInfo;
 
 /// `JetAIUpdateModuleData`'s own fields (the field parse's names in the docs).
 #[derive(Clone, Debug, PartialEq)]

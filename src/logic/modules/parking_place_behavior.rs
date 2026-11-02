@@ -1075,7 +1075,8 @@ impl UpdateBehavior for ParkingPlaceBehavior {
                 Self::record(world, me, r);
                 ModuleReply::Done
             }
-            ModuleCall::ParkingPlaceCalcBestParkingAssignment => ModuleReply::Bool(false),
+            // (the base class's: `return FALSE`; `getTaxiLocations` and `getCreationLocations` are `NULL`, unhandled)
+            ModuleCall::ParkingPlaceCalcBestParkingAssignment { .. } => ModuleReply::Approach { ok: false, position: None, index: -1 },
             _ => ModuleReply::Unhandled,
         }
     }

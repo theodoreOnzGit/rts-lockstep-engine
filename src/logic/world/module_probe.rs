@@ -470,7 +470,9 @@ impl ProbeModule {
             | ModuleCall::ParkingPlaceGetApproachHeight
             | ModuleCall::ParkingPlaceSetHealee { .. }
             | ModuleCall::ParkingPlaceKillAllParkedUnits
-            | ModuleCall::ParkingPlaceCalcBestParkingAssignment => ModuleReply::Unhandled,
+            | ModuleCall::ParkingPlaceCalcBestParkingAssignment { .. }
+            | ModuleCall::ParkingPlaceGetTaxiLocations { .. }
+            | ModuleCall::ParkingPlaceGetCreationLocations { .. } => ModuleReply::Unhandled,
             ModuleCall::SetInitialHealth(percent) if self.answers.trace_initial_health => {
                 world.body_trace(format!("initialhealth {} {percent}", me.object));
                 ModuleReply::Done

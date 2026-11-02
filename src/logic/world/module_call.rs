@@ -1060,8 +1060,13 @@ pub enum ModuleCall {
     ParkingPlaceSetHealee { id: ObjectId, add: bool },
     /// batch R74: `ParkingPlaceBehaviorInterface::killAllParkedUnits()`.
     ParkingPlaceKillAllParkedUnits,
-    /// batch R74: `ParkingPlaceBehaviorInterface::calcBestParkingAssignment(id, &pos, ...)`; replies [`ModuleReply::Bool`].
-    ParkingPlaceCalcBestParkingAssignment,
+    /// batch R74: `ParkingPlaceBehaviorInterface::calcBestParkingAssignment(id, &pos, ...)`; replies [`ModuleReply::Approach`] (whether
+    /// the jet moved up, its position, the new index or -1). Integration batch I13: with the jet's id (it had none, and no caller).
+    ParkingPlaceCalcBestParkingAssignment { id: ObjectId },
+    /// Integration batch I13: `ParkingPlaceBehaviorInterface::getTaxiLocations(id)`; replies [`ModuleReply::Coords`] (`None`: `NULL`).
+    ParkingPlaceGetTaxiLocations { id: ObjectId },
+    /// Integration batch I13: `ParkingPlaceBehaviorInterface::getCreationLocations(id)`; replies [`ModuleReply::Coords`] (`None`: `NULL`).
+    ParkingPlaceGetCreationLocations { id: ObjectId },
     /// `SpecialPowerUpdateInterface::isSpecialAbility()` and, if it is,
     /// `SpecialAbilityUpdate::getSpecialPowerType()`; replies
     /// [`ModuleReply::Int`] (anything else: not a special ability).
@@ -1284,6 +1289,8 @@ pub enum ModuleReply {
     PPInfo { ok: bool, info: Option<PPInfo> },
     /// batch R80: an audio event's name (`None`: `NULL`).
     Sound(Option<Vec<u8>>),
+    /// Integration batch I13: a list of positions (`None`: `NULL`).
+    Coords(Option<Vec<Coord3D>>),
     // --- end p1w13-sonnet ---
 }
 

@@ -1442,7 +1442,16 @@ impl UpdateBehavior for FlightDeckBehavior {
                 Self::record(world, me, r);
                 ModuleReply::Done
             }
-            ModuleCall::ParkingPlaceCalcBestParkingAssignment => ModuleReply::Unhandled,
+            // (integration batch I13: the flight deck's overrides, which no call reached)
+            ModuleCall::ParkingPlaceCalcBestParkingAssignment { id } => match self.calc_best_parking_assignment(world, id, true) {
+                Ok((moved, pos, _old, new)) => ModuleReply::Approach { ok: moved, position: pos, index: new.unwrap_or(-1) },
+                Err(e) => {
+                    Self::record::<()>(world, me, Err(e));
+                    ModuleReply::Approach { ok: false, position: None, index: -1 }
+                }
+            },
+            ModuleCall::ParkingPlaceGetTaxiLocations { id } => ModuleReply::Coords(self.get_taxi_locations(id)),
+            ModuleCall::ParkingPlaceGetCreationLocations { id } => ModuleReply::Coords(self.get_creation_locations(id)),
             _ => ModuleReply::Unhandled,
         }
     }
