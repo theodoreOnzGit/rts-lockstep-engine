@@ -1070,6 +1070,31 @@ impl World {
         self.cuts.action_allowed.contains(&(kind, other))
     }
 
+    /// Integration batch I19: the control bar's buttons and sets read from the game's INI (`statics.command_buttons`) added to the world's
+    /// tables, which the world's code reads (`cuts.command_buttons`, `cuts.command_sets`; a test's own entries stay first): each button's
+    /// final override, each set's final override with its slots as the tables' indices.
+    pub fn install_command_buttons(&mut self) {
+        let statics = self.statics.clone();
+        let store = &statics.command_buttons;
+        let base = self.cuts.command_buttons.len();
+        for chain in &store.buttons {
+            let b = chain.last().expect("a chain is never empty");
+            self.cuts.command_buttons.push(CommandButtonFacts {
+                name: b.name.clone(),
+                command_type: b.command,
+                weapon_slot: b.weapon_slot,
+                special_power: b.special_power,
+                thing_template: b.thing_template,
+                upgrade: b.upgrade.map(|k| k.0),
+                ready_for: Default::default(),
+            });
+        }
+        for chain in &store.sets {
+            let s = chain.last().expect("a chain is never empty");
+            self.cuts.command_sets.push((s.name.clone(), s.commands.iter().map(|slot| slot.map(|(c, _)| base + c)).collect()));
+        }
+    }
+
     /// batch R69: `TheControlBar->findCommandSet(name)`: the set's index in `cuts.command_sets`, `None` for `NULL`.
     pub fn control_bar_find_command_set(&self, name: &[u8]) -> Option<usize> {
         self.cuts.command_sets.iter().position(|(n, _)| n.as_slice() == name)

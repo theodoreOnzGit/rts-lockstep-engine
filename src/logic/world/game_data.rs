@@ -136,6 +136,9 @@ pub const LOGIC_SUBSYSTEMS: &[SubsystemFiles] = &[
     SubsystemFiles { name: "TheArmorStore", path1: None, path2: Some(b"Data\\INI\\Armor.ini"), dirpath: None },
     SubsystemFiles { name: "TheThingFactory", path1: Some(b"Data\\INI\\Default\\Object.ini"), path2: None, dirpath: Some(b"Data\\INI\\Object") },
     SubsystemFiles { name: "TheUpgradeCenter", path1: Some(b"Data\\INI\\Default\\Upgrade.ini"), path2: Some(b"Data\\INI\\Upgrade.ini"), dirpath: None },
+    // (batch I19: `TheGameClient`'s `ControlBar::init`, between the upgrade center and the AI, GameEngine.cpp:486; its three files)
+    SubsystemFiles { name: "TheControlBar", path1: Some(b"Data\\INI\\Default\\CommandButton.ini"), path2: Some(b"Data\\INI\\CommandButton.ini"), dirpath: None },
+    SubsystemFiles { name: "TheControlBar (sets)", path1: None, path2: Some(b"Data\\INI\\CommandSet.ini"), dirpath: None },
     SubsystemFiles { name: "TheAI", path1: Some(b"Data\\INI\\Default\\AIData.ini"), path2: Some(b"Data\\INI\\AIData.ini"), dirpath: None },
     SubsystemFiles { name: "TheCrateSystem", path1: Some(b"Data\\INI\\Default\\Crate.ini"), path2: Some(b"Data\\INI\\Crate.ini"), dirpath: None },
 ];
@@ -178,6 +181,10 @@ pub struct GameDataLoad {
     pub ai_data: AiDataChain,
     /// `TheCrateSystem`.
     pub crates: CrateSystem,
+    /// Integration batch I19: `TheControlBar`'s command buttons and sets.
+    pub command_buttons: crate::logic::command_button::CommandButtonStore,
+    /// What a button's fields look up, made at the first button (the stores it names are read before the control bar).
+    button_lookups: Option<Arc<crate::logic::command_button::CommandButtonLookups>>,
 }
 
 impl GameDataLoad {
@@ -206,6 +213,8 @@ impl GameDataLoad {
             upgrades: UpgradeCenter::new(),
             ai_data: Default::default(),
             crates: CrateSystem::new(),
+            command_buttons: Default::default(),
+            button_lookups: None,
         })
     }
 
@@ -237,6 +246,7 @@ impl GameDataLoad {
             rank_info_store: self.ranks,
             locomotor_store: self.locomotors,
             ai_data: self.ai_data.current().clone(),
+            command_buttons: self.command_buttons,
         };
         (statics, self.names)
     }
@@ -275,9 +285,11 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 15] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 17] = [
     BlockParse { token: "AIData", parse: ai_data_block },
     BlockParse { token: "Armor", parse: armor_block },
+    BlockParse { token: "CommandButton", parse: command_button_block },
+    BlockParse { token: "CommandSet", parse: command_set_block },
     BlockParse { token: "CrateData", parse: crate_block },
     BlockParse { token: "DamageFX", parse: damage_fx_block },
     BlockParse { token: "GameData", parse: game_data_block },
@@ -383,6 +395,32 @@ fn player_template_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<(
 fn special_power_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     let sciences = &c.sciences;
     c.special_powers.parse_special_power_definition(ini, &mut c.names, &|k| sciences.is_valid_science(ScienceType::from_name_key(k)))
+}
+
+/// (batch I19) `INI::parseCommandButtonDefinition`, its fields' lookups made from the stores read before it.
+fn command_button_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    if c.button_lookups.is_none() {
+        let mut l = crate::logic::command_button::CommandButtonLookups::default();
+        for t in c.factory.templates() {
+            l.templates.insert(t.data.get_name().to_vec(), t.data.get_template_id());
+        }
+        for name in c.upgrades.get_upgrade_names() {
+            let key = c.names.name_to_key(&name);
+            l.upgrades.insert(name, key);
+        }
+        for sp in c.special_powers.templates() {
+            l.special_powers.insert(sp.name().to_vec(), sp.id());
+        }
+        l.sciences = c.sciences.infos().map(|i| i.science()).collect();
+        c.button_lookups = Some(Arc::new(l));
+    }
+    let lookups = c.button_lookups.clone().expect("made above");
+    c.command_buttons.parse_command_button_definition(ini, &mut c.names, &lookups)
+}
+
+/// (batch I19) `INI::parseCommandSetDefinition`.
+fn command_set_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.command_buttons.parse_command_set_definition(ini)
 }
 
 fn upgrade_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {

@@ -86,5 +86,6 @@ pub mod modules;
 
 // --- p1w10-sonnet ---
 pub mod object_creation_list;
+pub mod command_button;
 pub mod radius_decal;
 // --- end p1w10-sonnet ---

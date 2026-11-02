@@ -138,6 +138,8 @@ pub fn gate_map_world_with(extra: &str) -> World {
         g.max_low_energy_production_speed = 0.8;
     }
     w.statics = Arc::new(st);
+    // (batch I19: the control bar's buttons and sets the INI held, into the world's tables)
+    w.install_command_buttons();
     let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
     let size = ICoord2D { x: 40, y: 40 };
     t.set_logic_height_map(Some(LogicHeightMap::new(40, 40, 0, vec![size], vec![0; 1600]).expect("the height map")));
@@ -1219,5 +1221,39 @@ Object Plane\n KindOf = AIRCRAFT\n Geometry = CYLINDER\n GeometryMajorRadius = 5
         assert_eq!(found, Some(far));
         assert_eq!(spaces, (true, false, true));
         assert_eq!(info, (Some(0), Vec::new()));
+    }
+}
+
+#[cfg(test)]
+mod command_button_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+
+    /// A tank with a command set, the set and its buttons, all in the test's INI (any block may be in any file, as upstream's table
+    /// is one); the buttons after the tank, whose template a button names.
+    const BUTTONS: &str = "\
+Object Tank\n KindOf = VEHICLE\n CommandSet = TankSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\nEnd\n\
+CommandButton Command_Stop\n Command = STOP\nEnd\n\
+CommandButton Command_Hijack\n Command = HIJACK_VEHICLE\n Object = Tank\nEnd\n\
+CommandSet TankSet\n 1 = Command_Stop\n 2 = Command_Hijack\n 4 = Command_Stop\nEnd\n";
+
+    /// Batch I19, the command buttons and sets read from the INI and installed in the world. Predicted before the run: the tank's AI
+    /// finds `Command_Stop` by name; its set (`TankSet`, by the template's `CommandSet`) holds it twice, and its type is `STOP` (12);
+    /// `Command_Hijack` once, `HIJACK_VEHICLE` (27), naming the tank's template; an unknown button is not found.
+    #[test]
+    fn a_units_command_set_is_read_from_the_ini() {
+        let mut w = gate_map_world_with(BUTTONS);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let tank = make(&mut w, b"Tank", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let tank_template = w.find_object(tank).map(|o| o.template().get_template_id());
+        let r = w.with_ai_self(tank, |w| {
+            let stop = w.command_button_by_name(b"Command_Stop").expect("the stop button");
+            let hijack = w.command_button_by_name(b"Command_Hijack").expect("the hijack button");
+            (w.command_set_button_matches(stop), w.command_set_button_matches(hijack), w.command_button_by_name(b"NoSuchButton"), w.cuts.command_buttons[hijack as usize].thing_template)
+        });
+        eprintln!("{r:?}");
+        assert_eq!(r, ((2, 12), (1, 27), None, tank_template));
     }
 }

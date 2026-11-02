@@ -43,6 +43,8 @@ use crate::common::upgrade::UpgradeCenter;
 pub struct GameStatics {
     /// `TheUpgradeCenter`.
     pub upgrade_center: UpgradeCenter,
+    /// Integration batch I19: the control bar's command buttons and sets (`TheControlBar`'s data the logic reads).
+    pub command_buttons: crate::logic::command_button::CommandButtonStore,
     // --- p1l9-upgrades ---
     /// `TheScienceStore`.
     pub science_store: crate::common::science::ScienceStore,
