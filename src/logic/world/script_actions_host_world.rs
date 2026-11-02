@@ -1323,8 +1323,9 @@ impl ScriptActionsHost for World {
     fn sa_set_objects_should_receive_difficulty_bonus(&mut self, _b: bool) {
         self.sa_cut("set_objects_should_receive_difficulty_bonus");
     }
-    fn sa_set_choose_victim_always_uses_normal(&mut self, _b: bool) {
-        self.sa_cut("set_choose_victim_always_uses_normal");
+    fn sa_set_choose_victim_always_uses_normal(&mut self, b: bool) {
+        // (integration batch I15: `TheScriptEngine->setChooseVictimAlwaysUsesNormal(b)`, the engine's own flag, which the AI reads)
+        self.script_engine.choose_victim_always_uses_normal = b;
     }
     fn sa_obj_has_railroad(&self, _o: ObjH) -> bool {
         Default::default()

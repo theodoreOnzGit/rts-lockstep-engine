@@ -210,6 +210,10 @@ pub struct World {
     // --- batch I9b ---
     /// The object whose AI is running: the one the object-centred AI hosts answer for (`ai_host_world.rs`).
     pub ai_self: ObjectId,
+    /// `GameLogic::m_frameObjectsChangedTriggerAreas`: "last frame objects moved into/outof trigger areas, or were created/destroyed"
+    /// (integration batch I15; set by `updateObjectsChangedTriggerAreas()`, not saved, 0 at `init` and `reset`). A field of the world, not
+    /// of `game_logic`, which a frame takes out of the world while it runs.
+    pub frame_objects_changed_trigger_areas: u32,
     /// The stacks the AI's state and machines are lent on while they run (`ai_state_host_world.rs`).
     pub ai_stacks: crate::logic::world::ai_state_host_world::AiStacks,
     /// Batch I9b-6: the turrets' AIs of the AI modules, by owner.
@@ -308,6 +312,7 @@ impl World {
             // --- end batch I9a ---
             // --- batch I9b ---
             ai_self: INVALID_ID,
+            frame_objects_changed_trigger_areas: 0,
             ai_stacks: Default::default(),
             turret_ais: Default::default(),
             ai_prone_damage: None,

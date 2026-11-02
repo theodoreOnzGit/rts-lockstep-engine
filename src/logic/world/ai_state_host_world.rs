@@ -137,6 +137,19 @@ impl World {
         self.cut(CutCall::Host { call, args: vec![i64::from(id)], text: Vec::new() });
     }
 
+    /// Integration batch I15: the polygon trigger at index `polygon` of the terrain's list (the AI's polygons are those indices, as
+    /// `polygon_trigger_by_name` gives them), rebuilt from its trigger area for `PolygonTrigger`'s own bounds, centre and radius.
+    fn ai_polygon(&self, polygon: i32) -> Option<crate::logic::polygon_trigger::PolygonTrigger> {
+        let area = self.terrain.triggers().get(usize::try_from(polygon).ok()?)?;
+        let mut p = crate::logic::polygon_trigger::PolygonTrigger::new(area.id());
+        p.set_trigger_name(area.name().str());
+        p.set_water_area(area.is_water_area());
+        for i in 0..area.num_points() {
+            p.add_point(*area.point(i));
+        }
+        Some(p)
+    }
+
     /// Integration batch I13: an airfield's parking place behavior, `getParkingPlaceBehaviorInterface()` of its first behavior module that
     /// has one (`None`: `NULL`).
     fn ai_pp(&mut self, airfield: ObjectId) -> Option<crate::logic::world::object::ModuleIndex> {
@@ -277,11 +290,16 @@ impl AiStateHost for World {
             let _ = crate::logic::world::player_objects::player_money_deposit(self, p, amount, true);
         }
     }
-    fn score_add_money_earned(&mut self, _amount: u32) {
-        self.ais_cut("score_add_money_earned");
+    fn score_add_money_earned(&mut self, amount: u32) {
+        let me = self.ai_self;
+        if let Some(p) = self.get_controlling_player(me) {
+            crate::logic::world::player_objects::PlayerObjectHost::score_add_money_earned(self, p, amount as i32);
+        }
     }
-    fn add_experience_points(&mut self, _xp: u32) {
-        self.ais_cut("add_experience_points");
+    fn add_experience_points(&mut self, xp: u32) {
+        // `addExperiencePoints(experienceGain, canScaleForBonus = TRUE)`
+        let me = self.ai_self;
+        self.experience_add_points(me, xp as i32, true)
     }
     fn is_locally_controlled(&mut self, id: ObjectId) -> bool {
         self.get_controlling_player(id).is_some_and(|p| crate::logic::world::player_ops::player_is_local_player(self, p))
@@ -298,9 +316,14 @@ impl AiStateHost for World {
     fn supply_find_best_warehouse(&mut self) -> ObjectId {
         self.ai_resource_query(false)
     }
-    fn player_find_closest_by_kind_of(&mut self, _kind: crate::common::kind_of::KindOfType) -> ObjectId {
-        self.ais_cut("player_find_closest_by_kind_of");
-        INVALID_ID
+    fn player_find_closest_by_kind_of(&mut self, kind: crate::common::kind_of::KindOfType) -> ObjectId {
+        // `findClosestByKindOf(owner, kind, KINDOFMASK_NONE)`
+        let me = self.ai_self;
+        let Some(p) = self.get_controlling_player(me) else { return INVALID_ID };
+        let mut set = crate::common::kind_of::KindOfMaskType::default();
+        set.set(kind, 1);
+        let clear = crate::common::kind_of::KindOfMaskType::default();
+        crate::logic::world::player_ops::player_find_closest_by_kind_of(self, p, Some(me), &set, &clear).ok().flatten().unwrap_or(INVALID_ID)
     }
     fn distance_squared_to_object_2d(&mut self, other: ObjectId) -> f32 {
         let (p, q) = (LocomotorHost::position(self), self.find_object(other).map_or_else(Coord3D::default, |o| o.get_position()));
@@ -602,11 +625,14 @@ impl AiStateHost for World {
         self.ai_weapon_set_clip_percent_full(self.ai_self, slot, percent, allow_reduction);
     }
     fn has_countermeasures(&mut self) -> bool {
-        self.ais_cut("has_countermeasures");
-        Default::default()
+        let me = self.ai_self;
+        self.module_with_interface(me, crate::logic::world::module_call::ModuleCall::HasCountermeasuresInterface).is_some()
     }
     fn reload_countermeasures(&mut self) {
-        self.ais_cut("reload_countermeasures");
+        let me = self.ai_self;
+        if let Some(c) = self.module_with_interface(me, crate::logic::world::module_call::ModuleCall::HasCountermeasuresInterface) {
+            self.module_call(me, c, crate::logic::world::module_call::ModuleCall::ReloadCountermeasures);
+        }
     }
     fn play_per_unit_sound_for(&mut self, _name: &[u8], _object: ObjectId) -> u32 {
         self.ais_cut("play_per_unit_sound_for");
@@ -794,8 +820,12 @@ impl AiStateHost for World {
             self.cuts.team_live_errors.push(format!("Player::onStructureConstructionComplete: {e:?}"));
         }
     }
-    fn academy_record_production(&mut self, _structure: ObjectId) {
-        self.ais_cut("academy_record_production");
+    fn academy_record_production(&mut self, structure: ObjectId) {
+        // (the player's academy, as the world's player calls run it: the cut, live with `live_teams`)
+        let me = self.ai_self;
+        if let Some(player) = self.get_controlling_player(me) {
+            self.cut(CutCall::PlayerAcademyRecordProduction { player, object: structure, constructor: me });
+        }
     }
     fn object_on_build_complete(&mut self, id: ObjectId) {
         for n in 0..crate::logic::world::build_assistant::BuildAssistantHost::obj_create_module_count(self, id) {
@@ -820,9 +850,8 @@ impl AiStateHost for World {
     fn player_index(&mut self) -> Option<i32> {
         self.get_controlling_player(self.ai_self)
     }
-    fn object_attempt_healing_from_sole_benefactor(&mut self, _id: ObjectId, _amount: f32, _healer: ObjectId, _frames: u32) -> bool {
-        self.ais_cut("object_attempt_healing_from_sole_benefactor");
-        Default::default()
+    fn object_attempt_healing_from_sole_benefactor(&mut self, id: ObjectId, amount: f32, healer: ObjectId, frames: u32) -> bool {
+        self.attempt_healing_from_sole_benefactor(id, amount, healer, frames)
     }
     fn partition_repair_candidates(&mut self, pos: &Coord3D, range: f32) -> Vec<ObjectId> {
         self.ai_repair_candidates(self.ai_self, pos, range)
@@ -926,8 +955,10 @@ impl AiStateHost for World {
     fn object_aim_update_module(&mut self, _id: ObjectId, _module: crate::logic::ai::deliver_payload_ai_update::ItemModule, _pos: &Coord3D) {
         self.ais_cut("object_aim_update_module");
     }
-    fn object_apply_force(&mut self, _id: ObjectId, _force: &Coord3D) {
-        self.ais_cut("object_apply_force");
+    fn object_apply_force(&mut self, id: ObjectId, force: &Coord3D) {
+        if let Some(p) = self.find_object(id).and_then(|o| o.physics) {
+            self.module_call(id, p, crate::logic::world::module_call::ModuleCall::PhysicsApplyForce(*force));
+        }
     }
     fn thing_template_by_name(&mut self, name: &[u8]) -> Option<u32> {
         World::thing_factory_find_template(self, name).map(u32::from)
@@ -996,10 +1027,12 @@ impl AiStateHost for World {
         (Coord3D { x: r.lo.x, y: r.lo.y, z: 0.0 }, Coord3D { x: r.hi.x, y: r.hi.y, z: 0.0 })
     }
     fn partition_register(&mut self) {
-        self.ais_cut("partition_register");
+        let me = self.ai_self;
+        self.partition_register_object(me)
     }
     fn partition_unregister(&mut self) {
-        self.ais_cut("partition_unregister");
+        let me = self.ai_self;
+        self.partition_unregister_object(me)
     }
     fn physics_turning(&mut self) -> i32 {
         self.ai_physics_call(crate::logic::world::module_call::ModuleCall::PhysicsGetTurning).map_or(0, |r| r.as_int(0))
@@ -1057,7 +1090,7 @@ impl AiStateHost for World {
         World::set_model_condition_state(self, id, set);
     }
     fn notify_of_object_creation_or_destruction(&mut self) {
-        self.ais_cut("notify_of_object_creation_or_destruction");
+        crate::logic::world::player_ops::PlayerHost::script_notify_of_object_creation_or_destruction(self)
     }
     fn is_mobile(&self) -> bool {
         World::is_mobile(self, self.ai_self)
@@ -1160,9 +1193,11 @@ impl AiStateHost for World {
             self.module_call(id, idx, crate::logic::world::module_call::ModuleCall::ProneGoProne(info));
         }
     }
-    fn polygon_center(&mut self, _polygon: i32) -> Coord3D {
-        self.ais_cut("polygon_center");
-        Coord3D::default()
+    fn polygon_center(&mut self, polygon: i32) -> Coord3D {
+        // `getCenterPoint`: the middle of the bounds, z the ground height there
+        let Some(Ok((x, y))) = self.ai_polygon(polygon).map(|p| p.center_point()) else { return Coord3D::default() };
+        let z = self.terrain_get_ground_height(x, y);
+        Coord3D { x, y, z }
     }
     fn command_set_button_matches(&mut self, _button: u32) -> (u32, i32) {
         self.ais_cut("command_set_button_matches");
@@ -1331,8 +1366,9 @@ impl AiStateHost for World {
         self.ais_cut("team_set_current_waypoint");
     }
     fn is_skirmish_ai_player(&mut self) -> bool {
-        self.ais_cut("is_skirmish_ai_player");
-        Default::default()
+        let me = self.ai_self;
+        let Some(p) = self.get_controlling_player(me) else { return false };
+        crate::logic::world::player_ops::player_is_skirmish_ai_player(self, p).unwrap_or(false)
     }
     fn team_group_center_and_count(&mut self) -> (Coord3D, i32) {
         self.ais_cut("team_group_center_and_count");
@@ -1568,8 +1604,9 @@ impl AiStateHost for World {
         let us = self.ai_self;
         self.ai_contain_call(container, MC::IsValidContainerFor { obj: us, check_capacity: true }).is_some_and(|r| r.as_bool())
     }
-    fn score_the_kill(&mut self, _victim: ObjectId) {
-        self.ais_cut("score_the_kill");
+    fn score_the_kill(&mut self, victim: ObjectId) {
+        let me = self.ai_self;
+        self.body_score_the_kill(me, victim)
     }
     fn object_kill(&mut self, id: ObjectId) {
         self.kill(id, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
@@ -1582,10 +1619,16 @@ impl AiStateHost for World {
         self.ais_cut("do_fx_combat_drop_kill");
     }
     fn physics_reset_dynamic(&mut self) {
-        self.ais_cut("physics_reset_dynamic");
+        let me = self.ai_self;
+        if let Some(p) = self.find_object(me).and_then(|o| o.physics) {
+            self.module_call(me, p, crate::logic::world::module_call::ModuleCall::PhysicsResetDynamicPhysics);
+        }
     }
-    fn physics_scrub_velocity_z(&mut self, _rate: f32) {
-        self.ais_cut("physics_scrub_velocity_z");
+    fn physics_scrub_velocity_z(&mut self, rate: f32) {
+        let me = self.ai_self;
+        if let Some(p) = self.find_object(me).and_then(|o| o.physics) {
+            self.module_call(me, p, crate::logic::world::module_call::ModuleCall::PhysicsScrubVelocityZ(rate));
+        }
     }
     fn object_set_layer(&mut self, layer: PathfindLayer) {
         let id = self.ai_self;
@@ -1613,8 +1656,7 @@ impl AiStateHost for World {
         TeamHost::player_difficulty(self, p) as i32
     }
     fn choose_victim_always_uses_normal(&mut self) -> bool {
-        self.ais_cut("choose_victim_always_uses_normal");
-        Default::default()
+        self.script_engine.choose_victim_always_uses_normal
     }
     fn object_is_selectable(&mut self, id: ObjectId) -> bool {
         self.is_selectable(id)
@@ -1683,9 +1725,9 @@ impl AiStateHost for World {
         let us = self.ai_self;
         self.ai_dock_call(dock, MC::DockAction { docker: us, drone }).is_some_and(|r| r.as_bool())
     }
-    fn object_rally_point(&mut self, _id: ObjectId) -> Option<Coord3D> {
-        self.ais_cut("object_rally_point");
-        Default::default()
+    fn object_rally_point(&mut self, id: ObjectId) -> Option<Coord3D> {
+        let e = self.module_with_interface(id, crate::logic::world::module_call::ModuleCall::HasUpdateExitInterface)?;
+        self.module_call(id, e, crate::logic::world::module_call::ModuleCall::GetRallyPoint).as_coord_opt()
     }
     fn supply_truck_action_delay(&mut self, _dock: ObjectId) -> Option<u32> {
         // (the docking states ask the host only for an AI that is not a supply truck, a worker or a chinook, whose own delays they
@@ -1705,16 +1747,15 @@ impl AiStateHost for World {
         self.ai_clear_last_attacker(self.ai_self);
     }
     fn template_is_enter_guard(&mut self) -> bool {
-        self.ais_cut("template_is_enter_guard");
-        Default::default()
+        let me = self.ai_self;
+        self.find_object(me).is_some_and(|o| o.template().is_enter_guard())
     }
     fn template_is_hijack_guard(&mut self) -> bool {
-        self.ais_cut("template_is_hijack_guard");
-        Default::default()
+        let me = self.ai_self;
+        self.find_object(me).is_some_and(|o| o.template().is_hijack_guard())
     }
     fn frame_objects_changed_trigger_areas(&mut self) -> u32 {
-        self.ais_cut("frame_objects_changed_trigger_areas");
-        Default::default()
+        self.frame_objects_changed_trigger_areas
     }
     fn ai_data_guard_enemy_scan_rate(&mut self) -> u32 {
         self.statics.ai_data.data.guard_enemy_scan_rate
@@ -1725,9 +1766,8 @@ impl AiStateHost for World {
     fn ai_data_guard_chase_unit_frames(&mut self) -> u32 {
         self.statics.ai_data.data.guard_chase_unit_frames
     }
-    fn polygon_radius(&mut self, _polygon: i32) -> f32 {
-        self.ais_cut("polygon_radius");
-        0.0
+    fn polygon_radius(&mut self, polygon: i32) -> f32 {
+        self.ai_polygon(polygon).and_then(|p| p.radius().ok()).unwrap_or(0.0)
     }
     fn closest_guard_target(&mut self, _pos: &Coord3D, _range: f32, _filters: u32, _area: Option<i32>) -> ObjectId {
         self.ais_cut("closest_guard_target");
@@ -1778,9 +1818,8 @@ impl AiStateHost for World {
             u.load_post_process();
         }
     }
-    fn polygon_trigger_name(&mut self, _polygon: i32) -> Vec<u8> {
-        self.ais_cut("polygon_trigger_name");
-        Default::default()
+    fn polygon_trigger_name(&mut self, polygon: i32) -> Vec<u8> {
+        self.ai_polygon(polygon).map(|p| p.trigger_name().to_vec()).unwrap_or_default()
     }
     fn polygon_trigger_by_name(&mut self, name: &[u8]) -> Option<i32> {
         self.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(name).ok()?).map(|i| i as i32)

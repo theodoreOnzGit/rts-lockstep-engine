@@ -989,3 +989,47 @@ Object Launcher\n KindOf = VEHICLE\n VisionRange = 200\n Geometry = CYLINDER\n G
         assert_eq!(hit.map(|(_, h)| h), Some(70.0));
     }
 }
+
+#[cfg(test)]
+mod ai_world_tests {
+    use super::*;
+    use crate::common::ascii_string::AsciiString;
+    use crate::common::base_type::ICoord3D;
+    use crate::logic::ai::ai_states::AiStateHost;
+    use crate::logic::terrain_logic::TriggerArea;
+
+    /// Batch I15, the AI's world questions live. Predicted before the run: a trigger area with corners (100, 100), (200, 100),
+    /// (200, 300), (100, 300) has its centre at (150, 200) on the flat ground (z 0), its name, and the radius `PolygonTrigger::updateBounds`
+    /// computes, whose half height is upstream's `(hi.y + lo.y) / 2` (a sum, kept): sqrt(50^2 + 200^2) = 206.155; the frame objects
+    /// last changed trigger areas reads 0, then the frame on which an object is made after five frames; the script's
+    /// `setChooseVictimAlwaysUsesNormal(TRUE)` reaches the AI's question; a soldier has no countermeasures.
+    #[test]
+    fn the_ais_world_questions_are_answered() {
+        let mut w = gate_map_world();
+        let corners = [(100, 100), (200, 100), (200, 300), (100, 300)].map(|(x, y)| ICoord3D { x, y, z: 0 });
+        let zone = TriggerArea::new(AsciiString::try_from_bytes(b"Zone").expect("a name"), 7, false, corners.to_vec()).expect("the area");
+        w.terrain.set_triggers(vec![zone]);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let before = w.with_ai_self(soldier, |w| w.frame_objects_changed_trigger_areas());
+        for _ in 0..5 {
+            w.logic_update().unwrap();
+        }
+        let made_on = w.frame();
+        make(&mut w, b"Soldier", team, Coord3D { x: 80.0, y: 60.0, z: 0.0 });
+        crate::logic::world::script_actions::ScriptActionsHost::sa_set_choose_victim_always_uses_normal(&mut w, true);
+        let r = w.with_ai_self(soldier, |w| {
+            let poly = w.polygon_trigger_by_name(b"Zone").expect("the zone");
+            (w.polygon_center(poly), w.polygon_radius(poly), w.polygon_trigger_name(poly), w.frame_objects_changed_trigger_areas(), AiStateHost::choose_victim_always_uses_normal(w), AiStateHost::has_countermeasures(w))
+        });
+        eprintln!("before {before}; made on {made_on}; {r:?}");
+        let (center, radius, name, after, choose, counter) = r;
+        assert_eq!((center.x, center.y, center.z), (150.0, 200.0, 0.0));
+        assert!((radius - 206.155).abs() < 1e-3, "{radius}");
+        assert_eq!(name, b"Zone");
+        assert_eq!((before, after), (0, made_on));
+        assert!(choose);
+        assert!(!counter);
+    }
+}

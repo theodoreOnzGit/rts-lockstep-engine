@@ -2600,6 +2600,10 @@ impl World {
         if self.cuts.live_teams {
             self.live_team_call(&call);
         }
+        // (batch I15: `updateObjectsChangedTriggerAreas()`, the logic's own: `m_frameObjectsChangedTriggerAreas = m_frame`)
+        if matches!(call, CutCall::GameLogicUpdateObjectsChangedTriggerAreas) {
+            self.frame_objects_changed_trigger_areas = self.frame();
+        }
         // (batch I11: the object creation lists, run after the call is logged, so that the calls they make follow it)
         let ocl = self.cuts.live_ocl.then(|| call.clone());
         if let Some(log) = &mut self.cuts.log {
