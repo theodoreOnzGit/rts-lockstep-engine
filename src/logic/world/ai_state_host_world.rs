@@ -34,6 +34,7 @@
 
 use crate::common::ascii_string::AsciiString;
 use crate::common::base_type::Coord3D;
+use crate::logic::world::partition::{FindPositionOptions, RANDOM_START_ANGLE};
 use crate::common::disabled_types::DisabledType;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::{ObjectId, PathfindLayer, WeaponSlotType, INVALID_ID};
@@ -134,6 +135,16 @@ impl World {
     fn ais_cut(&mut self, call: &'static str) {
         let id = self.ai_self;
         self.cut(CutCall::Host { call, args: vec![i64::from(id)], text: Vec::new() });
+    }
+
+    /// Integration batch I9j: `ThePartitionManager->findPositionAround(pos, &options, &result)` for the AI's sites, the partition
+    /// manager's with `cuts.live_partition` (none of them sets `flags`: `FPF_NONE`), otherwise the cut `call` answering none.
+    fn ai_find_position_around(&mut self, call: &'static str, pos: &Coord3D, options: FindPositionOptions) -> Option<Coord3D> {
+        if !self.cuts.live_partition {
+            self.ais_cut(call);
+            return None;
+        }
+        self.with_partition(|pm, w| pm.find_position_around(w, pos, &options))
     }
 }
 
@@ -626,9 +637,26 @@ impl AiStateHost for World {
     fn bounding_sphere_radius(&mut self) -> f32 {
         self.find_object(self.ai_self).map_or(0.0, |o| o.geometry_info.get_bounding_sphere_radius())
     }
-    fn find_position_around_options( &mut self, _pos: &Coord3D, _min_radius: f32, _max_radius: f32, _source: bool, _start_angle: Option<f32>, _max_z_delta: f32, _ignore: ObjectId, ) -> Option<Coord3D> {
-        self.ais_cut("find_position_around_options");
-        Default::default()
+    fn find_position_around_options(
+        &mut self,
+        pos: &Coord3D,
+        min_radius: f32,
+        max_radius: f32,
+        source: bool,
+        start_angle: Option<f32>,
+        max_z_delta: f32,
+        ignore: ObjectId,
+    ) -> Option<Coord3D> {
+        let options = FindPositionOptions {
+            min_radius,
+            max_radius,
+            start_angle: start_angle.unwrap_or(RANDOM_START_ANGLE),
+            max_z_delta,
+            ignore_object: (ignore != INVALID_ID).then_some(ignore),
+            source_to_path_to_dest: source.then_some(self.ai_self),
+            ..FindPositionOptions::default()
+        };
+        self.ai_find_position_around("find_position_around_options", pos, options)
     }
     fn distance_squared_to_position(&mut self, pos: &Coord3D, kind: DistanceKind) -> f32 {
         self.ai_distance_squared_pos(self.ai_self, pos, kind)
@@ -798,8 +826,10 @@ impl AiStateHost for World {
     fn new_structure_set_orientation(&mut self, id: ObjectId, angle: f32) {
         crate::logic::world::build_assistant::BuildAssistantHost::obj_set_orientation(self, id, angle);
     }
-    fn terrain_flatten(&mut self, _id: ObjectId) {
-        self.ais_cut("terrain_flatten");
+    fn terrain_flatten(&mut self, id: ObjectId) {
+        if !self.terrain_flatten_object(id) {
+            self.ais_cut("terrain_flatten");
+        }
     }
     fn pf_add_object_to_pathfind_map(&mut self, id: ObjectId) {
         self.pathfinder_add_object_to_map(id);
@@ -914,8 +944,9 @@ impl AiStateHost for World {
         Default::default()
     }
     fn terrain_extent_including_border(&mut self) -> (Coord3D, Coord3D) {
-        self.ais_cut("terrain_extent_including_border");
-        Default::default()
+        // W3DTerrainLogic::getExtentIncludingBorder writes only x and y; both callers read only x and y, so z is 0 here
+        let r = self.terrain_get_extent_including_border();
+        (Coord3D { x: r.lo.x, y: r.lo.y, z: 0.0 }, Coord3D { x: r.hi.x, y: r.hi.y, z: 0.0 })
     }
     fn partition_register(&mut self) {
         self.ais_cut("partition_register");
@@ -1051,9 +1082,9 @@ impl AiStateHost for World {
     fn object_controlling_player(&mut self, id: ObjectId) -> Option<crate::logic::world::ids::PlayerIndex> {
         self.get_controlling_player(id)
     }
-    fn find_position_around(&mut self, _pos: &Coord3D, _min_radius: f32, _max_radius: f32) -> Option<Coord3D> {
-        self.ais_cut("find_position_around");
-        Default::default()
+    fn find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
+        let options = FindPositionOptions { min_radius, max_radius, source_to_path_to_dest: Some(self.ai_self), ..FindPositionOptions::default() };
+        self.ai_find_position_around("find_position_around", pos, options)
     }
     fn has_contain(&self) -> bool {
         self.get_contain(self.ai_self).is_some()
@@ -1525,9 +1556,9 @@ impl AiStateHost for World {
     fn logic_random_value_real(&mut self, lo: f32, hi: f32) -> f32 {
         self.random.game_logic_random_value_real(lo, hi)
     }
-    fn find_position_around_no_source(&mut self, _pos: &Coord3D, _min_radius: f32, _max_radius: f32) -> Option<Coord3D> {
-        self.ais_cut("find_position_around_no_source");
-        Default::default()
+    fn find_position_around_no_source(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
+        let options = FindPositionOptions { min_radius, max_radius, ..FindPositionOptions::default() };
+        self.ai_find_position_around("find_position_around_no_source", pos, options)
     }
     fn player_difficulty(&mut self) -> i32 {
         use crate::logic::world::team_ops::TeamHost;

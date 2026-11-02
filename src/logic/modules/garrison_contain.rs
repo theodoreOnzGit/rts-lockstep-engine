@@ -1147,7 +1147,7 @@ impl GarrisonContain {
         let us = me.object;
         if self.rally_valid {
             let mut result = self.exit_rally_point;
-            if !out(self, world, me, |w| w.contain_partition_find_position_around(&mut result, 0.0, 0.0, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS)) {
+            if !out(self, world, me, |w| w.contain_partition_find_position_around_for(&mut result, 0.0, 0.0, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS, us, us)) {
                 self.rally_valid = false;
             }
         }
@@ -1157,7 +1157,7 @@ impl GarrisonContain {
             // "arbitrary max distance away, change as needed"
             let max_radius = min_radius * if crate::logic::modules::plant(1621) { 3.6 } else { 1.8 };
             let mut pos = o.get_position();
-            self.rally_valid = out(self, world, me, |w| w.contain_partition_find_position_around(&mut pos, min_radius, max_radius, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS));
+            self.rally_valid = out(self, world, me, |w| w.contain_partition_find_position_around_for(&mut pos, min_radius, max_radius, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS, us, us));
             if self.rally_valid {
                 self.exit_rally_point = pos;
             }

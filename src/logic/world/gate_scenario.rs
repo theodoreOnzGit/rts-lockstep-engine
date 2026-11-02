@@ -781,3 +781,79 @@ Object Harvester\n KindOf = VEHICLE HARVESTER\n Geometry = CYLINDER\n GeometryMa
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+    use crate::logic::terrain_visual::{LogicHeightMap, MAP_HEIGHT_SCALE};
+
+    /// A pad of 50 by 50, a structure whose footprint holds 5 by 5 of the height map's grid points (10 apart) when centred on one.
+    const PAD: &str = "\
+Object Pad\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 25\n GeometryMinorRadius = 25\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\nEnd\nEnd\n";
+
+    /// Batch I9j, the AI's position search live (`ThePartitionManager->findPositionAround`, no flags, as at every AI site). Predicted
+    /// before the run: around a clear spot the spot itself (the search tries distance 0 first); around the middle of the gate's Depot
+    /// (a box of 20 by 20 at (200, 200)) a point within 100 and outside the Depot's box; with the owner as the source to path from,
+    /// the same kind of point; with the partition not live, none, and the call logged as a cut.
+    #[test]
+    fn a_position_is_found_clear_of_a_structure() {
+        let mut w = gate_map_world();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let clear = Coord3D { x: 300.0, y: 300.0, z: 0.0 };
+        let centre = Coord3D { x: 200.0, y: 200.0, z: 0.0 };
+        let (at_clear, around_depot, with_source) = w.with_ai_self(soldier, |w| {
+            (w.find_position_around_no_source(&clear, 0.0, 100.0), w.find_position_around_no_source(&centre, 0.0, 100.0), w.find_position_around(&centre, 0.0, 100.0))
+        });
+        eprintln!("clear {at_clear:?}; around the depot {around_depot:?}; with the soldier as source {with_source:?}");
+        let at_clear = at_clear.expect("a position at a clear spot");
+        assert_eq!((at_clear.x, at_clear.y), (clear.x, clear.y));
+        for p in [around_depot.expect("a position around the depot"), with_source.expect("a position the soldier can reach")] {
+            let (dx, dy) = (p.x - centre.x, p.y - centre.y);
+            assert!(dx * dx + dy * dy <= 100.0 * 100.0 + 1e-3, "{p:?} is farther than 100");
+            assert!(dx.abs() > 20.0 || dy.abs() > 20.0, "{p:?} is inside the depot {depot}");
+        }
+        w.cuts.live_partition = false;
+        w.cuts.trace = Some(Vec::new());
+        assert_eq!(w.with_ai_self(soldier, |w| w.find_position_around_no_source(&centre, 0.0, 100.0)), None);
+        assert!(w.cuts.trace.take().unwrap().iter().any(|t| t.contains("\"find_position_around_no_source\"")));
+    }
+
+    /// Batch I9j, `TheTerrainLogic->flattenTerrain(obj)` live (a dozer's or a worker's new structure). The height map is flat at raw
+    /// height 10 but for one point of 30 under the pad's centre. Predicted before the run from `TerrainLogic::flattenTerrain`: the 25
+    /// grid points under the pad average 10.8, rounded to 11; the centre's height (30) does not cap it; `setRawMapHeight` only lowers,
+    /// so the raised point drops to 11 and every other point stays 10. A pad that is never flattened keeps its 30.
+    #[test]
+    fn a_new_structure_flattens_the_ground_under_it() {
+        let mut w = gate_map_world_with(PAD);
+        let size = ICoord2D { x: 40, y: 40 };
+        let mut data = vec![10u8; 1600];
+        data[20 * 40 + 20] = 30;
+        w.terrain.set_logic_height_map(Some(LogicHeightMap::new(40, 40, 0, vec![size], data).expect("the height map")));
+        let raw = |w: &World, i: i32, j: i32| w.terrain.ground_height(i as f32 * 10.0, j as f32 * 10.0, false).0 / MAP_HEIGHT_SCALE;
+        assert_eq!(raw(&w, 20, 20), 30.0);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let pad = make(&mut w, b"Pad", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        // (not live: the cut, and the ground as it was)
+        w.with_ai_self(pad, |w| w.terrain_flatten(pad));
+        assert_eq!(raw(&w, 20, 20), 30.0);
+        w.cuts.live_terrain = true;
+        w.with_ai_self(pad, |w| w.terrain_flatten(pad));
+        let mut changed = Vec::new();
+        for i in 0..40 {
+            for j in 0..40 {
+                let h = raw(&w, i, j);
+                let before = if (i, j) == (20, 20) { 30.0 } else { 10.0 };
+                if h != before {
+                    changed.push((i, j, before, h));
+                }
+            }
+        }
+        eprintln!("changed: {changed:?}");
+        assert_eq!(changed, [(20, 20, 30.0, 11.0)]);
+    }
+}

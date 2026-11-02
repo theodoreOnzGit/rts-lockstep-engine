@@ -140,8 +140,9 @@ pub const STATIC_GAME_LOD_LOW: i32 = 0;
 pub const STATIC_GAME_LOD_NAMES: [&str; 4] = ["Low", "Medium", "High", "Custom"];
 /// `FPF_USE_HIGHEST_LAYER` (`PartitionManager.h`).
 pub const FPF_USE_HIGHEST_LAYER: u32 = 0x80;
-/// `RANDOM_START_ANGLE` (`PartitionManager.h`).
-pub const RANDOM_START_ANGLE: f32 = 99999.9;
+/// `RANDOM_START_ANGLE` (`PartitionManager.h:125`: `-99999.9f`). ~~`99999.9`~~ **Corrected 2026-11-02** (integration batch I9j): the
+/// sign was lost; the partition manager's own constant ([`crate::logic::world::partition::RANDOM_START_ANGLE`]) had it right.
+pub const RANDOM_START_ANGLE: f32 = crate::logic::world::partition::RANDOM_START_ANGLE;
 
 /// `enum DebrisDisposition`.
 pub const LIKE_EXISTING: u32 = 0x0000_0001;

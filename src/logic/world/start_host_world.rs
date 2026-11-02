@@ -36,7 +36,6 @@ use crate::common::object_status_types::ObjectStatusMaskType;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::game_logic_start::{MapStartInfo, StartHost};
 use crate::logic::world::ids::ObjectId;
-use crate::logic::world::partition::FindPositionOptions;
 use crate::logic::world::player_objects::player_on_structure_construction_complete;
 use crate::logic::world::player_ops::player_on_unit_created;
 
@@ -134,12 +133,8 @@ impl StartHost for World {
         }
     }
     fn st_find_position_around(&mut self, pos: Coord3D, min_radius: f32, max_radius: f32) -> Option<Coord3D> {
-        if !self.cuts.live_partition {
-            let mut p = pos;
-            return self.contain_partition_find_position_around(&mut p, min_radius, max_radius, 0).then_some(p);
-        }
-        let options = FindPositionOptions { min_radius, max_radius, ..FindPositionOptions::default() };
-        self.with_partition(|pm, w| pm.find_position_around(w, &pos, &options))
+        let mut p = pos;
+        self.contain_partition_find_position_around(&mut p, min_radius, max_radius, 0).then_some(p)
     }
 }
 

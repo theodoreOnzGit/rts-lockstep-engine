@@ -1028,6 +1028,19 @@ impl World {
         self.cuts.extent_including_border
     }
 
+    /// Integration batch I9j: `TheTerrainLogic->flattenTerrain(obj)` (a dozer's or a worker's new structure), the terrain logic's with
+    /// `cuts.live_terrain`: `false` when it was not run (no live terrain, no such object, or the terrain could not answer), for the
+    /// caller to log its cut.
+    pub fn terrain_flatten_object(&mut self, id: ObjectId) -> bool {
+        if !self.cuts.live_terrain {
+            return false;
+        }
+        let Some(view) = crate::logic::world::terrain_host_world::object_view(self, id) else {
+            return false;
+        };
+        self.terrain.flatten_terrain(&view).is_ok()
+    }
+
     /// batch R69: `CommandButtonHuntUpdate::scanClosestTarget`'s scan (see [`CutCall::PartitionIterateHuntTargets`]): the objects, nearest first.
     pub fn partition_iterate_hunt_targets(&mut self, object: ObjectId, range: f32, relationship: i32, team_filter: bool) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateHuntTargets { object, range, relationship, team_filter });

@@ -171,7 +171,7 @@ impl CreateCrateDie {
         // "At this point, I could very well have a "" for the type, if the Designer didn't make the sum of chances 1"
         let Some(crate_type) = world.thing_factory_find_template(&crate_name) else { return INVALID_ID };
         let mut creation_point = center;
-        let spot_found = if layer != LAYER_GROUND || world.contain_partition_find_position_around(&mut creation_point, 0.0, 5.0, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS) {
+        let spot_found = if layer != LAYER_GROUND || world.contain_partition_find_position_around_for(&mut creation_point, 0.0, 5.0, FPF_IGNORE_ALLY_OR_NEUTRAL_UNITS, INVALID_ID, me) {
             true
         } else {
             // "try a great big scan so we appear on the edge of the large dead thing (building rubble)"

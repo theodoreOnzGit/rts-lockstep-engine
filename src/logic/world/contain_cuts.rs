@@ -575,11 +575,40 @@ impl World {
         self.objects.find(id).map_or(*bone, |o| o.thing.bone_position_to_world(bone))
     }
 
-    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)`: `pos` is written when a position is found (see
-    /// [`ContainCutTables::find_position`]).
+    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)` with the radii and flags and no ignored or relationship object: see
+    /// [`World::contain_partition_find_position_around_for`].
     pub fn contain_partition_find_position_around(&mut self, pos: &mut Coord3D, min_radius: f32, max_radius: f32, flags: i32) -> bool {
-        self.contain_cut(ContainCall::PartitionFindPositionAround { position: *pos, min_radius, max_radius, flags });
-        match self.cuts.contain.find_position {
+        self.contain_partition_find_position_around_for(pos, min_radius, max_radius, flags, INVALID_ID, INVALID_ID)
+    }
+
+    /// `ThePartitionManager->findPositionAround(&pos, options, &pos)` with the options' `ignoreObject` and `relationshipObject`
+    /// (`INVALID_ID`: `NULL`): `pos` is written when a position is found. Integration batch I9j: the partition manager's with
+    /// `cuts.live_partition`; otherwise the cut, answered by [`ContainCutTables::find_position`] (the cut log keeps the radii and flags).
+    pub fn contain_partition_find_position_around_for(
+        &mut self,
+        pos: &mut Coord3D,
+        min_radius: f32,
+        max_radius: f32,
+        flags: i32,
+        ignore_object: ObjectId,
+        relationship_object: ObjectId,
+    ) -> bool {
+        let found = if self.cuts.live_partition {
+            let options = crate::logic::world::partition::FindPositionOptions {
+                flags: flags as u32,
+                min_radius,
+                max_radius,
+                ignore_object: (ignore_object != INVALID_ID).then_some(ignore_object),
+                relationship_object: (relationship_object != INVALID_ID).then_some(relationship_object),
+                ..Default::default()
+            };
+            let center = *pos;
+            self.with_partition(|pm, w| pm.find_position_around(w, &center, &options))
+        } else {
+            self.contain_cut(ContainCall::PartitionFindPositionAround { position: *pos, min_radius, max_radius, flags });
+            self.cuts.contain.find_position
+        };
+        match found {
             Some(p) => {
                 *pos = p;
                 true
@@ -590,7 +619,18 @@ impl World {
 
     /// batch R43: `ThePartitionManager->findPositionAround(&pos, options, &result)` with no flags, the radii, and the options' object that must
     /// path to the position and object to ignore: the found position (see [`ContainCutTables::find_position`]), `None` when none is.
+    /// Integration batch I9j: the partition manager's with `cuts.live_partition`.
     pub fn dock_partition_find_position_around(&mut self, pos: &Coord3D, min_radius: f32, max_radius: f32, source_to_path_to_dest: ObjectId, ignore_object: ObjectId) -> Option<Coord3D> {
+        if self.cuts.live_partition {
+            let options = crate::logic::world::partition::FindPositionOptions {
+                min_radius,
+                max_radius,
+                source_to_path_to_dest: (source_to_path_to_dest != INVALID_ID).then_some(source_to_path_to_dest),
+                ignore_object: (ignore_object != INVALID_ID).then_some(ignore_object),
+                ..Default::default()
+            };
+            return self.with_partition(|pm, w| pm.find_position_around(w, pos, &options));
+        }
         self.contain_cut(ContainCall::PartitionFindPositionAroundFor { position: *pos, min_radius, max_radius, flags: 0, source_to_path_to_dest, ignore_object });
         self.cuts.contain.find_position
     }
