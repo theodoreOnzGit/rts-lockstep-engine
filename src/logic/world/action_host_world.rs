@@ -36,7 +36,7 @@ impl World {
     }
 
     /// The modules of `o` that answer `has` with yes, in module order.
-    fn modules_answering(&mut self, o: ObjectId, has: ModuleCall) -> Vec<crate::logic::world::object::ModuleIndex> {
+    pub(crate) fn modules_answering(&mut self, o: ObjectId, has: ModuleCall) -> Vec<crate::logic::world::object::ModuleIndex> {
         self.all_modules(o).into_iter().filter(|&idx| self.module_call(o, idx, has.clone()).as_bool()).collect()
     }
 }

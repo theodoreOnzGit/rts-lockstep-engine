@@ -314,10 +314,13 @@ impl AiGroupHost for World {
             x.formation_offset = offset;
         }
     }
-    fn damage_state(&mut self, _o: ObjectId) -> BodyDamageType {
-        self.grp_cut("damage_state");
-        Default::default()
+    fn damage_state(&mut self, o: ObjectId) -> BodyDamageType {
+        // (integration batch I24: was a stub)
+        // `getBodyModule()->getDamageState()`
+        let Some(b) = self.get_body_module(o) else { return Default::default() };
+        self.module_call(o, b, ModuleCall::GetDamageState).as_int(0)
     }
+
     fn cur_locomotor_speed(&mut self, o: ObjectId) -> f32 {
         self.with_ai_lent(o, |w| crate::logic::ai::ai_states::with_ai(w, |a, w| a.get_cur_locomotor_speed(w))).unwrap_or(0.0)
     }
@@ -327,10 +330,14 @@ impl AiGroupHost for World {
             Err(_) => crate::logic::weapon_host::CanAttackResult::NotPossible as CanAttackResultValue,
         }
     }
-    fn able_to_use_weapon_against_position(&mut self, _o: ObjectId, _t: AbleToAttackType, _pos: &Coord3D, _src: CommandSourceType) -> CanAttackResultValue {
-        self.grp_cut("able_to_use_weapon_against_position");
-        Default::default()
+    fn able_to_use_weapon_against_position(&mut self, o: ObjectId, t: AbleToAttackType, pos: &Coord3D, src: CommandSourceType) -> CanAttackResultValue {
+        // `getAbleToUseWeaponAgainstTarget(type, NULL, pos, src)`
+        match crate::logic::world::object_weapons::get_able_to_use_weapon_against_target(self, o, t, None, Some(*pos), crate::common::game_common::CommandSourceType::from_i32(src), -1) {
+            Ok(r) => r as CanAttackResultValue,
+            Err(_) => crate::logic::weapon_host::CanAttackResult::NotPossible as CanAttackResultValue,
+        }
     }
+
     fn ai_command(&mut self, o: ObjectId, cmd: GroupAiCommand, src: CommandSourceType) {
         self.group_ai_command(o, cmd, src);
     }
@@ -353,41 +360,62 @@ impl AiGroupHost for World {
     fn ai_set_next_mood_check_time(&mut self, o: ObjectId, t: u32) {
         self.with_ai_lent(o, |w| crate::logic::ai::ai_states::with_ai(w, |a, _| a.set_next_mood_check_time(t)));
     }
-    fn stealth_delay(&mut self, _o: ObjectId) -> Option<u32> {
-        self.grp_cut("stealth_delay");
-        Default::default()
+    fn stealth_delay(&mut self, o: ObjectId) -> Option<u32> {
+        // `getStealth()->getStealthDelay()`
+        let m = self.objects.find(o)?.stealth?;
+        match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: m })? {
+            crate::logic::world::update_body::UpdateBody::StealthUpdate(s) => Some(s.get_stealth_delay()),
+            _ => None,
+        }
     }
+
     fn has_contain(&mut self, o: ObjectId) -> bool {
         self.get_contain(o).is_some()
     }
-    fn contained(&mut self, _o: ObjectId) -> Vec<ObjectId> {
-        self.grp_cut("contained");
-        Default::default()
+    fn contained(&mut self, o: ObjectId) -> Vec<ObjectId> {
+        let Some(c) = self.get_contain(o) else { return Vec::new() };
+        match self.module_call(o, c, ModuleCall::GetContainedItems) {
+            crate::logic::world::module_call::ModuleReply::Ids(ids) => ids,
+            _ => Vec::new(),
+        }
     }
-    fn contain_passengers_allowed_to_fire(&mut self, _o: ObjectId) -> bool {
-        self.grp_cut("contain_passengers_allowed_to_fire");
-        Default::default()
+
+    fn contain_passengers_allowed_to_fire(&mut self, o: ObjectId) -> bool {
+        // `isPassengerAllowedToFire()`: the default argument `INVALID_ID`
+        let Some(c) = self.get_contain(o) else { return false };
+        self.module_call(o, c, ModuleCall::IsPassengerAllowedToFire(INVALID_ID)).as_bool()
     }
-    fn contain_order_all_passengers_to_exit(&mut self, _o: ObjectId, _src: CommandSourceType) {
-        self.grp_cut("contain_order_all_passengers_to_exit");
+
+    fn contain_order_all_passengers_to_exit(&mut self, o: ObjectId, src: CommandSourceType) {
+        if let Some(c) = self.get_contain(o) {
+            self.module_call(o, c, ModuleCall::OrderAllPassengersToExit { command_source: src, instantly: false });
+        }
     }
-    fn has_spawn(&mut self, _o: ObjectId) -> bool {
-        self.grp_cut("has_spawn");
-        Default::default()
+
+    fn has_spawn(&mut self, o: ObjectId) -> bool {
+        !self.modules_answering(o, ModuleCall::HasSpawnBehaviorInterface).is_empty()
     }
-    fn spawn_slaves_have_freedom(&mut self, _o: ObjectId) -> bool {
-        self.grp_cut("spawn_slaves_have_freedom");
-        Default::default()
+
+    fn spawn_slaves_have_freedom(&mut self, o: ObjectId) -> bool {
+        let Some(&m) = self.modules_answering(o, ModuleCall::HasSpawnBehaviorInterface).first() else { return Default::default() };
+        self.module_call(o, m, ModuleCall::SpawnDoSlavesHaveFreedom).as_bool()
     }
-    fn spawn_order_slaves_idle(&mut self, _o: ObjectId, _src: CommandSourceType) {
-        self.grp_cut("spawn_order_slaves_idle");
+
+    fn spawn_order_slaves_idle(&mut self, o: ObjectId, src: CommandSourceType) {
+        let Some(&m) = self.modules_answering(o, ModuleCall::HasSpawnBehaviorInterface).first() else { return Default::default() };
+        self.module_call(o, m, ModuleCall::SpawnOrderSlavesToGoIdle { command_source: src });
     }
-    fn spawn_order_slaves_attack_target(&mut self, _o: ObjectId, _victim: ObjectId, _max_shots: i32, _src: CommandSourceType) {
-        self.grp_cut("spawn_order_slaves_attack_target");
+
+    fn spawn_order_slaves_attack_target(&mut self, o: ObjectId, victim: ObjectId, max_shots: i32, src: CommandSourceType) {
+        let Some(&m) = self.modules_answering(o, ModuleCall::HasSpawnBehaviorInterface).first() else { return Default::default() };
+        self.module_call(o, m, ModuleCall::SpawnOrderSlavesToAttackTarget { target: victim, max_shots, command_source: src });
     }
-    fn spawn_order_slaves_attack_position(&mut self, _o: ObjectId, _pos: &Coord3D, _max_shots: i32, _src: CommandSourceType) {
-        self.grp_cut("spawn_order_slaves_attack_position");
+
+    fn spawn_order_slaves_attack_position(&mut self, o: ObjectId, pos: &Coord3D, max_shots: i32, src: CommandSourceType) {
+        let Some(&m) = self.modules_answering(o, ModuleCall::HasSpawnBehaviorInterface).first() else { return Default::default() };
+        self.module_call(o, m, ModuleCall::SpawnOrderSlavesToAttackPosition { pos: *pos, max_shots, command_source: src });
     }
+
     fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> i32 {
         self.terrain_get_highest_layer_for_destination(pos)
     }
@@ -455,15 +483,23 @@ impl AiGroupHost for World {
             self.module_call(o, m, crate::logic::world::module_call::ModuleCall::SetSpecialPowerOverridableDestination(*loc));
         }
     }
-    fn set_cheering(&mut self, _o: ObjectId, _frames: i32) {
-        self.grp_cut("set_cheering");
+    fn set_cheering(&mut self, o: ObjectId, frames: i32) {
+        self.set_special_model_condition_state(o, crate::common::model_state::MODELCONDITION_SPECIAL_CHEERING, frames as u32);
     }
-    fn sell(&mut self, _o: ObjectId) {
-        self.grp_cut("sell");
+
+    fn sell(&mut self, o: ObjectId) {
+        self.build_assistant_sell(o);
     }
-    fn toggle_overcharge(&mut self, _o: ObjectId) {
-        self.grp_cut("toggle_overcharge");
+
+    fn toggle_overcharge(&mut self, o: ObjectId) {
+        // each behaviour module's `getOverchargeBehaviorInterface()->toggle()`: those answering `isOverchargeActive`
+        for m in self.all_modules(o) {
+            if !matches!(self.module_call(o, m, ModuleCall::IsOverchargeActive), crate::logic::world::module_call::ModuleReply::Unhandled) {
+                self.module_call(o, m, ModuleCall::OverchargeToggle);
+            }
+        }
     }
+
     fn do_command_button(&mut self, o: ObjectId, button: u32, call: GroupButtonCall, src: CommandSourceType) {
         let b = button as usize;
         match call {
@@ -479,43 +515,63 @@ impl AiGroupHost for World {
     fn clear_weapon_set_flag(&mut self, o: ObjectId, wst: i32) {
         self.clear_weapon_set_flag(o, wst);
     }
-    fn template_has_weapon_set(&mut self, _o: ObjectId, _wst: i32) -> bool {
-        self.grp_cut("template_has_weapon_set");
-        Default::default()
+    fn template_has_weapon_set(&mut self, o: ObjectId, wst: i32) -> bool {
+        // `getTemplate()->findWeaponTemplateSet(flags of wst) != NULL`
+        let Some(t) = self.objects.find(o).map(|x| x.thing.template().get_template_id()) else { return false };
+        let mut flags = crate::logic::weapon_set_flags::WeaponSetFlags::default();
+        flags.set(wst, 1);
+        crate::logic::weapon_host::WeaponXferLookups::find_weapon_template_set_by_flags(self, t, &flags).is_some()
     }
+
     fn set_weapon_lock(&mut self, o: ObjectId, slot: i32, lock: i32) -> bool {
         crate::logic::world::object_weapons::set_weapon_lock(self, o, slot, lock)
     }
     fn release_weapon_lock(&mut self, o: ObjectId, lock: i32) {
         crate::logic::world::object_weapons::release_weapon_lock(self, o, lock);
     }
-    fn can_afford_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> bool {
-        self.grp_cut("can_afford_upgrade");
-        Default::default()
+    fn can_afford_upgrade(&mut self, o: ObjectId, upgrade: u32) -> bool {
+        // `UpgradeCenter::canAffordUpgrade`: `countMoney() < calcCostToBuild(player)`, the `Int` cost compared as unsigned
+        let Some(cost) = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade)).map(|t| t.cost_to_build()) else { return false };
+        let Some(p) = self.get_controlling_player(o) else { return false };
+        self.players.get_nth(p).is_some_and(|x| x.money.count_money() >= cost as u32)
     }
-    fn upgrade_is_object_type(&mut self, _upgrade: u32) -> bool {
-        self.grp_cut("upgrade_is_object_type");
-        Default::default()
+
+    fn upgrade_is_object_type(&mut self, upgrade: u32) -> bool {
+        self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade)).is_some_and(|t| t.upgrade_type() == crate::common::upgrade::UpgradeType::Object)
     }
-    fn has_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> bool {
-        self.grp_cut("has_upgrade");
-        Default::default()
+
+    fn has_upgrade(&mut self, o: ObjectId, upgrade: u32) -> bool {
+        let Some(m) = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade)).map(|t| t.upgrade_mask()) else { return false };
+        World::has_upgrade(self, o, &m)
     }
-    fn affected_by_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> bool {
-        self.grp_cut("affected_by_upgrade");
-        Default::default()
+
+    fn affected_by_upgrade(&mut self, o: ObjectId, upgrade: u32) -> bool {
+        let Some(m) = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade)).map(|t| t.upgrade_mask()) else { return false };
+        World::affected_by_upgrade(self, o, &m)
     }
-    fn can_produce_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> bool {
-        self.grp_cut("can_produce_upgrade");
-        Default::default()
+
+    fn can_produce_upgrade(&mut self, o: ObjectId, upgrade: u32) -> bool {
+        // `Object::canProduceUpgrade`: a button of its command set makes the upgrade; no such set dereferences a `NULL` set upstream
+        let Some(set) = self.control_bar_find_command_set(&self.object_get_command_set_string(o)) else {
+            self.cuts.team_live_errors.push("Object::canProduceUpgrade: no command set".into());
+            return false;
+        };
+        (0..crate::logic::command_button::MAX_COMMANDS_PER_SET)
+            .filter_map(|i| self.command_set_get_command_button(set, i))
+            .any(|b| self.cuts.command_buttons.get(b).is_some_and(|x| x.upgrade == Some(upgrade)))
     }
-    fn production_queue_full_for_upgrade(&mut self, _o: ObjectId, _upgrade: u32) -> Option<bool> {
-        self.grp_cut("production_queue_full_for_upgrade");
-        Default::default()
+
+    fn production_queue_full_for_upgrade(&mut self, o: ObjectId, upgrade: u32) -> Option<bool> {
+        let pu = self.get_production_update_interface(o)?;
+        Some(self.module_call(o, pu, ModuleCall::ProductionCanQueueUpgrade { upgrade: Some(upgrade) }).as_int(0) == crate::logic::modules::production_update::CANMAKE_QUEUE_FULL)
     }
-    fn production_queue_upgrade(&mut self, _o: ObjectId, _upgrade: u32) {
-        self.grp_cut("production_queue_upgrade");
+
+    fn production_queue_upgrade(&mut self, o: ObjectId, upgrade: u32) {
+        if let Some(pu) = self.get_production_update_interface(o) {
+            self.module_call(o, pu, ModuleCall::ProductionQueueUpgrade { upgrade: Some(upgrade) });
+        }
     }
+
     fn command_set_has_button_type(&mut self, o: ObjectId, command_type: i32) -> Option<bool> {
         // (integration batch I23) `TheControlBar->findCommandSet(obj->getCommandSetString())`, its buttons
         let set = self.control_bar_find_command_set(&self.object_get_command_set_string(o))?;

@@ -1523,3 +1523,64 @@ CommandSet CasterSet\n 1 = Command_Drop\n 2 = Command_Halt\nEnd\n";
 
     const CMD_FROM_SCRIPT_I32: i32 = 1;
 }
+
+#[cfg(test)]
+mod group_host_tests {
+    use super::*;
+    use crate::logic::ai::ai_group::AiGroupHost;
+    use crate::logic::world::module_call::ModuleCall;
+
+    /// The batch-I9h truck and rider, and an object upgrade.
+    fn fixture() -> String {
+        format!("{}Upgrade Upgrade_Armor\n Type = OBJECT\n BuildCost = 500\nEnd\n", super::contain_tests::TRUCK)
+    }
+
+    /// Batch I24, the group host's remaining logic calls live (each was a cut answering a default). A truck holding a rider, a soldier and
+    /// a depot of team 1. Predicted before the run: the soldier pristine (damage state 0); the truck's contained [rider], its passengers
+    /// not allowed to fire (`TransportContain` without `PassengersAllowedToFire`); no spawn behaviour on the soldier; the soldier's
+    /// template has a weapon set for the veteran flag (`findWeaponTemplateSet` finds the best match, here its only set, never `NULL` while
+    /// there is one); `Upgrade_Armor` an object upgrade the soldier does not have; the soldier cannot produce it (it has no command set,
+    /// which upstream dereferences: an error recorded); no stealth delay (no stealth module); cheering for 90 frames holds the special
+    /// condition until the frame plus 90; the depot sold is on the build assistant's sell list; ordered out, the rider leaves within 30
+    /// frames.
+    #[test]
+    fn the_group_host_answers_from_the_objects() {
+        let mut w = gate_map_world_with(&fixture());
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let truck = make(&mut w, b"Truck", team, Coord3D { x: 100.0, y: 60.0, z: 0.0 });
+        let rider = make(&mut w, b"Rider", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 60.0, y: 120.0, z: 0.0 });
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 250.0, y: 250.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let c = w.find_object(truck).and_then(|o| o.contain).expect("the truck's contain");
+        w.module_call(truck, c, ModuleCall::AddToContain(rider));
+        let armor = w.statics.upgrade_center.templates().find(|u| u.upgrade_name() == b"Upgrade_Armor").map(|u| u.upgrade_name_key().0).expect("the upgrade");
+        let objects = (AiGroupHost::damage_state(&mut w, soldier), AiGroupHost::contained(&mut w, truck), w.contain_passengers_allowed_to_fire(truck), w.has_spawn(soldier));
+        let templates = (w.template_has_weapon_set(soldier, 0 /* WEAPONSET_VETERAN */), w.upgrade_is_object_type(armor), AiGroupHost::has_upgrade(&mut w, soldier, armor));
+        let produce = AiGroupHost::can_produce_upgrade(&mut w, soldier, armor);
+        let stealth = w.stealth_delay(soldier);
+        let now = w.frame();
+        w.set_cheering(soldier, 90);
+        let cheer = w.find_object(soldier).map(|o| o.smc_until);
+        AiGroupHost::sell(&mut w, depot);
+        let selling = w.build_assistant.sell_list.len();
+        w.contain_order_all_passengers_to_exit(truck, 1);
+        let mut out = None;
+        for f in 0..30 {
+            w.logic_update().unwrap();
+            if AiGroupHost::contained(&mut w, truck).is_empty() {
+                out = Some(f);
+                break;
+            }
+        }
+        eprintln!("{objects:?}; {templates:?}; produce {produce}; stealth {stealth:?}; cheer {cheer:?} (now {now}); selling {selling}; out {out:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(objects, (0, vec![rider], false, false));
+        assert_eq!(templates, (true, true, false));
+        assert!(!produce);
+        assert_eq!(w.cuts.team_live_errors.iter().filter(|e| e.contains("canProduceUpgrade")).count(), 1);
+        assert_eq!(stealth, None);
+        assert_eq!(cheer, Some(now + 90));
+        assert_eq!(selling, 1);
+        assert!(out.is_some());
+    }
+}
