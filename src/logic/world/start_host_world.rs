@@ -98,10 +98,7 @@ impl StartHost for World {
         self.set_position(obj as ObjectId, &pos);
     }
     fn st_build_complete(&mut self, obj: u32) {
-        let o = obj as ObjectId;
-        for idx in self.modules_with(o, crate::common::module::MODULEINTERFACE_CREATE) {
-            self.module_call(o, idx, crate::logic::world::module_call::ModuleCall::OnBuildComplete);
-        }
+        build_complete(self, obj as ObjectId);
     }
     fn st_activate_default_team(&mut self, player: i32) {
         if let Some(team) = self.players.get_nth(player).and_then(|p| p.default_team) {
@@ -143,6 +140,14 @@ impl StartHost for World {
         }
         let options = FindPositionOptions { min_radius, max_radius, ..FindPositionOptions::default() };
         self.with_partition(|pm, w| pm.find_position_around(w, &pos, &options))
+    }
+}
+
+/// `startNewGame`'s loop over a map object's behaviour modules: each create module's `onBuildComplete()` (GameLogic.cpp:1902,
+/// "This magically created thing needs to be considered as Built").
+pub fn build_complete(w: &mut World, o: ObjectId) {
+    for idx in w.modules_with(o, crate::common::module::MODULEINTERFACE_CREATE) {
+        w.module_call(o, idx, crate::logic::world::module_call::ModuleCall::OnBuildComplete);
     }
 }
 

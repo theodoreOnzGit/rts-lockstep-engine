@@ -138,6 +138,10 @@ impl AiModuleBody {
         if let Some(p) = ai_command_parms(&call) {
             return command(m, world, me, p);
         }
+        // (batch I9i: `getSupplyTruckAIInterface()`'s calls, with the AI lent)
+        if is_supply_call(&call) {
+            return world.with_ai_self(me.object, |w| m.run(w, |_, h| supply_call(h, &call)));
+        }
         match call {
             ModuleCall::OnObjectCreated => {
                 if let Err(e) = world.with_ai_self(me.object, |w| m.on_object_created(w)) {
@@ -616,6 +620,64 @@ pub(crate) fn ai_command_parms(call: &ModuleCall) -> Option<AiCommandParms> {
     })
 }
 
+/// Batch I9i: one of `SupplyTruckAIInterface`'s calls (SupplyTruckAIUpdate.h:166-182).
+fn is_supply_call(call: &ModuleCall) -> bool {
+    matches!(
+        call,
+        ModuleCall::GetSupplyTruckPreferredDockId
+            | ModuleCall::GetSupplyTruckWarehouseScanDistance
+            | ModuleCall::SupplyTruckGetNumberBoxes
+            | ModuleCall::SupplyTruckIsAvailableForSupplying
+            | ModuleCall::SupplyTruckLoseOneBox
+            | ModuleCall::SupplyTruckGainOneBox { .. }
+            | ModuleCall::SupplyTruckGetUpgradedSupplyBoost
+            | ModuleCall::SupplyTruckSetForceWantingState(_)
+    )
+}
+
+/// Batch I9i: `getSupplyTruckAIInterface()`'s calls answered for the AI lent on top of `ai_stacks.ai` (by `AiUpdateModule::run`,
+/// or already, while it runs and a dock calls back): a supply truck's, a worker's and a chinook's supply part; for any other AI
+/// the interface is `NULL` (`Unhandled`). The supply part is worked on as a copy, written back after (its functions take the host,
+/// which may ask the lent AI again).
+fn supply_call(w: &mut World, call: &ModuleCall) -> ModuleReply {
+    use crate::logic::ai::supply_truck_ai_update as st;
+    let Some(a) = w.ai_stacks.ai.last() else { return ModuleReply::Unhandled };
+    let (mut s, kind) = match &a.subclass {
+        AiSubclass::SupplyTruck(s) => (*s, 0),
+        AiSubclass::Worker(wk) => (wk.supply, 1),
+        AiSubclass::Chinook(c) => (c.supply, 2),
+        _ => return ModuleReply::Unhandled,
+    };
+    let reply = match call {
+        ModuleCall::GetSupplyTruckPreferredDockId => ModuleReply::Id(s.preferred_dock),
+        ModuleCall::GetSupplyTruckWarehouseScanDistance => ModuleReply::Real(st::warehouse_scan_distance(w, &s)),
+        ModuleCall::SupplyTruckGetNumberBoxes => ModuleReply::Int(s.number_boxes),
+        ModuleCall::SupplyTruckIsAvailableForSupplying => ModuleReply::Bool(st::is_available_for_supplying(w)),
+        ModuleCall::SupplyTruckLoseOneBox => ModuleReply::Bool(st::lose_one_box(w, &mut s)),
+        ModuleCall::SupplyTruckGainOneBox { remaining_stock } => ModuleReply::Bool(st::gain_one_box(w, &mut s, *remaining_stock)),
+        // (the supply truck's is 0, SupplyTruckAIUpdate.h:220)
+        ModuleCall::SupplyTruckGetUpgradedSupplyBoost => ModuleReply::Int(match kind {
+            1 => crate::logic::ai::worker_ai_update::upgraded_supply_boost(w),
+            2 => crate::logic::ai::chinook_ai_update::upgraded_supply_boost(w),
+            _ => 0,
+        }),
+        ModuleCall::SupplyTruckSetForceWantingState(v) => {
+            s.force_pending = *v;
+            ModuleReply::Done
+        }
+        _ => return ModuleReply::Unhandled,
+    };
+    if let Some(a) = w.ai_stacks.ai.last_mut() {
+        match &mut a.subclass {
+            AiSubclass::SupplyTruck(x) => *x = s,
+            AiSubclass::Worker(wk) => wk.supply = s,
+            AiSubclass::Chinook(c) => c.supply = s,
+            _ => {}
+        }
+    }
+    reply
+}
+
 fn command(m: &mut AiUpdateModule<World>, world: &mut World, me: ModuleHandle, p: AiCommandParms) -> ModuleReply {
     if let Err(e) = world.with_ai_self(me.object, |w| m.ai_do_command(w, &p)) {
         world.cuts.team_live_errors.push(format!("AIUpdateInterface::aiDoCommand({}): {e:?}", p.cmd));
@@ -658,6 +720,10 @@ impl World {
         if let Some(p) = ai_command_parms(call) {
             self.ai_own_calls.push((id, OwnCall::Command(p)));
             return Some(ModuleReply::Done);
+        }
+        // (batch I9i: a dock's calls to the docking truck: its boxes, its preferred dock, its scan distance)
+        if is_supply_call(call) {
+            return Some(supply_call(self, call));
         }
         let now = self.frame();
         let a = self.ai_stacks.ai.last_mut()?;

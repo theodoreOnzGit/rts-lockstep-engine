@@ -133,6 +133,9 @@ fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
     }
     w.partition_register_object(id);
     w.partition_update();
+    // (batch I9i: "This magically created thing needs to be considered as Built", as `startNewGame` does for a map's objects,
+    // GameLogic.cpp:1902: its create modules' `onBuildComplete`, which registers a supply center with the players)
+    crate::logic::world::start_host_world::build_complete(w, id);
     id
 }
 
@@ -244,6 +247,11 @@ pub fn gate_map_world_with(extra: &str) -> World {
     // (batch I8c: and active, as `Player::setDefaultTeam` leaves it: a script finds a singleton team only when active)
     for t in [team, enemy] {
         crate::logic::world::team_ops::team_set_active(&mut w, t).expect("the team active");
+    }
+    // (batch I9i: each player's resource gathering manager, which `Player::initFromDict` makes, Player.cpp:1005: its supply
+    // trucks ask it for a warehouse and a center)
+    for p in 0..3 {
+        w.players.get_nth_mut(p).expect("the player").resource_gathering_manager = Some(Default::default());
     }
     // (the player allied to itself, as `Player::initFromDict` and `PlayerList::newGame` leave it)
     // (and the two players enemies, as a skirmish's `PlayerList::newGame` leaves them)
@@ -706,6 +714,69 @@ Object Truck\n KindOf = VEHICLE TRANSPORT\n Geometry = CYLINDER\n GeometryMajorR
         calls.dedup();
         eprintln!("entered on frame {entered}, out {left} frames after the order; calls cut: {calls:?}");
         assert!(calls.iter().all(|c| !c.starts_with("contain_") && !c.starts_with("exit_") && !c.starts_with("own_exit") && c != "object_ai_free_to_exit"), "{calls:?}");
+        assert!(w.cuts.reentrant_skips.is_empty(), "{:?}", w.cuts.reentrant_skips);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}
+
+#[cfg(test)]
+mod supply_tests {
+    use super::*;
+
+    /// A warehouse of four boxes, a supply center, and a supply truck that carries two, at the game's treads; no bones, so the docks
+    /// use the docker's own position ("If I don't have a bone, you are fine where you are") and their approach positions are dynamic.
+    const SUPPLY: &str = "\
+Object Warehouse\n KindOf = STRUCTURE IMMOBILE SUPPLY_SOURCE\n Geometry = BOX\n GeometryMajorRadius = 15\n GeometryMinorRadius = 15\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\n\
+ Behavior = SupplyWarehouseCreate ModuleTag_Create\n End\n\
+ Behavior = SupplyWarehouseDockUpdate ModuleTag_Dock\n  NumberApproachPositions = -1\n  AllowsPassthrough = No\n  StartingBoxes = 4\n  DeleteWhenEmpty = No\n End\nEnd\n\
+Object Center\n KindOf = STRUCTURE IMMOBILE CASH_GENERATOR\n Geometry = BOX\n GeometryMajorRadius = 15\n GeometryMinorRadius = 15\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\n\
+ Behavior = SupplyCenterCreate ModuleTag_Create\n End\n\
+ Behavior = SupplyCenterDockUpdate ModuleTag_Dock\n  NumberApproachPositions = -1\n  AllowsPassthrough = No\n End\nEnd\n\
+Object Harvester\n KindOf = VEHICLE HARVESTER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = SupplyTruckAIUpdate ModuleTag_AI\n  MaxBoxes = 2\n  SupplyCenterActionDelay = 100\n  SupplyWarehouseActionDelay = 100\n  SupplyWarehouseScanDistance = 500\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+
+    /// Batch I9i, the supply chain live: the truck's supply machine, the docks, the resource gathering manager, the action manager's
+    /// `canTransferSuppliesAt`. An idle truck wants supplies; with none it docks at the best warehouse, takes two boxes, docks at the
+    /// best center and is paid for them. Predicted before the run: player 1's money up by 200 (two boxes at the default 100, no
+    /// boost) within 600 frames (150 to the warehouse and 150 back at 30 a second, 300 frames, plus the docking); the warehouse down
+    /// to two boxes; no cut point of the docks or the supply calls reached; no re-entrant skip.
+    #[test]
+    fn a_supply_truck_brings_money() {
+        let mut w = gate_map_world_with(SUPPLY);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let warehouse = make(&mut w, b"Warehouse", team, Coord3D { x: 100.0, y: 250.0, z: 0.0 });
+        let center = make(&mut w, b"Center", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let truck = make(&mut w, b"Harvester", team, Coord3D { x: 130.0, y: 100.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        // (as the center's `SupplyCenterProductionExitUpdate` does for a truck it makes, SupplyCenterProductionExitUpdate.cpp:135:
+        // an idle truck wants supplies only when forced to)
+        let ai = w.find_object(truck).and_then(|o| o.ai).expect("the truck's AI");
+        w.module_call(truck, ai, crate::logic::world::module_call::ModuleCall::SupplyTruckSetForceWantingState(true));
+        let p = w.get_controlling_player(truck).expect("the truck's player");
+        let money = |w: &World| w.players.get_nth(p).map_or(0, |pl| pl.money.count_money());
+        let start = money(&w);
+        w.cuts.trace = Some(Vec::new());
+        let mut paid = None;
+        for f in 0..600 {
+            w.logic_update().unwrap();
+            if money(&w) != start {
+                paid = Some(f);
+                break;
+            }
+        }
+        let boxes = w.find_module(warehouse, b"SupplyWarehouseDockUpdate").map(|d| w.module_call(warehouse, d, crate::logic::world::module_call::ModuleCall::SupplyWarehouseGetBoxesStored).as_int(-1));
+        let mut calls: Vec<String> = w.cuts.trace.take().unwrap().into_iter().filter_map(|t| t.split("call: \"").nth(1).map(|c| c.split('"').next().unwrap().to_string())).collect();
+        calls.sort();
+        calls.dedup();
+        eprintln!("paid on frame {paid:?}: {} -> {}; warehouse boxes {boxes:?}; center {center}; calls cut: {calls:?}", start, money(&w));
+        assert!(paid.is_some(), "no money within 600 frames");
+        assert_eq!(money(&w) - start, 200);
+        assert_eq!(boxes, Some(2));
+        assert!(calls.iter().all(|c| !c.starts_with("dock_") && !c.starts_with("supply_")), "{calls:?}");
         assert!(w.cuts.reentrant_skips.is_empty(), "{:?}", w.cuts.reentrant_skips);
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }

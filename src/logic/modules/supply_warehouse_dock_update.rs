@@ -281,7 +281,7 @@ impl SupplyWarehouseDockUpdate {
 
     /// `setCashValue(cashValue)`.
     fn set_cash_value(&mut self, world: &mut World, me: ObjectId, cash_value: i32) -> Result<(), Undefined> {
-        let per_box = world.cuts.globals.base_value_per_supply_box as i32;
+        let per_box = world.base_value_per_supply_box() as i32;
         let boxes = (cash_value as f32 / per_box as f32).ceil();
         if !(boxes > i32::MIN as f32 - 1.0 && boxes < i32::MAX as f32) {
             return Err(Undefined::FloatToIntOutOfRange);

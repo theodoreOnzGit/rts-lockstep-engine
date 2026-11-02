@@ -214,8 +214,8 @@ pub fn make_supply_machine<H: AiStateHost>() -> SmResult<StateMachine<SupplyStat
     Ok(m)
 }
 
-/// `isAvailableForSupplying()`: always (batch A40: a chinook's own).
-fn is_available_for_supplying<H: AiStateHost>(h: &mut H) -> bool {
+/// `isAvailableForSupplying()`: always (batch A40: a chinook's own; a worker's is always too, WorkerAIUpdate.cpp:165).
+pub fn is_available_for_supplying<H: AiStateHost>(h: &mut H) -> bool {
     if matches!(ai(h).subclass, AiSubclass::Chinook(_)) {
         return crate::logic::ai::chinook_ai_update::is_available_for_supplying(h);
     }

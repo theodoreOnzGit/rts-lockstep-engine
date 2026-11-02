@@ -200,7 +200,7 @@ impl SupplyCenterDockUpdate {
         let owner = world.get_controlling_player(us);
         while world.module_call(docker, ai, ModuleCall::SupplyTruckLoseOneBox).as_bool() {
             owner.ok_or(Undefined::NullControllingPlayer)?;
-            let per_box = if crate::logic::modules::plant(2145) { 1 } else { world.cuts.globals.base_value_per_supply_box };
+            let per_box = if crate::logic::modules::plant(2145) { 1 } else { world.base_value_per_supply_box() };
             value = value.wrapping_add(per_box);
         }
         value = value.wrapping_add(world.module_call(docker, ai, ModuleCall::SupplyTruckGetUpgradedSupplyBoost).as_int(0) as u32);

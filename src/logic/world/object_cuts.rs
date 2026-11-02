@@ -2755,9 +2755,24 @@ impl World {
 
 // --- p1w7-sonnet ---
 impl World {
-    /// `TheActionManager->canTransferSuppliesAt(obj, transferObj)`: a table of the world (see
-    /// [`ObjectCuts::can_transfer_supplies`]).
-    pub fn can_transfer_supplies_at(&self, obj: ObjectId, transfer_obj: ObjectId) -> bool {
+    /// `TheGlobalData->m_baseValuePerSupplyBox` (batch I9i): with `cuts.live_ai`, the World's global data when it has one, as the
+    /// player's `getSupplyBoxValue` reads it; otherwise the table ([`ObjectCuts`]'s `globals`, upstream's default 100, which the
+    /// differential tests' docks are set against). The docks read the table alone before, so a map's own value reached the player
+    /// but not the docks.
+    pub fn base_value_per_supply_box(&self) -> u32 {
+        match self.statics.global_data.the_global_data().filter(|_| self.cuts.live_ai) {
+            Some(g) => g.base_value_per_supply_box as u32,
+            None => self.cuts.globals.base_value_per_supply_box,
+        }
+    }
+
+    /// `TheActionManager->canTransferSuppliesAt(obj, transferObj)`: ~~a table of the world~~ **since batch I9i**, with `cuts.live_ai`,
+    /// the action manager's (`action_manager::can_transfer_supplies_at`, the World as its host); otherwise the table (see
+    /// [`ObjectCuts::can_transfer_supplies`]), for the differential tests' units.
+    pub fn can_transfer_supplies_at(&mut self, obj: ObjectId, transfer_obj: ObjectId) -> bool {
+        if self.cuts.live_ai {
+            return crate::logic::action_manager::can_transfer_supplies_at(self, Some(obj), Some(transfer_obj));
+        }
         self.cuts.can_transfer_supplies.contains(&(obj, transfer_obj))
     }
 }

@@ -24,7 +24,8 @@
 //!
 //! - **Pointers are ids.** The two `std::list<ObjectID>` are `Vec<ObjectId>`
 //!   in upstream's order. A `NULL` object argument is `Option::None`.
-//! - **The units it calls are cut points.** `queryObject->getAI()` is the
+//! - **The units it calls ~~are cut points~~ are module calls** (batch I9i: the
+//!   World's AI module answers them). `queryObject->getAI()` is the
 //!   object's AI module ([`Object::ai`](crate::logic::world::object::Object));
 //!   `getSupplyTruckAIInterface()`, `getPreferredDockID()` and
 //!   `getWarehouseScanDistance()` are the [`ModuleCall`]s
@@ -34,8 +35,9 @@
 //!   `ModuleCall::IsClearToApproach`; `findUpdateModule(key)` is
 //!   [`World::find_module`] by class name;
 //!   `TheActionManager->canTransferSuppliesAt(a, b)` is
-//!   [`World::can_transfer_supplies_at`], a table of the world until
-//!   `ActionManager` is translated;
+//!   [`World::can_transfer_supplies_at`], ~~a table of the world until
+//!   `ActionManager` is translated~~ **since batch I9i** the action
+//!   manager's with `cuts.live_ai` (the table otherwise);
 //!   `ThePartitionManager->getDistanceSquared(a, b, FROM_CENTER_3D)` is
 //!   [`dist_calc`](crate::logic::world::partition::dist_calc) on the two
 //!   positions (the partition manager is verified by

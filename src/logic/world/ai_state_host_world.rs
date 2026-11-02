@@ -105,6 +105,31 @@ impl World {
         }
     }
 
+    /// Batch I9i: `obj->getDockUpdateInterface()` asked `call`; `None` when there is no such object or it has no dock.
+    fn ai_dock_call(&mut self, obj: ObjectId, call: MC) -> Option<ModuleReply> {
+        let d = self.get_dock_update_interface(obj)?;
+        Some(self.module_call(obj, d, call))
+    }
+
+    /// Batch I9i: the AI's controlling player's `getResourceGatheringManager()->findBestSupplyCenter(owner)` (`center`) or
+    /// `findBestSupplyWarehouse(owner)`; `INVALID_ID` for none, for no manager, and (recorded) for its undefined behaviour.
+    fn ai_resource_query(&mut self, center: bool) -> ObjectId {
+        let us = self.ai_self;
+        let Some(p) = self.get_controlling_player(us) else { return INVALID_ID };
+        let Some(mut rgm) = self.players.get_nth_mut(p).and_then(|pl| pl.resource_gathering_manager.take()) else { return INVALID_ID };
+        let r = if center { rgm.find_best_supply_center(self, Some(us)) } else { rgm.find_best_supply_warehouse(self, Some(us)) };
+        if let Some(pl) = self.players.get_nth_mut(p) {
+            pl.resource_gathering_manager = Some(rgm);
+        }
+        match r {
+            Ok(found) => found.unwrap_or(INVALID_ID),
+            Err(e) => {
+                self.cuts.team_live_errors.push(format!("ResourceGatheringManager::findBestSupply{}: {e:?}", if center { "Center" } else { "Warehouse" }));
+                INVALID_ID
+            }
+        }
+    }
+
     /// Logs one of the AI states' calls into a unit the world does not hold.
     fn ais_cut(&mut self, call: &'static str) {
         let id = self.ai_self;
@@ -245,12 +270,10 @@ impl AiStateHost for World {
         &mut self.ai_stacks.machine
     }
     fn supply_find_best_center(&mut self) -> ObjectId {
-        self.ais_cut("supply_find_best_center");
-        INVALID_ID
+        self.ai_resource_query(true)
     }
     fn supply_find_best_warehouse(&mut self) -> ObjectId {
-        self.ais_cut("supply_find_best_warehouse");
-        INVALID_ID
+        self.ai_resource_query(false)
     }
     fn player_find_closest_by_kind_of(&mut self, _kind: crate::common::kind_of::KindOfType) -> ObjectId {
         self.ais_cut("player_find_closest_by_kind_of");
@@ -260,9 +283,15 @@ impl AiStateHost for World {
         let (p, q) = (LocomotorHost::position(self), self.find_object(other).map_or_else(Coord3D::default, |o| o.get_position()));
         (p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y)
     }
-    fn dock_supply_kind(&mut self, _dock: ObjectId) -> crate::logic::ai::supply_truck_ai_update::SupplyDockKind {
-        self.ais_cut("dock_supply_kind");
-        crate::logic::ai::supply_truck_ai_update::SupplyDockKind::None
+    fn dock_supply_kind(&mut self, dock: ObjectId) -> crate::logic::ai::supply_truck_ai_update::SupplyDockKind {
+        use crate::logic::ai::supply_truck_ai_update::SupplyDockKind;
+        if self.find_module(dock, b"SupplyWarehouseDockUpdate").is_some() {
+            SupplyDockKind::Warehouse
+        } else if self.find_module(dock, b"SupplyCenterDockUpdate").is_some() {
+            SupplyDockKind::Center
+        } else {
+            SupplyDockKind::None
+        }
     }
     fn drawable_update_supply_status(&mut self, _max_boxes: i32, _boxes: i32) {
         self.ais_cut("drawable_update_supply_status");
@@ -1516,55 +1545,74 @@ impl AiStateHost for World {
         self.ais_cut("closest_object_on_squad");
         INVALID_ID
     }
-    fn object_has_dock(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("object_has_dock");
-        Default::default()
+    fn object_has_dock(&mut self, id: ObjectId) -> bool {
+        self.get_dock_update_interface(id).is_some()
     }
-    fn dock_is_open(&mut self, _dock: ObjectId) -> bool {
-        self.ais_cut("dock_is_open");
-        Default::default()
+    fn dock_is_open(&mut self, dock: ObjectId) -> bool {
+        self.ai_dock_call(dock, MC::DockIsOpen).is_some_and(|r| r.as_bool())
     }
-    fn dock_cancel(&mut self, _dock: ObjectId) {
-        self.ais_cut("dock_cancel");
+    fn dock_cancel(&mut self, dock: ObjectId) {
+        let us = self.ai_self;
+        self.ai_dock_call(dock, MC::DockCancelDock { docker: us });
     }
-    fn dock_reserve_approach(&mut self, _dock: ObjectId, _advance: bool) -> Option<(Coord3D, i32)> {
-        self.ais_cut("dock_reserve_approach");
-        Default::default()
+    fn dock_reserve_approach(&mut self, dock: ObjectId, advance: bool) -> Option<(Coord3D, i32)> {
+        let us = self.ai_self;
+        // (the docking machine's `m_approachPosition`, which `advanceApproachPosition` reads and both write)
+        let index = self.ai_stacks.attack.last().map_or(0, |f| f.dock_approach);
+        let position = Some(Coord3D::default());
+        let call = if advance { MC::DockAdvanceApproachPosition { docker: us, position, index } } else { MC::DockReserveApproachPosition { docker: us, position, index } };
+        match self.ai_dock_call(dock, call) {
+            Some(ModuleReply::Approach { ok: true, position, index }) => Some((position.unwrap_or_default(), index)),
+            _ => None,
+        }
     }
-    fn dock_is_clear_to_enter(&mut self, _dock: ObjectId) -> bool {
-        self.ais_cut("dock_is_clear_to_enter");
-        Default::default()
+    fn dock_is_clear_to_enter(&mut self, dock: ObjectId) -> bool {
+        let us = self.ai_self;
+        self.ai_dock_call(dock, MC::DockIsClearToEnter { docker: us }).is_some_and(|r| r.as_bool())
     }
-    fn dock_is_clear_to_advance(&mut self, _dock: ObjectId, _index: i32) -> bool {
-        self.ais_cut("dock_is_clear_to_advance");
-        Default::default()
+    fn dock_is_clear_to_advance(&mut self, dock: ObjectId, index: i32) -> bool {
+        let us = self.ai_self;
+        self.ai_dock_call(dock, MC::DockIsClearToAdvance { docker: us, index }).is_some_and(|r| r.as_bool())
     }
-    fn dock_is_allow_passthrough(&mut self, _dock: ObjectId) -> bool {
-        self.ais_cut("dock_is_allow_passthrough");
-        Default::default()
+    fn dock_is_allow_passthrough(&mut self, dock: ObjectId) -> bool {
+        self.ai_dock_call(dock, MC::DockIsAllowPassthroughType).is_some_and(|r| r.as_bool())
     }
-    fn dock_is_rally_point_after_dock(&mut self, _dock: ObjectId) -> bool {
-        self.ais_cut("dock_is_rally_point_after_dock");
-        Default::default()
+    fn dock_is_rally_point_after_dock(&mut self, dock: ObjectId) -> bool {
+        self.ai_dock_call(dock, MC::DockIsRallyPointAfterDockType).is_some_and(|r| r.as_bool())
     }
-    fn dock_position(&mut self, _dock: ObjectId, _which: u32) -> Coord3D {
-        self.ais_cut("dock_position");
-        Coord3D::default()
+    fn dock_position(&mut self, dock: ObjectId, which: u32) -> Coord3D {
+        use crate::logic::ai::ai_dock::{DOCK_DOCK, DOCK_ENTER};
+        let us = self.ai_self;
+        let call = match which {
+            DOCK_ENTER => MC::DockGetEnterPosition { docker: us, position: true },
+            DOCK_DOCK => MC::DockGetDockPosition { docker: us, position: true },
+            _ => MC::DockGetExitPosition { docker: us, position: true },
+        };
+        self.ai_dock_call(dock, call).map(|r| r.as_coord()).unwrap_or_default()
     }
-    fn dock_reached(&mut self, _dock: ObjectId, _which: u32) {
-        self.ais_cut("dock_reached");
+    fn dock_reached(&mut self, dock: ObjectId, which: u32) {
+        use crate::logic::ai::ai_dock::{REACHED_APPROACH, REACHED_DOCK, REACHED_ENTER};
+        let us = self.ai_self;
+        let call = match which {
+            REACHED_APPROACH => MC::DockOnApproachReached { docker: us },
+            REACHED_ENTER => MC::DockOnEnterReached { docker: us },
+            REACHED_DOCK => MC::DockOnDockReached { docker: us },
+            _ => MC::DockOnExitReached { docker: us },
+        };
+        self.ai_dock_call(dock, call);
     }
-    fn dock_action(&mut self, _dock: ObjectId, _drone: ObjectId) -> bool {
-        self.ais_cut("dock_action");
-        Default::default()
+    fn dock_action(&mut self, dock: ObjectId, drone: ObjectId) -> bool {
+        let us = self.ai_self;
+        self.ai_dock_call(dock, MC::DockAction { docker: us, drone }).is_some_and(|r| r.as_bool())
     }
     fn object_rally_point(&mut self, _id: ObjectId) -> Option<Coord3D> {
         self.ais_cut("object_rally_point");
         Default::default()
     }
     fn supply_truck_action_delay(&mut self, _dock: ObjectId) -> Option<u32> {
-        self.ais_cut("supply_truck_action_delay");
-        Default::default()
+        // (the docking states ask the host only for an AI that is not a supply truck, a worker or a chinook, whose own delays they
+        // read themselves: upstream's `getSupplyTruckAIInterface()` is `NULL` then, and the delay none)
+        None
     }
     fn player_object_ids(&mut self) -> Vec<ObjectId> {
         match self.get_controlling_player(self.ai_self) {
