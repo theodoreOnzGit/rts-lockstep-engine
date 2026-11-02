@@ -529,6 +529,44 @@ mod save_load_tests {
     /// upstream's own load does not give that (above); the criterion is now (1)-(3). ~~(1) as the deep logic CRC~~
     /// **WITHDRAWN, same batch**: once the partition rename registered the loaded objects, the re-look above made the CRC
     /// at the load the wrong instrument; (1) compares the durable blocks instead.
+    /// Batch I17: a unit's locomotors survive a save. The AI's load clears its locomotor set and then xfers it
+    /// (`xferSelfAndCurLocoPtr`), which was a cut that xfered nothing: a loaded unit had no locomotor and stood still, and the
+    /// gate (b) blocks could not show it (both sides of the comparison had lost it the same way). Predicted before the run: a soldier
+    /// ordered 300 north, saved on frame 10 and loaded, has a current locomotor, and moves at least 15 in the next 20 frames (30 a
+    /// second); with the cut, no locomotor and no movement.
+    #[test]
+    fn a_loaded_unit_keeps_its_locomotors() {
+        let mut a = gate_map_world();
+        let team = factory_find_team(&mut a, b"team1").expect("the team").expect("team1");
+        let s = make(&mut a, b"Soldier", team, Coord3D { x: 60.0, y: 40.0, z: 0.0 });
+        a.pathfinder_op(PfOp::NewMap);
+        let ai = a.find_object(s).and_then(|o| o.ai).expect("the AI");
+        a.module_call(s, ai, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 60.0, y: 340.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..10 {
+            step(&mut a);
+        }
+        let bytes = a.save_game().expect("the save");
+        let mut b = gate_map_world();
+        b.load_game(bytes).expect("the load");
+        let has_loco = |w: &World| {
+            let ai = w.find_object(s).and_then(|o| o.ai).expect("the AI");
+            match w.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: s, index: ai }) {
+                Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) => m.module.as_ref().and_then(|m| m.ai.as_ref()).is_some_and(|x| x.cur_locomotor.is_some()),
+                _ => false,
+            }
+        };
+        let y0 = b.find_object(s).map(|o| o.get_position().y).expect("the soldier");
+        let loco = has_loco(&b);
+        for _ in 0..20 {
+            step(&mut b);
+        }
+        let y1 = b.find_object(s).map(|o| o.get_position().y).expect("the soldier");
+        eprintln!("loaded with a locomotor {loco}; y {y0} -> {y1}");
+        assert!(loco);
+        assert!(y1 - y0 >= 15.0, "{y0} -> {y1}");
+        assert!(b.cuts.team_live_errors.is_empty(), "{:?}", b.cuts.team_live_errors);
+    }
+
     #[test]
     fn a_saved_game_loads_and_runs_on() {
         let mut a = gate_world();

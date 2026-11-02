@@ -1942,9 +1942,12 @@ impl AiStateHost for World {
     fn waypoint_by_id(&mut self, id: u32) -> Option<u32> {
         self.terrain.waypoint_by_id(id).map(|_| id)
     }
-    fn locomotor_set_xfer(&mut self, _set: &mut LocomotorSet, _cur: &mut Option<usize>, _xfer: &mut dyn Xfer) -> Result<(), LocomotorSetError> {
-        self.ais_cut("locomotor_set_xfer");
-        Ok(())
+    fn locomotor_set_xfer(&mut self, set: &mut LocomotorSet, cur: &mut Option<usize>, xfer: &mut dyn Xfer) -> Result<(), LocomotorSetError> {
+        // (integration batch I17: `m_locomotorSet.xferSelfAndCurLocoPtr(xfer, &m_curLocomotor)` with the store's locomotors. It was a
+        // cut that xfered nothing, and the AI's load clears its set first, so a loaded unit had no locomotor and could not move)
+        let statics = self.statics.clone();
+        let frame = self.frame();
+        set.xfer_self_and_cur_loco_ptr(xfer, &statics.locomotor_store, &mut self.names, &mut self.random, frame, cur)
     }
     fn turret_ai_snapshot(&mut self, which: usize, xfer: &mut dyn Xfer) -> XferResult<()> {
         let id = self.ai_self;

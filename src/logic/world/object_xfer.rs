@@ -492,8 +492,11 @@ impl World {
                 xfer.xfer_ascii_string(&mut identifier)?;
                 // begin a data block
                 xfer.begin_block()?;
-                // xfer data
+                // xfer data (integration batch I17: with the name keys back in the world while the module runs; the save host takes them out
+                // of the world for the object's xfer, and the AI's locomotor set looks its templates up by them)
+                std::mem::swap(&mut self.names, stores.names);
                 let r = self.xfer_slot(id, &mut snap, xfer);
+                std::mem::swap(&mut self.names, stores.names);
                 self.put_slot_snapshot(id, idx, snap);
                 r?;
                 // end a data block
@@ -515,7 +518,9 @@ impl World {
                     None => xfer.skip(data_size)?,
                     Some(idx) => {
                         let mut snap = self.take_slot_snapshot(id, idx);
+                        std::mem::swap(&mut self.names, stores.names);
                         let r = self.xfer_slot(id, &mut snap, xfer);
+                        std::mem::swap(&mut self.names, stores.names);
                         self.put_slot_snapshot(id, idx, snap);
                         r?;
                     }
