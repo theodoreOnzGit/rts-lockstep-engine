@@ -169,6 +169,25 @@ impl AiModuleBody {
                 m.ai_mut().desired_speed = speed;
                 ModuleReply::Done
             }
+            // (batch I20: a script's attack priority list, waypoint queue clear and reinforcement delivery)
+            ModuleCall::AiSetAttackInfo(info) => {
+                m.ai_mut().attack_info = info;
+                ModuleReply::Done
+            }
+            ModuleCall::AiClearWaypointQueue => {
+                m.ai_mut().clear_waypoint_queue();
+                ModuleReply::Done
+            }
+            ModuleCall::AiDeliverPayloadViaModuleData(pos) => {
+                if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_))) {
+                    return ModuleReply::Unhandled;
+                }
+                let r = world.with_ai_self(me.object, |w| m.run(w, |sm, h| crate::logic::ai::deliver_payload_ai_update::deliver_payload_via_module_data(sm, h, &pos)));
+                if let Err(e) = r {
+                    world.cuts.team_live_errors.push(format!("DeliverPayloadAIUpdate::deliverPayloadViaModuleData: {e:?}"));
+                }
+                ModuleReply::Done
+            }
             // (batch I14: `MissileAIUpdate` is a `ProjectileUpdateInterface`; none of its calls reached it, so a missile was never launched.
             // The exhaust override is a client particle system: `None`, its template's own)
             ModuleCall::HasProjectileUpdateInterface => ModuleReply::Bool(m.ai.as_ref().is_some_and(|a| matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::Missile(_)))),
@@ -834,6 +853,14 @@ impl World {
             }
             ModuleCall::AiSetDesiredSpeed(speed) => {
                 a.desired_speed = *speed;
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetAttackInfo(info) => {
+                a.attack_info = *info;
+                ModuleReply::Done
+            }
+            ModuleCall::AiClearWaypointQueue => {
+                a.clear_waypoint_queue();
                 ModuleReply::Done
             }
             ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(a.is_ai_in_dead_state()),

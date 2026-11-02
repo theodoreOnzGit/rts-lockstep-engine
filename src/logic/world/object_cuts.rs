@@ -1854,6 +1854,17 @@ pub struct CommandButtonFacts {
     pub ready_for: BTreeSet<ObjectId>,
 }
 
+/// Integration batch I20: a `GameLogic` member set by a script action.
+#[derive(Clone, Debug, PartialEq)]
+pub enum GameLogicWrite {
+    /// `setShowBehindBuildingMarkers(b)` (0), `setDrawIconUI(b)` (1), `setShowDynamicLOD(b)` (2).
+    Option { which: i32, enabled: bool },
+    /// `setControlBarOverride(commandSet, slot, button)`.
+    ControlBarOverride { command_set: Vec<u8>, slot: i32, button: Option<u32> },
+    /// `setHulkMaxLifetimeOverride(frames)`.
+    HulkMaxLifetimeOverride(i32),
+}
+
 /// The tables and logs behind the cut points. See the module docs.
 #[derive(Clone, Debug)]
 pub struct ObjectCuts {
@@ -2220,6 +2231,9 @@ pub struct ObjectCuts {
     pub new_game: crate::logic::world::new_game_host_world::NewGameCuts,
     /// batch I7c: `m_rankPointsToAddAtGameStart` as a dispatched `prepareNewGame` set it, until the frame ends.
     pub pending_rank_points: Option<i32>,
+    /// Integration batch I20: `GameLogic` members a script set while the frame held `GameLogic` (`logic_update` takes it out of the world),
+    /// applied when the frame ends (see [`GameLogicWrite`]).
+    pub pending_game_logic_writes: Vec<GameLogicWrite>,
     /// batch I8a: `TheAudio->getAudioLengthMS(name)`, by event name (none listed: 0).
     pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
     /// batch I8b: `TheInGameUI->getFrameSelectionChanged()`.
@@ -2405,6 +2419,7 @@ impl Default for ObjectCuts {
             map_cache: BTreeMap::new(),
             new_game: crate::logic::world::new_game_host_world::NewGameCuts { shroud_in_multiplayer: true, ..Default::default() },
             pending_rank_points: None,
+            pending_game_logic_writes: Vec::new(),
             audio_lengths_ms: BTreeMap::new(),
             frame_selection_changed: 0,
             music_tracks_completed: BTreeMap::new(),

@@ -147,12 +147,18 @@ impl World {
     pub fn logic_update(&mut self) -> R<()> {
         let mut state = std::mem::take(&mut self.game_logic);
         let mut dispatch = std::mem::take(&mut self.dispatch);
+        self.in_logic_frame = true;
         let r = game_logic_update(&mut state, &mut dispatch, self);
         // batch I7c: the rank points a dispatched `prepareNewGame` set while the frame held `GameLogic`'s members
         if let Some(points) = self.cuts.pending_rank_points.take() {
             state.rank_points_to_add_at_game_start = points;
         }
         self.game_logic = state;
+        self.in_logic_frame = false;
+        // (batch I20: the members a script set during the frame)
+        for wr in std::mem::take(&mut self.cuts.pending_game_logic_writes) {
+            self.apply_game_logic_write(wr);
+        }
         self.dispatch = dispatch;
         r
     }

@@ -1257,3 +1257,46 @@ CommandSet TankSet\n 1 = Command_Stop\n 2 = Command_Hijack\n 4 = Command_Stop\nE
         assert_eq!(r, ((2, 12), (1, 27), None, tank_template));
     }
 }
+
+#[cfg(test)]
+mod script_action_tests {
+    use super::*;
+    use crate::logic::world::module_call::ModuleCall;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// Batch I20, the script actions' logic live. Predicted before the run: a `GameLogic` member set while a frame holds `GameLogic` (as
+    /// a script's is: scripts run inside the frame) is not in `game_logic` at once, and is after the frame (the hulk lifetime override,
+    /// 300; before this batch it was written to the frame's placeholder and lost); set outside a frame it is there at once (the icon
+    /// UI off; a control bar override found for its set and slot); a soldier made indestructible keeps its 100 health under 1000 damage;
+    /// a team made not recruitable reads so.
+    #[test]
+    fn script_actions_reach_the_logic() {
+        let mut w = gate_map_world();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let s = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        w.in_logic_frame = true;
+        w.sa_logic_set_hulk_max_lifetime_override(300);
+        let during = w.game_logic.script_hulk_max_lifetime_override;
+        w.in_logic_frame = false;
+        w.logic_update().unwrap();
+        let after = w.game_logic.script_hulk_max_lifetime_override;
+        w.sa_logic_set_option(1, false);
+        w.sa_logic_set_control_bar_override(b"TankSet", 3, Some(5));
+        let found = crate::logic::world::game_logic_update::find_control_bar_override(&w.game_logic, b"TankSet", 3).ok().flatten();
+        w.sa_body_set_indestructible(s, true);
+        w.sa_obj_attempt_damage(s, crate::common::game_type::INVALID_ID, 0, 0, 1000.0);
+        let body = w.find_object(s).and_then(|o| o.body).expect("the body");
+        let health = w.module_call(s, body, ModuleCall::GetHealth).as_real(-1.0);
+        w.sa_team_set_recruitable(team as i32, false);
+        let recruitable = w.teams.team(team).map(|t| t.is_recruitable);
+        eprintln!("hulk during {during} after {after}; icon {}; override {found:?}; health {health}; recruitable {recruitable:?}", w.game_logic.draw_icon_ui);
+        assert_ne!(during, 300);
+        assert_eq!(after, 300);
+        assert!(!w.game_logic.draw_icon_ui);
+        assert_eq!(found, Some(Some(5)));
+        assert_eq!(health, 100.0);
+        assert_eq!(recruitable, Some(false));
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}

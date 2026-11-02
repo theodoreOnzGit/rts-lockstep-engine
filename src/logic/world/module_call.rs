@@ -1206,6 +1206,12 @@ pub enum ModuleCall {
     AiSetAllowedToChase(bool),
     /// Integration batch I16: `AIUpdateInterface::setDesiredSpeed(speed)`.
     AiSetDesiredSpeed(f32),
+    /// Integration batch I20: `AIUpdateInterface::setAttackInfo(info)` (an attack priority list's index in the script engine; `None`: `NULL`).
+    AiSetAttackInfo(Option<usize>),
+    /// Integration batch I20: `AIUpdateInterface::clearWaypointQueue()`.
+    AiClearWaypointQueue,
+    /// Integration batch I20: `DeliverPayloadAIUpdate::deliverPayloadViaModuleData(&pos)` (a script's reinforcements).
+    AiDeliverPayloadViaModuleData(Coord3D),
     /// Integration batch I14: `ProjectileUpdateInterface::projectileFireAtObjectOrPosition(victim, &pos, template, exhaust)` (`INVALID_ID`
     /// for no victim): fired without a launcher (`DeliverPayloadAIUpdate`'s visible payload missile).
     ProjectileFireAtObjectOrPosition { victim: ObjectId, pos: Coord3D, template: usize, exhaust: crate::logic::weapon::FxName },

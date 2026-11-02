@@ -81,6 +81,35 @@ impl World {
         }
     }
 
+    /// Integration batch I20: a `GameLogic` member a script sets, at once outside a frame, else when the frame ends (`logic_update`
+    /// holds `game_logic` while it runs, and scripts run inside it).
+    pub(crate) fn game_logic_write(&mut self, w: crate::logic::world::object_cuts::GameLogicWrite) {
+        if self.in_logic_frame {
+            self.cuts.pending_game_logic_writes.push(w);
+        } else {
+            self.apply_game_logic_write(w);
+        }
+    }
+
+    /// The write applied to `game_logic`.
+    pub(crate) fn apply_game_logic_write(&mut self, w: crate::logic::world::object_cuts::GameLogicWrite) {
+        use crate::logic::world::object_cuts::GameLogicWrite as W;
+        match w {
+            W::Option { which, enabled } => match which {
+                0 => self.game_logic.show_behind_building_markers = enabled,
+                1 => self.game_logic.draw_icon_ui = enabled,
+                2 => self.game_logic.show_dynamic_lod = enabled,
+                _ => {}
+            },
+            W::ControlBarOverride { command_set, slot, button } => {
+                if let Err(e) = crate::logic::world::game_logic_update::set_control_bar_override(&mut self.game_logic, &command_set, slot, button) {
+                    self.cuts.team_live_errors.push(format!("GameLogic::setControlBarOverride: {e:?}"));
+                }
+            }
+            W::HulkMaxLifetimeOverride(frames) => self.game_logic.script_hulk_max_lifetime_override = frames,
+        }
+    }
+
     /// `TheScriptActions->reset()`.
     pub(crate) fn script_actions_reset(&mut self) {
         let mut sa = std::mem::take(&mut self.script_actions);
@@ -249,11 +278,19 @@ impl ScriptActionsHost for World {
     fn sa_ground_height(&self, x: f32, y: f32) -> f32 {
         self.terrain.ground_height(x, y, false).0
     }
-    fn sa_create_crater_in_terrain(&mut self, _o: ObjH) {
+    fn sa_create_crater_in_terrain(&mut self, o: ObjH) {
+        // (integration batch I20: the terrain logic's with `live_terrain`, the cut otherwise)
+        if self.cuts.live_terrain {
+            if let Some(view) = crate::logic::world::terrain_host_world::object_view(self, o) {
+                if self.terrain.create_crater_in_terrain(&view).is_ok() {
+                    return;
+                }
+            }
+        }
         self.sa_cut("create_crater_in_terrain");
     }
-    fn sa_pathfinder_add_object(&mut self, _o: ObjH) {
-        self.sa_cut("pathfinder_add_object");
+    fn sa_pathfinder_add_object(&mut self, o: ObjH) {
+        self.pathfinder_add_object_to_map(o)
     }
     fn sa_oversize_the_terrain(&mut self, _amount: i32) {
         self.sa_cut("oversize_the_terrain");
@@ -355,8 +392,8 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_ai(&self, o: ObjH) -> bool {
         self.find_object(o).is_some_and(|x| x.ai.is_some())
     }
-    fn sa_ai_clear_waypoint_queue(&mut self, _o: ObjH) {
-        self.sa_cut("ai_clear_waypoint_queue");
+    fn sa_ai_clear_waypoint_queue(&mut self, o: ObjH) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiClearWaypointQueue);
     }
     fn sa_ai_choose_locomotor_set(&mut self, o: ObjH, set: i32) {
         self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiChooseLocomotorSet(set));
@@ -433,8 +470,10 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_body(&self, o: ObjH) -> bool {
         self.get_body_module(o).is_some()
     }
-    fn sa_body_set_indestructible(&mut self, _o: ObjH, _value: bool) {
-        self.sa_cut("body_set_indestructible");
+    fn sa_body_set_indestructible(&mut self, o: ObjH, value: bool) {
+        if let Some(b) = self.find_object(o).and_then(|x| x.body) {
+            self.module_call(o, b, crate::logic::world::module_call::ModuleCall::SetIndestructible(value));
+        }
     }
     fn sa_obj_is_selectable(&self, o: ObjH) -> bool {
         self.is_selectable(o)
@@ -457,8 +496,10 @@ impl ScriptActionsHost for World {
     fn sa_contain_is_valid_container_for(&self, _c: ObjH, _o: ObjH, _check_capacity: bool) -> bool {
         Default::default()
     }
-    fn sa_contain_add(&mut self, _c: ObjH, _o: ObjH) {
-        self.sa_cut("contain_add");
+    fn sa_contain_add(&mut self, c: ObjH, o: ObjH) {
+        if let Some(ct) = self.get_contain(c) {
+            self.module_call(c, ct, crate::logic::world::module_call::ModuleCall::AddToContain(o));
+        }
     }
     fn sa_obj_has_deliver_payload(&self, _o: ObjH) -> bool {
         Default::default()
@@ -466,17 +507,25 @@ impl ScriptActionsHost for World {
     fn sa_deliver_payload_put_in_container_template(&self, _o: ObjH) -> Option<TemplateH> {
         Default::default()
     }
-    fn sa_deliver_payload(&mut self, _o: ObjH, _p: &Coord3D) {
-        self.sa_cut("deliver_payload");
+    fn sa_deliver_payload(&mut self, o: ObjH, p: &Coord3D) {
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiDeliverPayloadViaModuleData(*p));
     }
     fn sa_attack_info(&self, _name: &[u8]) -> Vec<u8> {
         Default::default()
     }
-    fn sa_team_set_attack_priority_name(&mut self, _t: TeamH, _name: &[u8]) {
-        self.sa_cut("team_set_attack_priority_name");
+    fn sa_team_set_attack_priority_name(&mut self, t: TeamH, name: &[u8]) {
+        if let Ok(t) = u32::try_from(t) {
+            if let Err(e) = crate::logic::world::team_ops::team_set_attack_priority_name(self, t, name) {
+                self.cuts.team_live_errors.push(format!("Team::setAttackPriorityName: {e:?}"));
+            }
+        }
     }
-    fn sa_ai_set_attack_info(&mut self, _o: ObjH, _info: &[u8]) {
-        self.sa_cut("ai_set_attack_info");
+    fn sa_ai_set_attack_info(&mut self, o: ObjH, info: &[u8]) {
+        // `TheScriptEngine->getAttackInfo(name)`: index 1 on with the name, else 0 (the default)
+        let infos = &self.script_engine.attack_priority_info;
+        let found = infos.iter().enumerate().skip(1).find(|(_, a)| a.name.as_slice() == info).map(|(i, _)| i);
+        let index = (!infos.is_empty()).then(|| found.unwrap_or(0));
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiSetAttackInfo(index));
     }
     fn sa_player_set_team_delay_seconds(&mut self, p: PlayerH, seconds: i32) {
         let r = crate::logic::world::player_ops::player_set_team_delay_seconds(self, p, seconds);
@@ -521,8 +570,10 @@ impl ScriptActionsHost for World {
     fn sa_group_evacuate(&mut self, g: GroupH, cmd: i32) {
         self.script_group(g, |gr, w| gr.group_evacuate(w, cmd));
     }
-    fn sa_contain_set_evac_disposition(&mut self, _o: ObjH, _disposition: u32) {
-        self.sa_cut("contain_set_evac_disposition");
+    fn sa_contain_set_evac_disposition(&mut self, o: ObjH, disposition: u32) {
+        if let Some(ct) = self.get_contain(o) {
+            self.module_call(o, ct, crate::logic::world::module_call::ModuleCall::SetEvacDisposition(disposition as i32));
+        }
     }
     fn sa_obj_position(&self, o: ObjH) -> Coord3D {
         self.find_object(o).map(|x| x.get_position()).unwrap_or_default()
@@ -600,8 +651,10 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_command_button_hunt(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_command_button_hunt_set(&mut self, _o: ObjH, _ability: &[u8]) {
-        self.sa_cut("command_button_hunt_set");
+    fn sa_command_button_hunt_set(&mut self, o: ObjH, ability: &[u8]) {
+        if let Some(m) = self.find_module(o, b"CommandButtonHuntUpdate") {
+            self.module_call(o, m, crate::logic::world::module_call::ModuleCall::CommandButtonHuntSetCommandButton(ability.to_vec()));
+        }
     }
     fn sa_player_set_units_should_hunt(&mut self, p: PlayerH, hunt: bool, cmd: i32) {
         let _ = crate::logic::world::player_objects::player_set_units_should_hunt(self, p, hunt, cmd);
@@ -637,8 +690,13 @@ impl ScriptActionsHost for World {
         let r = crate::logic::world::player_ops::player_recruit_specific_team(self, p, u32::try_from(proto).ok(), radius);
         self.script_player("Player::recruitSpecificTeam", r);
     }
-    fn sa_obj_attempt_damage(&mut self, _o: ObjH, _source: ObjectId, _damage_type: i32, _death_type: i32, _amount: f32) {
-        self.sa_cut("obj_attempt_damage");
+    fn sa_obj_attempt_damage(&mut self, o: ObjH, source: ObjectId, damage_type: i32, death_type: i32, amount: f32) {
+        let mut info = crate::logic::damage::DamageInfo::default();
+        info.input.source_id = source;
+        info.input.damage_type = damage_type;
+        info.input.death_type = death_type;
+        info.input.amount = amount;
+        self.attempt_damage(o, &mut info)
     }
     fn sa_logic_destroy_object(&mut self, o: ObjH) {
         self.destroy_object(o);
@@ -658,8 +716,16 @@ impl ScriptActionsHost for World {
     fn sa_team_prototype(&self, t: TeamH) -> Option<ProtoH> {
         self.teams.team(t as u32).map(|x| x.proto as ProtoH)
     }
-    fn sa_proto_change_priority(&mut self, _p: ProtoH, _up: bool) {
-        self.sa_cut("proto_change_priority");
+    fn sa_proto_change_priority(&mut self, p: ProtoH, up: bool) {
+        let Ok(p) = u32::try_from(p) else { return };
+        let r = if up {
+            crate::logic::world::team_ops::proto_increase_ai_priority_for_success(self, p)
+        } else {
+            crate::logic::world::team_ops::proto_decrease_ai_priority_for_failure(self, p)
+        };
+        if let Err(e) = r {
+            self.cuts.team_live_errors.push(format!("TeamPrototype AI priority: {e:?}"));
+        }
     }
     fn sa_proto_production_priority(&self, _p: ProtoH) -> i32 {
         Default::default()
@@ -808,8 +874,10 @@ impl ScriptActionsHost for World {
     fn sa_partition_shroud_map(&mut self, _i: i32) {
         self.sa_cut("partition_shroud_map");
     }
-    fn sa_team_set_recruitable(&mut self, _t: TeamH, _recruitable: bool) {
-        self.sa_cut("team_set_recruitable");
+    fn sa_team_set_recruitable(&mut self, t: TeamH, recruitable: bool) {
+        if let Some(team) = u32::try_from(t).ok().and_then(|t| self.teams.team_mut(t)) {
+            team.set_recruitable(recruitable);
+        }
     }
     fn sa_find_team(&self, name: &[u8]) -> Option<TeamH> {
         self.script_engine.get_team_named(self, name).ok().flatten()
@@ -841,8 +909,10 @@ impl ScriptActionsHost for World {
     fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
         crate::logic::world::team_ops::team_get_controlling_player(self, t as u32).ok().flatten()
     }
-    fn sa_contain_remove_all_contained(&mut self, _o: ObjH, _expose: bool) {
-        self.sa_cut("contain_remove_all_contained");
+    fn sa_contain_remove_all_contained(&mut self, o: ObjH, expose: bool) {
+        if let Some(ct) = self.get_contain(o) {
+            self.module_call(o, ct, crate::logic::world::module_call::ModuleCall::RemoveAllContained { expose_stealth_units: expose });
+        }
     }
     fn sa_partition_garrison_candidates(&mut self, _leader: ObjH, _money_hacker: bool) -> Vec<ObjH> {
         self.sa_cut("partition_garrison_candidates");
@@ -876,15 +946,21 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_sticky_bomb_update(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_obj_random_offset_on_perimeter(&mut self, _o: ObjH) -> Coord3D {
-        self.sa_cut("obj_random_offset_on_perimeter");
-        Default::default()
+    fn sa_obj_random_offset_on_perimeter(&mut self, o: ObjH) -> Coord3D {
+        // `getGeometryInfo().makeRandomOffsetOnPerimeter(pos)`: an offset (from zero), with the logic's random values
+        let Some(g) = self.find_object(o).map(|x| x.geometry_info.clone()) else { return Coord3D::default() };
+        let mut p = Coord3D::default();
+        g.make_random_offset_on_perimeter(&mut self.random, &mut p);
+        p
     }
     fn sa_obj_transform_vector(&self, _o: ObjH, _v: &Coord3D) -> Coord3D {
         Default::default()
     }
-    fn sa_sticky_bomb_init(&mut self, _bomb: ObjH, _target: ObjH, _pos: &Coord3D) {
-        self.sa_cut("sticky_bomb_init");
+    fn sa_sticky_bomb_init(&mut self, bomb: ObjH, target: ObjH, pos: &Coord3D) {
+        // `initStickyBomb(target, NULL, &pos)`
+        if let Some(m) = self.find_module(bomb, b"StickyBombUpdate") {
+            self.module_call(bomb, m, crate::logic::world::module_call::ModuleCall::StickyBombInit { target, bomber: crate::common::game_type::INVALID_ID, specific_pos: Some(*pos) });
+        }
     }
     fn sa_player_garrison_all(&mut self, p: PlayerH, garrison: bool, cmd: i32) {
         let _ = if garrison {
@@ -1125,14 +1201,18 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_cave(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_cave_try_set_index(&mut self, _o: ObjH, _index: i32) {
-        self.sa_cut("cave_try_set_index");
+    fn sa_cave_try_set_index(&mut self, o: ObjH, index: i32) {
+        if let Some(ct) = self.get_contain(o) {
+            self.module_call(o, ct, crate::logic::world::module_call::ModuleCall::TryToSetCaveIndex(index));
+        }
     }
     fn sa_obj_has_warehouse(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_warehouse_set_cash_value(&mut self, _o: ObjH, _value: i32) {
-        self.sa_cut("warehouse_set_cash_value");
+    fn sa_warehouse_set_cash_value(&mut self, o: ObjH, value: i32) {
+        if let Some(m) = self.find_module(o, b"SupplyWarehouseDockUpdate") {
+            self.module_call(o, m, crate::logic::world::module_call::ModuleCall::SupplyWarehouseSetCashValue(value));
+        }
     }
     fn sa_audio_set_event_enabled(&mut self, _name: &[u8], _enable: bool) {
         self.sa_cut("audio_set_event_enabled");
@@ -1146,8 +1226,11 @@ impl ScriptActionsHost for World {
     fn sa_audio_set_event_volume_override(&mut self, _name: &[u8], _volume: f32) {
         self.sa_cut("audio_set_event_volume_override");
     }
-    fn sa_set_topple_direction(&mut self, _name: &[u8], _dir: &Coord3D) {
-        self.sa_cut("set_topple_direction");
+    fn sa_set_topple_direction(&mut self, name: &[u8], dir: &Coord3D) {
+        // (the running engine is the world's while an action runs, `execute_action_with`)
+        if let Err(e) = self.script_engine.set_topple_direction(name, Some(*dir)) {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::setToppleDirection: {e:?}"));
+        }
     }
     fn sa_radar_force_on(&mut self, _on: bool) {
         self.sa_cut("radar_force_on");
@@ -1251,8 +1334,17 @@ impl ScriptActionsHost for World {
     fn sa_player_science_availability_from_string(&self, _p: PlayerH, _name: &[u8]) -> Option<i32> {
         Default::default()
     }
-    fn sa_player_set_science_availability(&mut self, _p: PlayerH, _science: i32, _availability: i32) {
-        self.sa_cut("player_set_science_availability");
+    fn sa_player_set_science_availability(&mut self, p: PlayerH, science: i32, availability: i32) {
+        use crate::logic::world::player_ops::ScienceAvailabilityType as A;
+        let ty = match availability {
+            0 => A::Available,
+            1 => A::Disabled,
+            2 => A::Hidden,
+            _ => A::Invalid,
+        };
+        if let Err(e) = crate::logic::world::player_ops::player_set_science_availability(self, p, crate::common::science::ScienceType(science), ty) {
+            self.cuts.team_live_errors.push(format!("Player::setScienceAvailability: {e:?}"));
+        }
     }
     fn sa_group_set_emoticon(&mut self, g: GroupH, name: &[u8], frames: i32) {
         self.script_group(g, |gr, w| gr.group_set_emoticon(w, name, frames));
@@ -1272,11 +1364,13 @@ impl ScriptActionsHost for World {
     fn sa_eva_set_enabled(&mut self, _enabled: bool) {
         self.sa_cut("eva_set_enabled");
     }
-    fn sa_logic_set_option(&mut self, _which: i32, _enabled: bool) {
-        self.sa_cut("logic_set_option");
+    fn sa_logic_set_option(&mut self, which: i32, enabled: bool) {
+        self.game_logic_write(crate::logic::world::object_cuts::GameLogicWrite::Option { which, enabled });
     }
     fn sa_logic_set_hulk_max_lifetime_override(&mut self, frames: i32) {
-        self.game_logic.script_hulk_max_lifetime_override = frames;
+        // (integration batch I20: through the frame-safe write; it wrote `game_logic` directly, which the frame holds while scripts run,
+        // so the value was lost)
+        self.game_logic_write(crate::logic::world::object_cuts::GameLogicWrite::HulkMaxLifetimeOverride(frames));
     }
     fn sa_view_camera_slave_mode(&mut self, _slave: Option<(&[u8], &[u8])>) {
         self.sa_cut("view_camera_slave_mode");
@@ -1290,8 +1384,10 @@ impl ScriptActionsHost for World {
     fn sa_ai_face_position(&mut self, o: ObjH, p: &Coord3D, cmd: i32) {
         self.script_order(o, crate::logic::ai::ai_commands::AICMD_FACE_POSITION, cmd, |q| q.pos = *p);
     }
-    fn sa_player_set_skillset(&mut self, _p: PlayerH, _skillset: i32) {
-        self.sa_cut("player_set_skillset");
+    fn sa_player_set_skillset(&mut self, p: PlayerH, skillset: i32) {
+        if let Err(e) = crate::logic::world::player_ops::player_friend_set_skillset(self, p, skillset) {
+            self.cuts.team_live_errors.push(format!("Player::friend_setSkillset: {e:?}"));
+        }
     }
     fn sa_player_guard_supply_center(&mut self, p: PlayerH, t: TeamH, supplies: i32) {
         let r = crate::logic::world::player_ops::player_guard_supply_center(self, p, u32::try_from(t).ok(), supplies);
@@ -1303,8 +1399,9 @@ impl ScriptActionsHost for World {
     fn sa_template_command_set_string(&self, _t: TemplateH) -> Vec<u8> {
         Default::default()
     }
-    fn sa_logic_set_control_bar_override(&mut self, _command_set: &[u8], _slot: i32, _b: Option<ButtonH>) {
-        self.sa_cut("logic_set_control_bar_override");
+    fn sa_logic_set_control_bar_override(&mut self, command_set: &[u8], slot: i32, b: Option<ButtonH>) {
+        let button = b.and_then(|b| u32::try_from(b).ok());
+        self.game_logic_write(crate::logic::world::object_cuts::GameLogicWrite::ControlBarOverride { command_set: command_set.to_vec(), slot, button });
     }
     fn sa_player_set_skill_points_modifier(&mut self, p: PlayerH, m: f32) {
         if let Some(x) = self.players.get_nth_mut(p) {
@@ -1320,8 +1417,8 @@ impl ScriptActionsHost for World {
     fn sa_obj_set_receiving_difficulty_bonus(&mut self, o: ObjH, b: bool) {
         self.set_receiving_difficulty_bonus(o, b);
     }
-    fn sa_set_objects_should_receive_difficulty_bonus(&mut self, _b: bool) {
-        self.sa_cut("set_objects_should_receive_difficulty_bonus");
+    fn sa_set_objects_should_receive_difficulty_bonus(&mut self, b: bool) {
+        self.script_engine.objects_should_receive_difficulty_bonus = b;
     }
     fn sa_set_choose_victim_always_uses_normal(&mut self, b: bool) {
         // (integration batch I15: `TheScriptEngine->setChooseVictimAlwaysUsesNormal(b)`, the engine's own flag, which the AI reads)
@@ -1330,8 +1427,10 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_railroad(&self, _o: ObjH) -> bool {
         Default::default()
     }
-    fn sa_railroad_set_held(&mut self, _o: ObjH, _held: bool) {
-        self.sa_cut("railroad_set_held");
+    fn sa_railroad_set_held(&mut self, o: ObjH, held: bool) {
+        if let Some(m) = self.find_module(o, b"RailroadBehavior") {
+            self.module_call(o, m, crate::logic::world::module_call::ModuleCall::RailroadSetHeld(held));
+        }
     }
 
 }

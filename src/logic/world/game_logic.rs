@@ -214,6 +214,8 @@ pub struct World {
     /// (integration batch I15; set by `updateObjectsChangedTriggerAreas()`, not saved, 0 at `init` and `reset`). A field of the world, not
     /// of `game_logic`, which a frame takes out of the world while it runs.
     pub frame_objects_changed_trigger_areas: u32,
+    /// Integration batch I20: `logic_update` holds `game_logic` (a member a script sets then waits for the frame's end).
+    pub in_logic_frame: bool,
     /// The stacks the AI's state and machines are lent on while they run (`ai_state_host_world.rs`).
     pub ai_stacks: crate::logic::world::ai_state_host_world::AiStacks,
     /// Batch I9b-6: the turrets' AIs of the AI modules, by owner.
@@ -313,6 +315,7 @@ impl World {
             // --- batch I9b ---
             ai_self: INVALID_ID,
             frame_objects_changed_trigger_areas: 0,
+            in_logic_frame: false,
             ai_stacks: Default::default(),
             turret_ais: Default::default(),
             ai_prone_damage: None,
