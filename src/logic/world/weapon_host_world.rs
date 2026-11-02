@@ -565,7 +565,8 @@ impl WeaponHost for World {
         self.cut_partition_is_clear_line_of_sight_terrain(from, to)
     }
     fn bridge_attack_points(&self, bridge: ObjectId) -> (Coord3D, Coord3D) {
-        self.cuts.bridge_attack_points.get(&bridge).copied().unwrap_or_default()
+        // (integration batch I17: the terrain logic's with `live_terrain`; it was always the table)
+        self.terrain_bridge_attack_points(bridge)
     }
     fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
         self.terrain_get_layer_height(x, y, layer)

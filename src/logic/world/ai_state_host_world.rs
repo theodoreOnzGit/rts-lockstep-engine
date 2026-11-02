@@ -137,6 +137,22 @@ impl World {
         self.cut(CutCall::Host { call, args: vec![i64::from(id)], text: Vec::new() });
     }
 
+    /// Integration batch I17: object `o`'s `getRailedTransportDockUpdateInterface()->isLoadingOrUnloading()`, `None` with no such
+    /// interface (no module answers the call).
+    fn ai_railed_probe(&mut self, o: ObjectId) -> Option<bool> {
+        let n = self.find_object(o)?.modules.len();
+        (0..n).find_map(|i| match self.module_call(o, i as crate::logic::world::object::ModuleIndex, crate::logic::world::module_call::ModuleCall::RailedTransportDockIsLoadingOrUnloading) {
+            crate::logic::world::module_call::ModuleReply::Bool(b) => Some(b),
+            _ => None,
+        })
+    }
+
+    /// `call` made of object `o`'s first module that handles it (`Some` of its index), `None` when none does.
+    fn ai_railed_module(&mut self, o: ObjectId, call: crate::logic::world::module_call::ModuleCall) -> Option<crate::logic::world::object::ModuleIndex> {
+        let n = self.find_object(o)?.modules.len();
+        (0..n).map(|i| i as crate::logic::world::object::ModuleIndex).find(|&i| !matches!(self.module_call(o, i, call.clone()), crate::logic::world::module_call::ModuleReply::Unhandled))
+    }
+
     /// Integration batch I15: the polygon trigger at index `polygon` of the terrain's list (the AI's polygons are those indices, as
     /// `polygon_trigger_by_name` gives them), rebuilt from its trigger area for `PolygonTrigger`'s own bounds, centre and radius.
     fn ai_polygon(&self, polygon: i32) -> Option<crate::logic::polygon_trigger::PolygonTrigger> {
@@ -266,19 +282,22 @@ impl AiStateHost for World {
     fn waypoint_id(&mut self, way: u32) -> u32 {
         way
     }
-    fn railed_set_dock_open(&mut self, _open: bool) {
-        self.ais_cut("railed_set_dock_open");
+    fn railed_set_dock_open(&mut self, open: bool) {
+        // `getDockUpdateInterface()->setDockOpen(open)`, when there is one (the first module answering a dock call)
+        let me = self.ai_self;
+        self.ai_railed_module(me, crate::logic::world::module_call::ModuleCall::DockSetOpen(open));
     }
     fn railed_dock_present(&mut self) -> bool {
-        self.ais_cut("railed_dock_present");
-        Default::default()
+        let me = self.ai_self;
+        self.ai_railed_probe(me).is_some()
     }
     fn railed_dock_is_loading_or_unloading(&mut self) -> bool {
-        self.ais_cut("railed_dock_is_loading_or_unloading");
-        Default::default()
+        let me = self.ai_self;
+        self.ai_railed_probe(me).is_some_and(|b| b)
     }
     fn railed_dock_unload_all(&mut self) {
-        self.ais_cut("railed_dock_unload_all");
+        let me = self.ai_self;
+        self.ai_railed_module(me, crate::logic::world::module_call::ModuleCall::RailedTransportDockUnloadAll);
     }
     fn team_name(&mut self, team: u32) -> Vec<u8> {
         let teams = &self.teams;
@@ -746,20 +765,32 @@ impl AiStateHost for World {
     fn distance_squared_to_position(&mut self, pos: &Coord3D, kind: DistanceKind) -> f32 {
         self.ai_distance_squared_pos(self.ai_self, pos, kind)
     }
-    fn bridge_tower_ids(&mut self, _bridge: ObjectId) -> Option<[ObjectId; 4]> {
-        self.ais_cut("bridge_tower_ids");
-        Default::default()
+    fn bridge_tower_ids(&mut self, bridge: ObjectId) -> Option<[ObjectId; 4]> {
+        let b = self.module_with_interface(bridge, crate::logic::world::module_call::ModuleCall::HasBridgeBehaviorInterface)?;
+        let mut ids = [INVALID_ID; 4];
+        for (i, id) in ids.iter_mut().enumerate() {
+            *id = match self.module_call(bridge, b, crate::logic::world::module_call::ModuleCall::GetBridgeTowerId { tower: i as i32 }) {
+                crate::logic::world::module_call::ModuleReply::Id(x) => x,
+                _ => INVALID_ID,
+            };
+        }
+        Some(ids)
     }
-    fn bridge_tower_bridge_id(&mut self, _tower: ObjectId) -> Option<ObjectId> {
-        self.ais_cut("bridge_tower_bridge_id");
-        Default::default()
+    fn bridge_tower_bridge_id(&mut self, tower: ObjectId) -> Option<ObjectId> {
+        let n = self.find_object(tower)?.modules.len();
+        (0..n).find_map(|i| match self.module_call(tower, i as crate::logic::world::object::ModuleIndex, crate::logic::world::module_call::ModuleCall::BridgeTowerGetBridgeId) {
+            crate::logic::world::module_call::ModuleReply::Id(x) => Some(x),
+            _ => None,
+        })
     }
-    fn bridge_scaffold_in_motion(&mut self, _bridge: ObjectId) -> Option<bool> {
-        self.ais_cut("bridge_scaffold_in_motion");
-        Default::default()
+    fn bridge_scaffold_in_motion(&mut self, bridge: ObjectId) -> Option<bool> {
+        let b = self.module_with_interface(bridge, crate::logic::world::module_call::ModuleCall::HasBridgeBehaviorInterface)?;
+        Some(self.module_call(bridge, b, crate::logic::world::module_call::ModuleCall::BridgeIsScaffoldInMotion).as_bool())
     }
-    fn bridge_scaffolding(&mut self, _bridge: ObjectId, _create: bool) {
-        self.ais_cut("bridge_scaffolding");
+    fn bridge_scaffolding(&mut self, bridge: ObjectId, create: bool) {
+        if let Some(b) = self.module_with_interface(bridge, crate::logic::world::module_call::ModuleCall::HasBridgeBehaviorInterface) {
+            self.module_call(bridge, b, if create { crate::logic::world::module_call::ModuleCall::BridgeCreateScaffolding } else { crate::logic::world::module_call::ModuleCall::BridgeRemoveScaffolding });
+        }
     }
     fn object_set_builder(&mut self, id: ObjectId, builder: ObjectId) {
         if let Some(o) = self.find_object_mut(id) {
@@ -1300,9 +1331,8 @@ impl AiStateHost for World {
     fn object_is_kind_of(&self, id: ObjectId, kind: KindOfType) -> bool {
         self.find_object(id).is_some_and(|o| o.is_kind_of(kind))
     }
-    fn bridge_attack_points(&mut self, _bridge: ObjectId) -> (Coord3D, Coord3D) {
-        self.ais_cut("bridge_attack_points");
-        Default::default()
+    fn bridge_attack_points(&mut self, bridge: ObjectId) -> (Coord3D, Coord3D) {
+        self.terrain_bridge_attack_points(bridge)
     }
     fn distance_squared_bounding_sphere_3d(&mut self, pos: &Coord3D) -> f32 {
         self.ai_distance_squared_pos(self.ai_self, pos, DistanceKind::BoundingSphere3d)
@@ -1844,19 +1874,29 @@ impl AiStateHost for World {
         true
     }
     fn tunnel_system(&mut self) -> bool {
-        self.ais_cut("tunnel_system");
-        Default::default()
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return false };
+        self.players.get_nth(p).is_some_and(|pl| pl.tunnel_system.is_some())
     }
     fn tunnel_container_list(&mut self) -> Vec<ObjectId> {
-        self.ais_cut("tunnel_container_list");
-        Default::default()
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return Vec::new() };
+        self.players.get_nth(p).and_then(|pl| pl.tunnel_system.as_ref()).map(|t| t.get_container_list().to_vec()).unwrap_or_default()
     }
     fn tunnel_cur_nemesis(&mut self) -> ObjectId {
-        self.ais_cut("tunnel_cur_nemesis");
-        INVALID_ID
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return INVALID_ID };
+        let Some(mut t) = self.players.get_nth_mut(p).and_then(|pl| pl.tunnel_system.take()) else { return INVALID_ID };
+        let r = t.get_cur_nemesis(self);
+        if let Some(pl) = self.players.get_nth_mut(p) {
+            pl.tunnel_system = Some(t);
+        }
+        r.unwrap_or(INVALID_ID)
     }
-    fn tunnel_update_nemesis(&mut self, _target: ObjectId) {
-        self.ais_cut("tunnel_update_nemesis");
+    fn tunnel_update_nemesis(&mut self, target: ObjectId) {
+        let Some(p) = self.get_controlling_player(self.ai_self) else { return };
+        let Some(mut t) = self.players.get_nth_mut(p).and_then(|pl| pl.tunnel_system.take()) else { return };
+        t.update_nemesis(self, (target != INVALID_ID).then_some(target));
+        if let Some(pl) = self.players.get_nth_mut(p) {
+            pl.tunnel_system = Some(t);
+        }
     }
     fn object_ai_goal_object(&mut self, id: ObjectId) -> Option<ObjectId> {
         self.ai_machine_query(id).map(|m| m.goal_object_id())

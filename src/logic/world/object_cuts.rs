@@ -1041,6 +1041,17 @@ impl World {
         self.terrain.flatten_terrain(&view).is_ok()
     }
 
+    /// Integration batch I17: `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`, the terrain logic's with `cuts.live_terrain`
+    /// (its bridges; another object's are both its own position), otherwise `cuts.bridge_attack_points` (none: the origin).
+    pub fn terrain_bridge_attack_points(&self, bridge: ObjectId) -> (Coord3D, Coord3D) {
+        if self.cuts.live_terrain {
+            let pos = self.objects.find(bridge).map(|o| o.get_position()).unwrap_or_default();
+            let info = self.terrain.bridge_attack_points(bridge, &pos);
+            return (info.attack_point1, info.attack_point2);
+        }
+        self.cuts.bridge_attack_points.get(&bridge).copied().unwrap_or_default()
+    }
+
     /// batch R69: `CommandButtonHuntUpdate::scanClosestTarget`'s scan (see [`CutCall::PartitionIterateHuntTargets`]): the objects, nearest first.
     pub fn partition_iterate_hunt_targets(&mut self, object: ObjectId, range: f32, relationship: i32, team_filter: bool) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateHuntTargets { object, range, relationship, team_filter });

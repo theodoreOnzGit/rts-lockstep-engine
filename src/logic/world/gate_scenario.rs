@@ -166,8 +166,11 @@ pub fn gate_map_world_with(extra: &str) -> World {
     }
     // (batch I9i: each player's resource gathering manager, which `Player::initFromDict` makes, Player.cpp:1005: its supply
     // trucks ask it for a warehouse and a center)
+    // (batch I17: and its tunnel system, made in the same place, Player.cpp:1012: a tunnel's guard asks for it)
     for p in 0..3 {
-        w.players.get_nth_mut(p).expect("the player").resource_gathering_manager = Some(Default::default());
+        let pl = w.players.get_nth_mut(p).expect("the player");
+        pl.resource_gathering_manager = Some(Default::default());
+        pl.tunnel_system = Some(Default::default());
     }
     // (the player allied to itself, as `Player::initFromDict` and `PlayerList::newGame` leave it)
     // (and the two players enemies, as a skirmish's `PlayerList::newGame` leaves them)
@@ -1095,5 +1098,46 @@ mod ai_members_tests {
         assert_ne!(after.0, crate::logic::ai::ai_update_types::AI_IDLE);
         assert!(after.1);
         assert_eq!(team2, Some(enemy));
+    }
+}
+
+#[cfg(test)]
+mod ai_structures_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+
+    /// Batch I17, the AI's tunnel network, railed dock and bridge questions live. Predicted before the run: player 1 has a tunnel
+    /// system (`Player::init` makes one) with no tunnels; its nemesis set to an enemy soldier is its current nemesis; a soldier has no
+    /// railed dock; a depot has no bridge interface (no towers, no scaffold); its bridge attack points with the terrain live are both
+    /// its own position (`getBridgeAttackPoints` for an object that is no bridge), and from the table otherwise (none: the origin).
+    #[test]
+    fn the_ais_structure_questions_are_answered() {
+        let mut w = gate_map_world();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let e = make(&mut w, b"Soldier", enemy, Coord3D { x: 150.0, y: 100.0, z: 0.0 });
+        let depot_pos = Coord3D { x: 200.0, y: 200.0, z: 0.0 };
+        let depot = make(&mut w, b"Depot", team, depot_pos);
+        w.pathfinder_op(PfOp::NewMap);
+        let r = w.with_ai_self(a, |w| {
+            let tunnels = (w.tunnel_system(), w.tunnel_container_list());
+            w.tunnel_update_nemesis(e);
+            let nemesis = w.tunnel_cur_nemesis();
+            let railed = w.railed_dock_present();
+            let bridge = (w.bridge_tower_ids(depot), w.bridge_scaffold_in_motion(depot));
+            let table = w.bridge_attack_points(depot);
+            w.cuts.live_terrain = true;
+            let live = w.bridge_attack_points(depot);
+            (tunnels, nemesis, railed, bridge, table, live)
+        });
+        eprintln!("{r:?}");
+        let (tunnels, nemesis, railed, bridge, table, live) = r;
+        assert_eq!(tunnels, (true, Vec::new()));
+        assert_eq!(nemesis, e);
+        assert!(!railed);
+        assert_eq!(bridge, (None, None));
+        assert_eq!(table, (Coord3D::default(), Coord3D::default()));
+        assert_eq!(live, (depot_pos, depot_pos));
     }
 }
