@@ -266,6 +266,8 @@ pub enum ObjectClientEvent {
     DrawableTerrainDecalFadeTarget { object_id: ObjectId, target: f32, rate: f32 },
     /// `m_drawable->setDrawableHidden(hidden)` (`TunnelTracker::loadPostProcess`).
     DrawableSetHidden { object_id: ObjectId, hidden: bool },
+    /// Integration batch I11: `getDrawable()->fadeIn(frames)` (`fade_in`) or `fadeOut(frames)` (an OCL's `FadeIn`/`FadeOut`).
+    DrawableFade { object_id: ObjectId, fade_in: bool, frames: u32 },
     /// batch R67: `getDrawable()->setInstanceMatrix(matrix)` (`None` for `NULL`, the identity): the drawable's own offset from its object.
     DrawableSetInstanceMatrix { object_id: ObjectId, matrix: Option<crate::ww::matrix3d::Matrix3D> },
     /// batch R67: `TheParticleSystemManager->createAttachedParticleSystemID(template, object)`: a system of the named template attached to the

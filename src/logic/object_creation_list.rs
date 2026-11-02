@@ -220,7 +220,7 @@ pub trait OclHost {
     /// `TheGameLogic->getFrame()`.
     fn frame(&self) -> u32;
     /// `TheGameLODManager->isDebrisSkipped()`.
-    fn is_debris_skipped(&self) -> bool;
+    fn is_debris_skipped(&mut self) -> bool;
     /// `GameLogicRandomValue(lo, hi)`.
     fn random_value(&mut self, lo: i32, hi: i32) -> i32;
     /// `GameLogicRandomValueReal(lo, hi)`.
@@ -228,11 +228,11 @@ pub trait OclHost {
     /// `TheGameLogic->destroyObject(o)`.
     fn destroy_object(&mut self, o: ObjectId);
     /// `ThePlayerList->getNeutralPlayer() ? ThePlayerList->getNeutralPlayer()->getDefaultTeam() : NULL`.
-    fn neutral_player_default_team(&self) -> Option<TeamId>;
+    fn neutral_player_default_team(&mut self) -> Option<TeamId>;
     /// `player->getDefaultTeam()` (`None` for `NULL`).
-    fn player_default_team(&self, player: PlayerIndex) -> Option<TeamId>;
+    fn player_default_team(&mut self, player: PlayerIndex) -> Option<TeamId>;
     /// `player->isPlayerActive()`.
-    fn player_is_active(&self, player: PlayerIndex) -> bool;
+    fn player_is_active(&mut self, player: PlayerIndex) -> bool;
     /// `TheScriptEngine->transferObjectName(name, o)`.
     fn transfer_object_name(&mut self, name: &[u8], o: ObjectId);
     // ---- the thing factory ----------------------------------------------------------------------------------------
@@ -244,31 +244,31 @@ pub trait OclHost {
     fn new_object(&mut self, tmplate: Option<TemplateRef>, team: Option<TeamId>) -> Option<ObjectId>;
     // ---- an object -------------------------------------------------------------------------------------------------
     /// `*o->getPosition()`.
-    fn obj_position(&self, o: ObjectId) -> Coord3D;
+    fn obj_position(&mut self, o: ObjectId) -> Coord3D;
     /// `o->getOrientation()`.
-    fn obj_orientation(&self, o: ObjectId) -> f32;
+    fn obj_orientation(&mut self, o: ObjectId) -> f32;
     /// `*o->getTransformMatrix()`.
-    fn obj_transform(&self, o: ObjectId) -> Matrix3D;
+    fn obj_transform(&mut self, o: ObjectId) -> Matrix3D;
     /// `o->getControllingPlayer()`'s index (`None` for `NULL`).
-    fn obj_controlling_player(&self, o: ObjectId) -> Option<PlayerIndex>;
+    fn obj_controlling_player(&mut self, o: ObjectId) -> Option<PlayerIndex>;
     /// `o->getLayer()`.
-    fn obj_layer(&self, o: ObjectId) -> PathfindLayer;
+    fn obj_layer(&mut self, o: ObjectId) -> PathfindLayer;
     /// `o->isAboveTerrain()`.
-    fn obj_is_above_terrain(&self, o: ObjectId) -> bool;
+    fn obj_is_above_terrain(&mut self, o: ObjectId) -> bool;
     /// `o->isSignificantlyAboveTerrain()`.
-    fn obj_is_significantly_above_terrain(&self, o: ObjectId) -> bool;
+    fn obj_is_significantly_above_terrain(&mut self, o: ObjectId) -> bool;
     /// `o->isOffMap()`.
-    fn obj_is_off_map(&self, o: ObjectId) -> bool;
+    fn obj_is_off_map(&mut self, o: ObjectId) -> bool;
     /// `o->isKindOf(KINDOF_STRUCTURE)`.
-    fn obj_is_structure(&self, o: ObjectId) -> bool;
+    fn obj_is_structure(&mut self, o: ObjectId) -> bool;
     /// `o->getVeterancyLevel()`.
-    fn obj_veterancy_level(&self, o: ObjectId) -> VeterancyLevel;
+    fn obj_veterancy_level(&mut self, o: ObjectId) -> VeterancyLevel;
     /// `o->getIndicatorColor()`.
-    fn obj_indicator_color(&self, o: ObjectId) -> i32;
+    fn obj_indicator_color(&mut self, o: ObjectId) -> i32;
     /// `o->getName()`.
-    fn obj_name(&self, o: ObjectId) -> Vec<u8>;
+    fn obj_name(&mut self, o: ObjectId) -> Vec<u8>;
     /// `*o->getUnitDirectionVector2D()`.
-    fn obj_unit_direction_vector_2d(&self, o: ObjectId) -> Coord3D;
+    fn obj_unit_direction_vector_2d(&mut self, o: ObjectId) -> Coord3D;
     /// `o->setProducer(producer)` (`None` for `NULL`).
     fn obj_set_producer(&mut self, o: ObjectId, producer: Option<ObjectId>);
     /// `o->setPosition(pos)`.
@@ -292,21 +292,21 @@ pub trait OclHost {
     /// `o->attemptDamage(&info)`.
     fn obj_attempt_damage(&mut self, o: ObjectId, info: &DamageInfo);
     /// `o->findUpdateModule(NAMEKEY(...)) != NULL`.
-    fn obj_has_update_module(&self, o: ObjectId, kind: UpdateModuleKind) -> bool;
+    fn obj_has_update_module(&mut self, o: ObjectId, kind: UpdateModuleKind) -> bool;
     /// `o->findSpecialPowerCompletionDie() != NULL`.
-    fn obj_has_special_power_completion_die(&self, o: ObjectId) -> bool;
+    fn obj_has_special_power_completion_die(&mut self, o: ObjectId) -> bool;
     /// `o->getAIUpdateInterface() != NULL`.
-    fn obj_has_ai(&self, o: ObjectId) -> bool;
+    fn obj_has_ai(&mut self, o: ObjectId) -> bool;
     /// `o->getPhysics() != NULL`.
-    fn obj_has_physics(&self, o: ObjectId) -> bool;
+    fn obj_has_physics(&mut self, o: ObjectId) -> bool;
     /// `o->getBodyModule() != NULL`.
-    fn obj_has_body(&self, o: ObjectId) -> bool;
+    fn obj_has_body(&mut self, o: ObjectId) -> bool;
     /// `o->getContain() != NULL`.
-    fn obj_has_contain(&self, o: ObjectId) -> bool;
+    fn obj_has_contain(&mut self, o: ObjectId) -> bool;
     /// `o->getDrawable() != NULL`.
-    fn obj_has_drawable(&self, o: ObjectId) -> bool;
+    fn obj_has_drawable(&mut self, o: ObjectId) -> bool;
     /// `o->getExperienceTracker()->isTrainable()`.
-    fn obj_is_trainable(&self, o: ObjectId) -> bool;
+    fn obj_is_trainable(&mut self, o: ObjectId) -> bool;
     /// `o->getExperienceTracker()->setVeterancyLevel(level)`.
     fn obj_set_veterancy_level(&mut self, o: ObjectId, level: VeterancyLevel);
     // ---- the modules of an object ---------------------------------------------------------------------------------
@@ -319,11 +319,11 @@ pub trait OclHost {
     /// `dpai->deliverPayload(moveToPos, targetPos, data)`.
     fn deliver_payload(&mut self, o: ObjectId, move_to: &Coord3D, target: &Coord3D, data: &DeliverPayloadData);
     /// `dpai->getCurLocomotor()->getMaxSpeedForCondition(damageState)`.
-    fn deliver_payload_max_speed_for_condition(&self, o: ObjectId, damage_state: i32) -> f32;
+    fn deliver_payload_max_speed_for_condition(&mut self, o: ObjectId, damage_state: i32) -> f32;
     /// `dpai->getCurLocomotor()->getPreferredHeight()`.
-    fn deliver_payload_preferred_height(&self, o: ObjectId) -> f32;
+    fn deliver_payload_preferred_height(&mut self, o: ObjectId) -> f32;
     /// `o->getBodyModule()->getDamageState()`.
-    fn body_damage_state(&self, o: ObjectId) -> i32;
+    fn body_damage_state(&mut self, o: ObjectId) -> i32;
     /// `body->setInitialHealth(percent)`.
     fn body_set_initial_health(&mut self, o: ObjectId, percent: i32);
     /// `lup->setLifetimeRange(min, max)`.
@@ -333,16 +333,16 @@ pub trait OclHost {
     /// `die->setCreator(id)`.
     fn special_power_completion_die_set_creator(&mut self, o: ObjectId, creator: ObjectId);
     /// The number of entries of `o->getBehaviorModules()` (up to the `NULL`).
-    fn behavior_module_count(&self, o: ObjectId) -> usize;
+    fn behavior_module_count(&mut self, o: ObjectId) -> usize;
     /// `o->getBehaviorModules()[i]->getSlavedUpdateInterface() != NULL`.
-    fn behavior_module_has_slaved_update(&self, o: ObjectId, i: usize) -> bool;
+    fn behavior_module_has_slaved_update(&mut self, o: ObjectId, i: usize) -> bool;
     /// `o->getBehaviorModules()[i]->getSlavedUpdateInterface()->onEnslave(slaver)`.
     fn behavior_module_on_enslave(&mut self, o: ObjectId, i: usize, slaver: Option<ObjectId>);
     // ---- physics ----------------------------------------------------------------------------------------------------
     /// `physics->getVelocity()`.
-    fn physics_velocity(&self, o: ObjectId) -> Coord3D;
+    fn physics_velocity(&mut self, o: ObjectId) -> Coord3D;
     /// `physics->getMass()`.
-    fn physics_mass(&self, o: ObjectId) -> f32;
+    fn physics_mass(&mut self, o: ObjectId) -> f32;
     /// `physics->applyMotiveForce(&force)`.
     fn physics_apply_motive_force(&mut self, o: ObjectId, force: &Coord3D);
     /// `physics->applyForce(&force)`.
@@ -371,12 +371,12 @@ pub trait OclHost {
     fn physics_set_pitch_rate(&mut self, o: ObjectId, r: f32);
     // ---- containment ------------------------------------------------------------------------------------------------
     /// `container->getContain()->isValidContainerFor(obj, checkCapacity)`.
-    fn contain_is_valid_container_for(&self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
+    fn contain_is_valid_container_for(&mut self, container: ObjectId, obj: ObjectId, check_capacity: bool) -> bool;
     /// `container->getContain()->addToContain(obj)`.
     fn contain_add(&mut self, container: ObjectId, obj: ObjectId);
     // ---- the drawable -----------------------------------------------------------------------------------------------
     /// `o->getDrawable()->isDrawableEffectivelyHidden()`.
-    fn drawable_is_effectively_hidden(&self, o: ObjectId) -> bool;
+    fn drawable_is_effectively_hidden(&mut self, o: ObjectId) -> bool;
     /// `o->getDrawable()->setDrawableHidden(h)`.
     fn drawable_set_hidden(&mut self, o: ObjectId, hidden: bool);
     /// `o->getDrawable()->fadeIn(frames)`.
@@ -384,24 +384,24 @@ pub trait OclHost {
     /// `o->getDrawable()->fadeOut(frames)`.
     fn drawable_fade_out(&mut self, o: ObjectId, frames: u32);
     /// The number of draw modules of `o`'s drawable that have a `DebrisDrawInterface`, in module order.
-    fn drawable_debris_interface_count(&self, o: ObjectId) -> usize;
+    fn drawable_debris_interface_count(&mut self, o: ObjectId) -> usize;
     /// `di->setModelName(name, color, shadowType)` on the `i`-th debris interface.
     fn debris_set_model_name(&mut self, o: ObjectId, i: usize, name: &[u8], color: i32, shadow_type: u32);
     /// `di->setAnimNames(initial, flying, final, finalFX)` on the `i`-th debris interface.
     fn debris_set_anim_names(&mut self, o: ObjectId, i: usize, initial: &[u8], flying: &[u8], fin: &[u8], final_fx: &FxListName);
     // ---- the world --------------------------------------------------------------------------------------------------
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
-    fn terrain_ground_height(&self, x: f32, y: f32) -> f32;
+    fn terrain_ground_height(&mut self, x: f32, y: f32) -> f32;
     /// `TheTerrainLogic->getHighestLayerForDestination(&pos)`.
-    fn terrain_highest_layer_for_destination(&self, pos: &Coord3D) -> PathfindLayer;
+    fn terrain_highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer;
     /// `TheTerrainLogic->getLayerHeight(x, y, layer)`.
-    fn terrain_layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32;
+    fn terrain_layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32;
     /// `TheTerrainLogic->flattenTerrain(o)`.
     fn terrain_flatten(&mut self, o: ObjectId);
     /// `TheTerrainLogic->isUnderwater(x, y, &waterZ, &terrainZ)`: the water and terrain heights if the point is underwater.
-    fn terrain_is_underwater(&self, x: f32, y: f32) -> Option<(f32, f32)>;
+    fn terrain_is_underwater(&mut self, x: f32, y: f32) -> Option<(f32, f32)>;
     /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` (`None` for `NULL`).
-    fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType>;
+    fn pathfinder_cell_type(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType>;
     /// `TheAI->pathfinder()->addObjectToPathfindMap(o)`.
     fn pathfinder_add_object(&mut self, o: ObjectId);
     /// `ThePartitionManager->findPositionAround(center, &options, &result)`.
@@ -409,7 +409,7 @@ pub trait OclHost {
     /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &pos)`.
     fn weapon_create_and_fire_temp(&mut self, weapon: WeaponTemplateRef, source: ObjectId, pos: &Coord3D);
     /// `TheParticleSystemManager->findTemplate(name)` (`None` for `NULL`).
-    fn particle_system_find_template(&self, name: &[u8]) -> Option<u32>;
+    fn particle_system_find_template(&mut self, name: &[u8]) -> Option<u32>;
     /// `TheParticleSystemManager->createParticleSystem(tmpl)`, then `->attachToObject(o)`.
     fn particle_system_create_attached(&mut self, tmpl: u32, o: ObjectId);
     /// `TheAudio->addAudioEvent(&event)` for an event named `name` with `setObjectID(object)`.
@@ -1037,7 +1037,8 @@ impl GenericObjectCreationNugget {
         };
         // the vast majority of OCLs don't care about the angle, so if it comes in invalid, default it to 0
         let angle = if angle == INVALID_ANGLE && !plant(71) { 0.0 } else { angle };
-        self.really_create(host, pos, if plant(72) { primary_obj.map(|o| host.obj_transform(o)) } else { None }.as_ref(), angle, primary_obj, life)
+        let mtx = if plant(72) { primary_obj.map(|o| host.obj_transform(o)) } else { None };
+        self.really_create(host, pos, mtx.as_ref(), angle, primary_obj, life)
     }
 
     /// `doStuffToObj(obj, modelName, pos, mtx, orientation, sourceObj, lifetimeFrames)`.
@@ -1983,7 +1984,7 @@ mod tests {
     fn frame(&self) -> u32 {
         0
     }
-    fn is_debris_skipped(&self) -> bool {
+    fn is_debris_skipped(&mut self) -> bool {
         false
     }
     fn random_value(&mut self, _lo: i32, hi: i32) -> i32 {
@@ -1997,13 +1998,13 @@ mod tests {
     fn destroy_object(&mut self, o: ObjectId) {
         self.log.push(format!("destroy_object {}", o));
     }
-    fn neutral_player_default_team(&self) -> Option<TeamId> {
+    fn neutral_player_default_team(&mut self) -> Option<TeamId> {
         Some(2)
     }
-    fn player_default_team(&self, _player: PlayerIndex) -> Option<TeamId> {
+    fn player_default_team(&mut self, _player: PlayerIndex) -> Option<TeamId> {
         Some(3)
     }
-    fn player_is_active(&self, _player: PlayerIndex) -> bool {
+    fn player_is_active(&mut self, _player: PlayerIndex) -> bool {
         true
     }
     fn transfer_object_name(&mut self, _name: &[u8], _o: ObjectId) {
@@ -2024,43 +2025,43 @@ mod tests {
             Some(self.next)
         }
     }
-    fn obj_position(&self, _o: ObjectId) -> Coord3D {
+    fn obj_position(&mut self, _o: ObjectId) -> Coord3D {
         Coord3D::default()
     }
-    fn obj_orientation(&self, _o: ObjectId) -> f32 {
+    fn obj_orientation(&mut self, _o: ObjectId) -> f32 {
         0.0
     }
-    fn obj_transform(&self, _o: ObjectId) -> Matrix3D {
+    fn obj_transform(&mut self, _o: ObjectId) -> Matrix3D {
         Matrix3D::IDENTITY
     }
-    fn obj_controlling_player(&self, _o: ObjectId) -> Option<PlayerIndex> {
+    fn obj_controlling_player(&mut self, _o: ObjectId) -> Option<PlayerIndex> {
         (!self.no_player).then_some(1)
     }
-    fn obj_layer(&self, _o: ObjectId) -> PathfindLayer {
+    fn obj_layer(&mut self, _o: ObjectId) -> PathfindLayer {
         LAYER_GROUND
     }
-    fn obj_is_above_terrain(&self, _o: ObjectId) -> bool {
+    fn obj_is_above_terrain(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_is_significantly_above_terrain(&self, _o: ObjectId) -> bool {
+    fn obj_is_significantly_above_terrain(&mut self, _o: ObjectId) -> bool {
         false
     }
-    fn obj_is_off_map(&self, _o: ObjectId) -> bool {
+    fn obj_is_off_map(&mut self, _o: ObjectId) -> bool {
         false
     }
-    fn obj_is_structure(&self, _o: ObjectId) -> bool {
+    fn obj_is_structure(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_veterancy_level(&self, _o: ObjectId) -> VeterancyLevel {
+    fn obj_veterancy_level(&mut self, _o: ObjectId) -> VeterancyLevel {
         VeterancyLevel::Elite
     }
-    fn obj_indicator_color(&self, _o: ObjectId) -> i32 {
+    fn obj_indicator_color(&mut self, _o: ObjectId) -> i32 {
         0
     }
-    fn obj_name(&self, _o: ObjectId) -> Vec<u8> {
+    fn obj_name(&mut self, _o: ObjectId) -> Vec<u8> {
         Vec::new()
     }
-    fn obj_unit_direction_vector_2d(&self, _o: ObjectId) -> Coord3D {
+    fn obj_unit_direction_vector_2d(&mut self, _o: ObjectId) -> Coord3D {
         Coord3D { x: 1.0, y: 0.0, z: 0.0 }
     }
     fn obj_set_producer(&mut self, o: ObjectId, _producer: Option<ObjectId>) {
@@ -2096,28 +2097,28 @@ mod tests {
     fn obj_attempt_damage(&mut self, o: ObjectId, _info: &DamageInfo) {
         self.log.push(format!("obj_attempt_damage {}", o));
     }
-    fn obj_has_update_module(&self, _o: ObjectId, _kind: UpdateModuleKind) -> bool {
+    fn obj_has_update_module(&mut self, _o: ObjectId, _kind: UpdateModuleKind) -> bool {
         true
     }
-    fn obj_has_special_power_completion_die(&self, _o: ObjectId) -> bool {
+    fn obj_has_special_power_completion_die(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_has_ai(&self, _o: ObjectId) -> bool {
+    fn obj_has_ai(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_has_physics(&self, _o: ObjectId) -> bool {
+    fn obj_has_physics(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_has_body(&self, _o: ObjectId) -> bool {
+    fn obj_has_body(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_has_contain(&self, _o: ObjectId) -> bool {
+    fn obj_has_contain(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_has_drawable(&self, _o: ObjectId) -> bool {
+    fn obj_has_drawable(&mut self, _o: ObjectId) -> bool {
         true
     }
-    fn obj_is_trainable(&self, _o: ObjectId) -> bool {
+    fn obj_is_trainable(&mut self, _o: ObjectId) -> bool {
         true
     }
     fn obj_set_veterancy_level(&mut self, o: ObjectId, _level: VeterancyLevel) {
@@ -2135,13 +2136,13 @@ mod tests {
     fn deliver_payload(&mut self, o: ObjectId, _move_to: &Coord3D, _target: &Coord3D, _data: &DeliverPayloadData) {
         self.log.push(format!("deliver_payload {}", o));
     }
-    fn deliver_payload_max_speed_for_condition(&self, _o: ObjectId, _damage_state: i32) -> f32 {
+    fn deliver_payload_max_speed_for_condition(&mut self, _o: ObjectId, _damage_state: i32) -> f32 {
         10.0
     }
-    fn deliver_payload_preferred_height(&self, _o: ObjectId) -> f32 {
+    fn deliver_payload_preferred_height(&mut self, _o: ObjectId) -> f32 {
         30.0
     }
-    fn body_damage_state(&self, _o: ObjectId) -> i32 {
+    fn body_damage_state(&mut self, _o: ObjectId) -> i32 {
         1
     }
     fn body_set_initial_health(&mut self, o: ObjectId, _percent: i32) {
@@ -2156,19 +2157,19 @@ mod tests {
     fn special_power_completion_die_set_creator(&mut self, o: ObjectId, _creator: ObjectId) {
         self.log.push(format!("special_power_completion_die_set_creator {}", o));
     }
-    fn behavior_module_count(&self, _o: ObjectId) -> usize {
+    fn behavior_module_count(&mut self, _o: ObjectId) -> usize {
         2
     }
-    fn behavior_module_has_slaved_update(&self, _o: ObjectId, i: usize) -> bool {
+    fn behavior_module_has_slaved_update(&mut self, _o: ObjectId, i: usize) -> bool {
         i == 1
     }
     fn behavior_module_on_enslave(&mut self, o: ObjectId, _i: usize, _slaver: Option<ObjectId>) {
         self.log.push(format!("behavior_module_on_enslave {}", o));
     }
-    fn physics_velocity(&self, _o: ObjectId) -> Coord3D {
+    fn physics_velocity(&mut self, _o: ObjectId) -> Coord3D {
         Coord3D::default()
     }
-    fn physics_mass(&self, _o: ObjectId) -> f32 {
+    fn physics_mass(&mut self, _o: ObjectId) -> f32 {
         2.0
     }
     fn physics_apply_motive_force(&mut self, o: ObjectId, _force: &Coord3D) {
@@ -2210,13 +2211,13 @@ mod tests {
     fn physics_set_pitch_rate(&mut self, o: ObjectId, _r: f32) {
         self.log.push(format!("physics_set_pitch_rate {}", o));
     }
-    fn contain_is_valid_container_for(&self, _container: ObjectId, _obj: ObjectId, _check_capacity: bool) -> bool {
+    fn contain_is_valid_container_for(&mut self, _container: ObjectId, _obj: ObjectId, _check_capacity: bool) -> bool {
         true
     }
     fn contain_add(&mut self, container: ObjectId, _obj: ObjectId) {
         self.log.push(format!("contain_add {}", container));
     }
-    fn drawable_is_effectively_hidden(&self, _o: ObjectId) -> bool {
+    fn drawable_is_effectively_hidden(&mut self, _o: ObjectId) -> bool {
         false
     }
     fn drawable_set_hidden(&mut self, o: ObjectId, _hidden: bool) {
@@ -2228,7 +2229,7 @@ mod tests {
     fn drawable_fade_out(&mut self, o: ObjectId, _frames: u32) {
         self.log.push(format!("drawable_fade_out {}", o));
     }
-    fn drawable_debris_interface_count(&self, _o: ObjectId) -> usize {
+    fn drawable_debris_interface_count(&mut self, _o: ObjectId) -> usize {
         1
     }
     fn debris_set_model_name(&mut self, o: ObjectId, _i: usize, _name: &[u8], _color: i32, _shadow_type: u32) {
@@ -2237,22 +2238,22 @@ mod tests {
     fn debris_set_anim_names(&mut self, o: ObjectId, _i: usize, _initial: &[u8], _flying: &[u8], _fin: &[u8], _final_fx: &FxListName) {
         self.log.push(format!("debris_set_anim_names {}", o));
     }
-    fn terrain_ground_height(&self, _x: f32, _y: f32) -> f32 {
+    fn terrain_ground_height(&mut self, _x: f32, _y: f32) -> f32 {
         0.0
     }
-    fn terrain_highest_layer_for_destination(&self, _pos: &Coord3D) -> PathfindLayer {
+    fn terrain_highest_layer_for_destination(&mut self, _pos: &Coord3D) -> PathfindLayer {
         LAYER_GROUND
     }
-    fn terrain_layer_height(&self, _x: f32, _y: f32, _layer: PathfindLayer) -> f32 {
+    fn terrain_layer_height(&mut self, _x: f32, _y: f32, _layer: PathfindLayer) -> f32 {
         0.0
     }
     fn terrain_flatten(&mut self, o: ObjectId) {
         self.log.push(format!("terrain_flatten {}", o));
     }
-    fn terrain_is_underwater(&self, _x: f32, _y: f32) -> Option<(f32, f32)> {
+    fn terrain_is_underwater(&mut self, _x: f32, _y: f32) -> Option<(f32, f32)> {
         Some((50.0, 40.0))
     }
-    fn pathfinder_cell_type(&self, _layer: PathfindLayer, _x: i32, _y: i32) -> Option<PathfindCellType> {
+    fn pathfinder_cell_type(&mut self, _layer: PathfindLayer, _x: i32, _y: i32) -> Option<PathfindCellType> {
         Some(PathfindCellType::Clear)
     }
     fn pathfinder_add_object(&mut self, o: ObjectId) {
@@ -2265,7 +2266,7 @@ mod tests {
     fn weapon_create_and_fire_temp(&mut self, _weapon: WeaponTemplateRef, _source: ObjectId, _pos: &Coord3D) {
         self.log.push("weapon_create_and_fire_temp".to_string());
     }
-    fn particle_system_find_template(&self, _name: &[u8]) -> Option<u32> {
+    fn particle_system_find_template(&mut self, _name: &[u8]) -> Option<u32> {
         Some(1)
     }
     fn particle_system_create_attached(&mut self, _tmpl: u32, _o: ObjectId) {

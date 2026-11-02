@@ -66,7 +66,7 @@ use crate::ww::matrix3d::Matrix3D;
 
 impl World {
     /// The module index answering a `Has...Interface` question with yes, if any.
-    fn module_with_interface(&mut self, o: ObjectId, has: ModuleCall) -> Option<ModuleIndex> {
+    pub(crate) fn module_with_interface(&mut self, o: ObjectId, has: ModuleCall) -> Option<ModuleIndex> {
         let n = self.objects.find(o)?.modules.len();
         (0..n).map(|i| i as ModuleIndex).find(|&i| self.module_call(o, i, has.clone()).as_bool())
     }

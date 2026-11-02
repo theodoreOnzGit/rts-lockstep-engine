@@ -1188,6 +1188,14 @@ impl World {
     /// `ObjectCreationList::create(ocl, primary, secondary)` for a list that exists, and the object it makes (`CreateObjectDie`, batch R14a): the call is
     /// [`CutCall::OclCreateWithSecondary`] and the object is `ocl_create_result`'s for the name (`INVALID_ID` for `NULL`).
     pub fn ocl_create_returning(&mut self, primary: ObjectId, secondary: ObjectId, ocl: &[u8]) -> ObjectId {
+        if self.cuts.live_ocl {
+            // (batch I11: the list run, and its first object)
+            let call = CutCall::OclCreateWithSecondary { primary, secondary, ocl: ocl.to_vec() };
+            if let Some(log) = &mut self.cuts.log {
+                log.push(call.clone());
+            }
+            return self.live_ocl_call(&call).flatten().unwrap_or(INVALID_ID);
+        }
         self.cut(CutCall::OclCreateWithSecondary { primary, secondary, ocl: ocl.to_vec() });
         self.cuts.ocl_create_result.get(ocl).copied().filter(|&id| self.objects.find(id).is_some()).unwrap_or(INVALID_ID)
     }
@@ -2097,6 +2105,9 @@ pub struct ObjectCuts {
     /// `world.partition` with the world as its host, and a range scan's answer replaces `range_scan` (see
     /// `world::partition_host_world`). Off by default: the tests of the object and module code answer from these tables.
     pub live_partition: bool,
+    /// Integration batch I11: `ObjectCreationList::create(...)` run by the world (`world::ocl_host_world`) for the OCL cut calls,
+    /// which are still logged. Off by default: the tests of the module code answer from these tables.
+    pub live_ocl: bool,
     /// `TheAI->pathfinder()->getCell(layer, x, y)->getType()` for `findPositionAround` ~~(the pathfinder is not in the world
     /// yet)~~ (without `live_pathfinder`; batch I9a put the pathfinder in the world): the cells that are not `CELL_CLEAR`.
     pub pathfind_cells: BTreeMap<(i32, i32, i32), crate::logic::world::partition::PathfindCellType>,
@@ -2328,6 +2339,7 @@ impl Default for ObjectCuts {
             booby_traps_in_range: Vec::new(),
             wall_height: 0.0,
             live_partition: false,
+            live_ocl: false,
             pathfind_cells: BTreeMap::new(),
             partition_quick_path: None,
             view_blocked: BTreeSet::new(),
@@ -2588,8 +2600,13 @@ impl World {
         if self.cuts.live_teams {
             self.live_team_call(&call);
         }
+        // (batch I11: the object creation lists, run after the call is logged, so that the calls they make follow it)
+        let ocl = self.cuts.live_ocl.then(|| call.clone());
         if let Some(log) = &mut self.cuts.log {
             log.push(call);
+        }
+        if let Some(call) = ocl {
+            self.live_ocl_call(&call);
         }
     }
 

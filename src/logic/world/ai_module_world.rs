@@ -156,6 +156,31 @@ impl AiModuleBody {
                 ModuleReply::Done
             }
             // (batch I9e: `construct(what, pos, angle, owner, isRebuild)`: a dozer's or worker's; the base's makes nothing)
+            // (batch I11: the `DeliverPayload` OCL nugget's calls)
+            ModuleCall::AiDeliverPayload { move_to, target, data } => {
+                if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_))) {
+                    return ModuleReply::Unhandled;
+                }
+                let r = world.with_ai_self(me.object, |w| m.run(w, |sm, h| crate::logic::ai::deliver_payload_ai_update::deliver_payload(sm, h, &move_to, &target, &data)));
+                if let Err(e) = r {
+                    world.cuts.team_live_errors.push(format!("DeliverPayloadAIUpdate::deliverPayload: {e:?}"));
+                }
+                ModuleReply::Done
+            }
+            ModuleCall::AiGetCurLocomotorMaxSpeedForCondition(state) => {
+                if m.ai.as_ref().is_none_or(|a| a.get_cur_locomotor().is_none()) {
+                    return ModuleReply::Unhandled;
+                }
+                ModuleReply::Real(world.with_ai_self(me.object, |w| {
+                    m.run(w, |_, h| {
+                        use crate::logic::ai::ai_states::AiStateHost;
+                        let a = h.ai_stack().pop().expect("a running AI");
+                        let speed = a.get_cur_locomotor().map_or(0.0, |l| l.get_max_speed_for_condition(h, state));
+                        h.ai_stack().push(a);
+                        speed
+                    })
+                }))
+            }
             ModuleCall::AiConstruct { template, pos, angle, owner: _, is_rebuild } => {
                 use crate::logic::ai::ai_update::AiSubclass;
                 if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(AiSubclass::Dozer(_) | AiSubclass::Worker(_))) {

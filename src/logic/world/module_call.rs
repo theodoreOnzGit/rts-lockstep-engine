@@ -170,6 +170,12 @@ pub enum ModuleCall {
     /// Batch I9h: `attemptBestFirePointPosition(source, source's current weapon, victim)`, or `(.., targetPos)` when `victim` is
     /// `INVALID_ID`; replies [`ModuleReply::Bool`]. Only `GarrisonContain` overrides it; the base (`OpenContain.h`) is `FALSE`.
     AttemptBestFirePointPosition { source: ObjectId, victim: ObjectId, pos: Option<Coord3D> },
+    /// Integration batch I11: `DeliverPayloadAIUpdate::deliverPayload(moveToPos, targetPos, data)` (the `DeliverPayload` OCL nugget):
+    /// [`ModuleReply::Done`] for a delivering AI, [`ModuleReply::Unhandled`] for any other.
+    AiDeliverPayload { move_to: Coord3D, target: Coord3D, data: crate::logic::modules::deliver_payload_data::DeliverPayloadData },
+    /// Integration batch I11: `getCurLocomotor()->getMaxSpeedForCondition(damageState)`; replies [`ModuleReply::Real`],
+    /// [`ModuleReply::Unhandled`] with no current locomotor.
+    AiGetCurLocomotorMaxSpeedForCondition(i32),
     /// `isSpecialZeroSlotContainer()`; replies [`ModuleReply::Bool`].
     IsSpecialZeroSlotContainer,
     /// `getContainedItemsList()`, as ids in list order; replies [`ModuleReply::Ids`].

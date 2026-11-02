@@ -486,7 +486,7 @@ impl OclHost for Sim {
     fn frame(&self) -> u32 {
         self.frame
     }
-    fn is_debris_skipped(&self) -> bool {
+    fn is_debris_skipped(&mut self) -> bool {
         self.flags & PF_DEBRIS_SKIPPED != 0
     }
     fn random_value(&mut self, lo: i32, hi: i32) -> i32 {
@@ -498,20 +498,20 @@ impl OclHost for Sim {
     fn destroy_object(&mut self, o: ObjectId) {
         self.log(format!("destroy {o}"));
     }
-    fn neutral_player_default_team(&self) -> Option<TeamId> {
+    fn neutral_player_default_team(&mut self) -> Option<TeamId> {
         if self.flags & PF_NEUTRAL_PLAYER != 0 {
             self.player_default_team(0)
         } else {
             None
         }
     }
-    fn player_default_team(&self, player: PlayerIndex) -> Option<TeamId> {
+    fn player_default_team(&mut self, player: PlayerIndex) -> Option<TeamId> {
         match player {
             0 => (self.flags & PF_NEUTRAL_TEAM != 0).then_some(1),
             _ => (self.flags & PF_SRC_TEAM != 0).then_some(2),
         }
     }
-    fn player_is_active(&self, player: PlayerIndex) -> bool {
+    fn player_is_active(&mut self, player: PlayerIndex) -> bool {
         player == 0 || self.flags & PF_SRC_ACTIVE != 0
     }
     fn transfer_object_name(&mut self, name: &[u8], o: ObjectId) {
@@ -535,34 +535,34 @@ impl OclHost for Sim {
         self.log(format!("new {} tmpl={} team={}", id, self.tmpls[t].name, team.unwrap_or(0)));
         Some(id)
     }
-    fn obj_position(&self, o: ObjectId) -> Coord3D {
+    fn obj_position(&mut self, o: ObjectId) -> Coord3D {
         self.o(o).pos
     }
-    fn obj_orientation(&self, o: ObjectId) -> f32 {
+    fn obj_orientation(&mut self, o: ObjectId) -> f32 {
         self.o(o).orient
     }
-    fn obj_transform(&self, o: ObjectId) -> Matrix3D {
+    fn obj_transform(&mut self, o: ObjectId) -> Matrix3D {
         self.o(o).xfrm
     }
-    fn obj_controlling_player(&self, o: ObjectId) -> Option<PlayerIndex> {
+    fn obj_controlling_player(&mut self, o: ObjectId) -> Option<PlayerIndex> {
         self.o(o).player
     }
-    fn obj_layer(&self, o: ObjectId) -> PathfindLayer {
+    fn obj_layer(&mut self, o: ObjectId) -> PathfindLayer {
         self.o(o).layer
     }
-    fn obj_is_above_terrain(&self, o: ObjectId) -> bool {
+    fn obj_is_above_terrain(&mut self, o: ObjectId) -> bool {
         self.o(o).above
     }
-    fn obj_is_significantly_above_terrain(&self, o: ObjectId) -> bool {
+    fn obj_is_significantly_above_terrain(&mut self, o: ObjectId) -> bool {
         self.o(o).sig_above
     }
-    fn obj_is_off_map(&self, o: ObjectId) -> bool {
+    fn obj_is_off_map(&mut self, o: ObjectId) -> bool {
         self.o(o).off_map
     }
-    fn obj_is_structure(&self, o: ObjectId) -> bool {
+    fn obj_is_structure(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_STRUCTURE != 0
     }
-    fn obj_veterancy_level(&self, o: ObjectId) -> VeterancyLevel {
+    fn obj_veterancy_level(&mut self, o: ObjectId) -> VeterancyLevel {
         match self.o(o).veterancy {
             0 => VeterancyLevel::Regular,
             1 => VeterancyLevel::Veteran,
@@ -570,13 +570,13 @@ impl OclHost for Sim {
             _ => VeterancyLevel::Heroic,
         }
     }
-    fn obj_indicator_color(&self, o: ObjectId) -> i32 {
+    fn obj_indicator_color(&mut self, o: ObjectId) -> i32 {
         self.o(o).indicator_color
     }
-    fn obj_name(&self, o: ObjectId) -> Vec<u8> {
+    fn obj_name(&mut self, o: ObjectId) -> Vec<u8> {
         self.o(o).name.clone()
     }
-    fn obj_unit_direction_vector_2d(&self, o: ObjectId) -> Coord3D {
+    fn obj_unit_direction_vector_2d(&mut self, o: ObjectId) -> Coord3D {
         self.o(o).dir2d
     }
     fn obj_set_producer(&mut self, o: ObjectId, producer: Option<ObjectId>) {
@@ -616,7 +616,7 @@ impl OclHost for Sim {
     fn obj_attempt_damage(&mut self, o: ObjectId, info: &DamageInfo) {
         self.log(format!("o.damage {} type={} death={} src={} amount={}", o, info.input.damage_type, info.input.death_type, info.input.source_id, fb(info.input.amount)));
     }
-    fn obj_has_update_module(&self, o: ObjectId, kind: UpdateModuleKind) -> bool {
+    fn obj_has_update_module(&mut self, o: ObjectId, kind: UpdateModuleKind) -> bool {
         let bit = match kind {
             UpdateModuleKind::RadiusDecal => TF_RDU,
             UpdateModuleKind::DeliverPayloadAi => TF_DPAI,
@@ -625,25 +625,25 @@ impl OclHost for Sim {
         };
         self.tf(o) & bit != 0
     }
-    fn obj_has_special_power_completion_die(&self, o: ObjectId) -> bool {
+    fn obj_has_special_power_completion_die(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_SPCD != 0
     }
-    fn obj_has_ai(&self, o: ObjectId) -> bool {
+    fn obj_has_ai(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_AI != 0
     }
-    fn obj_has_physics(&self, o: ObjectId) -> bool {
+    fn obj_has_physics(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_PHYSICS != 0
     }
-    fn obj_has_body(&self, o: ObjectId) -> bool {
+    fn obj_has_body(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_BODY != 0
     }
-    fn obj_has_contain(&self, o: ObjectId) -> bool {
+    fn obj_has_contain(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_CONTAIN != 0
     }
-    fn obj_has_drawable(&self, o: ObjectId) -> bool {
+    fn obj_has_drawable(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_DRAWABLE != 0
     }
-    fn obj_is_trainable(&self, o: ObjectId) -> bool {
+    fn obj_is_trainable(&mut self, o: ObjectId) -> bool {
         self.tf(o) & TF_TRAINABLE != 0
     }
     fn obj_set_veterancy_level(&mut self, o: ObjectId, level: VeterancyLevel) {
@@ -661,13 +661,13 @@ impl OclHost for Sim {
     fn deliver_payload(&mut self, o: ObjectId, move_to: &Coord3D, target: &Coord3D, data: &DeliverPayloadData) {
         self.log(format!("dpai.deliver {} move={} target={} {}", o, v3(move_to), v3(target), data_str(data)));
     }
-    fn deliver_payload_max_speed_for_condition(&self, o: ObjectId, damage_state: i32) -> f32 {
+    fn deliver_payload_max_speed_for_condition(&mut self, o: ObjectId, damage_state: i32) -> f32 {
         self.tmpls[self.o(o).tmpl].max_speed + damage_state as f32 * 0.25
     }
-    fn deliver_payload_preferred_height(&self, o: ObjectId) -> f32 {
+    fn deliver_payload_preferred_height(&mut self, o: ObjectId) -> f32 {
         self.tmpls[self.o(o).tmpl].pref_height
     }
-    fn body_damage_state(&self, o: ObjectId) -> i32 {
+    fn body_damage_state(&mut self, o: ObjectId) -> i32 {
         self.tmpls[self.o(o).tmpl].damage_state
     }
     fn body_set_initial_health(&mut self, o: ObjectId, percent: i32) {
@@ -682,19 +682,19 @@ impl OclHost for Sim {
     fn special_power_completion_die_set_creator(&mut self, o: ObjectId, creator: ObjectId) {
         self.log(format!("spcd.creator {o} {creator}"));
     }
-    fn behavior_module_count(&self, _o: ObjectId) -> usize {
+    fn behavior_module_count(&mut self, _o: ObjectId) -> usize {
         2
     }
-    fn behavior_module_has_slaved_update(&self, o: ObjectId, i: usize) -> bool {
+    fn behavior_module_has_slaved_update(&mut self, o: ObjectId, i: usize) -> bool {
         self.tf(o) & if i == 0 { TF_SLAVED0 } else { TF_SLAVED1 } != 0
     }
     fn behavior_module_on_enslave(&mut self, o: ObjectId, _i: usize, slaver: Option<ObjectId>) {
         self.log(format!("slaved.enslave {} {}", o, slaver.unwrap_or(0)));
     }
-    fn physics_velocity(&self, o: ObjectId) -> Coord3D {
+    fn physics_velocity(&mut self, o: ObjectId) -> Coord3D {
         self.o(o).vel
     }
-    fn physics_mass(&self, o: ObjectId) -> f32 {
+    fn physics_mass(&mut self, o: ObjectId) -> f32 {
         self.o(o).mass
     }
     fn physics_apply_motive_force(&mut self, o: ObjectId, force: &Coord3D) {
@@ -737,13 +737,13 @@ impl OclHost for Sim {
     fn physics_set_pitch_rate(&mut self, o: ObjectId, r: f32) {
         self.log(format!("phys.pitchRate {} {}", o, fb(r)));
     }
-    fn contain_is_valid_container_for(&self, container: ObjectId, _obj: ObjectId, _check_capacity: bool) -> bool {
+    fn contain_is_valid_container_for(&mut self, container: ObjectId, _obj: ObjectId, _check_capacity: bool) -> bool {
         self.tf(container) & TF_ACCEPTS != 0
     }
     fn contain_add(&mut self, container: ObjectId, obj: ObjectId) {
         self.log(format!("contain.add {container} {obj}"));
     }
-    fn drawable_is_effectively_hidden(&self, o: ObjectId) -> bool {
+    fn drawable_is_effectively_hidden(&mut self, o: ObjectId) -> bool {
         self.o(o).hidden
     }
     fn drawable_set_hidden(&mut self, o: ObjectId, hidden: bool) {
@@ -756,7 +756,7 @@ impl OclHost for Sim {
     fn drawable_fade_out(&mut self, o: ObjectId, frames: u32) {
         self.log(format!("draw.fadeOut {o} {frames}"));
     }
-    fn drawable_debris_interface_count(&self, o: ObjectId) -> usize {
+    fn drawable_debris_interface_count(&mut self, o: ObjectId) -> usize {
         let f = self.tf(o);
         usize::from(f & TF_DEBRIS0 != 0) + usize::from(f & TF_DEBRIS1 != 0)
     }
@@ -769,10 +769,10 @@ impl OclHost for Sim {
         let idx = self.debris_module(o, i);
         self.log(format!("debris.anim {} {} {} {} {} fx={}", o, idx, qs(initial), qs(flying), qs(fin), qs(&fx_name(final_fx))));
     }
-    fn terrain_ground_height(&self, x: f32, y: f32) -> f32 {
+    fn terrain_ground_height(&mut self, x: f32, y: f32) -> f32 {
         self.ground(x, y)
     }
-    fn terrain_highest_layer_for_destination(&self, pos: &Coord3D) -> PathfindLayer {
+    fn terrain_highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
         match h3(pos.x.to_bits(), pos.y.to_bits(), self.tseed ^ 0x55 ^ if pos.z > 1000.0 { 0x1000 } else { 0 }) % 8 {
             0..=4 => 1,
             5 => 2,
@@ -780,20 +780,20 @@ impl OclHost for Sim {
             _ => 15,
         }
     }
-    fn terrain_layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
+    fn terrain_layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
         self.ground(x, y) + layer as f32 * 0.5
     }
     fn terrain_flatten(&mut self, o: ObjectId) {
         self.log(format!("terrain.flatten {o}"));
     }
-    fn terrain_is_underwater(&self, x: f32, y: f32) -> Option<(f32, f32)> {
+    fn terrain_is_underwater(&mut self, x: f32, y: f32) -> Option<(f32, f32)> {
         let h = h3(x.to_bits(), y.to_bits(), self.tseed ^ 0x77);
         if !h.is_multiple_of(5) {
             return None;
         }
         Some((self.ground(x, y) + (h / 5 % 16) as f32 * 0.5, self.ground(x, y)))
     }
-    fn pathfinder_cell_type(&self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
+    fn pathfinder_cell_type(&mut self, layer: PathfindLayer, x: i32, y: i32) -> Option<PathfindCellType> {
         let h = h3((layer as u32).wrapping_mul(7919).wrapping_add(x as u32), y as u32, self.tseed ^ 0x99) % 11;
         if h == 10 {
             return None;
@@ -817,7 +817,7 @@ impl OclHost for Sim {
     fn weapon_create_and_fire_temp(&mut self, weapon: WeaponTemplateRef, source: ObjectId, pos: &Coord3D) {
         self.log(format!("weapon.fire w={} src={} pos={}", weapon, source, v3(pos)));
     }
-    fn particle_system_find_template(&self, name: &[u8]) -> Option<u32> {
+    fn particle_system_find_template(&mut self, name: &[u8]) -> Option<u32> {
         (0..N_PSYS as u32).find(|i| name == format!("P{i}").as_bytes()).map(|i| i + 1)
     }
     fn particle_system_create_attached(&mut self, tmpl: u32, o: ObjectId) {

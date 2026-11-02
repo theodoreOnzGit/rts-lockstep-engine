@@ -81,6 +81,7 @@ struct Ctx {
     locomotors: LocomotorStore,
     weapon_store: crate::logic::weapon::WeaponStore,
     ai_data: crate::logic::ai::ai_data::AiDataChain,
+    ocls: crate::logic::object_creation_list::ObjectCreationListStore,
 }
 
 /// No game text (the game names none).
@@ -108,6 +109,13 @@ fn object_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
 fn ai_data_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
     crate::logic::ai::ai_data::parse_ai_data_definition(ini, &mut c.ai_data, &c.sciences, &mut c.names)
         .unwrap_or_else(|_| Err(crate::common::ini::IniError::new(crate::common::ini::IniErrorKind::Bug)))
+}
+
+/// (batch I11: `INI::parseObjectCreationListDefinition`; the weapons a nugget names are the store's by index, read before the lists)
+fn ocl_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
+    let weapon_templates = c.weapon_store.templates().iter().enumerate().map(|(i, t)| (t.name.clone(), i as u32)).collect();
+    let env = Arc::new(crate::logic::object_creation_list::OclParseEnv { preload_assets: false, weapon_templates });
+    c.ocls.parse_object_creation_list_definition(ini, &mut c.names, &env)
 }
 
 fn weapon_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
@@ -196,12 +204,14 @@ pub fn gate_map_world_with(extra: &str) -> World {
         locomotors: LocomotorStore::new(),
         weapon_store: crate::logic::weapon::WeaponStore::new(),
         ai_data: Default::default(),
+        ocls: Default::default(),
     };
-    static BLOCKS: [BlockParse<Ctx>; 4] = [
+    static BLOCKS: [BlockParse<Ctx>; 5] = [
         BlockParse { token: "AIData", parse: ai_data_block },
         BlockParse { token: "Object", parse: object_block },
         BlockParse { token: "Locomotor", parse: locomotor_block },
         BlockParse { token: "Weapon", parse: weapon_block },
+        BlockParse { token: "ObjectCreationList", parse: ocl_block },
     ];
     Ini::load(b"Data\\INI\\Gate.ini", INI.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("the game's INI");
     if !extra.is_empty() {
@@ -211,7 +221,14 @@ pub fn gate_map_world_with(extra: &str) -> World {
 
     let mut w = World::new();
     w.names = c.names;
-    let mut st = GameStatics { thing_factory: c.factory, locomotor_store: c.locomotors, weapon_store: c.weapon_store, ai_data: c.ai_data.current().clone(), ..Default::default() };
+    let mut st = GameStatics {
+        thing_factory: c.factory,
+        locomotor_store: c.locomotors,
+        weapon_store: c.weapon_store,
+        ai_data: c.ai_data.current().clone(),
+        object_creation_list_store: c.ocls,
+        ..Default::default()
+    };
     {
         let g = st.global_data.create_original();
         g.partition_cell_size = 40.0;
@@ -222,6 +239,8 @@ pub fn gate_map_world_with(extra: &str) -> World {
         g.max_low_energy_production_speed = 0.8;
     }
     w.statics = Arc::new(st);
+    // (batch I11: `TheWeaponStore->postProcessLoad()`, after the INI: the weapons' projectiles and OCLs found by name)
+    w.weapon_store_post_process();
     let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
     let size = ICoord2D { x: 40, y: 40 };
     t.set_logic_height_map(Some(LogicHeightMap::new(40, 40, 0, vec![size], vec![0; 1600]).expect("the height map")));
@@ -271,6 +290,7 @@ pub fn gate_map_world_with(extra: &str) -> World {
     w.cuts.live_teams = true;
     w.cuts.live_ai = true;
     w.cuts.live_pathfinder = true;
+    w.cuts.live_ocl = true;
     w
 }
 
@@ -855,5 +875,95 @@ Object Pad\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius 
         }
         eprintln!("changed: {changed:?}");
         assert_eq!(changed, [(20, 20, 30.0, 11.0)]);
+    }
+}
+
+#[cfg(test)]
+mod ocl_tests {
+    use super::*;
+    use crate::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
+    use crate::logic::world::module_call::ModuleCall;
+
+    /// A pair of pups as an object creation list; a crate that makes it when it dies; a gun that makes it when it fires, and a
+    /// soldier that carries the gun.
+    const OCL: &str = "\
+ObjectCreationList OCL_Pair\n CreateObject\n  ObjectNames = Pup\n  Count = 2\n End\nEnd\n\
+Weapon PopGun\n PrimaryDamage = 20\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\n FireOCL = OCL_Pair\nEnd\n\
+Object Pup\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 3\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+Object Crate\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 5\n GeometryMinorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\n\
+ Behavior = CreateObjectDie ModuleTag_Die\n  CreationList = OCL_Pair\n End\nEnd\n\
+Object Popper\n KindOf = VEHICLE\n VisionRange = 150\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY PopGun\n End\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+
+    /// The pups in the world: (id, position, team).
+    fn pups(w: &World) -> Vec<(ObjectId, Coord3D, TeamId)> {
+        w.objects.ids_in_order().into_iter().filter_map(|id| w.objects.find(id)).filter(|o| o.template().get_name() == b"Pup").map(|o| (o.id, o.get_position(), o.team)).collect()
+    }
+
+    /// Batch I11, the object creation lists run by the world. A crate of team 1 at (120, 140) with a `CreateObjectDie` of `OCL_Pair` is
+    /// killed. Predicted before the run from `GenericObjectCreationNugget` (`Count = 2`, no offset, the default disposition
+    /// `ON_GROUND_ALIGNED`): two pups, made in the kill, each at the crate's x and y on the flat ground (z 0), on player 1's default
+    /// team (the crate's player); no error. With `live_ocl` off, none (the call only logged).
+    #[test]
+    fn a_dying_crate_makes_its_creation_list() {
+        for live in [false, true] {
+            let mut w = gate_map_world_with(OCL);
+            w.cuts.live_ocl = live;
+            let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+            let crate_id = make(&mut w, b"Crate", team, Coord3D { x: 120.0, y: 140.0, z: 0.0 });
+            w.pathfinder_op(PfOp::NewMap);
+            w.kill(crate_id, DAMAGE_UNRESISTABLE, DEATH_NORMAL);
+            let made = pups(&w);
+            eprintln!("live {live}: {made:?}");
+            if !live {
+                assert!(made.is_empty());
+                continue;
+            }
+            assert_eq!(made.len(), 2, "{made:?}");
+            for (_, p, t) in &made {
+                assert_eq!((p.x, p.y, p.z), (120.0, 140.0, 0.0));
+                assert_eq!(*t, team);
+            }
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
+    }
+
+    /// Batch I11, a weapon's `FireOCL` (found by `TheWeaponStore->postProcessLoad()`, which the world did not run before this batch).
+    /// A popper of team 1 at (100, 200) is ordered to attack an enemy soldier 50 east. Predicted before the run: by its first shot,
+    /// within 60 frames (in range already; the turn and the aim), two pups at the popper's x and y (the list's primary object is the
+    /// shooter, `ObjectCreationList::create(ocl, source, NULL)`), on team 1.
+    #[test]
+    fn a_weapons_fire_ocl_makes_its_list() {
+        let mut w = gate_map_world_with(OCL);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let popper = make(&mut w, b"Popper", team, Coord3D { x: 100.0, y: 200.0, z: 0.0 });
+        let target = make(&mut w, b"Soldier", enemy, Coord3D { x: 150.0, y: 200.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let ai = w.find_object(popper).and_then(|o| o.ai).expect("the popper's AI");
+        w.module_call(popper, ai, ModuleCall::AiAttackObject { victim: target, max_shots: 1, command_source: 0 });
+        let mut frame = None;
+        for f in 0..60 {
+            w.logic_update().unwrap();
+            if !pups(&w).is_empty() {
+                frame = Some(f);
+                break;
+            }
+        }
+        let made = pups(&w);
+        let at = w.find_object(popper).map(|o| o.get_position()).expect("the popper");
+        eprintln!("pups on frame {frame:?}: {made:?}; popper at {at:?}");
+        assert!(frame.is_some(), "no pup within 60 frames");
+        assert_eq!(made.len(), 2, "{made:?}");
+        for (_, p, t) in &made {
+            assert_eq!((p.x, p.y), (at.x, at.y));
+            assert_eq!(*t, team);
+        }
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
