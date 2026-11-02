@@ -1227,21 +1227,34 @@ impl ScriptActionsHost for World {
     fn sa_find_script(&self, name: &[u8]) -> bool {
         self.script_engine.find_script(self, name).is_some()
     }
-    fn sa_append_sequential_script(&mut self, _team: Option<TeamH>, _object: ObjectId, _script: &[u8], _times_to_loop: i32) {
-        self.sa_cut("append_sequential_script");
+    fn sa_append_sequential_script(&mut self, team: Option<TeamH>, object: ObjectId, script: &[u8], times_to_loop: i32) {
+        // (integration batch I25: was a cut) a new `SequentialScript` of the team or object, the script found by name, appended to the
+        // running engine's (the world's while an action runs, `execute_action_with`)
+        let Some(r) = self.script_engine.find_script(self, script) else { return };
+        let mut s = crate::logic::world::script_engine::SequentialScript::new(r);
+        s.team_to_exec_on = team;
+        s.object_id = object;
+        s.times_to_loop = times_to_loop;
+        self.script_engine.append_sequential_script(&s);
     }
-    fn sa_remove_all_sequential_scripts_obj(&mut self, _o: ObjH) {
-        self.sa_cut("remove_all_sequential_scripts_obj");
+
+    fn sa_remove_all_sequential_scripts_obj(&mut self, o: ObjH) {
+        self.script_engine.remove_all_sequential_scripts_of_object(o);
     }
-    fn sa_remove_all_sequential_scripts_team(&mut self, _t: TeamH) {
-        self.sa_cut("remove_all_sequential_scripts_team");
+
+    fn sa_remove_all_sequential_scripts_team(&mut self, t: TeamH) {
+        // `removeAllSequentialScripts(team)` is upstream's `notifyOfTeamDestruction(team)`
+        self.script_engine.notify_of_team_destruction(t);
     }
-    fn sa_set_sequential_timer_obj(&mut self, _o: ObjH, _frames: i32) {
-        self.sa_cut("set_sequential_timer_obj");
+
+    fn sa_set_sequential_timer_obj(&mut self, o: ObjH, frames: i32) {
+        self.script_engine.set_sequential_timer_object(o, frames);
     }
-    fn sa_set_sequential_timer_team(&mut self, _t: TeamH, _frames: i32) {
-        self.sa_cut("set_sequential_timer_team");
+
+    fn sa_set_sequential_timer_team(&mut self, t: TeamH, frames: i32) {
+        self.script_engine.set_sequential_timer_team(t, frames);
     }
+
     fn sa_obj_has_waypoint_following_weapon(&self, o: ObjH) -> bool {
         // (integration batch I22: `findWaypointFollowingCapableWeapon() != NULL`; was always false)
         let Some(obj) = self.objects.find(o) else { return false };

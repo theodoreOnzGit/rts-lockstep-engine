@@ -1584,3 +1584,79 @@ mod group_host_tests {
         assert!(out.is_some());
     }
 }
+
+#[cfg(test)]
+mod sequential_script_tests {
+    use super::*;
+    use crate::logic::scripts::{action_type as at, Parameter, Script, ScriptAction, ScriptList};
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// A subroutine `KillMe` whose one action kills the object running it (`NAMED_KILL <This Object>`), in side 0's list (a side added
+    /// for it).
+    fn add_kill_me(w: &mut World) {
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = at::NAMED_KILL;
+        a.num_parms = 1;
+        let mut p = Parameter::new(0, 0);
+        p.string = crate::logic::world::script_engine::names::THIS_OBJECT.to_vec();
+        a.parms[0] = Some(p);
+        let mut s = Script::new();
+        s.script_name = b"KillMe".to_vec();
+        s.is_active = true;
+        s.is_subroutine = true;
+        s.actions = vec![a];
+        // (the gate's map has no sides: one, holding only the script list)
+        if w.sides.get_num_sides() == 0 {
+            w.sides.add_side(&Dict::default());
+        }
+        w.sides.get_side_info_mut(0).expect("side 0").scripts = Some(ScriptList { groups: Vec::new(), scripts: vec![s] });
+    }
+
+    /// Batch I25, the sequential script actions live (each was a cut). Predicted before the run: appending `KillMe` for a soldier makes
+    /// one chain headed by it; its timer set to 7 is the head's wait; removing the object's scripts leaves none; a team's chain is
+    /// removed by `removeAllSequentialScripts(team)`; an unknown script appends nothing; appended again, the soldier is dead within three
+    /// frames (the engine progresses the chain in its update and runs the action on the soldier; before this batch it lived).
+    /// **Missed on the first run, the test's setup:** the soldier lived, because the gate fixture never runs the engine's `newMap`, so
+    /// its update returned at once (`m_endGameTimer >= 0`, as upstream's constructed engine); the test now calls it first. Then it still
+    /// lived: **port defect**, the engine asked `se_ai_is_idle`, which read the `cuts.ai_idle` table (no live unit is in it), so no
+    /// unit's sequential script ever started; with `live_ai` it is now the AI's own `isIdle()`, and the soldier dies on the first frame.
+    #[test]
+    fn a_unit_runs_a_sequential_script() {
+        let mut w = gate_map_world();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let s = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        add_kill_me(&mut w);
+        // the engine's `newMap` (`startNewGame`'s, which the gate's fixture does not run): until then its update returns at once
+        // (`m_endGameTimer >= 0`), so no sequential script progresses
+        w.script_engine_new_map().unwrap();
+        let chains = |w: &World| w.script_engine.sequential_scripts.iter().map(|c| (c[0].object_id, c[0].team_to_exec_on, c[0].frames_to_wait)).collect::<Vec<_>>();
+        w.sa_append_sequential_script(None, s, b"KillMe", 0);
+        let appended = chains(&w);
+        w.sa_set_sequential_timer_obj(s, 7);
+        let timed = chains(&w);
+        w.sa_remove_all_sequential_scripts_obj(s);
+        let removed = chains(&w);
+        w.sa_append_sequential_script(Some(team as i32), 0, b"KillMe", 0);
+        let team_chain = chains(&w).len();
+        w.sa_remove_all_sequential_scripts_team(team as i32);
+        w.sa_append_sequential_script(None, s, b"NoSuchScript", 0);
+        let after_team = chains(&w);
+        w.sa_append_sequential_script(None, s, b"KillMe", 0);
+        let mut dead = None;
+        for f in 0..3 {
+            w.logic_update().unwrap();
+            if w.find_object(s).is_none_or(|o| o.is_effectively_dead()) {
+                dead = Some(f);
+                break;
+            }
+        }
+        eprintln!("{appended:?} {timed:?} {removed:?} team {team_chain} {after_team:?}; dead {dead:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(appended, vec![(s, None, -1)]);
+        assert_eq!(timed, vec![(s, None, 7)]);
+        assert!(removed.is_empty());
+        assert_eq!(team_chain, 1);
+        assert!(after_team.is_empty());
+        assert!(dead.is_some());
+    }
+}

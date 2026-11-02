@@ -561,7 +561,7 @@ impl ScriptEngineHost for Sim {
     fn se_obj_has_ai(&self, o: ObjH) -> bool {
         (self.ow(o) >> 1) & 1 != 0
     }
-    fn se_ai_is_idle(&self, o: ObjH) -> bool {
+    fn se_ai_is_idle(&mut self, o: ObjH) -> bool {
         hh(self.seed(), 200 + o as u32, self.frame) & 1 != 0
     }
     fn se_obj_is_effectively_dead(&self, o: ObjH) -> bool {

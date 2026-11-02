@@ -276,7 +276,12 @@ impl ScriptEngineHost for World {
     fn se_obj_has_ai(&self, o: ObjH) -> bool {
         self.find_object(o).is_some_and(|x| x.ai.is_some())
     }
-    fn se_ai_is_idle(&self, o: ObjH) -> bool {
+    fn se_ai_is_idle(&mut self, o: ObjH) -> bool {
+        // (integration batch I25: with `live_ai`, the AI's own (virtual) `isIdle()`; it was the `ai_idle` table, which no live unit is
+        // in, so no unit's sequential script ever started)
+        if self.cuts.live_ai {
+            return self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiIsIdle).is_some_and(|r| r.as_bool());
+        }
         self.cuts.ai_idle.contains(&o)
     }
     fn se_obj_is_effectively_dead(&self, o: ObjH) -> bool {

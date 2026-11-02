@@ -439,7 +439,7 @@ pub trait ScriptEngineHost {
     /// `obj->getAIUpdateInterface() != NULL`.
     fn se_obj_has_ai(&self, o: ObjH) -> bool;
     /// `obj->getAIUpdateInterface()->isIdle()`.
-    fn se_ai_is_idle(&self, o: ObjH) -> bool;
+    fn se_ai_is_idle(&mut self, o: ObjH) -> bool;
     /// `obj->isEffectivelyDead()`.
     fn se_obj_is_effectively_dead(&self, o: ObjH) -> bool;
 
