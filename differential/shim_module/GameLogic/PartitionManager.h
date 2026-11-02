@@ -38,7 +38,8 @@ class PartitionFilter { public: virtual ~PartitionFilter() {}
 class PartitionFilterRelationship : public PartitionFilter
 {
 public:
-	enum RelationshipAllowTypes { ALLOW_ALLIES = 2, ALLOW_ENEMIES = 1, ALLOW_NEUTRAL = 4 };
+	/* upstream PartitionManager.h: 1 << Relationship (ENEMIES 0, NEUTRAL 1, ALLIES 2). ~~ALLIES 2, NEUTRAL 4~~ corrected (I9g note) */
+	enum RelationshipAllowTypes { ALLOW_ALLIES = 4, ALLOW_ENEMIES = 1, ALLOW_NEUTRAL = 2 };
 	PartitionFilterRelationship( const Object *obj, Int flags ) : m_flags(flags) {}
 	Int m_flags;   /* batch R69: logged by CommandButtonHuntUpdate's scan */
 };
