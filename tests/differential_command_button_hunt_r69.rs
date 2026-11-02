@@ -360,6 +360,7 @@ fn set_scene(w: &mut World, cfg: &[u32], slots: &Slots) {
                 thing_template: None,
                 upgrade: None,
                 ready_for: Default::default(),
+                options: 0,
             }
         })
         .collect();

@@ -640,7 +640,7 @@ impl ScriptActionsHost for Sim {
     fn sa_obj_major_radius(&self, o: ObjH) -> f32 {
         self.o(o).tmpl.map(|t| (t + 1) as f32 * 2.5).unwrap_or(1.0)
     }
-    fn sa_obj_transport_slot_count(&self, o: ObjH) -> i32 {
+    fn sa_obj_transport_slot_count(&mut self, o: ObjH) -> i32 {
         match self.o(o).tmpl {
             Some(t) => ((self.tw(t) >> 16) & 3) as i32,
             None => ((self.ow(o, 1) >> 16) & 3) as i32,
@@ -679,13 +679,13 @@ impl ScriptActionsHost for Sim {
             None => (self.ow(o, 0) >> 3) & 1 != 0,
         }
     }
-    fn sa_contain_max(&self, o: ObjH) -> u32 {
+    fn sa_contain_max(&mut self, o: ObjH) -> u32 {
         match self.o(o).tmpl {
             Some(t) => (self.tw(t) >> 18) & 7,
             None => (self.ow(o, 1) >> 18) & 7,
         }
     }
-    fn sa_contain_is_valid_container_for(&self, c: ObjH, o: ObjH, check: bool) -> bool {
+    fn sa_contain_is_valid_container_for(&mut self, c: ObjH, o: ObjH, check: bool) -> bool {
         if self.sa_obj_is_kind_of(o, KINDOF_STRUCTURE) || hh(self.seed(), c as u32, 90 + o as u32) & 3 == 0 {
             return false;
         }
@@ -1109,7 +1109,7 @@ impl ScriptActionsHost for Sim {
     fn sa_set_current_track_name(&mut self, name: &[u8]) {
         self.log.push(format!("se track {}", st(name)));
     }
-    fn sa_contain_player_who_entered(&self, o: ObjH) -> u32 {
+    fn sa_contain_player_who_entered(&mut self, o: ObjH) -> u32 {
         let p = hh(self.seed(), o as u32, 92) % 9;
         if p == 8 {
             0
@@ -1117,7 +1117,7 @@ impl ScriptActionsHost for Sim {
             1 << p
         }
     }
-    fn sa_contain_count(&self, o: ObjH) -> u32 {
+    fn sa_contain_count(&mut self, o: ObjH) -> u32 {
         self.o(o).contained.len() as u32
     }
     fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
@@ -1217,7 +1217,7 @@ impl ScriptActionsHost for Sim {
     fn sa_freeze_time(&mut self, freeze: bool) {
         self.log.push(if freeze { "se freeze".into() } else { "se unfreeze".into() });
     }
-    fn sa_ai_has_cur_locomotor(&self, o: ObjH) -> bool {
+    fn sa_ai_has_cur_locomotor(&mut self, o: ObjH) -> bool {
         hh(self.seed(), o as u32, 40) & 1 != 0
     }
     fn sa_locomotor_set_close_enough_dist(&mut self, o: ObjH, d: f32) {
@@ -1427,7 +1427,7 @@ impl ScriptActionsHost for Sim {
     fn sa_view_shake(&mut self, p: &Coord3D, t: i32) {
         self.log.push(format!("view shake {} {} {} {t}", fb(p.x), fb(p.y), fb(p.z)));
     }
-    fn sa_contained(&self, o: ObjH) -> Vec<ObjH> {
+    fn sa_contained(&mut self, o: ObjH) -> Vec<ObjH> {
         self.o(o).contained.clone()
     }
     fn sa_logic_set_buildable_status_override(&mut self, t: TemplateH, s: i32) {
@@ -1487,7 +1487,7 @@ impl ScriptActionsHost for Sim {
     fn sa_obj_give_upgrade(&mut self, o: ObjH, u: i32) {
         self.log.push(format!("obj {o} giveupgrade {u}"));
     }
-    fn sa_group_center(&self, g: GroupH) -> Option<Coord3D> {
+    fn sa_group_center(&mut self, g: GroupH) -> Option<Coord3D> {
         let m = &self.groups[(g - 1) as usize];
         if m.is_empty() {
             return None;

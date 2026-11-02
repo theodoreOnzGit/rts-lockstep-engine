@@ -65,7 +65,7 @@ fn distance_type(kind: DistanceKind) -> DistanceCalculationType {
 }
 
 impl World {
-    fn combat_error(&mut self, call: &str, e: impl std::fmt::Debug) {
+    pub(crate) fn combat_error(&mut self, call: &str, e: impl std::fmt::Debug) {
         self.cuts.team_live_errors.push(format!("{call}: {e:?}"));
     }
 

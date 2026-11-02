@@ -314,6 +314,7 @@ mod computer_player_tests {
             thing_template: depot,
             upgrade: None,
             ready_for: Default::default(),
+            options: 0,
         });
         w.cuts.command_sets.push((b"GateDozerSet".to_vec(), vec![Some(w.cuts.command_buttons.len() - 1)]));
         w.objects.find_mut(dozer).expect("the dozer").command_set_string_override = b"GateDozerSet".to_vec();
@@ -609,7 +610,7 @@ mod contain_tests {
 
     /// A truck that carries two vehicles, with an AI and the game's treads; and a rider, the game's soldier with a transport slot
     /// (`TransportContain::isValidContainerFor` refuses a rider whose `TransportSlotCount` is 0, the default, as the soldier's is).
-    const TRUCK: &str = "\
+    pub(super) const TRUCK: &str = "\
 Object Rider\n KindOf = VEHICLE\n TransportSlotCount = 1\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
  WeaponSet\n  Conditions = None\n  Weapon = PRIMARY GateGun\n End\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
@@ -1344,5 +1345,110 @@ mod build_assistant_ai_tests {
         assert_eq!(r, (e1, e2, INVALID_ID));
         assert!(quick);
         assert!(moving);
+    }
+}
+
+#[cfg(test)]
+mod force_fire_tests {
+    use super::*;
+    use crate::logic::world::module_call::{ModuleCall, ModuleReply};
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// The batch-I14 rocket, fired by a gun capable of following waypoints, and a launcher carrying it.
+    const FOLLOWER: &str = "\
+Locomotor RocketThrust\n Surfaces = AIR\n Speed = 200\n Acceleration = 1000\n Braking = 1000\n TurnRate = 720\n Appearance = THRUST\nEnd\n\
+Weapon FollowGun\n PrimaryDamage = 30\n PrimaryDamageRadius = 5\n AttackRange = 150\n DamageType = EXPLOSION\n DeathType = NORMAL\n WeaponSpeed = 200\n DelayBetweenShots = 5000\n ProjectileObject = Rocket\n CapableOfFollowingWaypoints = Yes\nEnd\n\
+Object Rocket\n KindOf = PROJECTILE\n Geometry = CYLINDER\n GeometryMajorRadius = 1\n GeometryHeight = 1\n\
+ Behavior = MissileAIUpdate ModuleTag_AI\n  TryToFollowTarget = Yes\n  FuelLifetime = 5000\n  InitialVelocity = 100\n  IgnitionDelay = 0\n  DistanceToTravelBeforeTurning = 0\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 1\n End\n Locomotor = SET_NORMAL RocketThrust\nEnd\n\
+Object Follower\n KindOf = VEHICLE\n VisionRange = 200\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY FollowGun\n End\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+
+    /// Batch I22, the script's `doNamedFireWeaponFollowingWaypointPath` weapon calls live. Predicted before the run: the follower has a
+    /// waypoint-following weapon and the soldier none (the host answered false for every unit before, so the action never fired); the
+    /// follower's force-fire at its own position makes a rocket whose launcher is the follower and which has an AI (the action then
+    /// sends it along the path); ~~a second force-fire at once makes a second rocket (upstream's `forceFireWeapon` checks no reload)~~
+    /// **missed:** the second makes nothing. `forceFireWeapon` itself checks nothing, but the `privateFireWeapon` it calls returns
+    /// early when `getStatus() != READY_TO_FIRE` (Weapon.cpp:2594), and the first shot left the gun `BETWEEN_FIRING_SHOTS` for its
+    /// 5000 ms; the prediction read only `forceFireWeapon`'s body. The soldier's makes nothing.
+    #[test]
+    fn a_waypoint_following_weapon_is_force_fired() {
+        let mut w = gate_map_world_with(FOLLOWER);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let f = make(&mut w, b"Follower", team, Coord3D { x: 100.0, y: 200.0, z: 0.0 });
+        let s = make(&mut w, b"Soldier", team, Coord3D { x: 150.0, y: 200.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let has = (w.sa_obj_has_waypoint_following_weapon(f), w.sa_obj_has_waypoint_following_weapon(s));
+        let pos = Coord3D { x: 100.0, y: 200.0, z: 0.0 };
+        let first = w.sa_weapon_force_fire(f, &pos);
+        let second = w.sa_weapon_force_fire(f, &pos);
+        let none = w.sa_weapon_force_fire(s, &Coord3D { x: 150.0, y: 200.0, z: 0.0 });
+        let r = first.expect("a rocket");
+        let ai = w.find_object(r).and_then(|o| o.ai);
+        let launched_by = ai.map(|b| w.module_call(r, b, ModuleCall::ProjectileGetLauncherId));
+        let name = w.find_object(r).map(|o| o.template().get_name().to_vec());
+        eprintln!("{has:?}; {first:?} {second:?} {none:?}; launcher {launched_by:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(has, (true, false));
+        assert_eq!(name.as_deref(), Some(&b"Rocket"[..]));
+        assert_eq!(launched_by, Some(ModuleReply::Id(f)));
+        assert_eq!(second, None);
+        assert_eq!(none, None);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+}
+
+#[cfg(test)]
+mod script_query_tests {
+    use super::*;
+    use crate::logic::scripts::{action_type as at, Parameter, ScriptAction};
+    use crate::logic::world::module_call::ModuleCall;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// Batch I22, the script actions' object, contain and AI queries live (each answered `Default::default()` before, which closed the
+    /// actions they gate). A truck `Truck1` (two slots) holding a rider, and a second rider outside. Predicted before the run: the
+    /// truck's contain max 2, count 1, contained [rider], valid for the second rider with capacity checked; the rider's transport
+    /// slot count 1 and a current locomotor; the truck has no railroad, cave, warehouse, sticky bomb or hunt module; an unknown attack
+    /// info is the default's empty name; `"hidden"` is availability 2 (case-insensitive) and `"x"` none; ~~the truck's transform at
+    /// orientation 0 leaves (1, 2, 3) as it is~~ **missed:** (101, 62, 3). WW3D's `Matrix3D::Transform_Vector` adds the translation
+    /// (`A[i][3]`, matrix3d.h:1459), as the sticky-bomb action needs (an offset on the perimeter made a world position); the
+    /// prediction took it for a rotation only (`Rotate_Vector`). Then `UNIT_DESTROY_ALL_CONTAINED Truck1` kills the rider inside (before this batch
+    /// the count 0 returned at once) and not the one outside.
+    #[test]
+    fn the_script_queries_reach_the_objects() {
+        let mut w = gate_map_world_with(super::contain_tests::TRUCK);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let truck = make(&mut w, b"Truck", team, Coord3D { x: 100.0, y: 60.0, z: 0.0 });
+        let rider = make(&mut w, b"Rider", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        let outside = make(&mut w, b"Rider", team, Coord3D { x: 60.0, y: 90.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let c = w.find_object(truck).and_then(|o| o.contain).expect("the truck's contain");
+        w.module_call(truck, c, ModuleCall::AddToContain(rider));
+        let contain = (w.sa_contain_max(truck), w.sa_contain_count(truck), w.sa_contained(truck), w.sa_contain_is_valid_container_for(truck, outside, true));
+        let rider_q = (w.sa_obj_transport_slot_count(rider), w.sa_ai_has_cur_locomotor(rider));
+        let modules = [w.sa_obj_has_railroad(truck), w.sa_obj_has_cave(truck), w.sa_obj_has_warehouse(truck), w.sa_obj_has_sticky_bomb_update(truck), w.sa_obj_has_command_button_hunt(truck)];
+        let names = (w.sa_attack_info(b"NoSuchList"), w.sa_player_science_availability_from_string(1, b"hidden"), w.sa_player_science_availability_from_string(1, b"x"));
+        let v = w.sa_obj_transform_vector(truck, &Coord3D { x: 1.0, y: 2.0, z: 3.0 });
+        let mut engine = std::mem::take(&mut w.script_engine);
+        engine.named_objects.push((b"Truck1".to_vec(), Some(truck)));
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = at::UNIT_DESTROY_ALL_CONTAINED;
+        a.num_parms = 1;
+        let mut parm = Parameter::new(0, 0);
+        parm.string = b"Truck1".to_vec();
+        a.parms[0] = Some(parm);
+        w.execute_action_with(&mut engine, &a).unwrap();
+        w.script_engine = engine;
+        let dead = |w: &World, o| w.find_object(o).is_none_or(|x| x.is_effectively_dead());
+        let killed = (dead(&w, rider), dead(&w, outside));
+        eprintln!("{contain:?}; {rider_q:?}; {modules:?}; {names:?}; {v:?}; killed {killed:?}");
+        assert_eq!(contain, (2, 1, vec![rider], true));
+        assert_eq!(rider_q, (1, true));
+        assert_eq!(modules, [false; 5]);
+        assert_eq!(names, (Vec::new(), Some(2), None));
+        assert_eq!((v.x, v.y, v.z), (101.0, 62.0, 3.0));
+        assert_eq!(killed, (true, false));
     }
 }

@@ -228,6 +228,20 @@ pub fn find_waypoint_following_capable_weapon<H: ObjectWeaponHost>(host: &mut H,
     with_set(host, o, |host, set| set.find_waypoint_following_capable_weapon(host).map(|w| w.weapon_slot()))
 }
 
+/// `theUnit->findWaypointFollowingCapableWeapon()->forceFireWeapon(theUnit, &pos)` (ScriptActions.cpp's
+/// `doNamedFireWeaponFollowingWaypointPath`; integration batch I22): the projectile, if one was made; `None` without such a weapon.
+pub fn force_fire_waypoint_following_weapon<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, pos: &Coord3D) -> WResult<Option<ObjectId>> {
+    let Some(slot) = find_waypoint_following_capable_weapon(host, o) else { return Ok(None) };
+    let shared = host.weapon_set(o).is_shared_reload_time(host);
+    let Some(mut weapon) = host.take_weapon(o, slot) else { return Ok(None) };
+    let fired = weapon.force_fire_weapon(host, o, pos, shared);
+    host.put_weapon(o, slot, weapon);
+    let (projectile, outcome) = fired?;
+    // the siblings' shared reload is the last thing `privateFireWeapon` does
+    host.weapon_set_mut(o).apply_shared_reload(outcome.shared);
+    Ok(projectile)
+}
+
 /// `Object::getAmmoPipShowingInfo(numTotal, numFull)`.
 pub fn get_ammo_pip_showing_info<H: ObjectWeaponHost>(host: &H, o: ObjectId) -> Option<(i32, i32)> {
     // @todo srj -- may need to cache this inside weaponset.

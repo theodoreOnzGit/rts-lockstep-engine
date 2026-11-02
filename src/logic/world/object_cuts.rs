@@ -1087,6 +1087,7 @@ impl World {
                 thing_template: b.thing_template,
                 upgrade: b.upgrade.map(|k| k.0),
                 ready_for: Default::default(),
+                options: b.options,
             });
         }
         for chain in &store.sets {
@@ -1852,6 +1853,8 @@ pub struct CommandButtonFacts {
     pub upgrade: Option<u32>,
     /// batch I8b: the objects `isReady(obj)` answers true for.
     pub ready_for: BTreeSet<ObjectId>,
+    /// Integration batch I22: `getOptions()` (`CommandOption` bits).
+    pub options: u32,
 }
 
 /// Integration batch I20: a `GameLogic` member set by a script action.

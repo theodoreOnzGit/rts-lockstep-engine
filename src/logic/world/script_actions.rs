@@ -524,7 +524,7 @@ pub trait ScriptActionsHost {
     /// `getGeometryInfo().getMajorRadius()`.
     fn sa_obj_major_radius(&self, o: ObjH) -> f32;
     /// `getTransportSlotCount()`.
-    fn sa_obj_transport_slot_count(&self, o: ObjH) -> i32;
+    fn sa_obj_transport_slot_count(&mut self, o: ObjH) -> i32;
     /// `getContainedBy()` is not NULL.
     fn sa_obj_is_contained(&self, o: ObjH) -> bool;
     /// `leaveGroup()`.
@@ -546,9 +546,9 @@ pub trait ScriptActionsHost {
     /// `getContain()` is not NULL.
     fn sa_obj_has_contain(&self, o: ObjH) -> bool;
     /// `getContain()->getContainMax()` (as `TransportContain`).
-    fn sa_contain_max(&self, o: ObjH) -> u32;
+    fn sa_contain_max(&mut self, o: ObjH) -> u32;
     /// `getContain()->isValidContainerFor(obj, checkCapacity)`.
-    fn sa_contain_is_valid_container_for(&self, c: ObjH, o: ObjH, check_capacity: bool) -> bool;
+    fn sa_contain_is_valid_container_for(&mut self, c: ObjH, o: ObjH, check_capacity: bool) -> bool;
     /// `getContain()->addToContain(obj)`.
     fn sa_contain_add(&mut self, c: ObjH, o: ObjH);
     /// `findUpdateModule("DeliverPayloadAIUpdate")` is not NULL.
@@ -786,9 +786,9 @@ pub trait ScriptActionsHost {
     /// `TheScriptEngine->setCurrentTrackName(name)`.
     fn sa_set_current_track_name(&mut self, name: &[u8]);
     /// `getContain()->getPlayerWhoEntered()`.
-    fn sa_contain_player_who_entered(&self, o: ObjH) -> u32;
+    fn sa_contain_player_who_entered(&mut self, o: ObjH) -> u32;
     /// `getContain()->getContainCount()`.
-    fn sa_contain_count(&self, o: ObjH) -> u32;
+    fn sa_contain_count(&mut self, o: ObjH) -> u32;
     /// `Team::getControllingPlayer()`.
     fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH>;
     /// `getContain()->removeAllContained(exposeStealthUnits)`.
@@ -840,7 +840,7 @@ pub trait ScriptActionsHost {
     /// `TheScriptEngine->doFreezeTime()` (`freeze`) or `doUnfreezeTime()`.
     fn sa_freeze_time(&mut self, freeze: bool);
     /// `getAIUpdateInterface()->getCurLocomotor()` is not NULL.
-    fn sa_ai_has_cur_locomotor(&self, o: ObjH) -> bool;
+    fn sa_ai_has_cur_locomotor(&mut self, o: ObjH) -> bool;
     /// `getCurLocomotor()->setCloseEnoughDist(dist)`.
     fn sa_locomotor_set_close_enough_dist(&mut self, o: ObjH, dist: f32);
     /// `TheInGameUI->setSuperweaponDisplayEnabledByScript(enabled)`.
@@ -970,7 +970,7 @@ pub trait ScriptActionsHost {
     /// `TheTacticalView->shake(&pos, type)`.
     fn sa_view_shake(&mut self, p: &Coord3D, shake_type: i32);
     /// `getContain()->iterateContained(..)` (the contained objects, in order).
-    fn sa_contained(&self, o: ObjH) -> Vec<ObjH>;
+    fn sa_contained(&mut self, o: ObjH) -> Vec<ObjH>;
     /// `TheGameLogic->setBuildableStatusOverride(template, status)`.
     fn sa_logic_set_buildable_status_override(&mut self, t: TemplateH, status: i32);
     /// The first behavior module's `getCaveInterface()` that is not NULL.
@@ -1007,7 +1007,7 @@ pub trait ScriptActionsHost {
     /// `giveUpgrade(upgrade)`.
     fn sa_obj_give_upgrade(&mut self, o: ObjH, upgrade: i32);
     /// `AIGroup::getCenter(&pos)` (`None`: an empty group, which leaves `pos` unset).
-    fn sa_group_center(&self, g: GroupH) -> Option<Coord3D>;
+    fn sa_group_center(&mut self, g: GroupH) -> Option<Coord3D>;
     /// `ThePartitionManager->getNearestGroupWithValue(playerIndex, ALLOW_ENEMIES, VOT_CashValue, &src, value, greater, &out)`.
     fn sa_partition_nearest_group_with_value(&mut self, index: i32, src: &Coord3D, value: i32, greater: bool) -> Option<Coord3D>;
     /// `groupAttackMoveToPosition(&pos, maxShots, cmdSource)`.
@@ -3730,7 +3730,7 @@ impl ScriptActions {
     }
 
     /// The group's centre (its source object is a member, so it is not empty).
-    fn group_center<H: ScriptActionsHost>(h: &H, g: GroupH) -> R<Coord3D> {
+    fn group_center<H: ScriptActionsHost>(h: &mut H, g: GroupH) -> R<Coord3D> {
         h.sa_group_center(g).ok_or(ActionError::Undefined(IniError::undefined(Undefined::UninitialisedLocal)))
     }
 

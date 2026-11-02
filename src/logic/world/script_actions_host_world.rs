@@ -455,8 +455,9 @@ impl ScriptActionsHost for World {
     fn sa_obj_major_radius(&self, o: ObjH) -> f32 {
         self.find_object(o).map_or(0.0, |x| x.geometry_info.get_major_radius())
     }
-    fn sa_obj_transport_slot_count(&self, _o: ObjH) -> i32 {
-        Default::default()
+    fn sa_obj_transport_slot_count(&mut self, o: ObjH) -> i32 {
+        // (integration batch I22: was `Default::default()`)
+        self.get_transport_slot_count(o)
     }
     fn sa_obj_is_contained(&self, o: ObjH) -> bool {
         self.is_contained(o)
@@ -490,28 +491,46 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_contain(&self, o: ObjH) -> bool {
         self.get_contain(o).is_some()
     }
-    fn sa_contain_max(&self, _o: ObjH) -> u32 {
-        Default::default()
+    fn sa_contain_max(&mut self, o: ObjH) -> u32 {
+        // (integration batch I22: was `Default::default()`)
+        let Some(c) = self.get_contain(o) else { return 0 };
+        self.module_call(o, c, crate::logic::world::module_call::ModuleCall::GetContainMax).as_int(0) as u32
     }
-    fn sa_contain_is_valid_container_for(&self, _c: ObjH, _o: ObjH, _check_capacity: bool) -> bool {
-        Default::default()
+    fn sa_contain_is_valid_container_for(&mut self, c: ObjH, o: ObjH, check_capacity: bool) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        let Some(m) = self.get_contain(c) else { return false };
+        self.module_call(c, m, crate::logic::world::module_call::ModuleCall::IsValidContainerFor { obj: o, check_capacity }).as_bool()
     }
     fn sa_contain_add(&mut self, c: ObjH, o: ObjH) {
         if let Some(ct) = self.get_contain(c) {
             self.module_call(c, ct, crate::logic::world::module_call::ModuleCall::AddToContain(o));
         }
     }
-    fn sa_obj_has_deliver_payload(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_deliver_payload(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.find_module(o, b"DeliverPayloadAIUpdate").is_some()
     }
-    fn sa_deliver_payload_put_in_container_template(&self, _o: ObjH) -> Option<TemplateH> {
-        Default::default()
+    fn sa_deliver_payload_put_in_container_template(&self, o: ObjH) -> Option<TemplateH> {
+        // (integration batch I22: was `Default::default()`)
+        // `TheThingFactory->findTemplate(getDeliverPayloadAIUpdateModuleData()->m_putInContainerName)`
+        let m = self.find_module(o, b"DeliverPayloadAIUpdate")?;
+        let name = match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: m })? {
+            crate::logic::world::update_body::UpdateBody::AiUpdate(a) => match &a.module.as_ref()?.ai.as_ref()?.subclass {
+                crate::logic::ai::ai_update::AiSubclass::DeliverPayload(d) => d.module_data.put_in_container_name.clone(),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        self.sa_find_template(&name)
     }
     fn sa_deliver_payload(&mut self, o: ObjH, p: &Coord3D) {
         self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiDeliverPayloadViaModuleData(*p));
     }
-    fn sa_attack_info(&self, _name: &[u8]) -> Vec<u8> {
-        Default::default()
+    fn sa_attack_info(&self, name: &[u8]) -> Vec<u8> {
+        // (integration batch I22: was `Default::default()`)
+        // `getAttackInfo(name)`: the first of index 1 on with the name, else the default (index 0, an empty name)
+        let infos = &self.script_engine.attack_priority_info;
+        infos.iter().skip(1).find(|a| a.name.as_slice() == name).or(infos.first()).map(|a| a.name.clone()).unwrap_or_default()
     }
     fn sa_team_set_attack_priority_name(&mut self, t: TeamH, name: &[u8]) {
         if let Ok(t) = u32::try_from(t) {
@@ -633,8 +652,9 @@ impl ScriptActionsHost for World {
     fn sa_button_has_special_power(&self, b: ButtonH) -> bool {
         self.cuts.command_buttons.get(b as usize).is_some_and(|x| x.special_power.is_some())
     }
-    fn sa_button_options(&self, _b: ButtonH) -> u32 {
-        Default::default()
+    fn sa_button_options(&self, b: ButtonH) -> u32 {
+        // (integration batch I22: was `Default::default()`)
+        self.cuts.command_buttons.get(b as usize).map_or(0, |x| x.options)
     }
     fn sa_obj_command_set_string(&self, o: ObjH) -> Vec<u8> {
         self.object_get_command_set_string(o)
@@ -648,8 +668,9 @@ impl ScriptActionsHost for World {
     fn sa_template_name(&self, t: TemplateH) -> Vec<u8> {
         u16::try_from(t).ok().and_then(|t| self.statics.thing_factory.find_by_template_id(t)).map(|o| o.data.get_name().to_vec()).unwrap_or_default()
     }
-    fn sa_obj_has_command_button_hunt(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_command_button_hunt(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.find_module(o, b"CommandButtonHuntUpdate").is_some()
     }
     fn sa_command_button_hunt_set(&mut self, o: ObjH, ability: &[u8]) {
         if let Some(m) = self.find_module(o, b"CommandButtonHuntUpdate") {
@@ -727,8 +748,9 @@ impl ScriptActionsHost for World {
             self.cuts.team_live_errors.push(format!("TeamPrototype AI priority: {e:?}"));
         }
     }
-    fn sa_proto_production_priority(&self, _p: ProtoH) -> i32 {
-        Default::default()
+    fn sa_proto_production_priority(&self, p: ProtoH) -> i32 {
+        // (integration batch I22: was `Default::default()`)
+        u32::try_from(p).ok().and_then(|p| self.teams.prototype(p)).map_or(0, |p| p.team_template.production_priority)
     }
     fn sa_obj_kill(&mut self, o: ObjH) {
         self.kill(o, crate::logic::damage::DAMAGE_UNRESISTABLE, crate::logic::damage::DEATH_NORMAL);
@@ -900,11 +922,15 @@ impl ScriptActionsHost for World {
     fn sa_set_current_track_name(&mut self, _name: &[u8]) {
         self.sa_cut("set_current_track_name");
     }
-    fn sa_contain_player_who_entered(&self, _o: ObjH) -> u32 {
-        Default::default()
+    fn sa_contain_player_who_entered(&mut self, o: ObjH) -> u32 {
+        // (integration batch I22: was `Default::default()`)
+        let Some(c) = self.get_contain(o) else { return 0 };
+        self.module_call(o, c, crate::logic::world::module_call::ModuleCall::GetPlayerWhoEntered).as_int(0) as u32
     }
-    fn sa_contain_count(&self, _o: ObjH) -> u32 {
-        Default::default()
+    fn sa_contain_count(&mut self, o: ObjH) -> u32 {
+        // (integration batch I22: was `Default::default()`)
+        let Some(c) = self.get_contain(o) else { return 0 };
+        self.module_call(o, c, crate::logic::world::module_call::ModuleCall::GetContainCount).as_int(0) as u32
     }
     fn sa_team_controlling_player(&self, t: TeamH) -> Option<PlayerH> {
         crate::logic::world::team_ops::team_get_controlling_player(self, t as u32).ok().flatten()
@@ -943,8 +969,9 @@ impl ScriptActionsHost for World {
     fn sa_neutral_player(&self) -> Option<PlayerH> {
         self.players.get_nth(0).map(|x| x.player_index)
     }
-    fn sa_obj_has_sticky_bomb_update(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_sticky_bomb_update(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.find_module(o, b"StickyBombUpdate").is_some()
     }
     fn sa_obj_random_offset_on_perimeter(&mut self, o: ObjH) -> Coord3D {
         // `getGeometryInfo().makeRandomOffsetOnPerimeter(pos)`: an offset (from zero), with the logic's random values
@@ -953,8 +980,11 @@ impl ScriptActionsHost for World {
         g.make_random_offset_on_perimeter(&mut self.random, &mut p);
         p
     }
-    fn sa_obj_transform_vector(&self, _o: ObjH, _v: &Coord3D) -> Coord3D {
-        Default::default()
+    fn sa_obj_transform_vector(&self, o: ObjH, v: &Coord3D) -> Coord3D {
+        // (integration batch I22: was `Default::default()`)
+        let m = crate::logic::weapon_host::WeaponHost::transform_matrix(self, o);
+        let r = crate::ww::matrix3d::Matrix3D::transform_vector(&m, &crate::ww::vector3::Vector3 { x: v.x, y: v.y, z: v.z });
+        Coord3D { x: r.x, y: r.y, z: r.z }
     }
     fn sa_sticky_bomb_init(&mut self, bomb: ObjH, target: ObjH, pos: &Coord3D) {
         // `initStickyBomb(target, NULL, &pos)`
@@ -994,8 +1024,9 @@ impl ScriptActionsHost for World {
             self.script_engine.do_unfreeze_time();
         }
     }
-    fn sa_ai_has_cur_locomotor(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_ai_has_cur_locomotor(&mut self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiHasCurLocomotor).is_some_and(|r| r.as_bool())
     }
     fn sa_locomotor_set_close_enough_dist(&mut self, o: ObjH, dist: f32) {
         self.ai_ask(o, crate::logic::world::module_call::ModuleCall::AiLocomotorSetCloseEnoughDist(dist));
@@ -1158,12 +1189,22 @@ impl ScriptActionsHost for World {
     fn sa_set_sequential_timer_team(&mut self, _t: TeamH, _frames: i32) {
         self.sa_cut("set_sequential_timer_team");
     }
-    fn sa_obj_has_waypoint_following_weapon(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_waypoint_following_weapon(&self, o: ObjH) -> bool {
+        // (integration batch I22: `findWaypointFollowingCapableWeapon() != NULL`; was always false)
+        let Some(obj) = self.objects.find(o) else { return false };
+        let templates = self.statics.weapon_store.templates();
+        (0..crate::common::game_type::WEAPONSLOT_COUNT)
+            .any(|i| obj.weapon_set.get_weapon_in_weapon_slot(i).is_some_and(|w| templates.get(w.template()).is_some_and(|t| t.capable_of_following_waypoint)))
     }
-    fn sa_weapon_force_fire(&mut self, _o: ObjH, _p: &Coord3D) -> Option<ObjH> {
-        self.sa_cut("weapon_force_fire");
-        Default::default()
+    fn sa_weapon_force_fire(&mut self, o: ObjH, p: &Coord3D) -> Option<ObjH> {
+        // (integration batch I22: that weapon's `forceFireWeapon(obj, &pos)`, the projectile)
+        match crate::logic::world::object_weapons::force_fire_waypoint_following_weapon(self, o, p) {
+            Ok(projectile) => projectile,
+            Err(e) => {
+                self.combat_error("Weapon::forceFireWeapon", e);
+                None
+            }
+        }
     }
     fn sa_water_handle(&self, name: &[u8]) -> Option<i32> {
         self.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(name).ok()?).map(|i| i as i32)
@@ -1191,23 +1232,31 @@ impl ScriptActionsHost for World {
     fn sa_view_shake(&mut self, _p: &Coord3D, _shake_type: i32) {
         self.sa_cut("view_shake");
     }
-    fn sa_contained(&self, _o: ObjH) -> Vec<ObjH> {
-        Default::default()
+    fn sa_contained(&mut self, o: ObjH) -> Vec<ObjH> {
+        // (integration batch I22: was `Default::default()`)
+        let Some(c) = self.get_contain(o) else { return Vec::new() };
+        match self.module_call(o, c, crate::logic::world::module_call::ModuleCall::GetContainedItems) {
+            crate::logic::world::module_call::ModuleReply::Ids(ids) => ids,
+            _ => Vec::new(),
+        }
     }
     fn sa_logic_set_buildable_status_override(&mut self, t: TemplateH, status: i32) {
         let name = self.statics.thing_factory.find_by_template_id(t as u16).map(|x| x.data.get_name().to_vec());
         crate::logic::world::game_logic_update::set_buildable_status_override(&mut self.game_logic, name.as_deref(), status);
     }
-    fn sa_obj_has_cave(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_cave(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        // only `CaveContain` answers `getCaveInterface()`
+        self.find_module(o, b"CaveContain").is_some()
     }
     fn sa_cave_try_set_index(&mut self, o: ObjH, index: i32) {
         if let Some(ct) = self.get_contain(o) {
             self.module_call(o, ct, crate::logic::world::module_call::ModuleCall::TryToSetCaveIndex(index));
         }
     }
-    fn sa_obj_has_warehouse(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_warehouse(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.find_module(o, b"SupplyWarehouseDockUpdate").is_some()
     }
     fn sa_warehouse_set_cash_value(&mut self, o: ObjH, value: i32) {
         if let Some(m) = self.find_module(o, b"SupplyWarehouseDockUpdate") {
@@ -1253,8 +1302,10 @@ impl ScriptActionsHost for World {
         let mask = self.statics.upgrade_center.find_upgrade_by_key(crate::common::name_key_generator::NameKeyType(upgrade as u32)).map(|u| u.upgrade_mask());
         self.give_upgrade(o, mask.as_ref());
     }
-    fn sa_group_center(&self, _g: GroupH) -> Option<Coord3D> {
-        Default::default()
+    fn sa_group_center(&mut self, g: GroupH) -> Option<Coord3D> {
+        // (integration batch I22: was `Default::default()`)
+        let (pos, any) = self.with_group(u32::try_from(g).ok()?, |gr, w| gr.get_center(w))?;
+        any.then_some(pos)
     }
     fn sa_partition_nearest_group_with_value(&mut self, _index: i32, _src: &Coord3D, _value: i32, _greater: bool) -> Option<Coord3D> {
         self.sa_cut("partition_nearest_group_with_value");
@@ -1331,8 +1382,13 @@ impl ScriptActionsHost for World {
     fn sa_player_purchase_science(&mut self, p: PlayerH, science: i32) {
         let _ = crate::logic::world::player_ops::player_attempt_to_purchase_science(self, p, crate::common::science::ScienceType(science));
     }
-    fn sa_player_science_availability_from_string(&self, _p: PlayerH, _name: &[u8]) -> Option<i32> {
-        Default::default()
+    fn sa_player_science_availability_from_string(&self, _p: PlayerH, name: &[u8]) -> Option<i32> {
+        // (integration batch I22: was `Default::default()`)
+        use crate::logic::world::player_ops::{player_get_science_availability_type_from_string as from, ScienceAvailabilityType as S};
+        match from(name) {
+            S::Invalid => None,
+            s => Some(s as i32),
+        }
     }
     fn sa_player_set_science_availability(&mut self, p: PlayerH, science: i32, availability: i32) {
         use crate::logic::world::player_ops::ScienceAvailabilityType as A;
@@ -1396,8 +1452,9 @@ impl ScriptActionsHost for World {
     fn sa_ai_guard_tunnel_network(&mut self, o: ObjH, mode: i32, cmd: i32) {
         self.script_order(o, crate::logic::ai::ai_commands::AICMD_GUARD_TUNNEL_NETWORK, cmd, |q| q.int_value = mode);
     }
-    fn sa_template_command_set_string(&self, _t: TemplateH) -> Vec<u8> {
-        Default::default()
+    fn sa_template_command_set_string(&self, t: TemplateH) -> Vec<u8> {
+        // (integration batch I22: was `Default::default()`)
+        u16::try_from(t).ok().and_then(|t| self.statics.thing_factory.find_by_template_id(t)).map(|o| o.data.friend_get_command_set_string().to_vec()).unwrap_or_default()
     }
     fn sa_logic_set_control_bar_override(&mut self, command_set: &[u8], slot: i32, b: Option<ButtonH>) {
         let button = b.and_then(|b| u32::try_from(b).ok());
@@ -1424,8 +1481,9 @@ impl ScriptActionsHost for World {
         // (integration batch I15: `TheScriptEngine->setChooseVictimAlwaysUsesNormal(b)`, the engine's own flag, which the AI reads)
         self.script_engine.choose_victim_always_uses_normal = b;
     }
-    fn sa_obj_has_railroad(&self, _o: ObjH) -> bool {
-        Default::default()
+    fn sa_obj_has_railroad(&self, o: ObjH) -> bool {
+        // (integration batch I22: was `Default::default()`)
+        self.find_module(o, b"RailroadBehavior").is_some()
     }
     fn sa_railroad_set_held(&mut self, o: ObjH, held: bool) {
         if let Some(m) = self.find_module(o, b"RailroadBehavior") {
