@@ -438,10 +438,10 @@ impl AiHost for World {
     }
     fn find_closest_enemy(&mut self, range: f32, qualifiers: u32, info: Option<usize>, area: Option<i32>) -> ObjectId {
         let id = self.ai_self;
-        // (batch I9c-3: with `live_ai`, `TheAI`'s own query; the area filter (a polygon trigger, `PartitionFilterPolygonTrigger`)
-        // is not live yet: with one the query stays the cut table)
-        if self.cuts.live_ai && area.is_none() {
-            return self.ai_find_closest_enemy_live(id, range, qualifiers, info);
+        // (batch I9c-3: with `live_ai`, `TheAI`'s own query; ~~the area filter is not live yet~~ **since batch I21** the area is
+        // upstream's optional `PartitionFilterPolygonTrigger(area)`)
+        if self.cuts.live_ai {
+            return self.ai_find_closest_enemy_live_in(id, range, qualifiers, info, area);
         }
         self.ai_host_cut("AI::findClosestEnemy", vec![i64::from(id), i64::from(range.to_bits()), i64::from(qualifiers)]);
         self.cuts.ai_host.closest_enemy.get(&id).copied().unwrap_or(INVALID_ID)

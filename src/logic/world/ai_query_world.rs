@@ -81,9 +81,16 @@ impl World {
 
     /// `TheAI->findClosestEnemy(me, range, qualifiers, info)` (`INVALID_ID`: none).
     pub fn ai_find_closest_enemy_live(&mut self, me: ObjectId, range: f32, qualifiers: u32, info: Option<usize>) -> ObjectId {
+        self.ai_find_closest_enemy_live_in(me, range, qualifiers, info, None)
+    }
+
+    /// Integration batch I21: the same with an area, `findClosestEnemy`'s optional filter `PartitionFilterPolygonTrigger(area)` (the
+    /// guard's in an area).
+    pub fn ai_find_closest_enemy_live_in(&mut self, me: ObjectId, range: f32, qualifiers: u32, info: Option<usize>, area: Option<i32>) -> ObjectId {
         let data = self.statics.clone();
         let info = info.map(|i| i as i32);
-        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_enemy(pm, w, &data.ai_data.data, me, range, qualifiers, info, None)))
+        let optional = area.map(|trigger| crate::logic::world::partition::filters::PartitionFilter::PolygonTrigger { trigger });
+        self.with_ai_self(me, |w| w.with_partition(|pm, w| ai_system::find_closest_enemy(pm, w, &data.ai_data.data, me, range, qualifiers, info, optional)))
             .unwrap_or(INVALID_ID)
     }
 

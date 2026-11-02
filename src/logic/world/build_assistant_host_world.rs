@@ -181,10 +181,24 @@ impl BuildAssistantHost for World {
         }
     }
     fn ai_is_quick_path_available(&mut self, o: ObjectId, pos: Coord3D) -> bool {
+        // (integration batch I21: with `live_ai`, the AI's own `isQuickPathAvailable`, `ai_paths`, with the object as `ai_self`)
+        if self.cuts.live_ai && self.find_object(o).is_some_and(|x| x.ai.is_some()) {
+            return self.with_ai_self(o, |w| crate::logic::ai::ai_paths::is_quick_path_available(w, &pos));
+        }
         self.ba_cut("AIUpdateInterface::isQuickPathAvailable", &[i64::from(o), i64::from(pos.x.to_bits()), i64::from(pos.y.to_bits())]);
         !self.cuts.ai_no_quick_path.contains(&o)
     }
     fn ai_move_to_position_even_if_sleeping(&mut self, o: ObjectId, pos: Coord3D) {
+        // (integration batch I21: with `live_ai`, `aiMoveToPositionEvenIfSleeping(&pos, CMD_FROM_AI)`, BuildAssistant.cpp:1478)
+        if self.cuts.live_ai {
+            if let Some(ai) = self.find_object(o).and_then(|x| x.ai) {
+                use crate::logic::ai::ai_commands::{AiCommandParms, AICMD_MOVE_TO_POSITION_EVEN_IF_SLEEPING};
+                let mut p = AiCommandParms::new(AICMD_MOVE_TO_POSITION_EVEN_IF_SLEEPING, crate::common::game_common::CommandSourceType::FromAi as i32);
+                p.pos = pos;
+                self.module_call(o, ai, crate::logic::world::module_call::ModuleCall::AiDoCommandParms(p));
+                return;
+            }
+        }
         self.ba_cut("AIUpdateInterface::aiMoveToPositionEvenIfSleeping", &[i64::from(o), i64::from(pos.x.to_bits()), i64::from(pos.y.to_bits())]);
     }
     fn obj_producer_id(&self, o: ObjectId) -> ObjectId {

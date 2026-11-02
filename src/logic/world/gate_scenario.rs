@@ -1300,3 +1300,49 @@ mod script_action_tests {
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }
+
+#[cfg(test)]
+mod build_assistant_ai_tests {
+    use super::*;
+    use crate::common::ascii_string::AsciiString;
+    use crate::common::base_type::ICoord3D;
+    use crate::common::game_type::INVALID_ID;
+    use crate::logic::ai::ai_update::AiHost;
+    use crate::logic::world::build_assistant::BuildAssistantHost;
+    use crate::logic::terrain_logic::TriggerArea;
+
+    /// Batch I21, the area-limited enemy search and the build assistant's two AI calls live. A soldier A of team 1 at (100, 100), enemy
+    /// E1 at (150, 100) and E2 at (100, 180), a trigger area `West` of x 0 to 130 and y 0 to 400, and `East` of x 300 to 400. Predicted
+    /// before the run: the closest enemy within 200 is E1 (50 against 80); within `West` it is E2 (upstream's optional
+    /// `PartitionFilterPolygonTrigger`; before I21 the query with an area was the cut table, none); within `East` none; a quick path to
+    /// (100, 300) on the flat open map is available; after `aiMoveToPositionEvenIfSleeping` to (100, 300) and a frame, A is moving.
+    #[test]
+    fn the_build_assistants_ai_calls_and_the_area_enemy_search_are_live() {
+        let mut w = gate_map_world();
+        let area = |name: &[u8], id, x0, x1| {
+            let corners = [(x0, 0), (x1, 0), (x1, 400), (x0, 400)].map(|(x, y)| ICoord3D { x, y, z: 0 });
+            TriggerArea::new(AsciiString::try_from_bytes(name).expect("a name"), id, false, corners.to_vec()).expect("the area")
+        };
+        w.terrain.set_triggers(vec![area(b"West", 1, 0, 130), area(b"East", 2, 300, 400)]);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let e1 = make(&mut w, b"Soldier", enemy, Coord3D { x: 150.0, y: 100.0, z: 0.0 });
+        let e2 = make(&mut w, b"Soldier", enemy, Coord3D { x: 100.0, y: 180.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let r = w.with_ai_self(a, |w| {
+            let west = w.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(b"West").expect("a name")).map(|i| i as i32);
+            let east = w.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(b"East").expect("a name")).map(|i| i as i32);
+            (AiHost::find_closest_enemy(w, 200.0, 0, None, None), AiHost::find_closest_enemy(w, 200.0, 0, None, west), AiHost::find_closest_enemy(w, 200.0, 0, None, east))
+        });
+        let dest = Coord3D { x: 100.0, y: 300.0, z: 0.0 };
+        let quick = w.ai_is_quick_path_available(a, dest);
+        w.ai_move_to_position_even_if_sleeping(a, dest);
+        w.logic_update().unwrap();
+        let moving = w.with_ai_self(e1, |w| crate::logic::ai::ai_states::AiStateHost::member_ai_is_moving(w, a));
+        eprintln!("{r:?}; quick {quick}; moving {moving}");
+        assert_eq!(r, (e1, e2, INVALID_ID));
+        assert!(quick);
+        assert!(moving);
+    }
+}

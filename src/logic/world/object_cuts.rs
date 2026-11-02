@@ -2208,7 +2208,7 @@ pub struct ObjectCuts {
     pub live_build_assistant: bool,
     /// batch I6: `getAI()->isBusy()` of the objects whose AI is busy (the AI update is not a module of the world until I9).
     pub ai_busy: BTreeSet<ObjectId>,
-    /// batch I6: the objects whose AI has no quick path (`isQuickPathAvailable` false).
+    /// batch I6: the objects whose AI has no quick path (`isQuickPathAvailable` false); read only without `live_ai` (batch I21).
     pub ai_no_quick_path: BTreeSet<ObjectId>,
     /// batch I6: a production queue's special power construction command button (its name), by object.
     pub special_power_construction_buttons: BTreeMap<ObjectId, Vec<u8>>,
