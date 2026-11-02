@@ -338,8 +338,9 @@ pub trait AiStateHost: AiHost + StateContext {
     /// Its `getTaxiLocations(id)`, `getCreationLocations(id)` (none: `None`).
     fn pp_taxi_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>>;
     fn pp_creation_locations(&mut self, airfield: ObjectId, id: ObjectId) -> Option<Vec<Coord3D>>;
-    /// `findSuitableAirfield`'s search: the partition manager's closest candidate (before the parking-place filter), and its answer
-    /// (logged).
+    /// `findSuitableAirfield`'s search: the partition manager's closest candidate ~~(before the parking-place filter)~~ **Corrected
+    /// (integration batch I18):** with every one of its filters, the parking place's among them, as upstream applies it inside the search (a
+    /// host that answers before it is filtered again by the caller); and its answer (logged).
     fn jet_airfield_candidate(&mut self) -> Option<ObjectId>;
     fn log_find_suitable_airfield(&mut self, jet: ObjectId, found: ObjectId);
     /// A weapon slot's `getReloadType() == RETURN_TO_BASE_TO_RELOAD`, `getRemainingAmmo()`, `getClipSize()`, `getClipReloadTime()`,

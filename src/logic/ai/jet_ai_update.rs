@@ -307,7 +307,8 @@ fn reserve_space_info<H: AiStateHost>(h: &mut H, airfield: ObjectId) -> Option<P
 /// it reserves for us (the partition manager's search: the host's).
 fn find_suitable_airfield<H: AiStateHost>(h: &mut H) -> Option<ObjectId> {
     let me = h.object_id();
-    // (PartitionFilterHasParkingPlace: the parking place reserves a space at no offset)
+    // (PartitionFilterHasParkingPlace: the parking place reserves a space at no offset. The world's search applies it among its filters,
+    // as upstream; this second reservation finds the jet's space and changes nothing, `reserveSpace`'s `findPPI(id)` first)
     let candidate = h.jet_airfield_candidate().filter(|&a| get_pp(h, a).is_some_and(|pp| h.pp_reserve_space(pp, me, 0.0, false).is_some()));
     h.log_find_suitable_airfield(me, candidate.unwrap_or(INVALID_ID));
     candidate

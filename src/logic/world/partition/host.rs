@@ -214,6 +214,11 @@ pub trait PartitionFilterHost: PartitionHost {
     fn is_on_squad(&self, squad: i32, id: ObjectId) -> bool;
     /// `obj->isEffectivelyDead()`.
     fn is_effectively_dead(&self, id: ObjectId) -> bool;
+    /// Integration batch I18: `getPP(airfield)` and its `reserveSpace(id, 0.0f, NULL)` (`PartitionFilterHasParkingPlace`, JetAIUpdate.cpp:160:
+    /// the test reserves the space): whether a parking place reserved it. Only the world has parking places; another host has none.
+    fn parking_place_reserve_space(&mut self, _airfield: ObjectId, _id: ObjectId) -> bool {
+        false
+    }
     /// `obj->isOffMap()`.
     fn is_off_map(&self, id: ObjectId) -> bool;
     /// `TheAI && TheAI->pathfinder()->isViewBlockedByObstacle(obj, other)`.

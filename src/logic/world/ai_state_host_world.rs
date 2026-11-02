@@ -306,13 +306,14 @@ impl AiStateHost for World {
     fn team_by_name(&mut self, name: &[u8]) -> Option<u32> {
         crate::logic::world::team_ops::factory_find_team(self, name).ok().flatten()
     }
-    fn command_button_name(&mut self, _button: u32) -> Vec<u8> {
-        self.ais_cut("command_button_name");
-        Default::default()
+    fn command_button_name(&mut self, button: u32) -> Vec<u8> {
+        // (integration batch I18: a command button is its index in the world's button table, `cuts.command_buttons`, as the other
+        // world code reads it; the `CommandButton` INI data is not translated)
+        self.cuts.command_buttons.get(button as usize).map(|b| b.name.clone()).unwrap_or_default()
     }
-    fn command_button_by_name(&mut self, _name: &[u8]) -> Option<u32> {
-        self.ais_cut("command_button_by_name");
-        Default::default()
+    fn command_button_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        // `TheControlBar->findCommandButton(name)`
+        self.cuts.command_buttons.iter().position(|b| b.name.as_slice() == name).map(|i| i as u32)
     }
     fn set_drawable_animation_loop_duration(&mut self, _frames: u32) {
         self.ais_cut("set_drawable_animation_loop_duration");
@@ -529,21 +530,18 @@ impl AiStateHost for World {
         let r = crate::logic::action_manager::can_enter_object(self, Some(o), Some(target), crate::logic::world::ai_combat_world::source(src), crate::logic::action_manager::CanEnterType::CombatDropInto);
         self.ai_action_answer("ActionManager::canEnterObject", r)
     }
-    fn drawable_pristine_bone_positions(&mut self, _prefix: &[u8], _max: usize) -> Vec<Coord3D> {
-        self.ais_cut("drawable_pristine_bone_positions");
-        Default::default()
+    fn drawable_pristine_bone_positions(&mut self, prefix: &[u8], max: usize) -> Vec<Coord3D> {
+        self.drawable_pristine_bones(self.ai_self, prefix, 1, max as i32)
     }
-    fn drawable_pristine_bone_transforms(&mut self, _prefix: &[u8], _max: usize) -> Vec<crate::ww::matrix3d::Matrix3D> {
-        self.ais_cut("drawable_pristine_bone_transforms");
-        Default::default()
+    fn drawable_pristine_bone_transforms(&mut self, prefix: &[u8], max: usize) -> Vec<crate::ww::matrix3d::Matrix3D> {
+        World::drawable_pristine_bone_transforms(self, self.ai_self, prefix, 1, max as i32)
     }
-    fn own_convert_bone_transform_to_world(&mut self, _mtx: &crate::ww::matrix3d::Matrix3D) -> crate::ww::matrix3d::Matrix3D {
-        self.ais_cut("own_convert_bone_transform_to_world");
-        Default::default()
+    fn own_convert_bone_transform_to_world(&mut self, mtx: &crate::ww::matrix3d::Matrix3D) -> crate::ww::matrix3d::Matrix3D {
+        self.find_object(self.ai_self).map_or(*mtx, |o| o.thing.bone_transform_to_world(mtx))
     }
-    fn own_convert_bone_pos_to_world_pos(&mut self, _pos: &Coord3D) -> Coord3D {
-        self.ais_cut("own_convert_bone_pos_to_world_pos");
-        Coord3D::default()
+    fn own_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D {
+        // (integration batch I18: `Thing::convertBonePosToWorldPos`, through the object's transform, as the contain code answers it)
+        self.contain_convert_bone_pos_to_world_pos(self.ai_self, pos)
     }
     fn new_rope_drawable(&mut self) -> Option<u32> {
         self.ais_cut("new_rope_drawable");
@@ -643,11 +641,33 @@ impl AiStateHost for World {
         }
     }
     fn jet_airfield_candidate(&mut self) -> Option<ObjectId> {
-        self.ais_cut("jet_airfield_candidate");
-        Default::default()
+        // (integration batch I18) `findSuitableAirfield(jet)`'s search, all its filters in its order, the parking place's among them
+        // (`PartitionFilterHasParkingPlace`, which reserves the space it tests for); `getClosestObject(jet, HUGE_DIST, FROM_CENTER_2D)`
+        use crate::common::kind_of::{KindOfMaskType, KINDOF_FS_AIRFIELD};
+        use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
+        use crate::logic::world::partition::filters::{PartitionFilter, ALLOW_ALLIES};
+        let me = self.ai_self;
+        let mut kind = KindOfMaskType::default();
+        kind.set(KINDOF_FS_AIRFIELD, 1);
+        let status = |s| {
+            let mut m = ObjectStatusMaskType::default();
+            m.set(s, 1);
+            m
+        };
+        let filters = [
+            PartitionFilter::AcceptByKindOf { must_be_set: kind, must_be_clear: KindOfMaskType::default() },
+            PartitionFilter::RejectByObjectStatus { must_be_set: status(OBJECT_STATUS_UNDER_CONSTRUCTION), must_be_clear: ObjectStatusMaskType::default() },
+            PartitionFilter::RejectByObjectStatus { must_be_set: status(OBJECT_STATUS_SOLD), must_be_clear: ObjectStatusMaskType::default() },
+            PartitionFilter::Relationship { obj: me, flags: ALLOW_ALLIES },
+            PartitionFilter::Alive,
+            PartitionFilter::HasParkingPlace { id: me },
+            PartitionFilter::SameMapStatus { obj: me },
+        ];
+        let dc = crate::logic::world::partition::DistanceCalculationType::FromCenter2D;
+        self.with_partition(|pm, w| pm.get_closest_object(w, me, crate::logic::world::partition::collide::HUGE_DIST, dc, &filters).object)
     }
     fn log_find_suitable_airfield(&mut self, _jet: ObjectId, _found: ObjectId) {
-        self.ais_cut("log_find_suitable_airfield");
+        // (a debug log upstream; nothing of the logic's)
     }
     fn weapon_returns_to_base_to_reload(&mut self, slot: WeaponSlotType) -> bool {
         self.ai_weapon_clip(self.ai_self, slot).is_some_and(|c| c.0)
@@ -987,13 +1007,13 @@ impl AiStateHost for World {
     fn drawable_update_sub_objects(&mut self) {
         self.ais_cut("drawable_update_sub_objects");
     }
-    fn drawable_pristine_bone_position(&mut self, _prefix: &[u8], _start_index: i32) -> Option<Coord3D> {
-        self.ais_cut("drawable_pristine_bone_position");
-        Default::default()
+    fn drawable_pristine_bone_position(&mut self, prefix: &[u8], start_index: i32) -> Option<Coord3D> {
+        // (integration batch I18: the art's bones as the world holds them, `drawable_pristine_bones`; one asked for)
+        self.drawable_pristine_bones(self.ai_self, prefix, start_index, 1).first().copied()
     }
-    fn drawable_convert_bone_pos_to_world_pos(&mut self, _pos: &Coord3D) -> Coord3D {
-        self.ais_cut("drawable_convert_bone_pos_to_world_pos");
-        Coord3D::default()
+    fn drawable_convert_bone_pos_to_world_pos(&mut self, pos: &Coord3D) -> Coord3D {
+        // (the drawable's transform is its object's)
+        self.contain_convert_bone_pos_to_world_pos(self.ai_self, pos)
     }
     fn object_destroy(&mut self, id: ObjectId) {
         self.destroy_object(id);
@@ -1004,8 +1024,18 @@ impl AiStateHost for World {
     fn object_contain_set_override_destination(&mut self, id: ObjectId, pos: &Coord3D) {
         self.ai_contain_call(id, MC::SetOverrideDestination(*pos));
     }
-    fn object_aim_update_module(&mut self, _id: ObjectId, _module: crate::logic::ai::deliver_payload_ai_update::ItemModule, _pos: &Coord3D) {
-        self.ais_cut("object_aim_update_module");
+    fn object_aim_update_module(&mut self, id: ObjectId, module: crate::logic::ai::deliver_payload_ai_update::ItemModule, pos: &Coord3D) {
+        // (integration batch I18) `item->findUpdateModule(key)` and its aim: the minefield's `setMinefieldTarget`, the smart bomb's
+        // `SetTargetPosition`
+        use crate::logic::ai::deliver_payload_ai_update::ItemModule;
+        use crate::logic::world::module_call::ModuleCall;
+        let (name, call): (&[u8], ModuleCall) = match module {
+            ItemModule::GenerateMinefield => (b"GenerateMinefieldBehavior", ModuleCall::GenerateMinefieldSetTarget(Some(*pos))),
+            ItemModule::SmartBombTargetHoming => (b"SmartBombTargetHomingUpdate", ModuleCall::SetSmartBombTargetPosition(*pos)),
+        };
+        if let Some(m) = self.find_module(id, name) {
+            self.module_call(id, m, call);
+        }
     }
     fn object_apply_force(&mut self, id: ObjectId, force: &Coord3D) {
         if let Some(p) = self.find_object(id).and_then(|o| o.physics) {
@@ -1251,9 +1281,14 @@ impl AiStateHost for World {
         let z = self.terrain_get_ground_height(x, y);
         Coord3D { x, y, z }
     }
-    fn command_set_button_matches(&mut self, _button: u32) -> (u32, i32) {
-        self.ais_cut("command_set_button_matches");
-        Default::default()
+    fn command_set_button_matches(&mut self, button: u32) -> (u32, i32) {
+        // `TheControlBar->findCommandSet(getCommandSetString())`: how many of its slots hold the button, and the button's type
+        let me = self.ai_self;
+        let kind = self.cuts.command_buttons.get(button as usize).map_or(0, |b| b.command_type);
+        let name = self.object_get_command_set_string(me);
+        let Some(set) = self.control_bar_find_command_set(&name) else { return (0, kind) };
+        let count = self.cuts.command_sets[set].1.iter().filter(|s| **s == Some(button as usize)).count() as u32;
+        (count, kind)
     }
     fn waypoint_location(&mut self, way: u32) -> Coord3D {
         self.terrain.waypoint_by_id(way).and_then(|h| self.terrain.waypoint(h)).map(|w| *w.location()).unwrap_or_default()
@@ -1931,13 +1966,15 @@ impl AiStateHost for World {
     fn polygon_trigger_by_name(&mut self, name: &[u8]) -> Option<i32> {
         self.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(name).ok()?).map(|i| i as i32)
     }
-    fn attack_info_name(&mut self, _info: usize) -> Vec<u8> {
-        self.ais_cut("attack_info_name");
-        Default::default()
+    fn attack_info_name(&mut self, info: usize) -> Vec<u8> {
+        // (integration batch I18: an attack priority list is its index in the script engine's, as `ai_query_world` answers it)
+        self.script_engine.attack_priority_info.get(info).map(|a| a.name.clone()).unwrap_or_default()
     }
-    fn attack_info_by_name(&mut self, _name: &[u8]) -> Option<usize> {
-        self.ais_cut("attack_info_by_name");
-        Default::default()
+    fn attack_info_by_name(&mut self, name: &[u8]) -> Option<usize> {
+        // `getAttackInfo(name)`: the first of index 1 on with the name, else index 0, the default with an empty name
+        let infos = &self.script_engine.attack_priority_info;
+        let found = infos.iter().enumerate().skip(1).find(|(_, a)| a.name.as_slice() == name).map(|(i, _)| i);
+        (!infos.is_empty()).then(|| found.unwrap_or(0))
     }
     fn waypoint_by_id(&mut self, id: u32) -> Option<u32> {
         self.terrain.waypoint_by_id(id).map(|_| id)

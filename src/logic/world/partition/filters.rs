@@ -126,6 +126,9 @@ pub enum PartitionFilter {
     /// Integration batch I16: `PartitionFilterAcceptOnSquad` for a squad the caller holds (an AI's goal squad, `Squad::m_objectIDs`):
     /// on the squad and not effectively dead, as `AcceptOnSquad`.
     AcceptOnSquadList { ids: Vec<ObjectId> },
+    /// Integration batch I18: JetAIUpdate.cpp's `PartitionFilterHasParkingPlace(id)`: the object's parking place reserves a space for `id`
+    /// (a reservation made by the test itself, as upstream's).
+    HasParkingPlace { id: ObjectId },
     /// `PartitionFilterLineOfSight`: terrain and obstacles.
     LineOfSight { obj: ObjectId },
     /// `PartitionFilterPossibleToAttack`.
@@ -224,6 +227,7 @@ impl PartitionFilter {
             PartitionFilter::AcceptOnTeam { team } => host.team(other) == *team,
 
             PartitionFilter::AcceptOnSquadList { ids } => ids.contains(&other) && !host.is_effectively_dead(other),
+            PartitionFilter::HasParkingPlace { id } => host.parking_place_reserve_space(other, *id),
             PartitionFilter::AcceptOnSquad { squad } => match squad {
                 Some(s) => host.is_on_squad(*s, other) && !host.is_effectively_dead(other),
                 None => false,

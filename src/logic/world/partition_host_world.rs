@@ -365,6 +365,11 @@ impl PartitionHost for World {
 }
 
 impl PartitionFilterHost for World {
+    fn parking_place_reserve_space(&mut self, airfield: ObjectId, id: ObjectId) -> bool {
+        use crate::logic::world::module_call::{ModuleCall, ModuleReply};
+        let Some(pp) = self.module_with_interface(airfield, ModuleCall::HasParkingPlaceInterface) else { return false };
+        matches!(self.module_call(airfield, pp, ModuleCall::ParkingPlaceReserveSpace { id, parking_offset: 0.0, want_info: false }), ModuleReply::PPInfo { ok: true, .. })
+    }
     fn is_using_airborne_locomotor(&self, id: ObjectId) -> bool {
         World::is_using_airborne_locomotor(self, id)
     }

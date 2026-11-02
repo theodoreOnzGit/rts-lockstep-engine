@@ -1179,3 +1179,45 @@ mod ai_structures_tests {
         assert_eq!(live, (depot_pos, depot_pos));
     }
 }
+
+#[cfg(test)]
+mod airfield_search_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+
+    /// An airfield of one space, and a plane.
+    const FIELD: &str = "\
+Object Field\n KindOf = STRUCTURE IMMOBILE FS_AIRFIELD\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\n\
+ Behavior = ParkingPlaceBehavior ModuleTag_Parking\n  NumRows = 1\n  NumCols = 1\n  HasRunways = Yes\n End\nEnd\n\
+Object Plane\n KindOf = AIRCRAFT\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+
+    /// Batch I18, `findSuitableAirfield`'s search with its parking place filter inside it. Two airfields of one space, the near one 50
+    /// from the jet already holding plane P, the far one 150 away. Predicted before the run: the far airfield (upstream filters each
+    /// candidate by `PartitionFilterHasParkingPlace` inside the search; the old host took the closest and tested it alone, and answered
+    /// none); the far one then holds the jet's space (the filter's reservation) and the near one still P's; the attack info of an
+    /// unknown name is index 0, the default, with an empty name.
+    #[test]
+    fn a_jet_finds_the_nearest_airfield_with_room() {
+        let mut w = gate_map_world_with(FIELD);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let near = make(&mut w, b"Field", team, Coord3D { x: 150.0, y: 100.0, z: 0.0 });
+        let far = make(&mut w, b"Field", team, Coord3D { x: 250.0, y: 100.0, z: 0.0 });
+        let p = make(&mut w, b"Plane", team, Coord3D { x: 150.0, y: 150.0, z: 0.0 });
+        let jet = make(&mut w, b"Plane", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let r = w.with_ai_self(jet, |w| {
+            let held = w.pp_reserve_space(near, p, 0.0, false).is_some();
+            let found = w.jet_airfield_candidate();
+            let spaces = (w.pp_has_reserved_space(near, p), w.pp_has_reserved_space(near, jet), w.pp_has_reserved_space(far, jet));
+            let info = (w.attack_info_by_name(b"NoSuchList"), w.attack_info_name(0));
+            (held, found, spaces, info)
+        });
+        eprintln!("{r:?}");
+        let (held, found, spaces, info) = r;
+        assert!(held);
+        assert_eq!(found, Some(far));
+        assert_eq!(spaces, (true, false, true));
+        assert_eq!(info, (Some(0), Vec::new()));
+    }
+}
