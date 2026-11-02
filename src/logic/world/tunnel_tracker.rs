@@ -637,7 +637,7 @@ mod tests {
         let mut w = world();
         let a = make(&mut w, &[KINDOF_INFANTRY], None);
         w.objects.find_mut(a).unwrap().drawable = a;
-        w.objects.find_mut(a).unwrap().group = 7;
+        w.objects.find_mut(a).unwrap().group = Some(7);
         let mut t = TunnelTracker::new();
         t.on_tunnel_created(a);
         t.add_to_contain_list(a);
@@ -656,7 +656,7 @@ mod tests {
         back.load_post_process_world(&mut w).unwrap();
         assert_eq!(back.get_contained_items_list(), &[a]);
         assert!(back.get_xfer_contain_list().is_empty());
-        assert_eq!(w.objects.find(a).unwrap().group, 0);
+        assert_eq!(w.objects.find(a).unwrap().group, None);
         let trace = w.cuts.trace.clone().unwrap().join("\n");
         assert!(trace.contains("PartitionUnregisterObject") && trace.contains("PathfinderRemoveObjectFromPathfindMap") && trace.contains("DrawableSetHidden"));
         // a second post process finds the list full; an unknown id is invalid data

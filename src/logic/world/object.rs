@@ -422,8 +422,10 @@ pub struct Object {
     pub status: ObjectStatusMaskType,
     /// `m_geometryInfo`.
     pub geometry_info: GeometryInfo,
-    /// `m_group`: the `AIGroup` this object is in (0 = none).
-    pub group: u32,
+    /// `m_group`: the `AIGroup` this object is in (`None`: `NULL`). ~~0 = none~~ **Corrected (integration batch I16):** upstream's
+    /// first group's id is 0 (`AI::m_nextGroupID = 0`, AI.cpp:322), so 0 could not mean none: that group's members read as
+    /// ungrouped and were never removed from it.
+    pub group: Option<u32>,
     /// `m_partitionLastLook`.
     pub partition_last_look: Sighting,
     /// `m_partitionRevealAllLastLook`.
@@ -576,7 +578,7 @@ impl Object {
             name: Vec::new(),
             status: ObjectStatusMaskType::new(),
             geometry_info,
-            group: 0,
+            group: None,
             partition_last_look: Sighting::default(),
             partition_reveal_all_last_look: Sighting::default(),
             vision_spied_by: [0; MAX_PLAYER_COUNT as usize],

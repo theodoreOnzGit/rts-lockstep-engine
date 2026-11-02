@@ -92,7 +92,7 @@ impl World {
         // list: its own `destroyGroup` finds nothing)
         while let Some(&o) = g.members.first() {
             if let Some(obj) = self.objects.find_mut(o) {
-                obj.group = 0;
+                obj.group = None;
             }
             if !g.remove(self, o) && g.members.first() == Some(&o) {
                 g.members.remove(0);
@@ -751,7 +751,7 @@ mod tests {
             w.with_group(g, |gr, w| gr.add(w, r));
         }
         assert_eq!(w.ai_group_members(g), runners);
-        assert!(runners.iter().all(|&r| w.find_object(r).unwrap().group == g));
+        assert!(runners.iter().all(|&r| w.find_object(r).unwrap().group == Some(g)));
         assert!(!w.live_group_call(g, GroupCall::MoveTo { pos: Coord3D { x: 300.0, y: 300.0, z: 0.0 }, add_waypoint: false }));
         for _ in 0..150 {
             w.logic_update().unwrap();
@@ -763,7 +763,7 @@ mod tests {
         let with_group = w.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).unwrap();
         w.ai_destroy_group_live(g);
         assert!(w.ai_groups.list.is_empty());
-        assert!(runners.iter().all(|&r| w.find_object(r).unwrap().group == 0));
+        assert!(runners.iter().all(|&r| w.find_object(r).unwrap().group.is_none()));
         let without = w.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).unwrap();
         assert_ne!(with_group, without);
         let g2 = w.ai_create_group();

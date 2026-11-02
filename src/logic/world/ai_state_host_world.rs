@@ -218,27 +218,47 @@ impl AiStateHost for World {
     fn object_is_contained(&mut self, id: ObjectId) -> bool {
         self.is_contained(id)
     }
-    fn member_ai_last_command_source(&mut self, _id: ObjectId) -> CommandSourceType {
-        self.ais_cut("member_ai_last_command_source");
-        Default::default()
+    fn member_ai_last_command_source(&mut self, id: ObjectId) -> CommandSourceType {
+        self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiGetLastCommandSource).map_or(0, |r| r.as_int(0))
     }
-    fn member_ai_set_allowed_to_chase(&mut self, _id: ObjectId, _allowed: bool) {
-        self.ais_cut("member_ai_set_allowed_to_chase");
+    fn member_ai_set_allowed_to_chase(&mut self, id: ObjectId, allowed: bool) {
+        self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiSetAllowedToChase(allowed));
     }
-    fn member_ai_state_type(&mut self, _id: ObjectId) -> AiStateType {
-        self.ais_cut("member_ai_state_type");
-        Default::default()
+    fn member_ai_state_type(&mut self, id: ObjectId) -> AiStateType {
+        self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiGetAiStateType).map_or(0, |r| r.as_int(0) as AiStateType)
     }
-    fn member_ai_is_moving(&mut self, _id: ObjectId) -> bool {
-        self.ais_cut("member_ai_is_moving");
-        Default::default()
+    fn member_ai_is_moving(&mut self, id: ObjectId) -> bool {
+        self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiIsMoving).is_some_and(|r| r.as_bool())
     }
-    fn member_ai_goal_object(&mut self, _id: ObjectId) -> ObjectId {
-        self.ais_cut("member_ai_goal_object");
-        INVALID_ID
+    fn member_ai_goal_object(&mut self, id: ObjectId) -> ObjectId {
+        match self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiGetGoalObject) {
+            Some(crate::logic::world::module_call::ModuleReply::Id(v)) => v,
+            _ => INVALID_ID,
+        }
     }
-    fn member_ai_command(&mut self, _id: ObjectId, _cmd: crate::logic::ai::assault_transport_ai_update::MemberCommand) {
-        self.ais_cut("member_ai_command");
+    fn member_ai_command(&mut self, id: ObjectId, cmd: crate::logic::ai::assault_transport_ai_update::MemberCommand) {
+        use crate::logic::ai::ai_commands::{AiCommandParms, AICMD_IDLE, AICMD_RAPPEL_INTO};
+        use crate::logic::ai::assault_transport_ai_update::MemberCommand as C;
+        let Some(ai) = self.find_object(id).and_then(|o| o.ai) else { return };
+        let s = |src: CommandSourceType| src;
+        let call = match cmd {
+            C::Exit { transport, src } => crate::logic::world::module_call::ModuleCall::AiExit { container: transport, command_source: s(src) },
+            C::Enter { transport, src } => crate::logic::world::module_call::ModuleCall::AiEnter { target: transport, command_source: s(src) },
+            C::AttackObject { victim, max_shots, src } => crate::logic::world::module_call::ModuleCall::AiAttackObject { victim, max_shots, command_source: s(src) },
+            C::AttackMoveToPosition { pos, max_shots, src } => crate::logic::world::module_call::ModuleCall::AiAttackMoveToPosition { pos, max_shots, command_source: s(src) },
+            C::MoveToPosition { pos, src } => crate::logic::world::module_call::ModuleCall::AiMoveToPosition { pos, command_source: s(src) },
+            C::ForceAttackObject { victim, max_shots, src } => crate::logic::world::module_call::ModuleCall::AiForceAttackObject { victim, max_shots, command_source: s(src) },
+            C::AttackPosition { pos, max_shots, src } => crate::logic::world::module_call::ModuleCall::AiAttackPosition { pos: Some(pos), max_shots, command_source: s(src) },
+            C::Idle { src } => crate::logic::world::module_call::ModuleCall::AiDoCommandParms(AiCommandParms::new(AICMD_IDLE, src)),
+            C::SetDesiredSpeed(speed) => crate::logic::world::module_call::ModuleCall::AiSetDesiredSpeed(speed),
+            C::RappelInto { target, pos, src } => {
+                let mut p = AiCommandParms::new(AICMD_RAPPEL_INTO, src);
+                p.obj = target;
+                p.pos = pos;
+                crate::logic::world::module_call::ModuleCall::AiDoCommandParms(p)
+            }
+        };
+        self.module_call(id, ai, call);
     }
     fn waypoint_by_name(&mut self, name: &[u8]) -> Option<u32> {
         AsciiString::try_from_bytes(name).ok().and_then(|n| self.terrain.waypoint_by_name(&n)).and_then(|h| self.terrain.waypoint(h)).map(|w| w.id() as u32)
@@ -264,9 +284,8 @@ impl AiStateHost for World {
         let teams = &self.teams;
         teams.team(team).and_then(|x| teams.prototype(x.proto)).map(|p| p.name.clone()).unwrap_or_default()
     }
-    fn team_by_name(&mut self, _name: &[u8]) -> Option<u32> {
-        self.ais_cut("team_by_name");
-        Default::default()
+    fn team_by_name(&mut self, name: &[u8]) -> Option<u32> {
+        crate::logic::world::team_ops::factory_find_team(self, name).ok().flatten()
     }
     fn command_button_name(&mut self, _button: u32) -> Vec<u8> {
         self.ais_cut("command_button_name");
@@ -459,9 +478,11 @@ impl AiStateHost for World {
         let id = self.ai_self;
         self.ai_pp_call(airfield, crate::logic::world::module_call::ModuleCall::ParkingPlaceSetHealee { id, add });
     }
-    fn member_ai_current_victim(&mut self, _id: ObjectId) -> ObjectId {
-        self.ais_cut("member_ai_current_victim");
-        INVALID_ID
+    fn member_ai_current_victim(&mut self, id: ObjectId) -> ObjectId {
+        match self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiGetCurrentVictim) {
+            Some(crate::logic::world::module_call::ModuleReply::Id(v)) => v,
+            _ => INVALID_ID,
+        }
     }
     fn set_disabled_held(&mut self, held: bool) {
         let id = self.ai_self;
@@ -1314,8 +1335,8 @@ impl AiStateHost for World {
         self.objects.find(self.ai_self).map_or(0, |o| o.formation_id)
     }
     fn group_speed(&mut self) -> Option<f32> {
-        self.ais_cut("group_speed");
-        Default::default()
+        let g = self.find_object(self.ai_self).and_then(|o| o.group)?;
+        self.with_group(g, |gr, w| gr.get_speed(w))
     }
     fn object_max_height_above_position(&self, id: ObjectId) -> f32 {
         self.find_object(id).map_or(0.0, |o| o.geometry_info.get_max_height_above_position())
@@ -1355,15 +1376,18 @@ impl AiStateHost for World {
         self.cuts.wall_height
     }
     fn group_center(&mut self) -> Coord3D {
-        self.ais_cut("group_center");
-        Coord3D::default()
+        let Some(g) = self.find_object(self.ai_self).and_then(|o| o.group) else { return Coord3D::default() };
+        self.with_group(g, |gr, w| gr.get_center(w).0).unwrap_or_default()
     }
     fn team_current_waypoint(&mut self) -> Option<u32> {
-        self.ais_cut("team_current_waypoint");
-        Default::default()
+        let t = self.find_object(self.ai_self).map(|o| o.team)?;
+        self.teams.team(t)?.get_current_waypoint()
     }
-    fn team_set_current_waypoint(&mut self, _way: Option<u32>) {
-        self.ais_cut("team_set_current_waypoint");
+    fn team_set_current_waypoint(&mut self, way: Option<u32>) {
+        let Some(t) = self.find_object(self.ai_self).map(|o| o.team) else { return };
+        if let Some(team) = self.teams.team_mut(t) {
+            team.set_current_waypoint(way);
+        }
     }
     fn is_skirmish_ai_player(&mut self) -> bool {
         let me = self.ai_self;
@@ -1371,8 +1395,13 @@ impl AiStateHost for World {
         crate::logic::world::player_ops::player_is_skirmish_ai_player(self, p).unwrap_or(false)
     }
     fn team_group_center_and_count(&mut self) -> (Coord3D, i32) {
-        self.ais_cut("team_group_center_and_count");
-        Default::default()
+        // `TheAI->createGroup()` filled by `getTeam()->getTeamAsAIGroup(group)`, then its centre and count; the group is released after
+        let Some(t) = self.find_object(self.ai_self).map(|o| o.team) else { return Default::default() };
+        let g = self.ai_create_group();
+        crate::logic::world::team_ops::team_get_team_as_ai_group(self, t, Some(g));
+        let r = self.with_group(g, |gr, w| (gr.get_center(w).0, gr.get_count())).unwrap_or_default();
+        self.ai_destroy_group_live(g);
+        r
     }
     fn ai_data_skirmish_group_fudge_value(&self) -> f32 {
         self.statics.ai_data.data.skirmish_group_fudge_value
@@ -1661,9 +1690,13 @@ impl AiStateHost for World {
     fn object_is_selectable(&mut self, id: ObjectId) -> bool {
         self.is_selectable(id)
     }
-    fn closest_object_on_squad(&mut self, _squad: &[ObjectId]) -> ObjectId {
-        self.ais_cut("closest_object_on_squad");
-        INVALID_ID
+    fn closest_object_on_squad(&mut self, squad: &[ObjectId]) -> ObjectId {
+        // `getClosestObject(owner, HUGE_DIST, FROM_CENTER_2D, {PartitionFilterAcceptOnSquad(squad), PartitionFilterSameMapStatus(owner)})`
+        use crate::logic::world::partition::filters::PartitionFilter;
+        let me = self.ai_self;
+        let filters = [PartitionFilter::AcceptOnSquadList { ids: squad.to_vec() }, PartitionFilter::SameMapStatus { obj: me }];
+        let dc = crate::logic::world::partition::DistanceCalculationType::FromCenter2D;
+        self.with_partition(|pm, w| pm.get_closest_object(w, me, crate::logic::world::partition::collide::HUGE_DIST, dc, &filters).object).unwrap_or(INVALID_ID)
     }
     fn object_has_dock(&mut self, id: ObjectId) -> bool {
         self.get_dock_update_interface(id).is_some()
@@ -1769,9 +1802,43 @@ impl AiStateHost for World {
     fn polygon_radius(&mut self, polygon: i32) -> f32 {
         self.ai_polygon(polygon).and_then(|p| p.radius().ok()).unwrap_or(0.0)
     }
-    fn closest_guard_target(&mut self, _pos: &Coord3D, _range: f32, _filters: u32, _area: Option<i32>) -> ObjectId {
-        self.ais_cut("closest_guard_target");
-        INVALID_ID
+    fn closest_guard_target(&mut self, pos: &Coord3D, range: f32, filters: u32, area: Option<i32>) -> ObjectId {
+        // `AIGuardMachine::lookForInnerTarget` / `AIGuardRetaliateMachine`'s filters, in upstream's order (a conjunction of pure tests:
+        // the order changes no answer), then `getClosestObject(&pos, range, FROM_CENTER_2D, filters)`
+        use crate::logic::ai::ai_guard::*;
+        use crate::logic::world::partition::filters::{PartitionFilter, ALLOW_ENEMIES, ALLOW_NEUTRAL};
+        let me = self.ai_self;
+        let src = crate::logic::world::ai_combat_world::source(crate::common::game_common::CommandSourceType::FromAi as i32);
+        let mut f = Vec::new();
+        if filters & GUARD_FILTER_POSSIBLE_TO_ENTER != 0 {
+            f.push(PartitionFilter::PossibleToEnter { obj: Some(me), command_source: src });
+        }
+        if filters & GUARD_FILTER_ENEMIES != 0 {
+            f.push(PartitionFilter::Relationship { obj: me, flags: ALLOW_ENEMIES });
+        }
+        if filters & GUARD_FILTER_POSSIBLE_TO_HIJACK != 0 {
+            f.push(PartitionFilter::PossibleToHijack { obj: Some(me), command_source: src });
+        }
+        if filters & GUARD_FILTER_NEUTRAL != 0 {
+            f.push(PartitionFilter::Relationship { obj: me, flags: ALLOW_NEUTRAL });
+        }
+        if filters & GUARD_FILTER_POSSIBLE_TO_ATTACK != 0 {
+            f.push(PartitionFilter::PossibleToAttack { attack_type: crate::logic::weapon_host::ATTACK_NEW_TARGET, obj: Some(me), command_source: src });
+        }
+        if filters & GUARD_FILTER_REJECT_BUILDINGS != 0 {
+            f.push(PartitionFilter::reject_buildings(self, me));
+        }
+        if filters & GUARD_FILTER_SAME_MAP_STATUS != 0 {
+            f.push(PartitionFilter::SameMapStatus { obj: me });
+        }
+        if filters & GUARD_FILTER_POLYGON != 0 {
+            f.push(PartitionFilter::PolygonTrigger { trigger: area.unwrap_or(-1) });
+        }
+        if filters & GUARD_FILTER_IS_FLYING != 0 {
+            f.push(PartitionFilter::IsFlying);
+        }
+        let dc = crate::logic::world::partition::DistanceCalculationType::FromCenter2D;
+        self.with_partition(|pm, w| pm.get_closest_object_at(w, pos, range, dc, &f).object).unwrap_or(INVALID_ID)
     }
     fn has_team(&mut self) -> bool {
         true

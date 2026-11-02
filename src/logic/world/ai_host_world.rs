@@ -336,7 +336,10 @@ impl AiHost for World {
         let _ = World::awaken_update_module(self, id, u, frame);
     }
     fn group_recompute_speed(&mut self) {
-        self.ai_host_cut("AIGroup::recomputeGroupSpeed", vec![i64::from(self.ai_self)]);
+        // (integration batch I16: `getGroup()->recomputeGroupSpeed()`, `m_dirty = true`, AI.h; it was a cut)
+        if let Some(g) = self.find_object(self.ai_self).and_then(|o| o.group) {
+            self.with_group(g, |gr, _| gr.dirty = true);
+        }
     }
     fn pf_surfaces_for_position(&mut self, layer: PathfindLayer, pos: &Coord3D) -> LocomotorSurfaceTypeMask {
         use crate::logic::locomotor::{LOCOMOTORSURFACE_AIR, LOCOMOTORSURFACE_CLIFF, LOCOMOTORSURFACE_GROUND, LOCOMOTORSURFACE_RUBBLE, LOCOMOTORSURFACE_WATER};

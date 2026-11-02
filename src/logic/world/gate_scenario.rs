@@ -1033,3 +1033,67 @@ mod ai_world_tests {
         assert!(!counter);
     }
 }
+
+#[cfg(test)]
+mod ai_members_tests {
+    use super::*;
+    use crate::common::game_type::INVALID_ID;
+    use crate::common::ascii_string::AsciiString;
+    use crate::common::base_type::ICoord3D;
+    use crate::logic::ai::ai_guard::{GUARD_FILTER_ENEMIES, GUARD_FILTER_POLYGON, GUARD_FILTER_POSSIBLE_TO_ATTACK, GUARD_FILTER_SAME_MAP_STATUS};
+    use crate::logic::ai::ai_states::AiStateHost;
+    use crate::logic::ai::assault_transport_ai_update::MemberCommand;
+    use crate::logic::terrain_logic::TriggerArea;
+
+    /// Batch I16, the AI's member, group, team and guard-search questions live. A soldier A of team 1 at (100, 100), a friend F at
+    /// (120, 100), an enemy E at (150, 100). Predicted before the run: the guard's search for enemies it can attack, of its map status,
+    /// within 100 finds E, within 30 nothing, and limited to a polygon of x 0 to 130 nothing; the closest of the squad {E, F} to A is
+    /// F (20 against 50); a group of A and F is centred at (110, 100); A is idle, and after a move order and a frame is moving and no
+    /// longer idle; its chase flag set is read back; `team2` is the enemy team.
+    #[test]
+    fn the_ais_member_and_guard_questions_are_answered() {
+        let mut w = gate_map_world();
+        let corners = [(0, 0), (130, 0), (130, 400), (0, 400)].map(|(x, y)| ICoord3D { x, y, z: 0 });
+        let west = TriggerArea::new(AsciiString::try_from_bytes(b"West").expect("a name"), 1, false, corners.to_vec()).expect("the area");
+        w.terrain.set_triggers(vec![west]);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let f = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        let e = make(&mut w, b"Soldier", enemy, Coord3D { x: 150.0, y: 100.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let at = Coord3D { x: 100.0, y: 100.0, z: 0.0 };
+        let filt = GUARD_FILTER_ENEMIES | GUARD_FILTER_POSSIBLE_TO_ATTACK | GUARD_FILTER_SAME_MAP_STATUS;
+        let g = w.ai_create_group();
+        for o in [a, f] {
+            w.with_group(g, |gr, w| gr.add(w, o));
+        }
+        let r = w.with_ai_self(a, |w| {
+            let west = w.polygon_trigger_by_name(b"West");
+            let guard = (w.closest_guard_target(&at, 100.0, filt, None), w.closest_guard_target(&at, 30.0, filt, None), w.closest_guard_target(&at, 100.0, filt | GUARD_FILTER_POLYGON, west));
+            let squad = w.closest_object_on_squad(&[e, f]);
+            let center = w.group_center();
+            let idle_before = w.member_ai_state_type(a);
+            w.member_ai_set_allowed_to_chase(a, true);
+            let team2 = w.team_by_name(b"team2");
+            (guard, squad, center, idle_before, team2)
+        });
+        let chase = w.find_object(a).and_then(|o| o.ai).map(|ai| match w.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: a, index: ai }) {
+            Some(crate::logic::world::update_body::UpdateBody::AiUpdate(m)) => m.module.as_ref().and_then(|m| m.ai.as_ref()).is_some_and(|x| x.allowed_to_chase),
+            _ => false,
+        });
+        w.with_ai_self(f, |w| w.member_ai_command(a, MemberCommand::MoveToPosition { pos: Coord3D { x: 100.0, y: 300.0, z: 0.0 }, src: 2 }));
+        w.logic_update().unwrap();
+        let after = w.with_ai_self(f, |w| (w.member_ai_state_type(a), w.member_ai_is_moving(a)));
+        eprintln!("{r:?}; chase {chase:?}; after {after:?}");
+        let (guard, squad, center, idle_before, team2) = r;
+        assert_eq!(guard, (e, INVALID_ID, INVALID_ID));
+        assert_eq!(squad, f);
+        assert_eq!((center.x, center.y), (110.0, 100.0));
+        assert_eq!(idle_before, crate::logic::ai::ai_update_types::AI_IDLE);
+        assert_eq!(chase, Some(true));
+        assert_ne!(after.0, crate::logic::ai::ai_update_types::AI_IDLE);
+        assert!(after.1);
+        assert_eq!(team2, Some(enemy));
+    }
+}

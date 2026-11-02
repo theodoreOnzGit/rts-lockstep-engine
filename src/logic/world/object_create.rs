@@ -548,8 +548,7 @@ impl World {
         }
 
         // if we are in a group, remove us
-        let group = self.objects.find(id).map_or(0, |o| o.group);
-        if group != 0 {
+        if let Some(group) = self.objects.find(id).and_then(|o| o.group) {
             self.cut(CutCall::AiGroupRemove { group, object: id });
         }
 

@@ -156,6 +156,19 @@ impl AiModuleBody {
                 ModuleReply::Done
             }
             // (batch I9e: `construct(what, pos, angle, owner, isRebuild)`: a dozer's or worker's; the base's makes nothing)
+            // (batch I16: another object's AI's state type, chase flag and desired speed, for the members of a transport, a spawn or a group)
+            ModuleCall::AiGetAiStateType => match m.machine.as_ref() {
+                Some(sm) => ModuleReply::Int(sm.get_current_state_id() as i32),
+                None => ModuleReply::Unhandled,
+            },
+            ModuleCall::AiSetAllowedToChase(allowed) => {
+                m.ai_mut().allowed_to_chase = allowed;
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetDesiredSpeed(speed) => {
+                m.ai_mut().desired_speed = speed;
+                ModuleReply::Done
+            }
             // (batch I14: `MissileAIUpdate` is a `ProjectileUpdateInterface`; none of its calls reached it, so a missile was never launched.
             // The exhaust override is a client particle system: `None`, its template's own)
             ModuleCall::HasProjectileUpdateInterface => ModuleReply::Bool(m.ai.as_ref().is_some_and(|a| matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::Missile(_)))),
@@ -815,6 +828,14 @@ impl World {
             }
             ModuleCall::OnDisabledEdge { .. } => ModuleReply::Unhandled,
             ModuleCall::AiGetLastCommandSource => ModuleReply::Int(a.last_command_source),
+            ModuleCall::AiSetAllowedToChase(allowed) => {
+                a.allowed_to_chase = *allowed;
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetDesiredSpeed(speed) => {
+                a.desired_speed = *speed;
+                ModuleReply::Done
+            }
             ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(a.is_ai_in_dead_state()),
             ModuleCall::AiGetIgnoredObstacleId => ModuleReply::Id(a.get_ignored_obstacle_id()),
             ModuleCall::AiGetCurLocomotorSetType => ModuleReply::Int(a.cur_locomotor_set),

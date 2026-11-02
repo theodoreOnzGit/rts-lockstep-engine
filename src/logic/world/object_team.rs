@@ -454,16 +454,15 @@ impl World {
     pub fn enter_group(&mut self, id: ObjectId, group: u32) {
         self.leave_group(id);
         if let Some(o) = self.objects.find_mut(id) {
-            o.group = group;
+            o.group = Some(group);
         }
     }
 
     /// `leaveGroup()`: "to avoid recursion, set m_group to NULL before removing".
     pub fn leave_group(&mut self, id: ObjectId) {
         let Some(o) = self.objects.find_mut(id) else { return };
-        if o.group != 0 {
-            let group = o.group;
-            o.group = 0;
+        if let Some(group) = o.group {
+            o.group = None;
             // (batch I9c-2: with live groups, `group->remove(this)`)
             if self.cuts.live_ai {
                 self.leave_group_live(id, group);

@@ -123,6 +123,9 @@ pub enum PartitionFilter {
     AcceptOnTeam { team: TeamId },
     /// `PartitionFilterAcceptOnSquad` (`squad` is the host's squad key; `None` is a null squad).
     AcceptOnSquad { squad: Option<i32> },
+    /// Integration batch I16: `PartitionFilterAcceptOnSquad` for a squad the caller holds (an AI's goal squad, `Squad::m_objectIDs`):
+    /// on the squad and not effectively dead, as `AcceptOnSquad`.
+    AcceptOnSquadList { ids: Vec<ObjectId> },
     /// `PartitionFilterLineOfSight`: terrain and obstacles.
     LineOfSight { obj: ObjectId },
     /// `PartitionFilterPossibleToAttack`.
@@ -220,6 +223,7 @@ impl PartitionFilter {
 
             PartitionFilter::AcceptOnTeam { team } => host.team(other) == *team,
 
+            PartitionFilter::AcceptOnSquadList { ids } => ids.contains(&other) && !host.is_effectively_dead(other),
             PartitionFilter::AcceptOnSquad { squad } => match squad {
                 Some(s) => host.is_on_squad(*s, other) && !host.is_effectively_dead(other),
                 None => false,

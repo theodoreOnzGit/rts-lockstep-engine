@@ -1113,6 +1113,9 @@ impl ProbeModule {
             | ModuleCall::AttemptBestFirePointPosition { .. }
             | ModuleCall::AiDeliverPayload { .. }
             | ModuleCall::ProjectileFireAtObjectOrPosition { .. }
+            | ModuleCall::AiGetAiStateType
+            | ModuleCall::AiSetAllowedToChase(_)
+            | ModuleCall::AiSetDesiredSpeed(_)
             | ModuleCall::AiGetCurLocomotorMaxSpeedForCondition(_) => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(

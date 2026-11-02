@@ -275,7 +275,7 @@ impl Run {
                 o.private_status |= PRIVATE_EFFECTIVELY_DEAD;
             }
             o.drawable = if c.flags & FLAG_DRAWABLE != 0 { id } else { INVALID_DRAWABLE_ID };
-            o.group = u32::from(c.flags & FLAG_GROUP != 0);
+            o.group = (c.flags & FLAG_GROUP != 0).then_some(1);
             o.contained_by = c.by;
             o.contained_by_frame = c.by_frame;
         }
@@ -367,7 +367,7 @@ impl Run {
             self.tracker_state(&format!("C{i}"), t.as_ref());
         }
         for i in 1..=8i32 {
-            let live = self.w.objects.find(i).map(|o| (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group));
+            let live = self.w.objects.find(i).map(|o| (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group.unwrap_or(0)));
             let exists = u32::from(live.is_some());
             if live.is_some() {
                 if let Some(b) = self.w.get_body_module(i) {
@@ -458,7 +458,7 @@ impl Run {
                         // the stand-in keeps the fields of an object that left the world
                         if let Some(o) = self.w.objects.find(id) {
                             self.frozen[id as usize] =
-                                (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group);
+                                (o.contained_by, o.contained_by_frame, u32::from(o.is_effectively_dead()), u32::from(o.is_destroyed()), o.group.unwrap_or(0));
                         }
                         let _ = self.w.objects.remove(id);
                     } else if let Some(o) = self.w.objects.find_mut(id) {
@@ -474,7 +474,7 @@ impl Run {
                             2 => o.status.set(OBJECT_STATUS_DETECTED, i32::from(v != 0)),
                             3 => o.status.set(OBJECT_STATUS_DISGUISED, i32::from(v != 0)),
                             5 => o.contained_by = v,
-                            6 => o.group = v as u32,
+                            6 => o.group = (v != 0).then_some(v as u32),
                             _ => {}
                         }
                     }
