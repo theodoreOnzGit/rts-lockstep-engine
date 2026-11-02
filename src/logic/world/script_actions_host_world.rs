@@ -130,6 +130,33 @@ impl World {
     }
 }
 
+/// `REALLY_FAR` (ScriptActions.cpp): `100000 * MAP_XY_FACTOR`.
+const REALLY_FAR: f32 = 100000.0 * 10.0;
+
+/// A kind-of mask of one bit.
+fn kinds(k: crate::common::kind_of::KindOfType) -> crate::common::kind_of::KindOfMaskType {
+    let mut m = crate::common::kind_of::KindOfMaskType::new();
+    m.set(k, 1);
+    m
+}
+
+impl World {
+    /// Integration batch I26: `iterateObjectsInRange(obj, REALLY_FAR, FROM_CENTER_3D, filters, ITER_SORTED_NEAR_TO_FAR)`, the objects in
+    /// the iterator's order.
+    fn scan_from(&mut self, obj: ObjectId, filters: &[crate::logic::world::partition::filters::PartitionFilter]) -> Vec<ObjectId> {
+        let mut it = self.with_partition(|pm, w| {
+            pm.iterate_objects_in_range(w, obj, REALLY_FAR, crate::logic::world::partition::DistanceCalculationType::FromCenter3D, filters, crate::logic::object_iter::IterOrderType::SortedNearToFar)
+        });
+        let mut out = Vec::new();
+        let mut o = it.first();
+        while let Some(id) = o {
+            out.push(id);
+            o = it.next();
+        }
+        out
+    }
+}
+
 impl ScriptActionsHost for World {
     fn sa_win_create_from_script(&mut self, _name: &[u8]) -> WindowH {
         self.sa_cut("win_create_from_script");
@@ -884,18 +911,44 @@ impl ScriptActionsHost for World {
     fn sa_player_mask(&self, p: PlayerH) -> u32 {
         1u32.checked_shl(p as u32).unwrap_or(0)
     }
-    fn sa_partition_shroud(&mut self, _cover: bool, _undo: bool, _x: f32, _y: f32, _r: f32, _mask: u32) {
-        self.sa_cut("partition_shroud");
+    fn sa_partition_shroud(&mut self, cover: bool, undo: bool, x: f32, y: f32, r: f32, mask: u32) {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            return self.sa_cut("partition_shroud");
+        }
+        let mask = mask as crate::common::game_common::PlayerMaskType;
+        let _ = self.with_partition(|pm, w| match (cover, undo) {
+            (false, false) => pm.do_shroud_reveal(w, x, y, r, mask),
+            (false, true) => pm.undo_shroud_reveal(w, x, y, r, mask),
+            (true, false) => pm.do_shroud_cover(w, x, y, r, mask),
+            (true, true) => pm.undo_shroud_cover(w, x, y, r, mask),
+        });
     }
-    fn sa_partition_reveal_map(&mut self, _i: i32) {
-        self.sa_cut("partition_reveal_map");
+
+    fn sa_partition_reveal_map(&mut self, i: i32) {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            return self.sa_cut("partition_reveal_map");
+        }
+        self.with_partition(|pm, w| pm.reveal_map_for_player(w, i));
     }
-    fn sa_partition_reveal_map_permanently(&mut self, _i: i32, _undo: bool) {
-        self.sa_cut("partition_reveal_map_permanently");
+
+    fn sa_partition_reveal_map_permanently(&mut self, i: i32, undo: bool) {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            return self.sa_cut("partition_reveal_map_permanently");
+        }
+        self.with_partition(|pm, w| if undo { pm.undo_reveal_map_for_player_permanently(w, i) } else { pm.reveal_map_for_player_permanently(w, i) });
     }
-    fn sa_partition_shroud_map(&mut self, _i: i32) {
-        self.sa_cut("partition_shroud_map");
+
+    fn sa_partition_shroud_map(&mut self, i: i32) {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            return self.sa_cut("partition_shroud_map");
+        }
+        self.with_partition(|pm, w| pm.shroud_map_for_player(w, i));
     }
+
     fn sa_team_set_recruitable(&mut self, t: TeamH, recruitable: bool) {
         if let Some(team) = u32::try_from(t).ok().and_then(|t| self.teams.team_mut(t)) {
             team.set_recruitable(recruitable);
@@ -940,17 +993,42 @@ impl ScriptActionsHost for World {
             self.module_call(o, ct, crate::logic::world::module_call::ModuleCall::RemoveAllContained { expose_stealth_units: expose });
         }
     }
-    fn sa_partition_garrison_candidates(&mut self, _leader: ObjH, _money_hacker: bool) -> Vec<ObjH> {
-        self.sa_cut("partition_garrison_candidates");
-        Default::default()
+    fn sa_partition_garrison_candidates(&mut self, leader: ObjH, money_hacker: bool) -> Vec<ObjH> {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        // `iterateObjectsInRange(.., REALLY_FAR, FROM_CENTER_3D, filters, ITER_SORTED_NEAR_TO_FAR)`
+        if !self.cuts.live_partition {
+            self.sa_cut("partition_garrison_candidates");
+            return Vec::new();
+        }
+        use crate::logic::world::partition::filters::PartitionFilter as F;
+        // a money hacker looks for an internet centre, else buildings the team's player may garrison (the leader's team's player)
+        let first = if money_hacker {
+            F::AcceptByKindOf { must_be_set: kinds(crate::common::kind_of::KINDOF_FS_INTERNET_CENTER), must_be_clear: crate::common::kind_of::KindOfMaskType::new() }
+        } else {
+            F::GarrisonableByPlayer { player: self.get_controlling_player(leader), match_: true, command_source: crate::common::game_common::CommandSourceType::FromScript }
+        };
+        let filters = [first, F::SameMapStatus { obj: leader }];
+        self.scan_from(leader, &filters)
     }
+
     fn sa_ai_exit(&mut self, o: ObjH, cmd: i32) {
         self.script_order(o, crate::logic::ai::ai_commands::AICMD_EXIT, cmd, |_| {});
     }
-    fn sa_partition_unit_garrison_candidates(&mut self, _unit: ObjH, _money_hacker: bool) -> Vec<ObjH> {
-        self.sa_cut("partition_unit_garrison_candidates");
-        Default::default()
+    fn sa_partition_unit_garrison_candidates(&mut self, unit: ObjH, money_hacker: bool) -> Vec<ObjH> {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        // `iterateObjectsInRange(.., REALLY_FAR, FROM_CENTER_3D, filters, ITER_SORTED_NEAR_TO_FAR)`
+        if !self.cuts.live_partition {
+            self.sa_cut("partition_unit_garrison_candidates");
+            return Vec::new();
+        }
+        use crate::logic::world::partition::filters::PartitionFilter as F;
+        let none = crate::common::kind_of::KindOfMaskType::new();
+        let internet = kinds(crate::common::kind_of::KINDOF_FS_INTERNET_CENTER);
+        let third = if money_hacker { F::AcceptByKindOf { must_be_set: internet, must_be_clear: none } } else { F::RejectByKindOf { must_be_set: internet, must_be_clear: none } };
+        let filters = [F::AcceptByKindOf { must_be_set: kinds(crate::common::kind_of::KINDOF_STRUCTURE), must_be_clear: none }, F::SameMapStatus { obj: unit }, third];
+        self.scan_from(unit, &filters)
     }
+
     fn sa_obj_controlling_player(&self, o: ObjH) -> Option<PlayerH> {
         self.get_controlling_player(o)
     }
@@ -1129,14 +1207,20 @@ impl ScriptActionsHost for World {
         self.module_call(o, m, crate::logic::world::module_call::ModuleCall::DoSpecialPowerAtObject { target, command_options: options });
     }
 
-    fn sa_player_compute_superweapon_target(&mut self, _p: PlayerH, _power: SpecialPowerH, _index: i32, _weight: f32) -> Option<Coord3D> {
-        self.sa_cut("player_compute_superweapon_target");
-        Default::default()
+    fn sa_player_compute_superweapon_target(&mut self, p: PlayerH, power: SpecialPowerH, index: i32, weight: f32) -> Option<Coord3D> {
+        // (integration batch I26: was a cut) `player->computeSuperweaponTarget(power, &pos, playerIndex, weight)`: its AI's
+        let mut pos = Coord3D::default();
+        let found = crate::logic::world::player_ops::player_compute_superweapon_target(self, p, u32::try_from(power).ok()?, &mut pos, index, weight).unwrap_or(false);
+        found.then_some(pos)
     }
-    fn sa_player_closest_construction_zone(&mut self, _p: PlayerH, _t: TemplateH) -> Option<Coord3D> {
-        self.sa_cut("player_closest_construction_zone");
-        Default::default()
+
+    fn sa_player_closest_construction_zone(&mut self, p: PlayerH, t: TemplateH) -> Option<Coord3D> {
+        // (integration batch I26: was a cut) `player->calcClosestConstructionZoneLocation(template, &pos)`: its AI's
+        let mut pos = Coord3D::default();
+        let found = crate::logic::world::player_ops::player_calc_closest_construction_zone_location(self, p, t as crate::logic::world::team_ops::TemplateRef, &mut pos).unwrap_or(false);
+        found.then_some(pos)
     }
+
     fn sa_button_name(&self, b: ButtonH) -> Vec<u8> {
         self.cuts.command_buttons.get(b as usize).map(|x| x.name.clone()).unwrap_or_default()
     }
@@ -1350,9 +1434,19 @@ impl ScriptActionsHost for World {
     fn sa_radar_force_on(&mut self, _on: bool) {
         self.sa_cut("radar_force_on");
     }
-    fn sa_partition_closest_of_template(&self, _p: &Coord3D, _t: TemplateH, _trig: TriggerH, _obj: ObjH) -> Option<(ObjH, f32)> {
-        Default::default()
+    fn sa_partition_closest_of_template(&mut self, p: &Coord3D, t: TemplateH, trig: TriggerH, obj: ObjH) -> Option<(ObjH, f32)> {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            return None;
+        }
+        // `getClosestObject(&pos, REALLY_FAR, FROM_CENTER_2D, {PartitionFilterThing(t), PartitionFilterPolygonTrigger(trig),
+        // PartitionFilterSameMapStatus(obj)}, &dist)`
+        use crate::logic::world::partition::filters::PartitionFilter as F;
+        let filters = [F::Thing { template_key: t, match_: true }, F::PolygonTrigger { trigger: trig }, F::SameMapStatus { obj }];
+        let c = self.with_partition(|pm, w| pm.get_closest_object_at(w, p, REALLY_FAR, crate::logic::world::partition::DistanceCalculationType::FromCenter2D, &filters));
+        c.object.map(|o| (o, c.dist))
     }
+
     fn sa_object_types(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
         let t = &self.script_engine.all_object_type_lists[self.script_engine.get_object_types(name)?];
         Some((0..t.list_size() as i32).map(|i| t.get_nth_in_list(i).str().to_vec()).collect())
@@ -1373,10 +1467,18 @@ impl ScriptActionsHost for World {
         let (pos, any) = self.with_group(u32::try_from(g).ok()?, |gr, w| gr.get_center(w))?;
         any.then_some(pos)
     }
-    fn sa_partition_nearest_group_with_value(&mut self, _index: i32, _src: &Coord3D, _value: i32, _greater: bool) -> Option<Coord3D> {
-        self.sa_cut("partition_nearest_group_with_value");
-        Default::default()
+    fn sa_partition_nearest_group_with_value(&mut self, index: i32, src: &Coord3D, value: i32, greater: bool) -> Option<Coord3D> {
+        // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)
+        if !self.cuts.live_partition {
+            self.sa_cut("partition_nearest_group_with_value");
+            return None;
+        }
+        // `getNearestGroupWithValue(playerIndex, ALLOW_ENEMIES, VOT_CashValue, &src, value, greater, &out)`: the location it sets
+        let enemies = crate::logic::world::partition::filters::allow_player::ENEMIES;
+        let cash = crate::logic::world::partition::shroud::ValueOrThreat::CashValue;
+        self.with_partition(|pm, w| pm.get_nearest_group_with_value(w, index, enemies, cash, src, value, greater)).0
     }
+
     fn sa_group_attack_move_to_position(&mut self, g: GroupH, p: &Coord3D, max_shots: i32, cmd: i32) {
         self.script_group(g, |gr, w| gr.group_attack_move_to_position(w, p, max_shots, cmd));
     }
@@ -1481,15 +1583,27 @@ impl ScriptActionsHost for World {
     fn sa_drawable_set_emoticon(&mut self, _o: ObjH, _name: &[u8], _frames: i32) {
         self.sa_cut("drawable_set_emoticon");
     }
-    fn sa_object_type_list_maintenance(&mut self, _list: &[u8], _object_type: &[u8], _add: bool) {
-        self.sa_cut("object_type_list_maintenance");
+    fn sa_object_type_list_maintenance(&mut self, list: &[u8], object_type: &[u8], add: bool) {
+        // (integration batch I26: was a cut) the running engine's (the world's while an action runs)
+        self.script_engine.do_object_type_list_maintenance(list, object_type, add);
     }
-    fn sa_named_map_reveal(&mut self, _look: &[u8], _waypoint: &[u8], _radius: f32, _player: &[u8]) {
-        self.sa_cut("named_map_reveal");
+
+    fn sa_named_map_reveal(&mut self, look: &[u8], waypoint: &[u8], radius: f32, player: &[u8]) {
+        // (integration batch I26: was a cut) `createNamedMapReveal(..)` then `doNamedMapReveal(look)` on the running engine
+        self.script_engine.create_named_map_reveal(look, waypoint, radius, player);
+        let mut se = std::mem::take(&mut self.script_engine);
+        se.do_named_map_reveal(self, look);
+        self.script_engine = se;
     }
-    fn sa_undo_named_map_reveal(&mut self, _look: &[u8]) {
-        self.sa_cut("undo_named_map_reveal");
+
+    fn sa_undo_named_map_reveal(&mut self, look: &[u8]) {
+        // (integration batch I26: was a cut) `undoNamedMapReveal(look)` then `removeNamedMapReveal(look)`
+        let mut se = std::mem::take(&mut self.script_engine);
+        se.undo_named_map_reveal(self, look);
+        self.script_engine = se;
+        self.script_engine.remove_named_map_reveal(look);
     }
+
     fn sa_eva_set_enabled(&mut self, _enabled: bool) {
         self.sa_cut("eva_set_enabled");
     }

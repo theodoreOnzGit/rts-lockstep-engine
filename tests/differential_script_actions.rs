@@ -1465,7 +1465,7 @@ impl ScriptActionsHost for Sim {
     }
 
     // --- batch A8 ---
-    fn sa_partition_closest_of_template(&self, p: &Coord3D, t: TemplateH, _trig: TriggerH, _obj: ObjH) -> Option<(ObjH, f32)> {
+    fn sa_partition_closest_of_template(&mut self, p: &Coord3D, t: TemplateH, _trig: TriggerH, _obj: ObjH) -> Option<(ObjH, f32)> {
         let salt = 3000 + (3 + 8 * t as u32) * 49;
         let o = (0..self.objs.len()).find(|i| hh(self.seed() ^ self.cfg[16], *i as u32, salt) & 1 != 0)? as i32 + 1;
         Some((o, (hh(self.seed(), o as u32, p.x.to_bits()) % 1000) as f32))

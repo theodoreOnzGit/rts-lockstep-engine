@@ -997,7 +997,7 @@ pub trait ScriptActionsHost {
     // --- batch A8 ---
     /// `ThePartitionManager->getClosestObject(&pos, REALLY_FAR, FROM_CENTER_2D, {the template, within the trigger, same map status
     /// as `obj`}, &dist)`: the object and the distance.
-    fn sa_partition_closest_of_template(&self, p: &Coord3D, t: TemplateH, trig: TriggerH, obj: ObjH) -> Option<(ObjH, f32)>;
+    fn sa_partition_closest_of_template(&mut self, p: &Coord3D, t: TemplateH, trig: TriggerH, obj: ObjH) -> Option<(ObjH, f32)>;
     /// `TheScriptEngine->getObjectTypes(name)`: the list's names.
     fn sa_object_types(&self, name: &[u8]) -> Option<Vec<Vec<u8>>>;
     /// `aiMoveToObject(target, cmdSource)` (`target` NULL: 0).
@@ -3568,7 +3568,7 @@ impl ScriptActions {
     /// The nearest object of `object_type` (a template, or else an object type list: the nearest of each template in it) within the
     /// trigger: `Err(())` when the type is a template with no such object (the caller returns), `Ok(None)` when nothing was found
     /// through a list.
-    fn nearest_of_type<H: ScriptActionsHost>(h: &H, p: &Coord3D, object_type: &[u8], trig: TriggerH, obj: ObjH) -> Result<Option<ObjH>, ()> {
+    fn nearest_of_type<H: ScriptActionsHost>(h: &mut H, p: &Coord3D, object_type: &[u8], trig: TriggerH, obj: ObjH) -> Result<Option<ObjH>, ()> {
         if let Some(t) = h.sa_find_template(object_type) {
             return match h.sa_partition_closest_of_template(p, t, trig, obj) {
                 Some((o, _)) => Ok(Some(o)),

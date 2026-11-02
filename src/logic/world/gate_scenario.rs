@@ -1660,3 +1660,61 @@ mod sequential_script_tests {
         assert!(dead.is_some());
     }
 }
+
+#[cfg(test)]
+mod script_partition_tests {
+    use super::*;
+    use crate::common::ascii_string::AsciiString;
+    use crate::common::base_type::ICoord3D;
+    use crate::common::game_common::CellShroudStatus as S;
+    use crate::logic::terrain_logic::TriggerArea;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// Batch I26, the script actions' partition, shroud and list calls live (each was a cut or a default). Two soldiers of team 1 at
+    /// (100, 100) and (300, 100), a depot at (200, 300); trigger areas `All` (x 0 to 400) and `East` (x 200 to 400). Predicted before the
+    /// run: player 2 (no objects) sees cell (0, 0) shrouded at first, fogged after `revealMapForPlayer` (a look added and removed),
+    /// shrouded after `shroudMapForPlayer`, clear after `revealMapForPlayerPermanently`, fogged after its undo; the closest soldier to
+    /// (90, 100) within `All` is the first, 10 away, and within `East` the second, 210 away; a soldier's structure candidates (not an
+    /// internet centre) are [depot], its leader's garrisonable ones none (the depot has no garrison contain); `Soldier` maintained into
+    /// a new list `MyList` is its one entry; player 1 (human, no AI) has no construction zone or superweapon target.
+    #[test]
+    fn the_script_partition_calls_reach_the_partition() {
+        let mut w = gate_map_world();
+        let area = |name: &[u8], id, x0, x1| {
+            let corners = [(x0, 0), (x1, 0), (x1, 400), (x0, 400)].map(|(x, y)| ICoord3D { x, y, z: 0 });
+            TriggerArea::new(AsciiString::try_from_bytes(name).expect("a name"), id, false, corners.to_vec()).expect("the area")
+        };
+        w.terrain.set_triggers(vec![area(b"All", 1, 0, 400), area(b"East", 2, 200, 400)]);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let b = make(&mut w, b"Soldier", team, Coord3D { x: 300.0, y: 100.0, z: 0.0 });
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 300.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let cell = |w: &World| w.partition.get_shroud_status_for_player_at_cell(2, 0, 0);
+        let mut shroud = vec![cell(&w)];
+        w.sa_partition_reveal_map(2);
+        shroud.push(cell(&w));
+        w.sa_partition_shroud_map(2);
+        shroud.push(cell(&w));
+        w.sa_partition_reveal_map_permanently(2, false);
+        shroud.push(cell(&w));
+        w.sa_partition_reveal_map_permanently(2, true);
+        shroud.push(cell(&w));
+        let soldier = World::thing_factory_find_template(&w, b"Soldier").expect("the template") as i32;
+        let trig = |w: &World, n: &[u8]| w.terrain.trigger_area_by_name(&AsciiString::try_from_bytes(n).expect("a name")).expect("the area") as i32;
+        let (all, east) = (trig(&w, b"All"), trig(&w, b"East"));
+        let from = Coord3D { x: 90.0, y: 100.0, z: 0.0 };
+        let closest = (w.sa_partition_closest_of_template(&from, soldier, all, a), w.sa_partition_closest_of_template(&from, soldier, east, a));
+        let garrison = (w.sa_partition_unit_garrison_candidates(a, false), w.sa_partition_garrison_candidates(a, false));
+        w.sa_object_type_list_maintenance(b"MyList", b"Soldier", true);
+        let list = w.sa_object_types(b"MyList");
+        let player = (w.sa_player_closest_construction_zone(1, soldier), w.sa_player_compute_superweapon_target(1, 1, 2, 0.0));
+        eprintln!("{shroud:?}; {closest:?}; {garrison:?}; {list:?}; {player:?}");
+        assert_eq!(shroud, vec![S::Shrouded, S::Fogged, S::Shrouded, S::Clear, S::Fogged]);
+        assert_eq!(closest.0.map(|(o, d)| (o, d.round())), Some((a, 10.0)));
+        assert_eq!(closest.1.map(|(o, d)| (o, d.round())), Some((b, 210.0)));
+        assert_eq!(garrison, (vec![depot], Vec::new()));
+        assert_eq!(list, Some(vec![b"Soldier".to_vec()]));
+        assert_eq!(player, (None, None));
+    }
+}

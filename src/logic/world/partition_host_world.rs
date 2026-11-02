@@ -465,8 +465,9 @@ impl PartitionFilterHost for World {
         }
     }
     fn template_is_equivalent_to(&self, template_key: i32, other: ObjectId) -> bool {
-        // the template's `getTemplateID()` (the filter has no translated caller yet)
-        self.objects.find(other).is_some_and(|o| i32::from(o.template().get_template_id()) == template_key)
+        // ~~the template's `getTemplateID()` (the filter has no translated caller yet)~~ **integration batch I26:** upstream's
+        // `m_tThing->isEquivalentTo(other->getTemplate())` (a reskin or build variation is the same thing), now that the scripts use it
+        u16::try_from(template_key).is_ok_and(|t| self.template_is_equivalent_to_object(t, other))
     }
     fn can_player_garrison(&mut self, player: Option<i32>, other: ObjectId, source: CommandSourceType) -> bool {
         action_manager::can_player_garrison(self, player, Some(other), source).unwrap_or(false)
