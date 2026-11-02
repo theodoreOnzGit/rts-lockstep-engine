@@ -119,19 +119,7 @@ impl World {
     /// no fire OCL).
     pub fn weapon_store_post_process(&mut self) {
         let statics = std::sync::Arc::make_mut(&mut self.statics);
-        let factory = &statics.thing_factory;
-        let store = &statics.object_creation_list_store;
-        let names = &mut self.names;
-        let keys: std::collections::BTreeMap<Vec<u8>, u32> = {
-            let mut m = std::collections::BTreeMap::new();
-            for k in store.ocls.keys() {
-                m.insert(names.key_to_name(*k).to_vec(), k.0);
-            }
-            m
-        };
-        let find_template = |n: &[u8]| factory.find_template(n).map(|t| t.data.get_template_id());
-        let find_ocl = |n: &[u8]| if n.eq_ignore_ascii_case(b"None") { None } else { keys.get(n).copied() };
-        statics.weapon_store.post_process_load(&find_template, &find_ocl);
+        crate::logic::world::game_data::weapon_store_post_process(&mut statics.weapon_store, &statics.thing_factory, &statics.object_creation_list_store, &mut self.names);
     }
 }
 

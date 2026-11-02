@@ -23,27 +23,16 @@
 use std::sync::Arc;
 
 use crate::common::base_type::{Coord3D, ICoord2D};
-use crate::common::damage_fx::DamageFxStore;
 use crate::common::dict::Dict;
-use crate::common::ini::{BlockParse, Ini, IniLoadType, IniResult};
-use crate::common::module_factory::ModuleFactory;
-use crate::common::name_key_generator::NameKeyGenerator;
 use crate::common::object_status_types::ObjectStatusMaskType;
-use crate::common::science::{GameTextFetch, ScienceStore};
-use crate::common::thing_factory::ThingFactory;
-use crate::common::thing_template::ThingParseEnv;
-use crate::common::unicode_string::UnicodeString;
-use crate::logic::armor::ArmorStore;
-use crate::logic::locomotor::LocomotorStore;
 use crate::logic::terrain_logic::{GroundSource, TerrainLogic};
 use crate::logic::terrain_visual::LogicHeightMap;
-use crate::logic::weapon_set::WeaponTemplateTable;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::game_logic_update::CRC_RECALC;
 use crate::logic::world::ids::{ObjectId, TeamId};
 use crate::logic::world::module_call::ModuleCall;
 use crate::logic::world::pathfinder_host_world::PfOp;
-use crate::logic::world::statics::GameStatics;
+use crate::logic::world::game_data::{load_game_data, MemoryFiles, MissingFiles, TextTable};
 use crate::logic::world::team_ops::{factory_find_team, factory_init_team};
 
 /// The game's INI: a tracked locomotor, the runner, the gun, the dozer and the depot.
@@ -68,68 +57,6 @@ Object Soldier\n KindOf = VEHICLE\n VisionRange = 150\n Geometry = CYLINDER\n Ge
  Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
 Object Depot\n KindOf = STRUCTURE IMMOBILE\n BuildTime = 2.0\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n";
-
-/// What the game's INI is read into.
-struct Ctx {
-    factory: ThingFactory,
-    names: NameKeyGenerator,
-    modules: ModuleFactory,
-    armors: ArmorStore,
-    dfx: DamageFxStore,
-    weapons: WeaponTemplateTable,
-    sciences: ScienceStore,
-    locomotors: LocomotorStore,
-    weapon_store: crate::logic::weapon::WeaponStore,
-    ai_data: crate::logic::ai::ai_data::AiDataChain,
-    ocls: crate::logic::object_creation_list::ObjectCreationListStore,
-}
-
-/// No game text (the game names none).
-struct NoText;
-impl GameTextFetch for NoText {
-    fn fetch(&self, _label: &[u8]) -> UnicodeString {
-        UnicodeString::new()
-    }
-}
-
-fn object_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    let mut env = ThingParseEnv {
-        names: &mut c.names,
-        modules: &mut c.modules,
-        armors: &c.armors,
-        damage_fx: &c.dfx,
-        weapons: &c.weapons,
-        sciences: &c.sciences,
-        text: &NoText,
-        locomotors: &c.locomotors,
-    };
-    c.factory.parse_object_block(ini, &mut env, 0)
-}
-
-fn ai_data_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    crate::logic::ai::ai_data::parse_ai_data_definition(ini, &mut c.ai_data, &c.sciences, &mut c.names)
-        .unwrap_or_else(|_| Err(crate::common::ini::IniError::new(crate::common::ini::IniErrorKind::Bug)))
-}
-
-/// (batch I11: `INI::parseObjectCreationListDefinition`; the weapons a nugget names are the store's by index, read before the lists)
-fn ocl_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    let weapon_templates = c.weapon_store.templates().iter().enumerate().map(|(i, t)| (t.name.clone(), i as u32)).collect();
-    let env = Arc::new(crate::logic::object_creation_list::OclParseEnv { preload_assets: false, weapon_templates });
-    c.ocls.parse_object_creation_list_definition(ini, &mut c.names, &env)
-}
-
-fn weapon_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.weapon_store.parse_weapon_template_definition(ini, &mut c.names)?;
-    // (the thing templates' weapon sets name the weapons by key)
-    for t in c.weapon_store.templates() {
-        c.weapons.add(t.name_key);
-    }
-    Ok(())
-}
-
-fn locomotor_block(ini: &mut Ini<'_>, c: &mut Ctx) -> IniResult<()> {
-    c.locomotors.parse_locomotor_template_definition(ini, &mut c.names)
-}
 
 /// A new object of the template `name` on `team` at `pos`, in its team and the partition manager.
 fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
@@ -189,46 +116,18 @@ pub fn gate_map_world() -> World {
 
 /// [`gate_map_world`] with `extra` read after the game's INI (batch I9h: a test's own templates; the game's are unchanged).
 pub fn gate_map_world_with(extra: &str) -> World {
-    let mut names = NameKeyGenerator::new();
-    names.reset();
-    let mut modules = ModuleFactory::new();
-    modules.init(&mut names).expect("the module factory");
-    let mut c = Ctx {
-        factory: ThingFactory::new(),
-        names,
-        modules,
-        armors: ArmorStore::new(),
-        dfx: DamageFxStore::new(),
-        weapons: WeaponTemplateTable::new(),
-        sciences: ScienceStore::new(),
-        locomotors: LocomotorStore::new(),
-        weapon_store: crate::logic::weapon::WeaponStore::new(),
-        ai_data: Default::default(),
-        ocls: Default::default(),
-    };
-    static BLOCKS: [BlockParse<Ctx>; 5] = [
-        BlockParse { token: "AIData", parse: ai_data_block },
-        BlockParse { token: "Object", parse: object_block },
-        BlockParse { token: "Locomotor", parse: locomotor_block },
-        BlockParse { token: "Weapon", parse: weapon_block },
-        BlockParse { token: "ObjectCreationList", parse: ocl_block },
-    ];
-    Ini::load(b"Data\\INI\\Gate.ini", INI.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("the game's INI");
+    // (batch I12: read as the game reads its INI, `game_data::load_game_data`: the gate's blocks are one file of the thing
+    // factory's directory, a test's another after it; the other subsystems' files are absent and skipped; the post-process runs)
+    let mut files = MemoryFiles::new();
+    files.insert(b"Data\\INI\\Object\\Gate.ini", INI.as_bytes().to_vec());
     if !extra.is_empty() {
-        Ini::load(b"Data\\INI\\GateTest.ini", extra.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut c).expect("the test's INI");
+        files.insert(b"Data\\INI\\Object\\GateTest.ini", extra.as_bytes().to_vec());
     }
-    c.factory.post_process_load();
+    let load = load_game_data(&files, MissingFiles::Skip, TextTable::default()).expect("the game's INI");
+    let (mut st, names) = load.into_statics();
 
     let mut w = World::new();
-    w.names = c.names;
-    let mut st = GameStatics {
-        thing_factory: c.factory,
-        locomotor_store: c.locomotors,
-        weapon_store: c.weapon_store,
-        ai_data: c.ai_data.current().clone(),
-        object_creation_list_store: c.ocls,
-        ..Default::default()
-    };
+    w.names = names;
     {
         let g = st.global_data.create_original();
         g.partition_cell_size = 40.0;
@@ -239,8 +138,6 @@ pub fn gate_map_world_with(extra: &str) -> World {
         g.max_low_energy_production_speed = 0.8;
     }
     w.statics = Arc::new(st);
-    // (batch I11: `TheWeaponStore->postProcessLoad()`, after the INI: the weapons' projectiles and OCLs found by name)
-    w.weapon_store_post_process();
     let mut t = TerrainLogic::new(GroundSource::LogicHeightMap);
     let size = ICoord2D { x: 40, y: 40 };
     t.set_logic_height_map(Some(LogicHeightMap::new(40, 40, 0, vec![size], vec![0; 1600]).expect("the height map")));
