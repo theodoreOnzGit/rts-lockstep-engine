@@ -430,6 +430,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     put_u32(&mut v, d.scan_range.to_bits());
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names;
     let power = power_id(&ctx.store, cfg[13]);
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });

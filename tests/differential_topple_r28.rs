@@ -347,6 +347,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 12], ops: &[[u32; 6]
     let ModuleDataKind::ToppleUpdate(d) = &data else { unreachable!() };
     put_data(&mut v, d, &mut fx);
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     let mut factory = ThingFactory::new();
     factory.new_template(b"Stump", 0).expect("a template");

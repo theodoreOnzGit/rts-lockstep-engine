@@ -1962,3 +1962,59 @@ mod team_script_tests {
         assert_eq!(always_false, Some(true));
     }
 }
+
+#[cfg(test)]
+mod player_rest_tests {
+    use super::*;
+    use crate::common::game_common::{GameDifficulty, PlayerType};
+    use crate::logic::world::player_ops::{player_set_player_type, PlayerHost};
+    use crate::logic::world::script_engine::ScriptEngineHost;
+
+    /// Batch I31, three more of the logic's calls live. Predicted before the run: player 2 made a computer player has an AI player of
+    /// the game's difficulty (normal), and after `setAIDifficulty(HARD)` reads hard (before, the call set a table the live AI never
+    /// read); `MSG_ENABLE_RETALIATION_MODE` posted for player 1 turns its logical retaliation mode on at the next frame (before, only a
+    /// record); the engine's `doEnableOrDisableObjectDifficultyBonuses(false)` turns two soldiers' difficulty bonus off. Then (found by
+    /// the save and load test, see the batch's docs) a soldier of the hard computer player made outside a single-player game has no
+    /// `SOLO_AI_HARD` weapon bonus condition, and one made in a single-player game has it. **Missed on the first run of that part:**
+    /// both had none, because the test had just turned the engine's bonus flag off (above), which a new object reads; it is turned on
+    /// again first.
+    #[test]
+    fn the_players_remaining_calls_are_live() {
+        let mut w = gate_world();
+        player_set_player_type(&mut w, 2, PlayerType::Computer, false).expect("Player2 a computer player");
+        let before = w.ai_difficulty(2);
+        crate::logic::world::player_init::PlayerInitHost::ai_set_difficulty(&mut w, 2, GameDifficulty::Hard);
+        let after = w.ai_difficulty(2);
+        let retaliation = w.players.get_nth(1).map(|p| p.logical_retaliation_mode_enabled);
+        w.message_enable_retaliation_mode(1, true);
+        w.logic_update().unwrap();
+        let retaliating = w.players.get_nth(1).map(|p| p.logical_retaliation_mode_enabled);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let b = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        let bonus = |w: &World| [a, b].map(|o| w.find_object(o).map(|x| x.is_receiving_difficulty_bonus));
+        w.set_receiving_difficulty_bonus(a, true);
+        w.set_receiving_difficulty_bonus(b, true);
+        let on = bonus(&w);
+        w.se_actions_enable_difficulty_bonuses(false);
+        let off = bonus(&w);
+        eprintln!("difficulty {before:?} -> {after:?}; retaliation {retaliation:?} -> {retaliating:?}; bonus {on:?} -> {off:?}");
+        assert_eq!((before, after), (GameDifficulty::Normal, GameDifficulty::Hard));
+        assert_eq!((retaliation, retaliating), (Some(false), Some(true)));
+        assert_eq!(on, [Some(true); 2]);
+        assert_eq!(off, [Some(false); 2]);
+        // the single-player difficulty bonus (the game mode the world's; it was a table flag, never set): a hard computer player's new
+        // soldier in a single-player game gets the `SOLO_AI_HARD` weapon bonus condition; none outside one
+        // (the bonuses back on: the action above turned the engine's flag off, and a new object takes it from the engine; the first
+        // run of this part missed that and saw no bonus inside either)
+        w.se_actions_enable_difficulty_bonuses(true);
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let outside = make(&mut w, b"Soldier", enemy, Coord3D { x: 200.0, y: 100.0, z: 0.0 });
+        w.cuts.game_loop.game_mode = crate::common::recorder::game_mode::SINGLE_PLAYER;
+        let inside = make(&mut w, b"Soldier", enemy, Coord3D { x: 220.0, y: 100.0, z: 0.0 });
+        let solo = |w: &World, o| w.find_object(o).map(|x| x.weapon_bonus_condition & (1 << crate::logic::weapon_bonus::condition::SOLO_AI_HARD) != 0);
+        let (o, i) = (solo(&w, outside), solo(&w, inside));
+        eprintln!("solo AI hard: outside {o:?}, inside {i:?}");
+        assert_eq!((o, i), (Some(false), Some(true)));
+    }
+}

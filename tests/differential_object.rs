@@ -377,11 +377,12 @@ impl Run {
             level_gain_animation_name_set: r.b(),
             enable_repulsors: r.b(),
             draw_icon_ui: r.b(),
-            objects_should_receive_difficulty_bonus: r.b(),
             max_tunnel_capacity: 0, // not read by Object.cpp (TunnelTracker.cpp, tested in differential_tunnel_tracker.rs)
             ..ObjectGlobals::default() // the hulk override and the base regeneration are the layer-9 modules', not Object.cpp's
         };
         w.cuts.globals = g;
+        // `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`: the world's engine's (the stand-in's answer, drawn in the same place)
+        w.script_engine.objects_should_receive_difficulty_bonus = r.b();
         let _extent_known = r.b();
         let (_hx, _hy) = (r.f(), r.f());
         w.cuts.wall_height = r.f();

@@ -152,11 +152,8 @@ pub struct PlayerHostCuts {
     pub force_skirmish_ai: bool,
     /// `TheGameInfo` (`None`: `NULL`): its starting cash.
     pub game_info_starting_cash: Option<Money>,
-    /// `TheGameLogic->isInSinglePlayerGame()`, `isInShellGame()`, `getRankLevelLimit()`.
-    pub in_single_player_game: bool,
-    /// See `in_single_player_game`.
-    pub in_shell_game: bool,
-    /// See `in_single_player_game`.
+    /// `TheGameLogic->getRankLevelLimit()` (~~`isInSinglePlayerGame()`, `isInShellGame()` were here too~~ the world's game mode since
+    /// integration batch I31).
     pub rank_level_limit: i32,
     /// `TheInGameUI->isClientQuiet()`.
     pub client_quiet: bool,
@@ -182,8 +179,6 @@ impl Default for PlayerHostCuts {
             ai: BTreeMap::new(),
             force_skirmish_ai: false,
             game_info_starting_cash: None,
-            in_single_player_game: false,
-            in_shell_game: false,
             rank_level_limit: 1000,
             client_quiet: false,
             network_present: false,
@@ -730,8 +725,10 @@ impl PlayerHost for World {
             time_of_day_is_night: g.is_some_and(|g| g.time_of_day == TimeOfDay::Night as i32),
             game_info_starting_cash: c.game_info_starting_cash,
             force_skirmish_ai: c.force_skirmish_ai,
-            in_single_player_game: c.in_single_player_game,
-            in_shell_game: c.in_shell_game,
+            // (integration batch I31: `TheGameLogic->isInSinglePlayerGame()` and `isInShellGame()`, the world's game mode; they were
+            // table flags, false whatever game the world started, so the single-player difficulty bonuses were never applied)
+            in_single_player_game: self.cuts.game_loop.game_mode == crate::common::recorder::game_mode::SINGLE_PLAYER,
+            in_shell_game: self.cuts.game_loop.game_mode == crate::common::recorder::game_mode::SHELL,
             in_game_logic_update: self.is_in_game_logic_update(),
             rank_level_limit: c.rank_level_limit,
             client_quiet: c.client_quiet,
@@ -786,6 +783,12 @@ impl PlayerHost for World {
     }
     fn message_enable_retaliation_mode(&mut self, player_index: PlayerIndex, enabled: bool) {
         self.host_cut("MessageStream::appendMessage(MSG_ENABLE_RETALIATION_MODE)", &[i64::from(player_index), i64::from(enabled)], &[]);
+        // (integration batch I31: and the message itself, to the world's commands, which the dispatch carries out at the next frame: the
+        // stream's way to the logic through the network is the client's, taken here as immediate)
+        self.push_command(crate::common::message_types::MSG_ENABLE_RETALIATION_MODE, player_index, |m| {
+            m.append_integer_argument(player_index);
+            m.append_boolean_argument(enabled);
+        });
     }
     fn academy_init(&mut self, p: PlayerIndex) {
         let frame = World::frame(self);
@@ -1495,6 +1498,13 @@ impl PlayerInitHost for World {
         self.cuts.player_host.global_difficulty
     }
     fn ai_set_difficulty(&mut self, p: PlayerIndex, d: GameDifficulty) {
+        // (integration batch I31: with `live_ai`, the AI player's own `m_difficulty`, which `ai_difficulty` above already reads)
+        if self.cuts.live_ai {
+            if let Some(a) = self.ai_players.by_player.get_mut(&p) {
+                a.difficulty = d;
+            }
+            return;
+        }
         self.host_cut("AIPlayer::setAIDifficulty", &[i64::from(p), d as i64], &[]);
         if let Some(a) = self.cuts.player_host.ai.get_mut(&p) {
             a.difficulty = d;

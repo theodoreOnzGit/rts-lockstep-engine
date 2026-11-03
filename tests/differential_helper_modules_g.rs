@@ -246,6 +246,8 @@ struct Tally {
 fn rust_run(kind: usize, cfg: &[u32; 7], ops: &[[u32; 6]], tally: &mut Tally) -> Vec<u8> {
     let mut v = Vec::new();
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     let mut names = NameKeyGenerator::new();
     names.reset();
     w.names = names;

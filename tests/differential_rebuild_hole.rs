@@ -438,6 +438,8 @@ fn rust_run(ctx: &Ctx, kind: u32, data: ModuleDataKind, cfg: &[u32; 12], ops: &[
     let tid = |name: &str| *template_names.iter().find(|(_, n)| n.as_str() == name).unwrap().0;
     let (u1_id, u2_id) = (tid("U1"), tid("U2"));
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), thing_factory: factory, ..Default::default() });
     w.cuts.trace = Some(Vec::new());

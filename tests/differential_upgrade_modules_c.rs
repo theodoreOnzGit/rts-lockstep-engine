@@ -436,6 +436,8 @@ fn rust_run(
     let templates: Vec<u32> = (0..4).map(|i| if cfg[7 + i] == 99 { 0 } else { template_of(cfg[7 + i]) }).collect();
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;

@@ -467,6 +467,8 @@ fn rust_run(names: NameKeyGenerator, center: UpgradeCenter, data: ModuleDataKind
     }
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = sc.names;
     w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, thing_factory: factory, ..Default::default() });
     w.cuts.trace = Some(Vec::new());

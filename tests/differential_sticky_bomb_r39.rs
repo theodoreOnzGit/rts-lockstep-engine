@@ -347,6 +347,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 24], ops: &[[u32; 4]
     put_i32(&mut v, weapon);
     put_i32(&mut v, fx.id(&d.geometry_based_damage_fx));
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     let mut weapon_store = rts_lockstep_engine::logic::weapon::WeaponStore::new();
     for (k, n) in ["WEAP_A", "WEAP_B"].iter().enumerate() {

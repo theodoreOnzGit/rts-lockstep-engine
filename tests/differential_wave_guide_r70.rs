@@ -413,6 +413,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     put_str(&mut v, d.bridge_particle.as_deref().unwrap_or(b""));
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names;
     let mut factory = ThingFactory::new();
     if cfg[20] & 1 != 0 {

@@ -404,6 +404,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg_in: &[u32; 20], ops: &[[u32; 4]
     let ModuleDataKind::StructureToppleUpdate(d) = &data else { unreachable!() };
     put_data(&mut v, d, &mut fx);
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     let mut ocls = rts_lockstep_engine::logic::object_creation_list::ObjectCreationListStore::new();
     for n in [&b"OCL_A"[..], b"OCL_B"] {

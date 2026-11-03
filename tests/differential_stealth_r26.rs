@@ -577,6 +577,8 @@ fn rust_run(ctx: &Ctx, data: [ModuleDataKind; 2], cfg_in: &[u32; 20], ops: &[[u3
         put_data(&mut v, d, &mut fx);
     }
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     // the thing factory knows the templates' names (a load finds the disguise by name); the weapon store has one template
     let mut factory = ThingFactory::new();

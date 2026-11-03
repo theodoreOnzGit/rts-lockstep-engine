@@ -493,6 +493,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; 8], ops: &[[u32; 6]], ta
     put_data(&mut v, &data, &mut fx, &WEAPONS);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     // the weapon store's templates (named with a scratch generator: upstream assigns no key for them in the driver)
     let mut weapon_store = rts_lockstep_engine::logic::weapon::WeaponStore::new();
     let mut scratch = rts_lockstep_engine::common::name_key_generator::NameKeyGenerator::new();

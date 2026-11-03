@@ -467,6 +467,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     put_u32(&mut v, u32::from(d.park_in_hangars));
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names;
     let mut factory = ThingFactory::new();
     factory.new_template(b"R74Jet", 0).expect("a template");

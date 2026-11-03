@@ -273,6 +273,8 @@ fn rust_run(
     put_str(&mut v, &data.trigger_alt);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, ..Default::default() });
     w.names = ctx.names;
     w.cuts.neutral_default_team = 1;

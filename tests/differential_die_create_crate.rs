@@ -459,6 +459,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, crate_text: &[u8], cfg: &[u32; 12],
         template_names.insert(id, name.to_string());
     }
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = names;
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), thing_factory: factory, crate_system: crates, ..Default::default() });
     w.cuts.trace = Some(Vec::new());

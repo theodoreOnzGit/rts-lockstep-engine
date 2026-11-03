@@ -488,6 +488,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg: &[u32; 3], ops: &[[u32; 5]], ta
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, special_power_store: ctx.store, ..Default::default() });
     w.names = ctx.names;
     w.cuts.probe_effect_trace = true;

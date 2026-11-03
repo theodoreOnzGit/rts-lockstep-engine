@@ -247,6 +247,8 @@ fn rust_run(ctx: &Ctx, data: ModuleDataKind, cfg: &[u32; 5], ops: &[[u32; 6]], t
     put_u32(&mut v, d.health_percent_to_drain_per_second.to_bits());
     put_u32(&mut v, d.not_allowed_when_health_below_percent.to_bits());
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names.clone();
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center.clone(), ..Default::default() });
     w.cuts.trace = Some(Vec::new());

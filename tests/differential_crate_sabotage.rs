@@ -447,6 +447,8 @@ fn rust_run(kind: usize, names: NameKeyGenerator, center: UpgradeCenter, data: M
     Ini::load(b"Data\\INI\\Science.ini", defs.as_bytes(), IniLoadType::Overwrite, None, &BLOCKS, &mut sc).expect("sciences load");
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = sc.names;
     w.statics = Arc::new(GameStatics { science_store: sc.store, upgrade_center: center, ..Default::default() });
     w.cuts.trace = Some(Vec::new());

@@ -584,6 +584,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     }
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names;
     let mut ocls = rts_lockstep_engine::logic::object_creation_list::ObjectCreationListStore::new();
     for n in [&b"OCL_A"[..], b"OCL_B"] {

@@ -381,7 +381,9 @@ impl World {
         // applicable. Internally it validates certain kinds of objects.
         if let Some(controller) = self.get_controlling_player(id) {
             let receiving = self.objects.find(id).is_some_and(|o| o.is_receiving_difficulty_bonus);
-            if !receiving && self.cuts.globals.objects_should_receive_difficulty_bonus {
+            // (integration batch I31: the world's engine's flag, as upstream's `TheScriptEngine->getObjectsShouldReceiveDifficultyBonus()`;
+            // it was a table global that disagreed with the engine, so a loaded game's objects, set from the engine, differed)
+            if !receiving && self.script_engine.objects_should_receive_difficulty_bonus {
                 self.set_receiving_difficulty_bonus(id, true);
             }
             if self.tq().player_num_battle_plans_active(controller) > 0 {

@@ -293,6 +293,8 @@ fn rust_run(kind: usize, data: ModuleDataKind, cfg: &[u32; 1], ops: &[[u32; 6]],
     let mut v = Vec::new();
     put_data(&mut v, &data);
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     let mut names = NameKeyGenerator::new();
     names.reset();
     w.names = names;

@@ -874,6 +874,8 @@ fn rust_run(kind: usize, names: NameKeyGenerator, store: SpecialPowerStore, data
     put_data(&mut v, &data, &store);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     // batch R21: the declared sciences, for the cash hack's `UpgradeMoneyAmount` (their keys are the ones the context gave them)
     let mut names = names;
     let mut sciences = ScienceStore::new();

@@ -412,6 +412,8 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, player_mask: [u32; 4], obj_mask: [u3
     put_data(&mut v, &data, &mut fx);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     let factory = build_factory(&[cfg[2], cfg[3], cfg[4]]);
     w.statics = Arc::new(GameStatics { upgrade_center: ctx.center, thing_factory: factory, ..Default::default() });
     w.names = ctx.names;

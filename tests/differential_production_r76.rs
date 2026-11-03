@@ -495,6 +495,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
     put_u32(&mut v, (0..DISABLED_COUNT).filter(|&k| d.disabled_types_to_process.test(k)).fold(0, |a, k| a | 1 << k));
 
     let mut w = World::new();
+    // (the C++ harness's `newObject` hook makes its objects without the constructor's difficulty bonus call; since integration batch
+    // I31 the world's object creation reads the engine's flag, whose constructor value is true, so it is turned off here to match)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     w.names = ctx.names;
     let mut factory = ThingFactory::new();
     for (i, name) in TEMPLATES.iter().enumerate() {

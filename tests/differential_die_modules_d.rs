@@ -512,6 +512,8 @@ fn rust_run(kind: usize, mut ctx: Ctx, data: ModuleDataKind, cfg: &mut [u32; 9],
     put_data(&mut v, &data, &ctx.store);
 
     let mut w = World::new();
+    // (the C++ module harness makes its objects without the constructor's difficulty bonus call; the world reads the engine's flag since batch I31)
+    w.script_engine.objects_should_receive_difficulty_bonus = false;
     let factory = build_factory(cfg[7], cfg[8], cfg[3] & 1 != 0);
     let dying_template = Arc::new(factory.find_template(b"DYING").unwrap().get_final_override().data.clone());
     let mut ocls = rts_lockstep_engine::logic::object_creation_list::ObjectCreationListStore::new();

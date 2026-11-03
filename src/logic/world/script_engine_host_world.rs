@@ -345,7 +345,11 @@ impl ScriptEngineHost for World {
         store.infos().map(|i| i.science()).find(|s| store.get_internal_name_for_science(&self.names, *s) == name).map(|s| s.0)
     }
     fn se_actions_enable_difficulty_bonuses(&mut self, enable: bool) {
-        self.se_cut("ScriptActions::doEnableOrDisableObjectDifficultyBonuses", &[i64::from(enable)], &[]);
+        // (integration batch I31: was a cut) `TheScriptActions->doEnableOrDisableObjectDifficultyBonuses(enable)` (the engine's
+        // `loadPostProcess`): every object's difficulty bonus set again
+        let mut sa = std::mem::take(&mut self.script_actions);
+        sa.do_enable_or_disable_object_difficulty_bonuses(self, enable);
+        self.script_actions = sa;
     }
     fn se_audio_add_event(&mut self, name: &[u8], player: i32) {
         self.se_cut("AudioManager::addAudioEvent", &[i64::from(player)], name);
