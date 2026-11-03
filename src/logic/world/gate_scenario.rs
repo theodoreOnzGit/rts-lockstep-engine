@@ -2924,3 +2924,37 @@ mod allies_live_tests {
         assert_eq!(n, 0);
     }
 }
+
+#[cfg(test)]
+mod pathfind_cell_tests {
+    use super::*;
+
+    /// Batch I44, the pathfinder's facts of a unit's AI: its pathfind goal and current cells (which the pathfinder wrote to the
+    /// table `ai_cells`, so the AI's saved `pathfind_goal_cell`, which the collision code reads, stayed (-1, -1)) and
+    /// `isDoingGroundMovement()` (a table: false for every unit). Predicted before the run: a soldier ordered to (350, 105) has,
+    /// 30 frames on, its AI's goal cell the destination's cell (35, 10) and its current cell the cell under it, the table empty,
+    /// it does ground movement, no live error.
+    #[test]
+    fn a_units_pathfind_cells_are_on_its_ai() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let ai = w.find_object(me).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(me, ai, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 350.0, y: 105.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..30 {
+            w.logic_update().unwrap();
+        }
+        let a = w.ai_peek(me).expect("the AI");
+        let (goal, cur) = ((a.pathfind_goal_cell.x, a.pathfind_goal_cell.y), (a.pathfind_cur_cell.x, a.pathfind_cur_cell.y));
+        let pos = w.find_object(me).expect("the soldier").get_position();
+        let under = ((pos.x / 10.0).floor() as i32, (pos.y / 10.0).floor() as i32);
+        let ground = w.pf_object_facts(me).and_then(|f| f.ai).map(|f| f.doing_ground_movement);
+        eprintln!("goal {goal:?}, cur {cur:?} (at {pos:?}, cell {under:?}), ground {ground:?}, table {:?}, errors {:?}", w.cuts.pathfinder.ai_cells, w.cuts.team_live_errors);
+        assert_eq!(goal, (35, 10));
+        assert_eq!(cur, under);
+        assert!(w.cuts.pathfinder.ai_cells.is_empty());
+        assert_eq!(ground, Some(true));
+        assert!(w.cuts.team_live_errors.is_empty());
+    }
+}

@@ -908,6 +908,30 @@ impl AiUpdate {
         true
     }
 
+    /// [`AiUpdate::is_doing_ground_movement`]'s tests from facts the caller has already read, for a reader that cannot lend the AI
+    /// a host (batch I44: the pathfinder's facts of another unit): `unmanned_heli`, unmanned and produced at a helipad; `held`,
+    /// disabled held; `falling`, above the terrain with a physics that allows it to fall. The same order of tests; keep the two
+    /// in step.
+    pub fn is_doing_ground_movement_given(&self, unmanned_heli: bool, held: bool, falling: bool) -> bool {
+        if matches!(self.subclass, AiSubclass::Jet(_)) {
+            return false;
+        }
+        if unmanned_heli {
+            return true;
+        }
+        if self.locomotor_set.get_valid_surfaces() == LOCOMOTORSURFACE_AIR {
+            return false;
+        }
+        let Some(cur) = self.get_cur_locomotor() else { return false };
+        if cur.get_legal_surfaces() & LOCOMOTORSURFACE_AIR != 0 {
+            return false;
+        }
+        if held && !plant(3207) {
+            return false;
+        }
+        !falling
+    }
+
     /// `isAircraftThatAdjustsDestination()`: a hovering or winged current locomotor.
     pub fn is_aircraft_that_adjusts_destination(&self) -> bool {
         let Some(cur) = self.get_cur_locomotor() else { return false };

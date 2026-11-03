@@ -70,6 +70,16 @@ impl World {
             None => slot.body.as_ref(),
         }
     }
+
+    /// [`World::peek_module_body`], mutably (batch I44: the pathfinder writes the AI's pathfind cells).
+    pub fn peek_module_body_mut(&mut self, h: ModuleHandle) -> Option<&mut UpdateBody> {
+        let obj = self.objects.find_mut(h.object)?;
+        let slot = obj.modules.get(h.index as usize)?;
+        match slot.update_index {
+            Some(u) => obj.behaviors.get_mut(u as usize)?.body.as_mut(),
+            None => obj.modules.get_mut(h.index as usize)?.body.as_mut(),
+        }
+    }
     // --- end p1w13-sonnet ---
 
     /// Puts a checked-out body back.

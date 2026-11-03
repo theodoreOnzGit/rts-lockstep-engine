@@ -519,11 +519,11 @@ impl<H: AiStateHost> AiUpdateModule<H> {
         let ai = self.ai_mut();
         if !moving {
             ai.pathfind_goal_cell = ICoord2D { x: -1, y: -1 };
-            h_update_goal(h, &pos, layer);
+            self.with_ai_lent(h, |h| h_update_goal(h, &pos, layer));
             let ai = self.ai_mut();
             ai.pathfind_cur_cell = ICoord2D { x: -1, y: -1 };
             if !plant(3502) {
-                h.pf_update_pos(&pos);
+                self.with_ai_lent(h, |h| h.pf_update_pos(&pos));
             }
         } else if ai.pathfind_goal_cell.x >= 0 && ai.pathfind_goal_cell.y >= 0 {
             let goal = Coord3D {
@@ -532,8 +532,17 @@ impl<H: AiStateHost> AiUpdateModule<H> {
                 z: 0.0,
             };
             ai.pathfind_goal_cell = ICoord2D { x: -1, y: -1 };
-            h_update_goal(h, &goal, layer);
+            self.with_ai_lent(h, |h| h_update_goal(h, &goal, layer));
         }
+    }
+
+    /// The AI lent to the host around one pathfinder call (`updateGoal`, `updatePos`), as `run_inner` lends it (batch I44): the
+    /// pathfinder reads through the host whether the unit does ground movement and writes its pathfind cells to its AI, which
+    /// upstream reaches through `getAI()`; with the AI only in this module, the host saw no AI and the cells were lost.
+    fn with_ai_lent(&mut self, h: &mut H, f: impl FnOnce(&mut H)) {
+        h.ai_stack().push(self.ai.take().expect("the AI (not lent)"));
+        f(h);
+        self.ai = Some(h.ai_stack().pop().expect("the lent AI"));
     }
 }
 

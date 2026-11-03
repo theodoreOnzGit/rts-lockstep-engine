@@ -43,10 +43,12 @@
 //! closest tall building (none). **Corrected 2026-11-03 (batch I43):** with `cuts.live_ai`, these are the units' own AIs'
 //! answers: whether it can path through units, its ignored obstacle, whether it is moving, attacking or busy (`moveAllies`), the
 //! building it does not path around (a chinook's drop target), a wings locomotor, and `aiMoveAwayFromUnit` is given to the
-//! ally's AI (it was only logged). The attack search's questions are live since batch I38. Still tables: the AI facts the
+//! ally's AI (it was only logged). The attack search's questions are live since batch I38. ~~Still tables: the AI facts the
 //! pathfinder reads before it runs (ground movement, an aircraft that adjusts its destination, and the goal and current cells,
-//! which the pathfinder writes to `ai_cells`, not the AI's own `pathfind_goal_cell` and `pathfind_cur_cell`), the downhill-only
-//! flag of an object with no AI, the slaver id, and `attackUsesLineOfSight` (the AI data's default).
+//! which the pathfinder writes to `ai_cells`, not the AI's own `pathfind_goal_cell` and `pathfind_cur_cell`)~~ **Corrected
+//! 2026-11-03 (batch I44):** those facts are the AI's own with `live_ai`, and the pathfinder writes the cells to the AI's saved
+//! fields. Still tables: the downhill-only flag of an object with no AI, the slaver id, and `attackUsesLineOfSight` (the AI
+//! data's default).
 //!
 //! `p1w13-sonnet`, integration batch I9a, 2026-11-01.
 
@@ -435,7 +437,28 @@ impl World {
         let o = self.objects.find(id)?;
         let g = &o.geometry_info;
         let t = o.template();
+        // (batch I44: with `live_ai`, the AI's own: `isDoingGroundMovement()`, `isAircraftThatAdjustsDestination()` and its
+        // pathfind goal and current cells, the fields it saves; they were the tables, so no unit did ground movement)
+        let live = if self.cuts.live_ai && o.ai.is_some() {
+            self.ai_peek(id).map(|a| {
+                let unmanned_heli = o.is_disabled_by_type(DISABLED_UNMANNED) && o.is_kind_of(KINDOF_PRODUCED_AT_HELIPAD);
+                let held = o.is_disabled_by_type(crate::common::disabled_types::DISABLED_HELD);
+                let falling = self.peek_height_above_terrain(id) > 0.0
+                    && o.physics.is_some_and(|p| matches!(self.peek_module_body(ModuleHandle { object: id, index: p }), Some(UpdateBody::PhysicsBehavior(b)) if b.get_allow_to_fall()));
+                PfAiFacts {
+                    doing_ground_movement: a.is_doing_ground_movement_given(unmanned_heli, held, falling),
+                    aircraft_adjusts_destination: a.is_aircraft_that_adjusts_destination(),
+                    goal_cell: a.pathfind_goal_cell,
+                    cur_cell: a.pathfind_cur_cell,
+                }
+            })
+        } else {
+            None
+        };
         let ai = o.ai.map(|_| {
+            if let Some(f) = live {
+                return f;
+            }
             let (goal_cell, cur_cell) = self.cuts.pathfinder.ai_cells.get(&id).copied().unwrap_or((NO_CELL, NO_CELL));
             PfAiFacts {
                 doing_ground_movement: self.cuts.pathfinder.ai_ground_movement.contains(&id),
@@ -498,6 +521,14 @@ impl World {
         PfLocomotorSet {
             valid_surfaces: self.cuts.ai_valid_surfaces.get(&id).copied().unwrap_or(0) as _,
             downhill_only: self.cuts.pathfinder.ai_downhill_only.contains(&id),
+        }
+    }
+
+    /// A pathfind cell for a unit whose AI is neither in its module nor lent (a call of its module is running with the AI
+    /// unlent): reported, and kept in the table (batch I44). An object with no AI is not reported.
+    fn pf_cell_out_of_reach(&mut self, id: ObjectId) {
+        if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+            self.cuts.team_live_errors.push(format!("Pathfinder: the pathfind cell of {id}'s AI, which is out of reach"));
         }
     }
 
@@ -566,9 +597,26 @@ impl PathfinderHost for World {
         World::set_destination_layer(self, id, layer);
     }
     fn set_pathfind_goal_cell(&mut self, id: ObjectId, cell: ICoord2D) {
+        // (batch I44: the AI's own `setPathfindGoalCell` with `live_ai`; it was the table, so the AI's saved field, which the
+        // collision code reads, stayed (-1, -1))
+        if self.cuts.live_ai {
+            if let Some(a) = self.ai_peek_mut(id) {
+                a.pathfind_goal_cell = cell;
+                return;
+            }
+            self.pf_cell_out_of_reach(id);
+        }
         self.pf_ai_cells_mut(id).0 = cell;
     }
     fn set_cur_pathfind_cell(&mut self, id: ObjectId, cell: ICoord2D) {
+        // (batch I44: the AI's own `setCurPathfindCell`, as the goal cell)
+        if self.cuts.live_ai {
+            if let Some(a) = self.ai_peek_mut(id) {
+                a.pathfind_cur_cell = cell;
+                return;
+            }
+            self.pf_cell_out_of_reach(id);
+        }
         self.pf_ai_cells_mut(id).1 = cell;
     }
     fn splat(&mut self, id: ObjectId) {

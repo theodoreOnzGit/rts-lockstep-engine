@@ -156,6 +156,21 @@ impl World {
         None
     }
 
+    /// [`World::ai_peek`], mutably: in its module, or lent (batch I44).
+    pub(crate) fn ai_peek_mut(&mut self, obj: ObjectId) -> Option<&mut AiUpdate> {
+        let index = self.find_object(obj).and_then(|o| o.ai)?;
+        if self.ai_module_holds_ai(obj) {
+            return match self.peek_module_body_mut(ModuleHandle { object: obj, index }) {
+                Some(UpdateBody::AiUpdate(m)) => m.module.as_mut().and_then(|m| m.ai.as_mut()),
+                _ => None,
+            };
+        }
+        if self.ai_is_lent(obj) {
+            return self.ai_stacks.ai.last_mut();
+        }
+        None
+    }
+
     /// `obj->getAI()`'s machine: in its module, or lent (the top of `ai_stacks.machine`).
     pub(crate) fn ai_machine_query(&self, obj: ObjectId) -> Option<&StateMachine<AiState<World>>> {
         self.ai_machine_peek(obj)
