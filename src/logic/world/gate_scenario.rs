@@ -2773,3 +2773,99 @@ Object Bomber\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5
         assert_eq!(fired, 70.0);
     }
 }
+
+#[cfg(test)]
+mod partition_live_tests {
+    use super::*;
+    use crate::logic::world::object_cuts::{ALLOW_ENEMIES, ALLOW_NEUTRAL};
+    use crate::logic::world::object_state::mask_of;
+    use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
+    use crate::logic::world::partition::host::PartitionHost;
+
+    const EXTRA: &str = "\
+Object Mine\n KindOf = MINE\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 1\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+Object Bomb\n KindOf = BOOBY_TRAP\n Geometry = CYLINDER\n GeometryMajorRadius = 1\n GeometryHeight = 1\nEnd\n";
+
+    /// Batch I42, `Object::setStatus`'s "CHECK FOR MINES, AND DETONATE THEM NOW" (Object.cpp:1014: `iteratePotentialCollisions` when the
+    /// construction status changes), which read the table `cuts.potential_collisions`. A depot (team 1, a 20 box) with an enemy mine 5
+    /// east, a friendly one 5 west and an enemy one 100 away. Predicted before the run: the depot put under construction, the enemy
+    /// mine is killed (effectively dead at once) and the friendly one destroyed (gone after the frame); the far one untouched.
+    #[test]
+    fn a_structure_under_construction_sets_off_the_mines_it_covers() {
+        let mut w = gate_map_world_with(EXTRA);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let enemy = make(&mut w, b"Mine", enemy_team, Coord3D { x: 205.0, y: 200.0, z: 0.0 });
+        let friendly = make(&mut w, b"Mine", team, Coord3D { x: 195.0, y: 200.0, z: 0.0 });
+        let far = make(&mut w, b"Mine", enemy_team, Coord3D { x: 300.0, y: 200.0, z: 0.0 });
+        w.set_status(depot, mask_of(OBJECT_STATUS_UNDER_CONSTRUCTION), true);
+        let dead = |w: &World, id| w.find_object(id).is_some_and(|o| o.is_effectively_dead());
+        let killed = dead(&w, enemy);
+        w.logic_update().unwrap();
+        let (enemy_gone, friendly_gone, far_alive) = (w.find_object(enemy).is_none(), w.find_object(friendly).is_none(), w.find_object(far).is_some_and(|o| !o.is_effectively_dead()));
+        eprintln!("enemy killed {killed} (gone {enemy_gone}), friendly gone {friendly_gone}, far alive {far_alive}");
+        assert!(killed);
+        assert!(friendly_gone);
+        assert!(far_alive);
+    }
+
+    /// Batch I42, `checkAndDetonateBoobyTrap`'s scan (Object.cpp:946: `iterateObjectsInRange` of booby traps, same map status, sorted
+    /// near to far), which read the table `cuts.booby_traps_in_range`. Predicted before the run: of two bombs 15 and 5 east of a soldier
+    /// and a soldier 3 from it, the scan of 30 finds the bombs, the near one first; with the live partition off, the (empty) table.
+    /// **Missed on the first run, by the test's setup:** without the pathfinder's map, the two overlapping soldiers' collision ordered
+    /// a move whose `adjustDestination` indexed the empty cell store and panicked (upstream has no guard either: a game always has
+    /// the map, `newMap`); with the map, as predicted.
+    #[test]
+    fn booby_traps_are_found_nearest_first() {
+        let mut w = gate_map_world_with(EXTRA);
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let car = make(&mut w, b"Soldier", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let far = make(&mut w, b"Bomb", team, Coord3D { x: 215.0, y: 200.0, z: 0.0 });
+        let near = make(&mut w, b"Bomb", team, Coord3D { x: 205.0, y: 200.0, z: 0.0 });
+        let _other = make(&mut w, b"Soldier", team, Coord3D { x: 203.0, y: 200.0, z: 0.0 });
+        let live = w.cut_partition_booby_traps_in_range(car, 30.0);
+        w.cuts.live_partition = false;
+        let table = w.cut_partition_booby_traps_in_range(car, 30.0);
+        eprintln!("live {live:?} (near {near}, far {far}), table {table:?}");
+        assert_eq!(live, vec![near, far]);
+        assert!(table.is_empty());
+    }
+
+    /// Batch I42, `getPlayersWithRelationship`, which read the relationship table `cuts.player_relationships` (empty in a game: every
+    /// player neutral to every other). The gate's players 1 and 2 are enemies. Predicted before the run: player 1's enemies are player
+    /// 2 (mask 4); its enemies and neutrals add player 0, with no default team (mask 5); from the table, no enemy (0).
+    #[test]
+    fn players_relationships_come_from_their_teams() {
+        let mut w = gate_map_world();
+        let enemies = w.players_with_relationship_live(1, ALLOW_ENEMIES);
+        let both = w.cut_players_with_relationship(1, true, true);
+        w.cuts.live_teams = false;
+        let table = w.players_with_relationship_live(1, ALLOW_ENEMIES);
+        eprintln!("enemies {enemies:#b}, enemies and neutral {both:#b} (ALLOW_NEUTRAL {ALLOW_NEUTRAL}), table {table:#b}");
+        assert_eq!(enemies, 4);
+        assert_eq!(both, 5);
+        assert_eq!(table, 0);
+    }
+
+    /// Batch I42, the partition host's `clientSafeQuickDoesPathExist` (`findPositionAround`'s path check, and the computer player's
+    /// `quickDoesPathExist`), which was the table `cuts.partition_quick_path`, `None` in a game, so the computer player read false.
+    /// Predicted before the run: a soldier on the open gate map has a path to a point 100 east (`Some(true)`); a depot, with no AI,
+    /// answers `None` (upstream's `ai == NULL`).
+    #[test]
+    fn the_quick_path_check_is_the_pathfinders() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 300.0, y: 300.0, z: 0.0 });
+        let to = Coord3D { x: 200.0, y: 105.0, z: 0.0 };
+        let path = PartitionHost::quick_does_path_exist(&mut w, soldier, &to);
+        let no_ai = PartitionHost::quick_does_path_exist(&mut w, depot, &to);
+        eprintln!("soldier {path:?}, depot {no_ai:?}");
+        assert_eq!(path, Some(true));
+        assert_eq!(no_ai, None);
+    }
+}

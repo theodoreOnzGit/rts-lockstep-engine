@@ -580,8 +580,8 @@ impl WeaponHost for World {
     fn objects_in_range(&mut self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)> {
         self.partition_iterate_objects_in_range_numeric_at(*pos, radius, calc as i32)
     }
-    fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId> {
-        self.cut_partition_potential_collisions(source)
+    fn potential_collisions(&mut self, source: ObjectId) -> Vec<ObjectId> {
+        self.cut_partition_potential_collisions(source, 0.0)
     }
     fn is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool {
         self.cut_partition_is_clear_line_of_sight_terrain(from, to)

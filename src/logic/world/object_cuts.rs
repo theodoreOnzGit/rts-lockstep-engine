@@ -166,9 +166,13 @@ impl World {
         crate::logic::world::partition::dist_calc(dc, &pa, ga.as_ref(), pos, None, crate::logic::world::partition::HUGE_DIST_SQR).vec
     }
 
-    /// batch W1b: `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`: the table `cuts.blocked_lines_of_sight` (the
-    /// terrain's sight lines are the partition manager's, layer 12's).
+    /// batch W1b: `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`: ~~the table `cuts.blocked_lines_of_sight`
+    /// (the terrain's sight lines are the partition manager's, layer 12's)~~ **corrected 2026-11-02 (batch I42):** the world's partition
+    /// manager with `live_partition` (it was always the table); the table otherwise.
     pub fn cut_partition_is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool {
+        if self.cuts.live_partition {
+            return self.partition.is_clear_line_of_sight_terrain(self, None, from, None, to);
+        }
         let b = |c: &Coord3D| [c.x.to_bits(), c.y.to_bits(), c.z.to_bits()];
         !self.cuts.blocked_lines_of_sight.contains(&(b(from), b(to)))
     }
@@ -2736,18 +2740,58 @@ impl World {
         if neutral {
             allowed |= ALLOW_NEUTRAL;
         }
+        self.players_with_relationship_live(src, allowed)
+    }
+
+    /// `ThePlayerList->getPlayersWithRelationship(src, allowed)` (batch I42): the player list's own, from the players' teams'
+    /// relationships, with `live_teams` (the relationships were the table `cuts.player_relationships`, which nothing in a game
+    /// fills, so every player read as neutral to every other); the table otherwise. (Upstream cannot fail; an error of the port's,
+    /// a planted mutant's, answers no player.)
+    pub fn players_with_relationship_live(&self, src: PlayerIndex, allowed: u32) -> PlayerMaskType {
+        if self.cuts.live_teams {
+            return crate::logic::world::player_list::player_list_get_players_with_relationship(self, src, allowed).unwrap_or(0);
+        }
         self.cuts.players_with_relationship(src, self.players.player_count(), allowed)
     }
 
-    /// `ThePartitionManager->iteratePotentialCollisions(..)` (scripted).
-    pub fn cut_partition_potential_collisions(&self, _obj: ObjectId) -> Vec<ObjectId> {
-        self.cuts.potential_collisions.clone()
+    /// `ThePartitionManager->iteratePotentialCollisions(obj->getPosition(), obj->getGeometryInfo(), angle)`: the world's partition
+    /// manager with `live_partition` (batch I42; it was always the table, so a structure finished on a mine never set it off, and a
+    /// contact weapon never touched a structure); the table `cuts.potential_collisions` otherwise.
+    pub fn cut_partition_potential_collisions(&mut self, obj: ObjectId, angle: f32) -> Vec<ObjectId> {
+        if !self.cuts.live_partition {
+            return self.cuts.potential_collisions.clone();
+        }
+        let Some((pos, geom)) = self.objects.find(obj).map(|o| (o.get_position(), o.geometry_info.clone())) else { return Vec::new() };
+        let mut it = self.with_partition(|pm, w| pm.iterate_potential_collisions(w, &pos, &geom, angle, false));
+        Self::iterated(&mut it)
     }
 
-    /// `ThePartitionManager->iterateObjectsInRange(pos, radius, FROM_CENTER_2D,
-    /// {booby trap kind, same map status}, ITER_SORTED_NEAR_TO_FAR)` (scripted).
-    pub fn cut_partition_booby_traps_in_range(&self, _obj: ObjectId, _radius: f32) -> Vec<ObjectId> {
-        self.cuts.booby_traps_in_range.clone()
+    /// `ThePartitionManager->iterateObjectsInRange(obj->getPosition(), radius, FROM_CENTER_2D,
+    /// {booby trap kind, same map status}, ITER_SORTED_NEAR_TO_FAR)` (Object.cpp:946): the world's partition manager with
+    /// `live_partition` (batch I42; it was always the table, so no booby trap went off in a game); the table otherwise.
+    pub fn cut_partition_booby_traps_in_range(&mut self, obj: ObjectId, radius: f32) -> Vec<ObjectId> {
+        use crate::logic::world::partition::filters::PartitionFilter as F;
+        use crate::logic::object_iter::IterOrderType;
+        use crate::logic::world::partition::DistanceCalculationType;
+        use crate::common::kind_of::{KindOfMaskType, KINDOF_BOOBY_TRAP};
+        if !self.cuts.live_partition {
+            return self.cuts.booby_traps_in_range.clone();
+        }
+        let Some(pos) = self.objects.find(obj).map(|o| o.get_position()) else { return Vec::new() };
+        let filters = [F::AcceptByKindOf { must_be_set: KindOfMaskType::from_indices(&[KINDOF_BOOBY_TRAP]), must_be_clear: KindOfMaskType::new() }, F::SameMapStatus { obj }];
+        let mut it = self.with_partition(|pm, w| pm.iterate_objects_in_range_at(w, &pos, radius, DistanceCalculationType::FromCenter2D, &filters, IterOrderType::SortedNearToFar));
+        Self::iterated(&mut it)
+    }
+
+    /// The objects of an iterator, in its order (`first()`, then `next()` until `NULL`).
+    fn iterated(it: &mut crate::logic::object_iter::SimpleObjectIterator<ObjectId>) -> Vec<ObjectId> {
+        let mut out = Vec::new();
+        let mut o = it.first();
+        while let Some(id) = o {
+            out.push(id);
+            o = it.next();
+        }
+        out
     }
 
     /// `TheSpecialPowerStore->canUseSpecialPower(this, template)`.

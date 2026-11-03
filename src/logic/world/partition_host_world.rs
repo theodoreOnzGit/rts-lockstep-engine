@@ -43,7 +43,10 @@
 //!   the quick path check of `findPositionAround`, and
 //!   `isViewBlockedByObstacle`. `cuts.pathfind_cells`, `cuts.partition_quick_path`
 //!   and `cuts.view_blocked`; the wall height is the existing `cuts.wall_height`
-//!   and no point is on a wall.
+//!   and no point is on a wall. **Corrected 2026-11-02 (batch I42):** the world
+//!   holds the pathfinder since batch I9a; with `live_pathfinder` and a map the
+//!   cell types (since I9a), the quick path check and `isViewBlockedByObstacle`
+//!   (since I42) are its answers, and the tables answer only without it.
 //! - **The terrain render object** (`TheTerrainRenderObject`), which answers
 //!   `isClearLineOfSight` and `isCliffCell` for a height-map terrain: the
 //!   existing `cuts.blocked_lines_of_sight` and `cuts.terrain_cliff`.
@@ -282,7 +285,8 @@ impl PartitionHost for World {
         self.players.local_index()
     }
     fn players_with_relationship(&self, player_index: i32, which_player_types: u32) -> PlayerMaskType {
-        self.cuts.players_with_relationship(player_index, self.players.player_count(), which_player_types)
+        // (batch I42: the player list's with `live_teams`; it was always the table)
+        self.players_with_relationship_live(player_index, which_player_types)
     }
     fn player_relationship_to_object_team(&self, player_index: i32, object: ObjectId) -> Relationship {
         self.tq().player_relationship_to_team(player_index, self.get_team(object))
@@ -356,7 +360,15 @@ impl PartitionHost for World {
         }
         Some(self.cuts.pathfind_cells.get(&(layer, cell_x, cell_y)).copied().unwrap_or(PathfindCellType::Clear))
     }
-    fn quick_does_path_exist(&mut self, _source: ObjectId, _to: &Coord3D) -> Option<bool> {
+    fn quick_does_path_exist(&mut self, source: ObjectId, to: &Coord3D) -> Option<bool> {
+        // (batch I42: the world's pathfinder with `live_pathfinder` and a map, with the source's AI's locomotor set; it was always
+        // the table, which nothing in a game sets, so a computer player's `quickDoesPathExist` was always false)
+        if self.pf_ready().is_some() {
+            self.ai_peek(source)?;
+            let loco = self.ai_locomotor_set(source);
+            let from = self.objects.find(source)?.get_position();
+            return self.with_pathfinder(|pf, w| pf.client_safe_quick_does_path_exist(w, loco.valid_surfaces, &from, to));
+        }
         self.cuts.partition_quick_path
     }
     fn relationship(&self, obj: ObjectId, other: ObjectId) -> Relationship {
@@ -390,6 +402,12 @@ impl PartitionFilterHost for World {
         self.objects.find(id).is_some_and(|o| o.is_off_map())
     }
     fn is_view_blocked_by_obstacle(&mut self, obj: ObjectId, other: ObjectId) -> bool {
+        // (batch I42: the world's pathfinder with `live_pathfinder` and a map; it was always the table, so nothing blocked a line of
+        // sight filter's view)
+        if self.pf_ready().is_some() {
+            let (Some(a), Some(b)) = (self.pf_object_facts(obj), self.pf_object_facts(other)) else { return false };
+            return self.with_pathfinder(|pf, w| pf.is_view_blocked_by_obstacle(w, &a, &b)).unwrap_or(false);
+        }
         self.cuts.view_blocked.contains(&(obj, other))
     }
     fn able_to_attack_specific_object(&mut self, obj: ObjectId, attack_type: AbleToAttackType, other: ObjectId, source: CommandSourceType) -> CanAttackResult {

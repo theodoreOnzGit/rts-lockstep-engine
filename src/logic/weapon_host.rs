@@ -380,7 +380,7 @@ pub trait WeaponHost: WeaponXferLookups {
     /// `nextWithNumeric`: each object with its distance squared, in the iterator's order.
     fn objects_in_range(&mut self, pos: &Coord3D, radius: f32, calc: DistanceCalculationType) -> Vec<(ObjectId, f32)>;
     /// `ThePartitionManager->iteratePotentialCollisions(source->getPosition(), source->getGeometryInfo(), 0)`.
-    fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId>;
+    fn potential_collisions(&mut self, source: ObjectId) -> Vec<ObjectId>;
     /// `ThePartitionManager->isClearLineOfSightTerrain(NULL, from, NULL, to)`.
     fn is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool;
     /// `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`: the two attack points.

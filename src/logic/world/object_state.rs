@@ -123,7 +123,8 @@ impl World {
         // in order to maintain the shroud correctly.
         if new_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) != old_status.test(OBJECT_STATUS_UNDER_CONSTRUCTION) {
             // CHECK FOR MINES, AND DETONATE THEM NOW
-            for them in self.cut_partition_potential_collisions(id) {
+            let angle = self.objects.find(id).map_or(0.0, |o| o.thing.orientation());
+            for them in self.cut_partition_potential_collisions(id, angle) {
                 if !self.objects.find(them).is_some_and(|t| t.is_kind_of(KINDOF_MINE)) {
                     continue;
                 }

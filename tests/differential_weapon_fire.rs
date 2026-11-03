@@ -1146,7 +1146,7 @@ impl WeaponHost for Sim {
         }
         v
     }
-    fn potential_collisions(&self, source: ObjectId) -> Vec<ObjectId> {
+    fn potential_collisions(&mut self, source: ObjectId) -> Vec<ObjectId> {
         self.ob(source).collides.iter().copied().filter(|&c| self.exists(c)).collect()
     }
     fn is_clear_line_of_sight_terrain(&self, from: &Coord3D, to: &Coord3D) -> bool {
