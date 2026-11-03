@@ -76,7 +76,8 @@ impl World {
         let r = sc.evaluate_condition(self, condition);
         self.script_conditions = sc;
         std::mem::swap(&mut self.script_engine, engine);
-        engine.apply_notes(std::mem::take(&mut self.cuts.pending_script_notes));
+        let notes = std::mem::take(&mut self.cuts.pending_script_notes);
+        engine.apply_notes(self, notes);
         r
     }
 
@@ -87,7 +88,8 @@ impl World {
         let r = f(&sc, self);
         self.script_conditions = sc;
         std::mem::swap(&mut self.script_engine, engine);
-        engine.apply_notes(std::mem::take(&mut self.cuts.pending_script_notes));
+        let notes = std::mem::take(&mut self.cuts.pending_script_notes);
+        engine.apply_notes(self, notes);
         r
     }
 

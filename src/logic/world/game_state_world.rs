@@ -136,7 +136,8 @@ impl GameStateHost<WorldBlock> for World {
             WorldBlock::ScriptEngine => {
                 let mut se = std::mem::take(&mut self.script_engine);
                 // (integration batch I29: the notifications not yet taken, applied before the engine is saved)
-                se.apply_notes(std::mem::take(&mut self.cuts.pending_script_notes));
+                let notes = std::mem::take(&mut self.cuts.pending_script_notes);
+                se.apply_notes(self, notes);
                 let r = se.xfer(self, xfer);
                 self.script_engine = se;
                 r

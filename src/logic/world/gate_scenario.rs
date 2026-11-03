@@ -1858,6 +1858,10 @@ mod script_note_tests {
     /// destroyed, the cache still held him: the object is deleted at the end of that frame, after the engine's update, so its note is
     /// taken at the next engine update (the logic reads the cache only inside the engine's update, after that, so nothing it sees
     /// differs from upstream's immediate call; the test had read the field directly). Read after the next update, as below.
+    ///
+    /// **Batch I35, re-run with the notes given at once while the engine is in the world.** Predicted before the run: right after the
+    /// frame in which `Bob` was destroyed the cache no longer holds him (`named_raw` is now `(None, true)`, not `(Some(bob), false)`):
+    /// the I29 miss above was the queue's delay, and upstream's immediate call is what the world now does.
     #[test]
     fn the_logics_notifications_reach_the_engine() {
         let mut w = gate_map_world_with("Science SCIENCE_Test\nEnd\n");
@@ -1886,11 +1890,71 @@ mod script_note_tests {
         let acquired = w.script_engine.acquired_sciences[1].clone();
         eprintln!("made on {made_on}, count frame {count_frame}; named {named_raw:?} then {named:?}; chains {chains}; acquired {acquired:?} (science {})", sci.0);
         assert_eq!(count_frame, made_on);
-        assert_eq!(named_raw, (Some(bob), false));
+        assert_eq!(named_raw, (None, true));
         assert_eq!(named, (None, true));
         assert_eq!(chains, 0);
         assert_eq!(acquired, vec![sci.0]);
         let _ = w.sa_unit_named(b"Bob");
+    }
+}
+
+#[cfg(test)]
+mod script_power_note_tests {
+    use super::*;
+    use crate::logic::modules::create_host::{CreateHost, UpgradeRef};
+    use crate::logic::world::object_cuts::CutCall;
+
+    /// Batch I35, the special powers', the upgrades' and the name transfers' notifications reach the world's engine (they were records
+    /// only, so `TheScriptEngine`'s lists the special power and upgrade conditions read stayed empty in a real game), and
+    /// `GrantUpgradeCreate`'s `player->addUpgrade` is the player's (it set a table the live player never read). Predicted before the run:
+    /// with the engine in the world, a triggered power, a completed power and a completed upgrade of player 1 are in the engine's lists
+    /// at once (each with its name and source); with the engine out of the world (as during its update), a triggered power is queued and
+    /// the engine's list is unchanged until it is put back and updated, after which the list has it; a name transfer from `Alpha` (in the
+    /// cache) to a second soldier names the second soldier `Alpha` and points the cache at it; an upgrade granted to player 1 through the
+    /// create host is complete in the live player's list.
+    #[test]
+    fn power_and_name_notes_reach_the_engine() {
+        let mut w = gate_map_world_with("Upgrade Upgrade_I35\n  Type = PLAYER\nEnd\n");
+        w.script_engine_new_map().unwrap();
+        w.logic_update().unwrap();
+        w.cut(CutCall::ScriptNotifyOfTriggeredSpecialPower { player: 1, name: b"PowerT".to_vec(), source: 7 });
+        w.cut(CutCall::ScriptNotifyOfCompletedSpecialPower { player: 1, name: b"PowerC".to_vec(), creator: 8 });
+        w.cut(CutCall::ScriptNotifyOfCompletedUpgrade { player: 1, name: b"UpgradeU".to_vec(), source: 9 });
+        let at_once = (
+            w.script_engine.triggered_special_powers[1].clone(),
+            w.script_engine.finished_special_powers[1].clone(),
+            w.script_engine.completed_upgrades[1].clone(),
+        );
+        // the engine out of the world
+        let mut se = std::mem::take(&mut w.script_engine);
+        w.cut(CutCall::ScriptNotifyOfTriggeredSpecialPower { player: 1, name: b"PowerLate".to_vec(), source: 10 });
+        let queued = w.cuts.pending_script_notes.len();
+        let unchanged = se.triggered_special_powers[1].len();
+        std::mem::swap(&mut w.script_engine, &mut se);
+        w.script_engine_update().unwrap();
+        let after_update = w.script_engine.triggered_special_powers[1].clone();
+        // a name transfer
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let alpha = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let second = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        w.find_object_mut(alpha).unwrap().name = b"Alpha".to_vec();
+        w.script_engine.named_objects.push((b"Alpha".to_vec(), Some(alpha)));
+        w.cut(CutCall::ScriptEngineTransferObjectName { name: b"Alpha".to_vec(), object: second });
+        let transferred = (w.find_object(second).unwrap().name.clone(), w.script_engine.get_unit_named(b"Alpha"));
+        // an upgrade granted to the player
+        let statics = w.statics.clone();
+        let t = statics.upgrade_center.find_upgrade(&mut w.names, b"Upgrade_I35").unwrap().expect("the upgrade");
+        let (key, mask) = (t.upgrade_name_key().0, t.upgrade_mask());
+        w.player_add_upgrade_complete(1, UpgradeRef { id: key, player_type: true });
+        let granted = w.player_has_upgrade_complete(1, &mask);
+        eprintln!("at once {at_once:?}; queued {queued}, unchanged {unchanged}, after update {after_update:?}; transferred {transferred:?}; granted {granted}");
+        assert_eq!(at_once.0, vec![(b"PowerT".to_vec(), 7)]);
+        assert_eq!(at_once.1, vec![(b"PowerC".to_vec(), 8)]);
+        assert_eq!(at_once.2, vec![(b"UpgradeU".to_vec(), 9)]);
+        assert_eq!((queued, unchanged), (1, 1));
+        assert_eq!(after_update, vec![(b"PowerT".to_vec(), 7), (b"PowerLate".to_vec(), 10)]);
+        assert_eq!(transferred, (b"Alpha".to_vec(), Some(second)));
+        assert!(granted);
     }
 }
 

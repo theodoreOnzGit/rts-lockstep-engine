@@ -10,9 +10,9 @@
 //!
 //! Each method is the world's own data where the world has it (the player's
 //! preorder flag, sciences, resource gathering manager and academy stats; the
-//! object's weapon set and experience record; the upgrade center) and a cut
-//! point where the Player operation belongs to layer 12
-//! ([`CutCall::PlayerAddUpgradeComplete`]).
+//! object's weapon set and experience record; the upgrade center); the
+//! player's `addUpgrade` is the world's (`World::player_add_upgrade`, since
+//! integration batch I35).
 //!
 //! `ScienceRequired` is held as a name by the module data and resolved here
 //! with the science store ([`GameStatics::science_store`](crate::logic::world::statics::GameStatics)),
@@ -119,12 +119,12 @@ impl CreateHost for World {
     }
 
     fn player_add_upgrade_complete(&mut self, player: PlayerIndex, upgrade: UpgradeRef) {
-        // `Player::addUpgrade` is layer 12's; its visible effect on the completed-upgrade mask is kept here
+        // (batch I35: `player->addUpgrade(upgradeTemplate, UPGRADE_STATUS_COMPLETE)`, the world's, as `ProductionUpdate`'s; it was a
+        // record and the table's mask, which the player's own list, read with `live_teams`, never saw)
         let mask = self.statics.upgrade_center.find_upgrade_by_key(NameKeyType(upgrade.id)).map(|t| t.upgrade_mask());
         if let Some(mask) = mask {
-            self.cuts.player_upgrades.entry(player).or_default().set_mask(&mask);
+            self.player_add_upgrade(player, upgrade.id, &mask, crate::common::upgrade::UPGRADE_STATUS_COMPLETE);
         }
-        self.cut(CutCall::PlayerAddUpgradeComplete { player, upgrade: upgrade.id });
     }
 
     fn object_give_upgrade(&mut self, obj: ObjectId, upgrade: UpgradeRef) {
@@ -333,7 +333,7 @@ mod tests {
         let up_o = statics.upgrade_center.find_upgrade(&mut w.names, b"UpO").unwrap().unwrap().upgrade_mask();
         assert!(w.tq().player_completed_upgrade_mask(0).test_for_all(&up_p), "the player has UpP");
         assert!(w.objects.find(id).unwrap().object_upgrades_completed.test_for_all(&up_o), "the object has UpO");
-        assert!(w.cuts.log.as_ref().unwrap().iter().any(|c| matches!(c, CutCall::PlayerAddUpgradeComplete { player: 0, .. })));
+        assert!(w.cuts.log.as_ref().unwrap().iter().any(|c| matches!(c, CutCall::PlayerAddUpgrade { player: 0, status: crate::common::upgrade::UPGRADE_STATUS_COMPLETE, .. })));
         // build complete runs once
         let n = w.cuts.log.as_ref().unwrap().len();
         build_complete(&mut w, id);

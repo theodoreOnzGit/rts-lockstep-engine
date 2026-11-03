@@ -52,6 +52,7 @@
 //! | `CommandButton`, `TheControlBar->findCommandSet` | `doCommandButton*`, `canProduceUpgrade` | **not translated** (client/GUI types) |
 //! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | ~~**not translated**~~ (corrected 2026-10-24, batch R43: the art's bones are tables, `cuts.contain.single_bones` and `cuts.contain.pristine_bones`, read by `World::drawable_pristine_bones` and the contain cuts) |
 
+use crate::logic::world::script_engine::ScriptNote;
 use std::collections::{BTreeMap, BTreeSet};
 use crate::common::base_type::Coord3D;
 
@@ -1342,9 +1343,6 @@ pub enum CutCall {
     PlayerGrantScience { player: PlayerIndex, science: i32 },
     // --- end p1l9-upgrades ---
     // --- p1w10-sonnet ---
-    /// `player->addUpgrade(upgrade, UPGRADE_STATUS_COMPLETE)` (`GrantUpgradeCreate`); `upgrade` is the template's
-    /// name key.
-    PlayerAddUpgradeComplete { player: PlayerIndex, upgrade: u32 },
     /// `player->getAcademyStats()->recordUpgrade(upgrade, granted)` (`GrantUpgradeCreate`).
     PlayerAcademyRecordUpgrade { player: PlayerIndex, upgrade: u32, granted: bool },
     /// `adjustModelConditionForWeaponStatus()` (`ObjectWeaponStatusHelper::update`, every frame of an object that can have a
@@ -1374,7 +1372,7 @@ pub enum CutCall {
     /// `ObjectCreationList::create(ocl, primary, secondary)` for the list named `ocl` with a secondary object (`EjectPilotDie`'s damage dealer;
     /// `INVALID_ID` for `NULL`); like [`CutCall::OclCreate`], a name that is no list makes nothing.
     OclCreateWithSecondary { primary: ObjectId, secondary: ObjectId, ocl: Vec<u8> },
-    /// `TheScriptEngine->notifyOfCompletedSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerCompletionDie`).
+    /// `TheScriptEngine->notifyOfCompletedSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerCompletionDie`). Batch I35: given to the world's engine ([`World::script_note`]).
     ScriptNotifyOfCompletedSpecialPower { player: PlayerIndex, name: Vec<u8>, creator: ObjectId },
     /// `player->healAllObjects()` (`HealCrateCollide`).
     PlayerHealAllObjects { player: PlayerIndex },
@@ -1427,7 +1425,7 @@ pub enum CutCall {
     PartitionGetDistanceSquaredCenter2D { object: ObjectId, other: ObjectId },
     /// batch R19: `player->getAiBaseCenter(&pos)`; `ObjectCuts::ai_base_center` answers.
     PlayerGetAiBaseCenter { player: PlayerIndex },
-    /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot).
+    /// `TheScriptEngine->transferObjectName(name, obj)` (`VeterancyCrateCollide`'s pilot). Batch I35: given to the world's engine ([`World::script_note`]).
     ScriptEngineTransferObjectName { name: Vec<u8>, object: ObjectId },
     /// `player->getAcademyStats()->recordSalvageCollected()` (`SalvageCrateCollide`, batch R13c).
     PlayerAcademyRecordSalvageCollected { player: PlayerIndex },
@@ -1447,7 +1445,7 @@ pub enum CutCall {
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
     // --- end p1w13-sonnet ---
-    /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`).
+    /// `TheScriptEngine->notifyOfTriggeredSpecialPower(playerIndex, specialPowerName, sourceObject)` (`SpecialPowerModule::aboutToDoSpecialPower`). Batch I35: given to the world's engine ([`World::script_note`]).
     ScriptNotifyOfTriggeredSpecialPower { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// `player->getAcademyStats()->recordSpecialPowerUsed(template)` (`SpecialPowerModule::initiateIntentToDoSpecialPower`), the template by id.
     PlayerAcademyRecordSpecialPowerUsed { player: PlayerIndex, template: u32 },
@@ -1684,7 +1682,7 @@ pub enum CutCall {
     BuildAssistantCanMakeUnit { builder: ObjectId, template: u16 },
     /// batch R76: `player->getScoreKeeper()->addMoneySpent(amount)`.
     PlayerScoreAddMoneySpent { player: PlayerIndex, amount: i32 },
-    /// batch R76: `TheScriptEngine->notifyOfCompletedUpgrade(playerIndex, upgradeName, sourceObject)`.
+    /// batch R76: `TheScriptEngine->notifyOfCompletedUpgrade(playerIndex, upgradeName, sourceObject)`. Batch I35: given to the world's engine ([`World::script_note`]).
     ScriptNotifyOfCompletedUpgrade { player: PlayerIndex, name: Vec<u8>, source: ObjectId },
     /// batch R76: `player->getAcademyStats()->recordProduction(obj, constructor)`.
     PlayerAcademyRecordProduction { player: PlayerIndex, object: ObjectId, constructor: ObjectId },
@@ -2665,14 +2663,25 @@ impl World {
         if matches!(call, CutCall::GameLogicUpdateObjectsChangedTriggerAreas) {
             self.frame_objects_changed_trigger_areas = self.frame();
         }
-        // (batch I29: the object's notifications to the script engine, queued for it)
-        match call {
+        // (batch I29: the object's notifications to the script engine; batch I35: given at once while the engine is in the world, and
+        // the special powers', the upgrades' and the name transfers' too)
+        match &call {
             CutCall::ScriptEngineNotifyOfObjectCreationOrDestruction => {
                 let frame = self.frame();
-                self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::ObjectCountChanged { frame });
+                self.script_note(ScriptNote::ObjectCountChanged { frame });
             }
-            CutCall::ScriptEngineNotifyOfObjectDestruction { object } => {
-                self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::ObjectDestroyed(object));
+            CutCall::ScriptEngineNotifyOfObjectDestruction { object } => self.script_note(ScriptNote::ObjectDestroyed(*object)),
+            CutCall::ScriptNotifyOfTriggeredSpecialPower { player, name, source } => {
+                self.script_note(ScriptNote::Power { which: 0, player: *player, name: name.clone(), source: *source });
+            }
+            CutCall::ScriptNotifyOfCompletedSpecialPower { player, name, creator } => {
+                self.script_note(ScriptNote::Power { which: 2, player: *player, name: name.clone(), source: *creator });
+            }
+            CutCall::ScriptNotifyOfCompletedUpgrade { player, name, source } => {
+                self.script_note(ScriptNote::Power { which: 3, player: *player, name: name.clone(), source: *source });
+            }
+            CutCall::ScriptEngineTransferObjectName { name, object } => {
+                self.script_note(ScriptNote::TransferObjectName { name: name.clone(), object: *object });
             }
             _ => {}
         }
@@ -2683,6 +2692,20 @@ impl World {
         }
         if let Some(call) = ocl {
             self.live_ocl_call(&call);
+        }
+    }
+
+    /// Integration batch I35: a notification to `TheScriptEngine`. Upstream's call is immediate; here it is given to the world's engine
+    /// at once when the engine is in the world (at rest, or lent back to it for an action or a condition), with any notes queued before
+    /// it, in order; while the engine is out (its own update, or a question the world asks it) it is queued, and the engine takes the
+    /// queue where it reads what the notes change (see [`ScriptNote`]).
+    pub(crate) fn script_note(&mut self, note: ScriptNote) {
+        self.cuts.pending_script_notes.push(note);
+        if !self.script_engine.is_stand_in() {
+            let mut se = std::mem::take(&mut self.script_engine);
+            let notes = std::mem::take(&mut self.cuts.pending_script_notes);
+            se.apply_notes(self, notes);
+            self.script_engine = se;
         }
     }
 

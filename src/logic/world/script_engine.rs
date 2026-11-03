@@ -287,7 +287,7 @@ pub struct ScriptRef {
 /// makes at once. The world's engine is out of the world while it updates, so the world queues them and the engine takes them where
 /// they are read: at the start of its update, after `updateTeamStates` (which deletes teams), after each action and condition, and
 /// before it is saved. Each keeps what an immediate call would have used (the frame).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ScriptNote {
     /// `notifyOfObjectCreationOrDestruction()` on that frame.
     ObjectCountChanged { frame: u32 },
@@ -297,6 +297,11 @@ pub enum ScriptNote {
     TeamDestroyed(TeamH),
     /// `notifyOfAcquiredScience(playerIndex, science)`.
     AcquiredScience { player: i32, science: i32 },
+    /// Integration batch I35: `notifyOfTriggeredSpecialPower`, `...Midway...`, `...Completed...` or `notifyOfCompletedUpgrade`
+    /// (`which` 0..4, as [`ScriptEngine::notify_of_power`]).
+    Power { which: usize, player: i32, name: Vec<u8>, source: ObjectId },
+    /// Integration batch I35: `transferObjectName(name, obj)`.
+    TransferObjectName { name: Vec<u8>, object: ObjH },
 }
 
 /// Integration batch I30: the side of a [`ScriptRef`] naming a copy of a script the world owns (`Script::duplicate()`, which a team
@@ -641,11 +646,15 @@ pub struct ScriptEngine {
     progressing: Option<(usize, bool)>,
     /// How many subroutine calls are in course.
     call_depth: u32,
+    /// Integration batch I35: this is the placeholder `std::mem::take` leaves in the world while the world's engine is out of it
+    /// (`Default`), not the engine; the world queues its notifications instead of giving them to it.
+    stand_in: bool,
 }
 
 impl Default for ScriptEngine {
+    /// The placeholder left in the world while its engine is lent out (see [`ScriptEngine::is_stand_in`]).
     fn default() -> Self {
-        Self::new()
+        ScriptEngine { stand_in: true, ..Self::new() }
     }
 }
 
@@ -702,7 +711,13 @@ impl ScriptEngine {
             sequential_capacity: 0,
             progressing: None,
             call_depth: 0,
+            stand_in: false,
         }
+    }
+
+    /// Integration batch I35: whether this is the placeholder `Default` gives (the world's engine is out of the world).
+    pub fn is_stand_in(&self) -> bool {
+        self.stand_in
     }
 
     // --------------------------------------------------------------------------------------------------------------------
@@ -849,7 +864,7 @@ impl ScriptEngine {
     /// `update()`.
     pub fn update<H: ScriptEngineHost>(&mut self, h: &mut H) -> R<()> {
         let notes = h.se_take_notes();
-        self.apply_notes(notes);
+        self.apply_notes(h, notes);
         if self.first_update {
             self.create_named_cache(h);
             self.first_update = false;
@@ -898,7 +913,7 @@ impl ScriptEngine {
         h.se_update_team_states(self);
         // (the teams it deleted told the engine at once upstream, before the sequential scripts are progressed)
         let notes = h.se_take_notes();
-        self.apply_notes(notes);
+        self.apply_notes(h, notes);
         self.ui_interactions.clear();
         self.evaluate_and_progress_all_sequential_scripts(h)
     }
@@ -1807,7 +1822,10 @@ impl ScriptEngine {
     /// Integration batch I29: the queued notifications, in order. An object's destruction clears its entry in the named cache whatever
     /// its name now (the world has removed the object by then; only named objects are in the cache, so this is upstream's
     /// `if (!obj->getName().isEmpty()) removeObjectFromCache(obj)`).
-    pub fn apply_notes(&mut self, notes: Vec<ScriptNote>) {
+    ///
+    /// Integration batch I35: the world gives its notes to its engine at once when the engine is in the world (as upstream's immediate
+    /// calls); they wait here only while the engine is out of it (its own update, or a question the world asks it).
+    pub fn apply_notes<H: ScriptEngineHost>(&mut self, h: &mut H, notes: Vec<ScriptNote>) {
         for n in notes {
             match n {
                 ScriptNote::ObjectCountChanged { frame } => self.frame_object_count_changed = frame,
@@ -1826,6 +1844,11 @@ impl ScriptEngine {
                         l.push(science);
                     }
                 }
+                // (an index out of range is upstream's unchecked write; it is dropped, as the science's)
+                ScriptNote::Power { which, player, name, source } => {
+                    let _ = self.notify_of_power(which, player, &name, source);
+                }
+                ScriptNote::TransferObjectName { name, object } => self.transfer_object_name(h, &name, object),
             }
         }
     }

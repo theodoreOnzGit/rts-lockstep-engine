@@ -71,7 +71,8 @@ impl World {
         self.script_actions = sa;
         std::mem::swap(&mut self.script_engine, engine);
         // (integration batch I29: what the action destroyed, told to the running engine before its next question)
-        engine.apply_notes(std::mem::take(&mut self.cuts.pending_script_notes));
+        let notes = std::mem::take(&mut self.cuts.pending_script_notes);
+        engine.apply_notes(self, notes);
         match r {
             Ok(()) => Ok(()),
             Err(crate::logic::world::script_actions::ActionError::Undefined(e)) => Err(e),
@@ -237,9 +238,11 @@ impl ScriptActionsHost for World {
         self.script_engine.did_unit_exist(name)
     }
     fn sa_transfer_object_name(&mut self, name: &[u8], o: ObjH) {
-        let mut se = std::mem::take(&mut self.script_engine);
-        se.transfer_object_name(self, name, o);
-        self.script_engine = se;
+        // (batch I35: queued if the engine is out of the world, rather than given to its placeholder)
+        if name.is_empty() {
+            return;
+        }
+        self.script_note(crate::logic::world::script_engine::ScriptNote::TransferObjectName { name: name.to_vec(), object: o });
     }
     fn sa_add_object_to_cache(&mut self, o: ObjH) {
         let mut se = std::mem::take(&mut self.script_engine);
