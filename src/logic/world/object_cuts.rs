@@ -1950,14 +1950,18 @@ pub struct ObjectCuts {
     pub player_objects: BTreeMap<PlayerIndex, Vec<ObjectId>>,
     /// The function-local `static` of `AutoDepositUpdate::getUpgradedSupplyBoost` (its own, not `MoneyCrateCollide`'s), the same way.
     pub auto_deposit_upgrade_static: Option<Option<crate::common::upgrade::UpgradeMaskType>>,
-    /// `TheGlobalData->m_specialPowerViewObjectName` (`SpecialPowerModule::createViewObject`); empty for none.
+    /// `TheGlobalData->m_specialPowerViewObjectName` (`SpecialPowerModule::createViewObject`); empty for none. The test's value,
+    /// read only without `live_special_powers` (Corrected 2026-11-03 (batch I47): it was read in the live game too, where it was
+    /// always empty; the live game reads the global data).
     pub special_power_view_object_name: Vec<u8>,
     // --- end p1w11-sonnet ---
     /// The values of the global stores.
     pub globals: ObjectGlobals,
-    /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`.
+    /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`: the test's value, read only without `live_teams`
+    /// ([`World::neutral_default_team`]; Corrected 2026-11-03 (batch I47): it was read in the live game too).
     pub neutral_default_team: TeamId,
-    /// `Team::getControllingPlayer()`.
+    /// `Team::getControllingPlayer()`: the test's table, read only without `live_teams` (Corrected 2026-11-03 (batch I47): the
+    /// parking place's and flight deck's defection read it in the live game too, where it was empty).
     pub team_players: BTreeMap<TeamId, PlayerIndex>,
     /// `Team::getName()`.
     pub team_names: BTreeMap<TeamId, Vec<u8>>,

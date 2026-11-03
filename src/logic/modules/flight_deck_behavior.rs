@@ -942,7 +942,8 @@ impl FlightDeckBehavior {
             }
             let takeoff_or_landing = Self::takeoff_or_landing(world, id);
             if world.is_above_terrain(id) && !takeoff_or_landing {
-                let new_player = world.cuts.team_players.get(&new_team).copied();
+                // (batch I47: `newTeam->getControllingPlayer()`, the team's; it was the test table's in the live game too)
+                let new_player = world.tq().team_player(new_team);
                 if new_player != world.get_controlling_player(id) {
                     self.release_space(world, us, id)?;
                     if world.objects.find(id).is_some_and(|o| o.producer_id == us) {

@@ -179,8 +179,9 @@ impl World {
 
         // set m_team to null before the first call, to avoid naughtiness...
         // If no team is specified in the constructor, then assign the object to the neutral team.
-        let team = p.team.unwrap_or(self.cuts.neutral_default_team);
-        self.set_team(id, Some(team));
+        // (batch I47: the neutral player's default team, `World::neutral_default_team`; it was the table's in the live game too)
+        let team = p.team.or_else(|| self.neutral_default_team());
+        self.set_team(id, team);
 
         // the helpers are done first -- even before Behaviors! -- in case a module needs to call something that uses them.
         let mut is_inactive_body = false; // Inactive bodies can't take special damage since they can't take damage

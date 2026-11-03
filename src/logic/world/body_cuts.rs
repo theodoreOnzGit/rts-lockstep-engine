@@ -281,10 +281,11 @@ impl World {
 
     /// `obj->setTeam(ThePlayerList->getNeutralPlayer()->getDefaultTeam())`.
     pub fn body_set_team_to_neutral_default(&mut self, id: ObjectId) {
-        let team = self.cuts.neutral_default_team;
-        self.body_cut(BodyCall::SetTeam { object: id, team });
+        // (batch I47: `World::neutral_default_team`, live with the teams; the record's team is 0 for `NULL`)
+        let team = self.neutral_default_team();
+        self.body_cut(BodyCall::SetTeam { object: id, team: team.unwrap_or(0) });
         if !self.cuts.body.stub_object_calls {
-            self.set_team(id, Some(team));
+            self.set_team(id, team);
         }
     }
 

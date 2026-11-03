@@ -164,6 +164,11 @@ pub fn gate_map_world_with(extra: &str) -> World {
     factory_init_team(&mut w, b"team2", b"Player2", true, &Dict::new()).expect("the team");
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
     let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+    // (batch I47: and the neutral player's, `team`, as `PlayerList::newGame` gives it through `Player::setDefaultTeam`: an object
+    // made with no team joins it. Made after the players' two so that their ids are unchanged; until then the neutral player had
+    // none, and the live game read the tests' table, team 0, which is no team)
+    factory_init_team(&mut w, b"team", b"", true, &Dict::new()).expect("the team");
+    crate::logic::world::player_ops::player_set_default_team(&mut w, 0).expect("the neutral team");
     // (each player's default team, as `Player::initFromDict` makes one: the look's mask asks it)
     w.players.get_nth_mut(1).expect("the player").default_team = Some(team);
     w.players.get_nth_mut(2).expect("the player").default_team = Some(enemy);
@@ -3042,5 +3047,44 @@ mod all_live_tests {
         eprintln!("height {h}, normal {n:?}");
         assert_eq!(h, 0.0);
         assert_eq!((n.x, n.y, n.z), (0.0, 0.0, 1.0));
+    }
+    /// Predicted before the run (batch I47): the gate's neutral player has a default team, `team`, which the neutral player
+    /// controls, and `World::neutral_default_team` is it; the players' teams keep their ids 1 and 2; the global data's special
+    /// power view object name is empty (the gate's INI has no `GameData` block saying otherwise).
+    #[test]
+    fn the_neutral_player_has_its_team() {
+        let w = gate_world();
+        let n = w.neutral_default_team().expect("the neutral team");
+        assert_eq!(w.tq().team_player(n), Some(0));
+        assert_eq!(w.tq().team_name(n), b"team".to_vec());
+        assert_eq!((w.tq().player_default_team(1), w.tq().player_default_team(2)), (1, 2));
+        assert!(w.statics.global_data.the_global_data().is_some_and(|g| g.special_power_view_object_name.is_empty()));
+    }
+
+    /// Predicted before the run (batch I47): an object made with no team joins the neutral player's team (`Object::Object`).
+    #[test]
+    fn an_object_with_no_team_is_the_neutral_players() {
+        let mut w = gate_world();
+        let n = w.neutral_default_team().expect("the neutral team");
+        let t = World::thing_factory_find_template(&w, b"Runner").expect("a template of the game");
+        let id = w.thing_factory_new_object(t, None, ObjectStatusMaskType::default()).expect("an object of the game");
+        assert_eq!(w.get_team(id), Some(n));
+        assert_eq!(w.get_controlling_player(id), Some(0));
+    }
+
+    /// Predicted before the run (batch I47): `setID` on an object of the neutral team (as a load does) moves its place in the
+    /// team's member list to the new id: the team lists the new id, not the old one.
+    #[test]
+    fn a_new_id_keeps_the_objects_team_membership() {
+        let mut w = gate_world();
+        let n = w.neutral_default_team().expect("the neutral team");
+        let t = World::thing_factory_find_template(&w, b"Runner").expect("a template of the game");
+        let id = w.thing_factory_new_object(t, None, ObjectStatusMaskType::default()).expect("an object of the game");
+        let new = id + 1000;
+        assert_eq!(w.set_object_id(id, new).expect("the new id"), new);
+        let members = w.teams.members(n);
+        assert!(members.contains(&new), "{members:?}");
+        assert!(!members.contains(&id), "{members:?}");
+        assert!(w.teams.is_in_member_list(n, new));
     }
 }

@@ -119,6 +119,15 @@ impl World {
         self.get_controlling_player(id) == Some(0)
     }
 
+    /// `ThePlayerList->getNeutralPlayer()->getDefaultTeam()`: since batch I47, with `cuts.live_teams`, the neutral player's
+    /// (player 0's), `None` when it has none; otherwise the table, `cuts.neutral_default_team`, for the units' tests.
+    pub fn neutral_default_team(&self) -> Option<TeamId> {
+        if self.cuts.live_teams {
+            return self.players.neutral().default_team;
+        }
+        Some(self.cuts.neutral_default_team)
+    }
+
     /// `setTeam(team)`: sets the team and the original team. "In order to
     /// prevent spawning useful units for a player after he dies, we just
     /// assign objects to the neutral player if we try to misbehave."
@@ -127,7 +136,7 @@ impl World {
         if let Some(t) = team {
             if let Some(p) = self.tq().team_player(t) {
                 if !self.tq().player_is_active(p) {
-                    team = Some(self.cuts.neutral_default_team);
+                    team = self.neutral_default_team();
                 }
             }
         }

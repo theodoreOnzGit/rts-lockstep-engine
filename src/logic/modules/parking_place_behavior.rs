@@ -702,7 +702,8 @@ impl ParkingPlaceBehavior {
             let takeoff_or_landing = Self::takeoff_or_landing(world, id);
             if world.is_above_terrain(id) && !takeoff_or_landing {
                 // "if the new team is a different controlling player, this guys loses his space."
-                let new_player = world.cuts.team_players.get(&new_team).copied();
+                // (batch I47: `newTeam->getControllingPlayer()`, the team's; it was the test table's in the live game too)
+                let new_player = world.tq().team_player(new_team);
                 if new_player != world.get_controlling_player(id) {
                     self.release_space(world, us, id)?;
                     if world.objects.find(id).is_some_and(|o| o.producer_id == us) && !crate::logic::modules::plant(2454) {

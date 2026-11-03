@@ -597,6 +597,14 @@ impl World {
         if let Some(t) = self.turret_ais.map.remove(&old) {
             self.turret_ais.map.insert(new, t);
         }
+        // (batch I47: and its place in its team's member list, linked by pointer upstream. A loaded object is made with no team,
+        // so on the neutral player's, before its id is set; the gate's neutral player had no team until this batch, so the
+        // defect did not show: the list kept the old id, and `Team::loadPostProcess` failed on the next load)
+        if let Some(t) = self.get_team(new) {
+            if self.teams.is_in_member_list(t, old) {
+                self.teams.rename_member(t, old, new);
+            }
+        }
         Ok(new)
     }
 

@@ -883,6 +883,16 @@ impl TeamArena {
         }
     }
 
+    /// The member list's half of `Object::setID` (batch I47): upstream links the objects by pointer, so an object whose id
+    /// changes keeps its place in its team's list; here the link entry and its neighbours' references are renamed. False if
+    /// the team is gone or the new id is already linked.
+    pub fn rename_member(&mut self, team: TeamId, old: ObjectId, new: ObjectId) -> bool {
+        match self.teams.get_mut(&team) {
+            Some(t) => self.member_links.rekey(&mut t.member_head, old, new),
+            None => false,
+        }
+    }
+
     /// The members of a team, from its head along `next` (a snapshot: use `first_member` and `next_member` where
     /// the loop body can change the lists).
     pub fn members(&self, team: TeamId) -> Vec<ObjectId> {

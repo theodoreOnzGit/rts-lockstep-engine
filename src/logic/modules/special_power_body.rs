@@ -351,7 +351,13 @@ fn create_view_object<M: SpecialPowerBehavior>(m: &M, world: &mut World, me: Mod
     if range == 0.0 || duration == 0 {
         return Ok(()); // we don't want a view object at all
     }
-    let object_name = world.cuts.special_power_view_object_name.clone();
+    // `TheGlobalData->m_specialPowerViewObjectName` (batch I47: with `cuts.live_special_powers` the game's global data, which it
+    // was not in the live game; otherwise the test's `cuts.special_power_view_object_name`)
+    let object_name = if world.cuts.live_special_powers {
+        world.statics.global_data.the_global_data().map(|g| g.special_power_view_object_name.clone()).unwrap_or_default()
+    } else {
+        world.cuts.special_power_view_object_name.clone()
+    };
     if object_name.is_empty() {
         return Ok(());
     }
