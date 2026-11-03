@@ -707,6 +707,81 @@ mod tests {
 }
 
 #[cfg(test)]
+mod map_file_game_tests {
+    //! Integration batch I34: the game of `tests::a_frame_starts_a_pending_game_from_the_map`, its sides and objects read from a map
+    //! file on the world's disk (batch I32) instead of put in the world's tables.
+    use super::*;
+    use crate::common::recorder::game_mode;
+    use crate::formats::data_chunk_output::DataChunkOutput;
+    use crate::logic::world::player_host_world::tests::world;
+
+    /// The map file: a 30 by 30 height map at height 4, a tank owned by `teamPlayer1` at (120, 80), and the sides (the neutral one,
+    /// and `Player1`, human, America).
+    fn map_file(w: &mut World) -> Vec<u8> {
+        let mut out = DataChunkOutput::new();
+        out.open_data_chunk(b"HeightMapData", crate::logic::terrain_visual::K_HEIGHT_MAP_VERSION_4);
+        for v in [30, 30, 0, 1, 30, 30, 900] {
+            out.write_int(v);
+        }
+        out.write_array_of_bytes(&[4u8; 900]);
+        out.close_data_chunk();
+        out.open_data_chunk(b"ObjectsList", crate::logic::map_object::K_OBJECTS_VERSION_3);
+        out.open_data_chunk(b"Object", crate::logic::map_object::K_OBJECTS_VERSION_3);
+        for r in [120.0, 80.0, 0.0, 0.0] {
+            out.write_real(r);
+        }
+        out.write_int(0);
+        out.write_ascii_string(b"Tank");
+        let mut props = Dict::new();
+        props.set_ascii_string(w.names.name_to_key(b"originalOwner"), b"teamPlayer1").unwrap();
+        out.write_dict(&props, &w.names);
+        out.close_data_chunk();
+        out.close_data_chunk();
+        let templates = crate::logic::script_templates::script_templates(&mut w.names);
+        let mut sc = crate::logic::sides_list::SidesCtx::new(w.names.clone(), templates);
+        for (name, human, faction) in [(&b""[..], false, &b""[..]), (b"Player1", true, b"FactionAmerica")] {
+            let mut d = Dict::new();
+            d.set_ascii_string(sc.names.generator.name_to_key(b"playerName"), name).unwrap();
+            d.set_bool(sc.names.generator.name_to_key(b"playerIsHuman"), human).unwrap();
+            d.set_ascii_string(sc.names.generator.name_to_key(b"playerFaction"), faction).unwrap();
+            sc.sides.add_side(&d);
+        }
+        crate::logic::sides_list::SidesList::write_sides_data_chunk(&mut out, &mut sc).expect("the sides written");
+        out.finish()
+    }
+
+    /// Predicted before the run (the outcomes of the batch-I7c game, which put the same sides and tank in the tables): the frame
+    /// starts the game from the map file: the player list is the neutral player, `Player1` and the replay observer; one tank, on
+    /// `Player1`'s team, at x 120; and the terrain is the file's (30 by 30 samples, ground at 4 times `MAP_HEIGHT_SCALE`); no error.
+    #[test]
+    fn a_game_starts_from_a_map_file() {
+        let (mut w, _) = world();
+        w.cuts.live_teams = true;
+        w.cuts.game_loop.game_mode = game_mode::SINGLE_PLAYER;
+        w.cuts.new_game.colors = vec![(0x00ff_ffff, 0x0080_8080)];
+        w.cuts.new_game.map_name = b"Maps\\Test\\Test.map".to_vec();
+        w.sides = crate::logic::sides_list::SidesList::new();
+        w.cuts.new_game.map_objects = Vec::new();
+        let file = map_file(&mut w);
+        w.save_side.disk.insert(b"maps\\test\\test.map".to_vec(), file);
+        w.start_new_game(false).unwrap();
+        w.logic_update().unwrap();
+        let names: Vec<Vec<u8>> = (0..w.players.player_count())
+            .map(|i| w.names.key_to_name(crate::common::name_key_generator::NameKeyType(w.players.get_nth(i).unwrap().name_key as u32)).to_vec())
+            .collect();
+        let tanks: Vec<ObjectId> = w.objects.ids_in_order().into_iter().filter(|o| w.find_object(*o).unwrap().template().get_name() == b"Tank").collect();
+        let ground = w.terrain.ground_height(100.0, 100.0, false).0;
+        eprintln!("players {names:?}; tanks {tanks:?}; ground {ground}; errors {:?}", w.cuts.team_live_errors);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        assert_eq!(names, [b"".to_vec(), b"Player1".to_vec(), b"ReplayObserver".to_vec()]);
+        assert_eq!(tanks.len(), 1);
+        assert_eq!(w.get_controlling_player(tanks[0]), Some(1));
+        assert_eq!(w.find_object(tanks[0]).unwrap().get_position().x, 120.0);
+        assert_eq!(ground, 4.0 * crate::logic::terrain_visual::MAP_HEIGHT_SCALE);
+    }
+}
+
+#[cfg(test)]
 mod dispatched_tests {
     use crate::common::message_types::MSG_NEW_GAME;
     use crate::common::recorder::game_mode;
