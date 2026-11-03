@@ -293,7 +293,7 @@ impl World {
     /// faction structure at once.
     pub fn on_capture(&mut self, id: ObjectId, old_owner: PlayerIndex, new_owner: PlayerIndex) {
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) && old_owner != new_owner {
-            self.cut(CutCall::AiIdle { object: id });
+            self.ai_idle_from_ai(id);
         }
         // this gets the new owner some points
         self.cut(CutCall::PlayerScoreAddObjectCaptured { player: new_owner, object: id });
@@ -388,7 +388,7 @@ impl World {
         let ai = self.objects.find(id).is_some_and(|o| o.ai.is_some());
         self.handle_partition_cell_maintenance(id); // to clear the shroud for my new master
         if ai {
-            self.cut(CutCall::AiIdle { object: id });
+            self.ai_idle_from_ai(id);
         }
 
         // Play our sound indicating we've been defected. (weird verbage, but true.)
@@ -486,6 +486,15 @@ impl World {
         self.leave_group(id);
         if let Some(o) = self.objects.find_mut(id) {
             o.group = Some(group);
+        }
+    }
+
+    /// `getAI()->aiIdle(CMD_FROM_AI)` (batch I40: given to the AI with live AI; else recorded).
+    pub(crate) fn ai_idle_from_ai(&mut self, id: ObjectId) {
+        if self.cuts.live_ai {
+            let _ = self.ai_ask(id, ModuleCall::AiIdle);
+        } else {
+            self.cut(CutCall::AiIdle { object: id });
         }
     }
 

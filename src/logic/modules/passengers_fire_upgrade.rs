@@ -16,8 +16,10 @@
 
 //! `PassengersFireUpgrade`: lets the passengers of its object fire from inside.
 //!
-//! No fields of its own. Upstream `upgradeImplementation`: `if (contain) contain->setPassengerAllowedToFire(TRUE)`; the contain modules are not
-//! translated, so the effect is the cut point [`CutCall::ContainSetPassengerAllowedToFire`]. `isSubObjectsUpgrade` is false.
+//! No fields of its own. Upstream `upgradeImplementation`: `if (contain) contain->setPassengerAllowedToFire(TRUE)`. ~~The contain modules are not
+//! translated, so the effect is the cut point~~ **Corrected 2026-11-02 (batch I40):** with `cuts.live_ai` (the integrated world)
+//! the contain is told; without it the call is the record [`CutCall::ContainSetPassengerAllowedToFire`], which the module
+//! differential compares. `isSubObjectsUpgrade` is false.
 
 use std::sync::Arc;
 
@@ -119,7 +121,14 @@ impl UpgradeBehavior for PassengersFireUpgrade {
     }
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         if (world.get_contain(me.object).is_some() || crate::logic::modules::plant(609)) && !crate::logic::modules::plant(610) {
-            world.cut(CutCall::ContainSetPassengerAllowedToFire { object: me.object });
+            // (batch I40: with live AI, the integrated world, `contain->setPassengerAllowedToFire(TRUE)`; else recorded, as the module
+            // differential compares)
+            match world.get_contain(me.object).filter(|_| world.cuts.live_ai) {
+                Some(c) => {
+                    world.module_call(me.object, c, ModuleCall::SetPassengerAllowedToFire(true));
+                }
+                None => world.cut(CutCall::ContainSetPassengerAllowedToFire { object: me.object }),
+            }
         }
         Ok(())
     }

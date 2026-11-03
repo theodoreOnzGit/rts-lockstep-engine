@@ -17,7 +17,8 @@
 //! `StealthUpgrade`: gives its object the ability to stealth, and its spawn's slaves too.
 //!
 //! No fields of its own. Upstream `upgradeImplementation`: `setStatus(OBJECT_STATUS_CAN_STEALTH)`, then, for an object that is
-//! `KINDOF_SPAWNS_ARE_THE_WEAPONS` and has a spawn behaviour, `giveSlavesStealthUpgrade(TRUE)` (the cut point [`CutCall::SpawnGiveSlavesStealthUpgrade`]).
+//! `KINDOF_SPAWNS_ARE_THE_WEAPONS` and has a spawn behaviour, `giveSlavesStealthUpgrade(TRUE)` (batch I40: given to the spawn behaviour with `cuts.live_ai`, the integrated world; else
+//! the record [`CutCall::SpawnGiveSlavesStealthUpgrade`], which the module differential compares).
 //! `isSubObjectsUpgrade` is false.
 
 use std::sync::Arc;
@@ -129,7 +130,14 @@ impl UpgradeBehavior for StealthUpgrade {
         let kind = world.objects.find(object).is_some_and(|o| o.is_kind_of(KINDOF_SPAWNS_ARE_THE_WEAPONS)) || crate::logic::modules::plant(613);
         let spawn = world.get_spawn_behavior_interface(object).is_some() || crate::logic::modules::plant(614);
         if (if crate::logic::modules::plant(616) { kind || spawn } else { kind && spawn }) && !crate::logic::modules::plant(615) {
-            world.cut(CutCall::SpawnGiveSlavesStealthUpgrade { object });
+            // (batch I40: with live AI, the integrated world, `sbInterface->giveSlavesStealthUpgrade(TRUE)`; else recorded, as the
+            // module differential compares)
+            match world.get_spawn_behavior_interface(object).filter(|_| world.cuts.live_ai) {
+                Some(s) => {
+                    world.module_call(object, s, ModuleCall::SpawnGiveSlavesStealthUpgrade(true));
+                }
+                None => world.cut(CutCall::SpawnGiveSlavesStealthUpgrade { object }),
+            }
         }
         Ok(())
     }

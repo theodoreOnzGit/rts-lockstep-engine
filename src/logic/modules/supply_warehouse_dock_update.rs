@@ -268,7 +268,7 @@ impl SupplyWarehouseDockUpdate {
             } else {
                 let ai = world.objects.find(active).and_then(|o| o.ai).ok_or(Undefined::NullAi)?;
                 if world.module_call(active, ai, ModuleCall::HasSupplyTruckAiInterface).as_bool() {
-                    world.cut(crate::logic::world::object_cuts::CutCall::AiIdle { object: active }); // `aiIdle(CMD_FROM_AI)`
+                    world.ai_idle_from_ai(active); // `aiIdle(CMD_FROM_AI)` (batch I40: live with live AI, else recorded)
                     world.module_call(active, ai, ModuleCall::SupplyTruckSetForceWantingState(true));
                 }
             }

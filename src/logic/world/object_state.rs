@@ -29,6 +29,7 @@ use crate::common::disabled_types::{
 use crate::common::game_common::Relationship;
 use crate::common::game_common::{FOREVER, LOGICFRAMES_PER_SECOND, NEVER, PLAYERMASK_ALL};
 use crate::common::game_type::{ObjectId, INVALID_ID};
+use crate::logic::ai::dozer_ai_update::DOZER_TASK_INVALID;
 use crate::common::geometry::GeometryInfo;
 use crate::common::kind_of::{
     KINDOF_ALWAYS_SELECTABLE, KINDOF_DRONE, KINDOF_IGNORED_IN_GUI, KINDOF_MINE, KINDOF_MOB_NEXUS, KINDOF_REVEAL_TO_ALL,
@@ -480,12 +481,22 @@ impl World {
     /// cancels its task; the radar upgrade adds or removes the player's radar
     /// count; and a power producer adjusts the player's power (with the power
     /// plant upgrade's and the overcharge's bonus). The AI, radar and energy
-    /// calls are cut points; the modules' state is asked through the modules.
+    /// calls are cut points (batch I40: the dozer's cancel is live with live AI); the modules' state is asked through the modules.
     pub fn on_disabled_edge(&mut self, id: ObjectId, becoming_disabled: bool) {
         // rip through the behavior modules and call the onDisabledEdge for any modules that care
         self.call_all_modules(id, ModuleCall::OnDisabledEdge { becoming_disabled });
 
-        if becoming_disabled && self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.dozer_ais.contains(&id) {
+        // (batch I40: with live AI, the AI's `getDozerAIInterface()` asked and its current task cancelled)
+        if becoming_disabled && self.cuts.live_ai {
+            if let Some(ai) = self.objects.find(id).and_then(|o| o.ai) {
+                if self.module_call(id, ai, ModuleCall::AiGetDozerAIInterface).as_bool() {
+                    let task = self.module_call(id, ai, ModuleCall::DozerGetCurrentTask).as_int(DOZER_TASK_INVALID);
+                    if task != DOZER_TASK_INVALID {
+                        self.module_call(id, ai, ModuleCall::DozerCancelTask(task));
+                    }
+                }
+            }
+        } else if becoming_disabled && self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.dozer_ais.contains(&id) {
             // Have to say goodbye to the thing we might be building or repairing so someone else can do it.
             self.cut(CutCall::DozerCancelTask { object: id });
         }

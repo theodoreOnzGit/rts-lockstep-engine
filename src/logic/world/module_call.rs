@@ -527,6 +527,8 @@ pub enum ModuleCall {
     AiTransferAttack { from: ObjectId, to: ObjectId },
     /// `destroyObject`'s `ai->setLocomotorGoalNone(); ai->destroyPath()` (integration batch I39; it was a cut point).
     AiStopForDestroy,
+    /// `getAI()->setLocomotorUpgrade(set)` (`LocomotorSetUpgrade`, integration batch I40; it was a cut point).
+    AiSetLocomotorUpgrade(bool),
     /// `getAIUpdateInterface()->notifyCrate(crateID)` (`CreateCrateDie`, batch R14c).
     AiNotifyCrate(ObjectId),
     /// `getAIUpdateInterface()->isDoingGroundMovement()` (the production exits, batch R18); replies [`ModuleReply::Bool`].

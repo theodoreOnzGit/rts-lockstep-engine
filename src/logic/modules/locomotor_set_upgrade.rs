@@ -16,8 +16,9 @@
 
 //! `LocomotorSetUpgrade`: switches its object's AI to the upgraded locomotor set.
 //!
-//! No fields of its own. Upstream `upgradeImplementation`: `if (ai) ai->setLocomotorUpgrade(true)`; the AI is not translated, so the effect is the cut
-//! point [`CutCall::AiSetLocomotorUpgrade`]. `isSubObjectsUpgrade` is false.
+//! No fields of its own. Upstream `upgradeImplementation`: `if (ai) ai->setLocomotorUpgrade(true)`. ~~The AI is not translated, so the effect is the
+//! cut point~~ **Corrected 2026-11-02 (batch I40):** with `cuts.live_ai` the AI is told; without it the call is the record
+//! [`CutCall::AiSetLocomotorUpgrade`], which the module differential compares. `isSubObjectsUpgrade` is false.
 
 use std::sync::Arc;
 
@@ -119,7 +120,13 @@ impl UpgradeBehavior for LocomotorSetUpgrade {
     }
     fn upgrade_implementation(&mut self, world: &mut World, me: ModuleHandle) -> Result<(), IniError> {
         if (world.objects.find(me.object).is_some_and(|o| o.ai.is_some()) || crate::logic::modules::plant(607)) && !crate::logic::modules::plant(608) {
-            world.cut(CutCall::AiSetLocomotorUpgrade { object: me.object });
+            // (batch I40: with live AI, `ai->setLocomotorUpgrade(true)`; else recorded, as the module differential compares)
+            match world.objects.find(me.object).and_then(|o| o.ai).filter(|_| world.cuts.live_ai) {
+                Some(ai) => {
+                    world.module_call(me.object, ai, ModuleCall::AiSetLocomotorUpgrade(true));
+                }
+                None => world.cut(CutCall::AiSetLocomotorUpgrade { object: me.object }),
+            }
         }
         Ok(())
     }

@@ -273,6 +273,25 @@ impl AiModuleBody {
                     }
                 }
             }
+            // (batch I40: the `DozerAIInterface` a dozer or worker answers; it was unrouted, so a dozer's current task read as 0,
+            // `DOZER_TASK_BUILD`)
+            ModuleCall::DozerGetCurrentTask | ModuleCall::DozerGetTaskTarget(_) | ModuleCall::DozerCancelTask(_) => {
+                use crate::logic::ai::{ai_update::AiSubclass, dozer_ai_update as dz};
+                if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(AiSubclass::Dozer(_) | AiSubclass::Worker(_))) {
+                    return ModuleReply::Unhandled;
+                }
+                match call {
+                    ModuleCall::DozerGetCurrentTask => ModuleReply::Int(world.with_ai_self(me.object, |w| m.run_lent(w, |h| dz::dz(h).current_task))),
+                    ModuleCall::DozerGetTaskTarget(task) => ModuleReply::Id(world.with_ai_self(me.object, |w| m.run_lent(w, |h| dz::get_task_target(h, task)))),
+                    ModuleCall::DozerCancelTask(task) => {
+                        if let Err(e) = world.with_ai_self(me.object, |w| m.run_lent(w, |h| dz::cancel_task(h, task))) {
+                            world.cuts.team_live_errors.push(format!("DozerAIUpdate::cancelTask: {e:?}"));
+                        }
+                        ModuleReply::Done
+                    }
+                    _ => unreachable!(),
+                }
+            }
             // (upstream dereferences the `NULL`: undefined behaviour, recorded rather than guessed at)
             ModuleCall::AiAttackPosition { pos: None, .. } => {
                 world.cuts.team_live_errors.push("AIUpdateInterface::aiAttackPosition: NULL position".to_string());
@@ -326,6 +345,10 @@ impl AiModuleBody {
                     m.ai_mut().set_locomotor_goal_none(w);
                     m.ai_mut().destroy_path(w);
                 });
+                ModuleReply::Done
+            }
+            ModuleCall::AiSetLocomotorUpgrade(set) => {
+                world.with_ai_self(me.object, |w| m.ai_mut().set_locomotor_upgrade(w, set));
                 ModuleReply::Done
             }
             ModuleCall::AiDoPathfind => {

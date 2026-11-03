@@ -556,7 +556,12 @@ impl World {
 
         // if we are in a group, remove us
         if let Some(group) = self.objects.find(id).and_then(|o| o.group) {
-            self.cut(CutCall::AiGroupRemove { group, object: id });
+            // (batch I40: with live AI, `m_group->remove(this)`)
+            if self.cuts.live_ai {
+                self.leave_group_live(id, group);
+            } else {
+                self.cut(CutCall::AiGroupRemove { group, object: id });
+            }
         }
 
         // (batch I9b-6: the AI module's destructor deletes its turrets: `~TurretAI` stops the rotation sound and destroys the

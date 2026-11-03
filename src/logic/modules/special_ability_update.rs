@@ -1075,7 +1075,12 @@ impl SpecialAbilityUpdate {
                     return Ok(());
                 }
                 let until = world.frame().wrapping_add(d.effect_duration);
-                world.cut(CutCall::ObjectSetDisabledUntil { object: target, disabled: crate::common::disabled_types::DISABLED_HACKED, frame: until });
+                // (batch I40: real unless the module tests' stub is set, as `SabotageCrateCollide`'s; it was always a record)
+                if world.cuts.crate_stub_object_calls {
+                    world.cut(CutCall::ObjectSetDisabledUntil { object: target, disabled: crate::common::disabled_types::DISABLED_HACKED, frame: until });
+                } else {
+                    world.set_disabled_until(target, crate::common::disabled_types::DISABLED_HACKED, until);
+                }
                 let mut duration_interleave_factor = 1u32;
                 let (area, structure) = world.objects.find(target).map_or((0.0, false), |o| (o.geometry_info.get_footprint_area(), o.is_kind_of(KINDOF_STRUCTURE)));
                 if area < 300.0 && structure {

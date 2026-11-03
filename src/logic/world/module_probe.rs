@@ -1118,6 +1118,7 @@ impl ProbeModule {
             | ModuleCall::AiSetDesiredSpeed(_)
             | ModuleCall::AiSetAttackInfo(_)
             | ModuleCall::AiStopForDestroy
+            | ModuleCall::AiSetLocomotorUpgrade(_)
             | ModuleCall::AiClearWaypointQueue
             | ModuleCall::AiExecuteWaypointQueue
             | ModuleCall::AiDeliverPayloadViaModuleData(_)

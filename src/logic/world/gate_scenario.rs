@@ -2549,3 +2549,148 @@ mod ai_record_tests {
         assert_eq!(records, 0);
     }
 }
+
+#[cfg(test)]
+mod live_effect_tests {
+    use super::*;
+    use crate::common::disabled_types::DISABLED_EMP;
+    use crate::logic::ai::ai_commands::AICMD_REPAIR;
+    use crate::logic::ai::ai_update::AiSubclass;
+    use crate::logic::ai::ai_update_types::AI_IDLE;
+    use crate::logic::ai::dozer_ai_update::{DOZER_TASK_INVALID, DOZER_TASK_REPAIR};
+    use crate::logic::world::module_call::ModuleReply;
+    use crate::logic::world::module_probe::damage_of;
+    use crate::common::game_type::INVALID_ID;
+    use crate::logic::world::object_cuts::CutCall;
+
+    fn records(w: &World, f: impl Fn(&CutCall) -> bool) -> usize {
+        w.cuts.log.as_ref().unwrap().iter().filter(|c| f(c)).count()
+    }
+
+    /// Batch I40, `onDisabledEdge(true)`'s `dozerAI->cancelTask(dozerAI->getCurrentTask())` (Object.cpp:3820, a record only, and only
+    /// for an id in a test table), and the dozer interface's calls to the world's AI module, which answered none of them (so a dozer's
+    /// current task read as 0, `DOZER_TASK_BUILD`). A dozer ordered to repair a damaged depot of its team. Predicted before the run:
+    /// 30 frames on, its current task is the repair (1) on the depot, and the module answers `getCurrentTask` with 1; disabled by EMP,
+    /// the task is cancelled: current task -1, the repair task's target 0, no record of the call. **Missed on the first run, by the
+    /// test's setup:** ordered on frame 0, the task stayed pending (the depot its target) and the current task -1, the dozer machine
+    /// idle: `getMostRecentCommand` takes only an order frame after 0 (DozerAIUpdate.cpp, as the port); the order is now given after
+    /// one frame.
+    #[test]
+    fn a_disabled_dozers_task_is_cancelled() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let dozer = make(&mut w, b"Dozer", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let depot = make(&mut w, b"Depot", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        w.attempt_damage(depot, &mut damage_of(500.0, INVALID_ID));
+        let ai = w.find_object(dozer).and_then(|o| o.ai).expect("the dozer's AI");
+        // (a task ordered on frame 0 is never taken: `getMostRecentCommand` wants an order frame after 0, as upstream's)
+        w.logic_update().unwrap();
+        w.module_call(dozer, ai, ModuleCall::AiDoCommand { cmd: AICMD_REPAIR, command_source: 0, obj: depot, pos: Coord3D::default() });
+        for _ in 0..30 {
+            w.logic_update().unwrap();
+        }
+        let task = |w: &World| match &w.ai_peek(dozer).expect("the AI").subclass {
+            AiSubclass::Dozer(z) => (z.m.current_task, z.m.task[DOZER_TASK_REPAIR as usize].target_object_id),
+            s => panic!("{s:?}"),
+        };
+        let working = task(&w);
+        let asked = w.module_call(dozer, ai, ModuleCall::DozerGetCurrentTask);
+        w.cuts.log = Some(Vec::new());
+        let until = w.frame() + 100;
+        w.set_disabled_until(dozer, DISABLED_EMP, until);
+        let cancelled = task(&w);
+        let n = records(&w, |c| matches!(c, CutCall::DozerCancelTask { .. }));
+        eprintln!("working {working:?} (asked {asked:?}), cancelled {cancelled:?}, records {n}, errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(working, (DOZER_TASK_REPAIR, depot));
+        assert!(matches!(asked, ModuleReply::Int(DOZER_TASK_REPAIR)));
+        assert_eq!(cancelled, (DOZER_TASK_INVALID, INVALID_ID));
+        assert_eq!(n, 0);
+    }
+
+    /// Batch I40, `onCapture`'s `aiIdle(CMD_FROM_AI)` (Object.cpp:4537, a record only). Predicted before the run: a soldier 30 frames
+    /// into a move is not idle (its machine in a move state); captured by team 2's player it is idle (`AI_IDLE`), with no record.
+    #[test]
+    fn a_captured_unit_goes_idle() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let other = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 100.0, y: 305.0, z: 0.0 });
+        let ai = w.find_object(me).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(me, ai, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 350.0, y: 105.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..30 {
+            w.logic_update().unwrap();
+        }
+        let state = |w: &mut World| w.module_call(me, ai, ModuleCall::AiGetAiStateType).as_int(-1);
+        let moving = state(&mut w);
+        let old = w.get_controlling_player(me).expect("the soldier's player");
+        let new = w.get_controlling_player(other).expect("the enemy's player");
+        w.cuts.log = Some(Vec::new());
+        w.on_capture(me, old, new);
+        let captured = state(&mut w);
+        let n = records(&w, |c| matches!(c, CutCall::AiIdle { .. }));
+        eprintln!("moving {moving}, captured {captured} (players {old} -> {new}), records {n}");
+        assert_ne!(moving, AI_IDLE as i32);
+        assert_eq!(captured, AI_IDLE as i32);
+        assert_eq!(n, 0);
+    }
+
+    /// Batch I40, the destructor's `m_group->remove(this)` (Object.cpp:650, a record only): a destroyed member stayed in its group.
+    /// Predicted before the run: a group of two soldiers; the first destroyed and the frame run, the group holds only the second; no
+    /// record.
+    #[test]
+    fn a_destroyed_unit_leaves_its_group() {
+        let mut w = gate_map_world();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let a = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let b = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 205.0, z: 0.0 });
+        let g = w.ai_create_group();
+        w.with_group(g, |gr, w| {
+            gr.add(w, a);
+            gr.add(w, b);
+        });
+        let before = w.ai_group_members(g);
+        w.cuts.log = Some(Vec::new());
+        w.destroy_object(a);
+        w.logic_update().unwrap();
+        let after = w.ai_group_members(g);
+        let n = records(&w, |c| matches!(c, CutCall::AiGroupRemove { .. }));
+        eprintln!("members {before:?} -> {after:?}, records {n}");
+        assert_eq!(before.len(), 2);
+        assert_eq!(after, vec![b]);
+        assert_eq!(n, 0);
+    }
+
+    /// Batch I40, `LocomotorSetUpgrade`'s `ai->setLocomotorUpgrade(true)` and `PassengersFireUpgrade`'s
+    /// `contain->setPassengerAllowedToFire(TRUE)` (both records only). A truck with both, triggered by `Upgrade_Fire`. Predicted before
+    /// the run: before the upgrade, its locomotors not upgraded and its passengers not allowed to fire; given the upgrade, both; no
+    /// record of either.
+    #[test]
+    fn a_trucks_upgrades_reach_its_ai_and_contain() {
+        let extra = "\
+Upgrade Upgrade_Fire\n Type = OBJECT\n BuildCost = 100\nEnd\n\
+Object FireTruck\n KindOf = VEHICLE TRANSPORT\n Geometry = CYLINDER\n GeometryMajorRadius = 8\n GeometryHeight = 6\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = TransportContain ModuleTag_Contain\n  Slots = 2\n  AllowInsideKindOf = VEHICLE\n  AllowAlliesInside = Yes\n  ExitDelay = 0\n End\n\
+ Behavior = LocomotorSetUpgrade ModuleTag_Loco\n  TriggeredBy = Upgrade_Fire\n End\n\
+ Behavior = PassengersFireUpgrade ModuleTag_Fire\n  TriggeredBy = Upgrade_Fire\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 100\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+        let mut w = gate_map_world_with(extra);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let truck = make(&mut w, b"FireTruck", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let mask = w.statics.upgrade_center.templates().find(|u| u.upgrade_name() == b"Upgrade_Fire").map(|u| u.upgrade_mask()).expect("the upgrade");
+        let state = |w: &mut World| (w.ai_peek(truck).expect("the AI").upgraded_locomotors, crate::logic::ai::ai_group::AiGroupHost::contain_passengers_allowed_to_fire(w, truck));
+        let before = state(&mut w);
+        w.cuts.log = Some(Vec::new());
+        w.give_upgrade(truck, Some(&mask));
+        let after = state(&mut w);
+        let n = records(&w, |c| matches!(c, CutCall::AiSetLocomotorUpgrade { .. } | CutCall::ContainSetPassengerAllowedToFire { .. }));
+        eprintln!("before {before:?}, after {after:?}, records {n}, errors {:?}", w.cuts.module_errors);
+        assert_eq!(before, (false, false));
+        assert_eq!(after, (true, true));
+        assert_eq!(n, 0);
+    }
+}
