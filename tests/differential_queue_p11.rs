@@ -468,7 +468,7 @@ impl AlliesHost for Host {
     fn is_harvester(&self, id: ObjectId) -> bool {
         self.extra(id).w30 >> 12 & 1 != 0
     }
-    fn ai_activity(&self, id: ObjectId) -> Option<AiActivity> {
+    fn ai_activity(&mut self, id: ObjectId) -> Option<AiActivity> {
         let w = self.extra(id).w30;
         self.object(id)?.ai?;
         Some(AiActivity { moving: w >> 13 & 1 != 0, attacking: w >> 14 & 1 != 0, busy: w >> 15 & 1 != 0, using_ability: w >> 16 & 1 != 0 })

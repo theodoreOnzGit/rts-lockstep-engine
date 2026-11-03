@@ -167,7 +167,15 @@ impl BuildAssistantHost for World {
         self.find_object(o).is_some_and(|x| x.ai.is_some())
     }
     fn ai_is_busy(&self, o: ObjectId) -> bool {
-        // (a question to the AI module: the AI update is not a module of the world until batch I9; the table)
+        // ~~(a question to the AI module: the AI update is not a module of the world until batch I9; the table)~~ **corrected
+        // 2026-11-03 (batch I43):** the AI update has been a module of the world since batch I9b; with `live_ai` its own `isBusy()`
+        // (it was always the table); the table otherwise
+        if self.cuts.live_ai {
+            return match (self.ai_peek(o), self.ai_machine_query(o)) {
+                (Some(a), Some(m)) => a.is_busy(m),
+                _ => false,
+            };
+        }
         self.cuts.ai_busy.contains(&o)
     }
     fn ai_idle(&mut self, o: ObjectId) {

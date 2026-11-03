@@ -76,7 +76,12 @@ fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
 
 /// The game at frame 0: the world, its map, its player's team and its objects, the runners' orders given.
 pub fn gate_world() -> World {
-    let mut w = gate_map_world();
+    gate_world_with("")
+}
+
+/// [`gate_world`] with `extra` read after the game's INI (batch I43: a test's own templates; the gate's are unchanged).
+pub fn gate_world_with(extra: &str) -> World {
+    let mut w = gate_map_world_with(extra);
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
     let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
 
@@ -293,7 +298,13 @@ mod computer_player_tests {
     ///
     /// **Result** (2026-11-01, native, release): the first depot stands after `newMap`; the dozer starts the second on frame 1
     /// (the structure timer's two frames), teleported to the site (it has no locomotor: `buildStructureWithDozer` teleports a
-    /// dozer with no path). The depot's build time is 99 frames (2 s, the unpowered player's rate 0.6 of the gate's test
+    /// dozer with no path). **Re-measured 2026-11-03 (batch I43), with a dozer that can move:** answered live, the dozer's
+    /// ignored obstacle (the site, `DozerAIUpdate.cpp:234`) let the locomotor-less `Dozer` find a path into the site, and it then
+    /// stayed in its move for all 600 frames, the depot at 0 % (the table had answered no ignored obstacle, so the path search
+    /// failed, the move ended at once and it built where it stood). Whether upstream's locomotor-less dozer loops the same way was
+    /// not established; no game's dozer lacks a locomotor, so the test's is now `WorkDozer`, the same with `GateTreads` and
+    /// physics. With it: started on frame 1, not teleported (it drove to the site's edge, (345.0, 84.1) at the end), and finished
+    /// on frame 289. The figures below are the 2026-11-01 run's, with the locomotor-less dozer. The depot's build time is 99 frames (2 s, the unpowered player's rate 0.6 of the gate's test
     /// low-energy values; `calcTimeToBuild` truncates 100.0's float error to 99, as upstream's `Int` does); it is complete on
     /// frame 232. **Not first time:** the first runs found the World's AI module did not route `construct` to the dozer, the
     /// test's dozer had no command set (`isPossibleToMakeUnit` refuses a dozer whose command set cannot build the depot: the
@@ -301,9 +312,15 @@ mod computer_player_tests {
     /// without the AI's machine lent (the dozer's states ask whether the AI is idle).
     #[test]
     fn a_computer_player_builds_its_base() {
-        let mut w = gate_world();
+        // (batch I43: a dozer that can move; the gate's `Dozer` has no locomotor and no physics)
+        let extra = "\
+Object WorkDozer\n KindOf = VEHICLE DOZER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+        let mut w = gate_world_with(extra);
         let team2 = w.players.get_nth(2).and_then(|p| p.default_team).expect("Player2's team");
-        let dozer = make(&mut w, b"Dozer", team2, Coord3D { x: 320.0, y: 40.0, z: 0.0 });
+        let dozer = make(&mut w, b"WorkDozer", team2, Coord3D { x: 320.0, y: 40.0, z: 0.0 });
         // (its command set, with a button to construct a depot: the control bar's data, which the World takes as a table;
         // `buildObjectNow` with a dozer requires the dozer can make the building, `isPossibleToMakeUnit`)
         let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
@@ -356,6 +373,7 @@ mod computer_player_tests {
             }
         }
         let done = done.expect("the dozer finishes the depot");
+        eprintln!("started on frame {frame} at {pos:?}, finished on frame {done}, the dozer at {:?}", w.find_object(dozer).map(|o| o.get_position()));
         assert_eq!(w.find_object(site).map(|o| o.construction_percent), Some(crate::logic::world::object::CONSTRUCTION_COMPLETE));
         assert!(done < 600, "finished on frame {done}");
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
@@ -2867,5 +2885,42 @@ Object Bomb\n KindOf = BOOBY_TRAP\n Geometry = CYLINDER\n GeometryMajorRadius = 
         eprintln!("soldier {path:?}, depot {no_ai:?}");
         assert_eq!(path, Some(true));
         assert_eq!(no_ai, None);
+    }
+}
+
+#[cfg(test)]
+mod allies_live_tests {
+    use super::*;
+    use crate::logic::ai::queue::AlliesHost;
+    use crate::logic::world::object_cuts::CutCall;
+
+    /// Batch I43, the pathfinder's `moveAllies` questions to an ally's AI (`isMoving()`, `isAttacking()`, `isBusy()`, tables that read
+    /// false for every unit) and its `aiMoveAwayFromUnit(obj, CMD_FROM_AI)` (only logged, so no ally ever stepped aside). Predicted
+    /// before the run: an idle soldier is not moving, attacking or busy; a soldier 10 frames into a move is moving; asked to move away
+    /// from the first, the idle one's AI is moving out of its way (`isMovingAwayFrom`) on the next frame, with no record of the call.
+    #[test]
+    fn an_ally_asked_to_move_steps_aside() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let idle = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let mover = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 205.0, z: 0.0 });
+        let ai = w.find_object(mover).and_then(|o| o.ai).expect("the mover's AI");
+        w.module_call(mover, ai, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 300.0, y: 205.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..10 {
+            w.logic_update().unwrap();
+        }
+        let act = |w: &mut World, id| w.ai_activity(id).map(|a| (a.moving, a.attacking, a.busy, a.using_ability));
+        let (still, moving) = (act(&mut w, idle), act(&mut w, mover));
+        w.cuts.log = Some(Vec::new());
+        w.ai_move_away_from_unit(idle, mover);
+        w.logic_update().unwrap();
+        let away = w.ai_peek(idle).expect("the AI").is_moving_away_from(mover);
+        let n = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::Host { call, .. } if *call == "AIUpdateInterface::aiMoveAwayFromUnit")).count();
+        eprintln!("idle {still:?}, mover {moving:?}, moving away {away}, records {n}, errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(still, Some((false, false, false, false)));
+        assert_eq!(moving.map(|m| m.0), Some(true));
+        assert!(away);
+        assert_eq!(n, 0);
     }
 }

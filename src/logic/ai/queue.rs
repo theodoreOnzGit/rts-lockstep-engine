@@ -59,7 +59,7 @@ pub struct AiActivity {
 pub trait AlliesHost: AttackHost {
     fn is_harvester(&self, id: ObjectId) -> bool;
     /// The unit's AI's activity; none without an AI.
-    fn ai_activity(&self, id: ObjectId) -> Option<AiActivity>;
+    fn ai_activity(&mut self, id: ObjectId) -> Option<AiActivity>;
     /// `getAI()->aiMoveAwayFromUnit(from, CMD_FROM_AI)`.
     fn ai_move_away_from_unit(&mut self, id: ObjectId, from: ObjectId);
     /// `getAI()->getBuildingToNotPathAround()`.

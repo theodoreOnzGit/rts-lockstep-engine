@@ -40,7 +40,13 @@
 //! idle (`cuts.ai_idle`), moving, attacking or busy (`cuts.ai_busy`), the building it does not path around and a wings
 //! locomotor, and `aiMoveAwayFromUnit` (logged). Also the weapon's attack distance and range (`getAttackDistance` and
 //! `isGoalPosWithinAttackRange` take the weapon's host mutably), the terrain line of fire, and the partition manager's
-//! closest tall building (none).
+//! closest tall building (none). **Corrected 2026-11-03 (batch I43):** with `cuts.live_ai`, these are the units' own AIs'
+//! answers: whether it can path through units, its ignored obstacle, whether it is moving, attacking or busy (`moveAllies`), the
+//! building it does not path around (a chinook's drop target), a wings locomotor, and `aiMoveAwayFromUnit` is given to the
+//! ally's AI (it was only logged). The attack search's questions are live since batch I38. Still tables: the AI facts the
+//! pathfinder reads before it runs (ground movement, an aircraft that adjusts its destination, and the goal and current cells,
+//! which the pathfinder writes to `ai_cells`, not the AI's own `pathfind_goal_cell` and `pathfind_cur_cell`), the downhill-only
+//! flag of an object with no AI, the slaver id, and `attackUsesLineOfSight` (the AI data's default).
 //!
 //! `p1w13-sonnet`, integration batch I9a, 2026-11-01.
 
@@ -601,6 +607,10 @@ impl PathfinderHost for World {
 
 impl MovementHost for World {
     fn ignored_obstacle_id(&self, id: ObjectId) -> ObjectId {
+        // (batch I43: the AI's own `getIgnoredObstacleID()` with `live_ai`; it was always the table)
+        if self.cuts.live_ai {
+            return self.ai_peek(id).map_or(INVALID_ID, |a| a.get_ignored_obstacle_id());
+        }
         self.cuts.pathfinder.ai_ignored_obstacle.get(&id).copied().unwrap_or(INVALID_ID)
     }
     fn are_allies(&self, obj: ObjectId, unit: ObjectId) -> bool {
@@ -663,6 +673,10 @@ impl SearchHost for World {
         }
     }
     fn can_path_through_units(&self, id: ObjectId) -> bool {
+        // (batch I43: the AI's own `canPathThroughUnits()` with `live_ai`; it was always the table)
+        if self.cuts.live_ai {
+            return self.ai_peek(id).is_some_and(|a| a.can_path_through_units);
+        }
         self.cuts.pathfinder.ai_can_path_through_units.contains(&id)
     }
     fn is_dozer(&self, id: ObjectId) -> bool {
@@ -711,9 +725,19 @@ impl AlliesHost for World {
     fn is_harvester(&self, id: ObjectId) -> bool {
         self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_HARVESTER))
     }
-    fn ai_activity(&self, id: ObjectId) -> Option<AiActivity> {
+    fn ai_activity(&mut self, id: ObjectId) -> Option<AiActivity> {
         let o = self.objects.find(id)?;
         o.ai?;
+        let using_ability = o.test_status(crate::common::object_status_types::OBJECT_STATUS_IS_USING_ABILITY);
+        // (batch I43: the AI's own `isMoving()`, `isAttacking()` and `isBusy()` with `live_ai`; they were always the tables, so no
+        // ally was ever moving, attacking or busy, and `moveAllies` asked every ally in the way to move)
+        if self.cuts.live_ai {
+            use crate::logic::world::module_call::ModuleCall;
+            let ask = |w: &mut World, call| w.ai_ask(id, call).is_some_and(|r| r.as_bool());
+            let (moving, attacking, busy) = (ask(self, ModuleCall::AiIsMoving), ask(self, ModuleCall::AiIsAttacking), ask(self, ModuleCall::AiIsBusy));
+            return Some(AiActivity { moving, attacking, busy, using_ability });
+        }
+        let o = self.objects.find(id)?;
         let c = &self.cuts.pathfinder;
         Some(AiActivity {
             moving: c.ai_moving.contains(&id),
@@ -723,12 +747,40 @@ impl AlliesHost for World {
         })
     }
     fn ai_move_away_from_unit(&mut self, id: ObjectId, from: ObjectId) {
+        // (batch I43: given to the ally's AI with `live_ai`, `aiMoveAwayFromUnit(from, CMD_FROM_AI)`, as the collision's; it was
+        // only logged, so no ally in the way ever moved)
+        if self.cuts.live_ai {
+            use crate::logic::ai::ai_commands::{AiCommandParms, AICMD_MOVE_AWAY_FROM_UNIT};
+            let mut parms = AiCommandParms::new(AICMD_MOVE_AWAY_FROM_UNIT, crate::logic::ai::ai_update_types::CMD_FROM_AI);
+            parms.obj = from;
+            // (the ally is never the AI that runs: `moveAllies` skips the mover itself)
+            self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiDoCommandParms(parms));
+            return;
+        }
         self.cut(CutCall::Host { call: "AIUpdateInterface::aiMoveAwayFromUnit", args: vec![i64::from(id), i64::from(from)], text: Vec::new() });
     }
     fn building_to_not_path_around(&self, id: ObjectId) -> ObjectId {
+        // (batch I43: with `live_ai`, the AI's own: `INVALID_ID` but for a chinook moving to or doing a combat drop, its goal object,
+        // `chinook_ai_update::building_to_not_path_around`; it was always the table)
+        if self.cuts.live_ai {
+            use crate::logic::ai::chinook_ai_update::{DO_COMBAT_DROP, MOVE_TO_COMBAT_DROP};
+            let (Some(a), Some(m)) = (self.ai_peek(id), self.ai_machine_query(id)) else { return INVALID_ID };
+            if !matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::Chinook(_)) {
+                return INVALID_ID;
+            }
+            let state = m.get_current_state_id();
+            if state == MOVE_TO_COMBAT_DROP || state == DO_COMBAT_DROP {
+                return self.find_object(m.goal_object_id()).map_or(INVALID_ID, |_| m.goal_object_id());
+            }
+            return INVALID_ID;
+        }
         self.cuts.pathfinder.ai_building_to_not_path_around.get(&id).copied().unwrap_or(INVALID_ID)
     }
     fn has_wings_locomotor(&self, id: ObjectId) -> bool {
+        // (batch I43: the AI's current locomotor's appearance with `live_ai`; it was always the table)
+        if self.cuts.live_ai {
+            return self.ai_peek(id).and_then(|a| a.get_cur_locomotor()).is_some_and(|l| l.get_appearance() == crate::logic::locomotor::LocomotorAppearance::LocoWings);
+        }
         self.cuts.pathfinder.ai_wings.contains(&id)
     }
     fn terrain_extent(&self) -> Region3D {
