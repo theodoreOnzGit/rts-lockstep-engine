@@ -1328,7 +1328,17 @@ impl AiStateHost for World {
     }
     fn pf_find_attack_path(&mut self, victim: ObjectId, victim_pos: &Coord3D) -> Option<Path> {
         let v = self.pf_object_facts(victim);
-        self.ai_pf(|pf, w, o, loco| pf.find_attack_path(w, o, loco, &o.pos, v.as_ref(), victim_pos)).flatten()
+        // (integration batch I38: with `live_ai`, the search asks the AI's current weapon, as upstream's `findAttackPath(.., weapon)`;
+        // it asked tables, empty in a game, so no cell was ever in range and the attack distance was 0)
+        let id = self.ai_self;
+        let weapon = if self.cuts.live_ai { self.objects.find(id).and_then(|o| o.weapon_set.get_cur_weapon().cloned()) } else { None };
+        match weapon {
+            Some(w) => {
+                let search = self.attack_search_for(id, &w, Some(victim));
+                self.with_attack_search(search, |me| me.ai_pf(|pf, w, o, loco| pf.find_attack_path(w, o, loco, &o.pos, v.as_ref(), victim_pos)).flatten())
+            }
+            None => self.ai_pf(|pf, w, o, loco| pf.find_attack_path(w, o, loco, &o.pos, v.as_ref(), victim_pos)).flatten(),
+        }
     }
     fn pf_adjust_to_possible_destination(&mut self, pos: &mut Coord3D) {
         let id = self.ai_self;

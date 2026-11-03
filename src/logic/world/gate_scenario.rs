@@ -1959,6 +1959,67 @@ mod script_power_note_tests {
 }
 
 #[cfg(test)]
+mod attack_search_tests {
+    use super::*;
+    use crate::logic::ai::ai_states::AiStateHost;
+
+    /// Batch I38, the attack path asks the attacker's weapon (`findAttackPath(.., weapon)`: `isGoalPosWithinAttackRange` and
+    /// `getAttackDistance` were tables, empty in a game, and `isIdle` of the units in the way the `ai_idle` table). A soldier (GateGun,
+    /// range 100) at (100, 105) and an enemy soldier at (400, 105), on the fixture's map after `newMap`. Predicted before the run: a
+    /// path is found; its goal is within the weapon's attack range of the enemy (`isGoalPosWithinAttackRange`, the test the AI makes
+    /// after the search); the goal is short of the enemy: between 50 and 100 from it (the range undersized by a quarter cell, the
+    /// cells 10 wide); no search's facts remain after it. **Missed on the first run, in the prediction's measure:** the goal was in
+    /// range, at (295, 105), but 105 from the enemy's centre: the weapon's distance is between the two bounding circles (radius 5
+    /// each), 95, inside the 97.5 of the undersized range. The distance is checked between the circles below.
+    #[test]
+    fn an_attack_path_ends_in_the_weapons_range() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let enemy = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 400.0, y: 105.0, z: 0.0 });
+        let enemy_pos = w.objects.find(enemy).unwrap().get_position();
+        w.ai_self = me;
+        let path = w.pf_find_attack_path(enemy, &enemy_pos).expect("an attack path");
+        let goal = *path.node(path.last_node().expect("a node")).position();
+        let weapon = w.objects.find(me).unwrap().weapon_set.get_cur_weapon().cloned().expect("the soldier's gun");
+        let in_range = weapon.is_goal_pos_within_attack_range(&mut w, me, &goal, Some(enemy), &enemy_pos);
+        let dist = ((goal.x - enemy_pos.x).powi(2) + (goal.y - enemy_pos.y).powi(2)).sqrt() - 10.0;
+        eprintln!("goal {goal:?}, {dist} from the enemy's circle, in range {in_range}; facts left {:?}", w.cuts.pathfinder.attack_search.is_some());
+        assert!(in_range);
+        assert!((50.0..=97.5).contains(&dist), "the goal is {dist} from the enemy's circle");
+        assert!(w.cuts.pathfinder.attack_search.is_none());
+    }
+
+    /// Batch I38, `Weapon::computeApproachTarget`'s `adjustTargetDestination(source, target, pos, this, &approach)` (an aircraft's
+    /// approach "not stacked atop another aircraft") on the world's pathfinder; it was a record that left the approach as it was.
+    /// Predicted before the run: an approach put at (330, 103), about 70 from the enemy at (400, 105), moves to a cell's centre (both
+    /// coordinates 5 modulo 10, `adjustCoordToCell`) that the weapon's `isGoalPosWithinAttackRange` accepts, and no record is made.
+    #[test]
+    fn an_approach_is_adjusted_to_a_cell_in_range() {
+        use crate::logic::weapon_host::WeaponHost;
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let enemy = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 400.0, y: 105.0, z: 0.0 });
+        let enemy_pos = w.objects.find(enemy).unwrap().get_position();
+        let weapon = w.objects.find(me).unwrap().weapon_set.get_cur_weapon().cloned().expect("the soldier's gun");
+        w.cuts.log = Some(Vec::new());
+        let mut approach = Coord3D { x: 330.0, y: 103.0, z: 0.0 };
+        w.adjust_target_destination(me, Some(enemy), None, weapon.template(), &mut approach);
+        let in_range = weapon.is_goal_pos_within_attack_range(&mut w, me, &approach, Some(enemy), &enemy_pos);
+        let records = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, crate::logic::world::object_cuts::CutCall::PathfinderAdjustTargetDestination { .. })).count();
+        eprintln!("approach {approach:?}, in range {in_range}, records {records}");
+        assert_eq!((approach.x.rem_euclid(10.0), approach.y.rem_euclid(10.0)), (5.0, 5.0));
+        assert!(in_range);
+        assert_eq!(records, 0);
+    }
+}
+
+#[cfg(test)]
 mod footprint_wall_tests {
     use super::*;
     use crate::common::game_type::LAYER_GROUND;

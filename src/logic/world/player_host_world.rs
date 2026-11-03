@@ -638,6 +638,14 @@ impl TeamHost for World {
         self.find_object(o).is_some_and(|x| x.ai.is_some())
     }
     fn ai_is_idle(&self, o: ObjectId) -> bool {
+        // (integration batch I38: with `live_ai`, the AI's base `isIdle` on its machine, as the group's (`se_group_is_idle`; a
+        // subclass's override is not seen from here); it was the table, which no live unit is in)
+        if self.cuts.live_ai {
+            return match (self.ai_peek(o), self.ai_machine_query(o)) {
+                (Some(a), Some(m)) => a.base_is_idle(m),
+                _ => false,
+            };
+        }
         self.cuts.ai_idle.contains(&o)
     }
     fn ai_valid_surfaces(&self, o: ObjectId) -> u32 {

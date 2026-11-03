@@ -531,7 +531,29 @@ impl WeaponHost for World {
         template: usize,
         approach_target_pos: &mut Coord3D,
     ) {
-        // `TheAI->pathfinder()->adjustTargetDestination(...)`: the pathfinder is layer 11's; a record, the position as it is
+        // `TheAI->pathfinder()->adjustTargetDestination(source, target, pos, this, &approachTargetPos)`: (integration batch I38) with
+        // `live_ai` and the world's pathfinder, the source's weapon of this template (its current one first) asked by the search; else a
+        // record, the position as it is
+        if self.cuts.live_ai && self.pf_ready().is_some() {
+            let weapon = self.objects.find(source).and_then(|o| {
+                let ws = &o.weapon_set;
+                ws.get_cur_weapon()
+                    .filter(|w| w.template() == template)
+                    .or_else(|| (0..crate::common::game_type::WEAPONSLOT_COUNT).filter_map(|s| ws.get_weapon_in_weapon_slot(s)).find(|w| w.template() == template))
+                    .cloned()
+            });
+            if let (Some(w), Some(obj)) = (weapon, self.pf_object_facts(source)) {
+                // (`targetPos` is unused when there is a target, as in `isGoalPosWithinAttackRange`)
+                let target_pos = pos.or_else(|| target.map(|t| self.position(t))).unwrap_or_default();
+                let search = self.attack_search_for(source, &w, target);
+                self.with_attack_search(search, |me| {
+                    me.with_pathfinder(|pf, w| {
+                        pf.adjust_target_destination(w, &obj, target, &target_pos, approach_target_pos);
+                    })
+                });
+                return;
+            }
+        }
         self.cut(CutCall::PathfinderAdjustTargetDestination { source, target: target.unwrap_or(INVALID_ID), pos, template, approach: *approach_target_pos });
     }
 

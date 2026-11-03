@@ -44,6 +44,7 @@
 //!
 //! `p1w13-sonnet`, integration batch I9a, 2026-11-01.
 
+use crate::logic::weapon_fire::Weapon;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::base_type::{Coord3D, ICoord2D, Region2D, Region3D};
@@ -121,10 +122,26 @@ pub struct PathfinderCuts {
     pub attack_distance: BTreeMap<ObjectId, f32>,
     pub goal_within_attack_range: BTreeSet<ObjectId>,
     pub terrain_line_clear: BTreeMap<ObjectId, bool>,
+    /// Integration batch I38: while a search that asks a weapon runs (`findAttackPath`, `adjustTargetDestination`, with `live_ai`),
+    /// what it asks of the weapon and of the units, computed before it (the pathfinder's host is read-only); the tables above
+    /// answer otherwise.
+    pub attack_search: Option<AttackSearch>,
     /// The calls waiting for the pathfinder (or the terrain) to be back in the world.
     pub deferred: Vec<PfOp>,
     /// The bridge calls waiting for the terrain.
     pub deferred_bridge: Vec<PfOp>,
+}
+
+/// Integration batch I38: what a pathfinder search passed a weapon asks of it, computed with the world before the search: the weapon's
+/// two squared ranges for `isGoalPosWithinAttackRange` ([`Weapon::goal_range_sqrs`]), its `getAttackDistance(obj, victim, victimPos)`,
+/// and the units whose AI's `isIdle()` is true (the search asks it of the units in its way).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttackSearch {
+    /// The searching object (the weapon's owner).
+    pub obj: ObjectId,
+    pub range_sqrs: (f32, f32),
+    pub attack_distance: f32,
+    pub idle: BTreeSet<ObjectId>,
 }
 
 impl Default for PathfinderCuts {
@@ -144,6 +161,7 @@ impl Default for PathfinderCuts {
             attack_distance: BTreeMap::new(),
             goal_within_attack_range: BTreeSet::new(),
             terrain_line_clear: BTreeMap::new(),
+            attack_search: None,
             deferred: Vec::new(),
             deferred_bridge: Vec::new(),
         }
@@ -224,6 +242,28 @@ impl World {
         for op in ops {
             self.pathfinder_op(op);
         }
+    }
+
+    /// Integration batch I38: an [`AttackSearch`] for `obj` searching with `weapon` against `victim`: the weapon's ranges and attack
+    /// distance (its bonuses on `obj`), and every other unit whose AI's (virtual) `isIdle()` is true.
+    pub(crate) fn attack_search_for(&mut self, obj: ObjectId, weapon: &Weapon, victim: Option<ObjectId>) -> AttackSearch {
+        let range_sqrs = weapon.goal_range_sqrs(self, obj);
+        let attack_distance = weapon.get_attack_distance(self, obj, victim);
+        let mut idle = BTreeSet::new();
+        for id in self.objects.ids_in_order() {
+            if id != obj && self.ai_ask(id, crate::logic::world::module_call::ModuleCall::AiIsIdle).is_some_and(|r| r.as_bool()) {
+                idle.insert(id);
+            }
+        }
+        AttackSearch { obj, range_sqrs, attack_distance, idle }
+    }
+
+    /// Runs `f` with `search` in place for the pathfinder's weapon questions (the one before it put back after).
+    pub(crate) fn with_attack_search<T>(&mut self, search: AttackSearch, f: impl FnOnce(&mut World) -> T) -> T {
+        let before = self.cuts.pathfinder.attack_search.replace(search);
+        let r = f(self);
+        self.cuts.pathfinder.attack_search = before;
+        r
     }
 
     /// One call that changes the pathfinder, with `live_pathfinder`: run now, or deferred while the pathfinder is out.
@@ -587,7 +627,16 @@ impl MovementHost for World {
     fn attack_uses_line_of_sight(&self) -> bool {
         self.cuts.pathfinder.attack_uses_line_of_sight
     }
-    fn weapon_terrain_line_clear(&self, attacker: ObjectId, _attacker_pos: &Coord3D, _victim: Option<ObjectId>, _victim_pos: &Coord3D) -> Option<bool> {
+    fn weapon_terrain_line_clear(&self, attacker: ObjectId, attacker_pos: &Coord3D, victim: Option<ObjectId>, victim_pos: &Coord3D) -> Option<bool> {
+        // (integration batch I38: with `live_ai`, the attacker's current weapon's `isClearGoalFiringLineOfSightTerrain`; it was the
+        // table, empty in a game, so the terrain never blocked an attack view)
+        if self.cuts.live_ai {
+            let w = self.objects.find(attacker)?.weapon_set.get_cur_weapon()?;
+            return Some(match victim {
+                Some(v) => w.is_clear_goal_firing_line_of_sight_terrain(self, attacker, attacker_pos, v),
+                None => w.is_clear_goal_firing_line_of_sight_terrain_pos(self, attacker, attacker_pos, victim_pos),
+            });
+        }
         self.cuts.pathfinder.terrain_line_clear.get(&attacker).copied()
     }
     /// `getSlaverID(o)`: none until the slaved updates answer it (batch I9b).
@@ -631,16 +680,26 @@ impl SearchHost for World {
 }
 
 impl AdjustHost for World {
-    fn goal_pos_within_attack_range(&self, obj: ObjectId, _goal: &Coord3D, _victim: Option<ObjectId>, _victim_pos: &Coord3D) -> bool {
-        self.cuts.pathfinder.goal_within_attack_range.contains(&obj)
+    fn goal_pos_within_attack_range(&self, obj: ObjectId, goal: &Coord3D, victim: Option<ObjectId>, victim_pos: &Coord3D) -> bool {
+        // (integration batch I38: the searching weapon's test, with the ranges computed before the search)
+        match &self.cuts.pathfinder.attack_search {
+            Some(s) if s.obj == obj => Weapon::goal_pos_within_range_sqrs(self, obj, goal, victim, victim_pos, s.range_sqrs),
+            _ => self.cuts.pathfinder.goal_within_attack_range.contains(&obj),
+        }
     }
 }
 
 impl AttackHost for World {
     fn attack_distance(&self, obj: ObjectId, _victim: Option<ObjectId>, _victim_pos: &Coord3D) -> f32 {
-        self.cuts.pathfinder.attack_distance.get(&obj).copied().unwrap_or(0.0)
+        match &self.cuts.pathfinder.attack_search {
+            Some(s) if s.obj == obj => s.attack_distance,
+            _ => self.cuts.pathfinder.attack_distance.get(&obj).copied().unwrap_or(0.0),
+        }
     }
     fn is_idle(&self, id: ObjectId) -> bool {
+        if let Some(s) = &self.cuts.pathfinder.attack_search {
+            return s.idle.contains(&id);
+        }
         self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.ai_idle.contains(&id)
     }
     fn ai_locomotor_set(&self, id: ObjectId) -> PfLocomotorSet {

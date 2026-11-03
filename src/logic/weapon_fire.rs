@@ -707,9 +707,24 @@ impl Weapon {
         target: Option<ObjectId>,
         target_pos: &Coord3D,
     ) -> bool {
+        let ranges = self.goal_range_sqrs(host, source);
+        Self::goal_pos_within_range_sqrs(host, source, goal_pos, target, target_pos, ranges)
+    }
+
+    /// Integration batch I38: the two squared ranges [`Weapon::is_goal_pos_within_attack_range`] compares with, the attack range
+    /// (with this weapon's bonuses on `source`) and the minimum range, so that a search asking it for many goals (the pathfinder's,
+    /// whose host is read-only) can have them computed once.
+    pub fn goal_range_sqrs<H: WeaponHost>(&self, host: &mut H, source: ObjectId) -> (f32, f32) {
         // undersize by 1/4 of a pathfind cell, so that the goal is not teetering on the edge of firing range. jba.
         let attack_range_sqr = sqr(self.get_attack_range(host, source) - (PATHFIND_CELL_SIZE_F * 0.25));
+        // oversize by 1/4 of a pathfind cell, so that the goal is not teetering on the edge of firing range. jba.
+        let min_attack_range_sqr = sqr(tpl(host.store(), self.template).get_minimum_attack_range() + (PATHFIND_CELL_SIZE_F * 0.25));
+        (attack_range_sqr, min_attack_range_sqr)
+    }
 
+    /// The rest of [`Weapon::is_goal_pos_within_attack_range`], with its ranges ([`Weapon::goal_range_sqrs`]).
+    pub fn goal_pos_within_range_sqrs<H: WeaponHost>(host: &H, source: ObjectId, goal_pos: &Coord3D, target: Option<ObjectId>, target_pos: &Coord3D, ranges: (f32, f32)) -> bool {
+        let (attack_range_sqr, min_attack_range_sqr) = ranges;
         let dist_sqr;
         if let Some(t) = target {
             if host.is_kind_of(t, KINDOF_BRIDGE) {
@@ -728,8 +743,6 @@ impl Weapon {
             dist_sqr = host.goal_distance_squared_to_pos(source, goal_pos, target_pos, ATTACK_RANGE_CALC_TYPE);
         }
 
-        // oversize by 1/4 of a pathfind cell, so that the goal is not teetering on the edge of firing range. jba.
-        let min_attack_range_sqr = sqr(tpl(host.store(), self.template).get_minimum_attack_range() + (PATHFIND_CELL_SIZE_F * 0.25));
         if Self::is_inside_min_range(dist_sqr, min_attack_range_sqr) {
             return false;
         }
