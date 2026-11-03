@@ -475,8 +475,10 @@ impl PartitionFilterHost for World {
     fn is_disabled_unmanned(&self, id: ObjectId) -> bool {
         self.objects.find(id).is_some_and(|o| o.is_disabled_by_type(DISABLED_UNMANNED))
     }
-    fn command_button_valid_target(&mut self, _button: i32, _source: ObjectId, _other: ObjectId, _command_source: CommandSourceType) -> bool {
-        false // `CommandButton::isValidToUseOn` is the control bar's (layer 13); no translated caller builds this filter yet
+    fn command_button_valid_target(&mut self, button: i32, source: ObjectId, other: ObjectId, command_source: CommandSourceType) -> bool {
+        // ~~`CommandButton::isValidToUseOn` is the control bar's (layer 13); no translated caller builds this filter yet~~ **integration
+        // batch I27:** `m_commandButton->isValidToUseOn(m_source, other, NULL, m_commandSource)`, the button its index in the world's table
+        usize::try_from(button).is_ok_and(|b| self.command_button_is_valid_to_use_on(b, source, Some(other), None, command_source))
     }
     fn point_in_trigger(&self, trigger: i32, x: i32, y: i32) -> bool {
         usize::try_from(trigger).ok().and_then(|t| self.terrain.triggers().get(t)).is_some_and(|t| t.point_in_trigger(&ICoord3D { x, y, z: 0 }))

@@ -1008,6 +1008,9 @@ pub enum ModuleCall {
     ProductionQueueUpgrade { upgrade: Option<u32> },
     ProductionCancelUpgrade { upgrade: Option<u32> },
     ProductionIsUpgradeInQueue { upgrade: Option<u32> },
+    /// Integration batch I27: an entry of the queue researches an upgrade (`CommandButton::isValidToUseOn`'s walk from
+    /// `firstProduction()`, `getProductionUpgrade() != NULL`); replies [`ModuleReply::Bool`].
+    ProductionHasAnyUpgradeInQueue,
     ProductionCountUnitTypeInQueue { template: Option<u16> },
     ProductionQueueCreateUnit { template: Option<u16>, production_id: i32 },
     ProductionCancelUnitCreate { production_id: i32 },

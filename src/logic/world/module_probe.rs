@@ -1120,6 +1120,7 @@ impl ProbeModule {
             | ModuleCall::AiClearWaypointQueue
             | ModuleCall::AiDeliverPayloadViaModuleData(_)
             | ModuleCall::GetReferenceThingTemplate
+            | ModuleCall::ProductionHasAnyUpgradeInQueue
             | ModuleCall::AiGetCurLocomotorMaxSpeedForCondition(_) => ModuleReply::Unhandled,
             ModuleCall::AiConstruct { template, pos, angle, owner, is_rebuild } => {
                 world.body_trace(format!(

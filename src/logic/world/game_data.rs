@@ -183,8 +183,10 @@ pub struct GameDataLoad {
     pub crates: CrateSystem,
     /// Integration batch I19: `TheControlBar`'s command buttons and sets.
     pub command_buttons: crate::logic::command_button::CommandButtonStore,
-    /// What a button's fields look up, made at the first button (the stores it names are read before the control bar).
-    button_lookups: Option<Arc<crate::logic::command_button::CommandButtonLookups>>,
+    /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
+    /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
+    /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
+    button_lookups: Option<(Arc<crate::logic::command_button::CommandButtonLookups>, [usize; 4])>,
 }
 
 impl GameDataLoad {
@@ -399,7 +401,8 @@ fn special_power_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()>
 
 /// (batch I19) `INI::parseCommandButtonDefinition`, its fields' lookups made from the stores read before it.
 fn command_button_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
-    if c.button_lookups.is_none() {
+    let sizes = [c.factory.templates().count(), c.upgrades.get_upgrade_names().len(), c.special_powers.templates().count(), c.sciences.infos().count()];
+    if c.button_lookups.as_ref().is_none_or(|(_, s)| *s != sizes) {
         let mut l = crate::logic::command_button::CommandButtonLookups::default();
         for t in c.factory.templates() {
             l.templates.insert(t.data.get_name().to_vec(), t.data.get_template_id());
@@ -412,9 +415,9 @@ fn command_button_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()
             l.special_powers.insert(sp.name().to_vec(), sp.id());
         }
         l.sciences = c.sciences.infos().map(|i| i.science()).collect();
-        c.button_lookups = Some(Arc::new(l));
+        c.button_lookups = Some((Arc::new(l), sizes));
     }
-    let lookups = c.button_lookups.clone().expect("made above");
+    let lookups = c.button_lookups.as_ref().map(|(l, _)| l.clone()).expect("made above");
     c.command_buttons.parse_command_button_definition(ini, &mut c.names, &lookups)
 }
 

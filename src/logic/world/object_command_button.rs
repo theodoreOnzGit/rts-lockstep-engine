@@ -8,7 +8,7 @@
 //   GeneralsMD/Code/GameEngine/Source/Common/RTS/SpecialPower.cpp
 //   (`SpecialPowerStore::canUseSpecialPower`)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp
-//   (`CommandButton::isValidObjectTarget(Object*, Object*)`, `isValidRelationshipTarget`)
+//   (`CommandButton::isValidObjectTarget(Object*, Object*)`, `isValidRelationshipTarget`, `isValidToUseOn`)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -256,6 +256,49 @@ impl World {
             }
             _ => {}
         }
+    }
+
+    /// `CommandButton::isValidToUseOn(sourceObj, targetObj, targetLocation, commandSource)` (integration batch I27): an upgrade button is
+    /// valid while nothing in the source's production queue researches an upgrade and the source is affected by and lacks the upgrade;
+    /// else the target the options need, then the action manager's special power check for the target, the position (the target's when
+    /// none is given) or none, not checking the source's requirements. A button without a special power is then not valid
+    /// (`getSpecialPowerModule(NULL)` is `NULL`).
+    pub fn command_button_is_valid_to_use_on(&mut self, button: usize, src: ObjectId, target: Option<ObjectId>, loc: Option<Coord3D>, cmd: crate::common::game_common::CommandSourceType) -> bool {
+        let Some(b) = self.button(button) else { return false };
+        if let Some(u) = b.upgrade {
+            let Some(pu) = self.get_production_update_interface(src) else { return false }; // "we can't do this"
+            if self.module_call(src, pu, ModuleCall::ProductionHasAnyUpgradeInQueue).as_bool() {
+                return false;
+            }
+            let statics = self.statics.clone();
+            let Some(mask) = statics.upgrade_center.find_upgrade_by_key(NameKeyType(u)).map(|t| t.upgrade_mask()) else { return false };
+            return self.affected_by_upgrade(src, &mask) && !self.has_upgrade(src, &mask);
+        }
+        if b.options & opt::NEED_OBJECT_TARGET != 0 && target.is_none() {
+            return false;
+        }
+        let mut pos = loc;
+        if b.options & opt::NEED_TARGET_POS != 0 && loc.is_none() {
+            match target {
+                Some(t) => pos = self.objects.find(t).map(|x| x.get_position()),
+                None => return false,
+            }
+        }
+        let statics = self.statics.clone();
+        let Some(sp) = b.special_power.and_then(|id| statics.special_power_store.find_special_power_template_by_id(id).map(|t| crate::logic::action_manager::SpecialPowerTemplateRef { id, sp_type: t.special_power_type() })) else {
+            return false;
+        };
+        let r = if b.options & opt::NEED_OBJECT_TARGET != 0 {
+            crate::logic::action_manager::can_do_special_power_at_object(self, src, target.unwrap_or(crate::common::game_type::INVALID_ID), cmd, &sp, b.options, false)
+        } else if b.options & opt::NEED_TARGET_POS != 0 {
+            crate::logic::action_manager::can_do_special_power_at_location(self, src, &pos.unwrap_or_default(), cmd, &sp, None, b.options, false)
+        } else {
+            Ok(crate::logic::action_manager::can_do_special_power(self, src, &sp, cmd, b.options, false))
+        };
+        r.unwrap_or_else(|e| {
+            self.cuts.team_live_errors.push(format!("CommandButton::isValidToUseOn: {e:?}"));
+            false
+        })
     }
 
     /// `doCommandButtonUsingWaypoints(commandButton, way, cmdSource)`, the waypoint by id: only a button with `CAN_USE_WAYPOINTS`, and

@@ -1462,7 +1462,7 @@ mod command_button_object_tests {
 
     /// A caster with an `OCLSpecialPower` (its OCL drops a pup at the target location) and an AI; its command set holds the power's
     /// button and a stop button.
-    const CASTER: &str = "\
+    pub(super) const CASTER: &str = "\
 ObjectCreationList OCL_Drop\n CreateObject\n  ObjectNames = Pup\n  Count = 1\n End\nEnd\n\
 SpecialPower DropPower\n Enum = SPECIAL_DAISY_CUTTER\n ReloadTime = 0\n RadiusCursorRadius = 40\nEnd\n\
 Object Pup\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 2\n\
@@ -1716,5 +1716,70 @@ mod script_partition_tests {
         assert_eq!(garrison, (vec![depot], Vec::new()));
         assert_eq!(list, Some(vec![b"Soldier".to_vec()]));
         assert_eq!(player, (None, None));
+    }
+}
+
+#[cfg(test)]
+mod button_search_tests {
+    use super::*;
+    use crate::logic::world::script_actions::{ButtonFrom, ButtonSearch, ScriptActionsHost};
+
+    /// The batch-I23 caster, given a second power `ZapPower` (`SPECIAL_BATTLESHIP_BOMBARDMENT`: valid at any object not allied) with a
+    /// button needing an enemy object, and a costly enemy `Prize`.
+    fn fixture() -> String {
+        format!(
+            "{}SpecialPower ZapPower\n Enum = SPECIAL_BATTLESHIP_BOMBARDMENT\n ReloadTime = 0\nEnd\n\
+CommandButton Command_Zap\n Command = SPECIAL_POWER\n SpecialPower = ZapPower\n Options = NEED_TARGET_ENEMY_OBJECT\nEnd\n\
+Object Zapper\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = OCLSpecialPower ModuleTag_Zap\n  SpecialPowerTemplate = ZapPower\n  OCL = OCL_Drop\n  CreateLocation = CREATE_AT_LOCATION\n End\nEnd\n\
+Object Prize\n KindOf = VEHICLE\n BuildCost = 900\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n",
+            super::command_button_object_tests::CASTER
+        )
+    }
+
+    /// Batch I27, `CommandButton::isValidToUseOn` and the button searches with their player, source and button. A zapper of team 1 at
+    /// (100, 100), a friend at (120, 100), an enemy soldier at (160, 100) and an enemy prize (cost 900) at (300, 100). Predicted before
+    /// the run: `Command_Zap` from the zapper is valid on the enemy soldier and not on the friend (the bombardment is refused on allies),
+    /// nor with no target (it needs an object); `Command_Halt` (no special power) is valid on nothing; `Command_Drop` (`NEED_TARGET_POS`)
+    /// from the caster is not valid with neither target nor position. The nearest valid enemy to (100, 100) is the soldier, 60 away (the
+    /// friend is no enemy); the most valuable within 500 is the prize (sorted expensive to cheap); the unmanned search finds nothing.
+    /// **Missed on the first run:** every answer was false or none, because `Command_Zap` had no special power: **port defect**, the
+    /// INI loader made the buttons' name lookups at the first `CommandButton` block and kept them, so `ZapPower`, read after
+    /// `Command_Drop`, was unknown to `Command_Zap` (upstream looks each name up as it parses); the lookups are now remade when the stores
+    /// have grown. Then every prediction held.
+    #[test]
+    fn button_searches_find_valid_targets() {
+        let mut w = gate_map_world_with(&fixture());
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let zapper = make(&mut w, b"Zapper", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let friend = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        let foe = make(&mut w, b"Soldier", enemy, Coord3D { x: 160.0, y: 100.0, z: 0.0 });
+        let prize = make(&mut w, b"Prize", enemy, Coord3D { x: 300.0, y: 100.0, z: 0.0 });
+        let caster = make(&mut w, b"Caster", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+        let button = |w: &World, n: &[u8]| w.cuts.command_buttons.iter().position(|b| b.name == n).expect("the button") as i32;
+        let (zap, halt, drop) = (button(&w, b"Command_Zap"), button(&w, b"Command_Halt"), button(&w, b"Command_Drop"));
+        let valid = (
+            w.sa_button_is_valid_to_use_on(zap, zapper, Some(foe), 1),
+            w.sa_button_is_valid_to_use_on(zap, zapper, Some(friend), 1),
+            w.sa_button_is_valid_to_use_on(zap, zapper, None, 1),
+            w.sa_button_is_valid_to_use_on(halt, zapper, Some(foe), 1),
+            w.sa_button_is_valid_to_use_on(drop, caster, None, 1),
+        );
+        let player = w.get_controlling_player(zapper).expect("the zapper's player");
+        let from = ButtonFrom { player: Some(player), src: zapper, button: zap };
+        let at = Coord3D { x: 100.0, y: 100.0, z: 0.0 };
+        let nearest = w.sa_partition_closest_for_button(&at, ButtonSearch::Enemy, from).map(|(o, d)| (o, d.round()));
+        let valuable = w.sa_partition_most_valuable_target(&at, 500.0, from);
+        let unmanned = w.sa_partition_closest_for_button(&at, ButtonSearch::Unmanned, from);
+        eprintln!("{valid:?}; nearest {nearest:?}; valuable {valuable:?}; unmanned {unmanned:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(valid, (true, false, false, false, false));
+        assert_eq!(nearest, Some((foe, 60.0)));
+        assert_eq!(valuable, Some(prize));
+        assert_eq!(unmanned, None);
     }
 }

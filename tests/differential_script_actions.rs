@@ -1519,16 +1519,16 @@ impl ScriptActionsHost for Sim {
     fn sa_group_command_button_source(&mut self, g: GroupH, t: i32) -> Option<ObjH> {
         self.groups[(g - 1) as usize].iter().copied().find(|o| hh(self.seed(), *o as u32, 700 + t as u32) & 1 != 0)
     }
-    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32) -> Option<ObjH> {
+    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32, _from: ButtonFrom) -> Option<ObjH> {
         self.log.push(format!("partition iterate {} {} {} 0 4", fb(p.x), fb(p.y), fb(range)));
         (0..self.objs.len()).find(|i| hh(self.seed() ^ self.cfg[16], *i as u32, 1000 + 98) & 1 != 0).map(|i| i as i32 + 1)
     }
 
     // --- batch A9 ---
-    fn sa_button_is_valid_to_use_on(&self, b: ButtonH, src: ObjH, target: Option<ObjH>, _cmd: i32) -> bool {
+    fn sa_button_is_valid_to_use_on(&mut self, b: ButtonH, src: ObjH, target: Option<ObjH>, _cmd: i32) -> bool {
         hh(self.seed(), (b * 64 + src) as u32, 83 + target.unwrap_or(0) as u32) & 1 != 0
     }
-    fn sa_partition_closest_for_button(&self, p: &Coord3D, search: ButtonSearch) -> Option<(ObjH, f32)> {
+    fn sa_partition_closest_for_button(&mut self, p: &Coord3D, search: ButtonSearch, _from: ButtonFrom) -> Option<(ObjH, f32)> {
         // the filters' salt: the player's affiliation (2), then as the stand-ins' kinds (a kind-of filter 1 + 8 * its bit, a thing
         // filter 3 + 8 * its template, the others 0)
         let salt: u32 = match search {

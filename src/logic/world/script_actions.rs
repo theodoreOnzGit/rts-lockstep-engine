@@ -295,6 +295,17 @@ pub struct TeamTemplateInfo {
     pub transports_exit: bool,
 }
 
+/// Integration batch I27: what upstream's button searches filter by besides the search's own filters: the team's controlling player
+/// (`PartitionFilterPlayerAffiliation`), and the source object and the button (`PartitionFilterValidCommandButtonTarget` and
+/// `PartitionFilterSameMapStatus`; the unmanned search uses neither).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ButtonFrom {
+    /// `None`: a team with no controlling player, which upstream passes to the filter unchecked (dereferenced when it is asked).
+    pub player: Option<PlayerH>,
+    pub src: ObjH,
+    pub button: ButtonH,
+}
+
 /// The searches of the team command-button actions (batch A9), by their filters after the player's affiliation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonSearch {
@@ -1020,14 +1031,14 @@ pub trait ScriptActionsHost {
     fn sa_group_command_button_source(&mut self, g: GroupH, command_type: i32) -> Option<ObjH>;
     /// `iterateObjectsInRange(&pos, range, FROM_CENTER_2D, {the player's enemies, valid targets of the button from `src`, same map
     /// status}, ITER_SORTED_EXPENSIVE_TO_CHEAP)`'s first object.
-    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32) -> Option<ObjH>;
+    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32, from: ButtonFrom) -> Option<ObjH>;
 
     // --- batch A9 ---
     /// `button->isValidToUseOn(src, target, NULL, cmdSource)`.
-    fn sa_button_is_valid_to_use_on(&self, b: ButtonH, src: ObjH, target: Option<ObjH>, cmd: i32) -> bool;
+    fn sa_button_is_valid_to_use_on(&mut self, b: ButtonH, src: ObjH, target: Option<ObjH>, cmd: i32) -> bool;
     /// `ThePartitionManager->getClosestObject(&pos, REALLY_FAR, FROM_CENTER_2D, filters, &dist)` for the command-button searches: the
     /// filters after the player's affiliation, as `search` names them.
-    fn sa_partition_closest_for_button(&self, p: &Coord3D, search: ButtonSearch) -> Option<(ObjH, f32)>;
+    fn sa_partition_closest_for_button(&mut self, p: &Coord3D, search: ButtonSearch, from: ButtonFrom) -> Option<(ObjH, f32)>;
     /// `groupDoCommandButtonAtObject(button, target, cmdSource)` with a target that may be NULL.
     fn sa_group_do_command_button_at_object_opt(&mut self, g: GroupH, b: ButtonH, target: Option<ObjH>, cmd: i32);
 
@@ -3655,19 +3666,16 @@ impl ScriptActions {
     pub fn do_skirmish_command_button_on_most_valuable<H: ScriptActionsHost>(&mut self, h: &mut H, team: &[u8], ability: &[u8], range: f32) -> R<()> {
         let Some(t) = h.sa_team_named(team) else { return Ok(()) };
         let g = Self::team_group(h, t).ok_or(ActionError::Undefined(IniError::undefined(Undefined::NullObject)))?;
-        if h.sa_team_controlling_player(t).is_none() {
-            return Ok(());
-        }
+        let Some(player) = h.sa_team_controlling_player(t) else { return Ok(()) };
         let Some(b) = h.sa_find_command_button(ability) else { return Ok(()) };
         let src = match h.sa_button_special_power_id(b) {
             Some(id) => h.sa_group_special_power_source(g, id),
             None => h.sa_group_command_button_source(g, h.sa_button_command_type(b)),
         };
-        if src.is_none() {
-            return Ok(());
-        }
+        let Some(src) = src else { return Ok(()) };
         let pos = h.sa_group_center(g).ok_or(ActionError::Undefined(IniError::undefined(Undefined::UninitialisedLocal)))?;
-        if let Some(target) = h.sa_partition_most_valuable_target(&pos, if plant(3884) { range + 1.0 } else { range }) {
+        let from = ButtonFrom { player: Some(player), src, button: b };
+        if let Some(target) = h.sa_partition_most_valuable_target(&pos, if plant(3884) { range + 1.0 } else { range }, from) {
             h.sa_group_do_command_button_at_object(g, b, target, CMD_FROM_SCRIPT);
         }
         Ok(())
@@ -3719,6 +3727,7 @@ impl ScriptActions {
     /// The team's group (unchecked), the button by name, and the group's source object for it (by its special power, else its
     /// command type): `None` when there is no team, no button or no source.
     fn team_button_source<H: ScriptActionsHost>(h: &mut H, team: &[u8], ability: &[u8]) -> R<Option<(TeamH, GroupH, ButtonH, ObjH)>> {
+        // (integration batch I27: the callers' searches take the team's controlling player, which upstream dereferences)
         let Some(t) = h.sa_team_named(team) else { return Ok(None) };
         let g = Self::team_group(h, t).ok_or(ActionError::Undefined(IniError::undefined(Undefined::NullObject)))?;
         let Some(b) = h.sa_find_command_button(ability) else { return Ok(None) };
@@ -3736,9 +3745,10 @@ impl ScriptActions {
 
     /// `doTeamUseCommandButtonOnNearest*`: the group uses the button on the nearest object the search finds.
     fn team_button_on_nearest<H: ScriptActionsHost>(&mut self, h: &mut H, team: &[u8], ability: &[u8], search: ButtonSearch) -> R<()> {
-        let Some((_, g, b, _)) = Self::team_button_source(h, team, ability)? else { return Ok(()) };
+        let Some((t, g, b, src)) = Self::team_button_source(h, team, ability)? else { return Ok(()) };
+        let player = h.sa_team_controlling_player(t);
         let pos = Self::group_center(h, g)?;
-        let Some((o, _)) = h.sa_partition_closest_for_button(&pos, search) else { return Ok(()) };
+        let Some((o, _)) = h.sa_partition_closest_for_button(&pos, search, ButtonFrom { player, src, button: b }) else { return Ok(()) };
         h.sa_group_do_command_button_at_object(g, b, o, CMD_FROM_SCRIPT);
         Ok(())
     }
@@ -3746,11 +3756,12 @@ impl ScriptActions {
     /// `doTeamUseCommandButtonOnNearestObjectType(teamName, ability, objectType)`: a template, or the nearest of each template of an
     /// object type list (the button is then used on NULL when none is found).
     pub fn do_team_use_command_button_on_nearest_object_type<H: ScriptActionsHost>(&mut self, h: &mut H, team: &[u8], ability: &[u8], object_type: &[u8]) -> R<()> {
-        let Some((_, g, b, _)) = Self::team_button_source(h, team, ability)? else { return Ok(()) };
+        let Some((t, g, b, src)) = Self::team_button_source(h, team, ability)? else { return Ok(()) };
+        let from = ButtonFrom { player: h.sa_team_controlling_player(t), src, button: b };
         let best;
         if let Some(t) = h.sa_find_template(object_type) {
             let pos = Self::group_center(h, g)?;
-            let Some((o, _)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Template(t)) else { return Ok(()) };
+            let Some((o, _)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Template(t), from) else { return Ok(()) };
             best = Some(o);
         } else {
             let mut found: Option<(ObjH, f32)> = None;
@@ -3758,7 +3769,7 @@ impl ScriptActions {
                 let pos = Self::group_center(h, g)?;
                 for name in types {
                     let Some(t) = h.sa_find_template(&name) else { continue };
-                    if let Some((o, d)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Template(t)) {
+                    if let Some((o, d)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Template(t), from) {
                         if found.is_none_or(|(_, bd)| d < bd) {
                             found = Some((o, d));
                         }
@@ -3776,7 +3787,12 @@ impl ScriptActions {
     pub fn do_team_partial_use_command_button<H: ScriptActionsHost>(&mut self, h: &mut H, percentage: f32, team: &[u8], ability: &[u8]) -> R<()> {
         let Some(t) = h.sa_team_named(team) else { return Ok(()) };
         let Some(b) = h.sa_find_command_button(ability) else { return Ok(()) };
-        let list: Vec<ObjH> = h.sa_team_members(t).into_iter().filter(|o| h.sa_button_is_valid_to_use_on(b, *o, None, CMD_FROM_SCRIPT)).collect();
+        let mut list: Vec<ObjH> = Vec::new();
+        for o in h.sa_team_members(t) {
+            if h.sa_button_is_valid_to_use_on(b, o, None, CMD_FROM_SCRIPT) {
+                list.push(o);
+            }
+        }
         let n = real_to_int(percentage / 100.0 * list.len() as f32)?;
         for (count, o) in list.into_iter().enumerate() {
             if count as i32 >= n + i32::from(plant(3885)) {
@@ -3841,7 +3857,8 @@ impl ScriptActions {
                     let Some(t) = h.sa_team_named(&t) else { return Ok(()) };
                     let g = Self::team_group(h, t).ok_or(ActionError::Undefined(IniError::undefined(Undefined::NullObject)))?;
                     let pos = Self::group_center(h, g)?;
-                    if let Some((o, _)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Unmanned) {
+                    let from = ButtonFrom { player: h.sa_team_controlling_player(t), src: crate::common::game_type::INVALID_ID, button: -1 };
+                    if let Some((o, _)) = h.sa_partition_closest_for_button(&pos, ButtonSearch::Unmanned, from) {
                         h.sa_group_enter(g, o, CMD_FROM_SCRIPT);
                     }
                 }

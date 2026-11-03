@@ -1037,6 +1037,7 @@ impl UpdateBehavior for ProductionUpdate {
                 Self::record(world, me, r);
                 ModuleReply::Done
             }
+            ModuleCall::ProductionHasAnyUpgradeInQueue => ModuleReply::Bool(self.queue.iter().any(|e| e.upgrade_to_research.is_some())),
             ModuleCall::ProductionIsUpgradeInQueue { upgrade } => ModuleReply::Bool(upgrade.is_some_and(|k| self.is_upgrade_in_queue(NameKeyType(k)))),
             ModuleCall::ProductionCountUnitTypeInQueue { template } => ModuleReply::Int(self.count_unit_type_in_queue(template) as i32),
             ModuleCall::ProductionQueueCreateUnit { template, production_id } => {

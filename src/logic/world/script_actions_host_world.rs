@@ -45,7 +45,7 @@ use crate::logic::scripts::ScriptAction;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::script_actions::{
-    AudioEvent, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
+    AudioEvent, ButtonFrom, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
     TemplateH, TriggerH, WaypointH, WindowH,
 };
 use crate::logic::world::script_engine::ScriptEngine;
@@ -1495,16 +1495,70 @@ impl ScriptActionsHost for World {
         self.with_group(u32::try_from(g).ok()?, |gr, w| gr.get_command_button_source_object(w, command_type)).flatten()
     }
 
-    fn sa_partition_most_valuable_target(&mut self, _p: &Coord3D, _range: f32) -> Option<ObjH> {
-        self.sa_cut("partition_most_valuable_target");
-        Default::default()
+    fn sa_partition_most_valuable_target(&mut self, p: &Coord3D, range: f32, from: ButtonFrom) -> Option<ObjH> {
+        // (integration batch I27: was a cut) `iterateObjectsInRange(&pos, range, FROM_CENTER_2D, {the player's enemies, valid targets of
+        // the button from the source, its map status}, ITER_SORTED_EXPENSIVE_TO_CHEAP)`'s first, with `live_partition`
+        if !self.cuts.live_partition {
+            self.sa_cut("partition_most_valuable_target");
+            return None;
+        }
+        use crate::logic::world::partition::filters::{allow_player, PartitionFilter as F};
+        let player = from.player?; // (the action has checked it)
+        let filters = [
+            F::PlayerAffiliation { player, affiliation: allow_player::ENEMIES, match_: true },
+            F::ValidCommandButtonTarget { source: from.src, command_button: from.button, match_: true, command_source: crate::common::game_common::CommandSourceType::FromScript },
+            F::SameMapStatus { obj: from.src },
+        ];
+        let mut it = self.with_partition(|pm, w| {
+            pm.iterate_objects_in_range_at(w, p, range, crate::logic::world::partition::DistanceCalculationType::FromCenter2D, &filters, crate::logic::object_iter::IterOrderType::SortedExpensiveToCheap)
+        });
+        it.first()
     }
-    fn sa_button_is_valid_to_use_on(&self, _b: ButtonH, _src: ObjH, _target: Option<ObjH>, _cmd: i32) -> bool {
-        Default::default()
+
+    fn sa_button_is_valid_to_use_on(&mut self, b: ButtonH, src: ObjH, target: Option<ObjH>, cmd: i32) -> bool {
+        // (integration batch I27: was a default) `button->isValidToUseOn(src, target, NULL, cmdSource)`
+        let Ok(b) = usize::try_from(b) else { return false };
+        self.command_button_is_valid_to_use_on(b, src, target, None, crate::common::game_common::CommandSourceType::from_i32(cmd))
     }
-    fn sa_partition_closest_for_button(&self, _p: &Coord3D, _search: ButtonSearch) -> Option<(ObjH, f32)> {
-        Default::default()
+
+    fn sa_partition_closest_for_button(&mut self, p: &Coord3D, search: ButtonSearch, from: ButtonFrom) -> Option<(ObjH, f32)> {
+        // (integration batch I27: was a default) `getClosestObject(&pos, REALLY_FAR, FROM_CENTER_2D, filters, &dist)` with
+        // `live_partition`, the filters as ScriptActions.cpp's searches build them
+        if !self.cuts.live_partition {
+            return None;
+        }
+        use crate::logic::world::partition::filters::{allow_player, PartitionFilter as F};
+        // (a `NULL` player is dereferenced by the affiliation filter upstream)
+        let Some(player) = from.player else {
+            self.cuts.team_live_errors.push("PartitionFilterPlayerAffiliation: NULL player".into());
+            return None;
+        };
+        let none = crate::common::kind_of::KindOfMaskType::new();
+        let structure = kinds(crate::common::kind_of::KINDOF_STRUCTURE);
+        let enemies = F::PlayerAffiliation { player, affiliation: allow_player::ENEMIES, match_: true };
+        let valid = F::ValidCommandButtonTarget { source: from.src, command_button: from.button, match_: true, command_source: crate::common::game_common::CommandSourceType::FromScript };
+        let same = F::SameMapStatus { obj: from.src };
+        let filters: Vec<F> = match search {
+            ButtonSearch::Enemy => vec![enemies, valid, same],
+            ButtonSearch::GarrisonedBuilding => vec![enemies, F::AcceptByKindOf { must_be_set: structure, must_be_clear: none }, F::Garrisonable { match_: true }, valid, same],
+            ButtonSearch::KindOf(bit) => vec![enemies, F::AcceptByKindOf { must_be_set: kinds(bit), must_be_clear: none }, valid, same],
+            ButtonSearch::Building => vec![enemies, F::AcceptByKindOf { must_be_set: structure, must_be_clear: none }, valid, same],
+            ButtonSearch::BuildingClass(bit) => {
+                vec![enemies, F::AcceptByKindOf { must_be_set: structure, must_be_clear: none }, F::AcceptByKindOf { must_be_set: kinds(bit), must_be_clear: none }, valid, same]
+            }
+            ButtonSearch::Template(tt) => {
+                let either = F::PlayerAffiliation { player, affiliation: allow_player::ENEMIES | allow_player::NEUTRAL, match_: true };
+                vec![either, F::Thing { template_key: tt, match_: true }, valid, same]
+            }
+            ButtonSearch::Unmanned => {
+                let either = F::PlayerAffiliation { player, affiliation: allow_player::ENEMIES | allow_player::NEUTRAL, match_: true };
+                vec![either, F::UnmannedObject { match_: true }]
+            }
+        };
+        let c = self.with_partition(|pm, w| pm.get_closest_object_at(w, p, REALLY_FAR, crate::logic::world::partition::DistanceCalculationType::FromCenter2D, &filters));
+        c.object.map(|o| (o, c.dist))
     }
+
     fn sa_group_do_command_button_at_object_opt(&mut self, g: GroupH, b: ButtonH, target: Option<ObjH>, cmd: i32) {
         // (integration batch I23: was a stub)
         let (Ok(g), Ok(b)) = (u32::try_from(g), u32::try_from(b)) else { return };
