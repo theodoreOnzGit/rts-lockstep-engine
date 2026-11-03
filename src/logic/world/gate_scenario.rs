@@ -2018,3 +2018,104 @@ mod player_rest_tests {
         assert_eq!((o, i), (Some(false), Some(true)));
     }
 }
+
+#[cfg(test)]
+mod map_load_tests {
+    use super::*;
+    use crate::formats::data_chunk_output::DataChunkOutput;
+
+    /// A map file of the logic's chunks: a 20 by 20 height map (height 2 everywhere but 10 at sample (5, 5)), two objects (a
+    /// `Soldier` at (100, 120) and a waypoint `Rally`, id 1, at (200, 200)), a polygon trigger `Zone` (id 3) and two sides (the
+    /// neutral one and `ThePlayer`).
+    fn map_file(w: &mut World) -> Vec<u8> {
+        let mut out = DataChunkOutput::new();
+        out.open_data_chunk(b"HeightMapData", crate::logic::terrain_visual::K_HEIGHT_MAP_VERSION_4);
+        out.write_int(20);
+        out.write_int(20);
+        out.write_int(0);
+        out.write_int(1);
+        out.write_int(20);
+        out.write_int(20);
+        out.write_int(400);
+        let mut data = vec![2u8; 400];
+        data[5 * 20 + 5] = 10;
+        out.write_array_of_bytes(&data);
+        out.close_data_chunk();
+        out.open_data_chunk(b"ObjectsList", crate::logic::map_object::K_OBJECTS_VERSION_3);
+        let mut soldier = Dict::new();
+        soldier.set_ascii_string(w.names.name_to_key(b"originalOwner"), b"team1").unwrap();
+        let mut rally = Dict::new();
+        rally.set_int(w.names.name_to_key(b"waypointID"), 1).unwrap();
+        rally.set_ascii_string(w.names.name_to_key(b"waypointName"), b"Rally").unwrap();
+        for (x, y, flags, name, d) in [(100.0, 120.0, 1, &b"Soldier"[..], &soldier), (200.0, 200.0, 0, &b"*Waypoints/Waypoint"[..], &rally)] {
+            out.open_data_chunk(b"Object", crate::logic::map_object::K_OBJECTS_VERSION_3);
+            out.write_real(x);
+            out.write_real(y);
+            out.write_real(0.0);
+            out.write_real(0.0);
+            out.write_int(flags);
+            out.write_ascii_string(name);
+            out.write_dict(d, &w.names);
+            out.close_data_chunk();
+        }
+        out.close_data_chunk();
+        out.open_data_chunk(b"PolygonTriggers", crate::logic::polygon_trigger::K_TRIGGERS_VERSION_4);
+        out.write_int(1);
+        out.write_ascii_string(b"Zone");
+        out.write_ascii_string(b"");
+        out.write_int(3);
+        out.write_byte(0);
+        out.write_byte(0);
+        out.write_int(0);
+        out.write_int(4);
+        for (x, y) in [(0, 0), (100, 0), (100, 100), (0, 100)] {
+            out.write_int(x);
+            out.write_int(y);
+            out.write_int(0);
+        }
+        out.close_data_chunk();
+        let templates = crate::logic::script_templates::script_templates(&mut w.names);
+        let mut sc = crate::logic::sides_list::SidesCtx::new(w.names.clone(), templates);
+        for name in [&b""[..], b"ThePlayer"] {
+            let mut d = Dict::new();
+            d.set_ascii_string(sc.names.generator.name_to_key(b"playerName"), name).unwrap();
+            sc.sides.add_side(&d);
+        }
+        crate::logic::sides_list::SidesList::write_sides_data_chunk(&mut out, &mut sc).expect("the sides written");
+        out.finish()
+    }
+
+    /// Batch I32, a map file read into a world (`TheTerrainLogic->loadMap` was a cut: whoever made the world put the map in it).
+    /// Predicted before the run: the terrain's extent is the file's 20 by 20 samples and its ground 2 high (in height units, times
+    /// `MAP_HEIGHT_SCALE`) away from sample (5, 5) and 10 there; the waypoint `Rally` is the terrain's, at (200, 200); the trigger
+    /// `Zone` (id 3) holds (50, 50) and not (150, 50); the new game's map objects are the two, in file order, the soldier with its
+    /// template, its owner `team1` and its mirror flag, the waypoint with no template; the sides are the two; a file that is not a
+    /// map (the gate's INI text) changes nothing and answers false.
+    #[test]
+    fn a_map_file_is_read_into_the_world() {
+        let mut w = gate_map_world();
+        let file = map_file(&mut w);
+        w.save_side.disk.insert(b"maps\\test\\test.map".to_vec(), file);
+        let not_a_map = w.load_map_file(b"Maps\\Gate\\Gate.map");
+        let read = w.load_map_file(b"Maps\\Test\\Test.map");
+        let scale = crate::logic::terrain_visual::MAP_HEIGHT_SCALE;
+        let ground = |w: &World, x: f32, y: f32| w.terrain.ground_height(x, y, false).0;
+        let heights = (ground(&w, 15.0 * 10.0, 15.0 * 10.0), ground(&w, 5.0 * 10.0, 5.0 * 10.0));
+        let rally = w.terrain.waypoint_by_name(&crate::common::ascii_string::AsciiString::try_from_bytes(b"Rally").expect("a name")).and_then(|h| w.terrain.waypoint(h).map(|p| *p.location()));
+        let zone = w.terrain.triggers().iter().position(|t| t.name().str() == b"Zone");
+        let inside = zone.map(|z| (w.terrain.triggers()[z].point_in_trigger(&crate::common::base_type::ICoord3D { x: 50, y: 50, z: 0 }), w.terrain.triggers()[z].point_in_trigger(&crate::common::base_type::ICoord3D { x: 150, y: 50, z: 0 })));
+        let soldier = World::thing_factory_find_template(&w, b"Soldier").map(u32::from);
+        let objects: Vec<_> = w.cuts.new_game.map_objects.iter().map(|(m, _)| (m.name.clone(), m.template, m.original_owner.clone(), m.draws_in_mirror)).collect();
+        let sides: Vec<Vec<u8>> = (0..w.sides.get_num_sides()).map(|i| {
+            let d = &w.sides.get_side_info(i).expect("a side").dict;
+            d.get_ascii_string(w.names.name_to_key(b"playerName")).0
+        }).collect();
+        eprintln!("not a map {not_a_map}, read {read}; heights {heights:?} (scale {scale}); rally {rally:?}; zone {zone:?} {inside:?}; objects {objects:?}; sides {sides:?}; errors {:?}", w.cuts.team_live_errors);
+        assert!(!not_a_map && read);
+        assert_eq!(heights, (2.0 * scale, 10.0 * scale));
+        assert_eq!(rally.map(|p| (p.x, p.y)), Some((200.0, 200.0)));
+        assert_eq!(inside, Some((true, false)));
+        assert_eq!(objects, vec![(b"Soldier".to_vec(), soldier, b"team1".to_vec(), true), (b"*Waypoints/Waypoint".to_vec(), None, Vec::new(), false)]);
+        assert_eq!(sides, vec![Vec::new(), b"ThePlayer".to_vec()]);
+    }
+}

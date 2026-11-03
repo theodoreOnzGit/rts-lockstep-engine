@@ -226,9 +226,11 @@ impl NewGameHost for World {
         false
     }
     fn sn_terrain_load_map(&mut self, name: &[u8]) -> R<()> {
-        // the map's height map, waypoints, triggers and objects are put in the world by whoever loads it
-        // (`World::terrain`, `cuts.new_game.map_objects`)
+        // ~~the map's height map, waypoints, triggers and objects are put in the world by whoever loads it~~ (integration batch I32:
+        // the map file of the world's disk read into it, `World::load_map_file`; a world whose disk has no such map file, or a file
+        // the logic cannot read, keeps what it was given, as before)
         self.cut(CutCall::Host { call: "TerrainLogic::loadMap", args: Vec::new(), text: name.to_vec() });
+        self.load_map_file(name);
         Ok(())
     }
     fn sn_is_multiplayer_session(&self) -> bool {
