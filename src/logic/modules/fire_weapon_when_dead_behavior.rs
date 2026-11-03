@@ -24,7 +24,7 @@
 //! store does not have are `NULL` upstream, and nothing fires). The lookup compares the names without a case and does not assign a name key: upstream
 //! assigns the key when it reads the data, which the module's data proc (no store, no generator) cannot do.
 //!
-//! `TheWeaponStore->createAndFireTempWeapon(weapon, object, position)` is [`CutCall::WeaponCreateAndFireTemp`].
+//! ~~`TheWeaponStore->createAndFireTempWeapon(weapon, object, position)` is `CutCall::WeaponCreateAndFireTemp`.~~ **Corrected 2026-11-02 (batch I41):** it is `World::fire_temp_weapon`, which fires the weapon with live AI and keeps the record only without it.
 //!
 //! `p1w11-sonnet`, 2026-10-21.
 
@@ -43,7 +43,6 @@ use crate::logic::modules::lend_clone;
 use crate::logic::modules::upgrade_mux_user::{give_self_upgrade, upgrade_mux_call, UpgradeMuxUser};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::update_body::UpdateBody;
 use crate::upgrade_module_data_field_parse;
 
@@ -208,7 +207,7 @@ impl FireWeaponWhenDeadBehavior {
         let (Some(weapon), Some(obj)) = (weapon, world.objects.find(me.object)) else { return };
         let position = if crate::logic::modules::plant(891) { crate::common::base_type::Coord3D::default() } else { obj.get_position() };
         let source = if crate::logic::modules::plant(892) { INVALID_ID } else { me.object };
-        world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source, position });
+        world.fire_temp_weapon(weapon, source, position);
     }
 }
 

@@ -21,7 +21,7 @@
 //! # Where the world comes in
 //!
 //! - The FX are [`ObjectClientEvent::FxListDoFxPos`] / `FxListDoFxObj`; the object creation lists are [`CutCall::OclCreateAtPrimary`]
-//!   (`INVALID_ANGLE`); the crushing weapon is `CutCall::WeaponCreateAndFireTemp` (the weapon store's template by name; none, no crushing);
+//!   (`INVALID_ANGLE`); the crushing weapon is ~~`CutCall::WeaponCreateAndFireTemp`~~ `World::fire_temp_weapon` (corrected 2026-11-02, batch I41: fired with live AI) (the weapon store's template by name; none, no crushing);
 //!   the ground is [`World::terrain_get_ground_height`]; the script's topple direction is [`World::script_adjust_topple_direction`].
 //! - The AI's `markAsDead`, the body's last damage and its `updateBodyParticleSystems`, and the `BoneFXUpdate`'s `stopAllBoneFX` are module
 //!   calls; the deselection is `CutCall::GameLogicDeselectObject`.
@@ -532,7 +532,7 @@ impl StructureToppleUpdate {
         let pos = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
         let fire = |world: &mut World, x: f32, y: f32| {
             let target = Coord3D { x, y, z: world.terrain_get_ground_height(x, y) };
-            world.cut(CutCall::WeaponCreateAndFireTemp { weapon: wt.to_vec(), source: id, position: target });
+            world.fire_temp_weapon(wt.to_vec(), id, target);
             if allowed {
                 Self::fx_pos(world, &self.data.crushing_fx_list, target);
             }

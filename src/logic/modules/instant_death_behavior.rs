@@ -181,7 +181,7 @@ impl DieBehavior for InstantDeathBehavior {
             let weapon = d.weapons.get(idx).and_then(|wt| world.statics.weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(wt)).map(|t| t.name.clone()));
             if let Some(weapon) = weapon {
                 let position = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
-                world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: obj, position });
+                world.fire_temp_weapon(weapon, obj, position);
             }
         }
         if !crate::logic::modules::plant(1805) {

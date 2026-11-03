@@ -50,7 +50,6 @@ use crate::logic::weapon_types::WEAPONSET_VETERAN;
 use crate::logic::weapon_set_state::LOCKED_TEMPORARILY;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
 
@@ -319,7 +318,7 @@ impl DemoTrapUpdate {
             let found = name.and_then(|n| world.statics.weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(n)).map(|t| t.name.clone()));
             if let Some(weapon) = found {
                 let position = world.objects.find(us).map_or_else(Coord3D::default, |o| o.get_position());
-                world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: us, position });
+                world.fire_temp_weapon(weapon, us, position);
             }
         }
         if !crate::logic::modules::plant(2259) {

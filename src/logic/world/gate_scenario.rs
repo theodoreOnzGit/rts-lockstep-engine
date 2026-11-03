@@ -2694,3 +2694,82 @@ Object FireTruck\n KindOf = VEHICLE TRANSPORT\n Geometry = CYLINDER\n GeometryMa
         assert_eq!(n, 0);
     }
 }
+
+#[cfg(test)]
+mod temp_weapon_tests {
+    use super::*;
+    use crate::common::game_type::INVALID_ID;
+    use crate::logic::world::module_probe::damage_of;
+    use crate::logic::world::object_cuts::CutCall;
+
+    const EXTRA: &str = "\
+Weapon Blast\n PrimaryDamage = 30\n PrimaryDamageRadius = 20\n AttackRange = 20\n DamageType = EXPLOSION\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\nEnd\n\
+Object Bomber\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = FireWeaponWhenDeadBehavior ModuleTag_Death\n  StartsActive = Yes\n  DeathWeapon = Blast\n End\nEnd\n";
+
+    fn records(w: &World) -> usize {
+        w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::WeaponCreateAndFireTemp { .. })).count()
+    }
+
+    /// Batch I41, `FireWeaponWhenDeadBehavior::onDie`'s `TheWeaponStore->createAndFireTempWeapon(m_deathWeapon, obj, obj->getPosition())`
+    /// (a record only). A bomber with the death weapon `Blast` (30 damage, radius 20, instant), an enemy soldier 10 east and an allied
+    /// one 10 west. Predicted before the run: killed, the blast hits both at once (upstream's default `RadiusDamageAffects` is allies,
+    /// enemies and neutrals): each 100 → 70, with no record and no error; a soldier 50 away untouched.
+    #[test]
+    fn a_dead_units_death_weapon_hits_its_neighbours() {
+        let mut w = gate_map_world_with(EXTRA);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let bomber = make(&mut w, b"Bomber", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let enemy = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 210.0, y: 200.0, z: 0.0 });
+        let ally = make(&mut w, b"Soldier", team, Coord3D { x: 190.0, y: 200.0, z: 0.0 });
+        let far = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 250.0, y: 200.0, z: 0.0 });
+        w.cuts.log = Some(Vec::new());
+        w.attempt_damage(bomber, &mut damage_of(1000.0, INVALID_ID));
+        let health: Vec<f32> = [enemy, ally, far].iter().map(|&s| w.body_health(s).map_or(-1.0, |h| h.0)).collect();
+        let n = records(&w);
+        eprintln!("health {health:?}, records {n}, errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(health, vec![70.0, 70.0, 100.0]);
+        assert_eq!(n, 0);
+        assert!(w.cuts.team_live_errors.is_empty());
+    }
+
+    /// Batch I41, `World::fire_temp_weapon`'s edges. Predicted before the run: a name the store lacks (upstream's `NULL` template)
+    /// does nothing, with no error; no source (`NULL`, which upstream would dereference) does nothing and is reported; with the live AI
+    /// off, the call is the record and nothing is hit. **Missed on the first run, by the prediction:** a live shot from the source
+    /// (200, 200) at the soldier's (300, 300) was predicted to hit (100 → 70); it did nothing, because upstream's
+    /// `WeaponTemplate::fireWeaponTemplate` returns without firing when the distance exceeds `AttackRange` (Weapon.cpp:874, 20 here
+    /// against about 141), and the temporary weapon does not ignore ranges; the port does the same. Kept as the out-of-range case, with
+    /// an in-range shot from a second source 10 from the soldier: 100 → 70.
+    #[test]
+    fn a_temp_weapon_without_a_template_or_source_does_nothing() {
+        let mut w = gate_map_world_with(EXTRA);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let source = make(&mut w, b"Bomber", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let target = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 300.0, y: 300.0, z: 0.0 });
+        let at = Coord3D { x: 300.0, y: 300.0, z: 0.0 };
+        let hp = |w: &mut World| w.body_health(target).map_or(-1.0, |h| h.0);
+        w.fire_temp_weapon(b"NoSuchWeapon".to_vec(), source, at);
+        let unknown = (hp(&mut w), w.cuts.team_live_errors.len());
+        w.fire_temp_weapon(b"Blast".to_vec(), INVALID_ID, at);
+        let sourceless = (hp(&mut w), w.cuts.team_live_errors.len());
+        w.cuts.live_ai = false;
+        w.cuts.log = Some(Vec::new());
+        w.fire_temp_weapon(b"Blast".to_vec(), source, at);
+        let recorded = (hp(&mut w), records(&w));
+        w.cuts.live_ai = true;
+        w.fire_temp_weapon(b"Blast".to_vec(), source, at);
+        let out_of_range = hp(&mut w);
+        let near = make(&mut w, b"Bomber", team, Coord3D { x: 290.0, y: 300.0, z: 0.0 });
+        w.fire_temp_weapon(b"Blast".to_vec(), near, at);
+        let fired = hp(&mut w);
+        eprintln!("unknown {unknown:?}, sourceless {sourceless:?} {:?}, recorded {recorded:?}, out of range {out_of_range}, fired {fired}", w.cuts.team_live_errors);
+        assert_eq!(unknown, (100.0, 0));
+        assert_eq!(sourceless, (100.0, 1));
+        assert_eq!(recorded, (100.0, 1));
+        assert_eq!(out_of_range, 100.0);
+        assert_eq!(fired, 70.0);
+    }
+}

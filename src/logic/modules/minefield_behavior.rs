@@ -28,7 +28,7 @@
 //! - The constructor wakes the module and gives the object `OBJECT_STATUS_NO_ATTACK_FROM_AI`.
 //! - `DetonationWeapon` and `CreationList` are resolved by name as `INI::parseWeaponTemplate` and `INI::parseObjectCreationList` do (an
 //!   unknown name is `NULL`); this port keeps the names and resolves them where they are used (the stores do not change after loading).
-//!   The weapon is `TheWeaponStore->createAndFireTempWeapon` ([`CutCall::WeaponCreateAndFireTemp`]); the list is created with the mine as both
+//!   The weapon is `TheWeaponStore->createAndFireTempWeapon` (~~`CutCall::WeaponCreateAndFireTemp`~~ `World::fire_temp_weapon`, corrected 2026-11-02, batch I41: fired with live AI); the list is created with the mine as both
 //!   objects ([`CutCall::OclCreateWithSecondary`]).
 //! - The expected mine count is `numVirtualMines * health / maxHealth`, floored for healing and ceiled otherwise, compared with the
 //!   unsigned counts as unsigned (C++'s usual arithmetic conversions). A detonation never takes the health under 0.1, and its own damage is
@@ -65,7 +65,6 @@ use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, Updat
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_state::mask_of;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
@@ -416,7 +415,7 @@ impl MinefieldBehavior {
         let statics = world.statics.clone();
         if let Some(name) = &self.data.detonation_weapon {
             if let Some(wt) = statics.weapon_store.find_weapon_template(&mut world.names, name).ok().flatten() {
-                world.cut(CutCall::WeaponCreateAndFireTemp { weapon: wt.name.clone(), source: id, position: *position });
+                world.fire_temp_weapon(wt.name.clone(), id, *position);
             }
         }
         if self.virtual_mines_remaining > 0 {

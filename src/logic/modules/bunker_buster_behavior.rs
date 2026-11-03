@@ -46,7 +46,6 @@ use crate::logic::module::update_module::{SleepyUpdatePhase, UpdateModule, Updat
 use crate::logic::modules::update_behavior::{self, UpdateBehavior};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::{ModuleCall, ModuleHandle, ModuleReply};
-use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_events::ObjectClientEvent;
 use crate::logic::world::sleepy::UpdateHandle;
 use crate::logic::world::update_body::UpdateBody;
@@ -300,7 +299,7 @@ impl BunkerBusterBehavior {
         if let Some((weapon, _, _)) = Self::weapon(world, &d.shockwave_weapon_template) {
             let source = if crate::logic::modules::plant(2248) { us } else { object_for_fx };
             let position = world.objects.find(source).map_or_else(Coord3D::default, |o| o.get_position());
-            world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source, position });
+            world.fire_temp_weapon(weapon, source, position);
         }
         Ok(())
     }

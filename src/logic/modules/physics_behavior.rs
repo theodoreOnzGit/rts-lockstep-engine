@@ -1125,7 +1125,7 @@ impl PhysicsBehavior {
         let found = world.statics.clone().weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(name)).map(|t| t.name.clone());
         if let Some(weapon) = found {
             let position = world.objects.find(us).map_or_else(Coord3D::default, |o| o.get_position());
-            world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: us, position });
+            world.fire_temp_weapon(weapon, us, position);
         }
     }
 

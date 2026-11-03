@@ -22,8 +22,9 @@
 //! everything `Team` and `Player` do for the object (member lists, scores,
 //! energy, relationships) is a cut point listed in `object_cuts.rs`.
 
+use crate::common::base_type::Coord3D;
 use crate::common::game_common::Relationship;
-use crate::common::game_type::ObjectId;
+use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::kind_of::{KINDOF_CAPTURABLE, KINDOF_MINE};
 use crate::common::object_status_types::{OBJECT_STATUS_IS_CARBOMB, OBJECT_STATUS_SOLD, OBJECT_STATUS_UNDER_CONSTRUCTION};
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNSELLABLE;
@@ -495,6 +496,22 @@ impl World {
             let _ = self.ai_ask(id, ModuleCall::AiIdle);
         } else {
             self.cut(CutCall::AiIdle { object: id });
+        }
+    }
+
+    /// `TheWeaponStore->createAndFireTempWeapon(weapon, source, &position)` (WeaponStore.cpp; batch I41: fired with live AI, through
+    /// `weapon_fire::create_and_fire_temp_weapon_at_pos`, as the object creation lists already fire it; else recorded). `weapon` is the
+    /// store's template name (a name the store lacks is upstream's `NULL` template: nothing); an error, such as no source, goes to
+    /// `team_live_errors`.
+    pub fn fire_temp_weapon(&mut self, weapon: Vec<u8>, source: ObjectId, position: Coord3D) {
+        if !self.cuts.live_ai {
+            self.cut(CutCall::WeaponCreateAndFireTemp { weapon, source, position });
+            return;
+        }
+        let template = self.statics.weapon_store.templates().iter().position(|t| t.name.eq_ignore_ascii_case(&weapon));
+        let src = (source != INVALID_ID).then_some(source);
+        if let Err(e) = crate::logic::weapon_fire::create_and_fire_temp_weapon_at_pos(self, template, src, &position) {
+            self.cuts.team_live_errors.push(format!("WeaponStore::createAndFireTempWeapon: {e:?}"));
         }
     }
 

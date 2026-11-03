@@ -29,7 +29,7 @@
 //!   `cuts.globals.hulk_max_lifetime_override`; `deselectObject` is [`CutCall::GameLogicDeselectObject`].
 //! - The physics module's calls are [`ModuleCall::PhysicsSetAllowToFall`], `PhysicsApplyForce`, `PhysicsSetExtraBounciness`, `PhysicsSetExtraFriction`,
 //!   `PhysicsSetAllowBouncing`, `PhysicsSetAngles` and `PhysicsGetLastCollidee`; the AI's, [`ModuleCall::AiIsAiInDeadState`] and `AiMarkAsDead`; the slaver's,
-//!   `SlavedOnSlaverDie`. `ObjectCreationList::create` and `createAndFireTempWeapon` are the cut points `OclCreate` and `WeaponCreateAndFireTemp`.
+//!   `SlavedOnSlaverDie`. `ObjectCreationList::create` is the cut point `OclCreate`; ~~`createAndFireTempWeapon` the cut point `WeaponCreateAndFireTemp`~~. **Corrected 2026-11-02 (batch I41):** it is `World::fire_temp_weapon`, which fires the weapon with live AI and keeps the record only without it.
 //! - The drawable's shadows are [`ObjectClientEvent::DrawableSetShadowsEnabled`].
 //!
 //! # Deviation: the lists are found when the object is made
@@ -645,7 +645,7 @@ impl SlowDeathBehavior {
                 let weapon = world.statics.clone().weapon_store.templates().iter().find(|t| t.name.eq_ignore_ascii_case(wt)).map(|t| t.name.clone());
                 if let Some(weapon) = weapon {
                     let position = world.objects.find(obj).map_or_else(Coord3D::default, |o| o.get_position());
-                    world.cut(CutCall::WeaponCreateAndFireTemp { weapon, source: obj, position });
+                    world.fire_temp_weapon(weapon, obj, position);
                 }
             }
         }

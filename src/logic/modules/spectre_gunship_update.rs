@@ -615,7 +615,7 @@ impl SpectreGunshipUpdate {
                             let ry = if crate::logic::modules::plant(2433) { rx } else { world.random.game_logic_random_value(lo, hi) };
                             let g = self.gattling_target_position;
                             let position = Coord3D { x: g.x + rx as f32, y: g.y + ry as f32, z: g.z };
-                            world.cut(crate::logic::world::object_cuts::CutCall::WeaponCreateAndFireTemp { weapon, source: us, position });
+                            world.fire_temp_weapon(weapon, us, position);
                             let sound = world.objects.find(us).map(|o| o.template().get_per_unit_sound(b"HowitzerFire").event_name.clone()).unwrap_or_default();
                             world.audio_add_event(sound, us);
                         }
