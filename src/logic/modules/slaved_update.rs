@@ -234,6 +234,11 @@ impl PartialEq for SlavedUpdate {
 }
 
 impl SlavedUpdate {
+    /// `getSlaverID()` (batch I45: read by the pathfinder through the world).
+    pub fn slaver_id(&self) -> ObjectId {
+        self.slaver
+    }
+
     pub const fn get_interface_mask() -> i32 {
         UpdateModule::get_interface_mask()
     }

@@ -74,7 +74,7 @@ pub trait MovementHost: PathfinderHost {
     /// `obj->isKindOf(KINDOF_INFANTRY)` (batch P11).
     fn is_infantry(&self, id: ObjectId) -> bool;
     /// `ThePartitionManager->getClosestObject(pos, radius, FROM_BOUNDINGSPHERE_2D, {KINDOF_AIRCRAFT_PATH_AROUND})`.
-    fn closest_tall_building(&self, pos: &Coord3D, radius: f32) -> Option<ObjectId>;
+    fn closest_tall_building(&mut self, pos: &Coord3D, radius: f32) -> Option<ObjectId>;
 }
 
 /// `IS_IMPASSABLE(type)`: "impassable to ground units".
@@ -770,7 +770,7 @@ impl Pathfinder {
 
     /// `circleClipsTallBuilding(from, to, circleRadius, ignoreBuilding, adjustTo)`: the closest tall building to `to` within the
     /// circle: the point beside it (and beside a second one there); none without one.
-    pub fn circle_clips_tall_building(&self, host: &impl MovementHost, from: &Coord3D, to: &Coord3D, circle_radius: f32) -> Option<Coord3D> {
+    pub fn circle_clips_tall_building(&self, host: &mut impl MovementHost, from: &Coord3D, to: &Coord3D, circle_radius: f32) -> Option<Coord3D> {
         let tall = host.closest_tall_building(to, circle_radius)?;
         let t = host.object(tall).expect("the building was found");
         let radius = t.bounding_circle_radius + 2.0 * PATHFIND_CELL_SIZE_F;

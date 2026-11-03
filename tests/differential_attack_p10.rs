@@ -404,7 +404,7 @@ impl MovementHost for Host {
     fn container_id(&self, id: ObjectId) -> ObjectId {
         self.extra(id).container.map_or(0, |k| self.objects[k % self.objects.len()].id)
     }
-    fn closest_tall_building(&self, pos: &Coord3D, radius: f32) -> Option<ObjectId> {
+    fn closest_tall_building(&mut self, pos: &Coord3D, radius: f32) -> Option<ObjectId> {
         let mut best: Option<(ObjectId, f32)> = None;
         for o in self.objects.iter().filter(|o| o.aircraft_path_around) {
             let (dx, dy) = (o.pos.x - pos.x, o.pos.y - pos.y);

@@ -91,8 +91,9 @@ impl World {
     /// comes on; relooks when a stealth bit changes on an object that reveals
     /// itself to all; and when the under-construction bit changes, detonates
     /// the enemy mines and destroys the friendly mines the object is on
-    /// (`iteratePotentialCollisions`, a cut point) and dirties the object's
-    /// partition data.
+    /// (`iteratePotentialCollisions`, ~~a cut point~~ **corrected 2026-11-03,
+    /// batch I45:** the world's partition manager with `live_partition` since
+    /// batch I42, the table otherwise) and dirties the object's partition data.
     pub fn set_status(&mut self, id: ObjectId, object_status: ObjectStatusMaskType, set: bool) {
         let Some(o) = self.objects.find_mut(id) else { return };
         let old_status = o.status;

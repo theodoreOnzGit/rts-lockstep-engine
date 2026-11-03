@@ -19,8 +19,12 @@
 // Translated to Rust and modified; not the original program.
 
 //! Team and player membership of an `Object`. Teams and players are ids;
-//! everything `Team` and `Player` do for the object (member lists, scores,
-//! energy, relationships) is a cut point listed in `object_cuts.rs`.
+//! ~~everything `Team` and `Player` do for the object (member lists, scores,
+//! energy, relationships) is a cut point listed in `object_cuts.rs`.~~
+//! **Corrected 2026-11-03 (batch I45):** with `cuts.live_teams` (since
+//! integration batch I3) they are the world's own teams and players
+//! (`World::tq`, `team_live_world.rs`); the cut points in `object_cuts.rs`
+//! answer only without it.
 
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::Relationship;

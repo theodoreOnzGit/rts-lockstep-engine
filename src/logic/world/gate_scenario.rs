@@ -2958,3 +2958,72 @@ mod pathfind_cell_tests {
         assert!(w.cuts.team_live_errors.is_empty());
     }
 }
+
+/// Batch I45: the pathfinder's last three tables (`pathfinder_host_world`), made live.
+#[cfg(test)]
+mod pathfinder_tables_tests {
+    use super::*;
+    use crate::logic::ai::movement::MovementHost;
+    use crate::logic::world::module_call::ModuleCall;
+    use crate::common::game_type::INVALID_ID;
+
+    const EXTRA: &str = "\
+Object Drone\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\n\
+ Behavior = SlavedUpdate ModuleTag_Slaved\n End\nEnd\n\
+Object Tower\n KindOf = STRUCTURE AIRCRAFT_PATH_AROUND\n Geometry = CYLINDER\n GeometryMajorRadius = 20\n GeometryHeight = 200\nEnd\n";
+
+    /// `getSlaverID(o)` (`AIPathfind.cpp:9209`), always none before this batch. Predicted before the run: a drone enslaved to a
+    /// soldier answers the soldier; a soldier (no slaved update) none; with `live_ai` off, none.
+    #[test]
+    fn a_slaves_slaver_is_its_slaved_updates() {
+        let mut w = gate_map_world_with(EXTRA);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let master = make(&mut w, b"Soldier", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let drone = make(&mut w, b"Drone", team, Coord3D { x: 220.0, y: 200.0, z: 0.0 });
+        let idx = w.find_module(drone, b"SlavedUpdate").expect("the slaved update");
+        w.module_call(drone, idx, ModuleCall::SlavedOnEnslave { slaver: master });
+        let (live, none) = (w.slaver_id(drone), w.slaver_id(master));
+        w.cuts.live_ai = false;
+        let table = w.slaver_id(drone);
+        eprintln!("drone's slaver {live} (master {master}), master's {none}, table {table}");
+        assert_eq!(live, master);
+        assert_eq!(none, INVALID_ID);
+        assert_eq!(table, INVALID_ID);
+    }
+
+    /// `circleClipsTallBuilding`'s `getClosestObject(to, radius, FROM_BOUNDINGSPHERE_2D, {AIRCRAFT_PATH_AROUND})`, always none before
+    /// this batch. Predicted before the run: a tower of radius 20 at (300, 300) is found from (390, 300) within 100 (its sphere 70 away)
+    /// but not from (450, 300) (130 away); a soldier is never found; with `live_partition` off, none.
+    #[test]
+    fn the_closest_tall_building_is_the_partitions() {
+        let mut w = gate_map_world_with(EXTRA);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let tower = make(&mut w, b"Tower", team, Coord3D { x: 300.0, y: 300.0, z: 0.0 });
+        let _soldier = make(&mut w, b"Soldier", team, Coord3D { x: 440.0, y: 300.0, z: 0.0 });
+        let near = w.closest_tall_building(&Coord3D { x: 390.0, y: 300.0, z: 0.0 }, 100.0);
+        let far = w.closest_tall_building(&Coord3D { x: 450.0, y: 300.0, z: 0.0 }, 100.0);
+        w.cuts.live_partition = false;
+        let table = w.closest_tall_building(&Coord3D { x: 390.0, y: 300.0, z: 0.0 }, 100.0);
+        eprintln!("near {near:?} (tower {tower}), far {far:?}, table {table:?}");
+        assert_eq!(near, Some(tower));
+        assert_eq!(far, None);
+        assert_eq!(table, None);
+    }
+
+    /// `TheAI->getAiData()->m_attackUsesLineOfSight`, which the pathfinder read from its table (always `TRUE`). Predicted before the
+    /// run: with the AI data's flag cleared, the pathfinder reads `FALSE`; with `live_ai` off, the table's `TRUE`.
+    #[test]
+    fn attack_line_of_sight_is_the_ai_datas() {
+        let mut w = gate_map_world_with("");
+        let default = w.attack_uses_line_of_sight();
+        std::sync::Arc::make_mut(&mut w.statics).ai_data.data.attack_uses_line_of_sight = false;
+        let cleared = w.attack_uses_line_of_sight();
+        w.cuts.live_ai = false;
+        let table = w.attack_uses_line_of_sight();
+        eprintln!("default {default}, cleared {cleared}, table {table}");
+        assert!(default);
+        assert!(!cleared);
+        assert!(table);
+    }
+}

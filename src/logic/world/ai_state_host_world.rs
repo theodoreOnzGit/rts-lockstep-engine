@@ -1299,7 +1299,7 @@ impl AiStateHost for World {
         self.terrain.waypoint(l).map(|x| x.id() as u32)
     }
     fn pf_get_aircraft_path(&mut self, destination: &Coord3D) -> Option<Path> {
-        self.ai_pf(|pf, w, o, _| pf.get_aircraft_path(w, o, destination))
+        self.ai_pf_mut(|pf, w, o, _| pf.get_aircraft_path(w, o, destination))
     }
     fn terrain_max_pathfind_extent(&mut self) -> (Coord3D, Coord3D) {
         self.terrain.maximum_pathfind_extent().map_or((Coord3D::default(), Coord3D::default()), |r| (r.lo, r.hi))

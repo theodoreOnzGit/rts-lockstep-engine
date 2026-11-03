@@ -426,7 +426,7 @@ impl MovementHost for Host {
     fn container_id(&self, id: ObjectId) -> ObjectId {
         self.extra(id).container.map_or(0, |k| self.objects[k % self.objects.len()].id)
     }
-    fn closest_tall_building(&self, pos: &Coord3D, radius: f32) -> Option<ObjectId> {
+    fn closest_tall_building(&mut self, pos: &Coord3D, radius: f32) -> Option<ObjectId> {
         let mut best: Option<(ObjectId, f32)> = None;
         for o in self.objects.iter().filter(|o| o.aircraft_path_around) {
             let (dx, dy) = (o.pos.x - pos.x, o.pos.y - pos.y);
@@ -661,7 +661,7 @@ impl Run {
                         let f = host.object(id).expect("an object");
                         let mut to = pos(o[2], o[3]);
                         to.z = f32::from_bits(o[4]);
-                        dump_path(Some(pf.get_aircraft_path(&*host, &f, &to)), &mut res);
+                        dump_path(Some(pf.get_aircraft_path(host, &f, &to)), &mut res);
                     }
                     35 => {
                         let qid = if o[1] & 0x8000_0000 != 0 { (o[1] & 0xffff) as ObjectId } else { id };

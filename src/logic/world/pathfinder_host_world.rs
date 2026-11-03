@@ -47,8 +47,10 @@
 //! pathfinder reads before it runs (ground movement, an aircraft that adjusts its destination, and the goal and current cells,
 //! which the pathfinder writes to `ai_cells`, not the AI's own `pathfind_goal_cell` and `pathfind_cur_cell`)~~ **Corrected
 //! 2026-11-03 (batch I44):** those facts are the AI's own with `live_ai`, and the pathfinder writes the cells to the AI's saved
-//! fields. Still tables: the downhill-only flag of an object with no AI, the slaver id, and `attackUsesLineOfSight` (the AI
-//! data's default).
+//! fields. ~~Still tables: the downhill-only flag of an object with no AI, the slaver id, and `attackUsesLineOfSight` (the AI
+//! data's default).~~ **Corrected 2026-11-03 (batch I45):** the slaver id (the slaved update's, with `live_ai`),
+//! `attackUsesLineOfSight` (the AI data's, with `live_ai`) and the closest tall building (the partition's, with
+//! `live_partition`) are live. Still a table: the downhill-only flag of an object with no AI.
 //!
 //! `p1w13-sonnet`, integration batch I9a, 2026-11-01.
 
@@ -683,6 +685,10 @@ impl MovementHost for World {
         self.objects.find(id).is_some() && self.peek_height_above_terrain(id) > (-(3 * 3)) as f32 * self.cuts.globals.gravity
     }
     fn attack_uses_line_of_sight(&self) -> bool {
+        // (batch I45: `TheAI->getAiData()->m_attackUsesLineOfSight` with `live_ai`, as the AI reads it; it was always the table)
+        if self.cuts.live_ai {
+            return self.statics.ai_data.data.attack_uses_line_of_sight;
+        }
         self.cuts.pathfinder.attack_uses_line_of_sight
     }
     fn weapon_terrain_line_clear(&self, attacker: ObjectId, attacker_pos: &Coord3D, victim: Option<ObjectId>, victim_pos: &Coord3D) -> Option<bool> {
@@ -697,8 +703,22 @@ impl MovementHost for World {
         }
         self.cuts.pathfinder.terrain_line_clear.get(&attacker).copied()
     }
-    /// `getSlaverID(o)`: none until the slaved updates answer it (batch I9b).
-    fn slaver_id(&self, _id: ObjectId) -> ObjectId {
+    /// `getSlaverID(o)` (`AIPathfind.cpp:9209`): the first behavior module with a slaved update interface answers (`SlavedUpdate`,
+    /// `MobMemberSlavedUpdate`); none without one. ~~None until the slaved updates answer it (batch I9b).~~ **Corrected 2026-11-03
+    /// (batch I45):** it was always none, so the pathfinder never treated a slave's slaver (a stinger site, a mob's nexus) as
+    /// transparent. Live with `live_ai`; a module body out of its slot (its object updating) is not seen, and answers none.
+    fn slaver_id(&self, id: ObjectId) -> ObjectId {
+        if !self.cuts.live_ai {
+            return INVALID_ID;
+        }
+        for index in self.all_modules(id) {
+            use crate::logic::world::update_body::UpdateBody as B;
+            match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: id, index }) {
+                Some(B::SlavedUpdate(m)) => return m.slaver_id(),
+                Some(B::MobMemberSlavedUpdate(m)) => return m.slaver_id(),
+                _ => {}
+            }
+        }
         INVALID_ID
     }
     fn container_id(&self, id: ObjectId) -> ObjectId {
@@ -707,9 +727,20 @@ impl MovementHost for World {
     fn is_infantry(&self, id: ObjectId) -> bool {
         self.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_INFANTRY))
     }
-    /// The partition manager's search for a tall building: none (a cut point; batch I9b, with the aircraft's paths).
-    fn closest_tall_building(&self, _pos: &Coord3D, _radius: f32) -> Option<ObjectId> {
-        None
+    /// `ThePartitionManager->getClosestObject(pos, radius, FROM_BOUNDINGSPHERE_2D, { AcceptByKindOf(AIRCRAFT_PATH_AROUND) })`
+    /// (`circleClipsTallBuilding`, `AIPathfind.cpp:9548`): the world's partition manager with `live_partition`. ~~None (a cut point;
+    /// batch I9b, with the aircraft's paths).~~ **Corrected 2026-11-03 (batch I45):** it was always none, so an aircraft's
+    /// destination was never moved beside a tall building; none still without `live_partition`.
+    fn closest_tall_building(&mut self, pos: &Coord3D, radius: f32) -> Option<ObjectId> {
+        use crate::common::kind_of::{KindOfMaskType, KINDOF_AIRCRAFT_PATH_AROUND};
+        use crate::logic::world::partition::filters::PartitionFilter as F;
+        use crate::logic::world::partition::DistanceCalculationType;
+        if !self.cuts.live_partition {
+            return None;
+        }
+        let filters = [F::AcceptByKindOf { must_be_set: KindOfMaskType::from_indices(&[KINDOF_AIRCRAFT_PATH_AROUND]), must_be_clear: KindOfMaskType::new() }];
+        let found = self.with_partition(|pm, w| pm.get_closest_object_at(w, pos, radius, DistanceCalculationType::FromBoundingSphere2D, &filters));
+        found.object
     }
 }
 

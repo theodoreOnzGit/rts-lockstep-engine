@@ -175,7 +175,7 @@ impl Pathfinder {
     }
 
     /// `getAircraftPath(obj, to)`: see the module's notes.
-    pub fn get_aircraft_path(&self, host: &impl AlliesHost, obj: &PfObjectFacts, to: &Coord3D) -> Path {
+    pub fn get_aircraft_path(&self, host: &mut impl AlliesHost, obj: &PfObjectFacts, to: &Coord3D) -> Path {
         let mut path = Path::new();
         let has_ai = obj.ai.is_some();
         let avoid = if has_ai { host.building_to_not_path_around(obj.id) } else { INVALID_ID };
