@@ -165,3 +165,19 @@ impl World {
     }
 }
 
+impl World {
+    /// Integration batch I33: `INI ini; ini.load(path, INI_LOAD_CREATE_OVERRIDES, NULL)` of a file of the world's disk into the
+    /// world's stores (`loadMapINI`'s `map.ini` and `solo.ini`): the stores taken out of the statics, the file read into them as
+    /// overrides, the stores put back. No post-process follows (upstream runs none after these). False when the disk has no such
+    /// file.
+    pub fn load_ini_overrides(&mut self, path: &[u8]) -> crate::common::ini::IniResult<bool> {
+        let Some(text) = self.save_side.disk.get(&path.to_ascii_lowercase()).cloned() else { return Ok(false) };
+        let statics = (*self.statics).clone();
+        let mut load = crate::logic::world::game_data::GameDataLoad::from_statics(statics, std::mem::take(&mut self.names))?;
+        let r = load.load_text_as(path, &text, crate::common::ini::IniLoadType::CreateOverrides);
+        let (statics, names) = load.into_statics();
+        self.statics = std::sync::Arc::new(statics);
+        self.names = names;
+        r.map(|()| true)
+    }
+}

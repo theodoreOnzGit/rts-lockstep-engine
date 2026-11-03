@@ -213,11 +213,13 @@ impl NewGameHost for World {
         self.cuts.new_game.has_map_cache
     }
     fn sn_file_exists(&mut self, path: &[u8]) -> bool {
-        self.cuts.new_game.files.iter().any(|f| f == path)
+        // (integration batch I33: the world's disk too, which holds the map's files)
+        self.cuts.new_game.files.iter().any(|f| f == path) || self.save_side.disk.contains_key(&path.to_ascii_lowercase())
     }
     fn sn_load_ini(&mut self, path: &[u8]) -> R<()> {
         self.cut(CutCall::Host { call: "INI::load", args: Vec::new(), text: path.to_vec() });
-        Ok(())
+        // (integration batch I33: the file of the world's disk read over its stores)
+        self.load_ini_overrides(path).map(|_| ())
     }
     fn sn_init_map_string_file(&mut self, path: &[u8]) {
         self.cut(CutCall::Host { call: "GameText::initMapStringFile", args: Vec::new(), text: path.to_vec() });
@@ -238,6 +240,18 @@ impl NewGameHost for World {
     }
     fn sn_sides_prepare_for_mp(&mut self) {
         self.ng_cut("SidesList::prepareForMP_or_Skirmish", &[]);
+        // (integration batch I33: the world's sides prepared, `SidesCtx::prepare_for_mp_or_skirmish`, with the skirmish scripts of
+        // the world's disk, `data\Scripts\SkirmishScripts.scb`)
+        let templates = crate::logic::script_templates::script_templates(&mut self.names);
+        let mut sc = crate::logic::sides_list::SidesCtx::new(std::mem::take(&mut self.names), templates);
+        sc.sides = std::mem::take(&mut self.sides);
+        sc.skirmish_scripts_file = self.save_side.disk.get(&b"data\\scripts\\skirmishscripts.scb"[..]).cloned();
+        let r = sc.prepare_for_mp_or_skirmish();
+        self.sides = std::mem::take(&mut sc.sides);
+        self.names = std::mem::take(&mut sc.names.generator);
+        if let Err(e) = r {
+            self.cuts.team_live_errors.push(format!("SidesList::prepareForMP_or_Skirmish: {e:?}"));
+        }
     }
     fn sn_observer_template(&self) -> Option<i32> {
         let store = &self.statics.player_template_store;
@@ -324,7 +338,36 @@ impl NewGameHost for World {
     }
     fn sn_add_multiplayer_scripts(&mut self) -> Option<bool> {
         self.ng_cut("MultiplayerScripts.scb", &[]);
-        self.cuts.new_game.multiplayer_scripts
+        // (integration batch I33: the file of the world's disk when it has one; the table's answer otherwise)
+        let Some(bytes) = self.save_side.disk.get(&b"data\\scripts\\multiplayerscripts.scb"[..]).cloned() else {
+            return self.cuts.new_game.multiplayer_scripts;
+        };
+        let templates = crate::logic::script_templates::script_templates(&mut self.names);
+        let mut sc = crate::logic::sides_list::SidesCtx::new(std::mem::take(&mut self.names), templates);
+        let r = sc.read_scripts_chunk_file(bytes);
+        let lists = crate::logic::scripts::ScriptList::get_read_scripts(&mut sc.scripts);
+        let templates = sc.templates.clone();
+        self.names = std::mem::take(&mut sc.names.generator);
+        if !matches!(r, Ok(true)) {
+            return Some(false); // "Unable to read in multiplayer scripts."
+        }
+        // the first list's scripts, each duplicated and added to side 0's list at index 0
+        if let Some(Some(first)) = lists.first() {
+            for s in &first.scripts {
+                let dupe = match s.duplicate(&templates) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        self.cuts.team_live_errors.push(format!("Script::duplicate: {e:?}"));
+                        continue;
+                    }
+                };
+                match self.sides.get_side_info_mut(0).ok().and_then(|s| s.scripts.as_mut()) {
+                    Some(l) => l.add_script(dupe, 0),
+                    None => self.cuts.team_live_errors.push("MultiplayerScripts: side 0 has no script list (NULL upstream)".into()),
+                }
+            }
+        }
+        Some(true)
     }
     fn sn_radar_new_map(&mut self) {
         self.ng_cut("Radar::newMap", &[]);

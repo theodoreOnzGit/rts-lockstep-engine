@@ -225,10 +225,51 @@ impl GameDataLoad {
         Ini::load(path, text, IniLoadType::Overwrite, None, &BLOCKS, self)
     }
 
+    /// Integration batch I33: `INI::load(path, loadType, NULL)` of one file's text (`INI_LOAD_CREATE_OVERRIDES` for a map's
+    /// `map.ini`).
+    pub fn load_text_as(&mut self, path: &[u8], text: &[u8], load_type: IniLoadType) -> IniResult<()> {
+        Ini::load(path, text, load_type, None, &BLOCKS, self)
+    }
+
     /// `postProcessLoadAll()` for the logic's subsystems, in their order: the weapon store's, then the thing factory's.
     pub fn post_process_load(&mut self) {
         weapon_store_post_process(&mut self.weapon_store, &self.factory, &self.ocls, &mut self.names);
         self.factory.post_process_load();
+    }
+
+    /// Integration batch I33: the load again from a world's statics and name keys (the inverse of [`GameDataLoad::into_statics`]), to
+    /// read more INI into the stores the world already has (a map's `map.ini`, `INI_LOAD_OVERWRITE`). What the statics do not keep is
+    /// made again: the module factory (its `init`), the weapons' name table (the weapon store's templates), the AI data's chain (the
+    /// current data only: `into_statics` keeps no more), no game text, and the buttons' lookups (made at the next button).
+    pub fn from_statics(st: GameStatics, mut names: NameKeyGenerator) -> IniResult<Self> {
+        let mut modules = ModuleFactory::new();
+        modules.init(&mut names).map_err(|_| IniError::new(IniErrorKind::Bug))?;
+        let mut weapons = WeaponTemplateTable::new();
+        for t in st.weapon_store.templates() {
+            weapons.add(t.name_key);
+        }
+        Ok(GameDataLoad {
+            names,
+            modules,
+            text: TextTable::default(),
+            global_data: st.global_data,
+            sciences: st.science_store,
+            ranks: st.rank_info_store,
+            player_templates: st.player_template_store,
+            weapon_store: st.weapon_store,
+            weapons,
+            ocls: st.object_creation_list_store,
+            locomotors: st.locomotor_store,
+            special_powers: st.special_power_store,
+            damage_fx: st.damage_fx_store,
+            armors: st.armor_store,
+            factory: st.thing_factory,
+            upgrades: st.upgrade_center,
+            ai_data: crate::logic::ai::ai_data::AiDataChain { entries: vec![st.ai_data] },
+            crates: st.crate_system,
+            command_buttons: st.command_buttons,
+            button_lookups: None,
+        })
     }
 
     /// The world's statics of the load (and its name keys, which the world keeps beside them).

@@ -2119,3 +2119,76 @@ mod map_load_tests {
         assert_eq!(sides, vec![Vec::new(), b"ThePlayer".to_vec()]);
     }
 }
+
+#[cfg(test)]
+mod map_ini_tests {
+    use super::*;
+
+    /// Batch I33, a map's `map.ini` read over the world's stores as overrides (`loadMapINI`'s `INI::load(.., INI_LOAD_CREATE_OVERRIDES)`
+    /// was a cut, and its `doesFileExist` a table). Predicted before the run: with `Maps\Test\map.ini` (`Object Soldier`, vision 300)
+    /// on the world's disk, `loadMapINI("Maps\Test\Test.map")` finds and reads it; a soldier made before it sees 150 (the gate's
+    /// INI) and one made after sees 300 (the template's override); a map with no `map.ini` loads nothing and changes nothing.
+    #[test]
+    fn a_maps_ini_overrides_the_games() {
+        let mut w = gate_map_world();
+        w.cuts.new_game.has_map_cache = true;
+        w.save_side.disk.insert(b"maps\\test\\map.ini".to_vec(), b"Object Soldier\n VisionRange = 300\nEnd\n".to_vec());
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let before = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        crate::logic::world::game_logic_new_game::load_map_ini(b"Maps\\Other\\Other.map", &mut w).expect("no map.ini there");
+        let unchanged = make(&mut w, b"Soldier", team, Coord3D { x: 110.0, y: 100.0, z: 0.0 });
+        crate::logic::world::game_logic_new_game::load_map_ini(b"Maps\\Test\\Test.map", &mut w).expect("the map's ini");
+        let after = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        let vision = [before, unchanged, after].map(|o| w.get_vision_range(o));
+        eprintln!("vision {vision:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(vision, [150.0, 150.0, 300.0]);
+    }
+}
+
+#[cfg(test)]
+mod new_game_sides_tests {
+    use super::*;
+    use crate::formats::data_chunk_output::DataChunkOutput;
+    use crate::logic::scripts::{Script, ScriptList};
+    use crate::logic::world::game_logic_new_game::NewGameHost;
+
+    /// Batch I33, the new game's sides: `SidesList::prepareForMP_or_Skirmish` and the multiplayer scripts (a cut and a table). Two
+    /// sides (the neutral one and `ThePlayer`, neither `FactionCivilian`, each with an empty script list); a `MultiplayerScripts.scb`
+    /// of one list holding `MP_A` then `MP_B` on the world's disk. Predicted before the run: the preparation copies both sides to the
+    /// skirmish sides and leaves the real list with the last one, `ThePlayer` (the neutral side removed; the last side is never
+    /// removed); the multiplayer scripts are read (`Some(true)`) and side 0's list is `MP_B`, `MP_A` (each added at index 0); without
+    /// the file the table's answer stands (none).
+    #[test]
+    fn a_new_games_sides_are_prepared() {
+        let mut w = gate_map_world();
+        let without = w.sn_add_multiplayer_scripts();
+        for name in [&b""[..], b"ThePlayer"] {
+            let mut d = Dict::new();
+            d.set_ascii_string(w.names.name_to_key(b"playerName"), name).unwrap();
+            w.sides.add_side(&d);
+            let n = w.sides.get_num_sides() - 1;
+            w.sides.get_side_info_mut(n).expect("the side").scripts = Some(ScriptList::default());
+        }
+        let templates = crate::logic::script_templates::script_templates(&mut w.names);
+        let mut list = ScriptList::default();
+        for n in [&b"MP_A"[..], b"MP_B"] {
+            let mut s = Script::new();
+            s.script_name = n.to_vec();
+            list.scripts.push(s);
+        }
+        let mut out = DataChunkOutput::new();
+        ScriptList::write_scripts_data_chunk(&mut out, &mut [Some(&mut list)], &templates, &w.names).expect("the scripts written");
+        w.save_side.disk.insert(b"data\\scripts\\multiplayerscripts.scb".to_vec(), out.finish());
+        w.sn_sides_prepare_for_mp();
+        let pn = w.names.name_to_key(b"playerName");
+        let real: Vec<Vec<u8>> = (0..w.sides.get_num_sides()).map(|i| w.sides.get_side_info(i).expect("a side").dict.get_ascii_string(pn).0).collect();
+        let skirmish = w.sides.get_num_skirmish_sides();
+        let read = w.sn_add_multiplayer_scripts();
+        let side0: Vec<Vec<u8>> = w.sides.get_side_info(0).ok().and_then(|s| s.scripts.as_ref()).map(|l| l.scripts.iter().map(|s| s.script_name.clone()).collect()).unwrap_or_default();
+        eprintln!("without {without:?}; real {real:?}, skirmish {skirmish}; read {read:?}; side 0 {side0:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(without, None);
+        assert_eq!((real, skirmish), (vec![b"ThePlayer".to_vec()], 2));
+        assert_eq!(read, Some(true));
+        assert_eq!(side0, vec![b"MP_B".to_vec(), b"MP_A".to_vec()]);
+    }
+}
