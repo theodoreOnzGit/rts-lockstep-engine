@@ -214,6 +214,8 @@ pub struct World {
     /// (integration batch I15; set by `updateObjectsChangedTriggerAreas()`, not saved, 0 at `init` and `reset`). A field of the world, not
     /// of `game_logic`, which a frame takes out of the world while it runs.
     pub frame_objects_changed_trigger_areas: u32,
+    /// Integration batch I30: the scripts the team code names (`Script*`), found by name or duplicated.
+    pub team_scripts: TeamScripts,
     /// Integration batch I20: `logic_update` holds `game_logic` (a member a script sets then waits for the frame's end).
     pub in_logic_frame: bool,
     /// The stacks the AI's state and machines are lent on while they run (`ai_state_host_world.rs`).
@@ -315,6 +317,7 @@ impl World {
             // --- batch I9b ---
             ai_self: INVALID_ID,
             frame_objects_changed_trigger_areas: 0,
+            team_scripts: TeamScripts::default(),
             in_logic_frame: false,
             ai_stacks: Default::default(),
             turret_ais: Default::default(),
@@ -1209,4 +1212,14 @@ mod tests {
         assert!(w.with_body(u, |_, _| 2) == Some(2), "and it is back afterwards");
         assert!(w.with_body(UpdateHandle { object: a, index: 5 }, |_, _| 3).is_none());
     }
+}
+
+/// Integration batch I30: the scripts `Team.cpp` holds pointers to. A handle (the team code's `ScriptRef`, from 1) names a script in a
+/// side's list (found by name) or a copy the world owns (`Script::duplicate()`, the engine's [`OWNED_SIDE`]).
+#[derive(Clone, Debug, Default)]
+pub struct TeamScripts {
+    /// Handle `i + 1` is `refs[i]`.
+    pub refs: Vec<crate::logic::world::script_engine::ScriptRef>,
+    /// The copies; `None` once deleted.
+    pub owned: Vec<Option<crate::logic::scripts::Script>>,
 }

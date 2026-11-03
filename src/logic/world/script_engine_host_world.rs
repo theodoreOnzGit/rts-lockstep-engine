@@ -165,10 +165,20 @@ impl ScriptEngineHost for World {
     fn se_find_player_with_name_key(&self, key: NameKeyType) -> Option<PlayerH> {
         self.players.find_with_name_key(key.0 as i32).map(|p| p.player_index)
     }
-    fn se_update_team_states(&mut self) {
-        if let Err(e) = crate::logic::world::player_list::player_list_update_team_states(self) {
+    fn se_update_team_states(&mut self, engine: &mut ScriptEngine) {
+        // (integration batch I30: the running engine lent back to the world for the teams' scripts)
+        std::mem::swap(&mut self.script_engine, engine);
+        let r = crate::logic::world::player_list::player_list_update_team_states(self);
+        std::mem::swap(&mut self.script_engine, engine);
+        if let Err(e) = r {
             self.cuts.team_live_errors.push(format!("PlayerList::updateTeamStates: {e:?}"));
         }
+    }
+    fn se_owned_script(&self, index: usize) -> Option<&crate::logic::scripts::Script> {
+        self.team_scripts.owned.get(index)?.as_ref()
+    }
+    fn se_owned_script_mut(&mut self, index: usize) -> Option<&mut crate::logic::scripts::Script> {
+        self.team_scripts.owned.get_mut(index)?.as_mut()
     }
     fn se_player_current_enemy(&mut self, p: PlayerH) -> Option<PlayerH> {
         // (batch I9e: `Player::getCurrentEnemy()`, the AI player's, live with `cuts.live_ai`)

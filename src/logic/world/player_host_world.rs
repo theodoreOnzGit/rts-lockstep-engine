@@ -99,30 +99,6 @@ use crate::logic::world::score_keeper::ScoredObject;
 use crate::logic::world::team::{ScriptRef, TeamArena, WaypointId, WaypointInfo};
 use crate::logic::world::team_ops::{GroupRef, TeamHost, TemplateRef, TriggerRef};
 
-/// A script as the team code reads it (`Script`'s name, evaluation frame, delay, difficulty and one-shot flags), and the
-/// answers its condition gives, one per evaluation (the last repeats; none: false).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ScriptStandIn {
-    /// `getName()`.
-    pub name: Vec<u8>,
-    /// `getFrameToEvaluate()`.
-    pub frame_to_evaluate: u32,
-    /// `getDelayEvalSeconds()`.
-    pub delay_eval_seconds: i32,
-    /// `isEasy()`, `isNormal()`, `isHard()`.
-    pub easy: bool,
-    /// See `easy`.
-    pub normal: bool,
-    /// See `easy`.
-    pub hard: bool,
-    /// `isOneShot()`.
-    pub one_shot: bool,
-    /// What `evaluateConditions` answers, in order.
-    pub conditions: Vec<bool>,
-    /// How many times its conditions were evaluated.
-    pub evaluations: usize,
-}
-
 /// What an AI player answers (`AIPlayer`), until batch I9 brings the AI player in.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AiPlayerStandIn {
@@ -162,8 +138,6 @@ impl Default for AiPlayerStandIn {
 /// The answers of the units the player and team hosts reach that the world does not hold yet. See the module docs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerHostCuts {
-    /// `TheScriptEngine`'s scripts, by [`ScriptRef`] (1-based).
-    pub scripts: Vec<ScriptStandIn>,
     /// The script lists given out (`duplicateAndQualify`), for the next handle.
     pub script_lists_given: ScriptListRef,
     /// The script list of each side and skirmish side (`getScriptList()`): `None` is `NULL`.
@@ -201,7 +175,6 @@ pub struct PlayerHostCuts {
 impl Default for PlayerHostCuts {
     fn default() -> Self {
         PlayerHostCuts {
-            scripts: Vec::new(),
             script_lists_given: 0,
             side_scripts: BTreeMap::new(),
             skirmish_side_scripts: BTreeMap::new(),
@@ -464,60 +437,96 @@ impl TeamHost for World {
         World::thing_factory_find_template(self, pt.beacon_template()).map(TemplateRef::from)
     }
     fn script_find_by_name(&mut self, name: &[u8]) -> Option<ScriptRef> {
-        self.host_cut("ScriptEngine::findScriptByName", &[], name);
-        self.cuts.player_host.scripts.iter().position(|s| s.name == name).map(|i| i as ScriptRef + 1)
+        // (integration batch I30: the scripts were a table; now the sides' lists, `findScriptByName`, a handle to the found script)
+        let r = self.script_engine.find_script(self, name)?;
+        Some(self.team_script_handle(r))
     }
+
     fn script_duplicate(&mut self, s: ScriptRef) -> ScriptRef {
-        self.host_cut("Script::duplicate", &[i64::from(s)], &[]);
-        let scripts = &mut self.cuts.player_host.scripts;
-        let mut copy = scripts.get(s as usize - 1).cloned().unwrap_or_default();
-        copy.evaluations = 0;
-        scripts.push(copy);
-        scripts.len() as ScriptRef
+        // `script->duplicate()`: a copy the world owns
+        let copy = self.team_script(s).cloned().unwrap_or_default();
+        self.team_scripts.owned.push(Some(copy));
+        let r = SERef { side: OWNED_SIDE, group: None, index: self.team_scripts.owned.len() - 1 };
+        self.team_script_handle(r)
     }
+
     fn script_delete(&mut self, s: ScriptRef) {
-        self.host_cut("deleteInstance(Script)", &[i64::from(s)], &[]);
-    }
-    fn script_frame_to_evaluate(&self, s: ScriptRef) -> u32 {
-        self.cuts.player_host.scripts.get(s as usize - 1).map_or(0, |x| x.frame_to_evaluate)
-    }
-    fn script_set_frame_to_evaluate(&mut self, s: ScriptRef, frame: u32) {
-        self.host_cut("Script::setFrameToEvaluate", &[i64::from(s), i64::from(frame)], &[]);
-        if let Some(x) = self.cuts.player_host.scripts.get_mut(s as usize - 1) {
-            x.frame_to_evaluate = frame;
+        if let Some(r) = self.team_script_ref(s).filter(|r| r.side == OWNED_SIDE) {
+            if let Some(slot) = self.team_scripts.owned.get_mut(r.index) {
+                *slot = None;
+            }
         }
     }
+
+    fn script_frame_to_evaluate(&self, s: ScriptRef) -> u32 {
+        self.team_script(s).map_or(0, |x| x.frame_to_evaluate_at)
+    }
+
+    fn script_set_frame_to_evaluate(&mut self, s: ScriptRef, frame: u32) {
+        if let Some(r) = self.team_script_ref(s) {
+            if let Some(x) = crate::logic::world::script_engine::ScriptEngine::script_mut(self, r) {
+                x.frame_to_evaluate_at = frame;
+            }
+        }
+    }
+
     fn script_delay_eval_seconds(&self, s: ScriptRef) -> i32 {
-        self.cuts.player_host.scripts.get(s as usize - 1).map_or(0, |x| x.delay_eval_seconds)
+        self.team_script(s).map_or(0, |x| x.delay_evaluation_seconds)
     }
+
     fn script_is_easy(&self, s: ScriptRef) -> bool {
-        self.cuts.player_host.scripts.get(s as usize - 1).is_some_and(|x| x.easy)
+        self.team_script(s).is_some_and(|x| x.easy)
     }
+
     fn script_is_normal(&self, s: ScriptRef) -> bool {
-        self.cuts.player_host.scripts.get(s as usize - 1).is_some_and(|x| x.normal)
+        self.team_script(s).is_some_and(|x| x.normal)
     }
+
     fn script_is_hard(&self, s: ScriptRef) -> bool {
-        self.cuts.player_host.scripts.get(s as usize - 1).is_some_and(|x| x.hard)
+        self.team_script(s).is_some_and(|x| x.hard)
     }
+
     fn script_is_one_shot(&self, s: ScriptRef) -> bool {
-        self.cuts.player_host.scripts.get(s as usize - 1).is_some_and(|x| x.one_shot)
+        self.team_script(s).is_some_and(|x| x.is_one_shot)
     }
+
     fn script_name(&self, s: ScriptRef) -> Vec<u8> {
-        self.cuts.player_host.scripts.get(s as usize - 1).map(|x| x.name.clone()).unwrap_or_default()
+        self.team_script(s).map(|x| x.script_name.clone()).unwrap_or_default()
     }
+
     fn script_evaluate_conditions(&mut self, s: ScriptRef, team: Option<TeamId>, player: Option<PlayerIndex>) -> bool {
-        self.host_cut("ScriptEngine::evaluateConditions", &[i64::from(s), i64::from(team.unwrap_or(0)), i64::from(player.unwrap_or(-1))], &[]);
-        let Some(x) = self.cuts.player_host.scripts.get_mut(s as usize - 1) else { return false };
-        let r = x.conditions.get(x.evaluations).or(x.conditions.last()).copied().unwrap_or(false);
-        x.evaluations += 1;
-        r
+        // `TheScriptEngine->evaluateConditions(script, team, player)`: the world's engine (lent back while it updates)
+        let Some(r) = self.team_script_ref(s) else { return false };
+        let mut se = std::mem::take(&mut self.script_engine);
+        let res = se.evaluate_conditions(self, r, team.map(|t| t as i32), player);
+        self.script_engine = se;
+        res.unwrap_or_else(|e| {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::evaluateConditions: {e:?}"));
+            false
+        })
     }
+
     fn script_execute_action(&mut self, s: ScriptRef, team: Option<TeamId>) {
-        self.host_cut("ScriptEngine::executeActions", &[i64::from(s), i64::from(team.unwrap_or(0))], &[]);
+        // `TheScriptEngine->friend_executeAction(script->getAction(), team)`
+        let Some(r) = self.team_script_ref(s) else { return };
+        let mut se = std::mem::take(&mut self.script_engine);
+        let res = se.friend_execute_action(self, r, true, team.map(|t| t as i32));
+        self.script_engine = se;
+        if let Err(e) = res {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::friend_executeAction: {e:?}"));
+        }
     }
+
     fn script_run(&mut self, name: &[u8], team: TeamId) {
-        self.host_cut("ScriptEngine::runScript", &[i64::from(team)], name);
+        // `TheScriptEngine->runScript(name, team)`
+        let mut se = std::mem::take(&mut self.script_engine);
+        let res = se.run_script(self, name, Some(team as i32));
+        self.script_engine = se;
+        if let Err(e) = res {
+            self.cuts.team_live_errors.push(format!("ScriptEngine::runScript: {e:?}"));
+        }
     }
+
     fn script_notify_of_team_destruction(&mut self, team: TeamId) {
         self.host_cut("ScriptEngine::notifyOfTeamDestruction", &[i64::from(team)], &[]);
         // (integration batch I29: and to the world's engine, queued)
@@ -674,6 +683,32 @@ impl TeamHost for World {
         }
         let filters = [PartitionFilter::Relationship { obj: o, flags: ALLOW_ENEMIES }, PartitionFilter::Alive, PartitionFilter::SameMapStatus { obj: o }];
         self.with_partition(|pm, w| pm.get_closest_object(w, o, range, DistanceCalculationType::FromCenter2D, &filters).object.is_some())
+    }
+}
+
+use crate::logic::world::script_engine::{ScriptRef as SERef, OWNED_SIDE};
+
+impl World {
+    /// Integration batch I30: the team code's handle for the script (one per place, made once).
+    fn team_script_handle(&mut self, r: SERef) -> ScriptRef {
+        let i = match self.team_scripts.refs.iter().position(|x| *x == r) {
+            Some(i) => i,
+            None => {
+                self.team_scripts.refs.push(r);
+                self.team_scripts.refs.len() - 1
+            }
+        };
+        i as ScriptRef + 1
+    }
+
+    /// The place a team code handle names.
+    fn team_script_ref(&self, s: ScriptRef) -> Option<SERef> {
+        self.team_scripts.refs.get((s as usize).checked_sub(1)?).copied()
+    }
+
+    /// The script a team code handle names.
+    fn team_script(&self, s: ScriptRef) -> Option<&crate::logic::scripts::Script> {
+        crate::logic::world::script_engine::ScriptEngine::script(self, self.team_script_ref(s)?)
     }
 }
 
@@ -1725,18 +1760,12 @@ pub(crate) mod tests {
         assert_eq!(w.players.get_nth(0).unwrap().score_keeper.total_money_spent(), 0);
     }
 
-    /// The script engine and the AI player are cut points: each call is logged with upstream's name, and answered from
-    /// the tables (a script's conditions in order, the last repeating; an AI's base centre).
+    /// The AI player is a cut point without `live_ai`: each call is logged with upstream's name, and answered from the tables
+    /// (an AI's base centre). (~~The script engine's calls too~~ **since integration batch I30** the team code's scripts are the
+    /// world's engine's: `gate_scenario::team_script_tests`.)
     #[test]
     fn calls_into_units_the_world_lacks_are_logged_and_answered_from_the_tables() {
         let (mut w, _) = world();
-        w.cuts.player_host.scripts.push(ScriptStandIn { name: b"Attack".to_vec(), conditions: vec![false, true], ..Default::default() });
-        let s = w.script_find_by_name(b"Attack").expect("the script");
-        assert_eq!(w.script_find_by_name(b"Defend"), None);
-        let answers: Vec<bool> = (0..3).map(|_| w.script_evaluate_conditions(s, None, Some(1))).collect();
-        assert_eq!(answers, [false, true, true]);
-        let copy = w.script_duplicate(s);
-        assert_eq!((copy, w.script_name(copy)), (2, b"Attack".to_vec()));
         w.ai_create(1, true);
         let mut pos = Coord3D::default();
         assert!(!w.ai_base_center(1, &mut pos));
@@ -1746,12 +1775,6 @@ pub(crate) mod tests {
         assert_eq!(
             hosts(&w),
             [
-                "ScriptEngine::findScriptByName",
-                "ScriptEngine::findScriptByName",
-                "ScriptEngine::evaluateConditions",
-                "ScriptEngine::evaluateConditions",
-                "ScriptEngine::evaluateConditions",
-                "Script::duplicate",
                 "newInstance(AIPlayer)",
                 "AIPlayer::getBaseCenter",
                 "AIPlayer::getBaseCenter",

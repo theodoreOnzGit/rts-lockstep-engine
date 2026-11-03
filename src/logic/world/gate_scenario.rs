@@ -1893,3 +1893,72 @@ mod script_note_tests {
         let _ = w.sa_unit_named(b"Bob");
     }
 }
+
+#[cfg(test)]
+mod team_script_tests {
+    use super::*;
+    use crate::logic::scripts::{action_type as at, condition_type as ct, Condition, OrCondition, Parameter, Script, ScriptAction, ScriptList};
+    use crate::logic::world::team_ops::TeamHost;
+
+    /// A script `name` whose one action sets the flag `flag` (and whose condition is `CONDITION_TRUE`), for every difficulty.
+    fn flag_script(name: &[u8], flag: &[u8], subroutine: bool) -> Script {
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = at::SET_FLAG;
+        a.num_parms = 2;
+        let mut p = Parameter::new(0, 0);
+        p.string = flag.to_vec();
+        a.parms[0] = Some(p);
+        a.parms[1] = Some(Parameter::new(0, 1));
+        let mut c = Condition::new_for_read();
+        c.condition_type = ct::CONDITION_TRUE;
+        let mut s = Script::new();
+        s.script_name = name.to_vec();
+        s.is_active = true;
+        s.is_subroutine = subroutine;
+        s.easy = true;
+        s.normal = true;
+        s.hard = true;
+        s.conditions = vec![OrCondition { conditions: vec![c] }];
+        s.actions = vec![a];
+        s
+    }
+
+    /// Batch I30, the team code's scripts through the world's engine (they were a table, empty in a real game, so every prototype's
+    /// production condition was "always false" and no team script ran). Predicted before the run: team1's prototype, whose production
+    /// condition is `BuildIt` (a true condition), evaluates true, keeping a copy the world owns; that copy's actions run for the team
+    /// set the flag `Built`; team2's, naming `Nope` (no such script), evaluates false and is marked always false; `runScript("OnCreate",
+    /// team)` runs the subroutine, setting `Created`.
+    #[test]
+    fn a_prototypes_production_condition_is_the_engines() {
+        let mut w = gate_map_world();
+        if w.sides.get_num_sides() == 0 {
+            w.sides.add_side(&Dict::default());
+        }
+        w.sides.get_side_info_mut(0).expect("side 0").scripts =
+            Some(ScriptList { groups: Vec::new(), scripts: vec![flag_script(b"BuildIt", b"Built", false), flag_script(b"OnCreate", b"Created", true)] });
+        w.script_engine_new_map().unwrap();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let proto = |w: &World, n: &[u8]| w.teams.prototypes().find(|p| p.name == n).map(|p| p.id).expect("the prototype");
+        let (p1, p2) = (proto(&w, b"team1"), proto(&w, b"team2"));
+        w.teams.prototype_mut(p1).expect("p1").team_template.production_condition = b"BuildIt".to_vec();
+        w.teams.prototype_mut(p2).expect("p2").team_template.production_condition = b"Nope".to_vec();
+        let cond = (
+            crate::logic::world::team_ops::proto_evaluate_production_condition(&mut w, p1).expect("evaluated"),
+            crate::logic::world::team_ops::proto_evaluate_production_condition(&mut w, p2).expect("evaluated"),
+        );
+        let kept = w.teams.prototype(p1).and_then(|p| p.production_condition_script);
+        let owned = kept.and_then(|h| w.team_scripts.refs.get(h as usize - 1)).map(|r| r.side == crate::logic::world::script_engine::OWNED_SIDE);
+        if let Some(h) = kept {
+            w.script_execute_action(h, Some(team));
+        }
+        w.script_run(b"OnCreate", team);
+        let flag = |w: &World, n: &[u8]| w.script_engine.flags.iter().find(|f| f.name == n).map(|f| f.value);
+        let flags = (flag(&w, b"Built"), flag(&w, b"Created"));
+        let always_false = w.teams.prototype(p2).map(|p| p.production_condition_always_false);
+        eprintln!("{cond:?}; kept {kept:?} owned {owned:?}; flags {flags:?}; p2 always false {always_false:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(cond, (true, false));
+        assert_eq!(owned, Some(true));
+        assert_eq!(flags, (Some(true), Some(true)));
+        assert_eq!(always_false, Some(true));
+    }
+}

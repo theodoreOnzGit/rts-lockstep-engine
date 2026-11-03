@@ -299,6 +299,10 @@ pub enum ScriptNote {
     AcquiredScience { player: i32, science: i32 },
 }
 
+/// Integration batch I30: the side of a [`ScriptRef`] naming a copy of a script the world owns (`Script::duplicate()`, which a team
+/// prototype keeps for its production condition and generic scripts), not one in a side's list; its index is the copy's.
+pub const OWNED_SIDE: usize = usize::MAX;
+
 /// `class SequentialScript`, without its link: the chain it is in is a vector.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SequentialScript {
@@ -391,7 +395,12 @@ pub trait ScriptEngineHost {
     /// `ThePlayerList->findPlayerWithNameKey(key)`.
     fn se_find_player_with_name_key(&self, key: NameKeyType) -> Option<PlayerH>;
     /// `ThePlayerList->updateTeamStates()`.
-    fn se_update_team_states(&mut self);
+    /// `ThePlayerList->updateTeamStates()`, with the engine (out of the world while it updates) lent back to the world for it:
+    /// a team's state change runs its scripts (`runScript`, integration batch I30).
+    fn se_update_team_states(&mut self, engine: &mut ScriptEngine);
+    /// Integration batch I30: a script copy the world owns ([`OWNED_SIDE`]).
+    fn se_owned_script(&self, index: usize) -> Option<&Script>;
+    fn se_owned_script_mut(&mut self, index: usize) -> Option<&mut Script>;
     /// Integration batch I29: the notifications queued since they were last taken ([`ScriptNote`]).
     fn se_take_notes(&mut self) -> Vec<ScriptNote>;
     /// `player->getCurrentEnemy()`.
@@ -809,8 +818,11 @@ impl ScriptEngine {
         out
     }
 
-    /// The script at the place.
+    /// The script at the place (a copy the world owns for [`OWNED_SIDE`]).
     pub fn script<H: ScriptEngineHost>(h: &H, r: ScriptRef) -> Option<&Script> {
+        if r.side == OWNED_SIDE {
+            return h.se_owned_script(r.index);
+        }
         let l = h.se_script_list(r.side)?;
         match r.group {
             None => l.scripts.get(r.index),
@@ -820,6 +832,9 @@ impl ScriptEngine {
 
     /// The script at the place, to change.
     pub fn script_mut<H: ScriptEngineHost>(h: &mut H, r: ScriptRef) -> Option<&mut Script> {
+        if r.side == OWNED_SIDE {
+            return h.se_owned_script_mut(r.index);
+        }
         let l = h.se_script_list_mut(r.side)?;
         match r.group {
             None => l.scripts.get_mut(r.index),
@@ -880,7 +895,7 @@ impl ScriptEngine {
             }
             self.current_player = None;
         }
-        h.se_update_team_states();
+        h.se_update_team_states(self);
         // (the teams it deleted told the engine at once upstream, before the sequential scripts are progressed)
         let notes = h.se_take_notes();
         self.apply_notes(notes);

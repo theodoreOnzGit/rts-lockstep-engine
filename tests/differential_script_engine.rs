@@ -463,8 +463,14 @@ impl ScriptEngineHost for Sim {
     fn se_find_player_with_name_key(&self, key: NameKeyType) -> Option<PlayerH> {
         (0..self.nplayers()).find(|p| strhash(format!("player{p}").as_bytes()) & 0x7fff_ffff == key.0)
     }
-    fn se_update_team_states(&mut self) {
+    fn se_update_team_states(&mut self, _engine: &mut ScriptEngine) {
         self.log.push("playerlist updateteamstates".into());
+    }
+    fn se_owned_script(&self, _index: usize) -> Option<&Script> {
+        None
+    }
+    fn se_owned_script_mut(&mut self, _index: usize) -> Option<&mut Script> {
+        None
     }
     fn se_take_notes(&mut self) -> Vec<ScriptNote> {
         Vec::new()
