@@ -193,12 +193,9 @@ pub fn gate_map_world_with(extra: &str) -> World {
     // map file is that INI's text)
     w.save_side.map_name = b"Maps\\Gate\\Gate.map".to_vec();
     w.save_side.disk.insert(w.save_side.map_name.to_ascii_lowercase(), INI.as_bytes().to_vec());
-    w.cuts.live_partition = true;
-    w.cuts.live_teams = true;
-    w.cuts.live_ai = true;
-    w.cuts.live_special_powers = true;
-    w.cuts.live_pathfinder = true;
-    w.cuts.live_ocl = true;
+    // (batch I46: every switch; until then `live_terrain` and `live_build_assistant` were left off, so the objects' terrain
+    // questions answered from the tables, which on this flat map at 0 give the same answers)
+    w.cuts.set_all_live();
     w
 }
 
@@ -819,7 +816,8 @@ Object Pad\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius 
         assert_eq!(raw(&w, 20, 20), 30.0);
         let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
         let pad = make(&mut w, b"Pad", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
-        // (not live: the cut, and the ground as it was)
+        // (not live: the cut, and the ground as it was; batch I46: the gate world is all live, so the ablation is explicit)
+        w.cuts.live_terrain = false;
         w.with_ai_self(pad, |w| w.terrain_flatten(pad));
         assert_eq!(raw(&w, 20, 20), 30.0);
         w.cuts.live_terrain = true;
@@ -1187,6 +1185,7 @@ mod ai_structures_tests {
             let nemesis = w.tunnel_cur_nemesis();
             let railed = w.railed_dock_present();
             let bridge = (w.bridge_tower_ids(depot), w.bridge_scaffold_in_motion(depot));
+            w.cuts.live_terrain = false; // (batch I46: the gate world is all live, so the table's answer is an explicit ablation)
             let table = w.bridge_attack_points(depot);
             w.cuts.live_terrain = true;
             let live = w.bridge_attack_points(depot);
@@ -3025,5 +3024,23 @@ Object Tower\n KindOf = STRUCTURE AIRCRAFT_PATH_AROUND\n Geometry = CYLINDER\n G
         assert!(default);
         assert!(!cleared);
         assert!(table);
+    }
+}
+
+/// Batch I46: the gate game is played with every integration switch on.
+#[cfg(test)]
+mod all_live_tests {
+    use super::*;
+
+    /// Predicted before the run: the gate world has every switch on (`live_terrain` and `live_build_assistant` were off), and an
+    /// object's ground height and normal at (125, 105) are the terrain's: 0 and straight up.
+    #[test]
+    fn the_gate_game_is_all_live() {
+        let mut w = gate_world();
+        assert!(w.cuts.all_live());
+        let (h, n) = w.terrain_get_ground_height_and_normal(125.0, 105.0);
+        eprintln!("height {h}, normal {n:?}");
+        assert_eq!(h, 0.0);
+        assert_eq!((n.x, n.y, n.z), (0.0, 0.0, 1.0));
     }
 }

@@ -2450,6 +2450,26 @@ impl Default for ObjectCuts {
 }
 
 impl ObjectCuts {
+    /// Every integration switch on (batch I46): the world's own partition, object creation lists, terrain, teams and players,
+    /// build assistant, pathfinder, AI and special powers answer, rather than these tables. A game is played with all of them;
+    /// each `live_*` field left off is a deliberate ablation (the module tests answer from the tables).
+    pub fn set_all_live(&mut self) {
+        self.live_partition = true;
+        self.live_ocl = true;
+        self.live_terrain = true;
+        self.live_teams = true;
+        self.live_build_assistant = true;
+        self.live_pathfinder = true;
+        self.live_ai = true;
+        self.live_special_powers = true;
+    }
+
+    /// Whether every integration switch is on ([`ObjectCuts::set_all_live`]).
+    pub fn all_live(&self) -> bool {
+        self.live_partition && self.live_ocl && self.live_terrain && self.live_teams && self.live_build_assistant && self.live_pathfinder
+            && self.live_ai && self.live_special_powers
+    }
+
     /// `Team::getControllingPlayer()`: `None` for a team no player controls.
     pub fn team_player(&self, team: TeamId) -> Option<PlayerIndex> {
         self.team_players.get(&team).copied()
