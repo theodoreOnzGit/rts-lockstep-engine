@@ -91,6 +91,9 @@ pub enum PfOp {
     /// `changeBridgeState(layer, repaired)`, `forceMapRecalculation()`.
     ChangeBridgeState(PathfindLayer, bool),
     ForceMapRecalculation,
+    /// Integration batch I37: `createAWallFromMyFootprint(obj)` (true) and `removeWallFromMyFootprint(obj)` (false), upstream's
+    /// `internal_classifyObjectFootprint(obj, insert)` (AIPathfind.h), with none of `classifyObjectFootprint`'s filters.
+    FootprintWall(ObjectId, bool),
 }
 
 /// The pathfinder's answers from the units the world does not hold yet (see the module docs), and its deferred calls.
@@ -247,6 +250,11 @@ impl World {
             PfOp::NewMap => pf.new_map(w, frame),
             PfOp::ChangeBridgeState(layer, repaired) => pf.change_bridge_state(w, layer, repaired, frame),
             PfOp::ForceMapRecalculation => pf.force_map_recalculation(w),
+            PfOp::FootprintWall(id, insert) => {
+                if let Some(o) = w.object(id) {
+                    pf.internal_classify_object_footprint(&o, insert, frame);
+                }
+            }
         });
         true
     }

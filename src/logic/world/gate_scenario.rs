@@ -1959,6 +1959,42 @@ mod script_power_note_tests {
 }
 
 #[cfg(test)]
+mod footprint_wall_tests {
+    use super::*;
+    use crate::common::game_type::LAYER_GROUND;
+    use crate::logic::ai::cell::{CELL_CLEAR, CELL_OBSTACLE};
+    use crate::logic::world::object_cuts::CutCall;
+
+    /// Batch I37, `createAWallFromMyFootprint` and `removeWallFromMyFootprint` live (the tensile formation's and the railroad's "temporarily
+    /// treat this object as an obstacle"; they were records only). Predicted before the run: the ground cell under a soldier at
+    /// (205, 205) is clear (a mobile unit is no obstacle), an obstacle after the wall is made from its footprint, and clear again after
+    /// the wall is removed; no record of either call (the world's pathfinder answered). **Missed on the first run:** every cell `None`:
+    /// the fixture's pathfinder has had no `newMap`, so its extent is empty (the test's, not the wall's); `newMap` is run first, as the
+    /// other pathfinder tests do.
+    #[test]
+    fn an_objects_footprint_becomes_a_wall_and_back() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let soldier = make(&mut w, b"Soldier", team, Coord3D { x: 205.0, y: 205.0, z: 0.0 });
+        let cell = |w: &World| {
+            let pf = w.pathfinder.as_ref().expect("the world's pathfinder");
+            pf.get_cell(LAYER_GROUND, 20, 20).map(|c| pf.store.cells[c as usize].get_type())
+        };
+        w.cuts.log = Some(Vec::new());
+        let before = cell(&w);
+        w.pathfinder_create_wall_from_footprint(soldier);
+        let walled = cell(&w);
+        w.pathfinder_remove_wall_from_footprint(soldier);
+        let after = cell(&w);
+        let records = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::PathfinderCreateWallFromFootprint { .. } | CutCall::PathfinderRemoveWallFromFootprint { .. })).count();
+        eprintln!("cell (20, 20): {before:?}, walled {walled:?}, after {after:?}; records {records}");
+        assert_eq!((before, walled, after), (Some(CELL_CLEAR), Some(CELL_OBSTACLE), Some(CELL_CLEAR)));
+        assert_eq!(records, 0);
+    }
+}
+
+#[cfg(test)]
 mod energy_tests {
     use super::*;
 

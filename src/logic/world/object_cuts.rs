@@ -560,14 +560,19 @@ impl World {
         (self.cuts.terrain_ground[cell], self.cuts.terrain_normal[cell])
     }
 
-    /// batch R34: `TheAI->pathfinder()->createAWallFromMyFootprint(obj)` ("temporarily treat this object as an obstacle"); the pathfinder is layer 11's.
+    /// batch R34: `TheAI->pathfinder()->createAWallFromMyFootprint(obj)` ("temporarily treat this object as an obstacle"): the world's
+    /// pathfinder with `live_pathfinder` (integration batch I37), else the cut point.
     pub fn pathfinder_create_wall_from_footprint(&mut self, object: ObjectId) {
-        self.cut(CutCall::PathfinderCreateWallFromFootprint { object });
+        if !self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::FootprintWall(object, true)) {
+            self.cut(CutCall::PathfinderCreateWallFromFootprint { object });
+        }
     }
 
-    /// batch R34: `TheAI->pathfinder()->removeWallFromMyFootprint(obj)`.
+    /// batch R34: `TheAI->pathfinder()->removeWallFromMyFootprint(obj)`: as [`World::pathfinder_create_wall_from_footprint`].
     pub fn pathfinder_remove_wall_from_footprint(&mut self, object: ObjectId) {
-        self.cut(CutCall::PathfinderRemoveWallFromFootprint { object });
+        if !self.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::FootprintWall(object, false)) {
+            self.cut(CutCall::PathfinderRemoveWallFromFootprint { object });
+        }
     }
 
     /// batch R56: `ThePartitionManager->getClosestObject(&position, range, FROM_CENTER_2D, { KINDOF_CLEANUP_HAZARD, the same map status as
