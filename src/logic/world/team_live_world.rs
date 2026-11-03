@@ -150,6 +150,16 @@ impl World {
         player_deliver_brown_out_notice(self, p, notice)
     }
 
+    /// Integration batch I36: `Energy::objectEnteringInfluence(obj)` / `objectLeavingInfluence(obj)` of player `p`'s energy: the object's
+    /// template's `EnergyProduction` joins or leaves the sums, and the energy's brown-out notice goes to its owner.
+    fn live_energy_influence(&mut self, p: PlayerIndex, o: ObjectId, entering: bool) -> PResult<()> {
+        let Some(production) = self.find_object(o).map(|x| x.template().get_energy_production()) else { return Ok(()) };
+        let frame = self.frame();
+        let Some(pl) = self.players.get_nth_mut(p) else { return Ok(()) };
+        let notice = if entering { pl.energy.object_entering_influence(frame, production) } else { pl.energy.object_leaving_influence(frame, production) };
+        player_deliver_brown_out_notice(self, p, notice)
+    }
+
     /// A `Player*`, `Team*` or `AcademyStats*` cut call run on the team and player lists (`cuts.live_teams`). Calls
     /// whose answer the caller reads from a table keep that table answer; the errors of the player code (upstream's
     /// undefined behaviour) are recorded in `cuts.team_live_errors`.
@@ -183,6 +193,20 @@ impl World {
             }
             CutCall::PlayerAddKindOfProductionCostChange { player, kind_of, percent } => player_add_kind_of_production_cost_change(self, player, kind_of, percent),
             CutCall::PlayerRemoveKindOfProductionCostChange { player, kind_of, percent } => player_remove_kind_of_production_cost_change(self, player, kind_of, percent),
+            // (integration batch I36: the player's energy, `getControllingPlayer()->getEnergy()->...`; they were records only, so a
+            // player's production and consumption stayed 0 and no power plant or consumer counted)
+            CutCall::EnergyObjectEnteringInfluence { player, object } => self.live_energy_influence(player, object, true),
+            CutCall::EnergyObjectLeavingInfluence { player, object } => self.live_energy_influence(player, object, false),
+            CutCall::EnergyAdjustPower { player, amount, add } => {
+                let frame = self.frame();
+                match self.players.get_nth_mut(player) {
+                    Some(pl) => {
+                        let notice = pl.energy.adjust_power(frame, amount, add);
+                        player_deliver_brown_out_notice(self, player, notice)
+                    }
+                    None => Ok(()),
+                }
+            }
             CutCall::PlayerAddPowerBonus { player, object } => self.live_power_bonus(player, object, true),
             CutCall::PlayerRemovePowerBonus { player, object } => self.live_power_bonus(player, object, false),
             CutCall::PlayerOnStructureConstructionComplete { player, builder, structure, is_rebuild } => {

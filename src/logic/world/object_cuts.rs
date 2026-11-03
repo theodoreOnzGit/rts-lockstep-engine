@@ -1552,11 +1552,11 @@ pub enum CutCall {
     /// `team->setEnteredExited()`.
     TeamSetEnteredExited { team: TeamId },
     // ---- Energy ----
-    /// `player->getEnergy()->objectEnteringInfluence(obj)`.
+    /// `player->getEnergy()->objectEnteringInfluence(obj)`. Live with `live_teams` (integration batch I36).
     EnergyObjectEnteringInfluence { player: PlayerIndex, object: ObjectId },
-    /// `player->getEnergy()->objectLeavingInfluence(obj)`.
+    /// `player->getEnergy()->objectLeavingInfluence(obj)`. Live with `live_teams` (integration batch I36).
     EnergyObjectLeavingInfluence { player: PlayerIndex, object: ObjectId },
-    /// `player->getEnergy()->adjustPower(amount, add)`.
+    /// `player->getEnergy()->adjustPower(amount, add)`. Live with `live_teams` (integration batch I36).
     EnergyAdjustPower { player: PlayerIndex, amount: i32, add: bool },
     // ---- PartitionManager ----
     /// `ThePartitionManager->registerObject(obj)`.

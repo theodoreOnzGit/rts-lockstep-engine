@@ -1959,6 +1959,52 @@ mod script_power_note_tests {
 }
 
 #[cfg(test)]
+mod energy_tests {
+    use super::*;
+
+    /// A power plant making 5 and a consumer using 3, structures with a body and nothing else.
+    const GRID: &str = "\
+Object Plant\n KindOf = STRUCTURE IMMOBILE\n EnergyProduction = 5\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n\
+Object Consumer\n KindOf = STRUCTURE IMMOBILE\n EnergyProduction = -3\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+
+    /// Batch I36, the players' power grid live (`Energy::objectEnteringInfluence`, `objectLeavingInfluence` and `adjustPower` were
+    /// records only, so every player's production and consumption stayed 0). Predicted before the run: a plant made on team1's player
+    /// gives that player production 5, consumption 0; a consumer then gives consumption 3, with sufficient power; the plant disabled
+    /// (EMP) takes its 5 away (`adjustPower(5, false)`), production 0, so the player is browned out; the plant enabled again gives 5
+    /// back; the consumer destroyed (and deleted at the end of the frame) takes its 3 away, consumption 0.
+    #[test]
+    fn a_players_power_grid_counts_its_plants_and_consumers() {
+        let mut w = gate_map_world_with(GRID);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let plant = make(&mut w, b"Plant", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let p = w.get_controlling_player(plant).expect("the plant's player");
+        let grid = |w: &World| {
+            let f = w.frame();
+            let e = &w.players.get_nth(p).unwrap().energy;
+            (e.production(f), e.consumption(), e.has_sufficient_power(f))
+        };
+        let with_plant = grid(&w);
+        let consumer = make(&mut w, b"Consumer", team, Coord3D { x: 200.0, y: 100.0, z: 0.0 });
+        let with_consumer = grid(&w);
+        w.set_disabled(plant, crate::common::disabled_types::DISABLED_EMP);
+        let disabled = grid(&w);
+        w.clear_disabled(plant, crate::common::disabled_types::DISABLED_EMP);
+        let enabled = grid(&w);
+        w.destroy_object(consumer);
+        w.logic_update().unwrap();
+        let destroyed = grid(&w);
+        eprintln!("player {p}: plant {with_plant:?}, consumer {with_consumer:?}, disabled {disabled:?}, enabled {enabled:?}, consumer destroyed {destroyed:?}; errors {:?}", w.cuts.team_live_errors);
+        assert_eq!(with_plant, (5, 0, true));
+        assert_eq!(with_consumer, (5, 3, true));
+        assert_eq!(disabled, (0, 3, false));
+        assert_eq!(enabled, (5, 3, true));
+        assert_eq!(destroyed, (5, 0, true));
+    }
+}
+
+#[cfg(test)]
 mod team_script_tests {
     use super::*;
     use crate::logic::scripts::{action_type as at, condition_type as ct, Condition, OrCondition, Parameter, Script, ScriptAction, ScriptList};
