@@ -178,6 +178,10 @@ impl AiModuleBody {
                 m.ai_mut().clear_waypoint_queue();
                 ModuleReply::Done
             }
+            ModuleCall::AiExecuteWaypointQueue => {
+                m.ai_mut().execute_waypoint_queue();
+                ModuleReply::Done
+            }
             ModuleCall::AiDeliverPayloadViaModuleData(pos) => {
                 if !matches!(m.ai.as_ref().map(|a| &a.subclass), Some(crate::logic::ai::ai_update::AiSubclass::DeliverPayload(_))) {
                     return ModuleReply::Unhandled;
@@ -861,6 +865,10 @@ impl World {
             }
             ModuleCall::AiClearWaypointQueue => {
                 a.clear_waypoint_queue();
+                ModuleReply::Done
+            }
+            ModuleCall::AiExecuteWaypointQueue => {
+                a.execute_waypoint_queue();
                 ModuleReply::Done
             }
             ModuleCall::AiIsAiInDeadState => ModuleReply::Bool(a.is_ai_in_dead_state()),

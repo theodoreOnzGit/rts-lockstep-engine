@@ -520,6 +520,8 @@ impl TeamHost for World {
     }
     fn script_notify_of_team_destruction(&mut self, team: TeamId) {
         self.host_cut("ScriptEngine::notifyOfTeamDestruction", &[i64::from(team)], &[]);
+        // (integration batch I29: and to the world's engine, queued)
+        self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::TeamDestroyed(team as i32));
     }
     fn script_append_debug_message(&mut self, msg: &[u8], force_pause: bool) {
         self.host_cut("ScriptEngine::AppendDebugMessage", &[i64::from(force_pause)], msg);
@@ -735,9 +737,13 @@ impl PlayerHost for World {
     }
     fn script_notify_of_object_creation_or_destruction(&mut self) {
         self.host_cut("ScriptEngine::notifyOfObjectCreationOrDestruction", &[], &[]);
+        // (integration batch I29: and to the world's engine, queued)
+        let frame = World::frame(self);
+        self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::ObjectCountChanged { frame });
     }
     fn script_notify_of_acquired_science(&mut self, player_index: PlayerIndex, science: ScienceType) {
         self.host_cut("ScriptEngine::notifyOfAcquiredScience", &[i64::from(player_index), i64::from(science.0)], &[]);
+        self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::AcquiredScience { player: player_index, science: science.0 });
     }
     fn victory_has_single_player_been_defeated(&self, p: PlayerIndex) -> bool {
         // batch I5: the world's own conditions

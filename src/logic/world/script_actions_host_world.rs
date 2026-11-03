@@ -70,6 +70,8 @@ impl World {
         let r = sa.execute_action(self, action);
         self.script_actions = sa;
         std::mem::swap(&mut self.script_engine, engine);
+        // (integration batch I29: what the action destroyed, told to the running engine before its next question)
+        engine.apply_notes(std::mem::take(&mut self.cuts.pending_script_notes));
         match r {
             Ok(()) => Ok(()),
             Err(crate::logic::world::script_actions::ActionError::Undefined(e)) => Err(e),
@@ -398,8 +400,16 @@ impl ScriptActionsHost for World {
     fn sa_find_team_prototype(&self, name: &[u8]) -> Option<ProtoH> {
         self.teams.prototypes().find(|p| p.name == name).map(|p| p.id as ProtoH)
     }
-    fn sa_proto_template_info(&self, _p: ProtoH) -> TeamTemplateInfo {
-        Default::default()
+    fn sa_proto_template_info(&self, p: ProtoH) -> TeamTemplateInfo {
+        // (integration batch I28: was a default, so a scripted reinforcement had no units, no transport and no waypoint)
+        let Some(info) = u32::try_from(p).ok().and_then(|p| self.teams.prototype(p)).map(|p| &p.team_template) else { return Default::default() };
+        TeamTemplateInfo {
+            start_reinforce_waypoint: info.start_reinforce_waypoint.clone(),
+            transport_unit_type: info.transport_unit_type.clone(),
+            units_info: info.units_info[..info.num_units_info.clamp(0, info.units_info.len() as i32) as usize].iter().map(|u| (u.unit_thing_name.clone(), u.max_units)).collect(),
+            team_starts_full: info.team_starts_full,
+            transports_exit: info.transports_exit,
+        }
     }
     fn sa_create_inactive_team(&mut self, name: &[u8]) -> Option<TeamH> {
         crate::logic::world::team_ops::factory_create_inactive_team(self, name).ok().map(|t| t as TeamH)
@@ -972,8 +982,9 @@ impl ScriptActionsHost for World {
     fn sa_audio_remove_event_handle(&mut self, _handle: i32) {
         self.sa_cut("audio_remove_event_handle");
     }
-    fn sa_set_current_track_name(&mut self, _name: &[u8]) {
-        self.sa_cut("set_current_track_name");
+    fn sa_set_current_track_name(&mut self, name: &[u8]) {
+        // (integration batch I28: was a cut) `TheScriptEngine->setCurrentTrackName(name)`: the engine's (saved) `m_currentTrackName`
+        self.script_engine.current_track_name = name.to_vec();
     }
     fn sa_contain_player_who_entered(&mut self, o: ObjH) -> u32 {
         // (integration batch I22: was `Default::default()`)

@@ -2240,6 +2240,8 @@ pub struct ObjectCuts {
     /// Integration batch I20: `GameLogic` members a script set while the frame held `GameLogic` (`logic_update` takes it out of the world),
     /// applied when the frame ends (see [`GameLogicWrite`]).
     pub pending_game_logic_writes: Vec<GameLogicWrite>,
+    /// Integration batch I29: the script engine's notifications not yet taken by it ([`crate::logic::world::script_engine::ScriptNote`]).
+    pub pending_script_notes: Vec<crate::logic::world::script_engine::ScriptNote>,
     /// batch I8a: `TheAudio->getAudioLengthMS(name)`, by event name (none listed: 0).
     pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
     /// batch I8b: `TheInGameUI->getFrameSelectionChanged()`.
@@ -2429,6 +2431,7 @@ impl Default for ObjectCuts {
             new_game: crate::logic::world::new_game_host_world::NewGameCuts { shroud_in_multiplayer: true, ..Default::default() },
             pending_rank_points: None,
             pending_game_logic_writes: Vec::new(),
+            pending_script_notes: Vec::new(),
             audio_lengths_ms: BTreeMap::new(),
             frame_selection_changed: 0,
             music_tracks_completed: BTreeMap::new(),
@@ -2664,6 +2667,17 @@ impl World {
         // (batch I15: `updateObjectsChangedTriggerAreas()`, the logic's own: `m_frameObjectsChangedTriggerAreas = m_frame`)
         if matches!(call, CutCall::GameLogicUpdateObjectsChangedTriggerAreas) {
             self.frame_objects_changed_trigger_areas = self.frame();
+        }
+        // (batch I29: the object's notifications to the script engine, queued for it)
+        match call {
+            CutCall::ScriptEngineNotifyOfObjectCreationOrDestruction => {
+                let frame = self.frame();
+                self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::ObjectCountChanged { frame });
+            }
+            CutCall::ScriptEngineNotifyOfObjectDestruction { object } => {
+                self.cuts.pending_script_notes.push(crate::logic::world::script_engine::ScriptNote::ObjectDestroyed(object));
+            }
+            _ => {}
         }
         // (batch I11: the object creation lists, run after the call is logged, so that the calls they make follow it)
         let ocl = self.cuts.live_ocl.then(|| call.clone());

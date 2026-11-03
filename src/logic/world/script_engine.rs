@@ -283,6 +283,22 @@ pub struct ScriptRef {
     pub index: usize,
 }
 
+/// Integration batch I29: a notification to `TheScriptEngine` from the rest of the logic (objects, teams, players), which upstream
+/// makes at once. The world's engine is out of the world while it updates, so the world queues them and the engine takes them where
+/// they are read: at the start of its update, after `updateTeamStates` (which deletes teams), after each action and condition, and
+/// before it is saved. Each keeps what an immediate call would have used (the frame).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScriptNote {
+    /// `notifyOfObjectCreationOrDestruction()` on that frame.
+    ObjectCountChanged { frame: u32 },
+    /// `notifyOfObjectDestruction(obj)`.
+    ObjectDestroyed(ObjH),
+    /// `notifyOfTeamDestruction(team)`.
+    TeamDestroyed(TeamH),
+    /// `notifyOfAcquiredScience(playerIndex, science)`.
+    AcquiredScience { player: i32, science: i32 },
+}
+
 /// `class SequentialScript`, without its link: the chain it is in is a vector.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SequentialScript {
@@ -376,6 +392,8 @@ pub trait ScriptEngineHost {
     fn se_find_player_with_name_key(&self, key: NameKeyType) -> Option<PlayerH>;
     /// `ThePlayerList->updateTeamStates()`.
     fn se_update_team_states(&mut self);
+    /// Integration batch I29: the notifications queued since they were last taken ([`ScriptNote`]).
+    fn se_take_notes(&mut self) -> Vec<ScriptNote>;
     /// `player->getCurrentEnemy()`.
     fn se_player_current_enemy(&mut self, p: PlayerH) -> Option<PlayerH>;
     /// `player->getPlayerType() == PLAYER_HUMAN`.
@@ -815,6 +833,8 @@ impl ScriptEngine {
 
     /// `update()`.
     pub fn update<H: ScriptEngineHost>(&mut self, h: &mut H) -> R<()> {
+        let notes = h.se_take_notes();
+        self.apply_notes(notes);
         if self.first_update {
             self.create_named_cache(h);
             self.first_update = false;
@@ -861,6 +881,9 @@ impl ScriptEngine {
             self.current_player = None;
         }
         h.se_update_team_states();
+        // (the teams it deleted told the engine at once upstream, before the sequential scripts are progressed)
+        let notes = h.se_take_notes();
+        self.apply_notes(notes);
         self.ui_interactions.clear();
         self.evaluate_and_progress_all_sequential_scripts(h)
     }
@@ -1763,6 +1786,32 @@ impl ScriptEngine {
                 }
             }
             e.1 = Some(o);
+        }
+    }
+
+    /// Integration batch I29: the queued notifications, in order. An object's destruction clears its entry in the named cache whatever
+    /// its name now (the world has removed the object by then; only named objects are in the cache, so this is upstream's
+    /// `if (!obj->getName().isEmpty()) removeObjectFromCache(obj)`).
+    pub fn apply_notes(&mut self, notes: Vec<ScriptNote>) {
+        for n in notes {
+            match n {
+                ScriptNote::ObjectCountChanged { frame } => self.frame_object_count_changed = frame,
+                ScriptNote::ObjectDestroyed(o) => {
+                    self.remove_object_from_cache(o);
+                    if self.condition_object == Some(o) {
+                        self.condition_object = None;
+                    }
+                    if self.calling_object == Some(o) {
+                        self.calling_object = None;
+                    }
+                }
+                ScriptNote::TeamDestroyed(t) => self.notify_of_team_destruction(t),
+                ScriptNote::AcquiredScience { player, science } => {
+                    if let Some(l) = usize::try_from(player).ok().and_then(|p| self.acquired_sciences.get_mut(p)) {
+                        l.push(science);
+                    }
+                }
+            }
         }
     }
 

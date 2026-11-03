@@ -154,10 +154,12 @@ impl DispatchHost for World {
         Ok(false)
     }
     fn d_ai_execute_waypoint_queue(&mut self, obj: u32) {
-        self.dispatch_cut("AIUpdateInterface::executeWaypointQueue", &[i64::from(obj)]);
+        // (integration batch I28: was a cut) the unit's AI's `executeWaypointQueue()`
+        self.ai_ask(obj as ObjectId, ModuleCall::AiExecuteWaypointQueue);
     }
     fn d_release_weapon_lock(&mut self, obj: u32, lock: i32) {
-        self.dispatch_cut("Object::releaseWeaponLock", &[i64::from(obj), i64::from(lock)]);
+        // (integration batch I28: was a cut) `Object::releaseWeaponLock(lock)`
+        crate::logic::world::object_weapons::release_weapon_lock(self, obj as ObjectId, lock);
     }
     fn d_ai_exit(&mut self, obj: u32, container: u32) {
         self.ai_ask(obj as ObjectId, ModuleCall::AiExit { container: container as ObjectId, command_source: CMD_FROM_PLAYER });
@@ -166,8 +168,17 @@ impl DispatchHost for World {
         self.is_locally_controlled(obj as ObjectId)
     }
     fn d_rally_path_exists(&mut self, obj: u32, pos: &Coord3D) -> bool {
-        self.dispatch_cut("Pathfinder::clientSafeQuickDoesPathExist", &[i64::from(obj), i64::from(pos.x.to_bits()), i64::from(pos.y.to_bits())]);
-        true
+        // (integration batch I28: was a cut answering true) `TheAI->pathfinder()->clientSafeQuickDoesPathExist(locomotorSet,
+        // obj->getPosition(), &pos)`, the set of the one template `BasicHumanLocomotor` (GameLogicDispatch.cpp: "for now, just use the basic
+        // human locomotor"); with `live_pathfinder` and a map
+        if self.pf_ready().is_none() {
+            self.dispatch_cut("Pathfinder::clientSafeQuickDoesPathExist", &[i64::from(obj), i64::from(pos.x.to_bits()), i64::from(pos.y.to_bits())]);
+            return true;
+        }
+        let key = self.names.name_to_key(b"BasicHumanLocomotor");
+        let surfaces = self.statics.locomotor_store.find_locomotor_template(key).map_or(0, |t| t.get_final_override().data.surfaces);
+        let Some(from) = self.objects.find(obj as ObjectId).map(|o| o.get_position()) else { return false };
+        self.with_pathfinder(|pf, w| pf.client_safe_quick_does_path_exist(w, surfaces as _, &from, pos)).unwrap_or(false)
     }
     fn d_drawable_selected(&self, obj: u32) -> bool {
         self.cuts.selected_drawables.contains(&(obj as ObjectId))

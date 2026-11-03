@@ -466,6 +466,9 @@ impl ScriptEngineHost for Sim {
     fn se_update_team_states(&mut self) {
         self.log.push("playerlist updateteamstates".into());
     }
+    fn se_take_notes(&mut self) -> Vec<ScriptNote> {
+        Vec::new()
+    }
     fn se_player_current_enemy(&mut self, p: PlayerH) -> Option<PlayerH> {
         self.player(((self.pw(p) >> 12) & 15) as i32)
     }

@@ -1118,6 +1118,7 @@ impl ProbeModule {
             | ModuleCall::AiSetDesiredSpeed(_)
             | ModuleCall::AiSetAttackInfo(_)
             | ModuleCall::AiClearWaypointQueue
+            | ModuleCall::AiExecuteWaypointQueue
             | ModuleCall::AiDeliverPayloadViaModuleData(_)
             | ModuleCall::GetReferenceThingTemplate
             | ModuleCall::ProductionHasAnyUpgradeInQueue

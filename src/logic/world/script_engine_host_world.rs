@@ -69,6 +69,9 @@ impl World {
 }
 
 impl ScriptEngineHost for World {
+    fn se_take_notes(&mut self) -> Vec<crate::logic::world::script_engine::ScriptNote> {
+        std::mem::take(&mut self.cuts.pending_script_notes)
+    }
     fn se_restore_fps_limit(&mut self) {
         self.se_cut("GameEngine::setFramesPerSecondLimit", &[], &[]);
     }

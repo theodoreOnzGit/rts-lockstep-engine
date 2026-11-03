@@ -1216,6 +1216,9 @@ pub enum ModuleCall {
     AiSetAttackInfo(Option<usize>),
     /// Integration batch I20: `AIUpdateInterface::clearWaypointQueue()`.
     AiClearWaypointQueue,
+    /// Integration batch I28: `AIUpdateInterface::executeWaypointQueue()` (a player's queued waypoints, `MSG_EXECUTE_WAYPOINTS`... the
+    /// dispatch's).
+    AiExecuteWaypointQueue,
     /// Integration batch I20: `DeliverPayloadAIUpdate::deliverPayloadViaModuleData(&pos)` (a script's reinforcements).
     AiDeliverPayloadViaModuleData(Coord3D),
     /// Integration batch I14: `ProjectileUpdateInterface::projectileFireAtObjectOrPosition(victim, &pos, template, exhaust)` (`INVALID_ID`

@@ -1783,3 +1783,113 @@ Object Prize\n KindOf = VEHICLE\n BuildCost = 900\n Geometry = CYLINDER\n Geomet
         assert_eq!(unmanned, None);
     }
 }
+
+#[cfg(test)]
+mod dispatch_rest_tests {
+    use super::*;
+    use crate::logic::world::game_logic_dispatch::DispatchHost;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// Batch I28, the dispatch's waypoint queue, weapon lock and rally path, and the scripts' team prototype info and track name, live.
+    /// Predicted before the run: a soldier with two queued waypoints is not executing its queue, and is after the dispatch's
+    /// `executeWaypointQueue`; its weapon locked permanently is unlocked by `releaseWeaponLock(LOCKED_PERMANENTLY)`; the rally path from
+    /// it to (200, 100) on the flat open map exists with a `BasicHumanLocomotor` of ground surfaces (the gate's INI has none: then no
+    /// surface, and no path); team1's prototype, given one unit line (`Soldier`, at most 3), a transport `Truck`, the waypoint `Start`
+    /// and starts-full, reads so (before this batch, a default with no units); the track name set by a script is the engine's.
+    #[test]
+    fn the_dispatch_and_script_rest_are_live() {
+        let human = "Locomotor BasicHumanLocomotor\n Surfaces = GROUND\n Speed = 20\nEnd\n";
+        let mut with = gate_map_world_with(human);
+        let mut without = gate_map_world();
+        let mut paths = Vec::new();
+        for w in [&mut without, &mut with] {
+            let team = factory_find_team(w, b"team1").expect("the team").expect("team1");
+            let s = make(w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+            w.pathfinder_op(PfOp::NewMap);
+            paths.push(w.d_rally_path_exists(s as u32, &Coord3D { x: 200.0, y: 100.0, z: 0.0 }));
+        }
+        let w = &mut with;
+        let team = factory_find_team(w, b"team1").expect("the team").expect("team1");
+        let s = make(w, b"Soldier", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        w.with_ai_lent(s, |w| crate::logic::ai::ai_states::with_ai(w, |a, _| {
+            a.queue_waypoint(&Coord3D { x: 80.0, y: 60.0, z: 0.0 });
+            a.queue_waypoint(&Coord3D { x: 80.0, y: 90.0, z: 0.0 });
+        }));
+        let executing = |w: &World| w.ai_peek(s).map(|a| a.executing_waypoint_queue);
+        let before = executing(w);
+        w.d_ai_execute_waypoint_queue(s as u32);
+        let after = executing(w);
+        crate::logic::world::object_weapons::set_weapon_lock(w, s, 0, crate::logic::weapon_set_state::LOCKED_PERMANENTLY);
+        let locked = crate::logic::world::object_weapons::is_cur_weapon_locked(w, s);
+        w.d_release_weapon_lock(s as u32, crate::logic::weapon_set_state::LOCKED_PERMANENTLY);
+        let released = !crate::logic::world::object_weapons::is_cur_weapon_locked(w, s);
+        let proto = w.teams.prototypes().find(|p| p.name == b"team1").map(|p| p.id).expect("team1's prototype");
+        {
+            let t = &mut w.teams.prototype_mut(proto).expect("the prototype").team_template;
+            t.units_info[0].unit_thing_name = b"Soldier".to_vec();
+            t.units_info[0].max_units = 3;
+            t.num_units_info = 1;
+            t.transport_unit_type = b"Truck".to_vec();
+            t.start_reinforce_waypoint = b"Start".to_vec();
+            t.team_starts_full = true;
+        }
+        let info = w.sa_proto_template_info(proto as i32);
+        w.sa_set_current_track_name(b"Track_Battle");
+        eprintln!("paths {paths:?}; waypoints {before:?} -> {after:?}; lock {locked} released {released}; {info:?}; track {:?}", w.script_engine.current_track_name);
+        assert_eq!(paths, vec![false, true]);
+        assert_eq!((before, after), (Some(false), Some(true)));
+        assert!(locked && released);
+        assert_eq!(info.units_info, vec![(b"Soldier".to_vec(), 3)]);
+        assert_eq!((info.transport_unit_type, info.start_reinforce_waypoint, info.team_starts_full, info.transports_exit), (b"Truck".to_vec(), b"Start".to_vec(), true, false));
+        assert_eq!(w.script_engine.current_track_name, b"Track_Battle");
+    }
+}
+
+#[cfg(test)]
+mod script_note_tests {
+    use super::*;
+    use crate::logic::world::script_actions::ScriptActionsHost;
+
+    /// Batch I29, the logic's notifications reach the world's script engine (they were records only). Predicted before the run: a soldier
+    /// named `Bob` in the engine's cache and destroyed is `didUnitExist` and no longer `getUnitNamed` after the next engine update
+    /// (before, the cache kept the dead object); the engine's object count frame is the frame of the soldier's creation (frame 2, after
+    /// two updates); a team's sequential chain is removed when the team is deleted (`notifyOfTeamDestruction`); a science added to player
+    /// 1 is in the engine's acquired sciences of player 1. **Missed on the first run:** right after the frame in which `Bob` was
+    /// destroyed, the cache still held him: the object is deleted at the end of that frame, after the engine's update, so its note is
+    /// taken at the next engine update (the logic reads the cache only inside the engine's update, after that, so nothing it sees
+    /// differs from upstream's immediate call; the test had read the field directly). Read after the next update, as below.
+    #[test]
+    fn the_logics_notifications_reach_the_engine() {
+        let mut w = gate_map_world_with("Science SCIENCE_Test\nEnd\n");
+        w.script_engine_new_map().unwrap();
+        w.logic_update().unwrap();
+        w.logic_update().unwrap();
+        let made_on = w.frame();
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let bob = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        w.script_engine.named_objects.push((b"Bob".to_vec(), Some(bob)));
+        let other = crate::logic::world::team_ops::factory_create_inactive_team(&mut w, b"team1").expect("a second team1 instance");
+        w.script_engine.sequential_scripts.push(vec![crate::logic::world::script_engine::SequentialScript {
+            team_to_exec_on: Some(other as i32),
+            ..crate::logic::world::script_engine::SequentialScript::new(crate::logic::world::script_engine::ScriptRef { side: 0, group: None, index: 0 })
+        }]);
+        w.destroy_object(bob);
+        w.logic_update().unwrap();
+        let count_frame = w.script_engine.frame_object_count_changed;
+        let named_raw = (w.script_engine.get_unit_named(b"Bob"), w.script_engine.did_unit_exist(b"Bob"));
+        crate::logic::world::team_ops::delete_team_instance(&mut w, other).expect("the team deleted");
+        let sci = { let s = w.statics.clone(); s.science_store.get_science_from_internal_name(&mut w.names, b"SCIENCE_Test").expect("the science") };
+        crate::logic::world::player_ops::player_add_science(&mut w, 1, sci).expect("the science added");
+        w.logic_update().unwrap();
+        let named = (w.script_engine.get_unit_named(b"Bob"), w.script_engine.did_unit_exist(b"Bob"));
+        let chains = w.script_engine.sequential_scripts.len();
+        let acquired = w.script_engine.acquired_sciences[1].clone();
+        eprintln!("made on {made_on}, count frame {count_frame}; named {named_raw:?} then {named:?}; chains {chains}; acquired {acquired:?} (science {})", sci.0);
+        assert_eq!(count_frame, made_on);
+        assert_eq!(named_raw, (Some(bob), false));
+        assert_eq!(named, (None, true));
+        assert_eq!(chains, 0);
+        assert_eq!(acquired, vec![sci.0]);
+        let _ = w.sa_unit_named(b"Bob");
+    }
+}
