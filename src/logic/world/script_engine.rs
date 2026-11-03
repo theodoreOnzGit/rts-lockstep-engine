@@ -1470,6 +1470,12 @@ impl ScriptEngine {
         (1..self.num_attack_info.max(1) as usize).map(|i| &self.attack_priority_info[i]).find(|a| a.name == name).unwrap_or(&self.attack_priority_info[0])
     }
 
+    /// `getAttackInfo(name)` as the AI holds it (an index into `attack_priority_info`; integration batch I39): the named set's,
+    /// else 0, the default.
+    pub fn get_attack_info_index(&self, name: &[u8]) -> usize {
+        (1..self.num_attack_info.max(1) as usize).find(|&i| self.attack_priority_info[i].name == name).unwrap_or(0)
+    }
+
     /// `setPriorityThing(pAction)`: the type, or each type of the list of that name, given the priority in the named set.
     fn set_priority_thing<H: ScriptEngineHost>(&mut self, h: &mut H, at: ItemRef) -> R<()> {
         let arg = Self::pstr(h, at, 1)?;

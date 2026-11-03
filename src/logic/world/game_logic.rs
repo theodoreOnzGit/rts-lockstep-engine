@@ -789,10 +789,14 @@ impl World {
     pub fn hook_stop_ai(&mut self, id: ObjectId) {
         self.note(Hook::StopAi(id));
         // --- p1w6-object ---
-        if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+        if let Some(ai) = self.objects.find(id).and_then(|o| o.ai) {
             // "We desperately need to stop here, or else the destructor of the statemachine will try to do
-            // stopping logic" (`setLocomotorGoalNone`, `destroyPath`)
-            self.cut(crate::logic::world::object_cuts::CutCall::AiStopForDestroy { object: id });
+            // stopping logic" (`setLocomotorGoalNone`, `destroyPath`; with `live_ai` since integration batch I39)
+            if self.cuts.live_ai {
+                self.module_call(id, ai, crate::logic::world::module_call::ModuleCall::AiStopForDestroy);
+            } else {
+                self.cut(crate::logic::world::object_cuts::CutCall::AiStopForDestroy { object: id });
+            }
         }
         // --- end p1w6-object ---
     }

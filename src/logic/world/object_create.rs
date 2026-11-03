@@ -229,11 +229,16 @@ impl World {
         if self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
             // `getTeam()`, not the team asked for: `setTeam` puts an object of an inactive player on the neutral team
             if let Some(team) = self.get_team(id) {
-                if self.tq().team_has_template_info(team) {
-                    self.cut(CutCall::AiSetAttitude { object: id, team });
-                }
-                if self.tq().team_attack_info(team) {
-                    self.cut(CutCall::AiSetAttackInfo { object: id, team });
+                if self.ai_team_attitude_live() {
+                    // (integration batch I39: the AI told, as `setTeam` tells it)
+                    self.ai_take_team_attitude(id, team);
+                } else {
+                    if self.tq().team_has_template_info(team) {
+                        self.cut(CutCall::AiSetAttitude { object: id, team });
+                    }
+                    if self.tq().team_attack_info(team) {
+                        self.cut(CutCall::AiSetAttackInfo { object: id, team });
+                    }
                 }
             }
         }

@@ -2399,3 +2399,153 @@ mod new_game_sides_tests {
         assert_eq!(side0, vec![b"MP_B".to_vec(), b"MP_A".to_vec()]);
     }
 }
+
+#[cfg(test)]
+mod ai_record_tests {
+    use super::*;
+    use crate::logic::ai::ai_update::LocoGoalType;
+    use crate::logic::ai::ai_update_types::{AI_AGGRESSIVE, AI_PASSIVE};
+    use crate::logic::weapon_types::WeaponStatus;
+    use crate::logic::world::module_call::ModuleReply;
+    use crate::logic::world::object_cuts::CutCall;
+
+    fn attitude_and_set(w: &World, o: ObjectId) -> (i32, Option<usize>) {
+        let a = w.ai_peek(o).expect("the AI");
+        (a.attitude, a.attack_info)
+    }
+
+    /// Batch I39, `Object`'s constructor and `setTeam` tell the AI its team's attitude and attack priority set (Object.cpp:465, :888;
+    /// they were records only). Team 1's prototype aggressive with the set "Tanks First" (the script engine's index 1), team 2's
+    /// passive with a set the engine does not have. Predicted before the run: a soldier made on team 1 is (aggressive, Some(1)); moved
+    /// to team 2 it is (passive, Some(1)): `getAttackInfo` of an unknown name is the default, whose name is empty, so the set is not
+    /// changed; no record of either call.
+    #[test]
+    fn a_unit_takes_its_teams_attitude_and_attack_set() {
+        let mut w = gate_map_world();
+        assert!(!w.script_engine.is_stand_in());
+        let team1 = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let team2 = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        w.script_engine.num_attack_info = 2;
+        w.script_engine.attack_priority_info[1].name = b"Tanks First".to_vec();
+        for (team, attitude, set) in [(team1, AI_AGGRESSIVE, &b"Tanks First"[..]), (team2, AI_PASSIVE, &b"No Such Set"[..])] {
+            let proto = w.teams.team(team).expect("the team").proto;
+            let p = w.teams.prototype_mut(proto).expect("the prototype");
+            p.team_template.initial_team_attitude = attitude;
+            p.attack_priority_name = set.to_vec();
+        }
+        w.cuts.log = Some(Vec::new());
+        let me = make(&mut w, b"Soldier", team1, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let made = attitude_and_set(&w, me);
+        w.set_team(me, Some(team2));
+        let moved = attitude_and_set(&w, me);
+        let records = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::AiSetAttitude { .. } | CutCall::AiSetAttackInfo { .. })).count();
+        eprintln!("made {made:?}, moved {moved:?}, records {records}");
+        assert_eq!(made, (AI_AGGRESSIVE, Some(1)));
+        assert_eq!(moved, (AI_PASSIVE, Some(1)));
+        assert_eq!(records, 0);
+    }
+
+    /// Batch I39, `transferAttack(fromID, toID)` (AIUpdate.cpp:4166), which the rebuild hole's die and behavior and `CreateObjectDie`
+    /// send to an AI: it reached no arm of the world's AI module, so it did nothing. Predicted before the run: a soldier ordered to
+    /// attack enemy 1 has it as its goal object; after the transfer from enemy 1 to enemy 2, enemy 2; a second transfer from enemy 1
+    /// (no longer the goal) changes nothing.
+    #[test]
+    fn an_attack_is_transferred_to_the_new_victim() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let e1 = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 400.0, y: 105.0, z: 0.0 });
+        let e2 = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 400.0, y: 205.0, z: 0.0 });
+        let ai = w.find_object(me).and_then(|o| o.ai).expect("the soldier's AI");
+        let goal = |w: &mut World| match w.module_call(me, ai, ModuleCall::AiGetGoalObject) {
+            ModuleReply::Id(id) => id,
+            r => panic!("{r:?}"),
+        };
+        w.module_call(me, ai, ModuleCall::AiAttackObject { victim: e1, max_shots: 100, command_source: 0 });
+        let before = goal(&mut w);
+        w.module_call(me, ai, ModuleCall::AiTransferAttack { from: e1, to: e2 });
+        let after = goal(&mut w);
+        w.module_call(me, ai, ModuleCall::AiTransferAttack { from: e1, to: me });
+        let again = goal(&mut w);
+        eprintln!("goal {before} -> {after} -> {again} (enemies {e1}, {e2})");
+        assert_eq!((before, after, again), (e1, e2, e2));
+    }
+
+    /// Batch I39, `destroyObject`'s `setLocomotorGoalNone(); destroyPath()` on the AI (a record only). Predicted before the run: a
+    /// soldier 30 frames into a move across the map has a path and a goal on it; after the call, neither; destroying another soldier
+    /// makes no record of the call.
+    #[test]
+    fn a_destroyed_units_ai_stops() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let other = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 205.0, z: 0.0 });
+        let ai = w.find_object(me).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(me, ai, ModuleCall::AiMoveToPosition { pos: Coord3D { x: 350.0, y: 305.0, z: 0.0 }, command_source: 0 });
+        for _ in 0..30 {
+            w.logic_update().unwrap();
+        }
+        let state = |w: &World| {
+            let a = w.ai_peek(me).expect("the AI");
+            (a.path.is_some(), a.locomotor_goal_type)
+        };
+        let moving = state(&w);
+        w.module_call(me, ai, ModuleCall::AiStopForDestroy);
+        let stopped = state(&w);
+        w.cuts.log = Some(Vec::new());
+        w.destroy_object(other);
+        w.logic_update().unwrap();
+        let records = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::AiStopForDestroy { .. })).count();
+        eprintln!("moving {moving:?}, stopped {stopped:?}, records {records}");
+        assert_eq!(moving, (true, LocoGoalType::PositionOnPath));
+        assert_eq!(stopped, (false, LocoGoalType::None));
+        assert_eq!(records, 0);
+    }
+
+    /// Batch I39, `setWeaponBonusCondition` and `clearWeaponBonusCondition` tell the weapon set (`weaponSetOnWeaponBonusChange`, a
+    /// record only): a weapon between shots restarts its delay from now at the new bonus (Weapon.cpp `onWeaponBonusChange`). A
+    /// soldier shoots an enemy 50 away; 5 frames after its shot (GateGun: 500 ms between shots, 15 frames) the soldier is garrisoned
+    /// (a condition the fixture gives no bonus). Predicted before the run: the reload restarts on that frame and the next shot is 15
+    /// frames after it (5 frames later than before); no record. **Missed on the first run, by one frame, in the prediction's count:**
+    /// the reload restarted on that frame (8) and the next shot moved to 23 = 8 + 15, as predicted, but from 17, 6 frames later, not 5:
+    /// the shot was fired on frame 2 (17 = 2 + 15), and the loop saw it after the next update (frame 3). The move is checked as the
+    /// frames since the shot.
+    #[test]
+    fn a_weapon_bonus_change_restarts_the_reload() {
+        let mut w = gate_map_world();
+        assert!(w.pathfinder_op(PfOp::NewMap));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let me = make(&mut w, b"Soldier", team, Coord3D { x: 100.0, y: 105.0, z: 0.0 });
+        let enemy = make(&mut w, b"Soldier", enemy_team, Coord3D { x: 150.0, y: 105.0, z: 0.0 });
+        let ai = w.find_object(me).and_then(|o| o.ai).expect("the soldier's AI");
+        w.module_call(me, ai, ModuleCall::AiAttackObject { victim: enemy, max_shots: 100, command_source: 0 });
+        let gun = |w: &World| w.find_object(me).and_then(|o| o.weapon_set.get_cur_weapon().cloned()).expect("the gun");
+        let mut shot = None;
+        for _ in 0..90 {
+            w.logic_update().unwrap();
+            if gun(&w).get_status(w.frame()) == WeaponStatus::BetweenFiringShots {
+                shot = Some(w.frame());
+                break;
+            }
+        }
+        let shot = shot.expect("a shot within 90 frames");
+        for _ in 0..5 {
+            w.logic_update().unwrap();
+        }
+        let before = gun(&w).possible_next_shot_frame();
+        let now = w.frame();
+        w.cuts.log = Some(Vec::new());
+        w.set_weapon_bonus_condition(me, crate::logic::weapon_bonus::condition::GARRISONED);
+        let g = gun(&w);
+        let records = w.cuts.log.as_ref().unwrap().iter().filter(|c| matches!(c, CutCall::WeaponSetOnWeaponBonusChange { .. })).count();
+        eprintln!("shot on {shot}, now {now}, next shot {before} -> {}, reload started {}, records {records}", g.possible_next_shot_frame(), g.last_reload_started_frame());
+        assert_eq!(g.last_reload_started_frame(), now);
+        assert_eq!(g.possible_next_shot_frame(), now + 15);
+        assert_eq!(g.possible_next_shot_frame(), before + (now - (before - 15)));
+        assert_eq!(records, 0);
+    }
+}

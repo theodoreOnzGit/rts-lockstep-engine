@@ -147,6 +147,12 @@ pub fn update_weapon_set<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) {
     with_set(host, o, |host, set| set.update_weapon_set(host, o));
 }
 
+/// `m_weaponSet.weaponSetOnWeaponBonusChange(this)` (integration batch I39): "Our weapon bonus just changed, so we need to
+/// immediately update our weapons" (each weapon's reload rescaled to the new bonus).
+pub fn weapon_set_on_weapon_bonus_change<H: ObjectWeaponHost>(host: &mut H, o: ObjectId) {
+    with_set(host, o, |host, set| set.weapon_set_on_weapon_bonus_change(host, o));
+}
+
 /// `Object::reloadAllAmmo(now)`.
 pub fn reload_all_ammo<H: ObjectWeaponHost>(host: &mut H, o: ObjectId, now: bool) {
     with_set(host, o, |host, set| set.reload_all_ammo(host, o, now));

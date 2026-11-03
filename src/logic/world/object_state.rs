@@ -576,14 +576,14 @@ impl World {
         self.emit(ObjectClientEvent::DrawableModelCondition { object_id: id, op });
     }
 
-    /// `setWeaponBonusCondition(wst)`: on a change the weapons are told (a cut point).
+    /// `setWeaponBonusCondition(wst)`: on a change the weapons are told.
     pub fn set_weapon_bonus_condition(&mut self, id: ObjectId, wst: i32) {
         let Some(o) = self.objects.find_mut(id) else { return };
         let old = o.weapon_bonus_condition;
         o.weapon_bonus_condition |= 1u32.wrapping_shl(wst as u32);
         if old != o.weapon_bonus_condition {
             // Our weapon bonus just changed, so we need to immediately update our weapons
-            self.cut(CutCall::WeaponSetOnWeaponBonusChange { object: id });
+            self.object_weapon_bonus_changed(id);
         }
     }
 
@@ -593,6 +593,16 @@ impl World {
         let old = o.weapon_bonus_condition;
         o.weapon_bonus_condition &= !1u32.wrapping_shl(wst as u32);
         if old != o.weapon_bonus_condition {
+            self.object_weapon_bonus_changed(id);
+        }
+    }
+
+    /// `m_weaponSet.weaponSetOnWeaponBonusChange(this)`: with `cuts.live_ai` (integration batch I39) the object's own weapon set,
+    /// as [`object_update_weapon_set`](Self::object_update_weapon_set); otherwise the cut point, as before.
+    fn object_weapon_bonus_changed(&mut self, id: ObjectId) {
+        if self.cuts.live_ai {
+            crate::logic::world::object_weapons::weapon_set_on_weapon_bonus_change(self, id);
+        } else {
             self.cut(CutCall::WeaponSetOnWeaponBonusChange { object: id });
         }
     }

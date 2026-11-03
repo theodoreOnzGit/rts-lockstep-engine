@@ -1117,6 +1117,7 @@ impl ProbeModule {
             | ModuleCall::AiSetAllowedToChase(_)
             | ModuleCall::AiSetDesiredSpeed(_)
             | ModuleCall::AiSetAttackInfo(_)
+            | ModuleCall::AiStopForDestroy
             | ModuleCall::AiClearWaypointQueue
             | ModuleCall::AiExecuteWaypointQueue
             | ModuleCall::AiDeliverPayloadViaModuleData(_)

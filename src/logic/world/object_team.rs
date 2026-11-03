@@ -41,6 +41,35 @@ pub const RADAR_PRIORITY_STRUCTURE: u8 = 2;
 pub const RADAR_PRIORITY_UNIT: u8 = 3;
 
 impl World {
+    /// Whether a team's attitude and attack priority set reach its members' AI ([`ai_take_team_attitude`](Self::ai_take_team_attitude)):
+    /// with `cuts.live_ai` and `cuts.live_teams` (integration batch I39); otherwise the cut points, as before.
+    pub(crate) fn ai_team_attitude_live(&self) -> bool {
+        self.cuts.live_ai && self.cuts.live_teams
+    }
+
+    /// `ai->setAttitude(proto->getTemplateInfo()->m_initialTeamAttitude)`, then, when the prototype names an attack priority set,
+    /// `getAttackInfo(name)` and, if that set has a name (the default's is empty), `ai->setAttackInfo(info)`: Object.cpp:465 at
+    /// creation and :888 in `setTeam` (integration batch I39; they were cut points). Nothing without an AI or a prototype. While
+    /// the script engine is out of the world, its stand-in has no sets: a named set is then the cut point
+    /// (`CutCall::AiSetAttackInfo`), not the default.
+    pub(crate) fn ai_take_team_attitude(&mut self, id: ObjectId, team: TeamId) {
+        let Some(ai) = self.objects.find(id).and_then(|o| o.ai) else { return };
+        let proto = self.teams.team(team).and_then(|t| self.teams.prototype(t.proto));
+        let Some((attitude, name)) = proto.map(|p| (p.team_template.initial_team_attitude, p.attack_priority_name.clone())) else { return };
+        self.module_call(id, ai, ModuleCall::AiSetAttitude(attitude));
+        if name.is_empty() {
+            return;
+        }
+        if self.script_engine.is_stand_in() {
+            self.cut(CutCall::AiSetAttackInfo { object: id, team });
+            return;
+        }
+        let info = self.script_engine.get_attack_info_index(&name);
+        if !self.script_engine.attack_priority_info[info].name.is_empty() {
+            self.module_call(id, ai, ModuleCall::AiSetAttackInfo(Some(info)));
+        }
+    }
+
     // ---- team ---------------------------------------------------------------------------------
 
     /// `getTeam()`: the team id, `None` for no team.
@@ -165,7 +194,9 @@ impl World {
                 }
             }
             // now, adjust the attitude of the unit to its new team.
-            if self.tq().team_has_template_info(new_team) && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+            if self.ai_team_attitude_live() {
+                self.ai_take_team_attitude(id, new_team);
+            } else if self.tq().team_has_template_info(new_team) && self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
                 self.cut(CutCall::AiSetAttitude { object: id, team: new_team });
                 if self.tq().team_attack_info(new_team) {
                     self.cut(CutCall::AiSetAttackInfo { object: id, team: new_team });

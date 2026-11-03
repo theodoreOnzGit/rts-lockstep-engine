@@ -213,6 +213,25 @@ pub(crate) fn set_goal_object<H: AiStateHost>(sm: &mut Sm<H>, h: &H, obj: Object
     sm.set_goal_object(o.as_ref());
 }
 
+/// `transferAttack(fromID, toID)` (AIUpdate.cpp:4166, integration batch I39): whoever was `from` in the victim, the machine's
+/// goal object or a turret's target is now `to` (`findObjectByID(toID)`: no object when it is gone).
+pub fn transfer_attack<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, from: ObjectId, to: ObjectId) {
+    if ai(h).current_victim_id == from {
+        ai(h).current_victim_id = to;
+    }
+    let goal = sm.goal_object_id();
+    if goal == from && h.object_exists(goal) {
+        set_goal_object(sm, h, to);
+    }
+    // Transfer the turrets too this frame.
+    let new_target = h.object_exists(to).then_some(to);
+    for tur in 0..crate::common::game_common::MAX_TURRETS {
+        if crate::logic::ai::ai_attack_states::get_turret_target_object(h, tur, false) == Some(from) {
+            crate::logic::ai::ai_attack_states::set_turret_target_object(h, tur, new_target, true);
+        }
+    }
+}
+
 fn unblock<H: AiStateHost>(h: &mut H) {
     let a = ai(h);
     a.blocked_frames = 0;

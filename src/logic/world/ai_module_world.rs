@@ -313,6 +313,21 @@ impl AiModuleBody {
                 }
                 ModuleReply::Bool(r)
             }
+            // (batch I39: `transferAttack(fromID, toID)`, which the rebuild hole's die and behavior and `CreateObjectDie` send; it
+            // reached no arm here, so their attackers kept the dead victim)
+            ModuleCall::AiTransferAttack { from, to } => {
+                world.with_ai_self(me.object, |w| m.run(w, |sm, h| crate::logic::ai::ai_commands::transfer_attack(sm, h, from, to)));
+                ModuleReply::Done
+            }
+            // (batch I39: `destroyObject`: "We desperately need to stop here, or else the destructor of the statemachine will try to
+            // do stopping logic")
+            ModuleCall::AiStopForDestroy => {
+                world.with_ai_self(me.object, |w| {
+                    m.ai_mut().set_locomotor_goal_none(w);
+                    m.ai_mut().destroy_path(w);
+                });
+                ModuleReply::Done
+            }
             ModuleCall::AiDoPathfind => {
                 world.with_ai_self(me.object, |w| m.do_pathfind(w));
                 ModuleReply::Done

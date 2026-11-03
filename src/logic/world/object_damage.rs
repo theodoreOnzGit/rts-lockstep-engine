@@ -307,8 +307,13 @@ impl World {
                 }
                 // Transfer any attackers from the destroyed building to the hole.
                 for obj in self.objects.ids_in_order() {
-                    if self.objects.find(obj).is_some_and(|o| o.ai.is_some()) {
-                        self.cut(CutCall::AiTransferAttack { object: obj, old_victim: id, new_victim: hole_id });
+                    if let Some(ai) = self.objects.find(obj).and_then(|o| o.ai) {
+                        // (with `live_ai` since integration batch I39: the AI's `transferAttack`)
+                        if self.cuts.live_ai {
+                            self.module_call(obj, ai, ModuleCall::AiTransferAttack { from: id, to: hole_id });
+                        } else {
+                            self.cut(CutCall::AiTransferAttack { object: obj, old_victim: id, new_victim: hole_id });
+                        }
                     }
                 }
             }
