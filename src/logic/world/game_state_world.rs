@@ -139,6 +139,8 @@ impl GameStateHost<WorldBlock> for World {
                 let notes = std::mem::take(&mut self.cuts.pending_script_notes);
                 se.apply_notes(self, notes);
                 let r = se.xfer(self, xfer);
+                // (integration batch I49: a loaded `m_gameDifficulty` reaches the World's copy, which the players read)
+                self.cuts.player_host.global_difficulty = crate::logic::world::player_init::difficulty_from_int(se.game_difficulty);
                 self.script_engine = se;
                 r
             }

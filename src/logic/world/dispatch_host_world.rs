@@ -342,11 +342,8 @@ impl DispatchHost for World {
         // batch I7c: `GameLogic::prepareNewGame` (GameLogicDispatch.cpp); the background window and the shell are the
         // client's
         self.dispatch_cut("GameLogic::prepareNewGame (client: background, shell)", &[i64::from(mode), i64::from(diff), i64::from(rank_points)]);
-        self.cuts.player_host.global_difficulty = match diff {
-            0 => crate::common::game_common::GameDifficulty::Easy,
-            2 => crate::common::game_common::GameDifficulty::Hard,
-            _ => crate::common::game_common::GameDifficulty::Normal,
-        };
+        // `TheScriptEngine->setGlobalDifficulty(diff)` (integration batch I49: it set only the World's copy)
+        self.set_global_difficulty(diff);
         self.cuts.game_loop.game_mode = mode;
         if !self.cuts.new_game.pending_file.is_empty() {
             self.cuts.new_game.map_name = std::mem::take(&mut self.cuts.new_game.pending_file);
@@ -412,6 +409,17 @@ impl DispatchHost for World {
         self.cut(CutCall::Host { call: "client", args: Vec::new(), text: format!("{call:?}").into_bytes() });
     }
 }
+
+// --- p1w13-sonnet --- (integration batch I49)
+impl World {
+    /// `TheScriptEngine->setGlobalDifficulty(diff)`: the engine's `m_gameDifficulty` (as upstream, the int as given) and the
+    /// World's copy that the players and AI read while the engine is checked out (see `PlayerHostCuts::global_difficulty`).
+    pub fn set_global_difficulty(&mut self, diff: i32) {
+        self.script_engine.set_global_difficulty(diff);
+        self.cuts.player_host.global_difficulty = crate::logic::world::player_init::difficulty_from_int(diff);
+    }
+}
+// --- end p1w13-sonnet ---
 
 #[cfg(test)]
 mod tests {

@@ -144,7 +144,12 @@ pub struct PlayerHostCuts {
     pub side_scripts: BTreeMap<i32, ScriptListRef>,
     /// See `side_scripts`.
     pub skirmish_side_scripts: BTreeMap<i32, ScriptListRef>,
-    /// `TheScriptEngine->getGlobalDifficulty()`.
+    /// `TheScriptEngine->getGlobalDifficulty()`: ~~the value~~ **Corrected 2026-11-03 (batch I49):** the World's copy of the script engine's
+    /// `m_gameDifficulty`, which the engine's own scripts and save read. Before this batch the two were separate stores:
+    /// `prepareNewGame` set only this one and a load only the engine's, so a new game's difficulty never reached the scripts
+    /// and a loaded game's never reached the players. Both are now written together ([`World::set_global_difficulty`]) and
+    /// this copy follows the engine's after its block is loaded; the copy stays because the engine is checked out of the
+    /// World while it runs, and a player or AI made then reads this.
     pub global_difficulty: GameDifficulty,
     /// The AI players, by player index.
     pub ai: BTreeMap<PlayerIndex, AiPlayerStandIn>,

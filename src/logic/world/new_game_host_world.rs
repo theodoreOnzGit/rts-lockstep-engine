@@ -801,6 +801,8 @@ mod dispatched_tests {
         w.logic_update().unwrap();
         assert_eq!(w.cuts.game_loop.game_mode, game_mode::SINGLE_PLAYER);
         assert_eq!(w.cuts.player_host.global_difficulty, crate::common::game_common::GameDifficulty::Hard);
+        // (integration batch I49: and the script engine's, which its scripts and save read)
+        assert_eq!(w.script_engine.game_difficulty, crate::logic::world::script_engine::difficulty::HARD);
         assert!(w.start_new_game_pending());
         assert_eq!(w.game_logic.rank_points_to_add_at_game_start, 7);
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);

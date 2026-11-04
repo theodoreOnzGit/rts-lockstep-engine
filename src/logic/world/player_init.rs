@@ -371,7 +371,7 @@ fn pl_handicap<H: PlayerInitHost>(h: &H, p: PlayerIndex) -> PResult<crate::commo
 }
 
 /// `(GameDifficulty) diffInt`: the enum holds any int upstream; the three it names are what the Rust enum holds.
-fn difficulty_from_int(v: i32) -> GameDifficulty {
+pub(crate) fn difficulty_from_int(v: i32) -> GameDifficulty {
     match v {
         0 => GameDifficulty::Easy,
         1 => GameDifficulty::Normal,

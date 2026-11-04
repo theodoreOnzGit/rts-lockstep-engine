@@ -3118,4 +3118,23 @@ mod all_live_tests {
         assert_ne!(w.object_globals().draw_icon_ui, w.game_logic.draw_icon_ui);
         assert_eq!(w.wall_height(), w.cuts.wall_height);
     }
+
+    /// Predicted before the run (batch I49): `setGlobalDifficulty` reaches both the script engine and the World's copy, and a
+    /// loaded game's difficulty (saved in the engine's block) reaches the World's copy, which the players and AI read. Before the
+    /// batch the loaded game's copy stayed `Normal`, so a computer player made after a load took the wrong difficulty.
+    #[test]
+    fn a_loaded_games_difficulty_reaches_the_players() {
+        use crate::common::game_common::GameDifficulty;
+        let mut a = gate_world();
+        a.set_global_difficulty(2);
+        assert_eq!(a.script_engine.game_difficulty, crate::logic::world::script_engine::difficulty::HARD);
+        assert_eq!(a.cuts.player_host.global_difficulty, GameDifficulty::Hard);
+        let bytes = a.save_game().expect("the save");
+        let mut b = gate_map_world();
+        assert_eq!(b.cuts.player_host.global_difficulty, GameDifficulty::Normal);
+        b.load_game(bytes).expect("the load");
+        assert_eq!(b.script_engine.game_difficulty, crate::logic::world::script_engine::difficulty::HARD);
+        assert_eq!(b.cuts.player_host.global_difficulty, GameDifficulty::Hard);
+        assert_eq!(crate::logic::world::player_ops::PlayerHost::globals(&b).global_difficulty, GameDifficulty::Hard);
+    }
 }
