@@ -219,20 +219,17 @@ mod tests {
         let (mut w, _) = world();
         w.cuts.live_teams = true;
         w.cuts.game_loop.game_mode = game_mode::SHELL;
-        w.cuts.new_game.colors = vec![(0x00ff_0000, 0x0080_0000)];
+        crate::logic::world::new_game_host_world::tests::multiplayer_colors(&mut w);
         w.sides = crate::logic::sides_list::SidesList::new();
         w.cuts.new_game.map_objects = Vec::new();
         let file = skirmish_map(&mut w);
         w.save_side.disk.insert(MAP.to_ascii_lowercase(), file);
-        // `TheMapCache`'s entry for the map (MapUtil.cpp scans the map files for it; not translated yet, so the World's
-        // table holds it): two players, and the first one's start
-        w.cuts.map_cache.insert(
-            MAP.to_ascii_lowercase(),
-            crate::logic::world::game_logic_start::MapStartInfo {
-                num_players: 2,
-                waypoints: vec![(b"Player_1_Start".to_vec(), crate::common::base_type::Coord3D { x: 100.0, y: 100.0, z: 0.0 })],
-            },
-        );
+        // `TheMapCache`'s entry for the map, as the engine makes it at start (~~a table: two players, the first one's
+        // start~~ batch I56: `updateCache` over the disk; the map has one start waypoint, so one player). The shipped
+        // `Maps\MapCache.ini` is empty here: the map is a user map (the user data path is empty, so `Maps\`)
+        w.save_side.disk.insert(b"maps\\mapcache.ini".to_vec(), Vec::new());
+        w.update_map_cache().expect("the map cache");
+        assert_eq!(w.statics.map_cache.find_map(MAP).map(|m| m.num_players), Some(1));
         if skirmish {
             // (as the skirmish menu makes it: `enterGame()`, the slots, then `startGame(0)` when the game is launched)
             let mut g = GameInfo::new(&mut w);

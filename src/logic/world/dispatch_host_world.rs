@@ -286,7 +286,8 @@ impl DispatchHost for World {
         count[0]
     }
     fn d_max_beacons(&self) -> i32 {
-        self.cuts.max_beacons_per_player
+        // (batch I56: the statics' settings; was `cuts.max_beacons_per_player`, the constructor's 3)
+        self.statics.multiplayer_settings.get_max_beacons_per_player()
     }
     fn d_new_beacon(&mut self, template_id: i32, player: i32, pos: &Coord3D) -> R<u32> {
         let team = self.players.get_nth(player).and_then(|p| p.default_team);

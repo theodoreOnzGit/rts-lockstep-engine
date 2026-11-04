@@ -777,6 +777,12 @@ pub struct HeightMapParse {
 }
 
 impl HeightMapParse {
+    /// Batch I56: `m_width`, `m_height` and `m_borderSize` as the parse left them (`MapUtil.cpp`'s `ParseSizeOnly`
+    /// statics).
+    pub fn size(&self) -> (i32, i32, i32) {
+        (self.width, self.height, self.border_size)
+    }
+
     /// The map, if the parse found a `HeightMapData` chunk. A map whose
     /// stored extents no longer match its data (version 1 through
     /// `ParseHeightMapData`) keeps them as stored: [`LogicHeightMap::new`]

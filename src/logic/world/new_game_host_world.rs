@@ -90,10 +90,6 @@ pub struct NewGameCuts {
     pub files: Vec<Vec<u8>>,
     /// `TheGameEngine->isMultiplayerSession()`.
     pub multiplayer_session: bool,
-    /// `TheMultiplayerSettings`' colours: each colour and night colour.
-    pub colors: Vec<(i32, i32)>,
-    /// `TheMultiplayerSettings->isShroudInMultiplayer()` (TRUE, its constructor's).
-    pub shroud_in_multiplayer: bool,
     /// The answer of the multiplayer scripts file (`None`: it does not open; `Some(false)`: it does not parse).
     pub multiplayer_scripts: Option<bool>,
     /// The map objects (`MapObject::getFirstMapObject` and on), each with its properties.
@@ -278,7 +274,9 @@ impl NewGameHost for World {
         self.statics.player_template_store.nth_player_template(i).map(|t| self.names.key_to_name(t.name_key()).to_vec()).unwrap_or_default()
     }
     fn sn_color(&self, index: i32) -> Option<(i32, i32)> {
-        usize::try_from(index).ok().and_then(|i| self.cuts.new_game.colors.get(i)).copied()
+        // (batch I56: the statics' settings, `getColor` with its random and observer colours; was `cuts.new_game.colors`, which
+        // answered NULL for both)
+        self.statics.multiplayer_settings.color_at(index).map(|c| (c.color(), c.night_color()))
     }
     fn sn_add_side(&mut self, side: &SideDict) {
         // the keys in the order `startNewGame` sets them
@@ -514,7 +512,7 @@ impl NewGameHost for World {
         }
     }
     fn sn_shroud_in_multiplayer(&self) -> bool {
-        self.cuts.new_game.shroud_in_multiplayer
+        self.statics.multiplayer_settings.is_shroud_in_multiplayer()
     }
     fn sn_use_trees(&self) -> bool {
         self.statics.global_data.the_global_data().is_some_and(|g| g.use_trees)
@@ -665,12 +663,21 @@ impl NewGameHost for World {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! `startNewGame` itself is checked against the compiled GameLogic.cpp by `tests/differential_game_logic_new_game.rs`
     //! with a recording host; this checks a game set up in the world from a map's sides and objects.
     use super::*;
     use crate::common::recorder::game_mode;
     use crate::logic::world::player_host_world::tests::world;
+
+    /// Batch I56: `Multiplayer.ini`'s one colour (white by day, grey by night) on the world's disk, read into the statics as the
+    /// game's INI load reads it (it was a table of the World's cuts).
+    pub(crate) fn multiplayer_colors(w: &mut World) {
+        let ini = b"MultiplayerColor White\n TooltipName = Color:White\n RGBColor = R:255 G:255 B:255\n RGBNightColor = R:128 G:128 B:128\nEnd\n";
+        w.save_side.disk.insert(b"data\\ini\\multiplayer.ini".to_vec(), ini.to_vec());
+        assert!(w.load_ini_overrides(b"Data\\INI\\Multiplayer.ini").expect("the INI"));
+        assert_eq!(w.statics.multiplayer_settings.get_num_colors(), 1);
+    }
 
     /// A single-player map without game options: the map's sides (the neutral one, and `Player1`, human, America) and a
     /// tank owned by `teamPlayer1`. `startNewGame(FALSE)` marks the game pending; the next frame starts it: the replay
@@ -681,7 +688,7 @@ mod tests {
         let (mut w, _) = world();
         w.cuts.live_teams = true;
         w.cuts.game_loop.game_mode = game_mode::SINGLE_PLAYER;
-        w.cuts.new_game.colors = vec![(0x00ff_ffff, 0x0080_8080)];
+        multiplayer_colors(&mut w);
         w.cuts.new_game.map_name = b"Maps\\Test\\Test.map".to_vec();
         w.sides = crate::logic::sides_list::SidesList::new();
         for (name, human, faction) in [(&b""[..], false, &b""[..]), (b"Player1", true, b"FactionAmerica")] {
@@ -776,7 +783,7 @@ mod map_file_game_tests {
         let (mut w, _) = world();
         w.cuts.live_teams = true;
         w.cuts.game_loop.game_mode = game_mode::SINGLE_PLAYER;
-        w.cuts.new_game.colors = vec![(0x00ff_ffff, 0x0080_8080)];
+        super::tests::multiplayer_colors(&mut w);
         w.cuts.new_game.map_name = b"Maps\\Test\\Test.map".to_vec();
         w.sides = crate::logic::sides_list::SidesList::new();
         w.cuts.new_game.map_objects = Vec::new();

@@ -51,6 +51,7 @@ pub mod money;
 pub mod damage_fx;
 // --- end p1w1-armor ---
 // --- p1w2-terrain ---
+pub mod map_cache;
 pub mod multiplayer_settings;
 pub mod terrain_types;
 // --- end p1w2-terrain ---

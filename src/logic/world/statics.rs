@@ -86,6 +86,13 @@ pub struct GameStatics {
     /// `TheTerrainRoads` (`Roads.ini`'s road and bridge types; `BridgeBehavior` and `TerrainLogic` read the bridges).
     pub terrain_roads: crate::common::terrain_roads::TerrainRoadCollection,
     // --- end batch I50 ---
+    // --- batch I56 ---
+    /// `TheMultiplayerSettings` (`Multiplayer.ini`: the player colours, shroud, beacons, starting money).
+    pub multiplayer_settings: crate::common::multiplayer_settings::MultiplayerSettings,
+    /// `TheMapCache` (each map's player count, start waypoints, size and CRC). Made by `updateCache` at engine start
+    /// ([`crate::logic::world::game_logic::World::update_map_cache`]), read during a game.
+    pub map_cache: crate::common::map_cache::MapCache,
+    // --- end batch I56 ---
     // New stores go here, each in its translator's marked block.
 }
 

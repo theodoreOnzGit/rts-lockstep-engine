@@ -101,7 +101,10 @@ pub enum MissingFiles {
     Skip,
 }
 
-/// The game text, by label (`TheGameText->fetch(label)`); a label it does not hold fetches the empty string.
+/// The game text, by label (`TheGameText->fetch(label)`); ~~a label it does not hold fetches the empty string~~ **corrected
+/// 2026-11-04 (batch I56):** a label it does not hold fetches upstream's `MISSING: 'label'` (GameText.cpp:1301). The empty string
+/// was not upstream's, and it was not harmless: `parseAndTranslateLabel` treats an empty translation as `INI_INVALID_DATA`, and
+/// `parseMapCacheDefinition` keeps no map whose display name is empty, so a game read without its string file lost both.
 #[derive(Clone, Debug, Default)]
 pub struct TextTable {
     /// The strings by label.
@@ -110,7 +113,13 @@ pub struct TextTable {
 
 impl GameTextFetch for TextTable {
     fn fetch(&self, label: &[u8]) -> UnicodeString {
-        self.strings.get(label).cloned().unwrap_or_else(UnicodeString::new)
+        self.strings.get(label).cloned().unwrap_or_else(|| {
+            // `missingString.format(L"MISSING: '%hs'", label)`: `%hs` widens each byte
+            let mut units: Vec<u16> = "MISSING: '".encode_utf16().collect();
+            units.extend(label.iter().map(|&b| u16::from(b)));
+            units.push(u16::from(b'\''));
+            UnicodeString::try_from_chars(&units).unwrap_or_default()
+        })
     }
 }
 
@@ -130,6 +139,8 @@ pub struct SubsystemFiles {
 pub const LOGIC_SUBSYSTEMS: &[SubsystemFiles] = &[
     SubsystemFiles { name: "TheWritableGlobalData", path1: Some(b"Data\\INI\\Default\\GameData.ini"), path2: Some(b"Data\\INI\\GameData.ini"), dirpath: None },
     SubsystemFiles { name: "TheScienceStore", path1: Some(b"Data\\INI\\Default\\Science.ini"), path2: Some(b"Data\\INI\\Science.ini"), dirpath: None },
+    // (batch I56: GameEngine.cpp:423, after the science store)
+    SubsystemFiles { name: "TheMultiplayerSettings", path1: Some(b"Data\\INI\\Default\\Multiplayer.ini"), path2: Some(b"Data\\INI\\Multiplayer.ini"), dirpath: None },
     // (batch I50: the client's subsystem the logic reads, after the multiplayer settings and terrain types, GameEngine.cpp:425)
     SubsystemFiles { name: "TheTerrainRoads", path1: Some(b"Data\\INI\\Default\\Roads.ini"), path2: Some(b"Data\\INI\\Roads.ini"), dirpath: None },
     SubsystemFiles { name: "TheRankInfoStore", path1: None, path2: Some(b"Data\\INI\\Rank.ini"), dirpath: None },
@@ -191,6 +202,11 @@ pub struct GameDataLoad {
     pub command_buttons: crate::logic::command_button::CommandButtonStore,
     /// Integration batch I50: `TheTerrainRoads`.
     pub terrain_roads: crate::common::terrain_roads::TerrainRoadCollection,
+    /// Integration batch I56: `TheMultiplayerSettings`.
+    pub multiplayer_settings: crate::common::multiplayer_settings::MultiplayerSettings,
+    /// Integration batch I56: `TheMapCache`, which no INI of this load reads (it is made after the load, by
+    /// `updateCache`); kept so that a load made again from the statics gives it back.
+    pub map_cache: crate::common::map_cache::MapCache,
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -225,6 +241,8 @@ impl GameDataLoad {
             crates: CrateSystem::new(),
             command_buttons: Default::default(),
             terrain_roads: Default::default(),
+            multiplayer_settings: Default::default(),
+            map_cache: Default::default(),
             button_lookups: None,
         })
     }
@@ -278,6 +296,8 @@ impl GameDataLoad {
             crates: st.crate_system,
             command_buttons: st.command_buttons,
             terrain_roads: st.terrain_roads,
+            multiplayer_settings: st.multiplayer_settings,
+            map_cache: st.map_cache,
             button_lookups: None,
         })
     }
@@ -301,6 +321,8 @@ impl GameDataLoad {
             ai_data: self.ai_data.current().clone(),
             command_buttons: self.command_buttons,
             terrain_roads: self.terrain_roads,
+            multiplayer_settings: self.multiplayer_settings,
+            map_cache: self.map_cache,
         };
         (statics, self.names)
     }
@@ -346,7 +368,7 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 19] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 22] = [
     BlockParse { token: "AIData", parse: ai_data_block },
     BlockParse { token: "Armor", parse: armor_block },
     BlockParse { token: "Bridge", parse: bridge_block },
@@ -356,6 +378,9 @@ static BLOCKS: [BlockParse<GameDataLoad>; 19] = [
     BlockParse { token: "DamageFX", parse: damage_fx_block },
     BlockParse { token: "GameData", parse: game_data_block },
     BlockParse { token: "Locomotor", parse: locomotor_block },
+    BlockParse { token: "MultiplayerColor", parse: multiplayer_color_block },
+    BlockParse { token: "MultiplayerSettings", parse: multiplayer_settings_block },
+    BlockParse { token: "MultiplayerStartingMoneyChoice", parse: multiplayer_money_block },
     BlockParse { token: "Object", parse: object_block },
     BlockParse { token: "ObjectCreationList", parse: ocl_block },
     BlockParse { token: "ObjectReskin", parse: object_reskin_block },
@@ -497,6 +522,18 @@ fn command_set_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     c.command_buttons.parse_command_set_definition(ini)
 }
 
+fn multiplayer_settings_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.multiplayer_settings.parse_multiplayer_settings_definition(ini)
+}
+
+fn multiplayer_color_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.multiplayer_settings.parse_multiplayer_color_definition(ini)
+}
+
+fn multiplayer_money_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.multiplayer_settings.parse_multiplayer_starting_money_choice_definition(ini)
+}
+
 fn upgrade_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     c.upgrades.parse_upgrade_definition(ini, &mut c.names)
 }
@@ -542,6 +579,31 @@ mod tests {
         assert_ne!(base.get_template_id(), skin.get_template_id());
         assert_eq!(skin.get_weapon_template_sets(), base.get_weapon_template_sets());
         assert_eq!((base.get_fence_width(), skin.get_fence_width()), (0.0, 3.0));
+    }
+
+    /// Batch I56: `TheMultiplayerSettings` is read in the logic's load, after the science store, from `Multiplayer.ini` (it was
+    /// never read: the World answered its questions from tables). Predicted: the block's beacon count and shroud flag, two
+    /// colours with the alpha byte set (`0xFF` << 24 on the RGB), the default starting money, and all of it kept by
+    /// [`GameDataLoad::into_statics`].
+    #[test]
+    fn the_multiplayer_settings_load_into_the_statics() {
+        let mut f = files();
+        f.insert(
+            b"Data\\INI\\Multiplayer.ini",
+            b"MultiplayerSettings\n MaxBeaconsPerPlayer = 5\n UseShroud = No\nEnd\n\
+              MultiplayerColor Gold\n TooltipName = Color:Gold\n RGBColor = R:255 G:200 B:0\n RGBNightColor = R:128 G:100 B:0\nEnd\n\
+              MultiplayerColor Red\n TooltipName = Color:Red\n RGBColor = R:255 G:0 B:0\n RGBNightColor = R:128 G:0 B:0\nEnd\n\
+              MultiplayerStartingMoneyChoice\n Value = 10000\n Default = Yes\nEnd\n"
+                .to_vec(),
+        );
+        let load = load_game_data(&f, MissingFiles::Skip, TextTable::default()).expect("the INI");
+        let (st, _) = load.into_statics();
+        let m = &st.multiplayer_settings;
+        assert_eq!((m.get_max_beacons_per_player(), m.is_shroud_in_multiplayer(), m.get_num_colors()), (5, false, 2));
+        let red = m.color_at(1).expect("the second colour");
+        assert_eq!((red.color() as u32, red.night_color() as u32), (0xFFFF_0000, 0xFF80_0000));
+        assert_eq!(m.get_default_starting_money().count_money(), 10000);
+        assert!(m.color_at(2).is_none() && m.color_at(crate::common::multiplayer_settings::PLAYERTEMPLATE_OBSERVER).is_some());
     }
 
     /// Batch I12: upstream's `INI::load` throws on a file it cannot open; a client block (`FXList`) in a logic file is an unknown

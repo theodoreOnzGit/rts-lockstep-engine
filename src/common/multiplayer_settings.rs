@@ -292,6 +292,19 @@ impl MultiplayerSettings {
         }
     }
 
+    /// `getColor(which)` for a caller that only reads the colour (the same choice as [`MultiplayerSettings::get_color`]).
+    pub fn color_at(&self, which: i32) -> Option<&MultiplayerColorDefinition> {
+        if which == PLAYERTEMPLATE_RANDOM {
+            Some(&self.random_color)
+        } else if which == PLAYERTEMPLATE_OBSERVER {
+            Some(&self.observer_color)
+        } else if which < 0 || which >= self.get_num_colors() {
+            None
+        } else {
+            self.color_list.get(&which)
+        }
+    }
+
     /// `getDefaultStartingMoney()`: the default amount, or the constructor's
     /// `Money` if no default was given (upstream asserts there is one).
     pub fn get_default_starting_money(&self) -> &Money {

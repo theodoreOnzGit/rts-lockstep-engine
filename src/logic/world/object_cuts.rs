@@ -2377,14 +2377,10 @@ pub struct ObjectCuts {
     pub campaign: crate::logic::world::game_logic_save_host_world::CampaignStandIn,
     /// batch I7b: the objects whose drawable is selected (`getDrawable()->isSelected()`, the client's).
     pub selected_drawables: BTreeSet<ObjectId>,
-    /// batch I7b: `TheMultiplayerSettings->getMaxBeaconsPerPlayer()` (3, its constructor's).
-    pub max_beacons_per_player: i32,
     /// batch I7b: the network's slots whose player name is the player's display name (by slot).
     pub network_slot_players: BTreeMap<i32, i32>,
     /// batch I7c: the challenge generals that do not start enabled (`!isStartingEnabled()`), by player template name.
     pub challenge_generals_locked: BTreeSet<Vec<u8>>,
-    /// batch I7c: `TheMapCache`: each map's player count and waypoints, by lower-cased name.
-    pub map_cache: BTreeMap<Vec<u8>, crate::logic::world::game_logic_start::MapStartInfo>,
     /// batch I7c: the answers of the units `startNewGame` reaches that the world does not hold yet.
     pub new_game: crate::logic::world::new_game_host_world::NewGameCuts,
     /// batch I7c: `m_rankPointsToAddAtGameStart` as a dispatched `prepareNewGame` set it, until the frame ends.
@@ -2587,11 +2583,9 @@ impl Default for ObjectCuts {
             restricted_construction_cells: BTreeSet::new(),
             campaign: Default::default(),
             selected_drawables: BTreeSet::new(),
-            max_beacons_per_player: 3,
             network_slot_players: BTreeMap::new(),
             challenge_generals_locked: BTreeSet::new(),
-            map_cache: BTreeMap::new(),
-            new_game: crate::logic::world::new_game_host_world::NewGameCuts { shroud_in_multiplayer: true, ..Default::default() },
+            new_game: Default::default(),
             pending_rank_points: None,
             pending_game_logic_writes: Vec::new(),
             pending_script_notes: Vec::new(),

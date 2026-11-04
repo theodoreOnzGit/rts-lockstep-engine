@@ -24,7 +24,7 @@
 //!   `onStructureConstructionComplete` and `onUnitCreated`, the geometry, and the partition manager (`update`,
 //!   `findPositionAround` with `live_partition`).
 //! - **Cut points:** the challenge generals (`cuts.challenge_generals_locked`, by template name), the multiplayer
-//!   settings' colour count (`cuts.new_game.colors`), the map cache (`cuts.map_cache`, by lower-cased name) and
+//!   settings' colour count (~~`cuts.new_game.colors`~~ the statics' settings since batch I56), the map cache (~~`cuts.map_cache`~~ the statics' `MapCache` since batch I56, by lower-cased name) and
 //!   the pathfinder (`addObjectToPathfindMap`, `adjustDestination`, `updateGoal`: the contain cut points, batch I9).
 //!
 //! `p1w13-sonnet`, integration batch I7c, 2026-11-01.
@@ -61,10 +61,14 @@ impl StartHost for World {
         self.cuts.challenge_generals_locked.contains(name)
     }
     fn st_num_colors(&self) -> i32 {
-        self.cuts.new_game.colors.len() as i32
+        self.statics.multiplayer_settings.get_num_colors()
     }
     fn st_find_map(&self, lower_name: &[u8]) -> Option<MapStartInfo> {
-        self.cuts.map_cache.get(lower_name).cloned()
+        // (batch I56: the statics' `MapCache`; was `cuts.map_cache`, a table)
+        self.statics.map_cache.maps.get(lower_name).map(|m| MapStartInfo {
+            num_players: m.num_players,
+            waypoints: m.waypoints.map.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        })
     }
     fn st_random(&mut self, lo: i32, hi: i32) -> i32 {
         self.random.game_logic_random_value(lo, hi)

@@ -261,20 +261,23 @@ impl crate::common::game_info::GameInfoHost for World {
         0
     }
     fn default_starting_cash(&self) -> crate::common::money::Money {
-        crate::common::money::Money::new()
+        // ~~`Money::new()`~~ **Corrected 2026-11-04 (batch I56):** `TheGlobalData->m_defaultStartingCash`, the statics' global data
+        // (it was an empty purse, so every slot of a game read from a save or a replay header started with no money)
+        self.statics.global_data.the_global_data().map(|g| g.default_starting_cash).unwrap_or_default()
     }
     fn net_crc_interval(&self) -> i32 {
         crate::logic::world::game_logic_update::GameLogicHost::u_replay_crc_interval(self)
     }
     fn has_map_cache(&self) -> bool {
         // ~~false~~ **Corrected 2026-11-04 (batch I55):** `TheMapCache` exists in every game (the client makes it at
-        // start), and a replay's header (`ParseAsciiStringToGameInfo`) dereferences it; it is the World's map cache table
-        // (`cuts.map_cache`, which `startNewGame`'s start positions read too) until `MapUtil.cpp` is translated
+        // start), and a replay's header (`ParseAsciiStringToGameInfo`) dereferences it; ~~it is the World's map cache
+        // table (`cuts.map_cache`) until `MapUtil.cpp` is translated~~ **corrected 2026-11-04 (batch I56):** the
+        // statics' `MapCache`, translated, which `World::update_map_cache` builds from the disk
         true
     }
     fn map_cache_find(&self, lower_name: &[u8]) -> Option<crate::common::game_info::MapMeta> {
-        // (batch I55: the table's entry; its CRC is not kept, 0)
-        self.cuts.map_cache.get(lower_name).map(|m| crate::common::game_info::MapMeta { num_players: m.num_players, crc: 0 })
+        // (~~batch I55: the table's entry; its CRC is not kept, 0~~ batch I56: the cache's entry, with its CRC)
+        self.statics.map_cache.maps.get(lower_name).map(|m| crate::common::game_info::MapMeta { num_players: m.num_players, crc: m.crc })
     }
     fn file_exists(&mut self, path: &[u8]) -> bool {
         self.save_side.disk.contains_key(&path.to_ascii_lowercase())
@@ -287,24 +290,27 @@ impl crate::common::game_info::GameInfoHost for World {
     }
     fn has_multiplayer_settings(&self) -> bool {
         // ~~false~~ **Corrected 2026-11-04 (batch I55):** `TheMultiplayerSettings` exists in every game, and a replay's
-        // slot list asks it for its colour count; its colours are the World's colour table (`cuts.new_game.colors`,
-        // which `startNewGame` reads as `getColor`) until `Multiplayer.ini` is loaded into the statics (#15)
+        // slot list asks it for its colour count. ~~its colours are the World's colour table (`cuts.new_game.colors`)~~
+        // **Corrected 2026-11-04 (batch I56):** the statics' settings, read from `Multiplayer.ini` (#15)
         true
     }
     fn num_colors(&self) -> i32 {
-        self.cuts.new_game.colors.len() as i32
+        self.statics.multiplayer_settings.get_num_colors()
     }
+    // ~~false, false, false and an observer colour of 0~~ **Corrected 2026-11-04 (batch I56):** the statics' settings (the
+    // constructor's are TRUE, TRUE, TRUE and white)
     fn show_random_player_template(&self) -> bool {
-        false
+        self.statics.multiplayer_settings.show_random_player_template()
     }
     fn show_random_color(&self) -> bool {
-        false
+        self.statics.multiplayer_settings.show_random_color()
     }
     fn show_random_start_pos(&self) -> bool {
-        false
+        self.statics.multiplayer_settings.show_random_start_pos()
     }
     fn observer_color(&self) -> Result<i32, crate::common::ini::IniError> {
-        Ok(0)
+        let c = self.statics.multiplayer_settings.color_at(crate::common::multiplayer_settings::PLAYERTEMPLATE_OBSERVER);
+        Ok(c.map_or(-1, |c| c.color()))
     }
     fn player_template_count(&self) -> i32 {
         // ~~0~~ **Corrected 2026-11-04 (batch I55):** `ThePlayerTemplateStore->getPlayerTemplateCount()`, the statics'

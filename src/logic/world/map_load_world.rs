@@ -181,3 +181,67 @@ impl World {
         r.map(|()| true)
     }
 }
+
+/// Batch I56: `MapUtil.cpp`'s globals as the World holds them: the files are the world's disk (lower-cased paths), the
+/// templates the statics' thing factory, the name keys the world's.
+/// - The game text is not the World's ([`crate::logic::world::game_data::TextTable`] with no strings: a tag fetches
+///   upstream's `MISSING:` text), so `initMapStringFile` and `reset` have nothing to do.
+/// - `TheGlobalData->getPath_UserData()` is the recorder's (empty: the user's maps are `Maps\`, the shipped
+///   directory), and `m_buildMapCache` the global data's.
+impl crate::common::map_cache::MapCacheHost for World {
+    fn get_file_list_in_directory(&self, dir: &[u8], pattern: &[u8], list: &mut crate::formats::big::FilenameList, recursive: bool) {
+        // `getFileListInDirectory` over the disk: the files under the directory whose name matches the pattern (a
+        // `*.ext` pattern: the extension), in subdirectories when `recursive`
+        let d = dir.to_ascii_lowercase();
+        let ext = pattern.strip_prefix(b"*").unwrap_or(pattern).to_ascii_lowercase();
+        for k in self.save_side.disk.keys() {
+            if let Some(rest) = k.strip_prefix(d.as_slice()) {
+                if k.ends_with(&ext) && (recursive || !rest.contains(&b'\\')) {
+                    list.insert(k.clone());
+                }
+            }
+        }
+    }
+    fn get_file_info(&self, path: &[u8]) -> Option<crate::common::map_cache::MapFileInfo> {
+        let f = self.save_side.disk.get(&path.to_ascii_lowercase())?;
+        Some(crate::common::map_cache::MapFileInfo { size_low: u32::try_from(f.len()).unwrap_or(u32::MAX), ..Default::default() })
+    }
+    fn open_file(&self, path: &[u8]) -> Option<Vec<u8>> {
+        self.save_side.disk.get(&path.to_ascii_lowercase()).cloned()
+    }
+    fn user_data_path(&self) -> Vec<u8> {
+        crate::common::recorder::RecorderHost::user_data_path(self)
+    }
+    fn build_map_cache(&self) -> bool {
+        self.statics.global_data.the_global_data().is_some_and(|g| g.build_map_cache)
+    }
+    fn fetch(&self, label: &[u8]) -> crate::common::unicode_string::UnicodeString {
+        crate::common::science::GameTextFetch::fetch(&crate::logic::world::game_data::TextTable::default(), label)
+    }
+    fn init_map_string_file(&mut self, _path: &[u8]) {}
+    fn reset_game_text(&mut self) {}
+    fn tech_or_supply(&self, template: &[u8]) -> (bool, bool) {
+        use crate::common::kind_of::{KINDOF_SUPPLY_SOURCE_ON_PREVIEW, KINDOF_TECH_BUILDING};
+        self.statics
+            .thing_factory
+            .find_template(template)
+            .map_or((false, false), |t| (t.data.is_kind_of(KINDOF_TECH_BUILDING), t.data.is_kind_of(KINDOF_SUPPLY_SOURCE_ON_PREVIEW)))
+    }
+    fn write_file(&mut self, path: &[u8], text: Vec<u8>) {
+        self.save_side.disk.insert(path.to_ascii_lowercase(), text);
+    }
+    fn names(&mut self) -> &mut crate::common::name_key_generator::NameKeyGenerator {
+        &mut self.names
+    }
+}
+
+impl World {
+    /// Batch I56: `TheMapCache = NEW MapCache; TheMapCache->updateCache();` (GameEngine.cpp:606) over the world's disk,
+    /// into the statics.
+    pub fn update_map_cache(&mut self) -> crate::common::map_cache::MapCacheResult<()> {
+        let mut cache = std::mem::take(&mut std::sync::Arc::make_mut(&mut self.statics).map_cache);
+        let r = cache.update_cache(self);
+        std::sync::Arc::make_mut(&mut self.statics).map_cache = cache;
+        r
+    }
+}
