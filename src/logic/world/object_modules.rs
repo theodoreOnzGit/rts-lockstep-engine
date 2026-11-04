@@ -202,13 +202,40 @@ impl World {
         }
     }
 
-    /// The objects `player->iterateObjects(func)` visits: the test's list when it gives one (`cuts.player_objects`), else the objects the player
-    /// controls, in the order of the object list. (Upstream walks the player's teams' member lists; the teams are layer 10's.)
+    /// The objects `player->iterateObjects(func)` visits: **Corrected 2026-11-03 (batch I52):** with `cuts.live_teams` upstream's order, the members of each team of
+    /// each of the player's prototypes (`Player::iterateObjects`, `TeamPrototype::iterateObjects`, `Team::iterateObjects`). Otherwise the
+    /// test's list when it gives one (`cuts.player_objects`), else the objects the player controls, in the order of the object list
+    /// ~~(Upstream walks the player's teams' member lists; the teams are layer 10's.)~~ (the order the live game used until batch I52).
     pub fn player_iterate_objects(&self, p: crate::logic::world::ids::PlayerIndex) -> Vec<ObjectId> {
+        if self.cuts.live_teams {
+            let mut out = Vec::new();
+            let protos = self.players.get_nth(p).map(|x| x.team_prototypes.clone()).unwrap_or_default();
+            for proto in protos {
+                let mut team = self.teams.first_instance(proto);
+                while let Some(t) = team {
+                    let mut member = self.teams.first_member(t);
+                    while let Some(o) = member {
+                        out.push(o);
+                        member = self.teams.next_member(o);
+                    }
+                    team = self.teams.next_instance(t);
+                }
+            }
+            return out;
+        }
         if let Some(v) = self.cuts.player_objects.get(&p) {
             return v.clone();
         }
         self.objects.ids_in_order().into_iter().filter(|&id| self.get_controlling_player(id) == Some(p)).collect()
+    }
+
+    /// `player->iterateObjects(...)` for the callers that took their list from `cuts.player_object_list` (`AutoHealBehavior`, the weapon's
+    /// `controllingPlayerObjects`): with `cuts.live_teams` [`World::player_iterate_objects`], otherwise that table (integration batch I52).
+    pub fn player_object_list(&self, p: crate::logic::world::ids::PlayerIndex) -> Vec<ObjectId> {
+        if self.cuts.live_teams {
+            return self.player_iterate_objects(p);
+        }
+        self.cuts.player_object_list.get(&p).cloned().unwrap_or_default()
     }
     // --- end p1w13-sonnet ---
 

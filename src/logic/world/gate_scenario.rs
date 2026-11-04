@@ -3213,4 +3213,54 @@ Object Barracks\n KindOf = STRUCTURE\n CommandSet = BarracksSet\n Geometry = BOX
         w.cuts.live_build_assistant = false;
         assert_eq!(w.template_calc_cost_to_build(recruit, p), 0, "the tests' table");
     }
+
+    /// Integration batch I52: the scans that read a table the live game never filled. Predicted before the run: a healer
+    /// (`AutoHealBehavior`, radius 100, 2 a pulse) heals a hurt ally of its team within the radius and not a hurt enemy beside it;
+    /// before this batch it read `range_scan` without making the scan and healed nobody. The hunt's scan from the healer finds
+    /// the enemy alone; with the team filter cleared (the building capture's) it finds all three, nearest first (the healer
+    /// itself at 0, the ally at 30, the enemy at 60). The player's objects are its team's members in the team's order, newest
+    /// first (each is prepended). Without `live_partition`, the hunt's scan is the tests' (empty) table.
+    ///
+    /// Results (2026-11-03): all held. After 10 frames the ally is at its maximum, 10 (from 4: three pulses of 2), the enemy still
+    /// at 4; the scans and the player's order are as predicted. The ablation's first check failed, as the test was written: the
+    /// table still held the last live answer, so it now empties the table before it asks.
+    #[test]
+    fn a_healer_heals_its_allies_and_the_hunt_finds_its_enemies() {
+        use crate::logic::world::partition::filters::{ALLOW_ENEMIES, ALLOW_NEUTRAL};
+        const HEAL: &str = "\
+Object Patient\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 3\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 4\n End\nEnd\n\
+Object Healer\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 5\n GeometryMinorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AutoHealBehavior ModuleTag_Heal\n  StartsActive = Yes\n  HealingAmount = 2\n  HealingDelay = 100\n  Radius = 100\n\
+  KindOf = INFANTRY\n End\nEnd\n";
+        let mut w = gate_map_world_with(HEAL);
+        let team1 = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let team2 = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let healer = make(&mut w, b"Healer", team1, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let ally = make(&mut w, b"Patient", team1, Coord3D { x: 230.0, y: 200.0, z: 0.0 });
+        let enemy = make(&mut w, b"Patient", team2, Coord3D { x: 260.0, y: 200.0, z: 0.0 });
+        assert_eq!(w.get_relationship(healer, enemy), crate::common::game_common::Relationship::Enemies);
+        let health = |w: &mut World, o: ObjectId| w.body_health(o).expect("a body").0;
+        for _ in 0..10 {
+            w.logic_update().unwrap();
+        }
+        let (a, e) = (health(&mut w, ally), health(&mut w, enemy));
+        eprintln!("ally {a}, enemy {e}");
+        assert!(a > 4.0 && a <= 10.0, "the ally is healed: {a}");
+        assert_eq!(e, 4.0, "the enemy is not");
+
+        assert_eq!(w.partition_iterate_hunt_targets(healer, 300.0, ALLOW_ENEMIES, true), vec![enemy]);
+        assert_eq!(w.partition_iterate_hunt_targets(healer, 300.0, ALLOW_NEUTRAL, true), Vec::<ObjectId>::new());
+        assert_eq!(w.partition_iterate_hunt_targets(healer, 300.0, ALLOW_ENEMIES, false), vec![healer, ally, enemy]);
+        let p = w.get_controlling_player(healer).expect("the player");
+        assert_eq!(w.player_iterate_objects(p), vec![ally, healer]);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+
+        // (the live scans leave their answer in `range_scan`, as the other live scans do, so the ablation empties the table first:
+        // the first run of this test kept the last live answer there)
+        w.cuts.live_partition = false;
+        w.cuts.range_scan.clear();
+        assert_eq!(w.partition_iterate_hunt_targets(healer, 300.0, ALLOW_ENEMIES, true), Vec::<ObjectId>::new(), "the tests' table");
+    }
 }

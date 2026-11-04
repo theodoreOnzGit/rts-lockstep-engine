@@ -415,7 +415,7 @@ impl WeaponHost for World {
         }
     }
     fn controlling_player_objects(&self, o: ObjectId) -> Vec<ObjectId> {
-        self.get_controlling_player(o).and_then(|p| self.cuts.player_object_list.get(&p).cloned()).unwrap_or_default()
+        self.get_controlling_player(o).map(|p| self.player_object_list(p)).unwrap_or_default()
     }
 
     // ---- modules of an Object ---------------------------------------------------------------------------------------

@@ -21,8 +21,10 @@
 //! # Where the world comes from
 //!
 //! - The three scans are `ThePartitionManager->iterateObjectsInRange(pos, radius, FROM_CENTER_2D, {allies, alive, same map status})` and
-//!   `Player::iterateObjects`: both are the lists the test (the full-game adapter, later) puts in `ObjectCuts::range_scan` and
-//!   `ObjectCuts::player_object_list`, in the order upstream visits them. The filters are the partition manager's, verified with it.
+//!   `Player::iterateObjects`: ~~both are the lists the test (the full-game adapter, later) puts in `ObjectCuts::range_scan` and
+//!   `ObjectCuts::player_object_list`~~ **Corrected 2026-11-03 (batch I52):** the scan is [`World::partition_iterate_allies_in_range`] (the partition manager's with
+//!   `cuts.live_partition`; the radius heal read `range_scan` without asking, so in the live game it healed nobody) and the player's
+//!   objects [`World::player_object_list`] (the teams' members with `cuts.live_teams`), in the order upstream visits them.
 //! - `getBodyModule()->getHealth()/getMaxHealth()` are `GetHealth`/`GetMaxHealth` calls on the object's body; `attemptHealing` and
 //!   `attemptHealingFromSoleBenefactor` are the world's.
 //! - The particle systems (`TheParticleSystemManager->createParticleSystem(tmpl)` and `setPosition`) are [`CutCall::ParticleSystemCreate`]; the
@@ -352,7 +354,7 @@ impl AutoHealBehavior {
             if let Some(player) = world.get_controlling_player(me.object) {
                 let mut objects_to_heal = Vec::new();
                 // Smack all objects with this function, and we will end up with a list of Objects deserving of pulseHealObject
-                for obj in world.cuts.player_object_list.get(&player).cloned().unwrap_or_default() {
+                for obj in world.player_object_list(player) {
                     if self.check_for_auto_heal(world, me.object, obj)? {
                         objects_to_heal.push(obj);
                     }
@@ -375,7 +377,8 @@ impl AutoHealBehavior {
             return Ok(if crate::logic::modules::plant(948) { update_sleep(d.healing_delay) } else { UPDATE_SLEEP_FOREVER });
         }
         // EXPANDED SYSTEM -- HEAL FRIENDLIES IN RADIUS
-        for obj in world.cuts.range_scan.clone() {
+        // integration batch I52: the scan itself (it read `range_scan` without making it, so in the live game nothing was healed)
+        for obj in world.partition_iterate_allies_in_range(me.object, d.radius) {
             // do not heal if we are at max health already
             let (health, max_health) = world.body_health(obj).ok_or_else(|| IniError::undefined(Undefined::NullBodyModule))?;
             if health < max_health {

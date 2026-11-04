@@ -61,7 +61,7 @@
 use crate::common::base_type::{Coord3D, ICoord3D, Region3D};
 use crate::common::disabled_types::DISABLED_UNMANNED;
 use crate::common::game_common::{AbleToAttackType, CommandSourceType, PlayerMaskType, PlayerType, Relationship};
-use crate::common::kind_of::{KindOfMaskType, KindOfType, KINDOF_STRUCTURE};
+use crate::common::kind_of::{KindOfMaskType, KindOfType, KINDOF_CLEANUP_HAZARD, KINDOF_STRUCTURE, KINDOF_VEHICLE};
 use crate::common::object_status_types::{ObjectStatusMaskType, OBJECT_STATUS_DETECTED};
 use crate::logic::action_manager::{self, CanEnterType};
 use crate::logic::world::game_logic::World;
@@ -122,6 +122,13 @@ impl World {
         }
         self.cuts.range_scan_numeric = numerics;
         out
+    }
+
+    /// `MAKE_KINDOF_MASK(k)` (integration batch I52).
+    fn kinds(k: KindOfType) -> KindOfMaskType {
+        let mut m = KindOfMaskType::new();
+        m.set(k, 1);
+        m
     }
 
     /// The filter `PartitionFilterSameMapStatus(obj)`, `PartitionFilterAlive`.
@@ -234,6 +241,69 @@ impl World {
             CutCall::PartitionGetClosestObject { object, range } => {
                 Some(self.live_scan(|pm, w| pm.iterate_objects_in_range(w, object, range, Dc::FromCenter3D, &[], IterOrderType::SortedNearToFar)))
             }
+            // --- p1w13-sonnet --- (integration batch I52: the scans that had no live answer)
+            CutCall::PartitionIterateHuntTargets { object, range, relationship, team_filter } => {
+                // `CommandButtonHuntUpdate::scanClosestTarget`: alive, same map status, stealthed and undetected (FALSE), the relationship
+                // unless the building capture clears it; from the object's position, FROM_CENTER_2D, ITER_SORTED_NEAR_TO_FAR.
+                let position = self.objects.find(object).map(|o| o.get_position()).unwrap_or_default();
+                let mut f = vec![
+                    PartitionFilter::Alive,
+                    PartitionFilter::SameMapStatus { obj: object },
+                    PartitionFilter::StealthedAndUndetected { obj: object, allow: false },
+                ];
+                if team_filter {
+                    f.push(PartitionFilter::Relationship { obj: object, flags: relationship });
+                }
+                Some(self.live_scan(|pm, w| pm.iterate_objects_in_range_at(w, &position, range, Dc::FromCenter2D, &f, IterOrderType::SortedNearToFar)))
+            }
+            CutCall::PartitionIterateVehiclesNearToFar { object, range } => {
+                // `PilotFindVehicleUpdate::scanClosestTarget`: VEHICLE, alive, `PartitionFilterPlayer(me's player, true)`, same map status.
+                let position = self.objects.find(object).map(|o| o.get_position()).unwrap_or_default();
+                let f = [
+                    PartitionFilter::AcceptByKindOf { must_be_set: Self::kinds(KINDOF_VEHICLE), must_be_clear: KindOfMaskType::new() },
+                    PartitionFilter::Alive,
+                    PartitionFilter::Player { player: self.get_controlling_player(object), match_: true },
+                    PartitionFilter::SameMapStatus { obj: object },
+                ];
+                Some(self.live_scan(|pm, w| pm.iterate_objects_in_range_at(w, &position, range, Dc::FromCenter2D, &f, IterOrderType::SortedNearToFar)))
+            }
+            CutCall::PartitionIterateLineOfSightNearToFar { object, range } => {
+                // `SpecialAbilityUpdate::isWithinStartAbilityRange`: `PartitionFilterLineOfSight(self)`, FROM_BOUNDINGSPHERE_2D.
+                let f = [PartitionFilter::LineOfSight { obj: object }];
+                Some(self.live_scan(|pm, w| pm.iterate_objects_in_range(w, object, range, Dc::FromBoundingSphere2D, &f, IterOrderType::SortedNearToFar)))
+            }
+            CutCall::PartitionIterateAlliesAliveSameMapNotStructuresAt { object, position, range } => {
+                // `PropagandaTowerBehavior::doScan`: allies, alive, same map status, not structures; FROM_CENTER_2D, the fastest order.
+                let f = [
+                    PartitionFilter::Relationship { obj: object, flags: ALLOW_ALLIES },
+                    PartitionFilter::Alive,
+                    PartitionFilter::SameMapStatus { obj: object },
+                    PartitionFilter::AcceptByKindOf { must_be_set: KindOfMaskType::new(), must_be_clear: Self::kinds(KINDOF_STRUCTURE) },
+                ];
+                Some(self.live_scan(|pm, w| pm.iterate_objects_in_range_at(w, &position, range, Dc::FromCenter2D, &f, IterOrderType::Fastest)))
+            }
+            CutCall::PartitionIterateSpectreTargets { object, position, range, player_index } => {
+                // `SpectreGunshipUpdate::update`: stealthed and undetected (false), possible to attack (ATTACK_NEW_TARGET, CMD_FROM_AI), free of
+                // fog to the gunship's player; FROM_BOUNDINGSPHERE_2D, near to far. The first filter, the live map enemies, is the caller's
+                // (`live_map_enemy`); the filters only accept or reject, so applying it after the others changes nothing.
+                let f = [
+                    PartitionFilter::StealthedAndUndetected { obj: object, allow: false },
+                    PartitionFilter::PossibleToAttack { attack_type: crate::common::game_common::ATTACK_NEW_TARGET, obj: Some(object), command_source: CommandSourceType::FromAi },
+                    PartitionFilter::FreeOfFog { comparison_index: player_index },
+                ];
+                Some(self.live_scan(|pm, w| pm.iterate_objects_in_range_at(w, &position, range, Dc::FromBoundingSphere2D, &f, IterOrderType::SortedNearToFar)))
+            }
+            CutCall::PartitionGetClosestCleanupHazardAt { object, position, range } => {
+                // `CleanupHazardUpdate::scanClosestTarget`: CLEANUP_HAZARD, same map status; FROM_CENTER_2D.
+                let f = [
+                    PartitionFilter::AcceptByKindOf { must_be_set: Self::kinds(KINDOF_CLEANUP_HAZARD), must_be_clear: KindOfMaskType::new() },
+                    PartitionFilter::SameMapStatus { obj: object },
+                ];
+                let closest = self.with_partition(|pm, w| pm.get_closest_object_at(w, &position, range, Dc::FromCenter2D, &f).object);
+                self.cuts.closest_object_at = closest.unwrap_or(crate::logic::world::ids::INVALID_ID);
+                None
+            }
+            // --- end p1w13-sonnet ---
             _ => None,
         };
         if let Some(found) = scan {

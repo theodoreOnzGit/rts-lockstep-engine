@@ -2081,6 +2081,42 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I52 (2026-11-03, `p1w13-sonnet`): the last partition scans, and the hunt's action manager questions, are the game's.** Eight of the partition manager's calls had no live answer. In the live game the wrapper returned whatever `range_scan` last held, or an empty table:
+- `CommandButtonHuntUpdate`'s target scan (alive, same map status, stealthed and undetected, the relationship unless the building capture clears it; nearest first) and its search for one of the hunter's own mines;
+- `PilotFindVehicleUpdate`'s vehicle scan (VEHICLE, alive, `PartitionFilterPlayer(me's player, true)`, same map status);
+- `SpecialAbilityUpdate::isWithinStartAbilityRange`'s line of sight scan;
+- `PropagandaTowerBehavior`'s scan (allies, alive, same map status, not structures);
+- `SpectreGunshipUpdate`'s two target scans (stealth, possible to attack, free of fog; from the bounding sphere, as upstream, where the table's stand-in measured from the centre);
+- `CleanupHazardUpdate`'s closest hazard;
+- `getDistanceSquared(FROM_CENTER_2D)`, which preferred a test table to the measurement.
+
+Each now runs on the partition manager with upstream's filters, under `live_partition`. `estimateTerrainExtremesAlongLine` was checked too: it already asked the partition manager when no test set the table.
+
+Two more readers of the same tables:
+- `AutoHealBehavior`'s radius heal read `range_scan` without making any scan, so in the live game it healed nobody. It now makes upstream's scan (allies, alive, same map status, from the object's position), which the existing `PartitionIterateAlliesInRange` already answers live.
+- Its whole-player heal, and the weapon's `controllingPlayerObjects`, read `player_object_list`, which the live game never filled. With `live_teams` a player's objects (`World::player_iterate_objects`) are now upstream's `Player::iterateObjects` order: each team of each of the player's prototypes, then each team's members. Before, the order was the object list's, and the table the tests gave.
+
+Two defects in the hunt itself:
+- **The own-mine search.** `World::partition_has_closest_own_mine` was given only the target. Upstream's filter is `PartitionFilterSamePlayer(me->getControllingPlayer())`, the hunter's player, so the hunter is now passed too. The search is still never reached: `isPlaceExplosive` is never true, as the module's doc records.
+- **The action manager.** `World::action_manager_can` read `action_allowed`, a table the live game never filled, so no hunter ever found a target. With `live_ai` it asks the action manager's own `canDoSpecialPowerAtObject(me, other, CMD_FROM_AI, template, 0)`, `canHijackVehicle`, `canSabotageBuilding` and `canConvertObjectToCarBomb`.
+
+**Test and predictions**, written before the run:
+- `gate_scenario::all_live_tests::a_healer_heals_its_allies_and_the_hunt_finds_its_enemies`. A healer (`AutoHealBehavior`, radius 100, 2 a pulse, INFANTRY) heals a hurt ally of its team at 30 and not a hurt enemy at 60.
+- The hunt's scan from the healer finds the enemy alone, and nothing for neutrals. With the team filter cleared it finds all three, nearest first: the healer itself, the ally, the enemy.
+- The player's objects are its team's members, newest first: `[ally, healer]`.
+- Without `live_partition` the scan is the tests' empty table.
+
+Gate (a): **CRCs unchanged at `0bf44067`**. The gate game has no hunter, healer, pilot, propaganda tower, gunship or cleanup unit. The player's object order is read there only by the academy's statistics, which are not in the CRC.
+
+**Results (2026-11-03).** The predictions held but one. The healer healed its ally from 4 to 10 in the ten frames and left the
+enemy beside it at 4; the hunt's scan found `[enemy]` with ALLOW_ENEMIES, `[]` with ALLOW_NEUTRAL and `[healer, ally, enemy]`
+nearest first with no team filter; `player_iterate_objects` gave `[ally, healer]` (the team's member order); no
+`team_live_errors`. The miss was the ablation: turning `live_partition` off did not leave an empty table, because the live scans
+leave their last answer in `range_scan`. The test now clears the table before the ablation, and its doc says so. 803 library
+tests pass; the full run had 203 test binaries with 1,156 tests and none failed; clippy had no warnings; gate (a) PASS, the
+native and wasm CRCs identical at every one of 300 frames, last `0bf44067` (unchanged, as predicted: the gate game has none of
+these units).
+
 **Integration batch I51 (2026-11-03, `p1w13-sonnet`): a factory's build questions are the game's.** `ProductionUpdate` asked four things through tables the live game never filled:
 - `TheBuildAssistant->canMakeUnit`, which answered `CANMAKE_OK` from the empty table, so any factory could make anything;
 - `calcCostToBuild`, which answered 0, so every unit was free;

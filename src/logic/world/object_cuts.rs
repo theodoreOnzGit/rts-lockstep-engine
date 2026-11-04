@@ -599,7 +599,8 @@ impl World {
     }
 
     /// batch R56: `ThePartitionManager->getClosestObject(&position, range, FROM_CENTER_2D, { KINDOF_CLEANUP_HAZARD, the same map status as
-    /// `object` })`: the table's answer (the partition manager is layer 12's), `None` for `NULL`.
+    /// `object` })`: the table's answer ~~(the partition manager is layer 12's)~~ (**Corrected 2026-11-03 (batch I52):** with `cuts.live_partition` the partition
+    /// manager's), `None` for `NULL`.
     pub fn partition_get_closest_cleanup_hazard_at(&mut self, object: ObjectId, position: Coord3D, range: f32) -> Option<ObjectId> {
         self.cut(CutCall::PartitionGetClosestCleanupHazardAt { object, position, range });
         let id = self.cuts.closest_object_at;
@@ -746,8 +747,14 @@ impl World {
     /// batch R72: `SpectreGunshipUpdate`'s scans (see [`CutCall::PartitionIterateSpectreTargets`]; the partition manager is layer 12's):
     /// the objects of `cuts.range_scan` (those the stealth, attack and fog filters pass) whose centres are within `range` of `position`
     /// in 2D, nearest first (ties in list order). The live-map-enemies filter is the caller's.
+    ///
+    /// **Corrected 2026-11-03 (batch I52):** with `cuts.live_partition` the partition manager answers (FROM_BOUNDINGSPHERE_2D, as upstream; this file's centre test
+    /// is the tables' stand-in), nearest first.
     pub fn partition_iterate_spectre_targets(&mut self, object: ObjectId, position: Coord3D, range: f32, player_index: PlayerIndex) -> Vec<ObjectId> {
         self.cut(CutCall::PartitionIterateSpectreTargets { object, position, range, player_index });
+        if self.cuts.live_partition {
+            return self.cuts.range_scan.clone();
+        }
         let mut found: Vec<(f32, ObjectId)> = Vec::new();
         for &id in &self.cuts.range_scan {
             let Some(o) = self.objects.find(id) else { continue };
@@ -1123,15 +1130,54 @@ impl World {
         self.cuts.range_scan.clone()
     }
 
-    /// batch R69: the closest mine of the object's player near `object` (see [`CutCall::PartitionGetClosestOwnMine`]): whether there is one.
-    pub fn partition_has_closest_own_mine(&mut self, object: ObjectId, range: f32) -> bool {
+    /// batch R69: ~~the closest mine of the object's player near `object`~~ **Corrected 2026-11-03 (batch I52):** the closest mine of `me`'s player near `object`, as
+    /// upstream's `PartitionFilterSamePlayer(me->getControllingPlayer())` (see [`CutCall::PartitionGetClosestOwnMine`]): whether there is one.
+    /// With `cuts.live_partition` the partition manager answers (FROM_BOUNDINGSPHERE_2D, MINE, the same player); otherwise `own_mines_near`.
+    pub fn partition_has_closest_own_mine(&mut self, me: ObjectId, object: ObjectId, range: f32) -> bool {
         self.cut(CutCall::PartitionGetClosestOwnMine { object, range });
+        if self.cuts.live_partition {
+            use crate::logic::world::partition::DistanceCalculationType as Dc;
+            let mut mine = crate::common::kind_of::KindOfMaskType::new();
+            mine.set(crate::common::kind_of::KINDOF_MINE, 1);
+            let f = [
+                crate::logic::world::partition::PartitionFilter::AcceptByKindOf { must_be_set: mine, must_be_clear: crate::common::kind_of::KindOfMaskType::new() },
+                crate::logic::world::partition::PartitionFilter::SamePlayer { player: self.get_controlling_player(me) },
+            ];
+            return self.with_partition(|pm, w| pm.get_closest_object(w, object, range, Dc::FromBoundingSphere2D, &f).object).is_some();
+        }
         self.cuts.own_mines_near.contains(&object)
     }
 
-    /// batch R69: one of `TheActionManager`'s tests (see [`CutCall::ActionManagerCan`]; the action manager is not on `World` yet).
+    /// batch R69: one of `TheActionManager`'s tests (see [`CutCall::ActionManagerCan`]): ~~the action manager is not on `World` yet~~
+    /// **Corrected 2026-11-03 (batch I52):** with `cuts.live_ai` the action manager's own (`canDoSpecialPowerAtObject(obj, other, source, template, 0)`,
+    /// `canHijackVehicle`, `canSabotageBuilding`, `canConvertObjectToCarBomb`, on the world as their [`ActionHost`]); otherwise the tests'
+    /// `action_allowed`. An error of the special power test is recorded in `team_live_errors` and answers no.
+    ///
+    /// [`ActionHost`]: crate::logic::action_manager::ActionHost
     pub fn action_manager_can(&mut self, kind: i32, object: ObjectId, other: ObjectId, source: i32, template: u32) -> bool {
         self.cut(CutCall::ActionManagerCan { kind, object, other, source, template });
+        if self.cuts.live_ai {
+            use crate::logic::action_manager as am;
+            let source = crate::common::game_common::CommandSourceType::from_i32(source);
+            return match kind {
+                0 => {
+                    let statics = self.statics.clone();
+                    let Some(t) = statics.special_power_store.find_special_power_template_by_id(template) else { return false };
+                    let t = am::SpecialPowerTemplateRef { id: template, sp_type: t.special_power_type() };
+                    match am::can_do_special_power_at_object(self, object, other, source, &t, 0, true) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            self.cuts.team_live_errors.push(format!("ActionManager::canDoSpecialPowerAtObject: {e:?}"));
+                            false
+                        }
+                    }
+                }
+                1 => am::can_hijack_vehicle(self, Some(object), Some(other), source),
+                2 => am::can_sabotage_building(self, Some(object), Some(other), source),
+                3 => am::can_convert_object_to_car_bomb(self, Some(object), Some(other), source),
+                _ => false,
+            };
+        }
         self.cuts.action_allowed.contains(&(kind, other))
     }
 
@@ -1184,7 +1230,8 @@ impl World {
     /// `ThePartitionManager->getDistanceSquared(obj, other, FROM_CENTER_2D)` (batch R19): the table's entry, else the squared distance in the plane.
     pub fn partition_get_distance_squared_center_2d(&mut self, object: ObjectId, other: ObjectId) -> f32 {
         self.cut(CutCall::PartitionGetDistanceSquaredCenter2D { object, other });
-        if let Some(d) = self.cuts.distance_squared_center_2d.get(&(object, other)) {
+        // integration batch I52: the table is the tests'; the live game measures.
+        if let Some(d) = self.cuts.distance_squared_center_2d.get(&(object, other)).filter(|_| !self.cuts.live_partition) {
             return *d;
         }
         let pos = |w: &World, id: ObjectId| w.objects.find(id).map(|o| o.get_position()).unwrap_or_default();

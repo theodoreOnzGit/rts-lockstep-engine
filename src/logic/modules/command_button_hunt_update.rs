@@ -31,8 +31,9 @@
 //! higher unmodified priority). A disabled target is skipped by the vehicle hack; the building capture skips its own player's objects and
 //! its allies'.
 //!
-//! The command buttons and sets are the client's (not translated): `cuts.command_buttons` and `cuts.command_sets`. The action manager's
-//! tests are [`World::action_manager_can`] (it is not on `World` yet), the scan [`World::partition_iterate_hunt_targets`], the distance
+//! The command buttons and sets are ~~the client's (not translated)~~ (**Corrected 2026-11-03 (batch I52):** translated in batch I19 and installed in these tables
+//! by `World::install_command_buttons`) `cuts.command_buttons` and `cuts.command_sets`. The action manager's
+//! tests are [`World::action_manager_can`] (~~it is not on `World` yet~~ **Corrected 2026-11-03 (batch I52):** the action manager's own with `cuts.live_ai`), the scan [`World::partition_iterate_hunt_targets`], the distance
 //! [`World::body_get_distance_squared`] and `doCommandButtonAtObject` a [`CutCall::ObjectDoCommandButtonAtObject`] record (~~always~~
 //! **since integration batch I23** only without `live_ai`; with it, `World::do_command_button_at_object`).
 //!
@@ -405,7 +406,7 @@ impl CommandButtonHuntUpdate {
                     if is_place_explosive {
                         // "Don't target things near explosives... It's just not a good idea." (never reached: see the module's doc)
                         let range = power.and_then(|(id, _)| world.statics.special_power_store.find_special_power_template_by_id(id)).map_or(0.0, |t| t.view_object_range());
-                        if world.partition_has_closest_own_mine(other, range) {
+                        if world.partition_has_closest_own_mine(me, other, range) {
                             continue;
                         }
                     }
