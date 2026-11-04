@@ -2081,6 +2081,37 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I55 (2026-11-04, `p1w13-sonnet`, GitHub #14): `TheRecorder` in the World; a skirmish recorded and played back in sync.** This is the harness for phase 1's gate (b): play back an original `.rep` and report the first frame where the CRC diverges. `common::recorder` already translated `Recorder.cpp`; the World did not use it. Its recorder was a stand-in:
+- three flags;
+- `update` and `handleCRCMessage` were logged calls;
+- the logic CRC never reached the message stream;
+- the World kept its own list of command ids instead of `TheCommandList`.
+
+Now:
+- **`TheCommandList`** is the `Messages` arena's `COMMAND_LIST`.
+- **The CRC** (`GameLogic.cpp:3666`) is appended to `TheMessageStream`.
+- **`World::engine_update`** is `GameEngine::update`'s logic half: `propagateMessages`, then `GameLogic::update`.
+- **The recorder** (`recorder_world.rs`) runs on the World as its `RecorderHost`, with replays on the World's disk. Its calls are live:
+  - `update` (recording, and playback);
+  - `isMultiplayer` and `getMode`;
+  - `handleCRCMessage` from the dispatcher;
+  - `REPLAY_CRC_INTERVAL`;
+  - the original game mode;
+  - a replay's game options as the game `startNewGame` takes.
+- **`TheGameInfo`'s CRC interval** is that of the game taken.
+- **Without a recorder** the stand-ins answer as before.
+
+**Three World defects found by the round trip**, each corrected in place:
+- `TheMapCache` and `TheMultiplayerSettings` were answered as absent, but a replay's header dereferences both. They now answer from the World's map-cache and colour tables, until #15 loads the real ones.
+- `ThePlayerTemplateStore`'s count was answered as 0, so no game's slot list could parse. It is now the statics' store.
+
+**Predictions, written before the run (the test's doc):**
+- **Recording:** `MSG_NEW_GAME` (`GAME_SKIRMISH`) starts the recording, the game starts on the next frame, a CRC is sent every 100 frames, and `MSG_CLEAR_GAME_DATA` writes one replay.
+- **Playback,** in a World built alike without the skirmish's options: the header gives back the game, every recorded CRC is compared with no mismatch, and the CRCs equal the recording's at every frame.
+- **Tampered playback:** the same file with its seed changed is caught.
+
+**Results (2026-11-04).** Full run: 203 test binaries, 1,164 tests, 0 failed; clippy clean after four same-type casts were removed; gate (a) PASS, identical native and wasm CRCs at all 300 frames (last `0bf44067`, unchanged). The round trip `a_recorded_skirmish_plays_back_in_sync` records 350 frames with a self-destruct at frame 60 and plays them back with no mismatch and equal CRCs every frame; the negative control (seed 1234 → 1235 in the header) is reported as a mismatch, so the check can fail.
+
 **Integration batch I54 (2026-11-03, `p1w13-sonnet`): the upgrade center's `init`, and a unit's veterancy upgrade.** `GameEngine::init` makes each subsystem through `initSubsystem`, which calls the subsystem's `init()` before loading its files. `load_game_data` loaded the files but never called `UpgradeCenter::init`. That function makes the three veterancy upgrades: `Upgrade_Veterancy_VETERAN`, `_ELITE` and `_HEROIC`, each made by `newUpgrade("")` and renamed. Two consequences in the live game:
 - **No veterancy upgrades existed.** `Object::onVeterancyLevelChanged`'s `TheUpgradeCenter->findVeterancyUpgrade(newLevel)` read the tests' table `cuts.veterancy_upgrades`, which nothing filled. So no unit that ranked up ever got its level's upgrade, and no module triggered by one (a veteran's weapon set or health) ever ran.
 - **Every `Upgrade` block's mask bit was three lower than upstream's.** The veterancy upgrades take bits 0 to 2, and name keys for `DefaultUpgrade`, `""` and their three names, before the upgrade center's files load.

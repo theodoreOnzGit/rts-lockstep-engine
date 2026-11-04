@@ -63,13 +63,14 @@ impl World {
     /// Appends a command to `TheCommandList` (as the network or the message stream does): its type, its player and its
     /// arguments (`f` appends them).
     pub fn push_command(&mut self, ty: MessageType, player: i32, f: impl FnOnce(&mut GameMessage)) {
+        // (batch I55: onto the arena's `TheCommandList`, which the recorder reads)
         let gl = &mut self.cuts.game_loop;
         let id = gl.messages.new_message(ty, player);
         if let Some(m) = gl.messages.get_mut(id) {
             m.set_player_index(player);
             f(m);
         }
-        gl.commands.push(id);
+        let _ = gl.messages.append_message(crate::common::message_stream::Messages::COMMAND_LIST, id);
     }
 
     /// Logs a call of the dispatcher into a unit the world does not hold.
@@ -375,14 +376,24 @@ impl DispatchHost for World {
         false
     }
     fn d_recorder_playback(&self) -> bool {
-        self.cuts.game_loop.has_recorder && self.cuts.game_loop.recorder_playback
+        // (batch I55: the live recorder when made)
+        match &self.cuts.game_loop.recorder {
+            Some(r) => r.mode == crate::common::recorder::RecorderMode::Playback,
+            None => self.cuts.game_loop.has_recorder && self.cuts.game_loop.recorder_playback,
+        }
     }
     fn d_has_recorder(&self) -> bool {
-        self.cuts.game_loop.has_recorder
+        self.cuts.game_loop.recorder.is_some() || self.cuts.game_loop.has_recorder
     }
     fn d_recorder_handle_crc(&mut self, crc: u32, player: i32, from_playback: bool) -> R<()> {
-        self.dispatch_cut("Recorder::handleCRCMessage", &[i64::from(crc), i64::from(player), i64::from(from_playback)]);
-        Ok(())
+        // (batch I55: the live recorder's `handleCRCMessage`; a logged call without one)
+        match self.with_recorder(|r, w| r.handle_crc_message(crc, player, from_playback, w)) {
+            Some(r) => r,
+            None => {
+                self.dispatch_cut("Recorder::handleCRCMessage", &[i64::from(crc), i64::from(player), i64::from(from_playback)]);
+                Ok(())
+            }
+        }
     }
     fn d_replay_camera_follows(&self, _player: i32) -> bool {
         false
@@ -448,7 +459,7 @@ mod tests {
         w.logic_update().unwrap();
         assert!(w.players.get_nth(1).unwrap().logical_retaliation_mode_enabled);
         assert!(w.find_object(tank).is_none_or(|o| o.is_effectively_dead()));
-        assert!(w.cuts.game_loop.commands.is_empty());
+        assert!(w.cuts.game_loop.messages.first_message(crate::common::message_stream::Messages::COMMAND_LIST).is_none());
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
     }
 }

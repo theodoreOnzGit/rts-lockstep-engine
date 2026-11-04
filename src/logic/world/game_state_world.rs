@@ -267,10 +267,14 @@ impl crate::common::game_info::GameInfoHost for World {
         crate::logic::world::game_logic_update::GameLogicHost::u_replay_crc_interval(self)
     }
     fn has_map_cache(&self) -> bool {
-        false
+        // ~~false~~ **Corrected 2026-11-04 (batch I55):** `TheMapCache` exists in every game (the client makes it at
+        // start), and a replay's header (`ParseAsciiStringToGameInfo`) dereferences it; it is the World's map cache table
+        // (`cuts.map_cache`, which `startNewGame`'s start positions read too) until `MapUtil.cpp` is translated
+        true
     }
-    fn map_cache_find(&self, _lower_name: &[u8]) -> Option<crate::common::game_info::MapMeta> {
-        None
+    fn map_cache_find(&self, lower_name: &[u8]) -> Option<crate::common::game_info::MapMeta> {
+        // (batch I55: the table's entry; its CRC is not kept, 0)
+        self.cuts.map_cache.get(lower_name).map(|m| crate::common::game_info::MapMeta { num_players: m.num_players, crc: 0 })
     }
     fn file_exists(&mut self, path: &[u8]) -> bool {
         self.save_side.disk.contains_key(&path.to_ascii_lowercase())
@@ -282,10 +286,13 @@ impl crate::common::game_info::GameInfoHost for World {
         GameState::<WorldBlock>::new().portable_map_path_to_real(path, self).unwrap_or_default()
     }
     fn has_multiplayer_settings(&self) -> bool {
-        false
+        // ~~false~~ **Corrected 2026-11-04 (batch I55):** `TheMultiplayerSettings` exists in every game, and a replay's
+        // slot list asks it for its colour count; its colours are the World's colour table (`cuts.new_game.colors`,
+        // which `startNewGame` reads as `getColor`) until `Multiplayer.ini` is loaded into the statics (#15)
+        true
     }
     fn num_colors(&self) -> i32 {
-        0
+        self.cuts.new_game.colors.len() as i32
     }
     fn show_random_player_template(&self) -> bool {
         false
@@ -300,10 +307,14 @@ impl crate::common::game_info::GameInfoHost for World {
         Ok(0)
     }
     fn player_template_count(&self) -> i32 {
-        0
+        // ~~0~~ **Corrected 2026-11-04 (batch I55):** `ThePlayerTemplateStore->getPlayerTemplateCount()`, the statics'
+        // store (it was 0, so no game's slot list parsed: every slot's template was out of range)
+        self.statics.player_template_store.player_template_count()
     }
-    fn player_template_display_name(&self, _n: i32) -> Result<Vec<u16>, crate::common::ini::IniError> {
-        Ok(Vec::new())
+    fn player_template_display_name(&self, n: i32) -> Result<Vec<u16>, crate::common::ini::IniError> {
+        // (batch I55: `getNthPlayerTemplate(n)->getDisplayName()`, dereferenced unchecked upstream)
+        let t = self.statics.player_template_store.nth_player_template(n).ok_or_else(|| crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullObject))?;
+        Ok(t.display_name().str().to_vec())
     }
     fn record_income(&mut self, _player_index: i32) {}
 }

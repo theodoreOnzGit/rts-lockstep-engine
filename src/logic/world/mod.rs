@@ -136,3 +136,6 @@ pub mod script_orders_world; // batch I8c: the script actions' orders to units, 
 pub mod ai_combat_world; // batch I9c-5: the attack machine's weapon, body and partition calls in the World
 pub mod collision_world; // batch I9c-4: the AI's collisions in the World
 pub mod turret_host_world; // batch I9b-6: the turrets' AIs, the World as TurretHost
+// --- p1w13-sonnet --- (integration batch I55, #14)
+pub mod recorder_world;
+// --- end p1w13-sonnet ---

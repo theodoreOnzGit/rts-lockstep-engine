@@ -31,7 +31,9 @@
 //!   CRC, and dispatching one is logged)~~ (**corrected in I7b**: the command list is real messages and the world's
 //!   dispatcher runs them, `dispatch_host_world.rs`), ~~`startNewGame` (I7c), the script engine (I8)~~ (the world's
 //!   since batches I7c and I8a), the AI and its groups (I9), the
-//!   build assistant (I6), the victory conditions (I5), the recorder, `TheGameInfo`, the network, the stats collector,
+//!   build assistant (I6), the victory conditions (I5), ~~the recorder, `TheGameInfo`~~ (**corrected 2026-11-04,
+//!   batch I55**: the recorder is live once `World::recorder_init` makes it, `recorder_world.rs`, and `TheGameInfo`'s CRC
+//!   interval is the game `startNewGame` took), the network, the stats collector,
 //!   the game state's deep CRC, and the client (display, tactical view, in-game UI, mouse, audio, load screen).
 //!
 //! # Deviation until batch I9
@@ -63,10 +65,14 @@ type R<T> = Result<T, IniError>;
 pub struct GameLoopCuts {
     /// `m_gameMode` (`GAME_NONE` until a game starts, as `GameLogic::GameLogic()` sets it).
     pub game_mode: i32,
-    /// batch I7b: the messages of `TheCommandList` (and of the stream, unused here).
+    /// batch I7b: the messages of `TheMessageStream` and `TheCommandList`. ~~`TheCommandList` was a list of ids of its
+    /// own (`commands`), and the stream was unused.~~ **Corrected 2026-11-04 (batch I55):** `TheCommandList` is the
+    /// arena's [`Messages::COMMAND_LIST`](crate::common::message_stream::Messages::COMMAND_LIST), which the recorder reads
+    /// and writes, and the logic CRC goes to its [`Messages::STREAM`](crate::common::message_stream::Messages::STREAM)
+    /// ([`World::engine_update`] moves the stream to the command list).
     pub messages: crate::common::message_stream::Messages,
-    /// batch I7b: `TheCommandList`, first to last.
-    pub commands: Vec<crate::common::message_stream::MessageId>,
+    /// batch I55 (#14): `TheRecorder`, once [`World::recorder_init`] makes it; `None` keeps the stand-ins below.
+    pub recorder: Option<crate::common::recorder::Recorder>,
     /// `TheDisplay->isMoviePlaying()`.
     pub movie_playing: bool,
     /// `TheTacticalView->isTimeFrozen()`, `isCameraMovementFinished()`.
@@ -77,13 +83,15 @@ pub struct GameLoopCuts {
     pub script_time_frozen_debug: bool,
     /// See `script_time_frozen_debug`.
     pub script_time_frozen_script: bool,
-    /// `TheRecorder != NULL`, `isMultiplayer()`, `getMode() == RECORDERMODETYPE_PLAYBACK`.
+    /// `TheRecorder != NULL`, `isMultiplayer()`, `getMode() == RECORDERMODETYPE_PLAYBACK`: the stand-in's answers,
+    /// read only while there is no live `recorder` (batch I55).
     pub has_recorder: bool,
     /// See `has_recorder`.
     pub recorder_multiplayer: bool,
     /// See `has_recorder`.
     pub recorder_playback: bool,
-    /// `TheGameInfo->getCRCInterval()`, `None` when there is no `TheGameInfo`.
+    /// `TheGameInfo->getCRCInterval()`, `None` when there is no `TheGameInfo`: read only when `startNewGame` took no
+    /// game (batch I55; the taken game's interval otherwise).
     pub game_info_crc_interval: Option<i32>,
     /// batch I5: `TheGameInfo`'s slots, whether each is an AI's (`None`: no `TheGameInfo`).
     pub game_info_slots_ai: Option<Vec<bool>>,
@@ -116,7 +124,7 @@ impl Default for GameLoopCuts {
         GameLoopCuts {
             game_mode: crate::common::recorder::game_mode::NONE,
             messages: crate::common::message_stream::Messages::new(),
-            commands: Vec::new(),
+            recorder: None,
             movie_playing: false,
             view_time_frozen: false,
             view_camera_movement_finished: true,
@@ -229,26 +237,38 @@ impl GameLogicHost for World {
         self.process_destroy_list();
     }
     fn u_command_list_contains(&self, t: MessageType) -> bool {
-        let gl = &self.cuts.game_loop;
-        gl.commands.iter().any(|id| gl.messages.get(*id).is_some_and(|m| m.get_type() == t))
+        use crate::common::message_stream::Messages;
+        self.cuts.game_loop.messages.contains_message_of_type(Messages::COMMAND_LIST, t).unwrap_or(false)
     }
     fn u_command_list(&self) -> Vec<u32> {
-        (0..self.cuts.game_loop.commands.len() as u32).collect()
+        use crate::common::message_stream::Messages;
+        let n = self.cuts.game_loop.messages.list_messages(Messages::COMMAND_LIST).map_or(0, |l| l.len());
+        (0..n as u32).collect()
     }
     fn u_dispatch(&mut self, state: &mut DispatchState, msg: u32) -> R<()> {
-        // batch I7b: the world's own dispatcher
+        // batch I7b: the world's own dispatcher (batch I55: the `msg`th message of `TheCommandList`)
+        use crate::common::message_stream::Messages;
         let gl = &self.cuts.game_loop;
-        let Some(m) = gl.commands.get(msg as usize).and_then(|id| gl.messages.get(*id)).cloned() else { return Ok(()) };
+        let id = gl.messages.list_messages(Messages::COMMAND_LIST)?.get(msg as usize).copied();
+        let Some(m) = id.and_then(|id| gl.messages.get(id)).cloned() else { return Ok(()) };
         crate::logic::world::game_logic_dispatch::logic_message_dispatcher(state, &m, self)
     }
     fn u_command_list_reset(&mut self) {
-        let gl = &mut self.cuts.game_loop;
-        for id in std::mem::take(&mut gl.commands) {
-            let _ = gl.messages.delete_message(id);
-        }
+        use crate::common::message_stream::Messages;
+        let _ = self.cuts.game_loop.messages.destroy_all_messages(Messages::COMMAND_LIST);
     }
     fn u_send_logic_crc(&mut self, crc: u32, playback: bool) {
+        // batch I55: appended to `TheMessageStream` (GameLogic.cpp:3666), as upstream does; the call is still logged
         self.loop_cut("MessageStream::appendMessage(MSG_LOGIC_CRC)", &[i64::from(crc), i64::from(playback)]);
+        use crate::common::message_stream::Messages;
+        let local = self.players.local_index().map_or(-1, |p| p);
+        let gl = &mut self.cuts.game_loop;
+        if let Ok(id) = gl.messages.append_new_message(Messages::STREAM, crate::common::message_types::MSG_LOGIC_CRC, local) {
+            if let Some(m) = gl.messages.get_mut(id) {
+                m.append_integer_argument(crc as i32);
+                m.append_boolean_argument(playback);
+            }
+        }
     }
     fn u_set_fp_mode(&mut self) {
         // `setFPMode()`: the x87 control word; Rust's floating point is already IEEE single/double as written
@@ -290,22 +310,48 @@ impl GameLogicHost for World {
         }
     }
     fn u_has_recorder(&self) -> bool {
-        self.cuts.game_loop.has_recorder
+        // (batch I55: the live recorder, once made; the stand-in's flag otherwise)
+        self.cuts.game_loop.recorder.is_some() || self.cuts.game_loop.has_recorder
     }
     fn u_recorder_is_multiplayer(&self) -> bool {
-        self.cuts.game_loop.recorder_multiplayer
+        self.recorder_is_multiplayer().unwrap_or(self.cuts.game_loop.recorder_multiplayer)
     }
     fn u_recorder_playback(&self) -> bool {
-        self.cuts.game_loop.recorder_playback
+        match &self.cuts.game_loop.recorder {
+            Some(r) => r.mode == crate::common::recorder::RecorderMode::Playback,
+            None => self.cuts.game_loop.recorder_playback,
+        }
     }
     fn u_recorder_update(&mut self) {
-        self.loop_cut("Recorder::update", &[]);
+        // (batch I55: the live recorder's `update()`; a logged call without one)
+        match self.with_recorder(|r, w| r.update(w)) {
+            Some(Ok(())) => {}
+            Some(Err(e)) => self.cuts.team_live_errors.push(format!("Recorder::update: {e:?}")),
+            None => self.loop_cut("Recorder::update", &[]),
+        }
     }
     fn u_game_info_crc_interval(&self) -> Option<i32> {
+        // (batch I55: `TheGameInfo->getCRCInterval()`, of the game `startNewGame` took: the replay's, the recorder's
+        // `getGameInfo()`, or the skirmish's; the table when none was taken)
+        use crate::logic::world::game_logic_new_game::GameSource;
+        match self.cuts.new_game.selected {
+            Some(GameSource::Recorder) => {
+                if let Some(r) = &self.cuts.game_loop.recorder {
+                    return Some(r.game_info.crc_interval);
+                }
+            }
+            Some(s) => {
+                if let Some((_, g)) = self.cuts.new_game.games.iter().find(|(x, _)| *x == s) {
+                    return Some(g.crc_interval);
+                }
+            }
+            None => {}
+        }
         self.cuts.game_loop.game_info_crc_interval
     }
     fn u_replay_crc_interval(&self) -> i32 {
-        self.cuts.game_loop.replay_crc_interval
+        // (batch I55: `REPLAY_CRC_INTERVAL`, which the live recorder's `playbackFile` sets)
+        self.cuts.game_loop.recorder.as_ref().map_or(self.cuts.game_loop.replay_crc_interval, |r| r.replay_crc_interval)
     }
     fn u_stats_collector_update(&mut self) -> bool {
         if self.cuts.game_loop.has_stats_collector {

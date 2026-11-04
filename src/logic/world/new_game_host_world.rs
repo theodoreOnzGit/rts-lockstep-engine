@@ -189,6 +189,16 @@ impl NewGameHost for World {
         self.cuts.new_game.has_lan
     }
     fn sn_select_game(&mut self, source: GameSource) -> bool {
+        // (batch I55: a replay's game is the live recorder's `getGameInfo()`)
+        if source == GameSource::Recorder {
+            if let Some(r) = &self.cuts.game_loop.recorder {
+                let g = r.game_info.clone();
+                let ng = &mut self.cuts.new_game;
+                ng.selected = Some(source);
+                ng.taken = Some(g);
+                return true;
+            }
+        }
         let ng = &mut self.cuts.new_game;
         ng.selected = (source != GameSource::None).then_some(source);
         ng.taken = ng.selected.and_then(|s| ng.games.iter().find(|(src, _)| *src == s).map(|(_, g)| g.clone()));
@@ -198,6 +208,13 @@ impl NewGameHost for World {
         self.cuts.new_game.taken.take().expect("startNewGame takes the game's options only after selecting a game")
     }
     fn sn_put_game(&mut self, game: GameInfo) {
+        if self.cuts.new_game.selected == Some(GameSource::Recorder) {
+            if let Some(r) = &mut self.cuts.game_loop.recorder {
+                r.game_info = game.clone();
+                self.cuts.new_game.taken = Some(game);
+                return;
+            }
+        }
         let ng = &mut self.cuts.new_game;
         if let Some(s) = ng.selected {
             if let Some(entry) = ng.games.iter_mut().find(|(src, _)| *src == s) {
@@ -445,7 +462,8 @@ impl NewGameHost for World {
         Ok(World::thing_factory_new_object(self, t, team, ObjectStatusMaskType::default()).ok().map(|o| o as u32))
     }
     fn sn_recorder_game_mode(&self) -> i32 {
-        self.cuts.new_game.recorder_game_mode
+        // (batch I55: the live recorder's `getGameMode()`, the recorded game's original mode)
+        self.cuts.game_loop.recorder.as_ref().map_or(self.cuts.new_game.recorder_game_mode, |r| r.original_game_mode)
     }
     fn sn_add_landmark_bridge(&mut self, obj: u32) {
         self.terrain_add_landmark_bridge_to_logic(obj as ObjectId);
