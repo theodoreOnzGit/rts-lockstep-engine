@@ -3635,3 +3635,271 @@ mod line_of_sight_tests {
         assert_eq!(got, (false, true, true, true, false, false, true));
     }
 }
+
+#[cfg(test)]
+mod module_census_tests {
+    use super::*;
+
+    /// Integration batch I64: every logic module type the factory registers (201: the `ModuleType::Behavior` entries of
+    /// `module_factory`, bodies included) is made into an object, from an INI block that names it alone, in the gate world
+    /// after the pathfinder's `newMap` (as a game makes objects). It checks that a module type a real install's INI names is
+    /// never silently inert: an `untranslated_modules` entry is a module with no body.
+    ///
+    /// **Not a prediction:** the first run was exploratory (to count what a real install's INI would meet), and the assertions
+    /// pin what it found:
+    /// - 195 types build, with bodies, and with no error;
+    /// - 6 are refused by the INI as `ModuleNotInShippedBuild`, as upstream compiles them out of the shipped game:
+    ///   `POWTruckBehavior`, `PrisonBehavior`, `PropagandaCenterBehavior`, `PrisonDockUpdate`, `POWTruckAIUpdate` and
+    ///   `DemoralizeSpecialPower`.
+    ///
+    /// The exploratory run also met an index panic in the pathfinder for an object made before `newMap`. A game never does
+    /// that (`startNewGame` runs `newMap` before the map's objects), so the test runs `newMap` first; it is noted, not fixed.
+    #[test]
+    fn every_shipped_module_type_builds() {
+        let names: &[&[u8]] = &[
+        b"AutoHealBehavior",
+        b"GrantStealthBehavior",
+        b"NeutronBlastBehavior",
+        b"BridgeBehavior",
+        b"BridgeScaffoldBehavior",
+        b"BridgeTowerBehavior",
+        b"CountermeasuresBehavior",
+        b"DumbProjectileBehavior",
+        b"PhysicsBehavior",
+        b"InstantDeathBehavior",
+        b"SlowDeathBehavior",
+        b"HelicopterSlowDeathBehavior",
+        b"NeutronMissileSlowDeathBehavior",
+        b"CaveContain",
+        b"OpenContain",
+        b"OverchargeBehavior",
+        b"HealContain",
+        b"GarrisonContain",
+        b"InternetHackContain",
+        b"TransportContain",
+        b"RiderChangeContain",
+        b"RailedTransportContain",
+        b"MobNexusContain",
+        b"TunnelContain",
+        b"OverlordContain",
+        b"HelixContain",
+        b"ParachuteContain",
+        b"POWTruckBehavior",
+        b"PrisonBehavior",
+        b"PropagandaCenterBehavior",
+        b"PropagandaTowerBehavior",
+        b"BunkerBusterBehavior",
+        b"FireWeaponWhenDamagedBehavior",
+        b"FireWeaponWhenDeadBehavior",
+        b"GenerateMinefieldBehavior",
+        b"ParkingPlaceBehavior",
+        b"FlightDeckBehavior",
+        b"PoisonedBehavior",
+        b"RebuildHoleBehavior",
+        b"SupplyWarehouseCripplingBehavior",
+        b"TechBuildingBehavior",
+        b"MinefieldBehavior",
+        b"BattleBusSlowDeathBehavior",
+        b"JetSlowDeathBehavior",
+        b"RailroadBehavior",
+        b"SpawnBehavior",
+        b"DestroyDie",
+        b"FXListDie",
+        b"CrushDie",
+        b"DamDie",
+        b"CreateCrateDie",
+        b"CreateObjectDie",
+        b"EjectPilotDie",
+        b"SpecialPowerCompletionDie",
+        b"RebuildHoleExposeDie",
+        b"UpgradeDie",
+        b"KeepObjectDie",
+        b"AssistedTargetingUpdate",
+        b"AutoFindHealingUpdate",
+        b"BaseRegenerateUpdate",
+        b"StealthDetectorUpdate",
+        b"StealthUpdate",
+        b"DeletionUpdate",
+        b"SmartBombTargetHomingUpdate",
+        b"DynamicShroudClearingRangeUpdate",
+        b"DeployStyleAIUpdate",
+        b"AssaultTransportAIUpdate",
+        b"HordeUpdate",
+        b"ToppleUpdate",
+        b"EnemyNearUpdate",
+        b"LifetimeUpdate",
+        b"RadiusDecalUpdate",
+        b"EMPUpdate",
+        b"LeafletDropBehavior",
+        b"AutoDepositUpdate",
+        b"WeaponBonusUpdate",
+        b"MissileAIUpdate",
+        b"NeutronMissileUpdate",
+        b"FireSpreadUpdate",
+        b"FireWeaponUpdate",
+        b"FlammableUpdate",
+        b"FloatUpdate",
+        b"TensileFormationUpdate",
+        b"HeightDieUpdate",
+        b"ChinookAIUpdate",
+        b"JetAIUpdate",
+        b"AIUpdateInterface",
+        b"SupplyTruckAIUpdate",
+        b"DeliverPayloadAIUpdate",
+        b"HackInternetAIUpdate",
+        b"DynamicGeometryInfoUpdate",
+        b"FirestormDynamicGeometryInfoUpdate",
+        b"PointDefenseLaserUpdate",
+        b"CleanupHazardUpdate",
+        b"CommandButtonHuntUpdate",
+        b"PilotFindVehicleUpdate",
+        b"DemoTrapUpdate",
+        b"ParticleUplinkCannonUpdate",
+        b"SpectreGunshipUpdate",
+        b"SpectreGunshipDeploymentUpdate",
+        b"BaikonurLaunchPower",
+        b"BattlePlanUpdate",
+        b"ProjectileStreamUpdate",
+        b"QueueProductionExitUpdate",
+        b"RepairDockUpdate",
+        b"PrisonDockUpdate",
+        b"RailedTransportDockUpdate",
+        b"DefaultProductionExitUpdate",
+        b"SpawnPointProductionExitUpdate",
+        b"SpyVisionUpdate",
+        b"SlavedUpdate",
+        b"MobMemberSlavedUpdate",
+        b"OCLUpdate",
+        b"SpecialAbilityUpdate",
+        b"MissileLauncherBuildingUpdate",
+        b"SupplyCenterProductionExitUpdate",
+        b"SupplyCenterDockUpdate",
+        b"SupplyWarehouseDockUpdate",
+        b"DozerAIUpdate",
+        b"POWTruckAIUpdate",
+        b"RailedTransportAIUpdate",
+        b"ProductionUpdate",
+        b"ProneUpdate",
+        b"StickyBombUpdate",
+        b"FireOCLAfterWeaponCooldownUpdate",
+        b"HijackerUpdate",
+        b"StructureToppleUpdate",
+        b"StructureCollapseUpdate",
+        b"BoneFXUpdate",
+        b"RadarUpdate",
+        b"AnimationSteeringUpdate",
+        b"TransportAIUpdate",
+        b"WanderAIUpdate",
+        b"WaveGuideUpdate",
+        b"WorkerAIUpdate",
+        b"PowerPlantUpdate",
+        b"CheckpointUpdate",
+        b"CostModifierUpgrade",
+        b"ActiveShroudUpgrade",
+        b"ArmorUpgrade",
+        b"CommandSetUpgrade",
+        b"GrantScienceUpgrade",
+        b"PassengersFireUpgrade",
+        b"StatusBitsUpgrade",
+        b"SubObjectsUpgrade",
+        b"StealthUpgrade",
+        b"RadarUpgrade",
+        b"PowerPlantUpgrade",
+        b"LocomotorSetUpgrade",
+        b"ObjectCreationUpgrade",
+        b"ReplaceObjectUpgrade",
+        b"ModelConditionUpgrade",
+        b"UnpauseSpecialPowerUpgrade",
+        b"WeaponBonusUpgrade",
+        b"WeaponSetUpgrade",
+        b"WeaponBonusUpgrade",
+        b"ExperienceScalarUpgrade",
+        b"MaxHealthUpgrade",
+        b"LockWeaponCreate",
+        b"PreorderCreate",
+        b"SupplyCenterCreate",
+        b"SupplyWarehouseCreate",
+        b"SpecialPowerCreate",
+        b"GrantUpgradeCreate",
+        b"VeterancyGainCreate",
+        b"BoneFXDamage",
+        b"TransitionDamageFX",
+        b"FireWeaponCollide",
+        b"SquishCollide",
+        b"HealCrateCollide",
+        b"MoneyCrateCollide",
+        b"ShroudCrateCollide",
+        b"UnitCrateCollide",
+        b"VeterancyCrateCollide",
+        b"ConvertToCarBombCrateCollide",
+        b"ConvertToHijackedVehicleCrateCollide",
+        b"SabotageCommandCenterCrateCollide",
+        b"SabotageFakeBuildingCrateCollide",
+        b"SabotageInternetCenterCrateCollide",
+        b"SabotageMilitaryFactoryCrateCollide",
+        b"SabotagePowerPlantCrateCollide",
+        b"SabotageSuperweaponCrateCollide",
+        b"SabotageSupplyCenterCrateCollide",
+        b"SabotageSupplyDropzoneCrateCollide",
+        b"SalvageCrateCollide",
+        b"InactiveBody",
+        b"ActiveBody",
+        b"HighlanderBody",
+        b"ImmortalBody",
+        b"StructureBody",
+        b"HiveStructureBody",
+        b"UndeadBody",
+        b"CashHackSpecialPower",
+        b"DefectorSpecialPower",
+        b"DemoralizeSpecialPower",
+        b"OCLSpecialPower",
+        b"FireWeaponPower",
+        b"SpecialAbility",
+        b"SpyVisionSpecialPower",
+        b"CashBountyPower",
+        b"CleanupAreaPower"
+        ];
+        let mut untranslated = Vec::new();
+        let mut not_shipped = Vec::new();
+        let mut other_ini_errors = Vec::new();
+        let mut build_errors = Vec::new();
+        for (i, n) in names.iter().enumerate() {
+            let name = String::from_utf8_lossy(n).to_string();
+            let key = if name.ends_with("Body") { "Body" } else { "Behavior" };
+            let extra = format!("Object Census{i}\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n {key} = {name} ModuleTag_C\n End\nEnd\n");
+            // the INI first, as `gate_map_world_with` reads it, so that a refused module is an answer, not a panic
+            let mut files = MemoryFiles::new();
+            files.insert(b"Data\\INI\\Object\\Gate.ini", INI.as_bytes().to_vec());
+            files.insert(b"Data\\INI\\Object\\GateTest.ini", extra.as_bytes().to_vec());
+            match load_game_data(&files, MissingFiles::Skip, TextTable::default()) {
+                Ok(_) => {}
+                Err(e) if matches!(e.kind, crate::common::ini::IniErrorKind::ModuleNotInShippedBuild(_)) => {
+                    not_shipped.push(name);
+                    continue;
+                }
+                Err(e) => {
+                    other_ini_errors.push(format!("{name}: {:?}", e.kind));
+                    continue;
+                }
+            }
+            let mut w = gate_map_world_with(&extra);
+            let t = World::thing_factory_find_template(&w, format!("Census{i}").as_bytes()).expect("the template");
+            w.pathfinder_op(PfOp::NewMap);
+            if let Err(e) = w.thing_factory_new_object(t, None, Default::default()) {
+                build_errors.push(format!("{name}: {e:?}"));
+            }
+            if !w.cuts.untranslated_modules.is_empty() {
+                untranslated.push(name);
+            }
+        }
+        eprintln!("{} types; not shipped {not_shipped:?}", names.len());
+        assert_eq!(names.len(), 201);
+        assert!(untranslated.is_empty(), "{untranslated:?}");
+        assert!(other_ini_errors.is_empty(), "{other_ini_errors:?}");
+        assert!(build_errors.is_empty(), "{build_errors:?}");
+        assert_eq!(
+            not_shipped,
+            ["POWTruckBehavior", "PrisonBehavior", "PropagandaCenterBehavior", "PrisonDockUpdate", "POWTruckAIUpdate", "DemoralizeSpecialPower"]
+        );
+    }
+}

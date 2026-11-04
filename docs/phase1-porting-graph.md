@@ -2081,6 +2081,20 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I64 (2026-11-04, `p1w13-sonnet`, GitHub #8): every module type the shipped game has builds.** A real install's INI names every module type the original has, and one with no body in the port would be silently inert in a game: the World puts a bodiless stub in its place and lists it in `cuts.untranslated_modules`.
+
+**Two checks:**
+- **The registry against upstream.** `ModuleFactory.cpp`'s `addModule` calls register 204 distinct module names, and the port's factory registers the same 204, with no name missing on either side.
+- **A census, now a test** (`module_census_tests::every_shipped_module_type_builds`). Each of the 201 logic types (the 4 `ClientUpdate`s are the client's) is made into an object from an INI block naming it alone, in the gate world after the pathfinder's `newMap`:
+  - 195 build, all with bodies and no error;
+  - 6 are refused by the INI as `ModuleNotInShippedBuild`, as upstream compiles them out of the shipped game: `POWTruckBehavior`, `PrisonBehavior`, `PropagandaCenterBehavior`, `PrisonDockUpdate`, `POWTruckAIUpdate` and `DemoralizeSpecialPower`.
+
+**Not a prediction:** the census's first run was exploratory, and the test pins what it found. That run also met an index panic in the pathfinder, for an object made before `newMap`. A game never does that (`startNewGame` runs `newMap` before the map's objects), so the test runs `newMap` first; the panic is noted, not fixed.
+
+**What this does not show:** that each body behaves as upstream's does. That is what each module's own tests and the differential tests check.
+
+**Full run (2026-11-04):** 203 test binaries, 1,176 tests, 0 failed; clippy clean. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. The census takes 0.7 s.
+
 **Integration batch I63 (2026-11-04, `p1w13-sonnet`, GitHub #8): line of sight over the terrain.** A survey of the logic's remaining `NotTranslated` errors found `TheTerrainRenderObject->isClearLineOfSight`. It looked like render code but is logic: `PartitionManager::isClearLineOfSightTerrain` asks it, for the weapons that need a line of sight (Weapon.cpp:3102–3143) and for `PartitionFilterLineOfSight` (PartitionManager.cpp:5344). The World answered from `cuts.blocked_lines_of_sight`, an empty table, so **in a game every sight line over the terrain was clear, and units saw and shot through hills.**
 
 **Now** `LogicHeightMap::is_clear_line_of_sight` translates `BaseHeightMapRenderObjClass::isClearLineOfSight`'s `DO_BRESENHAM` path (BaseHeightMap.cpp:1011):
