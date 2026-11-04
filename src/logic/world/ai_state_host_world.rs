@@ -1916,7 +1916,9 @@ impl AiStateHost for World {
         self.with_partition(|pm, w| pm.get_closest_object_at(w, pos, range, dc, &f).object).unwrap_or(INVALID_ID)
     }
     fn has_team(&mut self) -> bool {
-        true
+        // (~~true~~ batch I62: `getTeam() != NULL`, the object's team, 0 being none; a guard of an object made with no team took
+        // the team branches)
+        self.objects.find(self.ai_self).is_some_and(|o| o.team != 0)
     }
     fn tunnel_system(&mut self) -> bool {
         let Some(p) = self.get_controlling_player(self.ai_self) else { return false };

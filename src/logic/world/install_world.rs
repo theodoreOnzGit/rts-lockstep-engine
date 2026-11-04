@@ -344,7 +344,7 @@ mod tests {
               MultiplayerColor Red\n TooltipName = Color:Red\n RGBColor = R:255 G:0 B:0\n RGBNightColor = R:128 G:0 B:0\nEnd\n",
         );
         let ini_refs: Vec<(&[u8], &[u8])> = ini.iter().map(|(p, t)| (p.as_slice(), t.as_slice())).collect();
-        let text = csf(&[("MAP:Duel", "Desert Duel")]);
+        let text = csf(&[("MAP:Duel", "Desert Duel"), ("GUI:MediumAI", "Medium Army")]);
         let cache = b"MapCache maps_5Cduel_5Cduel_2Emap\n fileSize = 1\n fileCRC = 7\n isOfficial = yes\n isMultiplayer = yes\n\
             numPlayers = 2\n extentMin = X:0.00 Y:0.00 Z:0.00\n extentMax = X:300.00 Y:300.00 Z:0.00\n nameLookupTag = MAP_3ADuel\n\
             Player_1_Start = X:100.00 Y:100.00 Z:0.00\n Player_2_Start = X:200.00 Y:200.00 Z:0.00\nEND\n";
@@ -372,7 +372,7 @@ mod tests {
         fs.init(None);
         let (mut w, report) = World::from_install(&fs, DEFAULT_LANGUAGE).expect("the install");
         assert!(report.archive_errors.is_empty(), "{:?}", report.archive_errors);
-        assert_eq!((report.csf, report.templates, report.maps), (Some(Ok(1)), 11, 1));
+        assert_eq!((report.csf, report.templates, report.maps), (Some(Ok(2)), 11, 1));
         assert_eq!(w.mount_map(&fs, MAP), 2);
         w.start_skirmish(MAP, 0, 5).expect("the skirmish");
         for _ in 0..10 {
@@ -386,6 +386,7 @@ mod tests {
     /// Integration batch I57: a World made from an install, as `GameEngine::init` makes the engine, starts a skirmish on a
     /// map of the install's archives. Predicted before the run:
     /// - the install loads with no error: the string file's one label, the tests' ~~twelve~~ eleven templates (a miscount in the prediction: the tests' INI holds eleven objects), one map in the cache
+    ///   (batch I62: the string file has a second label, `GUI:MediumAI`, so two)
     ///   (from the shipped `MapCache.ini`, not parsed: its CRC is the file's 7, and its display name is the string file's
     ///   "Desert Duel (2)");
     /// - the user data directory is `Command and Conquer Generals Zero Hour Data\`, so the user's map directory is not the
@@ -403,7 +404,7 @@ mod tests {
         let fs = install(&map);
         assert!(fs.archive_errors.is_empty());
         let (mut w, report) = World::from_install(&fs, DEFAULT_LANGUAGE).expect("the install");
-        assert_eq!(report.csf, Some(Ok(1)));
+        assert_eq!(report.csf, Some(Ok(2)));
         assert_eq!(report.templates, 11);
         assert_eq!(report.maps, 1);
         let md = w.statics.map_cache.find_map(MAP).expect("the shipped entry").clone();
@@ -531,6 +532,25 @@ mod tests {
         assert!(made.iter().any(|(n, p, c)| n == b"Barracks" && *p == ai && near(c, 200.0, 200.0)), "the computer's barracks at its start");
         assert!(made.iter().any(|(n, p, c)| n == b"Barracks" && *p != ai && near(c, 100.0, 100.0)), "the human's barracks at theirs");
         assert_eq!(made.iter().filter(|(n, _, _)| n == b"Tank").count(), 2);
+
+        // batch I62: three answers that were fixed literals. The computer slot's name is its label's text (`setState`'s
+        // `TheGameText->fetch("GUI:MediumAI")`; it was empty); the save side's user data path is the install's (it was empty);
+        // `getTeam() != NULL` is the object's (it was always true).
+        let game = w.cuts.new_game.games.iter().find(|(s, _)| *s == crate::logic::world::game_logic_new_game::GameSource::Skirmish).map(|(_, g)| g.clone());
+        let slot_name = game.map(|g| String::from_utf16_lossy(&g.slots[1].name)).unwrap_or_default();
+        assert_eq!(slot_name, "Medium Army");
+        assert_eq!(crate::common::game_state::GameStateHost::user_data_path(&w), USER_DATA_DIR.to_vec());
+        let tank = w.objects.ids_in_order().into_iter().find(|o| w.find_object(*o).is_some_and(|x| x.template().get_name() == b"Tank")).expect("a tank");
+        let t = World::thing_factory_find_template(&w, b"Tank").expect("the template");
+        // (first written predicting a tank made with no team would have none: wrong, as upstream's `newObject` with a NULL team
+        // puts it on the neutral player's default team (batch I47); so the team is cleared by hand to exercise the answer)
+        let loner = w.thing_factory_new_object(t, None, Default::default()).expect("a tank");
+        w.ai_self = loner;
+        assert!(crate::logic::ai::ai_states::AiStateHost::has_team(&mut w), "the neutral player's team");
+        w.objects.find_mut(loner).expect("the tank").team = 0;
+        assert!(!crate::logic::ai::ai_states::AiStateHost::has_team(&mut w));
+        w.ai_self = tank;
+        assert!(crate::logic::ai::ai_states::AiStateHost::has_team(&mut w));
     }
 
 }

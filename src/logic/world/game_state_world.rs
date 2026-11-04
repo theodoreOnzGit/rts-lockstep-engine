@@ -214,7 +214,9 @@ impl GameStateHost<WorldBlock> for World {
         World::partition_update(self);
     }
     fn user_data_path(&self) -> Vec<u8> {
-        Vec::new()
+        // (~~empty~~ batch I62: `TheGlobalData->getPath_UserData()`, as the recorder's and the map cache's (batch I57): an install's
+        // saves go under its user data directory)
+        crate::common::recorder::RecorderHost::user_data_path(self)
     }
     fn map_name(&self) -> Vec<u8> {
         self.save_side.map_name.clone()
@@ -254,8 +256,10 @@ pub struct SaveSide {
 
 impl crate::common::game_info::GameInfoHost for World {
     // (the skirmish game's options are xferred only in a skirmish; the World's games are not, and these are its fixed answers)
-    fn game_text(&mut self, _label: &str) -> Vec<u16> {
-        Vec::new()
+    fn game_text(&mut self, label: &str) -> Vec<u16> {
+        // (~~empty~~ batch I62: `TheGameText->fetch(label)`, the statics' game text (batch I57): an AI slot's name is its
+        // `GUI:EasyAI`-style label's text)
+        crate::common::science::GameTextFetch::fetch(&self.statics.game_text, label.as_bytes()).str().to_vec()
     }
     fn tick_count(&mut self) -> u32 {
         0

@@ -2081,6 +2081,30 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I62 (2026-11-04, `p1w13-sonnet`, GitHub #8): host answers that were fixed literals.** A scan for World host methods whose whole body is a literal (`false`, `0`, `None`, empty) found 46. Most are correct:
+- client answers (the drawables, the view, the UI, transitions);
+- `crc` methods upstream leaves empty;
+- values upstream reads from the machine (`GetTickCount`, the local time);
+- trait defaults the World overrides.
+
+**Three were defects:**
+- **`getTeam() != NULL`** (the AI state host's `has_team`) was always true. It is now the object's team (0 is none). Upstream gives every object made with no team the neutral player's team, so in practice this matters only for an object whose team is cleared.
+- **The save side's `getPath_UserData()`** was empty. It is now the global data's, as the recorder's and the map cache's are since batch I57, so an install's saves go under its user data directory.
+- **`GameInfo`'s `TheGameText->fetch`** was empty. It is now the statics' game text (I57), so an AI slot's name is its `GUI:EasyAI`-style label's text.
+
+**Left, and why:**
+- `world_dict_map_name` (`None`) is the save's description of the map; the World does not keep the map's `WorldInfo` dictionary, and the save file's logic does not depend on it.
+- `version_*` and `time` are the recorder header's build stamps, which upstream takes from the executable.
+
+**Test:** the I60 skirmish test now checks all three:
+- the computer slot's name is the string file's text for `GUI:MediumAI` (it was empty);
+- the save side's user data path is the install's;
+- `has_team` reads the object.
+
+My first prediction for `has_team` was wrong: I expected a tank made with no team to have none, but upstream's `newObject` puts it on the neutral player's team (I47). The test clears the team by hand instead, and records the miss.
+
+**Full run (2026-11-04):** 203 test binaries, 1,174 tests, 0 failed. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. Clippy found one needless `&mut` in the new test, fixed after the run. A clean `--all-targets` clippy and the install tests were rerun on the fix.
+
 **Integration batch I61 (2026-11-04, `p1w13-sonnet`, GitHub #14): `isMultiplayerSession()` is the recorder's.** A recheck of the `cuts` fields batch I58's hunt had skipped (`new_game`, `game_loop`) and of those it had filed as stored state, after I60 showed one such filing was wrong.
 - **Defect:** `TheGameEngine->isMultiplayerSession()` is `TheRecorder->isMultiplayer()` (GameEngine.cpp:929). The World answered `cuts.new_game.multiplayer_session`, a table that defaults to false. `startNewGame` reads it twice (GameLogic.cpp:1313 and 1503) and a script condition once (ScriptConditions.cpp:1398). So the playback of a multiplayer replay, the case gate (b) plays, took the single-player branches. Both answers are now the World's recorder's `isMultiplayer()` when it has one (batch I55), and the table otherwise.
 - **Checked and left:**
