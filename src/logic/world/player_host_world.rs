@@ -1458,9 +1458,20 @@ impl PlayerInitHost for World {
         self.sides.get_side_info(i).map(|s| s.dict.clone()).unwrap_or_default()
     }
     fn sides_side_scripts(&self, i: i32) -> Option<ScriptListRef> {
+        // (batch I60: with `live_teams`, the side's own list, as a handle; it was always the table)
+        if self.cuts.live_teams {
+            return self.sides.get_side_info(i).ok().and_then(|s| s.scripts.as_ref()).map(|_| script_handles::side(i));
+        }
         self.cuts.player_host.side_scripts.get(&i).copied()
     }
     fn sides_set_side_scripts(&mut self, i: i32, l: Option<ScriptListRef>) {
+        if self.cuts.live_teams {
+            let list = l.and_then(|h| self.take_script_list(h));
+            if let Ok(s) = self.sides.get_side_info_mut(i) {
+                s.scripts = list;
+            }
+            return;
+        }
         match l {
             Some(l) => self.cuts.player_host.side_scripts.insert(i, l),
             None => self.cuts.player_host.side_scripts.remove(&i),
@@ -1476,9 +1487,19 @@ impl PlayerInitHost for World {
         self.sides.get_skirmish_side_info(i).map(|s| s.dict.clone()).unwrap_or_default()
     }
     fn sides_skirmish_side_scripts(&self, i: i32) -> Option<ScriptListRef> {
+        if self.cuts.live_teams {
+            return self.sides.get_skirmish_side_info(i).ok().and_then(|s| s.scripts.as_ref()).map(|_| script_handles::skirmish_side(i));
+        }
         self.cuts.player_host.skirmish_side_scripts.get(&i).copied()
     }
     fn sides_set_skirmish_side_scripts(&mut self, i: i32, l: Option<ScriptListRef>) {
+        if self.cuts.live_teams {
+            let list = l.and_then(|h| self.take_script_list(h));
+            if let Ok(s) = self.sides.get_skirmish_side_info_mut(i) {
+                s.scripts = list;
+            }
+            return;
+        }
         match l {
             Some(l) => self.cuts.player_host.skirmish_side_scripts.insert(i, l),
             None => self.cuts.player_host.skirmish_side_scripts.remove(&i),
@@ -1516,10 +1537,30 @@ impl PlayerInitHost for World {
         }
         self.host_cut("ScriptList::duplicateAndQualify", &[i64::from(list)], &text);
         self.cuts.player_host.script_lists_given += 1;
+        if self.cuts.live_teams {
+            // (batch I60: the list's own deep copy, its names qualified for the new player; it was a handle with no list)
+            let handle = script_handles::PENDING + self.cuts.player_host.script_lists_given;
+            let Some(src) = self.script_list(list).cloned() else { return handle };
+            let templates = crate::logic::script_templates::script_templates(&mut self.names);
+            let mut cur_id = self.script_cur_id;
+            match src.duplicate_and_qualify(&mut cur_id, &templates, qualifier, qual_template_player_name, new_player_name) {
+                Ok(n) => {
+                    self.script_cur_id = cur_id;
+                    self.pending_script_lists.insert(handle, n);
+                }
+                Err(e) => self.cuts.team_live_errors.push(format!("ScriptList::duplicateAndQualify: {e:?}")),
+            }
+            return handle;
+        }
         self.cuts.player_host.script_lists_given
     }
     fn script_list_delete(&mut self, list: ScriptListRef) {
         self.host_cut("deleteInstance(ScriptList)", &[i64::from(list)], &[]);
+        if self.cuts.live_teams {
+            // (batch I60: the list freed; a side's pointer to it is cleared by the `setScriptList(NULL)` upstream makes next, and
+            // dropped here at once)
+            drop(self.take_script_list(list));
+        }
     }
     fn script_engine_global_difficulty(&self) -> GameDifficulty {
         self.cuts.player_host.global_difficulty
@@ -1841,5 +1882,46 @@ pub(crate) mod tests {
         assert_eq!(sp_ref((1 << 24) - 1, 255).map(sp_unref), Some(((1 << 24) - 1, 255)));
         assert_eq!(sp_ref(1 << 24, 0), None);
         assert_eq!(sp_ref(1, 256), None);
+    }
+}
+
+/// Batch I60: the handles the player host gives for script lists (`ScriptList*` upstream): a side's list, a skirmish side's, or a
+/// copy `duplicateAndQualify` made and `setScriptList` has not yet put on a side.
+pub(crate) mod script_handles {
+    /// Side `i`'s list.
+    pub fn side(i: i32) -> u32 {
+        1 + i as u32
+    }
+    /// Skirmish side `i`'s list.
+    pub fn skirmish_side(i: i32) -> u32 {
+        SKIRMISH + i as u32
+    }
+    /// The first skirmish side's handle.
+    pub const SKIRMISH: u32 = 0x1000;
+    /// The first copy's handle.
+    pub const PENDING: u32 = 0x10000;
+}
+
+impl World {
+    /// The list a script list handle names (batch I60).
+    fn script_list(&self, h: ScriptListRef) -> Option<&crate::logic::scripts::ScriptList> {
+        if h >= script_handles::PENDING {
+            self.pending_script_lists.get(&h)
+        } else if h >= script_handles::SKIRMISH {
+            self.sides.get_skirmish_side_info((h - script_handles::SKIRMISH) as i32).ok()?.scripts.as_ref()
+        } else {
+            self.sides.get_side_info(h as i32 - 1).ok()?.scripts.as_ref()
+        }
+    }
+
+    /// The list a handle names, taken from where it is (a side's list leaves the side's pointer `NULL`).
+    fn take_script_list(&mut self, h: ScriptListRef) -> Option<crate::logic::scripts::ScriptList> {
+        if h >= script_handles::PENDING {
+            self.pending_script_lists.remove(&h)
+        } else if h >= script_handles::SKIRMISH {
+            self.sides.get_skirmish_side_info_mut((h - script_handles::SKIRMISH) as i32).ok()?.scripts.take()
+        } else {
+            self.sides.get_side_info_mut(h as i32 - 1).ok()?.scripts.take()
+        }
     }
 }

@@ -173,6 +173,11 @@ pub struct World {
     pub keys: crate::common::well_known_keys::WellKnownKeys,
     /// `TheSidesList`: the map's sides, teams and build lists.
     pub sides: crate::logic::sides_list::SidesList,
+    /// Batch I60: the script lists `ScriptList::duplicateAndQualify` made for a player, by handle, until `setScriptList` puts them
+    /// on a side (see `player_host_world`'s script list handles).
+    pub pending_script_lists: std::collections::BTreeMap<u32, crate::logic::scripts::ScriptList>,
+    /// Batch I60: `ScriptList::m_curId`, the script groups' id counter (a global upstream).
+    pub script_cur_id: i32,
     // --- end batch I3 ---
     // --- batch I4 ---
     /// `GameLogic`'s own members (`m_CRC`, the pause, the progress, the overrides, what `GameLogic::xfer` saves).
@@ -290,6 +295,8 @@ impl World {
             // --- batch I3 ---
             keys: crate::common::well_known_keys::WellKnownKeys::new(),
             sides: crate::logic::sides_list::SidesList::new(),
+            pending_script_lists: std::collections::BTreeMap::new(),
+            script_cur_id: 0,
             // --- end batch I3 ---
             // --- batch I4 ---
             game_logic: crate::logic::world::game_logic_update::GameLogicState::new(),

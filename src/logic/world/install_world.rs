@@ -68,6 +68,8 @@ pub struct InstallReport {
     pub templates: usize,
     /// The maps in the map cache.
     pub maps: usize,
+    /// Batch I60: the script files (`Data\Scripts\*.scb`) mounted.
+    pub scripts: usize,
 }
 
 /// `"%s\\%s"`-style join of the parts.
@@ -128,6 +130,17 @@ impl World {
         }
         w.update_map_cache().map_err(InstallError::MapCache)?;
         report.maps = w.statics.map_cache.maps.len();
+        // (batch I60: the scripts a new game opens, `Data\Scripts\SkirmishScripts.scb` (`prepareForMP_or_Skirmish`) and
+        // `MultiplayerScripts.scb`, which an install keeps in its archives; without them every skirmish computer player whose
+        // side the map lacks was made human, as upstream does when the file is missing)
+        let mut scripts = FilenameList::new();
+        fs.get_file_list_in_directory(b"Data\\Scripts\\", b"*.scb", &mut scripts, false);
+        for name in scripts.iter() {
+            if let Some(bytes) = fs.open_file(name) {
+                w.save_side.disk.insert(name.to_ascii_lowercase(), bytes);
+                report.scripts += 1;
+            }
+        }
         Ok((w, report))
     }
 
@@ -136,6 +149,12 @@ impl World {
     /// name, `InitGameLogicRandom(seed)` and `MSG_NEW_GAME` (`GAME_SKIRMISH`). The game starts on the next frame. The map
     /// must be in the map cache (the menu lists only those).
     pub fn start_skirmish(&mut self, map: &[u8], template: i32, seed: i32) -> Result<(), InstallError> {
+        self.start_skirmish_against(map, template, seed, None)
+    }
+
+    /// [`World::start_skirmish`] with a computer opponent in slot 1: `(slot state, player template)`, the state one of
+    /// `SLOT_EASY_AI`, `SLOT_MED_AI`, `SLOT_BRUTAL_AI`, at the map's second start, with the second colour.
+    pub fn start_skirmish_against(&mut self, map: &[u8], template: i32, seed: i32, opponent: Option<(i32, i32)>) -> Result<(), InstallError> {
         use crate::common::game_info::{slot_state, GameInfo};
         use crate::common::recorder::game_mode;
         use crate::logic::world::game_logic_new_game::GameSource;
@@ -150,6 +169,12 @@ impl World {
         g.slots[0].set_player_template(template);
         g.slots[0].color = 0;
         g.slots[0].start_pos = 0;
+        if let Some((state, t)) = opponent {
+            g.slots[1].set_state(state, &[], 0, self);
+            g.slots[1].set_player_template(t);
+            g.slots[1].color = 1;
+            g.slots[1].start_pos = 1;
+        }
         g.map_name = map.to_vec();
         g.seed = seed;
         g.start_game(0, self);
@@ -227,6 +252,37 @@ mod tests {
         }
         out.write_array_of_bytes(&[4u8; 900]);
         out.close_data_chunk();
+        let templates = crate::logic::script_templates::script_templates(&mut w.names);
+        let mut sc = crate::logic::sides_list::SidesCtx::new(w.names.clone(), templates);
+        let mut d = Dict::new();
+        d.set_ascii_string(sc.names.generator.name_to_key(b"playerName"), b"").unwrap();
+        d.set_bool(sc.names.generator.name_to_key(b"playerIsHuman"), false).unwrap();
+        d.set_ascii_string(sc.names.generator.name_to_key(b"playerFaction"), b"").unwrap();
+        sc.sides.add_side(&d);
+        // (batch I60: the sides of a multiplayer map: the neutral one, the civilians (`FactionCivilian`, which
+        // `prepareForMP_or_Skirmish` keeps), and a skirmish side for America with its team, which it moves to the skirmish
+        // sides: a computer slot of `FactionAmerica` is a skirmish AI only when one exists, `Player::initFromDict`'s check)
+        for (name, faction) in [(&b"PlyrCivilian"[..], &b"FactionCivilian"[..]), (b"SkirmishAmerica", b"FactionAmerica")] {
+            let mut d = Dict::new();
+            d.set_ascii_string(sc.names.generator.name_to_key(b"playerName"), name).unwrap();
+            d.set_bool(sc.names.generator.name_to_key(b"playerIsHuman"), false).unwrap();
+            d.set_ascii_string(sc.names.generator.name_to_key(b"playerFaction"), faction).unwrap();
+            sc.sides.add_side(&d);
+            let mut t = Dict::new();
+            let mut team_name = b"team".to_vec();
+            team_name.extend_from_slice(name);
+            t.set_ascii_string(sc.names.generator.name_to_key(b"teamName"), &team_name).unwrap();
+            t.set_ascii_string(sc.names.generator.name_to_key(b"teamOwner"), name).unwrap();
+            t.set_bool(sc.names.generator.name_to_key(b"teamIsSingleton"), true).unwrap();
+            sc.sides.add_team(&t);
+        }
+        // (and its script list, empty, as every side of a real map has one: `initFromDict` dereferences the skirmish side's list)
+        for i in 0..sc.sides.get_num_sides() {
+            sc.sides.get_side_info_mut(i).expect("the side").scripts = Some(crate::logic::scripts::ScriptList { groups: Vec::new(), scripts: Vec::new() });
+        }
+        crate::logic::sides_list::SidesList::write_sides_data_chunk(&mut out, &mut sc).expect("the sides written");
+        // (the objects after the sides, in WorldBuilder's order: a map's last chunk, if empty, is never parsed, as upstream's
+        // `DataChunkInput::parse` stops at the end of the file after opening it; the sides list's last script list is empty)
         out.open_data_chunk(b"ObjectsList", K_OBJECTS_VERSION_3);
         for (i, (name, x, y)) in [(&b"Player_1_Start"[..], 100.0, 100.0), (b"Player_2_Start", 200.0, 200.0)].into_iter().enumerate() {
             out.open_data_chunk(b"Object", K_OBJECTS_VERSION_3);
@@ -242,14 +298,6 @@ mod tests {
             out.close_data_chunk();
         }
         out.close_data_chunk();
-        let templates = crate::logic::script_templates::script_templates(&mut w.names);
-        let mut sc = crate::logic::sides_list::SidesCtx::new(w.names.clone(), templates);
-        let mut d = Dict::new();
-        d.set_ascii_string(sc.names.generator.name_to_key(b"playerName"), b"").unwrap();
-        d.set_bool(sc.names.generator.name_to_key(b"playerIsHuman"), false).unwrap();
-        d.set_ascii_string(sc.names.generator.name_to_key(b"playerFaction"), b"").unwrap();
-        sc.sides.add_side(&d);
-        crate::logic::sides_list::SidesList::write_sides_data_chunk(&mut out, &mut sc).expect("the sides written");
         out.finish()
     }
 
@@ -257,8 +305,17 @@ mod tests {
     /// templates in `Object\`, `Multiplayer.ini` with one colour, the others empty), `EnglishZH.big` (the string file),
     /// and `MapsZH.big` (the shipped map cache, listing the map with its name tag, and the map's folder).
     fn install(map: &[u8]) -> FileSystem<MemoryDevice> {
+        install_with(map, None)
+    }
+
+    /// [`install`] with a `Data\\Scripts\\SkirmishScripts.scb` in `INIZH.big`.
+    fn install_with(map: &[u8], skirmish_scripts: Option<&[u8]>) -> FileSystem<MemoryDevice> {
         let mut d = MemoryDevice::new();
-        for (name, bytes) in install_archives(map) {
+        let mut archives = install_archives(map);
+        if let Some(scb) = skirmish_scripts {
+            archives.push((b"ScriptsZH.big".to_vec(), build_big(&[(b"Data\\Scripts\\SkirmishScripts.scb", scb)])));
+        }
+        for (name, bytes) in archives {
             d.insert(&[&b"ZH\\"[..], &name].concat(), bytes);
         }
         let mut fs = FileSystem::new(d);
@@ -283,7 +340,8 @@ mod tests {
         set(
             &mut ini,
             b"Data\\INI\\Multiplayer.ini",
-            b"MultiplayerColor Gold\n TooltipName = Color:Gold\n RGBColor = R:255 G:200 B:0\n RGBNightColor = R:128 G:100 B:0\nEnd\n",
+            b"MultiplayerColor Gold\n TooltipName = Color:Gold\n RGBColor = R:255 G:200 B:0\n RGBNightColor = R:128 G:100 B:0\nEnd\n\
+              MultiplayerColor Red\n TooltipName = Color:Red\n RGBColor = R:255 G:0 B:0\n RGBNightColor = R:128 G:0 B:0\nEnd\n",
         );
         let ini_refs: Vec<(&[u8], &[u8])> = ini.iter().map(|(p, t)| (p.as_slice(), t.as_slice())).collect();
         let text = csf(&[("MAP:Duel", "Desert Duel")]);
@@ -385,4 +443,94 @@ mod tests {
         assert_eq!(error.kind, crate::common::ini::IniErrorKind::CantOpenFile);
         assert!(missing.iter().any(|m| m == b"Data\\INI\\Multiplayer.ini") && !missing.iter().any(|m| m == b"Data\\INI\\GameData.ini"), "{missing:?}");
     }
+
+    /// A skirmish scripts file (`SkirmishScripts.scb`, the shipped one's form): one script list, the player it belongs to
+    /// (`ScriptsPlayers`: `SkirmishAmerica`) and its team (`ScriptTeams`: `teamSkirmishAmerica`, a singleton), the teams last (a
+    /// file's last chunk, if empty, is not parsed).
+    fn skirmish_scripts(names: &mut crate::common::name_key_generator::NameKeyGenerator) -> Vec<u8> {
+        use crate::common::dict::Dict;
+        use crate::formats::data_chunk_output::DataChunkOutput;
+        use crate::logic::scripts::ScriptList;
+        let templates = crate::logic::script_templates::script_templates(names);
+        let mut out = DataChunkOutput::new();
+        let mut list = ScriptList::default();
+        ScriptList::write_scripts_data_chunk(&mut out, &mut [Some(&mut list)], &templates, names).expect("the scripts written");
+        out.open_data_chunk(b"ScriptsPlayers", 2);
+        out.write_int(1);
+        out.write_int(1);
+        out.write_ascii_string(b"SkirmishAmerica");
+        let mut d = Dict::new();
+        d.set_ascii_string(names.name_to_key(b"playerName"), b"SkirmishAmerica").unwrap();
+        d.set_ascii_string(names.name_to_key(b"playerFaction"), b"FactionAmerica").unwrap();
+        out.write_dict(&d, names);
+        out.close_data_chunk();
+        out.open_data_chunk(b"ScriptTeams", 1);
+        let mut t = Dict::new();
+        t.set_ascii_string(names.name_to_key(b"teamName"), b"teamSkirmishAmerica").unwrap();
+        t.set_ascii_string(names.name_to_key(b"teamOwner"), b"SkirmishAmerica").unwrap();
+        t.set_bool(names.name_to_key(b"teamIsSingleton"), true).unwrap();
+        out.write_dict(&t, names);
+        out.close_data_chunk();
+        out.finish()
+    }
+
+    /// Integration batch I60: a skirmish against a computer player (slot 1, `SLOT_MED_AI`, at `Player_2_Start`) on the install's
+    /// map, run for 600 frames (20 seconds of game). Predicted before the run: both players are made from the slots, the
+    /// computer one with a skirmish AI (`AISkirmishPlayer`, `isSkirmishAIPlayer`); each gets its starting Barracks and Tank at
+    /// its start; the 600 frames run with no live error.
+    ///
+    /// The first run failed: the computer slot became a human player. Not a defect of the port: `Player::initFromDict` makes a
+    /// computer slot a skirmish AI only when the sides list has a skirmish side of its faction's side ("quietly making into
+    /// nonskirmish" otherwise), and the test map had only the neutral side. The map now carries `SkirmishAmerica`, as a
+    /// multiplayer map does. It did expose a gap: an install's `Data\Scripts\*.scb` were never mounted (now they are).
+    ///
+    /// The second run failed in `initFromDict`'s skirmish branch: the skirmish side had no script list, which upstream
+    /// dereferences. Two causes:
+    /// - **a port defect:** the World's player host answered the sides' script lists from a table and `duplicateAndQualify`
+    ///   with a bare handle, so in a game no player got its qualified scripts (now the sides' own lists and a real copy);
+    /// - the fixture's map ended with the sides chunk, whose last script list, empty, upstream's chunk reader never parses (it
+    ///   stops at the end of the file after opening the chunk); a real map has chunks after the sides, and the fixture now does.
+    ///
+    /// The third run made the skirmish AI with no team, so its units went to the neutral player. Upstream again:
+    /// `prepareForMP_or_Skirmish` clears the map's skirmish teams when no side has scripts and reads scripts and teams from
+    /// `SkirmishScripts.scb`, which a real install has. The fixture now lays out the map's sides as a multiplayer map does
+    /// (neutral, `PlyrCivilian`, `SkirmishAmerica`) and has a `SkirmishScripts.scb`, which reaches the World through the new
+    /// mount. Then all held: `SkirmishAmerica1` is the skirmish AI with its own team, both players' units are at their starts,
+    /// and the 600 frames run with no live error.
+    #[test]
+    fn a_skirmish_against_a_computer_player_runs() {
+        let mut scratch = World::new();
+        let map = duel_map(&mut scratch);
+        let scb = skirmish_scripts(&mut scratch.names);
+        let fs = install_with(&map, Some(&scb));
+        let (mut w, report) = World::from_install(&fs, DEFAULT_LANGUAGE).expect("the install");
+        assert_eq!(report.scripts, 1, "the skirmish scripts mounted");
+        assert_eq!(w.mount_map(&fs, MAP), 2);
+        w.start_skirmish_against(MAP, 0, 7, Some((crate::common::game_info::slot_state::MED_AI, 0))).expect("the skirmish");
+        for _ in 0..600 {
+            w.engine_update().expect("a frame");
+        }
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        let players = w.players.player_count();
+        let skirmish_ai: Vec<i32> =
+            (0..players).filter(|&p| crate::logic::world::player_ops::player_is_skirmish_ai_player(&w, p).unwrap_or(false)).collect();
+        let made: Vec<(Vec<u8>, i32, crate::common::base_type::Coord3D)> = w
+            .objects
+            .ids_in_order()
+            .into_iter()
+            .filter_map(|o| w.find_object(o).map(|x| (x.template().get_name().to_vec(), w.get_controlling_player(o).unwrap_or(-1), x.get_position())))
+            .collect();
+        eprintln!("players {players}; skirmish AI {skirmish_ai:?}; objects {:?}", made.iter().map(|(n, p, c)| (String::from_utf8_lossy(n).into_owned(), *p, c.x, c.y)).collect::<Vec<_>>());
+        for p in 0..players {
+            let pl = w.players.get_nth(p).expect("a player");
+            eprintln!("player {p}: {:?} default team {:?}", String::from_utf8_lossy(&pl.player_name), pl.default_team);
+        }
+        assert_eq!(skirmish_ai.len(), 1, "one computer player");
+        let ai = skirmish_ai[0];
+        let near = |c: &crate::common::base_type::Coord3D, x: f32, y: f32| (c.x - x).abs() < 30.0 && (c.y - y).abs() < 30.0;
+        assert!(made.iter().any(|(n, p, c)| n == b"Barracks" && *p == ai && near(c, 200.0, 200.0)), "the computer's barracks at its start");
+        assert!(made.iter().any(|(n, p, c)| n == b"Barracks" && *p != ai && near(c, 100.0, 100.0)), "the human's barracks at theirs");
+        assert_eq!(made.iter().filter(|(n, _, _)| n == b"Tank").count(), 2);
+    }
+
 }

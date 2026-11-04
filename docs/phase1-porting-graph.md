@@ -2081,6 +2081,22 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I60 (2026-11-04, `p1w13-sonnet`, GitHub #3, #8): a skirmish against a computer player, from an install.** The I57 test played a human alone. This one adds a computer slot (`SLOT_MED_AI`) at the second start and runs 600 frames. It took three runs, and each failure was read against upstream before anything was changed.
+
+**1. The computer slot became a human player.** Upstream's rule: `Player::initFromDict` makes a computer slot a skirmish AI only if the sides list has a skirmish side of its faction's side ("quietly making into nonskirmish" otherwise). The fixture map had only the neutral side. That was the fixture, not the port, but it exposed a real gap: **an install's `Data\Scripts\*.scb` were never mounted**, so every computer player of a game from an install would have been made human. `from_install` now mounts them (`InstallReport::scripts`).
+
+**2. A `Null` in the skirmish branch:** upstream dereferences the skirmish side's script list. Two causes:
+- **A port defect.** The World's player host answered the sides' script lists from a table (`cuts.player_host.side_scripts`), and `duplicateAndQualify` returned a bare handle with no list. So in a game no player ever got its qualified skirmish scripts, the ones that drive the skirmish AI. With `live_teams` the host now hands out handles to the sides' own lists, makes the real copy (`ScriptList::duplicate_and_qualify`, the World's `ScriptList::m_curId`), and moves lists in and out of the sides as upstream's pointers do. Batch I58's hunt had listed these as stored state; that is corrected above.
+- **The fixture.** Its map ended with the sides chunk, and upstream's chunk reader never parses an empty chunk that is the file's last bytes: it stops at the end of the file after opening the chunk ("FILE * returns eof after a failed read, so check"). The port does the same. A real map has more chunks after the sides, and the fixture now does too.
+
+**3. The skirmish AI had no team,** so its units went to the neutral player. This is upstream: when no side has scripts, `prepareForMP_or_Skirmish` clears the map's skirmish teams and reads scripts and teams from `SkirmishScripts.scb`. The fixture now lays out its sides as a multiplayer map does (neutral, `PlyrCivilian`, `SkirmishAmerica`) and has a `SkirmishScripts.scb` (`PlayerScriptsList`, `ScriptsPlayers`, `ScriptTeams`), which reaches the World through the new mount.
+
+**Predictions, written before the first run (the test's doc):** both players are made from the slots; the computer is a skirmish AI; each gets its Barracks and Tank at its start; 600 frames run with no live error. **Then all held:** `SkirmishAmerica1` is the skirmish AI with its team `teamSkirmishAmerica1`, both players' units are at their starts, and there are no errors.
+
+**Not shown:** the skirmish AI building or attacking. The fixture's `SkirmishScripts.scb` holds no scripts and its INI no AI build lists. That needs the shipped `SkirmishScripts.scb` and `AIData.ini`, from a real install.
+
+**Full run (2026-11-04):** 203 test binaries, 1,174 tests, 0 failed; clippy clean. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. The gate game makes its players in code, not from slots.
+
 **Integration batch I59 (2026-11-04, `p1w13-sonnet`, GitHub #16): the logic height map's `BlendTileData`, giving a real map's cliffs and no-build tiles.** This started as item (4) of the pre-files list: could the no-build tiles be done logic-only? It found a larger defect. `W3DTerrainVisual::m_logicHeightMap` is a full `WorldHeightMap`, which parses `BlendTileData`, and the logic asks two questions of it:
 - `isCliffCell` (`BaseHeightMapRenderObjClass::isCliffCell`), which reads `getCliffState`;
 - the build assistant's tile (`getTerrainTile`: `getTerrainNameAt`, then `TheTerrainTypes`' `getRestrictConstruction()`).
@@ -2110,7 +2126,7 @@ The port answered both from tables. `isCliffCell` was `NotTranslated`, so **on e
 
 **Integration batch I58 (2026-11-04, `p1w13-sonnet`): answers a game still read from the tests' tables.** Batch I46 turned every switch on, but a switch only covers the answers written to consult it. A static hunt found the rest: for each field of `ObjectCuts`, every non-test read in a function that consults no switch (`live_*`), stub flag or live delegation. It found 273 such reads in 62 fields. Most are not defects:
 - client cut points: audio, particles, drawables, bones, selection, lasers;
-- the World's own stored state: side scripts, rank limit, the synced difficulty;
+- the World's own stored state: ~~side scripts,~~ rank limit, the synced difficulty (**corrected by batch I60:** the side scripts were not stored state but a table of bare handles, and `duplicateAndQualify` copied nothing, so no player got its qualified scripts in a game);
 - answers made live another way, such as `cut()`'s live partition hook, which writes `range_scan` before it is read. The hunt's first reading took the hunt scan for a table; the gate test of I52 shows it is not.
 
 **The real ones are now live:**
