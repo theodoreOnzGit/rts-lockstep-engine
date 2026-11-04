@@ -908,7 +908,7 @@ impl StealthUpdate {
         if !world.has_drawable(id) {
             return Err(Undefined::NullDrawable);
         }
-        let night = world.cuts.globals.time_of_day_is_night;
+        let night = world.object_globals().time_of_day_is_night;
         let position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
         if let Some(template) = self.disguise_as_template.clone() {
             // the colour: the disguise player's to neutrals and enemies of the local player (if active), the object's own otherwise

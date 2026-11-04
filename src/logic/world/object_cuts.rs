@@ -1752,8 +1752,13 @@ pub enum CutCall {
 }
 
 /// The values of `TheGlobalData`, `TheAI->getAiData()`, `TheGameLogic` and
-/// `TheScriptEngine` that `Object.cpp` reads. Filled by the game setup from
-/// the real stores; the defaults are the headless run's.
+/// `TheScriptEngine` that `Object.cpp` reads. ~~Filled by the game setup from
+/// the real stores~~ **Corrected 2026-11-03 (batch I48):** nothing filled it, so the
+/// live game read these defaults whatever its `GameData` said, and a script's
+/// `drawIconUI` and hulk lifetime override (kept in `TheGameLogic`) were never
+/// seen. With `cuts.live_globals` the values are built from the stores by
+/// [`World::object_globals`]; this value is the tests' table. The defaults are
+/// the constructors' (`GlobalData::GlobalData`, `TAiData`, `GameLogic::init`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ObjectGlobals {
     /// batch R81: `TheGlobalData->m_selectionFlashSaturationFactor` (0.5 by default).
@@ -2159,7 +2164,8 @@ pub struct ObjectCuts {
     pub shrouded_status: BTreeMap<(ObjectId, i32), ObjectShroudStatus>,
     /// batch R28: `ScriptEngine::m_toppleDirections`, the topple direction a script gave each named object (the script engine is layer 10's).
     pub script_topple_directions: Vec<(Vec<u8>, Coord3D)>,
-    /// `pathfinder->getWallHeight()`, for `getLayerHeight` on the wall layer.
+    /// `pathfinder->getWallHeight()`, for `getLayerHeight` on the wall layer: the tests' value, read without
+    /// `live_globals` ([`World::wall_height`], batch I48: it was read in the live game too, always 0).
     pub wall_height: f32,
     // --- p1w13-sonnet --- (batch I1)
     /// The integration switch of the partition manager: when set, [`World::cut`] also runs every `Partition*` call on
@@ -2269,6 +2275,11 @@ pub struct ObjectCuts {
     /// Integration batch I23: `TheSpecialPowerStore->canUseSpecialPower` translated (`World::can_use_special_power`) rather than the
     /// `special_power_denied` table. Off by default, as the other `live_*` switches: the object differential answers from the table.
     pub live_special_powers: bool,
+    /// Integration batch I48: the global values the objects and modules read (`TheGlobalData`, `TheAI->getAiData()`,
+    /// `TheGameLogic`'s `drawIconUI` and hulk lifetime override) from those stores ([`World::object_globals`],
+    /// [`World::body_globals`], [`World::wall_height`]) rather than [`ObjectCuts::globals`], `body.globals` and `wall_height`.
+    /// Off by default, as the other `live_*` switches: the module tests set the tables.
+    pub live_globals: bool,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2448,6 +2459,7 @@ impl Default for ObjectCuts {
             ai_host: Default::default(),
             live_ai: false,
             live_special_powers: false,
+            live_globals: false,
             next_drawable_id: 1,
         }
     }
@@ -2466,12 +2478,13 @@ impl ObjectCuts {
         self.live_pathfinder = true;
         self.live_ai = true;
         self.live_special_powers = true;
+        self.live_globals = true;
     }
 
     /// Whether every integration switch is on ([`ObjectCuts::set_all_live`]).
     pub fn all_live(&self) -> bool {
         self.live_partition && self.live_ocl && self.live_terrain && self.live_teams && self.live_build_assistant && self.live_pathfinder
-            && self.live_ai && self.live_special_powers
+            && self.live_ai && self.live_special_powers && self.live_globals
     }
 
     /// `Team::getControllingPlayer()`: `None` for a team no player controls.
@@ -2965,7 +2978,7 @@ impl World {
     pub fn base_value_per_supply_box(&self) -> u32 {
         match self.statics.global_data.the_global_data().filter(|_| self.cuts.live_ai) {
             Some(g) => g.base_value_per_supply_box as u32,
-            None => self.cuts.globals.base_value_per_supply_box,
+            None => self.object_globals().base_value_per_supply_box,
         }
     }
 

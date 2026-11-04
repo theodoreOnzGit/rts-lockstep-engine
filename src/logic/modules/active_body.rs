@@ -465,7 +465,7 @@ impl ActiveBody {
 /// `calcDamageState(health, maxHealth)`.
 fn calc_damage_state(world: &World, health: f32, max_health: f32) -> BodyDamageType {
     let ratio = health / max_health;
-    let g = &world.cuts.body.globals;
+    let g = &world.body_globals();
     if ratio > g.unit_damaged_thresh {
         BODY_PRISTINE
     } else if ratio > g.unit_really_damaged_thresh {
@@ -486,7 +486,7 @@ fn set_correct_damage_state_of(ab: &mut ActiveBody, world: &mut World, me: Modul
     if ab.cur_damage_state == BODY_RUBBLE && world.objects.find(id).is_some_and(|o| o.is_kind_of(KINDOF_STRUCTURE)) {
         let mut rubble_height = world.objects.find(id).map_or(0.0, |o| o.template().get_structure_rubble_height());
         if rubble_height <= 0.0 {
-            rubble_height = world.cuts.body.globals.default_structure_rubble_height;
+            rubble_height = world.body_globals().default_structure_rubble_height;
         }
         // I had to change this to a Z only version to keep it from disappearing from the PartitionManager for a frame.
         world.set_geometry_info_z(id, rubble_height);
@@ -636,7 +636,7 @@ fn create_particle_systems(ab: &mut ActiveBody, world: &mut World, me: ModuleHan
 
 /// `updateBodyParticleSystems()`: "this function is called on state changes only. Body Type or Aflameness."
 fn update_body_particle_systems<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle) {
-    let g = world.cuts.body.globals.clone();
+    let g = world.body_globals().clone();
     let find = |world: &mut World, name: &[u8]| -> Option<Vec<u8>> { world.body_particle_find_template(name).then(|| name.to_vec()) };
     let fire_small_template = find(world, &g.auto_fire[0].system);
     let fire_medium_template = find(world, &g.auto_fire[1].system);
@@ -750,7 +750,7 @@ fn should_retaliate_against_aggressor(world: &mut World, obj: ObjectId, damager:
         return false; // only retaliate against enemies.
     }
     let dist_sqr = world.body_get_distance_squared(obj, damager);
-    if dist_sqr > sqr(world.cuts.body.globals.max_retaliate_distance) {
+    if dist_sqr > sqr(world.body_globals().max_retaliate_distance) {
         return false;
     }
     // Only human players retaliate.
@@ -1141,7 +1141,7 @@ pub fn attempt_damage<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: M
     do_damage_fx(t, world, me, info);
 
     // Damaged repulsable civilians scare (repulse) other civs. jba.
-    if world.cuts.globals.enable_repulsors && world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_CAN_BE_REPULSED)) {
+    if world.object_globals().enable_repulsors && world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_CAN_BE_REPULSED)) {
         out(t, world, me, |w| w.body_set_status(obj, mask_of(OBJECT_STATUS_REPULSOR), true));
     }
 
@@ -1157,7 +1157,7 @@ pub fn attempt_damage<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: M
                 let o = world.objects.find(obj).expect("checked above");
                 (o.get_position(), o.geometry_info.get_bounding_circle_radius())
             };
-            let distance = world.cuts.body.globals.retaliate_friends_radius + radius;
+            let distance = world.body_globals().retaliate_friends_radius + radius;
             let friends = world.body_iterate_retaliation_friends(position, distance, controlling_player);
             let damager = damager.expect("shouldRetaliateAgainstAggressor holds only with a damager");
             for them in friends {
@@ -1328,7 +1328,7 @@ fn estimate_damage<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: Modu
 
 /// `setDamageState(newState)`: "control damage state directly. Will adjust hitpoints."
 fn set_damage_state<T: ActiveBodyVirtuals>(t: &mut T, world: &mut World, me: ModuleHandle, new_state: BodyDamageType) {
-    let g = &world.cuts.body.globals;
+    let g = &world.body_globals();
     let ratio = match new_state {
         BODY_PRISTINE => 1.0,
         BODY_DAMAGED => g.unit_damaged_thresh,
@@ -1469,7 +1469,7 @@ fn on_veterancy_level_changed<T: ActiveBodyVirtuals>(t: &mut T, world: &mut Worl
         }
     }
 
-    let bonus = &world.cuts.body.globals.health_bonus;
+    let bonus = &world.body_globals().health_bonus;
     let (Some(&old_bonus), Some(&new_bonus)) = (usize::try_from(old_level).ok().and_then(|i| bonus.get(i)), usize::try_from(new_level).ok().and_then(|i| bonus.get(i))) else {
         undefined(world, me, Undefined::ArrayIndexOutOfRange);
         return;

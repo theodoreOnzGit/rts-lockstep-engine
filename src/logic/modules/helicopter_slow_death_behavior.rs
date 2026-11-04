@@ -414,7 +414,7 @@ impl HelicopterSlowDeathBehavior {
             return Err(Undefined::NullObject);
         }
         let fall = if crate::logic::modules::plant(2183) { d.fall_how_fast } else { 1.0 - d.fall_how_fast };
-        world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxLift(-world.cuts.globals.gravity * fall));
+        world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxLift(-world.object_globals().gravity * fall));
         world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxBraking(d.max_braking));
         // "attach particle system to bone if present"
         if let Some(template) = d.attach_particle_system.clone() {

@@ -25,7 +25,7 @@
 //!   its own and `changeBridgeState` and `forceMapRecalculation` run once the
 //!   terrain is back in the world; without it they are cut calls and the layer
 //!   `addBridge` assigns is [`World::pathfinder_add_bridge_stand_in`]'s. Its
-//!   wall height is `cuts.wall_height`; ~~no point is on a wall~~ a point is on
+//!   wall height is ~~`cuts.wall_height`~~ (Corrected 2026-11-03 (batch I48): [`World::wall_height`]); ~~no point is on a wall~~ a point is on
 //!   a wall as its `isPointOnWall` answers (`World::pf_wall`).
 //! - **`setActiveBoundary`** stores and restores the fog through the world's
 //!   partition manager, takes every object out of it and back in
@@ -332,7 +332,7 @@ impl TerrainWorld for World {
     }
 
     fn pathfinder_wall_height(&self) -> f32 {
-        self.cuts.wall_height
+        self.wall_height()
     }
 
     /// ~~No point is on a wall until the pathfinder is in the world (see the module docs).~~ **Batch I9a:** the world

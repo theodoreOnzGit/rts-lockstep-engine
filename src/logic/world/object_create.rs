@@ -201,7 +201,7 @@ impl World {
             helpers.push(HelperKind::StatusDamage);
             helpers.push(HelperKind::SubdualDamage);
         }
-        if self.cuts.globals.enable_repulsors && tt.is_kind_of(KINDOF_CAN_BE_REPULSED) {
+        if self.object_globals().enable_repulsors && tt.is_kind_of(KINDOF_CAN_BE_REPULSED) {
             // if we can ever be a temporary-repulsor, make a repulsor helper. (srj)
             helpers.push(HelperKind::Repulsor);
         }
@@ -474,7 +474,7 @@ impl World {
                     }
                 }
             }
-            let g = self.cuts.globals;
+            let g = self.object_globals();
             if g.force_models_to_follow_time_of_day {
                 set[MODELCONDITION_NIGHT as usize] = g.time_of_day_is_night;
             }

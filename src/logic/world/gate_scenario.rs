@@ -3087,4 +3087,35 @@ mod all_live_tests {
         assert!(!members.contains(&id), "{members:?}");
         assert!(w.teams.is_in_member_list(n, new));
     }
+    /// Predicted before the run (batch I48): in the gate world the globals built from the stores equal the tables' defaults
+    /// (the gate's INI has no `GameData` block and sets no retaliate or wall-height AI field), which is why gate (a) cannot move.
+    #[test]
+    fn the_gate_games_globals_are_the_stores_and_equal_the_defaults() {
+        let mut w = gate_world();
+        assert!(w.cuts.live_globals);
+        let (o, b, wh) = (w.object_globals(), w.body_globals(), w.wall_height());
+        w.cuts.live_globals = false;
+        assert_eq!(o, w.object_globals());
+        assert_eq!(b, w.body_globals());
+        assert_eq!(wh, w.wall_height());
+    }
+
+    /// Predicted before the run (batch I48): a value kept in the game logic (a script's `drawIconUI` and hulk lifetime override)
+    /// or the AI data (wall height, retaliate radius) reaches the objects with `live_globals`, and the tables are not read.
+    #[test]
+    fn the_stores_values_reach_the_objects() {
+        let mut w = gate_world();
+        w.game_logic.draw_icon_ui = !w.cuts.globals.draw_icon_ui;
+        w.game_logic.script_hulk_max_lifetime_override = 77;
+        std::sync::Arc::make_mut(&mut w.statics).ai_data.data.wall_height = 12.5;
+        std::sync::Arc::make_mut(&mut w.statics).ai_data.data.retaliate_friends_radius = 321.0;
+        let o = w.object_globals();
+        assert_eq!(o.draw_icon_ui, w.game_logic.draw_icon_ui);
+        assert_eq!(o.hulk_max_lifetime_override, 77);
+        assert_eq!(w.wall_height(), 12.5);
+        assert_eq!(w.body_globals().retaliate_friends_radius, 321.0);
+        w.cuts.live_globals = false;
+        assert_ne!(w.object_globals().draw_icon_ui, w.game_logic.draw_icon_ui);
+        assert_eq!(w.wall_height(), w.cuts.wall_height);
+    }
 }

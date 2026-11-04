@@ -651,7 +651,7 @@ impl PathfinderHost for World {
         self.terrain.object_interacts_with_bridge_end_uncounted(&v, layer).unwrap_or(false)
     }
     fn wall_height(&self) -> f32 {
-        self.cuts.wall_height
+        self.wall_height()
     }
 }
 
@@ -676,13 +676,13 @@ impl MovementHost for World {
         i32::from(self.get_crushable_level(id))
     }
     fn layer_height(&self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-        crate::logic::world::object_transform::layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, x, y, layer)
+        crate::logic::world::object_transform::layer_height(&self.terrain, self.wall_height(), &self.pf_wall, x, y, layer)
     }
     fn layer_for_destination(&self, pos: &Coord3D) -> PathfindLayer {
         self.terrain.layer_for_destination_uncounted(self, pos).unwrap_or(LAYER_GROUND)
     }
     fn is_significantly_above_terrain(&self, id: ObjectId) -> bool {
-        self.objects.find(id).is_some() && self.peek_height_above_terrain(id) > (-(3 * 3)) as f32 * self.cuts.globals.gravity
+        self.objects.find(id).is_some() && self.peek_height_above_terrain(id) > (-(3 * 3)) as f32 * self.object_globals().gravity
     }
     fn attack_uses_line_of_sight(&self) -> bool {
         // (batch I45: `TheAI->getAiData()->m_attackUsesLineOfSight` with `live_ai`, as the AI reads it; it was always the table)

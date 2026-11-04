@@ -603,7 +603,7 @@ impl MinefieldBehavior {
         end_on_ground.z = world.terrain_get_ground_height(end_on_ground.x, end_on_ground.y);
         if start.z > end_on_ground.z {
             // "figure out how long it will take to fall, and replace scoot time with that"
-            let gravity = world.cuts.globals.gravity;
+            let gravity = world.object_globals().gravity;
             let falling_time = real_to_int_ceil((2.0 * (start.z - end_on_ground.z) / gravity.abs()).sqrt()) as u32;
             // "we can scoot after we land, but don't want to stop scooting before we land"
             if scoot_time < falling_time {
@@ -634,7 +634,7 @@ impl MinefieldBehavior {
         self.scoot_vel.y = dy_norm * speed;
         self.scoot_accel.x = -dx_norm * accel_mag;
         self.scoot_accel.y = -dy_norm * accel_mag;
-        self.scoot_accel.z = world.cuts.globals.gravity;
+        self.scoot_accel.z = world.object_globals().gravity;
         world.set_position(id, &start);
         self.scoot_frames_left = scoot_time;
         // "we need to wake ourselves up because we could be lying here sleeping forever"

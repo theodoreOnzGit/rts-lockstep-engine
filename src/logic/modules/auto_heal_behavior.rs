@@ -382,10 +382,10 @@ impl AutoHealBehavior {
                 let Some(o) = world.objects.find(obj) else { continue };
                 if o.is_any_kind_of(&d.kind_of) && !o.is_any_kind_of(&d.forbidden_kind_of) && (!d.skip_self_for_healing || obj != me.object || crate::logic::modules::plant(946)) {
                     self.pulse_heal_object(world, me.object, obj);
-                    if d.single_burst && world.cuts.globals.draw_icon_ui {
-                        let g = world.cuts.globals;
-                        if g.anim2d_collection_present && !world.cuts.get_healed_animation_name.is_empty() {
-                            let template = world.cuts.get_healed_animation_name.clone();
+                    if d.single_burst && world.object_globals().draw_icon_ui {
+                        let g = world.object_globals();
+                        if g.anim2d_collection_present && !world.get_healed_animation_name().is_empty() {
+                            let template = world.get_healed_animation_name().clone();
                             let (time, rise) = (g.get_healed_animation_display_time_in_seconds, g.get_healed_animation_z_rise_per_second);
                             if let Some(o) = world.objects.find(obj) {
                                 let mut position = o.get_position();

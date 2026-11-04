@@ -42,7 +42,7 @@
 //! - **The pathfinder** (`TheAI->pathfinder()`, layer 11): the cell types and
 //!   the quick path check of `findPositionAround`, and
 //!   `isViewBlockedByObstacle`. `cuts.pathfind_cells`, `cuts.partition_quick_path`
-//!   and `cuts.view_blocked`; the wall height is the existing `cuts.wall_height`
+//!   and `cuts.view_blocked`; the wall height is the existing ~~`cuts.wall_height`~~ (Corrected 2026-11-03 (batch I48): [`World::wall_height`])
 //!   and no point is on a wall. **Corrected 2026-11-02 (batch I42):** the world
 //!   holds the pathfinder since batch I9a; with `live_pathfinder` and a map the
 //!   cell types (since I9a), the quick path check and `isViewBlockedByObstacle`
@@ -331,11 +331,11 @@ impl PartitionHost for World {
     }
     fn highest_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
         // the pathfinder's walls: its height from the table, and no point on a wall (see the module docs)
-        let wall_height = self.cuts.wall_height;
+        let wall_height = self.wall_height();
         self.terrain.highest_layer_for_destination_with(|| wall_height, |_| false, pos, false).unwrap_or(crate::logic::world::partition::LAYER_GROUND)
     }
     fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-        layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, x, y, layer)
+        layer_height(&self.terrain, self.wall_height(), &self.pf_wall, x, y, layer)
     }
     fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
         match self.terrain.is_cliff_cell(x, y) {

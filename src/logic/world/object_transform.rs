@@ -93,7 +93,7 @@ impl ThingContext for SetterContext {
 
 /// `TheTerrainLogic->getLayerHeight(x, y, layer)` (clipped, no normal):
 /// [`TerrainLogic::layer_height_with`]. The wall layer's height is the
-/// pathfinder's (a cut point, `cuts.wall_height`). ~~No point is on a wall
+/// pathfinder's (a cut point, ~~`cuts.wall_height`~~**Corrected 2026-11-03 (batch I48):** [`World::wall_height`]). ~~No point is on a wall
 /// (the pathfinder is not in the world yet; with no wall pieces upstream's
 /// `isPointOnWall` is false too).~~ **Batch I9a:** `isPointOnWall` is the
 /// world pathfinder's, through its [`WallView`] (`World::pf_wall`; empty, so
@@ -130,7 +130,7 @@ impl World {
         } else {
             None
         };
-        Some(SetterContext { gravity: self.cuts.globals.gravity, aligned })
+        Some(SetterContext { gravity: self.object_globals().gravity, aligned })
     }
 
     fn after_thing_change(&mut self, id: ObjectId, change: TransformChange) {
@@ -227,13 +227,13 @@ impl World {
     pub fn calculate_height_above_terrain(&self, id: ObjectId) -> f32 {
         let Some(o) = self.objects.find(id) else { return 0.0 };
         let pos = o.thing.position();
-        let terrain_z = layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, pos.x, pos.y, o.layer);
+        let terrain_z = layer_height(&self.terrain, self.wall_height(), &self.pf_wall, pos.x, pos.y, o.layer);
         pos.z - terrain_z
     }
 
     /// `getHeightAboveTerrain()`: cached, with the layer-aware calculation.
     pub fn get_height_above_terrain(&mut self, id: ObjectId) -> f32 {
-        let wall = self.cuts.wall_height;
+        let wall = self.wall_height();
         let (terrain, wall_view) = (&self.terrain, &self.pf_wall);
         let Some(o) = self.objects.find_mut(id) else { return 0.0 };
         let layer = o.layer;

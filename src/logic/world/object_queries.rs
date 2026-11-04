@@ -30,7 +30,7 @@ impl World {
         if self.objects.find(id).is_none() {
             return false;
         }
-        let threshold = (-(3 * 3)) as f32 * self.cuts.globals.gravity;
+        let threshold = (-(3 * 3)) as f32 * self.object_globals().gravity;
         self.get_height_above_terrain(id) > threshold
     }
 }

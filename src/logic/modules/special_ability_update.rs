@@ -996,7 +996,7 @@ impl SpecialAbilityUpdate {
                     self.capture_flash_phase += increment / if crate::logic::modules::plant(3812) { 2.0 } else { 3.0 };
                     let this_phase = (self.capture_flash_phase as i32) & 1 != 0;
                     if last_phase && !this_phase {
-                        let (r, g, b) = saturate_rgb(world.get_indicator_color(us), world.cuts.globals.selection_flash_saturation_factor);
+                        let (r, g, b) = saturate_rgb(world.get_indicator_color(us), world.object_globals().selection_flash_saturation_factor);
                         world.emit(ObjectClientEvent::DrawableFlashAsSelectedColor { object_id: target, r, g, b });
                         world.emit(ObjectClientEvent::Sound { sound: ObjectSound::DefectorTimerTick, object_id: target, position: None });
                     }

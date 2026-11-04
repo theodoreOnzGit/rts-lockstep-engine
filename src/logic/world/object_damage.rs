@@ -482,8 +482,8 @@ impl World {
             }
         }
 
-        if do_animation && self.cuts.globals.draw_icon_ui && provide_feedback {
-            if self.cuts.globals.level_gain_animation_name_set {
+        if do_animation && self.object_globals().draw_icon_ui && provide_feedback {
+            if self.object_globals().level_gain_animation_name_set {
                 let o = self.objects.find(id).expect("checked above");
                 let mut pos = o.get_position();
                 pos.add(&o.health_box_offset);

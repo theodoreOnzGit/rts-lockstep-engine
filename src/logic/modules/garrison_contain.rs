@@ -1069,7 +1069,7 @@ impl GarrisonContain {
         }
         out(self, world, me, |w| w.contain_drawable_model_condition(us, MODELCONDITION_GARRISONED, set_model_garrisoned));
         if let Some(controller) = self.get_apparent_controlling_player(world, me, local) {
-            let color = if world.cuts.globals.time_of_day_is_night { world.tq().player_night_color(controller) } else { world.tq().player_color(controller) };
+            let color = if world.object_globals().time_of_day_is_night { world.tq().player_night_color(controller) } else { world.tq().player_color(controller) };
             world.contain_drawable_set_indicator_color(us, color);
         }
         if count > 0 {

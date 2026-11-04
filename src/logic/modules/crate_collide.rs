@@ -238,7 +238,7 @@ pub fn crate_on_collide<M: CrateBehavior>(m: &mut M, world: &mut World, me: Modu
                 }
                 Ok(false) => {}
             }
-            if world.cuts.globals.anim2d_collection_present && !md.execution_animation_template.is_empty() && (world.cuts.globals.draw_icon_ui || crate::logic::modules::plant(759)) {
+            if world.object_globals().anim2d_collection_present && !md.execution_animation_template.is_empty() && (world.object_globals().draw_icon_ui || crate::logic::modules::plant(759)) {
                 let position = world.objects.find(me.object).map_or_else(Coord3D::default, |o| o.get_position());
                 world.cut(CutCall::InGameUiAddWorldAnimation {
                     template: md.execution_animation_template.clone(),

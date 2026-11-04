@@ -126,7 +126,7 @@ impl World {
 
 impl LocomotorGlobals for World {
     fn gravity(&self) -> f32 {
-        self.cuts.globals.gravity
+        self.object_globals().gravity
     }
     fn movement_penalty_damage_state(&self) -> BodyDamageType {
         self.statics.global_data.the_global_data().map_or(crate::logic::module::body_module::BODY_REALLYDAMAGED, |g| g.movement_penalty_damage_state)
@@ -243,11 +243,11 @@ impl LocomotorHost for World {
         self.terrain.ground_height(x, y, false).0
     }
     fn layer_height(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-        crate::logic::world::object_transform::layer_height(&self.terrain, self.cuts.wall_height, &self.pf_wall, x, y, layer)
+        crate::logic::world::object_transform::layer_height(&self.terrain, self.wall_height(), &self.pf_wall, x, y, layer)
     }
     /// `getLayerHeight(x, y, layer, NULL, false)`; a vertical deck (an undefined input) answers the ground height.
     fn layer_height_unclipped(&mut self, x: f32, y: f32, layer: PathfindLayer) -> f32 {
-        let (wall_height, wall) = (self.cuts.wall_height, &self.pf_wall);
+        let (wall_height, wall) = (self.wall_height(), &self.pf_wall);
         match self.terrain.layer_height_with(|| wall_height, |p| wall.is_point_on_wall(p), x, y, layer, false, false) {
             Ok((h, _)) => h,
             Err(_) => self.terrain.ground_height(x, y, false).0,

@@ -1448,7 +1448,7 @@ impl AiStateHost for World {
         self.pf_wall.is_point_on_wall(pos)
     }
     fn pf_wall_height(&self) -> f32 {
-        self.cuts.wall_height
+        self.wall_height()
     }
     fn group_center(&mut self) -> Coord3D {
         let Some(g) = self.find_object(self.ai_self).and_then(|o| o.group) else { return Coord3D::default() };

@@ -382,3 +382,93 @@ impl World {
         self.cuts.body.retaliation_friends.clone()
     }
 }
+
+// --- p1w13-sonnet --- (integration batch I48)
+impl World {
+    /// The values `Object.cpp` and the modules read of `TheGlobalData`, `TheAI->getAiData()` and `TheGameLogic`: with
+    /// `cuts.live_globals` from those stores, otherwise the tests' `cuts.globals`. Two are the client's and stay the table's:
+    /// `TheAnim2DCollection != NULL` and `TheGameLODManager->getSlowDeathScale()`.
+    pub fn object_globals(&self) -> crate::logic::world::object_cuts::ObjectGlobals {
+        use crate::common::game_type::{TimeOfDay, Weather};
+        let c = self.cuts.globals;
+        if !self.cuts.live_globals {
+            return c;
+        }
+        let Some(g) = self.statics.global_data.the_global_data() else { return c };
+        let ai = &self.statics.ai_data.data;
+        crate::logic::world::object_cuts::ObjectGlobals {
+            selection_flash_saturation_factor: g.selection_flash_saturation_factor,
+            gravity: g.gravity,
+            force_models_to_follow_time_of_day: g.force_models_to_follow_time_of_day,
+            time_of_day_is_night: g.time_of_day == TimeOfDay::Night as i32,
+            force_models_to_follow_weather: g.force_models_to_follow_weather,
+            weather_is_snowy: g.weather == Weather::Snowy as i32,
+            level_gain_animation_name_set: !g.level_gain_animation_name.is_empty() && c.anim2d_collection_present,
+            enable_repulsors: ai.enable_repulsors,
+            draw_icon_ui: self.game_logic.draw_icon_ui,
+            anim2d_collection_present: c.anim2d_collection_present,
+            get_healed_animation_display_time_in_seconds: g.get_healed_animation_display_time_in_seconds,
+            get_healed_animation_z_rise_per_second: g.get_healed_animation_z_rise_per_second,
+            max_tunnel_capacity: g.max_tunnel_capacity,
+            base_value_per_supply_box: g.base_value_per_supply_box as u32,
+            hulk_max_lifetime_override: self.game_logic.script_hulk_max_lifetime_override,
+            base_regen_health_percent_per_second: g.base_regen_health_percent_per_second,
+            base_regen_delay: g.base_regen_delay,
+            slow_death_scale: c.slow_death_scale,
+            ground_stiffness: g.ground_stiffness,
+            structure_stiffness: g.structure_stiffness,
+        }
+    }
+
+    /// The values `ActiveBody` reads of `TheGlobalData` and `TheAI->getAiData()`: with `cuts.live_globals` from those stores,
+    /// otherwise the tests' `cuts.body.globals`.
+    pub fn body_globals(&self) -> BodyGlobals {
+        if !self.cuts.live_globals {
+            return self.cuts.body.globals.clone();
+        }
+        let Some(g) = self.statics.global_data.the_global_data() else { return self.cuts.body.globals.clone() };
+        let ai = &self.statics.ai_data.data;
+        let p = |prefix: &[u8], system: &[u8], max: i32| AutoParticle { prefix: prefix.to_vec(), system: system.to_vec(), max };
+        BodyGlobals {
+            unit_damaged_thresh: g.unit_damaged_thresh,
+            unit_really_damaged_thresh: g.unit_really_damaged_thresh,
+            default_structure_rubble_height: g.default_structure_rubble_height,
+            health_bonus: g.health_bonus,
+            auto_fire: [
+                p(&g.auto_fire_particle_small_prefix, &g.auto_fire_particle_small_system, g.auto_fire_particle_small_max),
+                p(&g.auto_fire_particle_medium_prefix, &g.auto_fire_particle_medium_system, g.auto_fire_particle_medium_max),
+                p(&g.auto_fire_particle_large_prefix, &g.auto_fire_particle_large_system, g.auto_fire_particle_large_max),
+            ],
+            auto_smoke: [
+                p(&g.auto_smoke_particle_small_prefix, &g.auto_smoke_particle_small_system, g.auto_smoke_particle_small_max),
+                p(&g.auto_smoke_particle_medium_prefix, &g.auto_smoke_particle_medium_system, g.auto_smoke_particle_medium_max),
+                p(&g.auto_smoke_particle_large_prefix, &g.auto_smoke_particle_large_system, g.auto_smoke_particle_large_max),
+            ],
+            auto_aflame: p(&g.auto_aflame_particle_prefix, &g.auto_aflame_particle_system, g.auto_aflame_particle_max),
+            retaliate_friends_radius: ai.retaliate_friends_radius,
+            max_retaliate_distance: ai.max_retaliate_distance,
+        }
+    }
+
+    /// `TheAI->pathfinder()->getWallHeight()` for `getLayerHeight` on the wall layer, and `TheAI->getAiData()->m_wallHeight` for
+    /// the pathfinder's own copy: with `cuts.live_globals` the AI data's (the pathfinder copies it at `newMap` and `reset`, and a
+    /// map's `map.ini` changes the AI data itself, so the two agree once a map is loaded), otherwise the tests' `cuts.wall_height`.
+    pub fn wall_height(&self) -> f32 {
+        if self.cuts.live_globals {
+            return self.statics.ai_data.data.wall_height;
+        }
+        self.cuts.wall_height
+    }
+
+    /// `TheGlobalData->m_getHealedAnimationName` (`AutoHealBehavior`'s icon): the global data's with `cuts.live_globals`,
+    /// otherwise the tests' `cuts.get_healed_animation_name`.
+    pub fn get_healed_animation_name(&self) -> Vec<u8> {
+        if self.cuts.live_globals {
+            if let Some(g) = self.statics.global_data.the_global_data() {
+                return g.get_healed_animation_name.clone();
+            }
+        }
+        self.cuts.get_healed_animation_name.clone()
+    }
+}
+// --- end p1w13-sonnet ---

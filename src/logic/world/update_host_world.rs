@@ -86,7 +86,7 @@ impl UpdateHost for World {
     }
 
     fn hulk_max_lifetime_override(&self) -> i32 {
-        self.cuts.globals.hulk_max_lifetime_override
+        self.object_globals().hulk_max_lifetime_override
     }
 
     fn awaken_update_module(&mut self, frame: u32) {
@@ -116,11 +116,11 @@ impl UpdateHost for World {
 
 impl BaseRegenHost for World {
     fn base_regen_health_percent_per_second(&self) -> f32 {
-        self.cuts.globals.base_regen_health_percent_per_second
+        self.object_globals().base_regen_health_percent_per_second
     }
 
     fn base_regen_delay(&self) -> u32 {
-        self.cuts.globals.base_regen_delay
+        self.object_globals().base_regen_delay
     }
 
     fn is_under_construction(&self) -> bool {
@@ -157,7 +157,7 @@ impl SmartBombHost for World {
     fn is_significantly_above_terrain(&mut self) -> bool {
         let id = self.running_object();
         // `-(3*3)*TheGlobalData->m_gravity`, as `Thing::isSignificantlyAboveTerrain`
-        let threshold = (-(3 * 3)) as f32 * self.cuts.globals.gravity;
+        let threshold = (-(3 * 3)) as f32 * self.object_globals().gravity;
         self.get_height_above_terrain(id) > threshold
     }
 

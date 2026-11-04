@@ -29,7 +29,8 @@
 //!   is what the shipped game reads).
 //! - `m_lastCollidee` is not saved; `m_velMag` is (a stale `-1` after a load means "recompute").
 //! - The minimum fall speed for damage is `sqrt(|2 * gravity * height|)` of the height the INI gives (40 by default), with the gravity of
-//!   `TheGlobalData` when the data was made: here, `cuts.globals.gravity` when it is used (the same while the global data does not change).
+//!   `TheGlobalData` when the data was made: here, ~~`cuts.globals.gravity`~~ **Corrected 2026-11-03 (batch I48):** `World::object_globals().gravity`, the
+//!   global data's with `cuts.live_globals`, when it is used (the same while the global data does not change).
 //! - The two crash weapons are found in the weapon store by name when used (upstream finds them when the data is made or read; a name the
 //!   store does not have is `NULL`, and no weapon is fired).
 //! - `applyRandomRotation`'s "random modifier" is `GameLogicRandomValue(-1.0f, 1.0f)`, the integer draw: -1, 0 or 1.
@@ -636,7 +637,7 @@ impl PhysicsBehavior {
         const MIN_STIFF: f32 = 0.01;
         const MAX_STIFF: f32 = 0.99;
         // (`clamp` answers a NaN as the two tests do)
-        let stiffness = world.cuts.globals.ground_stiffness.clamp(MIN_STIFF, MAX_STIFF);
+        let stiffness = world.object_globals().ground_stiffness.clamp(MIN_STIFF, MAX_STIFF);
         let mut desired_accel_z = 0.0;
         let vz = self.vel.z;
         if old_z > ground_z && vz < 0.0 {
@@ -745,7 +746,7 @@ impl PhysicsBehavior {
             let mut mtx = world.objects.find(us).map(|o| *o.thing.transform_matrix()).unwrap_or_default();
             // `applyGravitationalForces()`
             if !crate::logic::modules::plant(2201) {
-                self.accel.z += world.cuts.globals.gravity;
+                self.accel.z += world.object_globals().gravity;
             }
             self.apply_frictional_forces(world, us);
             // "integrate acceleration into velocity"
@@ -871,7 +872,7 @@ impl PhysicsBehavior {
             let pos = world.objects.find(us).map_or_else(Coord3D::default, |o| o.get_position());
             crate::logic::modules::lend_clone(world, me, self, UpdateBody::PhysicsBehavior, Self::from_body, |w, _| w.on_collide(us, INVALID_ID, Some(pos), Some(normal)));
             // "(note that m_minFallSpeedForDamage is always POSITIVE.)"
-            let min_fall_speed = height_to_speed(world.cuts.globals.gravity, d.min_fall_height_for_damage);
+            let min_fall_speed = height_to_speed(world.object_globals().gravity, d.min_fall_height_for_damage);
             let net_speed = -active_vel_z - min_fall_speed;
             if net_speed > 0.0 && self.pui.is_none() {
                 // "only apply force if it's a pretty steep fall"
@@ -1087,14 +1088,14 @@ impl PhysicsBehavior {
             const MIN_STIFF: f32 = 0.01;
             const MAX_STIFF: f32 = 0.99;
             // (`clamp` answers a NaN as the two tests do)
-            let stiffness = world.cuts.globals.structure_stiffness.clamp(MIN_STIFF, MAX_STIFF);
+            let stiffness = world.object_globals().structure_stiffness.clamp(MIN_STIFF, MAX_STIFF);
             let mut mag = self.get_velocity_magnitude();
             let min_bounce_speed = 1.0 / (LOGICFRAMES_PER_SECOND as f32 * 5.0);
             if mag < min_bounce_speed {
                 mag = min_bounce_speed;
             }
             factor = -mag * self.get_mass(world, us) * stiffness;
-            if delta.z < 0.0 && us_pos.z >= world.cuts.body.globals.default_structure_rubble_height {
+            if delta.z < 0.0 && us_pos.z >= world.body_globals().default_structure_rubble_height {
                 let vehicle = world.objects.find(us).is_some_and(|o| o.is_kind_of(KINDOF_VEHICLE));
                 let structure = world.objects.find(other).is_some_and(|o| o.is_kind_of(KINDOF_STRUCTURE));
                 let weapon = if structure { &self.data.vehicle_crashes_into_building_weapon } else { &self.data.vehicle_crashes_into_non_building_weapon };

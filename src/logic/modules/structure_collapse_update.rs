@@ -26,7 +26,7 @@
 //!   gives the translation upstream sets on it (the shudder is drawn from the client's random numbers, as upstream draws it).
 //! - `FXList::doFXPos` is [`ObjectClientEvent::FxListDoFxPos`]; `ObjectCreationList::create(ocl, building, target, NULL, angle)` is
 //!   [`CutCall::OclCreateAtPrimary`]; `deselectObject` is [`CutCall::GameLogicDeselectObject`]; `TheGlobalData->m_gravity` is
-//!   `cuts.globals.gravity`.
+//!   ~~`cuts.globals.gravity`~~ **Corrected 2026-11-03 (batch I48):** `World::object_globals().gravity` (the global data's with `cuts.live_globals`).
 //! - The AI's `markAsDead` is [`ModuleCall::AiMarkAsDead`]; the body's `updateBodyParticleSystems` is [`ModuleCall::UpdateBodyParticleSystems`];
 //!   the object's `BoneFXUpdate` (`findUpdateModule`) gets [`ModuleCall::BoneFxStopAll`].
 //!
@@ -447,7 +447,7 @@ impl StructureCollapseUpdate {
         if self.collapse_state == CollapseState::Collapsing {
             let now = world.frame();
             self.current_height -= self.collapse_velocity;
-            self.collapse_velocity = (f64::from(self.collapse_velocity) - f64::from(world.cuts.globals.gravity) * (1.0 - if crate::logic::modules::plant(1993) { 0.0 } else { f64::from(d.collapse_damping) })) as f32;
+            self.collapse_velocity = (f64::from(self.collapse_velocity) - f64::from(world.object_globals().gravity) * (1.0 - if crate::logic::modules::plant(1993) { 0.0 } else { f64::from(d.collapse_damping) })) as f32;
             let current_position = world.objects.find(id).map(|o| o.get_position()).unwrap_or_default();
             let shudder = Self::shudder(world, d.max_shudder, self.current_height);
             if !world.has_drawable(id) {

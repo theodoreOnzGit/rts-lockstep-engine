@@ -48,7 +48,8 @@
 //!   Being a `Snapshot` with no world, the tracker's `load_post_process` is
 //!   the inherent [`TunnelTracker::load_post_process_world`].
 //! - `TheGlobalData->m_maxTunnelCapacity` is
-//!   `world.cuts.globals.max_tunnel_capacity`.
+//!   ~~`world.cuts.globals.max_tunnel_capacity`~~ **Corrected 2026-11-03 (batch I48):** `World::object_globals().max_tunnel_capacity`, the global
+//!   data's with `cuts.live_globals` (the table's 0 in the live game until then: no tunnel held anything).
 //!
 //! # Upstream defects kept
 //!
@@ -204,7 +205,7 @@ impl TunnelTracker {
 
     /// `getContainMax()`: `TheGlobalData->m_maxTunnelCapacity`.
     pub fn get_contain_max(&self, world: &World) -> i32 {
-        world.cuts.globals.max_tunnel_capacity
+        world.object_globals().max_tunnel_capacity
     }
 
     /// `updateNemesis(target)`.

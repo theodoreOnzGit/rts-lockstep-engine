@@ -26,7 +26,8 @@
 //! - `Object::setDisabled` and `TheGameLogic->destroyObject` are `World::body_set_disabled` and `World::body_destroy_object` (the logged cuts of `body_cuts`, which
 //!   run the real calls unless the test ablates them).
 //! - `TheGameLODManager->getSlowDeathScale()` is `cuts.globals.slow_death_scale`; `TheGameLogic->getHulkMaxLifetimeOverride()` is
-//!   `cuts.globals.hulk_max_lifetime_override`; `deselectObject` is [`CutCall::GameLogicDeselectObject`].
+//!   ~~`cuts.globals.hulk_max_lifetime_override`~~ **Corrected 2026-11-03 (batch I48):** `World::object_globals().hulk_max_lifetime_override`, the game logic's
+//!   with `cuts.live_globals` (the table's in the live game until then, so a script's override was never seen); `deselectObject` is [`CutCall::GameLogicDeselectObject`].
 //! - The physics module's calls are [`ModuleCall::PhysicsSetAllowToFall`], `PhysicsApplyForce`, `PhysicsSetExtraBounciness`, `PhysicsSetExtraFriction`,
 //!   `PhysicsSetAllowBouncing`, `PhysicsSetAngles` and `PhysicsGetLastCollidee`; the AI's, [`ModuleCall::AiIsAiInDeadState`] and `AiMarkAsDead`; the slaver's,
 //!   `SlavedOnSlaverDie`. `ObjectCreationList::create` is the cut point `OclCreate`; ~~`createAndFireTempWeapon` the cut point `WeaponCreateAndFireTemp`~~. **Corrected 2026-11-02 (batch I41):** it is `World::fire_temp_weapon`, which fires the weapon with live AI and keeps the record only without it.
@@ -519,7 +520,7 @@ impl SlowDeathBehavior {
         }
 
         // Ask game detail manager if we need to speedup all deaths to improve performance
-        let time_scale = world.cuts.globals.slow_death_scale;
+        let time_scale = world.object_globals().slow_death_scale;
         self.accelerated_time_scale = 1.0; // assume normal death speed.
         if time_scale == 0.0 && (!self.has_non_lod_effects() || crate::logic::modules::plant(1293)) {
             // Deaths happen instantly so just delete the object and return
@@ -529,7 +530,7 @@ impl SlowDeathBehavior {
 
         // timescale is some non-zero value so we may need to speed up death
         let is_hulk = world.objects.find(obj).is_some_and(|o| o.is_kind_of(KINDOF_HULK)) && !crate::logic::modules::plant(1315);
-        if is_hulk && world.cuts.globals.hulk_max_lifetime_override != -1 {
+        if is_hulk && world.object_globals().hulk_max_lifetime_override != -1 {
             // Scripts don't want hulks around, so start sinking immediately!
             self.sink_frame = if crate::logic::modules::plant(1294) { 0 } else { 1 };
             self.midpoint_frame = (LOGICFRAMES_PER_SECOND / 2 + 1) as u32;
@@ -739,7 +740,7 @@ impl UpdateBehavior for SlowDeathBehavior {
         // DEBUG_ASSERTCRASH(isSlowDeathActivated(), ("hmm, this should not be possible"));
         let d = self.data.clone();
         let obj = me.object;
-        let time_scale = world.cuts.globals.slow_death_scale;
+        let time_scale = world.object_globals().slow_death_scale;
 
         // Check if we have normal time scale but LODManager is requeseting acceleration
         if time_scale != 1.0 && (self.accelerated_time_scale == 1.0 || crate::logic::modules::plant(1316)) && !self.has_non_lod_effects() {

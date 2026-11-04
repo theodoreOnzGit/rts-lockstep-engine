@@ -338,7 +338,7 @@ impl JetSlowDeathBehavior {
             return Err(Undefined::NullObject);
         }
         let fall = if crate::logic::modules::plant(2163) { d.fall_how_fast } else { 1.0 - d.fall_how_fast };
-        world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxLift(-world.cuts.globals.gravity * fall));
+        world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxLift(-world.object_globals().gravity * fall));
         world.module_call(us, ai, ModuleCall::AiLocomotorSetMaxTurnRate(0.0));
         Ok(())
     }

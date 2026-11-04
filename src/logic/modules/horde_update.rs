@@ -338,7 +338,7 @@ impl UpdateBehavior for HordeUpdate {
         }
         let alive = world.objects.find(id).is_some_and(|o| !o.is_effectively_dead());
         if world.has_drawable(id) && alive {
-            if world.cuts.globals.draw_icon_ui {
+            if world.object_globals().draw_icon_ui {
                 if self.in_horde && !template.is_kind_of(KINDOF_PORTABLE_STRUCTURE) {
                     let current = world.objects.find(id).map_or(TERRAIN_DECAL_NONE, |o| o.terrain_decal_type);
                     if is_infantry {
