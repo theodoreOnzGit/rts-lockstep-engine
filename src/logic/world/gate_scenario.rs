@@ -3499,3 +3499,98 @@ Object Hordling\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius 
         assert_eq!(AiHost::stealth_granted_by_special_power(&w), None);
     }
 }
+
+#[cfg(test)]
+mod blend_tile_tests {
+    use super::*;
+    use crate::formats::data_chunk_output::DataChunkOutput;
+    use crate::logic::world::build_assistant::BuildAssistantHost;
+
+    /// A 20 x 20 map (no border) whose samples step from height 0 to 20 at x = 10, with a `BlendTileData` chunk of `version`:
+    /// the left half's tiles are 0 (texture class `GrassA`, tiles 0..4), the right half's 16 (tile 16 >> 2 = 4: `Concrete`,
+    /// tiles 4..8); from version 7, cell (3, 4) is painted a cliff. The chunk ends after the texture classes (the reader stops
+    /// there; the chunk's end is skipped).
+    fn tiled_map(version: u16) -> Vec<u8> {
+        let (w, h) = (20i32, 20i32);
+        let heights: Vec<u8> = (0..h).flat_map(|_| (0..w).map(|x| if x >= 10 { 20 } else { 0 })).collect();
+        let mut out = DataChunkOutput::new();
+        out.open_data_chunk(b"HeightMapData", crate::logic::terrain_visual::K_HEIGHT_MAP_VERSION_4);
+        for v in [w, h, 0, 1, w, h, w * h] {
+            out.write_int(v);
+        }
+        out.write_array_of_bytes(&heights);
+        out.close_data_chunk();
+        out.open_data_chunk(b"BlendTileData", version);
+        out.write_int(w * h);
+        let shorts = |f: &dyn Fn(i32, i32) -> i16| -> Vec<u8> { (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).flat_map(|(x, y)| f(x, y).to_le_bytes()).collect() };
+        out.write_array_of_bytes(&shorts(&|x, _| if x >= 10 { 16 } else { 0 }));
+        out.write_array_of_bytes(&shorts(&|_, _| 0));
+        if version >= 6 {
+            out.write_array_of_bytes(&shorts(&|_, _| 0));
+        }
+        if version >= 5 {
+            out.write_array_of_bytes(&shorts(&|_, _| 0));
+        }
+        if version >= 7 {
+            let fsw = if version == 7 { ((w + 1) / 8) as usize } else { ((w + 7) / 8) as usize };
+            let mut bits = vec![0u8; fsw * h as usize];
+            bits[4 * fsw] |= 1 << 3;
+            out.write_array_of_bytes(&bits);
+        }
+        out.write_int(8);
+        out.write_int(1);
+        if version >= 5 {
+            out.write_int(1);
+        }
+        out.write_int(2);
+        for (first, name) in [(0, &b"GrassA"[..]), (4, b"Concrete")] {
+            for v in [first, 4, 2, 0] {
+                out.write_int(v);
+            }
+            out.write_ascii_string(name);
+        }
+        out.close_data_chunk();
+        out.finish()
+    }
+
+    /// Integration batch I59 (#16): the logic height map reads the map's `BlendTileData`. Predicted before the run, for each
+    /// version:
+    /// - version 7 (added after the first run, which tested 8 and 6 only): the same as version 8, though its rows were saved
+    ///   `(20 + 1) / 8` = 2 bytes long rather than 3, and the reader moves them into 3-byte rows;
+    /// - version 8: cell (3, 4) is a cliff (`isCliffCell(35, 45)`), its neighbour (5, 4) is not, and the height step is not
+    ///   (painted flags replace the heights' from version 7);
+    /// - version 6 (no painted flags): the cells whose corners span the step (x = 9) are cliffs (20 × 0.625 = 12.5 > 9.8), the
+    ///   cells beside them are not, and cell (3, 4) is not;
+    /// - both: with `Terrain.ini`'s `Concrete` restricting construction, a point on the right half restricts building and one
+    ///   on the left (`GrassA`) does not; a point beyond the map is clamped to it (the right edge: restricted).
+    ///
+    /// Before this batch `isCliffCell` answered the tests' cliff table (all false) on every real map.
+    #[test]
+    fn a_maps_blend_tiles_give_its_cliffs_and_no_build_tiles() {
+        for version in [8u16, 7, 6] {
+            let mut w = gate_map_world();
+            w.save_side.disk.insert(b"data\\ini\\terrain.ini".to_vec(), b"Terrain GrassA\nEnd\nTerrain Concrete\n RestrictConstruction = Yes\nEnd\n".to_vec());
+            assert!(w.load_ini_overrides(b"Data\\INI\\Terrain.ini").expect("the INI"));
+            w.save_side.disk.insert(b"maps\\tiled\\tiled.map".to_vec(), tiled_map(version));
+            assert!(w.load_map_file(b"Maps\\Tiled\\Tiled.map"), "version {version}: the map read");
+            let cliff = |w: &World, x: f32, y: f32| w.terrain.is_cliff_cell(x, y).expect("the height map answers");
+            let restricted = |w: &World, x: f32, y: f32| BuildAssistantHost::terrain_tile_restricts_construction(w, x, y);
+            let got = (
+                cliff(&w, 35.0, 45.0),
+                cliff(&w, 55.0, 45.0),
+                cliff(&w, 95.0, 50.0),
+                cliff(&w, 85.0, 50.0),
+                cliff(&w, 105.0, 50.0),
+                restricted(&w, 150.0, 50.0),
+                restricted(&w, 50.0, 50.0),
+                restricted(&w, 900.0, 50.0),
+            );
+            eprintln!("version {version}: {got:?}");
+            if version >= 7 {
+                assert_eq!(got, (true, false, false, false, false, Some(true), Some(false), Some(true)));
+            } else {
+                assert_eq!(got, (false, false, true, false, false, Some(true), Some(false), Some(true)));
+            }
+        }
+    }
+}

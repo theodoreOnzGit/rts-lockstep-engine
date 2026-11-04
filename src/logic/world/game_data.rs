@@ -154,6 +154,8 @@ pub const LOGIC_SUBSYSTEMS: &[SubsystemFiles] = &[
     SubsystemFiles { name: "TheScienceStore", path1: Some(b"Data\\INI\\Default\\Science.ini"), path2: Some(b"Data\\INI\\Science.ini"), dirpath: None },
     // (batch I56: GameEngine.cpp:423, after the science store)
     SubsystemFiles { name: "TheMultiplayerSettings", path1: Some(b"Data\\INI\\Default\\Multiplayer.ini"), path2: Some(b"Data\\INI\\Multiplayer.ini"), dirpath: None },
+    // (batch I59, #16: GameEngine.cpp:424, the terrain types the build assistant asks of a tile)
+    SubsystemFiles { name: "TheTerrainTypes", path1: Some(b"Data\\INI\\Default\\Terrain.ini"), path2: Some(b"Data\\INI\\Terrain.ini"), dirpath: None },
     // (batch I50: the client's subsystem the logic reads, after the multiplayer settings and terrain types, GameEngine.cpp:425)
     SubsystemFiles { name: "TheTerrainRoads", path1: Some(b"Data\\INI\\Default\\Roads.ini"), path2: Some(b"Data\\INI\\Roads.ini"), dirpath: None },
     SubsystemFiles { name: "TheRankInfoStore", path1: None, path2: Some(b"Data\\INI\\Rank.ini"), dirpath: None },
@@ -220,6 +222,8 @@ pub struct GameDataLoad {
     /// Integration batch I56: `TheMapCache`, which no INI of this load reads (it is made after the load, by
     /// `updateCache`); kept so that a load made again from the statics gives it back.
     pub map_cache: crate::common::map_cache::MapCache,
+    /// Integration batch I59: `TheTerrainTypes`.
+    pub terrain_types: crate::common::terrain_types::TerrainTypeCollection,
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -256,6 +260,7 @@ impl GameDataLoad {
             terrain_roads: Default::default(),
             multiplayer_settings: Default::default(),
             map_cache: Default::default(),
+            terrain_types: Default::default(),
             button_lookups: None,
         })
     }
@@ -311,6 +316,7 @@ impl GameDataLoad {
             terrain_roads: st.terrain_roads,
             multiplayer_settings: st.multiplayer_settings,
             map_cache: st.map_cache,
+            terrain_types: st.terrain_types,
             button_lookups: None,
         })
     }
@@ -337,6 +343,7 @@ impl GameDataLoad {
             multiplayer_settings: self.multiplayer_settings,
             map_cache: self.map_cache,
             game_text: self.text,
+            terrain_types: self.terrain_types,
         };
         (statics, self.names)
     }
@@ -382,7 +389,7 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 22] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 23] = [
     BlockParse { token: "AIData", parse: ai_data_block },
     BlockParse { token: "Armor", parse: armor_block },
     BlockParse { token: "Bridge", parse: bridge_block },
@@ -403,6 +410,7 @@ static BLOCKS: [BlockParse<GameDataLoad>; 22] = [
     BlockParse { token: "Rank", parse: rank_block },
     BlockParse { token: "Road", parse: road_block },
     BlockParse { token: "SpecialPower", parse: special_power_block },
+    BlockParse { token: "Terrain", parse: terrain_block },
     BlockParse { token: "Upgrade", parse: upgrade_block },
     BlockParse { token: "Weapon", parse: weapon_block },
 ];
@@ -534,6 +542,10 @@ fn command_button_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()
 /// (batch I19) `INI::parseCommandSetDefinition`.
 fn command_set_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     c.command_buttons.parse_command_set_definition(ini)
+}
+
+fn terrain_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.terrain_types.parse_terrain_definition(ini)
 }
 
 fn multiplayer_settings_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {

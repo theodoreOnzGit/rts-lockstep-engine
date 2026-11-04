@@ -1438,6 +1438,11 @@ impl TerrainLogic {
         self.visual.height_map = map;
     }
 
+    /// The logic height map (`TheTerrainVisual->getLogicHeightMap()`), if a map is loaded.
+    pub fn logic_height_map(&self) -> Option<&LogicHeightMap> {
+        self.visual.height_map.as_ref()
+    }
+
     /// A write to the visual: apply it to the logic-owned state and queue
     /// the notification for the client.
     fn visual_write(&mut self, event: TerrainVisualEvent) -> TlResult<()> {
@@ -1958,13 +1963,25 @@ impl TerrainLogic {
         }
     }
 
-    /// `isCliffCell(x, y)`: false for the base class; the device one asks
-    /// the render object, which is not translated.
-    pub fn is_cliff_cell(&self, _x: f32, _y: f32) -> TlResult<bool> {
+    /// `isCliffCell(x, y)`: false for the base class; the device one asks the render object, ~~which is not translated~~
+    /// **corrected 2026-11-04 (batch I59, #16):** whose `isCliffCell` reads the logic height map's cliff flags
+    /// ([`LogicHeightMap::is_cliff_cell`]). A height map without `BlendTileData` (upstream: `m_cellCliffState` `NULL`, every cell
+    /// false) stays `NotTranslated`, so the callers' cliff tables (the differential tests') still answer there; their default is
+    /// false, upstream's answer.
+    pub fn is_cliff_cell(&self, x: f32, y: f32) -> TlResult<bool> {
         match self.ground {
             GroundSource::Base => Ok(false),
-            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated("BaseHeightMapRenderObjClass::isCliffCell")),
+            GroundSource::LogicHeightMap => match &self.visual.height_map {
+                Some(map) if map.blend_tiles().is_some() => Ok(map.is_cliff_cell(x, y)),
+                _ => Err(TerrainLogicError::NotTranslated("BaseHeightMapRenderObjClass::isCliffCell")),
+            },
         }
+    }
+
+    /// `TheTerrainVisual->getTerrainTile(x, y)`'s name (`getLogicHeightMap()->getTerrainNameAt(x, y)`, batch I59): `None` without a
+    /// logic height map, its `BlendTileData`, or a texture class holding the tile.
+    pub fn terrain_name_at(&self, x: f32, y: f32) -> Option<Vec<u8>> {
+        self.visual.height_map.as_ref()?.terrain_name_at(x, y).map(<[u8]>::to_vec)
     }
 
     /// `findClosestEdgePoint(closestTo)`: the point on the map's edge

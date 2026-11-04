@@ -2081,6 +2081,33 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I59 (2026-11-04, `p1w13-sonnet`, GitHub #16): the logic height map's `BlendTileData`, giving a real map's cliffs and no-build tiles.** This started as item (4) of the pre-files list: could the no-build tiles be done logic-only? It found a larger defect. `W3DTerrainVisual::m_logicHeightMap` is a full `WorldHeightMap`, which parses `BlendTileData`, and the logic asks two questions of it:
+- `isCliffCell` (`BaseHeightMapRenderObjClass::isCliffCell`), which reads `getCliffState`;
+- the build assistant's tile (`getTerrainTile`: `getTerrainNameAt`, then `TheTerrainTypes`' `getRestrictConstruction()`).
+
+The port answered both from tables. `isCliffCell` was `NotTranslated`, so **on every real map the pathfinder saw no cliffs**: a certain divergence from the original for gate (b).
+
+**Now:**
+- `terrain_visual::parse_blend_tile_data_chunk` reads the chunk's logic part:
+  - the tile indices;
+  - the cliff flags: painted from version 7 (with version 7's one-byte-short rows), computed from the heights before it with `initCliffFlagsFromHeights`' 9.8 slope limit;
+  - the texture classes.
+
+  The rest (blend tiles, edge classes, cliff UVs, the tiles' art) is the client's and is skipped.
+- `LogicHeightMap::get_cliff_state`, `is_cliff_cell` (the cell truncated, moved by the border, clamped to `extent − 2`, as upstream) and `terrain_name_at`.
+- `TerrainLogic::is_cliff_cell` answers from the height map when the map has the chunk. Without it, the callers' tables stay: upstream's answer is false there, the tables' default, and two differential tests set them.
+- `Terrain.ini` is loaded in `initSubsystem`'s order (GameEngine.cpp:424) into `GameStatics::terrain_types`.
+- The build assistant's tile restriction is the tile's terrain type (`live_terrain`, a map with the chunk).
+
+**Predictions, written before the run (the test's doc):** `blend_tile_tests::a_maps_blend_tiles_give_its_cliffs_and_no_build_tiles`, a 20 × 20 map whose heights step from 0 to 20 at x = 10:
+- version 8: the painted cell (3, 4) is a cliff, its neighbour is not, and the height step is not (painted flags replace the heights');
+- version 6: the step's cells (x = 9: 20 × 0.625 = 12.5 > 9.8) are cliffs, their neighbours and (3, 4) are not;
+- both: the right half (`Concrete`, `RestrictConstruction = Yes`) restricts building, the left (`GrassA`) does not, and a point beyond the right edge is clamped onto it.
+
+**Results:** all held on the first run. ~~Version 7's short rows are translated but not tested here.~~ **Corrected the same day:** version 7 was added to the test (its rows saved 2 bytes long on a 20-wide map, not 3), predicted the same as version 8, and held. Whether a real map's chunk reads correctly needs a real map: none is available here.
+
+**Full run (2026-11-04):** 203 test binaries, 1,173 tests, 0 failed; clippy clean. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. The gate map is built in code with no `BlendTileData`, so it is untouched; a real map is not.
+
 **Integration batch I58 (2026-11-04, `p1w13-sonnet`): answers a game still read from the tests' tables.** Batch I46 turned every switch on, but a switch only covers the answers written to consult it. A static hunt found the rest: for each field of `ObjectCuts`, every non-test read in a function that consults no switch (`live_*`), stub flag or live delegation. It found 273 such reads in 62 fields. Most are not defects:
 - client cut points: audio, particles, drawables, bones, selection, lasers;
 - the World's own stored state: side scripts, rank limit, the synced difficulty;
@@ -2210,7 +2237,7 @@ Now `load_game_data` runs `UpgradeCenter::init` in its place, before `TheUpgrade
 - **A defect fixed:** the AI module's `HasSupplyTruckAiInterface` answered yes only for `SupplyTruckAIUpdate` and `WorkerAIUpdate`. Upstream's `ChinookAIUpdate` derives from `SupplyTruckAIUpdate` and inherits `getSupplyTruckAIInterface() {return this;}`, so a Chinook is one too. Both answers now share `AiUpdate::has_supply_truck_ai_interface`.
 - `SpawnBehavior`'s two weapon questions of its slaves (`getAbleToAttackSpecificObject`, `getAbleToUseWeaponAgainstTarget`) read result tables, so a spawner's slaves could never attack. With `live_ai` they now ask the slave's own weapon set through `object_weapons`, as the AI group's have done. An error of the weapon layer is recorded in `team_live_errors` and answers `ATTACKRESULT_NOT_POSSIBLE`.
 
-The tables stay as the module tests' answers without `live_ai`. Their docs, and those of the two functions, are corrected and struck through. Left out: the map's construction-restricting tiles (`TheTerrainVisual`'s tile data, which the logic does not load).
+The tables stay as the module tests' answers without `live_ai`. Their docs, and those of the two functions, are corrected and struck through. Left out: the map's construction-restricting tiles (~~`TheTerrainVisual`'s tile data, which the logic does not load~~ **corrected by batch I59, #16:** the logic now loads the map's `BlendTileData` and `Terrain.ini`, and answers them).
 
 **Predictions, written before the run (the test's doc):** a Chinook with a rotor locomotor of AIR surfaces is airborne, and the gate's soldier is not. The Chinook and a supply truck have a supply truck interface, and the soldier has none. The valid surfaces are AIR and GROUND. The soldier's weapon questions answer: an enemy 50 away is attackable (`POSSIBLE`) and reachable (`POSSIBLE`); one 300 away is reachable only after moving (`POSSIBLE_AFTER_MOVING`; the gun's range is 100). The unarmed runner can attack nothing (`NOT_POSSIBLE`). Without `live_ai` every answer is the empty table's. The gate's CRC stays `0bf44067`: its units are on ground locomotors, it has no Chinook, no spawner and no trigger query on surfaces, and no computer player counts gatherers.
 

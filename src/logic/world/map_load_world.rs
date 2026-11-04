@@ -121,11 +121,19 @@ impl World {
     fn read_map(&mut self, bytes: &[u8]) -> Result<Option<MapRead>, String> {
         // the height map first: without it, nothing is read (`WorldHeightMap` throws)
         let Some(stream) = CachedFileInputStream::new(bytes.to_vec()) else { return Ok(None) };
-        let height_map = match LogicHeightMap::from_map_file(stream, false) {
+        let mut height_map = match LogicHeightMap::from_map_file(stream, false) {
             Ok(Some(m)) => m,
             Ok(None) | Err(crate::formats::data_chunk::ChunkError::Thrown(_)) => return Ok(None),
             Err(e) => return Err(format!("HeightMapData: {e:?}")),
         };
+        // (batch I59, #16: the logic height map is a full `WorldHeightMap`: its `BlendTileData`, for the cliff flags the
+        // pathfinder reads and the tiles the build assistant reads; a corrupt chunk throws, and the map is not read)
+        let mut bp = crate::logic::terrain_visual::BlendParse { width: height_map.x_extent(), height: height_map.y_extent(), data: height_map.data().to_vec(), blend: None };
+        match Self::parse_with(bytes, &mut bp, b"BlendTileData", crate::logic::terrain_visual::parse_blend_tile_data_chunk) {
+            Ok(_) => height_map.set_blend_tiles(bp.blend),
+            Err(crate::formats::data_chunk::ChunkError::Thrown(_)) => return Ok(None),
+            Err(e) => return Err(format!("BlendTileData: {e:?}")),
+        }
         // the objects
         let mut op = ObjectParse::new();
         op.names = std::mem::take(&mut self.names);

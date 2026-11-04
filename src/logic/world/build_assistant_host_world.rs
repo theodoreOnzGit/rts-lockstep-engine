@@ -428,6 +428,13 @@ impl BuildAssistantHost for World {
         self.with_terrain(|t, w| t.layer_for_destination(w, &pos)).unwrap_or(crate::common::game_type::LAYER_GROUND)
     }
     fn terrain_tile_restricts_construction(&self, x: f32, y: f32) -> Option<bool> {
+        // (batch I59, #16: with `live_terrain` and a map with `BlendTileData`, the tile's terrain type: `getTerrainNameAt`, then
+        // `TheTerrainTypes->findTerrain(name)->getRestrictConstruction()`; no tile, no restriction, as upstream's NULL. A map
+        // without the chunk keeps the tests' table)
+        if self.cuts.live_terrain && self.terrain.logic_height_map().is_some_and(|m| m.blend_tiles().is_some()) {
+            let name = self.terrain.terrain_name_at(x, y)?;
+            return self.statics.terrain_types.find_terrain(&name).map(|t| t.restrict_construction());
+        }
         let cell = crate::logic::world::object_cuts::terrain_cell(x, y);
         Some(self.cuts.restricted_construction_cells.contains(&cell))
     }

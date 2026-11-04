@@ -94,6 +94,8 @@ pub struct GameStatics {
     pub map_cache: crate::common::map_cache::MapCache,
     /// Batch I57: `TheGameText` (the install's string file; a test's table, or none).
     pub game_text: crate::logic::world::game_data::TextTable,
+    /// Batch I59 (#16): `TheTerrainTypes` (`Terrain.ini`: each terrain tile's class, and whether it restricts construction).
+    pub terrain_types: crate::common::terrain_types::TerrainTypeCollection,
     // --- end batch I56 ---
     // New stores go here, each in its translator's marked block.
 }

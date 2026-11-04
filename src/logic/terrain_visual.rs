@@ -505,6 +505,131 @@ pub struct LogicHeightMap {
     boundaries: Vec<ICoord2D>,
     /// `m_data`, `m_dataSize` entries.
     data: Vec<u8>,
+    /// Batch I59 (#16): what `ParseBlendTileData` read of the map (`None`: no `BlendTileData` chunk, upstream's `NULL` arrays).
+    blend: Option<BlendTiles>,
+}
+
+/// `PATHFIND_CLIFF_SLOPE_LIMIT_F` (WorldHeightMap.cpp:65).
+pub const PATHFIND_CLIFF_SLOPE_LIMIT_F: f32 = 9.8;
+/// `K_BLEND_TILE_VERSION_5`: the cliff info indices.
+pub const K_BLEND_TILE_VERSION_5: u16 = 5;
+/// `K_BLEND_TILE_VERSION_6`: the extra blend layer.
+pub const K_BLEND_TILE_VERSION_6: u16 = 6;
+/// `K_BLEND_TILE_VERSION_7`: the painted cliff (impassable) flags, saved one byte short per row.
+pub const K_BLEND_TILE_VERSION_7: u16 = 7;
+
+/// One `TXTextureClass` of the map: the tiles `firstTile .. firstTile + numTiles` are the terrain type `name`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextureClass {
+    /// `firstTile`.
+    pub first_tile: i32,
+    /// `numTiles`.
+    pub num_tiles: i32,
+    /// `width`.
+    pub width: i32,
+    /// `name`: a `TerrainType`'s name.
+    pub name: Vec<u8>,
+}
+
+/// The parts of `BlendTileData` the logic reads (batch I59, #16): the tile of each sample, the cliff flag of each cell, and the
+/// texture classes. The blend tiles, cliff UVs, edge classes and the tiles' art are the client's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlendTiles {
+    /// `m_tileNdxes`, `m_dataSize` entries.
+    pub tile_ndxes: Vec<i16>,
+    /// `m_cellCliffState`: one bit per cell, `flip_state_width` bytes a row, `m_height` rows.
+    pub cell_cliff_state: Vec<u8>,
+    /// `m_flipStateWidth`: `(m_width + 7) / 8`.
+    pub flip_state_width: i32,
+    /// `m_textureClasses`, `m_numTextureClasses` of them.
+    pub texture_classes: Vec<TextureClass>,
+}
+
+/// What a `BlendTileData` parse reads into: the height map it belongs to, and the result.
+pub struct BlendParse {
+    /// The map's samples (`m_width`, `m_height`, `m_data`) as `ParseHeightMapData` left them.
+    pub width: i32,
+    pub height: i32,
+    pub data: Vec<u8>,
+    /// The chunk read.
+    pub blend: Option<BlendTiles>,
+}
+
+/// `WorldHeightMap::ParseBlendTileData`, the logic's part: `m_dataSize` must match (`ERROR_CORRUPT_FILE_FORMAT`); the tile, blend,
+/// extra blend (version 6) and cliff info (version 5) indices; the cliff flags (version 7, with its one-byte-short rows, or
+/// later), else computed from the heights (`initCliffFlagsFromHeights`); the tile counts; and the texture classes. What follows
+/// (the edge classes, the blend tiles, the cliff infos) is the client's and is left unread; the chunk's end is skipped.
+pub fn parse_blend_tile_data_chunk(file: &mut DataChunkInput<BlendParse>, info: &DataChunkInfo, user: &mut BlendParse) -> ChunkResult<bool> {
+    let data_size = user.width * user.height;
+    let len = file.read_int()?;
+    if len != data_size {
+        return Err(ChunkError::Thrown(ERROR_CORRUPT_FILE_FORMAT));
+    }
+    let n = usize::try_from(data_size).unwrap_or(0);
+    let read_shorts = |file: &mut DataChunkInput<BlendParse>| -> ChunkResult<Vec<i16>> {
+        let mut b = vec![0u8; n * 2];
+        file.read_array_of_bytes(&mut b, (n * 2) as i32)?;
+        Ok(b.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect())
+    };
+    let tile_ndxes = read_shorts(file)?;
+    let _blend_tile_ndxes = read_shorts(file)?;
+    if info.version >= K_BLEND_TILE_VERSION_6 {
+        let _extra_blend_tile_ndxes = read_shorts(file)?;
+    }
+    if info.version >= K_BLEND_TILE_VERSION_5 {
+        let _cliff_info_ndxes = read_shorts(file)?;
+    }
+    let flip_state_width = (user.width + 7) / 8;
+    let rows = usize::try_from(user.height).unwrap_or(0);
+    let fsw = usize::try_from(flip_state_width).unwrap_or(0);
+    let mut cell_cliff_state = vec![0u8; fsw * rows];
+    if info.version >= K_BLEND_TILE_VERSION_7 {
+        if info.version == K_BLEND_TILE_VERSION_7 {
+            // "previous incorrect length that got used to save the file": (m_width + 1) / 8 bytes a row
+            let byte_width = usize::try_from((user.width + 1) / 8).unwrap_or(0);
+            let mut d = vec![0u8; rows * byte_width];
+            file.read_array_of_bytes(&mut d, (rows * byte_width) as i32)?;
+            for j in 0..rows {
+                for i in 0..byte_width {
+                    if let Some(c) = cell_cliff_state.get_mut(j * fsw + i) {
+                        *c = d[j * byte_width + i];
+                    }
+                }
+            }
+        } else {
+            file.read_array_of_bytes(&mut cell_cliff_state, (rows * fsw) as i32)?;
+        }
+    } else {
+        // initCliffFlagsFromHeights: each cell whose four corners span more than the slope limit
+        let h = |x: i32, y: i32| f32::from(user.data[(y * user.width + x) as usize]) * MAP_HEIGHT_SCALE;
+        for x in 0..user.width - 1 {
+            for y in 0..user.height - 1 {
+                let c = [h(x, y), h(x + 1, y), h(x, y + 1), h(x + 1, y + 1)];
+                let min = c.iter().copied().fold(c[0], f32::min);
+                let max = c.iter().copied().fold(c[0], f32::max);
+                if max - min > PATHFIND_CLIFF_SLOPE_LIMIT_F {
+                    cell_cliff_state[y as usize * fsw + (x as usize >> 3)] |= 1 << (x & 7);
+                }
+            }
+        }
+    }
+    let _num_bitmap_tiles = file.read_int()?;
+    let _num_blended_tiles = file.read_int()?;
+    if info.version >= K_BLEND_TILE_VERSION_5 {
+        let _num_cliff_info = file.read_int()?;
+    }
+    let num_texture_classes = file.read_int()?;
+    let mut texture_classes = Vec::new();
+    for _ in 0..num_texture_classes.max(0) {
+        let first_tile = file.read_int()?;
+        let num_tiles = file.read_int()?;
+        let width = file.read_int()?;
+        let _legacy = file.read_int()?;
+        let name = file.read_ascii_string()?;
+        texture_classes.push(TextureClass { first_tile, num_tiles, width, name });
+    }
+    user.blend = Some(BlendTiles { tile_ndxes, cell_cliff_state, flip_state_width, texture_classes });
+    Ok(true)
 }
 
 impl LogicHeightMap {
@@ -517,7 +642,62 @@ impl LogicHeightMap {
         if width < 1 || height < 1 || i64::from(width) * i64::from(height) > data.len() as i64 {
             return Err(TerrainUndefined::HeightMapShape);
         }
-        Ok(LogicHeightMap { width, height, border_size, boundaries, data })
+        Ok(LogicHeightMap { width, height, border_size, boundaries, data, blend: None })
+    }
+
+    /// Batch I59 (#16): the map's `BlendTileData` (see [`BlendTiles`]).
+    pub fn set_blend_tiles(&mut self, blend: Option<BlendTiles>) {
+        self.blend = blend;
+    }
+
+    /// The map's `BlendTileData`, if it had one.
+    pub fn blend_tiles(&self) -> Option<&BlendTiles> {
+        self.blend.as_ref()
+    }
+
+    /// `WorldHeightMap::getCliffState(xIndex, yIndex)`: false outside the map or without the chunk.
+    pub fn get_cliff_state(&self, x: i32, y: i32) -> bool {
+        if x < 0 || y < 0 || y >= self.height || x >= self.width {
+            return false;
+        }
+        let Some(b) = &self.blend else { return false };
+        b.cell_cliff_state.get((y * b.flip_state_width + (x >> 3)) as usize).is_some_and(|v| v & (1 << (x & 7)) != 0)
+    }
+
+    /// `BaseHeightMapRenderObjClass::isCliffCell(x, y)`, on the logic height map: the cell of the point (`Int iX = x /
+    /// MAP_XY_FACTOR`, truncated), moved by the border and clamped to `[0, extent - 2]`, and its cliff flag.
+    pub fn is_cliff_cell(&self, x: f32, y: f32) -> bool {
+        let mut ix = (x / MAP_XY_FACTOR) as i32 + self.border_size;
+        let mut iy = (y / MAP_XY_FACTOR) as i32 + self.border_size;
+        ix = ix.max(0);
+        iy = iy.max(0);
+        if ix >= self.width - 1 {
+            ix = self.width - 2;
+        }
+        if iy >= self.height - 1 {
+            iy = self.height - 2;
+        }
+        self.get_cliff_state(ix, iy)
+    }
+
+    /// `WorldHeightMap::getTerrainNameAt(x, y)`: the texture class of the sample under the point (floored, moved by the border,
+    /// clamped to the map), whose tile (`m_tileNdxes[ndx] >> 2`) lies in the class; `None` (the empty string) when no class
+    /// holds it or the map has no `BlendTileData`.
+    pub fn terrain_name_at(&self, x: f32, y: f32) -> Option<&[u8]> {
+        let b = self.blend.as_ref()?;
+        let mut xi = (x / MAP_XY_FACTOR).floor() as i32 + self.border_size;
+        let mut yi = (y / MAP_XY_FACTOR).floor() as i32 + self.border_size;
+        xi = xi.max(0);
+        yi = yi.max(0);
+        if xi >= self.width {
+            xi = self.width - 1;
+        }
+        if yi >= self.height {
+            yi = self.height - 1;
+        }
+        let ndx = yi * self.width + xi;
+        let tile = i32::from(*b.tile_ndxes.get(usize::try_from(ndx).ok()?)?) >> 2;
+        b.texture_classes.iter().find(|c| tile >= c.first_tile && tile < c.first_tile + c.num_tiles).map(|c| c.name.as_slice())
     }
 
     /// `getXExtent()`.
