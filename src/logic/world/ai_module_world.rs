@@ -444,7 +444,9 @@ impl AiModuleBody {
                 _ => ModuleReply::Int(FREE_TO_EXIT),
             },
             ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(matches!(m.ai().subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_))),
-            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(matches!(m.ai().subclass, AiSubclass::SupplyTruck(_) | AiSubclass::Worker(_))),
+            // (batch I53: and the Chinook, whose `ChinookAIUpdate` is a `SupplyTruckAIUpdate` and inherits its
+            // `getSupplyTruckAIInterface() {return this;}`; it was left out, so no warehouse took a Chinook's docking)
+            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(m.ai().has_supply_truck_ai_interface()),
             // the current locomotor's
             ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(m.ai().get_cur_locomotor().is_some()),
             ModuleCall::AiGetCurLocomotorPreferredHeight => match m.ai().get_cur_locomotor() {
@@ -915,7 +917,7 @@ impl World {
             ModuleCall::AiHasLocomotorForSurface(s) => ModuleReply::Bool(a.has_locomotor_for_surface(*s as i32)),
             ModuleCall::AiHasCurLocomotor => ModuleReply::Bool(a.get_cur_locomotor().is_some()),
             ModuleCall::AiGetDozerAIInterface => ModuleReply::Bool(matches!(a.subclass, AiSubclass::Dozer(_) | AiSubclass::Worker(_))),
-            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(matches!(a.subclass, AiSubclass::SupplyTruck(_) | AiSubclass::Worker(_))),
+            ModuleCall::HasSupplyTruckAiInterface => ModuleReply::Bool(a.has_supply_truck_ai_interface()),
             // (the chinook's and the deliverer's overrides need more than the AI)
             ModuleCall::AiGetFreeToExit { .. } if !matches!(a.subclass, AiSubclass::Chinook(_) | AiSubclass::DeliverPayload(_)) => ModuleReply::Int(FREE_TO_EXIT),
             _ => return None,

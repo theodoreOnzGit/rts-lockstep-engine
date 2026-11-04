@@ -653,9 +653,21 @@ impl World {
         }
     }
 
-    /// `isUsingAirborneLocomotor()`: the AI's current locomotor flies.
+    /// `isUsingAirborneLocomotor()`: the AI's current locomotor flies. ~~(`cuts.ai_airborne`)~~ **Corrected 2026-11-03 (batch I53):** with
+    /// `cuts.live_ai` the AI's own current locomotor ([`AiUpdate::cur_locomotor_is_airborne`], in its module or lent);
+    /// it read the table in the live game too, where no unit was ever in it, so no aircraft counted as flying (a
+    /// warehouse's dock, a transport's and a mob's exits, the veterancy crate, the partition's `IsFlying` filter).
+    /// Without `live_ai`, the tests' table.
+    ///
+    /// [`AiUpdate::cur_locomotor_is_airborne`]: crate::logic::ai::ai_update::AiUpdate::cur_locomotor_is_airborne
     pub fn is_using_airborne_locomotor(&self, id: ObjectId) -> bool {
-        self.objects.find(id).is_some_and(|o| o.ai.is_some()) && self.cuts.ai_airborne.contains(&id)
+        if !self.objects.find(id).is_some_and(|o| o.ai.is_some()) {
+            return false;
+        }
+        if self.cuts.live_ai {
+            return self.ai_peek(id).is_some_and(|a| a.cur_locomotor_is_airborne());
+        }
+        self.cuts.ai_airborne.contains(&id)
     }
 
     /// `getShroudedStatus(playerIndex)`: always clear for `KINDOF_ALWAYS_VISIBLE`;

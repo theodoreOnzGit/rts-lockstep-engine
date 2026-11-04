@@ -3263,4 +3263,80 @@ Object Healer\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadi
         w.cuts.range_scan.clear();
         assert_eq!(w.partition_iterate_hunt_targets(healer, 300.0, ALLOW_ENEMIES, true), Vec::<ObjectId>::new(), "the tests' table");
     }
+
+    /// Integration batch I53: the AI facts the object and the player code read from tables the live game never filled. Predicted
+    /// before the run: a Chinook (`ChinookAIUpdate`, a rotor locomotor of AIR surfaces) is using an airborne locomotor and the
+    /// gate's soldier (treads) is not; the Chinook has a supply truck interface (its AI is a `SupplyTruckAIUpdate`; before this
+    /// batch the module said no), as does a supply truck, and the soldier has none; the team code's valid surfaces are the AI's
+    /// locomotor set's (AIR for the Chinook, GROUND for the soldier; it was 0 for every live unit). The weapon questions a
+    /// spawner asks of its slaves are the slave's own weapon set: the soldier can attack an enemy soldier 50 away
+    /// (`ATTACKRESULT_POSSIBLE`), its weapon reaches it now (`ATTACKRESULT_POSSIBLE`), it reaches one 300 away only after moving
+    /// (`ATTACKRESULT_POSSIBLE_AFTER_MOVING`, the gun's range being 100); the unarmed runner can attack nothing
+    /// (`ATTACKRESULT_NOT_POSSIBLE`). Without `live_ai`, every answer is the tests' (empty) table's.
+    ///
+    /// Results (2026-11-03): all held but one. The weapon answers were `[3, 3, 2, 1]`: the unarmed runner's is
+    /// `ATTACKRESULT_INVALID_SHOT`, not the predicted `NOT_POSSIBLE`. Upstream agrees with the port: `getAbleToAttackSpecificObject`
+    /// passes a valid enemy to `getAbleToUseWeaponAgainstTarget`, which skips its weapon checks when `hasAnyDamageWeapon()` is
+    /// false, skips the passengers when there is no container, and ends `return ATTACKRESULT_INVALID_SHOT`. The assertion now
+    /// says so; the prediction was wrong, not the code.
+    #[test]
+    fn a_chinook_flies_and_gathers_and_a_slave_asks_its_own_weapons() {
+        use crate::logic::locomotor::{LOCOMOTORSURFACE_AIR, LOCOMOTORSURFACE_GROUND};
+        use crate::logic::weapon_host::{CanAttackResult, ATTACK_NEW_TARGET};
+        use crate::logic::world::player_objects::PlayerObjectHost;
+        use crate::logic::world::team_ops::TeamHost;
+        const AIR: &str = "\
+Locomotor GateRotor\n Surfaces = AIR\n Speed = 60\n Acceleration = 100\n Braking = 100\n TurnRate = 180\n Appearance = HOVER\nEnd\n\
+Object Chopper\n KindOf = VEHICLE AIRCRAFT\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = ChinookAIUpdate ModuleTag_AI\n  MaxBoxes = 2\n  SupplyCenterActionDelay = 100\n  SupplyWarehouseActionDelay = 100\n  SupplyWarehouseScanDistance = 500\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateRotor\nEnd\n\
+Object Truck\n KindOf = VEHICLE HARVESTER\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = SupplyTruckAIUpdate ModuleTag_AI\n  MaxBoxes = 2\n  SupplyCenterActionDelay = 100\n  SupplyWarehouseActionDelay = 100\n  SupplyWarehouseScanDistance = 500\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+        let mut w = gate_map_world_with(AIR);
+        let team1 = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let team2 = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let chopper = make(&mut w, b"Chopper", team1, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let truck = make(&mut w, b"Truck", team1, Coord3D { x: 100.0, y: 150.0, z: 0.0 });
+        let soldier = make(&mut w, b"Soldier", team1, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let runner = make(&mut w, b"Runner", team1, Coord3D { x: 200.0, y: 230.0, z: 0.0 });
+        let near = make(&mut w, b"Soldier", team2, Coord3D { x: 250.0, y: 200.0, z: 0.0 });
+        let far = make(&mut w, b"Soldier", team2, Coord3D { x: 500.0, y: 200.0, z: 0.0 });
+
+        assert!(w.is_using_airborne_locomotor(chopper));
+        assert!(!w.is_using_airborne_locomotor(soldier));
+        let truck_ai = |w: &mut World, o: ObjectId| {
+            let ai = w.objects.find(o).and_then(|x| x.ai).expect("an AI");
+            w.module_call(o, ai, ModuleCall::HasSupplyTruckAiInterface).as_bool()
+        };
+        assert!(truck_ai(&mut w, chopper), "the Chinook's AI is a supply truck's");
+        assert!(truck_ai(&mut w, truck));
+        assert!(!truck_ai(&mut w, soldier));
+        assert!(PlayerObjectHost::ai_has_supply_truck_interface(&w, chopper));
+        assert!(!PlayerObjectHost::ai_has_supply_truck_interface(&w, soldier));
+        assert_eq!(TeamHost::ai_valid_surfaces(&w, chopper), LOCOMOTORSURFACE_AIR as u32);
+        assert_eq!(TeamHost::ai_valid_surfaces(&w, soldier), LOCOMOTORSURFACE_GROUND as u32);
+
+        let src = 0; // CMD_FROM_PLAYER
+        let attack = |w: &mut World, o, t| w.object_get_able_to_attack_specific_object(o, ATTACK_NEW_TARGET, t, src);
+        let reach = |w: &mut World, o, t| w.object_get_able_to_use_weapon_against_target(o, ATTACK_NEW_TARGET, t, None, src);
+        let r = [attack(&mut w, soldier, near), reach(&mut w, soldier, near), reach(&mut w, soldier, far), attack(&mut w, runner, near)];
+        eprintln!("attack near, reach near, reach far, runner: {r:?}");
+        assert_eq!(r, [
+            CanAttackResult::Possible as i32,
+            CanAttackResult::Possible as i32,
+            CanAttackResult::PossibleAfterMoving as i32,
+            // (an unarmed unit's shot is invalid: `WeaponSet::getAbleToUseWeaponAgainstTarget`'s last line)
+            CanAttackResult::InvalidShot as i32,
+        ]);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+
+        w.cuts.live_ai = false;
+        assert!(!w.is_using_airborne_locomotor(chopper), "the tests' table");
+        assert!(!PlayerObjectHost::ai_has_supply_truck_interface(&w, chopper), "the tests' table");
+        assert_eq!(TeamHost::ai_valid_surfaces(&w, chopper), 0, "the tests' table");
+        assert_eq!(attack(&mut w, soldier, near), 0, "the tests' table");
+    }
 }

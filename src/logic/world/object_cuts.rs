@@ -1068,15 +1068,46 @@ impl World {
     }
 
     /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (see [`CutCall::ObjectGetAbleToAttackSpecificObject`]).
+    /// ~~Answered by `able_to_attack_results`.~~ **Corrected 2026-11-03 (batch I53):** with `cuts.live_ai` the object's own weapon set
+    /// ([`object_weapons::get_able_to_attack_specific_object`], `specificSlot` -1); it was the table in the live game too, so a
+    /// spawner's slaves could never attack. An error of the weapon layer is recorded in `team_live_errors` and answers
+    /// `ATTACKRESULT_NOT_POSSIBLE`.
+    ///
+    /// [`object_weapons::get_able_to_attack_specific_object`]: crate::logic::world::object_weapons::get_able_to_attack_specific_object
     pub fn object_get_able_to_attack_specific_object(&mut self, object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32) -> i32 {
         self.cut(CutCall::ObjectGetAbleToAttackSpecificObject { object, attack_type, target, command_source });
+        if self.cuts.live_ai {
+            let src = crate::common::game_common::CommandSourceType::from_i32(command_source);
+            return match crate::logic::world::object_weapons::get_able_to_attack_specific_object(self, object, attack_type, target, src, -1) {
+                Ok(r) => r as i32,
+                Err(e) => {
+                    self.cuts.team_live_errors.push(format!("Object::getAbleToAttackSpecificObject({object}): {e:?}"));
+                    crate::logic::weapon_host::CanAttackResult::NotPossible as i32
+                }
+            };
+        }
         self.cuts.able_to_attack_results.get(&object).copied().unwrap_or(0)
     }
 
     /// batch R73: `obj->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, cmdSource)` (see
-    /// [`CutCall::ObjectGetAbleToUseWeaponAgainstTarget`]).
+    /// [`CutCall::ObjectGetAbleToUseWeaponAgainstTarget`]). ~~Answered by `able_to_use_weapon_results`.~~ **Corrected 2026-11-03 (batch I53):** with
+    /// `cuts.live_ai` the object's own weapon set ([`object_weapons::get_able_to_use_weapon_against_target`], `INVALID_ID` as
+    /// `NULL`, `specificSlot` -1); errors as [`World::object_get_able_to_attack_specific_object`].
+    ///
+    /// [`object_weapons::get_able_to_use_weapon_against_target`]: crate::logic::world::object_weapons::get_able_to_use_weapon_against_target
     pub fn object_get_able_to_use_weapon_against_target(&mut self, object: ObjectId, attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32) -> i32 {
         self.cut(CutCall::ObjectGetAbleToUseWeaponAgainstTarget { object, attack_type, victim, pos, command_source });
+        if self.cuts.live_ai {
+            let src = crate::common::game_common::CommandSourceType::from_i32(command_source);
+            let v = (victim != INVALID_ID).then_some(victim);
+            return match crate::logic::world::object_weapons::get_able_to_use_weapon_against_target(self, object, attack_type, v, pos, src, -1) {
+                Ok(r) => r as i32,
+                Err(e) => {
+                    self.cuts.team_live_errors.push(format!("Object::getAbleToUseWeaponAgainstTarget({object}): {e:?}"));
+                    crate::logic::weapon_host::CanAttackResult::NotPossible as i32
+                }
+            };
+        }
         self.cuts.able_to_use_weapon_results.get(&object).copied().unwrap_or(0)
     }
 
@@ -1807,11 +1838,11 @@ pub enum CutCall {
     RadarQueueTerrainRefresh,
     /// batch R77: `TheAI->pathfinder()->changeBridgeState(layer, repaired)`.
     PathfinderChangeBridgeState { layer: crate::common::game_type::PathfindLayer, repaired: bool },
-    /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (the weapon layer's), answered by
-    /// `able_to_attack_results`.
+    /// batch R73: `obj->getAbleToAttackSpecificObject(attackType, target, cmdSource)` (the weapon layer's), ~~answered by
+    /// `able_to_attack_results`~~ **Corrected 2026-11-03 (batch I53):** answered by `able_to_attack_results` only without `live_ai`; with it the weapon set answers.
     ObjectGetAbleToAttackSpecificObject { object: ObjectId, attack_type: i32, target: ObjectId, command_source: i32 },
-    /// batch R73: `obj->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, cmdSource)` (the weapon layer's), answered by
-    /// `able_to_use_weapon_results`.
+    /// batch R73: `obj->getAbleToUseWeaponAgainstTarget(attackType, victim, pos, cmdSource)` (the weapon layer's), ~~answered by
+    /// `able_to_use_weapon_results`~~ **Corrected 2026-11-03 (batch I53):** answered by `able_to_use_weapon_results` only without `live_ai`; with it the weapon set answers.
     ObjectGetAbleToUseWeaponAgainstTarget { object: ObjectId, attack_type: i32, victim: ObjectId, pos: Option<Coord3D>, command_source: i32 },
     /// batch R70: `TheTerrainLogic->deleteBridge(bridge)`: the bridge by its info's ends (`None` for `NULL`).
     TerrainDeleteBridge { bridge: Option<(Coord3D, Coord3D)> },
@@ -2259,7 +2290,8 @@ pub struct ObjectCuts {
     pub booby_traps_in_range: Vec<ObjectId>,
     /// Objects whose AI has a dozer interface (`ai->getDozerAIInterface()` is non-null; its current task is a real one).
     pub dozer_ais: BTreeSet<ObjectId>,
-    /// Objects whose AI's current locomotor flies (`getLegalSurfaces() & LOCOMOTORSURFACE_AIR`).
+    /// Objects whose AI's current locomotor flies (`getLegalSurfaces() & LOCOMOTORSURFACE_AIR`): the tests' table, read
+    /// without `live_ai` (batch I53).
     pub ai_airborne: BTreeSet<ObjectId>,
     /// `ai->getTurretRotAndPitch(turret)`'s rotation: (object, turret) -> radians.
     pub ai_turret_rotation: BTreeMap<(ObjectId, i32), f32>,
@@ -2311,11 +2343,13 @@ pub struct ObjectCuts {
     /// `getAI()->isIdle()` of the objects whose AI is idle, as the player and team code ask it (the AI update is not a
     /// module of the world until batch I9).
     pub ai_idle: BTreeSet<ObjectId>,
-    /// `getAI()->getLocomotorSet()->getValidSurfaces()` (none listed: 0).
+    /// `getAI()->getLocomotorSet()->getValidSurfaces()` (none listed: 0): the tests' table, read without `live_ai` (the
+    /// pathfinder's since batch I9c-1, the player host's since batch I53).
     pub ai_valid_surfaces: BTreeMap<ObjectId, u32>,
     /// The objects whose AI is not recruitable (`isRecruitable()`).
     pub ai_not_recruitable: BTreeSet<ObjectId>,
-    /// The objects whose AI has a supply truck interface (`getSupplyTruckAIInterface() != NULL`).
+    /// The objects whose AI has a supply truck interface (`getSupplyTruckAIInterface() != NULL`): the tests' table, read
+    /// without `live_ai` (batch I53).
     pub supply_truck_ais: BTreeSet<ObjectId>,
     /// batch I3b: the team and player questions and notifications of `Object` and its modules are the team and player
     /// lists' (`team_live_world.rs`) instead of these tables. Off by default.

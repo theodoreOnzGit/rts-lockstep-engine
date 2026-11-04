@@ -469,6 +469,18 @@ impl AiUpdate {
         self.path_extra_distance = dist;
     }
     /// `getCurLocomotor()`.
+    /// `getSupplyTruckAIInterface() != NULL` (batch I53): `SupplyTruckAIUpdate` and `WorkerAIUpdate` return `this`, and
+    /// `ChinookAIUpdate` inherits the supply truck's; the base `AIUpdateInterface` returns `NULL`.
+    pub fn has_supply_truck_ai_interface(&self) -> bool {
+        matches!(self.subclass, AiSubclass::SupplyTruck(_) | AiSubclass::Worker(_) | AiSubclass::Chinook(_))
+    }
+
+    /// `getCurLocomotor() && (getCurLocomotor()->getLegalSurfaces() & LOCOMOTORSURFACE_AIR) != 0`, the AI's half of
+    /// `Object::isUsingAirborneLocomotor()` (batch I53).
+    pub fn cur_locomotor_is_airborne(&self) -> bool {
+        self.get_cur_locomotor().is_some_and(|l| l.get_legal_surfaces() & crate::logic::locomotor::LOCOMOTORSURFACE_AIR != 0)
+    }
+
     pub fn get_cur_locomotor(&self) -> Option<&crate::logic::locomotor::Locomotor> {
         self.cur_locomotor.and_then(|i| self.locomotor_set.get(i))
     }

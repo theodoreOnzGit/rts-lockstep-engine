@@ -654,6 +654,11 @@ impl TeamHost for World {
         self.cuts.ai_idle.contains(&o)
     }
     fn ai_valid_surfaces(&self, o: ObjectId) -> u32 {
+        // (batch I53: with `live_ai`, the AI's `getLocomotorSet().getValidSurfaces()`, as the pathfinder's
+        // `ai_locomotor_set`; it was the table, so a team's trigger queries judged every live unit by no surface at all)
+        if self.cuts.live_ai {
+            return self.ai_peek(o).map_or(0, |a| a.locomotor_set.get_valid_surfaces() as u32);
+        }
         self.cuts.ai_valid_surfaces.get(&o).copied().unwrap_or(0)
     }
     fn ai_is_recruitable(&self, o: ObjectId) -> bool {
@@ -1228,6 +1233,11 @@ impl PlayerObjectHost for World {
         self.ai_ask(o, ModuleCall::AiMoveToPosition { pos, command_source: source });
     }
     fn ai_has_supply_truck_interface(&self, o: ObjectId) -> bool {
+        // (batch I53: with `live_ai`, the AI's own `getSupplyTruckAIInterface() != NULL`; it was the table, so the
+        // computer player's idle-gatherer count found none)
+        if self.cuts.live_ai {
+            return self.ai_peek(o).is_some_and(|a| a.has_supply_truck_ai_interface());
+        }
         self.cuts.supply_truck_ais.contains(&o)
     }
     fn ai_supply_truck_set_force_wanting_state(&mut self, o: ObjectId, v: bool) {
