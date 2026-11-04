@@ -273,7 +273,13 @@ pub fn search_string_matches(s: &[u8], search: &[u8]) -> bool {
 pub struct ArchiveFile {
     /// The archive's name as given to [`ArchiveFile::open_archive_file`].
     name: Vec<u8>,
+    /// The archive's bytes: all of them ([`ArchiveFile::open_archive_file`]), or none when only its directory was read
+    /// ([`ArchiveFile::open_archive_directory`]; the members are then read by the caller at [`ArchiveFile::member_range`]).
     data: Vec<u8>,
+    /// The archive's length in bytes (`data.len()` when it is held whole).
+    archive_len: usize,
+    /// Whether `data` holds the whole archive.
+    members_in_memory: bool,
     root_directory: DetailedArchivedDirectoryInfo,
     /// The size field of the header (little-endian; upstream only logs it).
     archive_file_size: i32,
@@ -310,9 +316,12 @@ impl ArchiveFile {
         // byte order for some reason": ntohl of the in-memory Int.
         let num_little_files = i32::from_be_bytes(read_int_partial(&data, &mut pos));
 
+        let archive_len = data.len();
         let mut archive = ArchiveFile {
             name: filename.to_vec(),
             data,
+            archive_len,
+            members_in_memory: true,
             root_directory: DetailedArchivedDirectoryInfo::default(),
             archive_file_size,
         };
@@ -357,6 +366,58 @@ impl ArchiveFile {
             index += 1;
         }
         Ok(archive)
+    }
+
+    /// Integration batch F1 (#9): `Win32BIGFileSystem::openArchiveFile` reading only the archive's header and directory,
+    /// for archives too large to hold whole (a game's `.big` files run to a gigabyte; upstream reads them through a
+    /// `File` and seeks to each member). `read(offset, len)` returns the archive's bytes there (fewer at its end).
+    ///
+    /// The directory is parsed by [`ArchiveFile::open_archive_file`] itself, on a prefix of the archive: 64 KiB, then
+    /// four times as much while the parse stops at the prefix's end ([`BigError::TruncatedEntry`]), up to the whole
+    /// archive, so the result is the same as the whole archive's parse. The members are not held: read them at
+    /// [`ArchiveFile::member_range`]. [`ArchiveFile::open_file`] and [`ArchiveFile::open_file_streaming`] then answer `None`.
+    pub fn open_archive_directory(filename: &[u8], archive_len: usize, mut read: impl FnMut(usize, usize) -> Vec<u8>) -> Result<ArchiveFile, BigError> {
+        let mut prefix = archive_len.min(64 * 1024);
+        loop {
+            let data = read(0, prefix);
+            match ArchiveFile::open_archive_file(filename, data) {
+                Ok(mut a) => {
+                    a.data = Vec::new();
+                    a.archive_len = archive_len;
+                    a.members_in_memory = false;
+                    return Ok(a);
+                }
+                Err(BigError::TruncatedEntry { .. }) if prefix < archive_len => prefix = archive_len.min(prefix.saturating_mul(4)),
+                Err(BigError::TooShortForIdentifier) if prefix < archive_len.min(4) => prefix = archive_len.min(4),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Whether the archive's bytes are held whole (see [`ArchiveFile::open_archive_directory`]).
+    pub fn members_in_memory(&self) -> bool {
+        self.members_in_memory
+    }
+
+    /// The archive's length in bytes.
+    pub fn archive_len(&self) -> usize {
+        self.archive_len
+    }
+
+    /// Integration batch F1 (#9): where a member lies, `(offset, size)` in the archive, with the checks of
+    /// [`ArchiveFile::open_file`] (`RAMFile::openFromArchive`: the offset and size are `Int`s, and the member must lie
+    /// inside the archive). `None` when the name is not in this archive or the member is not inside it.
+    pub fn member_range(&self, filename: &[u8]) -> Option<(usize, usize)> {
+        let info = self.get_archived_file_info(filename)?;
+        let offset = i32::try_from(info.offset).ok()? as usize;
+        let size = i32::try_from(info.size).ok()? as usize;
+        if size == 0 {
+            return Some((offset, 0));
+        }
+        if offset.checked_add(size)? > self.archive_len {
+            return None;
+        }
+        Some((offset, size))
     }
 
     /// The name the archive was opened with.
@@ -415,6 +476,9 @@ impl ArchiveFile {
     /// must succeed). `None` when the name is not in this archive or the data
     /// is not inside it.
     pub fn open_file(&self, filename: &[u8]) -> Option<&[u8]> {
+        if !self.members_in_memory {
+            return None;
+        }
         let info = self.get_archived_file_info(filename)?;
         let offset = i32::try_from(info.offset).ok()? as usize;
         let size = i32::try_from(info.size).ok()? as usize;
@@ -441,6 +505,9 @@ impl ArchiveFile {
     /// (-1 again), where upstream's result depends on the archive's previous
     /// file position; that one does not open here.
     pub fn open_file_streaming(&self, filename: &[u8]) -> Option<StreamingMember<'_>> {
+        if !self.members_in_memory {
+            return None;
+        }
         let info = self.get_archived_file_info(filename)?;
         let offset = info.offset as i32;
         let size = info.size as i32;
@@ -570,6 +637,33 @@ impl ArchiveFileSystem {
         self.load_into_directory_tree(&archive, filename, overwrite);
         self.archive_file_map.insert(filename.to_vec(), archive);
         Ok(())
+    }
+
+    /// [`ArchiveFileSystem::load_big_file`] for an archive whose directory alone is read
+    /// ([`ArchiveFile::open_archive_directory`]; integration batch F1, #9).
+    pub fn load_big_file_directory(
+        &mut self,
+        filename: &[u8],
+        archive_len: usize,
+        read: impl FnMut(usize, usize) -> Vec<u8>,
+        overwrite: bool,
+    ) -> Result<(), BigError> {
+        let archive = ArchiveFile::open_archive_directory(filename, archive_len, read)?;
+        self.load_into_directory_tree(&archive, filename, overwrite);
+        self.archive_file_map.insert(filename.to_vec(), archive);
+        Ok(())
+    }
+
+    /// Where the archive that serves `filename` holds it: the archive's name (as it was loaded) and the member's
+    /// `(offset, size)` ([`ArchiveFile::member_range`]; integration batch F1, #9). `None` as `openFile` fails.
+    pub fn member_location(&self, filename: &[u8]) -> Option<(Vec<u8>, usize, usize)> {
+        let archive_filename = self.get_archive_filename_for_file(filename);
+        if archive_filename.is_empty() {
+            return None;
+        }
+        let a = self.archive_file_map.get(&archive_filename)?;
+        let (offset, size) = a.member_range(filename)?;
+        Some((archive_filename, offset, size))
     }
 
     /// `ArchiveFileSystem::loadIntoDirectoryTree`.

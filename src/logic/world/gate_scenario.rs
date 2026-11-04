@@ -3388,4 +3388,33 @@ Object Recruit\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius =
         assert!(!w.has_upgrade(other, &bit(0)), "the tests' table");
         assert_eq!(w.body_health(other), Some((100.0, 100.0)));
     }
+    /// Integration batch F1 (#9): the game's INI read through `TheFileSystem` from inside a `.big` archive, as a real
+    /// install keeps it (`INIZH.big`), gives the same game data as the same INI given as loose files. Predicted before the
+    /// run: the same templates in the same order, and the same name keys (the load's own `nameToKey` calls are the same).
+    ///
+    /// Results (2026-11-04): both held. (A third prediction, that the two loads give the same CRC once made into worlds,
+    /// was written but not tested here; the identical templates and name keys are what a world's CRC is built from.)
+    #[test]
+    fn the_ini_loads_through_the_file_system_from_an_archive() {
+        use crate::common::file_system::{FileSystem, MemoryDevice};
+        use crate::formats::big::build_big;
+        let mut loose = MemoryFiles::new();
+        loose.insert(b"Data\\INI\\Object\\Gate.ini", INI.as_bytes().to_vec());
+        let a = load_game_data(&loose, MissingFiles::Skip, TextTable::default()).expect("the loose INI");
+
+        let mut d = MemoryDevice::new();
+        d.insert(b"ZH\\INIZH.big", build_big(&[(b"Data\\INI\\Object\\Gate.ini", INI.as_bytes())]));
+        let mut fs = FileSystem::new(d);
+        fs.local.game_dir = b"ZH\\".to_vec();
+        fs.init(None);
+        assert!(fs.archive_errors.is_empty());
+        let b = load_game_data(&fs, MissingFiles::Skip, TextTable::default()).expect("the archived INI");
+
+        let names = |l: &crate::logic::world::game_data::GameDataLoad| -> Vec<Vec<u8>> {
+            l.factory.templates().map(|t| t.data.get_name().to_vec()).collect()
+        };
+        assert_eq!(names(&a), names(&b));
+        assert!(names(&b).iter().any(|n| n == b"Runner"));
+        assert_eq!(format!("{:?}", a.names), format!("{:?}", b.names), "the same name keys");
+    }
 }

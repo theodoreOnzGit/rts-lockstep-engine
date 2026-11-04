@@ -86,3 +86,32 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **The loaders are tested** on generated files, and on the owner's files when they are supplied (those tests are skipped
   without them, never faked).
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
+
+## Development history
+
+**Batch F1 (2026-11-04, GitHub #9): `TheFileSystem`, and archives read by their directory only.**
+`src/common/file_system.rs` translates three pieces:
+- `FileSystem.cpp`: `openFile`, `doesFileExist`, `getFileInfo` and `getFileListInDirectory`. The local files come first, then the archives.
+- `Win32LocalFileSystem`'s existence check, file info and recursive directory listing, over a `LocalDevice`. A device is the browser's storage of the imported folders (#3), a folder on disk (`NativeDevice`, which finds each path component without case, as a Windows install does) or memory (`MemoryDevice`).
+- `Win32BIGFileSystem::init` and `loadBigFilesFromDirectory`. They load every `*.big` under the game's folder, subfolders included, then every one under the *Generals* install path, without overwriting. The first archive to supply a path keeps it.
+
+`formats::big` gains `ArchiveFile::open_archive_directory`, `member_range` and the `ArchiveFileSystem` counterparts. Their two jobs:
+- The directory is parsed by the existing `open_archive_file`, on a prefix of the archive: 64 KiB, then four times as much while the parse stops at the prefix's end.
+- A member is read from its range when it is opened, so a gigabyte archive is never held whole.
+
+`FileSystem` implements the logic's `GameDataFiles`, so `load_game_data` reads a real install's INI through it.
+
+Two places where the translation differs:
+- upstream's existence cache (`m_fileExist`, keyed by `nameToLowercaseKey`) is not kept;
+- `FindFirstFile`'s wildcard is matched by `SearchStringMatches` without case.
+
+*Predictions before the runs:*
+- a loose file wins over an archived one;
+- between archives, the first loaded keeps a path, so Zero Hour's `INIZH.big` serves `Data\INI\Weapon.ini` over the Generals `INI.big`;
+- a path only Generals has is served by Generals' archive;
+- an archive in a subfolder is found;
+- no archive is held whole;
+- the directory-only parse equals the whole parse, for a 3,000-entry directory read in more than one prefix;
+- the gate's INI read from inside an archive gives the same templates and name keys as the same INI given as loose files.
+
+*Results:* all held but one, and that one was the test's layout, not the code. The first run put the Generals folder inside the game's folder. `loadBigFilesFromDirectory("", "*.big")` searches subfolders, so it found that archive first (name order) and it kept `Weapon.ini`, exactly as upstream would. The test now puts the two folders side by side, as a Steam install and the browser import do. For that, the local file system takes the game's folder within the device (`game_dir`), as upstream's paths are relative to its current directory, with absolute paths (`\Generals\`) for the install path. The full run (2026-11-04): 203 test binaries, 1,163 tests, none failed; clippy no warnings; gate (a) PASS, last CRC `0bf44067` (unchanged: the gate reads its INI from memory).

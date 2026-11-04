@@ -90,3 +90,6 @@ pub mod message_types;
 pub mod recorder;
 // (integration batch I50)
 pub mod terrain_roads;
+// --- p1w13-sonnet --- (integration batch F1, #9)
+pub mod file_system;
+// --- end p1w13-sonnet ---
