@@ -22,6 +22,13 @@ Phase 0 (formats) is done; Phase 1 (game logic) has started, bottom up, in
 the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md)
 (measured by `scripts/porting_graph.py`). What exists:
 
+**Phase 2 (the client) has started** (GitHub epic #1, plan in [`docs/phase2-client.md`](docs/phase2-client.md)): `client/`
+(`rts-client`, Bevy 0.20.1) draws the running game logic, on the web (WebGL2) and natively. It needs no game files yet: each
+unit is drawn as its collision shape, in its player's colour, with a health bar. Natively: `cd client && cargo run
+--release`. On the web: `scripts/build_web.sh`, then serve `client/dist/`. The client only reads the logic; its tests check
+that the gate game's CRCs are unchanged with it attached. Screenshots of the gate game:
+[web](docs/images/c1_web_gate_game.png), [native](docs/images/c1_native_gate_game.png).
+
 | Rust module | Translated from (`GeneralsMD/Code/...`) |
 |---|---|
 | `common::base_type` (value types) | the methods of `Coord2D/3D`, `ICoord2D/3D`, `Region2D/3D`, `IRegion2D/3D`, `RGBColor`, `RealRange`, and `sqr`, `clamp`, `sign`, `rad2deg`, `deg2rad`, `min`, `max` of `Libraries/Include/Lib/BaseType.h` (Phase 1 layer 1) |
