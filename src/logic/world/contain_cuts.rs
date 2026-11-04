@@ -353,6 +353,11 @@ impl World {
     /// `TheTerrainLogic->getLayerForDestination(pos)`: the layer table of the terrain cuts.
     pub fn contain_terrain_get_layer_for_destination(&mut self, pos: &Coord3D) -> PathfindLayer {
         self.contain_cut(ContainCall::TerrainGetLayerForDestination { position: *pos });
+        // (batch I58: with `live_terrain`, the terrain's own answer, as the build assistant asks it; it was always the table, so a
+        // unit leaving a container on a bridge was put on the ground layer)
+        if self.cuts.live_terrain {
+            return self.with_terrain(|t, w| t.layer_for_destination(w, pos)).unwrap_or(crate::common::game_type::LAYER_GROUND);
+        }
         let cell = crate::logic::world::object_cuts::terrain_cell(pos.x, pos.y);
         self.cuts.terrain_layer[cell]
     }
@@ -647,6 +652,11 @@ impl World {
 
     /// `player->isSkirmishAIPlayer()` (see [`ContainCutTables::skirmish_ai_players`]).
     pub fn contain_player_is_skirmish_ai(&self, player: crate::logic::world::ids::PlayerIndex) -> bool {
+        // (batch I58: with `live_ai`, the player's own `isSkirmishAIPlayer()`; it was always the table, so a skirmish computer's
+        // paratroopers never took the computer's landing rule)
+        if self.cuts.live_ai {
+            return crate::logic::world::player_ops::player_is_skirmish_ai_player(self, player).unwrap_or(false);
+        }
         self.cuts.contain.skirmish_ai_players.contains(&player)
     }
 

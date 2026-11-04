@@ -399,13 +399,28 @@ impl AiHost for World {
         }
     }
     fn stealth_granted_by_special_power(&self) -> Option<bool> {
+        // ~~the table~~ (batch I58: with `live_ai`, the object's stealth update, `getStealth()`: its first `StealthUpdate`; it was always
+        // the table, so a unit stealthed by a special power never left its stealth when it attacked)
+        if self.cuts.live_ai {
+            let o = self.objects.find(self.ai_self)?;
+            return (0..o.modules.len()).find_map(|i| match self.peek_module_body(ModuleHandle { object: self.ai_self, index: i as u16 }) {
+                Some(crate::logic::world::update_body::UpdateBody::StealthUpdate(m)) => Some(m.is_granted_by_special_power()),
+                _ => None,
+            });
+        }
         self.cuts.ai_host.stealth_granted_by_special_power.get(&self.ai_self).copied()
     }
     fn contained_by(&self) -> ObjectId {
         self.objects.find(self.ai_self).map_or(INVALID_ID, |o| o.contained_by)
     }
-    fn container_passenger_allowed_to_fire(&self) -> bool {
+    fn container_passenger_allowed_to_fire(&mut self) -> bool {
         let c = AiHost::contained_by(self);
+        // ~~the table~~ (batch I58: with `live_ai`, the container's contain module, `isPassengerAllowedToFire()` with its default
+        // argument; it was always the table, false, so no garrisoned or transported unit's AI ever fired)
+        if self.cuts.live_ai {
+            let Some(contain) = self.get_contain(c) else { return false };
+            return self.module_call(c, contain, ModuleCall::IsPassengerAllowedToFire(INVALID_ID)).as_bool();
+        }
         self.cuts.ai_host.passenger_allowed_to_fire.get(&c).copied().unwrap_or(false)
     }
     fn container_bounding_circle_radius(&self) -> f32 {
@@ -461,6 +476,17 @@ impl AiHost for World {
         Some(self.module_call(id, c, ModuleCall::HasObjectsWantingToEnterOrExit).as_bool())
     }
     fn horde_update_interfaces(&self) -> Vec<(bool, bool)> {
+        // ~~the table~~ (batch I58: with `live_ai`, each `HordeUpdate` of the object, in module order: `(isInHorde(),
+        // isAllowedNationalism())`; it was always the table, empty, so no horde unit ever got its horde or nationalism bonus)
+        if self.cuts.live_ai {
+            let Some(o) = self.objects.find(self.ai_self) else { return Vec::new() };
+            return (0..o.modules.len())
+                .filter_map(|i| match self.peek_module_body(ModuleHandle { object: self.ai_self, index: i as u16 }) {
+                    Some(crate::logic::world::update_body::UpdateBody::HordeUpdate(m)) => Some((m.is_in_horde(), m.is_allowed_nationalism())),
+                    _ => None,
+                })
+                .collect();
+        }
         self.cuts.ai_host.horde_updates.get(&self.ai_self).cloned().unwrap_or_default()
     }
     fn set_weapon_bonus_condition(&mut self, c: i32) {

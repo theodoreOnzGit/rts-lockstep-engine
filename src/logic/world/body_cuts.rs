@@ -364,21 +364,48 @@ impl World {
         self.body_cut(BodyCall::ParticleDestroy { id, found });
     }
 
-    /// `object->getAbleToAttackSpecificObject(ATTACK_NEW_TARGET, victim, CMD_FROM_AI)`: a `CanAttackResult` value.
+    /// `object->getAbleToAttackSpecificObject(ATTACK_NEW_TARGET, victim, CMD_FROM_AI)`: a `CanAttackResult` value. ~~The table's
+    /// answer~~ **Corrected 2026-11-04 (batch I58):** with `cuts.live_ai` the object's weapon set answers (it was always the table, 0
+    /// `ATTACKRESULT_NOT_POSSIBLE` by default, so in a game no ally ever joined a retaliation); the table otherwise.
     pub fn body_get_able_to_attack_specific_object(&mut self, object: ObjectId, victim: ObjectId) -> i32 {
         self.body_cut(BodyCall::GetAbleToAttackSpecificObject { object, victim });
+        if self.cuts.live_ai {
+            use crate::common::game_common::{CommandSourceType, ATTACK_NEW_TARGET};
+            return match crate::logic::world::object_weapons::get_able_to_attack_specific_object(self, object, ATTACK_NEW_TARGET, victim, CommandSourceType::FromAi, -1) {
+                Ok(r) => r as i32,
+                Err(e) => {
+                    self.cuts.team_live_errors.push(format!("getAbleToAttackSpecificObject: {e:?}"));
+                    0
+                }
+            };
+        }
         self.cuts.body.able_to_attack.get(&(object, victim)).copied().unwrap_or(0)
     }
 
-    /// `ThePartitionManager->getDistanceSquared(object, other, FROM_BOUNDINGSPHERE_2D)`.
+    /// `ThePartitionManager->getDistanceSquared(object, other, FROM_BOUNDINGSPHERE_2D)` (`ActiveBody`'s retaliation,
+    /// `SupplyWarehouseDockUpdate`'s and `CommandButtonHuntUpdate`'s distances). ~~The table's answer~~ **Corrected 2026-11-04 (batch
+    /// I58):** with `cuts.live_partition` the partition manager's distance (it was always the table, 0 by default, so in a game every
+    /// hunt target was at distance 0, and the dock's nearest docker was whichever came first); the table otherwise.
     pub fn body_get_distance_squared(&mut self, object: ObjectId, other: ObjectId) -> f32 {
         self.body_cut(BodyCall::GetDistanceSquared { object, other });
+        if self.cuts.live_partition {
+            return self.partition_distance_squared(object, other, crate::logic::world::partition::DistanceCalculationType::FromBoundingSphere2D);
+        }
         self.cuts.body.distance_squared.get(&(object, other)).copied().unwrap_or(0.0)
     }
 
-    /// The retaliation scan of `ActiveBody::attemptDamage`: the objects in range allied to `player` and on the map, in iteration order.
+    /// The retaliation scan of `ActiveBody::attemptDamage`: the objects in range allied to `player` and on the map, in iteration order
+    /// (`iterateObjectsInRange(pos, distance, FROM_CENTER_2D, {PartitionFilterPlayerAffiliation(player, ALLOW_ALLIES, true),
+    /// PartitionFilterOnMap}, ITER_FASTEST)`). ~~The table's~~ **Corrected 2026-11-04 (batch I58):** with `cuts.live_partition` the
+    /// partition manager's scan (it was always the table, empty by default: no retaliation in a game); the table otherwise.
     pub fn body_iterate_retaliation_friends(&mut self, position: Coord3D, range: f32, player: PlayerIndex) -> Vec<ObjectId> {
         self.body_cut(BodyCall::IterateRetaliationFriends { position, range, player });
+        if self.cuts.live_partition {
+            use crate::logic::object_iter::IterOrderType;
+            use crate::logic::world::partition::{filters::allow_player, DistanceCalculationType as Dc, PartitionFilter};
+            let f = [PartitionFilter::PlayerAffiliation { player, affiliation: allow_player::ALLIES, match_: true }, PartitionFilter::OnMap];
+            return self.live_scan(|pm, w| pm.iterate_objects_in_range_at(w, &position, range, Dc::FromCenter2D, &f, IterOrderType::Fastest));
+        }
         self.cuts.body.retaliation_friends.clone()
     }
 }

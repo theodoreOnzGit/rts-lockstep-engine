@@ -3418,3 +3418,84 @@ Object Recruit\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius =
         assert_eq!(format!("{:?}", a.names), format!("{:?}", b.names), "the same name keys");
     }
 }
+
+#[cfg(test)]
+mod table_hunt_tests {
+    use super::*;
+    use crate::logic::ai::ai_update::AiHost;
+
+    /// A unit with a horde update (nationalism not allowed) and a stealth update granted by a special power.
+    const HORDE: &str = "\
+Object Hordling\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = HordeUpdate ModuleTag_Horde\n  Count = 3\n  Radius = 50\n  AllowedNationalism = No\n End\n\
+ Behavior = StealthUpdate ModuleTag_Stealth\n  GrantedBySpecialPower = Yes\n End\nEnd\n";
+
+    /// Integration batch I58: answers that a static hunt found reading the tests' tables in a game with every switch on, now the
+    /// game's. Predicted before the run, in the gate world (all live):
+    /// - `getDistanceSquared(a, b, FROM_BOUNDINGSPHERE_2D)` of two radius-5 soldiers 100 apart: (100 − 5 − 5)² = 8100 (the table
+    ///   answered 0);
+    /// - the retaliation scan around Player1's soldier finds Player1's other soldier and not Player2's (the table: none);
+    /// - Player1's soldier's `getAbleToAttackSpecificObject` against Player2's: possible, or possible after moving (the table: 0,
+    ///   not possible);
+    /// - the hordling's stealth is granted by a special power (`Some(true)`; the table: `None`), and its one horde update is
+    ///   `(false, false)` (not yet in a horde, nationalism not allowed; the table: none);
+    /// - a rider in the truck may not fire (the transport's default), and may once the truck's contain allows it (the table:
+    ///   false both times);
+    /// - `isSkirmishAIPlayer` of each player is the player's own; the layer for a destination on this flat map is the ground;
+    ///   the general's name is the game text's (no string file: `MISSING: 'SCIENCE:GeneralName'`).
+    ///
+    /// With `live_partition` and `live_ai` off, the distance and the stealth are the tables' again (the ablation).
+    #[test]
+    fn the_last_tables_a_game_read_are_the_games() {
+        let mut w = gate_map_world_with(&[HORDE, super::contain_tests::TRUCK].concat());
+        assert!(w.cuts.all_live());
+        let team1 = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let team2 = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let a = make(&mut w, b"Soldier", team1, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        let b = make(&mut w, b"Soldier", team1, Coord3D { x: 200.0, y: 100.0, z: 0.0 });
+        let enemy = make(&mut w, b"Soldier", team2, Coord3D { x: 130.0, y: 100.0, z: 0.0 });
+        let hordling = make(&mut w, b"Hordling", team1, Coord3D { x: 100.0, y: 200.0, z: 0.0 });
+        let truck = make(&mut w, b"Truck", team1, Coord3D { x: 300.0, y: 300.0, z: 0.0 });
+        let rider = make(&mut w, b"Rider", team1, Coord3D { x: 300.0, y: 260.0, z: 0.0 });
+        w.pathfinder_op(PfOp::NewMap);
+
+        let d = w.body_get_distance_squared(a, b);
+        let p1 = w.get_controlling_player(a).expect("Player1");
+        let friends = w.body_iterate_retaliation_friends(Coord3D { x: 100.0, y: 100.0, z: 0.0 }, 150.0, p1);
+        let able = w.body_get_able_to_attack_specific_object(a, enemy);
+        w.ai_self = hordling;
+        let stealth = AiHost::stealth_granted_by_special_power(&w);
+        let horde = AiHost::horde_update_interfaces(&w);
+        let c = w.find_object(truck).and_then(|o| o.contain).expect("the truck's contain");
+        w.module_call(truck, c, ModuleCall::AddToContain(rider));
+        w.ai_self = rider;
+        let before = AiHost::container_passenger_allowed_to_fire(&mut w);
+        w.module_call(truck, c, ModuleCall::SetPassengerAllowedToFire(true));
+        let after = AiHost::container_passenger_allowed_to_fire(&mut w);
+        let skirmish: Vec<(bool, bool)> = (0..w.players.player_count())
+            .map(|p| (w.contain_player_is_skirmish_ai(p), crate::logic::world::player_ops::player_is_skirmish_ai_player(&w, p).unwrap_or(false)))
+            .collect();
+        let layer = w.contain_terrain_get_layer_for_destination(&Coord3D { x: 150.0, y: 150.0, z: 0.0 });
+        let general = String::from_utf16_lossy(crate::logic::world::player_ops::PlayerHost::game_text_general_name(&mut w).str());
+        eprintln!("distance {d}; friends {friends:?} (a {a}, b {b}, enemy {enemy}); able {able}; stealth {stealth:?}; horde {horde:?}; fire {before} {after}; skirmish {skirmish:?}; layer {layer}; general {general:?}");
+        assert_eq!(d, 8100.0);
+        assert!(friends.contains(&a) && friends.contains(&b) && !friends.contains(&enemy), "{friends:?}");
+        assert!(able == crate::logic::ai::ai_update_types::ATTACKRESULT_POSSIBLE || able == crate::logic::ai::ai_update_types::ATTACKRESULT_POSSIBLE_AFTER_MOVING, "{able}");
+        assert_eq!(stealth, Some(true));
+        assert_eq!(horde, vec![(false, false)]);
+        assert_eq!((before, after), (false, true));
+        assert!(skirmish.iter().all(|(x, y)| x == y));
+        assert_eq!(layer, crate::common::game_type::LAYER_GROUND);
+        assert_eq!(general, "MISSING: 'SCIENCE:GeneralName'");
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+
+        // the ablation: the tables answer again
+        w.cuts.live_partition = false;
+        w.cuts.live_ai = false;
+        assert_eq!(w.body_get_distance_squared(a, b), 0.0);
+        w.ai_self = hordling;
+        assert_eq!(AiHost::stealth_granted_by_special_power(&w), None);
+    }
+}

@@ -2081,6 +2081,37 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I58 (2026-11-04, `p1w13-sonnet`): answers a game still read from the tests' tables.** Batch I46 turned every switch on, but a switch only covers the answers written to consult it. A static hunt found the rest: for each field of `ObjectCuts`, every non-test read in a function that consults no switch (`live_*`), stub flag or live delegation. It found 273 such reads in 62 fields. Most are not defects:
+- client cut points: audio, particles, drawables, bones, selection, lasers;
+- the World's own stored state: side scripts, rank limit, the synced difficulty;
+- answers made live another way, such as `cut()`'s live partition hook, which writes `range_scan` before it is read. The hunt's first reading took the hunt scan for a table; the gate test of I52 shows it is not.
+
+**The real ones are now live:**
+- `ActiveBody`'s retaliation never happened in a game:
+  - the scan for friends (`PartitionFilterPlayerAffiliation(player, ALLOW_ALLIES, true)`, `PartitionFilterOnMap`, `FROM_CENTER_2D`) returned the empty table;
+  - `getAbleToAttackSpecificObject` answered 0, not possible.
+
+  Now the partition manager's scan (`live_partition`) and the weapon set's answer (`live_ai`).
+- `getDistanceSquared(.., FROM_BOUNDINGSPHERE_2D)` for the retaliation, `SupplyWarehouseDockUpdate` and `CommandButtonHuntUpdate` answered 0. So every hunt target was at distance 0, and the dock's nearest docker was whichever came first. Now the partition manager's (`live_partition`).
+- The AI host's `getStealth()->isGrantedBySpecialPower()`, `isPassengerAllowedToFire()` and the horde interfaces answered from tables. So no unit stealthed by a power ever left its stealth on attacking, no garrisoned or transported unit's AI ever fired, and no horde unit got its horde or nationalism bonus. Now the object's own `StealthUpdate` and `HordeUpdate`, and the container's contain (`live_ai`). **Signature change:** `AiHost::container_passenger_allowed_to_fire` takes `&mut self` (the contain's answer recurses through containers); the differential host follows.
+- The contain host's `isSkirmishAIPlayer` (`live_ai`) and `getLayerForDestination` (`live_terrain`), and the general's name from the game text (`live_globals`).
+
+**Predictions, written before the run (the test's doc):** `table_hunt_tests::the_last_tables_a_game_read_are_the_games`, in the gate world:
+- the distance of two radius-5 soldiers 100 apart is 8100;
+- the friends scan finds Player1's soldiers and not Player2's;
+- the attack is possible or possible after moving;
+- the hordling's stealth is `Some(true)` and its horde `[(false, false)]`;
+- the rider may not fire, then may once allowed;
+- the layer is the ground, and the name is the `MISSING:` text.
+
+With the switches off, the tables answer again (the ablation).
+
+**Measured:** 8100; friends `[hordling, b, a]` (the hordling is an ally within range too) and not the enemy; 3 (possible); `Some(true)`; `[(false, false)]`; false then true; ground; `MISSING: 'SCIENCE:GeneralName'`. The skirmish-AI check is weak here: the gate world has no skirmish computer, so it shows agreement only on false.
+
+**Not covered:** the static hunt cannot see a table read gated by its caller. The method is not a proof that none is left.
+
+**Results (2026-11-04).** Full run: 203 test binaries, 1,172 tests, 0 failed. Clippy is clean after one same-type cast was removed. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. That was expected but is worth stating: the gate game has no human player in retaliation mode, no hunt, no dock, no stealth power, no horde and no passengers, so it reads none of the corrected answers. Gate (a) therefore does not test this batch; the batch's own test does.
+
 **Integration batch I57 (2026-11-04, `p1w13-sonnet`, GitHub #3, #15): a World made from a game install, and a skirmish started on the install's map.** Until now every World was a test's: its INI came from a string in the test, its maps were written by the test, and its switches were set one by one. `logic::world::install_world` makes one as `GameEngine::init` makes the engine:
 - **`World::from_install(fs, language)`** takes the install's file system (batch F1) and loads, in order:
   - the game text from `data\<language>\Generals.csf` (`g_csfFile`; the CSF reader is `formats::csf`, translated in phase 0);

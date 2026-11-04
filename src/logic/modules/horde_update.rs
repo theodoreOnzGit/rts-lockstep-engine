@@ -265,6 +265,16 @@ impl HordeUpdate {
     }
 
     /// `isTrueHordeMember()`: a true member that is in the horde.
+    /// `isInHorde()` (batch I58: read by the World's AI host).
+    pub fn is_in_horde(&self) -> bool {
+        self.in_horde
+    }
+
+    /// `isAllowedNationalism()` (batch I58).
+    pub fn is_allowed_nationalism(&self) -> bool {
+        self.data.allowed_nationalism
+    }
+
     pub fn is_true_horde_member(&self) -> bool {
         self.true_horde_member && self.in_horde
     }

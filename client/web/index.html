@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>rts-lockstep-engine</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; overflow: hidden; }
+  #rts { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="loading">Loading…</div>
+<canvas id="rts" tabindex="0"></canvas>
+<script type="module">
+  // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
+  import init from './rts_client.js';
+  init().catch((e) => {
+    // Bevy's winit loop throws a control-flow exception on purpose once it takes over; anything else is a real failure.
+    if (!String(e).includes('Using exceptions for control flow')) {
+      document.getElementById('loading').textContent = 'Failed to start: ' + e;
+      throw e;
+    }
+  }).finally(() => { document.getElementById('loading').style.display = 'none'; });
+</script>
+</body>
+</html>

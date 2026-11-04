@@ -1,0 +1,49 @@
+[package]
+name = "rts-client"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "The client of rts-lockstep-engine (phase 2): draws the running game logic with Bevy, on the web and natively."
+publish = false
+
+[features]
+# `app`: the Bevy application (`src/app.rs`, the `rts-client` binary). On by default. The view model (`src/view.rs`) needs
+# no Bevy, so its tests run with `--no-default-features` without compiling the renderer.
+default = ["app"]
+app = ["dep:bevy"]
+
+[dependencies]
+# The game logic (phase 1). The client only reads it and sends it the game's own commands (see `src/lib.rs`).
+rts-lockstep-engine = { path = ".." }
+
+# Bevy at an exact version, default features off: the renderer (core pipeline, PBR), UI, windowing, input, assets, logging.
+# `webgl2` is the web backend (WebGL2 runs in every current browser; a WebGPU build is a later step: Bevy builds one web
+# backend per binary). Natively wgpu picks Vulkan, Metal or DX12.
+bevy = { version = "=0.20.1", default-features = false, optional = true, features = [
+    "default_app",
+    "3d_bevy_render",
+    "ui_bevy_render",
+    "std",
+    "bevy_winit",
+    "default_font",
+    "webgl2",
+    "x11",
+    "bevy_ui_widgets",
+    "bevy_picking",
+    "ui_picking",
+] }
+
+[[bin]]
+name = "rts-client"
+path = "src/main.rs"
+required-features = ["app"]
+
+# The web build's size (issue #5): no debug info, thin LTO. Symbols are kept (`strip = true` also drops the `target_features`
+# section wasm-bindgen reads); `wasm-opt` in `scripts/build_web.sh` shrinks the output. The logic's speed is unchanged in kind
+# (opt-level 3 is kept), and its results are the same bits whatever the optimisation (petir's maths). Measured 2026-11-04:
+# 135.6 MB with the default release profile; 66.8 MB (15.3 MB gzipped) with this one and `strip = true`.
+[profile.release]
+strip = "debuginfo"
+debug = false
+lto = "thin"
+codegen-units = 1

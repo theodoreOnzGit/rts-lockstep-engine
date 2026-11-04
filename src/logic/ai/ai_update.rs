@@ -209,7 +209,7 @@ pub trait AiHost: LocomotorHost + PathHost {
     /// `getObject()->getContainedBy()`'s id (`INVALID_ID`: none).
     fn contained_by(&self) -> ObjectId;
     /// `getContainedBy()->getContain()->isPassengerAllowedToFire()`.
-    fn container_passenger_allowed_to_fire(&self) -> bool;
+    fn container_passenger_allowed_to_fire(&mut self) -> bool;
     /// `getContainedBy()->getGeometryInfo().getBoundingCircleRadius()`.
     fn container_bounding_circle_radius(&self) -> f32;
     /// `getObject()->getBodyModule()->getLastDamageInfo()->in`'s damage type and source.

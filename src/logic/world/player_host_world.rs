@@ -783,6 +783,10 @@ impl PlayerHost for World {
     }
     fn game_text_general_name(&mut self) -> UnicodeString {
         self.host_cut("GameTextInterface::fetch", &[], b"SCIENCE:GeneralName");
+        // (batch I58: with `live_globals`, the statics' game text, the install's string file; it was always the table)
+        if self.cuts.live_globals {
+            return crate::common::science::GameTextFetch::fetch(&self.statics.game_text, b"SCIENCE:GeneralName");
+        }
         UnicodeString::try_from_chars(&self.cuts.player_host.general_name).unwrap_or_default()
     }
     fn script_notify_of_object_creation_or_destruction(&mut self) {

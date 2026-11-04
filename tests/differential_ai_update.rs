@@ -842,7 +842,7 @@ impl AiHost for Host {
         let id = self.env.container_id;
         if self.object_exists(id) { id } else { 0 }
     }
-    fn container_passenger_allowed_to_fire(&self) -> bool {
+    fn container_passenger_allowed_to_fire(&mut self) -> bool {
         self.env.container_allows_fire != 0
     }
     fn container_bounding_circle_radius(&self) -> f32 {

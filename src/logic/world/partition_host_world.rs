@@ -111,7 +111,7 @@ impl World {
     /// The range scans of [`CutCall`]`::Partition*` as the real manager answers them: the objects, in the order the manager
     /// iterates them; each one's numeric (its squared distance) goes to `cuts.range_scan_numeric`, for the callers that walk
     /// with `firstWithNumeric`.
-    fn live_scan(&mut self, f: impl FnOnce(&mut PartitionManager, &mut World) -> SimpleObjectIterator<ObjectId>) -> Vec<ObjectId> {
+    pub(crate) fn live_scan(&mut self, f: impl FnOnce(&mut PartitionManager, &mut World) -> SimpleObjectIterator<ObjectId>) -> Vec<ObjectId> {
         let mut it = self.with_partition(f);
         let (mut out, mut numerics) = (Vec::new(), Vec::new());
         let (mut o, mut n) = it.first_with_numeric();

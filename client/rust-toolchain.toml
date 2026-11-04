@@ -1,0 +1,4 @@
+# Bevy 0.20.1 needs rustc 1.97.1; the logic crate at the root keeps its own toolchain.
+[toolchain]
+channel = "1.97.1"
+targets = ["wasm32-unknown-unknown"]
