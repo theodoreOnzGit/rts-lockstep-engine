@@ -426,7 +426,20 @@ impl World {
     ) {
         self.update_upgrade_modules(id);
 
-        if let Some(up) = self.cuts.veterancy_upgrade(new_level) {
+        // `TheUpgradeCenter->findVeterancyUpgrade(newLevel)` (batch I54: the upgrade center's with `cuts.live_globals`, as upstream
+        // looks it up by name, giving a new name a key; it was the tests' table in the live game too, which nothing filled)
+        let up = if self.cuts.live_globals {
+            match self.statics.upgrade_center.find_veterancy_upgrade(&mut self.names, new_level) {
+                Ok(t) => t.map(|t| t.upgrade_mask()),
+                Err(e) => {
+                    self.cuts.team_live_errors.push(format!("UpgradeCenter::findVeterancyUpgrade: {e:?}"));
+                    None
+                }
+            }
+        } else {
+            self.cuts.veterancy_upgrade(new_level)
+        };
+        if let Some(up) = up {
             self.give_upgrade(id, Some(&up));
         }
 

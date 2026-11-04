@@ -3339,4 +3339,53 @@ Object Truck\n KindOf = VEHICLE HARVESTER\n Geometry = CYLINDER\n GeometryMajorR
         assert_eq!(TeamHost::ai_valid_surfaces(&w, chopper), 0, "the tests' table");
         assert_eq!(attack(&mut w, soldier, near), 0, "the tests' table");
     }
+
+    /// Integration batch I54: `UpgradeCenter::init` runs before the upgrade center's files, as `initSubsystem` runs it, and a
+    /// unit's new veterancy level gives it the level's upgrade. Predicted before the run: the loaded world's upgrade center
+    /// holds the three veterancy upgrades, newest first (`HEROIC`, `ELITE`, `VETERAN`), with mask bits 2, 1 and 0. A unit
+    /// made a veteran has `Upgrade_Veterancy_VETERAN` and not `_ELITE`, and its `MaxHealthUpgrade` triggered by that upgrade
+    /// raises its maximum health from 100 to 150. Made elite, it also has `_ELITE` (an upgrade is never taken away here). Before
+    /// this batch the center was empty, the lookup read the tests' table, and nothing happened. Without `live_globals` the table
+    /// answers (empty: no upgrade). No `team_live_errors`.
+    ///
+    /// Results (2026-11-03): all held. The center holds `HEROIC`, `ELITE` and `VETERAN` at bits 2, 1 and 0; the veteran has its
+    /// upgrade and its maximum health is 150 (health 150: `ADD_CURRENT_HEALTH_TOO`); the elite has both; without `live_globals`
+    /// the new unit gets nothing.
+    #[test]
+    fn a_veteran_gets_its_veterancy_upgrade() {
+        use crate::common::game_common::VeterancyLevel;
+        use crate::common::upgrade::UpgradeMaskType;
+        const VET: &str = "\
+Object Recruit\n KindOf = INFANTRY\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 3\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = MaxHealthUpgrade ModuleTag_Vet\n  TriggeredBy = Upgrade_Veterancy_VETERAN\n  AddMaxHealth = 50\n  ChangeType = ADD_CURRENT_HEALTH_TOO\n End\nEnd\n";
+        let mut w = gate_map_world_with(VET);
+        let vets: Vec<(Vec<u8>, UpgradeMaskType)> = w.statics.upgrade_center.templates().map(|t| (t.upgrade_name().to_vec(), t.upgrade_mask())).collect();
+        let names: Vec<String> = vets.iter().map(|(n, _)| String::from_utf8_lossy(n).into_owned()).collect();
+        eprintln!("upgrades: {names:?}");
+        assert_eq!(names, ["Upgrade_Veterancy_HEROIC", "Upgrade_Veterancy_ELITE", "Upgrade_Veterancy_VETERAN"]);
+        let bit = |i: i32| {
+            let mut m = UpgradeMaskType::default();
+            m.set(i, 1);
+            m
+        };
+        assert_eq!(vets.iter().map(|(_, m)| *m).collect::<Vec<_>>(), [bit(2), bit(1), bit(0)]);
+
+        let team1 = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let recruit = make(&mut w, b"Recruit", team1, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+        assert_eq!(w.body_health(recruit), Some((100.0, 100.0)));
+        w.cut_experience_set_veterancy_level(recruit, VeterancyLevel::Veteran, false);
+        assert!(w.has_upgrade(recruit, &bit(0)), "the veteran's upgrade");
+        assert!(!w.has_upgrade(recruit, &bit(1)));
+        assert_eq!(w.body_health(recruit), Some((150.0, 150.0)), "its MaxHealthUpgrade");
+        w.cut_experience_set_veterancy_level(recruit, VeterancyLevel::Elite, false);
+        assert!(w.has_upgrade(recruit, &bit(0)) && w.has_upgrade(recruit, &bit(1)));
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+
+        w.cuts.live_globals = false;
+        let other = make(&mut w, b"Recruit", team1, Coord3D { x: 150.0, y: 100.0, z: 0.0 });
+        w.cut_experience_set_veterancy_level(other, VeterancyLevel::Veteran, false);
+        assert!(!w.has_upgrade(other, &bit(0)), "the tests' table");
+        assert_eq!(w.body_health(other), Some((100.0, 100.0)));
+    }
 }

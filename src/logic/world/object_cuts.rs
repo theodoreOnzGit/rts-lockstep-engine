@@ -2133,7 +2133,8 @@ pub struct ObjectCuts {
     pub teams_with_template_info: BTreeSet<TeamId>,
     /// Teams whose attack priority names a known attack info.
     pub teams_with_attack_info: BTreeSet<TeamId>,
-    /// `TheUpgradeCenter->findVeterancyUpgrade(level)`'s mask, by level.
+    /// `TheUpgradeCenter->findVeterancyUpgrade(level)`'s mask, by level: the tests' table, read without `live_globals` (batch
+    /// I54; the live game read it too, and nothing filled it).
     pub veterancy_upgrades: [Option<UpgradeMaskType>; 4],
     /// `TheSpecialPowerStore->canUseSpecialPower` answers `false` for these objects.
     pub special_power_denied: BTreeSet<ObjectId>,
@@ -2415,7 +2416,8 @@ pub struct ObjectCuts {
     /// Integration batch I48: the global values the objects and modules read (`TheGlobalData`, `TheAI->getAiData()`,
     /// `TheGameLogic`'s `drawIconUI` and hulk lifetime override) from those stores ([`World::object_globals`],
     /// [`World::body_globals`], [`World::wall_height`]) rather than [`ObjectCuts::globals`], `body.globals` and `wall_height`.
-    /// Off by default, as the other `live_*` switches: the module tests set the tables.
+    /// Off by default, as the other `live_*` switches: the module tests set the tables. Batch I54: also
+    /// `TheUpgradeCenter->findVeterancyUpgrade(level)` (the upgrade center's rather than `veterancy_upgrades`).
     pub live_globals: bool,
     /// Integration batch I51: a factory's `ProductionUpdate` asking `TheBuildAssistant->canMakeUnit` from its own call is lent
     /// out of its slot, so the build assistant's questions back to it (`getProductionUpdateInterface`,
@@ -2749,7 +2751,8 @@ impl ObjectCuts {
         self.teams_with_attack_info.contains(&team)
     }
 
-    /// `TheUpgradeCenter->findVeterancyUpgrade(level)`'s mask.
+    /// `TheUpgradeCenter->findVeterancyUpgrade(level)`'s mask: the tests' table, read without `live_globals` (batch I54; the
+    /// upgrade center's otherwise).
     pub fn veterancy_upgrade(&self, level: VeterancyLevel) -> Option<UpgradeMaskType> {
         self.veterancy_upgrades[level as usize]
     }

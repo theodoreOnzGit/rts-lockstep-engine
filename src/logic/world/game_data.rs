@@ -16,6 +16,9 @@
 //! the multiplayer settings, the map cache; ~~the terrain roads, the command sets and buttons~~): a block of theirs in a file
 //! the logic loads is an unknown token, as it would be upstream for a token missing from the table.
 //!
+//! **Subsystem `init()`s (batch I54):** of the logic's, only `UpgradeCenter::init` makes data (the veterancy upgrades) and
+//! is run, in its place before its files; the module factory's runs when the load is made.
+//!
 //! **Missing files:** upstream's `INI::load` throws on a file it cannot open (the shipped data has every one). With
 //! [`MissingFiles::Error`] so does the loader; [`MissingFiles::Skip`] skips one, for a test's or a mod's partial data.
 //!
@@ -316,6 +319,13 @@ pub fn weapon_store_post_process(weapon_store: &mut WeaponStore, factory: &Thing
 pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: TextTable) -> IniResult<GameDataLoad> {
     let mut load = GameDataLoad::new(text)?;
     for sys in LOGIC_SUBSYSTEMS {
+        // (batch I54: `initSubsystem` calls the subsystem's `init()` before its loads. The upgrade center's is the one with an
+        // effect on the data: `UpgradeCenter::init` makes the three veterancy upgrades (`Upgrade_Veterancy_VETERAN`, `_ELITE`,
+        // `_HEROIC`), which take mask bits 0 to 2 and name keys before any `Upgrade` block. It was never called, so no unit got
+        // its veterancy upgrade and every INI upgrade's mask bit was three lower than upstream's)
+        if sys.name == "TheUpgradeCenter" {
+            load.upgrades.init(&mut load.names).map_err(|_| IniError::new(IniErrorKind::Bug))?;
+        }
         for path in [sys.path1, sys.path2].into_iter().flatten() {
             match files.open(path) {
                 Some(data) => load.load_text(path, &data)?,
