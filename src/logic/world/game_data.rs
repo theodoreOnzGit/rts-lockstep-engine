@@ -107,19 +107,32 @@ pub enum MissingFiles {
 /// `parseMapCacheDefinition` keeps no map whose display name is empty, so a game read without its string file lost both.
 #[derive(Clone, Debug, Default)]
 pub struct TextTable {
-    /// The strings by label.
+    /// The strings by label (a test's own; looked up first, by the exact label).
     pub strings: BTreeMap<Vec<u8>, UnicodeString>,
+    /// Batch I57: the game's string file (`GameTextManager::init`'s `Data\<language>\Generals.csf`), looked up as
+    /// upstream looks it up (`stricmp`).
+    pub csf: Option<std::sync::Arc<crate::formats::csf::GameText>>,
+}
+
+impl TextTable {
+    /// Batch I57: the table of a string file.
+    pub fn from_csf(csf: crate::formats::csf::GameText) -> Self {
+        TextTable { strings: BTreeMap::new(), csf: Some(std::sync::Arc::new(csf)) }
+    }
 }
 
 impl GameTextFetch for TextTable {
     fn fetch(&self, label: &[u8]) -> UnicodeString {
-        self.strings.get(label).cloned().unwrap_or_else(|| {
-            // `missingString.format(L"MISSING: '%hs'", label)`: `%hs` widens each byte
-            let mut units: Vec<u16> = "MISSING: '".encode_utf16().collect();
-            units.extend(label.iter().map(|&b| u16::from(b)));
-            units.push(u16::from(b'\''));
-            UnicodeString::try_from_chars(&units).unwrap_or_default()
-        })
+        if let Some(s) = self.strings.get(label) {
+            return s.clone();
+        }
+        if let Some(t) = self.csf.as_ref().and_then(|c| c.fetch(label)) {
+            return UnicodeString::try_from_chars(t).unwrap_or_default();
+        }
+        // `missingString.format(L"MISSING: '%hs'", label)` (`csf::missing_text`; a text too long for upstream's buffer
+        // throws there, and is the empty string here)
+        let units = crate::formats::csf::missing_text(label).unwrap_or_default();
+        UnicodeString::try_from_chars(&units).unwrap_or_default()
     }
 }
 
@@ -267,7 +280,7 @@ impl GameDataLoad {
     /// Integration batch I33: the load again from a world's statics and name keys (the inverse of [`GameDataLoad::into_statics`]), to
     /// read more INI into the stores the world already has (a map's `map.ini`, `INI_LOAD_OVERWRITE`). What the statics do not keep is
     /// made again: the module factory (its `init`), the weapons' name table (the weapon store's templates), the AI data's chain (the
-    /// current data only: `into_statics` keeps no more), no game text, and the buttons' lookups (made at the next button).
+    /// current data only: `into_statics` keeps no more), ~~no game text~~ the statics' game text (batch I57), and the buttons' lookups (made at the next button).
     pub fn from_statics(st: GameStatics, mut names: NameKeyGenerator) -> IniResult<Self> {
         let mut modules = ModuleFactory::new();
         modules.init(&mut names).map_err(|_| IniError::new(IniErrorKind::Bug))?;
@@ -278,7 +291,7 @@ impl GameDataLoad {
         Ok(GameDataLoad {
             names,
             modules,
-            text: TextTable::default(),
+            text: st.game_text,
             global_data: st.global_data,
             sciences: st.science_store,
             ranks: st.rank_info_store,
@@ -323,6 +336,7 @@ impl GameDataLoad {
             terrain_roads: self.terrain_roads,
             multiplayer_settings: self.multiplayer_settings,
             map_cache: self.map_cache,
+            game_text: self.text,
         };
         (statics, self.names)
     }

@@ -184,10 +184,11 @@ impl World {
 
 /// Batch I56: `MapUtil.cpp`'s globals as the World holds them: the files are the world's disk (lower-cased paths), the
 /// templates the statics' thing factory, the name keys the world's.
-/// - The game text is not the World's ([`crate::logic::world::game_data::TextTable`] with no strings: a tag fetches
-///   upstream's `MISSING:` text), so `initMapStringFile` and `reset` have nothing to do.
-/// - `TheGlobalData->getPath_UserData()` is the recorder's (empty: the user's maps are `Maps\`, the shipped
-///   directory), and `m_buildMapCache` the global data's.
+/// - The game text is ~~not the World's (a table with no strings)~~ the statics' (batch I57: the install's string
+///   file). `initMapStringFile` and `reset` do nothing: no `map.str` is read (a map's own strings are left out; its
+///   name tag is then fetched from the string file only).
+/// - `TheGlobalData->getPath_UserData()` and `m_buildMapCache` are the global data's. An empty user data path (the tests'
+///   worlds) makes the user's map directory `Maps\`, the shipped one; an install's World sets it (batch I57).
 impl crate::common::map_cache::MapCacheHost for World {
     fn get_file_list_in_directory(&self, dir: &[u8], pattern: &[u8], list: &mut crate::formats::big::FilenameList, recursive: bool) {
         // `getFileListInDirectory` over the disk: the files under the directory whose name matches the pattern (a
@@ -216,7 +217,8 @@ impl crate::common::map_cache::MapCacheHost for World {
         self.statics.global_data.the_global_data().is_some_and(|g| g.build_map_cache)
     }
     fn fetch(&self, label: &[u8]) -> crate::common::unicode_string::UnicodeString {
-        crate::common::science::GameTextFetch::fetch(&crate::logic::world::game_data::TextTable::default(), label)
+        // (~~a table with no strings~~ batch I57: the statics' game text)
+        crate::common::science::GameTextFetch::fetch(&self.statics.game_text, label)
     }
     fn init_map_string_file(&mut self, _path: &[u8]) {}
     fn reset_game_text(&mut self) {}

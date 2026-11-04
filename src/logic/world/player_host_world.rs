@@ -1610,7 +1610,7 @@ pub(crate) mod tests {
     /// A tank that needs a barracks, a barracks, a garrisonable bunker, a wall piece and an immobile depot (batch I9a), a scout with an `AIUpdateInterface`
     /// (batch I9b-3), and two player templates (America,
     /// the civilians).
-    const INI: &str = "Object Tank\n KindOf = VEHICLE\n BuildCost = 900\n Prerequisites\n  Object = Barracks\n End\n\
+    pub(crate) const INI: &str = "Object Tank\n KindOf = VEHICLE\n BuildCost = 900\n Prerequisites\n  Object = Barracks\n End\n\
                        \x20Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
                        \x20Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\nEnd\n\
                        Object Barracks\n KindOf = STRUCTURE\n BuildCost = 600\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\

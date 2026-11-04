@@ -2081,6 +2081,34 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I57 (2026-11-04, `p1w13-sonnet`, GitHub #3, #15): a World made from a game install, and a skirmish started on the install's map.** Until now every World was a test's: its INI came from a string in the test, its maps were written by the test, and its switches were set one by one. `logic::world::install_world` makes one as `GameEngine::init` makes the engine:
+- **`World::from_install(fs, language)`** takes the install's file system (batch F1) and loads, in order:
+  - the game text from `data\<language>\Generals.csf` (`g_csfFile`; the CSF reader is `formats::csf`, translated in phase 0);
+  - the logic's INI in `initSubsystem`'s order, where every file must open, as `INI::load` throws on one that does not;
+  - the user data directory (`Command and Conquer Generals Zero Hour Data\`, the default leaf name);
+  - the shipped `Maps\MapCache.ini` put on the World's disk, then `updateCache`.
+
+  An INI failure lists every logic file the install lacks.
+- **`World::mount_map(fs, map)`** puts a map's folder on the World's disk when the map is chosen, as upstream's file system finds it in `MapsZH.big`. Only what is mounted is held in memory.
+- **`World::start_skirmish(map, template, seed)`** is the skirmish menu's launch: the options entered, slot 0 the local human, `startGame(0)`, the recorder, the seed, and `MSG_NEW_GAME`. A map not in the cache is refused, as the menu lists only cached maps.
+- **`examples/load_install.rs`** is the loader for a real install. It reports the archives that did not open, the string file, the INI (with the missing files), the templates and the map cache. With `--map` it also starts a skirmish. It reads the game files and never copies them.
+
+**Three defects the test found, corrected in place:**
+- **The World did not keep the game text.** `into_statics` dropped it, so the map cache fetched every name tag as `MISSING:` even with the string file loaded. The statics now hold it (`GameStatics::game_text`), and `TextTable` reads a CSF (`stricmp` lookup, upstream's `MISSING:` text from `csf::missing_text`).
+- **An engine's World had its switches off.** The test worlds turned on what each test needed; a World made fresh had none on, and its starting units were not placed. `from_install` switches every one on (`set_all_live`), as a game is played.
+- **The recorder's user data path was empty** for every World (replays went to `Replays\`, and the user's maps were the shipped `Maps\`). It is now the global data's `getPath_UserData()`, which the tests' worlds leave empty, as before.
+
+**Predictions, written before the run (each test's doc):**
+- `a_world_from_an_install_starts_a_skirmish_on_its_map`, with an install in memory (`INIZH.big`, `EnglishZH.big`, `MapsZH.big`):
+  - the string file's one label, ~~twelve~~ eleven templates (my miscount: the tests' INI holds eleven objects), and one map from the shipped cache (CRC 7, named "Desert Duel (2)" from the string file);
+  - no cache file written;
+  - two files mounted;
+  - the skirmish places the Barracks at `Player_1_Start` with its Tank, and 100 frames run with no live error;
+  - an install without the INI files stops with `CantOpenFile` and lists them.
+- `an_install_on_disk_loads_through_the_native_device`: the same install written to a folder with the archives' names upper-cased loads alike through `NativeDevice`, and starts. Its first run failed on the test's own setup (it removed the folder before mounting the map); corrected.
+
+**Results (2026-11-04).** Every prediction held after the corrections above. Full run: 203 test binaries, 1,171 tests, 0 failed. Clippy is clean, the loader example included. Gate (a) passes: native and wasm give identical CRCs at all 300 frames (last `0bf44067`, unchanged). The library has 818 tests. The loader was run on an empty folder only; there it lists the 29 INI files the logic opens as missing, and exits 1. It has not seen a real install: none is available here.
+
 **Integration batch I56 (2026-11-04, `p1w13-sonnet`, GitHub #15): `TheMultiplayerSettings` and `TheMapCache` are the game's.** A replay's header and `startNewGame` read both. The World answered them from tables in its cuts.
 - **`Multiplayer.ini` is read** in the logic's INI load, after the science store (GameEngine.cpp:423), into the statics: the `MultiplayerSettings`, `MultiplayerColor` and `MultiplayerStartingMoneyChoice` blocks. `common::multiplayer_settings` was translated in phase 0 but never loaded. Every answer now comes from it: the colour count, `getColor` (with the random and observer colours, which the table answered as NULL), the shroud flag, the beacon limit, the three "show random" flags and the observer colour. Those last four were answered false, false, false and 0; the constructor's are TRUE, TRUE, TRUE and white. The cut fields `cuts.new_game.colors`, `cuts.new_game.shroud_in_multiplayer` and `cuts.max_beacons_per_player` are removed.
 - **`TheGlobalData->m_defaultStartingCash`** was answered as an empty purse to `GameInfo`, so every slot of a game read from a header started with no money. It is now the global data's.

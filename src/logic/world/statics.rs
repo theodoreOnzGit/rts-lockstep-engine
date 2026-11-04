@@ -92,6 +92,8 @@ pub struct GameStatics {
     /// `TheMapCache` (each map's player count, start waypoints, size and CRC). Made by `updateCache` at engine start
     /// ([`crate::logic::world::game_logic::World::update_map_cache`]), read during a game.
     pub map_cache: crate::common::map_cache::MapCache,
+    /// Batch I57: `TheGameText` (the install's string file; a test's table, or none).
+    pub game_text: crate::logic::world::game_data::TextTable,
     // --- end batch I56 ---
     // New stores go here, each in its translator's marked block.
 }

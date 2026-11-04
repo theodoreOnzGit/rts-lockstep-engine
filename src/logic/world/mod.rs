@@ -29,6 +29,7 @@ pub mod object;
 pub mod module_call;
 pub mod module_probe;
 pub mod map_load_world;
+pub mod install_world;
 pub mod object_command_button;
 pub mod object_create;
 pub mod object_cuts;

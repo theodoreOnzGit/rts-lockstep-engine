@@ -116,7 +116,9 @@ impl RecorderHost for World {
         self.cuts.new_game.map_name.clone()
     }
     fn user_data_path(&self) -> Vec<u8> {
-        Vec::new()
+        // ~~empty~~ (batch I57: `TheGlobalData->getPath_UserData()`, the global data's; empty until it is set, as in the
+        // tests' worlds, which keep their replays in `Replays\`)
+        self.statics.global_data.the_global_data().map(|g| g.get_path_user_data().to_vec()).unwrap_or_default()
     }
     fn exe_crc(&self) -> u32 {
         self.statics.global_data.the_global_data().map_or(0, |g| g.exe_crc)
