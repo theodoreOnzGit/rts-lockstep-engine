@@ -38,9 +38,11 @@
 //!   `cancelUnitCreate` matching an upgrade's entry (it reads the upgrade as a thing template: `Undefined::TypeConfusion`), an exit door beyond
 //!   the four doors' flags (`Undefined::ArrayIndexOutOfRange`), and a build time that is no `Int` (`Undefined::FloatToIntOutOfRange`).
 //!
-//! The player's money, upgrades and permissions, the thing templates' costs and build times, the build assistant's `canMakeUnit`, the
-//! object's `canProduceUpgrade` and the client's sounds, messages and radar are the world's cut points: the player and the client are later
-//! layers'.
+//! The player's money, upgrades and permissions, ~~the thing templates' costs and build times, the build assistant's `canMakeUnit`, the
+//! object's `canProduceUpgrade`~~ and the client's sounds, messages and radar are the world's cut points: the player and the client are later
+//! layers'. **Corrected 2026-11-03 (batch I51):** with `cuts.live_build_assistant` the costs and build times, `canMakeUnit` and
+//! `canProduceUpgrade` are the game's (the build assistant's, `World::calc_time_to_build`, the object's command set), the module giving
+//! the build assistant its own answers while it asks from its own call (`ObjectCuts::production_lent`); the tables are the tests'.
 //!
 //! `p1w13-sonnet`, batch R76, 2026-10-26.
 
@@ -495,7 +497,19 @@ impl ProductionUpdate {
     /// unless the build assistant says it cannot be made, no door could be reserved, or the queue is full.
     fn queue_create_unit(&mut self, world: &mut World, us: ObjectId, template: Option<u16>, production_id: i32) -> Result<bool, IniError> {
         let Some(template) = template else { return Err(IniError::undefined(Undefined::NullObject)) };
-        if world.build_assistant_can_make_unit(us, template) != CANMAKE_OK {
+        // (integration batch I51: this module is out of its slot while it asks; the build assistant's questions back to it are
+        // answered from what it gives here. `canQueueCreateUnit` only asks, so asking it first changes nothing)
+        let lent = if world.cuts.live_build_assistant {
+            Some(crate::logic::world::object_cuts::ProductionLent {
+                object: us,
+                template,
+                can_queue: self.can_queue_create_unit(world, us, template),
+                special_power_button: self.special_power_construction_command_button.clone(),
+            })
+        } else {
+            None
+        };
+        if world.build_assistant_can_make_unit(us, template, lent) != CANMAKE_OK {
             return Ok(false);
         }
         let mut exit_door = DOOR_NONE_AVAILABLE;
@@ -1084,6 +1098,15 @@ impl Snapshot for ProductionUpdate {
         self.base.load_post_process();
     }
 }
+
+// --- p1w13-sonnet --- (integration batch I51)
+impl ProductionUpdate {
+    /// `getSpecialPowerConstructionCommandButton()`'s name, for the build assistant's `canMakeUnit` on a factory not lent out.
+    pub(crate) fn special_power_construction_command_button(&self) -> Option<&[u8]> {
+        self.special_power_construction_command_button.as_deref()
+    }
+}
+// --- end p1w13-sonnet ---
 
 #[cfg(test)]
 mod tests {

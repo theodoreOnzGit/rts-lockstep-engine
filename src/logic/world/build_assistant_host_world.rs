@@ -27,8 +27,9 @@
 //!   logic, and the partition manager (with `cuts.live_partition`).
 //! - **Cut points** ([`CutCall::Host`]; answers in tables): the AI's quick path and its move "even if sleeping" (the AI
 //!   update comes in with batch I9), the control bar's command sets and buttons (`cuts.command_sets`,
-//!   `cuts.command_buttons`, whose new `thing_template` field answers `getThingTemplate()`), the production queue's
-//!   special power construction button, the terrain visual (`getRestrictConstruction`, the faction bib, the trees and
+//!   `cuts.command_buttons`, whose new `thing_template` field answers `getThingTemplate()`), ~~the production queue's
+//!   special power construction button~~ (**Corrected 2026-11-03 (batch I51):** the module's own with
+//!   `cuts.live_build_assistant`, the table without), the terrain visual (`getRestrictConstruction`, the faction bib, the trees and
 //!   props), the drawable's animation loop, the audio, and the pathfinder's cells (`cuts.contain.cell_types`).
 //!
 //! `p1w13-sonnet`, integration batch I6, 2026-10-31.
@@ -248,6 +249,10 @@ impl BuildAssistantHost for World {
         }
     }
     fn obj_has_production(&self, o: ObjectId) -> bool {
+        // (integration batch I51: the factory asking from its own call is out of its slot, and is a factory)
+        if self.cuts.production_lent.as_ref().is_some_and(|l| l.object == o) {
+            return true;
+        }
         self.find_object(o).is_some_and(|x| {
             (0..x.modules.len() as ModuleIndex).any(|i| {
                 matches!(self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: i }), Some(UpdateBody::ProductionUpdate(_)))
@@ -255,15 +260,29 @@ impl BuildAssistantHost for World {
         })
     }
     fn production_special_power_construction_template(&self, o: ObjectId) -> Option<TemplateRef> {
-        // `pui->getSpecialPowerConstructionCommandButton()->getThingTemplate()`: the button's template (the control bar's)
-        let name = self.cuts.special_power_construction_buttons.get(&o)?;
-        let b = self.cuts.command_buttons.iter().find(|b| &b.name == name)?;
+        // `pui->getSpecialPowerConstructionCommandButton()->getThingTemplate()`: the button's template (the control bar's).
+        // (integration batch I51: the module's own button, given by it while it is lent out, else read from it, with
+        // `live_build_assistant`; it was the tests' `special_power_construction_buttons` table, which no live factory is in)
+        let name = match &self.cuts.production_lent {
+            Some(l) if l.object == o => l.special_power_button.clone()?,
+            _ if self.cuts.live_build_assistant => self.production_special_power_construction_button(o)?,
+            _ => self.cuts.special_power_construction_buttons.get(&o)?.clone(),
+        };
+        let b = self.cuts.command_buttons.iter().find(|b| b.name == name)?;
         b.thing_template.map(TemplateRef::from)
     }
     fn production_can_queue_create_unit(&mut self, o: ObjectId, what: TemplateRef) -> CanMakeType {
-        let Some(p) = self.get_production_update_interface(o) else { return CanMakeType::Ok };
-        let Ok(template) = u16::try_from(what) else { return CanMakeType::Ok };
-        match self.module_call(o, p, ModuleCall::ProductionCanQueueCreateUnit { template }).as_int(0) {
+        // (integration batch I51: the lent factory's own answer, given before it asked)
+        let lent = self.cuts.production_lent.as_ref().filter(|l| l.object == o && u32::from(l.template) == what).map(|l| l.can_queue);
+        let answer = match lent {
+            Some(a) => a,
+            None => {
+                let Some(p) = self.get_production_update_interface(o) else { return CanMakeType::Ok };
+                let Ok(template) = u16::try_from(what) else { return CanMakeType::Ok };
+                self.module_call(o, p, ModuleCall::ProductionCanQueueCreateUnit { template }).as_int(0)
+            }
+        };
+        match answer {
             1 => CanMakeType::NoPrereq,
             2 => CanMakeType::NoMoney,
             3 => CanMakeType::FactoryIsDisabled,
@@ -467,6 +486,21 @@ impl BuildAssistantHost for World {
         }
     }
 }
+
+// --- p1w13-sonnet --- (integration batch I51)
+impl World {
+    /// `obj->getProductionUpdateInterface()->getSpecialPowerConstructionCommandButton()`'s name: the first `ProductionUpdate`'s.
+    pub(crate) fn production_special_power_construction_button(&self, o: ObjectId) -> Option<Vec<u8>> {
+        let x = self.find_object(o)?;
+        (0..x.modules.len() as ModuleIndex)
+            .find_map(|i| match self.peek_module_body(crate::logic::world::module_call::ModuleHandle { object: o, index: i }) {
+                Some(UpdateBody::ProductionUpdate(p)) => Some(p.special_power_construction_command_button().map(<[u8]>::to_vec)),
+                _ => None,
+            })
+            .flatten()
+    }
+}
+// --- end p1w13-sonnet ---
 
 #[cfg(test)]
 mod tests {

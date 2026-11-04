@@ -3157,4 +3157,60 @@ mod all_live_tests {
         w.cuts.live_terrain = false;
         assert!(w.terrain_roads_find_bridge(b"Wood").is_none());
     }
+
+    /// Integration batch I51: a factory's build questions are the game's. Predicted before the run: a recruit of build cost 300
+    /// and build time 2 s costs 300 (no handicap or faction change) and takes ~~100 frames~~ **99 frames (the prediction was
+    /// wrong: corrected after the first run)**: 60, divided by the low-energy rate of the gate's test global data for a player with
+    /// no power (supply ratio 0: max(1 - 0.4, 0.5) = 0.6, under the 0.8 cap). The prediction rounded by hand; in single precision,
+    /// as upstream's 24-bit x87 mode computes it, `1.0f - 0.4f` is 0.60000002, and 60 / 0.60000002 = 99.999996 truncates to 99
+    /// (checked independently in Python's f32 arithmetic). Queued at
+    /// the barracks, whose command set builds it, the player pays 300; a second is refused (one queue entry); a soldier, which the
+    /// set does not build, is refused and costs nothing (the empty table said yes to anything, for free). Nothing is re-entrant,
+    /// no build assistant error. Without `live_build_assistant`, the tests' tables: cost 0.
+    #[test]
+    fn a_factory_asks_the_build_assistant_and_pays_the_cost() {
+        const FACTORY: &str = "\
+Object Recruit\n KindOf = INFANTRY\n BuildCost = 300\n BuildTime = 2.0\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 3\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+CommandButton Command_Recruit\n Command = UNIT_BUILD\n Object = Recruit\nEnd\n\
+CommandSet BarracksSet\n 1 = Command_Recruit\nEnd\n\
+Object Barracks\n KindOf = STRUCTURE\n CommandSet = BarracksSet\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = ProductionUpdate ModuleTag_Production\n  MaxQueueEntries = 1\n End\nEnd\n";
+        let mut w = gate_map_world_with(FACTORY);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let barracks = make(&mut w, b"Barracks", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
+        let p = w.get_controlling_player(barracks).expect("the player");
+        w.cut(crate::logic::world::object_cuts::CutCall::PlayerMoneyDeposit { player: p, amount: 1000 });
+        let money = |w: &World| w.players.get_nth(p).map_or(0, |pl| pl.money.count_money());
+        let start = money(&w);
+        let id = |w: &World, n: &[u8]| w.statics.thing_factory.find_template(n).map(|t| t.data.get_template_id()).expect("a template");
+        let (recruit, soldier) = (id(&w, b"Recruit"), id(&w, b"Soldier"));
+        let (cost, time) = (w.template_calc_cost_to_build(recruit, p), w.template_calc_time_to_build(recruit, p));
+        eprintln!("cost {cost}, time {time}, money {start}");
+        assert_eq!((cost, time), (300, 99));
+        assert!(!w.object_can_produce_upgrade(barracks, 1), "the set has no upgrade button");
+
+        let pu = w.get_production_update_interface(barracks).expect("the factory");
+        let queue = |w: &mut World, template: u16, production_id: i32| {
+            w.module_call(barracks, pu, ModuleCall::ProductionQueueCreateUnit { template: Some(template), production_id }).as_bool()
+        };
+        assert!(!queue(&mut w, soldier, 1), "the set does not build soldiers");
+        assert_eq!(money(&w), start);
+        assert!(queue(&mut w, recruit, 2));
+        assert_eq!(money(&w), start - 300);
+        assert!(!queue(&mut w, recruit, 3), "one queue entry");
+        assert_eq!(money(&w), start - 300);
+        // (the only re-entrant calls are the factory's own module asking itself for a parking place interface as it walks its
+        // object's modules, answered "no", as upstream's `ProductionUpdate` answers `getParkingPlaceBehaviorInterface`: once per
+        // `canQueueCreateUnit` given (three queues) and once in the queued recruit's own walk. The third queue has no walk of its
+        // own: the build assistant refused it on the factory's own `canQueueCreateUnit` answer, so the lent answer is what refused)
+        let skips: Vec<_> = w.cuts.reentrant_skips.iter().map(|(h, c)| (h.object, h.index, format!("{c:?}"))).collect();
+        assert_eq!(skips, vec![(barracks, pu, "HasParkingPlaceInterface".to_string()); 4]);
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        assert!(w.cuts.production_lent.is_none());
+
+        w.cuts.live_build_assistant = false;
+        assert_eq!(w.template_calc_cost_to_build(recruit, p), 0, "the tests' table");
+    }
 }

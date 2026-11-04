@@ -867,8 +867,13 @@ impl World {
         money >= cost as u32
     }
 
-    /// batch R76: `obj->canProduceUpgrade(upgrade)` (`cuts.can_produce_upgrades`).
-    pub fn object_can_produce_upgrade(&self, _id: ObjectId, upgrade: u32) -> bool {
+    /// batch R76: `obj->canProduceUpgrade(upgrade)`: ~~(`cuts.can_produce_upgrades`)~~ **Corrected 2026-11-03 (batch I51):** with `live_build_assistant`
+    /// `Object::canProduceUpgrade`, a button of the object's command set makes the upgrade (the World's, as the AI group's); the
+    /// table `cuts.can_produce_upgrades` is the tests' without it (the live game read the empty table: no factory could queue an upgrade).
+    pub fn object_can_produce_upgrade(&mut self, id: ObjectId, upgrade: u32) -> bool {
+        if self.cuts.live_build_assistant {
+            return crate::logic::ai::ai_group::AiGroupHost::can_produce_upgrade(self, id, upgrade);
+        }
         self.cuts.can_produce_upgrades.contains(&upgrade)
     }
 
@@ -930,18 +935,45 @@ impl World {
     }
 
     /// batch R76: `TheBuildAssistant->canMakeUnit(builder, whatToBuild)` (see [`CutCall::BuildAssistantCanMakeUnit`]).
-    pub fn build_assistant_can_make_unit(&mut self, builder: ObjectId, template: u16) -> i32 {
+    /// **Corrected 2026-11-03 (batch I51):** with `live_build_assistant` the build assistant's own `canMakeUnit`, `lent` holding the asking factory's facts
+    /// while its module is out of its slot ([`ObjectCuts::production_lent`]); without it the tests' `cuts.can_make_unit` (the live
+    /// game read the empty table, `CANMAKE_OK`: any factory could make anything, its command set and prerequisites unasked). An
+    /// error of the build assistant (upstream's crash) is a `team_live_errors` entry and refuses.
+    pub fn build_assistant_can_make_unit(&mut self, builder: ObjectId, template: u16, lent: Option<ProductionLent>) -> i32 {
         self.cut(CutCall::BuildAssistantCanMakeUnit { builder, template });
+        if self.cuts.live_build_assistant {
+            let before = std::mem::replace(&mut self.cuts.production_lent, lent);
+            let r = crate::logic::world::build_assistant::build_assistant_can_make_unit(self, builder, u32::from(template));
+            self.cuts.production_lent = before;
+            return match r {
+                Ok(c) => c as i32,
+                Err(e) => {
+                    self.cuts.team_live_errors.push(format!("BuildAssistant::canMakeUnit: {e:?}"));
+                    crate::logic::world::build_assistant::CanMakeType::NoPrereq as i32
+                }
+            };
+        }
         self.cuts.can_make_unit.get(&template).copied().unwrap_or(0)
     }
 
-    /// batch R76: `tmpl->calcCostToBuild(player)` (`cuts.template_build_costs`).
-    pub fn template_calc_cost_to_build(&self, template: u16, _player: PlayerIndex) -> i32 {
+    /// batch R76: `tmpl->calcCostToBuild(player)`: ~~(`cuts.template_build_costs`)~~ **Corrected 2026-11-03 (batch I51):** with `live_build_assistant`
+    /// `ThingTemplate::calcCostToBuild` (the build assistant's: build cost, handicap, faction cost change); the tests'
+    /// `cuts.template_build_costs` without it (the live game's empty table made every unit free).
+    pub fn template_calc_cost_to_build(&mut self, template: u16, player: PlayerIndex) -> i32 {
+        if self.cuts.live_build_assistant {
+            return crate::logic::world::build_assistant::BuildAssistantHost::tmpl_calc_cost_to_build(self, u32::from(template), player);
+        }
         self.cuts.template_build_costs.get(&template).map_or(0, |c| c.0)
     }
 
-    /// batch R76: `tmpl->calcTimeToBuild(player)` (`cuts.template_build_costs`).
-    pub fn template_calc_time_to_build(&self, template: u16, _player: PlayerIndex) -> i32 {
+    /// batch R76: `tmpl->calcTimeToBuild(player)`: ~~(`cuts.template_build_costs`)~~ **Corrected 2026-11-03 (batch I51):** with `live_build_assistant`
+    /// `ThingTemplate::calcTimeToBuild` ([`World::calc_time_to_build`], batch I9e: build time, handicap, production time change,
+    /// low-energy penalty, multiple factories); the tests' `cuts.template_build_costs` without it (the live game's empty table:
+    /// 0 frames, every unit made on the next frame).
+    pub fn template_calc_time_to_build(&mut self, template: u16, player: PlayerIndex) -> i32 {
+        if self.cuts.live_build_assistant {
+            return self.calc_time_to_build(u32::from(template), player);
+        }
         self.cuts.template_build_costs.get(&template).map_or(0, |c| c.1)
     }
 
@@ -2304,6 +2336,11 @@ pub struct ObjectCuts {
     /// [`World::body_globals`], [`World::wall_height`]) rather than [`ObjectCuts::globals`], `body.globals` and `wall_height`.
     /// Off by default, as the other `live_*` switches: the module tests set the tables.
     pub live_globals: bool,
+    /// Integration batch I51: a factory's `ProductionUpdate` asking `TheBuildAssistant->canMakeUnit` from its own call is lent
+    /// out of its slot, so the build assistant's questions back to it (`getProductionUpdateInterface`,
+    /// `getSpecialPowerConstructionCommandButton`, `canQueueCreateUnit`) are answered from these facts, which the module gives
+    /// before it asks. `None` outside that call.
+    pub production_lent: Option<ProductionLent>,
     // --- end p1w13-sonnet ---
     /// The client's drawable id counter (`GameClient::allocateNewDrawableID`).
     next_drawable_id: DrawableId,
@@ -2484,6 +2521,7 @@ impl Default for ObjectCuts {
             live_ai: false,
             live_special_powers: false,
             live_globals: false,
+            production_lent: None,
             next_drawable_id: 1,
         }
     }
@@ -3017,3 +3055,19 @@ impl World {
     }
 }
 // --- end p1w7-sonnet ---
+
+// --- p1w13-sonnet --- (integration batch I51)
+/// The facts a factory's `ProductionUpdate` gives before it asks `TheBuildAssistant->canMakeUnit` from its own call
+/// ([`ObjectCuts::production_lent`]): the build assistant's questions back to the module, answered as the module would.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ProductionLent {
+    /// The factory.
+    pub object: ObjectId,
+    /// The template asked about.
+    pub template: u16,
+    /// `canQueueCreateUnit(template)`, a `CanMakeType` value.
+    pub can_queue: i32,
+    /// `m_specialPowerConstructionCommandButton`'s name.
+    pub special_power_button: Option<Vec<u8>>,
+}
+// --- end p1w13-sonnet ---

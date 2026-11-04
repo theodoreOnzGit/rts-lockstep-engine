@@ -2081,6 +2081,35 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I51 (2026-11-03, `p1w13-sonnet`): a factory's build questions are the game's.** `ProductionUpdate` asked four things through tables the live game never filled:
+- `TheBuildAssistant->canMakeUnit`, which answered `CANMAKE_OK` from the empty table, so any factory could make anything;
+- `calcCostToBuild`, which answered 0, so every unit was free;
+- `calcTimeToBuild`, which answered 0 frames;
+- `canProduceUpgrade`, which answered no, so no factory could queue an upgrade.
+
+All four already had live ports: the build assistant's `canMakeUnit` and `calcCostToBuild` (I6), `World::calc_time_to_build` (I9e), and `Object::canProduceUpgrade` on the AI group host. With `live_build_assistant` the factory now asks those.
+
+Two more defects sat behind them. While the factory asks the build assistant from its own call, its module is out of its slot, so the build assistant's questions back to it went wrong:
+- `getProductionUpdateInterface` read "no factory", which skipped the `canQueueCreateUnit` check;
+- `canQueueCreateUnit` would have answered the default.
+
+Separately, the special power construction button was read from a table no live factory is in, although the module keeps that button itself.
+
+The module now gives these facts before it asks, in a new `ObjectCuts::production_lent`. When the module is in its slot, the build assistant reads the button from the module itself.
+
+**Test and predictions**, written before the runs:
+- `gate_scenario::all_live_tests::a_factory_asks_the_build_assistant_and_pays_the_cost`. A recruit with a build cost of 300 and a build time of 2 s costs 300 and takes 100 frames under the gate's low-energy test values. Queued at a barracks whose command set builds it, the player pays 300. A second recruit is refused (one queue entry). A soldier, which the command set does not build, is refused and costs nothing. Without `live_build_assistant` the cost is the table's 0.
+
+Gate (a): **CRCs unchanged at `0bf44067`**. The gate game has no factory queue: its structures are built by a dozer from a build list.
+
+**Results (2026-11-03):**
+- **The build time prediction missed.** The recruit takes **99** frames, not 100. In single precision, 1 − 0.4 is 0.60000002, and 60 divided by it truncates to 99. That is the f32 value, which is what upstream computes with the x87 unit in 24-bit mode (`ThingTemplate::calcTimeToBuild`); my hand calculation used exact decimals. The test asserts 99 and its doc keeps the original prediction.
+- The other predictions held: the recruit costs 300 and is queued for 300; a second recruit and the soldier are refused, and the soldier costs nothing; `production_lent` is empty afterwards; the ablation gives cost 0.
+- While the factory asks, the module's own questions back to itself are skipped as re-entrant. The test asserts exactly four of them (`HasParkingPlaceInterface`), all harmless, and no live errors.
+- Library: 802 tests pass. Full run: 203 test binaries, 1,155 tests, none failed.
+- Clippy: the first pass warned once, "items after a test module", for the new impl block in `build_assistant_host_world.rs`. I moved the block above the tests, with no code change, and clippy is now clean.
+- Gate (a): PASS, identical native and wasm CRCs over 300 frames, last `0bf44067`, unchanged as predicted.
+
 **Integration batch I50 (2026-11-03, `p1w13-sonnet`): the road and bridge types (`TheTerrainRoads`) read from the game's INI.** Upstream keeps `TerrainRoadCollection` in the client's tree, but the logic reads it in six places: `BridgeBehavior` reads a bridge's tower objects, scaffold objects and damage and repair transition effects, and `TerrainLogic` asks whether a map's bridge names a template. The port had no reader for `Roads.ini`. Every answer came from `cuts.bridge_templates`, a table the live game never filled, so on a real map no bridge had towers, scaffolds or transition effects. New `common::terrain_roads` (`TerrainRoads.cpp`, `INITerrainRoad.cpp`, `INITerrainBridge.cpp`) holds the whole type, client fields included, its two field tables and the collection's find and new functions. The loader reads the `Road` and `Bridge` blocks from upstream's two files, in upstream's place among the subsystems. The world's `statics.terrain_roads` holds the result, and with `live_terrain` `World::terrain_roads_find_bridge` answers from it, which all three of the world's bridge template lookups now go through.
 
 **Upstream's behaviour kept:**
