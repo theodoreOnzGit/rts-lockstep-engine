@@ -10,10 +10,11 @@
 //! [`load_game_data`] does that for the subsystems the logic owns, in upstream's order and with upstream's paths
 //! ([`LOGIC_SUBSYSTEMS`]), over a file system given as [`GameDataFiles`]. The blocks it reads are the logic's:
 //! `GameData`, `Science`, `Rank`, `PlayerTemplate`, `Weapon`, `ObjectCreationList`, `Locomotor`, `SpecialPower`,
-//! `DamageFX`, `Armor`, `Object`, `ObjectReskin`, `Upgrade`, `AIData` and `CrateData`. **The client's subsystems are not
-//! loaded** (the FX lists, particle systems, audio, the UI, the terrain types and roads, the multiplayer settings, the
-//! command sets and buttons, the map cache): a block of theirs in a file the logic loads is an unknown token, as it would
-//! be upstream for a token missing from the table.
+//! `DamageFX`, `Armor`, `Object`, `ObjectReskin`, `Upgrade`, `AIData` and `CrateData`; **Corrected 2026-11-03 (batch I50):** also two of the client's
+//! the logic reads: `CommandButton` and `CommandSet` (since batch I19) and `Road` and `Bridge` (`TheTerrainRoads`, batch I50).
+//! **The other client subsystems are not loaded** (the FX lists, particle systems, audio, the UI, the terrain types,
+//! the multiplayer settings, the map cache; ~~the terrain roads, the command sets and buttons~~): a block of theirs in a file
+//! the logic loads is an unknown token, as it would be upstream for a token missing from the table.
 //!
 //! **Missing files:** upstream's `INI::load` throws on a file it cannot open (the shipped data has every one). With
 //! [`MissingFiles::Error`] so does the loader; [`MissingFiles::Skip`] skips one, for a test's or a mod's partial data.
@@ -126,6 +127,8 @@ pub struct SubsystemFiles {
 pub const LOGIC_SUBSYSTEMS: &[SubsystemFiles] = &[
     SubsystemFiles { name: "TheWritableGlobalData", path1: Some(b"Data\\INI\\Default\\GameData.ini"), path2: Some(b"Data\\INI\\GameData.ini"), dirpath: None },
     SubsystemFiles { name: "TheScienceStore", path1: Some(b"Data\\INI\\Default\\Science.ini"), path2: Some(b"Data\\INI\\Science.ini"), dirpath: None },
+    // (batch I50: the client's subsystem the logic reads, after the multiplayer settings and terrain types, GameEngine.cpp:425)
+    SubsystemFiles { name: "TheTerrainRoads", path1: Some(b"Data\\INI\\Default\\Roads.ini"), path2: Some(b"Data\\INI\\Roads.ini"), dirpath: None },
     SubsystemFiles { name: "TheRankInfoStore", path1: None, path2: Some(b"Data\\INI\\Rank.ini"), dirpath: None },
     SubsystemFiles { name: "ThePlayerTemplateStore", path1: Some(b"Data\\INI\\Default\\PlayerTemplate.ini"), path2: Some(b"Data\\INI\\PlayerTemplate.ini"), dirpath: None },
     SubsystemFiles { name: "TheWeaponStore", path1: None, path2: Some(b"Data\\INI\\Weapon.ini"), dirpath: None },
@@ -183,6 +186,8 @@ pub struct GameDataLoad {
     pub crates: CrateSystem,
     /// Integration batch I19: `TheControlBar`'s command buttons and sets.
     pub command_buttons: crate::logic::command_button::CommandButtonStore,
+    /// Integration batch I50: `TheTerrainRoads`.
+    pub terrain_roads: crate::common::terrain_roads::TerrainRoadCollection,
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -216,6 +221,7 @@ impl GameDataLoad {
             ai_data: Default::default(),
             crates: CrateSystem::new(),
             command_buttons: Default::default(),
+            terrain_roads: Default::default(),
             button_lookups: None,
         })
     }
@@ -268,6 +274,7 @@ impl GameDataLoad {
             ai_data: crate::logic::ai::ai_data::AiDataChain { entries: vec![st.ai_data] },
             crates: st.crate_system,
             command_buttons: st.command_buttons,
+            terrain_roads: st.terrain_roads,
             button_lookups: None,
         })
     }
@@ -290,6 +297,7 @@ impl GameDataLoad {
             locomotor_store: self.locomotors,
             ai_data: self.ai_data.current().clone(),
             command_buttons: self.command_buttons,
+            terrain_roads: self.terrain_roads,
         };
         (statics, self.names)
     }
@@ -328,9 +336,10 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 17] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 19] = [
     BlockParse { token: "AIData", parse: ai_data_block },
     BlockParse { token: "Armor", parse: armor_block },
+    BlockParse { token: "Bridge", parse: bridge_block },
     BlockParse { token: "CommandButton", parse: command_button_block },
     BlockParse { token: "CommandSet", parse: command_set_block },
     BlockParse { token: "CrateData", parse: crate_block },
@@ -343,6 +352,7 @@ static BLOCKS: [BlockParse<GameDataLoad>; 17] = [
     BlockParse { token: "PlayerTemplate", parse: player_template_block },
     BlockParse { token: "Science", parse: science_block },
     BlockParse { token: "Rank", parse: rank_block },
+    BlockParse { token: "Road", parse: road_block },
     BlockParse { token: "SpecialPower", parse: special_power_block },
     BlockParse { token: "Upgrade", parse: upgrade_block },
     BlockParse { token: "Weapon", parse: weapon_block },
@@ -413,6 +423,16 @@ fn armor_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
 
 fn damage_fx_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     c.damage_fx.parse_damage_fx_definition(ini, &mut c.names)
+}
+
+/// `INI::parseTerrainBridgeDefinition` (batch I50).
+fn bridge_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.terrain_roads.parse_terrain_bridge_definition(ini)
+}
+
+/// `INI::parseTerrainRoadDefinition` (batch I50).
+fn road_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    c.terrain_roads.parse_terrain_road_definition(ini)
 }
 
 fn crate_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {

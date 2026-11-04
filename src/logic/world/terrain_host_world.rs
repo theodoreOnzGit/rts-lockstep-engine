@@ -17,9 +17,11 @@
 //!   `updateObjValuesFromMapProperties` (batch O1) and `setOrientation`; a
 //!   landmark bridge's towers are `Bridge::createTower`, with the bridge's and
 //!   the tower's behaviour interfaces tied as upstream ties them.
-//! - **The terrain roads** (the client's INI, read by no layer yet) are the
+//! - **The terrain roads** ~~(the client's INI, read by no layer yet) are the
 //!   `cuts.bridge_templates` table, which batch I2 extends with the tower
-//!   object names.
+//!   object names.~~ **Corrected 2026-11-03 (batch I50):** with `live_terrain`
+//!   they are the world's `TheTerrainRoads` (`statics.terrain_roads`, read from
+//!   `Roads.ini` by the game data loader); the table is the tests' without it.
 //! - **The pathfinder** ~~is not in the world yet~~ is the world's since batch
 //!   I9a (`pathfinder_host_world.rs`): with `live_pathfinder`, `addBridge` is
 //!   its own and `changeBridgeState` and `forceMapRecalculation` run once the
@@ -253,7 +255,8 @@ impl World {
 
     /// The tower template `TheTerrainRoads->findBridge(bridge)->getTowerObjectName(tower)` names, by id.
     fn bridge_tower_template_id(&self, bridge_template: &AsciiString, tower: BridgeTowerType) -> Option<u16> {
-        let road = self.cuts.bridge_templates.get(bridge_template.str())?;
+        // (integration batch I50: through `terrain_roads_find_bridge`, the world's `TheTerrainRoads` with `live_terrain`)
+        let road = self.terrain_roads_find_bridge(bridge_template.str())?;
         self.thing_factory_find_template(&road.tower_object_names[tower as usize])
     }
 }
@@ -357,7 +360,8 @@ impl TerrainWorld for World {
     }
 
     fn find_bridge_road_template(&self, name: &AsciiString) -> bool {
-        self.cuts.bridge_templates.contains_key(name.str())
+        // (integration batch I50: `TheTerrainRoads->findBridge(name) != NULL` on the world's roads with `live_terrain`)
+        self.terrain_roads_find_bridge(name.str()).is_some()
     }
 
     fn find_bridge_tower_template(&self, bridge_template: &AsciiString, tower: BridgeTowerType) -> Option<f32> {
@@ -465,7 +469,6 @@ mod tests {
     use crate::logic::terrain_logic::{GroundSource, TriggerArea};
     use crate::logic::terrain_visual::LogicHeightMap;
     use crate::logic::weapon_set::WeaponTemplateTable;
-    use crate::logic::world::object_cuts::BridgeTemplateDetails;
     use crate::logic::world::statics::GameStatics;
     use crate::logic::client_event::ClientEvent;
     use crate::logic::world::team::Team;
@@ -623,8 +626,10 @@ mod tests {
     #[test]
     fn a_landmark_bridge_makes_and_ties_its_towers() {
         let mut w = world();
-        let tower_names = std::array::from_fn(|_| b"BridgeTower".to_vec());
-        w.cuts.bridge_templates.insert(b"LandBridge".to_vec(), BridgeTemplateDetails { tower_object_names: tower_names, ..Default::default() });
+        // (integration batch I50: the road is the world's `TheTerrainRoads`, as the live game reads it, not the tests' table)
+        let roads = &mut std::sync::Arc::make_mut(&mut w.statics).terrain_roads;
+        let i = roads.new_bridge(b"LandBridge");
+        roads.bridges[i].tower_object_name = std::array::from_fn(|_| b"BridgeTower".to_vec());
         let bridge = make(&mut w, b"LandBridge", Some(100), Coord3D { x: 200.0, y: 200.0, z: 10.0 });
         let body = w.get_body_module(bridge).unwrap();
         w.module_call(bridge, body, ModuleCall::SetIndestructible(true));
@@ -662,7 +667,7 @@ mod tests {
     #[test]
     fn a_bridge_in_rubble_drops_what_is_on_it() {
         let mut w = world();
-        w.cuts.bridge_templates.insert(b"LandBridge".to_vec(), BridgeTemplateDetails::default());
+        std::sync::Arc::make_mut(&mut w.statics).terrain_roads.new_bridge(b"LandBridge");
         let bridge = make(&mut w, b"LandBridge", Some(100), Coord3D { x: 200.0, y: 200.0, z: 10.0 });
         w.terrain_add_landmark_bridge_to_logic(bridge);
         let layer = w.terrain.bridges()[0].layer();

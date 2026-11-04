@@ -88,3 +88,5 @@ pub mod game_state_map;
 pub mod message_stream;
 pub mod message_types;
 pub mod recorder;
+// (integration batch I50)
+pub mod terrain_roads;

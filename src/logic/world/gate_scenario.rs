@@ -3137,4 +3137,24 @@ mod all_live_tests {
         assert_eq!(b.cuts.player_host.global_difficulty, GameDifficulty::Hard);
         assert_eq!(crate::logic::world::player_ops::PlayerHost::globals(&b).global_difficulty, GameDifficulty::Hard);
     }
+
+    /// Predicted before the run (batch I50): with `live_terrain` a bridge template is the world's `TheTerrainRoads` bridge, read
+    /// from a `Roads.ini` given to the INI loader, towers and transitions included; without it, the tests' (empty) table.
+    #[test]
+    fn a_bridge_template_is_the_games_roads() {
+        use crate::logic::world::game_data::{GameDataLoad, MemoryFiles, MissingFiles, TextTable};
+        let mut files = MemoryFiles::new();
+        files.insert(b"Data\\INI\\Roads.ini", b"Bridge Wood\n TowerObjectNameToRight = Runner\n TransitionToOCL = Transition:Damage ToState:RUBBLE EffectNum:2 OCL:OCL_Fall\nEnd\n".to_vec());
+        let load = crate::logic::world::game_data::load_game_data(&files, MissingFiles::Skip, TextTable::default()).expect("the load");
+        let _: &GameDataLoad = &load;
+        let (statics, _) = load.into_statics();
+        let mut w = gate_world();
+        std::sync::Arc::make_mut(&mut w.statics).terrain_roads = statics.terrain_roads;
+        let d = w.terrain_roads_find_bridge(b"Wood").expect("the bridge");
+        assert_eq!(d.tower_object_names[3], b"Runner".to_vec());
+        assert_eq!(d.damage_to_ocl[3][1], b"OCL_Fall".to_vec());
+        assert!(w.terrain_roads_find_bridge(b"Stone").is_none());
+        w.cuts.live_terrain = false;
+        assert!(w.terrain_roads_find_bridge(b"Wood").is_none());
+    }
 }

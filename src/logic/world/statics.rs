@@ -82,6 +82,10 @@ pub struct GameStatics {
     /// I9e, its side infos and build lists (`lists`), which the computer players read.
     pub ai_data: crate::logic::ai::ai_data::AiDataEntry,
     // --- end batch I9b ---
+    // --- batch I50 ---
+    /// `TheTerrainRoads` (`Roads.ini`'s road and bridge types; `BridgeBehavior` and `TerrainLogic` read the bridges).
+    pub terrain_roads: crate::common::terrain_roads::TerrainRoadCollection,
+    // --- end batch I50 ---
     // New stores go here, each in its translator's marked block.
 }
 

@@ -537,6 +537,25 @@ pub struct BridgeTemplateDetails {
     pub tower_object_names: [Vec<u8>; 4],
 }
 
+impl BridgeTemplateDetails {
+    /// Integration batch I50: what the logic reads of a `TerrainRoadType` of `TheTerrainRoads`.
+    pub fn from_road_type(r: &crate::common::terrain_roads::TerrainRoadType) -> Self {
+        BridgeTemplateDetails {
+            damage_to_ocl: r.damage_to_ocl_string.clone(),
+            damage_to_fx: r.damage_to_fx_string.clone(),
+            repaired_to_ocl: r.repaired_to_ocl_string.clone(),
+            repaired_to_fx: r.repaired_to_fx_string.clone(),
+            damage_to_sound: r.damage_to_sound_string.clone(),
+            repaired_to_sound: r.repaired_to_sound_string.clone(),
+            transition_effects_height: r.transition_effects_height,
+            num_fx_per_type: r.num_fx_per_type,
+            scaffold_object_name: r.scaffold_object_name.clone(),
+            scaffold_support_object_name: r.scaffold_support_object_name.clone(),
+            tower_object_names: r.tower_object_name.clone(),
+        }
+    }
+}
+
 /// The cell of the cut-point terrain tables a position falls in: an integer hash of the bits of (x, y), so that both sides of a differential test
 /// (which share no terrain) answer alike. (A stand-in only until the layer-12 adapter answers from the real terrain.)
 pub fn terrain_cell(x: f32, y: f32) -> usize {
@@ -951,8 +970,12 @@ impl World {
     }
 
     /// batch R77: `TheTerrainRoads->findBridge(name)`: the bridge template's transition effects and scaffold names, `None` for `NULL`
-    /// (`ObjectCuts::bridge_templates`; the terrain roads are the client's INI, read by no layer yet).
+    /// (~~`ObjectCuts::bridge_templates`; the terrain roads are the client's INI, read by no layer yet~~ **Corrected 2026-11-03 (batch I50):** with
+    /// `live_terrain`, the world's `statics.terrain_roads`, read from `Roads.ini`; without it the tests' `cuts.bridge_templates`).
     pub fn terrain_roads_find_bridge(&self, name: &[u8]) -> Option<BridgeTemplateDetails> {
+        if self.cuts.live_terrain {
+            return self.statics.terrain_roads.find_bridge(name).map(BridgeTemplateDetails::from_road_type);
+        }
         self.cuts.bridge_templates.get(name).cloned()
     }
 
@@ -2118,6 +2141,7 @@ pub struct ObjectCuts {
     pub valid_audio_events: BTreeSet<Vec<u8>>,
     /// batch R77: what `BridgeBehavior` reads of the bridge `findBridgeAt` finds in a cell (as `bridge_at`), and the bridge templates by name.
     pub bridge_details: [Option<BridgeDetails>; 8],
+    /// The tests' bridge templates, read without `live_terrain` (batch I50: with it, the world's `statics.terrain_roads`).
     pub bridge_templates: BTreeMap<Vec<u8>, BridgeTemplateDetails>,
     pub laser_drawables: BTreeSet<crate::common::game_type::DrawableId>,
     pub laser_radius: f32,
