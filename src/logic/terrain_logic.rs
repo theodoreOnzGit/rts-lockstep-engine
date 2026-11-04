@@ -1953,13 +1953,16 @@ impl TerrainLogic {
         }
     }
 
-    /// `isClearLineOfSight(pos, posOther)`: the base class has no
-    /// implementation (`DEBUG_CRASH`, false); the device one asks the render
-    /// object, which is not translated.
-    pub fn is_clear_line_of_sight(&self, _pos: &Coord3D, _pos_other: &Coord3D) -> TlResult<bool> {
+    /// `isClearLineOfSight(pos, posOther)`: the base class has no implementation (`DEBUG_CRASH`, false); the device one asks the
+    /// render object, ~~which is not translated~~ **corrected 2026-11-04 (batch I63):** whose walk over the logic height map is
+    /// [`LogicHeightMap::is_clear_line_of_sight`]. With no height map it stays `NotTranslated` (the callers' table answers).
+    pub fn is_clear_line_of_sight(&self, pos: &Coord3D, pos_other: &Coord3D) -> TlResult<bool> {
         match self.ground {
             GroundSource::Base => Ok(false),
-            GroundSource::LogicHeightMap => Err(TerrainLogicError::NotTranslated("TheTerrainRenderObject->isClearLineOfSight")),
+            GroundSource::LogicHeightMap => match &self.visual.height_map {
+                Some(map) => Ok(map.is_clear_line_of_sight(pos, pos_other)),
+                None => Err(TerrainLogicError::NotTranslated("TheTerrainRenderObject->isClearLineOfSight")),
+            },
         }
     }
 

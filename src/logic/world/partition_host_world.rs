@@ -48,8 +48,11 @@
 //!   cell types (since I9a), the quick path check and `isViewBlockedByObstacle`
 //!   (since I42) are its answers, and the tables answer only without it.
 //! - **The terrain render object** (`TheTerrainRenderObject`), which answers
-//!   `isClearLineOfSight` and `isCliffCell` for a height-map terrain: the
-//!   existing `cuts.blocked_lines_of_sight` and `cuts.terrain_cliff`.
+//!   `isClearLineOfSight` and `isCliffCell` for a height-map terrain: ~~the
+//!   existing `cuts.blocked_lines_of_sight` and `cuts.terrain_cliff`~~
+//!   **corrected 2026-11-04:** the logic height map's answers (`isCliffCell`
+//!   with the map's `BlendTileData`, batch I59; `isClearLineOfSight`, batch
+//!   I63); the tables answer only without a height map (or, for cliffs, its chunk).
 //! - **Hot-key squads by number**: `PartitionFilterAcceptOnSquad` holds a
 //!   `Squad*`; here a squad is `player * NUM_HOTKEY_SQUADS + hotkey` into the
 //!   players' own `squads` (no translated caller builds the filter yet).

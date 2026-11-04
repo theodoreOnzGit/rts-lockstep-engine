@@ -507,6 +507,10 @@ pub struct LogicHeightMap {
     data: Vec<u8>,
     /// Batch I59 (#16): what `ParseBlendTileData` read of the map (`None`: no `BlendTileData` chunk, upstream's `NULL` arrays).
     blend: Option<BlendTiles>,
+    /// Batch I63: `BaseHeightMapRenderObjClass::m_maxHeight` as `initHeightData` sets it when the map is loaded: the highest
+    /// sample times `MAP_HEIGHT_SCALE`. Later height changes do not move it (upstream recomputes it only on a full
+    /// `initHeightData`).
+    max_height_at_load: f32,
 }
 
 /// `PATHFIND_CLIFF_SLOPE_LIMIT_F` (WorldHeightMap.cpp:65).
@@ -642,7 +646,9 @@ impl LogicHeightMap {
         if width < 1 || height < 1 || i64::from(width) * i64::from(height) > data.len() as i64 {
             return Err(TerrainUndefined::HeightMapShape);
         }
-        Ok(LogicHeightMap { width, height, border_size, boundaries, data, blend: None })
+        let n = (width as usize) * (height as usize);
+        let max_height_at_load = f32::from(data[..n].iter().copied().max().unwrap_or(0)) * MAP_HEIGHT_SCALE;
+        Ok(LogicHeightMap { width, height, border_size, boundaries, data, blend: None, max_height_at_load })
     }
 
     /// Batch I59 (#16): the map's `BlendTileData` (see [`BlendTiles`]).
@@ -678,6 +684,64 @@ impl LogicHeightMap {
             iy = self.height - 2;
         }
         self.get_cliff_state(ix, iy)
+    }
+
+    /// `BaseHeightMapRenderObjClass::isClearLineOfSight(pos, posOther)` (the `DO_BRESENHAM` path, BaseHeightMap.cpp:1011): a
+    /// Bresenham walk over the samples from `pos` to `posOther`, the line's height moving from `pos.z` to `posOther.z`; blocked
+    /// where the highest of a cell's four samples is above the line by more than 0.5; clear once off the map, or once the line
+    /// is above the terrain's maximum height and still rising.
+    pub fn is_clear_line_of_sight(&self, pos: &Coord3D, pos_other: &Coord3D) -> bool {
+        const MAP_XY_FACTOR_INV: f32 = 1.0 / MAP_XY_FACTOR;
+        const LOS_FUDGE: f32 = 0.5;
+        let floor = |v: f32| v.floor() as i32;
+        let start_x = floor(pos.x * MAP_XY_FACTOR_INV) + self.border_size;
+        let start_y = floor(pos.y * MAP_XY_FACTOR_INV) + self.border_size;
+        let end_x = floor(pos_other.x * MAP_XY_FACTOR_INV) + self.border_size;
+        let end_y = floor(pos_other.y * MAP_XY_FACTOR_INV) + self.border_size;
+        let delta_x = (end_x - start_x).abs();
+        let delta_y = (end_y - start_y).abs();
+        let (mut x, mut y) = (start_x, start_y);
+        let (mut xinc1, mut xinc2) = if end_x >= start_x { (1, 1) } else { (-1, -1) };
+        let (mut yinc1, mut yinc2) = if end_y >= start_y { (1, 1) } else { (-1, -1) };
+        let (den, mut num, numadd, numpixels) = if delta_x >= delta_y {
+            xinc1 = 0;
+            yinc2 = 0;
+            (delta_x, delta_x / 2, delta_y, delta_x)
+        } else {
+            xinc2 = 0;
+            yinc1 = 0;
+            (delta_y, delta_y / 2, delta_x, delta_y)
+        };
+        let ns_inv = 1.0f32 / numpixels as f32;
+        let mut z = pos.z;
+        let dz = pos_other.z - z;
+        let zinc = dz * ns_inv;
+        let (xe, ye) = (self.width, self.height);
+        for _ in 0..numpixels {
+            if x < 0 || y < 0 || x >= xe - 1 || y >= ye - 1 {
+                // once we go off the map, we're done
+                break;
+            }
+            let idx = (x + y * xe) as usize;
+            let d = |i: usize| f32::from(self.data[i]);
+            let h = d(idx).max(d(idx + 1)).max(d(idx + xe as usize)).max(d(idx + xe as usize + 1)) * MAP_HEIGHT_SCALE;
+            if h > z + LOS_FUDGE {
+                return false;
+            }
+            if z >= self.max_height_at_load && zinc > 0.0 {
+                break;
+            }
+            z += zinc;
+            num += numadd;
+            if num >= den {
+                num -= den;
+                x += xinc1;
+                y += yinc1;
+            }
+            x += xinc2;
+            y += yinc2;
+        }
+        true
     }
 
     /// `WorldHeightMap::getTerrainNameAt(x, y)`: the texture class of the sample under the point (floored, moved by the border,

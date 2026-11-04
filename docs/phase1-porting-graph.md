@@ -2081,6 +2081,24 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I63 (2026-11-04, `p1w13-sonnet`, GitHub #8): line of sight over the terrain.** A survey of the logic's remaining `NotTranslated` errors found `TheTerrainRenderObject->isClearLineOfSight`. It looked like render code but is logic: `PartitionManager::isClearLineOfSightTerrain` asks it, for the weapons that need a line of sight (Weapon.cpp:3102–3143) and for `PartitionFilterLineOfSight` (PartitionManager.cpp:5344). The World answered from `cuts.blocked_lines_of_sight`, an empty table, so **in a game every sight line over the terrain was clear, and units saw and shot through hills.**
+
+**Now** `LogicHeightMap::is_clear_line_of_sight` translates `BaseHeightMapRenderObjClass::isClearLineOfSight`'s `DO_BRESENHAM` path (BaseHeightMap.cpp:1011):
+- a Bresenham walk over the samples, the line's height moving linearly from one end to the other;
+- a cell blocks when its highest corner is above the line by more than `LOS_FUDGE` (0.5);
+- the walk ends as clear off the map, or once the line is above the terrain's maximum height and still rising.
+
+`m_maxHeight` is taken as `initHeightData` sets it at map load: the highest sample times `MAP_HEIGHT_SCALE`. Upstream does not move it for later height changes (only a full `initHeightData` recomputes it), and nor does the port. `TerrainLogic::is_clear_line_of_sight` answers from it when there is a height map. The other two `NotTranslated` left are the height-map-less cliff fallback (I59) and an unreachable guard-machine path.
+
+**Predictions, written before the run (the test's doc):** `line_of_sight_tests::hills_block_the_line_of_sight`, a 40 × 40 map with a ridge 40 units high:
+- across the ridge at height 5: blocked; at height 60: clear;
+- on one side: clear;
+- through the World's partition manager: the same.
+
+One prediction missed, through my arithmetic and not the code. I predicted a line rising from the ground to height 200 across the ridge would be blocked. It is clear: it rises about 13.3 a cell and is above the ridge by the ridge's cell, and upstream's walk stops as clear once the line passes the terrain's maximum still rising. It is recorded struck through. A gentler line, rising to 60, predicted blocked before its run, is blocked.
+
+**Full run (2026-11-04):** 203 test binaries, 1,175 tests, 0 failed; clippy clean. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067`. That was expected but is worth stating: the gate map is flat at height 0 and its fights are along the ground, so no sight line there is blocked. Gate (a) therefore does not test this batch; its own test does.
+
 **Integration batch I62 (2026-11-04, `p1w13-sonnet`, GitHub #8): host answers that were fixed literals.** A scan for World host methods whose whole body is a literal (`false`, `0`, `None`, empty) found 46. Most are correct:
 - client answers (the drawables, the view, the UI, transitions);
 - `crc` methods upstream leaves empty;

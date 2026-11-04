@@ -3594,3 +3594,44 @@ mod blend_tile_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod line_of_sight_tests {
+    use super::*;
+
+    /// Integration batch I63: `isClearLineOfSight` over the logic height map (`BaseHeightMapRenderObjClass`'s Bresenham walk). A
+    /// 40 × 40 map with a ridge of height 64 (64 × 0.625 = 40 units) along x = 20, flat 0 elsewhere. Predicted before the run:
+    /// - two points at height 5 either side of the ridge (x = 100 and x = 300, y = 200): blocked (40 > 5 + 0.5);
+    /// - the same points at height 60: clear (above the ridge);
+    /// - two points at height 5 on the same side (x = 50 and x = 150): clear;
+    /// - ~~the line from the ground near the ridge rising to height 200 beyond it: blocked at the ridge, as the line is still
+    ///   below it there~~ **missed (my arithmetic, not the code):** clear. The walk crosses 15 cells, rising 199 / 15 ≈ 13.3 a
+    ///   cell; it is at 54 by cell 19, whose corners hold the ridge's samples, and it reaches the terrain's maximum (40) still
+    ///   rising one cell earlier, where upstream's walk stops as clear;
+    /// - (added after that miss, predicted before its run) the same line rising only to 60: ≈ 3.9 a cell, 16.7 at cell 19, below
+    ///   the ridge: blocked;
+    /// - through the World's partition manager (`isClearLineOfSightTerrain(NULL, from, NULL, to)`, which weapons ask), the
+    ///   same as the terrain's.
+    ///
+    /// Before this batch every one was clear: the World answered from an empty table, so units saw and shot through hills.
+    #[test]
+    fn hills_block_the_line_of_sight() {
+        let mut w = gate_map_world();
+        let data: Vec<u8> = (0..40).flat_map(|_| (0..40).map(|x| if x == 20 { 64 } else { 0 })).collect();
+        let size = ICoord2D { x: 40, y: 40 };
+        w.terrain.set_logic_height_map(Some(LogicHeightMap::new(40, 40, 0, vec![size], data).expect("the height map")));
+        let at = |x: f32, z: f32| Coord3D { x, y: 200.0, z };
+        let terrain = |w: &World, a: Coord3D, b: Coord3D| w.terrain.is_clear_line_of_sight(&a, &b).expect("the height map answers");
+        let got = (
+            terrain(&w, at(100.0, 5.0), at(300.0, 5.0)),
+            terrain(&w, at(100.0, 60.0), at(300.0, 60.0)),
+            terrain(&w, at(50.0, 5.0), at(150.0, 5.0)),
+            terrain(&w, at(150.0, 1.0), at(300.0, 200.0)),
+            terrain(&w, at(150.0, 1.0), at(300.0, 60.0)),
+            w.cut_partition_is_clear_line_of_sight_terrain(&at(100.0, 5.0), &at(300.0, 5.0)),
+            w.cut_partition_is_clear_line_of_sight_terrain(&at(50.0, 5.0), &at(150.0, 5.0)),
+        );
+        eprintln!("{got:?}");
+        assert_eq!(got, (false, true, true, true, false, false, true));
+    }
+}
