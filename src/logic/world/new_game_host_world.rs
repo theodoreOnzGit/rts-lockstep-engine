@@ -249,7 +249,10 @@ impl NewGameHost for World {
         Ok(())
     }
     fn sn_is_multiplayer_session(&self) -> bool {
-        self.cuts.new_game.multiplayer_session
+        // (batch I61: `TheGameEngine->isMultiplayerSession()` is `TheRecorder->isMultiplayer()` (GameEngine.cpp:929): the World's
+        // recorder when it has one; it was always the table, false, so a multiplayer replay's new game took the single-player
+        // branches of `startNewGame`)
+        self.recorder_is_multiplayer().unwrap_or(self.cuts.new_game.multiplayer_session)
     }
     fn sn_sides_prepare_for_mp(&mut self) {
         self.ng_cut("SidesList::prepareForMP_or_Skirmish", &[]);

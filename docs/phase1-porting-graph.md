@@ -2081,6 +2081,18 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**Integration batch I61 (2026-11-04, `p1w13-sonnet`, GitHub #14): `isMultiplayerSession()` is the recorder's.** A recheck of the `cuts` fields batch I58's hunt had skipped (`new_game`, `game_loop`) and of those it had filed as stored state, after I60 showed one such filing was wrong.
+- **Defect:** `TheGameEngine->isMultiplayerSession()` is `TheRecorder->isMultiplayer()` (GameEngine.cpp:929). The World answered `cuts.new_game.multiplayer_session`, a table that defaults to false. `startNewGame` reads it twice (GameLogic.cpp:1313 and 1503) and a script condition once (ScriptConditions.cpp:1398). So the playback of a multiplayer replay, the case gate (b) plays, took the single-player branches. Both answers are now the World's recorder's `isMultiplayer()` when it has one (batch I55), and the table otherwise.
+- **Checked and left:**
+  - the rank level limit is one store, shared by the script action, the new game, the save and the players;
+  - `TheNetwork != NULL` is false during a replay's playback, the table's default;
+  - `sn_file_exists` reads the World's disk, which an install's World fills (I57, I60);
+  - `victory_slot_is_ai` (a table) only marks a defeated AI slot's last frame for the end-game stats, through a `VictoryEffect` record, which never reaches the logic or its CRC.
+
+**Test:** the I55 round trip asserts `isMultiplayerSession()` during playback. Predicted: true, as the replay's header has an occupied slot; the table answered false. It held. With the playback now on `startNewGame`'s multiplayer branches, the round trip still plays back in sync at every frame, and the tampered replay is still caught.
+
+**Full run (2026-11-04):** 203 test binaries, 1,174 tests, 0 failed; clippy clean. Gate (a) passes: native and wasm give identical CRCs at all 300 frames, and the last is still `0bf44067` (the gate game has no recorder).
+
 **Integration batch I60 (2026-11-04, `p1w13-sonnet`, GitHub #3, #8): a skirmish against a computer player, from an install.** The I57 test played a human alone. This one adds a computer slot (`SLOT_MED_AI`) at the second start and runs 600 frames. It took three runs, and each failure was read against upstream before anything was changed.
 
 **1. The computer slot became a human player.** Upstream's rule: `Player::initFromDict` makes a computer slot a skirmish AI only if the sides list has a skirmish side of its faction's side ("quietly making into nonskirmish" otherwise). The fixture map had only the neutral side. That was the fixture, not the port, but it exposed a real gap: **an install's `Data\Scripts\*.scb` were never mounted**, so every computer player of a game from an install would have been made human. `from_install` now mounts them (`InstallReport::scripts`).

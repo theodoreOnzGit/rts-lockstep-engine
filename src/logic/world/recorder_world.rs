@@ -318,6 +318,9 @@ mod tests {
         // (`playbackFile` takes the name within the replay folder, as the replay menu passes it)
         let name = replays[0].strip_prefix(b"replays\\".as_slice()).expect("in the replay folder").to_vec();
         assert!(play.play_replay(&name).expect("the replay read"));
+        // (batch I61: `isMultiplayerSession()` is the recorder's `isMultiplayer()`: a playback of a game with occupied slots is
+        // one; the World answered the table's false before)
+        assert!(crate::logic::world::game_logic_new_game::NewGameHost::sn_is_multiplayer_session(&play));
         let mut played = Vec::new();
         for _ in 0..frames {
             play.engine_update().expect("a played frame");

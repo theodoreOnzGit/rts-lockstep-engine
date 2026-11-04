@@ -491,7 +491,8 @@ impl ScriptConditionsHost for World {
         self.frame()
     }
     fn sc_is_multiplayer_session(&mut self) -> bool {
-        self.cuts.new_game.multiplayer_session
+        // (batch I61: `TheRecorder->isMultiplayer()`, as `sn_is_multiplayer_session`)
+        self.recorder_is_multiplayer().unwrap_or(self.cuts.new_game.multiplayer_session)
     }
     fn sc_frame_selection_changed(&mut self) -> u32 {
         self.cuts.frame_selection_changed
