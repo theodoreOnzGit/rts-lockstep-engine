@@ -3,7 +3,10 @@
 //! upstream C++ (commit 0a05454d): `WWLib/chunkio.cpp`, the real
 //! `WW3D2/w3d_file.h`, and the loaders of `htree.cpp`, `motchan.cpp`,
 //! `hrawanim.cpp` and `hcanim.cpp` (see `differential/wrap_w3d.cpp` and
-//! `build.rs`; the file underneath is the real `RAMFile.cpp`).
+//! `build.rs`; the file underneath is the real `RAMFile.cpp`), and (sections
+//! 7 and 8) the mesh loader of `meshmdlio.cpp` (`differential/
+//! wrap_w3d_mesh.cpp`) and the HLOD definition loader of `hlod.cpp`
+//! (`differential/wrap_w3d_hlod.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -1481,6 +1484,387 @@ fn mesh_load_matches_upstream() {
     println!(
         "MeshModelClass::Load_W3D: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream, \
          unsupported or not ending): {} {excluded:?}; excluded (over 2^16 vertices or triangles): {large}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 8. HLOD definitions (hlod.cpp, HLodDefClass::Load_W3D)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::hlod::{self, SubObjectArray};
+
+/// A C string as wrap_w3d_hlod.cpp logs it: `strlen`, then the bytes;
+/// `0xFFFFFFFF` for a null pointer.
+fn pstr(log: &mut Log, s: Option<&[u8]>) {
+    match s {
+        None => p32(log, 0xFFFF_FFFF),
+        Some(b) => {
+            p32(log, b.len() as u32);
+            log.extend_from_slice(b);
+        }
+    }
+}
+
+fn log_sub_object_array(log: &mut Log, a: &SubObjectArray) {
+    p32(log, a.max_screen_size.to_bits());
+    p32(log, a.model_count as u32);
+    for i in 0..a.model_count.max(0) as usize {
+        let s = a.sub_object(i).unwrap();
+        pstr(log, s.name.as_deref());
+        p32(log, s.bone_index as u32);
+    }
+}
+
+/// `ref_w3d_load_hlod` of wrap_w3d_hlod.cpp, in Rust. `Ok(None)` when a
+/// loaded count is over 2^16 (kept out of the comparison: the log would hold
+/// every entry).
+fn rust_load_hlod(data: &[u8]) -> W3dResult<Option<Log>> {
+    let mut log = Log::new();
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    log.push(b'O');
+    if c.open_chunk()? {
+        log.push(1);
+        match hlod::load_w3d(&mut c)? {
+            Some(d) => {
+                let big = |n: i32| n > 1 << 16;
+                if big(d.lod_count)
+                    || d.lods.iter().chain([&d.aggregates]).any(|a| big(a.model_count))
+                    || d.proxy_array.as_ref().is_some_and(|p| big(p.length))
+                {
+                    return Ok(None);
+                }
+                log.push(b'H');
+                pstr(&mut log, Some(&d.name));
+                pstr(&mut log, Some(&d.hierarchy_tree_name));
+                p32(&mut log, d.lod_count as u32);
+                for a in &d.lods {
+                    log_sub_object_array(&mut log, a);
+                }
+                log_sub_object_array(&mut log, &d.aggregates);
+                match &d.proxy_array {
+                    Some(p) => {
+                        log.push(1);
+                        p32(&mut log, p.length as u32);
+                        for i in 0..p.length.max(0) as usize {
+                            let r = p.record(i).unwrap();
+                            p32(&mut log, r.bone_index as u32);
+                            log.extend_from_slice(&r.name);
+                        }
+                    }
+                    None => log.push(0),
+                }
+            }
+            // 'e', WW3D_ERROR_LOAD_FAILED
+            None => log.extend_from_slice(&[b'e', 2]),
+        }
+    } else {
+        log.push(0);
+    }
+    log_state(&mut log, &mut c);
+    Ok(Some(log))
+}
+
+/// The header's `LodCount` if the file starts like an HLOD (first chunk, then
+/// a whole header chunk inside it): upstream constructs that many
+/// `SubObjectArrayClass`es before it reads any LOD, so a file with more than
+/// 2^16 is kept out of the C++ comparison even when the load then fails.
+fn hlod_header_lod_count(data: &[u8]) -> Option<u32> {
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    if !c.open_chunk().ok()? || !c.open_chunk().ok()? || c.cur_chunk_id().ok()? != W3D_CHUNK_HLOD_HEADER {
+        return None;
+    }
+    let mut hb = [0u8; W3dHLodHeaderStruct::SIZE];
+    if c.read_into(&mut hb).ok()? != hb.len() as u32 {
+        return None;
+    }
+    Some(W3dHLodHeaderStruct::from_bytes(&hb).lod_count)
+}
+
+fn cpp_load_hlod(data: &[u8]) -> Log {
+    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load_hlod(data.as_ptr() as *const _, data.len() as i32, log, cap, n) })
+}
+
+/// A chunk with its exact size (the named cases).
+fn hchunk(id: u32, body: &[u8]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(body.len() + 8);
+    w32(&mut v, id);
+    w32(&mut v, body.len() as u32);
+    v.extend_from_slice(body);
+    v
+}
+
+fn hlod_header(name: &[u8], hier: &[u8], lod_count: u32) -> Vec<u8> {
+    let mut h = W3dHLodHeaderStruct::from_bytes(&[0; 40]);
+    h.version = W3D_CURRENT_HLOD_VERSION;
+    h.lod_count = lod_count;
+    h.name[..name.len()].copy_from_slice(name);
+    h.hierarchy_name[..hier.len()].copy_from_slice(hier);
+    hchunk(W3D_CHUNK_HLOD_HEADER, &h.to_bytes())
+}
+
+fn hlod_sub_object(bone: u32, name: &[u8]) -> Vec<u8> {
+    let mut s = W3dHLodSubObjectStruct::from_bytes(&[0; 36]);
+    s.bone_index = bone;
+    s.name[..name.len()].copy_from_slice(name);
+    hchunk(W3D_CHUNK_HLOD_SUB_OBJECT, &s.to_bytes())
+}
+
+/// An array chunk `id`: its header, then the given sub-objects.
+fn hlod_array(id: u32, model_count: u32, max: f32, subs: &[(u32, &[u8])]) -> Vec<u8> {
+    let mut h = W3dHLodArrayHeaderStruct::from_bytes(&[0; 8]);
+    h.model_count = model_count;
+    h.max_screen_size = max;
+    let mut body = hchunk(W3D_CHUNK_HLOD_SUB_OBJECT_ARRAY_HEADER, &h.to_bytes());
+    for &(bone, name) in subs {
+        body.extend(hlod_sub_object(bone, name));
+    }
+    hchunk(id, &body)
+}
+
+/// The named cases of `formats::w3d::hlod`'s unit tests, as whole files (the
+/// HLOD chunk around them).
+fn hlod_named_cases() -> Vec<(&'static str, Vec<u8>)> {
+    let wrap = |body: Vec<u8>| hchunk(W3D_CHUNK_HLOD, &body);
+    let mut v = Vec::new();
+
+    let mut b = hlod_header(b"TANK", b"TANKSKL", 2);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_LOD_ARRAY, 2, f32::MAX, &[(1, b"TANK.BODY"), (2, b"TANK.TURRET")]));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_LOD_ARRAY, 2, 0.25, &[(0, b"TANKLO"), (0xFFFF_FFFF, b"X")]));
+    b.extend(hchunk(0x0000_0799, &[1, 2, 3]));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, 1, 1.0, &[(3, b"FXGLOW")]));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 1, 0.0, &[(5, b"SPAWN")]));
+    v.push(("normal file", wrap(b)));
+
+    let mut b = hlod_header(b"H", b"", 1);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_LOD_ARRAY, 3, 50.0, &[(4, b"A")]));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 2, 0.0, &[(9, b"P")]));
+    v.push(("short arrays", wrap(b)));
+
+    let mut b = hlod_header(b"H", b"S", 1);
+    let mut lod = hlod_sub_object(7, b"WRONG");
+    lod.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 1, 0.0, &[(4, b"INNER")]));
+    b.extend(hchunk(W3D_CHUNK_HLOD_LOD_ARRAY, &lod));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, 1, 5.0, &[(2, b"AGG")]));
+    v.push(("failed LOD header", wrap(b)));
+
+    let mut b = hlod_header(b"H", b"S", 0);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, 1, 2.0, &[(1, b"G")]));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 1, 0.0, &[(3, b"P")]));
+    b.extend(hchunk(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, &[]));
+    b.extend(hchunk(W3D_CHUNK_HLOD_PROXY_ARRAY, &[]));
+    v.push(("second failed aggregate and proxy", wrap(b)));
+
+    v.push(("16-character name", wrap(hlod_header(b"ABCDEFGHIJKLMNOP", b"SKL", 0))));
+
+    let mut b = hlod_header(b"N", b"S", 0);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 1, 0.0, &[(1, &[b'Q'; 32])]));
+    v.push(("32-character proxy name", wrap(b)));
+
+    v.push(("first chunk not the header", wrap(hlod_array(W3D_CHUNK_HLOD_LOD_ARRAY, 0, 0.0, &[]))));
+    v.push(("short header", wrap(hchunk(W3D_CHUNK_HLOD_HEADER, &[0; 39]))));
+    let mut b = hlod_header(b"H", b"S", 2);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_LOD_ARRAY, 0, 0.0, &[]));
+    v.push(("fewer LOD arrays than LodCount", wrap(b.clone())));
+    b.extend(hlod_array(W3D_CHUNK_HLOD_AGGREGATE_ARRAY, 0, 0.0, &[]));
+    v.push(("mis-typed LOD array", wrap(b)));
+    let mut b = hlod_header(b"H", b"S", 0);
+    b.extend(hlod_array(W3D_CHUNK_HLOD_PROXY_ARRAY, 0, 0.0, &[]));
+    v.push(("empty proxy array", wrap(b)));
+    v
+}
+
+/// The named cases: the files of `formats::w3d::hlod`'s unit tests (a
+/// normal file; short LOD and proxy arrays; a LOD array whose first chunk
+/// is not its header; a second aggregate and proxy array that fail before
+/// their header; a 16-character `Name`; a 32-character proxy name) and its
+/// load failures (first chunk not the header, short header, fewer LOD arrays
+/// than `LodCount`, a mis-typed LOD array), plus an empty proxy array. The
+/// cases the unit tests show undefined (`StringOverrun`, `Allocation`) are
+/// not given to the C++.
+///
+/// Compared byte for byte: the load result, the definition (name and
+/// hierarchy name as `strlen` and bytes, `LodCount`, each LOD array's and the
+/// aggregates' `MaxScreenSize` bits, `ModelCount`, every entry's name, or
+/// null, and bone index; the proxy array's presence, `Length()` and each
+/// record's bone index and 32 name bytes), and the chunk depth and file
+/// position the loader leaves.
+///
+/// Predicted before the run: all 11 agree with upstream's own hlod.cpp, in
+/// particular the quirks the unit tests pin (the unread entries of a short
+/// array as null names and bone 0; the failed LOD header reading the proxy
+/// array from inside the LOD array and leaving depth 2; the second
+/// aggregate keeping the first and the second proxy array dropping it; the
+/// 16-character name running into the hierarchy name). A disagreement would
+/// mean the Rust is wrong.
+#[test]
+fn hlod_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("HLodDefClass::Load_W3D (hlod.cpp), named cases");
+    let cases = hlod_named_cases();
+    for (name, data) in &cases {
+        let rust = rust_load_hlod(data).unwrap_or_else(|e| panic!("{name}: Rust undefined: {e:?}")).expect("small counts");
+        let c = cpp_load_hlod(data);
+        check.eq(&rust, &c, || format!("{name}: {:02x?}", data));
+    }
+    println!("HLodDefClass::Load_W3D named cases: {} compared", cases.len());
+    check.finish();
+}
+
+fn gen_hlod_name(g: &mut Gn, max: usize) -> Vec<u8> {
+    let len = match g.below(12) {
+        0 => max,
+        1 => max - 1,
+        2 => 0,
+        _ => 1 + g.below(10) as usize,
+    };
+    (0..len).map(|_| b'A' + g.below(26) as u8).collect()
+}
+
+fn gen_hlod_array(g: &mut Gn, id: u32) -> Vec<u8> {
+    let full = g.below(5);
+    let count = match g.below(24) {
+        0 => 0xFFFF_FFFF,
+        1 => 0x2000_0000,
+        2 => 1000 + g.below(3000),
+        3..=5 => full + 1 + g.below(3),
+        _ => full,
+    };
+    let mut body = Vec::new();
+    if g.below(16) != 0 {
+        let mut h = W3dHLodArrayHeaderStruct::from_bytes(&[0; 8]);
+        h.model_count = count;
+        h.max_screen_size = g.f32();
+        let hb = h.to_bytes();
+        let hb = if g.chance(10) { hb[..g.below(8) as usize].to_vec() } else { hb };
+        let hid = if g.chance(16) { W3D_CHUNK_HLOD_SUB_OBJECT } else { W3D_CHUNK_HLOD_SUB_OBJECT_ARRAY_HEADER };
+        body.extend(chunk(g, hid, false, &hb));
+    }
+    for _ in 0..full {
+        let mut s = W3dHLodSubObjectStruct::from_bytes(&[0; 36]);
+        s.bone_index = if g.below(6) == 0 { g.g.u32() } else { g.below(20) };
+        let n = gen_hlod_name(g, 32);
+        s.name[..n.len()].copy_from_slice(&n);
+        let sb = s.to_bytes();
+        let sb = if g.chance(12) { sb[..g.below(36) as usize].to_vec() } else { sb };
+        let sid = if g.chance(16) { W3D_CHUNK_HLOD_PROXY_ARRAY } else { W3D_CHUNK_HLOD_SUB_OBJECT };
+        body.extend(chunk(g, sid, false, &sb));
+    }
+    if g.below(8) == 0 {
+        // a nested array (read from inside this one after a failure)
+        let inner = [W3D_CHUNK_HLOD_PROXY_ARRAY, W3D_CHUNK_HLOD_AGGREGATE_ARRAY, W3D_CHUNK_HLOD_LOD_ARRAY][g.below(3) as usize];
+        let mut h = W3dHLodArrayHeaderStruct::from_bytes(&[0; 8]);
+        h.model_count = 1;
+        let mut ib = chunk(g, W3D_CHUNK_HLOD_SUB_OBJECT_ARRAY_HEADER, false, &h.to_bytes());
+        ib.extend(chunk(g, W3D_CHUNK_HLOD_SUB_OBJECT, false, &W3dHLodSubObjectStruct::from_bytes(&[0; 36]).to_bytes()));
+        body.extend(chunk(g, inner, true, &ib));
+    }
+    chunk(g, id, true, &body)
+}
+
+fn gen_hlod(g: &mut Gn) -> Vec<u8> {
+    let lods = g.below(4);
+    let lod_count = match g.below(30) {
+        0 => 0xFFFF_FFFF,
+        1 => 0x8000_0000,
+        2 => 0x0800_0000,
+        3..=5 => lods + 1,
+        6 => lods.saturating_sub(1),
+        _ => lods,
+    };
+    let mut h = W3dHLodHeaderStruct::from_bytes(&[0; 40]);
+    h.version = if g.coin() { W3D_CURRENT_HLOD_VERSION } else { g.g.u32() };
+    h.lod_count = lod_count;
+    let n = gen_hlod_name(g, 16);
+    h.name[..n.len()].copy_from_slice(&n);
+    let n = gen_hlod_name(g, 16);
+    h.hierarchy_name[..n.len()].copy_from_slice(&n);
+    let mut body = if g.chance(20) {
+        chunk(g, W3D_CHUNK_HLOD_LOD_ARRAY, true, &[])
+    } else {
+        let hb = h.to_bytes();
+        let hb = if g.chance(10) { hb[..g.below(40) as usize].to_vec() } else { hb };
+        chunk(g, W3D_CHUNK_HLOD_HEADER, false, &hb)
+    };
+    for _ in 0..lods {
+        let id = if g.chance(16) { W3D_CHUNK_HLOD_AGGREGATE_ARRAY } else { W3D_CHUNK_HLOD_LOD_ARRAY };
+        body.extend(gen_hlod_array(g, id));
+    }
+    for _ in 0..g.below(4) {
+        match g.below(5) {
+            0 | 1 => body.extend(gen_hlod_array(g, W3D_CHUNK_HLOD_AGGREGATE_ARRAY)),
+            2 | 3 => body.extend(gen_hlod_array(g, W3D_CHUNK_HLOD_PROXY_ARRAY)),
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = if g.coin() { W3D_CHUNK_HLOD_SUB_OBJECT } else { g.g.u32() };
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    chunk(g, W3D_CHUNK_HLOD, true, &body)
+}
+
+/// Random HLOD files, half well-formed and half also with wrong chunk sizes,
+/// truncations and byte mutations (as the other loaders' tests): header
+/// names of 0 to 16 characters, `LodCount` matching the LOD arrays or not
+/// (and negative or too large), LOD arrays mis-typed, arrays whose header is
+/// missing, mis-typed or short, `ModelCount` matching the sub-objects or
+/// larger (or negative or too large), sub-object names of 0 to 32
+/// characters, mis-typed or short sub-object chunks, arrays nested inside
+/// arrays, and any number of aggregate, proxy and unknown chunks after the
+/// LODs. Compared as [`hlod_named_cases_match_upstream`]. Inputs the Rust
+/// reports undefined are not given to the C++ (counted per kind), nor are
+/// ones with a `LodCount` or a loaded count over 2^16 (counted).
+///
+/// Predicted before the run: no disagreement; roughly a quarter to a third
+/// of the inputs excluded as undefined, mostly `StringOverrun` (16-character
+/// hierarchy names and 32-character sub-object names) and `Allocation`.
+#[test]
+fn hlod_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gn { g: Gen::new(0x41_0D), clean: false };
+    let mut check = Check::new("HLodDefClass::Load_W3D (hlod.cpp)");
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut ok, mut failed, mut large) = (0u64, 0u64, 0u64);
+    const CASES: usize = 20_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let data = gen_hlod(&mut g);
+        let data = mutate(&mut g, data);
+        let rust = match rust_load_hlod(&data) {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                large += 1;
+                continue;
+            }
+            Err(W3dError::Undefined(u)) => {
+                *excluded.entry(format!("{u:?}")).or_default() += 1;
+                continue;
+            }
+            Err(e) => {
+                *excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        if hlod_header_lod_count(&data).is_some_and(|n| n > 1 << 16) {
+            large += 1;
+            continue;
+        }
+        match rust.get(2) {
+            Some(b'H') => ok += 1,
+            Some(b'e') => failed += 1,
+            _ => {}
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("hlod case {case}: {:02x?}", data);
+        }
+        let c = cpp_load_hlod(&data);
+        check.eq(&rust, &c, || format!("case {case}: {:02x?}", data));
+    }
+    println!(
+        "HLodDefClass::Load_W3D: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream or \
+         not ending): {} {excluded:?}; excluded (over 2^16 LODs or entries): {large}",
         excluded.values().sum::<u64>()
     );
     check.finish();
