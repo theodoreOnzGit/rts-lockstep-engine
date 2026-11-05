@@ -1,5 +1,8 @@
 # rts-lockstep-engine
 
+**▶ Play in your browser: https://theodoreonzgit.github.io/rts-lockstep-engine/** (bring your own *Zero Hour* folder; see
+[Play in your browser](#play-in-your-browser-c3-3-and-5)).
+
 A Rust translation of the real-time-strategy engine source code that
 Electronic Arts released under the GPL-3.0 in 2025 (the *Command & Conquer
 Generals: Zero Hour* code, [electronicarts/CnC_Generals_Zero_Hour](https://github.com/electronicarts/CnC_Generals_Zero_Hour),
@@ -33,7 +36,7 @@ selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes th
 ### Play in your browser (C3, #3 and #5)
 
 The web client is published by GitHub Actions (`.github/workflows/pages.yml`) to
-**https://theodoreongit.github.io/rts-lockstep-engine/** on every push to `phase1-gamelogic` or `main`. Open it, press
+**https://theodoreonzgit.github.io/rts-lockstep-engine/** on every push to `phase1-gamelogic` or `main`. Open it, press
 **Choose Zero Hour folder** and pick your *Command & Conquer Generals Zero Hour* folder (for Steam,
 `steamapps/common/Command and Conquer Generals Zero Hour`). The page keeps the archives the game's logic reads (its data,
 maps and text, not the art or sound) in that browser's own storage (OPFS): nothing is uploaded, and on your next visit
