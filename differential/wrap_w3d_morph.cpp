@@ -12,8 +12,11 @@
 ** animation (upstream then keeps a null pose, which the loading never
 ** dereferences), or, while wrap_w3d_assetmgr.cpp tests the real asset
 ** manager, forwards to its Get_HAnim; Get_HTree is wrap_w3d.cpp's (the hierarchies the test
-** registers). HMorphAnimClass's Get_Translation, Get_Orientation and
-** Get_Transform (named by its vtable, never called by the loading) abort.
+** registers). ~~HMorphAnimClass's Get_Translation, Get_Orientation and
+** Get_Transform (named by its vtable, never called by the loading) abort.~~
+** Corrected 2026-11-05 (#10, step 3): they, Get_Morph_Info, get_index and
+** binary_search_index are compiled from verbatim segments too (build.rs),
+** for differential/wrap_w3d_eval.cpp.
 ** The StringClass that read_channel uses is the real wwstring.h with the
 ** out-of-line members of differential/wrap_w3d_string.cpp (the library is
 ** compiled with StringClass renamed to ShimStringClass).
@@ -59,11 +62,6 @@ HAnimClass *WW3DAssetManager::Get_HAnim(const char *name)
 	if (g_w3d_hanim_hook) return g_w3d_hanim_hook(name);
 	return NULL;
 }
-
-/* ---- functions the loading never reaches ----------------------------- */
-void HMorphAnimClass::Get_Translation(Vector3 &, int, float) const { abort(); }
-void HMorphAnimClass::Get_Orientation(Quaternion &, int, float) const { abort(); }
-void HMorphAnimClass::Get_Transform(Matrix3D &, int, float) const { abort(); }
 
 namespace {
 

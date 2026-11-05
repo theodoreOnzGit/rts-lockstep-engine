@@ -55,8 +55,13 @@ translated much more (`src/formats/`, checked by reading each module's header):
 - `formats::texture`: DDS with upstream's DXT1/DXT5 decompression (`ddsfile.cpp`) and Targa.
 
 Not yet translated:
-- HLODs and aggregates, and the asset manager's file loop;
-- animation sampling and morph animations;
+- ~~HLODs and aggregates, and the asset manager's file loop;~~ **Corrected 2026-11-05 (#10, step 3):** translated
+  in #10 steps 1 and 2 (`formats::w3d::hlod`, `collect`, `agg_def`, the box/sphere/ring prototypes, `assetmgr`);
+- ~~animation sampling and morph animations;~~ **Corrected 2026-11-05 (#10, step 3):** translated: morph animations
+  load (`formats::w3d::hmorphanim`, step 2), and channels, raw, compressed and morph animations are sampled and
+  hierarchies posed (`motchan`, `hanim`, `hmorphanim`, `htree`: `Base_Update`, `Anim_Update`, `Blend_Update`,
+  `Simple_Evaluate_Pivot`, bone capture), compared bit for bit with upstream's compiled code
+  (`tests/differential_w3d.rs`, section 13). Still missing: `HTreeClass::Combo_Update` (`HAnimComboClass`);
 - the local and composite file systems, and random-access archive reads (archives are read whole into memory today);
 - the terrain's tile data and textures;
 - WND layouts.

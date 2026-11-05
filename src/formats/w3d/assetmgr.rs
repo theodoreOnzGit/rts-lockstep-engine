@@ -171,7 +171,7 @@ use super::boxrobj::{self, BoxPrototype};
 use super::collect::{self, CollectionDef};
 use super::hanim::{HCompressedAnim, HRawAnim};
 use super::hlod::{self, HLodDef};
-use super::hmorphanim::{self, HMorphAnim};
+use super::hmorphanim::{self, HMorphAnim, MorphChain, PoseLookup};
 use super::htree::{self, HTree};
 use super::mesh::{self, Mesh, MeshLoadOptions};
 use super::ringobj::{self, RingPrototype};
@@ -180,7 +180,10 @@ use super::w3d_file::*;
 use super::{W3dError, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::common::file_system::{FileSystem, LocalDevice};
 use crate::ww::chunkio::{ChunkLoad, GameFile};
+use crate::ww::matrix3d::Matrix3D;
+use crate::ww::quat::Quaternion;
 use crate::ww::realcrc::crc_stringi;
+use crate::ww::vector3::Vector3;
 
 /// `MAX_PATH` (and `_MAX_PATH`).
 pub const MAX_PATH: usize = 260;
@@ -397,6 +400,96 @@ impl HAnim {
             HAnim::Morph(a) => &a.name,
         };
         c_name(n)
+    }
+
+    /// `Get_Num_Pivots()`.
+    pub fn get_num_pivots(&self) -> i32 {
+        match self {
+            HAnim::Raw(a) => a.get_num_pivots(),
+            HAnim::Compressed(a) => a.get_num_pivots(),
+            HAnim::Morph(a) => a.get_num_pivots(),
+        }
+    }
+
+    /// `Get_Num_Frames()`.
+    pub fn get_num_frames(&self) -> i32 {
+        match self {
+            HAnim::Raw(a) => a.get_num_frames(),
+            HAnim::Compressed(a) => a.get_num_frames(),
+            HAnim::Morph(a) => a.get_num_frames(),
+        }
+    }
+
+    pub(crate) fn translation_in<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32, chain: &mut MorphChain) -> W3dResult<Vector3> {
+        match self {
+            HAnim::Raw(a) => a.get_translation(pividx, frame),
+            HAnim::Compressed(a) => a.get_translation(pividx, frame),
+            HAnim::Morph(a) => a.translation_in(poses, pividx, frame, chain),
+        }
+    }
+
+    pub(crate) fn orientation_in<P: PoseLookup>(
+        &self,
+        poses: &P,
+        pividx: i32,
+        frame: f32,
+        chain: &mut MorphChain,
+    ) -> W3dResult<Option<Quaternion>> {
+        match self {
+            HAnim::Raw(a) => a.get_orientation(pividx, frame).map(Some),
+            HAnim::Compressed(a) => a.get_orientation(pividx, frame),
+            HAnim::Morph(a) => a.orientation_in(poses, pividx, frame, chain).map(Some),
+        }
+    }
+
+    pub(crate) fn transform_in<P: PoseLookup>(
+        &self,
+        poses: &P,
+        pividx: i32,
+        frame: f32,
+        chain: &mut MorphChain,
+    ) -> W3dResult<Option<Matrix3D>> {
+        match self {
+            HAnim::Raw(a) => a.get_transform(pividx, frame).map(Some),
+            HAnim::Compressed(a) => a.get_transform(pividx, frame),
+            HAnim::Morph(a) => a.transform_in(poses, pividx, frame, chain).map(Some),
+        }
+    }
+
+    /// The virtual `Get_Translation(trans, pividx, frame)`.
+    pub fn get_translation<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Vector3> {
+        self.translation_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// The virtual `Get_Orientation(q, pividx, frame)`: `None` where upstream
+    /// leaves `q` as it was (a compressed animation of an unknown flavor).
+    pub fn get_orientation<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Option<Quaternion>> {
+        self.orientation_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// The virtual `Get_Transform(mtx, pividx, frame)`: `None` where upstream
+    /// leaves `mtx` as it was.
+    pub fn get_transform<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Option<Matrix3D>> {
+        self.transform_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// The virtual `Get_Visibility(pividx, frame)`.
+    pub fn get_visibility(&self, pividx: i32, frame: f32) -> W3dResult<bool> {
+        match self {
+            HAnim::Raw(a) => a.get_visibility(pividx, frame),
+            HAnim::Compressed(a) => a.get_visibility(pividx, frame),
+            HAnim::Morph(a) => Ok(a.get_visibility(pividx, frame)),
+        }
+    }
+}
+
+/// The asset manager gives a morph animation its poses: the newest
+/// animation of the name (`Peek_Anim`; upstream resolved the name with
+/// `Get_HAnim` when the morph animation was loaded, see
+/// [`super::hmorphanim`]).
+impl PoseLookup for AssetManager {
+    fn pose(&self, name: &[u8]) -> Option<&HAnim> {
+        self.peek_anim(name)
     }
 }
 

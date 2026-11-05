@@ -194,6 +194,17 @@ extern "C" {
     pub fn ref_assetmgr_reset(game: c_int, user_data: *const c_char);
     pub fn ref_assetmgr_add_file(path: *const c_char, data: *const c_char, len: c_int);
     pub fn ref_assetmgr_op(op: c_int, arg: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    // The animation evaluation: motchan.cpp, hrawanim.cpp, hcanim.cpp,
+    // hmorphanim.cpp, htree.cpp, pivot.cpp, quat.cpp (wrap_w3d_eval.cpp)
+    pub fn ref_w3d_eval(
+        data: *const c_char,
+        len: c_int,
+        script: *const c_uchar,
+        slen: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
     pub fn ref_crc_memory(data: *const c_uchar, len: c_int, crc: c_uint) -> c_uint;
     pub fn ref_dx8_convert_color(rgba: *const c_float) -> c_uint;
 

@@ -3,8 +3,10 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/hmorphanim.cpp
-//   (HMorphAnimClass: constructor, Load_W3D, read_channel;
-//   TimeCodedMorphKeysClass: constructor, Free, Load_W3D) and hmorphanim.h
+//   (HMorphAnimClass: constructor, Load_W3D, read_channel,
+//   Get_Translation, Get_Orientation, Get_Transform, Get_Visibility;
+//   TimeCodedMorphKeysClass: constructor, Free, Load_W3D, Get_Morph_Info,
+//   get_index, binary_search_index) and hmorphanim.h
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/simplevec.h
 //   (SimpleDynVecClass::Add and Grow: the allocation sizes)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/wwstring.h
@@ -24,8 +26,44 @@
 //! hierarchy between poses taken from other animations: a header, then per
 //! morph channel the name of its pose animation and its keys (which pose
 //! frame to use from which frame on), and which channel drives each pivot.
-//! Only the loading; evaluating the animation (`Get_Transform`, ...), the
-//! text import (`Import`) and saving are not translated.
+//! ~~Only the loading; evaluating the animation (`Get_Transform`, ...), the
+//! text import (`Import`) and saving are not translated.~~ **Corrected
+//! 2026-11-05 (#10, step 3):** and its evaluation (`Get_Translation`,
+//! `Get_Orientation`, `Get_Transform`, `Get_Visibility`); the text import
+//! (`Import`) and saving are not translated.
+//!
+//! # Evaluation, as upstream evaluates it
+//!
+//! A pivot follows the morph channel `PivotChannel[pivot]`. That channel's
+//! keys give, for the morph frame, two pose frames and a fraction
+//! (`Get_Morph_Info`: before 0 or at/after the last key's `MorphFrame`, the
+//! first or last key's pose with fraction 0; else the key at or before the
+//! frame, found from the cached key, the next one, or a binary search, and
+//! the next key). The channel's pose animation is sampled at both pose
+//! frames (as `float`s) and the results interpolated: `Vector3::Lerp` for
+//! the translation, `Fast_Slerp` for the orientation. `Get_Visibility` is
+//! always true.
+//!
+//! Upstream quirks kept in the evaluation: the fraction's denominator is
+//! the `uint32` difference of the two keys' `MorphFrame`s (wrapping when
+//! they decrease), converted to `float`; a pose frame is a `uint32` stored
+//! in an `int` (wrapping) and passed to the pose as a `float`; the key
+//! cache (`CachedIdx`) moves on every call; `Get_Transform` takes the pose's
+//! `Get_Orientation` and `Get_Translation`, not its `Get_Transform`.
+//!
+//! The pose animations: upstream resolves each pose name with
+//! `WW3DAssetManager::Get_HAnim` once, while loading, and keeps the pointer.
+//! Here the name is kept and resolved at evaluation through a
+//! [`PoseLookup`] (the asset manager implements it: the newest animation of
+//! that name, without loading). The two agree unless an animation of the
+//! same name is added after the morph animation was loaded.
+//!
+//! Undefined upstream, an error here: a pivot outside `0..NumNodes` or a
+//! channel outside `0..ChannelCount`, a channel with no keys, a channel
+//! whose pose was not found (`PoseData[channel]` null:
+//! [`W3dUndefined::NullPointer`]), and a pose animation that reaches the
+//! same morph animation again (upstream recurses until its stack overflows:
+//! [`W3dError::NonTerminating`]).
 //!
 //! # As upstream reads it
 //!
@@ -94,9 +132,32 @@
 //! chunk lengths.
 
 pub use super::hanim::HTreeLookup;
+use super::assetmgr::HAnim;
 use super::w3d_file::*;
-use super::{W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
+use super::{EvalCache, W3dError, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::chunkio::ChunkLoad;
+use crate::ww::matrix3d::Matrix3D;
+use crate::ww::quat::{build_matrix3d, fast_slerp, Quaternion};
+use crate::ww::vector3::Vector3;
+
+/// Where a morph animation finds its pose animations by name (upstream's
+/// `PoseData` pointers, which `WW3DAssetManager::Get_HAnim` gave it).
+pub trait PoseLookup {
+    fn pose(&self, name: &[u8]) -> Option<&HAnim>;
+}
+
+/// No pose animations (enough for raw and compressed animations).
+pub struct NoPoses;
+
+impl PoseLookup for NoPoses {
+    fn pose(&self, _name: &[u8]) -> Option<&HAnim> {
+        None
+    }
+}
+
+/// The morph animations being evaluated, outermost first (a pose that
+/// reaches one of them again recurses forever upstream).
+pub(crate) type MorphChain = Vec<*const HMorphAnim>;
 
 /// `sizeof(TimeCodedMorphKeysClass)` on Win32 (a `SimpleDynVecClass`:
 /// vtable pointer, `Vector`, `VectorMax`, `ActiveCount`; then `CachedIdx`).
@@ -121,6 +182,8 @@ pub struct MorphKey {
 pub struct MorphKeys {
     pub keys: Vec<MorphKey>,
     pub repeats: u32,
+    /// `CachedIdx` (0 after loading).
+    pub cached_idx: EvalCache<u32>,
 }
 
 impl MorphKeys {
@@ -143,6 +206,96 @@ impl MorphKeys {
         } else {
             None
         }
+    }
+
+    /// `Keys[i]`, undefined outside the array.
+    fn at(&self, i: u32) -> W3dResult<MorphKey> {
+        self.get(i as usize).ok_or_else(|| W3dUndefined::IndexOutOfRange.into())
+    }
+
+    /// `Keys.Count() - 1` as upstream computes it (`uint32`).
+    fn last(&self) -> u32 {
+        (self.len() as u32).wrapping_sub(1)
+    }
+
+    /// `TimeCodedMorphKeysClass::binary_search_index(req_frame)`.
+    pub fn binary_search_index(&self, req_frame: f32) -> W3dResult<u32> {
+        // special case first and last packet
+        if req_frame < self.at(0)?.morph_frame as f32 {
+            return Ok(0);
+        }
+        if req_frame >= self.at(self.last())?.morph_frame as f32 {
+            return Ok(self.last());
+        }
+        let mut left_idx: i32 = 0;
+        let mut right_idx: i32 = self.len() as i32;
+        loop {
+            // if we've zeroed in on the interval, return the left index
+            let mut dx = right_idx - left_idx;
+            if dx == 1 {
+                return Ok(left_idx as u32);
+            }
+            // otherwise, split our interval in half and descend into one of them
+            dx >>= 1;
+            let idx = left_idx + dx;
+            if idx < 0 {
+                return Err(W3dUndefined::IndexOutOfRange.into());
+            }
+            if req_frame < self.at(idx as u32)?.morph_frame as f32 {
+                right_idx = idx;
+            } else {
+                left_idx = idx;
+            }
+        }
+    }
+
+    /// `TimeCodedMorphKeysClass::get_index(frame)`: the cached key, the next
+    /// one, else a binary search; updates the cache.
+    pub fn get_index(&self, frame: f32) -> W3dResult<u32> {
+        let mut cached = self.cached_idx.lock();
+        let last = self.last();
+        let cached_frame = self.at(*cached)?.morph_frame as f32;
+        // check if the requested time is in the cached interval or the following one
+        if frame >= cached_frame {
+            // special case for end packets
+            if *cached == last {
+                return Ok(*cached);
+            }
+            // check if the requested time is still in the cached interval
+            if frame < self.at(cached.wrapping_add(1))?.morph_frame as f32 {
+                return Ok(*cached);
+            }
+            // do one time look-ahead before reverting to a search
+            *cached = cached.wrapping_add(1);
+            if *cached == last {
+                return Ok(*cached);
+            }
+            if frame < self.at(cached.wrapping_add(1))?.morph_frame as f32 {
+                return Ok(*cached);
+            }
+        }
+        // nope, fall back to a binary search for the requested interval
+        *cached = self.binary_search_index(frame)?;
+        Ok(*cached)
+    }
+
+    /// `Get_Morph_Info(morph_frame, &pose_frame0, &pose_frame1, &fraction)`.
+    pub fn get_morph_info(&self, morph_frame: f32) -> W3dResult<(i32, i32, f32)> {
+        if morph_frame < 0.0f32 {
+            let p = self.at(0)?.pose_frame as i32;
+            return Ok((p, p, 0.0));
+        }
+        let last = self.at(self.last())?;
+        if morph_frame >= last.morph_frame as f32 {
+            let p = last.pose_frame as i32;
+            return Ok((p, p, 0.0));
+        }
+        let key_index = self.get_index(morph_frame)?;
+        let k0 = self.at(key_index)?;
+        let k1 = self.at(key_index.wrapping_add(1))?;
+        let fraction =
+            (morph_frame - k0.morph_frame as f32) / (k1.morph_frame.wrapping_sub(k0.morph_frame) as f32);
+        Ok((k0.pose_frame as i32, k1.pose_frame as i32, fraction))
     }
 }
 
@@ -180,6 +333,108 @@ pub struct HMorphAnim {
 }
 
 impl HMorphAnim {
+    /// `Get_Num_Pivots()`.
+    pub fn get_num_pivots(&self) -> i32 {
+        self.num_nodes
+    }
+
+    /// `Get_Num_Frames()`.
+    pub fn get_num_frames(&self) -> i32 {
+        self.frame_count
+    }
+
+    /// `PivotChannel[pividx]`, its keys and its pose, after
+    /// `Get_Morph_Info(frame)`: (pose, pose frame 0, pose frame 1, fraction).
+    fn morph<'p, P: PoseLookup>(&self, poses: &'p P, pividx: i32, frame: f32) -> W3dResult<(&'p HAnim, f32, f32, f32)> {
+        let oob = || W3dError::from(W3dUndefined::IndexOutOfRange);
+        if pividx < 0 {
+            return Err(oob());
+        }
+        let channel = *self.pivot_channel.get(pividx as usize).ok_or_else(oob)? as i32;
+        if channel < 0 || channel >= self.channel_count {
+            return Err(oob());
+        }
+        let ch = self.channels.get(channel as usize);
+        let (p0, p1, fraction) = match ch {
+            Some(c) => c.keys.get_morph_info(frame)?,
+            None => return Err(oob()), // a channel never read has no keys
+        };
+        let name = ch.and_then(|c| c.pose_name.as_deref()).ok_or(W3dUndefined::NullPointer)?;
+        let pose = poses.pose(name).ok_or(W3dUndefined::NullPointer)?;
+        Ok((pose, p0 as f32, p1 as f32, fraction))
+    }
+
+    fn enter(&self, chain: &mut MorphChain) -> W3dResult<()> {
+        let me = self as *const HMorphAnim;
+        if chain.contains(&me) {
+            return Err(W3dError::NonTerminating);
+        }
+        chain.push(me);
+        Ok(())
+    }
+
+    pub(crate) fn translation_in<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32, chain: &mut MorphChain) -> W3dResult<Vector3> {
+        self.enter(chain)?;
+        let (pose, f0, f1, fraction) = self.morph(poses, pividx, frame)?;
+        let t0 = pose.translation_in(poses, pividx, f0, chain)?;
+        let t1 = pose.translation_in(poses, pividx, f1, chain)?;
+        chain.pop();
+        Ok(Vector3::new(
+            t0.x + (t1.x - t0.x) * fraction,
+            t0.y + (t1.y - t0.y) * fraction,
+            t0.z + (t1.z - t0.z) * fraction,
+        ))
+    }
+
+    pub(crate) fn orientation_in<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32, chain: &mut MorphChain) -> W3dResult<Quaternion> {
+        self.enter(chain)?;
+        let (pose, f0, f1, fraction) = self.morph(poses, pividx, frame)?;
+        // `Quaternion q0;` is uninitialised: a pose that leaves it is undefined
+        let q0 = pose.orientation_in(poses, pividx, f0, chain)?.ok_or(W3dUndefined::UninitialisedRead)?;
+        let q1 = pose.orientation_in(poses, pividx, f1, chain)?.ok_or(W3dUndefined::UninitialisedRead)?;
+        chain.pop();
+        Ok(fast_slerp(&q0, &q1, fraction))
+    }
+
+    pub(crate) fn transform_in<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32, chain: &mut MorphChain) -> W3dResult<Matrix3D> {
+        self.enter(chain)?;
+        let (pose, f0, f1, fraction) = self.morph(poses, pividx, frame)?;
+        let q0 = pose.orientation_in(poses, pividx, f0, chain)?.ok_or(W3dUndefined::UninitialisedRead)?;
+        let q1 = pose.orientation_in(poses, pividx, f1, chain)?.ok_or(W3dUndefined::UninitialisedRead)?;
+        let q = fast_slerp(&q0, &q1, fraction);
+        let mut mtx = build_matrix3d(&q);
+        let t0 = pose.translation_in(poses, pividx, f0, chain)?;
+        let t1 = pose.translation_in(poses, pividx, f1, chain)?;
+        chain.pop();
+        let trans = Vector3::new(
+            t0.x + (t1.x - t0.x) * fraction,
+            t0.y + (t1.y - t0.y) * fraction,
+            t0.z + (t1.z - t0.z) * fraction,
+        );
+        mtx.set_translation(&trans);
+        Ok(mtx)
+    }
+
+    /// `Get_Translation(trans, pividx, frame)`.
+    pub fn get_translation<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Vector3> {
+        self.translation_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// `Get_Orientation(q, pividx, frame)`.
+    pub fn get_orientation<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Quaternion> {
+        self.orientation_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// `Get_Transform(mtx, pividx, frame)`.
+    pub fn get_transform<P: PoseLookup>(&self, poses: &P, pividx: i32, frame: f32) -> W3dResult<Matrix3D> {
+        self.transform_in(poses, pividx, frame, &mut MorphChain::new())
+    }
+
+    /// `Get_Visibility(pividx, frame)`: always true.
+    pub fn get_visibility(&self, _pividx: i32, _frame: f32) -> bool {
+        true
+    }
+
     /// Channel `n` (`None` at or past `channel_count`).
     pub fn channel(&self, n: usize) -> Option<MorphChannel> {
         if n >= self.channel_count.max(0) as usize {
@@ -554,5 +809,57 @@ mod tests {
         // the key chunk claims 8 bytes, the file ends 5 bytes into them
         assert_eq!(load(&body).0, undefined(W3dUndefined::UninitialisedRead));
         assert_eq!(load(&header(b"F", b"SKL", 1, 0x8000_0000)).0, undefined(W3dUndefined::Allocation));
+    }
+
+    use crate::formats::w3d::assetmgr::HAnim;
+    use crate::formats::w3d::hanim::tests::raw_anim;
+
+    struct Poses(Vec<HAnim>);
+    impl PoseLookup for Poses {
+        fn pose(&self, name: &[u8]) -> Option<&HAnim> {
+            self.0.iter().find(|a| a.name() == name)
+        }
+    }
+
+    fn morph(pose: &[u8]) -> HMorphAnim {
+        let mut name = [0u8; 2 * W3D_NAME_LEN];
+        name[..9].copy_from_slice(b"SKL.MORPH");
+        let keys = MorphKeys {
+            keys: vec![MorphKey { morph_frame: 0, pose_frame: 0 }, MorphKey { morph_frame: 10, pose_frame: 2 }],
+            ..Default::default()
+        };
+        HMorphAnim {
+            name,
+            anim_name: [0; W3D_NAME_LEN],
+            hierarchy_name: [0; W3D_NAME_LEN],
+            frame_count: 11,
+            frame_rate: 30.0,
+            channel_count: 1,
+            num_nodes: 2,
+            channels: vec![MorphChannel { pose_name: Some(pose.to_vec()), keys }],
+            pivot_channel: vec![0, 0],
+        }
+    }
+
+    /// Keys (morph frame -> pose frame): 0 -> 0, 10 -> 2, over the pose
+    /// `hanim::tests::raw_anim` (node 1: x = 0, 10, 40). Predictions: morph
+    /// frame 5 is halfway: pose frames 0 and 2 (as floats) with fraction
+    /// 0.5; the pose gives 0 at 0.0 and, at 2.0 (frames 1/2 at ratio 1, the
+    /// portable truncation), 10 + 30 = 40: so 20. Morph frame -1 and 10 and
+    /// past: one pose frame, 0 and 40. A morph whose pose is itself recurses
+    /// forever upstream; an unknown pose is a null pointer.
+    #[test]
+    fn morph_blends_pose_frames() {
+        let poses = Poses(vec![HAnim::Raw(raw_anim()), HAnim::Morph(morph(b"SKL.MORPH"))]);
+        let m = morph(b"SKL.WALK");
+        assert_eq!(m.channels[0].keys.get_morph_info(5.0).unwrap(), (0, 2, 0.5));
+        for (f, e) in [(5.0, 20.0), (-1.0, 0.0), (10.0, 40.0), (50.0, 40.0)] {
+            assert_eq!(m.get_translation(&poses, 1, f).unwrap().x, e, "morph frame {f}");
+        }
+        assert_eq!(m.get_transform(&poses, 1, 5.0).unwrap()[0][3], 20.0);
+        assert!(m.get_visibility(1, 5.0));
+        let HAnim::Morph(selfish) = &poses.0[1] else { unreachable!() };
+        assert_eq!(selfish.get_translation(&poses, 1, 5.0), Err(W3dError::NonTerminating));
+        assert_eq!(morph(b"NONE").get_translation(&poses, 1, 5.0), Err(W3dUndefined::NullPointer.into()));
     }
 }

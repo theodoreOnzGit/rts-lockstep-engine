@@ -754,12 +754,16 @@ mod differential {
         pb.include(ww.join("WWSaveLoad")).file(dif.join("wrap_w3d_prim.cpp")).files(&prim_files);
         pb.compile("upstream_w3d_prim");
         // The morph animation loader (see differential/wrap_w3d_morph.cpp),
-        // linked before upstream_w3d: morph_def.cpp holds three verbatim
-        // segments of hmorphanim.cpp (markers asserted to occur once):
-        // TimeCodedMorphKeysClass's constructor through Load_W3D (up to
-        // Save_W3D), HMorphAnimClass's constructor through Free (up to
-        // Build_List_From_String, which the text import uses), and Load_W3D
-        // with read_channel (up to Save_W3D). Compiled with the generated
+        // linked before upstream_w3d: morph_def.cpp holds ~~three~~ five
+        // verbatim segments of hmorphanim.cpp (markers asserted to occur
+        // once): TimeCodedMorphKeysClass's constructor through Load_W3D (up
+        // to Save_W3D), **Corrected 2026-11-05 (#10, step 3):** its
+        // Get_Morph_Info, get_index and binary_search_index (up to
+        // HMorphAnimClass's constructor), HMorphAnimClass's constructor
+        // through Free (up to Build_List_From_String, which the text import
+        // uses), Load_W3D with read_channel (up to Save_W3D), and
+        // Get_Translation, Get_Orientation and Get_Transform (up to
+        // Insert_Morph_Key), which differential/wrap_w3d_eval.cpp calls. Compiled with the generated
         // simplevec_this.h first (above) and StringClass renamed to
         // ShimStringClass (read_channel's StringClass; see the collection
         // block).
@@ -770,8 +774,16 @@ mod differential {
             .to_vec();
         for (from, to) in [
             (&b"TimeCodedMorphKeysClass::TimeCodedMorphKeysClass(void)"[..], &b"bool TimeCodedMorphKeysClass::Save_W3D(ChunkSaveClass & csave)"[..]),
+            (
+                b"void TimeCodedMorphKeysClass::Get_Morph_Info(float morph_frame,int * pose_frame0,int * pose_frame1,float * fraction)",
+                b"HMorphAnimClass::HMorphAnimClass(void) :",
+            ),
             (b"HMorphAnimClass::HMorphAnimClass(void) :", b"static int Build_List_From_String"),
             (b"int HMorphAnimClass::Load_W3D(ChunkLoadClass & cload)", b"int HMorphAnimClass::Save_W3D(ChunkSaveClass & csave)"),
+            (
+                b"void HMorphAnimClass::Get_Translation(Vector3& trans,int pividx,float frame) const",
+                b"void HMorphAnimClass::Insert_Morph_Key(const int channel, uint32 morph_frame, uint32 pose_frame)",
+            ),
         ] {
             let a = once_in(&morph_text, from, "hmorphanim.cpp");
             let b = once_in(&morph_text, to, "hmorphanim.cpp");
@@ -913,6 +925,18 @@ mod differential {
             .file(&hanimmgr)
             .file(ww.join("WWLib/hash.cpp"));
         amb.compile("upstream_w3d_assetmgr");
+        // The animation evaluation (see differential/wrap_w3d_eval.cpp): a
+        // driver only. What it evaluates is compiled elsewhere: motchan.cpp,
+        // htree.cpp, hrawanim.cpp, hcanim.cpp, pivot.cpp and quat.cpp in
+        // upstream_w3d (below), the morph segments in upstream_w3d_morph
+        // (above; the test pulls its objects in), matrix3d.cpp and the
+        // WWMath tables in upstream_wwmath. Linked before upstream_w3d.
+        let mut evb = cc::Build::new();
+        w3d_build(&mut evb, true);
+        evb.include(ww.join("WWSaveLoad"))
+            .define("StringClass", Some("ShimStringClass"))
+            .file(dif.join("wrap_w3d_eval.cpp"));
+        evb.compile("upstream_w3d_eval");
         // The StringClass transcription the collection and morph libraries
         // use (differential/wrap_w3d_string.cpp), after them.
         let mut sb = cc::Build::new();

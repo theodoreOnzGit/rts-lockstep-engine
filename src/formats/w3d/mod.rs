@@ -64,6 +64,10 @@ pub enum W3dUndefined {
     IndexOutOfRange,
     /// An array deleted twice (an upstream bug, see [`hanim`]).
     DoubleDelete,
+    /// A `float` converted to an integer type that cannot hold its
+    /// truncation, or a NaN converted (the animation evaluation's frame
+    /// numbers; the 32-bit original's `long` is 32 bits).
+    FloatToInt,
 }
 
 /// A W3D loading error: only where upstream is undefined.
@@ -140,6 +144,67 @@ pub(crate) fn read_partial(cload: &mut ChunkLoad<'_>, nbytes: u32) -> W3dResult<
     let mut buf = vec![0u8; (nbytes as usize).min(left)];
     let n = cload.read(&mut buf, nbytes)?;
     Ok((n == nbytes, buf))
+}
+
+/// `(int)f` (and Win32's `(long)f`): defined when the truncation fits an
+/// `int`; anything else (NaN included) is undefined.
+pub(crate) fn f32_to_i32(f: f32) -> W3dResult<i32> {
+    let d = f64::from(f);
+    if d > -2_147_483_649.0 && d < 2_147_483_648.0 {
+        Ok(f as i32)
+    } else {
+        Err(W3dUndefined::FloatToInt.into())
+    }
+}
+
+/// `(uint32)f`: defined when the truncation fits (so `-1 < f < 2^32`).
+pub(crate) fn f32_to_u32(f: f32) -> W3dResult<u32> {
+    let d = f64::from(f);
+    if d > -1.0 && d < 4_294_967_296.0 {
+        Ok(f as u32)
+    } else {
+        Err(W3dUndefined::FloatToInt.into())
+    }
+}
+
+/// The mutable caches upstream's evaluation keeps inside a loaded object
+/// (`TimeCodedMotionChannelClass::CachedIdx`, the adaptive-delta
+/// `CacheFrame`/`CacheData`, ...), which its `const` evaluation functions
+/// change through non-`const` pointers. Behind a mutex so that loaded assets
+/// stay `Send + Sync`; the results still depend on the order of the calls,
+/// as upstream's do.
+#[derive(Default)]
+pub struct EvalCache<T>(std::sync::Mutex<T>);
+
+impl<T> EvalCache<T> {
+    pub fn new(v: T) -> Self {
+        EvalCache(std::sync::Mutex::new(v))
+    }
+
+    /// The cached state, locked.
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, T> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl<T: Clone> Clone for EvalCache<T> {
+    fn clone(&self) -> Self {
+        EvalCache::new(self.lock().clone())
+    }
+}
+
+impl<T: PartialEq> PartialEq for EvalCache<T> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other) || *self.lock() == *other.lock()
+    }
+}
+
+impl<T: Eq> Eq for EvalCache<T> {}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for EvalCache<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.lock().fmt(f)
+    }
 }
 
 /// The C string starting at `buf[start]`, as `strlen`/`strcpy` read it:

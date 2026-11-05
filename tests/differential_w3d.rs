@@ -15,7 +15,12 @@
 //! (`differential/wrap_w3d_morph.cpp`), and (section 12) the asset
 //! manager's loading side: `assetmgr.cpp` (verbatim segments),
 //! `htreemgr.cpp`, `hanimmgr.cpp` and `hash.cpp`, over the real loaders of
-//! the other sections (`differential/wrap_w3d_assetmgr.cpp`).
+//! the other sections (`differential/wrap_w3d_assetmgr.cpp`), and (section
+//! 13) the animation evaluation: the channels' `Get_Vector`s, time-code
+//! search and adaptive-delta decompression (`motchan.cpp`), the sampling of
+//! raw, compressed and morph animations (`hrawanim.cpp`, `hcanim.cpp`,
+//! `hmorphanim.cpp`), the hierarchy updates (`htree.cpp`, `pivot.cpp`) and
+//! `Fast_Slerp` (`quat.cpp`), driven by `differential/wrap_w3d_eval.cpp`.
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -3804,6 +3809,784 @@ fn assetmgr_matches_upstream() {
     }
     println!(
         "WW3DAssetManager: {CASES} cases, {compared} compared ({ops} operations); excluded: {} {excluded:?}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 13. Animation evaluation (motchan.cpp, hrawanim.cpp, hcanim.cpp,
+//     hmorphanim.cpp, htree.cpp, pivot.cpp, quat.cpp)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::assetmgr::HAnim;
+use rts_lockstep_engine::formats::w3d::hmorphanim::PoseLookup;
+use rts_lockstep_engine::ww::matrix3d::Matrix3D;
+
+/// What `ref_w3d_eval` loads: the hierarchies, and the animations with
+/// their kind (0 raw, 1 compressed, 2 morph).
+struct EvalWorld {
+    trees: Vec<HTree>,
+    anims: Vec<(HAnim, u8)>,
+}
+
+/// wrap_w3d_eval.cpp's pose hook: the first raw or compressed animation of
+/// that exact name.
+impl PoseLookup for EvalWorld {
+    fn pose(&self, name: &[u8]) -> Option<&HAnim> {
+        self.anims.iter().find(|(a, k)| *k != 2 && a.name() == name).map(|(a, _)| a)
+    }
+}
+
+/// The loading half of `ref_w3d_eval`, in Rust.
+fn rust_eval_load(data: &[u8]) -> W3dResult<(Log, EvalWorld)> {
+    let mut log = vec![b'L'];
+    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new() };
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    while c.open_chunk()? {
+        let trees = &w.trees;
+        let mut lookup = |n: &[u8; W3D_NAME_LEN]| trees.iter().find(|t| &t.name == n).map(|t| t.num_pivots);
+        match c.cur_chunk_id()? {
+            W3D_CHUNK_HIERARCHY => {
+                let t = htree::load_w3d(&mut c)?;
+                log.extend_from_slice(&[0, u8::from(t.is_none())]);
+                w.trees.extend(t);
+            }
+            W3D_CHUNK_ANIMATION => {
+                let a = HRawAnim::load_w3d(&mut c, &mut lookup)?;
+                log.extend_from_slice(&[1, u8::from(a.is_none())]);
+                w.anims.extend(a.map(|a| (HAnim::Raw(a), 0)));
+            }
+            W3D_CHUNK_COMPRESSED_ANIMATION => {
+                let a = HCompressedAnim::load_w3d(&mut c, &mut lookup)?;
+                log.extend_from_slice(&[2, u8::from(a.is_none())]);
+                w.anims.extend(a.map(|a| (HAnim::Compressed(a), 1)));
+            }
+            W3D_CHUNK_MORPH_ANIMATION => {
+                let a = hmorphanim::load_w3d(&mut c, &mut lookup)?;
+                log.extend_from_slice(&[3, u8::from(a.is_none())]);
+                w.anims.extend(a.map(|a| (HAnim::Morph(a), 2)));
+            }
+            _ => log.extend_from_slice(&[9, 0]),
+        }
+        c.close_chunk()?;
+    }
+    p32(&mut log, w.trees.len() as u32);
+    p32(&mut log, w.anims.len() as u32);
+    Ok((log, w))
+}
+
+const EVAL_SENTINEL: u32 = 0x7FC0_DEAD;
+
+fn log_m(log: &mut Log, m: &Matrix3D) {
+    for v in m.to_array() {
+        p32(log, v.to_bits());
+    }
+}
+
+fn log_eval_tree(log: &mut Log, t: &HTree) -> W3dResult<()> {
+    for p in 0..t.num_pivots {
+        log_m(log, &t.get_transform(p)?);
+        log.push(u8::from(t.get_visibility(p)?));
+    }
+    Ok(())
+}
+
+struct ScriptReader<'a> {
+    s: &'a [u8],
+    i: usize,
+}
+
+impl ScriptReader<'_> {
+    fn u(&mut self) -> u32 {
+        let v = u32::from_le_bytes(self.s[self.i..self.i + 4].try_into().unwrap());
+        self.i += 4;
+        v
+    }
+    fn f(&mut self) -> f32 {
+        f32::from_bits(self.u())
+    }
+    fn m(&mut self) -> Matrix3D {
+        let a: Vec<f32> = (0..12).map(|_| self.f()).collect();
+        Matrix3D::new(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11])
+    }
+}
+
+/// One script op in Rust (see `ref_w3d_eval`); its log bytes, or where
+/// upstream is undefined.
+fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W3dResult<()> {
+    let op = r.s[r.i];
+    r.i += 1;
+    log.push(op);
+    match op {
+        1..=4 => {
+            let a = r.u() as usize;
+            let pivot = r.u() as i32;
+            let frame = r.f();
+            let anim = &w.anims[a].0;
+            match op {
+                1 => {
+                    let t = anim.get_translation(w as &EvalWorld, pivot, frame)?;
+                    for v in [t.x, t.y, t.z] {
+                        p32(log, v.to_bits());
+                    }
+                }
+                2 => match anim.get_orientation(w as &EvalWorld, pivot, frame)? {
+                    Some(q) => {
+                        for v in [q.x, q.y, q.z, q.w] {
+                            p32(log, v.to_bits());
+                        }
+                    }
+                    None => (0..4).for_each(|_| p32(log, EVAL_SENTINEL)),
+                },
+                3 => match anim.get_transform(w as &EvalWorld, pivot, frame)? {
+                    Some(m) => log_m(log, &m),
+                    None => (0..12).for_each(|_| p32(log, EVAL_SENTINEL)),
+                },
+                _ => log.push(u8::from(anim.get_visibility(pivot, frame)?)),
+            }
+        }
+        5 | 6 => {
+            let t = r.u() as usize;
+            let a = r.u() as usize;
+            let frame = r.f();
+            let root = r.m();
+            let mut tree = w.trees[t].clone();
+            let res = if op == 5 {
+                tree.anim_update(&root, &w.anims[a].0, &*w, frame)
+            } else {
+                let HAnim::Raw(raw) = &w.anims[a].0 else { panic!("op 6 on a raw animation only") };
+                tree.anim_update_raw(&root, raw, frame)
+            };
+            w.trees[t] = tree;
+            res?;
+            log_eval_tree(log, &w.trees[t])?;
+        }
+        7 => {
+            let t = r.u() as usize;
+            let (a0, f0) = (r.u() as usize, r.f());
+            let (a1, f1) = (r.u() as usize, r.f());
+            let pct = r.f();
+            let root = r.m();
+            let mut tree = w.trees[t].clone();
+            let res = tree.blend_update(&root, &w.anims[a0].0, f0, &w.anims[a1].0, f1, pct, &*w);
+            w.trees[t] = tree;
+            res?;
+            log_eval_tree(log, &w.trees[t])?;
+        }
+        8 => {
+            let t = r.u() as usize;
+            let root = r.m();
+            w.trees[t].base_update(&root)?;
+            log_eval_tree(log, &w.trees[t])?;
+        }
+        9 => {
+            let t = r.u() as usize;
+            let a = r.u() as usize;
+            let pivot = r.u() as i32;
+            let frame = r.f();
+            let obj = r.m();
+            let (ok, m) = w.trees[t].simple_evaluate_pivot_anim(&w.anims[a].0, &*w, pivot, frame, &obj)?;
+            log.push(u8::from(ok));
+            log_m(log, &m);
+        }
+        10 => {
+            let t = r.u() as usize;
+            let pivot = r.u() as i32;
+            let obj = r.m();
+            let (ok, m) = w.trees[t].simple_evaluate_pivot(pivot, &obj)?;
+            log.push(u8::from(ok));
+            log_m(log, &m);
+        }
+        11 => {
+            let t = r.u() as usize;
+            let bone = r.u() as i32;
+            let capture = r.u();
+            let wst = r.u();
+            let m = r.m();
+            if capture != 0 {
+                w.trees[t].capture_bone(bone)?;
+                w.trees[t].control_bone(bone, &m, wst != 0)?;
+            } else {
+                w.trees[t].release_bone(bone)?;
+            }
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// The ops of a script, as byte ranges.
+fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
+    let mut v = Vec::new();
+    let mut i = 0;
+    while i < script.len() {
+        let words = match script[i] {
+            1..=4 => 3,
+            5 | 6 => 3 + 12,
+            7 => 6 + 12,
+            8 => 1 + 12,
+            9 => 4 + 12,
+            10 => 2 + 12,
+            11 => 4 + 12,
+            _ => unreachable!(),
+        };
+        v.push((i, i + 1 + 4 * words));
+        i += 1 + 4 * words;
+    }
+    v
+}
+
+fn cpp_eval(data: &[u8], script: &[u8]) -> Log {
+    cpp_log(|log, cap, n| unsafe {
+        cpp::ref_w3d_eval(data.as_ptr() as *const _, data.len() as i32, script.as_ptr(), script.len() as i32, log, cap, n)
+    })
+}
+
+// ---- generation ----
+
+fn name16(s: &[u8]) -> [u8; W3D_NAME_LEN] {
+    let mut n = [0u8; W3D_NAME_LEN];
+    n[..s.len()].copy_from_slice(s);
+    n
+}
+
+/// A unit quaternion (normalised in `f32`), or now and then arbitrary
+/// components.
+fn ev_quat(g: &mut Gn) -> [f32; 4] {
+    let mut q = [0.0f32; 4];
+    for v in q.iter_mut() {
+        *v = g.g.uniform(-1.0, 1.0);
+    }
+    if g.chance(10) {
+        return q;
+    }
+    let l = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+    if l < 1e-3 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    q.map(|v| v / l)
+}
+
+fn ev_tree(g: &mut Gn, name: &[u8; W3D_NAME_LEN], n: u32) -> Vec<u8> {
+    let pre30 = g.below(6) == 0;
+    let mut h = W3dHierarchyStruct::from_bytes(&[0; 36]);
+    h.version = if pre30 { w3d_make_version(2, 0) } else { w3d_make_version(4, 1) };
+    h.name = *name;
+    h.num_pivots = n;
+    let mut body = hchunk(W3D_CHUNK_HIERARCHY_HEADER, &h.to_bytes());
+    if !g.chance(25) {
+        let total = if pre30 { n + 1 } else { n };
+        let mut pb = Vec::new();
+        for i in 0..n {
+            let mut p = W3dPivotStruct::from_bytes(&[0; 60]);
+            p.name = name16(format!("B{i}").as_bytes());
+            let first = i == 0 && !pre30;
+            p.parent_idx = match if g.clean { 30 } else { g.below(30) } {
+                0 => 0xFFFF_FFFF,
+                1 => i,
+                2 => total - 1,
+                3 if !pre30 => total,
+                _ if first => 0xFFFF_FFFF,
+                _ if pre30 => g.below(i + 1).wrapping_sub(1),
+                _ => g.below(i),
+            };
+            p.translation = W3dVectorStruct { x: g.g.uniform(-2.0, 2.0), y: g.g.uniform(-2.0, 2.0), z: g.g.uniform(-2.0, 2.0) };
+            p.rotation.q = ev_quat(g);
+            pb.extend(p.to_bytes());
+        }
+        body.extend(hchunk(W3D_CHUNK_PIVOTS, &pb));
+    }
+    hchunk(W3D_CHUNK_HIERARCHY, &body)
+}
+
+fn ev_frames(g: &mut Gn) -> u32 {
+    match g.below(12) {
+        0 => 0,
+        1 => 20 + g.below(60),
+        _ => 1 + g.below(10),
+    }
+}
+
+fn ev_raw(g: &mut Gn, hier: &[u8; W3D_NAME_LEN], npiv: u32, name: &[u8]) -> Vec<u8> {
+    let nf = ev_frames(g);
+    let mut h = W3dAnimHeaderStruct::from_bytes(&[0; 44]);
+    h.version = if g.below(10) == 0 { w3d_make_version(2, 0) } else { w3d_make_version(4, 1) };
+    h.name = name16(name);
+    h.hierarchy_name = *hier;
+    h.num_frames = nf;
+    h.frame_rate = 30;
+    let mut body = hchunk(W3D_CHUNK_ANIMATION_HEADER, &h.to_bytes());
+    for pivot in 0..npiv + 1 {
+        for ty in [ANIM_CHANNEL_X, ANIM_CHANNEL_Y, ANIM_CHANNEL_Z, ANIM_CHANNEL_XR, ANIM_CHANNEL_Q] {
+            if g.below(if ty == ANIM_CHANNEL_XR { 8 } else { 2 }) != 0 {
+                continue;
+            }
+            let first = g.below(3) as u16;
+            let last = first + g.below(nf.max(1) + 1) as u16;
+            let vlen: u16 = match (ty, if g.clean { 14 } else { g.below(14) }) {
+                (ANIM_CHANNEL_Q, 0) => 3,
+                (ANIM_CHANNEL_Q, 1) => 5,
+                (ANIM_CHANNEL_Q, _) => 4,
+                (_, 0) => 2 + g.below(3) as u16,
+                _ => 1,
+            };
+            let mut b = Vec::new();
+            for v in [first, last, vlen, ty as u16, pivot as u16, 0] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            for _ in first..=last {
+                if ty == ANIM_CHANNEL_Q && vlen == 4 {
+                    for v in ev_quat(g) {
+                        b.extend_from_slice(&v.to_bits().to_le_bytes());
+                    }
+                } else {
+                    for _ in 0..vlen {
+                        b.extend_from_slice(&g.g.uniform(-3.0, 3.0).to_bits().to_le_bytes());
+                    }
+                }
+            }
+            body.extend(hchunk(W3D_CHUNK_ANIMATION_CHANNEL, &b));
+        }
+        if g.below(3) == 0 {
+            let first = g.below(3) as u16;
+            let last = first + g.below(nf.max(1) + 2) as u16;
+            let nbytes = (u32::from(last - first) + 1).div_ceil(8);
+            let mut b = Vec::new();
+            for v in [first, last, BIT_CHANNEL_VIS as u16, pivot as u16] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            b.push(g.below(2) as u8);
+            b.extend((0..nbytes).map(|_| g.g.u32() as u8));
+            body.extend(hchunk(W3D_CHUNK_BIT_CHANNEL, &b));
+        }
+    }
+    hchunk(W3D_CHUNK_ANIMATION, &body)
+}
+
+fn ev_compressed(g: &mut Gn, hier: &[u8; W3D_NAME_LEN], npiv: u32, name: &[u8]) -> Vec<u8> {
+    let nf = ev_frames(g);
+    let flavor: u16 = match g.below(16) {
+        0 if !g.clean => 5,
+        1..=8 => ANIM_FLAVOR_ADAPTIVE_DELTA as u16,
+        _ => ANIM_FLAVOR_TIMECODED as u16,
+    };
+    let mut h = W3dCompressedAnimHeaderStruct::from_bytes(&[0; 44]);
+    h.version = w3d_make_version(4, 1);
+    h.name = name16(name);
+    h.hierarchy_name = *hier;
+    h.num_frames = nf;
+    h.frame_rate = 30;
+    h.flavor = flavor;
+    let mut body = hchunk(W3D_CHUNK_COMPRESSED_ANIMATION_HEADER, &h.to_bytes());
+    let adaptive = flavor == ANIM_FLAVOR_ADAPTIVE_DELTA as u16;
+    for pivot in 0..npiv + 1 {
+        for ty in [ANIM_CHANNEL_X, ANIM_CHANNEL_Y, ANIM_CHANNEL_Z, ANIM_CHANNEL_Q] {
+            if g.coin() {
+                continue;
+            }
+            let q = ty == ANIM_CHANNEL_Q;
+            let vlen: u8 = match g.below(16) {
+                0 if !g.clean => [1u8, 2, 3, 5][g.below(4) as usize],
+                _ if q => 4,
+                _ => 1,
+            };
+            let mut b = Vec::new();
+            if adaptive {
+                let frames = if g.below(8) == 0 { 1 + g.below(40) } else { nf.max(1) };
+                w32(&mut b, frames);
+                b.extend_from_slice(&(pivot as u16).to_le_bytes());
+                b.extend_from_slice(&[vlen, ty as u8]);
+                let scale = if g.below(6) == 0 { g.f32() } else { g.g.uniform(0.0001, 0.5) };
+                w32(&mut b, scale.to_bits());
+                let mut d = Vec::new();
+                let base = ev_quat(g);
+                for k in 0..vlen as usize {
+                    let v = if q && vlen == 4 { base[k] } else { g.g.uniform(-3.0, 3.0) };
+                    d.extend_from_slice(&v.to_bits().to_le_bytes());
+                }
+                let mut groups = frames.div_ceil(16) as usize;
+                match g.below(10) {
+                    0 if !g.clean => groups = groups.saturating_sub(1),
+                    1 => groups += 1,
+                    _ => {}
+                }
+                for _ in 0..groups * vlen as usize {
+                    d.push(match g.below(4) {
+                        0 => g.below(16) as u8,
+                        _ => 16 + g.below(240) as u8,
+                    });
+                    d.extend((0..8).map(|_| g.g.u32() as u8));
+                }
+                while d.len() % 4 != 0 {
+                    d.push(g.g.u32() as u8);
+                }
+                b.extend(d);
+            } else {
+                let k = 1 + g.below(6);
+                w32(&mut b, k);
+                b.extend_from_slice(&(pivot as u16).to_le_bytes());
+                b.extend_from_slice(&[vlen, ty as u8]);
+                let mut t = if g.chance(6) { 1 + g.below(5) } else { 0 };
+                let mut words = Vec::new();
+                for i in 0..k {
+                    let flag = if i > 0 && g.below(5) == 0 { W3D_TIMECODED_BINARY_MOVEMENT_FLAG } else { 0 };
+                    words.push(t | flag);
+                    let quat = ev_quat(g);
+                    for c in 0..vlen as usize {
+                        let v = if q && vlen == 4 { quat[c] } else { g.g.uniform(-3.0, 3.0) };
+                        words.push(v.to_bits());
+                    }
+                    t = match g.below(12) {
+                        0 if !g.clean => t.saturating_sub(g.below(4)),
+                        _ => t + 1 + g.below(8),
+                    };
+                }
+                if g.chance(15) {
+                    let cut = 1 + g.below(2) as usize;
+                    words.truncate(words.len().saturating_sub(cut).max(1));
+                }
+                for w in words {
+                    w32(&mut b, w);
+                }
+            }
+            body.extend(hchunk(W3D_CHUNK_COMPRESSED_ANIMATION_CHANNEL, &b));
+        }
+        if g.below(3) == 0 {
+            let k = 1 + g.below(5);
+            let mut b = Vec::new();
+            w32(&mut b, k);
+            b.extend_from_slice(&(pivot as u16).to_le_bytes());
+            b.extend_from_slice(&[BIT_CHANNEL_VIS as u8, g.below(2) as u8]);
+            let mut t = if g.below(5) == 0 { 2 } else { 0 };
+            for _ in 0..k {
+                w32(&mut b, t | if g.coin() { W3D_TIMECODED_BIT_MASK } else { 0 });
+                t += 1 + g.below(6);
+            }
+            body.extend(hchunk(W3D_CHUNK_COMPRESSED_BIT_CHANNEL, &b));
+        }
+    }
+    hchunk(W3D_CHUNK_COMPRESSED_ANIMATION, &body)
+}
+
+fn ev_morph(g: &mut Gn, hier: &[u8; W3D_NAME_LEN], npiv: u32, poses: &[(Vec<u8>, u32)]) -> Vec<u8> {
+    let channels = 1 + g.below(3);
+    let mut h = W3dMorphAnimHeaderStruct::from_bytes(&[0; 48]);
+    h.version = W3D_CURRENT_MORPH_HANIM_VERSION;
+    h.name = name16(b"MORPH");
+    h.hierarchy_name = *hier;
+    h.frame_count = 30;
+    h.frame_rate = 30.0;
+    h.channel_count = channels;
+    let mut body = hchunk(W3D_CHUNK_MORPHANIM_HEADER, &h.to_bytes());
+    for _ in 0..channels {
+        let (mut pose, pf) = if poses.is_empty() || g.chance(12) {
+            (b"NOPE".to_vec(), 4)
+        } else {
+            poses[g.below(poses.len() as u32) as usize].clone()
+        };
+        pose.push(0);
+        let mut cb = hchunk(W3D_CHUNK_MORPHANIM_POSENAME, &pose);
+        let mut kb = Vec::new();
+        let mut m: u32 = if g.below(6) == 0 { 2 } else { 0 };
+        for _ in 0..1 + g.below(4) {
+            kb.extend(m.to_le_bytes());
+            kb.extend(g.below(pf + 2).to_le_bytes());
+            m = match g.below(10) {
+                0 if !g.clean => m.saturating_sub(3),
+                _ => m + 1 + g.below(10),
+            };
+        }
+        cb.extend(hchunk(W3D_CHUNK_MORPHANIM_KEYDATA, &kb));
+        body.extend(hchunk(W3D_CHUNK_MORPHANIM_CHANNEL, &cb));
+    }
+    let pv: Vec<u8> = (0..npiv).flat_map(|_| (if g.chance(20) { channels } else { g.below(channels) }).to_le_bytes()).collect();
+    body.extend(hchunk(W3D_CHUNK_MORPHANIM_PIVOTCHANNELDATA, &pv));
+    hchunk(W3D_CHUNK_MORPH_ANIMATION, &body)
+}
+
+/// A file: one or two hierarchies, one to four raw or compressed
+/// animations on them, then up to two morph animations over those.
+fn ev_file(g: &mut Gn) -> Vec<u8> {
+    let trees: Vec<([u8; W3D_NAME_LEN], u32)> =
+        (0..1 + g.below(2)).map(|i| (name16(if i == 0 { b"SKEL" } else { b"SK2" }), 1 + g.below(6))).collect();
+    let mut f = Vec::new();
+    for (n, p) in &trees {
+        f.extend(ev_tree(g, n, *p));
+    }
+    let mut poses = Vec::new();
+    for i in 0..1 + g.below(4) {
+        let (hier, npiv) = trees[g.below(trees.len() as u32) as usize];
+        let name = format!("A{i}");
+        let full = [&hier[..hier.iter().position(|&c| c == 0).unwrap()], b".", name.as_bytes()].concat();
+        if g.coin() {
+            f.extend(ev_raw(g, &hier, npiv, name.as_bytes()));
+        } else {
+            f.extend(ev_compressed(g, &hier, npiv, name.as_bytes()));
+        }
+        poses.push((full, 10));
+    }
+    for _ in 0..g.below(3) {
+        let (hier, npiv) = trees[g.below(trees.len() as u32) as usize];
+        f.extend(ev_morph(g, &hier, npiv, &poses));
+    }
+    f
+}
+
+fn ev_frame(g: &mut Gn, nf: i32) -> f32 {
+    let nf = nf.clamp(0, 100) as f32;
+    if g.clean {
+        return match g.below(10) {
+            0..=3 => g.below(nf as u32 + 3) as f32,
+            4 => g.below(nf as u32 + 3) as f32 + 0.5,
+            _ => g.g.uniform(0.0, nf + 1.5),
+        };
+    }
+    match g.below(20) {
+        0 => g.g.uniform(-3.0, 0.0),
+        1 => g.f32(),
+        2 => f32::NAN,
+        3..=7 => g.below(nf as u32 + 3) as f32,
+        8 => g.below(nf as u32 + 3) as f32 + 0.5,
+        _ => g.g.uniform(-0.5, nf + 1.5),
+    }
+}
+
+fn ev_matrix(g: &mut Gn, s: &mut Vec<u8>) {
+    let m: Vec<f32> = if g.coin() {
+        let q = ev_quat(g);
+        let mut m = rts_lockstep_engine::ww::quat::build_matrix3d(&rts_lockstep_engine::ww::quat::Quaternion::new(q[0], q[1], q[2], q[3]));
+        m.set_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(g.g.uniform(-5.0, 5.0), g.g.uniform(-5.0, 5.0), g.g.uniform(-5.0, 5.0)));
+        m.to_array().to_vec()
+    } else {
+        (0..12).map(|_| g.g.uniform(-2.0, 2.0)).collect()
+    };
+    for v in m {
+        w32(s, v.to_bits());
+    }
+}
+
+fn ev_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let nt = w.trees.len() as u32;
+    let raws: Vec<u32> = (0..na).filter(|&i| w.anims[i as usize].1 == 0).collect();
+    for _ in 0..1 + g.below(40) {
+        let op = 1 + g.below(11) as u8;
+        let needs_anim = matches!(op, 1..=7 | 9);
+        let needs_tree = op >= 5;
+        if (needs_anim && na == 0) || (needs_tree && nt == 0) || (op == 6 && raws.is_empty()) {
+            continue;
+        }
+        s.push(op);
+        let anim = |g: &mut Gn| g.below(na);
+        let pivot = |g: &mut Gn, n: i32| -> u32 {
+            match if g.clean { 20 } else { g.below(20) } {
+                0 => u32::MAX,
+                1 => (n + 1) as u32,
+                _ => g.below(n.clamp(1, 1000) as u32),
+            }
+        };
+        match op {
+            1..=4 => {
+                let a = anim(g);
+                let an = &w.anims[a as usize].0;
+                w32(&mut s, a);
+                w32(&mut s, pivot(g, an.get_num_pivots()));
+                w32(&mut s, ev_frame(g, an.get_num_frames()).to_bits());
+            }
+            5 | 6 => {
+                w32(&mut s, g.below(nt));
+                let a = if op == 6 { raws[g.below(raws.len() as u32) as usize] } else { anim(g) };
+                w32(&mut s, a);
+                w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                ev_matrix(g, &mut s);
+            }
+            7 => {
+                w32(&mut s, g.below(nt));
+                for _ in 0..2 {
+                    let a = anim(g);
+                    w32(&mut s, a);
+                    w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                }
+                let pct = match g.below(6) {
+                    0 => 0.0,
+                    1 => 1.0,
+                    _ => g.g.uniform(-0.2, 1.2),
+                };
+                w32(&mut s, f32::to_bits(pct));
+                ev_matrix(g, &mut s);
+            }
+            8 => {
+                w32(&mut s, g.below(nt));
+                ev_matrix(g, &mut s);
+            }
+            9 => {
+                let t = g.below(nt);
+                w32(&mut s, t);
+                let a = anim(g);
+                w32(&mut s, a);
+                w32(&mut s, pivot(g, w.trees[t as usize].num_pivots));
+                w32(&mut s, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits());
+                ev_matrix(g, &mut s);
+            }
+            10 => {
+                let t = g.below(nt);
+                w32(&mut s, t);
+                w32(&mut s, pivot(g, w.trees[t as usize].num_pivots));
+                ev_matrix(g, &mut s);
+            }
+            _ => {
+                let t = g.below(nt);
+                w32(&mut s, t);
+                w32(&mut s, pivot(g, w.trees[t as usize].num_pivots));
+                w32(&mut s, u32::from(g.below(4) != 0));
+                w32(&mut s, g.below(2));
+                ev_matrix(g, &mut s);
+            }
+        }
+    }
+    s
+}
+
+/// Random W3D files (one or two hierarchies of 1 to 6 pivots, sometimes
+/// pre-3.0, with random base poses and parents, now and then a parent that
+/// is missing, the pivot itself, a later pivot or one past the end; one to
+/// four raw or compressed animations on them: raw channels of every kind
+/// with vectors of the usual lengths and sometimes others, bit channels;
+/// time-coded channels with increasing (sometimes not) time codes, binary
+/// movements and sometimes too few words; adaptive-delta channels with
+/// random packets (filter indices across the whole table), sometimes a
+/// packet group short or extra; now and then an unknown flavor; then up to
+/// two morph animations whose channels name those animations, or an
+/// unknown one, with keys and pivot channels), loaded on both sides by the
+/// real loaders, then a random script of up to 40 evaluations, at integer,
+/// half, fractional, negative, out-of-range and NaN frames: the four
+/// sampling functions of every animation kind, `Anim_Update` (both
+/// overloads), `Blend_Update`, `Base_Update`, both
+/// `Simple_Evaluate_Pivot`s, and bone capture and release, all against the
+/// same objects in sequence (so the channels' caches carry over from op to
+/// op). Every result compared as raw bits. A script stops before the first
+/// op on which the Rust reports upstream undefined (counted per kind); a
+/// file whose loading is undefined is not run.
+///
+/// Predicted before the run: no disagreement (the C++ is x86-64 SSE with
+/// `-ffp-contract=off`, the Rust `f32` in the same order, and the WWMath
+/// tables and `sinf` bound to the same petir functions). Excluded op
+/// kinds: mostly `IndexOutOfRange` (pivot indices out of range, short
+/// time-coded data, adaptive-delta packets past the data, `Get_QuatVector`
+/// of vectors shorter than 4) and `FloatToInt` (negative and NaN frames of
+/// compressed animations), some `NullPointer` (missing parents, unknown
+/// poses), `UninitialisedRead` (raw quaternions of 3, unknown flavors under
+/// `Anim_Update`), and a few `NonTerminating` (time codes that decrease).
+///
+/// Results (2026-11-05). First run (one wild generator, every file with
+/// anomalies): 5,848 files run, 28 mismatching, all in components 1 to 3 of
+/// adaptive-delta quaternions. Cause (prediction missed): upstream's
+/// `decompress` shares one `done` flag across the components, so
+/// components after the first stop after one packet; the Rust had reset it
+/// per component. Translated as upstream does it (see `motchan.rs`; unit
+/// test `adaptive_delta_shared_done_flag`). Then 0 mismatches, but only
+/// 21,842 of 117,046 ops compared (scripts stopped early). The generator
+/// was given a tame half (no anomalies: in-range pivots and bones, frames
+/// from 0 to `NumFrames + 1.5`, valid parents, complete data, known
+/// flavors, found poses). Final run: 6,000 files, all run (2,609 of the
+/// 3,000 tame scripts to the end), 66,396 of 121,232 ops compared (about
+/// 6,000 of each kind), **0 mismatches, max ULP 0**. Scripts stopped at
+/// undefined upstream: 3,037, by kind about 1,900 `IndexOutOfRange`, 410
+/// `FloatToInt`, 380 `NullPointer`, 230 `NonTerminating` (cycles in
+/// `Simple_Evaluate_Pivot`'s parent walk and time-code searches), 76
+/// `UninitialisedRead`. Planted bugs: computing `getframe`'s last case from
+/// the start instead of with upstream's double-counted delta gives 506
+/// mismatching files; rounding raw frames to nearest (the shipped game's
+/// `fistp`) instead of the portable truncation makes the C++ reach a crash
+/// the Rust no longer predicts. Debugging: `W3D_CASE=<n>` prints a case's
+/// animations and ops, `W3D_TRACE` every case's file and script.
+#[test]
+fn animation_evaluation_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gn { g: Gen::new(0xE7A1), clean: true };
+    let mut tame_full = 0u64;
+    let mut check = Check::new("W3D animation evaluation (motchan, hrawanim, hcanim, hmorphanim, htree)");
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let mut load_excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut files, mut ops_run, mut ops_total) = (0u64, 0u64, 0u64);
+    let mut per_op = [0u64; 12];
+    const CASES: usize = 6_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let data = ev_file(&mut g);
+        let (mut log, mut w) = match rust_eval_load(&data) {
+            Ok(x) => x,
+            Err(e) => {
+                *load_excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        let script = ev_script(&mut g, &w);
+        let ops = script_ops(&script);
+        ops_total += ops.len() as u64;
+        let mut end = 0;
+        let mut starts = Vec::new();
+        for &(a, b) in &ops {
+            let mut r = ScriptReader { s: &script, i: a };
+            let mut l = Log::new();
+            match rust_eval_op(&mut w, &mut r, &mut l) {
+                Ok(()) => {
+                    assert_eq!(r.i, b);
+                    starts.push((log.len(), a));
+                    log.extend(l);
+                    per_op[script[a] as usize] += 1;
+                    ops_run += 1;
+                    end = b;
+                }
+                Err(W3dError::Undefined(u)) => {
+                    *excluded.entry(format!("op {}: {u:?}", script[a])).or_default() += 1;
+                    break;
+                }
+                Err(e) => {
+                    *excluded.entry(format!("op {}: {e:?}", script[a])).or_default() += 1;
+                    break;
+                }
+            }
+        }
+        let prefix = &script[..end];
+        if g.clean && end == script.len() {
+            tame_full += 1;
+        }
+        if std::env::var("W3D_CASE").ok().and_then(|v| v.parse::<usize>().ok()) == Some(case) {
+            for (i, (a, k)) in w.anims.iter().enumerate() {
+                eprintln!("anim {i} kind {k}: {a:#?}");
+            }
+            for &(a, b) in &ops {
+                eprintln!("op {:?}", &script[a..b]);
+            }
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("eval case {case}: {data:02x?} {prefix:02x?}");
+        }
+        let cpp = cpp_eval(&data, prefix);
+        check.eq(&log, &cpp, || {
+            let d = log.iter().zip(cpp.iter()).position(|(a, b)| a != b).unwrap_or(log.len().min(cpp.len()));
+            let op = starts.iter().rposition(|&(at, _)| at <= d);
+            let (at, sa) = op.map(|k| starts[k]).unwrap_or((0, 0));
+            let ctx = |v: &Log| v[at..v.len().min(at + 80)].to_vec();
+            format!(
+                "case {case}: first difference at log byte {d} (lengths {} / {}), in op #{op:?} (code {}, at script byte {sa}); \
+                 rust {:02x?} c++ {:02x?}",
+                log.len(),
+                cpp.len(),
+                op.map(|_| script[sa]).unwrap_or(0),
+                ctx(&log),
+                ctx(&cpp)
+            )
+        });
+        files += 1;
+    }
+    println!(
+        "animation evaluation: {CASES} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=11: {:?}); \
+         files excluded (loading undefined): {load_excluded:?}; scripts stopped at (undefined upstream): {} {excluded:?}",
+        &per_op[1..],
         excluded.values().sum::<u64>()
     );
     check.finish();
