@@ -4,9 +4,11 @@
 //! `WW3D2/w3d_file.h`, and the loaders of `htree.cpp`, `motchan.cpp`,
 //! `hrawanim.cpp` and `hcanim.cpp` (see `differential/wrap_w3d.cpp` and
 //! `build.rs`; the file underneath is the real `RAMFile.cpp`), and (sections
-//! 7 and 8) the mesh loader of `meshmdlio.cpp` (`differential/
-//! wrap_w3d_mesh.cpp`) and the HLOD definition loader of `hlod.cpp`
-//! (`differential/wrap_w3d_hlod.cpp`).
+//! 7 to 9) the mesh loader of `meshmdlio.cpp` (`differential/
+//! wrap_w3d_mesh.cpp`), the HLOD definition loader of `hlod.cpp`
+//! (`differential/wrap_w3d_hlod.cpp`) and the collection and aggregate
+//! definition loaders of `collect.cpp` and `agg_def.cpp`
+//! (`differential/wrap_w3d_collect.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -1868,4 +1870,483 @@ fn hlod_load_matches_upstream() {
         excluded.values().sum::<u64>()
     );
     check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 9. Collections and aggregates (collect.cpp, snappts.cpp, agg_def.cpp)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::{agg_def, collect};
+
+/// `ref_w3d_load_collect` of wrap_w3d_collect.cpp, in Rust: kind 0
+/// collection, 1 aggregate. `Ok(None)` when an object-name array is over
+/// 2^16 bytes (kept out of the comparison: the log holds every byte).
+fn rust_load_collect(data: &[u8], kind: i32) -> W3dResult<Option<Log>> {
+    let mut log = Log::new();
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    log.push(b'O');
+    if c.open_chunk()? {
+        log.push(1);
+        if kind == 0 {
+            match collect::load_w3d(&mut c)? {
+                Some(d) => {
+                    if d.object_names.iter().any(|n| n.len > 1 << 16) {
+                        return Ok(None);
+                    }
+                    log.push(b'C');
+                    log.extend_from_slice(&d.name);
+                    p32(&mut log, d.object_names.len() as u32);
+                    for n in &d.object_names {
+                        p32(&mut log, n.len);
+                        let mut b = n.bytes.clone();
+                        b.resize(n.len as usize, 0);
+                        log.extend(b);
+                    }
+                    p32(&mut log, d.proxies.len() as u32);
+                    for p in &d.proxies {
+                        pstr(&mut log, Some(&p.name));
+                        for row in p.transform {
+                            for v in row {
+                                p32(&mut log, v.to_bits());
+                            }
+                        }
+                    }
+                    match &d.snap_points {
+                        None => log.push(0),
+                        Some(pts) => {
+                            log.push(1);
+                            p32(&mut log, pts.len() as u32);
+                            for v in pts.iter().flatten() {
+                                p32(&mut log, v.to_bits());
+                            }
+                        }
+                    }
+                }
+                None => log.extend_from_slice(&[b'e', 2]),
+            }
+        } else {
+            match agg_def::load_w3d(&mut c)? {
+                Some(d) => {
+                    log.push(b'A');
+                    pstr(&mut log, d.name.as_deref());
+                    p32(&mut log, d.version);
+                    log.extend(d.info.to_bytes());
+                    log.extend(d.misc_info.to_bytes());
+                    p32(&mut log, d.subobjects.len() as u32);
+                    for s in &d.subobjects {
+                        for name in [&s.subobject_name, &s.bone_name] {
+                            let mut b = name.clone();
+                            b.resize(32, 0);
+                            log.extend(b);
+                        }
+                    }
+                }
+                None => log.extend_from_slice(&[b'e', 2]),
+            }
+        }
+    } else {
+        log.push(0);
+    }
+    log_state(&mut log, &mut c);
+    Ok(Some(log))
+}
+
+fn cpp_load_collect(data: &[u8], kind: i32) -> Log {
+    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load_collect(data.as_ptr() as *const _, data.len() as i32, kind, log, cap, n) })
+}
+
+fn coll_header(name: &[u8], count: u32) -> Vec<u8> {
+    let mut h = W3dCollectionHeaderStruct::from_bytes(&[0; 32]);
+    h.version = W3D_CURRENT_COLLECTION_VERSION;
+    h.name[..name.len()].copy_from_slice(name);
+    h.render_object_count = count;
+    hchunk(W3D_CHUNK_COLLECTION_HEADER, &h.to_bytes())
+}
+
+fn coll_placeholder(transform: [[f32; 3]; 4], name_len: u32, name: &[u8]) -> Vec<u8> {
+    let mut p = W3dPlaceholderStruct::from_bytes(&[0; 56]);
+    p.version = W3D_CURRENT_PLACEHOLDER_VERSION;
+    p.transform = transform;
+    p.name_len = name_len;
+    let mut b = p.to_bytes();
+    b.extend_from_slice(name);
+    hchunk(W3D_CHUNK_PLACEHOLDER, &b)
+}
+
+fn coll_points(p: &[[f32; 3]]) -> Vec<u8> {
+    let b: Vec<u8> = p.iter().flat_map(|v| v.iter().flat_map(|f| f.to_le_bytes())).collect();
+    hchunk(W3D_CHUNK_POINTS, &b)
+}
+
+fn agg_header(version: u32, name: &[u8]) -> Vec<u8> {
+    let mut h = W3dAggregateHeaderStruct::from_bytes(&[0; 20]);
+    h.version = version;
+    h.name[..name.len()].copy_from_slice(name);
+    hchunk(W3D_CHUNK_AGGREGATE_HEADER, &h.to_bytes())
+}
+
+fn agg_info(base: &[u8], count: u32, subs: &[(&[u8], &[u8])]) -> Vec<u8> {
+    let mut i = W3dAggregateInfoStruct::from_bytes(&[0; 36]);
+    i.base_model_name[..base.len()].copy_from_slice(base);
+    i.subobject_count = count;
+    let mut b = i.to_bytes();
+    for (n, bone) in subs {
+        let mut s = W3dAggregateSubobjectStruct::from_bytes(&[0; 64]);
+        s.subobject_name[..n.len()].copy_from_slice(n);
+        s.bone_name[..bone.len()].copy_from_slice(bone);
+        b.extend(s.to_bytes());
+    }
+    hchunk(W3D_CHUNK_AGGREGATE_INFO, &b)
+}
+
+fn agg_class_info(id: u32, flags: u32) -> Vec<u8> {
+    let mut m = W3dAggregateMiscInfo::from_bytes(&[0; 20]);
+    m.original_class_id = id;
+    m.flags = flags;
+    hchunk(W3D_CHUNK_AGGREGATE_CLASS_INFO, &m.to_bytes())
+}
+
+/// The named cases of `formats::w3d::collect`'s and `agg_def`'s unit
+/// tests, as whole files: (kind, name, file).
+fn collect_named_cases() -> Vec<(i32, &'static str, Vec<u8>)> {
+    let coll = |body: Vec<u8>| hchunk(W3D_CHUNK_COLLECTION, &body);
+    let agg = |body: Vec<u8>| hchunk(W3D_CHUNK_AGGREGATE, &body);
+    let mut v = Vec::new();
+
+    let mut b = coll_header(b"COLL", 2);
+    b.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"MESH1\0"));
+    b.extend(hchunk(W3D_CHUNK_TRANSFORM_NODE, &[0; 60]));
+    b.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"MESH2\0"));
+    let t = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0], [10.0, 11.0, 12.0]];
+    b.extend(coll_placeholder(t, 2, b"PH"));
+    b.extend(coll_points(&[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]));
+    v.push((0, "collection: names, placeholder, points", coll(b)));
+
+    let mut b = coll_header(b"ABCDEFGHIJKLMNOP", 1);
+    b.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"ABC"));
+    b.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"X\0"));
+    b.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b""));
+    b.extend(coll_placeholder([[0.0; 3]; 4], 10, b"SHORT"));
+    b.extend(coll_points(&[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]]));
+    let mut p2 = coll_points(&[[7.0, 8.0, 9.0]]);
+    p2[4] = 14;
+    p2.extend_from_slice(&[0xAA, 0xBB]);
+    b.extend(p2);
+    v.push((0, "collection: unchecked reads, replaced points, 16-character name", coll(b)));
+
+    let mut b = coll_header(b"C", 0);
+    let mut n = hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"ABCD");
+    n[4] = 100;
+    b.extend(n);
+    let mut f = W3D_CHUNK_COLLECTION.to_le_bytes().to_vec();
+    f.extend_from_slice(&(b.len() as u32 + 96).to_le_bytes());
+    f.extend(b);
+    v.push((0, "collection: object name longer than the file", f));
+
+    v.push((0, "collection: first chunk not the header", coll(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, b"A\0"))));
+    v.push((0, "collection: short header", coll(hchunk(W3D_CHUNK_COLLECTION_HEADER, &[0; 31]))));
+    v.push((0, "collection: RenderObjectCount 0x1FFFFFFF", coll(coll_header(b"C", 0x1FFF_FFFF))));
+
+    let mut b = agg_header(W3D_CURRENT_AGGREGATE_VERSION, b"AGG");
+    b.extend(agg_info(b"BASE", 2, &[(b"GUN", b"BONE01"), (b"FLAG", b"BONE02")]));
+    b.extend(hchunk(W3D_CHUNK_TEXTURE_REPLACER_INFO, &5u32.to_le_bytes()));
+    b.extend(agg_class_info(0, 3));
+    b.extend(hchunk(0x0000_06FF, &[9; 7]));
+    v.push((1, "aggregate: header, info, sub-objects, class info", agg(b)));
+
+    v.push((1, "aggregate: empty", agg(Vec::new())));
+    let mut b = agg_header(1, b"ONE");
+    b.extend(agg_info(b"B1", 2, &[(b"A", b"BA"), (b"B", b"BB")]));
+    b.extend(hchunk(W3D_CHUNK_TEXTURE_REPLACER_INFO, &[1, 2]));
+    b.extend(agg_header(2, b"TWO"));
+    b.extend(agg_info(b"B2", 1, &[(b"C", b"BC")]));
+    v.push((1, "aggregate: repeated header and info, short texture replacer", agg(b)));
+
+    v.push((1, "aggregate: short header", agg(hchunk(W3D_CHUNK_AGGREGATE_HEADER, &[0; 19]))));
+    v.push((1, "aggregate: short info", agg(hchunk(W3D_CHUNK_AGGREGATE_INFO, &[0; 35]))));
+    v.push((1, "aggregate: fewer sub-objects than the count", agg(agg_info(b"B", 2, &[(b"A", b"BA")]))));
+    v.push((1, "aggregate: short class info", agg(hchunk(W3D_CHUNK_AGGREGATE_CLASS_INFO, &[0; 19]))));
+    v.push((1, "aggregate: 31-character sub-object name", agg(agg_info(b"B", 1, &[(&[b'N'; 31], b"BONE")]))));
+    v
+}
+
+/// The named cases: the files of `formats::w3d::collect`'s unit tests (two
+/// object names, a skipped transform node, a placeholder and snap points;
+/// an unterminated object name, an empty one, a placeholder name read that
+/// fails its chunk bound, a second points chunk with a partial point, a
+/// 16-character name; an object-name chunk longer than the file; the two
+/// header failures; a `RenderObjectCount` just under the allocation limit)
+/// and of `agg_def`'s (a full aggregate; an empty one; repeated header and
+/// info chunks and a short texture-replacer header; the four short-read
+/// failures; a 31-character sub-object name). The undefined cases of those
+/// tests are not given to the C++.
+///
+/// Compared byte for byte: the load result; for a collection the 16 name
+/// bytes, every object-name array (its size, from the C++ `new[]` registry,
+/// and all its bytes), every proxy's name and 12 transform floats, the snap
+/// points; for an aggregate the name (or null), version, the bytes of
+/// `m_Info` and `m_MiscInfo`, every sub-object's two 32-byte names; and the
+/// chunk depth and file position the loader leaves.
+///
+/// Predicted before the run: all ~~15~~ **14** (corrected after the run: a
+/// miscount of the list) agree, in particular the transposed
+/// placeholder transform, the partial object name (`ABCD` and 96 zeros),
+/// the replaced snap points, the appended aggregate sub-objects, and the
+/// empty aggregate's class id 25 (`CLASSID_HLOD`, counted by hand from
+/// rendobj.h's enum: the C++ checks the count).
+#[test]
+fn collect_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("CollectionDefClass::Load / AggregateDefClass::Load_W3D, named cases");
+    let cases = collect_named_cases();
+    for (kind, name, data) in &cases {
+        let rust =
+            rust_load_collect(data, *kind).unwrap_or_else(|e| panic!("{name}: Rust undefined: {e:?}")).expect("small arrays");
+        let c = cpp_load_collect(data, *kind);
+        check.eq(&rust, &c, || format!("{name}: {:02x?}", data));
+    }
+    println!("collection/aggregate named cases: {} compared", cases.len());
+    check.finish();
+}
+
+fn gen_text(g: &mut Gn, max: usize) -> Vec<u8> {
+    let len = match g.below(12) {
+        0 => max,
+        1 => max.saturating_sub(1),
+        2 => 0,
+        _ => 1 + g.below(10) as usize,
+    };
+    (0..len.min(max)).map(|_| b'A' + g.below(26) as u8).collect()
+}
+
+fn gen_collection(g: &mut Gn) -> Vec<u8> {
+    let mut h = W3dCollectionHeaderStruct::from_bytes(&[0; 32]);
+    h.version = if g.coin() { W3D_CURRENT_COLLECTION_VERSION } else { g.g.u32() };
+    let n = gen_text(g, 16);
+    h.name[..n.len()].copy_from_slice(&n);
+    h.render_object_count = match g.below(20) {
+        0 => 0xFFFF_FFFF,
+        1 => 0x2000_0000,
+        2 => 0x1FFF_FFFF,
+        _ => g.below(6),
+    };
+    let mut body = if g.chance(20) {
+        chunk(g, W3D_CHUNK_COLLECTION_OBJ_NAME, false, b"X\0")
+    } else {
+        let hb = h.to_bytes();
+        let hb = if g.chance(10) { hb[..g.below(32) as usize].to_vec() } else { hb };
+        chunk(g, W3D_CHUNK_COLLECTION_HEADER, false, &hb)
+    };
+    for _ in 0..g.below(7) {
+        match g.below(6) {
+            0 | 1 => {
+                let mut b = gen_text(g, 24);
+                if g.below(3) != 0 {
+                    b.push(0);
+                }
+                if g.below(6) == 0 {
+                    b.extend((0..g.below(6)).map(|_| g.g.u32() as u8));
+                }
+                body.extend(chunk(g, W3D_CHUNK_COLLECTION_OBJ_NAME, false, &b));
+            }
+            2 => {
+                let mut p = W3dPlaceholderStruct::from_bytes(&[0; 56]);
+                p.version = W3D_CURRENT_PLACEHOLDER_VERSION;
+                for row in p.transform.iter_mut() {
+                    for v in row.iter_mut() {
+                        *v = g.f32();
+                    }
+                }
+                let name = gen_text(g, 20);
+                p.name_len = match g.below(12) {
+                    0 => 0xFFFF_FFFF,
+                    1 => 0x7FFF_FFFF,
+                    2 => name.len() as u32 + 1 + g.below(8),
+                    3 => name.len().saturating_sub(1) as u32,
+                    _ => name.len() as u32,
+                };
+                let mut b = p.to_bytes();
+                if g.chance(8) {
+                    b.truncate(g.below(56) as usize);
+                }
+                b.extend(name);
+                if g.below(4) == 0 {
+                    b.push(0);
+                }
+                body.extend(chunk(g, W3D_CHUNK_PLACEHOLDER, false, &b));
+            }
+            3 => {
+                let k = g.below(5);
+                let mut b = Vec::new();
+                for _ in 0..k * 3 {
+                    b.extend(g.f32().to_le_bytes());
+                }
+                b.extend((0..g.below(3) * g.below(5)).map(|_| g.g.u32() as u8));
+                body.extend(chunk(g, W3D_CHUNK_POINTS, false, &b));
+            }
+            4 => {
+                let junk: Vec<u8> = (0..g.below(70)).map(|_| g.g.u32() as u8).collect();
+                body.extend(chunk(g, W3D_CHUNK_TRANSFORM_NODE, false, &junk));
+            }
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = if g.coin() { W3D_CHUNK_COLLECTION_HEADER } else { g.g.u32() };
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    chunk(g, W3D_CHUNK_COLLECTION, true, &body)
+}
+
+fn gen_aggregate(g: &mut Gn) -> Vec<u8> {
+    let mut body = Vec::new();
+    for _ in 0..g.below(6) {
+        match g.below(6) {
+            0 => {
+                let mut h = W3dAggregateHeaderStruct::from_bytes(&[0; 20]);
+                h.version = if g.coin() { W3D_CURRENT_AGGREGATE_VERSION } else { g.g.u32() };
+                let n = gen_text(g, 16);
+                h.name[..n.len()].copy_from_slice(&n);
+                let mut b = h.to_bytes();
+                if g.chance(8) {
+                    b.truncate(g.below(20) as usize);
+                }
+                body.extend(chunk(g, W3D_CHUNK_AGGREGATE_HEADER, false, &b));
+            }
+            1 | 2 => {
+                let k = g.below(4);
+                let mut i = W3dAggregateInfoStruct::from_bytes(&[0; 36]);
+                let n = gen_text(g, 32);
+                i.base_model_name[..n.len()].copy_from_slice(&n);
+                i.subobject_count = match g.below(12) {
+                    0 => 0xFFFF_FFFF,
+                    1 => k + 1,
+                    _ => k,
+                };
+                let mut b = i.to_bytes();
+                for _ in 0..k {
+                    let mut s = W3dAggregateSubobjectStruct::from_bytes(&[0; 64]);
+                    let n = gen_text(g, 32);
+                    s.subobject_name[..n.len()].copy_from_slice(&n);
+                    let n = gen_text(g, 32);
+                    s.bone_name[..n.len()].copy_from_slice(&n);
+                    b.extend(s.to_bytes());
+                }
+                if g.chance(8) {
+                    let n = g.below(b.len() as u32 + 1) as usize;
+                    b.truncate(n);
+                }
+                body.extend(chunk(g, W3D_CHUNK_AGGREGATE_INFO, false, &b));
+            }
+            3 => {
+                let mut m = W3dAggregateMiscInfo::from_bytes(&[0; 20]);
+                m.original_class_id = if g.coin() { g.below(30) } else { g.g.u32() };
+                m.flags = g.g.u32();
+                let mut b = m.to_bytes();
+                if g.chance(8) {
+                    b.truncate(g.below(20) as usize);
+                }
+                body.extend(chunk(g, W3D_CHUNK_AGGREGATE_CLASS_INFO, false, &b));
+            }
+            4 => {
+                let b: Vec<u8> = (0..g.below(8)).map(|_| g.g.u32() as u8).collect();
+                body.extend(chunk(g, W3D_CHUNK_TEXTURE_REPLACER_INFO, false, &b));
+            }
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = g.g.u32();
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    chunk(g, W3D_CHUNK_AGGREGATE, true, &body)
+}
+
+fn run_collect_cases(name: &str, kind: i32, seed: u64, gen: impl Fn(&mut Gn) -> Vec<u8>) {
+    let mut g = Gn { g: Gen::new(seed), clean: false };
+    let mut check = Check::new(name);
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut ok, mut failed, mut large) = (0u64, 0u64, 0u64);
+    const CASES: usize = 20_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let data = gen(&mut g);
+        let data = mutate(&mut g, data);
+        let rust = match rust_load_collect(&data, kind) {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                large += 1;
+                continue;
+            }
+            Err(W3dError::Undefined(u)) => {
+                *excluded.entry(format!("{u:?}")).or_default() += 1;
+                continue;
+            }
+            Err(e) => {
+                *excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        match rust.get(2) {
+            Some(b'C' | b'A') => ok += 1,
+            Some(b'e') => failed += 1,
+            _ => {}
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("{name} case {case}: {:02x?}", data);
+        }
+        let c = cpp_load_collect(&data, kind);
+        check.eq(&rust, &c, || format!("case {case}: {:02x?}", data));
+    }
+    println!(
+        "{name}: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream or not ending): {} \
+         {excluded:?}; excluded (object name over 2^16 bytes): {large}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+/// Random collection files, half well-formed and half also with wrong chunk
+/// sizes, truncations and byte mutations: header names of 0 to 16
+/// characters, `RenderObjectCount`s small, at the allocation limit and over
+/// it, object names terminated or not (and empty), placeholders with
+/// `name_len` matching the name, shorter, longer than the chunk, `2^31 - 1`
+/// or `0xFFFFFFFF`, and structs cut short, points chunks with whole and
+/// partial points, transform nodes and unknown chunks. Compared as
+/// [`collect_named_cases_match_upstream`]; undefined inputs (counted) are
+/// not given to the C++, nor are ones with an object name over 2^16 bytes.
+///
+/// Predicted before the run: no disagreement; about a fifth to a third
+/// excluded as undefined (`UninitialisedRead` from short placeholders,
+/// `IndexOutOfRange`, `Allocation`).
+///
+/// Result (2026-11-05): 16,580 compared, 0 mismatches; 3,256 excluded as
+/// undefined (16 %, under the predicted range: 2,299 `Allocation`, 514
+/// `IndexOutOfRange`, 440 `UninitialisedRead`, 3 `NonTerminating`), 164 for
+/// an object name over 2^16 bytes.
+#[test]
+fn collection_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_collect_cases("CollectionDefClass::Load (collect.cpp)", 0, 0xC011, gen_collection);
+}
+
+/// Random aggregate files, generated as the collections: headers (names of
+/// 0 to 16 characters, cut short), info chunks (base model names of 0 to
+/// 32 characters, `SubobjectCount` matching the sub-objects, one more, or
+/// `0xFFFFFFFF`; sub-object and bone names of 0 to 32 characters; cut
+/// short), class-info chunks (cut short), texture-replacer chunks of 0 to 7
+/// bytes, unknown chunks, in any order and number.
+///
+/// Predicted before the run: no disagreement; roughly a third to a half
+/// excluded as undefined (`StringOverrun` from 16-character header names
+/// and 32-character bone names, `StringOverflow` from 32-character
+/// sub-object names).
+///
+/// Result (2026-11-05): 17,058 compared, 0 mismatches; 2,942 excluded as
+/// undefined (15 %, well under the predicted third to a half: 1,757
+/// `StringOverrun`, 1,184 `StringOverflow`, 1 `NonTerminating`).
+#[test]
+fn aggregate_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_collect_cases("AggregateDefClass::Load_W3D (agg_def.cpp)", 1, 0xA66, gen_aggregate);
 }

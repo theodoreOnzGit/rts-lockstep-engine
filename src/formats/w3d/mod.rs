@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! W3D files: the format definitions ([`w3d_file`]) and the loaders WW3D2
 //! reads meshes ([`mesh`]), hierarchies ([`htree`]), hierarchical LOD
-//! models ([`hlod`]) and animations ([`hanim`], [`motchan`]) with, into
+//! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`])
+//! and animations ([`hanim`], [`motchan`]) with, into
 //! plain structs (no rendering). All of it reads through the WWLib chunk
 //! reader, [`crate::ww::chunkio`]. The asset manager's file loop
 //! (`WW3DAssetManager::Load_3D_Assets`, which picks the loader by top-level
@@ -13,6 +14,8 @@
 //! upstream leaves it, which can be inside chunks it did not close), and
 //! `Err` an input on which upstream is undefined.
 
+pub mod agg_def;
+pub mod collect;
 pub mod hanim;
 pub mod hlod;
 pub mod htree;
@@ -112,6 +115,21 @@ pub(crate) fn read_array(cload: &mut ChunkLoad<'_>, nbytes: u32, capacity: usize
     }
     buf.truncate(nbytes as usize);
     Ok(Some(buf))
+}
+
+/// `cload.Read(buf, nbytes)` into a zero-filled buffer of `nbytes` bytes
+/// whose contents are kept whatever the read returns (the game's allocator
+/// zero-fills; a read that fits the chunk but finds the file short still
+/// copies what the file had). Returns whether the read succeeded and the
+/// buffer's first bytes: at most the bytes left in the file, the rest of the
+/// `nbytes` being zeros. `nbytes` must be at most `i32::MAX` (the callers
+/// check the allocation first).
+pub(crate) fn read_partial(cload: &mut ChunkLoad<'_>, nbytes: u32) -> W3dResult<(bool, Vec<u8>)> {
+    let f = cload.file();
+    let left = f.file_size().wrapping_sub(f.position()).max(0) as usize;
+    let mut buf = vec![0u8; (nbytes as usize).min(left)];
+    let n = cload.read(&mut buf, nbytes)?;
+    Ok((n == nbytes, buf))
 }
 
 /// The C string starting at `buf[start]`, as `strlen`/`strcpy` read it:
