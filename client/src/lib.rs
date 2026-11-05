@@ -11,6 +11,7 @@
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
 //! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
+//! - [`terrain`]: the terrain's look from the world and the game's files (#11); its Bevy meshes with feature `app`.
 //! - [`view`]: the view model. What is drawn, read from the `World`; plain Rust, no Bevy.
 //! - `model` (feature `app`): W3D models drawn with Bevy, and the model viewer's scene (#10, step 4).
 //! - `app` (feature `app`, on by default): the Bevy application.
@@ -19,6 +20,7 @@ pub mod demo;
 pub mod drawables;
 pub mod import;
 pub mod input;
+pub mod terrain;
 pub mod view;
 
 #[cfg(feature = "app")]

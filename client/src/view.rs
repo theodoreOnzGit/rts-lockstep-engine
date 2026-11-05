@@ -2,8 +2,10 @@
 //! The view model: what the client draws, read from the game logic's `World` after a logic frame. Plain Rust, no Bevy.
 //!
 //! Milestone C1 draws no art. Each object is its own collision geometry (`GeometryInfo`: a sphere, a cylinder or a box at
-//! its radii and height), at its position and orientation, in its player's indicator colour, with a health bar. The
-//! terrain is the logic's height map, sampled on a grid.
+//! its radii and height), at its position and orientation, in its player's indicator colour, with a health bar. ~~The
+//! terrain is the logic's height map, sampled on a grid.~~ **Corrected 2026-11-05 (#11):** the terrain is drawn by
+//! `crate::terrain` from the game's own vertices (`updateVB`); [`terrain_grid`] (the logic's ground height on a grid)
+//! is no longer drawn, and stays for its test.
 //!
 //! **Coordinates.** The game is right-handed with z up; Bevy is right-handed with y up. A game point `(x, y, z)` is drawn at
 //! `(x, z, -y)` ([`to_bevy`]), which keeps handedness, so a game rotation by `angle` about +z is a Bevy rotation by the same

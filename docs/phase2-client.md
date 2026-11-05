@@ -66,7 +66,9 @@ Not yet translated:
   **Corrected 2026-11-05 (#24):** translated in batch F1 (#9): `TheFileSystem` over a local device, archives mounted by
   their directory and members read by range; in the browser the art archives are read by range from the player's
   files (`RangedDevice`, #24);
-- the terrain's tile data and textures;
+- ~~the terrain's tile data and textures;~~ **Corrected 2026-11-05 (#11):** translated (`client::terrain_height_map`:
+  the blend tile data, the tiles, the atlas, the UVs and `updateVB`'s vertices); still missing: the vertex lighting,
+  the custom blend edges, water and shoreline (see #11's history entry below);
 - WND layouts.
 
 Until the owner supplies a copy for testing, the milestones that need no art come first, and the loaders are tested on
@@ -98,6 +100,28 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#11 (2026-11-05, GitHub #11): the terrain drawn as the game draws it.**
+- **Translated** (engine crate, `client::terrain_height_map`, from `WorldHeightMap.cpp`, `TerrainTex.cpp`,
+  `HeightMap.cpp`): the rest of `ParseBlendTileData` (edge classes, blend tiles with their `FLAG_VAL`, cliff infos; the
+  logic's parse now keeps the indices and the chunk's remaining bytes, consuming the chunk as before) and the
+  constructor's "patch bad maps"; `readTexClass`, `countTiles`, `readTiles`; `updateTileTexturePositions`,
+  `getTerrainTexture` and `TerrainTextureClass::update` (the A1R5G5B5 atlas with its wrap-around borders);
+  `getUVForNdx`, `getUVData`, `getUVForTileIndex` (cliff infos and `DO_OLD_UV`'s stretch), `getAlphaUVData`,
+  `getExtraAlphaUVData`; `HeightMapRenderObjClass::updateVB` (positions, normals, both UV sets, alpha, the
+  `FLIP_TRIANGLES` diagonal) over the whole map, `getXWithOrigin`/`getYWithOrigin`, and `renderExtraBlendTiles`'
+  cells. Quirks kept are listed in the module's docs.
+- **New** (client, `client/src/terrain.rs`): the look (textured, shaded without textures, flat without a height map)
+  and three Bevy meshes in place of upstream's passes (base, blend with vertex alpha, third layer), with depth biases;
+  the atlas with 3 box-filtered mip levels. Picking meets the logic's ground height. On the web, `TerrainZH.big` is no
+  longer skipped and is read by range (#24); the terrain is built again once its Targas arrive.
+- *Results:* 7 engine unit tests and 4 client tests (predictions in their docs), all as predicted, except one client
+  test whose first run failed: an unserved read of a loose ranged file opens as empty, not `None`, so "waiting" is now
+  told by the device's unserved-read count. Differential (`tests/differential_terrain_mesh.rs`, upstream's code cut
+  verbatim by `build.rs`): first run 235,104 mismatches, all from the wrapper lacking `FLIP_TRIANGLES`; then 3,000
+  synthetic maps, 1,701,051 cells, 6,804,204 vertices and 3,138,387,968 atlas words, **0 mismatches**; four planted
+  bugs caught, two equivalent ones not. Gate (a) passes (last CRC `0bf44067`); the gate game's CRCs are unchanged with
+  the terrain built every frame. Seen textured natively (Xvfb) and in headless Chromium on a synthetic install.
 
 **#24 (2026-11-05, GitHub #24): the browser reads the art archives by range, and draws the game's models.**
 - **The device** (engine crate, `common::file_system::RangedDevice`, new: upstream reads through Windows' synchronous

@@ -3462,3 +3462,31 @@ extern "C" {
     ) -> c_int;
 }
 // --- end p1w11-sonnet ---
+
+// --- #11, the terrain ---
+extern "C" {
+    // WorldHeightMap.cpp (readTexClass, countTiles, readTiles, updateTileTexturePositions, the UV lookups,
+    // getTerrainTexture), TerrainTex.cpp (TerrainTextureClass::update), HeightMap.cpp (updateVB), verbatim
+    // (wrap_terrain_mesh.cpp, which documents every array).
+    pub fn ref_terrain_mesh(
+        ints: *const c_int,
+        data: *const c_uchar,
+        tile: *const c_short,
+        blend: *const c_short,
+        extra: *const c_short,
+        cliff_ndx: *const c_short,
+        blends: *const c_int,
+        cliffs: *const c_float,
+        cliff_ints: *const c_int,
+        classes: *const c_int,
+        tga: *const c_uchar,
+        tga_lens: *const c_int,
+        uv: *mut c_float,
+        cell: *mut c_int,
+        vtx: *mut c_float,
+        vtx_alpha: *mut c_int,
+        info: *mut c_int,
+        atlas: *mut c_ushort,
+        atlas_cap: c_int,
+    ) -> c_int;
+}

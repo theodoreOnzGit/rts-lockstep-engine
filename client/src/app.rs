@@ -16,7 +16,13 @@
 //!   unit's command buttons are along the bottom, and a construct button puts the building at the cursor until a click
 //!   places it. Escape cancels a placement or a pending command. Everything goes through [`crate::input::Controls`], the
 //!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
-//!   (within 18 pixels), the ground by the camera ray meeting the ground plane (the demo's ground is flat).
+//!   (within 18 pixels), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
+//!   **corrected 2026-11-05 (#11):** the logic's ground height (`TerrainLogic::ground_height`), the plane at 0 only
+//!   when the ray meets no ground.
+//!
+//! - **The terrain** (#11): built from the map when a game starts (`crate::terrain`): the game's tile textures and
+//!   blend layers when the art has them, else the height map shaded, else a flat plane; while a terrain texture is
+//!   being fetched (the web) it is built again on a later frame.
 //!
 //! - **Models** (#25): after each logic frame the frame's client events go to the drawables (`crate::drawables`); every
 //!   rendered frame the draw modules choose and time each object's model and animation, and an object whose model the
@@ -43,7 +49,8 @@ use crate::demo::demo_world;
 use crate::drawables::{Art, WorldDrawables};
 use rts_lockstep_engine::common::file_system::LocalDevice;
 use crate::input::Controls;
-use crate::view::{interpolate, snapshot, terrain_grid, to_bevy, Shape, Snapshot, TerrainGrid};
+use crate::terrain::{spawn_terrain, terrain_look, Ground, TerrainBuild};
+use crate::view::{interpolate, snapshot, to_bevy, Shape, Snapshot};
 
 /// The logic's frame rate (`LOGICFRAMES_PER_SECOND`).
 const LOGIC_HZ: f64 = 30.0;
@@ -161,8 +168,6 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             Game::new(w, 1, "demo game: load your Zero Hour folder to play".to_string(), None)
         }
     };
-    let terrain = terrain_grid(&game.controls.client.world, 10.0);
-
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -177,12 +182,12 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         }))
         .insert_resource(Time::<Fixed>::from_hz(LOGIC_HZ))
         .insert_non_send(game)
-        .insert_resource(TerrainData(terrain))
+        .insert_resource(TerrainState { pending: true, look: "none" })
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
-        .add_systems(Update, (poll_import, pump_art).chain())
+        .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
             (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, control_bar, update_hud).chain(),
@@ -190,27 +195,55 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .run();
 }
 
+/// The terrain (#11): built when a game starts, and again on a later frame while its textures are being fetched.
 #[derive(Resource)]
-struct TerrainData(Option<TerrainGrid>);
+struct TerrainState {
+    /// The terrain is still to be built for the current game.
+    pending: bool,
+    /// What it was drawn as (`TerrainLook::name`), for the HUD.
+    look: &'static str,
+}
 
-#[derive(Component)]
-struct Ground;
-
-/// The terrain's mesh (marked [`Ground`]), and the view's centre and size.
-fn spawn_ground(commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, terrain: &Option<TerrainGrid>) -> (Vec2, f32) {
-    match terrain {
-        Some(g) => {
-            let w = (g.nx - 1) as f32 * g.step;
-            let h = (g.ny - 1) as f32 * g.step;
-            commands.spawn((
-                Ground,
-                Mesh3d(meshes.add(terrain_mesh(g))),
-                MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.32, 0.42, 0.26), perceptual_roughness: 1.0, ..default() })),
-            ));
-            (Vec2::new(w / 2.0, h / 2.0), w.max(h))
+/// The view's centre and size: the map's extent, or a 400-unit square without a map.
+fn view_frame(world: &GameWorld) -> (Vec2, f32) {
+    match world.terrain.extent() {
+        Ok(e) => {
+            let (w, h) = (e.hi.x - e.lo.x, e.hi.y - e.lo.y);
+            (Vec2::new(e.lo.x + w / 2.0, e.lo.y + h / 2.0), w.max(h))
         }
-        None => (Vec2::new(200.0, 200.0), 400.0),
+        Err(_) => (Vec2::new(200.0, 200.0), 400.0),
     }
+}
+
+/// GUI glue (needs the app): (re)builds the terrain while [`TerrainState::pending`]: the look from the world and the
+/// art's files ([`terrain_look`], tested there), spawned with [`spawn_terrain`] in place of the last game's. While a
+/// texture is being fetched (the web's ranged reads) it waits for a later frame.
+#[allow(clippy::too_many_arguments)]
+fn update_terrain(
+    mut commands: Commands,
+    game: NonSend<Game>,
+    mut state: ResMut<TerrainState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    grounds: Query<Entity, With<Ground>>,
+) {
+    if !state.pending {
+        return;
+    }
+    let world = &game.controls.client.world;
+    let look = match terrain_look(world, game.models.art.as_ref().map(|a| &a.fs)) {
+        TerrainBuild::Waiting => return,
+        TerrainBuild::Ready(look) => look,
+    };
+    for e in &grounds {
+        commands.entity(e).despawn();
+    }
+    let width = world.terrain.logic_height_map().map_or(0, |m| m.x_extent());
+    spawn_terrain(&mut commands, &mut meshes, &mut materials, &mut images, &look, width);
+    info!("terrain: {}", look.name());
+    state.pending = false;
+    state.look = look.name();
 }
 
 /// GUI glue (needs a window): the player's files, once the page has handed them over, replace the demo with their game.
@@ -220,9 +253,7 @@ fn poll_import(
     mut game: NonSendMut<Game>,
     mut drawn: ResMut<Drawn>,
     mut rig: ResMut<Rig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    grounds: Query<Entity, With<Ground>>,
+    mut terrain: ResMut<TerrainState>,
 ) {
     let Some(files) = crate::import::take_import() else { return };
     game.playing = "loading your Zero Hour files...".to_string();
@@ -242,11 +273,8 @@ fn poll_import(
             for (_, (e, _)) in drawn.0.drain() {
                 commands.entity(e).despawn();
             }
-            for e in &grounds {
-                commands.entity(e).despawn();
-            }
-            let terrain = terrain_grid(&game.controls.client.world, 10.0);
-            let (centre, size) = spawn_ground(&mut commands, &mut meshes, &mut materials, &terrain);
+            terrain.pending = true;
+            let (centre, size) = view_frame(&game.controls.client.world);
             let distance = size * 0.6;
             *rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
         }
@@ -261,7 +289,7 @@ fn poll_import(
 /// GUI glue (needs the app): the art's exchange with the page each frame (#24): the ranges the page read go to the art's
 /// device and the ranges it wants are listed for the page (`crate::import::pump_ranges`, tested there), and the art's
 /// status is set for the page's `art_status()`.
-fn pump_art(mut game: NonSendMut<Game>) {
+fn pump_art(mut game: NonSendMut<Game>, terrain: Res<TerrainState>) {
     let g = &mut *game;
     let Some(art) = &mut g.models.art else { return };
     #[cfg(target_arch = "wasm32")]
@@ -285,16 +313,17 @@ fn pump_art(mut game: NonSendMut<Game>) {
     };
     let models: std::collections::BTreeSet<&[u8]> = g.cur.objects.iter().filter_map(|b| g.models.instance(b.id).map(|m| m.name.as_slice())).collect();
     crate::import::set_art_status(format!(
-        "models={} names={} remade={} missing={}{device}",
+        "models={} names={} remade={} missing={} terrain={}{device}",
         g.models.instance_count(),
         models.into_iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>().join(","),
         g.models.remade,
-        g.models.missing.len()
+        g.models.missing.len(),
+        terrain.look
     ));
 }
 
-fn setup_scene(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, terrain: Res<TerrainData>) {
-    let (centre, size) = spawn_ground(&mut commands, &mut meshes, &mut materials, &terrain.0);
+fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
+    let (centre, size) = view_frame(&game.controls.client.world);
     commands.spawn((
         DirectionalLight { illuminance: 9000.0, shadow_maps_enabled: true, ..default() },
         Transform::from_xyz(0.0, 1.0, 0.0).looking_at(Vec3::new(-0.4, 0.0, -0.3), Vec3::Y),
@@ -303,34 +332,6 @@ fn setup_scene(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
     let rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
     commands.spawn((Camera3d::default(), rig.transform()));
     commands.insert_resource(rig);
-}
-
-/// The height map as a triangle mesh, in Bevy's axes, with smooth normals.
-fn terrain_mesh(g: &TerrainGrid) -> Mesh {
-    use bevy::asset::RenderAssetUsages;
-    use bevy::mesh::{Indices, PrimitiveTopology};
-    let mut positions = Vec::with_capacity(g.nx * g.ny);
-    for j in 0..g.ny {
-        for i in 0..g.nx {
-            positions.push(to_bevy([i as f32 * g.step, j as f32 * g.step, g.heights[j * g.nx + i]]));
-        }
-    }
-    let mut indices = Vec::with_capacity((g.nx - 1) * (g.ny - 1) * 6);
-    for j in 0..g.ny - 1 {
-        for i in 0..g.nx - 1 {
-            let a = (j * g.nx + i) as u32;
-            let b = a + 1;
-            let c = a + g.nx as u32;
-            let d = c + 1;
-            // counter-clockwise seen from above in Bevy's axes (game +y is Bevy −z)
-            indices.extend_from_slice(&[a, b, d, a, d, c]);
-        }
-    }
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_indices(Indices::U32(indices));
-    mesh.compute_smooth_normals();
-    mesh
 }
 
 fn step_logic(mut game: NonSendMut<Game>) {
@@ -725,13 +726,41 @@ fn over_ui(cursor: Vec2, window: &Window) -> bool {
     cursor.y > window.height() - BAR_HEIGHT || cursor.x > window.width() - ZOOM_COLUMN || cursor.y < 28.0
 }
 
-/// The game point (z up) on the ground plane under `cursor`.
-fn ground_under(camera: &Camera, cam: &GlobalTransform, cursor: Vec2) -> Option<Coord3D> {
+/// The game point (z up) on the ground under `cursor`: where the camera ray first meets the logic's ground height
+/// (`height(x, y)`, game axes; #11: the terrain is no longer flat), marched in steps of 2 units then halved 16 times; the
+/// plane at height 0 when the ray meets no ground within 20,000 units.
+fn ground_under(camera: &Camera, cam: &GlobalTransform, cursor: Vec2, height: impl Fn(f32, f32) -> f32) -> Option<Coord3D> {
     let ray = camera.viewport_to_world(cam, cursor).ok()?;
-    let d = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))?;
-    let p = ray.get_point(d);
     // Bevy (x, y up, -game y) to the game's (x, y, z up)
-    Some(Coord3D { x: p.x, y: -p.z, z: p.y })
+    let game = |p: Vec3| Coord3D { x: p.x, y: -p.z, z: p.y };
+    let above = |t: f32| {
+        let p = ray.get_point(t);
+        p.y > height(p.x, -p.z)
+    };
+    let (mut lo, mut hi) = (0.0f32, 0.0f32);
+    let mut found = false;
+    while hi < 20_000.0 {
+        if !above(hi) {
+            found = true;
+            break;
+        }
+        lo = hi;
+        hi += 2.0;
+    }
+    if !found {
+        let d = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))?;
+        return Some(game(ray.get_point(d)));
+    }
+    for _ in 0..16 {
+        let mid = (lo + hi) / 2.0;
+        if above(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let p = ray.get_point(hi);
+    Some(Coord3D { x: p.x, y: -p.z, z: height(p.x, -p.z) })
 }
 
 /// The objects' positions on screen, from the last snapshot.
@@ -764,7 +793,7 @@ fn pointer_input(
         c.ui.set_gui_command(None);
     }
     let Some(cursor) = window.cursor_position() else { return };
-    let Some(ground) = ground_under(camera, cam, cursor) else { return };
+    let Some(ground) = ground_under(camera, cam, cursor, |x, y| g.controls.client.world.terrain.ground_height(x, y, false).0) else { return };
     let screen = on_screen(g, camera, cam);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();

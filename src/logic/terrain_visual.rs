@@ -536,9 +536,25 @@ pub struct TextureClass {
 }
 
 /// The parts of `BlendTileData` the logic reads (batch I59, #16): the tile of each sample, the cliff flag of each cell, and the
-/// texture classes. The blend tiles, cliff UVs, edge classes and the tiles' art are the client's.
+/// texture classes. ~~The blend tiles, cliff UVs, edge classes and the tiles' art are the client's.~~ **Corrected 2026-11-05
+/// (#11):** the client's parts are kept too, unread by the logic: the blend, extra blend and cliff info indices, the counts,
+/// and the chunk's remaining bytes (`rest`: the edge classes, the blend tiles and the cliff infos), which
+/// `client::terrain_height_map` reads. The logic consumes the chunk as before (the rest was skipped; now it is copied).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlendTiles {
+    /// The chunk's version (`info->version`).
+    pub version: u16,
+    /// `m_blendTileNdxes`, `m_extraBlendTileNdxes` (zeros below version 6), `m_cliffInfoNdxes` (zeros below version 5), as
+    /// read, before the client's patching.
+    pub blend_tile_ndxes: Vec<i16>,
+    pub extra_blend_tile_ndxes: Vec<i16>,
+    pub cliff_info_ndxes: Vec<i16>,
+    /// `m_numBitmapTiles`, `m_numBlendedTiles`, `m_numCliffInfo` (1 below version 5).
+    pub num_bitmap_tiles: i32,
+    pub num_blended_tiles: i32,
+    pub num_cliff_info: i32,
+    /// The bytes of the chunk after the texture classes, which the logic does not read.
+    pub rest: Vec<u8>,
     /// `m_tileNdxes`, `m_dataSize` entries.
     pub tile_ndxes: Vec<i16>,
     /// `m_cellCliffState`: one bit per cell, `flip_state_width` bytes a row, `m_height` rows.
@@ -562,7 +578,8 @@ pub struct BlendParse {
 /// `WorldHeightMap::ParseBlendTileData`, the logic's part: `m_dataSize` must match (`ERROR_CORRUPT_FILE_FORMAT`); the tile, blend,
 /// extra blend (version 6) and cliff info (version 5) indices; the cliff flags (version 7, with its one-byte-short rows, or
 /// later), else computed from the heights (`initCliffFlagsFromHeights`); the tile counts; and the texture classes. What follows
-/// (the edge classes, the blend tiles, the cliff infos) is the client's and is left unread; the chunk's end is skipped.
+/// (the edge classes, the blend tiles, the cliff infos) is the client's: ~~left unread; the chunk's end is skipped~~
+/// **Corrected 2026-11-05 (#11):** copied, unread, into [`BlendTiles::rest`] for the client.
 pub fn parse_blend_tile_data_chunk(file: &mut DataChunkInput<BlendParse>, info: &DataChunkInfo, user: &mut BlendParse) -> ChunkResult<bool> {
     let data_size = user.width * user.height;
     let len = file.read_int()?;
@@ -576,12 +593,14 @@ pub fn parse_blend_tile_data_chunk(file: &mut DataChunkInput<BlendParse>, info: 
         Ok(b.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect())
     };
     let tile_ndxes = read_shorts(file)?;
-    let _blend_tile_ndxes = read_shorts(file)?;
+    let blend_tile_ndxes = read_shorts(file)?;
+    let mut extra_blend_tile_ndxes = vec![0i16; n];
     if info.version >= K_BLEND_TILE_VERSION_6 {
-        let _extra_blend_tile_ndxes = read_shorts(file)?;
+        extra_blend_tile_ndxes = read_shorts(file)?;
     }
+    let mut cliff_info_ndxes = vec![0i16; n];
     if info.version >= K_BLEND_TILE_VERSION_5 {
-        let _cliff_info_ndxes = read_shorts(file)?;
+        cliff_info_ndxes = read_shorts(file)?;
     }
     let flip_state_width = (user.width + 7) / 8;
     let rows = usize::try_from(user.height).unwrap_or(0);
@@ -617,10 +636,11 @@ pub fn parse_blend_tile_data_chunk(file: &mut DataChunkInput<BlendParse>, info: 
             }
         }
     }
-    let _num_bitmap_tiles = file.read_int()?;
-    let _num_blended_tiles = file.read_int()?;
+    let num_bitmap_tiles = file.read_int()?;
+    let num_blended_tiles = file.read_int()?;
+    let mut num_cliff_info = 1; // cliffInfo[0] is the default info.
     if info.version >= K_BLEND_TILE_VERSION_5 {
-        let _num_cliff_info = file.read_int()?;
+        num_cliff_info = file.read_int()?;
     }
     let num_texture_classes = file.read_int()?;
     let mut texture_classes = Vec::new();
@@ -632,7 +652,23 @@ pub fn parse_blend_tile_data_chunk(file: &mut DataChunkInput<BlendParse>, info: 
         let name = file.read_ascii_string()?;
         texture_classes.push(TextureClass { first_tile, num_tiles, width, name });
     }
-    user.blend = Some(BlendTiles { tile_ndxes, cell_cliff_state, flip_state_width, texture_classes });
+    let left = file.get_chunk_data_size_left();
+    let mut rest = vec![0u8; left as usize];
+    file.read_array_of_bytes(&mut rest, left as i32)?;
+    user.blend = Some(BlendTiles {
+        version: info.version,
+        blend_tile_ndxes,
+        extra_blend_tile_ndxes,
+        cliff_info_ndxes,
+        num_bitmap_tiles,
+        num_blended_tiles,
+        num_cliff_info,
+        rest,
+        tile_ndxes,
+        cell_cliff_state,
+        flip_state_width,
+        texture_classes,
+    });
     Ok(true)
 }
 
