@@ -6,9 +6,11 @@
 //! `build.rs`; the file underneath is the real `RAMFile.cpp`), and (sections
 //! 7 to 9) the mesh loader of `meshmdlio.cpp` (`differential/
 //! wrap_w3d_mesh.cpp`), the HLOD definition loader of `hlod.cpp`
-//! (`differential/wrap_w3d_hlod.cpp`) and the collection and aggregate
+//! (`differential/wrap_w3d_hlod.cpp`), the collection and aggregate
 //! definition loaders of `collect.cpp` and `agg_def.cpp`
-//! (`differential/wrap_w3d_collect.cpp`).
+//! (`differential/wrap_w3d_collect.cpp`), and (section 10) the box, sphere
+//! and ring prototype loaders of `boxrobj.cpp`, `sphereobj.cpp`,
+//! `ringobj.cpp` and `prim_anim.h` (`differential/wrap_w3d_prim.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -2349,4 +2351,370 @@ fn collection_load_matches_upstream() {
 fn aggregate_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_collect_cases("AggregateDefClass::Load_W3D (agg_def.cpp)", 1, 0xA66, gen_aggregate);
+}
+
+// ---------------------------------------------------------------------------
+// 10. Box, sphere and ring prototypes (boxrobj.cpp, sphereobj.cpp,
+//     ringobj.cpp, prim_anim.h)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::prim_anim::{Channel, CHUNKID_VARIABLES, VARID_KEY};
+use rts_lockstep_engine::formats::w3d::{boxrobj, ringobj, sphereobj};
+
+fn log_channel<T: W3dPod>(log: &mut Log, c: &Channel<T>) {
+    p32(log, c.keys.len() as u32);
+    for k in &c.keys {
+        log.extend(k.value.to_bytes());
+        p32(log, k.time.to_bits());
+    }
+}
+
+/// `ref_w3d_load_prim` of wrap_w3d_prim.cpp, in Rust: kind 0 box, 1 sphere,
+/// 2 ring.
+fn rust_load_prim(data: &[u8], kind: i32) -> W3dResult<Log> {
+    let mut log = Log::new();
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    log.push(b'O');
+    if c.open_chunk()? {
+        log.push(1);
+        match kind {
+            0 => {
+                let p = boxrobj::load_w3d(&mut c)?;
+                log.push(b'B');
+                log.extend(p.definition.to_bytes());
+                p32(&mut log, p.class_id());
+            }
+            1 => {
+                let p = sphereobj::load_w3d(&mut c)?;
+                log.push(b'S');
+                log.extend(p.definition.to_bytes());
+                p32(&mut log, p.class_id());
+                log_channel(&mut log, &p.color_channel);
+                log_channel(&mut log, &p.alpha_channel);
+                log_channel(&mut log, &p.scale_channel);
+                log_channel(&mut log, &p.vector_channel);
+            }
+            _ => {
+                let p = ringobj::load_w3d(&mut c)?;
+                log.push(b'R');
+                log.extend(p.definition.to_bytes());
+                p32(&mut log, p.class_id());
+                log_channel(&mut log, &p.color_channel);
+                log_channel(&mut log, &p.alpha_channel);
+                log_channel(&mut log, &p.inner_scale_channel);
+                log_channel(&mut log, &p.outer_scale_channel);
+            }
+        }
+    } else {
+        log.push(0);
+    }
+    log_state(&mut log, &mut c);
+    Ok(log)
+}
+
+fn cpp_load_prim(data: &[u8], kind: i32) -> Log {
+    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load_prim(data.as_ptr() as *const _, data.len() as i32, kind, log, cap, n) })
+}
+
+/// The layouts of `AlphaVectorStruct`, `W3dSphereStruct` and `W3dRingStruct`
+/// (sphereobj.h, ringobj.h) and the sizes of the four `KeyClass` types, as
+/// the real headers give them, against the Rust definitions.
+///
+/// Predicted before the run: identical (sizes 20, 164, 168; keys 16, 8, 12,
+/// 24 bytes).
+#[test]
+fn prim_struct_layouts_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let c = cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_prim_layouts(log, cap, n) });
+    let mut r = Log::new();
+    fn s<T: W3dPod>(r: &mut Log, name: &str, fields: &[W3dField]) {
+        r.push(b'S');
+        pname(r, name.as_bytes());
+        p32(r, T::SIZE as u32);
+        for f in fields {
+            pname(r, f.name.as_bytes());
+            p32(r, f.offset as u32);
+            p32(r, f.size as u32);
+        }
+    }
+    s::<AlphaVectorStruct>(&mut r, AlphaVectorStruct::C_NAME, AlphaVectorStruct::FIELDS);
+    s::<W3dSphereStruct>(&mut r, W3dSphereStruct::C_NAME, W3dSphereStruct::FIELDS);
+    s::<W3dRingStruct>(&mut r, W3dRingStruct::C_NAME, W3dRingStruct::FIELDS);
+    for n in [16u32, 8, 12, 24] {
+        p32(&mut r, n);
+    }
+    assert_eq!(r, c, "layouts differ");
+}
+
+fn prim_channel(id: u32, keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut vars = Vec::new();
+    for k in keys {
+        vars.push(VARID_KEY as u8);
+        vars.push(k.len() as u8);
+        vars.extend_from_slice(k);
+    }
+    hchunk(id, &hchunk(CHUNKID_VARIABLES, &vars))
+}
+
+fn prim_key(values: &[f32], time: f32) -> Vec<u8> {
+    values.iter().chain([&time]).flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// The named cases of the `boxrobj`, `sphereobj`, `ringobj` and `prim_anim`
+/// unit tests, as whole files: (kind, name, file).
+fn prim_named_cases() -> Vec<(i32, &'static str, Vec<u8>)> {
+    let mut v = Vec::new();
+    let mut b = W3dBoxStruct::from_bytes(&[0; 68]);
+    b.version = W3D_BOX_CURRENT_VERSION;
+    b.attributes = W3D_BOX_ATTRIBUTE_ORIENTED;
+    b.name[..8].copy_from_slice(b"CONT.BOX");
+    b.center = W3dVectorStruct { x: 1.0, y: 2.0, z: 3.0 };
+    b.extent = W3dVectorStruct { x: 4.0, y: 5.0, z: 6.0 };
+    let mut body = b.to_bytes();
+    body.extend([1, 2, 3]);
+    v.push((0, "box: oriented, trailing bytes", hchunk(W3D_CHUNK_BOX, &body)));
+    b.attributes = W3D_BOX_ATTRIBUTE_ALIGNED;
+    b.name = [b'N'; 32];
+    v.push((0, "box: aligned, 32-character name", hchunk(W3D_CHUNK_BOX, &b.to_bytes())));
+
+    let mut s = W3dSphereStruct::from_bytes(&[0; 164]);
+    s.version = 0x0001_0000;
+    s.attributes = 3;
+    s.name[..11].copy_from_slice(b"CONT.SPHERE");
+    s.extent = W3dVectorStruct { x: 2.0, y: 2.0, z: 2.0 };
+    s.anim_duration = 1.5;
+    s.default_alpha = 0.5;
+    s.default_vector = AlphaVectorStruct { angle: [0.0, 0.0, 0.0, 1.0], intensity: 2.0 };
+    s.texture_name[..7].copy_from_slice(b"FX1.TGA");
+    let mut body = hchunk(sphereobj::CHUNKID_SPHERE_DEF, &s.to_bytes());
+    body.extend(prim_channel(sphereobj::CHUNKID_COLOR_CHANNEL, &[prim_key(&[1.0, 0.0, 0.0], 0.0), prim_key(&[0.0, 1.0, 0.0], 1.0)]));
+    body.extend(prim_channel(sphereobj::CHUNKID_ALPHA_CHANNEL, &[prim_key(&[0.25], 0.5)]));
+    body.extend(hchunk(99, &[1, 2, 3]));
+    body.extend(prim_channel(sphereobj::CHUNKID_SCALE_CHANNEL, &[prim_key(&[2.0, 2.0, 2.0], 0.0)]));
+    body.extend(prim_channel(sphereobj::CHUNKID_VECTOR_CHANNEL, &[prim_key(&[0.0, 0.0, 0.0, 1.0, 3.0], 0.75)]));
+    v.push((1, "sphere: definition and four channels", hchunk(W3D_CHUNK_SPHERE, &body)));
+    v.push((1, "sphere: empty", hchunk(W3D_CHUNK_SPHERE, &[])));
+    let mut body = hchunk(sphereobj::CHUNKID_SPHERE_DEF, &s.to_bytes());
+    body.extend(hchunk(sphereobj::CHUNKID_SPHERE_DEF, &[0xEE; 100]));
+    body.extend(prim_channel(sphereobj::CHUNKID_COLOR_CHANNEL, &[prim_key(&[1.0, 1.0, 1.0], 0.0)]));
+    body.extend(prim_channel(sphereobj::CHUNKID_COLOR_CHANNEL, &[prim_key(&[5.0, 5.0, 5.0], 2.0)]));
+    v.push((1, "sphere: short second definition, repeated channel", hchunk(W3D_CHUNK_SPHERE, &body)));
+    let mut f = hchunk(W3D_CHUNK_SPHERE, &hchunk(sphereobj::CHUNKID_SPHERE_DEF, &s.to_bytes()));
+    f.truncate(16 + 10);
+    v.push((1, "sphere: definition cut by the end of the file", f));
+    let mut vars = vec![VARID_KEY as u8, 4];
+    vars.extend(9f32.to_le_bytes());
+    let short = hchunk(sphereobj::CHUNKID_VECTOR_CHANNEL, &hchunk(CHUNKID_VARIABLES, &vars));
+    v.push((1, "sphere: vector key in a short micro-chunk", hchunk(W3D_CHUNK_SPHERE, &short)));
+    let mut ch = prim_channel(sphereobj::CHUNKID_COLOR_CHANNEL, &[prim_key(&[1.0, 2.0, 3.0], 0.5)]);
+    let mut extra = vec![2u8, 3, 0, 0, 0, VARID_KEY as u8, 16];
+    extra.extend(prim_key(&[4.0, 5.0, 6.0], 1.0));
+    let more = hchunk(CHUNKID_VARIABLES, &extra);
+    let len = u32::from_le_bytes(ch[4..8].try_into().unwrap()) + more.len() as u32;
+    ch[4..8].copy_from_slice(&len.to_le_bytes());
+    ch.extend(more);
+    v.push((1, "sphere: two variables chunks, unknown micro-chunk", hchunk(W3D_CHUNK_SPHERE, &ch)));
+
+    let mut r = W3dRingStruct::from_bytes(&[0; 168]);
+    r.version = 0x0001_0000;
+    r.name[..9].copy_from_slice(b"CONT.RING");
+    r.inner_extent = [0.5, 0.5];
+    r.outer_extent = [1.5, 1.5];
+    r.texture_tile_count = -2;
+    let mut body = hchunk(ringobj::CHUNKID_RING_DEF, &r.to_bytes());
+    body.extend(prim_channel(ringobj::CHUNKID_INNER_SCALE_CHANNEL, &[prim_key(&[1.0, 1.0], 0.0), prim_key(&[2.0, 2.0], 1.0)]));
+    body.extend(prim_channel(ringobj::CHUNKID_OUTER_SCALE_CHANNEL, &[prim_key(&[3.0, 4.0], 0.5)]));
+    body.extend(prim_channel(ringobj::CHUNKID_COLOR_CHANNEL, &[prim_key(&[1.0, 1.0, 1.0], 0.0)]));
+    body.extend(prim_channel(ringobj::CHUNKID_ALPHA_CHANNEL, &[prim_key(&[1.0], 0.0)]));
+    v.push((2, "ring: definition and four channels", hchunk(W3D_CHUNK_RING, &body)));
+    v.push((2, "ring: empty", hchunk(W3D_CHUNK_RING, &[])));
+    v
+}
+
+/// The named cases: the files of the `boxrobj`, `sphereobj`, `ringobj` and
+/// `prim_anim` unit tests (an oriented box with trailing bytes, an aligned
+/// box with a 32-character name; a sphere with its definition and four
+/// channels, an empty sphere, a short second definition and a repeated
+/// channel, a definition cut by the end of the file, a vector key in a
+/// short micro-chunk, two variables chunks with an unknown micro-chunk; a
+/// ring with its definition and four channels, an empty ring). The cases
+/// those tests show undefined (a short box, short `float`/`Vector2` keys)
+/// are not given to the C++.
+///
+/// Compared byte for byte: the definition's bytes, `Get_Class_ID()`, each
+/// channel's keys (value and time bytes), the chunk depth and the file
+/// position the loader leaves.
+///
+/// Predicted before the run: all ~~11~~ **10** (corrected after the run: a
+/// miscount of the list) agree, including the class ids counted
+/// by hand from rendobj.h (26, 27, 29, 30), the definition left as it was by
+/// the short chunk, the 10 bytes copied from the cut file, and the default
+/// `AlphaVectorStruct` key (identity, intensity 1, time 0).
+#[test]
+fn prim_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("box/sphere/ring Load_W3D, named cases");
+    let cases = prim_named_cases();
+    for (kind, name, data) in &cases {
+        let rust = rust_load_prim(data, *kind).unwrap_or_else(|e| panic!("{name}: Rust undefined: {e:?}"));
+        let c = cpp_load_prim(data, *kind);
+        check.eq(&rust, &c, || format!("{name}: {:02x?}", data));
+    }
+    println!("box/sphere/ring named cases: {} compared", cases.len());
+    check.finish();
+}
+
+fn gen_prim_channel(g: &mut Gn, id: u32, n: usize) -> Vec<u8> {
+    let mut body = Vec::new();
+    for _ in 0..1 + g.below(2) {
+        let mut vars = Vec::new();
+        for _ in 0..g.below(4) {
+            let mut k: Vec<u8> = Vec::new();
+            for _ in 0..=n {
+                k.extend(g.f32().to_le_bytes());
+            }
+            let id = if g.below(10) == 0 { g.below(4) as u8 } else { VARID_KEY as u8 };
+            let mut len = k.len();
+            if g.chance(8) {
+                len = g.below(len as u32 + 3) as usize;
+            }
+            k.resize(len, 0xA5);
+            vars.push(id);
+            vars.push(len as u8);
+            vars.extend(k);
+        }
+        let cid = if g.below(10) == 0 { g.g.u32() } else { CHUNKID_VARIABLES };
+        body.extend(chunk(g, cid, true, &vars));
+    }
+    chunk(g, id, true, &body)
+}
+
+fn gen_prim(g: &mut Gn, kind: i32) -> Vec<u8> {
+    let rand_bytes = |g: &mut Gn, n: usize| -> Vec<u8> {
+        let mut b: Vec<u8> = (0..n).map(|_| g.g.u32() as u8).collect();
+        // mostly readable floats
+        for c in b.chunks_mut(4) {
+            if c.len() == 4 && g.coin() {
+                c.copy_from_slice(&g.f32().to_le_bytes());
+            }
+        }
+        b
+    };
+    if kind == 0 {
+        let mut b = rand_bytes(g, 68);
+        b[4..8].copy_from_slice(&g.below(4).to_le_bytes());
+        if g.chance(8) {
+            b.truncate(g.below(68) as usize);
+        }
+        if g.below(4) == 0 {
+            let n = g.below(10) as usize;
+            b.extend(rand_bytes(g, n));
+        }
+        return chunk(g, W3D_CHUNK_BOX, false, &b);
+    }
+    let def_size = if kind == 1 { 164 } else { 168 };
+    // value lengths in floats: color 3, alpha 1, then scale 3 / vector 5 or 2, 2
+    let lens: [usize; 4] = if kind == 1 { [3, 1, 3, 5] } else { [3, 1, 2, 2] };
+    let mut body = Vec::new();
+    for _ in 0..g.below(7) {
+        let id = g.below(7);
+        match id {
+            1 => {
+                let mut d = rand_bytes(g, def_size);
+                if g.below(6) == 0 {
+                    d.truncate(g.below(def_size as u32) as usize);
+                }
+                body.extend(chunk(g, 1, false, &d));
+            }
+            2..=5 => body.extend(gen_prim_channel(g, id, lens[id as usize - 2])),
+            _ => {
+                let n = g.below(20) as usize;
+                let junk = rand_bytes(g, n);
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    chunk(g, if kind == 1 { W3D_CHUNK_SPHERE } else { W3D_CHUNK_RING }, true, &body)
+}
+
+fn run_prim_cases(name: &str, kind: i32, seed: u64) {
+    let mut g = Gn { g: Gen::new(seed), clean: false };
+    let mut check = Check::new(name);
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let mut compared = 0u64;
+    const CASES: usize = 20_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let data = gen_prim(&mut g, kind);
+        let data = mutate(&mut g, data);
+        let rust = match rust_load_prim(&data, kind) {
+            Ok(l) => l,
+            Err(W3dError::Undefined(u)) => {
+                *excluded.entry(format!("{u:?}")).or_default() += 1;
+                continue;
+            }
+            Err(e) => {
+                *excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("{name} case {case}: {:02x?}", data);
+        }
+        let c = cpp_load_prim(&data, kind);
+        compared += 1;
+        check.eq(&rust, &c, || format!("case {case}: {:02x?}", data));
+    }
+    println!(
+        "{name}: {CASES} inputs, {compared} compared; excluded (undefined upstream or not ending): {} {excluded:?}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+/// Random box files, half well-formed and half also with wrong chunk sizes,
+/// truncations and byte mutations: the struct with random bytes (mostly
+/// plain floats) and attributes 0 to 3, sometimes cut short or followed by
+/// extra bytes. Compared as [`prim_named_cases_match_upstream`]; undefined
+/// inputs (a short struct) are not given to the C++ (counted).
+///
+/// Predicted before the run: no disagreement; roughly a tenth to a fifth
+/// excluded (`UninitialisedRead`).
+///
+/// Result (2026-11-05): 17,302 compared, 0 mismatches; 2,698 (13 %)
+/// excluded, all `UninitialisedRead`.
+#[test]
+fn box_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_prim_cases("BoxLoaderClass::Load_W3D (boxrobj.cpp)", 0, 0xB0C5);
+}
+
+/// Random sphere files, generated as the boxes: definition chunks (random
+/// bytes, sometimes short), channel chunks of each kind holding one or two
+/// variables chunks (sometimes of another id) of zero to three key
+/// micro-chunks (sometimes of another id, sometimes of the wrong length),
+/// and unknown chunks, in any order and number.
+///
+/// Predicted before the run: no disagreement; a third or fewer excluded
+/// (`UninitialisedRead` from short `float`/`Vector3` keys).
+///
+/// Result (2026-11-05): 18,458 compared, 0 mismatches; 1,542 (8 %) excluded:
+/// 1,540 `UninitialisedRead`, 2 `NonTerminating`.
+#[test]
+fn sphere_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_prim_cases("SphereLoaderClass::Load_W3D (sphereobj.cpp)", 1, 0x5F3);
+}
+
+/// Random ring files, generated as the spheres (with `Vector2` scale
+/// channels).
+///
+/// Predicted before the run: as for the spheres.
+///
+/// Result (2026-11-05): 18,029 compared, 0 mismatches; 1,971 (10 %) excluded:
+/// 1,967 `UninitialisedRead`, 4 `NonTerminating`.
+#[test]
+fn ring_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_prim_cases("RingLoaderClass::Load_W3D (ringobj.cpp)", 2, 0x219);
 }

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! W3D files: the format definitions ([`w3d_file`]) and the loaders WW3D2
 //! reads meshes ([`mesh`]), hierarchies ([`htree`]), hierarchical LOD
-//! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`])
-//! and animations ([`hanim`], [`motchan`]) with, into
-//! plain structs (no rendering). All of it reads through the WWLib chunk
+//! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`]),
+//! the box, sphere and ring primitives ([`boxrobj`], [`sphereobj`],
+//! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`])
+//! with, into plain structs (no rendering). All of it reads through the WWLib chunk
 //! reader, [`crate::ww::chunkio`]. The asset manager's file loop
 //! (`WW3DAssetManager::Load_3D_Assets`, which picks the loader by top-level
 //! chunk id and registers the result) is not translated: each loader is
@@ -15,12 +16,16 @@
 //! `Err` an input on which upstream is undefined.
 
 pub mod agg_def;
+pub mod boxrobj;
 pub mod collect;
 pub mod hanim;
 pub mod hlod;
 pub mod htree;
 pub mod mesh;
 pub mod motchan;
+pub mod prim_anim;
+pub mod ringobj;
+pub mod sphereobj;
 pub mod w3d_file;
 
 use crate::ww::chunkio::{ChunkIoError, ChunkIoUndefined, ChunkLoad};

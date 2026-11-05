@@ -6,6 +6,8 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_obsolete.h
 //   (and the IOVector3Struct / IOQuaternionStruct they use, from
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWLib/iostruct.h)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/sphereobj.h, ringobj.h
+//   (W3dSphereStruct, AlphaVectorStruct, W3dRingStruct)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -1356,6 +1358,61 @@ macro_rules! for_each_w3d_struct {
         $m!(W3dMeshHeaderStruct); $m!(W3dMeshDamageStruct); $m!(W3dMeshDamageVertexStruct);
         $m!(W3dMeshDamageColorStruct); $m!(W3dHModelAuxDataStruct);
     };
+}
+
+// ---------------------------------------------------------------------------
+// Structs of the primitive objects, defined outside w3d_file.h (sphereobj.h,
+// ringobj.h; same commit). Not in `for_each_w3d_struct!`: their layouts are
+// checked by tests/differential_w3d.rs against those headers.
+// ---------------------------------------------------------------------------
+
+w3d_struct! {
+    /// `struct AlphaVectorStruct` (sphereobj.h): a `Quaternion` and a float.
+    /// Its constructor sets the identity quaternion and intensity 1, but in
+    /// a [`W3dSphereStruct`] it is `memset` to zeros and then read.
+    AlphaVectorStruct = "AlphaVectorStruct", 20, {
+        /// `angle` (`X`, `Y`, `Z`, `W`).
+        angle: [f32; 4] = "angle" @ 0,
+        intensity: f32 = "intensity" @ 16,
+    }
+}
+w3d_struct! {
+    /// `struct W3dSphereStruct` (sphereobj.h).
+    W3dSphereStruct = "W3dSphereStruct", 164, {
+        version: u32 = "Version" @ 0,
+        attributes: u32 = "Attributes" @ 4,
+        name: Name2 = "Name" @ 8,
+        center: W3dVectorStruct = "Center" @ 40,
+        extent: W3dVectorStruct = "Extent" @ 52,
+        anim_duration: f32 = "AnimDuration" @ 64,
+        default_color: W3dVectorStruct = "DefaultColor" @ 68,
+        default_alpha: f32 = "DefaultAlpha" @ 80,
+        default_scale: W3dVectorStruct = "DefaultScale" @ 84,
+        default_vector: AlphaVectorStruct = "DefaultVector" @ 96,
+        texture_name: Name2 = "TextureName" @ 116,
+        shader: W3dShaderStruct = "Shader" @ 148,
+    }
+}
+w3d_struct! {
+    /// `struct W3dRingStruct` (ringobj.h). The `Vector2` members are
+    /// `[X, Y]`.
+    W3dRingStruct = "W3dRingStruct", 168, {
+        version: u32 = "Version" @ 0,
+        attributes: u32 = "Attributes" @ 4,
+        name: Name2 = "Name" @ 8,
+        center: W3dVectorStruct = "Center" @ 40,
+        extent: W3dVectorStruct = "Extent" @ 52,
+        anim_duration: f32 = "AnimDuration" @ 64,
+        default_color: W3dVectorStruct = "DefaultColor" @ 68,
+        default_alpha: f32 = "DefaultAlpha" @ 80,
+        default_inner_scale: [f32; 2] = "DefaultInnerScale" @ 84,
+        default_outer_scale: [f32; 2] = "DefaultOuterScale" @ 92,
+        inner_extent: [f32; 2] = "InnerExtent" @ 100,
+        outer_extent: [f32; 2] = "OuterExtent" @ 108,
+        texture_name: Name2 = "TextureName" @ 116,
+        shader: W3dShaderStruct = "Shader" @ 148,
+        texture_tile_count: i32 = "TextureTileCount" @ 164,
+    }
 }
 
 #[cfg(test)]
