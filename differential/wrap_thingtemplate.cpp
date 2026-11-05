@@ -227,7 +227,8 @@ void ModuleFactory::init(void) {}
 
 namespace {
 
-/* the client modules' stand-in data: every field line and the nested blocks of W3DModelDraw */
+/* the client modules' stand-in data: every field line and the nested blocks of W3DModelDraw (2026-11-05, #25:
+** AliasConditionState is a plain line, as W3DModelDrawModuleData::parseConditionState's PARSE_ALIAS reads no block) */
 class ClientModuleData : public ModuleData
 {
 public:
@@ -259,7 +260,6 @@ void clientNested(INI *ini, void *instance, void *store, const void *userData);
 const FieldParse g_clientFields[] = {
 	{ "DefaultConditionState", clientNested, (void *)"DefaultConditionState", 0 },
 	{ "ConditionState", clientNested, (void *)"ConditionState", 0 },
-	{ "AliasConditionState", clientNested, (void *)"AliasConditionState", 0 },
 	{ "TransitionState", clientNested, (void *)"TransitionState", 0 },
 	{ 0, clientLine, NULL, 0 },
 	{ 0, 0, 0, 0 }

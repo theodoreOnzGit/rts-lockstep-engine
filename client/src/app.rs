@@ -18,6 +18,11 @@
 //!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
 //!   (within 18 pixels), the ground by the camera ray meeting the ground plane (the demo's ground is flat).
 //!
+//! - **Models** (#25): after each logic frame the frame's client events go to the drawables (`crate::drawables`); every
+//!   rendered frame the draw modules choose and time each object's model and animation, and an object whose model the
+//!   art has is drawn as it (its parts at their bones, skins deformed), else as its shape. Natively with `--zh` the art
+//!   is the player's folder; the demo and the web page have none yet (#24), so they draw shapes.
+//!
 //! GUI glue: the drawing systems need a window and a GPU, so no test reaches them. What they draw is the view model's,
 //! which `view`'s tests check against the `World`; what the input does is `input`'s, which its tests drive.
 
@@ -33,11 +38,19 @@ use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::logic::world::game_logic::World as GameWorld;
 
 use crate::demo::demo_world;
+use crate::drawables::{Art, WorldDrawables};
 use crate::input::Controls;
 use crate::view::{interpolate, snapshot, terrain_grid, to_bevy, Shape, Snapshot, TerrainGrid};
 
 /// The logic's frame rate (`LOGICFRAMES_PER_SECOND`).
 const LOGIC_HZ: f64 = 30.0;
+
+/// The device the game's art is read from: the player's folder natively; in the browser the page's files (it imports no
+/// art archives yet, #24, so there the art is absent and every object is its shape).
+#[cfg(not(target_arch = "wasm32"))]
+type ArtDevice = rts_lockstep_engine::common::file_system::NativeDevice;
+#[cfg(target_arch = "wasm32")]
+type ArtDevice = rts_lockstep_engine::common::file_system::MemoryDevice;
 
 /// The game: the logic's `World` and the last two snapshots. A non-send resource: the `World` is the logic's, used only
 /// from the main thread, as upstream's single-threaded logic is.
@@ -51,19 +64,35 @@ struct Game {
     error: Option<String>,
     /// What is being played: the demo, or the player's game (the load's report), or why the player's files did not load.
     playing: String,
+    /// The objects' drawables and their models (#25): fed the logic's client events after each frame, drawn every
+    /// rendered frame.
+    models: WorldDrawables<ArtDevice>,
+    /// Each model's textures as Bevy images, by model name (made once).
+    images: HashMap<Vec<u8>, Vec<Vec<Option<Handle<Image>>>>>,
+    /// The client's clock for the draw modules (`WW3D::Sync`), milliseconds.
+    models_clock: u32,
 }
 
 impl Game {
-    fn new(world: GameWorld, player: i32, playing: String) -> Self {
+    fn new(world: GameWorld, player: i32, playing: String, art: Option<Art<ArtDevice>>) -> Self {
         let mut world = world;
         let cur = snapshot(&mut world);
-        Game { controls: Controls::new(world, player), prev: cur.clone(), cur, paused: false, error: None, playing }
+        Game { controls: Controls::new(world, player), prev: cur.clone(), cur, paused: false, error: None, playing, models: WorldDrawables::new(art), images: HashMap::new(), models_clock: 0 }
     }
 }
 
-/// The drawn entity of each logic object, by `ObjectID`.
+/// The drawn entity of each logic object, by `ObjectID`, and the model it was drawn with (empty: its shape).
 #[derive(Resource, Default)]
-struct Drawn(HashMap<i32, Entity>);
+struct Drawn(HashMap<i32, (Entity, Vec<u8>)>);
+
+/// A drawn piece of an object's model: the object, the sub-object, and its mesh (rewritten every frame for a skin).
+#[derive(Component)]
+struct ModelPart {
+    object: ObjectId,
+    sub: usize,
+    skin: bool,
+    mesh: Handle<Mesh>,
+}
 
 /// The RTS camera's state: what it looks at, from how far, from which heading.
 #[derive(Resource, Clone, Copy)]
@@ -112,15 +141,20 @@ pub fn run(zh: Option<std::path::PathBuf>) {
     let game = match zh {
         #[cfg(not(target_arch = "wasm32"))]
         Some(folder) => match crate::import::start_from_folder(&folder, None) {
-            Ok(s) => Game::new(s.world, s.player, s.report),
+            Ok(s) => {
+                // the art: the same folder through the game's file search (its archives mounted), as the model viewer reads it
+                let mut fs = rts_lockstep_engine::common::file_system::FileSystem::new(ArtDevice::new(&folder));
+                fs.init(None);
+                Game::new(s.world, s.player, s.report, Some(Art::new(fs)))
+            }
             Err(e) => {
                 let (w, _) = demo_world();
-                Game::new(w, 1, format!("demo ({e})"))
+                Game::new(w, 1, format!("demo ({e})"), None)
             }
         },
         _ => {
             let (w, _) = demo_world();
-            Game::new(w, 1, "demo game: load your Zero Hour folder to play".to_string())
+            Game::new(w, 1, "demo game: load your Zero Hour folder to play".to_string(), None)
         }
     };
     let terrain = terrain_grid(&game.controls.client.world, 10.0);
@@ -192,8 +226,8 @@ fn poll_import(
         Ok(s) => {
             info!("playing your game: {}", s.report);
             crate::import::set_outcome(Ok(&s.report));
-            *game = Game::new(s.world, s.player, s.report);
-            for (_, e) in drawn.0.drain() {
+            *game = Game::new(s.world, s.player, s.report, None);
+            for (_, (e, _)) in drawn.0.drain() {
                 commands.entity(e).despawn();
             }
             for e in &grounds {
@@ -263,6 +297,10 @@ fn step_logic(mut game: NonSendMut<Game>) {
         Ok(()) => {
             g.prev = std::mem::take(&mut g.cur);
             g.cur = snapshot(g.controls.world());
+            // the frame's client events, to the drawables (their flags; the draw itself is every rendered frame)
+            let events = g.controls.world().take_client_events();
+            let now = g.models_clock;
+            g.models.apply_events(g.controls.world(), &events, now);
         }
         Err(e) => g.error = Some(format!("logic frame {}: {e:?}", g.controls.world().frame())),
     }
@@ -287,45 +325,103 @@ fn shape_mesh(shape: Shape) -> (Mesh, f32) {
 #[derive(Component)]
 struct Body;
 
+/// GUI glue (needs a window): each object drawn at its interpolated place, as its model when its drawable chose one that
+/// the art has (`crate::drawables`, which its tests check without a window), else as its shape.
+#[allow(clippy::too_many_arguments)]
 fn sync_objects(
     mut commands: Commands,
-    game: NonSend<Game>,
+    mut game: NonSendMut<Game>,
+    time: Res<Time>,
     fixed: Res<Time<Fixed>>,
     mut drawn: ResMut<Drawn>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut transforms: Query<&mut Transform, Without<Body>>,
+    mut images: ResMut<Assets<Image>>,
+    mut transforms: Query<&mut Transform, (Without<Body>, Without<ModelPart>)>,
+    mut parts: Query<(&ModelPart, &mut Transform), Without<Body>>,
 ) {
     let t = if game.paused || game.error.is_some() { 1.0 } else { fixed.overstep_fraction() };
+    let g = &mut *game;
+    // the draw modules' clock: the client's own (upstream's sync time), not the logic's frames
+    g.models_clock = (time.elapsed_secs_f64() * 1000.0) as u32;
+    if g.error.is_none() {
+        let now = g.models_clock;
+        g.models.draw(g.controls.world(), now);
+    }
     let mut alive = std::collections::HashSet::new();
-    for b in &game.cur.objects {
+    for b in &g.cur.objects {
         alive.insert(b.id);
-        let o = match game.prev.find(b.id) {
+        let o = match g.prev.find(b.id) {
             Some(a) => interpolate(a, b, t),
             None => b.clone(),
         };
         let transform = Transform::from_translation(Vec3::from(to_bevy(o.pos))).with_rotation(Quat::from_rotation_y(o.angle));
-        match drawn.0.get(&b.id) {
-            Some(&e) => {
-                if let Ok(mut tr) = transforms.get_mut(e) {
+        let instance = g.models.instance(b.id);
+        let model_name = instance.map(|m| m.name.clone()).unwrap_or_default();
+        if let Some((e, name)) = drawn.0.get(&b.id) {
+            if *name == model_name {
+                if let Ok(mut tr) = transforms.get_mut(*e) {
                     *tr = transform;
                 }
+                continue;
+            }
+            // the model changed (or appeared, or went): drawn anew
+            commands.entity(*e).despawn();
+        }
+        let e = commands.spawn((transform, Visibility::default(), Name::new(format!("{} #{}", o.template, o.id)))).id();
+        let model_parts = instance.and_then(|m| crate::model::model_parts(m).ok().map(|p| (m, p)));
+        match model_parts {
+            Some((m, model_parts)) => {
+                let handles = g.images.entry(model_name.clone()).or_insert_with(|| {
+                    let Some(art) = &g.models.art else { return Vec::new() };
+                    let tex = crate::model::model_textures(&art.assets, &art.fs, m).unwrap_or_default();
+                    tex.iter()
+                        .zip(&m.sub_objects)
+                        .map(|(t, s)| t.iter().zip(&s.model.textures).map(|(r, x)| r.as_ref().ok().map(|img| images.add(crate::model::texture_image(img, x.clamp)))).collect())
+                        .collect()
+                });
+                commands.entity(e).with_children(|c| {
+                    for part in &model_parts {
+                        let sub = &m.sub_objects[part.sub];
+                        let (v, n) = m.deformed(part.sub).unwrap_or_else(|_| (sub.model.vertices.clone(), sub.model.normals.clone()));
+                        let mesh = meshes.add(crate::model::group_mesh(&sub.model, &part.group, &v, &n));
+                        let no_textures = Vec::new();
+                        let material = materials.add(part.material.to_standard_material(handles.get(part.sub).unwrap_or(&no_textures)));
+                        let tm = m.sub_object_transform(part.sub).map(|x| crate::model::to_bevy_matrix(&x)).unwrap_or(Mat4::IDENTITY);
+                        c.spawn((
+                            Mesh3d(mesh.clone()),
+                            MeshMaterial3d(material),
+                            Transform::from_matrix(tm),
+                            ModelPart { object: b.id, sub: part.sub, skin: sub.is_skin(), mesh },
+                        ));
+                    }
+                });
             }
             None => {
                 let (mesh, lift) = shape_mesh(o.shape);
-                let [r, g, bl] = o.color;
-                let material = materials.add(StandardMaterial { base_color: Color::srgb(r, g, bl), perceptual_roughness: 0.7, ..default() });
-                let e = commands
-                    .spawn((transform, Visibility::default(), Name::new(format!("{} #{}", o.template, o.id))))
-                    .with_children(|c| {
-                        c.spawn((Body, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::from_xyz(0.0, lift, 0.0)));
-                    })
-                    .id();
-                drawn.0.insert(b.id, e);
+                let [r, gr, bl] = o.color;
+                let material = materials.add(StandardMaterial { base_color: Color::srgb(r, gr, bl), perceptual_roughness: 0.7, ..default() });
+                commands.entity(e).with_children(|c| {
+                    c.spawn((Body, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::from_xyz(0.0, lift, 0.0)));
+                });
+            }
+        }
+        drawn.0.insert(b.id, (e, model_name));
+    }
+    // the models' poses: each part at its bone, each skin deformed
+    for (part, mut transform) in &mut parts {
+        let Some(m) = g.models.instance(part.object) else { continue };
+        if let Ok(x) = m.sub_object_transform(part.sub) {
+            *transform = Transform::from_matrix(crate::model::to_bevy_matrix(&x));
+        }
+        if part.skin {
+            if let (Ok((pos, nrm)), Some(mut mesh)) = (m.deformed(part.sub), meshes.get_mut(&part.mesh)) {
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos.iter().map(|p| to_bevy(*p)).collect::<Vec<_>>());
+                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nrm.iter().map(|p| to_bevy(*p)).collect::<Vec<_>>());
             }
         }
     }
-    drawn.0.retain(|id, e| {
+    drawn.0.retain(|id, (e, _)| {
         let keep = alive.contains(id);
         if !keep {
             commands.entity(*e).despawn();

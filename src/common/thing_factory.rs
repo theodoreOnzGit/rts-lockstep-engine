@@ -1105,6 +1105,28 @@ ConditionState = DAMAGED\n   Model = Bar\n  End\n  TransitionState = A B\n  End\
         assert_eq!(load(&mut c, "Object D2\n Draw = W3DModelDraw\nEnd\n").unwrap_err().kind, IniErrorKind::InvalidData);
     }
 
+    /// #25: `AliasConditionState` is one line, not a block (upstream's `PARSE_ALIAS` reads none). Prediction: the alias
+    /// is kept at depth 0 between the two states, the second state's lines at depth 1, and the object's `Behavior`
+    /// after the draw module is still the object's.
+    #[test]
+    fn an_alias_condition_state_is_one_line() {
+        let mut c = Ctx::new();
+        load(
+            &mut c,
+            "Object Aliased\n Draw = W3DModelDraw ModuleTag_Draw\n  ConditionState = DAMAGED\n   Model = A\n  End\n  AliasConditionState = RUBBLE\n  \
+ConditionState = MOVING\n   Model = B\n  End\n End\n Behavior = TestUpdate ModuleTag_U\n End\nEnd\n",
+        )
+        .unwrap();
+        let t = root(&c, "Aliased");
+        let Some(ModuleInfoData::Client(block)) = t.get_draw_module_info().get_nth_data(0) else { panic!("client data") };
+        let lines: Vec<(u32, String)> = block.lines.iter().map(|l| (l.depth, String::from_utf8_lossy(&l.field).into_owned())).collect();
+        assert_eq!(
+            lines,
+            [(0, "ConditionState".into()), (1, "Model".into()), (0, "AliasConditionState".into()), (0, "ConditionState".into()), (1, "Model".into())]
+        );
+        assert_eq!(t.get_behavior_module_info().get_count(), 1);
+    }
+
     #[test]
     fn a_reskin_copies_a_template_and_reads_only_the_look() {
         let mut c = Ctx::new();

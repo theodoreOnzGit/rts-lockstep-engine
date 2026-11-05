@@ -2105,8 +2105,13 @@ fn f_prerequisites(ini: &mut Ini<'_>, w: &mut ObjectFill<'_>, _: &UserData) -> I
 
 // ---- modules
 
-/// The four fields of a client module's block that open a nested block.
-const CLIENT_NESTED_BLOCKS: [&str; 4] = ["DefaultConditionState", "ConditionState", "AliasConditionState", "TransitionState"];
+/// The ~~four~~ three fields of a client module's block that open a nested block.
+///
+/// ~~`AliasConditionState` among them~~ **Corrected 2026-11-05 (#25):** `AliasConditionState` opens no block upstream
+/// (`W3DModelDrawModuleData::parseConditionState`'s `PARSE_ALIAS` adds the line's flags to the previous state and returns
+/// before `initFromINI`), so it is an ordinary line; read as a block, it swallowed the lines after it up to the next `End`,
+/// and the module's own `End` was then taken as the alias's.
+pub const CLIENT_NESTED_BLOCKS: [&str; 3] = ["DefaultConditionState", "ConditionState", "TransitionState"];
 
 struct ClientFill {
     lines: Vec<ClientLine>,
@@ -2143,12 +2148,11 @@ fn f_client_nested(ini: &mut Ini<'_>, w: &mut ClientFill, ud: &UserData) -> IniR
     Ok(())
 }
 
-fn client_fields() -> [FieldParse<ClientFill>; 6] {
+fn client_fields() -> [FieldParse<ClientFill>; 5] {
     [
         FieldParse::new(CLIENT_NESTED_BLOCKS[0], f_client_nested, UserData::Mask(0)),
         FieldParse::new(CLIENT_NESTED_BLOCKS[1], f_client_nested, UserData::Mask(1)),
         FieldParse::new(CLIENT_NESTED_BLOCKS[2], f_client_nested, UserData::Mask(2)),
-        FieldParse::new(CLIENT_NESTED_BLOCKS[3], f_client_nested, UserData::Mask(3)),
         FieldParse::catch_all(f_client_line),
         FieldParse::end(),
     ]

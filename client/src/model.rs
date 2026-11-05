@@ -267,18 +267,9 @@ impl ModelScene {
             Some(a) => Some(assets.get_hanim(fs, a).map_err(|e| format!("{}: {e}", show(a)))?.cloned().ok_or_else(|| format!("no animation {}", show(a)))?),
             None => None,
         };
-        let mut textures = Vec::new();
-        let (mut found, mut total) = (0, 0);
-        for s in &model.sub_objects {
-            let mut t = Vec::new();
-            for tex in &s.model.textures {
-                let r = load_texture_image(&assets.file_factory, fs, &tex.name).map_err(|e| format!("texture {}: {e}", show(&tex.name)))?;
-                total += 1;
-                found += usize::from(r.is_ok());
-                t.push(r);
-            }
-            textures.push(t);
-        }
+        let textures = model_textures(&assets, fs, &model)?;
+        let total: usize = textures.iter().map(|t| t.len()).sum();
+        let found: usize = textures.iter().flatten().filter(|r| r.is_ok()).count();
         let report = format!(
             "{}: {} meshes ({} skins), {} not drawn, {found} of {total} textures{}",
             show(name),
@@ -384,10 +375,30 @@ pub struct Part {
     pub material: MaterialDesc,
 }
 
+/// Per sub-object, per texture of a render model: the image or why there is none (`Get_Texture` through the game's
+/// file search over `fs`).
+pub fn model_textures<D: LocalDevice>(assets: &AssetManager, fs: &FileSystem<D>, model: &RenderModel) -> Result<Vec<Vec<Result<TextureImage, TextureLoadError>>>, String> {
+    let mut textures = Vec::new();
+    for s in &model.sub_objects {
+        let mut t = Vec::new();
+        for tex in &s.model.textures {
+            let r = load_texture_image(&assets.file_factory, fs, &tex.name).map_err(|e| format!("texture {}: {e}", String::from_utf8_lossy(&tex.name)))?;
+            t.push(r);
+        }
+        textures.push(t);
+    }
+    Ok(textures)
+}
+
 /// The pieces to draw (hidden sub-objects and invisible groups left out).
 pub fn parts(scene: &ModelScene) -> Result<Vec<Part>, String> {
+    model_parts(&scene.model)
+}
+
+/// The pieces of a render model to draw (hidden sub-objects and invisible groups left out).
+pub fn model_parts(model: &RenderModel) -> Result<Vec<Part>, String> {
     let mut out = Vec::new();
-    for (i, s) in scene.model.sub_objects.iter().enumerate() {
+    for (i, s) in model.sub_objects.iter().enumerate() {
         if s.hidden {
             continue;
         }

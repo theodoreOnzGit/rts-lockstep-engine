@@ -1146,6 +1146,10 @@ impl Gx<'_> {
                         let nested = pick(self.g, &["DefaultConditionState", "ConditionState", "AliasConditionState", "TransitionState"]);
                         let arg = pick(self.g, &["", " = DAMAGED", " NIGHT", " = A B"]);
                         out.push(self.line(format!("{nested}{arg}")));
+                        // #25: an alias is one line (upstream's PARSE_ALIAS reads no block)
+                        if nested == "AliasConditionState" {
+                            continue;
+                        }
                         for _ in 0..self.g.below(3) {
                             let (k, v) = (pick(self.g, &["Model", "Animation", "Flags", "WeaponFireFXBone"]), pick(self.g, &["X", "A B", "1 2 3"]));
                         out.push(self.line(format!("{k} = {v}")));

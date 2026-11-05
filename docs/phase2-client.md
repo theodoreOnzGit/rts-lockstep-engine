@@ -96,6 +96,38 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#10 step 5 (2026-11-05, GitHub #25): drawables. Each object's model and animation chosen by its model condition
+flags, and drawn.**
+- **`W3DModelDraw`, translated** (engine crate, `client::w3d_model_draw`): the module data's INI parse
+  (`buildFieldParse` and `parseConditionState`: default, normal, alias and transition states, the ignore mask, every
+  per-state field; the tank, truck, tank-truck, supply, dependency and science subclasses' fields, parsed only), read
+  from the `Draw` blocks the logic already keeps as tokens (written back as INI text and read by the translated INI
+  reader); `findBestInfo` through the existing `SparseMatchFinder`; `setModelState` (pending states, transitions,
+  `WaitForStateToFinishIfPossible`), `adjustAnimation` (random choice with the client's own generator, idle animations,
+  start frames, `MAINTAIN_FRAME_ACROSS_STATES`, speed factors), `doDrawModule`'s animation half, the loop and
+  completion durations, pausing, `DistanceCovered` speed; and `Animatable3DObjClass`'s single-animation playback over
+  the existing `Compute_Current_Frame`.
+- **Drawables** (`client::drawable`): `Drawable`'s flags with `DIRTY_CONDITION_FLAGS`, body damage states,
+  `getShouldAnimate`, the draw modules' LOD filter; fed by replaying the logic's client events after each frame.
+- **The client** (`client/src/drawables.rs`, `app.rs`): the drawables run every rendered frame, the chosen models are
+  loaded through the W3D asset manager and posed (`Anim_Update`); an object with no model, or no art, is still its shape.
+  The art is the player's folder with `--zh` natively; the demo and the web page have none yet (#24).
+- **A defect found in the logic's loader, fixed:** `AliasConditionState` was read as a nested block; upstream's
+  `PARSE_ALIAS` reads one line. A real `Draw` block with an alias would have swallowed the lines after it (see
+  `CLIENT_NESTED_BLOCKS`; the differential stand-in in `wrap_thingtemplate.cpp` had the same mistake and is corrected).
+
+*Predictions before the runs* are in each test's doc. *Results:* two misses, both in test data (the bit is
+`REALLYDAMAGED`, not `REALLY_DAMAGED`; a looping frame came out 2.000001 in `f32`); bisecting the first found the alias
+defect. In the demo with generated W3D models, the runner's model changed at logic frame 2 when it moved and back at frame
+133 when it stopped, and both soldiers showed their firing model. The gate game's CRCs with the drawables fed every frame
+equal the plain run's (120 frames). Full run: the engine's lib tests 917 pass (903 before), the client's 11 (9 before);
+differential `differential_w3d` 25 pass, `differential_thing_template` 3 pass (7,766 INI loads, 0 mismatches), and the
+existing `SparseMatchFinder<ModelConditionFlags>` check 60,000 queries, 0 mismatches; clippy clean (lib); the web build
+builds; gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+**Not done yet** (#25's remaining work): turret and recoil bones (rung 4), the bone caches, sub-object hide and show,
+muzzle flashes, particle systems, shadows, tracks, the subclasses' runtime (treads, tires), the other draw modules
+(`W3DDefaultDraw`, trees, lasers, ...), and a differential of `parseConditionState` against upstream's compiled code.
+
 **Batch #10 step 4 (2026-11-05, GitHub #10): W3D models drawn in the Bevy client, with meshes, materials, textures and
 skinning.**
 - **The render side without a device, translated** (engine crate, `formats::w3d`): `shader` (`ShaderClass::Apply` as
