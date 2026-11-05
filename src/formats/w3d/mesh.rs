@@ -122,12 +122,20 @@
 //!   [`Mesh::needs_generated_cull_tree`]), `install_materials`
 //!   (`Init_Alternate`, `Post_Load_Process`), and `post_process` (skins drop
 //!   their AABTree, two-sided meshes disable culling, fog, static sort
-//!   levels, overbright).
+//!   levels, overbright). **Corrected 2026-11-05 (#10, step 4):**
+//!   `install_materials`' `Post_Load_Process` on the default description and
+//!   `post_process` with the game's settings are translated in
+//!   [`super::meshmdl::MeshModel::from_mesh`]; `Init_Alternate` and the
+//!   AABTree are still left out.
 //! - `VertexMaterialClass`'s conversion of its file data (`Parse_W3dVertex
 //!   MaterialStruct`, `Parse_Mapping_Args`: the mapper argument strings are
 //!   kept raw), and the texture objects themselves (`Get_Texture` loads image
 //!   files; here a texture is its name and the settings `Load_Texture`
-//!   derives).
+//!   derives). **Corrected 2026-11-05 (#10, step 4):**
+//!   `Parse_W3dVertexMaterialStruct` and the mapper choice are translated in
+//!   [`super::vertmaterial`] (the mapper arguments are still kept raw), and
+//!   the image files a texture name leads to are found and decoded by
+//!   [`super::render::load_texture_image`].
 
 use super::w3d_file::*;
 use super::{c_string, W3dError, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};

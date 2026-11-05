@@ -4,8 +4,14 @@
 //! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`]),
 //! the box, sphere and ring primitives ([`boxrobj`], [`sphereobj`],
 //! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`],
-//! [`hmorphanim`]) with, into plain structs (no rendering). All of it reads
-//! through the WWLib chunk reader, [`crate::ww::chunkio`]. ~~The asset
+//! [`hmorphanim`]) with, into plain structs ~~(no rendering)~~. All of it reads
+//! through the WWLib chunk reader, [`crate::ww::chunkio`]. **Corrected
+//! 2026-11-05 (#10, step 4):** the render side without a device is
+//! translated too: the shader's device states ([`shader`]), vertex materials
+//! ([`vertmaterial`]), a mesh finished for drawing and split into the DX8
+//! renderer's polygon groups, with the skin deformation ([`meshmdl`]), and an
+//! HLOD bound to its bones, posed, with its textures found and decoded
+//! ([`render`]). [`synth`] writes W3D files for tests and placeholder art. ~~The asset
 //! manager's file loop (`WW3DAssetManager::Load_3D_Assets`, which picks the
 //! loader by top-level chunk id and registers the result) is not
 //! translated: each loader is called on its own chunk.~~ **Corrected
@@ -27,10 +33,15 @@ pub mod hlod;
 pub mod hmorphanim;
 pub mod htree;
 pub mod mesh;
+pub mod meshmdl;
 pub mod motchan;
 pub mod prim_anim;
+pub mod render;
 pub mod ringobj;
+pub mod shader;
 pub mod sphereobj;
+pub mod synth;
+pub mod vertmaterial;
 pub mod w3d_file;
 
 use crate::ww::chunkio::{ChunkIoError, ChunkIoUndefined, ChunkLoad};

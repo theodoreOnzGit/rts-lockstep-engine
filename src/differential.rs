@@ -207,6 +207,36 @@ extern "C" {
     ) -> c_int;
     pub fn ref_crc_memory(data: *const c_uchar, len: c_int, crc: c_uint) -> c_uint;
     pub fn ref_dx8_convert_color(rgba: *const c_float) -> c_uint;
+    // WW3D2/shader.cpp: ShaderClass::Apply, Get_SS_Category,
+    // Guess_Sort_Level on a recording device (wrap_w3d_shader.cpp)
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_w3d_shader_apply(
+        bits: c_uint,
+        tex_op_caps: c_uint,
+        mod_alpha_add_clr: c_int,
+        fog_allowed: c_int,
+        fog_enable: c_int,
+        fog_color: c_uint,
+        cull_ccw: c_int,
+        npatches_level: c_int,
+        out52: *mut c_uint,
+    ) -> c_int;
+    // WW3D2/meshgeometry.cpp get_deformed_vertices, WWMath/vp.cpp
+    // VectorProcessorClass::Transform, over htree.cpp's Base_Update
+    // (wrap_w3d_deform.cpp)
+    #[allow(clippy::too_many_arguments)]
+    pub fn ref_w3d_deform(
+        file: *const c_char,
+        len: c_int,
+        root12: *const c_float,
+        n: c_int,
+        verts: *const c_float,
+        norms: *const c_float,
+        links: *const c_ushort,
+        out_v: *mut c_float,
+        out_n: *mut c_float,
+        out_v2: *mut c_float,
+    ) -> c_int;
 
     // WW3D2/ddsfile.cpp, WWLib/TARGA.CPP (wrap_texture.cpp)
     pub fn ref_d3d_to_ww3d(code: c_uint) -> c_uint;

@@ -20,7 +20,12 @@
 //! search and adaptive-delta decompression (`motchan.cpp`), the sampling of
 //! raw, compressed and morph animations (`hrawanim.cpp`, `hcanim.cpp`,
 //! `hmorphanim.cpp`), the hierarchy updates (`htree.cpp`, `pivot.cpp`) and
-//! `Fast_Slerp` (`quat.cpp`), driven by `differential/wrap_w3d_eval.cpp`.
+//! `Fast_Slerp` (`quat.cpp`), driven by `differential/wrap_w3d_eval.cpp`,
+//! and (section 14) the render side: `ShaderClass::Apply`,
+//! `Get_SS_Category` and `Guess_Sort_Level` (`shader.cpp`) on a recording
+//! device (`differential/wrap_w3d_shader.cpp`), and the skin deformation
+//! (`meshgeometry.cpp`'s `get_deformed_vertices`, `vp.cpp`'s `Transform`)
+//! over hierarchies posed by `htree.cpp` (`differential/wrap_w3d_deform.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -4589,5 +4594,258 @@ fn animation_evaluation_matches_upstream() {
         &per_op[1..],
         excluded.values().sum::<u64>()
     );
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 14. The render side (#10, step 4): ShaderClass::Apply, Get_SS_Category and
+// Guess_Sort_Level (shader.cpp, verbatim) against formats::w3d::shader, and
+// the skin deformation (meshgeometry.cpp get_deformed_vertices, vp.cpp
+// Transform, verbatim, over htree.cpp's Base_Update) against
+// formats::w3d::meshmdl (differential/wrap_w3d_shader.cpp,
+// differential/wrap_w3d_deform.cpp).
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::meshmdl::MeshModel;
+use rts_lockstep_engine::formats::w3d::shader::{self as w3dshader, DeviceCaps, ShaderClass};
+
+/// The Rust states in the wrapper's 52-word layout.
+fn rust_shader_words(shader: ShaderClass, caps: &DeviceCaps) -> W3dResult<Vec<u32>> {
+    let st = w3dshader::apply(shader, caps)?;
+    let mut out = Vec::with_capacity(52);
+    let mut put = |w: Option<u32>| {
+        out.push(u32::from(w.is_some()));
+        out.push(w.unwrap_or(0));
+    };
+    put(Some(u32::from(st.alpha_blend_enable)));
+    put(st.src_blend);
+    put(st.dst_blend);
+    put(Some(u32::from(st.alpha_test_enable)));
+    put(st.alpha_ref);
+    put(st.alpha_func);
+    put(Some(u32::from(st.fog_enable)));
+    put(st.fog_color);
+    put(Some(u32::from(st.specular_enable)));
+    put(Some(st.zfunc));
+    put(Some(u32::from(st.zwrite_enable)));
+    put(Some(st.cull_mode));
+    put(Some(st.patch_segments.to_bits()));
+    for s in &st.stage {
+        for v in [s.color_op, s.color_arg1, s.color_arg2, s.alpha_op, s.alpha_arg1, s.alpha_arg2] {
+            put(Some(v));
+        }
+    }
+    out.push(shader.get_ss_category() as u32);
+    out.push(shader.guess_sort_level() as u32);
+    Ok(out)
+}
+
+fn cpp_shader_words(shader: ShaderClass, caps: &DeviceCaps, fog_allowed: bool, fog_enable: bool, fog_color: u32) -> (Vec<u32>, i32) {
+    let mut out = vec![0u32; 52];
+    let calls = unsafe {
+        cpp::ref_w3d_shader_apply(
+            shader.0,
+            caps.texture_op_caps,
+            i32::from(caps.mod_alpha_add_clr),
+            i32::from(fog_allowed),
+            i32::from(fog_enable),
+            fog_color,
+            i32::from(caps.polygon_cull_mode == w3dshader::d3d::D3DCULL_CCW),
+            caps.npatches_level as i32,
+            out.as_mut_ptr(),
+        )
+    };
+    (out, calls)
+}
+
+/// Predictions, written before the first run: every defined shader (a
+/// destination blend of 0 to 5, or colour writes off) gives the same 52
+/// words as upstream's `Apply` on the recording device, with no direct
+/// device call; the destination blends 6 and 7 with colour writes on are
+/// the only inputs left out (undefined upstream, `dstBlendLUT[6]`), about a
+/// quarter of the colour-write-enabled random cases.
+#[test]
+fn shader_apply_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("W3D ShaderClass::Apply, Get_SS_Category, Guess_Sort_Level (shader.cpp)");
+    let mut g = Gen::new(0x5AD3);
+    // (compared, excluded, direct device calls)
+    let mut counts = (0u64, 0u64, 0i64);
+    let run = |check: &mut Check, counts: &mut (u64, u64, i64), bits: u32, caps: DeviceCaps, fog_allowed: bool, fog_enable: bool, fog_color: u32| {
+        let caps_rust = DeviceCaps { fog: (fog_allowed && fog_enable).then_some(fog_color), ..caps };
+        let shader = ShaderClass(bits);
+        match rust_shader_words(shader, &caps_rust) {
+            Ok(r) => {
+                let (c, calls) = cpp_shader_words(shader, &caps_rust, fog_allowed, fog_enable, fog_color);
+                counts.2 += i64::from(calls);
+                check.eq(&r, &c, || format!("bits {bits:#010x} caps {caps_rust:?} fog {fog_allowed}/{fog_enable}"));
+                counts.0 += 1;
+            }
+            Err(_) => counts.1 += 1,
+        }
+    };
+    // every combination of the fields Apply branches on (colour mask, both
+    // blends, alpha test, texturing, primary gradient, post-detail colour and
+    // alpha), with every op cap and with none
+    let full = DeviceCaps::full();
+    let none = DeviceCaps { texture_op_caps: 0, mod_alpha_add_clr: false, ..full };
+    for caps in [full, none] {
+        for cm in 0..2u32 {
+            for dst in 0..8u32 {
+                for src in 0..4u32 {
+                    for at in 0..2u32 {
+                        for tex in 0..2u32 {
+                            for pri in 0..8u32 {
+                                for pdc in 0..16u32 {
+                                    for pda in 0..8u32 {
+                                        let bits = 3 | 1 << 3 | cm << 4 | dst << 5 | pri << 10 | src << 14 | tex << 16 | at << 18 | 1 << 19 | pdc << 20 | pda << 24;
+                                        run(&mut check, &mut counts, bits, caps, false, false, 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let exhaustive = counts.0 + counts.1;
+    // random bits (the four unused top bits too), caps, fog, cull sense and
+    // N-patch level
+    for _ in 0..200_000 {
+        let bits = g.u32();
+        let caps = DeviceCaps {
+            texture_op_caps: if g.below(3) == 0 { w3dshader::d3d::D3DTEXOPCAPS_ALL } else { g.u32() },
+            mod_alpha_add_clr: g.below(2) == 0,
+            fog: None,
+            polygon_cull_mode: if g.below(2) == 0 { w3dshader::d3d::D3DCULL_CW } else { w3dshader::d3d::D3DCULL_CCW },
+            npatches_level: 1 + g.below(4),
+        };
+        let (fa, fe) = (g.below(2) == 0, g.below(2) == 0);
+        let fc = g.u32();
+        run(&mut check, &mut counts, bits, caps, fa, fe, fc);
+    }
+    let (compared, excluded, direct_calls) = counts;
+    println!(
+        "shader apply: {exhaustive} exhaustive and 200000 random shaders, {compared} compared, {excluded} excluded (undefined: dstBlendLUT past its end), \
+         {direct_calls} direct device calls"
+    );
+    assert_eq!(direct_calls, 0);
+    check.finish();
+}
+
+/// Predictions, written before the first run: for every hierarchy the Rust
+/// loads and poses (`Base_Update` defined) and bone links inside it, the
+/// deformed vertices and normals are bit-identical to upstream's (both
+/// overloads: the vertices-only one uses `Transform_Vector`, which has the
+/// same operation order as `mulVector3Array`, so it equals the first);
+/// links past the tree and undefined trees are left out.
+#[test]
+fn skin_deformation_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("W3D skin deformation (meshgeometry.cpp get_deformed_vertices, vp.cpp Transform)");
+    let mut g = Gn { g: Gen::new(0xDEF0), clean: true };
+    let (mut compared, mut verts_compared) = (0u64, 0u64);
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    const CASES: usize = 4_000;
+    for case in 0..CASES {
+        g.clean = case % 4 != 0;
+        let npiv = 1 + g.below(12);
+        let data = ev_tree(&mut g, &name16(b"SKEL"), npiv);
+        let mut root = [0.0f32; 12];
+        for v in root.iter_mut() {
+            *v = if g.below(8) == 0 { g.f32() } else { g.g.uniform(-2.0, 2.0) };
+        }
+        let mut tree = {
+            let mut c = ChunkLoad::new(GameFile::new(&data).unwrap());
+            match c.open_chunk() {
+                Ok(true) => {}
+                _ => {
+                    *excluded.entry("no chunk".into()).or_default() += 1;
+                    continue;
+                }
+            }
+            match htree::load_w3d(&mut c) {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    *excluded.entry("hierarchy load failed".into()).or_default() += 1;
+                    continue;
+                }
+                Err(e) => {
+                    *excluded.entry(format!("load {e:?}")).or_default() += 1;
+                    continue;
+                }
+            }
+        };
+        let m = Matrix3D::new(
+            root[0], root[1], root[2], root[3], root[4], root[5], root[6], root[7], root[8], root[9], root[10], root[11],
+        );
+        if let Err(e) = tree.base_update(&m) {
+            *excluded.entry(format!("Base_Update {e:?}")).or_default() += 1;
+            continue;
+        }
+        let n = 1 + g.below(48) as usize;
+        let total = tree.num_pivots.max(1) as u32;
+        let mut links = Vec::with_capacity(n);
+        while links.len() < n {
+            let bone = if g.below(40) == 0 { total + g.below(3) } else { g.below(total) };
+            for _ in 0..1 + g.below(6) {
+                links.push(bone as u16);
+            }
+        }
+        links.truncate(n);
+        let mut vtx = || [g.f32(), g.f32(), g.f32()];
+        let vertices: Vec<[f32; 3]> = (0..n).map(|_| vtx()).collect();
+        let normals: Vec<[f32; 3]> = (0..n).map(|_| vtx()).collect();
+        let model = MeshModel {
+            name: Vec::new(),
+            flags: 0x0400,
+            w3d_attributes: 0,
+            sort_level: 0,
+            vertices: vertices.clone(),
+            normals: normals.clone(),
+            polys: Vec::new(),
+            bone_links: Some(links.clone()),
+            pass_count: 0,
+            passes: Vec::new(),
+            uv: Vec::new(),
+            color_array: [None, None],
+            vertex_materials: Vec::new(),
+            textures: Vec::new(),
+            has_alternate: false,
+        };
+        let (rv, rn) = match model.get_deformed_vertices(&tree) {
+            Ok(x) => x,
+            Err(e) => {
+                *excluded.entry(format!("deform {e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        let flat = |v: &[[f32; 3]]| v.iter().flatten().copied().collect::<Vec<f32>>();
+        let (mut cv, mut cn, mut cv2) = (vec![0f32; 3 * n], vec![0f32; 3 * n], vec![0f32; 3 * n]);
+        let r = unsafe {
+            cpp::ref_w3d_deform(
+                data.as_ptr() as *const _,
+                data.len() as i32,
+                root.as_ptr(),
+                n as i32,
+                flat(&vertices).as_ptr(),
+                flat(&normals).as_ptr(),
+                links.as_ptr(),
+                cv.as_mut_ptr(),
+                cn.as_mut_ptr(),
+                cv2.as_mut_ptr(),
+            )
+        };
+        assert_eq!(r, 0, "case {case}: the C++ did not load a hierarchy the Rust loaded");
+        let bits = |v: &[f32]| v.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+        let rb = bits(&flat(&rv));
+        check.eq(&rb, &bits(&cv), || format!("case {case}: vertices, links {links:?}"));
+        check.eq(&bits(&flat(&rn)), &bits(&cn), || format!("case {case}: normals, links {links:?}"));
+        check.eq(&rb, &bits(&cv2), || format!("case {case}: vertices-only overload, links {links:?}"));
+        compared += 1;
+        verts_compared += n as u64;
+    }
+    println!("skin deformation: {CASES} cases, {compared} compared ({verts_compared} vertices); excluded: {excluded:?}");
     check.finish();
 }

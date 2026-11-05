@@ -711,3 +711,165 @@ fn bar_button(label: &str) -> impl Bundle {
         children![(Text::new(label), TextColor(Color::WHITE))],
     )
 }
+
+// ---------------------------------------------------------------------------
+// The model viewer (#10, step 4): one W3D model, animated, drawn through `crate::model`.
+// ---------------------------------------------------------------------------
+
+/// Where the model viewer's model comes from.
+pub enum ViewerSource {
+    /// The generated placeholder robot ([`crate::model::demo_files`]): no game files needed.
+    Demo,
+    /// A model (and optionally an animation, `"HIERARCHY.ANIM"`) from the player's Zero Hour folder.
+    #[cfg(not(target_arch = "wasm32"))]
+    Folder { folder: std::path::PathBuf, model: String, anim: Option<String> },
+}
+
+/// The viewer's state: the scene, its drawn parts and their entities.
+struct Viewer {
+    scene: Option<crate::model::ModelScene>,
+    parts: Vec<crate::model::Part>,
+    status: String,
+    /// The orbit camera's heading, distance and target (the model's bounding centre, Bevy axes).
+    yaw: f32,
+    distance: f32,
+    target: Vec3,
+    paused: bool,
+}
+
+/// A drawn part: its index in `Viewer::parts`, and its mesh (rewritten every frame for a skin).
+#[derive(Component)]
+struct PartOf(usize, Handle<Mesh>);
+
+/// Runs the model viewer: `rts-client --model NAME [--anim HIERARCHY.ANIM] [--zh <folder>]` natively (the generated robot
+/// without `--zh`). Space pauses the animation, the arrows turn and zoom.
+///
+/// GUI glue (needs a window): what it draws is `crate::model`'s, which its tests check without one.
+pub fn run_viewer(source: ViewerSource) {
+    let loaded = match source {
+        ViewerSource::Demo => crate::model::ModelScene::load(&crate::model::demo_files(), b"ROBOT", Some(b"ROBOT.WAVE")),
+        #[cfg(not(target_arch = "wasm32"))]
+        ViewerSource::Folder { folder, model, anim } => {
+            let mut fs = rts_lockstep_engine::common::file_system::FileSystem::new(rts_lockstep_engine::common::file_system::NativeDevice::new(&folder));
+            fs.init(None);
+            crate::model::ModelScene::load(&fs, model.as_bytes(), anim.as_deref().map(str::as_bytes))
+        }
+    };
+    let (scene, parts, status) = match loaded.and_then(|s| crate::model::parts(&s).map(|p| (s, p))) {
+        Ok((s, p)) => {
+            let status = s.report.clone();
+            (Some(s), p, status)
+        }
+        Err(e) => (None, Vec::new(), format!("the model did not load: {e}")),
+    };
+    info!("model viewer: {status}");
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window { title: "rts-lockstep-engine: model viewer".into(), canvas: Some("#rts".into()), fit_canvas_to_parent: true, ..default() }),
+            ..default()
+        }))
+        .insert_non_send(Viewer { scene, parts, status, yaw: 0.6, distance: 80.0, target: Vec3::ZERO, paused: false })
+        .add_systems(Startup, viewer_setup)
+        .add_systems(Update, (viewer_input, viewer_animate, viewer_camera).chain())
+        .run();
+}
+
+fn viewer_setup(
+    mut commands: Commands,
+    mut viewer: NonSendMut<Viewer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    commands.spawn((
+        DirectionalLight { illuminance: 9000.0, shadow_maps_enabled: true, ..default() },
+        Transform::from_xyz(0.0, 1.0, 0.0).looking_at(Vec3::new(-0.4, 0.0, -0.3), Vec3::Y),
+    ));
+    commands.spawn((Camera3d::default(), Transform::default()));
+    commands.spawn((Hud, Text::new(viewer.status.clone()), Node { position_type: PositionType::Absolute, top: px(8), left: px(8), ..default() }));
+    let Some(scene) = &viewer.scene else { return };
+    // textures per sub-object, made once
+    let handles: Vec<Vec<Option<Handle<Image>>>> = scene
+        .textures
+        .iter()
+        .zip(&scene.model.sub_objects)
+        .map(|(t, s)| t.iter().zip(&s.model.textures).map(|(r, tex)| r.as_ref().ok().map(|img| images.add(crate::model::texture_image(img, tex.clamp)))).collect())
+        .collect();
+    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for (i, part) in viewer.parts.iter().enumerate() {
+        let sub = &scene.model.sub_objects[part.sub];
+        let (v, n) = scene.model.deformed(part.sub).unwrap_or_else(|_| (sub.model.vertices.clone(), sub.model.normals.clone()));
+        let mesh = meshes.add(crate::model::group_mesh(&sub.model, &part.group, &v, &n));
+        let material = materials.add(part.material.to_standard_material(&handles[part.sub]));
+        let tm = scene.model.sub_object_transform(part.sub).map(|m| crate::model::to_bevy_matrix(&m)).unwrap_or(Mat4::IDENTITY);
+        for p in &v {
+            let w = tm.transform_point3(Vec3::from(to_bevy(*p)));
+            (lo, hi) = (lo.min(w), hi.max(w));
+        }
+        commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material), Transform::from_matrix(tm), PartOf(i, mesh)));
+    }
+    if lo.x <= hi.x {
+        viewer.target = (lo + hi) / 2.0;
+        viewer.distance = ((hi - lo).length() * 1.5).max(1.0);
+    }
+}
+
+fn viewer_input(keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, mut viewer: NonSendMut<Viewer>) {
+    let dt = time.delta_secs();
+    if keys.just_pressed(KeyCode::Space) {
+        viewer.paused = !viewer.paused;
+    }
+    if keys.pressed(KeyCode::ArrowLeft) {
+        viewer.yaw -= dt;
+    }
+    if keys.pressed(KeyCode::ArrowRight) {
+        viewer.yaw += dt;
+    }
+    if keys.pressed(KeyCode::ArrowUp) {
+        viewer.distance = (viewer.distance * (1.0 - dt)).max(1.0);
+    }
+    if keys.pressed(KeyCode::ArrowDown) {
+        viewer.distance *= 1.0 + dt;
+    }
+}
+
+fn viewer_animate(
+    time: Res<Time>,
+    mut viewer: NonSendMut<Viewer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut parts: Query<(&PartOf, &mut Transform)>,
+    mut hud: Query<&mut Text, With<Hud>>,
+) {
+    let v = &mut *viewer;
+    let Some(scene) = &mut v.scene else { return };
+    if v.paused {
+        return;
+    }
+    if let Err(e) = scene.advance(time.delta_secs() * 1000.0) {
+        v.status = format!("the animation stopped: {e}");
+        v.paused = true;
+    }
+    for (PartOf(i, handle), mut transform) in &mut parts {
+        let part = &v.parts[*i];
+        if let Ok(m) = scene.model.sub_object_transform(part.sub) {
+            *transform = Transform::from_matrix(crate::model::to_bevy_matrix(&m));
+        }
+        if scene.model.sub_objects[part.sub].is_skin() {
+            if let (Ok((pos, nrm)), Some(mut mesh)) = (scene.model.deformed(part.sub), meshes.get_mut(handle)) {
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos.iter().map(|p| to_bevy(*p)).collect::<Vec<_>>());
+                mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, nrm.iter().map(|p| to_bevy(*p)).collect::<Vec<_>>());
+            }
+        }
+    }
+    for mut t in &mut hud {
+        *t = Text::new(format!("{} | frame {:.1}{}", v.status, scene.frame, if v.paused { " (paused)" } else { "" }));
+    }
+}
+
+fn viewer_camera(viewer: NonSend<Viewer>, mut cams: Query<&mut Transform, (With<Camera3d>, Without<PartOf>)>) {
+    let (s, c) = viewer.yaw.sin_cos();
+    let eye = viewer.target + Vec3::new(s * viewer.distance, viewer.distance * 0.5, c * viewer.distance);
+    for mut t in &mut cams {
+        *t = Transform::from_translation(eye).looking_at(viewer.target, Vec3::Y);
+    }
+}

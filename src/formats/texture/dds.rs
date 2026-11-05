@@ -84,7 +84,9 @@
 //! # What is left out
 //!
 //! - The file name handling (the constructor turns `.tga` into `.dds`) and
-//!   the file factory: the bytes are given. The date-time is always 0
+//!   the file factory: the bytes are given. (**2026-11-05, #10 step 4:** both
+//!   are translated in [`crate::formats::w3d::render::texture_file_names`]
+//!   and `load_texture_image`, which hand this reader the bytes.) The date-time is always 0
 //!   (`GameFileClass` does not override `Get_Date_Time`).
 //! - The `IDirect3DSurface8` overload of `Copy_Level_To_Surface` (it locks
 //!   the surface and calls the memory one, which is here).
@@ -520,6 +522,11 @@ impl<'a> DdsFile<'a> {
             }
         }
         Ok(d)
+    }
+
+    /// `Get_Format()`: the surface format the header gives.
+    pub fn get_format(&self) -> Ww3dFormat {
+        self.format
     }
 
     /// `Is_Available()`: the level table exists (the header was read).

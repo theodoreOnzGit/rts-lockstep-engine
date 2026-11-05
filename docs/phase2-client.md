@@ -96,6 +96,38 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch #10 step 4 (2026-11-05, GitHub #10): W3D models drawn in the Bevy client, with meshes, materials, textures and
+skinning.**
+- **The render side without a device, translated** (engine crate, `formats::w3d`): `shader` (`ShaderClass::Apply` as
+  plain device states, `Get_SS_Category`, `Guess_Sort_Level`), `vertmaterial` (`VertexMaterialClass` from the file:
+  colours, opacity, flags, the mapper kind of each stage), `meshmdl` (`install_materials`' `Post_Load_Process` and
+  `post_process` with the game's settings; the DX8 renderer's polygon groups per pass; `get_deformed_vertices`), `render`
+  (an HLOD's top LOD and aggregates bound to their bones and posed, `Compute_Current_Frame`, the texture lookup: the
+  lower-cased name, the DDS first, then the Targa, through the game's file search, decoded to RGBA8). `synth` writes W3D
+  files for the tests and placeholder art (new code).
+- **The Bevy mapping** (`client/src/model.rs`, new): one mesh and one `StandardMaterial` per polygon group, blend pairs
+  mapped to alpha modes, alpha test as a mask at upstream's `0x60`, culling, lighting, colours, the stage-0 texture;
+  sub-objects placed by their bones' transforms; skins rewritten every frame from the CPU deformation (as upstream
+  deforms on the CPU). What Bevy's material cannot reproduce is listed per group (detail stage, specular, fog, mappers,
+  screen blending, depth functions).
+- **A model viewer**: `rts-client --model NAME [--anim HIERARCHY.ANIM] [--zh <folder>]` natively; without `--zh` it shows
+  a generated robot (a textured rigid body, a skinned arm, a hidden helper, a looping swing)
+  ([screenshot](images/c3_model_viewer_demo.png), software Vulkan under Xvfb). The web page does not import the art
+  archives yet (its `SKIP` list), so the viewer has no real models in the browser.
+
+*Predictions before the runs* are in each test's doc. *Results:* the lib's 9 new unit tests and the client's 2 held
+except two misses, both in test data: a 2x2 Targa's rows were not flipped (upstream's `_swapBytes` leaves each row's
+`bytes & 15` tail in place, so an 8-byte row does not move: kept, documented), and the demo scene counted the hidden
+helper's texture. **Differential against upstream's compiled code** (`tests/differential_w3d.rs`, section 14; verbatim
+segments of shader.cpp, meshgeometry.cpp and vp.cpp): `Apply`, `Get_SS_Category` and `Guess_Sort_Level` on 633,824
+shaders (every combination of the fields `Apply` branches on, with every texture-op cap and with none, and 200,000
+random bits, caps, fog and cull settings), 0 mismatches, 90,464 left out as undefined (`dstBlendLUT` past its end, an
+eighth as predicted); the skin deformation over hierarchies posed by upstream's `Base_Update`, 3,061 cases (72,322
+vertices, both overloads), 0 mismatches. Two mutants of the Rust were caught (`srcBlendLUT[3]` "fixed" to `INVSRCALPHA`:
+68,056 mismatches; the normals' translation not zeroed: 3,054).
+**Not checked:** a real Zero Hour model (no game files here); the front face is assumed counter-clockwise in the model's
+space, which `MeshModel::winding_agrees_with_normals` will check on real art.
+
 **Batch C3b (2026-11-05, GitHub #3): `OnlineChatColors`, before a real install's first load.**
 Reading upstream's block table (INI.cpp `theTypeTable`) against the files the logic loads: upstream parses every file with
 its whole table, the port with the logic's blocks only, so a client block inside a file the logic reads stops the port's

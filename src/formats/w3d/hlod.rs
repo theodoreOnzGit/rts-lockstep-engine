@@ -20,8 +20,13 @@
 //! which reads the definition an `HLodClass` is later built from: a name, the
 //! hierarchy (HTree) it uses, one array of sub-objects (model name and bone)
 //! per level of detail, an array of "aggregates" and an array of "proxies".
-//! Only the loading; the render object (`HLodClass`), the saving
+//! Only the loading; ~~the render object (`HLodClass`),~~ the saving
 //! (`Save*`) and `Initialize` from a live `HLodClass` are not translated.
+//! **Corrected 2026-11-05 (#10, step 4):** the part of `HLodClass`'s
+//! constructor that decides what is drawn (each LOD's and the aggregates'
+//! sub-objects created by name and bound to their bones) is translated in
+//! [`super::render::RenderModel`]; LOD switching, proxies and the rest of the
+//! render object are not.
 //!
 //! # As upstream reads it
 //!
