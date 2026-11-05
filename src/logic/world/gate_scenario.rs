@@ -36,7 +36,7 @@ use crate::logic::world::game_data::{load_game_data, MemoryFiles, MissingFiles, 
 use crate::logic::world::team_ops::{factory_find_team, factory_init_team};
 
 /// The game's INI: a tracked locomotor, the runner, the gun, the dozer and the depot.
-pub(crate) const INI: &str = "\
+pub const INI: &str = "\
 AIData\n GuardInnerModifierHuman = 1.0\n GuardOuterModifierHuman = 1.0\n GuardInnerModifierAI = 1.0\n GuardOuterModifierAI = 1.0\n AlertRangeModifier = 1.1\n AggressiveRangeModifier = 1.5\nEnd\n\
 Weapon GateGun\n PrimaryDamage = 20\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\nEnd\n\
 Locomotor GateTreads\n Surfaces = GROUND\n Speed = 30\n Acceleration = 100\n Braking = 100\n TurnRate = 180\n Appearance = TREADS\nEnd\n\
@@ -58,8 +58,24 @@ Object Soldier\n KindOf = VEHICLE\n VisionRange = 150\n Geometry = CYLINDER\n Ge
 Object Depot\n KindOf = STRUCTURE IMMOBILE\n BuildTime = 2.0\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n";
 
+/// A caster with an `OCLSpecialPower` (its OCL drops a pup at the target location) and an AI; its command set holds the power's
+/// button and a stop button.
+pub const CASTER_INI: &str = "\
+ObjectCreationList OCL_Drop\n CreateObject\n  ObjectNames = Pup\n  Count = 1\n End\nEnd\n\
+SpecialPower DropPower\n Enum = SPECIAL_DAISY_CUTTER\n ReloadTime = 0\n RadiusCursorRadius = 40\nEnd\n\
+Object Pup\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 2\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+Object Caster\n KindOf = VEHICLE\n CommandSet = CasterSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = OCLSpecialPower ModuleTag_Drop\n  SpecialPowerTemplate = DropPower\n  OCL = OCL_Drop\n  CreateLocation = CREATE_AT_LOCATION\n  ReferenceObject = Pup\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+CommandButton Command_Drop\n Command = SPECIAL_POWER\n SpecialPower = DropPower\n Options = NEED_TARGET_POS\nEnd\n\
+CommandButton Command_Halt\n Command = STOP\nEnd\n\
+CommandSet CasterSet\n 1 = Command_Drop\n 2 = Command_Halt\nEnd\n";
+
 /// A new object of the template `name` on `team` at `pos`, in its team and the partition manager.
-pub(crate) fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
+pub fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
     let t = World::thing_factory_find_template(w, name).expect("a template of the game");
     let id = w.thing_factory_new_object(t, Some(team), ObjectStatusMaskType::default()).expect("an object of the game");
     w.set_position(id, &pos);
@@ -1482,21 +1498,7 @@ pub(crate) mod command_button_object_tests {
     use super::*;
     use crate::logic::world::script_actions::ScriptActionsHost;
 
-    /// A caster with an `OCLSpecialPower` (its OCL drops a pup at the target location) and an AI; its command set holds the power's
-    /// button and a stop button.
-    pub(crate) const CASTER: &str = "\
-ObjectCreationList OCL_Drop\n CreateObject\n  ObjectNames = Pup\n  Count = 1\n End\nEnd\n\
-SpecialPower DropPower\n Enum = SPECIAL_DAISY_CUTTER\n ReloadTime = 0\n RadiusCursorRadius = 40\nEnd\n\
-Object Pup\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 2\n\
- Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
-Object Caster\n KindOf = VEHICLE\n CommandSet = CasterSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
- Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
- Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
- Behavior = OCLSpecialPower ModuleTag_Drop\n  SpecialPowerTemplate = DropPower\n  OCL = OCL_Drop\n  CreateLocation = CREATE_AT_LOCATION\n  ReferenceObject = Pup\n End\n\
- Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
-CommandButton Command_Drop\n Command = SPECIAL_POWER\n SpecialPower = DropPower\n Options = NEED_TARGET_POS\nEnd\n\
-CommandButton Command_Halt\n Command = STOP\nEnd\n\
-CommandSet CasterSet\n 1 = Command_Drop\n 2 = Command_Halt\nEnd\n";
+    pub(crate) const CASTER: &str = super::CASTER_INI;
 
     /// Batch I23, an object carrying out command buttons and the special power store's check, live. Predicted before the run: the
     /// caster can use `DropPower` (it has the module; the power needs no science) and the soldier cannot (no module); the caster's module

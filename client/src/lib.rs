@@ -7,9 +7,15 @@
 //! and system order therefore never reach a CRC. `view`'s tests check that taking the snapshots leaves the logic's CRCs
 //! exactly as the gate game's without them.
 //!
+//! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
+//! - [`import`]: the player's Zero Hour files and the game made from them (C3).
+//! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
 //! - [`view`]: the view model. What is drawn, read from the `World`; plain Rust, no Bevy.
 //! - `app` (feature `app`, on by default): the Bevy application.
 
+pub mod demo;
+pub mod import;
+pub mod input;
 pub mod view;
 
 #[cfg(feature = "app")]

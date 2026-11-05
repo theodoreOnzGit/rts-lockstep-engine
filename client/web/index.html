@@ -8,21 +8,140 @@
   html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; overflow: hidden; }
   #rts { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
   #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  #files { position: absolute; top: 72px; left: 8px; max-width: min(420px, calc(100% - 32px)); padding: 12px 14px;
+           background: rgba(16, 20, 28, 0.92); border: 1px solid #345; border-radius: 8px; line-height: 1.4; }
+  #files h1 { font-size: 15px; margin: 0 0 6px; }
+  #files p { margin: 6px 0; color: #aab; }
+  #files .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  #files button, #files label.btn { background: #2a5d9f; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px;
+           font: inherit; cursor: pointer; }
+  #files button.quiet { background: #333a44; }
+  #files input[type=file] { display: none; }
+  #files .hide { position: absolute; top: 6px; right: 8px; background: none; padding: 2px 6px; color: #889; }
+  #status { color: #ffd479; min-height: 1.4em; }
 </style>
 </head>
 <body>
 <div id="loading">Loading…</div>
 <canvas id="rts" tabindex="0"></canvas>
+<div id="files">
+  <button class="hide quiet" id="hide" title="Hide">×</button>
+  <h1>Play with your Zero Hour files</h1>
+  <p>Pick your <b>Command &amp; Conquer Generals Zero Hour</b> folder (for Steam, under
+     <code>steamapps/common/</code>). Its game data stays in this browser, on this device: nothing is uploaded.
+     Units are drawn as plain shapes for now; the art comes later.</p>
+  <div class="row">
+    <label class="btn">Choose Zero Hour folder<input id="folder" type="file" webkitdirectory multiple></label>
+    <label class="btn quiet">…or its .big files<input id="bigs" type="file" multiple accept=".big"></label>
+  </div>
+  <div class="row" id="saved" hidden>
+    <button id="play">Play with saved files</button>
+    <button class="quiet" id="forget">Forget saved files</button>
+  </div>
+  <p id="status"></p>
+</div>
 <script type="module">
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
-  import init from './rts_client.js';
-  init().catch((e) => {
+  import init, { import_file, import_done } from './rts_client.js';
+  const $ = (id) => document.getElementById(id);
+  const status = (t) => { $('status').textContent = t; };
+
+  // The game starts with the demo; the exports can be called once the module is instantiated.
+  const ready = init().catch((e) => {
     // Bevy's winit loop throws a control-flow exception on purpose once it takes over; anything else is a real failure.
     if (!String(e).includes('Using exceptions for control flow')) {
-      document.getElementById('loading').textContent = 'Failed to start: ' + e;
+      $('loading').textContent = 'Failed to start: ' + e;
       throw e;
     }
-  }).finally(() => { document.getElementById('loading').style.display = 'none'; });
+  }).finally(() => { $('loading').style.display = 'none'; });
+
+  // The archives the game's logic reads (data, maps, text). The art and sound archives are not read yet, and are
+  // large, so they are left out: the browser keeps only what is used.
+  const SKIP = /^(audio|speech|music|textures|terrain|w3d|shaders|window)/i;
+  function wanted(path) {
+    const name = path.split('/').pop();
+    if (/\.big$/i.test(name)) return !SKIP.test(name);
+    // loose files the logic may read: INI, scripts, text, and maps
+    return /^(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
+  }
+  // A picked file's path within the Zero Hour folder (the folder's own name dropped).
+  function relative(file) {
+    const p = file.webkitRelativePath || file.name;
+    const i = p.indexOf('/');
+    return file.webkitRelativePath && i >= 0 ? p.slice(i + 1) : p;
+  }
+
+  // OPFS: one file per imported path, the slashes escaped.
+  const enc = (p) => p.replaceAll('%', '%25').replaceAll('/', '%2F');
+  const dec = (n) => n.replaceAll('%2F', '/').replaceAll('%25', '%');
+  async function store() {
+    const root = await navigator.storage.getDirectory();
+    return root.getDirectoryHandle('zero-hour', { create: true });
+  }
+  async function saved() {
+    const out = [];
+    try {
+      for await (const [name, h] of (await store()).entries()) {
+        if (h.kind === 'file') out.push([dec(name), h]);
+      }
+    } catch (e) { /* no OPFS in this browser */ }
+    return out;
+  }
+
+  async function play(entries) {
+    await ready;
+    let total = 0;
+    for (const [i, [path, getBytes]] of entries.entries()) {
+      status(`Reading ${path} (${i + 1} of ${entries.length})…`);
+      const bytes = new Uint8Array(await getBytes());
+      total += bytes.length;
+      import_file(path, bytes);
+    }
+    import_done();
+    status(`Loaded ${entries.length} files (${(total / 1048576).toFixed(1)} MB). Starting a skirmish…`);
+    setTimeout(() => { $('files').style.display = 'none'; }, 4000);
+  }
+
+  async function pick(files) {
+    const chosen = [...files].map((f) => [relative(f), f]).filter(([p]) => wanted(p));
+    if (!chosen.length) { status('No Zero Hour data found there: pick the folder that holds INIZH.big.'); return; }
+    if (!chosen.some(([p]) => /inizh\.big$/i.test(p))) status('Warning: no INIZH.big in what was picked; trying anyway.');
+    // keep them in this browser for next time (best effort: a browser without OPFS still plays)
+    try {
+      await navigator.storage.persist?.();
+      const dir = await store();
+      for (const [i, [path, f]] of chosen.entries()) {
+        status(`Saving ${path} in this browser (${i + 1} of ${chosen.length})…`);
+        const w = await (await dir.getFileHandle(enc(path), { create: true })).createWritable();
+        await w.write(f);
+        await w.close();
+      }
+    } catch (e) {
+      status('Could not keep the files in this browser (' + e + '); playing from the picked files.');
+    }
+    await play(chosen.map(([p, f]) => [p, () => f.arrayBuffer()]));
+  }
+
+  $('folder').addEventListener('change', (e) => pick(e.target.files));
+  $('bigs').addEventListener('change', (e) => pick(e.target.files));
+  $('hide').addEventListener('click', () => { $('files').style.display = 'none'; });
+  $('play').addEventListener('click', async () => {
+    const s = await saved();
+    await play(s.map(([p, h]) => [p, async () => (await h.getFile()).arrayBuffer()]));
+  });
+  $('forget').addEventListener('click', async () => {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry('zero-hour', { recursive: true });
+    $('saved').hidden = true;
+    status('The saved files were removed from this browser.');
+  });
+
+  saved().then((s) => {
+    if (s.length) {
+      $('saved').hidden = false;
+      status(`${s.length} Zero Hour files are saved in this browser.`);
+    }
+  });
 </script>
 </body>
 </html>

@@ -208,6 +208,53 @@ impl World {
     }
 }
 
+/// The game [`World::quick_skirmish`] started: the map, the local player's side and the opponent's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickSkirmish {
+    /// The map's path in the map cache (`maps\<name>\<name>.map`, lower case).
+    pub map: Vec<u8>,
+    /// The map's display name.
+    pub map_name: String,
+    /// The player templates' sides (`FactionAmerica`, ...), the local player's then the computer's.
+    pub sides: (Vec<u8>, Vec<u8>),
+    /// The files of the map's folder mounted on the World's disk.
+    pub mounted: usize,
+}
+
+impl World {
+    /// The skirmish menu's map list: the map cache's multiplayer maps for two or more players, by path.
+    pub fn skirmish_maps(&self) -> Vec<Vec<u8>> {
+        self.statics.map_cache.maps.iter().filter(|(_, m)| m.is_multiplayer && m.num_players >= 2).map(|(k, _)| k.clone()).collect()
+    }
+
+    /// A skirmish on `map` (else the first of [`World::skirmish_maps`]) as the skirmish menu would start it with its
+    /// defaults: the local player with the first playable side (`PlayableSide`, not an observer) in slot 0, a medium
+    /// computer player with the next playable side (the same one when there is only one) in slot 1, the map's folder
+    /// mounted, and [`World::start_skirmish_against`]. The game starts on the next frame.
+    pub fn quick_skirmish<D: LocalDevice>(&mut self, fs: &FileSystem<D>, map: Option<&[u8]>, seed: i32) -> Result<QuickSkirmish, InstallError> {
+        let maps = self.skirmish_maps();
+        let chosen = match map {
+            Some(m) => m.to_ascii_lowercase(),
+            None => maps.first().cloned().ok_or_else(|| InstallError::MapNotInCache(Vec::new()))?,
+        };
+        let playable: Vec<(i32, Vec<u8>)> = self
+            .statics
+            .player_template_store
+            .templates()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.is_playable_side() && !t.is_observer())
+            .map(|(i, t)| (i as i32, t.side().to_vec()))
+            .collect();
+        let me = playable.first().cloned().unwrap_or((0, Vec::new()));
+        let them = playable.get(1).cloned().unwrap_or_else(|| me.clone());
+        let mounted = self.mount_map(fs, &chosen);
+        let map_name = self.statics.map_cache.find_map(&chosen).map(|m| String::from_utf16_lossy(m.display_name.str())).unwrap_or_default();
+        self.start_skirmish_against(&chosen, me.0, seed, Some((crate::common::game_info::slot_state::MED_AI, them.0)))?;
+        Ok(QuickSkirmish { map: chosen, map_name, sides: (me.1, them.1), mounted })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,4 +600,53 @@ mod tests {
         assert!(crate::logic::ai::ai_states::AiStateHost::has_team(&mut w));
     }
 
+    /// Batch C3 (GitHub #3): the browser's quick start over an install. Predicted: the install's map cache lists the duel map
+    /// as the one skirmish map; `quick_skirmish` with no map chooses it, mounts its two files, takes the tests' playable
+    /// side for both slots (the fixture has one player template), and after 300 frames both players have their starting
+    /// Barracks and Tank, with no live error; an unknown map is refused.
+    ///
+    /// Results (2026-11-05): all held. Found by the browser's check of the page: the local player exists from the second
+    /// frame only (the first dispatches `MSG_NEW_GAME`), which the client had read after one; now pinned here.
+    #[test]
+    fn a_quick_skirmish_starts_on_the_installs_first_map() {
+        let mut scratch = World::new();
+        let map = duel_map(&mut scratch);
+        let scb = skirmish_scripts(&mut scratch.names);
+        let fs = install_with(&map, Some(&scb));
+        let (mut w, _) = World::from_install(&fs, DEFAULT_LANGUAGE).expect("the install");
+        assert_eq!(w.skirmish_maps(), vec![MAP.to_ascii_lowercase()]);
+        assert!(matches!(w.quick_skirmish(&fs, Some(b"Maps\\Nowhere\\Nowhere.map"), 1), Err(InstallError::MapNotInCache(_))));
+        let q = w.quick_skirmish(&fs, None, 7).expect("the skirmish");
+        eprintln!("C3: {q:?}");
+        assert_eq!((q.map.as_slice(), q.mounted), (MAP.to_ascii_lowercase().as_slice(), 2));
+        let mut local = Vec::new();
+        for _ in 0..300 {
+            w.engine_update().expect("a frame");
+            local.push(w.players.local_index());
+        }
+        eprintln!("C3: local player by frame: {:?}", &local[..6]);
+        // (the first frame dispatches `MSG_NEW_GAME`, the second starts the game and makes its players: the client waits
+        // for the local player, `client::import`)
+        assert_eq!((local[0], local[1].is_some()), (None, true));
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        let tanks = w.objects.ids_in_order().into_iter().filter(|&o| w.find_object(o).is_some_and(|x| x.template().get_name() == b"Tank")).count();
+        assert_eq!(tanks, 2);
+    }
+
+    /// Not a check: with `RTS_WRITE_TEST_INSTALL=<dir>` set, writes the test install's archives (`INIZH.big`, `EnglishZH.big`,
+    /// `MapsZH.big` and `ScriptsZH.big`, the repository's own test data) into `<dir>`, for the web page's import to be tried
+    /// in a browser without the game's files.
+    #[test]
+    fn write_the_test_install_when_asked() {
+        let Ok(dir) = std::env::var("RTS_WRITE_TEST_INSTALL") else { return };
+        let mut scratch = World::new();
+        let map = duel_map(&mut scratch);
+        let scb = skirmish_scripts(&mut scratch.names);
+        std::fs::create_dir_all(&dir).expect("the folder");
+        let mut archives = install_archives(&map);
+        archives.push((b"ScriptsZH.big".to_vec(), build_big(&[(b"Data\\Scripts\\SkirmishScripts.scb", &scb)])));
+        for (name, bytes) in archives {
+            std::fs::write(std::path::Path::new(&dir).join(String::from_utf8_lossy(&name).as_ref()), bytes).expect("written");
+        }
+    }
 }

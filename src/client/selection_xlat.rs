@@ -46,7 +46,7 @@ pub trait SelectionXlatHost: SelectionInfoHost + SelectionUiHost {
     /// `obj->getContainedBy()`'s id.
     fn contained_by(&self, obj: ObjectId) -> Option<ObjectId>;
     /// `container->getContain()->isEnclosingContainerFor(obj)`; `None` when the container has no contain module.
-    fn is_enclosing_container_for(&self, container: ObjectId, obj: ObjectId) -> Option<bool>;
+    fn is_enclosing_container_for(&mut self, container: ObjectId, obj: ObjectId) -> Option<bool>;
     /// `obj->getDrawable()`'s id.
     fn object_drawable(&self, obj: ObjectId) -> Option<DrawableId>;
     /// `obj->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED`.
@@ -90,7 +90,7 @@ impl Default for SelectionTranslator {
 ///
 /// Upstream's fall-through is kept: an unselectable drawable whose object is contained, but enclosed (or whose container has
 /// no drawable), is **not** refused here; the click drops it later, because a contained object is never selected.
-pub fn add_drawable_to_list(draw: DrawableId, list: &mut Vec<DrawableId>, h: &impl SelectionXlatHost) -> bool {
+pub fn add_drawable_to_list(draw: DrawableId, list: &mut Vec<DrawableId>, h: &mut impl SelectionXlatHost) -> bool {
     if !h.matches_pick_kinds(draw) {
         return false;
     }
@@ -296,7 +296,7 @@ pub(crate) mod tests {
             }
             self.rel.get(&obj).copied().unwrap_or(Relationship::Neutral)
         }
-        fn can_local_player_garrison(&self, _obj: ObjectId) -> bool {
+        fn can_local_player_garrison(&mut self, _obj: ObjectId) -> bool {
             false
         }
         fn force_fire_or_move(&self) -> bool {
@@ -336,7 +336,7 @@ pub(crate) mod tests {
         fn contained_by(&self, _obj: ObjectId) -> Option<ObjectId> {
             None
         }
-        fn is_enclosing_container_for(&self, _container: ObjectId, _obj: ObjectId) -> Option<bool> {
+        fn is_enclosing_container_for(&mut self, _container: ObjectId, _obj: ObjectId) -> Option<bool> {
             None
         }
         fn object_drawable(&self, obj: ObjectId) -> Option<DrawableId> {

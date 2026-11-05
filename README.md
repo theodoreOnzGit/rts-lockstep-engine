@@ -28,7 +28,22 @@ unit is drawn as its collision shape, in its player's colour, with a health bar.
 --release`. On the web: `scripts/build_web.sh`, then serve `client/dist/`. The client only reads the logic; its tests check
 that the gate game's CRCs are unchanged with it attached. Screenshots of the gate game:
 [web](docs/images/c1_web_gate_game.png), [native](docs/images/c1_native_gate_game.png). The
-selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes the logic's selected group, tested end to end. So are the orders (C2b): a click on the ground or on a unit moves, attacks, enters, docks or repairs, as the original decides it, and in a test World a click drives the selected unit there. The control bar's buttons follow (C2c): a button builds, upgrades, stops or sells, or puts the cursor in a mode whose click fires a special power or weapon; a building is placed with the dozer's button, an anchor and a click, and the dozer builds it.
+selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes the logic's selected group, tested end to end. So are the orders (C2b): a click on the ground or on a unit moves, attacks, enters, docks or repairs, as the original decides it, and in a test World a click drives the selected unit there. The control bar's buttons follow (C2c): a button builds, upgrades, stops or sells, or puts the cursor in a mode whose click fires a special power or weapon; a building is placed with the dozer's button, an anchor and a click, and the dozer builds it. The window takes the player's input (C2d): click or drag to select, click to order, buttons along the bottom, in a demo game until the player's own files are loaded.
+
+### Play in your browser (C3, #3 and #5)
+
+The web client is published by GitHub Actions (`.github/workflows/pages.yml`) to
+**https://theodoreongit.github.io/rts-lockstep-engine/** on every push to `phase1-gamelogic` or `main`. Open it, press
+**Choose Zero Hour folder** and pick your *Command & Conquer Generals Zero Hour* folder (for Steam,
+`steamapps/common/Command and Conquer Generals Zero Hour`). The page keeps the archives the game's logic reads (its data,
+maps and text, not the art or sound) in that browser's own storage (OPFS): nothing is uploaded, and on your next visit
+**Play with saved files** starts at once. The game loads its INI and map cache from them, as the original's
+`GameEngine::init` does, and starts a skirmish on the first multiplayer map: you against a medium computer player. Units
+are drawn as plain shapes until the models are translated (#10, #11); there is no menu, sound or game UI art yet (#12, #13).
+Natively: `cd client && cargo run --release -- --zh "<your Zero Hour folder>"`.
+
+One-time setup of the repository, for the page to publish: Settings -> Pages -> Source: **GitHub Actions**; and, while the
+work is on `phase1-gamelogic`, Settings -> Environments -> `github-pages` -> Deployment branches: add `phase1-gamelogic`.
 
 | Rust module | Translated from (`GeneralsMD/Code/...`) |
 |---|---|

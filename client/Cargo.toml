@@ -33,6 +33,10 @@ bevy = { version = "=0.20.1", default-features = false, optional = true, feature
     "ui_picking",
 ] }
 
+# The page's calls into the game (`src/import.rs`: the player's imported files), at the version Bevy already locks.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.130"
+
 [[bin]]
 name = "rts-client"
 path = "src/main.rs"

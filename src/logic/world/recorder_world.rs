@@ -390,7 +390,7 @@ mod tests {
                 crate::common::game_common::Relationship::Enemies
             }
         }
-        fn can_local_player_garrison(&self, _obj: ObjectId) -> bool {
+        fn can_local_player_garrison(&mut self, _obj: ObjectId) -> bool {
             false
         }
         fn force_fire_or_move(&self) -> bool {
@@ -432,7 +432,7 @@ mod tests {
         fn contained_by(&self, _obj: ObjectId) -> Option<ObjectId> {
             None
         }
-        fn is_enclosing_container_for(&self, _container: ObjectId, _obj: ObjectId) -> Option<bool> {
+        fn is_enclosing_container_for(&mut self, _container: ObjectId, _obj: ObjectId) -> Option<bool> {
             None
         }
         fn object_drawable(&self, obj: ObjectId) -> Option<DrawableId> {
@@ -829,7 +829,7 @@ mod tests {
         use crate::client::selection_xlat::{Disposition, SelectionTranslator};
         use crate::common::base_type::Coord3D;
         use crate::common::message_types::{MSG_DO_SPECIAL_POWER_AT_LOCATION, MSG_DO_STOP, MSG_VALID_GUICOMMAND_HINT};
-        use crate::logic::world::gate_scenario::command_button_object_tests::CASTER;
+        use crate::logic::world::gate_scenario::CASTER_INI as CASTER;
         use crate::logic::world::gate_scenario::{gate_map_world_with, make};
         use crate::logic::world::team_ops::factory_find_team;
         let ini = CASTER.replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1);

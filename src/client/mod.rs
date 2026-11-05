@@ -10,3 +10,4 @@ pub mod command_xlat;
 pub mod command_world;
 pub mod control_bar;
 pub mod place_event;
+pub mod world_host;

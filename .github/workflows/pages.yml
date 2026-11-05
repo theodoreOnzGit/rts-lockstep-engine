@@ -1,0 +1,54 @@
+# The web client on GitHub Pages (issue #5): builds client/ for wasm32 with scripts/build_web.sh and publishes client/dist.
+# The page runs entirely in the player's browser. The player's Zero Hour files are picked on the page and stay in that
+# browser's storage; nothing of EA's is built, committed or published here (AGENTS.md).
+#
+# One-time setup in the repository: Settings -> Pages -> Source: "GitHub Actions". The `github-pages` environment only lets
+# its allowed branches deploy (by default the default branch): add `phase1-gamelogic` under Settings -> Environments ->
+# github-pages -> Deployment branches, or deploy from the default branch.
+name: Web client (GitHub Pages)
+
+on:
+  push:
+    branches: [phase1-gamelogic, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # client/rust-toolchain.toml pins the client's toolchain (Bevy 0.20.1 needs rustc 1.97.1) with the wasm32 target
+      - name: Toolchain
+        working-directory: client
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client
+      - name: wasm-bindgen-cli (the version in client/Cargo.lock)
+        run: |
+          V=$(grep -A1 '^name = "wasm-bindgen"$' client/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')
+          cargo install wasm-bindgen-cli --version "$V" --locked
+      - name: Build
+        run: bash scripts/build_web.sh
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

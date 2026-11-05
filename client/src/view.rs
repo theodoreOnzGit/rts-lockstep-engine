@@ -81,7 +81,7 @@ pub fn snapshot(w: &mut World) -> Snapshot {
         let template = String::from_utf8_lossy(o.template().get_name()).into_owned();
         let angle = o.thing.orientation();
         let player = w.get_controlling_player(id);
-        let color = object_color(w.get_indicator_color(id), player.map(|p| p as i32));
+        let color = object_color(w.get_indicator_color(id), player);
         let health = w.body_health(id).map(|(h, max)| if max > 0.0 { (h / max).clamp(0.0, 1.0) } else { 0.0 });
         objects.push(ViewObject { id, template, pos: [p.x, p.y, p.z], angle, shape, color, health });
     }

@@ -40,7 +40,7 @@ pub trait SelectionInfoHost {
     /// `localPlayer->getRelationship(obj->getTeam())`.
     fn relationship_to_local_player(&self, obj: ObjectId) -> Relationship;
     /// `TheActionManager->canPlayerGarrison(localPlayer, obj, CMD_FROM_PLAYER)`.
-    fn can_local_player_garrison(&self, obj: ObjectId) -> bool;
+    fn can_local_player_garrison(&mut self, obj: ObjectId) -> bool;
     /// `TheInGameUI->isInForceAttackMode()` and `isInForceMoveToMode()`.
     fn force_fire_or_move(&self) -> bool;
     /// `TheInGameUI->isInPreferSelectionMode()`.
@@ -207,7 +207,7 @@ mod tests {
         fn relationship_to_local_player(&self, obj: ObjectId) -> Relationship {
             self.rel.get(&obj).copied().unwrap_or(Relationship::Neutral)
         }
-        fn can_local_player_garrison(&self, _obj: ObjectId) -> bool {
+        fn can_local_player_garrison(&mut self, _obj: ObjectId) -> bool {
             false
         }
         fn force_fire_or_move(&self) -> bool {

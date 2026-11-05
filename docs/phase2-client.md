@@ -91,6 +91,59 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch C3 (2026-11-05, GitHub #3, #5): the player's Zero Hour folder in the browser, and the page on GitHub Pages.**
+- **The page** (`client/web/index.html`): *Choose Zero Hour folder* (or its `.big` files) keeps the archives the logic
+  reads (all but the art and sound ones: `Audio*`, `Speech*`, `Music*`, `Textures*`, `Terrain*`, `W3D*`, `Shaders*`,
+  `Window*`), and the loose `Data\` and `Maps\` files, in that browser's OPFS, and hands them to the game; on a later visit
+  *Play with saved files* reads them back. Nothing is uploaded; there is no server side.
+- **The game** (`client/src/import.rs`): the files go on a memory device under the game's folder, `FileSystem::init` mounts
+  the archives, `World::from_install` loads the text, the logic's INI and the map cache (I57), and the new
+  `World::quick_skirmish` starts a skirmish on the first multiplayer map: the local player with the first playable side
+  against a medium computer player with the next. The app swaps the demo for it and rebuilds the ground. Natively:
+  `rts-client --zh <folder>`.
+- **Publishing** (`.github/workflows/pages.yml`): every push to `phase1-gamelogic` or `main` builds the page with
+  `scripts/build_web.sh` and deploys it to GitHub Pages. The repository's Pages source must be *GitHub Actions*, and the
+  `github-pages` environment must allow the branch.
+
+*Predictions before the runs:* the queue gives the files once and only after the import's end; a folder without archives
+does not start; `quick_skirmish` on the test install picks the duel map, mounts its two files and both players have their
+Barracks and Tank after 300 frames; in a browser, picking the test install's four archives keeps them (offered again after a
+reload) and starts the game.
+
+*Results:* the unit tests held on the first run. **The browser check** (headless Chromium, software WebGL2, the page built by
+`build_web.sh`, the test install's archives written by `install_world`'s `write_the_test_install_when_asked`) found one
+defect: the game said "the game has no local player". The local player exists from the second frame (the first dispatches
+`MSG_NEW_GAME`); the client had read it after one. It now waits for it (pinned in `install_world`'s test). Then the page
+logged "playing your game: on Desert Duel (2) | 11 templates, 1 maps, 0 archive errors, 4 files imported", drew both
+players' Barracks and Tank on the map ([screenshot](images/c3_web_import_test_install.png)), and after a reload offered the
+four saved files. **Not checked:** a real Zero Hour folder (none is in this repository); its first load is the next check.
+Full run: 1198 tests pass (2026-11-05: the engine's 1192 in 204 suites, the client's 6); clippy clean on both crates (the client's one finding, a redundant cast in C1's `view.rs`, fixed); gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
+**Batch C2d (2026-11-05, GitHub #6): the client takes the player's input.**
+- `client::world_host::WorldClient` (engine crate) answers every question of the selection, command, control bar and
+  placement translators from a `World`: relationships through the teams, garrisons through the action manager, the
+  shroud and stealth for the pick filter, hotkey squads, upgrades, sciences. `pick_kinds` translates
+  `getPickTypesForContext` and `PickDrawableStruct`'s kinds. Its messages go on the World's command list as the local
+  player's. Not read from the World yet: a production module's construction-special button (no module call returns it).
+  Not written: the single-use command flag, which upstream's client writes on the logic object directly; this client
+  writes the World only through command messages (`AGENTS.md`).
+- `client/src/input.rs` (`Controls`): pointer events into the translators, in the message stream's order (placement,
+  selection, commands); `client/src/demo.rs`: the demo game the window runs until the player's files are loaded, the gate's
+  own test data with selectable, sighted Runners, Soldiers, a WorkDozer that can build a Depot and the Caster.
+- `client/src/app.rs`: a left click selects or orders, a left drag selects in a box (drawn), the hint is in the status line,
+  selected units have rings, the first selected unit's buttons run along the bottom, a construct button places a building,
+  Escape cancels. Picking is by projected position (18 pixels), the ground by the camera ray on the ground plane.
+
+*Predictions before the runs:* the questions a hovering player asks every frame (18,000 over 300 frames: hints on every
+object and four ground points, normal and force attack, and `EVALUATE_ONLY` on every object) send nothing and leave the gate
+game's CRCs equal to the plain run's frame by frame; in the demo, a click selects a Runner, a click on the ground moves it,
+a box selects both Soldiers, a click on a distant enemy orders an attack without selecting it, and the dozer's button and a
+click build a Depot.
+
+*Results:* all held on the first run: 18,000 questions, 5,100 hints, 0 messages, CRCs identical over 300 frames; in the demo
+the Runner closed from 160 to 75.5 on the point in 90 frames and the Depot stood as player 1's a frame after the click. The
+window itself (`app.rs`) is GUI glue no test reaches; it builds natively and for wasm. Full run: 1198 tests pass (2026-11-05: the engine's 1192 in 204 suites, the client's 6); clippy clean on both crates (the client's one finding, a redundant cast in C1's `view.rs`, fixed); gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
 **Batch C2c, part 2 (2026-11-05, GitHub #6): building placement, and a defect in `canMakeUnit`.**
 `client::place_event` translates `PlaceEventTranslator`: with a building at the cursor (from a dozer's construct button), the
 left button anchors it, a drag of 5 pixels or more stretches it, and the click builds when `canMakeUnit` and

@@ -4434,6 +4434,7 @@ version = "0.0.1"
 dependencies = [
  "bevy",
  "rts-lockstep-engine",
+ "wasm-bindgen",
 ]
 
 [[package]]
