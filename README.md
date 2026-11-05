@@ -27,7 +27,8 @@ the layer order of [`docs/phase1-porting-graph.md`](docs/phase1-porting-graph.md
 unit is drawn as its collision shape, in its player's colour, with a health bar. Natively: `cd client && cargo run
 --release`. On the web: `scripts/build_web.sh`, then serve `client/dist/`. The client only reads the logic; its tests check
 that the gate game's CRCs are unchanged with it attached. Screenshots of the gate game:
-[web](docs/images/c1_web_gate_game.png), [native](docs/images/c1_native_gate_game.png).
+[web](docs/images/c1_web_gate_game.png), [native](docs/images/c1_native_gate_game.png). The
+selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes the logic's selected group, tested end to end.
 
 | Rust module | Translated from (`GeneralsMD/Code/...`) |
 |---|---|

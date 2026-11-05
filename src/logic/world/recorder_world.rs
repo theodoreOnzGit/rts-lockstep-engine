@@ -172,6 +172,7 @@ impl RecorderHost for World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::game_type::{DrawableId, ObjectId};
     use crate::common::dict::Dict;
     use crate::common::game_info::slot_state;
     use crate::common::message_types::{MSG_CLEAR_GAME_DATA, MSG_NEW_GAME};
@@ -360,5 +361,145 @@ mod tests {
             tampered.engine_update().expect("a tampered frame");
         }
         assert_eq!(tampered.replay_crc_state().map(|s| s.0), Some(true), "a changed seed is caught");
+    }
+
+    /// The client's selection facts read from a World, for the local player `p`; its messages go on the World's command list.
+    struct ClientOfWorld {
+        w: World,
+        p: i32,
+    }
+
+    impl crate::client::selection_info::SelectionInfoHost for ClientOfWorld {
+        fn drawable_object(&self, draw: DrawableId) -> Option<ObjectId> {
+            self.w.find_object(draw).map(|_| draw)
+        }
+        fn is_locally_controlled(&self, obj: ObjectId) -> bool {
+            self.w.get_controlling_player(obj) == Some(self.p)
+        }
+        fn is_kind_of(&self, obj: ObjectId, k: crate::common::kind_of::KindOfType) -> bool {
+            self.w.find_object(obj).is_some_and(|o| o.is_kind_of(k))
+        }
+        fn relationship_to_local_player(&self, obj: ObjectId) -> crate::common::game_common::Relationship {
+            if self.is_locally_controlled(obj) {
+                crate::common::game_common::Relationship::Allies
+            } else {
+                crate::common::game_common::Relationship::Enemies
+            }
+        }
+        fn can_local_player_garrison(&self, _obj: ObjectId) -> bool {
+            false
+        }
+        fn force_fire_or_move(&self) -> bool {
+            false
+        }
+        fn prefer_selection(&self) -> bool {
+            false
+        }
+        fn use_alternate_mouse(&self) -> bool {
+            false
+        }
+        fn context_command_is_valid(&mut self, _draw: DrawableId) -> bool {
+            false
+        }
+    }
+
+    impl crate::client::in_game_ui::SelectionUiHost for ClientOfWorld {
+        fn logic_frame(&self) -> u32 {
+            self.w.frame()
+        }
+        fn append_message_bool(&mut self, t: crate::common::message_stream::MessageType, b: bool) {
+            self.w.push_command(t, self.p, |m| m.append_boolean_argument(b));
+        }
+        fn on_selection_changed(&mut self, _draw: DrawableId, _selected: bool) {}
+    }
+
+    impl crate::client::selection_xlat::SelectionXlatHost for ClientOfWorld {
+        fn quit_menu_visible(&self) -> bool {
+            false
+        }
+        fn gui_command_pending(&self) -> bool {
+            false
+        }
+        // the fixture's templates carry no `SELECTABLE` (the shipped ones do): every object is picked; the pick filter is
+        // `selection_xlat::tests`'
+        fn matches_pick_kinds(&self, _draw: DrawableId) -> bool {
+            true
+        }
+        fn is_selectable(&self, _draw: DrawableId) -> bool {
+            true
+        }
+        fn contained_by(&self, _obj: ObjectId) -> Option<ObjectId> {
+            None
+        }
+        fn is_enclosing_container_for(&self, _container: ObjectId, _obj: ObjectId) -> Option<bool> {
+            None
+        }
+        fn object_drawable(&self, obj: ObjectId) -> Option<DrawableId> {
+            Some(obj)
+        }
+        fn fogged_for_local_player(&self, _obj: ObjectId) -> bool {
+            false
+        }
+        fn stealthed_and_undetected(&self, _obj: ObjectId) -> bool {
+            false
+        }
+        fn append_message(&mut self, t: crate::common::message_stream::MessageType, create: Option<bool>, objects: &[ObjectId]) {
+            self.w.push_command(t, self.p, |m| {
+                if let Some(b) = create {
+                    m.append_boolean_argument(b);
+                }
+                for &o in objects {
+                    m.append_object_id_argument(o as u32);
+                }
+            });
+        }
+        fn record_drag_selection(&mut self) {}
+        fn clear_attack_move_to_mode(&mut self) {}
+    }
+
+    /// C2a (#6): a click in the client makes the player's selected group in the logic. Predicted from SelectionXlat.cpp and
+    /// GameLogicDispatch.cpp, in the recorder's skirmish (the player starts with a Barracks and a Tank; drawable ids are the
+    /// object ids here, as the client gives no picking yet):
+    /// - a click on the tank: `MSG_DESTROY_SELECTED_GROUP`, then `MSG_CREATE_SELECTED_GROUP(true, tank)`; after the next
+    ///   frame the player's current selection is `[tank]`;
+    /// - a drag over both: the building is dropped (the tank is selectable), so the selection is `[tank]` again;
+    /// - a click on the Barracks alone: the selection is `[barracks]`.
+    ///
+    /// Results (2026-11-04): ~~the first click selects the tank~~ **Corrected:** the first run picked nothing (`Keep`): the
+    /// fixture's templates carry no `SELECTABLE` kind, so `addDrawableToList` refuses them, as upstream would. The host now
+    /// picks every object (the filter is tested in `selection_xlat::tests`); with it, the three clicks gave the
+    /// selections `[tank]`, `[tank]` and `[barracks]`, as predicted, with no live errors.
+    #[test]
+    fn a_click_in_the_client_makes_the_players_selected_group() {
+        use crate::client::in_game_ui::InGameUiSelection;
+        use crate::client::selection_xlat::{Disposition, SelectionTranslator};
+        let mut w = skirmish_world(true);
+        w.cuts.new_game.map_name = MAP.to_vec();
+        w.random.init_game_logic_random(1234);
+        w.push_command(MSG_NEW_GAME, 0, |m| {
+            m.append_integer_argument(game_mode::SKIRMISH);
+            m.append_integer_argument(1);
+            m.append_integer_argument(0);
+        });
+        for _ in 0..5 {
+            w.engine_update().expect("a frame");
+        }
+        let named = |w: &World, n: &[u8]| w.objects.ids_in_order().into_iter().find(|o| w.find_object(*o).is_some_and(|x| x.template().get_name() == n));
+        let tank = named(&w, b"Tank").expect("the tank");
+        let barracks = named(&w, b"Barracks").expect("the barracks");
+        let p = w.get_controlling_player(tank).expect("its player");
+        let mut c = ClientOfWorld { w, p };
+        let (mut x, mut ui) = (SelectionTranslator::default(), InGameUiSelection::new());
+        let selection = |c: &mut ClientOfWorld| {
+            c.w.engine_update().expect("a frame");
+            c.w.players.get_nth(c.p).and_then(|pl| pl.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default()
+        };
+        assert_eq!(x.left_click(&[tank], true, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(selection(&mut c), vec![tank]);
+        assert_eq!(x.left_click(&[barracks, tank], false, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(selection(&mut c), vec![tank]);
+        assert_eq!(x.left_click(&[barracks], true, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(selection(&mut c), vec![barracks]);
+        assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
     }
 }

@@ -21,6 +21,8 @@ logic frames.
 - A new package, `client/` (`rts-client`), in a Cargo workspace with the logic crate as the root package. The logic crate's
   dependencies do not change (still `petir` only), and its gates (`cargo test` at the root, `scripts/gate_a.sh`) do not build
   Bevy.
+- **The client's translations that need no renderer** (the selection, the command translators) go in the logic crate's
+  `src/client/`, with no new dependency, behind host traits: tested without Bevy, and the same on the web and natively.
 - **Bevy, a pinned exact version,** with default features off and only what we draw with: the renderer, the core pipeline,
   PBR, assets, windowing and input.
   - **Web build:** `wasm32-unknown-unknown` with `wasm-bindgen`, on WebGL2 first, because every browser has it. A WebGPU
@@ -88,6 +90,38 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**Batch C2a (2026-11-04, GitHub #6): the selection, from a click to the logic's selected group.**
+The client's renderer-free translations go in the logic crate's `src/client/`, beside the logic and with no new dependency, so
+that they are tested without Bevy and run the same on the web and natively. Three pieces:
+- `client::in_game_ui`: `InGameUI`'s selection list (`selectDrawable`, `deselectDrawable`, `deselectAllDrawables`, the
+  counts and the force-attack and prefer-selection modes). The list keeps upstream's order, newest first.
+- `client::selection_info`: `SelectionInfo` and `contextCommandForNewSelection`, which counts what a click would pick by whose
+  it is and decides whether it is an order to the current selection. The order itself (`evaluateContextCommand`) is
+  `CommandXlat`'s, C2b; until then the host answers "no order", so a click selects.
+- `client::selection_xlat`: `addDrawableToList` (the pick filter: kinds, the fire base's gunners picking their container,
+  fogged and stealthed enemies refused) and `SelectionTranslator`'s `MSG_MOUSE_LEFT_CLICK`. It emits
+  `MSG_DESTROY_SELECTED_GROUP`, `MSG_CREATE_SELECTED_GROUP` and `MSG_REMOVE_FROM_SELECTED_GROUP`, as upstream does.
+- `client::selection_groups`: the double click (`selectMatchingAcrossScreen`, or with alt `AcrossMap`: every unit of mine
+  like the selected ones, within the selection cap) and the control groups (`MSG_META_CREATE/SELECT/ADD/VIEW_TEAMn`, with
+  the double press within 20 frames that looks at the group). Upstream orders the matched templates by pointer
+  (`std::set<const ThingTemplate*>`); here they go in the template store's order, so the ids' order in that one message
+  can differ from a given run of the original.
+
+Each reaches the game through a host trait (picking needs the view; the facts of objects come from the `World`). Not
+translated yet: the raw button feedback (the drag rectangle's hints, C2d with the view), and the debug-only click modes.
+
+*Predictions before the runs:* written in each test's doc. In short: a click on my unit deselects all, then makes a new group
+of it; a drag over two units and a building takes the units only; shift and a click on a selected unit removes it; a fogged
+enemy is not picked; in the recorder's skirmish, a click on the tank makes the player's selection `[tank]` after one frame,
+a drag over both makes it `[tank]`, and a click on the Barracks makes it `[barracks]`; a double click selects the screen's
+units like it (alt: the map's); ctrl+3 makes group 3 in the drawable list's order, 3 selects it without a
+`MSG_DESTROY_SELECTED_GROUP`, and 3 again within 20 frames only looks at it; viewing group 0 does nothing (upstream's range
+is 1 to 10).
+
+*Results:* all held but one, and that one was the fixture. The end-to-end test first picked nothing: the test world's
+templates carry no `SELECTABLE` kind, so the pick filter refuses them, as upstream's would. The test's host now picks every
+object (the filter has its own test). Full run (2026-11-05): 1181 tests pass in 203 suites, clippy clean, gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
 
 **Batch F1 (2026-11-04, GitHub #9): `TheFileSystem`, and archives read by their directory only.**
 `src/common/file_system.rs` translates three pieces:

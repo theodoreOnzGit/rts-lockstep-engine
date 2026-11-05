@@ -55,6 +55,7 @@
 //! original C++ compiled for SSE; it does **not** establish agreement with the
 //! original x87 build (see `SCOPE.md` section 3).
 
+pub mod client;
 pub mod common;
 pub mod formats;
 pub mod logic;
