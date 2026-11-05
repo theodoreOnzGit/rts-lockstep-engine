@@ -22,7 +22,8 @@
 //! `W3D_CHUNK_COMPRESSED_ANIMATION` ([`HCompressedAnim`]), as their
 //! `Load_W3D` reads them. Only the loading; sampling an animation is not
 //! translated yet. Morph animations (`W3D_CHUNK_MORPH_ANIMATION`,
-//! `hmorphanim.cpp`) are not translated.
+//! `hmorphanim.cpp`) ~~are not translated~~ **Corrected 2026-11-05:** are
+//! loaded by [`super::hmorphanim`].
 //!
 //! # As upstream reads them
 //!

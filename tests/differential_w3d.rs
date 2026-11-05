@@ -8,9 +8,11 @@
 //! wrap_w3d_mesh.cpp`), the HLOD definition loader of `hlod.cpp`
 //! (`differential/wrap_w3d_hlod.cpp`), the collection and aggregate
 //! definition loaders of `collect.cpp` and `agg_def.cpp`
-//! (`differential/wrap_w3d_collect.cpp`), and (section 10) the box, sphere
+//! (`differential/wrap_w3d_collect.cpp`), (section 10) the box, sphere
 //! and ring prototype loaders of `boxrobj.cpp`, `sphereobj.cpp`,
-//! `ringobj.cpp` and `prim_anim.h` (`differential/wrap_w3d_prim.cpp`).
+//! `ringobj.cpp` and `prim_anim.h` (`differential/wrap_w3d_prim.cpp`), and
+//! (section 11) the morph animation loader of `hmorphanim.cpp`
+//! (`differential/wrap_w3d_morph.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -2717,4 +2719,318 @@ fn sphere_load_matches_upstream() {
 fn ring_load_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     run_prim_cases("RingLoaderClass::Load_W3D (ringobj.cpp)", 2, 0x219);
+}
+
+// ---------------------------------------------------------------------------
+// 11. Morph animations (hmorphanim.cpp)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::hmorphanim;
+
+/// `ref_w3d_load_morph` of wrap_w3d_morph.cpp, in Rust. `Ok(None)` when a
+/// channel count or a channel's key count is over 2^16 (kept out of the
+/// comparison: the C++ would allocate and log every one).
+fn rust_load_morph(data: &[u8], trees: &Trees) -> W3dResult<Option<Log>> {
+    let mut log = Log::new();
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    let mut lookup = |n: &[u8; W3D_NAME_LEN]| trees.iter().find(|t| &t.0 == n).map(|t| t.1);
+    log.push(b'O');
+    if c.open_chunk()? {
+        log.push(1);
+        match hmorphanim::load_w3d(&mut c, &mut lookup)? {
+            Some(a) => {
+                if a.channel_count > 1 << 16 || a.channels.iter().any(|ch| ch.keys.len() > 1 << 16) {
+                    return Ok(None);
+                }
+                log.extend_from_slice(&[b'M', 0]);
+                log.extend_from_slice(&a.name);
+                log.extend_from_slice(&a.anim_name);
+                log.extend_from_slice(&a.hierarchy_name);
+                for v in [a.frame_count as u32, a.frame_rate.to_bits(), a.channel_count as u32, a.num_nodes as u32] {
+                    p32(&mut log, v);
+                }
+                for v in &a.pivot_channel {
+                    p32(&mut log, *v);
+                }
+                p32(&mut log, a.channels.len() as u32);
+                for ch in &a.channels {
+                    let n = ch.pose_name.as_deref().unwrap();
+                    p32(&mut log, n.len() as u32);
+                    log.extend_from_slice(n);
+                }
+                for i in 0..a.channel_count.max(0) as usize {
+                    let k = a.channel(i).unwrap().keys;
+                    p32(&mut log, k.len() as u32);
+                    for j in 0..k.len() {
+                        let key = k.get(j).unwrap();
+                        p32(&mut log, key.morph_frame);
+                        p32(&mut log, key.pose_frame);
+                    }
+                }
+            }
+            // LOAD_ERROR
+            None => log.extend_from_slice(&[b'M', 1]),
+        }
+    } else {
+        log.push(0);
+    }
+    log_state(&mut log, &mut c);
+    Ok(Some(log))
+}
+
+fn cpp_load_morph(data: &[u8]) -> Log {
+    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load_morph(data.as_ptr() as *const _, data.len() as i32, log, cap, n) })
+}
+
+fn morph_header(name: &[u8], hier: &[u8], frames: u32, channels: u32) -> Vec<u8> {
+    let mut h = W3dMorphAnimHeaderStruct::from_bytes(&[0; 48]);
+    h.version = W3D_CURRENT_MORPH_HANIM_VERSION;
+    h.name[..name.len()].copy_from_slice(name);
+    h.hierarchy_name[..hier.len()].copy_from_slice(hier);
+    h.frame_count = frames;
+    h.frame_rate = 30.0;
+    h.channel_count = channels;
+    hchunk(W3D_CHUNK_MORPHANIM_HEADER, &h.to_bytes())
+}
+
+fn morph_keys(k: &[(u32, u32)]) -> Vec<u8> {
+    let b: Vec<u8> = k.iter().flat_map(|(m, p)| m.to_le_bytes().into_iter().chain(p.to_le_bytes())).collect();
+    hchunk(W3D_CHUNK_MORPHANIM_KEYDATA, &b)
+}
+
+fn morph_channel(pose: &[u8], k: &[(u32, u32)]) -> Vec<u8> {
+    let mut b = hchunk(W3D_CHUNK_MORPHANIM_POSENAME, pose);
+    b.extend(morph_keys(k));
+    hchunk(W3D_CHUNK_MORPHANIM_CHANNEL, &b)
+}
+
+fn morph_pivots(v: &[u32]) -> Vec<u8> {
+    let b: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    hchunk(W3D_CHUNK_MORPHANIM_PIVOTCHANNELDATA, &b)
+}
+
+/// The named cases of `formats::w3d::hmorphanim`'s unit tests, as whole
+/// files, on the registered hierarchy `SKEL` (6 pivots) instead of the unit
+/// tests' `SKL` (3).
+fn morph_named_cases() -> Vec<(&'static str, Vec<u8>)> {
+    let anim = |body: Vec<u8>| hchunk(W3D_CHUNK_MORPH_ANIMATION, &body);
+    let mut v = Vec::new();
+    let mut b = morph_header(b"FACE", b"SKEL", 60, 2);
+    b.extend(morph_channel(b"SKEL.PHONEMES\0", &[(0, 0), (10, 4)]));
+    b.extend(morph_channel(b"SKEL.EXPR\0", &[(0, 1)]));
+    b.extend(morph_pivots(&[0, 1, 1, 0, 1, 1]));
+    v.push(("two channels and pivot data", anim(b)));
+
+    v.push(("unknown hierarchy", anim(morph_header(b"F", b"NOPE", 1, 0))));
+    let mut b = morph_header(b"ABCDEFGHIJKLMNOP", b"SKEL", 1, 3);
+    b.extend(morph_channel(b"P\0", &[(0, 0)]));
+    b.extend(morph_pivots(&[7]));
+    v.push(("16-character name, unread channels, short pivot data", anim(b)));
+    v.push(("16-character hierarchy name", anim(morph_header(b"ANIM", b"SIXTEENCHARSNAME", 1, 0))));
+
+    let mut kb = morph_keys(&[(1, 2), (3, 4), (5, 6)]);
+    kb[4] = 40;
+    kb.truncate(8 + 16 + 2);
+    let mut b = morph_header(b"F", b"SKEL", 1, 1);
+    let mut ch = hchunk(W3D_CHUNK_MORPHANIM_POSENAME, b"P\0");
+    ch.extend(kb);
+    let mut chc = W3D_CHUNK_MORPHANIM_CHANNEL.to_le_bytes().to_vec();
+    chc.extend_from_slice(&(ch.len() as u32 + 22).to_le_bytes());
+    chc.extend(ch);
+    b.extend(chc);
+    let mut f = W3D_CHUNK_MORPH_ANIMATION.to_le_bytes().to_vec();
+    f.extend_from_slice(&(b.len() as u32 + 22).to_le_bytes());
+    f.extend(b);
+    v.push(("key reads failing after the second: stale key repeated", f));
+
+    let mut b = morph_header(b"F", b"SKEL", 1, 1);
+    b.extend(hchunk(W3D_CHUNK_MORPHANIM_CHANNEL, &[]));
+    b.extend(morph_pivots(&[0, 1, 1]));
+    let mut f = anim(b);
+    f.extend(hchunk(0x1234, &[9; 4]));
+    v.push(("empty channel chunk: misdirected closes", f));
+
+    let mut b = morph_header(b"F", b"SKEL", 1, 1);
+    b.extend(morph_channel(b"", &[(2, 3)]));
+    v.push(("empty pose name", anim(b)));
+    v
+}
+
+/// The named cases: the files of `formats::w3d::hmorphanim`'s unit tests (two
+/// channels and pivot data; an unknown hierarchy; a 16-character name with
+/// unread channels and a short pivot chunk; a key chunk whose reads fail
+/// after the second key; a channel chunk with no sub-chunks), plus a
+/// 16-character hierarchy name (registered as `SIXTEENCHARSNAME`) and an
+/// empty pose name. The undefined cases
+/// of those tests are not given to the C++.
+///
+/// Compared byte for byte: the load result, the three names, `FrameCount`,
+/// `FrameRate`, `ChannelCount`, `NumNodes`, `PivotChannel`, the pose names
+/// asked of the asset manager in order, every channel's keys, the chunk
+/// depth and the file position.
+///
+/// Predicted before the run: all 7 agree, in particular the repeated stale
+/// key (5,4), the empty channel chunk taking the pivot chunk as its keys and
+/// ending at depth 0, and `SIXTEENCHARSNAME.ANIM` (the hierarchy name
+/// running into the zero `FrameCount`).
+#[test]
+fn morph_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let trees = register_trees(&tree_names());
+    let mut check = Check::new("HMorphAnimClass::Load_W3D (hmorphanim.cpp), named cases");
+    let cases = morph_named_cases();
+    for (name, data) in &cases {
+        let rust =
+            rust_load_morph(data, &trees).unwrap_or_else(|e| panic!("{name}: Rust undefined: {e:?}")).expect("small counts");
+        let c = cpp_load_morph(data);
+        check.eq(&rust, &c, || format!("{name}: {:02x?}", data));
+    }
+    println!("morph named cases: {} compared", cases.len());
+    check.finish();
+}
+
+fn gen_morph(g: &mut Gn, trees: &Trees) -> Vec<u8> {
+    let mut h = W3dMorphAnimHeaderStruct::from_bytes(&[0; 48]);
+    h.version = if g.coin() { W3D_CURRENT_MORPH_HANIM_VERSION } else { g.g.u32() };
+    let n = gen_text(g, 16);
+    h.name[..n.len()].copy_from_slice(&n);
+    h.hierarchy_name = if g.below(8) == 0 { g.name() } else { trees[g.below(trees.len() as u32) as usize].0 };
+    h.frame_count = g.g.u32();
+    h.frame_rate = g.f32();
+    let chans = g.below(4);
+    h.channel_count = match g.below(16) {
+        0 => 0xFFFF_FFFF,
+        1 => 0x0800_0000,
+        2 => chans.saturating_sub(1),
+        3 => 1000 + g.below(1000),
+        _ => chans,
+    };
+    let mut body = if g.chance(20) {
+        Vec::new()
+    } else {
+        let hb = h.to_bytes();
+        let hb = if g.chance(10) { hb[..g.below(48) as usize].to_vec() } else { hb };
+        let id = if g.chance(10) { g.g.u32() } else { W3D_CHUNK_MORPHANIM_HEADER };
+        chunk(g, id, false, &hb)
+    };
+    for _ in 0..chans + g.below(3) {
+        match g.below(5) {
+            0..=2 => {
+                let mut cb = Vec::new();
+                if g.below(12) != 0 {
+                    let mut name = gen_text(g, 20);
+                    if g.below(4) != 0 {
+                        name.push(0);
+                    }
+                    cb.extend(chunk(g, W3D_CHUNK_MORPHANIM_POSENAME, false, &name));
+                }
+                if g.below(12) != 0 {
+                    let mut kb = Vec::new();
+                    for _ in 0..g.below(5) {
+                        kb.extend(g.below(100).to_le_bytes());
+                        kb.extend(g.below(10).to_le_bytes());
+                    }
+                    if g.below(5) == 0 {
+                        kb.extend((0..g.below(8)).map(|_| g.g.u32() as u8));
+                    }
+                    cb.extend(chunk(g, W3D_CHUNK_MORPHANIM_KEYDATA, false, &kb));
+                }
+                body.extend(chunk(g, W3D_CHUNK_MORPHANIM_CHANNEL, true, &cb));
+            }
+            3 => {
+                let k = g.below(9);
+                let mut pb: Vec<u8> = (0..k).flat_map(|_| g.below(4).to_le_bytes()).collect();
+                if g.below(4) == 0 {
+                    pb.extend((0..g.below(4)).map(|_| g.g.u32() as u8));
+                }
+                body.extend(chunk(g, W3D_CHUNK_MORPHANIM_PIVOTCHANNELDATA, false, &pb));
+            }
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = g.g.u32();
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    let mut f = chunk(g, W3D_CHUNK_MORPH_ANIMATION, true, &body);
+    if g.below(6) == 0 {
+        // a following top-level chunk, reached by misdirected closes
+        let junk: Vec<u8> = (0..g.below(12)).map(|_| g.g.u32() as u8).collect();
+        f.extend(chunk(g, W3D_CHUNK_MORPHANIM_PIVOTCHANNELDATA, false, &junk));
+    }
+    f
+}
+
+/// Random morph animation files, half well-formed and half also with wrong
+/// chunk sizes, truncations and byte mutations: headers (names of 0 to 16
+/// characters, the registered hierarchies `SKEL` (6 pivots), `BIG`
+/// (70,000), `NONE` (0), `NEG` (negative), `SIXTEENCHARSNAME` (3), `P1` (1)
+/// or an unregistered name; `ChannelCount` matching the channel chunks,
+/// fewer, 1000 or more, too large or negative; header chunks of another id or
+/// cut short, or missing), channel chunks with or without their pose-name
+/// and key sub-chunks (pose names terminated or not, key data with partial
+/// keys), pivot-channel chunks of 0 to 8 entries plus stray bytes, unknown
+/// chunks, and sometimes a top-level chunk after the animation. Compared as
+/// [`morph_named_cases_match_upstream`]; undefined inputs (counted) are not
+/// given to the C++, nor are ones with over 2^16 channels or keys.
+///
+/// Predicted before the run: no disagreement; a third to a half excluded as
+/// undefined (`UninitialisedRead` from missing or short headers and first
+/// keys, `IndexOutOfRange` from extra channels, `BufferOverrun` from pivot
+/// data longer than the pivots, `StringOverrun`, `Allocation` from `NEG`
+/// and huge channel counts, and the chunk reader's `NoChunkOpen` after
+/// misdirected closes).
+///
+/// Result (2026-11-05): 6,409 compared (3,924 loaded, 2,365 load errors,
+/// the rest with no chunk to open), 0 mismatches. Excluded as undefined:
+/// 13,492 (67 %, more than predicted): 4,175 `Allocation`, 3,464
+/// `UninitialisedRead`, 2,105 `StringOverrun`, 1,696 `BufferOverrun`, 1,530
+/// `IndexOutOfRange`, 518 `StringOverflow`, 4 `NonTerminating`; no
+/// `NoChunkOpen` (predicted, not reached). 99 more over 2^16 channels or
+/// keys.
+#[test]
+fn morph_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let trees = register_trees(&tree_names());
+    let mut g = Gn { g: Gen::new(0x302F), clean: false };
+    let mut check = Check::new("HMorphAnimClass::Load_W3D (hmorphanim.cpp)");
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut ok, mut failed, mut large) = (0u64, 0u64, 0u64);
+    const CASES: usize = 20_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let data = gen_morph(&mut g, &trees);
+        let data = mutate(&mut g, data);
+        let rust = match rust_load_morph(&data, &trees) {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                large += 1;
+                continue;
+            }
+            Err(W3dError::Undefined(u)) => {
+                *excluded.entry(format!("{u:?}")).or_default() += 1;
+                continue;
+            }
+            Err(e) => {
+                *excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        match rust.get(3) {
+            Some(0) if rust[2] == b'M' => ok += 1,
+            Some(1) if rust[2] == b'M' => failed += 1,
+            _ => {}
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("morph case {case}: {:02x?}", data);
+        }
+        let c = cpp_load_morph(&data);
+        check.eq(&rust, &c, || format!("case {case}: {:02x?}", data));
+    }
+    println!(
+        "HMorphAnimClass::Load_W3D: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream or \
+         not ending): {} {excluded:?}; excluded (over 2^16 channels or keys): {large}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
 }

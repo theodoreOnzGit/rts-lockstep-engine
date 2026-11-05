@@ -10,14 +10,10 @@
 ** give every class layout; differential/shim_w3d/w3d_prelude.h and
 ** mesh_prelude.h are force-included.
 **
-** TRANSCRIBED here, from WWLib/wwstring.cpp (which casts pointers to a
-** 32-bit `unsigned` and cannot be compiled for x86_64): the out-of-line
-** StringClass members that ProxyClass's name needs: the static
-** m_NullChar/m_EmptyString, Get_String and Free_String (their non-temporary
-** paths: nothing compiled here asks for a temporary string; the temporary
-** paths abort), and Uninitialised_Grow (verbatim). The library is compiled
-** with StringClass renamed to CollectionStringClass (build.rs), so these do
-** not clash with the mesh wrapper's empty-only stand-ins.
+** The out-of-line StringClass members ProxyClass's name needs are
+** transcribed in differential/wrap_w3d_string.cpp; the library is compiled
+** with StringClass renamed to ShimStringClass, as that file is (build.rs),
+** so they do not clash with the mesh wrapper's empty-only stand-ins.
 **
 ** Stand-ins never reached by the loading (they abort): the AggregateDefClass
 ** virtual functions agg_def.cpp defines outside the copied segments (the
@@ -62,48 +58,6 @@ int ref_w3d_ramfile_size(void *f);
 void ref_w3d_ramfile_close(void *f);
 void ref_w3d_track_arrays(int on);
 size_t ref_w3d_array_bytes(const void *p);
-}
-
-/* ---- wwstring.cpp (transcribed, see above) --------------------------- */
-TCHAR StringClass::m_NullChar = 0;
-TCHAR *StringClass::m_EmptyString = &m_NullChar;
-
-/* StringClass::Get_String: the non-temporary path. */
-void StringClass::Get_String(int length, bool is_temp)
-{
-	if (!is_temp && length == 0) {
-		m_Buffer = m_EmptyString;
-		return;
-	}
-	if (is_temp) abort();
-	if (length > 0) {
-		Set_Buffer_And_Allocated_Length(Allocate_Buffer(length), length);
-	} else {
-		Free_String();
-	}
-}
-
-/* StringClass::Free_String: the non-temporary path (no temporary buffers
-** are handed out here). */
-void StringClass::Free_String(void)
-{
-	if (m_Buffer != m_EmptyString) {
-		char *buffer = ((char *)m_Buffer) - sizeof(StringClass::_HEADER);
-		delete[] buffer;
-		m_Buffer = m_EmptyString;
-	}
-}
-
-/* StringClass::Uninitialised_Grow, verbatim (WWMEMLOG is empty). */
-void StringClass::Uninitialised_Grow(int new_len)
-{
-	int allocated_len = Get_Allocated_Length();
-	if (new_len > allocated_len) {
-		TCHAR *new_buffer = Allocate_Buffer(new_len);
-		Set_Buffer_And_Allocated_Length(new_buffer, new_len);
-	}
-	Store_Length(0);
-	return;
 }
 
 /* ---- agg_def.cpp functions the loading never reaches ----------------- */

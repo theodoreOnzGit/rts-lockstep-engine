@@ -3,12 +3,12 @@
 //! reads meshes ([`mesh`]), hierarchies ([`htree`]), hierarchical LOD
 //! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`]),
 //! the box, sphere and ring primitives ([`boxrobj`], [`sphereobj`],
-//! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`])
-//! with, into plain structs (no rendering). All of it reads through the WWLib chunk
-//! reader, [`crate::ww::chunkio`]. The asset manager's file loop
-//! (`WW3DAssetManager::Load_3D_Assets`, which picks the loader by top-level
-//! chunk id and registers the result) is not translated: each loader is
-//! called on its own chunk.
+//! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`],
+//! [`hmorphanim`]) with, into plain structs (no rendering). All of it reads
+//! through the WWLib chunk reader, [`crate::ww::chunkio`]. The asset
+//! manager's file loop (`WW3DAssetManager::Load_3D_Assets`, which picks the
+//! loader by top-level chunk id and registers the result) is not
+//! translated: each loader is called on its own chunk.
 //!
 //! The loaders return `W3dResult<Option<T>>`: `Ok(Some(_))` is upstream's
 //! successful load, `Ok(None)` its load error (the reader is left where
@@ -20,6 +20,7 @@ pub mod boxrobj;
 pub mod collect;
 pub mod hanim;
 pub mod hlod;
+pub mod hmorphanim;
 pub mod htree;
 pub mod mesh;
 pub mod motchan;

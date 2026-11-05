@@ -20,6 +20,8 @@
 ** 5. assetmgr.h (guard ASSETMGR_H): the animation loaders ask the asset
 **    manager for the hierarchy named in their header (Get_HTree); the
 **    stand-in returns the hierarchies the test has loaded (wrap_w3d.cpp).
+**    The morph loader also asks for its pose animations (Get_HAnim); that
+**    stand-in records the names and returns none (wrap_w3d_morph.cpp).
 ** 6. The MSVC CRT names stricmp/_strlwr/_isnan. */
 #ifndef SHIM_W3D_PRELUDE_H
 #define SHIM_W3D_PRELUDE_H
@@ -62,12 +64,14 @@ class MutexClass { public: class LockClass { public: LockClass(MutexClass &, int
 
 #define ASSETMGR_H
 class HTreeClass;
+class HAnimClass;
 class TextureClass;
 class WW3DAssetManager
 {
 public:
 	static WW3DAssetManager *Get_Instance();
 	HTreeClass *Get_HTree(const char *name);
+	HAnimClass *Get_HAnim(const char *name); /* the morph loader's pose lookup (wrap_w3d_morph.cpp) */
 	TextureClass *Get_Texture(const char *filename);
 	TextureClass *Get_Texture(const char *filename, int mip_level_count, int texture_format);
 	bool Get_Activate_Fog_On_Load() { return false; }
