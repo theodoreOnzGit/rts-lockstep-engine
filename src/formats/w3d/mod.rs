@@ -5,10 +5,13 @@
 //! the box, sphere and ring primitives ([`boxrobj`], [`sphereobj`],
 //! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`],
 //! [`hmorphanim`]) with, into plain structs (no rendering). All of it reads
-//! through the WWLib chunk reader, [`crate::ww::chunkio`]. The asset
+//! through the WWLib chunk reader, [`crate::ww::chunkio`]. ~~The asset
 //! manager's file loop (`WW3DAssetManager::Load_3D_Assets`, which picks the
 //! loader by top-level chunk id and registers the result) is not
-//! translated: each loader is called on its own chunk.
+//! translated: each loader is called on its own chunk.~~ **Corrected
+//! 2026-11-05 (#10, step 2):** the asset manager's loading side
+//! ([`assetmgr`]: `Load_3D_Assets`, registration and lookup by name, loading
+//! `<name>.w3d` on demand) picks the loader by top-level chunk id.
 //!
 //! The loaders return `W3dResult<Option<T>>`: `Ok(Some(_))` is upstream's
 //! successful load, `Ok(None)` its load error (the reader is left where
@@ -16,6 +19,7 @@
 //! `Err` an input on which upstream is undefined.
 
 pub mod agg_def;
+pub mod assetmgr;
 pub mod boxrobj;
 pub mod collect;
 pub mod hanim;

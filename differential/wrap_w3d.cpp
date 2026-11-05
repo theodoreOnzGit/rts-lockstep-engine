@@ -221,10 +221,15 @@ std::vector<std::pair<std::string, HTreeClass *> > g_trees;
 
 WW3DAssetManager *WW3DAssetManager::Get_Instance() { static WW3DAssetManager m; return &m; }
 
+/* Set by differential/wrap_w3d_assetmgr.cpp while it tests the real asset
+** manager: the loaders' lookups then go to its Get_HTree. */
+HTreeClass *(*g_w3d_htree_hook)(const char *) = NULL;
+
 /* The stand-in for the asset manager's lookup: the 16 name bytes as the
 ** animation loader passes them (its zero-padded HierarchyName), exactly. */
 HTreeClass *WW3DAssetManager::Get_HTree(const char *name)
 {
+	if (g_w3d_htree_hook) return g_w3d_htree_hook(name);
 	for (size_t i = 0; i < g_trees.size(); ++i)
 		if (memcmp(g_trees[i].first.data(), name, W3D_NAME_LEN) == 0) return g_trees[i].second;
 	return NULL;

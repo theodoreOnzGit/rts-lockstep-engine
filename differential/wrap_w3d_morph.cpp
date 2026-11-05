@@ -10,7 +10,8 @@
 ** Stand-ins: WW3DAssetManager::Get_HAnim (read_channel's lookup of each
 ** channel's pose animation) records the name it is asked for and returns no
 ** animation (upstream then keeps a null pose, which the loading never
-** dereferences); Get_HTree is wrap_w3d.cpp's (the hierarchies the test
+** dereferences), or, while wrap_w3d_assetmgr.cpp tests the real asset
+** manager, forwards to its Get_HAnim; Get_HTree is wrap_w3d.cpp's (the hierarchies the test
 ** registers). HMorphAnimClass's Get_Translation, Get_Orientation and
 ** Get_Transform (named by its vtable, never called by the loading) abort.
 ** The StringClass that read_channel uses is the real wwstring.h with the
@@ -47,10 +48,15 @@ namespace {
 std::vector<std::string> g_poses;
 }
 
+/* Set by differential/wrap_w3d_assetmgr.cpp while it tests the real asset
+** manager: the pose lookups then go to its Get_HAnim. */
+HAnimClass *(*g_w3d_hanim_hook)(const char *) = NULL;
+
 /* The asset manager's pose lookup (see above). */
 HAnimClass *WW3DAssetManager::Get_HAnim(const char *name)
 {
 	g_poses.push_back(std::string(name));
+	if (g_w3d_hanim_hook) return g_w3d_hanim_hook(name);
 	return NULL;
 }
 

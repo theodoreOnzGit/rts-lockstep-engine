@@ -22,6 +22,9 @@
 **    stand-in returns the hierarchies the test has loaded (wrap_w3d.cpp).
 **    The morph loader also asks for its pose animations (Get_HAnim); that
 **    stand-in records the names and returns none (wrap_w3d_morph.cpp).
+**    Both stand-ins forward to the real asset manager when
+**    wrap_w3d_assetmgr.cpp is testing it (its hooks). That library defines
+**    SHIM_W3D_REAL_ASSETMGR and gets the real assetmgr.h instead.
 ** 6. The MSVC CRT names stricmp/_strlwr/_isnan. */
 #ifndef SHIM_W3D_PRELUDE_H
 #define SHIM_W3D_PRELUDE_H
@@ -62,6 +65,7 @@ class MutexClass { public: class LockClass { public: LockClass(MutexClass &, int
 #define WWMEMLOG_H
 #define WWMEMLOG(category)
 
+#ifndef SHIM_W3D_REAL_ASSETMGR /* the asset-manager build uses the real header (wrap_w3d_assetmgr.cpp) */
 #define ASSETMGR_H
 class HTreeClass;
 class HAnimClass;
@@ -76,6 +80,7 @@ public:
 	TextureClass *Get_Texture(const char *filename, int mip_level_count, int texture_format);
 	bool Get_Activate_Fog_On_Load() { return false; }
 };
+#endif
 
 #define stricmp strcasecmp
 #define _stricmp strcasecmp

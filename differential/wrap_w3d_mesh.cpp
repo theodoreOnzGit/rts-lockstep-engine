@@ -770,6 +770,39 @@ int ref_w3d_load_mesh(const char *data, int len, int prelit_mode, unsigned char 
 	return 0;
 }
 
+} /* extern "C" */
+
+/* For differential/wrap_w3d_assetmgr.cpp (the asset manager's mesh loader):
+** MeshModelClass::Load_W3D on the open mesh chunk, stopped at the snapshot
+** as above, after which upstream returns WW3D_ERROR_OK (the reading is
+** over: install_materials and post_process read nothing). Returns 1 and the
+** model's Get_Name() (MeshClass::Get_Name), or 0 for a load error. The model
+** is not released (as ref_w3d_load_mesh). */
+int ref_w3d_mesh_load_for_assetmgr(ChunkLoadClass &cload, std::string &name)
+{
+	g_generated = false;
+	g_planes_used = false;
+	SimpleVecClass<Vector4> planes;
+	g_planes = &planes;
+	g_mesh = new MeshModelClass;
+	MeshModelClass *m = g_mesh;
+	int ok = 0;
+	try {
+		WW3DErrorType r = m->Load_W3D(cload);
+		if (r != WW3D_ERROR_OK) ok = 0;
+		else abort(); /* the snapshot comes first */
+	} catch (Snapshot &) {
+		const char *n = m->Get_Name();
+		name = n ? n : "";
+		ok = 1;
+	}
+	g_mesh = NULL;
+	g_planes = NULL;
+	return ok;
+}
+
+extern "C" {
+
 /* WWLib/realcrc.cpp */
 unsigned ref_crc_memory(const unsigned char *data, int len, unsigned crc)
 {

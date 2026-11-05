@@ -41,8 +41,8 @@
 //! | [`ww::matrix3d`] | `WWMath/matrix3d.h`, `matrix3d.cpp` |
 //! | [`ww::quat`] | `WWMath/quat.h`, `quat.cpp` (`Build_Matrix3D`, which the hierarchy loader uses) |
 //! | [`ww::chunkio`] | `WWLib/chunkio.h`, `chunkio.cpp` (`ChunkLoadClass`), read through `GameFileClass` over `RAMFile` |
-//! | [`ww::realcrc`] | `WWLib/realcrc.h`, `realcrc.cpp` (`CRC_Memory`) |
-//! | [`formats::w3d`] | `WW3D2/w3d_file.h`, `w3d_obsolete.h`; the loaders of `htree.cpp`, `pivot.cpp`, `hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`, `meshmdlio.cpp` (with what they call in `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h`, `dx8wrapper.h`) |
+//! | [`ww::realcrc`] | `WWLib/realcrc.h`, `realcrc.cpp` (`CRC_Memory`, `CRC_Stringi`) |
+//! | [`formats::w3d`] | `WW3D2/w3d_file.h`, `w3d_obsolete.h`; the loaders of `htree.cpp`, `pivot.cpp`, `hrawanim.cpp`, `hcanim.cpp`, `motchan.cpp`, `meshmdlio.cpp` (with what they call in `meshgeometry.cpp`, `meshmatdesc.cpp`, `vertmaterial.cpp`, `texture.cpp`, `aabtree.cpp`, `w3d_util.cpp`, `shader.h`, `dx8wrapper.h`); the asset manager's loading side (`assetmgr.cpp`, `htreemgr.cpp`, `hanimmgr.cpp`, `WWLib/hash.cpp`, the game's `W3DAssetManager.cpp` and `GameFileClass::Set_Name`) |
 //! | [`formats::texture`] | `WWLib/TARGA.CPP`, `TARGA.H`; `WW3D2/ddsfile.cpp`, `ddsfile.h`, `ww3dformat.cpp`, `formconv.cpp`, `bitmaphandler.h` (`Write_B8G8R8A8`), `colorspace.h` |
 //! | [`common::upgrade`], [`common::special_power`], [`common::academy_classification`], [`common::audio_event_name`] | `Include/Common/Upgrade.h`, `Source/Common/System/Upgrade.cpp`, `Source/Common/INI/INIUpgrade.cpp`, `Xfer::xferUpgradeMask`; `Include/Common/SpecialPower.h`, `Source/Common/RTS/SpecialPower.cpp`, `Source/Common/INI/INISpecialPower.cpp`; `AcademyClassificationType` of `AcademyStats.h`/`.cpp`; `INI::parseAudioEventRTS` (the token handling) (p1w2-upgrade) |
 //!

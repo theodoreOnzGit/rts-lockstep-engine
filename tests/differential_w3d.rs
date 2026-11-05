@@ -12,7 +12,10 @@
 //! and ring prototype loaders of `boxrobj.cpp`, `sphereobj.cpp`,
 //! `ringobj.cpp` and `prim_anim.h` (`differential/wrap_w3d_prim.cpp`), and
 //! (section 11) the morph animation loader of `hmorphanim.cpp`
-//! (`differential/wrap_w3d_morph.cpp`).
+//! (`differential/wrap_w3d_morph.cpp`), and (section 12) the asset
+//! manager's loading side: `assetmgr.cpp` (verbatim segments),
+//! `htreemgr.cpp`, `hanimmgr.cpp` and `hash.cpp`, over the real loaders of
+//! the other sections (`differential/wrap_w3d_assetmgr.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -3030,6 +3033,777 @@ fn morph_load_matches_upstream() {
     println!(
         "HMorphAnimClass::Load_W3D: {CASES} inputs, {ok} loaded, {failed} load errors; excluded (undefined upstream or \
          not ending): {} {excluded:?}; excluded (over 2^16 channels or keys): {large}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 12. The asset manager (assetmgr.cpp, htreemgr.cpp, hanimmgr.cpp, hash.cpp)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::common::file_system::{FileSystem, MemoryDevice};
+use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
+
+/// One operation of `ref_assetmgr_op` (wrap_w3d_assetmgr.cpp).
+#[derive(Clone, Debug)]
+enum AmOp {
+    /// `Load_3D_Assets(FileClass &)` on these bytes.
+    Bytes(Vec<u8>),
+    /// `Load_3D_Assets(name)`.
+    File(Vec<u8>),
+    /// `Create_Render_Obj(name)`: which prototype.
+    Create(Vec<u8>),
+    /// `Get_HTree(name)`.
+    HTree(Vec<u8>),
+    /// `Get_HAnim(name)`, then `Is_Missing(name)`.
+    HAnim(Vec<u8>),
+    /// `Render_Obj_Exists(name)`.
+    Exists(Vec<u8>),
+    /// `Free_Assets()`.
+    Free,
+    /// `Remove_Prototype(name)`.
+    Remove(Vec<u8>),
+    /// `Set_WW3D_Load_On_Demand(on)`.
+    OnDemand(bool),
+    /// The prototypes, hierarchies and animations, in their orders.
+    State,
+}
+
+impl AmOp {
+    fn code_arg(&self) -> (i32, Vec<u8>) {
+        match self {
+            AmOp::Bytes(b) => (0, b.clone()),
+            AmOp::File(n) => (1, n.clone()),
+            AmOp::Create(n) => (2, n.clone()),
+            AmOp::HTree(n) => (3, n.clone()),
+            AmOp::HAnim(n) => (4, n.clone()),
+            AmOp::Exists(n) => (5, n.clone()),
+            AmOp::Free => (6, Vec::new()),
+            AmOp::Remove(n) => (7, n.clone()),
+            AmOp::OnDemand(on) => (8, vec![*on as u8]),
+            AmOp::State => (9, Vec::new()),
+        }
+    }
+}
+
+/// A case: which manager, the user data directory (`None`: no
+/// `TheGlobalData`), the files of `TheFileSystem`, the operations.
+#[derive(Clone, Debug)]
+struct AmCase {
+    game: bool,
+    user_data: Option<Vec<u8>>,
+    files: Vec<(Vec<u8>, Vec<u8>)>,
+    ops: Vec<AmOp>,
+}
+
+fn am_pstr(log: &mut Log, s: &[u8]) {
+    p32(log, s.len() as u32);
+    log.extend_from_slice(s);
+}
+
+/// `ref_assetmgr_op`, in Rust: the same log from `formats::w3d::assetmgr`.
+fn rust_am_op(m: &mut AssetManager, fs: &FileSystem<MemoryDevice>, op: &AmOp) -> W3dResult<Log> {
+    let mut log = Log::new();
+    match op {
+        AmOp::Bytes(b) => {
+            log.push(b'B');
+            log.push(m.load_3d_assets(fs, b)? as u8);
+        }
+        AmOp::File(n) => {
+            log.push(b'L');
+            log.push(m.load_3d_assets_file(fs, n)? as u8);
+        }
+        AmOp::Create(n) => {
+            log.push(b'R');
+            match m.create_render_obj(fs, n)? {
+                Some(p) => {
+                    let name = p.name()?;
+                    let id = p.class_id();
+                    log.push(1);
+                    am_pstr(&mut log, &name);
+                    p32(&mut log, id);
+                }
+                None => log.push(0),
+            }
+        }
+        AmOp::HTree(n) => {
+            log.push(b'H');
+            let found = m.get_htree(fs, n)?.map(|t| t.num_pivots);
+            match found {
+                Some(np) => {
+                    let id = m.get_tree_id(n).expect("found");
+                    let name = m.htrees().nth(id).expect("tree").0.to_vec();
+                    log.push(1);
+                    am_pstr(&mut log, &name);
+                    p32(&mut log, np as u32);
+                }
+                None => log.push(0),
+            }
+        }
+        AmOp::HAnim(n) => {
+            log.push(b'N');
+            match m.get_hanim(fs, n)? {
+                Some(a) => {
+                    let name = a.name().to_vec();
+                    log.push(1);
+                    am_pstr(&mut log, &name);
+                }
+                None => log.push(0),
+            }
+            log.push(m.is_missing(n) as u8);
+        }
+        AmOp::Exists(n) => {
+            log.push(b'E');
+            log.push(m.render_obj_exists(n) as u8);
+        }
+        AmOp::Free => {
+            log.push(b'F');
+            m.free_assets();
+        }
+        AmOp::Remove(n) => {
+            log.push(b'X');
+            m.remove_prototype(n)?;
+        }
+        AmOp::OnDemand(on) => {
+            log.push(b'D');
+            m.load_on_demand = *on;
+        }
+        AmOp::State => {
+            log.push(b'P');
+            let protos: Vec<(Vec<u8>, u32)> = m.prototypes().map(|(n, p)| (n.to_vec(), p.class_id())).collect();
+            p32(&mut log, protos.len() as u32);
+            for (n, id) in protos {
+                am_pstr(&mut log, &n);
+                p32(&mut log, id);
+            }
+            log.push(b'T');
+            let trees: Vec<(Vec<u8>, i32)> = m.htrees().map(|(n, t)| (n.to_vec(), t.num_pivots)).collect();
+            p32(&mut log, trees.len() as u32);
+            for (n, np) in trees {
+                am_pstr(&mut log, &n);
+                p32(&mut log, np as u32);
+            }
+            log.push(b'A');
+            let anims: Vec<Vec<u8>> = m.anim_names().into_iter().map(|n| n.to_vec()).collect();
+            p32(&mut log, anims.len() as u32);
+            for n in anims {
+                am_pstr(&mut log, &n);
+            }
+        }
+    }
+    Ok(log)
+}
+
+/// The whole case in Rust: the logs of every operation, or the first error.
+fn rust_am_case(c: &AmCase) -> W3dResult<Vec<Log>> {
+    let mut dev = MemoryDevice::new();
+    for (p, d) in &c.files {
+        dev.insert(p, d.clone());
+    }
+    let fs = FileSystem::new(dev);
+    let factory = W3dFileFactory { language: b"english".to_vec(), user_data_path: c.user_data.clone() };
+    let mut m = if c.game {
+        AssetManager::new_game(factory)
+    } else {
+        let mut m = AssetManager::new();
+        m.file_factory = factory;
+        m
+    };
+    c.ops.iter().map(|op| rust_am_op(&mut m, &fs, op)).collect()
+}
+
+fn cpp_am_case(c: &AmCase) -> Vec<Log> {
+    let ud = c.user_data.as_ref().map(|u| {
+        let mut v = u.clone();
+        v.push(0);
+        v
+    });
+    unsafe { cpp::ref_assetmgr_reset(c.game as i32, ud.as_ref().map_or(std::ptr::null(), |v| v.as_ptr() as *const _)) };
+    for (p, d) in &c.files {
+        let mut p = p.clone();
+        p.push(0);
+        unsafe { cpp::ref_assetmgr_add_file(p.as_ptr() as *const _, d.as_ptr() as *const _, d.len() as i32) };
+    }
+    c.ops
+        .iter()
+        .map(|op| {
+            let (code, mut arg) = op.code_arg();
+            let len = arg.len() as i32;
+            arg.push(0);
+            cpp_log(|log, cap, n| unsafe { cpp::ref_assetmgr_op(code, arg.as_ptr() as *const _, len, log, cap, n) })
+        })
+        .collect()
+}
+
+fn am_name16(s: &[u8]) -> [u8; W3D_NAME_LEN] {
+    let mut n = [0u8; W3D_NAME_LEN];
+    let k = s.len().min(W3D_NAME_LEN);
+    n[..k].copy_from_slice(&s[..k]);
+    n
+}
+
+fn am_sub(id: u32, body: &[u8]) -> Vec<u8> {
+    let mut v = id.to_le_bytes().to_vec();
+    v.extend_from_slice(&(body.len() as u32 | 0x8000_0000).to_le_bytes());
+    v.extend_from_slice(body);
+    v
+}
+
+fn am_mesh(container: &[u8], name: &[u8]) -> Vec<u8> {
+    let mut h = W3dMeshHeader3Struct::from_bytes(&[0; W3dMeshHeader3Struct::SIZE]);
+    h.version = w3d_make_version(4, 2);
+    h.mesh_name = am_name16(name);
+    h.container_name = am_name16(container);
+    am_sub(W3D_CHUNK_MESH, &hchunk(W3D_CHUNK_MESH_HEADER3, &h.to_bytes()))
+}
+
+fn am_htree(name: &[u8], n: u32) -> Vec<u8> {
+    let mut h = W3dHierarchyStruct::from_bytes(&[0; W3dHierarchyStruct::SIZE]);
+    h.version = w3d_make_version(4, 1);
+    h.name = am_name16(name);
+    h.num_pivots = n;
+    let mut body = hchunk(W3D_CHUNK_HIERARCHY_HEADER, &h.to_bytes());
+    let mut pivots = Vec::new();
+    for _ in 0..n {
+        let mut p = W3dPivotStruct::from_bytes(&[0; W3dPivotStruct::SIZE]);
+        p.parent_idx = 0xFFFF_FFFF;
+        p.rotation.q = [0.0, 0.0, 0.0, 1.0];
+        pivots.extend(p.to_bytes());
+    }
+    body.extend(hchunk(W3D_CHUNK_PIVOTS, &pivots));
+    am_sub(W3D_CHUNK_HIERARCHY, &body)
+}
+
+fn am_anim(hier: &[u8], name: &[u8], compressed: bool) -> Vec<u8> {
+    if compressed {
+        let mut h = W3dCompressedAnimHeaderStruct::from_bytes(&[0; W3dCompressedAnimHeaderStruct::SIZE]);
+        h.version = w3d_make_version(0, 1);
+        h.name = am_name16(name);
+        h.hierarchy_name = am_name16(hier);
+        h.num_frames = 5;
+        h.frame_rate = 15;
+        am_sub(W3D_CHUNK_COMPRESSED_ANIMATION, &hchunk(W3D_CHUNK_COMPRESSED_ANIMATION_HEADER, &h.to_bytes()))
+    } else {
+        let mut h = W3dAnimHeaderStruct::from_bytes(&[0; W3dAnimHeaderStruct::SIZE]);
+        h.version = w3d_make_version(4, 1);
+        h.name = am_name16(name);
+        h.hierarchy_name = am_name16(hier);
+        h.num_frames = 10;
+        h.frame_rate = 30;
+        am_sub(W3D_CHUNK_ANIMATION, &hchunk(W3D_CHUNK_ANIMATION_HEADER, &h.to_bytes()))
+    }
+}
+
+fn am_morph(hier: &[u8], name: &[u8], poses: &[&[u8]]) -> Vec<u8> {
+    let mut h = W3dMorphAnimHeaderStruct::from_bytes(&[0; W3dMorphAnimHeaderStruct::SIZE]);
+    h.version = w3d_make_version(0, 1);
+    h.name = am_name16(name);
+    h.hierarchy_name = am_name16(hier);
+    h.frame_count = 4;
+    h.frame_rate = 30.0;
+    h.channel_count = poses.len() as u32;
+    let mut body = hchunk(W3D_CHUNK_MORPHANIM_HEADER, &h.to_bytes());
+    for p in poses {
+        let mut pn = p.to_vec();
+        pn.push(0);
+        let mut ch = hchunk(W3D_CHUNK_MORPHANIM_POSENAME, &pn);
+        ch.extend(hchunk(W3D_CHUNK_MORPHANIM_KEYDATA, &[0, 0, 0, 0, 1, 0, 0, 0]));
+        body.extend(am_sub(W3D_CHUNK_MORPHANIM_CHANNEL, &ch));
+    }
+    am_sub(W3D_CHUNK_MORPH_ANIMATION, &body)
+}
+
+fn am_hlod(name: &[u8], hier: &[u8], sub: &[u8]) -> Vec<u8> {
+    let mut h = W3dHLodHeaderStruct::from_bytes(&[0; W3dHLodHeaderStruct::SIZE]);
+    h.version = w3d_make_version(1, 0);
+    h.lod_count = 1;
+    h.name = am_name16(name);
+    h.hierarchy_name = am_name16(hier);
+    let mut a = W3dHLodArrayHeaderStruct::from_bytes(&[0; W3dHLodArrayHeaderStruct::SIZE]);
+    a.model_count = 1;
+    let mut s = W3dHLodSubObjectStruct::from_bytes(&[0; W3dHLodSubObjectStruct::SIZE]);
+    let k = sub.len().min(31);
+    s.name[..k].copy_from_slice(&sub[..k]);
+    let mut arr = hchunk(W3D_CHUNK_HLOD_SUB_OBJECT_ARRAY_HEADER, &a.to_bytes());
+    arr.extend(hchunk(W3D_CHUNK_HLOD_SUB_OBJECT, &s.to_bytes()));
+    let mut body = hchunk(W3D_CHUNK_HLOD_HEADER, &h.to_bytes());
+    body.extend(am_sub(W3D_CHUNK_HLOD_LOD_ARRAY, &arr));
+    am_sub(W3D_CHUNK_HLOD, &body)
+}
+
+fn am_name32(s: &[u8]) -> [u8; 2 * W3D_NAME_LEN] {
+    let mut n = [0u8; 2 * W3D_NAME_LEN];
+    let k = s.len().min(2 * W3D_NAME_LEN);
+    n[..k].copy_from_slice(&s[..k]);
+    n
+}
+
+fn am_box(name: &[u8], oriented: bool) -> Vec<u8> {
+    let mut b = W3dBoxStruct::from_bytes(&[0; W3dBoxStruct::SIZE]);
+    b.name = am_name32(name);
+    b.attributes = if oriented { W3D_BOX_ATTRIBUTE_ORIENTED } else { 0 };
+    hchunk(W3D_CHUNK_BOX, &b.to_bytes())
+}
+
+fn am_null(name: &[u8]) -> Vec<u8> {
+    let mut b = W3dNullObjectStruct::from_bytes(&[0; W3dNullObjectStruct::SIZE]);
+    b.name = am_name32(name);
+    hchunk(W3D_CHUNK_NULL_OBJECT, &b.to_bytes())
+}
+
+fn am_sphere(name: &[u8], ring: bool) -> Vec<u8> {
+    if ring {
+        let mut d = W3dRingStruct::from_bytes(&[0; W3dRingStruct::SIZE]);
+        d.name = am_name32(name);
+        am_sub(W3D_CHUNK_RING, &hchunk(ringobj::CHUNKID_RING_DEF, &d.to_bytes()))
+    } else {
+        let mut d = W3dSphereStruct::from_bytes(&[0; W3dSphereStruct::SIZE]);
+        d.name = am_name32(name);
+        am_sub(W3D_CHUNK_SPHERE, &hchunk(sphereobj::CHUNKID_SPHERE_DEF, &d.to_bytes()))
+    }
+}
+
+fn am_dazzle(name: &[u8], type_name: &[u8]) -> Vec<u8> {
+    let mut body = hchunk(W3D_CHUNK_DAZZLE_NAME, name);
+    body.extend(hchunk(W3D_CHUNK_DAZZLE_TYPENAME, type_name));
+    am_sub(W3D_CHUNK_DAZZLE, &body)
+}
+
+fn am_collection(name: &[u8], objects: &[&[u8]]) -> Vec<u8> {
+    let mut h = W3dCollectionHeaderStruct::from_bytes(&[0; W3dCollectionHeaderStruct::SIZE]);
+    h.version = w3d_make_version(4, 2);
+    h.name = am_name16(name);
+    h.render_object_count = objects.len() as u32;
+    let mut body = hchunk(W3D_CHUNK_COLLECTION_HEADER, &h.to_bytes());
+    for o in objects {
+        let mut n = o.to_vec();
+        n.push(0);
+        body.extend(hchunk(W3D_CHUNK_COLLECTION_OBJ_NAME, &n));
+    }
+    am_sub(W3D_CHUNK_COLLECTION, &body)
+}
+
+fn am_aggregate(name: &[u8]) -> Vec<u8> {
+    let mut h = W3dAggregateHeaderStruct::from_bytes(&[0; W3dAggregateHeaderStruct::SIZE]);
+    h.version = w3d_make_version(1, 0);
+    h.name = am_name16(name);
+    am_sub(W3D_CHUNK_AGGREGATE, &hchunk(W3D_CHUNK_AGGREGATE_HEADER, &h.to_bytes()))
+}
+
+fn s(b: &[u8]) -> Vec<u8> {
+    b.to_vec()
+}
+
+/// The scenarios of `formats::w3d::assetmgr`'s unit tests, with the state
+/// logged after each.
+fn am_named_cases() -> Vec<(&'static str, AmCase)> {
+    let mut v = Vec::new();
+    let mut file = am_htree(b"SKL", 3);
+    file.extend(am_mesh(b"CONT", b"MESHA"));
+    file.extend(am_hlod(b"CONT", b"SKL", b"CONT.MESHA"));
+    file.extend(am_anim(b"SKL", b"WALK", false));
+    file.extend(am_box(b"CONT.BOX", false));
+    file.extend(am_null(b"NUL1"));
+    v.push((
+        "a file registers each asset by name",
+        AmCase { game: false, user_data: None, files: vec![], ops: vec![AmOp::Bytes(file), AmOp::State] },
+    ));
+
+    let mut file = am_htree(b"SKL", 1);
+    file.extend(am_mesh(b"CONT", b"MESHA"));
+    file.extend(am_anim(b"SKL", b"WALK", false));
+    file.extend(am_null(b"null"));
+    file.extend(am_box(b"\xC9BOX", false));
+    v.push((
+        "lookups ignore ASCII case; NULL is built in",
+        AmCase {
+            game: false,
+            user_data: None,
+            files: vec![],
+            ops: vec![
+                AmOp::Bytes(file),
+                AmOp::Exists(s(b"cont.mesha")),
+                AmOp::HTree(s(b"Skl")),
+                AmOp::HAnim(s(b"skl.walk")),
+                AmOp::Create(s(b"Null")),
+                AmOp::Exists(s(b"\xC9box")),
+                AmOp::Exists(s(b"\xE9BOX")),
+                AmOp::State,
+            ],
+        },
+    ));
+
+    let mut file = am_htree(b"SKL", 3);
+    file.extend(am_mesh(b"CONT", b"MESHA"));
+    file.extend(am_htree(b"skl", 5));
+    file.extend(am_mesh(b"cont", b"mesha"));
+    file.extend(am_anim(b"SKL", b"WALK", false));
+    file.extend(am_anim(b"skl", b"walk", true));
+    v.push((
+        "duplicate names: the first from a file wins",
+        AmCase {
+            game: false,
+            user_data: None,
+            files: vec![],
+            ops: vec![
+                AmOp::Bytes(file),
+                AmOp::State,
+                AmOp::Remove(s(b"Cont.Mesha")),
+                AmOp::Exists(s(b"CONT.MESHA")),
+                AmOp::State,
+            ],
+        },
+    ));
+
+    let mut file = am_mesh(b"TANK", b"BODY");
+    file.extend(am_hlod(b"TANK", b"TANKSKL", b"TANK.BODY"));
+    v.push((
+        "render objects on demand (game)",
+        AmCase {
+            game: true,
+            user_data: None,
+            files: vec![(s(b"art/w3d/tank.w3d"), file.clone())],
+            ops: vec![
+                AmOp::Create(s(b"TANK.BODY")),
+                AmOp::Create(s(b"tank")),
+                AmOp::Create(s(b"GHOST")),
+                AmOp::State,
+            ],
+        },
+    ));
+    v.push((
+        "render objects, on demand off (library)",
+        AmCase {
+            game: false,
+            user_data: None,
+            files: vec![(s(b"art/w3d/tank.w3d"), file)],
+            ops: vec![AmOp::Create(s(b"TANK.BODY")), AmOp::OnDemand(true), AmOp::Create(s(b"TANK.BODY")), AmOp::State],
+        },
+    ));
+
+    v.push((
+        "file paths follow GameFileClass",
+        AmCase {
+            game: true,
+            user_data: Some(s(b"User/")),
+            files: vec![
+                (s(b"Data/english/Art/W3D/X.w3d"), am_box(b"LOCAL", false)),
+                (s(b"Art/W3D/X.w3d"), am_box(b"MAIN", false)),
+                (s(b"../TestArt/Y.w3d"), am_box(b"TEST", false)),
+                (s(b"User/W3D/Z.w3d"), am_box(b"USER", false)),
+                (s(b"Art/W3D/..\\W.w3d"), am_box(b"PARENT", true)),
+            ],
+            ops: vec![
+                AmOp::Create(s(b"X")),
+                AmOp::Create(s(b"Y")),
+                AmOp::Create(s(b"Z")),
+                AmOp::Create(s(b"W")),
+                AmOp::File(s(b"none.w3d")),
+                AmOp::State,
+            ],
+        },
+    ));
+
+    v.push((
+        "animations on demand: H.A loads A.w3d, its hierarchy loads H.w3d",
+        AmCase {
+            game: true,
+            user_data: None,
+            files: vec![(s(b"Art/W3D/RUN.w3d"), am_anim(b"SKL", b"RUN", false)), (s(b"Art/W3D/SKL.w3d"), am_htree(b"SKL", 4))],
+            ops: vec![
+                AmOp::HAnim(s(b"SKL.RUN")),
+                AmOp::HAnim(s(b"SKL.JUMP")),
+                AmOp::HAnim(s(b"SKL.JUMP")),
+                AmOp::Free,
+                AmOp::HAnim(s(b"SKL.JUMP")),
+                AmOp::HAnim(s(b"NODOT")),
+                AmOp::State,
+            ],
+        },
+    ));
+
+    let mut run = am_htree(b"SKL", 2);
+    run.extend(am_anim(b"SKL", b"RUN", false));
+    for game in [true, false] {
+        v.push((
+            if game { "the game's shortcut skips a file named like a prototype" } else { "the library reads it" },
+            AmCase {
+                game,
+                user_data: None,
+                files: vec![(s(b"Art/W3D/RUN.w3d"), run.clone())],
+                ops: vec![AmOp::OnDemand(true), AmOp::Bytes(am_box(b"RUN", false)), AmOp::HAnim(s(b"SKL.RUN")), AmOp::State],
+            },
+        ));
+    }
+
+    let mut file = am_dazzle(b"XYZ\0", b"SUN\0");
+    file.extend(am_htree(b"S", 1));
+    for a in [&b"A"[..], b"B", b"C", b"D"] {
+        file.extend(am_anim(b"S", a, false));
+    }
+    file.extend(hchunk(0x9999, &[1, 2, 3]));
+    file.extend(am_sphere(b"SPH", false));
+    file.extend(am_sphere(b"RNG", true));
+    file.extend(am_collection(b"COLL", &[b"A.B"]));
+    file.extend(am_aggregate(b"AGG"));
+    file.extend(am_morph(b"S", b"M", &[b"S.A", b"S.Q"]));
+    v.push((
+        "dazzles, primitives, collections, aggregates, morphs, unknown chunks, anim order",
+        AmCase { game: false, user_data: None, files: vec![], ops: vec![AmOp::Bytes(file), AmOp::HAnim(s(b"S.Q")), AmOp::State] },
+    ));
+
+    let mut a = am_htree(b"SIXTEENCHARSNAME", 2);
+    a.extend(am_box(b"0123456789ABCDEF0123456789ABCDEF", false));
+    a.extend(am_anim(b"SIXTEENCHARSNAM", b"X", false));
+    v.push((
+        "names that run on: a 16-character hierarchy into NumPivots, a 32-character box into Color",
+        AmCase { game: false, user_data: None, files: vec![], ops: vec![AmOp::Bytes(a), AmOp::Create(s(b"0123456789abcdef0123456789abcdef")), AmOp::State] },
+    ));
+
+    let mut m = am_htree(b"S", 1);
+    m.extend(am_morph(b"S", b"M", &[b"S.P"]));
+    v.push((
+        "a morph's pose loads its file on demand",
+        AmCase {
+            game: true,
+            user_data: None,
+            files: vec![(s(b"Art/W3D/P.w3d"), am_anim(b"S", b"P", false))],
+            ops: vec![AmOp::Bytes(m), AmOp::State],
+        },
+    ));
+    v
+}
+
+fn am_compare(check: &mut Check, name: &str, c: &AmCase) -> bool {
+    let rust = match rust_am_case(c) {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+    let cpp = cpp_am_case(c);
+    check.eq(&rust, &cpp, || format!("{name}: {c:02x?}"));
+    true
+}
+
+/// The named cases: the scenarios of `formats::w3d::assetmgr`'s unit tests
+/// (registration of each kind by name; case-insensitive lookups and the
+/// built-in `NULL`; duplicates, first from a file wins, removal; render
+/// objects on demand through the game's paths, and with on-demand loading
+/// off; the path search order with the `..\` retry; animations on demand,
+/// the missing table surviving `Free_Assets`; the game's prototype shortcut
+/// against the library's plain load), plus dazzles, spheres, rings,
+/// collections, aggregates, a morph animation and an unknown chunk in one
+/// file; names that run on past their fields; and a morph whose pose
+/// animation is loaded on demand during its load.
+///
+/// Compared byte for byte, after each operation: its result (which
+/// prototype `Create_Render_Obj` would create from, by name and class id;
+/// the hierarchy or animation found, by name; `Is_Missing`; the load
+/// results), and the state (prototypes in `Prototypes` order, hierarchies in
+/// load order with their pivot counts, animations in the hash table's
+/// iteration order).
+///
+/// Predicted before the run: all 13 agree; in particular the hash-table
+/// iteration order of `S.A`..`S.D`, `S.M`, the run-on hierarchy name
+/// `SIXTEENCHARSNAME\x02` (NumPivots 2) that the animation naming
+/// `SIXTEENCHARSNAM` does not find (no animation loads), and the morph
+/// animation `S.M` registered after its pose `S.P` (loaded from `P.w3d`
+/// during the morph's load).
+///
+/// Result (2026-11-05): 12 compared (the prediction's 13 was miscounted:
+/// there are 12 cases), 0 mismatches. Sensitivity checked by hand the same
+/// day: with the game's prototype shortcut disabled in the Rust, this test
+/// reports 1 mismatch and [`assetmgr_matches_upstream`] 113; with the
+/// animation order changed to plain load order, 1 and 26.
+#[test]
+fn assetmgr_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("WW3DAssetManager (assetmgr.cpp, htreemgr.cpp, hanimmgr.cpp), named cases");
+    let cases = am_named_cases();
+    for (name, c) in &cases {
+        if let Err(e) = rust_am_case(c) {
+            panic!("{name}: Rust error {e:?}");
+        }
+        am_compare(&mut check, name, c);
+    }
+    println!("asset manager named cases: {} compared", cases.len());
+    check.finish();
+}
+
+const AM_HIER: [&[u8]; 5] = [b"SKL", b"skl", b"TNK", b"A", b"SIXTEENCHARSNAME"];
+const AM_ANIM: [&[u8]; 5] = [b"RUN", b"run", b"WALK", b"A", b"B"];
+const AM_PROTO: [&[u8]; 9] = [b"TNK", b"tnk", b"RUN", b"SKL", b"BOX1", b"null", b"A", b"B", b"0123456789ABCDEF"];
+const AM_BASE: [&[u8]; 8] = [b"SKL", b"TNK", b"RUN", b"WALK", b"A", b"B", b"skl", b"BOX1"];
+const AM_DIR: [&[u8]; 6] = [b"Art/W3D/", b"Data/english/Art/W3D/", b"../TestArt/", b"User/W3D/", b"Art/W3D/..\\", b""];
+
+fn am_pick<'a>(g: &mut Gn, v: &[&'a [u8]]) -> &'a [u8] {
+    v[g.below(v.len() as u32) as usize]
+}
+
+fn am_gen_chunk(g: &mut Gn) -> Vec<u8> {
+    // the 16-character hierarchy name (undefined when an animation passes
+    // it to Get_HTree) in one chunk of 16
+    let h = if g.below(16) == 0 { AM_HIER[4] } else { am_pick(g, &AM_HIER[..4]) };
+    let a = am_pick(g, &AM_ANIM);
+    let p = am_pick(g, &AM_PROTO);
+    match g.below(15) {
+        0 | 1 => am_htree(h, 1 + g.below(4)),
+        2 | 3 => am_anim(h, a, g.coin()),
+        4 => {
+            let mut pose = h.to_vec();
+            pose.push(b'.');
+            pose.extend_from_slice(am_pick(g, &AM_ANIM));
+            am_morph(h, a, &[&pose])
+        }
+        5 | 6 => {
+            let (c, m) = if g.coin() { (p, &b"BODY"[..]) } else { (&b""[..], p) };
+            am_mesh(c, m)
+        }
+        7 => am_hlod(p, h, b"X.Y"),
+        8 => am_box(p, g.coin()),
+        9 => am_null(p),
+        10 => am_sphere(p, g.coin()),
+        11 => {
+            let mut n = p.to_vec();
+            n.push(0);
+            am_dazzle(&n, b"T\0")
+        }
+        12 => am_collection(p, &[b"Q.R"]),
+        13 => am_aggregate(p),
+        _ => {
+            let junk: Vec<u8> = (0..g.below(12)).map(|_| g.g.u32() as u8).collect();
+            let id = [0x9999, W3D_CHUNK_HIERARCHY_HEADER, W3D_CHUNK_PIVOTS, g.g.u32()][g.below(4) as usize];
+            hchunk(id, &junk)
+        }
+    }
+}
+
+fn am_gen_file(g: &mut Gn) -> Vec<u8> {
+    let mut f = Vec::new();
+    for _ in 0..1 + g.below(5) {
+        f.extend(am_gen_chunk(g));
+    }
+    mutate(g, f)
+}
+
+fn am_gen_name(g: &mut Gn) -> Vec<u8> {
+    match g.below(6) {
+        0 => am_pick(g, &AM_HIER).to_vec(),
+        1 => am_pick(g, &AM_PROTO).to_vec(),
+        2 => [am_pick(g, &AM_PROTO), b".BODY"].concat(),
+        3 => [am_pick(g, &AM_HIER), b".", am_pick(g, &AM_ANIM)].concat(),
+        4 => [am_pick(g, &AM_HIER), b".", am_pick(g, &AM_ANIM), b".x"].concat(),
+        _ => s(b"NULL"),
+    }
+}
+
+/// A name to remove: not `NULL` (undefined), except in one case of 16.
+fn am_gen_remove(g: &mut Gn) -> Vec<u8> {
+    if g.below(16) == 0 {
+        return s(b"NULL");
+    }
+    loop {
+        let n = am_gen_name(g);
+        if !n.eq_ignore_ascii_case(b"NULL") {
+            return n;
+        }
+    }
+}
+
+fn am_gen_case(g: &mut Gn) -> AmCase {
+    let mut files = Vec::new();
+    for _ in 0..g.below(6) {
+        let mut p = am_pick(g, &AM_DIR).to_vec();
+        p.extend_from_slice(am_pick(g, &AM_BASE));
+        p.extend_from_slice(if g.below(4) == 0 { b".W3D" } else { b".w3d" });
+        files.push((p, am_gen_file(g)));
+    }
+    let mut ops = Vec::new();
+    for _ in 0..3 + g.below(10) {
+        let op = match g.below(20) {
+            0..=2 => AmOp::Bytes(am_gen_file(g)),
+            3 | 4 => {
+                let mut n = am_pick(g, &AM_BASE).to_vec();
+                n.extend_from_slice(b".w3d");
+                AmOp::File(n)
+            }
+            5..=8 => AmOp::Create(am_gen_name(g)),
+            9 | 10 => AmOp::HTree(am_gen_name(g)),
+            11..=13 => AmOp::HAnim(am_gen_name(g)),
+            14 => AmOp::Exists(am_gen_name(g)),
+            15 => AmOp::Free,
+            16 => AmOp::Remove(am_gen_remove(g)),
+            17 => AmOp::OnDemand(g.coin()),
+            _ => AmOp::State,
+        };
+        ops.push(op);
+    }
+    ops.push(AmOp::State);
+    AmCase { game: g.coin(), user_data: if g.coin() { Some(s(b"User/")) } else { None }, files, ops }
+}
+
+/// Random file sets and operations: up to 5 files under the paths the
+/// game's file search tries (`Art/W3D/`, the localized `Data/english/...`,
+/// `../TestArt/`, the user data directory, `Art/W3D/..\`, or no directory;
+/// `.w3d` or `.W3D`) holding 1 to 5 chunks each (hierarchies of 1 to 4
+/// pivots, raw and compressed animations, morph animations with a pose,
+/// meshes with and without a container, HLODs, boxes, null objects, spheres
+/// and rings, dazzles, collections, aggregates, stray chunks; names from
+/// small pools that collide in and across case, including `null`, `NULL`
+/// and 16- and 32-character names), half of the cases also with truncations
+/// and byte mutations; then 3 to 12 operations (loads of bytes and of file
+/// names, `Create_Render_Obj`, `Get_HTree`, `Get_HAnim`, `Render_Obj_Exists`
+/// on names with zero, one or two dots, `Free_Assets`, `Remove_Prototype`,
+/// switching on-demand loading) in the library or the game manager, the
+/// state logged at the end. Compared as [`assetmgr_named_cases_match_upstream`].
+/// Cases on which the Rust reports an error (undefined upstream, a loop that
+/// does not end, an untranslated loader) are not given to the C++
+/// (counted).
+///
+/// Predicted before the run: no disagreement; a few percent excluded
+/// (`StringOverrun` from 16-character collection names and from the
+/// mutations, `NullPointer` from aggregates whose header is mutated away,
+/// `UninitialisedRead` from cut boxes and null objects, `NonTerminating`
+/// from animations whose hierarchy file is their own, `PointerOutOfRange`
+/// from removing `NULL`).
+///
+/// Result (2026-11-05), first run: 0 mismatches, but 1,214 of 4,000 cases
+/// (30 %, far more than predicted) excluded, mostly `StringOverrun` (847:
+/// the 16-character hierarchy name, which every animation over it passes to
+/// `Get_HTree` unterminated) and `PointerOutOfRange` (244: `Remove_Prototype
+/// ("NULL")`, a sixth of the removals). The generator was changed to use
+/// those two in one case of 16 (the comparison is unchanged). Second run:
+/// 3,322 compared (27,600 operations), 0 mismatches; excluded 678 (17 %):
+/// 441 `StringOverrun`, 90 `NonTerminating`, 77 `PointerOutOfRange`, 54
+/// `UninitialisedRead`, 10 `NullPointer`, 5 `Allocation`, 1 `Unsupported`
+/// (a mutated chunk id that became `W3D_CHUNK_LODMODEL`).
+#[test]
+fn assetmgr_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = Gn { g: Gen::new(0xA55E), clean: false };
+    let mut check = Check::new("WW3DAssetManager (assetmgr.cpp, htreemgr.cpp, hanimmgr.cpp)");
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut compared, mut ops) = (0u64, 0u64);
+    const CASES: usize = 4_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let c = am_gen_case(&mut g);
+        match rust_am_case(&c) {
+            Ok(l) => {
+                if std::env::var_os("W3D_TRACE").is_some() {
+                    eprintln!("assetmgr case {case}: {c:02x?}");
+                }
+                let cpp = cpp_am_case(&c);
+                check.eq(&l, &cpp, || format!("case {case}: {c:02x?}"));
+                compared += 1;
+                ops += c.ops.len() as u64;
+            }
+            Err(W3dError::Undefined(u)) => *excluded.entry(format!("{u:?}")).or_default() += 1,
+            Err(e) => *excluded.entry(format!("{e:?}")).or_default() += 1,
+        }
+    }
+    println!(
+        "WW3DAssetManager: {CASES} cases, {compared} compared ({ops} operations); excluded: {} {excluded:?}",
         excluded.values().sum::<u64>()
     );
     check.finish();
