@@ -29,7 +29,8 @@
   <h1>Play with your Zero Hour files</h1>
   <p>Pick your <b>Command &amp; Conquer Generals Zero Hour</b> folder (for Steam, under
      <code>steamapps/common/</code>). Its game data stays in this browser, on this device: nothing is uploaded.
-     Units are drawn as plain shapes for now; the art comes later.</p>
+     Units are drawn with your game's models where they are found (read from your files as they are needed), else as
+     plain shapes.</p>
   <div class="row">
     <label class="btn">Choose Zero Hour folder<input id="folder" type="file" webkitdirectory multiple></label>
     <label class="btn quiet">…or its .big files<input id="bigs" type="file" multiple accept=".big"></label>
@@ -42,7 +43,7 @@
 </div>
 <script type="module">
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
-  import init, { import_file, import_done, import_outcome } from './rts_client.js';
+  import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -55,14 +56,24 @@
     }
   }).finally(() => { $('loading').style.display = 'none'; });
 
-  // The archives the game's logic reads (data, maps, text). The art and sound archives are not read yet, and are
-  // large, so they are left out: the browser keeps only what is used.
-  const SKIP = /^(audio|speech|music|textures|terrain|w3d|shaders|window)/i;
+  // The archives the game reads. The sound archives are not read yet, nor the terrain's and shaders' (the terrain is
+  // drawn from the map's heights), so they are left out: the browser keeps only what is used. The art archives (W3D
+  // models, textures) are kept, and read by range as the game needs their files (#24): only their directories and the
+  // members used are ever read, never the hundreds of megabytes whole.
+  const SKIP = /^(audio|speech|music|terrain|shaders|window)/i;
+  const ART = /^(w3d|textures)/i;
   function wanted(path) {
     const name = path.split('/').pop();
     if (/\.big$/i.test(name)) return !SKIP.test(name);
+    // loose art: models and textures under Art/
+    if (/(^|\/)art\//i.test(path) && /\.(w3d|dds|tga)$/i.test(name)) return true;
     // loose files the logic may read: INI, scripts, text, and maps
     return /(^|\/)(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
+  }
+  // Read by range rather than whole: the art archives and loose art files.
+  function ranged(path) {
+    const name = path.split('/').pop();
+    return /\.big$/i.test(name) ? ART.test(name) : /(^|\/)art\//i.test(path);
   }
   // A picked file's path within the Zero Hour folder (the folder's own name dropped).
   function relative(file) {
@@ -88,17 +99,72 @@
     return out;
   }
 
+  // The files handed to the game, by key (their index): the game asks for ranges of them by key.
+  let handles = [];
+  // What the ranged reads have read, for the status line (and for checks).
+  const artRead = { ranges: 0, bytes: 0, archiveBytes: 0 };
+  window.rtsArt = artRead;
+
+  // An archive's header and directory: the first 64 KiB, then as many bytes as the game's directory read asks for,
+  // until it asks for no more (the same function decides, so the prefix is what its read will want).
+  async function prefixOf(file) {
+    let p = Math.min(file.size, 65536);
+    for (;;) {
+      const bytes = new Uint8Array(await file.slice(0, p).arrayBuffer());
+      const need = big_directory_prefix(file.size, bytes);
+      if (need <= p) return bytes;
+      p = need;
+    }
+  }
+
+  // The game's wanted ranges, read from the player's files and handed back, without blocking the page: each range is an
+  // asynchronous read of a slice of the File (picked or from OPFS); the game draws shapes until its models arrive.
+  let pumping = false;
+  const inFlight = new Set();
+  function pumpRanges() {
+    if (pumping) return;
+    pumping = true;
+    setInterval(() => {
+      const w = import_wanted();
+      for (let i = 0; i + 2 < w.length; i += 3) {
+        const [key, off, len] = [w[i], w[i + 1], w[i + 2]];
+        const id = `${key}:${off}:${len}`;
+        const file = handles[key];
+        if (!file || inFlight.has(id)) continue;
+        inFlight.add(id);
+        file.slice(off, off + len).arrayBuffer().then((b) => {
+          inFlight.delete(id);
+          import_range(key, off, new Uint8Array(b));
+          artRead.ranges += 1;
+          artRead.bytes += b.byteLength;
+        }, (e) => { inFlight.delete(id); console.warn('could not read ' + id + ': ' + e); });
+      }
+    }, 30);
+  }
+
   async function play(entries) {
     await ready;
     let total = 0;
-    for (const [i, [path, getBytes]] of entries.entries()) {
-      status(`Reading ${path} (${i + 1} of ${entries.length})…`);
-      const bytes = new Uint8Array(await getBytes());
-      total += bytes.length;
-      import_file(path, bytes);
+    handles = [];
+    for (const [i, [path, getFile]] of entries.entries()) {
+      const file = await getFile();
+      handles.push(file);
+      if (ranged(path)) {
+        status(`Reading the directory of ${path} (${i + 1} of ${entries.length})…`);
+        const prefix = /\.big$/i.test(path) ? await prefixOf(file) : new Uint8Array(0);
+        total += prefix.length;
+        artRead.archiveBytes += file.size;
+        import_ranged(path, i, file.size, prefix);
+      } else {
+        status(`Reading ${path} (${i + 1} of ${entries.length})…`);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        total += bytes.length;
+        import_file(path, i, bytes);
+      }
     }
     import_done();
-    status(`Loaded ${entries.length} files (${(total / 1048576).toFixed(1)} MB). Starting a skirmish…`);
+    pumpRanges();
+    status(`Loaded ${entries.length} files (${(total / 1048576).toFixed(1)} MB read; the art is read as it is needed). Starting a skirmish…`);
     // the game says what became of it: the panel closes when the game has started, and stays with the error if not
     const poll = setInterval(() => {
       const o = import_outcome();
@@ -130,7 +196,7 @@
     } catch (e) {
       status('Could not keep the files in this browser (' + e + '); playing from the picked files.');
     }
-    await play(chosen.map(([p, f]) => [p, () => f.arrayBuffer()]));
+    await play(chosen.map(([p, f]) => [p, async () => f]));
   }
 
   $('folder').addEventListener('change', (e) => pick(e.target.files));
@@ -138,7 +204,7 @@
   $('hide').addEventListener('click', () => { $('files').style.display = 'none'; });
   $('play').addEventListener('click', async () => {
     const s = await saved();
-    await play(s.map(([p, h]) => [p, async () => (await h.getFile()).arrayBuffer()]));
+    await play(s.map(([p, h]) => [p, () => h.getFile()]));
   });
   $('forget').addEventListener('click', async () => {
     const root = await navigator.storage.getDirectory();
@@ -146,6 +212,9 @@
     $('saved').hidden = true;
     status('The saved files were removed from this browser.');
   });
+
+  // the art's state, for checks (`art_status`: the objects drawn as models, the bytes held and read)
+  window.rtsArtStatus = () => { try { return art_status(); } catch (e) { return ''; } };
 
   saved().then((s) => {
     if (s.length) {

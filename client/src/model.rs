@@ -300,7 +300,7 @@ impl ModelScene {
 /// (its far vertices on the arm bone, the near on the body) and a hidden helper mesh, a 16x16 checker texture, and a
 /// looping animation that swings the arm. The files the viewer reads when no Zero Hour folder is given; built by
 /// [`synth`], read back by the translated loaders.
-pub fn demo_files() -> FileSystem<MemoryDevice> {
+pub fn demo_art_files() -> Vec<(&'static [u8], Vec<u8>)> {
     let ident = [0.0, 0.0, 0.0, 1.0];
     let mut f = synth::htree_w3d(b"ROBOT", &[
         PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
@@ -346,9 +346,15 @@ pub fn demo_files() -> FileSystem<MemoryDevice> {
     };
     let data: Vec<f32> = [0.0, -45.0, 0.0, 45.0, 0.0].iter().flat_map(|&d| q(d)).collect();
     f.extend(synth::raw_anim_w3d(b"ROBOT", b"WAVE", 5, 4, &[ChannelSpec { pivot: 2, kind: ANIM_CHANNEL_Q, vector_len: 4, data }]));
+    vec![(&b"Art/W3D/robot.w3d"[..], f), (&b"Art/Textures/robotchecker.tga"[..], checker_tga(16))]
+}
+
+/// The generated robot's files on a memory device (see [`demo_art_files`]).
+pub fn demo_files() -> FileSystem<MemoryDevice> {
     let mut d = MemoryDevice::new();
-    d.insert(b"Art/W3D/robot.w3d", f);
-    d.insert(b"Art/Textures/robotchecker.tga", checker_tga(16));
+    for (path, bytes) in demo_art_files() {
+        d.insert(path, bytes);
+    }
     FileSystem::new(d)
 }
 

@@ -394,6 +394,26 @@ impl ArchiveFile {
         }
     }
 
+    /// GitHub #24 (new, not upstream's): how many leading bytes of an archive [`ArchiveFile::open_archive_directory`]
+    /// reads, given the first `have.len()` of them: the largest prefix its loop asks for. When the answer is no more than
+    /// `have.len()`, those bytes are enough for the directory read to end as it would on the whole archive (parsed, or
+    /// failed the same way); otherwise read that many and ask again. The browser fetches an archive's directory this way
+    /// (its reads are asynchronous, so the loop cannot ask for them itself), and the same function decides it, so the
+    /// prefix the page fetches is the one the directory read will ask for.
+    pub fn directory_prefix_needed(archive_len: usize, have: &[u8]) -> usize {
+        let mut needed = 0usize;
+        let _ = ArchiveFile::open_archive_directory(b"", archive_len, |o, l| {
+            let end = o.saturating_add(l).min(archive_len);
+            needed = needed.max(end);
+            if end <= have.len() {
+                have[o.min(end)..end].to_vec()
+            } else {
+                Vec::new()
+            }
+        });
+        needed
+    }
+
     /// Whether the archive's bytes are held whole (see [`ArchiveFile::open_archive_directory`]).
     pub fn members_in_memory(&self) -> bool {
         self.members_in_memory

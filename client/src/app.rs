@@ -21,7 +21,9 @@
 //! - **Models** (#25): after each logic frame the frame's client events go to the drawables (`crate::drawables`); every
 //!   rendered frame the draw modules choose and time each object's model and animation, and an object whose model the
 //!   art has is drawn as it (its parts at their bones, skins deformed), else as its shape. Natively with `--zh` the art
-//!   is the player's folder; the demo and the web page have none yet (#24), so they draw shapes.
+//!   is the player's folder; ~~the demo and the web page have none yet (#24), so they draw shapes~~ **corrected
+//!   2026-11-05 (#24):** on the web it is the page's imported files, the art archives read by range as their members are
+//!   needed (`crate::import`); the demo has none, so it draws shapes.
 //!
 //! GUI glue: the drawing systems need a window and a GPU, so no test reaches them. What they draw is the view model's,
 //! which `view`'s tests check against the `World`; what the input does is `input`'s, which its tests drive.
@@ -39,18 +41,20 @@ use rts_lockstep_engine::logic::world::game_logic::World as GameWorld;
 
 use crate::demo::demo_world;
 use crate::drawables::{Art, WorldDrawables};
+use rts_lockstep_engine::common::file_system::LocalDevice;
 use crate::input::Controls;
 use crate::view::{interpolate, snapshot, terrain_grid, to_bevy, Shape, Snapshot, TerrainGrid};
 
 /// The logic's frame rate (`LOGICFRAMES_PER_SECOND`).
 const LOGIC_HZ: f64 = 30.0;
 
-/// The device the game's art is read from: the player's folder natively; in the browser the page's files (it imports no
-/// art archives yet, #24, so there the art is absent and every object is its shape).
+/// The device the game's art is read from: the player's folder natively; in the browser the page's files, ~~(it imports no
+/// art archives yet, #24, so there the art is absent and every object is its shape)~~ **corrected 2026-11-05 (#24):**
+/// read by range from the player's files as they are needed (`crate::import`'s ranged reads).
 #[cfg(not(target_arch = "wasm32"))]
 type ArtDevice = rts_lockstep_engine::common::file_system::NativeDevice;
 #[cfg(target_arch = "wasm32")]
-type ArtDevice = rts_lockstep_engine::common::file_system::MemoryDevice;
+type ArtDevice = rts_lockstep_engine::common::file_system::RangedDevice;
 
 /// The game: the logic's `World` and the last two snapshots. A non-send resource: the `World` is the logic's, used only
 /// from the main thread, as upstream's single-threaded logic is.
@@ -178,7 +182,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<Pointer>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
-        .add_systems(Update, poll_import)
+        .add_systems(Update, (poll_import, pump_art).chain())
         .add_systems(
             Update,
             (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, control_bar, update_hud).chain(),
@@ -223,10 +227,18 @@ fn poll_import(
     let Some(files) = crate::import::take_import() else { return };
     game.playing = "loading your Zero Hour files...".to_string();
     match crate::import::start_from_files(files, None) {
-        Ok(s) => {
+        Ok((s, art)) => {
             info!("playing your game: {}", s.report);
             crate::import::set_outcome(Ok(&s.report));
-            *game = Game::new(s.world, s.player, s.report, None);
+            #[cfg(target_arch = "wasm32")]
+            let art = Some(Art::new(art));
+            #[cfg(not(target_arch = "wasm32"))]
+            let art = {
+                // (natively the files come from --zh, not from the page)
+                drop(art);
+                None
+            };
+            *game = Game::new(s.world, s.player, s.report, art);
             for (_, (e, _)) in drawn.0.drain() {
                 commands.entity(e).despawn();
             }
@@ -244,6 +256,41 @@ fn poll_import(
             game.playing = format!("demo ({e})");
         }
     }
+}
+
+/// GUI glue (needs the app): the art's exchange with the page each frame (#24): the ranges the page read go to the art's
+/// device and the ranges it wants are listed for the page (`crate::import::pump_ranges`, tested there), and the art's
+/// status is set for the page's `art_status()`.
+fn pump_art(mut game: NonSendMut<Game>) {
+    let g = &mut *game;
+    let Some(art) = &mut g.models.art else { return };
+    #[cfg(target_arch = "wasm32")]
+    let device = {
+        crate::import::pump_ranges(&mut art.fs.local.device);
+        let s = art.fs.local.device.stats();
+        format!(
+            " held={} total={} arrived={} ranges={} outstanding={} wasm_memory={}",
+            s.held,
+            s.total_len,
+            s.bytes_arrived,
+            s.ranges_arrived,
+            art.fs.local.device.outstanding(),
+            core::arch::wasm32::memory_size(0) * 65536
+        )
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let device = {
+        let _ = &art;
+        String::new()
+    };
+    let models: std::collections::BTreeSet<&[u8]> = g.cur.objects.iter().filter_map(|b| g.models.instance(b.id).map(|m| m.name.as_slice())).collect();
+    crate::import::set_art_status(format!(
+        "models={} names={} remade={} missing={}{device}",
+        g.models.instance_count(),
+        models.into_iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>().join(","),
+        g.models.remade,
+        g.models.missing.len()
+    ));
 }
 
 fn setup_scene(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, terrain: Res<TerrainData>) {
@@ -356,7 +403,24 @@ fn sync_objects(
             None => b.clone(),
         };
         let transform = Transform::from_translation(Vec3::from(to_bevy(o.pos))).with_rotation(Quat::from_rotation_y(o.angle));
-        let instance = g.models.instance(b.id);
+        let mut instance = g.models.instance(b.id);
+        // the model's textures, once per model; while one is being fetched (#24) the object stays its shape
+        if let (Some(m), Some(art)) = (instance, &g.models.art) {
+            if !g.images.contains_key(&m.name) {
+                let unserved = art.fs.local.device.unserved_reads();
+                let tex = crate::model::model_textures(&art.assets, &art.fs, m).unwrap_or_default();
+                if art.fs.local.device.unserved_reads() == unserved {
+                    let handles = tex
+                        .iter()
+                        .zip(&m.sub_objects)
+                        .map(|(t, s)| t.iter().zip(&s.model.textures).map(|(r, x)| r.as_ref().ok().map(|img| images.add(crate::model::texture_image(img, x.clamp)))).collect())
+                        .collect();
+                    g.images.insert(m.name.clone(), handles);
+                } else {
+                    instance = None;
+                }
+            }
+        }
         let model_name = instance.map(|m| m.name.clone()).unwrap_or_default();
         if let Some((e, name)) = drawn.0.get(&b.id) {
             if *name == model_name {
@@ -372,14 +436,7 @@ fn sync_objects(
         let model_parts = instance.and_then(|m| crate::model::model_parts(m).ok().map(|p| (m, p)));
         match model_parts {
             Some((m, model_parts)) => {
-                let handles = g.images.entry(model_name.clone()).or_insert_with(|| {
-                    let Some(art) = &g.models.art else { return Vec::new() };
-                    let tex = crate::model::model_textures(&art.assets, &art.fs, m).unwrap_or_default();
-                    tex.iter()
-                        .zip(&m.sub_objects)
-                        .map(|(t, s)| t.iter().zip(&s.model.textures).map(|(r, x)| r.as_ref().ok().map(|img| images.add(crate::model::texture_image(img, x.clamp)))).collect())
-                        .collect()
-                });
+                let handles = g.images.entry(model_name.clone()).or_default();
                 commands.entity(e).with_children(|c| {
                     for part in &model_parts {
                         let sub = &m.sub_objects[part.sub];
@@ -548,8 +605,17 @@ fn update_hud(game: NonSend<Game>, mut hud: Query<&mut Text, With<Hud>>) {
         };
         let hint = game.controls.hint.map_or(String::new(), |h| format!(" | {}", hint_name(h)));
         let placing = if game.controls.ui.pending_place_type().is_some() { " | placing: click to build, Esc to cancel" } else { "" };
+        // the art's progress (#24): models drawn, and files still being read
+        let art = match &game.models.art {
+            Some(_) => {
+                let waiting = game.models.waiting_models.len() + game.models.waiting_anims.len();
+                let reading = if waiting > 0 { format!(", reading {waiting} files") } else { String::new() };
+                format!(" | {} models{reading}", game.models.instance_count())
+            }
+            None => String::new(),
+        };
         **text = format!(
-            "{} | logic frame {} | {} objects | {} selected{hint}{placing} | {state}",
+            "{} | logic frame {} | {} objects{art} | {} selected{hint}{placing} | {state}",
             game.playing,
             game.cur.frame,
             game.cur.objects.len(),

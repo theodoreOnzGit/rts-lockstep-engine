@@ -62,7 +62,10 @@ Not yet translated:
   hierarchies posed (`motchan`, `hanim`, `hmorphanim`, `htree`: `Base_Update`, `Anim_Update`, `Blend_Update`,
   `Simple_Evaluate_Pivot`, bone capture), compared bit for bit with upstream's compiled code
   (`tests/differential_w3d.rs`, section 13). Still missing: `HTreeClass::Combo_Update` (`HAnimComboClass`);
-- the local and composite file systems, and random-access archive reads (archives are read whole into memory today);
+- ~~the local and composite file systems, and random-access archive reads (archives are read whole into memory today);~~
+  **Corrected 2026-11-05 (#24):** translated in batch F1 (#9): `TheFileSystem` over a local device, archives mounted by
+  their directory and members read by range; in the browser the art archives are read by range from the player's
+  files (`RangedDevice`, #24);
 - the terrain's tile data and textures;
 - WND layouts.
 
@@ -95,6 +98,58 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#24 (2026-11-05, GitHub #24): the browser reads the art archives by range, and draws the game's models.**
+- **The device** (engine crate, `common::file_system::RangedDevice`, new: upstream reads through Windows' synchronous
+  `ReadFile`): files known by length, with the ranges that have arrived. A read of bytes not held returns nothing (the
+  open fails, as `FileSystem::open_file` checks the member's length) and lists the range as wanted, once;
+  `LocalDevice::ready` and `unserved_reads` (defaults: always ready, 0) let a caller tell "not yet" from "not there".
+  `ArchiveFile::directory_prefix_needed` runs the translated directory read on the bytes at hand and says how many it
+  would ask for, so the page fetches exactly the prefix `FileSystem::init` will read (64 KiB, then four times as much).
+  The translation's structure (`FileSystem`, `ArchiveFileSystem`, `Win32BIGFileSystem::init`) is unchanged.
+- **Why asynchronous fetches and not `FileSystemSyncAccessHandle`:** a synchronous read needs a worker, and Bevy runs
+  the game on the page's main thread, which may not block (`Atomics.wait` is refused there, and SharedArrayBuffer needs
+  cross-origin isolation headers GitHub Pages does not send). Moving Bevy into a worker with an OffscreenCanvas is a
+  larger change. So the page reads each wanted range with `File.slice(...).arrayBuffer()` (the picked File, or the
+  OPFS file on a later visit), off the frame, and the game draws the object's shape until its model arrives.
+- **The page** (`web/index.html`): the art archives (`W3D*`, `Textures*`) and loose `Art/` models and textures are kept
+  in OPFS and handed over by length and directory (`import_ranged`); the others whole, as before (`import_file`, now with
+  the page's key for the file so the art can read their members back too). Every 30 ms it reads the wanted ranges
+  (`import_wanted`) and hands them back (`import_range`). `Terrain*`, `Shaders*`, `Window*` and the sound archives stay
+  skipped.
+- **The drawables** (`client/src/drawables.rs`): the draw modules ask the asset manager through `Deferred`: a model
+  whose file is being fetched gives no render object for now, and an animation is not looked for while its file (or a
+  model's) is being fetched, so upstream's permanent missing-animation table is not filled by a fetch in flight. When
+  the bytes arrive, each drawable lacking its model or animation is made again with its flags. A render model or
+  textures whose read waited are made again on a later frame. The HUD shows the models drawn and the files being read;
+  `art_status()` reports them to the page.
+
+*Predictions before the runs* are in each test's doc. *Results:*
+- `the_ranged_device_reads_what_is_used_and_matches_the_memory_device` (engine): all held on the first run: a
+  3,000-entry directory took two reads (262,144 bytes); members read through the ranged path equal the memory device's
+  byte for byte; the 1 MiB member never opened was never read (held 569,349 of the archive's 1,532,841 bytes and the loose file's 5).
+- `the_demo_reads_its_models_by_range_and_draws_shapes_until_they_arrive` (client): all three objects posed from frame
+  1 (frame 0: shapes), the runner's moving model one frame later than with the files at hand (3 against 2), four ranges
+  read (6,852 bytes of a 4.2 MB archive), the logic's CRCs equal to the run with the files at hand. **One miss:** I
+  predicted 3 drawables made again; there were 6: the later fetches (the runner's moving model, both soldiers' firing
+  model) remake too, as designed.
+- `write_and_play_the_test_install_with_art_when_asked` (client, run with the test install): the Tank and the Barracks
+  given `Draw = W3DModelDraw` with the generated robot in a 33.6 MB `W3DZH.big` (a 32 MiB member nobody opens);
+  natively through the page's import path, 4 models posed from frame 1, 4,068 bytes of `W3DZH.big` read (0.012 %).
+- **Browser check** (headless Chromium, `build_web.sh`'s page, the same install picked with *…or its .big files*): the
+  page played, `art_status()` gave `models=4 names=robot missing=0 held=78071 total=33567038 arrived=4068 ranges=1`,
+  the page read one range of 4,068 bytes, and the robots were drawn textured
+  ([screenshot](images/c24_web_art_ranged.png)). The wasm memory after the game started was 85,065,728 bytes with the
+  art against 84,803,584 for the same install without it: 256 KiB more, where reading `W3DZH.big` whole would add at
+  least its 33.6 MB. On a second visit, *Play with saved files* read the same range from the OPFS copy and drew 4
+  models. The parent-folder pick (C3d's check) still plays.
+- Full run: the engine's lib tests 918 pass (917 before); the client's 14 (11 before; one of the three new runs only
+  when asked); clippy clean on the lib (the client's one warning, a complex type in `app.rs`, predates this); the web
+  build builds; gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
+**Not done yet:** the model viewer over the imported files (`?model=NAME&anim=H.A`); a real Zero Hour install (none
+here): its first load will show how many ranges a skirmish start reads and how long the shapes show; the terrain and
+shader archives.
 
 **#10 step 5 (2026-11-05, GitHub #25): drawables. Each object's model and animation chosen by its model condition
 flags, and drawn.**
