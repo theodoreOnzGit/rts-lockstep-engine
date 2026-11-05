@@ -124,13 +124,51 @@ pub fn import_outcome() -> String {
 pub fn start_from_files(files: Vec<(Vec<u8>, Vec<u8>)>, map: Option<&[u8]>) -> Result<Started, String> {
     let mut d = MemoryDevice::new();
     let n = files.len();
+    let (files, generals) = arrange(files);
     for (path, bytes) in files {
-        d.insert(&[GAME_DIR, &path].concat(), bytes);
+        d.insert(&path, bytes);
     }
     let mut fs = FileSystem::new(d);
     fs.local.game_dir = GAME_DIR.to_vec();
-    fs.init(None);
+    fs.init(generals.then_some(GENERALS_DIR));
     start_from_fs(&fs, map, n)
+}
+
+/// The Generals install's folder on the import's device (`Win32BIGFileSystem::init`'s second directory, which upstream
+/// reads from the registry).
+const GENERALS_DIR: &[u8] = b"\\Generals\\";
+
+/// The picked files on the import's device: the Zero Hour folder is the one holding `INIZH.big`, wherever it is in what
+/// was picked (a parent folder holding both games, as Steam's and the Ultimate Collection's layouts do), and a Generals
+/// install beside it, the folder holding `INI.big`, becomes the Generals install path. Files in neither are left out:
+/// upstream reads no other folder. Without an `INIZH.big` the picked folder is taken as the game's (the page warns).
+/// Returns the device's files and whether a Generals install was found.
+fn arrange(files: Vec<(Vec<u8>, Vec<u8>)>) -> (Vec<(Vec<u8>, Vec<u8>)>, bool) {
+    // the folder (with its trailing `\`) of the shallowest file named `name`
+    let folder_of = |name: &[u8], outside: Option<&[u8]>| -> Option<Vec<u8>> {
+        files
+            .iter()
+            .map(|(p, _)| p)
+            .filter(|p| outside.is_none_or(|o| o.is_empty() || !p.starts_with(o)))
+            .filter_map(|p| {
+                let cut = p.iter().rposition(|&c| c == b'\\').map_or(0, |i| i + 1);
+                p[cut..].eq_ignore_ascii_case(name).then(|| p[..cut].to_vec())
+            })
+            .min_by_key(|d| (d.iter().filter(|&&c| c == b'\\').count(), d.clone()))
+    };
+    let Some(zh) = folder_of(b"INIZH.big", None) else {
+        return (files.into_iter().map(|(p, b)| ([GAME_DIR, &p].concat(), b)).collect(), false);
+    };
+    let generals = if zh.is_empty() { None } else { folder_of(b"INI.big", Some(&zh)) };
+    let mut out = Vec::with_capacity(files.len());
+    for (p, b) in files {
+        if p.starts_with(&zh) {
+            out.push(([GAME_DIR, &p[zh.len()..]].concat(), b));
+        } else if let Some(g) = generals.as_ref().filter(|g| p.starts_with(g)) {
+            out.push(([&GENERALS_DIR[1..], &p[g.len()..]].concat(), b));
+        }
+    }
+    (out, generals.is_some())
 }
 
 /// A skirmish from a Zero Hour folder on disk (the native client's `--zh <folder>`).
@@ -188,5 +226,30 @@ mod tests {
         assert!(err.ends_with("and 23 more"), "{err}");
         set_outcome(Err(&err));
         assert!(outcome().starts_with("error: the game's data did not load"));
+    }
+
+    /// C3d: a picked parent folder. Predicted: with Zero Hour and Generals side by side under `Games\`, the folder holding
+    /// `INIZH.big` becomes the game's folder (its subfolders kept), the one holding `INI.big` the Generals install path,
+    /// and a file in neither is left out; picking the Zero Hour folder itself keeps every file and finds no Generals
+    /// install; a pick without `INIZH.big` is taken as the game's folder unchanged.
+    #[test]
+    fn the_zero_hour_folder_is_found_in_what_was_picked() {
+        let f = |p: &str| (p.as_bytes().to_vec(), vec![]);
+        let names = |v: Vec<(Vec<u8>, Vec<u8>)>| v.into_iter().map(|(p, _)| String::from_utf8(p).unwrap()).collect::<Vec<_>>();
+        let (out, generals) = arrange(vec![
+            f("Games\\ZH\\inizh.big"),
+            f("Games\\ZH\\Data\\Maps\\M.big"),
+            f("Games\\Gen\\INI.big"),
+            f("Games\\Gen\\W3D.big"),
+            f("Games\\Other\\x.big"),
+        ]);
+        assert!(generals);
+        assert_eq!(names(out), ["ZH\\inizh.big", "ZH\\Data\\Maps\\M.big", "Generals\\INI.big", "Generals\\W3D.big"]);
+        let (out, generals) = arrange(vec![f("INIZH.big"), f("Data\\INI\\a.ini")]);
+        assert!(!generals);
+        assert_eq!(names(out), ["ZH\\INIZH.big", "ZH\\Data\\INI\\a.ini"]);
+        let (out, generals) = arrange(vec![f("Sub\\EnglishZH.big")]);
+        assert!(!generals);
+        assert_eq!(names(out), ["ZH\\Sub\\EnglishZH.big"]);
     }
 }

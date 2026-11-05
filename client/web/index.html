@@ -62,7 +62,7 @@
     const name = path.split('/').pop();
     if (/\.big$/i.test(name)) return !SKIP.test(name);
     // loose files the logic may read: INI, scripts, text, and maps
-    return /^(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
+    return /(^|\/)(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
   }
   // A picked file's path within the Zero Hour folder (the folder's own name dropped).
   function relative(file) {
