@@ -625,6 +625,28 @@ mod tests {
             0
         }
         fn switch_to_context_none(&mut self) {}
+        fn placement_view_angle(&self, build: Option<u16>) -> f32 {
+            build.and_then(|t| self.w.statics.thing_factory.find_by_template_id(t)).map_or(0.0, |t| t.data.get_placement_view_angle())
+        }
+    }
+
+    /// Placement's questions (C2c part 2): this test view maps a pixel (x, y) to the ground at (x, y, 0).
+    impl crate::client::place_event::PlaceHost for ClientOfWorld {
+        fn screen_to_terrain(&mut self, pixel: crate::common::base_type::ICoord2D) -> crate::common::base_type::Coord3D {
+            crate::common::base_type::Coord3D { x: pixel.x as f32, y: pixel.y as f32, z: 0.0 }
+        }
+        fn is_line_build_template(&self, build: u16) -> bool {
+            crate::logic::world::build_assistant::build_assistant_is_line_build_template(&self.w, build.into())
+        }
+        fn is_location_legal_to_build(&mut self, world: crate::common::base_type::Coord3D, build: u16, angle: f32, builder: Option<ObjectId>) -> crate::logic::world::build_assistant::LegalBuildCode {
+            use crate::logic::world::build_assistant as ba;
+            let flags = ba::USE_QUICK_PATHFIND | ba::TERRAIN_RESTRICTIONS | ba::CLEAR_PATH | ba::NO_OBJECT_OVERLAP | ba::SHROUD_REVEALED | ba::IGNORE_STEALTHED | ba::FAIL_STEALTHED_WITHOUT_FEEDBACK;
+            ba::build_assistant_is_location_legal_to_build(&mut self.w, world, build.into(), angle, flags, builder, None)
+        }
+        // (no construction special is placed in these tests)
+        fn special_power_construction_button(&mut self, _builder: ObjectId) -> Option<crate::client::command_xlat::GuiButton> {
+            None
+        }
     }
 
     /// C2a (#6): a click in the client makes the player's selected group in the logic. Predicted from SelectionXlat.cpp and
@@ -853,6 +875,97 @@ mod tests {
         let halt = button(&c, b"Command_Halt");
         assert_eq!(process_command_ui(&halt, PressedControl::Command, Some(caster), false, false, &mut ui, &mut c), CbCommandStatus::Used);
         assert_eq!(c.sent, vec![MSG_DO_STOP]);
+        assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
+    }
+
+    /// C2c part 2 (#6): a building is placed through the logic. In the gate World (every switch on, a game in progress),
+    /// player 1's WorkDozer at (40, 40) (`a_computer_player_builds_its_base`'s, made `SELECTABLE` and given a vision of 250 so
+    /// the site is not shrouded), with a construct-Depot button in its set. Predicted from ControlBarCommandProcessing.cpp,
+    /// PlaceEventTranslator.cpp and the logic:
+    /// - the dozer selected, its button starts placing the Depot (nothing sent);
+    /// - the left button down at (150, 150) anchors it; the click sends `MSG_DOZER_CONSTRUCT(Depot, (150, 150), angle)` and
+    ///   ends the placement;
+    /// - the logic starts a Depot of player 1's at (150, 150), under construction, and the dozer finishes it within 600
+    ///   frames (the depot's build time is 2 s, and the dozer must drive about 155 to it at 30/s).
+    ///
+    /// Results (2026-11-05): all held after one fix **to the logic**: the first run started no placement, because
+    /// `BuildAssistant::canMakeUnit` answered `CANMAKE_NO_MONEY` for the free Depot with player 1's money at 0. The port compared
+    /// `cost >= money`; upstream's is `cost > money` (BuildAssistant.cpp:1343), so a player with exactly the cost could not
+    /// build either. Corrected to `>`. With it: the Depot started at (150.0, 150.0), player 1's, under construction, and the
+    /// dozer finished it 203 frames later, standing at (115.6, 134.5); no live errors.
+    #[test]
+    fn a_building_is_placed_through_the_logic() {
+        use crate::client::command_xlat::CommandTranslator;
+        use crate::client::control_bar::{gui, process_command_ui, CbCommandStatus, PressedControl};
+        use crate::client::in_game_ui::InGameUiSelection;
+        use crate::client::place_event::PlaceEventTranslator;
+        use crate::client::selection_xlat::{Disposition, SelectionTranslator};
+        use crate::common::base_type::{Coord3D, ICoord2D};
+        use crate::common::message_types::MSG_DOZER_CONSTRUCT;
+        use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
+        use crate::logic::world::gate_scenario::{gate_map_world_with, make};
+        use crate::logic::world::team_ops::factory_find_team;
+        let extra = "\
+Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n VisionRange = 250\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+        let mut w = gate_map_world_with(extra);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let dozer = make(&mut w, b"WorkDozer", team, Coord3D { x: 40.0, y: 40.0, z: 0.0 });
+        let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
+        w.cuts.command_buttons.push(crate::logic::world::object_cuts::CommandButtonFacts {
+            name: b"GateDozerBuildDepot".to_vec(),
+            command_type: gui::DOZER_CONSTRUCT,
+            weapon_slot: 0,
+            special_power: None,
+            thing_template: depot,
+            upgrade: None,
+            ready_for: Default::default(),
+            options: 0,
+            max_shots_to_fire: 0,
+        });
+        let button_index = w.cuts.command_buttons.len() - 1;
+        w.cuts.command_sets.push((b"GateDozerSet".to_vec(), vec![Some(button_index)]));
+        w.objects.find_mut(dozer).expect("the dozer").command_set_string_override = b"GateDozerSet".to_vec();
+        w.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap);
+        w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
+        let p = w.get_controlling_player(dozer).expect("its player");
+        let mut c = ClientOfWorld { w, p, sent: Vec::new(), hints: Vec::new() };
+        let (mut x, mut ui, cmd, mut place) = (SelectionTranslator::default(), InGameUiSelection::new(), CommandTranslator::default(), PlaceEventTranslator::default());
+        assert_eq!(x.left_click(&[dozer], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
+        c.w.engine_update().expect("a frame");
+        c.sent.clear();
+
+        let button = crate::client::command_world::gui_button(&c.w, button_index).expect("the button");
+        assert_eq!(process_command_ui(&button, PressedControl::Command, Some(dozer), false, false, &mut ui, &mut c), CbCommandStatus::Used);
+        assert_eq!(ui.pending_place_type(), depot);
+        assert!(c.sent.is_empty());
+        assert!(place.left_button_down(ICoord2D { x: 150, y: 150 }, &mut ui, &mut c));
+        assert!(place.left_click(c.w.frame(), &mut ui, &mut c), "messages {:?}", c.hints);
+        assert_eq!(c.sent, vec![MSG_DOZER_CONSTRUCT]);
+        assert_eq!(ui.pending_place_type(), None);
+        let depots = |c: &ClientOfWorld| c.w.objects.ids_in_order().into_iter().filter(|&o| c.w.find_object(o).is_some_and(|x| x.template().get_name() == b"Depot")).collect::<Vec<_>>();
+        c.w.engine_update().expect("a frame");
+        let made = depots(&c);
+        assert_eq!(made.len(), 1, "one depot started");
+        let site = made[0];
+        let at = c.w.find_object(site).expect("the site").get_position();
+        eprintln!("C2c2: the depot started at {at:?}, owned by {:?}", c.w.get_controlling_player(site));
+        assert!((at.x - 150.0).abs() < 1.0 && (at.y - 150.0).abs() < 1.0);
+        assert_eq!(c.w.get_controlling_player(site), Some(p));
+        let under = |c: &ClientOfWorld| c.w.find_object(site).is_some_and(|o| o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION));
+        assert!(under(&c));
+        let mut done = None;
+        for f in 0..600 {
+            c.w.engine_update().expect("a frame");
+            if !under(&c) {
+                done = Some(f);
+                break;
+            }
+        }
+        eprintln!("C2c2: finished after {done:?} frames, the dozer at {:?}", c.w.find_object(dozer).map(|o| o.get_position()));
+        assert!(done.is_some(), "the dozer finishes the depot");
         assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
     }
 }

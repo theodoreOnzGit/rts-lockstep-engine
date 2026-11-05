@@ -276,6 +276,8 @@ pub(crate) mod tests {
         pub cmd: crate::client::command_xlat::tests::CmdFacts,
         /// The control bar's facts (C2c).
         pub bar: crate::client::control_bar::tests::BarFacts,
+        /// Placement's facts (C2c part 2).
+        pub place: crate::client::place_event::tests::PlaceFacts,
     }
 
     impl SelectionInfoHost for Host {

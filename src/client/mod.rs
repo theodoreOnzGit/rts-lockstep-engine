@@ -9,3 +9,4 @@ pub mod selection_groups;
 pub mod command_xlat;
 pub mod command_world;
 pub mod control_bar;
+pub mod place_event;

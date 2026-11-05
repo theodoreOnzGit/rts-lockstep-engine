@@ -169,6 +169,8 @@ pub trait ControlBarHost: CommandXlatHost {
     fn science_purchase_points(&mut self) -> i32;
     /// `switchToContext(CB_CONTEXT_NONE, NULL)`.
     fn switch_to_context_none(&mut self);
+    /// `build->getPlacementViewAngle()` (C2c part 2); 0 without a template.
+    fn placement_view_angle(&self, build: Option<u16>) -> f32;
 }
 
 /// `SCIENCE_INVALID`.
@@ -236,7 +238,7 @@ pub fn process_command_ui(
             h.mark_single_use_command_used(o);
         }
     }
-    ui.place_build_available(None, None, h);
+    ui.place_build_available(None, None, 0.0, h);
 
     if button.options & opt::NEED_TARGET != 0 {
         if button.options & opt::USES_MINE_CLEARING_WEAPONSET != 0 {
@@ -249,7 +251,8 @@ pub fn process_command_ui(
     match t {
         gui::DOZER_CONSTRUCT => {
             if selected.is_some() && may_make(h.can_make_unit(obj, button.thing_template), h) {
-                ui.place_build_available(button.thing_template, selected, h);
+                let angle = h.placement_view_angle(button.thing_template);
+                ui.place_build_available(button.thing_template, selected, angle, h);
             }
         }
         gui::SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT => {
@@ -258,13 +261,15 @@ pub fn process_command_ui(
             let Some(builder) = h.most_ready_shortcut_special_power(sp_type) else { return CbCommandStatus::Used };
             if may_make(h.can_make_unit(Some(builder), button.thing_template), h) {
                 let draw = h.object_drawable(builder);
-                ui.place_build_available(button.thing_template, draw, h);
+                let angle = h.placement_view_angle(button.thing_template);
+                ui.place_build_available(button.thing_template, draw, angle, h);
                 h.set_special_power_construction_button(builder, button.index);
             }
         }
         gui::SPECIAL_POWER_CONSTRUCT => {
             if selected.is_some() && may_make(h.can_make_unit(obj, button.thing_template), h) {
-                ui.place_build_available(button.thing_template, selected, h);
+                let angle = h.placement_view_angle(button.thing_template);
+                ui.place_build_available(button.thing_template, selected, angle, h);
                 if let Some(o) = obj {
                     h.set_special_power_construction_button(o, button.index);
                 }
@@ -449,6 +454,9 @@ pub(crate) mod tests {
         }
         fn switch_to_context_none(&mut self) {
             self.bar.switched_to_none += 1;
+        }
+        fn placement_view_angle(&self, _build: Option<u16>) -> f32 {
+            0.5
         }
     }
 

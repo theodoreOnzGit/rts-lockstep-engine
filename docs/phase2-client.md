@@ -91,6 +91,31 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch C2c, part 2 (2026-11-05, GitHub #6): building placement, and a defect in `canMakeUnit`.**
+`client::place_event` translates `PlaceEventTranslator`: with a building at the cursor (from a dozer's construct button), the
+left button anchors it, a drag of 5 pixels or more stretches it, and the click builds when `canMakeUnit` and
+`isLocationLegalToBuild` (with upstream's flags, the shroud among them) agree: `MSG_DOZER_CONSTRUCT(template, place, angle)`,
+`MSG_DOZER_CONSTRUCT_LINE` with the end for a wall, or `MSG_DO_SPECIAL_POWER_AT_LOCATION` from the builder for a construction
+special; otherwise `displayCantBuildMessage`'s reason. InGameUI gains the placement anchor and angle (`handleBuildPlacements`'
+turn to face the drag), and `placeBuildAvailable` takes the template's placement view angle.
+
+**A defect found by the end-to-end test, in the logic:** `BuildAssistant::canMakeUnit` refused on `cost >= money` where
+upstream refuses on `cost > money` (BuildAssistant.cpp:1343). A player with exactly the cost could not build, nor could one
+with no money build something free. ~~`>=`~~ corrected to `>`; the upgrade check (`canAffordUpgrade`, `money >= cost`) was
+checked and matches upstream.
+
+*Predictions before the runs:* in each test's doc. In short: the button starts placing at the template's view angle; the
+button down anchors; 3 pixels do not stretch, 10 do, and the icon turns to face the drag; the click sends
+`MSG_DOZER_CONSTRUCT` and ends the placement, a wall sends the line with its end, an illegal place shows its reason and keeps
+the building at the cursor; in the gate World, a WorkDozer's construct button and a click at (150, 150) start a Depot there,
+which the dozer finishes within 600 frames.
+
+*Results:* the unit test held on the first run. The end-to-end test found the `canMakeUnit` defect above (the free Depot was
+refused with no money); after the fix, the Depot started at (150.0, 150.0) and was finished 203 frames later. The test's
+dozer is `SELECTABLE` and has a vision of 250, as shipped dozers do: placement requires a revealed site. Full run:
+1189 tests pass in 203 suites (2026-11-05), the differential tests among them; clippy clean; gate (a) identical over 300
+frames native and wasm (last CRC `0bf44067`: the fix does not move the gate game, whose builds are paid for).
+
 **Batch C2c, part 1 (2026-11-05, GitHub #6): the control bar's buttons, and the cursor modes they start.**
 `client::control_bar` translates `ControlBar::processCommandUI` (ControlBarCommandProcessing.cpp): a button needing a target
 becomes InGameUI's pending GUI command; the others build a unit (`MSG_QUEUE_UNIT_CREATE` with a new production id, after

@@ -728,8 +728,9 @@ pub fn build_assistant_can_make_unit<H: BuildAssistantHost>(h: &mut H, builder: 
     }
     // make sure we have enough money to build this
     let player = player.ok_or(BuildError::Undefined("canMakeUnit: the builder has no controlling player"))?;
-    // calcCostToBuild() is an Int, countMoney() an UnsignedInt: the comparison is unsigned
-    if (h.tmpl_calc_cost_to_build(what, player) as u32) >= h.player_count_money(player) {
+    // calcCostToBuild() is an Int, countMoney() an UnsignedInt: the comparison is unsigned. (C2c part 2: ~~`>=`~~ **corrected** to
+    // upstream's `>`, BuildAssistant.cpp:1343: a player with exactly the cost, or a free building with no money, can build)
+    if (h.tmpl_calc_cost_to_build(what, player) as u32) > h.player_count_money(player) {
         return Ok(CanMakeType::NoMoney);
     }
     Ok(CanMakeType::Ok)

@@ -77,6 +77,11 @@ pub struct InGameUiSelection {
     pending_place_source: Option<crate::common::game_type::ObjectId>,
     /// `m_preventLeftClickDeselectionInAlternateMouseModeForOneClick` (C2c).
     prevent_left_click_deselection_once: bool,
+    /// `m_placeAnchorStart`, `m_placeAnchorEnd` and `m_placeAnchorInProgress` (C2c part 2), in screen pixels.
+    place_anchor: (crate::common::base_type::ICoord2D, crate::common::base_type::ICoord2D),
+    place_anchor_in_progress: bool,
+    /// `m_placeIcon[0]->getOrientation()` (C2c part 2): the building's placement angle.
+    placement_angle: f32,
 }
 
 impl InGameUiSelection {
@@ -240,8 +245,15 @@ impl InGameUiSelection {
     }
 
     /// `placeBuildAvailable(build, buildDrawable)` (C2c): start (or with `None`, end) placing `build`, built by the object of
-    /// `builder`. The building at the cursor and the cursor itself are the view's (C2d).
-    pub fn place_build_available(&mut self, build: Option<u16>, builder: Option<DrawableId>, h: &impl crate::client::selection_info::SelectionInfoHost) {
+    /// `builder`; the icon starts at `view_angle` (`build->getPlacementViewAngle()`). The building at the cursor and the
+    /// cursor itself are the view's (C2d).
+    pub fn place_build_available(&mut self, build: Option<u16>, builder: Option<DrawableId>, view_angle: f32, h: &impl crate::client::selection_info::SelectionInfoHost) {
+        if build.is_some() {
+            self.placement_angle = view_angle;
+        } else {
+            // (upstream destroys the icon; its angle is gone with it)
+            self.place_anchor_in_progress = false;
+        }
         // (upstream first ends a placement under way when a new one starts; here that is the same assignment)
         self.pending_place_type = build;
         self.prevent_left_click_deselection_once = self.pending_place_source.is_some();
@@ -254,6 +266,42 @@ impl InGameUiSelection {
     pub fn pending_place_source(&self) -> Option<crate::common::game_type::ObjectId> {
         self.pending_place_source
     }
+    /// `setPlacementStart(start)` (C2c part 2): `Some` anchors the placement there, `None` releases it.
+    pub fn set_placement_start(&mut self, start: Option<crate::common::base_type::ICoord2D>) {
+        match start {
+            Some(s) => {
+                self.place_anchor = (s, s);
+                self.place_anchor_in_progress = true;
+            }
+            None => self.place_anchor_in_progress = false,
+        }
+    }
+    /// `setPlacementEnd(end)` (C2c part 2).
+    pub fn set_placement_end(&mut self, end: crate::common::base_type::ICoord2D) {
+        self.place_anchor.1 = end;
+    }
+    /// `isPlacementAnchored()` (C2c part 2).
+    pub fn is_placement_anchored(&self) -> bool {
+        self.place_anchor_in_progress
+    }
+    /// `getPlacementPoints(&start, &end)` (C2c part 2).
+    pub fn placement_points(&self) -> (crate::common::base_type::ICoord2D, crate::common::base_type::ICoord2D) {
+        self.place_anchor
+    }
+    /// `getPlacementAngle()` (C2c part 2).
+    pub fn placement_angle(&self) -> f32 {
+        self.placement_angle
+    }
+    /// `handleBuildPlacements()`'s angle (C2c part 2): while anchored and dragged, the icon faces from the anchor's terrain
+    /// point `world_start` to the drag's `world_end` (`Coord2D::toAngle`).
+    pub fn turn_placement(&mut self, world_start: crate::common::base_type::Coord3D, world_end: crate::common::base_type::Coord3D) {
+        let (s, e) = self.place_anchor;
+        if self.pending_place_type.is_some() && self.place_anchor_in_progress && s != e {
+            let v = crate::common::base_type::Coord2D { x: world_end.x - world_start.x, y: world_end.y - world_start.y };
+            self.placement_angle = v.to_angle();
+        }
+    }
+
     /// `getPreventLeftClickDeselectionInAlternateMouseModeForOneClick()` (C2c).
     pub fn prevent_left_click_deselection_once(&self) -> bool {
         self.prevent_left_click_deselection_once
