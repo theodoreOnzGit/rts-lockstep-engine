@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! W3D files: the format definitions ([`w3d_file`]) and the loaders WW3D2
-//! reads meshes ([`mesh`]), hierarchies ([`htree`]) and animations
-//! ([`hanim`], [`motchan`]) with, into plain structs (no rendering). All of
-//! it reads through the WWLib chunk reader, [`crate::ww::chunkio`]. The
-//! asset manager's file loop (`WW3DAssetManager::Load_3D_Assets`, which
-//! picks the loader by top-level chunk id and registers the result) is not
-//! translated: each loader is called on its own chunk.
+//! reads meshes ([`mesh`]), hierarchies ([`htree`]), hierarchical LOD
+//! models ([`hlod`]) and animations ([`hanim`], [`motchan`]) with, into
+//! plain structs (no rendering). All of it reads through the WWLib chunk
+//! reader, [`crate::ww::chunkio`]. The asset manager's file loop
+//! (`WW3DAssetManager::Load_3D_Assets`, which picks the loader by top-level
+//! chunk id and registers the result) is not translated: each loader is
+//! called on its own chunk.
 //!
 //! The loaders return `W3dResult<Option<T>>`: `Ok(Some(_))` is upstream's
 //! successful load, `Ok(None)` its load error (the reader is left where
@@ -13,6 +14,7 @@
 //! `Err` an input on which upstream is undefined.
 
 pub mod hanim;
+pub mod hlod;
 pub mod htree;
 pub mod mesh;
 pub mod motchan;

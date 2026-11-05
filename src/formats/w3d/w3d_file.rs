@@ -162,6 +162,9 @@ pub const W3D_CURRENT_LIGHT_VERSION: u32 = w3d_make_version(1, 0);
 pub const W3D_CURRENT_EMITTER_VERSION: u32 = 0x0002_0000;
 pub const W3D_CURRENT_AGGREGATE_VERSION: u32 = 0x0001_0003;
 pub const W3D_CURRENT_HLOD_VERSION: u32 = w3d_make_version(1, 0);
+/// `NO_MAX_SCREEN_SIZE` (`WWMATH_FLOAT_MAX`): an HLOD level with no upper
+/// screen-size limit.
+pub const NO_MAX_SCREEN_SIZE: f32 = crate::ww::wwmath::WWMATH_FLOAT_MAX;
 pub const W3D_BOX_CURRENT_VERSION: u32 = w3d_make_version(1, 0);
 pub const W3D_NULL_OBJECT_CURRENT_VERSION: u32 = w3d_make_version(1, 0);
 pub const W3D_CURRENT_SOUNDROBJ_VERSION: u32 = 0x0001_0000;
