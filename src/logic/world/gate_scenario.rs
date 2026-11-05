@@ -36,7 +36,7 @@ use crate::logic::world::game_data::{load_game_data, MemoryFiles, MissingFiles, 
 use crate::logic::world::team_ops::{factory_find_team, factory_init_team};
 
 /// The game's INI: a tracked locomotor, the runner, the gun, the dozer and the depot.
-const INI: &str = "\
+pub(crate) const INI: &str = "\
 AIData\n GuardInnerModifierHuman = 1.0\n GuardOuterModifierHuman = 1.0\n GuardInnerModifierAI = 1.0\n GuardOuterModifierAI = 1.0\n AlertRangeModifier = 1.1\n AggressiveRangeModifier = 1.5\nEnd\n\
 Weapon GateGun\n PrimaryDamage = 20\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\nEnd\n\
 Locomotor GateTreads\n Surfaces = GROUND\n Speed = 30\n Acceleration = 100\n Braking = 100\n TurnRate = 180\n Appearance = TREADS\nEnd\n\
@@ -59,7 +59,7 @@ Object Depot\n KindOf = STRUCTURE IMMOBILE\n BuildTime = 2.0\n Geometry = BOX\n 
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1000\n  InitialHealth = 1000\n End\nEnd\n";
 
 /// A new object of the template `name` on `team` at `pos`, in its team and the partition manager.
-fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
+pub(crate) fn make(w: &mut World, name: &[u8], team: TeamId, pos: Coord3D) -> ObjectId {
     let t = World::thing_factory_find_template(w, name).expect("a template of the game");
     let id = w.thing_factory_new_object(t, Some(team), ObjectStatusMaskType::default()).expect("an object of the game");
     w.set_position(id, &pos);

@@ -17,9 +17,12 @@
 //! `SelectionInfo` and `contextCommandForNewSelection` (C2a, GitHub #6): what a click or a drag selection would pick, counted
 //! by whose it is, and whether it is a context command (an order to the current selection) rather than a new selection.
 //!
-//! **The context command itself is not translated yet:** `TheGameClient->evaluateContextCommand(draw, pos, EVALUATE_ONLY)` is
+//! ~~**The context command itself is not translated yet:** `TheGameClient->evaluateContextCommand(draw, pos, EVALUATE_ONLY)` is
 //! `CommandXlat.cpp`'s (C2b). Here it is [`SelectionInfoHost::context_command_is_valid`]; until C2b the client answers false
-//! (`MSG_INVALID`), so a click on a unit selects it rather than ordering the selection.
+//! (`MSG_INVALID`), so a click on a unit selects it rather than ordering the selection.~~ **Corrected (C2b):**
+//! `TheGameClient->evaluateContextCommand(draw, pos, EVALUATE_ONLY) != MSG_INVALID` is the `valid` argument; the selection
+//! translator passes the command translator's
+//! [`evaluate_context_command`](crate::client::command_xlat::CommandTranslator::evaluate_context_command).
 
 use crate::client::in_game_ui::DrawableId;
 use crate::common::game_type::ObjectId;
@@ -44,9 +47,6 @@ pub trait SelectionInfoHost {
     fn prefer_selection(&self) -> bool;
     /// `TheGlobalData->m_useAlternateMouse`.
     fn use_alternate_mouse(&self) -> bool;
-    /// `TheGameClient->evaluateContextCommand(draw, draw->getPosition(), EVALUATE_ONLY) != MSG_INVALID` (C2b; see the module
-    /// docs).
-    fn context_command_is_valid(&mut self, draw: DrawableId) -> bool;
 }
 
 /// `struct SelectionInfo`.
@@ -74,12 +74,14 @@ pub struct SelectionInfo {
 
 /// `contextCommandForNewSelection(current, new, &info, isPoint)`: fills `info` with the counts of the current and the new
 /// drawables, and answers whether the click is a context command for the current selection (true) rather than a selection.
-pub fn context_command_for_new_selection(
+/// `valid(h, draw)` is `TheGameClient->evaluateContextCommand(draw, draw->getPosition(), EVALUATE_ONLY) != MSG_INVALID`.
+pub fn context_command_for_new_selection<H: SelectionInfoHost>(
     current: &[DrawableId],
     new: &[DrawableId],
     info: &mut SelectionInfo,
     selection_is_point: bool,
-    h: &mut impl SelectionInfoHost,
+    h: &mut H,
+    valid: &mut impl FnMut(&mut H, DrawableId) -> bool,
 ) -> bool {
     if h.force_fire_or_move() {
         return false;
@@ -143,19 +145,19 @@ pub fn context_command_for_new_selection(
     if info.current_count_mine > 0 {
         if info.new_count_enemies > 0 {
             if info.new_count_enemies == 1 && selection_is_point {
-                return new_enemy.is_some_and(|d| h.context_command_is_valid(d));
+                return new_enemy.is_some_and(|d| valid(h, d));
             }
             return selection_is_point;
         }
         if info.new_count_mine > 0 {
             if info.new_count_mine == 1 && selection_is_point && !h.prefer_selection() {
-                return new_mine.is_some_and(|d| h.context_command_is_valid(d));
+                return new_mine.is_some_and(|d| valid(h, d));
             }
             return false;
         }
         if info.new_count_friends > 0 {
             if info.new_count_friends == 1 && selection_is_point {
-                return new_friendly.is_some_and(|d| h.context_command_is_valid(d));
+                return new_friendly.is_some_and(|d| valid(h, d));
             }
             return false;
         }
@@ -164,7 +166,7 @@ pub fn context_command_for_new_selection(
         }
         if info.new_count_civilians > 0 {
             if info.new_count_civilians == 1 && selection_is_point {
-                return new_civilian.is_some_and(|d| h.context_command_is_valid(d));
+                return new_civilian.is_some_and(|d| valid(h, d));
             }
             return false;
         }
@@ -217,9 +219,10 @@ mod tests {
         fn use_alternate_mouse(&self) -> bool {
             false
         }
-        fn context_command_is_valid(&mut self, draw: DrawableId) -> bool {
-            self.context_valid.contains(&draw)
-        }
+    }
+
+    fn valid(h: &mut Host, draw: DrawableId) -> bool {
+        h.context_valid.contains(&draw)
     }
 
     /// C2a: `contextCommandForNewSelection`'s decision. Predicted from SelectionInfo.cpp, with my units 1 and 2 and an enemy 9:
@@ -233,14 +236,14 @@ mod tests {
         let mut h = Host { mine: vec![1, 2], ..Default::default() };
         h.rel.insert(9, Relationship::Enemies);
         let mut si = SelectionInfo::default();
-        assert!(!context_command_for_new_selection(&[], &[1], &mut si, true, &mut h));
+        assert!(!context_command_for_new_selection(&[], &[1], &mut si, true, &mut h, &mut valid));
         assert_eq!((si.new_count_mine, si.current_count_mine), (1, 0));
         let mut si = SelectionInfo::default();
-        assert!(!context_command_for_new_selection(&[1], &[9], &mut si, true, &mut h));
+        assert!(!context_command_for_new_selection(&[1], &[9], &mut si, true, &mut h, &mut valid));
         assert_eq!((si.current_count_mine, si.new_count_enemies), (1, 1));
         h.context_valid.push(9);
-        assert!(context_command_for_new_selection(&[1], &[9], &mut SelectionInfo::default(), true, &mut h));
-        assert!(!context_command_for_new_selection(&[1], &[9], &mut SelectionInfo::default(), false, &mut h));
-        assert!(!context_command_for_new_selection(&[1], &[2], &mut SelectionInfo::default(), true, &mut h));
+        assert!(context_command_for_new_selection(&[1], &[9], &mut SelectionInfo::default(), true, &mut h, &mut valid));
+        assert!(!context_command_for_new_selection(&[1], &[9], &mut SelectionInfo::default(), false, &mut h, &mut valid));
+        assert!(!context_command_for_new_selection(&[1], &[2], &mut SelectionInfo::default(), true, &mut h, &mut valid));
     }
 }

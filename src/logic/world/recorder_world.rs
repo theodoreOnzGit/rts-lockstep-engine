@@ -175,7 +175,7 @@ mod tests {
     use crate::common::game_type::{DrawableId, ObjectId};
     use crate::common::dict::Dict;
     use crate::common::game_info::slot_state;
-    use crate::common::message_types::{MSG_CLEAR_GAME_DATA, MSG_NEW_GAME};
+    use crate::common::message_types::{MSG_CLEAR_GAME_DATA, MSG_DO_MOVETO, MSG_DO_MOVETO_HINT, MSG_NEW_GAME};
     use crate::formats::data_chunk_output::DataChunkOutput;
     use crate::logic::world::player_host_world::tests::world;
 
@@ -367,6 +367,10 @@ mod tests {
     struct ClientOfWorld {
         w: World,
         p: i32,
+        /// The messages the client sent to the logic, which the command translator observes (C2b).
+        sent: Vec<crate::common::message_stream::MessageType>,
+        /// The hints the command translator made.
+        hints: Vec<crate::common::message_stream::MessageType>,
     }
 
     impl crate::client::selection_info::SelectionInfoHost for ClientOfWorld {
@@ -396,9 +400,6 @@ mod tests {
             false
         }
         fn use_alternate_mouse(&self) -> bool {
-            false
-        }
-        fn context_command_is_valid(&mut self, _draw: DrawableId) -> bool {
             false
         }
     }
@@ -444,6 +445,7 @@ mod tests {
             false
         }
         fn append_message(&mut self, t: crate::common::message_stream::MessageType, create: Option<bool>, objects: &[ObjectId]) {
+            self.sent.push(t);
             self.w.push_command(t, self.p, |m| {
                 if let Some(b) = create {
                     m.append_boolean_argument(b);
@@ -455,6 +457,111 @@ mod tests {
         }
         fn record_drag_selection(&mut self) {}
         fn clear_attack_move_to_mode(&mut self) {}
+    }
+
+    impl crate::client::selection_groups::SelectionGroupsHost for ClientOfWorld {
+        fn all_drawables(&self) -> Vec<DrawableId> {
+            self.w.objects.ids_in_order()
+        }
+        fn drawables_on_screen(&self) -> Vec<DrawableId> {
+            self.w.objects.ids_in_order()
+        }
+        fn pick_selectable_at_click(&self) -> Option<DrawableId> {
+            None
+        }
+        fn is_mass_selectable(&self, _obj: ObjectId) -> bool {
+            true
+        }
+        fn object_template(&self, obj: ObjectId) -> u32 {
+            self.w.find_object(obj).map_or(0, |o| u32::from(o.template().get_template_id()))
+        }
+        fn is_equivalent_to(&self, obj: ObjectId, template: u32) -> bool {
+            self.object_template(obj) == template
+        }
+        fn is_car_bomb(&self, _obj: ObjectId) -> bool {
+            false
+        }
+        fn is_off_map(&self, _obj: ObjectId) -> bool {
+            false
+        }
+        fn hotkey_squad_live_objects(&mut self, _group: i32) -> Option<Vec<ObjectId>> {
+            None
+        }
+        fn look_at(&mut self, _obj: ObjectId) {}
+        fn ui_message(&mut self, _label: &[u8], _count: Option<i32>) {}
+        fn append_message_drawable(&mut self, t: crate::common::message_stream::MessageType, draw: DrawableId) {
+            self.sent.push(t);
+            self.w.push_command(t, self.p, |m| m.append_drawable_id_argument(draw as u32));
+        }
+    }
+
+    /// The command translator's questions, answered by the World (`client::command_world`).
+    impl crate::client::command_xlat::CommandXlatHost for ClientOfWorld {
+        fn object_is_masked(&self, obj: ObjectId) -> bool {
+            self.w.find_object(obj).is_some_and(|o| o.test_status(crate::common::object_status_types::OBJECT_STATUS_MASKED))
+        }
+        fn object_position(&self, obj: ObjectId) -> crate::common::base_type::Coord3D {
+            self.w.find_object(obj).map(|o| o.get_position()).unwrap_or_default()
+        }
+        fn object_relationship(&self, src: ObjectId, target: ObjectId) -> crate::common::game_common::Relationship {
+            if self.w.get_controlling_player(src) == self.w.get_controlling_player(target) {
+                crate::common::game_common::Relationship::Allies
+            } else {
+                crate::common::game_common::Relationship::Enemies
+            }
+        }
+        fn object_can_do_action(&mut self, src: Option<ObjectId>, action: crate::client::command_xlat::ActionType, target: Option<ObjectId>, additional: bool) -> bool {
+            crate::client::command_world::object_can_do_action(&mut self.w, src, action, target, additional)
+        }
+        fn object_can_attack(&mut self, src: Option<ObjectId>, target: Option<ObjectId>, forced: bool) -> i32 {
+            crate::client::command_world::object_can_attack(&mut self.w, src, target, forced)
+        }
+        fn object_can_force_attack(&mut self, src: ObjectId, victim: Option<ObjectId>, pos: Option<crate::common::base_type::Coord3D>) -> i32 {
+            crate::client::command_world::object_can_force_attack(&mut self.w, src, victim, pos)
+        }
+        fn object_can_override_special_power_destination(&mut self, src: Option<ObjectId>, loc: &crate::common::base_type::Coord3D, sp: i32) -> bool {
+            crate::client::command_world::object_can_override_special_power_destination(&mut self.w, src, loc, sp)
+        }
+        fn is_salvage_crate(&mut self, obj: ObjectId) -> bool {
+            self.w.is_salvage_crate(obj)
+        }
+        fn shroud_clear_for_local_player(&mut self, pos: &crate::common::base_type::Coord3D) -> bool {
+            self.w.partition.get_shroud_status_for_player(self.p, pos) == crate::common::game_common::CellShroudStatus::Clear
+        }
+        fn object_has_ai(&self, obj: ObjectId) -> bool {
+            self.w.find_object(obj).is_some_and(|o| o.ai.is_some())
+        }
+        fn quick_path_available(&mut self, obj: ObjectId, pos: &crate::common::base_type::Coord3D) -> bool {
+            crate::logic::world::build_assistant::BuildAssistantHost::ai_is_quick_path_available(&mut self.w, obj, *pos)
+        }
+        fn has_cliff_locomotor(&mut self, obj: ObjectId) -> bool {
+            let call = crate::logic::world::module_call::ModuleCall::AiHasLocomotorForSurface(crate::logic::locomotor::LOCOMOTORSURFACE_CLIFF as u32);
+            matches!(self.w.ai_ask(obj, call), Some(crate::logic::world::module_call::ModuleReply::Bool(true)))
+        }
+        fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
+            crate::logic::ai::pathfinder::PathfinderHost::is_cliff_cell(&self.w, x, y)
+        }
+        fn special_power_buttons(&mut self, obj: ObjectId) -> Vec<crate::client::command_xlat::SpecialPowerButton> {
+            crate::client::command_world::special_power_buttons(&self.w, obj)
+        }
+        fn append_command(&mut self, t: crate::common::message_stream::MessageType, args: &[crate::client::command_xlat::CmdArg]) {
+            use crate::client::command_xlat::CmdArg;
+            self.sent.push(t);
+            self.w.push_command(t, self.p, |m| {
+                for a in args {
+                    match *a {
+                        CmdArg::Int(i) => m.append_integer_argument(i),
+                        CmdArg::Real(r) => m.append_real_argument(r),
+                        CmdArg::Bool(b) => m.append_boolean_argument(b),
+                        CmdArg::Object(o) => m.append_object_id_argument(o as u32),
+                        CmdArg::Location(l) => m.append_location_argument(l),
+                    }
+                }
+            });
+        }
+        fn append_hint(&mut self, t: crate::common::message_stream::MessageType, _args: &[crate::client::command_xlat::CmdArg]) {
+            self.hints.push(t);
+        }
     }
 
     /// C2a (#6): a click in the client makes the player's selected group in the logic. Predicted from SelectionXlat.cpp and
@@ -488,18 +595,129 @@ mod tests {
         let tank = named(&w, b"Tank").expect("the tank");
         let barracks = named(&w, b"Barracks").expect("the barracks");
         let p = w.get_controlling_player(tank).expect("its player");
-        let mut c = ClientOfWorld { w, p };
+        let mut c = ClientOfWorld { w, p, sent: Vec::new(), hints: Vec::new() };
         let (mut x, mut ui) = (SelectionTranslator::default(), InGameUiSelection::new());
+        let cmd = crate::client::command_xlat::CommandTranslator::default();
         let selection = |c: &mut ClientOfWorld| {
             c.w.engine_update().expect("a frame");
             c.w.players.get_nth(c.p).and_then(|pl| pl.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default()
         };
-        assert_eq!(x.left_click(&[tank], true, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(x.left_click(&[tank], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
         assert_eq!(selection(&mut c), vec![tank]);
-        assert_eq!(x.left_click(&[barracks, tank], false, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(x.left_click(&[barracks, tank], false, &cmd, &mut ui, &mut c), Disposition::Destroy);
         assert_eq!(selection(&mut c), vec![tank]);
-        assert_eq!(x.left_click(&[barracks], true, &mut ui, &mut c), Disposition::Destroy);
+        assert_eq!(x.left_click(&[barracks], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
         assert_eq!(selection(&mut c), vec![barracks]);
+        assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
+    }
+
+    /// C2b (#6): clicks order the selected units through the command translator and the logic. In the gate World (every
+    /// switch on; the recorder's skirmish Tank has no AI, so with the logic live `AIGroup::add` refuses it and it cannot be
+    /// selected, as upstream refuses it), player 1 has a Runner at (40, 50) and a Soldier at (40, 300); player 2 a Soldier at
+    /// (360, 300), 320 away, beyond the Soldiers' 150 vision. Predicted from CommandXlat.cpp, InGameUI.cpp, ActionManager.cpp
+    /// and GameLogicDispatch.cpp:
+    /// - a click on the Runner selects it (`MSG_DESTROY_SELECTED_GROUP`, `MSG_CREATE_SELECTED_GROUP`), so a group exists;
+    /// - the mouse over the ground at (200, 50) hints `MSG_DO_MOVETO_HINT`; a click there is actioned, destroyed, and sends
+    ///   `MSG_DO_MOVETO(200, 50)`; over 90 frames the Runner's distance to the point falls;
+    /// - with the Soldier selected, the enemy is a context command (`EVALUATE_ONLY` gives `MSG_DO_ATTACK_OBJECT`, the action
+    ///   manager's `getCanAttackObject` answering possible after moving), so the selection translator keeps the click rather
+    ///   than selecting the enemy; the hint is `MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT`; the click sends
+    ///   `MSG_DO_ATTACK_OBJECT(enemy)`; over 90 frames the Soldier closes on it (the enemy, beyond its vision, stays);
+    /// - a click on the player's own Runner with the Soldier selected is no context command: it selects the Runner.
+    ///
+    /// Results (2026-11-05): all held, after three corrections to the test's World, none to the code:
+    /// - ~~the recorder's skirmish~~: its Tank has no AI, so with the logic live `AIGroup::add` refuses it (the selection
+    ///   was `[]`) and it cannot move; the test moved to the gate World;
+    /// - the gate World was not a game in progress (`GAME_NONE`): `logicMessageDispatcher` makes the selection's group only
+    ///   `isInGame()`, so the move reached no group (the selection messages are handled either way). A control, the same
+    ///   move given to a group directly, drove the Runner 160 -> 75.2;
+    /// - the gate's units are not `SELECTABLE`: `Squad::getLiveObjects` keeps only selectable objects, upstream and here, so
+    ///   the order's group was empty. The test makes `SELECTABLE` copies of the Runner and the Soldier (the gate scenario,
+    ///   and its CRCs, are unchanged).
+    ///
+    /// With them: the hints and messages were as predicted; the Runner's distance to its goal went 160 -> 75.2 in 90 frames
+    /// (30/s for 3 s, less the start), and the Soldier's to the enemy 320 -> 235.1 while the enemy did not move; the click
+    /// on the enemy was kept, the click on the Runner selected it; no live errors.
+    #[test]
+    fn clicks_order_the_selected_units() {
+        use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator};
+        use crate::client::in_game_ui::InGameUiSelection;
+        use crate::client::selection_xlat::{Disposition, SelectionTranslator};
+        use crate::common::base_type::Coord3D;
+        use crate::common::message_types::{MSG_DO_ATTACK_OBJECT, MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT};
+        use crate::logic::world::gate_scenario::{gate_map_world_with, make, INI};
+        use crate::logic::world::team_ops::factory_find_team;
+        // the gate's Runner and Soldier, `SELECTABLE` as the shipped units are (`Squad::getLiveObjects` keeps only selectable
+        // objects, so an order's group would be empty without it)
+        let block = |name: &str| {
+            let start = INI.find(&format!("Object {name}\n")).expect("the template");
+            let end = start + INI[start..].find("\nEnd\n").expect("its end") + 5;
+            INI[start..end].replacen(&format!("Object {name}"), &format!("Object Click{name}"), 1).replacen("KindOf = VEHICLE", "KindOf = VEHICLE SELECTABLE", 1)
+        };
+        let mut w = gate_map_world_with(&(block("Runner") + "\n" + &block("Soldier") + "\n"));
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let runner = make(&mut w, b"ClickRunner", team, Coord3D { x: 40.0, y: 50.0, z: 0.0 });
+        let soldier = make(&mut w, b"ClickSoldier", team, Coord3D { x: 40.0, y: 300.0, z: 0.0 });
+        let enemy = make(&mut w, b"ClickSoldier", enemy_team, Coord3D { x: 360.0, y: 300.0, z: 0.0 });
+        w.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap);
+        // the gate World is made directly, not started by `startNewGame`: a game in progress (`isInGame()`), or the dispatcher
+        // makes no group for a command
+        w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
+        let p = w.get_controlling_player(runner).expect("its player");
+        let mut c = ClientOfWorld { w, p, sent: Vec::new(), hints: Vec::new() };
+        let (mut x, mut ui, mut cmd) = (SelectionTranslator::default(), InGameUiSelection::new(), CommandTranslator::default());
+        let frame = |c: &mut ClientOfWorld, cmd: &mut CommandTranslator| {
+            for t in c.sent.drain(..) {
+                cmd.observe_message(t);
+            }
+            c.w.engine_update().expect("a frame");
+        };
+        let selection = |c: &ClientOfWorld| c.w.players.get_nth(c.p).and_then(|pl| pl.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default();
+        let dist = |c: &ClientOfWorld, a: ObjectId, b: Coord3D| {
+            let at = c.w.find_object(a).expect("the unit").get_position();
+            ((at.x - b.x).powi(2) + (at.y - b.y).powi(2)).sqrt()
+        };
+
+        assert_eq!(x.left_click(&[runner], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
+        frame(&mut c, &mut cmd);
+        assert_eq!(selection(&c), vec![runner]);
+        assert!(cmd.team_exists);
+        let goal = Coord3D { x: 200.0, y: 50.0, z: 0.0 };
+        assert_eq!(cmd.mouse_over(None, &goal, &ui, &mut c), MSG_DO_MOVETO_HINT, "hints {:?}", c.hints);
+        assert!(cmd.click(false, true, &goal, None, &mut ui, &mut c));
+        assert_eq!(c.sent, vec![MSG_DO_MOVETO]);
+        let before = dist(&c, runner, goal);
+        for _ in 0..90 {
+            frame(&mut c, &mut cmd);
+        }
+        let after = dist(&c, runner, goal);
+        eprintln!("C2b: the Runner's distance to its goal {before} -> {after} after 90 frames");
+        assert!(after < before, "the Runner drove toward the point: {before} -> {after}");
+
+        assert_eq!(x.left_click(&[soldier], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
+        frame(&mut c, &mut cmd);
+        assert_eq!(selection(&c), vec![soldier]);
+        let at = c.w.find_object(enemy).expect("the enemy").get_position();
+        assert_eq!(cmd.evaluate_context_command(Some(enemy), &at, CommandEvaluateType::EvaluateOnly, &ui, &mut c), MSG_DO_ATTACK_OBJECT);
+        assert_eq!(cmd.mouse_over(Some(enemy), &at, &ui, &mut c), MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT);
+        assert_eq!(x.left_click(&[enemy], true, &cmd, &mut ui, &mut c), Disposition::Keep, "the enemy is not selected");
+        assert!(cmd.click(false, true, &at, Some(enemy), &mut ui, &mut c));
+        assert_eq!(c.sent, vec![MSG_DO_ATTACK_OBJECT]);
+        let before = dist(&c, soldier, at);
+        for _ in 0..90 {
+            frame(&mut c, &mut cmd);
+        }
+        let after = dist(&c, soldier, at);
+        let moved = dist(&c, enemy, at);
+        eprintln!("C2b: the Soldier's distance to the enemy's start {before} -> {after}; the enemy moved {moved}");
+        assert!(after < before, "the Soldier closed on the enemy: {before} -> {after}");
+
+        let at = c.w.find_object(runner).expect("the runner").get_position();
+        assert_eq!(cmd.evaluate_context_command(Some(runner), &at, CommandEvaluateType::EvaluateOnly, &ui, &mut c), crate::common::message_types::MSG_INVALID);
+        assert_eq!(x.left_click(&[runner], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
+        frame(&mut c, &mut cmd);
+        assert_eq!(selection(&c), vec![runner]);
         assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
     }
 }

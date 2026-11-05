@@ -63,6 +63,12 @@ pub struct InGameUiSelection {
     input_enabled: bool,
     /// `m_displayedMaxWarning` (the selection cap's message was shown).
     displayed_max_warning: bool,
+    /// `m_waypointMode` (C2b).
+    waypoint_mode: bool,
+    /// `m_forceMoveToMode` (C2b).
+    force_move_to_mode: bool,
+    /// `m_attackMoveToMode` (C2b).
+    attack_move_to_mode: bool,
 }
 
 impl InGameUiSelection {
@@ -177,6 +183,33 @@ impl InGameUiSelection {
     }
     pub fn set_displayed_max_warning(&mut self, b: bool) {
         self.displayed_max_warning = b;
+    }
+
+    /// `setWaypointMode(b)` / `isInWaypointMode()` (C2b).
+    pub fn set_waypoint_mode(&mut self, b: bool) {
+        self.waypoint_mode = b;
+    }
+    pub fn is_in_waypoint_mode(&self) -> bool {
+        self.waypoint_mode
+    }
+
+    /// `setForceMoveMode(b)` / `isInForceMoveToMode()` (C2b).
+    pub fn set_force_move_mode(&mut self, b: bool) {
+        self.force_move_to_mode = b;
+    }
+    pub fn is_in_force_move_to_mode(&self) -> bool {
+        self.force_move_to_mode
+    }
+
+    /// `setAttackMoveToMode(b)` / `isInAttackMoveToMode()` / `clearAttackMoveToMode()` (C2b).
+    pub fn set_attack_move_to_mode(&mut self, b: bool) {
+        self.attack_move_to_mode = b;
+    }
+    pub fn is_in_attack_move_to_mode(&self) -> bool {
+        self.attack_move_to_mode
+    }
+    pub fn clear_attack_move_to_mode(&mut self) {
+        self.attack_move_to_mode = false;
     }
 }
 

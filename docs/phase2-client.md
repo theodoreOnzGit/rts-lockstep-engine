@@ -91,6 +91,42 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch C2b (2026-11-05, GitHub #6): a click orders the selection.**
+`client::command_xlat` translates `CommandXlat.cpp`'s command translator and the selection questions of `InGameUI.cpp` it
+asks:
+- `evaluateContextCommand` with no GUI command pending: in upstream's order of precedence, the special power destination
+  override, resume construction, dock (all must qualify), repair, get repaired, get healed, hijack, car bomb, sabotage,
+  salvage, enter, attack (now or after moving), capture and the three hacks (through the first selected unit's command
+  set, upstream's "auto specials"), the rally point, the impossible shot, and otherwise a move (or waypoint, attack move,
+  force move), with each one's hint for a mouse-over;
+- `evaluateForceAttack`, `issueMoveToLocationCommand`, `issueAttackCommand` (one message for a group, else one per
+  selected unit), `createEnterMessage`, `issueSpecialPowerCommand` (for the auto specials), and the
+  `MSG_MOUSE_LEFT_CLICK`, alternate mouse `MSG_MOUSE_RIGHT_CLICK` and mouse-over hint cases;
+- `areSelectedObjectsControllable`, `canSelectedObjectsDoAction` and `getCanSelectedObjectsAttack` with their `ANY`/`ALL`
+  rules, and `canSelectedObjectsOverrideSpecialPowerDestination`.
+
+`client::command_world` answers the per-object questions from a `World`, through the action manager already translated
+(`canDockAt`, `canEnterObject`, `getCanAttackObject`, ...), and `canObjectForceAttack` with its spawn-slave and Firebase-rider
+cases. `InGameUI` gains the waypoint, force move and attack move modes. The stub of C2a is gone: the selection translator
+asks `evaluate_context_command(draw, pos, EVALUATE_ONLY)`, as upstream asks `TheGameClient`.
+
+Not translated yet: a pending GUI command (special powers, fire weapon, combat drop and the car bomb, hijack and sabotage
+modes, from the control bar: C2c), unit voices and the stats collector (no messages), and the double-click guard order
+(off in the shipped options).
+
+*Predictions before the runs:* written in each test's doc. In short: the ground gives `MSG_DO_MOVETO` (no group, no move);
+an attackable enemy `MSG_DO_ATTACK_OBJECT`, hinted "after moving" when out of range; an enterable unit of mine
+`MSG_ENTER(INVALID_ID, it)`, which wins over attacking it; one of mine with nothing to do, no command and no move; the
+infantry capture button issues its special power at the building. In the gate World, a click moves the selected Runner
+toward the point, and a click on an enemy beyond vision makes the selected Soldier close on it, the enemy not selected.
+
+*Results:* the translator's tests held on the first run. The end-to-end test held after three corrections to its World,
+none to the code: the recorder's skirmish Tank has no AI, so with the logic live it can neither be grouped nor move (the C2a
+test passes because its World leaves the AI ablated); the gate World was not a game in progress, and the dispatcher makes a
+command's group only in a game; and the gate's units are not `SELECTABLE`, which `Squad::getLiveObjects` requires. With
+selectable copies of the gate's Runner and Soldier, the Runner went 160 -> 75.2 from its goal in 90 frames, and the Soldier
+320 -> 235.1 from the enemy, which did not move. Full run (2026-11-05): 1184 tests pass in 203 suites; clippy found two `field_reassign_with_default` in the new tests, fixed (clean after); gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
 **Batch C2a (2026-11-04, GitHub #6): the selection, from a click to the logic's selected group.**
 The client's renderer-free translations go in the logic crate's `src/client/`, beside the logic and with no new dependency, so
 that they are tested without Bevy and run the same on the web and natively. Three pieces:
@@ -98,7 +134,8 @@ that they are tested without Bevy and run the same on the web and natively. Thre
   counts and the force-attack and prefer-selection modes). The list keeps upstream's order, newest first.
 - `client::selection_info`: `SelectionInfo` and `contextCommandForNewSelection`, which counts what a click would pick by whose
   it is and decides whether it is an order to the current selection. The order itself (`evaluateContextCommand`) is
-  `CommandXlat`'s, C2b; until then the host answers "no order", so a click selects.
+  `CommandXlat`'s, C2b; ~~until then the host answers "no order", so a click selects~~ **since C2b** the selection
+  translator asks the command translator.
 - `client::selection_xlat`: `addDrawableToList` (the pick filter: kinds, the fire base's gunners picking their container,
   fogged and stealthed enemies refused) and `SelectionTranslator`'s `MSG_MOUSE_LEFT_CLICK`. It emits
   `MSG_DESTROY_SELECTED_GROUP`, `MSG_CREATE_SELECTED_GROUP` and `MSG_REMOVE_FROM_SELECTED_GROUP`, as upstream does.

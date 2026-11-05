@@ -25,12 +25,13 @@
 //!   button feedback (the drag rectangle's hints) comes with the view (C2d).
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection, SelectionUiHost};
+use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator, CommandXlatHost};
 use crate::client::selection_info::{context_command_for_new_selection, SelectionInfo, SelectionInfoHost};
 use crate::common::game_common::Relationship;
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_STRUCTURE;
 use crate::common::message_stream::MessageType;
-use crate::common::message_types::{MSG_CREATE_SELECTED_GROUP, MSG_REMOVE_FROM_SELECTED_GROUP};
+use crate::common::message_types::{MSG_CREATE_SELECTED_GROUP, MSG_INVALID, MSG_REMOVE_FROM_SELECTED_GROUP};
 
 /// What the selection translator asks of the game beyond [`SelectionInfoHost`] and [`SelectionUiHost`].
 pub trait SelectionXlatHost: SelectionInfoHost + SelectionUiHost {
@@ -120,12 +121,13 @@ pub fn add_drawable_to_list(draw: DrawableId, list: &mut Vec<DrawableId>, h: &im
 impl SelectionTranslator {
     /// The `MSG_MOUSE_LEFT_CLICK` case: `in_region` are the drawables the view finds in the click's pixel region (a point
     /// when `is_point`), before [`add_drawable_to_list`]'s filter.
-    pub fn left_click(
+    pub fn left_click<H: CommandXlatHost>(
         &mut self,
         in_region: &[DrawableId],
         is_point: bool,
+        cmd: &CommandTranslator,
         ui: &mut InGameUiSelection,
-        h: &mut impl SelectionXlatHost,
+        h: &mut H,
     ) -> Disposition {
         if h.quit_menu_visible() {
             return Disposition::Destroy;
@@ -142,7 +144,12 @@ impl SelectionTranslator {
             return Disposition::Keep;
         }
         let mut si = SelectionInfo::default();
-        if context_command_for_new_selection(&current, &will_select, &mut si, is_point, h) {
+        let shown: &InGameUiSelection = ui;
+        let mut valid = |h: &mut H, d| {
+            let pos = h.drawable_object(d).map(|o| h.object_position(o)).unwrap_or_default();
+            cmd.evaluate_context_command(Some(d), &pos, CommandEvaluateType::EvaluateOnly, shown, h) != MSG_INVALID
+        };
+        if context_command_for_new_selection(&current, &will_select, &mut si, is_point, h, &mut valid) {
             return Disposition::Keep;
         }
         let mut add_to_group = ui.is_in_prefer_selection_mode();
@@ -265,6 +272,8 @@ pub(crate) mod tests {
         pub squads: BTreeMap<i32, Vec<ObjectId>>,
         pub looks: Vec<ObjectId>,
         pub ui_messages: Vec<Vec<u8>>,
+        /// The command translator's facts (C2b).
+        pub cmd: crate::client::command_xlat::tests::CmdFacts,
     }
 
     impl SelectionInfoHost for Host {
@@ -293,9 +302,6 @@ pub(crate) mod tests {
             false
         }
         fn use_alternate_mouse(&self) -> bool {
-            false
-        }
-        fn context_command_is_valid(&mut self, _draw: DrawableId) -> bool {
             false
         }
     }
@@ -361,26 +367,26 @@ pub(crate) mod tests {
         h.rel.insert(9, Relationship::Enemies);
         h.rel.insert(8, Relationship::Enemies);
         let (mut x, mut ui) = (SelectionTranslator::default(), InGameUiSelection::new());
-        assert_eq!(x.left_click(&[1], true, &mut ui, &mut h), Disposition::Destroy);
+        assert_eq!(x.left_click(&[1], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
         assert_eq!(
             h.messages,
             vec![(MSG_DESTROY_SELECTED_GROUP, Some(true), vec![]), (MSG_CREATE_SELECTED_GROUP, Some(true), vec![1])]
         );
         h.messages.clear();
-        assert_eq!(x.left_click(&[1, 2, 5], false, &mut ui, &mut h), Disposition::Destroy);
+        assert_eq!(x.left_click(&[1, 2, 5], false, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
         assert_eq!(h.messages.last(), Some(&(MSG_CREATE_SELECTED_GROUP, Some(true), vec![1, 2])));
         assert_eq!((ui.all_selected_drawables(), h.drags), (&[2, 1][..], 1));
         h.messages.clear();
         ui.set_prefer_selection_mode(true);
-        assert_eq!(x.left_click(&[1], true, &mut ui, &mut h), Disposition::Destroy);
+        assert_eq!(x.left_click(&[1], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
         assert_eq!(h.messages, vec![(MSG_REMOVE_FROM_SELECTED_GROUP, None, vec![1])]);
         assert_eq!(ui.all_selected_drawables(), &[2][..]);
         ui.set_prefer_selection_mode(false);
         ui.deselect_all_drawables(false, &mut h);
         h.messages.clear();
-        assert_eq!(x.left_click(&[8], true, &mut ui, &mut h), Disposition::Keep);
+        assert_eq!(x.left_click(&[8], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Keep);
         assert!(h.messages.is_empty());
-        assert_eq!(x.left_click(&[9], true, &mut ui, &mut h), Disposition::Destroy);
+        assert_eq!(x.left_click(&[9], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
         assert_eq!(h.messages.last(), Some(&(MSG_CREATE_SELECTED_GROUP, Some(true), vec![9])));
     }
 }
