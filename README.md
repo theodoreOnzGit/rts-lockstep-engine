@@ -28,7 +28,7 @@ unit is drawn as its collision shape, in its player's colour, with a health bar.
 --release`. On the web: `scripts/build_web.sh`, then serve `client/dist/`. The client only reads the logic; its tests check
 that the gate game's CRCs are unchanged with it attached. Screenshots of the gate game:
 [web](docs/images/c1_web_gate_game.png), [native](docs/images/c1_native_gate_game.png). The
-selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes the logic's selected group, tested end to end. So are the orders (C2b): a click on the ground or on a unit moves, attacks, enters, docks or repairs, as the original decides it, and in a test World a click drives the selected unit there.
+selection (C2a, #6) is translated in `src/client/`: a click or a drag becomes the logic's selected group, tested end to end. So are the orders (C2b): a click on the ground or on a unit moves, attacks, enters, docks or repairs, as the original decides it, and in a test World a click drives the selected unit there. The control bar's buttons follow (C2c): a button builds, upgrades, stops or sells, or puts the cursor in a mode whose click fires a special power or weapon.
 
 | Rust module | Translated from (`GeneralsMD/Code/...`) |
 |---|---|

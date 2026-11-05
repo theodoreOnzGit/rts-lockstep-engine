@@ -22,7 +22,7 @@
 //! An error from the logic's translation (`WeaponError`) answers "not possible" and is recorded in `cuts.team_live_errors`,
 //! where the tests look for it.
 
-use crate::client::command_xlat::{ActionType, SpecialPowerButton};
+use crate::client::command_xlat::{ActionType, GuiButton, TargetMode};
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::{CommandSourceType, ATTACK_NEW_TARGET, ATTACK_NEW_TARGET_FORCED};
 use crate::common::game_type::{ObjectId, INVALID_ID};
@@ -178,20 +178,56 @@ pub fn object_can_override_special_power_destination(w: &mut World, src: Option<
     ok_or_record(w, "canOverrideSpecialPowerDestination", r)
 }
 
+/// The World's button `index` (`cuts.command_buttons`) as the client reads it, with its special power's type and its
+/// sciences (from the command button store, by name).
+pub fn gui_button(w: &World, index: usize) -> Option<GuiButton> {
+    let b = w.cuts.command_buttons.get(index)?;
+    let special_power = b.special_power.and_then(|id| w.statics.special_power_store.find_special_power_template_by_id(id).map(|t| (id, t.special_power_type())));
+    let sciences = w.statics.command_buttons.find_command_button(&b.name).map(|c| c.science.iter().map(|s| s.0).collect()).unwrap_or_default();
+    Some(GuiButton {
+        index,
+        command_type: b.command_type,
+        options: b.options,
+        weapon_slot: b.weapon_slot,
+        max_shots_to_fire: b.max_shots_to_fire,
+        special_power,
+        thing_template: b.thing_template,
+        upgrade: b.upgrade,
+        sciences,
+    })
+}
+
+/// `TheActionManager->canDoSpecialPower(AtObject|AtLocation)(src, ..., CMD_FROM_PLAYER, template, options)` (the source's
+/// requirements checked, the default), by `mode`; a missing source or template cannot.
+pub fn object_can_do_special_power(w: &mut World, src: Option<ObjectId>, b: &GuiButton, mode: TargetMode) -> bool {
+    let (Some(s), Some((id, sp_type))) = (src, b.special_power) else { return false };
+    let sp = am::SpecialPowerTemplateRef { id, sp_type };
+    let r = match mode {
+        TargetMode::None => Ok(am::can_do_special_power(w, s, &sp, FROM_PLAYER, b.options, true)),
+        TargetMode::Object(t) => am::can_do_special_power_at_object(w, s, t, FROM_PLAYER, &sp, b.options, true),
+        TargetMode::Location(p, in_way) => am::can_do_special_power_at_location(w, s, &p, FROM_PLAYER, &sp, in_way, b.options, true),
+    };
+    ok_or_record(w, "canDoSpecialPower", r)
+}
+
+/// `TheActionManager->canFireWeapon(AtObject|AtLocation)(src, ..., CMD_FROM_PLAYER, slot)`, by `mode`.
+pub fn object_can_fire_weapon(w: &mut World, src: Option<ObjectId>, b: &GuiButton, mode: TargetMode) -> bool {
+    let r = match mode {
+        TargetMode::None => Ok(am::can_fire_weapon(w, src, b.weapon_slot, FROM_PLAYER)),
+        TargetMode::Object(t) => am::can_fire_weapon_at_object(w, src, Some(t), FROM_PLAYER, b.weapon_slot),
+        TargetMode::Location(p, in_way) => Ok(am::can_fire_weapon_at_location(w, src, Some(&p), FROM_PLAYER, b.weapon_slot, in_way)),
+    };
+    ok_or_record(w, "canFireWeapon", r)
+}
+
 /// `TheControlBar->findCommandSet(obj->getCommandSetString())`'s buttons that are `GUI_COMMAND_SPECIAL_POWER` with a special
 /// power template, in slot order.
-pub fn special_power_buttons(w: &World, obj: ObjectId) -> Vec<SpecialPowerButton> {
+pub fn special_power_buttons(w: &World, obj: ObjectId) -> Vec<GuiButton> {
     let name = w.object_get_command_set_string(obj);
     let Some(set) = w.control_bar_find_command_set(&name) else { return Vec::new() };
-    let mut out = Vec::new();
-    for i in 0..crate::logic::command_button::MAX_COMMANDS_PER_SET {
-        let Some(b) = w.command_set_get_command_button(set, i).and_then(|b| w.cuts.command_buttons.get(b)) else { continue };
-        if b.command_type != gui::SPECIAL_POWER {
-            continue;
-        }
-        let Some(id) = b.special_power else { continue };
-        let Some(t) = w.statics.special_power_store.find_special_power_template_by_id(id) else { continue };
-        out.push(SpecialPowerButton { template_id: id, sp_type: t.special_power_type(), options: b.options });
-    }
-    out
+    (0..crate::logic::command_button::MAX_COMMANDS_PER_SET)
+        .filter_map(|i| w.command_set_get_command_button(set, i))
+        .filter_map(|b| gui_button(w, b))
+        .filter(|b| b.command_type == gui::SPECIAL_POWER && b.special_power.is_some())
+        .collect()
 }

@@ -91,6 +91,35 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch C2c, part 1 (2026-11-05, GitHub #6): the control bar's buttons, and the cursor modes they start.**
+`client::control_bar` translates `ControlBar::processCommandUI` (ControlBarCommandProcessing.cpp): a button needing a target
+becomes InGameUI's pending GUI command; the others build a unit (`MSG_QUEUE_UNIT_CREATE` with a new production id, after
+`canMakeUnit`'s refusals and their messages), start a building's or a construction special's placement, cancel, queue and
+cancel upgrades, stop, sell, toggle attack move, evacuate, exit a container, fire, switch weapons, use a special power (from
+the unit or the shortcut bar), hack, overcharge, select every unit of a type, or buy a science. `GuiButton` is a button as the
+client reads it (`command_world::gui_button` makes it from the World's button facts).
+
+`evaluateContextCommand` gains the pending GUI command's branch: the shrubbery, mine and relationship filters, then
+`canSelectedObjectsDoAction` (car bomb, hijack, sabotage, combat drop into), `canSelectedObjectsDoSpecialPower` and
+`canSelectedObjectsEffectivelyUseWeapon` (InGameUI.cpp), answered through the action manager; `issueFireWeaponCommand`,
+`issueCombatDropCommand` and the shortcut half of `issueSpecialPowerCommand` (a power whose destination the player then
+steers selects its source). An invalid mode returns `MSG_INVALID_GUICOMMAND_HINT` whatever the type, as upstream does. A
+construction special issues nothing here (upstream's switch for it has no matching case); the placement makes it, in part 2.
+
+Not here: the buttons' windows, images and sounds, the radius cursor (the view, C2d); building placement
+(`PlaceEventTranslator`, part 2).
+
+*Predictions before the runs:* in each test's doc. In short: the build button makes `MSG_QUEUE_UNIT_CREATE(template, id)`,
+or without money only the EVA's voice and `GUI:NotEnoughMoneyToBuild`; a positional power becomes the pending command and
+sends nothing; select-all-of-type selects 1 and 3 of {1, 2, 3}; a pending power at a position, allowed, sends
+`MSG_DO_SPECIAL_POWER_AT_LOCATION(7, pos, INVALID_ANGLE, INVALID_ID, options, INVALID_ID)` and clears the mode; a weapon
+mode on an ally is invalid. In the gate World, the Caster's drop button, then a click at (200, 200), drops one Pup there.
+
+*Results:* the unit tests held on the first run. The end-to-end test held after one correction to its Caster: it has no
+vision, so all of player 1's map was shrouded and the daisy-cutter-type power was rightly refused (upstream refuses damaging
+powers on shrouded cells); with a vision of 250 the Pup stood at (200.0, 200.0) a frame after the click. Full run (2026-11-05): 1187 tests pass in 203 suites; clippy found six needless `&mut` borrows in the new tests,
+fixed (clean after); gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
 **Batch C2b (2026-11-05, GitHub #6): a click orders the selection.**
 `client::command_xlat` translates `CommandXlat.cpp`'s command translator and the selection questions of `InGameUI.cpp` it
 asks:

@@ -1478,13 +1478,13 @@ mod script_query_tests {
 }
 
 #[cfg(test)]
-mod command_button_object_tests {
+pub(crate) mod command_button_object_tests {
     use super::*;
     use crate::logic::world::script_actions::ScriptActionsHost;
 
     /// A caster with an `OCLSpecialPower` (its OCL drops a pup at the target location) and an AI; its command set holds the power's
     /// button and a stop button.
-    pub(super) const CASTER: &str = "\
+    pub(crate) const CASTER: &str = "\
 ObjectCreationList OCL_Drop\n CreateObject\n  ObjectNames = Pup\n  Count = 1\n End\nEnd\n\
 SpecialPower DropPower\n Enum = SPECIAL_DAISY_CUTTER\n ReloadTime = 0\n RadiusCursorRadius = 40\nEnd\n\
 Object Pup\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 2\n GeometryHeight = 2\n\

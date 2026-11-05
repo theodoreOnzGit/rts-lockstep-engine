@@ -24,9 +24,11 @@
 //! the selected unit's command set), set a rally point, force attack; and the hints a mouse-over makes.
 //!
 //! **What is not here yet:**
-//! - **A pending GUI command** (a control bar button that put the cursor in a mode: special powers, fire weapon, combat drop,
+//! - ~~**A pending GUI command** (a control bar button that put the cursor in a mode: special powers, fire weapon, combat drop,
 //!   the car bomb, hijack and sabotage modes, and construction specials) is C2c. Until then [`CommandTranslator::evaluate_context_command`]
-//!   runs as upstream does when `TheInGameUI->getGUICommand()` is `NULL`.
+//!   runs as upstream does when `TheInGameUI->getGUICommand()` is `NULL`.~~ **Since C2c** the pending GUI command is
+//!   evaluated too (with `issueFireWeaponCommand`, `issueCombatDropCommand`, the shortcut special powers, and InGameUI's
+//!   `canSelectedObjectsDoSpecialPower` and `canSelectedObjectsEffectivelyUseWeapon`).
 //! - **Unit voices** (`pickAndPlayUnitVoiceResponse`) and the stats collector are audio and debug; they change no message.
 //! - **The double-click guard order** (`m_doubleClickAttackMove`, off in the shipped options) and the right-button drag
 //!   bookkeeping that cancels build placement (C2c, with placement).
@@ -104,15 +106,16 @@ pub enum CmdArg {
     Location(Coord3D),
 }
 
-/// A `GUI_COMMAND_SPECIAL_POWER` button of a command set, as the capture and hack branches read it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SpecialPowerButton {
-    /// `getSpecialPowerTemplate()->getID()`.
-    pub template_id: u32,
-    /// `getSpecialPowerTemplate()->getSpecialPowerType()`.
-    pub sp_type: SpecialPowerType,
-    /// `getOptions()`.
-    pub options: u32,
+pub use crate::client::control_bar::GuiButton;
+use crate::client::control_bar::gui;
+
+/// What a special power or a weapon is aimed at (`canSelectedObjectsDoSpecialPower`'s order of precedence: no target, an
+/// object (`COMMAND_OPTION_NEED_OBJECT_TARGET`), else a position (`NEED_TARGET_POS`), with the object in the way).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TargetMode {
+    None,
+    Object(ObjectId),
+    Location(Coord3D, Option<ObjectId>),
 }
 
 /// What the command translator asks of the game, beyond the selection's questions. The per-object action questions are the
@@ -145,8 +148,18 @@ pub trait CommandXlatHost: SelectionGroupsHost {
     fn has_cliff_locomotor(&mut self, obj: ObjectId) -> bool;
     /// `TheTerrainLogic->isCliffCell(x, y)`.
     fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool;
-    /// `TheControlBar->findCommandSet(obj->getCommandSetString())`'s `GUI_COMMAND_SPECIAL_POWER` buttons, in slot order.
-    fn special_power_buttons(&mut self, obj: ObjectId) -> Vec<SpecialPowerButton>;
+    /// `TheControlBar->findCommandSet(obj->getCommandSetString())`'s `GUI_COMMAND_SPECIAL_POWER` buttons with a special
+    /// power, in slot order.
+    fn special_power_buttons(&mut self, obj: ObjectId) -> Vec<GuiButton>;
+    /// `TheActionManager->canDoSpecialPower` / `AtObject` / `AtLocation(src, ..., CMD_FROM_PLAYER, button's template,
+    /// button's options)` by `mode` (C2c).
+    fn object_can_do_special_power(&mut self, src: Option<ObjectId>, button: &GuiButton, mode: TargetMode) -> bool;
+    /// `TheActionManager->canFireWeapon` / `AtObject` / `AtLocation(src, ..., CMD_FROM_PLAYER, button's slot)` by `mode` (C2c).
+    fn object_can_fire_weapon(&mut self, src: Option<ObjectId>, button: &GuiButton, mode: TargetMode) -> bool;
+    /// `ThePlayerList->getLocalPlayer()->findMostReadyShortcutSpecialPowerOfType(spType)` (C2c).
+    fn most_ready_shortcut_special_power(&mut self, sp: SpecialPowerType) -> Option<ObjectId>;
+    /// `obj->findSpecialPowerWithOverridableDestination() != NULL` (C2c).
+    fn has_overridable_destination_special_power(&mut self, obj: ObjectId) -> bool;
     /// `TheMessageStream->appendMessage(t)` with its arguments: a command for the logic.
     fn append_command(&mut self, t: MessageType, args: &[CmdArg]);
     /// The same for a hint (`*_HINT`): for the client's hint spy and cursor, not the logic.
@@ -264,6 +277,71 @@ pub fn can_selected_objects_override_special_power_destination(
     rule == SelectionRules::All && !selected.is_empty() && qualify == selected.len()
 }
 
+/// The targets of a special power or weapon button by its options' precedence: none, the object, else the position. `None`
+/// when the options need what is missing.
+fn target_mode(b: &GuiButton, target: Option<ObjectId>, pos: &Coord3D) -> Option<TargetMode> {
+    let at_pos = b.options & opt::NEED_TARGET_POS != 0;
+    let at_obj = b.options & opt::NEED_OBJECT_TARGET != 0;
+    if at_obj {
+        return target.map(TargetMode::Object);
+    }
+    if at_pos {
+        return Some(TargetMode::Location(*pos, target));
+    }
+    Some(TargetMode::None)
+}
+
+/// `InGameUI::canSelectedObjectsDoSpecialPower(command, obj, pos, rule, options, ignoreSelObj)`: over the selection, or only
+/// `ignore_sel_obj` when given (the shortcut's source).
+pub fn can_selected_objects_do_special_power(
+    b: &GuiButton,
+    target: Option<ObjectId>,
+    pos: &Coord3D,
+    rule: SelectionRules,
+    ignore_sel_obj: Option<ObjectId>,
+    ui: &InGameUiSelection,
+    h: &mut impl CommandXlatHost,
+) -> bool {
+    let Some(mode) = target_mode(b, target, pos) else { return false };
+    let selected = match ignore_sel_obj {
+        Some(o) => vec![Some(o)],
+        None => objects_of(ui, h),
+    };
+    let mut qualify = 0;
+    for src in &selected {
+        if h.object_can_do_special_power(*src, b, mode) {
+            if rule == SelectionRules::Any {
+                return true;
+            }
+            qualify += 1;
+        }
+    }
+    rule == SelectionRules::All && !selected.is_empty() && qualify == selected.len()
+}
+
+/// `InGameUI::canSelectedObjectsEffectivelyUseWeapon(command, obj, pos, rule)`.
+pub fn can_selected_objects_effectively_use_weapon(
+    b: &GuiButton,
+    target: Option<ObjectId>,
+    pos: &Coord3D,
+    rule: SelectionRules,
+    ui: &InGameUiSelection,
+    h: &mut impl CommandXlatHost,
+) -> bool {
+    let Some(mode) = target_mode(b, target, pos) else { return false };
+    let selected = objects_of(ui, h);
+    let mut qualify = 0;
+    for src in &selected {
+        if h.object_can_fire_weapon(*src, b, mode) {
+            if rule == SelectionRules::Any {
+                return true;
+            }
+            qualify += 1;
+        }
+    }
+    rule == SelectionRules::All && !selected.is_empty() && qualify == selected.len()
+}
+
 /// `canSelectionSalvage(targetObj)`: the target is a salvage crate and a selected object is a salvager.
 fn can_selection_salvage(target: Option<ObjectId>, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> bool {
     let Some(t) = target else { return false };
@@ -369,50 +447,199 @@ impl CommandTranslator {
         MSG_ENTER
     }
 
-    /// `issueSpecialPowerCommand(command, commandType, target, pos, NULL)` for a set's special power button (the capture and
-    /// hack branches; the shortcut case is C2c's).
+    /// `issueSpecialPowerCommand(command, commandType, target, pos, ignoreSelObj)`: the power at the target object, the
+    /// position or neither, by the button's options; `ignore_sel_obj` is the source a shortcut names. A power used from the
+    /// shortcut bar whose destination the player then steers (the particle cannon, the spectre gunship) selects its source.
+    #[allow(clippy::too_many_arguments)]
     fn issue_special_power_command(
-        b: &SpecialPowerButton,
+        b: &GuiButton,
         ty: CommandEvaluateType,
         target: Option<DrawableId>,
         pos: &Coord3D,
-        ui: &InGameUiSelection,
+        ignore_sel_obj: Option<ObjectId>,
+        ui: &mut InGameUiSelection,
         h: &mut impl CommandXlatHost,
     ) -> MessageType {
-        let source = ui.first_selected_drawable();
+        let Some((sp_id, _)) = b.special_power else { return MSG_INVALID };
+        let source_obj = match ignore_sel_obj {
+            Some(o) => Some(o),
+            None => ui.first_selected_drawable().and_then(|d| h.drawable_object(d)),
+        };
+        let specific_source = ignore_sel_obj.unwrap_or(INVALID_ID);
         let target_obj = target.and_then(|d| h.drawable_object(d));
-        if b.options & opt::NEED_OBJECT_TARGET != 0 {
+        let t = if b.options & opt::NEED_OBJECT_TARGET != 0 {
             // `command->isValidObjectTarget(sourceDraw, target)`
-            let src_obj = source.and_then(|d| h.drawable_object(d));
-            let (Some(s), Some(t)) = (src_obj, target_obj) else { return MSG_INVALID };
+            let (Some(s), Some(t)) = (source_obj, target_obj) else { return MSG_INVALID };
             if !is_valid_relationship_target(b.options, h.object_relationship(s, t)) {
                 return MSG_INVALID;
             }
             if ty == CommandEvaluateType::DoCommand {
-                let args = [CmdArg::Int(b.template_id as i32), CmdArg::Object(t), CmdArg::Int(b.options as i32), CmdArg::Object(INVALID_ID)];
+                let args = [CmdArg::Int(sp_id as i32), CmdArg::Object(t), CmdArg::Int(b.options as i32), CmdArg::Object(specific_source)];
                 h.append_command(MSG_DO_SPECIAL_POWER_AT_OBJECT, &args);
             }
             MSG_DO_SPECIAL_POWER_AT_OBJECT
         } else if b.options & opt::NEED_TARGET_POS != 0 {
             if ty == CommandEvaluateType::DoCommand {
                 let args = [
-                    CmdArg::Int(b.template_id as i32),
+                    CmdArg::Int(sp_id as i32),
                     CmdArg::Location(*pos),
                     CmdArg::Real(INVALID_ANGLE),
                     CmdArg::Object(target_obj.unwrap_or(INVALID_ID)),
                     CmdArg::Int(b.options as i32),
-                    CmdArg::Object(INVALID_ID),
+                    CmdArg::Object(specific_source),
                 ];
                 h.append_command(MSG_DO_SPECIAL_POWER_AT_LOCATION, &args);
             }
             MSG_DO_SPECIAL_POWER_AT_LOCATION
         } else {
             if ty == CommandEvaluateType::DoCommand {
-                let args = [CmdArg::Int(b.template_id as i32), CmdArg::Int(b.options as i32), CmdArg::Object(INVALID_ID)];
+                let args = [CmdArg::Int(sp_id as i32), CmdArg::Int(b.options as i32), CmdArg::Object(specific_source)];
                 h.append_command(MSG_DO_SPECIAL_POWER, &args);
             }
             MSG_DO_SPECIAL_POWER
+        };
+        if b.command_type == gui::SPECIAL_POWER_FROM_SHORTCUT && ty == CommandEvaluateType::DoCommand {
+            // (upstream dereferences the source)
+            if let Some(o) = source_obj.filter(|&o| h.has_overridable_destination_special_power(o)) {
+                ui.deselect_all_drawables(true, h);
+                h.append_command(MSG_CREATE_SELECTED_GROUP_NO_SOUND, &[CmdArg::Bool(true), CmdArg::Object(o)]);
+                if let Some(d) = h.object_drawable(o) {
+                    ui.select_drawable(d, h);
+                }
+            }
         }
+        t
+    }
+
+    /// `issueCombatDropCommand(command, commandType, target, pos)`.
+    fn issue_combat_drop_command(b: &GuiButton, ty: CommandEvaluateType, target: Option<DrawableId>, pos: &Coord3D, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+        if target.is_some() && b.options & opt::NEED_OBJECT_TARGET != 0 {
+            let source = ui.first_selected_drawable().and_then(|d| h.drawable_object(d));
+            let target_obj = target.and_then(|d| h.drawable_object(d));
+            let (Some(s), Some(t)) = (source, target_obj) else { return MSG_INVALID };
+            if !is_valid_relationship_target(b.options, h.object_relationship(s, t)) {
+                return MSG_INVALID;
+            }
+            if ty == CommandEvaluateType::DoCommand {
+                h.append_command(MSG_COMBATDROP_AT_OBJECT, &[CmdArg::Object(t)]);
+            }
+            MSG_COMBATDROP_AT_OBJECT
+        } else if b.options & opt::NEED_TARGET_POS != 0 {
+            if ty == CommandEvaluateType::DoCommand {
+                h.append_command(MSG_COMBATDROP_AT_LOCATION, &[CmdArg::Location(*pos)]);
+            }
+            MSG_COMBATDROP_AT_LOCATION
+        } else {
+            MSG_INVALID
+        }
+    }
+
+    /// `issueFireWeaponCommand(command, commandType, target, pos)`.
+    fn issue_fire_weapon_command(b: &GuiButton, ty: CommandEvaluateType, target: Option<DrawableId>, pos: &Coord3D, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+        let doing = ty == CommandEvaluateType::DoCommand;
+        let target_obj = target.and_then(|d| h.drawable_object(d));
+        if b.options & opt::NEED_OBJECT_TARGET != 0 {
+            let Some(t) = target_obj else { return MSG_INVALID };
+            let Some(s) = ui.first_selected_drawable().and_then(|d| h.drawable_object(d)) else { return MSG_INVALID };
+            if !is_valid_relationship_target(b.options, h.object_relationship(s, t)) {
+                return MSG_INVALID;
+            }
+            if b.options & opt::ATTACK_OBJECTS_POSITION != 0 {
+                // "we want to attack the object's location instead"
+                if doing {
+                    let args = [CmdArg::Int(b.weapon_slot), CmdArg::Location(*pos), CmdArg::Int(b.max_shots_to_fire), CmdArg::Object(t)];
+                    h.append_command(MSG_DO_WEAPON_AT_LOCATION, &args);
+                }
+                return MSG_DO_WEAPON_AT_LOCATION;
+            }
+            if doing {
+                h.append_command(MSG_DO_WEAPON_AT_OBJECT, &[CmdArg::Int(b.weapon_slot), CmdArg::Object(t), CmdArg::Int(b.max_shots_to_fire)]);
+            }
+            MSG_DO_WEAPON_AT_OBJECT
+        } else if b.options & opt::NEED_TARGET_POS != 0 {
+            if doing {
+                let args = [CmdArg::Int(b.weapon_slot), CmdArg::Location(*pos), CmdArg::Int(b.max_shots_to_fire), CmdArg::Object(target_obj.unwrap_or(INVALID_ID))];
+                h.append_command(MSG_DO_WEAPON_AT_LOCATION, &args);
+            }
+            MSG_DO_WEAPON_AT_LOCATION
+        } else {
+            if doing {
+                // (upstream asserts a special power template is there to "do" with)
+                let id = b.special_power.map_or(0, |(id, _)| id as i32);
+                h.append_command(MSG_DO_WEAPON, &[CmdArg::Int(id)]);
+            }
+            MSG_DO_WEAPON
+        }
+    }
+
+    /// The pending GUI command's branch of `evaluateContextCommand`: a mode that needs a target (special power, fire weapon,
+    /// combat drop, car bomb, hijack, sabotage) is valid on `obj` / `pos` or not, and done, evaluated or hinted.
+    #[allow(clippy::too_many_arguments)]
+    fn gui_command_branch(
+        &self,
+        c: &GuiButton,
+        mut draw: Option<DrawableId>,
+        mut obj: Option<ObjectId>,
+        pos: &Coord3D,
+        ty: CommandEvaluateType,
+        ui: &mut InGameUiSelection,
+        h: &mut impl CommandXlatHost,
+    ) -> MessageType {
+        use crate::client::control_bar::opt as copt;
+        if obj.is_some_and(|o| h.is_kind_of(o, KINDOF_SHRUBBERY)) && c.options & copt::ALLOW_SHRUBBERY_TARGET == 0 {
+            draw = None;
+            obj = None;
+        }
+        if obj.is_some_and(|o| h.is_kind_of(o, KINDOF_MINE)) && c.options & copt::ALLOW_MINE_TARGET == 0 {
+            draw = None;
+            obj = None;
+        }
+        // "This case prevents rebels from using tranq darts on allies."
+        if obj.is_some_and(|o| c.options & opt::NEED_OBJECT_TARGET != 0 && !is_valid_relationship_target(c.options, h.relationship_to_local_player(o))) {
+            draw = None;
+            obj = None;
+        }
+        let object_id = obj.unwrap_or(INVALID_ID);
+        let shortcut_unit = if c.command_type == gui::SPECIAL_POWER_FROM_SHORTCUT {
+            c.special_power.and_then(|(_, t)| h.most_ready_shortcut_special_power(t))
+        } else {
+            None
+        };
+        let any = SelectionRules::Any;
+        let valid = match c.command_type {
+            gui::CONVERT_TO_CARBOMB => can_selected_objects_do_action(ActionType::ConvertObjectToCarbomb, obj, any, false, ui, h),
+            gui::HIJACK_VEHICLE => can_selected_objects_do_action(ActionType::HijackVehicle, obj, any, false, ui, h),
+            gui::SABOTAGE_BUILDING => can_selected_objects_do_action(ActionType::SabotageBuilding, obj, any, false, ui, h),
+            gui::SPECIAL_POWER_FROM_SHORTCUT => shortcut_unit.is_some_and(|u| can_selected_objects_do_special_power(c, obj, pos, any, Some(u), ui, h)),
+            gui::SPECIAL_POWER => can_selected_objects_do_special_power(c, obj, pos, any, None, ui, h),
+            gui::FIRE_WEAPON => can_selected_objects_effectively_use_weapon(c, obj, pos, any, ui, h),
+            gui::COMBATDROP => obj.is_none() || can_selected_objects_do_action(ActionType::CombatdropInto, obj, any, false, ui, h),
+            _ => false,
+        };
+        if !valid {
+            // (made whatever the type, as upstream does: an invalid mode is still "a command" to the selection translator)
+            h.append_hint(MSG_INVALID_GUICOMMAND_HINT, &[CmdArg::Object(object_id)]);
+            return MSG_INVALID_GUICOMMAND_HINT;
+        }
+        if ty == CommandEvaluateType::DoHint {
+            h.append_hint(MSG_VALID_GUICOMMAND_HINT, &[CmdArg::Object(object_id)]);
+            return MSG_VALID_GUICOMMAND_HINT;
+        }
+        let t = match c.command_type {
+            gui::CONVERT_TO_CARBOMB | gui::HIJACK_VEHICLE | gui::SABOTAGE_BUILDING => self.create_enter_message(draw, ty, h),
+            gui::SPECIAL_POWER_FROM_SHORTCUT => match shortcut_unit {
+                Some(u) => Self::issue_special_power_command(c, ty, draw, pos, Some(u), ui, h),
+                None => MSG_INVALID,
+            },
+            gui::SPECIAL_POWER => Self::issue_special_power_command(c, ty, draw, pos, None, ui, h),
+            gui::FIRE_WEAPON => Self::issue_fire_weapon_command(c, ty, draw, pos, ui, h),
+            gui::COMBATDROP => Self::issue_combat_drop_command(c, ty, draw, pos, ui, h),
+            _ => MSG_INVALID,
+        };
+        if ty == CommandEvaluateType::DoCommand {
+            ui.set_gui_command(None);
+        }
+        t
     }
 
     /// `evaluateForceAttack(draw, pos, type)`.
@@ -478,26 +705,26 @@ impl CommandTranslator {
         ty: CommandEvaluateType,
         draw: Option<DrawableId>,
         pos: &Coord3D,
-        ui: &InGameUiSelection,
+        ui: &mut InGameUiSelection,
         h: &mut impl CommandXlatHost,
     ) -> MessageType {
         let Some(source) = ui.first_selected_drawable().and_then(|d| h.drawable_object(d)) else { return MSG_INVALID };
         for b in h.special_power_buttons(source) {
-            if types.contains(&b.sp_type) {
-                return Self::issue_special_power_command(&b, ty, draw, pos, ui, h);
+            if b.special_power.is_some_and(|(_, t)| types.contains(&t)) {
+                return Self::issue_special_power_command(&b, ty, draw, pos, None, ui, h);
             }
         }
         MSG_INVALID
     }
 
-    /// `evaluateContextCommand(draw, pos, type)` with no GUI command pending (see the module docs): the command a click on
-    /// `draw` (or on the ground at `pos`) gives the selection, made when `ty` is `DoCommand`, hinted when `DoHint`.
+    /// `evaluateContextCommand(draw, pos, type)`: the command a click on `draw` (or on the ground at `pos`) gives the selection,
+    /// or the pending GUI command, made when `ty` is `DoCommand`, hinted when `DoHint`.
     pub fn evaluate_context_command(
         &self,
         draw: Option<DrawableId>,
         pos: &Coord3D,
         ty: CommandEvaluateType,
-        ui: &InGameUiSelection,
+        ui: &mut InGameUiSelection,
         h: &mut impl CommandXlatHost,
     ) -> MessageType {
         use CommandEvaluateType::{DoCommand, DoHint, EvaluateOnly};
@@ -524,7 +751,9 @@ impl CommandTranslator {
             return MSG_INVALID;
         }
         // "Now that we can select non-controllable units/structures, don't allow any actions to be performed."
-        if !are_selected_objects_controllable(ui, h) {
+        let command = ui.gui_command().cloned();
+        let ct = command.as_ref().map_or(gui::NONE, |c| c.command_type);
+        if !(are_selected_objects_controllable(ui, h) || ct == gui::SPECIAL_POWER_FROM_SHORTCUT) {
             return MSG_INVALID;
         }
         if ui.is_in_waypoint_mode() {
@@ -534,9 +763,18 @@ impl CommandTranslator {
             }
             return self.issue_move_to_location_command(pos, draw, ty, ui, h);
         }
+        if let Some(c) = command.as_ref().filter(|c| c.is_context_command() || ct == gui::SPECIAL_POWER || ct == gui::SPECIAL_POWER_FROM_SHORTCUT) {
+            return self.gui_command_branch(c, draw, obj, pos, ty, ui, h);
+        }
+        if ct == gui::SPECIAL_POWER_CONSTRUCT || ct == gui::SPECIAL_POWER_CONSTRUCT_FROM_SHORTCUT {
+            // The placement interface builds these (C2c's placement). Upstream's `DO_COMMAND` switch here only has cases for
+            // `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT` and `GUI_COMMAND_SPECIAL_POWER`, which a construction command never
+            // is: nothing is issued.
+            return MSG_INVALID;
+        }
         let force = ui.is_in_force_attack_mode();
         let any = SelectionRules::Any;
-        let can = |a: ActionType, rule: SelectionRules, extra: bool, h: &mut _| can_selected_objects_do_action(a, obj, rule, extra, ui, h);
+        let can = |a: ActionType, rule: SelectionRules, extra: bool, ui: &InGameUiSelection, h: &mut _| can_selected_objects_do_action(a, obj, rule, extra, ui, h);
         let mut result = ATTACKRESULT_NOT_POSSIBLE;
         if can_selected_objects_override_special_power_destination(pos, any, SPECIAL_INVALID, ui, h) {
             return match ty {
@@ -555,19 +793,19 @@ impl CommandTranslator {
         }
         // (the branches below test `draw`; with `draw` set, `obj` is too)
         let o = obj.unwrap_or(INVALID_ID);
-        if draw.is_some() && !force && can(ActionType::ResumeConstruction, any, false, h) {
+        if draw.is_some() && !force && can(ActionType::ResumeConstruction, any, false, ui, h) {
             return Self::object_branch(MSG_RESUME_CONSTRUCTION, MSG_RESUME_CONSTRUCTION_HINT, o, ty, h);
         }
-        if draw.is_some() && !force && can(ActionType::DockAt, SelectionRules::All, false, h) {
+        if draw.is_some() && !force && can(ActionType::DockAt, SelectionRules::All, false, ui, h) {
             return Self::object_branch(MSG_DOCK, MSG_DOCK_HINT, o, ty, h);
         }
-        if draw.is_some() && !force && can(ActionType::RepairObject, any, false, h) {
+        if draw.is_some() && !force && can(ActionType::RepairObject, any, false, ui, h) {
             return Self::object_branch(MSG_DO_REPAIR, MSG_DO_REPAIR_HINT, o, ty, h);
         }
-        if draw.is_some() && !force && can(ActionType::GetRepairedAt, any, false, h) {
+        if draw.is_some() && !force && can(ActionType::GetRepairedAt, any, false, ui, h) {
             return Self::object_branch(MSG_GET_REPAIRED, MSG_GET_REPAIRED_HINT, o, ty, h);
         }
-        if draw.is_some() && !force && can(ActionType::GetHealedAt, any, false, h) {
+        if draw.is_some() && !force && can(ActionType::GetHealedAt, any, false, ui, h) {
             return Self::object_branch(MSG_GET_HEALED, MSG_GET_HEALED_HINT, o, ty, h);
         }
         for (action, hint) in [
@@ -575,7 +813,7 @@ impl CommandTranslator {
             (ActionType::ConvertObjectToCarbomb, MSG_CONVERT_TO_CARBOMB_HINT),
             (ActionType::SabotageBuilding, MSG_SABOTAGE_HINT),
         ] {
-            if draw.is_some() && !force && can(action, any, false, h) {
+            if draw.is_some() && !force && can(action, any, false, ui, h) {
                 if ty == DoHint {
                     h.append_hint(hint, &[CmdArg::Object(o)]);
                     return hint;
@@ -594,7 +832,7 @@ impl CommandTranslator {
             }
             return MSG_DO_SALVAGE;
         }
-        if draw.is_some() && !force && can(ActionType::EnterObject, any, true, h) {
+        if draw.is_some() && !force && can(ActionType::EnterObject, any, true, ui, h) {
             if ty == DoHint {
                 h.append_hint(MSG_ENTER_HINT, &[CmdArg::Object(o)]);
                 return MSG_ENTER_HINT;
@@ -613,17 +851,17 @@ impl CommandTranslator {
                 }
             }
         }
-        if draw.is_some() && can(ActionType::CaptureBuilding, any, false, h) {
+        if draw.is_some() && can(ActionType::CaptureBuilding, any, false, ui, h) {
             // upstream walks the set for either type when commanding, and hints from the first matching button
             if ty == DoHint {
                 let Some(source) = ui.first_selected_drawable().and_then(|d| h.drawable_object(d)) else { return MSG_INVALID };
                 let mut t = MSG_INVALID;
                 for b in h.special_power_buttons(source) {
                     // (no `break` upstream: a later button's hint is made too)
-                    if b.sp_type == SPECIAL_BLACKLOTUS_CAPTURE_BUILDING {
+                    if b.special_power.map(|(_, t)| t) == Some(SPECIAL_BLACKLOTUS_CAPTURE_BUILDING) {
                         t = MSG_HACK_HINT;
                         h.append_hint(t, &[CmdArg::Object(o)]);
-                    } else if b.sp_type == SPECIAL_INFANTRY_CAPTURE_BUILDING {
+                    } else if b.special_power.map(|(_, t)| t) == Some(SPECIAL_INFANTRY_CAPTURE_BUILDING) {
                         t = MSG_CAPTUREBUILDING_HINT;
                         h.append_hint(t, &[CmdArg::Object(o)]);
                     }
@@ -637,7 +875,7 @@ impl CommandTranslator {
             (ActionType::StealCashViaHacking, SPECIAL_BLACKLOTUS_STEAL_CASH_HACK),
             (ActionType::DisableBuildingViaHacking, SPECIAL_HACKER_DISABLE_BUILDING),
         ] {
-            if draw.is_some() && can(action, any, false, h) {
+            if draw.is_some() && can(action, any, false, ui, h) {
                 if ty == DoHint {
                     h.append_hint(MSG_HACK_HINT, &[CmdArg::Object(o)]);
                     return MSG_HACK_HINT;
@@ -697,7 +935,7 @@ impl CommandTranslator {
 
     /// `MSG_MOUSEOVER_DRAWABLE_HINT` / `MSG_MOUSEOVER_LOCATION_HINT`: with something selected, the hint of the command a click
     /// on `draw` (at its position) or on the ground at `pos` would give.
-    pub fn mouse_over(&self, draw: Option<DrawableId>, pos: &Coord3D, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+    pub fn mouse_over(&self, draw: Option<DrawableId>, pos: &Coord3D, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
         let pos = match draw {
             Some(d) => {
                 if ui.select_count() == 0 {
@@ -752,10 +990,13 @@ pub(crate) mod tests {
         actions: BTreeSet<(ObjectId, u8, ObjectId)>,
         /// `(src, target)`: the attack result (not possible when absent).
         attacks: BTreeMap<(ObjectId, ObjectId), CanAttackResultValue>,
-        commands: Vec<(MessageType, Vec<CmdArg>)>,
+        pub(crate) commands: Vec<(MessageType, Vec<CmdArg>)>,
         hints: Vec<(MessageType, Vec<CmdArg>)>,
         no_path: bool,
-        buttons: Vec<SpecialPowerButton>,
+        buttons: Vec<GuiButton>,
+        /// `(src, button index)` whose special power or weapon is allowed, at any target.
+        powers: BTreeSet<(ObjectId, usize)>,
+        shortcut: Option<ObjectId>,
     }
 
     fn code(a: ActionType) -> u8 {
@@ -812,8 +1053,20 @@ pub(crate) mod tests {
         fn is_cliff_cell(&mut self, _x: f32, _y: f32) -> bool {
             false
         }
-        fn special_power_buttons(&mut self, _obj: ObjectId) -> Vec<SpecialPowerButton> {
+        fn special_power_buttons(&mut self, _obj: ObjectId) -> Vec<GuiButton> {
             self.cmd.buttons.clone()
+        }
+        fn object_can_do_special_power(&mut self, src: Option<ObjectId>, button: &GuiButton, _mode: TargetMode) -> bool {
+            src.is_some_and(|s| self.cmd.powers.contains(&(s, button.index)))
+        }
+        fn object_can_fire_weapon(&mut self, src: Option<ObjectId>, button: &GuiButton, _mode: TargetMode) -> bool {
+            src.is_some_and(|s| self.cmd.powers.contains(&(s, button.index)))
+        }
+        fn most_ready_shortcut_special_power(&mut self, _sp: SpecialPowerType) -> Option<ObjectId> {
+            self.cmd.shortcut
+        }
+        fn has_overridable_destination_special_power(&mut self, _obj: ObjectId) -> bool {
+            false
         }
         fn append_command(&mut self, t: MessageType, args: &[CmdArg]) {
             self.cmd.commands.push((t, args.to_vec()));
@@ -846,52 +1099,52 @@ pub(crate) mod tests {
         x.observe_message(MSG_CREATE_SELECTED_GROUP);
         let ground = Coord3D { x: 50.0, y: 0.0, z: 0.0 };
 
-        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &ui, &mut h), MSG_DO_MOVETO);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_DO_MOVETO);
         assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_MOVETO, vec![CmdArg::Location(ground)])));
-        assert_eq!(x.evaluate_context_command(None, &ground, DoHint, &ui, &mut h), MSG_DO_MOVETO_HINT);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoHint, &mut ui, &mut h), MSG_DO_MOVETO_HINT);
         h.cmd.no_path = true;
-        assert_eq!(x.evaluate_context_command(None, &ground, DoHint, &ui, &mut h), MSG_DO_INVALID_HINT);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoHint, &mut ui, &mut h), MSG_DO_INVALID_HINT);
         h.cmd.no_path = false;
 
         h.cmd.attacks.insert((1, 9), ATTACKRESULT_POSSIBLE);
-        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &ui, &mut h), MSG_DO_ATTACK_OBJECT);
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &mut ui, &mut h), MSG_DO_ATTACK_OBJECT);
         assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_ATTACK_OBJECT, vec![CmdArg::Object(9)])));
         h.cmd.attacks.insert((1, 9), ATTACKRESULT_POSSIBLE_AFTER_MOVING);
-        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoHint, &ui, &mut h), MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT);
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoHint, &mut ui, &mut h), MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT);
 
         h.cmd.attacks.insert((1, 2), ATTACKRESULT_POSSIBLE);
         h.cmd.actions.insert((1, code(ActionType::EnterObject), 2));
-        assert_eq!(x.evaluate_context_command(Some(2), &ground, DoCommand, &ui, &mut h), MSG_ENTER);
+        assert_eq!(x.evaluate_context_command(Some(2), &ground, DoCommand, &mut ui, &mut h), MSG_ENTER);
         assert_eq!(h.cmd.commands.pop(), Some((MSG_ENTER, vec![CmdArg::Object(INVALID_ID), CmdArg::Object(2)])));
         h.cmd.actions.clear();
         h.cmd.attacks.remove(&(1, 2));
         let before = h.cmd.commands.len();
-        assert_eq!(x.evaluate_context_command(Some(2), &ground, DoCommand, &ui, &mut h), MSG_INVALID);
+        assert_eq!(x.evaluate_context_command(Some(2), &ground, DoCommand, &mut ui, &mut h), MSG_INVALID);
         assert_eq!(h.cmd.commands.len(), before, "no move onto one of mine");
 
         x.observe_message(MSG_DESTROY_SELECTED_GROUP);
-        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &ui, &mut h), MSG_INVALID);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_INVALID);
         h.cmd.attacks.insert((1, 9), ATTACKRESULT_POSSIBLE);
-        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &ui, &mut h), MSG_DO_ATTACK_OBJECT);
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &mut ui, &mut h), MSG_DO_ATTACK_OBJECT);
         assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_ATTACK_OBJECT, vec![CmdArg::Object(9)])));
         x.observe_message(MSG_ADD_TEAM0);
 
         ui.set_waypoint_mode(true);
-        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &ui, &mut h), MSG_ADD_WAYPOINT);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_ADD_WAYPOINT);
         ui.set_waypoint_mode(false);
         ui.set_attack_move_to_mode(true);
-        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &ui, &mut h), MSG_DO_ATTACKMOVETO);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_DO_ATTACKMOVETO);
         ui.clear_attack_move_to_mode();
 
         ui.deselect_all_drawables(false, &mut h);
         ui.select_drawable(3, &mut h);
         h.cmd.actions.insert((3, code(ActionType::CaptureBuilding), 9));
-        let capture = SpecialPowerButton { template_id: 7, sp_type: SPECIAL_INFANTRY_CAPTURE_BUILDING, options: opt::NEED_TARGET_ENEMY_OBJECT };
+        let capture = GuiButton { command_type: gui::SPECIAL_POWER, special_power: Some((7, SPECIAL_INFANTRY_CAPTURE_BUILDING)), options: opt::NEED_TARGET_ENEMY_OBJECT, ..Default::default() };
         h.cmd.buttons = vec![capture];
-        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &ui, &mut h), MSG_DO_SPECIAL_POWER_AT_OBJECT);
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &mut ui, &mut h), MSG_DO_SPECIAL_POWER_AT_OBJECT);
         let args = vec![CmdArg::Int(7), CmdArg::Object(9), CmdArg::Int(opt::NEED_TARGET_ENEMY_OBJECT as i32), CmdArg::Object(INVALID_ID)];
         assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_SPECIAL_POWER_AT_OBJECT, args)));
-        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoHint, &ui, &mut h), MSG_CAPTUREBUILDING_HINT);
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoHint, &mut ui, &mut h), MSG_CAPTUREBUILDING_HINT);
     }
 
     /// C2b: the selection questions' rules and the click. Predicted from InGameUI.cpp: with 1 and 2 selected and only 1 able
@@ -927,5 +1180,61 @@ pub(crate) mod tests {
         ui.set_force_attack_mode(true);
         assert!(x.click(false, true, &ground, None, &mut ui, &mut h));
         assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_FORCE_ATTACK_GROUND, vec![CmdArg::Location(ground)])));
+    }
+
+    /// C2c: the pending GUI command's branch of `evaluateContextCommand`. Predicted from CommandXlat.cpp and InGameUI.cpp, with
+    /// my unit 1 selected as a group, an enemy 9 and the ground at (50, 0):
+    /// - a special power at a position (button 4, template 7), allowed for unit 1: hinted `MSG_VALID_GUICOMMAND_HINT`; done,
+    ///   `MSG_DO_SPECIAL_POWER_AT_LOCATION(7, pos, INVALID_ANGLE, INVALID_ID, options, INVALID_ID)` and the GUI command is
+    ///   cleared; not allowed: `MSG_INVALID_GUICOMMAND_HINT` (for a command too, as upstream returns it);
+    /// - a weapon at an enemy object (button 5, slot 1, 3 shots): `MSG_DO_WEAPON_AT_OBJECT(1, 9, 3)`; at an ally the
+    ///   relationship filter drops the object, so it is invalid;
+    /// - a combat drop at a position: `MSG_COMBATDROP_AT_LOCATION(pos)`;
+    /// - a special power from the shortcut bar with no ready source: invalid; with source 4 ready: the message names it.
+    #[test]
+    fn a_pending_gui_command_is_evaluated() {
+        use crate::client::control_bar::opt as copt;
+        use CommandEvaluateType::{DoCommand, DoHint};
+        let mut h = Host { mine: vec![1, 2], ..Default::default() };
+        h.rel.insert(9, Relationship::Enemies);
+        let mut ui = InGameUiSelection::new();
+        ui.select_drawable(1, &mut h);
+        let mut x = CommandTranslator::default();
+        x.observe_message(MSG_CREATE_SELECTED_GROUP);
+        let ground = Coord3D { x: 50.0, y: 0.0, z: 0.0 };
+
+        let power = GuiButton { index: 4, command_type: gui::SPECIAL_POWER, options: opt::NEED_TARGET_POS, special_power: Some((7, 1)), ..Default::default() };
+        ui.set_gui_command(Some(power.clone()));
+        h.cmd.powers.insert((1, 4));
+        assert_eq!(x.evaluate_context_command(None, &ground, DoHint, &mut ui, &mut h), MSG_VALID_GUICOMMAND_HINT);
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_DO_SPECIAL_POWER_AT_LOCATION);
+        let args = vec![CmdArg::Int(7), CmdArg::Location(ground), CmdArg::Real(INVALID_ANGLE), CmdArg::Object(INVALID_ID), CmdArg::Int(opt::NEED_TARGET_POS as i32), CmdArg::Object(INVALID_ID)];
+        assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_SPECIAL_POWER_AT_LOCATION, args)));
+        assert_eq!(ui.gui_command(), None);
+        h.cmd.powers.clear();
+        ui.set_gui_command(Some(power));
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_INVALID_GUICOMMAND_HINT);
+        assert!(h.cmd.commands.is_empty());
+
+        let weapon = GuiButton { index: 5, command_type: gui::FIRE_WEAPON, options: opt::NEED_TARGET_ENEMY_OBJECT | copt::CONTEXTMODE_COMMAND, weapon_slot: 1, max_shots_to_fire: 3, ..Default::default() };
+        ui.set_gui_command(Some(weapon.clone()));
+        h.cmd.powers.insert((1, 5));
+        assert_eq!(x.evaluate_context_command(Some(9), &ground, DoCommand, &mut ui, &mut h), MSG_DO_WEAPON_AT_OBJECT);
+        assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_WEAPON_AT_OBJECT, vec![CmdArg::Int(1), CmdArg::Object(9), CmdArg::Int(3)])));
+        ui.set_gui_command(Some(weapon));
+        assert_eq!(x.evaluate_context_command(Some(2), &ground, DoCommand, &mut ui, &mut h), MSG_INVALID_GUICOMMAND_HINT);
+
+        let drop = GuiButton { index: 6, command_type: gui::COMBATDROP, options: opt::NEED_TARGET_POS | copt::CONTEXTMODE_COMMAND, ..Default::default() };
+        ui.set_gui_command(Some(drop));
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_COMBATDROP_AT_LOCATION);
+        assert_eq!(h.cmd.commands.pop(), Some((MSG_COMBATDROP_AT_LOCATION, vec![CmdArg::Location(ground)])));
+
+        let shortcut = GuiButton { index: 7, command_type: gui::SPECIAL_POWER_FROM_SHORTCUT, options: opt::NEED_TARGET_POS, special_power: Some((8, 2)), ..Default::default() };
+        ui.set_gui_command(Some(shortcut.clone()));
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_INVALID_GUICOMMAND_HINT);
+        h.cmd.shortcut = Some(4);
+        h.cmd.powers.insert((4, 7));
+        assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_DO_SPECIAL_POWER_AT_LOCATION);
+        assert_eq!(h.cmd.commands.pop().map(|(_, a)| a[5]), Some(CmdArg::Object(4)));
     }
 }

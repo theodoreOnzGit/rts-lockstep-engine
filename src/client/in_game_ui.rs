@@ -69,6 +69,14 @@ pub struct InGameUiSelection {
     force_move_to_mode: bool,
     /// `m_attackMoveToMode` (C2b).
     attack_move_to_mode: bool,
+    /// `m_pendingGUICommand` (C2c): the button whose target the cursor is picking.
+    gui_command: Option<crate::client::control_bar::GuiButton>,
+    /// `m_pendingPlaceType` (C2c): the thing template being placed.
+    pending_place_type: Option<u16>,
+    /// `m_pendingPlaceSourceObjectID` (C2c): the object that will build it.
+    pending_place_source: Option<crate::common::game_type::ObjectId>,
+    /// `m_preventLeftClickDeselectionInAlternateMouseModeForOneClick` (C2c).
+    prevent_left_click_deselection_once: bool,
 }
 
 impl InGameUiSelection {
@@ -210,6 +218,45 @@ impl InGameUiSelection {
     }
     pub fn clear_attack_move_to_mode(&mut self) {
         self.attack_move_to_mode = false;
+    }
+    /// `toggleAttackMoveToMode()` (C2c).
+    pub fn toggle_attack_move_to_mode(&mut self) {
+        self.attack_move_to_mode = !self.attack_move_to_mode;
+    }
+
+    /// `setGUICommand(command)` (C2c): a command that needs no target is refused ("does not need additional user
+    /// interaction", a `DEBUG_ASSERTCRASH` upstream) and clears the pending one. The cursor and radius cursor are the view's
+    /// (C2d); the recorder's playback guard comes with the replay viewer.
+    pub fn set_gui_command(&mut self, command: Option<crate::client::control_bar::GuiButton>) {
+        if command.as_ref().is_some_and(|c| c.options & crate::client::control_bar::opt::NEED_TARGET == 0) {
+            self.gui_command = None;
+            return;
+        }
+        self.gui_command = command;
+    }
+    /// `getGUICommand()` (C2c).
+    pub fn gui_command(&self) -> Option<&crate::client::control_bar::GuiButton> {
+        self.gui_command.as_ref()
+    }
+
+    /// `placeBuildAvailable(build, buildDrawable)` (C2c): start (or with `None`, end) placing `build`, built by the object of
+    /// `builder`. The building at the cursor and the cursor itself are the view's (C2d).
+    pub fn place_build_available(&mut self, build: Option<u16>, builder: Option<DrawableId>, h: &impl crate::client::selection_info::SelectionInfoHost) {
+        // (upstream first ends a placement under way when a new one starts; here that is the same assignment)
+        self.pending_place_type = build;
+        self.prevent_left_click_deselection_once = self.pending_place_source.is_some();
+        self.pending_place_source = builder.and_then(|d| h.drawable_object(d));
+    }
+    /// `getPendingPlaceType()` / `getPendingPlaceSourceObjectID()` (C2c).
+    pub fn pending_place_type(&self) -> Option<u16> {
+        self.pending_place_type
+    }
+    pub fn pending_place_source(&self) -> Option<crate::common::game_type::ObjectId> {
+        self.pending_place_source
+    }
+    /// `getPreventLeftClickDeselectionInAlternateMouseModeForOneClick()` (C2c).
+    pub fn prevent_left_click_deselection_once(&self) -> bool {
+        self.prevent_left_click_deselection_once
     }
 }
 

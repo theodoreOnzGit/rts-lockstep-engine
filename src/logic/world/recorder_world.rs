@@ -541,8 +541,20 @@ mod tests {
         fn is_cliff_cell(&mut self, x: f32, y: f32) -> bool {
             crate::logic::ai::pathfinder::PathfinderHost::is_cliff_cell(&self.w, x, y)
         }
-        fn special_power_buttons(&mut self, obj: ObjectId) -> Vec<crate::client::command_xlat::SpecialPowerButton> {
+        fn special_power_buttons(&mut self, obj: ObjectId) -> Vec<crate::client::command_xlat::GuiButton> {
             crate::client::command_world::special_power_buttons(&self.w, obj)
+        }
+        fn object_can_do_special_power(&mut self, src: Option<ObjectId>, button: &crate::client::command_xlat::GuiButton, mode: crate::client::command_xlat::TargetMode) -> bool {
+            crate::client::command_world::object_can_do_special_power(&mut self.w, src, button, mode)
+        }
+        fn object_can_fire_weapon(&mut self, src: Option<ObjectId>, button: &crate::client::command_xlat::GuiButton, mode: crate::client::command_xlat::TargetMode) -> bool {
+            crate::client::command_world::object_can_fire_weapon(&mut self.w, src, button, mode)
+        }
+        fn most_ready_shortcut_special_power(&mut self, sp: i32) -> Option<ObjectId> {
+            crate::logic::world::player_objects::player_find_most_ready_shortcut_special_power_of_type(&mut self.w, self.p, sp).ok().flatten()
+        }
+        fn has_overridable_destination_special_power(&mut self, obj: ObjectId) -> bool {
+            self.w.find_special_power_with_overridable_destination(obj).is_some()
         }
         fn append_command(&mut self, t: crate::common::message_stream::MessageType, args: &[crate::client::command_xlat::CmdArg]) {
             use crate::client::command_xlat::CmdArg;
@@ -562,6 +574,57 @@ mod tests {
         fn append_hint(&mut self, t: crate::common::message_stream::MessageType, _args: &[crate::client::command_xlat::CmdArg]) {
             self.hints.push(t);
         }
+    }
+
+    /// The control bar's questions (C2c), from the World where this file's tests ask them; the others answer as noted.
+    impl crate::client::control_bar::ControlBarHost for ClientOfWorld {
+        fn can_make_unit(&mut self, builder: Option<ObjectId>, what: Option<u16>) -> crate::logic::world::build_assistant::CanMakeType {
+            use crate::logic::world::build_assistant::{build_assistant_can_make_unit, CanMakeType};
+            match (builder, what) {
+                (Some(b), Some(t)) => build_assistant_can_make_unit(&mut self.w, b, t.into()).unwrap_or(CanMakeType::NoPrereq),
+                _ => CanMakeType::NoPrereq,
+            }
+        }
+        fn eva_insufficient_funds(&mut self) {}
+        fn request_unique_unit_id(&mut self, factory: ObjectId) -> Option<u32> {
+            let pu = self.w.get_production_update_interface(factory)?;
+            Some(self.w.module_call(factory, pu, crate::logic::world::module_call::ModuleCall::ProductionRequestUniqueUnitId).as_int(0) as u32)
+        }
+        // (the upgrade and science buttons are not pressed in these tests)
+        fn can_afford_upgrade(&mut self, _upgrade: u32) -> bool {
+            false
+        }
+        fn can_queue_upgrade(&mut self, _obj: ObjectId, _upgrade: u32) -> Option<crate::logic::world::build_assistant::CanMakeType> {
+            None
+        }
+        fn has_upgrade(&mut self, _obj: ObjectId, _upgrade: u32) -> bool {
+            false
+        }
+        fn affected_by_upgrade(&mut self, _obj: ObjectId, _upgrade: u32) -> bool {
+            false
+        }
+        fn mark_single_use_command_used(&mut self, _obj: ObjectId) {}
+        fn set_special_power_construction_button(&mut self, _obj: ObjectId, _button: usize) {}
+        fn local_player_objects(&mut self) -> Vec<ObjectId> {
+            let p = self.p;
+            self.w.objects.ids_in_order().into_iter().filter(|&o| self.w.get_controlling_player(o) == Some(p)).collect()
+        }
+        fn object_exists(&self, obj: ObjectId) -> bool {
+            self.w.find_object(obj).is_some()
+        }
+        fn has_science(&mut self, _st: i32) -> bool {
+            false
+        }
+        fn has_prereqs_for_science(&mut self, _st: i32) -> bool {
+            false
+        }
+        fn science_purchase_cost(&mut self, _st: i32) -> i32 {
+            0
+        }
+        fn science_purchase_points(&mut self) -> i32 {
+            0
+        }
+        fn switch_to_context_none(&mut self) {}
     }
 
     /// C2a (#6): a click in the client makes the player's selected group in the logic. Predicted from SelectionXlat.cpp and
@@ -684,7 +747,7 @@ mod tests {
         assert_eq!(selection(&c), vec![runner]);
         assert!(cmd.team_exists);
         let goal = Coord3D { x: 200.0, y: 50.0, z: 0.0 };
-        assert_eq!(cmd.mouse_over(None, &goal, &ui, &mut c), MSG_DO_MOVETO_HINT, "hints {:?}", c.hints);
+        assert_eq!(cmd.mouse_over(None, &goal, &mut ui, &mut c), MSG_DO_MOVETO_HINT, "hints {:?}", c.hints);
         assert!(cmd.click(false, true, &goal, None, &mut ui, &mut c));
         assert_eq!(c.sent, vec![MSG_DO_MOVETO]);
         let before = dist(&c, runner, goal);
@@ -699,8 +762,8 @@ mod tests {
         frame(&mut c, &mut cmd);
         assert_eq!(selection(&c), vec![soldier]);
         let at = c.w.find_object(enemy).expect("the enemy").get_position();
-        assert_eq!(cmd.evaluate_context_command(Some(enemy), &at, CommandEvaluateType::EvaluateOnly, &ui, &mut c), MSG_DO_ATTACK_OBJECT);
-        assert_eq!(cmd.mouse_over(Some(enemy), &at, &ui, &mut c), MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT);
+        assert_eq!(cmd.evaluate_context_command(Some(enemy), &at, CommandEvaluateType::EvaluateOnly, &mut ui, &mut c), MSG_DO_ATTACK_OBJECT);
+        assert_eq!(cmd.mouse_over(Some(enemy), &at, &mut ui, &mut c), MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT);
         assert_eq!(x.left_click(&[enemy], true, &cmd, &mut ui, &mut c), Disposition::Keep, "the enemy is not selected");
         assert!(cmd.click(false, true, &at, Some(enemy), &mut ui, &mut c));
         assert_eq!(c.sent, vec![MSG_DO_ATTACK_OBJECT]);
@@ -714,10 +777,82 @@ mod tests {
         assert!(after < before, "the Soldier closed on the enemy: {before} -> {after}");
 
         let at = c.w.find_object(runner).expect("the runner").get_position();
-        assert_eq!(cmd.evaluate_context_command(Some(runner), &at, CommandEvaluateType::EvaluateOnly, &ui, &mut c), crate::common::message_types::MSG_INVALID);
+        assert_eq!(cmd.evaluate_context_command(Some(runner), &at, CommandEvaluateType::EvaluateOnly, &mut ui, &mut c), crate::common::message_types::MSG_INVALID);
         assert_eq!(x.left_click(&[runner], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
         frame(&mut c, &mut cmd);
         assert_eq!(selection(&c), vec![runner]);
+        assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
+    }
+
+    /// C2c (#6): a control bar button orders through the logic. In the gate World (every switch on, a game in progress), player
+    /// 1's Caster at (60, 60) (I23's: an `OCLSpecialPower` whose OCL drops a Pup at the target, reload 0; its set holds
+    /// `Command_Drop`, a `SPECIAL_POWER` needing a position, and `Command_Halt`, a stop), made `SELECTABLE` and given a
+    /// vision of 250, as shipped units have both. Predicted from
+    /// ControlBarCommandProcessing.cpp, CommandXlat.cpp and the logic:
+    /// - the Caster selected, pressing `Command_Drop` makes it the pending GUI command and sends nothing;
+    /// - the mouse over the ground at (200, 200) hints `MSG_VALID_GUICOMMAND_HINT`; the click sends
+    ///   `MSG_DO_SPECIAL_POWER_AT_LOCATION` and clears the GUI command; a frame later one Pup stands at (200, 200);
+    /// - pressing `Command_Halt` sends `MSG_DO_STOP` at once.
+    ///
+    /// Results (2026-11-05): all held, after one correction to the test's Caster. ~~Without a vision~~ the first run hinted
+    /// `MSG_INVALID_GUICOMMAND_HINT`: I23's Caster has no `VisionRange`, so the whole map was shrouded for player 1 (checked:
+    /// `Shrouded` at the Caster and at the target), and `canDoSpecialPowerAtLocation` refuses a shrouded target for a damaging
+    /// power (`SPECIAL_DAISY_CUTTER`), upstream and here. With a vision of 250 the hint was valid, the click sent the power,
+    /// and one Pup stood at (200.0, 200.0) a frame later; the halt sent `MSG_DO_STOP`; no live errors.
+    #[test]
+    fn a_control_bar_button_orders_through_the_logic() {
+        use crate::client::command_xlat::CommandTranslator;
+        use crate::client::control_bar::{process_command_ui, CbCommandStatus, PressedControl};
+        use crate::client::in_game_ui::InGameUiSelection;
+        use crate::client::selection_xlat::{Disposition, SelectionTranslator};
+        use crate::common::base_type::Coord3D;
+        use crate::common::message_types::{MSG_DO_SPECIAL_POWER_AT_LOCATION, MSG_DO_STOP, MSG_VALID_GUICOMMAND_HINT};
+        use crate::logic::world::gate_scenario::command_button_object_tests::CASTER;
+        use crate::logic::world::gate_scenario::{gate_map_world_with, make};
+        use crate::logic::world::team_ops::factory_find_team;
+        let ini = CASTER.replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1);
+        let mut w = gate_map_world_with(&ini);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let caster = make(&mut w, b"Caster", team, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        w.pathfinder_op(crate::logic::world::pathfinder_host_world::PfOp::NewMap);
+        w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
+        let p = w.get_controlling_player(caster).expect("its player");
+        let mut c = ClientOfWorld { w, p, sent: Vec::new(), hints: Vec::new() };
+        let (mut x, mut ui, mut cmd) = (SelectionTranslator::default(), InGameUiSelection::new(), CommandTranslator::default());
+        let frame = |c: &mut ClientOfWorld, cmd: &mut CommandTranslator| {
+            for t in c.sent.drain(..) {
+                cmd.observe_message(t);
+            }
+            c.w.engine_update().expect("a frame");
+        };
+        let button = |c: &ClientOfWorld, name: &[u8]| {
+            let i = c.w.cuts.command_buttons.iter().position(|b| b.name == name).expect("the button");
+            crate::client::command_world::gui_button(&c.w, i).expect("its facts")
+        };
+        let pups = |c: &ClientOfWorld| c.w.objects.ids_in_order().into_iter().filter_map(|o| c.w.find_object(o).filter(|x| x.template().get_name() == b"Pup").map(|x| x.get_position())).collect::<Vec<_>>();
+
+        assert_eq!(x.left_click(&[caster], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
+        frame(&mut c, &mut cmd);
+        c.sent.clear();
+        let drop = button(&c, b"Command_Drop");
+        assert_eq!(process_command_ui(&drop, PressedControl::Command, Some(caster), false, false, &mut ui, &mut c), CbCommandStatus::Used);
+        assert_eq!(ui.gui_command(), Some(&drop));
+        assert!(c.sent.is_empty());
+        let at = Coord3D { x: 200.0, y: 200.0, z: 0.0 };
+        assert_eq!(cmd.mouse_over(None, &at, &mut ui, &mut c), MSG_VALID_GUICOMMAND_HINT, "hints {:?}", c.hints);
+        assert!(cmd.click(false, true, &at, None, &mut ui, &mut c));
+        assert_eq!(c.sent, vec![MSG_DO_SPECIAL_POWER_AT_LOCATION]);
+        assert_eq!(ui.gui_command(), None);
+        assert!(pups(&c).is_empty());
+        frame(&mut c, &mut cmd);
+        let made = pups(&c);
+        eprintln!("C2c: the pups after the drop: {made:?}");
+        assert_eq!(made.len(), 1);
+        assert!((made[0].x - 200.0).abs() < 1.0 && (made[0].y - 200.0).abs() < 1.0, "{made:?}");
+
+        let halt = button(&c, b"Command_Halt");
+        assert_eq!(process_command_ui(&halt, PressedControl::Command, Some(caster), false, false, &mut ui, &mut c), CbCommandStatus::Used);
+        assert_eq!(c.sent, vec![MSG_DO_STOP]);
         assert!(c.w.cuts.team_live_errors.is_empty(), "{:?}", c.w.cuts.team_live_errors);
     }
 }

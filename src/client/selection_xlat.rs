@@ -144,7 +144,7 @@ impl SelectionTranslator {
             return Disposition::Keep;
         }
         let mut si = SelectionInfo::default();
-        let shown: &InGameUiSelection = ui;
+        let shown: &mut InGameUiSelection = ui;
         let mut valid = |h: &mut H, d| {
             let pos = h.drawable_object(d).map(|o| h.object_position(o)).unwrap_or_default();
             cmd.evaluate_context_command(Some(d), &pos, CommandEvaluateType::EvaluateOnly, shown, h) != MSG_INVALID
@@ -274,6 +274,8 @@ pub(crate) mod tests {
         pub ui_messages: Vec<Vec<u8>>,
         /// The command translator's facts (C2b).
         pub cmd: crate::client::command_xlat::tests::CmdFacts,
+        /// The control bar's facts (C2c).
+        pub bar: crate::client::control_bar::tests::BarFacts,
     }
 
     impl SelectionInfoHost for Host {
