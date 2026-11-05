@@ -91,6 +91,16 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**Batch C3b (2026-11-05, GitHub #3): `OnlineChatColors`, before a real install's first load.**
+Reading upstream's block table (INI.cpp `theTypeTable`) against the files the logic loads: upstream parses every file with
+its whole table, the port with the logic's blocks only, so a client block inside a file the logic reads stops the port's
+load. `OnlineChatColors` (the online lobby's colours, Chat.cpp) has no file of its own: it is read wherever it is met, and
+the game's `Multiplayer.ini` (a logic file) is where it sits. It is now parsed as upstream parses it
+(`GameSpyColorFieldParse`, `parseColorInt` into `GameSpyColor`), kept on the load and used by nothing yet. *Prediction:*
+the load reads past it, sets the named colours, and refuses an unknown field. *Result:* held on the first run. Other client
+blocks still stop the load if a logic file carries one (`a_missing_file_or_a_client_block_fails_the_load`); none is known.
+Full run (2026-11-05): 1193 tests pass in 203 suites; clippy clean; gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
+
 **Batch C3 (2026-11-05, GitHub #3, #5): the player's Zero Hour folder in the browser, and the page on GitHub Pages.**
 - **The page** (`client/web/index.html`): *Choose Zero Hour folder* (or its `.big` files) keeps the archives the logic
   reads (all but the art and sound ones: `Audio*`, `Speech*`, `Music*`, `Textures*`, `Terrain*`, `W3D*`, `Shaders*`,

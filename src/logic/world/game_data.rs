@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use crate::common::damage_fx::DamageFxStore;
 use crate::common::global_data::GlobalDataStore;
-use crate::common::ini::{BlockParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult};
+use crate::common::ini::{BlockParse, FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, UserData};
 use crate::common::module_factory::ModuleFactory;
 use crate::common::name_key_generator::NameKeyGenerator;
 use crate::common::player_template::PlayerTemplateStore;
@@ -224,6 +224,10 @@ pub struct GameDataLoad {
     pub map_cache: crate::common::map_cache::MapCache,
     /// Integration batch I59: `TheTerrainTypes`.
     pub terrain_types: crate::common::terrain_types::TerrainTypeCollection,
+    /// Batch C3: `GameSpyColor[GSCOLOR_MAX]` as an `OnlineChatColors` block sets it (the online lobby's colours, which the
+    /// game's `Multiplayer.ini` carries beside the logic's settings). Only what the files set: upstream's defaults
+    /// (Chat.cpp) are the lobby's, which this engine has not.
+    pub online_chat_colors: [i32; GSCOLOR_MAX],
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -238,6 +242,7 @@ impl GameDataLoad {
         let mut modules = ModuleFactory::new();
         modules.init(&mut names).map_err(|_| IniError::new(IniErrorKind::Bug))?;
         Ok(GameDataLoad {
+            online_chat_colors: [0; GSCOLOR_MAX],
             names,
             modules,
             text,
@@ -294,6 +299,7 @@ impl GameDataLoad {
             weapons.add(t.name_key);
         }
         Ok(GameDataLoad {
+            online_chat_colors: [0; GSCOLOR_MAX],
             names,
             modules,
             text: st.game_text,
@@ -389,7 +395,7 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 23] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 24] = [
     BlockParse { token: "AIData", parse: ai_data_block },
     BlockParse { token: "Armor", parse: armor_block },
     BlockParse { token: "Bridge", parse: bridge_block },
@@ -405,6 +411,7 @@ static BLOCKS: [BlockParse<GameDataLoad>; 23] = [
     BlockParse { token: "Object", parse: object_block },
     BlockParse { token: "ObjectCreationList", parse: ocl_block },
     BlockParse { token: "ObjectReskin", parse: object_reskin_block },
+    BlockParse { token: "OnlineChatColors", parse: online_chat_colors_block },
     BlockParse { token: "PlayerTemplate", parse: player_template_block },
     BlockParse { token: "Science", parse: science_block },
     BlockParse { token: "Rank", parse: rank_block },
@@ -560,6 +567,52 @@ fn multiplayer_money_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult
     c.multiplayer_settings.parse_multiplayer_starting_money_choice_definition(ini)
 }
 
+/// `GSCOLOR_MAX` (PeerDefs.h).
+pub const GSCOLOR_MAX: usize = 27;
+
+fn parse_chat_color(ini: &mut Ini<'_>, colors: &mut [i32; GSCOLOR_MAX], which: &UserData) -> IniResult<()> {
+    colors[which.mask() as usize] = ini.parse_color_int()?;
+    Ok(())
+}
+
+/// `GameSpyColorFieldParse` (Chat.cpp): every field `INI::parseColorInt` into its `GameSpyColor` slot, in `GSColors`' order.
+static ONLINE_CHAT_COLOR_FIELDS: [FieldParse<[i32; GSCOLOR_MAX]>; GSCOLOR_MAX] = [
+    FieldParse::new("Default", parse_chat_color, UserData::Mask(0)),
+    FieldParse::new("CurrentRoom", parse_chat_color, UserData::Mask(1)),
+    FieldParse::new("ChatRoom", parse_chat_color, UserData::Mask(2)),
+    FieldParse::new("Game", parse_chat_color, UserData::Mask(3)),
+    FieldParse::new("GameFull", parse_chat_color, UserData::Mask(4)),
+    FieldParse::new("GameCRCMismatch", parse_chat_color, UserData::Mask(5)),
+    FieldParse::new("PlayerNormal", parse_chat_color, UserData::Mask(6)),
+    FieldParse::new("PlayerOwner", parse_chat_color, UserData::Mask(7)),
+    FieldParse::new("PlayerBuddy", parse_chat_color, UserData::Mask(8)),
+    FieldParse::new("PlayerSelf", parse_chat_color, UserData::Mask(9)),
+    FieldParse::new("PlayerIgnored", parse_chat_color, UserData::Mask(10)),
+    FieldParse::new("ChatNormal", parse_chat_color, UserData::Mask(11)),
+    FieldParse::new("ChatEmote", parse_chat_color, UserData::Mask(12)),
+    FieldParse::new("ChatOwner", parse_chat_color, UserData::Mask(13)),
+    FieldParse::new("ChatOwnerEmote", parse_chat_color, UserData::Mask(14)),
+    FieldParse::new("ChatPriv", parse_chat_color, UserData::Mask(15)),
+    FieldParse::new("ChatPrivEmote", parse_chat_color, UserData::Mask(16)),
+    FieldParse::new("ChatPrivOwner", parse_chat_color, UserData::Mask(17)),
+    FieldParse::new("ChatPrivOwnerEmote", parse_chat_color, UserData::Mask(18)),
+    FieldParse::new("ChatBuddy", parse_chat_color, UserData::Mask(19)),
+    FieldParse::new("ChatSelf", parse_chat_color, UserData::Mask(20)),
+    FieldParse::new("AcceptTrue", parse_chat_color, UserData::Mask(21)),
+    FieldParse::new("AcceptFalse", parse_chat_color, UserData::Mask(22)),
+    FieldParse::new("MapSelected", parse_chat_color, UserData::Mask(23)),
+    FieldParse::new("MapUnselected", parse_chat_color, UserData::Mask(24)),
+    FieldParse::new("MOTD", parse_chat_color, UserData::Mask(25)),
+    FieldParse::new("MOTDHeading", parse_chat_color, UserData::Mask(26)),
+];
+
+/// `INI::parseOnlineChatColorDefinition` (Chat.cpp): `ini->initFromINI(GameSpyColor, GameSpyColorFieldParse)`. The block sits
+/// in the game's `Multiplayer.ini`, which the logic reads; without it the load stopped at an unknown block, where upstream,
+/// whose table holds every block, reads on (batch C3, found reading upstream's block table before a real install's load).
+fn online_chat_colors_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
+    ini.init_from_ini(&mut c.online_chat_colors, &ONLINE_CHAT_COLOR_FIELDS)
+}
+
 fn upgrade_block(ini: &mut Ini<'_>, c: &mut GameDataLoad) -> IniResult<()> {
     c.upgrades.parse_upgrade_definition(ini, &mut c.names)
 }
@@ -643,5 +696,22 @@ mod tests {
         f.insert(b"Data\\INI\\Armor.ini", b"FXList Boom\nEnd\n".to_vec());
         let r = load_game_data(&f, MissingFiles::Skip, TextTable::default());
         assert_eq!(r.err().map(|e| e.kind), Some(IniErrorKind::UnknownToken));
+    }
+
+    /// Batch C3: a `Multiplayer.ini` with an `OnlineChatColors` block, as the game's carries one beside the logic's settings.
+    /// Predicted: the load reads on past it (before, `UnknownToken`), sets the colours it names (`Default` R:255 G:255 B:255,
+    /// `ChatSelf` R:0 G:255 B:0, as `parseColorInt` packs them) and refuses a field the table does not name, as upstream's
+    /// `initFromINI` does.
+    #[test]
+    fn a_multiplayer_ini_with_online_chat_colors_loads() {
+        let mut f = files();
+        let block = b"OnlineChatColors\n  Default = R:255 G:255 B:255\n  ChatSelf = R:0 G:255 B:0\nEnd\n";
+        f.insert(b"Data\\INI\\Multiplayer.ini", block.to_vec());
+        let load = load_game_data(&f, MissingFiles::Skip, TextTable::default()).expect("the INI");
+        assert_eq!(load.online_chat_colors[20], crate::common::ini::game_make_color(0, 255, 0, 255));
+        assert_ne!(load.online_chat_colors[0], 0);
+        let mut g = files();
+        g.insert(b"Data\\INI\\Multiplayer.ini", b"OnlineChatColors\n  NoSuchColour = R:1 G:2 B:3\nEnd\n".to_vec());
+        assert!(load_game_data(&g, MissingFiles::Skip, TextTable::default()).is_err());
     }
 }
