@@ -191,6 +191,7 @@ fn poll_import(
     match crate::import::start_from_files(files, None) {
         Ok(s) => {
             info!("playing your game: {}", s.report);
+            crate::import::set_outcome(Ok(&s.report));
             *game = Game::new(s.world, s.player, s.report);
             for (_, e) in drawn.0.drain() {
                 commands.entity(e).despawn();
@@ -205,6 +206,7 @@ fn poll_import(
         }
         Err(e) => {
             warn!("your files did not start a game: {e}");
+            crate::import::set_outcome(Err(&e));
             game.playing = format!("demo ({e})");
         }
     }

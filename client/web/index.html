@@ -42,7 +42,7 @@
 </div>
 <script type="module">
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
-  import init, { import_file, import_done } from './rts_client.js';
+  import init, { import_file, import_done, import_outcome } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -99,7 +99,18 @@
     }
     import_done();
     status(`Loaded ${entries.length} files (${(total / 1048576).toFixed(1)} MB). Starting a skirmish…`);
-    setTimeout(() => { $('files').style.display = 'none'; }, 4000);
+    // the game says what became of it: the panel closes when the game has started, and stays with the error if not
+    const poll = setInterval(() => {
+      const o = import_outcome();
+      if (!o) return;
+      clearInterval(poll);
+      if (o.startsWith('ok: ')) {
+        status('Playing: ' + o.slice(4));
+        setTimeout(() => { $('files').style.display = 'none'; }, 3000);
+      } else {
+        status('Your files did not start a game. Please report this message: ' + o.replace(/^error: /, ''));
+      }
+    }, 250);
   }
 
   async function pick(files) {
