@@ -244,11 +244,13 @@ impl World {
         mode != game_mode::NONE && mode != game_mode::SHELL && !self.start_new_game_pending()
     }
 
-    /// GitHub #64 (a deviation, see [`World::load_game`]): the random generators as they are before any `InitRandom`,
-    /// for a load into a World that has played (upstream's load seeds nothing, so its loaded game would draw from the
-    /// generators' state after whatever ran before it).
+    /// GitHub #64 (a deviation, see [`World::load_game`]; owner's decision 2026-11-06): `InitRandom(0)`, as every other
+    /// single-player start seeds (MainMenu, ScoreScreen, ChallengeMenu, the mission save's load). Upstream's normal load
+    /// seeds nothing, so its loaded game draws from the generators' state after whatever ran before it in the session.
+    /// `InitRandom(0)` is exactly the state before any `InitRandom` (`seed_random(0)` gives `INITIAL_SEED`, base seed 0;
+    /// pinned by `random_value::tests::init_random_zero_is_the_initial_state`).
     pub fn reset_random_for_load(&mut self) {
-        self.random = crate::common::random_value::RandomValues::default();
+        self.random = crate::common::random_value::RandomValues::new(0);
     }
 
     /// GitHub #64: the last [`World::clear_game_data`]'s outcome, for the client's score screen.

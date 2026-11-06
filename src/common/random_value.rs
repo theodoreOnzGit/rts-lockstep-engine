@@ -371,6 +371,13 @@ impl GameClientRandomVariable {
 
 #[cfg(test)]
 mod tests {
+    /// GitHub #64: a load seeds `InitRandom(0)`. Predicted: equal to the state before any `InitRandom`, because
+    /// `seed_random(0)`'s running sum starts at `0xf22d0e56` and steps to each `INITIAL_SEED` word.
+    #[test]
+    fn init_random_zero_is_the_initial_state() {
+        assert_eq!(RandomValues::new(0), RandomValues::default());
+    }
+
     use super::*;
 
     #[test]
