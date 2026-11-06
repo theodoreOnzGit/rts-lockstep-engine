@@ -496,6 +496,9 @@ mod tests {
     }
 
     /// The command translator's questions, answered by the World (`client::command_world`).
+    /// (#51) The recorder's client plays no voices.
+    impl crate::client::unit_voice::UnitVoiceHost for ClientOfWorld {}
+
     impl crate::client::command_xlat::CommandXlatHost for ClientOfWorld {
         fn object_is_masked(&self, obj: ObjectId) -> bool {
             self.w.find_object(obj).is_some_and(|o| o.test_status(crate::common::object_status_types::OBJECT_STATUS_MASKED))

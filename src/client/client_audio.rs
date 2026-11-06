@@ -22,27 +22,33 @@
 //! - **The listener is the local player** (`ThePlayerList->getLocalPlayer()`); upstream switches to the observed player
 //!   when the local player is no longer active (`TheControlBar->getObserverLookAtPlayer()`), which the client's control
 //!   bar does not track yet.
-//! - **`ObjectSound::VoiceDefect`** (the object template's `VoiceDefect`), the map objects' customised ambient sounds
+//! - ~~**`ObjectSound::VoiceDefect`** (the object template's `VoiceDefect`), the map objects' customised ambient sounds
 //!   (`DrawableAmbientSoundProperties`, upstream's `DynamicAudioEventInfo`) and the drawables' ambient sounds are not
-//!   played yet; ~~nor are the script actions' sounds and music, which the logic does not emit (its `sa_audio_*` hooks are
+//!   played yet;~~ **Corrected 2026-11-06 (#51):** `VoiceDefect` is played from the object's template
+//!   ([`AudioHost::object_template_audio`]); the unit voice responses are played ([`ClientAudio::play_unit_voice`]); the
+//!   ambient sounds: see [`crate::client::drawable_ambient`]; ~~nor are the script actions' sounds and music, which the logic does not emit (its `sa_audio_*` hooks are
 //!   cut points).~~ **Corrected 2026-11-06 (#51):** the script actions' calls on `TheAudio` are now client events
 //!   ([`ScriptAudioEvent`]) and are made here ([`ClientAudio::apply_script_event`]); `pauseAmbient` does nothing, as
 //!   `MilesAudioManager::pauseAmbient` is empty.
-//! - **`getAudioLengthMS`** is not answered to the logic (the script engine's speech and sound waits read 0): the file
-//!   lengths would change the logic (#51's write-up).
+//! - ~~**`getAudioLengthMS`** is not answered to the logic (the script engine's speech and sound waits read 0): the file
+//!   lengths would change the logic (#51's write-up).~~ **Corrected 2026-11-06 (#51):** since #52 the logic reads the
+//!   lengths from the files at load (`logic::audio_length`).
 //! - **`ObjectClientEvent::AudioRemoveEvent { handle }`** carries a handle the logic made up (upstream's comes from
 //!   `addAudioEvent`, which the logic cannot call): ignored.
 //! - **`StealthDetectorFeedback`** plays its sound whether or not the radar would have taken the event (`tryEvent`); the
 //!   radar is not translated.
 
 use crate::client::audio_event::{AudioEventHost, AudioEventRts, AudioHandle};
-use crate::client::audio_info::MiscAudio;
+use crate::client::audio_info::{AudioTables, MiscAudio};
 use crate::client::fx_list::FxRequest;
 use crate::client::game_audio::{AudioDevice, AudioHost, AudioManager};
 use crate::common::audio_event_name::AudioEventName;
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::{CellShroudStatus, Relationship};
 use crate::common::game_type::{ObjectId, LAYER_GROUND};
+use crate::common::thing_template::ThingTemplateAudioType;
+use crate::client::unit_voice::{UnitVoice, VoiceSource};
+use crate::client::drawable_ambient::AmbientSounds;
 use crate::logic::client_event::{ClientEvent, MoneySound, ScriptAudioEvent};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound, StealthFeedback};
@@ -107,6 +113,16 @@ impl AudioHost for WorldAudioHost<'_> {
     fn ground_height(&self, x: f32, y: f32) -> f32 {
         self.world.peek_layer_height_and_normal(x, y, LAYER_GROUND).0
     }
+    fn object_template_audio(&self, id: u32, t: ThingTemplateAudioType) -> Vec<u8> {
+        self.world.find_object(id as ObjectId).map_or_else(Vec::new, |o| o.template().get_audio(t).event_name.clone())
+    }
+    /// The body read in place (`World::peek_damage_state`: no module is called).
+    fn object_damage_state(&self, id: u32) -> i32 {
+        self.world.peek_damage_state(id as ObjectId)
+    }
+    fn time_of_day(&self) -> i32 {
+        self.world.statics.global_data.the_global_data().map_or(crate::common::game_type::TimeOfDay::Afternoon as i32, |g| g.time_of_day)
+    }
 }
 
 /// The client's audio: the manager, and the handles of the firing trackers' looping sounds by object.
@@ -117,6 +133,13 @@ pub struct ClientAudio {
     pub firing_loops: BTreeMap<ObjectId, AudioHandle>,
     /// The events played (name and the handle `addAudioEvent` returned), most recent last; for checks (the last 64).
     pub log: Vec<(Vec<u8>, AudioHandle)>,
+    /// #51: the file index each template event last played (`setPlayingAudioIndex` on the template's event, which the client
+    /// cannot write: the template is the logic's), by template name and sound.
+    pub voice_indices: BTreeMap<(Vec<u8>, VoiceSource), i32>,
+    /// #51: the drawables' ambient sounds.
+    pub ambient: AmbientSounds,
+    /// #51: how many of the logic's INI audio events ([`AudioTables::logic_ini_events`]) are applied to the manager's tables.
+    pub logic_ini_applied: usize,
 }
 
 /// `MiscAudio`'s sound for an [`ObjectSound`] (`None`: not a misc sound).
@@ -145,16 +168,38 @@ pub fn misc_sound(m: &MiscAudio, s: ObjectSound) -> Option<&AudioEventName> {
 
 impl ClientAudio {
     pub fn new(manager: AudioManager) -> Self {
-        ClientAudio { manager, firing_loops: BTreeMap::new(), log: Vec::new() }
+        ClientAudio { manager, firing_loops: BTreeMap::new(), log: Vec::new(), voice_indices: BTreeMap::new(), ambient: AmbientSounds::default(), logic_ini_applied: 0 }
     }
 
-    fn add(&mut self, host: &dyn AudioHost, mut e: AudioEventRts) -> AudioHandle {
+    fn add(&mut self, host: &dyn AudioHost, e: AudioEventRts) -> AudioHandle {
+        self.add_index(host, e).0
+    }
+
+    /// [`Self::add`], with the file index the caller's event was given (`getPlayingAudioIndex()` after the call).
+    fn add_index(&mut self, host: &dyn AudioHost, mut e: AudioEventRts) -> (AudioHandle, i32) {
         let h = self.manager.add_audio_event(host, &mut e);
+        let index = e.playing_audio_index;
         self.log.push((e.event_name, h));
         if self.log.len() > 64 {
             self.log.remove(0);
         }
-        h
+        (h, index)
+    }
+
+    /// #51: one of `pickAndPlayUnitVoiceResponse`'s plays ([`crate::client::unit_voice`]): `AudioEventRTS soundToPlay =
+    /// *soundToPlayPtr; soundToPlay.setObjectID(id); TheAudio->addAudioEvent(&soundToPlay);` then, for a template's or a
+    /// module's event, `setPlayingAudioIndex(soundToPlay.getPlayingAudioIndex())` on it, kept here.
+    pub fn play_unit_voice(&mut self, host: &dyn AudioHost, v: &UnitVoice) {
+        let mut e = AudioEventRts::new(&v.name);
+        let key = (v.source != VoiceSource::Misc).then(|| (v.template.clone(), v.source.clone()));
+        if let Some(i) = key.as_ref().and_then(|k| self.voice_indices.get(k)) {
+            e.playing_audio_index = *i;
+        }
+        e.set_object_id(v.object as u32);
+        let (_, index) = self.add_index(host, e);
+        if let Some(k) = key {
+            self.voice_indices.insert(k, index);
+        }
     }
 
     /// An event of a name, owned by an object (`INVALID_ID`: none) or placed, with a player index.
@@ -192,6 +237,11 @@ impl ClientAudio {
             }
             ClientEvent::Object(o) => self.apply_object_event(host, device, &misc, o),
             ClientEvent::ScriptAudio(s) => self.apply_script_event(host, device, s),
+            // #51: the drawables' ambient sounds
+            ClientEvent::ObjectCreated { object_id, .. } => self.ambient.create(*object_id, &mut self.manager, device, host),
+            ClientEvent::ObjectDestroyed { object_id } => self.ambient.destroy(*object_id, &mut self.manager, device),
+            ClientEvent::LoadingMap(on) => self.ambient.loading_map = *on,
+            ClientEvent::DrawablesOnLevelStart => self.ambient.on_level_start(&mut self.manager, device, host),
             _ => {}
         }
     }
@@ -234,6 +284,12 @@ impl ClientAudio {
 
     fn apply_object_event<D: AudioDevice>(&mut self, host: &dyn AudioHost, device: &mut D, misc: &MiscAudio, o: &ObjectClientEvent) {
         match o {
+            // #51: `Object::defect`: `AudioEventRTS voiceDefect = *getTemplate()->getVoiceDefect(); voiceDefect.setObjectID(getID());
+            // TheAudio->addAudioEvent(&voiceDefect);` (a copy: nothing is written back)
+            ObjectClientEvent::Sound { sound: ObjectSound::VoiceDefect, object_id, .. } => {
+                let name = host.object_template_audio(*object_id as u32, ThingTemplateAudioType::VoiceDefect);
+                self.add(host, Self::named(&name, *object_id, None, None));
+            }
             ObjectClientEvent::Sound { sound, object_id, position } => {
                 if let Some(n) = misc_sound(misc, *sound) {
                     let obj = if position.is_some() { 0 } else { *object_id };
@@ -267,6 +323,20 @@ impl ClientAudio {
                 let h = self.add(host, Self::named(name, *object_id, None, None));
                 self.firing_loops.insert(*object_id, h);
             }
+            // #51: the drawable's ambient sound calls
+            ObjectClientEvent::DrawableReactToBodyDamageStateChange { object_id, state } => {
+                self.ambient.react_to_body_damage_state_change(*object_id, *state, &mut self.manager, device, host)
+            }
+            ObjectClientEvent::DrawableAmbientSoundProperties { object_id, properties } => {
+                self.ambient.apply_map_properties(*object_id, properties, &mut self.manager, device, host)
+            }
+            ObjectClientEvent::DrawableStopAmbientSound { object_id } => self.ambient.stop_ambient_sound(*object_id, &mut self.manager, device),
+            ObjectClientEvent::DrawableEnableAmbientSound { object_id, enable } => {
+                self.ambient.enable_ambient_sound(*object_id, *enable, &mut self.manager, device, host)
+            }
+            ObjectClientEvent::DrawableEnableAmbientSoundFromScript { object_id, enable } => {
+                self.ambient.enable_ambient_sound_from_script(*object_id, *enable, &mut self.manager, device, host)
+            }
             ObjectClientEvent::FiringTrackerStopLoopingSound { object_id } => {
                 if let Some(h) = self.firing_loops.remove(object_id) {
                     self.manager.remove_audio_event(device, h);
@@ -274,6 +344,30 @@ impl ClientAudio {
             }
             _ => {}
         }
+    }
+
+    /// #51: the audio events a map's `map.ini` defined or redefined, read by the logic (`GameStatics::audio`, the logic's
+    /// load of the INI through `theTypeTable`), applied to the manager's tables as the logic parsed them: the description
+    /// copied (upstream's one `TheAudio` holds both), and the name added to the music track list where the logic's parse
+    /// added it. Each machine's logic reads the same `map.ini`, so every machine's client gets the same descriptions.
+    pub fn sync_logic_ini_audio(&mut self, logic: &AudioTables) {
+        for (name, added_track) in logic.logic_ini_events.iter().skip(self.logic_ini_applied) {
+            if let Some(info) = logic.find_audio_event_info(name) {
+                if self.manager.tables.infos.contains_key(name) {
+                    self.manager.tables.redefined.push(name.clone());
+                }
+                self.manager.tables.infos.insert(name.clone(), info.clone());
+            }
+            if *added_track {
+                self.manager.tables.add_track_name(name);
+            }
+        }
+        self.logic_ini_applied = logic.logic_ini_events.len();
+    }
+
+    /// #51: `Drawable::update`'s ambient sound restart, for every drawable; once per logic frame, after its events.
+    pub fn update_ambient<D: AudioDevice>(&mut self, host: &dyn AudioHost, device: &mut D) {
+        self.ambient.update(&mut self.manager, device, host);
     }
 
     /// An FX list's sound (`SoundFXNugget`): at the position, if it has one.

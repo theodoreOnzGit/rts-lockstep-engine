@@ -628,6 +628,8 @@ impl ProbeModule {
                     ModuleReply::Unhandled
                 }
             }
+            // (#51: a client read; the probe has no data)
+            ModuleCall::GetSpecialPowerInitiateSound => ModuleReply::Unhandled,
             ModuleCall::IsShortcutPower => ModuleReply::Bool(self.answers.shortcut),
             ModuleCall::IsModuleForPower { template } => ModuleReply::Bool(self.answers.power_template == template),
             // --- p1w11-sonnet --- (the effects are lines of the trace, tagged with the module's position, when `cuts.probe_effect_trace` asks)

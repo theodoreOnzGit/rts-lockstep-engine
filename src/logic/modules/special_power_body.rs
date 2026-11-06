@@ -494,6 +494,8 @@ pub fn special_power_module_call<M: SpecialPowerBehavior>(m: &mut M, world: &mut
             let t = template_id(world, m.power()).and_then(|id| world.statics.special_power_store.find_special_power_template_by_id(id).map(|t| t.special_power_type()));
             t.map_or(ModuleReply::Unhandled, ModuleReply::Int)
         }
+        // (#51) `SpecialPowerModule::getInitiateSound()`: `getSpecialPowerModuleData()->m_initiateSound`
+        ModuleCall::GetSpecialPowerInitiateSound => ModuleReply::Sound(Some(m.power().special_power_module_data().initiate_sound.event_name.clone())),
         ModuleCall::IsShortcutPower => {
             let t = template_id(world, m.power()).and_then(|id| world.statics.special_power_store.find_special_power_template_by_id(id).map(|t| t.is_shortcut_power()));
             ModuleReply::Bool(t.unwrap_or(false))

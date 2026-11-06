@@ -2374,6 +2374,52 @@ mod map_ini_tests {
         eprintln!("vision {vision:?}; errors {:?}", w.cuts.team_live_errors);
         assert_eq!(vision, [150.0, 150.0, 300.0]);
     }
+
+    /// GitHub #51, part 3: a map's `map.ini` can define or redefine audio events (upstream's `INI::load` reads it through
+    /// `theTypeTable`, which holds `AudioEvent`, `DialogEvent` and `MusicTrack`). The world's audio tables hold `Boom`
+    /// (`Sounds = a`, `Limit = 3`) and `DefaultMusicTrack` (volume 80%); `Maps\Test\map.ini` holds an `Object Soldier`
+    /// override, an `AudioEvent Boom` (`Sounds = map1 map2`, `Volume = 50%`) and a `MusicTrack MapSong`.
+    ///
+    /// *Predictions, written before the first run:* the soldier's override still applies (vision 300); the logic's `Boom`
+    /// has the files `map1`, `map2` and volume 0.5, and keeps `Limit = 3` (with no `DefaultSoundEffect`,
+    /// `newAudioEventInfo` returns the existing description and nothing resets it, as upstream); `Boom` is listed as
+    /// redefined; `MapSong` is a music event with `DefaultMusicTrack`'s volume 0.8, added to the track list; the recorded
+    /// events are `Boom` (not a track) then `MapSong` (a track). The client's audio, synced, has the same `Boom` and
+    /// `MapSong` and the track; a second sync adds nothing.
+    #[test]
+    fn a_maps_ini_redefines_audio_for_the_logic_and_the_client() {
+        use crate::client::audio_info::AudioTables;
+        let mut w = gate_map_world();
+        w.cuts.new_game.has_map_cache = true;
+        let mut tables = AudioTables::new();
+        tables.load_text(b"a.ini", b"AudioEvent Boom\n Sounds = a\n Volume = 100%\n Limit = 3\nEnd\nMusicTrack DefaultMusicTrack\n Volume = 80%\nEnd\n").expect("the audio");
+        std::sync::Arc::make_mut(&mut w.statics).audio = tables.clone();
+        w.save_side.disk.insert(
+            b"maps\\test\\map.ini".to_vec(),
+            b"Object Soldier\n VisionRange = 300\nEnd\nAudioEvent Boom\n Sounds = map1 map2\n Volume = 50%\nEnd\nMusicTrack MapSong\n Filename = song.mp3\nEnd\n".to_vec(),
+        );
+        crate::logic::world::game_logic_new_game::load_map_ini(b"Maps\\Test\\Test.map", &mut w).expect("the map's ini");
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let s = make(&mut w, b"Soldier", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+        assert_eq!(w.get_vision_range(s), 300.0);
+        let a = &w.statics.audio;
+        let boom = a.find_audio_event_info(b"Boom").expect("Boom");
+        assert_eq!((boom.sounds.clone(), boom.volume, boom.limit), (vec![b"map1".to_vec(), b"map2".to_vec()], 0.5, 3));
+        assert_eq!(a.redefined, [b"Boom".to_vec()]);
+        let song = a.find_audio_event_info(b"MapSong").expect("MapSong");
+        assert_eq!((song.volume, song.sound_type), (0.8, crate::client::audio_info::AudioType::Music));
+        assert!(a.music_tracks.contains(&b"MapSong".to_vec()));
+        assert_eq!(a.logic_ini_events, [(b"Boom".to_vec(), false), (b"MapSong".to_vec(), true)]);
+        // the client's audio, from the install's tables, synced
+        let mut c = crate::client::client_audio::ClientAudio::new(crate::client::game_audio::AudioManager::new(tables));
+        c.sync_logic_ini_audio(&w.statics.audio);
+        assert_eq!(c.manager.tables.find_audio_event_info(b"Boom"), w.statics.audio.find_audio_event_info(b"Boom"));
+        assert_eq!(c.manager.tables.find_audio_event_info(b"MapSong"), w.statics.audio.find_audio_event_info(b"MapSong"));
+        assert_eq!(c.manager.tables.music_tracks, w.statics.audio.music_tracks);
+        let before = c.manager.tables.music_tracks.len();
+        c.sync_logic_ini_audio(&w.statics.audio);
+        assert_eq!(c.manager.tables.music_tracks.len(), before);
+    }
 }
 
 #[cfg(test)]

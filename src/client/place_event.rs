@@ -162,7 +162,11 @@ impl PlaceEventTranslator {
             if is_line {
                 args.push(CmdArg::Location(h.screen_to_terrain(anchor_end)));
             }
-            h.append_command(if is_line { MSG_DOZER_CONSTRUCT_LINE } else { MSG_DOZER_CONSTRUCT }, &args);
+            let t = if is_line { MSG_DOZER_CONSTRUCT_LINE } else { MSG_DOZER_CONSTRUCT };
+            h.append_command(t, &args);
+            // #51: `pickAndPlayUnitVoiceResponse(TheInGameUI->getAllSelectedDrawables(), placeMsg->getType())`
+            let list = ui.all_selected_drawables().to_vec();
+            crate::client::unit_voice::pick_and_play_unit_voice_response(&list, t, None, ui, h);
             ui.place_build_available(None, None, 0.0, h);
         } else {
             display_cant_build_message(lbc, h);

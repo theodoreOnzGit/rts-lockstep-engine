@@ -10,7 +10,8 @@
 //! (the particle system templates, systems and particles), `fx_list` (the FX lists) and `client_fx` (both fed by the
 //! logic's client events, in the drawables' event order). Since #13, the audio: `audio_info` (the audio INI, settings and misc
 //! sounds), `audio_event` (`AudioEventRTS`: the file chosen), `game_audio` (the audio manager, with the device behind a
-//! trait) and `client_audio` (the logic's sound events played).
+//! trait) and `client_audio` (the logic's sound events played). Since #51, `unit_voice` (the units' voice responses to
+//! orders and selection) and `drawable_ambient` (the drawables' ambient sounds).
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -38,3 +39,5 @@ pub mod audio_info;
 pub mod audio_event;
 pub mod game_audio;
 pub mod client_audio;
+pub mod unit_voice;
+pub mod drawable_ambient;

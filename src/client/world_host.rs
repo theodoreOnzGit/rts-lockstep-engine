@@ -103,6 +103,8 @@ pub struct WorldClient {
     pub looks: Vec<ObjectId>,
     /// `EVA_InsufficientFunds` plays.
     pub eva_insufficient_funds: u32,
+    /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
+    pub voices: Vec<crate::client::unit_voice::UnitVoice>,
 }
 
 /// `getPickTypesForContext(forceAttackMode)` and `PickDrawableStruct`'s kinds: selectable things; force-attackable ones in
@@ -148,6 +150,7 @@ impl WorldClient {
             ui_messages: Vec::new(),
             looks: Vec::new(),
             eva_insufficient_funds: 0,
+            voices: Vec::new(),
         }
     }
 
@@ -302,6 +305,77 @@ impl SelectionGroupsHost for WorldClient {
     fn append_message_drawable(&mut self, t: MessageType, draw: DrawableId) {
         self.sent.push(t);
         self.world.push_command(t, self.player, |m| m.append_drawable_id_argument(draw as u32));
+    }
+}
+
+/// #51: the unit voices' reads. Each is a getter of the World: the object's template, the AI module's `isMoving` (the module's
+/// own answer, as the control bar's [`ControlBarStateHost::is_moving`](crate::client::control_bar_command::ControlBarStateHost))
+/// and its `isWaitingForPath` flag (read where the AI lies, `World::ai_peek`), `canCrushOrSquish` (a `&self` read of both
+/// objects), the weapon set's weapons and the store's templates, the special power module's data (`getInitiateSound`, a
+/// module call that only reads), `isUsingAirborneLocomotor`, the player's completed upgrades, and the logic's copy of the
+/// audio tables (`GameStatics::audio`, read from the same files as the client's). None writes.
+impl crate::client::unit_voice::UnitVoiceHost for WorldClient {
+    fn voice_template_name(&self, obj: ObjectId) -> Vec<u8> {
+        self.object(obj).map_or_else(Vec::new, |o| o.template().get_name().to_vec())
+    }
+    fn template_audio(&self, obj: ObjectId, t: crate::common::thing_template::ThingTemplateAudioType) -> Vec<u8> {
+        self.object(obj).map_or_else(Vec::new, |o| o.template().get_audio(t).event_name.clone())
+    }
+    fn template_per_unit_sound(&self, obj: ObjectId, name: &[u8]) -> Vec<u8> {
+        self.object(obj).map_or_else(Vec::new, |o| o.template().get_per_unit_sound(name).event_name.clone())
+    }
+    fn ai_effectively_moving(&mut self, obj: ObjectId) -> Option<bool> {
+        self.object(obj)?.ai?;
+        let moving = self.world.ai_ask(obj, ModuleCall::AiIsMoving).is_some_and(|r| r.as_bool());
+        let waiting = self.world.ai_peek(obj).is_some_and(|a| a.is_waiting_for_path());
+        Some(moving || waiting)
+    }
+    fn can_crush_or_squish(&self, obj: ObjectId, target: ObjectId) -> bool {
+        use crate::logic::world::object_damage::CrushSquishTestType;
+        self.world.can_crush_or_squish(obj, Some(target), CrushSquishTestType::CrushOrSquish)
+    }
+    fn is_valid_audio_event(&self, name: &[u8]) -> bool {
+        !name.is_empty() && self.world.statics.audio.find_audio_event_info(name).is_some()
+    }
+    fn has_worker_shoes(&self, obj: ObjectId) -> bool {
+        // `TheUpgradeCenter->findUpgrade("Upgrade_GLAWorkerShoes")`, by name without making a name key (a missing upgrade is
+        // `NULL` upstream, which `hasUpgradeComplete` dereferences: taken as not complete)
+        let Some(p) = self.world.get_controlling_player(obj) else { return false };
+        let Some(u) = self.world.statics.upgrade_center.templates().find(|u| u.upgrade_name() == b"Upgrade_GLAWorkerShoes") else { return false };
+        self.world.player_has_upgrade_complete(p, &u.upgrade_mask())
+    }
+    fn voice_weapon(&self, obj: ObjectId, slot: Option<i32>) -> Option<crate::client::unit_voice::VoiceWeapon> {
+        let set = &self.object(obj)?.weapon_set;
+        let w = match slot {
+            Some(s) => set.get_weapon_in_weapon_slot(s)?,
+            // `getCurrentWeapon()`: `NULL` without any weapon
+            None if !set.has_any_weapon() => return None,
+            None => set.get_cur_weapon()?,
+        };
+        let t = self.world.statics.weapon_store.templates().get(w.template())?;
+        Some(crate::client::unit_voice::VoiceWeapon { damage_type: t.damage_type, slot: w.weapon_slot(), name: t.name.clone() })
+    }
+    fn special_power_initiate_sound(&mut self, obj: ObjectId, sp: SpecialPowerType) -> Option<Vec<u8>> {
+        let idx = self.world.find_special_power_module_interface(obj, sp)?;
+        match self.world.module_call(obj, idx, ModuleCall::GetSpecialPowerInitiateSound) {
+            crate::logic::world::module_call::ModuleReply::Sound(s) => Some(s.unwrap_or_default()),
+            _ => Some(Vec::new()),
+        }
+    }
+    fn is_using_airborne_locomotor(&self, obj: ObjectId) -> bool {
+        self.world.is_using_airborne_locomotor(obj)
+    }
+    fn terrorist_voice(&self, which: crate::client::unit_voice::TerroristVoice) -> Vec<u8> {
+        use crate::client::unit_voice::TerroristVoice;
+        let m = &self.world.statics.audio.misc;
+        match which {
+            TerroristVoice::Attack => m.terrorist_in_car_attack_voice.event_name.clone(),
+            TerroristVoice::Move => m.terrorist_in_car_move_voice.event_name.clone(),
+            TerroristVoice::Select => m.terrorist_in_car_select_voice.event_name.clone(),
+        }
+    }
+    fn play_unit_voice(&mut self, v: crate::client::unit_voice::UnitVoice) {
+        self.voices.push(v);
     }
 }
 
@@ -1006,6 +1080,69 @@ mod tests {
         }
         let p = c.world.get_controlling_player(x.caster).expect("the player");
         assert_eq!(c.world.players.get_nth(p).map(|pl| pl.special_power_timers.len()), Some(0));
+    }
+
+    /// #51: the unit voices' questions (`pickAndPlayUnitVoiceResponse` for every message type it knows, with and without an
+    /// air target, a target drawable, a weapon slot and each special power type of the game), asked every frame with every
+    /// player-1 object of [`world33`] selected (a gunner in a fight, buses, rappellers, a barracks training, a caster and a
+    /// charger with special power modules), leave the logic's CRCs equal, frame by frame for 300 frames, to a run without
+    /// them. The reads are the AI's `isMoving` (a module call) and `isWaitingForPath`, `canCrushOrSquish`, the weapon set,
+    /// the special power modules' `getInitiateSound` (a module call), `isUsingAirborneLocomotor` and the upgrades.
+    ///
+    /// *Predictions, written before the first run:* the CRCs equal on all 300 frames; nothing sent; every call plays one
+    /// voice (the templates have no voice names, so each is the no-sound event, which upstream still copies and "plays")
+    /// except `MSG_DO_SPECIAL_POWER*` without a matching module (none) and the waypoint skip (not in waypoint mode: none),
+    /// so voices are found for the special power types of the caster (`SPECIAL_CARPET_BOMB`) and the charger
+    /// (`SPECIAL_PARADROP_AMERICA`) as `InitiateSound` sources; the gunner's weapon is found (`DAMAGE_ARMOR_PIERCING`).
+    #[test]
+    fn the_unit_voices_questions_leave_the_crcs_alone() {
+        use crate::client::unit_voice::{pick_and_play_unit_voice_response, PickAndPlayInfo, VoiceSource};
+        use crate::common::message_types::*;
+        use crate::common::special_power_type::{SPECIAL_CARPET_BOMB, SPECIAL_INVALID, SPECIAL_PARADROP_AMERICA};
+        let frames = 300;
+        let (mut plain, _) = world33();
+        let (w, x) = world33();
+        let mut c = WorldClient::new(w, 1);
+        let mut ui = InGameUiSelection::new();
+        for o in c.local_player_objects() {
+            ui.select_drawable(o, &mut c);
+        }
+        let msgs = [
+            MSG_DOCK, MSG_CREATE_SELECTED_GROUP, MSG_SELECT_TEAM3, MSG_EVACUATE, MSG_DO_REPAIR, MSG_COMBATDROP_AT_LOCATION, MSG_ENTER,
+            MSG_DO_MOVETO, MSG_DO_ATTACKMOVETO, MSG_GET_REPAIRED, MSG_GET_HEALED, MSG_DO_SALVAGE, MSG_RESUME_CONSTRUCTION,
+            MSG_DOZER_CONSTRUCT, MSG_DO_FORCE_ATTACK_GROUND, MSG_SWITCH_WEAPONS, MSG_DO_FORCE_ATTACK_OBJECT, MSG_DO_ATTACK_OBJECT,
+            MSG_DO_WEAPON_AT_OBJECT, MSG_DO_WEAPON_AT_LOCATION, MSG_DO_GUARD_POSITION, MSG_DO_SPECIAL_POWER,
+            MSG_DO_SPECIAL_POWER_AT_LOCATION, MSG_INTERNET_HACK,
+        ];
+        let (mut asked, mut sources) = (0u32, std::collections::BTreeSet::new());
+        for f in 0..frames {
+            plain.logic_update().expect("a frame");
+            c.world.logic_update().expect("a frame");
+            let list = ui.all_selected_drawables().to_vec();
+            for &m in &msgs {
+                for (air, target, slot, sp) in [
+                    (false, None, None, SPECIAL_INVALID),
+                    (true, Some(x.bus), Some(0), SPECIAL_CARPET_BOMB),
+                    (false, Some(x.barracks), Some(1), SPECIAL_PARADROP_AMERICA),
+                ] {
+                    let info = PickAndPlayInfo { air, draw_target: target, weapon_slot: slot, special_power_type: sp };
+                    pick_and_play_unit_voice_response(&list, m, Some(&info), &ui, &mut c);
+                    asked += 1;
+                }
+            }
+            for v in c.voices.drain(..) {
+                sources.insert(format!("{:?}", v.source));
+            }
+            let a = c.world.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            let b = plain.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            assert_eq!(a, b, "the CRCs part at frame {f}");
+        }
+        eprintln!("#51: {asked} voice responses asked over {frames} frames; sources {sources:?}");
+        assert!(c.sent.is_empty());
+        assert!(sources.contains(&format!("{:?}", VoiceSource::InitiateSound(SPECIAL_CARPET_BOMB))));
+        assert!(sources.contains(&format!("{:?}", VoiceSource::InitiateSound(SPECIAL_PARADROP_AMERICA))));
+        let gun = crate::client::unit_voice::UnitVoiceHost::voice_weapon(&c, x.gunner, None).expect("the gunner's weapon");
+        assert_eq!((gun.slot, gun.name.as_slice()), (0, &b"ClipGun"[..]));
     }
 
     /// #33: the game's own templates for the control bar's questions, read after the gate's INI (the gate's are unchanged).

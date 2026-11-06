@@ -145,10 +145,12 @@ output).**
   `generatePlayInfo`, and the audio and logic generators' words): **0 mismatches** on the first run. Two planted bugs
   (the repeat rule at more than one sound; a pitch divisor) were caught (2,027 and 1,257 mismatches).
 - **The CRCs:** the FX gun test (`drawables`) now also plays the audio: CRCs equal over 200 frames, 5 voices played.
-- **Not done** (issues filed): a native output (no backend chosen; ALSA is not in this build environment); the
-  drawables' ambient sounds and the map's customised ones (`DynamicAudioEventInfo`); ~~the scripts' sounds, speech and
+- **Not done** (issues filed): a native output (no backend chosen; ALSA is not in this build environment); ~~the
+  drawables' ambient sounds and the map's customised ones (`DynamicAudioEventInfo`);~~ **Corrected 2026-11-06 (#51):**
+  the ambient sounds and the map's customised ones are played (see #51's parts 2 and 3 below); ~~the scripts' sounds, speech and
   music (cut points in the logic);~~ **Corrected 2026-11-06 (#51):** the scripts' sounds, speech and music are played
-  (see #51's entry below); unit voices on selection and orders; music tracks started by the game; EVA; the
+  (see #51's entry below); ~~unit voices on selection and orders;~~ **Corrected 2026-11-06 (#51):** unit voices are
+  played (see #51's parts 2 and 3); music tracks started by the game; EVA; the
   low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
 
 **#52 (2026-11-06, GitHub #52): script speech and sound waits last the files' length (the owner's option 2).**
@@ -199,8 +201,71 @@ output).**
   prefix is not there is skipped until it is. Then held.
 - **Gate (a):** the gate game has no speech or sound waits and loads no audio. *Predicted:* unchanged. *Result:* PASS,
   300 frames, last CRC `0bf44067`. Lib 999 (994 + 5), client 34 (33 + 1), clippy clean, web build clean.
-- **Not done:** no check against a real install (none at hand) or against Miles (never released); a map's `map.ini`
-  audio redefinitions (as #50).
+- **Not done:** no check against a real install (none at hand) or against Miles (never released); ~~a map's `map.ini`
+  audio redefinitions (as #50).~~ **Corrected 2026-11-06 (#51):** a map's `map.ini` audio events now reach the logic's
+  and the client's descriptions (see #51's parts 2 and 3); their lengths are still the install's (computed at load,
+  before the map).
+
+**#51 (2026-11-06, GitHub #51): audio follow-ups, parts 2 and 3 (unit voices; ambient sounds; `map.ini` audio).**
+- **Translated, unit voices** (`client::unit_voice`, new): CommandXlat.cpp's `PickAndPlayInfo` and
+  `pickAndPlayUnitVoiceResponse` (CommandXlat.cpp:295-753: every case, the move voice "upgraded" by crush, salvage and the
+  GLA worker shoes, the weapon damage types, the special power module's `InitiateSound`, the car bomb's extra voices) and
+  `translateGameMessage`'s `MSG_CREATE_SELECTED_GROUP`/`MSG_SELECT_TEAMn` case (only locally controlled units speak).
+  Called where upstream calls it: `issueMoveToLocationCommand`, `issueAttackCommand`, the three branches of
+  `issueSpecialPowerCommand`, both of `issueCombatDropCommand`, `issueFireWeaponCommand` at an object,
+  `createEnterMessage`, both of `evaluateForceAttack`, and `evaluateContextCommand`'s resume construction, dock, repair,
+  get repaired, get healed and salvage (`client::command_xlat`); `ControlBar::processCommandUI`'s evacuate, hack internet
+  and switch weapon (`client::control_bar`); `PlaceEventTranslator`'s construct (`client::place_event`). The selection
+  sounds of SelectionXlat.cpp are the `MSG_CREATE_SELECTED_GROUP` messages it sends (its own `m_noCanDoSound` plays are in
+  debug builds only). `Object::defect`'s `VoiceDefect` is played from the object's template (`client_audio`).
+- **Reads, all without side effects** (`UnitVoiceHost`, answered by `WorldClient`): the template's sounds; the AI's
+  `isMoving` (the module's own answer, as the control bar reads it) and `isWaitingForPath` (`World::ai_peek`);
+  `canCrushOrSquish` (`&self`); the weapon set's weapons and the store's templates; `isUsingAirborneLocomotor`; the
+  player's completed upgrades (the worker shoes found by name, no name key made); the special power module's
+  `getInitiateSound()` (a new `ModuleCall::GetSpecialPowerInitiateSound`, a getter of the module data); the logic's copy of
+  the audio descriptions for `isValidAudioEvent`. Upstream's `setPlayingAudioIndex` on the template's `const` event (so
+  the next voice is another file) is kept by the client, by template and sound (`ClientAudio::voice_indices`). The voices
+  go to `WorldClient::voices`; the application plays them with the client's audio random.
+- **Translated, ambient sounds** (`client::drawable_ambient`, new): Drawable.cpp's `startAmbientSound` (both),
+  `stopAmbientSound`, `enableAmbientSound`, `enableAmbientSoundFromScript`, `getAmbientSoundByDamage` (`SoundAmbient`,
+  `SoundAmbientDamaged`, `SoundAmbientReallyDamaged`, `SoundAmbientRubble`, the pristine one standing in for a missing
+  damaged one), the custom sound (`setCustomSoundAmbientOff`/`Info`, `clearCustomSoundAmbient`, `mangleCustomAudioName`,
+  `getNoSoundMarker`), `onLevelStart`, `update`'s restart of a sound that loops for ever, and the constructor's and
+  `reactToBodyDamageStateChange`'s starts (not while the map loads). The map's `DynamicAudioEventInfo`: the logic already
+  sent the object's `objectSoundAmbient*` properties (`DrawableAmbientSoundProperties`) and had the property block
+  translated (`apply_ambient_sound_properties`); the client now runs it on the drawable, copying the description with
+  its overrides under `" CUSTOM <id> <name>"` (`addAudioEventInfo`). The state is the client audio's, by object id.
+- **Cuts made client events:** `doEnableObjectSound` (`sa_drawable_enable_ambient_sound`) and the AI's
+  `drawable_enable_ambient_sound` / `drawable_stop_ambient_sound` (the jets' engine sound) push
+  `ObjectClientEvent::DrawableEnableAmbientSoundFromScript` / `DrawableEnableAmbientSound` / `DrawableStopAmbientSound`,
+  as 6320292 did for the scripts' audio; `startNewGame`'s `setLoadingMap` and `onLevelStart` loop also push
+  `ClientEvent::LoadingMap` and `DrawablesOnLevelStart` (their cut records are kept). None is saved or in the CRC.
+- **`map.ini` audio:** upstream's `loadMapINI` reads `map.ini` with `INI::load`, whose `theTypeTable` holds the audio's
+  `AudioEvent`, `DialogEvent` and `MusicTrack` rows. The logic's block table (`game_data`'s `BLOCKS`, used by I33's
+  `load_ini_overrides`) now has them: the descriptions go to `GameStatics::audio` (so #50's logical draws follow a
+  redefined event) and are listed (`AudioTables::logic_ini_events`); the client copies each listed description into its
+  own tables (`ClientAudio::sync_logic_ini_audio`), so every machine has the same ones. Before this, an audio block in a
+  `map.ini` stopped the load there with `INI_UNKNOWN_TOKEN`.
+- **Defect fixed on the way:** `CommandTranslator::observe_message` left `m_teamExists` as it was for `MSG_SELECT_TEAMn`;
+  upstream's case sets it (written up for an issue).
+- **Tests (predictions in each doc comment, written before the runs):** `the_unit_voices_questions_leave_the_crcs_alone`
+  (every voice case asked 21,600 times over 300 frames of #33's world: CRCs equal, nothing sent, both special power
+  modules' `InitiateSound` found, the gunner's weapon read): held. `ambient_sounds_follow_the_drawable`: held after one
+  prediction I corrected while reading the test over, before the run (`onLevelStart` visits every drawable).
+  `a_maps_ini_redefines_audio_for_the_logic_and_the_client` (`Boom` redefined keeps its `Limit` with no
+  `DefaultSoundEffect`, as upstream; `MapSong` a track; the client synced the same): held. Client:
+  `voiced_units_selected_and_ordered_leave_the_crcs_alone` (two voiced soldiers selected by a click and a drag, ordered
+  to move and attack; with the audio and every voice case asked each frame): CRCs equal over 90 frames, the same six
+  messages, `SoldierSelect` twice (files `sel1`, `sel2`: the kept index 1), `SoldierMove`, `SoldierAttack`, three
+  looping hums still playing. One miss, in the test: the hums were not in `ClientAudio`'s log (the ambient sounds go to
+  the manager directly); the assertion reads the drawables' sounds instead.
+- **Gates:** lib 1002 (999 + 3), client 35 (34 + 1), clippy clean, web build clean. Gate (a): *predicted* unchanged (the
+  gate game runs no translator and no `startNewGame`); *result* PASS, 300 frames, last CRC `0bf44067`.
+- **Not done** (written up for issues): GUICommandTranslator.cpp is not translated, so its five voices (guard at an
+  object and a position, attack move, fire weapon at a position, evacuate at a position) and ControlBarCallback.cpp's two
+  are not played; EVA; the ambient sound's `setTimeOfDay` restart and its save-game state; the lengths (#52) of events a
+  `map.ini` redefines are the install's; `map.ini`'s `AudioSettings`/`MiscAudio` blocks are not read; no check with a
+  real install.
 
 **#51 (2026-11-06, GitHub #51): audio follow-ups, part 1 (the scripts' audio).**
 - **Translated:** the `TheAudio` calls of ScriptActions.cpp's `doPlaySoundEffect`, `doPlaySoundEffectAt`,
@@ -220,9 +285,10 @@ output).**
   read `cuts.audio_lengths_ms`, which nothing fills): answering it from the device's files changes when script waits end,
   so it is a question for the owner.~~ **Corrected 2026-11-06 (#52):** the owner chose option 2; the logic reads each
   event's length from the files at load (see #52's entry). Music next/previous are not script actions upstream (CommandXlat's demo keys
-  `MSG_META_DEMO_MUSIC_NEXT_TRACK`/`PREV_TRACK`); the manager has them, nothing calls them. Unit voices, selection
+  `MSG_META_DEMO_MUSIC_NEXT_TRACK`/`PREV_TRACK`); the manager has them, nothing calls them. ~~Unit voices, selection
   sounds, `VoiceDefect`, EVA, the drawables' ambient sounds (with `doEnableObjectSound`, still a cut) and the map's
-  customised ambient sounds remain (parts 2 and 3).
+  customised ambient sounds remain (parts 2 and 3).~~ **Corrected 2026-11-06 (#51):** all of these but EVA are done (see
+  the entry for parts 2 and 3 below).
 
 **#50 (2026-11-06, GitHub #50): the logic makes a logical audio event's random draws (the owner's option (a)).**
 - **Translated:** the logic half of `AudioManager::addAudioEvent` (GameAudio.cpp:420-457: the empty/`NoSound` name and
@@ -267,8 +333,10 @@ output).**
   states compared, 0 mismatches. A check that it can fail: skipping the attack draw gave 480 mismatches.
 - **Gate (a):** the gate game plays no script sound and loads no audio INI. *Predicted:* unchanged. *Result:* PASS, 300
   frames, last CRC `0bf44067`, unchanged. Lib 994 (992 + 2), client 33, clippy clean, web build clean.
-- **Not done:** a map's `map.ini` can redefine `AudioEvent`s upstream (`INI::load` with `theTypeTable`); the map loader
-  does not read audio blocks, so the logic's and the client's descriptions are the install's.
+- **Not done:** ~~a map's `map.ini` can redefine `AudioEvent`s upstream (`INI::load` with `theTypeTable`); the map loader
+  does not read audio blocks, so the logic's and the client's descriptions are the install's.~~ **Corrected 2026-11-06
+  (#51):** the logic's INI loads read `AudioEvent`, `DialogEvent` and `MusicTrack` blocks into `GameStatics::audio`, and
+  the client applies them (see #51's parts 2 and 3).
 
 **#19 (2026-11-06, GitHub #19): animations sampled with the shipped game's `Float_To_Long`.**
 - **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of
@@ -631,7 +699,8 @@ cases. `InGameUI` gains the waypoint, force move and attack move modes. The stub
 asks `evaluate_context_command(draw, pos, EVALUATE_ONLY)`, as upstream asks `TheGameClient`.
 
 Not translated yet: a pending GUI command (special powers, fire weapon, combat drop and the car bomb, hijack and sabotage
-modes, from the control bar: C2c), unit voices and the stats collector (no messages), and the double-click guard order
+modes, from the control bar: C2c), ~~unit voices~~ (**corrected 2026-11-06, #51:** played since #51) and the stats
+collector (no messages), and the double-click guard order
 (off in the shipped options).
 
 *Predictions before the runs:* written in each test's doc. In short: the ground gives `MSG_DO_MOVETO` (no group, no move);

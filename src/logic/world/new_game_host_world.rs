@@ -127,6 +127,8 @@ impl World {
 impl NewGameHost for World {
     fn sn_set_loading_map(&mut self, on: bool) {
         self.ng_cut("GameLogic::setLoadingMap", &[i64::from(on)]);
+        // (#51) the client's drawables read it (whether a new drawable starts its ambient sound)
+        self.events.push(crate::logic::client_event::ClientEvent::LoadingMap(on));
     }
     fn sn_map_name(&self) -> Vec<u8> {
         self.cuts.new_game.map_name.clone()
@@ -660,6 +662,8 @@ impl NewGameHost for World {
     fn sn_gamespy_playing(&mut self) {}
     fn sn_drawables_on_level_start(&mut self) {
         self.ng_cut("Drawable::onLevelStart", &[]);
+        // (#51) the client's drawables start their ambient sounds
+        self.events.push(crate::logic::client_event::ClientEvent::DrawablesOnLevelStart);
     }
     fn sn_gamespy_disconnections(&mut self) {}
     fn sn_replay_message(&mut self) {}

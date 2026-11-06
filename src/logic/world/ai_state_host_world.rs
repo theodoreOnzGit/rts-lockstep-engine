@@ -711,11 +711,15 @@ impl AiStateHost for World {
     fn drawable_set_instance_matrix(&mut self, _z: Option<f32>) {
         self.ais_cut("drawable_set_instance_matrix");
     }
-    fn drawable_enable_ambient_sound(&mut self, _enable: bool) {
-        self.ais_cut("drawable_enable_ambient_sound");
+    fn drawable_enable_ambient_sound(&mut self, enable: bool) {
+        // (#51: was a cut) the client's drawable makes the call
+        let object_id = self.ai_self;
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableEnableAmbientSound { object_id, enable });
     }
     fn drawable_stop_ambient_sound(&mut self) {
-        self.ais_cut("drawable_stop_ambient_sound");
+        // (#51: was a cut) the client's drawable makes the call
+        let object_id = self.ai_self;
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableStopAmbientSound { object_id });
     }
     fn drawable_set_orientation(&mut self, _drawable: u32, _angle: f32) {
         self.ais_cut("drawable_set_orientation");

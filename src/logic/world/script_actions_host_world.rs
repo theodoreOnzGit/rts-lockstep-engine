@@ -543,8 +543,9 @@ impl ScriptActionsHost for World {
     fn sa_obj_has_drawable(&self, o: ObjH) -> bool {
         self.has_drawable(o)
     }
-    fn sa_drawable_enable_ambient_sound(&mut self, _o: ObjH, _enable: bool) {
-        self.sa_cut("drawable_enable_ambient_sound");
+    fn sa_drawable_enable_ambient_sound(&mut self, o: ObjH, enable: bool) {
+        // (#51: was a cut) the client's drawable makes the call
+        self.emit(crate::logic::world::object_events::ObjectClientEvent::DrawableEnableAmbientSoundFromScript { object_id: o, enable });
     }
     fn sa_obj_has_contain(&self, o: ObjH) -> bool {
         self.get_contain(o).is_some()

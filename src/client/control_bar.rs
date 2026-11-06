@@ -20,11 +20,14 @@
 //! build (or start a building's placement), queue upgrades, cancel, stop, sell, evacuate, fire, use a special power, switch
 //! weapons, select every unit of a type or buy a science, as messages for the logic.
 //!
-//! **Not here:** the buttons' windows and images, flashing, and the unit-specific sounds (the view and audio, C2d); the EVA
+//! **Not here:** the buttons' windows and images, flashing, ~~and the unit-specific sounds (the view and audio, C2d);~~
+//! **Corrected 2026-11-06 (#51):** the unit voices of evacuate, hack internet and switch weapon are played
+//! ([`crate::client::unit_voice`]); the EVA
 //! "insufficient funds" voice is the host's [`ControlBarHost::eva_insufficient_funds`].
 
 use crate::client::command_xlat::{CmdArg, CommandXlatHost};
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection};
+use crate::client::unit_voice::{pick_and_play_unit_voice_response, PickAndPlayInfo};
 use crate::common::game_type::{ObjectId, INVALID_ID};
 use crate::common::message_types::*;
 use crate::common::special_power_type::SpecialPowerType;
@@ -205,6 +208,12 @@ fn may_queue_upgrade(obj: Option<ObjectId>, upgrade: u32, h: &mut impl ControlBa
     true
 }
 
+/// `pickAndPlayUnitVoiceResponse(TheInGameUI->getAllSelectedDrawables(), msg, info)` (#51).
+fn voice(msg: crate::common::message_stream::MessageType, info: Option<&PickAndPlayInfo>, ui: &InGameUiSelection, h: &mut impl ControlBarHost) {
+    let list = ui.all_selected_drawables().to_vec();
+    pick_and_play_unit_voice_response(&list, msg, info, ui, h);
+}
+
 /// `ControlBar::processCommandUI(control, gadgetMessage)`: `button` was pressed, on `control`, while the control bar shows
 /// `selected` (`m_currentSelectedDrawable`) in the context `multi_select` (`CB_CONTEXT_MULTI_SELECT`) or none
 /// (`context_none`).
@@ -348,17 +357,27 @@ pub fn process_command_ui(
         gui::EVACUATE => {
             ui.set_gui_command(None);
             if button.options & opt::NEED_TARGET_POS == 0 {
+                // #51: the voice first, as upstream
+                voice(MSG_EVACUATE, None, ui, h);
                 h.append_command(MSG_EVACUATE, &[]);
             }
         }
         gui::EXECUTE_RAILED_TRANSPORT => h.append_command(MSG_EXECUTE_RAILED_TRANSPORT, &[]),
-        gui::HACK_INTERNET => h.append_command(MSG_INTERNET_HACK, &[]),
+        gui::HACK_INTERNET => {
+            voice(MSG_INTERNET_HACK, None, ui, h);
+            h.append_command(MSG_INTERNET_HACK, &[]);
+        }
         gui::SELL => h.append_command(MSG_SELL, &[]),
         gui::TOGGLE_OVERCHARGE => h.append_command(MSG_TOGGLE_OVERCHARGE, &[]),
         // ("hmm, should never occur": these need a target)
         gui::WAYPOINTS | gui::SET_RALLY_POINT | gui::BEACON_DELETE | gui::GUARD | gui::GUARD_WITHOUT_PURSUIT
         | gui::GUARD_FLYING_UNITS_ONLY | gui::COMBATDROP => {}
-        gui::SWITCH_WEAPON => h.append_command(MSG_SWITCH_WEAPONS, &[CmdArg::Int(button.weapon_slot)]),
+        gui::SWITCH_WEAPON => {
+            // "Play mode change acknowledgement" (between the message and its argument upstream)
+            let info = PickAndPlayInfo { weapon_slot: Some(button.weapon_slot), ..Default::default() };
+            voice(MSG_SWITCH_WEAPONS, Some(&info), ui, h);
+            h.append_command(MSG_SWITCH_WEAPONS, &[CmdArg::Int(button.weapon_slot)]);
+        }
         gui::FIRE_WEAPON => h.append_command(MSG_DO_WEAPON, &[CmdArg::Int(button.weapon_slot), CmdArg::Int(button.max_shots_to_fire)]),
         gui::SPECIAL_POWER_FROM_SHORTCUT => {
             let Some((id, sp_type)) = sp else { return CbCommandStatus::Used };

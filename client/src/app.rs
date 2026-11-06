@@ -419,6 +419,7 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
             g.models.apply_events(g.controls.world(), &events, now);
             // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
             let requests: Vec<_> = g.models.drawables.fx.requests.drain(..).collect();
+            let voices: Vec<_> = g.controls.client.voices.drain(..).collect();
             if let (Some(sound), Some(art)) = (g.audio.as_deref_mut(), g.models.art.as_ref()) {
                 let files = |p: &[u8]| art.fs.does_file_exist(p);
                 let w = &g.controls.client.world;
@@ -428,12 +429,19 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
                     files: &files,
                     language: rts_lockstep_engine::logic::world::install_world::DEFAULT_LANGUAGE,
                 };
+                // #51: a map's `map.ini` audio events, as the logic read them; the unit voices the translators played since
+                // the last frame; then the frame's events
+                sound.audio.sync_logic_ini_audio(&w.statics.audio);
+                for v in &voices {
+                    sound.audio.play_unit_voice(&host, v);
+                }
                 for e in &events {
                     sound.audio.apply_event(&host, &mut sound.device, e);
                 }
                 for r in &requests {
                     sound.audio.fx_request(&host, r);
                 }
+                sound.audio.update_ambient(&host, &mut sound.device);
                 let view = rig.as_deref().map_or_else(Default::default, |r| crate::audio::listener_view(r.focus.to_array(), r.yaw, r.pitch, r.distance));
                 sound.audio.manager.update(&host, &mut sound.device, &view);
             }

@@ -116,6 +116,9 @@ pub enum ModuleCall {
     /// [`ModuleReply::Int`] if the module has a template, anything else if its
     /// template is `NULL`.
     GetSpecialPowerType,
+    /// #51: `getInitiateSound()`: the module data's `InitiateSound` (a read; the client's unit voices ask it). Replies
+    /// [`ModuleReply::Sound`].
+    GetSpecialPowerInitiateSound,
     /// `getSpecialPowerTemplate()->isShortcutPower()`; replies [`ModuleReply::Bool`].
     IsShortcutPower,
     /// `isModuleForPower(template)`; the template by id. Replies [`ModuleReply::Bool`].

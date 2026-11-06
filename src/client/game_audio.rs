@@ -162,6 +162,19 @@ pub trait AudioHost: AudioEventHost {
     fn shroud_clear(&self, player: i32, pos: &Coord3D) -> bool;
     /// `TheTerrainLogic->getGroundHeight(x, y)`.
     fn ground_height(&self, x: f32, y: f32) -> f32;
+    /// #51: `obj->getTemplate()->getAudio(t)`'s event name (empty: `s_audioEventNoSound`, or no such object). A host with no
+    /// objects answers empty.
+    fn object_template_audio(&self, _id: u32, _t: crate::common::thing_template::ThingTemplateAudioType) -> Vec<u8> {
+        Vec::new()
+    }
+    /// #51: `obj->getBodyModule()->getDamageState()` (`BODY_PRISTINE` for none).
+    fn object_damage_state(&self, _id: u32) -> i32 {
+        0
+    }
+    /// #51: `TheGlobalData->m_timeOfDay`.
+    fn time_of_day(&self) -> i32 {
+        crate::common::game_type::TimeOfDay::Afternoon as i32
+    }
 }
 
 /// `enum RequestType`.

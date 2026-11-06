@@ -90,6 +90,12 @@ pub enum ClientEvent {
     /// GitHub #51: the script actions' calls on `TheAudio` (ScriptActions.cpp) and the script engine's music track played
     /// again after a load (`ScriptEngine::loadPostProcess`), nested ([`ScriptAudioEvent`]).
     ScriptAudio(ScriptAudioEvent),
+    /// GitHub #51: `GameLogic::setLoadingMap(on)` (`startNewGame`): while it is on, a drawable made or damaged does not start
+    /// its ambient sound (`Drawable::Drawable`, `Drawable::setDamageState`); `onLevelStart` does
+    /// ([`ClientEvent::DrawablesOnLevelStart`]). Not simulation state: the logic's own flag is not kept by this engine.
+    LoadingMap(bool),
+    /// GitHub #51: `startNewGame`'s loop calling every drawable's `Drawable::onLevelStart()` (its ambient sound started).
+    DrawablesOnLevelStart,
 }
 
 /// GitHub #51: one of the scripts' calls on `TheAudio`. Upstream calls the audio manager directly from the logic's

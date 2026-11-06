@@ -29,12 +29,15 @@
 //!   runs as upstream does when `TheInGameUI->getGUICommand()` is `NULL`.~~ **Since C2c** the pending GUI command is
 //!   evaluated too (with `issueFireWeaponCommand`, `issueCombatDropCommand`, the shortcut special powers, and InGameUI's
 //!   `canSelectedObjectsDoSpecialPower` and `canSelectedObjectsEffectivelyUseWeapon`).
-//! - **Unit voices** (`pickAndPlayUnitVoiceResponse`) and the stats collector are audio and debug; they change no message.
+//! - ~~**Unit voices** (`pickAndPlayUnitVoiceResponse`) and the stats collector are audio and debug; they change no message.~~
+//!   **Corrected 2026-11-06 (#51):** the unit voices are played at upstream's call sites ([`crate::client::unit_voice`]);
+//!   the stats collector (debug) is still left out. Neither changes a message.
 //! - **The double-click guard order** (`m_doubleClickAttackMove`, off in the shipped options) and the right-button drag
 //!   bookkeeping that cancels build placement (C2c, with placement).
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection};
 use crate::client::selection_groups::SelectionGroupsHost;
+use crate::client::unit_voice::{pick_and_play_unit_voice_response, PickAndPlayInfo, UnitVoiceHost};
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::{ObjectId, INVALID_ANGLE, INVALID_ID};
@@ -120,7 +123,7 @@ pub enum TargetMode {
 
 /// What the command translator asks of the game, beyond the selection's questions. The per-object action questions are the
 /// action manager's; [`crate::client::command_world`] answers them from a World.
-pub trait CommandXlatHost: SelectionGroupsHost {
+pub trait CommandXlatHost: SelectionGroupsHost + UnitVoiceHost {
     /// `obj->getStatusBits().test(OBJECT_STATUS_MASKED)`.
     fn object_is_masked(&self, obj: ObjectId) -> bool;
     /// `obj->getPosition()`.
@@ -171,6 +174,12 @@ pub trait CommandXlatHost: SelectionGroupsHost {
 pub struct CommandTranslator {
     /// `m_teamExists`: a selected group was made and not destroyed since.
     pub team_exists: bool,
+}
+
+/// `pickAndPlayUnitVoiceResponse(TheInGameUI->getAllSelectedDrawables(), msg, info)` (#51).
+fn voice(msg: MessageType, info: Option<&PickAndPlayInfo>, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) {
+    let list = ui.all_selected_drawables().to_vec();
+    pick_and_play_unit_voice_response(&list, msg, info, ui, h);
 }
 
 fn objects_of(ui: &InGameUiSelection, h: &impl CommandXlatHost) -> Vec<Option<ObjectId>> {
@@ -362,11 +371,24 @@ fn can_any_force_attack(victim: Option<ObjectId>, pos: Option<Coord3D>, ui: &InG
 impl CommandTranslator {
     /// `translateGameMessage`'s selected-group cases: `m_teamExists` follows the group messages that pass through.
     pub fn observe_message(&mut self, t: MessageType) {
-        if t == MSG_CREATE_SELECTED_GROUP || t == MSG_CREATE_SELECTED_GROUP_NO_SOUND || (MSG_ADD_TEAM0.0..=MSG_ADD_TEAM9.0).contains(&t.0) {
+        // (#51: ~~`MSG_SELECT_TEAMn` left `m_teamExists` as it was~~ **corrected 2026-11-06 (#51):** upstream's case sets it
+        // for the select-team messages too)
+        if t == MSG_CREATE_SELECTED_GROUP
+            || t == MSG_CREATE_SELECTED_GROUP_NO_SOUND
+            || (MSG_ADD_TEAM0.0..=MSG_ADD_TEAM9.0).contains(&t.0)
+            || (MSG_SELECT_TEAM0.0..=MSG_SELECT_TEAM9.0).contains(&t.0)
+        {
             self.team_exists = true;
         } else if t == MSG_DESTROY_SELECTED_GROUP {
             self.team_exists = false;
         }
+    }
+
+    /// [`Self::observe_message`] and, for `MSG_CREATE_SELECTED_GROUP` and `MSG_SELECT_TEAMn`, the selection's voice (#51:
+    /// `translateGameMessage`'s case, [`crate::client::unit_voice::selected_group_voice`]).
+    pub fn observe_message_with_voice(&mut self, t: MessageType, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) {
+        crate::client::unit_voice::selected_group_voice(t, ui, h);
+        self.observe_message(t);
     }
 
     /// `issueMoveToLocationCommand(pos, drawableInWay, commandType)`.
@@ -400,6 +422,11 @@ impl CommandTranslator {
                 }
             }
         }
+        // "only make sounds if we really did the command messages" (#51; with or without a group, as upstream)
+        if ty == CommandEvaluateType::DoCommand {
+            let info = PickAndPlayInfo { draw_target: drawable_in_way, ..Default::default() };
+            voice(MSG_DO_MOVETO, Some(&info), ui, h);
+        }
         t
     }
 
@@ -431,17 +458,25 @@ impl CommandTranslator {
                 t = Self::create_attack_message(d, target, ty, h);
             }
         }
+        // "only make sounds if the command was for real" (#51)
+        if ty == CommandEvaluateType::DoCommand {
+            let info = PickAndPlayInfo { air: h.is_using_airborne_locomotor(target_obj), draw_target: Some(target), ..Default::default() };
+            voice(t, Some(&info), ui, h);
+        }
         t
     }
 
     /// `createEnterMessage(enter, commandType)`: `MSG_ENTER` for the selected group (`INVALID_ID`) into the target.
-    fn create_enter_message(&self, enter: Option<DrawableId>, ty: CommandEvaluateType, h: &mut impl CommandXlatHost) -> MessageType {
+    fn create_enter_message(&self, enter: Option<DrawableId>, ty: CommandEvaluateType, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
         if ty == CommandEvaluateType::EvaluateOnly {
             return MSG_ENTER;
         }
         let Some(target) = enter.and_then(|d| h.drawable_object(d)) else { return MSG_ENTER };
         // (without a team upstream DEBUG_CRASHes and makes no message)
         if self.team_exists {
+            // (#51: the voice first, as upstream)
+            let info = PickAndPlayInfo { draw_target: enter, ..Default::default() };
+            voice(MSG_ENTER, Some(&info), ui, h);
             h.append_command(MSG_ENTER, &[CmdArg::Object(INVALID_ID), CmdArg::Object(target)]);
         }
         MSG_ENTER
@@ -460,7 +495,8 @@ impl CommandTranslator {
         ui: &mut InGameUiSelection,
         h: &mut impl CommandXlatHost,
     ) -> MessageType {
-        let Some((sp_id, _)) = b.special_power else { return MSG_INVALID };
+        let Some((sp_id, sp_type)) = b.special_power else { return MSG_INVALID };
+        let sp_info = PickAndPlayInfo { draw_target: target, special_power_type: sp_type, ..Default::default() };
         let source_obj = match ignore_sel_obj {
             Some(o) => Some(o),
             None => ui.first_selected_drawable().and_then(|d| h.drawable_object(d)),
@@ -476,6 +512,8 @@ impl CommandTranslator {
             if ty == CommandEvaluateType::DoCommand {
                 let args = [CmdArg::Int(sp_id as i32), CmdArg::Object(t), CmdArg::Int(b.options as i32), CmdArg::Object(specific_source)];
                 h.append_command(MSG_DO_SPECIAL_POWER_AT_OBJECT, &args);
+                // "say something like " I think I'll put some dynamite on that there tank."" (#51)
+                voice(MSG_DO_SPECIAL_POWER_AT_OBJECT, Some(&sp_info), ui, h);
             }
             MSG_DO_SPECIAL_POWER_AT_OBJECT
         } else if b.options & opt::NEED_TARGET_POS != 0 {
@@ -489,12 +527,14 @@ impl CommandTranslator {
                     CmdArg::Object(specific_source),
                 ];
                 h.append_command(MSG_DO_SPECIAL_POWER_AT_LOCATION, &args);
+                voice(MSG_DO_SPECIAL_POWER_AT_LOCATION, Some(&sp_info), ui, h);
             }
             MSG_DO_SPECIAL_POWER_AT_LOCATION
         } else {
             if ty == CommandEvaluateType::DoCommand {
                 let args = [CmdArg::Int(sp_id as i32), CmdArg::Int(b.options as i32), CmdArg::Object(specific_source)];
                 h.append_command(MSG_DO_SPECIAL_POWER, &args);
+                voice(MSG_DO_SPECIAL_POWER, Some(&sp_info), ui, h);
             }
             MSG_DO_SPECIAL_POWER
         };
@@ -522,11 +562,13 @@ impl CommandTranslator {
             }
             if ty == CommandEvaluateType::DoCommand {
                 h.append_command(MSG_COMBATDROP_AT_OBJECT, &[CmdArg::Object(t)]);
+                voice(MSG_COMBATDROP_AT_OBJECT, None, ui, h);
             }
             MSG_COMBATDROP_AT_OBJECT
         } else if b.options & opt::NEED_TARGET_POS != 0 {
             if ty == CommandEvaluateType::DoCommand {
                 h.append_command(MSG_COMBATDROP_AT_LOCATION, &[CmdArg::Location(*pos)]);
+                voice(MSG_COMBATDROP_AT_LOCATION, None, ui, h);
             }
             MSG_COMBATDROP_AT_LOCATION
         } else {
@@ -554,6 +596,9 @@ impl CommandTranslator {
             }
             if doing {
                 h.append_command(MSG_DO_WEAPON_AT_OBJECT, &[CmdArg::Int(b.weapon_slot), CmdArg::Object(t), CmdArg::Int(b.max_shots_to_fire)]);
+                // "play a unit specific sound?" (#51)
+                let info = PickAndPlayInfo { weapon_slot: Some(b.weapon_slot), ..Default::default() };
+                voice(MSG_DO_WEAPON_AT_OBJECT, Some(&info), ui, h);
             }
             MSG_DO_WEAPON_AT_OBJECT
         } else if b.options & opt::NEED_TARGET_POS != 0 {
@@ -626,7 +671,7 @@ impl CommandTranslator {
             return MSG_VALID_GUICOMMAND_HINT;
         }
         let t = match c.command_type {
-            gui::CONVERT_TO_CARBOMB | gui::HIJACK_VEHICLE | gui::SABOTAGE_BUILDING => self.create_enter_message(draw, ty, h),
+            gui::CONVERT_TO_CARBOMB | gui::HIJACK_VEHICLE | gui::SABOTAGE_BUILDING => self.create_enter_message(draw, ty, ui, h),
             gui::SPECIAL_POWER_FROM_SHORTCUT => match shortcut_unit {
                 Some(u) => Self::issue_special_power_command(c, ty, draw, pos, Some(u), ui, h),
                 None => MSG_INVALID,
@@ -665,6 +710,8 @@ impl CommandTranslator {
         if r == ATTACKRESULT_POSSIBLE || r == ATTACKRESULT_POSSIBLE_AFTER_MOVING {
             match ty {
                 CommandEvaluateType::DoCommand => {
+                    // (#51: the voice first, as upstream)
+                    voice(command, None, ui, h);
                     h.append_command(command, &[arg]);
                     command
                 }
@@ -696,6 +743,16 @@ impl CommandTranslator {
             }
             CommandEvaluateType::EvaluateOnly => command,
         }
+    }
+
+    /// [`Self::object_branch`] for the context branches that play the selection's voice when they command (#51:
+    /// resume construction, dock, repair, get repaired, get healed).
+    fn object_branch_voiced(command: MessageType, hint: MessageType, obj: ObjectId, ty: CommandEvaluateType, ui: &InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+        let t = Self::object_branch(command, hint, obj, ty, h);
+        if ty == CommandEvaluateType::DoCommand {
+            voice(command, None, ui, h);
+        }
+        t
     }
 
     /// The capture and hack branches' search of the first selected object's command set (upstream's "PRELIMINARY CODE FOR
@@ -794,19 +851,19 @@ impl CommandTranslator {
         // (the branches below test `draw`; with `draw` set, `obj` is too)
         let o = obj.unwrap_or(INVALID_ID);
         if draw.is_some() && !force && can(ActionType::ResumeConstruction, any, false, ui, h) {
-            return Self::object_branch(MSG_RESUME_CONSTRUCTION, MSG_RESUME_CONSTRUCTION_HINT, o, ty, h);
+            return Self::object_branch_voiced(MSG_RESUME_CONSTRUCTION, MSG_RESUME_CONSTRUCTION_HINT, o, ty, ui, h);
         }
         if draw.is_some() && !force && can(ActionType::DockAt, SelectionRules::All, false, ui, h) {
-            return Self::object_branch(MSG_DOCK, MSG_DOCK_HINT, o, ty, h);
+            return Self::object_branch_voiced(MSG_DOCK, MSG_DOCK_HINT, o, ty, ui, h);
         }
         if draw.is_some() && !force && can(ActionType::RepairObject, any, false, ui, h) {
-            return Self::object_branch(MSG_DO_REPAIR, MSG_DO_REPAIR_HINT, o, ty, h);
+            return Self::object_branch_voiced(MSG_DO_REPAIR, MSG_DO_REPAIR_HINT, o, ty, ui, h);
         }
         if draw.is_some() && !force && can(ActionType::GetRepairedAt, any, false, ui, h) {
-            return Self::object_branch(MSG_GET_REPAIRED, MSG_GET_REPAIRED_HINT, o, ty, h);
+            return Self::object_branch_voiced(MSG_GET_REPAIRED, MSG_GET_REPAIRED_HINT, o, ty, ui, h);
         }
         if draw.is_some() && !force && can(ActionType::GetHealedAt, any, false, ui, h) {
-            return Self::object_branch(MSG_GET_HEALED, MSG_GET_HEALED_HINT, o, ty, h);
+            return Self::object_branch_voiced(MSG_GET_HEALED, MSG_GET_HEALED_HINT, o, ty, ui, h);
         }
         for (action, hint) in [
             (ActionType::HijackVehicle, MSG_HIJACK_HINT),
@@ -818,7 +875,7 @@ impl CommandTranslator {
                     h.append_hint(hint, &[CmdArg::Object(o)]);
                     return hint;
                 }
-                return self.create_enter_message(draw, ty, h);
+                return self.create_enter_message(draw, ty, ui, h);
             }
         }
         if draw.is_some() && !force && can_selection_salvage(obj, ui, h) {
@@ -829,6 +886,7 @@ impl CommandTranslator {
             }
             if ty == DoCommand {
                 h.append_command(MSG_DO_SALVAGE, &[at]);
+                voice(MSG_DO_SALVAGE, None, ui, h);
             }
             return MSG_DO_SALVAGE;
         }
@@ -837,7 +895,7 @@ impl CommandTranslator {
                 h.append_hint(MSG_ENTER_HINT, &[CmdArg::Object(o)]);
                 return MSG_ENTER_HINT;
             }
-            return self.create_enter_message(draw, ty, h);
+            return self.create_enter_message(draw, ty, ui, h);
         }
         if draw.is_some() {
             result = get_can_selected_objects_attack(ActionType::AttackObject, obj, any, force, ui, h);
@@ -1002,6 +1060,9 @@ pub(crate) mod tests {
     fn code(a: ActionType) -> u8 {
         a as u8
     }
+
+    /// (#51) The selection test host plays no voices.
+    impl UnitVoiceHost for Host {}
 
     impl CommandXlatHost for Host {
         fn object_is_masked(&self, _obj: ObjectId) -> bool {

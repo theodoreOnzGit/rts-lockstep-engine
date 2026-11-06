@@ -517,6 +517,11 @@ pub struct AudioTables {
     pub preferred_speaker: Vec<u8>,
     /// `newAudioEventInfo` of a name already defined (upstream's `DEBUG_CRASH`, ignored in release): the names, in order.
     pub redefined: Vec<Vec<u8>>,
+    /// #51: the events defined by the logic's INI loads rather than the audio's own files (a map's `map.ini`, read through
+    /// `theTypeTable` upstream, which holds the audio's blocks too: [`LOGIC_INI_AUDIO_BLOCKS`]), in order, each with whether
+    /// it was added to the music track list. The client's audio applies them to its own tables
+    /// (`client_audio::ClientAudio::sync_logic_ini_audio`).
+    pub logic_ini_events: Vec<(Vec<u8>, bool)>,
 }
 
 /// `AudioManager::init`'s files, in its order.
@@ -562,19 +567,48 @@ fn parse_definition(ini: &mut Ini<'_>, t: &mut AudioTables, default: &[u8], ty: 
 /// `INI::parseMusicTrackDefinition`: as an audio event of type music, from `DefaultMusicTrack`; the track list gets the
 /// name only when `DefaultMusicTrack` exists (added before the fields are read).
 fn parse_music_track_definition(ini: &mut Ini<'_>, t: &mut AudioTables) -> IniResult<()> {
+    parse_music_track(ini, t).map(|_| ())
+}
+
+/// [`parse_music_track_definition`], answering the name and whether it was added to the track list.
+fn parse_music_track(ini: &mut Ini<'_>, t: &mut AudioTables) -> IniResult<(Vec<u8>, bool)> {
     let name = ini.get_next_token(None)?;
     t.new_audio_event_info(&name);
     let default = t.infos.get(b"DefaultMusicTrack".as_slice()).map(|d| (**d).clone());
-    if default.is_some() {
+    let added = default.is_some();
+    if added {
         t.music_tracks.push(name.clone());
     }
     let track = Arc::make_mut(t.infos.get_mut(&name).expect("made"));
     if let Some(d) = default {
         *track = d;
     }
-    track.audio_name = name;
+    track.audio_name = name.clone();
     track.sound_type = AudioType::Music;
-    ini.init_from_ini(track, &AUDIO_EVENT_INFO_FIELDS)
+    ini.init_from_ini(track, &AUDIO_EVENT_INFO_FIELDS)?;
+    Ok((name, added))
+}
+
+/// #51: `theTypeTable`'s `AudioEvent` row, read by one of the logic's INI loads: [`parse_audio_event_definition`], the
+/// name recorded in [`AudioTables::logic_ini_events`].
+pub fn logic_ini_audio_event(ini: &mut Ini<'_>, t: &mut AudioTables) -> IniResult<()> {
+    let (name, _) = parse_definition(ini, t, b"DefaultSoundEffect", AudioType::SoundEffect)?;
+    t.logic_ini_events.push((name, false));
+    Ok(())
+}
+
+/// #51: the `DialogEvent` row, as [`logic_ini_audio_event`].
+pub fn logic_ini_dialog_event(ini: &mut Ini<'_>, t: &mut AudioTables) -> IniResult<()> {
+    let (name, _) = parse_definition(ini, t, b"DefaultDialog", AudioType::Streaming)?;
+    t.logic_ini_events.push((name, false));
+    Ok(())
+}
+
+/// #51: the `MusicTrack` row, as [`logic_ini_audio_event`] (with whether the track list got the name).
+pub fn logic_ini_music_track(ini: &mut Ini<'_>, t: &mut AudioTables) -> IniResult<()> {
+    let (name, added) = parse_music_track(ini, t)?;
+    t.logic_ini_events.push((name, added));
+    Ok(())
 }
 
 /// `INI::parseAudioEventDefinition`: a sound effect, from `DefaultSoundEffect`.

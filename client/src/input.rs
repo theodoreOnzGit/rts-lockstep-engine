@@ -62,8 +62,10 @@ impl Controls {
     /// Before each logic frame: the command translator sees the group messages sent since (as the message stream passes
     /// them through `CommandTranslator` after `SelectionTranslator`).
     pub fn observe_sent(&mut self) {
-        for t in self.client.sent.drain(..) {
-            self.commands.observe_message(t);
+        // (#51: with the selection's voice for a group made or selected, as `translateGameMessage`'s case plays it)
+        let sent: Vec<_> = self.client.sent.drain(..).collect();
+        for t in sent {
+            self.commands.observe_message_with_voice(t, &self.ui, &mut self.client);
         }
     }
 
@@ -241,5 +243,162 @@ mod tests {
         assert_eq!(depots.len(), 1, "sent {:?}, messages {:?}", c.client.sent, c.client.ui_messages);
         assert_eq!(c.client.world.get_controlling_player(depots[0]), Some(1));
         assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+    }
+
+    /// GitHub #51: a game of voiced soldiers, two of player 1's and one enemy, from the gate's Soldier with `VoiceSelect`,
+    /// `VoiceMove`, `VoiceAttack` and a looping `SoundAmbient`. The player clicks one soldier (frame 2), drags a box over
+    /// both (frame 5), orders a move (frame 10) and an attack on the enemy (frame 40), over 90 frames, as the application
+    /// drives it. With `drawn_client`, the translators' unit voices and the logic's events go to the translated audio
+    /// manager and the device, and every frame the voice responses of every message type are also asked of the selection
+    /// (their reads); without, the voices are dropped. Returns the CRCs, the sent message types, the events the manager
+    /// was given through `ClientAudio` (the voices), the kept file index of the select voice, the files the device read and
+    /// each drawable's ambient sound with whether it is still playing.
+    #[allow(clippy::type_complexity)]
+    fn play_voiced_soldiers(drawn_client: bool) -> (Vec<u32>, Vec<MessageType>, Vec<Vec<u8>>, Option<i32>, Vec<Vec<u8>>, Vec<(Vec<u8>, bool)>) {
+        use rts_lockstep_engine::client::unit_voice::{pick_and_play_unit_voice_response, PickAndPlayInfo, VoiceSource};
+        use rts_lockstep_engine::common::message_types::*;
+        use rts_lockstep_engine::common::thing_template::ThingTemplateAudioType;
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        use rts_lockstep_engine::logic::world::gate_scenario::{gate_map_world_with, make, INI};
+        use rts_lockstep_engine::logic::world::team_ops::factory_find_team;
+        let start = INI.find("Object Soldier\n").expect("the template");
+        let end = start + INI[start..].find("\nEnd\n").expect("its end") + 5;
+        let block = INI[start..end].replacen("Object Soldier", "Object VoiceSoldier", 1).replacen(
+            "KindOf = VEHICLE",
+            "KindOf = VEHICLE SELECTABLE\n VisionRange = 250\n VoiceSelect = SoldierSelect\n VoiceMove = SoldierMove\n VoiceAttack = SoldierAttack\n SoundAmbient = SoldierHum",
+            1,
+        );
+        let mut w = gate_map_world_with(&block);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let enemy_team = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let a = make(&mut w, b"VoiceSoldier", team, at(80.0, 60.0));
+        let b = make(&mut w, b"VoiceSoldier", team, at(80.0, 90.0));
+        let e = make(&mut w, b"VoiceSoldier", enemy_team, at(360.0, 360.0));
+        w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+        w.cuts.game_loop.game_mode = rts_lockstep_engine::common::recorder::game_mode::SKIRMISH;
+        w.players.set_local_player(Some(1));
+        let mut c = Controls::new(w, 1);
+        let mut tables = rts_lockstep_engine::client::audio_info::AudioTables::new();
+        tables
+            .load_text(b"a.ini", b"AudioSettings\n AudioRoot = Data\\Audio\n SoundsFolder = Sounds\n SoundsExtension = wav\n SampleCount2D = 8\n SampleCount3D = 8\n MinSampleVolume = 1%\n DefaultSoundVolume = 100%\n Default3DSoundVolume = 100%\nEnd\n\
+AudioEvent SoldierSelect\n Sounds = sel1 sel2 sel3\n Type = ui everyone\n Volume = 100%\nEnd\n\
+AudioEvent SoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\nEnd\n\
+AudioEvent SoldierAttack\n Sounds = attack\n Type = ui everyone\n Volume = 100%\nEnd\n\
+AudioEvent SoldierHum\n Sounds = hum\n Type = world everyone\n Control = loop\n MinRange = 100\n MaxRange = 2000\n Volume = 100%\nEnd\n")
+            .expect("the audio INI");
+        let mut audio = rts_lockstep_engine::client::client_audio::ClientAudio::new(rts_lockstep_engine::client::game_audio::AudioManager::new(tables));
+        let mut device = crate::audio::ClientDevice::new(crate::audio::NullOutput::default());
+        let wav = {
+            let mut v = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data".to_vec();
+            v.extend_from_slice(&(2 * 4410u32).to_le_bytes());
+            v.extend(std::iter::repeat_n(0u8, 2 * 4410));
+            v
+        };
+        let files = |p: &[u8]| p.starts_with(b"Data\\Audio\\Sounds\\");
+        let view = crate::audio::listener_view([200.0, 200.0], 0.0, 0.95, 300.0);
+        let pixel = |x: i32, y: i32| ICoord2D { x, y };
+        let all_msgs = [
+            MSG_DOCK, MSG_CREATE_SELECTED_GROUP, MSG_EVACUATE, MSG_ENTER, MSG_DO_MOVETO, MSG_DO_SALVAGE, MSG_DO_FORCE_ATTACK_GROUND,
+            MSG_SWITCH_WEAPONS, MSG_DO_ATTACK_OBJECT, MSG_DO_WEAPON_AT_OBJECT, MSG_DO_WEAPON_AT_LOCATION, MSG_DO_GUARD_OBJECT,
+            MSG_DO_SPECIAL_POWER, MSG_INTERNET_HACK,
+        ];
+        let (mut crcs, mut sent, mut fetched) = (Vec::new(), Vec::new(), Vec::new());
+        for f in 0..90u32 {
+            match f {
+                2 => assert!(c.left_release(pixel(10, 10), pixel(10, 10), &[a], Some(a), at(80.0, 60.0))),
+                5 => assert!(c.left_release(pixel(0, 0), pixel(60, 60), &[a, b], None, at(0.0, 0.0))),
+                10 => assert!(c.left_release(pixel(50, 10), pixel(50, 10), &[], None, at(200.0, 60.0))),
+                40 => {
+                    let ep = c.client.world.find_object(e).map(|o| *o.thing.position()).expect("the enemy");
+                    assert!(c.left_release(pixel(90, 90), pixel(90, 90), &[e], Some(e), ep));
+                }
+                _ => {}
+            }
+            sent.extend(c.client.sent.iter().copied());
+            c.observe_sent();
+            if drawn_client {
+                // the reads of every voice response, asked of the selection (their voices dropped)
+                let list = c.ui.all_selected_drawables().to_vec();
+                let info = PickAndPlayInfo { air: true, draw_target: Some(e), weapon_slot: Some(0), special_power_type: 3 };
+                let before = c.client.voices.len();
+                for m in all_msgs {
+                    pick_and_play_unit_voice_response(&list, m, Some(&info), &c.ui, &mut c.client);
+                }
+                c.client.voices.truncate(before);
+            }
+            c.world().logic_update().expect("a frame");
+            let ev = c.world().take_client_events();
+            let voices: Vec<_> = c.client.voices.drain(..).collect();
+            if drawn_client {
+                let w = &c.client.world;
+                let host = rts_lockstep_engine::client::client_audio::WorldAudioHost { world: w, local_player_index: None, files: &files, language: b"English" };
+                for v in &voices {
+                    audio.play_unit_voice(&host, v);
+                }
+                for x in &ev {
+                    audio.apply_event(&host, &mut device, x);
+                }
+                audio.update_ambient(&host, &mut device);
+                audio.manager.update(&host, &mut device, &view);
+                device.pump(|p| {
+                    if !fetched.iter().any(|x: &Vec<u8>| x == p) {
+                        fetched.push(p.to_vec());
+                    }
+                    if files(p) { crate::audio::Fetch::Bytes(wav.clone()) } else { crate::audio::Fetch::Missing }
+                });
+                crate::audio::AudioOutput::advance(&mut device.out, 1.0 / 30.0);
+            }
+            crcs.push(c.client.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        let log: Vec<Vec<u8>> = audio.log.iter().map(|(n, _)| n.clone()).collect();
+        let index = audio.voice_indices.get(&(b"VoiceSoldier".to_vec(), VoiceSource::Template(ThingTemplateAudioType::VoiceSelect))).copied();
+        // each drawable's ambient sound, and whether its handle is still playing (or requested)
+        let ambient = audio
+            .ambient
+            .drawables
+            .values()
+            .filter_map(|d| d.sound.as_ref())
+            .map(|e| (e.event_name.clone(), audio.manager.is_currently_playing(e.playing_handle)))
+            .collect();
+        (crcs, sent, log, index, fetched, ambient)
+    }
+
+    /// GitHub #51: selecting and ordering voiced units with the audio attached leaves the logic's CRCs as without it.
+    ///
+    /// *Predictions, written before the first run:* the CRCs equal frame for frame over 90 frames, and the same messages
+    /// sent in both runs (a click: `MSG_DESTROY_SELECTED_GROUP`? and `MSG_CREATE_SELECTED_GROUP`; the drag the same; then
+    /// `MSG_DO_MOVETO`, `MSG_DO_ATTACK_OBJECT`). With the client, the manager is given, in order: `SoldierHum` three
+    /// times (made outside a map load; within the 2000 range), `SoldierSelect` (frame 3, the group made by the click),
+    /// `SoldierSelect` again (frame 6), `SoldierMove` (frame 10), `SoldierAttack` (frame 40); the looping hums stay
+    /// requested or playing, so `update` restarts none. The select voice's kept index is 1 (the first select played
+    /// `sel1`, index 0; the second `sel2`, as `SoldierSelect` is not `RANDOM`: `++m_playingAudioIndex`), so the device
+    /// reads `sel1.wav` and `sel2.wav`.
+    ///
+    /// *Results (2026-11-06), first run:* the CRCs equal over 90 frames; the same six messages sent in both runs
+    /// (`MSG_DESTROY_SELECTED_GROUP` and `MSG_CREATE_SELECTED_GROUP` for the click and again for the drag, then
+    /// `MSG_DO_MOVETO`, `MSG_DO_ATTACK_OBJECT`); the voices `SoldierSelect`, `SoldierSelect`, `SoldierMove`,
+    /// `SoldierAttack`; the select index 1; `sel1.wav`, `sel2.wav`, `move.wav`, `attack.wav` and `hum.wav` read (as
+    /// `Sounds\English\\..`: the localized path is tried first and the test's file system has every file). **Miss (in the
+    /// test):** the three `SoldierHum` were not in `ClientAudio`'s log, because the ambient sounds are added to the manager
+    /// by `drawable_ambient` directly, not through the log; they were played (`hum.wav` read). The assertion now reads
+    /// each drawable's ambient sound instead: three `SoldierHum`, still playing (or requested) at the end, so `update`
+    /// restarted none.
+    #[test]
+    fn voiced_units_selected_and_ordered_leave_the_crcs_alone() {
+        let (plain, plain_sent, ..) = play_voiced_soldiers(false);
+        let (crcs, sent, log, index, started, ambient) = play_voiced_soldiers(true);
+        eprintln!("#51 voices: sent {sent:?}; manager given {:?}; started {:?}; select index {index:?}", log.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>(), started.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>());
+        assert_eq!(crcs, plain);
+        assert_eq!(sent, plain_sent);
+        let names: Vec<&[u8]> = log.iter().map(|n| n.as_slice()).collect();
+        assert_eq!(names, [&b"SoldierSelect"[..], b"SoldierSelect", b"SoldierMove", b"SoldierAttack"]);
+        let hum = (b"SoldierHum".to_vec(), true);
+        assert_eq!(ambient, [hum.clone(), hum.clone(), hum], "three hums, still playing");
+        assert!(started.iter().any(|s| s.ends_with(b"hum.wav")));
+        assert_eq!(index, Some(1));
+        for f in [&b"sel1.wav"[..], b"sel2.wav"] {
+            assert!(started.iter().any(|s| s.ends_with(f)), "{}", String::from_utf8_lossy(f));
+        }
     }
 }

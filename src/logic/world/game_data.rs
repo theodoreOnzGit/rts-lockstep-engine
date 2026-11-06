@@ -432,12 +432,31 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
     Ok(load)
 }
 
+/// #51: `INI::parseAudioEventDefinition` into the audio's tables (`TheAudio->newAudioEventInfo`), recorded for the client.
+fn audio_event_block(ini: &mut Ini<'_>, l: &mut GameDataLoad) -> IniResult<()> {
+    crate::client::audio_info::logic_ini_audio_event(ini, &mut l.audio)
+}
+
+/// #51: `INI::parseDialogDefinition`, as [`audio_event_block`].
+fn dialog_event_block(ini: &mut Ini<'_>, l: &mut GameDataLoad) -> IniResult<()> {
+    crate::client::audio_info::logic_ini_dialog_event(ini, &mut l.audio)
+}
+
+/// #51: `INI::parseMusicTrackDefinition`, as [`audio_event_block`].
+fn music_track_block(ini: &mut Ini<'_>, l: &mut GameDataLoad) -> IniResult<()> {
+    crate::client::audio_info::logic_ini_music_track(ini, &mut l.audio)
+}
+
 // -------------------------------------------------------------------------------------------------------------------------------
 // the blocks (`theTypeTable`'s logic entries)
 // -------------------------------------------------------------------------------------------------------------------------------
 
-static BLOCKS: [BlockParse<GameDataLoad>; 24] = [
+static BLOCKS: [BlockParse<GameDataLoad>; 27] = [
     BlockParse { token: "AIData", parse: ai_data_block },
+    // (#51: `theTypeTable`'s audio event rows, which a map's `map.ini` can hold; the descriptions go to the audio's tables)
+    BlockParse { token: "AudioEvent", parse: audio_event_block },
+    BlockParse { token: "DialogEvent", parse: dialog_event_block },
+    BlockParse { token: "MusicTrack", parse: music_track_block },
     BlockParse { token: "Armor", parse: armor_block },
     BlockParse { token: "Bridge", parse: bridge_block },
     BlockParse { token: "CommandButton", parse: command_button_block },
