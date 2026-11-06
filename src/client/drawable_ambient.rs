@@ -37,11 +37,14 @@
 //! - **`setTimeOfDay`** (which restarts every drawable's ambient sound) is not called: nothing in the logic changes the time
 //!   of day yet. The time of day an ambient event carries is the global data's; it picks no file (`SoundsNight` and the
 //!   rest are never read by `generateFilename`).
-//! - **Saved games:** the drawable's xfer of its custom sound (`DynamicAudioEventInfo::xferNoName`) and of the two enable
-//!   flags is not translated (the client's drawables are not saved).
+//! - ~~**Saved games:** the drawable's xfer of its custom sound (`DynamicAudioEventInfo::xferNoName`) and of the two enable
+//!   flags is not translated (the client's drawables are not saved).~~ **Corrected 2026-11-06 (GitHub #59):** the drawable's
+//!   xfer writes and reads them (`client::drawable_save`, [`AmbientSave`], held by each drawable's saved fields); the client
+//!   copies them from these sounds before a save ([`AmbientSounds::to_save`]) and gives them back after a load
+//!   ([`AmbientSounds::restore_saved`]: the xfer's custom sound, then `Drawable::loadPostProcess`'s start or stop).
 
 use crate::client::audio_event::AudioEventRts;
-use crate::client::audio_info::{AudioEventInfo, AudioPriority, ST_GLOBAL};
+use crate::client::audio_info::{AudioEventInfo, AudioPriority, AC_LOOP, ST_GLOBAL};
 use crate::client::game_audio::{AudioDevice, AudioHost, AudioManager};
 use crate::common::game_type::ObjectId;
 use crate::common::thing_template::ThingTemplateAudioType;
@@ -56,8 +59,58 @@ use std::sync::Arc;
 pub enum CustomAmbient {
     /// `getNoSoundMarker()`: "don't allow an ambient sound to be attached" (except for rubble).
     NoSound,
-    /// The map object's own description, given to the audio under its mangled name.
-    Info(Arc<AudioEventInfo>),
+    /// The map object's own description, given to the audio under its mangled name; with
+    /// `DynamicAudioEventInfo::getOriginalName()` (the base description's name) and `m_overriddenFields`
+    /// ([`override_bits`], `OVERRIDE_NAME` included: `mangleCustomAudioName` overrides the name), which its xfer writes
+    /// (GitHub #59).
+    Info { info: Arc<AudioEventInfo>, original_name: Vec<u8>, overridden: u32 },
+}
+
+/// `DynamicAudioEventInfo::xferNoName`'s data with the base description's name the drawable's xfer writes before it
+/// (GitHub #59): the overridden fields' bits (an `UnsignedByte`) and each field, as the description holds it (a field
+/// not overridden is written only if its bit is set, so its value here is the base's).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DynamicAudioSave {
+    /// `getOriginalName()`.
+    pub original_name: Vec<u8>,
+    /// `m_overriddenFields`, bit `1 << field`.
+    pub overridden: u8,
+    /// `BitTest(m_control, AC_LOOP)`.
+    pub loop_flag: bool,
+    /// `m_loopCount`, `m_volume`, `m_minVolume`, `m_minDistance`, `m_maxDistance`.
+    pub loop_count: i32,
+    pub volume: f32,
+    pub min_volume: f32,
+    pub min_distance: f32,
+    pub max_distance: f32,
+    /// `(UnsignedByte)m_priority`.
+    pub priority: u8,
+}
+
+/// `m_customSoundAmbientInfo` as a save holds it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CustomAmbientSave {
+    /// `customizedToSilence`: `getNoSoundMarker()`.
+    NoSound,
+    /// A customised description.
+    Info(DynamicAudioSave),
+}
+
+/// A drawable's ambient sound as `Drawable::xfer` (version 7) writes it (GitHub #59): `m_ambientSoundEnabled` (version 4),
+/// `m_ambientSoundEnabledFromScript` (version 6) and the customised sound (version 7).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AmbientSave {
+    pub enabled: bool,
+    pub enabled_from_script: bool,
+    /// `None`: not customised (`m_customSoundAmbientInfo == NULL`).
+    pub custom: Option<CustomAmbientSave>,
+}
+
+impl Default for AmbientSave {
+    /// The constructor's: both switches on, no customisation.
+    fn default() -> Self {
+        AmbientSave { enabled: true, enabled_from_script: true, custom: None }
+    }
 }
 
 /// A drawable's ambient sound state.
@@ -182,7 +235,7 @@ impl AmbientSounds {
         let mut try_sound = false;
         // Look for customized sound info
         if dt != BODY_RUBBLE && d.custom.is_some() {
-            if let Some(CustomAmbient::Info(info)) = &d.custom {
+            if let Some(CustomAmbient::Info { info, .. }) = &d.custom {
                 let info = info.clone();
                 // "Make sure m_event will accept the custom info"
                 let e = d.sound.get_or_insert_with(AudioEventRts::default);
@@ -311,10 +364,114 @@ impl AmbientSounds {
 
     /// `setCustomSoundAmbientInfo(info)`: "Force the Drawable to use the sound described by customAmbientInfo as its ambient
     /// sound."
-    pub fn set_custom_sound_ambient_info<D: AudioDevice>(&mut self, id: ObjectId, info: Arc<AudioEventInfo>, m: &mut AudioManager, device: &mut D, host: &dyn AudioHost) {
+    pub fn set_custom_sound_ambient_info<D: AudioDevice>(&mut self, id: ObjectId, info: CustomAmbient, m: &mut AudioManager, device: &mut D, host: &dyn AudioHost) {
         self.clear_custom_sound_ambient(id, false, m, device, host);
-        self.entry(id).custom = Some(CustomAmbient::Info(info));
+        self.entry(id).custom = Some(info);
         self.start_ambient_sound(id, false, m, device, host); // Note: checks for enabled flag
+    }
+
+    /// Each drawable these sounds know given its ambient sound as its xfer writes it ([`AmbientSounds::to_save`]), before a
+    /// save (GitHub #59); a drawable they do not know keeps what it holds (a loaded game's, before the audio is up). New:
+    /// upstream's drawable holds its sound itself.
+    pub fn save_into(&self, drawables: &mut crate::client::drawable::ClientDrawables) {
+        for (id, d) in drawables.drawables.iter_mut() {
+            if self.drawables.contains_key(id) {
+                d.saved.ambient = self.to_save(*id);
+            }
+        }
+    }
+
+    /// The drawable of `id`'s ambient sound as its xfer writes it (GitHub #59; the default for a drawable these sounds do
+    /// not know): the two switches and the customised sound, `xferNoName`'s fields read from the description.
+    pub fn to_save(&self, id: ObjectId) -> AmbientSave {
+        let Some(d) = self.drawables.get(&id) else { return AmbientSave::default() };
+        let custom = d.custom.as_ref().map(|c| match c {
+            CustomAmbient::NoSound => CustomAmbientSave::NoSound,
+            CustomAmbient::Info { info, original_name, overridden } => CustomAmbientSave::Info(DynamicAudioSave {
+                original_name: original_name.clone(),
+                overridden: *overridden as u8,
+                loop_flag: info.control & AC_LOOP != 0,
+                loop_count: info.loop_count,
+                volume: info.volume,
+                min_volume: info.min_volume,
+                min_distance: info.min_distance,
+                max_distance: info.max_distance,
+                priority: info.priority as u8,
+            }),
+        });
+        AmbientSave { enabled: d.enabled, enabled_from_script: d.enabled_from_script, custom }
+    }
+
+    /// A loaded game's drawables' ambient sounds (GitHub #59), in their order: for each, what its xfer does on a load
+    /// (`stopAmbientSound()`; the two switches; a customised sound: `setCustomSoundAmbientOff()` for silence, else a copy of
+    /// the base description (`findAudioEventInfo(baseInfoName)`) given the saved fields (`xferNoName`), its name mangled
+    /// (`mangleCustomAudioName`: `" CUSTOM %d "` and the name), `TheAudio->addAudioEventInfo`, `clearCustomSoundAmbient(false)`
+    /// and kept; a base description no longer there is upstream's debug crash, the saved fields dropped), then for each its
+    /// `loadPostProcess`: `startAmbientSound(TRUE)` (a permanent sound only) when both switches are on, else
+    /// `stopAmbientSound()`. A sound not customised in the save keeps the drawable's own (`NULL` for a new one).
+    pub fn restore_saved<D: AudioDevice>(&mut self, saved: &[(ObjectId, AmbientSave)], m: &mut AudioManager, device: &mut D, host: &dyn AudioHost) {
+        for (id, s) in saved {
+            let id = *id;
+            self.stop_ambient_sound(id, m, device);
+            let d = self.entry(id);
+            d.enabled = s.enabled;
+            d.enabled_from_script = s.enabled_from_script;
+            match &s.custom {
+                None => {}
+                Some(CustomAmbientSave::NoSound) => {
+                    self.clear_custom_sound_ambient(id, false, m, device, host);
+                    self.entry(id).custom = Some(CustomAmbient::NoSound);
+                }
+                Some(CustomAmbientSave::Info(dy)) => {
+                    // "Keep trying to load if we possibly can... Don't completely ruin save files just because an old sound
+                    // entry in the INI files was removed or renamed"
+                    let Some(base) = m.tables.find_audio_event_info(&dy.original_name) else { continue };
+                    let mut info = AudioEventInfo::clone(base);
+                    let bits = u32::from(dy.overridden);
+                    if bits & override_bits::LOOP_FLAG != 0 {
+                        if dy.loop_flag {
+                            info.control |= AC_LOOP;
+                        } else {
+                            info.control &= !AC_LOOP;
+                        }
+                    }
+                    if bits & override_bits::LOOP_COUNT != 0 {
+                        info.loop_count = dy.loop_count;
+                    }
+                    if bits & override_bits::VOLUME != 0 {
+                        info.volume = dy.volume;
+                    }
+                    if bits & override_bits::MIN_VOLUME != 0 {
+                        info.min_volume = dy.min_volume;
+                    }
+                    if bits & override_bits::MIN_RANGE != 0 {
+                        info.min_distance = dy.min_distance;
+                    }
+                    if bits & override_bits::MAX_RANGE != 0 {
+                        info.max_distance = dy.max_distance;
+                    }
+                    if bits & override_bits::PRIORITY != 0 {
+                        info.priority = AudioPriority::from_index(i32::from(dy.priority));
+                    }
+                    let mut name = format!(" CUSTOM {id} ").into_bytes();
+                    name.extend_from_slice(&dy.original_name);
+                    info.audio_name = name.clone();
+                    let info = Arc::new(info);
+                    m.tables.infos.insert(name, info.clone());
+                    self.clear_custom_sound_ambient(id, false, m, device, host);
+                    self.entry(id).custom = Some(CustomAmbient::Info { info, original_name: dy.original_name.clone(), overridden: bits });
+                }
+            }
+        }
+        // `Drawable::loadPostProcess`
+        for (id, _) in saved {
+            let d = self.entry(*id);
+            if d.enabled && d.enabled_from_script {
+                self.start_ambient_sound(*id, true, m, device, host);
+            } else {
+                self.stop_ambient_sound(*id, m, device);
+            }
+        }
     }
 
     /// The map object's `objectSoundAmbient*` properties (`updateObjValuesFromMapProperties`), applied to the drawable of
@@ -400,7 +557,9 @@ impl<D: AudioDevice> AmbientSoundClient for PropsClient<'_, D> {
         info.audio_name = name.clone();
         let info = Arc::new(info);
         self.m.tables.infos.insert(name, info.clone());
-        self.ambient.set_custom_sound_ambient_info(self.id, info, self.m, self.device, self.host);
+        // (`overrideAudioName` sets `OVERRIDE_NAME` and keeps the base name as `m_originalName`, GitHub #59)
+        let custom = CustomAmbient::Info { info, original_name: a.name.clone(), overridden: a.overridden | override_bits::NAME };
+        self.ambient.set_custom_sound_ambient_info(self.id, custom, self.m, self.device, self.host);
     }
 }
 
@@ -564,4 +723,68 @@ AudioEvent Clatter\n Sounds = clatter\n Type = world everyone\n MinRange = 100\n
         a.update(&mut m, &mut dev, &host);
         assert_eq!(pending(&m), [b"Hum".to_vec(), b" CUSTOM 9 Hum".to_vec(), b"Hum".to_vec()]);
     }
+
+    /// GitHub #59: the ambient sound through a save's data. 9 is customised by its map properties (volume 50%, max range
+    /// 2000), 10 silenced and off by script, 7 switched off by the logic.
+    ///
+    /// *Predictions, written before the first run:* `to_save` gives 9 a customised `Hum` with `OVERRIDE_NAME`,
+    /// `OVERRIDE_VOLUME` and `OVERRIDE_MAX_RANGE` set (`1 | 8 | 64` = 73), volume 0.5 and range 2000; 10 silence with
+    /// the script switch off; 7 the logic switch off; 11 (made, not touched) the default. Restored into fresh sounds with
+    /// a fresh manager: the custom description `" CUSTOM 9 Hum"` is installed again with volume 0.5, range 2000 and the
+    /// base's min range 100; `to_save` of the restored sounds equals the first for all four; the post-process plays the
+    /// permanent `Hum`s of 9 and 11 (both switches on, in range), not 7 (logic off) or 10 (script off); a save naming a
+    /// base sound the audio no longer has leaves the drawable not customised; `save_into` copies 9's into its drawable
+    /// and leaves a drawable it does not know (12) as it was.
+    ///
+    /// *Results (2026-11-06, native, release):* all held, first run.
+    #[test]
+    fn ambient_sounds_restore_from_a_save() {
+        let mut m = manager();
+        let mut dev = LogDevice::default();
+        let host = AmbHost { dt: Cell::new(BODY_PRISTINE) };
+        let mut a = AmbientSounds::default();
+        for id in [7, 9, 10, 11] {
+            a.create(id, &mut m, &mut dev, &host);
+        }
+        let custom = AmbientSoundProperties { customized: Some(true), volume: Some(0.5), max_range: Some(2000.0), ..Default::default() };
+        a.apply_map_properties(9, &custom, &mut m, &mut dev, &host);
+        a.apply_map_properties(10, &AmbientSoundProperties { name: Some(Vec::new()), ..Default::default() }, &mut m, &mut dev, &host);
+        a.enable_ambient_sound(7, false, &mut m, &mut dev, &host);
+        let saved: Vec<(ObjectId, AmbientSave)> = [7, 9, 10, 11].iter().map(|&id| (id, a.to_save(id))).collect();
+        let Some(CustomAmbientSave::Info(d)) = &saved[1].1.custom else { panic!("9 customised: {:?}", saved[1]) };
+        assert_eq!((d.original_name.as_slice(), d.overridden, d.volume, d.max_distance), (&b"Hum"[..], 73, 0.5, 2000.0));
+        assert_eq!(saved[2].1, AmbientSave { enabled: true, enabled_from_script: false, custom: Some(CustomAmbientSave::NoSound) });
+        assert_eq!(saved[0].1, AmbientSave { enabled: false, ..Default::default() });
+        assert_eq!(saved[3].1, AmbientSave::default());
+        // (`save_into`: the drawables the sounds know, by object)
+        let mut cd = crate::client::drawable::ClientDrawables::new();
+        for id in [9, 12] {
+            let mut d = crate::client::drawable::Drawable::for_tests();
+            d.object_id = id;
+            cd.drawables.insert(id, d);
+        }
+        cd.drawables.get_mut(&12).unwrap().saved.ambient.enabled = false;
+        a.save_into(&mut cd);
+        assert_eq!(cd.drawables[&9].saved.ambient, saved[1].1);
+        assert!(!cd.drawables[&12].saved.ambient.enabled, "a drawable the sounds do not know keeps its own");
+
+        let mut m2 = manager();
+        let mut b = AmbientSounds::default();
+        b.restore_saved(&saved, &mut m2, &mut dev, &host);
+        let info = m2.tables.find_audio_event_info(b" CUSTOM 9 Hum").expect("installed again").clone();
+        assert_eq!((info.volume, info.max_distance, info.min_distance), (0.5, 2000.0, 100.0));
+        for (id, s) in &saved {
+            assert_eq!(&b.to_save(*id), s, "{id}");
+        }
+        assert_eq!(pending(&m2), [b" CUSTOM 9 Hum".to_vec(), b"Hum".to_vec()]);
+
+        let mut gone = saved[1].clone();
+        if let Some(CustomAmbientSave::Info(d)) = &mut gone.1.custom {
+            d.original_name = b"Gone".to_vec();
+        }
+        let mut c = AmbientSounds::default();
+        c.restore_saved(&[gone], &mut manager(), &mut dev, &host);
+        assert_eq!(c.drawables[&9].custom, None);
+    }
+
 }

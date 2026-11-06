@@ -22,10 +22,18 @@
 //! **corrected 2026-11-06 (GitHub #58):** a copy of the install's World with no game, in which the save's own
 //! `CHUNK_GameStateMap` starts the save's game (its map, game mode and slots) as upstream's does
 //! ([`crate::import::world_for_save`]); then every block is read into it and into a fresh client.
+//!
+//! **The drawables (GitHub #59).** A save writes the client's drawables (`CHUNK_GameClient`, `Drawable::xfer`) and a load
+//! makes them, each from its object (or without one) and the save's data, when the caller passes them ([`Drawables`]:
+//! the application's, with its art); the ambient sound's part of each is copied from the client's audio before a save
+//! (`AmbientSounds::save_into`) and given back to it after a load, once the audio is up (`AmbientSounds::restore_saved`,
+//! the application's).
 
 use std::collections::BTreeMap;
 
+use rts_lockstep_engine::client::drawable::ClientDrawables;
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
+use rts_lockstep_engine::client::w3d_model_draw::W3dAssetSource;
 use rts_lockstep_engine::client::save_game::{load_client_game, read_save_summary, save_client_game, ClientSaveState, LoadOutcome, SaveHost, SaveSummary};
 use rts_lockstep_engine::common::game_state::{GameState, GameStateHost, SaveDate, SAVE_GAME_EXTENSION};
 use rts_lockstep_engine::common::xfer::{Xfer, XferResult};
@@ -400,24 +408,38 @@ pub fn civil_time(ms: i64) -> [u16; 8] {
     [year as u16, month as u16, dow as u16, day as u16, (rem / 3_600_000) as u16, (rem / 60_000 % 60) as u16, (rem / 1000 % 60) as u16, (rem % 1000) as u16]
 }
 
-/// The game saved through the client: the World, the radar, the particle systems' id counter and the client's state
-/// (`state.view` is the camera, set by the caller), with `description`. The file's bytes.
-pub fn save_game(controls: &mut Controls, particles: &mut ParticleSystemManager, state: &mut ClientState, description: &str) -> Result<Vec<u8>, String> {
+/// The client's drawables for a save or a load (GitHub #59): the drawables, the art their modules are made from, and the
+/// client's clock (milliseconds) they are drawn by.
+pub type Drawables<'a> = (&'a mut ClientDrawables, &'a mut dyn W3dAssetSource, u32);
+
+/// The SaveHost of a client, with its drawables when given.
+fn host<'a, 'b>(controls: &'a mut Controls, particles: &'a mut ParticleSystemManager, state: &'a mut ClientState, drawables: Option<&'a mut Drawables<'b>>) -> SaveHost<'a> {
+    let h = SaveHost::new(&mut controls.client.world, &mut controls.radar.radar, particles, state);
+    match drawables {
+        Some((d, a, t)) => h.with_drawables(&mut **d, &mut **a, *t),
+        None => h,
+    }
+}
+
+/// The game saved through the client: the World, the radar, the particle systems' id counter, the client's state
+/// (`state.view` is the camera, set by the caller) and, since GitHub #59, its drawables when given, with `description`.
+/// The file's bytes.
+pub fn save_game(controls: &mut Controls, particles: &mut ParticleSystemManager, state: &mut ClientState, mut drawables: Option<Drawables<'_>>, description: &str) -> Result<Vec<u8>, String> {
     state.game_client.frame = controls.client.world.frame();
     state.local_time = local_time_now();
     state.errors.clear();
     let d: Vec<u16> = description.encode_utf16().collect();
-    let mut host = SaveHost::new(&mut controls.client.world, &mut controls.radar.radar, particles, state);
+    let mut host = host(controls, particles, state, drawables.as_mut());
     let r = save_client_game(&mut host, &d);
     r.map_err(|e| format!("the save failed ({e:?}) {:?} {:?}", state.errors, controls.client.world.cuts.team_live_errors))
 }
 
 /// A save's bytes loaded into a client whose World was made for it ([`world_for_save`]) and whose radar has had its new
 /// map: every block read, post-processed.
-pub fn load_game(controls: &mut Controls, particles: &mut ParticleSystemManager, state: &mut ClientState, bytes: Vec<u8>) -> Result<LoadOutcome, String> {
+pub fn load_game(controls: &mut Controls, particles: &mut ParticleSystemManager, state: &mut ClientState, mut drawables: Option<Drawables<'_>>, bytes: Vec<u8>) -> Result<LoadOutcome, String> {
     state.errors.clear();
     state.read_past.clear();
-    let mut host = SaveHost::new(&mut controls.client.world, &mut controls.radar.radar, particles, state);
+    let mut host = host(controls, particles, state, drawables.as_mut());
     load_client_game(&mut host, bytes).map_err(|e| format!("the load failed: {e}"))
 }
 
@@ -434,14 +456,15 @@ pub fn world_for_save(summary: &SaveSummary, base: Option<&World>) -> Result<(Wo
 
 /// A client ready for a save: the World made for it ([`world_for_save`]) in fresh controls, a fresh particle manager and
 /// state, and the save loaded (for an install's save, the load starts the save's game, and the radar's new map is made
-/// then: `client::save_game`'s host). Returns them with the local player and the load's outcome.
-pub fn client_from_save(bytes: Vec<u8>, base: Option<&World>) -> Result<(Controls, ParticleSystemManager, ClientState, i32, LoadOutcome), String> {
+/// then: `client::save_game`'s host); the save's drawables made into `drawables` when given (GitHub #59). Returns them
+/// with the local player and the load's outcome.
+pub fn client_from_save(bytes: Vec<u8>, base: Option<&World>, drawables: Option<Drawables<'_>>) -> Result<(Controls, ParticleSystemManager, ClientState, i32, LoadOutcome), String> {
     let summary = read_save_summary(bytes.clone()).map_err(|e| format!("the save does not read: {e}"))?;
     let (world, player) = world_for_save(&summary, base)?;
     let mut controls = Controls::new(world, player.unwrap_or(-1));
     let mut particles = ParticleSystemManager::new();
     let mut state = ClientState::default();
-    let outcome = load_game(&mut controls, &mut particles, &mut state, bytes)?;
+    let outcome = load_game(&mut controls, &mut particles, &mut state, drawables, bytes)?;
     let player = match player {
         Some(p) => p,
         None => controls.client.world.players.local_index().ok_or("the loaded game has no local player")?,
@@ -473,7 +496,9 @@ mod tests {
     /// **Predicted before the run:** the folder names the save `00000000.sav` and the next `00000001.sav`; the list's line
     /// has the description, the gate map's label and the date given; the two client loads give the same logic CRC at each
     /// of the next 150 frames, and so does the World loaded alone; the radar of a loaded client lists the same objects the
-    /// saving client's did; the soldier ordered to move is still moving after the load (its y grows).
+    /// saving client's did; the soldier ordered to move is still moving after the load (its y grows). **#59, predicted
+    /// before its run:** the client's drawables (one per object, no art) saved with the game come back by object, each
+    /// with its template.
     ///
     /// **Results (2026-11-06, native, release):** all held on the second run. **Miss (the test's):** the first run's soldier
     /// stood still after the load (y 65 to 65): it had moved only 5 before the save, because the move was ordered in the same
@@ -501,7 +526,10 @@ mod tests {
         let mut particles = ParticleSystemManager::new();
         let mut state = ClientState::default();
         state.view.angle = 0.25;
-        let bytes = save_game(&mut a, &mut particles, &mut state, "demo at 90").expect("the save");
+        // (#59: the client's drawables, made for every object as the client's draw makes them, without art)
+        let mut drawables = ClientDrawables::new();
+        drawables.draw(&a.client.world, &mut crate::drawables::NoArt, 0);
+        let bytes = save_game(&mut a, &mut particles, &mut state, Some((&mut drawables, &mut crate::drawables::NoArt, 0)), "demo at 90").expect("the save");
         let mut folder = SaveFolder::default();
         let name = folder.next_name();
         assert_eq!(name, "00000000.sav");
@@ -513,8 +541,12 @@ mod tests {
         assert!(list[0].line().starts_with("demo at 90 | Gate.map | "), "{}", list[0].line());
 
         let loaded = folder.files[&list[0].name].clone();
-        let (mut b, _, sb, player, _) = client_from_save(loaded.clone(), None).unwrap_or_else(|e| panic!("{e}"));
-        let (mut c, _, _, _, _) = client_from_save(loaded.clone(), None).unwrap_or_else(|e| panic!("{e}"));
+        let mut loaded_drawables = ClientDrawables::new();
+        let (mut b, _, sb, player, _) = client_from_save(loaded.clone(), None, Some((&mut loaded_drawables, &mut crate::drawables::NoArt, 0))).unwrap_or_else(|e| panic!("{e}"));
+        let templates = |d: &ClientDrawables| d.drawables.iter().map(|(id, x)| (*id, x.template.clone())).collect::<Vec<_>>();
+        assert_eq!(templates(&loaded_drawables), templates(&drawables), "#59: the save's drawables, by object");
+        assert!(!drawables.drawables.is_empty());
+        let (mut c, _, _, _, _) = client_from_save(loaded.clone(), None, None).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(player, crate::demo::DEMO_LOCAL_PLAYER);
         assert_eq!(sb.view.angle, 0.25);
         let mut d = crate::demo::demo_map_world();

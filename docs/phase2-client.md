@@ -107,6 +107,58 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#59 (2026-11-06, GitHub #59): the drawables saved and loaded.**
+- **Upstream** (`Drawable::xfer` v7 and `xferDrawableModules`, `TintEnvelope::xfer`, `Anim2D::xfer` (Drawable.cpp,
+  Anim2D.cpp); `DynamicAudioEventInfo::xferNoName`; `Module`, `DrawableModule`, `DrawModule::xfer`; `W3DModelDraw::xfer` v2
+  and the xfers of every draw class the port makes from `W3DModelDrawModuleData`: `W3DTankDraw`, `W3DTruckDraw`,
+  `W3DTankTruckDraw`, `W3DPoliceCarDraw`, `W3DOverlordTankDraw`, `W3DOverlordTruckDraw`, `W3DOverlordAircraftDraw`,
+  `W3DSupplyDraw`, `W3DScienceModelDraw`, `W3DDependencyModelDraw`; `GameClient::xfer`'s drawable part, `shouldSaveDrawable`,
+  `GameClient::loadPostProcess`, `Drawable::loadPostProcess`). New file `src/client/drawable_save.rs`; `save_game.rs`'s
+  `CHUNK_GameClient` now writes and reads the drawables (`SaveHost::with_drawables`).
+- **The load's order is upstream's:** `CHUNK_GameLogic` has made the objects; `CHUNK_GameClient` clears the client's
+  drawables and, per saved drawable, takes its object's drawable (made as the object's creation makes it upstream; made
+  again from the saved template when it differs, upstream's disguised bomb truck) or a new one without an object, and xfers
+  into it. The condition flags are read before the modules and forced onto them (`replaceModelConditionFlags(TRUE)`), so the
+  animation's saved fraction lands in the right animation; the post-process gives each drawable with an object its
+  object's transform and raises the drawable id counter.
+- **Read as upstream reads it, all versions:** the drawable's versions 1 to 7 (condition state after the modules before 2,
+  position and orientation in 3 and 4, the ambient switches from 4 and 6, the custom sound from 7), `W3DModelDraw` 1 and 2.
+  A module the port has not got (a client update module, `W3DDefaultDraw`, trees, ...) is found by its tag as upstream and,
+  where upstream skips it, its block is kept and written back; a drawable of an unknown template is skipped by its size.
+- **Kept but unused** (read, held in `DrawableSaveFields`, written back): the drawable id, the transform, both tint
+  envelopes and the tint statuses, the terrain decal, the six opacities, `m_status`, the fade members, the flash count and
+  colour, the second material pass opacity, the instance matrix, identity flag and scale, the shroud status object, the
+  expiration date, the icons (templates unchecked: no `Anim2DCollection`), unknown modules' blocks,
+  `W3DDependencyModelDraw::m_dependencyCleared`, the drawables without objects (`ClientDrawables::object_less`, not drawn),
+  the animation mode `W3DModelDraw::xfer` writes ("note, this will be ignored", upstream too).
+- **Used:** the condition flags, the animation frame (a fraction of its frames), the recoil infos, the `showSubObject` list,
+  `m_locoInfo` (but its yaw and pitch modulators, which upstream does not save), the hidden and hidden-by-stealth flags, and
+  the ambient sound: each drawable's switches and custom sound are copied from the client audio before a save
+  (`AmbientSounds::save_into`) and given back after a load once the audio is up (`AmbientSounds::restore_saved`: the custom
+  description rebuilt from its base and the saved overrides, then `loadPostProcess`'s start or stop). `CustomAmbient::Info`
+  now carries the original name and the override bits `xferNoName` writes.
+- **Upstream's choices kept, against the brief:** the tank and truck draws save **no** tread, wheel or police-car frame
+  state ("John A and Mark W say there is no data to save here"), so tread offsets start at 0 after a load; the stealth look is
+  written but a load sets it to `STEALTHLOOK_NONE` for the next stealth update to set; a transition state's animation is not
+  saved.
+- **The client:** `saves::save_game`, `load_game` and `client_from_save` take the drawables (`saves::Drawables`: the
+  drawables, the art, the clock); the application passes its own (`WorldDrawables::with_assets`) and, on a load, makes the
+  new game's drawables before the load (`Game::from_loaded`). A drawable remade when its art arrives (the browser) now keeps
+  its saved members, client physics and `showSubObject` lists.
+- *Predictions and results* (in the tests' doc comments): `save_game`'s `the_drawables_round_trip_through_a_save` (the
+  flags, the module's state, the animation frame 7 of `tanka.move` restored exactly at the load's clock, the treads at 0 as
+  upstream saves none, the stealth look reset with the drawable still hidden by stealth, the hidden flag, the turret list,
+  recoil, client physics, tint, icon, opacity, ambient saves, a kept client update module and an object-less drawable all
+  back; the second and third saves' `CHUNK_GameClient` equal; the logic CRC unchanged by the save and the client's load
+  equal to the World's alone for 30 frames). **Miss:** the table was predicted to hold one template; it holds six, as the
+  client's draw makes a drawable for each of the gate game's fifteen objects. `drawable_ambient`'s
+  `ambient_sounds_restore_from_a_save` (override bits 73, the custom description rebuilt, the post-process plays 9's and
+  11's): first run. `saves`' demo test now saves and loads the drawables: they come back by object and template.
+- **Gates:** lib 1029 (1027 + 2), client 41 (one test extended), clippy clean, web build clean, gate (a) PASS (last
+  `0bf44067`, unchanged), gate (b) passes (in the lib tests).
+- **Not done** (`issue59_followups`): no `Anim2DCollection` (icon templates unchecked); the kept members drive nothing yet;
+  object-less drawables and client update modules are kept, not drawn or run; no original save has been read (none here).
+
 **#58 (2026-11-06, GitHub #58): a load starts the save's own game.**
 - **Upstream** (`GameStateMap::xfer`, GameStateMap.cpp): the load extracts the save's map, sets the game mode, reads
   `TheSkirmishGameInfo` (`SkirmishGameInfo::xfer` v4, already translated in `src/common/game_info.rs`) and calls `startNewGame(TRUE)` inside the
@@ -141,7 +193,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   and the test fails), and `save_game`'s `a_campaign_save_fails_cleanly` (a save naming campaign `usa`, mission `m1`, fails in
   `CHUNK_Campaign`, as predicted). Lib 1027, client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
 - **Not done:** the client crate's own `client_from_save` on an install's save is not reached by a client test (the
-  install fixtures are the engine's test code); campaign saves (above); #59 (`Drawable::xfer`).
+  install fixtures are the engine's test code); campaign saves (above); #59 (`Drawable::xfer`; **done 2026-11-06**, its
+  entry).
 
 **#4 (2026-11-06, GitHub #4): saved games in the client.**
 - **The whole file.** `src/client/save_game.rs` registers upstream's sixteen `SNAPSHOT_SAVELOAD` blocks in
@@ -150,13 +203,15 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   World's. Per block: `CHUNK_Radar` (`Radar::xfer`, `xferRadarObjectList`, `RadarObject::xfer`) and `CHUNK_TacticalView`
   (`View::xfer`) translated whole; `CHUNK_InGameUI` (`InGameUI::xfer` v3: named timers, superweapon timers) translated whole
   and kept as read (the port's in-game UI does not show them yet); `CHUNK_GameClient` (`GameClient::xfer` v3,
-  `xferDrawableTOC`) translated except each drawable's own data (`Drawable::xfer`), read past by its block size;
+  `xferDrawableTOC`) translated except each drawable's own data (`Drawable::xfer`), read past by its block size
+  (**corrected 2026-11-06 (#59):** `Drawable::xfer` translated, see #59's entry);
   `CHUNK_ParticleSystem` (`ParticleSystemManager::xfer`) the id counter translated, the systems read past;
   `CHUNK_GhostObject` (`W3DGhostObjectManager::xfer`, `GhostObjectManager::xfer`) the local player translated, the ghost
   objects read past; `CHUNK_TerrainVisual` (`W3DTerrainVisual::xfer`, `TerrainVisual::xfer`, `WaterRenderObjClass::xfer`)
   made the World's own block, since the logic height map and water grid it holds are the World's (a version 3 block's tree
   and prop buffers are read past; a save writes version 2, which upstream loads without emptying its trees). A save's
-  loaded drawables, particle systems and ghost objects start from their objects' state, not the save's.
+  loaded ~~drawables,~~ particle systems and ghost objects start from their objects' state, not the save's (**corrected
+  2026-11-06 (#59):** the drawables are the save's).
 - **A load reports where it stopped** (`TracingLoad`, `LoadFailure`): the block, the offset in it, the last reads and the
   blocks' recorded errors. `read_save_summary` reads a save's `SaveGameInfo` and map without a game (the list, and the map
   a load starts from).
@@ -186,7 +241,7 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   frame); no horizontal overflow.
 - **Not run:** an original game's save (`RTS_ZH_SAVE` with `RTS_ZH_DIR`, `save_game`'s third test): none is here, so it
   was skipped.
-- **Not yet:** `Drawable::xfer` (the drawables' looks), `ParticleSystem::xfer`, `W3DGhostObject::xfer`, the tree and prop
+- **Not yet:** ~~`Drawable::xfer` (the drawables' looks)~~ (**done 2026-11-06, #59**), `ParticleSystem::xfer`, `W3DGhostObject::xfer`, the tree and prop
   buffers; a load starting the save's own skirmish slots or a campaign mission; the game's own save/load menu (C5); the
   in-game UI's timers shown.
 - **Gates:** lib 1024 (1021 + 3), client 41 (39 + 2), clippy clean, web build clean, gate (a) PASS (last `0bf44067`,

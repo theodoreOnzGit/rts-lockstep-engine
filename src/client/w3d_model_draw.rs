@@ -1097,6 +1097,9 @@ pub enum StateRef {
 pub struct W3DModelDrawModuleData {
     /// The module's class name (`W3DModelDraw`, `W3DTankDraw`, ...).
     pub module_name: Vec<u8>,
+    /// `getModuleTagNameKey()`'s name (the `Draw` line's tag, `ModuleTag_01`): what `Drawable::xferDrawableModules` writes
+    /// and finds the module by (GitHub #59). Empty when the data was not made from a template's module list.
+    pub module_tag: Vec<u8>,
     /// `m_conditionStates`.
     pub condition_states: Vec<ModelConditionInfo>,
     /// `m_conditionStateMap` (mutable upstream).
@@ -1141,6 +1144,7 @@ impl W3DModelDrawModuleData {
     pub fn new(module_name: &[u8], extra: DrawModuleExtra) -> Self {
         W3DModelDrawModuleData {
             module_name: module_name.to_vec(),
+            module_tag: Vec::new(),
             condition_states: Vec::new(),
             condition_state_map: Mutex::new(SparseMatchFinder::new()),
             transition_map: BTreeMap::new(),
@@ -2436,6 +2440,9 @@ pub struct W3DModelDraw {
     /// The truck draws' state (GitHub #41, [`crate::client::w3d_truck_draw`]): `W3DTruckDraw` (and
     /// `W3DOverlordTruckDraw`, `W3DPoliceCarDraw`), or `W3DTankTruckDraw`.
     pub truck: Option<TruckKind>,
+    /// `W3DDependencyModelDraw::m_dependencyCleared` (`FALSE` at construction), which its xfer saves (GitHub #59). Kept
+    /// but not used: the dependency draw's own behaviour (drawn only once its container says so) is not translated.
+    pub dependency_cleared: bool,
 }
 
 impl W3DModelDraw {
@@ -2482,6 +2489,7 @@ impl W3DModelDraw {
             render_obj_serial: 0,
             tank: matches!(data_extra, DrawModuleExtra::Tank(_)).then(TankDraw::new),
             truck: None,
+            dependency_cleared: false,
         };
         d.set_model_state(StateRef::Normal(info), env);
         // the subclass's own members are made after the base class's constructor (whose `setModelState` calls the

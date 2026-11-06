@@ -7,7 +7,8 @@
 //   GeneralsMD/Code/GameEngine/Source/Common/System/Radar.cpp (RadarObject::xfer, xferRadarObjectList, Radar::xfer,
 //     Radar::loadPostProcess)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/View.cpp (View::xfer)
-//   GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp (GameClient::xferDrawableTOC, GameClient::xfer)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp (GameClient::xferDrawableTOC, GameClient::xfer,
+//     shouldSaveDrawable, GameClient::loadPostProcess; GitHub #59: the drawables themselves, `client::drawable_save`)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (InGameUI::xfer)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/System/ParticleSys.cpp (ParticleSystemManager::xfer)
 //   GeneralsMD/Code/GameEngine/Source/GameLogic/Object/GhostObject.cpp (GhostObjectManager::xfer)
@@ -34,7 +35,7 @@
 //! |---|---|---|
 //! | `CHUNK_Radar` | `Radar::xfer` v1 | **Translated whole**: the hidden and forced flags, both object lists (each object's id and colour; a load gives each object its radar data back, `friend_setRadarData`, the World's `on_radar`), the 64 events, the two indices. `loadPostProcess` refreshes the terrain. |
 //! | `CHUNK_TacticalView` | `View::xfer` v1 | **Translated whole**: the angle and the position, into [`TacticalViewSave`]; the application turns its camera to them (upstream's `setAngle`, `lookAt`). |
-//! | `CHUNK_GameClient` | `GameClient::xfer` v3 | **The frame, the drawable table of contents, each drawable's object id and the briefing list translated; each drawable's own data (`Drawable::xfer`: its modules, model condition, animation, tint, ambient sound) read past** by its block's size, as upstream itself skips a drawable of an unknown template. A loaded game's drawables are made new from their objects (the client makes one for every object), so their looks start from their objects' state, not the save's. A save writes the frame, an empty table, no drawables and no briefing lines (upstream's load then leaves each object's drawable as it made it). |
+//! | `CHUNK_GameClient` | `GameClient::xfer` v3 | ~~**The frame, the drawable table of contents, each drawable's object id and the briefing list translated; each drawable's own data (`Drawable::xfer`: its modules, model condition, animation, tint, ambient sound) read past** by its block's size, as upstream itself skips a drawable of an unknown template. A loaded game's drawables are made new from their objects (the client makes one for every object), so their looks start from their objects' state, not the save's. A save writes the frame, an empty table, no drawables and no briefing lines (upstream's load then leaves each object's drawable as it made it).~~ **Corrected 2026-11-06 (GitHub #59): translated whole.** The frame, the table of contents, each drawable (`Drawable::xfer` v7 with its modules, `client::drawable_save`) and the briefing list. A save writes the client's drawables ([`SaveDrawables`]); a load clears them, then for each saved drawable takes its object's drawable (made, as the object's creation makes it upstream; made again from the saved template when the object's has another, upstream's disguised bomb truck) or a new one without an object, and reads the save into it. A drawable of a template the port has not got is skipped by its size, as upstream. The briefing list is kept as read and written back (the port keeps no briefing list). Without [`SaveDrawables`] (the logic's tests) a save writes no drawables and a load reads them into drawables it then drops. |
 //! | `CHUNK_InGameUI` | `InGameUI::xfer` v3 | **Translated whole** into [`InGameUiSave`] (the named timers and the superweapon timers; a superweapon's special power must exist, as upstream). The port's in-game UI does not show these timers yet, so a load keeps what it read and a save writes it back. |
 //! | `CHUNK_ParticleSystem` | `ParticleSystemManager::xfer` v1 | **The system id counter translated; the systems read past** (`ParticleSystem::xfer` and its particles are not translated): a loaded game's effects start empty. A save writes the counter and no systems. |
 //! | `CHUNK_TerrainVisual` | `W3DTerrainVisual::xfer` v3 | **The World's** (the logic height map and the water grid live in the World: `World::xfer_terrain_visual_part`); a version 3 block's tree and prop buffers are read past here. A save writes version 2. |
@@ -65,14 +66,17 @@
 //! - **The events the load makes are dropped.** Upstream's load runs with the client attached: an object made by the load
 //!   gets its drawable and its radar entry at once, and the object's xfer takes it off the radar again before the radar's
 //!   block puts it back. Here the World's load emits those calls as client events; [`load_client_game`] drops them, since
-//!   the radar's own block is what puts each object back (and the drawables are made from the objects).
+//!   the radar's own block is what puts each object back (and ~~the drawables are made from the objects~~ **corrected
+//!   2026-11-06 (GitHub #59):** the client's block makes each saved drawable, from its object, and reads it).
 //! - **The save's date** is the client's clock ([`ClientSaveState::local_time`]), where the World alone writes zero.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use crate::client::drawable::{ClientDrawables, Drawable};
 use crate::client::particle_sys::ParticleSystemManager;
+use crate::client::w3d_model_draw::{AnimHandle, DrawEnv, Skeleton, W3dAssetSource};
 use crate::client::radar::{Radar, RadarObject, MAX_RADAR_EVENTS};
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::MAX_PLAYER_COUNT;
@@ -82,6 +86,8 @@ use crate::common::ini::game_make_color;
 use crate::common::xfer::{Snapshot, Xfer, XferMode, XferResult, XferState, XferStatus, XferVersion};
 use crate::common::xfer_load::XferLoad;
 use crate::common::xfer_save::XferSave;
+#[cfg(test)]
+use crate::client::drawable_save::KeptModule;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::game_state_world::WorldBlock;
 
@@ -191,7 +197,9 @@ pub struct GameClientSave {
     pub frame: u32,
     /// The drawable table of contents a load read: (template name, id).
     pub toc: Vec<(Vec<u8>, u16)>,
-    /// The drawables a load read past: their template and object (`INVALID_ID` for one with none).
+    /// ~~The drawables a load read past: their template and object (`INVALID_ID` for one with none).~~ **Corrected
+    /// 2026-11-06 (GitHub #59):** the drawables a load skipped because the port has not got their template (their object
+    /// is not read: `INVALID_ID`); the others are read into the client's drawables.
     pub drawables_read_past: Vec<(Vec<u8>, ObjectId)>,
     /// The mission briefing history (`GetBriefingTextList`); a save writes none (the port keeps no briefing list).
     pub briefing: Vec<Vec<u8>>,
@@ -403,13 +411,62 @@ fn failure(trace: &LoadTrace, error: XferStatus, errors: Vec<String>) -> LoadFai
     LoadFailure { error, block, file_offset: trace.pos, block_offset, last_reads: trace.reads.iter().cloned().collect(), errors, blocks: trace.blocks.clone() }
 }
 
+/// The client's drawables a save writes and a load reads into (GitHub #59), with the art their modules are made from and
+/// the client's clock (`WW3D::Get_Sync_Time()`, milliseconds) a loaded animation restarts at.
+pub struct SaveDrawables<'a> {
+    pub drawables: &'a mut ClientDrawables,
+    pub assets: &'a mut dyn W3dAssetSource,
+    pub sync_time: u32,
+}
+
+/// A `dyn W3dAssetSource` as a sized one (for [`DrawEnv`]).
+struct DynAssets<'b, 'a>(&'b mut (dyn W3dAssetSource + 'a));
+
+impl W3dAssetSource for DynAssets<'_, '_> {
+    fn create_render_obj(&mut self, name: &[u8]) -> Option<bool> {
+        self.0.create_render_obj(name)
+    }
+    fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
+        self.0.get_hanim(name)
+    }
+    fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+        self.0.skeleton(name, pose, scale)
+    }
+    fn deferred_answers(&self) -> usize {
+        self.0.deferred_answers()
+    }
+}
+
+/// No art: render objects that are not HLODs, no animations (the drawables a load reads without [`SaveDrawables`]).
+struct NoArt;
+
+impl W3dAssetSource for NoArt {
+    fn create_render_obj(&mut self, _: &[u8]) -> Option<bool> {
+        Some(false)
+    }
+    fn get_hanim(&mut self, _: &[u8]) -> Option<AnimHandle> {
+        None
+    }
+}
+
+/// `DRAWABLE_STATUS_NO_SAVE`: "do *not* save this drawable (UI fluff only)".
+pub const DRAWABLE_STATUS_NO_SAVE: u32 = 0x10;
+
+/// `shouldSaveDrawable(draw)`: not one marked not to be saved without an object (one with an object is saved, upstream's
+/// debug crash aside).
+fn should_save_drawable(d: &Drawable, world: &World) -> bool {
+    d.saved.status & DRAWABLE_STATUS_NO_SAVE == 0 || world.find_object(d.object_id).is_some()
+}
+
 /// The game a save holds, as `GameState` reaches it here: the World, the client's radar, the particle systems' manager
-/// and the rest of the client's saved state.
+/// and the rest of the client's saved state; since GitHub #59, the client's drawables ([`SaveHost::with_drawables`]).
 pub struct SaveHost<'a> {
     pub world: &'a mut World,
     pub radar: &'a mut Radar,
     pub particles: &'a mut ParticleSystemManager,
     pub client: &'a mut ClientSaveState,
+    /// The client's drawables (`None`: see the module docs).
+    pub drawables: Option<SaveDrawables<'a>>,
     /// The World's blocks see a `GameState<WorldBlock>`: this one, carrying the save's information to and from the whole
     /// file's.
     shadow: GameState<WorldBlock>,
@@ -419,7 +476,13 @@ pub struct SaveHost<'a> {
 
 impl<'a> SaveHost<'a> {
     pub fn new(world: &'a mut World, radar: &'a mut Radar, particles: &'a mut ParticleSystemManager, client: &'a mut ClientSaveState) -> Self {
-        SaveHost { world, radar, particles, client, shadow: GameState::new(), trace: None }
+        SaveHost { world, radar, particles, client, drawables: None, shadow: GameState::new(), trace: None }
+    }
+
+    /// The host with the client's drawables (GitHub #59).
+    pub fn with_drawables(mut self, drawables: &'a mut ClientDrawables, assets: &'a mut dyn W3dAssetSource, sync_time: u32) -> Self {
+        self.drawables = Some(SaveDrawables { drawables, assets, sync_time });
+        self
     }
 
     /// The rest of the current top-level block read past (see the module docs); `what` is recorded.
@@ -492,24 +555,45 @@ impl<'a> SaveHost<'a> {
         Ok(())
     }
 
-    /// `GameClient::xfer` (version 3) with `xferDrawableTOC` (version 1); each drawable's own data is read past (module
-    /// docs).
+    /// `GameClient::xfer` (version 3) with `xferDrawableTOC` (version 1) and each drawable's `Drawable::xfer` (GitHub #59;
+    /// module docs).
     fn xfer_game_client(&mut self, xfer: &mut dyn Xfer) -> Result<(), SaveError> {
         let current: XferVersion = 3;
         let mut version = current;
         xfer.xfer_version(&mut version, current)?;
         xfer.xfer_unsigned_int(&mut self.client.game_client.frame)?;
+        // "note that we do not do the id counter here, we did it in the game state block"
+        let saving = xfer.get_xfer_mode() == XferMode::Save;
+        let mut scratch = ClientDrawables::new();
+        let mut no_art = NoArt;
+        let (drawables, assets, sync_time): (&mut ClientDrawables, &mut dyn W3dAssetSource, u32) = match &mut self.drawables {
+            Some(d) => (&mut *d.drawables, &mut *d.assets, d.sync_time),
+            None => (&mut scratch, &mut no_art, 0),
+        };
+        let mut assets = DynAssets(assets);
+        let world = &*self.world;
         // xferDrawableTOC
         let mut toc_version: XferVersion = 1;
         xfer.xfer_version(&mut toc_version, 1)?;
-        let saving = xfer.get_xfer_mode() == XferMode::Save;
         let gc = &mut self.client.game_client;
+        gc.toc.clear();
         if saving {
-            // (no drawable is saved: an empty table)
-            let mut toc_count = 0u32;
+            // "generate a new TOC based on the drawables that are in the map" (the drawables without objects after those
+            // with; module docs)
+            // (without the client's drawables: the scratch drawables, none)
+            for d in drawables.drawables.values().chain(drawables.object_less.iter()) {
+                if should_save_drawable(d, world) && !gc.toc.iter().any(|(n, _)| *n == d.template) {
+                    let id = gc.toc.len() as u16 + 1;
+                    gc.toc.push((d.template.clone(), id));
+                }
+            }
+            let mut toc_count = gc.toc.len() as u32;
             xfer.xfer_unsigned_int(&mut toc_count)?;
+            for (name, id) in gc.toc.iter_mut() {
+                xfer.xfer_ascii_string(name)?;
+                xfer.xfer_unsigned_short(id)?;
+            }
         } else {
-            gc.toc.clear();
             let mut toc_count = 0u32;
             xfer.xfer_unsigned_int(&mut toc_count)?;
             for _ in 0..toc_count {
@@ -520,33 +604,79 @@ impl<'a> SaveHost<'a> {
                 gc.toc.push((name, id));
             }
         }
-        let mut drawable_count = 0u16;
-        xfer.xfer_unsigned_short(&mut drawable_count)?;
-        if !saving {
+        if saving {
+            let saved: Vec<&mut Drawable> = drawables.drawables.values_mut().chain(drawables.object_less.iter_mut()).filter(|d| should_save_drawable(d, world)).collect();
+            let mut drawable_count = saved.len() as u16;
+            xfer.xfer_unsigned_short(&mut drawable_count)?;
+            let random = &mut drawables.random;
+            for d in saved {
+                // ("Drawable TOC entry not found": every saved drawable's template is in the table)
+                let Some(mut toc_id) = gc.toc.iter().find(|(n, _)| *n == d.template).map(|(_, id)| *id) else {
+                    return Err(SaveError::InvalidData);
+                };
+                xfer.xfer_unsigned_short(&mut toc_id)?;
+                xfer.begin_block()?;
+                let mut object = if world.find_object(d.object_id).is_some() { d.object_id } else { INVALID_ID };
+                xfer.xfer_object_id(&mut object)?;
+                let mut env = DrawEnv { assets: &mut assets, random: &mut *random, sync_time, logic_time: false };
+                d.xfer(xfer, world, &mut env)?;
+                xfer.end_block()?;
+            }
+        } else {
+            // (the client's drawables before the load are gone: upstream's reset destroyed them, and the load's objects
+            // made theirs; here each is made as its saved data is met)
+            drawables.drawables.clear();
+            drawables.object_less.clear();
             gc.drawables_read_past.clear();
+            let mut drawable_count = 0u16;
+            xfer.xfer_unsigned_short(&mut drawable_count)?;
             for _ in 0..drawable_count {
                 let mut toc_id = 0u16;
                 xfer.xfer_unsigned_short(&mut toc_id)?;
                 let Some(name) = gc.toc.iter().find(|(_, id)| *id == toc_id).map(|(n, _)| n.clone()) else {
+                    // ("No TOC entry match for id")
                     return Err(SaveError::InvalidData);
                 };
                 let size = xfer.begin_block()?;
-                if self.world.statics.thing_factory.find_template(&name).is_none() {
+                let Some(template) = world.statics.thing_factory.find_template(&name) else {
                     // ("Unrecognized thing template ..., skipping")
                     xfer.skip(size)?;
+                    gc.drawables_read_past.push((name.clone(), INVALID_ID));
+                    self.client.read_past.push(format!("CHUNK_GameClient: a drawable of the unknown template {:?}", String::from_utf8_lossy(&name)));
                     continue;
-                }
+                };
+                let template = template.get_final_override().data.clone();
                 let mut object = INVALID_ID;
                 xfer.xfer_object_id(&mut object)?;
-                if object != INVALID_ID && self.world.find_object(object).is_none() {
-                    return Err(SaveError::InvalidData);
+                let mut d = if object != INVALID_ID {
+                    // ("Cannot find object that is supposed to be attached to this drawable")
+                    let Some(o) = world.find_object(object) else { return Err(SaveError::InvalidData) };
+                    // the object's drawable, as its creation made it (`object->getDrawable()`)
+                    let mine = drawables.drawables.remove(&object);
+                    let own = o.template().clone();
+                    let d = match mine {
+                        Some(d) => d,
+                        None => drawables.new_drawable(world, object, &own, &mut assets, sync_time, false),
+                    };
+                    // "some objects (eg, diguised bombtrucks) may have an "abnormal" drawable. so check."
+                    if !d.template.eq_ignore_ascii_case(template.get_name()) {
+                        drawables.new_drawable(world, object, &template, &mut assets, sync_time, false)
+                    } else {
+                        d
+                    }
+                } else {
+                    // "there was no object attached to this drawable when we saved, we need to create a whole brand new
+                    // drawable now"
+                    drawables.new_drawable(world, INVALID_ID, &template, &mut assets, sync_time, false)
+                };
+                let mut env = DrawEnv { assets: &mut assets, random: &mut drawables.random, sync_time, logic_time: false };
+                d.xfer(xfer, world, &mut env)?;
+                xfer.end_block()?;
+                if object != INVALID_ID {
+                    drawables.drawables.insert(object, d);
+                } else {
+                    drawables.object_less.push(d);
                 }
-                // `xferSnapshot(draw)`: `Drawable::xfer` is not translated; its data is read past
-                xfer.skip(size - 4)?;
-                gc.drawables_read_past.push((name, object));
-            }
-            if drawable_count > 0 {
-                self.client.read_past.push(format!("CHUNK_GameClient: {drawable_count} drawables' own data (Drawable::xfer)"));
             }
         }
         let gc = &mut self.client.game_client;
@@ -570,6 +700,21 @@ impl<'a> SaveHost<'a> {
             }
         }
         Ok(())
+    }
+
+    /// `GameClient::loadPostProcess` with each drawable's `Drawable::loadPostProcess` (its transform; the ambient sound is
+    /// the client audio's): the drawable id counter (`CHUNK_GameStateMap`'s, the World's) raised past every loaded
+    /// drawable's id ("our allocater id may be far higher than it needs to be": upstream's comment says lowered, its code
+    /// only raises).
+    fn game_client_load_post_process(&mut self) {
+        let Some(sd) = &mut self.drawables else { return };
+        let world = &mut *self.world;
+        for d in sd.drawables.drawables.values_mut().chain(sd.drawables.object_less.iter_mut()) {
+            d.load_post_process(world);
+            if d.saved.drawable_id >= world.save_side.drawable_id_counter {
+                world.save_side.drawable_id_counter = d.saved.drawable_id.wrapping_add(1);
+            }
+        }
     }
 
     /// `InGameUI::xfer` (version 3).
@@ -785,9 +930,12 @@ impl GameStateHost<SaveBlock> for SaveHost<'_> {
             SaveBlock::World(b) => <World as GameStateHost<WorldBlock>>::load_post_process(self.world, b),
             // `Radar::loadPostProcess`: `refreshTerrain(TheTerrainLogic)`
             SaveBlock::Radar => self.radar.refresh_terrain(),
-            // (`GameClient::loadPostProcess` pulls the drawable id counter down to the drawables loaded: none are loaded here,
-            // so the counter `CHUNK_GameStateMap` read stays; the other blocks' post-processes are empty)
-            SaveBlock::GameClient | SaveBlock::TacticalView | SaveBlock::InGameUi | SaveBlock::ParticleSystem | SaveBlock::GhostObject => {}
+            // ~~(`GameClient::loadPostProcess` pulls the drawable id counter down to the drawables loaded: none are loaded here,
+            // so the counter `CHUNK_GameStateMap` read stays; the other blocks' post-processes are empty)~~ **Corrected
+            // 2026-11-06 (GitHub #59):** the drawables are loaded, and `GameClient::loadPostProcess` raises the counter
+            // past them (the other blocks' post-processes are empty)
+            SaveBlock::GameClient => self.game_client_load_post_process(),
+            SaveBlock::TacticalView | SaveBlock::InGameUi | SaveBlock::ParticleSystem | SaveBlock::GhostObject => {}
         }
     }
     fn partition_update(&mut self) {
@@ -1286,4 +1434,229 @@ mod tests {
         assert!(e.errors.iter().any(|x| x.contains("CampaignManager::xfer") && x.contains("InvalidData")), "{:?}", e.errors);
         assert_eq!(e.blocks.last().map(|b| b.name.clone()), Some(b"CHUNK_Campaign".to_vec()));
     }
+
+    /// GitHub #59's art: every render object an HLOD with a hierarchy of one bone and four sub-objects (`CHASSIS`,
+    /// `TREADSL` and `TREADSR` with a linear-offset material each, `TURRET`), and two animations.
+    struct TankArt;
+
+    impl W3dAssetSource for TankArt {
+        fn create_render_obj(&mut self, _: &[u8]) -> Option<bool> {
+            Some(true)
+        }
+        fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
+            let frames = if name.eq_ignore_ascii_case(b"tanka.idle") {
+                10
+            } else if name.eq_ignore_ascii_case(b"tanka.move") {
+                20
+            } else {
+                return None;
+            };
+            Some(AnimHandle { name: name.to_ascii_lowercase(), num_frames: frames, frame_rate: 30.0 })
+        }
+        fn skeleton(&mut self, _: &[u8], _: Option<(&[u8], f32)>, _: f32) -> Option<Skeleton> {
+            use crate::client::w3d_model_draw::{SkeletonBone, SkeletonSubObject};
+            use crate::ww::matrix3d::Matrix3D;
+            let sub = |n: &str, l| SkeletonSubObject { name: n.as_bytes().to_vec(), bone_index: 0, hidden: false, transform: Matrix3D::IDENTITY, linear_offset_materials: l };
+            Some(Skeleton {
+                bones: vec![SkeletonBone { name: b"ROOTTRANSFORM".to_vec(), parent_index: 0, transform: Matrix3D::IDENTITY }],
+                sub_objects: vec![sub("TANKA.CHASSIS", 0), sub("TANKA.TREADSL", 1), sub("TANKA.TREADSR", 1), sub("TANKA.TURRET", 0)],
+            })
+        }
+    }
+
+    /// GitHub #59: the client's drawables through a save and a load. Two `Tanky`s (a `W3DTankDraw` with an idle and a
+    /// moving state, each animated, and a `W3DDefaultDraw` the port does not make) in the gate game; after 10 frames their
+    /// drawables (made from the creation events with [`TankArt`]) are given by hand: tank A the MOVING flags (given to the
+    /// module by a draw), its animation at frame 7 of 20, its treads' offsets 0.25 and 0.75, its turret hidden by
+    /// `showSubObject`, a recoil, a client-physics state, the invisible stealth look, a colour tint envelope, tint
+    /// statuses, an icon, an opacity, and a customised ambient sound (volume overridden); tank B hidden, its ambient sound
+    /// off by script and silenced, with a client update module kept as a load of an original save keeps one; and one
+    /// `Tanky` drawable without an object (id 900). The game is saved with the drawables, then loaded into a fresh client (the World from
+    /// the map, its drawables empty), the load's clock at 500 ms.
+    ///
+    /// **Predicted before the run:** (1) the save's table has the one template and two drawables; (2) after the load
+    /// both drawables exist, by their objects, with their template; A has MOVING and its module's MOVING state, its
+    /// animation `tanka.move` at frame 7 (7/19 times 19: within 1e-5), restarted at 500 ms, in its LOOP mode; (3) the
+    /// treads are found again, at offset 0: `W3DTankDraw::xfer` saves no tread data (upstream), so this one does **not**
+    /// round-trip; (4) A's stealth look is `STEALTHLOOK_NONE` (upstream's load resets it for the next stealth update) and
+    /// it is hidden by stealth, its render object hidden; B is hidden, its render object hidden; (5) the turret list, the
+    /// recoil, the client physics (but its yaw and pitch modulators, unsaved: 0), the tint envelope and statuses, the
+    /// icon, the opacity and both ambient saves come back equal, the drawable ids are the objects', and nothing is kept
+    /// of a module the port has not got (the save wrote none) but B's kept module, which comes back as it was; the
+    /// drawable without an object comes back without one, its transform kept, and the drawable id counter is raised past
+    /// 900; (6) a second save of the loaded client, loaded again and
+    /// saved a third time, writes the same `CHUNK_GameClient` as the second (a fixed point: the first differs only by
+    /// the stealth look, and possibly the frame's last bits); (7) the drawables change nothing the logic computes: the
+    /// saving World's CRC is the same before and after the save, and the loaded World and a World loaded alone
+    /// (`World::load_game`) agree for 30 frames.
+    ///
+    /// **Results (2026-11-06, native, release):** (2) to (7) held (the kept module, the drawable without an object and the
+    /// id counter were added to the test after its first passing run, and held on their first). **Miss (1), the prediction's:** the table holds six
+    /// templates, not one: the client's draw makes a drawable for every object of the gate game (its thirteen and the two
+    /// tanks), so all fifteen are saved, `Tanky` sixth; the test now checks every object's drawable comes back. The
+    /// loaded animation was `tanka.move` at frame 7 exactly, at 500 ms, LOOP. (6): the second and third saves'
+    /// `CHUNK_GameClient` (4,673 bytes each, with the kept module and the drawable without an object) are equal; the first
+    /// differs from the second in 152 bytes, as the second
+    /// was written 30 logic frames later (which the prediction overlooked): the frame, the moving objects' transforms, and A's
+    /// stealth look (5, then 0).
+    #[test]
+    fn the_drawables_round_trip_through_a_save() {
+        use crate::client::drawable_ambient::{AmbientSave, CustomAmbientSave, DynamicAudioSave};
+        use crate::client::drawable_save::{Anim2DSave, DrawableIconSave, TintEnvelope};
+        use crate::client::w3d_model_draw::{RecoilState, WeaponRecoilInfo};
+        use crate::common::model_state::{ModelConditionFlags, MODELCONDITION_MOVING};
+        use crate::logic::modules::stealth_update::stealth_look;
+        use crate::logic::world::gate_scenario::{gate_map_world_with, gate_world_with, make};
+        use crate::logic::world::object_map_props::override_bits;
+        use crate::logic::world::team_ops::factory_find_team;
+        let extra = "Object Tanky\n KindOf = VEHICLE\n Draw = W3DTankDraw ModuleTag_Tank\n  DefaultConditionState\n   Model = TankA\n   \
+Animation = TankA.Idle\n   AnimationMode = LOOP\n  End\n  ConditionState = MOVING\n   Model = TankA\n   Animation = TankA.Move\n   \
+AnimationMode = LOOP\n  End\n  TreadAnimationRate = 30\n End\n Draw = W3DDefaultDraw ModuleTag_Other\n End\n Geometry = CYLINDER\n \
+GeometryMajorRadius = 5\n GeometryHeight = 5\nEnd\n";
+        let mut a = Client::new(gate_world_with(extra));
+        let t1 = factory_find_team(&mut a.world, b"team1").expect("the team").expect("team1");
+        let ta = make(&mut a.world, b"Tanky", t1, Coord3D { x: 60.0, y: 60.0, z: 0.0 });
+        let tb = make(&mut a.world, b"Tanky", t1, Coord3D { x: 90.0, y: 60.0, z: 0.0 });
+        let mut cd = ClientDrawables::new();
+        for _ in 0..10 {
+            a.step();
+        }
+        cd.draw(&a.world, &mut TankArt, 0);
+        assert!(cd.drawables[&ta].draw_modules.len() == 1, "the tank draw (no W3DDefaultDraw)");
+        assert_eq!(cd.drawables[&ta].draw_modules[0].data.module_tag, b"ModuleTag_Tank");
+        // tank A, by hand
+        {
+            let moving = ModelConditionFlags::from_indices(&[MODELCONDITION_MOVING]);
+            let d = cd.drawables.get_mut(&ta).unwrap();
+            d.clear_and_set_model_condition_flags(&ModelConditionFlags::new(), &moving);
+        }
+        cd.draw(&a.world, &mut TankArt, 33);
+        let tint = TintEnvelope { attack_rate: [0.1, 0.2, 0.3], decay_rate: [0.01, 0.02, 0.03], peak_color: [1.0, -1.0, -1.0], current_color: [0.5, 0.0, 0.0], sustain_counter: 12, affect: true, env_state: 3 };
+        let icon = DrawableIconSave { keep_till_frame: 300, template_name: b"SCCHealIcon".to_vec(), anim: Anim2DSave { current_frame: 2, last_update_frame: 9, status: 1, min_frame: 0, max_frame: 5, frames_between_updates: 3, alpha: 0.75 } };
+        let custom = AmbientSave {
+            enabled: false,
+            enabled_from_script: true,
+            custom: Some(CustomAmbientSave::Info(DynamicAudioSave { original_name: b"Hum".to_vec(), overridden: (override_bits::NAME | override_bits::VOLUME) as u8, volume: 0.5, ..Default::default() })),
+        };
+        let silenced = AmbientSave { enabled: true, enabled_from_script: false, custom: Some(CustomAmbientSave::NoSound) };
+        {
+            let d = cd.drawables.get_mut(&ta).unwrap();
+            let m = &mut d.draw_modules[0];
+            let r = m.render_object.as_mut().expect("a render object");
+            let anim = r.anim.as_mut().expect("an animation");
+            assert_eq!(anim.motion.name, b"tanka.move");
+            anim.frame = 7.0;
+            let t = m.tank.as_mut().expect("the tank's state");
+            assert_eq!(t.treads.len(), 2);
+            t.treads[0].custom_uv_offset = [0.25, 0.0];
+            t.treads[1].custom_uv_offset = [0.75, 0.0];
+            m.show_sub_object(b"TANKA.TURRET", false);
+            m.update_sub_objects();
+            m.weapon_recoil_info_vec[0] = vec![WeaponRecoilInfo { state: RecoilState::Recoil, shift: 1.5, recoil_rate: 0.25 }];
+            let mut loco = crate::client::drawable_loco::DrawableLocoInfo { pitch: 0.125, roll_rate: -0.5, yaw_modulator: 0.3, ..Default::default() };
+            loco.wheel_info.wheel_angle = 0.2;
+            loco.wheel_info.frames_airborne = 4;
+            d.loco_info = Some(loco);
+            d.set_stealth_look(stealth_look::INVISIBLE);
+            d.saved.color_tint_envelope = Some(tint);
+            d.saved.tint_status = 4;
+            d.saved.prev_tint_status = 2;
+            d.saved.explicit_opacity = 0.5;
+            d.saved.icons.insert(4, icon.clone());
+            d.saved.ambient = custom.clone();
+            let b = cd.drawables.get_mut(&tb).unwrap();
+            b.set_drawable_hidden(true);
+            b.saved.ambient = silenced.clone();
+            // a client update module the port does not make, as a load of an original save keeps it
+            b.saved.kept_modules.push(KeptModule { module_type: 1, tag: b"ModuleTag_Sway".to_vec(), data: vec![1, 1, 1, 1, 0, 0, 128, 63] });
+        }
+        // a drawable without an object (upstream's debris and the like)
+        let tanky = a.world.statics.thing_factory.find_template(b"Tanky").expect("the template").get_final_override().data.clone();
+        let mut loose = cd.new_drawable(&a.world, INVALID_ID, &tanky, &mut TankArt, 33, false);
+        loose.saved.transform.set_translation(&crate::ww::vector3::Vector3 { x: 5.0, y: 6.0, z: 7.0 });
+        loose.saved.drawable_id = 900;
+        cd.object_less.push(loose);
+        let before = a.world.logic_crc(CRC_RECALC, None).expect("the CRC");
+        let save = |c: &mut Client, cd: &mut ClientDrawables, t: u32| {
+            c.state.game_client.frame = c.world.frame();
+            let d: Vec<u16> = "tanks".encode_utf16().collect();
+            let mut art = TankArt;
+            let mut h = SaveHost::new(&mut c.world, &mut c.radar.radar, &mut c.particles, &mut c.state).with_drawables(cd, &mut art, t);
+            save_client_game(&mut h, &d).unwrap_or_else(|e| panic!("the save: {e:?}"))
+        };
+        let load = |bytes: Vec<u8>, t: u32| {
+            let mut c = Client::new(gate_map_world_with(extra));
+            let mut cd = ClientDrawables::new();
+            let mut art = TankArt;
+            let mut h = SaveHost::new(&mut c.world, &mut c.radar.radar, &mut c.particles, &mut c.state).with_drawables(&mut cd, &mut art, t);
+            load_client_game(&mut h, bytes).unwrap_or_else(|e| panic!("the load: {e}\n{}", e.last_reads.join("\n")));
+            (c, cd)
+        };
+        let bytes = save(&mut a, &mut cd, 66);
+        // (7) the save changes nothing the logic computes
+        assert_eq!(a.world.logic_crc(CRC_RECALC, None).expect("the CRC"), before);
+        let (mut b, mut bd) = load(bytes.clone(), 500);
+        // (1)
+        eprintln!("table {:?}", b.state.game_client.toc.iter().map(|(n, i)| (String::from_utf8_lossy(n).into_owned(), *i)).collect::<Vec<_>>());
+        assert_eq!(b.state.game_client.toc.last(), Some(&(b"Tanky".to_vec(), 6)));
+        assert!(b.state.read_past.is_empty(), "{:?}", b.state.read_past);
+        // (2)
+        assert_eq!(bd.drawables.len(), cd.drawables.len());
+        assert_eq!(bd.drawables.len(), a.world.objects.ids_in_order().len());
+        assert_eq!(bd.object_less.len(), 1);
+        assert_eq!(bd.object_less[0].saved.transform.get_translation().z, 7.0);
+        assert!(b.world.save_side.drawable_id_counter > 900, "the id counter raised past the loaded drawables'");
+        let (la, lb) = (&bd.drawables[&ta], &bd.drawables[&tb]);
+        assert_eq!(la.template, b"Tanky");
+        assert!(la.get_model_condition_flags().test(MODELCONDITION_MOVING));
+        let lm = &la.draw_modules[0];
+        assert_eq!(lm.cur_state_ref(), cd.drawables[&ta].draw_modules[0].cur_state_ref());
+        let ra = lm.render_object.as_ref().unwrap();
+        let an = ra.anim.as_ref().unwrap();
+        eprintln!("loaded animation {:?} frame {} at {} ms, mode {:?}", String::from_utf8_lossy(&an.motion.name), an.frame, an.last_sync_time, an.anim_mode);
+        assert_eq!(an.motion.name, b"tanka.move");
+        assert!((an.frame - 7.0).abs() < 1e-5, "{}", an.frame);
+        assert_eq!(an.last_sync_time, 500);
+        assert_eq!(an.anim_mode, crate::formats::w3d::render::AnimMode::Loop);
+        // (3)
+        let lt = lm.tank.as_ref().unwrap();
+        assert_eq!(lt.treads.iter().map(|t| t.custom_uv_offset).collect::<Vec<_>>(), vec![[0.0, 0.0], [0.0, 0.0]], "tread offsets are not saved upstream");
+        // (4)
+        assert_eq!(la.stealth_look, stealth_look::NONE);
+        assert!(la.hidden_by_stealth && !la.hidden && ra.hidden);
+        assert!(lb.hidden && lb.draw_modules[0].render_object.as_ref().unwrap().hidden);
+        // (5)
+        let oa = &cd.drawables[&ta];
+        assert_eq!(lm.sub_object_vec, oa.draw_modules[0].sub_object_vec);
+        assert!(ra.is_sub_object_hidden(3), "the turret hidden again");
+        assert_eq!(lm.weapon_recoil_info_vec, oa.draw_modules[0].weapon_recoil_info_vec);
+        let mut want_loco = oa.loco_info.unwrap();
+        want_loco.yaw_modulator = 0.0;
+        assert_eq!(la.loco_info, Some(want_loco));
+        assert_eq!(la.saved.color_tint_envelope, Some(tint));
+        assert_eq!(la.saved.selection_flash_envelope, None);
+        assert_eq!((la.saved.tint_status, la.saved.prev_tint_status, la.saved.explicit_opacity), (4, 2, 0.5));
+        assert_eq!(la.saved.icons.get(&4), Some(&icon));
+        assert_eq!(la.saved.ambient, custom);
+        assert_eq!(lb.saved.ambient, silenced);
+        assert_eq!((la.saved.drawable_id, lb.saved.drawable_id), (ta, tb));
+        assert!(la.saved.kept_modules.is_empty());
+        assert_eq!(lb.saved.kept_modules, cd.drawables[&tb].saved.kept_modules);
+        // (7) the drawables' load changes nothing the logic computes
+        let mut alone = gate_map_world_with(extra);
+        alone.load_game(bytes.clone()).unwrap_or_else(|e| panic!("the World's load: {e:?}"));
+        for f in 0..30 {
+            assert_eq!(b.step(), step(&mut alone), "the client's load and the World's part at frame {f}");
+        }
+        // (6)
+        let second = save(&mut b, &mut bd, 600);
+        let (mut c, mut cdd) = load(second.clone(), 700);
+        let third = save(&mut c, &mut cdd, 800);
+        let (g1, g2, g3) = (blocks(&bytes)["CHUNK_GameClient"].clone(), blocks(&second)["CHUNK_GameClient"].clone(), blocks(&third)["CHUNK_GameClient"].clone());
+        eprintln!("CHUNK_GameClient: {} bytes, then {} and {}; first == second: {}", g1.len(), g2.len(), g3.len(), g1 == g2);
+        let differ: Vec<usize> = g1.iter().zip(&g2).enumerate().filter(|(_, (x, y))| x != y).map(|(i, _)| i).collect();
+        eprintln!("{} bytes differ between the first and second, the last at {:?}: {:?} then {:?}", differ.len(), differ.last(), differ.last().map(|&i| g1[i]), differ.last().map(|&i| g2[i]));
+        assert!(g2 == g3, "the loaded drawables save as they were read");
+    }
+
 }

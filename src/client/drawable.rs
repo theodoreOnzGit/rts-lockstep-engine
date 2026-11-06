@@ -55,6 +55,9 @@
 //!   subdued or unmanned (unless it is produced at a helipad), or underpowered
 //!   (power considered).
 //!
+//! - **Saved games** (GitHub #59): `Drawable::xfer` and the modules' xfers are [`super::drawable_save`]'s; the members a
+//!   save holds that this drawable does not use are kept in [`Drawable::saved`].
+//!
 //! # Where this differs from upstream
 //!
 //! - **Upstream's logic calls the drawable** while it updates. Here the logic
@@ -88,6 +91,7 @@ use std::sync::Arc;
 
 use super::client_fx::{ClientFx, WeaponFireFx, WorldFxHost};
 use super::drawable_loco::physics_xform_facts;
+use super::drawable_save::DrawableSaveFields;
 use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, WeaponFireFxAt, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
 use crate::common::game_common::{ObjectShroudStatus, LOGICFRAMES_PER_SECOND};
@@ -116,9 +120,9 @@ pub struct Drawable {
     /// Its template's name.
     pub template: Vec<u8>,
     /// `m_conditionState`.
-    condition_state: ModelConditionFlags,
+    pub(crate) condition_state: ModelConditionFlags,
     /// `m_isModelDirty`.
-    is_model_dirty: bool,
+    pub(crate) is_model_dirty: bool,
     /// Its `W3DModelDraw` modules (`MODULETYPE_DRAW`).
     pub draw_modules: Vec<W3DModelDraw>,
     /// `m_hidden`.
@@ -136,6 +140,9 @@ pub struct Drawable {
     /// The last draw's `applyPhysicsXform` totals, for the client to put on the drawn model (`None`: none applied).
     /// New: upstream applies them to the draw's transform matrix in place.
     pub physics_xform: Option<super::drawable_loco::PhysicsXformInfo>,
+    /// The members upstream's drawable saves that the port's does not use, and the ambient sound's saved part (GitHub
+    /// #59, [`super::drawable_save`]).
+    pub saved: DrawableSaveFields,
 }
 
 impl Drawable {
@@ -155,6 +162,7 @@ impl Drawable {
             shroud_clear_frame: 0,
             loco_info: None,
             physics_xform: None,
+            saved: DrawableSaveFields::new(1, 1.0),
         }
     }
 
@@ -335,11 +343,23 @@ pub struct ClientDrawables {
     pub local_player_index: Option<i32>,
     /// The effects (GitHub #43, #44): FX lists and particle systems, fed by the same events in the same order.
     pub fx: ClientFx,
+    /// GitHub #59: the drawables a save held with no object (upstream's `newDrawable` without an object: debris and the
+    /// like), in the save's order. Kept but not drawn (the port's drawables are its objects'), and written back by a save.
+    pub object_less: Vec<Drawable>,
 }
 
 impl Default for ClientDrawables {
     fn default() -> Self {
-        ClientDrawables { drawables: BTreeMap::new(), module_data: BTreeMap::new(), random: RandomValues::new(0), static_lod: STATIC_GAME_LOD_HIGH, errors: Vec::new(), local_player_index: None, fx: ClientFx::new() }
+        ClientDrawables {
+            drawables: BTreeMap::new(),
+            module_data: BTreeMap::new(),
+            random: RandomValues::new(0),
+            static_lod: STATIC_GAME_LOD_HIGH,
+            errors: Vec::new(),
+            local_player_index: None,
+            fx: ClientFx::new(),
+            object_less: Vec::new(),
+        }
     }
 }
 
@@ -359,7 +379,11 @@ impl ClientDrawables {
         for n in mi.nuggets() {
             let ModuleInfoData::Client(block) = &n.second else { continue };
             match W3DModelDrawModuleData::parse(&n.first, block) {
-                Ok(Some(d)) => out.push(Arc::new(d)),
+                Ok(Some(mut d)) => {
+                    // (the module's tag, for the save's module list: GitHub #59)
+                    d.module_tag = n.module_tag.clone();
+                    out.push(Arc::new(d))
+                }
                 Ok(None) => {}
                 Err(e) => self.errors.push((name.clone(), n.first.clone(), format!("{e:?}"))),
             }
@@ -375,18 +399,28 @@ impl ClientDrawables {
     pub fn create_drawable<A: W3dAssetSource>(&mut self, w: &World, id: ObjectId, assets: &mut A, sync_time: u32) -> bool {
         let Some(o) = w.find_object(id) else { return false };
         let t = o.template().clone();
-        let datas = self.module_data_for(&t);
+        let drawable = self.new_drawable(w, id, &t, assets, sync_time, true);
+        self.drawables.insert(id, drawable);
+        true
+    }
+
+    /// `TheThingFactory->newDrawable(thingTemplate)` bound to object `id` (`INVALID_ID`: none, then no indicator colour):
+    /// its draw modules, each constructed (`logic_time`: inside the logic update, a valid time for the logic's bones).
+    /// GitHub #59: a save's drawable whose template is not its object's (upstream's disguised bomb trucks), or that has no
+    /// object, is made this way.
+    pub fn new_drawable<A: W3dAssetSource>(&mut self, w: &World, id: ObjectId, t: &ThingTemplate, assets: &mut A, sync_time: u32, logic_time: bool) -> Drawable {
+        let datas = self.module_data_for(t);
         let (use_lod, night, snowy) = w
             .statics
             .global_data
             .the_global_data()
             .map_or((false, false, false), |g| (g.use_draw_module_lod, g.time_of_day == TIME_OF_DAY_NIGHT, g.weather == WEATHER_SNOWY));
-        let hex_color = w.get_indicator_color(id);
+        let hex_color = if w.find_object(id).is_some() { w.get_indicator_color(id) } else { 0 };
         // `getScale()`: `m_instanceScale`, the template's asset scale
         let scale = t.get_asset_scale();
         let standard = Arc::new(w.statics.global_data.the_global_data().map_or_else(Vec::new, |g| g.standard_public_bones.clone()));
         let mut draw_modules = Vec::new();
-        let mut env = DrawEnv { assets, random: &mut self.random, sync_time, logic_time: true };
+        let mut env = DrawEnv { assets, random: &mut self.random, sync_time, logic_time };
         for d in datas.iter() {
             if use_lod && d.min_lod_required > self.static_lod {
                 continue;
@@ -396,7 +430,7 @@ impl ClientDrawables {
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
             }
         }
-        let drawable = Drawable {
+        Drawable {
             object_id: id,
             template: t.get_name().to_vec(),
             condition_state: ModelConditionFlags::new(),
@@ -409,9 +443,8 @@ impl ClientDrawables {
             shroud_clear_frame: 0,
             loco_info: None,
             physics_xform: None,
-        };
-        self.drawables.insert(id, drawable);
-        true
+            saved: DrawableSaveFields::new(id, scale),
+        }
     }
 
     /// The drawable of `id`, made if the World has the object and the client

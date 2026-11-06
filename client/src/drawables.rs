@@ -200,6 +200,18 @@ impl<D: LocalDevice> WorldDrawables<D> {
         true
     }
 
+    /// `f` given the drawables and the art their modules are made from (GitHub #59: a save writes the drawables, a load
+    /// makes them; `Deferred`, as for the client's events, or no art).
+    pub fn with_assets<R>(&mut self, f: impl FnOnce(&mut ClientDrawables, &mut dyn W3dAssetSource) -> R) -> R {
+        match &mut self.art {
+            Some(art) => {
+                let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims, deferred: 0 };
+                f(&mut self.drawables, &mut src)
+            }
+            None => f(&mut self.drawables, &mut NoArt),
+        }
+    }
+
     /// The objects with a posed render model.
     pub fn instance_count(&self) -> usize {
         self.instances.len()
@@ -291,6 +303,13 @@ impl<D: LocalDevice> WorldDrawables<D> {
             d.set_stealth_look(old.stealth_look);
             d.set_fully_obscured_by_shroud(old.fully_obscured_by_shroud);
             d.shroud_clear_frame = old.shroud_clear_frame;
+            // (GitHub #59: its saved members, its client physics and its `showSubObject` lists, which a load may have given)
+            d.saved = old.saved.clone();
+            d.loco_info = old.loco_info;
+            for (m, o) in d.draw_modules.iter_mut().zip(&old.draw_modules) {
+                m.sub_object_vec = o.sub_object_vec.clone();
+                m.update_sub_objects();
+            }
         }
     }
 

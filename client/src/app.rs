@@ -120,6 +120,8 @@ struct Game {
     base: Option<Box<GameWorld>>,
     /// (#4) The client's state a save holds besides the World and the radar (the camera's view, the in-game UI's timers).
     save_state: crate::saves::ClientState,
+    /// (#59) A loaded game's drawables' ambient sounds are still to be given to the audio (once it is up).
+    ambient_restore_pending: bool,
 }
 
 /// The audio's output: the browser's Web Audio, or (natively, no backend chosen yet) the silent one.
@@ -141,6 +143,11 @@ impl Game {
 
     /// (#4) A game over controls already made (a loaded save's).
     fn from_controls(controls: Controls, player: i32, playing: String, art: Option<Art<ArtDevice>>) -> Self {
+        Game::from_loaded(controls, player, playing, WorldDrawables::new(art))
+    }
+
+    /// (#59) A game over controls and drawables already made (a loaded save's: its drawables are the save's).
+    fn from_loaded(controls: Controls, player: i32, playing: String, models: WorldDrawables<ArtDevice>) -> Self {
         let mut controls = controls;
         let cur = snapshot(controls.world());
         Game {
@@ -152,7 +159,7 @@ impl Game {
             playing,
             models: {
                 // the shroud's local player (`ClientDrawables::local_player_index`, GitHub #45)
-                let mut m = WorldDrawables::new(art);
+                let mut m = models;
                 m.drawables.local_player_index = Some(player);
                 m
             },
@@ -175,6 +182,7 @@ impl Game {
             radar_water_pending: true,
             base: None,
             save_state: Default::default(),
+            ambient_restore_pending: false,
         }
     }
 }
@@ -479,6 +487,12 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
                 // #51: a map's `map.ini` audio events, as the logic read them; the unit voices the translators played since
                 // the last frame; then the frame's events
                 sound.audio.sync_logic_ini_audio(&w.statics.audio);
+                // #59: a loaded game's drawables' ambient sounds, once (`Drawable::xfer`'s and `loadPostProcess`'s)
+                if g.ambient_restore_pending {
+                    g.ambient_restore_pending = false;
+                    let saved: Vec<_> = g.models.drawables.drawables.iter().map(|(id, d)| (*id, d.saved.ambient.clone())).collect();
+                    sound.audio.ambient.restore_saved(&saved, &mut sound.audio.manager, &mut sound.device, &host);
+                }
                 for v in &voices {
                     sound.audio.play_unit_voice(&host, v);
                 }
@@ -1737,7 +1751,19 @@ fn apply_save_action(
             g.save_state.view.position = Coord3D { x: rig.focus.x, y: rig.focus.y, z: 0.0 };
             let frame = g.controls.client.world.frame();
             let desc = format!("{} | frame {frame}", g.playing.split(" | ").next().unwrap_or(""));
-            let r = crate::saves::save_game(&mut g.controls, &mut g.models.drawables.fx.particles, &mut g.save_state, &desc);
+            // (#59: the drawables with their ambient sounds, as the audio has them)
+            if let Some(sound) = g.audio.as_deref() {
+                sound.audio.ambient.save_into(&mut g.models.drawables);
+            }
+            let clock = g.models_clock;
+            let (controls, save_state) = (&mut g.controls, &mut g.save_state);
+            let r = g.models.with_assets(|drawables, assets| {
+                // (the particle systems' manager is the drawables' effects')
+                let mut particles = std::mem::take(&mut drawables.fx.particles);
+                let r = crate::saves::save_game(controls, &mut particles, save_state, Some((&mut *drawables, assets, clock)), &desc);
+                drawables.fx.particles = particles;
+                r
+            });
             let status = match r {
                 Ok(bytes) => {
                     let name = saves.folder.next_name();
@@ -1766,11 +1792,14 @@ fn apply_save_action(
         SaveCmd::Load(name) => {
             let Some(bytes) = saves.folder.files.get(&name).cloned() else { return };
             let base = game.base.take();
-            match crate::saves::client_from_save(bytes, base.as_deref()) {
+            // (#59: the save's drawables are made into the new game's, with the art; its clock starts at 0)
+            let mut models = WorldDrawables::new(game.models.art.take());
+            let loaded = models.with_assets(|drawables, assets| crate::saves::client_from_save(bytes, base.as_deref(), Some((drawables, assets, 0))));
+            match loaded {
                 Ok((controls, particles, state, player, outcome)) => {
-                    let art = game.models.art.take();
                     let label = String::from_utf8_lossy(&outcome.info.map_label).into_owned();
-                    let mut g = Game::from_controls(controls, player, format!("loaded {name} ({label})"), art);
+                    let mut g = Game::from_loaded(controls, player, format!("loaded {name} ({label})"), models);
+                    g.ambient_restore_pending = true;
                     g.models.drawables.fx.particles.unique_system_id = particles.unique_system_id;
                     g.base = base;
                     g.save_state = state;
@@ -1790,6 +1819,7 @@ fn apply_save_action(
                 }
                 Err(e) => {
                     game.base = base;
+                    game.models.art = models.art.take();
                     warn!("{e}");
                     saves.set_status(format!("error: {e}"));
                 }
