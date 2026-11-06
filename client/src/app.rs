@@ -108,6 +108,13 @@ struct Game {
     audio_pending: bool,
     /// The audio (#13): the translated manager and the device, once its tables are read.
     audio: Option<Box<GameSound>>,
+    /// (#35) The radar's image, the logic frame and size it was drawn for, and the "RadarEvent" sounds it asked for
+    /// (played with the next frame's sounds).
+    radar_image: Option<Handle<Image>>,
+    radar_drawn: Option<(u32, ICoord2D)>,
+    radar_event_sounds: u32,
+    /// (#35) Whether the water INI has been read for the radar (once the art is there).
+    radar_water_pending: bool,
 }
 
 /// The audio's output: the browser's Web Audio, or (natively, no backend chosen yet) the silent one.
@@ -152,7 +159,22 @@ impl Game {
             fx_pending: true,
             audio_pending: true,
             audio: None,
+            radar_image: None,
+            radar_drawn: None,
+            radar_event_sounds: 0,
+            radar_water_pending: true,
         }
+    }
+}
+
+impl Game {
+    /// The demo game (`crate::demo`). #35: its player has no radar building, so the demo forces the radar on, as a map
+    /// script's `RADAR_FORCE_ENABLE` would (the demo's own choice: the radar is to be seen without the game's files).
+    fn demo(playing: String) -> Self {
+        let (w, _) = demo_world();
+        let mut g = Game::new(w, crate::demo::DEMO_LOCAL_PLAYER, playing, None);
+        g.controls.radar.radar.force_on(true);
+        g
     }
 }
 
@@ -222,15 +244,9 @@ pub fn run(zh: Option<std::path::PathBuf>) {
                 fs.init(None);
                 Game::new(s.world, s.player, s.report, Some(Art::new(fs)))
             }
-            Err(e) => {
-                let (w, _) = demo_world();
-                Game::new(w, crate::demo::DEMO_LOCAL_PLAYER, format!("demo ({e})"), None)
-            }
+            Err(e) => Game::demo(format!("demo ({e})")),
         },
-        _ => {
-            let (w, _) = demo_world();
-            Game::new(w, crate::demo::DEMO_LOCAL_PLAYER, "demo game: load your Zero Hour folder to play".to_string(), None)
-        }
+        _ => Game::demo("demo game: load your Zero Hour folder to play".to_string()),
     };
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -250,13 +266,14 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
         .init_resource::<UiBar>()
+        .init_resource::<RadarBox>()
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
         .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
-            (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
+            (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -287,7 +304,7 @@ fn view_frame(world: &GameWorld) -> (Vec2, f32) {
 #[allow(clippy::too_many_arguments)]
 fn update_terrain(
     mut commands: Commands,
-    game: NonSend<Game>,
+    mut game: NonSendMut<Game>,
     mut state: ResMut<TerrainState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -308,6 +325,10 @@ fn update_terrain(
     let width = world.terrain.logic_height_map().map_or(0, |m| m.x_extent());
     spawn_terrain(&mut commands, &mut meshes, &mut materials, &mut images, &look, width);
     info!("terrain: {}", look.name());
+    // #35: the radar's terrain from the tiles' colours (`W3DRadar::buildTerrainTexture`'s `getTerrainColorAt`)
+    let g = &mut *game;
+    g.controls.radar.set_terrain_colors(look.radar_colors().cloned(), &mut g.controls.client.world);
+    g.radar_drawn = None;
     state.pending = false;
     state.look = look.name();
 }
@@ -417,6 +438,10 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
             let events = g.controls.world().take_client_events();
             // #56: the logic's messages to the local player (`TheInGameUI->message`)
             g.controls.client.take_logic_messages(&events);
+            // #35: the radar's calls; a stealth detector's feedback the radar's `tryEvent` refused does not play
+            let radar = g.controls.take_radar_events(&events);
+            let heard: Vec<_> = events.iter().enumerate().filter(|(i, _)| !radar.refused.contains(i)).map(|(_, e)| e.clone()).collect();
+            let radar_sounds = std::mem::take(&mut g.radar_event_sounds);
             let now = g.models_clock;
             g.models.apply_events(g.controls.world(), &events, now);
             // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
@@ -438,15 +463,18 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
                 for v in &voices {
                     sound.audio.play_unit_voice(&host, v);
                 }
-                for e in &events {
+                for e in &heard {
                     sound.audio.apply_event(&host, &mut sound.device, e);
                 }
+                // #35: the radar's sounds and EVA (`tryUnderAttackEvent`, `tryInfiltrationEvent`, `drawEvents`)
+                sound.audio.apply_radar_feedback(&host, &radar.feedback);
+                sound.audio.play_radar_event_sound(&host, radar_sounds);
                 for r in &requests {
                     sound.audio.fx_request(&host, r);
                 }
                 sound.audio.update_ambient(&host, &mut sound.device);
                 // #55: EVA, from the frame's events and the client's own requests
-                sound.audio.update_eva(&host, &events, insufficient_funds);
+                sound.audio.update_eva(&host, &heard, insufficient_funds);
                 let view = rig.as_deref().map_or_else(Default::default, |r| crate::audio::listener_view(r.focus.to_array(), r.yaw, r.pitch, r.distance));
                 sound.audio.manager.update(&host, &mut sound.device, &view);
             }
@@ -900,6 +928,7 @@ fn pointer_input(
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform)>,
     bar: Res<UiBar>,
+    radar_box: Res<RadarBox>,
 ) {
     let bar = bar.height + bar.panel;
     let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
@@ -914,6 +943,7 @@ fn pointer_input(
     let screen = on_screen(g, camera, cam);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();
+    let over_ui = |c: Vec2, w: &Window, b: f32| over_ui(c, w, b) || radar_box.contains(c);
     if buttons.just_pressed(MouseButton::Left) && !over_ui(cursor, window, bar) {
         pointer.press = Some(cursor);
         g.controls.left_press(pixel(cursor), ground);
@@ -1033,6 +1063,8 @@ fn lift_zoom(bar: Res<UiBar>, mut cols: Query<&mut Node, With<ZoomColumn>>) {
 struct UiBar {
     height: f32,
     panel: f32,
+    /// (#35) Where the bar's layout is on screen (for the radar's window), while the bar is drawn.
+    placement: Option<crate::ui::LayoutPlacement>,
 }
 
 /// The game's control bar's root node, and the quads it was last drawn with.
@@ -1252,6 +1284,7 @@ fn game_ui(
     let g = &mut *game;
     if g.ui.is_none() {
         ui_bar.height = 0.0;
+        ui_bar.placement = None;
         return;
     }
     let c = &mut g.controls;
@@ -1277,6 +1310,7 @@ fn game_ui(
     let (ww, wh) = windows.single().map_or((800.0, 600.0), |w| (w.width(), w.height()));
     let width = ww.min(wh * lw / crate::ui::LAYOUT.1 as f32);
     ui_bar.height = width * bh / lw;
+    ui_bar.placement = Some(crate::ui::LayoutPlacement { left: (ww - width) / 2.0, top: wh - ui_bar.height, y0, scale: width / lw });
     let root = match roots.iter_mut().next() {
         Some((e, mut r, mut node)) => {
             node.width = px(width);
@@ -1377,6 +1411,147 @@ fn game_ui(
         }
         let child = e.id();
         commands.entity(root).add_child(child);
+    }
+}
+
+/// (#35) The radar's window on screen this frame (logical pixels), for the pointer: a press there is the radar's.
+#[derive(Resource, Default)]
+struct RadarBox {
+    rect: Option<Rect>,
+}
+
+impl RadarBox {
+    fn contains(&self, p: Vec2) -> bool {
+        self.rect.is_some_and(|r| r.contains(p))
+    }
+}
+
+/// The radar's image node.
+#[derive(Component)]
+struct RadarNode;
+
+/// The tactical view's corners on the plane of height `z` (`getScreenCornerWorldPointsAtZ`: upper left, upper right, lower
+/// right, lower left), game axes; `None` if a corner's ray does not meet it.
+fn screen_corners_at_z(camera: &Camera, cam: &GlobalTransform, size: Vec2, z: f32) -> Option<[Coord3D; 4]> {
+    let at = |p: Vec2| -> Option<Coord3D> {
+        let ray = camera.viewport_to_world(cam, p).ok()?;
+        let d = ray.intersect_plane(Vec3::new(0.0, z, 0.0), InfinitePlane3d::new(Vec3::Y))?;
+        let w = ray.get_point(d);
+        Some(Coord3D { x: w.x, y: -w.z, z })
+    };
+    Some([at(Vec2::ZERO)?, at(Vec2::new(size.x, 0.0))?, at(size)?, at(Vec2::new(0.0, size.y))?])
+}
+
+/// GUI glue (needs a window): the radar (#35), drawn by the engine's `W3DRadar` translation
+/// (`rts_lockstep_engine::client::w3d_radar`, tested there; `ClientRadar::draw`) into an image shown in `LeftHUD`, or
+/// without the game's control bar in a box at the top right ([`crate::ui::radar_screen_rect`], tested there); redrawn when
+/// the logic frame or the window's size changes, hidden while the radar is off. A press on it is `LeftHUDInput`'s
+/// ([`Controls::radar_click`], tested in `input`): a look moves the camera there.
+#[allow(clippy::too_many_arguments)]
+fn radar_view(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut images: ResMut<Assets<Image>>,
+    mut nodes: Query<(&mut Node, &mut Visibility, &mut ImageNode), With<RadarNode>>,
+    windows: Query<&Window>,
+    cams: Query<(&Camera, &GlobalTransform)>,
+    ui_bar: Res<UiBar>,
+    mut radar_box: ResMut<RadarBox>,
+) {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let Ok(window) = windows.single() else { return };
+    let g = &mut *game;
+    // the water's radar colour from the art's INI, once (`GameEngine::init`'s `Water.ini` loads)
+    if g.radar_water_pending {
+        if let Some(art) = &g.models.art {
+            let mut read = 0;
+            for path in rts_lockstep_engine::client::water::WATER_INI_FILES {
+                if let Some(text) = art.fs.open_file(path) {
+                    if let Err(e) = g.controls.radar.water.load_text(path, &text) {
+                        warn!("radar: {} did not read: {e:?}", String::from_utf8_lossy(path));
+                    }
+                    read += 1;
+                }
+            }
+            info!("radar: {read} water files read");
+            let colors = g.controls.radar.terrain_colors.take();
+            g.controls.radar.set_terrain_colors(colors, &mut g.controls.client.world);
+            g.radar_drawn = None;
+        }
+        g.radar_water_pending = false;
+    }
+    let screen = (window.width(), window.height());
+    let r = crate::ui::radar_screen_rect(g.ui.as_ref().and_then(|u| u.radar_window()), ui_bar.placement, screen);
+    let size = ICoord2D { x: (r[2] - r[0]).round() as i32, y: (r[3] - r[1]).round() as i32 };
+    radar_box.rect = Some(Rect::new(r[0], r[1], r[2], r[3]));
+    g.controls.radar.radar.set_radar_window(Some((ICoord2D { x: r[0].round() as i32, y: r[1].round() as i32 }, size)));
+    let frame = g.controls.client.world.frame();
+    let entity_node = |n: &mut Node| {
+        n.left = px(r[0]);
+        n.top = px(r[1]);
+        n.width = px(size.x as f32);
+        n.height = px(size.y as f32);
+    };
+    if g.radar_drawn == Some((frame, size)) {
+        for (mut n, ..) in &mut nodes {
+            entity_node(&mut n);
+        }
+        return;
+    }
+    g.radar_drawn = Some((frame, size));
+    let view = cams.single().ok().and_then(|(camera, cam)| screen_corners_at_z(camera, cam, Vec2::new(screen.0, screen.1), g.controls.radar.radar.terrain_average_z));
+    let img = g.controls.radar.draw(&mut g.controls.client.world, Some(&g.models.drawables), size, view);
+    let Some(img) = img else {
+        for (mut n, mut vis, _) in &mut nodes {
+            entity_node(&mut n);
+            *vis = Visibility::Hidden;
+        }
+        // (off: the press is not the radar's)
+        radar_box.rect = None;
+        return;
+    };
+    g.radar_event_sounds += img.event_sounds;
+    let image = Image::new(
+        Extent3d { width: img.width.max(1) as u32, height: img.height.max(1) as u32, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        img.rgba,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    let handle = match &g.radar_image {
+        Some(h) => {
+            let _ = images.insert(h, image);
+            h.clone()
+        }
+        None => {
+            let h = images.add(image);
+            g.radar_image = Some(h.clone());
+            h
+        }
+    };
+    match nodes.iter_mut().next() {
+        Some((mut n, mut vis, mut image_node)) => {
+            entity_node(&mut n);
+            *vis = Visibility::Visible;
+            image_node.image = handle;
+        }
+        None => {
+            let mut n = Node { position_type: PositionType::Absolute, ..default() };
+            entity_node(&mut n);
+            commands
+                .spawn((RadarNode, n, ImageNode { image: handle, image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() }, ZIndex(5)))
+                .observe(|ev: On<PointerPress>, mut game: NonSendMut<Game>, mut rig: ResMut<Rig>, radar_box: Res<RadarBox>| {
+                    let Some(rect) = radar_box.rect else { return };
+                    let local = ev.pointer.position - rect.min;
+                    let right = matches!(ev.button, bevy::picking::pointer::PointerButton::Secondary);
+                    let pixel = ICoord2D { x: local.x as i32, y: local.y as i32 };
+                    if let Some(rts_lockstep_engine::client::control_bar_callback::RadarClick::LookAt(at)) = game.controls.radar_click(pixel, right) {
+                        // `TheTacticalView->lookAt(&world)`
+                        rig.focus = Vec2::new(at.x, at.y);
+                    }
+                });
+        }
     }
 }
 

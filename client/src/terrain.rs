@@ -21,7 +21,7 @@
 //! positions), on the logic's own height map. Upstream's drawn surface and its logic height differ on a cell whose
 //! diagonal is flipped for a blend (see the engine module's quirks); that is kept.
 
-use rts_lockstep_engine::client::terrain_height_map::{ExtraBlendCell, TerrainAtlas, TerrainHeightMap, TerrainVertex};
+use rts_lockstep_engine::client::terrain_height_map::{ExtraBlendCell, TerrainAtlas, TerrainColors, TerrainHeightMap, TerrainVertex};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::logic::world::game_logic::World;
 
@@ -31,11 +31,21 @@ pub enum TerrainLook {
     Flat,
     /// A height map without textures: `updateVB`'s vertices, untextured.
     Shaded { vertices: Vec<TerrainVertex> },
-    /// The game's look: the vertices with both UV sets, the atlas, and the third-layer cells.
-    Textured { vertices: Vec<TerrainVertex>, atlas: TerrainAtlas, extra: Vec<ExtraBlendCell> },
+    /// The game's look: the vertices with both UV sets, the atlas, and the third-layer cells; and (#35) the tiles' colours
+    /// for the radar (`getTerrainColorAt`).
+    Textured { vertices: Vec<TerrainVertex>, atlas: TerrainAtlas, extra: Vec<ExtraBlendCell>, colors: TerrainColors },
 }
 
 impl TerrainLook {
+    /// (#35) The radar's terrain colours: the tiles' when the terrain is textured; none otherwise (the radar's terrain is
+    /// then black shaded by height, as upstream's colour of a missing tile).
+    pub fn radar_colors(&self) -> Option<&TerrainColors> {
+        match self {
+            TerrainLook::Textured { colors, .. } => Some(colors),
+            _ => None,
+        }
+    }
+
     /// "flat", "shaded" or "textured", for the HUD and the tests.
     pub fn name(&self) -> &'static str {
         match self {
@@ -82,7 +92,7 @@ pub fn terrain_look<D: LocalDevice>(world: &World, fs: Option<&FileSystem<D>>) -
         return shaded();
     }
     let atlas = hm.build_terrain_texture();
-    TerrainBuild::Ready(TerrainLook::Textured { vertices: hm.update_vb(), atlas, extra: hm.extra_blend_cells() })
+    TerrainBuild::Ready(TerrainLook::Textured { vertices: hm.update_vb(), atlas, extra: hm.extra_blend_cells(), colors: hm.terrain_colors() })
 }
 
 #[cfg(feature = "app")]
@@ -239,7 +249,7 @@ mod bevy_side {
                     MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.32, 0.42, 0.26), perceptual_roughness: 1.0, ..default() })),
                 ));
             }
-            TerrainLook::Textured { vertices, atlas, extra } => {
+            TerrainLook::Textured { vertices, atlas, extra, .. } => {
                 let image = images.add(atlas_image(atlas));
                 let layer = |bias: f32, blend: bool| StandardMaterial {
                     base_color_texture: Some(image.clone()),
@@ -355,7 +365,7 @@ mod tests {
         dev.insert(b"Art/Terrain/TGrass.tga", grass_tga());
         let fs = FileSystem::new(dev);
         let TerrainBuild::Ready(look) = terrain_look(&w, Some(&fs)) else { panic!("waiting") };
-        let TerrainLook::Textured { vertices, atlas, extra } = look else { panic!("{}", look.name()) };
+        let TerrainLook::Textured { vertices, atlas, extra, .. } = look else { panic!("{}", look.name()) };
         assert_eq!((atlas.width, atlas.height), (2048, 256));
         assert!(extra.is_empty());
         for v in &vertices {

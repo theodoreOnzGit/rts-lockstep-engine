@@ -914,8 +914,13 @@ impl AiStateHost for World {
     fn object_update_upgrade_modules(&mut self, id: ObjectId) {
         self.update_upgrade_modules(id);
     }
-    fn dozer_construction_complete_ui(&mut self, _structure: ObjectId) {
+    fn dozer_construction_complete_ui(&mut self, structure: ObjectId) {
         self.ais_cut("dozer_construction_complete_ui");
+        // (GitHub #35: the radar's part, `TheRadar->createEvent(goalObject->getPosition(), RADAR_EVENT_CONSTRUCTION)`, as a
+        // client event; the message and the dozer's voice are still the cut's)
+        if let Some(position) = self.find_object(structure).map(|o| *o.thing.position()) {
+            self.emit(crate::logic::world::object_events::ObjectClientEvent::RadarCreateEvent { position, event_type: 1 });
+        }
     }
     fn in_game_ui_message(&mut self, _label: &[u8]) {
         self.ais_cut("in_game_ui_message");

@@ -106,6 +106,24 @@ pub enum ClientEvent {
     /// GitHub #55: `TheEva->setEvaEnabled(enabled)` (`ScriptActions::doEvaEnabledDisabled`, the script action
     /// `EVA_SET_ENABLED_DISABLED`). Not simulation state: `Eva` is the client's.
     EvaSetEnabled(bool),
+    /// GitHub #35: the logic's own calls on `TheRadar` that no object makes: the script actions' (`doRadarCreateEvent`,
+    /// `doObjectRadarCreateEvent`, `doTeamRadarCreateEvent`, `doRadarDisable`, `doRadarEnable`, `doRadarForceEnable`,
+    /// `doRadarRevertNormal`, `REFRESH_RADAR`) and the victory conditions' `forceOn(TRUE)`. Not simulation state:
+    /// `Radar::crc` writes nothing (Radar.cpp), and nothing in the logic reads the radar back (`client::radar`).
+    Radar(RadarCall),
+}
+
+/// GitHub #35: one of the logic's calls on `TheRadar` that is not an object's ([`ClientEvent::Radar`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RadarCall {
+    /// `TheRadar->createEvent(pos, (RadarEventType)eventType)` (the default four seconds to live).
+    CreateEvent { position: crate::common::base_type::Coord3D, event_type: i32 },
+    /// `TheRadar->hide(hide)`.
+    Hide(bool),
+    /// `TheRadar->forceOn(force)`.
+    ForceOn(bool),
+    /// `TheRadar->refreshTerrain(TheTerrainLogic)`.
+    RefreshTerrain,
 }
 
 /// GitHub #51: one of the scripts' calls on `TheAudio`. Upstream calls the audio manager directly from the logic's

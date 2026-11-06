@@ -154,6 +154,48 @@ output).**
   played (see #56/#55's entry below); the
   low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
 
+**#35, the rest (2026-11-06, GitHub #35): the radar and the minimap.**
+- **Logic or client state?** Client. `Radar::crc` and `RadarObject::crc` write nothing (Radar.cpp:1376), so the radar is
+  not in the logic's CRC and gate (a) cannot move for it. `Radar::xfer` is saved (`CHUNK_Radar`: hidden, forced, both
+  object lists as ids and colours, the 64 events, the two indices); this port's save does not carry that block yet (a
+  gap). The logic reads back only whether an object has radar data (`m_radarData`, the World's `on_radar`, already
+  kept); `tryEvent`'s answer gates only client feedback. So the logic's radar calls are client events and the client's
+  radar takes them, reading the World.
+- **Translated:** `src/client/radar.rs` (Radar.cpp: the two object lists sorted by priority with each object's colour,
+  disguise and garrison included; `newMap`'s sampling and averages; `worldToRadar`, `radarToWorld(2D)`,
+  `findDrawPositions`, `localPixelToRadar`, `screenPixelToWorld`, `objectUnderRadarPixel`; the events with their colour
+  table, `createPlayerEvent`, expiry in `update`, `getLastEventLoc`; `tryEvent`, `tryUnderAttackEvent` with its message,
+  sound and EVA (`EVA_BaseUnderAttack`, `EVA_AllyUnderAttack`, Radar.cpp:1222-1224), `tryInfiltrationEvent`; `hide`,
+  `forceOn`, `refreshTerrain`, `queueTerrainRefresh`); `src/client/w3d_radar.rs` (W3DRadar.cpp: `buildTerrainTexture`'s
+  sampling with `interpolateColorForHeight`, water and bridges; `renderObjectList`'s dots, shroud and stealth twinkle;
+  `setShroudLevel`; `drawEvents` with the generic and beacon triangles and the "RadarEvent" sound; `reconstructViewBox`,
+  `drawViewBox`; `draw` and `W3DLeftHUDDraw`'s radar test); `TileData::doMip`/`getRGBDataForWidth(1)` and
+  `WorldHeightMap::getTerrainColorAt` (`terrain_height_map`); `src/client/water.rs` (Water.ini's `WaterSet` and
+  `WaterTransparency`, for `m_radarColor`).
+- **The logic's side:** the script actions `RADAR_CREATE_EVENT`, `OBJECT_CREATE_RADAR_EVENT`, `TEAM_CREATE_RADAR_EVENT`,
+  `RADAR_DISABLE`/`ENABLE`, `RADAR_FORCE_ENABLE`/`REVERT_TO_NORMAL`, `REFRESH_RADAR` and the victory conditions' `forceOn`
+  keep their cut records and now also push `ClientEvent::Radar` (as #55 did for EVA); the dozer's construction complete
+  pushes `RadarCreateEvent(RADAR_EVENT_CONSTRUCTION)`. The radar's host (`src/client/radar_world.rs`) reads the World;
+  the partition's shroud is read with `get_shroud_status_for_player_at_cell` for the local player; `hasRadar` (with
+  power's `m_radarDisabled`) through `player_has_radar`.
+- **The client:** drawn in `ControlBar.wnd:LeftHUD` when the game's control bar is there, else (no game files) in a box
+  of its own above the zoom column; the demo forces the radar on (its player has no radar building). A press on it is
+  `LeftHUDInput` through `control_bar_callback` (look, move, attack move, a pending special power); a look moves the
+  camera. The stealth detectors' feedback the radar refuses no longer plays. Without game files the terrain is the
+  untextured terrain's green (new: upstream always has tiles).
+- *Predictions and results:* in the tests' doc comments (`radar` 6, `w3d_radar` 3, `water` 1, `radar_world` 1,
+  `terrain_height_map` 1; the client's `input` and `ui` one each). **Misses:** the client CRC test predicted the gate game's
+  objects on the radar; none have a `RadarPriority`, so none were listed (the test now makes its own); the fallback box's
+  first place (the top right) covered the phone's four-line status line (the phone check's screenshot), so it moved above
+  the zoom column. The rest held on the first run, including `tryEvent`'s throttling read from upstream's unparenthesised
+  distance (any two points of a map are "close").
+- **Not yet:** `CHUNK_Radar` in the save; the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;
+  the dozer's construction message and voice; a map's own `WaterTransparency`; the beacon's radar pulse
+  (`BeaconClientUpdate`, not translated); `GameLogic::startNewGame`'s replay `forceOn`.
+- **Gates:** lib 1021 (1009 + 12), client 39 (37 + 2), clippy clean, web build clean, the page checked at 390 x 844 and
+  1000 x 700 (no overflow, the radar drawn, a tap moves the camera). Gate (a): *predicted* unchanged (nothing in the
+  logic's CRC changed); *result* PASS, last CRC `0bf44067`.
+
 **#56 and #55 (2026-11-06, GitHub #56, #55): the demo's local player; the dispatcher's client calls; EVA.**
 - **#56 (a defect):** the demo game never set the logic's local player (only tests did), so the logic's feedback to the
   local player never fired in the app. Upstream sets it in `PlayerList::newGame` (`GameLogic::startNewGame`): the first
@@ -173,8 +215,9 @@ output).**
   two: the beacon's (now `ClientEvent::Dispatch`) and the script action `EVA_SET_ENABLED_DISABLED` (now
   `ClientEvent::EvaSetEnabled`). The client's own: insufficient funds (`WorldClient::eva_insufficient_funds`) and
   superweapon ready (`InGameUI::postDraw`'s EVA half, `SuperweaponTimers`, read through the new
-  `special_power_body::peek_special_power_module`). Not asked yet: base and ally under attack (`Radar::tryUnderAttackEvent`;
-  the radar's events are #35's).
+  `special_power_body::peek_special_power_module`). ~~Not asked yet: base and ally under attack (`Radar::tryUnderAttackEvent`;
+  the radar's events are #35's).~~ **Corrected 2026-11-06 (#35):** asked for by the radar's `tryUnderAttackEvent` (see #35's
+  radar entry above).
 - *Predictions and results:* in the tests' doc comments (`client/src/input.rs`
   `the_demo_sets_the_local_player_and_a_rally_point_gives_the_local_message`, `src/client/eva.rs`'s four): all held on
   the first run. The CRCs are equal with EVA attached (lib) and with the neutral player local (client).

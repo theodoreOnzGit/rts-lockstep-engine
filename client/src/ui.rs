@@ -66,6 +66,8 @@ pub struct GameUi {
     pub unit_selected: Option<WinId>,
     pub cameo: Option<WinId>,
     pub upgrade_cameos: Vec<Option<WinId>>,
+    /// (#35) `ControlBar.wnd:LeftHUD`, the radar's window (`Radar::newMap`'s `m_radarWindow`).
+    pub radar: Option<WinId>,
 }
 
 /// The reads of the files, telling "not yet" (an unserved ranged read) from "not there".
@@ -163,6 +165,7 @@ pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetc
         unit_selected: find("ControlBar.wnd:WinUnitSelected".into()),
         cameo: find("ControlBar.wnd:CameoWindow".into()),
         upgrade_cameos: (1..=MAX_RIGHT_HUD_UPGRADE_CAMEOS).map(|i| find(format!("ControlBar.wnd:UnitUpgrade{i}"))).collect(),
+        radar: find("ControlBar.wnd:LeftHUD".into()),
         images,
         tree,
         schemes,
@@ -371,6 +374,18 @@ impl GameUi {
         out
     }
 
+    /// (#35) The radar window's rectangle in the layout (`winGetScreenPosition`, `winGetSize` of `LeftHUD`), if the bar has
+    /// one and it is shown.
+    pub fn radar_window(&self) -> Option<[f32; 4]> {
+        let w = self.radar?;
+        if !self.shown(w, &BarState::default()) {
+            return None;
+        }
+        let win = &self.tree.windows[w];
+        let (x, y) = self.tree.screen_position(w);
+        Some([x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32])
+    }
+
     fn windows_into(&self, w: WinId, s: &BarState, out: &mut Vec<UiQuad>) {
         if !self.shown(w, s) {
             return;
@@ -437,6 +452,42 @@ impl GameUi {
     }
 }
 
+/// (#35) Where the bar's layout sits on screen, as `app::game_ui` places it: the screen point of the layout's
+/// `(0, y0)` (`y0` the top of the bar's quads) and the scale (screen pixels per layout pixel).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LayoutPlacement {
+    pub left: f32,
+    pub top: f32,
+    pub y0: f32,
+    pub scale: f32,
+}
+
+impl LayoutPlacement {
+    /// A layout rectangle `(x0, y0, x1, y1)` on screen.
+    pub fn to_screen(&self, r: [f32; 4]) -> [f32; 4] {
+        [self.left + r[0] * self.scale, self.top + (r[1] - self.y0) * self.scale, self.left + r[2] * self.scale, self.top + (r[3] - self.y0) * self.scale]
+    }
+}
+
+/// The zoom column's height (4 buttons of 48 and 3 gaps of 6, `app::setup_ui`) and its bottom margin.
+const ZOOM_COLUMN_HEIGHT: f32 = 4.0 * 48.0 + 3.0 * 6.0 + 8.0;
+
+/// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
+/// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
+/// (mobile first: 30 % of the screen's short side, 96 to 180 pixels wide, 4:3, inside an 8-pixel margin; never above the
+/// status line's first line, y 36). ~~At the top right, below the status line~~ **corrected 2026-11-06 (#35):** the status
+/// line wraps to four lines on a phone and the box covered it (the phone check's first screenshot).
+pub fn radar_screen_rect(window: Option<[f32; 4]>, placement: Option<LayoutPlacement>, screen: (f32, f32)) -> [f32; 4] {
+    if let (Some(r), Some(p)) = (window, placement) {
+        return p.to_screen(r);
+    }
+    let w = (screen.0.min(screen.1) * 0.3).clamp(96.0, 180.0).min(screen.0 - 16.0);
+    let h = (w * 0.75).round();
+    let x1 = screen.0 - 8.0;
+    let y0 = (screen.1 - ZOOM_COLUMN_HEIGHT - 8.0 - h).max(36.0);
+    [x1 - w, y0, x1, y0 + h]
+}
+
 /// A synthetic control bar (no EA file): the mapped images, `ControlBar.wnd` and a scheme, as test files. `ui.tga` is a
 /// 64x64 Targa in four colours. Since #35 it has the portrait windows (`WinUnitSelected` with `CameoWindow` and
 /// `UnitUpgrade1`) and a portrait image, `ImgPortrait` (the green quadrant; ~~`ImgBack` the lower half~~ `ImgBack` is now the
@@ -458,6 +509,8 @@ MappedImage ImgPortrait\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeigh
     };
     wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:ControlBarParent\";\n STATUS = ENABLED+IMAGE;\n STYLE = USER;\n ENABLEDDRAWDATA = {};\n CHILD\n", rect(0, 450, 800, 600), dd("ImgBar"));
     wnd += &format!("WINDOW\n WINDOWTYPE = STATICTEXT;\n {}\n NAME = \"ControlBar.wnd:MoneyDisplay\";\n STATUS = ENABLED;\n STATICTEXTDATA = CENTERED: 1;\nEND\n", rect(20, 460, 120, 480));
+    // (#35) the radar's window
+    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:LeftHUD\";\n STATUS = ENABLED;\n ENABLEDDRAWDATA = {};\nEND\n", rect(20, 500, 220, 590), dd("NoImage"));
     wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:PowerWindow\";\n STATUS = ENABLED;\n ENABLEDDRAWDATA = {};\nEND\n", rect(20, 485, 220, 495), dd("NoImage"));
     wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:CommandWindow\";\n STATUS = ENABLED+HIDDEN;\n CHILD\n", rect(250, 470, 700, 590));
     for i in 0..3 {
@@ -506,7 +559,8 @@ mod tests {
     /// #12: the control bar from synthetic files, for the demo game's dozer. Predicted before the run:
     /// - it loads: ~~3 mapped images, ~~8 windows~~ **missed on the first run:** 7 windows (the parent, the money, the power,
     ///   the command window and its 3 buttons: a miscount in the prediction, not in the reader)~~ **since #35 (2026-11-06):**
-    ///   4 mapped images and 10 windows (with `WinUnitSelected`, `CameoWindow`, `UnitUpgrade1`); the `Default` scheme is chosen for side `America` (none of that side);
+    ///   4 mapped images and ~~10 windows~~ (with `WinUnitSelected`, `CameoWindow`, `UnitUpgrade1`) **since #35's radar
+    ///   (2026-11-06): 11 windows, with `LeftHUD`**; the `Default` scheme is chosen for side `America` (none of that side);
     /// - nothing selected: the scheme's background (`ImgBack`, from y 440), the parent (`ImgBar`), the money
     ///   (`$ <money>`: no string file, so `GUI:ControlBarMoneyDisplay` is missing) and the power bar; no command button
     ///   (the command window is hidden without a selection);
@@ -526,7 +580,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
-        assert_eq!((ui.images.len(), ui.tree.windows.len()), (4, 10));
+        assert_eq!((ui.images.len(), ui.tree.windows.len()), (4, 11));
         assert_eq!(ui.schemes.current_scheme().map(|s| s.name.clone()), Some(b"default".to_vec()));
         let money = ui.money.expect("the money window");
         assert_eq!(ui.tree.screen_position(money), (30, 455));
@@ -729,5 +783,33 @@ mod tests {
         assert!(ui.command_windows.iter().all(Option::is_some));
         assert!(ui.queue_windows.iter().all(Option::is_some));
         assert!(ui.money.is_some() && ui.power.is_some());
+    }
+
+    /// #35: where the radar is drawn. Predicted before the run: the synthetic bar's `LeftHUD` is (20, 500)..(220, 590) in
+    /// the layout; on a 390 x 844 phone the bar is 390 wide (scale 0.4875) and its quads start at y 440, so with the bar at
+    /// the bottom (its top at 844 - 160 * 0.4875 = 766) the radar is (9.75, 795.25)..(107.25, 839.125); without the bar the
+    /// fallback box on the phone is 117 x 88 at the top right, (265, 36)..(382, 124), and on a 1280 x 720 screen 180 x 135.
+    /// **Corrected (2026-11-06, after the phone check):** the box moved above the zoom column: on the phone (265, 530)..(382,
+    /// 618) (844 - 218 - 8 - 88 = 530); on a screen 300 tall it stops at y 36.
+    ///
+    /// *Results (2026-11-06):* as predicted, first run; after the move, as predicted.
+    #[test]
+    fn the_radar_sits_in_left_hud_or_at_the_top_right() {
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let r = ui.radar_window().expect("LeftHUD");
+        assert_eq!(r, [20.0, 500.0, 220.0, 590.0]);
+        let scale = 390.0 / 800.0;
+        let p = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * scale, y0: 440.0, scale };
+        assert_eq!(radar_screen_rect(Some(r), Some(p), (390.0, 844.0)), [9.75, 795.25, 107.25, 839.125]);
+        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 530.0, 382.0, 618.0]);
+        assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
+        let big = radar_screen_rect(None, None, (1280.0, 720.0));
+        assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));
     }
 }

@@ -8,7 +8,8 @@
 //! Soldiers in the north-east, beyond the Soldiers' sight. Since #54 the Soldiers have guard and attack move buttons (and
 //! voices for them, whose sounds the demo does not have), and player 1 has a Hut with a set rally point button and an
 //! exit to rally. The game is in progress (`GAME_SKIRMISH`), so the dispatcher
-//! makes groups for the player's commands.
+//! makes groups for the player's commands. Since #35 the demo's own templates have a `RadarPriority` (units, the Hut a
+//! structure), so they show on the radar.
 
 use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::game_type::ObjectId;
@@ -38,13 +39,13 @@ fn selectable(name: &str) -> String {
     let end = start + INI[start..].find("\nEnd\n").expect("its end") + 5;
     INI[start..end]
         .replacen(&format!("Object {name}"), &format!("Object Click{name}"), 1)
-        .replacen("KindOf = VEHICLE", "KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1)
+        .replacen("KindOf = VEHICLE", "KindOf = VEHICLE SELECTABLE\n VisionRange = 250\n RadarPriority = UNIT", 1)
 }
 
 /// The dozer, with its portrait (#35: the synthetic control bar's `ImgPortrait`) and its command set: construct a Depot, with
 /// the demo's own button texts (this project's, not the game's).
 const WORK_DOZER: &str = "\
-Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n CommandSet = DemoDozerSet\n SelectPortrait = ImgPortrait\n VisionRange = 250\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n RadarPriority = UNIT\n CommandSet = DemoDozerSet\n SelectPortrait = ImgPortrait\n VisionRange = 250\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
  Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\n\
  Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
@@ -62,7 +63,7 @@ CommandButton Command_DemoAttackMove\n Command = ATTACK_MOVE\n Options = NEED_TA
 CommandButton Command_DemoRally\n Command = SET_RALLY_POINT\n Options = NEED_TARGET_POS\n TextLabel = DEMO:Rally\nEnd\n\
 CommandSet DemoSoldierSet\n 1 = Command_DemoGuard\n 2 = Command_DemoAttackMove\nEnd\n\
 CommandSet DemoHutSet\n 1 = Command_DemoRally\nEnd\n\
-Object DemoHut\n KindOf = STRUCTURE IMMOBILE SELECTABLE\n CommandSet = DemoHutSet\n VisionRange = 250\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+Object DemoHut\n KindOf = STRUCTURE IMMOBILE SELECTABLE\n RadarPriority = STRUCTURE\n CommandSet = DemoHutSet\n VisionRange = 250\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\
  Behavior = DefaultProductionExitUpdate ModuleTag_Exit\n  UnitCreatePoint = X:0 Y:0 Z:0\n  NaturalRallyPoint = X:20 Y:0 Z:0\n End\nEnd\n";
 
@@ -81,7 +82,7 @@ pub const DEMO_TEXT: [(&str, &str); 5] = [
 /// The demo game at frame 0, and its objects.
 pub fn demo_world() -> (World, DemoObjects) {
     let caster = rts_lockstep_engine::logic::world::gate_scenario::CASTER_INI
-        .replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1);
+        .replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250\n RadarPriority = UNIT", 1);
     // (#54: the Soldiers' command set and voices)
     let soldier = selectable("Soldier").replacen(
         "Object ClickSoldier\n",

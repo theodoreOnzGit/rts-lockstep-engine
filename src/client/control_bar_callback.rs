@@ -21,8 +21,10 @@
 //! that needs a position is carried out there, a pending attack move attack-moves there, and anything else moves there,
 //! with the unit voices of the two orders.
 //!
-//! **Not here:** the radar itself (its pixels, `isRadarHidden`, `isRadarForced`) and the cursor kept over it; the client
-//! has no radar yet, so the caller supplies the world point.
+//! **Not here:** the radar itself (its pixels, `isRadarHidden`, `isRadarForced`) and the cursor kept over it; ~~the client
+//! has no radar yet, so the caller supplies the world point.~~ **Corrected 2026-11-06 (#35):** the radar is
+//! `client::radar`; the caller turns the pixel into the world point with it
+//! (`client::radar_world::ClientRadar::local_pixel_to_world`) and passes it here, as `LeftHUDInput` does.
 
 use crate::client::command_xlat::{CmdArg, CommandEvaluateType, CommandTranslator, CommandXlatHost};
 use crate::client::control_bar::gui;

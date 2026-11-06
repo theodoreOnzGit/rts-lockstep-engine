@@ -905,8 +905,11 @@ impl ScriptActionsHost for World {
         };
         let _ = crate::logic::world::player_ops::player_set_player_relationship(self, p, Some(other), r);
     }
-    fn sa_radar_create_event(&mut self, _p: &Coord3D, _event_type: i32) {
+    /// `TheRadar->createEvent(pos, type)`: the cut log's record, and (GitHub #35) the call as a client event, for the
+    /// client's radar (`client::radar`).
+    fn sa_radar_create_event(&mut self, p: &Coord3D, event_type: i32) {
         self.sa_cut("radar_create_event");
+        self.events.push(crate::logic::client_event::ClientEvent::Radar(crate::logic::client_event::RadarCall::CreateEvent { position: *p, event_type }));
     }
     fn sa_team_has_any_units(&self, t: TeamH) -> bool {
         crate::logic::world::team_ops::team_has_any_units(self, t as u32)
@@ -914,8 +917,10 @@ impl ScriptActionsHost for World {
     fn sa_team_estimate_position(&self, t: TeamH) -> Option<Coord3D> {
         crate::logic::world::team_ops::team_get_estimate_team_position(self, t as u32)
     }
-    fn sa_radar_hide(&mut self, _hide: bool) {
+    /// `TheRadar->hide(hide)`: the cut log's record, and (GitHub #35) the call as a client event.
+    fn sa_radar_hide(&mut self, hide: bool) {
         self.sa_cut("radar_hide");
+        self.events.push(crate::logic::client_event::ClientEvent::Radar(crate::logic::client_event::RadarCall::Hide(hide)));
     }
     fn sa_view_set_view_filter(&mut self, _filter: i32) -> bool {
         self.sa_cut("view_set_view_filter");
@@ -1303,8 +1308,10 @@ impl ScriptActionsHost for World {
         self.with_group(g, |gr, w| gr.group_do_command_button(w, b, crate::logic::ai::ai_group::GroupButtonCall::AtPosition(*p), cmd));
     }
 
+    /// `TheRadar->refreshTerrain(TheTerrainLogic)`: the cut log's record, and (GitHub #35) the call as a client event.
     fn sa_radar_refresh_terrain(&mut self) {
         self.sa_cut("radar_refresh_terrain");
+        self.events.push(crate::logic::client_event::ClientEvent::Radar(crate::logic::client_event::RadarCall::RefreshTerrain));
     }
     fn sa_view_set_default_view(&mut self, _pitch: f32, _angle: f32, _max_height: f32) {
         self.sa_cut("view_set_default_view");
@@ -1464,8 +1471,10 @@ impl ScriptActionsHost for World {
             self.cuts.team_live_errors.push(format!("ScriptEngine::setToppleDirection: {e:?}"));
         }
     }
-    fn sa_radar_force_on(&mut self, _on: bool) {
+    /// `TheRadar->forceOn(on)`: the cut log's record, and (GitHub #35) the call as a client event.
+    fn sa_radar_force_on(&mut self, on: bool) {
         self.sa_cut("radar_force_on");
+        self.events.push(crate::logic::client_event::ClientEvent::Radar(crate::logic::client_event::RadarCall::ForceOn(on)));
     }
     fn sa_partition_closest_of_template(&mut self, p: &Coord3D, t: TemplateH, trig: TriggerH, obj: ObjH) -> Option<(ObjH, f32)> {
         // (integration batch I26: was a cut or a default; the partition's own with `live_partition`)

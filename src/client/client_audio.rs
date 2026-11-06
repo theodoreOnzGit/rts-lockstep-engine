@@ -35,8 +35,11 @@
 //!   lengths from the files at load (`logic::audio_length`).
 //! - **`ObjectClientEvent::AudioRemoveEvent { handle }`** carries a handle the logic made up (upstream's comes from
 //!   `addAudioEvent`, which the logic cannot call): ignored.
-//! - **`StealthDetectorFeedback`** plays its sound whether or not the radar would have taken the event (`tryEvent`); the
-//!   radar is not translated.
+//! - ~~**`StealthDetectorFeedback`** plays its sound whether or not the radar would have taken the event (`tryEvent`); the
+//!   radar is not translated.~~ **Corrected 2026-11-06 (#35):** the radar is translated (`client::radar`); the client
+//!   leaves out the feedback events whose `tryEvent` refused ([`crate::client::radar::RadarFrame::refused`]) before they
+//!   reach the audio and EVA, and the radar's own sounds and EVA are played by [`ClientAudio::apply_radar_feedback`]
+//!   and [`ClientAudio::play_radar_event_sound`].
 
 use crate::client::audio_event::{AudioEventHost, AudioEventRts, AudioHandle};
 use crate::client::audio_info::{AudioTables, MiscAudio};
@@ -446,6 +449,35 @@ impl ClientAudio {
         }
         self.superweapons.update(host, &mut self.eva);
         self.eva.update(host, &mut self.manager);
+    }
+
+    /// #35: the radar's feedback (`Radar::tryUnderAttackEvent`, `tryInfiltrationEvent`): `MiscAudio`'s radar sound with
+    /// `setPlayerIndex(localPlayer)`, and `TheEva->setShouldPlay(EVA_BaseUnderAttack / EVA_AllyUnderAttack)`.
+    pub fn apply_radar_feedback(&mut self, host: &dyn AudioHost, feedback: &[crate::client::radar::RadarFeedback]) {
+        use crate::client::radar::{RadarFeedback, RadarSound};
+        let misc = self.manager.tables.misc.clone();
+        for f in feedback {
+            match f {
+                RadarFeedback::Sound { sound, player_index } => {
+                    let n = match sound {
+                        RadarSound::HarvesterUnderAttack => &misc.radar_harvester_under_attack_sound,
+                        RadarSound::StructureUnderAttack => &misc.radar_structure_under_attack_sound,
+                        RadarSound::Infiltration => &misc.radar_infiltration_sound,
+                    };
+                    self.add(host, Self::named(&n.event_name, 0, None, *player_index));
+                }
+                RadarFeedback::Eva(name) => self.eva.set_should_play(crate::client::eva::name_to_message(name.as_bytes())),
+                RadarFeedback::AttackGlow | RadarFeedback::Message(_) => {}
+            }
+        }
+    }
+
+    /// #35: `W3DRadar::drawEvents`'s `static AudioEventRTS eventSound("RadarEvent"); TheAudio->addAudioEvent(&eventSound);`,
+    /// `count` times.
+    pub fn play_radar_event_sound(&mut self, host: &dyn AudioHost, count: u32) {
+        for _ in 0..count {
+            self.add(host, Self::named(b"RadarEvent", 0, None, None));
+        }
     }
 
     /// An FX list's sound (`SoundFXNugget`): at the position, if it has one.

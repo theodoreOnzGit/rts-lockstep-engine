@@ -17,6 +17,9 @@ use rts_lockstep_engine::client::place_event::PlaceEventTranslator;
 use rts_lockstep_engine::client::selection_info::SelectionInfoHost;
 use rts_lockstep_engine::client::selection_xlat::{Disposition, SelectionTranslator};
 use rts_lockstep_engine::client::world_host::WorldClient;
+use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
+use rts_lockstep_engine::client::radar::{RadarFeedback, RadarFrame};
+use rts_lockstep_engine::client::radar_world::ClientRadar;
 use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::message_stream::MessageType;
@@ -37,6 +40,8 @@ pub struct Controls {
     pub gui: GuiCommandTranslator,
     /// The last hint the pointer made (for the cursor).
     pub hint: Option<MessageType>,
+    /// #35: `TheRadar` and what it draws (`rts_lockstep_engine::client::radar_world`).
+    pub radar: ClientRadar,
 }
 
 /// A button of the selected unit's command set, with its label (the button's name, until the game's text is loaded).
@@ -48,7 +53,7 @@ pub struct BarButton {
 
 impl Controls {
     pub fn new(world: World, player: i32) -> Self {
-        Controls {
+        let mut c = Controls {
             client: WorldClient::new(world, player),
             ui: InGameUiSelection::new(),
             selection: SelectionTranslator::default(),
@@ -56,7 +61,32 @@ impl Controls {
             place: PlaceEventTranslator::default(),
             gui: GuiCommandTranslator,
             hint: None,
+            radar: ClientRadar::default(),
+        };
+        // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
+        c.radar.new_map(&mut c.client.world);
+        c
+    }
+
+    /// #35: a logic frame's events to the radar: its lists, events and flags; the messages it shows
+    /// (`TheInGameUI->message`) join [`WorldClient::ui_messages`]. The answer says which stealth feedback events the radar
+    /// refused (their sounds and EVA do not play) and what else to play.
+    pub fn take_radar_events(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent]) -> RadarFrame {
+        let f = self.radar.take_events(&mut self.client.world, events);
+        for x in &f.feedback {
+            if let RadarFeedback::Message(label) = x {
+                self.client.ui_messages.push(label.to_vec());
+            }
         }
+        f
+    }
+
+    /// #35: `LeftHUDInput`'s `GWM_LEFT_DOWN` / `GWM_RIGHT_DOWN` at `pixel` of the radar window: with the radar on and the
+    /// pixel on the map, the click at that ground point (`control_bar_callback::left_hud_input_click`); else nothing.
+    pub fn radar_click(&mut self, pixel: ICoord2D, right: bool) -> Option<RadarClick> {
+        let world = self.radar.local_pixel_to_world(&mut self.client.world, &pixel)?;
+        self.client.sync_modes(&self.ui);
+        Some(left_hud_input_click(&world, right, &self.commands, &mut self.ui, &mut self.client))
     }
 
     /// The World.
@@ -708,5 +738,57 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         assert!(!ev.iter().any(|e| matches!(e, ClientEvent::Dispatch(ClientCall::UiMessage { .. }))), "{ev:?}");
         assert!(n.client.ui_messages.is_empty(), "{:?}", n.client.ui_messages);
         assert_eq!(n.world().logic_crc(CRC_RECALC, None).expect("the CRC"), crc, "the local player is not in the CRC");
+    }
+
+    /// #35: the radar in the demo game. Predicted before the run: after the first frame the radar lists the local player's
+    /// seven objects (two Runners, two Soldiers, the dozer, the Caster, the Hut) and the enemy's two Soldiers; the demo
+    /// player has no radar building, so the radar is off and a click on it does nothing; forced on (a script's
+    /// `RADAR_FORCE_ENABLE`), a left click in the middle of a 200 x 150 window with nothing selected looks at the map's
+    /// middle (no message sent); with a Runner selected it sends `MSG_DO_MOVETO` to that point; a right click looks; the
+    /// radar draws a 200 x 150 image; and the logic's CRC after 30 frames equals that of a game without the radar's
+    /// questions but with the same move order.
+    ///
+    /// *Results (2026-11-06):* as predicted, first run.
+    #[test]
+    fn the_radar_shows_the_demo_and_its_clicks_look_and_move() {
+        use rts_lockstep_engine::common::message_types::MSG_DO_MOVETO;
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        c.radar.radar.set_radar_window(Some((ICoord2D { x: 0, y: 0 }, ICoord2D { x: 200, y: 150 })));
+        c.world().logic_update().expect("a frame");
+        let ev = c.world().take_client_events();
+        c.take_radar_events(&ev);
+        assert_eq!((c.radar.radar.local_object_list.len(), c.radar.radar.object_list.len()), (7, 2));
+        let middle = ICoord2D { x: 100, y: 75 };
+        assert_eq!(c.radar_click(middle, false), None);
+        c.radar.radar.force_on(true);
+        let Some(RadarClick::LookAt(at)) = c.radar_click(middle, false) else { panic!("a look") };
+        let ext = c.client.world.terrain.extent().expect("the map");
+        assert!((at.x - ext.width() / 2.0).abs() < 8.0 && (at.y - ext.height() / 2.0).abs() < 8.0, "{at:?}");
+        assert!(c.client.sent.is_empty());
+        c.ui.select_drawable(o.runners[0], &mut c.client);
+        assert!(matches!(c.radar_click(middle, true), Some(RadarClick::LookAt(_))));
+        assert_eq!(c.radar_click(middle, false), Some(RadarClick::Ordered));
+        assert_eq!(c.client.sent, vec![MSG_DO_MOVETO]);
+        let img = c.radar.draw(&mut c.client.world, None, ICoord2D { x: 200, y: 150 }, None).expect("forced on");
+        assert_eq!((img.width, img.height), (200, 150));
+        for _ in 0..30 {
+            c.world().logic_update().expect("a frame");
+            let ev = c.world().take_client_events();
+            c.take_radar_events(&ev);
+            let _ = c.radar.draw(&mut c.client.world, None, ICoord2D { x: 200, y: 150 }, None);
+        }
+        let crc = c.world().logic_crc(CRC_RECALC, None).expect("the CRC");
+        // the control: the same order without the radar's questions
+        let (w, o) = demo_world();
+        let mut p = Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        p.world().logic_update().expect("a frame");
+        p.ui.select_drawable(o.runners[0], &mut p.client);
+        rts_lockstep_engine::client::command_xlat::CommandXlatHost::append_command(&mut p.client, MSG_DO_MOVETO, &[rts_lockstep_engine::client::command_xlat::CmdArg::Location(at)]);
+        for _ in 0..30 {
+            p.world().logic_update().expect("a frame");
+        }
+        assert_eq!(p.world().logic_crc(CRC_RECALC, None).expect("the CRC"), crc);
     }
 }

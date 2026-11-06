@@ -5,6 +5,8 @@
 //   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/WorldHeightMap.h
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/WorldHeightMap.cpp
 //   GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/TileData.h
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/TileData.cpp (GitHub #35: TileData::doMip, updateMips,
+//     getRGBDataForWidth)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/TerrainTex.cpp
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/HeightMap.cpp
 //
@@ -1571,5 +1573,144 @@ mod tests {
         assert_eq!(a, b);
         let t = a[0].as_ref().unwrap();
         assert_eq!(&t.tile_data[(5 + 64 * 3) * 4..(5 + 64 * 3) * 4 + 4], &[7, 3, 5, 255]);
+    }
+}
+
+// --- GitHub #35: the radar's terrain colour (`W3DRadar::buildTerrainTexture`'s `getTerrainColorAt`) ---
+
+impl TileData {
+    /// `TileData::doMip(pHiRes, hiRow, pLoRes)`: each 2x2 block of the `hi_row`-wide BGRA image averaged, `(a + b + c + d
+    /// + 2) / 4` per byte, into a `hi_row / 2`-wide one.
+    pub fn do_mip(hi: &[u8], hi_row: i32) -> Vec<u8> {
+        let bpp = TILE_BYTES_PER_PIXEL as i32;
+        let lo_row = hi_row / 2;
+        let mut lo = vec![0u8; (lo_row * lo_row * bpp) as usize];
+        let mut i = 0;
+        while i < hi_row {
+            let mut j = 0;
+            while j < hi_row {
+                let ndx0 = (j * hi_row + i) * bpp;
+                let lo_ndx0 = ((j / 2) * (hi_row / 2) + (i / 2)) * bpp;
+                for p in 0..bpp {
+                    let (ndx, lo_ndx) = (ndx0 + p, lo_ndx0 + p);
+                    let at = |k: i32| i32::from(hi[k as usize]);
+                    let pxl = (at(ndx) + at(ndx + bpp) + at(ndx + bpp * hi_row) + at(ndx + bpp * hi_row + bpp) + 2) / 4;
+                    lo[lo_ndx as usize] = pxl as u8;
+                }
+                j += 2;
+            }
+            i += 2;
+        }
+        lo
+    }
+
+    /// `updateMips()` then `getRGBDataForWidth(1)`: the tile mipped down to one pixel (`m_tileDataMip1`), BGRA. Upstream
+    /// keeps every level; only the last is read by the radar, so the chain is made when asked.
+    pub fn rgb_data_for_width_1(&self) -> [u8; 4] {
+        let mut level = self.tile_data.clone();
+        let mut row = TILE_PIXEL_EXTENT;
+        while row > 1 {
+            level = TileData::do_mip(&level, row);
+            row /= 2;
+        }
+        [level[0], level[1], level[2], level[3]]
+    }
+}
+
+/// What `WorldHeightMap::getTerrainColorAt` reads (GitHub #35): the samples' tile indices and each source tile mipped to
+/// one pixel ([`TileData::rgb_data_for_width_1`], made once here; upstream made them when the tile was read).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TerrainColors {
+    pub width: i32,
+    pub height: i32,
+    pub border_size: i32,
+    pub data_size: i32,
+    pub tile_ndxes: Vec<i16>,
+    /// `getSourceTile(i)->getRGBDataForWidth(1)` (BGRA), `None` for a missing tile.
+    pub mips: Vec<Option<[u8; 4]>>,
+}
+
+impl TerrainColors {
+    /// `WorldHeightMap::getTerrainColorAt(x, y, &color)`: the one-pixel colour of the tile under the world point (the
+    /// sample clamped into the map, border included); black with no tile there.
+    pub fn get_terrain_color_at(&self, x: f32, y: f32) -> crate::common::base_type::RGBColor {
+        use crate::common::base_type::{real_to_int_floor, RGBColor};
+        let mut x_index = real_to_int_floor(x / MAP_XY_FACTOR);
+        let mut y_index = real_to_int_floor(y / MAP_XY_FACTOR);
+        x_index += self.border_size;
+        y_index += self.border_size;
+        let mut c = RGBColor { red: 0.0, green: 0.0, blue: 0.0 };
+        if x_index < 0 {
+            x_index = 0;
+        }
+        if y_index < 0 {
+            y_index = 0;
+        }
+        if x_index >= self.width {
+            x_index = self.width - 1;
+        }
+        if y_index >= self.height {
+            y_index = self.height - 1;
+        }
+        let ndx = (y_index * self.width) + x_index;
+        if ndx < 0 || ndx >= self.data_size {
+            return c;
+        }
+        let Some(&tile_ndx) = self.tile_ndxes.get(ndx as usize) else { return c };
+        // "We pack 4 grids into a tile."
+        let tile_ndx = i32::from(tile_ndx) >> 2;
+        if let Some(Some(p)) = usize::try_from(tile_ndx).ok().and_then(|n| self.mips.get(n)) {
+            // "Data is in microsoft bgra format." (`pData[2]/255.0`: a double, stored as a float)
+            c.red = (f64::from(p[2]) / 255.0) as f32;
+            c.green = (f64::from(p[1]) / 255.0) as f32;
+            c.blue = (f64::from(p[0]) / 255.0) as f32;
+        }
+        c
+    }
+}
+
+impl TerrainHeightMap {
+    /// The colours `getTerrainColorAt` reads ([`TerrainColors`]).
+    pub fn terrain_colors(&self) -> TerrainColors {
+        TerrainColors {
+            width: self.width,
+            height: self.height,
+            border_size: self.border_size,
+            data_size: self.data_size,
+            tile_ndxes: self.tile_ndxes.clone(),
+            mips: self.source_tiles.iter().map(|t| t.as_ref().map(TileData::rgb_data_for_width_1)).collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod radar_color_tests {
+    use super::*;
+
+    /// #35: the tiles' one-pixel colours and `getTerrainColorAt`. Predicted before the run: a tile of one BGRA colour mips
+    /// to that colour; a tile whose left half is 0 and right half 255 (each byte) mips to 128 (the halves stay apart down to
+    /// 2 x 1, then `(0 + 255 + 0 + 255 + 2) / 4`); on a 4 x 4 map with a border of 1,
+    /// the world point (5, 5) is sample (1, 1), whose tile index 4 is tile 1 (`>> 2`), and its colour reads as red 0.8
+    /// (204/255), green 0.4, blue 0.2; a point off the map clamps to the corner sample; a missing tile is black.
+    ///
+    /// *Results (2026-11-06):* as predicted, first run.
+    #[test]
+    fn tiles_mip_to_one_pixel_and_colour_the_terrain() {
+        let solid = TileData { tile_data: [51u8, 102, 204, 255].repeat((TILE_PIXEL_EXTENT * TILE_PIXEL_EXTENT) as usize), ..Default::default() };
+        assert_eq!(solid.rgb_data_for_width_1(), [51, 102, 204, 255]);
+        let mut half = TileData::default();
+        for y in 0..TILE_PIXEL_EXTENT {
+            for x in TILE_PIXEL_EXTENT / 2..TILE_PIXEL_EXTENT {
+                let i = ((y * TILE_PIXEL_EXTENT + x) * 4) as usize;
+                half.tile_data[i..i + 4].copy_from_slice(&[255; 4]);
+            }
+        }
+        assert_eq!(half.rgb_data_for_width_1(), [128; 4]);
+        let c = TerrainColors { width: 4, height: 4, border_size: 1, data_size: 16, tile_ndxes: vec![4; 16], mips: vec![None, Some(solid.rgb_data_for_width_1())] };
+        let got = c.get_terrain_color_at(5.0, 5.0);
+        assert_eq!((got.red, got.green, got.blue), ((204.0f64 / 255.0) as f32, (102.0f64 / 255.0) as f32, (51.0f64 / 255.0) as f32));
+        assert_eq!(c.get_terrain_color_at(-500.0, 9999.0), got);
+        let none = TerrainColors { mips: vec![None; 2], ..c };
+        assert_eq!(none.get_terrain_color_at(5.0, 5.0), crate::common::base_type::RGBColor::default());
     }
 }

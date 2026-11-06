@@ -48,9 +48,12 @@
 //! - **The local player is a parameter** (the [`AudioHost`]'s), where upstream keeps `m_localPlayer` for the update.
 //! - **`m_previousBuildingCount` and `m_previousUnitCount`** are kept and reset, as upstream, and never read (upstream
 //!   reads them nowhere either).
-//! - **Base and ally under attack** (`Radar::tryUnderAttackEvent`) are not asked for: the radar's events are not
+//! - ~~**Base and ally under attack** (`Radar::tryUnderAttackEvent`) are not asked for: the radar's events are not
 //!   translated (GitHub #35). The stealth detectors' messages are asked for whether or not the radar would have taken the
-//!   event (`tryEvent`), as their sounds are (`client_audio`).
+//!   event (`tryEvent`), as their sounds are (`client_audio`).~~ **Corrected 2026-11-06 (#35):** the radar is translated
+//!   (`client::radar`): base and ally under attack are asked for by `ClientAudio::apply_radar_feedback` (Radar.cpp's
+//!   `tryUnderAttackEvent`, throttled by its `tryEvent`), and the client leaves out the stealth detectors' feedback events
+//!   whose `tryEvent` refused before they reach EVA.
 //! - **The superweapon timers** keep only what decides the EVA: the timers are not drawn, a removed timer is not removed
 //!   (the logic does not emit `removeSuperweapon`; a timer whose object is gone is skipped, as upstream skips it), and the
 //!   scripts' hiding (`hideObjectSuperweaponDisplayByScript`) and `objectChangedTeam` are not followed.

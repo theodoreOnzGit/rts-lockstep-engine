@@ -12,7 +12,9 @@
 //! sounds), `audio_event` (`AudioEventRTS`: the file chosen), `game_audio` (the audio manager, with the device behind a
 //! trait) and `client_audio` (the logic's sound events played). Since #51, `unit_voice` (the units' voice responses to
 //! orders and selection) and `drawable_ambient` (the drawables' ambient sounds). Since #54, `gui_command_xlat` (a pending
-//! control bar command carried out by the next click) and `control_bar_callback` (the radar's clicks).
+//! control bar command carried out by the next click) and `control_bar_callback` (the radar's clicks). Since #35 (the rest
+//! of it), `radar` (`TheRadar`: its objects, events and coordinates, fed by the logic's client events), `w3d_radar` (what
+//! the radar draws) and `water` (the water INI's radar colour).
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -45,3 +47,7 @@ pub mod client_audio;
 pub mod unit_voice;
 pub mod drawable_ambient;
 pub mod eva;
+pub mod radar;
+pub mod radar_world;
+pub mod w3d_radar;
+pub mod water;

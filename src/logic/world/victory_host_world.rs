@@ -137,7 +137,11 @@ impl VictoryHost for World {
             VictoryEffect::LeftGameSound => self.victory_cut("AudioManager::addAudioEvent(GUIMessageReceived)", &[]),
             VictoryEffect::SlotLastFrameInGame { slot, frame } => self.victory_cut("GameSlot::setLastFrameInGame", &[i64::from(slot), i64::from(frame)]),
             VictoryEffect::PopulateInGameDiplomacyPopup => self.victory_cut("PopulateInGameDiplomacyPopup", &[]),
-            VictoryEffect::RadarForceOn => self.victory_cut("Radar::forceOn", &[]),
+            VictoryEffect::RadarForceOn => {
+                // (GitHub #35: and the call as a client event, for the client's radar)
+                self.victory_cut("Radar::forceOn", &[]);
+                self.events.push(crate::logic::client_event::ClientEvent::Radar(crate::logic::client_event::RadarCall::ForceOn(true)));
+            }
             VictoryEffect::InGameChatEveryone => self.victory_cut("SetInGameChatType(INGAME_CHAT_EVERYONE)", &[]),
         }
     }
