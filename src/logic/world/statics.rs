@@ -81,6 +81,9 @@ pub struct GameStatics {
     /// `TheAI->getAiData()` (`TAiData`'s constructor values until `AIData.ini` is read): its scalars (`data`) and, since batch
     /// I9e, its side infos and build lists (`lists`), which the computer players read.
     pub ai_data: crate::logic::ai::ai_data::AiDataEntry,
+    /// GitHub #64: the rest of `TheAI`'s data chain after `ai_data` (`m_aiData->m_next`, the original last): the data a
+    /// map's `AIData` override replaced, which `AI::reset` restores. Empty without overrides.
+    pub ai_data_overrides: Vec<crate::logic::ai::ai_data::AiDataEntry>,
     // --- end batch I9b ---
     // --- batch I50 ---
     /// `TheTerrainRoads` (`Roads.ini`'s road and bridge types; `BridgeBehavior` and `TerrainLogic` read the bridges).

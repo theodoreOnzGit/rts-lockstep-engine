@@ -111,6 +111,7 @@ impl World {
                 }
             }
             W::HulkMaxLifetimeOverride(frames) => self.game_logic.script_hulk_max_lifetime_override = frames,
+            W::Reset => crate::logic::world::clear_game_data::reset_game_logic_state(&mut self.game_logic),
         }
     }
 

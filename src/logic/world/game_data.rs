@@ -320,8 +320,9 @@ impl GameDataLoad {
 
     /// Integration batch I33: the load again from a world's statics and name keys (the inverse of [`GameDataLoad::into_statics`]), to
     /// read more INI into the stores the world already has (a map's `map.ini`, `INI_LOAD_OVERWRITE`). What the statics do not keep is
-    /// made again: the module factory (its `init`), the weapons' name table (the weapon store's templates), the AI data's chain (the
-    /// current data only: `into_statics` keeps no more), ~~no game text~~ the statics' game text (batch I57), and the buttons' lookups (made at the next button).
+    /// made again: the module factory (its `init`), the weapons' name table (the weapon store's templates), ~~the AI data's chain (the
+    /// current data only: `into_statics` keeps no more)~~ **Corrected 2026-11-06 (#64):** the AI data's chain (the statics keep it whole,
+    /// `ai_data_overrides`, for `AI::reset`), ~~no game text~~ the statics' game text (batch I57), and the buttons' lookups (made at the next button).
     pub fn from_statics(st: GameStatics, mut names: NameKeyGenerator) -> IniResult<Self> {
         let mut modules = ModuleFactory::new();
         modules.init(&mut names).map_err(|_| IniError::new(IniErrorKind::Bug))?;
@@ -347,7 +348,7 @@ impl GameDataLoad {
             armors: st.armor_store,
             factory: st.thing_factory,
             upgrades: st.upgrade_center,
-            ai_data: crate::logic::ai::ai_data::AiDataChain { entries: vec![st.ai_data] },
+            ai_data: crate::logic::ai::ai_data::AiDataChain { entries: std::iter::once(st.ai_data).chain(st.ai_data_overrides).collect() },
             crates: st.crate_system,
             command_buttons: st.command_buttons,
             terrain_roads: st.terrain_roads,
@@ -377,6 +378,7 @@ impl GameDataLoad {
             rank_info_store: self.ranks,
             locomotor_store: self.locomotors,
             ai_data: self.ai_data.current().clone(),
+            ai_data_overrides: self.ai_data.entries[1..].to_vec(),
             command_buttons: self.command_buttons,
             terrain_roads: self.terrain_roads,
             multiplayer_settings: self.multiplayer_settings,

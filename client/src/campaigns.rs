@@ -20,7 +20,9 @@
 //! `MSG_CLEAR_GAME_DATA`, `World::single_player_game_over`), the score screen's `finishSinglePlayerInit` runs on a copy
 //! of the World's campaign (the client never changes the simulation): after a victory the next mission is the campaign's
 //! next (`gotoNextMission`), after a defeat the same one (Continue reads Retry); its Continue starts it
-//! (`startNextCampaignGame`), read by range as the first was. At a campaign's end there is none.
+//! (`startNextCampaignGame`), read by range as the first was. At a campaign's end there is none. **#64 (2026-11-06):** the
+//! message now reaches `clearGameData`, which clears the World that played; the next mission starts in that World (the
+//! client's copy of it, which the application puts in place of its game, as it did the install's copy before).
 //!
 //! **Briefings.** The briefing movies are Bink videos, which cannot be played (Bink was never released); the briefing's
 //! text is shown instead ([`briefing`]): the mission's location and objective lines from the game text.
@@ -174,7 +176,7 @@ impl Flow {
             if let Err(e) = world.engine_update() {
                 return Some(Err(format!("a starting frame failed: {e:?}")));
             }
-            if let Some(player) = world.players.local_index() {
+            if let Some(player) = world.players.local_index().filter(|_| world.game_started()) {
                 self.watching = true;
                 let campaign = world.campaign.get_current_campaign().map(|c| String::from_utf8_lossy(&c.name).into_owned()).unwrap_or_default();
                 let label = format!("{campaign} mission {} on {}", world.campaign.get_current_mission_number() + 1, String::from_utf8_lossy(&map));
@@ -190,22 +192,24 @@ impl Flow {
     }
 
     /// After each logic frame: when the mission being played has ended (`World::single_player_game_over`), the score
-    /// screen's `finishSinglePlayerInit` on a copy of its campaign, and what its Continue starts in a copy of `base`.
-    /// Whether the score screen opened now.
-    pub fn check_game_over(&mut self, world: &World, base: &World) -> bool {
+    /// screen's `finishSinglePlayerInit` on a copy of ~~its campaign~~ the World (cleared by its `clearGameData`, #64), and
+    /// what its Continue starts ~~in a copy of `base`~~ in that World. Whether the score screen opened now.
+    pub fn check_game_over(&mut self, world: &World) -> bool {
         if !self.watching || self.over.is_some() || !world.single_player_game_over() {
             return false;
         }
         self.watching = false;
         let victorious = world.campaign.is_victorious();
-        let mut played = base.clone();
-        played.carry_campaign_from(world);
+        // (#64: the World that played, cleared by its `clearGameData`, is the one the next mission starts in, as upstream's
+        // one engine; the client's copy of it is given `finishSinglePlayerInit`, the score screen's, and the mission save
+        // is made from it, as upstream's is after the clear)
+        let mut played = world.clone();
         played.finish_single_player();
-        let next = PendingMission::next(base, &played);
-        let mission_save = (victorious && next.is_ok())
-            .then(|| played.mission_save_description())
-            .flatten()
+        let mission_save = played
+            .mission_save_description()
             .and_then(|d| played.mission_save(&d).ok().map(|b| (String::from_utf16_lossy(&d), b)));
+        let next = PendingMission::next(played);
+        let mission_save = mission_save.filter(|_| victorious && next.is_ok());
         self.over = Some(GameOver { victorious, next, mission_save });
         true
     }
@@ -320,7 +324,9 @@ mod tests {
     /// `usa mission 1`; its script wins, and the score screen opens 120 to 125 frames later, victorious, its Continue
     /// waiting for `USA02`, which starts as `usa mission 2`; its automatic mission save (#62 part 2) loads and starts
     /// `usa mission 2` too, after one round (one range: `USA02`'s map), so the Continue after it waits for nothing; run twice, the two runs' logic CRCs
-    /// agree on each of the first mission's 150 frames.
+    /// agree on each of the first mission's 150 frames. #64 part 2, predicted: a normal save of `m01` at its 60th frame,
+    /// loaded through `PendingLoad`, mounts its folder's 3 files at once (they arrived for the start) and its load reads
+    /// `USA01`'s `map.ini`.
     #[test]
     fn a_mission_from_the_list_runs_on_the_browsers_import_when_asked() {
         use crate::import::Imported;
@@ -365,9 +371,23 @@ mod tests {
             let mut crcs = Vec::new();
             let mut over_at = None;
             for f in 1..=150 {
+                if f == 60 {
+                    // (#64 part 2: a normal save of the listed mission, loaded through the save panel's path: the save's map
+                    // folder mounted from the art's files first, so the load reads its `map.ini`)
+                    let mut controls = crate::input::Controls::new(m1.world.clone(), m1.player);
+                    let mut particles = rts_lockstep_engine::client::particle_sys::ParticleSystemManager::new();
+                    let save = crate::saves::save_game(&mut controls, &mut particles, &mut crate::saves::ClientState::default(), None, "m1").expect("the save");
+                    let mut p = crate::saves::PendingLoad::new(save, Some(&base)).expect("the pending load");
+                    assert_eq!(p.mount(&fs), Ok(true), "USA01's folder arrived for the mission's start");
+                    assert_eq!(p.mounted, Some(3));
+                    p.world.cuts.trace = Some(Vec::new());
+                    let (c, ..) = crate::saves::client_from_pending(p, None).expect("the load");
+                    let read = c.client.world.cuts.trace.as_ref().is_some_and(|t| t.iter().any(|l| l.contains("\"INI::load\"") && l.contains(&format!("{:?}", b"maps\\usa01\\map.ini".to_vec()))));
+                    assert!(read, "the save's load read USA01's map.ini");
+                }
                 m1.world.engine_update().expect("a frame");
                 crcs.push(m1.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
-                if over_at.is_none() && flow.check_game_over(&m1.world, &base) {
+                if over_at.is_none() && flow.check_game_over(&m1.world) {
                     over_at = Some(f);
                 }
             }

@@ -94,7 +94,7 @@ impl Campaign {
     /// `newMission(name)`: the name lower-cased; a mission of that name is deleted, and the new one is added last.
     pub fn new_mission(&mut self, name: &[u8]) -> &mut Mission {
         let name = name.to_ascii_lowercase();
-        if let Some(at) = self.missions.iter().position(|m| m.name == name) {
+        if let Some(at) = self.missions.iter().position(|m| m.name == name).filter(|_| !crate::logic::modules::plant(4421)) {
             self.missions.remove(at);
         }
         self.missions.push(Mission { name, ..Default::default() });
@@ -230,7 +230,9 @@ impl CampaignManager {
         self.current_campaign = None;
         self.current_mission = None;
         self.current_rank_points = 0;
-        self.difficulty = DIFFICULTY_NORMAL;
+        if !crate::logic::modules::plant(4422) {
+            self.difficulty = DIFFICULTY_NORMAL;
+        }
     }
 
     /// `getCurrentMap()`: the current mission's map, else empty.

@@ -2011,6 +2011,8 @@ pub enum GameLogicWrite {
     ControlBarOverride { command_set: Vec<u8>, slot: i32, button: Option<u32> },
     /// `setHulkMaxLifetimeOverride(frames)`.
     HulkMaxLifetimeOverride(i32),
+    /// GitHub #64: `GameLogic::reset()`'s part on these members (`clearGameData` dispatched during the frame).
+    Reset,
 }
 
 /// The tables and logs behind the cut points. See the module docs.

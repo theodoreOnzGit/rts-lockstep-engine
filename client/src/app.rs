@@ -1704,6 +1704,8 @@ struct Saves {
     /// menu pauses the game).
     paused_before: bool,
     status: String,
+    /// GitHub #64 part 2: the save being loaded, waiting for its map's folder (`crate::saves::PendingLoad`), by its name.
+    pending: Option<(String, crate::saves::PendingLoad)>,
 }
 
 impl Saves {
@@ -1716,7 +1718,7 @@ impl Saves {
             Some(d) => format!("saves in {}", d.display()),
             None => "saves in this browser (OPFS Save/); never uploaded".to_string(),
         };
-        Saves { folder, generation: 0, built: None, paused_before: false, status }
+        Saves { folder, generation: 0, built: None, paused_before: false, status, pending: None }
     }
     fn set_status(&mut self, s: String) {
         crate::saves::page::set_status(s.clone());
@@ -1756,6 +1758,18 @@ fn apply_save_action(
     mut terrain: ResMut<TerrainState>,
     mut campaigns: NonSendMut<Campaigns>,
 ) {
+    // (#64 part 2: a save waiting for its map's folder, read from the art's files; once mounted, the load)
+    if let Some((name, mut p)) = saves.pending.take() {
+        let mounted = match game.models.art.as_ref() {
+            Some(art) => p.mount(&art.fs),
+            None => p.mount(&rts_lockstep_engine::common::file_system::FileSystem::new(rts_lockstep_engine::common::file_system::MemoryDevice::new())),
+        };
+        match mounted {
+            Ok(false) => saves.pending = Some((name, p)),
+            Ok(true) => finish_load(&mut commands, &mut game, &mut saves, &mut rig, &mut drawn, &mut terrain, name, p),
+            Err(e) => saves.set_status(format!("error: {e}")),
+        }
+    }
     let Some(cmd) = action.0.take() else { return };
     match cmd {
         SaveCmd::Load(name) if saves.folder.files.get(&name).is_some_and(|b| crate::campaigns::Flow::is_mission_save(b)) => {
@@ -1835,10 +1849,38 @@ fn apply_save_action(
         }
         SaveCmd::Load(name) => {
             let Some(bytes) = saves.folder.files.get(&name).cloned() else { return };
+            // (#64 part 2: the load waits for the save's map folder, read from the art's files, as a mission's start does)
+            match crate::saves::PendingLoad::new(bytes, game.base.as_deref()) {
+                Ok(p) => {
+                    saves.set_status(format!("loading {name}"));
+                    saves.pending = Some((name, p));
+                }
+                Err(e) => saves.set_status(format!("error: {e}")),
+            }
+        }
+    }
+}
+
+/// GUI glue (needs the app): a save whose World is ready ([`crate::saves::PendingLoad`]) loaded into a new game, as the
+/// panel's Load did at once before #64: the client fresh, the save's drawables made with the art, the camera turned to the
+/// save's view.
+#[allow(clippy::too_many_arguments)]
+fn finish_load(
+    commands: &mut Commands,
+    game: &mut NonSendMut<Game>,
+    saves: &mut NonSendMut<Saves>,
+    rig: &mut ResMut<Rig>,
+    drawn: &mut ResMut<Drawn>,
+    terrain: &mut ResMut<TerrainState>,
+    name: String,
+    p: crate::saves::PendingLoad,
+) {
+    {
+        {
             let base = game.base.take();
             // (#59: the save's drawables are made into the new game's, with the art; its clock starts at 0)
             let mut models = WorldDrawables::new(game.models.art.take());
-            let loaded = models.with_assets(|drawables, assets| crate::saves::client_from_save(bytes, base.as_deref(), Some((drawables, assets, 0))));
+            let loaded = models.with_assets(|drawables, assets| crate::saves::client_from_pending(p, Some((drawables, assets, 0))));
             match loaded {
                 Ok((controls, particles, state, player, outcome)) => {
                     let label = String::from_utf8_lossy(&outcome.info.map_label).into_owned();
@@ -1851,7 +1893,7 @@ fn apply_save_action(
                     // the camera to the save's view (`setAngle`, `lookAt`)
                     rig.yaw = g.save_state.view.angle;
                     rig.focus = Vec2::new(g.save_state.view.position.x, g.save_state.view.position.y);
-                    *game = g;
+                    **game = g;
                     for (_, (e, _)) in drawn.0.drain() {
                         commands.entity(e).despawn();
                     }
@@ -2091,8 +2133,10 @@ fn campaign_flow(
         }
         return;
     }
-    let Some(base) = game.base.as_deref() else { return };
-    if c.flow.check_game_over(&game.controls.client.world, base) {
+    if game.base.is_none() {
+        return;
+    }
+    if c.flow.check_game_over(&game.controls.client.world) {
         let won = c.flow.over.as_ref().is_some_and(|o| o.victorious);
         let mut status = if won { "over victorious" } else { "over defeated" }.to_string();
         // (#62 part 2: `finishSinglePlayerInit`'s automatic mission save, into the save folder; the button reads "Save and

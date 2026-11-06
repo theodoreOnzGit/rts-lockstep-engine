@@ -107,6 +107,79 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#64 (2026-11-06, GitHub #64): `clearGameData`; a World starts its next game in place; a save's map folder on load; the
+campaign INI's differential.**
+- **Upstream translated** (`src/logic/world/clear_game_data.rs`): `GameLogic::clearGameData` (GameLogicDispatch.cpp),
+  `GameEngine::reset` and `SubsystemInterfaceList::resetAll` (each logic subsystem's `reset()` in the reverse of
+  `GameEngine::init`'s order: `TheVictoryConditions`, `TheRecorder`, `ThePlayerList`, `TheTeamFactory`, `TheGameLogic`,
+  `TheAI`, the INI stores' override deletion, `TheBuildAssistant`, `TheCaveSystem`, `TheSidesList`), `GameLogic::reset`
+  (the objects, `ThePartitionManager`, `TheTerrainLogic`, `TheAI`, `TheScriptEngine`, `setDefaults`, `GameLogic`'s own
+  members) and `AI::reset` (the pathfinder, the groups, the AI data's override chain, which the statics now keep:
+  `GameStatics::ai_data_overrides`). The three cuts are live: the script engine's end-game timer appends
+  `MSG_CLEAR_GAME_DATA` to `TheMessageStream`, the dispatcher's `MSG_CLEAR_GAME_DATA` and `RecorderHost::clear_game_data`
+  (playback, the campaign starts) call `World::clear_game_data`. Also `GameState::loadGame`'s prologue
+  (`clearGameData(FALSE)` in a game, `TheGameEngine->reset()`; `World::load_game` and the client's load, for a World that
+  starts the save's own game) and `reallyDoStart`'s `clearGameData(FALSE)` (`World::start_skirmish_slots`).
+- **During a frame:** `MSG_CLEAR_GAME_DATA` is dispatched while the frame holds `GameLogic`'s members, so their reset is
+  queued (`GameLogicWrite::Reset`) and applied when the frame returns them; the rest of the frame runs on the empty World,
+  as upstream's (the frame counter ends at 1; `startNewGame` sets 0).
+- **The score screen:** `clearGameData` records `World::game_cleared` (the mode, the score screen); `single_player_game_over`
+  is now a single-player game cleared with the score screen, one frame after the timer (the message is dispatched on the
+  next frame). The client's Continue starts the next mission in the World that played, cleared (`PendingMission::next`
+  takes it), and the mission save is made from it, as upstream's after the clear.
+- **Defects found and fixed:** (1) `World::from_install` lacked `GameEngine::init`'s `ThePlayerList->init()` and
+  `TheScriptEngine->init()` (its `reset()`): no player and the script counters at 0, where upstream's engine, and a cleared
+  World, have the neutral player (local) and counters at 1; frame 0's CRC differed (`World::init_engine_subsystems`).
+  Before a game starts the local player is therefore the neutral one, and "the game has started" is
+  `World::game_started()` (the client's start loops, the tests). (2) The partition manager's module slots stayed
+  allocated after a reset (now dropped once all are empty). (3) **Deviation:** a load into a World that has played drew
+  from the generators' state after the earlier games (upstream's load seeds nothing); a load that starts the save's own
+  game now resets them (`World::reset_random_for_load`), so loads agree across machines. Measured before the fix: the
+  in-place load's CRC differed at its first frame while the deep CRC (no seed) was byte-identical.
+- **Kept, as upstream keeps it** (measured, no effect on the next game's CRCs): the name keys a game made
+  (`TheNameKeyGenerator` is not a listed subsystem) and the cached well-known keys; `TerrainLogic::reset`'s boundaries; the
+  pathfinder zone manager's `m_maxZone` and `m_nextFrameToCalculateZones`; the script engine's `m_firstUpdate` and fades;
+  `Player::init(NULL)`'s relationship maps; the global difficulty; the campaign, challenge, message arena, recorder,
+  disk and map cache; the frame counter (1). The test lists them (`KEPT`) and fails on any other.
+- **Part 2, a save's map folder on load** (`World::mount_save_map_when_ready`, new as `mount_map_when_ready` is): the
+  save's pristine map's folder read from the art's files, by range in the browser, and mounted once all of it has
+  arrived; the client's load waits for it (`saves::PendingLoad`, the panel's Load through it). A normal save of a mission
+  started from the list now reads its folder's `map.ini` on load.
+- **Part 3, the differential** (`tests/differential_campaign.rs`, `differential/wrap_campaign.cpp`, `shim_campaign`):
+  CampaignManager.cpp and ChallengeGenerals.cpp from their globals to the end, and INI.cpp's `parseAudioEventRTS`, cut by
+  build.rs with three renames, on stand-ins of AudioEventRTS.h, GameClient.h and GameInfo.h; the blocks reach them through
+  wrap_ini.cpp's hooks (were stubs). Random `Campaign.ini`- and `ChallengeMode.ini`-like files, then random operations
+  (`setCampaign`, `setCampaignAndMission`, `gotoNextMission`, the victory flag, rank points, difficulty) and the three
+  persona lookups. **Predicted:** 0 mismatches, each plant caught. **Result:** 20,000 sessions, 49,907 loads (13,823
+  threw), 129,876 operations, 59,634 lookups: **0 mismatches** in the throw and CRC, the whole campaign list and manager
+  state, every persona field, the operations and the lookups; 122 sessions stopped where upstream is undefined
+  (`VoiceLength = 99999999999`). Plants 4421 (a repeated mission kept), 4422 (`setCampaign`'s unknown name keeps the
+  difficulty), 4423 (`StartsEnabled` inverted) each caught (2,748 + 8,146; 2,388; 4,404 mismatches at 5,000 sessions). The
+  harness needed two fixes before its first full run (an undefined Rust load counted and the session stopped). Not
+  compared: the personas' images (upstream stores `NULL` without `TheMappedImageCollection`; the port keeps the names),
+  `CampaignManager::xfer`.
+- *Predictions and results* (each test's doc comment): `clear_game_data`'s `a_cleared_world_starts_its_next_game_as_a_fresh_one`
+  (engine reset of the install's World changes nothing; `USA01` cleared by its timer 121 to 126 frames after its start;
+  `USA02` started in place and fresh: the same CRC on 300 frames, last `493473a0`; a skirmish after a `DEFEAT`'s clear:
+  300 frames, last `6000a592`; the skirmish's save loaded in place and fresh: 300 frames). **Misses:** frame 0 of `USA02`
+  differed at first (`MARKER:ThePlayerList`: defect 1); then the in-place load (defect 3); the predicted list of kept
+  members missed the players' relationship maps and academy frame, the boundaries, the zone counters and the script
+  engine's flags, and named the random generators, which a campaign start's `InitRandom(0)` leaves equal.
+  `campaign_world`'s `a_normal_save_of_a_listed_mission_reads_its_folder_on_load` (the mount waits once for three
+  ranges, mounts 3 files; the load reads `USA01`'s `map.ini`, which a load without the mount does not; the two loads by
+  range and whole agree for 150 frames): as predicted, first run. The client's gated
+  `a_mission_from_the_list_runs_on_the_browsers_import_when_asked` (with `RTS_CAMPAIGN_INSTALL`) saves `m01` at frame 60
+  and loads it through `saves::PendingLoad`: 3 files mounted at once, `map.ini` read; the score screen now opens at frame
+  121 after the start (the clear's frame); passed. The #62 tests now take the
+  cleared World (`PendingMission::next`, the mission save) and pass; `install_world`'s quick skirmish test reads
+  `game_started` (corrected in place); the recorder test's launch clears the shell game first, as `reallyDoStart`.
+- **Gates:** lib 1041 (1039 + 2), client 43 (the gated campaign test run too, with `RTS_CAMPAIGN_INSTALL`), clippy clean,
+  web build clean (no warnings), gate (a) PASS (last `0bf44067`, unchanged); `differential_campaign` (new),
+  `differential_ini` and `differential_ai_data` pass.
+- **Not done** (`issue64_followups`): the client's own subsystems are made anew per game (no `GameClient::reset`); a list
+  choice and the panel's loads still start from a copy of the install's World (the World on screen may be the demo's);
+  `GameText::reset`, `GhostObjectManager::reset`, the water and weather overrides.
+
 **#59 (2026-11-06, GitHub #59): the drawables saved and loaded.**
 - **Upstream** (`Drawable::xfer` v7 and `xferDrawableModules`, `TintEnvelope::xfer`, `Anim2D::xfer` (Drawable.cpp,
   Anim2D.cpp); `DynamicAudioEventInfo::xferNoName`; `Module`, `DrawableModule`, `DrawModule::xfer`; `W3DModelDraw::xfer` v2
@@ -174,7 +247,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   nothing is mounted), then mounts them all whole and starts. A mission never starts from part of its folder, so every
   peer reads the same bytes; holding every campaign map in memory (option a) was not needed. Natively (`--zh`) the art's
   device is the folder on disk and the mount is immediate. The mission starts in a copy of the install's World
-  (`Started::base`), as a save's load does (the port has no `clearGameData`).
+  (`Started::base`), as a save's load does ~~(the port has no `clearGameData`)~~. **Corrected 2026-11-06 (#64):**
+  `clearGameData` is translated; a list choice still starts in a copy of the install's World, which a cleared World
+  matches (#64's entry), and the score screen's Continue starts in the World that played.
 - **The flow** (`client/src/campaigns.rs`, plain Rust; `app.rs` glue): a `C` button under the zoom column's `S` opens a panel
   (the game paused under it): Close, the difficulty (Easy/Normal/Hard, normal by default), the status and the briefing,
   then each campaign of `Campaign.ini` that is not a challenge's (the file's order: USA, China, GLA and the training
@@ -182,7 +257,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   button (`list_button`, wrapping at phone width). Upstream's menus start a campaign's first mission only; the list
   offers every one (`start_campaign` for a first, `start_campaign_mission` otherwise). The challenge's locked generals
   (`StartsEnabled`, battle honours) are offered, marked: the port keeps no honours. **The game's end:** the script
-  engine's end-game timer running out (upstream appends `MSG_CLEAR_GAME_DATA` there, a cut in the port) is
+  engine's end-game timer running out (upstream appends `MSG_CLEAR_GAME_DATA` there, ~~a cut in the port~~ **corrected
+  2026-11-06 (#64):** appended, and its `clearGameData` clears the World on the next frame) is
   `World::single_player_game_over`; the client then runs `finishSinglePlayerInit` on a copy of the World's campaign (the
   client never changes the simulation), opens the panel with Save and Continue after a victory (Retry after a defeat:
   the same mission, as upstream's Continue then), nothing at a campaign's end, and Continue starts
@@ -223,9 +299,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Not done:** the game's own menus (C5: main menu, difficulty, challenge menu, score screen with its stats); the
   challenge's win/loss display and sounds, battle honours, the final victory movie; a mission save's map label (the
   played game's map is not the saving World's); the challenge's `TheChallengeGameInfo` after a mission save's load
-  (upstream's mission save holds no `CHUNK_GameLogic` either); a save of a mission started from the list loads into the
+  (upstream's mission save holds no `CHUNK_GameLogic` either); ~~a save of a mission started from the list loads into the
   install's World with the map the save embeds but without the folder's `map.ini` (the load does not read the folder by
-  range yet).
+  range yet)~~ (**done 2026-11-06, #64**: the load waits for the save's map folder).
 
 **#61 (2026-11-06, GitHub #61): the campaign manager and the Generals' Challenge.**
 - **Translated:** `CampaignManager.cpp` whole (`src/client/campaign_manager.rs`: the `Campaign` INI with its `Mission` blocks,
@@ -249,8 +325,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   `World::finish_single_player` (`finishSinglePlayerInit`'s `gotoNextMission`) and `World::start_next_campaign_game`
   (`startNextCampaignGame`). The logic's `startNewGame` already handled `GAME_SINGLE_PLAYER` (the map's sides, the human
   one local, the others its computer players, its scripts; `GameSource::Challenge` for a challenge): nothing there changed.
-  **Deviation:** `clearGameData` is a cut, so the next mission starts in a World without a game given the campaign's state
-  (`World::carry_campaign_from`), as a save's load does.
+  ~~**Deviation:** `clearGameData` is a cut, so the next mission starts in a World without a game given the campaign's state
+  (`World::carry_campaign_from`), as a save's load does.~~ **Corrected 2026-11-06 (#64):** translated; the next mission
+  starts in the World that played, cleared (#64's entry).
 - **An upstream quirk kept:** `CampaignManager::xfer` reads the rank points and difficulty before `setCampaignAndMission`, and
   outside a campaign that is `setCampaign("")`, which resets them to 0 and normal: a skirmish save's load now ends with them
   so (the stand-in kept the saved values; `game_logic_save_host_world`'s round-trip test now runs in a campaign).
@@ -267,7 +344,7 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Not done:** ~~the client's mission list (a campaign map must be on the World's disk, and the client keeps no logic file
   system after the start: holding every campaign map in memory, or reading them by range as the art is read, is the work)~~
   (**done 2026-11-06, #62**, its entry: read by range);
-  a differential of the Campaign INI against the compiled CampaignManager.cpp; ~~mission saves (`GameState::missionSave`, the
+  ~~a differential of the Campaign INI against the compiled CampaignManager.cpp~~ (**done 2026-11-06, #64**); ~~mission saves (`GameState::missionSave`, the
   score screen's Save and Continue, `SAVE_FILE_TYPE_MISSION`'s load)~~ (**done 2026-11-06, #62**); the battle honours and
   final movie of a campaign's end.
 

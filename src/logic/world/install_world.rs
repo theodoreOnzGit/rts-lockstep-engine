@@ -143,6 +143,10 @@ impl World {
         w.install_command_buttons();
         // a game: every integration switch on (the tables are the module tests' ablations)
         w.cuts.set_all_live();
+        // (GitHub #64: `GameLogic::init`'s `TheScriptEngine->init()`, which ends in `reset()`, and `ThePlayerList->init()`
+        // (the neutral player, local), as `GameEngine::init` makes them; they were left out, so the install's World had no
+        // player and the script engine's counters at 0, where a World cleared by `clearGameData` has upstream's)
+        w.init_engine_subsystems().map_err(|_| InstallError::Ini { error: IniError::new(crate::common::ini::IniErrorKind::Bug), missing: Vec::new() })?;
         // (GitHub #61: `GameClient::init`'s `TheChallengeGenerals->init()` and `TheCampaignManager->init()`, which the
         // logic reads; each file when the install has it)
         let (challenge, _) = w.load_campaigns(fs).map_err(|error| InstallError::Ini { error, missing: Vec::new() })?;
@@ -199,6 +203,10 @@ impl World {
         use crate::logic::world::game_logic_new_game::GameSource;
         if self.statics.map_cache.find_map(map).is_none() {
             return Err(InstallError::MapNotInCache(map.to_vec()));
+        }
+        // (GitHub #64: `reallyDoStart`'s `if (TheGameLogic->isInGame()) TheGameLogic->clearGameData(FALSE)`)
+        if crate::common::recorder::RecorderHost::is_in_game(self) {
+            self.clear_game_data(false);
         }
         self.cuts.game_loop.game_mode = game_mode::SHELL;
         let mut g = GameInfo::new(self);
@@ -263,6 +271,21 @@ impl World {
         let n = files.len();
         self.save_side.disk.extend(files);
         Some(n)
+    }
+
+    /// GitHub #64 (new, as [`World::mount_map_when_ready`]): a save's map folder put on the World's disk before the save is
+    /// loaded into it, as a mission's start puts its folder there: the save's pristine map (`GameState`'s
+    /// `portableMapPathToRealMapPath`) and the files beside it, read from `fs` once all its bytes have arrived. A save of a
+    /// campaign mission started from the list then reads its folder's `map.ini`, `solo.ini` and `map.str` on load, as the
+    /// mission's start read them (`loadMapINI` looks beside the pristine map). `Ok(None)` while waiting; the number of files
+    /// mounted (0 for a map the files do not hold: the load then uses the map the save embeds). An error when the bytes
+    /// are not a save.
+    pub fn mount_save_map_when_ready<D: LocalDevice>(&mut self, fs: &FileSystem<D>, save: &[u8]) -> Result<Option<usize>, String> {
+        use crate::common::game_state::GameState;
+        use crate::logic::world::game_state_world::WorldBlock;
+        let summary = crate::client::save_game::read_save_summary(save.to_vec()).map_err(|e| format!("the save: {e:?}"))?;
+        let real = GameState::<WorldBlock>::new().portable_map_path_to_real(&summary.pristine_map, self).map_err(|e| format!("the save's map: {e:?}"))?;
+        Ok(self.mount_map_when_ready(fs, &real))
     }
 }
 
@@ -752,12 +775,14 @@ pub(crate) mod tests {
         let mut local = Vec::new();
         for _ in 0..300 {
             w.engine_update().expect("a frame");
-            local.push(w.players.local_index());
+            local.push((w.game_started(), w.players.local_index()));
         }
-        eprintln!("C3: local player by frame: {:?}", &local[..6]);
+        eprintln!("C3: started and local player by frame: {:?}", &local[..6]);
         // (the first frame dispatches `MSG_NEW_GAME`, the second starts the game and makes its players: the client waits
-        // for the local player, `client::import`)
-        assert_eq!((local[0], local[1].is_some()), (None, true));
+        // for the game's start, `client::import`. ~~`None` before~~ **Corrected 2026-11-06 (#64):** before the start the
+        // local player is `ThePlayerList->init()`'s neutral one, 0, as upstream's engine has it)
+        assert_eq!((local[0], local[1].0), ((false, Some(0)), true));
+        assert!(local[1].1.is_some_and(|p| p > 0));
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
         let tanks = w.objects.ids_in_order().into_iter().filter(|&o| w.find_object(o).is_some_and(|x| x.template().get_name() == b"Tank")).count();
         assert_eq!(tanks, 2);
@@ -879,7 +904,7 @@ pub(crate) mod tests {
         q.quick_skirmish_mounted(MAP, 1).expect("the quick skirmish");
         for _ in 0..30 {
             q.engine_update().expect("a frame");
-            if q.players.local_index().is_some() {
+            if q.game_started() {
                 break;
             }
         }

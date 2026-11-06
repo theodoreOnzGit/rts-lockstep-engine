@@ -249,6 +249,10 @@ pub struct World {
     /// The AI module's `UpdateModule` base, lent while its snapshot runs (`ai_module_world.rs`).
     pub ai_update_base: Option<crate::logic::module::update_module::UpdateModule>,
     // --- end batch I9b ---
+    /// GitHub #64: `GameLogic::m_clearingGameData` (`setClearingGameData`), on while [`World::clear_game_data`] runs.
+    pub clearing_game_data: bool,
+    /// GitHub #64: the last `clearGameData`'s outcome (the client's score screen); not simulation state.
+    pub game_cleared: Option<crate::logic::world::clear_game_data::GameCleared>,
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -345,6 +349,8 @@ impl World {
             ai_own_calls: Vec::new(),
             ai_update_base: None,
             // --- end batch I9b ---
+            clearing_game_data: false,
+            game_cleared: None,
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

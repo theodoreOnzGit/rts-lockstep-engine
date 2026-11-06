@@ -365,7 +365,9 @@ impl DispatchHost for World {
         }
     }
     fn d_clear_game_data(&mut self) {
+        // (~~a cut~~ GitHub #64: translated, `World::clear_game_data`; `clearGameData()`'s default shows the score screen)
         self.dispatch_cut("GameLogic::clearGameData", &[]);
+        self.clear_game_data(true);
     }
     fn d_global_fps_limit(&self) -> i32 {
         self.statics.global_data.the_global_data().map_or(30, |g| g.frames_per_second_limit)

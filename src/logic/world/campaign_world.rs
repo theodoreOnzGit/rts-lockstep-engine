@@ -37,9 +37,11 @@
 //!   screen's `finishSinglePlayerInit` then calls `gotoNextMission` ([`World::finish_single_player`]), and its Continue
 //!   button `startNextCampaignGame` ([`World::start_next_campaign_game`]).
 //!
-//! **Where this differs from upstream:** `GameLogic::clearGameData` is a cut in the port (`RecorderHost::clear_game_data`),
+//! ~~**Where this differs from upstream:** `GameLogic::clearGameData` is a cut in the port (`RecorderHost::clear_game_data`),
 //! so the next mission is started in a World without a game (the install's, as a save's load is: `import::world_for_save`)
-//! given the campaign's state ([`World::carry_campaign_from`]). `Campaign.ini` and `ChallengeMode.ini` are read with the
+//! given the campaign's state ([`World::carry_campaign_from`]).~~ **Corrected 2026-11-06 (#64):** `clearGameData` is
+//! translated ([`World::clear_game_data`]): the end-game timer's `MSG_CLEAR_GAME_DATA` clears the World, and the score
+//! screen's Continue starts the next mission in it ([`PendingMission::next`]). `Campaign.ini` and `ChallengeMode.ini` are read with the
 //! logic's INI by [`World::from_install`] (upstream's `GameClient::init` reads them); an install without them loads
 //! with no campaigns (upstream's `INI::load` throws).
 
@@ -221,8 +223,10 @@ impl World {
         Some(self.campaign.get_current_map())
     }
 
-    /// The campaign's state carried into `self`, a World without a game (see the module docs: the port has no
-    /// `clearGameData`): `TheCampaignManager` and `TheChallengeGenerals`, which upstream's engine keeps across games.
+    /// The campaign's state carried into `self`, a World without a game ~~(see the module docs: the port has no
+    /// `clearGameData`)~~: `TheCampaignManager` and `TheChallengeGenerals`, which upstream's engine keeps across games.
+    /// **Corrected 2026-11-06 (#64):** the next mission starts in the World that played (`clearGameData`,
+    /// [`World::clear_game_data`]); this makes the fresh World the tests compare it with.
     pub fn carry_campaign_from(&mut self, played: &World) {
         self.campaign = played.campaign.clone();
         self.challenge_generals = played.challenge_generals.clone();
@@ -309,12 +313,13 @@ impl PendingMission {
         Ok(PendingMission { world: base.clone(), choice, difficulty, map, mounted: None })
     }
 
-    /// The score screen's Continue after `played`'s game ended: `played`'s campaign (after `finishSinglePlayerInit`,
-    /// [`World::finish_single_player`]) carried into a copy of `base`, and its current map: the next mission after a
+    /// The score screen's Continue after `played`'s game ended: ~~`played`'s campaign (after `finishSinglePlayerInit`,
+    /// [`World::finish_single_player`]) carried into a copy of `base`~~ **Corrected 2026-11-06 (#64):** the World that
+    /// played it, cleared by its `clearGameData` and given `finishSinglePlayerInit` ([`World::finish_single_player`]), in
+    /// which the next game starts, as upstream's one engine starts it; and its current map: the next mission after a
     /// victory, the same one after a defeat (Retry). `NoMission` at the campaign's end (the score screen pops the shell).
-    pub fn next(base: &World, played: &World) -> Result<PendingMission, CampaignStartError> {
-        let mut world = base.clone();
-        world.carry_campaign_from(played);
+    pub fn next(played: World) -> Result<PendingMission, CampaignStartError> {
+        let world = played;
         let map = world.campaign.get_current_map();
         if map.is_empty() {
             let name = world.campaign.get_current_campaign().map(|c| c.name.clone()).unwrap_or_default();
@@ -392,15 +397,17 @@ impl World {
 
     /// GitHub #62: whether a single-player game has ended as upstream ends it: the script engine's end-game timer (started
     /// by `VICTORY`, `DEFEAT` and their kin) has run out, where upstream's `ScriptEngine::update` appends
-    /// `MSG_CLEAR_GAME_DATA` (a cut in the port: `se_append_clear_game_data`), whose `clearGameData` shows the score
-    /// screen. The client's score screen opens then.
+    /// `MSG_CLEAR_GAME_DATA`, ~~(a cut in the port: `se_append_clear_game_data`)~~ whose `clearGameData` shows the score
+    /// screen. The client's score screen opens then. **Corrected 2026-11-06 (#64):** the message is appended and its
+    /// `clearGameData` runs on the next frame ([`World::clear_game_data`]); the game is over once a single-player game has
+    /// been cleared with the score screen, and no game has started since.
     pub fn single_player_game_over(&self) -> bool {
-        self.cuts.game_loop.game_mode == game_mode::SINGLE_PLAYER && RecorderHost::is_in_game(self) && self.script_engine.end_game_timer == 0
+        !RecorderHost::is_in_game(self) && self.game_cleared.is_some_and(|c| c.score_screen && c.mode == game_mode::SINGLE_PLAYER)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! GitHub #61: a campaign mission started from an install, victory moving to the next mission, a challenge, and a
     //! campaign save loading and running on.
     use super::*;
@@ -414,8 +421,8 @@ mod tests {
     use crate::logic::world::install_world::tests::{install_archives_for, player_sides};
     use crate::logic::world::install_world::DEFAULT_LANGUAGE;
 
-    const USA01: &[u8] = b"Maps\\USA01\\USA01.map";
-    const USA02: &[u8] = b"Maps\\USA02\\USA02.map";
+    pub(crate) const USA01: &[u8] = b"Maps\\USA01\\USA01.map";
+    pub(crate) const USA02: &[u8] = b"Maps\\USA02\\USA02.map";
     const GC01: &[u8] = b"Maps\\GC01\\GC01.map";
 
     /// `Campaign.ini`: `USA`, two missions; `Challenge_0`, a challenge of one mission.
@@ -506,7 +513,7 @@ mod tests {
 
     /// The tests' install (`install_world`'s two-player one) with `CampaignZH.big`: `Campaign.ini`, `ChallengeMode.ini` and
     /// the three missions' maps (the first two differ in the tank's x: 120 and 180).
-    fn campaign_install() -> (World, FileSystem<MemoryDevice>) {
+    pub(crate) fn campaign_install() -> (World, FileSystem<MemoryDevice>) {
         let mut scratch = World::new();
         let duel = crate::logic::world::install_world::tests::duel_map(&mut scratch);
         let m1 = mission_map(&mut scratch, 120.0, false);
@@ -537,10 +544,10 @@ mod tests {
     }
 
     /// Frames until the game has a local player (at most 30).
-    fn start_frames(w: &mut World) {
+    pub(crate) fn start_frames(w: &mut World) {
         for _ in 0..30 {
             w.engine_update().expect("a frame");
-            if w.players.local_index().is_some() {
+            if w.game_started() && w.players.local_index().is_some() {
                 return;
             }
         }
@@ -548,12 +555,12 @@ mod tests {
     }
 
     /// The x of each Tank, in the object list's order.
-    fn tanks(w: &World) -> Vec<f32> {
+    pub(crate) fn tanks(w: &World) -> Vec<f32> {
         w.objects.ids_in_order().into_iter().filter_map(|o| w.find_object(o)).filter(|o| o.template().get_name() == b"Tank").map(|o| o.get_position().x).collect()
     }
 
     /// A script's `VICTORY`, executed as the script engine executes an action.
-    fn victory(w: &mut World) {
+    pub(crate) fn victory(w: &mut World) {
         let mut a = ScriptAction::new_for_read();
         a.action_type = action_type::VICTORY;
         let mut engine = std::mem::take(&mut w.script_engine);
@@ -767,7 +774,7 @@ mod tests {
     }
 
     /// The archives mounted whole (the logic's load, as the client's `import::Starting` mounts what the page gives whole).
-    fn whole_fs(archives: &[(Vec<u8>, Vec<u8>)]) -> FileSystem<MemoryDevice> {
+    pub(crate) fn whole_fs(archives: &[(Vec<u8>, Vec<u8>)]) -> FileSystem<MemoryDevice> {
         let mut d = MemoryDevice::new();
         for (name, bytes) in archives {
             d.insert(&[&b"ZH\\"[..], name].concat(), bytes.clone());
@@ -819,14 +826,14 @@ mod tests {
     }
 
     /// The install's World (no game, no mission map mounted) from the archives given whole.
-    fn base_of(archives: &[(Vec<u8>, Vec<u8>)]) -> World {
+    pub(crate) fn base_of(archives: &[(Vec<u8>, Vec<u8>)]) -> World {
         let (base, report) = World::from_install(&whole_fs(archives), DEFAULT_LANGUAGE).expect("the install");
         assert_eq!((report.campaigns, report.challenge_mode), (2, true));
         base
     }
 
     /// Frames until [`World::single_player_game_over`] (at most `limit`): how many.
-    fn frames_to_game_over(w: &mut World, limit: usize) -> usize {
+    pub(crate) fn frames_to_game_over(w: &mut World, limit: usize) -> usize {
         for f in 1..=limit {
             w.engine_update().expect("a frame");
             if w.single_player_game_over() {
@@ -893,7 +900,7 @@ mod tests {
         assert!(a.campaign.is_victorious());
         // (5)
         assert_eq!(a.finish_single_player(), Some(USA02.to_vec()));
-        let mut p = PendingMission::next(&base, &a).expect("the next mission");
+        let mut p = PendingMission::next(a.clone()).expect("the next mission");
         assert_eq!(p.map, USA02.to_vec());
         assert_eq!(mount_by_range(&mut p, &mut fs, &archives, false), 1);
         assert_eq!(p.mounted, Some(1));
@@ -911,7 +918,7 @@ mod tests {
         b.script_engine = engine;
         frames_to_game_over(&mut b, 200);
         assert_eq!(b.finish_single_player(), None);
-        let retry = PendingMission::next(&base, &b).expect("Retry");
+        let retry = PendingMission::next(b.clone()).expect("Retry");
         assert_eq!(retry.map, USA02.to_vec());
         // (7)
         let mut p = PendingMission::new(&base, MissionChoice::Campaign { campaign: b"usa".to_vec(), mission: b"M02".to_vec() }, 1).expect("M02");
@@ -965,8 +972,9 @@ mod tests {
 
     /// GitHub #62, part 2: the score screen's Save and Continue (`GameState::missionSave`) and its load.
     ///
-    /// **Predicted before the run:** after `USA01`'s victory and the score screen's `gotoNextMission` (on a copy of the
-    /// install's World carrying the played campaign, as the client does it), the mission save holds two blocks,
+    /// **Predicted before the run:** after `USA01`'s victory and the score screen's `gotoNextMission` (~~on a copy of the
+    /// install's World carrying the played campaign, as the client does it~~ **corrected 2026-11-06 (#64):** on the World
+    /// that played, cleared by `clearGameData`, as the client now does it), the mission save holds two blocks,
     /// `CHUNK_GameState` and `CHUNK_Campaign`, its file type `SAVE_FILE_TYPE_MISSION` (1) and its mission map `USA02`'s; its
     /// description is `GUI:MissionSave` formatted, which the tests' text lacks, so upstream's `MISSING: 'GUI:MissionSave'`;
     /// loaded into a copy of the install's World (`PendingMission::from_mission_save`), its campaign is `usa`, mission
@@ -983,8 +991,8 @@ mod tests {
         let (mut a, _) = p.start().expect("the start");
         start_frames(&mut a);
         frames_to_game_over(&mut a, 200);
-        let mut played = base.clone();
-        played.carry_campaign_from(&a);
+        // (#64: the World that played, cleared by its `clearGameData`, as upstream's score screen saves after the clear)
+        let mut played = a.clone();
         assert_eq!(played.finish_single_player(), Some(USA02.to_vec()));
         let desc = played.mission_save_description().expect("a campaign");
         assert_eq!(String::from_utf16_lossy(&desc), "MISSING: 'GUI:MissionSave'");
@@ -1017,6 +1025,74 @@ mod tests {
         }
         let normal = a.save_game().expect("a normal save");
         assert_eq!(PendingMission::from_mission_save(&base, normal).err(), Some("not a mission save".to_string()));
+    }
+
+    /// Whether `trace` (`cuts.trace`) holds an `INI::load` of `path` (in any case).
+    fn ini_loaded(trace: &[String], path: &[u8]) -> bool {
+        let forms = [path.to_vec(), path.to_ascii_lowercase()];
+        trace.iter().any(|t| t.contains("\"INI::load\"") && forms.iter().any(|f| t.contains(&format!("text: {f:?}"))))
+    }
+
+    /// GitHub #64, part 2: a normal save of a mission started from the list reads its map's folder on load.
+    ///
+    /// **Predicted before the run:** `USA01` started from the list (its folder read by range) runs 30 frames and is saved
+    /// (`World::save_game`: a normal save, its pristine map `USA01`'s); (1) into a copy of the install's World,
+    /// `mount_save_map_when_ready` on a fresh ranged device waits once (`None`, three ranges asked for), and after the page
+    /// serves them mounts 3 files (the map, `map.ini`, `map.str`); (2) the load (`new_game_on_load`) then reads `USA01`'s
+    /// `map.ini` (an `INI::load` cut naming it), the tank at x 120, local player 1; (3) the control, the defect: a load into
+    /// a copy of the install's World without the mount reads no `map.ini`; (4) the load whose folder came by range and one
+    /// whose folder was mounted whole from the archives give the same logic CRCs for 150 frames; (5) bytes that are not a
+    /// save are an error.
+    #[test]
+    fn a_normal_save_of_a_listed_mission_reads_its_folder_on_load() {
+        let archives = campaign_archives(true);
+        let base = base_of(&archives);
+        let mut fs = ranged_fs(&archives);
+        let mut p = PendingMission::new(&base, MissionChoice::Campaign { campaign: b"USA".to_vec(), mission: b"M01".to_vec() }, 2).expect("the choice");
+        mount_by_range(&mut p, &mut fs, &archives, false);
+        let (mut a, _) = p.start().expect("the start");
+        start_frames(&mut a);
+        for _ in 0..30 {
+            a.engine_update().expect("a frame");
+        }
+        let bytes = a.save_game().expect("the save");
+        let s = crate::client::save_game::read_save_summary(bytes.clone()).expect("the summary");
+        assert_eq!(s.info.save_file_type, crate::common::game_state::SAVE_FILE_TYPE_NORMAL);
+        eprintln!("the save's pristine map {:?}", String::from_utf8_lossy(&s.pristine_map));
+        let load = |w: &mut World| -> Vec<String> {
+            w.save_side.new_game_on_load = true;
+            w.cuts.trace = Some(Vec::new());
+            w.load_game(bytes.clone()).unwrap_or_else(|e| panic!("the load: {e:?} {:?}", w.cuts.team_live_errors));
+            w.cuts.trace.take().unwrap_or_default()
+        };
+        // (1)
+        let mut fresh = ranged_fs(&archives);
+        let mut b = base.clone();
+        assert_eq!(b.mount_save_map_when_ready(&fresh, &bytes), Ok(None), "the first mount waits");
+        assert_eq!(serve(&mut fresh, &archives, false), 3);
+        assert_eq!(b.mount_save_map_when_ready(&fresh, &bytes), Ok(Some(3)));
+        // (2)
+        let trace = load(&mut b);
+        assert!(ini_loaded(&trace, USA01_INI), "the folder's map.ini read on load");
+        assert_eq!((tanks(&b), b.players.local_index()), (vec![120.0], Some(1)));
+        // (3)
+        let mut c = base.clone();
+        let trace = load(&mut c);
+        assert!(!ini_loaded(&trace, USA01_INI), "without the mount, no map.ini (the defect)");
+        // (4)
+        let mut d = base.clone();
+        assert_eq!(d.mount_map(&whole_fs(&archives), USA01), 3);
+        load(&mut d);
+        for f in 0..150 {
+            b.engine_update().expect("a frame");
+            d.engine_update().expect("a frame");
+            assert_eq!(b.logic_crc(CRC_RECALC, None).unwrap(), d.logic_crc(CRC_RECALC, None).unwrap(), "frame {f}");
+        }
+        // (5)
+        assert!(base.clone().mount_save_map_when_ready(&fresh, b"not a save").is_err());
+        for w in [&a, &b, &c, &d] {
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
     }
 
     /// GitHub #62, not a check: with `RTS_WRITE_CAMPAIGN_INSTALL=<dir>` set, writes [`campaign_archives`] (with `USA01`'s

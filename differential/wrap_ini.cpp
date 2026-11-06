@@ -469,8 +469,13 @@ STUB(INI::parseAnim2DDefinition)
 extern "C" { void (*ref_audio_block_hook[5])(INI *) = { 0, 0, 0, 0, 0 }; }
 #define AUDIO_HOOK(F, I) void F(INI *ini) { if (!ref_audio_block_hook[I]) throw ERROR_BUG; ref_audio_block_hook[I](ini); }
 AUDIO_HOOK(INI::parseAudioEventDefinition, 0) AUDIO_HOOK(INI::parseAudioSettingsDefinition, 1)
-STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCampaignDefinition)
-STUB(INI::parseChallengeModeDefinition) STUB(INI::parseCommandButtonDefinition)
+/* GitHub #64: the Campaign and ChallengeGenerals blocks reach CampaignManager.cpp's and ChallengeGenerals.cpp's handlers
+** (wrap_campaign.cpp, renamed there) when that fixture sets the hooks (ref_campaign_reset): 0 Campaign, 1
+** ChallengeGenerals; with none set they throw, as the stubs did. */
+extern "C" { void (*ref_campaign_block_hook[2])(INI *) = { 0, 0 }; }
+void INI::parseCampaignDefinition(INI *ini) { if (!ref_campaign_block_hook[0]) throw ERROR_BUG; ref_campaign_block_hook[0](ini); }
+void INI::parseChallengeModeDefinition(INI *ini) { if (!ref_campaign_block_hook[1]) throw ERROR_BUG; ref_campaign_block_hook[1](ini); }
+STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCommandButtonDefinition)
 STUB(INI::parseMetaMapDefinition) STUB(INI::parseCommandSetDefinition)
 STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefinition)
 WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)

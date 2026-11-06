@@ -990,6 +990,16 @@ pub struct LoadOutcome {
 /// order. The client events the load made are dropped (module docs). A failure says where ([`LoadFailure`]).
 pub fn load_client_game(host: &mut SaveHost<'_>, bytes: Vec<u8>) -> Result<LoadOutcome, LoadFailure> {
     let mut gs = client_game_state();
+    // (GitHub #64: a World that starts the save's own game is cleared first, as `World::load_game` clears it:
+    // `clearGameData(FALSE)` when a game is on, then `TheGameEngine->reset()`, and the random generators from their
+    // first state, `World::load_game`'s deviation)
+    if host.world.save_side.new_game_on_load {
+        if crate::common::recorder::RecorderHost::is_in_game(&*host.world) {
+            host.world.clear_game_data(false);
+        }
+        host.world.engine_reset();
+        host.world.reset_random_for_load();
+    }
     let mut x = TracingLoad::new(bytes);
     host.trace = Some(x.trace.clone());
     let fail = |x: &TracingLoad, host: &SaveHost<'_>, e: XferStatus| {

@@ -160,7 +160,7 @@ impl ChallengeGenerals {
 
 /// `parseGeneralPersona`'s `dataFieldParse`.
 pub static PERSONA_FIELDS: [FieldParse<GeneralPersona>; 27] = [
-    FieldParse::new("StartsEnabled", |i, p, _| i.parse_bool().map(|v| p.starts_enabled = v), UserData::None),
+    FieldParse::new("StartsEnabled", |i, p, _| i.parse_bool().map(|v| p.starts_enabled = v != crate::logic::modules::plant(4423)), UserData::None),
     FieldParse::new("BioNameString", |i, p, _| i.parse_ascii_string().map(|v| p.bio_name = v), UserData::None),
     FieldParse::new("BioDOBString", |i, p, _| i.parse_ascii_string().map(|v| p.bio_dob = v), UserData::None),
     FieldParse::new("BioBirthplaceString", |i, p, _| i.parse_ascii_string().map(|v| p.bio_birthplace = v), UserData::None),

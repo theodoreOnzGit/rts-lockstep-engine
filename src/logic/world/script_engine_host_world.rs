@@ -83,6 +83,12 @@ impl ScriptEngineHost for World {
     }
     fn se_append_clear_game_data(&mut self) {
         self.se_cut("MessageStream::appendMessage(MSG_CLEAR_GAME_DATA)", &[], &[]);
+        // (~~a cut~~ GitHub #64: onto `TheMessageStream`, as the local player's; the next frame's command list carries it
+        // to the dispatcher's `clearGameData`)
+        let local = crate::common::recorder::RecorderHost::local_player_index(self);
+        if let Err(e) = self.cuts.game_loop.messages.append_new_message(crate::common::message_stream::Messages::STREAM, crate::common::message_types::MSG_CLEAR_GAME_DATA, local) {
+            self.cuts.team_live_errors.push(format!("MessageStream::appendMessage(MSG_CLEAR_GAME_DATA): {e:?}"));
+        }
     }
     fn se_audio_length_ms(&mut self, name: &[u8]) -> f32 {
         self.se_cut("AudioManager::getAudioLengthMS", &[], name);

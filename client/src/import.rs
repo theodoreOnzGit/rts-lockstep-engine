@@ -418,7 +418,7 @@ fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles,
 fn start_frames(world: &mut World) -> Result<i32, String> {
     for _ in 0..30 {
         world.engine_update().map_err(|e| format!("a starting frame failed: {e:?}"))?;
-        if let Some(p) = world.players.local_index() {
+        if let Some(p) = world.players.local_index().filter(|_| world.game_started()) {
             return Ok(p);
         }
     }

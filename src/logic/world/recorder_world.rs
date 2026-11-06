@@ -94,6 +94,8 @@ impl RecorderHost for World {
     }
     fn clear_game_data(&mut self) {
         self.cut(CutCall::Host { call: "GameLogic::clearGameData", args: Vec::new(), text: Vec::new() });
+        // (~~a cut~~ GitHub #64: translated, `World::clear_game_data`)
+        self.clear_game_data(true);
     }
     fn messages(&mut self) -> &mut Messages {
         &mut self.cuts.game_loop.messages
@@ -248,6 +250,9 @@ mod tests {
             w.cuts.new_game.games.push((GameSource::Skirmish, g));
         }
         w.recorder_init();
+        // (GitHub #64: the engine's `init` of the player list and the script engine, as an engine has them; the replay's
+        // `playbackFile` clears the shell game, which leaves them so)
+        w.init_engine_subsystems().expect("the engine's init");
         w
     }
 
@@ -281,6 +286,9 @@ mod tests {
         let mut rec = skirmish_world(true);
         // the skirmish menu's launch (SkirmishGameOptionsMenu.cpp:432): `m_mapName`, `startGame(0)` (made above), then
         // `InitGameLogicRandom(TheSkirmishGameInfo->getSeed())`, then `MSG_NEW_GAME` (here put straight on the command list)
+        // (GitHub #64: `reallyDoStart` first clears the game the shell is in, `clearGameData(FALSE)`, as the replay's
+        // `playbackFile` clears the playing World's)
+        assert!(rec.clear_game_data(false));
         rec.cuts.new_game.map_name = MAP.to_vec();
         rec.random.init_game_logic_random(1234);
         rec.push_command(MSG_NEW_GAME, 0, |m| {

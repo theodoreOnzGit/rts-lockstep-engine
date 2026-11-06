@@ -38,6 +38,7 @@ use rts_lockstep_engine::client::save_game::{load_client_game, read_save_summary
 use rts_lockstep_engine::common::game_state::{GameState, GameStateHost, SaveDate, SAVE_GAME_EXTENSION};
 use rts_lockstep_engine::common::xfer::{Xfer, XferResult};
 use rts_lockstep_engine::logic::world::game_logic::World;
+use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 
 use crate::input::Controls;
 
@@ -459,8 +460,43 @@ pub fn world_for_save(summary: &SaveSummary, base: Option<&World>) -> Result<(Wo
 /// then: `client::save_game`'s host); the save's drawables made into `drawables` when given (GitHub #59). Returns them
 /// with the local player and the load's outcome.
 pub fn client_from_save(bytes: Vec<u8>, base: Option<&World>, drawables: Option<Drawables<'_>>) -> Result<(Controls, ParticleSystemManager, ClientState, i32, LoadOutcome), String> {
-    let summary = read_save_summary(bytes.clone()).map_err(|e| format!("the save does not read: {e}"))?;
-    let (world, player) = world_for_save(&summary, base)?;
+    client_from_pending(PendingLoad::new(bytes, base)?, drawables)
+}
+
+/// GitHub #64, part 2: a save chosen for loading, waiting for its map's folder. The World made for it
+/// ([`world_for_save`]) gets the folder of the save's pristine map (its `map.ini`, `solo.ini`, `map.str`) from the art's
+/// files, read by range in the browser, as a mission's start gets it (`World::mount_save_map_when_ready`); until then the
+/// load waits. Without it a save of a mission started from the list loaded with the map the save embeds and no `map.ini`.
+pub struct PendingLoad {
+    pub bytes: Vec<u8>,
+    pub world: World,
+    /// The local player when it is known before the load (the demo's).
+    pub player: Option<i32>,
+    /// The files of the map's folder mounted, once they have all arrived.
+    pub mounted: Option<usize>,
+}
+
+impl PendingLoad {
+    /// The save's World ([`world_for_save`]), its folder not yet mounted.
+    pub fn new(bytes: Vec<u8>, base: Option<&World>) -> Result<PendingLoad, String> {
+        let summary = read_save_summary(bytes.clone()).map_err(|e| format!("the save does not read: {e}"))?;
+        let (world, player) = world_for_save(&summary, base)?;
+        Ok(PendingLoad { bytes, world, player, mounted: None })
+    }
+
+    /// Once a frame: the map's folder read from `fs` and mounted once all of it has arrived (the demo's map has none to
+    /// read). Whether it is mounted.
+    pub fn mount<D: LocalDevice>(&mut self, fs: &FileSystem<D>) -> Result<bool, String> {
+        if self.mounted.is_none() {
+            self.mounted = if self.player.is_some() { Some(0) } else { self.world.mount_save_map_when_ready(fs, &self.bytes)? };
+        }
+        Ok(self.mounted.is_some())
+    }
+}
+
+/// [`client_from_save`] of a save whose World is ready ([`PendingLoad`]).
+pub fn client_from_pending(p: PendingLoad, drawables: Option<Drawables<'_>>) -> Result<(Controls, ParticleSystemManager, ClientState, i32, LoadOutcome), String> {
+    let PendingLoad { bytes, world, player, .. } = p;
     let mut controls = Controls::new(world, player.unwrap_or(-1));
     let mut particles = ParticleSystemManager::new();
     let mut state = ClientState::default();

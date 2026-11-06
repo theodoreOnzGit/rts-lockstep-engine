@@ -462,6 +462,14 @@ impl PartitionManager {
     pub fn reset(&mut self) {
         self.reset_pending_undo_shroud_reveal_queue();
         self.shutdown();
+        // (GitHub #64: the port's module slots, upstream's heap objects, which are deleted with their objects: once every
+        // module is gone, the slots go too, so a World cleared by `clearGameData` numbers its next game's modules as a new
+        // World does)
+        if self.module_list.is_none() && self.modules.iter().all(Option::is_none) {
+            self.modules.clear();
+            self.free_slots.clear();
+            self.by_object.clear();
+        }
     }
 
     /// `shutdown()`.

@@ -1369,6 +1369,15 @@ extern "C" {
 }
 
 extern "C" {
+    // GitHub #64: the campaign manager and the Generals' Challenge (wrap_campaign.cpp), loaded through ref_ini_load_typed
+    pub fn ref_campaign_reset();
+    pub fn ref_campaign_dump(buf: *mut u8, cap: c_int) -> c_int;
+    pub fn ref_campaign_op(op: c_int, a: *const c_char, b: *const c_char, n: c_int) -> c_int;
+    pub fn ref_challenge_dump(buf: *mut u8, cap: c_int) -> c_int;
+    pub fn ref_challenge_lookup(kind: c_int, name: *const c_char) -> c_int;
+}
+
+extern "C" {
     // batch A24: the AI group (wrap_ai_group.cpp)
     pub fn ref_ai_group_run(scene: *const GrpScene, ops: *const GrpOp, n_ops: c_int, out: *mut c_uint, out_cap: c_int, log: *mut c_uint, log_cap: c_int, log_len: *mut c_int) -> c_int;
     pub fn grpAnswer(seed: c_uint, kind: c_uint, obj: c_uint, arg: c_uint) -> c_uint;

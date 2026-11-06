@@ -149,7 +149,37 @@ impl World {
     /// docs), then post-processed in load order. (#62) A mission save's (`SAVE_FILE_TYPE_MISSION`: its campaign alone)
     /// then starts its mission, as `loadGame`'s end does ([`World::start_loaded_mission`]); its map must be on the
     /// World's disk before the next frame.
+    ///
+    /// GitHub #64: a World that starts the save's own game ([`SaveSide::new_game_on_load`]) is cleared first, as upstream's
+    /// load is: a game in progress by `clearGameData(FALSE)` (the save menu's `doLoadGame`, and `loadGame`'s own for a
+    /// mission save), then `TheGameEngine->reset()` ([`World::engine_reset`]); a load that fails clears it again, as
+    /// `loadGame`'s error branch does. So a load can be into the World that was playing, in place.
+    ///
+    /// **Deviation (#64):** the random generators then start from their state before any `InitRandom`, the install
+    /// World's ([`World::reset_random_for_load`]). Upstream's load seeds nothing (neither the save nor `loadGame` holds a
+    /// seed), so its loaded game draws from whatever the engine's generators hold after the games before it, and two
+    /// machines would not agree; every load into a fresh copy of the install's World drew from that state.
     pub fn load_game(&mut self, bytes: Vec<u8>) -> XferResult<()> {
+        let in_place = self.save_side.new_game_on_load;
+        if in_place {
+            if crate::common::recorder::RecorderHost::is_in_game(self) {
+                self.clear_game_data(false);
+            }
+            self.engine_reset();
+            self.reset_random_for_load();
+        }
+        let r = self.load_game_data(bytes);
+        if r.is_err() && in_place {
+            if crate::common::recorder::RecorderHost::is_in_game(self) {
+                self.clear_game_data(false);
+            }
+            self.engine_reset();
+        }
+        r
+    }
+
+    /// [`World::load_game`]'s reading and post-process.
+    fn load_game_data(&mut self, bytes: Vec<u8>) -> XferResult<()> {
         let mut gs = world_game_state();
         let mut x = XferLoad::new(bytes);
         x.open(b"save game")?;
