@@ -12,8 +12,10 @@
 //!   pinch. On-screen buttons zoom in, zoom out, reset the view and pause, so a phone needs no keyboard.
 //!
 //! - **The player's input** (C2d): a left click selects or orders, a left drag selects the player's units in the box; the
-//!   pointer's hint (what a click would order) is in the status line; selected units have a ring; the first selected
-//!   unit's command buttons are along the bottom, and a construct button puts the building at the cursor until a click
+//!   pointer's hint (what a click would order) is in the status line; selected units have a ring; ~~the first selected
+//!   unit's command buttons are along the bottom~~ **corrected 2026-11-05 (#12):** the first selected unit's command
+//!   buttons are the game's control bar's when its files are loaded (below), else a debug panel along the bottom (also
+//!   shown, above the bar, on a narrow screen); a construct button puts the building at the cursor until a click
 //!   places it. Escape cancels a placement or a pending command. Everything goes through [`crate::input::Controls`], the
 //!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
 //!   (within 18 pixels), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
@@ -30,6 +32,10 @@
 //!   is the player's folder; ~~the demo and the web page have none yet (#24), so they draw shapes~~ **corrected
 //!   2026-11-05 (#24):** on the web it is the page's imported files, the art archives read by range as their members are
 //!   needed (`crate::import`); the demo has none, so it draws shapes.
+//!
+//! - **The control bar** (#12): read from the art's files when a game starts (`crate::ui`, tested there) and drawn as
+//!   Bevy UI nodes along the bottom, scaled to the screen's width (a phone's too); its command buttons press through
+//!   `Controls::press`. Without the files the debug panel stays.
 //!
 //! GUI glue: the drawing systems need a window and a GPU, so no test reaches them. What they draw is the view model's,
 //! which `view`'s tests check against the `World`; what the input does is `input`'s, which its tests drive.
@@ -82,13 +88,34 @@ struct Game {
     images: HashMap<Vec<u8>, Vec<Vec<Option<Handle<Image>>>>>,
     /// The client's clock for the draw modules (`WW3D::Sync`), milliseconds.
     models_clock: u32,
+    /// The game's control bar (#12), once read from the art's files.
+    ui: Option<Box<crate::ui::GameUi>>,
+    /// Whether the control bar is still to be read (`false` once read or found missing), and why it is not drawn.
+    ui_pending: bool,
+    ui_status: String,
+    /// The UI's textures by file name (`None`: missing), with their sizes.
+    ui_textures: HashMap<Vec<u8>, Option<(Handle<Image>, (u32, u32))>>,
 }
 
 impl Game {
     fn new(world: GameWorld, player: i32, playing: String, art: Option<Art<ArtDevice>>) -> Self {
         let mut world = world;
         let cur = snapshot(&mut world);
-        Game { controls: Controls::new(world, player), prev: cur.clone(), cur, paused: false, error: None, playing, models: WorldDrawables::new(art), images: HashMap::new(), models_clock: 0 }
+        Game {
+            controls: Controls::new(world, player),
+            prev: cur.clone(),
+            cur,
+            paused: false,
+            error: None,
+            playing,
+            models: WorldDrawables::new(art),
+            images: HashMap::new(),
+            models_clock: 0,
+            ui: None,
+            ui_pending: true,
+            ui_status: "no game files: debug panel".to_string(),
+            ui_textures: HashMap::new(),
+        }
     }
 }
 
@@ -185,12 +212,13 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .insert_resource(TerrainState { pending: true, look: "none" })
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
+        .init_resource::<UiBar>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
         .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
-            (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, control_bar, update_hud).chain(),
+            (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -616,11 +644,12 @@ fn update_hud(game: NonSend<Game>, mut hud: Query<&mut Text, With<Hud>>) {
             None => String::new(),
         };
         **text = format!(
-            "{} | logic frame {} | {} objects{art} | {} selected{hint}{placing} | {state}",
+            "{} | logic frame {} | {} objects{art} | {} selected{hint}{placing} | {} | {state}",
             game.playing,
             game.cur.frame,
             game.cur.objects.len(),
-            game.controls.ui.select_count()
+            game.controls.ui.select_count(),
+            game.ui_status
         );
     }
 }
@@ -652,6 +681,7 @@ fn setup_ui(mut commands: Commands) {
         Node { position_type: PositionType::Absolute, top: px(8), left: px(8), ..default() },
     ));
     commands.spawn((
+        ZoomColumn,
         Node {
             position_type: PositionType::Absolute,
             right: px(8),
@@ -722,8 +752,8 @@ struct Pointer {
 const BAR_HEIGHT: f32 = 64.0;
 const ZOOM_COLUMN: f32 = 64.0;
 
-fn over_ui(cursor: Vec2, window: &Window) -> bool {
-    cursor.y > window.height() - BAR_HEIGHT || cursor.x > window.width() - ZOOM_COLUMN || cursor.y < 28.0
+fn over_ui(cursor: Vec2, window: &Window, bar: f32) -> bool {
+    cursor.y > window.height() - BAR_HEIGHT.max(bar) || cursor.x > window.width() - ZOOM_COLUMN || cursor.y < 28.0
 }
 
 /// The game point (z up) on the ground under `cursor`: where the camera ray first meets the logic's ground height
@@ -784,7 +814,9 @@ fn pointer_input(
     keys: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform)>,
+    bar: Res<UiBar>,
 ) {
+    let bar = bar.height + bar.panel;
     let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
     let g = &mut *game;
     if keys.just_pressed(KeyCode::Escape) {
@@ -797,7 +829,7 @@ fn pointer_input(
     let screen = on_screen(g, camera, cam);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();
-    if buttons.just_pressed(MouseButton::Left) && !over_ui(cursor, window) {
+    if buttons.just_pressed(MouseButton::Left) && !over_ui(cursor, window, bar) {
         pointer.press = Some(cursor);
         g.controls.left_press(pixel(cursor), ground);
     }
@@ -814,7 +846,7 @@ fn pointer_input(
             };
             g.controls.left_release(pixel(press), pixel(cursor), &in_box, picked, ground);
         }
-    } else if !over_ui(cursor, window) {
+    } else if !over_ui(cursor, window, bar) {
         g.controls.hover(picked, ground);
     }
 }
@@ -862,16 +894,30 @@ struct ControlBar {
 }
 
 /// GUI glue (needs a window): the first selected unit's command buttons, rebuilt when the selection changes.
-fn control_bar(mut commands: Commands, mut game: NonSendMut<Game>, mut bars: Query<(Entity, &mut ControlBar)>) {
+fn control_bar(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut bars: Query<(Entity, &mut ControlBar, &mut Node, &mut Visibility)>,
+    windows: Query<&Window>,
+    mut ui_bar: ResMut<UiBar>,
+) {
     let changed = game.controls.ui.frame_selection_changed();
-    for (e, mut bar) in &mut bars {
+    // (#12) with the game's control bar the debug panel is for narrow screens only (big buttons a finger can press),
+    // above the bar
+    let narrow = windows.single().map_or(true, |w| w.width() < 700.0);
+    let shown = game.ui.is_none() || narrow;
+    ui_bar.panel = if shown && game.ui.is_some() { 56.0 } else { 0.0 };
+    for (e, mut bar, mut node, mut vis) in &mut bars {
+        *vis = if shown { Visibility::Inherited } else { Visibility::Hidden };
+        node.bottom = px(8.0 + ui_bar.height);
         if bar.shown == changed {
             continue;
         }
         bar.shown = changed;
         commands.entity(e).despawn_children();
         for b in game.controls.bar_buttons() {
-            let label = b.label.trim_start_matches("Command_").to_string();
+            // (#12) the button's text label through the game's text when there is one, else its name
+            let label = game.controls.bar_label(&b).unwrap_or_else(|| b.label.trim_start_matches("Command_").to_string());
             let button = b.button.clone();
             let child = commands
                 .spawn((
@@ -883,6 +929,200 @@ fn control_bar(mut commands: Commands, mut game: NonSendMut<Game>, mut bars: Que
                 .id();
             commands.entity(e).add_child(child);
         }
+    }
+}
+
+/// The zoom, reset and pause buttons' column.
+#[derive(Component)]
+struct ZoomColumn;
+
+/// GUI glue (needs a window): the zoom column stays above the game's control bar (#12).
+fn lift_zoom(bar: Res<UiBar>, mut cols: Query<&mut Node, With<ZoomColumn>>) {
+    for mut n in &mut cols {
+        n.bottom = px(8.0 + bar.height);
+    }
+}
+
+/// The game's control bar on screen (#12): its height in logical pixels, and the debug panel's above it.
+#[derive(Resource, Default)]
+struct UiBar {
+    height: f32,
+    panel: f32,
+}
+
+/// The game's control bar's root node, and the quads it was last drawn with.
+#[derive(Component)]
+struct GameUiRoot(Vec<crate::ui::UiQuad>);
+
+/// GUI glue (needs the app): reads the game's control bar from the art's files once a game is running
+/// ([`crate::ui::load_game_ui`], tested there); while a file is being fetched (the web) it tries again on a later frame.
+fn load_game_ui(mut game: NonSendMut<Game>) {
+    let g = &mut *game;
+    if !g.ui_pending {
+        return;
+    }
+    let Some(art) = &g.models.art else {
+        g.ui_pending = false;
+        return;
+    };
+    let world = &g.controls.client.world;
+    let side = world.players.get_nth(g.controls.client.player).map(|p| p.side.clone()).unwrap_or_default();
+    match crate::ui::load_game_ui(&art.fs, &world.statics.game_text, &side) {
+        crate::ui::UiBuild::Ready(ui) => {
+            info!("control bar: {} windows, {} images", ui.tree.windows.len(), ui.images.len());
+            g.ui_status = format!("control bar: {} windows", ui.tree.windows.len());
+            g.ui = Some(ui);
+            g.ui_pending = false;
+        }
+        crate::ui::UiBuild::Waiting => {}
+        crate::ui::UiBuild::Missing(why) => {
+            warn!("no control bar: {why}");
+            g.ui_status = format!("debug panel ({why})");
+            g.ui_pending = false;
+        }
+    }
+}
+
+/// A mapped image's texture and the rectangle of it, in texels: `None` while missing (or still being fetched).
+fn ui_image(g: &mut Game, images: &mut Assets<Image>, name: &[u8]) -> Option<(Handle<Image>, Rect)> {
+    let ui = g.ui.as_ref()?;
+    let img = ui.images.find_image_by_name(name)?.clone();
+    if !g.ui_textures.contains_key(&img.filename) {
+        let art = g.models.art.as_ref()?;
+        let before = art.fs.local.device.unserved_reads();
+        let r = rts_lockstep_engine::formats::w3d::render::load_texture_image(&art.assets.file_factory, &art.fs, &img.filename);
+        if art.fs.local.device.unserved_reads() != before {
+            return None;
+        }
+        let entry = match r {
+            Ok(Ok(t)) => Some((images.add(crate::model::texture_image(&t, Some((true, true)))), (t.width, t.height))),
+            _ => None,
+        };
+        g.ui_textures.insert(img.filename.clone(), entry);
+    }
+    let (h, (w, ht)) = g.ui_textures.get(&img.filename)?.clone()?;
+    // (the UVs are the pixel edges over the texture size the INI gives; Coords before TextureWidth stay pixels)
+    let to_px = |u: f32, size: u32, given: i32| if given != 0 { u * size as f32 } else { u };
+    // (inset half a texel, so the linear filter does not bleed the neighbouring image of the page in)
+    let rect = Rect::new(
+        to_px(img.uv[0], w, img.texture_size.0) + 0.5,
+        to_px(img.uv[1], ht, img.texture_size.1) + 0.5,
+        to_px(img.uv[2], w, img.texture_size.0) - 0.5,
+        to_px(img.uv[3], ht, img.texture_size.1) - 0.5,
+    );
+    Some((h, rect))
+}
+
+/// GUI glue (needs a window): the game's control bar drawn from [`crate::ui::GameUi::frame`]'s quads (the selected
+/// object's buttons from `populateCommand`, the money, the power, the build queue), as Bevy UI nodes in a box of the
+/// layout's 800-wide proportions along the bottom of the screen, as wide as the screen allows; rebuilt when the quads
+/// change. A command button presses through [`Controls::press`] (`processCommandUI`).
+fn game_ui(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut images: ResMut<Assets<Image>>,
+    mut roots: Query<(Entity, &mut GameUiRoot, &mut Node)>,
+    windows: Query<&Window>,
+    mut ui_bar: ResMut<UiBar>,
+) {
+    let g = &mut *game;
+    if g.ui.is_none() {
+        ui_bar.height = 0.0;
+        return;
+    }
+    let c = &mut g.controls;
+    let sel = c.ui.first_selected_drawable().filter(|&o| rts_lockstep_engine::client::selection_info::SelectionInfoHost::is_locally_controlled(&c.client, o) && c.ui.select_count() == 1);
+    let queue = sel.map(|o| c.client.production_queue(o)).unwrap_or_default();
+    let (money, power) = c.client.money_and_power();
+    let state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
+    let ui = g.ui.as_ref().expect("checked");
+    let quads = ui.frame(&state);
+    let buttons: Vec<Option<usize>> = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
+    // the box: the quads' extent, the layout's full width
+    let (y0, y1) = quads.iter().fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q.rect[1]), b.max(q.rect[3])));
+    if quads.is_empty() || y1 <= y0 {
+        return;
+    }
+    let (lw, bh) = (crate::ui::LAYOUT.0 as f32, y1 - y0);
+    let (ww, wh) = windows.single().map_or((800.0, 600.0), |w| (w.width(), w.height()));
+    let width = ww.min(wh * lw / crate::ui::LAYOUT.1 as f32);
+    ui_bar.height = width * bh / lw;
+    let root = match roots.iter_mut().next() {
+        Some((e, mut r, mut node)) => {
+            node.width = px(width);
+            node.height = px(ui_bar.height);
+            node.left = px((ww - width) / 2.0);
+            if r.0 == quads {
+                return;
+            }
+            r.0 = quads.clone();
+            commands.entity(e).despawn_children();
+            e
+        }
+        None => commands
+            .spawn((
+                GameUiRoot(quads.clone()),
+                Node { position_type: PositionType::Absolute, bottom: px(0), left: px((ww - width) / 2.0), width: px(width), height: px(ui_bar.height), ..default() },
+            ))
+            .id(),
+    };
+    let pct = |v: f32, total: f32| Val::Percent(v / total * 100.0);
+    for q in &quads {
+        let node = Node {
+            position_type: PositionType::Absolute,
+            left: pct(q.rect[0], lw),
+            top: pct(q.rect[1] - y0, bh),
+            width: pct(q.rect[2] - q.rect[0], lw),
+            height: pct(q.rect[3] - q.rect[1], bh),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        };
+        let tint = if q.dim { Color::srgb(0.45, 0.45, 0.45) } else { Color::WHITE };
+        let mut e = commands.spawn(node);
+        match q.image.as_ref().and_then(|n| ui_image(g, &mut images, n)) {
+            Some((h, rect)) => {
+                e.insert(ImageNode { image: h, rect: Some(rect), color: tint, image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() });
+            }
+            None => {
+                if let Some([r, gr, b, a]) = q.color {
+                    e.insert(BackgroundColor(Color::srgba_u8(r, gr, b, a)));
+                } else if q.command.is_some() {
+                    e.insert(BackgroundColor(Color::srgba(0.12, 0.16, 0.22, 0.9)));
+                }
+            }
+        }
+        if let Some(t) = &q.text {
+            let size = (ui_bar.height / bh * 11.0).clamp(8.0, 18.0);
+            e.with_children(|p| {
+                p.spawn((Text::new(t.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(Color::WHITE)));
+            });
+        }
+        if let Some(pct_done) = q.clock {
+            let rest = (100 - pct_done.clamp(0, 100)) as f32;
+            e.with_children(|p| {
+                p.spawn((
+                    Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(rest), ..default() },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                ));
+            });
+        }
+        if let Some(slot) = q.command {
+            if let Some(Some(index)) = buttons.get(slot) {
+                let index = *index;
+                e.insert((
+                    Button,
+                    observe(move |_: On<Activate>, mut game: NonSendMut<Game>| {
+                        let b = rts_lockstep_engine::client::command_world::gui_button(&game.controls.client.world, index);
+                        if let Some(b) = b {
+                            game.controls.press(&b);
+                        }
+                    }),
+                ));
+            }
+        }
+        let child = e.id();
+        commands.entity(root).add_child(child);
     }
 }
 

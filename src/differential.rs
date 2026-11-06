@@ -3489,4 +3489,17 @@ extern "C" {
         atlas: *mut c_ushort,
         atlas_cap: c_int,
     ) -> c_int;
+
+    // #12: GameWindowManagerScript.cpp, verbatim (wrap_wnd.cpp): the files read in order in a forked child; 0 read,
+    // 1 stopped where upstream is undefined or never returns, 2 crashed, 3 timed out.
+    pub fn ref_wnd_run(
+        data: *const c_char,
+        lens: *const c_int,
+        count: c_int,
+        width: c_int,
+        height: c_int,
+        out: *mut c_char,
+        cap: c_int,
+        out_len: *mut c_int,
+    ) -> c_int;
 }

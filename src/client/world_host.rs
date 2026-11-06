@@ -452,11 +452,283 @@ impl PlaceHost for WorldClient {
     }
 }
 
+// --- #12: the control bar's questions (client::control_bar_command), answered from the World, read only ---
+
+impl WorldClient {
+    /// The production queue of `obj` for the build queue window: (a unit?, its production id or upgrade key, its button
+    /// image's name, its percent complete), in order; empty without a production update.
+    pub fn production_queue(&self, obj: ObjectId) -> Vec<(bool, u32, Option<Vec<u8>>, f32)> {
+        use crate::logic::modules::production_update::PRODUCTION_UNIT;
+        use crate::logic::world::module_call::ModuleHandle;
+        let Some(x) = self.world.find_object(obj) else { return Vec::new() };
+        let n = x.modules.len();
+        for i in 0..n {
+            if let Some(crate::logic::world::update_body::UpdateBody::ProductionUpdate(p)) = self.world.peek_module_body(ModuleHandle { object: obj, index: i as _ }) {
+                return p
+                    .queue()
+                    .iter()
+                    .map(|e| {
+                        let unit = e.production_type == PRODUCTION_UNIT;
+                        let (id, image) = if unit {
+                            let image = e.object_to_produce.and_then(|t| self.world.statics.thing_factory.find_by_template_id(t)).map(|t| t.data.button_image_name().to_vec());
+                            (e.production_id as u32, image.filter(|n| !n.is_empty()))
+                        } else {
+                            let key = e.upgrade_to_research.map_or(0, |k| k.0);
+                            let image = self.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(key)).map(|u| u.button_image_name().to_vec());
+                            (key, image.filter(|n| !n.is_empty()))
+                        };
+                        (unit, id, image, e.percent_complete)
+                    })
+                    .collect();
+            }
+        }
+        Vec::new()
+    }
+
+    /// The local player's money and (production, consumption) of power.
+    pub fn money_and_power(&self) -> (u32, (i32, i32)) {
+        let frame = self.world.frame();
+        self.world.players.get_nth(self.player).map_or((0, (0, 0)), |p| (p.money.count_money(), (p.energy.production(frame), p.energy.consumption())))
+    }
+
+    fn object(&self, obj: ObjectId) -> Option<&crate::logic::world::object::Object> {
+        self.world.find_object(obj)
+    }
+}
+
+impl crate::client::control_bar_command::ControlBarStateHost for WorldClient {
+    fn command_set_buttons(&self, obj: ObjectId) -> Option<[Option<usize>; crate::logic::command_button::MAX_COMMANDS_PER_SET]> {
+        let w = &self.world;
+        let set = w.control_bar_find_command_set(&w.object_get_command_set_string(obj))?;
+        Some(std::array::from_fn(|i| w.command_set_get_command_button(set, i)))
+    }
+    fn button(&self, index: usize) -> Option<crate::logic::command_button::CommandButton> {
+        let f = self.world.cuts.command_buttons.get(index)?;
+        if let Some(b) = self.world.statics.command_buttons.find_command_button(&f.name) {
+            return Some(b.clone());
+        }
+        // (a button the World has only as facts, as the tests' and the demo's: no images, no labels)
+        let mut b = crate::logic::command_button::CommandButton::new(&f.name);
+        b.command = f.command_type;
+        b.options = f.options;
+        b.weapon_slot = f.weapon_slot;
+        b.max_shots_to_fire = f.max_shots_to_fire;
+        b.special_power = f.special_power;
+        b.thing_template = f.thing_template;
+        b.upgrade = f.upgrade.map(NameKeyType);
+        Some(b)
+    }
+    fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
+        use crate::common::science::GameTextFetch;
+        self.world.statics.game_text.fetch(label).str().to_vec()
+    }
+    fn shortcut_source(&mut self, button: &crate::logic::command_button::CommandButton) -> Option<ObjectId> {
+        let sp = button.special_power.and_then(|id| self.world.statics.special_power_store.find_special_power_template_by_id(id).map(|t| t.special_power_type()))?;
+        self.most_ready_shortcut_special_power(sp)
+    }
+    fn script_disabled_or_unpowered(&self, obj: ObjectId) -> bool {
+        use crate::logic::object_script_status_bits::{OBJECT_STATUS_SCRIPT_DISABLED, OBJECT_STATUS_SCRIPT_UNPOWERED};
+        self.object(obj).is_some_and(|o| o.test_script_status_bit(OBJECT_STATUS_SCRIPT_DISABLED) || o.test_script_status_bit(OBJECT_STATUS_SCRIPT_UNPOWERED))
+    }
+    fn disabled_unmanned(&self, obj: ObjectId) -> bool {
+        self.object(obj).is_some_and(|o| o.is_disabled_by_type(crate::common::disabled_types::DISABLED_UNMANNED))
+    }
+    fn disabled_subdued(&self, obj: ObjectId) -> bool {
+        self.object(obj).is_some_and(|o| o.is_disabled_by_type(crate::common::disabled_types::DISABLED_SUBDUED))
+    }
+    fn single_use_used(&self, _obj: ObjectId) -> bool {
+        // (the flag is never set by this client: see `mark_single_use_command_used`)
+        false
+    }
+    fn is_moving(&mut self, _obj: ObjectId) -> bool {
+        // **Not answered yet (#12 gap):** the AI's `isMoving` needs the AI host; buttons with `MUST_BE_STOPPED` show as
+        // available while moving.
+        false
+    }
+    fn disabled(&self, obj: ObjectId) -> (bool, bool) {
+        self.object(obj).map_or((false, false), |o| {
+            let only = o.is_disabled_by_type(crate::common::disabled_types::DISABLED_UNDERPOWERED) && o.disabled.count() == 1;
+            (o.is_disabled(), only)
+        })
+    }
+    fn upgrade_is_player(&self, upgrade: u32) -> Option<bool> {
+        self.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(upgrade)).map(|u| u.upgrade_type() == crate::common::upgrade::UpgradeType::Player)
+    }
+    fn player_has_upgrade_complete(&self, obj: ObjectId, upgrade: u32) -> bool {
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_complete(p, &m))
+    }
+    fn player_has_upgrade_in_production(&self, _obj: ObjectId, _upgrade: u32) -> bool {
+        // **Not answered yet (#12 gap):** the player's upgrade list's in-production state.
+        false
+    }
+    fn obj_has_upgrade(&mut self, obj: ObjectId, upgrade: u32) -> bool {
+        ControlBarHost::has_upgrade(self, obj, upgrade)
+    }
+    fn affected_by_upgrade(&mut self, obj: ObjectId, upgrade: u32) -> bool {
+        ControlBarHost::affected_by_upgrade(self, obj, upgrade)
+    }
+    fn production_count(&mut self, obj: ObjectId) -> Option<i32> {
+        let pu = self.world.get_production_update_interface(obj)?;
+        Some(self.world.module_call(obj, pu, ModuleCall::ProductionGetCount).as_int(0))
+    }
+    fn is_upgrade_in_queue(&mut self, obj: ObjectId, upgrade: u32) -> bool {
+        let Some(pu) = self.world.get_production_update_interface(obj) else { return false };
+        self.world.module_call(obj, pu, ModuleCall::ProductionIsUpgradeInQueue { upgrade: Some(upgrade) }).as_int(0) != 0
+    }
+    fn buildable(&self, template: u16) -> crate::client::control_bar_command::Buildable {
+        use crate::client::control_bar_command::Buildable;
+        match self.world.statics.thing_factory.find_by_template_id(template).map(|t| t.data.buildable()) {
+            Some(1) => Buildable::IgnorePrerequisites,
+            Some(2) => Buildable::No,
+            Some(3) => Buildable::OnlyByAi,
+            _ => Buildable::Yes,
+        }
+    }
+    fn player_is_computer(&self, obj: ObjectId) -> bool {
+        self.world.get_controlling_player(obj).and_then(|p| self.world.players.get_nth(p)).is_some_and(|p| p.player_type == crate::common::game_common::PlayerType::Computer)
+    }
+    fn is_dozer(&self, obj: ObjectId) -> bool {
+        self.object(obj).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_DOZER))
+    }
+    fn dozer_build_pending(&mut self, _obj: ObjectId) -> Option<bool> {
+        // **Not answered yet (#12 gap):** the dozer AI's pending build task; the dozer is taken as idle.
+        Some(false)
+    }
+    fn player_can_build(&mut self, obj: ObjectId, template: Option<u16>) -> bool {
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        crate::logic::world::player_objects::player_can_build(&mut self.world, p, template.map(Into::into)).unwrap_or(false)
+    }
+    fn player_can_afford_build(&mut self, obj: ObjectId, template: Option<u16>) -> bool {
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        let Some(t) = template else { return false };
+        crate::logic::world::player_objects::player_can_afford_build(&mut self.world, p, t.into()).unwrap_or(false)
+    }
+    fn can_make_unit(&mut self, obj: ObjectId, template: Option<u16>) -> CanMakeType {
+        ControlBarHost::can_make_unit(self, Some(obj), template)
+    }
+    fn can_afford_upgrade(&mut self, obj: ObjectId, upgrade: u32) -> bool {
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        let cost = self.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(upgrade)).map(|t| t.cost_to_build());
+        cost.is_some_and(|c| self.world.upgrade_center_can_afford_upgrade(Some(p), c))
+    }
+    fn player_has_science(&mut self, _obj: ObjectId, st: i32) -> bool {
+        ControlBarHost::has_science(self, st)
+    }
+    fn unsellable(&self, obj: ObjectId) -> bool {
+        self.object(obj).is_some_and(|o| o.test_script_status_bit(crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNSELLABLE))
+    }
+    fn weapon(&mut self, _obj: ObjectId, _slot: i32) -> Option<crate::client::control_bar_command::WeaponState> {
+        // **Not answered yet (#12 gap):** the weapon's status; a fire weapon button shows as ready.
+        Some(crate::client::control_bar_command::WeaponState { clip_reload_time: 0, ready_to_fire: true, reloading_clip: false, possible_next_shot_frame: 0, percent_ready: 1.0 })
+    }
+    fn frame(&self) -> u32 {
+        self.world.frame()
+    }
+    fn mine_clearing_weapon_set(&self, _obj: ObjectId) -> bool {
+        false
+    }
+    fn rappeller_count(&mut self, _obj: ObjectId) -> i32 {
+        // **Not answered yet (#12 gap):** the contained rappellers; combat drop shows as restricted.
+        0
+    }
+    fn contain_count(&self, _obj: ObjectId) -> Option<u32> {
+        // **Not answered yet (#12 gap):** the contain module's count; evacuate shows as restricted.
+        None
+    }
+    fn dock_open(&mut self, _obj: ObjectId) -> Option<bool> {
+        None
+    }
+    fn special_power(&mut self, _obj: ObjectId, _button: &crate::logic::command_button::CommandButton) -> crate::client::control_bar_command::SpecialPowerState {
+        // **Not answered yet (#12 gap):** the special power module's readiness and the clock; powers show as ready.
+        crate::client::control_bar_command::SpecialPowerState::Ready { ability_in_use: None, battle_plan_option_match: false }
+    }
+    fn overcharge_active(&mut self, _obj: ObjectId) -> bool {
+        false
+    }
+    fn selected_current_weapon_slots(&mut self) -> Vec<i32> {
+        Vec::new()
+    }
+    fn hacking_packing_or_unpacking(&mut self, _obj: ObjectId) -> bool {
+        false
+    }
+    fn battle_plan_is_bombardment(&mut self, _obj: ObjectId) -> Option<bool> {
+        None
+    }
+    fn purchase_science_buttons(&self, _obj: ObjectId) -> Option<Vec<usize>> {
+        // **Not answered yet (#12 gap):** the player template's purchase science sets.
+        None
+    }
+    fn special_power_required_science(&self, button: &crate::logic::command_button::CommandButton) -> Option<i32> {
+        let t = self.world.statics.special_power_store.find_special_power_template_by_id(button.special_power?)?;
+        let st = t.required_science().0;
+        (st >= 0).then_some(st)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator};
     use crate::logic::world::gate_scenario::{gate_world, run_gate_scenario};
+
+    /// #12, the rule of `AGENTS.md` for the control bar: `populateCommand`'s questions (`getCommandAvailability` for
+    /// every button of every player-1 object, which asks production modules for their counts and queues, the build
+    /// assistant, the upgrade center and the players), the build queue and the money and power, asked every frame, leave
+    /// the logic's CRCs equal, frame by frame for 300 frames, to a run without them. Both runs give every player-1 object
+    /// the same set of five buttons (unit build, dozer construct, sell, stop, an object upgrade; the World takes the
+    /// control bar's data as a table). Predicted: equal CRCs (the questions only read), and five windows a frame per
+    /// object, so 300 x 5 x the objects shown at most.
+    #[test]
+    fn the_control_bars_questions_leave_the_crcs_alone() {
+        use crate::logic::world::object_cuts::CommandButtonFacts;
+        use crate::logic::world::object_command_button::gui as g;
+        let frames = 300;
+        let setup = || {
+            let mut w = gate_world();
+            let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
+            let first = w.cuts.command_buttons.len();
+            for (i, (t, tt)) in [(g::UNIT_BUILD, depot), (g::DOZER_CONSTRUCT, depot), (g::SELL, None), (g::STOP, None), (g::OBJECT_UPGRADE, None)].into_iter().enumerate() {
+                w.cuts.command_buttons.push(CommandButtonFacts {
+                    name: format!("Gate12Button{i}").into_bytes(),
+                    command_type: t,
+                    weapon_slot: 0,
+                    special_power: None,
+                    thing_template: tt,
+                    upgrade: None,
+                    ready_for: Default::default(),
+                    options: 0,
+                    max_shots_to_fire: 0,
+                });
+            }
+            w.cuts.command_sets.push((b"Gate12Set".to_vec(), (first..first + 5).map(Some).collect()));
+            for o in w.objects.ids_in_order() {
+                if w.get_controlling_player(o) == Some(1) {
+                    w.objects.find_mut(o).expect("an object").command_set_string_override = b"Gate12Set".to_vec();
+                }
+            }
+            w
+        };
+        let mut plain = setup();
+        let mut c = WorldClient::new(setup(), 1);
+        let mut shown = 0usize;
+        for f in 0..frames {
+            plain.logic_update().expect("a frame");
+            c.world.logic_update().expect("a frame");
+            for o in c.local_player_objects() {
+                let slots = crate::client::control_bar_command::populate_command(o, &mut c);
+                shown += slots.iter().flatten().count();
+                let _ = c.production_queue(o);
+            }
+            let _ = c.money_and_power();
+            let a = c.world.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            let b = plain.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            assert_eq!(a, b, "the CRCs part at frame {f}");
+        }
+        eprintln!("#12: {shown} command windows shown over {frames} frames");
+        assert!(c.sent.is_empty());
+        assert!(shown > 0);
+    }
 
     /// C2d (#6), the rule of `AGENTS.md`: the client's questions never change the simulation. Predicted: in the gate game,
     /// player 1 hovering every frame (a mouse-over hint on every object and on four ground points, in normal and in force

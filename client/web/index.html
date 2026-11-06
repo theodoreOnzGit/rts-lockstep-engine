@@ -56,18 +56,20 @@
     }
   }).finally(() => { $('loading').style.display = 'none'; });
 
-  // The archives the game reads. The sound archives are not read yet, nor the shaders' and windows', so they are left
-  // out: the browser keeps only what is used. The art archives (W3D models, textures, and since #11 the terrain's
-  // tiles, TerrainZH.big) are kept, and read by range as the game needs their files (#24): only their directories and
-  // the members used are ever read, never the hundreds of megabytes whole.
-  const SKIP = /^(audio|speech|music|shaders|window)/i;
-  const ART = /^(w3d|textures|terrain)/i;
+  // The archives the game reads. The sound archives are not read yet, nor the shaders', so they are left out: the
+  // browser keeps only what is used. The art archives (W3D models, textures, and since #11 the terrain's tiles,
+  // TerrainZH.big; since #12 the UI's layouts and images, WindowZH.big) are kept, and read by range as the game needs
+  // their files (#24): only their directories and the members used are ever read, never the hundreds of megabytes whole.
+  // (#12: `window` was skipped until the control bar was read from its files.)
+  const SKIP = /^(audio|speech|music|shaders)/i;
+  const ART = /^(w3d|textures|terrain|window)/i;
   function wanted(path) {
     const name = path.split('/').pop();
     if (/\.big$/i.test(name)) return !SKIP.test(name);
     // loose art: models and textures under Art/
     if (/(^|\/)art\//i.test(path) && /\.(w3d|dds|tga)$/i.test(name)) return true;
-    // loose files the logic may read: INI, scripts, text, and maps
+    // loose files the logic may read: INI, scripts, text, and maps; and (#12) the UI's window layouts
+    if (/(^|\/)window\//i.test(path) && /\.wnd$/i.test(name)) return true;
     return /(^|\/)(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
   }
   // Read by range rather than whole: the art archives and loose art files.

@@ -127,6 +127,19 @@ impl Controls {
             .collect()
     }
 
+    /// #12: a bar button's text label (`TextLabel`) through the game's text, without its hot key marks (`&`); `None`
+    /// when it has none or the game's text lacks it (the button's name is shown then).
+    pub fn bar_label(&self, b: &BarButton) -> Option<String> {
+        use rts_lockstep_engine::common::science::GameTextFetch;
+        let w = &self.client.world;
+        let cb = w.statics.command_buttons.find_command_button(b.label.as_bytes())?;
+        if cb.labels[0].is_empty() {
+            return None;
+        }
+        let s = String::from_utf16_lossy(w.statics.game_text.fetch(&cb.labels[0]).str()).replace('&', "");
+        (!s.is_empty() && !s.starts_with("MISSING")).then_some(s)
+    }
+
     /// A control bar button pressed.
     pub fn press(&mut self, button: &GuiButton) -> CbCommandStatus {
         let selected = self.ui.first_selected_drawable();
