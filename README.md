@@ -453,7 +453,11 @@ possible. It does **not** make this crate bit-compatible with the original
 Windows build, which ran on the x87 FPU at 24-bit precision and, in several
 `wwmath.h` functions, used x87 instructions (`fsin`, `fcos`, `fistp`, a
 Newton-iteration `Inv_Sqrt`) where this translation follows upstream's
-portable C++ branch. See `src/ww/wwmath.rs` and `SCOPE.md` section 3.
+portable C++ branch. **Corrected 2026-11-06 (#19):** one exception, outside
+the logic: the client's W3D animation evaluation converts frames with the
+Win32 `Float_To_Long` (`fistp`, round to nearest even) by default, as the
+game showed them; the portable truncation is a named choice. See
+`src/ww/wwmath.rs` and `SCOPE.md` section 3.
 
 ## Verification: code-to-code differential tests
 

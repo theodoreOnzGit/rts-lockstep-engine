@@ -349,18 +349,33 @@ mod differential {
                 ],
             ),
         );
-        let htree = write(
-            "htree_msvc_scope.cpp",
-            &patch_copy(
-                &w3d.join("htree.cpp"),
-                "htree.cpp",
-                &[(
+        // #19: htree.cpp's raw fast path and hrawanim.cpp's three samplers
+        // call `WWMath::Float_To_Long`, whose branch decides the frames
+        // sampled. In both copies each such call (asserted: 1 and 3) is
+        // renamed `Ref_W3D_Float_To_Long`, declared in the line put first;
+        // wrap_w3d.cpp defines it as either branch, chosen at run time
+        // (`ref_w3d_set_float_to_long_mode`): the portable one is
+        // `WWMath::Float_To_Long` itself (g++ takes the portable branch of
+        // wwmath.h), the Win32 one the shipped `fld`/`fistp` as inline
+        // assembly. Nothing else in the files changes.
+        const F2L_DECL: &[u8] = b"/* differential: see build.rs (#19) */\nlong Ref_W3D_Float_To_Long(float f);\n";
+        let mut htree_text = F2L_DECL.to_vec();
+        htree_text.extend(patch_copy(
+            &w3d.join("htree.cpp"),
+            "htree.cpp",
+            &[
+                (
                     "\n\tfor ( int anim_num = 0; anim_num < anim->Get_Num_Anims(); anim_num++ ) {",
                     "\n\tint anim_num; for ( anim_num = 0; anim_num < anim->Get_Num_Anims(); anim_num++ ) {",
                     1,
-                )],
-            ),
-        );
+                ),
+                ("WWMath::Float_To_Long(", "Ref_W3D_Float_To_Long(", 1),
+            ],
+        ));
+        let htree = write("htree_msvc_scope.cpp", &htree_text);
+        let mut hrawanim_text = F2L_DECL.to_vec();
+        hrawanim_text.extend(patch_copy(&w3d.join("hrawanim.cpp"), "hrawanim.cpp", &[("WWMath::Float_To_Long(", "Ref_W3D_Float_To_Long(", 3)]));
+        let hrawanim = write("hrawanim_float_to_long.cpp", &hrawanim_text);
         // multilist.cpp (the list base classes meshmdl.h's members derive
         // from): DEFINE_AUTO_POOL defines a member of a class template
         // specialisation without `template<>`, which MSVC accepts.
@@ -1021,7 +1036,7 @@ mod differential {
             .file(ww.join("WWLib/chunkio.cpp"))
             .file(&motchan)
             .file(&htree)
-            .file(w3d.join("hrawanim.cpp"))
+            .file(&hrawanim)
             .file(w3d.join("hcanim.cpp"))
             .file(w3d.join("pivot.cpp"))
             .file(ww.join("WWMath/quat.cpp"));

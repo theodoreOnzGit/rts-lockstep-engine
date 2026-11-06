@@ -402,6 +402,25 @@ impl HAnim {
         c_name(n)
     }
 
+    /// The `WWMath::Float_To_Long` branch a raw animation samples with
+    /// (GitHub #19: the shipped Win32 `fistp` after loading); `None` for the
+    /// compressed and morph kinds, which never call it (a morph animation's
+    /// poses are animations of their own, with their own setting).
+    pub fn frame_rounding(&self) -> Option<super::hanim::FloatToLongMode> {
+        match self {
+            HAnim::Raw(a) => Some(a.frame_rounding),
+            HAnim::Compressed(_) | HAnim::Morph(_) => None,
+        }
+    }
+
+    /// Chooses the `Float_To_Long` branch of a raw animation (nothing for
+    /// the other kinds); see [`Self::frame_rounding`].
+    pub fn set_frame_rounding(&mut self, mode: super::hanim::FloatToLongMode) {
+        if let HAnim::Raw(a) = self {
+            a.frame_rounding = mode;
+        }
+    }
+
     /// `Get_Num_Pivots()`.
     pub fn get_num_pivots(&self) -> i32 {
         match self {
@@ -1326,6 +1345,9 @@ mod tests {
             Some(HAnim::Raw(a)) => assert_eq!(a.num_nodes, 3),
             other => panic!("{other:?}"),
         }
+        // #19: loaded animations sample with the shipped Win32 Float_To_Long
+        let a = m.peek_anim(b"SKL.WALK").unwrap();
+        assert_eq!(a.frame_rounding(), Some(crate::formats::w3d::hanim::FloatToLongMode::Win32Fistp));
     }
 
     /// Lookups ignore ASCII case everywhere; `"NULL"` is built in.

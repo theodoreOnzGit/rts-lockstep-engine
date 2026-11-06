@@ -205,6 +205,11 @@ extern "C" {
         cap: c_int,
         log_len: *mut c_int,
     ) -> c_int;
+    // #19: the WWMath::Float_To_Long branch htree.cpp's raw fast path and
+    // hrawanim.cpp use (0 portable `(long) f`, 1 the Win32 `fld`/`fistp`),
+    // and that conversion itself (wrap_w3d.cpp)
+    pub fn ref_w3d_set_float_to_long_mode(mode: c_int);
+    pub fn ref_w3d_float_to_long(f: c_float) -> c_longlong;
     pub fn ref_crc_memory(data: *const c_uchar, len: c_int, crc: c_uint) -> c_uint;
     pub fn ref_dx8_convert_color(rgba: *const c_float) -> c_uint;
     // WW3D2/shader.cpp: ShaderClass::Apply, Get_SS_Category,

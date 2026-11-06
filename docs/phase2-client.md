@@ -105,6 +105,49 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#19 (2026-11-06, GitHub #19): animations sampled with the shipped game's `Float_To_Long`.**
+- **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of
+  `WWMath::Float_To_Long` (wwmath.h: `fld [f]` / `fistp [i]`), which the shipped game ran under the round-to-nearest
+  control word its `setFPMode` (GameLogic.cpp) sets after `_fpreset` (`_RC_NEAR`; `_RC_CHOP` is commented out there).
+  The portable truncation `(long) f` stays available as a named choice. The logic never calls either: nothing under
+  `src/logic` or `src/common` reaches `formats::w3d` or the conversion, and gate (a) keeps its CRCs.
+- **Translated:** `ww::wwmath::float_to_long_fistp` (round to nearest, ties to even; NaN, the infinities and anything
+  rounding outside `i32` give the x87 integer indefinite `i32::MIN`, the masked invalid-operation result, so defined)
+  and `FloatToLongMode { Win32Fistp, PortableTruncate }`. Its call sites are `hrawanim.cpp`'s three
+  `Float_To_Long(frame - 0.499999f)` (`HRawAnim::frames`) and the raw fast path of `HTreeClass::Anim_Update`
+  (`anim_update_raw`), the only ones in the translated W3D code. A raw animation carries its branch
+  (`HRawAnim::frame_rounding`, `with_frame_rounding`; `HAnim::frame_rounding`, `set_frame_rounding`), `Win32Fistp`
+  after loading, so the model viewer (`ModelScene`) and the drawables, which both get their animations from the asset
+  manager's loader, sample as the game did. `Get_Visibility`'s `(int)frame` is a C cast and still truncates.
+- **The differential** (`tests/differential_w3d.rs`, section 13): `build.rs` now compiles `htree.cpp` and `hrawanim.cpp`
+  as copies whose `Float_To_Long` calls (1 and 3, asserted) go through `Ref_W3D_Float_To_Long` in `wrap_w3d.cpp`, which
+  is either `WWMath::Float_To_Long` itself or the `flds`/`fistpl` pair, chosen at run time. Each Rust branch runs
+  against its C++ counterpart on the same 6,000 files and scripts. Portable: 66,396 of 121,232 ops compared, 0
+  mismatches, max ULP 0 (as recorded for #10). Win32: 67,413 compared, **0 mismatches, max ULP 0**; `FloatToInt`
+  stops fall from 410 to 247 (none left in the raw fast path). The conversion alone, against a real x87 `fistp`
+  (every tie `k + 0.5` for `|k| <= 4096` with its neighbours, values around +-2^31, the specials and 2^20 random bit
+  patterns): 1,081,413 compared, 0 mismatches.
+- **The earlier crash** (#10's planted bug: with rounding, the C++ crashed where the Rust went on), investigated. It
+  does not recur with the branches matched, and no crossed run crashed here either (2,244 and 2,193 mismatching files).
+  It was a comparison of two branches, not a defect of either: the ops a crossed run sends the C++ undefined are 147
+  NaN or out-of-range raw frames (defined under `fistp`) and 28 frame-dependent undefined reads and writes of
+  `motchan.h` (an overlong channel vector written past its `Vector3` or `Matrix3D`, a 3-float quaternion read as 4)
+  that occur only at frames inside the channel, so a different frame moves them. Not a negative index: rounding's
+  frame -1 and `i32::MIN` fall below every `FirstFrame` and give the identity in both languages. Nothing was changed in
+  behaviour; the exclusions are counted in the test's printed line.
+- *Predictions before the runs* (in each test's doc), and the results: frame 2.3 samples keys 2 and 3 at ratio
+  0.29999995 under Win32 (X = 28.0) and keys 1 and 2 at 1.2999999 under the portable branch (X = 49.0, an
+  extrapolation): held. The fast path shows frame 2 at 1.5 and 2.5 (ties to even), 0 at 2.6 (past the end) under
+  Win32, 1, 2 and 2 under truncation: held. On a synthetic 30-key sway of amplitude 10, the interpolated pose differs by
+  at most 0.212 predicted, **0.2105 measured** (at frame 8.48); the fast path by one key step, 2.09 predicted,
+  **2.0791 measured: a miss** (the largest step over integer keys is at `cos(pi/30)`, not 1). The demo robot's arm at
+  frame 1.25: yaw 33.75 degrees under Win32, 56.25 under truncation: held. The differential's 0 mismatches: held.
+- **Gates (2026-11-06):** lib tests 943 pass; differential W3D 27 pass (25 plus the Win32 run and the `fistp` check);
+  client tests 23 pass; clippy clean; web build OK; gate (a) identical over 300 frames native and wasm (last CRC
+  `0bf44067`).
+- **Not done:** the other four Win32 branches of `wwmath.h` (`Sin`, `Cos`, `Sqrt`, `Inv_Sqrt` on the x87) are still the
+  portable ones in the client; a real Zero Hour animation was not compared (no game files here).
+
 **#12 (2026-11-05, GitHub #12): the control bar from the game's own files.**
 - **Translated** (engine crate, plain Rust):
   - `client::image` (Image.cpp, INIMappedImage.cpp): `MappedImage` blocks (`Texture`, `TextureWidth`/`Height`,

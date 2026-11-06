@@ -423,6 +423,7 @@ pub fn model_parts(model: &RenderModel) -> Result<Vec<Part>, String> {
 mod tests {
     use super::*;
     use bevy::mesh::VertexAttributeValues;
+    use rts_lockstep_engine::ww::wwmath::FloatToLongMode;
 
     /// Predictions, written before the first run, for the generated robot:
     /// - the scene loads the HLOD with 3 meshes, 1 skin, 0 not drawn, 1 of 1 texture (the checker, from
@@ -483,6 +484,24 @@ mod tests {
         scene.frame = 0.0;
         scene.advance(125.0).unwrap();
         assert!((scene.frame - 0.5).abs() < 1e-6);
+
+        // #19: the client samples raw animations with the shipped Win32 `Float_To_Long` (`fistp`, round to nearest),
+        // the loader's default. Predictions: at frame 1.25 Win32 interpolates keys 1 and 2 (-45 and 0 degrees) a quarter
+        // of the way, a yaw of magnitude 33.75 degrees; the portable truncation would take keys 0 and 1 at ratio 1.25
+        // and slerp past key 1, to 56.25 degrees (within 0.1 each).
+        let anim = scene.anim.as_ref().unwrap();
+        assert_eq!(anim.frame_rounding(), Some(FloatToLongMode::Win32Fistp));
+        let yaw = |s: &ModelScene| {
+            let m = s.model.bone_transform(2).unwrap();
+            m[0][2].atan2(m[0][0]).to_degrees().abs()
+        };
+        scene.frame = 1.25;
+        scene.advance(0.0).unwrap();
+        assert!((yaw(&scene) - 33.75).abs() < 0.1, "{}", yaw(&scene));
+        scene.anim.as_mut().unwrap().set_frame_rounding(FloatToLongMode::PortableTruncate);
+        scene.frame = 1.25;
+        scene.advance(0.0).unwrap();
+        assert!((yaw(&scene) - 56.25).abs() < 0.1, "{}", yaw(&scene));
     }
 
     /// Predictions: the quad of `MeshSpec::quad` (SRCALPHA/INVSRCALPHA, textured) is an alpha-blended material whose

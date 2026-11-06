@@ -46,9 +46,14 @@
 //! `WWMath::Float_To_Long(frame)` (0 at or past `NumFrames`), without
 //! interpolation, reading the channels directly
 //! (`Get_Vector_As_Quat` for the orientation); `Translate(trans)` when
-//! `ScaleFactor` is 1. `Float_To_Long` is the portable truncation here;
+//! `ScaleFactor` is 1. ~~`Float_To_Long` is the portable truncation here;
 //! the shipped game's `fistp` rounds to nearest, so it shows frame
-//! `round(frame)` where this shows `floor(frame)` (see [`super::hanim`]).
+//! `round(frame)` where this shows `floor(frame)` (see [`super::hanim`]).~~
+//! **Corrected 2026-11-06 (#19):** `Float_To_Long` is the animation's
+//! branch ([`super::hanim::HRawAnim::frame_rounding`]): by default the
+//! shipped game's `fistp`, frame `round(frame)` (ties to even: 1.5 and
+//! 2.5 both show frame 2); the portable truncation, `floor(frame)` for
+//! non-negative frames, on request (see [`super::hanim`]).
 //!
 //! # Upstream quirks that are kept (pose updates)
 //!
@@ -123,9 +128,8 @@ use super::assetmgr::HAnim;
 use super::hanim::HRawAnim;
 use super::hmorphanim::PoseLookup;
 use super::w3d_file::*;
-use super::{f32_to_i32, W3dError, W3dResult, W3dUndefined};
+use super::{W3dError, W3dResult, W3dUndefined};
 use crate::ww::chunkio::ChunkLoad;
-use crate::ww::wwmath;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::quat::{build_matrix3d, fast_slerp, Quaternion};
 use crate::ww::vector3::Vector3;
@@ -305,9 +309,9 @@ impl HTree {
     pub fn anim_update_raw(&mut self, root: &Matrix3D, motion: &HRawAnim, frame: f32) -> W3dResult<()> {
         self.begin_update(root)?;
         let num_anim_pivots = motion.get_num_pivots();
-        // Get integer frame (WWMath::Float_To_Long, a 32-bit long)
-        f32_to_i32(frame)?;
-        let mut iframe = wwmath::float_to_long(frame);
+        // Get integer frame (WWMath::Float_To_Long, a 32-bit long, in the
+        // animation's branch: #19)
+        let mut iframe = motion.float_to_long(frame)?;
         if iframe >= motion.get_num_frames() {
             iframe = 0;
         }
@@ -647,6 +651,7 @@ mod tests {
 
     use crate::formats::w3d::assetmgr::HAnim;
     use crate::formats::w3d::hanim::tests::raw_anim;
+    use crate::formats::w3d::hanim::FloatToLongMode;
     use crate::formats::w3d::hmorphanim::NoPoses;
 
     /// Two pivots: the root, and pivot 1 at (1, 0, 0) under it.
@@ -680,7 +685,7 @@ mod tests {
     /// translation, rotation equal within 2e-7.
     #[test]
     fn two_pivot_anim_update() {
-        let anim = HAnim::Raw(raw_anim());
+        let anim = HAnim::Raw(raw_anim().with_frame_rounding(FloatToLongMode::PortableTruncate));
         let mut t = two_pivots();
         t.anim_update(&Matrix3D::IDENTITY, &anim, &NoPoses, 2.0).unwrap();
         let m = t.get_transform(1).unwrap();
@@ -701,6 +706,91 @@ mod tests {
         for (x, y) in bm.to_array().iter().zip(m.to_array().iter()) {
             assert!((x - y).abs() < 2e-7, "{bm:?}");
         }
+    }
+
+    /// #19, the raw fast path (one integer frame, `Float_To_Long(frame)`) on
+    /// `raw_anim` (X = 0, 10, 40; 3 frames) under pivot 1's base offset
+    /// (1, 0, 0). Predictions, written before the run (pivot 1's x, Win32
+    /// / portable): frame 1.6 -> frame 2 / 1: 41 / 11; frame 1.5 (a tie,
+    /// to even) -> 2 / 1: 41 / 11; frame 0.5 (a tie) -> 0 / 0: 1 / 1;
+    /// frame 2.5 (a tie) -> 2 / 2: 41 / 41; frame 2.6 -> 3, past the end so
+    /// frame 0 / 2: 1 / 41. A NaN frame: Win32's integer indefinite is
+    /// below every channel: the identity, x = 1; portable: undefined.
+    #[test]
+    fn raw_fast_path_rounds_or_truncates() {
+        let win = raw_anim();
+        let port = raw_anim().with_frame_rounding(FloatToLongMode::PortableTruncate);
+        let x = |a: &crate::formats::w3d::hanim::HRawAnim, f: f32| -> W3dResult<f32> {
+            let mut t = two_pivots();
+            t.anim_update_raw(&Matrix3D::IDENTITY, a, f)?;
+            Ok(t.get_transform(1)?.get_translation().x)
+        };
+        for (f, ew, ep) in [(1.6f32, 41.0f32, 11.0f32), (1.5, 41.0, 11.0), (0.5, 1.0, 1.0), (2.5, 41.0, 41.0), (2.6, 1.0, 41.0)] {
+            assert_eq!(x(&win, f).unwrap(), ew, "Win32, frame {f}");
+            assert_eq!(x(&port, f).unwrap(), ep, "portable, frame {f}");
+        }
+        assert_eq!(x(&win, f32::NAN).unwrap(), 1.0);
+        assert_eq!(x(&port, f32::NAN), Err(W3dUndefined::FloatToInt.into()));
+    }
+
+    /// #19, the visible difference. A synthetic 30-frame raw animation,
+    /// pivot 1's X keys `10 sin(2 pi k / 30)` (a sway of amplitude 10),
+    /// played through `Anim_Update` (the interpolating path the client
+    /// uses) at every 1/64 frame from 0 to 29, and through the raw fast
+    /// path. Predictions, written before the run: between keys the portable
+    /// branch extrapolates the previous pair (`ratio = 1 + phi` for a
+    /// fraction `phi` below 0.499999), Win32 interpolates the current one;
+    /// for any keys the two differ by `phi` times the second difference
+    /// `X(k+1) - 2 X(k) + X(k-1)`, at most `20 (1 - cos(2 pi / 30)) =
+    /// 0.437` here, so the largest delta is `31/64 * 0.437 = 0.212` (within
+    /// 0.005), about 2 % of the amplitude, at the sway's extremes. The
+    /// fast path shows `X(round(t))` against `X(floor(t))`: at most one
+    /// key step, `20 sin(pi / 30) = 2.09` (within 0.01). Past frame 29
+    /// (looping) Win32 interpolates towards frame 0 and the portable branch
+    /// extrapolates; not measured here.
+    ///
+    /// Results (2026-11-06): interpolated max |dx| 0.2105 at frame
+    /// 8.484375 (predicted 0.212: hit). Fast path 2.0791: **prediction
+    /// missed** (2.09 within 0.01). The step `X(k+1) - X(k)` is `20
+    /// sin(pi/30) cos(2 pi (k + 1/2) / 30)`, whose largest value over
+    /// *integer* `k` is at `k = 0` with `cos(pi / 30) = 0.9945`, not 1:
+    /// 2.0791. The assertion is that corrected value.
+    #[test]
+    fn rounding_pose_difference() {
+        use crate::formats::w3d::motchan::MotionChannel;
+        use crate::formats::w3d::w3d_file::ANIM_CHANNEL_X;
+        let mut a = raw_anim();
+        a.num_frames = 30;
+        let data: Vec<f32> = (0..30).map(|k| 10.0 * crate::ww::wwmath::sin(2.0 * crate::ww::wwmath::WWMATH_PI * k as f32 / 30.0)).collect();
+        let x = MotionChannel { pivot_idx: 1, type_: ANIM_CHANNEL_X, vector_len: 1, first_frame: 0, last_frame: 29, data };
+        let m = a.node_motion.get_mut(&1).unwrap();
+        m.x = Some(x);
+        m.q = None;
+        let win = HAnim::Raw(a.clone());
+        let port = HAnim::Raw(a.clone().with_frame_rounding(FloatToLongMode::PortableTruncate));
+        let pos = |anim: &HAnim, f: f32| -> f32 {
+            let mut t = two_pivots();
+            t.anim_update(&Matrix3D::IDENTITY, anim, &NoPoses, f).unwrap();
+            t.get_transform(1).unwrap().get_translation().x
+        };
+        let fast = |anim: &HAnim, f: f32| -> f32 {
+            let HAnim::Raw(r) = anim else { unreachable!() };
+            let mut t = two_pivots();
+            t.anim_update_raw(&Matrix3D::IDENTITY, r, f).unwrap();
+            t.get_transform(1).unwrap().get_translation().x
+        };
+        let (mut max, mut at, mut max_fast) = (0.0f32, 0.0f32, 0.0f32);
+        for i in 0..=29 * 64 {
+            let f = i as f32 / 64.0;
+            let d = (pos(&win, f) - pos(&port, f)).abs();
+            if d > max {
+                (max, at) = (d, f);
+            }
+            max_fast = max_fast.max((fast(&win, f) - fast(&port, f)).abs());
+        }
+        println!("#19 pose difference: interpolated max |dx| = {max} at frame {at}; fast path max |dx| = {max_fast}");
+        assert!((max - 0.212).abs() < 0.005, "{max} at {at}");
+        assert!((max_fast - 2.0791).abs() < 0.001, "{max_fast}");
     }
 
     /// Predictions: the base pose puts pivot 1 at (1, 0, 0) under a root at

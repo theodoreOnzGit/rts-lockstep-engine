@@ -21,6 +21,8 @@
 //! raw, compressed and morph animations (`hrawanim.cpp`, `hcanim.cpp`,
 //! `hmorphanim.cpp`), the hierarchy updates (`htree.cpp`, `pivot.cpp`) and
 //! `Fast_Slerp` (`quat.cpp`), driven by `differential/wrap_w3d_eval.cpp`,
+//! in both branches of `WWMath::Float_To_Long` (the portable truncation and
+//! the shipped Win32 `fistp`, each side in the same one; #19),
 //! and (section 14) the render side: `ShaderClass::Apply`,
 //! `Get_SS_Category` and `Guess_Sort_Level` (`shader.cpp`) on a recording
 //! device (`differential/wrap_w3d_shader.cpp`), and the skin deformation
@@ -55,6 +57,7 @@ mod support;
 use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::for_each_w3d_struct;
 use rts_lockstep_engine::formats::w3d::hanim::*;
+use rts_lockstep_engine::ww::wwmath::FloatToLongMode;
 use rts_lockstep_engine::formats::w3d::htree::{self, HTree};
 use rts_lockstep_engine::formats::w3d::motchan::*;
 use rts_lockstep_engine::formats::w3d::w3d_file::*;
@@ -3843,8 +3846,9 @@ impl PoseLookup for EvalWorld {
     }
 }
 
-/// The loading half of `ref_w3d_eval`, in Rust.
-fn rust_eval_load(data: &[u8]) -> W3dResult<(Log, EvalWorld)> {
+/// The loading half of `ref_w3d_eval`, in Rust; the raw animations sample
+/// with `mode`'s `Float_To_Long` (#19).
+fn rust_eval_load(data: &[u8], mode: FloatToLongMode) -> W3dResult<(Log, EvalWorld)> {
     let mut log = vec![b'L'];
     let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new() };
     let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
@@ -3860,7 +3864,7 @@ fn rust_eval_load(data: &[u8]) -> W3dResult<(Log, EvalWorld)> {
             W3D_CHUNK_ANIMATION => {
                 let a = HRawAnim::load_w3d(&mut c, &mut lookup)?;
                 log.extend_from_slice(&[1, u8::from(a.is_none())]);
-                w.anims.extend(a.map(|a| (HAnim::Raw(a), 0)));
+                w.anims.extend(a.map(|a| (HAnim::Raw(a.with_frame_rounding(mode)), 0)));
             }
             W3D_CHUNK_COMPRESSED_ANIMATION => {
                 let a = HCompressedAnim::load_w3d(&mut c, &mut lookup)?;
@@ -4505,14 +4509,134 @@ fn ev_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
 /// the start instead of with upstream's double-counted delta gives 506
 /// mismatching files; rounding raw frames to nearest (the shipped game's
 /// `fistp`) instead of the portable truncation makes the C++ reach a crash
-/// the Rust no longer predicts. Debugging: `W3D_CASE=<n>` prints a case's
+/// the Rust no longer predicts. **Corrected 2026-11-06 (#19):** that
+/// was a Rust branch compared with a different C++ branch. The Rust now
+/// has both branches ([`FloatToLongMode`]), and the C++ both too
+/// (`build.rs`, `wrap_w3d.cpp`): this test runs the portable pair,
+/// [`animation_evaluation_win32_matches_upstream`] the Win32 pair, and the
+/// crash is explained there. Debugging: `W3D_CASE=<n>` prints a case's
 /// animations and ops, `W3D_TRACE` every case's file and script.
 #[test]
 fn animation_evaluation_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    animation_evaluation(FloatToLongMode::PortableTruncate);
+}
+
+/// Restores the C++ `Float_To_Long` branch to the portable one (0) when a
+/// test that changed it ends, panicking or not.
+struct CppFloatToLongMode;
+
+impl CppFloatToLongMode {
+    fn set(mode: FloatToLongMode) -> Self {
+        let m = match mode {
+            FloatToLongMode::PortableTruncate => 0,
+            FloatToLongMode::Win32Fistp => 1,
+        };
+        unsafe { cpp::ref_w3d_set_float_to_long_mode(m) };
+        CppFloatToLongMode
+    }
+}
+
+impl Drop for CppFloatToLongMode {
+    fn drop(&mut self) {
+        unsafe { cpp::ref_w3d_set_float_to_long_mode(0) };
+    }
+}
+
+/// Section 13 again (#19) with the shipped Win32 `Float_To_Long` on both
+/// sides: the Rust's [`FloatToLongMode::Win32Fistp`] (the client's
+/// default) against the same compiled upstream `hrawanim.cpp` and
+/// `htree.cpp`, whose `Float_To_Long` calls now run the `fld`/`fistp` pair
+/// itself (see `build.rs` and `wrap_w3d.cpp`). Same seed, so the same files
+/// and scripts as [`animation_evaluation_matches_upstream`].
+///
+/// Predicted before the run: 0 mismatches. Fewer scripts stop at
+/// `FloatToInt`, because NaN and out-of-range frames of *raw* animations
+/// are defined under `fistp` (the integer indefinite); the compressed
+/// animations' `uint32` casts stay undefined, so `FloatToInt` does not
+/// vanish. The earlier finding (#10, the planted bug above: the C++
+/// reached a crash the Rust did not predict) is expected not to recur:
+/// it is a property of comparing two different branches, not of either.
+///
+/// Results (2026-11-06): 6,000 files, all run (2,609 tame scripts to the
+/// end), 67,413 of 121,232 ops compared (portable: 66,396), **0
+/// mismatches, max ULP 0**. Scripts stopped at undefined upstream: 3,007
+/// (portable 3,037), `FloatToInt` 247 (portable 410; none left in op 6,
+/// the raw fast path, which only converts through `Float_To_Long`; the
+/// rest are `Get_Visibility`'s `(int)frame` and the compressed channels'
+/// `uint32`). Predictions hit.
+///
+/// The earlier finding, investigated (#19). No crash recurs with the
+/// branches matched, and none occurred in either *crossed* run either
+/// (Rust Win32 against C++ portable: 2,244 of 6,000 files mismatch, 2,245
+/// when run after the portable test in the same process;
+/// Rust portable against C++ Win32: 2,193), measured with a temporary
+/// hook, not kept. What a crossed run sends the C++ was counted by also
+/// running the Rust in the C++'s branch over the same prefix: ops the
+/// Rust's own branch found defined but the other branch finds undefined
+/// are 147 `FloatToInt` (NaN and out-of-range raw frames: defined under
+/// `fistp`, C++-undefined `(long)f` under truncation, which x86-64 happens
+/// to turn into 0, no crash) and 26 `IndexOutOfRange` and 2
+/// `UninitialisedRead` (Rust Win32 against C++ portable; the other way, 20
+/// and 1). Those are the
+/// frame-dependent undefined ops of `motchan.h`: a channel whose vector is
+/// longer than its slot writes past the `Vector3` or `Matrix3D` on the
+/// stack, and a 3-float quaternion is read as 4 (`Get_Vector_As_Quat`, or
+/// `Get_Transform`'s uninitialised `vals[3]`), but only at frames inside
+/// the channel; outside it the identity is written. A different branch
+/// samples a different frame, so the C++ ran such ops at frames the Rust
+/// had checked at another frame; a stack overrun of that kind is the
+/// likely crash of the #10 planted run. It is not a negative or
+/// out-of-range index: rounding's frame -1 and the indefinite `i32::MIN`
+/// fall below every channel's `FirstFrame` and give the identity, in both
+/// languages. With the branches matched, each of those ops is reported
+/// undefined by the Rust (the kinds above) and never sent: nothing is
+/// changed in behaviour, and the exclusion is counted in the printed line.
+#[test]
+fn animation_evaluation_win32_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _m = CppFloatToLongMode::set(FloatToLongMode::Win32Fistp);
+    animation_evaluation(FloatToLongMode::Win32Fistp);
+}
+
+/// `WWMath::Float_To_Long(float)`'s Win32 branch (#19): the Rust's
+/// integer-only [`wwmath::float_to_long_fistp`] against a real x87
+/// `fld`/`fistp` (`ref_w3d_float_to_long` in mode 1), on every tie `k +
+/// 0.5` for `|k| <= 4096`, the neighbours of each, values around +-2^31,
+/// the specials (zeros, subnormals, infinities, NaNs) and 2^20 random bit
+/// patterns. Predicted before the run: 0 mismatches.
+#[test]
+fn float_to_long_fistp_matches_x87() {
+    use rts_lockstep_engine::ww::wwmath;
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _m = CppFloatToLongMode::set(FloatToLongMode::Win32Fistp);
+    let mut c = Check::new("WWMath::Float_To_Long (Win32 fld/fistp)");
+    let mut xs: Vec<f32> = vec![0.0, -0.0, f32::MIN_POSITIVE, -f32::MIN_POSITIVE, f32::from_bits(1), f32::INFINITY, f32::NEG_INFINITY, f32::NAN, -f32::NAN, f32::MAX, f32::MIN];
+    for k in -4096i32..=4096 {
+        let t = k as f32 + 0.5;
+        xs.extend([t, f32::from_bits(t.to_bits() - 1), f32::from_bits(t.to_bits() + 1), k as f32]);
+    }
+    for e in [2_147_483_648.0f32, -2_147_483_648.0, 2_147_483_520.0, -2_147_483_520.0, 8_388_608.0, 16_777_216.0] {
+        for d in -4i32..=4 {
+            xs.push(f32::from_bits((e.to_bits() as i32 + d) as u32));
+        }
+    }
+    let mut g = Gen::new(0xF157);
+    for _ in 0..1 << 20 {
+        xs.push(f32::from_bits(g.u32()));
+    }
+    for x in xs {
+        c.eq(i64::from(wwmath::float_to_long_fistp(x)), unsafe { cpp::ref_w3d_float_to_long(x) }, || format!("x = {x:e} ({:#010x})", x.to_bits()));
+    }
+    c.finish();
+}
+
+/// Section 13 in the given `Float_To_Long` branch; the C++ side must have
+/// been set to the same one.
+fn animation_evaluation(mode: FloatToLongMode) {
     let mut g = Gn { g: Gen::new(0xE7A1), clean: true };
     let mut tame_full = 0u64;
-    let mut check = Check::new("W3D animation evaluation (motchan, hrawanim, hcanim, hmorphanim, htree)");
+    let mut check = Check::new(&format!("W3D animation evaluation (motchan, hrawanim, hcanim, hmorphanim, htree), {mode:?}"));
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let mut load_excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut files, mut ops_run, mut ops_total) = (0u64, 0u64, 0u64);
@@ -4521,7 +4645,7 @@ fn animation_evaluation_matches_upstream() {
     for case in 0..CASES {
         g.clean = case % 2 == 0;
         let data = ev_file(&mut g);
-        let (mut log, mut w) = match rust_eval_load(&data) {
+        let (mut log, mut w) = match rust_eval_load(&data, mode) {
             Ok(x) => x,
             Err(e) => {
                 *load_excluded.entry(format!("{e:?}")).or_default() += 1;
@@ -4589,7 +4713,7 @@ fn animation_evaluation_matches_upstream() {
         files += 1;
     }
     println!(
-        "animation evaluation: {CASES} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=11: {:?}); \
+        "animation evaluation ({mode:?}): {CASES} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=11: {:?}); \
          files excluded (loading undefined): {load_excluded:?}; scripts stopped at (undefined upstream): {} {excluded:?}",
         &per_op[1..],
         excluded.values().sum::<u64>()

@@ -14,7 +14,9 @@
 **   WWMath/quat.cpp       Fast_Slerp
 ** all COMPILED from upstream's files: motchan.cpp, htree.cpp, hrawanim.cpp,
 ** hcanim.cpp, pivot.cpp and quat.cpp in the upstream_w3d library
-** (wrap_w3d.cpp, with its MSVC-scope edits, see build.rs), the morph
+** (wrap_w3d.cpp, with its MSVC-scope edits, see build.rs; htree.cpp's and
+** hrawanim.cpp's Float_To_Long calls go through wrap_w3d.cpp's
+** Ref_W3D_Float_To_Long, either branch, #19), the morph
 ** functions as verbatim segments of hmorphanim.cpp in upstream_w3d_morph
 ** (morph_def.cpp, see build.rs), matrix3d.cpp and the WWMath tables in
 ** upstream_wwmath. This file only drives them; nothing of the evaluation is

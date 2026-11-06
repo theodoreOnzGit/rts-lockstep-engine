@@ -31,6 +31,11 @@
 //! | `Inv_Sqrt` | `1.0f / (float)sqrt(val)` | a hand-written x87 Newton iteration |
 //! | `Float_To_Long` | `(long) f` (truncate) | `fld`/`fistp` (round to nearest) |
 //!
+//! **Corrected 2026-11-06 (#19):** `Float_To_Long(float)` now has both
+//! branches ([`float_to_long`], [`float_to_long_fistp`], chosen by
+//! [`FloatToLongMode`]); the W3D animation evaluation uses the Win32 one by
+//! default. The logic calls neither.
+//!
 //! `Sqrt` agrees between the two up to x87 exponent-range effects (both round
 //! the exact root to 24 bits under the game's `_PC_24` mode). The other four
 //! differ in their results, which matters only for the (separate, not
@@ -199,6 +204,64 @@ pub fn inv_sqrt(val: f32) -> f32 {
 #[inline]
 pub fn float_to_long(f: f32) -> i32 {
     f as i32
+}
+
+/// `WWMath::Float_To_Long(float)`, MSVC x86 branch (the shipped Win32
+/// game): `fld [f]; fistp [i]` into a 32-bit `long`.
+///
+/// `fistp` rounds by the x87 control word's rounding field. The game sets it
+/// to round-to-nearest (`setFPMode`, GameLogic.cpp: `_RC_NEAR`, with
+/// `_RC_CHOP` commented out, and `_PC_24`, which does not affect `fistp`)
+/// after `_fpreset()`, which leaves every exception masked. So the result is
+/// `f` rounded to the nearest integer, ties to even (`0.5 -> 0`, `1.5 -> 2`,
+/// `-2.5 -> -2`), and, for a NaN, an infinity or a rounded value outside
+/// `i32`, the masked invalid-operation response: the *integer indefinite*
+/// `0x8000_0000` (`i32::MIN`). That is the hardware's defined result, not
+/// C++ undefined behaviour, so it is returned, not reported.
+///
+/// Computed exactly with integer operations and one exact subtraction (no
+/// float function), so native and wasm give the same bits. Checked against
+/// a real `fistp` in `tests/differential_w3d.rs`.
+pub fn float_to_long_fistp(f: f32) -> i32 {
+    const INDEFINITE: i32 = i32::MIN;
+    // |f| >= 2^31 (or NaN): a rounded value outside i32, except -2^31
+    // itself, which fits.
+    if f.is_nan() {
+        return INDEFINITE;
+    }
+    if !(-2_147_483_648.0f32..2_147_483_648.0f32).contains(&f) {
+        return INDEFINITE;
+    }
+    // In range, `as` truncates exactly; f - t is the exact fraction
+    // (|f| < 2^31 and t has the same sign and no more significant bits).
+    let t = f as i64;
+    let frac = f - t as f32;
+    let r = if frac > 0.5f32 || (frac == 0.5f32 && t & 1 != 0) {
+        t + 1
+    } else if frac < -0.5f32 || (frac == -0.5f32 && t & 1 != 0) {
+        t - 1
+    } else {
+        t
+    };
+    if r > i64::from(i32::MAX) || r < i64::from(i32::MIN) {
+        INDEFINITE
+    } else {
+        r as i32
+    }
+}
+
+/// Which branch of `WWMath::Float_To_Long(float)` a caller evaluates with
+/// (GitHub #19). The logic never calls it; the client's W3D animation
+/// evaluation does (`hrawanim.cpp`, `HTreeClass::Anim_Update`'s raw fast
+/// path), where the two branches show different poses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatToLongMode {
+    /// The MSVC x86 branch the shipped Win32 game ran: `fistp`, round to
+    /// nearest even ([`float_to_long_fistp`]).
+    Win32Fistp,
+    /// The portable branch: `(long) f`, a truncation ([`float_to_long`]);
+    /// undefined in C++ outside a 32-bit `long`.
+    PortableTruncate,
 }
 
 /// `WWMath::Float_To_Long(double)` (portable branch: `(long) f`).
@@ -492,6 +555,51 @@ pub fn is_valid_double(x: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Float_To_Long`'s two branches (#19). Predictions, written before the
+    /// run: `fistp` under round-to-nearest rounds ties to even (0.5 -> 0,
+    /// 1.5 -> 2, 2.5 -> 2, -0.5 -> 0, -1.5 -> -2, -2.5 -> -2), other values
+    /// to the nearest (2.3 -> 2, 2.7 -> 3, -2.7 -> -3, 1.800001 -> 2, the
+    /// largest float below 0.5 -> 0); -2^31 fits; 2^31, the infinities and
+    /// NaN give the integer indefinite `i32::MIN`; the largest float below
+    /// 2^31 (2147483520) is itself. The portable branch truncates: 2.7 ->
+    /// 2, -2.7 -> -2, 1.5 -> 1.
+    #[test]
+    fn float_to_long_branches() {
+        let below_half = f32::from_bits(0.5f32.to_bits() - 1);
+        for (f, e) in [
+            (0.5f32, 0),
+            (1.5, 2),
+            (2.5, 2),
+            (3.5, 4),
+            (-0.5, 0),
+            (-1.5, -2),
+            (-2.5, -2),
+            (2.3, 2),
+            (2.7, 3),
+            (-2.7, -3),
+            (1.800_001, 2),
+            (below_half, 0),
+            (-below_half, 0),
+            (0.0, 0),
+            (-0.0, 0),
+            (f32::MIN_POSITIVE, 0),
+            (-2_147_483_648.0, i32::MIN),
+            (2_147_483_520.0, 2_147_483_520),
+            (-2_147_483_520.0, -2_147_483_520),
+            (8_388_609.0, 8_388_609),
+            (2_147_483_648.0, i32::MIN),
+            (-2_147_483_904.0, i32::MIN),
+            (f32::INFINITY, i32::MIN),
+            (f32::NEG_INFINITY, i32::MIN),
+            (f32::NAN, i32::MIN),
+        ] {
+            assert_eq!(float_to_long_fistp(f), e, "fistp({f:e})");
+        }
+        assert_eq!(float_to_long(2.7), 2);
+        assert_eq!(float_to_long(-2.7), -2);
+        assert_eq!(float_to_long(1.5), 1);
+    }
 
     #[test]
     fn is_valid_double_cases() {

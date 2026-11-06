@@ -1,8 +1,11 @@
 /* Differential-test wrapper for the W3D readers (upstream commit 0a05454d):
 **   WWLib/chunkio.cpp                    (compiled unchanged)
 **   WW3D2/htree.cpp, WW3D2/motchan.cpp   (copies with MSVC-scope edits, see build.rs)
-**   WW3D2/hrawanim.cpp, WW3D2/hcanim.cpp, WW3D2/pivot.cpp, WWMath/quat.cpp
+**   WW3D2/hcanim.cpp, WW3D2/pivot.cpp, WWMath/quat.cpp
 **                                        (compiled unchanged)
+**   WW3D2/hrawanim.cpp                   (a copy whose Float_To_Long calls
+**                                        go through Ref_W3D_Float_To_Long,
+**                                        below; see build.rs, #19)
 ** with differential/shim_w3d/w3d_prelude.h force-included (see that file for
 ** each stand-in) and the real WW3D2/w3d_file.h.
 **
@@ -125,6 +128,32 @@ static size_t array_bytes(const void *p)
 }
 
 /* For differential/wrap_texture.cpp: the registry, switched on and read. */
+/* #19: the branch of WWMath::Float_To_Long(float) that htree.cpp's raw
+** fast path and hrawanim.cpp's samplers use (their copies call this; see
+** build.rs). 0: the portable branch, WWMath::Float_To_Long itself (`(long)
+** f`; g++ is not _MSC_VER). 1: the MSVC x86 branch the shipped game ran,
+** `fld [f]` / `fistp [i]` into a 32-bit long, as the same two instructions.
+** On x86_64 Linux the x87 control word is the default 0x037F: rounding to
+** nearest even, all exceptions masked, so a NaN or out-of-range value
+** stores the integer indefinite 0x80000000 -- the setting the game's
+** setFPMode (GameLogic.cpp) chooses too (_RC_NEAR after _fpreset; its
+** _PC_24 does not affect fistp). */
+static int g_float_to_long_mode = 0;
+extern "C" void ref_w3d_set_float_to_long_mode(int mode) { g_float_to_long_mode = mode; }
+long Ref_W3D_Float_To_Long(float f)
+{
+	if (g_float_to_long_mode == 0)
+		return WWMath::Float_To_Long(f);
+	int32_t i;
+#if defined(__x86_64__) || defined(__i386__)
+	__asm__ volatile("flds %1\n\tfistpl %0" : "=m"(i) : "m"(f));
+#else
+#error "the Win32 Float_To_Long variant needs x87 (fld/fistp)"
+#endif
+	return (long)i;
+}
+extern "C" long long ref_w3d_float_to_long(float f) { return (long long)Ref_W3D_Float_To_Long(f); }
+
 extern "C" void ref_w3d_track_arrays(int on)
 {
 	std::lock_guard<std::mutex> l(reg_mutex());

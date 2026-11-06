@@ -60,16 +60,45 @@
 //!   [`AdaptiveDeltaMotionChannel`]); a missing channel gives 0 (identity
 //!   for the orientation).
 //!
-//! `Float_To_Long` is the portable branch of `wwmath.h` (`(long)f`, a
+//! ~~`Float_To_Long` is the portable branch of `wwmath.h` (`(long)f`, a
 //! truncation; see [`crate::ww::wwmath`]), as everywhere in this
-//! translation. **The shipped Win32 game differs here, visibly:** its
+//! translation.~~ **Corrected 2026-11-06 (#19):** `Float_To_Long` is
+//! chosen per raw animation ([`HRawAnim::frame_rounding`],
+//! [`FloatToLongMode`]), and the default after loading is the shipped Win32
+//! branch, `fld`/`fistp` under the game's round-to-nearest control word
+//! (`setFPMode`, GameLogic.cpp), ties to even
+//! ([`crate::ww::wwmath::float_to_long_fistp`]); the owner chose this
+//! (option 2 of #19) because the client draws what the game showed. The
+//! portable truncation stays available as
+//! [`FloatToLongMode::PortableTruncate`] ([`HRawAnim::with_frame_rounding`],
+//! [`super::assetmgr::HAnim::set_frame_rounding`]). The logic never samples
+//! animations, so the simulation is unchanged. The two differ as follows.
+//! **The shipped Win32 game differs here, visibly:** its
 //! `fistp` rounds to nearest, so it samples frames `round(frame - 0.5)`
 //! and `+1` with `ratio` in `[0, 1)`; the portable truncation gives `frame0
 //! = floor(frame) - 1` when the fraction is below 0.499999 (for `frame >=
 //! 1`), and then `ratio` in `[1, 1.5)`: the translation is *extrapolated*
 //! from the previous key pair, the orientation slerped past `q1`. Integer
 //! frames `N >= 1` come out as `lerp(v[N-1], v[N], 1)`, which can differ
-//! from `v[N]` in the last bit. Recorded, open for review (issue #10).
+//! from `v[N]` in the last bit. ~~Recorded, open for review (issue #10).~~
+//! **Corrected 2026-11-06 (#19):** decided as above. Measured on a
+//! synthetic sway of amplitude 10 (30 keys): the interpolated pose differs
+//! by up to 0.21 (2 %) between the branches, the raw fast path by up to
+//! one key step, 2.08 (`htree::tests::rounding_pose_difference`).
+//!
+//! Under `fistp` a NaN frame, or one whose rounding is outside `i32`, gives
+//! the x87 *integer indefinite* `i32::MIN` (invalid operation masked, as
+//! after the game's `_fpreset`): the hardware's defined result, so it is
+//! sampled (every channel gives its identity there: `i32::MIN` is below
+//! every `FirstFrame`), where the portable `(long)f` of such a frame is
+//! undefined ([`W3dUndefined::FloatToInt`]). Rounding also gives `-1`
+//! for slightly negative frames where truncation gave 0 (the sampling's
+//! `frame0` for frames in about `(-0.5, 0)`, the fast path's frame for
+//! `(-1, -0.5)`); that too is below every channel (`FirstFrame` is an
+//! unsigned 16-bit value), so upstream's range check gives the identity:
+//! defined in both branches.
+//! The `(int)frame` of `Get_Visibility` is a C cast, not `Float_To_Long`,
+//! and truncates in both branches.
 //!
 //! # Upstream quirks that are kept
 //!
@@ -108,7 +137,8 @@
 //! Sampling ([`W3dUndefined`]): a pivot index outside `0..NumNodes`
 //! ([`W3dUndefined::IndexOutOfRange`]), a frame whose integer conversion
 //! does not fit ([`W3dUndefined::FloatToInt`]: `(int)frame`, Win32's 32-bit
-//! `long`, or `uint32` for the compressed channels, so negative frames of a
+//! `long` **(only under [`FloatToLongMode::PortableTruncate`]; #19)**, or
+//! `uint32` for the compressed channels, so negative frames of a
 //! compressed animation), the uninitialised quaternion of raw
 //! `Get_Transform` ([`W3dUndefined::UninitialisedRead`]), and the channel
 //! cases of [`super::motchan`].
@@ -130,12 +160,12 @@ use std::collections::BTreeMap;
 
 use super::motchan::*;
 use super::w3d_file::*;
-use super::{c_string, f32_to_i32, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
+use super::{c_string, f32_to_i32, float_to_long, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::chunkio::ChunkLoad;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::quat::{build_matrix3d, fast_slerp, Quaternion};
 use crate::ww::vector3::Vector3;
-use crate::ww::wwmath;
+pub use crate::ww::wwmath::FloatToLongMode;
 
 /// A `Matrix3D` as its 12 floats, row-major (`mtx[r][c]` is `[4 * r + c]`),
 /// for `Get_Vector`'s pointer into it.
@@ -243,9 +273,27 @@ pub struct HRawAnim {
     /// `NodeMotion[i]` for the nodes that have a channel (the others have
     /// none).
     pub node_motion: BTreeMap<u32, NodeMotion>,
+    /// Not upstream's: which `WWMath::Float_To_Long` branch the sampling
+    /// (and `HTreeClass::Anim_Update`'s raw fast path) converts frames with
+    /// (GitHub #19). [`FloatToLongMode::Win32Fistp`], the shipped game's,
+    /// after loading; [`Self::with_frame_rounding`] chooses the portable
+    /// truncation instead.
+    pub frame_rounding: FloatToLongMode,
 }
 
 impl HRawAnim {
+    /// The same animation, sampled with `mode`'s `Float_To_Long`.
+    pub fn with_frame_rounding(mut self, mode: FloatToLongMode) -> Self {
+        self.frame_rounding = mode;
+        self
+    }
+
+    /// `WWMath::Float_To_Long(frame)` in this animation's branch (see
+    /// [`Self::frame_rounding`]).
+    pub fn float_to_long(&self, frame: f32) -> W3dResult<i32> {
+        float_to_long(frame, self.frame_rounding)
+    }
+
     /// `HRawAnimClass::Load_W3D(cload)`, inside the animation chunk.
     /// `Ok(None)` is upstream's `LOAD_ERROR`.
     pub fn load_w3d(cload: &mut ChunkLoad<'_>, htrees: &mut impl HTreeLookup) -> W3dResult<Option<Self>> {
@@ -274,6 +322,7 @@ impl HRawAnim {
             num_nodes,
             frame_rate: aheader.frame_rate as f32,
             node_motion: BTreeMap::new(),
+            frame_rounding: FloatToLongMode::Win32Fistp,
         };
         while cload.open_chunk()? {
             match cload.cur_chunk_id()? {
@@ -361,11 +410,8 @@ impl HRawAnim {
     /// The integer frames and ratio of the raw sampling (see the module
     /// docs): `frame0`, `frame1`, `ratio`.
     fn frames(&self, frame: f32) -> W3dResult<(i32, i32, f32)> {
-        // WWMath::Float_To_Long (portable branch, `(long) f`): undefined
-        // outside a 32-bit long, else `wwmath::float_to_long`
-        let f = frame - 0.499_999f32;
-        f32_to_i32(f)?;
-        let frame0 = wwmath::float_to_long(f);
+        // WWMath::Float_To_Long, in this animation's branch (#19)
+        let frame0 = self.float_to_long(frame - 0.499_999f32)?;
         let mut frame1 = frame0 + 1;
         let ratio = frame - frame0 as f32;
         if frame1 >= self.num_frames {
@@ -739,7 +785,15 @@ pub(crate) mod tests {
         node_motion.insert(1, NodeMotion { x: Some(x), q: Some(q), ..Default::default() });
         let mut h = [0u8; W3D_NAME_LEN];
         h[..3].copy_from_slice(b"SKL");
-        HRawAnim { name: name32(b"SKL.WALK"), hierarchy_name: h, num_frames: 3, num_nodes: 2, frame_rate: 30.0, node_motion }
+        HRawAnim {
+            name: name32(b"SKL.WALK"),
+            hierarchy_name: h,
+            num_frames: 3,
+            num_nodes: 2,
+            frame_rate: 30.0,
+            node_motion,
+            frame_rounding: FloatToLongMode::Win32Fistp,
+        }
     }
 
     /// Predictions (portable `Float_To_Long`, a truncation, of `frame -
@@ -751,7 +805,7 @@ pub(crate) mod tests {
     /// which wraps to 0: lerp(40, 0, 0.5) = 20. Node 0 has no channels: 0.
     #[test]
     fn raw_translation() {
-        let a = raw_anim();
+        let a = raw_anim().with_frame_rounding(FloatToLongMode::PortableTruncate);
         for (f, e) in [(0.0, 0.0), (0.25, 2.5), (1.0, 10.0), (1.25, 12.5), (1.75, 32.5), (2.5, 20.0)] {
             assert_eq!(a.get_translation(1, f).unwrap(), Vector3::new(e, 0.0, 0.0), "frame {f}");
         }
@@ -767,13 +821,49 @@ pub(crate) mod tests {
     /// and puts the translation 10 + 30 * 1 = 40 in `[0][3]`.
     #[test]
     fn raw_orientation_and_transform() {
-        let a = raw_anim();
+        let a = raw_anim().with_frame_rounding(FloatToLongMode::PortableTruncate);
         assert_eq!(a.get_orientation(1, 2.0).unwrap(), Quaternion::new(0.0, 0.0, S, S));
         let q = a.get_orientation(1, 1.75).unwrap();
         assert!((q.z - 0.555_570_2).abs() < 2e-4, "{q:?}");
         let m = a.get_transform(1, 2.0).unwrap();
         assert_eq!(m[0][3], 40.0);
         assert!((m[1][0] - 1.0).abs() < 1e-3 && m[0][0].abs() < 1e-3, "{m:?}");
+    }
+
+    /// #19: a raw animation sampled at frame 2.3 in each branch, with 10
+    /// frames so that frame 3 does not wrap (the X channel holds frames 0
+    /// to 2 only: 0, 10, 40; frame 3 is outside it, the identity 0).
+    /// Predictions, written before the run: the default after loading is
+    /// the Win32 `fistp`. `2.3 - 0.499999 = 1.800001`: Win32 rounds to 2,
+    /// so keys 2 and 3, ratio `2.3f - 2 = 0.29999995`, X = `40 + (0 - 40) *
+    /// 0.3` = 28.0 (within 1e-5); portable truncates to 1, keys 1 and 2,
+    /// ratio `2.3f - 1 = 1.2999999`, X = `10 + 30 * 1.3` = 49.0, an
+    /// extrapolation. At frame 2.0 both give key 2 exactly (40): Win32 with
+    /// ratio 0, portable with ratio 1. A NaN frame is the integer indefinite
+    /// under Win32 (frames `i32::MIN`, `i32::MIN + 1`, ratio NaN; outside
+    /// the channel, so X = 0 + 0 * NaN = NaN) and undefined under the
+    /// portable branch.
+    #[test]
+    fn frame_rounding_modes() {
+        let mut win = raw_anim();
+        win.num_frames = 10;
+        assert_eq!(win.frame_rounding, FloatToLongMode::Win32Fistp);
+        let port = win.clone().with_frame_rounding(FloatToLongMode::PortableTruncate);
+        assert_eq!(win.frames(2.3).unwrap(), (2, 3, 2.3f32 - 2.0));
+        assert_eq!(port.frames(2.3).unwrap(), (1, 2, 2.3f32 - 1.0));
+        let xw = win.get_translation(1, 2.3).unwrap().x;
+        let xp = port.get_translation(1, 2.3).unwrap().x;
+        assert!((xw - 28.0).abs() < 1e-5, "{xw}");
+        assert!((xp - 49.0).abs() < 1e-5, "{xp}");
+        assert_eq!(win.frames(2.0).unwrap(), (2, 3, 0.0));
+        assert_eq!(port.frames(2.0).unwrap(), (1, 2, 1.0));
+        assert_eq!(win.get_translation(1, 2.0).unwrap().x, 40.0);
+        assert_eq!(port.get_translation(1, 2.0).unwrap().x, 40.0);
+        let (a, b, r) = win.frames(f32::NAN).unwrap();
+        assert_eq!((a, b), (i32::MIN, i32::MIN + 1));
+        assert!(r.is_nan());
+        assert!(win.get_translation(1, f32::NAN).unwrap().x.is_nan());
+        assert_eq!(port.frames(f32::NAN), Err(W3dUndefined::FloatToInt.into()));
     }
 
     /// A time-coded compressed animation, X: (0, 0), (10, 5). Predictions:

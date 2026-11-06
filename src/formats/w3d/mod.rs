@@ -168,6 +168,23 @@ pub(crate) fn f32_to_i32(f: f32) -> W3dResult<i32> {
     }
 }
 
+/// `WWMath::Float_To_Long(f)` into an `int`, in the branch `mode` names
+/// (GitHub #19). The portable `(long) f` is undefined in C++ when the
+/// truncation does not fit the Win32 32-bit `long` (NaN included):
+/// [`W3dUndefined::FloatToInt`]. The Win32 `fistp` is defined for every
+/// input (the integer indefinite `i32::MIN` outside the range; see
+/// [`crate::ww::wwmath::float_to_long_fistp`]).
+pub(crate) fn float_to_long(f: f32, mode: crate::ww::wwmath::FloatToLongMode) -> W3dResult<i32> {
+    use crate::ww::wwmath::{self, FloatToLongMode};
+    match mode {
+        FloatToLongMode::Win32Fistp => Ok(wwmath::float_to_long_fistp(f)),
+        FloatToLongMode::PortableTruncate => {
+            f32_to_i32(f)?;
+            Ok(wwmath::float_to_long(f))
+        }
+    }
+}
+
 /// `(uint32)f`: defined when the truncation fits (so `-1 < f < 2^32`).
 pub(crate) fn f32_to_u32(f: f32) -> W3dResult<u32> {
     let d = f64::from(f);
