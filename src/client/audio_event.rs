@@ -36,8 +36,14 @@
 //!   initialised to 0 here (upstream leaves it uninitialised in the plain and positional constructors, where only the
 //!   owner type is then read) and copied whatever the owner type (upstream's copy constructor copies it only for an
 //!   object or a drawable).
-//! - **The logic generator** of a logical event is the client's own [`RandomValues::logic`] state, never the World's: the
-//!   client never changes the simulation (`AGENTS.md`). Upstream advances the logic's generator there.
+//! - ~~**The logic generator** of a logical event is the client's own [`RandomValues::logic`] state, never the World's: the
+//!   client never changes the simulation (`AGENTS.md`). Upstream advances the logic's generator there.~~
+//!   **Corrected 2026-11-06 (GitHub #50):** a logical event's `GameLogicRandomValue` draws are made by the **logic**, from
+//!   the World's generator, at the script action (`logic::logical_audio`), and their values come with the event
+//!   ([`AudioEventRts::logic_picks`]). Each draw here takes its value from there instead: the client plays the logic's
+//!   picks and reads no logic stream (the [`RandomValues::logic`] passed in is never touched). A logical event whose
+//!   pick is missing or out of range (only if the client's description differs from the logic's, which read the same
+//!   files) draws from the audio stream instead.
 //! - **The description** is an `Arc` (upstream: a pointer, mutable through `const`).
 //! - `adjustForLocalization` keeps upstream's double backslash (`reverseFind` returns the separator, which is appended
 //!   after the prefix's own); the file system skips empty path components, so the file is found as upstream finds it.
@@ -45,6 +51,7 @@
 use crate::client::audio_info::{AudioEventInfo, AudioPriority, AudioSettings, AudioType, AC_ALL, AC_RANDOM, ST_WORLD};
 use crate::common::base_type::Coord3D;
 use crate::common::random_value::{random_int, random_real, RandomValues};
+use crate::logic::logical_audio::LogicalAudioPicks;
 use std::sync::Arc;
 
 /// `AudioHandle`.
@@ -136,6 +143,9 @@ pub struct AudioEventRts {
     pub should_fade: bool,
     /// `m_isLogicalAudio`.
     pub is_logical_audio: bool,
+    /// GitHub #50: the values of the logic's `GameLogicRandomValue` draws for this logical event (none until the event
+    /// carries them; taken by the draws they replace, and cleared with `m_isLogicalAudio`).
+    pub logic_picks: LogicalAudioPicks,
     /// `m_uninterruptable`.
     pub uninterruptable: bool,
     /// `m_pitchShift`.
@@ -175,6 +185,7 @@ impl Default for AudioEventRts {
             owner_type: OwnerType::Invalid,
             should_fade: false,
             is_logical_audio: false,
+            logic_picks: LogicalAudioPicks::default(),
             uninterruptable: false,
             pitch_shift: 1.0,
             volume_shift: 0.0,
@@ -296,7 +307,8 @@ impl AudioEventRts {
         }
         let which: usize;
         if info.control & AC_RANDOM != 0 {
-            let mut w = if self.is_logical_audio { random_int(&mut random.logic, 0, n as i32 - 1) } else { random_int(&mut random.audio, 0, n as i32 - 1) };
+            let pick = self.logic_picks.sound.take();
+            let mut w = self.draw(pick, random, n as i32);
             if w == self.playing_audio_index && n > 2 {
                 w = (w + 1) % n as i32;
             }
@@ -315,12 +327,21 @@ impl AudioEventRts {
         self.delay = random_real(&mut random.audio, info.delay_min as f32, info.delay_max as f32);
     }
 
-    /// One of the attack or decay files (`generatePlayInfo`'s two blocks).
-    fn pick_piece(&self, settings: &AudioSettings, host: &dyn AudioEventHost, random: &mut RandomValues, list: &[Vec<u8>]) -> Vec<u8> {
+    /// `m_isLogicalAudio ? GameLogicRandomValue(0, n - 1) : GameAudioRandomValue(0, n - 1)`: for a logical event, the
+    /// logic's value `pick` (GitHub #50; see the module docs), else the audio stream's draw.
+    fn draw(&self, pick: Option<i32>, random: &mut RandomValues, n: i32) -> i32 {
+        match pick {
+            Some(v) if self.is_logical_audio && (0..n).contains(&v) => v,
+            _ => random_int(&mut random.audio, 0, n - 1),
+        }
+    }
+
+    /// One of the attack or decay files (`generatePlayInfo`'s two blocks), with the logic's pick for it (GitHub #50).
+    fn pick_piece(&self, settings: &AudioSettings, host: &dyn AudioEventHost, random: &mut RandomValues, list: &[Vec<u8>], pick: Option<i32>) -> Vec<u8> {
         let ty = self.info().sound_type;
         let mut name = Self::generate_filename_prefix(settings, ty, None);
         let n = list.len() as i32;
-        let i = if self.is_logical_audio { random_int(&mut random.logic, 0, n - 1) } else { random_int(&mut random.audio, 0, n - 1) };
+        let i = self.draw(pick, random, n);
         name.extend_from_slice(&list[i as usize]);
         name.extend_from_slice(&Self::generate_filename_extension(settings, ty));
         self.adjust_for_localization(settings, host, &mut name);
@@ -336,14 +357,17 @@ impl AudioEventRts {
         self.loop_count = info.loop_count;
         self.portion_to_play_next = PortionToPlay::Attack;
         if !info.attack_sounds.is_empty() {
-            self.attack_name = self.pick_piece(settings, host, random, &info.attack_sounds);
+            let pick = self.logic_picks.attack.take();
+            self.attack_name = self.pick_piece(settings, host, random, &info.attack_sounds, pick);
         } else {
             self.portion_to_play_next = PortionToPlay::Sound;
         }
         if !info.decay_sounds.is_empty() {
-            self.decay_name = self.pick_piece(settings, host, random, &info.decay_sounds);
+            let pick = self.logic_picks.decay.take();
+            self.decay_name = self.pick_piece(settings, host, random, &info.decay_sounds, pick);
         }
         self.is_logical_audio = false;
+        self.logic_picks = LogicalAudioPicks::default();
     }
 
     /// `decrementDelay(t)`.
@@ -553,8 +577,11 @@ MusicTrack Song\n Filename = song.mp3\nEnd\n",
 
     /// Predicted: with `RANDOM`, each pick is the audio generator's draw in 0..=3 (checked against a copy of the
     /// generator), bumped to the next when it repeats the last (four sounds, more than two), so no two picks in a row
-    /// are the same; then the delay is the audio draw in 10..20; with two sounds a repeat is allowed. The logic stream is
-    /// used only for a logical event, and not again after `generatePlayInfo`.
+    /// are the same; then the delay is the audio draw in 10..20; with two sounds a repeat is allowed. ~~The logic stream is
+    /// used only for a logical event, and not again after `generatePlayInfo`.~~ **Corrected 2026-11-06 (GitHub #50):** a
+    /// logical event never touches the logic stream: it plays the logic's picks (sound 2, attack 1, decay 0 here; the
+    /// sound is bumped to 3 only if 2 repeats its playing index), its audio stream advances by exactly the delay, pitch
+    /// and volume draws, and after `generatePlayInfo` it is neither logical nor holds picks.
     #[test]
     fn random_picks_avoid_repeats_and_use_the_audio_generator() {
         let t = tables();
@@ -588,13 +615,25 @@ MusicTrack Song\n Filename = song.mp3\nEnd\n",
             prev = two.playing_audio_index;
         }
         assert!(repeats > 0, "with two sounds the same one may follow itself");
-        // a logical event draws its pick from the logic stream
+        // a logical event plays the logic's picks (#50) and reads no logic stream
+        let mut l = event(&t, b"Rnd");
+        l.is_logical_audio = true;
+        l.logic_picks = LogicalAudioPicks { sound: Some(2), attack: Some(1), decay: Some(0) };
         let before = r.clone();
-        e.is_logical_audio = true;
-        e.generate_filename(&t.settings, &host, &mut r);
-        assert_ne!(r.logic, before.logic);
-        e.generate_play_info(&t.settings, &host, &mut r);
-        assert!(!e.is_logical_audio);
+        let mut copy = r.clone();
+        l.generate_filename(&t.settings, &host, &mut r);
+        assert_eq!(l.playing_audio_index, 2);
+        assert_eq!(l.filename_to_load, b"Data\\Audio\\Sounds\\c.wav");
+        l.generate_play_info(&t.settings, &host, &mut r);
+        assert_eq!(l.attack_name, b"Data\\Audio\\Sounds\\at2.wav");
+        assert_eq!(l.decay_name, b"Data\\Audio\\Sounds\\de.wav");
+        assert_eq!(r.logic, before.logic, "no logic draw on the client");
+        let _ = random_real(&mut copy.audio, 10.0, 20.0);
+        let _ = random_real(&mut copy.audio, 0.8, 1.2);
+        let _ = random_real(&mut copy.audio, 0.7, 1.0);
+        assert_eq!(r.audio, copy.audio, "the delay, pitch and volume draws only");
+        assert!(!l.is_logical_audio);
+        assert_eq!(l.logic_picks, LogicalAudioPicks::default());
     }
 
     /// Predicted: `generatePlayInfo` draws pitch in 0.8..1.2 and volume shift in 0.7..1.0 from the audio generator,

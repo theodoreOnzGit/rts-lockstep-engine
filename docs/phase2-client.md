@@ -161,7 +161,9 @@ output).**
   on the manager. `pauseAmbient` does nothing (`MilesAudioManager::pauseAmbient` is empty upstream).
 - **No logic state changes:** the event is pushed on the client queue (not saved, not in the CRC), takes none of the
   logic's made-up audio handles (`cuts.last_audio_handle`, which modules keep and save), and makes no logic random draw:
-  a logical event's file is picked from the client's own copy of the logic stream, as before (#50 is open). The
+  ~~a logical event's file is picked from the client's own copy of the logic stream, as before (#50 is open).~~
+  **Corrected 2026-11-06 (#50):** a logical event's `GameLogicRandomValue` draws are now the logic's (see #50's entry
+  below). The
   engine's saved `m_currentTrackName` is set as before. Gate (a): last CRC `0bf44067`, unchanged.
 - **Not done:** `getAudioLengthMS` is still 0 to the logic (the script engine's `isSpeechComplete`/`isAudioComplete`
   read `cuts.audio_lengths_ms`, which nothing fills): answering it from the device's files changes when script waits end,
@@ -169,6 +171,52 @@ output).**
   `MSG_META_DEMO_MUSIC_NEXT_TRACK`/`PREV_TRACK`); the manager has them, nothing calls them. Unit voices, selection
   sounds, `VoiceDefect`, EVA, the drawables' ambient sounds (with `doEnableObjectSound`, still a cut) and the map's
   customised ambient sounds remain (parts 2 and 3).
+
+**#50 (2026-11-06, GitHub #50): the logic makes a logical audio event's random draws (the owner's option (a)).**
+- **Translated:** the logic half of `AudioManager::addAudioEvent` (GameAudio.cpp:420-457: the empty/`NoSound` name and
+  no-description returns, the category and `getDisallowSpeech` returns, then `generateFilename` and `generatePlayInfo`)
+  and the `m_isLogicalAudio` branches of `AudioEventRTS::generateFilename` and `generatePlayInfo` (AudioEventRTS.cpp:
+  318-424), as `logic::logical_audio::logical_audio_draws`. Only the four script actions that call
+  `setIsLogicalAudio(true)` (ScriptActions.cpp:356, 373, 2756, 2770) reach it, through `World::sa_audio_add_event`.
+- **Where and when the logic draws:** in the script action, at the `TheAudio->addAudioEvent` call, from `World::random`
+  (`theGameLogicSeed`), in upstream's order: one `GameLogicRandomValue(0, Sounds - 1)` for a sound effect with a
+  non-empty `Sounds` and `Control = RANDOM` (**also for a single file**: `GetGameLogicRandomValue(0, 0)` advances the
+  state, since `delta` is 1); one `(0, Attack - 1)` if `Attack` is non-empty; one `(0, Decay - 1)` if `Decay` is
+  non-empty (both whatever the type, even with no `Sounds`). Music and speech pick their `Filename` without a draw.
+- **The values reach the client** in `ScriptAudioEvent::AddEvent(event, LogicalAudioPicks)`; the client's
+  `AudioEventRts` takes each value in place of its own draw (`logic_picks`), so it plays the files every machine's
+  logic picked and never reads a logic stream. Delay, pitch and volume stay the audio stream's.
+- **The descriptions reach the logic** as `GameStatics::audio` (`client::audio_info::AudioTables`, the same crate, no
+  new dependency): `load_game_data` reads `AudioManager::init`'s files (`AUDIO_INI_FILES`) with the audio's own loader,
+  with no user preferences (they set volumes only). A missing or bad audio file is skipped, as the client's loader
+  skips it (upstream's `INI::load` would throw); every machine reads the same files.
+- **`m_playingAudioIndex`:** each of the four actions' `AudioEventRTS` is a local, constructed with -1, and
+  `setPlayingAudioIndex` copies the pick back into that local only; nothing persists between calls, so the "not the
+  one played last" bump (`which == m_playingAudioIndex && size > 2`) never fires for a script's sound. The bump is not
+  a draw, so the logic sends the raw value and the client's event applies upstream's bump to it.
+- **Upstream desyncs with audio off.** `isOn` is each player's own (`-noaudio` sets `m_audioOn` false, and
+  `GameEngine::init` turns every category off with it; the options menu's sound/speech switches; the debug
+  `MSG_META_DEMO_TOGGLE_SOUND`). A player with sound effects off returns from `addAudioEvent` before
+  `generateFilename`, so makes none of these logic draws; the first random script sound then leaves that player's
+  logic stream behind everyone else's, and the game desyncs. The same holds for speech with an `Attack`/`Decay` list,
+  and while uninterruptable speech plays (`getDisallowSpeech()`, set by the device when the stream *opens* and cleared
+  when it ends: device- and wall-clock-dependent). **This engine draws as an audio-on upstream with no
+  uninterruptable speech playing, on every machine**, whatever the player's settings.
+- **Tests (predictions in each doc comment):** `logical_audio`'s order-and-count test (8 names: 1 draw for 4 files, 1
+  for 1 `RANDOM` file, 3 with attack and decay, 1 decay-only with no `Sounds`, 1 for a dialog with `Attack`, 0 for the
+  rest); `a_scripts_logical_sound_draws_upstreams_logic_values_and_the_client_plays_them` (`PLAY_SOUND_EFFECT` of a
+  5-file random sound with 3 attacks: exactly 2 logic draws, sound 2 and attack 1; the client started `a1.wav` and
+  holds `r2.wav`, its logic state untouched; a single non-random file: none; a single random file: 1). One miss, in the
+  test's host (it said every file exists, so the localized file was preferred), not in the logic.
+- **Differential** (`tests/differential_audio.rs`, `audio_events_match_upstream`): logical events now run as
+  `addAudioEvent` runs them, the Rust logic drawing first and the client event playing the values, against the compiled
+  upstream drawing from its own logic stream. *Predicted:* about 3,500 logical events and 2,300 logic draws in 4,000
+  cases, no mismatch. *Result:* 3,425 logical events, 2,274 logic draws; 13,949 per-call states and 4,000 generator
+  states compared, 0 mismatches. A check that it can fail: skipping the attack draw gave 480 mismatches.
+- **Gate (a):** the gate game plays no script sound and loads no audio INI. *Predicted:* unchanged. *Result:* PASS, 300
+  frames, last CRC `0bf44067`, unchanged. Lib 994 (992 + 2), client 33, clippy clean, web build clean.
+- **Not done:** a map's `map.ini` can redefine `AudioEvent`s upstream (`INI::load` with `theTypeTable`); the map loader
+  does not read audio blocks, so the logic's and the client's descriptions are the install's.
 
 **#19 (2026-11-06, GitHub #19): animations sampled with the shipped game's `Float_To_Long`.**
 - **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of

@@ -299,8 +299,15 @@ impl ScriptActionsHost for World {
         self.script_player("Player::buildBaseDefenseStructure", r);
     }
     fn sa_audio_add_event(&mut self, e: &AudioEvent) {
-        // (#51: was a cut) the client's audio manager makes the call
-        self.sa_audio(ScriptAudioEvent::AddEvent(e.clone()));
+        // (#51: was a cut) the client's audio manager makes the call. (#50) A logical event's `GameLogicRandomValue` draws are
+        // the logic's: made here, at the action, from the World's generator, as `addAudioEvent` makes them upstream (the
+        // event is the action's local, so its playing index is the constructor's -1 and nothing is kept for a next call)
+        let picks = if e.logical {
+            crate::logic::logical_audio::logical_audio_draws(&self.statics.audio, &e.name, &mut self.random)
+        } else {
+            Default::default()
+        };
+        self.sa_audio(ScriptAudioEvent::AddEvent(e.clone(), picks));
     }
     fn sa_waypoint_by_name(&self, name: &[u8]) -> Option<WaypointH> {
         AsciiString::try_from_bytes(name).ok().and_then(|n| self.terrain.waypoint_by_name(&n)).and_then(|h| self.terrain.waypoint(h)).map(|w| w.id())
@@ -1858,7 +1865,7 @@ mod tests {
         let ev = w.take_client_events();
         let ev: Vec<_> = ev.into_iter().filter_map(|e| if let ClientEvent::ScriptAudio(s) = e { Some(s) } else { None }).collect();
         let add = |name: &[u8], logical| {
-            ScriptAudioEvent::AddEvent(AudioEvent { name: name.to_vec(), position: None, logical, player_index: local, object: 0, uninterruptable: false, should_fade: false })
+            ScriptAudioEvent::AddEvent(AudioEvent { name: name.to_vec(), position: None, logical, player_index: local, object: 0, uninterruptable: false, should_fade: false }, Default::default())
         };
         assert_eq!(
             ev,
@@ -1874,5 +1881,94 @@ mod tests {
         assert_eq!(engine.current_track_name, b"Track_A", "the engine's saved track, as before #51");
         assert_eq!(w.random, random, "no logic random draw");
         assert_eq!(w.cuts.last_audio_handle, handle, "no made-up handle taken");
+    }
+
+    /// GitHub #50: a script's logical sound makes upstream's `GameLogicRandomValue` draws in the logic, and the client
+    /// plays the file the logic picked.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - `PLAY_SOUND_EFFECT Rnd` (five `Sounds`, `RANDOM`, three `Attack`, no `Decay`) advances the World's logic stream
+    ///   by exactly two draws, `GameLogicRandomValue(0, 4)` then `(0, 2)` (a copy of the generator making those two
+    ///   draws ends equal), and the event carries those two values and no decay;
+    /// - the client, given the event, plays `Data\Audio\Sounds\r<sound>.wav` (no "not the last one" bump: the script's
+    ///   event is a fresh local, index -1) after the attack `a<attack>.wav`, and its own copy of the logic stream is
+    ///   untouched;
+    /// - `Solo` (one file, no `RANDOM`) draws nothing; `SoloRandom` (one file, `RANDOM`) draws **once**: upstream's
+    ///   `GetGameLogicRandomValue(0, 0)` advances the state (`delta` is 1, not 0), so "a single-file sound draws
+    ///   nothing" holds only without `RANDOM`;
+    /// - `Missing` (no description), `MUSIC_SET_TRACK` (not logical) and `PLAY_SOUND_EFFECT` of a dialog event without
+    ///   `Attack`/`Decay` draw nothing.
+    ///
+    /// *Results (2026-11-06):* all held: two draws, sound 2 and attack 1 from the test world's stream; the client
+    /// started `a1.wav` and holds `r2.wav` (playing index 2) as the sound to follow; its logic state untouched;
+    /// `SoloRandom` drew once (0), the others none. The first run failed in the test's own host, not the logic: its file
+    /// system said every file exists, so the localized `Sounds\English\\a1.wav` was preferred (upstream's
+    /// `adjustForLocalization`); the host now has no files.
+    #[test]
+    fn a_scripts_logical_sound_draws_upstreams_logic_values_and_the_client_plays_them() {
+        use crate::client::audio_info::AudioTables;
+        use crate::client::client_audio::{ClientAudio, WorldAudioHost};
+        use crate::client::game_audio::tests::LogDevice;
+        use crate::client::game_audio::AudioManager;
+        use crate::logic::client_event::{ClientEvent, ScriptAudioEvent};
+        use crate::logic::logical_audio::LogicalAudioPicks;
+        const INI: &[u8] = b"AudioSettings\n AudioRoot = Data\\Audio\n SoundsFolder = Sounds\n MusicFolder = Tracks\n StreamingFolder = Speech\n SoundsExtension = wav\n SampleCount2D = 4\n SampleCount3D = 8\n MinSampleVolume = 1%\n DefaultSoundVolume = 100%\n Default3DSoundVolume = 100%\n DefaultSpeechVolume = 100%\n DefaultMusicVolume = 100%\nEnd\n\
+AudioEvent Rnd\n Sounds = r0 r1 r2 r3 r4\n Control = random\n Attack = a0 a1 a2\n Type = ui everyone\n Volume = 100%\nEnd\n\
+AudioEvent Solo\n Sounds = solo\n Type = ui everyone\nEnd\n\
+AudioEvent SoloRandom\n Sounds = solo\n Control = random\n Type = ui everyone\nEnd\n\
+DialogEvent Talk\n Filename = talk.wav\nEnd\n";
+        let (mut w, _) = world();
+        let mut engine = std::mem::take(&mut w.script_engine);
+        w.take_client_events();
+        w.players.set_local_player(Some(1));
+        let mut t = AudioTables::new();
+        t.load_text(b"a.ini", INI).expect("the audio INI");
+        std::sync::Arc::make_mut(&mut w.statics).audio = t.clone();
+        let play = |w: &mut World, engine: &mut ScriptEngine, name: &[u8]| {
+            w.execute_action_with(engine, &action(at::PLAY_SOUND_EFFECT, &[name], &[], &[])).unwrap();
+            let ev = w.take_client_events();
+            let adds: Vec<_> = ev
+                .into_iter()
+                .filter_map(|e| if let ClientEvent::ScriptAudio(s @ ScriptAudioEvent::AddEvent(..)) = e { Some(s) } else { None })
+                .collect();
+            assert_eq!(adds.len(), 1);
+            adds.into_iter().next().unwrap()
+        };
+        // Rnd: two draws
+        let mut predicted = w.random.clone();
+        let sound = predicted.game_logic_random_value(0, 4);
+        let attack = predicted.game_logic_random_value(0, 2);
+        let ev = play(&mut w, &mut engine, b"Rnd");
+        assert_eq!(w.random, predicted, "exactly two logic draws");
+        let ScriptAudioEvent::AddEvent(_, picks) = &ev else { unreachable!() };
+        assert_eq!(*picks, LogicalAudioPicks { sound: Some(sound), attack: Some(attack), decay: None });
+        // the client plays the logic's picks
+        let mut audio = ClientAudio::new(AudioManager::new(t));
+        let client_logic = audio.manager.random.logic;
+        let mut dev = LogDevice::default();
+        let files = |_: &[u8]| false;
+        let host = WorldAudioHost { world: &w, local_player_index: None, files: &files, language: b"English" };
+        audio.apply_event(&host, &mut dev, &ClientEvent::ScriptAudio(ev));
+        audio.manager.update(&host, &mut dev, &Default::default());
+        let started: Vec<String> = dev.started.iter().map(|s| String::from_utf8_lossy(&s.1).into_owned()).collect();
+        assert_eq!(started, [format!("Data\\Audio\\Sounds\\a{attack}.wav")], "the attack portion first");
+        let req = audio.manager.playing_sounds.first().map(|p| (String::from_utf8_lossy(&p.event.filename_to_load).into_owned(), p.event.playing_audio_index));
+        assert_eq!(req, Some((format!("Data\\Audio\\Sounds\\r{sound}.wav"), sound)), "the logic's sound, then");
+        assert_eq!(audio.manager.random.logic, client_logic, "the client draws nothing from a logic stream");
+        // Solo: none; SoloRandom: one, the value 0
+        let before = w.random.clone();
+        let ev = play(&mut w, &mut engine, b"Solo");
+        assert_eq!((w.random == before, ev), (true, ScriptAudioEvent::AddEvent(AudioEvent { name: b"Solo".to_vec(), position: None, logical: true, player_index: w.players.local_index().unwrap(), object: 0, uninterruptable: false, should_fade: false }, LogicalAudioPicks::default())));
+        let mut predicted = w.random.clone();
+        assert_eq!(predicted.game_logic_random_value(0, 0), 0);
+        let ev = play(&mut w, &mut engine, b"SoloRandom");
+        assert_eq!(w.random, predicted, "a single RANDOM file still draws once");
+        assert!(matches!(ev, ScriptAudioEvent::AddEvent(_, LogicalAudioPicks { sound: Some(0), attack: None, decay: None })));
+        // no description, a dialog event without attack or decay, a music change: no draw
+        let before = w.random.clone();
+        play(&mut w, &mut engine, b"Missing");
+        play(&mut w, &mut engine, b"Talk");
+        w.execute_action_with(&mut engine, &action(at::MUSIC_SET_TRACK, &[b"Track_A"], &[1, 0], &[])).unwrap();
+        assert_eq!(w.random, before);
     }
 }

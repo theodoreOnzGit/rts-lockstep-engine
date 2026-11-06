@@ -22,6 +22,10 @@
 //!   exist (some localized, under one of two languages), then random events: a name (defined or not), an owner (none,
 //!   an object, a drawable, a position; some owners missing), logical or not, a player index, and a run of
 //!   `generateFilename` and `generatePlayInfo` calls; both sides' audio and logic generators start from the same state.
+//!   **GitHub #50:** a logical event is run as `addAudioEvent` runs it, `generateFilename` then `generatePlayInfo` once
+//!   each: upstream's draws its picks from its compiled logic stream; the Rust's logic makes its draws first
+//!   (`logic::logical_audio::logical_audio_draws`, from the Rust logic stream) and the client's event plays those values
+//!   (`AudioEventRts::logic_picks`). The final words of both logic streams are compared as before.
 //!   Compared after each call: the file, the playing index, the delay, the pitch and volume shifts, the loop count, the
 //!   attack and decay files, the next portion and the logical flag; then `isPositionalAudio`, `getVolume`,
 //!   `getCurrentPosition`, the owner type and `getPlayerIndex`; and the generators' words at the end.
@@ -42,6 +46,7 @@ use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::ini::{IniResult, Thrown};
 use rts_lockstep_engine::common::random_value::{seed_random, RandomValues};
 use rts_lockstep_engine::differential as cpp;
+use rts_lockstep_engine::logic::logical_audio::logical_audio_draws;
 use support::Gen;
 
 struct Words {
@@ -516,6 +521,7 @@ fn audio_events_match_upstream() {
     let mut states = Words::new("audio events (state per call)");
     let mut rng = Words::new("audio events (generators)");
     let mut localized = 0u64;
+    let (mut logical_events, mut logic_draws) = (0u64, 0u64);
     for case in 0..cases {
         unsafe { cpp::ref_audio_reset() };
         let mut t = AudioTables::new();
@@ -560,8 +566,13 @@ fn audio_events_match_upstream() {
             let pos = [g.uniform(-300.0, 300.0), g.uniform(-300.0, 300.0), g.uniform(0.0, 30.0)];
             let logical = g.below(4) == 0;
             let player_index = g.below(5) as i32 - 1;
-            let n_ops = 1 + g.below(8) as i32;
-            let ops = g.u32() & ((1u32 << (2 * n_ops)) - 1);
+            let mut n_ops = 1 + g.below(8) as i32;
+            let mut ops = g.u32() & ((1u32 << (2 * n_ops)) - 1);
+            if logical {
+                // (#50) `addAudioEvent`'s calls: generateFilename, then generatePlayInfo
+                (n_ops, ops) = (1, 3);
+                logical_events += 1;
+            }
             // Rust
             let p = Coord3D { x: pos[0], y: pos[1], z: pos[2] };
             let mut e = match owner {
@@ -573,6 +584,11 @@ fn audio_events_match_upstream() {
             e.is_logical_audio = logical;
             e.player_index = player_index;
             e.event_info = t.find_audio_event_info(name.as_bytes()).cloned();
+            if logical {
+                // (#50) the logic's draws, from the Rust logic stream, which the client's event then plays
+                e.logic_picks = logical_audio_draws(&t, name.as_bytes(), &mut r);
+                logic_draws += e.logic_picks.count() as u64;
+            }
             let mut a = vec![u32::from(e.event_info.is_some())];
             if e.event_info.is_some() {
                 for k in 0..n_ops {
@@ -636,8 +652,9 @@ fn audio_events_match_upstream() {
         let mine: Vec<u32> = r.logic.iter().chain(r.audio.iter()).copied().collect();
         rng.cmp(&mine, &words, || format!("case {case}"));
     }
-    println!("COVERAGE audio events: {cases} cases, {localized} calls with a localized file");
+    println!("COVERAGE audio events: {cases} cases, {localized} calls with a localized file, {logical_events} logical events, {logic_draws} logic draws");
     states.finish();
     rng.finish();
     assert!(localized > 0);
+    assert!(logic_draws > 0);
 }

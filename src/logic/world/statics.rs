@@ -97,6 +97,12 @@ pub struct GameStatics {
     /// Batch I59 (#16): `TheTerrainTypes` (`Terrain.ini`: each terrain tile's class, and whether it restricts construction).
     pub terrain_types: crate::common::terrain_types::TerrainTypeCollection,
     // --- end batch I56 ---
+    // --- GitHub #50 ---
+    /// `TheAudio`'s descriptions (`AudioManager::init`'s files, read by [`crate::logic::world::game_data::load_game_data`]
+    /// with no user preferences): the logic reads a logical event's `Sounds`, `Attack`, `Decay`, `Control` and type
+    /// to make upstream's logic draws (`crate::logic::logical_audio`). The client reads its own copy of the same files.
+    pub audio: crate::client::audio_info::AudioTables,
+    // --- end GitHub #50 ---
     // New stores go here, each in its translator's marked block.
 }
 

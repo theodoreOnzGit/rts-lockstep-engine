@@ -12,9 +12,11 @@
 //! `GameData`, `Science`, `Rank`, `PlayerTemplate`, `Weapon`, `ObjectCreationList`, `Locomotor`, `SpecialPower`,
 //! `DamageFX`, `Armor`, `Object`, `ObjectReskin`, `Upgrade`, `AIData` and `CrateData`; **Corrected 2026-11-03 (batch I50):** also two of the client's
 //! the logic reads: `CommandButton` and `CommandSet` (since batch I19) and `Road` and `Bridge` (`TheTerrainRoads`, batch I50).
-//! **The other client subsystems are not loaded** (the FX lists, particle systems, audio, the UI, the terrain types,
+//! **The other client subsystems are not loaded** (the FX lists, particle systems, ~~audio,~~ the UI, the terrain types,
 //! the multiplayer settings, the map cache; ~~the terrain roads, the command sets and buttons~~): a block of theirs in a file
 //! the logic loads is an unknown token, as it would be upstream for a token missing from the table.
+//! **Corrected 2026-11-06 (GitHub #50):** the audio's descriptions are read too, after the list, by the audio's own
+//! loader (`AudioManager::init`'s files into [`GameDataLoad::audio`]); their blocks stay unknown tokens in the logic's files.
 //!
 //! **Subsystem `init()`s (batch I54):** of the logic's, only `UpgradeCenter::init` makes data (the veterancy upgrades) and
 //! is run, in its place before its files; the module factory's runs when the load is made.
@@ -228,6 +230,8 @@ pub struct GameDataLoad {
     /// game's `Multiplayer.ini` carries beside the logic's settings). Only what the files set: upstream's defaults
     /// (Chat.cpp) are the lobby's, which this engine has not.
     pub online_chat_colors: [i32; GSCOLOR_MAX],
+    /// GitHub #50: `TheAudio`'s descriptions (`AudioManager::init`'s files; see [`load_game_data`]).
+    pub audio: crate::client::audio_info::AudioTables,
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -266,6 +270,7 @@ impl GameDataLoad {
             multiplayer_settings: Default::default(),
             map_cache: Default::default(),
             terrain_types: Default::default(),
+            audio: Default::default(),
             button_lookups: None,
         })
     }
@@ -323,6 +328,7 @@ impl GameDataLoad {
             multiplayer_settings: st.multiplayer_settings,
             map_cache: st.map_cache,
             terrain_types: st.terrain_types,
+            audio: st.audio,
             button_lookups: None,
         })
     }
@@ -350,6 +356,7 @@ impl GameDataLoad {
             map_cache: self.map_cache,
             game_text: self.text,
             terrain_types: self.terrain_types,
+            audio: self.audio,
         };
         (statics, self.names)
     }
@@ -387,6 +394,12 @@ pub fn load_game_data(files: &impl GameDataFiles, missing: MissingFiles, text: T
             Ini::load_directory(dir, true, IniLoadType::Overwrite, None, &list, |p| files.open(p), &BLOCKS, &mut load)?;
         }
     }
+    // (GitHub #50: `initSubsystem(TheAudio, ...)`, GameEngine.cpp:434: `AudioManager::init` loads its own files with its own
+    // blocks (`client::audio_info::AUDIO_INI_FILES`), which no other subsystem reads, so where in the list it runs changes nothing.
+    // The logic reads a logical event's description from it (`logic::logical_audio`). Unlike upstream's `INI::load`, a
+    // missing or bad audio file is skipped, as the client's own load skips it: every machine reads the same files, so
+    // every machine skips the same ones. No user preferences are read: they set only volumes, which the logic never reads)
+    let _ = load.audio.load(|p| files.open(p));
     load.post_process_load();
     Ok(load)
 }

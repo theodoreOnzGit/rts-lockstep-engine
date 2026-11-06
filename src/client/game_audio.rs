@@ -277,7 +277,8 @@ pub struct AudioManager {
     pub playing_3d_sounds: Vec<PlayingAudio>,
     pub playing_streams: Vec<PlayingAudio>,
     pub fading_audio: Vec<PlayingAudio>,
-    /// The audio and logic random streams (`GameAudioRandomValue`; see `audio_event` for the logic one).
+    /// The audio random stream (`GameAudioRandomValue`) ~~and the logic one (see `audio_event`)~~ (**corrected 2026-11-06,
+    /// GitHub #50:** a logical event takes the logic's values from the logic; the `logic` state here is never read).
     pub random: RandomValues,
 }
 

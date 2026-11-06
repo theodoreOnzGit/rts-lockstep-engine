@@ -363,7 +363,7 @@ impl ScriptEngineHost for World {
             uninterruptable: false,
             should_fade: false,
         };
-        self.sa_audio(crate::logic::client_event::ScriptAudioEvent::AddEvent(e));
+        self.sa_audio(crate::logic::client_event::ScriptAudioEvent::AddEvent(e, Default::default()));
     }
 }
 

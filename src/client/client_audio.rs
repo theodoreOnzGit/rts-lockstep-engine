@@ -200,7 +200,7 @@ impl ClientAudio {
     /// here as upstream's action makes it.
     pub fn apply_script_event<D: AudioDevice>(&mut self, host: &dyn AudioHost, device: &mut D, s: &ScriptAudioEvent) {
         match s {
-            ScriptAudioEvent::AddEvent(a) => {
+            ScriptAudioEvent::AddEvent(a, picks) => {
                 // `AudioEventRTS(name)`, `(name, pos)` or `(name, objectID)`, then the action's setters
                 let mut e = AudioEventRts::new(&a.name);
                 if let Some(p) = &a.position {
@@ -209,8 +209,11 @@ impl ClientAudio {
                 if a.object != 0 {
                     e.set_object_id(a.object as u32);
                 }
-                // `setIsLogicalAudio(true)`: the file is picked from the client's own copy of the logic stream (#50)
+                // `setIsLogicalAudio(true)`: ~~the file is picked from the client's own copy of the logic stream (#50)~~
+                // **corrected 2026-11-06 (#50):** the logic made the event's `GameLogicRandomValue` draws; their values
+                // replace the draws here, so this machine plays the files every machine's logic picked
                 e.is_logical_audio = a.logical;
+                e.logic_picks = *picks;
                 e.player_index = a.player_index;
                 e.uninterruptable = a.uninterruptable;
                 e.should_fade = a.should_fade;

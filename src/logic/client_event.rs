@@ -97,14 +97,21 @@ pub enum ClientEvent {
 /// (`client::client_audio::ClientAudio::apply_event`).
 ///
 /// **Not simulation state.** Pushing one changes nothing the logic reads, saves or puts in its CRC: it is not given a
-/// handle from the logic's made-up audio handles (`cuts.last_audio_handle`, which the modules keep and save), and a
-/// logical event's random file choice is the client's (`client::audio_event`, GitHub #50), never the World's generator.
+/// handle from the logic's made-up audio handles (`cuts.last_audio_handle`, which the modules keep and save)~~, and a
+/// logical event's random file choice is the client's (`client::audio_event`, GitHub #50), never the World's generator~~.
+/// **Corrected 2026-11-06 (GitHub #50):** a *logical* event's `GameLogicRandomValue` draws are the logic's own, made by the
+/// World from its generator before the event is pushed, as upstream's `addAudioEvent` makes them
+/// ([`crate::logic::logical_audio`]); they are simulation state, and the values drawn travel in
+/// [`ScriptAudioEvent::AddEvent`] for the client to play.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ScriptAudioEvent {
     /// `TheAudio->addAudioEvent(&event)` of the event the action built (`doPlaySoundEffect`, `doPlaySoundEffectAt`,
     /// `doSoundPlayFromNamed`, `doSpeechPlay`, `doMusicTrackChange`, `doUnitSelectAndPlay`; and
     /// `ScriptEngine::loadPostProcess`'s current music track).
-    AddEvent(crate::logic::world::script_actions::AudioEvent),
+    ///
+    /// GitHub #50: with the values of the logic's draws for a logical event (none for one that is not logical), which the
+    /// client's `AudioEventRTS` uses in place of its own `GameLogicRandomValue` draws.
+    AddEvent(crate::logic::world::script_actions::AudioEvent, crate::logic::logical_audio::LogicalAudioPicks),
     /// `TheAudio->removeAudioEvent(handle)`: only `AHSV_StopTheMusic` / `AHSV_StopTheMusicFade` (`doMusicTrackChange`).
     RemoveEventHandle(i32),
     /// `TheAudio->pauseAmbient(pausing)` (`doAmbientSoundsPause`).
