@@ -58,6 +58,20 @@ pub trait GameDataFiles {
     fn open(&self, path: &[u8]) -> Option<Vec<u8>>;
     /// `TheFileSystem->getFileListInDirectory(dir + "\\", "*.ini", list, TRUE)`: every `.ini` file under `dir`, with its full path.
     fn list_ini(&self, dir: &[u8]) -> FilenameList;
+    /// GitHub #52: `TheFileSystem->doesFileExist(path)` (by default, whether it opens).
+    fn file_exists(&self, path: &[u8]) -> bool {
+        self.open(path).is_some()
+    }
+    /// GitHub #52: `TheFileSystem->getFileInfo(path)`'s size, `None` when there is no such file (by default, the opened
+    /// file's length).
+    fn file_size(&self, path: &[u8]) -> Option<usize> {
+        self.open(path).map(|d| d.len())
+    }
+    /// GitHub #52: `len` bytes of the file from `offset` (fewer at its end, none without the file). A file system over
+    /// archives reads only that range of the member; by default the file is opened whole.
+    fn read_file_range(&self, path: &[u8], offset: usize, len: usize) -> Vec<u8> {
+        self.open(path).map(|d| d[offset.min(d.len())..offset.saturating_add(len).min(d.len())].to_vec()).unwrap_or_default()
+    }
 }
 
 /// A file system in memory: the files by path, compared without case.
@@ -232,6 +246,9 @@ pub struct GameDataLoad {
     pub online_chat_colors: [i32; GSCOLOR_MAX],
     /// GitHub #50: `TheAudio`'s descriptions (`AudioManager::init`'s files; see [`load_game_data`]).
     pub audio: crate::client::audio_info::AudioTables,
+    /// GitHub #52: `getAudioLengthMS` of each event ([`GameStatics::audio_lengths_ms`]), made by
+    /// [`GameDataLoad::load_audio_lengths`].
+    pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
     /// What a button's fields look up, ~~made at the first button (the stores it names are read before the control bar)~~ **corrected
     /// in integration batch I27:** remade when the stores it is made from have grown since (upstream's `find*` calls are live at every
     /// field: a power, template or upgrade read after the first button was invisible to the later buttons); the stores' sizes when made.
@@ -271,6 +288,7 @@ impl GameDataLoad {
             map_cache: Default::default(),
             terrain_types: Default::default(),
             audio: Default::default(),
+            audio_lengths_ms: BTreeMap::new(),
             button_lookups: None,
         })
     }
@@ -284,6 +302,14 @@ impl GameDataLoad {
     /// `map.ini`).
     pub fn load_text_as(&mut self, path: &[u8], text: &[u8], load_type: IniLoadType) -> IniResult<()> {
         Ini::load(path, text, load_type, None, &BLOCKS, self)
+    }
+
+    /// GitHub #52: `getAudioLengthMS` of every event of the audio tables read, from the headers of the files `files`
+    /// holds (`crate::logic::audio_length`), with `language` as `GetRegistryLanguage()` for the localized files. A load
+    /// from an install does it after [`load_game_data`] (`World::from_install`); every machine reads the same files, so
+    /// every machine gets the same lengths.
+    pub fn load_audio_lengths(&mut self, files: &impl GameDataFiles, language: &[u8]) {
+        self.audio_lengths_ms = crate::logic::audio_length::audio_lengths_ms(&self.audio, files, language);
     }
 
     /// `postProcessLoadAll()` for the logic's subsystems, in their order: the weapon store's, then the thing factory's.
@@ -329,6 +355,7 @@ impl GameDataLoad {
             map_cache: st.map_cache,
             terrain_types: st.terrain_types,
             audio: st.audio,
+            audio_lengths_ms: st.audio_lengths_ms,
             button_lookups: None,
         })
     }
@@ -357,6 +384,7 @@ impl GameDataLoad {
             game_text: self.text,
             terrain_types: self.terrain_types,
             audio: self.audio,
+            audio_lengths_ms: self.audio_lengths_ms,
         };
         (statics, self.names)
     }

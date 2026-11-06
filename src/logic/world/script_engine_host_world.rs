@@ -86,7 +86,8 @@ impl ScriptEngineHost for World {
     }
     fn se_audio_length_ms(&mut self, name: &[u8]) -> f32 {
         self.se_cut("AudioManager::getAudioLengthMS", &[], name);
-        self.cuts.audio_lengths_ms.get(name).copied().unwrap_or(0.0)
+        // (GitHub #52: the lengths made at load from the files, the first file of each list; `crate::logic::audio_length`)
+        self.statics.audio_lengths_ms.get(name).copied().unwrap_or(0.0)
     }
     fn se_is_challenge_campaign(&self) -> bool {
         self.cuts.new_game.campaign == Some(true)

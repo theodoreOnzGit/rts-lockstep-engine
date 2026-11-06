@@ -151,6 +151,57 @@ output).**
   (see #51's entry below); unit voices on selection and orders; music tracks started by the game; EVA; the
   low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
 
+**#52 (2026-11-06, GitHub #52): script speech and sound waits last the files' length (the owner's option 2).**
+- **Translated:** `AudioManager::getAudioLengthMS` (GameAudio.cpp:944: a copy of the event, `generateFilename`,
+  `generatePlayInfo`, the attack + sound + decay files' lengths summed as `Real`s) and `MilesAudioManager::getFileLengthMS`
+  (MilesAudioManager.cpp:2595: 0 for an empty name or a file that does not open, else `INT_TO_REAL` of
+  `AIL_stream_ms_position`'s integer total), as `logic::audio_length`. The paths are made by the client's translated
+  `AudioEventRTS::generateFilename`/`generatePlayInfo` (prefix, extension, `adjustForLocalization`).
+- **New (Miles was never released):** the lengths themselves. WAV from `formats::wav` (now `parse_wav_ranged`, which reads
+  only the chunk headers, and `WavInfo::sample_frames`, the decoder's exact count for PCM and IMA ADPCM, short last block
+  included); MP3 from the new `formats::mp3` (frame headers, ID3v2/ID3v1 skipped, Xing/`Info` and `VBRI` frame counts;
+  else the audio bytes over the first frame's bit rate; a full frame walk, `mp3_walk`, is there for comparison and is not
+  used by the logic). Each file's length is whole milliseconds, truncated.
+- **The fixed choice: index 0 of each list.** Upstream's copy is not logical, so a `RANDOM` sound and every attack and
+  decay are picked with each machine's own *audio* stream (upstream can desync there); the logic must not draw from its
+  own stream, because upstream does not. Index 0 is the file upstream picks for a non-`RANDOM` sound (`++(-1)`), music and
+  dialog have one `Filename`, it needs no generator and it is one of upstream's own possible answers.
+- **Miles, what is not known:** truncation vs rounding (at most 1 ms per file); whether ADPCM is counted by samples or by
+  `nAvgBytesPerSec`; whether Miles believes a Xing header or estimates every MP3 from its first frame's bit rate. A few
+  ms moves a wait only when the total crosses a multiple of 33.33 ms. Upstream's own comment ("to get the file info
+  without actually opening the file") is why a header-only MP3 length is preferred to a frame walk.
+- **How the bytes reach the logic.** `World::from_install` reads the headers after `load_game_data`
+  (`GameDataLoad::load_audio_lengths`, kept through `from_statics`/`into_statics` in `GameStatics::audio_lengths_ms`),
+  through `GameDataFiles`' new `file_exists`/`file_size`/`read_file_range` (`FileSystem::read_file_range` reads an
+  archive member's range, never the member). Natively that is the install's file system. In the browser the audio
+  archives are on the art's ranged device, so `client::import::Starting` runs the same read each frame until no range is
+  missing (`poll_start`), then loads with `World::from_install_with_audio(logic files, art files, language)`: the load
+  reads only bytes already held, so every machine computes the same lengths. Each file costs a 512-byte prefix (an MP3
+  also its 4 KiB frame window and its last 128 bytes). The language is `GetRegistryLanguage()`'s, as upstream: machines
+  with different languages read different speech files, as upstream's do.
+- **`cuts.audio_lengths_ms` is gone**; `se_audio_length_ms` reads `statics.audio_lengths_ms`.
+- **Tests (predictions in each doc comment, written before the runs):** `formats::wav`'s
+  `lengths_from_the_header_equal_the_decoded_count` (PCM 8/16-bit, IMA mono and stereo with short last blocks: the header
+  count equals the decoder's, 100, 1000, 100, 47, 46 ms; a parse with the data unreadable gives the same info): held.
+  `formats::mp3`'s test (CBR behind ID3v2 and before ID3v1: walk 300 frames, 7836 ms, header estimate 7825 ms; Xing
+  `Info` 7836 ms; MPEG-2 Xing 26122 ms; VBRI 1306 ms; junk and a false sync skipped): one miss, in the fixture (`f3 50
+  c0` is 40 kbit/s in the MPEG-2 table, not 64; fixed to `f3 80 c0`). `audio_length`'s first-of-each-list test (`Boom`
+  100 + 400 + 50 = 550 ms with 9000 ms files second in each list; localized `Talk` 1234 ms; MP3 7825 ms; a missing file
+  0): held. The archive-by-range test (the browser's way): held, lengths equal the in-memory ones; 3 waiting passes,
+  11,091 bytes fetched of 284,250 at first, then 6,095 after the fix below. **The script wait**
+  (`a_speech_wait_ends_on_the_frame_its_files_length_gives`): `HAS_FINISHED_SPEECH` of `Talk` (1234 ms) asked at frame
+  100 is first true at 137 (`REAL_TO_UNSIGNEDINT(37.02)`), again asked at 137 true at 174; `HAS_FINISHED_AUDIO` of
+  `Boom` (550 ms, 16.5 frames) true at 116; a length-0 event true at once: all held.
+- **Client** (`a_start_waits_for_the_sound_headers`): two misses on the first runs. The test archive was smaller than
+  the directory read, so it was held whole and the start never waited (a fixture error: a 300 KiB member was put first).
+  Then 4,622 bytes were fetched where under 2,048 was predicted: on the first pass the 512-byte prefix was not held, so
+  the reader fell through to the MP3 reader and asked for its 4 KiB window of a WAV. Fixed in the logic: a file whose
+  prefix is not there is skipped until it is. Then held.
+- **Gate (a):** the gate game has no speech or sound waits and loads no audio. *Predicted:* unchanged. *Result:* PASS,
+  300 frames, last CRC `0bf44067`. Lib 999 (994 + 5), client 34 (33 + 1), clippy clean, web build clean.
+- **Not done:** no check against a real install (none at hand) or against Miles (never released); a map's `map.ini`
+  audio redefinitions (as #50).
+
 **#51 (2026-11-06, GitHub #51): audio follow-ups, part 1 (the scripts' audio).**
 - **Translated:** the `TheAudio` calls of ScriptActions.cpp's `doPlaySoundEffect`, `doPlaySoundEffectAt`,
   `doSoundPlayFromNamed`, `doSpeechPlay`, `doMusicTrackChange`, `doUnitSelectAndPlay`, `doAudioSetVolume` (music, sound,
@@ -165,9 +216,10 @@ output).**
   **Corrected 2026-11-06 (#50):** a logical event's `GameLogicRandomValue` draws are now the logic's (see #50's entry
   below). The
   engine's saved `m_currentTrackName` is set as before. Gate (a): last CRC `0bf44067`, unchanged.
-- **Not done:** `getAudioLengthMS` is still 0 to the logic (the script engine's `isSpeechComplete`/`isAudioComplete`
+- **Not done:** ~~`getAudioLengthMS` is still 0 to the logic (the script engine's `isSpeechComplete`/`isAudioComplete`
   read `cuts.audio_lengths_ms`, which nothing fills): answering it from the device's files changes when script waits end,
-  so it is a question for the owner. Music next/previous are not script actions upstream (CommandXlat's demo keys
+  so it is a question for the owner.~~ **Corrected 2026-11-06 (#52):** the owner chose option 2; the logic reads each
+  event's length from the files at load (see #52's entry). Music next/previous are not script actions upstream (CommandXlat's demo keys
   `MSG_META_DEMO_MUSIC_NEXT_TRACK`/`PREV_TRACK`); the manager has them, nothing calls them. Unit voices, selection
   sounds, `VoiceDefect`, EVA, the drawables' ambient sounds (with `doEnableObjectSound`, still a cut) and the map's
   customised ambient sounds remain (parts 2 and 3).

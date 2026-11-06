@@ -58,22 +58,38 @@ fn u32_at(b: &[u8], i: usize) -> u32 {
 /// Reads the RIFF chunks of a wave file: its format and where its samples are. A `data` chunk longer than the file is
 /// cut to the file.
 pub fn parse_wav(b: &[u8]) -> Result<WavInfo, WavError> {
-    if b.len() < 12 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+    parse_wav_ranged(b.len(), |o, l| b[o.min(b.len())..o.saturating_add(l).min(b.len())].to_vec())
+}
+
+/// GitHub #52: [`parse_wav`] of a file of `file_len` bytes read by ranges (`read(offset, len)`, fewer bytes at the end):
+/// only the RIFF header, each chunk's 8-byte header and the `fmt ` body are read, never the samples, so the format and
+/// the `data` chunk's place (cut to `file_len`) come from a few dozen bytes of an archive member.
+pub fn parse_wav_ranged(file_len: usize, mut read: impl FnMut(usize, usize) -> Vec<u8>) -> Result<WavInfo, WavError> {
+    let head = read(0, 12);
+    if file_len < 12 || head.len() < 12 || &head[0..4] != b"RIFF" || &head[8..12] != b"WAVE" {
         return Err(WavError::NotRiffWave);
     }
     let mut fmt: Option<(u16, u16, u32, u16, u16, u32)> = None;
-    let mut i = 12;
-    while i + 8 <= b.len() {
-        let id = &b[i..i + 4];
-        let len = u32_at(b, i + 4) as usize;
+    let mut i = 12usize;
+    while i.saturating_add(8) <= file_len {
+        let h = read(i, 8);
+        if h.len() < 8 {
+            break;
+        }
+        let id = &h[0..4];
+        let len = u32_at(&h, 4) as usize;
         let body = i + 8;
-        if id == b"fmt " && body + 16 <= b.len() {
-            let format = u16_at(b, body);
-            let channels = u16_at(b, body + 2);
-            let rate = u32_at(b, body + 4);
-            let align = u16_at(b, body + 12);
-            let bits = u16_at(b, body + 14);
-            let spb = if len >= 20 && body + 20 <= b.len() { u32::from(u16_at(b, body + 18)) } else { 0 };
+        if id == b"fmt " && body + 16 <= file_len {
+            let b = read(body, 20.min(len.max(16)));
+            if b.len() < 16 {
+                break;
+            }
+            let format = u16_at(&b, 0);
+            let channels = u16_at(&b, 2);
+            let rate = u32_at(&b, 4);
+            let align = u16_at(&b, 12);
+            let bits = u16_at(&b, 14);
+            let spb = if len >= 20 && b.len() >= 20 { u32::from(u16_at(&b, 18)) } else { 0 };
             fmt = Some((format, channels, rate, align, bits, spb));
         } else if id == b"data" {
             let (format, channels, sample_rate, block_align, bits_per_sample, spb) = fmt.ok_or(WavError::NoFmt)?;
@@ -91,12 +107,51 @@ pub fn parse_wav(b: &[u8]) -> Result<WavInfo, WavError> {
             } else {
                 1
             };
-            let len = len.min(b.len() - body);
+            let len = len.min(file_len - body);
             return Ok(WavInfo { format, channels, sample_rate, bits_per_sample, block_align, samples_per_block, data: (body, len) });
         }
-        i = body + len + (len & 1);
+        i = match body.checked_add(len + (len & 1)) {
+            Some(n) => n,
+            None => break,
+        };
     }
     Err(if fmt.is_some() { WavError::NoData } else { WavError::NoFmt })
+}
+
+impl WavInfo {
+    /// GitHub #52: the sample frames (samples per channel) [`WavDecoder`] decodes from the `data` chunk, worked out from
+    /// its length alone: PCM, the whole samples over the channels; IMA ADPCM, each `block_align` block's first sample
+    /// and its nibbles (mono: two per byte after the 4-byte header; stereo: 8 per whole 8-byte group), at most
+    /// `samples_per_block`, the short last block included.
+    pub fn sample_frames(&self) -> u64 {
+        let len = self.data.1 as u64;
+        let ch = u64::from(self.channels.max(1));
+        match self.format {
+            WAVE_FORMAT_PCM => len / u64::from(self.bits_per_sample / 8).max(1) / ch,
+            _ => {
+                let align = u64::from(self.block_align);
+                let spb = u64::from(self.samples_per_block);
+                let block = |l: u64| -> u64 {
+                    if l < 4 * ch {
+                        return 0;
+                    }
+                    let nibbles = if ch == 1 { 2 * (l - 4) } else { 8 * ((l - 4 * ch) / (4 * ch)) };
+                    (1 + nibbles).min(spb)
+                };
+                (len / align) * block(align) + block(len % align)
+            }
+        }
+    }
+
+    /// GitHub #52: the file's length in whole milliseconds, `sample_frames * 1000 / sample_rate` truncated (0 for a rate
+    /// of 0): the integer `AIL_stream_ms_position` gives `MilesAudioManager::getFileLengthMS` (see
+    /// `crate::logic::audio_length` for the rounding and what is not known about Miles).
+    pub fn length_ms(&self) -> u32 {
+        if self.sample_rate == 0 {
+            return 0;
+        }
+        (self.sample_frames() * 1000 / u64::from(self.sample_rate)).min(u64::from(u32::MAX)) as u32
+    }
 }
 
 /// One channel's IMA decoder state.
@@ -383,5 +438,32 @@ pub(crate) mod tests {
         assert_eq!(WavDecoder::decode_all(&p16).unwrap().1, [1, -1]);
         assert_eq!(parse_wav(b"RIFX"), Err(WavError::NotRiffWave));
         assert!(matches!(parse_wav(&wav(0x55, 2, 44100, 1, 0, None, &[])), Err(WavError::Unsupported { format: 0x55, .. })));
+    }
+
+    /// GitHub #52. *Predictions, written before the first run:* the length from the header equals the decoder's count
+    /// for every case: 16-bit stereo PCM of 4,410 frames at 44100 Hz (17,640 bytes and one stray byte) is 4,410 frames,
+    /// 100 ms; 8-bit mono PCM of 11,025 bytes at 11025 Hz, 1000 ms; IMA mono 22050 Hz, 512-byte blocks (1017 samples
+    /// each), two whole blocks and a short one of 100 bytes (1 + 2 * 96 = 193 samples): 2,227 frames, 100.99 ms, so 100
+    /// ms; IMA stereo 1024-byte blocks (1017 per channel), one whole block and one of 8 + 3 * 8 + 5 bytes (1 + 24 = 25
+    /// per channel): 1,042 frames; a block shorter than its header adds nothing. The ranged parse reads only the
+    /// headers: with the data's bytes unreadable (zeros past 64) it gives the same `WavInfo`.
+    #[test]
+    fn lengths_from_the_header_equal_the_decoded_count() {
+        let check = |f: &[u8], frames: u64, ms: u32| {
+            let info = parse_wav(f).unwrap();
+            let (_, out) = WavDecoder::decode_all(f).unwrap();
+            assert_eq!(out.len() as u64 / u64::from(info.channels), frames, "decoded");
+            assert_eq!(info.sample_frames(), frames, "from the header");
+            assert_eq!(info.length_ms(), ms);
+            let blind = parse_wav_ranged(f.len(), |o, l| (o..o + l).filter(|&k| k < f.len()).map(|k| if k < 64 { f[k] } else { 0 }).collect());
+            assert_eq!(blind, Ok(info));
+        };
+        let mut d = vec![0u8; 4410 * 4 + 1];
+        d[0] = 1;
+        check(&wav(WAVE_FORMAT_PCM, 2, 44100, 4, 16, None, &d), 4410, 100);
+        check(&wav(WAVE_FORMAT_PCM, 1, 11025, 1, 8, None, &vec![128u8; 11025]), 11025, 1000);
+        check(&wav(WAVE_FORMAT_IMA_ADPCM, 1, 22050, 512, 4, Some(1017), &vec![0x13u8; 512 * 2 + 100]), 2227, 100);
+        check(&wav(WAVE_FORMAT_IMA_ADPCM, 2, 22050, 1024, 4, Some(1017), &vec![0x13u8; 1024 + 8 + 24 + 5]), 1042, 47);
+        check(&wav(WAVE_FORMAT_IMA_ADPCM, 1, 22050, 512, 4, Some(1017), &vec![0x13u8; 512 + 3]), 1017, 46);
     }
 }

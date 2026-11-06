@@ -48,8 +48,11 @@ pub struct ClientReads {
     /// files, so it is filled from game data at load, identically on every
     /// peer.~~ **Corrected 2026-11-06 (#51):** nothing fills or reads this field: the script engine's
     /// `isSpeechComplete`/`isAudioComplete` read `cuts.audio_lengths_ms` (`se_audio_length_ms`), which nothing fills
-    /// either, so every length is 0 and a script's speech or sound wait ends on the frame it is asked. Filling it from
-    /// the device's file lengths would change the logic; that question is open (see #51's write-up).
+    /// either, so every length is 0 and a script's speech or sound wait ends on the frame it is asked. ~~Filling it from
+    /// the device's file lengths would change the logic; that question is open (see #51's write-up).~~
+    /// **Corrected 2026-11-06 (#52):** the owner chose the files' lengths, made at load and the same on every machine:
+    /// the script engine reads `statics.audio_lengths_ms` (`crate::logic::audio_length`), and `cuts.audio_lengths_ms` is
+    /// gone. This field is still read by nothing.
     /// Headless: empty, and [`ClientReads::audio_length_ms`] answers 0.
     pub audio_length_ms: BTreeMap<Vec<u8>, f32>,
     /// `TheAudio->hasMusicTrackCompleted(name, count)` (`ScriptConditions`):

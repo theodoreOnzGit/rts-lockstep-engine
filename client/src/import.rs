@@ -26,6 +26,9 @@ use std::cell::RefCell;
 
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice, MemoryDevice, RangedDevice};
 use rts_lockstep_engine::formats::big::ArchiveFile;
+use rts_lockstep_engine::client::audio_info::AudioTables;
+use rts_lockstep_engine::logic::audio_length::audio_lengths_ms;
+use rts_lockstep_engine::logic::world::game_data::GameDataFiles;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::install_world::{InstallError, QuickSkirmish, DEFAULT_LANGUAGE};
 
@@ -225,37 +228,113 @@ pub fn import_outcome() -> String {
 
 /// A skirmish from the files of a Zero Hour folder, held in memory: the files given whole on a memory device for the
 /// logic's load (dropped after it), and every file on the art's ranged device (#24): an archive by its directory, its
-/// members read when they are opened. Returns the game and the art's file system, mounted as the logic's was.
+/// members read when they are opened. Returns the game and the art's file system, mounted as the logic's was. Every
+/// byte must be there: a ranged audio header that has not arrived is a length of 0 (#52), so the application starts
+/// through [`poll_start`], which fetches them first.
 pub fn start_from_files(files: Vec<(Vec<u8>, Imported)>, map: Option<&[u8]>) -> Result<(Started, FileSystem<RangedDevice>), String> {
-    let mut d = MemoryDevice::new();
-    let mut art = RangedDevice::new();
-    let n = files.len();
-    let (files, generals) = arrange(files);
-    for (path, file) in files {
-        match file {
-            Imported::Whole { key, bytes } => {
-                if key == u32::MAX {
-                    art.insert(&path, bytes.clone());
-                } else {
-                    // the art keeps the archive's directory only, and reads its members back from the page
-                    let keep = if is_big(&path) { ArchiveFile::directory_prefix_needed(bytes.len(), &bytes) } else { 0 };
-                    art.insert_ranged(&path, bytes.len(), key, bytes[..keep.min(bytes.len())].to_vec());
+    Starting::new(files, map).start()
+}
+
+/// GitHub #52: a game being started from the page's files: the logic's files and the art's device mounted, waiting for
+/// the audio files' headers. The logic reads each audio event's length from its files at load
+/// (`rts_lockstep_engine::logic::audio_length`), and the audio archives are on the art's ranged device, whose bytes
+/// arrive between frames: [`Starting::audio_headers_ready`] runs that read, which asks the device for the headers it
+/// lacks, until nothing is missing; the load then reads them all from memory, so every machine gets the same lengths.
+pub struct Starting {
+    logic: FileSystem<MemoryDevice>,
+    art: FileSystem<RangedDevice>,
+    /// The audio tables read from the logic's files (the ones the load will read).
+    tables: AudioTables,
+    map: Option<Vec<u8>>,
+    files: usize,
+}
+
+impl Starting {
+    /// The files mounted: the whole ones on the logic's memory device, every one on the art's ranged device.
+    pub fn new(files: Vec<(Vec<u8>, Imported)>, map: Option<&[u8]>) -> Starting {
+        let mut d = MemoryDevice::new();
+        let mut art = RangedDevice::new();
+        let n = files.len();
+        let (files, generals) = arrange(files);
+        for (path, file) in files {
+            match file {
+                Imported::Whole { key, bytes } => {
+                    if key == u32::MAX {
+                        art.insert(&path, bytes.clone());
+                    } else {
+                        // the art keeps the archive's directory only, and reads its members back from the page
+                        let keep = if is_big(&path) { ArchiveFile::directory_prefix_needed(bytes.len(), &bytes) } else { 0 };
+                        art.insert_ranged(&path, bytes.len(), key, bytes[..keep.min(bytes.len())].to_vec());
+                    }
+                    d.insert(&path, bytes);
                 }
-                d.insert(&path, bytes);
+                Imported::Ranged { key, len, prefix } => art.insert_ranged(&path, len, key, prefix),
             }
-            Imported::Ranged { key, len, prefix } => art.insert_ranged(&path, len, key, prefix),
         }
+        let generals = generals.then_some(GENERALS_DIR);
+        let mut logic = FileSystem::new(d);
+        logic.local.game_dir = GAME_DIR.to_vec();
+        logic.init(generals);
+        let mut art = FileSystem::new(art);
+        art.local.game_dir = GAME_DIR.to_vec();
+        art.init(generals);
+        let mut tables = AudioTables::new();
+        let _ = tables.load(|p| logic.open_file(p));
+        Starting { logic, art, tables, map: map.map(<[u8]>::to_vec), files: n }
     }
-    let generals = generals.then_some(GENERALS_DIR);
-    let mut fs = FileSystem::new(d);
-    fs.local.game_dir = GAME_DIR.to_vec();
-    fs.init(generals);
-    let started = start_from_fs(&fs, map, n)?;
-    drop(fs);
-    let mut art = FileSystem::new(art);
-    art.local.game_dir = GAME_DIR.to_vec();
-    art.init(generals);
-    Ok((started, art))
+
+    /// The art's device (the page's ranges go to it, [`pump_ranges`]).
+    pub fn art_device(&mut self) -> &mut RangedDevice {
+        &mut self.art.local.device
+    }
+
+    /// Whether every audio header the load reads is held: the load's own read is run, and the device asks for what it
+    /// lacks (listed for the page by the next [`pump_ranges`]).
+    pub fn audio_headers_ready(&self) -> bool {
+        let before = self.art.local.device.unserved_reads();
+        let _ = audio_lengths_ms(&self.tables, &self.art, DEFAULT_LANGUAGE);
+        self.art.local.device.unserved_reads() == before
+    }
+
+    /// The ranges asked for and not arrived (for the status line).
+    pub fn outstanding(&self) -> usize {
+        self.art.local.device.outstanding()
+    }
+
+    /// The game: the logic's load from its files, the audio lengths from the art's device.
+    pub fn start(self) -> Result<(Started, FileSystem<RangedDevice>), String> {
+        let started = start_from_fs(&self.logic, &self.art, self.map.as_deref(), self.files)?;
+        drop(self.logic);
+        Ok((started, self.art))
+    }
+}
+
+thread_local! {
+    /// The game being started ([`poll_start`]).
+    static STARTING: RefCell<Option<Starting>> = const { RefCell::new(None) };
+}
+
+/// The application's poll, once a frame (#52): a completed import becomes a [`Starting`]; its ranges are exchanged with
+/// the page; once the audio headers are all held the game starts. `None` while there is nothing to start or it is still
+/// waiting (the art's status says for what).
+pub fn poll_start() -> Option<Result<(Started, FileSystem<RangedDevice>), String>> {
+    if let Some(files) = take_import() {
+        STARTING.with(|s| *s.borrow_mut() = Some(Starting::new(files, None)));
+    }
+    STARTING.with(|s| {
+        let mut slot = s.borrow_mut();
+        let st = slot.as_mut()?;
+        pump_ranges(st.art_device());
+        let ready = st.audio_headers_ready();
+        // the headers just asked for go to the page now
+        pump_ranges(st.art_device());
+        if !ready {
+            set_art_status(format!("reading the sounds' headers: {} ranges outstanding", st.outstanding()));
+            return None;
+        }
+        let st = slot.take()?;
+        Some(st.start())
+    })
 }
 
 /// A `.big` file's name.
@@ -305,11 +384,12 @@ fn arrange<T>(files: Vec<(Vec<u8>, T)>) -> (Vec<(Vec<u8>, T)>, bool) {
 pub fn start_from_folder(folder: &std::path::Path, map: Option<&[u8]>) -> Result<Started, String> {
     let mut fs = FileSystem::new(rts_lockstep_engine::common::file_system::NativeDevice::new(folder));
     fs.init(None);
-    start_from_fs(&fs, map, 0)
+    start_from_fs(&fs, &fs, map, 0)
 }
 
-fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, map: Option<&[u8]>, files: usize) -> Result<Started, String> {
-    let (mut world, report) = World::from_install(fs, DEFAULT_LANGUAGE).map_err(|e| format!("the game's data did not load: {}", describe(&e)))?;
+/// The game from the logic's files, with the audio files' headers read from `audio` (#52; natively the same files).
+fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles, map: Option<&[u8]>, files: usize) -> Result<Started, String> {
+    let (mut world, report) = World::from_install_with_audio(fs, audio, DEFAULT_LANGUAGE).map_err(|e| format!("the game's data did not load: {}", describe(&e)))?;
     let game = world.quick_skirmish(fs, map, 1).map_err(|e| format!("no skirmish could start: {}", describe(&e)))?;
     // the first frame dispatches `MSG_NEW_GAME`, the next starts the game and makes the players: the local player is the
     // slot-0 human (the second frame in `install_world`'s test; up to 30 allowed)
@@ -323,11 +403,12 @@ fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, map: Option<&[u8]>, files: 
     }
     let player = player.ok_or_else(|| "the game made no local player in 30 frames".to_string())?;
     let report = format!(
-        "{} on {} | {} templates, {} maps, {} archive errors{}",
+        "{} on {} | {} templates, {} maps, {} sound lengths, {} archive errors{}",
         String::from_utf8_lossy(&game.sides.0),
         game.map_name,
         report.templates,
         report.maps,
+        report.audio_lengths,
         report.archive_errors.len(),
         if files > 0 { format!(", {files} files imported") } else { String::new() }
     );
@@ -380,6 +461,48 @@ mod tests {
         let (out, generals) = arrange(vec![f("Sub\\EnglishZH.big")]);
         assert!(!generals);
         assert_eq!(names(out), ["ZH\\Sub\\EnglishZH.big"]);
+    }
+
+    /// #52: a start waits for the audio headers. Predicted: with the audio INI given whole and the sounds in an archive
+    /// handed over by its directory only, the first check is not ready and asks for ranges; the ranges handed back as the
+    /// page would, the check is ready within four rounds; the lengths then read from the art's device are the files' own
+    /// (`Talk`, 8-bit mono at 8000 Hz of 9,872 bytes, 1234 ms), and fewer than 2,048 bytes of the ~310 KB archive were
+    /// fetched.
+    #[test]
+    fn a_start_waits_for_the_sound_headers() {
+        let wav = |ms: usize| {
+            let data = vec![128u8; 8 * ms];
+            let mut b = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x40\x1f\0\0\x40\x1f\0\0\x01\0\x08\0data".to_vec();
+            b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            b.extend_from_slice(&data);
+            b
+        };
+        let talk = wav(1234);
+        // (a member nobody reads first: the directory read takes the archive's first 64 KiB or so, and a test archive
+        // smaller than that would be held whole; first run: it was, and the check never waited, a fixture error)
+        let filler = vec![0u8; 300 * 1024];
+        let big = rts_lockstep_engine::formats::big::build_big(&[(b"Data\\Audio\\filler.bin", &filler), (b"Data\\Audio\\Speech\\talk.wav", &talk)]);
+        let ini = b"AudioSettings\n AudioRoot = Data\\Audio\n StreamingFolder = Speech\n SoundsExtension = wav\nEnd\nDialogEvent Talk\n Filename = talk.wav\nEnd\n".to_vec();
+        let keep = ArchiveFile::directory_prefix_needed(big.len(), &big);
+        let files = vec![
+            (b"INIZH.big".to_vec(), Imported::Whole { key: u32::MAX, bytes: rts_lockstep_engine::formats::big::build_big(&[(b"Data\\INI\\Speech.ini", &ini)]) }),
+            (b"SpeechZH.big".to_vec(), Imported::Ranged { key: 9, len: big.len(), prefix: big[..keep].to_vec() }),
+        ];
+        let mut st = Starting::new(files, None);
+        let mut rounds = 0;
+        while !st.audio_headers_ready() {
+            rounds += 1;
+            assert!(rounds < 4, "round {rounds}");
+            for (k, o, l) in st.art_device().take_wanted() {
+                assert_eq!(k, 9);
+                st.art_device().provide(k, o, big[o..o + l].to_vec());
+            }
+        }
+        assert!(rounds >= 1, "the first check waits");
+        let lengths = audio_lengths_ms(&st.tables, &st.art, DEFAULT_LANGUAGE);
+        assert_eq!(lengths.get(&b"Talk"[..]), Some(&1234.0));
+        let fetched = st.art.local.device.stats().bytes_arrived;
+        assert!(fetched < 2048, "{fetched} of {}", big.len());
     }
 
     /// #24: the exchange with the page. Predicted: a read of bytes not held lists its range once for the page after a

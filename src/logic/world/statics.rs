@@ -103,6 +103,12 @@ pub struct GameStatics {
     /// to make upstream's logic draws (`crate::logic::logical_audio`). The client reads its own copy of the same files.
     pub audio: crate::client::audio_info::AudioTables,
     // --- end GitHub #50 ---
+    // --- GitHub #52 ---
+    /// `TheAudio->getAudioLengthMS(&AudioEventRTS(name))` of every described event, by name, as the script engine's
+    /// `isSpeechComplete`/`isAudioComplete` read it: made at load from the files' headers, the first file of each list
+    /// (`crate::logic::audio_length`). An event not listed is 0. Empty for a load without the install's audio.
+    pub audio_lengths_ms: std::collections::BTreeMap<Vec<u8>, f32>,
+    // --- end GitHub #52 ---
     // New stores go here, each in its translator's marked block.
 }
 

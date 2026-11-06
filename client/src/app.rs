@@ -321,9 +321,10 @@ fn poll_import(
     mut rig: ResMut<Rig>,
     mut terrain: ResMut<TerrainState>,
 ) {
-    let Some(files) = crate::import::take_import() else { return };
+    // (#52: the audio files' headers are fetched first, over as many frames as the page takes to read them)
+    let Some(started) = crate::import::poll_start() else { return };
     game.playing = "loading your Zero Hour files...".to_string();
-    match crate::import::start_from_files(files, None) {
+    match started {
         Ok((s, art)) => {
             info!("playing your game: {}", s.report);
             crate::import::set_outcome(Ok(&s.report));

@@ -553,4 +553,42 @@ mod tests {
         assert!(!w.evaluate_condition_with(&mut engine, &mut credits(400)).unwrap());
         assert_eq!((engine.counters[0].value, w.script_engine.counters[0].value), (42, 0));
     }
+
+    /// GitHub #52. A `HAS_FINISHED_SPEECH` (and `HAS_FINISHED_AUDIO`) condition on a world whose audio lengths were made
+    /// at load from the files (`audio_length`'s test install: `Talk` 1234 ms from its localized file, `Boom` 100 + 400 +
+    /// 50 ms). *Predictions, written before the first run:* `isSpeechComplete` stores `frame + REAL_TO_UNSIGNEDINT(1234 /
+    /// 33.333332)` = `frame + 37` (37.02 truncated); asked first at frame 100, the condition is false on frames 100 to
+    /// 136 and true on 137, the first frame at or past it; then, removed by that true answer, a new ask at 137 starts a
+    /// new wait ending at 174. `Boom` asked at 100 through `HAS_FINISHED_AUDIO`: 550 / 33.333332 = 16.5, so true on frame
+    /// 116 and not 115. An event with no length is true on the frame it is asked.
+    #[test]
+    fn a_speech_wait_ends_on_the_frame_its_files_length_gives() {
+        let (mut w, _) = world();
+        let (t, f) = (crate::logic::audio_length::tests::tables(), crate::logic::audio_length::tests::files());
+        let mut st = (*w.statics).clone();
+        st.audio_lengths_ms = crate::logic::audio_length::audio_lengths_ms(&t, &f, b"English");
+        w.statics = std::sync::Arc::new(st);
+        let cond = |ty: i32, name: &[u8]| {
+            let mut c = Condition::new_for_read();
+            c.condition_type = ty;
+            c.num_parms = 1;
+            let mut p = Parameter::new(0, 0);
+            p.string = name.to_vec();
+            c.parms[0] = Some(p);
+            c
+        };
+        let mut engine = std::mem::take(&mut w.script_engine);
+        let mut ask = |w: &mut World, frame: u32, ty: i32, name: &[u8]| {
+            w.set_frame(frame);
+            w.evaluate_condition_with(&mut engine, &mut cond(ty, name)).unwrap()
+        };
+        let first_true = |ask: &mut dyn FnMut(&mut World, u32, i32, &[u8]) -> bool, w: &mut World, from: u32, ty: i32, name: &[u8]| {
+            (from..from + 1000).find(|&f| ask(w, f, ty, name)).unwrap()
+        };
+        assert_eq!(first_true(&mut ask, &mut w, 100, ct::HAS_FINISHED_SPEECH, b"Talk"), 137);
+        assert_eq!(first_true(&mut ask, &mut w, 137, ct::HAS_FINISHED_SPEECH, b"Talk"), 174);
+        assert_eq!(first_true(&mut ask, &mut w, 100, ct::HAS_FINISHED_AUDIO, b"Boom"), 116);
+        assert!(ask(&mut w, 500, ct::HAS_FINISHED_SPEECH, b"Quiet"));
+        assert!(ask(&mut w, 500, ct::HAS_FINISHED_AUDIO, b"NoSuchEvent"));
+    }
 }

@@ -2390,8 +2390,6 @@ pub struct ObjectCuts {
     pub pending_game_logic_writes: Vec<GameLogicWrite>,
     /// Integration batch I29: the script engine's notifications not yet taken by it ([`crate::logic::world::script_engine::ScriptNote`]).
     pub pending_script_notes: Vec<crate::logic::world::script_engine::ScriptNote>,
-    /// batch I8a: `TheAudio->getAudioLengthMS(name)`, by event name (none listed: 0).
-    pub audio_lengths_ms: BTreeMap<Vec<u8>, f32>,
     /// batch I8b: `TheInGameUI->getFrameSelectionChanged()`.
     pub frame_selection_changed: u32,
     /// batch I8b: `TheAudio->hasMusicTrackCompleted(name, n)`: how many times each track has completed.
@@ -2589,7 +2587,6 @@ impl Default for ObjectCuts {
             pending_rank_points: None,
             pending_game_logic_writes: Vec::new(),
             pending_script_notes: Vec::new(),
-            audio_lengths_ms: BTreeMap::new(),
             frame_selection_changed: 0,
             music_tracks_completed: BTreeMap::new(),
             live_pathfinder: false,

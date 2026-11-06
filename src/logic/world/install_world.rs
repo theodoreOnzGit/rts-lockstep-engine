@@ -35,7 +35,7 @@ use crate::common::ini::IniError;
 use crate::common::map_cache::MapCacheError;
 use crate::formats::big::FilenameList;
 use crate::formats::csf::{CsfError, GameText};
-use crate::logic::world::game_data::{load_game_data, MissingFiles, TextTable};
+use crate::logic::world::game_data::{load_game_data, GameDataFiles, MissingFiles, TextTable};
 use crate::logic::world::game_logic::World;
 
 /// `GetRegistryLanguage()`'s answer for an English install (the folder name under `Data\`).
@@ -70,6 +70,8 @@ pub struct InstallReport {
     pub maps: usize,
     /// Batch I60: the script files (`Data\Scripts\*.scb`) mounted.
     pub scripts: usize,
+    /// GitHub #52: the audio events with a length (`World::statics.audio_lengths_ms`).
+    pub audio_lengths: usize,
 }
 
 /// `"%s\\%s"`-style join of the parts.
@@ -82,6 +84,14 @@ impl World {
     /// `INI::load` throws on one that does not), a World with those statics, the user data directory, the shipped map
     /// cache file mounted, and `TheMapCache->updateCache()`.
     pub fn from_install<D: LocalDevice>(fs: &FileSystem<D>, language: &[u8]) -> Result<(World, InstallReport), InstallError> {
+        Self::from_install_with_audio(fs, fs, language)
+    }
+
+    /// [`World::from_install`] with the audio files' headers read from `audio` (GitHub #52): the same install, where its
+    /// audio archives are on another device than its INI (the browser's: the logic's files are handed over whole, the
+    /// audio archives by range, `client/src/import.rs`). Every byte `audio` is asked for must be there now: a read that
+    /// is not served gives a length of 0, so a caller whose bytes arrive later fetches them first.
+    pub fn from_install_with_audio<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles, language: &[u8]) -> Result<(World, InstallReport), InstallError> {
         let mut report = InstallReport { archive_errors: fs.archive_errors.iter().map(|e| format!("{e:?}")).collect(), ..Default::default() };
         // TheGameText->init(): `g_csfFile` with the registry's language
         let csf_path = join(&[b"data\\", language, b"\\Generals.csf"]);
@@ -109,6 +119,10 @@ impl World {
                 .collect();
             InstallError::Ini { error, missing }
         })?;
+        // (GitHub #52: `getAudioLengthMS` of every event, from its files' headers, for the script engine's waits)
+        let mut load = load;
+        load.load_audio_lengths(audio, language);
+        report.audio_lengths = load.audio_lengths_ms.len();
         report.templates = load.factory.templates().count();
         let (mut statics, names) = load.into_statics();
         if statics.global_data.the_global_data().is_none() {

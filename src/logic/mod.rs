@@ -92,3 +92,6 @@ pub mod radius_decal;
 // --- GitHub #50 ---
 pub mod logical_audio;
 // --- end GitHub #50 ---
+// --- GitHub #52 ---
+pub mod audio_length;
+// --- end GitHub #52 ---

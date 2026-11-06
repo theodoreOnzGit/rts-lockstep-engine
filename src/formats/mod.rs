@@ -12,3 +12,6 @@ pub mod w3d;
 pub mod data_chunk_output;
 // --- end p1w4-sides ---
 pub mod wav;
+// --- GitHub #52 ---
+pub mod mp3;
+// --- end GitHub #52 ---

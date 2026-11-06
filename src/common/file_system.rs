@@ -216,6 +216,21 @@ impl<D: LocalDevice> FileSystem<D> {
         (data.len() == size).then_some(data)
     }
 
+    /// GitHub #52 (new): `len` bytes of `filename` from `offset` (fewer at its end, none without the file): the local
+    /// file's range, else the archive member's range of its archive, so a member's header is read without the member.
+    pub fn read_file_range(&self, filename: &[u8], offset: usize, len: usize) -> Vec<u8> {
+        if let Some(size) = self.local.get_file_info(filename) {
+            let end = offset.saturating_add(len).min(size);
+            return if offset < end { self.local.read_range(filename, offset, end - offset) } else { Vec::new() };
+        }
+        let Some((archive, start, size)) = self.archives.member_location(filename) else { return Vec::new() };
+        let end = offset.saturating_add(len).min(size);
+        if offset >= end {
+            return Vec::new();
+        }
+        self.local.read_range(&archive, start + offset, end - offset)
+    }
+
     /// GitHub #24 (new): whether [`FileSystem::open_file`] of `filename` would be served now by a device whose bytes
     /// arrive later ([`LocalDevice::ready`]): the local file's bytes, else the archive member's range. A file that is not
     /// there is ready (opening it fails at once). Asks the device for the bytes it lacks.
@@ -262,6 +277,15 @@ impl<D: LocalDevice> GameDataFiles for FileSystem<D> {
         let mut list = FilenameList::new();
         self.get_file_list_in_directory(&d, b"*.ini", &mut list, true);
         list
+    }
+    fn file_exists(&self, path: &[u8]) -> bool {
+        self.does_file_exist(path)
+    }
+    fn file_size(&self, path: &[u8]) -> Option<usize> {
+        self.get_file_info(path)
+    }
+    fn read_file_range(&self, path: &[u8], offset: usize, len: usize) -> Vec<u8> {
+        self.read_file_range(path, offset, len)
     }
 }
 
