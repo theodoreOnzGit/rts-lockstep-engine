@@ -246,11 +246,25 @@ impl World {
     /// computer player with the next playable side (the same one when there is only one) in slot 1, the map's folder
     /// mounted, and [`World::start_skirmish_against`]. The game starts on the next frame.
     pub fn quick_skirmish<D: LocalDevice>(&mut self, fs: &FileSystem<D>, map: Option<&[u8]>, seed: i32) -> Result<QuickSkirmish, InstallError> {
-        let maps = self.skirmish_maps();
-        let chosen = match map {
-            Some(m) => m.to_ascii_lowercase(),
-            None => maps.first().cloned().ok_or_else(|| InstallError::MapNotInCache(Vec::new()))?,
-        };
+        let chosen = self.choose_skirmish_map(map)?;
+        let mounted = self.mount_map(fs, &chosen);
+        let mut q = self.quick_skirmish_mounted(&chosen, seed)?;
+        q.mounted = mounted;
+        Ok(q)
+    }
+
+    /// [`World::quick_skirmish`]'s map: `map` (lower case), else the first of [`World::skirmish_maps`].
+    pub fn choose_skirmish_map(&self, map: Option<&[u8]>) -> Result<Vec<u8>, InstallError> {
+        match map {
+            Some(m) => Ok(m.to_ascii_lowercase()),
+            None => self.skirmish_maps().first().cloned().ok_or_else(|| InstallError::MapNotInCache(Vec::new())),
+        }
+    }
+
+    /// [`World::quick_skirmish`] on a map whose folder is already on the World's disk (GitHub #4: a World cloned from the
+    /// one an install made, for a save's load; `mounted` is 0).
+    pub fn quick_skirmish_mounted(&mut self, chosen: &[u8], seed: i32) -> Result<QuickSkirmish, InstallError> {
+        let chosen = chosen.to_vec();
         let playable: Vec<(i32, Vec<u8>)> = self
             .statics
             .player_template_store
@@ -262,10 +276,9 @@ impl World {
             .collect();
         let me = playable.first().cloned().unwrap_or((0, Vec::new()));
         let them = playable.get(1).cloned().unwrap_or_else(|| me.clone());
-        let mounted = self.mount_map(fs, &chosen);
         let map_name = self.statics.map_cache.find_map(&chosen).map(|m| String::from_utf16_lossy(m.display_name.str())).unwrap_or_default();
         self.start_skirmish_against(&chosen, me.0, seed, Some((crate::common::game_info::slot_state::MED_AI, them.0)))?;
-        Ok(QuickSkirmish { map: chosen, map_name, sides: (me.1, them.1), mounted })
+        Ok(QuickSkirmish { map: chosen, map_name, sides: (me.1, them.1), mounted: 0 })
     }
 }
 

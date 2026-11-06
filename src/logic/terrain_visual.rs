@@ -341,6 +341,16 @@ impl WaterGrid {
         self.mesh.as_ref().map(Vec::len)
     }
 
+    /// `m_gridCellsX`, `m_gridCellsY` (GitHub #4: `WaterRenderObjClass::xfer` checks them against the save's).
+    pub fn grid_cells(&self) -> (i32, i32) {
+        (self.cells_x, self.cells_y)
+    }
+
+    /// `m_meshData[i].height` for `WaterRenderObjClass::xfer` (GitHub #4), `None` when the mesh is not allocated.
+    pub fn mesh_heights_mut(&mut self) -> Option<&mut Vec<f32>> {
+        self.mesh.as_mut()
+    }
+
     /// `W3DTerrainVisual::enableWaterGrid(enable)`.
     pub fn enable_water_grid(&mut self, enable: bool) -> Result<(), TerrainUndefined> {
         self.rendering_enabled = enable;
@@ -823,6 +833,11 @@ impl LogicHeightMap {
     /// `getDataPtr()`.
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+
+    /// `getDataPtr()`, written (GitHub #4: `W3DTerrainVisual::xfer`'s `xferUser(data, len)` on a load).
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        &mut self.data
     }
 
     /// `getHeight(xIndex, yIndex)`: 0 for an index outside the data. The

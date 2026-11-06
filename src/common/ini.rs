@@ -374,6 +374,10 @@ pub enum Undefined {
     NullBridgeTemplate,
     /// batch R77: a `NULL` `BridgeScaffoldBehaviorInterface` dereferenced (an object `BridgeBehavior` makes or keeps as scaffold has none).
     NullScaffoldInterface,
+    /// GitHub #4: part of a save block this port does not translate and cannot read past in that place (the World's own
+    /// load of `W3DTerrainVisual::xfer` version 3, whose tree and prop buffers follow the heights; the client's save code
+    /// reads past them).
+    SaveBlockPartNotTranslated,
 }
 
 /// What failed, innermost cause first.

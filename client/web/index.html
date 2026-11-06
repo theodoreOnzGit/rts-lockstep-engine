@@ -19,11 +19,18 @@
   #files input[type=file] { display: none; }
   #files .hide { position: absolute; top: 6px; right: 8px; background: none; padding: 2px 6px; color: #889; }
   #status { color: #ffd479; min-height: 1.4em; }
+  /* #4: the saves panel's import button (the panel itself is the game's; this file picker needs the page) */
+  #importsave { position: absolute; top: 44px; right: 72px; background: #2a5d9f; color: #fff; border-radius: 6px;
+                padding: 8px 12px; cursor: pointer; z-index: 2; }
+  #importsave input { display: none; }
+  /* on a phone the panel's header wraps: the button goes to the room the panel leaves on its second row */
+  @media (max-width: 420px) { #importsave { top: 98px; left: 16px; right: auto; } }
 </style>
 </head>
 <body>
 <div id="loading">Loading…</div>
 <canvas id="rts" tabindex="0"></canvas>
+<label id="importsave" hidden title="Import saved games (.sav), yours from the original game too. They stay in this browser.">Import .sav<input id="savfile" type="file" accept=".sav" multiple></label>
 <div id="files">
   <button class="hide quiet" id="hide" title="Hide">×</button>
   <h1>Play with your Zero Hour files</h1>
@@ -43,7 +50,9 @@
 </div>
 <script type="module">
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
-  import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status } from './rts_client.js';
+  import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status,
+    saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open,
+    saves_status, saves_logic_frame } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -230,6 +239,65 @@
     $('saved').hidden = true;
     status('The saved files were removed from this browser.');
   });
+
+  // #4: saved games. They live in OPFS `Save/` (upstream's save folder, `GameState::getSaveDirectory`), in this browser
+  // only: nothing is uploaded. The game asks for writes and downloads through queues (`src/saves.rs`'s `page`); the page
+  // reads the folder at start, writes what the game saves, offers exports as downloads, and imports the .sav files the
+  // player picks (theirs from the original game too) through the game, which names them.
+  async function saveDir() {
+    const root = await navigator.storage.getDirectory();
+    return root.getDirectoryHandle('Save', { create: true });
+  }
+  async function savedGames() {
+    const out = [];
+    try {
+      for await (const [name, h] of (await saveDir()).entries()) {
+        if (h.kind === 'file' && /\.sav$/i.test(name)) out.push([name, h]);
+      }
+    } catch (e) { /* no OPFS in this browser */ }
+    return out;
+  }
+  ready.then(async () => {
+    for (const [name, h] of await savedGames()) {
+      saves_add(name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
+    }
+    let writing = false;
+    setInterval(async () => {
+      $('importsave').hidden = !saves_panel_open();
+      for (;;) {
+        const name = saves_download_name();
+        if (!name) break;
+        const url = URL.createObjectURL(new Blob([saves_download_bytes()], { type: 'application/octet-stream' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
+      if (writing) return;
+      writing = true;
+      try {
+        for (;;) {
+          const name = saves_write_name();
+          if (!name) break;
+          const bytes = saves_write_bytes();
+          try {
+            const w = await (await (await saveDir()).getFileHandle(name, { create: true })).createWritable();
+            await w.write(bytes);
+            await w.close();
+          } catch (e) { console.warn('could not keep the save ' + name + ' in this browser: ' + e); }
+        }
+      } finally { writing = false; }
+    }, 250);
+  });
+  $('savfile').addEventListener('change', async (e) => {
+    for (const f of e.target.files) saves_import(f.name, new Uint8Array(await f.arrayBuffer()));
+    e.target.value = '';
+  });
+  // for checks: the last save action, and the names in OPFS `Save/`
+  window.rtsSaves = {
+    status: () => { try { return saves_status(); } catch (e) { return ''; } },
+    frame: () => { try { return saves_logic_frame(); } catch (e) { return -1; } },
+    names: async () => (await savedGames()).map(([n]) => n),
+  };
 
   // the art's state, for checks (`art_status`: the objects drawn as models, the bytes held and read)
   window.rtsArtStatus = () => { try { return art_status(); } catch (e) { return ''; } };

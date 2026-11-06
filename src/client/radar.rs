@@ -33,8 +33,9 @@
 //! - **`Radar::crc` writes nothing** (Radar.cpp:1376), nor does `RadarObject::crc`: the radar is not in the logic's CRC,
 //!   so nothing here moves gate (a).
 //! - **`Radar::xfer` is saved** (`CHUNK_Radar`, `GameState.cpp`): the hidden and forced flags, both object lists (each
-//!   entry its object's id and colour), the 64 events and the two event indices. This port's save game does not carry
-//!   the block yet (GitHub #35's gap note); [`Radar`] holds every field it would write.
+//!   entry its object's id and colour), the 64 events and the two event indices. ~~This port's save game does not carry
+//!   the block yet (GitHub #35's gap note); [`Radar`] holds every field it would write.~~ **Corrected 2026-11-06 (GitHub
+//!   #4):** the client's save (`crate::client::save_game`) writes and reads it, every field.
 //! - **Nothing in the logic reads the radar back**, except one bit the logic already keeps: whether an object has radar
 //!   data (`m_radarData != NULL`, read by `Object::attemptDamage` before `tryUnderAttackEvent`), which is the World's
 //!   `on_radar`. `tryEvent`'s answer gates only the stealth detectors' sound, message and EVA (`StealthDetectorUpdate`),

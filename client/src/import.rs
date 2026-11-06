@@ -61,6 +61,9 @@ pub struct Started {
     pub game: QuickSkirmish,
     /// What the load found, for the status line.
     pub report: String,
+    /// GitHub #4: the World as the install made it, with the game's map mounted, before the skirmish started: a save is
+    /// loaded into a copy of it, started on the save's map ([`world_for_save`]).
+    pub base: World,
 }
 
 /// A file the page hands over: whole, or by its length and the bytes from its start (#24).
@@ -390,18 +393,13 @@ pub fn start_from_folder(folder: &std::path::Path, map: Option<&[u8]>) -> Result
 /// The game from the logic's files, with the audio files' headers read from `audio` (#52; natively the same files).
 fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles, map: Option<&[u8]>, files: usize) -> Result<Started, String> {
     let (mut world, report) = World::from_install_with_audio(fs, audio, DEFAULT_LANGUAGE).map_err(|e| format!("the game's data did not load: {}", describe(&e)))?;
-    let game = world.quick_skirmish(fs, map, 1).map_err(|e| format!("no skirmish could start: {}", describe(&e)))?;
-    // the first frame dispatches `MSG_NEW_GAME`, the next starts the game and makes the players: the local player is the
-    // slot-0 human (the second frame in `install_world`'s test; up to 30 allowed)
-    let mut player = None;
-    for _ in 0..30 {
-        world.engine_update().map_err(|e| format!("a starting frame failed: {e:?}"))?;
-        player = world.players.local_index();
-        if player.is_some() {
-            break;
-        }
-    }
-    let player = player.ok_or_else(|| "the game made no local player in 30 frames".to_string())?;
+    // (`World::quick_skirmish` in its steps, so the World before the game is kept for a save's load, GitHub #4)
+    let chosen = world.choose_skirmish_map(map).map_err(|e| format!("no skirmish could start: {}", describe(&e)))?;
+    let mounted = world.mount_map(fs, &chosen);
+    let base = world.clone();
+    let mut game = world.quick_skirmish_mounted(&chosen, 1).map_err(|e| format!("no skirmish could start: {}", describe(&e)))?;
+    game.mounted = mounted;
+    let player = start_frames(&mut world)?;
     let report = format!(
         "{} on {} | {} templates, {} maps, {} sound lengths, {} archive errors{}",
         String::from_utf8_lossy(&game.sides.0),
@@ -412,7 +410,41 @@ fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles,
         report.archive_errors.len(),
         if files > 0 { format!(", {files} files imported") } else { String::new() }
     );
-    Ok(Started { world, player, game, report })
+    Ok(Started { world, player, game, report, base })
+}
+
+/// The frames that start a skirmish: the first dispatches `MSG_NEW_GAME`, the next starts the game and makes the players.
+/// The local player (the slot-0 human; the second frame in `install_world`'s test; up to 30 allowed).
+fn start_frames(world: &mut World) -> Result<i32, String> {
+    for _ in 0..30 {
+        world.engine_update().map_err(|e| format!("a starting frame failed: {e:?}"))?;
+        if let Some(p) = world.players.local_index() {
+            return Ok(p);
+        }
+    }
+    Err("the game made no local player in 30 frames".to_string())
+}
+
+/// GitHub #4: the World a save of an install's game is loaded into, as upstream's load starts the save's map before it
+/// reads the objects (`GameStateMap::xfer`'s `startNewGame(TRUE)`): a copy of the install's World ([`Started::base`])
+/// with the skirmish started on the save's pristine map, its folder taken from the base's disk, else the map file the
+/// save embeds. The local player.
+///
+/// The skirmish is the quick one's (the local player and a medium computer player with the first two playable sides),
+/// not the save's own slots: a save of another kind of game (more players, other sides, a campaign) then fails in its
+/// players' block, and the load says where.
+pub fn world_for_save(base: &World, pristine_map: &[u8], map_file: &[u8]) -> Result<(World, i32), String> {
+    use rts_lockstep_engine::common::game_state::GameState;
+    use rts_lockstep_engine::logic::world::game_state_world::WorldBlock;
+    let mut world = base.clone();
+    let real = GameState::<WorldBlock>::new().portable_map_path_to_real(pristine_map, &world).map_err(|e| format!("the save's map {:?}: {e:?}", String::from_utf8_lossy(pristine_map)))?;
+    let key = real.to_ascii_lowercase();
+    if !world.save_side.disk.contains_key(&key) && !map_file.is_empty() {
+        world.save_side.disk.insert(key, map_file.to_vec());
+    }
+    world.quick_skirmish_mounted(&real, 1).map_err(|e| format!("no skirmish on the save's map: {}", describe(&e)))?;
+    let player = start_frames(&mut world)?;
+    Ok((world, player))
 }
 
 #[cfg(test)]

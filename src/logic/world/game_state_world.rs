@@ -23,8 +23,14 @@
 //! `CHUNK_Campaign` (the campaign manager is the cut table `cuts.campaign`, saved within `CHUNK_GameLogic` as upstream also
 //! does), `CHUNK_GameStateMap` (it embeds the map file; the World is made from a map in memory, so a load is into a World
 //! made from the same map: [`World::load_game`]'s caller's), and the client's (`CHUNK_Radar`, `CHUNK_TacticalView`,
-//! `CHUNK_GameClient`, `CHUNK_InGameUI`, `CHUNK_ParticleSystem`, `CHUNK_TerrainVisual`, `CHUNK_GhostObject`). A file the
+//! `CHUNK_GameClient`, `CHUNK_InGameUI`, `CHUNK_ParticleSystem`, ~~`CHUNK_TerrainVisual`,~~ `CHUNK_GhostObject`). A file the
 //! World saves therefore lacks blocks upstream's has; a load skips blocks it does not know by their size, as upstream's.
+//! **Corrected 2026-11-06 (GitHub #4):** `CHUNK_GameStateMap` is registered (since batch I10, as the list above the
+//! correction already says); `CHUNK_TerrainVisual` is now the World's own block (`WorldBlock::TerrainVisual`,
+//! [`World::xfer_terrain_visual_part`]): its data is the logic height map the ground heights are read from and the water
+//! grid, both held by the World, so a save restores a height a script or a crater lowered. The client's other blocks are
+//! written and read by `crate::client::save_game`, which saves the whole file in upstream's order; a World saving alone
+//! still lacks them.
 //!
 //! **Post-processing:** upstream's load adds every snapshot it loads to the list, nested ones first; here each block's
 //! post-process runs its nested ones first (each object's modules and the object, then the game logic; each team, then the
@@ -36,7 +42,7 @@
 //! `p1w13-sonnet`, integration batch I10, 2026-11-01.
 
 use crate::common::game_state::{GameState, GameStateHost, SnapshotType};
-use crate::common::xfer::{Xfer, XferMode, XferResult, XferStatus};
+use crate::common::xfer::{Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::common::xfer_load::XferLoad;
 use crate::common::xfer_save::XferSave;
 use crate::logic::world::game_logic::World;
@@ -56,6 +62,9 @@ pub enum WorldBlock {
     ScriptEngine,
     SidesList,
     Partition,
+    /// GitHub #4: `CHUNK_TerrainVisual` (`W3DTerrainVisual::xfer`): the logic height map's heights and the water grid,
+    /// which the World holds ([`World::xfer_terrain_visual`]).
+    TerrainVisual,
 }
 
 /// `GameState::init`'s registration, of the blocks the World holds (see the module docs).
@@ -72,6 +81,7 @@ pub fn world_game_state() -> GameState<WorldBlock> {
         (b"CHUNK_ScriptEngine", B::ScriptEngine),
         (b"CHUNK_SidesList", B::SidesList),
         (b"CHUNK_Partition", B::Partition),
+        (b"CHUNK_TerrainVisual", B::TerrainVisual),
     ] {
         gs.add_snapshot_block(name, b, SnapshotType::SaveLoad);
     }
@@ -150,6 +160,7 @@ impl GameStateHost<WorldBlock> for World {
                 self.sides = sides;
                 r.map_err(|e| e.unwrap_or_else(|| self.block_error("SidesList::xfer", "SC_INVALID_DATA")))
             }
+            WorldBlock::TerrainVisual => self.xfer_terrain_visual(xfer).map_err(|e| self.block_error("W3DTerrainVisual::xfer", e)),
             WorldBlock::Partition => {
                 let mut pm = std::mem::take(&mut self.partition);
                 let r = xfer.xfer_snapshot(&mut pm);
@@ -206,7 +217,9 @@ impl GameStateHost<WorldBlock> for World {
             | WorldBlock::SkirmishGameInfo
             | WorldBlock::SkirmishCash
             | WorldBlock::SidesList
-            | WorldBlock::Partition => {}
+            | WorldBlock::Partition
+            // (`W3DTerrainVisual::loadPostProcess` is `TerrainVisual::loadPostProcess`, empty)
+            | WorldBlock::TerrainVisual => {}
         }
     }
 
@@ -219,6 +232,11 @@ impl GameStateHost<WorldBlock> for World {
         crate::common::recorder::RecorderHost::user_data_path(self)
     }
     fn map_name(&self) -> Vec<u8> {
+        // (GitHub #4: both are `TheGlobalData->m_mapName`; a game started from an install sets the new game's, the save side's
+        // stays empty until a load sets it, so a skirmish's first save named no map and could not embed it)
+        if self.save_side.map_name.is_empty() {
+            return self.cuts.new_game.map_name.clone();
+        }
         self.save_side.map_name.clone()
     }
     fn local_time(&mut self) -> [u16; 8] {
@@ -416,7 +434,101 @@ impl crate::common::game_state_map::GameStateMapHost<WorldBlock> for World {
     }
 }
 
+/// GitHub #4: the version this port writes of `W3DTerrainVisual::xfer` (upstream's current is 3). Version 3 adds the
+/// terrain render object's tree and prop buffers (`BaseHeightMapRenderObjClass::xfer`); this port draws neither, and a
+/// version 3 block with no trees would make upstream's load delete the map's trees (`W3DTreeBuffer::xfer` empties the
+/// buffer before reading), so it writes version 2, which upstream loads without touching them.
+pub const TERRAIN_VISUAL_SAVE_VERSION: XferVersion = 2;
+
 impl World {
+    /// GitHub #4: `W3DTerrainVisual::xfer` (current version 3, written as [`TERRAIN_VISUAL_SAVE_VERSION`]) and the
+    /// `TerrainVisual::xfer` it extends (version 1, no data), over the World's terrain visual (the logic height map the
+    /// ground heights are read from, and the water grid; `TerrainLogic::visual`):
+    ///
+    /// - the water grid's rendering flag, which must equal the World's (`SC_INVALID_DATA` otherwise, as upstream), and, if
+    ///   it is on, `WaterRenderObjClass::xfer` (version 1): the cell counts, which must equal the grid's, then each mesh
+    ///   entry's height, velocity, status and preferred height. The port's grid holds the heights only (the velocity, status
+    ///   and preferred height are the client's water simulation, not translated): a load keeps the heights and reads past the
+    ///   rest; a save writes them as 0.
+    /// - (version 2) the logic height map's samples (`xExtent * yExtent` of them, as an `Int` and the bytes). A save whose
+    ///   count differs is read for the smaller of the two, as upstream (`DEBUG_CRASH` and `len = xferLen` when the save's is
+    ///   shorter). Upstream then tells the render object its lighting changed (the client's).
+    /// - (version 3) `BaseHeightMapRenderObjClass::xfer` (the trees and props): not translated, read past to the block's
+    ///   end by the caller ([`crate::client::save_game`] knows where the block ends; a World loading alone has the block
+    ///   skipped by `GameState` only when it is not registered).
+    ///
+    /// Returns `Ok(true)` when the block's remainder is a version 3 tree and prop part this function did not read.
+    pub fn xfer_terrain_visual_part(&mut self, xfer: &mut dyn Xfer) -> Result<bool, crate::common::game_state::SaveError> {
+        use crate::common::game_state::SaveError;
+        let current: XferVersion = 3;
+        let mut version = if xfer.get_xfer_mode() == XferMode::Save { TERRAIN_VISUAL_SAVE_VERSION } else { current };
+        xfer.xfer_version(&mut version, current)?;
+        // TerrainVisual::xfer
+        let mut base: XferVersion = 1;
+        xfer.xfer_version(&mut base, 1)?;
+        let enabled = self.terrain.visual().water_grid.rendering_enabled();
+        let mut grid_enabled = enabled;
+        xfer.xfer_bool(&mut grid_enabled)?;
+        if grid_enabled != enabled {
+            return Err(SaveError::InvalidData);
+        }
+        if grid_enabled {
+            // WaterRenderObjClass::xfer
+            let mut wv: XferVersion = 1;
+            xfer.xfer_version(&mut wv, 1)?;
+            let (cx, cy) = self.terrain.visual().water_grid.grid_cells();
+            let (mut x, mut y) = (cx, cy);
+            xfer.xfer_int(&mut x)?;
+            if x != cx {
+                return Err(SaveError::InvalidData);
+            }
+            xfer.xfer_int(&mut y)?;
+            if y != cy {
+                return Err(SaveError::InvalidData);
+            }
+            let mut heights = self.terrain.visual_mut().water_grid.mesh_heights_mut().map(std::mem::take).unwrap_or_default();
+            let mut r = Ok(());
+            for h in heights.iter_mut() {
+                let (mut velocity, mut status, mut preferred) = (0.0f32, 0u8, 0u8);
+                r = xfer.xfer_real(h).and_then(|_| xfer.xfer_real(&mut velocity)).and_then(|_| xfer.xfer_unsigned_byte(&mut status)).and_then(|_| xfer.xfer_unsigned_byte(&mut preferred));
+                if r.is_err() {
+                    break;
+                }
+            }
+            if let Some(m) = self.terrain.visual_mut().water_grid.mesh_heights_mut() {
+                *m = heights;
+            }
+            r?;
+        }
+        if version >= 2 {
+            let visual = self.terrain.visual_mut();
+            let Some(map) = visual.height_map.as_mut() else {
+                // (m_logicHeightMap->getDataPtr() of a NULL map)
+                return Err(SaveError::Undefined(crate::common::ini::IniError::undefined(crate::common::ini::Undefined::NullObject)));
+            };
+            let mut len = (map.x_extent() * map.y_extent()) as usize;
+            let mut xfer_len = len as i32;
+            xfer.xfer_int(&mut xfer_len)?;
+            if len as i32 != xfer_len && len as i64 > i64::from(xfer_len) {
+                len = xfer_len.max(0) as usize;
+            }
+            let data = map.data_mut();
+            let n = len.min(data.len());
+            xfer.xfer_user(&mut data[..n])?;
+        }
+        Ok(version >= 3)
+    }
+
+    /// [`World::xfer_terrain_visual_part`] as the World's own block. A version 3 block (an original game's save) has its
+    /// trees and props left, which the World cannot read past (it does not know where the block ends), so its load stops
+    /// there with an error: such a save is loaded through [`crate::client::save_game`], which reads past them.
+    fn xfer_terrain_visual(&mut self, xfer: &mut dyn Xfer) -> Result<(), crate::common::game_state::SaveError> {
+        if self.xfer_terrain_visual_part(xfer)? {
+            return Err(crate::common::game_state::SaveError::Undefined(crate::common::ini::IniError::undefined(crate::common::ini::Undefined::SaveBlockPartNotTranslated)));
+        }
+        Ok(())
+    }
+
     /// A file opened on the save side's disk: for reading, it must exist; for writing, it is made empty.
     fn save_open(&mut self, path: &[u8], write: bool) -> bool {
         let key = path.to_ascii_lowercase();

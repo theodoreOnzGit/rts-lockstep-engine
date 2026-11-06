@@ -79,8 +79,35 @@ pub const DEMO_TEXT: [(&str, &str); 5] = [
     ("DEMO:Rally", "Set rally point"),
 ];
 
-/// The demo game at frame 0, and its objects.
-pub fn demo_world() -> (World, DemoObjects) {
+/// GitHub #4: the demo's pristine map, as a save names it (`GameStateMap`'s portable path of the gate map,
+/// `Maps\Gate\Gate.map`).
+pub const DEMO_MAP_PORTABLE: &[u8] = b"maps\\gate\\gate.map";
+
+/// GitHub #4: the demo game's map and data with no objects yet: the World a demo save is loaded into (as upstream's load
+/// starts the save's map before reading the objects): the demo's templates and texts, the local player set as the demo's
+/// game start sets it.
+pub fn demo_map_world() -> World {
+    let mut w = gate_map_world_with(&demo_ini());
+    player_list_set_local_player(&mut w, Some(DEMO_LOCAL_PLAYER)).expect("the local player");
+    add_demo_text(&mut w);
+    w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
+    w
+}
+
+/// The demo's own text for its buttons in the World's game text.
+fn add_demo_text(w: &mut World) {
+    if let Some(statics) = std::sync::Arc::get_mut(&mut w.statics) {
+        for (label, text) in DEMO_TEXT {
+            let units: Vec<u16> = text.encode_utf16().collect();
+            if let Ok(t) = rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&units) {
+                statics.game_text.strings.insert(label.as_bytes().to_vec(), t);
+            }
+        }
+    }
+}
+
+/// The demo's INI beyond the gate's.
+fn demo_ini() -> String {
     let caster = rts_lockstep_engine::logic::world::gate_scenario::CASTER_INI
         .replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250\n RadarPriority = UNIT", 1);
     // (#54: the Soldiers' command set and voices)
@@ -89,8 +116,12 @@ pub fn demo_world() -> (World, DemoObjects) {
         "Object ClickSoldier\n CommandSet = DemoSoldierSet\n VoiceGuard = DemoSoldierGuard\n VoiceMove = DemoSoldierMove\n",
         1,
     );
-    let extra = [selectable("Runner"), soldier, WORK_DOZER.to_string(), caster, GUARD_AND_RALLY.to_string()].join("\n");
-    let mut w = gate_map_world_with(&extra);
+    [selectable("Runner"), soldier, WORK_DOZER.to_string(), caster, GUARD_AND_RALLY.to_string()].join("\n")
+}
+
+/// The demo game at frame 0, and its objects.
+pub fn demo_world() -> (World, DemoObjects) {
+    let mut w = gate_map_world_with(&demo_ini());
     // GitHub #56: the local player, as `PlayerList::newGame` (`GameLogic::startNewGame`) sets it before the map's objects
     // are made: with no network, the first side whose `playerIsHuman` is set, through `setLocalPlayer` (which tells the
     // player it became local: its team colour and the control bar). The gate's two sides are both human, so `Player1`.
@@ -116,14 +147,7 @@ pub fn demo_world() -> (World, DemoObjects) {
     // the dozer's command set: construct a Depot (~~the control bar's data, which the World keeps as a table~~ **since #35**
     // the demo's INI, so the button has its texts)
     o.build_depot = w.cuts.command_buttons.iter().position(|b| b.name == b"Command_BuildDepot").expect("the dozer's button");
-    if let Some(statics) = std::sync::Arc::get_mut(&mut w.statics) {
-        for (label, text) in DEMO_TEXT {
-            let units: Vec<u16> = text.encode_utf16().collect();
-            if let Ok(t) = rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&units) {
-                statics.game_text.strings.insert(label.as_bytes().to_vec(), t);
-            }
-        }
-    }
+    add_demo_text(&mut w);
     w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
     w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
     (w, o)

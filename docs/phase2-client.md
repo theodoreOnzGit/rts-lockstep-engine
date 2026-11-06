@@ -107,6 +107,53 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#4 (2026-11-06, GitHub #4): saved games in the client.**
+- **The whole file.** `src/client/save_game.rs` registers upstream's sixteen `SNAPSHOT_SAVELOAD` blocks in
+  `GameState::init`'s order (`CHUNK_Campaign` excepted, the World's note) and writes and reads the client's beside the
+  World's. Per block: `CHUNK_Radar` (`Radar::xfer`, `xferRadarObjectList`, `RadarObject::xfer`) and `CHUNK_TacticalView`
+  (`View::xfer`) translated whole; `CHUNK_InGameUI` (`InGameUI::xfer` v3: named timers, superweapon timers) translated whole
+  and kept as read (the port's in-game UI does not show them yet); `CHUNK_GameClient` (`GameClient::xfer` v3,
+  `xferDrawableTOC`) translated except each drawable's own data (`Drawable::xfer`), read past by its block size;
+  `CHUNK_ParticleSystem` (`ParticleSystemManager::xfer`) the id counter translated, the systems read past;
+  `CHUNK_GhostObject` (`W3DGhostObjectManager::xfer`, `GhostObjectManager::xfer`) the local player translated, the ghost
+  objects read past; `CHUNK_TerrainVisual` (`W3DTerrainVisual::xfer`, `TerrainVisual::xfer`, `WaterRenderObjClass::xfer`)
+  made the World's own block, since the logic height map and water grid it holds are the World's (a version 3 block's tree
+  and prop buffers are read past; a save writes version 2, which upstream loads without emptying its trees). A save's
+  loaded drawables, particle systems and ghost objects start from their objects' state, not the save's.
+- **A load reports where it stopped** (`TracingLoad`, `LoadFailure`): the block, the offset in it, the last reads and the
+  blocks' recorded errors. `read_save_summary` reads a save's `SaveGameInfo` and map without a game (the list, and the map
+  a load starts from).
+- **Defects found and fixed:** (1) a World started from an install had no `TheGlobalData->m_mapName` for its save (the new
+  game's copy was set, the save side's was empty), so `GameStateMap` could not embed the map: `map_name` now falls back to
+  the new game's; (2) `CHUNK_TerrainVisual` was not saved, so a height a script or a crater lowered was lost on a load;
+  (3) after a load every object lacked its radar data (`on_radar`, which upstream's radar block gives back): only client
+  feedback reads it, and the client's radar block now restores it (a World loading alone still lacks it).
+- **The client** (`client/src/saves.rs`, plain Rust; `app.rs` glue): an `S` button in the zoom column opens a panel (the game
+  paused under it, the pointer its) with *Save game*, *Close* and the saves newest first (description, map label, date,
+  campaign side), each with *Load* and *Export*. Natively the folder is the game's own (`Documents\Command and Conquer
+  Generals Zero Hour Data\Save`, `RTS_ZH_USER_DATA` to override), so an original game's saves are listed as they are; in the
+  browser OPFS `Save/`, which the page reads at start and writes as asked; export is a download, import a file picker (the
+  page's button, shown with the panel). Saves are never uploaded. A save is named `%08d.sav` by
+  `GameState::find_next_save_filename`. A load starts the save's map first: the demo's (`demo_map_world`) or the install's
+  World copied before its game started (`import::Started::base`, `import::world_for_save`, the quick skirmish's slots).
+- *Predictions and results:* in the tests' doc comments (`save_game` 3, `saves` 2). **Misses:** two in the engine's test
+  and one in the client's, all fixtures (an unknown template in the load's world, the local player the game start sets, an
+  order in the selection's own frame); the browser check's first pass pressed nothing (Bevy's picking needs the pointer
+  over a button before the press: the check now hovers, and holds a touch); the radar's fallback box covered the new
+  button (moved up by one button, its test corrected); on a phone the page's import button covered *Close* (the panel now
+  leaves it room on a second row).
+- **Checked in headless Chromium** (`$S/webcheck/check4.js`, demo game, 1000 x 700 and 390 x 844 touch): save (status
+  `saved 00000000.sav`, the file in OPFS `Save/`), reload the page (the save still listed), load from the list (status
+  `loaded 00000000.sav`; frames 152 to 167 to 219 desktop, 252 to 286 to 378 phone: the game runs on from the saved
+  frame); no horizontal overflow.
+- **Not run:** an original game's save (`RTS_ZH_SAVE` with `RTS_ZH_DIR`, `save_game`'s third test): none is here, so it
+  was skipped.
+- **Not yet:** `Drawable::xfer` (the drawables' looks), `ParticleSystem::xfer`, `W3DGhostObject::xfer`, the tree and prop
+  buffers; a load starting the save's own skirmish slots or a campaign mission; the game's own save/load menu (C5); the
+  in-game UI's timers shown.
+- **Gates:** lib 1024 (1021 + 3), client 41 (39 + 2), clippy clean, web build clean, gate (a) PASS (last `0bf44067`,
+  unchanged), gate (b) (`save_load_tests`) passes.
+
 **#13 (2026-11-06, GitHub #13): audio, rung 1 (the manager, translated) and rung 2 in part (the device, the browser's
 output).**
 - **Translated** (engine crate, `src/client/`, no renderer): `audio_info` (`AudioEventInfo` and its INI blocks
@@ -157,8 +204,8 @@ output).**
 **#35, the rest (2026-11-06, GitHub #35): the radar and the minimap.**
 - **Logic or client state?** Client. `Radar::crc` and `RadarObject::crc` write nothing (Radar.cpp:1376), so the radar is
   not in the logic's CRC and gate (a) cannot move for it. `Radar::xfer` is saved (`CHUNK_Radar`: hidden, forced, both
-  object lists as ids and colours, the 64 events, the two indices); this port's save does not carry that block yet (a
-  gap). The logic reads back only whether an object has radar data (`m_radarData`, the World's `on_radar`, already
+  object lists as ids and colours, the 64 events, the two indices); ~~this port's save does not carry that block yet (a
+  gap).~~ **Corrected 2026-11-06 (#4):** the client's save writes and reads it (see #4's entry). The logic reads back only whether an object has radar data (`m_radarData`, the World's `on_radar`, already
   kept); `tryEvent`'s answer gates only client feedback. So the logic's radar calls are client events and the client's
   radar takes them, reading the World.
 - **Translated:** `src/client/radar.rs` (Radar.cpp: the two object lists sorted by priority with each object's colour,
@@ -189,7 +236,7 @@ output).**
   first place (the top right) covered the phone's four-line status line (the phone check's screenshot), so it moved above
   the zoom column. The rest held on the first run, including `tryEvent`'s throttling read from upstream's unparenthesised
   distance (any two points of a map are "close").
-- **Not yet:** `CHUNK_Radar` in the save; the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;
+- **Not yet:** ~~`CHUNK_Radar` in the save;~~ (**corrected 2026-11-06, #4:** saved and loaded) the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;
   the dozer's construction message and voice; a map's own `WaterTransparency`; the beacon's radar pulse
   (`BeaconClientUpdate`, not translated); `GameLogic::startNewGame`'s replay `forceOn`.
 - **Gates:** lib 1021 (1009 + 12), client 39 (37 + 2), clippy clean, web build clean, the page checked at 390 x 844 and

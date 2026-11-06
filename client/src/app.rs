@@ -115,6 +115,11 @@ struct Game {
     radar_event_sounds: u32,
     /// (#35) Whether the water INI has been read for the radar (once the art is there).
     radar_water_pending: bool,
+    /// (#4) The World as the install made it, before the game started: a save of this install's games is loaded into a
+    /// copy of it (`crate::import::Started::base`); `None` for the demo.
+    base: Option<Box<GameWorld>>,
+    /// (#4) The client's state a save holds besides the World and the radar (the camera's view, the in-game UI's timers).
+    save_state: crate::saves::ClientState,
 }
 
 /// The audio's output: the browser's Web Audio, or (natively, no backend chosen yet) the silent one.
@@ -131,10 +136,15 @@ struct GameSound {
 
 impl Game {
     fn new(world: GameWorld, player: i32, playing: String, art: Option<Art<ArtDevice>>) -> Self {
-        let mut world = world;
-        let cur = snapshot(&mut world);
+        Game::from_controls(Controls::new(world, player), player, playing, art)
+    }
+
+    /// (#4) A game over controls already made (a loaded save's).
+    fn from_controls(controls: Controls, player: i32, playing: String, art: Option<Art<ArtDevice>>) -> Self {
+        let mut controls = controls;
+        let cur = snapshot(controls.world());
         Game {
-            controls: Controls::new(world, player),
+            controls,
             prev: cur.clone(),
             cur,
             paused: false,
@@ -163,6 +173,8 @@ impl Game {
             radar_drawn: None,
             radar_event_sounds: 0,
             radar_water_pending: true,
+            base: None,
+            save_state: Default::default(),
         }
     }
 }
@@ -242,7 +254,9 @@ pub fn run(zh: Option<std::path::PathBuf>) {
                 // the art: the same folder through the game's file search (its archives mounted), as the model viewer reads it
                 let mut fs = rts_lockstep_engine::common::file_system::FileSystem::new(ArtDevice::new(&folder));
                 fs.init(None);
-                Game::new(s.world, s.player, s.report, Some(Art::new(fs)))
+                let mut g = Game::new(s.world, s.player, s.report, Some(Art::new(fs)));
+                g.base = Some(Box::new(s.base));
+                g
             }
             Err(e) => Game::demo(format!("demo ({e})")),
         },
@@ -262,6 +276,8 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         }))
         .insert_resource(Time::<Fixed>::from_hz(LOGIC_HZ))
         .insert_non_send(game)
+        .insert_non_send(Saves::new())
+        .init_resource::<SaveAction>()
         .insert_resource(TerrainState { pending: true, look: "none" })
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
@@ -270,7 +286,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
-        .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
+        .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, update_terrain).chain())
         .add_systems(
             Update,
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
@@ -358,6 +374,7 @@ fn poll_import(
                 None
             };
             *game = Game::new(s.world, s.player, s.report, art);
+            game.base = Some(Box::new(s.base));
             for (_, (e, _)) in drawn.0.drain() {
                 commands.entity(e).despawn();
             }
@@ -432,6 +449,8 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
     // (`GameEngine::update`'s logic half: the message stream's commands, then the frame)
     match g.controls.world().engine_update() {
         Ok(()) => {
+            // (#4: the frame, for the page's checks)
+            crate::saves::page::set_frame(g.controls.client.world.frame());
             g.prev = std::mem::take(&mut g.cur);
             g.cur = snapshot(g.controls.world());
             // the frame's client events, to the drawables (their flags; the draw itself is every rendered frame)
@@ -808,6 +827,8 @@ fn setup_ui(mut commands: Commands) {
             (button("-"), observe(|_: On<Activate>, mut rig: ResMut<Rig>| rig.zoom(1.25))),
             (button("R"), observe(|_: On<Activate>, mut rig: ResMut<Rig>| rig.reset())),
             (button("||"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| game.paused = !game.paused)),
+            // (#4) the saves: the panel with the save button and the list
+            (button("S"), observe(|_: On<Activate>, mut action: ResMut<SaveAction>| action.0 = Some(SaveCmd::Toggle))),
         ],
     ));
 }
@@ -931,6 +952,11 @@ fn pointer_input(
     radar_box: Res<RadarBox>,
 ) {
     let bar = bar.height + bar.panel;
+    // (#4) the saves panel takes the pointer while it is open (the game is paused under it)
+    if crate::saves::page::panel_open() {
+        pointer.press = None;
+        return;
+    }
     let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
     let g = &mut *game;
     if keys.just_pressed(KeyCode::Escape) {
@@ -1623,6 +1649,223 @@ fn bar_button(label: &str) -> impl Bundle {
         BackgroundColor(Color::srgba(0.12, 0.16, 0.22, 0.9)),
         children![(Text::new(label), TextColor(Color::WHITE))],
     )
+}
+
+// ---------------------------------------------------------------------------
+// Saved games (#4): the panel, its buttons and what they do, through `crate::saves` (tested there).
+// ---------------------------------------------------------------------------
+
+/// The save folder and the panel's state (a non-send resource: it lives across games, as the folder does).
+struct Saves {
+    folder: crate::saves::SaveFolder,
+    /// Bumped when the folder or the status changes, so the panel is rebuilt.
+    generation: u64,
+    /// The generation the panel on screen was built for (`None`: no panel).
+    built: Option<u64>,
+    /// Whether the game was paused before the panel opened (it is paused while the panel is open, as upstream's save
+    /// menu pauses the game).
+    paused_before: bool,
+    status: String,
+}
+
+impl Saves {
+    fn new() -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        let folder = crate::saves::native_save_dir().map_or_else(crate::saves::SaveFolder::default, crate::saves::SaveFolder::native);
+        #[cfg(target_arch = "wasm32")]
+        let folder = crate::saves::SaveFolder::default();
+        let status = match &folder.dir {
+            Some(d) => format!("saves in {}", d.display()),
+            None => "saves in this browser (OPFS Save/); never uploaded".to_string(),
+        };
+        Saves { folder, generation: 0, built: None, paused_before: false, status }
+    }
+    fn set_status(&mut self, s: String) {
+        crate::saves::page::set_status(s.clone());
+        self.status = s;
+        self.generation += 1;
+    }
+}
+
+/// A press of the saves panel's buttons, carried out by [`apply_save_action`].
+#[derive(Clone, Debug)]
+enum SaveCmd {
+    Toggle,
+    Save,
+    Load(String),
+    Export(String),
+}
+
+#[derive(Resource, Default)]
+struct SaveAction(Option<SaveCmd>);
+
+/// The saves panel's root.
+#[derive(Component)]
+struct SavesPanel;
+
+/// GUI glue (needs the app): carries out the panel's button presses through `crate::saves` (whose tests save, list and load
+/// games the same way): open or close the panel (pausing the game under it); save the game (the camera's view with it)
+/// under the folder's next name; load a save into a new game (the World made for its map, the client fresh; the camera
+/// turned to the save's view); offer a save as a download.
+#[allow(clippy::too_many_arguments)]
+fn apply_save_action(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut saves: NonSendMut<Saves>,
+    mut action: ResMut<SaveAction>,
+    mut rig: ResMut<Rig>,
+    mut drawn: ResMut<Drawn>,
+    mut terrain: ResMut<TerrainState>,
+) {
+    let Some(cmd) = action.0.take() else { return };
+    match cmd {
+        SaveCmd::Toggle => {
+            let open = !crate::saves::page::panel_open();
+            crate::saves::page::set_panel_open(open);
+            if open {
+                saves.paused_before = game.paused;
+                game.paused = true;
+            } else {
+                game.paused = saves.paused_before;
+            }
+            saves.generation += 1;
+        }
+        SaveCmd::Save => {
+            let g = &mut *game;
+            // (`View::xfer`: the camera's heading and the point it looks at)
+            g.save_state.view.angle = rig.yaw;
+            g.save_state.view.position = Coord3D { x: rig.focus.x, y: rig.focus.y, z: 0.0 };
+            let frame = g.controls.client.world.frame();
+            let desc = format!("{} | frame {frame}", g.playing.split(" | ").next().unwrap_or(""));
+            let r = crate::saves::save_game(&mut g.controls, &mut g.models.drawables.fx.particles, &mut g.save_state, &desc);
+            let status = match r {
+                Ok(bytes) => {
+                    let name = saves.folder.next_name();
+                    match saves.folder.write(&name, bytes) {
+                        Ok(()) => {
+                            // (`saveGame`'s message to the player)
+                            g.controls.client.ui_messages.push(b"GUI:GameSaveComplete".to_vec());
+                            format!("saved {name}")
+                        }
+                        Err(e) => format!("error: {e}"),
+                    }
+                }
+                Err(e) => format!("error: {e}"),
+            };
+            info!("{status}");
+            saves.set_status(status);
+        }
+        SaveCmd::Export(name) => {
+            let s = match saves.folder.export(&name) {
+                Some(p) if saves.folder.dir.is_some() => format!("{name} is the file {p}"),
+                Some(_) => format!("exported {name}"),
+                None => format!("error: no save {name}"),
+            };
+            saves.set_status(s);
+        }
+        SaveCmd::Load(name) => {
+            let Some(bytes) = saves.folder.files.get(&name).cloned() else { return };
+            let base = game.base.take();
+            match crate::saves::client_from_save(bytes, base.as_deref()) {
+                Ok((controls, particles, state, player, outcome)) => {
+                    let art = game.models.art.take();
+                    let label = String::from_utf8_lossy(&outcome.info.map_label).into_owned();
+                    let mut g = Game::from_controls(controls, player, format!("loaded {name} ({label})"), art);
+                    g.models.drawables.fx.particles.unique_system_id = particles.unique_system_id;
+                    g.base = base;
+                    g.save_state = state;
+                    let read_past = g.save_state.read_past.len();
+                    // the camera to the save's view (`setAngle`, `lookAt`)
+                    rig.yaw = g.save_state.view.angle;
+                    rig.focus = Vec2::new(g.save_state.view.position.x, g.save_state.view.position.y);
+                    *game = g;
+                    for (_, (e, _)) in drawn.0.drain() {
+                        commands.entity(e).despawn();
+                    }
+                    terrain.pending = true;
+                    crate::saves::page::set_panel_open(false);
+                    game.paused = false;
+                    saves.set_status(format!("loaded {name}{}", if read_past > 0 { format!(" ({read_past} parts read past)") } else { String::new() }));
+                    info!("loaded {name}: read past {:?}", game.save_state.read_past);
+                }
+                Err(e) => {
+                    game.base = base;
+                    warn!("{e}");
+                    saves.set_status(format!("error: {e}"));
+                }
+            }
+        }
+    }
+}
+
+/// GUI glue (needs a window): the files the page read from OPFS (or the player imported) join the folder; the panel is
+/// (re)built when it opens or its folder or status changes: the save and close buttons, the status, and each save's line
+/// (`SaveListing::line`, tested in `crate::saves`) with its load and export buttons. Full width less the zoom column, so a
+/// phone's screen fits it; its rows wrap.
+fn saves_panel(mut commands: Commands, mut saves: NonSendMut<Saves>, panels: Query<Entity, With<SavesPanel>>) {
+    if saves.folder.take_page_files() > 0 {
+        saves.generation += 1;
+    }
+    let open = crate::saves::page::panel_open();
+    let want = open.then_some(saves.generation);
+    if want == saves.built {
+        return;
+    }
+    saves.built = want;
+    for e in &panels {
+        commands.entity(e).despawn();
+    }
+    if !open {
+        return;
+    }
+    let small = |t: String| (Text::new(t), TextFont { font_size: bevy::text::FontSize::Px(14.0), ..default() }, TextColor(Color::WHITE));
+    let root = commands
+        .spawn((
+            SavesPanel,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(36),
+                left: px(8),
+                right: px(64),
+                max_height: percent(80),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(6),
+                padding: UiRect::all(px(8)),
+                overflow: Overflow::clip_y(),
+                border_radius: BorderRadius::all(px(8)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.06, 0.08, 0.11, 0.94)),
+        ))
+        .id();
+    let header = commands
+        .spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, column_gap: px(6), row_gap: px(6), ..default() })
+        .id();
+    let save = commands.spawn((bar_button("Save game"), observe(|_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Save)))).id();
+    let close = commands.spawn((bar_button("Close"), observe(|_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Toggle)))).id();
+    commands.entity(header).add_children(&[save, close]);
+    if saves.folder.dir.is_none() {
+        // (the browser: room for the page's import button, which `web/index.html` places here; on a phone it wraps to a
+        // second row, where the page's narrow layout puts the button)
+        let room = commands.spawn(Node { width: px(120), height: px(40), ..default() }).id();
+        commands.entity(header).add_child(room);
+    }
+    let list = saves.folder.listing();
+    let import_note = if saves.folder.dir.is_none() { " | import a .sav with the page's button" } else { "" };
+    let status = commands.spawn(small(format!("{} | {} saves{import_note}", saves.status, list.len()))).id();
+    commands.entity(root).add_children(&[header, status]);
+    // (the newest twelve: the game's own menu, C5, will scroll)
+    for l in list.iter().take(12) {
+        let row = commands
+            .spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, align_items: AlignItems::Center, column_gap: px(6), row_gap: px(4), ..default() })
+            .id();
+        let text = commands.spawn(small(l.line())).insert(Node { flex_grow: 1.0, flex_basis: px(160), ..default() }).id();
+        let (n1, n2) = (l.name.clone(), l.name.clone());
+        let load = commands.spawn((bar_button("Load"), observe(move |_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Load(n1.clone()))))).id();
+        let export = commands.spawn((bar_button("Export"), observe(move |_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Export(n2.clone()))))).id();
+        commands.entity(row).add_children(&[text, load, export]);
+        commands.entity(root).add_child(row);
+    }
 }
 
 // ---------------------------------------------------------------------------
