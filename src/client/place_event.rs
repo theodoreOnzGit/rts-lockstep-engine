@@ -98,7 +98,7 @@ impl PlaceEventTranslator {
         }
         let (start, _) = ui.placement_points();
         let (x, y) = (f64::from(pixel.x - start.x), f64::from(pixel.y - start.y));
-        if (x * x + y * y).sqrt() >= PLACEMENT_DRAG_THRESHOLD_DIST {
+        if petir::Real::sqrt(x * x + y * y) >= PLACEMENT_DRAG_THRESHOLD_DIST {
             ui.set_placement_end(pixel);
             return true;
         }

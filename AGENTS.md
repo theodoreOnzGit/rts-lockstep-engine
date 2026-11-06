@@ -34,7 +34,10 @@ The epics: #1 (phase 2, the client). The phase 1 issues are #7 (comparison with 
 - **Correct, don't rewrite history.** A doc claim the code contradicts is fixed in the same change, struck through with
   the date and batch: `~~old~~ **Corrected YYYY-MM-DD (batch N):** new`.
 - **Determinism.** All logic maths goes through `petir::Real`, never `std` floats' own functions, so native and wasm
-  compute the same bits. Gate (a) (`scripts/gate_a.sh`) compares their CRCs every frame.
+  compute the same bits. Gate (a) (`scripts/gate_a.sh`) compares their CRCs every frame. The client's maths does too
+  (owner direction, 2026-11-06, #40): `WWMath`'s `Sin`/`Cos`/`Sqrt`/`Inv_Sqrt` stay on the portable branches through
+  petir, not the x87 ones. Write `petir::Real::sqrt(x)` or `ww::wwmath::sin(x)`, because method syntax (`x.sqrt()`)
+  picks `std`'s own.
 - **The client never changes the simulation** (`client/`, phase 2). It reads the `World`, consumes the logic's client
   events, and sends orders only as the game's own command messages. Each client milestone keeps a test that the
   logic's CRCs are unchanged with it attached.

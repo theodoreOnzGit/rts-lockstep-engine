@@ -893,7 +893,7 @@ impl TerrainHeightMap {
                 }
                 let side = |a: i32, b: i32| {
                     let mut s = ((a - b) as f32) * HEIGHT_SCALE;
-                    s = (1.0 + s * s).sqrt();
+                    s = petir::Real::sqrt(1.0 + s * s);
                     if s < STRETCH_LIMIT {
                         s = 1.0; // don't make a seam unless there is great stretch.
                     }
