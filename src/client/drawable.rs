@@ -8,7 +8,8 @@
 //   replaceModelConditionFlags, getDrawModules with DIRTY_CONDITION_FLAGS,
 //   reactToBodyDamageStateChange's flags, getShouldAnimate,
 //   setAnimationLoopDuration; GitHub #27: showSubObject, updateSubObjects,
-//   handleWeaponFireFX without the locomotor recoil)
+//   handleWeaponFireFX without the locomotor recoil; GitHub #41: Drawable::draw's
+//   call of applyPhysicsXform, translated in drawable_loco.rs)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h
 //
 // Original copyright notice of those files:
@@ -34,6 +35,9 @@
 //!   is defined), and the next `getDrawModules()` gives each module
 //!   `replaceModelConditionState(flags)` once. A body damage state replaces
 //!   `DAMAGED`, `REALLY_DAMAGED` and `RUBBLE` with its own bit.
+//! - **The client-side physics** (GitHub #41): before its draw modules, a drawable that is not hidden applies its
+//!   object's physics transform (`applyPhysicsXform`, [`super::drawable_loco`]), whose wheel info the truck draws
+//!   read.
 //! - **`getShouldAnimate(considerPower)`**: no when the object is unpowered by
 //!   script (power considered), or disabled as hacked, paralyzed, EMP'd,
 //!   subdued or unmanned (unless it is produced at a helipad), or underpowered
@@ -62,6 +66,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::drawable_loco::physics_xform_facts;
 use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
 use crate::common::game_type::ObjectId;
@@ -96,9 +101,29 @@ pub struct Drawable {
     pub draw_modules: Vec<W3DModelDraw>,
     /// `m_hidden`.
     pub hidden: bool,
+    /// `m_locoInfo` (GitHub #41): made by the first physics model that runs ([`Drawable::calc_physics_xform`]).
+    pub loco_info: Option<super::drawable_loco::DrawableLocoInfo>,
+    /// The last draw's `applyPhysicsXform` totals, for the client to put on the drawn model (`None`: none applied).
+    /// New: upstream applies them to the draw's transform matrix in place.
+    pub physics_xform: Option<super::drawable_loco::PhysicsXformInfo>,
 }
 
 impl Drawable {
+    /// A drawable of object 1 with no draw modules, for tests elsewhere in the crate.
+    #[cfg(test)]
+    pub(crate) fn for_tests() -> Drawable {
+        Drawable {
+            object_id: 1,
+            template: b"T".to_vec(),
+            condition_state: ModelConditionFlags::new(),
+            is_model_dirty: false,
+            draw_modules: Vec::new(),
+            hidden: false,
+            loco_info: None,
+            physics_xform: None,
+        }
+    }
+
     /// `getModelConditionFlags()`.
     pub fn get_model_condition_flags(&self) -> &ModelConditionFlags {
         &self.condition_state
@@ -289,6 +314,8 @@ impl ClientDrawables {
             is_model_dirty: false,
             draw_modules,
             hidden: false,
+            loco_info: None,
+            physics_xform: None,
         };
         self.drawables.insert(id, drawable);
         true
@@ -408,22 +435,30 @@ impl ClientDrawables {
     /// place with `&World` (nothing is written, no cache filled): `getVelocityMagnitude`,
     /// `getTurning`, `isMotive` (`PhysicsBehavior::peek_*`), `getCurLocomotorSpeed`
     /// (`World::peek_cur_locomotor_speed`) and `getUnitDirectionVector2D`
-    /// (`Thing::peek_unit_direction_vector_2d`). `None` without an object or physics.
+    /// (`Thing::peek_unit_direction_vector_2d`); the velocity (`PhysicsBehavior::peek_velocity`), the current
+    /// locomotor's `isMovingBackwards()` ([`World::ai_peek`], a flag read) and the relative angle to the AI path's cached
+    /// point (`ai->getPath()->peekCachedPointOnPath`, a field read, and
+    /// [`World::partition_relative_angle_2d`], `&self` arithmetic) for the trucks. `None` without an object or physics.
     pub fn motion(w: &World, id: ObjectId) -> Option<MotionFacts> {
         let o = w.find_object(id)?;
         let p = w.physics_peek(id)?;
         let dir = o.thing.peek_unit_direction_vector_2d();
+        let ai = w.ai_peek(id);
         Some(MotionFacts {
             velocity_magnitude: p.peek_velocity_magnitude(),
             turning: p.peek_turning(),
             is_motive: p.peek_is_motive(w.frame()),
             cur_locomotor_speed: w.peek_cur_locomotor_speed(id),
             unit_direction_2d: (dir.x, dir.y),
+            velocity: p.peek_velocity(),
+            moving_backwards: ai.and_then(|a| a.get_cur_locomotor()).is_some_and(|l| l.is_moving_backwards()),
+            angle_to_path_point: ai.and_then(|a| a.path.as_ref()).map(|path| w.partition_relative_angle_2d(id, &path.peek_cached_point_on_path())),
         })
     }
 
     /// One client draw at sync time `sync_time` (milliseconds): make the
-    /// drawables of objects not seen yet, then for each drawable give its
+    /// drawables of objects not seen yet, then for each drawable its
+    /// `applyPhysicsXform` (GitHub #41, [`Drawable::apply_physics_xform`]), give its
     /// modules the flags if dirty (`getDrawModules`, from the client: not a
     /// valid time for the logic's bones), `doDrawModule`, and render (the
     /// animation advances).
@@ -437,13 +472,21 @@ impl ClientDrawables {
             }
         }
         let ids: Vec<ObjectId> = self.drawables.keys().copied().collect();
+        let show_client_physics = w.statics.global_data.the_global_data().is_none_or(|g| g.show_client_physics);
         for id in ids {
+            // `applyPhysicsXform(&transformMtx)`, before the draw modules (GitHub #41)
+            let xform = physics_xform_facts(w, id);
+            let d = self.drawables.get_mut(&id).expect("listed");
+            d.apply_physics_xform(&xform, &mut self.random);
+            let wheel_info = d.get_wheel_info();
             let facts = DrawFacts {
                 should_animate_with_power: Self::get_should_animate(w, id, true),
                 should_animate_without_power: Self::get_should_animate(w, id, false),
                 speed: w.find_object(id).and_then(|o| o.physics).map(|ph| w.module_call(id, ph, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)),
                 turrets: Self::turret_rot_and_pitch(w, id),
                 motion: Self::motion(w, id),
+                show_client_physics,
+                wheel_info,
             };
             let d = self.drawables.get_mut(&id).expect("listed");
             let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
@@ -485,7 +528,7 @@ mod tests {
         let mut random = RandomValues::new(0);
         let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true };
         let m = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
-        let mut d = Drawable { object_id: 1, template: b"T".to_vec(), condition_state: ModelConditionFlags::new(), is_model_dirty: false, draw_modules: vec![m], hidden: false };
+        let mut d = Drawable { object_id: 1, template: b"T".to_vec(), condition_state: ModelConditionFlags::new(), is_model_dirty: false, draw_modules: vec![m], hidden: false, loco_info: None, physics_xform: None };
         d.clear_and_set_model_condition_flags(&ModelConditionFlags::new(), &ModelConditionFlags::new());
         assert!(!d.is_model_dirty);
         d.react_to_body_damage_state_change(1);

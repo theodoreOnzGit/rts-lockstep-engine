@@ -442,7 +442,11 @@ fn sync_objects(
             Some(a) => interpolate(a, b, t),
             None => b.clone(),
         };
-        let transform = Transform::from_translation(Vec3::from(to_bevy(o.pos))).with_rotation(Quat::from_rotation_y(o.angle));
+        let mut transform = Transform::from_translation(Vec3::from(to_bevy(o.pos))).with_rotation(Quat::from_rotation_y(o.angle));
+        // the drawable's client-side physics (#41, `applyPhysicsXform`): suspension, pitch and roll, in the model's frame
+        if let Some(x) = g.models.physics_xform(b.id) {
+            transform = Transform::from_matrix(transform.to_matrix() * crate::model::to_bevy_matrix(&x));
+        }
         let mut instance = g.models.instance(b.id);
         // the model's textures, once per model; while one is being fetched (#24) the object stays its shape
         if let (Some(m), Some(art)) = (instance, &g.models.art) {

@@ -280,6 +280,13 @@ impl<D: LocalDevice> WorldDrawables<D> {
         self.instances.get(&id).map(|(_, m)| m)
     }
 
+    /// The last draw's client-side physics transform of the object's drawable, in the model's own frame (GitHub #41,
+    /// `Drawable::applyPhysicsXform`: the suspension's height, pitch, roll and yaw, `PhysicsXformInfo::apply` to the
+    /// identity), for the app to put after the object's own transform; `None` when none applied.
+    pub fn physics_xform(&self, id: ObjectId) -> Option<Matrix3D> {
+        self.drawables.drawables.get(&id)?.physics_xform.map(|x| x.local_matrix())
+    }
+
     /// Each object's render model made (when its model changes) and posed at its animation's frame.
     fn pose(&mut self) {
         let Some(art) = &mut self.art else { return };
@@ -785,6 +792,138 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert!(steps > 60, "{steps} drive steps");
         assert!(last_step.is_some_and(|f| f < 150));
         assert_eq!(posed, Some(vec![None, Some([u, 0.0]), Some([u, 0.0])]));
+    }
+
+    /// A truck `TRUCKT`: pivots ROOTTRANSFORM (0), TIREFL (1), TIREFR (2), TIRERL (3), TIRERR (4), a cube on each (GitHub #41).
+    fn truck_model() -> Vec<u8> {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let p = |n: &[u8], parent: i32, t: [f32; 3]| PivotSpec { name: n.to_vec(), parent, translation: t, rotation: ident };
+        let mut f = synth::htree_w3d(b"TRUCKT", &[
+            p(b"ROOTTRANSFORM", -1, [0.0; 3]),
+            p(b"TIREFL", 0, [2.0, 1.0, 0.0]),
+            p(b"TIREFR", 0, [2.0, -1.0, 0.0]),
+            p(b"TIRERL", 0, [-2.0, 1.0, 0.0]),
+            p(b"TIRERR", 0, [-2.0, -1.0, 0.0]),
+        ]);
+        let mut names = Vec::new();
+        for (n, bone) in [(&b"CHASSIS"[..], 0u32), (b"TIREFL", 1), (b"TIREFR", 2), (b"TIRERL", 3), (b"TIRERR", 4)] {
+            let mut m = MeshSpec::cuboid(b"TRUCKT", n, [-0.5; 3], [0.5; 3]);
+            m.stage0.texture = None;
+            f.extend(m.to_w3d());
+            names.push(([&b"TRUCKT."[..], n].concat(), bone));
+        }
+        let hl: Vec<(&[u8], u32)> = names.iter().map(|(n, b)| (n.as_slice(), *b)).collect();
+        f.extend(synth::hlod_w3d(b"TRUCKT", b"TRUCKT", &hl));
+        f
+    }
+
+    const TRUCK_DRAW: &str = " Draw = W3DTruckDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = TruckT\n  End\n  \
+LeftFrontTireBone = TireFL\n  RightFrontTireBone = TireFR\n  LeftRearTireBone = TireRL\n  RightRearTireBone = TireRR\n  \
+TireRotationMultiplier = 0.2\n End\n";
+
+    /// A wheeled locomotor for the gate's runner: the gate's speeds, `FOUR_WHEELS`, with a suspension.
+    const GATE_WHEELS: &str = "Locomotor GateWheels\n Surfaces = GROUND\n Speed = 30\n Acceleration = 100\n Braking = 100\n TurnRate = 180\n \
+Appearance = FOUR_WHEELS\n HasSuspension = Yes\n FrontWheelTurnAngle = 20\n MaximumWheelExtension = -2.3\n PitchStiffness = 0.1\n \
+RollStiffness = 0.1\n PitchDamping = 0.4\n RollDamping = 0.4\n ForwardAccelerationPitchFactor = 0.1\n LateralAccelerationRollFactor = 0.1\n \
+UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n DecelerationPitchLimit = 10\nEnd\n";
+
+    /// GitHub #41: the gate's runner on wheels drawn as a truck (`W3DTruckDraw`, four tire bones, `TireRotationMultiplier`
+    /// 0.2), from (40, 50) facing east ordered to (100, 150), so it turns left as it drives; 200 frames with the drawables
+    /// fed every frame, and the same game without them.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - the logic's CRCs are equal frame for frame with and without the client (the new reads are `peek_*` and `&World`
+    ///   queries, which write nothing; the bounce's random is the client's own generator);
+    /// - the drawable has a physics transform on every drawn frame (a `FOUR_WHEELS` locomotor), and the drawable's wheel
+    ///   info from the first;
+    /// - the front tires spin by 0.2 times the speed each draw: the final rotation is 0.2 times the distance driven
+    ///   (summed frame by frame from the positions; within 5%, the speed being the velocity's and the distance the
+    ///   position's), which is at least the straight line, 116.6;
+    /// - the runner turns left (`TURN_POSITIVE`) to face its goal: on some frame the front tire's control is steered left
+    ///   (its Z rotation above 0.01), never more than the turn angle, 20 degrees;
+    /// - accelerating from rest pitches the chassis nose up: the total pitch is below 0 on some frame of the first ten;
+    /// - the posed model's front-left tire is not where it was made (its control is on the drawn model).
+    ///
+    /// *Results (2026-11-06), first run:* all held. CRCs equal over 200 frames; a physics transform and wheel info on all
+    /// 200 frames; 195 units driven (the path is longer than the straight line's 116.6), front tires at 39.000076 rad
+    /// (0.2 x 195, within f32 rounding); the steering reached 0.34906572, the full 20 degrees, and never right of 0;
+    /// the lowest pitch of the first ten frames -0.0847; the drawn tire moved.
+    #[test]
+    fn a_drawn_truck_spins_and_steers_its_wheels_without_changing_the_crcs() {
+        let extra = format!("{GATE_WHEELS}{}", drawn("Runner", TRUCK_DRAW).replace("GateTreads", "GateWheels"));
+        let play = |drawn_client: bool| {
+            let mut w = gate_map_world_with(&extra);
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let truck = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+            let mut art = MemoryDevice::new();
+            art.insert(b"Art/W3D/truckt.w3d", truck_model());
+            let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+            }
+            let ai = w.find_object(truck).and_then(|o| o.ai).expect("the AI");
+            w.module_call(truck, ai, ModuleCall::AiMoveToPosition { pos: at(100.0, 150.0), command_source: 0 });
+            let start = w.find_object(truck).unwrap().get_position();
+            let (mut crcs, mut xformed, mut max_steer, mut min_steer, mut early_pitch, mut wheel_frames) = (Vec::new(), 0, 0.0f32, 0.0f32, 0.0f32, 0);
+            let (mut rotation, mut distance, mut prev_pos, mut moved_tire) = (0.0f32, 0.0f32, start, false);
+            for f in 1..=200u32 {
+                w.logic_update().expect("a frame");
+                let ev = w.take_client_events();
+                let pos = w.find_object(truck).unwrap().get_position();
+                distance += rts_lockstep_engine::ww::wwmath::sqrt((pos.x - prev_pos.x) * (pos.x - prev_pos.x) + (pos.y - prev_pos.y) * (pos.y - prev_pos.y));
+                prev_pos = pos;
+                if drawn_client {
+                    d.update(&mut w, &ev, f * 33);
+                    let dr = &d.drawables.drawables[&truck];
+                    if let Some(x) = dr.physics_xform {
+                        xformed += 1;
+                        if f <= 10 {
+                            early_pitch = early_pitch.min(x.total_pitch);
+                        }
+                    }
+                    if dr.get_wheel_info().is_some() {
+                        wheel_frames += 1;
+                    }
+                    let m = &dr.draw_modules[0];
+                    let Some(rts_lockstep_engine::client::w3d_truck_draw::TruckKind::Truck(t)) = &m.truck else { panic!("a truck draw") };
+                    rotation = t.front_wheel_rotation;
+                    if let Some(c) = m.render_object.as_ref().unwrap().bone_controls.get(&1) {
+                        // the steering is the Z rotation before the spin: read it from the X axis's heading in the XY plane
+                        // of the control with the spin about Y taken out (Rotate_Y keeps Y's axis; Z rotation turns it)
+                        let yx = c.transform.row[0][1];
+                        let yy = c.transform.row[1][1];
+                        let steer = -rts_lockstep_engine::ww::wwmath::atan2(yx, yy);
+                        max_steer = max_steer.max(steer);
+                        min_steer = min_steer.min(steer);
+                    }
+                    if let Some(i) = d.instance(truck) {
+                        let tire = i.sub_objects.iter().position(|s| s.name.eq_ignore_ascii_case(b"TRUCKT.TIREFL")).unwrap();
+                        let x = i.sub_object_transform(tire).unwrap();
+                        if (x.row[0][0] - 1.0).abs() > 1e-3 {
+                            moved_tire = true;
+                        }
+                    }
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire)
+        };
+        let (plain, ..) = play(false);
+        let (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire) = play(true);
+        println!(
+            "xformed {xformed} wheel frames {wheel_frames} rotation {rotation} distance {distance} steer [{min_steer}, {max_steer}] early pitch {early_pitch} tire moved {moved_tire}"
+        );
+        assert_eq!(crcs, plain);
+        assert_eq!((xformed, wheel_frames), (200, 200));
+        assert!(distance >= 116.0, "{distance}");
+        assert!((rotation - 0.2 * distance).abs() < 0.2 * distance * 0.05, "{rotation} for {distance}");
+        assert!(max_steer > 0.01 && max_steer <= 20.0 * core::f32::consts::PI / 180.0 + 1e-4, "{max_steer}");
+        assert!(early_pitch < 0.0, "{early_pitch}");
+        assert!(moved_tire);
     }
 
     /// GitHub #42: the drawn gun of [`play_gun`] with its model read by range, the page's part played by the test. Before

@@ -263,6 +263,12 @@ fn undefined(world: &mut World, me: ModuleHandle, u: Undefined) {
 }
 
 impl ActiveBody {
+    /// `getFrontCrushed()` and `getBackCrushed()`, for the client (GitHub #41, `Drawable::calcPhysicsXformTreads`): field
+    /// reads.
+    pub fn peek_crushed(&self) -> (bool, bool) {
+        (self.front_crushed, self.back_crushed)
+    }
+
     /// `setArmorSetFlag(ast)`: "m_curArmorSetFlags.set(ast, 1)" (`UndeadBody::startSecondLife`).
     pub(crate) fn set_armor_set_flag(&mut self, ast: ArmorSetType) {
         self.cur_armor_set_flags.set(ast, 1);

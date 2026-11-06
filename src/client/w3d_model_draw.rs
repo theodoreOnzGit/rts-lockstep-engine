@@ -28,7 +28,8 @@
 //   W3DDependencyModelDraw.cpp, W3DScienceModelDraw.cpp (their module data's
 //   field parse only; GitHub #41: W3DTankDraw.cpp's constructor (the tread
 //   state), updateTreadPositions, updateTreadObjects, onRenderObjRecreated and
-//   doDrawModule without the tread debris)
+//   doDrawModule without the tread debris; the trucks' own parts are in
+//   w3d_truck_draw.rs, whose tread loop shares find_tread_objects here)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp
 //   (Animatable3DObjClass: Set_Animation, Single_Anim_Progress,
 //   Is_Animation_Complete, Peek_Animation_And_Info,
@@ -226,6 +227,7 @@ use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMod
 use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
 use crate::formats::w3d::vertmaterial::MapperKind;
 use crate::ww::matrix3d::Matrix3D;
+use crate::client::w3d_truck_draw::TruckKind;
 
 /// `MAX_TURRETS`.
 pub const MAX_TURRETS: usize = 2;
@@ -990,7 +992,9 @@ fn do_single_bone_name(sk: Option<&Skeleton>, bone_name: &[u8], map: &mut BTreeM
 // ---------------------------------------------------------------------------
 
 /// The draw modules whose data is a `W3DModelDrawModuleData`, and what each
-/// subclass adds to it (parsed, not used yet).
+/// subclass adds to it (~~parsed, not used yet~~ **Corrected 2026-11-06 (#41):** the tank's and the trucks' are used by
+/// their draws, `W3DModelDraw::tank` and `W3DModelDraw::truck`; the supply, dependency and science fields are parsed,
+/// not used yet).
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawModuleExtra {
     /// `W3DModelDraw`, `W3DOverlordAircraftDraw`: nothing.
@@ -2207,6 +2211,11 @@ pub struct DrawFacts {
     /// What the subclasses' `doDrawModule` read of the object's physics and AI (GitHub #41);
     /// `None` without an object or without physics.
     pub motion: Option<MotionFacts>,
+    /// `TheGlobalData->m_showClientPhysics` (the truck draws do nothing of their own without it).
+    pub show_client_physics: bool,
+    /// `getDrawable()->getWheelInfo()`, after this draw's `applyPhysicsXform` (GitHub #41,
+    /// `crate::client::drawable_loco`); `None` until the drawable's first physics model ran.
+    pub wheel_info: Option<crate::client::drawable_loco::TWheelInfo>,
 }
 
 /// The logic's state a subclass draw module reads (`W3DTankDraw::doDrawModule`), read only: see
@@ -2225,6 +2234,13 @@ pub struct MotionFacts {
     pub cur_locomotor_speed: Option<f32>,
     /// `obj->getUnitDirectionVector2D()` (x, y).
     pub unit_direction_2d: (f32, f32),
+    /// `physics->getVelocity()`.
+    pub velocity: crate::common::base_type::Coord3D,
+    /// `ai->getCurLocomotor()->isMovingBackwards()`; false without an AI or a current locomotor.
+    pub moving_backwards: bool,
+    /// `ThePartitionManager->getRelativeAngle2D(obj, &pointOnPath)` for the AI path's
+    /// `peekCachedPointOnPath`; `None` without an AI or a path (`ai->getPath()`).
+    pub angle_to_path_point: Option<f32>,
 }
 
 /// `PhysicsTurningType::TURN_NEGATIVE`.
@@ -2295,6 +2311,50 @@ impl Default for TankDraw {
     }
 }
 
+/// The tread loop of `W3DTankDraw::updateTreadObjects` and `W3DTankTruckDraw::updateTreadObjects`, for render object
+/// `r` and module data rate `rate` (none when 0 or without a render object): each sub-object (up to
+/// `MAX_TREADS_PER_TANK` treads) that is a mesh named `<container>.TREADS*` (ignoring case) gives one tread per vertex
+/// material whose stage-0 mapper is a linear-offset mapper, at offset (0, 0); with `typed` (the tank's), `TREADSL*` is a
+/// left tread, `TREADSR*` a right one and any other a middle one; without (the tank truck's, whose switch is commented
+/// out upstream: "on vehicles with wheels, it makes no sense to turn with treads") every tread is a middle one. The
+/// treads, and the render object's material overrides that go with them.
+pub(crate) fn find_tread_objects(r: Option<&RenderObj>, rate: f32, typed: bool) -> (Vec<TreadObjectInfo>, BTreeMap<usize, [f32; 2]>) {
+    let mut treads = Vec::new();
+    let mut overrides = BTreeMap::new();
+    if let Some(r) = r {
+        //Make sure this object has defined a speed for tread scrolling.
+        if rate != 0.0 {
+            let subs = r.skeleton.as_ref().map(|k| k.sub_objects.as_slice()).unwrap_or(&[]);
+            for (i, sub) in subs.iter().enumerate() {
+                if treads.len() >= MAX_TREADS_PER_TANK {
+                    break;
+                }
+                //Check if subobject name starts with "TREADS".
+                let Some(dot) = sub.name.iter().position(|&c| c == b'.') else { continue };
+                let mesh_name = &sub.name[dot + 1..];
+                if mesh_name.len() < 6 || !mesh_name[..6].eq_ignore_ascii_case(b"TREADS") {
+                    continue;
+                }
+                //check if sub-object has the correct material to do texture scrolling.
+                for _ in 0..sub.linear_offset_materials {
+                    if treads.len() >= MAX_TREADS_PER_TANK {
+                        break;
+                    }
+                    //check next character after 'TREADS'
+                    let kind = match mesh_name.get(6) {
+                        Some(b'L' | b'l') if typed => TreadType::Left,
+                        Some(b'R' | b'r') if typed => TreadType::Right,
+                        _ => TreadType::Middle,
+                    };
+                    treads.push(TreadObjectInfo { sub_object: i, kind, custom_uv_offset: [0.0, 0.0] });
+                    overrides.insert(i, [0.0, 0.0]);
+                }
+            }
+        }
+    }
+    (treads, overrides)
+}
+
 /// `W3DModelDraw::WeaponRecoilInfo::RecoilState`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecoilState {
@@ -2360,6 +2420,9 @@ pub struct W3DModelDraw {
     pub render_obj_serial: u32,
     /// `W3DTankDraw`'s state, for a module whose data is `W3DTankDrawModuleData` (GitHub #41).
     pub tank: Option<TankDraw>,
+    /// The truck draws' state (GitHub #41, [`crate::client::w3d_truck_draw`]): `W3DTruckDraw` (and
+    /// `W3DOverlordTruckDraw`, `W3DPoliceCarDraw`), or `W3DTankTruckDraw`.
+    pub truck: Option<TruckKind>,
 }
 
 impl W3DModelDraw {
@@ -2405,8 +2468,13 @@ impl W3DModelDraw {
             weapon_recoil_info_vec: Default::default(),
             render_obj_serial: 0,
             tank: matches!(data_extra, DrawModuleExtra::Tank(_)).then(TankDraw::new),
+            truck: None,
         };
         d.set_model_state(StateRef::Normal(info), env);
+        // the subclass's own members are made after the base class's constructor (whose `setModelState` calls the
+        // base class's `onRenderObjRecreated`, C++'s dispatch during construction): the trucks find their bones on
+        // their first draw
+        d.truck = TruckKind::new_for(&d.data.module_name, &d.data.extra, env.random);
         Ok(d)
     }
 
@@ -2718,11 +2786,15 @@ impl W3DModelDraw {
         if self.tank.is_some() && !self.tank_do_draw_module(facts) {
             return;
         }
+        if self.truck.is_some() {
+            self.truck_kind_do_draw_module(facts, env);
+            return;
+        }
         self.model_draw_do_draw_module(facts, env);
     }
 
     /// `W3DModelDraw::doDrawModule` (see [`W3DModelDraw::do_draw_module`]).
-    fn model_draw_do_draw_module<A: W3dAssetSource>(&mut self, facts: &DrawFacts, env: &mut DrawEnv<'_, A>) {
+    pub(crate) fn model_draw_do_draw_module<A: W3dAssetSource>(&mut self, facts: &DrawFacts, env: &mut DrawEnv<'_, A>) {
         let should_animate = if self.data.animations_require_power { facts.should_animate_with_power } else { facts.should_animate_without_power };
         self.set_pause_animation(!should_animate, env.sync_time);
 
@@ -2758,15 +2830,19 @@ impl W3DModelDraw {
     }
 
     /// The identity of the current render object (`getRenderObject()` as a pointer).
-    fn render_obj_id(&self) -> Option<u32> {
+    pub(crate) fn render_obj_id(&self) -> Option<u32> {
         self.render_object.as_ref().map(|_| self.render_obj_serial)
     }
 
     /// `onRenderObjRecreated()`: `W3DTankDraw`'s finds its treads again
-    /// ([`W3DModelDraw::update_tread_objects`]); the base class's does nothing.
+    /// ([`W3DModelDraw::update_tread_objects`]), the trucks' their bones (and the tank truck's its treads,
+    /// `crate::client::w3d_truck_draw`); the base class's does nothing.
     fn on_render_obj_recreated(&mut self) {
         if self.tank.is_some() {
             self.update_tread_objects();
+        }
+        if self.truck.is_some() {
+            self.truck_on_render_obj_recreated();
         }
     }
 
@@ -2788,39 +2864,7 @@ impl W3DModelDraw {
             _ => 0.0,
         };
         let id = self.render_obj_id();
-        let mut treads = Vec::new();
-        let mut overrides = BTreeMap::new();
-        if let Some(r) = &self.render_object {
-            //Make sure this object has defined a speed for tread scrolling.
-            if rate != 0.0 {
-                let subs = r.skeleton.as_ref().map(|k| k.sub_objects.as_slice()).unwrap_or(&[]);
-                for (i, sub) in subs.iter().enumerate() {
-                    if treads.len() >= MAX_TREADS_PER_TANK {
-                        break;
-                    }
-                    //Check if subobject name starts with "TREADS".
-                    let Some(dot) = sub.name.iter().position(|&c| c == b'.') else { continue };
-                    let mesh_name = &sub.name[dot + 1..];
-                    if mesh_name.len() < 6 || !mesh_name[..6].eq_ignore_ascii_case(b"TREADS") {
-                        continue;
-                    }
-                    //check if sub-object has the correct material to do texture scrolling.
-                    for _ in 0..sub.linear_offset_materials {
-                        if treads.len() >= MAX_TREADS_PER_TANK {
-                            break;
-                        }
-                        //check next character after 'TREADS'
-                        let kind = match mesh_name.get(6) {
-                            Some(b'L' | b'l') => TreadType::Left,
-                            Some(b'R' | b'r') => TreadType::Right,
-                            _ => TreadType::Middle,
-                        };
-                        treads.push(TreadObjectInfo { sub_object: i, kind, custom_uv_offset: [0.0, 0.0] });
-                        overrides.insert(i, [0.0, 0.0]);
-                    }
-                }
-            }
-        }
+        let (treads, overrides) = find_tread_objects(self.render_object.as_ref(), rate, true);
         if let Some(r) = &mut self.render_object {
             r.material_overrides = overrides;
         }
@@ -3399,7 +3443,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -4080,6 +4124,9 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 is_motive: motive,
                 cur_locomotor_speed: Some(4.0),
                 unit_direction_2d: (crate::ww::wwmath::cos(dir_angle), crate::ww::wwmath::sin(dir_angle)),
+                velocity: Default::default(),
+                moving_backwards: false,
+                angle_to_path_point: None,
             };
             DrawFacts { motion: Some(motion), ..FACTS }
         }

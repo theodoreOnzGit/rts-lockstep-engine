@@ -252,6 +252,33 @@ impl World {
         }
     }
 
+    /// `TheTerrainLogic->getLayerHeight(x, y, layer, &normal)` (clip on, its default) for the client (GitHub #41,
+    /// `Drawable::calcPhysicsXform*`): the height and the normal, read with `&self` (the logic's
+    /// [`TerrainLogic::layer_height_with`] over the height map, the pathfinder's wall answered in place, as
+    /// [`layer_height`] reads it; an undefined bridge answer falls back to the ground's, as there). Nothing is cached
+    /// or counted.
+    pub fn peek_layer_height_and_normal(&self, x: f32, y: f32, layer: PathfindLayer) -> (f32, Coord3D) {
+        let wall = self.wall_height();
+        match self.terrain.layer_height_with(|| wall, |p| self.pf_wall.is_point_on_wall(p), x, y, layer, true, true) {
+            Ok((height, normal)) => (height, normal.unwrap_or_default()),
+            Err(_) => {
+                let (height, normal) = self.terrain.ground_height(x, y, true);
+                (height, normal.unwrap_or_default())
+            }
+        }
+    }
+
+    /// `obj->isSignificantlyAboveTerrain()` for a caller that holds the world shared (the client, GitHub #41): the
+    /// height above the terrain read with [`World::peek_height_above_terrain`] (the cache's value when valid, else the
+    /// calculation, not stored) against the same threshold as [`World::is_significantly_above_terrain`].
+    pub fn peek_is_significantly_above_terrain(&self, id: ObjectId) -> bool {
+        if self.objects.find(id).is_none() {
+            return false;
+        }
+        let threshold = (-(3 * 3)) as f32 * self.object_globals().gravity;
+        self.peek_height_above_terrain(id) > threshold
+    }
+
     // ---- trigger areas -----------------------------------------------------------------------------
 
     /// `updateTriggerAreaFlags()`: "clear the previous entered/exited flags":

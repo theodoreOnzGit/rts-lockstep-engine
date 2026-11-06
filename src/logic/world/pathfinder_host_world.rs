@@ -405,6 +405,22 @@ impl World {
         Some(pf.get_cell(layer, x, y).map(|c| i32::from(pf.store.cells[c as usize].get_type())))
     }
 
+    /// The body's `getFrontCrushed()` and `getBackCrushed()`, read in place for the client (GitHub #41,
+    /// `Drawable::calcPhysicsXformTreads`): an active body's fields; any other body (`BodyModule`'s: false), one that
+    /// is out, or none: `(false, false)`.
+    pub fn peek_crushed(&self, id: ObjectId) -> (bool, bool) {
+        let Some(index) = self.objects.find(id).and_then(|o| o.body) else { return (false, false) };
+        match self.peek_module_body(ModuleHandle { object: id, index }) {
+            Some(UpdateBody::ActiveBody(b)) => b.peek_crushed(),
+            Some(UpdateBody::HighlanderBody(b)) => b.active_body().peek_crushed(),
+            Some(UpdateBody::ImmortalBody(b)) => b.active_body().peek_crushed(),
+            Some(UpdateBody::StructureBody(b)) => b.active_body().peek_crushed(),
+            Some(UpdateBody::UndeadBody(b)) => b.active_body().peek_crushed(),
+            Some(UpdateBody::HiveStructureBody(b)) => b.active_body().peek_crushed(),
+            _ => (false, false),
+        }
+    }
+
     /// The body's `getDamageState()`, read in place (a body that is out, or none: pristine; a probe: its answer).
     pub(crate) fn peek_damage_state(&self, id: ObjectId) -> BodyDamageType {
         let Some(index) = self.objects.find(id).and_then(|o| o.body) else { return BODY_PRISTINE };

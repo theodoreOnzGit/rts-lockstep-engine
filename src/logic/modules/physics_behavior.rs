@@ -334,6 +334,36 @@ impl PhysicsBehavior {
         }
     }
 
+    /// `getAcceleration()`, for the client (GitHub #41, `Drawable::calcPhysicsXform*`): `m_prevAccel`, a field read.
+    pub fn peek_acceleration(&self) -> Coord3D {
+        self.prev_accel
+    }
+
+    /// `getVelocity()`, for the client (GitHub #41): `m_vel`, a field read.
+    pub fn peek_velocity(&self) -> Coord3D {
+        self.vel
+    }
+
+    /// `getForwardSpeed2D()` for the client (GitHub #41), with the object's `getUnitDirectionVector2D()` given as `dir`
+    /// (read without filling its cache, `Thing::peek_unit_direction_vector_2d`): the same expression as
+    /// [`get_forward_speed_2d`](Self::get_forward_speed_2d), which fills the direction's cache first, so the same bits.
+    pub fn peek_forward_speed_2d(&self, dir: &Coord3D) -> f32 {
+        let vx = self.vel.x * dir.x;
+        let vy = self.vel.y * dir.y;
+        let dot = vx + vy;
+        let speed = (vx * vx + vy * vy).sqrt();
+        if dot >= 0.0 {
+            speed
+        } else {
+            -speed
+        }
+    }
+
+    /// `getCurrentOverlap()` and `getPreviousOverlap()`, for the client (GitHub #41): field reads.
+    pub fn peek_overlaps(&self) -> (ObjectId, ObjectId) {
+        (self.current_overlap, self.previous_overlap)
+    }
+
     /// `getInterfaceMask()`: `UpdateModule`'s and `MODULEINTERFACE_COLLIDE`.
     pub const fn get_interface_mask() -> i32 {
         UpdateModule::get_interface_mask() | MODULEINTERFACE_COLLIDE
