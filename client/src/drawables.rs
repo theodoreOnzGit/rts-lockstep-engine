@@ -732,7 +732,7 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
     /// The gun of [`play_gun`] firing `FxGun` (the gate's gun with `FireFX = FX_Gun`), with the client's FX lists and
     /// particle systems loaded from synthetic INI text (GitHub #43): the CRCs, the systems made, where the first was
     /// placed, and the most particles alive.
-    fn play_fx_gun(drawn_client: bool) -> (Vec<u32>, u32, Option<Coord3D>, u32, u32) {
+    fn play_fx_gun(drawn_client: bool) -> (Vec<u32>, u32, Option<Coord3D>, u32, u32, u64) {
         let weapon = "Weapon FxGun\n PrimaryDamage = 20\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\n FireFX = FX_Gun\nEnd\n";
         // (`Scale = 1.0`: the gate's templates give none, and a template's asset scale is 0 until one is read, which
         // collapses the skeleton the FX bone is read from onto the origin)
@@ -755,6 +755,21 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         }
         let ai = w.find_object(gun).and_then(|o| o.ai).expect("the gun's AI");
         w.module_call(gun, ai, ModuleCall::AiAttackObject { victim: target, max_shots: i32::MAX, command_source: 0 });
+        // #13: the audio, attached with the client: the FX list's `GunShot` (a WAV the test makes) played through the
+        // translated manager and the device, the listener over the gun
+        let mut tables = rts_lockstep_engine::client::audio_info::AudioTables::new();
+        tables
+            .load_text(b"a.ini", b"AudioSettings\n AudioRoot = Data\\Audio\n SoundsFolder = Sounds\n SoundsExtension = wav\n SampleCount2D = 4\n SampleCount3D = 8\n MinSampleVolume = 1%\n Default3DSoundVolume = 100%\n DefaultSoundVolume = 100%\n MicrophoneMaxPercentageBetweenGroundAndCamera = 50%\nEnd\nAudioEvent GunShot\n Sounds = gunshot\n Type = world everyone\n MinRange = 50\n MaxRange = 900\n Volume = 100%\n Limit = 3\nEnd\n")
+            .expect("the audio INI");
+        let mut audio = rts_lockstep_engine::client::client_audio::ClientAudio::new(rts_lockstep_engine::client::game_audio::AudioManager::new(tables));
+        let mut device = crate::audio::ClientDevice::new(crate::audio::NullOutput::default());
+        let shot = {
+            let mut b = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data".to_vec();
+            b.extend_from_slice(&(2 * 4410u32).to_le_bytes());
+            b.extend(std::iter::repeat_n(0u8, 2 * 4410));
+            b
+        };
+        let view = crate::audio::listener_view([150.0, 400.0], 0.0, 0.95, 300.0);
         let (mut crcs, mut first, mut most, mut sounds) = (Vec::new(), None, 0, 0);
         for f in 1..=200u32 {
             w.logic_update().expect("a frame");
@@ -766,11 +781,23 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
                     first = fx.particles.systems.first().map(|s| s.get_position());
                 }
                 most = most.max(fx.particles.particle_count);
-                sounds += fx.requests.drain(..).filter(|r| matches!(r, rts_lockstep_engine::client::fx_list::FxRequest::Sound { .. })).count() as u32;
+                let requests: Vec<_> = fx.requests.drain(..).collect();
+                sounds += requests.iter().filter(|r| matches!(r, rts_lockstep_engine::client::fx_list::FxRequest::Sound { .. })).count() as u32;
+                let files = |p: &[u8]| p == b"Data\\Audio\\Sounds\\gunshot.wav";
+                let host = rts_lockstep_engine::client::client_audio::WorldAudioHost { world: &w, local_player_index: None, files: &files, language: b"English" };
+                for e in &ev {
+                    audio.apply_event(&host, &mut device, e);
+                }
+                for r in &requests {
+                    audio.fx_request(&host, r);
+                }
+                audio.manager.update(&host, &mut device, &view);
+                device.pump(|p| if files(p) { crate::audio::Fetch::Bytes(shot.clone()) } else { crate::audio::Fetch::Missing });
+                crate::audio::AudioOutput::advance(&mut device.out, 1.0 / 30.0);
             }
             crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
         }
-        (crcs, d.drawables.fx.particles.unique_system_id, first, most, sounds)
+        (crcs, d.drawables.fx.particles.unique_system_id, first, most, sounds, device.stats.voices_played)
     }
 
     /// GitHub #43: the drawn gun's fire FX plays at its FX bone and makes particle systems, and the logic's CRCs are
@@ -785,15 +812,22 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
     /// are 15 frames apart).
     ///
     /// *Results (2026-11-06):* the CRCs were equal over 200 frames; 5 systems, 5 sound requests, at most 2 particles.
+    ///
+    /// **#13 (2026-11-06), the audio attached too:** the logic's events and the FX requests go to the translated audio
+    /// manager (`ClientAudio`) and the device (`crate::audio`, its silent output). *Predicted:* the CRCs still equal;
+    /// each of the 5 `GunShot` requests (a positional sound about 150 from the microphone, inside its 900 range, under
+    /// its limit of 3 as each 0.1 s shot ends long before the next) is played: 5 voices. *Result (first run):* as
+    /// predicted, CRCs equal over 200 frames and 5 voices played.
     /// **Miss:** the first system was at the gun, (150, 380, 0): the FX bone's transform was all zeros, because the
     /// gate's templates have no `Scale` and the asset scale is then 0 (the skeleton is posed under `root.scale(0)`).
     /// With `Scale = 1.0` on the test's template (as the game's data gives its objects), see the assertion.
     #[test]
     fn a_drawn_gun_s_fire_fx_makes_particles_without_changing_the_crcs() {
         let (plain, ..) = play_fx_gun(false);
-        let (crcs, systems, first, most, sounds) = play_fx_gun(true);
+        let (crcs, systems, first, most, sounds, played) = play_fx_gun(true);
         assert_eq!(crcs, plain);
-        println!("systems {systems} first {first:?} most {most} sounds {sounds}");
+        println!("systems {systems} first {first:?} most {most} sounds {sounds} played {played}");
+        assert_eq!(played, 5, "#13: each shot's GunShot played by the audio, the CRCs unchanged");
         assert_eq!(systems, 5);
         assert_eq!(sounds, 5);
         assert_eq!(first, Some(Coord3D { x: 154.0, y: 380.0, z: 2.0 }));

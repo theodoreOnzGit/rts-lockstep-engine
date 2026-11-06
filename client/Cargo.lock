@@ -4433,8 +4433,11 @@ name = "rts-client"
 version = "0.0.1"
 dependencies = [
  "bevy",
+ "js-sys",
  "rts-lockstep-engine",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

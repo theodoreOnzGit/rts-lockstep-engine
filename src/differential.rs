@@ -3522,6 +3522,16 @@ extern "C" {
     // #46: ParticleSys.cpp and INIParticleSys.cpp, verbatim (wrap_particle_sys.cpp, which documents every op and the dump
     // words). The INI is read by wrap_ini.cpp's ref_ini_load*, whose ParticleSystem block reaches the real handler once
     // ref_psys_reset has installed the hook.
+    // GitHub #13: the audio (differential/wrap_audio.cpp): INIAudioEventInfo.cpp, INIMiscAudio.cpp, GameAudio.cpp's
+    // settings, AudioEventRTS.cpp; the INI read by wrap_ini.cpp's ref_ini_load, whose audio blocks reach the handlers once
+    // ref_audio_reset has installed the hooks.
+    pub fn ref_audio_reset();
+    pub fn ref_audio_pref(key: *const c_char, value: *const c_char);
+    pub fn ref_audio_file(name: *const c_char);
+    pub fn ref_audio_language(lang: *const c_char);
+    pub fn ref_audio_object(id: c_uint, x: c_float, y: c_float, z: c_float, player: c_int);
+    pub fn ref_audio_dump(out: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_audio_event(name: *const c_char, owner: c_int, id: c_uint, pos: *const c_float, logical: c_int, player_index: c_int, n_ops: c_int, ops: c_uint, out: *mut c_uint, cap: c_int) -> c_int;
     pub fn ref_psys_reset();
     pub fn ref_psys_settings(use_fx: c_int, scale: c_float, max_count: c_int, max_field: c_int, min_pri: c_int, min_skip_pri: c_int, skipped: c_int, field_count: c_uint);
     pub fn ref_psys_scene(kind: c_int, id: c_uint, v: *const c_float, iv: *const c_int);

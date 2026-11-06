@@ -7,6 +7,8 @@
 //! and system order therefore never reach a CRC. `view`'s tests check that taking the snapshots leaves the logic's CRCs
 //! exactly as the gate game's without them.
 //!
+//! - [`audio`]: the audio device (#13): the translated audio manager's voices played from the game's files; plain Rust,
+//!   with the browser's Web Audio output on the web.
 //! - [`drawables`]: each object's drawable and its posed W3D model, chosen by its model condition flags (#25); plain Rust.
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
@@ -18,6 +20,7 @@
 //! - `model` (feature `app`): W3D models drawn with Bevy, and the model viewer's scene (#10, step 4).
 //! - `app` (feature `app`, on by default): the Bevy application.
 
+pub mod audio;
 pub mod demo;
 pub mod drawables;
 pub mod import;

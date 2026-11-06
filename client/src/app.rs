@@ -104,6 +104,22 @@ struct Game {
     touch_pressed: bool,
     /// The FX lists and particle systems still to be read from the art (#43, #44).
     fx_pending: bool,
+    /// The audio's tables still to be read from the art (#13).
+    audio_pending: bool,
+    /// The audio (#13): the translated manager and the device, once its tables are read.
+    audio: Option<Box<GameSound>>,
+}
+
+/// The audio's output: the browser's Web Audio, or (natively, no backend chosen yet) the silent one.
+#[cfg(target_arch = "wasm32")]
+type SoundOutput = crate::audio::web::WebOutput;
+#[cfg(not(target_arch = "wasm32"))]
+type SoundOutput = crate::audio::NullOutput;
+
+/// The audio of a game (#13).
+struct GameSound {
+    audio: rts_lockstep_engine::client::client_audio::ClientAudio,
+    device: crate::audio::ClientDevice<SoundOutput>,
 }
 
 impl Game {
@@ -134,6 +150,8 @@ impl Game {
             tooltip_for: None,
             touch_pressed: false,
             fx_pending: true,
+            audio_pending: true,
+            audio: None,
         }
     }
 }
@@ -238,7 +256,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
-            (load_fx, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
+            (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -360,8 +378,9 @@ fn pump_art(mut game: NonSendMut<Game>, terrain: Res<TerrainState>) {
         String::new()
     };
     let models: std::collections::BTreeSet<&[u8]> = g.cur.objects.iter().filter_map(|b| g.models.instance(b.id).map(|m| m.name.as_slice())).collect();
+    let audio = g.audio.as_deref().map_or_else(|| "none".to_string(), |s| s.device.status());
     crate::import::set_art_status(format!(
-        "models={} names={} remade={} missing={} terrain={}{device}",
+        "models={} names={} remade={} missing={} terrain={} audio=[{audio}]{device}",
         g.models.instance_count(),
         models.into_iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>().join(","),
         g.models.remade,
@@ -382,7 +401,7 @@ fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
     commands.insert_resource(rig);
 }
 
-fn step_logic(mut game: NonSendMut<Game>) {
+fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
     if game.paused || game.error.is_some() {
         return;
     }
@@ -397,6 +416,26 @@ fn step_logic(mut game: NonSendMut<Game>) {
             let events = g.controls.world().take_client_events();
             let now = g.models_clock;
             g.models.apply_events(g.controls.world(), &events, now);
+            // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
+            let requests: Vec<_> = g.models.drawables.fx.requests.drain(..).collect();
+            if let (Some(sound), Some(art)) = (g.audio.as_deref_mut(), g.models.art.as_ref()) {
+                let files = |p: &[u8]| art.fs.does_file_exist(p);
+                let w = &g.controls.client.world;
+                let host = rts_lockstep_engine::client::client_audio::WorldAudioHost {
+                    world: w,
+                    local_player_index: g.models.drawables.local_player_index,
+                    files: &files,
+                    language: rts_lockstep_engine::logic::world::install_world::DEFAULT_LANGUAGE,
+                };
+                for e in &events {
+                    sound.audio.apply_event(&host, &mut sound.device, e);
+                }
+                for r in &requests {
+                    sound.audio.fx_request(&host, r);
+                }
+                let view = rig.as_deref().map_or_else(Default::default, |r| crate::audio::listener_view(r.focus.to_array(), r.yaw, r.pitch, r.distance));
+                sound.audio.manager.update(&host, &mut sound.device, &view);
+            }
         }
         Err(e) => g.error = Some(format!("logic frame {}: {e:?}", g.controls.world().frame())),
     }
@@ -989,6 +1028,43 @@ struct GameUiRoot(Vec<crate::ui::UiQuad>);
 /// GUI glue (needs the app): reads the game's control bar from the art's files once a game is running
 /// ([`crate::ui::load_game_ui`], tested there); while a file is being fetched (the web) it tries again on a later frame.
 /// The FX lists and particle systems from the art (#43, #44), once its files have arrived (`WorldDrawables::load_fx`).
+/// GUI glue (needs the app): the audio's tables from the art's INI files once they have arrived (#13,
+/// `crate::audio::load_tables`, tested through the engine's `AudioTables`), then each frame the device's files read
+/// and decoded and its voices started and ended (`ClientDevice::pump`, tested there).
+fn update_audio(mut game: NonSendMut<Game>, time: Res<Time>) {
+    let g = &mut *game;
+    let Some(art) = &g.models.art else { return };
+    let open = |p: &[u8]| {
+        if !art.fs.file_ready(p) {
+            return None;
+        }
+        Some(art.fs.open_file(p))
+    };
+    if g.audio_pending {
+        if let Some((tables, errors)) = crate::audio::load_tables(open) {
+            g.audio_pending = false;
+            info!("audio: {} events, {} music tracks, {} errors {errors:?}", tables.infos.len(), tables.music_tracks.len(), errors.len());
+            let mut manager = rts_lockstep_engine::client::game_audio::AudioManager::new(tables);
+            manager.random = rts_lockstep_engine::common::random_value::RandomValues::new(0);
+            g.audio = Some(Box::new(GameSound {
+                audio: rts_lockstep_engine::client::client_audio::ClientAudio::new(manager),
+                device: crate::audio::ClientDevice::new(SoundOutput::default()),
+            }));
+        }
+    }
+    let Some(sound) = g.audio.as_deref_mut() else { return };
+    sound.device.pump(|p| {
+        if !art.fs.file_ready(p) {
+            return crate::audio::Fetch::Waiting;
+        }
+        match art.fs.open_file(p) {
+            Some(b) => crate::audio::Fetch::Bytes(b),
+            None => crate::audio::Fetch::Missing,
+        }
+    });
+    crate::audio::AudioOutput::advance(&mut sound.device.out, time.delta_secs_f64());
+}
+
 fn load_fx(mut game: NonSendMut<Game>) {
     if game.fx_pending && game.models.load_fx() {
         game.fx_pending = false;

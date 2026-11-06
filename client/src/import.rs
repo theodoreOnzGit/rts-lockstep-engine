@@ -11,7 +11,9 @@
 //! multiplayer map, the player against a medium computer player. ~~The art (models, textures), the audio and the GUI's
 //! layouts are not read yet (issues #10 to #13): units are drawn as their collision shapes.~~ **Corrected 2026-11-05
 //! (#24):** the art is read: the drawables' models and textures come from the same files (`drawables`), and an object
-//! whose model is not found is drawn as its shape. The audio and the GUI's layouts are not read yet.
+//! whose model is not found is drawn as its shape. ~~The audio and the GUI's layouts are not read yet.~~ **Corrected
+//! 2026-11-06 (#13):** the GUI's layouts are read since #12, and the sounds, speech and music since #13 (`crate::audio`),
+//! by range from the same files.
 //!
 //! **Ranged reads (#24).** The art archives run to hundreds of megabytes, so the page does not hand them over whole: it
 //! gives each one's length and the bytes of its header and directory ([`import_ranged`]; the page finds how many with

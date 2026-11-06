@@ -36,6 +36,24 @@ bevy = { version = "=0.20.1", default-features = false, optional = true, feature
 # The page's calls into the game (`src/import.rs`: the player's imported files), at the version Bevy already locks.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "=0.2.130"
+# The audio's output in the browser (#13, `src/audio.rs`): the Web Audio API. All three at the versions Bevy and wgpu
+# already lock (no new crate is downloaded); `web-sys` gains the audio interfaces' features only.
+js-sys = "=0.3.107"
+wasm-bindgen-futures = "=0.4.80"
+web-sys = { version = "=0.3.107", features = [
+    "Window",
+    "AudioContext",
+    "AudioContextState",
+    "BaseAudioContext",
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "AudioScheduledSourceNode",
+    "AudioNode",
+    "AudioParam",
+    "AudioDestinationNode",
+    "GainNode",
+    "StereoPannerNode",
+] }
 
 [[bin]]
 name = "rts-client"

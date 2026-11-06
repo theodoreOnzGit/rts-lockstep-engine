@@ -11,3 +11,4 @@ pub mod w3d;
 // --- p1w4-sides ---
 pub mod data_chunk_output;
 // --- end p1w4-sides ---
+pub mod wav;

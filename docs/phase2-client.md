@@ -28,8 +28,10 @@ logic frames.
   - **Web build:** `wasm32-unknown-unknown` with `wasm-bindgen`, on WebGL2 first, because every browser has it. A WebGPU
     build follows once the first works; Bevy builds one backend per wasm target.
   - **Native build:** wgpu's Vulkan, Metal or DX12 through Bevy.
-- **Audio** sits behind our own small trait. On the web it is the **Web Audio API** through `web-sys`. Natively it is a
-  Rust backend, chosen when audio starts (milestone C6).
+- **Audio** sits behind our own small trait. On the web it is the **Web Audio API** through `web-sys`. ~~Natively it is a
+  Rust backend, chosen when audio starts (milestone C6).~~ **Corrected 2026-11-06 (#13):** the trait is in place
+  (`client::game_audio::AudioDevice`, the client's `audio::AudioOutput`); natively the output is still silent (it keeps
+  the clock and the lengths, so the manager runs as with sound): no Rust backend is chosen yet (see #13's entry below).
 - **`outram-blender`** is used only where it saves work: mesh operations on loaded models (normals, decimation for level of
   detail, booleans for the terrain cut-outs), or generated placeholder geometry. It pulls `faer`, so it comes in only when a
   milestone needs it, with its default `gpu` feature off.
@@ -104,6 +106,49 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#13 (2026-11-06, GitHub #13): audio, rung 1 (the manager, translated) and rung 2 in part (the device, the browser's
+output).**
+- **Translated** (engine crate, `src/client/`, no renderer): `audio_info` (`AudioEventInfo` and its INI blocks
+  `AudioEvent`, `DialogEvent`, `MusicTrack` from INIAudioEventInfo.cpp; `AudioSettings` and
+  `parseAudioSettingsDefinition` from GameAudio.cpp with OptionsMenu.cpp's preference getters; `MiscAudio` from
+  INIMiscAudio.cpp; the track list); `audio_event` (all of AudioEventRTS.cpp: `generateFilename` with its random choice
+  that avoids repeats, the in-turn order, the type's folder, extension and localized file; `generatePlayInfo` with the
+  pitch and volume shifts and the attack and decay files; the portions, loops, owners, positions and players);
+  `game_audio` (GameAudio.cpp's `addAudioEvent`, `shouldPlayLocally`, volumes, overrides, microphone and zoom;
+  GameSounds.cpp's `canPlayNow`; GameMusic.cpp; and the device-independent bookkeeping of MilesAudioManager.cpp, read
+  for what the device must do: the request list and delays, the 2-D and 3-D sample pools, `doesViolateLimit`, the
+  priorities and interrupts, the voices, loops and portions, `getEffectiveVolume`'s distance roll-off, the playing
+  list's culling, music fades). `client_audio` turns the logic's sound events and the FX lists' sound requests back
+  into `addAudioEvent` calls. `formats::wav` is new (Miles was never released): RIFF WAVE and IMA ADPCM, decoded in
+  steps.
+- **Upstream facts found on the way:** `SoundsNight`/`SoundsEvening`/`SoundsMorning` are parsed but never read
+  (`generateFilename` picks from `Sounds` only); a `MusicTrack DefaultMusicTrack` block lists itself as a track (its
+  own lookup of the default finds it); `checkForSample` compares the `Type` bits with `AT_SoundEffect` (kept);
+  `killLowestPrioritySoundImmediately` erases a 2-D sound from the 3-D list (undefined; not copied); localized paths
+  carry a double backslash (kept; the file system skips it).
+- **The device** (client crate, `src/audio.rs`, new): `ClientDevice` plays the manager's voices from the art's file
+  system, so in the browser the sound archives (`AudioZH.big`, `SpeechZH.big`, `MusicZH.big`, which the page no longer
+  skips) are read by range as the art is; WAV is decoded in Rust at most 256 KiB of input per frame, MP3 by the
+  browser's `decodeAudioData` off the main thread. The browser's output is the Web Audio API (`web-sys`, `js-sys`,
+  `wasm-bindgen-futures`, at the versions Bevy already locks): a source, a gain and a stereo panner per voice, on the
+  `AudioContext` the page creates and resumes in the press that opens the folder picker or plays the saved files.
+  Positional gain is the manager's `getEffectiveVolume` each logic frame, and the pan (new) the sine of the bearing
+  from the camera's heading; the microphone follows the camera rig. Natively the output is silent for now.
+- *Predictions and results:* the unit tests' predictions are in their doc comments; four missed on the first run and
+  are recorded there (the default music track listed; a 100 ms delay waits four frames, not three, in `float`; a quoted
+  provider name; the ADPCM round trip's error at block starts, from the test's encoder). The device's file state first
+  advanced one step per frame, so a file that arrived played a frame late; it now goes as far as it can in a frame.
+- **The differential** (`tests/differential_audio.rs`, `differential/wrap_audio.cpp`, `shim_audio`): the INI
+  (4,000 cases: 6,039 loads, 1,220 succeeding and 4,819 failing on damaged values, every description, track, setting,
+  misc sound and preference compared) and the events (4,000 cases, 13,949 states after `generateFilename` and
+  `generatePlayInfo`, and the audio and logic generators' words): **0 mismatches** on the first run. Two planted bugs
+  (the repeat rule at more than one sound; a pitch divisor) were caught (2,027 and 1,257 mismatches).
+- **The CRCs:** the FX gun test (`drawables`) now also plays the audio: CRCs equal over 200 frames, 5 voices played.
+- **Not done** (issues filed): a native output (no backend chosen; ALSA is not in this build environment); the
+  drawables' ambient sounds and the map's customised ones (`DynamicAudioEventInfo`); the scripts' sounds, speech and
+  music (cut points in the logic); unit voices on selection and orders; music tracks started by the game; EVA; the
+  low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
 
 **#19 (2026-11-06, GitHub #19): animations sampled with the shipped game's `Float_To_Long`.**
 - **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of

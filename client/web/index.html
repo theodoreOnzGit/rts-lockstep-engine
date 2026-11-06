@@ -56,18 +56,21 @@
     }
   }).finally(() => { $('loading').style.display = 'none'; });
 
-  // The archives the game reads. The sound archives are not read yet, nor the shaders', so they are left out: the
+  // The archives the game reads. ~~The sound archives are not read yet, nor the shaders', so they are left out~~
+  // (corrected 2026-11-06, #13: the sound archives are read now) The shaders' archive is not read, so it is left out: the
   // browser keeps only what is used. The art archives (W3D models, textures, and since #11 the terrain's tiles,
-  // TerrainZH.big; since #12 the UI's layouts and images, WindowZH.big) are kept, and read by range as the game needs
+  // TerrainZH.big; since #12 the UI's layouts and images, WindowZH.big; since #13 the sounds, speech and music,
+  // AudioZH.big, SpeechZH.big, MusicZH.big and their language versions) are kept, and read by range as the game needs
   // their files (#24): only their directories and the members used are ever read, never the hundreds of megabytes whole.
   // (#12: `window` was skipped until the control bar was read from its files.)
-  const SKIP = /^(audio|speech|music|shaders)/i;
-  const ART = /^(w3d|textures|terrain|window)/i;
+  const SKIP = /^(shaders)/i;
+  const ART = /^(w3d|textures|terrain|window|audio|speech|music)/i;
   function wanted(path) {
     const name = path.split('/').pop();
     if (/\.big$/i.test(name)) return !SKIP.test(name);
-    // loose art: models and textures under Art/
+    // loose art: models and textures under Art/; (#13) loose sounds under Data/Audio/
     if (/(^|\/)art\//i.test(path) && /\.(w3d|dds|tga)$/i.test(name)) return true;
+    if (/(^|\/)data\/audio\//i.test(path) && /\.(wav|mp3)$/i.test(name)) return true;
     // loose files the logic may read: INI, scripts, text, and maps; and (#12) the UI's window layouts
     if (/(^|\/)window\//i.test(path) && /\.wnd$/i.test(name)) return true;
     return /(^|\/)(data|maps)\//i.test(path) && /\.(ini|scb|csf|str|map|tga)$/i.test(name);
@@ -75,7 +78,7 @@
   // Read by range rather than whole: the art archives and loose art files.
   function ranged(path) {
     const name = path.split('/').pop();
-    return /\.big$/i.test(name) ? ART.test(name) : /(^|\/)art\//i.test(path);
+    return /\.big$/i.test(name) ? ART.test(name) : /(^|\/)(art|data\/audio)\//i.test(path);
   }
   // A picked file's path within the Zero Hour folder (the folder's own name dropped).
   function relative(file) {
@@ -201,6 +204,19 @@
     await play(chosen.map(([p, f]) => [p, async () => f]));
   }
 
+  // #13: browsers start no sound before a user gesture. The game's audio uses the AudioContext made here, in the press
+  // that opens the folder picker or plays the saved files (`window.rtsAudioContext`; `src/audio.rs`), resumed there.
+  function startAudio() {
+    try {
+      if (!window.rtsAudioContext) window.rtsAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (window.rtsAudioContext.state === 'suspended') window.rtsAudioContext.resume();
+    } catch (e) { console.warn('no audio: ' + e); }
+  }
+  for (const id of ['folder', 'bigs', 'play']) {
+    const el = $(id).closest('label') || $(id);
+    el.addEventListener('pointerdown', startAudio);
+    el.addEventListener('click', startAudio);
+  }
   $('folder').addEventListener('change', (e) => pick(e.target.files));
   $('bigs').addEventListener('change', (e) => pick(e.target.files));
   $('hide').addEventListener('click', () => { $('files').style.display = 'none'; });

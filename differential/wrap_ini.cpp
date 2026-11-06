@@ -463,22 +463,27 @@ WEAK void INI::parseScienceDefinition(INI *ini) /* p1w2-science: WEAK, Science.c
 extern "C" { void (*ref_ai_data_block_hook)(INI *) = 0; }
 void INI::parseAIDataDefinition(INI *ini) { if (!ref_ai_data_block_hook) throw ERROR_BUG; ref_ai_data_block_hook(ini); }
 STUB(INI::parseAnim2DDefinition)
-STUB(INI::parseAudioEventDefinition) STUB(INI::parseAudioSettingsDefinition)
+/* GitHub #13: the audio blocks reach the handlers of wrap_audio.cpp (renamed there) when that fixture sets the hooks
+** (ref_audio_reset): 0 AudioEvent, 1 AudioSettings, 2 DialogEvent, 3 MiscAudio, 4 MusicTrack; with none set they throw,
+** as the stubs did. */
+extern "C" { void (*ref_audio_block_hook[5])(INI *) = { 0, 0, 0, 0, 0 }; }
+#define AUDIO_HOOK(F, I) void F(INI *ini) { if (!ref_audio_block_hook[I]) throw ERROR_BUG; ref_audio_block_hook[I](ini); }
+AUDIO_HOOK(INI::parseAudioEventDefinition, 0) AUDIO_HOOK(INI::parseAudioSettingsDefinition, 1)
 STUB(INI::parseTerrainBridgeDefinition) STUB(INI::parseCampaignDefinition)
 STUB(INI::parseChallengeModeDefinition) STUB(INI::parseCommandButtonDefinition)
 STUB(INI::parseMetaMapDefinition) STUB(INI::parseCommandSetDefinition)
 STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefinition)
 WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
-WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
+WEAK_STUB(INI::parseDamageFXDefinition) AUDIO_HOOK(INI::parseDialogDefinition, 2)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
 WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
 STUB(INI::parseInGameUIDefinition) WEAK_STUB(INI::parseLocomotorTemplateDefinition) /* p1w6-locomotor: real in Locomotor.cpp (wrap_locomotor.cpp) */
 STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
-STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)
+AUDIO_HOOK(INI::parseMiscAudio, 3) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)
 WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
 STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
-STUB(INI::parseMusicTrackDefinition) WEAK_STUB(INI::parseObjectCreationListDefinition) /* p1w10-sonnet: real in ObjectCreationList.cpp (wrap_ocl.cpp) */
+AUDIO_HOOK(INI::parseMusicTrackDefinition, 4) WEAK_STUB(INI::parseObjectCreationListDefinition) /* p1w10-sonnet: real in ObjectCreationList.cpp (wrap_ocl.cpp) */
 /* #46: the ParticleSystem block reaches INIParticleSys.cpp's handler (wrap_particle_sys.cpp, where it is renamed) when that
 ** fixture sets the hook (ref_psys_reset); with none set it throws, as the stub did. */
 extern "C" { void (*ref_particle_block_hook)(INI *) = 0; void (*ref_fxlist_block_hook)(INI *) = 0; }
