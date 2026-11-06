@@ -43,6 +43,7 @@ use crate::common::ini::IniError;
 use crate::common::kind_of::KindOfType;
 use crate::logic::scripts::ScriptAction;
 use crate::logic::world::game_logic::World;
+use crate::logic::client_event::{ClientEvent, ScriptAudioEvent};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::script_actions::{
     AudioEvent, ButtonFrom, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
@@ -125,6 +126,15 @@ impl World {
         let mut sa = std::mem::take(&mut self.script_actions);
         sa.close_windows(self, suppress);
         self.script_actions = sa;
+    }
+
+    /// GitHub #51: one of the actions' calls on `TheAudio`, sent to the client (see [`ScriptAudioEvent`]: nothing the logic
+    /// reads, saves or puts in its CRC changes).
+    pub(crate) fn sa_audio(&mut self, e: ScriptAudioEvent) {
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("evt {e:?}"));
+        }
+        self.events.push(ClientEvent::ScriptAudio(e));
     }
 
     /// Logs one of the actions' calls into a unit the world does not hold.
@@ -288,8 +298,9 @@ impl ScriptActionsHost for World {
         let r = crate::logic::world::player_ops::player_build_base_defense_structure(self, p, building, flank);
         self.script_player("Player::buildBaseDefenseStructure", r);
     }
-    fn sa_audio_add_event(&mut self, _e: &AudioEvent) {
-        self.sa_cut("audio_add_event");
+    fn sa_audio_add_event(&mut self, e: &AudioEvent) {
+        // (#51: was a cut) the client's audio manager makes the call
+        self.sa_audio(ScriptAudioEvent::AddEvent(e.clone()));
     }
     fn sa_waypoint_by_name(&self, name: &[u8]) -> Option<WaypointH> {
         AsciiString::try_from_bytes(name).ok().and_then(|n| self.terrain.waypoint_by_name(&n)).and_then(|h| self.terrain.waypoint(h)).map(|w| w.id())
@@ -979,11 +990,11 @@ impl ScriptActionsHost for World {
     fn sa_player_set_units_should_idle_or_resume(&mut self, p: PlayerH, idle: bool) {
         let _ = crate::logic::world::player_objects::player_set_units_should_idle_or_resume(self, p, idle);
     }
-    fn sa_audio_pause_ambient(&mut self, _pause: bool) {
-        self.sa_cut("audio_pause_ambient");
+    fn sa_audio_pause_ambient(&mut self, pause: bool) {
+        self.sa_audio(ScriptAudioEvent::PauseAmbient(pause));
     }
-    fn sa_audio_remove_event_handle(&mut self, _handle: i32) {
-        self.sa_cut("audio_remove_event_handle");
+    fn sa_audio_remove_event_handle(&mut self, handle: i32) {
+        self.sa_audio(ScriptAudioEvent::RemoveEventHandle(handle));
     }
     fn sa_set_current_track_name(&mut self, name: &[u8]) {
         // (integration batch I28: was a cut) `TheScriptEngine->setCurrentTrackName(name)`: the engine's (saved) `m_currentTrackName`
@@ -1129,8 +1140,8 @@ impl ScriptActionsHost for World {
     fn sa_ui_object_superweapon_display(&mut self, _o: ObjH, _hide: bool) {
         self.sa_cut("ui_object_superweapon_display");
     }
-    fn sa_audio_set_volume(&mut self, _volume: f32, _affect: i32) {
-        self.sa_cut("audio_set_volume");
+    fn sa_audio_set_volume(&mut self, volume: f32, affect: i32) {
+        self.sa_audio(ScriptAudioEvent::SetVolume { volume, affect });
     }
     fn sa_team_set_controlling_player(&mut self, t: TeamH, p: PlayerH) {
         let _ = crate::logic::world::team_ops::team_set_controlling_player(self, t as u32, Some(p));
@@ -1427,17 +1438,17 @@ impl ScriptActionsHost for World {
             self.module_call(o, m, crate::logic::world::module_call::ModuleCall::SupplyWarehouseSetCashValue(value));
         }
     }
-    fn sa_audio_set_event_enabled(&mut self, _name: &[u8], _enable: bool) {
-        self.sa_cut("audio_set_event_enabled");
+    fn sa_audio_set_event_enabled(&mut self, name: &[u8], enable: bool) {
+        self.sa_audio(ScriptAudioEvent::SetEventEnabled { name: name.to_vec(), enable });
     }
     fn sa_audio_remove_disabled_events(&mut self) {
-        self.sa_cut("audio_remove_disabled_events");
+        self.sa_audio(ScriptAudioEvent::RemoveDisabledEvents);
     }
-    fn sa_audio_remove_event_named(&mut self, _name: &[u8]) {
-        self.sa_cut("audio_remove_event_named");
+    fn sa_audio_remove_event_named(&mut self, name: &[u8]) {
+        self.sa_audio(ScriptAudioEvent::RemoveEventNamed(name.to_vec()));
     }
-    fn sa_audio_set_event_volume_override(&mut self, _name: &[u8], _volume: f32) {
-        self.sa_cut("audio_set_event_volume_override");
+    fn sa_audio_set_event_volume_override(&mut self, name: &[u8], volume: f32) {
+        self.sa_audio(ScriptAudioEvent::SetEventVolumeOverride { name: name.to_vec(), volume });
     }
     fn sa_set_topple_direction(&mut self, name: &[u8], dir: &Coord3D) {
         // (the running engine is the world's while an action runs, `execute_action_with`)
@@ -1591,8 +1602,8 @@ impl ScriptActionsHost for World {
     fn sa_view_set_time_multiplier(&mut self, _m: i32) {
         self.sa_cut("view_set_time_multiplier");
     }
-    fn sa_audio_pause(&mut self, _pause: bool, _affect: i32) {
-        self.sa_cut("audio_pause");
+    fn sa_audio_pause(&mut self, pause: bool, affect: i32) {
+        self.sa_audio(ScriptAudioEvent::Pause { pause, affect });
     }
     fn sa_global_fps_limit(&self) -> i32 {
         Default::default()
@@ -1786,5 +1797,82 @@ mod tests {
         assert_eq!(money(&w), 400);
         assert_eq!((engine.counters[0].value, w.script_engine.counters[0].value), (42, 0));
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+    }
+
+    /// An action of `action_type` with string, int and real parameters, in that order.
+    fn action(action_type: i32, strings: &[&[u8]], ints: &[i32], reals: &[f32]) -> ScriptAction {
+        let mut a = ScriptAction::new_for_read();
+        a.action_type = action_type;
+        let mut i = 0;
+        for s in strings {
+            let mut p = Parameter::new(0, 0);
+            p.string = s.to_vec();
+            a.parms[i] = Some(p);
+            i += 1;
+        }
+        for n in ints {
+            a.parms[i] = Some(Parameter::new(0, *n));
+            i += 1;
+        }
+        for r in reals {
+            let mut p = Parameter::new(0, 0);
+            p.real = *r;
+            a.parms[i] = Some(p);
+            i += 1;
+        }
+        a.num_parms = i as i32;
+        a
+    }
+
+    /// GitHub #51: the scripts' audio actions are client events, and change nothing the logic CRCs or saves.
+    ///
+    /// *Predictions, written before the first run:* `PLAY_SOUND_EFFECT Snd` sends one `AddEvent` (logical, the local
+    /// player's index, no position, no object); `MUSIC_SET_TRACK Track_A 1 0` sends `RemoveEventHandle(5)`
+    /// (`AHSV_StopTheMusicFade`) then a non-logical `AddEvent` without fade, and sets the engine's (saved)
+    /// `currentTrackName` as before; `SOUND_SET_VOLUME 50` sends `SetVolume { 0.5, Sound | Sound3D = 6 }`;
+    /// `SUSPEND_BACKGROUND_SOUNDS` sends `Pause { true, 2 }`; `SOUND_DISABLE_TYPE Snd` sends `SetEventEnabled { Snd,
+    /// false }`. Nothing else: the logic's random state, its made-up audio handle (`cuts.last_audio_handle`, 0) and its
+    /// CRC are as before the actions.
+    #[test]
+    fn the_scripts_audio_actions_are_client_events_that_change_no_logic_state() {
+        use crate::logic::client_event::{ClientEvent, ScriptAudioEvent};
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        let (mut w, _) = world();
+        let mut engine = std::mem::take(&mut w.script_engine);
+        w.take_client_events();
+        w.players.set_local_player(Some(1));
+        let local = w.players.local_index().expect("a local player");
+        let random = w.random.clone();
+        let handle = w.cuts.last_audio_handle;
+        let crc = w.logic_crc(CRC_RECALC, None).unwrap();
+        for a in [
+            action(at::PLAY_SOUND_EFFECT, &[b"Snd"], &[], &[]),
+            action(at::SOUND_SET_VOLUME, &[], &[], &[50.0]),
+            action(at::SUSPEND_BACKGROUND_SOUNDS, &[], &[], &[]),
+            action(at::SOUND_DISABLE_TYPE, &[b"Snd"], &[], &[]),
+        ] {
+            w.execute_action_with(&mut engine, &a).unwrap();
+        }
+        assert_eq!(w.logic_crc(CRC_RECALC, None).unwrap(), crc, "the CRC");
+        w.execute_action_with(&mut engine, &action(at::MUSIC_SET_TRACK, &[b"Track_A"], &[1, 0], &[])).unwrap();
+        let ev = w.take_client_events();
+        let ev: Vec<_> = ev.into_iter().filter_map(|e| if let ClientEvent::ScriptAudio(s) = e { Some(s) } else { None }).collect();
+        let add = |name: &[u8], logical| {
+            ScriptAudioEvent::AddEvent(AudioEvent { name: name.to_vec(), position: None, logical, player_index: local, object: 0, uninterruptable: false, should_fade: false })
+        };
+        assert_eq!(
+            ev,
+            [
+                add(b"Snd", true),
+                ScriptAudioEvent::SetVolume { volume: 0.5, affect: 6 },
+                ScriptAudioEvent::Pause { pause: true, affect: 2 },
+                ScriptAudioEvent::SetEventEnabled { name: b"Snd".to_vec(), enable: false },
+                ScriptAudioEvent::RemoveEventHandle(5),
+                add(b"Track_A", false),
+            ]
+        );
+        assert_eq!(engine.current_track_name, b"Track_A", "the engine's saved track, as before #51");
+        assert_eq!(w.random, random, "no logic random draw");
+        assert_eq!(w.cuts.last_audio_handle, handle, "no made-up handle taken");
     }
 }

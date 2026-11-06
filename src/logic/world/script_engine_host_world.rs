@@ -352,7 +352,18 @@ impl ScriptEngineHost for World {
         self.script_actions = sa;
     }
     fn se_audio_add_event(&mut self, name: &[u8], player: i32) {
-        self.se_cut("AudioManager::addAudioEvent", &[i64::from(player)], name);
+        // (#51: was a cut) `loadPostProcess`'s `AudioEventRTS event(m_currentTrackName); event.setPlayerIndex(local);
+        // TheAudio->addAudioEvent(&event)`, made by the client's audio manager
+        let e = crate::logic::world::script_actions::AudioEvent {
+            name: name.to_vec(),
+            position: None,
+            logical: false,
+            player_index: player,
+            object: 0,
+            uninterruptable: false,
+            should_fade: false,
+        };
+        self.sa_audio(crate::logic::client_event::ScriptAudioEvent::AddEvent(e));
     }
 }
 

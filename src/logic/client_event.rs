@@ -87,4 +87,39 @@ pub enum ClientEvent {
     /// What `Player` tells `TheAudio`, `TheControlBar` and `TheEva` ([`PlayerClientEvent`]), nested.
     Player(crate::logic::world::player_ops::PlayerClientEvent),
     // --- end p1w10-sonnet ---
+    /// GitHub #51: the script actions' calls on `TheAudio` (ScriptActions.cpp) and the script engine's music track played
+    /// again after a load (`ScriptEngine::loadPostProcess`), nested ([`ScriptAudioEvent`]).
+    ScriptAudio(ScriptAudioEvent),
+}
+
+/// GitHub #51: one of the scripts' calls on `TheAudio`. Upstream calls the audio manager directly from the logic's
+/// script actions; here the logic pushes the call, and the client's audio manager makes it
+/// (`client::client_audio::ClientAudio::apply_event`).
+///
+/// **Not simulation state.** Pushing one changes nothing the logic reads, saves or puts in its CRC: it is not given a
+/// handle from the logic's made-up audio handles (`cuts.last_audio_handle`, which the modules keep and save), and a
+/// logical event's random file choice is the client's (`client::audio_event`, GitHub #50), never the World's generator.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScriptAudioEvent {
+    /// `TheAudio->addAudioEvent(&event)` of the event the action built (`doPlaySoundEffect`, `doPlaySoundEffectAt`,
+    /// `doSoundPlayFromNamed`, `doSpeechPlay`, `doMusicTrackChange`, `doUnitSelectAndPlay`; and
+    /// `ScriptEngine::loadPostProcess`'s current music track).
+    AddEvent(crate::logic::world::script_actions::AudioEvent),
+    /// `TheAudio->removeAudioEvent(handle)`: only `AHSV_StopTheMusic` / `AHSV_StopTheMusicFade` (`doMusicTrackChange`).
+    RemoveEventHandle(i32),
+    /// `TheAudio->pauseAmbient(pausing)` (`doAmbientSoundsPause`).
+    PauseAmbient(bool),
+    /// `TheAudio->setVolume(volume, whichToAffect)` (`doAudioSetVolume`: already divided by 100 and clamped to [0, 1]).
+    SetVolume { volume: f32, affect: i32 },
+    /// `TheAudio->setAudioEventEnabled(name, enable)` (an empty name: all).
+    SetEventEnabled { name: Vec<u8>, enable: bool },
+    /// `TheAudio->removeDisabledEvents()`.
+    RemoveDisabledEvents,
+    /// `TheAudio->removeAudioEvent(name)`.
+    RemoveEventNamed(Vec<u8>),
+    /// `TheAudio->setAudioEventVolumeOverride(name, volume)` (-1 restores; an empty name: all).
+    SetEventVolumeOverride { name: Vec<u8>, volume: f32 },
+    /// `TheAudio->pauseAudio(affect)` (`pause`) or `resumeAudio(affect)` (`SUSPEND_BACKGROUND_SOUNDS`,
+    /// `RESUME_BACKGROUND_SOUNDS`).
+    Pause { pause: bool, affect: i32 },
 }

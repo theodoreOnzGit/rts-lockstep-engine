@@ -834,6 +834,121 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert_eq!(most, 2);
     }
 
+    /// GitHub #51: a script game. Side 0 holds one active, one-shot script on `CONDITION_TRUE` whose actions play a
+    /// sound (`PLAY_SOUND_EFFECT Blip`), change the music (`MUSIC_SET_TRACK Theme 0 0`), play a speech (`SPEECH_PLAY
+    /// Hello 1`) and set the sound volume (`SOUND_SET_VOLUME 80`). 90 frames, the logic's events (the script's
+    /// `ScriptAudio` ones among them) given to the translated audio manager and the device (`drawn_client`), or dropped.
+    /// Returns the CRCs, the device's voices played, the script audio events seen, the manager's sound volume, the
+    /// events the manager was given and the files still playing at the end.
+    #[allow(clippy::type_complexity)]
+    fn play_script_audio(drawn_client: bool) -> (Vec<u32>, u64, usize, f32, Vec<Vec<u8>>, Vec<Vec<u8>>) {
+        use rts_lockstep_engine::common::dict::Dict;
+        use rts_lockstep_engine::logic::client_event::ClientEvent;
+        use rts_lockstep_engine::logic::scripts::{action_type as at, condition_type as ct, Condition, OrCondition, Parameter, Script, ScriptAction, ScriptList};
+        let mut w = gate_map_world_with("");
+        w.players.set_local_player(Some(1));
+        let act = |t: i32, strings: &[&[u8]], ints: &[i32], reals: &[f32]| {
+            let mut a = ScriptAction::new_for_read();
+            a.action_type = t;
+            let mut i = 0;
+            for x in strings {
+                let mut p = Parameter::new(0, 0);
+                p.string = x.to_vec();
+                a.parms[i] = Some(p);
+                i += 1;
+            }
+            for n in ints {
+                a.parms[i] = Some(Parameter::new(0, *n));
+                i += 1;
+            }
+            for r in reals {
+                let mut p = Parameter::new(0, 0);
+                p.real = *r;
+                a.parms[i] = Some(p);
+                i += 1;
+            }
+            a.num_parms = i as i32;
+            a
+        };
+        let mut c = Condition::new_for_read();
+        c.condition_type = ct::CONDITION_TRUE;
+        let mut sc = Script::new();
+        sc.script_name = b"Audio".to_vec();
+        (sc.is_active, sc.is_one_shot, sc.easy, sc.normal, sc.hard) = (true, true, true, true, true);
+        sc.conditions = vec![OrCondition { conditions: vec![c] }];
+        sc.actions = vec![
+            act(at::PLAY_SOUND_EFFECT, &[b"Blip"], &[], &[]),
+            act(at::MUSIC_SET_TRACK, &[b"Theme"], &[0, 0], &[]),
+            act(at::SPEECH_PLAY, &[b"Hello"], &[1], &[]),
+            act(at::SOUND_SET_VOLUME, &[], &[], &[80.0]),
+        ];
+        if w.sides.get_num_sides() == 0 {
+            w.sides.add_side(&Dict::default());
+        }
+        w.sides.get_side_info_mut(0).expect("side 0").scripts = Some(ScriptList { groups: Vec::new(), scripts: vec![sc] });
+        w.script_engine_new_map().expect("the engine's newMap");
+        w.take_client_events();
+        let mut tables = rts_lockstep_engine::client::audio_info::AudioTables::new();
+        tables
+            .load_text(b"a.ini", b"AudioSettings\n AudioRoot = Data\\Audio\n SoundsFolder = Sounds\n MusicFolder = Tracks\n StreamingFolder = Speech\n SoundsExtension = wav\n SampleCount2D = 4\n SampleCount3D = 8\n MinSampleVolume = 1%\n DefaultSoundVolume = 100%\n Default3DSoundVolume = 100%\n DefaultSpeechVolume = 100%\n DefaultMusicVolume = 100%\nEnd\nAudioEvent Blip\n Sounds = blip\n Type = ui everyone\n Volume = 100%\nEnd\nDialogEvent Hello\n Filename = hello.wav\n Type = ui player\n Volume = 100%\nEnd\nMusicTrack Theme\n Filename = theme.wav\n Volume = 100%\nEnd\n")
+            .expect("the audio INI");
+        let mut audio = rts_lockstep_engine::client::client_audio::ClientAudio::new(rts_lockstep_engine::client::game_audio::AudioManager::new(tables));
+        let mut device = crate::audio::ClientDevice::new(crate::audio::NullOutput::default());
+        let wav = {
+            let mut b = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data".to_vec();
+            b.extend_from_slice(&(2 * 4410u32).to_le_bytes());
+            b.extend(std::iter::repeat_n(0u8, 2 * 4410));
+            b
+        };
+        let known: [&[u8]; 3] = [b"Data\\Audio\\Sounds\\blip.wav", b"Data\\Audio\\Tracks\\theme.wav", b"Data\\Audio\\Speech\\hello.wav"];
+        let files = |p: &[u8]| known.contains(&p);
+        let view = crate::audio::listener_view([150.0, 400.0], 0.0, 0.95, 300.0);
+        let (mut crcs, mut seen) = (Vec::new(), 0);
+        for _ in 0..90 {
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            seen += ev.iter().filter(|e| matches!(e, ClientEvent::ScriptAudio(_))).count();
+            if drawn_client {
+                let host = rts_lockstep_engine::client::client_audio::WorldAudioHost { world: &w, local_player_index: None, files: &files, language: b"English" };
+                for e in &ev {
+                    audio.apply_event(&host, &mut device, e);
+                }
+                audio.manager.update(&host, &mut device, &view);
+                device.pump(|p| if files(p) { crate::audio::Fetch::Bytes(wav.clone()) } else { crate::audio::Fetch::Missing });
+                crate::audio::AudioOutput::advance(&mut device.out, 1.0 / 30.0);
+            }
+            crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        let vol = audio.manager.get_volume(rts_lockstep_engine::client::game_audio::AUDIO_AFFECT_SOUND);
+        let log: Vec<Vec<u8>> = audio.log.iter().map(|(n, _)| n.clone()).collect();
+        let playing: Vec<Vec<u8>> = device.out.playing.values().map(|v| v.0.clone()).collect();
+        (crcs, device.stats.voices_played, seen, vol, log, playing)
+    }
+
+    /// GitHub #51: a script game that plays a sound, music and a speech leaves the logic's CRCs as without the client.
+    ///
+    /// *Predictions, written before the first run:* the CRCs are equal frame for frame; the script runs once, on the
+    /// first frame, and sends 5 script audio events (the sound, the music's stop and its track, the speech, the volume);
+    /// with the client, 3 voices are played (`blip.wav` 2-D, `theme.wav` as music, `hello.wav` as speech), and the
+    /// manager's sound volume is the script's 0.8 (times the system's 1).
+    ///
+    /// *Results (2026-11-06), first run:* the CRCs equal over 90 frames, 5 events, the volume 0.8, the manager given
+    /// `Blip`, `Theme`, `Hello` (handles 6, 7, 8). **Miss: 14 voices, not 3.** The music loops: the manager restarts a
+    /// track when it ends (`game_audio`'s module docs: upstream sets Miles' infinite loop count), and the test's 0.1 s
+    /// `theme.wav` ended and was restarted 11 times in the 3 s; `theme.wav` is still playing at the end. My prediction
+    /// forgot the loop, not a defect.
+    #[test]
+    fn a_script_game_s_sounds_and_music_leave_the_crcs_alone() {
+        let (plain, _, seen_plain, ..) = play_script_audio(false);
+        let (crcs, played, seen, vol, log, playing) = play_script_audio(true);
+        assert_eq!(crcs, plain);
+        assert_eq!((seen, seen_plain), (5, 5));
+        assert_eq!(log, [b"Blip".to_vec(), b"Theme".to_vec(), b"Hello".to_vec()]);
+        assert_eq!(playing, [b"Data\\Audio\\Tracks\\theme.wav".to_vec()], "the music loops");
+        assert_eq!(played, 14, "Blip, Hello, and Theme 12 times (it loops)");
+        assert_eq!(vol, 0.8);
+    }
+
     /// A tank `TANKT`: ROOTTRANSFORM and BODY pivots, a cube for the chassis and one for each tread (`TREADSL`, `TREADSR`)
     /// with a linear-offset mapper on stage 0 (GitHub #41).
     fn tank_model() -> Vec<u8> {

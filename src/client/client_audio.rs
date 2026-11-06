@@ -24,8 +24,12 @@
 //!   bar does not track yet.
 //! - **`ObjectSound::VoiceDefect`** (the object template's `VoiceDefect`), the map objects' customised ambient sounds
 //!   (`DrawableAmbientSoundProperties`, upstream's `DynamicAudioEventInfo`) and the drawables' ambient sounds are not
-//!   played yet; nor are the script actions' sounds and music, which the logic does not emit (its `sa_audio_*` hooks are
-//!   cut points).
+//!   played yet; ~~nor are the script actions' sounds and music, which the logic does not emit (its `sa_audio_*` hooks are
+//!   cut points).~~ **Corrected 2026-11-06 (#51):** the script actions' calls on `TheAudio` are now client events
+//!   ([`ScriptAudioEvent`]) and are made here ([`ClientAudio::apply_script_event`]); `pauseAmbient` does nothing, as
+//!   `MilesAudioManager::pauseAmbient` is empty.
+//! - **`getAudioLengthMS`** is not answered to the logic (the script engine's speech and sound waits read 0): the file
+//!   lengths would change the logic (#51's write-up).
 //! - **`ObjectClientEvent::AudioRemoveEvent { handle }`** carries a handle the logic made up (upstream's comes from
 //!   `addAudioEvent`, which the logic cannot call): ignored.
 //! - **`StealthDetectorFeedback`** plays its sound whether or not the radar would have taken the event (`tryEvent`); the
@@ -39,7 +43,7 @@ use crate::common::audio_event_name::AudioEventName;
 use crate::common::base_type::Coord3D;
 use crate::common::game_common::{CellShroudStatus, Relationship};
 use crate::common::game_type::{ObjectId, LAYER_GROUND};
-use crate::logic::client_event::{ClientEvent, MoneySound};
+use crate::logic::client_event::{ClientEvent, MoneySound, ScriptAudioEvent};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound, StealthFeedback};
 use crate::logic::world::player_ops::PlayerClientEvent;
@@ -187,7 +191,41 @@ impl ClientAudio {
                 self.add(host, Self::named(&n.event_name, 0, None, Some(*player_index)));
             }
             ClientEvent::Object(o) => self.apply_object_event(host, device, &misc, o),
+            ClientEvent::ScriptAudio(s) => self.apply_script_event(host, device, s),
             _ => {}
+        }
+    }
+
+    /// GitHub #51: a script's call on `TheAudio` (ScriptActions.cpp; `ScriptEngine::loadPostProcess`'s music track), made
+    /// here as upstream's action makes it.
+    pub fn apply_script_event<D: AudioDevice>(&mut self, host: &dyn AudioHost, device: &mut D, s: &ScriptAudioEvent) {
+        match s {
+            ScriptAudioEvent::AddEvent(a) => {
+                // `AudioEventRTS(name)`, `(name, pos)` or `(name, objectID)`, then the action's setters
+                let mut e = AudioEventRts::new(&a.name);
+                if let Some(p) = &a.position {
+                    e.set_position(p);
+                }
+                if a.object != 0 {
+                    e.set_object_id(a.object as u32);
+                }
+                // `setIsLogicalAudio(true)`: the file is picked from the client's own copy of the logic stream (#50)
+                e.is_logical_audio = a.logical;
+                e.player_index = a.player_index;
+                e.uninterruptable = a.uninterruptable;
+                e.should_fade = a.should_fade;
+                self.add(host, e);
+            }
+            ScriptAudioEvent::RemoveEventHandle(h) => self.manager.remove_audio_event(device, *h as AudioHandle),
+            // `MilesAudioManager::pauseAmbient` is empty: nothing happens upstream
+            ScriptAudioEvent::PauseAmbient(_) => {}
+            ScriptAudioEvent::SetVolume { volume, affect } => self.manager.set_volume(*volume, *affect as u32),
+            ScriptAudioEvent::SetEventEnabled { name, enable } => self.manager.set_audio_event_enabled(name, *enable),
+            ScriptAudioEvent::RemoveDisabledEvents => self.manager.remove_disabled_events(device),
+            ScriptAudioEvent::RemoveEventNamed(name) => self.manager.remove_audio_event_named(device, name),
+            ScriptAudioEvent::SetEventVolumeOverride { name, volume } => self.manager.set_audio_event_volume_override(name, *volume),
+            ScriptAudioEvent::Pause { pause: true, affect } => self.manager.pause_audio(device, *affect as u32),
+            ScriptAudioEvent::Pause { pause: false, affect } => self.manager.resume_audio(device, *affect as u32),
         }
     }
 

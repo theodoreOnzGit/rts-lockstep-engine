@@ -146,9 +146,29 @@ output).**
   (the repeat rule at more than one sound; a pitch divisor) were caught (2,027 and 1,257 mismatches).
 - **The CRCs:** the FX gun test (`drawables`) now also plays the audio: CRCs equal over 200 frames, 5 voices played.
 - **Not done** (issues filed): a native output (no backend chosen; ALSA is not in this build environment); the
-  drawables' ambient sounds and the map's customised ones (`DynamicAudioEventInfo`); the scripts' sounds, speech and
-  music (cut points in the logic); unit voices on selection and orders; music tracks started by the game; EVA; the
+  drawables' ambient sounds and the map's customised ones (`DynamicAudioEventInfo`); ~~the scripts' sounds, speech and
+  music (cut points in the logic);~~ **Corrected 2026-11-06 (#51):** the scripts' sounds, speech and music are played
+  (see #51's entry below); unit voices on selection and orders; music tracks started by the game; EVA; the
   low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
+
+**#51 (2026-11-06, GitHub #51): audio follow-ups, part 1 (the scripts' audio).**
+- **Translated:** the `TheAudio` calls of ScriptActions.cpp's `doPlaySoundEffect`, `doPlaySoundEffectAt`,
+  `doSoundPlayFromNamed`, `doSpeechPlay`, `doMusicTrackChange`, `doUnitSelectAndPlay`, `doAudioSetVolume` (music, sound,
+  speech), `doAmbientSoundsPause`, the `SOUND_*`/`AUDIO_*` enable, remove and volume-override actions,
+  `SUSPEND_BACKGROUND_SOUNDS`/`RESUME_BACKGROUND_SOUNDS`, and `ScriptEngine::loadPostProcess`'s current track. The
+  logic's `sa_audio_*` (and `se_audio_add_event`) were cut points; each now pushes a
+  `ClientEvent::ScriptAudio(ScriptAudioEvent)`, and `client_audio::ClientAudio::apply_script_event` makes upstream's call
+  on the manager. `pauseAmbient` does nothing (`MilesAudioManager::pauseAmbient` is empty upstream).
+- **No logic state changes:** the event is pushed on the client queue (not saved, not in the CRC), takes none of the
+  logic's made-up audio handles (`cuts.last_audio_handle`, which modules keep and save), and makes no logic random draw:
+  a logical event's file is picked from the client's own copy of the logic stream, as before (#50 is open). The
+  engine's saved `m_currentTrackName` is set as before. Gate (a): last CRC `0bf44067`, unchanged.
+- **Not done:** `getAudioLengthMS` is still 0 to the logic (the script engine's `isSpeechComplete`/`isAudioComplete`
+  read `cuts.audio_lengths_ms`, which nothing fills): answering it from the device's files changes when script waits end,
+  so it is a question for the owner. Music next/previous are not script actions upstream (CommandXlat's demo keys
+  `MSG_META_DEMO_MUSIC_NEXT_TRACK`/`PREV_TRACK`); the manager has them, nothing calls them. Unit voices, selection
+  sounds, `VoiceDefect`, EVA, the drawables' ambient sounds (with `doEnableObjectSound`, still a cut) and the map's
+  customised ambient sounds remain (parts 2 and 3).
 
 **#19 (2026-11-06, GitHub #19): animations sampled with the shipped game's `Float_To_Long`.**
 - **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of

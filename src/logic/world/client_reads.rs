@@ -44,9 +44,13 @@ pub struct ClientReads {
     /// `TheInGameUI->getFrameSelectionChanged()` (`ScriptConditions`). Headless: 0.
     pub frame_selection_changed: u32,
     /// `TheAudio->getAudioLengthMS(&event)` (`ScriptEngine`: how long a
-    /// speech takes), keyed by event name (bytes, as `AudioEventName`). It is a property of the audio
+    /// speech takes), keyed by event name (bytes, as `AudioEventName`). ~~It is a property of the audio
     /// files, so it is filled from game data at load, identically on every
-    /// peer. Headless: empty, and [`ClientReads::audio_length_ms`] answers 0.
+    /// peer.~~ **Corrected 2026-11-06 (#51):** nothing fills or reads this field: the script engine's
+    /// `isSpeechComplete`/`isAudioComplete` read `cuts.audio_lengths_ms` (`se_audio_length_ms`), which nothing fills
+    /// either, so every length is 0 and a script's speech or sound wait ends on the frame it is asked. Filling it from
+    /// the device's file lengths would change the logic; that question is open (see #51's write-up).
+    /// Headless: empty, and [`ClientReads::audio_length_ms`] answers 0.
     pub audio_length_ms: BTreeMap<Vec<u8>, f32>,
     /// `TheAudio->hasMusicTrackCompleted(name, count)` (`ScriptConditions`):
     /// how many times each track has completed. Headless: empty (never).
