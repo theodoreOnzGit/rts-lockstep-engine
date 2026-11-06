@@ -11,6 +11,7 @@
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
 //! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
+//! - [`particles`]: the particle systems' particles as camera-facing quads by texture and blend (#43, #44); plain Rust.
 //! - [`terrain`]: the terrain's look from the world and the game's files (#11); its Bevy meshes with feature `app`.
 //! - [`ui`]: the game's own control bar from its files (#12): what to draw, as quads; plain Rust.
 //! - [`view`]: the view model. What is drawn, read from the `World`; plain Rust, no Bevy.
@@ -21,6 +22,7 @@ pub mod demo;
 pub mod drawables;
 pub mod import;
 pub mod input;
+pub mod particles;
 pub mod terrain;
 pub mod ui;
 pub mod view;

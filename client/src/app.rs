@@ -102,6 +102,8 @@ struct Game {
     tooltip_lines: Vec<Option<Vec<String>>>,
     tooltip_for: Option<ObjectId>,
     touch_pressed: bool,
+    /// The FX lists and particle systems still to be read from the art (#43, #44).
+    fx_pending: bool,
 }
 
 impl Game {
@@ -115,7 +117,12 @@ impl Game {
             paused: false,
             error: None,
             playing,
-            models: WorldDrawables::new(art),
+            models: {
+                // the shroud's local player (`ClientDrawables::local_player_index`, GitHub #45)
+                let mut m = WorldDrawables::new(art);
+                m.drawables.local_player_index = Some(player);
+                m
+            },
             images: HashMap::new(),
             models_clock: 0,
             ui: None,
@@ -126,6 +133,7 @@ impl Game {
             tooltip_lines: Vec::new(),
             tooltip_for: None,
             touch_pressed: false,
+            fx_pending: true,
         }
     }
 }
@@ -224,12 +232,13 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
         .init_resource::<UiBar>()
+        .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
         .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
-            (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
+            (load_fx, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -979,6 +988,102 @@ struct GameUiRoot(Vec<crate::ui::UiQuad>);
 
 /// GUI glue (needs the app): reads the game's control bar from the art's files once a game is running
 /// ([`crate::ui::load_game_ui`], tested there); while a file is being fetched (the web) it tries again on a later frame.
+/// The FX lists and particle systems from the art (#43, #44), once its files have arrived (`WorldDrawables::load_fx`).
+fn load_fx(mut game: NonSendMut<Game>) {
+    if game.fx_pending && game.models.load_fx() {
+        game.fx_pending = false;
+        let fx = &game.models.drawables.fx;
+        info!("effects: {} particle system templates, {} FX lists, {} errors", fx.particles.templates.len(), fx.fx_lists.fxmap.len(), fx.errors.len());
+    }
+}
+
+/// Each particle batch's entity and mesh, by texture and blend, and the particle textures by name (`None`: missing).
+#[derive(Resource, Default)]
+struct ParticleDraw {
+    batches: HashMap<(Vec<u8>, crate::particles::Blend), (Entity, Handle<Mesh>)>,
+    textures: HashMap<Vec<u8>, Option<Handle<Image>>>,
+}
+
+/// GUI glue (needs a window): the particles (#43, #44) as one mesh per texture and blend (`crate::particles`, tested
+/// there), facing the camera, rebuilt each frame; at most `MAX_CLIENT_PARTICLES` quads, so the work per frame is bounded.
+#[allow(clippy::too_many_arguments)]
+fn draw_particles(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut pd: ResMut<ParticleDraw>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    cams: Query<&GlobalTransform, With<Camera3d>>,
+    mut vis: Query<&mut Visibility>,
+) {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::mesh::{Indices, PrimitiveTopology};
+    let Ok(cam) = cams.single() else { return };
+    let (right, up) = (cam.right(), cam.up());
+    let g = &mut *game;
+    let quads = crate::particles::particle_quads(&g.models.drawables.fx.particles, right.to_array(), up.to_array());
+    // the batches no particle uses this frame are hidden, not freed
+    for (key, (e, _)) in &pd.batches {
+        if !quads.contains_key(key) {
+            if let Ok(mut v) = vis.get_mut(*e) {
+                *v = Visibility::Hidden;
+            }
+        }
+    }
+    for (key, b) in quads {
+        // the texture, once (`None` while missing; a read still being fetched is tried again on a later frame)
+        if !pd.textures.contains_key(&key.0) && !key.0.is_empty() {
+            if let Some(art) = &g.models.art {
+                let before = art.fs.local.device.unserved_reads();
+                let r = rts_lockstep_engine::formats::w3d::render::load_texture_image(&art.assets.file_factory, &art.fs, &key.0);
+                if art.fs.local.device.unserved_reads() == before {
+                    let h = match r {
+                        Ok(Ok(t)) => Some(images.add(crate::model::texture_image(&t, Some((true, true))))),
+                        _ => None,
+                    };
+                    pd.textures.insert(key.0.clone(), h);
+                }
+            } else {
+                pd.textures.insert(key.0.clone(), None);
+            }
+        }
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let n = b.positions.len();
+        let normal = (-cam.forward()).to_array();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, b.positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![normal; n]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, b.uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, b.colors);
+        mesh.insert_indices(Indices::U32(b.indices));
+        match pd.batches.get(&key) {
+            Some((e, h)) => {
+                if let Some(mut m) = meshes.get_mut(h) {
+                    *m = mesh;
+                }
+                if let Ok(mut v) = vis.get_mut(*e) {
+                    *v = Visibility::Visible;
+                }
+            }
+            None => {
+                if !key.0.is_empty() && !pd.textures.contains_key(&key.0) {
+                    // its texture is still being fetched: drawn once it has arrived
+                    continue;
+                }
+                let texture = pd.textures.get(&key.0).cloned().flatten();
+                let alpha_mode = match key.1 {
+                    crate::particles::Blend::Add => AlphaMode::Add,
+                    crate::particles::Blend::Alpha => AlphaMode::Blend,
+                };
+                let material = materials.add(StandardMaterial { base_color_texture: texture, unlit: true, alpha_mode, double_sided: true, cull_mode: None, ..default() });
+                let h = meshes.add(mesh);
+                let e = commands.spawn((Mesh3d(h.clone()), MeshMaterial3d(material), Transform::IDENTITY, bevy::camera::visibility::NoFrustumCulling)).id();
+                pd.batches.insert(key, (e, h));
+            }
+        }
+    }
+}
+
 fn load_game_ui(mut game: NonSendMut<Game>) {
     let g = &mut *game;
     if !g.ui_pending {

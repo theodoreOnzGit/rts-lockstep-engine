@@ -6,7 +6,9 @@
 //! terrain's tiles, atlas, UVs and vertices). Since #12, the game's own UI from its files: `image` (the mapped images),
 //! `window_script` (the WND layout reader), `control_bar_scheme` (the side's look of the control bar) and
 //! `control_bar_command` (the selected object's command buttons and build queue). Since #35, `control_bar_popup` (the
-//! selected object's portrait and the command buttons' popup description).
+//! selected object's portrait and the command buttons' popup description). Since #43 and #44, the effects: `particle_sys`
+//! (the particle system templates, systems and particles), `fx_list` (the FX lists) and `client_fx` (both fed by the
+//! logic's client events, in the drawables' event order).
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -20,6 +22,9 @@ pub mod world_host;
 pub mod w3d_model_draw;
 pub mod w3d_truck_draw;
 pub mod drawable;
+pub mod particle_sys;
+pub mod fx_list;
+pub mod client_fx;
 pub mod drawable_loco;
 pub mod terrain_height_map;
 pub mod image;

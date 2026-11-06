@@ -140,7 +140,8 @@
 //!   logic state). Equality is the same: `NAMEKEY` is one key per name and
 //!   never `NAMEKEY_INVALID`, which is the empty name here.
 //! - **`ParticleSysBone`** keeps the system's name, not a template pointer
-//!   (the client has no particle systems yet); `RequiredScience` keeps the
+//!   (~~the client has no particle systems yet~~ **Corrected 2026-11-06 (GitHub #43):** the client has them,
+//!   `crate::client::particle_sys`, but this module does not make its bone systems yet); `RequiredScience` keeps the
 //!   science's name.
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
@@ -1984,6 +1985,15 @@ pub struct ModeAnim {
     pub anim_mode: AnimMode,
 }
 
+/// Where a handled `handleWeaponFireFX` plays its FX list (GitHub #43).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponFireFxAt {
+    /// The FX bone's transform in the model's space (its pose as made); `None` when the asset source gave no skeleton.
+    pub bone_transform: Option<Matrix3D>,
+    /// `m_renderObject->Is_Hidden()`: upstream then plays at the logic object's position and transform.
+    pub render_hidden: bool,
+}
+
 /// A render object as the draw module sees it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderObj {
@@ -2203,7 +2213,8 @@ pub struct DrawFacts {
     pub should_animate_with_power: bool,
     pub should_animate_without_power: bool,
     /// The object's `getPhysics()->getVelocityMagnitude()`, distance per
-    /// logic frame; `None` without an object or physics.
+    /// logic frame; `None` without an object or physics. Read in place
+    /// (`PhysicsBehavior::peek_velocity_magnitude`, GitHub #45), the cache not filled.
     pub speed: Option<f32>,
     /// Each turret's `ai->getTurretRotAndPitch(tslot, &angle, &pitch)` (radians), read from
     /// the World; `None` when the object has no AI or the call answers false (the angles stay 0).
@@ -2272,7 +2283,9 @@ pub struct TreadObjectInfo {
 
 /// `W3DTankDraw`'s own state (GitHub #41): `m_treads`, `m_treadCount` (the length),
 /// `m_prevRenderObj` (by the render object's serial, see [`W3DModelDraw::render_obj_serial`]),
-/// `m_lastDirection`. The tread debris particle systems are not made (no particle systems yet).
+/// `m_lastDirection`. The tread debris particle systems are not made (~~no particle systems yet~~ **Corrected
+/// 2026-11-06 (GitHub #44):** the client's particle systems exist, `crate::client::particle_sys`; the draw modules do
+/// not reach them yet).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TankDraw {
     pub treads: Vec<TreadObjectInfo>,
@@ -2880,7 +2893,8 @@ impl W3DModelDraw {
     ///
     /// - A render object other than the last one seen: [`W3DModelDraw::update_tread_objects`].
     /// - The tread debris (`startMoveDebris`, `stopMoveDebris`, the velocity and burst
-    ///   multipliers) is not made: no particle systems yet.
+    ///   multipliers) is not made: ~~no particle systems yet~~ **Corrected 2026-11-06 (GitHub #44):** the draw
+    ///   modules do not reach the client's particle systems yet.
     /// - With treads: while turning and slower than `TreadPivotSpeedFraction` of the current
     ///   locomotor's speed, the treads move by the `TreadAnimationRate` (negative when turning
     ///   right, `TURN_NEGATIVE`) when the direction changed since the last draw (the cosine between
@@ -3093,26 +3107,38 @@ impl W3DModelDraw {
         }
     }
 
-    /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`, without the effect itself
-    /// (no FX lists on the client yet): whether it would be handled (an FX list, the barrel's
-    /// FX bone and a render object), and the barrel's recoil started and its muzzle flash shown.
+    /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`'s answer, whether it was handled
+    /// (see [`W3DModelDraw::handle_weapon_fire_fx_at`] for where the effect plays).
     pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> bool {
-        let Some(cur) = self.get_cur_state() else { return false };
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl).is_some()
+    }
+
+    /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the barrel's recoil started and its muzzle flash
+    /// shown; when it is handled (an FX list, the barrel's FX bone and a render object), where upstream's
+    /// `FXList::doFXPos` plays: ~~not drawn yet~~ **since GitHub #43 (2026-11-06)** the caller plays it
+    /// (`crate::client::client_fx`) at the bone the answer names, or at the logic object when the render object is
+    /// hidden.
+    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> Option<WeaponFireFxAt> {
+        let cur = self.get_cur_state()?;
         if !cur.barrels_valid() || wslot >= SLOTS {
-            return false;
+            return None;
         }
         let wbvec = cur.weapon_barrels(wslot);
         if wbvec.is_empty() {
             // some other module of our drawable may have handled it.
-            return false;
+            return None;
         }
-        let mut handled = false;
+        let mut handled = None;
         // upstream tests `> size()`, so a barrel equal to the count is read past the end (undefined); here it is the first.
         let barrel = if specific_barrel_to_use < 0 || specific_barrel_to_use as usize >= wbvec.len() { 0 } else { specific_barrel_to_use as usize };
         let info = wbvec[barrel];
-        if has_fxl && info.fx_bone != 0 && self.render_object.is_some() {
-            // FXList::doFXPos at the bone (or the logic position when hidden): not drawn yet
-            handled = true;
+        if has_fxl && info.fx_bone != 0 {
+            if let Some(r) = &self.render_object {
+                // `m_renderObject->Get_Bone_Transform(info.m_fxBone)` unless hidden; the bone's pose as made (the
+                // skeleton's), in the model's space
+                let bone_transform = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| b.transform);
+                handled = Some(WeaponFireFxAt { bone_transform, render_hidden: r.hidden });
+            }
         }
         if info.recoil_bone != 0 || info.muzzle_flash_bone != 0 {
             if let Some(recoil) = self.weapon_recoil_info_vec[wslot].get_mut(barrel) {

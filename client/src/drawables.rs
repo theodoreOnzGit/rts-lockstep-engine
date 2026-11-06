@@ -174,6 +174,32 @@ impl<D: LocalDevice> WorldDrawables<D> {
         }
     }
 
+    /// The client's FX lists and particle systems from the art's INI files (GitHub #43, #44,
+    /// `ClientFx::load`): `true` once read (or when there is no art: nothing to read), `false` while a file is being
+    /// fetched (the page's ranged reads; try again on a later frame).
+    pub fn load_fx(&mut self) -> bool {
+        let Some(art) = &self.art else { return true };
+        let waiting = std::cell::Cell::new(false);
+        let open = |p: &[u8]| {
+            let before = art.fs.local.device.unserved_reads();
+            let r = art.fs.open_file(p);
+            if art.fs.local.device.unserved_reads() != before {
+                waiting.set(true);
+                return None;
+            }
+            r
+        };
+        let mut fx = rts_lockstep_engine::client::client_fx::ClientFx::new();
+        fx.load(open);
+        if waiting.get() {
+            return false;
+        }
+        self.drawables.fx.fx_lists = fx.fx_lists;
+        self.drawables.fx.particles.templates = fx.particles.templates;
+        self.drawables.fx.errors = fx.errors;
+        true
+    }
+
     /// The objects with a posed render model.
     pub fn instance_count(&self) -> usize {
         self.instances.len()
@@ -213,7 +239,8 @@ impl<D: LocalDevice> WorldDrawables<D> {
 
     /// The waiting names whose files have arrived are dropped; if any was, each drawable with a module lacking its
     /// model, or its animation, is made again (`ClientDrawables::create_drawable`), given its flags back
-    /// (`replaceModelConditionFlags`, so its modules choose on the next draw as they would have) and its hidden state.
+    /// (`replaceModelConditionFlags`, so its modules choose on the next draw as they would have) and its hidden state
+    /// (and, since GitHub #45, its stealth look and shroud state).
     /// New (not upstream's: upstream's reads never wait).
     fn remake_when_arrived(&mut self, w: &World, sync_time: u32) {
         let Some(art) = &mut self.art else { return };
@@ -260,6 +287,10 @@ impl<D: LocalDevice> WorldDrawables<D> {
             if old.hidden {
                 d.set_drawable_hidden(true);
             }
+            // (GitHub #45: its stealth look and shroud state too)
+            d.set_stealth_look(old.stealth_look);
+            d.set_fully_obscured_by_shroud(old.fully_obscured_by_shroud);
+            d.shroud_clear_frame = old.shroud_clear_frame;
         }
     }
 
@@ -696,6 +727,77 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert!(r.target_died.is_some());
         assert!(r.turned > 100, "turned on {} frames", r.turned);
         assert!(r.recoiling > 0 && r.flashed > 0, "recoiling {} flashed {}", r.recoiling, r.flashed);
+    }
+
+    /// The gun of [`play_gun`] firing `FxGun` (the gate's gun with `FireFX = FX_Gun`), with the client's FX lists and
+    /// particle systems loaded from synthetic INI text (GitHub #43): the CRCs, the systems made, where the first was
+    /// placed, and the most particles alive.
+    fn play_fx_gun(drawn_client: bool) -> (Vec<u32>, u32, Option<Coord3D>, u32, u32) {
+        let weapon = "Weapon FxGun\n PrimaryDamage = 20\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 500\n FireFX = FX_Gun\nEnd\n";
+        // (`Scale = 1.0`: the gate's templates give none, and a template's asset scale is 0 until one is read, which
+        // collapses the skeleton the FX bone is read from onto the origin)
+        let mut w = gate_map_world_with(&format!("{weapon}{}", drawn("Gun", &format!(" Scale = 1.0\n{}", GUN_DRAW.replace("GateGun", "FxGun")))));
+        let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+        let enemy = factory_find_team(&mut w, b"team2").unwrap().unwrap();
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let gun = make(&mut w, b"DrawnGun", team, at(150.0, 380.0));
+        let target = make(&mut w, b"Runner", enemy, at(150.0, 460.0));
+        w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+        let mut art = MemoryDevice::new();
+        art.insert(b"Art/W3D/gunt.w3d", gun_model());
+        let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+        let fx = &mut d.drawables.fx;
+        fx.particles.load_text(b"ParticleSystem.ini", b"ParticleSystem MuzzleSmoke\n  Shader = ADDITIVE\n  Type = PARTICLE\n  ParticleName = EXSmoke.tga\n  Lifetime = 10 10\n  SystemLifetime = 3\n  Size = 1 1\n  BurstCount = 2 2\n  BurstDelay = 100 100\n  Color1 = R:255 G:200 B:100 0\n  VelocityDamping = 1 1\n  VelocityType = ORTHO\n  VelOrthoZ = 0.5 0.5\nEnd\n").unwrap();
+        fx.fx_lists.load_text(b"FXList.ini", b"FXList FX_Gun\n  ParticleSystem\n    Name = MuzzleSmoke\n  End\n  Sound\n    Name = GunShot\n  End\nEnd\n").unwrap();
+        let ev = w.take_client_events();
+        if drawn_client {
+            d.update(&mut w, &ev, 0);
+        }
+        let ai = w.find_object(gun).and_then(|o| o.ai).expect("the gun's AI");
+        w.module_call(gun, ai, ModuleCall::AiAttackObject { victim: target, max_shots: i32::MAX, command_source: 0 });
+        let (mut crcs, mut first, mut most, mut sounds) = (Vec::new(), None, 0, 0);
+        for f in 1..=200u32 {
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, f * 33);
+                let fx = &mut d.drawables.fx;
+                if first.is_none() {
+                    first = fx.particles.systems.first().map(|s| s.get_position());
+                }
+                most = most.max(fx.particles.particle_count);
+                sounds += fx.requests.drain(..).filter(|r| matches!(r, rts_lockstep_engine::client::fx_list::FxRequest::Sound { .. })).count() as u32;
+            }
+            crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        (crcs, d.drawables.fx.particles.unique_system_id, first, most, sounds)
+    }
+
+    /// GitHub #43: the drawn gun's fire FX plays at its FX bone and makes particle systems, and the logic's CRCs are
+    /// those of the same game without the client.
+    ///
+    /// *Predictions, written before the first run:* the CRCs are equal frame for frame; the gun fires about 5 shots
+    /// (20 damage against 100 health, one shot every 15 frames) before the runner dies, each shot's `FX_Gun` handled by
+    /// the draw module at `MuzzleFX` and making one `MuzzleSmoke` system: 5 systems and 5 sound requests; the first is
+    /// placed at the bone's pose as made, (4, 0, 2) from the gun (the turret's 2 up, the barrel 1, the recoil bone 2
+    /// and the muzzle 1 along x), so (154, 380, 2) (the turret's turn is not applied, see `client_fx`); each system
+    /// emits 2 particles on its first update and lives 3 frames, its particles 10, so at most 2 alive at once (shots
+    /// are 15 frames apart).
+    ///
+    /// *Results (2026-11-06):* the CRCs were equal over 200 frames; 5 systems, 5 sound requests, at most 2 particles.
+    /// **Miss:** the first system was at the gun, (150, 380, 0): the FX bone's transform was all zeros, because the
+    /// gate's templates have no `Scale` and the asset scale is then 0 (the skeleton is posed under `root.scale(0)`).
+    /// With `Scale = 1.0` on the test's template (as the game's data gives its objects), see the assertion.
+    #[test]
+    fn a_drawn_gun_s_fire_fx_makes_particles_without_changing_the_crcs() {
+        let (plain, ..) = play_fx_gun(false);
+        let (crcs, systems, first, most, sounds) = play_fx_gun(true);
+        assert_eq!(crcs, plain);
+        println!("systems {systems} first {first:?} most {most} sounds {sounds}");
+        assert_eq!(systems, 5);
+        assert_eq!(sounds, 5);
+        assert_eq!(first, Some(Coord3D { x: 154.0, y: 380.0, z: 2.0 }));
+        assert_eq!(most, 2);
     }
 
     /// A tank `TANKT`: ROOTTRANSFORM and BODY pivots, a cube for the chassis and one for each tread (`TREADSL`, `TREADSR`)

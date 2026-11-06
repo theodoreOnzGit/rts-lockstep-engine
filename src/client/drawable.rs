@@ -9,7 +9,13 @@
 //   reactToBodyDamageStateChange's flags, getShouldAnimate,
 //   setAnimationLoopDuration; GitHub #27: showSubObject, updateSubObjects,
 //   handleWeaponFireFX without the locomotor recoil; GitHub #41: Drawable::draw's
-//   call of applyPhysicsXform, translated in drawable_loco.rs)
+//   call of applyPhysicsXform, translated in drawable_loco.rs; GitHub #45:
+//   Drawable::draw's early return, setStealthLook's m_hiddenByStealth,
+//   updateHiddenStatus, setFullyObscuredByShroud, isDrawableEffectivelyHidden)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp
+//   (GitHub #45: GameClient::update's shroud status of each drawable)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp
+//   (GitHub #45: RTS3DScene::renderOneObject's setShroudClearFrame)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h
 //
 // Original copyright notice of those files:
@@ -38,6 +44,12 @@
 //! - **The client-side physics** (GitHub #41): before its draw modules, a drawable that is not hidden applies its
 //!   object's physics transform (`applyPhysicsXform`, [`super::drawable_loco`]), whose wheel info the truck draws
 //!   read.
+//! - **`Drawable::draw` returns at once** (GitHub #45) when the drawable is hidden (`m_hidden`), hidden by stealth
+//!   (`m_hiddenByStealth`, set by `setStealthLook(STEALTHLOOK_INVISIBLE)`) or fully obscured by the shroud
+//!   (`getFullyObscuredByShroud()`): no `applyPhysicsXform`, no `getDrawModules()` (so dirty flags wait), no
+//!   `doDrawModule`. The shroud flag is set each client frame before the draw (`GameClient::update`): fogged or
+//!   shrouded for the local player, except for two seconds (five when the object is effectively dead) after the frame
+//!   the scene last drew it clear (`setShroudClearFrame`, `RTS3DScene::renderOneObject`).
 //! - **`getShouldAnimate(considerPower)`**: no when the object is unpowered by
 //!   script (power considered), or disabled as hacked, paralyzed, EMP'd,
 //!   subdued or unmanned (unless it is produced at a helipad), or underpowered
@@ -62,24 +74,34 @@
 //!   others (`W3DDefaultDraw`, trees, lasers, ...) are not translated yet.
 //! - The static LOD is [`ClientDrawables::static_lod`] (`STATIC_GAME_LOD_HIGH`
 //!   by default); upstream measures the machine.
+//! - **Stealth and shroud** (GitHub #45): of `setStealthLook`, only the look and `m_hiddenByStealth` are kept; the
+//!   stealth and second material pass opacities, the heat-vision pass, the shadows' `setShadowsEnabled`, and the
+//!   deselection `updateHiddenStatus` asks of the in-game UI are not translated (nothing draws them yet), nor are
+//!   `W3DModelDraw::setFullyObscuredByShroud`'s shadow, decal and particle-system switches. The shroud status is the
+//!   World's (`World::get_shrouded_status`, a read of the partition's table); the scene's clear frame is set at the
+//!   client's render step for a drawable with a render object, without the scene's view-frustum cull (every drawable
+//!   counts as on screen). The render step itself ([`W3DModelDraw::render`], the animation's advance) is the scene's
+//!   and runs for every drawable whose render object is not hidden, as before.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::client_fx::{ClientFx, WeaponFireFx, WorldFxHost};
 use super::drawable_loco::physics_xform_facts;
-use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
+use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, WeaponFireFxAt, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
+use crate::common::game_common::{ObjectShroudStatus, LOGICFRAMES_PER_SECOND};
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_PRODUCED_AT_HELIPAD;
 use crate::common::model_state::{ModelConditionFlags, MODELCONDITION_DAMAGED, MODELCONDITION_REALLY_DAMAGED, MODELCONDITION_RUBBLE};
 use crate::common::random_value::RandomValues;
 use crate::common::thing_template::{ModuleInfoData, ThingTemplate};
 use crate::logic::client_event::ClientEvent;
+use crate::logic::modules::stealth_update::stealth_look;
 use crate::logic::weapon_host::WeaponFx;
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNPOWERED;
 use crate::logic::world::game_logic::World;
-use crate::logic::world::module_call::ModuleCall;
-use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent};
+use crate::logic::world::object_events::{ModelConditionOp, ObjectClientEvent, StealthClientOp};
 
 /// `TIME_OF_DAY_NIGHT`.
 pub const TIME_OF_DAY_NIGHT: i32 = 4;
@@ -101,6 +123,14 @@ pub struct Drawable {
     pub draw_modules: Vec<W3DModelDraw>,
     /// `m_hidden`.
     pub hidden: bool,
+    /// `m_hiddenByStealth` (GitHub #45): `setStealthLook(STEALTHLOOK_INVISIBLE)`.
+    pub hidden_by_stealth: bool,
+    /// `m_stealthLook` (a `StealthLookType` number, `STEALTHLOOK_NONE` at first).
+    pub stealth_look: i32,
+    /// `m_drawableFullyObscuredByShroud` (GitHub #45).
+    pub fully_obscured_by_shroud: bool,
+    /// `m_shroudClearFrame`: the logic frame the scene last drew it clear of the shroud (0: never).
+    pub shroud_clear_frame: u32,
     /// `m_locoInfo` (GitHub #41): made by the first physics model that runs ([`Drawable::calc_physics_xform`]).
     pub loco_info: Option<super::drawable_loco::DrawableLocoInfo>,
     /// The last draw's `applyPhysicsXform` totals, for the client to put on the drawn model (`None`: none applied).
@@ -119,6 +149,10 @@ impl Drawable {
             is_model_dirty: false,
             draw_modules: Vec::new(),
             hidden: false,
+            hidden_by_stealth: false,
+            stealth_look: stealth_look::NONE,
+            fully_obscured_by_shroud: false,
+            shroud_clear_frame: 0,
             loco_info: None,
             physics_xform: None,
         }
@@ -182,12 +216,56 @@ impl Drawable {
         &mut self.draw_modules
     }
 
-    /// `setDrawableHidden(hidden)`: each module's render object.
+    /// `setDrawableHidden(hidden)`: when it changed, `updateHiddenStatus()`.
+    ///
+    /// ~~each module's render object~~ **Corrected 2026-11-06 (GitHub #45):** only when `m_hidden` changed, and the
+    /// modules are given `m_hidden || m_hiddenByStealth` ([`Drawable::update_hidden_status`]).
     pub fn set_drawable_hidden(&mut self, hidden: bool) {
-        self.hidden = hidden;
+        if hidden != self.hidden {
+            self.hidden = hidden;
+            self.update_hidden_status();
+        }
+    }
+
+    /// `isDrawableEffectivelyHidden()`: `m_hidden || m_hiddenByStealth`.
+    pub fn is_drawable_effectively_hidden(&self) -> bool {
+        self.hidden || self.hidden_by_stealth
+    }
+
+    /// `updateHiddenStatus()`: each module's render object hidden when the drawable is effectively hidden.
+    /// (`TheInGameUI->deselectDrawable(this)` is not translated: the client's selection is the logic-side model's.)
+    /// Upstream walks `getDrawModules()`, which first gives dirty flags; here the modules are walked as they are, as
+    /// before (no draw environment at hand), so the flags wait for the next draw.
+    pub fn update_hidden_status(&mut self) {
+        let hidden = self.is_drawable_effectively_hidden();
         for dm in &mut self.draw_modules {
             dm.set_hidden(hidden);
         }
+    }
+
+    /// `setStealthLook(look)` (GitHub #45), the parts the client draws by: when the look changed, `m_hiddenByStealth`
+    /// (true only for `STEALTHLOOK_INVISIBLE`: every other case of upstream's switch clears it, the disguised
+    /// friendly's early `break` included), the look kept, then `updateHiddenStatus()`. The opacities are not
+    /// translated (see the module docs).
+    pub fn set_stealth_look(&mut self, look: i32) {
+        if look != self.stealth_look {
+            self.hidden_by_stealth = look == stealth_look::INVISIBLE;
+            self.stealth_look = look;
+            self.update_hidden_status();
+        }
+    }
+
+    /// `setFullyObscuredByShroud(fullyObscured)` (GitHub #45): the flag. Upstream also tells each draw module, whose
+    /// `W3DModelDraw` switches its shadow, terrain decal and particle systems; none is made here yet.
+    pub fn set_fully_obscured_by_shroud(&mut self, fully_obscured: bool) {
+        if self.fully_obscured_by_shroud != fully_obscured {
+            self.fully_obscured_by_shroud = fully_obscured;
+        }
+    }
+
+    /// `getFullyObscuredByShroud()`.
+    pub fn get_fully_obscured_by_shroud(&self) -> bool {
+        self.fully_obscured_by_shroud
     }
 
     /// `showSubObject(name, show)`: each module's list.
@@ -208,12 +286,18 @@ impl Drawable {
     /// it ends the walk (the drawable's own recoil pitch and roll, `m_locoInfo`, is not
     /// translated: no locomotor info on the client yet).
     pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> bool {
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env).is_some()
+    }
+
+    /// [`Drawable::handle_weapon_fire_fx`] with where the handling module plays the FX list (GitHub #43,
+    /// [`W3DModelDraw::handle_weapon_fire_fx_at`]).
+    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
         for dm in self.get_draw_modules(env) {
-            if dm.handle_weapon_fire_fx(wslot, specific_barrel_to_use, has_fxl) {
-                return true;
+            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl) {
+                return Some(at);
             }
         }
-        false
+        None
     }
 
     /// `setAnimationLoopDuration(numFrames)`: each module's.
@@ -246,11 +330,16 @@ pub struct ClientDrawables {
     pub static_lod: i32,
     /// What did not parse or construct: template, module, why.
     pub errors: Vec<(Vec<u8>, Vec<u8>, String)>,
+    /// `ThePlayerList->getLocalPlayer()->getPlayerIndex()` for the shroud (GitHub #45): the client's local player
+    /// when it sets one, else the World's player list's (`None` in both: no shroud status is taken).
+    pub local_player_index: Option<i32>,
+    /// The effects (GitHub #43, #44): FX lists and particle systems, fed by the same events in the same order.
+    pub fx: ClientFx,
 }
 
 impl Default for ClientDrawables {
     fn default() -> Self {
-        ClientDrawables { drawables: BTreeMap::new(), module_data: BTreeMap::new(), random: RandomValues::new(0), static_lod: STATIC_GAME_LOD_HIGH, errors: Vec::new() }
+        ClientDrawables { drawables: BTreeMap::new(), module_data: BTreeMap::new(), random: RandomValues::new(0), static_lod: STATIC_GAME_LOD_HIGH, errors: Vec::new(), local_player_index: None, fx: ClientFx::new() }
     }
 }
 
@@ -314,6 +403,10 @@ impl ClientDrawables {
             is_model_dirty: false,
             draw_modules,
             hidden: false,
+            hidden_by_stealth: false,
+            stealth_look: stealth_look::NONE,
+            fully_obscured_by_shroud: false,
+            shroud_clear_frame: 0,
             loco_info: None,
             physics_xform: None,
         };
@@ -331,8 +424,10 @@ impl ClientDrawables {
     }
 
     /// The logic's client events of a frame, in order: drawables made and
-    /// destroyed, their flags, damage states, visibility and loop durations.
-    /// Other events are left to their consumers.
+    /// destroyed, their flags, damage states, visibility, stealth looks (GitHub #45) and loop durations; and, since
+    /// GitHub #43, each event's effects in its place ([`ClientFx::apply_event`], a weapon's fire FX through
+    /// [`ClientFx::weapon_fire_fx`] once the drawable has answered `handleWeaponFireFX`). Other events are left to
+    /// their consumers.
     pub fn apply_events<A: W3dAssetSource>(&mut self, w: &World, events: &[ClientEvent], assets: &mut A, sync_time: u32) {
         for e in events {
             match e {
@@ -363,6 +458,11 @@ impl ClientDrawables {
                         d.set_drawable_hidden(*hidden);
                     }
                 }
+                ClientEvent::Object(ObjectClientEvent::Stealth { object_id, op: StealthClientOp::StealthLook(look) }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        d.set_stealth_look(*look);
+                    }
+                }
                 ClientEvent::Object(ObjectClientEvent::DrawableShowSubObject { object_id, name, show }) => {
                     if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
                         d.show_sub_object(name, *show);
@@ -375,11 +475,27 @@ impl ClientDrawables {
                         d.update_sub_objects(&mut env);
                     }
                 }
-                ClientEvent::Object(ObjectClientEvent::WeaponFx(WeaponFx::Fire { source, weapon_slot, barrel, fx, .. })) => {
+                ClientEvent::Object(ObjectClientEvent::WeaponFx(WeaponFx::Fire { source, weapon_slot, barrel, fx, speed, target, radius, contact_weapon, .. })) => {
                     self.drawable(w, *source, assets, sync_time);
+                    let mut handled = None;
                     if let (Some(d), Ok(wslot)) = (self.drawables.get_mut(source), usize::try_from(*weapon_slot)) {
                         let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
-                        d.handle_weapon_fire_fx(wslot, *barrel, fx.is_some(), &mut env);
+                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &mut env);
+                    }
+                    // the FX list itself (GitHub #43): at the handling module's FX bone, else where
+                    // `fireWeaponTemplate` plays it
+                    if let Some(fx) = fx {
+                        let f = WeaponFireFx {
+                            source: *source,
+                            fx: fx.clone(),
+                            speed: *speed,
+                            target: *target,
+                            radius: *radius,
+                            contact_weapon: *contact_weapon,
+                            handled: handled.map(|h| (h.bone_transform, h.render_hidden)),
+                        };
+                        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()) };
+                        self.fx.weapon_fire_fx(&host, &mut self.random, &f);
                     }
                 }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
@@ -391,6 +507,9 @@ impl ClientDrawables {
                 }
                 _ => {}
             }
+            // the effects of the event, in its place among the drawables' (GitHub #43, #44)
+            let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()) };
+            self.fx.apply_event(&host, &mut self.random, e);
         }
     }
 
@@ -456,16 +575,68 @@ impl ClientDrawables {
         })
     }
 
+    /// What the draw modules of `id`'s drawable read of the World for one draw (`doDrawModule`'s reads), all with
+    /// `&World`: the animation's power checks ([`ClientDrawables::get_should_animate`]), the speed
+    /// (`getPhysics()->getVelocityMagnitude()`, read with [`PhysicsBehavior::peek_velocity_magnitude`]: the cached
+    /// value, or the expression the cache would be filled with, so the same bits, and `m_velMag` is not written), the
+    /// turrets ([`ClientDrawables::turret_rot_and_pitch`]) and the motion ([`ClientDrawables::motion`]).
+    ///
+    /// [`PhysicsBehavior::peek_velocity_magnitude`]: crate::logic::modules::physics_behavior::PhysicsBehavior::peek_velocity_magnitude
+    pub fn draw_facts(w: &World, id: ObjectId, show_client_physics: bool, wheel_info: Option<super::drawable_loco::TWheelInfo>) -> DrawFacts {
+        DrawFacts {
+            should_animate_with_power: Self::get_should_animate(w, id, true),
+            should_animate_without_power: Self::get_should_animate(w, id, false),
+            speed: w.physics_peek(id).map(|ph| ph.peek_velocity_magnitude()),
+            turrets: Self::turret_rot_and_pitch(w, id),
+            motion: Self::motion(w, id),
+            show_client_physics,
+            wheel_info,
+        }
+    }
+
+    /// `GameClient::update`'s shroud status of `id`'s drawable (GitHub #45, the release build's `if (true)` branch):
+    /// the object's `getShroudedStatus(localPlayerIndex)` ([`World::get_shrouded_status`], `&self`: a table read),
+    /// taken as clear while fewer than `2*LOGICFRAMES_PER_SECOND` frames (3 more when the object is effectively dead)
+    /// have passed since the scene last drew it clear, then `setFullyObscuredByShroud(ss >= OBJECTSHROUD_FOGGED)`. A
+    /// drawable without an object, or a World without a local player, is left as it is.
+    pub fn update_shroud(d: &mut Drawable, w: &World, local_player_index: Option<i32>) {
+        let (Some(object), Some(local)) = (w.find_object(d.object_id), local_player_index) else { return };
+        let mut ss = w.get_shrouded_status(d.object_id, local);
+        if ss >= ObjectShroudStatus::Fogged && d.shroud_clear_frame != 0 {
+            let mut limit = 2 * LOGICFRAMES_PER_SECOND as u32;
+            if object.is_effectively_dead() {
+                // extend the time, so we can see the dead plane blow up & crash.
+                limit += 3 * LOGICFRAMES_PER_SECOND as u32;
+            }
+            if w.frame() < limit + d.shroud_clear_frame {
+                // It's been less than 2 seconds since we could see them clear, so keep showing them.
+                ss = ObjectShroudStatus::Clear;
+            }
+        }
+        d.set_fully_obscured_by_shroud(ss >= ObjectShroudStatus::Fogged);
+    }
+
     /// One client draw at sync time `sync_time` (milliseconds): make the
-    /// drawables of objects not seen yet, then for each drawable its
+    /// drawables of objects not seen yet, then for each drawable its shroud
+    /// status ([`ClientDrawables::update_shroud`], `GameClient::update`'s), then
+    /// `Drawable::draw`: nothing more when it is hidden, hidden by stealth or
+    /// fully obscured by the shroud (GitHub #45), else its
     /// `applyPhysicsXform` (GitHub #41, [`Drawable::apply_physics_xform`]), give its
     /// modules the flags if dirty (`getDrawModules`, from the client: not a
-    /// valid time for the logic's bones), `doDrawModule`, and render (the
-    /// animation advances).
+    /// valid time for the logic's bones) and `doDrawModule`; then the scene's
+    /// render step (the animation advances, unless the render object is hidden;
+    /// a drawable not effectively hidden, with a render object, drawn clear of
+    /// the shroud marks the frame, `setShroudClearFrame`). Last, the particle
+    /// systems' update (`W3DDisplay::draw`'s `TheParticleSystemManager->update()`,
+    /// once per logic frame, GitHub #43, [`ClientFx::update`]).
     ///
-    /// `&mut World` because the speed is the physics module's answer
-    /// (`getVelocityMagnitude`, a module call); nothing is written.
-    pub fn draw<A: W3dAssetSource>(&mut self, w: &mut World, assets: &mut A, sync_time: u32) {
+    /// ~~`&mut World` because the speed is the physics module's answer
+    /// (`getVelocityMagnitude`, a module call); nothing is written.~~
+    /// **Corrected 2026-11-06 (GitHub #45):** the module call wrote the physics
+    /// module's `m_velMag` cache. The speed is now read in place
+    /// ([`ClientDrawables::draw_facts`]) and the World is taken as `&World`:
+    /// nothing is written.
+    pub fn draw<A: W3dAssetSource>(&mut self, w: &World, assets: &mut A, sync_time: u32) {
         for id in w.objects.ids_in_order() {
             if !self.drawables.contains_key(&id) && w.find_object(id).is_some_and(|o| !o.is_destroyed()) {
                 self.create_drawable(w, id, assets, sync_time);
@@ -473,28 +644,41 @@ impl ClientDrawables {
         }
         let ids: Vec<ObjectId> = self.drawables.keys().copied().collect();
         let show_client_physics = w.statics.global_data.the_global_data().is_none_or(|g| g.show_client_physics);
+        let local_player_index = self.local_player_index.or(w.players.local_index());
         for id in ids {
-            // `applyPhysicsXform(&transformMtx)`, before the draw modules (GitHub #41)
-            let xform = physics_xform_facts(w, id);
             let d = self.drawables.get_mut(&id).expect("listed");
-            d.apply_physics_xform(&xform, &mut self.random);
-            let wheel_info = d.get_wheel_info();
-            let facts = DrawFacts {
-                should_animate_with_power: Self::get_should_animate(w, id, true),
-                should_animate_without_power: Self::get_should_animate(w, id, false),
-                speed: w.find_object(id).and_then(|o| o.physics).map(|ph| w.module_call(id, ph, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)),
-                turrets: Self::turret_rot_and_pitch(w, id),
-                motion: Self::motion(w, id),
-                show_client_physics,
-                wheel_info,
-            };
-            let d = self.drawables.get_mut(&id).expect("listed");
-            let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
-            for dm in d.get_draw_modules(&mut env) {
-                dm.do_draw_module(&facts, &mut env);
+            Self::update_shroud(d, w, local_player_index);
+            // `if (m_hidden || m_hiddenByStealth || getFullyObscuredByShroud()) return;`
+            if d.is_drawable_effectively_hidden() || d.get_fully_obscured_by_shroud() {
+                d.physics_xform = None;
+            } else {
+                // `applyPhysicsXform(&transformMtx)`, before the draw modules (GitHub #41)
+                let xform = physics_xform_facts(w, id);
+                d.apply_physics_xform(&xform, &mut self.random);
+                let facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
+                let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
+                for dm in d.get_draw_modules(&mut env) {
+                    dm.do_draw_module(&facts, &mut env);
+                }
+            }
+            // the scene's render step
+            let mut rendered = false;
+            for dm in &mut d.draw_modules {
                 dm.render(sync_time);
+                rendered |= dm.render_object.is_some();
+            }
+            // `RTS3DScene::renderOneObject`: `if (ss == OBJECTSHROUD_CLEAR) draw->setShroudClearFrame(frame)`
+            if rendered && !d.is_drawable_effectively_hidden() {
+                if let Some(local) = local_player_index {
+                    if w.find_object(id).is_some() && w.get_shrouded_status(id, local) == ObjectShroudStatus::Clear {
+                        d.shroud_clear_frame = w.frame();
+                    }
+                }
             }
         }
+        // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
+        let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index };
+        self.fx.update(&host, &mut self.random);
     }
 }
 
@@ -528,7 +712,7 @@ mod tests {
         let mut random = RandomValues::new(0);
         let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true };
         let m = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
-        let mut d = Drawable { object_id: 1, template: b"T".to_vec(), condition_state: ModelConditionFlags::new(), is_model_dirty: false, draw_modules: vec![m], hidden: false, loco_info: None, physics_xform: None };
+        let mut d = Drawable { object_id: 1, template: b"T".to_vec(), condition_state: ModelConditionFlags::new(), is_model_dirty: false, draw_modules: vec![m], ..Drawable::for_tests() };
         d.clear_and_set_model_condition_flags(&ModelConditionFlags::new(), &ModelConditionFlags::new());
         assert!(!d.is_model_dirty);
         d.react_to_body_damage_state_change(1);
@@ -565,5 +749,174 @@ mod tests {
         assert_eq!(c.drawables.len(), 12);
         c.draw(&mut w, &mut NoAssets, 33);
         assert_eq!(c.drawables.len(), 13, "an object the client has not seen gets its drawable at the draw");
+    }
+
+    /// The drawable of the gate game's first object, with one module (no art: `NoAssets` gives a render object that is
+    /// not an HLOD, so its animation counts as complete) whose MOVING state is reached through a `TransitionState`.
+    fn gate_with_a_transition_module() -> (World, ClientDrawables, ObjectId) {
+        let mut w = crate::logic::world::gate_scenario::gate_world();
+        for _ in 0..3 {
+            w.logic_update().expect("a frame");
+        }
+        let mut c = ClientDrawables::new();
+        let ev = w.take_client_events();
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        let id = *c.drawables.keys().next().unwrap();
+        let line = |depth, f: &str, a: &str| ClientLine { depth, field: f.as_bytes().to_vec(), args: a.split_whitespace().map(|t| t.as_bytes().to_vec()).collect() };
+        let block = ClientModuleData {
+            module_tag_name_key: Default::default(),
+            lines: vec![
+                line(0, "DefaultConditionState", ""),
+                line(1, "Model", "T"),
+                line(1, "TransitionKey", "Up"),
+                line(0, "ConditionState", "MOVING"),
+                line(1, "TransitionKey", "Down"),
+                line(0, "TransitionState", "Up Down"),
+                line(1, "AnimationMode", "ONCE"),
+            ],
+        };
+        let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut c.random, sync_time: 0, logic_time: true };
+        let m = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
+        c.drawables.get_mut(&id).unwrap().draw_modules = vec![m];
+        // (the gate's World has no local player; the client names its own)
+        c.local_player_index = Some(1);
+        (w, c, id)
+    }
+
+    fn moving(d: &mut Drawable, on: bool) {
+        let m = ModelConditionFlags::from_indices(&[crate::common::model_state::MODELCONDITION_MOVING]);
+        if on {
+            d.clear_and_set_model_condition_flags(&ModelConditionFlags::new(), &m);
+        } else {
+            d.clear_and_set_model_condition_flags(&m, &ModelConditionFlags::new());
+        }
+    }
+
+    /// GitHub #45, `Drawable::draw`'s early return for `m_hidden` and `m_hiddenByStealth`.
+    ///
+    /// *Predictions, written before the first run:* ~~the gate world has a local player~~ (missed: it has none; the
+    /// client's own [`ClientDrawables::local_player_index`] was added and is set to 1 here). Hidden (`setDrawableHidden`),
+    /// a drawable whose flags went to MOVING is not drawn: its modules are not asked (`getDrawModules` is after the
+    /// return), so it stays dirty in the default state, no physics transform is kept and the scene does not mark it
+    /// clear of the shroud. Shown, one draw gives the flags (the transition `up -> down`) and `doDrawModule` ends the
+    /// transition at once (a non-HLOD render object's animation is complete): MOVING, and the clear frame is the logic
+    /// frame (3). `setStealthLook(STEALTHLOOK_INVISIBLE)` hides the render object and stops the draw the same way (the
+    /// flags back to none wait); `STEALTHLOOK_VISIBLE_DETECTED` shows it and the next draw reaches the default (no
+    /// `down -> up` transition).
+    ///
+    /// *Results (2026-11-06):* first run, the local-player assertion failed (see above); after the client's own local
+    /// player, all held.
+    #[test]
+    fn a_hidden_or_stealthed_drawable_is_not_drawn() {
+        let (w, mut c, id) = gate_with_a_transition_module();
+        let d = c.drawables.get_mut(&id).unwrap();
+        moving(d, true);
+        d.set_drawable_hidden(true);
+        assert!(d.draw_modules[0].render_object.as_ref().unwrap().hidden);
+        c.draw(&w, &mut NoAssets, 33);
+        let d = &c.drawables[&id];
+        assert!(d.is_model_dirty, "the modules were not asked");
+        assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(0)));
+        assert!(d.physics_xform.is_none());
+        assert_eq!(d.shroud_clear_frame, 0);
+
+        c.drawables.get_mut(&id).unwrap().set_drawable_hidden(false);
+        c.draw(&w, &mut NoAssets, 66);
+        let d = &c.drawables[&id];
+        assert!(!d.is_model_dirty);
+        assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(1)));
+        assert_eq!(d.draw_modules[0].next_state_ref(), None);
+        assert_eq!(d.shroud_clear_frame, w.frame());
+        assert_eq!(w.frame(), 3);
+
+        let ev = |look| ClientEvent::Object(ObjectClientEvent::Stealth { object_id: id, op: StealthClientOp::StealthLook(look) });
+        c.apply_events(&w, &[ev(stealth_look::INVISIBLE)], &mut NoAssets, 66);
+        let d = c.drawables.get_mut(&id).unwrap();
+        assert!(d.hidden_by_stealth && !d.hidden && d.is_drawable_effectively_hidden());
+        assert!(d.draw_modules[0].render_object.as_ref().unwrap().hidden);
+        moving(d, false);
+        c.draw(&w, &mut NoAssets, 99);
+        let d = &c.drawables[&id];
+        assert!(d.is_model_dirty);
+        assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(1)));
+
+        c.apply_events(&w, &[ev(stealth_look::VISIBLE_DETECTED)], &mut NoAssets, 99);
+        let d = &c.drawables[&id];
+        assert!(!d.hidden_by_stealth && !d.draw_modules[0].render_object.as_ref().unwrap().hidden);
+        c.draw(&w, &mut NoAssets, 132);
+        assert_eq!(c.drawables[&id].draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(0)));
+    }
+
+    /// GitHub #45, `Drawable::draw`'s early return for `getFullyObscuredByShroud()`, set by `GameClient::update`.
+    ///
+    /// *Predictions, written before the first run:* the first object is in the partition, so the World's shroud table
+    /// answers for it. Fogged for the local player with no clear frame: obscured, not drawn (flags to MOVING wait).
+    /// Fogged but drawn clear one frame ago (clear frame 2, frame 3 < 2 + 60): taken as clear, drawn (MOVING reached);
+    /// the scene does not mark it (the status is fogged), so the clear frame stays 2. Clear again: not obscured, and
+    /// marked at frame 3.
+    ///
+    /// *Results (2026-11-06):* the first run stopped at the World's local player (none; see the test above); with the
+    /// client's own, all held.
+    #[test]
+    fn a_drawable_fogged_for_the_local_player_is_not_drawn() {
+        let (mut w, mut c, id) = gate_with_a_transition_module();
+        let local = c.local_player_index.unwrap();
+        assert!(w.find_object(id).unwrap().in_partition);
+        w.cuts.shrouded_status.insert((id, local), ObjectShroudStatus::Fogged);
+        moving(c.drawables.get_mut(&id).unwrap(), true);
+        c.draw(&w, &mut NoAssets, 33);
+        let d = &c.drawables[&id];
+        assert!(d.get_fully_obscured_by_shroud());
+        assert!(d.is_model_dirty);
+        assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(0)));
+
+        c.drawables.get_mut(&id).unwrap().shroud_clear_frame = 2;
+        c.draw(&w, &mut NoAssets, 66);
+        let d = &c.drawables[&id];
+        assert!(!d.get_fully_obscured_by_shroud(), "seen clear less than two seconds ago");
+        assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(1)));
+        assert_eq!(d.shroud_clear_frame, 2);
+
+        w.cuts.shrouded_status.insert((id, local), ObjectShroudStatus::Clear);
+        c.draw(&w, &mut NoAssets, 99);
+        let d = &c.drawables[&id];
+        assert!(!d.get_fully_obscured_by_shroud());
+        assert_eq!(d.shroud_clear_frame, 3);
+    }
+
+    /// GitHub #45: the draw reads the speed without filling the physics module's `m_velMag` cache.
+    ///
+    /// *Predictions, written before the first run:* after 30 frames of the gate game, a client draw leaves every
+    /// physics module's state words (which hold `m_velMag`) as they were; each object's `DrawFacts::speed` has the
+    /// same bits as the module call `getVelocityMagnitude()` made afterwards; and that module call does change the
+    /// words of at least one module (its cache was not valid), which is the write the draw used to make.
+    ///
+    /// *Results (2026-11-06), first run:* all held.
+    #[test]
+    fn the_draw_reads_the_speed_without_writing_the_physics_cache() {
+        use crate::logic::world::module_call::ModuleCall;
+        let mut w = crate::logic::world::gate_scenario::gate_world();
+        for _ in 0..30 {
+            w.logic_update().expect("a frame");
+        }
+        let mut c = ClientDrawables::new();
+        let ev = w.take_client_events();
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        let ids: Vec<ObjectId> = w.objects.ids_in_order().into_iter().filter(|&id| w.physics_peek(id).is_some()).collect();
+        assert!(!ids.is_empty());
+        let words = |w: &World| ids.iter().map(|&id| w.physics_peek(id).unwrap().state_words()).collect::<Vec<_>>();
+        let before = words(&w);
+        c.draw(&w, &mut NoAssets, 33);
+        let speeds: Vec<Option<f32>> = ids.iter().map(|&id| ClientDrawables::draw_facts(&w, id, true, None).speed).collect();
+        assert_eq!(words(&w), before);
+        let mut changed = 0;
+        for (k, &id) in ids.iter().enumerate() {
+            let ph = w.find_object(id).unwrap().physics.unwrap();
+            let v = w.module_call(id, ph, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0);
+            assert_eq!(speeds[k].map(f32::to_bits), Some(v.to_bits()));
+            changed += usize::from(w.physics_peek(id).unwrap().state_words() != before[k]);
+        }
+        assert!(changed > 0, "the module call fills the cache");
     }
 }

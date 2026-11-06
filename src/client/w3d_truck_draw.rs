@@ -51,8 +51,9 @@
 //! # Upstream quirks that are kept
 //!
 //! - The rear tires are always spun with `m_rearWheelRotation`, which adds `PowerslideRotationAddition` while
-//!   powersliding; powersliding needs the powerslide effect, which is not made here (no particle systems), so it never
-//!   happens, as upstream with a `PowerslideSpray` it cannot find.
+//!   powersliding; powersliding needs the powerslide effect, which is not made here (~~no particle systems~~
+//!   **Corrected 2026-11-06 (GitHub #44):** the client has particle systems, but the truck draws do not make theirs
+//!   yet), so it never happens, as upstream with a `PowerslideSpray` it cannot find.
 //! - The mid-mid tires use the rear rotation and the rear offsets.
 //! - The tank truck's mid-front tires start from the rear tires' last transform (no `Make_Identity` first), and its mid
 //!   wheel rotations are never advanced.
@@ -63,8 +64,10 @@
 //!   `m_curCabRotation`, `m_curTrailerRotation`; `W3DTankTruckDraw`'s mid tire bones and mid wheel rotations; and
 //!   `W3DTruckDrawModuleData`'s reals (its constructor sets none).
 //! - The dust, dirt and powerslide particle systems, the landing and powerslide sounds, the tank truck's tread debris and
-//!   the police car's dynamic light are not made (no particle systems, audio or dynamic lights yet). They change nothing
-//!   that is drawn here.
+//!   the police car's dynamic light are not made (~~no particle systems,~~ no audio or dynamic lights yet; **Corrected
+//!   2026-11-06 (GitHub #44):** the client's particle systems exist, `crate::client::particle_sys`, but these draws do
+//!   not create theirs yet: `createEmitters`, `enableEmitters` and the speed multipliers are the remaining step). They
+//!   change nothing that is drawn here.
 //! - Time frozen is not checked (the client has none yet), as for the tank.
 //! - The tank truck's locomotor speed: without an AI upstream dereferences null; here its treads do not move then.
 
