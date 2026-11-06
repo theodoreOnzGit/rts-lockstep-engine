@@ -46,6 +46,13 @@
 //!   `crate::common::damage_fx::FxListName`), and is played through [`FxHost::bone_positions`].
 //! - The world is read through [`FxHost`]; the particle systems are the [`ParticleSystemManager`]'s.
 //! - `BuryFX` is not in this release's `FXList.cpp` (no such nugget exists upstream).
+//!
+//! # Verified against the compiled upstream (#46)
+//!
+//! `tests/differential_particle_sys.rs` runs `FXList.cpp`, compiled, with the real particle systems: random `FXList`
+//! INI files (every nugget field compared) and random `doFXPos`/`doFXObj` plays (every request, the particle systems
+//! made and the client random state compared); 0 mismatches. It found one defect, fixed here: the particle system
+//! nugget's `radius * cos(angle)` (C's `double` `cos`, the sum in `double`).
 
 use std::collections::BTreeMap;
 
@@ -55,6 +62,7 @@ use crate::common::game_common::convert_duration_from_msecs_to_frames;
 use crate::common::game_type::ObjectId;
 use crate::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, LookupListRec, UserData};
 use crate::common::random_value::{DistributionType, GameClientRandomVariable, RandomValues};
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -117,7 +125,7 @@ impl Default for ParticleSystemFxNugget {
             offset: Coord3D::default(),
             radius: c(0.0),
             height: c(0.0),
-            delay: c(-1.0),
+            delay: c(if plant(4415) { 0.0 } else { -1.0 }),
             rotate_x: 0.0,
             rotate_y: 0.0,
             rotate_z: 0.0,
@@ -267,11 +275,18 @@ impl ParticleSystemFxNugget {
             made.push(id);
             let radius = self.radius.get_value(play.random);
             let angle = play.random.game_client_random_value_real(0.0, 2.0 * PI);
+            // ~~`radius * WWMath::Cos(angle)` in `float`~~ **Corrected 2026-11-06 (#46):** upstream's `cos(angle)` is C's
+            // `double` `cos` (`differential/shim/math.h`), so the sum is taken in `double` and rounded once (the
+            // differential test found the last bit)
             let mut new_pos = Coord3D {
-                x: primary.x + offset.x + radius * crate::ww::wwmath::cos(angle),
-                y: primary.y + offset.y + radius * crate::ww::wwmath::sin(angle),
+                x: (f64::from(primary.x + offset.x) + f64::from(radius) * petir::Real::cos(f64::from(angle))) as f32,
+                y: (f64::from(primary.y + offset.y) + f64::from(radius) * petir::Real::sin(f64::from(angle))) as f32,
                 z: 0.0,
             };
+            if plant(4414) {
+                new_pos.x = primary.x + offset.x + radius * crate::ww::wwmath::cos(angle);
+                new_pos.y = primary.y + offset.y + radius * crate::ww::wwmath::sin(angle);
+            }
             if self.create_at_ground_height {
                 new_pos.z = host.layer_height_for_destination(&new_pos);
             } else {
@@ -353,7 +368,7 @@ impl FxNugget {
                 if let Some(p) = primary {
                     let mut s = *scorch;
                     if s < 0 {
-                        s = play.random.game_client_random_value(SCORCH_1, SCORCH_4);
+                        s = play.random.game_client_random_value(SCORCH_1, if plant(4412) { SCORCH_4 - 1 } else { SCORCH_4 });
                     }
                     play.requests.push(FxRequest::TerrainScorch { position: *p, radius: *radius, scorch: s });
                 }
@@ -389,8 +404,7 @@ impl FxNugget {
             FxNugget::ParticleSystem(n) => {
                 let Some((ppos, pmtx)) = at(primary) else { return };
                 if let (true, Some((spos, _))) = (n.ricochet, at(secondary)) {
-                    let delta_x = ppos.x - spos.x;
-                    let delta_y = ppos.y - spos.y;
+                    let (delta_x, delta_y) = if plant(4413) { (ppos.y - spos.y, ppos.x - spos.x) } else { (ppos.x - spos.x, ppos.y - spos.y) };
                     let aiming_angle = crate::ww::wwmath::atan2(delta_y, delta_x);
                     let mut aiming = Matrix3D::IDENTITY;
                     aiming.rotate_z(aiming_angle);

@@ -3507,4 +3507,22 @@ extern "C" {
         cap: c_int,
         out_len: *mut c_int,
     ) -> c_int;
+
+    // #46: ParticleSys.cpp and INIParticleSys.cpp, verbatim (wrap_particle_sys.cpp, which documents every op and the dump
+    // words). The INI is read by wrap_ini.cpp's ref_ini_load*, whose ParticleSystem block reaches the real handler once
+    // ref_psys_reset has installed the hook.
+    pub fn ref_psys_reset();
+    pub fn ref_psys_settings(use_fx: c_int, scale: c_float, max_count: c_int, max_field: c_int, min_pri: c_int, min_skip_pri: c_int, skipped: c_int, field_count: c_uint);
+    pub fn ref_psys_scene(kind: c_int, id: c_uint, v: *const c_float, iv: *const c_int);
+    pub fn ref_psys_template_dump(out: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_psys_create(name: *const c_char, create_slaves: c_int, frame: c_uint, attach_to: c_uint) -> c_uint;
+    pub fn ref_psys_op(op: c_int, id: c_uint, v: *const c_float, iv: c_int) -> c_int;
+    pub fn ref_psys_update(logic: c_uint, client: c_uint);
+    pub fn ref_psys_dump(out: *mut c_uint, cap: c_int) -> c_int;
+    // #46: FXList.cpp, verbatim (wrap_particle_sys.cpp), with the particle systems above.
+    pub fn ref_fx_reset();
+    pub fn ref_fx_dump(out: *mut c_uint, cap: c_int) -> c_int;
+    pub fn ref_fx_pos(name: *const c_char, primary: *const c_float, mtx: *const c_float, speed: c_float, secondary: *const c_float, override_radius: c_float, logic: c_uint, client: c_uint);
+    pub fn ref_fx_obj(name: *const c_char, primary: c_uint, secondary: c_uint, logic: c_uint, client: c_uint);
+    pub fn ref_fx_log(out: *mut c_uint, cap: c_int) -> c_int;
 }

@@ -57,13 +57,20 @@
 //!
 //! - `computeParticlePosition`'s hollow `BOX` has no `break`: it falls through into `LINE`, which draws once more and
 //!   places the particle on the line whose start is the box's half size (the union). Its fifth side places `x` at
-//!   `halfSize.y`.
+//!   `halfSize.y` (which the line then overwrites, as it does every side: only the sides' random draws are seen; the
+//!   differential test, #46, found that a planted change there was invisible).
 //! - `computeParticleVelocity`'s `OUTWARD` with a volume type it does not handle (none) leaves the velocity of the
 //!   previous call (`static Coord3D newVel`, shared by every system): [`ParticleSystemManager::last_new_vel`].
 //! - `Particle::update`'s colour clamp tests `red < 0` to zero `green`.
 //! - A colour or alpha key past the eighth (`m_colorTargetKey` reaching 8 when all eight keys have frames) reads
 //!   beyond the array upstream (undefined): here it reads as a key at frame 0 (no rate), see
-//!   [`Particle::color_key_at`].
+//!   [`Particle::color_key_at`], and is reported in [`ParticleSystemManager::undefined`] (#46).
+//! - **Where upstream is undefined** (#46) the run goes on as described and the manager records it in
+//!   [`ParticleSystemManager::undefined`]: a key past the eighth (above), and a `float` cast to `UnsignedInt` or
+//!   `Int` out of the target's range (`(UnsignedInt)m_lifetime.getValue()` of a negative lifetime, the initial and
+//!   burst delays, `m_burstDelayLeft *= m_delayCoeff`, `count *= m_countCoeff`), which the MSVC build truncated in a
+//!   64-bit register and C++ leaves undefined; Rust's `as` saturates instead. The differential test
+//!   (`tests/differential_particle_sys.rs`) stops comparing a case once this is set.
 //!
 //! # Where this differs from upstream
 //!
@@ -79,6 +86,15 @@
 //! - `DRAWABLE` particles (particles that are drawables) and `SMUDGE`/`VOLUME_PARTICLE` rendering are not translated;
 //!   such systems run, and the client draws their particles as quads.
 //! - Saving and loading (`xfer`, `loadPostProcess`) is not translated.
+//!
+//! # Verified against the compiled upstream (#46)
+//!
+//! `tests/differential_particle_sys.rs` runs `ParticleSys.cpp` and `INIParticleSys.cpp`, compiled, beside this
+//! module: random `ParticleSystem` INI files (every field of every template compared) and random runs (every system,
+//! particle, overall list and the client random state compared bit for bit after every frame); 0 mismatches. It found
+//! four defects, fixed here: the system's copy of `m_systemLifetime`, `m_initialDelay` and `m_slaveSystemName` (not
+//! copied upstream), the overall list a slave's particle is listed under, the cylinder's `cos`/`sin` (`double`), and
+//! `tintAllColors` (255 twice).
 
 use std::collections::BTreeMap;
 
@@ -87,6 +103,7 @@ use crate::common::game_type::ObjectId;
 use crate::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, UserData};
 use crate::common::random_value::{DistributionType, GameClientRandomVariable, RandomValues};
 use crate::common::trig;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector3::Vector3;
 
@@ -374,15 +391,22 @@ impl ParticleSystemInfo {
         self.line_start()
     }
 
-    /// `tintAllColors(tintColor)`: every key but the first scaled by the colour's components over 255.
+    /// `tintAllColors(tintColor)`: every key but the first scaled by the colour's components ~~over 255~~
+    /// **Corrected 2026-11-06 (#46):** over 255 twice: `RGBColor::setFromInt` gives 0..1, then upstream divides by
+    /// 255 again (`(Real)(rgb.red) / 255.0f`). The differential test found that the translation divided once.
     pub fn tint_all_colors(&mut self, tint_color: i32) {
-        let r = ((tint_color >> 16) & 0xff) as f32;
-        let g = ((tint_color >> 8) & 0xff) as f32;
-        let b = (tint_color & 0xff) as f32;
+        let mut rgb = RGBColor::default();
+        rgb.set_from_int(tint_color);
         for key in &mut self.color_key[1..] {
-            key.color.red *= r / 255.0;
-            key.color.green *= g / 255.0;
-            key.color.blue *= b / 255.0;
+            if plant(4409) {
+                key.color.red *= rgb.red;
+                key.color.green *= rgb.green;
+                key.color.blue *= rgb.blue;
+                continue;
+            }
+            key.color.red *= rgb.red / 255.0;
+            key.color.green *= rgb.green / 255.0;
+            key.color.blue *= rgb.blue / 255.0;
         }
     }
 }
@@ -401,7 +425,7 @@ fn parse_random_keyframe(ini: &mut Ini<'_>) -> IniResult<RandomKeyframe> {
     let high = Ini::scan_real(&ini.get_next_token(None)?)?;
     let frame = Ini::scan_unsigned_int(&ini.get_next_token(None)?)?;
     let mut var = ZERO_VAR;
-    var.set_range(low, high, DistributionType::Uniform);
+    var.set_range(low, high, if plant(4411) { DistributionType::Constant } else { DistributionType::Uniform });
     Ok(RandomKeyframe { var, frame })
 }
 
@@ -542,6 +566,8 @@ pub struct Particle {
     /// Its place in the manager's overall list (`m_overallNext`), and the priority it was listed under.
     pub overall_seq: u64,
     pub overall_priority: i32,
+    /// Set when this particle read a key past the eighth (undefined upstream; see the module docs).
+    pub read_past_keys: bool,
 }
 
 impl Particle {
@@ -564,6 +590,7 @@ impl Particle {
             system_under_control: None,
             overall_seq: 0,
             overall_priority: 0,
+            read_past_keys: false,
         };
         p.compute_alpha_rate();
         p.compute_color_rate();
@@ -582,6 +609,9 @@ impl Particle {
 
     /// `computeAlphaRate()`.
     fn compute_alpha_rate(&mut self) {
+        if self.alpha_target_key >= MAX_KEYFRAMES {
+            self.read_past_keys = true;
+        }
         let t = self.alpha_key_at(self.alpha_target_key);
         if t.frame == 0 {
             self.alpha_rate = 0.0;
@@ -595,6 +625,9 @@ impl Particle {
 
     /// `computeColorRate()`.
     fn compute_color_rate(&mut self) {
+        if self.color_target_key >= MAX_KEYFRAMES {
+            self.read_past_keys = true;
+        }
         let t = self.color_key_at(self.color_target_key);
         if t.frame == 0 {
             self.color_rate = RGBColor::default();
@@ -691,7 +724,7 @@ impl Particle {
             self.color.red = 1.0;
         }
         // (upstream tests red here)
-        if self.color.red < 0.0 {
+        if (if plant(4402) { self.color.green } else { self.color.red }) < 0.0 {
             self.color.green = 0.0;
         } else if self.color.green > 1.0 {
             self.color.green = 1.0;
@@ -708,6 +741,9 @@ impl Particle {
             if self.lifetime_left == 0 {
                 return false;
             }
+        }
+        if matches!(sys.shader_type, shader_type::ADDITIVE | shader_type::MULTIPLY) && self.color_target_key >= MAX_KEYFRAMES {
+            self.read_past_keys = true;
         }
         !self.is_invisible(sys.shader_type)
     }
@@ -771,6 +807,42 @@ fn angle_between(a: &Coord2D, b: &Coord2D) -> f32 {
         return theta;
     }
     -theta
+}
+
+/// `k * cos(angle)` of two `Real`s as upstream writes it: C's `double` `cos` (the MSVC headers' C semantics, see
+/// `differential/shim/math.h`), the product in `double`, rounded to `Real` once on assignment. (#46: the translation
+/// called `WWMath::Cos`, the `float` cosine, and multiplied in `float`; the differential test found the last bit.)
+fn mul_c_cos(k: f32, angle: f32) -> f32 {
+    if plant(4408) {
+        return k * crate::ww::wwmath::cos(angle);
+    }
+    (f64::from(k) * petir::Real::cos(f64::from(angle))) as f32
+}
+
+/// `k * sin(angle)`, as [`mul_c_cos`].
+fn mul_c_sin(k: f32, angle: f32) -> f32 {
+    if plant(4408) {
+        return k * crate::ww::wwmath::sin(angle);
+    }
+    (f64::from(k) * petir::Real::sin(f64::from(angle))) as f32
+}
+
+/// `(UnsignedInt)x`, recording in `ub` when C++ leaves the conversion undefined (`x` NaN, or not above -1 and below
+/// 2^32); the value is then Rust's saturating cast.
+fn real_to_unsigned_cast(x: f32, ub: &mut Option<&'static str>) -> u32 {
+    if !(x > -1.0 && x < 4_294_967_296.0) {
+        *ub = Some("a float cast to UnsignedInt out of its range");
+    }
+    x as u32
+}
+
+/// `(Int)x`, recording in `ub` when C++ leaves the conversion undefined (`x` NaN, or outside `Int`'s range after
+/// truncation); the value is then Rust's saturating cast.
+fn real_to_int_cast(x: f32, ub: &mut Option<&'static str>) -> i32 {
+    if !(x > -2_147_483_649.0 && x < 2_147_483_648.0) {
+        *ub = Some("a float cast to Int out of its range");
+    }
+    x as i32
 }
 
 /// What a system is attached to, as its update reads it.
@@ -980,7 +1052,7 @@ impl ParticleSystem {
                 let diff_from_center = (half_span - i.wind_angle + start_angle).abs();
                 let mut change = (1.0 - (diff_from_center / half_span)) * i.wind_angle_change;
                 const MINIMUM_CHANGE: f32 = 0.005;
-                if change < MINIMUM_CHANGE {
+                if change < MINIMUM_CHANGE && !plant(4403) {
                     change = MINIMUM_CHANGE;
                 }
                 let turn = if i.wind_motion_moving_to_end_angle {
@@ -1042,8 +1114,8 @@ impl ParticleSystem {
             velocity_type::CYLINDRICAL => {
                 let radial_speed = ev[0].get_value(random);
                 let angle = random.game_client_random_value_real(0.0, 2.0 * PI);
-                new_vel.x = radial_speed * crate::ww::wwmath::cos(angle);
-                new_vel.y = radial_speed * crate::ww::wwmath::sin(angle);
+                new_vel.x = mul_c_cos(radial_speed, angle);
+                new_vel.y = mul_c_sin(radial_speed, angle);
                 new_vel.z = ev[1].get_value(random);
             }
             velocity_type::OUTWARD => {
@@ -1083,7 +1155,11 @@ impl ParticleSystem {
                         new_vel.z = speed * vel.z;
                     }
                     // (no case: the previous call's velocity)
-                    _ => {}
+                    _ => {
+                        if plant(4405) {
+                            new_vel = Coord3D::default();
+                        }
+                    }
                 }
             }
             velocity_type::SPHERICAL => {
@@ -1131,8 +1207,8 @@ impl ParticleSystem {
             volume_type::CYLINDER => {
                 let angle = random.game_client_random_value_real(0.0, 2.0 * PI);
                 let radius = if hollow { v[0] } else { random.game_client_random_value_real(0.0, v[0]) };
-                new_pos.x = radius * crate::ww::wwmath::cos(angle);
-                new_pos.y = radius * crate::ww::wwmath::sin(angle);
+                new_pos.x = mul_c_cos(radius, angle);
+                new_pos.y = mul_c_sin(radius, angle);
                 let half_length = v[1] / 2.0;
                 new_pos.z = random.game_client_random_value_real(-half_length, half_length);
             }
@@ -1161,8 +1237,8 @@ impl ParticleSystem {
                         new_pos.z = random.game_client_random_value_real(-h.z, h.z);
                         new_pos.y = if side == 2 { -h.y } else { h.y };
                     }
-                    // (no `break`: falls through into LINE)
-                    line = true;
+                    // (no `break`: falls through into LINE, which overwrites all three: the sides only draw)
+                    line = !plant(4401);
                 } else {
                     new_pos.x = random.game_client_random_value_real(-h.x, h.x);
                     new_pos.y = random.game_client_random_value_real(-h.y, h.y);
@@ -1210,6 +1286,9 @@ pub struct ParticleSystemManager {
     pub last_new_pos: Coord3D,
     /// The next overall-list place.
     next_seq: u64,
+    /// What upstream would have done that C++ leaves undefined, when this run did it (see the module docs); never
+    /// cleared by the manager.
+    pub undefined: Option<&'static str>,
 }
 
 impl Default for ParticleSystemManager {
@@ -1232,6 +1311,7 @@ impl ParticleSystemManager {
             last_new_vel: Coord3D::default(),
             last_new_pos: Coord3D::default(),
             next_seq: 0,
+            undefined: None,
         }
     }
 
@@ -1292,9 +1372,14 @@ impl ParticleSystemManager {
         let s = &t.info;
         let mut info = s.clone();
         info.volume_particle_depth = DEFAULT_VOLUME_PARTICLE_DEPTH;
+        // (#46: the constructor does not copy these three; they keep `ParticleSystemInfo()`'s 0, the zeroed pool's
+        // random variable and the empty string)
+        info.system_lifetime = 0;
+        info.initial_delay = ZERO_VAR;
+        info.slave_system_name = Vec::new();
         let (low, hi) = (s.color_scale.get_minimum_value(), s.color_scale.get_maximum_value());
         info.color_scale.set_range(low / 255.0, hi / 255.0, DistributionType::Uniform);
-        let delay_left = s.initial_delay.get_value(random) as u32;
+        let delay_left = real_to_unsigned_cast(s.initial_delay.get_value(random), &mut self.undefined);
         info.wind_motion_start_angle = random.game_client_random_value_real(info.wind_motion_start_angle_min, info.wind_motion_start_angle_max);
         info.wind_motion_end_angle = random.game_client_random_value_real(info.wind_motion_end_angle_min, info.wind_motion_end_angle_max);
         info.wind_angle = random.game_client_random_value_real(info.wind_motion_start_angle, info.wind_motion_end_angle);
@@ -1437,7 +1522,7 @@ impl ParticleSystemManager {
                 let mut oldest: Option<(u64, usize, usize)> = None;
                 for (si, s) in self.systems.iter().enumerate() {
                     for (k, p) in s.particles.iter().enumerate() {
-                        if p.overall_priority == pr && oldest.is_none_or(|o| p.overall_seq < o.0) {
+                        if p.overall_priority == pr && oldest.is_none_or(|o| if plant(4404) { p.overall_seq > o.0 } else { p.overall_seq < o.0 }) {
                             oldest = Some((p.overall_seq, si, k));
                         }
                     }
@@ -1478,7 +1563,9 @@ impl ParticleSystemManager {
         // (the system may have moved in the list if particles were removed: systems are not, only particles)
         let mut p = Particle::new(info, frame);
         p.overall_seq = self.next_seq;
-        p.overall_priority = pri;
+        // ~~`pri`~~ **Corrected 2026-11-06 (#46):** `Particle::Particle` lists it under its own system's priority
+        // (`system->getPriority()`), not under `priority` (a slave's particle carries its master's)
+        p.overall_priority = if plant(4410) { pri } else { self.systems[si].info.priority };
         self.next_seq += 1;
         self.particle_count += 1;
         let s = &mut self.systems[si];
@@ -1504,7 +1591,7 @@ impl ParticleSystemManager {
                 s.last_pos = s.pos;
                 s.is_first_pos = false;
             }
-            let f = 1.0 - (particle_num as f32 / particle_count as f32);
+            let f = 1.0 - ((particle_num + i32::from(plant(4407))) as f32 / particle_count as f32);
             let adj = Coord3D { x: f * (s.pos.x - s.last_pos.x), y: f * (s.pos.y - s.last_pos.y), z: f * (s.pos.z - s.last_pos.z) };
             let pr = s.transform.mul_vector3(&Vector3 { x: info.pos.x, y: info.pos.y, z: info.pos.z });
             info.pos = Coord3D { x: pr.x - adj.x, y: pr.y - adj.y, z: pr.z - adj.z };
@@ -1516,7 +1603,7 @@ impl ParticleSystemManager {
         info.angular_damping = i.angular_damping.get_value(random);
         info.angle_z = i.angle_z.get_value(random);
         info.angular_rate_z = i.angular_rate_z.get_value(random);
-        info.lifetime = i.lifetime.get_value(random) as u32;
+        info.lifetime = real_to_unsigned_cast(i.lifetime.get_value(random), &mut self.undefined);
         info.size = i.start_size.get_value(random) * s.size_coeff * scale;
         info.size_rate = i.size_rate.get_value(random) * s.size_coeff * scale;
         info.size_rate_damping = i.size_rate_damping.get_value(random);
@@ -1555,7 +1642,7 @@ impl ParticleSystemManager {
         merge.alpha_key = info.alpha_key;
         merge.color_key = info.color_key;
         merge.color_scale = info.color_scale;
-        let offset = self.systems[slave].info.slave_pos_offset;
+        let offset = if plant(4406) { Coord3D::default() } else { self.systems[slave].info.slave_pos_offset };
         merge.pos.x += offset.x;
         merge.pos.y += offset.y;
         merge.pos.z += offset.z;
@@ -1690,7 +1777,7 @@ impl ParticleSystemManager {
             let pri = s.info.priority;
             let count_coeff = s.count_coeff;
             let mut count = real_to_int(s.info.burst_count.get_value(random));
-            count = (count as f32 * count_coeff) as i32;
+            count = real_to_int_cast(count as f32 * count_coeff, &mut self.undefined);
             for i in 0..count {
                 let si = self.index_of(id).expect("listed");
                 let info = self.generate_particle_info(si, i, count, random, settings);
@@ -1717,8 +1804,8 @@ impl ParticleSystemManager {
             }
             let si = self.index_of(id).expect("listed");
             let s = &mut self.systems[si];
-            s.burst_delay_left = s.info.burst_delay.get_value(random) as u32;
-            s.burst_delay_left = (s.burst_delay_left as f32 * s.delay_coeff) as u32;
+            s.burst_delay_left = real_to_unsigned_cast(s.info.burst_delay.get_value(random), &mut self.undefined);
+            s.burst_delay_left = real_to_unsigned_cast(s.burst_delay_left as f32 * s.delay_coeff, &mut self.undefined);
         }
 
         // the particles
@@ -1746,7 +1833,11 @@ impl ParticleSystemManager {
             if info.gravity != 0.0 {
                 p.apply_force(&Coord3D { x: 0.0, y: 0.0, z: info.gravity });
             }
-            if p.update(info, system_pos, frame) {
+            let alive = p.update(info, system_pos, frame);
+            if p.read_past_keys {
+                self.undefined = Some("a particle's alpha or colour key past the eighth");
+            }
+            if alive {
                 k += 1;
             } else {
                 self.delete_particle(si, k);

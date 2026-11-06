@@ -471,7 +471,7 @@ STUB(INI::parseControlBarSchemeDefinition) STUB(INI::parseControlBarResizerDefin
 WEAK_STUB(INI::parseCrateTemplateDefinition) STUB(INI::parseWindowTransitions)
 WEAK_STUB(INI::parseDamageFXDefinition) STUB(INI::parseDialogDefinition)
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
-STUB(INI::parseFXListDefinition) WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
+WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
 STUB(INI::parseInGameUIDefinition) WEAK_STUB(INI::parseLocomotorTemplateDefinition) /* p1w6-locomotor: real in Locomotor.cpp (wrap_locomotor.cpp) */
 STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
@@ -479,7 +479,12 @@ STUB(INI::parseMiscAudio) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCu
 WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)
 STUB(INI::parseOnlineChatColorDefinition) WEAK_STUB(INI::parseMultiplayerSettingsDefinition)
 STUB(INI::parseMusicTrackDefinition) WEAK_STUB(INI::parseObjectCreationListDefinition) /* p1w10-sonnet: real in ObjectCreationList.cpp (wrap_ocl.cpp) */
-STUB(INI::parseParticleSystemDefinition)
+/* #46: the ParticleSystem block reaches INIParticleSys.cpp's handler (wrap_particle_sys.cpp, where it is renamed) when that
+** fixture sets the hook (ref_psys_reset); with none set it throws, as the stub did. */
+extern "C" { void (*ref_particle_block_hook)(INI *) = 0; void (*ref_fxlist_block_hook)(INI *) = 0; }
+/* #46: the FXList block reaches FXList.cpp's handler the same way (ref_fx_reset sets the hook) */
+void INI::parseFXListDefinition(INI *ini) { if (!ref_fxlist_block_hook) throw ERROR_BUG; ref_fxlist_block_hook(ini); }
+void INI::parseParticleSystemDefinition(INI *ini) { if (!ref_particle_block_hook) throw ERROR_BUG; ref_particle_block_hook(ini); }
 WEAK_STUB(INI::parsePlayerTemplateDefinition) /* p1w3-playertemplate: real in PlayerTemplate.cpp */ STUB(INI::parseTerrainRoadDefinition)
 WEAK_STUB(INI::parseRankDefinition) /* p1w2-science: real in RankInfo.cpp */ WEAK_STUB(INI::parseSpecialPowerDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */
 STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition) /* p1w2-terrain */
