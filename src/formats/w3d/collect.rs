@@ -204,7 +204,7 @@ pub fn load_w3d(cload: &mut ChunkLoad<'_>) -> W3dResult<Option<CollectionDef>> {
 
 /// `SnapPointsClass::Load_W3D(cload)` on a new set, with `cload` inside the
 /// points chunk: the points read (its result is ignored by the caller).
-fn load_snap_points(cload: &mut ChunkLoad<'_>) -> W3dResult<Vec<[f32; 3]>> {
+pub(crate) fn load_snap_points(cload: &mut ChunkLoad<'_>) -> W3dResult<Vec<[f32; 3]>> {
     // int size = Cur_Chunk_Length(); int count = size / sizeof(W3dVectorStruct)
     // (sizeof is an unsigned int on Win32: the division is unsigned)
     let count = cload.cur_chunk_length()? / W3dVectorStruct::SIZE as u32;

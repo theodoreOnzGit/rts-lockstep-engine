@@ -3,7 +3,9 @@
 //! reads meshes ([`mesh`]), hierarchies ([`htree`]), hierarchical LOD
 //! models ([`hlod`]), collections ([`collect`]), aggregates ([`agg_def`]),
 //! the box, sphere and ring primitives ([`boxrobj`], [`sphereobj`],
-//! [`ringobj`], with [`prim_anim`]) and animations ([`hanim`], [`motchan`],
+//! [`ringobj`], with [`prim_anim`]), **added 2026-11-06 (#17):** the obsolete
+//! hierarchical models ([`hmdldef`]) and distance LODs ([`distlod`]) and the
+//! particle emitters ([`part_ldr`]), and animations ([`hanim`], [`motchan`],
 //! [`hmorphanim`]) with, into plain structs ~~(no rendering)~~. All of it reads
 //! through the WWLib chunk reader, [`crate::ww::chunkio`]. **Corrected
 //! 2026-11-05 (#10, step 4):** the render side without a device is
@@ -28,13 +30,16 @@ pub mod agg_def;
 pub mod assetmgr;
 pub mod boxrobj;
 pub mod collect;
+pub mod distlod;
 pub mod hanim;
 pub mod hlod;
+pub mod hmdldef;
 pub mod hmorphanim;
 pub mod htree;
 pub mod mesh;
 pub mod meshmdl;
 pub mod motchan;
+pub mod part_ldr;
 pub mod prim_anim;
 pub mod render;
 pub mod ringobj;

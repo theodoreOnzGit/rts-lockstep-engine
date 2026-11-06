@@ -176,7 +176,7 @@ impl<T> Seg<T> {
 }
 
 impl<T: Copy + PartialEq> Arr<T> {
-    fn new(len: usize, zero: T) -> Self {
+    pub(crate) fn new(len: usize, zero: T) -> Self {
         Arr { len, segs: if len > 0 { vec![Seg::Run(len, zero)] } else { Vec::new() } }
     }
     /// The number of elements.
@@ -256,7 +256,7 @@ impl<T: Copy + PartialEq> Arr<T> {
         }
         self.segs = out;
     }
-    fn set(&mut self, i: usize, v: T) {
+    pub(crate) fn set(&mut self, i: usize, v: T) {
         assert!(i < self.len);
         // fast path: the end of a values stretch, or inside one
         let mut pos = 0;

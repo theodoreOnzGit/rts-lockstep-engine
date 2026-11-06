@@ -187,6 +187,17 @@ extern "C" {
         log_len: *mut c_int,
     ) -> c_int;
     pub fn ref_w3d_prim_layouts(log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    // WW3D2/hmdldef.cpp, distlod.cpp, part_ldr.cpp: HModelDefClass,
+    // DistLODDefClass and ParticleEmitterDefClass::Load_W3D (wrap_w3d_emit.cpp)
+    pub fn ref_w3d_load_emit(
+        data: *const c_char,
+        len: c_int,
+        kind: c_int,
+        alpha: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
     // WW3D2/hmorphanim.cpp: HMorphAnimClass::Load_W3D (wrap_w3d_morph.cpp)
     pub fn ref_w3d_load_morph(data: *const c_char, len: c_int, log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
     // WW3D2/assetmgr.cpp, htreemgr.cpp, hanimmgr.cpp, WWLib/hash.cpp: the

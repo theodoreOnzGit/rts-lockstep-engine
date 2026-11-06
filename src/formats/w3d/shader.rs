@@ -6,7 +6,12 @@
 //   (ShaderClass's enumerations and Get_* accessors)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
 //   (srcBlendLUT, dstBlendLUT, ShaderClass::Apply, Get_SS_Category,
-//   Guess_Sort_Level, _PolygonCullMode)
+//   Guess_Sort_Level, _PolygonCullMode, the presets SC_ADD_SPRITE and
+//   SC_ALPHA_SPRITE)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_util.cpp
+//   (W3dUtilityClass::Convert_Shader(const ShaderClass &, W3dShaderStruct *))
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_file.h
+//   (W3d_Shader_Reset)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -173,6 +178,93 @@ pub const SORT_LEVEL_NONE: i32 = 0;
 pub const SORT_LEVEL_BIN1: i32 = 20;
 pub const SORT_LEVEL_BIN2: i32 = 15;
 pub const SORT_LEVEL_BIN3: i32 = 10;
+
+/// `SHADE_CNST(...)` (shader.h): the bits of a preset shader.
+#[allow(clippy::too_many_arguments)]
+const fn shade_cnst(
+    depth_compare: u32,
+    depth_mask: u32,
+    color_mask: u32,
+    src_blend: u32,
+    dst_blend: u32,
+    fog: u32,
+    pri_grad: u32,
+    sec_grad: u32,
+    texture: u32,
+    alpha_test: u32,
+    cullmode: u32,
+    post_det_color: u32,
+    post_det_alpha: u32,
+) -> u32 {
+    depth_compare << SHIFT_DEPTHCOMPARE
+        | depth_mask << SHIFT_DEPTHMASK
+        | color_mask << SHIFT_COLORMASK
+        | dst_blend << SHIFT_DSTBLEND
+        | fog << SHIFT_FOG
+        | pri_grad << SHIFT_PRIGRADIENT
+        | sec_grad << SHIFT_SECGRADIENT
+        | src_blend << SHIFT_SRCBLEND
+        | texture << SHIFT_TEXTURING
+        | alpha_test << SHIFT_ALPHATEST
+        | cullmode << SHIFT_CULLMODE
+        | post_det_color << SHIFT_POSTDETAILCOLORFUNC
+        | post_det_alpha << SHIFT_POSTDETAILALPHAFUNC
+}
+
+/// `ShaderClass::_PresetAdditiveSpriteShader` (`SC_ADD_SPRITE`, shader.cpp):
+/// `PASS_LEQUAL`, `DEPTH_WRITE_DISABLE`, `COLOR_WRITE_ENABLE`,
+/// `SRCBLEND_ONE`, `DSTBLEND_ONE`, `FOG_DISABLE`, `GRADIENT_DISABLE`,
+/// `SECONDARY_GRADIENT_DISABLE`, `TEXTURING_ENABLE`, `ALPHATEST_DISABLE`,
+/// `CULL_MODE_ENABLE`, `DETAILCOLOR_DISABLE`, `DETAILALPHA_DISABLE`.
+pub const PRESET_ADDITIVE_SPRITE_SHADER: ShaderClass =
+    ShaderClass(shade_cnst(PASS_LEQUAL, 0, 1, SRCBLEND_ONE, DSTBLEND_ONE, FOG_DISABLE, GRADIENT_DISABLE, 0, 1, 0, 1, 0, 0));
+/// `ShaderClass::_PresetAlphaSpriteShader` (`SC_ALPHA_SPRITE`): as the
+/// additive sprite with `SRCBLEND_SRC_ALPHA`, `DSTBLEND_ONE_MINUS_SRC_ALPHA`.
+pub const PRESET_ALPHA_SPRITE_SHADER: ShaderClass = ShaderClass(shade_cnst(
+    PASS_LEQUAL,
+    0,
+    1,
+    SRCBLEND_SRC_ALPHA,
+    DSTBLEND_ONE_MINUS_SRC_ALPHA,
+    FOG_DISABLE,
+    GRADIENT_DISABLE,
+    0,
+    1,
+    0,
+    1,
+    0,
+    0,
+));
+
+/// `W3dUtilityClass::Convert_Shader(const ShaderClass &, W3dShaderStruct *)`
+/// (w3d_util.cpp): `W3d_Shader_Reset`, then each field from its `Get_*`
+/// (each stored in a `uint8`). The colour-mask, fog, detail, preset and
+/// pad members stay as the reset leaves them (0).
+pub fn convert_shader_to_w3d(shader: ShaderClass) -> super::w3d_file::W3dShaderStruct {
+    use super::w3d_file::*;
+    let mut s = W3dShaderStruct::from_bytes(&[0; W3dShaderStruct::SIZE]);
+    // W3d_Shader_Reset
+    s.depth_compare = W3DSHADER_DEPTHCOMPARE_PASS_LEQUAL;
+    s.depth_mask = W3DSHADER_DEPTHMASK_WRITE_ENABLE;
+    s.dest_blend = W3DSHADER_DESTBLENDFUNC_ZERO;
+    s.pri_gradient = W3DSHADER_PRIGRADIENT_MODULATE;
+    s.sec_gradient = W3DSHADER_SECGRADIENT_DISABLE;
+    s.src_blend = W3DSHADER_SRCBLENDFUNC_ONE;
+    s.texturing = W3DSHADER_TEXTURING_DISABLE;
+    s.alpha_test = W3DSHADER_ALPHATEST_DISABLE;
+    // the W3d_Shader_Set_* calls
+    s.depth_compare = shader.get_depth_compare() as u8;
+    s.depth_mask = shader.get_depth_mask() as u8;
+    s.dest_blend = shader.get_dst_blend_func() as u8;
+    s.pri_gradient = shader.get_primary_gradient() as u8;
+    s.sec_gradient = shader.get_secondary_gradient() as u8;
+    s.src_blend = shader.get_src_blend_func() as u8;
+    s.texturing = shader.get_texturing() as u8;
+    s.alpha_test = shader.get_alpha_test() as u8;
+    s.post_detail_color_func = shader.get_post_detail_color_func() as u8;
+    s.post_detail_alpha_func = shader.get_post_detail_alpha_func() as u8;
+    s
+}
 
 /// `class ShaderClass`: its bits, with shader.h's accessors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

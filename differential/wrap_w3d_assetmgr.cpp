@@ -31,9 +31,14 @@
 **     real one would give, and a Create that records which prototype was
 **     asked for (building a render object needs the renderer). Box, sphere
 **     and ring prototypes are the real ones, wrapped the same way.
-**   - The loaders that are not translated (hmodel, distance LOD, particle
+**   - ~~The loaders that are not translated (hmodel, distance LOD, particle
 **     emitter) abort: the Rust reports them Unsupported and such inputs are
-**     not given to the C++.
+**     not given to the C++.~~ Corrected 2026-11-06 (#17): proto.cpp
+**     HModelLoaderClass, distlod.cpp DistLODLoaderClass and part_ldr.cpp
+**     ParticleEmitterLoaderClass, the same way, over the real definition
+**     loaders (wrap_w3d_emit.cpp's ref_w3d_emit_load_for_assetmgr; the
+**     emitter's texture lookup answers "no alpha", as the Rust manager's
+**     empty alpha_textures).
 **   - GameEngineDevice W3DAssetManager.cpp: Load_3D_Assets(const char *)
 **     (the prototype shortcut, without DUMP_PERF_STATS, the debug-build
 **     preload log and the Granny branches, which the release does not
@@ -81,6 +86,7 @@ int ref_w3d_ramfile_size(void *f);
 void ref_w3d_ramfile_close(void *f);
 }
 int ref_w3d_mesh_load_for_assetmgr(ChunkLoadClass &cload, std::string &name);
+bool ref_w3d_emit_load_for_assetmgr(ChunkLoadClass &cload, int kind, std::string &name); /* wrap_w3d_emit.cpp (#17) */
 extern HTreeClass *(*g_w3d_htree_hook)(const char *);
 extern HAnimClass *(*g_w3d_hanim_hook)(const char *);
 
@@ -529,8 +535,20 @@ PrototypeClass *TestLoaderClass::Load_W3D(ChunkLoadClass &cload)
 		if (!inner) return NULL;
 		return new TestProtoClass(inner->Get_Name(), inner->Get_Class_ID(), inner);
 	}
+	case K_HMODEL:
+	case K_DISTLOD:
+	case K_EMITTER: {
+		/* #17: proto.cpp HModelLoaderClass (HModelPrototypeClass,
+		** CLASSID_HLOD), distlod.cpp DistLODLoaderClass (CLASSID_DISTLOD),
+		** part_ldr.cpp ParticleEmitterLoaderClass (CLASSID_PARTICLEEMITTER),
+		** over the real definitions of wrap_w3d_emit.cpp's library */
+		std::string name;
+		int k = Kind == K_HMODEL ? 1 : Kind == K_DISTLOD ? 2 : 3;
+		if (!ref_w3d_emit_load_for_assetmgr(cload, k, name)) return NULL;
+		return new TestProtoClass(name.c_str(), Kind == K_HMODEL ? 24 : Kind == K_DISTLOD ? 2 : 14, NULL);
+	}
 	default:
-		abort(); /* not translated: not given to the C++ */
+		abort();
 	}
 }
 

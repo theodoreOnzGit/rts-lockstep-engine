@@ -27,7 +27,11 @@
 //! `Get_SS_Category` and `Guess_Sort_Level` (`shader.cpp`) on a recording
 //! device (`differential/wrap_w3d_shader.cpp`), and the skin deformation
 //! (`meshgeometry.cpp`'s `get_deformed_vertices`, `vp.cpp`'s `Transform`)
-//! over hierarchies posed by `htree.cpp` (`differential/wrap_w3d_deform.cpp`).
+//! over hierarchies posed by `htree.cpp` (`differential/wrap_w3d_deform.cpp`),
+//! and (section 15, #17) the hierarchical-model, distance-LOD and
+//! particle-emitter definition loaders of `hmdldef.cpp`, `distlod.cpp` and
+//! `part_ldr.cpp` (`differential/wrap_w3d_emit.cpp`), alone and through the
+//! asset manager.
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -3691,10 +3695,10 @@ fn am_gen_chunk(g: &mut Gn) -> Vec<u8> {
     }
 }
 
-fn am_gen_file(g: &mut Gn) -> Vec<u8> {
+fn am_gen_file(g: &mut Gn, gen_chunk: fn(&mut Gn) -> Vec<u8>) -> Vec<u8> {
     let mut f = Vec::new();
     for _ in 0..1 + g.below(5) {
-        f.extend(am_gen_chunk(g));
+        f.extend(gen_chunk(g));
     }
     mutate(g, f)
 }
@@ -3723,18 +3727,18 @@ fn am_gen_remove(g: &mut Gn) -> Vec<u8> {
     }
 }
 
-fn am_gen_case(g: &mut Gn) -> AmCase {
+fn am_gen_case(g: &mut Gn, gen_chunk: fn(&mut Gn) -> Vec<u8>) -> AmCase {
     let mut files = Vec::new();
     for _ in 0..g.below(6) {
         let mut p = am_pick(g, &AM_DIR).to_vec();
         p.extend_from_slice(am_pick(g, &AM_BASE));
         p.extend_from_slice(if g.below(4) == 0 { b".W3D" } else { b".w3d" });
-        files.push((p, am_gen_file(g)));
+        files.push((p, am_gen_file(g, gen_chunk)));
     }
     let mut ops = Vec::new();
     for _ in 0..3 + g.below(10) {
         let op = match g.below(20) {
-            0..=2 => AmOp::Bytes(am_gen_file(g)),
+            0..=2 => AmOp::Bytes(am_gen_file(g, gen_chunk)),
             3 | 4 => {
                 let mut n = am_pick(g, &AM_BASE).to_vec();
                 n.extend_from_slice(b".w3d");
@@ -3789,7 +3793,11 @@ fn am_gen_case(g: &mut Gn) -> AmCase {
 /// 3,322 compared (27,600 operations), 0 mismatches; excluded 678 (17 %):
 /// 441 `StringOverrun`, 90 `NonTerminating`, 77 `PointerOutOfRange`, 54
 /// `UninitialisedRead`, 10 `NullPointer`, 5 `Allocation`, 1 `Unsupported`
-/// (a mutated chunk id that became `W3D_CHUNK_LODMODEL`).
+/// (a mutated chunk id that became `W3D_CHUNK_LODMODEL`). **Corrected
+/// 2026-11-06 (#17):** the distance-LOD loader is translated, so that case
+/// is compared too: 3,323 compared (27,610 operations), 0 mismatches; 677
+/// excluded, none `Unsupported`. The three new loaders are exercised by
+/// [`assetmgr_emit_loaders_match_upstream`].
 #[test]
 fn assetmgr_matches_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -3800,7 +3808,7 @@ fn assetmgr_matches_upstream() {
     const CASES: usize = 4_000;
     for case in 0..CASES {
         g.clean = case % 2 == 0;
-        let c = am_gen_case(&mut g);
+        let c = am_gen_case(&mut g, am_gen_chunk);
         match rust_am_case(&c) {
             Ok(l) => {
                 if std::env::var_os("W3D_TRACE").is_some() {
@@ -4971,5 +4979,971 @@ fn skin_deformation_matches_upstream() {
         verts_compared += n as u64;
     }
     println!("skin deformation: {CASES} cases, {compared} compared ({verts_compared} vertices); excluded: {excluded:?}");
+    check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 15. Hierarchical models, distance LODs, particle emitters (hmdldef.cpp,
+//     distlod.cpp, part_ldr.cpp; GitHub #17)
+// ---------------------------------------------------------------------------
+
+use rts_lockstep_engine::formats::w3d::part_ldr::{self, ParticleProperty, Vector3Randomizer};
+use rts_lockstep_engine::formats::w3d::{distlod, hmdldef};
+
+/// The largest keyframe count the comparison logs (the log holds every key).
+const EMIT_MAX_KEYS: u32 = 1 << 16;
+
+fn log_props<T: Copy + PartialEq + Default>(log: &mut Log, p: &ParticleProperty<T>, bytes: impl Fn(T) -> Vec<u8>) {
+    log.extend(bytes(p.start));
+    log.extend(bytes(p.rand));
+    p32(log, p.num_key_frames);
+    log.push(p.key_times.is_some() as u8);
+    log.push(p.values.is_some() as u8);
+    if p.key_times.is_some() && p.values.is_some() {
+        for i in 0..p.num_key_frames {
+            let (t, v) = p.key(i).expect("a key below the count");
+            p32(log, t.to_bits());
+            log.extend(bytes(v));
+        }
+    }
+}
+
+fn log_randomizer(log: &mut Log, r: &Option<Vector3Randomizer>) {
+    match r {
+        None => p32(log, 0xFFFF_FFFF),
+        Some(r) => {
+            p32(log, r.class_id());
+            let v: Vec<f32> = match *r {
+                Vector3Randomizer::SolidBox(e) => e.to_vec(),
+                Vector3Randomizer::SolidSphere(x) | Vector3Randomizer::HollowSphere(x) => vec![x],
+                Vector3Randomizer::SolidCylinder { extent, radius } => vec![extent, radius],
+            };
+            for x in v {
+                p32(log, x.to_bits());
+            }
+        }
+    }
+}
+
+/// `ref_w3d_load_emit` of wrap_w3d_emit.cpp, in Rust: kind 0 hmodel, 1
+/// distance LOD, 2 particle emitter (`alpha`: the texture lookup's answer).
+/// `Ok(None)` when an emitter keeps more than [`EMIT_MAX_KEYS`] keys (kept
+/// out of the comparison).
+fn rust_load_emit(data: &[u8], kind: i32, alpha: bool) -> W3dResult<Option<Log>> {
+    let mut log = Log::new();
+    let mut asked: Vec<Vec<u8>> = Vec::new();
+    let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
+    log.push(b'O');
+    if c.open_chunk()? {
+        log.push(1);
+        match kind {
+            0 => match hmdldef::load_w3d(&mut c)? {
+                Some(d) => {
+                    log.push(b'H');
+                    pstr(&mut log, Some(&d.name));
+                    log.extend_from_slice(&d.model_name);
+                    log.extend_from_slice(&d.base_pose_name);
+                    p32(&mut log, d.sub_object_count as u32);
+                    for i in 0..d.sub_object_count.max(0) as usize {
+                        let n = d.sub_object(i).unwrap();
+                        pstr(&mut log, Some(&n.render_obj_name));
+                        p32(&mut log, n.pivot_id as u32);
+                    }
+                    match &d.snap_points {
+                        None => log.push(0),
+                        Some(pts) => {
+                            log.push(1);
+                            p32(&mut log, pts.len() as u32);
+                            for v in pts.iter().flatten() {
+                                p32(&mut log, v.to_bits());
+                            }
+                        }
+                    }
+                }
+                None => log.extend_from_slice(&[b'e', 1]),
+            },
+            1 => match distlod::load_w3d(&mut c)? {
+                Some(d) => {
+                    log.push(b'D');
+                    pstr(&mut log, Some(&d.name));
+                    p32(&mut log, d.lod_count as u32);
+                    for l in &d.lods {
+                        pstr(&mut log, Some(&l.name));
+                        p32(&mut log, l.res_down_dist.to_bits());
+                        p32(&mut log, l.res_up_dist.to_bits());
+                    }
+                }
+                None => log.extend_from_slice(&[b'e', 2]),
+            },
+            _ => {
+                let r = part_ldr::load_w3d(&mut c, |n: &[u8]| {
+                    asked.push(n.to_vec());
+                    alpha
+                })?;
+                match r {
+                    Some(d) => {
+                        let props = [&d.opacity_keyframes, &d.size_keyframes, &d.rotation_keyframes, &d.frame_keyframes, &d.blur_time_keyframes];
+                        if d.color_keyframes.num_key_frames > EMIT_MAX_KEYS || props.iter().any(|p| p.num_key_frames > EMIT_MAX_KEYS) {
+                            return Ok(None);
+                        }
+                        log.push(b'P');
+                        pstr(&mut log, d.name.as_deref());
+                        match &d.user_string {
+                            None => p32(&mut log, 0xFFFF_FFFF),
+                            Some(s) => {
+                                p32(&mut log, s.len() as u32);
+                                log.extend_from_slice(s);
+                            }
+                        }
+                        p32(&mut log, d.user_type as u32);
+                        p32(&mut log, d.version);
+                        log.extend(d.info.to_bytes());
+                        log.extend(d.info_v2.to_bytes());
+                        log.extend(d.extra_info.to_bytes());
+                        log.extend(d.line_properties.to_bytes());
+                        let f = |x: f32| x.to_le_bytes().to_vec();
+                        let v3 = |x: [f32; 3]| x.iter().flat_map(|c| c.to_le_bytes()).collect::<Vec<u8>>();
+                        log_props(&mut log, &d.color_keyframes, v3);
+                        log_props(&mut log, &d.opacity_keyframes, f);
+                        log_props(&mut log, &d.size_keyframes, f);
+                        log_props(&mut log, &d.rotation_keyframes, f);
+                        p32(&mut log, d.initial_orientation_random.to_bits());
+                        log_props(&mut log, &d.frame_keyframes, f);
+                        log_props(&mut log, &d.blur_time_keyframes, f);
+                        log_randomizer(&mut log, &d.creation_volume);
+                        log_randomizer(&mut log, &d.velocity_randomizer);
+                    }
+                    None => log.extend_from_slice(&[b'e', 2]),
+                }
+            }
+        }
+    } else {
+        log.push(0);
+    }
+    log_state(&mut log, &mut c);
+    if kind == 2 {
+        log.push(b't');
+        p32(&mut log, asked.len() as u32);
+        for n in &asked {
+            pstr(&mut log, Some(n));
+        }
+    }
+    Ok(Some(log))
+}
+
+fn cpp_load_emit(data: &[u8], kind: i32, alpha: bool) -> Log {
+    cpp_log(|log, cap, n| unsafe { cpp::ref_w3d_load_emit(data.as_ptr() as *const _, data.len() as i32, kind, alpha as i32, log, cap, n) })
+}
+
+fn emit_hmodel_header(version: u32, name: &[u8], hier: &[u8], n: u16) -> Vec<u8> {
+    let mut h = W3dHModelHeaderStruct::from_bytes(&[0; 40]);
+    h.version = version;
+    h.name[..name.len()].copy_from_slice(name);
+    h.hierarchy_name[..hier.len()].copy_from_slice(hier);
+    h.num_connections = n;
+    hchunk(W3D_CHUNK_HMODEL_HEADER, &h.to_bytes())
+}
+
+fn emit_hmodel_node(id: u32, name: &[u8], pivot: u16) -> Vec<u8> {
+    let mut n = W3dHModelNodeStruct::from_bytes(&[0; 18]);
+    n.render_obj_name[..name.len()].copy_from_slice(name);
+    n.pivot_idx = pivot;
+    hchunk(id, &n.to_bytes())
+}
+
+fn emit_lod_header(name: &[u8], n: u16) -> Vec<u8> {
+    let mut h = W3dLODModelHeaderStruct::from_bytes(&[0; 24]);
+    h.name[..name.len()].copy_from_slice(name);
+    h.num_lods = n;
+    hchunk(W3D_CHUNK_LODMODEL_HEADER, &h.to_bytes())
+}
+
+fn emit_lod(name: &[u8], min: f32, max: f32) -> Vec<u8> {
+    let mut l = W3dLODStruct::from_bytes(&[0; 40]);
+    l.render_obj_name[..name.len()].copy_from_slice(name);
+    l.lod_min = min;
+    l.lod_max = max;
+    hchunk(W3D_CHUNK_LOD, &l.to_bytes())
+}
+
+fn emit_header(version: u32, name: &[u8]) -> Vec<u8> {
+    let mut h = W3dEmitterHeaderStruct::from_bytes(&[0; 20]);
+    h.version = version;
+    h.name[..name.len()].copy_from_slice(name);
+    hchunk(W3D_CHUNK_EMITTER_HEADER, &h.to_bytes())
+}
+
+fn emit_user(type_: u32, n: u32, s: &[u8]) -> Vec<u8> {
+    let mut b = type_.to_le_bytes().to_vec();
+    b.extend(n.to_le_bytes());
+    b.extend([0u8; 4]);
+    b.extend_from_slice(s);
+    hchunk(W3D_CHUNK_EMITTER_USER_DATA, &b)
+}
+
+fn emit_info(texture: &[u8], f: impl FnOnce(&mut W3dEmitterInfoStruct)) -> Vec<u8> {
+    let mut i = W3dEmitterInfoStruct::from_bytes(&[0; 332]);
+    i.texture_filename[..texture.len()].copy_from_slice(texture);
+    f(&mut i);
+    hchunk(W3D_CHUNK_EMITTER_INFO, &i.to_bytes())
+}
+
+fn emit_info_v2(f: impl FnOnce(&mut W3dEmitterInfoStructV2)) -> Vec<u8> {
+    let mut i = W3dEmitterInfoStructV2::from_bytes(&[0; 124]);
+    f(&mut i);
+    hchunk(W3D_CHUNK_EMITTER_INFOV2, &i.to_bytes())
+}
+
+fn emit_key(t: f32, v: [u8; 4]) -> Vec<u8> {
+    let mut b = t.to_le_bytes().to_vec();
+    b.extend(v);
+    b
+}
+
+fn emit_fkey(t: f32, v: f32) -> Vec<u8> {
+    emit_key(t, v.to_le_bytes())
+}
+
+fn emit_props(counts: [u32; 3], rand: [u8; 4], keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut p = W3dEmitterPropertyStruct::from_bytes(&[0; 40]);
+    (p.color_keyframes, p.opacity_keyframes, p.size_keyframes) = (counts[0], counts[1], counts[2]);
+    p.color_random = W3dRGBAStruct { r: rand[0], g: rand[1], b: rand[2], a: rand[3] };
+    p.opacity_random = 0.5;
+    p.size_random = 0.25;
+    let mut b = p.to_bytes();
+    for k in keys {
+        b.extend(k);
+    }
+    hchunk(W3D_CHUNK_EMITTER_PROPS, &b)
+}
+
+/// A rotation, frame or blur-time chunk: the count, the random range, the
+/// orientation random (rotation only), padding to the header's size, then
+/// the keys.
+fn emit_keyed(id: u32, count: u32, keys: &[Vec<u8>]) -> Vec<u8> {
+    let mut b = count.to_le_bytes().to_vec();
+    b.extend(0.1f32.to_le_bytes());
+    let size = match id {
+        W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES => {
+            b.extend(0.3f32.to_le_bytes());
+            16
+        }
+        W3D_CHUNK_EMITTER_FRAME_KEYFRAMES => 16,
+        _ => 12,
+    };
+    b.resize(size, 0);
+    for k in keys {
+        b.extend(k);
+    }
+    hchunk(id, &b)
+}
+
+fn emit_v2_base(name: &[u8]) -> Vec<u8> {
+    let mut b = emit_header(0x0002_0000, name);
+    b.extend(emit_user(0, 0, b""));
+    b.extend(emit_info(b"a.tga", |_| {}));
+    b.extend(emit_info_v2(|_| {}));
+    let k = [emit_key(0.0, [0; 4]), emit_key(1.0, [0; 4])];
+    b.extend(emit_props([2, 2, 2], [0; 4], &[k[0].clone(), k[1].clone(), k[0].clone(), k[1].clone(), k[0].clone(), k[1].clone()]));
+    b
+}
+
+/// (kind, alpha, name, file).
+fn emit_named_cases() -> Vec<(i32, bool, &'static str, Vec<u8>)> {
+    let hm = |b: Vec<u8>| hchunk(W3D_CHUNK_HMODEL, &b);
+    let dl = |b: Vec<u8>| hchunk(W3D_CHUNK_LODMODEL, &b);
+    let em = |b: Vec<u8>| hchunk(W3D_CHUNK_EMITTER, &b);
+    let mut v = Vec::new();
+
+    let mut b = emit_hmodel_header(W3D_CURRENT_HMODEL_VERSION, b"TANK", b"TANKSKL", 3);
+    b.extend(emit_hmodel_node(W3D_CHUNK_NODE, b"BODY", 1));
+    b.extend(hchunk(0x1234, &[1, 2, 3]));
+    b.extend(emit_hmodel_node(W3D_CHUNK_SKIN_NODE, b"TURRET", 65535));
+    b.extend(emit_hmodel_node(W3D_CHUNK_COLLISION_NODE, b"BOX", 3));
+    b.extend(hchunk(W3D_CHUNK_POINTS, &[0, 0, 128, 63, 0, 0, 0, 64, 0, 0, 64, 64]));
+    v.push((0, false, "hmodel: current, three node kinds, points", hm(b)));
+    let mut b = emit_hmodel_header(w3d_make_version(2, 0), b"ABCDEFGHIJKLMNOP", b"S", 3);
+    b.extend(emit_hmodel_node(W3D_CHUNK_NODE, b"X", 65535));
+    b.extend(emit_hmodel_node(W3D_CHUNK_NODE, b"Y", 4));
+    v.push((0, false, "hmodel: pre-3.0, 16-character name, fewer nodes", hm(b)));
+    v.push((0, false, "hmodel: empty chunk (false is OK)", hm(Vec::new())));
+    v.push((0, false, "hmodel: first chunk not the header", hm(emit_hmodel_node(W3D_CHUNK_NODE, b"A", 0))));
+    v.push((0, false, "hmodel: short header", hm(hchunk(W3D_CHUNK_HMODEL_HEADER, &[0; 39]))));
+    let mut b = emit_hmodel_header(W3D_CURRENT_HMODEL_VERSION, b"M", b"S", 1);
+    b.extend(emit_hmodel_node(W3D_CHUNK_NODE, b"ABCDEFGHIJKLMNOP", 0x0041));
+    v.push((0, false, "hmodel: node name running into PivotIdx", hm(b)));
+
+    let mut b = emit_lod_header(b"TREE", 2);
+    b.extend(emit_lod(b"TREE_HI", 0.0, 50.0));
+    b.extend(emit_lod(b"TREE_LO", 50.0, 1000.0));
+    b.extend(hchunk(0x99, &[1, 2]));
+    v.push((1, false, "distlod: two LODs", dl(b)));
+    v.push((1, false, "distlod: 16-character name", dl(emit_lod_header(b"ABCDEFGHIJKLMNOP", 0))));
+    v.push((1, false, "distlod: name into NumLODs, missing LODs", dl(emit_lod_header(b"ABCDEFGHIJKLMNOP", 0x4141))));
+    let mut b = emit_lod_header(b"M", 1);
+    b.extend(emit_lod(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", 0.0, 1.0));
+    v.push((1, false, "distlod: 32-character LOD name", dl(b)));
+    let mut b = emit_lod_header(b"M", 1);
+    b.extend(hchunk(W3D_CHUNK_LOD, &[0; 39]));
+    v.push((1, false, "distlod: short LOD", dl(b)));
+
+    let mut b = emit_header(0x0002_0000, b"SMOKE");
+    b.extend(emit_user(7, 6, b"hello\0"));
+    b.extend(emit_info(b"smoke.tga", |i| i.lifetime = 2.0));
+    b.extend(emit_info_v2(|i| {
+        i.burst_size = 3;
+        i.creation_volume.class_id = 1;
+        i.creation_volume.value1 = 2.5;
+        i.vel_random.class_id = 3;
+        i.vel_random.value1 = 1.0;
+        i.vel_random.value2 = -2.0;
+    }));
+    b.extend(emit_props(
+        [3, 2, 1],
+        [51, 0, 0, 0],
+        &[
+            emit_key(0.0, [255, 0, 0, 0]),
+            emit_key(0.5, [0, 255, 0, 0]),
+            emit_key(1.0, [0, 0, 0, 0]),
+            emit_fkey(0.0, 1.0),
+            emit_fkey(1.0, 0.0),
+            emit_fkey(0.0, 4.0),
+            emit_fkey(9.0, 9.0),
+        ],
+    ));
+    let mut lp = W3dEmitterLinePropertiesStruct::from_bytes(&[0; 64]);
+    lp.flags = 5;
+    b.extend(hchunk(W3D_CHUNK_EMITTER_LINE_PROPERTIES, &lp.to_bytes()));
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, 2, &[emit_fkey(0.0, 0.5), emit_fkey(0.2, 1.0), emit_fkey(0.8, 2.0)]));
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_FRAME_KEYFRAMES, 1, &[emit_fkey(0.0, 3.0), emit_fkey(0.5, 7.0)]));
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_BLUR_TIME_KEYFRAMES, 0, &[emit_fkey(0.0, 0.1)]));
+    b.extend(hchunk(OBSOLETE_W3D_CHUNK_EMITTER_COLOR_KEYFRAME, &[1, 2, 3]));
+    let mut eb = 1.5f32.to_le_bytes().to_vec();
+    eb.extend([0u8; 36]);
+    b.extend(hchunk(W3D_CHUNK_EMITTER_EXTRA_INFO, &eb));
+    v.push((2, false, "emitter: version 2, every chunk", em(b)));
+
+    let v1 = |texture: &[u8]| {
+        let mut b = emit_header(0x0001_0000, b"SPARK");
+        b.extend(emit_user(0, 0, b""));
+        b.extend(emit_info(texture, |i| {
+            i.position_random = 500.0;
+            i.velocity_random = 2.0;
+            i.fade_time = 0.75;
+            i.start_color = W3dRGBAStruct { r: 255, g: 128, b: 0, a: 255 };
+            i.end_color = W3dRGBAStruct { r: 0, g: 0, b: 0, a: 51 };
+            i.start_size = 1.5;
+        }));
+        b.extend(emit_info_v2(|i| i.burst_size = 9));
+        b
+    };
+    v.push((2, true, "emitter: version 1, alpha texture", em(v1(b"fx\\spark.tga"))));
+    v.push((2, false, "emitter: version 1, texture without alpha", em(v1(b"fx\\spark.tga"))));
+    v.push((2, true, "emitter: version 1, no texture", em(v1(b""))));
+
+    let mut b = emit_header(0x0002_0000, b"Q");
+    b.extend(emit_user(0, 0, b""));
+    b.extend(emit_info(b"", |_| {}));
+    b.extend(emit_info_v2(|_| {}));
+    b.extend(emit_props([2, 1, 1], [9, 0, 0, 0], &[emit_key(0.0, [1, 1, 1, 0]), emit_key(1.0, [0; 4])]));
+    v.push((2, false, "emitter: one black keyframe not tweaked", em(b)));
+    let mut b = emit_header(0x0002_0000, b"Q");
+    b.extend(emit_user(0, 3, b"abc"));
+    b.extend(emit_info(b"", |_| {}));
+    b.extend(emit_info_v2(|_| {}));
+    b.extend(emit_props([4, 2, 2], [0; 4], &[]));
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, 1, &[emit_fkey(0.0, 0.5), emit_fkey(0.25, 1.0)]));
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, 0, &[]));
+    v.push((2, false, "emitter: keyless props, unterminated user string, second rotation", em(b)));
+    let mut b = emit_v2_base(b"Q");
+    b.extend(emit_keyed(W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, 3, &[emit_fkey(0.0, 0.5), emit_fkey(0.25, 1.0)]));
+    b.extend(hchunk(W3D_CHUNK_EMITTER_EXTRA_INFO, &[0; 40]));
+    v.push((2, false, "emitter: short rotation keys, one more chunk opened", em(b)));
+    v.push((2, false, "emitter: user data where the header should be", em(emit_user(0, 0, b""))));
+    v.push((2, false, "emitter: empty", em(Vec::new())));
+    let mut b = hchunk(W3D_CHUNK_EMITTER_HEADER, &[0; 19]);
+    b.extend(emit_user(0, 0, b""));
+    v.push((2, false, "emitter: short header", em(b)));
+    v
+}
+
+/// The named cases: the files of the unit tests of `formats::w3d::hmdldef`
+/// (a current model with the three node kinds, a skipped chunk and snap
+/// points; a pre-3.0 model with a 16-character name and fewer nodes than
+/// `NumConnections`; an empty hmodel chunk, which loads; the two header
+/// failures; a node name running into `PivotIdx`), of `distlod` (two LODs
+/// and a trailing chunk; 16-character names stopping at and running into
+/// `NumLODs`; a 32-character LOD name; a short LOD) and of `part_ldr` (a
+/// version-2 emitter with every chunk kind; a version-1 emitter converted
+/// with and without an alpha texture, and with none; a single black
+/// keyframe; a keyless props chunk, an unterminated user string and a
+/// second rotation chunk of count 0; short rotation keys; the three load
+/// errors before the loop). Their undefined cases are not given to the C++.
+///
+/// Compared byte for byte: the load result; for an hmodel `Name`, the two
+/// 16-byte names, `SubObjectCount`, every node's name and pivot, the snap
+/// points; for a distance LOD the name, count, each LOD's name and two
+/// distances; for an emitter the name, the user string's bytes (from its
+/// `malloc` size), type and version, the bytes of `m_Info`, `m_InfoV2`,
+/// `m_ExtraInfo` and `m_LineProperties`, the six keyframe sets (start,
+/// random range, count, which arrays exist, every key), the orientation
+/// random and the two randomizers; the chunk depth and file position the
+/// loader leaves; and the texture names `Convert_To_Ver2` asked for.
+///
+/// Predicted before the run: all ~~23~~ **21** (corrected after the run:
+/// a miscount of the list) agree, in particular the black
+/// keyframe at minus the random range (`-0.2, -0, -0`), the empty hmodel
+/// that loads with an empty name, the extra chunk the emitter's loop opens
+/// after a failure, the shaders of the version-1 conversion (`SrcBlend` 2
+/// and `DestBlend` 5 with alpha, 1 and 1 without) and the backslash kept in
+/// the texture name asked for.
+///
+/// Result (2026-11-06): 21 compared, 0 mismatches.
+#[test]
+fn emit_named_cases_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("HModelDefClass / DistLODDefClass / ParticleEmitterDefClass::Load_W3D, named cases");
+    let cases = emit_named_cases();
+    for (kind, alpha, name, data) in &cases {
+        let rust = rust_load_emit(data, *kind, *alpha).unwrap_or_else(|e| panic!("{name}: Rust undefined: {e:?}")).expect("few keys");
+        let c = cpp_load_emit(data, *kind, *alpha);
+        check.eq(&rust, &c, || format!("{name}: {:02x?}", data));
+    }
+    println!("hmodel/distlod/emitter named cases: {} compared", cases.len());
+    check.finish();
+}
+
+fn gen_hmodel(g: &mut Gn) -> Vec<u8> {
+    let mut body = Vec::new();
+    if g.below(12) != 0 {
+        let mut h = W3dHModelHeaderStruct::from_bytes(&[0; 40]);
+        h.version = match g.below(4) {
+            0 => w3d_make_version(2, 0),
+            1 => w3d_make_version(3, 0),
+            2 => g.g.u32(),
+            _ => W3D_CURRENT_HMODEL_VERSION,
+        };
+        let n = gen_text(g, 16);
+        h.name[..n.len()].copy_from_slice(&n);
+        let n = gen_text(g, 16);
+        h.hierarchy_name[..n.len()].copy_from_slice(&n);
+        h.num_connections = match g.below(16) {
+            0 => g.g.u32() as u16,
+            1 => 0,
+            _ => g.below(6) as u16,
+        };
+        let mut hb = h.to_bytes();
+        if g.chance(10) {
+            hb.truncate(g.below(40) as usize);
+        }
+        let id = if g.chance(12) { W3D_CHUNK_HMODEL } else { W3D_CHUNK_HMODEL_HEADER };
+        body.extend(chunk(g, id, false, &hb));
+    }
+    for _ in 0..g.below(7) {
+        match g.below(6) {
+            0..=2 => {
+                let id = [W3D_CHUNK_NODE, W3D_CHUNK_COLLISION_NODE, W3D_CHUNK_SKIN_NODE][g.below(3) as usize];
+                let mut n = W3dHModelNodeStruct::from_bytes(&[0; 18]);
+                let t = gen_text(g, 16);
+                n.render_obj_name[..t.len()].copy_from_slice(&t);
+                n.pivot_idx = match g.below(5) {
+                    0 => 65535,
+                    1 => g.g.u32() as u16,
+                    _ => g.below(10) as u16,
+                };
+                let mut b = n.to_bytes();
+                if g.chance(10) {
+                    b.truncate(g.below(18) as usize);
+                }
+                body.extend(chunk(g, id, false, &b));
+            }
+            3 => {
+                let mut b = Vec::new();
+                for _ in 0..g.below(4) * 3 {
+                    b.extend(g.f32().to_le_bytes());
+                }
+                b.extend((0..g.below(3)).map(|_| g.g.u32() as u8));
+                body.extend(chunk(g, W3D_CHUNK_POINTS, false, &b));
+            }
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = if g.coin() { OBSOLETE_W3D_CHUNK_HMODEL_AUX_DATA } else { g.g.u32() };
+                body.extend(chunk(g, id, false, &junk));
+            }
+        }
+    }
+    chunk(g, W3D_CHUNK_HMODEL, true, &body)
+}
+
+fn gen_distlod(g: &mut Gn) -> Vec<u8> {
+    let mut h = W3dLODModelHeaderStruct::from_bytes(&[0; 24]);
+    h.version = g.g.u32();
+    let n = gen_text(g, 16);
+    h.name[..n.len()].copy_from_slice(&n);
+    let count = match g.below(14) {
+        0 => g.g.u32() as u16,
+        1 => 0,
+        _ => g.below(5) as u16,
+    };
+    h.num_lods = count;
+    let mut hb = h.to_bytes();
+    if g.chance(10) {
+        hb.truncate(g.below(24) as usize);
+    }
+    let id = if g.chance(12) { W3D_CHUNK_LOD } else { W3D_CHUNK_LODMODEL_HEADER };
+    let mut body = chunk(g, id, false, &hb);
+    let lods = if g.coin() { u32::from(count) } else { g.below(6) };
+    for _ in 0..lods.min(8) {
+        let mut l = W3dLODStruct::from_bytes(&[0; 40]);
+        let t = gen_text(g, 32);
+        l.render_obj_name[..t.len()].copy_from_slice(&t);
+        l.lod_min = g.f32();
+        l.lod_max = g.f32();
+        let mut b = l.to_bytes();
+        if g.chance(10) {
+            b.truncate(g.below(40) as usize);
+        }
+        if g.chance(8) {
+            b.extend((0..g.below(8)).map(|_| g.g.u32() as u8));
+        }
+        let id = if g.chance(12) { g.g.u32() } else { W3D_CHUNK_LOD };
+        body.extend(chunk(g, id, false, &b));
+    }
+    chunk(g, W3D_CHUNK_LODMODEL, true, &body)
+}
+
+fn gen_emit_keys(g: &mut Gn, n: u32, color: bool) -> Vec<Vec<u8>> {
+    (0..n)
+        .map(|_| {
+            let t = g.f32();
+            if color && g.coin() {
+                let c = if g.below(4) == 0 { [0, 0, 0, g.g.u32() as u8] } else { (g.g.u32()).to_le_bytes() };
+                emit_key(t, c)
+            } else {
+                let v = g.f32();
+                emit_fkey(t, v)
+            }
+        })
+        .collect()
+}
+
+fn gen_emitter(g: &mut Gn) -> Vec<u8> {
+    let version = match g.below(8) {
+        0 | 1 => 0x0001_0000,
+        2 => g.below(0x0003_0000),
+        3 => g.g.u32(),
+        _ => 0x0002_0000,
+    };
+    let mut parts: Vec<Vec<u8>> = Vec::new();
+    // header
+    let mut h = W3dEmitterHeaderStruct::from_bytes(&[0; 20]);
+    h.version = version;
+    let n = gen_text(g, 16);
+    h.name[..n.len()].copy_from_slice(&n);
+    let mut hb = h.to_bytes();
+    if g.chance(12) {
+        hb.truncate(g.below(20) as usize);
+    }
+    parts.push(chunk(g, W3D_CHUNK_EMITTER_HEADER, false, &hb));
+    // user data
+    let s = gen_text(g, 12);
+    let mut sb = s.clone();
+    if g.coin() {
+        sb.push(0);
+    }
+    let n = match g.below(16) {
+        0 => 0xFFFF_FFFF,
+        1 => 0x7FFF_FFFF,
+        2 => sb.len() as u32 + 1 + g.below(4),
+        3..=6 => 0,
+        _ => sb.len() as u32,
+    };
+    let mut ub = g.g.u32().to_le_bytes().to_vec();
+    ub.extend(n.to_le_bytes());
+    ub.extend((0..4).map(|_| g.g.u32() as u8));
+    if g.chance(12) {
+        ub.truncate(g.below(12) as usize);
+    }
+    ub.extend(sb);
+    parts.push(chunk(g, W3D_CHUNK_EMITTER_USER_DATA, false, &ub));
+    // info
+    let mut i = W3dEmitterInfoStruct::from_bytes(&[0; 332]);
+    let tex: Vec<u8> = match g.below(8) {
+        0 => Vec::new(),
+        1 => vec![b'x'; 260],
+        2 => {
+            let mut t = b"art\\fx\\".to_vec();
+            t.extend(gen_text(g, 12));
+            t.extend(b".tga");
+            t
+        }
+        _ => {
+            let mut t = gen_text(g, 12);
+            t.extend(b".tga");
+            t
+        }
+    };
+    i.texture_filename[..tex.len()].copy_from_slice(&tex);
+    for f in [
+        &mut i.start_size,
+        &mut i.end_size,
+        &mut i.lifetime,
+        &mut i.emission_rate,
+        &mut i.max_emissions,
+        &mut i.velocity_random,
+        &mut i.position_random,
+        &mut i.fade_time,
+        &mut i.gravity,
+        &mut i.elasticity,
+    ] {
+        *f = g.f32();
+    }
+    for v in [&mut i.velocity, &mut i.acceleration] {
+        (v.x, v.y, v.z) = (g.f32(), g.f32(), g.f32());
+    }
+    let c = g.g.u32().to_le_bytes();
+    i.start_color = W3dRGBAStruct { r: c[0], g: c[1], b: c[2], a: c[3] };
+    let c = g.g.u32().to_le_bytes();
+    i.end_color = W3dRGBAStruct { r: c[0], g: c[1], b: c[2], a: c[3] };
+    let mut ib = i.to_bytes();
+    if g.chance(12) {
+        ib.truncate(g.below(332) as usize);
+    }
+    parts.push(chunk(g, W3D_CHUNK_EMITTER_INFO, false, &ib));
+    // info v2
+    if version > 0x0001_0000 || g.below(4) == 0 {
+        let mut v = W3dEmitterInfoStructV2::from_bytes(&[0; 124]);
+        v.burst_size = if g.coin() { g.below(5) } else { g.g.u32() };
+        for r in [&mut v.creation_volume, &mut v.vel_random] {
+            r.class_id = if g.below(6) == 0 { g.g.u32() } else { g.below(5) };
+            (r.value1, r.value2, r.value3) = (g.f32(), g.f32(), g.f32());
+        }
+        v.outward_vel = g.f32();
+        v.vel_inherit = g.f32();
+        let s = g.g.u64().to_le_bytes();
+        let mut sh = [0u8; 16];
+        sh[..8].copy_from_slice(&s);
+        v.shader = W3dShaderStruct::from_bytes(&sh);
+        v.render_mode = g.below(4);
+        v.frame_mode = g.below(4);
+        let mut vb = v.to_bytes();
+        if g.chance(12) {
+            vb.truncate(g.below(124) as usize);
+        }
+        parts.push(chunk(g, W3D_CHUNK_EMITTER_INFOV2, false, &vb));
+        // props
+        let counts = [0, 1, 2].map(|_| match g.below(20) {
+            0 => 0,
+            1 => g.g.u32(),
+            _ => 1 + g.below(5),
+        });
+        let mut p = W3dEmitterPropertyStruct::from_bytes(&[0; 40]);
+        (p.color_keyframes, p.opacity_keyframes, p.size_keyframes) = (counts[0], counts[1], counts[2]);
+        let c = if g.coin() { [0u8; 4] } else { g.g.u32().to_le_bytes() };
+        p.color_random = W3dRGBAStruct { r: c[0], g: c[1], b: c[2], a: c[3] };
+        p.opacity_random = g.f32();
+        p.size_random = g.f32();
+        let mut pb = p.to_bytes();
+        if g.chance(12) {
+            pb.truncate(g.below(40) as usize);
+        }
+        let keys = counts.iter().map(|&k| k.min(6)).sum::<u32>();
+        let keys = if g.below(4) == 0 { g.below(keys + 1) } else { keys };
+        for k in gen_emit_keys(g, keys, true) {
+            pb.extend(k);
+        }
+        parts.push(chunk(g, W3D_CHUNK_EMITTER_PROPS, false, &pb));
+    }
+    if g.chance(10) && !parts.is_empty() {
+        let a = g.below(parts.len() as u32) as usize;
+        let b = g.below(parts.len() as u32) as usize;
+        parts.swap(a, b);
+    }
+    if g.chance(12) && !parts.is_empty() {
+        let a = g.below(parts.len() as u32) as usize;
+        parts.remove(a);
+    }
+    // later chunks
+    for _ in 0..g.below(6) {
+        let p = match g.below(8) {
+            0 => {
+                let mut b: Vec<u8> = (0..64).map(|_| g.g.u32() as u8).collect();
+                if g.chance(8) {
+                    b.truncate(g.below(64) as usize);
+                }
+                chunk(g, W3D_CHUNK_EMITTER_LINE_PROPERTIES, false, &b)
+            }
+            1..=3 => {
+                let id = [W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, W3D_CHUNK_EMITTER_FRAME_KEYFRAMES, W3D_CHUNK_EMITTER_BLUR_TIME_KEYFRAMES]
+                    [g.below(3) as usize];
+                let count = match g.below(16) {
+                    0 => g.g.u32(),
+                    1 => 0x2000_0000,
+                    _ => g.below(5),
+                };
+                let mut b = count.to_le_bytes().to_vec();
+                let size = if id == W3D_CHUNK_EMITTER_BLUR_TIME_KEYFRAMES { 12 } else { 16 };
+                while b.len() < size {
+                    b.extend(g.f32().to_le_bytes());
+                }
+                if g.chance(10) {
+                    b.truncate(g.below(size as u32) as usize);
+                }
+                let keys = if g.below(4) == 0 { g.below(count.min(5) + 2) } else { count.min(5) + 1 };
+                for k in gen_emit_keys(g, keys, false) {
+                    b.extend(k);
+                }
+                if g.chance(10) {
+                    b.extend((0..g.below(8)).map(|_| g.g.u32() as u8));
+                }
+                chunk(g, id, false, &b)
+            }
+            4 => {
+                let mut b: Vec<u8> = g.f32().to_le_bytes().to_vec();
+                b.extend((0..36).map(|_| g.g.u32() as u8));
+                if g.chance(8) {
+                    b.truncate(g.below(40) as usize);
+                }
+                chunk(g, W3D_CHUNK_EMITTER_EXTRA_INFO, false, &b)
+            }
+            5 => {
+                let junk: Vec<u8> = (0..g.below(24)).map(|_| g.g.u32() as u8).collect();
+                let id = OBSOLETE_W3D_CHUNK_EMITTER_COLOR_KEYFRAME + g.below(3);
+                chunk(g, id, false, &junk)
+            }
+            _ => {
+                let junk: Vec<u8> = (0..g.below(20)).map(|_| g.g.u32() as u8).collect();
+                let id = if g.coin() { W3D_CHUNK_EMITTER_HEADER + g.below(14) } else { g.g.u32() };
+                chunk(g, id, false, &junk)
+            }
+        };
+        parts.push(p);
+    }
+    chunk(g, W3D_CHUNK_EMITTER, true, &parts.concat())
+}
+
+/// The random comparison of section 15 for one kind.
+fn run_emit_cases(name: &str, kind: i32, seed: u64, cases: usize, gen: impl Fn(&mut Gn) -> Vec<u8>) {
+    let mut g = Gn { g: Gen::new(seed), clean: false };
+    let mut check = Check::new(name);
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut ok, mut failed, mut large, mut compared) = (0u64, 0u64, 0u64, 0u64);
+    for case in 0..cases {
+        g.clean = case % 2 == 0;
+        let data = gen(&mut g);
+        let data = mutate(&mut g, data);
+        let alpha = g.coin();
+        let rust = match rust_load_emit(&data, kind, alpha) {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                large += 1;
+                continue;
+            }
+            Err(W3dError::Undefined(u)) => {
+                *excluded.entry(format!("{u:?}")).or_default() += 1;
+                continue;
+            }
+            Err(e) => {
+                *excluded.entry(format!("{e:?}")).or_default() += 1;
+                continue;
+            }
+        };
+        match rust.get(2) {
+            Some(b'H' | b'D' | b'P') => ok += 1,
+            Some(b'e') => failed += 1,
+            _ => {}
+        }
+        if std::env::var_os("W3D_TRACE").is_some() {
+            eprintln!("{name} case {case}: {:02x?}", data);
+        }
+        let c = cpp_load_emit(&data, kind, alpha);
+        check.eq(&rust, &c, || format!("case {case}: {:02x?}", data));
+        compared += 1;
+    }
+    println!(
+        "{name}: {cases} inputs, {compared} compared, {ok} loaded, {failed} load errors; excluded (undefined upstream or not \
+         ending): {} {excluded:?}; excluded (over {EMIT_MAX_KEYS} keys): {large}",
+        excluded.values().sum::<u64>()
+    );
+    check.finish();
+}
+
+/// Random hmodel files, half well-formed and half also with wrong chunk
+/// sizes, truncations and byte mutations: headers of pre-3.0, 3.0, current
+/// and random versions with names of 0 to 16 characters, `NumConnections`
+/// small, 0 or random (up to 65535), cut short or replaced by another
+/// chunk; then nodes of the three kinds (names of 0 to 16 characters,
+/// pivots small, 65535 or random, structs cut short), points chunks with
+/// whole and partial points, the obsolete aux-data chunk and unknown
+/// chunks, in any order; sometimes no header at all (an empty chunk).
+/// Compared as [`emit_named_cases_match_upstream`].
+///
+/// Predicted before the run: no disagreement; about a fifth to a third
+/// excluded as undefined (`IndexOutOfRange` from more nodes than
+/// `NumConnections`, `StringOverrun` from 16-character node names,
+/// `StringOverflow`).
+///
+/// Result (2026-11-06): 16,089 compared, 0 mismatches (11,293 loaded, 4,638
+/// load errors); 3,911 excluded (20 %, in the predicted range): 3,415
+/// `IndexOutOfRange`, 398 `StringOverrun`, 97 `StringOverflow`, 1
+/// `NonTerminating`. Planted bug (pre-3.0 pivots not moved up): 1,257
+/// mismatches here, 1 in the named cases.
+#[test]
+fn hmodel_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_emit_cases("HModelDefClass::Load_W3D (hmdldef.cpp)", 0, 0x4D0D, 20_000, gen_hmodel);
+}
+
+/// Random distance-LOD files, generated as the hmodels: a header (names of
+/// 0 to 16 characters, `NumLODs` small, 0 or random, cut short or of the
+/// wrong type), then as many LOD chunks as the header says or 0 to 5
+/// (names of 0 to 32 characters, random distances, cut short, extended, of
+/// the wrong type).
+///
+/// Predicted before the run: no disagreement; a few percent excluded as
+/// undefined (`StringOverrun` from names that fill their struct).
+///
+/// Result (2026-11-06): 18,390 compared, 0 mismatches (10,249 loaded, 8,007
+/// load errors); 1,610 excluded (8 %, more than the predicted few
+/// percent), all `StringOverrun`. Planted bug (`ResUpDist` and
+/// `ResDownDist` swapped): 6,173 mismatches here, 2 in the named cases.
+#[test]
+fn distlod_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_emit_cases("DistLODDefClass::Load_W3D (distlod.cpp)", 1, 0xD157, 20_000, gen_distlod);
+}
+
+/// Random particle-emitter files: versions 1.0 (converted), 2.0, small and
+/// random; headers with names of 0 to 16 characters; user data with types,
+/// strings terminated or not, `SizeofStringParam` matching, longer than
+/// the chunk, 0, `2^31 - 1` or `0xFFFFFFFF`; info with texture names empty,
+/// short, with a path, or of 260 characters, and random floats and colours;
+/// info v2 with known and unknown randomizer classes and random values,
+/// sometimes in a version-1 file; props with keyframe counts 0 (wraps),
+/// small or random and as many keys as they need or fewer; the six
+/// structures in order, sometimes swapped or one dropped; then line
+/// properties, rotation, frame and blur-time chunks (counts small, random,
+/// or 2^29; headers and keys cut short; extra bytes), extra info, obsolete
+/// keyframe chunks and unknown chunks. Each case answers the texture lookup
+/// with alpha or not at random.
+///
+/// Predicted before the run: no disagreement; about a third excluded as
+/// undefined (`StringOverrun` from 16-character names and 260-character
+/// textures, `Allocation` from wrapped and random counts,
+/// `UninitialisedRead` from short headers and frame/blur keys,
+/// `WriteToEmptyArray`); a handful over the key limit.
+///
+/// Result (2026-11-06): 12,688 compared, 0 mismatches (5,699 loaded, 6,965
+/// load errors); 7,245 excluded (36 %, about the predicted third): 3,689
+/// `Allocation`, 1,583 `StringOverrun`, 1,000 `UninitialisedRead`, 973
+/// `WriteToEmptyArray`; 67 over the key limit. Planted bugs: the black
+/// keyframe tweaked from index 0 (`>= 0`): 65 mismatches here, 1 in the
+/// named cases; the loop not opening a chunk after a failure: 5,594 and 3;
+/// the texture's alpha ignored (and the lookup skipped): 2,056 and 2.
+#[test]
+fn emitter_load_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    run_emit_cases("ParticleEmitterDefClass::Load_W3D (part_ldr.cpp)", 2, 0xE717, 20_000, gen_emitter);
+}
+
+/// An hmodel `name` over the hierarchy `hier` with one node.
+fn am_hmodel(name: &[u8], hier: &[u8]) -> Vec<u8> {
+    let mut b = emit_hmodel_header(W3D_CURRENT_HMODEL_VERSION, name, hier, 1);
+    b.extend(emit_hmodel_node(W3D_CHUNK_NODE, b"BODY", 1));
+    am_sub(W3D_CHUNK_HMODEL, &b)
+}
+
+/// A distance LOD `name` with one LOD.
+fn am_distlod(name: &[u8]) -> Vec<u8> {
+    let mut b = emit_lod_header(name, 1);
+    b.extend(emit_lod(b"X.Y", 0.0, 100.0));
+    am_sub(W3D_CHUNK_LODMODEL, &b)
+}
+
+/// A version-1 particle emitter `name` (with a texture, which the C++ and
+/// the Rust managers both answer "no alpha" for).
+fn am_emitter(name: &[u8]) -> Vec<u8> {
+    let mut b = emit_header(0x0001_0000, name);
+    b.extend(emit_user(0, 0, b""));
+    b.extend(emit_info(b"spark.tga", |i| i.fade_time = 1.0));
+    am_sub(W3D_CHUNK_EMITTER, &b)
+}
+
+/// [`am_gen_chunk`], with one chunk in four an hmodel, a distance LOD, an
+/// emitter or an empty hmodel chunk (#17).
+fn am_gen_chunk_17(g: &mut Gn) -> Vec<u8> {
+    if g.below(4) != 0 {
+        return am_gen_chunk(g);
+    }
+    let p = am_pick(g, &AM_PROTO);
+    match g.below(4) {
+        0 => am_hmodel(p, am_pick(g, &AM_HIER[..4])),
+        1 => am_distlod(p),
+        2 => am_emitter(p),
+        _ => am_sub(W3D_CHUNK_HMODEL, &[]),
+    }
+}
+
+/// The asset manager with the loaders of #17 registered: named cases (each
+/// kind registered by name and class id in the library and the game
+/// manager; an emitter in the library manager, which has no emitter loader;
+/// an empty hmodel chunk, registered as `""`), then 2,000 random cases as
+/// [`assetmgr_matches_upstream`] with one chunk in four of the new kinds
+/// (names from the same pools). Compared as there.
+///
+/// Predicted before the run: no disagreement; the named cases' state shows
+/// `HM` (class 24), `DL` (class 2), `EM` (class 14, game manager only) and
+/// `""` (24); about a fifth of the random cases excluded, as in
+/// [`assetmgr_matches_upstream`].
+///
+/// Result (2026-11-06): the 2 named cases and 1,692 of the 2,000 random
+/// cases (14,109 operations) compared, 0 mismatches; 308 excluded (15 %):
+/// 210 `StringOverrun`, 50 `PointerOutOfRange`, 30 `NonTerminating`, 15
+/// `UninitialisedRead`, 2 `NoPivots`, 1 `NullPointer`. The named cases'
+/// state was not inspected beyond the comparison; the unit test
+/// `hmodel_distlod_and_emitter_prototypes` asserts the same names and class
+/// ids on the Rust side.
+#[test]
+fn assetmgr_emit_loaders_match_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut check = Check::new("WW3DAssetManager with the hmodel, distlod and emitter loaders");
+    let mut file = am_hmodel(b"HM", b"SKL");
+    file.extend(am_distlod(b"DL"));
+    file.extend(am_emitter(b"EM"));
+    file.extend(am_sub(W3D_CHUNK_HMODEL, &[]));
+    for game in [false, true] {
+        let c = AmCase {
+            game,
+            user_data: None,
+            files: vec![(s(b"Art/W3D/EM2.w3d"), am_emitter(b"EM2"))],
+            ops: vec![AmOp::Bytes(file.clone()), AmOp::Create(s(b"em2")), AmOp::Create(s(b"hm")), AmOp::State],
+        };
+        if let Err(e) = rust_am_case(&c) {
+            panic!("named case (game {game}): Rust error {e:?}");
+        }
+        assert!(am_compare(&mut check, "named", &c));
+    }
+    let mut g = Gn { g: Gen::new(0xA517), clean: false };
+    let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut compared, mut ops) = (0u64, 0u64);
+    const CASES: usize = 2_000;
+    for case in 0..CASES {
+        g.clean = case % 2 == 0;
+        let c = am_gen_case(&mut g, am_gen_chunk_17);
+        match rust_am_case(&c) {
+            Ok(l) => {
+                let cpp = cpp_am_case(&c);
+                check.eq(&l, &cpp, || format!("case {case}: {c:02x?}"));
+                compared += 1;
+                ops += c.ops.len() as u64;
+            }
+            Err(W3dError::Undefined(u)) => *excluded.entry(format!("{u:?}")).or_default() += 1,
+            Err(e) => *excluded.entry(format!("{e:?}")).or_default() += 1,
+        }
+    }
+    println!(
+        "WW3DAssetManager (#17 loaders): {CASES} cases, {compared} compared ({ops} operations); excluded: {} {excluded:?}",
+        excluded.values().sum::<u64>()
+    );
     check.finish();
 }

@@ -240,6 +240,9 @@ fn prototype_kind(p: &Prototype) -> &'static str {
         Prototype::Dazzle(_) => "dazzle",
         Prototype::Sphere(_) => "sphere",
         Prototype::Ring(_) => "ring",
+        Prototype::HModel(_) => "hierarchical model",
+        Prototype::DistLod(_) => "distance LOD",
+        Prototype::ParticleEmitter(_) => "particle emitter",
     }
 }
 

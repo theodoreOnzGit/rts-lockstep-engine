@@ -148,10 +148,17 @@
 //! again with nothing loaded in between (upstream recurses until its stack
 //! overflows).
 //!
-//! [`W3dError::Unsupported`]: a chunk whose loader is not translated: the
+//! ~~[`W3dError::Unsupported`]: a chunk whose loader is not translated: the
 //! obsolete hierarchical model (`W3D_CHUNK_HMODEL`, `hmdldef.cpp`), the
 //! distance LOD (`W3D_CHUNK_LODMODEL`, `distlod.cpp`) and the particle
-//! emitter the game registers (`W3D_CHUNK_EMITTER`, `part_ldr.cpp`).
+//! emitter the game registers (`W3D_CHUNK_EMITTER`, `part_ldr.cpp`).~~
+//! **Corrected 2026-11-06 (#17):** every registered loader is translated:
+//! the hierarchical model ([`super::hmdldef`]), the distance LOD
+//! ([`super::distlod`]) and the particle emitter ([`super::part_ldr`]; the
+//! texture question of a version-1 emitter is answered by
+//! [`AssetManager::alpha_textures`]). No prototype loader is missing any
+//! more (the mesh loader still reports the legacy `W3D_CHUNK_MATERIALS3`
+//! as [`W3dError::Unsupported`], see [`super::mesh`]).
 //!
 //! # Representation
 //!
@@ -169,11 +176,14 @@
 use super::agg_def::{self, AggregateDef};
 use super::boxrobj::{self, BoxPrototype};
 use super::collect::{self, CollectionDef};
+use super::distlod::{self, DistLodDef};
 use super::hanim::{HCompressedAnim, HRawAnim};
 use super::hlod::{self, HLodDef};
+use super::hmdldef::{self, HModelDef};
 use super::hmorphanim::{self, HMorphAnim, MorphChain, PoseLookup};
 use super::htree::{self, HTree};
 use super::mesh::{self, Mesh, MeshLoadOptions};
+use super::part_ldr::{self, ParticleEmitterDef};
 use super::ringobj::{self, RingPrototype};
 use super::sphereobj::{self, SpherePrototype};
 use super::w3d_file::*;
@@ -233,7 +243,8 @@ fn c_name(name: &[u8]) -> &[u8] {
 pub enum PrototypeLoader {
     /// `_MeshLoader` (`W3D_CHUNK_MESH`).
     Mesh,
-    /// `_HModelLoader` (`W3D_CHUNK_HMODEL`; not translated).
+    /// `_HModelLoader` (`W3D_CHUNK_HMODEL`; ~~not translated~~ **Corrected
+    /// 2026-11-06 (#17):** [`super::hmdldef`]).
     HModel,
     /// `_CollectionLoader` (`W3D_CHUNK_COLLECTION`).
     Collection,
@@ -241,7 +252,8 @@ pub enum PrototypeLoader {
     Box,
     /// `_HLodLoader` (`W3D_CHUNK_HLOD`).
     HLod,
-    /// `_DistLODLoader` (`W3D_CHUNK_LODMODEL`; not translated).
+    /// `_DistLODLoader` (`W3D_CHUNK_LODMODEL`; ~~not translated~~
+    /// **Corrected 2026-11-06 (#17):** [`super::distlod`]).
     DistLod,
     /// `_AggregateLoader` (`W3D_CHUNK_AGGREGATE`).
     Aggregate,
@@ -254,7 +266,8 @@ pub enum PrototypeLoader {
     /// `_SphereLoader` (`W3D_CHUNK_SPHERE`).
     Sphere,
     /// `_ParticleEmitterLoader` (`W3D_CHUNK_EMITTER`; registered by the
-    /// game; not translated).
+    /// game; ~~not translated~~ **Corrected 2026-11-06 (#17):**
+    /// [`super::part_ldr`]).
     ParticleEmitter,
 }
 
@@ -342,6 +355,12 @@ pub enum Prototype {
     Sphere(SpherePrototype),
     /// `RingPrototypeClass`.
     Ring(RingPrototype),
+    /// `HModelPrototypeClass` (#17).
+    HModel(HModelDef),
+    /// `DistLODPrototypeClass` (#17).
+    DistLod(DistLodDef),
+    /// `ParticleEmitterPrototypeClass` (#17).
+    ParticleEmitter(ParticleEmitterDef),
 }
 
 impl Prototype {
@@ -361,6 +380,12 @@ impl Prototype {
             Prototype::Dazzle(d) => d.name.clone(),
             Prototype::Sphere(s) => c_str_in(&s.definition.to_bytes()[8..])?.to_vec(),
             Prototype::Ring(r) => c_str_in(&r.definition.to_bytes()[8..])?.to_vec(),
+            Prototype::HModel(h) => h.name.clone(),
+            Prototype::DistLod(d) => d.name.clone(),
+            Prototype::ParticleEmitter(e) => match &e.name {
+                Some(n) => n.clone(),
+                None => return Err(W3dUndefined::NullPointer.into()),
+            },
         })
     }
 
@@ -376,6 +401,9 @@ impl Prototype {
             Prototype::Dazzle(_) => CLASSID_DAZZLE,
             Prototype::Sphere(s) => s.class_id(),
             Prototype::Ring(r) => r.class_id(),
+            Prototype::HModel(h) => h.class_id(),
+            Prototype::DistLod(d) => d.class_id(),
+            Prototype::ParticleEmitter(e) => e.class_id(),
         }
     }
 }
@@ -661,6 +689,12 @@ pub struct AssetManager {
     pub mesh_options: MeshLoadOptions,
     /// `_TheFileFactory`.
     pub file_factory: W3dFileFactory,
+    /// The textures (lower-case names, as `Get_Texture` keys them) whose
+    /// format has alpha when a version-1 particle emitter asks
+    /// (`Convert_To_Ver2`; see [`super::part_ldr`]). Upstream the answer
+    /// depends on the renderer: a texture not yet initialised has no format
+    /// (`WW3D_FORMAT_UNKNOWN`, no alpha), which is what an empty list gives.
+    pub alpha_textures: Vec<Vec<u8>>,
     /// `PrototypeLoaders`.
     loaders: Vec<PrototypeLoader>,
     /// `Prototypes`, in order (the hash table is derived, see the module
@@ -696,6 +730,7 @@ impl AssetManager {
             load_on_demand: false,
             mesh_options: MeshLoadOptions::default(),
             file_factory: W3dFileFactory::default(),
+            alpha_textures: Vec::new(),
             loaders: WW3D_LOADERS.to_vec(),
             prototypes: Vec::new(),
             trees: Vec::new(),
@@ -977,9 +1012,16 @@ impl AssetManager {
             PrototypeLoader::Dazzle => Some(Prototype::Dazzle(load_dazzle(cload)?)),
             PrototypeLoader::Ring => Some(Prototype::Ring(ringobj::load_w3d(cload)?)),
             PrototypeLoader::Sphere => Some(Prototype::Sphere(sphereobj::load_w3d(cload)?)),
-            PrototypeLoader::HModel => return Err(W3dError::Unsupported("W3D_CHUNK_HMODEL (hmdldef.cpp)")),
-            PrototypeLoader::DistLod => return Err(W3dError::Unsupported("W3D_CHUNK_LODMODEL (distlod.cpp)")),
-            PrototypeLoader::ParticleEmitter => return Err(W3dError::Unsupported("W3D_CHUNK_EMITTER (part_ldr.cpp)")),
+            PrototypeLoader::HModel => hmdldef::load_w3d(cload)?.map(Prototype::HModel),
+            PrototypeLoader::DistLod => distlod::load_w3d(cload)?.map(Prototype::DistLod),
+            PrototypeLoader::ParticleEmitter => {
+                let alpha = &self.alpha_textures;
+                part_ldr::load_w3d(cload, |name: &[u8]| {
+                    let lower: Vec<u8> = name.iter().map(|c| c.to_ascii_lowercase()).collect();
+                    alpha.contains(&lower)
+                })?
+                .map(Prototype::ParticleEmitter)
+            }
         };
         let Some(proto) = proto else {
             // "Could not generate prototype!"
@@ -1519,11 +1561,13 @@ mod tests {
         assert!(w.get_hanim(&fs, b"SKL.RUN").unwrap().is_some());
     }
 
-    /// Unsupported loaders, chunks without a loader, recursion.
+    /// ~~Unsupported loaders~~ **Corrected 2026-11-06 (#17):** the emitter
+    /// loader, chunks without a loader, recursion.
     ///
     /// Predicted before the run: an unknown chunk id (0x9999) is skipped and
-    /// the next box loads; an emitter chunk is `Unsupported` in the game
-    /// manager and skipped (no loader) in the library one; `Get_HAnim("A.A")`
+    /// the next box loads; an emitter chunk is ~~`Unsupported`~~ a load
+    /// error (no header chunk) in the game manager, and is skipped (no
+    /// loader) in the library one, both returning true; `Get_HAnim("A.A")`
     /// loads `A.w3d`, whose animation's hierarchy `A` is not in it: the
     /// lookup loads `A.w3d` again with nothing loaded in between:
     /// `NonTerminating`.
@@ -1538,8 +1582,53 @@ mod tests {
         let em = chunk(W3D_CHUNK_EMITTER, &[]);
         assert!(m.load_3d_assets(&fs, &em).unwrap());
         let mut g = AssetManager::new_game(W3dFileFactory::default());
-        assert!(matches!(g.load_3d_assets(&fs, &em), Err(W3dError::Unsupported(_))));
+        assert!(g.load_3d_assets(&fs, &em).unwrap());
+        assert_eq!(proto_names(&g).len(), 0);
         assert_eq!(g.get_hanim(&fs, b"A.A").unwrap_err(), W3dError::NonTerminating);
+    }
+
+    /// The loaders of #17 through the manager: hierarchical models,
+    /// distance LODs and particle emitters.
+    ///
+    /// Predicted before the run: in the library manager an empty hmodel
+    /// chunk registers a prototype named `""` (upstream's `return false` is
+    /// `OK`), an hmodel `HM` registers `HM` (class 24, `CLASSID_HLOD`), a
+    /// distance LOD `DL` registers `DL` (class 2), and an emitter is skipped
+    /// (the library registers no emitter loader). In the game manager the
+    /// version-1 emitter `SPARK` registers (class 14) with the additive
+    /// sprite shader, or with the alpha one when `alpha_textures` holds its
+    /// texture name lower-cased.
+    #[test]
+    fn hmodel_distlod_and_emitter_prototypes() {
+        let fs = fs_with(&[]);
+        let mut h = W3dHModelHeaderStruct::from_bytes(&[0; W3dHModelHeaderStruct::SIZE]);
+        h.version = W3D_CURRENT_HMODEL_VERSION;
+        h.name = name16(b"HM");
+        let hm = chunk_sub(W3D_CHUNK_HMODEL, &chunk(W3D_CHUNK_HMODEL_HEADER, &h.to_bytes()));
+        let mut l = W3dLODModelHeaderStruct::from_bytes(&[0; W3dLODModelHeaderStruct::SIZE]);
+        l.name = name16(b"DL");
+        let dl = chunk_sub(W3D_CHUNK_LODMODEL, &chunk(W3D_CHUNK_LODMODEL_HEADER, &l.to_bytes()));
+        let em = super::super::part_ldr::tests::emitter_v1(b"SPARK", b"FX\\SPARK.TGA");
+        let mut data = chunk_sub(W3D_CHUNK_HMODEL, &[]);
+        data.extend(hm);
+        data.extend(dl);
+        data.extend(em.clone());
+        let mut m = AssetManager::new();
+        assert!(m.load_3d_assets(&fs, &data).unwrap());
+        assert_eq!(proto_names(&m), vec![b"".to_vec(), b"HM".to_vec(), b"DL".to_vec()]);
+        assert_eq!(m.find_prototype(b"HM").map(|p| p.class_id()), Some(24));
+        assert_eq!(m.find_prototype(b"DL").map(|p| p.class_id()), Some(2));
+        let mut g = AssetManager::new_game(W3dFileFactory::default());
+        g.load_3d_assets(&fs, &em).unwrap();
+        let blend = |g: &AssetManager| match g.find_prototype(b"spark") {
+            Some(Prototype::ParticleEmitter(e)) => (e.class_id(), e.info_v2.shader.src_blend, e.info_v2.shader.dest_blend),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(blend(&g), (14, 1, 1));
+        let mut g = AssetManager::new_game(W3dFileFactory::default());
+        g.alpha_textures.push(b"fx\\spark.tga".to_vec());
+        g.load_3d_assets(&fs, &em).unwrap();
+        assert_eq!(blend(&g), (14, 2, 5));
     }
 
     /// Dazzles and anim iteration order.
