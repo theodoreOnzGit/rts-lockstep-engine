@@ -11,11 +11,17 @@
 //! `WIN_STATUS_IMAGE` is drawn as its state's first image stretched over its region, any other as its first colour,
 //! text centred; the power bar as production against consumption. That part is new.
 //!
+//! Since #35, the selected object's portrait (`ControlBar.wnd:WinUnitSelected`, `CameoWindow`, `UnitUpgrade1..5`, from
+//! `client::control_bar_popup::set_portrait_by_object`) and each command button's popup description
+//! (`populate_build_tooltip_layout`): [`BarState`] carries them, [`TooltipTimer`] decides when the popup shows (new: the
+//! hover delay, and on a phone a long press, with the last button touched kept as a visible fallback).
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
 
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command, CommandSlot, ControlBarStateHost, QueueSlot};
+use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WindowTree, WndHost, WIN_COLOR_UNDEFINED};
@@ -56,6 +62,10 @@ pub struct GameUi {
     pub hidden_parents: Vec<WinId>,
     /// `GUI:ControlBarMoneyDisplay`.
     pub money_format: Vec<u16>,
+    /// (#35) `ControlBar.wnd:WinUnitSelected`, `CameoWindow` and `UnitUpgrade1..5`.
+    pub unit_selected: Option<WinId>,
+    pub cameo: Option<WinId>,
+    pub upgrade_cameos: Vec<Option<WinId>>,
 }
 
 /// The reads of the files, telling "not yet" (an unserved ranged read) from "not there".
@@ -150,6 +160,9 @@ pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetc
             .filter_map(|n| find(format!("ControlBar.wnd:{n}")))
             .collect(),
         money_format: text.fetch(b"GUI:ControlBarMoneyDisplay").str().to_vec(),
+        unit_selected: find("ControlBar.wnd:WinUnitSelected".into()),
+        cameo: find("ControlBar.wnd:CameoWindow".into()),
+        upgrade_cameos: (1..=MAX_RIGHT_HUD_UPGRADE_CAMEOS).map(|i| find(format!("ControlBar.wnd:UnitUpgrade{i}"))).collect(),
         images,
         tree,
         schemes,
@@ -173,6 +186,8 @@ pub struct UiQuad {
     pub dim: bool,
     /// A clock's percent over the quad.
     pub clock: Option<i32>,
+    /// (#35) An image drawn over the quad (the portrait's veterancy chevron).
+    pub overlay: Option<Vec<u8>>,
 }
 
 /// What the bar shows this frame, read from the World.
@@ -186,6 +201,94 @@ pub struct BarState {
     pub money: u32,
     /// (production, consumption).
     pub power: (i32, i32),
+    /// (#35) The portrait (`setPortraitByObject`), and each command window's popup (`populateBuildTooltipLayout`).
+    pub portrait: Portrait,
+    pub tooltips: Vec<Option<Tooltip>>,
+}
+
+/// When the popup of a command button shows (new: upstream's `showBuildTooltipLayout` waits `getTooltipDelay()` with the
+/// mouse over the button; a phone has no hover). A pointer over a slot for [`TooltipTimer::DELAY`] seconds shows its popup,
+/// whether a mouse hovers or a finger holds. A press held that long is a **long press**: its release shows the popup and
+/// does not press the button. A touch's slot stays shown after the finger lifts (the **visible fallback**: the last button
+/// touched keeps its description on screen) until another is touched or the selection changes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TooltipTimer {
+    /// The slot under the pointer, since when, and whether the pointer is a touch.
+    over: Option<(usize, f64, bool)>,
+    /// The slot pressed, and since when.
+    pressed: Option<(usize, f64)>,
+    /// The slot kept shown after a touch.
+    pinned: Option<usize>,
+}
+
+impl TooltipTimer {
+    /// Seconds over (or held on) a button before its popup shows.
+    pub const DELAY: f64 = 0.5;
+
+    /// The pointer came over `slot` at `now`.
+    pub fn over(&mut self, slot: usize, now: f64, touch: bool) {
+        if self.over.map(|o| o.0) != Some(slot) {
+            self.over = Some((slot, now, touch));
+        }
+        if touch && self.pinned != Some(slot) {
+            self.pinned = None;
+        }
+    }
+
+    /// The pointer left `slot`.
+    pub fn out(&mut self, slot: usize) {
+        if self.over.is_some_and(|o| o.0 == slot) {
+            self.over = None;
+        }
+    }
+
+    /// `slot` was pressed at `now`.
+    pub fn press(&mut self, slot: usize, now: f64) {
+        self.pressed = Some((slot, now));
+    }
+
+    /// `slot` was clicked (released over it) at `now`: whether the click presses the button (`false` after a long press).
+    pub fn click(&mut self, slot: usize, now: f64, touch: bool) -> bool {
+        let long = self.pressed.is_some_and(|(s, t)| s == slot && now - t >= Self::DELAY);
+        self.pressed = None;
+        if touch || long {
+            self.pinned = Some(slot);
+        }
+        !long
+    }
+
+    /// The selection changed: nothing shown.
+    pub fn reset(&mut self) {
+        *self = TooltipTimer::default();
+    }
+
+    /// The slot whose popup shows at `now`.
+    pub fn shown(&self, now: f64) -> Option<usize> {
+        if let Some((s, t, _)) = self.over {
+            if now - t >= Self::DELAY {
+                return Some(s);
+            }
+        }
+        if let Some((s, t)) = self.pressed {
+            if now - t >= Self::DELAY {
+                return Some(s);
+            }
+        }
+        self.pinned
+    }
+}
+
+/// A popup's text as the drawing shows it: the name, the cost (if any) and the description, one line each (the
+/// description keeps its own line breaks).
+pub fn tooltip_lines(t: &Tooltip) -> Vec<String> {
+    let mut v = vec![String::from_utf16_lossy(&t.name)];
+    if let Some(c) = &t.cost {
+        v.push(String::from_utf16_lossy(c));
+    }
+    if !t.description.is_empty() {
+        v.push(String::from_utf16_lossy(&t.description));
+    }
+    v
 }
 
 /// `UnicodeString::format(fmt, money)` for the money's one `%d` (the string as it is when it has none).
@@ -209,11 +312,14 @@ fn color(c: i32) -> Option<[u8; 4]> {
 }
 
 impl GameUi {
-    /// The bar's state for `selected`: `populateCommand` and the build queue when an object is selected, else nothing.
-    pub fn bar_state(selected: Option<ObjectId>, h: &mut impl ControlBarStateHost, queue: Vec<(bool, u32, Option<Vec<u8>>, f32)>, money: u32, power: (i32, i32)) -> BarState {
-        let commands = selected.map(|o| populate_command(o, h).to_vec()).unwrap_or_default();
+    /// The bar's state for `selected`: `populateCommand` and the build queue when an object is selected, else nothing; the
+    /// portrait (`setPortraitByObject`) and each shown button's popup (`populateBuildTooltipLayout`).
+    pub fn bar_state<H: ControlBarStateHost + PopupHost + PortraitHost>(selected: Option<ObjectId>, h: &mut H, queue: Vec<(bool, u32, Option<Vec<u8>>, f32)>, money: u32, power: (i32, i32)) -> BarState {
+        let commands: Vec<Option<CommandSlot>> = selected.map(|o| populate_command(o, h).to_vec()).unwrap_or_default();
+        let tooltips = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).map(|b| populate_build_tooltip_layout(&b, h))).collect();
+        let portrait = set_portrait_by_object(selected, h);
         let (queue, queue_clock) = populate_build_queue(&queue);
-        BarState { selected, commands, queue, queue_clock, money, power }
+        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips }
     }
 
     /// Whether a window is drawn: it and every ancestor not hidden, with the context parents shown as
@@ -234,6 +340,10 @@ impl GameUi {
                 true
             } else if Some(i) == self.money || Some(i) == self.power {
                 false
+            } else if Some(i) == self.unit_selected {
+                !s.portrait.shown
+            } else if let Some(u) = self.upgrade_cameos.iter().position(|&c| c == Some(i)) {
+                s.portrait.upgrade_cameos.get(u).is_none_or(|c| c.is_none())
             } else {
                 win.is_hidden()
             };
@@ -251,7 +361,7 @@ impl GameUi {
         let mut out = Vec::new();
         let scheme = self.schemes.current_scheme();
         let draws: Vec<SchemeDraw> = scheme.map(|c| c.draw_list(self.schemes.multiplier, Default::default(), &self.images)).unwrap_or_default();
-        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None };
+        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None };
         out.extend(draws.iter().filter(|d| d.layer >= 3).map(quad));
         let roots: Vec<WinId> = (0..self.tree.windows.len()).filter(|&i| self.tree.windows[i].parent.is_none()).collect();
         for r in roots {
@@ -268,7 +378,7 @@ impl GameUi {
         let win: &GameWindow = &self.tree.windows[w];
         let (x, y) = self.tree.screen_position(w);
         let rect = [x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32];
-        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None };
+        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None, overlay: None };
         let enabled = win.status & win_status::ENABLED != 0;
         let dd = if enabled { &win.inst.enabled_draw_data[0] } else { &win.inst.disabled_draw_data[0] };
         if win.status & win_status::IMAGE != 0 {
@@ -301,13 +411,25 @@ impl GameUi {
         if Some(w) == self.money {
             q.text = Some(format_money(&self.money_format, s.money));
         }
+        // (#35) the portrait in the cameo window, its chevron over it; the upgrade cameos, dimmed when not had
+        if Some(w) == self.cameo && s.portrait.shown {
+            q.image = s.portrait.image.clone();
+            q.color = None;
+            q.overlay = s.portrait.overlay.clone();
+        }
+        if let Some(u) = self.upgrade_cameos.iter().position(|&c| c == Some(w)) {
+            if let Some(Some((image, enabled))) = s.portrait.upgrade_cameos.get(u) {
+                q.image = image.clone();
+                q.dim = !enabled;
+            }
+        }
         out.push(q);
         if Some(w) == self.power {
             // the power bar (new drawing): consumption against production
             let (p, c) = s.power;
             let frac = if p <= 0 { 0.0 } else { (c as f32 / p as f32).min(1.0) };
             let colr = if c > p { [220, 40, 30, 255] } else { [40, 200, 60, 255] };
-            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, clock: None });
+            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, clock: None, overlay: None });
         }
         for &c in win.children.iter().rev() {
             self.windows_into(c, s, out);
@@ -316,11 +438,14 @@ impl GameUi {
 }
 
 /// A synthetic control bar (no EA file): the mapped images, `ControlBar.wnd` and a scheme, as test files. `ui.tga` is a
-/// 64x64 Targa in four colours.
+/// 64x64 Targa in four colours. Since #35 it has the portrait windows (`WinUnitSelected` with `CameoWindow` and
+/// `UnitUpgrade1`) and a portrait image, `ImgPortrait` (the green quadrant; ~~`ImgBack` the lower half~~ `ImgBack` is now the
+/// lower-right quadrant).
 pub fn synthetic_ui_files() -> Vec<(&'static [u8], Vec<u8>)> {
     let images = b"MappedImage ImgBar\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:0 Top:0 Right:32 Bottom:32\n  Status = NONE\nEnd\n\
 MappedImage ImgButton\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:32 Top:0 Right:64 Bottom:32\n  Status = NONE\nEnd\n\
-MappedImage ImgBack\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:0 Top:32 Right:64 Bottom:64\n  Status = NONE\nEnd\n"
+MappedImage ImgBack\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:32 Top:32 Right:64 Bottom:64\n  Status = NONE\nEnd\n\
+MappedImage ImgPortrait\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 64\n  Coords = Left:0 Top:32 Right:32 Bottom:64\n  Status = NONE\nEnd\n"
         .to_vec();
     let rect = |x0: i32, y0: i32, x1: i32, y1: i32| format!("SCREENRECT = UPPERLEFT: {x0} {y0}, BOTTOMRIGHT: {x1} {y1}, CREATIONRESOLUTION: 800 600;");
     let mut wnd = String::from("FILE_VERSION = 2;\nSTARTLAYOUTBLOCK\n  LAYOUTINIT = ControlBarInit;\n  LAYOUTUPDATE = ControlBarUpdate;\n  LAYOUTSHUTDOWN = [None];\nENDLAYOUTBLOCK\n");
@@ -339,6 +464,11 @@ MappedImage ImgBack\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 
         let x = 260 + i * 60;
         wnd += &format!("WINDOW\n WINDOWTYPE = PUSHBUTTON;\n {}\n NAME = \"ControlBar.wnd:ButtonCommand{:02}\";\n STATUS = ENABLED+IMAGE;\n ENABLEDDRAWDATA = {};\nEND\n", rect(x, 480, x + 50, 530), i + 1, dd("ImgButton"));
     }
+    wnd += "ENDALLCHILDREN\nEND\n";
+    // (#35) the portrait: `WinUnitSelected` holding `CameoWindow` and one upgrade cameo
+    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:WinUnitSelected\";\n STATUS = ENABLED;\n CHILD\n", rect(705, 460, 795, 590));
+    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:CameoWindow\";\n STATUS = ENABLED+IMAGE;\n ENABLEDDRAWDATA = {};\nEND\n", rect(710, 465, 790, 545), dd("NoImage"));
+    wnd += &format!("WINDOW\n WINDOWTYPE = PUSHBUTTON;\n {}\n NAME = \"ControlBar.wnd:UnitUpgrade1\";\n STATUS = ENABLED+IMAGE;\n ENABLEDDRAWDATA = {};\nEND\n", rect(710, 550, 740, 580), dd("NoImage"));
     wnd += "ENDALLCHILDREN\nEND\nENDALLCHILDREN\nEND\n";
     let scheme = b"ControlBarScheme Default\n  ScreenCreationRes = X:800 Y:600\n  Side = Observer\n  MoneyUL = X:30 Y:455\n  MoneyLR = X:130 Y:475\n  PowerBarUL = X:20 Y:485\n  PowerBarLR = X:220 Y:495\n\
   ImagePart\n    Position = X:0 Y:440\n    Size = X:800 Y:160\n    ImageName = ImgBack\n    Layer = 5\n  End\nEnd\n"
@@ -350,6 +480,7 @@ MappedImage ImgBack\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeight = 
             let c: [u8; 4] = match (x < 32, y < 32) {
                 (true, true) => [90, 60, 30, 255],
                 (false, true) => [30, 120, 200, 255],
+                (true, false) => [60, 170, 80, 255],
                 _ => [40, 40, 40, 255],
             };
             tga.extend_from_slice(&c);
@@ -373,14 +504,18 @@ mod tests {
     use rts_lockstep_engine::logic::world::game_data::TextTable;
 
     /// #12: the control bar from synthetic files, for the demo game's dozer. Predicted before the run:
-    /// - it loads: 3 mapped images, ~~8 windows~~ **missed on the first run:** 7 windows (the parent, the money, the power,
-    ///   the command window and its 3 buttons: a miscount in the prediction, not in the reader); the `Default` scheme is chosen for side `America` (none of that side);
+    /// - it loads: ~~3 mapped images, ~~8 windows~~ **missed on the first run:** 7 windows (the parent, the money, the power,
+    ///   the command window and its 3 buttons: a miscount in the prediction, not in the reader)~~ **since #35 (2026-11-06):**
+    ///   4 mapped images and 10 windows (with `WinUnitSelected`, `CameoWindow`, `UnitUpgrade1`); the `Default` scheme is chosen for side `America` (none of that side);
     /// - nothing selected: the scheme's background (`ImgBack`, from y 440), the parent (`ImgBar`), the money
     ///   (`$ <money>`: no string file, so `GUI:ControlBarMoneyDisplay` is missing) and the power bar; no command button
     ///   (the command window is hidden without a selection);
     /// - the money display placed by the scheme's corners: (30, 455)..(130, 475);
     /// - the dozer selected: the command window and its first button, `Command_BuildDepot` in slot 0, clickable;
     ///   pressing it through `Controls::press` starts the Depot's placement;
+    /// - (#35) nothing selected: no portrait quad (`WinUnitSelected` hidden); the dozer selected: the cameo window drawn with
+    ///   `ImgPortrait`, no chevron, the upgrade cameo hidden (the dozer has none); the build button's popup "Build a Depot",
+    ///   no cost (the gate's Depot costs nothing), and the demo's description;
     /// - the CRCs: building the bar's state every frame for 60 frames leaves the logic's CRCs as a plain run's.
     #[test]
     fn the_control_bar_draws_from_its_files() {
@@ -391,7 +526,7 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
-        assert_eq!((ui.images.len(), ui.tree.windows.len()), (3, 7));
+        assert_eq!((ui.images.len(), ui.tree.windows.len()), (4, 10));
         assert_eq!(ui.schemes.current_scheme().map(|s| s.name.clone()), Some(b"default".to_vec()));
         let money = ui.money.expect("the money window");
         assert_eq!(ui.tree.screen_position(money), (30, 455));
@@ -405,6 +540,7 @@ mod tests {
         assert_eq!(images[1], Some(&b"ImgBar"[..]));
         assert!(q.iter().any(|x| x.text.as_deref() == Some(format!("$ {m}").as_str())), "{q:?}");
         assert!(q.iter().all(|x| x.command.is_none()));
+        assert!(q.iter().all(|x| x.image.as_deref() != Some(&b"ImgPortrait"[..])), "no portrait without a selection");
         // select the dozer
         let dp = c.client.object_position(o.dozer);
         assert!(c.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
@@ -414,6 +550,11 @@ mod tests {
         assert_eq!(slot.button, o.build_depot);
         let q = ui.frame(&st);
         assert_eq!(q.iter().filter(|x| x.command.is_some()).count(), 1);
+        let portrait = q.iter().find(|x| x.image.as_deref() == Some(&b"ImgPortrait"[..])).expect("the portrait");
+        assert_eq!((portrait.rect, portrait.overlay.as_ref()), ([710.0, 465.0, 790.0, 545.0], None));
+        assert!(st.portrait.upgrade_cameos.iter().all(Option::is_none));
+        let tip = st.tooltips[0].as_ref().expect("the build button's popup");
+        assert_eq!(tooltip_lines(tip), vec![crate::demo::DEMO_TEXT[0].1.to_string(), crate::demo::DEMO_TEXT[1].1.to_string()]);
         let b = rts_lockstep_engine::client::command_world::gui_button(&c.client.world, slot.button).expect("a button");
         c.press(&b);
         assert!(c.ui.pending_place_type().is_some());
@@ -454,7 +595,8 @@ mod tests {
     /// synthetic control bar added: the mapped images and the scheme in `INIZH.big`, `Window\ControlBar.wnd` and the
     /// texture in a new `WindowZH.big`. Then checks the bar loads from it through the import's ranged art device.
     ///
-    /// *Prediction:* ~~the bar waits at least once (the page's ranges)~~, then loads with 7 windows. **Missed on the first
+    /// *Prediction:* ~~the bar waits at least once (the page's ranges)~~, then loads with ~~7~~ 10 windows (**since #35:**
+    /// the portrait's three). **Missed on the first
     /// run (2026-11-05):** it did not wait: the synthetic `WindowZH.big` (20,556 bytes) and `INIZH.big` are smaller than
     /// the 64 KiB prefix the page sends, so every member was already there; it loaded with 7 windows and 3 images.
     #[test]
@@ -478,6 +620,22 @@ mod tests {
                 let mut list = FilenameList::new();
                 a.get_file_list_in_directory(b"", b"", b"*", &mut list, true);
                 let mut members: Vec<(Vec<u8>, Vec<u8>)> = list.iter().map(|m| (m.to_vec(), a.open_file(m).expect("a member").to_vec())).collect();
+                // (#35) the install's tank made selectable, with the synthetic portrait and a command set of two labelled
+                // buttons, so the page can show a portrait and a popup (the labels are not in the install's string file: the
+                // popup reads `MISSING: '...'`, as upstream shows a missing label)
+                for (_, text) in members.iter_mut() {
+                    let t = String::from_utf8_lossy(text).into_owned();
+                    // (the tank's `KindOf` line, after its `Draw` block when the art install added one)
+                    let kind = " KindOf = VEHICLE\n";
+                    if let Some(i) = t.find("Object Tank\n").and_then(|o| t[o..].find(kind).map(|k| o + k)) {
+                        let head = " KindOf = VEHICLE SELECTABLE\n SelectPortrait = ImgPortrait\n CommandSet = UiTankSet\n";
+                        let mut patched = format!("{}{}{}", &t[..i], head, &t[i + kind.len()..]);
+                        patched.push_str("CommandButton UiTank_Stop\n Command = STOP\n TextLabel = CONTROLBAR:Stop\n DescriptLabel = CONTROLBAR:TooltipStop\nEnd\n");
+                        patched.push_str("CommandButton UiTank_Guard\n Command = GUARD\n TextLabel = CONTROLBAR:Guard\n DescriptLabel = CONTROLBAR:TooltipGuard\nEnd\n");
+                        patched.push_str("CommandSet UiTankSet\n 1 = UiTank_Stop\n 2 = UiTank_Guard\nEnd\n");
+                        *text = patched.into_bytes();
+                    }
+                }
                 members.extend(ini.iter().map(|(p, b)| (p.to_vec(), b.clone())));
                 let refs: Vec<(&[u8], &[u8])> = members.iter().map(|(p, b)| (p.as_slice(), b.as_slice())).collect();
                 build_big(&refs)
@@ -521,7 +679,39 @@ mod tests {
             }
         };
         println!("ui install: waited {waits} times; {} windows, {} images", ui.tree.windows.len(), ui.images.len());
-        assert_eq!(ui.tree.windows.len(), 7);
+        assert_eq!(ui.tree.windows.len(), 10);
+    }
+
+    /// #35, when the popup shows. Predicted from [`TooltipTimer`]'s rules (new, not upstream's): a mouse over slot 2 shows
+    /// nothing at 0.4 s and slot 2 at 0.5 s; leaving hides it; a quick click (0.1 s) presses the button and, from a mouse,
+    /// pins nothing; a touch held 0.6 s shows the popup while held, its release does not press, and the popup stays pinned
+    /// after the finger leaves; a quick tap on slot 0 presses it and pins slot 0 (the visible fallback); a reset clears it.
+    #[test]
+    fn a_popup_shows_on_hover_and_on_a_long_press() {
+        let mut t = TooltipTimer::default();
+        t.over(2, 10.0, false);
+        assert_eq!((t.shown(10.4), t.shown(10.5)), (None, Some(2)));
+        t.out(2);
+        assert_eq!(t.shown(11.0), None);
+        t.over(2, 20.0, false);
+        t.press(2, 20.0);
+        assert!(t.click(2, 20.1, false), "a quick click presses");
+        t.out(2);
+        assert_eq!(t.shown(21.0), None);
+        t.over(1, 30.0, true);
+        t.press(1, 30.0);
+        assert_eq!(t.shown(30.6), Some(1), "held: shown");
+        assert!(!t.click(1, 30.6, true), "a long press does not press");
+        t.out(1);
+        assert_eq!(t.shown(31.0), Some(1), "pinned after the finger lifts");
+        t.over(0, 40.0, true);
+        t.press(0, 40.0);
+        assert_eq!(t.shown(40.05), None, "another touch unpins");
+        assert!(t.click(0, 40.1, true));
+        t.out(0);
+        assert_eq!(t.shown(40.2), Some(0), "the tapped button's popup stays");
+        t.reset();
+        assert_eq!(t.shown(50.0), None);
     }
 
     /// #12, on the owner's copy of Zero Hour (`RTS_ZH_DIR`, a folder with its archives; skipped without it, never faked):

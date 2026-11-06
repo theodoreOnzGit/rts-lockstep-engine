@@ -732,7 +732,8 @@ impl StealthUpdate {
     }
 
     /// `calcStealthedStatusForPlayer(obj, ThePlayerList->getLocalPlayer())`; `None` where upstream reads a `NULL` local player.
-    fn calc_stealthed_status_for_local_player(&self, world: &World, id: ObjectId) -> Option<i32> {
+    /// (Public since #35: the control bar's portrait reads the look it gives the drawable; it only reads.)
+    pub fn calc_stealthed_status_for_local_player(&self, world: &World, id: ObjectId) -> Option<i32> {
         let o = world.objects.find(id)?;
         if o.is_effectively_dead() {
             return Some(stealth_look::NONE); // making sure he turns visible when he dies

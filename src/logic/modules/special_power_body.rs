@@ -148,6 +148,45 @@ pub fn get_ready_frame<M: SpecialPowerBehavior>(m: &M, world: &mut World, me: Mo
     Ok(m.power().get_ready_frame(&ctx, || shared_ready_frame(world, me, t)))
 }
 
+// --- p1w13-sonnet --- (GitHub #33: the control bar's reads)
+/// `isReady()` and `getPercentReady()` as the control bar asks them (`ControlBar::getCommandAvailability`), **read only**
+/// (new, not upstream's). For a shared power (`SharedSyncedTimer`) upstream's getters call the player's
+/// `getOrStartSpecialPowerReadyFrame`, which **starts a timer** on the first call: that would let the client change the
+/// player's saved timer list (`Player::xfer`; not in `Player::crc`, so gate (a)'s CRCs would not see it). Here the timer is read with [`special_power_timers_peek`], which answers the same
+/// frame without adding one. Every other step is the logic's own ([`SpecialPowerModule::is_ready`],
+/// [`SpecialPowerModule::get_percent_ready`]).
+pub fn peek_ready_and_percent(power: &SpecialPowerModule, world: &World, me: ModuleHandle) -> Result<(bool, f32), IniError> {
+    let ctx = context(world, me, power)?;
+    let t = template_id(world, power);
+    let shared = || peek_shared_ready_frame(world, me, t);
+    Ok((power.is_ready(&ctx, shared), power.get_percent_ready(&ctx, shared)))
+}
+
+/// [`shared_ready_frame`] without the start (see [`peek_ready_and_percent`]).
+fn peek_shared_ready_frame(world: &World, me: ModuleHandle, template: Option<u32>) -> u32 {
+    let (Some(player), Some(template)) = (world.get_controlling_player(me.object), template) else { return 0 };
+    let now = world.frame();
+    world.players.get_nth(player).map_or(0, |p| crate::logic::world::player_ops::special_power_timers_peek(&p.special_power_timers, template, now))
+}
+
+/// The `SpecialPowerModule` base of a module's body, for every special power module the game has (the client's read).
+pub fn power_of_body(b: &UpdateBody) -> Option<&SpecialPowerModule> {
+    Some(match b {
+        UpdateBody::SpecialPowerModule(m) => m.power(),
+        UpdateBody::CleanupAreaPower(m) => m.power(),
+        UpdateBody::BaikonurLaunchPower(m) => m.power(),
+        UpdateBody::SpyVisionSpecialPower(m) => m.power(),
+        UpdateBody::DefectorSpecialPower(m) => m.power(),
+        UpdateBody::FireWeaponPower(m) => m.power(),
+        UpdateBody::SpecialAbility(m) => m.power(),
+        UpdateBody::OCLSpecialPower(m) => m.power(),
+        UpdateBody::CashHackSpecialPower(m) => m.power(),
+        UpdateBody::CashBountyPower(m) => m.power(),
+        _ => return None,
+    })
+}
+// --- end p1w13-sonnet ---
+
 /// `pauseCountdown(pause)`.
 pub fn pause_countdown<M: SpecialPowerBehavior>(m: &mut M, world: &mut World, me: ModuleHandle, pause: bool) -> Result<(), IniError> {
     let ctx = context(world, me, m.power())?;

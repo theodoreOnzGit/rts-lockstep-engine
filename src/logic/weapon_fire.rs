@@ -435,6 +435,26 @@ impl Weapon {
         self.status.get()
     }
 
+    // --- p1w13-sonnet --- (GitHub #33: the control bar's reads)
+    /// What `getStatus()` answers at `now`, **without its write of `m_status`** (new, not upstream's): the client's read.
+    /// `m_status` is not in `Weapon::crc` but it is saved (`xfer`), so a client that called `getStatus()` would change the
+    /// save file of a game it only looked at. The same answer as [`Weapon::get_status`] at the same frame.
+    pub fn peek_status(&self, now: u32) -> WeaponStatus {
+        if now < self.when_pre_attack_finished {
+            return WeaponStatus::PreAttack;
+        }
+        if now >= self.when_we_can_fire_again {
+            return if self.ammo_in_clip > 0 { WeaponStatus::ReadyToFire } else { WeaponStatus::OutOfAmmo };
+        }
+        self.status.get()
+    }
+
+    /// What `getPercentReadyToFire()` answers at `now`, without the write of its `getStatus()` (see [`Weapon::peek_status`]).
+    pub fn peek_percent_ready_to_fire(&self, now: u32) -> f32 {
+        self.percent_ready_for_status(self.peek_status(now), now)
+    }
+    // --- end p1w13-sonnet ---
+
     // ---- bonus, ammo and reload ------------------------------------------------------------------------------------
 
     /// `computeBonus(source, extraBonusFlags, bonus)`.
@@ -872,7 +892,12 @@ impl Weapon {
 
     /// `getPercentReadyToFire()`.
     pub fn get_percent_ready_to_fire(&self, now: u32) -> f32 {
-        match self.get_status(now) {
+        self.percent_ready_for_status(self.get_status(now), now)
+    }
+
+    /// The rest of `getPercentReadyToFire()`, given the status its `getStatus()` answered (#33: shared with the client's read).
+    fn percent_ready_for_status(&self, status: WeaponStatus, now: u32) -> f32 {
+        match status {
             WeaponStatus::OutOfAmmo | WeaponStatus::PreAttack => 0.0,
             WeaponStatus::ReadyToFire => 1.0,
             WeaponStatus::BetweenFiringShots | WeaponStatus::ReloadingClip => {

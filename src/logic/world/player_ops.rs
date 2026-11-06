@@ -1415,6 +1415,16 @@ pub fn special_power_timers_get_or_start(timers: &mut Vec<SpecialPowerReadyTimer
 }
 // --- end p1w11-sonnet ---
 
+// --- p1w13-sonnet --- (GitHub #33)
+/// What `Player::getOrStartSpecialPowerReadyFrame(template)` answers at `now`, **without starting a timer** (new, not
+/// upstream's): the timer's ready frame, else `now` (what a new timer answers). Upstream's getter adds a timer to the
+/// player's list on its first call; the list is saved with the player (`Player::xfer`; `Player::crc` leaves it out), so a
+/// client that only looks at a shared power's clock must not call it ([`special_power_timers_get_or_start`] is the logic's).
+pub fn special_power_timers_peek(timers: &[SpecialPowerReadyTimer], template_id: u32, now: u32) -> u32 {
+    timers.iter().find(|t| t.template_id == template_id).map_or(now, |t| t.ready_frame)
+}
+// --- end p1w13-sonnet ---
+
 /// `Player::addNewSharedSpecialPowerTimer(temp, frame)`.
 pub fn player_add_new_shared_special_power_timer<H: PlayerHost>(h: &mut H, p: PlayerIndex, temp: SpecialPowerTemplateRef, frame: u32) -> PResult<()> {
     let id = h.special_power_template(temp).id;

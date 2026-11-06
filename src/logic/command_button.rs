@@ -67,8 +67,10 @@ pub const GUI_COMMAND_NAMES: [&str; 35] = [
     "SELECT_ALL_UNITS_OF_TYPE",
 ];
 
-/// `TheCommandOptionNames` (without `ALLOW_SURRENDER`): bit `i` is the name in place `i`.
-pub const COMMAND_OPTION_NAMES: [&str; 23] = [
+/// `TheCommandOptionNames` (without `ALLOW_SURRENDER`): bit `i` is the name in place `i`. **Corrected 2026-11-06 (#33):**
+/// ~~23 names, ending at `CAN_USE_WAYPOINTS`~~ upstream's list (ControlBar.h) ends with `MUST_BE_STOPPED` (bit 23,
+/// `0x00800000`): a button's `Options = MUST_BE_STOPPED` failed to parse.
+pub const COMMAND_OPTION_NAMES: [&str; 24] = [
     "NEED_TARGET_ENEMY_OBJECT",
     "NEED_TARGET_NEUTRAL_OBJECT",
     "NEED_TARGET_ALLY_OBJECT",
@@ -92,6 +94,7 @@ pub const COMMAND_OPTION_NAMES: [&str; 23] = [
     "IGNORES_UNDERPOWERED",
     "USES_MINE_CLEARING_WEAPONSET",
     "CAN_USE_WAYPOINTS",
+    "MUST_BE_STOPPED",
 ];
 
 /// `CommandButtonMappedBorderTypeNames`.

@@ -5,7 +5,8 @@
 //! `drawable` (each object's drawable, fed by the logic's client events). Since #11, `terrain_height_map` (the
 //! terrain's tiles, atlas, UVs and vertices). Since #12, the game's own UI from its files: `image` (the mapped images),
 //! `window_script` (the WND layout reader), `control_bar_scheme` (the side's look of the control bar) and
-//! `control_bar_command` (the selected object's command buttons and build queue).
+//! `control_bar_command` (the selected object's command buttons and build queue). Since #35, `control_bar_popup` (the
+//! selected object's portrait and the command buttons' popup description).
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -23,3 +24,4 @@ pub mod image;
 pub mod window_script;
 pub mod control_bar_scheme;
 pub mod control_bar_command;
+pub mod control_bar_popup;

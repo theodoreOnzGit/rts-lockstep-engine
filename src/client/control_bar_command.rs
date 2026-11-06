@@ -176,7 +176,9 @@ pub trait ControlBarStateHost {
     /// `getRappellerCount(obj)`.
     fn rappeller_count(&mut self, obj: ObjectId) -> i32;
     /// `getContain()->getContainCount()` (`None`: no contain).
-    fn contain_count(&self, obj: ObjectId) -> Option<u32>;
+    fn contain_count(&mut self, obj: ObjectId) -> Option<u32>;
+    /// `getAIUpdateInterface() != NULL` (#33: the fire weapon buttons are restricted without an AI).
+    fn has_ai_update(&self, obj: ObjectId) -> bool;
     /// `getDockUpdateInterface()->isDockOpen()` (`None`: no dock).
     fn dock_open(&mut self, obj: ObjectId) -> Option<bool>;
     /// The special power module of the button's power.
@@ -320,6 +322,10 @@ pub fn get_command_availability(button: &CommandButton, obj: Option<ObjectId>, f
             }
         }
         gui::FIRE_WEAPON => {
+            // "no ai, can't possibly fire weapon" (**Corrected 2026-11-06 (#33):** the check was missing here)
+            if !h.has_ai_update(obj) {
+                return (Restricted, None);
+            }
             let w = h.weapon(obj, button.weapon_slot);
             if let Some(w) = w {
                 if w.clip_reload_time == 0 {
@@ -535,6 +541,9 @@ mod tests {
         disabled: bool,
         money: bool,
         charging: Option<f32>,
+        /// (#33) the AI, and a weapon with no clip reload in every slot
+        ai: bool,
+        weapon: bool,
     }
     impl ControlBarStateHost for H {
         fn command_set_buttons(&self, _: ObjectId) -> Option<[Option<usize>; MAX_COMMANDS_PER_SET]> {
@@ -631,7 +640,7 @@ mod tests {
             false
         }
         fn weapon(&mut self, _: ObjectId, _: i32) -> Option<WeaponState> {
-            None
+            self.weapon.then_some(WeaponState { clip_reload_time: 0, ready_to_fire: true, reloading_clip: false, possible_next_shot_frame: 0, percent_ready: 1.0 })
         }
         fn frame(&self) -> u32 {
             10
@@ -642,7 +651,10 @@ mod tests {
         fn rappeller_count(&mut self, _: ObjectId) -> i32 {
             0
         }
-        fn contain_count(&self, _: ObjectId) -> Option<u32> {
+        fn has_ai_update(&self, _: ObjectId) -> bool {
+            self.ai
+        }
+        fn contain_count(&mut self, _: ObjectId) -> Option<u32> {
             None
         }
         fn dock_open(&mut self, _: ObjectId) -> Option<bool> {
@@ -697,7 +709,7 @@ mod tests {
         tank.thing_template = Some(5);
         let mut nope = button(gui::UNIT_BUILD, "ImgNope", "");
         nope.thing_template = Some(99);
-        let mut h = H { buttons: vec![tank, button(gui::STOP, "ImgStop", ""), sell, button(gui::SPECIAL_POWER, "ImgPower", ""), nope], disabled: false, money: true, charging: Some(0.25) };
+        let mut h = H { buttons: vec![tank, button(gui::STOP, "ImgStop", ""), sell, button(gui::SPECIAL_POWER, "ImgPower", ""), nope], disabled: false, money: true, charging: Some(0.25), ai: true, weapon: false };
         let s = populate_command(1, &mut h);
         let a = s[0].as_ref().unwrap();
         let t: Vec<u16> = "T:CONTROLBAR:Tank".encode_utf16().collect();
@@ -718,5 +730,20 @@ mod tests {
         assert_eq!(s[1].as_ref().unwrap().availability, CommandAvailability::Available);
         let (q, clock) = populate_build_queue(&[(true, 1, Some(b"ImgTank".to_vec()), 40.0), (true, 2, None, 0.0), (false, 77, None, 0.0)]);
         assert_eq!((q.len(), clock, q[2].unit), (3, Some(40), false));
+    }
+
+    /// #33, the fire weapon button and the AI (`getCommandAvailability`: "no ai, can't possibly fire weapon"). Predicted:
+    /// a weapon with no clip reload time is `AVAILABLE` with an AI ("anything with a 0 clip reload time"), `RESTRICTED`
+    /// without one (the check the #12 translation had missed); no weapon in the slot is `RESTRICTED` either way.
+    #[test]
+    fn a_fire_weapon_button_needs_an_ai() {
+        let fire = button(gui::FIRE_WEAPON, "ImgFire", "");
+        let mut h = H { buttons: vec![fire.clone()], disabled: false, money: true, charging: None, ai: true, weapon: true };
+        assert_eq!(get_command_availability(&fire, Some(1), false, &mut h), (CommandAvailability::Available, None));
+        h.ai = false;
+        assert_eq!(get_command_availability(&fire, Some(1), false, &mut h), (CommandAvailability::Restricted, None));
+        h.ai = true;
+        h.weapon = false;
+        assert_eq!(get_command_availability(&fire, Some(1), false, &mut h), (CommandAvailability::Restricted, None));
     }
 }

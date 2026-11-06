@@ -36,11 +36,18 @@ fn selectable(name: &str) -> String {
         .replacen("KindOf = VEHICLE", "KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1)
 }
 
+/// The dozer, with its portrait (#35: the synthetic control bar's `ImgPortrait`) and its command set: construct a Depot, with
+/// the demo's own button texts (this project's, not the game's).
 const WORK_DOZER: &str = "\
-Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n VisionRange = 250\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n CommandSet = DemoDozerSet\n SelectPortrait = ImgPortrait\n VisionRange = 250\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
  Behavior = DozerAIUpdate ModuleTag_AI\n  RepairHealthPercentPerSecond = 2%\n  BoredTime = 5000\n  BoredRange = 150\n End\n\
- Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n";
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+CommandButton Command_BuildDepot\n Command = DOZER_CONSTRUCT\n Object = Depot\n TextLabel = DEMO:BuildDepot\n DescriptLabel = DEMO:BuildDepotDesc\nEnd\n\
+CommandSet DemoDozerSet\n 1 = Command_BuildDepot\nEnd\n";
+
+/// The demo's own texts for its button (#35), by label.
+pub const DEMO_TEXT: [(&str, &str); 2] = [("DEMO:BuildDepot", "Build a Depot"), ("DEMO:BuildDepotDesc", "The demo's one building: a depot. Hold or hover a button to read this.")];
 
 /// The demo game at frame 0, and its objects.
 pub fn demo_world() -> (World, DemoObjects) {
@@ -63,22 +70,17 @@ pub fn demo_world() -> (World, DemoObjects) {
     for (x, y) in [(360.0, 360.0), (370.0, 340.0)] {
         o.enemies.push(make(&mut w, b"ClickSoldier", enemy, at(x, y)));
     }
-    // the dozer's command set: construct a Depot (the control bar's data, which the World keeps as a table)
-    let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
-    w.cuts.command_buttons.push(rts_lockstep_engine::logic::world::object_cuts::CommandButtonFacts {
-        name: b"Command_BuildDepot".to_vec(),
-        command_type: rts_lockstep_engine::client::control_bar::gui::DOZER_CONSTRUCT,
-        weapon_slot: 0,
-        special_power: None,
-        thing_template: depot,
-        upgrade: None,
-        ready_for: Default::default(),
-        options: 0,
-        max_shots_to_fire: 0,
-    });
-    o.build_depot = w.cuts.command_buttons.len() - 1;
-    w.cuts.command_sets.push((b"DemoDozerSet".to_vec(), vec![Some(o.build_depot)]));
-    w.objects.find_mut(o.dozer).expect("the dozer").command_set_string_override = b"DemoDozerSet".to_vec();
+    // the dozer's command set: construct a Depot (~~the control bar's data, which the World keeps as a table~~ **since #35**
+    // the demo's INI, so the button has its texts)
+    o.build_depot = w.cuts.command_buttons.iter().position(|b| b.name == b"Command_BuildDepot").expect("the dozer's button");
+    if let Some(statics) = std::sync::Arc::get_mut(&mut w.statics) {
+        for (label, text) in DEMO_TEXT {
+            let units: Vec<u16> = text.encode_utf16().collect();
+            if let Ok(t) = rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&units) {
+                statics.game_text.strings.insert(label.as_bytes().to_vec(), t);
+            }
+        }
+    }
     w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
     w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
     (w, o)

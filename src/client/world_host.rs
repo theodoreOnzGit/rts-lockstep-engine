@@ -23,6 +23,14 @@
 //! InGameUI's modes. The questions only read the logic: [`tests`] checks that asking them every frame leaves the gate game's
 //! CRCs as they were (`AGENTS.md`: the client never changes the simulation).
 //!
+//! **The control bar's questions (#33).** Every question `getCommandAvailability` asks is answered from the World: the
+//! AI (`isMoving`, the dozer's pending build task, the hack internet state), the weapons, the contain, the dock, the
+//! special power modules, special ability and battle plan updates, overcharge, the player's upgrades in production and
+//! its template's purchase science sets. Most are the modules' own getters (a module call that only reads). Two of
+//! upstream's getters write, and are read here without the write: `Weapon::getStatus()` refreshes `m_status` (saved, not
+//! CRC'd: `Weapon::peek_status`), and a shared special power's `isReady()`/`getPercentReady()` start the player's timer
+//! (`getOrStartSpecialPowerReadyFrame`, saved: `special_power_body::peek_ready_and_percent`).
+//!
 //! **Not read from the World yet:** the construction special's button kept by a production module
 //! (`getSpecialPowerConstructionCommandButton`: no module call returns it), so placement here always builds with a dozer;
 //! the quit menu (no shell yet). **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
@@ -63,6 +71,8 @@ pub struct ClientView {
     pub terrain: Vec<(ICoord2D, Coord3D)>,
     /// `getPickTypesForContext`'s kinds ([`pick_kinds`]).
     pub pick_kinds: Vec<KindOfType>,
+    /// `TheInGameUI->getAllSelectedDrawables()`, as their objects (#33: the switch weapon buttons ask for their current weapons).
+    pub selection: Vec<ObjectId>,
 }
 
 /// InGameUI's modes, as the selection info's questions read them.
@@ -152,6 +162,7 @@ impl WorldClient {
         let flame = controllable
             && ui.all_selected_drawables().iter().any(|&d| crate::logic::world::object_weapons::has_weapon_to_deal_damage_type(&self.world, d, DAMAGE_FLAME));
         self.view.pick_kinds = pick_kinds(ui, flame);
+        self.view.selection = ui.all_selected_drawables().to_vec();
     }
 
     fn push(&mut self, t: MessageType, args: &[CmdArg]) {
@@ -540,10 +551,11 @@ impl crate::client::control_bar_command::ControlBarStateHost for WorldClient {
         // (the flag is never set by this client: see `mark_single_use_command_used`)
         false
     }
-    fn is_moving(&mut self, _obj: ObjectId) -> bool {
-        // **Not answered yet (#12 gap):** the AI's `isMoving` needs the AI host; buttons with `MUST_BE_STOPPED` show as
-        // available while moving.
-        false
+    fn is_moving(&mut self, obj: ObjectId) -> bool {
+        // ~~**Not answered yet (#12 gap):** the AI's `isMoving` needs the AI host; buttons with `MUST_BE_STOPPED` show as
+        // available while moving.~~ **Corrected 2026-11-06 (#33):** `getAI()->isMoving()`, the AI module's own answer (it reads
+        // the AI and its machine; `isIdle` of a Chinook also asks its contain, a getter).
+        self.world.ai_ask(obj, ModuleCall::AiIsMoving).is_some_and(|r| r.as_bool())
     }
     fn disabled(&self, obj: ObjectId) -> (bool, bool) {
         self.object(obj).map_or((false, false), |o| {
@@ -558,9 +570,11 @@ impl crate::client::control_bar_command::ControlBarStateHost for WorldClient {
         let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
         self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_complete(p, &m))
     }
-    fn player_has_upgrade_in_production(&self, _obj: ObjectId, _upgrade: u32) -> bool {
-        // **Not answered yet (#12 gap):** the player's upgrade list's in-production state.
-        false
+    fn player_has_upgrade_in_production(&self, obj: ObjectId, upgrade: u32) -> bool {
+        // ~~**Not answered yet (#12 gap):** the player's upgrade list's in-production state.~~ **Corrected 2026-11-06 (#33):**
+        // `player->hasUpgradeInProduction(u)` of the object's controlling player, the World's read of the player's upgrade list.
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_in_production(p, &m))
     }
     fn obj_has_upgrade(&mut self, obj: ObjectId, upgrade: u32) -> bool {
         ControlBarHost::has_upgrade(self, obj, upgrade)
@@ -591,9 +605,18 @@ impl crate::client::control_bar_command::ControlBarStateHost for WorldClient {
     fn is_dozer(&self, obj: ObjectId) -> bool {
         self.object(obj).is_some_and(|o| o.is_kind_of(crate::common::kind_of::KINDOF_DOZER))
     }
-    fn dozer_build_pending(&mut self, _obj: ObjectId) -> Option<bool> {
-        // **Not answered yet (#12 gap):** the dozer AI's pending build task; the dozer is taken as idle.
-        Some(false)
+    fn dozer_build_pending(&mut self, obj: ObjectId) -> Option<bool> {
+        // ~~**Not answered yet (#12 gap):** the dozer AI's pending build task; the dozer is taken as idle.~~ **Corrected
+        // 2026-11-06 (#33):** `getDozerAIInterface()->isTaskPending(DOZER_TASK_BUILD)`, read from the AI where it lies
+        // (`World::ai_peek`): `m_task[DOZER_TASK_BUILD].m_targetObjectID != INVALID_ID`. `None` without a dozer AI.
+        use crate::logic::ai::ai_update::AiSubclass;
+        use crate::logic::ai::dozer_ai_update::DOZER_TASK_BUILD;
+        let m = match &self.world.ai_peek(obj)?.subclass {
+            AiSubclass::Dozer(d) => &d.m,
+            AiSubclass::Worker(w) => &w.dozer.m,
+            _ => return None,
+        };
+        Some(m.task[DOZER_TASK_BUILD as usize].target_object_id != INVALID_ID)
     }
     fn player_can_build(&mut self, obj: ObjectId, template: Option<u16>) -> bool {
         let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
@@ -618,51 +641,262 @@ impl crate::client::control_bar_command::ControlBarStateHost for WorldClient {
     fn unsellable(&self, obj: ObjectId) -> bool {
         self.object(obj).is_some_and(|o| o.test_script_status_bit(crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNSELLABLE))
     }
-    fn weapon(&mut self, _obj: ObjectId, _slot: i32) -> Option<crate::client::control_bar_command::WeaponState> {
-        // **Not answered yet (#12 gap):** the weapon's status; a fire weapon button shows as ready.
-        Some(crate::client::control_bar_command::WeaponState { clip_reload_time: 0, ready_to_fire: true, reloading_clip: false, possible_next_shot_frame: 0, percent_ready: 1.0 })
+    fn weapon(&mut self, obj: ObjectId, slot: i32) -> Option<crate::client::control_bar_command::WeaponState> {
+        // ~~**Not answered yet (#12 gap):** the weapon's status; a fire weapon button shows as ready.~~ **Corrected 2026-11-06
+        // (#33):** `getWeaponInWeaponSlot(slot)` and its `getClipReloadTime(obj)`, `getStatus()`, `getPossibleNextShotFrame()`
+        // and `getPercentReadyToFire()`. Upstream's `getStatus()` writes `m_status` (a lazy refresh; saved, not CRC'd): the
+        // status and the percent are read with `Weapon::peek_status` and `peek_percent_ready_to_fire`, the same answers
+        // without the write. `getClipReloadTime` computes the bonus (the object's and its container's bonus flags, getters)
+        // on a copy of the weapon, as `getLargestWeaponRange` does.
+        use crate::logic::weapon_types::WeaponStatus;
+        let w = self.object(obj)?.weapon_set.get_weapon_in_weapon_slot(slot)?.clone();
+        let now = self.world.frame();
+        let status = w.peek_status(now);
+        let clip = w.get_clip_reload_time(&mut self.world, obj);
+        Some(crate::client::control_bar_command::WeaponState {
+            clip_reload_time: clip.max(0) as u32,
+            ready_to_fire: status == WeaponStatus::ReadyToFire,
+            reloading_clip: status == WeaponStatus::ReloadingClip,
+            possible_next_shot_frame: w.possible_next_shot_frame(),
+            percent_ready: w.peek_percent_ready_to_fire(now),
+        })
     }
     fn frame(&self) -> u32 {
         self.world.frame()
     }
-    fn mine_clearing_weapon_set(&self, _obj: ObjectId) -> bool {
-        false
+    fn mine_clearing_weapon_set(&self, obj: ObjectId) -> bool {
+        // (#33) `testWeaponSetFlag(WEAPONSET_MINE_CLEARING_DETAIL)`
+        self.object(obj).is_some_and(|o| o.test_weapon_set_flag(crate::logic::weapon_types::WEAPONSET_MINE_CLEARING_DETAIL))
     }
-    fn rappeller_count(&mut self, _obj: ObjectId) -> i32 {
-        // **Not answered yet (#12 gap):** the contained rappellers; combat drop shows as restricted.
-        0
+    fn rappeller_count(&mut self, obj: ObjectId) -> i32 {
+        // ~~**Not answered yet (#12 gap):** the contained rappellers; combat drop shows as restricted.~~ **Corrected 2026-11-06
+        // (#33):** `getRappellerCount(obj)`: the contain's `getContainedItemsList()` (a getter) counted by `KINDOF_CAN_RAPPEL`.
+        let Some(c) = self.world.get_contain(obj) else { return 0 };
+        let ModuleReply::Ids(items) = self.world.module_call(obj, c, ModuleCall::GetContainedItems) else { return 0 };
+        items.iter().filter(|&&i| self.is_kind_of(i, crate::common::kind_of::KINDOF_CAN_RAPPEL)).count() as i32
     }
-    fn contain_count(&self, _obj: ObjectId) -> Option<u32> {
-        // **Not answered yet (#12 gap):** the contain module's count; evacuate shows as restricted.
-        None
+    fn contain_count(&mut self, obj: ObjectId) -> Option<u32> {
+        // ~~**Not answered yet (#12 gap):** the contain module's count; evacuate shows as restricted.~~ **Corrected 2026-11-06
+        // (#33):** `getContain()->getContainCount()`, the contain module's getter.
+        let c = self.world.get_contain(obj)?;
+        Some(self.world.module_call(obj, c, ModuleCall::GetContainCount).as_int(0).max(0) as u32)
     }
-    fn dock_open(&mut self, _obj: ObjectId) -> Option<bool> {
-        None
+    fn has_ai_update(&self, obj: ObjectId) -> bool {
+        self.object(obj).is_some_and(|o| o.ai.is_some())
     }
-    fn special_power(&mut self, _obj: ObjectId, _button: &crate::logic::command_button::CommandButton) -> crate::client::control_bar_command::SpecialPowerState {
-        // **Not answered yet (#12 gap):** the special power module's readiness and the clock; powers show as ready.
-        crate::client::control_bar_command::SpecialPowerState::Ready { ability_in_use: None, battle_plan_option_match: false }
+    fn dock_open(&mut self, obj: ObjectId) -> Option<bool> {
+        // (#33) `getDockUpdateInterface()->isDockOpen()`, the dock's getter
+        let d = self.world.get_dock_update_interface(obj)?;
+        Some(self.world.module_call(obj, d, ModuleCall::DockIsOpen).as_bool())
     }
-    fn overcharge_active(&mut self, _obj: ObjectId) -> bool {
-        false
+    fn special_power(&mut self, obj: ObjectId, button: &crate::logic::command_button::CommandButton) -> crate::client::control_bar_command::SpecialPowerState {
+        // ~~**Not answered yet (#12 gap):** the special power module's readiness and the clock; powers show as ready.~~
+        // **Corrected 2026-11-06 (#33):** `getSpecialPowerModule(template)`; its `isReady()` and `getPercentReady()`; else
+        // `findSpecialAbilityUpdate(type)->isPowerCurrentlyInUse(command)`; else, for `SPECIAL_CHANGE_BATTLE_PLANS`, the
+        // `BattlePlanUpdate`'s `getCommandOption() & command->getOptions()`. **A side effect avoided:** for a shared power the
+        // module's `isReady` starts the player's timer (`getOrStartSpecialPowerReadyFrame`), so the readiness is read with
+        // `special_power_body::peek_ready_and_percent` from the module's body where it lies.
+        use crate::client::control_bar_command::SpecialPowerState;
+        use crate::logic::modules::special_power_body::{peek_ready_and_percent, power_of_body};
+        use crate::logic::world::module_call::ModuleHandle;
+        let Some(m) = self.world.get_special_power_module(obj, button.special_power) else { return SpecialPowerState::NoModule };
+        let me = ModuleHandle { object: obj, index: m };
+        let read = self.world.peek_module_body(me).and_then(power_of_body).map(|p| peek_ready_and_percent(p, &self.world, me));
+        // (a module that is not one of the game's special powers, or a `NULL` template upstream would crash on: no clock)
+        let Some(Ok((ready, percent))) = read else { return SpecialPowerState::NoModule };
+        if !ready {
+            return SpecialPowerState::Charging(percent);
+        }
+        let sp_type = button.special_power.and_then(|id| self.world.statics.special_power_store.find_special_power_template_by_id(id)).map(|t| t.special_power_type());
+        if let Some(t) = sp_type {
+            if let Some(u) = self.world.find_special_ability_update(obj, t) {
+                let in_use = self.world.module_call(obj, u, ModuleCall::IsPowerCurrentlyInUse).as_bool();
+                return SpecialPowerState::Ready { ability_in_use: Some(in_use), battle_plan_option_match: false };
+            }
+        }
+        if sp_type == Some(crate::common::special_power_type::SPECIAL_CHANGE_BATTLE_PLANS) {
+            if let Some(b) = self.world.find_module(obj, b"BattlePlanUpdate") {
+                let option = self.world.module_call(obj, b, ModuleCall::SpecialPowerUpdateGetCommandOption).as_int(0) as u32;
+                return SpecialPowerState::Ready { ability_in_use: None, battle_plan_option_match: option & button.options != 0 };
+            }
+        }
+        SpecialPowerState::Ready { ability_in_use: None, battle_plan_option_match: false }
+    }
+    fn overcharge_active(&mut self, obj: ObjectId) -> bool {
+        // (#33) each behavior module's `getOverchargeBehaviorInterface()->isOverchargeActive()`
+        crate::client::control_bar_popup::PopupHost::overcharge_interfaces(self, obj).into_iter().any(|a| a)
     }
     fn selected_current_weapon_slots(&mut self) -> Vec<i32> {
-        Vec::new()
+        // (#33) the selected drawables' objects that are locally controlled and have a current weapon: its slot
+        use crate::logic::world::object_weapons::get_current_weapon;
+        let sel = self.view.selection.clone();
+        sel.into_iter()
+            .filter(|&o| self.is_locally_controlled(o))
+            .filter_map(|o| {
+                let c = get_current_weapon(&self.world, o);
+                c.slot.filter(|_| c.has_weapon)
+            })
+            .collect()
     }
-    fn hacking_packing_or_unpacking(&mut self, _obj: ObjectId) -> bool {
-        false
+    fn hacking_packing_or_unpacking(&mut self, obj: ObjectId) -> bool {
+        // (#33) `getHackInternetAIInterface()->isHackingPackingOrUnpacking()`: the AI machine's state is one of the three
+        use crate::logic::ai::hack_internet_ai_update::{HACK_INTERNET, PACKING, UNPACKING};
+        if !self.world.ai_peek(obj).is_some_and(|a| matches!(a.subclass, crate::logic::ai::ai_update::AiSubclass::HackInternet(_))) {
+            return false;
+        }
+        match self.world.ai_ask(obj, ModuleCall::AiGetAiStateType) {
+            Some(ModuleReply::Int(s)) => [UNPACKING, HACK_INTERNET, PACKING].contains(&(s as _)),
+            _ => false,
+        }
     }
-    fn battle_plan_is_bombardment(&mut self, _obj: ObjectId) -> Option<bool> {
-        None
+    fn battle_plan_is_bombardment(&mut self, obj: ObjectId) -> Option<bool> {
+        // (#33) `findUpdateModule(BattlePlanUpdate)->getActiveBattlePlan() == PLANSTATUS_BOMBARDMENT`
+        let b = self.world.find_module(obj, b"BattlePlanUpdate")?;
+        let plan = self.world.module_call(obj, b, ModuleCall::BattlePlanGetActiveBattlePlan).as_int(0);
+        Some(plan == crate::logic::modules::battle_plan_update::PLANSTATUS_BOMBARDMENT)
     }
-    fn purchase_science_buttons(&self, _obj: ObjectId) -> Option<Vec<usize>> {
-        // **Not answered yet (#12 gap):** the player template's purchase science sets.
-        None
+    fn purchase_science_buttons(&self, obj: ObjectId) -> Option<Vec<usize>> {
+        // ~~**Not answered yet (#12 gap):** the player template's purchase science sets.~~ **Corrected 2026-11-06 (#33):** the
+        // controlling player's template's `PurchaseScienceCommandSetRank1`, `3` and `8` (none empty, every set found), their
+        // first `MAX_PURCHASE_SCIENCE_RANK_1` (4), `_3` (15) and `_8` (4) buttons, in that order (`populateCommand`'s loops).
+        let w = &self.world;
+        let p = w.get_controlling_player(obj)?;
+        let t = w.players.get_nth(p)?.template?;
+        let pt = w.statics.player_template_store.templates().get(t as usize)?;
+        let sets = [(pt.purchase_science_command_set_rank1(), 4), (pt.purchase_science_command_set_rank3(), 15), (pt.purchase_science_command_set_rank8(), 4)];
+        if sets.iter().any(|(n, _)| n.is_empty()) {
+            return None;
+        }
+        let found: Vec<(usize, usize)> = sets.iter().map(|(n, max)| w.control_bar_find_command_set(n).map(|s| (s, *max))).collect::<Option<_>>()?;
+        Some(found.into_iter().flat_map(|(set, max)| (0..max).filter_map(move |i| w.command_set_get_command_button(set, i))).collect())
     }
     fn special_power_required_science(&self, button: &crate::logic::command_button::CommandButton) -> Option<i32> {
         let t = self.world.statics.special_power_store.find_special_power_template_by_id(button.special_power?)?;
         let st = t.required_science().0;
         (st >= 0).then_some(st)
+    }
+}
+
+// --- #35: the portrait and the popup description (client::control_bar_popup), answered from the World, read only ---
+
+impl crate::client::control_bar_popup::PortraitHost for WorldClient {
+    fn portrait_is_kind_of(&self, obj: ObjectId, k: KindOfType) -> bool {
+        self.is_kind_of(obj, k)
+    }
+    fn portrait_is_locally_controlled(&self, obj: ObjectId) -> bool {
+        self.is_locally_controlled(obj)
+    }
+    fn portrait_template(&self, obj: ObjectId) -> Option<u16> {
+        self.object(obj).map(|o| o.template().get_template_id())
+    }
+    fn portrait_controlling_player(&self, obj: ObjectId) -> Option<i32> {
+        self.world.get_controlling_player(obj)
+    }
+    fn portrait_disguised_enemy(&mut self, obj: ObjectId) -> Option<(u16, Option<i32>)> {
+        // `draw->getStealthLook() == STEALTHLOOK_DISGUISED_ENEMY`: the look the object's `StealthUpdate` gives its drawable
+        // for the local player (`calcStealthedStatusForPlayer`, read where the module lies), with the disguise's template
+        use crate::logic::modules::stealth_update::stealth_look;
+        use crate::logic::world::module_call::ModuleHandle;
+        use crate::logic::world::update_body::UpdateBody;
+        let index = self.object(obj)?.find_module(b"StealthUpdate")?;
+        let Some(UpdateBody::StealthUpdate(s)) = self.world.peek_module_body(ModuleHandle { object: obj, index }) else { return None };
+        if s.calc_stealthed_status_for_local_player(&self.world, obj)? != stealth_look::DISGUISED_ENEMY {
+            return None;
+        }
+        let t = s.get_disguised_template()?.get_template_id();
+        Some((t, s.is_disguised().then(|| s.get_disguised_player_index())))
+    }
+    fn template_is_kind_of(&self, template: u16, k: KindOfType) -> bool {
+        self.world.statics.thing_factory.find_by_template_id(template).is_some_and(|t| t.data.is_kind_of(k))
+    }
+    fn template_selected_portrait(&self, template: u16) -> Vec<u8> {
+        self.world.statics.thing_factory.find_by_template_id(template).map(|t| t.data.selected_portrait_image_name().to_vec()).unwrap_or_default()
+    }
+    fn template_upgrade_cameo_name(&self, template: u16, i: usize) -> Vec<u8> {
+        self.world.statics.thing_factory.find_by_template_id(template).map(|t| t.data.get_upgrade_cameo_name(i).to_vec()).unwrap_or_default()
+    }
+    fn find_upgrade(&self, name: &[u8]) -> Option<(u32, Vec<u8>)> {
+        self.world.statics.upgrade_center.templates().find(|u| u.upgrade_name() == name).map(|u| (u.upgrade_name_key().0, u.button_image_name().to_vec()))
+    }
+    fn portrait_obj_has_upgrade(&mut self, obj: ObjectId, upgrade: u32) -> bool {
+        ControlBarHost::has_upgrade(self, obj, upgrade)
+    }
+    fn portrait_player_has_upgrade_complete(&self, player: i32, upgrade: u32) -> bool {
+        self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_complete(player, &m))
+    }
+    fn veterancy_level(&self, obj: ObjectId) -> i32 {
+        self.object(obj).map_or(0, |o| o.get_veterancy_level() as i32)
+    }
+}
+
+impl crate::client::control_bar_popup::PopupHost for WorldClient {
+    fn first_selected_object(&self) -> Option<ObjectId> {
+        self.view.selection.first().copied().filter(|&o| self.world.find_object(o).is_some())
+    }
+    fn local_has_science(&mut self, st: i32) -> bool {
+        ControlBarHost::has_science(self, st)
+    }
+    fn local_has_upgrade_in_production(&mut self, upgrade: u32) -> bool {
+        self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_in_production(self.player, &m))
+    }
+    fn local_has_upgrade_complete(&mut self, upgrade: u32) -> bool {
+        self.upgrade_mask(upgrade).is_some_and(|m| self.world.player_has_upgrade_complete(self.player, &m))
+    }
+    fn local_can_afford_upgrade(&mut self, upgrade: u32) -> bool {
+        let cost = self.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(upgrade)).map(|t| t.cost_to_build());
+        cost.is_some_and(|c| self.world.upgrade_center_can_afford_upgrade(Some(self.player), c))
+    }
+    fn thing_cost_to_build(&mut self, template: u16) -> i32 {
+        self.world.template_calc_cost_to_build(template, self.player)
+    }
+    fn thing_is_kind_of(&self, template: u16, k: KindOfType) -> bool {
+        crate::client::control_bar_popup::PortraitHost::template_is_kind_of(self, template, k)
+    }
+    fn thing_prereqs(&mut self, template: u16) -> Vec<(Vec<crate::client::control_bar_popup::PrereqUnit>, bool)> {
+        // each prerequisite's `calcNumPrereqUnitsOwned(player, counts)` (`countObjectsByThingTemplate`) and sciences
+        use crate::common::production_prerequisite::{MAX_PREREQ, UNIT_OR_WITH_PREV};
+        use crate::logic::world::player_ops::{player_count_objects_by_thing_template, player_has_science};
+        let w = &self.world;
+        let Some(t) = w.statics.thing_factory.find_by_template_id(template) else { return Vec::new() };
+        let p = self.player;
+        (0..t.data.get_prereq_count().max(0) as usize)
+            .filter_map(|i| t.data.get_nth_prereq(i))
+            .map(|pre| {
+                let units = pre.prereq_units();
+                let cnt = units.len().min(MAX_PREREQ);
+                let things: Vec<Option<_>> = units[..cnt].iter().map(|u| u.unit.map(Into::into)).collect();
+                let mut own = [0i32; MAX_PREREQ];
+                let _ = player_count_objects_by_thing_template(w, p, &things, false, &mut own[..cnt], true);
+                let list = units[..cnt]
+                    .iter()
+                    .zip(own)
+                    .map(|(u, owned)| crate::client::control_bar_popup::PrereqUnit {
+                        display_name: u.unit.and_then(|id| w.statics.thing_factory.find_by_template_id(id)).map(|t| t.data.get_display_name().str().to_vec()).unwrap_or_default(),
+                        or_with_prev: u.flags & UNIT_OR_WITH_PREV != 0,
+                        owned,
+                    })
+                    .collect();
+                let has_sciences = pre.prereq_sciences().iter().all(|s| player_has_science(w, p, *s).unwrap_or(false));
+                (list, has_sciences)
+            })
+            .collect()
+    }
+    fn upgrade_cost_to_build(&self, upgrade: u32) -> i32 {
+        self.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(upgrade)).map_or(0, |t| t.cost_to_build())
+    }
+    fn science_name_and_description(&self, st: i32) -> Option<(Vec<u16>, Vec<u16>)> {
+        self.world.statics.science_store.get_name_and_description(ScienceType(st)).map(|(n, d)| (n.str().to_vec(), d.str().to_vec()))
+    }
+    fn science_cost(&self, st: i32) -> i32 {
+        self.world.statics.science_store.get_science_purchase_cost(ScienceType(st))
+    }
+    fn overcharge_interfaces(&mut self, obj: ObjectId) -> Vec<bool> {
+        let mods: Vec<_> = self.world.all_modules(obj).into_iter().filter(|&i| self.world.module_slot(obj, i).is_some_and(|m| m.name == b"OverchargeBehavior")).collect();
+        mods.into_iter().map(|i| self.world.module_call(obj, i, ModuleCall::IsOverchargeActive).as_bool()).collect()
+    }
+    fn local_energy(&self) -> Option<(i32, i32)> {
+        let frame = self.world.frame();
+        self.world.players.get_nth(self.player).map(|p| (p.energy.production(frame), p.energy.consumption()))
     }
 }
 
@@ -676,16 +910,33 @@ mod tests {
     /// every button of every player-1 object, which asks production modules for their counts and queues, the build
     /// assistant, the upgrade center and the players), the build queue and the money and power, asked every frame, leave
     /// the logic's CRCs equal, frame by frame for 300 frames, to a run without them. Both runs give every player-1 object
-    /// the same set of five buttons (unit build, dozer construct, sell, stop, an object upgrade; the World takes the
-    /// control bar's data as a table). Predicted: equal CRCs (the questions only read), and five windows a frame per
+    /// of the gate the same set of five buttons (unit build, dozer construct, sell, stop, an object upgrade; the World takes
+    /// the control bar's data as a table). Predicted: equal CRCs (the questions only read), and five windows a frame per
     /// object, so 300 x 5 x the objects shown at most.
+    ///
+    /// **#33 (2026-11-06):** both runs also hold [`EXTRA33`]'s objects with their own command sets, so the questions now
+    /// read the AI (`isMoving`, the dozer's task, the hack state), the weapons (a gunner in a fight: its clip, status and
+    /// reload), the contain (a bus with two rappellers), the production (a barracks training a recruit and researching a
+    /// player upgrade, queued in both runs), the special powers (a shared one never started, a charging one) and the
+    /// selection (every player-1 object selected on the client, for the switch weapon buttons). Predicted: the CRCs stay
+    /// equal; the tally of the answers shows a fire weapon clock (`NOT_READY` with a clock) at least once, evacuate and
+    /// combat drop available, the drill upgrade `CANT_AFFORD` (in production) and the charger's power `NOT_READY` with a
+    /// clock; the shared timer list stays empty; nothing is sent. The gunner's set also asks the questions of modules it lacks
+    /// (overcharge, hack internet, a battle plan's stop, a railed transport): `AVAILABLE`, `AVAILABLE`, `AVAILABLE` and
+    /// `RESTRICTED` (no dock) every frame (held: 300 of each).
+    ///
+    /// *Results (2026-11-06):* equal CRCs on all 300 frames; 24,300 windows shown; the fire button 58 frames with a reload
+    /// clock, 13 not ready between shots, 229 available; the charger's power 179 frames with a clock, then available (its
+    /// 180-frame charge); evacuate and combat drop available on the full bus and restricted on the empty one; the drill
+    /// `CANT_AFFORD` throughout; the primary switch button `ACTIVE`; the timer list empty; nothing sent.
     #[test]
     fn the_control_bars_questions_leave_the_crcs_alone() {
+        use crate::client::control_bar_command::CommandAvailability as A;
         use crate::logic::world::object_cuts::CommandButtonFacts;
         use crate::logic::world::object_command_button::gui as g;
         let frames = 300;
         let setup = || {
-            let mut w = gate_world();
+            let (mut w, x) = world33();
             let depot = w.statics.thing_factory.find_template(b"Depot").map(|t| t.data.get_template_id());
             let first = w.cuts.command_buttons.len();
             for (i, (t, tt)) in [(g::UNIT_BUILD, depot), (g::DOZER_CONSTRUCT, depot), (g::SELL, None), (g::STOP, None), (g::OBJECT_UPGRADE, None)].into_iter().enumerate() {
@@ -703,21 +954,34 @@ mod tests {
             }
             w.cuts.command_sets.push((b"Gate12Set".to_vec(), (first..first + 5).map(Some).collect()));
             for o in w.objects.ids_in_order() {
-                if w.get_controlling_player(o) == Some(1) {
+                if w.get_controlling_player(o) == Some(1) && w.object_get_command_set_string(o).is_empty() {
                     w.objects.find_mut(o).expect("an object").command_set_string_override = b"Gate12Set".to_vec();
                 }
             }
-            w
+            // (#33: the barracks trains a recruit and researches the drill, in both runs)
+            let pu = w.get_production_update_interface(x.barracks).expect("the factory");
+            let recruit = w.statics.thing_factory.find_template(b"Recruit").map(|t| t.data.get_template_id());
+            assert!(w.module_call(x.barracks, pu, ModuleCall::ProductionQueueCreateUnit { template: recruit, production_id: 1 }).as_bool());
+            let drill = w.cuts.command_buttons.iter().find(|b| b.name == b"Command_Drill").and_then(|b| b.upgrade);
+            assert!(w.module_call(x.barracks, pu, ModuleCall::ProductionQueueUpgrade { upgrade: drill }).as_bool());
+            (w, x)
         };
-        let mut plain = setup();
-        let mut c = WorldClient::new(setup(), 1);
+        let (mut plain, _) = setup();
+        let (w, x) = setup();
+        let mut c = WorldClient::new(w, 1);
+        c.view.selection = c.local_player_objects();
         let mut shown = 0usize;
+        let mut tally: std::collections::BTreeMap<(Vec<u8>, String), u32> = Default::default();
         for f in 0..frames {
             plain.logic_update().expect("a frame");
             c.world.logic_update().expect("a frame");
             for o in c.local_player_objects() {
                 let slots = crate::client::control_bar_command::populate_command(o, &mut c);
-                shown += slots.iter().flatten().count();
+                for s in slots.iter().flatten() {
+                    shown += 1;
+                    let name = c.world.cuts.command_buttons[s.button].name.clone();
+                    *tally.entry((name, format!("{:?} {}", s.availability, if s.clock.is_some() { "clock" } else { "" }))).or_default() += 1;
+                }
                 let _ = c.production_queue(o);
             }
             let _ = c.money_and_power();
@@ -726,8 +990,330 @@ mod tests {
             assert_eq!(a, b, "the CRCs part at frame {f}");
         }
         eprintln!("#12: {shown} command windows shown over {frames} frames");
+        for ((n, a), k) in &tally {
+            eprintln!("#33:   {:<24} {a:<20} {k}", String::from_utf8_lossy(n));
+        }
+        let seen = |n: &[u8], a: A, clock: bool| tally.get(&(n.to_vec(), format!("{a:?} {}", if clock { "clock" } else { "" }))).copied().unwrap_or(0);
         assert!(c.sent.is_empty());
         assert!(shown > 0);
+        assert!(seen(b"Command_Fire", A::NotReady, true) > 0, "a reload clock");
+        assert!(seen(b"Command_Evac", A::Available, false) > 0);
+        assert!(seen(b"Command_CombatDrop", A::Available, false) > 0);
+        assert!(seen(b"Command_Drill", A::CantAfford, false) > 0);
+        assert!(seen(b"Command_Own", A::NotReady, true) > 0);
+        for (n, a) in [(&b"Command_Overcharge"[..], A::Available), (b"Command_Hack", A::Available), (b"Command_PlanStop", A::Available), (b"Command_Rail", A::Restricted)] {
+            assert_eq!(seen(n, a, false), frames, "{}", String::from_utf8_lossy(n));
+        }
+        let p = c.world.get_controlling_player(x.caster).expect("the player");
+        assert_eq!(c.world.players.get_nth(p).map(|pl| pl.special_power_timers.len()), Some(0));
+    }
+
+    /// #33: the game's own templates for the control bar's questions, read after the gate's INI (the gate's are unchanged).
+    /// A gunner whose weapon has a two-shot clip that reloads in 1 s (30 frames) and a fire, a switch and a stopped-only
+    /// fire button; a bus carrying vehicles, with evacuate and combat drop; riders that can rappel; a barracks that trains
+    /// recruits and researches a player upgrade; a caster with a shared (`SharedSyncedTimer`) power and no create module, so
+    /// no timer is started; a charger whose non-shared power (6 s, 180 frames) starts recharging when it is built.
+    const EXTRA33: &str = "\
+Weapon ClipGun\n PrimaryDamage = 50\n PrimaryDamageRadius = 0\n AttackRange = 100\n DamageType = ARMOR_PIERCING\n DeathType = NORMAL\n WeaponSpeed = 999999\n DelayBetweenShots = 100\n ClipSize = 2\n ClipReloadTime = 1000\n AutoReloadsClip = Yes\nEnd\n\
+Upgrade Upgrade_Drill\n Type = PLAYER\n BuildCost = 100\n BuildTime = 10.0\n ButtonImage = SUDrill\nEnd\n\
+ObjectCreationList OCL_Nothing\n CreateObject\n  ObjectNames = Depot\n  Count = 1\n End\nEnd\n\
+SpecialPower SharedDrop\n Enum = SPECIAL_CARPET_BOMB\n ReloadTime = 6000\n SharedSyncedTimer = Yes\nEnd\n\
+SpecialPower OwnDrop\n Enum = SPECIAL_PARADROP_AMERICA\n ReloadTime = 6000\nEnd\n\
+Object Gunner\n KindOf = VEHICLE\n CommandSet = GunnerSet\n SelectPortrait = SNGunner_L\n UpgradeCameo1 = Upgrade_Drill\n VisionRange = 150\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ WeaponSet\n  Conditions = None\n  Weapon = PRIMARY ClipGun\n End\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n  AutoAcquireEnemiesWhenIdle = Yes\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+Object Rappeller\n KindOf = VEHICLE CAN_RAPPEL\n TransportSlotCount = 1\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 50\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+Object Bus\n KindOf = VEHICLE TRANSPORT\n CommandSet = BusSet\n Geometry = CYLINDER\n GeometryMajorRadius = 8\n GeometryHeight = 6\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 200\n  InitialHealth = 200\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = TransportContain ModuleTag_Contain\n  Slots = 2\n  AllowInsideKindOf = VEHICLE\n  AllowAlliesInside = Yes\n  ExitDelay = 0\n End\n\
+ Behavior = PhysicsBehavior ModuleTag_Physics\n  Mass = 100\n End\n Locomotor = SET_NORMAL GateTreads\nEnd\n\
+Object Recruit\n KindOf = INFANTRY\n BuildCost = 300\n BuildTime = 2.0\n Geometry = CYLINDER\n GeometryMajorRadius = 3\n GeometryHeight = 3\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 10\n  InitialHealth = 10\n End\nEnd\n\
+Object Barracks\n KindOf = STRUCTURE\n CommandSet = BarracksSet\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = ProductionUpdate ModuleTag_Production\n  MaxQueueEntries = 3\n End\nEnd\n\
+Object Caster\n KindOf = VEHICLE\n CommandSet = CasterSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = OCLSpecialPower ModuleTag_Drop\n  SpecialPowerTemplate = SharedDrop\n  OCL = OCL_Nothing\n  CreateLocation = CREATE_AT_LOCATION\n End\nEnd\n\
+Object Charger\n KindOf = VEHICLE\n CommandSet = ChargerSet\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+ Behavior = AIUpdateInterface ModuleTag_AI\n End\n\
+ Behavior = OCLSpecialPower ModuleTag_Drop\n  SpecialPowerTemplate = OwnDrop\n  OCL = OCL_Nothing\n  CreateLocation = CREATE_AT_LOCATION\n End\n\
+ Behavior = SpecialPowerCreate ModuleTag_Create\n End\nEnd\n\
+CommandButton Command_Fire\n Command = FIRE_WEAPON\n WeaponSlot = PRIMARY\nEnd\n\
+CommandButton Command_FireStopped\n Command = FIRE_WEAPON\n WeaponSlot = PRIMARY\n Options = MUST_BE_STOPPED\nEnd\n\
+CommandButton Command_Switch\n Command = SWITCH_WEAPON\n WeaponSlot = PRIMARY\nEnd\n\
+CommandButton Command_SwitchSecondary\n Command = SWITCH_WEAPON\n WeaponSlot = SECONDARY\nEnd\n\
+CommandButton Command_Evac\n Command = EVACUATE\nEnd\n\
+CommandButton Command_CombatDrop\n Command = COMBATDROP\nEnd\n\
+CommandButton Command_Recruit\n Command = UNIT_BUILD\n Object = Recruit\n TextLabel = CONTROLBAR:Recruit\n DescriptLabel = CONTROLBAR:RecruitDesc\nEnd\n\
+CommandButton Command_Drill\n Command = PLAYER_UPGRADE\n Upgrade = Upgrade_Drill\n TextLabel = CONTROLBAR:Drill\n DescriptLabel = CONTROLBAR:DrillDesc\nEnd\n\
+CommandButton Command_Shared\n Command = SPECIAL_POWER\n SpecialPower = SharedDrop\nEnd\n\
+CommandButton Command_Own\n Command = SPECIAL_POWER\n SpecialPower = OwnDrop\nEnd\n\
+CommandButton Command_Overcharge\n Command = TOGGLE_OVERCHARGE\nEnd\n\
+CommandButton Command_Hack\n Command = HACK_INTERNET\nEnd\n\
+CommandButton Command_PlanStop\n Command = STOP\n Options = OPTION_ONE\nEnd\n\
+CommandButton Command_Rail\n Command = EXECUTE_RAILED_TRANSPORT\nEnd\n\
+CommandSet GunnerSet\n 1 = Command_Fire\n 2 = Command_FireStopped\n 3 = Command_Switch\n 4 = Command_SwitchSecondary\n 5 = Command_Overcharge\n 6 = Command_Hack\n 7 = Command_PlanStop\n 8 = Command_Rail\nEnd\n\
+CommandSet BusSet\n 1 = Command_Evac\n 2 = Command_CombatDrop\nEnd\n\
+CommandSet BarracksSet\n 1 = Command_Recruit\n 2 = Command_Drill\nEnd\n\
+CommandSet CasterSet\n 1 = Command_Shared\nEnd\n\
+CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
+
+    /// The objects of [`EXTRA33`] in the gate's game (player 1's, `team1`): a gunner 80 from player 2's nearer soldier
+    /// (within its range of 100), a bus with two rappellers inside, an empty bus, a barracks with money to spend, a caster
+    /// and a charger.
+    struct Extra33 {
+        gunner: ObjectId,
+        bus: ObjectId,
+        empty_bus: ObjectId,
+        barracks: ObjectId,
+        caster: ObjectId,
+        charger: ObjectId,
+        made_on: u32,
+    }
+
+    fn world33() -> (World, Extra33) {
+        use crate::logic::world::gate_scenario::{gate_world_with, make};
+        use crate::logic::world::team_ops::factory_find_team;
+        let mut w = gate_world_with(EXTRA33);
+        let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let gunner = make(&mut w, b"Gunner", team, at(170.0, 380.0));
+        let bus = make(&mut w, b"Bus", team, at(60.0, 200.0));
+        let empty_bus = make(&mut w, b"Bus", team, at(60.0, 240.0));
+        for y in [180.0, 190.0] {
+            let r = make(&mut w, b"Rappeller", team, at(40.0, y));
+            let c = w.get_contain(bus).expect("the bus's contain");
+            w.module_call(bus, c, ModuleCall::AddToContain(r));
+        }
+        let barracks = make(&mut w, b"Barracks", team, at(320.0, 260.0));
+        let p = w.get_controlling_player(barracks).expect("the player");
+        w.cut(crate::logic::world::object_cuts::CutCall::PlayerMoneyDeposit { player: p, amount: 1000 });
+        let caster = make(&mut w, b"Caster", team, at(320.0, 320.0));
+        let made_on = w.frame();
+        let charger = make(&mut w, b"Charger", team, at(340.0, 320.0));
+        (w, Extra33 { gunner, bus, empty_bus, barracks, caster, charger, made_on })
+    }
+
+    /// The availability and the clock of the button named `name` for `obj`.
+    fn availability(c: &mut WorldClient, obj: ObjectId, name: &[u8]) -> (crate::client::control_bar_command::CommandAvailability, Option<i32>) {
+        use crate::client::control_bar_command::ControlBarStateHost;
+        let i = c.world.cuts.command_buttons.iter().position(|b| b.name == name).expect("the button");
+        let b = c.button(i).expect("the button");
+        crate::client::control_bar_command::get_command_availability(&b, Some(obj), false, c)
+    }
+
+    /// #33, the fire weapon button's clock. Predicted before the run, from `Weapon.cpp` and `getCommandAvailability`: the
+    /// gunner acquires player 2's soldier (80 away, in range) and fires its two-shot clip; the second shot empties it and
+    /// starts the reload (`AutoReloadsClip`), `RELOADING_CLIP` until 30 frames later (`ClipReloadTime = 1000`, 30 logic frames
+    /// a second). 15 frames into the reload the button is `NOT_READY` with the clock at `getPercentReadyToFire() * 100` =
+    /// 15 / 30 = **50**; the clip's reload time is 30, not 0. Reading leaves the weapon equal to a copy taken before (its
+    /// `m_status` cell included). Once both enemies are dead (50 damage a shot, 100 health each) and the gunner is idle,
+    /// the weapon's cell is stale: `getStatus()` would rewrite it to `READY_TO_FIRE`, which `peek_status` answers without
+    /// the write (the hazard the pure read avoids).
+    ///
+    /// *Results (2026-11-06):* the reload started on frame 7; on frame 22 the weapon read clip reload 30, reloading,
+    /// next shot 37, percent 0.5, and the button `(NOT_READY, 50)`, as predicted. The stale cell came **earlier than
+    /// predicted**: on frame 37, the frame the reload ended, before the AI fired again (`RELOADING_CLIP` in the cell,
+    /// `READY_TO_FIRE` read), not only after the fight.
+    #[test]
+    fn a_unit_that_just_fired_shows_its_reload_clock() {
+        use crate::client::control_bar_command::{CommandAvailability, ControlBarStateHost};
+        use crate::logic::weapon_types::WeaponStatus;
+        let (w, x) = world33();
+        let mut c = WorldClient::new(w, 1);
+        let slot = crate::logic::weapon_fire::PRIMARY_WEAPON;
+        let weapon = |c: &WorldClient| c.world.find_object(x.gunner).and_then(|o| o.weapon_set.get_weapon_in_weapon_slot(slot)).cloned().expect("the clip gun");
+        let mut reload_started = None;
+        for _ in 0..200 {
+            c.world.logic_update().expect("a frame");
+            let wpn = weapon(&c);
+            if wpn.peek_status(c.world.frame()) == WeaponStatus::ReloadingClip {
+                reload_started = Some(wpn.last_reload_started_frame());
+                break;
+            }
+        }
+        let started = reload_started.expect("the gunner emptied its clip");
+        while c.world.frame() < started + 15 {
+            c.world.logic_update().expect("a frame");
+        }
+        let before = weapon(&c);
+        let state = c.weapon(x.gunner, slot).expect("a weapon");
+        let got = availability(&mut c, x.gunner, b"Command_Fire");
+        eprintln!("#33: reload started on frame {started}; at {} the weapon reads {state:?}, the button {got:?}", c.world.frame());
+        assert_eq!(state.clip_reload_time, 30);
+        assert!(state.reloading_clip);
+        assert_eq!(got, (CommandAvailability::NotReady, Some(50)));
+        assert_eq!(weapon(&c), before, "the read left the weapon as it was");
+        // the stale cell, once the fight is over
+        let mut stale = None;
+        for _ in 0..600 {
+            c.world.logic_update().expect("a frame");
+            let wpn = weapon(&c);
+            let now = c.world.frame();
+            // (every frame: the pure reads answer as upstream's getters, on a copy, do)
+            let probe = wpn.clone();
+            assert_eq!(probe.get_percent_ready_to_fire(now).to_bits(), wpn.peek_percent_ready_to_fire(now).to_bits(), "frame {now}");
+            if wpn.peek_status(now) != wpn.raw_status() {
+                stale = Some((now, wpn.raw_status(), wpn.peek_status(now)));
+                let copy = wpn.clone();
+                assert_eq!(copy.get_status(now), wpn.peek_status(now), "the pure read answers what getStatus() answers");
+                assert_ne!(copy, wpn, "upstream's getStatus() writes the cell");
+                break;
+            }
+        }
+        eprintln!("#33: the first stale status cell: {stale:?}");
+        assert!(stale.is_some_and(|(_, _, peek)| peek == WeaponStatus::ReadyToFire));
+    }
+
+    /// #33, a special power's clock and the shared timer. Predicted before the run, from `SpecialPowerModule.cpp` and
+    /// `getCommandAvailability`: the charger's own power (6 s = 180 frames) starts recharging when it is built
+    /// (`SpecialPowerCreate`), so 90 frames later its button is `NOT_READY` with the clock at
+    /// `(1 - 90 / 180) * 100` = **50**. The caster's power is shared and no timer was started (no create module): the
+    /// player's `getOrStartSpecialPowerReadyFrame` would answer now, so the power is ready and the button `AVAILABLE`, and
+    /// the read leaves the player's timer list **empty**. The ablation: the module's own `isReady` (upstream's call) adds
+    /// one timer to the list.
+    ///
+    /// *Results (2026-11-06):* as predicted: built on frame 0, at frame 90 the charger's button `(NOT_READY, 50)`, the
+    /// caster's `(AVAILABLE, none)`; the timer list stayed empty, and the module's own `isReady` added one.
+    #[test]
+    fn a_power_shows_its_charge_and_a_shared_one_starts_no_timer() {
+        use crate::client::control_bar_command::CommandAvailability;
+        let (w, x) = world33();
+        let mut c = WorldClient::new(w, 1);
+        while c.world.frame() < x.made_on + 90 {
+            c.world.logic_update().expect("a frame");
+        }
+        let p = c.world.get_controlling_player(x.caster).expect("the player");
+        let timers = |c: &WorldClient| c.world.players.get_nth(p).map(|pl| pl.special_power_timers.len()).expect("the player");
+        assert_eq!(timers(&c), 0);
+        let charging = availability(&mut c, x.charger, b"Command_Own");
+        let shared = availability(&mut c, x.caster, b"Command_Shared");
+        eprintln!("#33: at frame {} (built on {}): own power {charging:?}, shared {shared:?}", c.world.frame(), x.made_on);
+        assert_eq!(charging, (CommandAvailability::NotReady, Some(50)));
+        assert_eq!(shared, (CommandAvailability::Available, None));
+        assert_eq!(timers(&c), 0, "the client's read started no timer");
+        // the ablation: upstream's getter starts it
+        let t = c.world.statics.special_power_store.find_special_power_template(b"SharedDrop").map(|t| t.id());
+        let m = c.world.get_special_power_module(x.caster, t).expect("the caster's power");
+        c.world.module_call(x.caster, m, ModuleCall::IsReady);
+        assert_eq!(timers(&c), 1, "the module's isReady starts the shared timer");
+    }
+
+    /// #33, the contain, production and AI answers. Predicted before the run, from `getCommandAvailability`:
+    /// - the bus with two rappellers: evacuate `AVAILABLE` (count 2) and combat drop `AVAILABLE` (2 that can rappel); the
+    ///   empty bus: both `RESTRICTED`;
+    /// - the barracks: the player upgrade `AVAILABLE` (1000 to spend, it costs 100); once queued, `CANT_AFFORD` (in
+    ///   production: the swap upstream's comment shows);
+    /// - a runner of the gate, ordered across the map, is moving at frame 5: the gunner's stopped-only fire button on it is
+    ///   `RESTRICTED`; on the idle gun (no command set needed: the button is asked directly) the AI is not moving, so the
+    ///   answer falls to the fire weapon case: the gun has no weapon in its primary slot, so `RESTRICTED` as well; ~~the
+    ///   gunner (stopped, weapon ready at frame 5) `AVAILABLE`~~ **missed on the first run (2026-11-06):** the gunner had
+    ///   already fired by frame 5 (its reload starts on frame 7, after the second shot: see
+    ///   `a_unit_that_just_fired_shows_its_reload_clock`), so between shots it is `NOT_READY` without a clock (upstream draws
+    ///   the clock only while the clip reloads); the prediction assumed it had not acquired its target yet;
+    /// - the switch weapon buttons: with the gunner selected (its current slot primary) the primary one is `ACTIVE`; the
+    ///   secondary one `RESTRICTED` (no weapon there);
+    /// - the gate's dozer is idle: `isTaskPending(DOZER_TASK_BUILD)` false.
+    #[test]
+    fn the_contain_production_and_ai_answers() {
+        use crate::client::control_bar_command::{CommandAvailability as A, ControlBarStateHost};
+        let (w, x) = world33();
+        let mut c = WorldClient::new(w, 1);
+        for _ in 0..5 {
+            c.world.logic_update().expect("a frame");
+        }
+        assert_eq!((c.contain_count(x.bus), c.rappeller_count(x.bus)), (Some(2), 2));
+        assert_eq!(availability(&mut c, x.bus, b"Command_Evac").0, A::Available);
+        assert_eq!(availability(&mut c, x.bus, b"Command_CombatDrop").0, A::Available);
+        assert_eq!(availability(&mut c, x.empty_bus, b"Command_Evac").0, A::Restricted);
+        assert_eq!(availability(&mut c, x.empty_bus, b"Command_CombatDrop").0, A::Restricted);
+        assert_eq!(availability(&mut c, x.barracks, b"Command_Drill").0, A::Available);
+        let key = c.world.cuts.command_buttons.iter().find(|b| b.name == b"Command_Drill").and_then(|b| b.upgrade).expect("the upgrade");
+        let pu = c.world.get_production_update_interface(x.barracks).expect("the factory");
+        assert!(c.world.module_call(x.barracks, pu, ModuleCall::ProductionQueueUpgrade { upgrade: Some(key) }).as_bool(), "queued");
+        assert!(c.player_has_upgrade_in_production(x.barracks, key));
+        assert_eq!(availability(&mut c, x.barracks, b"Command_Drill").0, A::CantAfford);
+        let runner = c.world.objects.ids_in_order().into_iter().find(|&o| c.world.find_object(o).is_some_and(|ob| ob.template().get_name() == b"Runner")).expect("a runner");
+        let gun = c.world.objects.ids_in_order().into_iter().find(|&o| c.world.find_object(o).is_some_and(|ob| ob.template().get_name() == b"Gun")).expect("the gun");
+        assert!(c.is_moving(runner));
+        assert!(!c.is_moving(gun));
+        assert_eq!(availability(&mut c, runner, b"Command_FireStopped").0, A::Restricted);
+        assert_eq!(availability(&mut c, gun, b"Command_FireStopped").0, A::Restricted);
+        assert_eq!(availability(&mut c, x.gunner, b"Command_FireStopped"), (A::NotReady, None));
+        c.view.selection = vec![x.gunner];
+        assert_eq!(availability(&mut c, x.gunner, b"Command_Switch").0, A::Active);
+        assert_eq!(availability(&mut c, x.gunner, b"Command_SwitchSecondary").0, A::Restricted);
+        let dozer = c.world.objects.ids_in_order().into_iter().find(|&o| c.is_dozer(o)).expect("the dozer");
+        assert_eq!(c.dozer_build_pending(dozer), Some(false));
+        assert_eq!(c.dozer_build_pending(x.gunner), None);
+        assert!(c.sent.is_empty());
+    }
+
+    /// #35, the portrait and the popup, from the World. Predicted before the run, from `setPortraitByObject` and
+    /// `populateBuildTooltipLayout`, with the test's strings (`TOOLTIP:Cost` = "Cost: $%d", the labels' texts, and
+    /// `CONTROLBAR:PowerDescription` = "Power %d/%d"):
+    /// - nothing selected: the portrait hidden;
+    /// - the gunner (regular): `SNGunner_L`, no chevron, the first upgrade cameo `SUDrill` disabled (the player has not
+    ///   researched the drill), the other four hidden; once the player has the drill, the cameo enabled;
+    /// - the recruit button, the barracks selected with 1000 to spend: name "Recruit", cost "Cost: $300", description
+    ///   "Trains a recruit." (it can be made, no prerequisites);
+    /// - the drill button: "Drill", "Cost: $100", "Researches drills."; once the player has it: no cost and
+    ///   `TOOLTIP:AlreadyUpgradedDefault`'s "Already upgraded.";
+    /// - the power window: "Power" and "Power 0/0" (player 1 has no power plant).
+    ///
+    /// *Results (2026-11-06):* every prediction held.
+    #[test]
+    fn the_portrait_and_the_popup_read_the_world() {
+        use crate::client::control_bar_command::ControlBarStateHost;
+        use crate::client::control_bar_popup::{populate_build_tooltip_layout, populate_window_tooltip, set_portrait_by_object, TooltipWindow};
+        let (mut w, x) = world33();
+        let statics = std::sync::Arc::get_mut(&mut w.statics).expect("the test's own statics");
+        for (l, t) in [
+            ("TOOLTIP:Cost", "Cost: $%d"),
+            ("CONTROLBAR:Recruit", "Recruit"),
+            ("CONTROLBAR:RecruitDesc", "Trains a recruit."),
+            ("CONTROLBAR:Drill", "Drill"),
+            ("CONTROLBAR:DrillDesc", "Researches drills."),
+            ("TOOLTIP:AlreadyUpgradedDefault", "Already upgraded."),
+            ("CONTROLBAR:Power", "Power"),
+            ("CONTROLBAR:PowerDescription", "Power %d/%d"),
+        ] {
+            let units: Vec<u16> = t.encode_utf16().collect();
+            statics.game_text.strings.insert(l.as_bytes().to_vec(), crate::common::unicode_string::UnicodeString::try_from_chars(&units).expect("a string"));
+        }
+        let mut c = WorldClient::new(w, 1);
+        let text = |v: &[u16]| String::from_utf16_lossy(v);
+        assert_eq!(set_portrait_by_object(None, &mut c), crate::client::control_bar_popup::Portrait::default());
+        let p = set_portrait_by_object(Some(x.gunner), &mut c);
+        assert!(p.shown);
+        assert_eq!((p.image.as_deref(), p.overlay.as_deref()), (Some(&b"SNGunner_L"[..]), None));
+        assert_eq!(p.upgrade_cameos[0], Some((Some(b"SUDrill".to_vec()), false)));
+        assert!(p.upgrade_cameos[1..].iter().all(Option::is_none));
+        c.view.selection = vec![x.barracks];
+        let button = |c: &WorldClient, n: &[u8]| c.button(c.world.cuts.command_buttons.iter().position(|b| b.name == n).expect("the button")).expect("the button");
+        let t = populate_build_tooltip_layout(&button(&c, b"Command_Recruit"), &mut c);
+        assert_eq!((text(&t.name), t.cost.as_deref().map(text), text(&t.description)), ("Recruit".into(), Some("Cost: $300".into()), "Trains a recruit.".into()));
+        let t = populate_build_tooltip_layout(&button(&c, b"Command_Drill"), &mut c);
+        assert_eq!((text(&t.name), t.cost.as_deref().map(text), text(&t.description)), ("Drill".into(), Some("Cost: $100".into()), "Researches drills.".into()));
+        let key = button(&c, b"Command_Drill").upgrade.expect("the upgrade").0;
+        let mask = c.world.statics.upgrade_center.find_upgrade_by_key(NameKeyType(key)).expect("the upgrade").upgrade_mask();
+        c.world.player_add_upgrade(1, key, &mask, crate::common::upgrade::UPGRADE_STATUS_COMPLETE);
+        let t = populate_build_tooltip_layout(&button(&c, b"Command_Drill"), &mut c);
+        assert_eq!((t.cost.is_none(), text(&t.description)), (true, "Already upgraded.".into()));
+        let p = set_portrait_by_object(Some(x.gunner), &mut c);
+        assert_eq!(p.upgrade_cameos[0], Some((Some(b"SUDrill".to_vec()), true)));
+        let t = populate_window_tooltip(TooltipWindow::Power, &mut c);
+        eprintln!("#35: the power's popup: {:?} / {:?}", text(&t.name), text(&t.description));
+        assert_eq!((text(&t.name), text(&t.description)), ("Power".into(), "Power 0/0".into()));
     }
 
     /// C2d (#6), the rule of `AGENTS.md`: the client's questions never change the simulation. Predicted: in the gate game,

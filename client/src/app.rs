@@ -44,6 +44,7 @@ use std::collections::HashMap;
 
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
+use bevy::picking::events::{PointerOut, PointerOver, PointerPress};
 use bevy::ui_widgets::{observe, Activate, Button};
 
 use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D};
@@ -95,6 +96,12 @@ struct Game {
     ui_status: String,
     /// The UI's textures by file name (`None`: missing), with their sizes.
     ui_textures: HashMap<Vec<u8>, Option<(Handle<Image>, (u32, u32))>>,
+    /// (#35) When a command button's popup shows, the popups' lines by command slot, the selection they were made for, and
+    /// whether the last pointer to press a button was a touch.
+    tooltip: crate::ui::TooltipTimer,
+    tooltip_lines: Vec<Option<Vec<String>>>,
+    tooltip_for: Option<ObjectId>,
+    touch_pressed: bool,
 }
 
 impl Game {
@@ -115,6 +122,10 @@ impl Game {
             ui_pending: true,
             ui_status: "no game files: debug panel".to_string(),
             ui_textures: HashMap::new(),
+            tooltip: crate::ui::TooltipTimer::default(),
+            tooltip_lines: Vec::new(),
+            tooltip_for: None,
+            touch_pressed: false,
         }
     }
 }
@@ -218,7 +229,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .add_systems(Update, (poll_import, pump_art, update_terrain).chain())
         .add_systems(
             Update,
-            (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, lift_zoom, control_bar, update_hud).chain(),
+            (sync_objects, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -1035,6 +1046,12 @@ fn game_ui(
     let queue = sel.map(|o| c.client.production_queue(o)).unwrap_or_default();
     let (money, power) = c.client.money_and_power();
     let state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
+    // (#35) the popups of this selection's buttons; a new selection shows none
+    if sel != g.tooltip_for {
+        g.tooltip.reset();
+        g.tooltip_for = sel;
+    }
+    g.tooltip_lines = state.tooltips.iter().map(|t| t.as_ref().map(crate::ui::tooltip_lines)).collect();
     let ui = g.ui.as_ref().expect("checked");
     let quads = ui.frame(&state);
     let buttons: Vec<Option<usize>> = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
@@ -1098,6 +1115,15 @@ fn game_ui(
                 p.spawn((Text::new(t.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(Color::WHITE)));
             });
         }
+        if let Some((h, rect)) = q.overlay.as_ref().and_then(|n| ui_image(g, &mut images, n)) {
+            // (#35) the portrait's veterancy chevron over it
+            e.with_children(|p| {
+                p.spawn((
+                    Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
+                    ImageNode { image: h, rect: Some(rect), image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() },
+                ));
+            });
+        }
         if let Some(pct_done) = q.clock {
             let rest = (100 - pct_done.clamp(0, 100)) as f32;
             e.with_children(|p| {
@@ -1112,18 +1138,86 @@ fn game_ui(
                 let index = *index;
                 e.insert((
                     Button,
-                    observe(move |_: On<Activate>, mut game: NonSendMut<Game>| {
+                    observe(move |_: On<Activate>, time: Res<Time>, mut game: NonSendMut<Game>| {
+                        // (#35) a long press shows the popup instead of pressing
+                        let touch = game.touch_pressed;
+                        if !game.tooltip.click(slot, time.elapsed_secs_f64(), touch) {
+                            return;
+                        }
                         let b = rts_lockstep_engine::client::command_world::gui_button(&game.controls.client.world, index);
                         if let Some(b) = b {
                             game.controls.press(&b);
                         }
                     }),
                 ));
+                // (#35) the popup's hover and long press
+                e.observe(move |ev: On<PointerOver>, time: Res<Time>, mut game: NonSendMut<Game>| {
+                    let touch = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
+                    game.tooltip.over(slot, time.elapsed_secs_f64(), touch);
+                });
+                e.observe(move |_: On<PointerOut>, mut game: NonSendMut<Game>| game.tooltip.out(slot));
+                e.observe(move |ev: On<PointerPress>, time: Res<Time>, mut game: NonSendMut<Game>| {
+                    game.touch_pressed = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
+                    game.tooltip.press(slot, time.elapsed_secs_f64());
+                });
             }
         }
         let child = e.id();
         commands.entity(root).add_child(child);
     }
+}
+
+/// The popup description's panel (#35), and the lines it shows.
+#[derive(Component)]
+struct TooltipPanel(Vec<String>);
+
+/// GUI glue (needs a window): the shown command button's popup (`ControlBarPopupDescription.wnd`'s name, cost and
+/// description, from [`crate::ui::tooltip_lines`]; when, from [`crate::ui::TooltipTimer`], both tested in `ui`), as a
+/// panel just above the control bar, no wider than the screen less its 8-pixel margins (a phone's too). Rebuilt when its
+/// lines change; none while nothing is shown.
+fn tooltip_panel(mut commands: Commands, time: Res<Time>, game: NonSend<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
+    let lines = game.tooltip.shown(time.elapsed_secs_f64()).and_then(|s| game.tooltip_lines.get(s).cloned().flatten());
+    let ww = windows.single().map_or(800.0, |w| w.width());
+    let width = (ww - 16.0).clamp(120.0, 420.0);
+    let mut existing = panels.iter_mut().next();
+    let Some(lines) = lines.filter(|l| !l.is_empty()) else {
+        if let Some((e, _, _)) = existing {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    if let Some((_, panel, node)) = existing.as_mut() {
+        node.bottom = px(ui_bar.height + 6.0);
+        node.left = px((ww - width) / 2.0);
+        node.width = px(width);
+        if panel.0 == lines {
+            return;
+        }
+    }
+    if let Some((e, _, _)) = existing {
+        commands.entity(e).despawn();
+    }
+    let mut e = commands.spawn((
+        TooltipPanel(lines.clone()),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(ui_bar.height + 6.0),
+            left: px((ww - width) / 2.0),
+            width: px(width),
+            padding: UiRect::all(px(8)),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(4),
+            border_radius: BorderRadius::all(px(6)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.05, 0.07, 0.10, 0.92)),
+    ));
+    e.with_children(|p| {
+        for (i, l) in lines.iter().enumerate() {
+            let (size, color) = if i == 0 { (16.0, Color::srgb(1.0, 0.85, 0.4)) } else { (13.0, Color::WHITE) };
+            p.spawn((Text::new(l.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(color)));
+        }
+    });
 }
 
 fn bar_button(label: &str) -> impl Bundle {
