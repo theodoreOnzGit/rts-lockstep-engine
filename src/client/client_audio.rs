@@ -49,6 +49,8 @@ use crate::common::game_type::{ObjectId, LAYER_GROUND};
 use crate::common::thing_template::ThingTemplateAudioType;
 use crate::client::unit_voice::{UnitVoice, VoiceSource};
 use crate::client::drawable_ambient::AmbientSounds;
+use crate::client::eva::{Eva, EvaHost, SuperweaponTimers, EVA_INSUFFICIENT_FUNDS};
+use crate::logic::world::game_logic_dispatch::ClientCall;
 use crate::logic::client_event::{ClientEvent, MoneySound, ScriptAudioEvent};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::object_events::{ObjectClientEvent, ObjectSound, StealthFeedback};
@@ -125,6 +127,45 @@ impl AudioHost for WorldAudioHost<'_> {
     }
 }
 
+/// #55: EVA's questions, read from the World.
+impl EvaHost for WorldAudioHost<'_> {
+    fn eva_frame(&self) -> u32 {
+        self.world.frame()
+    }
+    fn eva_has_sufficient_power(&self, player: i32) -> bool {
+        let now = self.world.frame();
+        self.world.players.get_nth(player).is_some_and(|p| p.energy.has_sufficient_power(now))
+    }
+    fn eva_player_side(&self, player: i32) -> Vec<u8> {
+        self.world.players.get_nth(player).map(|p| p.side.clone()).unwrap_or_default()
+    }
+    fn eva_superweapon_ready(&self, object: ObjectId, template: u32) -> Option<Option<bool>> {
+        use crate::common::object_status_types::OBJECT_STATUS_UNDER_CONSTRUCTION;
+        use crate::logic::modules::special_power_body::{peek_ready_and_percent, peek_special_power_module};
+        let o = self.world.find_object(object)?;
+        if o.test_status(OBJECT_STATUS_UNDER_CONSTRUCTION) {
+            return None;
+        }
+        // (`isReady()` read without starting a shared timer: `peek_ready_and_percent`)
+        Some(peek_special_power_module(self.world, object, template).and_then(|(me, p)| peek_ready_and_percent(p, self.world, me).ok()).map(|(ready, _)| ready))
+    }
+    fn eva_special_power_type(&self, template: u32) -> Option<crate::common::special_power_type::SpecialPowerType> {
+        self.world.statics.special_power_store.find_special_power_template_by_id(template).map(|t| t.special_power_type())
+    }
+    fn eva_hidden_by_science(&self, player: i32, template: u32) -> bool {
+        use crate::common::science::SCIENCE_INVALID;
+        let Some(t) = self.world.statics.special_power_store.find_special_power_template_by_id(template) else { return false };
+        let s = t.required_science();
+        s != SCIENCE_INVALID && !self.world.players.get_nth(player).is_some_and(|p| p.sciences.contains(&s))
+    }
+    fn eva_controlling_player(&self, object: ObjectId) -> Option<i32> {
+        self.world.get_controlling_player(object)
+    }
+    fn eva_relationship(&self, player: i32, object: ObjectId) -> Relationship {
+        self.world.tq().player_relationship_to_team(player, self.world.get_team(object))
+    }
+}
+
 /// The client's audio: the manager, and the handles of the firing trackers' looping sounds by object.
 #[derive(Clone, Debug)]
 pub struct ClientAudio {
@@ -140,6 +181,12 @@ pub struct ClientAudio {
     pub ambient: AmbientSounds,
     /// #51: how many of the logic's INI audio events ([`AudioTables::logic_ini_events`]) are applied to the manager's tables.
     pub logic_ini_applied: usize,
+    /// #55: `TheEva`, played through [`ClientAudio::manager`].
+    pub eva: Eva,
+    /// #55: `InGameUI`'s superweapon timers, for their "ready" EVA.
+    pub superweapons: SuperweaponTimers,
+    /// #55: how many of the client's `EVA_InsufficientFunds` requests (`WorldClient::eva_insufficient_funds`) EVA has taken.
+    pub eva_insufficient_funds_taken: u32,
 }
 
 /// `MiscAudio`'s sound for an [`ObjectSound`] (`None`: not a misc sound).
@@ -168,7 +215,17 @@ pub fn misc_sound(m: &MiscAudio, s: ObjectSound) -> Option<&AudioEventName> {
 
 impl ClientAudio {
     pub fn new(manager: AudioManager) -> Self {
-        ClientAudio { manager, firing_loops: BTreeMap::new(), log: Vec::new(), voice_indices: BTreeMap::new(), ambient: AmbientSounds::default(), logic_ini_applied: 0 }
+        ClientAudio {
+            manager,
+            firing_loops: BTreeMap::new(),
+            log: Vec::new(),
+            voice_indices: BTreeMap::new(),
+            ambient: AmbientSounds::default(),
+            logic_ini_applied: 0,
+            eva: Eva::new(),
+            superweapons: SuperweaponTimers::default(),
+            eva_insufficient_funds_taken: 0,
+        }
     }
 
     fn add(&mut self, host: &dyn AudioHost, e: AudioEventRts) -> AudioHandle {
@@ -242,6 +299,11 @@ impl ClientAudio {
             ClientEvent::ObjectDestroyed { object_id } => self.ambient.destroy(*object_id, &mut self.manager, device),
             ClientEvent::LoadingMap(on) => self.ambient.loading_map = *on,
             ClientEvent::DrawablesOnLevelStart => self.ambient.on_level_start(&mut self.manager, device, host),
+            // #56: the dispatcher's `AudioEventRTS sound(name); sound.setPosition(&pos); sound.setPlayerIndex(i);
+            // sound.setObjectID(id); TheAudio->addAudioEvent(&sound);` (the rally point's, the beacon's, the placement's)
+            ClientEvent::Dispatch(ClientCall::Audio { name, pos, player, object }) => {
+                self.add(host, Self::named(name.as_bytes(), object.map_or(0, |o| o as ObjectId), pos.as_ref(), *player));
+            }
             _ => {}
         }
     }
@@ -368,6 +430,22 @@ impl ClientAudio {
     /// #51: `Drawable::update`'s ambient sound restart, for every drawable; once per logic frame, after its events.
     pub fn update_ambient<D: AudioDevice>(&mut self, host: &dyn AudioHost, device: &mut D) {
         self.ambient.update(&mut self.manager, device, host);
+    }
+
+    /// #55: EVA's frame, once per logic frame after its events: the logic's `TheEva` and `addSuperweapon` calls among
+    /// `events`, the client's insufficient funds requests (`insufficient_funds`, the running count of
+    /// `WorldClient::eva_insufficient_funds`), the superweapon timers' ready check, then `Eva::update`. Reads the World only.
+    pub fn update_eva(&mut self, host: &impl EvaHost, events: &[ClientEvent], insufficient_funds: u32) {
+        for e in events {
+            self.eva.take_event(e);
+            self.superweapons.take_event(host, e);
+        }
+        if insufficient_funds != self.eva_insufficient_funds_taken {
+            self.eva.set_should_play(EVA_INSUFFICIENT_FUNDS);
+            self.eva_insufficient_funds_taken = insufficient_funds;
+        }
+        self.superweapons.update(host, &mut self.eva);
+        self.eva.update(host, &mut self.manager);
     }
 
     /// An FX list's sound (`SoundFXNugget`): at the position, if it has one.

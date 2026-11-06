@@ -150,8 +150,36 @@ output).**
   the ambient sounds and the map's customised ones are played (see #51's parts 2 and 3 below); ~~the scripts' sounds, speech and
   music (cut points in the logic);~~ **Corrected 2026-11-06 (#51):** the scripts' sounds, speech and music are played
   (see #51's entry below); ~~unit voices on selection and orders;~~ **Corrected 2026-11-06 (#51):** unit voices are
-  played (see #51's parts 2 and 3); music tracks started by the game; EVA; the
+  played (see #51's parts 2 and 3); music tracks started by the game; ~~EVA;~~ **Corrected 2026-11-06 (#55):** EVA is
+  played (see #56/#55's entry below); the
   low-pass occlusion of off-screen sounds; a check in a real browser with a real install.
+
+**#56 and #55 (2026-11-06, GitHub #56, #55): the demo's local player; the dispatcher's client calls; EVA.**
+- **#56 (a defect):** the demo game never set the logic's local player (only tests did), so the logic's feedback to the
+  local player never fired in the app. Upstream sets it in `PlayerList::newGame` (`GameLogic::startNewGame`): the first
+  side marked `multiplayerIsLocal`, else (no network) the first `playerIsHuman`, else the first non-neutral player made
+  human, each through `setLocalPlayer` (which tells the player it became local). An imported game runs the translated
+  `startNewGame`, so it already had one (`import.rs` reads it); the demo now sets `Player1` through
+  `player_list_set_local_player` at its game start. **A second gap behind it:** the dispatcher's client calls
+  (`ClientCall`: `TheInGameUI->message`, `TheAudio->addAudioEvent`, `TheEva->setShouldPlay(EVA_BeaconDetected)`, ...) went
+  only to the cut log, so even with a local player no client saw `GUI:RallyPointSet`. They are now client events too
+  (`ClientEvent::Dispatch`); the client takes the messages (`WorldClient::take_logic_messages`) and plays the sounds.
+  **Not in the CRC or the save:** `PlayerList::crc`/`xfer` and `Player::crc` do not write the local player, and gate (a)
+  does not use the demo.
+- **#55, EVA:** `src/client/eva.rs` translates Eva.cpp (the `EvaEvent` INI of `Data\INI\Eva.ini`, `EvaCheckInfo`,
+  `setShouldPlay`, `setEvaEnabled`, `update` with its per-message intervals and expiry, `processPlayingMessages` with the
+  priority and the side's sounds through `GameClientRandomValue`), played through the audio manager
+  (`ClientAudio::update_eva`, once per logic frame). The logic's `setShouldPlay` calls already were client events but for
+  two: the beacon's (now `ClientEvent::Dispatch`) and the script action `EVA_SET_ENABLED_DISABLED` (now
+  `ClientEvent::EvaSetEnabled`). The client's own: insufficient funds (`WorldClient::eva_insufficient_funds`) and
+  superweapon ready (`InGameUI::postDraw`'s EVA half, `SuperweaponTimers`, read through the new
+  `special_power_body::peek_special_power_module`). Not asked yet: base and ally under attack (`Radar::tryUnderAttackEvent`;
+  the radar's events are #35's).
+- *Predictions and results:* in the tests' doc comments (`client/src/input.rs`
+  `the_demo_sets_the_local_player_and_a_rally_point_gives_the_local_message`, `src/client/eva.rs`'s four): all held on
+  the first run. The CRCs are equal with EVA attached (lib) and with the neutral player local (client).
+- **Gates:** lib 1009 (1004 + 5), client 37 (36 + 1), clippy clean, web build clean. Gate (a): *predicted* unchanged
+  (the gate game does not run the demo's start and client events are not CRC'd); *result* PASS, last CRC `0bf44067`.
 
 **#52 (2026-11-06, GitHub #52): script speech and sound waits last the files' length (the owner's option 2).**
 - **Translated:** `AudioManager::getAudioLengthMS` (GameAudio.cpp:944: a copy of the event, `generateFilename`,
@@ -263,7 +291,7 @@ output).**
   gate game runs no translator and no `startNewGame`); *result* PASS, 300 frames, last CRC `0bf44067`.
 - **Not done** (written up for issues): GUICommandTranslator.cpp is not translated, so its five voices (guard at an
   object and a position, attack move, fire weapon at a position, evacuate at a position) and ControlBarCallback.cpp's two
-  are not played; EVA; the ambient sound's `setTimeOfDay` restart and its save-game state; the lengths (#52) of events a
+  are not played; ~~EVA;~~ **Corrected 2026-11-06 (#55):** EVA is played (see #56/#55's entry); the ambient sound's `setTimeOfDay` restart and its save-game state; the lengths (#52) of events a
   `map.ini` redefines are the install's; `map.ini`'s `AudioSettings`/`MiscAudio` blocks are not read; no check with a
   real install.
 

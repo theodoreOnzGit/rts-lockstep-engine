@@ -417,8 +417,10 @@ impl DispatchHost for World {
     fn d_is_local_player(&self, player: i32) -> bool {
         player_is_local_player(self, player)
     }
+    /// The cut log's record, and (GitHub #56) the call itself as a client event, for the client to make.
     fn d_client(&mut self, call: ClientCall) {
         self.cut(CutCall::Host { call: "client", args: Vec::new(), text: format!("{call:?}").into_bytes() });
+        self.events.push(crate::logic::client_event::ClientEvent::Dispatch(call));
     }
 }
 

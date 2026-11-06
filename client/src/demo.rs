@@ -4,7 +4,7 @@
 //! EA data), with units the player can select and order: `SELECTABLE` copies of the gate's Runner and Soldier, a WorkDozer
 //! that can build the gate's Depot, and I23's Caster with its drop power, all with sight, as shipped units have.
 //!
-//! Player 1 (the local player) has two Runners, two Soldiers, the dozer and the Caster in the south-west; player 2 has two
+//! Player 1 (the local player, set at the demo's game start as `PlayerList::newGame` sets it, #56) has two Runners, two Soldiers, the dozer and the Caster in the south-west; player 2 has two
 //! Soldiers in the north-east, beyond the Soldiers' sight. Since #54 the Soldiers have guard and attack move buttons (and
 //! voices for them, whose sounds the demo does not have), and player 1 has a Hut with a set rally point button and an
 //! exit to rally. The game is in progress (`GAME_SKIRMISH`), so the dispatcher
@@ -15,6 +15,7 @@ use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::recorder::game_mode;
 use rts_lockstep_engine::logic::world::game_logic::World;
 use rts_lockstep_engine::logic::world::gate_scenario::{gate_map_world_with, make, INI};
+use rts_lockstep_engine::logic::world::player_list::player_list_set_local_player;
 use rts_lockstep_engine::logic::world::team_ops::factory_find_team;
 
 /// The demo's objects, by role.
@@ -65,6 +66,9 @@ Object DemoHut\n KindOf = STRUCTURE IMMOBILE SELECTABLE\n CommandSet = DemoHutSe
  Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\
  Behavior = DefaultProductionExitUpdate ModuleTag_Exit\n  UnitCreatePoint = X:0 Y:0 Z:0\n  NaturalRallyPoint = X:20 Y:0 Z:0\n End\nEnd\n";
 
+/// GitHub #56: the demo's local player, `Player1` (index 1; 0 is the neutral player).
+pub const DEMO_LOCAL_PLAYER: i32 = 1;
+
 /// The demo's own texts for its buttons (#35, #54), by label.
 pub const DEMO_TEXT: [(&str, &str); 5] = [
     ("DEMO:BuildDepot", "Build a Depot"),
@@ -86,6 +90,11 @@ pub fn demo_world() -> (World, DemoObjects) {
     );
     let extra = [selectable("Runner"), soldier, WORK_DOZER.to_string(), caster, GUARD_AND_RALLY.to_string()].join("\n");
     let mut w = gate_map_world_with(&extra);
+    // GitHub #56: the local player, as `PlayerList::newGame` (`GameLogic::startNewGame`) sets it before the map's objects
+    // are made: with no network, the first side whose `playerIsHuman` is set, through `setLocalPlayer` (which tells the
+    // player it became local: its team colour and the control bar). The gate's two sides are both human, so `Player1`.
+    // ~~The demo never set it, so the logic's local feedback (`doSetRallyPoint`'s message and sound, the EVA) never fired.~~
+    player_list_set_local_player(&mut w, Some(DEMO_LOCAL_PLAYER)).expect("the local player");
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
     let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
     let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };

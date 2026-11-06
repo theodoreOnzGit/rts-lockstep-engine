@@ -169,6 +169,18 @@ fn peek_shared_ready_frame(world: &World, me: ModuleHandle, template: Option<u32
     world.players.get_nth(player).map_or(0, |p| crate::logic::world::player_ops::special_power_timers_peek(&p.special_power_timers, template, now))
 }
 
+/// GitHub #55: `getSpecialPowerModule(template)` read in place for the client (`InGameUI`'s superweapon timers): the first
+/// special power module of the object whose template is `template` (`isModuleForPower`: `getSpecialPowerTemplate() ==
+/// template`), with its handle. [`World::get_special_power_module`] asks the same through a module call, which needs the
+/// World mutable; this reads the bodies only.
+pub fn peek_special_power_module(world: &World, obj: ObjectId, template: u32) -> Option<(ModuleHandle, &SpecialPowerModule)> {
+    world.modules_with(obj, crate::common::module::MODULEINTERFACE_SPECIAL_POWER).into_iter().find_map(|index| {
+        let me = ModuleHandle { object: obj, index };
+        let power = world.peek_module_body(me).and_then(power_of_body)?;
+        (template_id(world, power) == Some(template)).then_some((me, power))
+    })
+}
+
 /// The `SpecialPowerModule` base of a module's body, for every special power module the game has (the client's read).
 pub fn power_of_body(b: &UpdateBody) -> Option<&SpecialPowerModule> {
     Some(match b {

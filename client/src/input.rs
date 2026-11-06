@@ -647,4 +647,66 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         assert_eq!(played, run.crcs, "the playback of the recorded orders gives the same CRCs");
         assert!(first_diff.is_some(), "without the guard order the game differs");
     }
+
+    /// The demo's Hut selected, its rally point button pressed and the ground at `at` clicked, then one logic frame: the
+    /// frame's events and the client's logic messages after it.
+    fn rally_from_the_demo(c: &mut Controls, hut: ObjectId, at: Coord3D) -> Vec<rts_lockstep_engine::logic::client_event::ClientEvent> {
+        let px = ICoord2D { x: 20, y: 20 };
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        c.world().take_client_events();
+        let hp = c.client.object_position(hut);
+        assert!(c.left_release(px, px, &[hut], Some(hut), hp));
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        c.world().take_client_events();
+        let bar = c.bar_buttons();
+        let b = bar.iter().find(|b| b.label == "Command_DemoRally").expect("the rally button").button.clone();
+        assert_eq!(c.press(&b), CbCommandStatus::Used);
+        assert!(c.left_press(ICoord2D { x: 300, y: 300 }, at));
+        assert!(c.left_release(ICoord2D { x: 300, y: 300 }, ICoord2D { x: 300, y: 300 }, &[], None, at));
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        let ev = c.world().take_client_events();
+        c.client.take_logic_messages(&ev);
+        ev
+    }
+
+    /// GitHub #56: the demo's game start sets the logic's local player (`PlayerList::newGame`'s `setLocalPlayer` of the
+    /// first human side), so the logic's feedback to the local player reaches the client.
+    ///
+    /// *Predictions, written before the first run:* after `demo_world` the World's local player is 1 (it was `None`:
+    /// `PlayerArena::new` leaves it unset and the demo never set it). A rally point set on the Hut at (90, 230) gives, in that
+    /// frame's events, the dispatcher's `UiMessage { "GUI:RallyPointSet" }` and `Audio { "RallyPointSet", player 1 }`
+    /// (`doSetRallyPoint`, `isLocallyControlled`), and the client's message list gets `GUI:RallyPointSet`. The control: the
+    /// same game with the neutral player local (`setLocalPlayer(NULL)`) gets the rally point but neither message. The local
+    /// player is not in the CRC (`PlayerList::crc` and `Player::crc` do not write it): both games' CRCs are equal after the
+    /// frame.
+    #[test]
+    fn the_demo_sets_the_local_player_and_a_rally_point_gives_the_local_message() {
+        use rts_lockstep_engine::logic::client_event::ClientEvent;
+        use rts_lockstep_engine::logic::world::game_logic_dispatch::ClientCall;
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        use rts_lockstep_engine::logic::world::player_list::player_list_set_local_player;
+        let at = Coord3D { x: 90.0, y: 230.0, z: 0.0 };
+        let (w, o) = demo_world();
+        assert_eq!(w.players.local_index(), Some(crate::demo::DEMO_LOCAL_PLAYER));
+        let mut c = Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        let ev = rally_from_the_demo(&mut c, o.hut, at);
+        let dispatched: Vec<_> = ev.iter().filter_map(|e| if let ClientEvent::Dispatch(d) = e { Some(d.clone()) } else { None }).collect();
+        eprintln!("#56: dispatched {dispatched:?}; messages {:?}", c.client.ui_messages.iter().map(|m| String::from_utf8_lossy(m).into_owned()).collect::<Vec<_>>());
+        assert!(dispatched.contains(&ClientCall::UiMessage { label: "GUI:RallyPointSet" }), "{dispatched:?}");
+        assert!(dispatched.iter().any(|d| matches!(d, ClientCall::Audio { name: "RallyPointSet", player: Some(1), .. })), "{dispatched:?}");
+        assert!(c.client.ui_messages.iter().any(|m| m == b"GUI:RallyPointSet"));
+        let crc = c.world().logic_crc(CRC_RECALC, None).expect("the CRC");
+
+        // the control: the neutral player local
+        let (mut w, o) = demo_world();
+        player_list_set_local_player(&mut w, None).expect("the neutral player");
+        let mut n = Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        let ev = rally_from_the_demo(&mut n, o.hut, at);
+        assert!(!ev.iter().any(|e| matches!(e, ClientEvent::Dispatch(ClientCall::UiMessage { .. }))), "{ev:?}");
+        assert!(n.client.ui_messages.is_empty(), "{:?}", n.client.ui_messages);
+        assert_eq!(n.world().logic_crc(CRC_RECALC, None).expect("the CRC"), crc, "the local player is not in the CRC");
+    }
 }

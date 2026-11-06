@@ -96,6 +96,16 @@ pub enum ClientEvent {
     LoadingMap(bool),
     /// GitHub #51: `startNewGame`'s loop calling every drawable's `Drawable::onLevelStart()` (its ambient sound started).
     DrawablesOnLevelStart,
+    /// GitHub #56: what `GameLogicDispatch.cpp` tells the client (`TheInGameUI->message`, `TheAudio->addAudioEvent`,
+    /// `TheEva->setShouldPlay(EVA_BeaconDetected)`, `TheRadar->createEvent`, ...), each [`ClientCall`] as the dispatcher made
+    /// it. ~~Until #56 they went only to the cut log, so no client saw a rally point's `GUI:RallyPointSet`.~~ Not simulation
+    /// state: the dispatcher makes the call after (or instead of) its own logic and reads nothing back.
+    ///
+    /// [`ClientCall`]: crate::logic::world::game_logic_dispatch::ClientCall
+    Dispatch(crate::logic::world::game_logic_dispatch::ClientCall),
+    /// GitHub #55: `TheEva->setEvaEnabled(enabled)` (`ScriptActions::doEvaEnabledDisabled`, the script action
+    /// `EVA_SET_ENABLED_DISABLED`). Not simulation state: `Eva` is the client's.
+    EvaSetEnabled(bool),
 }
 
 /// GitHub #51: one of the scripts' calls on `TheAudio`. Upstream calls the audio manager directly from the logic's

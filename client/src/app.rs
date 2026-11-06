@@ -224,12 +224,12 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             }
             Err(e) => {
                 let (w, _) = demo_world();
-                Game::new(w, 1, format!("demo ({e})"), None)
+                Game::new(w, crate::demo::DEMO_LOCAL_PLAYER, format!("demo ({e})"), None)
             }
         },
         _ => {
             let (w, _) = demo_world();
-            Game::new(w, 1, "demo game: load your Zero Hour folder to play".to_string(), None)
+            Game::new(w, crate::demo::DEMO_LOCAL_PLAYER, "demo game: load your Zero Hour folder to play".to_string(), None)
         }
     };
     App::new()
@@ -415,11 +415,14 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
             g.cur = snapshot(g.controls.world());
             // the frame's client events, to the drawables (their flags; the draw itself is every rendered frame)
             let events = g.controls.world().take_client_events();
+            // #56: the logic's messages to the local player (`TheInGameUI->message`)
+            g.controls.client.take_logic_messages(&events);
             let now = g.models_clock;
             g.models.apply_events(g.controls.world(), &events, now);
             // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
             let requests: Vec<_> = g.models.drawables.fx.requests.drain(..).collect();
             let voices: Vec<_> = g.controls.client.voices.drain(..).collect();
+            let insufficient_funds = g.controls.client.eva_insufficient_funds;
             if let (Some(sound), Some(art)) = (g.audio.as_deref_mut(), g.models.art.as_ref()) {
                 let files = |p: &[u8]| art.fs.does_file_exist(p);
                 let w = &g.controls.client.world;
@@ -442,6 +445,8 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
                     sound.audio.fx_request(&host, r);
                 }
                 sound.audio.update_ambient(&host, &mut sound.device);
+                // #55: EVA, from the frame's events and the client's own requests
+                sound.audio.update_eva(&host, &events, insufficient_funds);
                 let view = rig.as_deref().map_or_else(Default::default, |r| crate::audio::listener_view(r.focus.to_array(), r.yaw, r.pitch, r.distance));
                 sound.audio.manager.update(&host, &mut sound.device, &view);
             }
@@ -1050,15 +1055,21 @@ fn update_audio(mut game: NonSendMut<Game>, time: Res<Time>) {
         Some(art.fs.open_file(p))
     };
     if g.audio_pending {
-        if let Some((tables, errors)) = crate::audio::load_tables(open) {
+        // #55: `Eva::init`'s `Data\INI\Eva.ini` too (`None`: still arriving)
+        let eva_ini = open(rts_lockstep_engine::client::eva::EVA_INI_FILE);
+        if let (Some(eva_ini), Some((tables, errors))) = (eva_ini, crate::audio::load_tables(open)) {
             g.audio_pending = false;
             info!("audio: {} events, {} music tracks, {} errors {errors:?}", tables.infos.len(), tables.music_tracks.len(), errors.len());
             let mut manager = rts_lockstep_engine::client::game_audio::AudioManager::new(tables);
             manager.random = rts_lockstep_engine::common::random_value::RandomValues::new(0);
-            g.audio = Some(Box::new(GameSound {
-                audio: rts_lockstep_engine::client::client_audio::ClientAudio::new(manager),
-                device: crate::audio::ClientDevice::new(SoundOutput::default()),
-            }));
+            let mut audio = rts_lockstep_engine::client::client_audio::ClientAudio::new(manager);
+            if let Some(text) = eva_ini {
+                if let Err(e) = audio.eva.load_text(rts_lockstep_engine::client::eva::EVA_INI_FILE, &text) {
+                    info!("EVA: Eva.ini did not parse: {e:?}");
+                }
+            }
+            info!("EVA: {} messages described", audio.eva.all_check_infos.len());
+            g.audio = Some(Box::new(GameSound { audio, device: crate::audio::ClientDevice::new(SoundOutput::default()) }));
         }
     }
     let Some(sound) = g.audio.as_deref_mut() else { return };

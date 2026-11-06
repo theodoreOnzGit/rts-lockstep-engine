@@ -44,3 +44,4 @@ pub mod game_audio;
 pub mod client_audio;
 pub mod unit_voice;
 pub mod drawable_ambient;
+pub mod eva;

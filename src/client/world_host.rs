@@ -154,6 +154,26 @@ impl WorldClient {
         }
     }
 
+    /// GitHub #56: the logic's `TheInGameUI->message(TheGameText->fetch(label))` calls of a frame, into
+    /// [`WorldClient::ui_messages`] in order: the dispatcher's ([`ClientCall::UiMessage`], e.g. `doSetRallyPoint`'s
+    /// `GUI:RallyPointSet` to the local player) and the objects' (`ObjectClientEvent::UiMessage`, and the format label of a
+    /// formatted one). Reads the events only.
+    ///
+    /// [`ClientCall::UiMessage`]: crate::logic::world::game_logic_dispatch::ClientCall::UiMessage
+    pub fn take_logic_messages(&mut self, events: &[crate::logic::client_event::ClientEvent]) {
+        use crate::logic::client_event::ClientEvent;
+        use crate::logic::world::game_logic_dispatch::ClientCall;
+        use crate::logic::world::object_events::ObjectClientEvent;
+        for e in events {
+            match e {
+                ClientEvent::Dispatch(ClientCall::UiMessage { label }) => self.ui_messages.push(label.as_bytes().to_vec()),
+                ClientEvent::Object(ObjectClientEvent::UiMessage { label }) => self.ui_messages.push(label.clone()),
+                ClientEvent::Object(ObjectClientEvent::UiMessageFormatted { format, .. }) => self.ui_messages.push(format.clone()),
+                _ => {}
+            }
+        }
+    }
+
     /// Copies InGameUI's modes and the pick kinds they imply, before a translator runs.
     pub fn sync_modes(&mut self, ui: &InGameUiSelection) {
         self.modes.force_attack = ui.is_in_force_attack_mode();

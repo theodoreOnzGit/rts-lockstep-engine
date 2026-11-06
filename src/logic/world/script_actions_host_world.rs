@@ -1691,8 +1691,11 @@ impl ScriptActionsHost for World {
         self.script_engine.remove_named_map_reveal(look);
     }
 
-    fn sa_eva_set_enabled(&mut self, _enabled: bool) {
+    /// `TheEva->setEvaEnabled(enabled)`: the cut log's record, and (GitHub #55) the call as a client event, for the client's
+    /// `Eva` (`client::eva`).
+    fn sa_eva_set_enabled(&mut self, enabled: bool) {
         self.sa_cut("eva_set_enabled");
+        self.events.push(crate::logic::client_event::ClientEvent::EvaSetEnabled(enabled));
     }
     fn sa_logic_set_option(&mut self, which: i32, enabled: bool) {
         self.game_logic_write(crate::logic::world::object_cuts::GameLogicWrite::Option { which, enabled });
