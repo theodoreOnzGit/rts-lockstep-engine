@@ -22,7 +22,8 @@
 //! **Approximations, named** ([`MaterialDesc::approximations`]): blend pairs Bevy's alpha modes do not have (screen
 //! `ONE/INVSRCCOLOR` is drawn additive; the rest as alpha blend); depth compare functions other than `LEQUAL` and
 //! depth writes off on opaque groups; the secondary gradient (specular) and stage 1 (detail textures); fog; the
-//! texture mappers (UV animation, environment maps); the gradient modes other than modulate (`GRADIENT_ADD` and
+//! texture mappers (UV animation, environment maps; a sub-object's material-override UV offset, a tank's treads, is drawn
+//! as the material's UV transform, [`uv_offset_transform`]); the gradient modes other than modulate (`GRADIENT_ADD` and
 //! `MODULATE2X` are drawn as modulate); fixed-function lighting (Bevy's PBR with full roughness stands in for
 //! Direct3D's Gouraud lighting). The front face is taken to be counter-clockwise in the model's right-handed, z-up
 //! space (Bevy's default after the axis change); [`MeshModel::winding_agrees_with_normals`] reports how far a real
@@ -139,7 +140,8 @@ pub fn material_desc(model: &MeshModel, group: &PolygonGroup) -> MaterialDesc {
         approximations.push("a primary gradient other than modulate");
     }
     if vm.mapper.iter().any(|m| *m != rts_lockstep_engine::formats::w3d::vertmaterial::MapperKind::None) {
-        approximations.push("a texture mapper (UVs drawn unmapped)");
+        // (a tread's material override is drawn: `uv_offset_transform`, GitHub #41; the mapper's own animation is not)
+        approximations.push("a texture mapper (UVs drawn unmapped, but for a material override's UV offset)");
     }
     let texturing = group.shader.get_texturing() == 1;
     let texture = if texturing { group.textures[0] } else { None };
@@ -176,6 +178,21 @@ impl MaterialDesc {
             reflectance: 0.1,
             ..default()
         }
+    }
+}
+
+/// A sub-object's material-override UV offset (`RenderObjClass::Material_Override::customUVOffset`, a tank's tread,
+/// GitHub #41) as the stage-0 UV transform: a translation by the offset, as the DX8 renderer's texture matrix does with
+/// the linear-offset mapper's offset in its third column (`LinearOffsetTextureMapperClass::Calculate_Texture_Matrix`, its
+/// `Scale` taken as 1: the mapper's arguments are not parsed yet). The identity without one.
+///
+/// New (the device side). It is a material transform (`StandardMaterial::uv_transform`, a uniform), not new mesh UVs: one
+/// part's material changes, no vertex buffer is uploaded again, and it is the same on WebGL2 and natively. Each part has
+/// its own material already, so one tread's offset does not move another's.
+pub fn uv_offset_transform(offset: Option<[f32; 2]>) -> bevy::math::Affine2 {
+    match offset {
+        Some([u, v]) => bevy::math::Affine2::from_translation(Vec2::new(u, v)),
+        None => bevy::math::Affine2::IDENTITY,
     }
 }
 
@@ -507,6 +524,16 @@ mod tests {
     /// Predictions: the quad of `MeshSpec::quad` (SRCALPHA/INVSRCALPHA, textured) is an alpha-blended material whose
     /// base colour is its diffuse (1, 128/255, 0) at opacity 1; with alpha test on it becomes a mask at 0x60 / 255;
     /// two-sided, it is not culled; additive ONE/ONE is `Add`.
+    /// GitHub #41: a tread's UV offset as the material's UV transform. Prediction: offset (0.25, 0) takes UV (0.5, 0.5)
+    /// to (0.75, 0.5), as the DX8 texture matrix `u' = u + offset_u` does; no offset is the identity. *Result
+    /// (2026-11-06):* held.
+    #[test]
+    fn a_uv_offset_translates_the_uvs() {
+        let t = uv_offset_transform(Some([0.25, 0.0]));
+        assert_eq!(t.transform_point2(Vec2::new(0.5, 0.5)), Vec2::new(0.75, 0.5));
+        assert_eq!(uv_offset_transform(None), bevy::math::Affine2::IDENTITY);
+    }
+
     #[test]
     fn shaders_map_to_alpha_modes() {
         use rts_lockstep_engine::formats::w3d::mesh::{self as m, MeshLoadOptions};

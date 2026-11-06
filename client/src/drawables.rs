@@ -20,7 +20,10 @@
 //! fetched gives no render object for now, and an animation whose file is being fetched (or asked while a model is) is
 //! not looked for. The object is drawn as its shape meanwhile, and when the bytes have arrived its drawable is made
 //! again with its flags ([`WorldDrawables::draw`]), so its modules choose as they would have with the files at hand. A
-//! render model or texture whose read waited is not kept, and is made again on a later frame.
+//! render model or texture whose read waited is not kept, and is made again on a later frame. The bones a module data
+//! caches for its template (pristine, turret and barrel bones) stay not valid while their files are fetched, so the
+//! drawable made again finds them ([`Deferred`] counts its "for now" answers, `W3dAssetSource::deferred_answers`; GitHub
+//! #42).
 //!
 //! **Time.** The draw modules' sync time is the client's clock in milliseconds ([`WorldDrawables::update`]'s
 //! `sync_time`), as `WW3D::Sync` is upstream: animations run in real time, not in logic frames.
@@ -70,6 +73,8 @@ pub struct Deferred<'a, D: LocalDevice> {
     pub models: &'a mut BTreeSet<Vec<u8>>,
     /// Animation names not looked for because a file was being fetched.
     pub anims: &'a mut BTreeSet<Vec<u8>>,
+    /// The questions answered "none for now" so far ([`W3dAssetSource::deferred_answers`], GitHub #42).
+    pub deferred: usize,
 }
 
 /// Whether `Load_3D_Assets(filename)`'s read (the file, else `..\filename`, as `load_with_parent` tries) would be served
@@ -103,12 +108,14 @@ impl<D: LocalDevice> W3dAssetSource for Deferred<'_, D> {
         let r = self.files.create_render_obj(name);
         if r.is_none() && self.files.fs.local.device.unserved_reads() != before {
             self.models.insert(name.to_vec());
+            self.deferred += 1;
         }
         r
     }
     fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
         if !anim_ready(self.files.assets, self.files.fs, name, !self.models.is_empty()) {
             self.anims.insert(name.to_vec());
+            self.deferred += 1;
             return None;
         }
         self.files.get_hanim(name)
@@ -120,9 +127,13 @@ impl<D: LocalDevice> W3dAssetSource for Deferred<'_, D> {
         let k = self.files.skeleton(name, pose, scale);
         if self.files.fs.local.device.unserved_reads() != before {
             self.models.insert(name.to_vec());
+            self.deferred += 1;
             return None;
         }
         k
+    }
+    fn deferred_answers(&self) -> usize {
+        self.deferred
     }
 }
 
@@ -179,7 +190,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
     pub fn apply_events(&mut self, w: &World, events: &[ClientEvent], sync_time: u32) {
         match &mut self.art {
             Some(art) => {
-                let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims };
+                let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims, deferred: 0 };
                 self.drawables.apply_events(w, events, &mut src, sync_time)
             }
             None => self.drawables.apply_events(w, events, &mut NoArt, sync_time),
@@ -192,7 +203,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
         self.remake_when_arrived(w, sync_time);
         match &mut self.art {
             Some(art) => {
-                let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims };
+                let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims, deferred: 0 };
                 self.drawables.draw(w, &mut src, sync_time)
             }
             None => self.drawables.draw(w, &mut NoArt, sync_time),
@@ -237,7 +248,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             .collect();
         for id in incomplete {
             let Some(old) = self.drawables.drawables.remove(&id) else { continue };
-            let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims };
+            let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims, deferred: 0 };
             if !self.drawables.create_drawable(w, id, &mut src, sync_time) {
                 continue;
             }
@@ -566,11 +577,22 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         target_died: Option<u32>,
         /// The frames the drawn turret control was not exactly `Rz` of the World's angle.
         mismatched: usize,
+        /// The first frame the gun's current state had its pristine bones valid and turret bones `(1, 2)` (GitHub #42),
+        /// and the frames (from 0) its drawable had no render object.
+        bones_found: Option<u32>,
+        unmodelled: usize,
     }
 
     /// GitHub #27: the gate map with a drawn turreted gun (the gate's `Gun` given `GateGun` and a `Draw` block) told to
     /// attack an unarmed runner 80 to its north; 200 frames, with the drawables fed every frame when `drawn`.
     fn play_gun(drawn_client: bool) -> GunRun {
+        let mut art = MemoryDevice::new();
+        art.insert(b"Art/W3D/gunt.w3d", gun_model());
+        play_gun_on(drawn_client, FileSystem::new(art), |_| {})
+    }
+
+    /// [`play_gun`] over `art`; `pump` runs after each frame's update (the page's part, for a ranged device).
+    fn play_gun_on<D: LocalDevice>(drawn_client: bool, art: FileSystem<D>, mut pump: impl FnMut(&mut FileSystem<D>)) -> GunRun {
         let mut w = gate_map_world_with(&drawn("Gun", GUN_DRAW));
         let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
         let enemy = factory_find_team(&mut w, b"team2").unwrap().unwrap();
@@ -578,22 +600,34 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         let gun = make(&mut w, b"DrawnGun", team, at(150.0, 380.0));
         let target = make(&mut w, b"Runner", enemy, at(150.0, 460.0));
         w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
-        let mut art = MemoryDevice::new();
-        art.insert(b"Art/W3D/gunt.w3d", gun_model());
-        let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+        let mut d = WorldDrawables::new(Some(Art::new(art)));
         let ev = w.take_client_events();
+        let mut run = GunRun { crcs: Vec::new(), turned: 0, recoiling: 0, flashed: 0, last: None, max_angle: 0.0, target_died: None, mismatched: 0, bones_found: None, unmodelled: 0 };
+        let see_bones = |d: &WorldDrawables<D>, f: u32, run: &mut GunRun| {
+            let m = &d.drawables.drawables[&gun].draw_modules[0];
+            if m.render_object.is_none() {
+                run.unmodelled += 1;
+            }
+            let s = m.get_cur_state().expect("a state");
+            if run.bones_found.is_none() && s.pristine_bones_valid() && s.turret_bones(0) == (1, 2) {
+                run.bones_found = Some(f);
+            }
+        };
         if drawn_client {
             d.update(&mut w, &ev, 0);
             assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+            see_bones(&d, 0, &mut run);
+            pump(&mut d.art.as_mut().unwrap().fs);
         }
         let ai = w.find_object(gun).and_then(|o| o.ai).expect("the gun's AI");
         w.module_call(gun, ai, ModuleCall::AiAttackObject { victim: target, max_shots: i32::MAX, command_source: 0 });
-        let mut run = GunRun { crcs: Vec::new(), turned: 0, recoiling: 0, flashed: 0, last: None, max_angle: 0.0, target_died: None, mismatched: 0 };
         for f in 1..=200u32 {
             w.logic_update().expect("a frame");
             let ev = w.take_client_events();
             if drawn_client {
                 d.update(&mut w, &ev, f * 33);
+                see_bones(&d, f, &mut run);
+                pump(&mut d.art.as_mut().unwrap().fs);
                 let m = &d.drawables.drawables[&gun].draw_modules[0];
                 let r = m.render_object.as_ref().expect("the gun's render object");
                 if let Some(c) = r.bone_controls.get(&1) {
@@ -657,17 +691,157 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert!(r.recoiling > 0 && r.flashed > 0, "recoiling {} flashed {}", r.recoiling, r.flashed);
     }
 
+    /// A tank `TANKT`: ROOTTRANSFORM and BODY pivots, a cube for the chassis and one for each tread (`TREADSL`, `TREADSR`)
+    /// with a linear-offset mapper on stage 0 (GitHub #41).
+    fn tank_model() -> Vec<u8> {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = synth::htree_w3d(b"TANKT", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"BODY".to_vec(), parent: 0, translation: [0.0, 0.0, 1.0], rotation: ident },
+        ]);
+        let mut names = Vec::new();
+        for (n, mapping) in [(&b"CHASSIS"[..], 0), (b"TREADSL", 4), (b"TREADSR", 4)] {
+            let mut m = MeshSpec::cuboid(b"TANKT", n, [-0.5; 3], [0.5; 3]);
+            m.stage0.texture = None;
+            m.stage0.mapping = mapping;
+            f.extend(m.to_w3d());
+            names.push([&b"TANKT."[..], n].concat());
+        }
+        let hl: Vec<(&[u8], u32)> = names.iter().map(|n| (n.as_slice(), 1)).collect();
+        f.extend(synth::hlod_w3d(b"TANKT", b"TANKT", &hl));
+        f
+    }
+
+    const TANK_DRAW: &str = " Draw = W3DTankDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = TankT\n  End\n  TreadAnimationRate = 3\n End\n";
+
+    /// GitHub #41: the gate's runner drawn as a tank (`W3DTankDraw`, two treads), ordered 120 east as in [`play_demo`],
+    /// 150 frames with the drawables fed every frame, and the same game without them.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - the logic's CRCs are equal frame for frame with and without the client (the new reads are `peek_*`, which write
+    ///   nothing);
+    /// - the runner starts facing east, so it never pivots: every change of the left tread's U is one drive step,
+    ///   `-rate` wrapped (rate 3 a second, 0.10000001 a draw), on the frames it moves at 0.3 of its locomotor's speed or
+    ///   more under a motive force; that is most of its ~130 frames of travel (say more than 60), and none once it has
+    ///   stopped;
+    /// - the drawn render model carries the left and right treads' offsets (equal, both driven the same way), none on
+    ///   the chassis.
+    ///
+    /// *Results (2026-11-06), first run:* all held. CRCs equal over 150 frames; 129 drive steps, each exactly `-rate`
+    /// wrapped, none of another size (no pivot); the last at frame 132, as the runner arrives; the drawn model's treads
+    /// at U 0.09999767 (129 steps of 0.10000001 from 0, wrapped, f32 rounding included), the chassis without one.
+    #[test]
+    fn a_drawn_tank_scrolls_its_treads_without_changing_the_crcs() {
+        let play = |drawn_client: bool| {
+            let mut w = gate_map_world_with(&drawn("Runner", TANK_DRAW));
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let tank = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+            let mut art = MemoryDevice::new();
+            art.insert(b"Art/W3D/tankt.w3d", tank_model());
+            let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+            }
+            let ai = w.find_object(tank).and_then(|o| o.ai).expect("the AI");
+            w.module_call(tank, ai, ModuleCall::AiMoveToPosition { pos: at(160.0, 50.0), command_source: 0 });
+            let (mut crcs, mut steps, mut odd, mut last_step) = (Vec::new(), 0usize, 0usize, None);
+            let mut prev = 0.0f32;
+            let mut posed = None;
+            for f in 1..=150u32 {
+                w.logic_update().expect("a frame");
+                let ev = w.take_client_events();
+                if drawn_client {
+                    d.update(&mut w, &ev, f * 33);
+                    let m = &d.drawables.drawables[&tank].draw_modules[0];
+                    let t = m.tank.as_ref().expect("a tank draw");
+                    let rate = 3.0f32 * rts_lockstep_engine::common::game_common::SECONDS_PER_LOGICFRAME_REAL;
+                    let u = t.treads[0].custom_uv_offset[0];
+                    if u != prev {
+                        let mut want = prev - rate;
+                        want -= rts_lockstep_engine::ww::wwmath::floor(want);
+                        if u == want {
+                            steps += 1;
+                        } else {
+                            odd += 1;
+                        }
+                        last_step = Some(f);
+                    }
+                    prev = u;
+                    posed = d.instance(tank).map(|i| i.sub_objects.iter().map(|s| s.uv_offset).collect::<Vec<_>>());
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, steps, odd, last_step, posed, prev)
+        };
+        let (plain, ..) = play(false);
+        let (crcs, steps, odd, last_step, posed, u) = play(true);
+        println!("steps {steps} odd {odd} last step at {last_step:?} posed {posed:?}");
+        assert_eq!(crcs, plain);
+        assert_eq!(odd, 0);
+        assert!(steps > 60, "{steps} drive steps");
+        assert!(last_step.is_some_and(|f| f < 150));
+        assert_eq!(posed, Some(vec![None, Some([u, 0.0]), Some([u, 0.0])]));
+    }
+
+    /// GitHub #42: the drawn gun of [`play_gun`] with its model read by range, the page's part played by the test. Before
+    /// the fix, the module data's states were validated at frame 0 while `gunt.w3d` was being fetched, marked valid with
+    /// no bones, and never looked at again: the remade drawable had no turret, recoil or muzzle-flash bones for good.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - with the files at hand the turret bones are found at frame 0 and the gun always has a render object (as
+    ///   [`a_drawn_gun_turns_its_turret_and_recoils_without_changing_the_crcs`] already relies on);
+    /// - ranged: at frame 0 the gun has no render object and its state's bones are not valid; the bytes arrive after
+    ///   frame 0, the drawable is made again at frame 1 (one remade), and the bones are found at frame 1;
+    /// - from then on the ranged run is the at-hand run's: the turret control is `Rz` of the World's angle on every
+    ///   frame, the barrel recoils and flashes on the same number of frames, and the logic's CRCs equal the plain game's.
+    ///
+    /// *Results (2026-11-06), first run:* all held. At hand: bones at frame 0, a render object on every frame. Ranged:
+    /// one frame without a render object, the bones found at frame 1; turned 199, recoiling 111, flashed 7 (the at-hand
+    /// numbers); the drawn control exactly `Rz` on every frame; CRCs equal over 200 frames. **The defect reproduced:**
+    /// with `Deferred::deferred_answers` made to answer 0 (the behaviour before the fix) the same test fails: bones never
+    /// found, the turret never turned (0 frames), and the muzzle flash shown on all 200 frames (never hidden: no bone).
+    #[test]
+    fn a_ranged_gun_finds_its_bones_once_its_model_arrives() {
+        let plain = play_gun(false);
+        let at_hand = play_gun(true);
+        let (art, big) = ranged(vec![(b"Art\\W3D\\gunt.w3d", gun_model())]);
+        let r = play_gun_on(true, art, |fs| {
+            for (key, o, l) in fs.local.device.take_wanted() {
+                fs.local.device.provide(key, o, big[o..o + l].to_vec());
+            }
+        });
+        println!(
+            "at hand: bones at {:?}, unmodelled {}; ranged: bones at {:?}, unmodelled {}, turned {} recoiling {} flashed {}",
+            at_hand.bones_found, at_hand.unmodelled, r.bones_found, r.unmodelled, r.turned, r.recoiling, r.flashed
+        );
+        assert_eq!((at_hand.bones_found, at_hand.unmodelled), (Some(0), 0));
+        assert_eq!((r.bones_found, r.unmodelled), (Some(1), 1));
+        assert_eq!(r.mismatched, 0);
+        assert_eq!((r.recoiling, r.flashed), (at_hand.recoiling, at_hand.flashed));
+        assert_eq!(r.crcs, plain.crcs);
+    }
+
     /// The generated art of [`synthetic_art`] in a `W3DZH.big` after a 4 MiB member nobody opens, on a ranged device as the
     /// page gives it (the archive's length and the first 64 KiB, which hold its directory), and the archive itself.
     fn ranged_art() -> (FileSystem<RangedDevice>, Vec<u8>) {
-        let filler = vec![7u8; 4 << 20];
-        let files = [
-            (&b"Art\\W3D\\zzfiller.w3d"[..], filler),
+        ranged(vec![
             (b"Art\\W3D\\runner.w3d", model(b"RUNNER", &[b"IDLE"])),
             (b"Art\\W3D\\runnermv.w3d", model(b"RUNNERMV", &[b"ROLL"])),
             (b"Art\\W3D\\soldier.w3d", model(b"SOLDIER", &[b"IDLE"])),
             (b"Art\\W3D\\soldierfr.w3d", model(b"SOLDIERFR", &[b"FIRE"])),
-        ];
+        ])
+    }
+
+    /// `files` in a `W3DZH.big` after a 4 MiB member nobody opens, on a ranged device as the page gives it (see
+    /// [`ranged_art`]), and the archive itself.
+    fn ranged(models: Vec<(&'static [u8], Vec<u8>)>) -> (FileSystem<RangedDevice>, Vec<u8>) {
+        let filler = vec![7u8; 4 << 20];
+        let mut files = vec![(&b"Art\\W3D\\zzfiller.w3d"[..], filler)];
+        files.extend(models);
         let members: Vec<(&[u8], &[u8])> = files.iter().map(|(p, b)| (*p, b.as_slice())).collect();
         let big = build_big(&members);
         let prefix = ArchiveFile::directory_prefix_needed(big.len(), &big[..big.len().min(64 * 1024)]);

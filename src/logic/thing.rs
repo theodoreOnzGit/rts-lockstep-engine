@@ -284,6 +284,17 @@ impl<T: ThingTemplateView> Thing<T> {
         self.cached_angle
     }
 
+    /// [`Thing::unit_direction_vector_2d`] without filling the cache, for the client (GitHub #41): the cached vector
+    /// when valid, else the same expression from the orientation, so the same bits.
+    pub fn peek_unit_direction_vector_2d(&self) -> Coord3D {
+        if self.cache_flags & VALID_DIRVECTOR == 0 {
+            let angle = self.orientation();
+            Coord3D { x: trig::cos(angle), y: trig::sin(angle), z: 0.0 }
+        } else {
+            self.cached_dir_vector
+        }
+    }
+
     /// `getUnitDirectionVector2D()`: `(cos a, sin a, 0)` for the orientation,
     /// cached until the orientation changes.
     pub fn unit_direction_vector_2d(&mut self) -> Coord3D {

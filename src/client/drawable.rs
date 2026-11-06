@@ -62,7 +62,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::w3d_model_draw::{DrawEnv, DrawFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
+use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_PRODUCED_AT_HELIPAD;
@@ -404,6 +404,24 @@ impl ClientDrawables {
         out
     }
 
+    /// What the subclass draw modules read of the object's physics and AI (GitHub #41), all read in
+    /// place with `&World` (nothing is written, no cache filled): `getVelocityMagnitude`,
+    /// `getTurning`, `isMotive` (`PhysicsBehavior::peek_*`), `getCurLocomotorSpeed`
+    /// (`World::peek_cur_locomotor_speed`) and `getUnitDirectionVector2D`
+    /// (`Thing::peek_unit_direction_vector_2d`). `None` without an object or physics.
+    pub fn motion(w: &World, id: ObjectId) -> Option<MotionFacts> {
+        let o = w.find_object(id)?;
+        let p = w.physics_peek(id)?;
+        let dir = o.thing.peek_unit_direction_vector_2d();
+        Some(MotionFacts {
+            velocity_magnitude: p.peek_velocity_magnitude(),
+            turning: p.peek_turning(),
+            is_motive: p.peek_is_motive(w.frame()),
+            cur_locomotor_speed: w.peek_cur_locomotor_speed(id),
+            unit_direction_2d: (dir.x, dir.y),
+        })
+    }
+
     /// One client draw at sync time `sync_time` (milliseconds): make the
     /// drawables of objects not seen yet, then for each drawable give its
     /// modules the flags if dirty (`getDrawModules`, from the client: not a
@@ -425,6 +443,7 @@ impl ClientDrawables {
                 should_animate_without_power: Self::get_should_animate(w, id, false),
                 speed: w.find_object(id).and_then(|o| o.physics).map(|ph| w.module_call(id, ph, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)),
                 turrets: Self::turret_rot_and_pitch(w, id),
+                motion: Self::motion(w, id),
             };
             let d = self.drawables.get_mut(&id).expect("listed");
             let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };

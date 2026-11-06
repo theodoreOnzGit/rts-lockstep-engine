@@ -43,6 +43,9 @@ fn f32s(v: &[f32]) -> Vec<u8> {
 pub struct StageSpec {
     /// The texture file name (`None`: no texture on the stage).
     pub texture: Option<Vec<u8>>,
+    /// The vertex material's stage-0 mapping (`W3DVERTMAT_STAGE0_MAPPING_*` >> 16: 0 for UV, 4 for a
+    /// linear-offset mapper), written into its `Attributes`.
+    pub mapping: u32,
 }
 
 /// A one-pass mesh: geometry, one vertex material, one shader, at most one
@@ -98,7 +101,7 @@ impl MeshSpec {
             // ONE_MINUS_SRC_ALPHA, Fog, PriGradient MODULATE, SecGradient,
             // SrcBlend SRC_ALPHA, Texturing on
             shader: [3, 1, 1, 5, 0, 1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0],
-            stage0: StageSpec { texture: Some(b"quad.tga".to_vec()) },
+            stage0: StageSpec { texture: Some(b"quad.tga".to_vec()), mapping: 0 },
             vertex_material_on_pass: true,
         }
     }
@@ -185,6 +188,7 @@ impl MeshSpec {
         vm.diffuse = rgb(self.diffuse);
         vm.emissive = rgb(self.emissive);
         vm.opacity = self.opacity;
+        vm.attributes |= (self.stage0.mapping & 0xFF) << 16;
         let mut vmc = chunk(W3D_CHUNK_VERTEX_MATERIAL_NAME, b"vmat\0");
         vmc.extend(chunk(W3D_CHUNK_VERTEX_MATERIAL_INFO, &vm.to_bytes()));
         body.extend(chunk_sub(W3D_CHUNK_VERTEX_MATERIALS, &chunk_sub(W3D_CHUNK_VERTEX_MATERIAL, &vmc)));

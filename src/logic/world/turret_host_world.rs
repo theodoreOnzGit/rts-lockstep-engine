@@ -132,6 +132,25 @@ impl World {
         self.turret_peek(id, which).map(|d| (d.angle, d.pitch))
     }
 
+    /// `obj->getPhysics()`, read in place (GitHub #41: the client's draw modules read its turning, motive force and
+    /// speed with [`PhysicsBehavior`]'s `peek_*`); `None` without physics, or while its module is out (lent).
+    pub fn physics_peek(&self, obj: ObjectId) -> Option<&crate::logic::modules::physics_behavior::PhysicsBehavior> {
+        let index = self.find_object(obj).and_then(|o| o.physics)?;
+        match self.peek_module_body(ModuleHandle { object: obj, index }) {
+            Some(UpdateBody::PhysicsBehavior(p)) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// `obj->getAIUpdateInterface()->getCurLocomotorSpeed()` read in place (GitHub #41): the current locomotor's
+    /// `getMaxSpeedForCondition` with the body's damage state ([`World::peek_damage_state`], the body module read in
+    /// place) and the global data's movement-penalty state; 0 without a current locomotor, `None` without an AI.
+    /// Nothing is written: the same fields `AIUpdateInterface::getCurLocomotorSpeed` reads.
+    pub fn peek_cur_locomotor_speed(&self, obj: ObjectId) -> Option<f32> {
+        let ai = self.ai_peek(obj)?;
+        Some(ai.get_cur_locomotor().map_or(0.0, |l| l.get_max_speed_for_condition(self, self.peek_damage_state(obj))))
+    }
+
     /// Whether `obj`'s AI is lent to the World now (on top of `ai_stacks`: `obj` is `this` and its module holds no AI).
     pub(crate) fn ai_is_lent(&self, obj: ObjectId) -> bool {
         obj == self.ai_self && !self.ai_stacks.ai.is_empty() && !self.ai_module_holds_ai(obj)

@@ -425,7 +425,7 @@ fn sync_objects(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut transforms: Query<&mut Transform, (Without<Body>, Without<ModelPart>)>,
-    mut parts: Query<(&ModelPart, &mut Transform), Without<Body>>,
+    mut parts: Query<(&ModelPart, &mut Transform, &MeshMaterial3d<StandardMaterial>), Without<Body>>,
 ) {
     let t = if game.paused || game.error.is_some() { 1.0 } else { fixed.overstep_fraction() };
     let g = &mut *game;
@@ -483,7 +483,9 @@ fn sync_objects(
                         let (v, n) = m.deformed(part.sub).unwrap_or_else(|_| (sub.model.vertices.clone(), sub.model.normals.clone()));
                         let mesh = meshes.add(crate::model::group_mesh(&sub.model, &part.group, &v, &n));
                         let no_textures = Vec::new();
-                        let material = materials.add(part.material.to_standard_material(handles.get(part.sub).unwrap_or(&no_textures)));
+                        let mut sm = part.material.to_standard_material(handles.get(part.sub).unwrap_or(&no_textures));
+                        sm.uv_transform = crate::model::uv_offset_transform(sub.uv_offset);
+                        let material = materials.add(sm);
                         let tm = m.sub_object_transform(part.sub).map(|x| crate::model::to_bevy_matrix(&x)).unwrap_or(Mat4::IDENTITY);
                         c.spawn((
                             Mesh3d(mesh.clone()),
@@ -505,11 +507,17 @@ fn sync_objects(
         }
         drawn.0.insert(b.id, (e, model_name));
     }
-    // the models' poses: each part at its bone, each skin deformed
-    for (part, mut transform) in &mut parts {
+    // the models' poses: each part at its bone, each skin deformed, each tread's UV offset (#41) on its own material
+    for (part, mut transform, material) in &mut parts {
         let Some(m) = g.models.instance(part.object) else { continue };
         if let Ok(x) = m.sub_object_transform(part.sub) {
             *transform = Transform::from_matrix(crate::model::to_bevy_matrix(&x));
+        }
+        let uv = crate::model::uv_offset_transform(m.sub_objects.get(part.sub).and_then(|s| s.uv_offset));
+        if materials.get(&material.0).is_some_and(|x| x.uv_transform != uv) {
+            if let Some(mut x) = materials.get_mut(&material.0) {
+                x.uv_transform = uv;
+            }
         }
         if part.skin {
             if let (Ok((pos, nrm)), Some(mut mesh)) = (m.deformed(part.sub), meshes.get_mut(&part.mesh)) {

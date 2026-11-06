@@ -314,6 +314,26 @@ impl PartialEq for PhysicsBehavior {
 }
 
 impl PhysicsBehavior {
+    /// `getTurning()`, for the client (GitHub #41): a field read.
+    pub fn peek_turning(&self) -> i32 {
+        self.turning
+    }
+
+    /// `isMotive()` at logic frame `now`, for the client (GitHub #41): a comparison of a field with the frame.
+    pub fn peek_is_motive(&self, now: u32) -> bool {
+        self.motive_force_expires > now
+    }
+
+    /// `getVelocityMagnitude()` without filling its cache, for the client (GitHub #41): the cached value when there is
+    /// one, else the same expression [`get_velocity_magnitude`](Self::get_velocity_magnitude) caches, so the same bits.
+    pub fn peek_velocity_magnitude(&self) -> f32 {
+        if self.vel_mag == INVALID_VEL_MAG {
+            (sqr(self.vel.x) + sqr(self.vel.y) + sqr(self.vel.z)).sqrt()
+        } else {
+            self.vel_mag
+        }
+    }
+
     /// `getInterfaceMask()`: `UpdateModule`'s and `MODULEINTERFACE_COLLIDE`.
     pub const fn get_interface_mask() -> i32 {
         UpdateModule::get_interface_mask() | MODULEINTERFACE_COLLIDE

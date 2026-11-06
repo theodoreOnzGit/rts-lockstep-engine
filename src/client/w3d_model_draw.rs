@@ -26,7 +26,9 @@
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/
 //   W3DTankDraw.cpp, W3DTruckDraw.cpp, W3DTankTruckDraw.cpp, W3DSupplyDraw.cpp,
 //   W3DDependencyModelDraw.cpp, W3DScienceModelDraw.cpp (their module data's
-//   field parse only)
+//   field parse only; GitHub #41: W3DTankDraw.cpp's constructor (the tread
+//   state), updateTreadPositions, updateTreadObjects, onRenderObjRecreated and
+//   doDrawModule without the tread debris)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/animobj.cpp
 //   (Animatable3DObjClass: Set_Animation, Single_Anim_Progress,
 //   Is_Animation_Complete, Peek_Animation_And_Info,
@@ -145,10 +147,15 @@
 //!   muzzle flashes, headlights,~~ particle systems, shadows, terrain decals and
 //!   tracks, the attach-to-bone offset, `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`,
 //!   the weapon fire FX lists themselves, garrison flags, and the subclasses'
-//!   runtime (treads, tires, supplies, dependencies). ~~`validateStuff` only
+//!   runtime (~~treads,~~ tires, supplies, dependencies). ~~`validateStuff` only
 //!   marks the turret info valid.~~ **Corrected 2026-11-06 (#27):** the bone
 //!   caches, turret and recoil posing, muzzle flashes, sub-object hide and
-//!   show and headlights are translated (below).
+//!   show and headlights are translated (below). **Corrected 2026-11-06
+//!   (#41):** `W3DTankDraw`'s treads are translated
+//!   ([`W3DModelDraw::update_tread_objects`], [`TankDraw`]); its tread debris
+//!   (particle systems), `W3DTruckDraw`, `W3DTankTruckDraw` and
+//!   `W3DPoliceCarDraw` are not (the truck's tires and steering need the
+//!   drawable's `calcPhysicsXformWheels`, not translated yet).
 //! - **The render object** ([`RenderObj`]) is not the drawn one: it keeps the
 //!   bone captures and controls (`Capture_Bone`, `Control_Bone`) and the
 //!   sub-objects' hidden flags, and the client puts them on the render model
@@ -164,11 +171,30 @@
 //! - **The logic's turret angles** are read from the World each draw
 //!   ([`DrawFacts::turrets`], `World::ai_turret_rot_and_pitch`, which takes
 //!   `&self`); upstream's draw module asks the object's AI itself.
+//! - (#41) **The logic's motion** for `W3DTankDraw` ([`DrawFacts::motion`]:
+//!   speed, turning, motive force, locomotor speed, direction) is read from
+//!   the World in place, nothing written; upstream asks the object's physics
+//!   and AI. A tank's render object is told apart from the last one by a serial
+//!   ([`W3DModelDraw::render_obj_serial`]), not a pointer. The treads' UV
+//!   offsets reach the drawn model as material overrides
+//!   ([`RenderObj::material_overrides`], `SubObject::uv_offset`).
+//! - (#41, kept) `W3DTankDraw::doDrawModule` returns before the base class's
+//!   when there is no render object or no physics, so such a tank's states
+//!   and animation pauses are not handled then.
 //! - `handleWeaponFireFX` with a barrel equal to the barrel count (upstream
 //!   tests `> size()`, then reads past the end: undefined) uses barrel 0.
-//! - A pristine-bone validation that found the model's files still being
+//! - ~~A pristine-bone validation that found the model's files still being
 //!   fetched (the browser) is valid all the same, with no bones, as upstream's
-//!   is for a missing model; the module data's validation is once per mode.
+//!   is for a missing model; the module data's validation is once per mode.~~
+//!   **Corrected 2026-11-06 (#42):** that left a template's bones empty for
+//!   good in the browser. Now (new: upstream's reads never wait) a validation
+//!   whose asset source answered "none for now"
+//!   ([`W3dAssetSource::deferred_answers`]) leaves `PRISTINE_BONES_VALID`
+//!   unset, finds no turret or barrel bones (not valid, as outside a logic
+//!   time), and leaves the mode's validated bit unset, so a later validation
+//!   at a logic time finds the bones once the bytes are there. A missing
+//!   model is still valid with no bones, as upstream's; with the files at
+//!   hand nothing changes.
 //! - `Peek_Animation_And_Info` on an HLOD with no animation leaves its outputs
 //!   uninitialised, which `getCurrentAnimFraction` then reads (undefined
 //!   upstream); here the fraction is -1 (none) there.
@@ -198,6 +224,7 @@ use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
 use crate::formats::w3d::assetmgr::{AssetManager, Prototype};
 use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMode, RenderModel};
 use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
+use crate::formats::w3d::vertmaterial::MapperKind;
 use crate::ww::matrix3d::Matrix3D;
 
 /// `MAX_TURRETS`.
@@ -630,6 +657,10 @@ impl ModelConditionInfo {
     /// `RETAIN_ANIM_HANDLES`), the public bones, `validateCachedBones`, `validateTurretInfo`,
     /// `validateWeaponBarrelInfo`.
     ///
+    /// Returns whether the pristine bones' files were still being fetched (GitHub #42, new: see
+    /// [`ModelConditionInfo::validate_cached_bones`]); then the turrets and barrels are validated as
+    /// outside a logic time (none found, not valid), so a later validation finds them.
+    ///
     /// `addPublicBone` of the extra bones (once, at a valid time, `PUBLIC_BONES_VALID`) is not
     /// stored: the extras join the parsed list where the list is read (here only, when the
     /// pristine bones are cached), with `addPublicBone`'s rules; the map is by name, so the order
@@ -641,10 +672,14 @@ impl ModelConditionInfo {
         extra_public_bones: &[Vec<u8>],
         standard_public_bones: &[Vec<u8>],
         env: &mut DrawEnv<'_, A>,
-    ) {
-        self.validate_cached_bones(robj, scale, extra_public_bones, standard_public_bones, env);
-        self.validate_turret_info(env.logic_time);
-        self.validate_weapon_barrel_info(env.logic_time);
+    ) -> bool {
+        let fetching = self.validate_cached_bones(robj, scale, extra_public_bones, standard_public_bones, env);
+        // (GitHub #42, new) bones looked for in a pose whose files were still being fetched are not looked for:
+        // the turrets and barrels stay not valid, as outside a logic time, and are found once the pose is
+        let valid_time = env.logic_time && !fetching;
+        self.validate_turret_info(valid_time);
+        self.validate_weapon_barrel_info(valid_time);
+        fetching
     }
 
     /// `validateCachedBones(robj, scale)`: once, at a valid time, the pristine bones: the
@@ -658,7 +693,33 @@ impl ModelConditionInfo {
     /// the model, so a bone the live one has captured is not applied (upstream poses the live
     /// render object when one is given). The live one's animation is left as upstream leaves
     /// it: set to the pose's animation in `MANUAL`, then back to the animation it had, if any.
+    ///
+    /// **Files still being fetched** (GitHub #42; new, not upstream's, whose reads never wait):
+    /// when the asset source answered a question of this validation "none for now"
+    /// ([`W3dAssetSource::deferred_answers`] moved: the model, its skeleton or the pose's animation),
+    /// the bones are cleared and `PRISTINE_BONES_VALID` is left unset, so a later validation at a
+    /// valid time looks again once the bytes are there; it returns `true` then. With the files at
+    /// hand nothing is answered "for now" and this is upstream's function.
     pub fn validate_cached_bones<A: W3dAssetSource>(
+        &self,
+        robj: Option<&mut RenderObj>,
+        scale: f32,
+        extra_public_bones: &[Vec<u8>],
+        standard_public_bones: &[Vec<u8>],
+        env: &mut DrawEnv<'_, A>,
+    ) -> bool {
+        let before = env.assets.deferred_answers();
+        self.validate_cached_bones_upstream(robj, scale, extra_public_bones, standard_public_bones, env);
+        if env.assets.deferred_answers() == before {
+            return false;
+        }
+        self.cache().pristine_bones.clear();
+        self.valid_stuff.fetch_and(!PRISTINE_BONES_VALID, Ordering::Relaxed);
+        true
+    }
+
+    /// `validateCachedBones` as upstream has it (see [`ModelConditionInfo::validate_cached_bones`]).
+    fn validate_cached_bones_upstream<A: W3dAssetSource>(
         &self,
         robj: Option<&mut RenderObj>,
         scale: f32,
@@ -1158,6 +1219,12 @@ impl W3DModelDrawModuleData {
     /// `validateStuffForTimeAndWeather(draw, night, snowy)`: once per mode
     /// at a valid time, validate the states of the plain mode or of this one,
     /// and the transitions with a source and a destination in it.
+    ///
+    /// When a state's validation found its files still being fetched (GitHub #42; new, not
+    /// upstream's, whose reads never wait), the mode's validated bit is cleared again after the
+    /// loop, so the next validation of the mode at a valid time (the next drawable of the template,
+    /// or this one made again when the files arrive) validates the states still not valid. With
+    /// the files at hand, upstream's function.
     pub fn validate_stuff_for_time_and_weather<A: W3dAssetSource>(
         &self,
         night: bool,
@@ -1179,20 +1246,36 @@ impl W3DModelDrawModuleData {
             return;
         }
         self.validated.fetch_or(mode, Ordering::Relaxed);
+        let mut fetching = false;
         for c in &self.condition_states {
             if !c.matches_mode(false, false) && !c.matches_mode(night, snowy) {
                 continue;
             }
-            c.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
+            fetching |= c.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
         }
         for ((src, dst), t) in &self.transition_map {
             let a = self.condition_states.iter().any(|c| &c.transition_key == src && c.matches_mode(night, snowy));
             let b = self.condition_states.iter().any(|c| &c.transition_key == dst && c.matches_mode(night, snowy));
             if a && b {
                 // (nope -- transition states don't get public bones; they are validated all the same)
-                t.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
+                fetching |= t.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
             }
         }
+        if fetching {
+            // (GitHub #42, new) not validated for this mode until every state's files were at hand
+            self.validated.fetch_and(!mode, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether `validateStuffForTimeAndWeather` has validated this mode (`m_validated`'s bit).
+    pub fn validated_for(&self, night: bool, snowy: bool) -> bool {
+        let mode: u8 = match (night, snowy) {
+            (true, true) => 0x8,
+            (true, false) => 0x2,
+            (false, true) => 0x4,
+            (false, false) => 0x1,
+        };
+        self.validated.load(Ordering::Relaxed) & mode != 0
     }
 }
 
@@ -1737,6 +1820,13 @@ pub trait W3dAssetSource {
     fn skeleton(&mut self, _name: &[u8], _pose: Option<(&[u8], f32)>, _scale: f32) -> Option<Skeleton> {
         None
     }
+    /// How many questions this source has answered "none for now" because the files that decide the answer are still
+    /// being fetched (the browser's ranged reads, GitHub #24), as opposed to "none": the validations compare it before
+    /// and after asking, and stay not valid when it moved (GitHub #42). New, not upstream's: upstream's reads never
+    /// wait. A source whose files are at hand never answers "for now": 0.
+    fn deferred_answers(&self) -> usize {
+        0
+    }
 }
 
 /// A render object's bone: `Pivot[i]` of its `HTreeClass` as the draw module reads it.
@@ -1761,6 +1851,10 @@ pub struct SkeletonSubObject {
     pub hidden: bool,
     /// `Get_Transform()` in the pose: its bone's transform.
     pub transform: Matrix3D,
+    /// How many of its `Get_Material_Info()`'s vertex materials have a stage-0 mapper
+    /// (`Peek_Mapper()`) of `MAPPER_ID_LINEAR_OFFSET`: what `W3DTankDraw::updateTreadObjects` looks
+    /// for (GitHub #41). Every sub-object here is a mesh (`CLASSID_MESH`).
+    pub linear_offset_materials: usize,
 }
 
 /// What the draw module reads of a render object's hierarchy and sub-objects (see
@@ -1795,6 +1889,7 @@ impl Skeleton {
                 bone_index: s.bone_index,
                 hidden: s.hidden,
                 transform: tree.get_transform(s.bone_index).unwrap_or(Matrix3D::IDENTITY),
+                linear_offset_materials: s.model.vertex_materials.iter().filter(|v| v.mapper[0] == MapperKind::LinearOffset).count(),
             })
             .collect();
         Skeleton { bones, sub_objects }
@@ -1906,6 +2001,10 @@ pub struct RenderObj {
     pub bone_controls: BTreeMap<i32, BoneControl>,
     /// Each sub-object's `Is_Hidden()` (the skeleton's sub-objects), as `Set_Hidden` left it.
     pub sub_object_hidden: Vec<bool>,
+    /// The sub-objects given a `Material_Override` as user data (`Set_User_Data`), by sub-object
+    /// index: its `customUVOffset` (GitHub #41, `W3DTankDraw`'s treads). Upstream the sub-object
+    /// points at the draw module's settings; here the module writes the value each draw.
+    pub material_overrides: BTreeMap<usize, [f32; 2]>,
 }
 
 /// One pivot's capture state (`PivotClass::IsCaptured`, `CapTransform`, `WorldSpaceTranslation`).
@@ -1925,7 +2024,17 @@ impl Default for BoneControl {
 impl RenderObj {
     /// A new render object of `name` (`Create_Render_Obj`).
     pub fn new(name: &[u8], is_hlod: bool) -> Self {
-        RenderObj { model_name: name.to_vec(), is_hlod, anim: None, last_frame: 0.0, hidden: false, skeleton: None, bone_controls: BTreeMap::new(), sub_object_hidden: Vec::new() }
+        RenderObj {
+            model_name: name.to_vec(),
+            is_hlod,
+            anim: None,
+            last_frame: 0.0,
+            hidden: false,
+            skeleton: None,
+            bone_controls: BTreeMap::new(),
+            sub_object_hidden: Vec::new(),
+            material_overrides: BTreeMap::new(),
+        }
     }
 
     /// The render object with its hierarchy and sub-objects (their hidden flags as made).
@@ -1978,7 +2087,8 @@ impl RenderObj {
     /// The render object's bone controls and sub-object visibility put on a render model made
     /// for the same name (the client's): every pivot of its hierarchy captured and controlled
     /// as this object's are (the others released, their control the identity), and each
-    /// sub-object hidden as this object's is. Call before posing it ([`RenderModel::update`]).
+    /// sub-object hidden as this object's is, and given this object's material overrides' UV
+    /// offsets (GitHub #41; none on the others). Call before posing it ([`RenderModel::update`]).
     /// New (upstream's render object is the drawn one).
     pub fn pose_render_model(&self, m: &mut RenderModel) {
         if let Some(tree) = &mut m.htree {
@@ -1996,6 +2106,9 @@ impl RenderObj {
             for (s, &h) in m.sub_objects.iter_mut().zip(&self.sub_object_hidden) {
                 s.hidden = h;
             }
+        }
+        for (i, s) in m.sub_objects.iter_mut().enumerate() {
+            s.uv_offset = self.material_overrides.get(&i).copied();
         }
     }
 
@@ -2091,6 +2204,95 @@ pub struct DrawFacts {
     /// Each turret's `ai->getTurretRotAndPitch(tslot, &angle, &pitch)` (radians), read from
     /// the World; `None` when the object has no AI or the call answers false (the angles stay 0).
     pub turrets: [Option<(f32, f32)>; MAX_TURRETS],
+    /// What the subclasses' `doDrawModule` read of the object's physics and AI (GitHub #41);
+    /// `None` without an object or without physics.
+    pub motion: Option<MotionFacts>,
+}
+
+/// The logic's state a subclass draw module reads (`W3DTankDraw::doDrawModule`), read only: see
+/// `ClientDrawables::draw`, which fills it with `World::physics_peek`'s `peek_*`,
+/// `World::peek_cur_locomotor_speed` and `Thing::peek_unit_direction_vector_2d`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MotionFacts {
+    /// `physics->getVelocityMagnitude()`.
+    pub velocity_magnitude: f32,
+    /// `physics->getTurning()`: `TURN_NEGATIVE` (-1), `TURN_NONE` (0), `TURN_POSITIVE` (1).
+    pub turning: i32,
+    /// `physics->isMotive()`.
+    pub is_motive: bool,
+    /// `obj->getAIUpdateInterface()->getCurLocomotorSpeed()`; `None` without an AI (upstream
+    /// dereferences it all the same).
+    pub cur_locomotor_speed: Option<f32>,
+    /// `obj->getUnitDirectionVector2D()` (x, y).
+    pub unit_direction_2d: (f32, f32),
+}
+
+/// `PhysicsTurningType::TURN_NEGATIVE`.
+pub const TURN_NEGATIVE: i32 = -1;
+/// `PhysicsTurningType::TURN_NONE`.
+pub const TURN_NONE: i32 = 0;
+/// `PhysicsTurningType::TURN_POSITIVE`.
+pub const TURN_POSITIVE: i32 = 1;
+
+/// `W3DTankDraw::MAX_TREADS_PER_TANK`.
+pub const MAX_TREADS_PER_TANK: usize = 4;
+
+/// `W3DTankDraw::TreadType`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreadType {
+    Left,
+    Right,
+    Middle,
+}
+
+/// `W3DTankDraw::TreadObjectInfo`: the sub-object (by index, for `m_robj`), its type, and its
+/// material settings' `customUVOffset`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TreadObjectInfo {
+    pub sub_object: usize,
+    pub kind: TreadType,
+    pub custom_uv_offset: [f32; 2],
+}
+
+/// `W3DTankDraw`'s own state (GitHub #41): `m_treads`, `m_treadCount` (the length),
+/// `m_prevRenderObj` (by the render object's serial, see [`W3DModelDraw::render_obj_serial`]),
+/// `m_lastDirection`. The tread debris particle systems are not made (no particle systems yet).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TankDraw {
+    pub treads: Vec<TreadObjectInfo>,
+    pub prev_render_obj: Option<u32>,
+    pub last_direction: (f32, f32),
+}
+
+impl TankDraw {
+    /// `W3DTankDraw(thing, moduleData)`: no treads; "assume all things face along x axis when
+    /// created".
+    pub fn new() -> Self {
+        TankDraw { treads: Vec::new(), prev_render_obj: None, last_direction: (1.0, 0.0) }
+    }
+
+    /// `updateTreadPositions(uvDelta)`: each tread's U offset moved by `uv_delta` (a left tread
+    /// forwards, a right one backwards) and wrapped into [0, 1) (`offset - WWMath::Floor(offset)`).
+    /// A middle tread: upstream's `offset_u` is not set for it (the previous tread's value, or
+    /// uninitialised for the first: undefined); here its offset is wrapped unchanged.
+    pub fn update_tread_positions(&mut self, uv_delta: f32) {
+        for t in &mut self.treads {
+            let mut offset_u = match t.kind {
+                TreadType::Left => t.custom_uv_offset[0] + uv_delta,
+                TreadType::Right => t.custom_uv_offset[0] - uv_delta,
+                TreadType::Middle => t.custom_uv_offset[0],
+            };
+            // ensure coordinates of offset are in [0, 1] range:
+            offset_u -= crate::ww::wwmath::floor(offset_u);
+            t.custom_uv_offset = [offset_u, 0.0];
+        }
+    }
+}
+
+impl Default for TankDraw {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// `W3DModelDraw::WeaponRecoilInfo::RecoilState`.
@@ -2153,6 +2355,11 @@ pub struct W3DModelDraw {
     pub sub_object_vec: Vec<HideShowSubObjInfo>,
     /// `m_weaponRecoilInfoVec`.
     pub weapon_recoil_info_vec: [Vec<WeaponRecoilInfo>; SLOTS],
+    /// Counts the render objects made, the current one's number being its identity: what a
+    /// subclass's `m_prevRenderObj` compares (a pointer upstream). New (GitHub #41).
+    pub render_obj_serial: u32,
+    /// `W3DTankDraw`'s state, for a module whose data is `W3DTankDrawModuleData` (GitHub #41).
+    pub tank: Option<TankDraw>,
 }
 
 impl W3DModelDraw {
@@ -2179,6 +2386,7 @@ impl W3DModelDraw {
     ) -> IniResult<Self> {
         data.validate_stuff_for_time_and_weather(night, snowy, scale, &standard_public_bones, env);
         let info = data.find_best_info(&ModelConditionFlags::new()).ok_or_else(invalid)?;
+        let data_extra = data.extra.clone();
         let mut d = W3DModelDraw {
             data,
             cur_state: None,
@@ -2195,6 +2403,8 @@ impl W3DModelDraw {
             standard_public_bones,
             sub_object_vec: Vec::new(),
             weapon_recoil_info_vec: Default::default(),
+            render_obj_serial: 0,
+            tank: matches!(data_extra, DrawModuleExtra::Tank(_)).then(TankDraw::new),
         };
         d.set_model_state(StateRef::Normal(info), env);
         Ok(d)
@@ -2313,6 +2523,7 @@ impl W3DModelDraw {
                     // preserve the visibility state of the previous render object
                     r.hidden = self.drawable_hidden;
                     self.render_object = Some(r);
+                    self.render_obj_serial = self.render_obj_serial.wrapping_add(1);
                 }
             }
         }
@@ -2320,6 +2531,9 @@ impl W3DModelDraw {
         ns.validate_stuff(self.render_object.as_mut(), self.scale, &data.extra_public_bones, &standard, env);
         self.rebuild_weapon_recoil_info(Some(ns));
         self.do_hide_show_sub_objs(&ns.hide_show_vec);
+        if remake && self.render_object.is_some() {
+            self.on_render_obj_recreated();
+        }
         self.hide_all_headlights(self.hide_headlights);
 
         let prev_state = self.cur_state.take();
@@ -2501,6 +2715,14 @@ impl W3DModelDraw {
     /// `doDrawModule(transformMtx)`, the parts that choose and time the
     /// animation (the transform is the client's; see the module docs).
     pub fn do_draw_module<A: W3dAssetSource>(&mut self, facts: &DrawFacts, env: &mut DrawEnv<'_, A>) {
+        if self.tank.is_some() && !self.tank_do_draw_module(facts) {
+            return;
+        }
+        self.model_draw_do_draw_module(facts, env);
+    }
+
+    /// `W3DModelDraw::doDrawModule` (see [`W3DModelDraw::do_draw_module`]).
+    fn model_draw_do_draw_module<A: W3dAssetSource>(&mut self, facts: &DrawFacts, env: &mut DrawEnv<'_, A>) {
         let should_animate = if self.data.animations_require_power { facts.should_animate_with_power } else { facts.should_animate_without_power };
         self.set_pause_animation(!should_animate, env.sync_time);
 
@@ -2533,6 +2755,150 @@ impl W3DModelDraw {
 
         self.handle_client_turret_positioning(&facts.turrets);
         self.handle_client_recoil();
+    }
+
+    /// The identity of the current render object (`getRenderObject()` as a pointer).
+    fn render_obj_id(&self) -> Option<u32> {
+        self.render_object.as_ref().map(|_| self.render_obj_serial)
+    }
+
+    /// `onRenderObjRecreated()`: `W3DTankDraw`'s finds its treads again
+    /// ([`W3DModelDraw::update_tread_objects`]); the base class's does nothing.
+    fn on_render_obj_recreated(&mut self) {
+        if self.tank.is_some() {
+            self.update_tread_objects();
+        }
+    }
+
+    /// `W3DTankDraw::updateTreadObjects()`: the treads forgotten, then, when the module data has a
+    /// `TreadAnimationRate` and there is a render object, each sub-object (up to
+    /// `MAX_TREADS_PER_TANK` treads) that is a mesh named `<container>.TREADS*` (ignoring case)
+    /// gives one tread per vertex material whose stage-0 mapper is a linear-offset mapper (its
+    /// automatic scrolling turned off, `Set_UV_Offset_Delta(0, 0)`; the sub-object's user data set to
+    /// the tread's settings, offset (0, 0)): `TREADSL*` a left tread, `TREADSR*` a right one, any
+    /// other a middle one. `m_prevRenderObj` is the render object either way.
+    ///
+    /// Upstream checks the tread count against the maximum only between sub-objects, so a
+    /// sub-object with more such materials than are left would write past `m_treads` (undefined);
+    /// here the count stops at the maximum. The automatic scrolling is not drawn here at all (the
+    /// client draws no mapper; `client/src/model.rs`), so turning it off is implicit.
+    pub fn update_tread_objects(&mut self) {
+        let rate = match &self.data.extra {
+            DrawModuleExtra::Tank(t) => t.tread_animation_rate,
+            _ => 0.0,
+        };
+        let id = self.render_obj_id();
+        let mut treads = Vec::new();
+        let mut overrides = BTreeMap::new();
+        if let Some(r) = &self.render_object {
+            //Make sure this object has defined a speed for tread scrolling.
+            if rate != 0.0 {
+                let subs = r.skeleton.as_ref().map(|k| k.sub_objects.as_slice()).unwrap_or(&[]);
+                for (i, sub) in subs.iter().enumerate() {
+                    if treads.len() >= MAX_TREADS_PER_TANK {
+                        break;
+                    }
+                    //Check if subobject name starts with "TREADS".
+                    let Some(dot) = sub.name.iter().position(|&c| c == b'.') else { continue };
+                    let mesh_name = &sub.name[dot + 1..];
+                    if mesh_name.len() < 6 || !mesh_name[..6].eq_ignore_ascii_case(b"TREADS") {
+                        continue;
+                    }
+                    //check if sub-object has the correct material to do texture scrolling.
+                    for _ in 0..sub.linear_offset_materials {
+                        if treads.len() >= MAX_TREADS_PER_TANK {
+                            break;
+                        }
+                        //check next character after 'TREADS'
+                        let kind = match mesh_name.get(6) {
+                            Some(b'L' | b'l') => TreadType::Left,
+                            Some(b'R' | b'r') => TreadType::Right,
+                            _ => TreadType::Middle,
+                        };
+                        treads.push(TreadObjectInfo { sub_object: i, kind, custom_uv_offset: [0.0, 0.0] });
+                        overrides.insert(i, [0.0, 0.0]);
+                    }
+                }
+            }
+        }
+        if let Some(r) = &mut self.render_object {
+            r.material_overrides = overrides;
+        }
+        if let Some(t) = &mut self.tank {
+            t.treads = treads;
+            t.prev_render_obj = id;
+        }
+    }
+
+    /// `W3DTankDraw::doDrawModule(transformMtx)` up to its call of the base class's: `false` when
+    /// it returns before (no render object, no object, no physics), so the base class's does not
+    /// run either (kept: upstream's tank draw does not pause or advance its states then).
+    ///
+    /// - A render object other than the last one seen: [`W3DModelDraw::update_tread_objects`].
+    /// - The tread debris (`startMoveDebris`, `stopMoveDebris`, the velocity and burst
+    ///   multipliers) is not made: no particle systems yet.
+    /// - With treads: while turning and slower than `TreadPivotSpeedFraction` of the current
+    ///   locomotor's speed, the treads move by the `TreadAnimationRate` (negative when turning
+    ///   right, `TURN_NEGATIVE`) when the direction changed since the last draw (the cosine between
+    ///   them more than 1e-5 from 1), and the direction is kept; else, moving under a motive force
+    ///   at `TreadDriveSpeedFraction` or more of it, every tread's U offset goes down by the rate,
+    ///   wrapped into [0, 1). The rate is per draw, not per unit of speed ("tread scrolling speed
+    ///   was not directly tied into tank velocity because it looked odd").
+    /// - Time frozen (`isTimeFrozen`, the script engine's freezes): the client has no frozen time
+    ///   yet; not checked.
+    /// - Without an AI upstream dereferences null for the locomotor speed; here the treads do not
+    ///   move then.
+    /// - The values sent to the render object: the treads' offsets, as the sub-objects' material
+    ///   overrides (upstream's sub-objects point at them).
+    fn tank_do_draw_module(&mut self, facts: &DrawFacts) -> bool {
+        if self.render_object.is_none() {
+            return false;
+        }
+        if self.render_obj_id() != self.tank.as_ref().and_then(|t| t.prev_render_obj) {
+            self.update_tread_objects();
+        }
+        // get object from logic; get object physics state
+        let Some(m) = facts.motion else { return false };
+        let DrawModuleExtra::Tank(fields) = &self.data.extra else { return true };
+        let (scroll, pivot, drive) = (fields.tread_animation_rate, fields.tread_pivot_speed_fraction, fields.tread_drive_speed_fraction);
+        let Some(t) = &mut self.tank else { return true };
+        //Update movement of treads
+        if !t.treads.is_empty() {
+            if let Some(max_speed) = m.cur_locomotor_speed {
+                //For optimization sake, we only do complex tread scrolling when tank
+                //is mostly stationary and turning
+                if m.turning != TURN_NONE && m.velocity_magnitude / max_speed < pivot {
+                    //Check if we have turned enough since last draw to require animation
+                    let dir = m.unit_direction_2d;
+                    let angle_to_goal = dir.0 * t.last_direction.0 + dir.1 * t.last_direction.1;
+                    if crate::ww::wwmath::fabs(1.0 - angle_to_goal) > 0.00001 {
+                        if m.turning == TURN_NEGATIVE {
+                            //turning right
+                            t.update_tread_positions(-scroll);
+                        } else {
+                            //turning left
+                            t.update_tread_positions(scroll);
+                        }
+                    }
+                    t.last_direction = dir; //update for next frame
+                } else if m.is_motive && m.velocity_magnitude / max_speed >= drive {
+                    //do simple scrolling based only on speed when tank is moving straight at high speed.
+                    for tr in &mut t.treads {
+                        let mut offset_u = tr.custom_uv_offset[0] - scroll;
+                        // ensure coordinates of offset are in [0, 1] range:
+                        offset_u -= crate::ww::wwmath::floor(offset_u);
+                        tr.custom_uv_offset = [offset_u, 0.0];
+                    }
+                }
+            }
+            let offsets: Vec<(usize, [f32; 2])> = t.treads.iter().map(|tr| (tr.sub_object, tr.custom_uv_offset)).collect();
+            if let Some(r) = &mut self.render_object {
+                for (i, o) in offsets {
+                    r.material_overrides.insert(i, o);
+                }
+            }
+        }
+        true
     }
 
     /// `handleClientTurretPositioning()`: each turret of the current state (valid at a logic
@@ -3033,7 +3399,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None] };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -3483,6 +3849,121 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(m.handle_weapon_fire_fx(0, 0, true));
         }
 
+        /// The browser's asset source in small (GitHub #42): the files of [`gunt`], answering every question "none for
+        /// now" (counted, as `Deferred` counts them) until `arrived`, or only the skeleton when `skeleton_only`.
+        struct Fetching<'a> {
+            files: W3dFiles<'a, MemoryDevice>,
+            arrived: bool,
+            skeleton_only: bool,
+            deferred: usize,
+        }
+
+        impl W3dAssetSource for Fetching<'_> {
+            fn create_render_obj(&mut self, name: &[u8]) -> Option<bool> {
+                if !self.arrived && !self.skeleton_only {
+                    self.deferred += 1;
+                    return None;
+                }
+                self.files.create_render_obj(name)
+            }
+            fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle> {
+                if !self.arrived && !self.skeleton_only {
+                    self.deferred += 1;
+                    return None;
+                }
+                self.files.get_hanim(name)
+            }
+            fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+                if !self.arrived {
+                    self.deferred += 1;
+                    return None;
+                }
+                self.files.skeleton(name, pose, scale)
+            }
+            fn deferred_answers(&self) -> usize {
+                self.deferred
+            }
+        }
+
+        /// GitHub #42: bones validated while the model's files are being fetched are looked for again once they are
+        /// there. Each case makes a drawable of [`GUN_DRAW`] at a logic time while fetching, then (as the client remakes
+        /// a waiting drawable) another of the same shared module data at a logic time after the files arrived.
+        ///
+        /// *Predictions, written before the first run:*
+        /// - while fetching (everything, or only the skeleton): the default state's pristine bones, turrets and barrels
+        ///   are not valid, its bone cache is empty with turret bones `[(0, 0), (0, 0)]`, and the module data is not
+        ///   validated for the plain mode; with everything fetched there is no render object;
+        /// - after arrival: all three valid, the mode validated, and the bone cache exactly that of a drawable made with
+        ///   the files at hand from the start (the 4 pristine bones, turret bones `[(1, 2), (0, 0)]`, one primary
+        ///   barrel 3/4/4), which is itself what [`the_pristine_bones_turrets_and_barrels_are_cached_at_a_logic_time`]
+        ///   checks against upstream;
+        /// - a draw outside a logic time after arrival validates nothing (upstream's rule, unchanged): a drawable made
+        ///   with `logic_time` false after a fetched one still finds the bones not valid.
+        ///
+        /// *Results (2026-11-06), first run:* all held, in both cases.
+        #[test]
+        fn bones_validated_while_fetching_are_found_after_the_files_arrive() {
+            let mut rig = Rig::new();
+            let at_hand = rig.draw(true).get_cur_state().unwrap().bone_cache();
+            for skeleton_only in [false, true] {
+                let data = Arc::new(parse(GUN_DRAW).unwrap());
+                let mut src = Fetching { files: W3dFiles { assets: &mut rig.am, fs: &rig.fs }, arrived: false, skeleton_only, deferred: 0 };
+                let m = {
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+                    W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
+                };
+                let s = m.get_cur_state().unwrap();
+                assert!(src.deferred > 0);
+                assert!(!s.pristine_bones_valid() && !s.turrets_valid() && !s.barrels_valid(), "skeleton only {skeleton_only}");
+                let c = s.bone_cache();
+                assert!(c.pristine_bones.is_empty());
+                assert_eq!(c.turret_bones, [(0, 0), (0, 0)]);
+                assert!(c.weapon_barrel_info_vec[0].is_empty());
+                assert!(!data.validated_for(false, false));
+                assert_eq!(m.render_object.is_none(), !skeleton_only);
+
+                // made outside a logic time once the files are there: upstream's rule, nothing validated
+                src.arrived = true;
+                let m = {
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: false };
+                    W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
+                };
+                assert!(!m.get_cur_state().unwrap().pristine_bones_valid());
+                assert!(!data.validated_for(false, false));
+
+                // made again at a logic time (the client's remake): found
+                let before = src.deferred;
+                let m = {
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+                    W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
+                };
+                assert_eq!(src.deferred, before);
+                let s = m.get_cur_state().unwrap();
+                assert!(s.pristine_bones_valid() && s.turrets_valid() && s.barrels_valid());
+                assert!(data.validated_for(false, false));
+                assert_eq!(s.bone_cache(), at_hand);
+                assert_eq!(s.bone_cache().turret_bones, [(1, 2), (0, 0)]);
+                assert!(m.render_object.is_some());
+            }
+        }
+
+        /// With the files at hand nothing is answered "for now": a source that never defers gives the module data the
+        /// same validity bits and caches as before GitHub #42 (the at-hand drawable above), and is validated for its mode.
+        #[test]
+        fn with_the_files_at_hand_the_validation_is_upstream_s() {
+            let mut rig = Rig::new();
+            let m = rig.draw(true);
+            let s = m.get_cur_state().unwrap();
+            assert!(s.pristine_bones_valid() && s.turrets_valid() && s.barrels_valid());
+            assert!(m.data.validated_for(false, false));
+            let mut src = Fetching { files: W3dFiles { assets: &mut rig.am, fs: &rig.fs }, arrived: true, skeleton_only: false, deferred: 0 };
+            let data = Arc::new(parse(GUN_DRAW).unwrap());
+            let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+            let m2 = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
+            assert_eq!(src.deferred, 0);
+            assert_eq!(m2.get_cur_state().unwrap().bone_cache(), s.bone_cache());
+        }
+
         /// Predictions, written before the first run:
         /// - `DAMAGED` (same model, same turret names: no new render object) hides `TURRET` and every sub-object whose
         ///   bone descends from the turret's bone (BARREL, GUN, MUZZLEFX01), but not ANTENNA, which is on the turret's
@@ -3511,6 +3992,178 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(!hidden(&m)[HEADLIGHT]);
             let model = rig.posed(&m);
             assert_eq!(model.sub_objects.iter().map(|s| s.hidden).collect::<Vec<_>>(), hidden(&m));
+        }
+    }
+
+    // ---- GitHub #41: W3DTankDraw's treads
+
+    mod treads {
+        use super::*;
+        use crate::common::file_system::{FileSystem, MemoryDevice};
+        use crate::formats::w3d::assetmgr::W3dFileFactory;
+        use crate::formats::w3d::synth::*;
+
+        /// A tank `TANKT` (ROOTTRANSFORM and BODY pivots) with five cubes on the body: CHASSIS (plain), TREADSL, TREADSR
+        /// and TREADSX (each a linear-offset mapper on stage 0), and TREADSNOMAP (named as a tread, no mapper).
+        fn tankt(name: &[u8]) -> Vec<u8> {
+            let ident = [0.0, 0.0, 0.0, 1.0];
+            let mut f = htree_w3d(name, &[
+                PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+                PivotSpec { name: b"BODY".to_vec(), parent: 0, translation: [0.0, 0.0, 1.0], rotation: ident },
+            ]);
+            let subs: [(&[u8], u32); 5] = [(b"CHASSIS", 0), (b"TREADSL", 4), (b"TREADSR", 4), (b"TREADSX", 4), (b"TREADSNOMAP", 0)];
+            let mut names = Vec::new();
+            for (n, mapping) in subs {
+                let mut m = MeshSpec::cuboid(name, n, [-0.5; 3], [0.5; 3]);
+                m.stage0.texture = None;
+                m.stage0.mapping = mapping;
+                f.extend(m.to_w3d());
+                let mut full = name.to_vec();
+                full.push(b'.');
+                full.extend_from_slice(n);
+                names.push(full);
+            }
+            let hl: Vec<(&[u8], u32)> = names.iter().map(|n| (n.as_slice(), 1)).collect();
+            f.extend(hlod_w3d(name, name, &hl));
+            f
+        }
+
+        const CHASSIS: usize = 0;
+        const LEFT: usize = 1;
+        const RIGHT: usize = 2;
+        const MIDDLE: usize = 3;
+        const NOMAP: usize = 4;
+
+        struct Rig {
+            fs: FileSystem<MemoryDevice>,
+            am: AssetManager,
+            random: RandomValues,
+        }
+
+        impl Rig {
+            fn new() -> Self {
+                let mut d = MemoryDevice::new();
+                d.insert(b"Art/W3D/tankt.w3d", tankt(b"TANKT"));
+                d.insert(b"Art/W3D/tanku.w3d", tankt(b"TANKU"));
+                Rig { fs: FileSystem::new(d), am: AssetManager::new_game(W3dFileFactory::default()), random: RandomValues::new(0) }
+            }
+            /// A `W3DTankDraw` of `TANKT` (`TANKU` when `DAMAGED`) with `TreadAnimationRate = rate` (per second).
+            fn draw(&mut self, rate: &str) -> W3DModelDraw {
+                let l = [
+                    (0, "DefaultConditionState", ""),
+                    (1, "Model", "TANKT"),
+                    (0, "ConditionState", "DAMAGED"),
+                    (1, "Model", "TANKU"),
+                    (0, "TreadAnimationRate", rate),
+                ];
+                let d = Arc::new(W3DModelDrawModuleData::parse(b"W3DTankDraw", &block(&l)).unwrap().unwrap());
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: true };
+                W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
+            }
+            fn frame(&mut self, m: &mut W3DModelDraw, facts: &DrawFacts) {
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                m.do_draw_module(facts, &mut env);
+            }
+            fn set_flags(&mut self, m: &mut W3DModelDraw, bits: &[i32]) {
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                m.replace_model_condition_state(&flags(bits), &mut env);
+            }
+        }
+
+        fn moving(v: f32, turning: i32, motive: bool, dir_angle: f32) -> DrawFacts {
+            let motion = MotionFacts {
+                velocity_magnitude: v,
+                turning,
+                is_motive: motive,
+                cur_locomotor_speed: Some(4.0),
+                unit_direction_2d: (crate::ww::wwmath::cos(dir_angle), crate::ww::wwmath::sin(dir_angle)),
+            };
+            DrawFacts { motion: Some(motion), ..FACTS }
+        }
+
+        fn offsets(m: &W3DModelDraw) -> Vec<(usize, TreadType, f32)> {
+            m.tank.as_ref().unwrap().treads.iter().map(|t| (t.sub_object, t.kind, t.custom_uv_offset[0])).collect()
+        }
+
+        /// `offset - floor(offset)` after `n` steps of `-d` from 0, as `doDrawModule` computes it.
+        fn scrolled(n: usize, d: f32) -> f32 {
+            let mut o = 0.0f32;
+            for _ in 0..n {
+                o -= d;
+                o -= crate::ww::wwmath::floor(o);
+            }
+            o
+        }
+
+        /// *Predictions, written before the first run* (rate 3 a second is 0.1 a frame; the pivot and drive fractions
+        /// are the defaults, 0.6 and 0.3; the locomotor's speed is 4):
+        /// - the render object made in the constructor gives three treads: TREADSL left (sub-object 1), TREADSR right
+        ///   (2), TREADSX middle (3), offsets 0; not CHASSIS, and not TREADSNOMAP (no linear-offset mapper);
+        /// - driving straight at speed v = 2 (half the locomotor's speed, above 0.3) under a motive force, every tread's
+        ///   U goes down by 0.1 a draw, wrapped: 0.9, 0.8, 0.7 after three draws (to within one ulp of the same sum); the
+        ///   client's render model gets those offsets on sub-objects 1 to 3 and none on 0 and 4;
+        /// - at v = 1 (0.25 of the locomotor's speed, under 0.3), or at v = 2 without a motive force, nothing moves;
+        /// - pivoting right (`TURN_NEGATIVE`, v = 0) with the direction turned 0.1 rad since the last draw: the left
+        ///   tread goes down by 0.1, the right one up by 0.1, the middle one not at all; a second draw facing the same
+        ///   way moves nothing; pivoting left moves them the other way;
+        /// - without physics (no motion facts) `doDrawModule` returns before the base class's: an object that should not
+        ///   animate is not paused;
+        /// - a new render object (the `DAMAGED` state's model) finds its treads again, at offset 0;
+        /// - with `TreadAnimationRate` 0 there are no treads.
+        ///
+        /// *Results (2026-11-06):* all held but one. **Miss:** the step is not 0.1 but 0.10000001: `parseVelocityReal`
+        /// multiplies 3 by `SECONDS_PER_LOGICFRAME_REAL` (1/30 in f32). The test now takes the parsed rate and checks
+        /// it is 0.10000001; with it every offset held exactly (three drive steps within 1e-6 of 0.7).
+        #[test]
+        fn treads_scroll_with_the_tank_s_motion() {
+            let mut rig = Rig::new();
+            let mut m = rig.draw("3");
+            assert_eq!(offsets(&m), vec![(LEFT, TreadType::Left, 0.0), (RIGHT, TreadType::Right, 0.0), (MIDDLE, TreadType::Middle, 0.0)]);
+            // (the first run's miss: `parseVelocityReal` gives 3 * (1/30) = 0.10000001 in f32, not 0.1)
+            let DrawModuleExtra::Tank(t) = &m.data.extra else { panic!("a tank") };
+            let rate = t.tread_animation_rate;
+            assert_eq!(rate, 0.10000001);
+
+            let drive = moving(2.0, TURN_NONE, true, 0.0);
+            for _ in 0..3 {
+                rig.frame(&mut m, &drive);
+            }
+            let want = scrolled(3, rate);
+            assert!((want - 0.7).abs() < 1e-6, "{want}");
+            assert_eq!(offsets(&m), vec![(LEFT, TreadType::Left, want), (RIGHT, TreadType::Right, want), (MIDDLE, TreadType::Middle, want)]);
+            let mut model = RenderModel::create(&mut rig.am, &rig.fs, b"tankt").unwrap().unwrap();
+            m.render_object.as_ref().unwrap().pose_render_model(&mut model);
+            let uv: Vec<Option<[f32; 2]>> = model.sub_objects.iter().map(|s| s.uv_offset).collect();
+            assert_eq!(uv, vec![None, Some([want, 0.0]), Some([want, 0.0]), Some([want, 0.0]), None]);
+            let _ = (CHASSIS, NOMAP);
+
+            rig.frame(&mut m, &moving(1.0, TURN_NONE, true, 0.0));
+            rig.frame(&mut m, &moving(2.0, TURN_NONE, false, 0.0));
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![want; 3]);
+
+            let mut m = rig.draw("3");
+            rig.frame(&mut m, &moving(0.0, TURN_NEGATIVE, false, 0.1));
+            let down = -rate - crate::ww::wwmath::floor(-rate);
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, 0.0]);
+            rig.frame(&mut m, &moving(0.0, TURN_NEGATIVE, false, 0.1));
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, 0.0]);
+            rig.frame(&mut m, &moving(0.0, TURN_POSITIVE, false, 0.0));
+            let l = down + rate - crate::ww::wwmath::floor(down + rate);
+            let r = rate - rate - crate::ww::wwmath::floor(rate - rate);
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![l, r, 0.0]);
+
+            rig.frame(&mut m, &DrawFacts { should_animate_with_power: false, should_animate_without_power: false, ..FACTS });
+            assert!(!m.pause_animation, "the base class's doDrawModule did not run");
+
+            rig.set_flags(&mut m, &[MODELCONDITION_DAMAGED]);
+            assert_eq!(m.render_object.as_ref().unwrap().model_name, b"tanku");
+            assert_eq!(offsets(&m), vec![(LEFT, TreadType::Left, 0.0), (RIGHT, TreadType::Right, 0.0), (MIDDLE, TreadType::Middle, 0.0)]);
+
+            let m = rig.draw("0");
+            assert!(offsets(&m).is_empty());
         }
     }
 }

@@ -107,6 +107,12 @@ pub struct SubObject {
     /// `Is_Hidden()` (`W3D_MESH_FLAG_HIDDEN`).
     pub hidden: bool,
     pub model: MeshModel,
+    /// A `RenderObjClass::Material_Override` set as the sub-object's user data (`Set_User_Data`): its
+    /// `customUVOffset`, which the DX8 renderer puts in the stage-0 `LinearOffsetTextureMapperClass`
+    /// for the draw (`Set_Current_UV_Offset`, with no time passing) and takes back after
+    /// (`dx8renderer.cpp`). `None` without one. Set by a draw module (`W3DTankDraw`'s treads, GitHub
+    /// #41) through `RenderObj::pose_render_model`.
+    pub uv_offset: Option<[f32; 2]>,
 }
 
 impl SubObject {
@@ -148,7 +154,7 @@ impl RenderModel {
                     name: name.to_vec(),
                     is_hlod: false,
                     htree: None,
-                    sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model }],
+                    sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model, uv_offset: None }],
                     not_drawn: Vec::new(),
                 }))
             }
@@ -166,7 +172,7 @@ impl RenderModel {
                         Some(Prototype::Mesh(mesh)) => {
                             let model = MeshModel::from_mesh(&mesh)?;
                             let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
-                            out.sub_objects.push(SubObject { name: sub_name, bone_index: s.bone_index, hidden, model });
+                            out.sub_objects.push(SubObject { name: sub_name, bone_index: s.bone_index, hidden, model, uv_offset: None });
                         }
                         Some(other) => {
                             let why = format!("a {} prototype, not a mesh", prototype_kind(&other));
