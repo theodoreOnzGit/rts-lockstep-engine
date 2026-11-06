@@ -78,10 +78,13 @@ pub trait GameStateMapHost<B>: GameStateHost<B> + GameInfoHost {
     fn drawable_id_counter(&self) -> DrawableId;
     /// `TheGameClient->setDrawableIDCounter(id)`.
     fn set_drawable_id_counter(&mut self, id: DrawableId);
-    /// `TheGameLogic->startNewGame(loadingSaveGame)`.
-    fn start_new_game(&mut self, loading_save_game: bool);
-    /// `TheSkirmishGameInfo` (`None` is `NULL`).
-    fn skirmish_game_info(&mut self) -> &mut Option<GameInfo>;
+    /// `TheGameLogic->startNewGame(loadingSaveGame)`, with `TheGameState` (its pristine map name, its save directory) as
+    /// the logic reads it. A failure is what the new game threw (GitHub #58).
+    fn start_new_game(&mut self, gs: &GameState<B>, loading_save_game: bool) -> MapResult<()>;
+    /// `TheSkirmishGameInfo` taken out (`None` is `NULL`), for the xfer to work on.
+    fn take_skirmish_game_info(&mut self) -> Option<GameInfo>;
+    /// `TheSkirmishGameInfo` put back (`None`: `delete TheSkirmishGameInfo; TheSkirmishGameInfo = NULL`).
+    fn set_skirmish_game_info(&mut self, game: Option<GameInfo>);
     /// The block a load's post-process list holds for `TheSkirmishGameInfo` (its `loadPostProcess` is empty
     /// upstream; the block names that object, not any later one).
     fn skirmish_block(&self) -> B;
@@ -279,7 +282,7 @@ pub fn xfer_game_state_map<B: Copy>(gs: &mut GameState<B>, xfer: &mut dyn Xfer, 
     h.set_drawable_id_counter(drawable_id);
 
     if h.logic_game_mode() == game_mode::SKIRMISH {
-        let mut game = match h.skirmish_game_info().take() {
+        let mut game = match h.take_skirmish_game_info() {
             Some(g) => g,
             None => {
                 // NEW SkirmishGameInfo; init(); clearSlotList(); reset()
@@ -293,14 +296,14 @@ pub fn xfer_game_state_map<B: Copy>(gs: &mut GameState<B>, xfer: &mut dyn Xfer, 
             }
         };
         let r = xfer_skirmish(gs, &mut game, xfer, h);
-        *h.skirmish_game_info() = Some(game);
+        h.set_skirmish_game_info(Some(game));
         r?;
     } else if !plant(3996) {
-        *h.skirmish_game_info() = None;
+        h.set_skirmish_game_info(None);
     }
 
     if xfer.get_xfer_mode() == XferMode::Load {
-        h.start_new_game(true);
+        h.start_new_game(gs, true)?;
         h.set_loading_save(plant(3997));
     }
     Ok(())

@@ -40,8 +40,17 @@
 //! | `CHUNK_TerrainVisual` | `W3DTerrainVisual::xfer` v3 | **The World's** (the logic height map and the water grid live in the World: `World::xfer_terrain_visual_part`); a version 3 block's tree and prop buffers are read past here. A save writes version 2. |
 //! | `CHUNK_GhostObject` | `W3DGhostObjectManager::xfer` v1 | **The local player translated; the ghost objects read past** (`W3DGhostObject::xfer`, the last seen look of a shrouded building, is not translated). A save writes no ghost objects. |
 //!
-//! `CHUNK_Campaign` is the logic's and is not registered (see `game_state_world`): a load skips it by its size, as any
-//! unknown block. A block is "read past" with the save's own block size, which every block carries; so the game loads
+//! ~~`CHUNK_Campaign` is the logic's and is not registered (see `game_state_world`): a load skips it by its size, as any
+//! unknown block.~~ **Corrected 2026-11-06 (GitHub #58):** `CHUNK_Campaign` is registered, second as upstream's, and is the
+//! World's (`CampaignManager::xfer` over the World's campaign stand-in): a save outside a campaign loads; a campaign's save
+//! (a campaign or mission named, or a challenge) fails there, with `SC_INVALID_DATA`, as the port has no campaigns.
+//!
+//! # Starting the save's game (GitHub #58)
+//!
+//! Upstream's load starts the save's own game inside `CHUNK_GameStateMap` (`startNewGame(TRUE)`, with the map the block
+//! extracts and the `TheSkirmishGameInfo` it reads). A World made ready for that (`SaveSide::new_game_on_load`: a World with
+//! no game, upstream's `TheGameEngine->reset()`) starts it there; the host then makes the radar's new map (the
+//! `TheRadar->newMap` of that `startNewGame`, which is the client's) before `CHUNK_Radar` is read. A block is "read past" with the save's own block size, which every block carries; so the game loads
 //! without what was read past, as upstream does for blocks it does not know.
 //!
 //! # Loading an original game's save
@@ -97,6 +106,7 @@ pub fn client_game_state() -> GameState<SaveBlock> {
     let mut gs = GameState::new();
     for (name, b) in [
         (&b"CHUNK_GameState"[..], S::World(W::GameState)),
+        (b"CHUNK_Campaign", S::World(W::Campaign)),
         (b"CHUNK_GameStateMap", S::World(W::GameStateMap)),
         (b"CHUNK_TerrainLogic", S::World(W::TerrainLogic)),
         (b"CHUNK_TeamFactory", S::World(W::TeamFactory)),
@@ -740,10 +750,23 @@ impl GameStateHost<SaveBlock> for SaveHost<'_> {
             SaveBlock::World(b) => {
                 std::mem::swap(&mut self.shadow.info, &mut gs.info);
                 self.shadow.is_in_load_game = gs.is_in_load_game;
+                let starting = self.world.save_side.new_game_on_load;
                 let r = <World as GameStateHost<WorldBlock>>::xfer_block(self.world, b, &mut self.shadow, xfer);
                 std::mem::swap(&mut self.shadow.info, &mut gs.info);
                 for p in std::mem::take(&mut self.shadow.post_process) {
                     gs.add_post_process(SaveBlock::World(p));
+                }
+                if r.is_ok() && starting && !self.world.save_side.new_game_on_load {
+                    // GitHub #58: `CHUNK_GameStateMap` started the save's game (`startNewGame(TRUE)`), whose
+                    // `TheRadar->newMap(TheTerrainLogic)` is the client's: the radar takes the new map's extent and
+                    // heights before its own block is read (its terrain texture is rebuilt by its `loadPostProcess`)
+                    let host = crate::client::radar_world::WorldRadarHost {
+                        world: &mut *self.world,
+                        drawables: None,
+                        colors: None,
+                        water_color: crate::client::radar_world::UNTEXTURED_TERRAIN_COLOR,
+                    };
+                    self.radar.new_map(&host);
                 }
                 return r;
             }
@@ -1000,7 +1023,8 @@ mod tests {
     /// World alone (`World::load_game`, which skips the client's blocks by their size).
     ///
     /// **Predicted before the run:** (1) the save has upstream's sixteen registered blocks in `GameState::init`'s order,
-    /// `CHUNK_Campaign` excepted; (2) the two client loads give the same logic CRC at each of the next 150 frames, and the
+    /// `CHUNK_Campaign` excepted (~~sixteen~~ **corrected 2026-11-06 (GitHub #58):** all seventeen, `CHUNK_Campaign` now
+    /// registered); (2) the two client loads give the same logic CRC at each of the next 150 frames, and the
     /// World loaded alone gives the same CRCs as they do (the client's blocks change nothing the logic computes); (3) the
     /// client blocks round-trip: a loaded client saved again writes the same `CHUNK_Radar`, `CHUNK_TacticalView`,
     /// `CHUNK_GameClient`, `CHUNK_InGameUI`, `CHUNK_ParticleSystem`, `CHUNK_TerrainVisual` and `CHUNK_GhostObject` bytes,
@@ -1042,7 +1066,7 @@ mod tests {
         let names: Vec<String> = read_save_summary(bytes.clone()).expect("summary").blocks.iter().map(|b| String::from_utf8_lossy(&b.name).into_owned()).collect();
         let expected: Vec<String> = client_game_state().blocks[0].iter().map(|b| String::from_utf8_lossy(&b.block_name).into_owned()).collect();
         assert_eq!(names, expected);
-        assert_eq!(names.len(), 16);
+        assert_eq!(names.len(), 17);
         // (5)
         let s = read_save_summary(bytes.clone()).expect("summary");
         assert_eq!(String::from_utf16_lossy(&s.info.description), "gate at 120");
@@ -1051,7 +1075,7 @@ mod tests {
         // (4)
         let own = blocks(&a.world.save_game().expect("the World's save"));
         let mine = blocks(&bytes);
-        for name in ["CHUNK_GameStateMap", "CHUNK_TerrainLogic", "CHUNK_TeamFactory", "CHUNK_Players", "CHUNK_GameLogic", "CHUNK_ScriptEngine", "CHUNK_SidesList", "CHUNK_Partition", "CHUNK_TerrainVisual"] {
+        for name in ["CHUNK_Campaign", "CHUNK_GameStateMap", "CHUNK_TerrainLogic", "CHUNK_TeamFactory", "CHUNK_Players", "CHUNK_GameLogic", "CHUNK_ScriptEngine", "CHUNK_SidesList", "CHUNK_Partition", "CHUNK_TerrainVisual"] {
             assert!(own[name] == mine[name], "{name}: the client's save holds the World's block");
         }
 
@@ -1125,7 +1149,8 @@ mod tests {
 
     /// GitHub #4: an original game's save (`RTS_ZH_SAVE=<file.sav>`), with its install (`RTS_ZH_DIR=<Zero Hour folder>`).
     /// Skipped without them (no EA file is in this repository). The summary is read (its blocks, its information, its
-    /// map); with the install, a skirmish is started on the save's map and the save loaded through the client's path; the
+    /// map); with the install, ~~a skirmish is started on the save's map and~~ the save loaded through the client's path
+    /// into the install's World with no game, the save starting its own (GitHub #58); the
     /// first block, offset and field that does not load is reported, or what was read past. **Not run (2026-11-06):** no
     /// original save is in this repository or on this machine, so the test was skipped (it passes by skipping).
     #[test]
@@ -1163,13 +1188,7 @@ mod tests {
         if !world.save_side.disk.contains_key(&real.to_ascii_lowercase()) {
             world.save_side.disk.insert(real.to_ascii_lowercase(), summary.map_file.clone());
         }
-        world.quick_skirmish_mounted(&real, 1).unwrap_or_else(|e| panic!("no skirmish on {:?}: {e:?}", String::from_utf8_lossy(&real)));
-        for _ in 0..30 {
-            world.engine_update().expect("a starting frame");
-            if world.players.local_index().is_some() {
-                break;
-            }
-        }
+        world.save_side.new_game_on_load = true;
         let mut c = Client::new(world);
         let mut h = SaveHost::new(&mut c.world, &mut c.radar.radar, &mut c.particles, &mut c.state);
         match load_client_game(&mut h, bytes) {
@@ -1182,5 +1201,89 @@ mod tests {
             }
             Err(e) => panic!("the first difference: {e}\nlast reads:\n{}", e.last_reads.join("\n")),
         }
+    }
+
+
+    /// GitHub #58: a four-player game's save through the client's path. The install's four-player game
+    /// (`install_world`'s `four_player_game`: the human with China at the third start, America, GLA and China computer
+    /// players, two teams) runs 60 frames, then 60 with a client radar attached, and is saved through
+    /// [`save_client_game`]; it is loaded through [`load_client_game`] into two copies of the install's World with no game
+    /// (`SaveSide::new_game_on_load`), each in a fresh client whose radar was given the empty World's map.
+    ///
+    /// **Predicted before the run:** each load starts the save's game in `CHUNK_GameStateMap` and the host makes the radar's
+    /// new map then: the loaded radar's map extent is the saving radar's (300 x 300), not the empty World's; the radar lists
+    /// name the same objects; the player list, sides and local player are the original's; the two loads give the same logic
+    /// CRC at each of the next 150 frames; nothing is read past and no error is recorded.
+    ///
+    /// **Results (2026-11-06, native, release):** all held, first run (extent (0, 0) to (300, 300) on both). **Ablation:**
+    /// with the host's radar new map taken out, the loaded radar's extent is the empty World's ((0, 0) to (0, 0)) and the
+    /// test fails, so it checks the call.
+    #[test]
+    fn a_four_player_client_save_starts_its_own_game() {
+        use crate::logic::world::install_world::tests::{four_player_game, player_sides};
+        let (base, w) = four_player_game(60);
+        let mut a = Client::new(w);
+        for _ in 0..60 {
+            a.step();
+        }
+        let bytes = a.save("four at 120");
+        let load = || {
+            let mut w = base.clone();
+            w.save_side.new_game_on_load = true;
+            Client::load_into(w, bytes.clone()).unwrap_or_else(|e| panic!("the load: {e}\n{}", e.last_reads.join("\n")))
+        };
+        let ((mut b, _), (mut c, _)) = (load(), load());
+        let ext = |c: &Client| c.radar.radar.map_extent;
+        eprintln!("radar extent: saved {:?}, loaded {:?}", ext(&a), ext(&b));
+        assert_eq!(ext(&b), ext(&a));
+        assert!(ext(&a).hi.x > ext(&a).lo.x);
+        let listed = |c: &Client| c.radar.radar.local_object_list.iter().chain(c.radar.radar.object_list.iter()).map(|o| o.object).collect::<Vec<_>>();
+        assert_eq!(listed(&b), listed(&a));
+        assert_eq!(player_sides(&b.world), player_sides(&a.world));
+        assert_eq!(b.world.players.local_index(), a.world.players.local_index());
+        for f in 0..150 {
+            assert_eq!(b.step(), c.step(), "two client loads part at frame {f} after the load");
+        }
+        for w in [&a.world, &b.world, &c.world] {
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
+        assert!(b.state.read_past.is_empty(), "{:?}", b.state.read_past);
+        assert!(b.state.errors.is_empty(), "{:?}", b.state.errors);
+    }
+
+
+    /// GitHub #58: a campaign's save fails cleanly. The gate game's client save has its `CHUNK_Campaign` rewritten to name
+    /// a campaign (`usa`, mission `m1`; the block's size fixed). **Predicted before the run:** the load fails in
+    /// `CHUNK_Campaign` with `XFER_UNKNOWN_ERROR` and the recorded `CampaignManager::xfer: InvalidData` (the port has no
+    /// campaigns for `setCampaignAndMission`), and no later block is read. **Result (2026-11-06):** as predicted, first run
+    /// (`ErrorUnknown in CHUNK_Campaign at byte 17 of the block`; `CampaignManager::xfer: InvalidData`).
+    #[test]
+    fn a_campaign_save_fails_cleanly() {
+        let mut a = Client::new(gate_world());
+        for _ in 0..5 {
+            a.step();
+        }
+        let bytes = a.save("campaign");
+        let s = read_save_summary(bytes.clone()).expect("summary");
+        let b = s.blocks.iter().find(|b| b.name == b"CHUNK_Campaign").expect("the campaign's block");
+        let (start, end) = (b.offset, b.offset + b.size as usize);
+        let old = &bytes[start..end];
+        // version, then the two empty names (each a length byte of 0), then the rest as it was
+        assert_eq!(&old[1..3], &[0, 0]);
+        let mut data = vec![old[0], 3];
+        data.extend_from_slice(b"usa");
+        data.push(2);
+        data.extend_from_slice(b"m1");
+        data.extend_from_slice(&old[3..]);
+        let mut edited = bytes[..start - 4].to_vec();
+        edited.extend_from_slice(&(data.len() as i32).to_le_bytes());
+        edited.extend_from_slice(&data);
+        edited.extend_from_slice(&bytes[end..]);
+        let e = Client::load(edited).err().expect("the load fails");
+        eprintln!("{e}");
+        assert_eq!(e.block, "CHUNK_Campaign");
+        assert_eq!(e.error, XferStatus::ErrorUnknown);
+        assert!(e.errors.iter().any(|x| x.contains("CampaignManager::xfer") && x.contains("InvalidData")), "{:?}", e.errors);
+        assert_eq!(e.blocks.last().map(|b| b.name.clone()), Some(b"CHUNK_Campaign".to_vec()));
     }
 }

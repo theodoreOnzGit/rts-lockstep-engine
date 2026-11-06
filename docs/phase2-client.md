@@ -107,9 +107,46 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#58 (2026-11-06, GitHub #58): a load starts the save's own game.**
+- **Upstream** (`GameStateMap::xfer`, GameStateMap.cpp): the load extracts the save's map, sets the game mode, reads
+  `TheSkirmishGameInfo` (`SkirmishGameInfo::xfer` v4, already translated in `src/common/game_info.rs`) and calls `startNewGame(TRUE)` inside the
+  block, before the players and objects are read; `GameState::loadGame` resets the engine first. The port's
+  `GameStateMapHost::start_new_game` was a no-op and the client started the quick skirmish's two slots on the save's map
+  first, so a save of any other game failed in its teams' block.
+- **Chosen: the World's block starts the game, as upstream's does**, not the client in the same order. Inside the block the
+  object id counter and `TheSkirmishGameInfo` are set before the start, as upstream's (the start makes the bridges and wall
+  pieces, whose ids follow the counter), and the World alone (`World::load_game`) and the client's whole file
+  (`client::save_game`) take one path. A World opts in with `SaveSide::new_game_on_load` (a World with no game: upstream's
+  `TheGameEngine->reset()`); off, a load is into a World made from the save's map, as the gate (b) and earlier save tests
+  make it. The start sets the new game's map name to the extracted copy, its pristine map name and save directory from
+  `TheGameState`, gives the World a recorder if it has none (upstream's is an engine subsystem), and runs
+  `World::start_new_game(true)`. The client's host then makes the radar's new map (that start's `TheRadar->newMap`, the
+  client's) before `CHUNK_Radar` is read. `import::world_for_save` is now a copy of the install's World with the flag set;
+  the local player is read after the load.
+- **`CHUNK_Campaign`** is registered (second, as upstream) and read by `CampaignManager::xfer` over the World's campaign
+  stand-in. A campaign's or a challenge's save fails cleanly there (`SC_INVALID_DATA`, `CampaignManager::xfer: InvalidData`
+  in the load's report): the port has no campaigns (`Campaign.ini`, `setCampaignAndMission`, `TheChallengeGameInfo` not
+  translated). Gap, below.
+- **Defects found and fixed:** (1) `TheSkirmishGameInfo` was held twice (the new game's skirmish entry and a save-side
+  copy that nothing filled), so every skirmish save wrote an empty slot list; the save side now reads and writes the new
+  game's (`take_skirmish_game_info`, `set_skirmish_game_info`); (2) the campaign stand-in's `CampaignManager::xfer` v5 left
+  out `TheChallengeGenerals`' player template number, so the port's `CHUNK_GameLogic` was four bytes short of upstream's
+  (and an original save's misread from there): written and read now. Saves the port wrote before this change no longer
+  load (their `CHUNK_GameLogic` lacks the four bytes, and they have no `CHUNK_Campaign`, which is skipped, so only the
+  first matters).
+- *Predictions and results:* `install_world`'s `a_save_starts_its_own_game_on_load` (World: a four-player game, three
+  sides, two teams, the human at the third start; two loads agree for 150 frames; the save into the quick skirmish's game
+  fails, **miss:** in `CHUNK_TeamFactory`, one block before the predicted `CHUNK_Players`) and `save_game`'s
+  `a_four_player_client_save_starts_its_own_game` (client path: the radar's extent is the map's; ablated, the empty World's,
+  and the test fails), and `save_game`'s `a_campaign_save_fails_cleanly` (a save naming campaign `usa`, mission `m1`, fails in
+  `CHUNK_Campaign`, as predicted). Lib 1027, client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
+- **Not done:** the client crate's own `client_from_save` on an install's save is not reached by a client test (the
+  install fixtures are the engine's test code); campaign saves (above); #59 (`Drawable::xfer`).
+
 **#4 (2026-11-06, GitHub #4): saved games in the client.**
 - **The whole file.** `src/client/save_game.rs` registers upstream's sixteen `SNAPSHOT_SAVELOAD` blocks in
-  `GameState::init`'s order (`CHUNK_Campaign` excepted, the World's note) and writes and reads the client's beside the
+  `GameState::init`'s order (`CHUNK_Campaign` excepted, the World's note; ~~excepted~~ **corrected 2026-11-06 (#58):** all
+  seventeen, `CHUNK_Campaign` registered) and writes and reads the client's beside the
   World's. Per block: `CHUNK_Radar` (`Radar::xfer`, `xferRadarObjectList`, `RadarObject::xfer`) and `CHUNK_TacticalView`
   (`View::xfer`) translated whole; `CHUNK_InGameUI` (`InGameUI::xfer` v3: named timers, superweapon timers) translated whole
   and kept as read (the port's in-game UI does not show them yet); `CHUNK_GameClient` (`GameClient::xfer` v3,
@@ -135,7 +172,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   browser OPFS `Save/`, which the page reads at start and writes as asked; export is a download, import a file picker (the
   page's button, shown with the panel). Saves are never uploaded. A save is named `%08d.sav` by
   `GameState::find_next_save_filename`. A load starts the save's map first: the demo's (`demo_map_world`) or the install's
-  World copied before its game started (`import::Started::base`, `import::world_for_save`, the quick skirmish's slots).
+  World copied before its game started (`import::Started::base`, `import::world_for_save`, ~~the quick skirmish's slots~~
+  **corrected 2026-11-06 (#58):** the save's own game and slots, started by its `CHUNK_GameStateMap`).
 - *Predictions and results:* in the tests' doc comments (`save_game` 3, `saves` 2). **Misses:** two in the engine's test
   and one in the client's, all fixtures (an unknown template in the load's world, the local player the game start sets, an
   order in the selection's own frame); the browser check's first pass pressed nothing (Bevy's picking needs the pointer
@@ -153,6 +191,7 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   in-game UI's timers shown.
 - **Gates:** lib 1024 (1021 + 3), client 41 (39 + 2), clippy clean, web build clean, gate (a) PASS (last `0bf44067`,
   unchanged), gate (b) (`save_load_tests`) passes.
+
 
 **#13 (2026-11-06, GitHub #13): audio, rung 1 (the manager, translated) and rung 2 in part (the device, the browser's
 output).**

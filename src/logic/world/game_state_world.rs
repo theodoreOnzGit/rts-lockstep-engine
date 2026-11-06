@@ -20,11 +20,18 @@
 //! `CHUNK_GameLogic` (the objects, the campaign, the caves, the polygon triggers: the AI is not saved upstream; the
 //! pathfinder's map is rebuilt as the objects load), `CHUNK_ScriptEngine`, `CHUNK_SidesList` (the scripts' active flags)
 //! and `CHUNK_Partition`; for a deep CRC the six logic blocks of `SNAPSHOT_DEEPCRC_LOGICONLY`. **Not registered:**
-//! `CHUNK_Campaign` (the campaign manager is the cut table `cuts.campaign`, saved within `CHUNK_GameLogic` as upstream also
-//! does), `CHUNK_GameStateMap` (it embeds the map file; the World is made from a map in memory, so a load is into a World
+//! ~~`CHUNK_Campaign` (the campaign manager is the cut table `cuts.campaign`, saved within `CHUNK_GameLogic` as upstream also
+//! does),~~ (registered since GitHub #58, below) `CHUNK_GameStateMap` (it embeds the map file; the World is made from a map in memory, so a load is into a World
 //! made from the same map: [`World::load_game`]'s caller's), and the client's (`CHUNK_Radar`, `CHUNK_TacticalView`,
 //! `CHUNK_GameClient`, `CHUNK_InGameUI`, `CHUNK_ParticleSystem`, ~~`CHUNK_TerrainVisual`,~~ `CHUNK_GhostObject`). A file the
 //! World saves therefore lacks blocks upstream's has; a load skips blocks it does not know by their size, as upstream's.
+//! **Corrected 2026-11-06 (GitHub #58):** `CHUNK_Campaign` is registered, second as upstream's, and xferred by
+//! `CampaignManager::xfer` over the World's campaign stand-in (`cuts.campaign`, which `CHUNK_GameLogic` also xfers, as
+//! upstream's `GameLogic::xfer` does); a campaign's save fails there (`SC_INVALID_DATA`: the port has no campaigns). And
+//! `CHUNK_GameStateMap`'s `startNewGame(TRUE)` starts the save's game when the World was reset for the load
+//! ([`SaveSide::new_game_on_load`]); otherwise the World is still taken to be made from the save's map by
+//! [`World::load_game`]'s caller.
+//!
 //! **Corrected 2026-11-06 (GitHub #4):** `CHUNK_GameStateMap` is registered (since batch I10, as the list above the
 //! correction already says); `CHUNK_TerrainVisual` is now the World's own block (`WorldBlock::TerrainVisual`,
 //! [`World::xfer_terrain_visual_part`]): its data is the logic height map the ground heights are read from and the water
@@ -51,6 +58,8 @@ use crate::logic::world::game_logic::World;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldBlock {
     GameState,
+    /// GitHub #58: `CHUNK_Campaign` (`CampaignManager::xfer`, the World's campaign stand-in `cuts.campaign`).
+    Campaign,
     GameStateMap,
     /// `TheSkirmishGameInfo` and its starting cash (post-processed after a load, their `loadPostProcess` empty).
     SkirmishGameInfo,
@@ -73,6 +82,7 @@ pub fn world_game_state() -> GameState<WorldBlock> {
     let mut gs = GameState::new();
     for (name, b) in [
         (&b"CHUNK_GameState"[..], B::GameState),
+        (b"CHUNK_Campaign", B::Campaign),
         (b"CHUNK_GameStateMap", B::GameStateMap),
         (b"CHUNK_TerrainLogic", B::TerrainLogic),
         (b"CHUNK_TeamFactory", B::TeamFactory),
@@ -132,6 +142,8 @@ impl GameStateHost<WorldBlock> for World {
     fn xfer_block(&mut self, block: WorldBlock, gs: &mut GameState<WorldBlock>, xfer: &mut dyn Xfer) -> XferResult<()> {
         match block {
             WorldBlock::GameState => gs.xfer_info(xfer, self),
+            WorldBlock::Campaign => <World as crate::logic::world::game_logic_xfer::GameLogicSaveHost>::x_xfer_campaign_manager(self, xfer)
+                .map_err(|e| self.block_error("CampaignManager::xfer", e)),
             WorldBlock::GameStateMap => {
                 crate::common::game_state_map::xfer_game_state_map(gs, xfer, self).map_err(|e| self.block_error("GameStateMap::xfer", e))
             }
@@ -212,7 +224,9 @@ impl GameStateHost<WorldBlock> for World {
                 }
             }
             WorldBlock::TerrainLogic => self.with_terrain(|t, w| t.load_post_process(w)),
+            // (`CampaignManager::loadPostProcess` gives `TheChallengeGenerals` its template number: the stand-in keeps it)
             WorldBlock::GameState
+            | WorldBlock::Campaign
             | WorldBlock::GameStateMap
             | WorldBlock::SkirmishGameInfo
             | WorldBlock::SkirmishCash
@@ -268,8 +282,17 @@ pub struct SaveSide {
     pub loading_save: bool,
     /// `TheGameClient`'s drawable id counter (the client's; kept so a save writes what it read).
     pub drawable_id_counter: crate::common::game_type::DrawableId,
-    /// `TheSkirmishGameInfo`.
-    pub skirmish: Option<crate::common::game_info::GameInfo>,
+    /// ~~`TheSkirmishGameInfo`.~~ **Corrected 2026-11-06 (GitHub #58):** `TheSkirmishGameInfo` is the new game's skirmish
+    /// entry (`cuts.new_game.games`, [`GameSource::Skirmish`](crate::logic::world::game_logic_new_game::GameSource)), the one
+    /// the skirmish menu fills and `startNewGame` reads. This field was a second copy that no game ever filled, so every save
+    /// of a skirmish wrote an empty slot list (`clearSlotList`'s) where upstream writes the game's slots.
+    ///
+    /// GitHub #58: the World has been reset for a load (upstream's `TheGameEngine->reset()` in `GameState::loadGame`), so the
+    /// save's `CHUNK_GameStateMap` starts the save's own game in it (`startNewGame(TRUE)`, with the save's map and
+    /// `TheSkirmishGameInfo`). Off (the default), the World is taken to be made from the save's map already, as
+    /// [`World::load_game`]'s callers have always made it (the gate world's tests), and the block starts nothing. Cleared
+    /// once the game is started.
+    pub new_game_on_load: bool,
 }
 
 impl crate::common::game_info::GameInfoHost for World {
@@ -372,10 +395,44 @@ impl crate::common::game_state_map::GameStateMapHost<WorldBlock> for World {
     fn set_drawable_id_counter(&mut self, id: crate::common::game_type::DrawableId) {
         self.save_side.drawable_id_counter = id;
     }
-    /// (a load's new game: the World is already made from the map the save names, by [`World::load_game`]'s caller)
-    fn start_new_game(&mut self, _loading_save_game: bool) {}
-    fn skirmish_game_info(&mut self) -> &mut Option<crate::common::game_info::GameInfo> {
-        &mut self.save_side.skirmish
+    /// `TheGameLogic->startNewGame(TRUE)` (GitHub #58) when the World was reset for the load
+    /// ([`SaveSide::new_game_on_load`]): the new game on `TheGlobalData->m_mapName`, which the block has just set to the map
+    /// it extracted to the save directory (`map.ini` is then read beside the pristine map, `TheGameState`'s, as upstream's
+    /// `startNewGame` does for a map in the save directory), with the game mode and `TheSkirmishGameInfo` the block read.
+    /// `TheRecorder` is an engine subsystem upstream (`GameEngine::init`), always there; a World without one is given one
+    /// here, as [`World::start_skirmish_against`] does. Otherwise nothing: the World is already made from the save's map,
+    /// by [`World::load_game`]'s caller.
+    fn start_new_game(&mut self, gs: &GameState<WorldBlock>, loading_save_game: bool) -> Result<(), crate::common::game_state::SaveError> {
+        if !self.save_side.new_game_on_load {
+            return Ok(());
+        }
+        self.save_side.new_game_on_load = false;
+        let map = self.save_side.map_name.clone();
+        let ng = &mut self.cuts.new_game;
+        ng.map_name = map.clone();
+        ng.pristine_map_name = gs.info.pristine_map_name.clone();
+        if gs.is_in_save_directory(&map, self) && !self.cuts.new_game.save_directory.contains(&map) {
+            self.cuts.new_game.save_directory.push(map);
+        }
+        if self.cuts.game_loop.recorder.is_none() {
+            self.recorder_init();
+        }
+        World::start_new_game(self, loading_save_game)?;
+        Ok(())
+    }
+    fn take_skirmish_game_info(&mut self) -> Option<crate::common::game_info::GameInfo> {
+        use crate::logic::world::game_logic_new_game::GameSource;
+        let games = &mut self.cuts.new_game.games;
+        let at = games.iter().position(|(s, _)| *s == GameSource::Skirmish)?;
+        Some(games.remove(at).1)
+    }
+    fn set_skirmish_game_info(&mut self, game: Option<crate::common::game_info::GameInfo>) {
+        use crate::logic::world::game_logic_new_game::GameSource;
+        let games = &mut self.cuts.new_game.games;
+        games.retain(|(s, _)| *s != GameSource::Skirmish);
+        if let Some(g) = game {
+            games.push((GameSource::Skirmish, g));
+        }
     }
     fn skirmish_block(&self) -> WorldBlock {
         WorldBlock::SkirmishGameInfo

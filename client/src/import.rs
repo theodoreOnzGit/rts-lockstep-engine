@@ -425,15 +425,23 @@ fn start_frames(world: &mut World) -> Result<i32, String> {
     Err("the game made no local player in 30 frames".to_string())
 }
 
-/// GitHub #4: the World a save of an install's game is loaded into, as upstream's load starts the save's map before it
+/// ~~GitHub #4: the World a save of an install's game is loaded into, as upstream's load starts the save's map before it
 /// reads the objects (`GameStateMap::xfer`'s `startNewGame(TRUE)`): a copy of the install's World ([`Started::base`])
 /// with the skirmish started on the save's pristine map, its folder taken from the base's disk, else the map file the
-/// save embeds. The local player.
+/// save embeds. The local player.~~
 ///
-/// The skirmish is the quick one's (the local player and a medium computer player with the first two playable sides),
+/// ~~The skirmish is the quick one's (the local player and a medium computer player with the first two playable sides),
 /// not the save's own slots: a save of another kind of game (more players, other sides, a campaign) then fails in its
-/// players' block, and the load says where.
-pub fn world_for_save(base: &World, pristine_map: &[u8], map_file: &[u8]) -> Result<(World, i32), String> {
+/// players' block, and the load says where.~~
+///
+/// **Corrected 2026-11-06 (GitHub #58):** the World a save of an install's game is loaded into: a copy of the install's
+/// World ([`Started::base`], no game started: upstream's `TheGameEngine->reset()` before `GameState::loadGame`) marked
+/// for the save to start its own game in it ([`SaveSide::new_game_on_load`](rts_lockstep_engine::logic::world::game_state_world::SaveSide)):
+/// the save's `CHUNK_GameStateMap` extracts its map, sets the game mode, reads `TheSkirmishGameInfo` (the save's slots) and
+/// calls `startNewGame(TRUE)`, as upstream's does, before the players and objects are read. The pristine map's folder is
+/// the base's (its `map.ini` is read from there); a map the base lacks gets the save's embedded map file at its pristine
+/// path. The local player is known once the load has run (`ThePlayerList->getLocalPlayer()`).
+pub fn world_for_save(base: &World, pristine_map: &[u8], map_file: &[u8]) -> Result<World, String> {
     use rts_lockstep_engine::common::game_state::GameState;
     use rts_lockstep_engine::logic::world::game_state_world::WorldBlock;
     let mut world = base.clone();
@@ -442,9 +450,8 @@ pub fn world_for_save(base: &World, pristine_map: &[u8], map_file: &[u8]) -> Res
     if !world.save_side.disk.contains_key(&key) && !map_file.is_empty() {
         world.save_side.disk.insert(key, map_file.to_vec());
     }
-    world.quick_skirmish_mounted(&real, 1).map_err(|e| format!("no skirmish on the save's map: {}", describe(&e)))?;
-    let player = start_frames(&mut world)?;
-    Ok((world, player))
+    world.save_side.new_game_on_load = true;
+    Ok(world)
 }
 
 #[cfg(test)]

@@ -169,6 +169,20 @@ impl World {
     /// [`World::start_skirmish`] with a computer opponent in slot 1: `(slot state, player template)`, the state one of
     /// `SLOT_EASY_AI`, `SLOT_MED_AI`, `SLOT_BRUTAL_AI`, at the map's second start, with the second colour.
     pub fn start_skirmish_against(&mut self, map: &[u8], template: i32, seed: i32, opponent: Option<(i32, i32)>) -> Result<(), InstallError> {
+        use crate::common::game_info::slot_state;
+        let mut slots = vec![SkirmishSlot { state: slot_state::PLAYER, template, color: 0, start_pos: 0, team: -1 }];
+        if let Some((state, t)) = opponent {
+            slots.push(SkirmishSlot { state, template: t, color: 1, start_pos: 1, team: -1 });
+        }
+        self.start_skirmish_slots(map, seed, &slots)
+    }
+
+    /// The skirmish menu's launch with the slots given, from slot 0 (GitHub #58; [`World::start_skirmish_against`] is its
+    /// two-slot case): `enterGame`, each slot's state, player template, colour, start and team as the menu's controls set
+    /// them (a human slot is named "Me"; the menu has one), `startGame(0)`; then the recorder, the map's name,
+    /// `InitGameLogicRandom(seed)` and `MSG_NEW_GAME` (`GAME_SKIRMISH`). The game starts on the next frame. The map must be
+    /// in the map cache (the menu lists only those).
+    pub fn start_skirmish_slots(&mut self, map: &[u8], seed: i32, slots: &[SkirmishSlot]) -> Result<(), InstallError> {
         use crate::common::game_info::{slot_state, GameInfo};
         use crate::common::recorder::game_mode;
         use crate::logic::world::game_logic_new_game::GameSource;
@@ -179,15 +193,13 @@ impl World {
         let mut g = GameInfo::new(self);
         g.enter_game(self);
         let name: Vec<u16> = "Me".encode_utf16().collect();
-        g.slots[0].set_state(slot_state::PLAYER, &name, 0, self);
-        g.slots[0].set_player_template(template);
-        g.slots[0].color = 0;
-        g.slots[0].start_pos = 0;
-        if let Some((state, t)) = opponent {
-            g.slots[1].set_state(state, &[], 0, self);
-            g.slots[1].set_player_template(t);
-            g.slots[1].color = 1;
-            g.slots[1].start_pos = 1;
+        for (i, s) in slots.iter().enumerate().take(g.slots.len()) {
+            let n: &[u16] = if s.state == slot_state::PLAYER { &name } else { &[] };
+            g.slots[i].set_state(s.state, n, 0, self);
+            g.slots[i].set_player_template(s.template);
+            g.slots[i].color = s.color;
+            g.slots[i].start_pos = s.start_pos;
+            g.slots[i].team_number = s.team;
         }
         g.map_name = map.to_vec();
         g.seed = seed;
@@ -220,6 +232,17 @@ impl World {
         }
         n
     }
+}
+
+/// A slot of [`World::start_skirmish_slots`]: its state (`SLOT_PLAYER`, `SLOT_EASY_AI`, ...), player template index, colour
+/// index, start position index and team number (-1: no team).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SkirmishSlot {
+    pub state: i32,
+    pub template: i32,
+    pub color: i32,
+    pub start_pos: i32,
+    pub team: i32,
 }
 
 /// The game [`World::quick_skirmish`] started: the map, the local player's side and the opponent's.
@@ -283,13 +306,13 @@ impl World {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::common::file_system::MemoryDevice;
     use crate::formats::big::build_big;
     use crate::logic::world::game_data::LOGIC_SUBSYSTEMS;
 
-    const MAP: &[u8] = b"Maps\\Duel\\Duel.map";
+    pub(crate) const MAP: &[u8] = b"Maps\\Duel\\Duel.map";
 
     /// A string file of `(label, text)` pairs (the format of `formats::csf`'s module docs).
     fn csf(labels: &[(&str, &str)]) -> Vec<u8> {
@@ -315,7 +338,17 @@ mod tests {
     }
 
     /// A map with a flat 30 x 30 height map, the neutral side, and two start waypoints.
-    fn duel_map(w: &mut World) -> Vec<u8> {
+    pub(crate) fn duel_map(w: &mut World) -> Vec<u8> {
+        map_with_starts(w, &[(b"Player_1_Start", 100.0, 100.0), (b"Player_2_Start", 200.0, 200.0)])
+    }
+
+    /// GitHub #58: [`duel_map`] with four start waypoints, one near each corner.
+    pub(crate) fn four_map(w: &mut World) -> Vec<u8> {
+        map_with_starts(w, &[(b"Player_1_Start", 60.0, 60.0), (b"Player_2_Start", 240.0, 240.0), (b"Player_3_Start", 60.0, 240.0), (b"Player_4_Start", 240.0, 60.0)])
+    }
+
+    /// [`duel_map`]'s map with the start waypoints given: (name, x, y).
+    fn map_with_starts(w: &mut World, starts: &[(&[u8], f32, f32)]) -> Vec<u8> {
         use crate::common::dict::Dict;
         use crate::formats::data_chunk_output::DataChunkOutput;
         use crate::logic::map_object::K_OBJECTS_VERSION_3;
@@ -358,7 +391,7 @@ mod tests {
         // (the objects after the sides, in WorldBuilder's order: a map's last chunk, if empty, is never parsed, as upstream's
         // `DataChunkInput::parse` stops at the end of the file after opening it; the sides list's last script list is empty)
         out.open_data_chunk(b"ObjectsList", K_OBJECTS_VERSION_3);
-        for (i, (name, x, y)) in [(&b"Player_1_Start"[..], 100.0, 100.0), (b"Player_2_Start", 200.0, 200.0)].into_iter().enumerate() {
+        for (i, &(name, x, y)) in starts.iter().enumerate() {
             out.open_data_chunk(b"Object", K_OBJECTS_VERSION_3);
             for r in [x, y, 0.0, 0.0] {
                 out.write_real(r);
@@ -398,8 +431,31 @@ mod tests {
         fs
     }
 
+    /// GitHub #58: an install for four players: [`install_with`]'s archives with two more playable sides (`FactionChina`,
+    /// `FactionGLA`, each with the starting Barracks and Tank), four colours, and the map cache's entry for a four-player
+    /// map (`map` should be [`four_map`]'s).
+    pub(crate) fn install_four(map: &[u8], skirmish_scripts: Option<&[u8]>) -> FileSystem<MemoryDevice> {
+        let mut d = MemoryDevice::new();
+        let mut archives = install_archives_for(map, true);
+        if let Some(scb) = skirmish_scripts {
+            archives.push((b"ScriptsZH.big".to_vec(), build_big(&[(b"Data\\Scripts\\SkirmishScripts.scb", scb)])));
+        }
+        for (name, bytes) in archives {
+            d.insert(&[&b"ZH\\"[..], &name].concat(), bytes);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.local.game_dir = b"ZH\\".to_vec();
+        fs.init(None);
+        fs
+    }
+
     /// The three archives of [`install`], by file name.
     fn install_archives(map: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+        install_archives_for(map, false)
+    }
+
+    /// [`install_archives`], or [`install_four`]'s (`four`).
+    fn install_archives_for(map: &[u8], four: bool) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut ini: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for sys in LOGIC_SUBSYSTEMS {
             for p in [sys.path1, sys.path2].into_iter().flatten() {
@@ -410,18 +466,33 @@ mod tests {
             ini.retain(|(p, _)| p != path);
             ini.push((path.to_vec(), text.to_vec()));
         };
-        set(&mut ini, b"Data\\INI\\Object\\Units.ini", crate::logic::world::player_host_world::tests::INI.as_bytes());
-        set(
-            &mut ini,
-            b"Data\\INI\\Multiplayer.ini",
-            b"MultiplayerColor Gold\n TooltipName = Color:Gold\n RGBColor = R:255 G:200 B:0\n RGBNightColor = R:128 G:100 B:0\nEnd\n\
-              MultiplayerColor Red\n TooltipName = Color:Red\n RGBColor = R:255 G:0 B:0\n RGBNightColor = R:128 G:0 B:0\nEnd\n",
-        );
+        let mut units = crate::logic::world::player_host_world::tests::INI.to_string();
+        let mut colors = "MultiplayerColor Gold\n TooltipName = Color:Gold\n RGBColor = R:255 G:200 B:0\n RGBNightColor = R:128 G:100 B:0\nEnd\n\
+              MultiplayerColor Red\n TooltipName = Color:Red\n RGBColor = R:255 G:0 B:0\n RGBNightColor = R:128 G:0 B:0\nEnd\n"
+            .to_string();
+        if four {
+            for (faction, side) in [("FactionChina", "China"), ("FactionGLA", "GLA")] {
+                units.push_str(&format!("PlayerTemplate {faction}\n Side = {side}\n PlayableSide = Yes\n StartingBuilding = Barracks\n StartingUnit0 = Tank\nEnd\n"));
+            }
+            colors.push_str(
+                "MultiplayerColor Blue\n TooltipName = Color:Blue\n RGBColor = R:0 G:0 B:255\n RGBNightColor = R:0 G:0 B:128\nEnd\n\
+                 MultiplayerColor Green\n TooltipName = Color:Green\n RGBColor = R:0 G:255 B:0\n RGBNightColor = R:0 G:128 B:0\nEnd\n",
+            );
+        }
+        set(&mut ini, b"Data\\INI\\Object\\Units.ini", units.as_bytes());
+        set(&mut ini, b"Data\\INI\\Multiplayer.ini", colors.as_bytes());
         let ini_refs: Vec<(&[u8], &[u8])> = ini.iter().map(|(p, t)| (p.as_slice(), t.as_slice())).collect();
         let text = csf(&[("MAP:Duel", "Desert Duel"), ("GUI:MediumAI", "Medium Army")]);
-        let cache = b"MapCache maps_5Cduel_5Cduel_2Emap\n fileSize = 1\n fileCRC = 7\n isOfficial = yes\n isMultiplayer = yes\n\
+        let cache: &[u8] = if four {
+            b"MapCache maps_5Cduel_5Cduel_2Emap\n fileSize = 1\n fileCRC = 7\n isOfficial = yes\n isMultiplayer = yes\n\
+            numPlayers = 4\n extentMin = X:0.00 Y:0.00 Z:0.00\n extentMax = X:300.00 Y:300.00 Z:0.00\n nameLookupTag = MAP_3ADuel\n\
+            Player_1_Start = X:60.00 Y:60.00 Z:0.00\n Player_2_Start = X:240.00 Y:240.00 Z:0.00\n\
+            Player_3_Start = X:60.00 Y:240.00 Z:0.00\n Player_4_Start = X:240.00 Y:60.00 Z:0.00\nEND\n"
+        } else {
+            b"MapCache maps_5Cduel_5Cduel_2Emap\n fileSize = 1\n fileCRC = 7\n isOfficial = yes\n isMultiplayer = yes\n\
             numPlayers = 2\n extentMin = X:0.00 Y:0.00 Z:0.00\n extentMax = X:300.00 Y:300.00 Z:0.00\n nameLookupTag = MAP_3ADuel\n\
-            Player_1_Start = X:100.00 Y:100.00 Z:0.00\n Player_2_Start = X:200.00 Y:200.00 Z:0.00\nEND\n";
+            Player_1_Start = X:100.00 Y:100.00 Z:0.00\n Player_2_Start = X:200.00 Y:200.00 Z:0.00\nEND\n"
+        };
         vec![
             (b"INIZH.big".to_vec(), build_big(&ini_refs)),
             (b"EnglishZH.big".to_vec(), build_big(&[(b"Data\\English\\Generals.csf", &text)])),
@@ -522,7 +593,7 @@ mod tests {
     /// A skirmish scripts file (`SkirmishScripts.scb`, the shipped one's form): one script list, the player it belongs to
     /// (`ScriptsPlayers`: `SkirmishAmerica`) and its team (`ScriptTeams`: `teamSkirmishAmerica`, a singleton), the teams last (a
     /// file's last chunk, if empty, is not parsed).
-    fn skirmish_scripts(names: &mut crate::common::name_key_generator::NameKeyGenerator) -> Vec<u8> {
+    pub(crate) fn skirmish_scripts(names: &mut crate::common::name_key_generator::NameKeyGenerator) -> Vec<u8> {
         use crate::common::dict::Dict;
         use crate::formats::data_chunk_output::DataChunkOutput;
         use crate::logic::scripts::ScriptList;
@@ -675,5 +746,113 @@ mod tests {
         for (name, bytes) in archives {
             std::fs::write(std::path::Path::new(&dir).join(String::from_utf8_lossy(&name).as_ref()), bytes).expect("written");
         }
+    }
+
+
+    /// GitHub #58: the four-player game of [`a_save_starts_its_own_game_on_load`], started on an install's World: the
+    /// World as the install made it (no game, the map mounted: the load's base) and the started game after `frames` frames.
+    pub(crate) fn four_player_game(frames: usize) -> (World, World) {
+        use crate::common::game_info::slot_state;
+        let mut scratch = World::new();
+        let map = four_map(&mut scratch);
+        let scb = skirmish_scripts(&mut scratch.names);
+        let fs = install_four(&map, Some(&scb));
+        let (mut base, _) = World::from_install(&fs, DEFAULT_LANGUAGE).expect("the install");
+        assert_eq!(base.mount_map(&fs, MAP), 2);
+        let side = |w: &World, s: &[u8]| w.statics.player_template_store.templates().iter().position(|t| t.side() == s).expect("the side") as i32;
+        let (america, china, gla) = (side(&base, b"America"), side(&base, b"China"), side(&base, b"GLA"));
+        // (the human in slot 0 at the third start, three computer players on three sides, two teams: a layout the quick
+        // skirmish, one human and one medium computer of the first playable side, never makes)
+        let slots = [
+            SkirmishSlot { state: slot_state::PLAYER, template: china, color: 2, start_pos: 2, team: 0 },
+            SkirmishSlot { state: slot_state::MED_AI, template: america, color: 0, start_pos: 0, team: 0 },
+            SkirmishSlot { state: slot_state::EASY_AI, template: gla, color: 1, start_pos: 1, team: 1 },
+            SkirmishSlot { state: slot_state::BRUTAL_AI, template: china, color: 3, start_pos: 3, team: 1 },
+        ];
+        let mut w = base.clone();
+        w.start_skirmish_slots(MAP, 11, &slots).expect("the skirmish");
+        for _ in 0..frames {
+            w.engine_update().expect("a frame");
+        }
+        assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        (base, w)
+    }
+
+    /// The players of a World: (name, side), in the list's order.
+    pub(crate) fn player_sides(w: &World) -> Vec<(String, String)> {
+        (0..w.players.player_count())
+            .filter_map(|p| w.players.get_nth(p))
+            .map(|p| (String::from_utf8_lossy(&p.player_name).into_owned(), String::from_utf8_lossy(&p.side).into_owned()))
+            .collect()
+    }
+
+    /// GitHub #58: a save of a game other than the quick skirmish loads by starting its own game, as upstream's
+    /// `GameStateMap::xfer` does (`startNewGame(TRUE)` with `TheSkirmishGameInfo` read from the save). A four-player game
+    /// (the human with China at the third start, an America medium, a GLA easy and a China brutal computer player, two teams)
+    /// runs 60 frames and is saved by the World (`World::save_game`); the save is loaded into two copies of the install's
+    /// World with no game ([`SaveSide::new_game_on_load`](crate::logic::world::game_state_world::SaveSide)), and, as the
+    /// control, into a World with the quick skirmish started (the client's way before #58).
+    ///
+    /// **Predicted before the run:** the save's `TheSkirmishGameInfo` carries the four slots (the loaded Worlds' skirmish
+    /// game has the original's states, templates, colours, starts and teams; before #58 every save wrote an empty slot
+    /// list); each load starts the game and gives the original's player list (names and sides) and local player; the two
+    /// loads give the same logic CRC at each of the next 150 frames; no load or frame records an error; the control load
+    /// fails (the quick skirmish has two slot players, the save four: `PlayerList::xfer`'s count check).
+    ///
+    /// **Results (2026-11-06, native, release), first run:** the four slots came back as saved
+    /// (`(5,2,2,2,0) (3,0,0,0,0) (2,3,1,1,1) (4,2,3,3,1)`: state, template, colour, start, team); the players are the
+    /// neutral one, `PlyrCivilian`, `player0` (China), `SkirmishAmerica0` (America, the skirmish AI), `player2` (GLA),
+    /// `player3` (China) and `ReplayObserver`, the same after the load, with the same local player; the two loads agreed at all
+    /// 150 frames; no error. **Miss (the prediction's):** the control failed one block earlier than predicted, in
+    /// `CHUNK_TeamFactory` (`TeamFactory::xfer: InvalidData`): the team factory's block comes before the players' and its
+    /// teams already differ. The object count check was added after the first run (it held).
+    #[test]
+    fn a_save_starts_its_own_game_on_load() {
+        use crate::logic::world::game_logic_new_game::GameSource;
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        let (base, mut a) = four_player_game(60);
+        let bytes = a.save_game().unwrap_or_else(|e| panic!("the save: {e:?} {:?}", a.cuts.team_live_errors));
+        let load = |bytes: Vec<u8>| {
+            let mut w = base.clone();
+            w.save_side.new_game_on_load = true;
+            w.load_game(bytes).unwrap_or_else(|e| panic!("the load: {e:?} {:?}", w.cuts.team_live_errors));
+            assert!(!w.save_side.new_game_on_load, "the load started the game");
+            w
+        };
+        let (mut b, mut c) = (load(bytes.clone()), load(bytes.clone()));
+        let slots = |w: &World| {
+            let g = w.cuts.new_game.games.iter().find(|(s, _)| *s == GameSource::Skirmish).map(|(_, g)| g.clone()).expect("TheSkirmishGameInfo");
+            g.slots.iter().map(|s| (s.state, s.player_template, s.color, s.start_pos, s.team_number)).collect::<Vec<_>>()
+        };
+        eprintln!("slots {:?}", slots(&a));
+        eprintln!("players {:?}", player_sides(&a));
+        assert_eq!(slots(&b), slots(&a));
+        assert_eq!(player_sides(&b), player_sides(&a));
+        assert_eq!(b.players.local_index(), a.players.local_index());
+        assert!(a.players.local_index().is_some());
+        assert_eq!(b.objects.ids_in_order().len(), a.objects.ids_in_order().len());
+        let crc = |w: &mut World| {
+            w.engine_update().expect("a frame");
+            w.logic_crc(CRC_RECALC, None).expect("the CRC")
+        };
+        for f in 0..150 {
+            assert_eq!(crc(&mut b), crc(&mut c), "two loads of one save part at frame {f} after the load");
+        }
+        for w in [&a, &b, &c] {
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
+
+        // the control: the save into the quick skirmish's game
+        let mut q = base.clone();
+        q.quick_skirmish_mounted(MAP, 1).expect("the quick skirmish");
+        for _ in 0..30 {
+            q.engine_update().expect("a frame");
+            if q.players.local_index().is_some() {
+                break;
+            }
+        }
+        let r = q.load_game(bytes);
+        eprintln!("the control: {r:?} {:?}", q.cuts.team_live_errors);
+        assert!(r.is_err(), "a four-player save does not load into the quick skirmish's game");
     }
 }

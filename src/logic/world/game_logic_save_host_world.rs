@@ -28,7 +28,9 @@
 //!   after its first query (bounds computed, `m_boundsNeedsUpdate` false); a save taken before any query of a trigger
 //!   would write the constructor's bounds and TRUE upstream. A load reads them and keeps the map's.
 //! - **`CampaignManager::xfer`** (version 5) is the client's: the world writes what it writes outside a campaign (no
-//!   campaign, no mission, the rank points and difficulty of [`CampaignStandIn`], not a challenge) and reads the same.
+//!   campaign, no mission, the rank points and difficulty of [`CampaignStandIn`], not a challenge, ~~and~~ **corrected
+//!   2026-11-06 (GitHub #58):** and `TheChallengeGenerals`' player template number) and reads the same. It is also the
+//!   save file's own `CHUNK_Campaign` block (`crate::logic::world::game_state_world`), as upstream registers it.
 //! - **Cut points:** the rank level limit (`m_rankLevelLimit`, kept in `cuts.player_host.rank_level_limit`), the
 //!   pathfinder's `addWallPiece` and `newMap` (batch I9).
 //!
@@ -55,6 +57,11 @@ pub struct CampaignStandIn {
     pub rank_points: i32,
     /// `m_difficulty` (a `GameDifficulty`, saved as its four bytes).
     pub difficulty: i32,
+    /// GitHub #58: `TheChallengeGenerals->getCurrentPlayerTemplateNum()`, which version 5 writes
+    /// (`m_xferChallengeGeneralsPlayerTemplateNum` on a load; `loadPostProcess` gives it back to `TheChallengeGenerals`).
+    /// Upstream leaves it uninitialised until the challenge menu sets it; here 0, `CampaignManager::init`'s value of the
+    /// copy.
+    pub challenge_player_template_num: i32,
 }
 
 /// `PolygonTrigger::updateBounds`: the points' bounds and the radius it computes from them (`halfHeight` adds the two
@@ -190,6 +197,13 @@ impl GameLogicSaveHost for World {
             // `setCampaignAndMission(...)`: a campaign the stand-in cannot hold
             return Err(SaveError::InvalidData);
         }
+        // ~~(version 5 ended at the challenge flag)~~ **Corrected 2026-11-06 (GitHub #58):** version 5 writes
+        // `TheChallengeGenerals`' player template number last; the stand-in wrote and read nothing there, so the port's
+        // saves were four bytes short of upstream's in `CHUNK_GameLogic` (and `CHUNK_Campaign`), and an original save's
+        // block was misread from there on.
+        if version >= 5 {
+            xfer.xfer_int(&mut self.cuts.campaign.challenge_player_template_num)?;
+        }
         Ok(())
     }
     fn x_xfer_cave_system(&mut self, xfer: &mut dyn Xfer) -> SaveResult<()> {
@@ -260,7 +274,7 @@ mod tests {
         x.take_bytes()
     }
 
-    /// A tank's and a barracks' world (ids 3 and 4) at frame 77 with rank points 5 and difficulty 2 saved, then loaded into a fresh world: the
+    /// A tank's and a barracks' world (ids 3 and 4) at frame 77 with rank points 5, difficulty 2 and (GitHub #58) the challenge template 3 saved, then loaded into a fresh world: the
     /// same objects (ids, templates, positions), frame and campaign. Its save lists the objects in the reverse order, and
     /// loading that into a third world saves the first bytes again.
     #[test]
@@ -275,7 +289,7 @@ mod tests {
         let t1 = make(&mut a, b"Tank", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
         let b1 = make(&mut a, b"Barracks", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
         a.set_frame(77);
-        a.cuts.campaign = CampaignStandIn { rank_points: 5, difficulty: 2 };
+        a.cuts.campaign = CampaignStandIn { rank_points: 5, difficulty: 2, challenge_player_template_num: 3 };
         let bytes = save(&mut a);
 
         let (mut b, _) = world();
@@ -284,7 +298,7 @@ mod tests {
         b.xfer_game_logic_block(&mut load).expect("load");
         b.process_destroy_list();
         assert_eq!(b.frame(), 77);
-        assert_eq!(b.cuts.campaign, CampaignStandIn { rank_points: 5, difficulty: 2 });
+        assert_eq!(b.cuts.campaign, CampaignStandIn { rank_points: 5, difficulty: 2, challenge_player_template_num: 3 });
         let mut ids = b.objects.ids_in_order();
         ids.sort();
         assert_eq!(ids, {

@@ -18,7 +18,9 @@
 //! translated in the engine's `GameState::find_next_save_filename`).
 //!
 //! **A load** starts the save's map first, as upstream's load does (`GameStateMap::xfer`'s `startNewGame(TRUE)`): the demo's
-//! map for a demo save ([`crate::demo::demo_map_world`]), else the install's World started on the save's map
+//! map for a demo save ([`crate::demo::demo_map_world`]), else ~~the install's World started on the save's map~~
+//! **corrected 2026-11-06 (GitHub #58):** a copy of the install's World with no game, in which the save's own
+//! `CHUNK_GameStateMap` starts the save's game (its map, game mode and slots) as upstream's does
 //! ([`crate::import::world_for_save`]); then every block is read into it and into a fresh client.
 
 use std::collections::BTreeMap;
@@ -419,25 +421,32 @@ pub fn load_game(controls: &mut Controls, particles: &mut ParticleSystemManager,
     load_client_game(&mut host, bytes).map_err(|e| format!("the load failed: {e}"))
 }
 
-/// The World and local player a save is loaded into (see the module docs): the demo's map for a demo save, else the
-/// install's (`base`, which a demo game has not got).
-pub fn world_for_save(summary: &SaveSummary, base: Option<&World>) -> Result<(World, i32), String> {
+/// The World a save is loaded into (see the module docs), and the local player when it is known before the load: the
+/// demo's map for a demo save (its player), else the install's (`base`, which a demo game has not got), whose game the
+/// load starts (its local player known after the load).
+pub fn world_for_save(summary: &SaveSummary, base: Option<&World>) -> Result<(World, Option<i32>), String> {
     if summary.pristine_map.eq_ignore_ascii_case(crate::demo::DEMO_MAP_PORTABLE) {
-        return Ok((crate::demo::demo_map_world(), crate::demo::DEMO_LOCAL_PLAYER));
+        return Ok((crate::demo::demo_map_world(), Some(crate::demo::DEMO_LOCAL_PLAYER)));
     }
     let base = base.ok_or_else(|| format!("this save is of {:?}: load your Zero Hour files first", String::from_utf8_lossy(&summary.info.map_label)))?;
-    crate::import::world_for_save(base, &summary.pristine_map, &summary.map_file)
+    Ok((crate::import::world_for_save(base, &summary.pristine_map, &summary.map_file)?, None))
 }
 
-/// A client ready for a save: the World made for it ([`world_for_save`]) in fresh controls (the radar's new map made), a
-/// fresh particle manager and state, and the save loaded. Returns them with the local player and the load's outcome.
+/// A client ready for a save: the World made for it ([`world_for_save`]) in fresh controls, a fresh particle manager and
+/// state, and the save loaded (for an install's save, the load starts the save's game, and the radar's new map is made
+/// then: `client::save_game`'s host). Returns them with the local player and the load's outcome.
 pub fn client_from_save(bytes: Vec<u8>, base: Option<&World>) -> Result<(Controls, ParticleSystemManager, ClientState, i32, LoadOutcome), String> {
     let summary = read_save_summary(bytes.clone()).map_err(|e| format!("the save does not read: {e}"))?;
     let (world, player) = world_for_save(&summary, base)?;
-    let mut controls = Controls::new(world, player);
+    let mut controls = Controls::new(world, player.unwrap_or(-1));
     let mut particles = ParticleSystemManager::new();
     let mut state = ClientState::default();
     let outcome = load_game(&mut controls, &mut particles, &mut state, bytes)?;
+    let player = match player {
+        Some(p) => p,
+        None => controls.client.world.players.local_index().ok_or("the loaded game has no local player")?,
+    };
+    controls.client.player = player;
     Ok((controls, particles, state, player, outcome))
 }
 
