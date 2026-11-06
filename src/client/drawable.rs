@@ -7,7 +7,8 @@
 //   clearAndSetModelConditionState, clearAndSetModelConditionFlags,
 //   replaceModelConditionFlags, getDrawModules with DIRTY_CONDITION_FLAGS,
 //   reactToBodyDamageStateChange's flags, getShouldAnimate,
-//   setAnimationLoopDuration)
+//   setAnimationLoopDuration; GitHub #27: showSubObject, updateSubObjects,
+//   handleWeaponFireFX without the locomotor recoil)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h
 //
 // Original copyright notice of those files:
@@ -61,7 +62,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::w3d_model_draw::{DrawEnv, DrawFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, STATIC_GAME_LOD_HIGH};
+use super::w3d_model_draw::{DrawEnv, DrawFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_PRODUCED_AT_HELIPAD;
@@ -69,6 +70,7 @@ use crate::common::model_state::{ModelConditionFlags, MODELCONDITION_DAMAGED, MO
 use crate::common::random_value::RandomValues;
 use crate::common::thing_template::{ModuleInfoData, ThingTemplate};
 use crate::logic::client_event::ClientEvent;
+use crate::logic::weapon_host::WeaponFx;
 use crate::logic::object_script_status_bits::OBJECT_STATUS_SCRIPT_UNPOWERED;
 use crate::logic::world::game_logic::World;
 use crate::logic::world::module_call::ModuleCall;
@@ -163,6 +165,32 @@ impl Drawable {
         }
     }
 
+    /// `showSubObject(name, show)`: each module's list.
+    pub fn show_sub_object(&mut self, name: &[u8], show: bool) {
+        for dm in &mut self.draw_modules {
+            dm.show_sub_object(name, show);
+        }
+    }
+
+    /// `updateSubObjects()`: each module's list applied.
+    pub fn update_sub_objects<A: W3dAssetSource>(&mut self, env: &mut DrawEnv<'_, A>) {
+        for dm in self.get_draw_modules(env) {
+            dm.update_sub_objects();
+        }
+    }
+
+    /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the first module that handles
+    /// it ends the walk (the drawable's own recoil pitch and roll, `m_locoInfo`, is not
+    /// translated: no locomotor info on the client yet).
+    pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> bool {
+        for dm in self.get_draw_modules(env) {
+            if dm.handle_weapon_fire_fx(wslot, specific_barrel_to_use, has_fxl) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// `setAnimationLoopDuration(numFrames)`: each module's.
     pub fn set_animation_loop_duration<A: W3dAssetSource>(&mut self, num_frames: u32, env: &mut DrawEnv<'_, A>) {
         for dm in self.get_draw_modules(env) {
@@ -240,13 +268,16 @@ impl ClientDrawables {
             .the_global_data()
             .map_or((false, false, false), |g| (g.use_draw_module_lod, g.time_of_day == TIME_OF_DAY_NIGHT, g.weather == WEATHER_SNOWY));
         let hex_color = w.get_indicator_color(id);
+        // `getScale()`: `m_instanceScale`, the template's asset scale
+        let scale = t.get_asset_scale();
+        let standard = Arc::new(w.statics.global_data.the_global_data().map_or_else(Vec::new, |g| g.standard_public_bones.clone()));
         let mut draw_modules = Vec::new();
         let mut env = DrawEnv { assets, random: &mut self.random, sync_time, logic_time: true };
         for d in datas.iter() {
             if use_lod && d.min_lod_required > self.static_lod {
                 continue;
             }
-            match W3DModelDraw::new(d.clone(), hex_color, night, snowy, &mut env) {
+            match W3DModelDraw::new_scaled(d.clone(), hex_color, night, snowy, scale, standard.clone(), &mut env) {
                 Ok(m) => draw_modules.push(m),
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
             }
@@ -305,6 +336,25 @@ impl ClientDrawables {
                         d.set_drawable_hidden(*hidden);
                     }
                 }
+                ClientEvent::Object(ObjectClientEvent::DrawableShowSubObject { object_id, name, show }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        d.show_sub_object(name, *show);
+                    }
+                }
+                ClientEvent::Object(ObjectClientEvent::DrawableUpdateSubObjects { object_id }) => {
+                    self.drawable(w, *object_id, assets, sync_time);
+                    if let Some(d) = self.drawables.get_mut(object_id) {
+                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
+                        d.update_sub_objects(&mut env);
+                    }
+                }
+                ClientEvent::Object(ObjectClientEvent::WeaponFx(WeaponFx::Fire { source, weapon_slot, barrel, fx, .. })) => {
+                    self.drawable(w, *source, assets, sync_time);
+                    if let (Some(d), Ok(wslot)) = (self.drawables.get_mut(source), usize::try_from(*weapon_slot)) {
+                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
+                        d.handle_weapon_fire_fx(wslot, *barrel, fx.is_some(), &mut env);
+                    }
+                }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
@@ -340,6 +390,20 @@ impl ClientDrawables {
         true
     }
 
+    /// `obj->getAIUpdateInterface()->getTurretRotAndPitch(tslot, &angle, &pitch)` for each
+    /// turret (`handleClientTurretPositioning`'s read): `None` without an object or an AI, or
+    /// when the AI has no such turret. A read of the World's turret table
+    /// ([`World::ai_turret_rot_and_pitch`], `&self`: map lookups, nothing written or cached).
+    pub fn turret_rot_and_pitch(w: &World, id: ObjectId) -> [Option<(f32, f32)>; MAX_TURRETS] {
+        let mut out = [None; MAX_TURRETS];
+        if w.find_object(id).is_some_and(|o| o.ai.is_some()) {
+            for (tslot, t) in out.iter_mut().enumerate() {
+                *t = w.ai_turret_rot_and_pitch(id, tslot as i32);
+            }
+        }
+        out
+    }
+
     /// One client draw at sync time `sync_time` (milliseconds): make the
     /// drawables of objects not seen yet, then for each drawable give its
     /// modules the flags if dirty (`getDrawModules`, from the client: not a
@@ -360,6 +424,7 @@ impl ClientDrawables {
                 should_animate_with_power: Self::get_should_animate(w, id, true),
                 should_animate_without_power: Self::get_should_animate(w, id, false),
                 speed: w.find_object(id).and_then(|o| o.physics).map(|ph| w.module_call(id, ph, ModuleCall::PhysicsGetVelocityMagnitude).as_real(0.0)),
+                turrets: Self::turret_rot_and_pitch(w, id),
             };
             let d = self.drawables.get_mut(&id).expect("listed");
             let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };

@@ -28,7 +28,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rts_lockstep_engine::client::drawable::ClientDrawables;
-use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, W3dAssetSource, W3dFiles};
+use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, Skeleton, W3dAssetSource, W3dFiles};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
@@ -112,6 +112,17 @@ impl<D: LocalDevice> W3dAssetSource for Deferred<'_, D> {
             return None;
         }
         self.files.get_hanim(name)
+    }
+    /// The skeleton as [`W3dFiles`] makes it, or none when a file it read is being fetched (its hierarchy's file may be
+    /// another than the model's).
+    fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+        let before = self.files.fs.local.device.unserved_reads();
+        let k = self.files.skeleton(name, pose, scale);
+        if self.files.fs.local.device.unserved_reads() != before {
+            self.models.insert(name.to_vec());
+            return None;
+        }
+        k
     }
 }
 
@@ -218,7 +229,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
                     let Some(cur) = m.get_cur_state() else { return false };
                     match &m.render_object {
                         None => !cur.model_name.is_empty(),
-                        Some(r) => r.is_hlod && r.anim.is_none() && !cur.animations.is_empty(),
+                        Some(r) => r.is_hlod && ((r.anim.is_none() && !cur.animations.is_empty()) || r.skeleton.is_none()),
                     }
                 })
             })
@@ -294,6 +305,10 @@ impl<D: LocalDevice> WorldDrawables<D> {
                 }
             }
             let (_, m) = self.instances.get_mut(&id).expect("made above");
+            // the draw module's bone captures (turrets, recoil) and hidden sub-objects, on the model drawn for it
+            if let Some(r) = self.drawables.drawables.get(&id).and_then(|d| d.draw_modules.first()).and_then(|dm| dm.render_object.as_ref()) {
+                r.pose_render_model(m);
+            }
             let root = Matrix3D::IDENTITY;
             let posed = match &c.anim {
                 Some((name, frame)) => match art.assets.peek_anim(name) {
@@ -359,7 +374,7 @@ mod tests {
         f.extend(synth::hlod_w3d(name, name, &[(&sub, 1)]));
         let q = |deg: f32| {
             let h = deg.to_radians() / 2.0;
-            [0.0, 0.0, h.sin(), h.cos()]
+            [0.0, 0.0, rts_lockstep_engine::ww::wwmath::sin(h), rts_lockstep_engine::ww::wwmath::cos(h)]
         };
         for a in anims {
             let data: Vec<f32> = [0.0, 90.0, 180.0, 270.0].iter().flat_map(|&d| q(d)).collect();
@@ -507,6 +522,141 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
         }
     }
 
+    /// A turreted gun `GUNT`: pivots ROOTTRANSFORM, TURRET (0, 0, 2), BARREL (1, 0, 0) under it, RECOIL01 (2, 0, 0)
+    /// under that, MUZZLEFX01 (1, 0, 0) under that; a cube on each but the root.
+    fn gun_model() -> Vec<u8> {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let p = |n: &[u8], parent: i32, t: [f32; 3]| PivotSpec { name: n.to_vec(), parent, translation: t, rotation: ident };
+        let mut f = synth::htree_w3d(b"GUNT", &[
+            p(b"ROOTTRANSFORM", -1, [0.0; 3]),
+            p(b"TURRET", 0, [0.0, 0.0, 2.0]),
+            p(b"BARREL", 1, [1.0, 0.0, 0.0]),
+            p(b"RECOIL01", 2, [2.0, 0.0, 0.0]),
+            p(b"MUZZLEFX01", 3, [1.0, 0.0, 0.0]),
+        ]);
+        let subs: [(&[u8], u32); 4] = [(b"TURRET", 1), (b"BARREL", 2), (b"GUN", 3), (b"MUZZLEFX01", 4)];
+        let mut names = Vec::new();
+        for (n, _) in subs {
+            let mut m = MeshSpec::cuboid(b"GUNT", n, [-0.5; 3], [0.5; 3]);
+            m.stage0.texture = None;
+            f.extend(m.to_w3d());
+            names.push([&b"GUNT."[..], n].concat());
+        }
+        let hl: Vec<(&[u8], u32)> = names.iter().zip(subs).map(|(n, (_, b))| (n.as_slice(), b)).collect();
+        f.extend(synth::hlod_w3d(b"GUNT", b"GUNT", &hl));
+        f
+    }
+
+    const GUN_DRAW: &str = " WeaponSet\n  Conditions = None\n  Weapon = PRIMARY GateGun\n End\n Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   \
+Model = GunT\n   Turret = Turret\n   TurretPitch = Barrel\n   WeaponRecoilBone = PRIMARY Recoil\n   WeaponMuzzleFlash = PRIMARY MuzzleFX\n   \
+WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
+
+    /// What [`play_gun`] saw.
+    struct GunRun {
+        crcs: Vec<u32>,
+        /// The frames the turret bone was captured with a turn (not the identity).
+        turned: usize,
+        /// The frames a recoil was under way, and those the muzzle flash showed on the drawn model.
+        recoiling: usize,
+        flashed: usize,
+        /// The last frame's turret angle in the World, and the drawn turret bone's control.
+        last: Option<(f32, Matrix3D)>,
+        /// The largest turret angle seen, and the frame the target died (if it did).
+        max_angle: f32,
+        target_died: Option<u32>,
+        /// The frames the drawn turret control was not exactly `Rz` of the World's angle.
+        mismatched: usize,
+    }
+
+    /// GitHub #27: the gate map with a drawn turreted gun (the gate's `Gun` given `GateGun` and a `Draw` block) told to
+    /// attack an unarmed runner 80 to its north; 200 frames, with the drawables fed every frame when `drawn`.
+    fn play_gun(drawn_client: bool) -> GunRun {
+        let mut w = gate_map_world_with(&drawn("Gun", GUN_DRAW));
+        let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+        let enemy = factory_find_team(&mut w, b"team2").unwrap().unwrap();
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let gun = make(&mut w, b"DrawnGun", team, at(150.0, 380.0));
+        let target = make(&mut w, b"Runner", enemy, at(150.0, 460.0));
+        w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+        let mut art = MemoryDevice::new();
+        art.insert(b"Art/W3D/gunt.w3d", gun_model());
+        let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+        let ev = w.take_client_events();
+        if drawn_client {
+            d.update(&mut w, &ev, 0);
+            assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+        }
+        let ai = w.find_object(gun).and_then(|o| o.ai).expect("the gun's AI");
+        w.module_call(gun, ai, ModuleCall::AiAttackObject { victim: target, max_shots: i32::MAX, command_source: 0 });
+        let mut run = GunRun { crcs: Vec::new(), turned: 0, recoiling: 0, flashed: 0, last: None, max_angle: 0.0, target_died: None, mismatched: 0 };
+        for f in 1..=200u32 {
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, f * 33);
+                let m = &d.drawables.drawables[&gun].draw_modules[0];
+                let r = m.render_object.as_ref().expect("the gun's render object");
+                if let Some(c) = r.bone_controls.get(&1) {
+                    if c.captured && c.transform != Matrix3D::IDENTITY {
+                        run.turned += 1;
+                    }
+                    let angle = w.ai_turret_rot_and_pitch(gun, 0).map(|t| t.0);
+                    run.last = angle.map(|a| (a, c.transform));
+                    run.max_angle = run.max_angle.max(angle.unwrap_or(0.0));
+                    let mut rz = Matrix3D::IDENTITY;
+                    rz.rotate_z(angle.unwrap_or(0.0));
+                    if !(c.captured && c.transform == rz) {
+                        run.mismatched += 1;
+                    }
+                }
+                if m.weapon_recoil_info_vec[0].iter().any(|x| x.state != rts_lockstep_engine::client::w3d_model_draw::RecoilState::Idle) {
+                    run.recoiling += 1;
+                }
+                if d.instance(gun).is_some_and(|i| !i.sub_objects[3].hidden) {
+                    run.flashed += 1;
+                }
+            }
+            if run.target_died.is_none() && w.find_object(target).is_none_or(|o| o.is_effectively_dead()) {
+                run.target_died = Some(f);
+            }
+            run.crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        run
+    }
+
+    /// GitHub #27: the drawn gun's turret follows the World's turret angle, its barrel recoils and its muzzle flashes,
+    /// and the logic's CRCs are those of the same game without the client.
+    ///
+    /// *Predictions, written before the first run:* the CRCs are equal frame for frame; the turret turns toward the
+    /// runner (a quarter turn at 60 degrees a second, about 45 frames) and is captured turned on most frames; at the
+    /// end the drawn turret bone's control is exactly `Rz(angle)` of the World's angle (no art angle) and the angle is
+    /// near pi/2; the gun fires within the 200 frames, so a recoil is under way on some frames and the muzzle flash
+    /// shows on the drawn model on some.
+    ///
+    /// *Results (2026-11-06), first run:* the CRCs were equal over 200 frames and the drawn control was exactly
+    /// `Rz(angle)`; turned on 199 frames, a recoil under way on 111, the flash shown on 7. **Miss:** the final angle was
+    /// 0.988, not near pi/2: the runner dies after a few shots (frame 109) and the turret turns back toward its natural
+    /// angle. **Second miss:** the largest angle reached was 1.512, 0.059 short of pi/2 (the logic's turret stops
+    /// turning before it is exactly on the target; the logic's behaviour, not the client's). The test now checks what
+    /// the client owns: on every frame the drawn turret control is exactly `Rz` of the World's angle, the turret turned
+    /// past 1.4, and the target died.
+    #[test]
+    fn a_drawn_gun_turns_its_turret_and_recoils_without_changing_the_crcs() {
+        let plain = play_gun(false);
+        let r = play_gun(true);
+        assert_eq!(r.crcs, plain.crcs);
+        let (angle, ctl) = r.last.expect("the turret bone was controlled");
+        let mut rz = Matrix3D::IDENTITY;
+        rz.rotate_z(angle);
+        assert_eq!(ctl, rz);
+        println!("turned {} recoiling {} flashed {} final angle {angle} max {} target died {:?}", r.turned, r.recoiling, r.flashed, r.max_angle, r.target_died);
+        assert_eq!(r.mismatched, 0);
+        assert!(r.max_angle > 1.4, "largest angle {}", r.max_angle);
+        assert!(r.target_died.is_some());
+        assert!(r.turned > 100, "turned on {} frames", r.turned);
+        assert!(r.recoiling > 0 && r.flashed > 0, "recoiling {} flashed {}", r.recoiling, r.flashed);
+    }
+
     /// The generated art of [`synthetic_art`] in a `W3DZH.big` after a 4 MiB member nobody opens, on a ranged device as the
     /// page gives it (the archive's length and the first 64 KiB, which hold its directory), and the archive itself.
     fn ranged_art() -> (FileSystem<RangedDevice>, Vec<u8>) {
@@ -549,6 +699,12 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
     /// (2 with the files at hand), four ranges of 1,713 bytes read from a 4,201,315-byte archive (held 72,388), the CRCs
     /// equal. **Miss:** 6 drawables were made again, not 3: each later fetch (the runner's moving model, the soldiers'
     /// firing model, for both soldiers) remakes the drawables waiting on it too, as designed. The assertion is now 6.
+    ///
+    /// ~~The moving model at frame 3; 6 remade.~~ **Corrected 2026-11-06 (#27):** with the bone caches translated, each
+    /// draw module's constructor validates every state of its mode (`validateCachedBones` makes each state's render
+    /// object, as upstream's does), so the four models are all asked for at frame 0: 3 drawables remade (at frame 1),
+    /// and the moving model shows at frame 2, as with the files at hand. Not predicted before the run: found as a
+    /// failure of the old assertions.
     #[test]
     fn the_demo_reads_its_models_by_range_and_draws_shapes_until_they_arrive() {
         let (art, big) = ranged_art();
@@ -569,12 +725,16 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
         assert_eq!(r.first_posed, [Some(1), Some(1), Some(1)]);
         // three at frame 1 (the runner and both soldiers), then one each time a later model arrived: the runner's moving
         // model, and the soldiers' firing model (both soldiers)
-        assert_eq!(r.remade, 6);
+        // ~~assert_eq!(r.remade, 6)~~ Corrected 2026-11-06 (#27): 3. The draw modules' constructors now validate every
+        // state's bones (`validateCachedBones`, `Create_Render_Obj` of each state's model, as upstream), so all four
+        // models are asked for at frame 0 and arrive together.
+        assert_eq!(r.remade, 3);
         let stats = stats.unwrap();
         assert_eq!((stats.ranges_arrived, stats.bytes_arrived), (4, models));
         assert_eq!(stats.held, 64 * 1024 + models);
         let at_hand = play_demo(synthetic_art(), |_| {});
-        assert_eq!((at_hand.moved, r.moved), (2, 3), "one frame later than with the files at hand");
+        // ~~(2, 3), one frame later~~ Corrected 2026-11-06 (#27): (2, 2), the moving model was fetched at frame 0 (above).
+        assert_eq!((at_hand.moved, r.moved), (2, 2), "the moving model is at hand when the runner moves");
         // the client never changes the simulation: the same logic CRCs whether the art is at hand or fetched
         assert_eq!(r.crcs, at_hand.crcs);
         assert!(r.roll_frames > 3);

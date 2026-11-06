@@ -121,6 +121,8 @@ impl SubObject {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderModel {
     pub name: Vec<u8>,
+    /// Whether it is an HLOD (`Class_ID() == CLASSID_HLOD`), not a lone mesh.
+    pub is_hlod: bool,
     /// The hierarchy (posed by [`RenderModel::update`]); `None` for a lone
     /// mesh, or when the HLOD's could not be found.
     pub htree: Option<HTree>,
@@ -144,6 +146,7 @@ impl RenderModel {
                 let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
                 Ok(Some(RenderModel {
                     name: name.to_vec(),
+                    is_hlod: false,
                     htree: None,
                     sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model }],
                     not_drawn: Vec::new(),
@@ -151,7 +154,7 @@ impl RenderModel {
             }
             Prototype::HLod(def) => {
                 let htree = am.get_htree(fs, &def.hierarchy_tree_name)?.cloned();
-                let mut out = RenderModel { name: name.to_vec(), htree, sub_objects: Vec::new(), not_drawn: Vec::new() };
+                let mut out = RenderModel { name: name.to_vec(), is_hlod: true, htree, sub_objects: Vec::new(), not_drawn: Vec::new() };
                 let mut subs = Vec::new();
                 if let Some(top) = def.lods.last() {
                     subs.extend(top.sub_objects.iter().cloned());

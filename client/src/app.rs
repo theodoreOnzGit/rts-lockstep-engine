@@ -530,7 +530,7 @@ fn sync_objects(
 fn health_bars(game: NonSend<Game>, fixed: Res<Time<Fixed>>, rig: Res<Rig>, mut gizmos: Gizmos) {
     let t = if game.paused || game.error.is_some() { 1.0 } else { fixed.overstep_fraction() };
     // the bar lies across the screen: along the camera's right, in game coordinates (cos yaw, sin yaw)
-    let right = Vec3::from(to_bevy([rig.yaw.cos(), rig.yaw.sin(), 0.0]));
+    let right = Vec3::from(to_bevy([rts_lockstep_engine::ww::wwmath::cos(rig.yaw), rts_lockstep_engine::ww::wwmath::sin(rig.yaw), 0.0]));
     for b in &game.cur.objects {
         let Some(h) = b.health else { continue };
         let o = match game.prev.find(b.id) {

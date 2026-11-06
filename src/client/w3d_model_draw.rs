@@ -10,7 +10,19 @@
 //   adjustAnimation, setCurAnimDurationInMsec, getCurAnimDistanceCovered,
 //   adjustAnimSpeedToMovementSpeed, setModelState, replaceModelConditionState,
 //   setAnimationLoopDuration, setAnimationCompletionTime, setAnimationFrame,
-//   setPauseAnimation, isAnimationComplete, turretNamesDiffer)
+//   setPauseAnimation, isAnimationComplete, turretNamesDiffer;
+//   GitHub #27: findSingleBone, findSingleSubObj, doSingleBoneName,
+//   ModelConditionInfo::validateStuff, validateCachedBones,
+//   validateWeaponBarrelInfo, validateTurretInfo, findPristineBone,
+//   WeaponBarrelInfo::setMuzzleFlashHidden, doHideShowBoneSubObjs,
+//   W3DModelDraw::showSubObject, doHideShowSubObjs,
+//   handleClientTurretPositioning, handleClientRecoil, hideAllHeadlights,
+//   hideAllMuzzleFlashes, getBarrelCount, handleWeaponFireFX (without the
+//   effect), rebuildWeaponRecoilInfo, updateSubObjects)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp
+//   (Get_Bone_Index, Get_Parent_Index), rendobj.cpp (Get_Sub_Object_By_Name),
+//   hlod.cpp (Get_Sub_Object_On_Bone), animobj.cpp (Capture_Bone,
+//   Control_Bone)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/
 //   W3DTankDraw.cpp, W3DTruckDraw.cpp, W3DTankTruckDraw.cpp, W3DSupplyDraw.cpp,
 //   W3DDependencyModelDraw.cpp, W3DScienceModelDraw.cpp (their module data's
@@ -82,6 +94,15 @@
 //!
 //! # Upstream quirks that are kept
 //!
+//! - (#27) A recoil never enters `RECOIL`: from `RECOIL_START` it goes to
+//!   `SETTLE` at `MaxRecoil` or a tiny rate, so the muzzle flash shows until
+//!   then. The muzzle flashes are hidden on the *old* render object, before a
+//!   new one is made: a new render object's flash shows until the next draw.
+//!   A sub-object hidden by a state stays hidden when the next state keeps the
+//!   render object and names no sub-objects. `doHideShowBoneSubObjs` counts a
+//!   sub-object's bone's ancestors, not its own bone, and with bone 0 every
+//!   sub-object not on bone 0. Turret, barrel and pristine bones are found only
+//!   at a logic time; a state first validated from the client's draw has none.
 //! - A `ConditionState` copies the default state's **turret, weapon-bone and
 //!   sub-object lists, flags and mode** as well as its model and animations
 //!   (the whole `ModelConditionInfo`); only the condition bits are cleared.
@@ -118,13 +139,36 @@
 //! - **`ParticleSysBone`** keeps the system's name, not a template pointer
 //!   (the client has no particle systems yet); `RequiredScience` keeps the
 //!   science's name.
-//! - **Not translated yet** (GitHub #25's remaining work): the bone caches
+//! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
 //!   weapon barrels), turret and recoil posing, sub-object hide and show,
-//!   muzzle flashes, headlights, particle systems, shadows, terrain decals and
+//!   muzzle flashes, headlights,~~ particle systems, shadows, terrain decals and
 //!   tracks, the attach-to-bone offset, `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`,
-//!   and the subclasses' runtime (treads, tires, supplies, dependencies).
-//!   `validateStuff` only marks the turret info valid.
+//!   the weapon fire FX lists themselves, garrison flags, and the subclasses'
+//!   runtime (treads, tires, supplies, dependencies). ~~`validateStuff` only
+//!   marks the turret info valid.~~ **Corrected 2026-11-06 (#27):** the bone
+//!   caches, turret and recoil posing, muzzle flashes, sub-object hide and
+//!   show and headlights are translated (below).
+//! - **The render object** ([`RenderObj`]) is not the drawn one: it keeps the
+//!   bone captures and controls (`Capture_Bone`, `Control_Bone`) and the
+//!   sub-objects' hidden flags, and the client puts them on the render model
+//!   it draws ([`RenderObj::pose_render_model`]) before posing it. What the
+//!   bone functions read of a render object (bone and sub-object names, bone
+//!   indices, parents, transforms) is its [`Skeleton`], from the asset source.
+//! - **The pristine pose** is a fresh render object's (the asset source's),
+//!   even when `validateStuff` is given the live one, whose captured bones
+//!   upstream would include. The sub-objects are [`RenderModel`]'s (top LOD,
+//!   then aggregates, meshes only); upstream counts every LOD and reads a
+//!   sub-object's bone as `Get_Sub_Object_Bone_Index(0, i)`, the same for the
+//!   game's one-LOD models.
+//! - **The logic's turret angles** are read from the World each draw
+//!   ([`DrawFacts::turrets`], `World::ai_turret_rot_and_pitch`, which takes
+//!   `&self`); upstream's draw module asks the object's AI itself.
+//! - `handleWeaponFireFX` with a barrel equal to the barrel count (upstream
+//!   tests `> size()`, then reads past the end: undefined) uses barrel 0.
+//! - A pristine-bone validation that found the model's files still being
+//!   fetched (the browser) is valid all the same, with no bones, as upstream's
+//!   is for a missing model; the module data's validation is once per mode.
 //! - `Peek_Animation_And_Info` on an HLOD with no animation leaves its outputs
 //!   uninitialised, which `getCurrentAnimFraction` then reads (undefined
 //!   upstream); here the fraction is -1 (none) there.
@@ -152,8 +196,9 @@ use crate::common::random_value::RandomValues;
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
 use crate::formats::w3d::assetmgr::{AssetManager, Prototype};
-use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMode};
+use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMode, RenderModel};
 use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
+use crate::ww::matrix3d::Matrix3D;
 
 /// `MAX_TURRETS`.
 pub const MAX_TURRETS: usize = 2;
@@ -246,8 +291,10 @@ const GOT_NONIDLE_ANIMS: u32 = 1;
 const GOT_IDLE_ANIMS: u32 = 2;
 
 // `ModelConditionInfo::m_validStuff` bits.
+const PRISTINE_BONES_VALID: u8 = 0x0001;
 const TURRETS_VALID: u8 = 0x0002;
 const HAS_PROJECTILE_BONES: u8 = 0x0004;
+const BARRELS_VALID: u8 = 0x0008;
 
 /// `AsciiString::toLower()` (ASCII).
 fn lower(s: &[u8]) -> Vec<u8> {
@@ -350,6 +397,58 @@ pub struct ParticleSysBoneInfo {
     pub particle_system_template: Vec<u8>,
 }
 
+/// `PristineBoneInfo`: a bone's transform in the pristine pose and its index.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PristineBoneInfo {
+    pub mtx: Matrix3D,
+    pub bone_index: i32,
+}
+
+/// `ModelConditionInfo::WeaponBarrelInfo` (`m_muzzleFlashBoneName` is debug-only upstream and left out).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponBarrelInfo {
+    /// `m_recoilBone` (zero: no bone).
+    pub recoil_bone: i32,
+    /// `m_fxBone`.
+    pub fx_bone: i32,
+    /// `m_muzzleFlashBone`.
+    pub muzzle_flash_bone: i32,
+    /// `m_projectileOffsetMtx`.
+    pub projectile_offset_mtx: Matrix3D,
+}
+
+impl Default for WeaponBarrelInfo {
+    /// `WeaponBarrelInfo()`, which calls `clear()`.
+    fn default() -> Self {
+        WeaponBarrelInfo { recoil_bone: 0, fx_bone: 0, muzzle_flash_bone: 0, projectile_offset_mtx: Matrix3D::IDENTITY }
+    }
+}
+
+impl WeaponBarrelInfo {
+    /// `setMuzzleFlashHidden(fullObject, hide)`: the first sub-object on the muzzle-flash bone
+    /// (`Get_Sub_Object_On_Bone(0, bone)`); none is upstream's asset-error debug crash, a no-op here.
+    pub fn set_muzzle_flash_hidden(&self, full_object: Option<&mut RenderObj>, hide: bool) {
+        if let Some(r) = full_object {
+            if let Some(i) = r.get_sub_object_on_bone(0, self.muzzle_flash_bone) {
+                r.set_sub_object_hidden(i, hide);
+            }
+        }
+    }
+}
+
+/// The `mutable` bone caches of a `ModelConditionInfo` that `validateStuff` fills.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BoneCache {
+    /// `m_pristineBones`, by lower-cased name (`NAMEKEY` of it).
+    pub pristine_bones: BTreeMap<Vec<u8>, PristineBoneInfo>,
+    /// `m_turrets[i].m_turretAngleBone`, `.m_turretPitchBone`.
+    pub turret_bones: [(i32, i32); MAX_TURRETS],
+    /// `m_weaponBarrelInfoVec`.
+    pub weapon_barrel_info_vec: [Vec<WeaponBarrelInfo>; SLOTS],
+    /// `m_hasRecoilBonesOrMuzzleFlashes`.
+    pub has_recoil_bones_or_muzzle_flashes: [bool; SLOTS],
+}
+
 /// The transition signature, `buildTransitionSig(src, dst)`: the two keys'
 /// names. `NO_TRANSITION` is `None`.
 pub type TransitionSig = (Vec<u8>, Vec<u8>);
@@ -393,6 +492,8 @@ pub struct ModelConditionInfo {
     pub turrets: [TurretInfo; MAX_TURRETS],
     /// `m_validStuff` (mutable upstream).
     valid_stuff: AtomicU8,
+    /// `m_pristineBones`, the turrets' bones, the barrels (mutable upstream).
+    bones: Mutex<BoneCache>,
 }
 
 impl Clone for ModelConditionInfo {
@@ -419,6 +520,7 @@ impl Clone for ModelConditionInfo {
             anim_max_speed_factor: self.anim_max_speed_factor,
             turrets: self.turrets.clone(),
             valid_stuff: AtomicU8::new(self.valid_stuff.load(Ordering::Relaxed)),
+            bones: Mutex::new(self.bone_cache()),
         }
     }
 }
@@ -448,6 +550,7 @@ impl Default for ModelConditionInfo {
             anim_max_speed_factor: 1.0,
             turrets: Default::default(),
             valid_stuff: AtomicU8::new(0),
+            bones: Mutex::new(BoneCache::default()),
         }
     }
 }
@@ -489,13 +592,336 @@ impl ModelConditionInfo {
         self.valid_stuff.load(Ordering::Relaxed) & TURRETS_VALID != 0
     }
 
-    /// `validateStuff(robj, scale, extraPublicBones)`, the part translated:
-    /// `validateTurretInfo`'s flag (see the module docs).
-    pub fn validate_stuff(&self, logic_time: bool) {
+    /// Whether `validateWeaponBarrelInfo` has run at a valid time (`BARRELS_VALID`).
+    pub fn barrels_valid(&self) -> bool {
+        self.valid_stuff.load(Ordering::Relaxed) & BARRELS_VALID != 0
+    }
+
+    /// Whether `validateCachedBones` has run at a valid time (`PRISTINE_BONES_VALID`).
+    pub fn pristine_bones_valid(&self) -> bool {
+        self.valid_stuff.load(Ordering::Relaxed) & PRISTINE_BONES_VALID != 0
+    }
+
+    fn cache(&self) -> std::sync::MutexGuard<'_, BoneCache> {
+        self.bones.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A copy of the bone caches (`m_pristineBones`, the turrets' and barrels' bones).
+    pub fn bone_cache(&self) -> BoneCache {
+        self.cache().clone()
+    }
+
+    /// `m_turrets[t].m_turretAngleBone` and `.m_turretPitchBone`.
+    pub fn turret_bones(&self, t: usize) -> (i32, i32) {
+        self.cache().turret_bones[t]
+    }
+
+    /// `m_weaponBarrelInfoVec[wslot]`.
+    pub fn weapon_barrels(&self, wslot: usize) -> Vec<WeaponBarrelInfo> {
+        self.cache().weapon_barrel_info_vec[wslot].clone()
+    }
+
+    /// `m_hasRecoilBonesOrMuzzleFlashes[wslot]`.
+    pub fn has_recoil_bones_or_muzzle_flashes(&self, wslot: usize) -> bool {
+        self.cache().has_recoil_bones_or_muzzle_flashes[wslot]
+    }
+
+    /// `validateStuff(robj, scale, extraPublicBones)`: `loadAnimations` (nothing, without
+    /// `RETAIN_ANIM_HANDLES`), the public bones, `validateCachedBones`, `validateTurretInfo`,
+    /// `validateWeaponBarrelInfo`.
+    ///
+    /// `addPublicBone` of the extra bones (once, at a valid time, `PUBLIC_BONES_VALID`) is not
+    /// stored: the extras join the parsed list where the list is read (here only, when the
+    /// pristine bones are cached), with `addPublicBone`'s rules; the map is by name, so the order
+    /// does not matter.
+    pub fn validate_stuff<A: W3dAssetSource>(
+        &self,
+        robj: Option<&mut RenderObj>,
+        scale: f32,
+        extra_public_bones: &[Vec<u8>],
+        standard_public_bones: &[Vec<u8>],
+        env: &mut DrawEnv<'_, A>,
+    ) {
+        self.validate_cached_bones(robj, scale, extra_public_bones, standard_public_bones, env);
+        self.validate_turret_info(env.logic_time);
+        self.validate_weapon_barrel_info(env.logic_time);
+    }
+
+    /// `validateCachedBones(robj, scale)`: once, at a valid time, the pristine bones: the
+    /// global data's standard public bones and the state's public bones (each also numbered
+    /// `01` up to `99`, until one is missing), found as bones (`Get_Bone_Index`, where index 0
+    /// counts as not found) or else as sub-objects, with the render object posed at the first
+    /// frame of the state's first animation (the last, under `PRISTINE_BONE_POS_IN_FINAL_FRAME`;
+    /// without animations, the render object's own) under a transform of `scale`.
+    ///
+    /// The pose is the asset source's ([`W3dAssetSource::skeleton`]): a fresh render object of
+    /// the model, so a bone the live one has captured is not applied (upstream poses the live
+    /// render object when one is given). The live one's animation is left as upstream leaves
+    /// it: set to the pose's animation in `MANUAL`, then back to the animation it had, if any.
+    pub fn validate_cached_bones<A: W3dAssetSource>(
+        &self,
+        robj: Option<&mut RenderObj>,
+        scale: f32,
+        extra_public_bones: &[Vec<u8>],
+        standard_public_bones: &[Vec<u8>],
+        env: &mut DrawEnv<'_, A>,
+    ) {
+        if self.pristine_bones_valid() {
+            return;
+        }
+        if !env.logic_time {
+            self.cache().pristine_bones.clear();
+            self.valid_stuff.fetch_and(!PRISTINE_BONES_VALID, Ordering::Relaxed);
+            return;
+        }
+        self.cache().pristine_bones.clear();
+        // go ahead and set this here, in case we return early.
+        self.valid_stuff.fetch_or(PRISTINE_BONES_VALID, Ordering::Relaxed);
+
+        let (model_name, is_hlod, cur_anim) = match &robj {
+            Some(r) => (r.model_name.clone(), r.is_hlod, if r.is_hlod { r.anim.clone() } else { None }),
+            None => {
+                if self.model_name.is_empty() {
+                    return;
+                }
+                match env.assets.create_render_obj(&self.model_name) {
+                    Some(hlod) => (self.model_name.clone(), hlod, None),
+                    // "*** ASSET ERROR: Model %s not found!"
+                    None => return,
+                }
+            }
+        };
+
+        // if we have any animations in this state, always choose the first, since the
+        // animations vary on a per-client basis.
+        let anim_to_use = if !self.animations.is_empty() { self.animations[0].get_anim_handle(env.assets) } else { cur_anim.as_ref().map(|a| a.motion.clone()) };
+        let which_frame = anim_to_use.as_ref().map(|h| if test_flag_bit(self.flags, PRISTINE_BONE_POS_IN_FINAL_FRAME) { h.num_frames - 1 } else { 0 });
+        // Set_Animation does nothing on a render object that is not an HLOD
+        let pose = match (&anim_to_use, which_frame) {
+            (Some(h), Some(f)) if is_hlod => Some((h.name.as_slice(), f as f32)),
+            _ => None,
+        };
+        let skeleton = env.assets.skeleton(&model_name, pose, scale);
+
+        let mut map = BTreeMap::new();
+        for b in standard_public_bones {
+            // don't crash here, since these are catch-all global bones and won't be present in most models.
+            do_single_bone_name(skeleton.as_ref(), b, &mut map);
+        }
+        let mut public = self.public_bones.clone();
+        for b in extra_public_bones {
+            let tmp = lower(b);
+            if !b.is_empty() && !is_none(b) && !public.contains(&tmp) {
+                public.push(tmp);
+            }
+        }
+        for b in &public {
+            // DO crash here (upstream's debug build), since we specifically requested this bone for this model
+            do_single_bone_name(skeleton.as_ref(), b, &mut map);
+        }
+        self.cache().pristine_bones = map;
+
+        if let Some(r) = robj {
+            if r.is_hlod {
+                if let (Some(h), Some(f)) = (anim_to_use, which_frame) {
+                    r.set_animation(Some(h), f as f32, AnimMode::Manual, env.sync_time);
+                }
+                if let Some(a) = cur_anim {
+                    r.set_animation(Some(a.motion), a.frame, a.anim_mode, env.sync_time);
+                    r.set_animation_frame_rate_multiplier(a.frame_rate_multiplier);
+                }
+            }
+        }
+    }
+
+    /// `findPristineBone(boneName, &boneIndex)`: `None` (bone index 0) when the bones are not
+    /// valid, the name is `NAMEKEY_INVALID` (empty), or it is not cached.
+    pub fn find_pristine_bone(&self, bone_name: &[u8]) -> Option<PristineBoneInfo> {
+        if !self.pristine_bones_valid() || bone_name.is_empty() {
+            return None;
+        }
+        self.cache().pristine_bones.get(bone_name).copied()
+    }
+
+    /// `validateTurretInfo()`: once, at a valid time, each turret's angle and pitch bone by its
+    /// key through the pristine bones (0 when it has none, or it is not found: upstream's
+    /// asset-error debug crash). Outside a valid time, or without a model, the bones are 0 and
+    /// the turrets stay not valid.
+    pub fn validate_turret_info(&self, logic_time: bool) {
+        if self.turrets_valid() {
+            return;
+        }
+        for tslot in 0..MAX_TURRETS {
+            let tur = &self.turrets[tslot];
+            let bones = if !logic_time || self.model_name.is_empty() {
+                (0, 0)
+            } else {
+                let find = |key: &[u8]| if key.is_empty() { 0 } else { self.find_pristine_bone(key).map_or(0, |b| b.bone_index) };
+                (find(&tur.turret_angle_name_key), find(&tur.turret_pitch_name_key))
+            };
+            self.cache().turret_bones[tslot] = bones;
+        }
         if logic_time {
             self.valid_stuff.fetch_or(TURRETS_VALID, Ordering::Relaxed);
         }
     }
+
+    /// `validateWeaponBarrelInfo()`: once, at a valid time, each weapon slot's barrels: for
+    /// `i` from 1 to 99 the bones `<name>NN` of the recoil, muzzle-flash, fire-FX and launch
+    /// names (a barrel with a muzzle flash but no FX bone of its own uses the previous FX
+    /// bone), until a number finds none of them; when no numbered barrel is found, the
+    /// unadorned names make one barrel if any is found.
+    pub fn validate_weapon_barrel_info(&self, logic_time: bool) {
+        if self.barrels_valid() || !logic_time {
+            return;
+        }
+        let bone = |name: &[u8]| self.find_pristine_bone(name).map_or(0, |b| b.bone_index);
+        let numbered = |name: &[u8], i: i32| {
+            let mut n = name.to_vec();
+            n.extend_from_slice(format!("{i:02}").as_bytes());
+            n
+        };
+        let mut vecs: [Vec<WeaponBarrelInfo>; SLOTS] = Default::default();
+        let mut has = [false; SLOTS];
+        for wslot in 0..SLOTS {
+            let fx_bone_name = &self.weapon_fire_fx_bone_name[wslot];
+            let recoil_bone_name = &self.weapon_recoil_bone_name[wslot];
+            let mf_name = &self.weapon_muzzle_flash_name[wslot];
+            let plb_name = &self.weapon_projectile_launch_bone_name[wslot];
+            if fx_bone_name.is_empty() && recoil_bone_name.is_empty() && mf_name.is_empty() && plb_name.is_empty() {
+                continue;
+            }
+            let mut prev_fx_bone = 0;
+            for i in 1..=99 {
+                let mut info = WeaponBarrelInfo::default();
+                if !recoil_bone_name.is_empty() {
+                    info.recoil_bone = bone(&numbered(recoil_bone_name, i));
+                }
+                if !mf_name.is_empty() {
+                    info.muzzle_flash_bone = bone(&numbered(mf_name, i));
+                }
+                if !fx_bone_name.is_empty() {
+                    info.fx_bone = bone(&numbered(fx_bone_name, i));
+                    // special case: if we have multiple muzzleflashes, but only one fxbone, use that fxbone for everything.
+                    if info.fx_bone == 0 && info.muzzle_flash_bone != 0 {
+                        info.fx_bone = prev_fx_bone;
+                    }
+                }
+                let mut plb_bone_index = 0;
+                if !plb_name.is_empty() {
+                    if let Some(b) = self.find_pristine_bone(&numbered(plb_name, i)) {
+                        plb_bone_index = b.bone_index;
+                        info.projectile_offset_mtx = b.mtx;
+                    }
+                }
+                if info.fx_bone == 0 && info.recoil_bone == 0 && info.muzzle_flash_bone == 0 && plb_bone_index == 0 {
+                    break;
+                }
+                vecs[wslot].push(info);
+                if info.recoil_bone != 0 || info.muzzle_flash_bone != 0 {
+                    has[wslot] = true;
+                }
+                prev_fx_bone = info.fx_bone;
+            }
+            if vecs[wslot].is_empty() {
+                // try the unadorned names
+                let mut info = WeaponBarrelInfo::default();
+                if !recoil_bone_name.is_empty() {
+                    info.recoil_bone = bone(recoil_bone_name);
+                }
+                if !mf_name.is_empty() {
+                    info.muzzle_flash_bone = bone(mf_name);
+                }
+                let plb = if plb_name.is_empty() { None } else { self.find_pristine_bone(plb_name) };
+                info.projectile_offset_mtx = plb.map_or(Matrix3D::IDENTITY, |b| b.mtx);
+                if !fx_bone_name.is_empty() {
+                    info.fx_bone = bone(fx_bone_name);
+                }
+                if info.fx_bone != 0 || info.recoil_bone != 0 || info.muzzle_flash_bone != 0 || plb.is_some() {
+                    vecs[wslot].push(info);
+                    if info.recoil_bone != 0 || info.muzzle_flash_bone != 0 {
+                        has[wslot] = true;
+                    }
+                }
+            }
+        }
+        {
+            let mut c = self.cache();
+            c.weapon_barrel_info_vec = vecs;
+            c.has_recoil_bones_or_muzzle_flashes = has;
+        }
+        self.valid_stuff.fetch_or(BARRELS_VALID, Ordering::Relaxed);
+    }
+}
+
+/// `findSingleBone(robj, boneName, mtx, boneIndex)`: the bone by name, unless its index is 0.
+fn find_single_bone(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
+    if is_none(bone_name) || bone_name.is_empty() {
+        return None;
+    }
+    let sk = sk?;
+    let bone_index = sk.get_bone_index(bone_name);
+    if bone_index != 0 {
+        Some(PristineBoneInfo { mtx: sk.bones[bone_index as usize].transform, bone_index })
+    } else {
+        None
+    }
+}
+
+/// `findSingleSubObj(robj, boneName, mtx, boneIndex)`: the sub-object by name, its transform
+/// and its bone.
+fn find_single_sub_obj(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<PristineBoneInfo> {
+    if is_none(bone_name) || bone_name.is_empty() {
+        return None;
+    }
+    let sk = sk?;
+    let i = sk.get_sub_object_by_name(bone_name)?;
+    let sub = &sk.sub_objects[i];
+    Some(PristineBoneInfo { mtx: sub.transform, bone_index: sub.bone_index })
+}
+
+/// `doSingleBoneName(robj, boneName, map)`: the bone and its numbered variants as bones, or
+/// else as sub-objects, into the map by lower-cased name.
+fn do_single_bone_name(sk: Option<&Skeleton>, bone_name: &[u8], map: &mut BTreeMap<Vec<u8>, PristineBoneInfo>) -> bool {
+    let mut found_as_bone = false;
+    let mut found_as_sub_obj = false;
+    let tmp_name = lower(bone_name);
+    let numbered = |i: i32| {
+        let mut n = tmp_name.clone();
+        n.extend_from_slice(format!("{i:02}").as_bytes());
+        n
+    };
+    if let Some(info) = find_single_bone(sk, &tmp_name) {
+        map.insert(tmp_name.clone(), info);
+        found_as_bone = true;
+    }
+    for i in 1..=99 {
+        let tmp = numbered(i);
+        match find_single_bone(sk, &tmp) {
+            Some(info) => {
+                map.insert(tmp, info);
+                found_as_bone = true;
+            }
+            None => break,
+        }
+    }
+    if !found_as_bone {
+        if let Some(info) = find_single_sub_obj(sk, &tmp_name) {
+            map.insert(tmp_name.clone(), info);
+            found_as_sub_obj = true;
+        }
+        for i in 1..=99 {
+            let tmp = numbered(i);
+            match find_single_sub_obj(sk, &tmp) {
+                Some(info) => {
+                    map.insert(tmp, info);
+                    found_as_sub_obj = true;
+                }
+                None => break,
+            }
+        }
+    }
+    found_as_bone || found_as_sub_obj
 }
 
 // ---------------------------------------------------------------------------
@@ -732,8 +1158,15 @@ impl W3DModelDrawModuleData {
     /// `validateStuffForTimeAndWeather(draw, night, snowy)`: once per mode
     /// at a valid time, validate the states of the plain mode or of this one,
     /// and the transitions with a source and a destination in it.
-    pub fn validate_stuff_for_time_and_weather(&self, night: bool, snowy: bool, logic_time: bool) {
-        if !logic_time {
+    pub fn validate_stuff_for_time_and_weather<A: W3dAssetSource>(
+        &self,
+        night: bool,
+        snowy: bool,
+        scale: f32,
+        standard_public_bones: &[Vec<u8>],
+        env: &mut DrawEnv<'_, A>,
+    ) {
+        if !env.logic_time {
             return;
         }
         let mode: u8 = match (night, snowy) {
@@ -750,13 +1183,14 @@ impl W3DModelDrawModuleData {
             if !c.matches_mode(false, false) && !c.matches_mode(night, snowy) {
                 continue;
             }
-            c.validate_stuff(logic_time);
+            c.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
         }
         for ((src, dst), t) in &self.transition_map {
             let a = self.condition_states.iter().any(|c| &c.transition_key == src && c.matches_mode(night, snowy));
             let b = self.condition_states.iter().any(|c| &c.transition_key == dst && c.matches_mode(night, snowy));
             if a && b {
-                t.validate_stuff(logic_time);
+                // (nope -- transition states don't get public bones; they are validated all the same)
+                t.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
             }
         }
     }
@@ -1294,6 +1728,107 @@ pub trait W3dAssetSource {
     fn create_render_obj(&mut self, name: &[u8]) -> Option<bool>;
     /// `Get_HAnim(name)`.
     fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle>;
+    /// The hierarchy and sub-objects of a new render object of `name` (`Create_Render_Obj`),
+    /// posed at `pose`'s animation and frame (the base pose without one, or when the animation
+    /// is not found) under a transform of `scale` (`Matrix3D(true).Scale(scale)`): what
+    /// `Get_Bone_Index`, `Get_Bone_Transform`, `Get_Sub_Object_By_Name` and the hide-show
+    /// functions read of it. `None` when it has none to give (no such render object, or a
+    /// source without hierarchies); a mesh gives an empty [`Skeleton`].
+    fn skeleton(&mut self, _name: &[u8], _pose: Option<(&[u8], f32)>, _scale: f32) -> Option<Skeleton> {
+        None
+    }
+}
+
+/// A render object's bone: `Pivot[i]` of its `HTreeClass` as the draw module reads it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkeletonBone {
+    /// `Pivot[i].Name`, up to its NUL.
+    pub name: Vec<u8>,
+    /// `Get_Parent_Index(i)`: the parent's index, 0 for none.
+    pub parent_index: i32,
+    /// `Get_Transform(i)` in the pose the skeleton was made for.
+    pub transform: Matrix3D,
+}
+
+/// A render object's sub-object (`Get_Sub_Object(i)`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkeletonSubObject {
+    /// `Get_Name()` (`CONTAINER.MESH`).
+    pub name: Vec<u8>,
+    /// The bone it is bound to (`Get_Sub_Object_Bone_Index`).
+    pub bone_index: i32,
+    /// `Is_Hidden()` as made (`W3D_MESH_FLAG_HIDDEN`).
+    pub hidden: bool,
+    /// `Get_Transform()` in the pose: its bone's transform.
+    pub transform: Matrix3D,
+}
+
+/// What the draw module reads of a render object's hierarchy and sub-objects (see
+/// [`W3dAssetSource::skeleton`]). The sub-objects are [`RenderModel`]'s: the top LOD's meshes,
+/// then the aggregates' (upstream counts every LOD and non-mesh sub-objects too; the same list
+/// for the game's one-LOD models made only of meshes).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Skeleton {
+    /// The pivots; empty for a render object without a hierarchy (a mesh).
+    pub bones: Vec<SkeletonBone>,
+    pub sub_objects: Vec<SkeletonSubObject>,
+}
+
+impl Skeleton {
+    /// The skeleton of a posed [`RenderModel`].
+    pub fn of(m: &RenderModel) -> Skeleton {
+        let Some(tree) = (if m.is_hlod { m.htree.as_ref() } else { None }) else {
+            return Skeleton::default();
+        };
+        let mut bones = Vec::new();
+        for i in 0..tree.num_pivots().max(0) as usize {
+            let p = tree.pivot(i).unwrap_or_default();
+            let end = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
+            let parent_index = p.parent.and_then(|q| tree.pivot(q as usize)).map_or(0, |q| q.index);
+            bones.push(SkeletonBone { name: p.name[..end].to_vec(), parent_index, transform: tree.get_transform(i as i32).unwrap_or(Matrix3D::IDENTITY) });
+        }
+        let sub_objects = m
+            .sub_objects
+            .iter()
+            .map(|s| SkeletonSubObject {
+                name: s.name.clone(),
+                bone_index: s.bone_index,
+                hidden: s.hidden,
+                transform: tree.get_transform(s.bone_index).unwrap_or(Matrix3D::IDENTITY),
+            })
+            .collect();
+        Skeleton { bones, sub_objects }
+    }
+
+    /// `Get_HTree() != NULL`.
+    pub fn has_htree(&self) -> bool {
+        !self.bones.is_empty()
+    }
+
+    /// `Get_Bone_Index(name)`: the first pivot of that name (ignoring case), else 0.
+    pub fn get_bone_index(&self, name: &[u8]) -> i32 {
+        self.bones.iter().position(|b| b.name.eq_ignore_ascii_case(name)).map_or(0, |i| i as i32)
+    }
+
+    /// `Get_Parent_Index(bone)` (0 out of range: upstream asserts).
+    pub fn get_parent_index(&self, bone: i32) -> i32 {
+        usize::try_from(bone).ok().and_then(|b| self.bones.get(b)).map_or(0, |b| b.parent_index)
+    }
+
+    /// `Get_Sub_Object_By_Name(name, &index)`: the first sub-object of that name (ignoring
+    /// case), else the first whose name after its first `.` is it.
+    pub fn get_sub_object_by_name(&self, name: &[u8]) -> Option<usize> {
+        if let Some(i) = self.sub_objects.iter().position(|s| s.name.eq_ignore_ascii_case(name)) {
+            return Some(i);
+        }
+        self.sub_objects.iter().position(|s| {
+            let suffix = match s.name.iter().position(|&c| c == b'.') {
+                Some(d) => &s.name[d + 1..],
+                None => &s.name[..],
+            };
+            suffix.eq_ignore_ascii_case(name)
+        })
+    }
 }
 
 /// The asset manager over the game's files.
@@ -1315,6 +1850,25 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
             Ok(Some(a)) => Some(AnimHandle { name: a.name().to_vec(), num_frames: a.get_num_frames(), frame_rate: get_frame_rate(a) }),
             _ => None,
         }
+    }
+    /// The render model as drawn ([`RenderModel::create`]), posed by `Anim_Update` (or
+    /// `Base_Update`) under the scaled identity, as `Validate_Transform` poses it.
+    fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+        let mut m = RenderModel::create(self.assets, self.fs, name).ok()??;
+        let mut root = Matrix3D::IDENTITY;
+        root.scale(scale);
+        let anim = match pose {
+            Some((anim, frame)) => match self.assets.get_hanim(self.fs, anim) {
+                Ok(Some(a)) => Some((a.clone(), frame)),
+                _ => None,
+            },
+            None => None,
+        };
+        match &anim {
+            Some((a, frame)) => m.update(&root, Some((a, &*self.assets, *frame))).ok()?,
+            None => m.update::<AssetManager>(&root, None).ok()?,
+        }
+        Some(Skeleton::of(&m))
     }
 }
 
@@ -1344,12 +1898,105 @@ pub struct RenderObj {
     last_frame: f32,
     /// `Is_Hidden()`.
     pub hidden: bool,
+    /// Its hierarchy and sub-objects as made ([`W3dAssetSource::skeleton`] in the base pose);
+    /// `None` when the asset source gives none.
+    pub skeleton: Option<Arc<Skeleton>>,
+    /// Its `HTreeClass`'s bone captures and controls (`Capture_Bone`, `Control_Bone`), by bone;
+    /// a bone not listed is as made (not captured, the identity).
+    pub bone_controls: BTreeMap<i32, BoneControl>,
+    /// Each sub-object's `Is_Hidden()` (the skeleton's sub-objects), as `Set_Hidden` left it.
+    pub sub_object_hidden: Vec<bool>,
+}
+
+/// One pivot's capture state (`PivotClass::IsCaptured`, `CapTransform`, `WorldSpaceTranslation`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoneControl {
+    pub captured: bool,
+    pub transform: Matrix3D,
+    pub world_space_translation: bool,
+}
+
+impl Default for BoneControl {
+    fn default() -> Self {
+        BoneControl { captured: false, transform: Matrix3D::IDENTITY, world_space_translation: false }
+    }
 }
 
 impl RenderObj {
     /// A new render object of `name` (`Create_Render_Obj`).
     pub fn new(name: &[u8], is_hlod: bool) -> Self {
-        RenderObj { model_name: name.to_vec(), is_hlod, anim: None, last_frame: 0.0, hidden: false }
+        RenderObj { model_name: name.to_vec(), is_hlod, anim: None, last_frame: 0.0, hidden: false, skeleton: None, bone_controls: BTreeMap::new(), sub_object_hidden: Vec::new() }
+    }
+
+    /// The render object with its hierarchy and sub-objects (their hidden flags as made).
+    pub fn with_skeleton(mut self, skeleton: Option<Skeleton>) -> Self {
+        self.sub_object_hidden = skeleton.as_ref().map_or_else(Vec::new, |k| k.sub_objects.iter().map(|s| s.hidden).collect());
+        self.skeleton = skeleton.map(Arc::new);
+        self
+    }
+
+    /// `Get_HTree()` is not `NULL`: an HLOD with a hierarchy.
+    fn has_htree(&self) -> bool {
+        self.is_hlod && self.skeleton.as_ref().is_some_and(|k| k.has_htree())
+    }
+
+    /// `Capture_Bone(boneindex)` (`Animatable3DObjClass`: nothing without a hierarchy; a bone
+    /// out of range is an upstream assertion, ignored).
+    pub fn capture_bone(&mut self, boneindex: i32) {
+        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| boneindex >= 0 && (boneindex as usize) < k.bones.len()) {
+            self.bone_controls.entry(boneindex).or_default().captured = true;
+        }
+    }
+
+    /// `Control_Bone(bindex, objtm, world_space_translation = false)`.
+    pub fn control_bone(&mut self, bindex: i32, objtm: &Matrix3D) {
+        if self.has_htree() && self.skeleton.as_ref().is_some_and(|k| bindex >= 0 && (bindex as usize) < k.bones.len()) {
+            let c = self.bone_controls.entry(bindex).or_default();
+            c.transform = *objtm;
+            c.world_space_translation = false;
+        }
+    }
+
+    /// `Get_Sub_Object_On_Bone(index, boneindex)`: the `index`th sub-object on the bone.
+    pub fn get_sub_object_on_bone(&self, index: usize, boneindex: i32) -> Option<usize> {
+        let k = self.skeleton.as_ref()?;
+        k.sub_objects.iter().enumerate().filter(|(_, s)| s.bone_index == boneindex).map(|(i, _)| i).nth(index)
+    }
+
+    /// `Get_Sub_Object(i)->Set_Hidden(hide)`.
+    pub fn set_sub_object_hidden(&mut self, i: usize, hide: bool) {
+        if let Some(h) = self.sub_object_hidden.get_mut(i) {
+            *h = hide;
+        }
+    }
+
+    /// Whether sub-object `i` is hidden (`Get_Sub_Object(i)->Is_Hidden()`).
+    pub fn is_sub_object_hidden(&self, i: usize) -> bool {
+        self.sub_object_hidden.get(i).copied().unwrap_or(false)
+    }
+
+    /// The render object's bone controls and sub-object visibility put on a render model made
+    /// for the same name (the client's): every pivot of its hierarchy captured and controlled
+    /// as this object's are (the others released, their control the identity), and each
+    /// sub-object hidden as this object's is. Call before posing it ([`RenderModel::update`]).
+    /// New (upstream's render object is the drawn one).
+    pub fn pose_render_model(&self, m: &mut RenderModel) {
+        if let Some(tree) = &mut m.htree {
+            for i in 0..tree.num_pivots().max(0) {
+                let c = self.bone_controls.get(&i).copied().unwrap_or_default();
+                let as_made = tree.pivot(i as usize).is_some_and(|p| !p.is_captured && p.cap_transform == Matrix3D::IDENTITY && !p.world_space_translation);
+                if c == BoneControl::default() && as_made {
+                    continue;
+                }
+                let _ = tree.control_bone(i, &c.transform, c.world_space_translation);
+                let _ = if c.captured { tree.capture_bone(i) } else { tree.release_bone(i) };
+            }
+        }
+        if m.sub_objects.len() == self.sub_object_hidden.len() {
+            for (s, &h) in m.sub_objects.iter_mut().zip(&self.sub_object_hidden) {
+                s.hidden = h;
+            }
+        }
     }
 
     /// `Set_Animation(motion, frame, mode)` at sync time `now` (nothing on a
@@ -1441,6 +2088,36 @@ pub struct DrawFacts {
     /// The object's `getPhysics()->getVelocityMagnitude()`, distance per
     /// logic frame; `None` without an object or physics.
     pub speed: Option<f32>,
+    /// Each turret's `ai->getTurretRotAndPitch(tslot, &angle, &pitch)` (radians), read from
+    /// the World; `None` when the object has no AI or the call answers false (the angles stay 0).
+    pub turrets: [Option<(f32, f32)>; MAX_TURRETS],
+}
+
+/// `W3DModelDraw::WeaponRecoilInfo::RecoilState`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoilState {
+    Idle,
+    RecoilStart,
+    Recoil,
+    Settle,
+}
+
+/// `W3DModelDraw::WeaponRecoilInfo`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponRecoilInfo {
+    /// `m_state`: what state this gun is in.
+    pub state: RecoilState,
+    /// `m_shift`: how far the gun barrel has recoiled.
+    pub shift: f32,
+    /// `m_recoilRate`: how fast the gun barrel is recoiling.
+    pub recoil_rate: f32,
+}
+
+impl Default for WeaponRecoilInfo {
+    /// `WeaponRecoilInfo()`, which calls `clear()`.
+    fn default() -> Self {
+        WeaponRecoilInfo { state: RecoilState::Idle, shift: 0.0, recoil_rate: 0.0 }
+    }
 }
 
 /// `class W3DModelDraw` (the parts listed in the module docs).
@@ -1468,14 +2145,39 @@ pub struct W3DModelDraw {
     /// The drawable is effectively hidden (`isDrawableEffectivelyHidden`),
     /// carried to each new render object.
     pub drawable_hidden: bool,
+    /// `getDrawable()->getScale()` (`m_instanceScale`, the template's `Scale`).
+    pub scale: f32,
+    /// `TheGlobalData->m_standardPublicBones`.
+    pub standard_public_bones: Arc<Vec<Vec<u8>>>,
+    /// `m_subObjectVec`: the sub-objects shown or hidden by `showSubObject`.
+    pub sub_object_vec: Vec<HideShowSubObjInfo>,
+    /// `m_weaponRecoilInfoVec`.
+    pub weapon_recoil_info_vec: [Vec<WeaponRecoilInfo>; SLOTS],
 }
 
 impl W3DModelDraw {
     /// `W3DModelDraw(thing, moduleData)`: validate the states for the time
     /// of day and weather, then take the state for no flags; a module with
     /// none is an error ("all draw modules must have an IDLE state").
+    ///
+    /// The drawable's scale is 1 and the global data has no standard public bones; see
+    /// [`W3DModelDraw::new_scaled`].
     pub fn new<A: W3dAssetSource>(data: Arc<W3DModelDrawModuleData>, hex_color: i32, night: bool, snowy: bool, env: &mut DrawEnv<'_, A>) -> IniResult<Self> {
-        data.validate_stuff_for_time_and_weather(night, snowy, env.logic_time);
+        Self::new_scaled(data, hex_color, night, snowy, 1.0, Arc::new(Vec::new()), env)
+    }
+
+    /// [`W3DModelDraw::new`] for a drawable of `scale` (`getScale()`), with the global data's
+    /// standard public bones.
+    pub fn new_scaled<A: W3dAssetSource>(
+        data: Arc<W3DModelDrawModuleData>,
+        hex_color: i32,
+        night: bool,
+        snowy: bool,
+        scale: f32,
+        standard_public_bones: Arc<Vec<Vec<u8>>>,
+        env: &mut DrawEnv<'_, A>,
+    ) -> IniResult<Self> {
+        data.validate_stuff_for_time_and_weather(night, snowy, scale, &standard_public_bones, env);
         let info = data.find_best_info(&ModelConditionFlags::new()).ok_or_else(invalid)?;
         let mut d = W3DModelDraw {
             data,
@@ -1489,6 +2191,10 @@ impl W3DModelDraw {
             pause_animation: false,
             animation_mode: AnimMode::Loop,
             drawable_hidden: false,
+            scale,
+            standard_public_bones,
+            sub_object_vec: Vec::new(),
+            weapon_recoil_info_vec: Default::default(),
         };
         d.set_model_state(StateRef::Normal(info), env);
         Ok(d)
@@ -1587,6 +2293,10 @@ impl W3DModelDraw {
 
         let data = self.data.clone();
         let ns = data.state(&new_state);
+
+        // and always hide muzzle flashes, in case modelstate and model have crossed at the same time
+        Self::hide_all_muzzle_flashes(Some(ns), self.render_object.as_mut());
+
         let remake = match &self.cur_state {
             None => true,
             Some(cur) => {
@@ -1597,15 +2307,20 @@ impl W3DModelDraw {
         if remake {
             self.nuke_current_render();
             if !ns.model_name.is_empty() {
-                self.render_object = env.assets.create_render_obj(&ns.model_name).map(|hlod| {
-                    let mut r = RenderObj::new(&ns.model_name, hlod);
+                if let Some(hlod) = env.assets.create_render_obj(&ns.model_name) {
+                    let skeleton = env.assets.skeleton(&ns.model_name, None, self.scale);
+                    let mut r = RenderObj::new(&ns.model_name, hlod).with_skeleton(skeleton);
                     // preserve the visibility state of the previous render object
                     r.hidden = self.drawable_hidden;
-                    r
-                });
+                    self.render_object = Some(r);
+                }
             }
         }
-        ns.validate_stuff(env.logic_time);
+        let standard = self.standard_public_bones.clone();
+        ns.validate_stuff(self.render_object.as_mut(), self.scale, &data.extra_public_bones, &standard, env);
+        self.rebuild_weapon_recoil_info(Some(ns));
+        self.do_hide_show_sub_objs(&ns.hide_show_vec);
+        self.hide_all_headlights(self.hide_headlights);
 
         let prev_state = self.cur_state.take();
         self.cur_state = Some(new_state);
@@ -1815,6 +2530,278 @@ impl W3DModelDraw {
         }
 
         self.adjust_anim_speed_to_movement_speed(facts.speed);
+
+        self.handle_client_turret_positioning(&facts.turrets);
+        self.handle_client_recoil();
+    }
+
+    /// `handleClientTurretPositioning()`: each turret of the current state (valid at a logic
+    /// time) with a bone: its angle bone captured and turned about Z by the logic's angle plus
+    /// `TurretArtAngle`, its pitch bone about Y by minus the pitch plus `TurretArtPitch`.
+    /// `turrets` is what the object's AI answers (see [`DrawFacts::turrets`]): read, never
+    /// written ("This function must not EVER do ANYTHING which can in any way, shape, or form
+    /// affect GameLogic").
+    pub fn handle_client_turret_positioning(&mut self, turrets: &[Option<(f32, f32)>; MAX_TURRETS]) {
+        let Some(cur_ref) = self.cur_state.clone() else { return };
+        let data = self.data.clone();
+        let cur = data.state(&cur_ref);
+        if !cur.turrets_valid() {
+            return;
+        }
+        for (tslot, logic) in turrets.iter().enumerate() {
+            let tur = &cur.turrets[tslot];
+            let (angle_bone, pitch_bone) = cur.turret_bones(tslot);
+            if angle_bone != 0 || pitch_bone != 0 {
+                let (mut turret_angle, mut turret_pitch) = logic.unwrap_or((0.0, 0.0));
+                // do turret, if any
+                if angle_bone != 0 {
+                    turret_angle += tur.turret_art_angle;
+                    let mut turret_xfrm = Matrix3D::IDENTITY;
+                    turret_xfrm.rotate_z(turret_angle);
+                    if let Some(r) = &mut self.render_object {
+                        r.capture_bone(angle_bone);
+                        r.control_bone(angle_bone, &turret_xfrm);
+                    }
+                }
+                // do turret pitch, if any
+                if pitch_bone != 0 {
+                    turret_pitch += tur.turret_art_pitch;
+                    let mut turret_pitch_xfrm = Matrix3D::IDENTITY;
+                    turret_pitch_xfrm.rotate_y(-turret_pitch);
+                    if let Some(r) = &mut self.render_object {
+                        r.capture_bone(pitch_bone);
+                        r.control_bone(pitch_bone, &turret_pitch_xfrm);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `handleClientRecoil()`: each barrel of the current state's weapons (valid at a logic
+    /// time): its muzzle flash shown only while the recoil starts; its recoil bone moved back
+    /// along X by the shift, which grows by the rate (the rate damped by `RecoilDamping`) up to
+    /// `MaxRecoil`, or until the rate is tiny, then settles back by `RecoilSettle` a draw. A
+    /// barrel without a recoil bone goes idle. Upstream's own note: it assumes one call a frame
+    /// but is called each frame the drawable is drawn.
+    pub fn handle_client_recoil(&mut self) {
+        let Some(cur_ref) = self.cur_state.clone() else { return };
+        let data = self.data.clone();
+        let cur = data.state(&cur_ref);
+        let d = &*data;
+        if !cur.barrels_valid() {
+            return;
+        }
+        const TINY_RECOIL: f32 = 0.01;
+        for wslot in 0..SLOTS {
+            if !cur.has_recoil_bones_or_muzzle_flashes(wslot) {
+                continue;
+            }
+            let barrels = cur.weapon_barrels(wslot);
+            let count = barrels.len().min(self.weapon_recoil_info_vec[wslot].len());
+            for (i, barrel) in barrels.iter().enumerate().take(count) {
+                let recoil = &mut self.weapon_recoil_info_vec[wslot][i];
+                if barrel.muzzle_flash_bone != 0 {
+                    let hidden = recoil.state != RecoilState::RecoilStart;
+                    barrel.set_muzzle_flash_hidden(self.render_object.as_mut(), hidden);
+                }
+                if barrel.recoil_bone != 0 {
+                    match recoil.state {
+                        RecoilState::Idle => {}
+                        RecoilState::RecoilStart | RecoilState::Recoil => {
+                            recoil.shift += recoil.recoil_rate;
+                            recoil.recoil_rate *= d.recoil_damping; // recoil decelerates
+                            if recoil.shift >= d.max_recoil {
+                                recoil.shift = d.max_recoil;
+                                recoil.state = RecoilState::Settle;
+                            } else if recoil.recoil_rate.abs() < TINY_RECOIL {
+                                recoil.state = RecoilState::Settle;
+                            }
+                        }
+                        RecoilState::Settle => {
+                            recoil.shift -= d.recoil_settle;
+                            if recoil.shift <= 0.0 {
+                                recoil.shift = 0.0;
+                                recoil.state = RecoilState::Idle;
+                            }
+                        }
+                    }
+                    let mut gun_xfrm = Matrix3D::IDENTITY;
+                    gun_xfrm.translate_x(-recoil.shift);
+                    if let Some(r) = &mut self.render_object {
+                        r.capture_bone(barrel.recoil_bone);
+                        r.control_bone(barrel.recoil_bone, &gun_xfrm);
+                    }
+                } else {
+                    recoil.state = RecoilState::Idle;
+                }
+            }
+        }
+    }
+
+    /// `rebuildWeaponRecoilInfo(state)`: one cleared recoil per barrel of each slot (none
+    /// without a state).
+    pub fn rebuild_weapon_recoil_info(&mut self, state: Option<&ModelConditionInfo>) {
+        for wslot in 0..SLOTS {
+            match state {
+                None => self.weapon_recoil_info_vec[wslot].clear(),
+                Some(st) => {
+                    let ncount = st.weapon_barrels(wslot).len();
+                    let v = &mut self.weapon_recoil_info_vec[wslot];
+                    v.resize(ncount, WeaponRecoilInfo::default());
+                    for it in v.iter_mut() {
+                        *it = WeaponRecoilInfo::default();
+                    }
+                }
+            }
+        }
+    }
+
+    /// `hideAllMuzzleFlashes(state, renderObject)`: every muzzle flash of the state's barrels
+    /// (valid at a logic time) hidden.
+    pub fn hide_all_muzzle_flashes(state: Option<&ModelConditionInfo>, render_object: Option<&mut RenderObj>) {
+        let (Some(state), Some(r)) = (state, render_object) else { return };
+        if !state.barrels_valid() {
+            return;
+        }
+        for wslot in 0..SLOTS {
+            if !state.has_recoil_bones_or_muzzle_flashes(wslot) {
+                continue;
+            }
+            for it in state.weapon_barrels(wslot) {
+                if it.muzzle_flash_bone != 0 {
+                    it.set_muzzle_flash_hidden(Some(&mut *r), true);
+                }
+            }
+        }
+    }
+
+    /// `getBarrelCount(wslot)`.
+    pub fn get_barrel_count(&self, wslot: usize) -> usize {
+        match self.get_cur_state() {
+            Some(c) if c.barrels_valid() => c.weapon_barrels(wslot).len(),
+            _ => 0,
+        }
+    }
+
+    /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`, without the effect itself
+    /// (no FX lists on the client yet): whether it would be handled (an FX list, the barrel's
+    /// FX bone and a render object), and the barrel's recoil started and its muzzle flash shown.
+    pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> bool {
+        let Some(cur) = self.get_cur_state() else { return false };
+        if !cur.barrels_valid() || wslot >= SLOTS {
+            return false;
+        }
+        let wbvec = cur.weapon_barrels(wslot);
+        if wbvec.is_empty() {
+            // some other module of our drawable may have handled it.
+            return false;
+        }
+        let mut handled = false;
+        // upstream tests `> size()`, so a barrel equal to the count is read past the end (undefined); here it is the first.
+        let barrel = if specific_barrel_to_use < 0 || specific_barrel_to_use as usize >= wbvec.len() { 0 } else { specific_barrel_to_use as usize };
+        let info = wbvec[barrel];
+        if has_fxl && info.fx_bone != 0 && self.render_object.is_some() {
+            // FXList::doFXPos at the bone (or the logic position when hidden): not drawn yet
+            handled = true;
+        }
+        if info.recoil_bone != 0 || info.muzzle_flash_bone != 0 {
+            if let Some(recoil) = self.weapon_recoil_info_vec[wslot].get_mut(barrel) {
+                recoil.state = RecoilState::RecoilStart;
+                recoil.recoil_rate = self.data.initial_recoil;
+            }
+            if info.muzzle_flash_bone != 0 {
+                info.set_muzzle_flash_hidden(self.render_object.as_mut(), false);
+            }
+        }
+        handled
+    }
+
+    /// `doHideShowSubObjs(vec)`: each named sub-object hidden or shown, with every sub-object
+    /// whose bone descends from its bone; then the `showSubObject` list over them
+    /// ([`W3DModelDraw::update_sub_objects`]). A name not found is upstream's asset-error debug
+    /// crash, skipped.
+    pub fn do_hide_show_sub_objs(&mut self, vec: &[HideShowSubObjInfo]) {
+        let Some(r) = &mut self.render_object else { return };
+        for it in vec {
+            Self::hide_show_one(r, &it.sub_obj_name, it.hide);
+        }
+        // This is really important as it allows a person to override modelcondition show/hide objects.
+        if !self.sub_object_vec.is_empty() {
+            self.update_sub_objects();
+        }
+    }
+
+    /// One `Get_Sub_Object_By_Name` and its `Set_Hidden`, then `doHideShowBoneSubObjs` under its bone.
+    fn hide_show_one(r: &mut RenderObj, name: &[u8], hide: bool) {
+        let Some(k) = r.skeleton.clone() else { return };
+        let Some(obj_index) = k.get_sub_object_by_name(name) else { return };
+        r.set_sub_object_hidden(obj_index, hide);
+        if r.has_htree() {
+            // get the bone of this subobject so we can hide all other child objects that use this bone as a parent.
+            let bone_idx = k.sub_objects[obj_index].bone_index;
+            Self::do_hide_show_bone_sub_objs(hide, bone_idx, r, &k);
+        }
+    }
+
+    /// `doHideShowBoneSubObjs(state, numSubObjects, boneIdx, fullObject, htree)`: every
+    /// sub-object one of whose bone's ancestors (not its own bone) is `bone_idx`. The walk stops
+    /// at bone 0, after testing it: with `bone_idx` 0, every sub-object not on bone 0 matches.
+    fn do_hide_show_bone_sub_objs(state: bool, bone_idx: i32, r: &mut RenderObj, k: &Skeleton) {
+        for (i, s) in k.sub_objects.iter().enumerate() {
+            let mut is_child = false;
+            let mut parent_bone_index = s.bone_index;
+            let mut steps = 0;
+            while parent_bone_index != 0 && steps <= k.bones.len() {
+                parent_bone_index = k.get_parent_index(parent_bone_index);
+                steps += 1;
+                if parent_bone_index == bone_idx {
+                    is_child = true;
+                    break;
+                }
+            }
+            if is_child {
+                r.set_sub_object_hidden(i, state);
+            }
+        }
+    }
+
+    /// `showSubObject(name, show)`: kept in the list (`m_subObjectVec`), by name ignoring case;
+    /// applied by [`W3DModelDraw::update_sub_objects`].
+    pub fn show_sub_object(&mut self, name: &[u8], show: bool) {
+        if name.is_empty() {
+            return;
+        }
+        let mut found = false;
+        for it in &mut self.sub_object_vec {
+            if it.sub_obj_name.eq_ignore_ascii_case(name) {
+                it.hide = !show;
+                found = true;
+            }
+        }
+        if !found {
+            self.sub_object_vec.push(HideShowSubObjInfo { sub_obj_name: name.to_vec(), hide: !show });
+        }
+    }
+
+    /// `updateSubObjects()`: the `showSubObject` list applied to the render object, each as
+    /// `doHideShowSubObjs` applies a state's.
+    pub fn update_sub_objects(&mut self) {
+        let Some(r) = &mut self.render_object else { return };
+        for it in &self.sub_object_vec {
+            Self::hide_show_one(r, &it.sub_obj_name, it.hide);
+        }
+    }
+
+    /// `hideAllHeadlights(hide)`: every sub-object whose name holds `HEADLIGHT` (case matters,
+    /// `strstr`).
+    pub fn hide_all_headlights(&mut self, hide: bool) {
+        let Some(r) = &mut self.render_object else { return };
+        let Some(k) = r.skeleton.clone() else { return };
+        for (i, s) in k.sub_objects.iter().enumerate() {
+            if s.name.windows(9).any(|w| w == b"HEADLIGHT") {
+                r.set_sub_object_hidden(i, hide);
+            }
+        }
     }
 
     /// The render's own step (`Animatable3DObjClass::Render`): advance the
@@ -2046,7 +3033,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None] };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -2278,5 +3265,252 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         assert!(m.render_object.is_none());
         assert_eq!(m.which_anim_in_cur_state(), 0);
         assert!(is_animation_complete(m.render_object.as_ref()));
+    }
+
+    // ---- GitHub #27: the bone caches, turrets, recoil, muzzle flashes, sub-objects
+
+    mod bones {
+        use super::*;
+        use crate::common::file_system::{FileSystem, MemoryDevice};
+        use crate::formats::w3d::assetmgr::W3dFileFactory;
+        use crate::formats::w3d::synth::*;
+        use crate::ww::vector3::Vector3;
+
+        /// A turreted gun `GUNT`: pivots ROOTTRANSFORM, TURRET (0, 0, 2) under the root, BARREL (1, 0, 0) under the
+        /// turret, RECOIL01 (2, 0, 0) under the barrel, MUZZLEFX01 (1, 0, 0) under the recoil bone; a cube on each
+        /// (CHASSIS on the root, TURRET, BARREL, GUN on RECOIL01, MUZZLEFX01), and ANTENNA on the turret's bone and
+        /// HEADLIGHT on the root.
+        fn gunt() -> Vec<u8> {
+            let ident = [0.0, 0.0, 0.0, 1.0];
+            let p = |n: &[u8], parent: i32, t: [f32; 3]| PivotSpec { name: n.to_vec(), parent, translation: t, rotation: ident };
+            let mut f = htree_w3d(b"GUNT", &[
+                p(b"ROOTTRANSFORM", -1, [0.0; 3]),
+                p(b"TURRET", 0, [0.0, 0.0, 2.0]),
+                p(b"BARREL", 1, [1.0, 0.0, 0.0]),
+                p(b"RECOIL01", 2, [2.0, 0.0, 0.0]),
+                p(b"MUZZLEFX01", 3, [1.0, 0.0, 0.0]),
+            ]);
+            let subs: [(&[u8], u32); 7] =
+                [(b"CHASSIS", 0), (b"TURRET", 1), (b"BARREL", 2), (b"GUN", 3), (b"MUZZLEFX01", 4), (b"ANTENNA", 1), (b"HEADLIGHT", 0)];
+            let mut names = Vec::new();
+            for (n, _) in subs {
+                let mut m = MeshSpec::cuboid(b"GUNT", n, [-0.5; 3], [0.5; 3]);
+                m.stage0.texture = None;
+                f.extend(m.to_w3d());
+                let mut full = b"GUNT.".to_vec();
+                full.extend_from_slice(n);
+                names.push(full);
+            }
+            let hl: Vec<(&[u8], u32)> = names.iter().zip(subs).map(|(n, (_, b))| (n.as_slice(), b)).collect();
+            f.extend(hlod_w3d(b"GUNT", b"GUNT", &hl));
+            f
+        }
+
+        fn files() -> FileSystem<MemoryDevice> {
+            let mut d = MemoryDevice::new();
+            d.insert(b"Art/W3D/gunt.w3d", gunt());
+            FileSystem::new(d)
+        }
+
+        const GUN_DRAW: &[(u32, &str, &str)] = &[
+            (0, "DefaultConditionState", ""),
+            (1, "Model", "GUNT"),
+            (1, "Turret", "Turret"),
+            (1, "TurretArtAngle", "90"),
+            (1, "TurretPitch", "Barrel"),
+            (1, "WeaponRecoilBone", "PRIMARY Recoil"),
+            (1, "WeaponMuzzleFlash", "PRIMARY MuzzleFX"),
+            (1, "WeaponFireFXBone", "PRIMARY MuzzleFX"),
+            (0, "ConditionState", "DAMAGED"),
+            (1, "HideSubObject", "Turret"),
+            (0, "ConditionState", "NIGHT"),
+            (1, "Model", "GUNT"),
+        ];
+
+        /// Sub-object indices of [`gunt`].
+        const CHASSIS: usize = 0;
+        const TURRET: usize = 1;
+        const BARREL: usize = 2;
+        const GUN: usize = 3;
+        const MUZZLE: usize = 4;
+        const ANTENNA: usize = 5;
+        const HEADLIGHT: usize = 6;
+
+        struct Rig {
+            fs: FileSystem<MemoryDevice>,
+            am: AssetManager,
+            random: RandomValues,
+        }
+
+        impl Rig {
+            fn new() -> Self {
+                Rig { fs: files(), am: AssetManager::new_game(W3dFileFactory::default()), random: RandomValues::new(0) }
+            }
+            fn draw(&mut self, logic_time: bool) -> W3DModelDraw {
+                let d = Arc::new(parse(GUN_DRAW).unwrap());
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time };
+                W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
+            }
+            fn frame(&mut self, m: &mut W3DModelDraw, turrets: [Option<(f32, f32)>; 2]) {
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                m.do_draw_module(&DrawFacts { turrets, ..FACTS }, &mut env);
+            }
+            fn set_flags(&mut self, m: &mut W3DModelDraw, bits: &[i32]) {
+                let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                m.replace_model_condition_state(&flags(bits), &mut env);
+            }
+            /// The render model the client draws for `m`, with `m`'s controls and visibility, posed.
+            fn posed(&mut self, m: &W3DModelDraw) -> RenderModel {
+                let mut model = RenderModel::create(&mut self.am, &self.fs, b"gunt").unwrap().unwrap();
+                m.render_object.as_ref().unwrap().pose_render_model(&mut model);
+                model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+                model
+            }
+        }
+
+        fn hidden(m: &W3DModelDraw) -> Vec<bool> {
+            m.render_object.as_ref().unwrap().sub_object_hidden.clone()
+        }
+
+        fn near(a: Vector3, b: [f32; 3]) -> bool {
+            (a.x - b[0]).abs() < 1e-5 && (a.y - b[1]).abs() < 1e-5 && (a.z - b[2]).abs() < 1e-5
+        }
+
+        /// Predictions, written before the first run:
+        /// - the pristine bones (made in the constructor, a logic time) hold `turret` (1), `barrel` (2, at (1, 0, 2)),
+        ///   `recoil01` (3) and `muzzlefx01` (4), and not the unnumbered `recoil` or `muzzlefx` (no such bones, and
+        ///   numbered ones were found);
+        /// - turret 0's bones are (1, 2), turret 1's (0, 0); the primary slot has one barrel: recoil bone 3, muzzle
+        ///   flash and FX bone 4, projectile offset the identity; it has recoil bones or muzzle flashes;
+        /// - `Get_Sub_Object_By_Name("turret")` finds `GUNT.TURRET` by its suffix.
+        #[test]
+        fn the_pristine_bones_turrets_and_barrels_are_cached_at_a_logic_time() {
+            let mut rig = Rig::new();
+            let m = rig.draw(true);
+            let s = m.get_cur_state().unwrap();
+            assert!(s.pristine_bones_valid() && s.turrets_valid() && s.barrels_valid());
+            let c = s.bone_cache();
+            let keys: Vec<&[u8]> = c.pristine_bones.keys().map(|k| k.as_slice()).collect();
+            assert_eq!(keys, vec![&b"barrel"[..], b"muzzlefx01", b"recoil01", b"turret"]);
+            assert_eq!(c.pristine_bones[&b"recoil01"[..]].bone_index, 3);
+            assert!(near(c.pristine_bones[&b"barrel"[..]].mtx.get_translation(), [1.0, 0.0, 2.0]));
+            assert_eq!(c.turret_bones, [(1, 2), (0, 0)]);
+            assert_eq!(c.weapon_barrel_info_vec[0], vec![WeaponBarrelInfo { recoil_bone: 3, fx_bone: 4, muzzle_flash_bone: 4, projectile_offset_mtx: Matrix3D::IDENTITY }]);
+            assert_eq!(c.has_recoil_bones_or_muzzle_flashes, [true, false, false]);
+            let k = m.render_object.as_ref().unwrap().skeleton.clone().unwrap();
+            assert_eq!(k.get_sub_object_by_name(b"turret"), Some(TURRET));
+            assert_eq!(k.get_bone_index(b"recoil01"), 3);
+            assert_eq!(m.weapon_recoil_info_vec[0], vec![WeaponRecoilInfo::default()]);
+        }
+
+        /// Predictions, written before the first run:
+        /// - the logic's turret at angle 0.5 and pitch 0.25: bone 1 captured and turned about Z by 0.5 + pi/2 (the art
+        ///   angle of 90 degrees), bone 2 captured and turned about Y by -0.25; posed, the barrel's bone is at
+        ///   (0, 0, 2) + Rz(0.5 + pi/2) (1, 0, 0) = (-0.479426, 0.877583, 2);
+        /// - with no AI answer the art angle alone turns it: the barrel at (0, 1, 2);
+        /// - a module made outside a logic time has no pristine bones, its turrets are not valid, nothing is captured.
+        #[test]
+        fn the_turret_bones_follow_the_logic_s_angle_and_pitch() {
+            let mut rig = Rig::new();
+            let mut m = rig.draw(true);
+            rig.frame(&mut m, [Some((0.5, 0.25)), None]);
+            let r = m.render_object.as_ref().unwrap();
+            let mut rz = Matrix3D::IDENTITY;
+            rz.rotate_z(0.5 + std::f32::consts::FRAC_PI_2);
+            let mut ry = Matrix3D::IDENTITY;
+            ry.rotate_y(-0.25);
+            assert_eq!(r.bone_controls[&1], BoneControl { captured: true, transform: rz, world_space_translation: false });
+            assert_eq!(r.bone_controls[&2], BoneControl { captured: true, transform: ry, world_space_translation: false });
+            let model = rig.posed(&m);
+            assert!(near(model.bone_transform(2).unwrap().get_translation(), [-0.479426, 0.877583, 2.0]), "{:?}", model.bone_transform(2).unwrap().get_translation());
+
+            rig.frame(&mut m, [None, None]);
+            let model = rig.posed(&m);
+            assert!(near(model.bone_transform(2).unwrap().get_translation(), [0.0, 1.0, 2.0]), "{:?}", model.bone_transform(2).unwrap().get_translation());
+
+            let mut rig = Rig::new();
+            let mut m = rig.draw(false);
+            rig.frame(&mut m, [Some((0.5, 0.25)), None]);
+            let s = m.get_cur_state().unwrap();
+            assert!(!s.pristine_bones_valid() && !s.turrets_valid() && !s.barrels_valid());
+            assert!(m.render_object.as_ref().unwrap().bone_controls.is_empty());
+        }
+
+        /// Predictions, written before the first run (`InitialRecoil` 2, `RecoilDamping` 0.4, `MaxRecoil` 3,
+        /// `RecoilSettle` 0.065, the defaults):
+        /// - as made, the muzzle flash is shown (the muzzle flashes are hidden on the *old* render object, before the
+        ///   new one is made: upstream's order) and the headlight hidden (`m_hideHeadlights` starts true); after one
+        ///   draw the flash is hidden (idle recoil);
+        /// - a shot without an FX list is not handled (false) but starts the recoil and shows the flash;
+        /// - the shift goes 2, 2.8, then 3 (capped, settling); the state stays `RECOIL_START` until then (upstream never
+        ///   enters `RECOIL`), so the flash shows for those three draws and hides on the fourth, when the shift is
+        ///   2.935; the recoil bone is moved back along X by the shift;
+        /// - it settles to 0 and idle on draw 50.
+        #[test]
+        fn a_shot_recoils_the_barrel_and_flashes_the_muzzle() {
+            let mut rig = Rig::new();
+            let mut m = rig.draw(true);
+            assert!(!hidden(&m)[MUZZLE] && hidden(&m)[HEADLIGHT]);
+            rig.frame(&mut m, [None, None]);
+            assert!(hidden(&m)[MUZZLE]);
+            assert_eq!(m.get_barrel_count(0), 1);
+
+            assert!(!m.handle_weapon_fire_fx(0, 0, false));
+            assert_eq!(m.weapon_recoil_info_vec[0][0], WeaponRecoilInfo { state: RecoilState::RecoilStart, shift: 0.0, recoil_rate: 2.0 });
+            assert!(!hidden(&m)[MUZZLE]);
+            let mut shifts = Vec::new();
+            let mut flash = Vec::new();
+            let mut idle_at = None;
+            for f in 1..=60 {
+                rig.frame(&mut m, [None, None]);
+                let rc = m.weapon_recoil_info_vec[0][0];
+                shifts.push(rc.shift);
+                flash.push(!hidden(&m)[MUZZLE]);
+                if rc.state == RecoilState::Idle && idle_at.is_none() {
+                    idle_at = Some(f);
+                }
+            }
+            assert_eq!(&flash[..5], &[true, true, true, false, false]);
+            assert!((shifts[0] - 2.0).abs() < 1e-6 && (shifts[1] - 2.8).abs() < 1e-6 && shifts[2] == 3.0 && (shifts[3] - 2.935).abs() < 1e-6, "{shifts:?}");
+            let mut back = Matrix3D::IDENTITY;
+            back.translate_x(-shifts[59]);
+            assert_eq!(idle_at, Some(50));
+            assert_eq!(m.render_object.as_ref().unwrap().bone_controls[&3].transform, back);
+            // with an FX list, the FX bone and a render object, it is handled
+            assert!(m.handle_weapon_fire_fx(0, 0, true));
+        }
+
+        /// Predictions, written before the first run:
+        /// - `DAMAGED` (same model, same turret names: no new render object) hides `TURRET` and every sub-object whose
+        ///   bone descends from the turret's bone (BARREL, GUN, MUZZLEFX01), but not ANTENNA, which is on the turret's
+        ///   own bone, nor CHASSIS;
+        /// - back to the default state nothing is shown again (it names no sub-objects, and the render object is
+        ///   kept): TURRET stays hidden;
+        /// - `showSubObject("Turret", true)` then `updateSubObjects` shows it and its descendants again;
+        /// - `NIGHT` (its own state) shows the headlight (`hideAllHeadlights(false)`);
+        /// - posed by the client, the hidden flags are the drawn model's.
+        #[test]
+        fn sub_objects_are_hidden_and_shown_with_their_bones_children() {
+            let mut rig = Rig::new();
+            let mut m = rig.draw(true);
+            rig.frame(&mut m, [None, None]);
+            rig.set_flags(&mut m, &[MODELCONDITION_DAMAGED]);
+            let h = hidden(&m);
+            assert!(h[TURRET] && h[BARREL] && h[GUN] && h[MUZZLE] && !h[ANTENNA] && !h[CHASSIS], "{h:?}");
+            rig.set_flags(&mut m, &[]);
+            assert!(hidden(&m)[TURRET]);
+            m.show_sub_object(b"Turret", true);
+            m.update_sub_objects();
+            let h = hidden(&m);
+            assert!(!h[TURRET] && !h[BARREL] && !h[GUN] && !h[MUZZLE], "{h:?}");
+            assert!(h[HEADLIGHT]);
+            rig.set_flags(&mut m, &[MODELCONDITION_NIGHT]);
+            assert!(!hidden(&m)[HEADLIGHT]);
+            let model = rig.posed(&m);
+            assert_eq!(model.sub_objects.iter().map(|s| s.hidden).collect::<Vec<_>>(), hidden(&m));
+        }
     }
 }

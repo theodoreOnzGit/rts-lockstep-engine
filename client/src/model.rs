@@ -342,7 +342,7 @@ pub fn demo_art_files() -> Vec<(&'static [u8], Vec<u8>)> {
     // need more keys; the raw channel holds one value per frame, so 5 frames at 4 frames a second)
     let q = |deg: f32| {
         let h = deg.to_radians() / 2.0;
-        [0.0, h.sin(), 0.0, h.cos()]
+        [0.0, rts_lockstep_engine::ww::wwmath::sin(h), 0.0, rts_lockstep_engine::ww::wwmath::cos(h)]
     };
     let data: Vec<f32> = [0.0, -45.0, 0.0, 45.0, 0.0].iter().flat_map(|&d| q(d)).collect();
     f.extend(synth::raw_anim_w3d(b"ROBOT", b"WAVE", 5, 4, &[ChannelSpec { pivot: 2, kind: ANIM_CHANNEL_Q, vector_len: 4, data }]));
