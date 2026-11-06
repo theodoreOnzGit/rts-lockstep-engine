@@ -159,6 +159,48 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Not done** (`issue59_followups`): no `Anim2DCollection` (icon templates unchecked); the kept members drive nothing yet;
   object-less drawables and client update modules are kept, not drawn or run; no original save has been read (none here).
 
+**#61 (2026-11-06, GitHub #61): the campaign manager and the Generals' Challenge.**
+- **Translated:** `CampaignManager.cpp` whole (`src/client/campaign_manager.rs`: the `Campaign` INI with its `Mission` blocks,
+  `newCampaign`, `newMission`, `getMission`, `getNextMission`, `setCampaign`, `setCampaignAndMission`, `gotoNextMission`,
+  `getCurrentCampaign`, `getCurrentMission`, `getCurrentMap`, `getCurrentMissionNumber`, the victory flag, the rank points
+  and difficulty, `xfer` v5 and `loadPostProcess`) and `ChallengeGenerals.cpp` whole (`src/client/challenge_generals.rs`:
+  the `ChallengeGenerals` INI, its twelve `GeneralPersona` blocks, the lookups by campaign, general and template name, the
+  player template number and difficulty). The World holds both (`World::campaign`, `World::challenge_generals`), as the
+  logic reads them; `World::from_install` reads `Data\INI\Campaign.ini` and `ChallengeMode.ini` (upstream's
+  `GameClient::init`), each when present (**deviation:** upstream's `INI::load` throws on a missing file).
+- **Cuts made live:** `CampaignStandIn` (`cuts.campaign`, removed: `CHUNK_Campaign` and `CHUNK_GameLogic` now xfer the real
+  manager, `TheChallengeGameInfo` included, so a campaign's or a challenge's save loads instead of failing with
+  `SC_INVALID_DATA`); `cuts.new_game.campaign` (`startNewGame`'s and the script engine's current campaign, never set);
+  `cuts.challenge_generals_locked` (`populateRandomSideAndColor`'s locked generals, never filled); the script actions'
+  `TheCampaignManager` (`sa_has_campaign_manager` was false, so `VICTORY`, `DEFEAT`, `QUICKVICTORY` and the local defeat
+  never set the victory flag); `startNewGame`'s `SetVictorious(FALSE)`; the save summary's campaign and mission number
+  (`GameStateHost::current_campaign`, was `None`); `CHUNK_Campaign`'s post-process.
+- **Starting a mission** (`src/logic/world/campaign_world.rs`, the menus' logic parts, C5's menus not translated):
+  `World::start_campaign` (`setCampaign`, `prepareCampaignGame`, `setupGameStart`, `doGameStart`: `MSG_NEW_GAME` with
+  `GAME_SINGLE_PLAYER`), `World::start_challenge` (`setGeneralCampaign` and the Play button: `TheChallengeGameInfo`'s slot 0),
+  `World::finish_single_player` (`finishSinglePlayerInit`'s `gotoNextMission`) and `World::start_next_campaign_game`
+  (`startNextCampaignGame`). The logic's `startNewGame` already handled `GAME_SINGLE_PLAYER` (the map's sides, the human
+  one local, the others its computer players, its scripts; `GameSource::Challenge` for a challenge): nothing there changed.
+  **Deviation:** `clearGameData` is a cut, so the next mission starts in a World without a game given the campaign's state
+  (`World::carry_campaign_from`), as a save's load does.
+- **An upstream quirk kept:** `CampaignManager::xfer` reads the rank points and difficulty before `setCampaignAndMission`, and
+  outside a campaign that is `setCampaign("")`, which resets them to 0 and normal: a skirmish save's load now ends with them
+  so (the stand-in kept the saved values; `game_logic_save_host_world`'s round-trip test now runs in a campaign).
+- *Predictions and results* (each test's doc comment; lib 1035, was 1029: six new, `a_campaign_save_fails_cleanly`
+  replaced): `campaign_manager`'s `a_synthetic_campaign_ini_parses` and `the_campaign_moves_through_its_missions`,
+  `challenge_generals`' `a_synthetic_challenge_mode_ini_parses`, `campaign_world`'s
+  `a_campaign_mission_starts_and_victory_moves_to_the_next`, `a_campaign_save_loads_and_runs_on` (two loads agree for 150
+  frames) and `a_challenge_starts_and_its_save_loads`, and `save_game`'s `a_campaign_save_loads_and_runs_on` (the client's
+  path: a campaign's and a challenge's save, two loads agree for 150 frames, `CHUNK_Campaign` round-trips) all as predicted
+  on their first full run but one **miss**: the challenge's game has two tanks, not one (the challenge slot's own starting
+  unit, `placeNetworkBuildingsForPlayer`'s, which the prediction forgot). One **fixture** fix before it: the tests' map cache
+  lacked the challenge's map, which `populateRandomStartPosition` dereferences unchecked (`Undefined(NullObject)`); the
+  shipped cache lists every map. Client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
+- **Not done:** the client's mission list (a campaign map must be on the World's disk, and the client keeps no logic file
+  system after the start: holding every campaign map in memory, or reading them by range as the art is read, is the work);
+  a differential of the Campaign INI against the compiled CampaignManager.cpp; mission saves (`GameState::missionSave`, the
+  score screen's Save and Continue, `SAVE_FILE_TYPE_MISSION`'s load); the battle honours and final movie of a campaign's end.
+
 **#58 (2026-11-06, GitHub #58): a load starts the save's own game.**
 - **Upstream** (`GameStateMap::xfer`, GameStateMap.cpp): the load extracts the save's map, sets the game mode, reads
   `TheSkirmishGameInfo` (`SkirmishGameInfo::xfer` v4, already translated in `src/common/game_info.rs`) and calls `startNewGame(TRUE)` inside the
@@ -178,7 +220,7 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **`CHUNK_Campaign`** is registered (second, as upstream) and read by `CampaignManager::xfer` over the World's campaign
   stand-in. A campaign's or a challenge's save fails cleanly there (`SC_INVALID_DATA`, `CampaignManager::xfer: InvalidData`
   in the load's report): the port has no campaigns (`Campaign.ini`, `setCampaignAndMission`, `TheChallengeGameInfo` not
-  translated). Gap, below.
+  translated). Gap, below. **Corrected 2026-11-06 (#61):** translated; such saves load (#61's entry).
 - **Defects found and fixed:** (1) `TheSkirmishGameInfo` was held twice (the new game's skirmish entry and a save-side
   copy that nothing filled), so every skirmish save wrote an empty slot list; the save side now reads and writes the new
   game's (`take_skirmish_game_info`, `set_skirmish_game_info`); (2) the campaign stand-in's `CampaignManager::xfer` v5 left
@@ -191,9 +233,10 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   fails, **miss:** in `CHUNK_TeamFactory`, one block before the predicted `CHUNK_Players`) and `save_game`'s
   `a_four_player_client_save_starts_its_own_game` (client path: the radar's extent is the map's; ablated, the empty World's,
   and the test fails), and `save_game`'s `a_campaign_save_fails_cleanly` (a save naming campaign `usa`, mission `m1`, fails in
-  `CHUNK_Campaign`, as predicted). Lib 1027, client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
+  `CHUNK_Campaign`, as predicted; **corrected 2026-11-06 (#61):** replaced by `a_campaign_save_loads_and_runs_on`, the
+  port now having campaigns). Lib 1027, client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
 - **Not done:** the client crate's own `client_from_save` on an install's save is not reached by a client test (the
-  install fixtures are the engine's test code); campaign saves (above); #59 (`Drawable::xfer`; **done 2026-11-06**, its
+  install fixtures are the engine's test code); campaign saves (above; **done 2026-11-06**, #61's entry); #59 (`Drawable::xfer`; **done 2026-11-06**, its
   entry).
 
 **#4 (2026-11-06, GitHub #4): saved games in the client.**

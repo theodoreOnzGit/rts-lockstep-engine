@@ -90,7 +90,8 @@ impl ScriptEngineHost for World {
         self.statics.audio_lengths_ms.get(name).copied().unwrap_or(0.0)
     }
     fn se_is_challenge_campaign(&self) -> bool {
-        self.cuts.new_game.campaign == Some(true)
+        // (GitHub #61: the World's `TheCampaignManager`; was the cut `cuts.new_game.campaign`)
+        self.campaign.get_current_campaign().is_some_and(|c| c.is_challenge_campaign())
     }
     fn se_name_key(&mut self, name: &[u8]) -> NameKeyType {
         self.names.name_to_key(name)

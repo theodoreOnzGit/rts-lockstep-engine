@@ -235,6 +235,12 @@ pub struct World {
     pub ai_players: crate::logic::world::ai_player_world::AiPlayers,
     /// Batch I10: the save's side (the map file and the client's counters a save carries).
     pub save_side: crate::logic::world::game_state_world::SaveSide,
+    /// GitHub #61: `TheCampaignManager` (the campaigns of `Campaign.ini`, the current campaign and mission, the victory
+    /// flag, the difficulty), which the logic reads; was the stand-ins `cuts.campaign` and `cuts.new_game.campaign`.
+    pub campaign: crate::client::campaign_manager::CampaignManager,
+    /// GitHub #61: `TheChallengeGenerals` (the Generals' Challenge personas of `ChallengeMode.ini`, the challenge's player
+    /// template number); was the stand-in `cuts.challenge_generals_locked`.
+    pub challenge_generals: crate::client::challenge_generals::ChallengeGenerals,
     /// Batch I9c-4: the other object of the AI collision being answered, and the commands to the asking AI it waits to run.
     pub collision_other: crate::common::game_type::ObjectId,
     pub collision_self_commands: Vec<crate::logic::ai::ai_commands::AiCommandParms>,
@@ -332,6 +338,8 @@ impl World {
             ai_groups: Default::default(),
             ai_players: Default::default(),
             save_side: Default::default(),
+            campaign: Default::default(),
+            challenge_generals: Default::default(),
             collision_other: crate::common::game_type::INVALID_ID,
             collision_self_commands: Vec::new(),
             ai_own_calls: Vec::new(),

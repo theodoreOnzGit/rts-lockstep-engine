@@ -27,7 +27,10 @@
 //! World saves therefore lacks blocks upstream's has; a load skips blocks it does not know by their size, as upstream's.
 //! **Corrected 2026-11-06 (GitHub #58):** `CHUNK_Campaign` is registered, second as upstream's, and xferred by
 //! `CampaignManager::xfer` over the World's campaign stand-in (`cuts.campaign`, which `CHUNK_GameLogic` also xfers, as
-//! upstream's `GameLogic::xfer` does); a campaign's save fails there (`SC_INVALID_DATA`: the port has no campaigns). And
+//! upstream's `GameLogic::xfer` does); ~~a campaign's save fails there (`SC_INVALID_DATA`: the port has no campaigns)~~
+//! **corrected 2026-11-06 (GitHub #61):** over the World's `TheCampaignManager` (`World::campaign`, translated), so a
+//! campaign's or a challenge's save loads (its campaign and mission set before `CHUNK_GameStateMap` starts the game), and
+//! the block's `loadPostProcess` gives `TheChallengeGenerals` its player template number. And
 //! `CHUNK_GameStateMap`'s `startNewGame(TRUE)` starts the save's game when the World was reset for the load
 //! ([`SaveSide::new_game_on_load`]); otherwise the World is still taken to be made from the save's map by
 //! [`World::load_game`]'s caller.
@@ -58,7 +61,8 @@ use crate::logic::world::game_logic::World;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldBlock {
     GameState,
-    /// GitHub #58: `CHUNK_Campaign` (`CampaignManager::xfer`, the World's campaign stand-in `cuts.campaign`).
+    /// GitHub #58: `CHUNK_Campaign` (`CampaignManager::xfer`, ~~the World's campaign stand-in `cuts.campaign`~~ the World's
+    /// `TheCampaignManager` since GitHub #61).
     Campaign,
     GameStateMap,
     /// `TheSkirmishGameInfo` and its starting cash (post-processed after a load, their `loadPostProcess` empty).
@@ -224,9 +228,12 @@ impl GameStateHost<WorldBlock> for World {
                 }
             }
             WorldBlock::TerrainLogic => self.with_terrain(|t, w| t.load_post_process(w)),
-            // (`CampaignManager::loadPostProcess` gives `TheChallengeGenerals` its template number: the stand-in keeps it)
+            // (GitHub #61: `CampaignManager::loadPostProcess` gives `TheChallengeGenerals` its template number)
+            WorldBlock::Campaign => {
+                let c = self.campaign.clone();
+                c.load_post_process(self);
+            }
             WorldBlock::GameState
-            | WorldBlock::Campaign
             | WorldBlock::GameStateMap
             | WorldBlock::SkirmishGameInfo
             | WorldBlock::SkirmishCash
@@ -260,7 +267,9 @@ impl GameStateHost<WorldBlock> for World {
         None
     }
     fn current_campaign(&self) -> Option<(Vec<u8>, i32)> {
-        None
+        // (GitHub #61: `TheCampaignManager`'s; was `None`, the port having no campaigns)
+        let c = self.campaign.get_current_campaign()?;
+        Some((c.name.clone(), self.campaign.get_current_mission_number()))
     }
     fn file_exists(&self, path: &[u8]) -> bool {
         self.save_side.disk.contains_key(&path.to_ascii_lowercase())

@@ -27,6 +27,8 @@
 //! held in memory, not the install's archives.
 //!
 //! **Not done here:** the client's subsystems (art, audio, the GUI's INI), and every INI the logic does not read.
+//! (GitHub #61: `Campaign.ini` and `ChallengeMode.ini`, the client's upstream, are read, as the logic reads their
+//! managers.)
 
 use std::sync::Arc;
 
@@ -72,6 +74,10 @@ pub struct InstallReport {
     pub scripts: usize,
     /// GitHub #52: the audio events with a length (`World::statics.audio_lengths_ms`).
     pub audio_lengths: usize,
+    /// GitHub #61: the campaigns of `Data\INI\Campaign.ini` (0 without the file).
+    pub campaigns: usize,
+    /// GitHub #61: whether `Data\INI\ChallengeMode.ini` was read.
+    pub challenge_mode: bool,
 }
 
 /// `"%s\\%s"`-style join of the parts.
@@ -137,6 +143,11 @@ impl World {
         w.install_command_buttons();
         // a game: every integration switch on (the tables are the module tests' ablations)
         w.cuts.set_all_live();
+        // (GitHub #61: `GameClient::init`'s `TheChallengeGenerals->init()` and `TheCampaignManager->init()`, which the
+        // logic reads; each file when the install has it)
+        let (challenge, _) = w.load_campaigns(fs).map_err(|error| InstallError::Ini { error, missing: Vec::new() })?;
+        report.challenge_mode = challenge;
+        report.campaigns = w.campaign.campaign_list.len();
         // TheMapCache = NEW MapCache; TheMapCache->updateCache(): the shipped cache file from the archives
         let cache = join(&[b"Maps\\", crate::common::map_cache::MAP_CACHE_NAME]);
         if let Some(bytes) = fs.open_file(&cache) {
@@ -455,7 +466,7 @@ pub(crate) mod tests {
     }
 
     /// [`install_archives`], or [`install_four`]'s (`four`).
-    fn install_archives_for(map: &[u8], four: bool) -> Vec<(Vec<u8>, Vec<u8>)> {
+    pub(crate) fn install_archives_for(map: &[u8], four: bool) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut ini: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         for sys in LOGIC_SUBSYSTEMS {
             for p in [sys.path1, sys.path2].into_iter().flatten() {

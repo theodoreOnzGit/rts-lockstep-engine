@@ -27,10 +27,12 @@
 //!   `hi.y + lo.y` as upstream does. **Deviation:** the trigger area keeps no bounds of its own, so it is saved as it is
 //!   after its first query (bounds computed, `m_boundsNeedsUpdate` false); a save taken before any query of a trigger
 //!   would write the constructor's bounds and TRUE upstream. A load reads them and keeps the map's.
-//! - **`CampaignManager::xfer`** (version 5) is the client's: the world writes what it writes outside a campaign (no
-//!   campaign, no mission, the rank points and difficulty of [`CampaignStandIn`], not a challenge, ~~and~~ **corrected
-//!   2026-11-06 (GitHub #58):** and `TheChallengeGenerals`' player template number) and reads the same. It is also the
-//!   save file's own `CHUNK_Campaign` block (`crate::logic::world::game_state_world`), as upstream registers it.
+//! - **`CampaignManager::xfer`** (version 5) is the client's: ~~the world writes what it writes outside a campaign (no
+//!   campaign, no mission, the rank points and difficulty of `CampaignStandIn`, not a challenge, and `TheChallengeGenerals`'
+//!   player template number) and reads the same~~ **corrected 2026-11-06 (GitHub #61):** translated whole
+//!   (`crate::client::campaign_manager`) over the World's `TheCampaignManager` (`World::campaign`), with
+//!   `TheChallengeGameInfo` and `TheChallengeGenerals` ([`CampaignXferHost`] below). It is also the save file's own
+//!   `CHUNK_Campaign` block (`crate::logic::world::game_state_world`), as upstream registers it.
 //! - **Cut points:** the rank level limit (`m_rankLevelLimit`, kept in `cuts.player_host.rank_level_limit`), the
 //!   pathfinder's `addWallPiece` and `newMap` (batch I9).
 //!
@@ -47,22 +49,11 @@ use crate::logic::world::game_logic_xfer::{xfer_game_logic, GameLogicSaveHost, B
 use crate::logic::world::ids::ObjectId;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::object_xfer::{ObjectXferError, ObjectXferStores};
+use crate::client::campaign_manager::CampaignXferHost;
+use crate::common::game_info::GameInfo;
+use crate::logic::world::game_logic_new_game::GameSource;
 
 type SaveResult<T> = Result<T, SaveError>;
-
-/// `TheCampaignManager` outside a campaign: what its `xfer` saves (`m_currentRankPoints`, `m_difficulty`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CampaignStandIn {
-    /// `m_currentRankPoints`.
-    pub rank_points: i32,
-    /// `m_difficulty` (a `GameDifficulty`, saved as its four bytes).
-    pub difficulty: i32,
-    /// GitHub #58: `TheChallengeGenerals->getCurrentPlayerTemplateNum()`, which version 5 writes
-    /// (`m_xferChallengeGeneralsPlayerTemplateNum` on a load; `loadPostProcess` gives it back to `TheChallengeGenerals`).
-    /// Upstream leaves it uninitialised until the challenge menu sets it; here 0, `CampaignManager::init`'s value of the
-    /// copy.
-    pub challenge_player_template_num: i32,
-}
 
 /// `PolygonTrigger::updateBounds`: the points' bounds and the radius it computes from them (`halfHeight` adds the two
 /// y bounds, as upstream does).
@@ -170,41 +161,12 @@ impl GameLogicSaveHost for World {
         self.save_cut("Pathfinder::newMap", &[]);
     }
     fn x_xfer_campaign_manager(&mut self, xfer: &mut dyn Xfer) -> SaveResult<()> {
-        let current: XferVersion = 5;
-        let mut version = current;
-        xfer.xfer_version(&mut version, current)?;
-        let (mut campaign, mut mission) = (Vec::new(), Vec::new());
-        xfer.xfer_ascii_string(&mut campaign)?;
-        xfer.xfer_ascii_string(&mut mission)?;
-        let c = &mut self.cuts.campaign;
-        if version >= 2 {
-            xfer.xfer_int(&mut c.rank_points)?;
-        }
-        if version >= 3 {
-            let mut d = c.difficulty.to_le_bytes();
-            xfer.xfer_user(&mut d)?;
-            c.difficulty = i32::from_le_bytes(d);
-        }
-        if version >= 4 {
-            let mut challenge = false;
-            xfer.xfer_bool(&mut challenge)?;
-            if challenge {
-                // a challenge campaign's skirmish game info: not outside a campaign
-                return Err(SaveError::InvalidData);
-            }
-        }
-        if xfer.get_xfer_mode() == XferMode::Load && !(campaign.is_empty() && mission.is_empty()) {
-            // `setCampaignAndMission(...)`: a campaign the stand-in cannot hold
-            return Err(SaveError::InvalidData);
-        }
-        // ~~(version 5 ended at the challenge flag)~~ **Corrected 2026-11-06 (GitHub #58):** version 5 writes
-        // `TheChallengeGenerals`' player template number last; the stand-in wrote and read nothing there, so the port's
-        // saves were four bytes short of upstream's in `CHUNK_GameLogic` (and `CHUNK_Campaign`), and an original save's
-        // block was misread from there on.
-        if version >= 5 {
-            xfer.xfer_int(&mut self.cuts.campaign.challenge_player_template_num)?;
-        }
-        Ok(())
+        // (GitHub #61: `CampaignManager::xfer` itself, over the World's `TheCampaignManager`; ~~a stand-in outside a
+        // campaign~~, whose load of a campaign's or a challenge's save was `SC_INVALID_DATA`)
+        let mut campaign = std::mem::take(&mut self.campaign);
+        let r = campaign.xfer(xfer, self);
+        self.campaign = campaign;
+        Ok(r?)
     }
     fn x_xfer_cave_system(&mut self, xfer: &mut dyn Xfer) -> SaveResult<()> {
         self.cave_system.xfer(xfer)?;
@@ -255,6 +217,30 @@ impl GameLogicSaveHost for World {
     }
 }
 
+/// GitHub #61: what `CampaignManager::xfer` reaches: `TheChallengeGameInfo` is the new game's challenge entry
+/// (`cuts.new_game.games`, [`GameSource::Challenge`], which `startNewGame` reads in a challenge campaign), and
+/// `TheChallengeGenerals` is the World's.
+impl CampaignXferHost for World {
+    fn take_challenge_game_info(&mut self) -> Option<GameInfo> {
+        let games = &mut self.cuts.new_game.games;
+        let at = games.iter().position(|(s, _)| *s == GameSource::Challenge)?;
+        Some(games.remove(at).1)
+    }
+    fn set_challenge_game_info(&mut self, game: Option<GameInfo>) {
+        let games = &mut self.cuts.new_game.games;
+        games.retain(|(s, _)| *s != GameSource::Challenge);
+        if let Some(g) = game {
+            games.push((GameSource::Challenge, g));
+        }
+    }
+    fn challenge_player_template_num(&self) -> i32 {
+        self.challenge_generals.get_current_player_template_num()
+    }
+    fn set_challenge_player_template_num(&mut self, n: i32) {
+        self.challenge_generals.set_current_player_template_num(n);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! `GameLogic::xfer` itself is checked against the compiled GameLogic.cpp by `tests/differential_game_logic_save.rs`
@@ -275,7 +261,10 @@ mod tests {
     }
 
     /// A tank's and a barracks' world (ids 3 and 4) at frame 77 with rank points 5, difficulty 2 and (GitHub #58) the challenge template 3 saved, then loaded into a fresh world: the
-    /// same objects (ids, templates, positions), frame and campaign. Its save lists the objects in the reverse order, and
+    /// same objects (ids, templates, positions), frame and campaign. (**Corrected 2026-11-06 (GitHub #61):** in campaign
+    /// `usa`, mission `m02`, of a synthetic `Campaign.ini` in each world: outside a campaign, upstream's load
+    /// (`setCampaign("")`) resets the rank points to 0 and the difficulty to normal, which the stand-in did not; the
+    /// template number reaches `TheChallengeGenerals` by `loadPostProcess`, run here as the save file's post-process runs it.) Its save lists the objects in the reverse order, and
     /// loading that into a third world saves the first bytes again.
     #[test]
     fn a_saved_block_loads_into_a_fresh_world_and_saves_the_same() {
@@ -289,16 +278,25 @@ mod tests {
         let t1 = make(&mut a, b"Tank", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
         let b1 = make(&mut a, b"Barracks", team, Coord3D { x: 200.0, y: 200.0, z: 0.0 });
         a.set_frame(77);
-        a.cuts.campaign = CampaignStandIn { rank_points: 5, difficulty: 2, challenge_player_template_num: 3 };
+        let campaigns = |w: &mut World| w.campaign.init(crate::client::campaign_manager::tests::INI).expect("the campaigns");
+        campaigns(&mut a);
+        a.campaign.set_campaign_and_mission(b"usa", b"m02");
+        a.campaign.set_rank_points(5);
+        a.campaign.set_game_difficulty(2);
+        a.challenge_generals.set_current_player_template_num(3);
         let bytes = save(&mut a);
 
         let (mut b, _) = world();
+        campaigns(&mut b);
         let mut load = XferLoad::new(bytes.clone());
         load.open(b"game_logic").unwrap();
         b.xfer_game_logic_block(&mut load).expect("load");
         b.process_destroy_list();
         assert_eq!(b.frame(), 77);
-        assert_eq!(b.cuts.campaign, CampaignStandIn { rank_points: 5, difficulty: 2, challenge_player_template_num: 3 });
+        b.campaign.clone().load_post_process(&mut b);
+        assert_eq!(b.campaign.get_current_mission().map(|m| m.name.clone()), Some(b"m02".to_vec()));
+        assert_eq!((b.campaign.current_rank_points(), b.campaign.get_game_difficulty()), (5, 2));
+        assert_eq!(b.challenge_generals.get_current_player_template_num(), 3);
         let mut ids = b.objects.ids_in_order();
         ids.sort();
         assert_eq!(ids, {
@@ -313,10 +311,12 @@ mod tests {
         let again = save(&mut b);
         assert_ne!(again, bytes);
         let (mut c, _) = world();
+        campaigns(&mut c);
         let mut load = XferLoad::new(again);
         load.open(b"game_logic").unwrap();
         c.xfer_game_logic_block(&mut load).expect("load");
         c.process_destroy_list();
+        c.campaign.clone().load_post_process(&mut c);
         assert_eq!(save(&mut c), bytes);
     }
 

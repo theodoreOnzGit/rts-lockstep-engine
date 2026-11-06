@@ -32,7 +32,7 @@
 //!   each with its properties), the thing templates, the objects made from them, the landmark bridges (batch I2), and
 //!   the map properties (batch O1).
 //! - **Cut points** ([`CutCall::Host`], answers in [`NewGameCuts`]): the map and its INI and string files, the save
-//!   directory, the campaign manager, the game's options by source, the multiplayer settings (colours, shroud), the
+//!   directory, ~~the campaign manager~~ (the World's `TheCampaignManager` since GitHub #61), the game's options by source, the multiplayer settings (colours, shroud), the
 //!   map's multiplayer scripts, ~~the script engine~~ (its `newMap` is the world's since batch I8a), the radar, the ghost objects, the pathfinder, the network, the game
 //!   engine, the client (load screen, background, shell, control bar, view, drawables, props, trees, transitions,
 //!   window manager, display) and the stats collector.
@@ -74,8 +74,6 @@ pub struct NewGameCuts {
     pub pristine_map_name: Vec<u8>,
     /// The paths `TheGameState->isInSaveDirectory` says are in the save directory.
     pub save_directory: Vec<Vec<u8>>,
-    /// `TheCampaignManager->getCurrentCampaign()`: `Some(isChallengeCampaign)` when there is one.
-    pub campaign: Option<bool>,
     /// `TheLAN != NULL`.
     pub has_lan: bool,
     /// The game options of each source (`TheLAN->GetMyGame()`, `TheSkirmishGameInfo`, ...).
@@ -177,10 +175,12 @@ impl NewGameHost for World {
         self.set_frame(frame);
     }
     fn sn_current_campaign(&self) -> Option<bool> {
-        self.cuts.new_game.campaign
+        // (GitHub #61: the World's `TheCampaignManager`; was the cut `cuts.new_game.campaign`, never set)
+        self.campaign.get_current_campaign().map(|c| c.is_challenge_campaign())
     }
     fn sn_campaign_not_victorious(&mut self) -> bool {
-        self.ng_cut("CampaignManager::SetVictorious", &[0]);
+        // (GitHub #61: live; `TheCampaignManager` always exists, `GameClient::init` makes it)
+        self.campaign.set_victorious(false);
         true
     }
     fn sn_has_lan(&self) -> bool {

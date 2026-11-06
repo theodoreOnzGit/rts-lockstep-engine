@@ -43,8 +43,10 @@
 //!
 //! ~~`CHUNK_Campaign` is the logic's and is not registered (see `game_state_world`): a load skips it by its size, as any
 //! unknown block.~~ **Corrected 2026-11-06 (GitHub #58):** `CHUNK_Campaign` is registered, second as upstream's, and is the
-//! World's (`CampaignManager::xfer` over the World's campaign stand-in): a save outside a campaign loads; a campaign's save
-//! (a campaign or mission named, or a challenge) fails there, with `SC_INVALID_DATA`, as the port has no campaigns.
+//! World's (`CampaignManager::xfer` over the World's campaign stand-in): a save outside a campaign loads; ~~a campaign's save
+//! (a campaign or mission named, or a challenge) fails there, with `SC_INVALID_DATA`, as the port has no campaigns~~
+//! **corrected 2026-11-06 (GitHub #61):** a campaign's or a challenge's save loads too (the World's `TheCampaignManager`,
+//! translated).
 //!
 //! # Starting the save's game (GitHub #58)
 //!
@@ -104,8 +106,9 @@ pub enum SaveBlock {
 }
 
 /// `GameState::init`'s `SNAPSHOT_SAVELOAD` registration, in upstream's order: the World's blocks (as
-/// `game_state_world::world_game_state` registers them) and the client's. `CHUNK_Campaign` is not registered (the
-/// World's note).
+/// `game_state_world::world_game_state` registers them) and the client's. ~~`CHUNK_Campaign` is not registered (the
+/// World's note).~~ **Corrected 2026-11-06 (GitHub #61; registered since #58, as the list below shows):** `CHUNK_Campaign`
+/// is registered, second, the World's.
 pub fn client_game_state() -> GameState<SaveBlock> {
     use SaveBlock as S;
     use WorldBlock as W;
@@ -1400,39 +1403,81 @@ mod tests {
     }
 
 
-    /// GitHub #58: a campaign's save fails cleanly. The gate game's client save has its `CHUNK_Campaign` rewritten to name
-    /// a campaign (`usa`, mission `m1`; the block's size fixed). **Predicted before the run:** the load fails in
-    /// `CHUNK_Campaign` with `XFER_UNKNOWN_ERROR` and the recorded `CampaignManager::xfer: InvalidData` (the port has no
-    /// campaigns for `setCampaignAndMission`), and no later block is read. **Result (2026-11-06):** as predicted, first run
-    /// (`ErrorUnknown in CHUNK_Campaign at byte 17 of the block`; `CampaignManager::xfer: InvalidData`).
+    /// ~~GitHub #58: a campaign's save fails cleanly.~~ **Corrected 2026-11-06 (GitHub #61):** a campaign's and a challenge's
+    /// save loads and runs on (#58's test, a save naming campaign `usa` and mission `m1` failing in `CHUNK_Campaign` with
+    /// `CampaignManager::xfer: InvalidData`, is replaced: the port now has `TheCampaignManager`). The gate game's worlds are
+    /// given the synthetic `Campaign.ini` (`campaign_manager`'s tests); the game is in campaign `usa`, mission `m02`, rank
+    /// points 5, difficulty hard, `TheChallengeGenerals`' template 3; saved at frame 60 through the client's path and loaded
+    /// into two clients made from the map.
+    ///
+    /// **Predicted before the run:** (1) the summary names campaign side `usa`, mission number 1 (0 based, `m02` the
+    /// second); (2) both loads are in `usa`/`m02` with rank points 5 and difficulty 2, and `TheChallengeGenerals` has
+    /// template 3 (`loadPostProcess`); (3) the two loads agree on the logic CRC for 150 frames; (4) a load saved again
+    /// writes the same `CHUNK_Campaign`; (5) a challenge (`challenge_0`) save carries `TheChallengeGameInfo` (the slot list
+    /// the challenge set: slot 0 a human of template 0) and the load has the same slots; (6) the control: a world without
+    /// the campaigns loads the `usa` save outside any campaign (upstream's `setCampaignAndMission` of an unknown campaign
+    /// changes nothing), with the rank points and difficulty the save holds. **Result (2026-11-06):** all six as predicted,
+    /// first run.
     #[test]
-    fn a_campaign_save_fails_cleanly() {
-        let mut a = Client::new(gate_world());
-        for _ in 0..5 {
+    fn a_campaign_save_loads_and_runs_on() {
+        use crate::common::game_info::{slot_state, GameSlot};
+        use crate::logic::world::game_logic_new_game::GameSource;
+        let campaigns = |mut w: World| {
+            w.campaign.init(crate::client::campaign_manager::tests::INI).expect("the campaigns");
+            w
+        };
+        let mut a = Client::new(campaigns(gate_world()));
+        a.world.campaign.set_campaign_and_mission(b"usa", b"m02");
+        a.world.campaign.set_rank_points(5);
+        a.world.campaign.set_game_difficulty(2);
+        a.world.challenge_generals.set_current_player_template_num(3);
+        for _ in 0..60 {
             a.step();
         }
         let bytes = a.save("campaign");
+        // (1)
         let s = read_save_summary(bytes.clone()).expect("summary");
-        let b = s.blocks.iter().find(|b| b.name == b"CHUNK_Campaign").expect("the campaign's block");
-        let (start, end) = (b.offset, b.offset + b.size as usize);
-        let old = &bytes[start..end];
-        // version, then the two empty names (each a length byte of 0), then the rest as it was
-        assert_eq!(&old[1..3], &[0, 0]);
-        let mut data = vec![old[0], 3];
-        data.extend_from_slice(b"usa");
-        data.push(2);
-        data.extend_from_slice(b"m1");
-        data.extend_from_slice(&old[3..]);
-        let mut edited = bytes[..start - 4].to_vec();
-        edited.extend_from_slice(&(data.len() as i32).to_le_bytes());
-        edited.extend_from_slice(&data);
-        edited.extend_from_slice(&bytes[end..]);
-        let e = Client::load(edited).err().expect("the load fails");
-        eprintln!("{e}");
-        assert_eq!(e.block, "CHUNK_Campaign");
-        assert_eq!(e.error, XferStatus::ErrorUnknown);
-        assert!(e.errors.iter().any(|x| x.contains("CampaignManager::xfer") && x.contains("InvalidData")), "{:?}", e.errors);
-        assert_eq!(e.blocks.last().map(|b| b.name.clone()), Some(b"CHUNK_Campaign".to_vec()));
+        assert_eq!((s.info.campaign_side.as_slice(), s.info.mission_number), (&b"usa"[..], 1));
+        // (2)
+        let (mut b, _) = Client::load_into(campaigns(gate_map_world()), bytes.clone()).unwrap_or_else(|e| panic!("the load: {e}"));
+        let (mut c, _) = Client::load_into(campaigns(gate_map_world()), bytes.clone()).unwrap_or_else(|e| panic!("the load: {e}"));
+        for w in [&b.world, &c.world] {
+            assert_eq!(w.campaign.get_current_mission().map(|m| m.name.clone()), Some(b"m02".to_vec()));
+            assert_eq!((w.campaign.current_rank_points(), w.campaign.get_game_difficulty()), (5, 2));
+            assert_eq!(w.challenge_generals.get_current_player_template_num(), 3);
+        }
+        // (4)
+        let again = b.save("again");
+        assert!(blocks(&again)["CHUNK_Campaign"] == blocks(&bytes)["CHUNK_Campaign"], "CHUNK_Campaign round-trips");
+        // (3)
+        for f in 0..150 {
+            assert_eq!(b.step(), c.step(), "two loads of one campaign save part at frame {f}");
+        }
+        for w in [&a.world, &b.world, &c.world] {
+            assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
+        }
+        // (5)
+        let mut g = Client::new(campaigns(gate_world()));
+        g.world.campaign.set_campaign(b"challenge_0");
+        let mut game = crate::common::game_info::GameInfo::new(&mut g.world);
+        let mut slot = GameSlot::new();
+        slot.set_state(slot_state::PLAYER, &[u16::from(b'X')], 0, &mut g.world);
+        slot.set_player_template(0);
+        game.set_slot(0, slot);
+        g.world.cuts.new_game.games.push((GameSource::Challenge, game));
+        let challenge_bytes = g.save("challenge");
+        let slots = |w: &World| {
+            let (_, game) = w.cuts.new_game.games.iter().find(|(s, _)| *s == GameSource::Challenge).expect("TheChallengeGameInfo");
+            game.slots.iter().map(|s| (s.state, s.player_template)).collect::<Vec<_>>()
+        };
+        let (h, _) = Client::load_into(campaigns(gate_map_world()), challenge_bytes).unwrap_or_else(|e| panic!("the challenge's load: {e}"));
+        eprintln!("challenge slots {:?}", slots(&h.world));
+        assert_eq!(slots(&h.world), slots(&g.world));
+        assert_eq!(h.world.campaign.get_current_campaign().map(|c| c.name.clone()), Some(b"challenge_0".to_vec()));
+        // (6)
+        let (d, _) = Client::load_into(gate_map_world(), bytes).unwrap_or_else(|e| panic!("the control's load: {e}"));
+        assert!(d.world.campaign.get_current_campaign().is_none());
+        assert_eq!((d.world.campaign.current_rank_points(), d.world.campaign.get_game_difficulty()), (5, 2));
     }
 
     /// GitHub #59's art: every render object an HLOD with a hierarchy of one bone and four sub-objects (`CHASSIS`,

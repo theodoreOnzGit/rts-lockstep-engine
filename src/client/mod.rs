@@ -15,7 +15,8 @@
 //! control bar command carried out by the next click) and `control_bar_callback` (the radar's clicks). Since #35 (the rest
 //! of it), `radar` (`TheRadar`: its objects, events and coordinates, fed by the logic's client events), `w3d_radar` (what
 //! the radar draws) and `water` (the water INI's radar colour). Since #4, `save_game` (the whole save file: the client's blocks
-//! with the logic's).
+//! with the logic's). Since #61, `campaign_manager` (`TheCampaignManager`) and `challenge_generals` (`TheChallengeGenerals`),
+//! which the World holds, as the logic reads them.
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -54,3 +55,5 @@ pub mod radar_world;
 pub mod w3d_radar;
 pub mod water;
 pub mod save_game;
+pub mod campaign_manager;
+pub mod challenge_generals;

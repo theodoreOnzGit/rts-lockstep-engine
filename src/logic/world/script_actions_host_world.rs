@@ -206,10 +206,12 @@ impl ScriptActionsHost for World {
         self.sa_cut("look_at_reset_modes");
     }
     fn sa_has_campaign_manager(&self) -> bool {
-        Default::default()
+        // (GitHub #61: `TheCampaignManager` always exists (`GameClient::init`); ~~false, a cut~~)
+        true
     }
-    fn sa_campaign_set_victorious(&mut self, _victorious: bool) {
-        self.sa_cut("campaign_set_victorious");
+    fn sa_campaign_set_victorious(&mut self, victorious: bool) {
+        // (GitHub #61: live; was a cut)
+        self.campaign.set_victorious(victorious);
     }
     fn sa_am_i_observer(&self) -> bool {
         self.victory.am_i_observer()

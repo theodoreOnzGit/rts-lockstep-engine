@@ -23,7 +23,8 @@
 //!   activating a player's default team, the objects' AI and kinds, the players' `onStructureCreated`,
 //!   `onStructureConstructionComplete` and `onUnitCreated`, the geometry, and the partition manager (`update`,
 //!   `findPositionAround` with `live_partition`).
-//! - **Cut points:** the challenge generals (`cuts.challenge_generals_locked`, by template name), the multiplayer
+//! - **Cut points:** ~~the challenge generals (`cuts.challenge_generals_locked`, by template name)~~ (**corrected 2026-11-06
+//!   (GitHub #61):** the World's `TheChallengeGenerals`, translated), the multiplayer
 //!   settings' colour count (~~`cuts.new_game.colors`~~ the statics' settings since batch I56), the map cache (~~`cuts.map_cache`~~ the statics' `MapCache` since batch I56, by lower-cased name) and
 //!   the pathfinder (`addObjectToPathfindMap`, `adjustDestination`, `updateGoal`: the contain cut points, batch I9).
 //!
@@ -57,8 +58,10 @@ impl StartHost for World {
     }
     fn st_general_starts_locked(&self, i: i32) -> bool {
         let Some(t) = self.statics.player_template_store.nth_player_template(i) else { return false };
+        // (GitHub #61: `TheChallengeGenerals`' persona of the template's name, from `ChallengeMode.ini`; was the cut table
+        // `cuts.challenge_generals_locked`, never filled)
         let name = self.names.key_to_name(t.name_key());
-        self.cuts.challenge_generals_locked.contains(name)
+        self.challenge_generals.get_general_by_template_name(name).is_some_and(|g| !g.is_starting_enabled())
     }
     fn st_num_colors(&self) -> i32 {
         self.statics.multiplayer_settings.get_num_colors()
