@@ -82,7 +82,8 @@ pub struct NewGameCuts {
     pub selected: Option<GameSource>,
     /// See `selected`.
     pub taken: Option<GameInfo>,
-    /// `TheMapCache != NULL`.
+    /// ~~`TheMapCache != NULL`.~~ **Corrected 2026-11-06 (#62):** no longer read: `TheMapCache` exists in every game
+    /// (`sn_has_map_cache` answers true).
     pub has_map_cache: bool,
     /// The files `TheFileSystem->doesFileExist` finds.
     pub files: Vec<Vec<u8>>,
@@ -225,7 +226,11 @@ impl NewGameHost for World {
         self.cuts.new_game.games.retain(|(s, _)| *s != GameSource::Skirmish);
     }
     fn sn_has_map_cache(&self) -> bool {
-        self.cuts.new_game.has_map_cache
+        // ~~`self.cuts.new_game.has_map_cache`~~ **Corrected 2026-11-06 (#62):** `TheMapCache` exists in every game (the
+        // client makes it at start), as the save side's `has_map_cache` already answers (batch I55). The stand-in flag was
+        // false in every World but the tests' that set it, so `loadMapINI` returned at once and no game ever read its
+        // map's `map.ini`, `solo.ini` or `map.str`: a campaign mission's overrides were lost.
+        true
     }
     fn sn_file_exists(&mut self, path: &[u8]) -> bool {
         // (integration batch I33: the world's disk too, which holds the map's files)

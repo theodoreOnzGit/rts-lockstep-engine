@@ -9,6 +9,8 @@
 //!
 //! - [`audio`]: the audio device (#13): the translated audio manager's voices played from the game's files; plain Rust,
 //!   with the browser's Web Audio output on the web.
+//! - [`campaigns`]: campaign missions and the Generals' Challenge started from a list, their maps read as the art is,
+//!   and the score screen's Continue (#62); plain Rust.
 //! - [`drawables`]: each object's drawable and its posed W3D model, chosen by its model condition flags (#25); plain Rust.
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
@@ -23,6 +25,7 @@
 //! - `app` (feature `app`, on by default): the Bevy application.
 
 pub mod audio;
+pub mod campaigns;
 pub mod demo;
 pub mod drawables;
 pub mod import;

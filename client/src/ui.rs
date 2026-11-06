@@ -469,9 +469,10 @@ impl LayoutPlacement {
     }
 }
 
-/// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** 5 buttons of 48 and 4
-/// gaps of 6, the saves button added, `app::setup_ui`) and its bottom margin.
-const ZOOM_COLUMN_HEIGHT: f32 = 5.0 * 48.0 + 4.0 * 6.0 + 8.0;
+/// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** ~~5 buttons of 48 and 4
+/// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** 6 buttons of 48 and 5 gaps of 6, the campaigns
+/// button added, `app::setup_ui`) and its bottom margin.
+const ZOOM_COLUMN_HEIGHT: f32 = 6.0 * 48.0 + 5.0 * 6.0 + 8.0;
 
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
@@ -808,8 +809,9 @@ mod tests {
         let scale = 390.0 / 800.0;
         let p = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * scale, y0: 440.0, scale };
         assert_eq!(radar_screen_rect(Some(r), Some(p), (390.0, 844.0)), [9.75, 795.25, 107.25, 839.125]);
-        // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button)
-        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 476.0, 382.0, 564.0]);
+        // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button; ~~[265, 476,
+        // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button)
+        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 422.0, 382.0, 510.0]);
         assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
         let big = radar_screen_rect(None, None, (1280.0, 720.0));
         assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));

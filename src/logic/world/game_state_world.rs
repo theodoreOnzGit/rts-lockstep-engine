@@ -51,7 +51,7 @@
 //!
 //! `p1w13-sonnet`, integration batch I10, 2026-11-01.
 
-use crate::common::game_state::{GameState, GameStateHost, SnapshotType};
+use crate::common::game_state::{GameState, GameStateHost, SnapshotType, SAVE_FILE_TYPE_MISSION};
 use crate::common::xfer::{Xfer, XferMode, XferResult, XferStatus, XferVersion};
 use crate::common::xfer_load::XferLoad;
 use crate::common::xfer_save::XferSave;
@@ -129,8 +129,26 @@ impl World {
         Ok(x.take_bytes())
     }
 
+    /// GitHub #62: `GameState::missionSave()`'s `saveGame(AsciiString(""), desc, SAVE_FILE_TYPE_MISSION)`: the save file
+    /// type a mission's, its mission map `TheCampaignManager->getCurrentMap()` (after the score screen's
+    /// `gotoNextMission`: the next mission's), and only `CHUNK_GameState` and `CHUNK_Campaign` written (`xferSaveData`).
+    /// The description is the caller's ([`World::mission_save_description`]).
+    pub fn mission_save(&mut self, description: &[u16]) -> XferResult<Vec<u8>> {
+        let mut gs = world_game_state();
+        gs.info.description = description.to_vec();
+        gs.info.save_file_type = SAVE_FILE_TYPE_MISSION;
+        gs.info.mission_map_name = self.campaign.get_current_map();
+        let mut x = XferSave::new();
+        x.open(b"save game")?;
+        gs.xfer_save_data(&mut x, SnapshotType::SaveLoad, self)?;
+        x.close()?;
+        Ok(x.take_bytes())
+    }
+
     /// `GameState::loadGame`'s data: a save file's blocks loaded into this World (made from the same map, see the module
-    /// docs), then post-processed in load order.
+    /// docs), then post-processed in load order. (#62) A mission save's (`SAVE_FILE_TYPE_MISSION`: its campaign alone)
+    /// then starts its mission, as `loadGame`'s end does ([`World::start_loaded_mission`]); its map must be on the
+    /// World's disk before the next frame.
     pub fn load_game(&mut self, bytes: Vec<u8>) -> XferResult<()> {
         let mut gs = world_game_state();
         let mut x = XferLoad::new(bytes);
@@ -138,6 +156,9 @@ impl World {
         gs.xfer_save_data(&mut x, SnapshotType::SaveLoad, self)?;
         x.close()?;
         gs.game_state_post_process_load(self);
+        if gs.info.save_file_type == SAVE_FILE_TYPE_MISSION {
+            self.start_loaded_mission(&gs.info.mission_map_name);
+        }
         Ok(())
     }
 }

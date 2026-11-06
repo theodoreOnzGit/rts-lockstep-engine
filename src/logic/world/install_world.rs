@@ -243,6 +243,27 @@ impl World {
         }
         n
     }
+
+    /// GitHub #62 (new; upstream's file system holds every byte): [`World::mount_map`] from a file system whose bytes may
+    /// not have arrived yet (the browser's ranged device, `RangedDevice`, whose archive members the page reads by range).
+    /// The folder's files are read; if any read had to wait (`LocalDevice::unserved_reads` moved: the device has asked for
+    /// the bytes), nothing is mounted and `None` is returned, to be called again once they have arrived. Otherwise every
+    /// file is mounted whole, as `mount_map` mounts it: a map is never started from part of its folder, so every machine
+    /// that mounts it gets the same bytes. The number of files mounted.
+    pub fn mount_map_when_ready<D: LocalDevice>(&mut self, fs: &FileSystem<D>, map_path: &[u8]) -> Option<usize> {
+        let Some(slash) = map_path.iter().rposition(|&c| c == b'\\') else { return Some(0) };
+        let dir = &map_path[..=slash];
+        let mut list = FilenameList::new();
+        fs.get_file_list_in_directory(dir, b"*", &mut list, false);
+        let before = fs.local.device.unserved_reads();
+        let files: Vec<(Vec<u8>, Vec<u8>)> = list.iter().filter_map(|name| fs.open_file(name).map(|b| (name.to_ascii_lowercase(), b))).collect();
+        if fs.local.device.unserved_reads() != before {
+            return None;
+        }
+        let n = files.len();
+        self.save_side.disk.extend(files);
+        Some(n)
+    }
 }
 
 /// A slot of [`World::start_skirmish_slots`]: its state (`SLOT_PLAYER`, `SLOT_EASY_AI`, ...), player template index, colour

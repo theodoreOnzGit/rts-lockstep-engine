@@ -159,6 +159,74 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Not done** (`issue59_followups`): no `Anim2DCollection` (icon templates unchecked); the kept members drive nothing yet;
   object-less drawables and client update modules are kept, not drawn or run; no original save has been read (none here).
 
+**#62 (2026-11-06, GitHub #62): campaign missions and the Generals' Challenge started from the client; mission saves.**
+- **Upstream read first:** `GameLogic::startNewGame`'s `loadMapINI` (the map's folder: `map.ini`, `solo.ini`, `map.str`,
+  `AssetUsage.txt`, through `TheFileSystem`), `FileTransfer.cpp`'s map files (`GetINIFromMap`, `GetStrFileFromMap`,
+  `GetSoloINIFromMap`: what a peer needs of a map), `CampaignManager::getCurrentMap` (the campaign's `Map` field, the
+  path `startNewGame`'s pending file takes), `ScoreScreen.cpp` (`finishSinglePlayerInit`, the Continue button,
+  `startNextCampaignGame`) and `GameState.cpp` (`missionSave`, `saveGame`'s mission map, `xferSaveData`'s two blocks,
+  `loadGame`'s mission branch).
+- **Design: option (b), the map read by range, as the art is.** The page hands the logic's archives (`MapsZH.big` among
+  them) over whole; after the start the logic's memory device is dropped, but the art's device holds every archive by its
+  directory and the page's key (`import::Starting`), so any member can be read back by range. A chosen mission waits
+  (`PendingMission`, `src/logic/world/campaign_world.rs`) until **every** file of its map's folder has arrived
+  (`World::mount_map_when_ready`, new: the folder read; if any read waited, the device has asked for its bytes and
+  nothing is mounted), then mounts them all whole and starts. A mission never starts from part of its folder, so every
+  peer reads the same bytes; holding every campaign map in memory (option a) was not needed. Natively (`--zh`) the art's
+  device is the folder on disk and the mount is immediate. The mission starts in a copy of the install's World
+  (`Started::base`), as a save's load does (the port has no `clearGameData`).
+- **The flow** (`client/src/campaigns.rs`, plain Rust; `app.rs` glue): a `C` button under the zoom column's `S` opens a panel
+  (the game paused under it): Close, the difficulty (Easy/Normal/Hard, normal by default), the status and the briefing,
+  then each campaign of `Campaign.ini` that is not a challenge's (the file's order: USA, China, GLA and the training
+  campaign in a real install) with every mission, and the Generals' Challenge's generals of `ChallengeMode.ini`, each a
+  button (`list_button`, wrapping at phone width). Upstream's menus start a campaign's first mission only; the list
+  offers every one (`start_campaign` for a first, `start_campaign_mission` otherwise). The challenge's locked generals
+  (`StartsEnabled`, battle honours) are offered, marked: the port keeps no honours. **The game's end:** the script
+  engine's end-game timer running out (upstream appends `MSG_CLEAR_GAME_DATA` there, a cut in the port) is
+  `World::single_player_game_over`; the client then runs `finishSinglePlayerInit` on a copy of the World's campaign (the
+  client never changes the simulation), opens the panel with Save and Continue after a victory (Retry after a defeat:
+  the same mission, as upstream's Continue then), nothing at a campaign's end, and Continue starts
+  `startNextCampaignGame`'s mission, read by range as the first. **Briefings:** the movies are Bink (never released); the
+  mission's location and objective lines are shown from the game text.
+- **Part 2, mission saves (translated):** `GameState::missionSave` (`World::mission_save_description`: `GUI:MissionSave`
+  with the campaign's name and the next mission's number; `World::mission_save`: file type `SAVE_FILE_TYPE_MISSION`, the
+  mission map, only `CHUNK_GameState` and `CHUNK_Campaign`) runs at a victory's score screen, as upstream's
+  `finishSinglePlayerInit` does, and the save goes into the save folder. `loadGame`'s mission branch
+  (`World::start_loaded_mission`: `InitRandom(0)`, the pending file the mission map, `MSG_NEW_GAME`) runs at the end of
+  `World::load_game`; the saves panel's Load of a mission save goes to the campaign flow
+  (`PendingMission::from_mission_save`), so its map is read by range too.
+- **Defect found and fixed:** `NewGameHost::sn_has_map_cache` answered the stand-in `cuts.new_game.has_map_cache`, false in
+  every World but two tests', so `loadMapINI` returned at once and **no install game ever read its map's `map.ini`,
+  `solo.ini` or `map.str`** (a campaign mission's overrides lost). Now true, as the save side's `has_map_cache` has been
+  since batch I55. No existing test moved (all lib tests pass with the fix; the duel's `map.ini` is empty).
+- *Predictions and results* (the tests' doc comments): `campaign_world`'s `a_mission_read_by_range_starts_and_victory_moves_to_the_next`
+  (one round of three ranges, 3 files mounted, the members' bytes, under 64 KiB arrived of the 314 KB archive; the game
+  over exactly 120 frames after the start frames; `USA02` one round of one range; Retry after a defeat; errors) — **miss
+  on the first run:** the mission's `map.ini` was never read, the defect above; as predicted after the fix.
+  `a_mission_read_by_range_runs_as_one_read_whole` (ranges served in order, in reverse, and the archives whole: the same
+  CRC on each of 300 frames, `99dd30e6` at 300; the challenge twice for 200): as predicted, first run.
+  `a_mission_save_loads_the_next_mission` (two blocks, type 1, map `USA02`, description `MISSING: 'GUI:MissionSave'`, the
+  load at `m02`/hard, one round, the tank at 180, two loads agree for 150 frames, a normal save refused): first run.
+  `campaigns`' `the_list_names_the_campaigns_missions_and_generals`: first run. `campaigns`'
+  `a_mission_from_the_list_runs_on_the_browsers_import_when_asked` (`RTS_CAMPAIGN_INSTALL`, the archives written by
+  `write_the_campaign_install_when_asked`; the client's own import path, `import::start_from_files`): `[3]` ranges, the
+  score screen at frame 120, the mission save loading `usa mission 2` after `[1]`, the Continue then reading nothing, two
+  runs' CRCs equal for 150 frames — as predicted, first run once the prediction was corrected before it ran (it first
+  expected Continue to read `USA02`'s range, which the mission save's load had already read).
+- **Checked in headless Chromium** (`$S/webcheck/check62.js`, the campaign install written by
+  `write_the_campaign_install_when_asked`, 1000 x 700 and 390 x 844 touch): the import plays the duel; `C` opens the list
+  (`Campaign usa`: m01, m02; the Generals' Challenge: General 0); m01 starts (`playing usa mission 1`), its map read from
+  `MapsZH.big` in 3 ranges, 1,577 bytes; the score screen opens at logic frame 121 to 123 (`over victorious | mission saved
+  00000000.sav`); Save and Continue starts `usa mission 2`, which runs on; no horizontal overflow, panel open or not.
+- **Gates:** lib 1039 (1035 + 4), client 43 (41 + 2; with `RTS_CAMPAIGN_INSTALL` set, so the gated test ran), clippy
+  clean, web build clean (no warnings), gate (a) PASS (last `0bf44067`, unchanged).
+- **Not done:** the game's own menus (C5: main menu, difficulty, challenge menu, score screen with its stats); the
+  challenge's win/loss display and sounds, battle honours, the final victory movie; a mission save's map label (the
+  played game's map is not the saving World's); the challenge's `TheChallengeGameInfo` after a mission save's load
+  (upstream's mission save holds no `CHUNK_GameLogic` either); a save of a mission started from the list loads into the
+  install's World with the map the save embeds but without the folder's `map.ini` (the load does not read the folder by
+  range yet).
+
 **#61 (2026-11-06, GitHub #61): the campaign manager and the Generals' Challenge.**
 - **Translated:** `CampaignManager.cpp` whole (`src/client/campaign_manager.rs`: the `Campaign` INI with its `Mission` blocks,
   `newCampaign`, `newMission`, `getMission`, `getNextMission`, `setCampaign`, `setCampaignAndMission`, `gotoNextMission`,
@@ -196,10 +264,12 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   unit, `placeNetworkBuildingsForPlayer`'s, which the prediction forgot). One **fixture** fix before it: the tests' map cache
   lacked the challenge's map, which `populateRandomStartPosition` dereferences unchecked (`Undefined(NullObject)`); the
   shipped cache lists every map. Client 41, clippy clean, gate (a) `0bf44067`, gate (b) passes.
-- **Not done:** the client's mission list (a campaign map must be on the World's disk, and the client keeps no logic file
-  system after the start: holding every campaign map in memory, or reading them by range as the art is read, is the work);
-  a differential of the Campaign INI against the compiled CampaignManager.cpp; mission saves (`GameState::missionSave`, the
-  score screen's Save and Continue, `SAVE_FILE_TYPE_MISSION`'s load); the battle honours and final movie of a campaign's end.
+- **Not done:** ~~the client's mission list (a campaign map must be on the World's disk, and the client keeps no logic file
+  system after the start: holding every campaign map in memory, or reading them by range as the art is read, is the work)~~
+  (**done 2026-11-06, #62**, its entry: read by range);
+  a differential of the Campaign INI against the compiled CampaignManager.cpp; ~~mission saves (`GameState::missionSave`, the
+  score screen's Save and Continue, `SAVE_FILE_TYPE_MISSION`'s load)~~ (**done 2026-11-06, #62**); the battle honours and
+  final movie of a campaign's end.
 
 **#58 (2026-11-06, GitHub #58): a load starts the save's own game.**
 - **Upstream** (`GameStateMap::xfer`, GameStateMap.cpp): the load extracts the save's map, sets the game mode, reads

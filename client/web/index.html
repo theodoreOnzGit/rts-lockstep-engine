@@ -52,7 +52,7 @@
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
   import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status,
     saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open,
-    saves_status, saves_logic_frame } from './rts_client.js';
+    saves_status, saves_logic_frame, campaign_status } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -298,6 +298,8 @@
     frame: () => { try { return saves_logic_frame(); } catch (e) { return -1; } },
     names: async () => (await savedGames()).map(([n]) => n),
   };
+  // #62, for checks: the campaign flow's state (`waiting <map>`, `playing <mission>`, `over victorious`, ...)
+  window.rtsCampaign = { status: () => { try { return campaign_status(); } catch (e) { return ''; } } };
 
   // the art's state, for checks (`art_status`: the objects drawn as models, the bytes held and read)
   window.rtsArtStatus = () => { try { return art_status(); } catch (e) { return ''; } };

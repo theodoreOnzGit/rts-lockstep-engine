@@ -286,6 +286,8 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .insert_non_send(game)
         .insert_non_send(Saves::new())
         .init_resource::<SaveAction>()
+        .insert_non_send(Campaigns::default())
+        .init_resource::<CampaignAction>()
         .insert_resource(TerrainState { pending: true, look: "none" })
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
@@ -294,7 +296,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
-        .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, update_terrain).chain())
+        .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain).chain())
         .add_systems(
             Update,
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
@@ -843,6 +845,8 @@ fn setup_ui(mut commands: Commands) {
             (button("||"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| game.paused = !game.paused)),
             // (#4) the saves: the panel with the save button and the list
             (button("S"), observe(|_: On<Activate>, mut action: ResMut<SaveAction>| action.0 = Some(SaveCmd::Toggle))),
+            // (#62) the campaigns: the missions and the Generals' Challenge, and the score screen
+            (button("C"), observe(|_: On<Activate>, mut action: ResMut<CampaignAction>| action.0 = Some(CampaignCmd::Toggle))),
         ],
     ));
 }
@@ -967,7 +971,7 @@ fn pointer_input(
 ) {
     let bar = bar.height + bar.panel;
     // (#4) the saves panel takes the pointer while it is open (the game is paused under it)
-    if crate::saves::page::panel_open() {
+    if crate::saves::page::panel_open() || crate::campaigns::page::panel_open() {
         pointer.press = None;
         return;
     }
@@ -1665,6 +1669,26 @@ fn bar_button(label: &str) -> impl Bundle {
     )
 }
 
+/// (#62) A list's button: [`bar_button`]'s look, as tall as its text, never wider than its row (a long mission name wraps
+/// on a phone).
+fn list_button(label: &str) -> impl Bundle {
+    (
+        Button,
+        Node {
+            min_width: px(96),
+            max_width: percent(100),
+            min_height: px(44),
+            padding: UiRect::axes(px(8), px(4)),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border_radius: BorderRadius::all(px(6)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.12, 0.16, 0.22, 0.9)),
+        children![(Text::new(label), TextFont { font_size: bevy::text::FontSize::Px(15.0), ..default() }, TextColor(Color::WHITE))],
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Saved games (#4): the panel, its buttons and what they do, through `crate::saves` (tested there).
 // ---------------------------------------------------------------------------
@@ -1730,9 +1754,29 @@ fn apply_save_action(
     mut rig: ResMut<Rig>,
     mut drawn: ResMut<Drawn>,
     mut terrain: ResMut<TerrainState>,
+    mut campaigns: NonSendMut<Campaigns>,
 ) {
     let Some(cmd) = action.0.take() else { return };
     match cmd {
+        SaveCmd::Load(name) if saves.folder.files.get(&name).is_some_and(|b| crate::campaigns::Flow::is_mission_save(b)) => {
+            // (#62 part 2: a mission save holds the campaign alone; its load starts the mission, whose map is read as a
+            // chosen mission's is: the campaign flow's)
+            let bytes = saves.folder.files.get(&name).cloned().unwrap_or_default();
+            let status = match game.base.as_deref() {
+                Some(base) => match campaigns.flow.load_mission_save(base, bytes) {
+                    Ok(()) => {
+                        let map = campaigns.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
+                        campaigns.set_status(format!("waiting {map}"));
+                        crate::saves::page::set_panel_open(false);
+                        game.paused = saves.paused_before;
+                        format!("loading mission save {name}")
+                    }
+                    Err(e) => format!("error: {e}"),
+                },
+                None => "error: a mission save needs your Zero Hour files".to_string(),
+            };
+            saves.set_status(status);
+        }
         SaveCmd::Toggle => {
             let open = !crate::saves::page::panel_open();
             crate::saves::page::set_panel_open(open);
@@ -1895,6 +1939,260 @@ fn saves_panel(mut commands: Commands, mut saves: NonSendMut<Saves>, panels: Que
         let export = commands.spawn((bar_button("Export"), observe(move |_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Export(n2.clone()))))).id();
         commands.entity(row).add_children(&[text, load, export]);
         commands.entity(root).add_child(row);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Campaigns (#62): the mission list, a mission's map read as the art is, and the score screen, through `crate::campaigns`
+// (tested there).
+// ---------------------------------------------------------------------------
+
+/// The campaign panel's state and the flow (a non-send resource: the flow holds Worlds).
+#[derive(Default)]
+struct Campaigns {
+    flow: crate::campaigns::Flow,
+    /// The difficulty the list starts at (`DIFFICULTY_NORMAL` by default, as the difficulty menu's).
+    difficulty: Option<i32>,
+    status: String,
+    /// The current mission's briefing text (the movies are Bink, never released).
+    briefing: Vec<String>,
+    /// Bumped when what the panel shows changes; the generation the panel on screen was built for.
+    generation: u64,
+    built: Option<u64>,
+    paused_before: bool,
+}
+
+impl Campaigns {
+    fn set_status(&mut self, s: String) {
+        crate::campaigns::page::set_status(s.clone());
+        self.status = s;
+        self.generation += 1;
+    }
+    fn difficulty(&self) -> i32 {
+        self.difficulty.unwrap_or(1)
+    }
+}
+
+/// A press of the campaign panel's buttons, carried out by [`apply_campaign_action`].
+#[derive(Clone, Debug)]
+enum CampaignCmd {
+    Toggle,
+    Difficulty,
+    Choose(rts_lockstep_engine::logic::world::campaign_world::MissionChoice),
+    Continue,
+}
+
+#[derive(Resource, Default)]
+struct CampaignAction(Option<CampaignCmd>);
+
+/// The campaign panel's root.
+#[derive(Component)]
+struct CampaignPanel;
+
+/// Opens or closes the campaign panel (pausing the game under it, as the saves panel does).
+fn set_campaign_panel(open: bool, game: &mut Game, c: &mut Campaigns) {
+    if open == crate::campaigns::page::panel_open() {
+        return;
+    }
+    crate::campaigns::page::set_panel_open(open);
+    if open {
+        c.paused_before = game.paused;
+        game.paused = true;
+    } else {
+        game.paused = c.paused_before;
+    }
+    c.generation += 1;
+}
+
+/// GUI glue (needs the app): carries out the panel's presses through `crate::campaigns::Flow` (whose tests, and the
+/// engine's `campaign_world` tests, drive the same calls): open or close the panel; change the difficulty; a choice waits
+/// for its map, in a copy of the install's World; the score screen's Continue.
+fn apply_campaign_action(mut game: NonSendMut<Game>, mut campaigns: NonSendMut<Campaigns>, mut action: ResMut<CampaignAction>) {
+    let Some(cmd) = action.0.take() else { return };
+    let c = &mut *campaigns;
+    match cmd {
+        CampaignCmd::Toggle => {
+            let open = !crate::campaigns::page::panel_open();
+            set_campaign_panel(open, &mut game, c);
+        }
+        CampaignCmd::Difficulty => {
+            c.difficulty = Some((c.difficulty() + 1) % 3);
+            c.generation += 1;
+        }
+        CampaignCmd::Choose(choice) => {
+            let Some(base) = game.base.as_deref() else {
+                c.set_status("error: load your Zero Hour files first".to_string());
+                return;
+            };
+            let d = c.difficulty();
+            match c.flow.choose(base, choice, d) {
+                Ok(()) => {
+                    let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
+                    c.set_status(format!("waiting {map}"));
+                }
+                Err(e) => c.set_status(format!("error: {e}")),
+            }
+        }
+        CampaignCmd::Continue => {
+            if c.flow.continue_campaign() {
+                let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
+                c.set_status(format!("waiting {map}"));
+            } else {
+                c.set_status("the campaign is over".to_string());
+            }
+        }
+    }
+}
+
+/// GUI glue (needs the app): once a frame, a waiting mission reads its map from the art's files (the page's ranges for it
+/// are exchanged by [`pump_art`]); once it has started, it replaces the game (the art and the install's World kept), as a
+/// loaded save does. After each frame, a mission's end opens the score screen in the panel.
+#[allow(clippy::too_many_arguments)]
+fn campaign_flow(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut campaigns: NonSendMut<Campaigns>,
+    mut rig: ResMut<Rig>,
+    mut drawn: ResMut<Drawn>,
+    mut terrain: ResMut<TerrainState>,
+    mut saves: NonSendMut<Saves>,
+) {
+    let c = &mut *campaigns;
+    if c.flow.pending.is_some() {
+        let Some(art) = game.models.art.as_ref() else {
+            c.flow.pending = None;
+            c.set_status("error: no game files to read the map from".to_string());
+            return;
+        };
+        let Some(started) = c.flow.poll(&art.fs) else { return };
+        match started {
+            Ok(s) => {
+                info!("mission: {}", s.label);
+                c.briefing = crate::campaigns::briefing(&s.world);
+                let art = game.models.art.take();
+                let base = game.base.take();
+                *game = Game::new(s.world, s.player, s.label.clone(), art);
+                game.base = base;
+                for (_, (e, _)) in drawn.0.drain() {
+                    commands.entity(e).despawn();
+                }
+                terrain.pending = true;
+                let (centre, size) = view_frame(&game.controls.client.world);
+                let distance = size * 0.6;
+                *rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
+                crate::campaigns::page::set_panel_open(false);
+                c.paused_before = false;
+                c.set_status(format!("playing {}", s.label));
+            }
+            Err(e) => {
+                warn!("the mission did not start: {e}");
+                c.set_status(format!("error: {e}"));
+            }
+        }
+        return;
+    }
+    let Some(base) = game.base.as_deref() else { return };
+    if c.flow.check_game_over(&game.controls.client.world, base) {
+        let won = c.flow.over.as_ref().is_some_and(|o| o.victorious);
+        let mut status = if won { "over victorious" } else { "over defeated" }.to_string();
+        // (#62 part 2: `finishSinglePlayerInit`'s automatic mission save, into the save folder; the button reads "Save and
+        // Continue")
+        if let Some((desc, bytes)) = c.flow.over.as_mut().and_then(|o| o.mission_save.take()) {
+            let name = saves.folder.next_name();
+            match saves.folder.write(&name, bytes) {
+                Ok(()) => {
+                    status.push_str(&format!(" | mission saved {name} ({desc})"));
+                    saves.generation += 1;
+                }
+                Err(e) => status.push_str(&format!(" | the mission save failed: {e}")),
+            }
+        }
+        c.set_status(status);
+        set_campaign_panel(true, &mut game, c);
+    }
+}
+
+/// GUI glue (needs a window): the campaign panel, rebuilt when it opens or what it shows changes: Close and the difficulty;
+/// the status and the briefing; the score screen's Continue (Retry after a defeat) when a mission has ended; then each
+/// campaign's missions and the challenge's generals (`crate::campaigns::sections`, tested there), each a button. Full
+/// width less the zoom column, rows wrapping, so a phone's screen fits it; the list scrolls.
+fn campaign_panel(mut commands: Commands, game: NonSend<Game>, mut campaigns: NonSendMut<Campaigns>, panels: Query<Entity, With<CampaignPanel>>) {
+    let open = crate::campaigns::page::panel_open();
+    let want = open.then_some(campaigns.generation);
+    if want == campaigns.built {
+        return;
+    }
+    campaigns.built = want;
+    for e in &panels {
+        commands.entity(e).despawn();
+    }
+    if !open {
+        return;
+    }
+    let small = |t: String| (Text::new(t), TextFont { font_size: bevy::text::FontSize::Px(14.0), ..default() }, TextColor(Color::WHITE));
+    let root = commands
+        .spawn((
+            CampaignPanel,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(36),
+                left: px(8),
+                right: px(64),
+                max_height: percent(80),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(6),
+                padding: UiRect::all(px(8)),
+                overflow: Overflow::scroll_y(),
+                border_radius: BorderRadius::all(px(8)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.06, 0.08, 0.11, 0.94)),
+        ))
+        .id();
+    let row = |commands: &mut Commands| commands.spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, align_items: AlignItems::Center, column_gap: px(6), row_gap: px(6), ..default() }).id();
+    let header = row(&mut commands);
+    let close = commands.spawn((bar_button("Close"), observe(|_: On<Activate>, mut a: ResMut<CampaignAction>| a.0 = Some(CampaignCmd::Toggle)))).id();
+    let diff = format!("Difficulty: {}", crate::campaigns::DIFFICULTIES[campaigns.difficulty() as usize]);
+    let difficulty = commands.spawn((bar_button(&diff), observe(|_: On<Activate>, mut a: ResMut<CampaignAction>| a.0 = Some(CampaignCmd::Difficulty)))).id();
+    commands.entity(header).add_children(&[close, difficulty]);
+    if let Some(over) = &campaigns.flow.over {
+        let label = match (&over.next, over.victorious) {
+            (Ok(_), true) => Some("Save and Continue"),
+            (Ok(_), false) => Some("Retry"),
+            (Err(_), _) => None,
+        };
+        if let Some(label) = label {
+            let b = commands.spawn((bar_button(label), observe(|_: On<Activate>, mut a: ResMut<CampaignAction>| a.0 = Some(CampaignCmd::Continue)))).id();
+            commands.entity(header).add_child(b);
+        }
+    }
+    let mut status = campaigns.status.clone();
+    if campaigns.flow.over.as_ref().is_some_and(|o| o.next.is_err()) {
+        status.push_str(" | the campaign is complete");
+    }
+    if status.is_empty() {
+        status = "choose a mission (its briefing movie cannot play: Bink was never released)".to_string();
+    }
+    let status = commands.spawn(small(status)).id();
+    commands.entity(root).add_children(&[header, status]);
+    if !campaigns.briefing.is_empty() {
+        let b = commands.spawn(small(format!("Briefing: {}", campaigns.briefing.join(" | ")))).id();
+        commands.entity(root).add_child(b);
+    }
+    let sections = crate::campaigns::sections(&game.controls.client.world);
+    if sections.is_empty() {
+        let none = commands.spawn(small("no campaigns: load your Zero Hour files (Data\\INI\\Campaign.ini)".to_string())).id();
+        commands.entity(root).add_child(none);
+    }
+    for s in sections {
+        let title = commands.spawn(small(s.title)).id();
+        let list = row(&mut commands);
+        for e in s.entries {
+            let choice = e.choice.clone();
+            let b = commands.spawn((list_button(&e.line), observe(move |_: On<Activate>, mut a: ResMut<CampaignAction>| a.0 = Some(CampaignCmd::Choose(choice.clone()))))).id();
+            commands.entity(list).add_child(b);
+        }
+        commands.entity(root).add_children(&[title, list]);
     }
 }
 
