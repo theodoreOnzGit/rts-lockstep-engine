@@ -278,6 +278,8 @@ pub(crate) mod tests {
         pub bar: crate::client::control_bar::tests::BarFacts,
         /// Placement's facts (C2c part 2).
         pub place: crate::client::place_event::tests::PlaceFacts,
+        /// #54: the objects that are `KINDOF_SELECTABLE` (the GUI command translator's pick type).
+        pub selectable: Vec<ObjectId>,
     }
 
     impl SelectionInfoHost for Host {
@@ -288,7 +290,7 @@ pub(crate) mod tests {
             self.mine.contains(&obj)
         }
         fn is_kind_of(&self, obj: ObjectId, k: KindOfType) -> bool {
-            k == KINDOF_STRUCTURE && self.structures.contains(&obj)
+            (k == KINDOF_STRUCTURE && self.structures.contains(&obj)) || (k == crate::common::kind_of::KINDOF_SELECTABLE && self.selectable.contains(&obj))
         }
         fn relationship_to_local_player(&self, obj: ObjectId) -> Relationship {
             if self.mine.contains(&obj) {

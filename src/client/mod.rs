@@ -11,7 +11,8 @@
 //! logic's client events, in the drawables' event order). Since #13, the audio: `audio_info` (the audio INI, settings and misc
 //! sounds), `audio_event` (`AudioEventRTS`: the file chosen), `game_audio` (the audio manager, with the device behind a
 //! trait) and `client_audio` (the logic's sound events played). Since #51, `unit_voice` (the units' voice responses to
-//! orders and selection) and `drawable_ambient` (the drawables' ambient sounds).
+//! orders and selection) and `drawable_ambient` (the drawables' ambient sounds). Since #54, `gui_command_xlat` (a pending
+//! control bar command carried out by the next click) and `control_bar_callback` (the radar's clicks).
 
 pub mod in_game_ui;
 pub mod selection_info;
@@ -21,6 +22,8 @@ pub mod command_xlat;
 pub mod command_world;
 pub mod control_bar;
 pub mod place_event;
+pub mod gui_command_xlat;
+pub mod control_bar_callback;
 pub mod world_host;
 pub mod w3d_model_draw;
 pub mod w3d_truck_draw;

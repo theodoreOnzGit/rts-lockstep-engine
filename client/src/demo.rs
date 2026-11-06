@@ -5,7 +5,9 @@
 //! that can build the gate's Depot, and I23's Caster with its drop power, all with sight, as shipped units have.
 //!
 //! Player 1 (the local player) has two Runners, two Soldiers, the dozer and the Caster in the south-west; player 2 has two
-//! Soldiers in the north-east, beyond the Soldiers' sight. The game is in progress (`GAME_SKIRMISH`), so the dispatcher
+//! Soldiers in the north-east, beyond the Soldiers' sight. Since #54 the Soldiers have guard and attack move buttons (and
+//! voices for them, whose sounds the demo does not have), and player 1 has a Hut with a set rally point button and an
+//! exit to rally. The game is in progress (`GAME_SKIRMISH`), so the dispatcher
 //! makes groups for the player's commands.
 
 use rts_lockstep_engine::common::base_type::Coord3D;
@@ -23,6 +25,8 @@ pub struct DemoObjects {
     pub dozer: ObjectId,
     pub caster: ObjectId,
     pub enemies: Vec<ObjectId>,
+    /// #54: player 1's Hut, with a rally point.
+    pub hut: ObjectId,
     /// The dozer's construct-Depot button, in the World's button list.
     pub build_depot: usize,
 }
@@ -46,14 +50,41 @@ Object WorkDozer\n KindOf = VEHICLE DOZER SELECTABLE\n CommandSet = DemoDozerSet
 CommandButton Command_BuildDepot\n Command = DOZER_CONSTRUCT\n Object = Depot\n TextLabel = DEMO:BuildDepot\n DescriptLabel = DEMO:BuildDepotDesc\nEnd\n\
 CommandSet DemoDozerSet\n 1 = Command_BuildDepot\nEnd\n";
 
-/// The demo's own texts for its button (#35), by label.
-pub const DEMO_TEXT: [(&str, &str); 2] = [("DEMO:BuildDepot", "Build a Depot"), ("DEMO:BuildDepotDesc", "The demo's one building: a depot. Hold or hover a button to read this.")];
+/// #54: the Soldiers' guard and attack move buttons and voices, and the Hut with its rally point button and exit (the
+/// demo's own, not the game's). The guard button may target an object or the ground, as the shipped one does. A rally point
+/// is only set where `BasicHumanLocomotor` can find a path (`doSetRallyPoint`'s one locomotor, by name), so the demo has one,
+/// for the ground; without it every rally point is refused, as upstream's `clientSafeQuickDoesPathExist` does.
+const GUARD_AND_RALLY: &str = "\
+Locomotor BasicHumanLocomotor\n Surfaces = GROUND\n Speed = 20\n Acceleration = 100\n Braking = 100\n TurnRate = 180\n Appearance = TWO_LEGS\nEnd\n\
+CommandButton Command_DemoGuard\n Command = GUARD\n Options = NEED_TARGET_ENEMY_OBJECT NEED_TARGET_NEUTRAL_OBJECT NEED_TARGET_ALLY_OBJECT NEED_TARGET_POS OK_FOR_MULTI_SELECT\n TextLabel = DEMO:Guard\nEnd\n\
+CommandButton Command_DemoAttackMove\n Command = ATTACK_MOVE\n Options = NEED_TARGET_POS OK_FOR_MULTI_SELECT\n TextLabel = DEMO:AttackMove\nEnd\n\
+CommandButton Command_DemoRally\n Command = SET_RALLY_POINT\n Options = NEED_TARGET_POS\n TextLabel = DEMO:Rally\nEnd\n\
+CommandSet DemoSoldierSet\n 1 = Command_DemoGuard\n 2 = Command_DemoAttackMove\nEnd\n\
+CommandSet DemoHutSet\n 1 = Command_DemoRally\nEnd\n\
+Object DemoHut\n KindOf = STRUCTURE IMMOBILE SELECTABLE\n CommandSet = DemoHutSet\n VisionRange = 250\n Geometry = BOX\n GeometryMajorRadius = 10\n GeometryMinorRadius = 10\n GeometryHeight = 10\n\
+ Body = ActiveBody ModuleTag_Body\n  MaxHealth = 500\n  InitialHealth = 500\n End\n\
+ Behavior = DefaultProductionExitUpdate ModuleTag_Exit\n  UnitCreatePoint = X:0 Y:0 Z:0\n  NaturalRallyPoint = X:20 Y:0 Z:0\n End\nEnd\n";
+
+/// The demo's own texts for its buttons (#35, #54), by label.
+pub const DEMO_TEXT: [(&str, &str); 5] = [
+    ("DEMO:BuildDepot", "Build a Depot"),
+    ("DEMO:BuildDepotDesc", "The demo's one building: a depot. Hold or hover a button to read this."),
+    ("DEMO:Guard", "Guard"),
+    ("DEMO:AttackMove", "Attack move"),
+    ("DEMO:Rally", "Set rally point"),
+];
 
 /// The demo game at frame 0, and its objects.
 pub fn demo_world() -> (World, DemoObjects) {
     let caster = rts_lockstep_engine::logic::world::gate_scenario::CASTER_INI
         .replacen("Object Caster\n KindOf = VEHICLE", "Object Caster\n KindOf = VEHICLE SELECTABLE\n VisionRange = 250", 1);
-    let extra = [selectable("Runner"), selectable("Soldier"), WORK_DOZER.to_string(), caster].join("\n");
+    // (#54: the Soldiers' command set and voices)
+    let soldier = selectable("Soldier").replacen(
+        "Object ClickSoldier\n",
+        "Object ClickSoldier\n CommandSet = DemoSoldierSet\n VoiceGuard = DemoSoldierGuard\n VoiceMove = DemoSoldierMove\n",
+        1,
+    );
+    let extra = [selectable("Runner"), soldier, WORK_DOZER.to_string(), caster, GUARD_AND_RALLY.to_string()].join("\n");
     let mut w = gate_map_world_with(&extra);
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
     let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
@@ -70,6 +101,8 @@ pub fn demo_world() -> (World, DemoObjects) {
     for (x, y) in [(360.0, 360.0), (370.0, 340.0)] {
         o.enemies.push(make(&mut w, b"ClickSoldier", enemy, at(x, y)));
     }
+    // #54: made last, so the other objects keep their ids
+    o.hut = make(&mut w, b"DemoHut", team, at(40.0, 200.0));
     // the dozer's command set: construct a Depot (~~the control bar's data, which the World keeps as a table~~ **since #35**
     // the demo's INI, so the button has its texts)
     o.build_depot = w.cuts.command_buttons.iter().position(|b| b.name == b"Command_BuildDepot").expect("the dozer's button");

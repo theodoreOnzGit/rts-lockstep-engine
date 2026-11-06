@@ -16,7 +16,10 @@
 // Translated to Rust and modified; not the original program.
 
 //! The control bar's buttons (C2c, GitHub #6): `ControlBar::processCommandUI`, what pressing a command button does. A button
-//! that needs a target becomes the pending GUI command (the cursor mode [`crate::client::command_xlat`] evaluates); the others
+//! that needs a target becomes the pending GUI command (~~the cursor mode [`crate::client::command_xlat`] evaluates~~
+//! **Corrected 2026-11-06 (#54):** a context command's cursor mode, and a special power's, are evaluated by
+//! [`crate::client::command_xlat`]; the others (guard, attack move, rally point, beacon, evacuate to a position, fire a
+//! weapon) are carried out by the next click through [`crate::client::gui_command_xlat`]); the others
 //! build (or start a building's placement), queue upgrades, cancel, stop, sell, evacuate, fire, use a special power, switch
 //! weapons, select every unit of a type or buy a science, as messages for the logic.
 //!

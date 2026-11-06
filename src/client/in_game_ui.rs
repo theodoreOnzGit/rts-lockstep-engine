@@ -306,6 +306,11 @@ impl InGameUiSelection {
     pub fn prevent_left_click_deselection_once(&self) -> bool {
         self.prevent_left_click_deselection_once
     }
+    /// `setPreventLeftClickDeselectionInAlternateMouseModeForOneClick(set)` (#54: the GUI command translator sets it when
+    /// a command is carried out).
+    pub fn set_prevent_left_click_deselection_once(&mut self, set: bool) {
+        self.prevent_left_click_deselection_once = set;
+    }
 }
 
 #[cfg(test)]

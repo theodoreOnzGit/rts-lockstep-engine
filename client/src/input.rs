@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The player's input, milestone C2d (GitHub #6): pointer events become the translated client's calls, in the order the
-//! game's message stream runs its translators (placement, then selection, then commands; `GameClient.cpp`'s translator
+//! game's message stream runs its translators (~~placement, then selection, then commands~~ **Corrected 2026-11-06
+//! (#54):** placement (30), the pending GUI command (40), selection (50), then commands (70); `GameClient.cpp`'s translator
 //! list). Plain Rust, no Bevy: the application supplies what the view knows (the objects under the pointer or in a
 //! dragged box, the ground point under a pixel), and its tests drive the same calls without a window.
 //!
@@ -10,6 +11,7 @@
 
 use rts_lockstep_engine::client::command_xlat::{CommandEvaluateType, CommandTranslator, CommandXlatHost, GuiButton};
 use rts_lockstep_engine::client::control_bar::{process_command_ui, CbCommandStatus, PressedControl};
+use rts_lockstep_engine::client::gui_command_xlat::GuiCommandTranslator;
 use rts_lockstep_engine::client::in_game_ui::InGameUiSelection;
 use rts_lockstep_engine::client::place_event::PlaceEventTranslator;
 use rts_lockstep_engine::client::selection_info::SelectionInfoHost;
@@ -31,6 +33,8 @@ pub struct Controls {
     pub selection: SelectionTranslator,
     pub commands: CommandTranslator,
     pub place: PlaceEventTranslator,
+    /// #54: `GUICommandTranslator`, a pending control bar command carried out by the next click.
+    pub gui: GuiCommandTranslator,
     /// The last hint the pointer made (for the cursor).
     pub hint: Option<MessageType>,
 }
@@ -50,6 +54,7 @@ impl Controls {
             selection: SelectionTranslator::default(),
             commands: CommandTranslator::default(),
             place: PlaceEventTranslator::default(),
+            gui: GuiCommandTranslator,
             hint: None,
         }
     }
@@ -69,10 +74,14 @@ impl Controls {
         }
     }
 
-    /// The left button pressed at `pixel`: a building at the cursor is anchored there. Whether the press was taken.
+    /// The left button pressed at `pixel`: a building at the cursor is anchored there; with a GUI command pending the press
+    /// is used up (#54). Whether the press was taken.
     pub fn left_press(&mut self, pixel: ICoord2D, ground: Coord3D) -> bool {
         self.client.view.terrain = vec![(pixel, ground)];
-        self.place.left_button_down(pixel, &mut self.ui, &mut self.client)
+        if self.place.left_button_down(pixel, &mut self.ui, &mut self.client) {
+            return true;
+        }
+        self.gui.left_button_down(&mut self.ui) == Disposition::Destroy
     }
 
     /// The pointer moved to `pixel`: an anchored building stretches toward it and turns to face it.
@@ -87,10 +96,15 @@ impl Controls {
 
     /// The left button released at `release`, pressed at `press`: `in_region` are the objects under the click or in the
     /// dragged box, `picked` the one the view picks under the pointer (for an order), `ground` the terrain under the
-    /// release. Returns whether a placement, a selection or an order took it.
+    /// release. Returns whether a placement, a pending GUI command, a selection or an order took it.
     pub fn left_release(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
         let frame = self.client.world.frame();
         if self.place.left_click(frame, &mut self.ui, &mut self.client) {
+            return true;
+        }
+        // #54: `GUICommandTranslator` (40) sees every `MSG_MOUSE_LEFT_CLICK`, a click or the end of a drag
+        self.client.sync_modes(&self.ui);
+        if self.gui.left_click(&ground, picked, &mut self.ui, &mut self.client) == Disposition::Destroy {
             return true;
         }
         let is_point = (release.x - press.x).abs() <= CLICK_TOLERANCE && (release.y - press.y).abs() <= CLICK_TOLERANCE;
@@ -400,5 +414,237 @@ AudioEvent SoldierHum\n Sounds = hum\n Type = world everyone\n Control = loop\n 
         for f in [&b"sel1.wav"[..], b"sel2.wav"] {
             assert!(started.iter().any(|s| s.ends_with(f)), "{}", String::from_utf8_lossy(f));
         }
+    }
+
+    /// One frame's command list as the recorder reads it (`TheCommandList`, `Recorder::writeToFile`): each message's type,
+    /// player and arguments.
+    type RecordedFrame = Vec<(MessageType, i32, Vec<rts_lockstep_engine::common::message_stream::GameMessageArgument>)>;
+
+    /// The command list the logic is about to run (`Recorder::updateRecord` reads the same list).
+    fn record_command_list(w: &World) -> RecordedFrame {
+        use rts_lockstep_engine::common::message_stream::Messages;
+        let m = &w.cuts.game_loop.messages;
+        m.list_messages(Messages::COMMAND_LIST)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| m.get(id))
+            .map(|g| (g.get_type(), g.get_player_index(), g.arguments().to_vec()))
+            .collect()
+    }
+
+    /// `getAIStateType()` of `obj`'s AI.
+    fn ai_state(w: &mut World, obj: ObjectId) -> Option<i32> {
+        use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
+        let ai = w.find_object(obj)?.ai?;
+        match w.module_call(obj, ai, ModuleCall::AiGetAiStateType) {
+            ModuleReply::Int(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// The Hut's rally point (`getRallyPoint()` of its exit).
+    fn rally_point(w: &mut World, obj: ObjectId) -> Option<Coord3D> {
+        use rts_lockstep_engine::logic::world::module_call::{ModuleCall, ModuleReply};
+        let exit = w.get_object_exit_interface(obj)?;
+        match w.module_call(obj, exit, ModuleCall::GetRallyPoint) {
+            ModuleReply::Coord(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// What [`play_gui_commands`] saw.
+    struct GuiRun {
+        crcs: Vec<u32>,
+        recorded: Vec<RecordedFrame>,
+        /// The orders sent at each step: the guard, the attack move, the rally point.
+        sent: Vec<Vec<MessageType>>,
+        /// The Soldier's AI state 10 frames after the guard order.
+        guard_state: Option<i32>,
+        /// The Soldier's distance from the attack move's point when it was ordered and 90 frames later.
+        attack_move: (f32, f32),
+        rally: Option<Coord3D>,
+        voices: Vec<Vec<u8>>,
+        fetched: Vec<Vec<u8>>,
+    }
+
+    /// #54: the demo game, as the application drives it: the player clicks a Soldier (frame 2), presses its Guard button
+    /// and clicks the ground at (140, 100) (frame 5), presses Attack move and clicks (150, 170) (frame 40), then clicks the
+    /// Hut (frame 140), presses its rally point button and clicks (90, 230) (frame 145), over 160 frames. The unit voices
+    /// go to the translated audio manager and the device, with a test audio INI for the Soldier's two voices. Each frame's
+    /// command list is recorded before the logic runs it.
+    fn play_gui_commands() -> GuiRun {
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let mut tables = rts_lockstep_engine::client::audio_info::AudioTables::new();
+        tables
+            .load_text(b"a.ini", b"AudioSettings\n AudioRoot = Data\\Audio\n SoundsFolder = Sounds\n SoundsExtension = wav\n SampleCount2D = 8\n SampleCount3D = 8\n MinSampleVolume = 1%\n DefaultSoundVolume = 100%\n Default3DSoundVolume = 100%\nEnd\n\
+AudioEvent DemoSoldierGuard\n Sounds = guard\n Type = ui everyone\n Volume = 100%\nEnd\n\
+AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\nEnd\n")
+            .expect("the audio INI");
+        let mut audio = rts_lockstep_engine::client::client_audio::ClientAudio::new(rts_lockstep_engine::client::game_audio::AudioManager::new(tables));
+        let mut device = crate::audio::ClientDevice::new(crate::audio::NullOutput::default());
+        let wav = {
+            let mut v = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data".to_vec();
+            v.extend_from_slice(&(2 * 4410u32).to_le_bytes());
+            v.extend(std::iter::repeat_n(0u8, 2 * 4410));
+            v
+        };
+        let files = |p: &[u8]| p.starts_with(b"Data\\Audio\\Sounds\\");
+        let view = crate::audio::listener_view([100.0, 100.0], 0.0, 0.95, 300.0);
+        let pixel = |x: i32, y: i32| ICoord2D { x, y };
+        let ground = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let s = o.soldiers[0];
+        let press = |c: &mut Controls, name: &str| {
+            let bar = c.bar_buttons();
+            let b = bar.iter().find(|b| b.label == name).unwrap_or_else(|| panic!("{name} in {bar:?}")).button.clone();
+            assert_eq!(c.press(&b), CbCommandStatus::Used);
+            assert!(c.ui.gui_command().is_some(), "{name} waits for its target");
+        };
+        // a click on the ground: the press and the release, both taken by the pending command
+        let order = |c: &mut Controls, at: Coord3D| {
+            c.client.sent.clear();
+            assert!(c.left_press(pixel(300, 300), at), "the press is used up");
+            assert!(c.left_release(pixel(300, 300), pixel(300, 300), &[], None, at), "the click is used up");
+            assert!(c.ui.gui_command().is_none(), "the command ended");
+            c.client.sent.clone()
+        };
+        let mut run = GuiRun { crcs: Vec::new(), recorded: Vec::new(), sent: Vec::new(), guard_state: None, attack_move: (0.0, 0.0), rally: None, voices: Vec::new(), fetched: Vec::new() };
+        let attack_at = ground(150.0, 170.0);
+        let dist = |c: &mut Controls| {
+            let p = c.client.object_position(s);
+            let (dx, dy) = (p.x - attack_at.x, p.y - attack_at.y);
+            rts_lockstep_engine::ww::wwmath::sqrt(dx * dx + dy * dy)
+        };
+        for f in 0..160u32 {
+            match f {
+                2 => assert!(c.left_release(pixel(10, 10), pixel(10, 10), &[s], Some(s), c.client.object_position(s))),
+                5 => {
+                    press(&mut c, "Command_DemoGuard");
+                    run.sent.push(order(&mut c, ground(140.0, 100.0)));
+                }
+                40 => {
+                    press(&mut c, "Command_DemoAttackMove");
+                    run.sent.push(order(&mut c, attack_at));
+                    run.attack_move.0 = dist(&mut c);
+                }
+                130 => run.attack_move.1 = dist(&mut c),
+                140 => {
+                    let hp = c.client.object_position(o.hut);
+                    assert!(c.left_release(pixel(20, 20), pixel(20, 20), &[o.hut], Some(o.hut), hp));
+                }
+                145 => {
+                    press(&mut c, "Command_DemoRally");
+                    run.sent.push(order(&mut c, ground(90.0, 230.0)));
+                }
+                _ => {}
+            }
+            c.observe_sent();
+            run.recorded.push(record_command_list(&c.client.world));
+            c.world().logic_update().expect("a frame");
+            if f == 15 {
+                run.guard_state = ai_state(c.world(), s);
+            }
+            if f == 146 {
+                run.rally = rally_point(c.world(), o.hut);
+            }
+            let ev = c.world().take_client_events();
+            let voices: Vec<_> = c.client.voices.drain(..).collect();
+            let w = &c.client.world;
+            let host = rts_lockstep_engine::client::client_audio::WorldAudioHost { world: w, local_player_index: None, files: &files, language: b"English" };
+            for v in &voices {
+                run.voices.push(v.name.clone());
+                audio.play_unit_voice(&host, v);
+            }
+            for x in &ev {
+                audio.apply_event(&host, &mut device, x);
+            }
+            audio.manager.update(&host, &mut device, &view);
+            device.pump(|p| {
+                if !run.fetched.iter().any(|x: &Vec<u8>| x == p) {
+                    run.fetched.push(p.to_vec());
+                }
+                if files(p) { crate::audio::Fetch::Bytes(wav.clone()) } else { crate::audio::Fetch::Missing }
+            });
+            crate::audio::AudioOutput::advance(&mut device.out, 1.0 / 30.0);
+            run.crcs.push(c.client.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+        run
+    }
+
+    /// The recorded command lists played into a fresh demo game with no client (as a replay's playback appends them),
+    /// without the messages of type `drop`; the CRCs, with the same AI state and rally point reads as the recorded run.
+    fn play_back(recorded: &[RecordedFrame], drop: Option<MessageType>) -> Vec<u32> {
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let (mut w, o) = demo_world();
+        let mut crcs = Vec::new();
+        for (f, frame) in recorded.iter().enumerate() {
+            for (t, player, args) in frame.iter().filter(|m| Some(m.0) != drop) {
+                w.push_command(*t, *player, |m| {
+                    for a in args {
+                        m.append_argument(*a);
+                    }
+                });
+            }
+            w.logic_update().expect("a played frame");
+            if f == 15 {
+                ai_state(&mut w, o.soldiers[0]);
+            }
+            if f == 146 {
+                rally_point(&mut w, o.hut);
+            }
+            crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+        }
+        crcs
+    }
+
+    /// GitHub #54: a pending control bar command is carried out by the next click (`GUICommandTranslator`), in the demo
+    /// game as the application drives it, and the input path adds nothing to the logic but the orders.
+    ///
+    /// *Predictions, written before the first run* (`issue54_predictions.md`): the guard click sends exactly
+    /// `[MSG_DO_GUARD_POSITION]` (the ground has no object, so not `MSG_DO_GUARD_OBJECT`) and 10 frames later the Soldier's
+    /// AI is in `AI_GUARD` (16); the attack move click sends `[MSG_DO_ATTACKMOVETO]` and 90 frames later the Soldier is
+    /// closer to its point; the rally click sends `[MSG_SET_RALLY_POINT]` and a frame later the Hut's exit has its rally
+    /// point at (90, 230). The voices `DemoSoldierGuard` and `DemoSoldierMove` are played (the device reads `guard.wav` and
+    /// `move.wav`; the Hut has no voice). The recorded command lists played back into a fresh demo game with no client give
+    /// the same CRC every frame; played back without the guard order they differ from frame 6 on.
+    ///
+    /// *Results (2026-11-06):* the orders as predicted (`MSG_DO_GUARD_POSITION`, `MSG_DO_ATTACKMOVETO`,
+    /// `MSG_SET_RALLY_POINT`, one each); the guard state 16; the attack move took the Soldier from 91.1 to 6.3 from its
+    /// point; the voices `DemoSoldierGuard` and `DemoSoldierMove` played (`guard.wav`, `move.wav` read; the two selections
+    /// asked for the empty select voice); the playback's CRCs equal over 160 frames. **Misses:** (1) on the first run the
+    /// rally point was not set: the demo had no `BasicHumanLocomotor`, the one locomotor `doSetRallyPoint` asks for a path
+    /// with, so the logic refused it, as upstream does; the demo now has one. (2) Without the guard order the CRCs differ
+    /// from index 5, not 6: index 5 is the CRC after frame 5's logic update, which ran the order (my off-by-one).
+    #[test]
+    fn a_pending_gui_command_is_ordered_by_the_click_and_adds_nothing_else() {
+        use rts_lockstep_engine::common::message_types::{MSG_DO_ATTACKMOVETO, MSG_DO_GUARD_POSITION, MSG_SET_RALLY_POINT};
+        use rts_lockstep_engine::logic::ai::ai_update_types::AI_GUARD;
+        let run = play_gui_commands();
+        let played = play_back(&run.recorded, None);
+        let unguarded = play_back(&run.recorded, Some(MSG_DO_GUARD_POSITION));
+        let first_diff = unguarded.iter().zip(&run.crcs).position(|(a, b)| a != b);
+        eprintln!(
+            "#54: sent {:?}; guard state {:?}; attack move {:?}; rally {:?}; voices {:?}; fetched {:?}; without the guard the CRCs first differ at frame {first_diff:?}",
+            run.sent,
+            run.guard_state,
+            run.attack_move,
+            run.rally,
+            run.voices.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>(),
+            run.fetched.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect::<Vec<_>>()
+        );
+        assert_eq!(run.sent, vec![vec![MSG_DO_GUARD_POSITION], vec![MSG_DO_ATTACKMOVETO], vec![MSG_SET_RALLY_POINT]]);
+        assert_eq!(run.guard_state, Some(AI_GUARD as i32));
+        assert!(run.attack_move.1 < run.attack_move.0, "{:?}", run.attack_move);
+        let r = run.rally.expect("a rally point");
+        assert_eq!((r.x, r.y), (90.0, 230.0));
+        assert!(run.voices.iter().any(|v| v == b"DemoSoldierGuard"));
+        assert!(run.voices.iter().any(|v| v == b"DemoSoldierMove"));
+        for f in [&b"guard.wav"[..], b"move.wav"] {
+            assert!(run.fetched.iter().any(|s| s.ends_with(f)), "{}", String::from_utf8_lossy(f));
+        }
+        assert_eq!(played, run.crcs, "the playback of the recorded orders gives the same CRCs");
+        assert!(first_diff.is_some(), "without the guard order the game differs");
     }
 }
