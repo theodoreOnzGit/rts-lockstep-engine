@@ -7,7 +7,7 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/shader.cpp
 //   (srcBlendLUT, dstBlendLUT, ShaderClass::Apply, Get_SS_Category,
 //   Guess_Sort_Level, _PolygonCullMode, the presets SC_ADD_SPRITE and
-//   SC_ALPHA_SPRITE)
+//   SC_ALPHA_SPRITE; since #49 Enable_Fog and Set_Fog_Func)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_util.cpp
 //   (W3dUtilityClass::Convert_Shader(const ShaderClass &, W3dShaderStruct *))
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/w3d_file.h
@@ -322,6 +322,28 @@ impl ShaderClass {
     pub fn set_cull_mode(&mut self, x: u32) {
         self.0 &= !MASK_CULLMODE;
         self.0 |= x << SHIFT_CULLMODE;
+    }
+
+    /// `Set_Fog_Func(x)`.
+    pub fn set_fog_func(&mut self, x: u32) {
+        self.0 &= !MASK_FOG;
+        self.0 |= x << SHIFT_FOG;
+    }
+
+    /// `Enable_Fog(source)` (shader.cpp, #49): the fog mode the blend
+    /// functions allow (`Report_Unable_To_Fog` only reports, in debug
+    /// builds).
+    pub fn enable_fog(&mut self) {
+        let dst = self.get_dst_blend_func();
+        // (Report_Unable_To_Fog, debug builds only, for the other pairs)
+        match self.get_src_blend_func() {
+            SRCBLEND_ZERO if dst == DSTBLEND_SRC_COLOR => self.set_fog_func(FOG_WHITE),
+            SRCBLEND_ONE if dst == DSTBLEND_ZERO => self.set_fog_func(FOG_ENABLE),
+            SRCBLEND_ONE if dst == DSTBLEND_ONE || dst == DSTBLEND_ONE_MINUS_SRC_COLOR => self.set_fog_func(FOG_SCALE_FRAGMENT),
+            SRCBLEND_SRC_ALPHA if dst == DSTBLEND_ONE_MINUS_SRC_ALPHA => self.set_fog_func(FOG_ENABLE),
+            SRCBLEND_ONE_MINUS_SRC_ALPHA if dst == DSTBLEND_SRC_ALPHA => self.set_fog_func(FOG_ENABLE),
+            _ => {}
+        }
     }
 
     /// `Get_SS_Category()`: the static sort category (`SSCAT_*`).

@@ -301,3 +301,91 @@ pub fn raw_anim_w3d(hierarchy: &[u8], anim_name: &[u8], num_frames: u32, frame_r
     }
     chunk_sub(W3D_CHUNK_ANIMATION, &body)
 }
+
+/// A version-2 particle emitter (#49): one colour, opacity and size
+/// keyframe at the end of the lifetime, solid-box randomizers, the additive
+/// or alpha sprite shader.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmitterSpec {
+    pub name: Vec<u8>,
+    pub texture: Vec<u8>,
+    pub lifetime: f32,
+    pub emission_rate: f32,
+    pub burst_size: u32,
+    pub velocity: [f32; 3],
+    pub velocity_random: f32,
+    pub position_random: f32,
+    pub acceleration: [f32; 3],
+    /// Start and end colours (RGBA bytes; alpha is the opacity).
+    pub start_color: [u8; 4],
+    pub end_color: [u8; 4],
+    pub start_size: f32,
+    pub end_size: f32,
+    /// `W3D_EMITTER_RENDER_MODE_*`.
+    pub render_mode: u32,
+    /// Additive (else alpha blended).
+    pub additive: bool,
+}
+
+impl EmitterSpec {
+    /// A small puff: 10 particles a second, rising, fading out over a second.
+    pub fn puff(name: &[u8]) -> Self {
+        EmitterSpec {
+            name: name.to_vec(),
+            texture: b"puff.tga".to_vec(),
+            lifetime: 1.0,
+            emission_rate: 10.0,
+            burst_size: 1,
+            velocity: [0.0, 0.0, 10.0],
+            velocity_random: 1.0,
+            position_random: 0.5,
+            acceleration: [0.0, 0.0, 0.0],
+            start_color: [255, 200, 120, 255],
+            end_color: [80, 80, 80, 0],
+            start_size: 1.0,
+            end_size: 3.0,
+            render_mode: 1,
+            additive: false,
+        }
+    }
+
+    /// The emitter chunk (`W3D_CHUNK_EMITTER`).
+    pub fn to_w3d(&self) -> Vec<u8> {
+        use super::shader::{convert_shader_to_w3d, PRESET_ADDITIVE_SPRITE_SHADER, PRESET_ALPHA_SPRITE_SHADER};
+        let mut h = W3dEmitterHeaderStruct::from_bytes(&[0; W3dEmitterHeaderStruct::SIZE]);
+        h.version = 0x0002_0000;
+        h.name = name(&self.name);
+        let mut body = chunk(W3D_CHUNK_EMITTER_HEADER, &h.to_bytes());
+        body.extend(chunk(W3D_CHUNK_EMITTER_USER_DATA, &[0u8; 12]));
+        let mut i = W3dEmitterInfoStruct::from_bytes(&[0; W3dEmitterInfoStruct::SIZE]);
+        let k = self.texture.len().min(259);
+        i.texture_filename[..k].copy_from_slice(&self.texture[..k]);
+        i.lifetime = self.lifetime;
+        i.emission_rate = self.emission_rate;
+        (i.velocity.x, i.velocity.y, i.velocity.z) = (self.velocity[0], self.velocity[1], self.velocity[2]);
+        (i.acceleration.x, i.acceleration.y, i.acceleration.z) = (self.acceleration[0], self.acceleration[1], self.acceleration[2]);
+        body.extend(chunk(W3D_CHUNK_EMITTER_INFO, &i.to_bytes()));
+        let mut v = W3dEmitterInfoStructV2::from_bytes(&[0; W3dEmitterInfoStructV2::SIZE]);
+        v.burst_size = self.burst_size;
+        (v.creation_volume.class_id, v.creation_volume.value1, v.creation_volume.value2, v.creation_volume.value3) =
+            (0, self.position_random, self.position_random, self.position_random);
+        (v.vel_random.class_id, v.vel_random.value1, v.vel_random.value2, v.vel_random.value3) =
+            (0, self.velocity_random, self.velocity_random, self.velocity_random);
+        v.shader = convert_shader_to_w3d(if self.additive { PRESET_ADDITIVE_SPRITE_SHADER } else { PRESET_ALPHA_SPRITE_SHADER });
+        v.render_mode = self.render_mode;
+        body.extend(chunk(W3D_CHUNK_EMITTER_INFOV2, &v.to_bytes()));
+        let mut p = W3dEmitterPropertyStruct::from_bytes(&[0; W3dEmitterPropertyStruct::SIZE]);
+        (p.color_keyframes, p.opacity_keyframes, p.size_keyframes) = (2, 2, 2);
+        let mut pb = p.to_bytes();
+        let key = |t: f32, v: [u8; 4]| -> Vec<u8> { t.to_le_bytes().into_iter().chain(v).collect() };
+        let (s, e) = (self.start_color, self.end_color);
+        pb.extend(key(0.0, [s[0], s[1], s[2], 0]));
+        pb.extend(key(self.lifetime, [e[0], e[1], e[2], 0]));
+        pb.extend(key(0.0, (f32::from(s[3]) / 255.0).to_le_bytes()));
+        pb.extend(key(self.lifetime, (f32::from(e[3]) / 255.0).to_le_bytes()));
+        pb.extend(key(0.0, self.start_size.to_le_bytes()));
+        pb.extend(key(self.lifetime, self.end_size.to_le_bytes()));
+        body.extend(chunk(W3D_CHUNK_EMITTER_PROPS, &pb));
+        chunk_sub(W3D_CHUNK_EMITTER, &body)
+    }
+}

@@ -13,7 +13,8 @@
 //! ([`vertmaterial`]), a mesh finished for drawing and split into the DX8
 //! renderer's polygon groups, with the skin deformation ([`meshmdl`]), and an
 //! HLOD bound to its bones, posed, with its textures found and decoded
-//! ([`render`]). [`synth`] writes W3D files for tests and placeholder art. ~~The asset
+//! ([`render`]), **added 2026-11-07 (#49):** with the particle emitters'
+//! render objects ([`part_emt`], [`part_buf`]). [`synth`] writes W3D files for tests and placeholder art. ~~The asset
 //! manager's file loop (`WW3DAssetManager::Load_3D_Assets`, which picks the
 //! loader by top-level chunk id and registers the result) is not
 //! translated: each loader is called on its own chunk.~~ **Corrected
@@ -39,6 +40,8 @@ pub mod htree;
 pub mod mesh;
 pub mod meshmdl;
 pub mod motchan;
+pub mod part_buf;
+pub mod part_emt;
 pub mod part_ldr;
 pub mod prim_anim;
 pub mod render;

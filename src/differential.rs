@@ -187,6 +187,21 @@ extern "C" {
         log_len: *mut c_int,
     ) -> c_int;
     pub fn ref_w3d_prim_layouts(log: *mut c_uchar, cap: c_int, log_len: *mut c_int) -> c_int;
+    // WW3D2/part_emt.cpp, part_buf.cpp: ParticleEmitterClass from a loaded
+    // definition, run over a script of frames (wrap_w3d_part.cpp, #49)
+    pub fn ref_w3d_part_run(
+        data: *const c_char,
+        len: c_int,
+        alpha: c_int,
+        seeds: *const c_uint,
+        create_sync: c_uint,
+        script: *const c_uint,
+        mats: *const c_float,
+        frames: c_int,
+        log: *mut c_uchar,
+        cap: c_int,
+        log_len: *mut c_int,
+    ) -> c_int;
     // WW3D2/hmdldef.cpp, distlod.cpp, part_ldr.cpp: HModelDefClass,
     // DistLODDefClass and ParticleEmitterDefClass::Load_W3D (wrap_w3d_emit.cpp)
     pub fn ref_w3d_load_emit(

@@ -6,6 +6,7 @@
 pub mod chunkio;
 pub mod matrix3d;
 pub mod quat;
+pub mod random;
 pub mod realcrc;
 pub mod vector2;
 pub mod vector3;

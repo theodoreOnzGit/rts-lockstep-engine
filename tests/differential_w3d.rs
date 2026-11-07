@@ -31,7 +31,9 @@
 //! and (section 15, #17) the hierarchical-model, distance-LOD and
 //! particle-emitter definition loaders of `hmdldef.cpp`, `distlod.cpp` and
 //! `part_ldr.cpp` (`differential/wrap_w3d_emit.cpp`), alone and through the
-//! asset manager.
+//! asset manager, and (section 16, #49) the particle emitter and buffer
+//! render objects of `part_emt.cpp` and `part_buf.cpp`, run frame by frame
+//! (`differential/wrap_w3d_part.cpp`).
 //!
 //! No game assets are available, so every input is **synthetic**, built
 //! byte by byte in the layout the upstream readers read: chunk trees with
@@ -5946,4 +5948,579 @@ fn assetmgr_emit_loaders_match_upstream() {
         excluded.values().sum::<u64>()
     );
     check.finish();
+}
+
+// ---------------------------------------------------------------------------
+// 16. Particle emitters as render objects (part_emt.cpp, part_buf.cpp,
+//     v3_rnd.cpp, random.cpp, quat.cpp's slerp; GitHub #49)
+// ---------------------------------------------------------------------------
+
+mod part16 {
+    use super::*;
+    use rts_lockstep_engine::formats::w3d::part_buf::{KeyTrack, ParticleDraw, RandomTable, Ww3dClock};
+    use rts_lockstep_engine::formats::w3d::part_emt::{ParticleEmitter, ParticleRandom};
+    use rts_lockstep_engine::formats::w3d::part_ldr;
+    use rts_lockstep_engine::ww::matrix3d::Matrix3D;
+    use rts_lockstep_engine::ww::quat::{build_matrix3d, Quaternion};
+    use rts_lockstep_engine::ww::random::{Random3, Random4};
+    use rts_lockstep_engine::ww::vector3::Vector3;
+    use rts_lockstep_engine::ww::vector4::Vector4;
+
+    /// The particle comparison's limit on the buffer size (larger buffers
+    /// are kept out, for time).
+    const PART_MAX_NUM: u32 = 100_000;
+
+    /// One run: the emitter chunk, the seeds (Random3's two, Random4's),
+    /// the creation time, and per frame the clock, operation and transform
+    /// (`mats[0]` is the transform before the first frame).
+    #[derive(Clone, Debug)]
+    pub struct PartCase {
+        pub data: Vec<u8>,
+        pub seeds: [u32; 3],
+        pub create_sync: u32,
+        pub script: Vec<[u32; 5]>,
+        pub mats: Vec<[f32; 12]>,
+    }
+
+    fn pf(log: &mut Log, f: f32) {
+        p32(log, f.to_bits());
+    }
+    fn pv3(log: &mut Log, v: Vector3) {
+        pf(log, v.x);
+        pf(log, v.y);
+        pf(log, v.z);
+    }
+    fn pv4(log: &mut Log, v: Vector4) {
+        pf(log, v.x);
+        pf(log, v.y);
+        pf(log, v.z);
+        pf(log, v.w);
+    }
+
+    fn log_track<T: Copy>(log: &mut Log, k: &KeyTrack<T>, val: fn(&mut Log, T)) {
+        p32(log, k.num);
+        let m = k.num.max(1) as usize;
+        log.push(k.times.is_some() as u8);
+        if let Some(t) = &k.times {
+            t.iter().take(k.num as usize).for_each(|&x| p32(log, x));
+        }
+        log.push(k.values.is_some() as u8);
+        if let Some(v) = &k.values {
+            v.iter().take(m).for_each(|&x| val(log, x));
+        }
+        log.push(k.deltas.is_some() as u8);
+        if let Some(d) = &k.deltas {
+            d.iter().take(k.num as usize).for_each(|&x| val(log, x));
+        }
+    }
+
+    fn log_table<T: Copy>(log: &mut Log, t: &RandomTable<T>, val: fn(&mut Log, T)) {
+        p32(log, t.minus1);
+        log.push(t.entries.is_some() as u8);
+        if let Some(e) = &t.entries {
+            e.iter().take(t.minus1 as usize + 1).for_each(|&x| val(log, x));
+        }
+    }
+
+    /// wrap_w3d_part.cpp's log_created.
+    fn log_created(log: &mut Log, e: &ParticleEmitter) {
+        let b = &e.buffer;
+        log.push(b'C');
+        p32(log, e.emit_rate);
+        p32(log, e.burst_size);
+        p32(log, e.max_particles as u32);
+        pv3(log, e.base_vel);
+        pf(log, e.outward_vel);
+        pf(log, e.vel_inherit_factor);
+        p32(log, b.max_num);
+        p32(log, b.max_age);
+        p32(log, b.future_start_time);
+        p32(log, b.render_mode as u32);
+        log.push(b.has_accel as u8);
+        pv3(log, b.accel);
+        pf(log, b.max_size);
+        p32(log, if b.has_point_group || b.has_line_group || b.has_line_renderer { b.shader.0 } else { 0xFFFF_FFFF });
+        for x in [b.color.is_some(), b.alpha.is_some(), b.size.is_some(), b.orientation.is_some(), b.frame.is_some(), b.ucoord.is_some()] {
+            log.push(x as u8);
+        }
+        log_track(log, &b.color_keys, pv3);
+        log_track(log, &b.alpha_keys, pf);
+        log_track(log, &b.size_keys, pf);
+        log_track(log, &b.frame_keys, pf);
+        log_track(log, &b.blur_time_keys, pf);
+        let r = &b.rotation_keys;
+        p32(log, r.num);
+        log.push(r.times.is_some() as u8);
+        if let Some(t) = &r.times {
+            for i in 0..r.num as usize {
+                p32(log, t[i]);
+                pf(log, r.values.as_ref().unwrap()[i]);
+                pf(log, r.half_deltas.as_ref().unwrap()[i]);
+                pf(log, r.orientations.as_ref().unwrap()[i]);
+            }
+        }
+        if b.color.is_some() {
+            log_table(log, &b.random_color, pv3);
+        }
+        if b.alpha.is_some() {
+            log_table(log, &b.random_alpha, pf);
+        }
+        if b.size.is_some() {
+            log_table(log, &b.random_size, pf);
+        }
+        if b.orientation.is_some() {
+            log_table(log, &b.random_rotation, pf);
+            log_table(log, &b.random_orientation, pf);
+        }
+        if b.frame.is_some() || b.ucoord.is_some() {
+            log_table(log, &b.random_frame, pf);
+        }
+        if b.blur_time_keys.times.is_some() {
+            log_table(log, &b.random_blur_time, pf);
+        }
+    }
+
+    /// wrap_w3d_part.cpp's log_state.
+    fn log_state(log: &mut Log, e: &ParticleEmitter) {
+        let b = &e.buffer;
+        log.push(b'S');
+        p32(log, e.emit_remain);
+        p32(log, e.particles_left as u32);
+        log.push(e.is_complete as u8);
+        log.push(e.active as u8);
+        log.push(e.group_id);
+        pv3(log, e.prev_orig);
+        for x in [e.prev_q.x, e.prev_q.y, e.prev_q.z, e.prev_q.w] {
+            pf(log, x);
+        }
+        for x in [b.start, b.end, b.new_end, b.non_new_num as u32, b.new_num as u32] {
+            p32(log, x);
+        }
+        for x in [b.new_particle_queue_start, b.new_particle_queue_end, b.new_particle_queue_count as u32, b.last_update_time] {
+            p32(log, x);
+        }
+        pv3(log, b.bounding_box.center);
+        pv3(log, b.bounding_box.extent);
+    }
+
+    /// wrap_w3d_part.cpp's log_points, log_lines, log_line_group.
+    fn log_draw(log: &mut Log, d: &ParticleDraw) -> u64 {
+        match d {
+            ParticleDraw::Points(p) => {
+                log.push(b'P');
+                log.push(p.quads as u8);
+                log.push(p.frame_row_column_count_log2);
+                p32(log, p.points.len() as u32);
+                for s in &p.points {
+                    p32(log, s.index);
+                    pv3(log, s.position);
+                    pv4(log, s.diffuse);
+                    pf(log, s.size);
+                    log.push(s.orientation);
+                    log.push(s.frame);
+                }
+                p.points.len() as u64
+            }
+            ParticleDraw::Lines { width, runs } => {
+                log.push(b'L');
+                pf(log, *width);
+                p32(log, runs.len() as u32);
+                let mut n = 0;
+                for r in runs {
+                    p32(log, r.points.len() as u32);
+                    for (p, c) in r.points.iter().zip(&r.colors) {
+                        pv3(log, *p);
+                        pv4(log, *c);
+                    }
+                    n += r.points.len() as u64;
+                }
+                n
+            }
+            ParticleDraw::LineGroup(g) => {
+                log.push(b'G');
+                log.push(g.prism as u8);
+                p32(log, g.lines.len() as u32);
+                for l in &g.lines {
+                    p32(log, l.index);
+                    pv3(log, l.head);
+                    pv3(log, l.tail);
+                    pv4(log, l.head_diffuse);
+                    pv4(log, l.tail_diffuse);
+                    pf(log, l.size);
+                    pf(log, l.ucoord);
+                }
+                g.lines.len() as u64
+            }
+            ParticleDraw::Nothing => {
+                log.push(b'X');
+                0
+            }
+        }
+    }
+
+    fn mat(m: &[f32; 12]) -> Matrix3D {
+        Matrix3D::new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11])
+    }
+
+    /// `ref_w3d_part_run` in Rust: `Ok(None)` for a buffer over
+    /// [`PART_MAX_NUM`]; the second value counts the particles drawn.
+    pub fn rust_part_run(c: &PartCase) -> W3dResult<Option<(Log, u64)>> {
+        let mut log = Log::new();
+        let mut cl = ChunkLoad::new(GameFile::new(&c.data).unwrap());
+        assert!(cl.open_chunk()?);
+        let Some(def) = part_ldr::load_w3d(&mut cl, |_| panic!("version 1"))? else {
+            log.push(b'e');
+            return Ok(Some((log, 0)));
+        };
+        let mut rng = ParticleRandom { v3: Random3::new(c.seeds[0], c.seeds[1]), buf: Random4::new(c.seeds[2]) };
+        let mut clock = Ww3dClock { sync_time: c.create_sync, frame_time: 0, frame_count: 0 };
+        let mut e = ParticleEmitter::create_from_definition(&def, &mut rng, &clock)?;
+        if e.buffer.max_num > PART_MAX_NUM {
+            return Ok(None);
+        }
+        log_created(&mut log, &e);
+        e.set_transform(mat(&c.mats[0]));
+        e.notify_added();
+        e.set_hidden(false);
+        let mut drawn = 0;
+        for (f, s) in c.script.iter().enumerate() {
+            clock = Ww3dClock { sync_time: s[0], frame_time: s[1], frame_count: s[2] };
+            e.set_transform(mat(&c.mats[f + 1]));
+            match s[3] {
+                1 => e.set_hidden(true),
+                2 => e.set_hidden(false),
+                3 => e.set_one_time_burst(s[4] as i32),
+                4 => e.reset(),
+                5 => e.stop(),
+                6 => e.start(),
+                _ => {}
+            }
+            log.push(b'F');
+            e.on_frame_update();
+            if e.buffer_in_scene {
+                e.emit(&clock, &mut rng)?;
+                let at = (e.get_position(), e.is_stopped());
+                let d = e.buffer.render(&clock, Some(at))?;
+                drawn += log_draw(&mut log, &d);
+            } else {
+                log.push(b'N');
+            }
+            log_state(&mut log, &e);
+        }
+        Ok(Some((log, drawn)))
+    }
+
+    pub fn cpp_part_run(c: &PartCase) -> Log {
+        let script: Vec<u32> = c.script.iter().flatten().copied().collect();
+        let mats: Vec<f32> = c.mats.iter().flatten().copied().collect();
+        cpp_log(|log, cap, n| unsafe {
+            cpp::ref_w3d_part_run(
+                c.data.as_ptr() as *const _,
+                c.data.len() as i32,
+                0,
+                c.seeds.as_ptr(),
+                c.create_sync,
+                script.as_ptr(),
+                mats.as_ptr(),
+                c.script.len() as i32,
+                log,
+                cap,
+                n,
+            )
+        })
+    }
+
+    fn key8(t: f32, v: [u8; 4]) -> Vec<u8> {
+        let mut b = t.to_le_bytes().to_vec();
+        b.extend(v);
+        b
+    }
+
+    /// Increasing key times up to about `span` seconds; sometimes equal,
+    /// decreasing, past the lifetime, or a hair below 0 (truncated to 0).
+    fn key_times(g: &mut Gn, n: usize, span: f32) -> Vec<f32> {
+        let mut t = 0.0f32;
+        (0..n)
+            .map(|_| {
+                t += g.g.uniform(0.005, span.max(0.01) * 0.6);
+                match g.below(30) {
+                    0 => t - 0.5 * span,
+                    1 => -0.0004,
+                    2 => t * 3.0,
+                    _ => t,
+                }
+            })
+            .collect()
+    }
+
+    /// A version-2 emitter that mostly loads: lifetime, rate, burst and
+    /// maximum emissions in game-like ranges (with 0, negative and rate
+    /// over 1000 sometimes), velocities, accelerations, each randomizer
+    /// class (an unknown one rarely), outward velocity, inheritance, a
+    /// random shader, every render and frame mode (and unknown ones),
+    /// colour, opacity and size keyframes with random ranges or none,
+    /// rotation, frame and blur-time keyframes, line properties and a future
+    /// start time.
+    pub fn gen_part_def(g: &mut Gn) -> Vec<u8> {
+        let lifetime = match g.below(20) {
+            0 => 0.0,
+            1 => -1.0,
+            2 => g.g.uniform(0.0005, 0.01),
+            _ => g.g.uniform(0.05, 4.0),
+        };
+        let mut body = emit_header(0x0002_0000, b"PART");
+        body.extend(emit_user(0, 0, b""));
+        let tex: &[u8] = if g.coin() { b"" } else { b"fx.tga" };
+        body.extend(emit_info(tex, |i| {
+            i.lifetime = lifetime;
+            i.emission_rate = match g.below(20) {
+                0 => 0.0,
+                1 => -2.0,
+                2 => 1500.0,
+                _ => g.g.uniform(0.5, 60.0),
+            };
+            i.max_emissions = match g.below(4) {
+                0 => g.below(40) as f32,
+                1 => -3.0,
+                _ => 0.0,
+            };
+            (i.velocity.x, i.velocity.y, i.velocity.z) = (g.g.uniform(-20.0, 20.0), g.g.uniform(-20.0, 20.0), g.g.uniform(-20.0, 20.0));
+            if g.coin() {
+                (i.acceleration.x, i.acceleration.y, i.acceleration.z) = (g.g.uniform(-10.0, 10.0), g.g.uniform(-10.0, 10.0), g.g.uniform(-30.0, 5.0));
+            }
+        }));
+        body.extend(emit_info_v2(|v| {
+            v.burst_size = match g.below(10) {
+                0 => 0,
+                1 => 12 + g.below(20),
+                _ => 1 + g.below(4),
+            };
+            for r in [&mut v.creation_volume, &mut v.vel_random] {
+                r.class_id = if g.below(60) == 0 { 7 } else { g.below(4) };
+                (r.value1, r.value2, r.value3) = (g.g.uniform(-0.5, 5.0), g.g.uniform(-0.5, 5.0), g.g.uniform(-0.5, 5.0));
+            }
+            v.outward_vel = if g.coin() { 0.0 } else { g.g.uniform(-5.0, 5.0) };
+            v.vel_inherit = if g.coin() { 0.0 } else { g.g.uniform(-1.0, 2.0) };
+            let s = g.g.u64().to_le_bytes();
+            let mut sh = [0u8; 16];
+            for (k, b) in sh.iter_mut().enumerate().take(14) {
+                *b = s[k % 8] % 4;
+            }
+            v.shader = W3dShaderStruct::from_bytes(&sh);
+            v.render_mode = if g.below(30) == 0 { 7 } else { g.below(5) };
+            v.frame_mode = if g.below(20) == 0 { 9 } else { g.below(5) };
+        }));
+        // props: colour, opacity and size keyframes
+        let span = if lifetime > 0.0 { lifetime } else { 1.0 };
+        let counts = [g.below(4), g.below(4), g.below(4)];
+        let mut p = W3dEmitterPropertyStruct::from_bytes(&[0; 40]);
+        (p.color_keyframes, p.opacity_keyframes, p.size_keyframes) = (counts[0] + 1, counts[1] + 1, counts[2] + 1);
+        let c = if g.coin() { [0u8; 4] } else { g.g.u32().to_le_bytes() };
+        p.color_random = W3dRGBAStruct { r: c[0], g: c[1], b: c[2], a: c[3] };
+        p.opacity_random = if g.coin() { 0.0 } else { g.g.uniform(0.0, 0.5) };
+        p.size_random = if g.coin() { 0.0 } else { g.g.uniform(0.0, 1.0) };
+        let mut pb = p.to_bytes();
+        pb.extend(key8(0.0, g.g.u32().to_le_bytes()));
+        for t in key_times(g, counts[0] as usize, span) {
+            pb.extend(key8(t, if g.below(4) == 0 { [0; 4] } else { g.g.u32().to_le_bytes() }));
+        }
+        pb.extend(key8(0.0, g.g.uniform(0.0, 1.0).to_le_bytes()));
+        for t in key_times(g, counts[1] as usize, span) {
+            pb.extend(key8(t, g.g.uniform(-0.2, 1.2).to_le_bytes()));
+        }
+        pb.extend(key8(0.0, g.g.uniform(0.0, 3.0).to_le_bytes()));
+        for t in key_times(g, counts[2] as usize, span) {
+            pb.extend(key8(t, g.g.uniform(-1.0, 6.0).to_le_bytes()));
+        }
+        body.extend(hchunk(W3D_CHUNK_EMITTER_PROPS, &pb));
+        if g.coin() {
+            let mut lp = W3dEmitterLinePropertiesStruct::from_bytes(&[0; 64]);
+            lp.flags = g.g.u32() & 0x0300_000F;
+            lp.subdivision_level = g.below(5);
+            lp.noise_amplitude = g.g.uniform(0.0, 2.0);
+            lp.texture_tile_factor = g.g.uniform(0.0, 4.0);
+            body.extend(hchunk(W3D_CHUNK_EMITTER_LINE_PROPERTIES, &lp.to_bytes()));
+        }
+        // rotation (header: count, random, orientation random, pad), frame (count, random, 8 pad), blur (count, random, pad)
+        for (id, chance, hsize, range) in [
+            (W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES, 2, 16, 3.0f32),
+            (W3D_CHUNK_EMITTER_FRAME_KEYFRAMES, 2, 16, 16.0),
+            (W3D_CHUNK_EMITTER_BLUR_TIME_KEYFRAMES, 3, 12, 0.2),
+        ] {
+            if g.below(chance) != 0 {
+                continue;
+            }
+            let n = g.below(4);
+            let mut b = n.to_le_bytes().to_vec();
+            b.extend((if g.coin() { 0.0 } else { g.g.uniform(0.0, range * 0.3) }).to_le_bytes());
+            if hsize == 16 {
+                let o = if id == W3D_CHUNK_EMITTER_ROTATION_KEYFRAMES && g.coin() { g.g.uniform(0.0, 1.0) } else { 0.0f32 };
+                b.extend(o.to_le_bytes());
+            }
+            b.extend([0u8; 4]);
+            let start = if g.below(3) == 0 { 0.0 } else { g.g.uniform(-range, range) };
+            b.extend(key8(0.0, start.to_le_bytes()));
+            for t in key_times(g, n as usize, span) {
+                b.extend(key8(t, g.g.uniform(-range, range).to_le_bytes()));
+            }
+            body.extend(hchunk(id, &b));
+        }
+        if g.coin() {
+            let mut eb = (if g.below(6) == 0 { -0.5f32 } else { g.g.uniform(0.0, 2.0) }).to_le_bytes().to_vec();
+            eb.extend([0u8; 36]);
+            body.extend(hchunk(W3D_CHUNK_EMITTER_EXTRA_INFO, &eb));
+        }
+        hchunk(W3D_CHUNK_EMITTER, &body)
+    }
+
+    /// A random run: 10 to 40 frames of 0 to 50 ms mostly, longer ones
+    /// sometimes (up to 20 s, which takes the emission time modulo the
+    /// buffer's cycle), with hides, shows, one-time bursts, resets, stops
+    /// and starts; the emitter moving and turning (a unit quaternion made a
+    /// matrix), still or teleported sometimes.
+    pub fn gen_part_case(g: &mut Gn) -> PartCase {
+        let data = gen_part_def(g);
+        let seeds = [g.g.u32(), g.g.u32(), g.g.u32()];
+        let create_sync = g.below(100_000);
+        let frames = 10 + g.below(31) as usize;
+        let mut sync = create_sync;
+        let mut script = Vec::with_capacity(frames);
+        for f in 0..frames {
+            let dt = match g.below(20) {
+                0 | 1 => 0,
+                2..=13 => 1 + g.below(50),
+                14..=18 => 50 + g.below(350),
+                _ => 3000 + g.below(17_000),
+            };
+            sync = sync.wrapping_add(dt);
+            let op = match g.below(50) {
+                0..=2 => 1,
+                3..=5 => 2,
+                6..=8 => 3,
+                9 => 4,
+                10 => 5,
+                11 => 6,
+                _ => 0,
+            };
+            script.push([sync, dt, f as u32 + 1, op, g.below(6)]);
+        }
+        let mut pos = [g.g.uniform(-50.0, 50.0), g.g.uniform(-50.0, 50.0), g.g.uniform(0.0, 20.0)];
+        let vel = [g.g.uniform(-0.05, 0.05), g.g.uniform(-0.05, 0.05), 0.0];
+        let spin = g.g.uniform(-0.003, 0.003);
+        let still = g.below(4) == 0;
+        let mut angle = g.g.uniform(-3.0, 3.0);
+        let mut mats = Vec::with_capacity(frames + 1);
+        for k in 0..=frames {
+            if k > 0 && !still {
+                let dt = script[k - 1][1] as f32;
+                for i in 0..3 {
+                    pos[i] += vel[i] * dt;
+                }
+                angle += spin * dt;
+                if g.below(40) == 0 {
+                    pos[0] += g.g.uniform(-100.0, 100.0);
+                }
+            }
+            let h = angle * 0.5;
+            let tilt = 0.3f32;
+            let q = Quaternion::new(
+                rts_lockstep_engine::ww::wwmath::sin(tilt) * rts_lockstep_engine::ww::wwmath::cos(h),
+                0.0,
+                rts_lockstep_engine::ww::wwmath::sin(h),
+                rts_lockstep_engine::ww::wwmath::cos(h) * rts_lockstep_engine::ww::wwmath::cos(tilt),
+            );
+            let mut m = build_matrix3d(&q);
+            m.set_translation(&Vector3::new(pos[0], pos[1], pos[2]));
+            mats.push(m.to_array());
+        }
+        PartCase { data, seeds, create_sync, script, mats }
+    }
+
+    /// Particle emitters run frame by frame against the compiled
+    /// part_emt.cpp and part_buf.cpp (see wrap_w3d_part.cpp): 3,000 random
+    /// runs ([`gen_part_case`]); compared, byte for byte (floats as raw
+    /// bits), the emitter and buffer as created (emission period, burst
+    /// size, buffer size, lifetime, acceleration, shader after `Enable_Fog`,
+    /// every keyframe time, value and delta, the rotation's integrated
+    /// orientations, every randomizer table) and after each frame the
+    /// emitter's counters and previous transform, the ring's and queue's
+    /// indices, the bounding box, and what the renderer was given: every
+    /// point's slot, position, colour and alpha, size, orientation and frame
+    /// (triangles and quads), every line run's points and colours (line
+    /// mode), every line's head, tail, colours, size and u coordinate (line
+    /// groups). The same seeds on both sides.
+    ///
+    /// Predicted before the run: no disagreement; a few percent excluded as
+    /// undefined: `NullPointer` (an unknown randomizer class, about 1 in 30),
+    /// `FloatToInt` (lifetimes or key times that make a negative or huge
+    /// `unsigned`, a hair-below-0 key is defined), `NonTerminating` (a rate
+    /// over 1000 with no maximum, about 1 in 30); a third or so of the runs
+    /// drawing nothing in some frames (hidden, rate 0, or tiny lifetimes).
+    ///
+    /// Result (2026-11-07): 2,261 of the 3,000 runs compared (56,870 frames,
+    /// 3,360,104 particles or line points drawn; runs drawing points 993,
+    /// line runs 684, line groups 1,003, an unknown render mode 357), 0
+    /// mismatches. **Prediction missed:** 736 runs (25 %, not a few percent)
+    /// excluded as undefined: 561 `FloatToInt` (most from the generator's
+    /// negative future start times, -0.5 s, and its key times half a span
+    /// back, which upstream converts to `unsigned`), 98 `NullPointer`, 77
+    /// `NonTerminating`; 3 over the buffer limit. Planted bugs, each run
+    /// once on the 3,000 runs: `Cached_Slerp` "fixed" to divide by sin theta:
+    /// 1,158 mismatching runs; a particle kept while its age equals `MaxAge`
+    /// (`<=` in `Kill_Old_Particles`): 231; the colour randomizer's three
+    /// draws taken right to left (MSVC's argument order): 1,148;
+    /// `VectorProcessorClass::Clamp` as if its arrays were distinct (the top
+    /// clamp only): 1,119.
+    #[test]
+    fn particle_emitters_match_upstream() {
+        let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let cases: usize = std::env::var("PART_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(3_000);
+        let mut g = Gn { g: Gen::new(0x9A47), clean: true };
+        let mut check = Check::new("ParticleEmitterClass/ParticleBufferClass");
+        let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
+        let (mut compared, mut frames, mut drawn, mut large, mut load_errors) = (0u64, 0u64, 0u64, 0u64, 0u64);
+        let mut modes = [0u64; 4];
+        for case in 0..cases {
+            let c = gen_part_case(&mut g);
+            let (rust, n) = match rust_part_run(&c) {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    large += 1;
+                    continue;
+                }
+                Err(W3dError::Undefined(u)) => {
+                    *excluded.entry(format!("{u:?}")).or_default() += 1;
+                    continue;
+                }
+                Err(e) => {
+                    *excluded.entry(format!("{e:?}")).or_default() += 1;
+                    continue;
+                }
+            };
+            if rust == b"e" {
+                load_errors += 1;
+            }
+            for (k, tag) in [b'P', b'L', b'G', b'X'].iter().enumerate() {
+                if rust.windows(2).any(|w| w[0] == b'F' && w[1] == *tag) {
+                    modes[k] += 1;
+                }
+            }
+            let cpp = cpp_part_run(&c);
+            check.eq(&rust, &cpp, || format!("case {case}: {c:?}"));
+            compared += 1;
+            frames += c.script.len() as u64;
+            drawn += n;
+        }
+        println!(
+            "particles: {cases} runs, {compared} compared ({frames} frames, {drawn} particles or line points drawn; runs with \
+             points {}, lines {}, line groups {}, no renderer {}; {load_errors} definitions not loading); excluded (undefined \
+             upstream): {} {excluded:?}; over {PART_MAX_NUM} particles: {large}",
+            modes[0],
+            modes[1],
+            modes[2],
+            modes[3],
+            excluded.values().sum::<u64>()
+        );
+        check.finish();
+    }
 }

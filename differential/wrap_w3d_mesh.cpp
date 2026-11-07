@@ -127,7 +127,8 @@ void StringClass::Get_String(int length, bool)
 int _cdecl StringClass::Format(const TCHAR *, ...) { return 0; }
 TCHAR StringClass::m_NullChar = 0;
 TCHAR *StringClass::m_EmptyString = &StringClass::m_NullChar;
-void ShaderClass::Enable_Fog(const char *) { abort(); }
+/* ~~ShaderClass::Enable_Fog (aborting stand-in)~~ Corrected 2026-11-07 (#49): the real
+** Enable_Fog is compiled from shader.cpp, verbatim, in the emit library (build.rs). */
 ShaderClass::StaticSortCategoryType ShaderClass::Get_SS_Category(void) const { abort(); }
 
 /* ---- meshgeometry.cpp ------------------------------------------------ */

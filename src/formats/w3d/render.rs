@@ -73,7 +73,11 @@
 //!
 //! - **The LOD** is the highest (`LodCount - 1`); upstream picks by screen
 //!   size and cost. Sub-objects that are not meshes (boxes, nulls, nested
-//!   HLODs, emitters) are listed in [`RenderModel::not_drawn`], not drawn.
+//!   HLODs, ~~emitters~~) are listed in [`RenderModel::not_drawn`], not drawn.
+//!   **Corrected 2026-11-07 (#49):** particle emitters are kept
+//!   ([`RenderModel::emitters`]), bound to their bones, and run by
+//!   [`RenderModel::update_emitters`]; a bone's visibility
+//!   (`Set_Animation_Hidden` from the hierarchy) does not stop them yet.
 //! - A hierarchy that cannot be found poses every bone at the root
 //!   (upstream's `Animatable3DObjClass` makes a one-pivot default tree, on
 //!   which only bone 0 is defined).
@@ -135,6 +139,25 @@ pub struct RenderModel {
     pub sub_objects: Vec<SubObject>,
     /// Sub-objects that are not drawn: name, and why.
     pub not_drawn: Vec<(Vec<u8>, String)>,
+    /// The particle emitters among the sub-objects (#49), on their bones.
+    pub emitters: Vec<EmitterSub>,
+}
+
+/// A particle emitter bound to a bone of a [`RenderModel`] (#49).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmitterSub {
+    /// The name it was created by.
+    pub name: Vec<u8>,
+    pub bone_index: i32,
+    /// Its definition (the prototype).
+    pub def: super::part_ldr::ParticleEmitterDef,
+    /// The render object, made at the first [`RenderModel::update_emitters`]
+    /// (`Create_From_Definition` needs the clock and the generators).
+    pub emitter: Option<super::part_emt::ParticleEmitter>,
+    /// What the buffer drew at the last update.
+    pub draw: Option<super::part_buf::ParticleDraw>,
+    /// Why it stopped: an input upstream is undefined on.
+    pub failed: Option<String>,
 }
 
 impl RenderModel {
@@ -156,11 +179,13 @@ impl RenderModel {
                     htree: None,
                     sub_objects: vec![SubObject { name: name.to_vec(), bone_index: 0, hidden, model, uv_offset: None }],
                     not_drawn: Vec::new(),
+                    emitters: Vec::new(),
                 }))
             }
             Prototype::HLod(def) => {
                 let htree = am.get_htree(fs, &def.hierarchy_tree_name)?.cloned();
-                let mut out = RenderModel { name: name.to_vec(), is_hlod: true, htree, sub_objects: Vec::new(), not_drawn: Vec::new() };
+                let mut out =
+                    RenderModel { name: name.to_vec(), is_hlod: true, htree, sub_objects: Vec::new(), not_drawn: Vec::new(), emitters: Vec::new() };
                 let mut subs = Vec::new();
                 if let Some(top) = def.lods.last() {
                     subs.extend(top.sub_objects.iter().cloned());
@@ -173,6 +198,9 @@ impl RenderModel {
                             let model = MeshModel::from_mesh(&mesh)?;
                             let hidden = model.w3d_attributes & W3D_MESH_FLAG_HIDDEN != 0;
                             out.sub_objects.push(SubObject { name: sub_name, bone_index: s.bone_index, hidden, model, uv_offset: None });
+                        }
+                        Some(Prototype::ParticleEmitter(def)) => {
+                            out.emitters.push(EmitterSub { name: sub_name, bone_index: s.bone_index, def, emitter: None, draw: None, failed: None });
                         }
                         Some(other) => {
                             let why = format!("a {} prototype, not a mesh", prototype_kind(&other));
@@ -214,6 +242,49 @@ impl RenderModel {
             Ok(Matrix3D::IDENTITY)
         } else {
             self.bone_transform(s.bone_index)
+        }
+    }
+
+    /// One frame of the particle emitters at the clock (#49): each emitter
+    /// takes its bone's transform under `world` (`HLodClass` updating its
+    /// sub-objects' transforms; the particles live in the world, so the
+    /// object's own transform is part of it) and runs a frame
+    /// ([`super::part_emt::ParticleEmitter::frame`]). The first time, the
+    /// emitter is made, added to the scene and shown, which starts it
+    /// (`Notify_Added`, `Set_Hidden(false)`). An emitter upstream is
+    /// undefined on stops, with the reason in [`EmitterSub::failed`].
+    pub fn update_emitters(&mut self, world: &Matrix3D, clock: &super::part_buf::Ww3dClock, rng: &mut super::part_emt::ParticleRandom) {
+        use super::part_emt::ParticleEmitter;
+        for i in 0..self.emitters.len() {
+            if self.emitters[i].failed.is_some() {
+                continue;
+            }
+            let bone = self.bone_transform(self.emitters[i].bone_index).unwrap_or(Matrix3D::IDENTITY);
+            let tm = Matrix3D::multiply(world, &bone);
+            let e = &mut self.emitters[i];
+            if e.emitter.is_none() {
+                match ParticleEmitter::create_from_definition(&e.def, rng, clock) {
+                    Ok(mut em) => {
+                        em.set_transform(tm);
+                        em.notify_added();
+                        em.set_hidden(false);
+                        e.emitter = Some(em);
+                    }
+                    Err(err) => {
+                        e.failed = Some(format!("{err}"));
+                        continue;
+                    }
+                }
+            }
+            let em = e.emitter.as_mut().expect("made above");
+            em.set_transform(tm);
+            match em.frame(clock, rng) {
+                Ok(d) => e.draw = d,
+                Err(err) => {
+                    e.failed = Some(format!("{err}"));
+                    e.draw = None;
+                }
+            }
         }
     }
 
@@ -542,6 +613,55 @@ mod tests {
         let (v, _) = model.deformed(1).unwrap();
         assert_eq!(v[2], [3.0, 1.0, 5.0]);
         assert_eq!(model.sub_object_transform(1).unwrap(), Matrix3D::IDENTITY, "a skin is drawn in model space");
+    }
+
+    /// #49: an emitter that is a sub-object of an HLOD, on the arm bone (at
+    /// (0, 0, 5)), with the object at (10, 0, 0).
+    ///
+    /// Predicted before the run: the HLOD keeps the emitter (not in
+    /// `not_drawn`) on bone 1; the first update (sync 0) makes and starts
+    /// it and draws an empty point group (quads); 250 ms later two bursts
+    /// of one (period 100 ms) are drawn, stamped 100 and 200, rising at 10
+    /// units a second (+-1) from within 0.5 of (10, 0, 5): x within 10 +-
+    /// 0.7, z between 5 and 7.5; their alpha (opacity 1 fading to 0 over
+    /// the second) under 1.
+    ///
+    /// *Result (2026-11-07), first run:* held.
+    #[test]
+    fn an_hlod_emitter_emits_on_its_bone() {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = htree_w3d(b"ROBOT", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"ARM".to_vec(), parent: 0, translation: [0.0, 0.0, 5.0], rotation: ident },
+        ]);
+        f.extend(MeshSpec::cuboid(b"ROBOT", b"BOX", [-1.0; 3], [1.0; 3]).to_w3d());
+        f.extend(EmitterSpec::puff(b"PUFF").to_w3d());
+        f.extend(hlod_w3d(b"ROBOT", b"ROBOT", &[(b"ROBOT.BOX", 1), (b"PUFF", 1)]));
+        let fs = fs_with(&[("Art/W3D/robot.w3d", f)]);
+        let mut am = AssetManager::new_game(W3dFileFactory::default());
+        let mut model = RenderModel::create(&mut am, &fs, b"ROBOT").unwrap().unwrap();
+        assert!(model.not_drawn.is_empty(), "{:?}", model.not_drawn);
+        assert_eq!((model.emitters.len(), model.emitters[0].bone_index), (1, 1));
+        model.update::<AssetManager>(&Matrix3D::IDENTITY, None).unwrap();
+        let world = Matrix3D::from_translation(&crate::ww::vector3::Vector3::new(10.0, 0.0, 0.0));
+        let mut rng = super::super::part_emt::ParticleRandom::default();
+        use super::super::part_buf::{ParticleDraw, Ww3dClock};
+        model.update_emitters(&world, &Ww3dClock::default(), &mut rng);
+        match &model.emitters[0].draw {
+            Some(ParticleDraw::Points(p)) => assert!(p.quads && p.points.is_empty()),
+            d => panic!("{d:?} {:?}", model.emitters[0].failed),
+        }
+        model.update_emitters(&world, &Ww3dClock { sync_time: 250, frame_time: 250, frame_count: 1 }, &mut rng);
+        match &model.emitters[0].draw {
+            Some(ParticleDraw::Points(p)) => {
+                assert_eq!(p.points.len(), 2);
+                for s in &p.points {
+                    assert!((s.position.x - 10.0).abs() <= 0.7 && s.position.z > 5.0 && s.position.z < 7.5, "{s:?}");
+                    assert!(s.diffuse.w < 1.0, "{s:?}");
+                }
+            }
+            d => panic!("{d:?}"),
+        }
     }
 
     /// Predictions: a 30 fps animation of 10 frames, looping, advances 3

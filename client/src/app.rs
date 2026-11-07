@@ -1194,7 +1194,10 @@ fn draw_particles(
     let Ok(cam) = cams.single() else { return };
     let (right, up) = (cam.right(), cam.up());
     let g = &mut *game;
-    let quads = crate::particles::particle_quads(&g.models.drawables.fx.particles, right.to_array(), up.to_array());
+    let mut quads = crate::particles::particle_quads(&g.models.drawables.fx.particles, right.to_array(), up.to_array());
+    // the W3D models' emitters (#49), in the same batches
+    let w3d = crate::particles::emitter_quads(g.models.instances(), crate::particles::point_tables(), right.to_array(), up.to_array());
+    crate::particles::merge_batches(&mut quads, w3d);
     // the batches no particle uses this frame are hidden, not freed
     for (key, (e, _)) in &pd.batches {
         if !quads.contains_key(key) {

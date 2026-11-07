@@ -35,6 +35,8 @@ use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, Skeleton,
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
+use rts_lockstep_engine::formats::w3d::part_buf::Ww3dClock;
+use rts_lockstep_engine::formats::w3d::part_emt::ParticleRandom;
 use rts_lockstep_engine::formats::w3d::render::RenderModel;
 use rts_lockstep_engine::logic::client_event::ClientEvent;
 use rts_lockstep_engine::logic::world::game_logic::World;
@@ -159,6 +161,11 @@ pub struct WorldDrawables<D: LocalDevice> {
     pub waiting_anims: BTreeSet<Vec<u8>>,
     /// Drawables made again because the files their modules waited for arrived (GitHub #24's count).
     pub remade: usize,
+    /// The W3D particle generators (#49: `Vector3Randomizer::Randomizer` and part_buf.cpp's `rand_gen`, process globals
+    /// upstream), seeded as upstream's statics are.
+    pub particle_random: ParticleRandom,
+    /// The WW3D clock of the last draw (frame time and count for the emitters, #49).
+    pub particle_clock: Option<Ww3dClock>,
 }
 
 impl<D: LocalDevice> WorldDrawables<D> {
@@ -171,6 +178,8 @@ impl<D: LocalDevice> WorldDrawables<D> {
             waiting_models: BTreeSet::new(),
             waiting_anims: BTreeSet::new(),
             remade: 0,
+            particle_random: ParticleRandom::default(),
+            particle_clock: None,
         }
     }
 
@@ -247,6 +256,39 @@ impl<D: LocalDevice> WorldDrawables<D> {
             None => self.drawables.draw(w, &mut NoArt, sync_time),
         }
         self.pose();
+        self.update_emitters(w, sync_time);
+    }
+
+    /// The posed models' particle emitters, one W3D frame at `sync_time` ms (#49): the clock advances as `WW3D::Sync`
+    /// does (frame time = the time since the last draw, frame count + 1), and each emitter runs on its bone under its
+    /// object's transform (position, orientation, and the client-side physics transform the mesh is drawn with), since
+    /// W3D particles live in the world. Reading only: the World is not written.
+    fn update_emitters(&mut self, w: &World, sync_time: u32) {
+        let clock = match self.particle_clock {
+            Some(c) => Ww3dClock { sync_time, frame_time: sync_time.wrapping_sub(c.sync_time), frame_count: c.frame_count.wrapping_add(1) },
+            None => Ww3dClock { sync_time, frame_time: 0, frame_count: 0 },
+        };
+        self.particle_clock = Some(clock);
+        let ids: Vec<ObjectId> = self.instances.keys().copied().collect();
+        for id in ids {
+            let Some(o) = w.find_object(id) else { continue };
+            let p = o.get_position();
+            let mut world = Matrix3D::from_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(p.x, p.y, p.z));
+            world.rotate_z(o.thing.orientation());
+            if let Some(x) = self.physics_xform(id) {
+                world = Matrix3D::multiply(&world, &x);
+            }
+            if let Some((_, m)) = self.instances.get_mut(&id) {
+                if !m.emitters.is_empty() {
+                    m.update_emitters(&world, &clock, &mut self.particle_random);
+                }
+            }
+        }
+    }
+
+    /// The posed models, for drawing their particles (#49).
+    pub fn instances(&self) -> impl Iterator<Item = &RenderModel> {
+        self.instances.values().map(|(_, m)| m)
     }
 
     /// The waiting names whose files have arrived are dropped; if any was, each drawable with a module lacking its
@@ -1062,6 +1104,101 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert!(steps > 60, "{steps} drive steps");
         assert!(last_step.is_some_and(|f| f < 150));
         assert_eq!(posed, Some(vec![None, Some([u, 0.0]), Some([u, 0.0])]));
+    }
+
+    /// A smoker `SMOKER` (GitHub #49): pivots ROOTTRANSFORM and STACK (3 up), a cube on the stack, and the particle
+    /// emitter `SMOKE` (a puff: 10 a second, a second's life, rising, alpha-blended `puff.tga`) on the stack too.
+    fn smoker_model() -> Vec<u8> {
+        let ident = [0.0, 0.0, 0.0, 1.0];
+        let mut f = synth::htree_w3d(b"SMOKER", &[
+            PivotSpec { name: b"ROOTTRANSFORM".to_vec(), parent: -1, translation: [0.0; 3], rotation: ident },
+            PivotSpec { name: b"STACK".to_vec(), parent: 0, translation: [0.0, 0.0, 3.0], rotation: ident },
+        ]);
+        let mut m = MeshSpec::cuboid(b"SMOKER", b"BODY", [-0.5; 3], [0.5; 3]);
+        m.stage0.texture = None;
+        f.extend(m.to_w3d());
+        f.extend(synth::EmitterSpec::puff(b"SMOKE").to_w3d());
+        f.extend(synth::hlod_w3d(b"SMOKER", b"SMOKER", &[(b"SMOKER.BODY", 1), (b"SMOKE", 1)]));
+        f
+    }
+
+    const SMOKER_DRAW: &str = " Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = Smoker\n  End\n End\n";
+
+    /// GitHub #49: the gate's runner drawn as `SMOKER`, a model whose HLOD has a W3D particle emitter on a bone, ordered
+    /// 120 east as in [`a_drawn_tank_scrolls_its_treads_without_changing_the_crcs`], 120 frames at 33 ms with the
+    /// drawables fed every frame, and the same game without them.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - the logic's CRCs are equal frame for frame with and without the client (the emitters read the World's
+    ///   positions only);
+    /// - the emitter is made and started at the first draw; it emits one particle every 100 ms, each living a second:
+    ///   once past the first second, 9 to 11 particles are drawn each frame, and every frame from the fourth (99 ms is
+    ///   under one period; 132 is over) has some;
+    /// - the particles are in the world: while the runner moves east the oldest one is more than half a unit west of
+    ///   the runner (a trail), and all are above the stack's height minus the creation box (z over 2.5);
+    /// - the client's batches (`emitter_quads`) hold them under (`puff.tga`, alpha), 4 corners and 6 indices each.
+    ///
+    /// *Results (2026-11-07), first run:* all held. CRCs equal over 120 frames; the first particle at frame 4, then one
+    /// more every third frame, 10 from frame 31 on (9 once, at frame 100); the oldest particle west of the runner by
+    /// more than half a unit on 117 frames; none below 2.5; at frame 60, one batch (`puff.tga`, alpha) of 10 quads and
+    /// 60 indices.
+    #[test]
+    fn a_drawn_model_s_emitter_draws_particles_without_changing_the_crcs() {
+        let play = |drawn_client: bool| {
+            let mut w = gate_map_world_with(&drawn("Runner", SMOKER_DRAW));
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let runner = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+            let mut art = MemoryDevice::new();
+            art.insert(b"Art/W3D/smoker.w3d", smoker_model());
+            let mut d = WorldDrawables::new(Some(Art::new(FileSystem::new(art))));
+            let ev = w.take_client_events();
+            if drawn_client {
+                d.update(&mut w, &ev, 0);
+                assert!(d.drawables.errors.is_empty(), "{:?}", d.drawables.errors);
+            }
+            let ai = w.find_object(runner).and_then(|o| o.ai).expect("the AI");
+            w.module_call(runner, ai, ModuleCall::AiMoveToPosition { pos: at(160.0, 50.0), command_source: 0 });
+            let (mut crcs, mut counts, mut trails, mut low, mut batch) = (Vec::new(), Vec::new(), 0usize, 0usize, None);
+            for f in 1..=120u32 {
+                w.logic_update().expect("a frame");
+                let ev = w.take_client_events();
+                if drawn_client {
+                    d.update(&mut w, &ev, f * 33);
+                    let m = d.instance(runner).expect("the smoker");
+                    let e = &m.emitters[0];
+                    assert!(e.failed.is_none(), "{:?}", e.failed);
+                    let pts = match &e.draw {
+                        Some(rts_lockstep_engine::formats::w3d::part_buf::ParticleDraw::Points(p)) => p.points.clone(),
+                        other => panic!("{other:?}"),
+                    };
+                    counts.push(pts.len());
+                    let x = w.find_object(runner).unwrap().get_position().x;
+                    if pts.first().is_some_and(|p| p.position.x < x - 0.5) {
+                        trails += 1;
+                    }
+                    low += pts.iter().filter(|p| p.position.z <= 2.5).count();
+                    if f == 60 {
+                        let q = crate::particles::emitter_quads(d.instances(), crate::particles::point_tables(), [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+                        batch = Some((q.keys().cloned().collect::<Vec<_>>(), q.values().map(|b| (b.len(), b.indices.len())).collect::<Vec<_>>(), pts.len()));
+                    }
+                }
+                crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, counts, trails, low, batch)
+        };
+        let (plain, ..) = play(false);
+        let (crcs, counts, trails, low, batch) = play(true);
+        println!("counts {counts:?} trails {trails} low {low} batch {batch:?}");
+        assert_eq!(crcs, plain);
+        assert!(counts[3..].iter().all(|&n| n > 0), "{counts:?}");
+        assert!(counts[31..].iter().all(|&n| (9..=11).contains(&n)), "{counts:?}");
+        assert!(trails > 30, "{trails}");
+        assert_eq!(low, 0);
+        let (keys, sizes, n) = batch.expect("frame 60");
+        assert_eq!(keys, vec![(b"puff.tga".to_vec(), crate::particles::Blend::Alpha)]);
+        assert_eq!(sizes, vec![(n, 6 * n)]);
     }
 
     /// A truck `TRUCKT`: pivots ROOTTRANSFORM (0), TIREFL (1), TIREFR (2), TIRERL (3), TIRERR (4), a cube on each (GitHub #41).

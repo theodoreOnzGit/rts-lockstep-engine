@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
+//
+// Partly translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
+// commit 0a05454d8574207440a5fb15241b98ad0b435590):
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/pointgr.cpp
+//   (PointGroupClass::_Init's vertex location and frame UV tables; [`PointTables`])
+// Original copyright notice: Command & Conquer Generals Zero Hour(tm), Copyright 2025 Electronic Arts Inc.
+// (Westwood Studios, WW3D). Licensed under the GNU General Public License version 3, with the additional terms in
+// NOTICE.md. Translated to Rust and modified; not the original program. The rest of this file is new.
 //! The particles as quads (GitHub #43, #44). Plain Rust, no Bevy: the app (`app::draw_particles`) puts each batch in
 //! one mesh.
 //!
@@ -8,6 +16,10 @@
 //! lie flat. **New** (the DirectX 8 device is replaced): each batch is a list of quads in Bevy's axes, grouped by texture
 //! and blend, built on the CPU each frame facing the camera. Streaks (`STREAK`, a line strip upstream), drawable
 //! particles and volume particles are drawn as plain quads for now.
+//!
+//! **Added 2026-11-07 (GitHub #49):** the W3D model emitters' particles ([`emitter_quads`], a parallel batch merged
+//! into the same keys), from the translated `ParticleEmitterClass`/`ParticleBufferClass`; their point-group geometry is
+//! `PointGroupClass::_Init`'s (pointgr.cpp, translated in [`PointTables`]).
 
 use std::collections::BTreeMap;
 
@@ -75,6 +87,174 @@ pub fn particle_quads(m: &ParticleSystemManager, right: [f32; 3], up: [f32; 3]) 
         }
     }
     out
+}
+
+/// `PointGroupClass::_Init`'s vertex tables (pointgr.cpp, GitHub #49): for each of the 256 orientations, a point's
+/// triangle (`(0, -2)`, `(-1.732, 1)`, `(1.732, 1)`) and quad (`(+-0.5, +-0.5)`) corners turned by `i * 2 pi / 256`
+/// (the angle accumulated in `float`, `Fast_Cos`, `Fast_Sin`), in the camera's x (right) and y (up), times the size.
+pub struct PointTables {
+    pub tri: Vec<[[f32; 2]; 3]>,
+    pub quad: Vec<[[f32; 2]; 4]>,
+}
+
+impl PointTables {
+    pub fn new() -> Self {
+        use rts_lockstep_engine::ww::wwmath::{fast_cos, fast_sin, WWMATH_PI};
+        let tri_locs = [[0.0f32, -2.0], [-1.732, 1.0], [1.732, 1.0]];
+        let quad_locs = [[-0.5f32, 0.5], [-0.5, -0.5], [0.5, -0.5], [0.5, 0.5]];
+        let (mut tri, mut quad) = (Vec::with_capacity(256), Vec::with_capacity(256));
+        let mut angle = 0.0f32;
+        let angle_step = (WWMATH_PI * 2.0f32) / 256.0f32;
+        for _ in 0..256 {
+            let (c, s) = (fast_cos(angle), fast_sin(angle));
+            let turn = |l: [f32; 2]| [l[0] * c - l[1] * s, l[0] * s + l[1] * c];
+            tri.push(tri_locs.map(turn));
+            quad.push(quad_locs.map(turn));
+            angle += angle_step;
+        }
+        PointTables { tri, quad }
+    }
+}
+
+/// The tables, made once.
+pub fn point_tables() -> &'static PointTables {
+    static T: std::sync::OnceLock<PointTables> = std::sync::OnceLock::new();
+    T.get_or_init(PointTables::new)
+}
+
+impl Default for PointTables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// How a W3D emitter's shader blends: additive for `ONE/ONE` (and screen), else alpha.
+fn emitter_blend(shader: rts_lockstep_engine::formats::w3d::shader::ShaderClass) -> Blend {
+    use rts_lockstep_engine::formats::w3d::shader::{DSTBLEND_ONE, DSTBLEND_ONE_MINUS_SRC_COLOR, SRCBLEND_ONE};
+    if shader.get_src_blend_func() == SRCBLEND_ONE && matches!(shader.get_dst_blend_func(), DSTBLEND_ONE | DSTBLEND_ONE_MINUS_SRC_COLOR) {
+        Blend::Add
+    } else {
+        Blend::Alpha
+    }
+}
+
+/// A camera-facing ribbon of `width` through `points` (game axes) with their colours, into `b` (Bevy axes).
+fn ribbon(b: &mut QuadBatch, points: &[[f32; 3]], colors: &[[f32; 4]], width: f32, right: [f32; 3], up: [f32; 3]) {
+    use rts_lockstep_engine::ww::wwmath::sqrt;
+    // the view direction (right x up)
+    let view = [right[1] * up[2] - right[2] * up[1], right[2] * up[0] - right[0] * up[2], right[0] * up[1] - right[1] * up[0]];
+    for k in 0..points.len().saturating_sub(1) {
+        let (a, c) = (to_bevy(points[k]), to_bevy(points[k + 1]));
+        let d = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let mut o = [d[1] * view[2] - d[2] * view[1], d[2] * view[0] - d[0] * view[2], d[0] * view[1] - d[1] * view[0]];
+        let l = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if l <= 0.0 {
+            continue;
+        }
+        let h = 0.5 * width / l;
+        o = [o[0] * h, o[1] * h, o[2] * h];
+        let base = b.positions.len() as u32;
+        for (p, sgn, uv) in [(a, -1.0f32, [0.0, 1.0]), (c, -1.0, [1.0, 1.0]), (c, 1.0, [1.0, 0.0]), (a, 1.0, [0.0, 0.0])] {
+            b.positions.push([p[0] + sgn * o[0], p[1] + sgn * o[1], p[2] + sgn * o[2]]);
+            b.uvs.push(uv);
+        }
+        b.colors.extend([colors[k], colors[k + 1], colors[k + 1], colors[k]]);
+        b.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
+/// The W3D emitters' particles (GitHub #49), in batches keyed as [`particle_quads`]'s (texture, blend), to merge with
+/// them: what each emitter's buffer handed its renderer at the last draw (`RenderModel::update_emitters`). **New** (the
+/// DirectX 8 device is replaced): triangle and quad particles as `PointGroupClass` builds them (its vertex tables,
+/// [`PointTables`], facing the camera; the frame's cell of the texture, `frame & mask` in rows of `1 << log2`);
+/// line-mode runs and line-group lines as camera-facing ribbons of the line's width or the particle's size (upstream's
+/// segment-line renderer subdivides, adds noise and merges intersections; its line groups draw tetrahedra or prisms:
+/// not modelled).
+pub fn emitter_quads<'a>(
+    models: impl Iterator<Item = &'a rts_lockstep_engine::formats::w3d::render::RenderModel>,
+    tables: &PointTables,
+    right: [f32; 3],
+    up: [f32; 3],
+) -> BTreeMap<(Vec<u8>, Blend), QuadBatch> {
+    use rts_lockstep_engine::formats::w3d::part_buf::ParticleDraw;
+    let mut out: BTreeMap<(Vec<u8>, Blend), QuadBatch> = BTreeMap::new();
+    for m in models {
+        for e in &m.emitters {
+            let (Some(d), Some(em)) = (&e.draw, &e.emitter) else { continue };
+            let blend = emitter_blend(em.buffer.shader);
+            let tex = em.buffer.texture.clone().unwrap_or_default().to_ascii_lowercase();
+            let rgba = |c: rts_lockstep_engine::ww::vector4::Vector4| match blend {
+                Blend::Add => [c.x, c.y, c.z, 1.0],
+                Blend::Alpha => [c.x, c.y, c.z, c.w],
+            };
+            match d {
+                ParticleDraw::Points(p) if !p.points.is_empty() => {
+                    let b = out.entry((tex, blend)).or_default();
+                    let rows = 1u32 << p.frame_row_column_count_log2;
+                    let mask = !(0xFFFF_FFFFu32 << (2 * p.frame_row_column_count_log2));
+                    let scale = 1.0f32 / rows as f32;
+                    for s in &p.points {
+                        let c = to_bevy([s.position.x, s.position.y, s.position.z]);
+                        let f = u32::from(s.frame) & mask;
+                        let corner = [(f % rows) as f32 * scale, (f / rows) as f32 * scale];
+                        let at = |l: [f32; 2]| {
+                            [c[0] + (right[0] * l[0] + up[0] * l[1]) * s.size, c[1] + (right[1] * l[0] + up[1] * l[1]) * s.size, c[2] + (right[2] * l[0] + up[2] * l[1]) * s.size]
+                        };
+                        let base = b.positions.len() as u32;
+                        if p.quads {
+                            let uvs = [[0.0f32, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
+                            for (l, uv) in tables.quad[s.orientation as usize].iter().zip(uvs) {
+                                b.positions.push(at(*l));
+                                b.uvs.push([corner[0] + uv[0] * scale, corner[1] + uv[1] * scale]);
+                            }
+                            b.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+                        } else {
+                            let uvs = [[0.5f32, 0.0], [0.0, 0.866], [1.0, 0.866]];
+                            for (l, uv) in tables.tri[s.orientation as usize].iter().zip(uvs) {
+                                b.positions.push(at(*l));
+                                b.uvs.push([corner[0] + uv[0] * scale, corner[1] + uv[1] * scale]);
+                            }
+                            // (four corners per entry: the triangle's last again, unused)
+                            let last = *b.positions.last().expect("pushed");
+                            b.positions.push(last);
+                            b.uvs.push([0.0, 0.0]);
+                            b.indices.extend([base, base + 1, base + 2]);
+                        }
+                        b.colors.extend([rgba(s.diffuse); 4]);
+                    }
+                }
+                ParticleDraw::Lines { width, runs } => {
+                    for r in runs {
+                        let b = out.entry((tex.clone(), blend)).or_default();
+                        let pts: Vec<[f32; 3]> = r.points.iter().map(|p| [p.x, p.y, p.z]).collect();
+                        let cols: Vec<[f32; 4]> = r.colors.iter().map(|c| rgba(*c)).collect();
+                        ribbon(b, &pts, &cols, *width, right, up);
+                    }
+                }
+                ParticleDraw::LineGroup(g) => {
+                    let b = out.entry((tex, blend)).or_default();
+                    for l in &g.lines {
+                        let pts = [[l.tail.x, l.tail.y, l.tail.z], [l.head.x, l.head.y, l.head.z]];
+                        ribbon(b, &pts, &[rgba(l.tail_diffuse), rgba(l.head_diffuse)], l.size, right, up);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// `b`'s quads appended to `a` (the INI particles' batches and the W3D emitters' share keys).
+pub fn merge_batches(a: &mut BTreeMap<(Vec<u8>, Blend), QuadBatch>, b: BTreeMap<(Vec<u8>, Blend), QuadBatch>) {
+    for (k, v) in b {
+        let t = a.entry(k).or_default();
+        let base = t.positions.len() as u32;
+        t.positions.extend(v.positions);
+        t.colors.extend(v.colors);
+        t.uvs.extend(v.uvs);
+        t.indices.extend(v.indices.into_iter().map(|i| i + base));
+    }
 }
 
 #[cfg(test)]

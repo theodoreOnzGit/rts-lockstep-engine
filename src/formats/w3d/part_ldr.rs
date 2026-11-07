@@ -14,7 +14,8 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/part_emt.h
 //   (ParticlePropertyStruct)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/v3_rnd.cpp, v3_rnd.h
-//   (the four Vector3Randomizer constructors, their Class_IDs)
+//   (the four Vector3Randomizer constructors, their Class_IDs; since #49
+//   their Get_Vector, Scale and Get_Maximum_Extent)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -29,8 +30,10 @@
 //! `ParticleEmitterDefClass::Load_W3D`, which reads the definition the
 //! game's `ParticleEmitterLoaderClass` keeps in a
 //! `ParticleEmitterPrototypeClass` (upstream's `Create` builds a
-//! `ParticleEmitterClass` from it; that render object is not translated
-//! here, see [`ParticleEmitterDef`]). GitHub issue #17.
+//! `ParticleEmitterClass` from it; that render object is ~~not translated
+//! here~~ **Corrected 2026-11-07 (#49):** translated in
+//! [`super::part_emt`] and [`super::part_buf`], see [`ParticleEmitterDef`]).
+//! GitHub issue #17.
 //!
 //! # As upstream reads it
 //!
@@ -123,6 +126,9 @@ use super::shader::{convert_shader_to_w3d, PRESET_ADDITIVE_SPRITE_SHADER, PRESET
 use super::w3d_file::*;
 use super::{c_string, read_partial, W3dResult, W3dUndefined, WIN32_MAX_ALLOCATION};
 use crate::ww::chunkio::ChunkLoad;
+use crate::ww::random::Random3;
+use crate::ww::vector3::Vector3;
+use crate::ww::wwmath;
 
 /// `RenderObjClass::CLASSID_PARTICLEEMITTER`.
 pub const CLASSID_PARTICLEEMITTER: u32 = 14;
@@ -133,6 +139,10 @@ pub const CLASSID_SOLIDBOX: u32 = 0;
 pub const CLASSID_SOLIDSPHERE: u32 = 1;
 pub const CLASSID_HOLLOWSPHERE: u32 = 2;
 pub const CLASSID_SOLIDCYLINDER: u32 = 3;
+
+/// `Vector3Randomizer::OOIntMax`: `1.0f / (float)INT_MAX`, where
+/// `(float)INT_MAX` rounds to 2^31.
+const OO_INT_MAX: f32 = 1.0 / 2_147_483_648.0;
 
 /// `MAX(x, 0.0f)` (always.h: `((a) > (b)) ? (a) : (b)`): NaN and -0 give 0.
 fn max0(x: f32) -> f32 {
@@ -167,6 +177,97 @@ impl Vector3Randomizer {
             CLASSID_SOLIDCYLINDER => Vector3Randomizer::SolidCylinder { extent: max0(info.value1), radius: max0(info.value2) },
             _ => return None,
         })
+    }
+
+    /// `Get_Vector(vector)` (v3_rnd.cpp), drawing from the randomizers'
+    /// shared `Random3Class` (`Vector3Randomizer::Randomizer`, upstream a
+    /// static; the caller's here). `Get_Random_Float_Minus1_To_1()` is the
+    /// generator's `int` times `OOIntMax` (`1.0f / (float)INT_MAX`, 2^-31).
+    /// The spheres and the cylinder reject points outside them and draw
+    /// again, as upstream; their radii are never NaN (the constructors and
+    /// [`Self::scale`] clamp NaN to 0), so the loops end.
+    pub fn get_vector(&self, r: &mut Random3) -> Vector3 {
+        let mut rnd = || r.next() as f32 * OO_INT_MAX;
+        match *self {
+            Vector3Randomizer::SolidBox(e) => {
+                let x = rnd() * e[0];
+                let y = rnd() * e[1];
+                let z = rnd() * e[2];
+                Vector3::new(x, y, z)
+            }
+            Vector3Randomizer::SolidSphere(radius) => {
+                // Generate vectors in a cube and discard the ones not in a sphere
+                let rad_squared = radius * radius;
+                loop {
+                    let x = rnd() * radius;
+                    let y = rnd() * radius;
+                    let z = rnd() * radius;
+                    let v = Vector3::new(x, y, z);
+                    if v.length2() <= rad_squared {
+                        return v;
+                    }
+                }
+            }
+            Vector3Randomizer::HollowSphere(radius) => {
+                // vectors in a 2x2x2 cube, kept inside the unit sphere, scaled to Radius
+                let (mut v, mut v_l2);
+                loop {
+                    let x = rnd();
+                    let y = rnd();
+                    let z = rnd();
+                    v = Vector3::new(x, y, z);
+                    v_l2 = v.length2();
+                    if v_l2 <= 1.0f32 && v_l2 > 0.0f32 {
+                        break;
+                    }
+                }
+                let scale = radius * wwmath::inv_sqrt(v_l2);
+                v.x *= scale;
+                v.y *= scale;
+                v.z *= scale;
+                v
+            }
+            Vector3Randomizer::SolidCylinder { extent, radius } => {
+                let x = rnd() * extent;
+                // 2D vectors in a square, kept inside the circle
+                let rad_squared = radius * radius;
+                loop {
+                    let vx = rnd() * radius;
+                    let vy = rnd() * radius;
+                    if vx * vx + vy * vy <= rad_squared {
+                        return Vector3::new(x, vx, vy);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `Scale(scale)` (v3_rnd.cpp): `scale = MAX(scale, 0.0f)`, then every
+    /// extent multiplied.
+    pub fn scale(&mut self, scale: f32) {
+        let scale = max0(scale);
+        match self {
+            Vector3Randomizer::SolidBox(e) => {
+                e[0] *= scale;
+                e[1] *= scale;
+                e[2] *= scale;
+            }
+            Vector3Randomizer::SolidSphere(r) | Vector3Randomizer::HollowSphere(r) => *r *= scale,
+            Vector3Randomizer::SolidCylinder { extent, radius } => {
+                *extent *= scale;
+                *radius *= scale;
+            }
+        }
+    }
+
+    /// `Get_Maximum_Extent()` (v3_rnd.cpp; `MAX(a, b)` is `a > b ? a : b`).
+    pub fn get_maximum_extent(&self) -> f32 {
+        let mx = |a: f32, b: f32| if a > b { a } else { b };
+        match *self {
+            Vector3Randomizer::SolidBox(e) => mx(mx(e[0], e[1]), e[2]),
+            Vector3Randomizer::SolidSphere(r) | Vector3Randomizer::HollowSphere(r) => r,
+            Vector3Randomizer::SolidCylinder { extent, radius } => mx(extent, radius),
+        }
     }
 
     /// `Class_ID()`.
