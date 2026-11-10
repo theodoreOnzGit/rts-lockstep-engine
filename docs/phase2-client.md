@@ -124,6 +124,54 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#78 item 3 (2026-11-10, GitHub #78): the save/load screen, the single player menu and the difficulty popup.**
+- **Translated** (engine crate, plain Rust):
+  - `client::save_load_menu` (PopupSaveLoad.cpp, whole; GameState.cpp's `populateSaveGameListbox`,
+    `addGameToAvailableList`, `iterateSaveFiles`' choice of `.sav` files, `clearAvailableGames`): both inits (the full
+    screen from the main menu's *Load Game*, the in-game popup), update, shutdown, input (Escape), system (load, save,
+    delete, back, the four confirmations, the list's `GLM_SELECTED` and `GLM_DOUBLE_CLICKED`), `updateMenuActions`,
+    `doLoadGame`, `closeSaveMenu`, `setEditDescription`, `processLoadButtonPress`. The engine's side is three new
+    `ShellRequest`s: `LoadGame` (`prepareNewGame` + `loadGame`), `SaveGame`, `DeleteSave`.
+  - `client::single_player_menu` (SinglePlayerMenu.cpp, whole) and `client::difficulty_select` (DifficultySelect.cpp,
+    whole; `OptionPreferences::getCampaignDifficulty`). **Neither is reachable from Zero Hour's main menu** (nothing
+    pushes `SinglePlayerMenu.wnd`; the main menu's calls that made `DifficultySelect.wnd` are commented out): the tests
+    push them. The difficulty popup's *OK* is the main menu's `setupGameStart`, now `pub`, so it reaches the same
+    `StartCampaign` as the main menu's difficulty buttons (asserted).
+  - `client::shell_gui`: the lexicon entries for the fourteen callbacks; `synthetic::save_load_wnd`,
+    `single_player_menu_wnd`, `difficulty_select_wnd` and the `SaveLoadMenuFade` group (no EA file).
+- **Defect found and fixed (issue drafted):** `ShellGui::name_to_key` asked the files' key generator, which is lent to
+  the WND reader while a layout loads: a `GWM_CREATE` callback asking for a key got `u32::MAX`
+  (`SinglePlayerMenuSystem` takes its keys there). The generator is now one table (`shell::NameKeys`) the host and the
+  reader share (`KeyedFiles`).
+- **Client:** `client/src/shell.rs`: `ShellUi::set_saves` (the folder's `.sav` files read with `read_save_summary`, the
+  ones that do not read `None`), `ShellUi::show` (a failed load's `showShell(TRUE)`), `ShellAction::LoadGame` and
+  `DeleteSave`; `MenuFiles::fetch_text_exists`. `client/src/app.rs`: `shell_ui` gives the shell the folder when it
+  changes, maps `LoadGame` onto the saves panel's own `SaveCmd::Load` (the same call: mission saves included) and
+  shows the shell again when that load fails (`Saves::last_load`); `DeleteSave` is `SaveFolder::delete` (natively the
+  file; on the web a new queue the page empties into OPFS `removeEntry`). The in-game popup's save is answered as a gap
+  (QuitMenu.cpp, which opens it, is not translated).
+- **Predictions vs results:** recorded in each test's doc. Misses: the full screen's focus is nobody's after its init
+  (it gives the parent the focus, then hides the parent: `windowHiding` drops it; upstream's order); `ab.cde`'s
+  extension is cut (its fourth character from the end is the dot), predicted kept; a list box cell never written reads
+  empty, predicted " "; and three misses in the tests' own steps (a destroyed list box found first by name, the main
+  menu's panel buttons left hidden on return, `justEntered` cleared before the test looked).
+- **Differential** (`tests/differential_save_list.rs`, `differential/wrap_save_list.cpp`, build.rs cuts GameState.cpp's
+  pieces verbatim; stand-ins for the directory search, the save information, the date formats, the text and the list
+  box table): predicted 0 mismatches; the first run had 1,229, all in the C++ stand-in (it recorded the selection asked
+  for on an empty list, where the gadget keeps none; fixed to GadgetListBox.cpp's `GLM_SET_SELECTION` rule). Then
+  20,000 cases, 73,267 directory entries, 53,965 rows, **0 mismatches**. Planted bugs 3 of 3 caught: 7801 (newest
+  last) 12,095 cases, 7802 (colour alternation from 1) 14,199, 7803 (row 1 selected) 18,771. The shim's
+  `UnicodeString::format` gained an opt-in MSVC reading of `%S` (`SHIM_UNICODE_MSVC_FORMAT`, this test's TU only;
+  issue drafted). differential_wm (2,000 cases), differential_wnd (3,000), differential_wt (2,000) and
+  differential_game_state (20,000) rerun: 0 mismatches.
+- **Gates:** lib 1105 passed (1099 before, 6 new); client 53 passed (52 before, 1 new); clippy (lib) clean; the
+  differential build (`--features differential --tests`) compiles, the differentials above pass; web build ok; gate
+  (a) PASS, last CRC 0bf44067 (unchanged).
+- **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); `Options.ini`
+  (`OptionPreferences`) is neither read nor written (the campaign difficulty); the date and time formats are the en-US
+  system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (the
+  skirmish map select and game options, the score screen, the challenge menu, the options menu) is not started.
+
 **#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
 - **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):
   - `client/src/ui.rs`: `draw_list_quads`, a window manager's `winRepaint` draw list (`DrawItem`s, the transitions'
@@ -172,7 +220,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Gaps (recorded in the modules' docs; issue drafts in the scratchpad):** the shell's click sounds and
   `signalUIInteract`; text drop shadows; grayscale images drawn dimmed; the rect clock's wedge; Bevy's font against the
   host's measured box; the synthetic buttons are 9.75 CSS pixels high on a phone (reachable, small; the real WND's sizes
-  unchecked). Item 3 (the other screens' callbacks) is not started.
+  unchecked). Item 3 (the other screens' callbacks) ~~is not started~~ **Corrected 2026-11-10 (#78):** is started: see
+  the entry for item 3 above.
 
 **#77 (2026-11-10, GitHub #77): the window transitions and the animate window manager.**
 - **Translated** (engine crate, plain Rust):
@@ -251,8 +300,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Gaps, recorded (issues drafted):** ~~the window transitions (`GameWindowTransitions*.cpp`, `WindowTransitions.ini`:
   without them the difficulty panel is never shown by the menu, so the campaign path is reached only by its messages),
   the animate window manager,~~ (**corrected 2026-11-10 (#77):** both translated, see #77's entry) the shell menu schemes, the shell map, Bink video, the online / GameSpy / LAN / patch
-  buttons' work, `ExMessageBoxOkCancel` (insert-disc prompt), the screens the menu pushes (save/load, skirmish, replay,
-  credits, LAN lobby, options, challenge: they load, their callbacks are not translated), and drawing the shell.
+  buttons' work, `ExMessageBoxOkCancel` (insert-disc prompt), the screens the menu pushes (~~save/load,~~ skirmish, replay,
+  credits, LAN lobby, options, challenge: they load, their callbacks are not translated; **corrected 2026-11-10 (#78
+  item 3):** the save/load screen's are translated), and drawing the shell.
 - **Predictions vs results:** the stack, the clock and the layouts held as predicted. Missed: the campaign start
   completes the menu's shutdown in the **same** update that sends the start (`doGameStart` sets `isShuttingDown` just
   before `MainMenuUpdate` tests it), not the next; the client test first ran its first frame after a click (the shell's

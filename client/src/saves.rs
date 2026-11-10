@@ -55,6 +55,8 @@ pub mod page {
         pub writes: Vec<(String, Vec<u8>)>,
         /// Files to offer as a download.
         pub downloads: Vec<(String, Vec<u8>)>,
+        /// (#78) Files to remove from OPFS `Save/` (the shell's save/load screen's delete).
+        pub deletes: Vec<String>,
         /// Whether the saves panel is open (the page shows its import button then).
         pub panel_open: bool,
         /// The last save action's outcome, for the page and checks.
@@ -77,6 +79,14 @@ pub mod page {
         Q.with(|q| {
             let mut q = q.borrow_mut();
             (!q.writes.is_empty()).then(|| q.writes.remove(0))
+        })
+    }
+
+    /// (#78) The next file to remove from OPFS, once.
+    pub fn take_delete() -> Option<String> {
+        Q.with(|q| {
+            let mut q = q.borrow_mut();
+            (!q.deletes.is_empty()).then(|| q.deletes.remove(0))
         })
     }
 
@@ -150,6 +160,12 @@ pub mod page {
         #[wasm_bindgen]
         pub fn saves_download_bytes() -> Vec<u8> {
             super::take_download().map(|w| w.1).unwrap_or_default()
+        }
+
+        /// (#78) The next file to remove from OPFS `Save/` (`""`: none), taken.
+        #[wasm_bindgen]
+        pub fn saves_delete_name() -> String {
+            super::take_delete().unwrap_or_default()
         }
 
         /// Whether the saves panel is open.
@@ -331,6 +347,22 @@ impl SaveFolder {
         }
         self.write(&leaf, bytes)?;
         Ok(leaf)
+    }
+
+    /// (#78) A save deleted (the shell's save/load screen: `DeleteFile` of the file in the save directory, whose names
+    /// Windows compares without case): gone from the folder, from disk natively, from OPFS by the page. Its name in the
+    /// folder, or `None` when there is no such save (upstream's `DeleteFile` then fails, unchecked).
+    pub fn delete(&mut self, name: &str) -> Option<String> {
+        let key = self.files.keys().find(|k| k.eq_ignore_ascii_case(name))?.clone();
+        self.files.remove(&key);
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(dir) = &self.dir {
+            let _ = std::fs::remove_file(dir.join(&key));
+        }
+        if self.dir.is_none() {
+            page::Q.with(|q| q.borrow_mut().deletes.push(key.clone()));
+        }
+        Some(key)
     }
 
     /// A save offered as a download (the browser's page); natively the file is already in the folder, and its path is

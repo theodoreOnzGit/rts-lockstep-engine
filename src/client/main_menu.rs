@@ -270,7 +270,7 @@ pub fn quit_callback<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H) {
 }
 
 /// `setupGameStart(mapName, diff)`.
-fn setup_game_start<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i32) {
+pub fn setup_game_start<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i32) {
     h.main_menu().difficulty = diff;
     if h.main_menu().launch_challenge_menu {
         // (`TheChallengeGenerals->setCurrentDifficulty(diff)`: the challenge menu's)

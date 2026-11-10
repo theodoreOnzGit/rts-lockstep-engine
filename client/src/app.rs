@@ -1853,6 +1853,9 @@ struct Saves {
     status: String,
     /// GitHub #64 part 2: the save being loaded, waiting for its map's folder (`crate::saves::PendingLoad`), by its name.
     pending: Option<(String, crate::saves::PendingLoad)>,
+    /// (#78) How the last load ended (its name, or the error), for the shell's save/load screen, which shows the shell
+    /// again after a failed load (`doLoadGame`'s `showShell(TRUE)`).
+    last_load: Option<Result<String, String>>,
 }
 
 impl Saves {
@@ -1865,7 +1868,7 @@ impl Saves {
             Some(d) => format!("saves in {}", d.display()),
             None => "saves in this browser (OPFS Save/); never uploaded".to_string(),
         };
-        Saves { folder, generation: 0, built: None, paused_before: false, status, pending: None }
+        Saves { folder, generation: 0, built: None, paused_before: false, status, pending: None, last_load: None }
     }
     fn set_status(&mut self, s: String) {
         crate::saves::page::set_status(s.clone());
@@ -1914,7 +1917,10 @@ fn apply_save_action(
         match mounted {
             Ok(false) => saves.pending = Some((name, p)),
             Ok(true) => finish_load(&mut commands, &mut game, &mut saves, &mut rig, &mut drawn, &mut terrain, name, p),
-            Err(e) => saves.set_status(format!("error: {e}")),
+            Err(e) => {
+                saves.last_load = Some(Err(e.clone()));
+                saves.set_status(format!("error: {e}"));
+            }
         }
     }
     let Some(cmd) = action.0.take() else { return };
@@ -1930,12 +1936,16 @@ fn apply_save_action(
                         campaigns.set_status(format!("waiting {map}"));
                         crate::saves::page::set_panel_open(false);
                         game.paused = saves.paused_before;
+                        saves.last_load = Some(Ok(name.clone()));
                         format!("loading mission save {name}")
                     }
                     Err(e) => format!("error: {e}"),
                 },
                 None => "error: a mission save needs your Zero Hour files".to_string(),
             };
+            if status.starts_with("error") {
+                saves.last_load = Some(Err(status.clone()));
+            }
             saves.set_status(status);
         }
         SaveCmd::Toggle => {
@@ -1995,14 +2005,20 @@ fn apply_save_action(
             saves.set_status(s);
         }
         SaveCmd::Load(name) => {
-            let Some(bytes) = saves.folder.files.get(&name).cloned() else { return };
+            let Some(bytes) = saves.folder.files.get(&name).cloned() else {
+                saves.last_load = Some(Err(format!("no save {name}")));
+                return;
+            };
             // (#64 part 2: the load waits for the save's map folder, read from the art's files, as a mission's start does)
             match crate::saves::PendingLoad::new(bytes, game.base.as_deref()) {
                 Ok(p) => {
                     saves.set_status(format!("loading {name}"));
                     saves.pending = Some((name, p));
                 }
-                Err(e) => saves.set_status(format!("error: {e}")),
+                Err(e) => {
+                    saves.last_load = Some(Err(e.clone()));
+                    saves.set_status(format!("error: {e}"));
+                }
             }
         }
     }
@@ -2047,12 +2063,14 @@ fn finish_load(
                     terrain.pending = true;
                     crate::saves::page::set_panel_open(false);
                     game.paused = false;
+                    saves.last_load = Some(Ok(name.clone()));
                     saves.set_status(format!("loaded {name}{}", if read_past > 0 { format!(" ({read_past} parts read past)") } else { String::new() }));
                     info!("loaded {name}: read past {:?}", game.save_state.read_past);
                 }
                 Err(e) => {
                     game.base = base;
                     game.models.art = models.art.take();
+                    saves.last_load = Some(Err(e.clone()));
                     warn!("{e}");
                     saves.set_status(format!("error: {e}"));
                 }
@@ -2323,6 +2341,10 @@ struct ShellState {
     /// The pointer's last screen point over the shell (a release not seen there is sent at it).
     last_pointer: Option<(f32, f32)>,
     textures: UiTextures,
+    /// (#78) The saves panel's generation the shell's save list was last given ([`crate::shell::ShellUi::set_saves`]).
+    saves_generation: Option<u64>,
+    /// (#78) A load the shell's save/load screen asked for, until it ends (a failed one shows the shell again).
+    loading: Option<String>,
 }
 
 /// The shell's root node, and the quads it was last drawn with.
@@ -2398,10 +2420,30 @@ fn shell_ui(
     buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
     mut exit: MessageWriter<AppExit>,
+    mut saves: NonSendMut<Saves>,
+    mut save_action: ResMut<SaveAction>,
 ) {
     let st = &mut *shell;
     let Some(ui) = st.ui.as_mut() else { return };
     let g = &mut *game;
+    // (#78) the save folder, as the save/load screen lists it; a load it asked for that failed shows the shell again
+    if st.saves_generation != Some(saves.generation) {
+        ui.set_saves(&saves.folder);
+        st.saves_generation = Some(saves.generation);
+    }
+    if st.loading.is_some() {
+        match saves.last_load.take() {
+            Some(Err(e)) => {
+                warn!("the shell's load failed: {e}");
+                st.loading = None;
+                ui.show();
+                st.shown_over = g.serial;
+                g.paused = true;
+            }
+            Some(Ok(_)) => st.loading = None,
+            None => {}
+        }
+    }
     if ui.is_active() && g.serial != st.shown_over {
         // (`GameLogic::startNewGame`'s `TheShell->hideShell()`)
         ui.hide();
@@ -2437,7 +2479,24 @@ fn shell_ui(
                         g.playing = "Exit: a web page cannot close itself; close the tab to leave".to_string();
                     }
                 }
-                crate::shell::ShellAction::None(_) => {}
+                crate::shell::ShellAction::LoadGame(name) => {
+                    // (#78: the saves panel's own load)
+                    saves.last_load = None;
+                    st.loading = Some(name.clone());
+                    save_action.0 = Some(SaveCmd::Load(name));
+                }
+                crate::shell::ShellAction::DeleteSave(name) => {
+                    let s = match saves.folder.delete(&name) {
+                        Some(n) => format!("deleted {n}"),
+                        None => format!("error: no save {name}"),
+                    };
+                    saves.set_status(s);
+                }
+                crate::shell::ShellAction::None(why) => {
+                    if !why.is_empty() {
+                        debug!("shell: {why}");
+                    }
+                }
             }
         }
     }

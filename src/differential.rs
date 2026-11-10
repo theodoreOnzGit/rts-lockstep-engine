@@ -3000,6 +3000,8 @@ extern "C" {
     /// p1w13-sonnet, layer 11 batch E1: ScriptEngine::init's templates (differential/wrap_script_templates.cpp): the dump's
     /// length (written up to `cap`).
     pub fn ref_script_templates(out: *mut c_uchar, cap: usize) -> usize;
+    /// #78: the save/load screen's list of saves (differential/wrap_save_list.cpp): the dump's length.
+    pub fn ref_save_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.

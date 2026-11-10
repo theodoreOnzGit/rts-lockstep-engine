@@ -9,7 +9,11 @@
 //!   keyboard (`crate::ui::keyboard_into`: keys and typed characters) and the clock (`Shell::update`).
 //! - [`act`] turns what the callbacks asked of the engine into the client's own calls: a campaign start goes to the
 //!   same [`Flow::choose`] the campaign panel uses (the campaign's first mission, as the main menu starts it: the World's
-//!   `start_campaign`), a quit is the application's.
+//!   `start_campaign`), a quit is the application's. (#78) The save/load screen's load is the saves panel's own load
+//!   ([`ShellAction::LoadGame`]: `SaveCmd::Load` in the app), its delete the folder's
+//!   ([`crate::saves::SaveFolder::delete`]); the folder is given to the shell's host as `iterateSaveFiles` reads the
+//!   directory ([`ShellUi::set_saves`]), and a load that fails shows the shell again ([`ShellUi::show`], `doLoadGame`'s
+//!   `showShell(TRUE)`).
 //!
 //! ~~**Not drawn yet (#69's remaining work):** the application does not show this shell; the windows' quads, as
 //! `crate::ui::GameUi::frame` makes the control bar's, and the phone layout (the menu over the 3D view, the zoom
@@ -40,6 +44,9 @@
 //!
 //! # Where this differs from upstream
 //!
+//! - (#78) The in-game save popup (`Menus/PopupSaveLoad.wnd`, opened by QuitMenu.cpp, not translated) is not reachable:
+//!   its save request ([`ShellRequest::SaveGame`]) is answered with a [`ShellAction::None`] that says so; the saves
+//!   panel's *Save game* is the client's way to save.
 //! - The shell has its own window manager (the control bar has another): it is drawn and takes the pointer and keyboard
 //!   only while it is active ([`ShellUi::is_active`]); upstream's one manager keeps drawing what the shutdowns left
 //!   shown.
@@ -63,6 +70,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use rts_lockstep_engine::client::save_game::read_save_summary;
 use rts_lockstep_engine::client::shell::{self as sh, ShellRequest, WndFiles};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::shell_gui::{start_shell, ShellGui};
@@ -79,8 +87,15 @@ use crate::campaigns::Flow;
 use crate::ui::{LayoutPlacement, UiQuad, LAYOUT};
 
 /// The shell's WND files (`Window\Menus\<name>.wnd`) read when the shell is made: the main menu, its boxes, the
-/// background, and the screens the main menu pushes (their callbacks are not translated yet; they load and show).
-pub const SHELL_FILES: [&str; 11] = ["MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"];
+/// background, and the screens the main menu pushes (~~their callbacks are not translated yet; they load and show~~
+/// **Corrected 2026-11-10 (#78):** the save/load screen's are translated; the others' are not yet: they load and show).
+///
+/// (#78) With the save/load screen (`SaveLoad`, and the in-game `PopupSaveLoad`), the single player menu and the
+/// difficulty popup, whose callbacks are translated (neither of the last two is reached from Zero Hour's main menu).
+pub const SHELL_FILES: [&str; 14] = [
+    "MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu",
+    "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect",
+];
 
 /// The files the shell reads, read ahead (the art's file system is not kept by the shell), with the reader's name keys
 /// and the game's text.
@@ -116,6 +131,11 @@ impl WndFiles for MenuFiles {
         let p: Vec<u8> = path.iter().map(|&b| if b == b'/' { b'\\' } else { b }).collect();
         self.files.iter().find(|(k, _)| k.eq_ignore_ascii_case(&p)).map(|(_, v)| v.clone())
     }
+    fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
+        // (#78) `TheGameText->fetch(label, &exists)`: found in the test's strings or the string file
+        let exists = self.text.strings.contains_key(label) || self.text.csf.as_ref().is_some_and(|c| c.fetch(label).is_some());
+        (self.text.fetch(label).str().to_vec(), exists)
+    }
 }
 
 /// What the client does for a request of the shell's callbacks.
@@ -129,6 +149,11 @@ pub enum ShellAction {
     Failed(String),
     /// The application should end (`TheGameEngine->setQuitting(TRUE)`).
     Quit,
+    /// (#78) The save/load screen loads this save of the folder: the saves panel's own load (`SaveCmd::Load` in the app,
+    /// which starts with [`crate::saves::PendingLoad::new`]).
+    LoadGame(String),
+    /// (#78) The save/load screen deleted this save: the folder's [`crate::saves::SaveFolder::delete`].
+    DeleteSave(String),
 }
 
 /// The client's side of a request: [`ShellRequest::StartCampaign`] is the campaign panel's start of the campaign's
@@ -148,6 +173,9 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
             }
         }
         ShellRequest::Quit => ShellAction::Quit,
+        ShellRequest::LoadGame { filename } => ShellAction::LoadGame(String::from_utf8_lossy(filename).into_owned()),
+        ShellRequest::DeleteSave { filename } => ShellAction::DeleteSave(String::from_utf8_lossy(filename).into_owned()),
+        ShellRequest::SaveGame { .. } => ShellAction::None("the in-game save popup is not reachable (QuitMenu.cpp, which opens it, is not translated)"),
         ShellRequest::ClearGameData => ShellAction::None("no game runs under the shell (the client's games are started by the flow)"),
         ShellRequest::NewShellGame => ShellAction::None("the shell map is not translated"),
     }
@@ -214,6 +242,19 @@ impl ShellUi {
     /// The callbacks' requests since the last call, acted on ([`act`]).
     pub fn take_actions(&mut self, base: &World, flow: &mut Flow) -> Vec<ShellAction> {
         std::mem::take(&mut self.gui.requests).iter().map(|r| act(r, base, flow)).collect()
+    }
+
+    /// (#78) The save folder as the save/load screen lists it (`iterateSaveFiles`, `getSaveGameInfoFromFile`): each
+    /// file's name and its information ([`read_save_summary`]; `None` for a file that does not read, which
+    /// `addGameToAvailableList` leaves out), in the folder's order.
+    pub fn set_saves(&mut self, folder: &crate::saves::SaveFolder) {
+        self.gui.save_files = folder.files.iter().map(|(n, b)| (n.as_bytes().to_vec(), read_save_summary(b.clone()).ok().map(|s| s.info))).collect();
+    }
+
+    /// (#78) `TheShell->showShell(TRUE)`, as a failed load's `doLoadGame` calls it: the top screen's init again, the
+    /// shell active.
+    pub fn show(&mut self) {
+        sh::show_shell(&mut self.wm, &mut self.gui, true);
     }
 
     /// The file the top screen was read from.
@@ -325,6 +366,91 @@ mod tests {
         ui.pointer(gwm::MOUSE_POS, p, touch);
         ui.pointer(gwm::LEFT_DOWN, p, touch);
         ui.pointer(gwm::LEFT_UP, p, touch);
+    }
+
+    /// (#78) A click on the window `<file>:<name>` (the last one of that name: a screen made again makes new windows).
+    fn click_named(ui: &mut ShellUi, file: &str, name: &str) {
+        let full = format!("{file}:{name}");
+        let w = ui.wm.tree.windows.len() - 1 - ui.wm.tree.windows.iter().rev().position(|x| x.name() == full.as_bytes()).expect(name);
+        let (x, y) = ui.wm.tree.screen_position(w);
+        let p = (x as f32 + 5.0, y as f32 + 5.0);
+        ui.pointer(gwm::MOUSE_POS, p, false);
+        ui.pointer(gwm::LEFT_DOWN, p, false);
+        ui.pointer(gwm::LEFT_UP, p, false);
+    }
+
+    /// #78: the save/load screen in the client, with a save the client made (the demo game saved through
+    /// `crate::saves::save_game`, as the saves panel saves) and a file that does not read. Predicted from
+    /// PopupSaveLoad.cpp and GameState.cpp before the run:
+    ///
+    /// - the folder given to the shell ([`ShellUi::set_saves`]) lists the save (its description "demo at 90") and not
+    ///   the file that does not read (`addGameToAvailableList`'s `catch`);
+    /// - the main menu's *Load/Replay*, *Load Game*: the save/load screen on top, its list one row, selected;
+    /// - *Load*: the shell hidden (`hideShell`), one action [`ShellAction::LoadGame`] of `00000000.sav`, the saves
+    ///   panel's own load (its first call, [`crate::saves::PendingLoad::new`], takes the save);
+    /// - a failed load's [`ShellUi::show`]: the shell active, the screen's init again;
+    /// - *Delete* and *Confirm*: [`ShellAction::DeleteSave`], and the folder's delete removes the file; the list empty.
+    ///
+    /// **Result (2026-11-10):** as predicted.
+    #[test]
+    fn the_save_load_screen_loads_through_the_saves_panel() {
+        let (w, _) = crate::demo::demo_world();
+        let mut c = crate::input::Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        let mut particles = rts_lockstep_engine::client::particle_sys::ParticleSystemManager::new();
+        let mut state = rts_lockstep_engine::client::save_game::ClientSaveState::default();
+        let bytes = crate::saves::save_game(&mut c, &mut particles, &mut state, None, "demo at 90").expect("the save");
+        let mut folder = crate::saves::SaveFolder::default();
+        folder.write("00000000.sav", bytes).expect("kept");
+        folder.write("00000001.sav", b"junk".to_vec()).expect("kept");
+        let mut ui = shell();
+        ui.set_saves(&folder);
+        assert_eq!(ui.gui.save_files.len(), 2);
+        assert!(ui.gui.save_files[1].1.is_none(), "the junk does not read");
+        let mut now = 1000;
+        ui.frame(now);
+        assert!(ui.keyboard(0x39, true, Some(" ")));
+        settle(&mut ui, &mut now);
+        click(&mut ui, "ButtonLoadReplay", false);
+        settle(&mut ui, &mut now);
+        click(&mut ui, "ButtonLoadGame", false);
+        settle(&mut ui, &mut now);
+        settle(&mut ui, &mut now);
+        assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/SaveLoad.wnd"[..]));
+        for _ in 0..3 {
+            now += 40;
+            ui.frame(now);
+        }
+        settle(&mut ui, &mut now);
+        let l = ui.gui.save_load.listbox_games.expect("the list box");
+        assert_eq!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, l), 1);
+        let desc = String::from_utf16_lossy(&ui.gui.save_load.available_games[0].save_game_info.description);
+        assert_eq!(desc, "demo at 90");
+        click_named(&mut ui, "SaveLoad.wnd", "ButtonLoad");
+        assert!(!ui.is_active(), "hideShell");
+        let base = World::new();
+        let mut flow = Flow::default();
+        let actions = ui.take_actions(&base, &mut flow);
+        assert_eq!(actions, [ShellAction::LoadGame("00000000.sav".to_string())]);
+        assert!(crate::saves::PendingLoad::new(folder.files["00000000.sav"].clone(), None).is_ok(), "the saves panel's load takes it");
+        // a failed load: the shell again
+        ui.show();
+        assert!(ui.is_active());
+        assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/SaveLoad.wnd"[..]));
+        for _ in 0..3 {
+            now += 40;
+            ui.frame(now);
+        }
+        settle(&mut ui, &mut now);
+        click_named(&mut ui, "SaveLoad.wnd", "ButtonDelete");
+        click_named(&mut ui, "SaveLoad.wnd", "ButtonDeleteConfirm");
+        let actions = ui.take_actions(&base, &mut flow);
+        assert_eq!(actions, [ShellAction::DeleteSave("00000000.sav".to_string())]);
+        assert_eq!(folder.delete("00000000.SAV").as_deref(), Some("00000000.sav"));
+        assert!(!folder.files.contains_key("00000000.sav"));
+        assert_eq!(crate::saves::page::take_delete().as_deref(), Some("00000000.sav"), "the page removes it from OPFS");
+        let l = ui.gui.save_load.listbox_games.expect("the list box");
+        assert_eq!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, l), 0);
+        assert!(matches!(act(&ShellRequest::SaveGame { filename: Vec::new(), description: Vec::new(), file_type: 0 }, &base, &mut flow), ShellAction::None(_)));
     }
 
     /// #69: the shell from synthetic WND files (no EA file) in the client. Predicted from MainMenu.cpp before the run:

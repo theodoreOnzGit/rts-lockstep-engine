@@ -26,8 +26,26 @@ public:
 	{
 		wchar_t buf[2048];
 		va_list args;
+		const wchar_t *use = fmt;
+#ifdef SHIM_UNICODE_MSVC_FORMAT
+		/* #78, for the TUs that define SHIM_UNICODE_MSVC_FORMAT (differential/wrap_save_list.cpp): MSVC's wide printf
+		** reads `%s` as a wide string and `%S` as a narrow one, glibc's the other way round (`%s` narrow, through the C
+		** locale: ASCII only; `%S` and `%ls` wide). The format is rewritten to glibc's spelling first. */
+		std::wstring msvc;
+		for (const wchar_t *c = fmt; *c; ++c) {
+			msvc += *c;
+			if (*c != L'%') continue;
+			++c;
+			while (*c && wcschr(L"-+ #0123456789.*", *c)) msvc += *c++;
+			if (!*c) break;
+			if (*c == L's') msvc += L"ls";
+			else if (*c == L'S') msvc += L's';
+			else msvc += *c;
+		}
+		use = msvc.c_str();
+#endif
 		va_start(args, fmt);
-		int n = vswprintf(buf, sizeof(buf) / sizeof(buf[0]) - 1, fmt, args);
+		int n = vswprintf(buf, sizeof(buf) / sizeof(buf[0]) - 1, use, args);
 		va_end(args);
 		if (n < 0) buf[0] = 0;
 		setWide(buf);

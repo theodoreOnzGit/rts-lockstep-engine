@@ -5,7 +5,10 @@
 //   GeneralsMD/Code/GameEngine/Source/Common/System/FunctionLexicon.cpp (the entries of gameWinSystemTable,
 //     gameWinInputTable, winLayoutInitTable, winLayoutUpdateTable and winLayoutShutdownTable for the callbacks
 //     translated here: MainMenuSystem, MessageBoxSystem, QuitMessageBoxSystem, MainMenuInput, MainMenuInit,
-//     MainMenuUpdate, MainMenuShutdown)
+//     MainMenuUpdate, MainMenuShutdown; #78: SaveLoadMenuSystem, SinglePlayerMenuSystem, DifficultySelectSystem,
+//     SaveLoadMenuInput, SinglePlayerMenuInput, DifficultySelectInput, SaveLoadMenuInit, SaveLoadMenuFullScreenInit,
+//     SinglePlayerMenuInit, DifficultySelectInit, SaveLoadMenuUpdate, SinglePlayerMenuUpdate, SaveLoadMenuShutdown,
+//     SinglePlayerMenuShutdown)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -29,10 +32,19 @@
 //!
 //! - The window manager keeps the names (a callback of the game's own is [`SystemFunc::Host`]); [`ShellGui`] maps
 //!   them to the translated functions when they are called.
-//! - A name this translation does not have yet (`SaveLoadMenuInit`, `OptionsMenuInit`, `SkirmishGameOptionsMenuSystem`,
-//!   ... every screen but the main menu and the message boxes) is recorded in [`ShellGui::untranslated`] and does
-//!   nothing: the screen loads and shows its windows, but its buttons do nothing and its shutdown never completes
-//!   (`Shell::popImmediate` still takes it off). Upstream's lexicon would have the function.
+//! - A name this translation does not have yet (~~`SaveLoadMenuInit`,~~ `OptionsMenuInit`,
+//!   `SkirmishGameOptionsMenuSystem`, ... every screen but the main menu and the message boxes) is recorded in
+//!   [`ShellGui::untranslated`] and does nothing: the screen loads and shows its windows, but its buttons do nothing
+//!   and its shutdown never completes (`Shell::popImmediate` still takes it off). Upstream's lexicon would have the
+//!   function. **Corrected 2026-11-10 (#78):** the save/load screen (`crate::client::save_load_menu`: the full screen
+//!   and the popup), the single player menu (`crate::client::single_player_menu`) and the difficulty popup
+//!   (`crate::client::difficulty_select`) are translated and dispatched here; the runInit user data the lexicon passes
+//!   them is `NULL`, as every caller in the release passes. The save directory is the owner's
+//!   ([`ShellGui::save_files`]).
+//! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
+//!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
+//!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
+//!   reader's keys, as upstream's one global generator gives (the files' own `name_to_key` is no longer asked).
 //! - The engine's side: the requests ([`ShellRequest`])~~, the transitions (`Transition`)~~ and the shell hooks are
 //!   kept in lists for the host's owner (the client) to act on; the clock and the global data are set by it.
 //!   **Corrected 2026-11-10 (#77):** the transitions are no longer recorded here: they are the window manager's
@@ -41,9 +53,13 @@
 //!
 //! [`SystemFunc::Host`]: crate::client::window_manager::SystemFunc::Host
 
+use crate::client::difficulty_select::{self as ds, DifficultyHost, DifficultySelect};
 use crate::client::main_menu::{self, MainMenu, MenuHost};
 use crate::client::message_box;
-use crate::client::shell::{self, LayoutFiles, Shell, ShellEnv, ShellHost, ShellRequest, WndFiles};
+use crate::client::save_load_menu::{self as slm, SaveLoadHost, SaveLoadMenu};
+use crate::client::single_player_menu::{self as spm, SinglePlayerHost, SinglePlayerMenu};
+use crate::common::game_state::SaveGameInfo;
+use crate::client::shell::{self, win_create_from_script_with, win_create_layout_with, KeyedFiles, LayoutFiles, NameKeys, Shell, ShellEnv, ShellHost, ShellRequest, WndFiles};
 use crate::client::window_manager::{GameWindowManager, GuiHost, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 
@@ -67,6 +83,19 @@ pub struct ShellGui<W> {
     pub untranslated: Vec<Vec<u8>>,
     /// `IsFirstCDPresent()`.
     pub first_cd_present: bool,
+    /// (#78) PopupSaveLoad.cpp's statics and `TheGameState->m_availableGames`.
+    pub save_load: SaveLoadMenu,
+    /// (#78) The save directory as the owner gives it: each file's name and its information (`None`: the read throws).
+    pub save_files: Vec<(Vec<u8>, Option<SaveGameInfo>)>,
+    /// (#78) SinglePlayerMenu.cpp's statics.
+    pub single_player: SinglePlayerMenu,
+    /// (#78) DifficultySelect.cpp's statics.
+    pub difficulty: DifficultySelect,
+    /// (#78) `Options.ini`'s `CampaignDifficulty` (`None`: no entry; the options are not read in this client).
+    pub campaign_difficulty_pref: Option<i32>,
+    /// (#78) `TheNameKeyGenerator`: the table the reader gives the windows their keys from, and the callbacks ask
+    /// (a clone of the host shares it, as the one global generator).
+    pub keys: NameKeys,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -85,6 +114,12 @@ impl<W: WndFiles> ShellGui<W> {
             audio: Vec::new(),
             untranslated: Vec::new(),
             first_cd_present: true,
+            save_load: SaveLoadMenu::default(),
+            save_files: Vec::new(),
+            single_player: SinglePlayerMenu::default(),
+            difficulty: DifficultySelect::default(),
+            campaign_difficulty_pref: None,
+            keys: NameKeys::default(),
         }
     }
 
@@ -100,6 +135,9 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"MainMenuSystem" => main_menu::main_menu_system(wm, self, win, msg, d1, d2),
             b"MessageBoxSystem" => message_box::message_box_system(wm, self, win, msg, d1, d2, false),
             b"QuitMessageBoxSystem" => message_box::message_box_system(wm, self, win, msg, d1, d2, true),
+            b"SaveLoadMenuSystem" => slm::save_load_menu_system(wm, self, win, msg, d1, d2),
+            b"SinglePlayerMenuSystem" => spm::single_player_menu_system(wm, self, win, msg, d1, d2),
+            b"DifficultySelectSystem" => ds::difficulty_select_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -109,6 +147,9 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
     fn input(&mut self, wm: &mut GameWindowManager, func: &[u8], win: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
         match func {
             b"MainMenuInput" => main_menu::main_menu_input(wm, self, win, msg, d1, d2),
+            b"SaveLoadMenuInput" => slm::save_load_menu_input(wm, self, win, msg, d1, d2),
+            b"SinglePlayerMenuInput" => spm::single_player_menu_input(wm, self, win, msg, d1, d2),
+            b"DifficultySelectInput" => ds::difficulty_select_input(wm, self, win, msg, d1, d2),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -131,13 +172,16 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
     }
     fn create_layout(&mut self, wm: &mut GameWindowManager, filename: &[u8]) -> Option<usize> {
         let mut f = self.files.take()?;
-        let r = f.win_create_layout(wm, self, filename);
+        // (#78: the files lent with the shared key table, so that a `GWM_CREATE` asking for a key gets the reader's)
+        let mut k = KeyedFiles { files: &mut f.files, keys: self.keys.clone() };
+        let r = win_create_layout_with(&mut f.script, &mut k, wm, self, filename);
         self.files = Some(f);
         r
     }
     fn create_from_script(&mut self, wm: &mut GameWindowManager, filename: &[u8]) -> Option<WinId> {
         let mut f = self.files.take()?;
-        let r = f.win_create_from_script(wm, self, filename);
+        let mut k = KeyedFiles { files: &mut f.files, keys: self.keys.clone() };
+        let r = win_create_from_script_with(&mut f.script, &mut k, wm, self, filename);
         self.files = Some(f);
         r
     }
@@ -146,6 +190,15 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"MainMenuInit" => main_menu::main_menu_init(wm, self, layout),
             b"MainMenuUpdate" => main_menu::main_menu_update(wm, self, layout),
             b"MainMenuShutdown" => main_menu::main_menu_shutdown(wm, self, layout, user),
+            // (#78; the runInit user data, `SaveLoadLayoutType *`, is `NULL` from every caller in the release)
+            b"SaveLoadMenuInit" => slm::save_load_menu_init(wm, self, layout, None),
+            b"SaveLoadMenuFullScreenInit" => slm::save_load_menu_full_screen_init(wm, self, layout, None),
+            b"SaveLoadMenuUpdate" => slm::save_load_menu_update(wm, self, layout),
+            b"SaveLoadMenuShutdown" => slm::save_load_menu_shutdown(wm, self, layout, user),
+            b"SinglePlayerMenuInit" => spm::single_player_menu_init(wm, self, layout),
+            b"SinglePlayerMenuUpdate" => spm::single_player_menu_update(wm, self, layout),
+            b"SinglePlayerMenuShutdown" => spm::single_player_menu_shutdown(wm, self, layout, user),
+            b"DifficultySelectInit" => ds::difficulty_select_init(wm, self, layout),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -159,7 +212,9 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
         self.requests.push(r);
     }
     fn name_to_key(&mut self, name: &[u8]) -> u32 {
-        self.files.as_mut().map_or(u32::MAX, |f| f.files.name_to_key(name))
+        // ~~the files' generator (`u32::MAX` while they are lent to the reader)~~ **Corrected 2026-11-10 (#78):** the
+        // shared table, also while the files are lent
+        self.keys.name_to_key(name)
     }
     fn message_box_callback(&mut self, wm: &mut GameWindowManager, func: &[u8]) {
         match func {
@@ -181,6 +236,40 @@ impl<W: WndFiles> MenuHost for ShellGui<W> {
     }
     fn first_cd_present(&self) -> bool {
         self.first_cd_present
+    }
+}
+
+impl<W: WndFiles> SaveLoadHost for ShellGui<W> {
+    fn save_load_menu(&mut self) -> &mut SaveLoadMenu {
+        &mut self.save_load
+    }
+    fn save_files(&mut self) -> Vec<(Vec<u8>, Option<SaveGameInfo>)> {
+        self.save_files.clone()
+    }
+    fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
+        self.files.as_ref().map_or_else(|| (Vec::new(), false), |f| f.files.fetch_text_exists(label))
+    }
+    fn delete_save_file(&mut self, filename: &[u8]) {
+        self.save_files.retain(|(n, _)| !n.eq_ignore_ascii_case(filename));
+        self.requests.push(ShellRequest::DeleteSave { filename: filename.to_vec() });
+    }
+    fn destroy_quit_menu(&mut self) {
+        self.untranslated.push(b"destroyQuitMenu".to_vec());
+    }
+}
+
+impl<W: WndFiles> SinglePlayerHost for ShellGui<W> {
+    fn single_player_menu(&mut self) -> &mut SinglePlayerMenu {
+        &mut self.single_player
+    }
+}
+
+impl<W: WndFiles> DifficultyHost for ShellGui<W> {
+    fn difficulty_select(&mut self) -> &mut DifficultySelect {
+        &mut self.difficulty
+    }
+    fn campaign_difficulty_pref(&self) -> Option<i32> {
+        self.campaign_difficulty_pref
     }
 }
 
@@ -269,6 +358,111 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         .into_bytes()
     }
 
+    /// (#78) One window `<file>:<name>` of `kind` (`PUSHBUTTON`, `USER`, ...) over `(x0, y0)-(x1, y1)`, hidden or
+    /// shown, with `extra` lines (its data, callbacks) and its `children` (already made).
+    fn win(file: &str, kind: &str, name: &str, r: (i32, i32, i32, i32), hidden: bool, extra: &str, children: &str) -> String {
+        let st = if hidden { "ENABLED+HIDDEN" } else { "ENABLED" };
+        let style = match kind {
+            "PUSHBUTTON" => "PUSHBUTTON+MOUSETRACK",
+            "RADIOBUTTON" => "RADIOBUTTON+MOUSETRACK",
+            "SCROLLLISTBOX" => "SCROLLLISTBOX+MOUSETRACK",
+            k => k,
+        };
+        let text = if matches!(kind, "PUSHBUTTON" | "RADIOBUTTON") { format!("    TEXT = \"GUI:{name}\";\n") } else { String::new() };
+        let mut out = format!(
+            "  WINDOW\n    WINDOWTYPE = {kind};\n    SCREENRECT = UPPERLEFT: {} {}, BOTTOMRIGHT: {} {}, CREATIONRESOLUTION: 800 600;\n    NAME = \"{file}:{name}\";\n    STATUS = {st};\n    STYLE = {style};\n{text}{extra}",
+            r.0, r.1, r.2, r.3
+        );
+        if !children.is_empty() {
+            out += &format!("    CHILD\n{children}    ENDALLCHILDREN\n");
+        }
+        out + "  END\n"
+    }
+
+    /// (#78) A row of push buttons `<file>:<name>`, 90x20, from (x, y) down, 25 apart.
+    fn buttons(file: &str, x: i32, y: i32, names: &[&str]) -> String {
+        names.iter().enumerate().map(|(i, n)| win(file, "PUSHBUTTON", n, (x, y + 25 * i as i32, x + 90, y + 20 + 25 * i as i32), false, "", "")).collect()
+    }
+
+    /// (#78) A frame `<file>:<name>` that passes its buttons' presses up (`PassSelectedButtonsToParentSystem`).
+    fn frame(file: &str, name: &str, r: (i32, i32, i32, i32), hidden: bool, children: &str) -> String {
+        win(file, "USER", name, r, hidden, "    SYSTEMCALLBACK = \"PassSelectedButtonsToParentSystem\";\n", children)
+    }
+
+    /// (#78) A layout file: the layout block's three callbacks (`[None]` for none) and its windows.
+    fn layout_file(init: &str, update: &str, shutdown: &str, windows: &str) -> Vec<u8> {
+        format!("FILE_VERSION = 2;\nSTARTLAYOUTBLOCK\n  LAYOUTINIT = {init};\n  LAYOUTUPDATE = {update};\n  LAYOUTSHUTDOWN = {shutdown};\nENDLAYOUTBLOCK\n{}", windows.replace("\n  ", "\n").trim_start_matches(' ')).into_bytes()
+    }
+
+    /// (#78) A synthetic save/load screen (no EA file): `Menus/SaveLoad.wnd` (full screen, `SaveLoadMenuFullScreenInit`)
+    /// or, with `popup`, `Menus/PopupSaveLoad.wnd` (`SaveLoadMenuInit`), with the windows PopupSaveLoad.cpp finds by name:
+    /// the parent `SaveLoadMenu` (the system and input callbacks), the games list box (three columns, 60/20/20 %) at
+    /// (20, 100)-(560, 400), the button frame (Save, Load, Delete, Back at x 610 from y 110), and the four confirmations
+    /// at (200, 420)-(600, 520), each with its two buttons at x 210 from y 430 (the delete one hidden in the file, the
+    /// others shown; the description one holds `EntryDesc` at (310, 430)-(590, 450)).
+    pub fn save_load_wnd(popup: bool) -> Vec<u8> {
+        let f = if popup { "PopupSaveLoad.wnd" } else { "SaveLoad.wnd" };
+        let conf = (200, 420, 600, 520);
+        let mut c = String::new();
+        c += &win(
+            f,
+            "SCROLLLISTBOX",
+            "ListboxGames",
+            (20, 100, 560, 400),
+            false,
+            "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 3, COLUMNSWIDTH%: 60, COLUMNSWIDTH%: 20, COLUMNSWIDTH%: 20, FORCESELECT: 0;\n",
+            "",
+        );
+        c += &frame(f, "MenuButtonFrame", (600, 100, 790, 300), false, &buttons(f, 610, 110, &["ButtonSave", "ButtonLoad", "ButtonDelete", "ButtonBack"]));
+        c += &frame(f, "OverwriteConfirmParent", conf, false, &buttons(f, 210, 430, &["ButtonOverwriteConfirm", "ButtonOverwriteCancel"]));
+        c += &frame(f, "LoadConfirmParent", conf, false, &buttons(f, 210, 430, &["ButtonLoadConfirm", "ButtonLoadCancel"]));
+        let entry = win(f, "ENTRYFIELD", "EntryDesc", (310, 430, 590, 450), false, "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n", "");
+        c += &frame(f, "SaveDescParent", conf, false, &(buttons(f, 210, 430, &["ButtonSaveDescConfirm", "ButtonSaveDescCancel"]) + &entry));
+        c += &frame(f, "DeleteConfirmParent", conf, true, &buttons(f, 210, 430, &["ButtonDeleteConfirm", "ButtonDeleteCancel"]));
+        let parent = win(f, "USER", "SaveLoadMenu", (0, 0, 800, 600), false, "    SYSTEMCALLBACK = \"SaveLoadMenuSystem\";\n    INPUTCALLBACK = \"SaveLoadMenuInput\";\n", &c);
+        let init = if popup { "SaveLoadMenuInit" } else { "SaveLoadMenuFullScreenInit" };
+        layout_file(init, "SaveLoadMenuUpdate", "SaveLoadMenuShutdown", &parent)
+    }
+
+    /// (#78) A synthetic `Menus/SinglePlayerMenu.wnd` (no EA file): `SinglePlayerMenuParent` with the system and input
+    /// callbacks, and its New, Load and Back buttons at x 350 from y 250.
+    pub fn single_player_menu_wnd() -> Vec<u8> {
+        let f = "SinglePlayerMenu.wnd";
+        let parent = win(
+            f,
+            "USER",
+            "SinglePlayerMenuParent",
+            (0, 0, 800, 600),
+            false,
+            "    SYSTEMCALLBACK = \"SinglePlayerMenuSystem\";\n    INPUTCALLBACK = \"SinglePlayerMenuInput\";\n",
+            &buttons(f, 350, 250, &["ButtonNew", "ButtonLoad", "ButtonBack"]),
+        );
+        layout_file("SinglePlayerMenuInit", "SinglePlayerMenuUpdate", "SinglePlayerMenuShutdown", &parent)
+    }
+
+    /// (#78) A synthetic `Menus/DifficultySelect.wnd` (no EA file): `DifficultySelectParent` at (250, 200)-(550, 400) with
+    /// the system and input callbacks, the three radio buttons (group 1) at x 260 from y 210, OK and Cancel at x 400 from
+    /// y 210.
+    pub fn difficulty_select_wnd() -> Vec<u8> {
+        let f = "DifficultySelect.wnd";
+        let mut c = String::new();
+        for (i, n) in ["RadioButtonEasy", "RadioButtonMedium", "RadioButtonHard"].iter().enumerate() {
+            let y = 210 + 25 * i as i32;
+            c += &win(f, "RADIOBUTTON", n, (260, y, 350, y + 20), false, "    RADIOBUTTONDATA = GROUP: 1;\n", "");
+        }
+        c += &buttons(f, 400, 210, &["ButtonOk", "ButtonCancel"]);
+        let parent = win(
+            f,
+            "USER",
+            "DifficultySelectParent",
+            (250, 200, 550, 400),
+            false,
+            "    SYSTEMCALLBACK = \"DifficultySelectSystem\";\n    INPUTCALLBACK = \"DifficultySelectInput\";\n",
+            &c,
+        );
+        layout_file("DifficultySelectInit", "[None]", "[None]", &parent)
+    }
+
     /// The panels of [`main_menu_wnd`] and their buttons.
     const PANELS: [(&str, &[&str]); 5] = [
         ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
@@ -329,6 +523,8 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         ] {
             s += &panel_group(name, fire_once, panel);
         }
+        // (#78) the save/load screen's fade (`SaveLoadMenuFade`), on its parent, not fire-once (its shutdown reverses it)
+        s += "WindowTransition SaveLoadMenuFade\n  Window\n    WinName = SaveLoad.wnd:SaveLoadMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         for (g, w) in [("US", "US"), ("GLA", "GLA"), ("China", "China"), ("Training", "Training"), ("Skirmish", "Skirmish")] {
             s += &format!("WindowTransition MainMenuFaction{g}\n  Window\n    WinName = MainMenu.wnd:WinFaction{w}\n    Style = WINSCALEUP\n  End\nEnd\n");
         }
@@ -338,8 +534,17 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
     /// The shell's synthetic files by their paths (`Window\Menus/<name>.wnd`): the main menu, the two message boxes,
     /// and plain screens ([`screen`]) for the background and the screens the main menu pushes.
     pub fn shell_wnd_files() -> Vec<(Vec<u8>, Vec<u8>)> {
-        let mut out = vec![("MainMenu", main_menu_wnd()), ("MessageBox", message_box_wnd(false)), ("QuitMessageBox", message_box_wnd(true))];
-        for n in ["BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"] {
+        let mut out = vec![
+            ("MainMenu", main_menu_wnd()),
+            ("MessageBox", message_box_wnd(false)),
+            ("QuitMessageBox", message_box_wnd(true)),
+            // (#78)
+            ("SaveLoad", save_load_wnd(false)),
+            ("PopupSaveLoad", save_load_wnd(true)),
+            ("SinglePlayerMenu", single_player_menu_wnd()),
+            ("DifficultySelect", difficulty_select_wnd()),
+        ];
+        for n in ["BlankWindow", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()
@@ -495,7 +700,8 @@ pub(crate) mod tests {
     ///
     /// - *Load/Replay* then *Load Game*: the menu's shutdown is asked (`Menus/SaveLoad.wnd` pending), and ~~the next
     ///   update~~ **Corrected 2026-11-10 (#77):** the first update once `MainMenuLoadReplayMenuBackTransition` and the
-    ///   animate manager are done completes it: two screens, the save/load screen on top (its callbacks are not translated: recorded);
+    ///   animate manager are done completes it: two screens, the save/load screen on top (~~its callbacks are not translated:
+///   recorded~~ **Corrected 2026-11-10 (#78):** its full-screen init runs, `crate::client::save_load_menu`);
     ///   `buttonPushed` stays set; `popImmediate` takes it off and the main menu's init runs again, which (not the
     ///   first time) shows the ruler and sets `justEntered`; two updates later (`initialGadgetDelay` 2, 1) the focus is
     ///   set again;
@@ -526,7 +732,9 @@ pub(crate) mod tests {
         settle(&mut wm, &mut h);
         assert_eq!(h.shell.get_screen_count(), 2);
         assert_eq!(wm.layouts[h.shell.top().expect("top")].filename, b"Menus/SaveLoad.wnd");
-        assert!(h.untranslated.contains(&b"SaveLoadInit".to_vec()));
+        // (#78: the save/load screen's own init, not an untranslated name)
+        assert!(h.save_load.parent.is_some() && !h.save_load.is_popup && h.save_load.just_entered);
+        assert!(!h.untranslated.iter().any(|f| f.starts_with(b"SaveLoad")), "{:?}", h.untranslated);
         let b = w(&wm, "ButtonOptions");
         click(&mut wm, &mut h, b);
         assert!(h.shell.options_layout.is_none(), "buttonPushed: ignored");

@@ -135,6 +135,16 @@ pub enum ShellRequest {
     StartCampaign { campaign: Vec<u8>, difficulty: i32 },
     /// `TheGameEngine->setQuitting(TRUE)`.
     Quit,
+    /// (#78) The save/load screen's load (`doLoadGame`): in the shell, `prepareNewGame(GAME_SINGLE_PLAYER,
+    /// DIFFICULTY_NORMAL, 0)`; then `TheGameState->loadGame(info)` of the save `filename` (its name in the save
+    /// directory). A failed load is the host's to answer as `doLoadGame` does (`clearGameData`, `reset`,
+    /// `showShell(TRUE)`).
+    LoadGame { filename: Vec<u8> },
+    /// (#78) `TheGameState->saveGame(filename, description, fileType)` (the save/load screen; an empty `filename`: the
+    /// next free name, `findNextSaveFilename`).
+    SaveGame { filename: Vec<u8>, description: Vec<u16>, file_type: i32 },
+    /// (#78) `DeleteFile(getFilePathInSaveDirectory(filename))` (the save/load screen's delete).
+    DeleteSave { filename: Vec<u8> },
 }
 
 /// `TheShell`.
@@ -232,6 +242,11 @@ pub trait ShellHost: GuiHost {
 pub trait WndFiles: WndHost {
     /// The bytes of `path` (`Window\...`), if the file is there.
     fn open_wnd(&mut self, path: &[u8]) -> Option<Vec<u8>>;
+    /// (#78) `TheGameText->fetch(label, &exists)`: the text and whether the game's text has the label (by default
+    /// [`WndHost::fetch_text`], found).
+    fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
+        (self.fetch_text(label), true)
+    }
 }
 
 /// The reader's state with its files: what a host keeps to load layouts. A host takes it out of itself while it loads
@@ -251,29 +266,96 @@ impl<W: WndFiles> LayoutFiles<W> {
     /// `winCreateLayout(filename)`: a new layout loaded from `Window\<filename>` (`WindowLayout::load`); `None` (the
     /// layout deleted) when the file is missing, does not read, or makes no window.
     pub fn win_create_layout<H: GuiHost>(&mut self, wm: &mut GameWindowManager, h: &mut H, filename: &[u8]) -> Option<usize> {
-        if filename.is_empty() {
-            return None;
-        }
-        let data = self.files.open_wnd(&window_script_path(filename))?;
-        match wm.win_create_from_script(&mut self.script, filename, &data, &mut self.files, h) {
-            Ok((Some(l), _)) => Some(l),
-            _ => None,
-        }
+        win_create_layout_with(&mut self.script, &mut self.files, wm, h, filename)
     }
 
     /// `winCreateFromScript(filename)` with no layout info (`gogoMessageBox`): the windows are made but belong to no
     /// layout. The first window.
     pub fn win_create_from_script<H: GuiHost>(&mut self, wm: &mut GameWindowManager, h: &mut H, filename: &[u8]) -> Option<WinId> {
-        let data = self.files.open_wnd(&window_script_path(filename))?;
-        let (l, r) = wm.win_create_from_script(&mut self.script, filename, &data, &mut self.files, h).ok()?;
-        if let Some(l) = l {
-            // (the manager made a layout of the file's windows; upstream's call makes none)
-            for w in wm.layouts[l].windows.clone() {
-                wm.layout_remove_window(l, w);
-            }
-            wm.layouts[l].deleted = true;
+        win_create_from_script_with(&mut self.script, &mut self.files, wm, h, filename)
+    }
+}
+
+/// [`LayoutFiles::win_create_layout`] with the reader and the files apart (#78: a host lends its files through
+/// [`KeyedFiles`]).
+pub fn win_create_layout_with<F: WndFiles, H: GuiHost>(script: &mut WindowScript, files: &mut F, wm: &mut GameWindowManager, h: &mut H, filename: &[u8]) -> Option<usize> {
+    if filename.is_empty() {
+        return None;
+    }
+    let data = files.open_wnd(&window_script_path(filename))?;
+    match wm.win_create_from_script(script, filename, &data, files, h) {
+        Ok((Some(l), _)) => Some(l),
+        _ => None,
+    }
+}
+
+/// [`LayoutFiles::win_create_from_script`] with the reader and the files apart.
+pub fn win_create_from_script_with<F: WndFiles, H: GuiHost>(script: &mut WindowScript, files: &mut F, wm: &mut GameWindowManager, h: &mut H, filename: &[u8]) -> Option<WinId> {
+    let data = files.open_wnd(&window_script_path(filename))?;
+    let (l, r) = wm.win_create_from_script(script, filename, &data, files, h).ok()?;
+    if let Some(l) = l {
+        // (the manager made a layout of the file's windows; upstream's call makes none)
+        for w in wm.layouts[l].windows.clone() {
+            wm.layout_remove_window(l, w);
         }
-        r.first_window
+        wm.layouts[l].deleted = true;
+    }
+    r.first_window
+}
+
+/// (#78) `TheNameKeyGenerator` as one table that a host and the reader it lends its files to share: a callback the
+/// reader runs while the files are lent (a window's `GWM_CREATE`: `SinglePlayerMenuSystem` takes its buttons' keys
+/// there) gets the keys the reader gives the windows, as upstream's one global generator does. The keys are numbered
+/// from 1 in the order the names are first asked for.
+#[derive(Clone, Debug, Default)]
+pub struct NameKeys(std::rc::Rc<std::cell::RefCell<std::collections::BTreeMap<Vec<u8>, u32>>>);
+
+impl NameKeys {
+    /// `nameToKey(name)`.
+    pub fn name_to_key(&self, name: &[u8]) -> u32 {
+        let mut m = self.0.borrow_mut();
+        let n = m.len() as u32 + 1;
+        *m.entry(name.to_vec()).or_insert(n)
+    }
+}
+
+/// (#78) Files lent to the reader with the shared [`NameKeys`]: every [`WndHost`] call but `name_to_key` is the
+/// files' own.
+pub struct KeyedFiles<'a, W> {
+    pub files: &'a mut W,
+    pub keys: NameKeys,
+}
+
+impl<W: WndFiles> WndHost for KeyedFiles<'_, W> {
+    fn name_to_key(&mut self, name: &[u8]) -> u32 {
+        self.keys.name_to_key(name)
+    }
+    fn find_image(&self, name: &[u8]) -> Option<Vec<u8>> {
+        self.files.find_image(name)
+    }
+    fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
+        self.files.fetch_text(label)
+    }
+    fn get_font(&self, name: &[u8], size: i32, bold: bool) -> Option<crate::client::window_script::GameFont> {
+        self.files.get_font(name, size, bold)
+    }
+    fn font_from_template(&self, name: &[u8]) -> Option<crate::client::window_script::GameFont> {
+        self.files.font_from_template(name)
+    }
+    fn lexicon_has(&self, kind: crate::client::window_script::Callback, name: &[u8]) -> bool {
+        self.files.lexicon_has(kind, name)
+    }
+    fn display_size(&self) -> (i32, i32) {
+        self.files.display_size()
+    }
+}
+
+impl<W: WndFiles> WndFiles for KeyedFiles<'_, W> {
+    fn open_wnd(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        self.files.open_wnd(path)
+    }
+    fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
+        self.files.fetch_text_exists(label)
     }
 }
 
@@ -642,6 +724,10 @@ pub(crate) mod tests {
     impl WndFiles for Files {
         fn open_wnd(&mut self, path: &[u8]) -> Option<Vec<u8>> {
             self.files.get(path).cloned()
+        }
+        /// (#78) A label starting `NOTEXT` is not in the game's text.
+        fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
+            (self.fetch_text(label), !label.starts_with(b"NOTEXT"))
         }
     }
 

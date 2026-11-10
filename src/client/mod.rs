@@ -73,3 +73,6 @@ pub mod water;
 pub mod save_game;
 pub mod campaign_manager;
 pub mod challenge_generals;
+pub mod save_load_menu;
+pub mod single_player_menu;
+pub mod difficulty_select;

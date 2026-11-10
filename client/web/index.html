@@ -51,7 +51,7 @@
 <script type="module">
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
   import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status,
-    saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open,
+    saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open, saves_delete_name,
     saves_status, saves_logic_frame, campaign_status } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
@@ -284,6 +284,12 @@
             await w.write(bytes);
             await w.close();
           } catch (e) { console.warn('could not keep the save ' + name + ' in this browser: ' + e); }
+        }
+        // #78: the saves the game's save/load screen deleted
+        for (;;) {
+          const name = saves_delete_name();
+          if (!name) break;
+          try { await (await saveDir()).removeEntry(name); } catch (e) { console.warn('could not delete the save ' + name + ': ' + e); }
         }
       } finally { writing = false; }
     }, 250);
