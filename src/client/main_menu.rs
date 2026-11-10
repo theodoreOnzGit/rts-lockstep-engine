@@ -52,16 +52,21 @@
 //! - A window the file lacks is used without a check where upstream does (the drop-down panels, the campaigns' save
 //!   buttons): recorded as undefined ([`GameWindowManager::undefined`]).
 //! - `buttonPushed` stays set after a push to another screen: the menu takes no other button until its init runs again.
-//! - `launchChallengeMenu` is cleared by any button but the three difficulties, when the transitions are done (always,
-//!   here).
+//! - `launchChallengeMenu` is cleared by any button but the three difficulties, when the transitions are done ~~(always,
+//!   here)~~ (**Corrected 2026-11-10 (#77):** as upstream's handler says).
 //!
 //! # Where this differs from upstream
 //!
-//! - **The transitions** (`TheTransitionHandler`: `setGroup`, `reverse`, `remove`, `isFinished`, and the groups of
+//! - ~~**The transitions** (`TheTransitionHandler`: `setGroup`, `reverse`, `remove`, `isFinished`, and the groups of
 //!   `WindowTransitions.ini` that fade the panels in and out) are not translated (#69): the calls are given to the
-//!   host ([`MenuHost::transition`]) and every group is finished at once. So `dontAllowTransitions` is cleared at the
+//!   host (`MenuHost::transition`) and every group is finished at once. So `dontAllowTransitions` is cleared at the
 //!   next update, and a panel shown stays shown, with the previous one, until the file's own windows say otherwise:
-//!   upstream's transitions are what hide the panel left behind. Recorded as a gap.
+//!   upstream's transitions are what hide the panel left behind. Recorded as a gap.~~ **Corrected 2026-11-10 (#77):**
+//!   the transitions are translated ([`crate::client::window_transitions`], the window manager's handler): the menu
+//!   calls `setGroup`, `reverse`, `remove` and `isFinished` as upstream does, the groups of `WindowTransitions.ini`
+//!   hide the panel left behind and show the next (the difficulty panel among them), and `dontAllowTransitions` is
+//!   cleared by the first update once they are done. A group the INI lacks is upstream's `NULL`: `reverse` of it with
+//!   none current is recorded as undefined.
 //! - `TheScriptEngine->signalUIInteract` (the shell map's scripts) is given to the host
 //!   ([`MenuHost::signal_ui_interact`]), which only records it: there is no shell map game here, and the client never
 //!   changes the simulation.
@@ -69,7 +74,9 @@
 //!   (the Online button: its panel state changes, the patch check and the online menus do not happen),
 //!   `CancelPatchCheckCallback`, `StartDownloadingPatches`, `RaiseGSMessageBox`, `HTTPThinkWrapper`,
 //!   `GameSpyUpdateOverlays`, `TheDownloadManager`, `TheMapCache->updateCache`: not translated (gaps).
-//! - `TheShell->loadScheme("MainMenu")` (shell menu schemes), `reverseAnimatewindow`: not translated.
+//! - `TheShell->loadScheme("MainMenu")` (shell menu schemes)~~, `reverseAnimatewindow`~~: not translated.
+//!   **Corrected 2026-11-10 (#77):** `reverseAnimatewindow` is translated (the shutdown and `setupGameStart` call it;
+//!   [`shell::reverse_animate_window`]).
 //! - `TheWritableGlobalData->m_breakTheMovie`, `DontShowMainMenu` (false in the game): not modelled.
 //! - `IsFirstCDPresent` (`TheFileSystem->areMusicFilesOnCD()`) is the host's ([`MenuHost::first_cd_present`]); the
 //!   insert-disc prompt (`ExMessageBoxOkCancel`, ExtendedMessageBox.cpp) is not translated: without the disc the
@@ -90,6 +97,7 @@ use crate::client::message_box::quit_message_box_yes_no;
 use crate::client::shell::{self, ShellHost, ShellRequest};
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
+use crate::client::window_transitions as wt;
 
 /// `DROPDOWN_NONE` .. `DROPDOWN_DIFFICULTY`, `DROPDOWN_COUNT`.
 pub const DROPDOWN_NONE: usize = 0;
@@ -121,25 +129,12 @@ pub const BUTTONS: [&str; 30] = [
     "ButtonHard",
 ];
 
-/// A call on `TheTransitionHandler` (not translated: recorded by the host).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Transition {
-    /// `setGroup(name, immediate)`.
-    SetGroup(&'static str, bool),
-    /// `reverse(name)`.
-    Reverse(&'static str),
-    /// `remove(name, skipPending)`.
-    Remove(&'static str, bool),
-}
-
 /// What the main menu needs besides the shell.
 pub trait MenuHost: ShellHost {
     /// The file's statics.
     fn main_menu(&mut self) -> &mut MainMenu;
     /// `TheGameText->fetch(label)`.
     fn fetch_text(&self, label: &[u8]) -> Vec<u16>;
-    /// `TheTransitionHandler` (not translated: every group is finished at once).
-    fn transition(&mut self, _t: Transition) {}
     /// `TheScriptEngine->signalUIInteract(TheShellHookNames[hook])` (the shell map's scripts: recorded only).
     fn signal_ui_interact(&mut self, _hook: &'static str) {}
     /// `IsFirstCDPresent()`.
@@ -249,7 +244,7 @@ pub fn handle_canceled_download<H: MenuHost>(wm: &mut GameWindowManager, h: &mut
     if reset_drop_down {
         let d = h.main_menu().drop_down_windows[DROPDOWN_MAIN];
         hide_checked(wm, d, false, "HandleCanceledDownload: no MapBorder2");
-        h.transition(Transition::SetGroup("MainMenuDefaultMenuLogoFade", false));
+        wt::set_group(wm, h, b"MainMenuDefaultMenuLogoFade", false);
     }
 }
 
@@ -281,11 +276,12 @@ fn setup_game_start<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i3
         // (`TheChallengeGenerals->setCurrentDifficulty(diff)`: the challenge menu's)
         h.main_menu().campaign_selected = true;
         shell::push(wm, h, b"Menus/ChallengeMenu.wnd", false);
-        h.transition(Transition::Reverse("MainMenuDifficultyMenuTraining"));
+        wt::reverse(wm, h, b"MainMenuDifficultyMenuTraining");
     } else {
         // (`m_pendingFile = mapName`: the campaign's current map, the World's)
         h.main_menu().start_game = true;
-        h.transition(Transition::SetGroup("FadeWholeScreen", false));
+        shell::reverse_animate_window(wm, h);
+        wt::set_group(wm, h, b"FadeWholeScreen", false);
     }
 }
 
@@ -296,7 +292,7 @@ fn prepare_campaign_game<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, dif
     // (OptionPreferences' campaign difficulty, written to Options.ini; `TheScriptEngine->setGlobalDifficulty(diff)`:
     // the World's, in `start_campaign`)
     m.button_pushed = false;
-    h.transition(Transition::Reverse("MainMenuDifficultyMenuBack"));
+    wt::reverse(wm, h, b"MainMenuDifficultyMenuBack");
     setup_game_start(wm, h, diff);
 }
 
@@ -391,7 +387,7 @@ pub fn main_menu_init<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layout
     h.main_menu().campaign_selected = false;
     if h.main_menu().first_time_running_the_game {
         h.main_menu().mouse_visible = false;
-        h.transition(Transition::Reverse("FadeWholeScreen"));
+        wt::reverse(wm, h, b"FadeWholeScreen");
         h.main_menu().first_time_running_the_game = false;
     } else {
         let m = h.main_menu();
@@ -418,8 +414,12 @@ pub fn main_menu_shutdown<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, la
     };
     if pop_immediate {
         menu_shutdown_complete(wm, h, layout);
+        return;
     }
-    // (else `TheShell->reverseAnimatewindow()`: not translated; the update completes the shutdown)
+    // (#77) the update completes the shutdown once the animations are done
+    if !h.main_menu().start_game {
+        shell::reverse_animate_window(wm, h);
+    }
 }
 
 /// `MainMenuUpdate(layout, userData)`.
@@ -430,7 +430,7 @@ pub fn main_menu_update<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layo
     }
     if h.main_menu().just_entered {
         if h.main_menu().initial_gadget_delay == 1 {
-            h.transition(Transition::SetGroup("MainMenuDefaultMenuLogoFade", false));
+            wt::set_group(wm, h, b"MainMenuDefaultMenuLogoFade", false);
             let p = h.main_menu().parent;
             wm.win_set_focus(h, p);
             let m = h.main_menu();
@@ -440,8 +440,7 @@ pub fn main_menu_update<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layo
             h.main_menu().initial_gadget_delay -= 1;
         }
     }
-    // `TheTransitionHandler->isFinished()`: always (see the module docs)
-    if h.main_menu().dont_allow_transitions {
+    if h.main_menu().dont_allow_transitions && wt::is_finished(wm) {
         h.main_menu().dont_allow_transitions = false;
     }
     if h.main_menu().show_logo && !h.main_menu().dont_allow_transitions {
@@ -454,7 +453,7 @@ pub fn main_menu_update<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layo
             _ => None,
         };
         if let Some(g) = g {
-            h.transition(Transition::SetGroup(g, false));
+            wt::set_group(wm, h, g.as_bytes(), false);
         }
         h.main_menu().show_logo = false;
     }
@@ -462,7 +461,7 @@ pub fn main_menu_update<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layo
         // (`RaiseGSMessageBox()`: online)
         h.main_menu().raise_message_boxes = false;
     }
-    let finished = h.shell().is_anim_finished();
+    let finished = shell::is_anim_finished(wm, h) && wt::is_finished(wm);
     if h.main_menu().start_game && finished {
         do_game_start(wm, h);
     }
@@ -478,8 +477,8 @@ fn first_show<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H) -> MsgHandled 
     if !hide_checked(wm, d, false, "MainMenuInput: no MapBorder2") {
         return MsgHandled::Handled;
     }
-    h.transition(Transition::SetGroup("MainMenuFade", true));
-    h.transition(Transition::SetGroup("MainMenuDefaultMenu", false));
+    wt::set_group(wm, h, b"MainMenuFade", true);
+    wt::set_group(wm, h, b"MainMenuDefaultMenu", false);
     let m = h.main_menu();
     m.mouse_visible = true;
     m.not_shown = false;
@@ -509,7 +508,7 @@ pub fn main_menu_input<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, _wind
 }
 
 /// `GBM_MOUSE_ENTERING` / `GBM_MOUSE_LEAVING` on a faction button: the logo's transition.
-fn faction_hover<H: MenuHost>(h: &mut H, entering: bool, side: i32, group: &'static str) {
+fn faction_hover<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, entering: bool, side: i32, group: &'static str) {
     let m = h.main_menu();
     if entering {
         if m.dont_allow_transitions && !m.campaign_selected {
@@ -519,7 +518,7 @@ fn faction_hover<H: MenuHost>(h: &mut H, entering: bool, side: i32, group: &'sta
         if m.campaign_selected || m.dont_allow_transitions {
             return;
         }
-        h.transition(Transition::SetGroup(group, false));
+        wt::set_group(wm, h, group.as_bytes(), false);
     } else {
         if m.dont_allow_transitions && !m.campaign_selected && m.show_logo {
             m.show_logo = false;
@@ -528,7 +527,7 @@ fn faction_hover<H: MenuHost>(h: &mut H, entering: bool, side: i32, group: &'sta
         if m.campaign_selected || m.dont_allow_transitions {
             return;
         }
-        h.transition(Transition::Reverse(group));
+        wt::reverse(wm, h, group.as_bytes());
     }
 }
 
@@ -567,15 +566,15 @@ pub fn main_menu_system<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, _win
             } else if id == key(h, "ButtonExit") {
                 h.signal_ui_interact(hook("Exit"));
             } else if id == key(h, "ButtonChallenge") {
-                faction_hover(h, entering, SHOW_TRAINING, "MainMenuFactionTraining");
+                faction_hover(wm, h, entering, SHOW_TRAINING, "MainMenuFactionTraining");
             } else if id == key(h, "ButtonSkirmish") {
-                faction_hover(h, entering, SHOW_SKIRMISH, "MainMenuFactionSkirmish");
+                faction_hover(wm, h, entering, SHOW_SKIRMISH, "MainMenuFactionSkirmish");
             } else if id == key(h, "ButtonUSA") {
-                faction_hover(h, entering, SHOW_USA, "MainMenuFactionUS");
+                faction_hover(wm, h, entering, SHOW_USA, "MainMenuFactionUS");
             } else if id == key(h, "ButtonGLA") {
-                faction_hover(h, entering, SHOW_GLA, "MainMenuFactionGLA");
+                faction_hover(wm, h, entering, SHOW_GLA, "MainMenuFactionGLA");
             } else if id == key(h, "ButtonChina") {
-                faction_hover(h, entering, SHOW_CHINA, "MainMenuFactionChina");
+                faction_hover(wm, h, entering, SHOW_CHINA, "MainMenuFactionChina");
             }
         }
         ggm::GBM_SELECTED => {
@@ -595,14 +594,13 @@ fn show_panel<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, i: usize) {
 
 /// `MainMenuSystem`'s `GBM_SELECTED`.
 fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, control: WinId) {
-    use Transition::{Remove, Reverse, SetGroup};
     if h.main_menu().button_pushed {
         return;
     }
     let id = wm.tree.windows[control].id;
     let is = |h: &mut H, name: &str| id == key(h, name);
-    // `TheTransitionHandler->isFinished()` (always) and not a difficulty
-    if !is(h, "ButtonEasy") && !is(h, "ButtonMedium") && !is(h, "ButtonHard") {
+    // `TheTransitionHandler->isFinished()` and not a difficulty
+    if wt::is_finished(wm) && !is(h, "ButtonEasy") && !is(h, "ButtonMedium") && !is(h, "ButtonHard") {
         h.main_menu().launch_challenge_menu = false;
     }
     let dont = h.main_menu().dont_allow_transitions;
@@ -615,18 +613,18 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.dont_allow_transitions = true;
         m.button_pushed = false;
         show_panel(wm, h, DROPDOWN_SINGLE);
-        h.transition(Remove("MainMenuDefaultMenu", false));
-        h.transition(Reverse("MainMenuDefaultMenuBack"));
-        h.transition(SetGroup("MainMenuSinglePlayerMenu", false));
+        wt::remove(wm, h, b"MainMenuDefaultMenu", false);
+        wt::reverse(wm, h, b"MainMenuDefaultMenuBack");
+        wt::set_group(wm, h, b"MainMenuSinglePlayerMenu", false);
     } else if is(h, "ButtonSingleBack") {
         if campaign_selected || dont {
             return;
         }
         h.main_menu().button_pushed = false;
         show_panel(wm, h, DROPDOWN_MAIN);
-        h.transition(Remove("MainMenuSinglePlayerMenu", false));
-        h.transition(Reverse("MainMenuSinglePlayerMenuBack"));
-        h.transition(SetGroup("MainMenuDefaultMenu", false));
+        wt::remove(wm, h, b"MainMenuSinglePlayerMenu", false);
+        wt::reverse(wm, h, b"MainMenuSinglePlayerMenuBack");
+        wt::set_group(wm, h, b"MainMenuDefaultMenu", false);
         h.main_menu().dont_allow_transitions = true;
     } else if is(h, "ButtonMultiBack") || is(h, "ButtonLoadReplayBack") {
         if dont {
@@ -637,13 +635,13 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.button_pushed = false;
         show_panel(wm, h, DROPDOWN_MAIN);
         if is(h, "ButtonMultiBack") {
-            h.transition(Remove("MainMenuMultiPlayerMenu", false));
-            h.transition(Reverse("MainMenuMultiPlayerMenuReverse"));
+            wt::remove(wm, h, b"MainMenuMultiPlayerMenu", false);
+            wt::reverse(wm, h, b"MainMenuMultiPlayerMenuReverse");
         } else {
-            h.transition(Remove("MainMenuLoadReplayMenu", false));
-            h.transition(Reverse("MainMenuLoadReplayMenuBack"));
+            wt::remove(wm, h, b"MainMenuLoadReplayMenu", false);
+            wt::reverse(wm, h, b"MainMenuLoadReplayMenuBack");
         }
-        h.transition(SetGroup("MainMenuDefaultMenu", false));
+        wt::set_group(wm, h, b"MainMenuDefaultMenu", false);
     } else if Some(control) == button(h, "ButtonCredits") {
         if dont {
             return;
@@ -653,7 +651,7 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.button_pushed = true;
         shell::push(wm, h, b"Menus/CreditsMenu.wnd", false);
         show_panel(wm, h, DROPDOWN_MAIN);
-        h.transition(Reverse("MainMenuDefaultMenu"));
+        wt::reverse(wm, h, b"MainMenuDefaultMenu");
     } else if is(h, "ButtonMultiplayer") || is(h, "ButtonLoadReplay") {
         if dont {
             return;
@@ -663,9 +661,9 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.button_pushed = false;
         let multi = is(h, "ButtonMultiplayer");
         show_panel(wm, h, if multi { DROPDOWN_MULTIPLAYER } else { DROPDOWN_LOADREPLAY });
-        h.transition(Remove("MainMenuDefaultMenu", false));
-        h.transition(Reverse("MainMenuDefaultMenuBack"));
-        h.transition(SetGroup(if multi { "MainMenuMultiPlayerMenu" } else { "MainMenuLoadReplayMenu" }, false));
+        wt::remove(wm, h, b"MainMenuDefaultMenu", false);
+        wt::reverse(wm, h, b"MainMenuDefaultMenuBack");
+        wt::set_group(wm, h, if multi { "MainMenuMultiPlayerMenu" } else { "MainMenuLoadReplayMenu" }.as_bytes(), false);
     } else if is(h, "ButtonLoadGame") || is(h, "ButtonReplay") {
         if dont {
             return;
@@ -674,7 +672,7 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.dont_allow_transitions = true;
         m.button_pushed = true;
         show_panel(wm, h, DROPDOWN_LOADREPLAY);
-        h.transition(Reverse("MainMenuLoadReplayMenuBackTransition"));
+        wt::reverse(wm, h, b"MainMenuLoadReplayMenuBackTransition");
         let to: &[u8] = if is(h, "ButtonLoadGame") { b"Menus/SaveLoad.wnd" } else { b"Menus/ReplayMenu.wnd" };
         shell::push(wm, h, to, false);
     } else if is(h, "ButtonSkirmish") {
@@ -685,8 +683,8 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.button_pushed = true;
         m.campaign_selected = true;
         show_panel(wm, h, DROPDOWN_SINGLE);
-        h.transition(Remove("MainMenuFactionSkirmish", false));
-        h.transition(Reverse("MainMenuSinglePlayerMenuBackSkirmish"));
+        wt::remove(wm, h, b"MainMenuFactionSkirmish", false);
+        wt::reverse(wm, h, b"MainMenuSinglePlayerMenuBackSkirmish");
         shell::push(wm, h, b"Menus/SkirmishGameOptionsMenu.wnd", false);
         h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED");
     } else if is(h, "ButtonOnline") {
@@ -697,7 +695,7 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.dont_allow_transitions = true;
         m.button_pushed = true;
         show_panel(wm, h, DROPDOWN_MULTIPLAYER);
-        h.transition(Reverse("MainMenuMultiPlayerMenuTransitionToNext"));
+        wt::reverse(wm, h, b"MainMenuMultiPlayerMenuTransitionToNext");
         // (`StartPatchCheck()`: online, not translated)
         h.main_menu().drop_down = DROPDOWN_NONE;
     } else if is(h, "ButtonNetwork") {
@@ -708,7 +706,7 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         m.dont_allow_transitions = true;
         m.button_pushed = true;
         show_panel(wm, h, DROPDOWN_MULTIPLAYER);
-        h.transition(Reverse("MainMenuMultiPlayerMenuTransitionToNext"));
+        wt::reverse(wm, h, b"MainMenuMultiPlayerMenuTransitionToNext");
         shell::push(wm, h, b"Menus/LanLobbyMenu.wnd", false);
         h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_SELECTED");
     } else if is(h, "ButtonOptions") {
@@ -744,12 +742,12 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         if campaign_selected || dont {
             return;
         }
-        h.transition(SetGroup("MainMenuFactionTraining", false));
+        wt::set_group(wm, h, b"MainMenuFactionTraining", false);
         if let Some(w) = find(wm, h, "WinFactionTraining") {
             wm.win_hide(w, true);
         }
-        h.transition(Reverse("MainMenuSinglePlayerMenuBackTraining"));
-        h.transition(SetGroup("MainMenuDifficultyMenuTraining", false));
+        wt::reverse(wm, h, b"MainMenuSinglePlayerMenuBackTraining");
+        wt::set_group(wm, h, b"MainMenuDifficultyMenuTraining", false);
         let m = h.main_menu();
         m.campaign_selected = true;
         m.show_logo = false;
@@ -768,13 +766,13 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
             return;
         }
         h.main_menu().campaign = campaign.as_bytes().to_vec();
-        h.transition(SetGroup(group, false));
-        h.transition(Remove(group, true));
+        wt::set_group(wm, h, group.as_bytes(), false);
+        wt::remove(wm, h, group.as_bytes(), true);
         if let Some(w) = find(wm, h, logo) {
             wm.win_hide(w, true);
         }
-        h.transition(Reverse(back));
-        h.transition(SetGroup(diff_menu, false));
+        wt::reverse(wm, h, back.as_bytes());
+        wt::set_group(wm, h, diff_menu.as_bytes(), false);
         let m = h.main_menu();
         m.campaign_selected = true;
         m.logo_is_shown = false;
@@ -799,13 +797,13 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         let m = h.main_menu();
         m.dont_allow_transitions = true;
         m.campaign.clear();
-        diff_reverse_side(h);
+        diff_reverse_side(wm, h);
         h.main_menu().campaign_selected = false;
     }
 }
 
 /// `diffReverseSide()`.
-fn diff_reverse_side<H: MenuHost>(h: &mut H) {
+fn diff_reverse_side<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     let (back, to) = match h.main_menu().show_side {
         SHOW_TRAINING => ("MainMenuDifficultyMenuTrainingBack", "MainMenuSinglePlayerTrainingMenuFromDiff"),
         SHOW_USA => ("MainMenuDifficultyMenuUSBack", "MainMenuSinglePlayerUSAMenuFromDiff"),
@@ -813,6 +811,6 @@ fn diff_reverse_side<H: MenuHost>(h: &mut H) {
         SHOW_CHINA => ("MainMenuDifficultyMenuChinaBack", "MainMenuSinglePlayerChinaMenuFromDiff"),
         _ => return,
     };
-    h.transition(Transition::Reverse(back));
-    h.transition(Transition::SetGroup(to, false));
+    wt::reverse(wm, h, back.as_bytes());
+    wt::set_group(wm, h, to.as_bytes(), false);
 }

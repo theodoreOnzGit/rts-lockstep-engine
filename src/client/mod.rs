@@ -53,6 +53,8 @@ pub mod main_menu;
 pub mod message_box;
 pub mod shell_gui;
 pub mod window_draw;
+pub mod window_transitions;
+pub mod animate_window;
 pub mod control_bar_scheme;
 pub mod control_bar_command;
 pub mod control_bar_popup;

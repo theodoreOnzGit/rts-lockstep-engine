@@ -44,7 +44,11 @@
 ** Input (stdin): one operation per line (see tests/differential_wm.rs, which writes them and runs the same ones on the
 ** Rust). Output (stdout): after each operation, `#` and its number, the messages the host recorded, then a dump of the
 ** windows and the manager's state, in the format the Rust writes. A crash ends the output early (the Rust test
-** reports it). */
+** reports it).
+**
+** #77: differential/wrap_wt.cpp compiles this file again with WT_REF defined, for the window transitions and the
+** animate window manager (`wt_ref`): the real transitions handler instead of the stand-in, the `Gradient` image, the
+** display string's draw recorded, and its own operations (`!`) and dump. Without WT_REF this file is as before. */
 #include "PreRTS.h"
 #include <malloc.h>
 #include <strings.h>
@@ -153,8 +157,10 @@ static View s_view;
 View *TheTacticalView = &s_view;
 static IMEManagerInterface s_ime;
 IMEManagerInterface *TheIMEManager = &s_ime;
+#ifndef WT_REF
 static GameWindowTransitionsHandler s_trans;
 GameWindowTransitionsHandler *TheTransitionHandler = &s_trans;
+#endif
 GlobalLanguage *TheGlobalLanguageData = NULL;
 LanguageID OurLanguage = LANGUAGE_ID_US;
 
@@ -185,10 +191,24 @@ class TestDisplayString : public DisplayString
 {
 public:
 	Int m_wrap;
+#ifdef WT_REF
+	TestDisplayString() : m_wrap(0), m_centered(FALSE), m_hasClip(FALSE) {}
+#else
 	TestDisplayString() : m_wrap(0) {}
+#endif
 	virtual void setWordWrap(Int w) { m_wrap = w; }
+#ifdef WT_REF
+	/* (#77) drawTypeText's string: what it is drawn with is recorded */
+	Bool m_centered;
+	IRegion2D m_clip;
+	Bool m_hasClip;
+	virtual void setWordWrapCentered(Bool c) { m_centered = c; }
+	virtual void setClipRegion(IRegion2D *r) { m_clip = *r; m_hasClip = TRUE; }
+	virtual void draw(Int x, Int y, Color c, Color d) { wt_text_draw(this, x, y, c, d); }
+#else
 	virtual void setWordWrapCentered(Bool) {}
 	virtual void draw(Int, Int, Color, Color) {}
+#endif
 	virtual void draw(Int, Int, Color, Color, Int, Int) {}
 	virtual void getSize(Int *width, Int *height)
 	{
@@ -242,7 +262,12 @@ ImageCollection::~ImageCollection(void) {}
 const Image *ImageCollection::findImageByName(const AsciiString &name)
 {
 	const char *n = name.str();
+#ifdef WT_REF
+	/* (#77) the transitions' `Gradient` too */
+	if (strncasecmp(n, "img", 3) != 0 && strcmp(n, "Gradient") != 0) return NULL;
+#else
 	if (strncasecmp(n, "img", 3) != 0) return NULL;
+#endif
 	for (std::map<unsigned, Image *>::iterator i = m_imageMap.begin(); i != m_imageMap.end(); ++i)
 		if (strcmp(i->second->getName().str(), n) == 0) return i->second;
 	Image *im = newInstance(Image);
@@ -472,6 +497,9 @@ static void dump(std::ostringstream &o, TestWindowManager *wm)
 	dump_text(o, TheMouse->m_tooltip);
 	o << " ime " << widx(TheIMEManager->m_window);
 	o << "\n";
+#ifdef WT_REF
+	wt_dump(o);
+#endif
 }
 
 /* ---- the operations (tests/differential_wm.rs documents each) */
@@ -705,6 +733,10 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 	case 'n': in >> a >> b; GadgetTabControlShowSubPane(win(a), b); break;
 	case 'q': in >> a; GadgetTabControlCreateSubPanes(win(a)); break;
 	case 'u': in >> a; GadgetTabControlFixupSubPaneList(win(a)); break;
+#ifdef WT_REF
+	/* (#77) the transitions' and the animate manager's operations (wrap_wt.cpp) */
+	case '!': wt_op(wm, in); break;
+#endif
 	}
 }
 
@@ -718,6 +750,9 @@ static void run_case(void)
 	wm->init();
 	TheDisplay->m_width = 800;
 	TheDisplay->m_height = 600;
+#ifdef WT_REF
+	wt_begin();
+#endif
 	for (size_t i = 0; i < g_ops.size(); ++i)
 	{
 		std::istringstream in(g_ops[i]);

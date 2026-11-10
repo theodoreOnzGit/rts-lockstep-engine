@@ -97,6 +97,9 @@ public:
 	** beacon text (batch D1) */
 	void concat(WideChar c) { if (c) m_s += c; }
 	/* --- end layer 12 batch G1 --- */
+	/* removeLastChar (UnicodeString.cpp: the unit before the terminator dropped, nothing for an empty string), for the
+	** transitions' typed text (#77) */
+	void removeLastChar() { if (!m_s.empty()) m_s.erase(m_s.size() - 1); }
 private:
 	void setWide(const wchar_t *s) { m_s.clear(); for (; s && *s; ++s) m_s += (WideChar)*s; }
 	std::basic_string<WideChar> m_s;

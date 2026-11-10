@@ -68,10 +68,15 @@
 //! - The layout callbacks are the game's own (the main menu's, ...), named in the file and run by the
 //!   [`ShellHost`] ([`ShellHost::layout_callback`]), with the user data upstream passes (`None` for `NULL`, the
 //!   shutdown's `Bool`).
-//! - **Gaps (#69):** the animate window manager (`AnimateWindowManager`: `registerWithAnimateManager`,
+//! - **Gaps (#69):** ~~the animate window manager (`AnimateWindowManager`: `registerWithAnimateManager`,
 //!   `reverseAnimatewindow`, its `update` and `reset`) and the window transitions (`TheTransitionHandler`) are not
-//!   translated: [`Shell::is_anim_finished`] is always true, as upstream's is with nothing registered and every
-//!   transition group done. The shell menu schemes (`ShellMenuScheme.ini`, `loadScheme`, the scheme manager's draws)
+//!   translated: `Shell::is_anim_finished` is always true, as upstream's is with nothing registered and every
+//!   transition group done.~~ **Corrected 2026-11-10 (#77):** both are translated
+//!   ([`crate::client::animate_window`], the shell's [`Shell::animate`]; [`crate::client::window_transitions`], the
+//!   window manager's): [`is_anim_finished`] asks the transitions, then (with [`ShellEnv::animate_windows`]) the
+//!   animate manager, which `update` runs after the screens' updates and `shutdownComplete` and `reset` reset;
+//!   [`register_with_animate_manager`], [`reverse_animate_window`] and [`is_anim_reversed`] are upstream's. The
+//!   shell menu schemes (`ShellMenuScheme.ini`, `loadScheme`, the scheme manager's draws)
 //!   are not translated. The shell **map** (a game of `GAME_SHELL` behind the menus) is not: the host's
 //!   [`ShellEnv::shell_map_on`] is false in this client, so `showShellMap(TRUE)` takes its background branch.
 //!   `GameSpyCloseAllOverlays` (online) is not called.
@@ -83,6 +88,7 @@
 //! host owns the shell, so that a callback the shell runs can call the shell again, as upstream's do through the
 //! global `TheShell`).
 
+use crate::client::animate_window::{AnimType, AnimateWindowManager};
 use crate::client::window_manager::{GameWindowManager, GuiHost, WindowLayout};
 use crate::client::window_script::{window_script_path, win_status, WinId, WindowScript, WndHost};
 
@@ -92,7 +98,7 @@ pub const MAX_SHELL_STACK: usize = 16;
 pub const SHELL_UPDATE_DELAY: i32 = 30;
 
 /// The global data and engine state the shell reads (`TheGlobalData`, `TheGameLogic`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShellEnv {
     /// `m_initialFile` (a map given on the command line: no shell).
     pub initial_file: Vec<u8>,
@@ -104,6 +110,15 @@ pub struct ShellEnv {
     pub in_shell_game: bool,
     /// `m_windowed`.
     pub windowed: bool,
+    /// (#77) `m_animateWindows` (`TRUE` by default: GlobalData.cpp).
+    pub animate_windows: bool,
+}
+
+impl Default for ShellEnv {
+    /// The global data's defaults: no initial file, no shell map, not in a game, full screen, windows animated.
+    fn default() -> Self {
+        ShellEnv { initial_file: Vec::new(), shell_map_on: false, in_game: false, in_shell_game: false, windowed: false, animate_windows: true }
+    }
 }
 
 /// What a callback asks of the engine and the logic (upstream's `TheMessageStream` messages and engine calls). The
@@ -123,7 +138,7 @@ pub enum ShellRequest {
 }
 
 /// `TheShell`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shell {
     /// `m_screenStack[0 .. m_screenCount]`: layout indices, bottom first.
     pub screen_stack: Vec<usize>,
@@ -141,6 +156,8 @@ pub struct Shell {
     pub options_layout: Option<usize>,
     /// `update`'s `static Int lastUpdate` (set at the first call).
     pub last_update: Option<u32>,
+    /// (#77) `m_animateWindowManager` ([`crate::client::animate_window`]).
+    pub animate: AnimateWindowManager,
 }
 
 impl Shell {
@@ -164,10 +181,9 @@ impl Shell {
         self.is_shell_active
     }
 
-    /// `isAnimFinished()`: `TheTransitionHandler->isFinished()` and the animate manager's; neither is translated, and
-    /// with nothing registered both are finished (see the module docs).
-    pub fn is_anim_finished(&self) -> bool {
-        true
+    /// `Shell::Shell()` with the animate window manager made on a display `display_width` wide (its spiral's radius).
+    pub fn with_display_width(display_width: i32) -> Self {
+        Shell { animate: AnimateWindowManager::new(display_width), ..Shell::new() }
     }
 
     /// `linkScreen(screen)`: on the top, unless the stack is full.
@@ -300,10 +316,12 @@ pub fn reset<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H) {
             }
         }
     }
+    // `m_animateWindowManager->reset()` (#77)
+    reset_animate(wm, h);
 }
 
 /// `Shell::update()` at the host's clock: every screen's update, top first, at most 30 times a second; the
-/// background goes once the shell map is on.
+/// background goes once the shell map is on; (#77) then the animate window manager's update.
 pub fn update<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H) {
     let now = h.time_ms();
     let last = *h.shell().last_update.get_or_insert(now);
@@ -321,7 +339,10 @@ pub fn update<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H) {
                 destroy_layout(wm, b);
             }
         }
-        // (the animate window manager's and the scheme manager's updates: not translated)
+        // `m_animateWindowManager->update()` (#77); (the scheme manager's update: not translated)
+        let mut a = std::mem::take(&mut h.shell().animate);
+        a.update(wm, now);
+        h.shell().animate = a;
         h.shell().last_update = Some(now);
     }
 }
@@ -482,7 +503,8 @@ fn do_pop<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H, impending_push: b
 
 /// `shutdownComplete(layout, impendingPush)`: a layout's shutdown is done; the pending push or pop is done now.
 pub fn shutdown_complete<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H, _layout: Option<usize>, impending_push: bool) {
-    // (`m_animateWindowManager->reset()`: not translated)
+    // `m_animateWindowManager->reset()` (#77)
+    reset_animate(wm, h);
     let s = h.shell();
     if s.pending_push {
         let name = s.pending_push_name.clone();
@@ -539,6 +561,52 @@ pub fn destroy_options_layout<H: ShellHost>(wm: &mut GameWindowManager, h: &mut 
 /// The layout as the manager keeps it (for a host's checks).
 pub fn layout(wm: &GameWindowManager, l: usize) -> &WindowLayout {
     &wm.layouts[l]
+}
+
+/// (#77) `m_animateWindowManager->reset()`.
+fn reset_animate<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H) {
+    let mut a = std::mem::take(&mut h.shell().animate);
+    a.reset(wm);
+    h.shell().animate = a;
+}
+
+/// (#77) `registerWithAnimateManager(win, animType, needsToFinish, delayMS)`: with `m_animateWindows`, registered for
+/// 500 ms at the host's clock.
+pub fn register_with_animate_manager<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H, win: Option<WinId>, anim_type: AnimType, needs_to_finish: bool, delay_ms: u32) {
+    if h.env().animate_windows {
+        let now = h.time_ms();
+        let mut a = std::mem::take(&mut h.shell().animate);
+        a.register_game_window(wm, win, anim_type, needs_to_finish, 500, delay_ms, now);
+        h.shell().animate = a;
+    }
+}
+
+/// (#77) `isAnimFinished()`: the transitions' (`TheTransitionHandler->isFinished()`), then, with `m_animateWindows`,
+/// the animate manager's.
+pub fn is_anim_finished<H: ShellHost>(wm: &GameWindowManager, h: &mut H) -> bool {
+    if !crate::client::window_transitions::is_finished(wm) {
+        return false;
+    }
+    if h.env().animate_windows {
+        h.shell().animate.is_finished()
+    } else {
+        true
+    }
+}
+
+/// (#77) `reverseAnimatewindow()`: with `m_animateWindows`, every animation turned around at the host's clock.
+pub fn reverse_animate_window<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H) {
+    if h.env().animate_windows {
+        let now = h.time_ms();
+        let mut a = std::mem::take(&mut h.shell().animate);
+        a.reverse_animate_window(wm, now);
+        h.shell().animate = a;
+    }
+}
+
+/// (#77) `isAnimReversed()`: the animate manager's, or true without `m_animateWindows`.
+pub fn is_anim_reversed<H: ShellHost>(h: &mut H) -> bool {
+    !h.env().animate_windows || h.shell().animate.is_reversed()
 }
 
 #[cfg(test)]
@@ -802,4 +870,38 @@ pub(crate) mod tests {
         let first = h.create_from_script(&mut wm, b"Menus/Credits.wnd").expect("made");
         assert_eq!(wm.ext[first].layout, None);
     }
+
+    /// (#77) The animate window manager in the shell, predicted from Shell.cpp: `registerWithAnimateManager` registers
+    /// (500 ms) only with `m_animateWindows`; `isAnimFinished` is false while a window must finish (and while a
+    /// transition group runs), `isAnimReversed` after `reverseAnimatewindow`; the shell's update runs the manager after
+    /// the screens; `reset` puts the window at rest and empties it. Without `m_animateWindows` nothing registers and
+    /// the shell is always finished and reversed.
+    #[test]
+    fn the_animate_manager_follows_the_shell() {
+        let mut wm = GameWindowManager::new((800, 600));
+        let mut h = rec();
+        h.shell = Shell::with_display_width(800);
+        h.complete_at_once = true;
+        push(&mut wm, &mut h, b"Menus/MainMenu.wnd", false);
+        let w = wm.layouts[h.shell.top().expect("top")].windows[0];
+        let rest = (wm.tree.windows[w].region.0, wm.tree.windows[w].region.1);
+        register_with_animate_manager(&mut wm, &mut h, Some(w), crate::client::animate_window::anim::WIN_ANIMATION_SLIDE_TOP, true, 0);
+        assert!(!is_anim_finished(&wm, &mut h) && !is_anim_reversed(&mut h));
+        assert_ne!((wm.tree.windows[w].region.0, wm.tree.windows[w].region.1), rest);
+        for t in 0..60 {
+            h.time = 1000 + 40 * t;
+            update(&mut wm, &mut h);
+        }
+        assert!(is_anim_finished(&wm, &mut h));
+        assert_eq!((wm.tree.windows[w].region.0, wm.tree.windows[w].region.1), rest);
+        reverse_animate_window(&mut wm, &mut h);
+        assert!(is_anim_reversed(&mut h) && !is_anim_finished(&wm, &mut h));
+        reset(&mut wm, &mut h);
+        assert!(h.shell.animate.is_empty());
+        let mut h2 = rec();
+        h2.env.animate_windows = false;
+        register_with_animate_manager(&mut wm, &mut h2, Some(w), crate::client::animate_window::anim::WIN_ANIMATION_SLIDE_TOP, true, 0);
+        assert!(h2.shell.animate.is_empty() && is_anim_finished(&wm, &mut h2) && is_anim_reversed(&mut h2));
+    }
 }
+

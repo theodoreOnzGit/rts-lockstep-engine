@@ -13,8 +13,11 @@
 //!
 //! **Not drawn yet (#69's remaining work):** the application does not show this shell; the windows' quads, as
 //! `crate::ui::GameUi::frame` makes the control bar's, and the phone layout (the menu over the 3D view, the zoom
-//! column kept) are the next step. The transitions (`WindowTransitions.ini`) that show the difficulty panel are not
-//! translated, so the campaign's path is reachable only through its messages (the tests' path) until they are.
+//! column kept) are the next step. ~~The transitions (`WindowTransitions.ini`) that show the difficulty panel are not
+//! translated, so the campaign's path is reachable only through its messages (the tests' path) until they are.~~
+//! **Corrected 2026-11-10 (#77):** the transitions are translated (`client::window_transitions`): [`ShellUi::load`]
+//! reads `Data\INI\WindowTransitions.ini` from the owner's files (the INI archive), and the panels, the difficulty
+//! panel among them, show and hide as upstream's groups make them; the campaign's path is clicked through.
 //!
 //! The client never changes the simulation: the shell reads nothing of the `World`, and a start is the campaign
 //! panel's own start (a copy of the install's World).
@@ -25,6 +28,7 @@ use rts_lockstep_engine::client::shell::{self as sh, ShellRequest, WndFiles};
 use rts_lockstep_engine::client::shell_gui::{start_shell, ShellGui};
 use rts_lockstep_engine::client::window_manager::{gwm, GameWindowManager};
 use rts_lockstep_engine::client::window_script::WndHost;
+use rts_lockstep_engine::client::window_transitions as wt;
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::science::GameTextFetch;
 use rts_lockstep_engine::logic::world::campaign_world::MissionChoice;
@@ -113,8 +117,9 @@ pub struct ShellUi {
 }
 
 impl ShellUi {
-    /// The shell from the art's files, started (the main menu pushed), or `None` without `Menus\MainMenu.wnd`. The time
-    /// is the client's clock in milliseconds.
+    /// The shell from the art's files, started (the main menu pushed), or `None` without `Menus\MainMenu.wnd` or
+    /// (#77) `Data\INI\WindowTransitions.ini` (or with one that does not read). The time is the client's clock in
+    /// milliseconds.
     pub fn load<D: LocalDevice>(fs: &FileSystem<D>, text: &TextTable, now_ms: u32) -> Option<ShellUi> {
         let mut files = BTreeMap::new();
         for n in SHELL_FILES {
@@ -126,14 +131,19 @@ impl ShellUi {
         if !files.contains_key(&b"Window\\Menus\\MainMenu.wnd"[..]) {
             return None;
         }
-        let mut ui = ShellUi { wm: GameWindowManager::new(LAYOUT), gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone() }) };
+        // (#77) `TheTransitionHandler->load()` at the window manager's init: without the file upstream's INI load
+        // throws; here there is no shell
+        let transitions = fs.open_file(wt::WINDOW_TRANSITIONS_INI)?;
+        let mut wm = GameWindowManager::new(LAYOUT);
+        wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &transitions).ok()?;
+        let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone() }) };
         ui.gui.time_ms = now_ms;
         start_shell(&mut ui.wm, &mut ui.gui);
         Some(ui)
     }
 
     /// A frame at `now_ms`: the shell's update (every screen's, at most 30 a second) and the window manager's
-    /// (`processDestroyList`).
+    /// (`processDestroyList`, then (#77) the transitions' update).
     pub fn frame(&mut self, now_ms: u32) {
         self.gui.time_ms = now_ms;
         self.wm.time_ms = now_ms;
@@ -170,8 +180,7 @@ impl ShellUi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rts_lockstep_engine::client::shell_gui::synthetic::shell_wnd_files;
-    use rts_lockstep_engine::client::window_manager::{ggm, win_data};
+    use rts_lockstep_engine::client::shell_gui::synthetic::{shell_wnd_files, window_transitions_ini};
     use rts_lockstep_engine::common::file_system::MemoryDevice;
 
     const CAMPAIGN: &[u8] = b"Campaign USA\n FirstMission = M01\n Mission M01\n  Map = Maps\\USA01\\USA01.map\n  NextMission = M02\n End\n Mission M02\n  Map = Maps\\USA02\\USA02.map\n End\nEnd\n";
@@ -182,9 +191,23 @@ mod tests {
             let p: Vec<u8> = p.iter().map(|&c| if c == b'/' { b'\\' } else { c }).collect();
             d.insert(&p, b);
         }
+        d.insert(b"Data\\INI\\WindowTransitions.ini", window_transitions_ini());
         let mut fs = FileSystem::new(d);
         fs.init(None);
         ShellUi::load(&fs, &TextTable::default(), 1000).expect("the shell loads")
+    }
+
+    /// (#77) Frames 40 ms apart until the transitions are done, and one more (the menu's update sees it).
+    fn settle(ui: &mut ShellUi, now: &mut u32) {
+        for _ in 0..400 {
+            *now += 40;
+            let done = wt::is_finished(&ui.wm) && ui.wm.transitions.pending.is_none();
+            ui.frame(*now);
+            if done {
+                return;
+            }
+        }
+        panic!("the transitions never finish");
     }
 
     fn win(ui: &ShellUi, name: &str) -> usize {
@@ -206,7 +229,9 @@ mod tests {
     /// - a key (scan 0x39, space) shows the main panel (`MapBorder2`); the keyboard is used;
     /// - touches on *Single Player* then *USA* (frames between them clear `dontAllowTransitions`; the shell's first
     ///   update only starts its clock), then *Medium*
-    ///   (`GBM_SELECTED`, its panel being a transition's): one request, `StartCampaign { USA, 1 }`, which [`act`] turns
+    ///   ~~(`GBM_SELECTED`, its panel being a transition's)~~ **Corrected 2026-11-10 (#77):** touched too, once the
+    ///   transitions (the synthetic `WindowTransitions.ini`) have shown the difficulty panel; without the INI there is
+    ///   no shell; after the frames that finish `FadeWholeScreen`: one request, `StartCampaign { USA, 1 }`, which [`act`] turns
     ///   into the flow's choice of `usa`'s first mission `m01` on `Maps\USA01\USA01.map` at difficulty 1, waiting for
     ///   its map;
     /// - a campaign the World lacks fails; a quit is the application's; the shell map's requests do nothing;
@@ -218,21 +243,33 @@ mod tests {
         let mut fs = FileSystem::new(d);
         fs.init(None);
         assert!(ShellUi::load(&fs, &TextTable::default(), 0).is_none());
+        let mut d = MemoryDevice::new();
+        for (p, b) in shell_wnd_files() {
+            let p: Vec<u8> = p.iter().map(|&c| if c == b'/' { b'\\' } else { c }).collect();
+            d.insert(&p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        assert!(ShellUi::load(&fs, &TextTable::default(), 0).is_none(), "no WindowTransitions.ini: no shell");
         let mut ui = shell();
         // (the shell's first update only starts its clock: `static Int lastUpdate`; missed in the first run, where the
         // first frame came after the click and the USA press was refused)
         ui.frame(1000);
         assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/MainMenu.wnd"[..]));
         assert!(ui.keyboard(0x39, true, Some(" ")));
+        // (#77: the main panel's group hides it at its init and shows it over its frames)
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
         assert!(!ui.wm.tree.windows[win(&ui, "MapBorder2")].is_hidden());
         click(&mut ui, "ButtonSinglePlayer", true);
-        ui.frame(1040);
+        settle(&mut ui, &mut now);
+        assert!(ui.wm.tree.windows[win(&ui, "MapBorder2")].is_hidden(), "the transitions hid the main panel");
         click(&mut ui, "ButtonUSA", true);
-        ui.frame(1080);
-        let medium = win(&ui, "ButtonMedium");
-        let owner = ui.wm.win_get_owner(medium);
-        ui.wm.win_send_system_msg(&mut ui.gui, owner, ggm::GBM_SELECTED, win_data(Some(medium)), 0);
-        ui.frame(1120);
+        settle(&mut ui, &mut now);
+        assert!(!ui.wm.tree.windows[win(&ui, "MapBorder4")].is_hidden(), "the difficulty panel is shown");
+        click(&mut ui, "ButtonMedium", true);
+        assert!(ui.gui.requests.is_empty(), "the screen fades first");
+        settle(&mut ui, &mut now);
         assert_eq!(ui.gui.requests, [ShellRequest::StartCampaign { campaign: b"USA".to_vec(), difficulty: 1 }]);
         let mut base = World::new();
         base.campaign.init(CAMPAIGN).expect("Campaign.ini");

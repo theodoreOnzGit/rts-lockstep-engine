@@ -631,6 +631,10 @@ pub trait GuiHost {
     fn has_image(&self, _image: &[u8]) -> bool {
         false
     }
+    /// (#77) `TheControlBar->getArrowImage()` (the scheme's `GenArrow`), by name; `None` for `NULL`.
+    fn control_bar_arrow_image(&self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// A host with none of the game's callbacks.
@@ -681,6 +685,9 @@ pub struct GameWindowManager {
     pub(crate) entry_draw_cnt: u8,
     /// (#74) `TheIMEManager`: the text entry typed characters go to ([`crate::client::ime_manager`]).
     pub ime: crate::client::ime_manager::ImeManager,
+    /// (#77) `TheTransitionHandler`, which the manager creates, updates, draws and resets
+    /// ([`crate::client::window_transitions`]).
+    pub transitions: crate::client::window_transitions::GameWindowTransitionsHandler,
 }
 
 /// The gadget kinds this translation creates, from the style bits (`createGadget`'s order).
@@ -1940,9 +1947,16 @@ impl GameWindowManager {
         }
     }
 
-    /// `update`: the destroy list.
+    /// `update`: the destroy list, then (#77) `TheTransitionHandler->update()`.
     pub fn update<H: GuiHost>(&mut self, h: &mut H) {
         self.process_destroy_list(h);
+        crate::client::window_transitions::update(self, h);
+    }
+
+    /// `reset`: every window destroyed (`winDestroyAll`), then (#77) `TheTransitionHandler->reset()`.
+    pub fn reset<H: GuiHost>(&mut self, h: &mut H) {
+        self.win_destroy_all(h);
+        self.transitions.reset();
     }
 
     /// `winDestroyAll`.
@@ -2032,6 +2046,8 @@ impl GameWindowManager {
                 }
             }
         }
+        // (#77) `TheTransitionHandler->draw()`
+        crate::client::window_transitions::draw(self, h, &mut out);
         out
     }
 

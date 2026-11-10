@@ -33,12 +33,15 @@
 //!   ... every screen but the main menu and the message boxes) is recorded in [`ShellGui::untranslated`] and does
 //!   nothing: the screen loads and shows its windows, but its buttons do nothing and its shutdown never completes
 //!   (`Shell::popImmediate` still takes it off). Upstream's lexicon would have the function.
-//! - The engine's side: the requests ([`ShellRequest`]), the transitions ([`Transition`]) and the shell hooks are kept
-//!   in lists for the host's owner (the client) to act on; the clock and the global data are set by it.
+//! - The engine's side: the requests ([`ShellRequest`])~~, the transitions (`Transition`)~~ and the shell hooks are
+//!   kept in lists for the host's owner (the client) to act on; the clock and the global data are set by it.
+//!   **Corrected 2026-11-10 (#77):** the transitions are no longer recorded here: they are the window manager's
+//!   handler ([`crate::client::window_transitions`]), loaded from `WindowTransitions.ini` by the owner
+//!   ([`synthetic::window_transitions_ini`] in the tests).
 //!
 //! [`SystemFunc::Host`]: crate::client::window_manager::SystemFunc::Host
 
-use crate::client::main_menu::{self, MainMenu, MenuHost, Transition};
+use crate::client::main_menu::{self, MainMenu, MenuHost};
 use crate::client::message_box;
 use crate::client::shell::{self, LayoutFiles, Shell, ShellEnv, ShellHost, ShellRequest, WndFiles};
 use crate::client::window_manager::{GameWindowManager, GuiHost, MsgHandled, WindowMsgData};
@@ -56,8 +59,6 @@ pub struct ShellGui<W> {
     pub env: ShellEnv,
     /// What the callbacks asked of the engine and the logic, oldest first (the owner takes them).
     pub requests: Vec<ShellRequest>,
-    /// `TheTransitionHandler`'s calls (not translated).
-    pub transitions: Vec<Transition>,
     /// `TheScriptEngine->signalUIInteract`'s hooks (not run: no shell map).
     pub ui_interacts: Vec<&'static str>,
     /// `TheAudio->addAudioEvent` names (the buttons' clicks), for the owner to play.
@@ -72,14 +73,14 @@ impl<W: WndFiles> ShellGui<W> {
     /// A host on these files: the shell made (`Shell::Shell`), the main menu's statics at their start, the disc
     /// present.
     pub fn new(files: W) -> Self {
+        let width = files.display_size().0;
         ShellGui {
-            shell: Shell::new(),
+            shell: Shell::with_display_width(width),
             main_menu: MainMenu::default(),
             files: Some(LayoutFiles::new(files)),
             time_ms: 0,
             env: ShellEnv::default(),
             requests: Vec::new(),
-            transitions: Vec::new(),
             ui_interacts: Vec::new(),
             audio: Vec::new(),
             untranslated: Vec::new(),
@@ -175,9 +176,6 @@ impl<W: WndFiles> MenuHost for ShellGui<W> {
     fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
         self.text(label)
     }
-    fn transition(&mut self, t: Transition) {
-        self.transitions.push(t);
-    }
     fn signal_ui_interact(&mut self, hook: &'static str) {
         self.ui_interacts.push(hook);
     }
@@ -234,7 +232,7 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         for (i, b) in ["ButtonUSARecentSave", "ButtonUSALoadGame", "ButtonGLARecentSave", "ButtonGLALoadGame", "ButtonChinaRecentSave", "ButtonChinaLoadGame"].iter().enumerate() {
             s += &button(b, 650, 100 + 25 * i as i32, false);
         }
-        for (i, b) in ["WinFactionUS", "WinFactionGLA", "MainMenuRuler"].iter().enumerate() {
+        for (i, b) in ["WinFactionUS", "WinFactionGLA", "MainMenuRuler", "WinFactionChina", "WinFactionTraining", "WinFactionSkirmish"].iter().enumerate() {
             s += &format!("  WINDOW\n    WINDOWTYPE = USER;\n    SCREENRECT = UPPERLEFT: {} 450, BOTTOMRIGHT: {} 500, CREATIONRESOLUTION: 800 600;\n    NAME = \"MainMenu.wnd:{b}\";\n    STATUS = ENABLED;\n    STYLE = USER;\n  END\n", 10 + 60 * i, 60 + 60 * i);
         }
         s += "  ENDALLCHILDREN\nEND\n";
@@ -271,6 +269,72 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         .into_bytes()
     }
 
+    /// The panels of [`main_menu_wnd`] and their buttons.
+    const PANELS: [(&str, &[&str]); 5] = [
+        ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
+        ("MapBorder", &["ButtonUSA", "ButtonGLA", "ButtonChina", "ButtonChallenge", "ButtonSkirmish", "ButtonSingleBack"]),
+        ("MapBorder1", &["ButtonOnline", "ButtonNetwork", "ButtonMultiBack"]),
+        ("MapBorder3", &["ButtonLoadGame", "ButtonReplay", "ButtonLoadReplayBack"]),
+        ("MapBorder4", &["ButtonEasy", "ButtonMedium", "ButtonHard", "ButtonDiffBack"]),
+    ];
+
+    /// One `WindowTransition` block: a panel (`FLASH`) and its buttons (`BUTTONFLASH`, one frame apart).
+    fn panel_group(name: &str, fire_once: bool, panel: usize) -> String {
+        let (p, buttons) = PANELS[panel];
+        let mut s = format!("WindowTransition {name}\n  FireOnce = {}\n  Window\n    WinName = MainMenu.wnd:{p}\n    Style = FLASH\n    FrameDelay = 0\n  End\n", if fire_once { "Yes" } else { "No" });
+        for (i, b) in buttons.iter().enumerate() {
+            s += &format!("  Window\n    WinName = MainMenu.wnd:{b}\n    Style = BUTTONFLASH\n    FrameDelay = {}\n  End\n", i + 1);
+        }
+        s + "End\n"
+    }
+
+    /// A synthetic `Data\INI\WindowTransitions.ini` (no EA file) for [`main_menu_wnd`]: every group `MainMenu.cpp`
+    /// names. The groups that show a panel are fire-once (so that a hover's group does not reverse them); the `Back`
+    /// groups, which the menu reverses to hide a panel, are not; the faction logos scale up (`WINSCALEUP`); the whole
+    /// screen fades (`SCREENFADE`), `MainMenuFade` once.
+    pub fn window_transitions_ini() -> Vec<u8> {
+        let mut s = String::from("; synthetic, for the tests (not the game's file)\n");
+        s += "WindowTransition FadeWholeScreen\n  Window\n    WinName = MainMenu.wnd:MainMenuParent\n    Style = SCREENFADE\n  End\nEnd\n";
+        s += "WindowTransition MainMenuFade\n  FireOnce = Yes\n  Window\n    WinName = MainMenu.wnd:MainMenuParent\n    Style = SCREENFADE\n  End\nEnd\n";
+        for (name, fire_once, panel) in [
+            ("MainMenuDefaultMenu", true, 0),
+            ("MainMenuDefaultMenuLogoFade", true, 0),
+            ("MainMenuDefaultMenuBack", false, 0),
+            ("MainMenuSinglePlayerMenu", true, 1),
+            ("MainMenuSinglePlayerMenuBack", false, 1),
+            ("MainMenuSinglePlayerMenuBackUS", false, 1),
+            ("MainMenuSinglePlayerMenuBackGLA", false, 1),
+            ("MainMenuSinglePlayerMenuBackChina", false, 1),
+            ("MainMenuSinglePlayerMenuBackTraining", false, 1),
+            ("MainMenuSinglePlayerMenuBackSkirmish", false, 1),
+            ("MainMenuSinglePlayerUSAMenuFromDiff", true, 1),
+            ("MainMenuSinglePlayerGLAMenuFromDiff", true, 1),
+            ("MainMenuSinglePlayerChinaMenuFromDiff", true, 1),
+            ("MainMenuSinglePlayerTrainingMenuFromDiff", true, 1),
+            ("MainMenuMultiPlayerMenu", true, 2),
+            ("MainMenuMultiPlayerMenuReverse", false, 2),
+            ("MainMenuMultiPlayerMenuTransitionToNext", false, 2),
+            ("MainMenuLoadReplayMenu", true, 3),
+            ("MainMenuLoadReplayMenuBack", false, 3),
+            ("MainMenuLoadReplayMenuBackTransition", false, 3),
+            ("MainMenuDifficultyMenuUS", true, 4),
+            ("MainMenuDifficultyMenuGLA", true, 4),
+            ("MainMenuDifficultyMenuChina", true, 4),
+            ("MainMenuDifficultyMenuTraining", true, 4),
+            ("MainMenuDifficultyMenuBack", false, 4),
+            ("MainMenuDifficultyMenuUSBack", false, 4),
+            ("MainMenuDifficultyMenuGLABack", false, 4),
+            ("MainMenuDifficultyMenuChinaBack", false, 4),
+            ("MainMenuDifficultyMenuTrainingBack", false, 4),
+        ] {
+            s += &panel_group(name, fire_once, panel);
+        }
+        for (g, w) in [("US", "US"), ("GLA", "GLA"), ("China", "China"), ("Training", "Training"), ("Skirmish", "Skirmish")] {
+            s += &format!("WindowTransition MainMenuFaction{g}\n  Window\n    WinName = MainMenu.wnd:WinFaction{w}\n    Style = WINSCALEUP\n  End\nEnd\n");
+        }
+        s.into_bytes()
+    }
+
     /// The shell's synthetic files by their paths (`Window\Menus/<name>.wnd`): the main menu, the two message boxes,
     /// and plain screens ([`screen`]) for the background and the screens the main menu pushes.
     pub fn shell_wnd_files() -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -289,6 +353,7 @@ pub(crate) mod tests {
     use crate::client::shell::tests::Files;
     use crate::client::window_manager::{gwm, key, short_to_long};
     use crate::client::window_script::win_status;
+    use crate::client::window_transitions as wt;
 
     /// The synthetic files of the shell ([`synthetic::shell_wnd_files`]).
     pub(crate) fn shell_files() -> Files {
@@ -317,20 +382,35 @@ pub(crate) mod tests {
         wm.win_process_mouse_event(h, gwm::LEFT_UP, p, (0, 0));
     }
 
-    /// `GBM_SELECTED` from a button, as its click sends it (for a button whose panel only a transition would show).
-    fn select(wm: &mut GameWindowManager, h: &mut ShellGui<Files>, name: &str) {
-        let b = w(wm, name);
-        let owner = wm.win_get_owner(b);
-        wm.win_send_system_msg(h, owner, crate::client::window_manager::ggm::GBM_SELECTED, crate::client::window_manager::win_data(Some(b)), 0);
-    }
-
+    /// A frame: the shell's update (40 ms later: each frame runs it) and the window manager's (the transitions').
     fn tick(wm: &mut GameWindowManager, h: &mut ShellGui<Files>) {
         h.time_ms += 40;
         shell::update(wm, h);
+        wm.update(h);
     }
 
+    /// (#77) Frames until the transitions are done (no current group running, none pending) and one more, so that
+    /// the menu's update sees it; the number of frames.
+    fn settle(wm: &mut GameWindowManager, h: &mut ShellGui<Files>) -> usize {
+        for n in 0..400 {
+            if wt::is_finished(wm) && wm.transitions.pending.is_none() && shell::is_anim_finished(wm, h) {
+                tick(wm, h);
+                return n + 1;
+            }
+            tick(wm, h);
+        }
+        panic!("the transitions never finish: {:?}", wm.transitions.current.map(|c| String::from_utf8_lossy(&wm.transitions.groups[c].name).into_owned()));
+    }
+
+    /// The handler's current group's name.
+    fn current(wm: &GameWindowManager) -> Option<String> {
+        wm.transitions.current.map(|c| String::from_utf8_lossy(&wm.transitions.groups[c].name).into_owned())
+    }
+
+    /// The shell from the synthetic files, with the synthetic `WindowTransitions.ini` (#77), started.
     fn booted() -> (GameWindowManager, ShellGui<Files>) {
         let mut wm = GameWindowManager::new((800, 600));
+        wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &synthetic::window_transitions_ini()).expect("the synthetic INI reads");
         let mut h = ShellGui::new(shell_files());
         h.time_ms = 1000;
         start_shell(&mut wm, &mut h);
@@ -344,13 +424,23 @@ pub(crate) mod tests {
     ///   (the first time) hides the five panels and the six save buttons, hides `MainMenuRuler`, shows the layout,
     ///   hides the mouse, reverses `FadeWholeScreen`, and gives `MainMenuParent` the focus;
     /// - a key (`GWM_CHAR` to the focus) shows the main panel (`MapBorder2`) and the mouse; then input is ignored;
-    /// - clicking *Single Player* shows `MapBorder` (the main panel stays: the transition that hides it is a gap) and
-    ///   sets `dontAllowTransitions`, which the next update clears (transitions finish at once);
-    /// - *USA* sets the campaign `USA`; *Medium* (`GBM_SELECTED`, its panel being a transition's) with the disc present
-    ///   asks for nothing at once (`startGame`); the next update asks for `StartCampaign { USA, 1 }` and starts the
-    ///   shutdown; the update after completes it (the layout hidden), with no pending operation. **Missed:** the same
-    ///   update completes it (`MainMenuUpdate` tests `isShuttingDown` right after `doGameStart` sets it);
+    /// - ~~clicking *Single Player* shows `MapBorder` (the main panel stays: the transition that hides it is a gap) and
+    ///   sets `dontAllowTransitions`, which the next update clears (transitions finish at once);~~
+    ///   **Corrected 2026-11-10 (#77):** with the transitions translated (the synthetic `WindowTransitions.ini` of
+    ///   [`synthetic::window_transitions_ini`]), clicking *Single Player* sets `dontAllowTransitions`; the main panel
+    ///   (`MainMenuDefaultMenuBack` reversed) hides and the single player panel (`MainMenuSinglePlayerMenu`, pending)
+    ///   shows; `dontAllowTransitions` is cleared by the first update after they are done;
+    /// - *USA* sets the campaign `USA`; ~~*Medium* (`GBM_SELECTED`, its panel being a transition's)~~ **Corrected
+    ///   2026-11-10 (#77):** the difficulty panel `MapBorder4` (`MainMenuDifficultyMenuUS`) shows and the single
+    ///   player panel hides; a click on *Medium* with the disc present asks for nothing at once (`startGame`); the
+    ///   update once `FadeWholeScreen` (forward) and the animate manager are done asks for `StartCampaign { USA, 1 }`
+    ///   and starts the shutdown, and **the same update** completes it (`MainMenuUpdate` tests `isShuttingDown` right
+    ///   after `doGameStart` sets it; missed in #69's first run);
     /// - every button press played `GUIClick`-less push buttons: no audio (the file names no sound).
+    ///
+    /// **#77 predictions (written before the run):** right after the key, `MapBorder2` is **hidden** again
+    /// (`MainMenuDefaultMenu`'s init runs its frame 0 backwards, which hides it) and shown once the group has run; the
+    /// main panel's buttons play `GUIButtonsFadeIn` and the panel `GUIBoarderFadeIn`. **Result:** held.
     #[test]
     fn the_main_menu_starts_a_campaign_as_upstream() {
         let (mut wm, mut h) = booted();
@@ -362,28 +452,38 @@ pub(crate) mod tests {
         }
         assert!(shown(&wm, "MainMenuParent"));
         assert!(!h.main_menu.mouse_visible);
-        assert_eq!(h.transitions, [Transition::Reverse("FadeWholeScreen")]);
+        assert_eq!(current(&wm).as_deref(), Some("FadeWholeScreen"));
+        assert!(wm.transitions.groups[wm.transitions.current.expect("current")].is_reversed());
         assert_eq!(wm.keyboard_focus, Some(w(&wm, "MainMenuParent")));
         wm.win_process_key(&mut h, key::SPACE, key::STATE_DOWN);
-        assert!(shown(&wm, "MapBorder2"));
+        assert!(!shown(&wm, "MapBorder2"), "MainMenuDefaultMenu's init hides it");
         assert!(h.main_menu.mouse_visible && !h.main_menu.not_shown);
+        assert_eq!(current(&wm).as_deref(), Some("MainMenuFade"));
+        settle(&mut wm, &mut h);
+        assert!(shown(&wm, "MapBorder2") && shown(&wm, "ButtonSinglePlayer"));
+        assert!(h.audio.contains(&b"GUIButtonsFadeIn".to_vec()) && h.audio.contains(&b"GUIBoarderFadeIn".to_vec()));
         let b = w(&wm, "ButtonSinglePlayer");
         click(&mut wm, &mut h, b);
-        assert!(shown(&wm, "MapBorder") && shown(&wm, "MapBorder2"));
         assert!(h.main_menu.dont_allow_transitions);
-        tick(&mut wm, &mut h);
+        assert!(!shown(&wm, "MapBorder"), "MainMenuSinglePlayerMenu's init hides it");
+        settle(&mut wm, &mut h);
+        assert!(shown(&wm, "MapBorder") && !shown(&wm, "MapBorder2"), "the transitions swap the panels");
         assert!(!h.main_menu.dont_allow_transitions);
         let b = w(&wm, "ButtonUSA");
         click(&mut wm, &mut h, b);
         assert_eq!(h.main_menu.campaign, b"USA");
         assert!(h.main_menu.campaign_selected);
-        tick(&mut wm, &mut h);
-        select(&mut wm, &mut h, "ButtonMedium");
+        settle(&mut wm, &mut h);
+        assert!(shown(&wm, "MapBorder4") && !shown(&wm, "MapBorder"), "the difficulty panel replaces the single player one");
+        let b = w(&wm, "ButtonMedium");
+        click(&mut wm, &mut h, b);
         assert!(h.main_menu.start_game);
         assert!(h.requests.is_empty());
         tick(&mut wm, &mut h);
+        assert!(h.requests.is_empty(), "FadeWholeScreen is still running");
+        settle(&mut wm, &mut h);
         assert_eq!(h.requests, [ShellRequest::StartCampaign { campaign: b"USA".to_vec(), difficulty: 1 }]);
-        // (prediction missed: `doGameStart` sets `isShuttingDown` and the same update's next test completes it)
+        // (prediction missed in #69: `doGameStart` sets `isShuttingDown` and the same update's next test completes it)
         assert!(!h.main_menu.is_shutting_down);
         let top = h.shell.top().expect("the menu stays on the stack");
         assert!(wm.layouts[top].hidden);
@@ -393,8 +493,9 @@ pub(crate) mod tests {
 
     /// #69, the other buttons, predicted from MainMenu.cpp before the run:
     ///
-    /// - *Load/Replay* then *Load Game*: the menu's shutdown is asked (`Menus/SaveLoad.wnd` pending), and the next
-    ///   update completes it: two screens, the save/load screen on top (its callbacks are not translated: recorded);
+    /// - *Load/Replay* then *Load Game*: the menu's shutdown is asked (`Menus/SaveLoad.wnd` pending), and ~~the next
+    ///   update~~ **Corrected 2026-11-10 (#77):** the first update once `MainMenuLoadReplayMenuBackTransition` and the
+    ///   animate manager are done completes it: two screens, the save/load screen on top (its callbacks are not translated: recorded);
     ///   `buttonPushed` stays set; `popImmediate` takes it off and the main menu's init runs again, which (not the
     ///   first time) shows the ruler and sets `justEntered`; two updates later (`initialGadgetDelay` 2, 1) the focus is
     ///   set again;
@@ -402,18 +503,27 @@ pub(crate) mod tests {
     ///   title and message from the game text; *No* closes it (no callback); *Exit* again and *Yes*: `quitCallback`
     ///   pops the menu (its shutdown) and asks the engine to quit;
     /// - *Options* shows the options layout (made once); *World Builder* fails to spawn and shows an OK box.
+    ///
+    /// **#77 (predicted before the run):** the panels wait for their transitions (the test lets them settle before
+    /// each click). **Missed:** the quit's pop took two updates, not one: `MainMenuShutdown` reverses the animate
+    /// manager (`reverseAnimatewindow`), which is not finished until its own update, run after the screens' updates
+    /// in `Shell::update` (upstream's order).
     #[test]
     fn the_main_menu_buttons_reach_the_shell_and_the_boxes() {
         let (mut wm, mut h) = booted();
         wm.win_process_key(&mut h, key::ENTER, key::STATE_DOWN);
+        settle(&mut wm, &mut h);
         let b = w(&wm, "ButtonLoadReplay");
         click(&mut wm, &mut h, b);
+        settle(&mut wm, &mut h);
         assert!(shown(&wm, "MapBorder3"));
-        tick(&mut wm, &mut h);
         let b = w(&wm, "ButtonLoadGame");
         click(&mut wm, &mut h, b);
         assert!(h.shell.pending_push && h.main_menu.button_pushed);
+        // (#77: the menu's shutdown waits for `MainMenuLoadReplayMenuBackTransition` and the animate manager)
         tick(&mut wm, &mut h);
+        assert_eq!(h.shell.get_screen_count(), 1);
+        settle(&mut wm, &mut h);
         assert_eq!(h.shell.get_screen_count(), 2);
         assert_eq!(wm.layouts[h.shell.top().expect("top")].filename, b"Menus/SaveLoad.wnd");
         assert!(h.untranslated.contains(&b"SaveLoadInit".to_vec()));
@@ -430,6 +540,9 @@ pub(crate) mod tests {
         tick(&mut wm, &mut h);
         assert_eq!(wm.keyboard_focus, Some(w(&wm, "MainMenuParent")));
         assert!(!h.main_menu.just_entered);
+        // (#77: `MainMenuDefaultMenuLogoFade` hid the main panel's buttons at its init; it shows them)
+        assert_eq!(current(&wm).as_deref(), Some("MainMenuDefaultMenuLogoFade"));
+        settle(&mut wm, &mut h);
         // the quit box
         let mm = h.main_menu.parent.expect("parent");
         wm.win_hide(w(&wm, "MapBorder2"), false);
@@ -454,6 +567,10 @@ pub(crate) mod tests {
         assert_eq!(h.requests, [ShellRequest::Quit]);
         assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_SELECTED"));
         assert!(h.main_menu.is_shutting_down && h.shell.pending_pop);
+        // (#77: the shutdown reversed the animate manager, which is finished only after its next update, which runs
+        // after the screens' updates: the second update completes the shutdown)
+        tick(&mut wm, &mut h);
+        assert_eq!(h.shell.get_screen_count(), 1, "the animate manager is not finished yet");
         tick(&mut wm, &mut h);
         assert_eq!(h.shell.get_screen_count(), 0, "the menu popped");
         assert!(wm.tree.windows[mm].status & win_status::DESTROYED != 0);
@@ -468,6 +585,7 @@ pub(crate) mod tests {
     fn options_world_builder_and_hover_follow_upstream() {
         let (mut wm, mut h) = booted();
         wm.win_process_key(&mut h, key::ENTER, key::STATE_DOWN);
+        settle(&mut wm, &mut h);
         let b = w(&wm, "ButtonOptions");
         click(&mut wm, &mut h, b);
         let o = h.shell.options_layout.expect("options");
@@ -484,7 +602,7 @@ pub(crate) mod tests {
         assert!(wm.tree.windows[ok].status & win_status::HIDDEN == 0);
         click(&mut wm, &mut h, ok);
         assert!(wm.modal.is_empty());
-        h.transitions.clear();
+        settle(&mut wm, &mut h);
         let e = w(&wm, "ButtonExit");
         let (x, y) = wm.tree.screen_position(e);
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (x + 5, y + 5), (0, 0));
@@ -494,9 +612,11 @@ pub(crate) mod tests {
         let (x, y) = wm.tree.screen_position(u);
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (x + 5, y + 5), (0, 0));
         assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_UNHIGHLIGHTED"));
-        assert_eq!(h.transitions, [Transition::SetGroup("MainMenuFactionUS", false)]);
+        assert_eq!(current(&wm).as_deref(), Some("MainMenuFactionUS"));
+        assert!(!wm.transitions.groups[wm.transitions.current.expect("current")].is_reversed());
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (790, 590), (0, 0));
-        assert_eq!(h.transitions.last(), Some(&Transition::Reverse("MainMenuFactionUS")));
+        assert_eq!(current(&wm).as_deref(), Some("MainMenuFactionUS"));
+        assert!(wm.transitions.groups[wm.transitions.current.expect("current")].is_reversed());
         wm.ime.attach(Some(0));
         shell::push(&mut wm, &mut h, b"Menus/CreditsMenu.wnd", true);
         tick(&mut wm, &mut h);
