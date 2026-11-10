@@ -21,7 +21,9 @@
 // Translated to Rust and modified; not the original program.
 
 //! GitHub #61: campaign missions and the Generals' Challenge in the World. The menus that start them are the client's
-//! (C5, not translated); what they hand the logic is translated here, in the order they do it:
+//! (~~C5, not translated~~ **Corrected 2026-11-10 (#98):** the main menu, the difficulty popup and the challenge menu
+//! are translated in `crate::client`; their starts are the calls below); what they hand the logic is translated here,
+//! in the order they do it:
 //!
 //! - **A campaign** ([`World::start_campaign`]): the main menu's campaign button (`setCampaign`), the difficulty menu's
 //!   `prepareCampaignGame` (`setGlobalDifficulty`), `setupGameStart` (the campaign's difficulty, the pending file the
@@ -255,7 +257,8 @@ impl World {
     }
 }
 
-/// GitHub #62: what a mission list's choice starts (the client's list; the game's own menus are C5).
+/// GitHub #62: what a mission list's choice starts (the client's list; ~~the game's own menus are C5~~ **Corrected
+/// 2026-11-10 (#98):** the game's own menus, translated in `crate::client`, start the same choices).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MissionChoice {
     /// A campaign's mission: its first ([`World::start_campaign`], the main menu's path) or another
@@ -271,6 +274,10 @@ pub enum MissionChoice {
     /// (#89) The skirmish screen's start (`ShellRequest::StartSkirmish`): [`World::start_skirmish_game`] with the
     /// screen's game, mode, difficulty and FPS limit.
     Skirmish { game: Box<crate::common::game_info::GameInfo>, mode: i32, max_fps: i32 },
+    /// (#98) The replay menu's playback (`ShellRequest::PlaybackReplay`): the replay folder's file `filename` (its name in
+    /// the folder), with its `bytes`, put on the World's disk in its replay folder and played back through the recorder
+    /// ([`World::play_replay`], `RecorderClass::playbackFile`, batch I55).
+    Replay { filename: Vec<u8>, bytes: Vec<u8> },
 }
 
 /// GitHub #62 (new: upstream's file system holds every map): a mission chosen and waiting for its map's folder to be on
@@ -304,6 +311,17 @@ impl PendingMission {
                 campaign.set_campaign(general.get_campaign());
             }
             MissionChoice::Continue | MissionChoice::MissionSave => {}
+            MissionChoice::Replay { filename, bytes } => {
+                // (#98) the map `playbackFile` makes the pending file: the replay's game options' (read here on a copy, as
+                // the replay list reads them; the World the replay plays in is not touched until the start)
+                let listing = crate::client::replay_menu::replay_listings(base, &[(filename.clone(), bytes.clone())]).remove(0);
+                let Some(l) = listing.filter(|l| l.parsed && !l.map.is_empty()) else {
+                    return Err(CampaignStartError::NoMission(filename.clone()));
+                };
+                let mut world = base.clone();
+                world.put_replay(filename, bytes);
+                return Ok(PendingMission { world, choice, difficulty, map: l.map, mounted: None });
+            }
             MissionChoice::Skirmish { game, .. } => {
                 // (#89) the skirmish's map, which the cache must hold (the screen lists only those)
                 if base.statics.map_cache.find_map(&game.map_name).is_none() {
@@ -379,6 +397,14 @@ impl PendingMission {
             MissionChoice::Challenge(i) => w.start_challenge(*i, self.difficulty)?,
             MissionChoice::Continue => w.start_next_campaign_game()?,
             MissionChoice::MissionSave => w.cuts.new_game.pending_file.clone(),
+            MissionChoice::Replay { filename, .. } => {
+                // (#98) `TheRecorder->playbackFile(filename)`: the header read, the pending file the replay's map,
+                // `MSG_NEW_GAME` (`GAME_REPLAY`); a file that does not read starts nothing
+                if !w.play_replay(filename).unwrap_or(false) {
+                    return Err(CampaignStartError::NoMission(filename.clone()));
+                }
+                w.cuts.new_game.pending_file.clone()
+            }
             MissionChoice::Skirmish { game, mode, max_fps } => {
                 let map = game.map_name.clone();
                 w.start_skirmish_game((**game).clone(), *mode, self.difficulty, *max_fps).map_err(|_| CampaignStartError::NoMission(map.clone()))?;

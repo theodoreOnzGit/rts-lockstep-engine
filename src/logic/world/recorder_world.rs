@@ -75,6 +75,26 @@ impl World {
         self.with_recorder(|r, w| r.playback_file(filename, w)).unwrap_or(Ok(false))
     }
 
+    /// (#98, new) The file `filename` put in the recorder's replay folder on the World's disk (`getReplayDir()` and the
+    /// name), as a replay the replay menu plays back is there for upstream's `playbackFile`.
+    pub fn put_replay(&mut self, filename: &[u8], bytes: &[u8]) {
+        let mut path = RecorderHost::user_data_path(self);
+        path.extend_from_slice(b"Replays\\");
+        path.extend_from_slice(filename);
+        self.save_side.disk.insert(path.to_ascii_lowercase(), bytes.to_vec());
+    }
+
+    /// (#98, new) The last replay as the recorder wrote it to the World's disk (`getReplayDir()`,
+    /// `getLastReplayFileName()` and `.rep`, `00000000.rep`): what the score screen's *Save Replay* copies. `None`
+    /// when no game was recorded. Read only.
+    pub fn last_replay(&self) -> Option<&[u8]> {
+        let mut path = RecorderHost::user_data_path(self);
+        path.extend_from_slice(b"Replays\\");
+        path.extend_from_slice(crate::common::recorder::LAST_REPLAY_FILE_NAME);
+        path.extend_from_slice(crate::common::recorder::REPLAY_EXTENSION);
+        self.save_side.disk.get(&path.to_ascii_lowercase()).map(|b| b.as_slice())
+    }
+
     /// The replay CRC check's outcome so far, during a playback: `(mismatch seen, CRCs still queued)`.
     pub fn replay_crc_state(&self) -> Option<(bool, usize)> {
         let info = self.cuts.game_loop.recorder.as_ref()?.crc_info.as_ref()?;
@@ -265,6 +285,11 @@ mod tests {
     ///   (its map and slot), `MSG_NEW_GAME` (`GAME_REPLAY`) starts it, and the recorded CRCs are compared with the
     ///   playback's own at every CRC frame: no mismatch, and the frames' CRCs equal the recording's frame by frame.
     ///
+    /// (#98) Also, predicted before the run: the World's `last_replay` is the file; `replay_listings` reads it as a
+    /// parsed skirmish on the map with local slot 0; the replay menu's path (`MissionChoice::Replay`) waits for that
+    /// map and plays the recorded CRCs for 100 frames; bytes that are not a replay are refused. **Result
+    /// (2026-11-10):** see the commit's entry in docs/phase2-client.md.
+    ///
     /// The order at frame 60 (the tank selected, then `MSG_SELF_DESTRUCT`) is recorded and played back. A second playback,
     /// of the same file with its seed changed (`SD=1234` to `SD=1235`), must be caught as a mismatch: the check can fail.
     ///
@@ -321,6 +346,28 @@ mod tests {
         let replays: Vec<Vec<u8>> = rec.save_side.disk.keys().filter(|k| k.ends_with(b".rep")).cloned().collect();
         eprintln!("replays {:?}; players {}", replays.iter().map(|r| String::from_utf8_lossy(r).into_owned()).collect::<Vec<_>>(), rec.players.player_count());
         assert_eq!(replays.len(), 1, "one replay written");
+
+        // (#98) the World's last replay is that file; the replay list reads its header and options on a copy of a World
+        // (the client's `replay_listings`): a parsed skirmish (local slot 0) on the test map; the replay menu's
+        // playback path (`MissionChoice::Replay`: the file put on the World's disk, the map from the options, then
+        // `play_replay`) plays the same first 100 frames
+        assert_eq!(rec.last_replay(), Some(&rec.save_side.disk[&replays[0]][..]));
+        let bytes = rec.save_side.disk[&replays[0]].clone();
+        let base = skirmish_world(false);
+        let listing = crate::client::replay_menu::replay_listings(&base, &[(b"00000000.rep".to_vec(), bytes.clone())]);
+        let l = listing[0].as_ref().expect("the header reads");
+        assert!(l.parsed && l.map.eq_ignore_ascii_case(MAP) && l.header.local_player_index == 0, "{:?}", l.map);
+        let choice = crate::logic::world::campaign_world::MissionChoice::Replay { filename: b"00000000.rep".to_vec(), bytes: bytes.clone() };
+        let pending = crate::logic::world::campaign_world::PendingMission::new(&base, choice, 1).expect("the replay waits for its map");
+        assert!(pending.map.eq_ignore_ascii_case(MAP));
+        let (mut via_menu, map) = pending.start().expect("the playback starts");
+        assert!(map.eq_ignore_ascii_case(MAP));
+        for (i, want) in recorded.iter().take(100).enumerate() {
+            via_menu.engine_update().expect("a played frame");
+            assert_eq!((via_menu.frame(), via_menu.logic_crc(CRC_RECALC, None).expect("the CRC")), *want, "frame index {i}");
+        }
+        let bad = crate::logic::world::campaign_world::MissionChoice::Replay { filename: b"x.rep".to_vec(), bytes: b"NOTAREPLAY".to_vec() };
+        assert!(crate::logic::world::campaign_world::PendingMission::new(&base, bad, 1).is_err());
 
         let mut play = skirmish_world(false);
         play.save_side.disk.insert(replays[0].clone(), rec.save_side.disk[&replays[0]].clone());

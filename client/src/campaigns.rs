@@ -180,6 +180,8 @@ impl Flow {
         // **Corrected 2026-11-10 (#89 part 2):** its end opens the shell's score screen, as upstream's `clearGameData`
         // pushes it for a skirmish ([`Flow::check_score_screen`])
         let skirmish = matches!(p.choice, MissionChoice::Skirmish { .. });
+        // (#98) the replay menu's playback: labelled as a replay; its end opens the score screen as any game's
+        let replay = matches!(p.choice, MissionChoice::Replay { .. });
         let (mut world, map) = match p.start() {
             Ok(x) => x,
             Err(e) => return Some(Err(describe(&e))),
@@ -190,6 +192,9 @@ impl Flow {
             }
             if let Some(player) = world.players.local_index().filter(|_| world.game_started()) {
                 self.watching = true;
+                if replay {
+                    return Some(Ok(Started { world, player, label: format!("replay of {}", String::from_utf8_lossy(&map)) }));
+                }
                 if skirmish {
                     return Some(Ok(Started { world, player, label: format!("skirmish on {}", String::from_utf8_lossy(&map)) }));
                 }

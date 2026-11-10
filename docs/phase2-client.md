@@ -124,6 +124,61 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#98 (2026-11-10, GitHub #98, #89): the replay folder, *Save Replay*, the replay menu and the challenge menu.**
+- **Translated** (engine crate, plain Rust):
+  - `client::replay_menu` (ReplayMenu.cpp, whole but the debug build's *Analyze Replay*: the statics,
+    `deleteReplayFlag`, `copyReplayFlag`, `GetReplayFilenameFromListbox`, `PopulateReplayFileListbox`, init, shutdown,
+    update, input, `reallyLoadReplay`, system, `deleteReplay`, `copyReplay`), with Recorder.cpp's `testVersionPlayback`
+    comparison over the host's header; `ReplayListHost`; `MemoryReplayFolder` (the host's folder: listing, header,
+    delete, copy; the writes queued as `ShellRequest`s); `replay_listings` (each file's header and options read by the
+    logic's `RecorderClass::readReplayHeader` and `ParseAsciiStringToGameInfo` on a copy of a World).
+  - `client::popup_replay` (PopupReplay.cpp, whole: `ShowReplaySavedPopup`, `closeSaveMenu`, init, shutdown, update,
+    input, `saveReplay`, `reallySaveReplay`, system). The score screen's update now calls `PopupReplayUpdate` through
+    the host's lexicon.
+  - `client::challenge_menu` (ChallengeMenu.cpp, whole: `findPositionButton`, `setEnabledButtons`, `setGeneralBio`,
+    `updateButtonSequence`, `updateBio`, init, update, shutdown, input, system). *Play* is
+    `ShellRequest::StartChallenge`: the World's `start_challenge` (the same calls as `setGeneralCampaign` and the
+    button, in their order). `SkirmishData`'s templates carry the medallions; `template_num_by_name`.
+  - `client::shell_gui`: the fifteen lexicon entries and the four message box callbacks; `synthetic::replay_menu_wnd`,
+    `popup_replay_wnd`, `challenge_menu_wnd`, the `ReplayMenuFade` and `ChallengeMenuFade` groups.
+  - The logic: `MissionChoice::Replay` (the replay's map from its options, read on a copy; the file put in the World's
+    replay folder, `World::put_replay`; the start is `World::play_replay`, batch I55); `World::last_replay` (the
+    recorder's `00000000.rep`, read only).
+- **Client:** `client/src/replays.rs`: the replay folder (natively the user data folder's `Replays`, in the browser
+  OPFS `Replays/`, read at start and written and deleted through the page's queues, `web/index.html`; *Copy* to the
+  desktop natively, a download in the browser). The score screen's opening copies the World's last replay into it;
+  the shell gets the folder with each file's listing (`ShellUi::set_replays`, again whenever it changes); the actions
+  `ReplayWritten`, `ReplayDeleted`, `ReplayExported` keep it; the replay menu's playback goes through the flow
+  (`ShellAction::ReplayChosen`, labelled `replay of <map>`); the challenge's *Play* through the campaign panel's
+  challenge start. The player's commands during a playback are deleted by the recorder (`cullBadCommands`), as
+  upstream: the client still never changes the simulation.
+- **Defect found and fixed (issue drafted):** the shell's host answered no mapped image sizes and no images
+  (`GuiHost::image_size` / `has_image` defaults): the three-piece buttons and the other image draws measured 0, and the
+  challenge's general buttons would have been sized 0 x 0. `WndFiles::image_size` / `has_image`, the client's
+  `MenuFiles` from the shared collection. **Defect found, not fixed (issue drafted):** the logic's
+  `Recorder::test_version_playback` records an unread header field as undefined where upstream's `||` never reaches
+  it (the replay menu's own comparison keeps the short-circuit).
+- **Predictions vs results:** in each test's doc. Misses: the replay and challenge menus' first frames (the settles
+  had run their update once, not twice); *Save Replay* under the last replay's own name asks the overwrite question
+  first (predicted: nothing at all); plant 8964 caught in every case with a row (predicted: those with two). The logic
+  test I55 now also checks `last_replay`, `replay_listings` (a parsed skirmish on the map, local slot 0) and the
+  replay menu's path (`MissionChoice::Replay` plays the recorded CRCs for 100 frames; bytes that are not a replay are
+  refused): held.
+- **Differential** (`tests/differential_replay_list.rs`, `differential/wrap_replay_list.cpp`, build.rs cuts
+  `GetReplayFilenameFromListbox` and `PopulateReplayFileListbox` verbatim; the real `FilenameList` ordering): predicted
+  0 mismatches; **0 on the first run**; then (fewer unread header fields) 20,000 cases, 98,837 files, 32,718 rows
+  (3,809 reading as the last replay), 5,074 cases undefined (compared on that only), **0 mismatches**. Plants 5 of 5
+  caught: 8961 (last replay matched with case) 1,679 cases, 8962 (one character fewer cut) 11,145, 8963 (colours
+  swapped) 11,588, 8964 (second row selected) 11,588, 8965 (`GUI:LastReplay` not recognised) 7,155.
+  differential_wm, _wnd, _wt, _save_list, _map_list, _score_grid and _user_prefs rerun: 0 mismatches.
+- **Gaps (issue drafts):** the last replay reaches the folder only at the score screen; sub-folders and 8.3 names;
+  the error texts and the time format; a campaign or challenge replay's playback, the replay's end and controls
+  (`initControls`) in the app; the original game's replays (another version: grey, asked, and not in sync with this
+  logic); `WindowVideoManager`; the real WND files. **Upstream undefined steps and quirks kept** (recorded, issue
+  drafted).
+- **Gates:** lib 1130 passed (1125 before, 5 new); client 59 passed (57 before, 2 new); clippy (lib) clean; web build
+  ok (no warnings, after a native-only helper was gated off wasm); gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#89 part 3 (2026-11-10, GitHub #93, #88): the preference files and the options screen.**
 - **Translated** (engine crate, plain Rust):
   - `client::user_preferences` (UserPreferences.h / UserPreferences.cpp's base class, whole: `intAsStr`, `boolAsStr`,
@@ -188,7 +243,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   skirmish tail's `SkirmishBattleHonors` update (`updateSkirmishBattleHonors`, `updateChallengeMedals`,
   `isSlotLocalAlly`, `CheckForApocalypse`: one `HonorsCall::SkirmishResult` recorded, #92); the campaign's completion
   is translated as its `SkirmishBattleHonors` calls, recorded, nothing written (#92); the buddy and chat calls
-  (`TheLAN`, `TheGameSpyInfo` are `NULL` in the client); PopupReplay.cpp.
+  (`TheLAN`, `TheGameSpyInfo` are `NULL` in the client); ~~PopupReplay.cpp~~ **Corrected 2026-11-10 (#98):**
+  PopupReplay.cpp is translated (the #98 entry above).
 - **Client:** `Flow` watches a skirmish too and keeps the World that played (`Flow::check_score_screen`,
   `continue_from_score_screen`, `mission_save_from_score_screen`); with the shell loaded, a mission's or a skirmish's
   end opens the translated screen over the paused game (`ShellUi::score_screen`); *Continue* starts the next mission
@@ -207,8 +263,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   (allies and enemies swapped) 8,969, 8924 (marker without image) 4,071. differential_wm, _wnd, _wt, _save_list and
   _map_list rerun: 0 mismatches. The opt-in campaign run (`RTS_CAMPAIGN_INSTALL`) passes with the shell's path checked
   at the mission's end (frame 121).
-- **Gaps (issue drafts):** the multiplayer / GameSpy / battle-honour parts above; PopupReplay.cpp (*Save Replay* opens
-  a popup whose callbacks are not translated); upstream's undefined steps and quirks kept (recorded).
+- **Gaps (issue drafts):** the multiplayer / GameSpy / battle-honour parts above; ~~PopupReplay.cpp (*Save Replay* opens
+  a popup whose callbacks are not translated)~~ **Corrected 2026-11-10 (#98):** PopupReplay.cpp is translated and
+  *Save Replay* copies the last replay (the #98 entry above); upstream's undefined steps and quirks kept (recorded).
 - **Gates:** lib 1119 passed (1112 before, 7 new); client 55 passed (54 before, 1 new); clippy (lib) clean; web build
   ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
 
@@ -311,10 +368,11 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   (`OptionPreferences`) is neither read nor written (the campaign difficulty);~~ **Corrected 2026-11-10 (#89):**
   `Options.ini` is read and written (#88, #93: the entry above); the date and time formats are the en-US
   system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (~~the
-  skirmish map select and game options,~~ ~~the score screen,~~ the challenge menu, ~~the options menu~~) is not started.
+  skirmish map select and game options,~~ ~~the score screen,~~ ~~the challenge menu,~~ ~~the options menu~~) is not started.
   **Corrected 2026-11-10 (#89):** the skirmish game options and its map picker are translated (the entry above).
   **Corrected 2026-11-10 (#89 part 2):** the score screen is translated (the entry above). **Corrected 2026-11-10
-  (#89):** the options menu is translated (#88, the entry above).
+  (#89):** the options menu is translated (#88, the entry above). **Corrected 2026-11-10 (#98):** the challenge menu is
+  translated (the #98 entry above).
 
 **#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
 - **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):
@@ -792,7 +850,8 @@ campaign INI's differential.**
   00000000.sav`); Save and Continue starts `usa mission 2`, which runs on; no horizontal overflow, panel open or not.
 - **Gates:** lib 1039 (1035 + 4), client 43 (41 + 2; with `RTS_CAMPAIGN_INSTALL` set, so the gated test ran), clippy
   clean, web build clean (no warnings), gate (a) PASS (last `0bf44067`, unchanged).
-- **Not done:** the game's own menus (C5: ~~main menu,~~ difficulty, challenge menu, score screen with its stats;
+- **Not done:** the game's own menus (C5: ~~main menu,~~ difficulty, ~~challenge menu~~, score screen with its stats;
+  **corrected 2026-11-10 (#98):** the challenge menu is translated;
   **corrected 2026-11-10 (#69):** the main menu's callbacks and the shell are translated, not yet drawn); the
   challenge's win/loss display and sounds, battle honours, the final victory movie; a mission save's map label (the
   played game's map is not the saving World's); the challenge's `TheChallengeGameInfo` after a mission save's load

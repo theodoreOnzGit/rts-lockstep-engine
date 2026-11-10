@@ -13,7 +13,10 @@
 //     SkirmishGameOptionsMenuUpdate, SkirmishMapSelectMenuUpdate, SkirmishGameOptionsMenuShutdown,
 //     SkirmishMapSelectMenuShutdown; the tooltip callbacks MapSelectorTooltip, mapListTooltipFunc; #89 part 2:
 //     ScoreScreenSystem, ScoreScreenInput, ScoreScreenInit, ScoreScreenUpdate, ScoreScreenShutdown; #88:
-//     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown)
+//     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown; #98:
+//     ReplayMenuSystem, PopupReplaySystem, ChallengeMenuSystem, ReplayMenuInput, PopupReplayInput, ChallengeMenuInput,
+//     ReplayMenuInit, PopupReplayInit, ChallengeMenuInit, ReplayMenuUpdate, PopupReplayUpdate, ChallengeMenuUpdate,
+//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -57,6 +60,10 @@
 //!   (`crate::client::options_menu`) is translated and dispatched here, over the owner's copy of the global data
 //!   ([`ShellGui::global_data`]); what the client lacks of it (the LOD manager, the display modes, the gamma, the
 //!   registry, the IP addresses) is answered here as missing and recorded in [`ShellGui::untranslated`].
+//!   **Corrected 2026-11-10 (#98):** the replay menu (`crate::client::replay_menu`), the score screen's replay popup
+//!   (`crate::client::popup_replay`) and the challenge menu (`crate::client::challenge_menu`) are translated and
+//!   dispatched here, with their message boxes' callbacks (`reallySaveReplay`, `reallyLoadReplay`,
+//!   `deleteReplayFlag`, `copyReplayFlag`); the replay folder is the owner's ([`ShellGui::replays`]).
 //! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
 //!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
 //!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
@@ -85,6 +92,10 @@ use crate::client::main_menu::{self, MainMenu, MenuHost};
 use crate::client::message_box;
 use crate::client::save_load_menu::{self as slm, SaveLoadHost, SaveLoadMenu};
 use crate::client::single_player_menu::{self as spm, SinglePlayerHost, SinglePlayerMenu};
+use crate::client::challenge_menu::{self as cm, ChallengeHost, ChallengeMenu};
+use crate::client::popup_replay::{self as pr, PopupReplay, PopupReplayHost};
+use crate::client::replay_menu::{self as rm, MemoryReplayFolder, ReplayListHost, ReplayListing, ReplayMenu, ReplayVersion};
+use crate::formats::big::FilenameList;
 use crate::common::game_state::SaveGameInfo;
 use crate::client::shell::{self, win_create_from_script_with, win_create_layout_with, KeyedFiles, LayoutFiles, NameKeys, Shell, ShellEnv, ShellHost, ShellRequest, WndFiles};
 use crate::client::window_manager::{GameWindowManager, GuiHost, MsgHandled, WindowMsgData};
@@ -154,6 +165,15 @@ pub struct ShellGui<W> {
     pub skirmish_wins: i32,
     /// (#89 part 2) ScoreScreen.cpp's statics and globals, with the game it scores (the owner's copy).
     pub score_screen: ScoreScreen,
+    /// (#98) ReplayMenu.cpp's statics.
+    pub replay_menu: ReplayMenu,
+    /// (#98) PopupReplay.cpp's statics.
+    pub popup_replay: PopupReplay,
+    /// (#98) ChallengeMenu.cpp's statics.
+    pub challenge: ChallengeMenu,
+    /// (#98) The replay folder as the owner gave it (each file's listing read by the owner with the logic's recorder);
+    /// its writes and deletes are queued in [`ShellGui::requests`].
+    pub replays: MemoryReplayFolder,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -191,6 +211,10 @@ impl<W: WndFiles> ShellGui<W> {
             map_list_names: Vec::new(),
             skirmish_wins: 0,
             score_screen: ScoreScreen::default(),
+            replay_menu: ReplayMenu::default(),
+            popup_replay: PopupReplay::default(),
+            challenge: ChallengeMenu::default(),
+            replays: MemoryReplayFolder { files: Vec::new(), desktop: b"Desktop".to_vec() },
         }
     }
 
@@ -201,6 +225,14 @@ impl<W: WndFiles> ShellGui<W> {
 }
 
 impl<W: WndFiles> GuiHost for ShellGui<W> {
+    // (#98, defect fixed: the shell's host answered no image sizes and no images, `GuiHost`'s defaults, so every draw
+    // and callback that measures a mapped image (`getImageWidth`) or asks whether one exists read 0 and false)
+    fn image_size(&self, image: &[u8]) -> Option<(i32, i32)> {
+        self.files.as_ref().and_then(|f| f.files.image_size(image))
+    }
+    fn has_image(&self, image: &[u8]) -> bool {
+        self.files.as_ref().is_some_and(|f| f.files.has_image(image))
+    }
     fn system(&mut self, wm: &mut GameWindowManager, func: &[u8], win: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
         match func {
             b"MainMenuSystem" => main_menu::main_menu_system(wm, self, win, msg, d1, d2),
@@ -215,6 +247,10 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ScoreScreenSystem" => ss::score_screen_system(wm, self, win, msg, d1, d2),
             // (#88)
             b"OptionsMenuSystem" => om::options_menu_system(wm, self, win, msg, d1, d2),
+            // (#98)
+            b"ReplayMenuSystem" => rm::replay_menu_system(wm, self, win, msg, d1, d2),
+            b"PopupReplaySystem" => pr::popup_replay_system(wm, self, win, msg, d1, d2),
+            b"ChallengeMenuSystem" => cm::challenge_menu_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -231,6 +267,10 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"SkirmishMapSelectMenuInput" => smsm::skirmish_map_select_menu_input(wm, self, win, msg, d1, d2),
             b"ScoreScreenInput" => ss::score_screen_input(wm, self, win, msg, d1, d2),
             b"OptionsMenuInput" => om::options_menu_input(wm, self, win, msg, d1, d2),
+            // (#98)
+            b"ReplayMenuInput" => rm::replay_menu_input(wm, self, win, msg, d1, d2),
+            b"PopupReplayInput" => pr::popup_replay_input(wm, self, win, msg, d1, d2),
+            b"ChallengeMenuInput" => cm::challenge_menu_input(wm, self, win, msg, d1, d2),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -307,6 +347,16 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"OptionsMenuInit" => om::options_menu_init(wm, self, layout),
             b"OptionsMenuUpdate" => om::options_menu_update(wm, self, layout),
             b"OptionsMenuShutdown" => om::options_menu_shutdown(wm, self, layout),
+            // (#98)
+            b"ReplayMenuInit" => rm::replay_menu_init(wm, self, layout),
+            b"ReplayMenuUpdate" => rm::replay_menu_update(wm, self, layout),
+            b"ReplayMenuShutdown" => rm::replay_menu_shutdown(wm, self, layout, user),
+            b"PopupReplayInit" => pr::popup_replay_init(wm, self, layout),
+            b"PopupReplayUpdate" => pr::popup_replay_update(wm, self, layout),
+            b"PopupReplayShutdown" => pr::popup_replay_shutdown(wm, self, layout),
+            b"ChallengeMenuInit" => cm::challenge_menu_init(wm, self, layout),
+            b"ChallengeMenuUpdate" => cm::challenge_menu_update(wm, self, layout),
+            b"ChallengeMenuShutdown" => cm::challenge_menu_shutdown(wm, self, layout, user),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -327,6 +377,11 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
     fn message_box_callback(&mut self, wm: &mut GameWindowManager, func: &[u8]) {
         match func {
             b"quitCallback" => main_menu::quit_callback(wm, self),
+            // (#98)
+            b"reallySaveReplay" => pr::really_save_replay(wm, self),
+            b"reallyLoadReplay" => rm::really_load_replay(wm, self),
+            b"deleteReplayFlag" => rm::delete_replay_flag(self),
+            b"copyReplayFlag" => rm::copy_replay_flag(self),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -500,6 +555,58 @@ impl<W: WndFiles> ScoreGridHost for ShellGui<W> {
 }
 
 impl<W: WndFiles> ScoreScreenHost for ShellGui<W> {}
+
+impl<W: WndFiles> ReplayListHost for ShellGui<W> {
+    fn replay_dir(&self) -> Vec<u8> {
+        // (#98) `getPath_UserData()` (the user data folder's, empty in the client: a file opened by its name) and
+        // `Replays\`
+        let mut d = self.user_data.path.clone();
+        d.extend_from_slice(b"Replays\\");
+        d
+    }
+    fn replay_file_list(&mut self, dir: &[u8], search: &[u8]) -> FilenameList {
+        self.replays.list(dir, search)
+    }
+    fn read_replay_header(&mut self, filename: &[u8]) -> Option<ReplayListing> {
+        let dir = self.replay_dir();
+        self.replays.header(&dir, filename)
+    }
+    fn replay_version(&self) -> ReplayVersion {
+        // (#98) as the World records them: no version strings, version 0, the global data's CRCs
+        ReplayVersion { exe_crc: self.global_data.exe_crc, ini_crc: self.global_data.ini_crc, ..Default::default() }
+    }
+    fn replay_file_exists(&mut self, path: &[u8]) -> bool {
+        self.replays.find(path).is_some()
+    }
+    fn delete_replay_file(&mut self, path: &[u8]) -> Result<(), Vec<u16>> {
+        let r = self.replays.delete(path)?;
+        self.requests.push(r);
+        Ok(())
+    }
+    fn copy_replay_file(&mut self, from: &[u8], to: &[u8]) -> Result<(), Vec<u16>> {
+        let r = self.replays.copy(from, to)?;
+        self.requests.push(r);
+        Ok(())
+    }
+    fn desktop_path(&self) -> Vec<u8> {
+        self.replays.desktop.clone()
+    }
+    fn replay_menu(&mut self) -> &mut ReplayMenu {
+        &mut self.replay_menu
+    }
+}
+
+impl<W: WndFiles> PopupReplayHost for ShellGui<W> {
+    fn popup_replay(&mut self) -> &mut PopupReplay {
+        &mut self.popup_replay
+    }
+}
+
+impl<W: WndFiles> ChallengeHost for ShellGui<W> {
+    fn challenge_menu(&mut self) -> &mut ChallengeMenu {
+        &mut self.challenge
+    }
+}
 
 impl<W: WndFiles> SaveLoadHost for ShellGui<W> {
     fn save_load_menu(&mut self) -> &mut SaveLoadMenu {
@@ -935,6 +1042,77 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         layout_file("ScoreScreenInit", "ScoreScreenUpdate", "ScoreScreenShutdown", &parent)
     }
 
+    /// (#98) A synthetic `Menus/ReplayMenu.wnd` (no EA file): `ParentReplayMenu` (the system and input callbacks)
+    /// with the replay list (four columns, 40/20/20/20 %) at (20, 60)-(560, 400), *Load*, *Delete*, *Copy* at x 610
+    /// from y 110, *Back* at (20, 560), and `GadgetParent`.
+    pub fn replay_menu_wnd() -> Vec<u8> {
+        let f = "ReplayMenu.wnd";
+        let mut c = String::new();
+        c += &win(
+            f,
+            "SCROLLLISTBOX",
+            "ListboxReplayFiles",
+            (20, 60, 560, 400),
+            false,
+            "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 4, COLUMNSWIDTH%: 40, COLUMNSWIDTH%: 20, COLUMNSWIDTH%: 20, COLUMNSWIDTH%: 20, FORCESELECT: 0;\n",
+            "",
+        );
+        c += &buttons(f, 610, 110, &["ButtonLoadReplay", "ButtonDeleteReplay", "ButtonCopyReplay"]);
+        c += &buttons(f, 20, 560, &["ButtonBack"]);
+        c += &win(f, "USER", "GadgetParent", (0, 590, 10, 600), false, "", "");
+        let parent = win(f, "USER", "ParentReplayMenu", (0, 0, 800, 600), false, "    SYSTEMCALLBACK = \"ReplayMenuSystem\";\n    INPUTCALLBACK = \"ReplayMenuInput\";\n", &c);
+        layout_file("ReplayMenuInit", "ReplayMenuUpdate", "ReplayMenuShutdown", &parent)
+    }
+
+    /// (#98) A synthetic `Menus/PopupReplay.wnd` (no EA file): `PopupReplayMenu` (the system and input callbacks) at
+    /// (100, 50)-(700, 550) with the games list (four columns) at (110, 60)-(500, 400), the name entry
+    /// `TextEntryReplayName` at (110, 420)-(500, 440), `MenuButtonFrame` holding *Save* and *Back* at x 520 from y 110,
+    /// and the *replay saved* window `PopupReplaySaved` at (250, 250)-(550, 300).
+    pub fn popup_replay_wnd() -> Vec<u8> {
+        let f = "PopupReplay.wnd";
+        let mut c = String::new();
+        c += &win(
+            f,
+            "SCROLLLISTBOX",
+            "ListboxGames",
+            (110, 60, 500, 400),
+            false,
+            "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 4, COLUMNSWIDTH%: 40, COLUMNSWIDTH%: 20, COLUMNSWIDTH%: 20, COLUMNSWIDTH%: 20, FORCESELECT: 0;\n",
+            "",
+        );
+        c += &win(f, "ENTRYFIELD", "TextEntryReplayName", (110, 420, 500, 440), false, "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n", "");
+        c += &frame(f, "MenuButtonFrame", (510, 100, 690, 200), false, &buttons(f, 520, 110, &["ButtonSave", "ButtonBack"]));
+        c += &static_text(f, "PopupReplaySaved", (250, 250, 550, 300));
+        let parent = win(f, "USER", "PopupReplayMenu", (100, 50, 700, 550), false, "    SYSTEMCALLBACK = \"PopupReplaySystem\";\n    INPUTCALLBACK = \"PopupReplayInput\";\n", &c);
+        layout_file("PopupReplayInit", "PopupReplayUpdate", "PopupReplayShutdown", &parent)
+    }
+
+    /// (#98) A synthetic `Menus/ChallengeMenu.wnd` (no EA file): `ParentChallengeMenu` (the system and input
+    /// callbacks) with the twelve general buttons `GeneralPosition0` .. `11` (check boxes, 40x40, three rows of four
+    /// from (20, 40), 50 apart), *Play* (600, 560), *Back* (20, 560), `MainBackdrop`, `GadgetParent`, and
+    /// `GeneralsBioParent` at (300, 40)-(780, 400) holding `BioPortrait` and the four bio lines (static texts at x 420
+    /// from y 50, 30 apart).
+    pub fn challenge_menu_wnd() -> Vec<u8> {
+        let f = "ChallengeMenu.wnd";
+        let mut c = String::new();
+        for i in 0..12 {
+            let (x, y) = (20 + 50 * (i % 4), 40 + 50 * (i / 4));
+            c += &win(f, "CHECKBOX", &format!("GeneralPosition{i}"), (x, y, x + 40, y + 40), false, "", "");
+        }
+        c += &buttons(f, 600, 560, &["ButtonPlay"]);
+        c += &buttons(f, 20, 560, &["ButtonBack"]);
+        c += &win(f, "USER", "MainBackdrop", (0, 0, 10, 10), false, "", "");
+        c += &win(f, "USER", "GadgetParent", (0, 590, 10, 600), false, "", "");
+        let mut bio = win(f, "USER", "BioPortrait", (310, 50, 410, 150), false, "", "");
+        for (i, n) in ["BioNameEntry", "BioDOBEntry", "BioBirthplaceEntry", "BioStrategyEntry"].iter().enumerate() {
+            let y = 50 + 30 * i as i32;
+            bio += &static_text(f, n, (420, y, 770, y + 20));
+        }
+        c += &win(f, "USER", "GeneralsBioParent", (300, 40, 780, 400), false, "", &bio);
+        let parent = win(f, "USER", "ParentChallengeMenu", (0, 0, 800, 600), false, "    SYSTEMCALLBACK = \"ChallengeMenuSystem\";\n    INPUTCALLBACK = \"ChallengeMenuInput\";\n", &c);
+        layout_file("ChallengeMenuInit", "ChallengeMenuUpdate", "ChallengeMenuShutdown", &parent)
+    }
+
     /// The panels of [`main_menu_wnd`] and their buttons.
     const PANELS: [(&str, &[&str]); 5] = [
         ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
@@ -999,6 +1177,9 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         s += "WindowTransition SaveLoadMenuFade\n  Window\n    WinName = SaveLoad.wnd:SaveLoadMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         // (#89 part 2) the score screen's show, on its grid
         s += "WindowTransition ScoreScreenShow\n  Window\n    WinName = ScoreScreen.wnd:GadgetParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
+        // (#98) the replay and challenge menus' fades, on their parents, not fire-once (their shutdowns reverse them)
+        s += "WindowTransition ReplayMenuFade\n  Window\n    WinName = ReplayMenu.wnd:ParentReplayMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
+        s += "WindowTransition ChallengeMenuFade\n  Window\n    WinName = ChallengeMenu.wnd:ParentChallengeMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         // (#89) the skirmish screen's fade, on its parent, not fire-once (its shutdown reverses it)
         s += "WindowTransition SkirmishGameOptionsMenuFade\n  Window\n    WinName = SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         for (g, w) in [("US", "US"), ("GLA", "GLA"), ("China", "China"), ("Training", "Training"), ("Skirmish", "Skirmish")] {
@@ -1072,8 +1253,12 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             ("ScoreScreen", score_screen_wnd()),
             // (#88)
             ("OptionsMenu", options_menu_wnd()),
+            // (#98)
+            ("ReplayMenu", replay_menu_wnd()),
+            ("PopupReplay", popup_replay_wnd()),
+            ("ChallengeMenu", challenge_menu_wnd()),
         ];
-        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "ChallengeMenu", "PopupReplay", "KeyboardOptionsMenu"] {
+        for n in ["BlankWindow", "CreditsMenu", "LanLobbyMenu", "KeyboardOptionsMenu"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()

@@ -52,7 +52,8 @@
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
   import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status,
     saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open, saves_delete_name,
-    saves_status, saves_logic_frame, campaign_status, prefs_add, prefs_write_name, prefs_write_bytes } from './rts_client.js';
+    saves_status, saves_logic_frame, campaign_status, prefs_add, prefs_write_name, prefs_write_bytes,
+    replays_add, replays_write_name, replays_write_bytes, replays_delete_name, replays_download_name, replays_download_bytes } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -269,7 +270,26 @@
     } catch (e) { /* no OPFS in this browser */ }
     return out;
   }
+  // #98: the replay folder: upstream's getReplayDir(), the user data folder's Replays\, is OPFS `Replays/` here. The
+  // page reads its .rep files at start, writes and deletes what the game's replay screens ask (src/replays.rs's
+  // `page`), and offers the replay menu's copy to the desktop as a download; in this browser only.
+  async function replayDir() {
+    const root = await navigator.storage.getDirectory();
+    return root.getDirectoryHandle('Replays', { create: true });
+  }
+  async function replayFiles() {
+    const out = [];
+    try {
+      for await (const [name, h] of (await replayDir()).entries()) {
+        if (h.kind === 'file' && /\.rep$/i.test(name)) out.push([name, h]);
+      }
+    } catch (e) { /* no OPFS in this browser */ }
+    return out;
+  }
   ready.then(async () => {
+    for (const [name, h] of await replayFiles()) {
+      replays_add(name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
+    }
     for (const [name, h] of await prefFiles()) {
       prefs_add(name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
     }
@@ -283,6 +303,14 @@
         const name = saves_download_name();
         if (!name) break;
         const url = URL.createObjectURL(new Blob([saves_download_bytes()], { type: 'application/octet-stream' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
+      for (;;) {
+        const name = replays_download_name();
+        if (!name) break;
+        const url = URL.createObjectURL(new Blob([replays_download_bytes()], { type: 'application/octet-stream' }));
         const a = document.createElement('a');
         a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 10000);
@@ -310,6 +338,22 @@
             await w.write(bytes);
             await w.close();
           } catch (e) { console.warn('could not keep ' + name + ' in this browser: ' + e); }
+        }
+        // #98: the replays the game's replay screens wrote and deleted, in OPFS `Replays/`
+        for (;;) {
+          const name = replays_write_name();
+          if (!name) break;
+          const bytes = replays_write_bytes();
+          try {
+            const w = await (await (await replayDir()).getFileHandle(name, { create: true })).createWritable();
+            await w.write(bytes);
+            await w.close();
+          } catch (e) { console.warn('could not keep the replay ' + name + ' in this browser: ' + e); }
+        }
+        for (;;) {
+          const name = replays_delete_name();
+          if (!name) break;
+          try { await (await replayDir()).removeEntry(name); } catch (e) { console.warn('could not delete the replay ' + name + ': ' + e); }
         }
         // #78: the saves the game's save/load screen deleted
         for (;;) {

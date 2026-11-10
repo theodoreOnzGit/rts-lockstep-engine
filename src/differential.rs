@@ -3006,6 +3006,8 @@ extern "C" {
     pub fn ref_map_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// #89 part 2: the score screen's grid (differential/wrap_score_grid.cpp): the dump's length.
     pub fn ref_score_grid_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    /// #98: the replay list (differential/wrap_replay_list.cpp): the dump's length.
+    pub fn ref_replay_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// #93: the user preference files (differential/wrap_user_prefs.cpp): the dump's length (-1: too small).
     pub fn ref_user_prefs_run(input: *const c_uchar, len: c_int, dir: *const c_char, out: *mut c_uchar, cap: c_int) -> c_int;
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.

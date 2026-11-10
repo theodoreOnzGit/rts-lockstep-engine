@@ -113,7 +113,10 @@
 //!   whatever the LOD.
 //! - The music (`TheAudio->addAudioEvent`) is the host's audio list; `removeAudioEvent(AHSV_StopTheMusicFade)` and
 //!   `TheAudio->update()` are the host's audio (not recorded).
-//! - `PopupReplay.wnd`'s callbacks (`PopupReplayUpdate`, its init) are not translated: the lexicon records them.
+//! - ~~`PopupReplay.wnd`'s callbacks (`PopupReplayUpdate`, its init) are not translated: the lexicon records them.~~
+//!   **Corrected 2026-11-10 (#98):** they are translated (`crate::client::popup_replay`): *Save Replay* copies the
+//!   last replay in the replay folder; `PopupReplayUpdate` is called through the host's lexicon
+//!   ([`crate::client::shell::ShellHost::layout_callback`]).
 //! - `TheInGameUI->freeMessageResources()` is the host's ([`ScoreScreenHost::free_message_resources`]).
 //!
 //! # Verification
@@ -692,8 +695,9 @@ pub fn score_screen_shutdown<H: ScoreScreenHost>(wm: &mut GameWindowManager, h: 
 pub fn score_screen_update<H: ScoreScreenHost>(wm: &mut GameWindowManager, h: &mut H, _layout: usize) {
     if let Some(r) = shell::get_popup_replay_layout(wm, h) {
         if !wm.layouts[r].hidden {
-            // `PopupReplayUpdate(popupReplayLayout, NULL)`: PopupReplay.cpp, not translated
-            h.score_untranslated(b"PopupReplayUpdate");
+            // `PopupReplayUpdate(popupReplayLayout, NULL)` (~~PopupReplay.cpp, not translated~~ **Corrected 2026-11-10
+            // (#98):** translated, `crate::client::popup_replay`; called through the host's lexicon)
+            h.layout_callback(wm, b"PopupReplayUpdate", r, None);
         }
     }
     if h.score_screen().need_to_finish_single_player_init {
@@ -1437,7 +1441,7 @@ pub(crate) mod tests {
     }
 
     /// A score keeper with these totals (player `me`; units destroyed of player 0 counted as another's).
-    fn keeper(me: i32, units_built: i32, units_lost: i32, units_destroyed: i32, buildings_built: i32, buildings_lost: i32, buildings_destroyed: i32, money: i32) -> ScoreKeeper {
+    pub(crate) fn keeper(me: i32, units_built: i32, units_lost: i32, units_destroyed: i32, buildings_built: i32, buildings_lost: i32, buildings_destroyed: i32, money: i32) -> ScoreKeeper {
         let mut k = ScoreKeeper::new();
         let mut ud = [0; 16];
         ud[0] = units_destroyed;
@@ -1447,7 +1451,7 @@ pub(crate) mod tests {
         k
     }
 
-    fn player(name: &str, display: &str, color: i32, k: ScoreKeeper, human: bool, side: &str, template: Option<usize>, listed: bool) -> ScorePlayer {
+    pub(crate) fn player(name: &str, display: &str, color: i32, k: ScoreKeeper, human: bool, side: &str, template: Option<usize>, listed: bool) -> ScorePlayer {
         ScorePlayer {
             name: name.into(),
             display_name: wide(display),
@@ -1465,7 +1469,7 @@ pub(crate) mod tests {
 
     /// A game of `mode` with these players (the neutral player 0 first, not human), the local player `local`, every
     /// relation neutral, recording.
-    fn game(mode: i32, mut players: Vec<ScorePlayer>, local: usize) -> ScoreScreenGame {
+    pub(crate) fn game(mode: i32, mut players: Vec<ScorePlayer>, local: usize) -> ScoreScreenGame {
         let mut neutral = player("", "Neutral", 0, ScoreKeeper::new(), false, "", None, false);
         neutral.human = false;
         players.insert(0, neutral);
@@ -1499,7 +1503,7 @@ pub(crate) mod tests {
     }
 
     /// `TheSkirmishGameInfo` for two slots: the local human (template 0) and an easy AI, no teams.
-    fn skirmish_info() -> GameInfo {
+    pub(crate) fn skirmish_info() -> GameInfo {
         let mut g = GameInfo::new(&mut crate::client::gui_util::SkirmishData::default());
         g.in_game = true;
         g.local_ip = 1;
@@ -1513,7 +1517,7 @@ pub(crate) mod tests {
     }
 
     /// The shell in a game (hidden), then `clearGameData`'s score screen with `g`.
-    fn scored(g: ScoreScreenGame) -> (GameWindowManager, H) {
+    pub(crate) fn scored(g: ScoreScreenGame) -> (GameWindowManager, H) {
         let (mut wm, mut h) = booted();
         settle(&mut wm, &mut h);
         shell::hide_shell(&mut wm, &mut h);
@@ -1762,7 +1766,9 @@ pub(crate) mod tests {
     ///   marker shown, its numbers hidden, the winner marker shown; the chat entry, emote, chat list and border shown,
     ///   the focus on the chat entry; *Emote* empties the chat entry (no `TheLAN` to send to); `GEM_EDIT_DONE` the same;
     ///   *Buddies* is recorded (`GameSpyToggleOverlay`); *Save Replay* disables the buttons and runs the replay popup's
-    ///   init (not translated: recorded) and shows it; the next update records `PopupReplayUpdate`;
+    ///   init (~~not translated: recorded~~ **Corrected 2026-11-10 (#98):** translated: its `parent` found) and shows it;
+    ///   ~~the next update records `PopupReplayUpdate`~~ **Corrected 2026-11-10 (#98):** the next update runs the
+    ///   translated `PopupReplayUpdate` (nothing recorded);
     /// - internet: the academy's list and title shown, the buddy button shown (no `TheGameSpyInfo`), the stats report
     ///   recorded for each row;
     /// - a multiplayer replay: the replay type, *Save Replay* hidden; a single player replay with an observer as the
@@ -1809,11 +1815,11 @@ pub(crate) mod tests {
         let sr = w(&wm, "ButtonSaveReplay");
         click(&mut wm, &mut h, sr);
         assert!(!wm.is_enabled(Some(w(&wm, "ButtonOk"))));
-        assert!(h.untranslated.iter().any(|u| u == b"PopupReplayInit"), "{:?}", h.untranslated);
+        assert!(h.popup_replay.parent.is_some() && !h.untranslated.iter().any(|u| u.starts_with(b"PopupReplay")), "{:?}", h.untranslated);
         let popup = h.shell.popup_replay_layout.expect("the popup");
         assert!(!wm.layouts[popup].hidden);
         tick(&mut wm, &mut h);
-        assert!(h.untranslated.iter().any(|u| u == b"PopupReplayUpdate"));
+        assert!(!h.untranslated.iter().any(|u| u == b"PopupReplayUpdate"));
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
         let add = w(&wm, "ButtonAdd0");
         wm.win_send_system_msg(&mut h, Some(parent), ggm::GBM_SELECTED, win_data(Some(add)), 0);

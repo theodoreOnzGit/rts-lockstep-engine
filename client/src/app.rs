@@ -2317,6 +2317,19 @@ fn campaign_flow(
     let st = &mut *shell;
     if let Some(ui) = st.ui.as_mut() {
         if let Some(g) = c.flow.check_score_screen(&game.controls.client.world) {
+            // (#98) the recorder's last replay (`00000000.rep`) into the replay folder, where upstream's recorder wrote
+            // it, for the score screen's *Save Replay*; the shell's copy of the folder made again
+            if let Some(bytes) = game.controls.client.world.last_replay().map(|b| b.to_vec()) {
+                let folder = st.replays.get_or_insert_with(crate::replays::ReplayFolder::start);
+                folder.take_page_files();
+                if let Err(e) = folder.write("00000000.rep", bytes) {
+                    warn!("the last replay was not kept: {e}");
+                }
+            }
+            if let (Some(folder), Some(base)) = (st.replays.as_ref(), game.base.as_deref()) {
+                ui.set_replays(folder, base);
+                st.replays_generation = Some(folder.generation);
+            }
             ui.score_screen(g);
             st.shown_over = game.serial;
             game.paused = true;
@@ -2370,6 +2383,9 @@ struct ShellState {
     loading: Option<String>,
     /// (#93) The user data folder's preference files (made at the first use: [`ShellState::user_data`]).
     user_data: Option<crate::user_data::UserDataFolder>,
+    /// (#98) The replay folder (made at the first use), and its generation the shell's copy was last made from.
+    replays: Option<crate::replays::ReplayFolder>,
+    replays_generation: Option<u64>,
 }
 
 impl ShellState {
@@ -2488,6 +2504,17 @@ fn shell_ui(
             warn!("the preference file {name} was not kept: {e}");
         }
     }
+    // (#98) the replay folder, as the replay menu and the replay popup list it (its files the page handed over first)
+    {
+        let folder = st.replays.get_or_insert_with(crate::replays::ReplayFolder::start);
+        folder.take_page_files();
+        if st.replays_generation != Some(folder.generation) {
+            if let Some(base) = g.base.as_deref() {
+                ui.set_replays(folder, base);
+                st.replays_generation = Some(folder.generation);
+            }
+        }
+    }
     // (#78) the save folder, as the save/load screen lists it; a load it asked for that failed shows the shell again
     if st.saves_generation != Some(saves.generation) {
         ui.set_saves(&saves.folder);
@@ -2524,7 +2551,7 @@ fn shell_ui(
         let c = &mut *campaigns;
         for a in ui.take_actions(base, &mut c.flow) {
             match a {
-                crate::shell::ShellAction::CampaignChosen | crate::shell::ShellAction::SkirmishChosen => {
+                crate::shell::ShellAction::CampaignChosen | crate::shell::ShellAction::SkirmishChosen | crate::shell::ShellAction::ReplayChosen => {
                     let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
                     c.set_status(format!("waiting {map}"));
                 }
@@ -2563,6 +2590,28 @@ fn shell_ui(
                     };
                     saves.set_status(s);
                     saves.generation += 1;
+                }
+                // (#98) the replay folder's changes the shell made (its own copy already has them)
+                crate::shell::ShellAction::ReplayWritten(name, bytes) => {
+                    let folder = st.replays.get_or_insert_with(crate::replays::ReplayFolder::start);
+                    match folder.write(&name, bytes) {
+                        Ok(()) => st.replays_generation = Some(folder.generation),
+                        Err(e) => warn!("the replay {name} was not kept: {e}"),
+                    }
+                }
+                crate::shell::ShellAction::ReplayDeleted(name) => {
+                    let folder = st.replays.get_or_insert_with(crate::replays::ReplayFolder::start);
+                    match folder.delete(&name) {
+                        Ok(()) => st.replays_generation = Some(folder.generation),
+                        Err(e) => warn!("the replay {name} was not deleted: {e}"),
+                    }
+                }
+                crate::shell::ShellAction::ReplayExported(name, bytes) => {
+                    let folder = st.replays.get_or_insert_with(crate::replays::ReplayFolder::start);
+                    match folder.export(&name, bytes) {
+                        Ok(to) => info!("replay copied: {to}"),
+                        Err(e) => warn!("the replay {name} was not copied: {e}"),
+                    }
                 }
                 crate::shell::ShellAction::SetVolume(volume, affect) => {
                     // (#88) `TheAudio->setVolume`: the client's audio manager, once it is up

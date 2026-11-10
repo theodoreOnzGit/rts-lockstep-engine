@@ -96,6 +96,10 @@ pub struct TemplateView {
     pub starting_building: Vec<u8>,
     /// `isOldFaction()`.
     pub old_faction: bool,
+    /// (#98) `getMedallionNormal()`, `getMedallionSelected()`, `getMedallionHilite()` (the challenge menu's).
+    pub medallion_normal: Vec<u8>,
+    pub medallion_selected: Vec<u8>,
+    pub medallion_hilite: Vec<u8>,
 }
 
 /// (#89) The World's data the skirmish screens read, copied by the client when it gives the shell its World
@@ -138,6 +142,9 @@ impl SkirmishData {
                 display_name: t.display_name().str().to_vec(),
                 starting_building: t.starting_building().to_vec(),
                 old_faction: t.is_old_faction(),
+                medallion_normal: t.medallion_normal().to_vec(),
+                medallion_selected: t.medallion_selected().to_vec(),
+                medallion_hilite: t.medallion_hilite().to_vec(),
             })
             .collect();
         SkirmishData {
@@ -163,6 +170,14 @@ impl SkirmishData {
     /// `ThePlayerTemplateStore->getPlayerTemplateCount()`.
     pub fn template_count(&self) -> i32 {
         self.templates.len() as i32
+    }
+
+    /// (#98) `ThePlayerTemplateStore->getTemplateNumByName(name)`: the first template whose name equals `name` without
+    /// regard to case (as C strings), or -1 (`PlayerTemplateStore::template_num_by_name` over the copy).
+    pub fn template_num_by_name(&self, name: &[u8]) -> i32 {
+        let c = |s: &[u8]| s.iter().position(|&b| b == 0).map_or(s.len(), |i| i);
+        let want = &name[..c(name)];
+        self.templates.iter().position(|t| t.name[..c(&t.name)].eq_ignore_ascii_case(want)).map_or(-1, |i| i as i32)
     }
 
     /// `getNthPlayerTemplate(n)`.

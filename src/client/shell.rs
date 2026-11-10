@@ -161,6 +161,22 @@ pub enum ShellRequest {
     MissionSave { campaign: Box<crate::client::campaign_manager::CampaignManager> },
     /// (#88) The options screen's `TheAudio->setVolume(volume, affect)` (`AudioAffect` bits): the client's audio.
     SetVolume { volume: f32, affect: u32 },
+    /// (#98) `TheRecorder->playbackFile(filename)` (the replay menu's): the replay folder's file `filename` played
+    /// back through the logic's recorder (`World::play_replay`), with its bytes as the host's folder holds them.
+    PlaybackReplay { filename: Vec<u8> },
+    /// (#98) A file of the replay folder written (`CopyFile` to `path`, the replay popup's save): its path (the replay
+    /// folder's, `Replays\<name>.rep`) and bytes, for the owner's folder.
+    WriteReplay { path: Vec<u8>, bytes: Vec<u8> },
+    /// (#98) `DeleteFile(path)` of a file of the replay folder (the replay popup's overwrite, the replay menu's
+    /// delete).
+    DeleteReplay { path: Vec<u8> },
+    /// (#98) `CopyFile` of a replay to the desktop folder (`copyReplay`): the file's name and bytes, for the owner to
+    /// put where the player keeps files (natively the desktop folder, in the browser a download).
+    ExportReplay { name: Vec<u8>, bytes: Vec<u8> },
+    /// (#98) The challenge menu's *Play*: `setGeneralCampaign(general)`, the pending file and `TheChallengeGameInfo`'s
+    /// map, `clearGameData`, the challenge's `difficulty`, `MSG_NEW_GAME`, `InitRandom(0)`: the World's
+    /// `start_challenge`.
+    StartChallenge { general: i32, difficulty: i32 },
 }
 
 /// `TheShell`.
@@ -262,6 +278,14 @@ pub trait WndFiles: WndHost {
     /// [`WndHost::fetch_text`], found).
     fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
         (self.fetch_text(label), true)
+    }
+    /// (#98) `image->getImageWidth()`, `getImageHeight()` of the mapped image `image` (by default unknown).
+    fn image_size(&self, _image: &[u8]) -> Option<(i32, i32)> {
+        None
+    }
+    /// (#98) `TheMappedImageCollection->findImageByName(image) != NULL` (by default [`WndHost::find_image`]'s answer).
+    fn has_image(&self, image: &[u8]) -> bool {
+        self.find_image(image).is_some()
     }
 }
 
@@ -744,6 +768,10 @@ pub(crate) mod tests {
         /// (#78) A label starting `NOTEXT` is not in the game's text.
         fn fetch_text_exists(&self, label: &[u8]) -> (Vec<u16>, bool) {
             (self.fetch_text(label), !label.starts_with(b"NOTEXT"))
+        }
+        /// (#98) Every `Img...` image is 32x20.
+        fn image_size(&self, image: &[u8]) -> Option<(i32, i32)> {
+            image.starts_with(b"Img").then_some((32, 20))
         }
     }
 

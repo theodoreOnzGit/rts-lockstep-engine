@@ -15,6 +15,8 @@
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
 //! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
+//! - [`replays`]: the replay folder (#98): natively the user data folder's `Replays`, in the browser OPFS `Replays/`;
+//!   what the translated replay menu and the score screen's *Save Replay* read and write; plain Rust.
 //! - [`saves`]: saved games (#4): the save folder (natively the game's own, in the browser OPFS `Save/`), the list, and
 //!   saving and loading through the translated save code; plain Rust.
 //! - [`shell`]: the game's shell (#69): the main menu and its message boxes from their files, run by the translated
@@ -34,6 +36,7 @@ pub mod drawables;
 pub mod import;
 pub mod input;
 pub mod particles;
+pub mod replays;
 pub mod saves;
 pub mod shell;
 pub mod user_data;

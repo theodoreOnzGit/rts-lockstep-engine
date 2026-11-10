@@ -19,7 +19,13 @@
 //!   ([`ShellUi::set_skirmish_data`], given when the shell is loaded). (#89 part 2) A mission's or a skirmish's end
 //!   pushes the translated score screen ([`ShellUi::score_screen`], with the copy of the game `clearGameData` keeps);
 //!   its *Continue* goes to the flow ([`ShellRequest::StartNextCampaignGame`]: [`Flow::continue_from_score_screen`],
-//!   in the World that played) and its mission save to the save folder ([`ShellAction::MissionSaved`]).
+//!   in the World that played) and its mission save to the save folder ([`ShellAction::MissionSaved`]). (#98) The
+//!   replay folder ([`crate::replays`]) is given to the shell's host with each file's header read by the logic's
+//!   recorder ([`ShellUi::set_replays`]); the score screen's *Save Replay* and the replay menu's delete and copy come
+//!   back as [`ShellAction::ReplayWritten`], [`ShellAction::ReplayDeleted`], [`ShellAction::ReplayExported`]; the
+//!   replay menu's playback goes through the flow ([`ShellAction::ReplayChosen`]: `MissionChoice::Replay`, the World's
+//!   `play_replay`, once the replay's map has arrived); the challenge menu's *Play* is the campaign panel's challenge
+//!   start ([`ShellRequest::StartChallenge`]: `MissionChoice::Challenge`, the World's `start_challenge`).
 //!
 //! ~~**Not drawn yet (#69's remaining work):** the application does not show this shell; the windows' quads, as
 //! `crate::ui::GameUi::frame` makes the control bar's, and the phone layout (the menu over the 3D view, the zoom
@@ -107,7 +113,7 @@ use crate::ui::{LayoutPlacement, UiQuad, LAYOUT};
 /// translated.
 ///
 /// (#89 part 2) With the score screen (`ScoreScreen`, translated) and the replay popup it opens (`PopupReplay`, whose
-/// callbacks are not).
+/// callbacks are ~~not~~ **Corrected 2026-11-10 (#98):** translated, as are `ReplayMenu`'s and `ChallengeMenu`'s).
 pub const SHELL_FILES: [&str; 18] = [
     "MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu",
     "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect", "SkirmishMapSelectMenu", "ScoreScreen", "PopupReplay",
@@ -154,6 +160,10 @@ impl WndFiles for MenuFiles {
         let exists = self.text.strings.contains_key(label) || self.text.csf.as_ref().is_some_and(|c| c.fetch(label).is_some());
         (self.text.fetch(label).str().to_vec(), exists)
     }
+    fn image_size(&self, image: &[u8]) -> Option<(i32, i32)> {
+        // (#98) the mapped image's size (`getImageWidth`, `getImageHeight`)
+        self.images.find_image_by_name(image).map(|i| i.image_size)
+    }
 }
 
 /// What the client does for a request of the shell's callbacks.
@@ -179,6 +189,16 @@ pub enum ShellAction {
     MissionSaved(String, Vec<u8>),
     /// (#88) The options screen's `TheAudio->setVolume(volume, affect)`: the client's audio manager's.
     SetVolume(f32, u32),
+    /// (#98) A replay the shell wrote into the replay folder (the score screen's *Save Replay*): its name and bytes,
+    /// for [`crate::replays::ReplayFolder::write`].
+    ReplayWritten(String, Vec<u8>),
+    /// (#98) A replay the shell deleted: [`crate::replays::ReplayFolder::delete`].
+    ReplayDeleted(String),
+    /// (#98) The replay menu's copy to the desktop: [`crate::replays::ReplayFolder::export`].
+    ReplayExported(String, Vec<u8>),
+    /// (#98) The replay menu's playback waits for the replay's map in the flow ([`Flow::choose`] with
+    /// `MissionChoice::Replay`: the World's `play_replay`).
+    ReplayChosen,
 }
 
 /// The client's side of a request (#89: [`ShellRequest::StartSkirmish`] goes through the same flow as a campaign's
@@ -215,6 +235,17 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
             None => ShellAction::Failed("the mission save failed (no game ended, or no campaign)".to_string()),
         },
         ShellRequest::SetVolume { volume, affect } => ShellAction::SetVolume(*volume, *affect),
+        // (#98) the challenge menu's *Play*: the campaign panel's challenge start (`start_challenge`)
+        ShellRequest::StartChallenge { general, difficulty } => match flow.choose(base, MissionChoice::Challenge(*general), *difficulty) {
+            Ok(()) => ShellAction::CampaignChosen,
+            Err(e) => ShellAction::Failed(e),
+        },
+        // (#98) the replay folder's changes, kept by the client's folder
+        ShellRequest::WriteReplay { path, bytes } => ShellAction::ReplayWritten(crate::replays::name_of_path(path), bytes.clone()),
+        ShellRequest::DeleteReplay { path } => ShellAction::ReplayDeleted(crate::replays::name_of_path(path)),
+        ShellRequest::ExportReplay { name, bytes } => ShellAction::ReplayExported(String::from_utf8_lossy(name).into_owned(), bytes.clone()),
+        // (#98) without the folder's bytes (see `ShellUi::take_actions`, which gives them)
+        ShellRequest::PlaybackReplay { .. } => ShellAction::Failed("a replay's playback needs the replay folder".to_string()),
         // (#89) the skirmish screen's start: a copy of `base` waits for the map's folder, then `start_skirmish_game`
         ShellRequest::StartSkirmish { game, mode, difficulty, max_fps } => {
             let choice = MissionChoice::Skirmish { game: game.clone(), mode: *mode, max_fps: *max_fps };
@@ -293,9 +324,51 @@ impl ShellUi {
         crate::ui::keyboard_into(&mut self.wm, &mut self.gui, scan, down, text)
     }
 
-    /// The callbacks' requests since the last call, acted on ([`act`]).
+    /// The callbacks' requests since the last call, acted on ([`act`]). (#98) A replay's playback
+    /// (`TheRecorder->playbackFile`) takes the file's bytes from the shell's replay folder: the flow's
+    /// `MissionChoice::Replay`, which waits for the replay's map.
     pub fn take_actions(&mut self, base: &World, flow: &mut Flow) -> Vec<ShellAction> {
-        std::mem::take(&mut self.gui.requests).iter().map(|r| act(r, base, flow)).collect()
+        let requests = std::mem::take(&mut self.gui.requests);
+        requests
+            .iter()
+            .map(|r| match r {
+                ShellRequest::PlaybackReplay { filename } => self.playback(filename, base, flow),
+                r => act(r, base, flow),
+            })
+            .collect()
+    }
+
+    /// (#98) `TheRecorder->playbackFile(filename)`: the replay folder's file (by its name, without case), in a copy of
+    /// `base`, waiting for its map (the difficulty is the file's: `DIFFICULTY_NORMAL` is not read).
+    fn playback(&self, filename: &[u8], base: &World, flow: &mut Flow) -> ShellAction {
+        let mut path = b"Replays\\".to_vec();
+        path.extend_from_slice(filename);
+        let Some(i) = self.gui.replays.find(&path) else {
+            return ShellAction::Failed(format!("no replay {}", String::from_utf8_lossy(filename)));
+        };
+        let bytes = self.gui.replays.files[i].1.clone();
+        let choice = MissionChoice::Replay { filename: filename.to_vec(), bytes };
+        match flow.choose(base, choice, rts_lockstep_engine::common::recorder::DIFFICULTY_NORMAL) {
+            Ok(()) => ShellAction::ReplayChosen,
+            Err(e) => ShellAction::Failed(e),
+        }
+    }
+
+    /// (#98) The replay folder as the replay list and the replay popup read it: each `.rep` file under `Replays\`,
+    /// with its header and options read by the logic's recorder on a copy of `base` (the install's World; not
+    /// changed): `replay_listings`.
+    pub fn set_replays(&mut self, folder: &crate::replays::ReplayFolder, base: &World) {
+        let files: Vec<(Vec<u8>, Vec<u8>)> = folder.files.iter().map(|(n, b)| (n.as_bytes().to_vec(), b.clone())).collect();
+        let listings = rts_lockstep_engine::client::replay_menu::replay_listings(base, &files);
+        self.gui.replays.files = files
+            .into_iter()
+            .zip(listings)
+            .map(|((n, b), l)| {
+                let mut p = b"Replays\\".to_vec();
+                p.extend(n);
+                (p, b, l)
+            })
+            .collect();
     }
 
     /// (#78) The save folder as the save/load screen lists it (`iterateSaveFiles`, `getSaveGameInfoFromFile`): each
@@ -722,6 +795,49 @@ mod tests {
         let p = flow.pending.as_ref().expect("pending");
         assert_eq!(p.world.campaign.current_rank_points(), 777);
         assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
+    }
+
+    /// #98: the replay folder and the challenge menu's start in the client, predicted from ReplayMenu.cpp,
+    /// PopupReplay.cpp and ChallengeMenu.cpp before the run:
+    ///
+    /// - [`ShellUi::set_replays`] gives the host each file of the folder under `Replays\`, with its listing read on a
+    ///   copy of the base World: bytes that are not a replay have none (left out of the lists);
+    /// - the playback of a file the folder lacks, and of one that does not read, fail ([`ShellAction::Failed`]); the
+    ///   flow waits for nothing;
+    /// - the folder's write, delete and export come back as the actions the app keeps ([`ShellAction::ReplayWritten`]
+    ///   by the file's name, ...);
+    /// - the challenge menu's `StartChallenge { 0, 2 }` is the campaign panel's challenge: the flow waits for the
+    ///   general's campaign's first map (`Maps\GC01\GC01.map`) at difficulty 2; the base World only read.
+    #[test]
+    fn the_replay_folder_and_the_challenge_reach_the_flow() {
+        const CHALLENGE_CAMPAIGN: &[u8] = b"Campaign Challenge_0\n IsChallengeCampaign = Yes\n FirstMission = M01\n Mission M01\n  Map = Maps\\GC01\\GC01.map\n End\nEnd\n";
+        const CHALLENGE: &[u8] = b"ChallengeGenerals\n GeneralPersona0\n  StartsEnabled = Yes\n  Campaign = Challenge_0\n  PlayerTemplate = FactionAmerica\n End\nEnd\n";
+        let (mut ui, _, _) = shell_with(&TextTable::default());
+        let mut base = World::new();
+        base.campaign.init(CHALLENGE_CAMPAIGN).expect("Campaign.ini");
+        base.challenge_generals.init(CHALLENGE).expect("ChallengeMode.ini");
+        let mut folder = crate::replays::ReplayFolder::default();
+        folder.files.insert("bad.rep".to_string(), b"NOT A REPLAY".to_vec());
+        ui.set_replays(&folder, &base);
+        assert_eq!(ui.gui.replays.files.len(), 1);
+        assert_eq!(ui.gui.replays.files[0].0, b"Replays\\bad.rep");
+        assert_eq!(ui.gui.replays.files[0].2, None);
+        let mut flow = Flow::default();
+        ui.gui.requests.push(ShellRequest::PlaybackReplay { filename: b"none.rep".to_vec() });
+        ui.gui.requests.push(ShellRequest::PlaybackReplay { filename: b"BAD.rep".to_vec() });
+        let a = ui.take_actions(&base, &mut flow);
+        assert!(matches!(a.as_slice(), [ShellAction::Failed(_), ShellAction::Failed(_)]), "{a:?}");
+        assert!(flow.pending.is_none());
+        assert_eq!(act(&ShellRequest::WriteReplay { path: b"Replays\\Best.rep".to_vec(), bytes: b"B".to_vec() }, &base, &mut flow), ShellAction::ReplayWritten("Best.rep".into(), b"B".to_vec()));
+        assert_eq!(act(&ShellRequest::DeleteReplay { path: b"Replays\\Best.rep".to_vec() }, &base, &mut flow), ShellAction::ReplayDeleted("Best.rep".into()));
+        assert_eq!(act(&ShellRequest::ExportReplay { name: b"x.rep".to_vec(), bytes: b"X".to_vec() }, &base, &mut flow), ShellAction::ReplayExported("x.rep".into(), b"X".to_vec()));
+        let before = base.campaign.clone();
+        assert_eq!(act(&ShellRequest::StartChallenge { general: 0, difficulty: 2 }, &base, &mut flow), ShellAction::CampaignChosen);
+        assert_eq!(flow.waiting_for(), Some(&b"Maps\\GC01\\GC01.map"[..]));
+        let p = flow.pending.as_ref().expect("pending");
+        assert_eq!((&p.choice, p.difficulty), (&MissionChoice::Challenge(0), 2));
+        assert_eq!(base.campaign, before, "the base World is only read");
+        assert!(matches!(act(&ShellRequest::StartChallenge { general: 40, difficulty: 2 }, &base, &mut flow), ShellAction::Failed(_)));
     }
 
     /// #78: the shell drawn from the window manager's draw list, and hidden when a game starts. Predicted from

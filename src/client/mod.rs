@@ -84,3 +84,8 @@ pub mod user_preferences;
 pub mod options_menu;
 pub mod skirmish_map_select;
 pub mod score_screen;
+// (#98) the replay menu and the score screen's replay popup (ReplayMenu.cpp, PopupReplay.cpp), the challenge menu
+// (ChallengeMenu.cpp)
+pub mod replay_menu;
+pub mod popup_replay;
+pub mod challenge_menu;
