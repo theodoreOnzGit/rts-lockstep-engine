@@ -1439,7 +1439,9 @@ fn mapped_texture(art: &Art<ArtDevice>, cache: &mut UiTextures, collection: &rts
 /// change. ~~A command button presses through [`Controls::press`] (`processCommandUI`).~~ **Corrected 2026-11-10 (#34):**
 /// the pointer over the bar goes through the window manager ([`crate::ui::GameUi::pointer`], tested there: the root's
 /// pointer observers turn the screen position into the layout's); the button it selects presses through
-/// [`Controls::press`] (`processCommandUI`). A release that happened off the bar ends the manager's grab here.
+/// [`Controls::press`] (`processCommandUI`). A release that happened off the bar ends the manager's grab here. (#109) The
+/// bar's quit menu call ([`crate::ui::GameUi::take_quit_menu_call`]) is made on the shell's quit menu
+/// ([`crate::shell::ShellUi::bar_quit_menu_call`], tested there).
 #[allow(clippy::too_many_arguments)]
 fn game_ui(
     mut commands: Commands,
@@ -1450,9 +1452,15 @@ fn game_ui(
     mut ui_bar: ResMut<UiBar>,
     buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
-    shell: NonSend<ShellState>,
+    mut shell: NonSendMut<ShellState>,
 ) {
     let g = &mut *game;
+    // (#109) the bar's options button (`ControlBarSystem`'s `ToggleQuitMenu`, `HideQuitMenu`): the shell's quit menu,
+    // as Escape opens it (`keyboard_ui`); the phone's way in
+    if let (Some(call), Some(s)) = (g.ui.as_mut().and_then(|u| u.take_quit_menu_call()), shell.ui.as_mut()) {
+        let c = &g.controls;
+        s.bar_quit_menu_call(call, || crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
+    }
     // (#78) the shell, while shown, is drawn in place of the bar (upstream's control bar is hidden in the shell)
     let shell_up = shell.ui.as_ref().is_some_and(|s| s.is_active());
     for (_, _, mut node) in roots.iter_mut() {
@@ -2655,6 +2663,17 @@ fn shell_ui(
                     // (the game's end is watched whatever started it: `clearGameData` opens the score screen)
                     c.flow.watching = true;
                 }
+                // (#110) the quit menu's restart: a copy of the game being played waits for its map, then starts again
+                crate::shell::ShellAction::RestartMission(r) => match c.flow.restart(&g.controls.client.world, r) {
+                    Ok(()) => {
+                        let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
+                        c.set_status(format!("waiting {map}"));
+                    }
+                    Err(e) => {
+                        warn!("the restart failed: {e}");
+                        c.set_status(format!("error: {e}"));
+                    }
+                },
                 crate::shell::ShellAction::None(why) => {
                     if !why.is_empty() {
                         debug!("shell: {why}");

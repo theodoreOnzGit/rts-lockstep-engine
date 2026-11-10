@@ -127,6 +127,11 @@ pub fn demo_world() -> (World, DemoObjects) {
     // player it became local: its team colour and the control bar). The gate's two sides are both human, so `Player1`.
     // ~~The demo never set it, so the logic's local feedback (`doSetRallyPoint`'s message and sound, the EVA) never fired.~~
     player_list_set_local_player(&mut w, Some(DEMO_LOCAL_PLAYER)).expect("the local player");
+    // GitHub #107: `TheScriptEngine->newMap()`, which `startNewGame` calls after `ThePlayerList->newGame()` (before the
+    // map's objects): the end-game timer -1 (the constructor leaves 0), so the game is not ending (`isGameEnding`) and
+    // `ScriptEngine::update` runs its actions, conditions and scripts each frame (the demo map has none). ~~The demo was
+    // made without it: the quit menu could not open in it, and the script engine's update returned at once.~~
+    w.script_engine_new_map().expect("the script engine's newMap");
     let team = factory_find_team(&mut w, b"team1").expect("the team").expect("team1");
     let enemy = factory_find_team(&mut w, b"team2").expect("the team").expect("team2");
     let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
@@ -151,4 +156,35 @@ pub fn demo_world() -> (World, DemoObjects) {
     w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
     w.cuts.game_loop.game_mode = game_mode::SKIRMISH;
     (w, o)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+
+    /// GitHub #107: the demo World's script engine is given `newMap`, as `startNewGame` gives a game's. **Predicted
+    /// before the run:** the end-game timer is -1 and the game is not ending (`isGameEnding` false), where it was 0 and
+    /// true; the logic's CRCs of 300 frames are the same as those of the same demo with the timer put back to the
+    /// constructor's 0 (the defect's state: `ScriptEngine::update` returning before its actions, conditions and scripts),
+    /// because the demo map has no scripts and the logic CRC (`GameLogic::getCRC`: the objects, the random seed, the
+    /// partition manager, the player list, the AI) reads nothing of the script engine.
+    ///
+    /// **Result (2026-11-10):** as predicted, first run: the 300 CRCs agree frame by frame.
+    #[test]
+    fn the_demos_script_engine_has_had_new_map_and_its_crcs_are_unchanged() {
+        let (mut a, _) = demo_world();
+        assert_eq!(a.script_engine.end_game_timer, -1);
+        assert!(!a.script_engine.is_game_ending());
+        let (mut b, _) = demo_world();
+        b.script_engine.end_game_timer = 0;
+        assert!(b.script_engine.is_game_ending());
+        for f in 0..300 {
+            a.engine_update().expect("a frame");
+            b.engine_update().expect("a frame");
+            assert_eq!(a.logic_crc(CRC_RECALC, None).expect("the CRC"), b.logic_crc(CRC_RECALC, None).expect("the CRC"), "frame {f}");
+        }
+        assert!(!a.script_engine.is_game_ending(), "nothing ended the demo");
+        assert!(a.cuts.team_live_errors.is_empty(), "{:?}", a.cuts.team_live_errors);
+    }
 }

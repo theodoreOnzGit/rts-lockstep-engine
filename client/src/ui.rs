@@ -36,6 +36,11 @@
 //! ([`load_mapped_images`]) and shared between the shell and the bar ([`load_game_ui_with`]). The bar itself still draws
 //! from [`GameUi::frame`].
 //!
+//! Since #109, the bar's options button is ControlBarCallback.cpp's `ToggleQuitMenu` (and the general's and the idle
+//! worker's buttons its `HideQuitMenu`): [`GameUi::pointer`] names the call ([`QuitMenuCall`]) and the app makes it on the
+//! shell's quit menu (`crate::shell::ShellUi::bar_quit_menu_call`): the phone's way into the quit menu, which has no
+//! Escape key. The general's `togglePurchaseScience` and the idle worker's `selectNextIdleWorker` are not translated.
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -93,6 +98,22 @@ pub struct GameUi {
     pub upgrade_cameos: Vec<Option<WinId>>,
     /// (#35) `ControlBar.wnd:LeftHUD`, the radar's window (`Radar::newMap`'s `m_radarWindow`).
     pub radar: Option<WinId>,
+    /// (#109) `ControlBar.wnd:ButtonOptions` (`ControlBarSystem`'s `buttonOptions`: `ToggleQuitMenu`).
+    pub options_button: Option<WinId>,
+    /// (#109) `ControlBar.wnd:ButtonGeneral` and `ButtonIdleWorker`, whose `GBM_SELECTED` first calls `HideQuitMenu`.
+    pub hide_quit_menu_buttons: Vec<WinId>,
+    /// (#109) The quit menu call the last pointer event's `GBM_SELECTED` made ([`GameUi::take_quit_menu_call`]).
+    quit_menu_call: Option<QuitMenuCall>,
+}
+
+/// (#109) What `ControlBarSystem`'s `GBM_SELECTED` asks of the quit menu (ControlBarCallback.cpp): `ToggleQuitMenu()` for
+/// the options button, `HideQuitMenu()` before the general's (`togglePurchaseScience`) and the idle worker's
+/// (`selectNextIdleWorker`) own calls. The quit menu is the shell's (`crate::shell::ShellUi`): another window manager,
+/// so the bar names the call and the app makes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuitMenuCall {
+    Toggle,
+    Hide,
 }
 
 /// The reads of the files, telling "not yet" (an unserved ranged read) from "not there".
@@ -220,6 +241,9 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         cameo: find("ControlBar.wnd:CameoWindow".into()),
         upgrade_cameos: (1..=MAX_RIGHT_HUD_UPGRADE_CAMEOS).map(|i| find(format!("ControlBar.wnd:UnitUpgrade{i}"))).collect(),
         radar: find("ControlBar.wnd:LeftHUD".into()),
+        options_button: find("ControlBar.wnd:ButtonOptions".into()),
+        hide_quit_menu_buttons: ["ButtonGeneral", "ButtonIdleWorker"].iter().filter_map(|n| find(format!("ControlBar.wnd:{n}"))).collect(),
+        quit_menu_call: None,
         images,
         wm,
         schemes,
@@ -607,8 +631,24 @@ impl GameUi {
                 tip.press(g, now);
             }
         }
+        // (#109) `ControlBarSystem`'s `GBM_SELECTED` for the options button (`ToggleQuitMenu`), and the `HideQuitMenu` of
+        // the general's and the idle worker's buttons (their own calls, `togglePurchaseScience` and
+        // `selectNextIdleWorker`, are not translated)
+        if let Some(w) = host.selected {
+            if Some(w) == self.options_button {
+                self.quit_menu_call = Some(QuitMenuCall::Toggle);
+            } else if self.hide_quit_menu_buttons.contains(&w) {
+                self.quit_menu_call = Some(QuitMenuCall::Hide);
+            }
+        }
         let slot = self.slot_of(host.selected)?;
         tip.click(slot, now, touch).then_some(slot)
+    }
+
+    /// (#109) The quit menu call a button of the bar made since the last call ([`QuitMenuCall`]), for the app to make
+    /// on the shell's quit menu.
+    pub fn take_quit_menu_call(&mut self) -> Option<QuitMenuCall> {
+        self.quit_menu_call.take()
     }
 
     /// (#74) A key through the bar's window manager ([`keyboard_into`]); whether the UI used it.
@@ -1007,6 +1047,68 @@ mod tests {
         assert!(ui.wm.is_hidden(Some(win(&ui, 0))));
         assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 4.0, false, &mut tip), None);
         assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 4.1, false, &mut tip), None);
+    }
+
+    /// (#109) The synthetic bar with `ButtonOptions` and `ButtonIdleWorker` added (copies of `ButtonCommand01`, children
+    /// of the parent, at (130, 455)-(180, 475) and (190, 455)-(240, 475), where the scheme's corners put them too).
+    fn bar_with_options() -> GameUi {
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let start = wnd.find("WINDOW\n WINDOWTYPE = PUSHBUTTON;").expect("a button");
+                let button = &wnd[start..start + wnd[start..].find("END\n").expect("its end") + 4];
+                let make = |name: &str, x: i32| {
+                    button
+                        .replace("ControlBar.wnd:ButtonCommand01", &format!("ControlBar.wnd:{name}"))
+                        .replace("UPPERLEFT: 260 480, BOTTOMRIGHT: 310 530", &format!("UPPERLEFT: {x} 455, BOTTOMRIGHT: {} 475", x + 50))
+                };
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                format!("{}{}{}{}", &wnd[..at], make("ButtonOptions", 130), make("ButtonIdleWorker", 190), &wnd[at..]).into_bytes()
+            } else if p == b"Data\\INI\\ControlBarScheme.ini" {
+                // (first run, a miss of the test's: `ControlBarScheme::init` places both buttons at the scheme's
+                // `OptionsUL`/`LR` and `WorkerUL`/`LR`, which the synthetic scheme lacked, so they were put at 0 by 0)
+                String::from_utf8(b).expect("text").replacen("  Side = Observer\n", "  Side = Observer\n  OptionsUL = X:130 Y:455\n  OptionsLR = X:180 Y:475\n  WorkerUL = X:190 Y:455\n  WorkerLR = X:240 Y:475\n", 1).into_bytes()
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        *ui
+    }
+
+    /// #109: the bar's options button (ControlBarCallback.cpp, `ControlBarSystem`'s `GBM_SELECTED`). Predicted before the
+    /// run: the bar finds `ButtonOptions` and one of the two `HideQuitMenu` buttons (`ButtonIdleWorker`; the synthetic bar
+    /// has no `ButtonGeneral`); no call before a press; a tap on the options button presses no command slot and makes
+    /// `ToggleQuitMenu` ([`QuitMenuCall::Toggle`]), taken once; a tap on the idle worker's makes `HideQuitMenu`
+    /// ([`QuitMenuCall::Hide`]); a press dragged off the options button makes none; a tap on the bar's background none.
+    ///
+    /// **Result (2026-11-10):** one miss of the test's own (the scheme places the two buttons, and the synthetic scheme
+    /// had no corners for them: see [`bar_with_options`]), then as predicted.
+    #[test]
+    fn the_bars_options_button_toggles_the_quit_menu() {
+        let mut ui = bar_with_options();
+        assert!(ui.options_button.is_some() && ui.hide_quit_menu_buttons.len() == 1);
+        let mut tip = TooltipTimer::default();
+        let tap = |ui: &mut GameUi, at: (f32, f32), t: f64, tip: &mut TooltipTimer| -> Option<usize> {
+            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, t, true, tip), None);
+            ui.pointer(gwm::LEFT_UP, at, t + 0.1, true, tip)
+        };
+        assert_eq!(ui.take_quit_menu_call(), None);
+        assert_eq!(tap(&mut ui, (155.0, 465.0), 0.0, &mut tip), None);
+        assert_eq!(ui.take_quit_menu_call(), Some(QuitMenuCall::Toggle));
+        assert_eq!(ui.take_quit_menu_call(), None, "taken once");
+        assert_eq!(tap(&mut ui, (215.0, 465.0), 1.0, &mut tip), None);
+        assert_eq!(ui.take_quit_menu_call(), Some(QuitMenuCall::Hide));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (155.0, 465.0), 2.0, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), 2.05, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), 2.1, false, &mut tip), None);
+        assert_eq!(ui.take_quit_menu_call(), None, "released off the button");
+        assert_eq!(tap(&mut ui, (400.0, 460.0), 3.0, &mut tip), None);
+        assert_eq!(ui.take_quit_menu_call(), None, "the background");
     }
 
     /// #74: typed characters reach a text entry in the bar's window manager (the bar has none of its own: one is made

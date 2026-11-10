@@ -198,6 +198,7 @@ mod tests {
     use crate::common::dict::Dict;
     use crate::common::game_info::slot_state;
     use crate::common::message_types::{MSG_CLEAR_GAME_DATA, MSG_DO_MOVETO, MSG_DO_MOVETO_HINT, MSG_NEW_GAME};
+    use crate::common::recorder::FRAMES_OFFSET;
     use crate::formats::data_chunk_output::DataChunkOutput;
     use crate::logic::world::player_host_world::tests::world;
 
@@ -416,6 +417,88 @@ mod tests {
             tampered.engine_update().expect("a tampered frame");
         }
         assert_eq!(tampered.replay_crc_state().map(|s| s.0), Some(true), "a changed seed is caught");
+    }
+
+    /// GitHub #110: the quit menu's *Restart* (`restartMissionMenu`'s engine half, [`World::restart_mission`]) of a
+    /// recorded skirmish and of a replay's playback, through the flow's choice (`MissionChoice::Restart`).
+    ///
+    /// **Predicted before the run** (the skirmish recorded as [`a_recorded_skirmish_plays_back_in_sync`] records it, seed
+    /// 1234, 120 frames):
+    /// - the skirmish restarted with what the menu reads (`GAME_SKIRMISH`, difficulty 1, no rank points, the map, no
+    ///   replay, recording): the recording stopped and its file written (~~one `.rep` on the disk~~ **Corrected
+    ///   2026-11-10 (#110), first run:** the file is on the disk before the stop, written as it is made; the stop writes
+    ///   its header's frame count, 0 before and ~~120~~ 119 after: the logic's frame, which is 0 on the first of the 120
+    ///   updates, as `recorded` shows), the game cleared and
+    ///   started again as a skirmish (`TheSkirmishGameInfo` kept), recording again, no live error; its CRCs differ from the
+    ///   first start's from the first frame, because the restart seeds with `InitRandom(0)` and the first start with the
+    ///   game's seed (upstream's quirk, kept);
+    /// - the replay of that game, played 50 frames, then restarted (`GAME_REPLAY`, the recorder's current file name): the
+    ///   playback starts again from its header, and its first 100 frames give the recording's CRCs frame by frame.
+    ///
+    /// **Result (2026-11-10):** as predicted but for the corrected point above (two runs to get it right): the skirmish's
+    /// restart differs from frame 0 (CRC `1350010189` against the first start's `894748852`), restarts as a recording
+    /// skirmish with no live error; the replay's restart gives the recording's first 100 CRCs.
+    #[test]
+    fn a_restart_plays_a_replay_again_and_restarts_a_skirmish() {
+        use crate::logic::world::campaign_world::{MissionChoice, PendingMission, Restart};
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        let mut rec = skirmish_world(true);
+        assert!(rec.clear_game_data(false));
+        rec.cuts.new_game.map_name = MAP.to_vec();
+        rec.random.init_game_logic_random(1234);
+        rec.push_command(MSG_NEW_GAME, 0, |m| {
+            m.append_integer_argument(game_mode::SKIRMISH);
+            m.append_integer_argument(1);
+            m.append_integer_argument(0);
+        });
+        let run = |w: &mut World, n: usize| -> Vec<(u32, u32)> {
+            (0..n)
+                .map(|_| {
+                    w.engine_update().expect("a frame");
+                    (w.frame(), w.logic_crc(CRC_RECALC, None).expect("the CRC"))
+                })
+                .collect()
+        };
+        let recorded = run(&mut rec, 120);
+        let reps = |w: &World| w.save_side.disk.keys().filter(|k| k.ends_with(b".rep")).count();
+        // (1) the skirmish restarted
+        let again = rec.clone();
+        assert_eq!(again.cuts.game_loop.recorder.as_ref().map(|r| r.mode), Some(RecorderMode::Record));
+        // (the recording is on the disk as it is made, `fflush` each frame: what the stop changes is its header's frame
+        // count, `logGameEnd`)
+        assert_eq!(reps(&again), 1);
+        let rep = |w: &World| w.save_side.disk.iter().find(|(k, _)| k.ends_with(b".rep")).map(|(_, b)| b.clone()).expect("the replay");
+        let frames_of = |b: &[u8]| u32::from_le_bytes(b[FRAMES_OFFSET as usize..FRAMES_OFFSET as usize + 4].try_into().unwrap());
+        let before = frames_of(&rep(&again));
+        let r = Restart { game_mode: game_mode::SKIRMISH, difficulty: 1, rank_points: 0, fps: 0, map_name: MAP.to_vec(), replay_file: Vec::new(), stop_recording: true };
+        let (mut again, map) = PendingMission::new(&again, MissionChoice::Restart(r), 1).expect("the restart").start().expect("the start");
+        assert_eq!(map, MAP);
+        assert_eq!(reps(&again), 1, "the stopped recording's file");
+        eprintln!("the recording's frame count: {before} before the stop, {} after", frames_of(&rep(&again)));
+        assert_eq!((before, frames_of(&rep(&again))), (0, recorded[119].0), "the stop wrote the game's length");
+        assert_eq!(recorded[119].0, 119);
+        let restarted = run(&mut again, 120);
+        assert_eq!(again.cuts.game_loop.game_mode, game_mode::SKIRMISH);
+        assert_eq!(again.cuts.game_loop.recorder.as_ref().map(|r| r.mode), Some(RecorderMode::Record));
+        assert!(again.cuts.team_live_errors.is_empty(), "{:?}", again.cuts.team_live_errors);
+        let first = recorded.iter().zip(&restarted).position(|(a, b)| a != b);
+        eprintln!("the skirmish's restart first differs at {first:?}: {:?} vs {:?}", first.map(|i| recorded[i]), first.map(|i| restarted[i]));
+        assert_eq!(first, Some(0), "InitRandom(0), not the game's seed");
+        // (2) the replay restarted
+        rec.push_command(MSG_CLEAR_GAME_DATA, 0, |_| {});
+        rec.engine_update().expect("the last frame");
+        let path = rec.save_side.disk.keys().find(|k| k.ends_with(b".rep")).expect("the replay").clone();
+        let name = path.strip_prefix(b"replays\\".as_slice()).expect("in the replay folder").to_vec();
+        let mut play = skirmish_world(false);
+        play.save_side.disk.insert(path.clone(), rec.save_side.disk[&path].clone());
+        assert!(play.play_replay(&name).expect("the replay read"));
+        run(&mut play, 50);
+        let replay_file = play.cuts.game_loop.recorder.as_ref().map(|r| r.current_replay_filename()).unwrap_or_default();
+        assert_eq!(replay_file, name);
+        let r = Restart { game_mode: game_mode::REPLAY, difficulty: 1, rank_points: 0, fps: 0, map_name: MAP.to_vec(), replay_file, stop_recording: false };
+        let (mut replayed, _) = PendingMission::new(&play, MissionChoice::Restart(r), 1).expect("the restart").start().expect("the playback");
+        assert_eq!(run(&mut replayed, 100), recorded[..100], "the replay from its start again");
+        assert!(replayed.cuts.team_live_errors.is_empty(), "{:?}", replayed.cuts.team_live_errors);
     }
 
     /// The client's selection facts read from a World, for the local player `p`; its messages go on the World's command list.

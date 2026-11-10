@@ -38,6 +38,11 @@
 //! - **Victory moves to the next mission**: a script's `VICTORY` sets `TheCampaignManager`'s victory flag; the score
 //!   screen's `finishSinglePlayerInit` then calls `gotoNextMission` ([`World::finish_single_player`]), and its Continue
 //!   button `startNextCampaignGame` ([`World::start_next_campaign_game`]).
+//! - **(#110) The quit menu's restart** ([`World::restart_mission`], `MissionChoice::Restart`): `restartMissionMenu`'s
+//!   engine half (QuitMenu.cpp): the recording stopped, `clearGameData(FALSE)`, then the replay's `playbackFile` again or
+//!   the pending file the map and `MSG_NEW_GAME` (mode, difficulty, rank points, frame limit) with `InitRandom(0)`, in the
+//!   World that played (upstream's one engine). A mission restarted gives the logic CRCs of a fresh start of it; a
+//!   skirmish does not (upstream's `InitRandom(0)`, not the game's seed, kept).
 //!
 //! ~~**Where this differs from upstream:** `GameLogic::clearGameData` is a cut in the port (`RecorderHost::clear_game_data`),
 //! so the next mission is started in a World without a game (the install's, as a save's load is: `import::world_for_save`)
@@ -278,6 +283,23 @@ pub enum MissionChoice {
     /// the folder), with its `bytes`, put on the World's disk in its replay folder and played back through the recorder
     /// ([`World::play_replay`], `RecorderClass::playbackFile`, batch I55).
     Replay { filename: Vec<u8>, bytes: Vec<u8> },
+    /// (#110) The quit menu's *Restart* (`restartMissionMenu`, `ShellRequest::RestartMission`): the game being played
+    /// started again in the World that played it ([`World::restart_mission`]).
+    Restart(Restart),
+}
+
+/// GitHub #110: what `restartMissionMenu` (QuitMenu.cpp) reads of the game before it clears it: `getGameMode()`, the
+/// script engine's global difficulty, `getRankPointsToAddAtGameStart()`, the engine's frame limit, `m_mapName` (a
+/// save's: the pristine name), `getCurrentReplayFilename()`, and whether the recorder records.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Restart {
+    pub game_mode: i32,
+    pub difficulty: i32,
+    pub rank_points: i32,
+    pub fps: i32,
+    pub map_name: Vec<u8>,
+    pub replay_file: Vec<u8>,
+    pub stop_recording: bool,
 }
 
 /// GitHub #62 (new: upstream's file system holds every map): a mission chosen and waiting for its map's folder to be on
@@ -321,6 +343,15 @@ impl PendingMission {
                 let mut world = base.clone();
                 world.put_replay(filename, bytes);
                 return Ok(PendingMission { world, choice, difficulty, map: l.map, mounted: None });
+            }
+            MissionChoice::Restart(r) => {
+                // (#110) the map the game being played was on (a replay's: its own, which its playback reads again);
+                // `base` is the World that played it, not the install's
+                if r.map_name.is_empty() {
+                    return Err(CampaignStartError::NoMission(r.replay_file.clone()));
+                }
+                let map = r.map_name.clone();
+                return Ok(PendingMission { world: base.clone(), choice, difficulty, map, mounted: None });
             }
             MissionChoice::Skirmish { game, .. } => {
                 // (#89) the skirmish's map, which the cache must hold (the screen lists only those)
@@ -405,6 +436,7 @@ impl PendingMission {
                 }
                 w.cuts.new_game.pending_file.clone()
             }
+            MissionChoice::Restart(r) => w.restart_mission(r)?,
             MissionChoice::Skirmish { game, mode, max_fps } => {
                 let map = game.map_name.clone();
                 w.start_skirmish_game((**game).clone(), *mode, self.difficulty, *max_fps).map_err(|_| CampaignStartError::NoMission(map.clone()))?;
@@ -416,6 +448,45 @@ impl PendingMission {
 }
 
 impl World {
+    /// GitHub #110: `restartMissionMenu()`'s engine half (QuitMenu.cpp; the menu's own half is
+    /// `crate::client::quit_menu::restart_mission_menu`, which reads `r`): the recording stopped when the recorder
+    /// records (`stopRecording`); `clearGameData(FALSE)` (no score screen); `setQuitting(FALSE)` (the engine's: the
+    /// World has no such flag); then, with a replay file, `TheRecorder->playbackFile(replayFile)` (the file must be in the
+    /// World's replay folder, where its first playback found it); else `m_pendingFile` the map and `MSG_NEW_GAME`
+    /// (`game_mode`, `difficulty`, `rank_points`, `fps`) with `InitRandom(0)`. The message goes on the command list, as
+    /// [`World::start_campaign`]'s `doGameStart` puts it. The map started (the pending file), or `NoMission` for a
+    /// replay that does not read.
+    ///
+    /// Upstream quirks kept: `clearGameData` is called without checking that a game is on (outside a game it is
+    /// upstream's `DEBUG_CRASH` and nothing, recorded in `team_live_errors`); a skirmish restarts with `InitRandom(0)`,
+    /// not `InitGameLogicRandom` of its game's seed as the skirmish screen's start does, so it does not replay the first
+    /// start's random numbers.
+    pub fn restart_mission(&mut self, r: &Restart) -> Result<Vec<u8>, CampaignStartError> {
+        if r.stop_recording {
+            self.with_recorder(|rec, w| rec.stop_recording(w));
+        }
+        self.clear_game_data(false);
+        if !r.replay_file.is_empty() {
+            if !self.play_replay(&r.replay_file).unwrap_or(false) {
+                return Err(CampaignStartError::NoMission(r.replay_file.clone()));
+            }
+            return Ok(self.cuts.new_game.pending_file.clone());
+        }
+        self.cuts.new_game.pending_file = r.map_name.clone();
+        if self.cuts.game_loop.recorder.is_none() {
+            self.recorder_init();
+        }
+        let (mode, difficulty, rank_points, fps) = (r.game_mode, r.difficulty, r.rank_points, r.fps);
+        self.push_command(MSG_NEW_GAME, 0, |m| {
+            m.append_integer_argument(mode);
+            m.append_integer_argument(difficulty);
+            m.append_integer_argument(rank_points);
+            m.append_integer_argument(fps);
+        });
+        self.random.init_random(0);
+        Ok(r.map_name.clone())
+    }
+
     /// GitHub #62: `GameState::loadGame`'s end for a mission save: `InitRandom(0)`, the pending file the save's mission
     /// map, `MSG_NEW_GAME` (`GAME_SINGLE_PLAYER`, the loaded campaign's difficulty and rank points). (Upstream's
     /// `clearGameData` before the load is the caller's: a World without a game, as for any load.)
@@ -1135,6 +1206,76 @@ pub(crate) mod tests {
         for w in [&a, &b, &c, &d] {
             assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
         }
+    }
+
+    /// GitHub #110: the quit menu's *Restart* (`restartMissionMenu`'s engine half, [`World::restart_mission`]) through
+    /// the flow's path ([`MissionChoice::Restart`] in the World that played, its map's folder mounted again).
+    ///
+    /// **Predicted before the run:** the `USA` campaign's first mission at hard (2), started fresh from the install's
+    /// World and run 150 frames, gives the same logic CRC on each frame as the same mission started, run 60 frames,
+    /// then restarted with what the quit menu reads (`GAME_SINGLE_PLAYER`, the script engine's difficulty 2, rank points
+    /// to add 0, the frame limit 30, `USA01`, no replay, the recorder recording) and run 150 frames: upstream's restart
+    /// (`clearGameData(FALSE)`, `MSG_NEW_GAME`, `InitRandom(0)`) gives the same game as the menu's first start. The
+    /// restarted game's map mounts at once (its 1 file is on the folder), its tank is at x 120 again, its local player 1,
+    /// no live error. A restart whose replay does not read, and one with no map, start nothing (`NoMission`).
+    ///
+    /// **Result (2026-11-10), first run:** two misses in what the menu reads, before the CRCs were compared. The frame
+    /// limit is **0, not 30**: the tests' install's `GameData.ini` sets none, and `MSG_NEW_GAME`'s dispatch then takes the
+    /// global limit for a value outside 1 .. 1000, so the restart is unchanged by it. The recorder is **not recording**:
+    /// the port's recorder starts a recording at `MSG_NEW_GAME` only outside the shell and single player
+    /// (`common::recorder`), so a campaign mission has nothing to stop. The assertions now say 0 and `false`. With them,
+    /// the second run held the rest as predicted: the 150 CRCs agree frame by frame, the tank at 120, local player 1.
+    #[test]
+    fn a_restarted_mission_runs_as_a_fresh_start() {
+        let archives = campaign_archives(false);
+        let base = base_of(&archives);
+        let fs = whole_fs(&archives);
+        let usa = MissionChoice::Campaign { campaign: b"USA".to_vec(), mission: b"M01".to_vec() };
+        let started = |from: &World, choice: MissionChoice| -> World {
+            let mut p = PendingMission::new(from, choice, 2).expect("the choice");
+            assert!(p.mount(&fs), "the folder is held whole");
+            let (w, map) = p.start().expect("the start");
+            assert_eq!(map, USA01);
+            w
+        };
+        let crcs = |w: &mut World, n: usize| -> Vec<u32> {
+            (0..n)
+                .map(|_| {
+                    w.engine_update().expect("a frame");
+                    w.logic_crc(CRC_RECALC, None).expect("the CRC")
+                })
+                .collect()
+        };
+        let mut fresh = started(&base, usa.clone());
+        let a = crcs(&mut fresh, 150);
+        let mut running = started(&base, usa);
+        crcs(&mut running, 60);
+        let fps = running.statics.global_data.the_global_data().map_or(30, |g| g.frames_per_second_limit);
+        let recording = running.cuts.game_loop.recorder.as_ref().is_some_and(|r| r.mode == crate::common::recorder::RecorderMode::Record);
+        let r = Restart {
+            game_mode: running.cuts.game_loop.game_mode,
+            difficulty: running.script_engine.game_difficulty,
+            rank_points: running.game_logic.rank_points_to_add_at_game_start,
+            fps,
+            // (`TheGlobalData->m_mapName`, as the quit menu reads it)
+            map_name: running.cuts.new_game.map_name.clone(),
+            replay_file: Vec::new(),
+            stop_recording: recording,
+        };
+        eprintln!("restart: {r:?}");
+        assert_eq!((r.game_mode, r.difficulty, r.rank_points, r.fps, r.stop_recording), (game_mode::SINGLE_PLAYER, 2, 0, 0, false));
+        assert_eq!(r.map_name, USA01);
+        let mut restarted = started(&running, MissionChoice::Restart(r.clone()));
+        let b = crcs(&mut restarted, 150);
+        let first = a.iter().zip(&b).position(|(x, y)| x != y);
+        assert_eq!(first, None, "the first frame that differs; fresh {:08x?}, restarted {:08x?}", &a[..4], &b[..4]);
+        assert_eq!(tanks(&restarted), [120.0]);
+        assert_eq!(restarted.players.local_index(), Some(1));
+        assert!(restarted.cuts.team_live_errors.is_empty(), "{:?}", restarted.cuts.team_live_errors);
+        let bad = Restart { replay_file: b"none.rep".to_vec(), ..r.clone() };
+        assert_eq!(PendingMission::new(&running, MissionChoice::Restart(bad), 2).and_then(|p| p.start()).err(), Some(CampaignStartError::NoMission(b"none.rep".to_vec())));
+        let no_map = Restart { map_name: Vec::new(), ..r };
+        assert_eq!(PendingMission::new(&running, MissionChoice::Restart(no_map), 2).err(), Some(CampaignStartError::NoMission(Vec::new())));
     }
 
     /// GitHub #62, not a check: with `RTS_WRITE_CAMPAIGN_INSTALL=<dir>` set, writes [`campaign_archives`] (with `USA01`'s

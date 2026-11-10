@@ -124,6 +124,43 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#110, #109, #107 (2026-11-10, GitHub #110, #109, #107): the quit menu's *Restart*, its phone entry, and the demo's
+`newMap`.**
+- **#110, the restart.** The logic: `World::restart_mission` translates `restartMissionMenu`'s engine half
+  (QuitMenu.cpp: the recording stopped, `clearGameData(FALSE)`, then the replay's `playbackFile` again or
+  `m_pendingFile` and `MSG_NEW_GAME` with mode, difficulty, rank points and frame limit, `InitRandom(0)`), reached as
+  `MissionChoice::Restart` through the flow's existing path (`PendingMission`: the map's folder mounted, then the start).
+  The client: `Flow::playing` keeps the running game's choice; `ShellAction::RestartMission` goes to `Flow::restart`,
+  which starts it in a copy of the World that plays (as #64's *Continue*). `quit_menu_game` now reads the replay file,
+  whether the recorder records, and a save's pristine map. **Defect found and fixed:** it read the map name from the
+  INI's global data, which no game start sets; `TheGlobalData->m_mapName` is the World's `cuts.new_game.map_name`.
+- **#109, the phone's way in.** ControlBarCallback.cpp's `ControlBarSystem`: the options button is `ToggleQuitMenu`, the
+  general's and the idle worker's buttons first `HideQuitMenu` (their own calls are not translated). `GameUi::pointer`
+  names the call (`QuitMenuCall`); the app makes it on the shell (`ShellUi::bar_quit_menu_call`). No button was added
+  to the zoom column, so `ZOOM_COLUMN_HEIGHT` and `shell_placement` are unchanged.
+- **#107, the demo.** `demo_world` runs `ScriptEngine::newMap` where `startNewGame` does (after the local player): the
+  end-game timer is -1, the demo is not ending, Escape opens the quit menu in it.
+- **Predictions vs results:**
+  - logic, a mission restarted vs a fresh start (`a_restarted_mission_runs_as_a_fresh_start`): CRCs equal on all 150
+    frames, as predicted; two misses in what the menu reads (frame limit 0, not 30; a campaign does not record);
+  - logic, a skirmish and a replay restarted (`a_restart_plays_a_replay_again_and_restarts_a_skirmish`): the replay's
+    restart gives the recording's first 100 CRCs; the skirmish's differs from frame 0 (`InitRandom(0)`, upstream's
+    quirk, kept); one miss (the recording is on the disk before the stop; the stop writes its frame count, 119);
+  - client, the restart through the quit menu over the demo: three misses (the box is `MessageBox.wnd`; the frame
+    limit 0; a restart without its map on the disk *starts*: drafted as a gap); the campaign test run with
+    `RTS_CAMPAIGN_INSTALL` (the logic's synthetic install): the restart at frame 60 gives the fresh start's 150 CRCs
+    after the map name fix;
+  - client, the bar's options button: one miss of the test's (the scheme places the buttons); the quit menu and its
+    popup at 390x844: every enabled button 43.875 x 9.75 CSS pixels, on the screen above the zoom column, tapped at
+    its centre (*Load* and *Delete* disabled with no save);
+  - #107: the demo's 300 CRCs equal those with the timer put back to 0, first run (the logic CRC reads nothing of the
+    script engine, and the demo map has no scripts).
+- **CRCs:** no recorded CRC changed. Gate (a) is the logic's gate scenario, which does not use `demo_world`: PASS,
+  0bf44067.
+- **Gates:** lib 1134 passed (1132 before, 2 new); client 64 passed (60 before, 4 new); clippy (lib) clean; the
+  differentials wm, wnd, wt, save_list, map_list, score_grid, user_prefs, replay_list pass; web build ok (no warnings);
+  gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#87 (2026-11-10, GitHub #87): the in-game quit menu (Escape), so the in-game save popup works.**
 - **Translated** (engine crate, plain Rust): `client::quit_menu` (QuitMenu.cpp, whole but `quitToDesktopQuitMenu`,
   which only a commented-out button names: the statics, `initGadgetsFullQuit`, `initGadgetsNoSaveQuit`,
@@ -140,16 +177,16 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   `m_gamePaused`, which is neither saved nor CRC'd). The popup's save is the saves panel's save under the popup's name
   and description (`ShellAction::SaveGame`). *Exit* sends `MSG_CLEAR_GAME_DATA` on the World's command list
   (`send_clear_game_data`); the next frame's `clearGameData` opens the score screen (the flow now watches whatever
-  game was exited). *Restart* is a gap. The client changes the simulation only through that message.
+  game was exited). *Restart* ~~is a gap~~ **Corrected 2026-11-10 (#110):** is wired (the entry above). The client changes the simulation only through that message.
 - **Predictions vs results:** both engine tests held on the first run. The client test missed once: the demo World's
   `isGameEnding` is true (its script engine never had `newMap`: the end-game timer is the constructor's 0), so Escape
   did nothing there, as upstream's would; the test now asserts that and runs with a started game's timer. Defect
-  drafted, not fixed (fixing it changes what the demo's frames run).
+  drafted, not fixed (fixing it changes what the demo's frames run). **Corrected 2026-11-10 (#107):** fixed; the demo's CRCs did not change (the entry above).
 - **Differential:** none. QuitMenu.cpp has no computation to compare: every function is window and state glue whose
   only branches are on the game mode and four flags, all exercised by the tests above.
-- **Gaps (issue drafts):** the restart (the flow does not keep the running game's choice); `setGamePaused`'s input,
+- **Gaps (issue drafts):** ~~the restart (the flow does not keep the running game's choice);~~ **Corrected 2026-11-10 (#110):** wired; `setGamePaused`'s input,
   audio, mouse and time effects, `isQuitMenuVisible` for the selection, `closeWindows`'s `HideQuitMenu`; no on-screen
-  way in on a phone (the control bar's options button). **Upstream undefined steps** (a layout without `ButtonRestart`
+  way in on a phone (the control bar's options button; **Corrected 2026-11-10 (#109):** translated and wired). **Upstream undefined steps** (a layout without `ButtonRestart`
   or `ButtonOptions`: `winEnable` on `NULL`) are recorded with `set_undefined`.
 - **Gates:** lib 1132 passed (1130 before, 2 new); client 60 passed (59 before, 1 new); clippy (lib) clean; the
   differentials wm, wnd, wt, save_list, map_list, score_grid, user_prefs, replay_list pass (0 mismatches); web build ok

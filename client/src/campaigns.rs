@@ -28,11 +28,18 @@
 //! ([`Flow::check_score_screen`]: the translated `ScoreScreen.cpp`, for a mission and a skirmish); the plain panel's path
 //! above is the one without the shell, and now applies `initSinglePlayer`'s rank points and difficulty first.
 //!
+//! **The quit menu's *Restart*** (#110, [`Flow::restart`]): QuitMenu.cpp's `restartMissionMenu` restarts the game being
+//! played in the engine that plays it (`clearGameData(FALSE)`, then `MSG_NEW_GAME` and `InitRandom(0)`, or the replay's
+//! `playbackFile` again). The flow does it in a copy of the World that plays, which waits for the game's map as any
+//! start does, and keeps the game's choice ([`Flow::playing`]) for the label. A campaign mission restarted gives the
+//! same logic CRCs as a fresh start of it (the logic's test `a_restarted_mission_runs_as_a_fresh_start`); a skirmish
+//! does not (upstream seeds the restart with 0, not the game's seed).
+//!
 //! **Briefings.** The briefing movies are Bink videos, which cannot be played (Bink was never released); the briefing's
 //! text is shown instead ([`briefing`]): the mission's location and objective lines from the game text.
 
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
-use rts_lockstep_engine::logic::world::campaign_world::{CampaignStartError, MissionChoice, PendingMission};
+use rts_lockstep_engine::logic::world::campaign_world::{CampaignStartError, MissionChoice, PendingMission, Restart};
 use rts_lockstep_engine::common::science::GameTextFetch;
 use rts_lockstep_engine::logic::world::game_logic::World;
 
@@ -137,6 +144,9 @@ pub struct Flow {
     /// (#89 part 2) The World of the game that ended, cleared by its `clearGameData`, while the shell's translated score
     /// screen is up: its *Continue* starts the next mission in it ([`Flow::continue_from_score_screen`]).
     pub played: Option<World>,
+    /// (#110) The choice of the game being played, kept from its start ([`Flow::poll`]): what the quit menu's *Restart*
+    /// starts again ([`Flow::restart`], whose own choice keeps it). `None` before the flow has started a game.
+    pub playing: Option<MissionChoice>,
 }
 
 /// Why a choice did not start, in words.
@@ -176,12 +186,18 @@ impl Flow {
             return None;
         }
         let p = self.pending.take()?;
+        // (#110) the game's choice, kept: a restart's is the game it restarts
+        let kind = match &p.choice {
+            MissionChoice::Restart(_) => self.playing.clone(),
+            c => Some(c.clone()),
+        };
         // (#89) the skirmish screen's start: labelled as a skirmish~~, and its end opens no score screen~~
         // **Corrected 2026-11-10 (#89 part 2):** its end opens the shell's score screen, as upstream's `clearGameData`
         // pushes it for a skirmish ([`Flow::check_score_screen`])
-        let skirmish = matches!(p.choice, MissionChoice::Skirmish { .. });
+        let skirmish = matches!(kind, Some(MissionChoice::Skirmish { .. }));
         // (#98) the replay menu's playback: labelled as a replay; its end opens the score screen as any game's
-        let replay = matches!(p.choice, MissionChoice::Replay { .. });
+        let replay = matches!(kind, Some(MissionChoice::Replay { .. }));
+        self.playing = kind;
         let (mut world, map) = match p.start() {
             Ok(x) => x,
             Err(e) => return Some(Err(describe(&e))),
@@ -273,6 +289,19 @@ impl Flow {
         w.campaign = campaign.clone();
         let d = w.mission_save_description()?;
         w.mission_save(&d).ok().map(|b| (String::from_utf16_lossy(&d), b))
+    }
+
+    /// (#110) The quit menu's *Restart* (`restartMissionMenu`, its request read from the game `running`): a copy of the
+    /// World that plays it (as the score screen's *Continue* starts in the World that played, #64) waits for the game's
+    /// map (`MissionChoice::Restart`), whose start is the World's `restart_mission`: the recording stopped,
+    /// `clearGameData(FALSE)`, then the replay played again or `MSG_NEW_GAME` with `InitRandom(0)`. The game's choice
+    /// ([`Flow::playing`]) is kept for the restarted game. An error without a map (the demo's game has none).
+    pub fn restart(&mut self, running: &World, r: Restart) -> Result<(), String> {
+        let difficulty = r.difficulty;
+        self.pending = Some(PendingMission::new(running, MissionChoice::Restart(r), difficulty).map_err(|e| describe(&e))?);
+        self.over = None;
+        self.played = None;
+        Ok(())
     }
 
     /// A mission save from the save folder (the load menu's, for a `SAVE_FILE_TYPE_MISSION` file): loaded into a copy of
@@ -389,7 +418,12 @@ mod tests {
     /// ([`Flow::check_score_screen`]) gives the screen's copy of the game: single player, local player 1 (human), the
     /// campaign victorious; once. #64 part 2, predicted: a normal save of `m01` at its 60th frame,
     /// loaded through `PendingLoad`, mounts its folder's 3 files at once (they arrived for the start) and its load reads
-    /// `USA01`'s `map.ini`.
+    /// `USA01`'s `map.ini`. #110, predicted: the quit menu's restart of `m01` at its 60th frame (what
+    /// [`crate::shell::quit_menu_game`] reads, through [`Flow::restart`]) waits for no range, starts labelled
+    /// `usa mission 1` with the kept choice, and gives the fresh start's 150 CRCs. **Result (2026-11-10, run with the
+    /// install `write_the_campaign_install_when_asked` writes):** the first run failed: the menu read no map name
+    /// (`quit_menu_game` read the INI's global data, which the game's start never gives the map; defect, corrected
+    /// there); then as predicted, both runs.
     #[test]
     fn a_mission_from_the_list_runs_on_the_browsers_import_when_asked() {
         use crate::import::Imported;
@@ -433,8 +467,10 @@ mod tests {
             assert_eq!(m1.player, 1);
             let mut crcs = Vec::new();
             let mut over_at = None;
+            let mut at60 = None;
             for f in 1..=150 {
                 if f == 60 {
+                    at60 = Some(m1.world.clone());
                     // (#64 part 2: a normal save of the listed mission, loaded through the save panel's path: the save's map
                     // folder mounted from the art's files first, so the load reads its `map.ini`)
                     let mut controls = crate::input::Controls::new(m1.world.clone(), m1.player);
@@ -461,6 +497,25 @@ mod tests {
                     eprintln!("the score screen's local player: {:?}, skill {}", String::from_utf16_lossy(&g.players[1].display_name), g.players[1].skill_points);
                 }
             }
+            // (#110: the quit menu's restart of the game at its 60th frame, with what the menu reads of it, through the
+            // flow: the same mission again, whose CRCs are the fresh start's)
+            let running = at60.expect("frame 60");
+            let g = crate::shell::quit_menu_game(&running, true);
+            let r = Restart { game_mode: g.game_mode, difficulty: g.difficulty, rank_points: g.rank_points, fps: g.fps_limit, map_name: g.pristine_map_name.clone().unwrap_or(g.map_name.clone()), replay_file: g.replay_file.clone(), stop_recording: g.recording };
+            eprintln!("the restart: {r:?}");
+            let mut again = Flow { playing: Some(s[0].entries[0].choice.clone()), ..Flow::default() };
+            again.restart(&running, r).expect("the restart");
+            let (mut restarted, served) = until_started(&mut again, &mut fs);
+            assert!(served.is_empty(), "the folder's ranges arrived for the start: {served:?}");
+            assert!(restarted.label.starts_with("usa mission 1"), "{}", restarted.label);
+            assert_eq!(again.playing.as_ref(), Some(&s[0].entries[0].choice));
+            let restarted_crcs: Vec<u32> = (0..150)
+                .map(|_| {
+                    restarted.world.engine_update().expect("a frame");
+                    restarted.world.logic_crc(CRC_RECALC, None).expect("the CRC")
+                })
+                .collect();
+            assert_eq!(restarted_crcs, crcs, "the restart's CRCs are the fresh start's");
             eprintln!("the score screen at frame {over_at:?} after the start");
             assert!(over_at.is_some_and(|f| (120..=125).contains(&f)), "{over_at:?}");
             assert!(flow.over.as_ref().is_some_and(|o| o.victorious));

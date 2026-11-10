@@ -185,7 +185,7 @@ pub enum ShellRequest {
     /// (#87) The quit menu's `restartMissionMenu`, its engine half: the recording stopped (`stop_recording`),
     /// `clearGameData(FALSE)`, `setQuitting(FALSE)`; then `TheRecorder->playbackFile(replay_file)` when it is not empty,
     /// else `m_pendingFile = map_name` and `MSG_NEW_GAME` (`game_mode`, `difficulty`, `rank_points`, `fps`) with
-    /// `InitRandom(0)`.
+    /// `InitRandom(0)`. (#110) The World's half is `World::restart_mission` (`MissionChoice::Restart`).
     RestartMission { game_mode: i32, difficulty: i32, rank_points: i32, fps: i32, map_name: Vec<u8>, replay_file: Vec<u8>, stop_recording: bool },
 }
 

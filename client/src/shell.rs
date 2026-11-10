@@ -65,7 +65,12 @@
 //!   panel's save under the popup's name and description ([`ShellAction::SaveGame`]); its pause is the app's (the logic's
 //!   frames not run: [`ShellAction::SetGamePaused`]); its *Exit* is `MSG_CLEAR_GAME_DATA` sent on the World's command
 //!   list ([`ShellAction::ClearGameData`]), whose `clearGameData` opens the score screen as a mission's end does. Its
-//!   *Restart* is a gap ([`ShellRequest::RestartMission`] is answered with a [`ShellAction::None`]); its surrender and a
+//!   *Restart* ~~is a gap ([`ShellRequest::RestartMission`] is answered with a [`ShellAction::None`])~~ **Corrected
+//!   2026-11-10 (#110):** goes to the flow with the game being played ([`ShellAction::RestartMission`],
+//!   [`Flow::restart`]: the World's `restart_mission` in a copy of it, once the map is held). (#109) The control bar's
+//!   options button is the other way in, the phone's (ControlBarCallback.cpp's `ToggleQuitMenu`, and `HideQuitMenu`
+//!   for the general's and the idle worker's buttons: `crate::ui::QuitMenuCall`, [`ShellUi::bar_quit_menu_call`]). Its
+//!   surrender and a
 //!   multiplayer exit's `MSG_SELF_DESTRUCT` are never asked (the client has no multiplayer game). A mission-type save
 //!   from the popup (not asked by the quit menu, whose popup is save-and-load) fails with a message.
 //! - The shell has its own window manager (the control bar has another): it is drawn and takes the pointer and keyboard
@@ -105,7 +110,7 @@ use rts_lockstep_engine::client::window_script::WndHost;
 use rts_lockstep_engine::client::window_transitions as wt;
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::science::GameTextFetch;
-use rts_lockstep_engine::logic::world::campaign_world::MissionChoice;
+use rts_lockstep_engine::logic::world::campaign_world::{MissionChoice, Restart};
 use rts_lockstep_engine::logic::world::game_data::TextTable;
 use rts_lockstep_engine::logic::world::game_logic::World;
 
@@ -221,6 +226,9 @@ pub enum ShellAction {
     /// (#87) The quit menu's `MSG_CLEAR_GAME_DATA`: sent on the World's command list (`World::push_command`), its next
     /// frame's `clearGameData` ends the game.
     ClearGameData,
+    /// (#110) The quit menu's *Restart* (`restartMissionMenu`, what it read of the game): the app hands it to the flow
+    /// with the game being played ([`Flow::restart`]), which waits for the game's map and starts it again.
+    RestartMission(Restart),
 }
 
 /// The client's side of a request (#89: [`ShellRequest::StartSkirmish`] goes through the same flow as a campaign's
@@ -256,7 +264,16 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
         ShellRequest::ClearGameData => ShellAction::ClearGameData,
         ShellRequest::SetGamePaused(p) => ShellAction::SetGamePaused(*p),
         ShellRequest::SelfDestruct => ShellAction::None("MSG_SELF_DESTRUCT is a multiplayer game's (the client has none)"),
-        ShellRequest::RestartMission { .. } => ShellAction::None("the quit menu's Restart is not wired (#87: restartMissionMenu's MSG_NEW_GAME needs the flow's map wait)"),
+        // ~~not wired~~ (#110) the quit menu's restart: the app gives it the game being played ([`Flow::restart`])
+        ShellRequest::RestartMission { game_mode, difficulty, rank_points, fps, map_name, replay_file, stop_recording } => ShellAction::RestartMission(Restart {
+            game_mode: *game_mode,
+            difficulty: *difficulty,
+            rank_points: *rank_points,
+            fps: *fps,
+            map_name: map_name.clone(),
+            replay_file: replay_file.clone(),
+            stop_recording: *stop_recording,
+        }),
         ShellRequest::NewShellGame => ShellAction::None("the shell map is not translated"),
         // (#89 part 2) the score screen's *Continue*: the next mission (or the same, after a defeat) in the World that
         // played, with the screen's campaign
@@ -479,6 +496,22 @@ impl ShellUi {
         rts_lockstep_engine::client::quit_menu::toggle_quit_menu(&mut self.wm, &mut self.gui);
     }
 
+    /// (#109) `HideQuitMenu()` (the control bar's general and idle worker buttons call it first): the quit menu hidden if
+    /// it is shown, the game unpaused outside a multiplayer game (the action [`ShellAction::SetGamePaused`]).
+    pub fn hide_quit_menu(&mut self) {
+        rts_lockstep_engine::client::quit_menu::hide_quit_menu(&mut self.wm, &mut self.gui);
+    }
+
+    /// (#109) The control bar's quit menu call ([`crate::ui::QuitMenuCall`], ControlBarCallback.cpp's `ToggleQuitMenu`
+    /// on the options button, `HideQuitMenu` on the general's and the idle worker's), with what the menu reads of the
+    /// game when it toggles.
+    pub fn bar_quit_menu_call(&mut self, call: crate::ui::QuitMenuCall, game: impl FnOnce() -> QuitMenuGame) {
+        match call {
+            crate::ui::QuitMenuCall::Toggle => self.toggle_quit_menu(game()),
+            crate::ui::QuitMenuCall::Hide => self.hide_quit_menu(),
+        }
+    }
+
     /// (#87) Whether the in-game menus are up (the quit menu, its save/load popup, the options screen, a box):
     /// `rts_lockstep_engine::client::quit_menu::in_game_menus_shown`.
     pub fn in_game_menus_shown(&self) -> bool {
@@ -525,17 +558,29 @@ impl ShellUi {
 
 /// (#87) What the quit menu reads of the game being played (`QuitMenuGame`), from the World, which is only read:
 /// the game mode, `isGameEnding`, the map name, the rank points, the difficulty and the frame limit; `input_enabled` is
-/// the client's `InGameUI`'s. Not read (the client has no such state, or the quit menu's use of it is a gap): no intro
+/// the client's `InGameUI`'s. Not read (the client has no such state~~, or the quit menu's use of it is a gap~~): no intro
 /// movie or map loading under a running game, no disconnect menu (no network), the local player active and not
-/// victorious (read only in a multiplayer game), no replay file name and no recording (read only by the restart, a
-/// gap), the map not a save's.
+/// victorious (read only in a multiplayer game)~~, no replay file name and no recording (read only by the restart, a
+/// gap), the map not a save's~~. **Corrected 2026-11-10 (#110):** the restart's are read: the recorder's
+/// `getCurrentReplayFilename()` and whether it records, and for a map in the save directory (`isInSaveDirectory`, as
+/// the World's `startNewGame` found it) `getPristineMapName()`.
 pub fn quit_menu_game(world: &World, input_enabled: bool) -> QuitMenuGame {
+    use rts_lockstep_engine::common::recorder::RecorderMode;
+    use rts_lockstep_engine::logic::world::game_logic_new_game::NewGameHost;
     let g = world.statics.global_data.the_global_data();
+    // ~~`g.map_name`~~ **Corrected 2026-11-10 (#110):** `TheGlobalData->m_mapName` as the game sets it is the World's
+    // `cuts.new_game.map_name` (`startNewGame`'s, a skirmish's or a load's); the INI's global data is not given the
+    // map, so the quit menu read an empty name for every game
+    let map_name = world.cuts.new_game.map_name.clone();
+    let recorder = world.cuts.game_loop.recorder.as_ref();
     QuitMenuGame {
         game_mode: world.cuts.game_loop.game_mode,
         game_ending: world.script_engine.is_game_ending(),
         input_enabled,
-        map_name: g.map(|g| g.map_name.clone()).unwrap_or_default(),
+        pristine_map_name: world.sn_is_in_save_directory(&map_name).then(|| world.sn_pristine_map_name()),
+        replay_file: recorder.map(|r| r.current_replay_filename()).unwrap_or_default(),
+        recording: recorder.is_some_and(|r| r.mode == RecorderMode::Record),
+        map_name,
         rank_points: world.game_logic.rank_points_to_add_at_game_start,
         difficulty: world.script_engine.game_difficulty,
         fps_limit: g.map_or(30, |g| g.frames_per_second_limit),
@@ -983,7 +1028,8 @@ mod tests {
     /// **Result (2026-11-10):** one miss, then as predicted. The first run's Escape did nothing: the demo World's
     /// `isGameEnding` is true (its script engine was never given `newMap`: the end-game timer is the constructor's 0),
     /// and `ToggleQuitMenu` returns for an ending game. The test now asserts that and opens the menu with the game not
-    /// ending, as a game started by `startNewGame` has it.
+    /// ending, as a game started by `startNewGame` has it. **Corrected 2026-11-10 (#107):** the demo World now has had
+    /// `newMap`; the test asserts its game is not ending and opens the menu on it as read.
     #[test]
     fn escape_opens_the_quit_menu_whose_save_and_exit_reach_the_game() {
         use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
@@ -998,12 +1044,12 @@ mod tests {
         let (mut w, _) = crate::demo::demo_world();
         let crc = w.logic_crc(CRC_RECALC, None).expect("the CRC");
         // (first run, a miss: the demo World is made without `ScriptEngine::newMap` or `reset`, so its end-game timer is
-        // the constructor's 0 and `isGameEnding` is true: Escape did nothing, as upstream's would. The game here is a
-        // started game's: the timer at -1, as `newMap` leaves it; the demo's own timer is a defect, issue draft)
+        // the constructor's 0 and `isGameEnding` is true: Escape did nothing, as upstream's would. ~~The game here is a
+        // started game's: the timer at -1, as `newMap` leaves it; the demo's own timer is a defect, issue draft~~
+        // **Corrected 2026-11-10 (#107):** the demo World is given `newMap` (`crate::demo::demo_world`), so its game is
+        // not ending and the menu opens on what the World reads)
         let game = quit_menu_game(&w, true);
-        assert!(game.is_in_game() && game.game_ending, "{game:?}");
-        let mut game = game;
-        game.game_ending = false;
+        assert!(game.is_in_game() && !game.game_ending, "{game:?}");
         ui.toggle_quit_menu(game.clone());
         settle(&mut ui, &mut now);
         let (base, mut flow) = (World::new(), Flow::default());
@@ -1028,6 +1074,173 @@ mod tests {
         w.engine_update().expect("the frame");
         assert_eq!(w.cuts.game_loop.game_mode, rts_lockstep_engine::common::recorder::game_mode::NONE);
         assert!(w.score_screen_game_over().is_some(), "clearGameData's score screen");
+    }
+
+    /// #110: the quit menu's *Restart* reaches the flow, over the demo game (not ending: #107's `newMap`). Predicted from QuitMenu.cpp before the run:
+    ///
+    /// - [`quit_menu_game`] of the demo World reads what the restart needs: no replay file, not recording (the demo has
+    ///   no recorder), the map not a save's (`pristine_map_name` `None`), no map name (the demo World has no global data);
+    /// - Escape: the full menu and [`ShellAction::SetGamePaused`] (true); *Restart* (its text `GUI:ButtonRestart`, the
+    ///   demo is a skirmish), *Yes*: the menu gone and one action, [`ShellAction::RestartMission`] with `GAME_SKIRMISH`,
+    ///   the script engine's difficulty, no rank points, the frame limit ~~30~~ 0 (the gate's global data has none), no
+    ///   map, no replay, not recording (no pause
+    ///   request: `restartMissionMenu` does not unpause);
+    /// - [`Flow::restart`] of it fails (no map: the demo cannot be restarted, `NoMission`) and nothing waits; with the
+    ///   map named, a copy of the running World waits for it (`MissionChoice::Restart`), the World only read (its CRC
+    ///   unchanged, the copy's the same);
+    /// - [`Flow::poll`] with the map's folder absent mounts nothing and starts the restart, which fails (the map is not
+    ///   on the World's disk): an error, and the game's kept choice ([`Flow::playing`]) is still the one given.
+    ///   **Result (2026-11-10):** three misses over three runs, each recorded where it is asserted: the restart box is
+    ///   `MessageBox.wnd`; the frame limit read is 0; and the restart without its map **starts** rather than failing
+    ///   (the kept choice held, labelled with the map).
+    #[test]
+    fn the_quit_menus_restart_reaches_the_flow() {
+        use rts_lockstep_engine::common::recorder::game_mode;
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let (mut ui, _, fs) = shell_with(&TextTable::default());
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        ui.hide();
+        settle(&mut ui, &mut now);
+        let (mut w, _) = crate::demo::demo_world();
+        let crc = w.logic_crc(CRC_RECALC, None).expect("the CRC");
+        let game = quit_menu_game(&w, true);
+        assert_eq!((game.replay_file.as_slice(), game.recording, game.pristine_map_name.as_ref(), game.map_name.as_slice()), (&b""[..], false, None, &b""[..]));
+        assert!(!game.game_ending, "#107: the demo has had newMap");
+        ui.toggle_quit_menu(game.clone());
+        settle(&mut ui, &mut now);
+        let (base, mut flow) = (World::new(), Flow::default());
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
+        click_named(&mut ui, "QuitMenu.wnd", "ButtonRestart");
+        // (first run, a miss of the test's: the restart box is `MessageBoxYesNo`, `Menus/MessageBox.wnd`, not the exit's
+        // `QuitMessageBoxYesNo`)
+        click_named(&mut ui, "MessageBox.wnd", "ButtonYes");
+        // (first run, a miss: the frame limit is **0, not 30**: the demo World has the gate's global data, which sets no
+        // limit; `MSG_NEW_GAME` takes the global limit for a value outside 1 .. 1000)
+        let r = Restart { game_mode: game_mode::SKIRMISH, difficulty: w.script_engine.game_difficulty, rank_points: 0, fps: 0, map_name: Vec::new(), replay_file: Vec::new(), stop_recording: false };
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::RestartMission(r.clone())]);
+        assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
+        settle(&mut ui, &mut now);
+        assert!(!ui.takes_input(), "the menu is gone");
+        assert!(flow.restart(&w, r.clone()).is_err() && flow.pending.is_none(), "no map");
+        let kept = MissionChoice::Campaign { campaign: b"usa".to_vec(), mission: b"m01".to_vec() };
+        flow.playing = Some(kept.clone());
+        let named = Restart { map_name: b"Maps\\Gate\\Gate.map".to_vec(), ..r };
+        flow.restart(&w, named.clone()).expect("the restart waits");
+        assert_eq!(flow.waiting_for(), Some(&b"Maps\\Gate\\Gate.map"[..]));
+        let p = flow.pending.as_ref().expect("the pending restart");
+        assert_eq!(p.choice, MissionChoice::Restart(named));
+        assert_eq!(p.world.clone().logic_crc(CRC_RECALC, None).expect("the CRC"), crc, "a copy of the running World");
+        assert_eq!(w.logic_crc(CRC_RECALC, None).expect("the CRC"), crc, "the World only read");
+        let started = flow.poll(&fs).expect("the start ran");
+        // (first run, a miss: the restart **starts** (a local player within 30 frames), though the map is not on the
+        // World's disk: the demo World's map was never a file (`gate_map_world` builds it in memory), and its start
+        // does not fail without one. Not investigated further: issue draft)
+        let started = started.expect("the restart started");
+        eprintln!("the restart without its map: {:?}", started.label);
+        assert_eq!(flow.playing, Some(kept), "the game's choice kept");
+        assert!(started.label.contains("Maps\\Gate\\Gate.map"), "{}", started.label);
+    }
+
+    /// #109: the control bar's options button's way into the quit menu (ControlBarCallback.cpp's `ToggleQuitMenu` and
+    /// `HideQuitMenu`, [`ShellUi::bar_quit_menu_call`]), and the menu and its save/load popup on a phone, 390 by 844 CSS
+    /// pixels. Predicted from QuitMenu.cpp and [`shell_placement`] before the run:
+    ///
+    /// - over the demo game (not ending: #107's `newMap`), `Toggle` shows `QuitMenu.wnd` and asks for the pause
+    ///   ([`ShellAction::SetGamePaused`] true); `Hide` hides it and unpauses (false); `Hide` again does nothing (not
+    ///   visible); `Toggle` shows it again (true);
+    /// - at 390x844 (the placement of the #78 test: scale 0.4875, top 126.75, unchanged: no button is added to the zoom
+    ///   column) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
+    ///   on the screen, below
+    ///   the status line (y 36) and above the zoom column, and a tap at its centre is that button's
+    ///   (`getWindowUnderCursor`);
+    /// - a tap on *Save/Load* opens the popup; its four buttons (*Save*, *Load*, *Delete*, *Back*) are each on the screen
+    ///   and tapped the same way (~~all four~~ **first run:** *Load* and *Delete* are disabled with no save listed, so
+    ///   not under the cursor; *Save* and *Back* are); a tap on *Save* shows the description box, whose *Confirm* and *Cancel* are too; a tap on
+    ///   *Cancel* hides it.
+    ///
+    /// **Result (2026-11-10):** the toggles and the hide as predicted; two misses over two runs, recorded where asserted
+    /// (the buttons are 90 wide, 43.875 x 9.75 CSS pixels; *Load* and *Delete* disabled). Every enabled button of the menu,
+    /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
+    #[test]
+    fn the_bars_options_button_opens_the_quit_menu_which_fits_a_phone() {
+        use crate::ui::QuitMenuCall;
+        let (mut ui, _, _) = shell_with(&TextTable::default());
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        ui.hide();
+        settle(&mut ui, &mut now);
+        let (w, _) = crate::demo::demo_world();
+        let game = || quit_menu_game(&w, true);
+        let (base, mut flow) = (World::new(), Flow::default());
+        ui.bar_quit_menu_call(QuitMenuCall::Toggle, game);
+        settle(&mut ui, &mut now);
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
+        assert!(ui.takes_input() && ui.gui.quit_menu.quit_menu_visible);
+        ui.bar_quit_menu_call(QuitMenuCall::Hide, game);
+        settle(&mut ui, &mut now);
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(false)]);
+        assert!(!ui.takes_input() && !ui.gui.quit_menu.quit_menu_visible);
+        ui.bar_quit_menu_call(QuitMenuCall::Hide, game);
+        assert!(ui.take_actions(&base, &mut flow).is_empty());
+        ui.bar_quit_menu_call(QuitMenuCall::Toggle, game);
+        settle(&mut ui, &mut now);
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
+        let p = shell_placement((390.0, 844.0));
+        assert_eq!((p.left, p.top, p.scale), (0.0, 126.75, 0.4875));
+        let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
+        let last = |ui: &ShellUi, file: &str, name: &str| -> usize {
+            let full = format!("{file}:{name}");
+            ui.wm.tree.windows.len() - 1 - ui.wm.tree.windows.iter().rev().position(|x| x.name() == full.as_bytes()).expect(name)
+        };
+        // (each button on the screen and its centre's tap its own; the centre, for the tap)
+        let tappable = |ui: &mut ShellUi, file: &str, name: &str| -> (f32, f32) {
+            let w = last(ui, file, name);
+            assert!(!ui.wm.tree.windows[w].is_hidden(), "{name} shown");
+            let (x, y) = ui.wm.tree.screen_position(w);
+            let reg = ui.wm.tree.windows[w].region;
+            let r = p.to_screen([x as f32, y as f32, (x + reg.2 - reg.0) as f32, (y + reg.3 - reg.1) as f32]);
+            assert!(r[0] >= 0.0 && r[2] <= 390.0 && r[1] >= 36.0 && r[3] <= column_top, "{name}: {r:?}");
+            let centre = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+            let (lx, ly) = p.to_layout(centre);
+            assert_eq!(ui.wm.get_window_under_cursor(&mut ui.gui, lx as i32, ly as i32, false), Some(w), "{name}");
+            println!("{file}:{name}: {:.2} x {:.2} at ({:.2}, {:.2})", r[2] - r[0], r[3] - r[1], r[0], r[1]);
+            centre
+        };
+        let tap = |ui: &mut ShellUi, at: (f32, f32)| {
+            for msg in [gwm::LEFT_DOWN, gwm::LEFT_UP] {
+                ui.pointer_at(msg, at, &p, true);
+            }
+        };
+        for name in ["ButtonExit", "ButtonRestart", "ButtonReturn", "ButtonOptions", "ButtonSaveLoad"] {
+            let at = tappable(&mut ui, "QuitMenu.wnd", name);
+            let w = last(&ui, "QuitMenu.wnd", name);
+            let reg = ui.wm.tree.windows[w].region;
+            // (first run, a miss: the synthetic quit menu's buttons are 90 by 20, not 100: 43.875 x 9.75 CSS pixels)
+            assert_eq!(((reg.2 - reg.0) as f32 * p.scale, (reg.3 - reg.1) as f32 * p.scale), (43.875, 9.75), "{name}");
+            if name == "ButtonSaveLoad" {
+                tap(&mut ui, at);
+            }
+        }
+        settle(&mut ui, &mut now);
+        // (first run, a miss: *Load* and *Delete* are disabled with no save listed (the popup's init), and a disabled
+        // button is not under the cursor (`getWindowUnderCursor` gives its frame): they are checked disabled, the
+        // others tapped)
+        for name in ["ButtonLoad", "ButtonDelete"] {
+            assert!(!ui.wm.is_enabled(Some(last(&ui, "PopupSaveLoad.wnd", name))), "{name} disabled");
+        }
+        for name in ["ButtonSave", "ButtonBack"] {
+            tappable(&mut ui, "PopupSaveLoad.wnd", name);
+        }
+        let save = tappable(&mut ui, "PopupSaveLoad.wnd", "ButtonSave");
+        tap(&mut ui, save);
+        settle(&mut ui, &mut now);
+        tappable(&mut ui, "PopupSaveLoad.wnd", "ButtonSaveDescConfirm");
+        let cancel = tappable(&mut ui, "PopupSaveLoad.wnd", "ButtonSaveDescCancel");
+        tap(&mut ui, cancel);
+        settle(&mut ui, &mut now);
+        assert!(ui.wm.tree.windows[last(&ui, "PopupSaveLoad.wnd", "SaveDescParent")].is_hidden(), "the description box hidden");
+        assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
     }
 
     #[test]
