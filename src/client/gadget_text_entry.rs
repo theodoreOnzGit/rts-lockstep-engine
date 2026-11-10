@@ -39,7 +39,8 @@
 //! - **The mouse**: a left press hilites the entry and gives it the focus; with `GWS_MOUSE_TRACK`, entering and
 //!   leaving hilite it and tell the owner (`GBM_MOUSE_ENTERING` / `LEAVING`), and a drag sends `GGM_LEFT_DRAG`.
 //! - **The focus** (`GWM_INPUT_FOCUS`): selected and hilited while it has it; the owner gets `GGM_FOCUS_CHANGE`; it
-//!   always wants the focus.
+//!   always wants the focus. Taking it attaches `TheIMEManager` to the entry; losing it detaches the manager if it is
+//!   attached to this entry (#74).
 //! - `GEM_SET_TEXT` replaces the text (and the secret text by as many `*`) and puts `charPos` at its end;
 //!   `GEM_GET_TEXT` reads it.
 //!
@@ -57,10 +58,14 @@
 //!
 //! # Not translated
 //!
-//! The IME (`TheIMEManager` is never attached in this translation, so it never composes): its construction text and
+//! ~~The IME (`TheIMEManager` is never attached in this translation, so it never composes): its construction text and
 //! candidate list (`constructList`, made only for Korean and Japanese) stay empty, and its `WM_CHAR` handling, which is
-//! what turns typed characters into `GWM_IME_CHAR`, is the host's to do (it sends `GWM_IME_CHAR` to the focus window).
-//! `winSetCursorPosition` (where the IME's window goes) is not modelled.
+//! what turns typed characters into `GWM_IME_CHAR`, is the host's to do (it sends `GWM_IME_CHAR` to the focus window).~~
+//! **Corrected 2026-11-10 (#74):** `TheIMEManager` is translated as far as typing goes
+//! ([`crate::client::ime_manager`]): the entry attaches it when it takes the focus and detaches it (`attach(NULL)`)
+//! when it loses it while attached, and its `WM_CHAR` handling sends the attached entry `GWM_IME_CHAR`. It never
+//! composes, so the construction text and candidate list (`constructList`, made only for Korean and Japanese) stay
+//! empty. `winSetCursorPosition` (where the IME's window goes) is not modelled.
 //!
 //! # Where this differs from upstream
 //!
@@ -202,7 +207,8 @@ fn set_state(wm: &mut GameWindowManager, w: WinId, bits: i32, on: bool) {
 
 /// `GadgetTextEntryInput`.
 pub fn text_entry_input<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, msg: u32, d1: WindowMsgData, d2: WindowMsgData) -> MsgHandled {
-    // `TheIMEManager->isAttachedTo(window) && isComposing()`: never (no IME)
+    // `TheIMEManager->isAttachedTo(window) && isComposing()`: never (#74: the manager never composes)
+    debug_assert!(!(wm.ime.is_attached_to(Some(w)) && wm.ime.is_composing()));
     let style = wm.tree.windows[w].inst.style;
     match msg {
         gwm::IME_CHAR => {
@@ -325,7 +331,13 @@ pub fn text_entry_system<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: W
                 let Some(e) = entry_mut(wm, w, "GWM_INPUT_FOCUS: the text entry has no EntryData") else { return Handled };
                 e.construct_text.text.clear();
                 e.con_char_pos = 0;
+                // (#74) `if (TheIMEManager && TheIMEManager->isAttachedTo(window)) TheIMEManager->attach(NULL)`
+                if wm.ime.is_attached_to(Some(w)) && !crate::logic::modules::plant(4710) {
+                    wm.ime.attach(None);
+                }
             } else {
+                // (#74) `TheIMEManager->attach(window)`
+                wm.ime.attach(Some(w));
                 set_state(wm, w, WIN_STATE_SELECTED | WIN_STATE_HILITED, true);
             }
             let o = owner(wm, w);

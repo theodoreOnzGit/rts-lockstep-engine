@@ -470,6 +470,7 @@ static void dump(std::ostringstream &o, TestWindowManager *wm)
 	for (GameWindow *w = wm->list(); w; w = w->winGetNext()) o << " " << widx(w);
 	o << " tip";
 	dump_text(o, TheMouse->m_tooltip);
+	o << " ime " << widx(TheIMEManager->m_window);
 	o << "\n";
 }
 
@@ -656,6 +657,20 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 	}
 	/* #72: the text entry, the combo box, the tab control */
 	/* (each call is made before its result is logged: the messages it sends are logged first) */
+	/* #74: IMEManager::serviceIMEMessage's WM_CHAR case (transcribed: IMEManager.cpp needs Win32's IME to compile) */
+	case 'w':
+	{
+		in >> a;
+		WideChar wchar = (WideChar)(a & 0xffff);
+		int r = 0;
+		if (TheIMEManager->m_window && (wchar >= 32 || wchar == VK_RETURN))
+		{
+			TheWindowManager->winSendInputMsg(TheIMEManager->m_window, GWM_IME_CHAR, (a & 0xffff), 0);
+			r = 1;
+		}
+		g_log << "ime " << r << "\n";
+		break;
+	}
 	case 'I': { in >> a >> b; int r = (int)wm->winSendInputMsg(win(a), GWM_IME_CHAR, (WindowMsgData)b, 0); g_log << "ret " << r << "\n"; break; }
 	case 'e': case 'y': case 'a':
 	{

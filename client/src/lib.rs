@@ -17,9 +17,12 @@
 //! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
 //! - [`saves`]: saved games (#4): the save folder (natively the game's own, in the browser OPFS `Save/`), the list, and
 //!   saving and loading through the translated save code; plain Rust.
+//! - [`shell`]: the game's shell (#69): the main menu and its message boxes from their files, run by the translated
+//!   shell, and its requests turned into the client's starts; plain Rust (not drawn yet).
 //! - [`particles`]: the particle systems' particles as camera-facing quads by texture and blend (#43, #44); plain Rust.
 //! - [`terrain`]: the terrain's look from the world and the game's files (#11); its Bevy meshes with feature `app`.
-//! - [`ui`]: the game's own control bar from its files (#12): what to draw, as quads; plain Rust.
+//! - [`ui`]: the game's own control bar from its files (#12): what to draw, as quads; the keyboard's keys and typed
+//!   characters into the window manager (#74); plain Rust.
 //! - [`view`]: the view model. What is drawn, read from the `World`; plain Rust, no Bevy.
 //! - `model` (feature `app`): W3D models drawn with Bevy, and the model viewer's scene (#10, step 4).
 //! - `app` (feature `app`, on by default): the Bevy application.
@@ -32,6 +35,7 @@ pub mod import;
 pub mod input;
 pub mod particles;
 pub mod saves;
+pub mod shell;
 pub mod terrain;
 pub mod ui;
 pub mod view;

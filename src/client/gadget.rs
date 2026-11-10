@@ -558,6 +558,13 @@ pub fn static_text_system<H: GuiHost>(wm: &mut GameWindowManager, _h: &mut H, w:
     Handled
 }
 
+/// (#69) `GadgetStaticTextSetText(window, text)`: `GGM_SET_LABEL` with the text (nothing for no window).
+pub fn static_text_set_text<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: Option<WinId>, text: &[u16]) {
+    let Some(w) = w else { return };
+    wm.msg_text = text.to_vec();
+    wm.win_send_system_msg(h, Some(w), ggm::SET_LABEL, 1, 0);
+}
+
 /// `GadgetStaticTextGetText`.
 pub fn static_text_get_text(wm: &GameWindowManager, w: WinId) -> Vec<u16> {
     match &wm.ext[w].user {

@@ -26,6 +26,11 @@
 //! `ControlBarSystem`. Touch is a mouse: a press moves the pointer there first. The drawing is still the quads above (moving
 //! it onto the manager's draw list is #34's remaining work).
 //!
+//! Since #74, the keyboard reaches the manager ([`keyboard_into`], [`GameUi::keyboard`]): each key as DirectInput's
+//! code through `winProcessKey`, and the text it typed as `WM_CHAR`s through the translated IME manager, so a text entry
+//! with the focus is typed into, natively and in the browser (`app::keyboard_ui` feeds Bevy's keyboard events). While a
+//! window has the focus the camera's keys are the UI's.
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -35,7 +40,7 @@ use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layo
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
-use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WindowMsgData};
+use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
 use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WndHost, WIN_COLOR_UNDEFINED};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
@@ -201,6 +206,23 @@ impl GuiHost for BarHost {
         }
         MsgHandled::Ignored
     }
+}
+
+/// (#74) A key of the keyboard into a window manager, as the game receives it: the key itself as DirectInput reports it
+/// (`scan`, a `KeyDefs.h` code; 0 for none) through `winProcessKey` (down or up), then, for a press, the text it typed
+/// as `WM_CHAR`s through the IME manager (`client::ime_manager::type_text`: one per UTF-16 unit; the manager takes 32
+/// and above, and return, for the text entry it is attached to). New glue: upstream gets the two from DirectInput and
+/// from `WndProc`; here both come from one Bevy keyboard event, natively and in the browser. Whether either was used
+/// (`WIN_INPUT_USED`, or a character eaten).
+pub fn keyboard_into<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, scan: u8, down: bool, text: Option<&str>) -> bool {
+    let state = if down { key::STATE_DOWN } else { key::STATE_UP };
+    let mut used = scan != key::NONE && wm.win_process_key(h, scan, state) == WinInputReturnCode::Used;
+    if down {
+        if let Some(t) = text {
+            used |= rts_lockstep_engine::client::ime_manager::type_text(wm, h, t) > 0;
+        }
+    }
+    used
 }
 
 /// One thing to draw, in the layout's space.
@@ -441,6 +463,16 @@ impl GameUi {
         }
         let slot = self.slot_of(host.selected)?;
         tip.click(slot, now, touch).then_some(slot)
+    }
+
+    /// (#74) A key through the bar's window manager ([`keyboard_into`]); whether the UI used it.
+    pub fn keyboard(&mut self, scan: u8, down: bool, text: Option<&str>) -> bool {
+        keyboard_into(&mut self.wm, &mut BarHost::default(), scan, down, text)
+    }
+
+    /// (#74) Whether a window of the bar has the keyboard's focus (the camera's keys then go to it, not the view).
+    pub fn has_keyboard_focus(&self) -> bool {
+        self.wm.keyboard_focus.is_some()
     }
 
     /// The command slot of a window.
@@ -784,6 +816,39 @@ mod tests {
         assert!(ui.wm.is_hidden(Some(win(&ui, 0))));
         assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 4.0, false, &mut tip), None);
         assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 4.1, false, &mut tip), None);
+    }
+
+    /// #74: typed characters reach a text entry in the bar's window manager (the bar has none of its own: one is made
+    /// with `gogoGadgetTextEntry`, as a menu's would be). Predicted from IMEManager.cpp and GadgetTextEntry.cpp before
+    /// the run: before it has the focus, typing `a` is not used; once focused (`winSetFocus`, which attaches the IME),
+    /// the key `A` (scan 0x1E, not a key the entry handles: eaten, so used) with the text `Go 1!` types `Go 1!`; a
+    /// backspace key (scan 0x0E, no text) erases the `!`; its release is used too (the entry eats every key it does not
+    /// pass on); a key whose text is a tab (`\t`, below 32) adds nothing; the bar's keyboard focus is reported.
+    #[test]
+    fn typed_text_reaches_a_text_entry_in_the_ui() {
+        use rts_lockstep_engine::client::gadget_text_entry::{entry_rt, gogo_gadget_text_entry, EntryRt};
+        use rts_lockstep_engine::client::window_script::{gws, WinInstanceData};
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let inst = WinInstanceData { style: gws::ENTRY_FIELD, ..WinInstanceData::new() };
+        let e = gogo_gadget_text_entry(&mut ui.wm, &mut NoGuiHost, None, win_status::ENABLED, 10, 10, 200, 20, inst, EntryRt { max_text_len: 32, ..Default::default() }, true).expect("an entry");
+        assert!(!ui.keyboard(0, true, Some("a")));
+        assert!(!ui.has_keyboard_focus());
+        ui.wm.win_set_focus(&mut NoGuiHost, Some(e));
+        assert!(ui.has_keyboard_focus());
+        assert!(ui.keyboard(0x1E, true, Some("Go 1!")));
+        let text = |ui: &GameUi| String::from_utf16_lossy(&entry_rt(&ui.wm, e).expect("data").text.text);
+        assert_eq!(text(&ui), "Go 1!");
+        assert!(ui.keyboard(0x0E, true, None));
+        assert!(ui.keyboard(0x0E, false, None));
+        assert_eq!(text(&ui), "Go 1");
+        ui.keyboard(0x0F, true, Some("\t"));
+        assert_eq!(text(&ui), "Go 1");
     }
 
     /// #12: the money's format. Predicted: `$%d` with 1500 is `$1500`; a missing label falls back to `$ 1500`.

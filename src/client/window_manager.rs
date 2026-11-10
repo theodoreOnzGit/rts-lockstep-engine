@@ -123,6 +123,8 @@
 //!   [`GameWindowManager::focus_reply`].
 //! - Audio (`GUIClick`), the selection translator's state that `GameWinBlockInput` clears, text measuring and image
 //!   sizes are asked of the [`GuiHost`].
+//! - **Added 2026-11-10 (#74):** `TheIMEManager` (a global upstream) is the manager's [`GameWindowManager::ime`]
+//!   ([`crate::client::ime_manager`]), so the text entry and the shell reach it through the manager.
 //! - `WIN_MAX_WINDOWS` is not enforced (upstream's pool allocator has no such limit either).
 //! - Windows freed by `processDestroyList` stay in the vector, marked freed, so ids stay stable.
 //!
@@ -473,6 +475,8 @@ pub enum UserData {
     Combo(crate::client::gadget_combo_box::ComboRt),
     /// A tab control's `TabControlData`.
     Tab(crate::client::gadget_tab_control::TabRt),
+    /// (#69) A message box's `WindowMessageBoxData` (`gogoMessageBox`).
+    MessageBox(crate::client::message_box::MessageBoxData),
 }
 
 /// What the manager keeps for a window besides the reader's [`GameWindow`].
@@ -510,6 +514,8 @@ pub struct WindowLayout {
     pub init: Option<Vec<u8>>,
     pub update: Option<Vec<u8>>,
     pub shutdown: Option<Vec<u8>>,
+    /// (#69) `deleteInstance`d (the shell's popped screens): the index stays, the layout is not used again.
+    pub deleted: bool,
 }
 
 /// The mouse's tooltip (`Mouse::setCursorTooltip`, the timer of `createStreamMessages`, `drawTooltip`'s condition).
@@ -673,6 +679,8 @@ pub struct GameWindowManager {
     pub combo_msg: crate::client::gadget_combo_box::ComboMsg,
     /// `drawTextEntryText`'s `static Byte drawCnt` (the caret's blink), one for every text entry.
     pub(crate) entry_draw_cnt: u8,
+    /// (#74) `TheIMEManager`: the text entry typed characters go to ([`crate::client::ime_manager`]).
+    pub ime: crate::client::ime_manager::ImeManager,
 }
 
 /// The gadget kinds this translation creates, from the style bits (`createGadget`'s order).

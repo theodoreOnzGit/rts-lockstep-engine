@@ -42,7 +42,9 @@
 
 use std::collections::HashMap;
 
+use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::input::ButtonState;
 use bevy::prelude::*;
 use bevy::picking::events::{PointerLeave, PointerMove, PointerPress, PointerRelease};
 use bevy::picking::pointer::PointerButton;
@@ -296,6 +298,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<Drawn>()
         .init_resource::<Pointer>()
         .init_resource::<UiBar>()
+        .init_resource::<UiKeyboard>()
         .init_resource::<RadarBox>()
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
@@ -303,7 +306,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain).chain())
         .add_systems(
             Update,
-            (load_fx, update_audio, sync_objects, draw_particles, health_bars, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
+            (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
         )
         .run();
 }
@@ -702,7 +705,46 @@ fn health_bars(game: NonSend<Game>, fixed: Res<Time<Fixed>>, rig: Res<Rig>, mut 
     }
 }
 
+/// (#74) Whether the game's UI has the keyboard (a window of it has the focus): the camera's keys are then the UI's,
+/// as upstream's `WindowXlat` eats a key the window manager used.
+#[derive(Resource, Default)]
+struct UiKeyboard(bool);
+
+/// (#74) The DirectInput code (`KeyDefs.h`'s `KEY_*`, the scan code) of a physical key, 0 for one the game has no code
+/// for. GUI glue (a table of Bevy's key codes; the path it feeds is tested in `crate::ui::keyboard_into`).
+fn dik_of(k: KeyCode) -> u8 {
+    use KeyCode as K;
+    let letters = [(K::KeyQ, 0x10), (K::KeyW, 0x11), (K::KeyE, 0x12), (K::KeyR, 0x13), (K::KeyT, 0x14), (K::KeyY, 0x15), (K::KeyU, 0x16), (K::KeyI, 0x17), (K::KeyO, 0x18), (K::KeyP, 0x19)];
+    let row2 = [(K::KeyA, 0x1E), (K::KeyS, 0x1F), (K::KeyD, 0x20), (K::KeyF, 0x21), (K::KeyG, 0x22), (K::KeyH, 0x23), (K::KeyJ, 0x24), (K::KeyK, 0x25), (K::KeyL, 0x26)];
+    let row3 = [(K::KeyZ, 0x2C), (K::KeyX, 0x2D), (K::KeyC, 0x2E), (K::KeyV, 0x2F), (K::KeyB, 0x30), (K::KeyN, 0x31), (K::KeyM, 0x32)];
+    let digits = [(K::Digit1, 0x02), (K::Digit2, 0x03), (K::Digit3, 0x04), (K::Digit4, 0x05), (K::Digit5, 0x06), (K::Digit6, 0x07), (K::Digit7, 0x08), (K::Digit8, 0x09), (K::Digit9, 0x0A), (K::Digit0, 0x0B)];
+    let fkeys = [(K::F1, 0x3B), (K::F2, 0x3C), (K::F3, 0x3D), (K::F4, 0x3E), (K::F5, 0x3F), (K::F6, 0x40), (K::F7, 0x41), (K::F8, 0x42), (K::F9, 0x43), (K::F10, 0x44), (K::F11, 0x57), (K::F12, 0x58)];
+    let other = [
+        (K::Escape, 0x01), (K::Minus, 0x0C), (K::Equal, 0x0D), (K::Backspace, 0x0E), (K::Tab, 0x0F), (K::BracketLeft, 0x1A), (K::BracketRight, 0x1B), (K::Enter, 0x1C), (K::ControlLeft, 0x1D),
+        (K::Semicolon, 0x27), (K::Quote, 0x28), (K::Backquote, 0x29), (K::ShiftLeft, 0x2A), (K::Backslash, 0x2B), (K::Comma, 0x33), (K::Period, 0x34), (K::Slash, 0x35), (K::ShiftRight, 0x36),
+        (K::AltLeft, 0x38), (K::Space, 0x39), (K::CapsLock, 0x3A), (K::NumpadEnter, 0x9C), (K::ControlRight, 0x9D), (K::AltRight, 0xB8), (K::Home, 0xC7), (K::ArrowUp, 0xC8), (K::PageUp, 0xC9),
+        (K::ArrowLeft, 0xCB), (K::ArrowRight, 0xCD), (K::End, 0xCF), (K::ArrowDown, 0xD0), (K::PageDown, 0xD1), (K::Insert, 0xD2), (K::Delete, 0xD3),
+    ];
+    letters.iter().chain(&row2).chain(&row3).chain(&digits).chain(&fkeys).chain(&other).find(|(c, _)| *c == k).map_or(0, |&(_, d)| d)
+}
+
+/// (#74) GUI glue (needs a window's keyboard events): each of Bevy's keyboard events, natively and in the browser,
+/// into the game's UI ([`crate::ui::GameUi::keyboard`], tested there): the key by its DirectInput code, and the text it
+/// typed. The modifier states (`KEY_STATE_CONTROL`, ...) are not passed yet.
+fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>) {
+    let Some(ui) = game.ui.as_mut() else {
+        events.clear();
+        taken.0 = false;
+        return;
+    };
+    for k in events.read() {
+        ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+    }
+    taken.0 = ui.has_keyboard_focus();
+}
+
 fn camera_input(
+    taken: Res<UiKeyboard>,
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
@@ -713,6 +755,9 @@ fn camera_input(
 ) {
     let dt = time.delta_secs();
     let speed = rig.distance * 0.9 * dt;
+    // (#74) a UI window with the focus has the keyboard
+    let empty = ButtonInput::<KeyCode>::default();
+    let keys: &ButtonInput<KeyCode> = if taken.0 { &empty } else { &keys };
     let mut right = 0.0;
     let mut forward = 0.0;
     if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) {

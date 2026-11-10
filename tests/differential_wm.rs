@@ -97,6 +97,27 @@
 //!   (predicted 400 to 500: missed, low); 4707 **9** (predicted 10 to 30: just under; in 3 of them the compiled
 //!   upstream crashed past the point the planted Rust ate the press); 4708 **1500** (predicted 1500 or more: held).
 
+//!
+//! # #74: typed characters (the IME manager's `WM_CHAR`)
+//!
+//! The text entry's own calls on `TheIMEManager` (`attach(window)` when it takes the focus, `attach(NULL)` when it
+//! loses it while attached; GadgetTextEntry.cpp, compiled verbatim) now act on a stand-in whose `attach`, `detatch`
+//! and `isAttachedTo` are transcribed from IMEManager.cpp (which needs Win32's IME to compile), and the dump adds the
+//! attached window. A new operation, `w`, is `serviceIMEMessage`'s `WM_CHAR` case (transcribed: a unit of 32 or more,
+//! or return, goes to the attached window as `GWM_IME_CHAR`): letters, a digit, space (32), 31, return, backspace (8),
+//! tab, 0xE9, 0x4E2D, and the low unit of a surrogate pair. Three in ten of the entry operations are now `w` (the
+//! random stream changed, so the cases are not those of #72).
+//!
+//! **Predictions (written before the first run):** 0 mismatches (the attach chain is three lines on each side). A
+//! character typed after its entry was destroyed and freed is undefined (a few cases). Planted (2000 cases each): 4709
+//! (`WM_CHAR` takes 33 and above: a space is dropped) 20 to 60 cases, since a space must be typed while an entry that
+//! takes it is attached; 4710 (the entry does not detach when it loses the focus) 100 to 300.
+//!
+//! **Results (2026-11-10, `WM_CASES=2000`):** **2000 cases, 70,324 operations compared, 0 mismatches** (798 `w`,
+//! 1,000 `I`). Stopped as undefined at `w`: 2 cases (the attached entry freed). Plants: 4709 **14** cases differ
+//! (predicted 20 to 60: missed, low: a space typed while an entry is attached is rarer than guessed); 4710 **143**
+//! (predicted 100 to 300: held).
+
 #![cfg(feature = "differential")]
 
 use rts_lockstep_engine::client::gadget_combo_box::{self as cbx, combo_rt};
@@ -258,6 +279,7 @@ fn dump(wm: &GameWindowManager, dd_from: usize) -> String {
     }
     o.push_str(" tip");
     text(&mut o, if wm.mouse.is_empty { &[] } else { &wm.mouse.display_string });
+    let _ = write!(o, " ime {}", idx(wm.ime.get_window()));
     o.push('\n');
     o
 }
@@ -490,6 +512,11 @@ fn run_op(wm: &mut GameWindowManager, h: &mut Host, op: &str) {
             wm.win_set_text(x, &t);
         }
         // #72: the text entry, the combo box, the tab control
+        "w" => {
+            let ch = n(&mut v);
+            let r = rts_lockstep_engine::client::ime_manager::service_ime_message(wm, h, rts_lockstep_engine::client::ime_manager::WM_CHAR, ch as u32, 0);
+            let _ = writeln!(h.log, "ime {}", u8::from(r));
+        }
         "I" => {
             let (x, ch) = (n(&mut v) as usize, n(&mut v));
             let r = wm.win_send_input_msg(h, Some(x), gwm::IME_CHAR, ch as u32, 0);
@@ -625,8 +652,11 @@ fn gen_op(r: &mut Rng, wm: &GameWindowManager) -> String {
     if k < 58 && !ens.is_empty() {
         let e = pick(r, &ens);
         let chars = [u32::from(b'a'), u32::from(b'Z'), u32::from(b'5'), u32::from(b' '), u32::from(b'-'), 13, 0xE9, 0x4E2D, 0xFF10, 0];
+        // (#74) `w`: a typed character through the IME manager, to whichever entry it is attached to
+        let typed = [u32::from(b'a'), u32::from(b'Q'), u32::from(b'7'), 32, 31, 13, 8, 9, 0xE9, 0x4E2D, 0x1F600 & 0xFFFF];
         return match r.below(10) {
-            0..=6 => format!("I {e} {}", chars[r.below(chars.len() as u64) as usize]),
+            0..=3 => format!("I {e} {}", chars[r.below(chars.len() as u64) as usize]),
+            4..=6 => format!("w {}", typed[r.below(typed.len() as u64) as usize]),
             7 => format!("e {e} {}", TEXTS[r.below(TEXTS.len() as u64) as usize]),
             _ => format!("g {e}"),
         };
