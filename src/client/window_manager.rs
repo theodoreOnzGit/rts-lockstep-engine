@@ -99,9 +99,16 @@
 //!   would see them already there (no translated callback does). The gadget's label is set once, to its final text
 //!   (upstream sets the raw label first, then the fetched text).
 //! - The callbacks this translation does not have (the game's own menus, `ControlBarSystem`, the device draws of the
-//!   HUD) are named, not called: [`GuiHost`] gets them by name. The gadgets not translated yet (list box, combo box,
+//!   HUD) are named, not called: [`GuiHost`] gets them by name. ~~The gadgets not translated yet (list box, combo box,
 //!   sliders, text entry, tab control) get no behaviour (their messages are ignored) and are drawn with
-//!   `W3DGameWinDefaultDraw`; their inner windows are not created (see #34's remaining list).
+//!   `W3DGameWinDefaultDraw`; their inner windows are not created (see #34's remaining list).~~ **Corrected 2026-11-10
+//!   (#70):** the list box and the sliders are translated ([`crate::client::gadget_list_box`],
+//!   [`crate::client::gadget_slider`]), with their inner windows (the scroll bar's buttons and slider, the thumbs),
+//!   created after the file's children of the gadget in the child list as upstream's are; the combo box, text entry
+//!   and tab control still get no behaviour and are drawn with `W3DGameWinDefaultDraw`, and the progress bar's draw is
+//!   that too (see #70's remaining list).
+//! - Where upstream's behaviour is undefined (a `NULL` or out-of-range access in a gadget), the manager records it in
+//!   [`GameWindowManager::undefined`] and the message stops.
 //! - Window data that upstream passes as pointers: a window is `id + 1` (0 for `NULL`, [`win_data`]); a string
 //!   (`GGM_SET_LABEL`, `GGM_GET_LABEL`) is in [`GameWindowManager::msg_text`]; the `Bool*` of `GWM_INPUT_FOCUS` is
 //!   [`GameWindowManager::focus_reply`].
@@ -262,7 +269,13 @@ pub enum SystemFunc {
     RadioButton,
     StaticText,
     ProgressBar,
-    /// A gadget whose behaviour is not translated yet (`GadgetListBoxSystem`, ...): ignores everything.
+    /// `GadgetListBoxSystem`.
+    ListBox,
+    /// `GadgetVerticalSliderSystem`.
+    VerticalSlider,
+    /// `GadgetHorizontalSliderSystem`.
+    HorizontalSlider,
+    /// A gadget whose behaviour is not translated yet (`GadgetComboBoxSystem`, ...): ignores everything.
     Untranslated(&'static str),
     /// A callback of the game's own (`ControlBarSystem`, `MainMenuSystem`, ...), for the [`GuiHost`].
     Host(Vec<u8>),
@@ -279,6 +292,12 @@ pub enum InputFunc {
     CheckBox,
     RadioButton,
     StaticText,
+    /// `GadgetListBoxInput`.
+    ListBox,
+    /// `GadgetListBoxMultiInput`.
+    ListBoxMulti,
+    VerticalSlider,
+    HorizontalSlider,
     Untranslated(&'static str),
     Host(Vec<u8>),
 }
@@ -298,6 +317,12 @@ pub enum DrawFunc {
     RadioButtonImage,
     StaticText,
     StaticTextImage,
+    ListBox,
+    ListBoxImage,
+    VerticalSlider,
+    VerticalSliderImage,
+    HorizontalSlider,
+    HorizontalSliderImage,
     /// `W3DNoDraw`.
     NoDraw,
     /// A gadget whose drawing is not translated yet: drawn as `W3DGameWinDefaultDraw` (see the module docs).
@@ -318,10 +343,10 @@ pub fn lexicon_system(name: &[u8]) -> SystemFunc {
         b"GadgetStaticTextSystem" => SystemFunc::StaticText,
         b"GadgetProgressBarSystem" => SystemFunc::ProgressBar,
         b"GadgetTabControlSystem" => SystemFunc::Untranslated("GadgetTabControlSystem"),
-        b"GadgetListBoxSystem" => SystemFunc::Untranslated("GadgetListBoxSystem"),
+        b"GadgetListBoxSystem" => SystemFunc::ListBox,
         b"GadgetComboBoxSystem" => SystemFunc::Untranslated("GadgetComboBoxSystem"),
-        b"GadgetHorizontalSliderSystem" => SystemFunc::Untranslated("GadgetHorizontalSliderSystem"),
-        b"GadgetVerticalSliderSystem" => SystemFunc::Untranslated("GadgetVerticalSliderSystem"),
+        b"GadgetHorizontalSliderSystem" => SystemFunc::HorizontalSlider,
+        b"GadgetVerticalSliderSystem" => SystemFunc::VerticalSlider,
         b"GadgetTextEntrySystem" => SystemFunc::Untranslated("GadgetTextEntrySystem"),
         _ => SystemFunc::Host(name.to_vec()),
     }
@@ -337,11 +362,11 @@ pub fn lexicon_input(name: &[u8]) -> InputFunc {
         b"GadgetRadioButtonInput" => InputFunc::RadioButton,
         b"GadgetStaticTextInput" => InputFunc::StaticText,
         b"GadgetTabControlInput" => InputFunc::Untranslated("GadgetTabControlInput"),
-        b"GadgetListBoxInput" => InputFunc::Untranslated("GadgetListBoxInput"),
-        b"GadgetListBoxMultiInput" => InputFunc::Untranslated("GadgetListBoxMultiInput"),
+        b"GadgetListBoxInput" => InputFunc::ListBox,
+        b"GadgetListBoxMultiInput" => InputFunc::ListBoxMulti,
         b"GadgetComboBoxInput" => InputFunc::Untranslated("GadgetComboBoxInput"),
-        b"GadgetHorizontalSliderInput" => InputFunc::Untranslated("GadgetHorizontalSliderInput"),
-        b"GadgetVerticalSliderInput" => InputFunc::Untranslated("GadgetVerticalSliderInput"),
+        b"GadgetHorizontalSliderInput" => InputFunc::HorizontalSlider,
+        b"GadgetVerticalSliderInput" => InputFunc::VerticalSlider,
         b"GadgetTextEntryInput" => InputFunc::Untranslated("GadgetTextEntryInput"),
         _ => InputFunc::Host(name.to_vec()),
     }
@@ -363,10 +388,13 @@ pub fn lexicon_draw(name: &[u8]) -> DrawFunc {
         b"W3DGadgetStaticTextImageDraw" => DrawFunc::StaticTextImage,
         b"W3DNoDraw" => DrawFunc::NoDraw,
         b"W3DGadgetTabControlDraw" | b"W3DGadgetTabControlImageDraw" => DrawFunc::Untranslated("W3DGadgetTabControlDraw"),
-        b"W3DGadgetListBoxDraw" | b"W3DGadgetListBoxImageDraw" => DrawFunc::Untranslated("W3DGadgetListBoxDraw"),
+        b"W3DGadgetListBoxDraw" => DrawFunc::ListBox,
+        b"W3DGadgetListBoxImageDraw" => DrawFunc::ListBoxImage,
         b"W3DGadgetComboBoxDraw" | b"W3DGadgetComboBoxImageDraw" => DrawFunc::Untranslated("W3DGadgetComboBoxDraw"),
-        b"W3DGadgetHorizontalSliderDraw" | b"W3DGadgetHorizontalSliderImageDraw" => DrawFunc::Untranslated("W3DGadgetHorizontalSliderDraw"),
-        b"W3DGadgetVerticalSliderDraw" | b"W3DGadgetVerticalSliderImageDraw" => DrawFunc::Untranslated("W3DGadgetVerticalSliderDraw"),
+        b"W3DGadgetHorizontalSliderDraw" => DrawFunc::HorizontalSlider,
+        b"W3DGadgetHorizontalSliderImageDraw" => DrawFunc::HorizontalSliderImage,
+        b"W3DGadgetVerticalSliderDraw" => DrawFunc::VerticalSlider,
+        b"W3DGadgetVerticalSliderImageDraw" => DrawFunc::VerticalSliderImage,
         b"W3DGadgetProgressBarDraw" | b"W3DGadgetProgressBarImageDraw" => DrawFunc::Untranslated("W3DGadgetProgressBarDraw"),
         b"W3DGadgetTextEntryDraw" | b"W3DGadgetTextEntryImageDraw" => DrawFunc::Untranslated("W3DGadgetTextEntryDraw"),
         _ => DrawFunc::Host(name.to_vec()),
@@ -396,7 +424,7 @@ pub struct PushButtonData {
 }
 
 /// A window's user data (`winGetUserData`), by gadget.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum UserData {
     #[default]
     None,
@@ -407,10 +435,14 @@ pub enum UserData {
     StaticText(TextData, Vec<u16>),
     /// A progress bar's position (`winSetUserData((void *)newPos)`).
     Progress(i32),
+    /// A list box's `ListboxData`.
+    Listbox(crate::client::gadget_list_box::ListboxRt),
+    /// A slider's `SliderData`.
+    Slider(crate::client::gadget_slider::SliderRt),
 }
 
 /// What the manager keeps for a window besides the reader's [`GameWindow`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WinExt {
     pub system: SystemFunc,
     pub input: InputFunc,
@@ -543,6 +575,14 @@ pub trait GuiHost {
             _ => (w, h),
         }
     }
+    /// `winFontHeight(font)` (`font->height`).
+    fn font_height(&self, font: Option<&GameFont>) -> i32 {
+        font.map_or(12, |f| f.point_size.max(1))
+    }
+    /// `TheKeyboard->getPrintableKey(key, state)` (0, 1, 2: plain, shifted, the second shift); 0 for none.
+    fn printable_key(&self, _key: u8, _state: i32) -> u16 {
+        0
+    }
     /// `image->getImageWidth()`, `getImageHeight()`.
     fn image_size(&self, _image: &[u8]) -> Option<(i32, i32)> {
         None
@@ -586,6 +626,13 @@ pub struct GameWindowManager {
     pub focus_reply: bool,
     /// `Display::setClipRegion` while drawing.
     pub(crate) clip: Option<(i32, i32, i32, i32)>,
+    /// The first operation upstream leaves undefined that the translation met (a `NULL` or out-of-range access, a
+    /// freed array used): the message that met it stops there, and a differential stops the session.
+    pub undefined: Option<&'static str>,
+    /// The data the list box's messages point to.
+    pub list_msg: crate::client::gadget_list_box::ListMsg,
+    /// `timeGetTime()`, milliseconds (the list box's double click), set by the host.
+    pub time_ms: u32,
 }
 
 /// The gadget kinds this translation creates, from the style bits (`createGadget`'s order).
@@ -602,6 +649,13 @@ impl GameWindowManager {
     /// A manager for a display of `display` pixels.
     pub fn new(display: (i32, i32)) -> Self {
         GameWindowManager { display, ..Default::default() }
+    }
+
+    /// Records upstream's undefined behaviour (the first one is kept).
+    pub fn set_undefined(&mut self, what: &'static str) {
+        if self.undefined.is_none() {
+            self.undefined = Some(what);
+        }
     }
 
     /// The window `id`.
@@ -1068,6 +1122,9 @@ impl GameWindowManager {
             SystemFunc::RadioButton => crate::client::gadget::radio_button_system(self, h, w, msg, d1, d2),
             SystemFunc::StaticText => crate::client::gadget::static_text_system(self, h, w, msg, d1, d2),
             SystemFunc::ProgressBar => crate::client::gadget::progress_bar_system(self, h, w, msg, d1, d2),
+            SystemFunc::ListBox => crate::client::gadget_list_box::list_box_system(self, h, w, msg, d1, d2),
+            SystemFunc::VerticalSlider => crate::client::gadget_slider::vertical_slider_system(self, h, w, msg, d1, d2),
+            SystemFunc::HorizontalSlider => crate::client::gadget_slider::horizontal_slider_system(self, h, w, msg, d1, d2),
             SystemFunc::Host(name) => h.system(self, &name, w, msg, d1, d2),
         }
     }
@@ -1094,6 +1151,10 @@ impl GameWindowManager {
             InputFunc::CheckBox => crate::client::gadget::check_box_input(self, h, w, msg, d1, d2),
             InputFunc::RadioButton => crate::client::gadget::radio_button_input(self, h, w, msg, d1, d2),
             InputFunc::StaticText => crate::client::gadget::static_text_input(self, h, w, msg, d1, d2),
+            InputFunc::ListBox => crate::client::gadget_list_box::list_box_input(self, h, w, msg, d1, d2),
+            InputFunc::ListBoxMulti => crate::client::gadget_list_box::list_box_multi_input(self, h, w, msg, d1, d2),
+            InputFunc::VerticalSlider => crate::client::gadget_slider::vertical_slider_input(self, h, w, msg, d1, d2),
+            InputFunc::HorizontalSlider => crate::client::gadget_slider::horizontal_slider_input(self, h, w, msg, d1, d2),
             InputFunc::Host(name) => h.input(self, &name, w, msg, d1, d2),
         }
     }
@@ -1445,14 +1506,6 @@ impl GameWindowManager {
                 e.input = InputFunc::Untranslated("GadgetTabControlInput");
                 e.draw = DrawFunc::Untranslated("W3DGadgetTabControlDraw");
             }
-            gws::VERT_SLIDER | gws::HORZ_SLIDER => {
-                e.input = InputFunc::Untranslated("GadgetSliderInput");
-                e.draw = DrawFunc::Untranslated("W3DGadgetSliderDraw");
-            }
-            gws::SCROLL_LISTBOX => {
-                e.input = InputFunc::Untranslated("GadgetListBoxInput");
-                e.draw = DrawFunc::Untranslated("W3DGadgetListBoxDraw");
-            }
             gws::COMBO_BOX => {
                 e.input = InputFunc::Untranslated("GadgetComboBoxInput");
                 e.draw = DrawFunc::Untranslated("W3DGadgetComboBoxDraw");
@@ -1475,21 +1528,65 @@ impl GameWindowManager {
             gws::STATIC_TEXT => SystemFunc::StaticText,
             gws::PROGRESS_BAR => SystemFunc::ProgressBar,
             gws::TAB_CONTROL => SystemFunc::Untranslated("GadgetTabControlSystem"),
-            gws::VERT_SLIDER => SystemFunc::Untranslated("GadgetVerticalSliderSystem"),
-            gws::HORZ_SLIDER => SystemFunc::Untranslated("GadgetHorizontalSliderSystem"),
-            gws::SCROLL_LISTBOX => SystemFunc::Untranslated("GadgetListBoxSystem"),
+            gws::VERT_SLIDER => SystemFunc::VerticalSlider,
+            gws::HORZ_SLIDER => SystemFunc::HorizontalSlider,
+            gws::SCROLL_LISTBOX => SystemFunc::ListBox,
             gws::COMBO_BOX => SystemFunc::Untranslated("GadgetComboBoxSystem"),
             gws::ENTRY_FIELD => SystemFunc::Untranslated("GadgetTextEntrySystem"),
             _ => return None,
         })
     }
 
+    /// The slider's input and draw callbacks (`gogoGadgetSlider`): the image draw with `WIN_STATUS_IMAGE`, except
+    /// for a vertical slider in a list box.
+    pub(crate) fn install_slider_callbacks(&mut self, s: WinId, parent: Option<WinId>) {
+        let horz = self.tree.windows[s].inst.style & gws::HORZ_SLIDER != 0;
+        let image = self.tree.windows[s].status & win_status::IMAGE != 0;
+        let in_listbox = parent.is_some_and(|p| self.tree.windows[p].inst.style & gws::SCROLL_LISTBOX != 0);
+        let e = &mut self.ext[s];
+        if horz {
+            e.input = InputFunc::HorizontalSlider;
+            e.draw = if image { DrawFunc::HorizontalSliderImage } else { DrawFunc::HorizontalSlider };
+        } else {
+            e.input = InputFunc::VerticalSlider;
+            e.draw = if image && !in_listbox { DrawFunc::VerticalSliderImage } else { DrawFunc::VerticalSlider };
+        }
+    }
+
+    /// `assignDefaultGadgetLook(gadget, defaultFont, FALSE)`: the font given, else the default.
+    pub(crate) fn assign_default_font(&mut self, w: WinId, font: Option<GameFont>) {
+        self.tree.windows[w].inst.font = Some(font.unwrap_or_else(default_font));
+    }
+
+    /// `gogoGadgetPushButton(parent, status, x, y, w, h, instData, NULL, TRUE)` for an inner button (no label). The
+    /// default visual it assigns (`PushButtonEnabled`, ...) is not modelled: the script's part draw data replace all
+    /// of it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gogo_push_button<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData) -> WinId {
+        self.gogo_gadget(h, parent, status, x, y, width, height, inst, GadgetData::None).expect("a push button")
+    }
+
     /// `gogoGadgetPushButton`, `gogoGadgetCheckbox`, `gogoGadgetRadioButton`, `gogoGadgetStaticText`,
-    /// `gogoGadgetProgressBar` (by the instance data's style), with the label as its text (`winTextLabelToText`:
-    /// the label translated byte for byte). `None` where upstream asserts (no gadget style this translation creates).
+    /// `gogoGadgetProgressBar`, `gogoGadgetListBox`, `gogoGadgetSlider` (by the instance data's style), with the label
+    /// as its text (`winTextLabelToText`: the label translated byte for byte). `None` where upstream asserts (no
+    /// gadget style this translation creates).
     #[allow(clippy::too_many_arguments)]
     pub fn gogo_gadget<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, mut inst: WinInstanceData, data: GadgetData) -> Option<WinId> {
         let style = gadget_style(inst.style);
+        if style == gws::SCROLL_LISTBOX {
+            let t = match &data {
+                GadgetData::Listbox(d) => crate::client::gadget_list_box::listbox_template(d),
+                _ => crate::client::gadget_list_box::ListboxRt::default(),
+            };
+            return crate::client::gadget_list_box::gogo_gadget_list_box(self, h, parent, status, x, y, width, height, inst, t);
+        }
+        if style == gws::VERT_SLIDER || style == gws::HORZ_SLIDER {
+            let mut t = match &data {
+                GadgetData::Slider(d) => crate::client::gadget_slider::slider_template(d),
+                _ => crate::client::gadget_slider::SliderRt::default(),
+            };
+            return crate::client::gadget_slider::gogo_gadget_slider(self, h, parent, status, x, y, width, height, inst, &mut t);
+        }
         if !matches!(style, gws::PUSH_BUTTON | gws::CHECK_BOX | gws::RADIO_BUTTON | gws::STATIC_TEXT | gws::PROGRESS_BAR) {
             return None;
         }
@@ -1571,12 +1668,49 @@ impl GameWindowManager {
         let style = self.tree.windows[w].inst.style;
         let cb = self.tree.windows[w].callbacks.clone();
         let is_gadget = !matches!(self.tree.windows[w].window_type.as_slice(), b"USER" | b"TABPANE");
+        // setWindowText comes after the creation: the gadget is created without its text
+        let text = self.tree.windows[w].text.take();
         // winCreate's system: the gadget's, or the file's
         let system = if is_gadget { Self::gadget_system(style).unwrap_or(SystemFunc::Default) } else { cb[0].as_deref().map_or(SystemFunc::Default, lexicon_system) };
         self.ext[w].system = system;
         self.win_send_system_msg(h, Some(w), gwm::CREATE, 0, 0);
         if is_gadget {
-            self.install_gadget(w, parent);
+            let kids = self.tree.windows[w].children.len();
+            match gadget_style(style) {
+                gws::SCROLL_LISTBOX => {
+                    let t = match &self.tree.windows[w].gadget {
+                        GadgetData::Listbox(d) => crate::client::gadget_list_box::listbox_template(d),
+                        _ => crate::client::gadget_list_box::ListboxRt::default(),
+                    };
+                    let font = self.tree.windows[w].inst.font.clone();
+                    crate::client::gadget_list_box::list_box_after_create(self, h, w, parent, font, t);
+                    crate::client::gadget_list_box::assign_part_draw_data(self, w);
+                }
+                gws::VERT_SLIDER | gws::HORZ_SLIDER => {
+                    let mut t = match &self.tree.windows[w].gadget {
+                        GadgetData::Slider(d) => crate::client::gadget_slider::slider_template(d),
+                        _ => crate::client::gadget_slider::SliderRt::default(),
+                    };
+                    self.tree.windows[w].status |= win_status::TAB_STOP;
+                    let status = self.tree.windows[w].status;
+                    let font = self.tree.windows[w].inst.font.clone();
+                    crate::client::gadget_slider::slider_after_create(self, h, w, parent, status, style, font, &mut t);
+                    // createGadget: the file's thumb draw data
+                    let thumb = self.tree.windows[w].children.first().copied();
+                    let part = self.tree.windows[w].parts.iter().find(|p| p.0 == crate::client::window_script::GadgetPart::SliderThumb).map(|p| p.1.clone());
+                    if let (Some(t), Some(d)) = (thumb, part) {
+                        let i = &mut self.tree.windows[t].inst;
+                        i.enabled_draw_data = d.enabled;
+                        i.disabled_draw_data = d.disabled;
+                        i.hilite_draw_data = d.hilite;
+                    }
+                }
+                _ => self.install_gadget(w, parent),
+            }
+            // the inner windows were created before the file's children: they go after them
+            let ch = &mut self.tree.windows[w].children;
+            let inner = ch.len() - kids;
+            ch.rotate_left(inner);
         }
         // createWindow: the callbacks the file named
         if let Some(s) = &cb[0] {
@@ -1592,7 +1726,7 @@ impl GameWindowManager {
             self.ext[w].draw = lexicon_draw(d);
         }
         // setWindowText: the reader's final text
-        if let Some(t) = self.tree.windows[w].text.take() {
+        if let Some(t) = text {
             self.set_label(h, w, &t);
         }
         if let Some(p) = parent {
@@ -1842,6 +1976,9 @@ pub(crate) mod tests {
         fn has_image(&self, _image: &[u8]) -> bool {
             true
         }
+        fn printable_key(&self, key: u8, state: i32) -> u16 {
+            if state == 1 { u16::from(key) } else { 0 }
+        }
     }
 
     /// A layout at 800x600 (scale 1): `Parent` (0..400, 0..300, `TestSystem` / `TestInput`, layout callbacks
@@ -1891,7 +2028,7 @@ END\n";
         pub r: [WinId; 3],
     }
 
-    struct WndHost800(WndTestHost);
+    pub(crate) struct WndHost800(pub(crate) WndTestHost);
     impl WndHost for WndHost800 {
         fn name_to_key(&mut self, name: &[u8]) -> u32 {
             self.0.name_to_key(name)

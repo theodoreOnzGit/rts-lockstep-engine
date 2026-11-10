@@ -41,6 +41,8 @@ pub mod image;
 pub mod window_script;
 pub mod window_manager;
 pub mod gadget;
+pub mod gadget_list_box;
+pub mod gadget_slider;
 pub mod window_draw;
 pub mod control_bar_scheme;
 pub mod control_bar_command;

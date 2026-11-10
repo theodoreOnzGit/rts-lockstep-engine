@@ -13,6 +13,12 @@
 //     W3DGadgetRadioButtonDraw, W3DGadgetRadioButtonImageDraw)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DStaticText.cpp (drawStaticTextText,
 //     W3DGadgetStaticTextDraw, W3DGadgetStaticTextImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DListBox.cpp (drawHiliteBar,
+//     drawListBoxText, W3DGadgetListBoxDraw, W3DGadgetListBoxImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DVerticalSlider.cpp
+//     (W3DGadgetVerticalSliderDraw, W3DGadgetVerticalSliderImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DHorizontalSlider.cpp
+//     (W3DGadgetHorizontalSliderDraw, W3DGadgetHorizontalSliderImageDraw)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GameWindowGlobal.cpp (winDrawImage, winFillRect, winOpenRect,
 //     winDrawLine)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/{GadgetPushButton.h, GadgetCheckBox.h, GadgetRadioButton.h,
@@ -53,6 +59,13 @@
 //!   margins.
 //! - The border (`winDrawBorder`): the style's lowest bit chooses; push buttons, radio buttons, static texts, progress
 //!   bars, user windows and tab controls blit the `Border*` images around the window.
+//! - List box (#70): the title, then the border and background (index 0), the rows in view from `displayPos`, each
+//!   cell clipped to its column (text at `x + 5`, images centred), and the selected rows' bar from images 1 to 4 (left,
+//!   right, centre, small centre). The image draw draws image 0 less the slider's width instead of the colours.
+//! - Sliders (#70): the colour draw is the border and colour 0 of the state; the vertical image draw stacks the top
+//!   (0), the repeated centre (2), the small centre (3) and the bottom (1); the horizontal image draw is a row of
+//!   boxes, filled (the **disabled** image 0) up to the position and blank (disabled image 1) after, with the hilite
+//!   image 0 behind them when hilited.
 //!
 //! # Upstream quirks that are kept
 //!
@@ -65,6 +78,10 @@
 //! - The check box's colour draw draws the background border and fill without testing whether they are defined.
 //! - The three-piece push button with no room for its centre draws its left image to the middle and its right image
 //!   from there to the window's right edge **without** the image offset.
+//! - The list box's colour draw asks `drawListBoxText` for **images** (`useImages` TRUE): its selection bar is the
+//!   image bar, never the selection colours. A list box's own draw sets each cell's font to the window's (and, with
+//!   `ONE_LINE`, its word wrap to 0), which later row heights see.
+//! - `winDrawBorder` takes the list box's slider adjustment from the thumb's **height**, off the width.
 //!
 //! # Where this differs from upstream
 //!
@@ -147,6 +164,11 @@ pub fn draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &m
         DrawFunc::RadioButtonImage => radio_button_image_draw(wm, h, w, out),
         DrawFunc::StaticText => static_text_draw(wm, h, w, out),
         DrawFunc::StaticTextImage => static_text_image_draw(wm, h, w, out),
+        DrawFunc::ListBox => list_box_draw(wm, h, w, out),
+        DrawFunc::ListBoxImage => list_box_image_draw(wm, h, w, out),
+        DrawFunc::VerticalSlider | DrawFunc::HorizontalSlider => slider_draw(wm, w, out),
+        DrawFunc::VerticalSliderImage => vertical_slider_image_draw(wm, h, w, out),
+        DrawFunc::HorizontalSliderImage => horizontal_slider_image_draw(wm, h, w, out),
         DrawFunc::Host(name) => h.draw(wm, &name, w, out),
     }
 }
@@ -506,6 +528,317 @@ pub fn static_text_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H,
     }
 }
 
+/// `drawHiliteBar(left, right, center, smallCenter, startX, startY, endX, endY)`.
+#[allow(clippy::too_many_arguments)]
+fn draw_hilite_bar<H: GuiHost>(wm: &mut GameWindowManager, h: &H, imgs: [&Vec<u8>; 4], sx: i32, sy: i32, ex: i32, ey: i32, out: &mut Vec<DrawItem>) {
+    let [left, right, center, small] = imgs;
+    let size = |i: &Vec<u8>| h.image_size(i).unwrap_or((0, 0));
+    let (ls, rs, cs, ss) = (size(left), size(right), size(center), size(small));
+    let mut bar = (ex - sx, ey - sy);
+    if bar.0 < ls.0 + rs.0 {
+        bar.0 = ls.0 + rs.0;
+    }
+    let left_end = (sx + ls.0, sy + bar.1);
+    let right_start = (sx + bar.0 - rs.0, sy);
+    let mut center_width = right_start.0 - left_end.0;
+    // a zero-width image divides by zero upstream: nothing is drawn
+    if cs.0 == 0 || ss.0 == 0 {
+        return;
+    }
+    let pieces = center_width / cs.0;
+    let mut x = left_end.0;
+    let (y0, y1) = (sy, sy + bar.1);
+    for _ in 0..pieces {
+        image(out, wm, Some(center), x, y0, x + cs.0, y1);
+        x += cs.0;
+    }
+    wm.clip = Some((left_end.0, sy, left_end.0 + center_width, y0 + bar.1));
+    center_width = right_start.0 - x;
+    if center_width != 0 {
+        let pieces = center_width / ss.0 + 1;
+        for _ in 0..pieces {
+            image(out, wm, Some(small), x, y0, x + ss.0, y1);
+            x += ss.0;
+        }
+    }
+    wm.clip = None;
+    image(out, wm, Some(left), sx, sy, left_end.0, left_end.1);
+    image(out, wm, Some(right), right_start.0, right_start.1, right_start.0 + rs.0, right_start.1 + bar.1);
+}
+
+/// `drawListBoxText(window, instData, x, y, width, height, useImages)`: the rows in view, the selection bar, each
+/// cell clipped to its column. The cells' display strings take the window's font (and, with `ONE_LINE`, no word
+/// wrap) as upstream's draw sets them.
+#[allow(clippy::too_many_arguments)]
+fn draw_list_box_text<H: GuiHost>(wm: &mut GameWindowManager, h: &H, w: WinId, x: i32, y: i32, width: i32, height: i32, use_images: bool, out: &mut Vec<DrawItem>) {
+    use crate::client::gadget_list_box::{CellData, LISTBOX_IMAGE, LISTBOX_TEXT, TEXT_X_OFFSET};
+    let UserData::Listbox(l) = &wm.ext[w].user else { return };
+    let l = l.clone();
+    let Some(data) = l.list_data.clone() else { return };
+    let clip = (x + 1, y - 3, x + width - 1, y + height - 1);
+    let mut draw_y = y - i32::from(l.display_pos);
+    let win = wm.tree.windows[w].clone();
+    let st = draw_state(&win);
+    let window_font = win.inst.font.clone();
+    let one_line = win.status & win_status::ONE_LINE != 0;
+    let slider_hidden = l.slider.is_some_and(|s| wm.tree.windows[s].status & win_status::HIDDEN != 0);
+    let mut i = 0usize;
+    loop {
+        if i > 0 && data.get(i - 1).is_none_or(|r| r.list_height > i32::from(l.display_pos) + i32::from(l.display_height)) {
+            break;
+        }
+        if i as i32 == i32::from(l.end_pos) {
+            break;
+        }
+        let Some(r) = data.get(i).copied() else { break };
+        if r.list_height < i32::from(l.display_pos) {
+            draw_y += i32::from(r.height) + 1;
+            i += 1;
+            continue;
+        }
+        let line = i32::from(r.height) + 1;
+        let selected = if l.multi_select { l.selections.as_ref().is_some_and(|s| s.iter().take_while(|&&v| v >= 0).any(|&v| v == i as i32)) } else { i as i32 == l.select_pos };
+        if selected {
+            let (mut s0, mut e0) = ((x, draw_y), (x + width, draw_y + line));
+            if e0.1 > clip.3 {
+                e0.1 = clip.3;
+            }
+            if s0.1 < clip.1 {
+                s0.1 = clip.1;
+            }
+            if use_images {
+                let im = |k: usize| dd(&win, st, k).image.clone();
+                if let (Some(a), Some(b), Some(c), Some(d)) = (im(1), im(2), im(3), im(4)) {
+                    draw_hilite_bar(wm, h, [&a, &b, &c, &d], s0.0 + 1, s0.1, e0.0, e0.1, out);
+                }
+            } else {
+                let d = dd(&win, st, 1);
+                if d.border_color != WIN_COLOR_UNDEFINED {
+                    open_rect(out, d.border_color, s0.0, s0.1, e0.0, e0.1);
+                }
+                let (mut s1, mut e1) = ((x + 1, draw_y + 1), (x + 1 + width - 2, draw_y + 1 + line - 2));
+                if e1.1 > clip.3 {
+                    e1.1 = clip.3;
+                }
+                if s1.1 < clip.1 {
+                    s1.1 = clip.1;
+                }
+                if d.color != WIN_COLOR_UNDEFINED {
+                    fill_rect(out, d.color, s1.0, s1.1, e1.0, e1.1);
+                }
+            }
+        }
+        // `winMakeColor(0, 0, 0, 255)`
+        let drop = 0xFF00_0000u32 as i32;
+        if let Some(a) = r.cell {
+            let mut column_x = x;
+            for j in 0..usize::try_from(l.columns).unwrap_or(0) {
+                let cw = l.column_width.as_ref().and_then(|c| c.get(j)).copied().unwrap_or(0);
+                let hi_x = if l.columns == 1 && slider_hidden { column_x + width - 3 } else { column_x + cw };
+                let mut region = (column_x, draw_y, hi_x, draw_y + i32::from(r.height));
+                if region.1 < clip.1 {
+                    region.1 = clip.1;
+                }
+                if region.3 > clip.3 {
+                    region.3 = clip.3;
+                }
+                let Some(Some(cells)) = (match &wm.ext[w].user { UserData::Listbox(l) => l.arrays.get(a).cloned(), _ => None }) else { break };
+                let Some(c) = cells.get(j).cloned() else { break };
+                if c.cell_type == LISTBOX_TEXT {
+                    if let CellData::Text(mut d) = c.data {
+                        if one_line {
+                            d.word_wrap = 0;
+                        }
+                        if d.font != window_font {
+                            d.font = window_font.clone();
+                        }
+                        out.push(DrawItem::Text { text: d.text.clone(), x: column_x + TEXT_X_OFFSET, y: draw_y, color: c.color, drop_color: drop, font: d.font.clone(), word_wrap: (d.word_wrap > 0).then_some(d.word_wrap), wrap_centered: false, hotkey: false, clip: Some(region) });
+                        if let UserData::Listbox(l) = &mut wm.ext[w].user {
+                            if let Some(cc) = l.arrays.get_mut(a).and_then(|x| x.as_mut()).and_then(|x| x.get_mut(j)) {
+                                cc.data = CellData::Text(d);
+                            }
+                        }
+                    }
+                } else if c.cell_type == LISTBOX_IMAGE {
+                    if let CellData::Image(img) = &c.data {
+                        let mut iw = if c.width > 0 { c.width } else { cw };
+                        let ih = if c.height > 0 { c.height } else { i32::from(r.height) };
+                        if j == 0 {
+                            iw -= 1;
+                        }
+                        let mut ox = if iw < cw { column_x + (cw - iw) / 2 } else { column_x };
+                        let mut oy = if ih < i32::from(r.height) { draw_y + (i32::from(r.height) - ih) / 2 } else { draw_y };
+                        oy += 1;
+                        if ox < x + 1 {
+                            ox = x + 1;
+                        }
+                        wm.clip = Some(region);
+                        image_mode(out, wm, Some(img), ox, oy, ox + iw, oy + ih, c.color as u32, false);
+                    }
+                }
+                column_x += cw;
+            }
+        }
+        draw_y += line;
+        wm.clip = None;
+        i += 1;
+    }
+}
+
+/// `W3DGadgetListBoxDraw`: the title, the border and background colours (index 0), the rows (with images for the
+/// selection, as upstream asks even here).
+pub fn list_box_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((mut x, mut y), (width0, mut height)) = place(wm, w);
+    let _ = &mut x;
+    let win = wm.tree.windows[w].clone();
+    let fh = h.font_height(win.inst.font.as_ref());
+    let st = draw_state(&win);
+    let d = dd(&win, st, 0);
+    let (bg, border) = (d.color, d.border_color);
+    let (tc, tb) = text_colors(&win, st);
+    let mut width = width0;
+    if let Some(t) = win.text.as_ref().filter(|t| !t.is_empty()) {
+        out.push(DrawItem::Text { text: t.clone(), x: x + 1, y, color: tc, drop_color: tb, font: win.inst.font.clone(), word_wrap: None, wrap_centered: false, hotkey: false, clip: None });
+        y += fh + 1;
+        height -= fh + 1;
+    }
+    if border != WIN_COLOR_UNDEFINED {
+        open_rect(out, border, x, y, x + width, y + height);
+    }
+    if bg != WIN_COLOR_UNDEFINED {
+        fill_rect(out, bg, x + 1, y + 1, x + width - 1, y + height - 1);
+    }
+    if let UserData::Listbox(l) = &wm.ext[w].user {
+        if let Some(s) = l.slider {
+            if wm.tree.windows[s].status & win_status::HIDDEN == 0 {
+                width -= wm.tree.windows[s].size.0 + 3;
+            }
+        }
+    }
+    draw_list_box_text(wm, h, w, x, y + 4, width, height - 4, true, out);
+}
+
+/// `W3DGadgetListBoxImageDraw`: the state's image 0 (less the slider's width), the title, the rows.
+pub fn list_box_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((x, mut y), (mut width, mut height)) = place(wm, w);
+    let win = wm.tree.windows[w].clone();
+    if let UserData::Listbox(l) = &wm.ext[w].user {
+        if let Some(s) = l.slider {
+            width -= wm.tree.windows[s].size.0;
+        }
+    }
+    let st = draw_state(&win);
+    let (tc, tb) = text_colors(&win, st);
+    if let Some(img) = dd(&win, st, 0).image.clone() {
+        let (sx, sy) = (x + win.inst.image_offset.0, y + win.inst.image_offset.1);
+        image(out, wm, Some(&img), sx, sy, sx + width, sy + height);
+    }
+    if let Some(t) = win.text.as_ref().filter(|t| !t.is_empty()) {
+        out.push(DrawItem::Text { text: t.clone(), x: x + 1, y, color: tc, drop_color: tb, font: win.inst.font.clone(), word_wrap: None, wrap_centered: false, hotkey: false, clip: None });
+        let fh = h.font_height(win.inst.font.as_ref());
+        y += fh;
+        height -= fh + 1;
+    }
+    draw_list_box_text(wm, h, w, x, y + 4, width, height - 4, true, out);
+}
+
+/// `W3DGadgetVerticalSliderDraw` / `W3DGadgetHorizontalSliderDraw` (the same): the state's border and colour 0.
+pub fn slider_draw(wm: &GameWindowManager, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let d = dd(win, draw_state(win), 0);
+    if d.border_color != WIN_COLOR_UNDEFINED {
+        open_rect(out, d.border_color, ox, oy, ox + sx, oy + sy);
+    }
+    if d.color != WIN_COLOR_UNDEFINED {
+        fill_rect(out, d.color, ox + 1, oy + 1, ox + 1 + sx - 2, oy + 1 + sy - 2);
+    }
+}
+
+/// `W3DGadgetVerticalSliderImageDraw`: top (0) and bottom (1) ends, the centre (2) repeated and the small centre (3)
+/// up to the bottom; only when all four images are set.
+pub fn vertical_slider_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((ox, oy), (_sx, sy)) = place(wm, w);
+    let win = wm.tree.windows[w].clone();
+    let (xo, yo) = win.inst.image_offset;
+    let st = draw_state(&win);
+    let im = |k: usize| dd(&win, st, k).image.clone();
+    let (Some(top), Some(bot), Some(cen), Some(small)) = (im(0), im(1), im(2), im(3)) else { return };
+    let size = |i: &Vec<u8>| h.image_size(i).unwrap_or((0, 0));
+    let (ts, bs, cs, ss) = (size(&top), size(&bot), size(&cen), size(&small));
+    if ts.1 + bs.1 >= sy {
+        image(out, wm, Some(&top), ox + xo, oy + yo, ox + xo + ts.0, oy + sy / 2);
+        image(out, wm, Some(&bot), ox + xo, oy + sy / 2, ox + xo + bs.0, oy + yo + sy);
+        return;
+    }
+    let top_end = (ox + ts.0 + xo, oy + ts.1 + yo);
+    let bottom_start = (ox + xo, oy + sy - bs.1 + yo);
+    if cs.1 == 0 || ss.1 == 0 {
+        return;
+    }
+    let pieces = (bottom_start.1 - top_end.1) / cs.1;
+    let (x0, mut y0) = (ox + xo, top_end.1);
+    let x1 = x0 + cs.0;
+    let mut y1 = y0 + cs.1;
+    for _ in 0..pieces {
+        image(out, wm, Some(&cen), x0, y0, x1, y1);
+        y0 += cs.1;
+        y1 += cs.1;
+    }
+    let pieces = (bottom_start.1 - y0) / ss.1 + 1;
+    y1 = y0 + ss.1;
+    for _ in 0..pieces {
+        image(out, wm, Some(&small), x0, y0, x1, y1);
+        y0 += ss.1;
+        y1 += ss.1;
+    }
+    image(out, wm, Some(&top), ox + xo, oy + yo, top_end.0, top_end.1);
+    image(out, wm, Some(&bot), bottom_start.0, bottom_start.1, bottom_start.0 + bs.0, bottom_start.1 + bs.1);
+}
+
+/// `W3DGadgetHorizontalSliderImageDraw`: a row of boxes, the filled ones (disabled image 0) up to the position, the
+/// blank ones (disabled image 1) after, and with the hilite the hilite image 0 behind them. Upstream dereferences the
+/// images without a test: without them nothing is drawn.
+pub fn horizontal_slider_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    use crate::client::gadget_slider::real_to_int_x86;
+    let ((mut ox, oy), (sx, _sy)) = place(wm, w);
+    let win = wm.tree.windows[w].clone();
+    let (Some(hi), Some(blank), Some(fill)) = (win.inst.hilite_draw_data[0].image.clone(), win.inst.disabled_draw_data[1].image.clone(), win.inst.disabled_draw_data[0].image.clone()) else { return };
+    let UserData::Slider(s) = wm.ext[w].user else { return };
+    let x_multi = wm.display.0 as f32 / 800.0;
+    let fw = h.image_size(&fill).unwrap_or((0, 0)).0;
+    let box_w = real_to_int_x86(fw as f32 * x_multi);
+    let pad = 2;
+    let (mut start_x, mut end_x) = (ox, ox + box_w);
+    let pct = s.position.wrapping_sub(s.min_val) as f32 / s.max_val.wrapping_sub(s.min_val) as f32;
+    let max_sel = ox + crate::common::base_type::real_to_int(pct * sx as f32);
+    let (mut boxes, mut sel) = (0, 0);
+    while end_x < ox + sx {
+        if start_x <= max_sel && end_x < ox + sx && s.position != s.min_val {
+            sel += 1;
+        }
+        start_x = end_x + pad;
+        end_x = start_x + box_w;
+        boxes += 1;
+    }
+    let hi_boxes = boxes + 1;
+    let covered = end_x - ox - box_w;
+    let hoff = (-(box_w + pad) / 2, box_w / 3);
+    ox += (sx - covered) / 2;
+    if win.inst.state & WIN_STATE_HILITED != 0 {
+        let by = oy + hoff.1;
+        for i in 0..hi_boxes {
+            let bx = ox + hoff.0 + i * (box_w + pad);
+            image(out, wm, Some(&hi), bx, by, bx + box_w + pad, by + box_w + pad);
+        }
+    }
+    for i in 0..boxes {
+        let x0 = ox + i * (box_w + pad);
+        let img = if i < sel { &fill } else { &blank };
+        image(out, wm, Some(img), x0, oy, x0 + box_w, oy + box_w);
+    }
+}
+
 /// `BORDER_CORNER_SIZE`, `BORDER_LINE_SIZE`.
 const BORDER_CORNER_SIZE: i32 = 15;
 const BORDER_LINE_SIZE: i32 = 20;
@@ -590,9 +923,20 @@ pub fn win_draw_border<H: GuiHost>(wm: &GameWindowManager, h: &H, w: WinId, out:
                 blit_border_rect(wm, &mut items, x, oy, width, win.size.1);
             }
             gws::SCROLL_LISTBOX => {
-                // the slider's thumb is not created yet (#34's remaining list): no slider adjustment
+                // the slider adjustment is the thumb's **height** (`size.y`), taken off the width
+                let mut slider = 0;
+                if let UserData::Listbox(l) = &wm.ext[w].user {
+                    if l.scroll_bar {
+                        let thumb = l.slider.and_then(|s| wm.tree.windows[s].children.first().copied());
+                        match thumb {
+                            Some(t) => slider = wm.tree.windows[t].size.1,
+                            // `list->slider->winGetChild()` NULL: upstream dereferences it
+                            None => return,
+                        }
+                    }
+                }
                 let label = if win.text.as_ref().is_some_and(|t| !t.is_empty()) { 4 } else { 0 };
-                blit_border_rect(wm, &mut items, ox - 3, oy - (3 + label), win.size.0 + 3, win.size.1 + 6);
+                blit_border_rect(wm, &mut items, ox - 3, oy - (3 + label), win.size.0 + 3 - slider, win.size.1 + 6);
             }
             gws::RADIO_BUTTON | gws::STATIC_TEXT | gws::PROGRESS_BAR | gws::PUSH_BUTTON | gws::USER_WINDOW | gws::TAB_CONTROL => {
                 blit_border_rect(wm, &mut items, ox, oy, win.size.0, win.size.1);
