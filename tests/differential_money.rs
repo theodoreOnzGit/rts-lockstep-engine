@@ -64,6 +64,9 @@ fn event_pair(e: &ClientEvent) -> (u32, u32) {
         // --- p1w10-sonnet ---
         ClientEvent::Player(_) => unreachable!("the money code makes only MoneySound events"),
         // --- end p1w10-sonnet ---
+        // #83: the events phase 2 added (script audio, loading, level start, dispatch, EVA); the money code makes none.
+        // This match was not updated when they were added, so the test stopped compiling.
+        _ => unreachable!("the money code makes only MoneySound events"),
     }
 }
 

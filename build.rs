@@ -43,6 +43,11 @@ mod differential {
         for f in FLAGS {
             cfg.flag(f);
         }
+        // #81: g++'s object-lifetime dead-store elimination (`-flifetime-dse`, on by default) drops the shim's zero
+        // fill of `NEW` (differential/shim/Common/GameMemory.h: a memset before the constructor starts), so members a
+        // constructor leaves unset read heap garbage where upstream's allocator gives 0. Clang rejects the flag (and
+        // does not do this elimination by default); `flag_if_supported` is checked against the build's final compiler.
+        cfg.flag_if_supported("-fno-lifetime-dse");
         // `__cdecl` appears in WWMath declarations; it means nothing on x86_64.
         cfg.define("__cdecl", Some(""));
         // Release build: upstream asserts compiled out (as in the shipped game).

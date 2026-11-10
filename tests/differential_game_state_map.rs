@@ -278,11 +278,17 @@ impl GameStateMapHost<Blk> for Host {
         self.drawable_id = id;
         self.line(format!("drawid {id}"));
     }
-    fn start_new_game(&mut self, loading_save_game: bool) {
+    fn start_new_game(&mut self, _gs: &GameState<Blk>, loading_save_game: bool) -> Result<(), MapXferError> {
         self.line(format!("startnewgame {}", i32::from(loading_save_game)));
+        Ok(())
     }
-    fn skirmish_game_info(&mut self) -> &mut Option<GameInfo> {
-        &mut self.skirmish
+    // ~~`skirmish_game_info(&mut self) -> &mut Option<GameInfo>`~~ **Corrected 2026-11-10 (#83):** the trait
+    // takes `TheSkirmishGameInfo` out and puts it back since #58 (bd32e57); this test was not updated then.
+    fn take_skirmish_game_info(&mut self) -> Option<GameInfo> {
+        self.skirmish.take()
+    }
+    fn set_skirmish_game_info(&mut self, game: Option<GameInfo>) {
+        self.skirmish = game;
     }
     fn skirmish_block(&self) -> Blk {
         Blk::Skirmish(self.skirmish_gen)
