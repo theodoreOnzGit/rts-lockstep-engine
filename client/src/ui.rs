@@ -31,16 +31,22 @@
 //! with the focus is typed into, natively and in the browser (`app::keyboard_ui` feeds Bevy's keyboard events). While a
 //! window has the focus the camera's keys are the UI's.
 //!
+//! Since #78, [`draw_list_quads`] turns a window manager's draw list (`winRepaint`'s `DrawItem`s) into the same quads, so
+//! the shell (`crate::shell`) is drawn by the app's one quad drawing; the mapped images are read alone
+//! ([`load_mapped_images`]) and shared between the shell and the bar ([`load_game_ui_with`]). The bar itself still draws
+//! from [`GameUi::frame`].
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
-use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
+use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
 use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WndHost, WIN_COLOR_UNDEFINED};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
@@ -61,7 +67,8 @@ pub enum UiBuild {
 
 /// The control bar, read.
 pub struct GameUi {
-    pub images: ImageCollection,
+    /// (#78) Shared with the shell ([`load_game_ui_with`]).
+    pub images: Arc<ImageCollection>,
     /// (#34) The window manager holding the bar's windows (`wm.tree`).
     pub wm: GameWindowManager,
     pub schemes: ControlBarSchemeManager,
@@ -141,15 +148,44 @@ impl<T: GameTextFetch> WndHost for Host<'_, T> {
 /// Reads the control bar: the mapped images (`ImageCollection::load(512)`), `Window\ControlBar.wnd`, the schemes, and
 /// the scheme of `side` (`setControlBarSchemeByPlayerTemplate`). Reads only.
 pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetch, side: &[u8]) -> UiBuild {
+    load_game_ui_with(fs, text, side, None)
+}
+
+/// (#78) What [`load_mapped_images`] found.
+pub enum ImagesBuild {
+    Ready(Arc<ImageCollection>),
+    /// A file's bytes are still being fetched (the web's ranged reads): ask again later.
+    Waiting,
+    Missing(String),
+}
+
+/// (#78) The mapped images alone (`TheMappedImageCollection->load(512)`, `Data\INI\MappedImages`), shared: upstream has
+/// one collection for every window, the shell's and the control bar's (`TheMappedImageCollection`). Reads only.
+pub fn load_mapped_images<D: LocalDevice>(fs: &FileSystem<D>) -> ImagesBuild {
     let reads = Reads { fs, waiting: std::cell::Cell::new(false) };
     let mut images = ImageCollection::new();
     let loaded = images.load(512, &reads);
     if reads.waiting.get() {
-        return UiBuild::Waiting;
+        return ImagesBuild::Waiting;
     }
-    if let Err(e) = loaded {
-        return UiBuild::Missing(format!("the mapped images did not load: {e:?}"));
+    match loaded {
+        Ok(_) => ImagesBuild::Ready(Arc::new(images)),
+        Err(e) => ImagesBuild::Missing(format!("the mapped images did not load: {e:?}")),
     }
+}
+
+/// [`load_game_ui`] with (#78) the mapped images already read (the shell's, [`load_mapped_images`]) when given, so the
+/// shell and the bar share one collection, as upstream's windows share `TheMappedImageCollection`.
+pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetch, side: &[u8], shared: Option<Arc<ImageCollection>>) -> UiBuild {
+    let reads = Reads { fs, waiting: std::cell::Cell::new(false) };
+    let images = match shared {
+        Some(i) => i,
+        None => match load_mapped_images(fs) {
+            ImagesBuild::Ready(i) => i,
+            ImagesBuild::Waiting => return UiBuild::Waiting,
+            ImagesBuild::Missing(why) => return UiBuild::Missing(why),
+        },
+    };
     let Some(wnd) = reads.open(b"Window\\ControlBar.wnd") else {
         return if reads.waiting.get() { UiBuild::Waiting } else { UiBuild::Missing("no Window\\ControlBar.wnd".into()) };
     };
@@ -226,7 +262,7 @@ pub fn keyboard_into<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, scan: u8
 }
 
 /// One thing to draw, in the layout's space.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiQuad {
     /// (x0, y0, x1, y1).
     pub rect: [f32; 4],
@@ -243,6 +279,116 @@ pub struct UiQuad {
     pub clock: Option<i32>,
     /// (#35) An image drawn over the quad (the portrait's veterancy chevron).
     pub overlay: Option<Vec<u8>>,
+    /// (#78) The image's colour (`drawImage`'s `color`, as RGBA) when it is not opaque white.
+    pub tint: Option<[u8; 4]>,
+    /// (#78) The part of the image shown, as fractions of it `(u0, v0, u1, v1)`: an image cut by its clip region.
+    pub uv: Option<[f32; 4]>,
+    /// (#78) The text's colour (white when `None`).
+    pub text_color: Option<[u8; 4]>,
+    /// (#78) The text's height in layout pixels (the bar's own size when `None`).
+    pub font_px: Option<f32>,
+    /// (#78) The text starts at the quad's top left, where the window's draw placed it (`DisplayString::draw(x, y)`),
+    /// rather than centred; it wraps at the quad's width only when `text_wrap`.
+    pub text_top_left: bool,
+    pub text_wrap: bool,
+    /// (#78) A line not along an axis (`drawLine`): the quad is the line laid flat about its centre, turned clockwise by
+    /// the angle whose `(sin, cos)` this is.
+    pub rotation: Option<(f32, f32)>,
+}
+
+/// `WIN_DRAW_LINE_WIDTH` (W3DGadget.h, 1.0): the width every outline and line of the windows' draws is given upstream
+/// (each `winOpenRect` and `drawOpenRect` caller passes it or a literal 1, checked 2026-11-10), so a [`DrawItem`] does not
+/// carry one (#82).
+pub const WIN_DRAW_LINE_WIDTH: f32 = 1.0;
+
+/// An `ARGB` colour (`GameMakeColor`) as RGBA.
+fn rgba(c: u32) -> [u8; 4] {
+    [(c >> 16) as u8, (c >> 8) as u8, c as u8, (c >> 24) as u8]
+}
+
+/// `(x0, y0, x1, y1)` cut by a clip region `(x0, y0, x1, y1)`, with the fractions of the original kept: `None` when
+/// nothing is left.
+fn clipped(r: [f32; 4], clip: Option<(i32, i32, i32, i32)>) -> Option<([f32; 4], Option<[f32; 4]>)> {
+    let Some((cx0, cy0, cx1, cy1)) = clip else { return Some((r, None)) };
+    let c = [r[0].max(cx0 as f32), r[1].max(cy0 as f32), r[2].min(cx1 as f32), r[3].min(cy1 as f32)];
+    if c[2] <= c[0] || c[3] <= c[1] {
+        return None;
+    }
+    if c == r {
+        return Some((r, None));
+    }
+    let (w, h) = (r[2] - r[0], r[3] - r[1]);
+    Some((c, Some([(c[0] - r[0]) / w, (c[1] - r[1]) / h, (c[2] - r[0]) / w, (c[3] - r[1]) / h])))
+}
+
+/// (#78) A window manager's draw list (`winRepaint`'s [`DrawItem`]s, the transitions' draws last) as the quads the app
+/// draws the control bar with, in the same order (the first underneath). New glue in place of `W3DDisplay`'s 2D
+/// renderer:
+///
+/// - `drawFillRect`: a quad of its colour;
+/// - `drawOpenRect`: its four edges, [`WIN_DRAW_LINE_WIDTH`] wide, inside the rectangle (`Render2DClass::Add_Outline`
+///   on `RectClass(x, y, x + w, y + h)`);
+/// - `drawLine`: a quad one line wide along it (turned when it is not along an axis);
+/// - `drawImage`: the mapped image over its rectangle, cut by the clip region it was drawn under, tinted by its colour;
+///   a grayscale draw is drawn dimmed (the app has no grayscale shader);
+/// - `DisplayString::draw`: the text from its top left, in its colour, its box measured by the host
+///   (`GuiHost::text_size`), cut by its clip region; the drop shadow is not drawn;
+/// - `drawRectClock`: the quad's clock (the bar's darkened part), the remaining part for an inverse clock.
+pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> {
+    let mut out = Vec::new();
+    let lw = WIN_DRAW_LINE_WIDTH;
+    for d in items {
+        match d {
+            DrawItem::FillRect { x, y, w, h, color: c } => {
+                out.push(UiQuad { rect: [*x as f32, *y as f32, (x + w) as f32, (y + h) as f32], color: color(*c), ..Default::default() });
+            }
+            DrawItem::OpenRect { x, y, w, h, color: c } => {
+                let (x0, y0, x1, y1) = (*x as f32, *y as f32, (x + w) as f32, (y + h) as f32);
+                for rect in [[x0, y0, x1, y0 + lw], [x0, y1 - lw, x1, y1], [x0, y0, x0 + lw, y1], [x1 - lw, y0, x1, y1]] {
+                    out.push(UiQuad { rect, color: color(*c), ..Default::default() });
+                }
+            }
+            DrawItem::Line { x0, y0, x1, y1, color: c } => {
+                let (dx, dy) = ((x1 - x0) as f32, (y1 - y0) as f32);
+                let (mx, my) = ((x0 + x1) as f32 / 2.0, (y0 + y1) as f32 / 2.0);
+                let q = if dy == 0.0 {
+                    UiQuad { rect: [mx - dx.abs() / 2.0, my - lw / 2.0, mx + dx.abs() / 2.0, my + lw / 2.0], ..Default::default() }
+                } else if dx == 0.0 {
+                    UiQuad { rect: [mx - lw / 2.0, my - dy.abs() / 2.0, mx + lw / 2.0, my + dy.abs() / 2.0], ..Default::default() }
+                } else {
+                    let l = rts_lockstep_engine::ww::wwmath::sqrt(dx * dx + dy * dy);
+                    UiQuad { rect: [mx - l / 2.0, my - lw / 2.0, mx + l / 2.0, my + lw / 2.0], rotation: Some((dy / l, dx / l)), ..Default::default() }
+                };
+                out.push(UiQuad { color: color(*c), ..q });
+            }
+            DrawItem::Image { image, x0, y0, x1, y1, color: c, grayscale, clip } => {
+                let Some((rect, uv)) = clipped([*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32], *clip) else { continue };
+                let tint = (*c != 0xFFFF_FFFF).then(|| rgba(*c));
+                out.push(UiQuad { rect, image: Some(image.clone()), uv, tint, dim: *grayscale, ..Default::default() });
+            }
+            DrawItem::Text { text, x, y, color: c, font, word_wrap, clip, .. } => {
+                if text.is_empty() {
+                    continue;
+                }
+                let (w, h) = host.text_size(font.as_ref(), text, *word_wrap);
+                let Some((rect, _)) = clipped([*x as f32, *y as f32, (x + w) as f32, (y + h) as f32], *clip) else { continue };
+                out.push(UiQuad {
+                    rect,
+                    text: Some(String::from_utf16_lossy(text)),
+                    text_color: Some(rgba(*c as u32)),
+                    font_px: Some(host.font_height(font.as_ref()) as f32),
+                    text_top_left: true,
+                    text_wrap: word_wrap.is_some_and(|w| w > 0),
+                    ..Default::default()
+                });
+            }
+            DrawItem::RectClock { x, y, w, h, percent, inverse, .. } => {
+                let pct = if *inverse { 100 - percent } else { *percent };
+                out.push(UiQuad { rect: [*x as f32, *y as f32, (x + w) as f32, (y + h) as f32], clock: Some(pct), ..Default::default() });
+            }
+        }
+    }
+    out
 }
 
 /// What the bar shows this frame, read from the World.
@@ -487,7 +633,7 @@ impl GameUi {
         let mut out = Vec::new();
         let scheme = self.schemes.current_scheme();
         let draws: Vec<SchemeDraw> = scheme.map(|c| c.draw_list(self.schemes.multiplier, Default::default(), &self.images)).unwrap_or_default();
-        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None };
+        let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() };
         out.extend(draws.iter().filter(|d| d.layer >= 3).map(quad));
         let roots: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&i| self.wm.tree.windows[i].parent.is_none()).collect();
         for r in roots {
@@ -516,7 +662,7 @@ impl GameUi {
         let win: &GameWindow = &self.wm.tree.windows[w];
         let (x, y) = self.wm.tree.screen_position(w);
         let rect = [x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32];
-        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None, overlay: None };
+        let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() };
         let enabled = win.status & win_status::ENABLED != 0;
         let dd = if enabled { &win.inst.enabled_draw_data[0] } else { &win.inst.disabled_draw_data[0] };
         if win.status & win_status::IMAGE != 0 {
@@ -572,7 +718,7 @@ impl GameUi {
             let (p, c) = s.power;
             let frac = if p <= 0 { 0.0 } else { (c as f32 / p as f32).min(1.0) };
             let colr = if c > p { [220, 40, 30, 255] } else { [40, 200, 60, 255] };
-            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, clock: None, overlay: None });
+            out.push(UiQuad { rect: [rect[0], rect[1], rect[0] + (rect[2] - rect[0]) * frac.max(0.05), rect[3]], image: None, color: Some(colr), text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() });
         }
         for &c in win.children.iter().rev() {
             self.windows_into(c, s, out);
@@ -595,12 +741,17 @@ impl LayoutPlacement {
     pub fn to_screen(&self, r: [f32; 4]) -> [f32; 4] {
         [self.left + r[0] * self.scale, self.top + (r[1] - self.y0) * self.scale, self.left + r[2] * self.scale, self.top + (r[3] - self.y0) * self.scale]
     }
+
+    /// (#78) A screen point (logical pixels) in the layout: [`LayoutPlacement::to_screen`] inverted.
+    pub fn to_layout(&self, p: (f32, f32)) -> (f32, f32) {
+        ((p.0 - self.left) / self.scale, (p.1 - self.top) / self.scale + self.y0)
+    }
 }
 
 /// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** ~~5 buttons of 48 and 4
 /// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** 6 buttons of 48 and 5 gaps of 6, the campaigns
 /// button added, `app::setup_ui`) and its bottom margin.
-const ZOOM_COLUMN_HEIGHT: f32 = 6.0 * 48.0 + 5.0 * 6.0 + 8.0;
+pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 6.0 * 48.0 + 5.0 * 6.0 + 8.0;
 
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
@@ -685,6 +836,46 @@ mod tests {
     use rts_lockstep_engine::common::base_type::ICoord2D;
     use rts_lockstep_engine::common::file_system::MemoryDevice;
     use rts_lockstep_engine::logic::world::game_data::TextTable;
+
+    /// #78: a window manager's draw list as the app's quads ([`draw_list_quads`]). Predicted before the run, from the
+    /// rules in its doc:
+    ///
+    /// - `FillRect(10, 20, 30, 40, 0x80FF0000)`: one quad (10, 20)..(40, 60), RGBA (255, 0, 0, 128);
+    /// - `OpenRect(0, 0, 10, 5)`: four edges, one pixel wide, inside: top (0,0,10,1), bottom (0,4,10,5), left (0,0,1,5),
+    ///   right (9,0,10,5);
+    /// - a horizontal line (0, 5)..(10, 5): (0, 4.5, 10, 5.5), not turned; a line (0, 0)..(3, 4): 5 long about (1.5, 2),
+    ///   (-1, 1.5, 4, 2.5), turned by sin 0.8, cos 0.6;
+    /// - an image (0, 0)..(100, 50) clipped to (50, 0)..(200, 25): (50, 0, 100, 25), the image's (0.5, 0)..(1, 0.5),
+    ///   no tint (opaque white); tinted 0x80FFFFFF: alpha 128; clipped away: no quad;
+    /// - the text "AB" at (5, 6), no font (the default host: 12 high, 6 a character): (5, 6, 17, 18) from its top left,
+    ///   green, 12 high, not wrapped;
+    /// - an inverse clock at 30 %: 70.
+    /// - a placement's `to_layout` inverts `to_screen`.
+    #[test]
+    fn the_draw_list_becomes_quads() {
+        let q = |items: &[DrawItem]| draw_list_quads(items, &NoGuiHost);
+        let f = q(&[DrawItem::FillRect { x: 10, y: 20, w: 30, h: 40, color: 0x80FF_0000_u32 as i32 }]);
+        assert_eq!((f.len(), f[0].rect, f[0].color), (1, [10.0, 20.0, 40.0, 60.0], Some([255, 0, 0, 128])));
+        let o: Vec<[f32; 4]> = q(&[DrawItem::OpenRect { x: 0, y: 0, w: 10, h: 5, color: -1 }]).iter().map(|q| q.rect).collect();
+        assert_eq!(o, [[0.0, 0.0, 10.0, 1.0], [0.0, 4.0, 10.0, 5.0], [0.0, 0.0, 1.0, 5.0], [9.0, 0.0, 10.0, 5.0]]);
+        let l = q(&[DrawItem::Line { x0: 0, y0: 5, x1: 10, y1: 5, color: -1 }, DrawItem::Line { x0: 0, y0: 0, x1: 3, y1: 4, color: -1 }]);
+        assert_eq!((l[0].rect, l[0].rotation), ([0.0, 4.5, 10.0, 5.5], None));
+        assert_eq!(l[1].rect, [-1.0, 1.5, 4.0, 2.5]);
+        let (sin, cos) = l[1].rotation.expect("turned");
+        assert!((sin - 0.8).abs() < 1e-6 && (cos - 0.6).abs() < 1e-6);
+        let img = |color: u32, clip| DrawItem::Image { image: b"ImgBack".to_vec(), x0: 0, y0: 0, x1: 100, y1: 50, color, grayscale: false, clip };
+        let i = q(&[img(0xFFFF_FFFF, Some((50, 0, 200, 25))), img(0x80FF_FFFF, None), img(0xFFFF_FFFF, Some((200, 200, 300, 300)))]);
+        assert_eq!(i.len(), 2);
+        assert_eq!((i[0].rect, i[0].uv, i[0].tint, i[0].image.as_deref()), ([50.0, 0.0, 100.0, 25.0], Some([0.5, 0.0, 1.0, 0.5]), None, Some(&b"ImgBack"[..])));
+        assert_eq!((i[1].uv, i[1].tint), (None, Some([255, 255, 255, 128])));
+        let t = q(&[DrawItem::Text { text: "AB".encode_utf16().collect(), x: 5, y: 6, color: 0xFF00_FF00_u32 as i32, drop_color: 0, font: None, word_wrap: None, wrap_centered: false, hotkey: false, clip: None }]);
+        assert_eq!((t[0].rect, t[0].text.as_deref(), t[0].text_color, t[0].font_px, t[0].text_top_left, t[0].text_wrap), ([5.0, 6.0, 17.0, 18.0], Some("AB"), Some([0, 255, 0, 255]), Some(12.0), true, false));
+        let c = q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: 0, inverse: true }]);
+        assert_eq!(c[0].clock, Some(70));
+        let p = LayoutPlacement { left: 7.0, top: 100.0, y0: 450.0, scale: 0.5 };
+        let r = p.to_screen([40.0, 470.0, 0.0, 0.0]);
+        assert_eq!(p.to_layout((r[0], r[1])), (40.0, 470.0));
+    }
 
     /// #12: the control bar from synthetic files, for the demo game's dozer. Predicted before the run:
     /// - it loads: ~~3 mapped images, ~~8 windows~~ **missed on the first run:** 7 windows (the parent, the money, the power,

@@ -89,7 +89,8 @@ Not yet translated:
   ~~Typed characters (`IMEManager`'s `WM_CHAR` path) and~~ **Corrected 2026-11-10 (#74):** typed characters reach the
   text entries (`client::ime_manager`); the control bar's drawing from the draw list remains. **Added 2026-11-10 (#69):**
   the shell (`client::shell`), the main menu's callbacks (`client::main_menu`) and the message boxes
-  (`client::message_box`) are translated; the shell is not drawn by the application yet. **Added 2026-11-10 (#77):** the
+  (`client::message_box`) are translated; ~~the shell is not drawn by the application yet.~~ **Corrected 2026-11-10
+  (#78):** the application draws the shell from its window manager's draw list (see #78's entry). **Added 2026-11-10 (#77):** the
   window transitions (`client::window_transitions`, `WindowTransitions.ini`) and the animate window manager
   (`client::animate_window`) are translated: the main menu's panels show and hide as upstream's.
 
@@ -122,6 +123,56 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
+- **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):
+  - `client/src/ui.rs`: `draw_list_quads`, a window manager's `winRepaint` draw list (`DrawItem`s, the transitions'
+    draws last) as the quads the app already draws the control bar with: `drawFillRect` a quad; `drawOpenRect` its four
+    edges `WIN_DRAW_LINE_WIDTH` (1) wide inside the rectangle (`Add_Outline`); `drawLine` a quad one wide, turned when
+    not along an axis (`(sin, cos)` from `WWMath::Sqrt`, no `atan2`); `drawImage` cut by its clip region (the image's
+    UVs cut with it) and tinted; `DisplayString::draw` from its top left, in its colour and height, measured by the
+    host; `drawRectClock` the bar's clock. `UiQuad` gained those fields (`Default` for the rest).
+    `load_mapped_images` reads `TheMappedImageCollection` alone; `load_game_ui_with` takes it, so the shell's windows and
+    the control bar share one `Arc<ImageCollection>` (item 5: `MenuFiles::find_image` finds them).
+    `LayoutPlacement::to_layout` inverts `to_screen`.
+  - `client/src/shell.rs`: `ShellUi::draw` (nothing while not active), `hide` (`hideShell`), `is_active`,
+    `pointer_at` (a screen point through the placement); `shell_placement` (mobile first): the 800x600 layout scaled
+    whole over the 3D view, below the status line's first line and clear of the zoom column: the full width above the
+    column, or the full height beside it, whichever is larger.
+  - `client/src/app.rs`: `ShellState` (kept across games); `load_shell` reads the images and the shell once the owner's
+    files are there (retried while the web's ranged reads are outstanding) and shows it over the install's game,
+    paused; `shell_ui` runs its frame and `take_actions` (a campaign start is the campaign panel's `Flow::choose`;
+    Quit is `AppExit` natively and a status message on the web), and draws it through `spawn_quads`, the control bar's
+    node code factored out and shared (one renderer). A new game under it (`Game::serial`) is `hideShell`. While it is
+    shown the control bar is hidden, the keyboard is the shell's and the world's pointer is not taken; a plain panel
+    open hides it. Without `MainMenu.wnd` or `WindowTransitions.ini` there is no shell and the plain panels stay the
+    way in.
+- **#82, the outline's width:** not added to `DrawItem::OpenRect`: every upstream caller passes `WIN_DRAW_LINE_WIDTH`
+  (1.0) or a literal 1 (W3D gadget draws, GameWindowGlobal.cpp, GameWindowTransitionsStyles.cpp, checked).
+- **Predictions vs results:** `the_draw_list_becomes_quads` (each kind's rectangle, colour, UVs, rotation `(0.8, 0.6)`,
+  the inverse placement): held. `the_shell_draws_from_the_window_managers_draw_list` (the main panel's buttons' text
+  inside their rectangles, the hidden panel's not drawn, nothing after `hideShell`): held; seen, not predicted: the
+  synthetic WND gives the text no colour, so it is drawn transparent (`[0, 0, 0, 0]`), as upstream would draw it.
+  `the_menu_fits_a_phone_and_every_button_is_tapped` (390x844: scale 0.4875, left 0, top 126.75; 1280x720: scale 1.1267
+  beside the column; every main-panel button on screen, clear of the zoom column, its centre's tap its own, a tap on
+  *Single Player* showing the single player panel; buttons 48.75 x 9.75): held. `the_shell_and_the_bar_share_the_mapped_images`:
+  held. In the browser, one miss: the first desktop click left *Single Player* pushed and nothing selected. The press
+  redraws the button, its quads are despawned and respawned, and the release aimed at a despawned quad never bubbled to
+  the root. The fallback then released at (-1, -1), off the button. Fixed: the shell's quads take no pointer
+  (`Pickable::IGNORE`; the root gets every event), and a release not seen is sent at the pointer's last point. After
+  the fix the tap and the click both show the single player panel.
+- **Screenshots** (synthetic layouts only: no EA file here; the check install is `write_the_shell_install_when_asked`'s,
+  the synthetic shell with button colours added; Chromium with SwiftShader, `webcheck/check78.js` in the session's
+  scratchpad): at 390x844 the main panel at the predicted place (y 180 to 275, left), after a tap on *Single Player*
+  the single player panel (x 63); at 1000x700 the single player panel flashing in at x 173 after a click. No page
+  overflow at either width.
+- **Gates:** lib 1099 passed; client 52 passed (47 before, 5 new incl. the env-gated install writer); clippy (lib) clean;
+  web build ok; gate (a) PASS, last CRC 0bf44067. No host trait, `ClientEvent` or differential input changed, so the
+  differential build was not rerun.
+- **Gaps (recorded in the modules' docs; issue drafts in the scratchpad):** the shell's click sounds and
+  `signalUIInteract`; text drop shadows; grayscale images drawn dimmed; the rect clock's wedge; Bevy's font against the
+  host's measured box; the synthetic buttons are 9.75 CSS pixels high on a phone (reachable, small; the real WND's sizes
+  unchecked). Item 3 (the other screens' callbacks) is not started.
 
 **#77 (2026-11-10, GitHub #77): the window transitions and the animate window manager.**
 - **Translated** (engine crate, plain Rust):

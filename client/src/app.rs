@@ -37,6 +37,11 @@
 //!   Bevy UI nodes along the bottom, scaled to the screen's width (a phone's too); its command buttons press through
 //!   `Controls::press`. Without the files the debug panel stays.
 //!
+//! - **The shell** (#78): the game's menus (`crate::shell`, tested there), read once the owner's files are there and
+//!   shown over the install's game (paused under it), drawn from the shell's window manager's draw list with the
+//!   control bar's drawing, the 800x600 layout scaled whole over the 3D view and clear of the zoom column (a phone's
+//!   too); a game's start hides it (`hideShell`). Without its files the plain panels (saves, campaigns) are the way in.
+//!
 //! GUI glue: the drawing systems need a window and a GPU, so no test reaches them. What they draw is the view model's,
 //! which `view`'s tests check against the `World`; what the input does is `input`'s, which its tests drive.
 
@@ -98,7 +103,7 @@ struct Game {
     ui_pending: bool,
     ui_status: String,
     /// The UI's textures by file name (`None`: missing), with their sizes.
-    ui_textures: HashMap<Vec<u8>, Option<(Handle<Image>, (u32, u32))>>,
+    ui_textures: UiTextures,
     /// (#35) When a command button's popup shows, the popups' lines by command slot, the selection they were made for, and
     /// whether the last pointer to press a button was a touch.
     tooltip: crate::ui::TooltipTimer,
@@ -127,7 +132,13 @@ struct Game {
     save_state: crate::saves::ClientState,
     /// (#59) A loaded game's drawables' ambient sounds are still to be given to the audio (once it is up).
     ambient_restore_pending: bool,
+    /// (#78) This game's number in the session (each new game, loaded save or mission is a new one): the shell is hidden
+    /// when the game under it is no longer the one it was shown over.
+    serial: u64,
 }
+
+/// (#78) The next [`Game::serial`].
+static GAME_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// The audio's output: the browser's Web Audio, or (natively, no backend chosen yet) the silent one.
 #[cfg(target_arch = "wasm32")]
@@ -189,6 +200,7 @@ impl Game {
             base: None,
             save_state: Default::default(),
             ambient_restore_pending: false,
+            serial: GAME_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
@@ -303,7 +315,8 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<ParticleDraw>()
         .add_systems(Startup, (setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
-        .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain).chain())
+        .insert_non_send(ShellState::default())
+        .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain, load_shell, shell_ui).chain())
         .add_systems(
             Update,
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
@@ -731,7 +744,15 @@ fn dik_of(k: KeyCode) -> u8 {
 /// (#74) GUI glue (needs a window's keyboard events): each of Bevy's keyboard events, natively and in the browser,
 /// into the game's UI ([`crate::ui::GameUi::keyboard`], tested there): the key by its DirectInput code, and the text it
 /// typed. The modifier states (`KEY_STATE_CONTROL`, ...) are not passed yet.
-fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>) {
+fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>, mut shell: NonSendMut<ShellState>) {
+    // (#78) the shell, while it is shown, has the keyboard (`crate::shell::ShellUi::keyboard`, tested there)
+    if let Some(s) = shell.ui.as_mut().filter(|s| s.is_active()) {
+        for k in events.read() {
+            s.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+        }
+        taken.0 = true;
+        return;
+    }
     let Some(ui) = game.ui.as_mut() else {
         events.clear();
         taken.0 = false;
@@ -1017,10 +1038,11 @@ fn pointer_input(
     cams: Query<(&Camera, &GlobalTransform)>,
     bar: Res<UiBar>,
     radar_box: Res<RadarBox>,
+    shell: NonSend<ShellState>,
 ) {
     let bar = bar.height + bar.panel;
-    // (#4) the saves panel takes the pointer while it is open (the game is paused under it)
-    if crate::saves::page::panel_open() || crate::campaigns::page::panel_open() {
+    // (#4) the saves panel takes the pointer while it is open (the game is paused under it); (#78) so does the shell
+    if crate::saves::page::panel_open() || crate::campaigns::page::panel_open() || shell.ui.as_ref().is_some_and(|s| s.is_active()) {
         pointer.press = None;
         return;
     }
@@ -1308,7 +1330,7 @@ fn draw_particles(
     }
 }
 
-fn load_game_ui(mut game: NonSendMut<Game>) {
+fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
     let g = &mut *game;
     if !g.ui_pending {
         return;
@@ -1317,9 +1339,15 @@ fn load_game_ui(mut game: NonSendMut<Game>) {
         g.ui_pending = false;
         return;
     };
+    // (#78) the mapped images are the shell's, read first ([`load_shell`]), so that both share one collection
+    let shared = match &shell.images {
+        None => return,
+        Some(Ok(i)) => Some(i.clone()),
+        Some(Err(_)) => None,
+    };
     let world = &g.controls.client.world;
     let side = world.players.get_nth(g.controls.client.player).map(|p| p.side.clone()).unwrap_or_default();
-    match crate::ui::load_game_ui(&art.fs, &world.statics.game_text, &side) {
+    match crate::ui::load_game_ui_with(&art.fs, &world.statics.game_text, &side, shared) {
         crate::ui::UiBuild::Ready(ui) => {
             info!("control bar: {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
             g.ui_status = format!("control bar: {} windows", ui.wm.tree.windows.len());
@@ -1337,10 +1365,18 @@ fn load_game_ui(mut game: NonSendMut<Game>) {
 
 /// A mapped image's texture and the rectangle of it, in texels: `None` while missing (or still being fetched).
 fn ui_image(g: &mut Game, images: &mut Assets<Image>, name: &[u8]) -> Option<(Handle<Image>, Rect)> {
-    let ui = g.ui.as_ref()?;
-    let img = ui.images.find_image_by_name(name)?.clone();
-    if !g.ui_textures.contains_key(&img.filename) {
-        let art = g.models.art.as_ref()?;
+    let collection = g.ui.as_ref()?.images.clone();
+    mapped_texture(g.models.art.as_ref()?, &mut g.ui_textures, &collection, images, name)
+}
+
+/// The UI's textures by file name (`None`: missing), with their sizes.
+type UiTextures = HashMap<Vec<u8>, Option<(Handle<Image>, (u32, u32))>>;
+
+/// A mapped image of `collection` as a texture of the art's (made once into `cache`) and its rectangle: the control bar's
+/// and (#78) the shell's. GUI glue (needs the app's image assets).
+fn mapped_texture(art: &Art<ArtDevice>, cache: &mut UiTextures, collection: &rts_lockstep_engine::client::image::ImageCollection, images: &mut Assets<Image>, name: &[u8]) -> Option<(Handle<Image>, Rect)> {
+    let img = collection.find_image_by_name(name)?.clone();
+    if !cache.contains_key(&img.filename) {
         let before = art.fs.local.device.unserved_reads();
         let r = rts_lockstep_engine::formats::w3d::render::load_texture_image(&art.assets.file_factory, &art.fs, &img.filename);
         if art.fs.local.device.unserved_reads() != before {
@@ -1350,9 +1386,9 @@ fn ui_image(g: &mut Game, images: &mut Assets<Image>, name: &[u8]) -> Option<(Ha
             Ok(Ok(t)) => Some((images.add(crate::model::texture_image(&t, Some((true, true)))), (t.width, t.height))),
             _ => None,
         };
-        g.ui_textures.insert(img.filename.clone(), entry);
+        cache.insert(img.filename.clone(), entry);
     }
-    let (h, (w, ht)) = g.ui_textures.get(&img.filename)?.clone()?;
+    let (h, (w, ht)) = cache.get(&img.filename)?.clone()?;
     // (the UVs are the pixel edges over the texture size the INI gives; Coords before TextureWidth stay pixels)
     let to_px = |u: f32, size: u32, given: i32| if given != 0 { u * size as f32 } else { u };
     // (inset half a texel, so the linear filter does not bleed the neighbouring image of the page in)
@@ -1382,9 +1418,15 @@ fn game_ui(
     mut ui_bar: ResMut<UiBar>,
     buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
+    shell: NonSend<ShellState>,
 ) {
     let g = &mut *game;
-    if g.ui.is_none() {
+    // (#78) the shell, while shown, is drawn in place of the bar (upstream's control bar is hidden in the shell)
+    let shell_up = shell.ui.as_ref().is_some_and(|s| s.is_active());
+    for (_, _, mut node) in roots.iter_mut() {
+        node.display = if shell_up { Display::None } else { Display::Flex };
+    }
+    if g.ui.is_none() || shell_up {
         ui_bar.height = 0.0;
         ui_bar.placement = None;
         return;
@@ -1457,44 +1499,74 @@ fn game_ui(
             root.id()
         }
     };
+    let frame = [0.0, y0, lw, y1];
+    let scale = width / lw;
+    spawn_quads(&mut commands, root, &quads, frame, scale, false, |n| ui_image(g, &mut images, n));
+}
+
+/// GUI glue (needs a window): `quads` as Bevy UI nodes, children of `root`, in percentages of `frame` (the layout's
+/// rectangle the root covers), the first underneath; a text's size scaled by `scale` (screen pixels per layout pixel).
+/// The control bar's drawing (#12, #35) and (#78) the shell's ([`crate::ui::draw_list_quads`]'s quads: tints, cut images,
+/// placed and coloured text, turned lines).
+fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad], frame: [f32; 4], scale: f32, ignore_picks: bool, mut image: impl FnMut(&[u8]) -> Option<(Handle<Image>, Rect)>) {
+    // (#78) the shell's quads are rebuilt as it changes (a press redraws its button), so they take no pointer: the root,
+    // which stays, gets every event (a release aimed at a quad despawned under it was lost)
+    let pick = if ignore_picks { Pickable::IGNORE } else { Pickable::default() };
+    let (fw, fh) = (frame[2] - frame[0], frame[3] - frame[1]);
     let pct = |v: f32, total: f32| Val::Percent(v / total * 100.0);
-    for q in &quads {
+    let rgba = |c: [u8; 4], dim: bool| {
+        let k = |v: u8| if dim { (v as u32 * 45 / 100) as u8 } else { v };
+        Color::srgba_u8(k(c[0]), k(c[1]), k(c[2]), c[3])
+    };
+    for q in quads {
+        let corner = q.text_top_left;
         let node = Node {
             position_type: PositionType::Absolute,
-            left: pct(q.rect[0], lw),
-            top: pct(q.rect[1] - y0, bh),
-            width: pct(q.rect[2] - q.rect[0], lw),
-            height: pct(q.rect[3] - q.rect[1], bh),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
+            left: pct(q.rect[0] - frame[0], fw),
+            top: pct(q.rect[1] - frame[1], fh),
+            width: pct(q.rect[2] - q.rect[0], fw),
+            height: pct(q.rect[3] - q.rect[1], fh),
+            justify_content: if corner { JustifyContent::Start } else { JustifyContent::Center },
+            align_items: if corner { AlignItems::Start } else { AlignItems::Center },
+            overflow: if corner { Overflow::clip() } else { Overflow::default() },
             ..default()
         };
-        let tint = if q.dim { Color::srgb(0.45, 0.45, 0.45) } else { Color::WHITE };
-        let mut e = commands.spawn(node);
-        match q.image.as_ref().and_then(|n| ui_image(g, &mut images, n)) {
+        let mut e = commands.spawn((node, pick));
+        if let Some((sin, cos)) = q.rotation {
+            e.insert(UiTransform::from_rotation(Rot2::from_sin_cos(sin, cos)));
+        }
+        match q.image.as_ref().and_then(|n| image(n)) {
             Some((h, rect)) => {
+                let rect = match q.uv {
+                    Some([u0, v0, u1, v1]) => Rect::new(rect.min.x + u0 * rect.width(), rect.min.y + v0 * rect.height(), rect.min.x + u1 * rect.width(), rect.min.y + v1 * rect.height()),
+                    None => rect,
+                };
+                let tint = rgba(q.tint.unwrap_or([255, 255, 255, 255]), q.dim);
                 e.insert(ImageNode { image: h, rect: Some(rect), color: tint, image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() });
             }
             None => {
-                if let Some([r, gr, b, a]) = q.color {
-                    e.insert(BackgroundColor(Color::srgba_u8(r, gr, b, a)));
+                if let Some(c) = q.color {
+                    e.insert(BackgroundColor(rgba(c, false)));
                 } else if q.command.is_some() {
                     e.insert(BackgroundColor(Color::srgba(0.12, 0.16, 0.22, 0.9)));
                 }
             }
         }
         if let Some(t) = &q.text {
-            let size = (ui_bar.height / bh * 11.0).clamp(8.0, 18.0);
+            let size = q.font_px.map_or((scale * 11.0).clamp(8.0, 18.0), |f| (f * scale).max(6.0));
+            let colour = q.text_color.map_or(Color::WHITE, |c| rgba(c, false));
+            let layout = if corner && !q.text_wrap { TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() } } else { TextLayout::default() };
             e.with_children(|p| {
-                p.spawn((Text::new(t.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(Color::WHITE)));
+                p.spawn((Text::new(t.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(colour), layout, pick));
             });
         }
-        if let Some((h, rect)) = q.overlay.as_ref().and_then(|n| ui_image(g, &mut images, n)) {
+        if let Some((h, rect)) = q.overlay.as_ref().and_then(|n| image(n)) {
             // (#35) the portrait's veterancy chevron over it
             e.with_children(|p| {
                 p.spawn((
                     Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
                     ImageNode { image: h, rect: Some(rect), image_mode: bevy::ui::widget::NodeImageMode::Stretch, ..default() },
+                    pick,
                 ));
             });
         }
@@ -1504,6 +1576,7 @@ fn game_ui(
                 p.spawn((
                     Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(rest), ..default() },
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                    pick,
                 ));
             });
         }
@@ -1522,7 +1595,7 @@ fn game_ui(
 fn bar_pointer(game: &mut Game, bar: &UiBar, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId, now: f64) {
     let Some(p) = bar.placement else { return };
     let touch = matches!(id, bevy::picking::pointer::PointerId::Touch(_));
-    let pos = ((screen.x - p.left) / p.scale, (screen.y - p.top) / p.scale + p.y0);
+    let pos = p.to_layout((screen.x, screen.y));
     let g = &mut *game;
     let Some(ui) = g.ui.as_mut() else { return };
     let Some(slot) = ui.pointer(msg, pos, now, touch, &mut g.tooltip) else { return };
@@ -2227,6 +2300,215 @@ fn campaign_flow(
         }
         c.set_status(status);
         set_campaign_panel(true, &mut game, c);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The shell (#78): the game's menus from the owner's files, through `crate::shell` (tested there).
+// ---------------------------------------------------------------------------
+
+/// The shell and what the app keeps for it (a non-send resource: it lives across games, as upstream's `TheShell` does).
+#[derive(Default)]
+struct ShellState {
+    ui: Option<Box<crate::shell::ShellUi>>,
+    /// The mapped images, read once from the art (`TheMappedImageCollection`), shared with the control bar; `Err` when they
+    /// did not load (the bar then reads them itself, and fails as before).
+    images: Option<Result<std::sync::Arc<rts_lockstep_engine::client::image::ImageCollection>, String>>,
+    /// Whether the shell has been read (or found missing): it is read once, when the owner's files are there.
+    tried: bool,
+    /// The game ([`Game::serial`]) the shell was shown over; another game is a game started: `hideShell`.
+    shown_over: u64,
+    /// Where the shell's layout is on screen this frame (for the pointer).
+    placement: Option<crate::ui::LayoutPlacement>,
+    /// The pointer's last screen point over the shell (a release not seen there is sent at it).
+    last_pointer: Option<(f32, f32)>,
+    textures: UiTextures,
+}
+
+/// The shell's root node, and the quads it was last drawn with.
+#[derive(Component)]
+struct ShellRoot(Vec<crate::ui::UiQuad>);
+
+/// GUI glue (needs the app): once the owner's files are there (the art, and the install's World), the mapped images
+/// ([`crate::ui::load_mapped_images`]) and the shell ([`crate::shell::ShellUi::load`], tested there), read once; while a
+/// file is being fetched (the web's ranged reads) it tries again on a later frame. The shell is shown over the install's
+/// game, paused under it, as the game shows its menus before a game. Without `Menus\MainMenu.wnd` or
+/// `WindowTransitions.ini` there is no shell, and the plain panels (saves, campaigns) are the way in.
+fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, time: Res<Time>) {
+    let st = &mut *shell;
+    if st.tried {
+        return;
+    }
+    let g = &mut *game;
+    let Some(art) = g.models.art.as_ref() else { return };
+    let images = match &st.images {
+        Some(r) => r.clone(),
+        None => match crate::ui::load_mapped_images(&art.fs) {
+            crate::ui::ImagesBuild::Waiting => return,
+            crate::ui::ImagesBuild::Ready(i) => {
+                st.images = Some(Ok(i.clone()));
+                Ok(i)
+            }
+            crate::ui::ImagesBuild::Missing(why) => {
+                warn!("no mapped images: {why}");
+                st.images = Some(Err(why.clone()));
+                Err(why)
+            }
+        },
+    };
+    if g.base.is_none() {
+        return;
+    }
+    let images = images.unwrap_or_default();
+    let before = art.fs.local.device.unserved_reads();
+    let now = (time.elapsed_secs_f64() * 1000.0) as u32;
+    let loaded = crate::shell::ShellUi::load(&art.fs, &g.controls.client.world.statics.game_text, images, now);
+    if art.fs.local.device.unserved_reads() != before {
+        return;
+    }
+    st.tried = true;
+    match loaded {
+        Some(ui) => {
+            info!("shell: {} windows", ui.wm.tree.windows.len());
+            st.shown_over = g.serial;
+            g.paused = true;
+            st.ui = Some(Box::new(ui));
+        }
+        None => info!("no shell (no Menus\\MainMenu.wnd or Data\\INI\\WindowTransitions.ini): the plain panels"),
+    }
+}
+
+/// GUI glue (needs a window): the shell each frame. A game started under it hides it (`hideShell`); while shown, its
+/// clock ([`crate::shell::ShellUi::frame`]), its callbacks' requests ([`crate::shell::ShellUi::take_actions`]: a campaign's
+/// start is the campaign panel's flow; a quit ends the native app, and on the web says so), and its windows drawn from the
+/// window manager's draw list ([`crate::shell::ShellUi::draw`]) with the control bar's drawing ([`spawn_quads`]), in the
+/// layout's 4:3 scaled over the 3D view ([`crate::shell::shell_placement`]); rebuilt when the quads change. A plain panel
+/// open over it hides it. The pointer over it goes through [`crate::shell::ShellUi::pointer_at`]; a release off it ends
+/// the window manager's grab.
+#[allow(clippy::too_many_arguments)]
+fn shell_ui(
+    mut commands: Commands,
+    mut game: NonSendMut<Game>,
+    mut shell: NonSendMut<ShellState>,
+    mut campaigns: NonSendMut<Campaigns>,
+    mut images: ResMut<Assets<Image>>,
+    mut roots: Query<(Entity, &mut ShellRoot, &mut Node)>,
+    windows: Query<&Window>,
+    time: Res<Time>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let st = &mut *shell;
+    let Some(ui) = st.ui.as_mut() else { return };
+    let g = &mut *game;
+    if ui.is_active() && g.serial != st.shown_over {
+        // (`GameLogic::startNewGame`'s `TheShell->hideShell()`)
+        ui.hide();
+        info!("shell hidden: a game started");
+    }
+    if ui.is_active() {
+        ui.frame((time.elapsed_secs_f64() * 1000.0) as u32);
+        if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
+            match (st.last_pointer, st.placement) {
+                (Some(at), Some(p)) => ui.pointer_at(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, at, &p, false),
+                _ => ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), false),
+            }
+        }
+    }
+    if let Some(base) = g.base.as_deref() {
+        let c = &mut *campaigns;
+        for a in ui.take_actions(base, &mut c.flow) {
+            match a {
+                crate::shell::ShellAction::CampaignChosen => {
+                    let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
+                    c.set_status(format!("waiting {map}"));
+                }
+                crate::shell::ShellAction::Failed(e) => {
+                    warn!("the shell's start failed: {e}");
+                    c.set_status(format!("error: {e}"));
+                }
+                crate::shell::ShellAction::Quit => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    exit.write(AppExit::Success);
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let _ = &mut exit;
+                        g.playing = "Exit: a web page cannot close itself; close the tab to leave".to_string();
+                    }
+                }
+                crate::shell::ShellAction::None(_) => {}
+            }
+        }
+    }
+    // (the clicks' sounds and the script hooks are not played or run yet; the untranslated callbacks are logged once)
+    ui.gui.audio.clear();
+    ui.gui.ui_interacts.clear();
+    for f in ui.gui.untranslated.drain(..) {
+        debug!("shell: untranslated callback {}", String::from_utf8_lossy(&f));
+    }
+    let panel = crate::saves::page::panel_open() || crate::campaigns::page::panel_open();
+    let quads = if panel { Vec::new() } else { ui.draw() };
+    let (ww, wh) = windows.single().map_or((800.0, 600.0), |w| (w.width(), w.height()));
+    let placement = crate::shell::shell_placement((ww, wh));
+    st.placement = (!quads.is_empty()).then_some(placement);
+    let (lw, lh) = (crate::ui::LAYOUT.0 as f32, crate::ui::LAYOUT.1 as f32);
+    let root = match roots.iter_mut().next() {
+        Some((e, mut r, mut node)) => {
+            node.left = px(placement.left);
+            node.top = px(placement.top);
+            node.width = px(lw * placement.scale);
+            node.height = px(lh * placement.scale);
+            node.display = if quads.is_empty() { Display::None } else { Display::Flex };
+            if r.0 == quads {
+                return;
+            }
+            r.0 = quads.clone();
+            commands.entity(e).despawn_children();
+            e
+        }
+        None => {
+            if quads.is_empty() {
+                return;
+            }
+            let mut root = commands.spawn((
+                ShellRoot(quads.clone()),
+                GlobalZIndex(10),
+                Node { position_type: PositionType::Absolute, left: px(placement.left), top: px(placement.top), width: px(lw * placement.scale), height: px(lh * placement.scale), ..default() },
+            ));
+            let gwm = rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS;
+            root.observe(move |ev: On<PointerMove>, mut shell: NonSendMut<ShellState>| shell_pointer(&mut shell, gwm, ev.pointer.position, &ev.pointer.id));
+            root.observe(move |ev: On<PointerLeave>, mut shell: NonSendMut<ShellState>| shell_pointer(&mut shell, gwm, ev.pointer.position, &ev.pointer.id));
+            root.observe(|ev: On<PointerPress>, mut shell: NonSendMut<ShellState>| {
+                if ev.button == PointerButton::Primary {
+                    shell_pointer(&mut shell, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id);
+                }
+            });
+            root.observe(|ev: On<PointerRelease>, mut shell: NonSendMut<ShellState>| {
+                if ev.button == PointerButton::Primary {
+                    shell_pointer(&mut shell, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id);
+                }
+            });
+            root.id()
+        }
+    };
+    let collection = match &st.images {
+        Some(Ok(i)) => i.clone(),
+        _ => Default::default(),
+    };
+    let art = g.models.art.as_ref();
+    let textures = &mut st.textures;
+    spawn_quads(&mut commands, root, &quads, [0.0, 0.0, lw, lh], placement.scale, true, |n| art.and_then(|a| mapped_texture(a, textures, &collection, &mut images, n)));
+}
+
+/// GUI glue (needs a window): a pointer event over the shell, from the screen (logical pixels) through
+/// [`crate::shell::ShellUi::pointer_at`] (tested there).
+fn shell_pointer(shell: &mut ShellState, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId) {
+    let touch = matches!(id, bevy::picking::pointer::PointerId::Touch(_));
+    let Some(p) = shell.placement else { return };
+    shell.last_pointer = Some((screen.x, screen.y));
+    if let Some(ui) = shell.ui.as_mut() {
+        ui.pointer_at(msg, (screen.x, screen.y), &p, touch);
     }
 }
 
