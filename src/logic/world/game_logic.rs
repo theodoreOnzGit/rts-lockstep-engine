@@ -253,6 +253,10 @@ pub struct World {
     pub clearing_game_data: bool,
     /// GitHub #64: the last `clearGameData`'s outcome (the client's score screen); not simulation state.
     pub game_cleared: Option<crate::logic::world::clear_game_data::GameCleared>,
+    /// GitHub #89 part 2: what the score screen's init reads of the game (`ThePlayerList`'s score keepers, ...), copied
+    /// where upstream's `clearGameData` pushes the screen, before the engine's reset; the client's to take. Not
+    /// simulation state.
+    pub score_screen_game: Option<std::sync::Arc<crate::client::score_screen::ScoreScreenGame>>,
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -351,6 +355,7 @@ impl World {
             // --- end batch I9b ---
             clearing_game_data: false,
             game_cleared: None,
+            score_screen_game: None,
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

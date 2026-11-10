@@ -99,6 +99,10 @@ impl World {
         // `(!isInShellGame() || !isInGame()) && showScoreScreen`: the score screen (the client's shell; a fade, the
         // shell's push, `FixupScoreScreenMovieWindow`)
         let score_screen = mode != game_mode::SHELL && show_score_screen;
+        // (#89 part 2) the score screen's init runs in the push, before the reset: what it reads, copied for the client
+        if score_screen {
+            self.score_screen_game = Some(std::sync::Arc::new(crate::client::score_screen::ScoreScreenGame::from_world(self)));
+        }
         // TheGameEngine->reset()
         self.engine_reset();
         // setGameMode(GAME_NONE)
@@ -251,6 +255,15 @@ impl World {
     /// pinned by `random_value::tests::init_random_zero_is_the_initial_state`).
     pub fn reset_random_for_load(&mut self) {
         self.random = crate::common::random_value::RandomValues::new(0);
+    }
+
+    /// GitHub #89 part 2: after a game cleared with the score screen (any mode but the shell's) and no game since, what
+    /// the score screen reads of it (copied by [`World::clear_game_data`] before the engine's reset).
+    pub fn score_screen_game_over(&self) -> Option<&crate::client::score_screen::ScoreScreenGame> {
+        if RecorderHost::is_in_game(self) || !self.game_cleared.is_some_and(|c| c.score_screen) {
+            return None;
+        }
+        self.score_screen_game.as_deref()
     }
 
     /// GitHub #64: the last [`World::clear_game_data`]'s outcome, for the client's score screen.

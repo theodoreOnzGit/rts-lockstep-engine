@@ -96,8 +96,10 @@
 //!   tested from a synthetic `PopupSaveLoad.wnd`, and the client answers its save request by saying so (#78).
 //! - The runInit user data (`SaveLoadLayoutType *`) is an argument ([`save_load_menu_init`]); the lexicon passes `None`
 //!   (`NULL`), as every caller in the release does (QuitMenu.cpp's is commented out).
-//! - `DontShowMainMenu` and `ReplayWasPressed` (ScoreScreen.cpp's globals; the score screen is not translated) are
-//!   [`SaveLoadMenu`]'s, false.
+//! - ~~`DontShowMainMenu` and `ReplayWasPressed` (ScoreScreen.cpp's globals; the score screen is not translated) are
+//!   [`SaveLoadMenu`]'s, false.~~ **Corrected 2026-11-10 (#89):** they are the score screen's
+//!   (`crate::client::score_screen::ScoreScreenGlobals`, through [`MenuHost::score_screen_globals`]; false for a host
+//!   without it).
 //!
 //! # Verification
 //!
@@ -197,9 +199,8 @@ pub struct SaveLoadMenu {
     pub is_shutting_down: bool,
     /// `TheGameState->m_availableGames`, newest first.
     pub available_games: Vec<AvailableGameInfo>,
-    /// ScoreScreen.cpp's `DontShowMainMenu` and `ReplayWasPressed` (the score screen is not translated: false).
-    pub dont_show_main_menu: bool,
-    pub replay_was_pressed: bool,
+    // ~~ScoreScreen.cpp's `DontShowMainMenu` and `ReplayWasPressed` (the score screen is not translated: false)~~
+    // **Corrected 2026-11-10 (#89):** the score screen's globals, [`MenuHost::score_screen_globals`]
 }
 
 impl Default for SaveLoadMenu {
@@ -233,8 +234,6 @@ impl Default for SaveLoadMenu {
             just_entered: false,
             is_shutting_down: false,
             available_games: Vec::new(),
-            dont_show_main_menu: false,
-            replay_was_pressed: false,
         }
     }
 }
@@ -527,14 +526,19 @@ pub fn save_load_menu_shutdown<H: SaveLoadHost>(wm: &mut GameWindowManager, h: &
 
 /// `SaveLoadMenuUpdate(layout, userData)`.
 pub fn save_load_menu_update<H: SaveLoadHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
+    // (#89: ScoreScreen.cpp's globals)
+    let dont_show = h.score_screen_globals().is_some_and(|g| g.dont_show_main_menu);
+    if dont_show && h.save_load_menu().just_entered {
+        h.save_load_menu().just_entered = false;
+    }
+    let replay = h.score_screen_globals().is_some_and(|g| g.replay_was_pressed);
+    if replay && h.save_load_menu().just_entered {
+        h.save_load_menu().just_entered = false;
+        if let Some(g) = h.score_screen_globals() {
+            g.replay_was_pressed = false;
+        }
+    }
     let m = h.save_load_menu();
-    if m.dont_show_main_menu && m.just_entered {
-        m.just_entered = false;
-    }
-    if m.replay_was_pressed && m.just_entered {
-        m.just_entered = false;
-        m.replay_was_pressed = false;
-    }
     if m.just_entered {
         if m.initial_gadget_delay == 1 {
             wt::remove(wm, h, b"MainMenuDefaultMenuLogoFade", false);

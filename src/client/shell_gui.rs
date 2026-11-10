@@ -11,7 +11,8 @@
 //     SinglePlayerMenuShutdown; #89: SkirmishGameOptionsMenuSystem, SkirmishMapSelectMenuSystem,
 //     SkirmishGameOptionsMenuInput, SkirmishMapSelectMenuInput, SkirmishGameOptionsMenuInit, SkirmishMapSelectMenuInit,
 //     SkirmishGameOptionsMenuUpdate, SkirmishMapSelectMenuUpdate, SkirmishGameOptionsMenuShutdown,
-//     SkirmishMapSelectMenuShutdown; the tooltip callbacks MapSelectorTooltip, mapListTooltipFunc)
+//     SkirmishMapSelectMenuShutdown; the tooltip callbacks MapSelectorTooltip, mapListTooltipFunc; #89 part 2:
+//     ScoreScreenSystem, ScoreScreenInput, ScoreScreenInit, ScoreScreenUpdate, ScoreScreenShutdown)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -47,7 +48,9 @@
 //!   (`crate::client::skirmish_game_options`) and its map picker (`crate::client::skirmish_map_select`) are translated
 //!   and dispatched here, with their two tooltips (`MapSelectorTooltip`, `mapListTooltipFunc`); a tooltip callback
 //!   that is not translated is recorded in [`ShellGui::untranslated`]. The World's data they read is the owner's copy
-//!   ([`ShellGui::skirmish_data`]); the preference files are kept in memory ([`ShellGui::prefs`]).
+//!   ([`ShellGui::skirmish_data`]); the preference files are kept in memory ([`ShellGui::prefs`]). **Corrected
+//!   2026-11-10 (#89 part 2):** the score screen (`crate::client::score_screen`) is translated and dispatched here; the
+//!   game it scores is the owner's copy ([`ShellGui::score_screen`]'s `game`).
 //! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
 //!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
 //!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
@@ -67,6 +70,7 @@ use crate::client::gui_util::{GuiUtilHost, SkirmishData};
 use crate::client::map_util::MapUtilHost;
 use crate::client::skirmish_game_options::{self as sgo, SkirmishGameOptions, SkirmishHost};
 use crate::client::skirmish_map_select::{self as smsm, SkirmishMapSelect};
+use crate::client::score_screen::{self as ss, ScoreGridHost, ScoreScreen, ScoreScreenGlobals, ScoreScreenHost};
 use crate::common::game_info::GameInfo;
 use crate::common::map_cache::MapCache;
 use crate::client::main_menu::{self, MainMenu, MenuHost};
@@ -124,6 +128,8 @@ pub struct ShellGui<W> {
     pub map_list_names: Vec<Vec<u8>>,
     /// (#89) `SkirmishBattleHonors::getWins()` (the stats file is not read: 0 unless the owner sets it).
     pub skirmish_wins: i32,
+    /// (#89 part 2) ScoreScreen.cpp's statics and globals, with the game it scores (the owner's copy).
+    pub score_screen: ScoreScreen,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -154,6 +160,7 @@ impl<W: WndFiles> ShellGui<W> {
             prefs: BTreeMap::new(),
             map_list_names: Vec::new(),
             skirmish_wins: 0,
+            score_screen: ScoreScreen::default(),
         }
     }
 
@@ -174,6 +181,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"DifficultySelectSystem" => ds::difficulty_select_system(wm, self, win, msg, d1, d2),
             b"SkirmishGameOptionsMenuSystem" => sgo::skirmish_game_options_menu_system(wm, self, win, msg, d1, d2),
             b"SkirmishMapSelectMenuSystem" => smsm::skirmish_map_select_menu_system(wm, self, win, msg, d1, d2),
+            // (#89 part 2)
+            b"ScoreScreenSystem" => ss::score_screen_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -188,6 +197,7 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"DifficultySelectInput" => ds::difficulty_select_input(wm, self, win, msg, d1, d2),
             b"SkirmishGameOptionsMenuInput" => sgo::skirmish_game_options_menu_input(wm, self, win, msg, d1, d2),
             b"SkirmishMapSelectMenuInput" => smsm::skirmish_map_select_menu_input(wm, self, win, msg, d1, d2),
+            b"ScoreScreenInput" => ss::score_screen_input(wm, self, win, msg, d1, d2),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -256,6 +266,10 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"SkirmishMapSelectMenuInit" => smsm::skirmish_map_select_menu_init(wm, self, layout),
             b"SkirmishMapSelectMenuUpdate" => smsm::skirmish_map_select_menu_update(wm, self, layout),
             b"SkirmishMapSelectMenuShutdown" => smsm::skirmish_map_select_menu_shutdown(wm, self, layout),
+            // (#89 part 2)
+            b"ScoreScreenInit" => ss::score_screen_init(wm, self, layout),
+            b"ScoreScreenUpdate" => ss::score_screen_update(wm, self, layout),
+            b"ScoreScreenShutdown" => ss::score_screen_shutdown(wm, self, layout),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -294,7 +308,30 @@ impl<W: WndFiles> MenuHost for ShellGui<W> {
     fn first_cd_present(&self) -> bool {
         self.first_cd_present
     }
+    fn score_screen_globals(&mut self) -> Option<&mut ScoreScreenGlobals> {
+        Some(&mut self.score_screen.globals)
+    }
 }
+
+impl<W: WndFiles> ScoreGridHost for ShellGui<W> {
+    fn score_screen(&mut self) -> &mut ScoreScreen {
+        &mut self.score_screen
+    }
+    fn grid_name_to_key(&mut self, name: &[u8]) -> u32 {
+        self.keys.name_to_key(name)
+    }
+    fn grid_fetch_text(&self, label: &[u8]) -> Vec<u16> {
+        self.text(label)
+    }
+    fn grid_find_image(&self, name: &[u8]) -> Option<Vec<u8>> {
+        MapUtilHost::find_mapped_image(self, name)
+    }
+    fn score_untranslated(&mut self, what: &[u8]) {
+        self.untranslated.push(what.to_vec());
+    }
+}
+
+impl<W: WndFiles> ScoreScreenHost for ShellGui<W> {}
 
 impl<W: WndFiles> SaveLoadHost for ShellGui<W> {
     fn save_load_menu(&mut self) -> &mut SaveLoadMenu {
@@ -697,6 +734,49 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         layout_file("SkirmishMapSelectMenuInit", "SkirmishMapSelectMenuUpdate", "SkirmishMapSelectMenuShutdown", &parent)
     }
 
+    /// (#89 part 2) A synthetic `Menus/ScoreScreen.wnd` (no EA file), with the windows ScoreScreen.cpp finds by name,
+    /// under `ParentScoreScreen` (the system and input callbacks): *OK* (600, 560), *Continue* (700, 560), *Buddies*
+    /// (20, 560), *Save Replay* (120, 560), *Emote* (220, 560); the chat entry at (20, 520)-(300, 540) with its list box
+    /// and border; the academy's list box (one column) at (320, 420)-(780, 540) and title; *game saved* at (320, 400);
+    /// `MainBackdrop`, `BigPortrait`, `ChallengeWinLossText`, `GeneralRemarks`; `GadgetParent` (20, 40)-(780, 400)
+    /// holding the grid: per row `i` (0 .. 7, at y 60 + 40 i) `StaticTextPlayer<i>` (x 20), `StaticTextObserver<i>`
+    /// (x 150), the seven numbers from x 220 (70 apart), `GameWindowWinner<i>` (x 720); `ButtonAdd0`, hidden.
+    pub fn score_screen_wnd() -> Vec<u8> {
+        let f = "ScoreScreen.wnd";
+        let mut grid = String::new();
+        for i in 0..8 {
+            let y = 60 + 40 * i;
+            grid += &static_text(f, &format!("StaticTextPlayer{i}"), (20, y, 140, y + 20));
+            grid += &static_text(f, &format!("StaticTextObserver{i}"), (150, y, 210, y + 20));
+            for (j, n) in ["UnitsBuilt", "UnitsLost", "UnitsDestroyed", "BuildingsBuilt", "BuildingsLost", "BuildingsDestroyed", "Resources"].iter().enumerate() {
+                let x = 220 + 70 * j as i32;
+                grid += &static_text(f, &format!("StaticText{n}{i}"), (x, y, x + 60, y + 20));
+            }
+            grid += &win(f, "USER", &format!("GameWindowWinner{i}"), (720, y, 760, y + 20), false, "", "");
+        }
+        let mut c = String::new();
+        c += &frame(f, "GadgetParent", (20, 40, 780, 400), false, &grid);
+        c += &buttons(f, 600, 560, &["ButtonOk"]);
+        c += &buttons(f, 700, 560, &["ButtonContinue"]);
+        c += &buttons(f, 20, 560, &["ButtonBuddy"]);
+        c += &buttons(f, 120, 560, &["ButtonSaveReplay"]);
+        c += &buttons(f, 220, 560, &["ButtonEmote"]);
+        c += &win(f, "PUSHBUTTON", "ButtonAdd0", (700, 10, 760, 30), true, "", "");
+        c += &win(f, "ENTRYFIELD", "TextEntryChat", (20, 520, 300, 540), false, "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n", "");
+        let list = "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 1, FORCESELECT: 0;\n";
+        c += &win(f, "SCROLLLISTBOX", "ListboxChatWindowScoreScreen", (20, 420, 300, 510), false, list, "");
+        c += &win(f, "USER", "ChatBoxBorder", (18, 418, 302, 542), false, "", "");
+        c += &win(f, "SCROLLLISTBOX", "ListboxWarschoolAdvice", (320, 420, 780, 540), false, list, "");
+        c += &static_text(f, "StaticTextWarSchool", (320, 405, 500, 418));
+        c += &static_text(f, "StaticTextGameSaveComplete", (520, 405, 700, 418));
+        c += &win(f, "USER", "MainBackdrop", (0, 0, 10, 10), false, "", "");
+        c += &win(f, "USER", "BigPortrait", (20, 40, 220, 300), true, "", "");
+        c += &static_text(f, "ChallengeWinLossText", (240, 40, 700, 60));
+        c += &static_text(f, "GeneralRemarks", (240, 80, 700, 300));
+        let parent = win(f, "USER", "ParentScoreScreen", (0, 0, 800, 600), false, "    SYSTEMCALLBACK = \"ScoreScreenSystem\";\n    INPUTCALLBACK = \"ScoreScreenInput\";\n", &c);
+        layout_file("ScoreScreenInit", "ScoreScreenUpdate", "ScoreScreenShutdown", &parent)
+    }
+
     /// The panels of [`main_menu_wnd`] and their buttons.
     const PANELS: [(&str, &[&str]); 5] = [
         ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
@@ -759,6 +839,8 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         }
         // (#78) the save/load screen's fade (`SaveLoadMenuFade`), on its parent, not fire-once (its shutdown reverses it)
         s += "WindowTransition SaveLoadMenuFade\n  Window\n    WinName = SaveLoad.wnd:SaveLoadMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
+        // (#89 part 2) the score screen's show, on its grid
+        s += "WindowTransition ScoreScreenShow\n  Window\n    WinName = ScoreScreen.wnd:GadgetParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         // (#89) the skirmish screen's fade, on its parent, not fire-once (its shutdown reverses it)
         s += "WindowTransition SkirmishGameOptionsMenuFade\n  Window\n    WinName = SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         for (g, w) in [("US", "US"), ("GLA", "GLA"), ("China", "China"), ("Training", "Training"), ("Skirmish", "Skirmish")] {
@@ -782,8 +864,10 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             // (#89)
             ("SkirmishGameOptionsMenu", skirmish_game_options_wnd()),
             ("SkirmishMapSelectMenu", skirmish_map_select_wnd()),
+            // (#89 part 2)
+            ("ScoreScreen", score_screen_wnd()),
         ];
-        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"] {
+        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu", "PopupReplay"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()

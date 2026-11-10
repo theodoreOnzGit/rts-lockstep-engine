@@ -77,7 +77,9 @@
 //! - `TheShell->loadScheme("MainMenu")` (shell menu schemes)~~, `reverseAnimatewindow`~~: not translated.
 //!   **Corrected 2026-11-10 (#77):** `reverseAnimatewindow` is translated (the shutdown and `setupGameStart` call it;
 //!   [`shell::reverse_animate_window`]).
-//! - `TheWritableGlobalData->m_breakTheMovie`, `DontShowMainMenu` (false in the game): not modelled.
+//! - `TheWritableGlobalData->m_breakTheMovie`~~, `DontShowMainMenu` (false in the game)~~: not modelled.
+//!   **Corrected 2026-11-10 (#89):** `DontShowMainMenu` is ScoreScreen.cpp's global, true while the score screen is
+//!   up (over the main menu): [`MenuHost::score_screen_globals`]; `MainMenuUpdate` reads it.
 //! - `IsFirstCDPresent` (`TheFileSystem->areMusicFilesOnCD()`) is the host's ([`MenuHost::first_cd_present`]); the
 //!   insert-disc prompt (`ExMessageBoxOkCancel`, ExtendedMessageBox.cpp) is not translated: without the disc the
 //!   difficulty buttons do nothing.
@@ -140,6 +142,11 @@ pub trait MenuHost: ShellHost {
     /// `IsFirstCDPresent()`.
     fn first_cd_present(&self) -> bool {
         true
+    }
+    /// (#89 part 2) ScoreScreen.cpp's globals (`DontShowMainMenu`, `ReplayWasPressed`, ...): `None` for a host without
+    /// the score screen (they keep their initial values, false).
+    fn score_screen_globals(&mut self) -> Option<&mut crate::client::score_screen::ScoreScreenGlobals> {
+        None
     }
     /// `_spawnl(_P_NOWAIT, "WorldBuilder.exe", ...) >= 0`.
     fn spawn_world_builder(&mut self) -> bool {
@@ -427,6 +434,10 @@ pub fn main_menu_update<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layo
     let env = h.env();
     if env.in_game && !env.in_shell_game {
         return;
+    }
+    // (#89 part 2) `if(DontShowMainMenu && justEntered) justEntered = FALSE;`
+    if h.score_screen_globals().is_some_and(|g| g.dont_show_main_menu) && h.main_menu().just_entered {
+        h.main_menu().just_entered = false;
     }
     if h.main_menu().just_entered {
         if h.main_menu().initial_gadget_delay == 1 {

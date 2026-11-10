@@ -408,6 +408,34 @@ impl ScoreKeeper {
         }
     }
 
+    /// GitHub #89 part 2 (tests and differentials, new): the totals set directly, as a game's records would leave them
+    /// (`m_myPlayerIdx`, the money earned and spent, the units and buildings built and lost, and those destroyed by
+    /// owner). The object maps are left as they are.
+    #[allow(clippy::too_many_arguments)]
+    #[doc(hidden)]
+    pub fn friend_set_totals(
+        &mut self,
+        my_player_index: i32,
+        money_earned: i32,
+        money_spent: i32,
+        units_built: i32,
+        units_lost: i32,
+        buildings_built: i32,
+        buildings_lost: i32,
+        units_destroyed: [i32; MAX_PLAYER_COUNT as usize],
+        buildings_destroyed: [i32; MAX_PLAYER_COUNT as usize],
+    ) {
+        self.my_player_index = my_player_index;
+        self.total_money_earned = money_earned;
+        self.total_money_spent = money_spent;
+        self.total_units_built = units_built;
+        self.total_units_lost = units_lost;
+        self.total_buildings_built = buildings_built;
+        self.total_buildings_lost = buildings_lost;
+        self.total_units_destroyed = units_destroyed;
+        self.total_buildings_destroyed = buildings_destroyed;
+    }
+
     /// `calculateScore()`: 100 per unit built, 100 per building built, the
     /// money earned, and 100 per unit and building destroyed by anyone but us.
     /// Stored as `m_currentScore` and returned.

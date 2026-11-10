@@ -3004,6 +3004,8 @@ extern "C" {
     pub fn ref_save_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// #89: the skirmish map list (differential/wrap_map_list.cpp): the dump's length.
     pub fn ref_map_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    /// #89 part 2: the score screen's grid (differential/wrap_score_grid.cpp): the dump's length.
+    pub fn ref_score_grid_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.

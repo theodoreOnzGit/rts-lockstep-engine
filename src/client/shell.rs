@@ -123,7 +123,7 @@ impl Default for ShellEnv {
 
 /// What a callback asks of the engine and the logic (upstream's `TheMessageStream` messages and engine calls). The
 /// client acts on them: they never reach the simulation except as the game's own start messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ShellRequest {
     /// `MSG_CLEAR_GAME_DATA`.
     ClearGameData,
@@ -151,6 +151,14 @@ pub enum ShellRequest {
     /// (`DIFFICULTY_NORMAL`, "not really used"), rank 0 and the FPS limit `max_fps`: the World's
     /// `start_skirmish_game`.
     StartSkirmish { game: Box<crate::common::game_info::GameInfo>, mode: i32, difficulty: i32, max_fps: i32 },
+    /// (#89 part 2) The score screen's *Continue*: `startNextCampaignGame`'s logic half (the pending file the
+    /// campaign's current map, a challenge's `TheChallengeGameInfo`, `MSG_NEW_GAME`, `InitRandom(0)`: the World's
+    /// `start_next_campaign_game`), with the screen's `TheCampaignManager` (`campaign`: its rank points, difficulty and
+    /// next mission set by the screen), in the World that played.
+    StartNextCampaignGame { campaign: Box<crate::client::campaign_manager::CampaignManager> },
+    /// (#89 part 2) `TheGameState->missionSave()` (the score screen's `finishSinglePlayerInit` after a victory with a
+    /// mission to follow), with the screen's `TheCampaignManager`.
+    MissionSave { campaign: Box<crate::client::campaign_manager::CampaignManager> },
 }
 
 /// `TheShell`.
@@ -378,7 +386,7 @@ pub fn run_layout<H: ShellHost>(wm: &mut GameWindowManager, h: &mut H, l: usize,
 }
 
 /// `layout->deleteInstance()` after `destroyWindows()`.
-fn destroy_layout(wm: &mut GameWindowManager, l: usize) {
+pub(crate) fn destroy_layout(wm: &mut GameWindowManager, l: usize) {
     wm.layout_destroy_windows(l);
     wm.layouts[l].deleted = true;
 }

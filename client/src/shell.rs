@@ -16,7 +16,10 @@
 //!   `showShell(TRUE)`). (#89) The skirmish screen's start ([`ShellRequest::StartSkirmish`]) goes through the same flow
 //!   as a campaign's ([`ShellAction::SkirmishChosen`]: `MissionChoice::Skirmish`, the World's `start_skirmish_game`
 //!   once the map's folder has arrived); the screens read a copy of the install's data
-//!   ([`ShellUi::set_skirmish_data`], given when the shell is loaded).
+//!   ([`ShellUi::set_skirmish_data`], given when the shell is loaded). (#89 part 2) A mission's or a skirmish's end
+//!   pushes the translated score screen ([`ShellUi::score_screen`], with the copy of the game `clearGameData` keeps);
+//!   its *Continue* goes to the flow ([`ShellRequest::StartNextCampaignGame`]: [`Flow::continue_from_score_screen`],
+//!   in the World that played) and its mission save to the save folder ([`ShellAction::MissionSaved`]).
 //!
 //! ~~**Not drawn yet (#69's remaining work):** the application does not show this shell; the windows' quads, as
 //! `crate::ui::GameUi::frame` makes the control bar's, and the phone layout (the menu over the 3D view, the zoom
@@ -99,9 +102,12 @@ use crate::ui::{LayoutPlacement, UiQuad, LAYOUT};
 ///
 /// (#89) With the skirmish screen's map picker (`SkirmishMapSelectMenu`); the skirmish screen's callbacks are
 /// translated.
-pub const SHELL_FILES: [&str; 15] = [
+///
+/// (#89 part 2) With the score screen (`ScoreScreen`, translated) and the replay popup it opens (`PopupReplay`, whose
+/// callbacks are not).
+pub const SHELL_FILES: [&str; 17] = [
     "MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu",
-    "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect", "SkirmishMapSelectMenu",
+    "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect", "SkirmishMapSelectMenu", "ScoreScreen", "PopupReplay",
 ];
 
 /// The files the shell reads, read ahead (the art's file system is not kept by the shell), with the reader's name keys
@@ -164,6 +170,8 @@ pub enum ShellAction {
     /// (#89) The skirmish screen's start waits for its map in the flow (the campaign panel's path: [`Flow::choose`]
     /// with `MissionChoice::Skirmish`, the World's `start_skirmish_game`).
     SkirmishChosen,
+    /// (#89 part 2) The score screen's mission save (`missionSave`): its description and bytes, for the save folder.
+    MissionSaved(String, Vec<u8>),
 }
 
 /// The client's side of a request (#89: [`ShellRequest::StartSkirmish`] goes through the same flow as a campaign's
@@ -189,6 +197,16 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
         ShellRequest::SaveGame { .. } => ShellAction::None("the in-game save popup is not reachable (QuitMenu.cpp, which opens it, is not translated)"),
         ShellRequest::ClearGameData => ShellAction::None("no game runs under the shell (the client's games are started by the flow)"),
         ShellRequest::NewShellGame => ShellAction::None("the shell map is not translated"),
+        // (#89 part 2) the score screen's *Continue*: the next mission (or the same, after a defeat) in the World that
+        // played, with the screen's campaign
+        ShellRequest::StartNextCampaignGame { campaign } => match flow.continue_from_score_screen((**campaign).clone()) {
+            Ok(()) => ShellAction::CampaignChosen,
+            Err(e) => ShellAction::Failed(e),
+        },
+        ShellRequest::MissionSave { campaign } => match flow.mission_save_from_score_screen(campaign) {
+            Some((d, b)) => ShellAction::MissionSaved(d, b),
+            None => ShellAction::Failed("the mission save failed (no game ended, or no campaign)".to_string()),
+        },
         // (#89) the skirmish screen's start: a copy of `base` waits for the map's folder, then `start_skirmish_game`
         ShellRequest::StartSkirmish { game, mode, difficulty, max_fps } => {
             let choice = MissionChoice::Skirmish { game: game.clone(), mode: *mode, max_fps: *max_fps };
@@ -278,6 +296,14 @@ impl ShellUi {
         fs.get_file_list_in_directory(b"Maps\\", b"*", &mut list, true);
         let files = list.iter().map(|n| n.to_ascii_lowercase()).collect();
         self.gui.skirmish_data = SkirmishData::from_world(base, files);
+    }
+
+    /// (#89 part 2) `GameLogic::clearGameData`'s score screen for the game that ended (`game`, what the screen reads of
+    /// it: [`Flow::check_score_screen`]): the fade, the push of `Menus/ScoreScreen.wnd` (its init reads `game`),
+    /// `showShell(FALSE)`.
+    pub fn score_screen(&mut self, game: rts_lockstep_engine::client::score_screen::ScoreScreenGame) {
+        self.gui.score_screen.game = Some(game);
+        rts_lockstep_engine::client::score_screen::clear_game_data_score_screen(&mut self.wm, &mut self.gui);
     }
 
     /// (#78) `TheShell->showShell(TRUE)`, as a failed load's `doLoadGame` calls it: the top screen's init again, the
@@ -607,6 +633,51 @@ mod tests {
         let mut gone = g.clone();
         gone.map_name = b"maps\\gone\\gone.map".to_vec();
         assert!(matches!(act(&ShellRequest::StartSkirmish { game: Box::new(gone), mode: 2, difficulty: 1, max_fps: 30 }, &base, &mut flow), ShellAction::Failed(_)));
+    }
+
+    /// #89 part 2: the translated score screen in the client, after a campaign mission won (a World with the campaign
+    /// `usa` at its first mission, victorious; local player 1, human, 777 skill points). Predicted from ScoreScreen.cpp
+    /// before the run:
+    ///
+    /// - [`ShellUi::score_screen`] pushes `Menus/ScoreScreen.wnd` over the (hidden) main menu and shows the shell;
+    ///   `DontShowMainMenu` is set;
+    /// - the first frame (`finishSinglePlayerInit`) goes to M02 and asks for the mission save: the action
+    ///   [`ShellAction::MissionSaved`] (or [`ShellAction::Failed`] if the World without a game cannot save; the
+    ///   prediction: saved, the description `GUI:MissionSave` formatted);
+    /// - *Continue*: the shell hidden, [`ShellAction::CampaignChosen`], the flow waiting for `Maps\USA02\USA02.map` in
+    ///   the World that played, its campaign the screen's (rank points 777).
+    #[test]
+    fn the_score_screen_continues_the_campaign_in_the_flow() {
+        let (mut ui, _, _) = shell_with(&TextTable::default());
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        let mut w = World::new();
+        w.campaign.init(CAMPAIGN).expect("Campaign.ini");
+        w.campaign.set_campaign(b"usa");
+        w.campaign.set_victorious(true);
+        w.players.set_player_count(2);
+        w.players.friend_set_local_index(Some(1));
+        w.players.get_nth_mut(1).expect("player 1").skill_points = 777;
+        let g = rts_lockstep_engine::client::score_screen::ScoreScreenGame::from_world(&w);
+        let mut flow = Flow { played: Some(w.clone()), ..Flow::default() };
+        ui.hide();
+        ui.score_screen(g);
+        assert!(ui.is_active());
+        assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/ScoreScreen.wnd"[..]));
+        assert!(ui.gui.score_screen.globals.dont_show_main_menu);
+        assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
+        now += 40;
+        ui.frame(now);
+        let actions = ui.take_actions(&w, &mut flow);
+        assert!(matches!(actions.as_slice(), [ShellAction::MissionSaved(..)]), "{actions:?}");
+        settle(&mut ui, &mut now);
+        click_named(&mut ui, "ScoreScreen.wnd", "ButtonContinue");
+        assert!(!ui.is_active());
+        assert_eq!(ui.take_actions(&w, &mut flow), [ShellAction::CampaignChosen]);
+        assert_eq!(flow.waiting_for(), Some(&b"Maps\\USA02\\USA02.map"[..]));
+        let p = flow.pending.as_ref().expect("pending");
+        assert_eq!(p.world.campaign.current_rank_points(), 777);
+        assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
     }
 
     /// #78: the shell drawn from the window manager's draw list, and hidden when a game starts. Predicted from

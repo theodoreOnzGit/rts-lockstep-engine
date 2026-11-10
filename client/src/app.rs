@@ -2263,6 +2263,7 @@ fn campaign_flow(
     mut drawn: ResMut<Drawn>,
     mut terrain: ResMut<TerrainState>,
     mut saves: NonSendMut<Saves>,
+    mut shell: NonSendMut<ShellState>,
 ) {
     let c = &mut *campaigns;
     if c.flow.pending.is_some() {
@@ -2299,6 +2300,19 @@ fn campaign_flow(
         return;
     }
     if game.base.is_none() {
+        return;
+    }
+    // (#89 part 2) with the shell, a mission's or a skirmish's end opens the translated score screen, as upstream's
+    // `clearGameData` pushes it (the game paused under it); its *Continue* and its mission save come back as the shell's
+    // actions (`shell_ui`)
+    let st = &mut *shell;
+    if let Some(ui) = st.ui.as_mut() {
+        if let Some(g) = c.flow.check_score_screen(&game.controls.client.world) {
+            ui.score_screen(g);
+            st.shown_over = game.serial;
+            game.paused = true;
+            c.set_status("over: the score screen".to_string());
+        }
         return;
     }
     if c.flow.check_game_over(&game.controls.client.world) {
@@ -2495,6 +2509,16 @@ fn shell_ui(
                         None => format!("error: no save {name}"),
                     };
                     saves.set_status(s);
+                }
+                crate::shell::ShellAction::MissionSaved(desc, bytes) => {
+                    // (#89 part 2: the score screen's `missionSave`, into the save folder)
+                    let name = saves.folder.next_name();
+                    let s = match saves.folder.write(&name, bytes) {
+                        Ok(()) => format!("mission saved {name} ({desc})"),
+                        Err(e) => format!("the mission save failed: {e}"),
+                    };
+                    saves.set_status(s);
+                    saves.generation += 1;
                 }
                 crate::shell::ShellAction::None(why) => {
                     if !why.is_empty() {

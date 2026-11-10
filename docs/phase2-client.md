@@ -124,6 +124,50 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#89 part 2 (2026-11-10, GitHub #89): the score screen.**
+- **Translated** (engine crate, plain Rust): `client::score_screen` (ScoreScreen.cpp): the statics and globals
+  (`DontShowMainMenu`, `ReplayWasPressed`, `g_playMusic`, `LastReplayFileName`), `startNextCampaignGame`,
+  `ScoreScreenEnableControls`, `ScoreScreenInit`, `FixupScoreScreenMovieWindow`, `ScoreScreenShutdown`,
+  `ScoreScreenUpdate`, `ScoreScreenInput`, `ScoreScreenSystem`, `initSkirmish`, `PlayMovieAndBlock` (no Bink stream:
+  it returns, as upstream's does then), `initSinglePlayer`, `displayChallengeWinLoss`, `finishSinglePlayerInit`,
+  `initReplaySinglePlayer`, `initLANMultiPlayer`, `initInternetMultiPlayer`, `initReplayMultiPlayer`,
+  `populatePlayerInfo` (to its skirmish tail and its internet branch), `grabMultiPlayerInfo`, `grabSinglePlayerInfo`,
+  `hideWindows`, `setObserverWindows`, `populateSideInfo`; with clearGameData's push (`clear_game_data_score_screen`)
+  and `CheckForCDAtGameStart` for *Continue*. The game the screen reads is copied where upstream's init reads it, in
+  `World::clear_game_data` before the engine's reset (`ScoreScreenGame::from_world`, `World::score_screen_game`; not
+  simulation state, the copy's `calculateScore` and the academy's advice on a copy of the client stream). Two new
+  `ShellRequest`s: `StartNextCampaignGame` and `MissionSave`, each with the screen's `TheCampaignManager`.
+  `MainMenuUpdate` and `SaveLoadMenuUpdate` now read `DontShowMainMenu` / `ReplayWasPressed`
+  (`MenuHost::score_screen_globals`). `ScoreKeeper::friend_set_totals` (tests). `shell_gui`: the five lexicon entries,
+  `synthetic::score_screen_wnd`, the `ScoreScreenShow` group, a plain `PopupReplay.wnd`.
+- **Not translated (recorded, issue drafts):** the internet branch's stats report and `updateMPBattleHonors`; the
+  skirmish tail's `SkirmishBattleHonors` update (`updateSkirmishBattleHonors`, `updateChallengeMedals`,
+  `isSlotLocalAlly`, `CheckForApocalypse`: one `HonorsCall::SkirmishResult` recorded, #92); the campaign's completion
+  is translated as its `SkirmishBattleHonors` calls, recorded, nothing written (#92); the buddy and chat calls
+  (`TheLAN`, `TheGameSpyInfo` are `NULL` in the client); PopupReplay.cpp.
+- **Client:** `Flow` watches a skirmish too and keeps the World that played (`Flow::check_score_screen`,
+  `continue_from_score_screen`, `mission_save_from_score_screen`); with the shell loaded, a mission's or a skirmish's
+  end opens the translated screen over the paused game (`ShellUi::score_screen`); *Continue* starts the next mission
+  (or the same one after a defeat) in the World that played, the mission save goes to the save folder
+  (`ShellAction::MissionSaved`), *OK* goes back to the main menu. Without the shell the plain panel is unchanged.
+  `SHELL_FILES` reads `ScoreScreen.wnd` and `PopupReplay.wnd`.
+- **Defect found and fixed (issue drafted):** the plain flow's next mission and its mission save missed
+  `initSinglePlayer`'s `setRankPoints(local skill points)` / `setGameDifficulty(global difficulty)` (the players are
+  reset before the flow looked); `Flow::check_game_over` now applies them from the copy.
+- **Predictions vs results:** in each test's doc. One miss, in the prediction: a LAN screen's focus is the parent's
+  (`ScoreScreenInit` gives it after `initLANMultiPlayer` gave it to the chat entry).
+- **Differential** (`tests/differential_score_grid.rs`, `differential/wrap_score_grid.cpp`, build.rs cuts
+  `ScoreGather`, `populatePlayerInfo` to its skirmish tail and the file from `grabMultiPlayerInfo` on, verbatim):
+  predicted 0 mismatches; 20,000 cases (10,069 single player), 79,843 named rows, 5,854 academy rows, **0 mismatches**
+  on the first run. Plants 4 of 4 caught: 8921 (tie adder not counted up) 831 cases, 8922 (lowest first) 8,849, 8923
+  (allies and enemies swapped) 8,969, 8924 (marker without image) 4,071. differential_wm, _wnd, _wt, _save_list and
+  _map_list rerun: 0 mismatches. The opt-in campaign run (`RTS_CAMPAIGN_INSTALL`) passes with the shell's path checked
+  at the mission's end (frame 121).
+- **Gaps (issue drafts):** the multiplayer / GameSpy / battle-honour parts above; PopupReplay.cpp (*Save Replay* opens
+  a popup whose callbacks are not translated); upstream's undefined steps and quirks kept (recorded).
+- **Gates:** lib 1119 passed (1112 before, 7 new); client 55 passed (54 before, 1 new); clippy (lib) clean; web build
+  ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#89 part 1 (2026-11-10, GitHub #89): the skirmish game options screen and its map picker.**
 - **Translated** (engine crate, plain Rust):
   - `client::skirmish_game_options` (SkirmishGameOptionsMenu.cpp, whole but `populateSkirmishBattleHonors`): the
@@ -150,7 +194,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Client:** the shell gets `SkirmishData` from the install's World when it loads (`ShellUi::set_skirmish_data`, with
   the file system's `Maps\` files); `act` turns `StartSkirmish` into the campaign panel's flow
   (`ShellAction::SkirmishChosen`: a copy of the base World waits for the map's folder, then `start_skirmish_game`);
-  `Flow::poll` labels it a skirmish and opens no score screen at its end. `SkirmishMapSelectMenu` is read with the
+  `Flow::poll` labels it a skirmish~~ and opens no score screen at its end~~. **Corrected 2026-11-10 (#89 part 2):**
+  its end opens the translated score screen (the entry above). `SkirmishMapSelectMenu` is read with the
   shell's files.
 - **Defect found and fixed (issue drafted):** the map list passed `overwrite = FALSE` to `GadgetListBoxAddEntryText`,
   whose default is `TRUE`: with two columns each name went into a row of its own (caught by the picker's unit test).
@@ -221,8 +266,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); `Options.ini`
   (`OptionPreferences`) is neither read nor written (the campaign difficulty); the date and time formats are the en-US
   system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (~~the
-  skirmish map select and game options,~~ the score screen, the challenge menu, the options menu) is not started.
+  skirmish map select and game options,~~ ~~the score screen,~~ the challenge menu, the options menu) is not started.
   **Corrected 2026-11-10 (#89):** the skirmish game options and its map picker are translated (the entry above).
+  **Corrected 2026-11-10 (#89 part 2):** the score screen is translated (the entry above).
 
 **#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
 - **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):

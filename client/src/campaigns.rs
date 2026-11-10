@@ -5,7 +5,7 @@
 //! **The list** is the World's `TheCampaignManager` (`Data\INI\Campaign.ini`: USA, China, GLA and the training campaign,
 //! each with its missions) and `TheChallengeGenerals` (`Data\INI\ChallengeMode.ini`: the challenge's generals), read by
 //! the install ([`sections`]). The game's own menus (the main menu's campaign buttons, the difficulty menu, the challenge
-//! menu, the score screen) are milestone C5; this list is plain, and offers every mission, not only a campaign's first
+//! menu, ~~the score screen~~) are milestone C5; this list is plain, and offers every mission, not only a campaign's first
 //! (upstream's menus start the first; the others by Continue, or a cheat's `MissionSelect` menu).
 //!
 //! **A mission's map** must be on the World's disk, and the client keeps no logic file system once the game has started
@@ -23,6 +23,10 @@
 //! (`startNextCampaignGame`), read by range as the first was. At a campaign's end there is none. **#64 (2026-11-06):** the
 //! message now reaches `clearGameData`, which clears the World that played; the next mission starts in that World (the
 //! client's copy of it, which the application puts in place of its game, as it did the install's copy before).
+//!
+//! **Corrected 2026-11-10 (#89 part 2):** with the shell loaded, the game's own score screen opens instead
+//! ([`Flow::check_score_screen`]: the translated `ScoreScreen.cpp`, for a mission and a skirmish); the plain panel's path
+//! above is the one without the shell, and now applies `initSinglePlayer`'s rank points and difficulty first.
 //!
 //! **Briefings.** The briefing movies are Bink videos, which cannot be played (Bink was never released); the briefing's
 //! text is shown instead ([`briefing`]): the mission's location and objective lines from the game text.
@@ -127,8 +131,12 @@ pub struct GameOver {
 pub struct Flow {
     pub pending: Option<PendingMission>,
     pub over: Option<GameOver>,
-    /// The game being played is a mission this flow started (its end opens the score screen once).
+    /// The game being played is a mission ~~this flow started~~ **Corrected 2026-11-10 (#89):** or a skirmish this
+    /// flow started (its end opens the score screen once).
     pub watching: bool,
+    /// (#89 part 2) The World of the game that ended, cleared by its `clearGameData`, while the shell's translated score
+    /// screen is up: its *Continue* starts the next mission in it ([`Flow::continue_from_score_screen`]).
+    pub played: Option<World>,
 }
 
 /// Why a choice did not start, in words.
@@ -168,7 +176,9 @@ impl Flow {
             return None;
         }
         let p = self.pending.take()?;
-        // (#89) the skirmish screen's start: labelled as a skirmish, and its end opens no score screen
+        // (#89) the skirmish screen's start: labelled as a skirmish~~, and its end opens no score screen~~
+        // **Corrected 2026-11-10 (#89 part 2):** its end opens the shell's score screen, as upstream's `clearGameData`
+        // pushes it for a skirmish ([`Flow::check_score_screen`])
         let skirmish = matches!(p.choice, MissionChoice::Skirmish { .. });
         let (mut world, map) = match p.start() {
             Ok(x) => x,
@@ -179,10 +189,10 @@ impl Flow {
                 return Some(Err(format!("a starting frame failed: {e:?}")));
             }
             if let Some(player) = world.players.local_index().filter(|_| world.game_started()) {
+                self.watching = true;
                 if skirmish {
                     return Some(Ok(Started { world, player, label: format!("skirmish on {}", String::from_utf8_lossy(&map)) }));
                 }
-                self.watching = true;
                 let campaign = world.campaign.get_current_campaign().map(|c| String::from_utf8_lossy(&c.name).into_owned()).unwrap_or_default();
                 let label = format!("{campaign} mission {} on {}", world.campaign.get_current_mission_number() + 1, String::from_utf8_lossy(&map));
                 return Some(Ok(Started { world, player, label }));
@@ -209,6 +219,15 @@ impl Flow {
         // one engine; the client's copy of it is given `finishSinglePlayerInit`, the score screen's, and the mission save
         // is made from it, as upstream's is after the clear)
         let mut played = world.clone();
+        // (#89 part 2, defect fixed: the score screen's `initSinglePlayer` sets the campaign's rank points to the local
+        // player's skill points and its difficulty to the script engine's, before `finishSinglePlayerInit`; the flow left
+        // them as the mission started, and the mission save carried those)
+        if let Some(g) = world.score_screen_game.as_deref() {
+            if let Some(p) = g.local.and_then(|l| g.players.get(l)) {
+                played.campaign.set_rank_points(p.skill_points);
+            }
+            played.campaign.set_game_difficulty(g.global_difficulty);
+        }
         played.finish_single_player();
         let mission_save = played
             .mission_save_description()
@@ -217,6 +236,38 @@ impl Flow {
         let mission_save = mission_save.filter(|_| victorious && next.is_ok());
         self.over = Some(GameOver { victorious, next, mission_save });
         true
+    }
+
+    /// (#89 part 2) After each logic frame, with the shell: when the game being played (a mission or a skirmish) has
+    /// ended with the score screen (`World::score_screen_game_over`), what the translated screen reads of it; the World
+    /// that played is kept for its *Continue* and its mission save. Once per game.
+    pub fn check_score_screen(&mut self, world: &World) -> Option<rts_lockstep_engine::client::score_screen::ScoreScreenGame> {
+        if !self.watching || self.over.is_some() {
+            return None;
+        }
+        let g = world.score_screen_game_over()?.clone();
+        self.watching = false;
+        self.played = Some(world.clone());
+        Some(g)
+    }
+
+    /// (#89 part 2) The score screen's *Continue* (`startNextCampaignGame`): the World that played, given the screen's
+    /// campaign (its next mission, or the same one after a defeat), waits for the mission's map, as
+    /// [`Flow::continue_campaign`]'s does. An error without a game ended, or at the campaign's end.
+    pub fn continue_from_score_screen(&mut self, campaign: rts_lockstep_engine::client::campaign_manager::CampaignManager) -> Result<(), String> {
+        let mut w = self.played.take().ok_or("no game has ended")?;
+        w.campaign = campaign;
+        self.pending = Some(PendingMission::next(w).map_err(|e| describe(&e))?);
+        Ok(())
+    }
+
+    /// (#89 part 2) The score screen's `TheGameState->missionSave()`: the mission save of the World that played with the
+    /// screen's campaign (its next mission): its description and bytes. `None` without a game ended or a campaign.
+    pub fn mission_save_from_score_screen(&self, campaign: &rts_lockstep_engine::client::campaign_manager::CampaignManager) -> Option<(String, Vec<u8>)> {
+        let mut w = self.played.clone()?;
+        w.campaign = campaign.clone();
+        let d = w.mission_save_description()?;
+        w.mission_save(&d).ok().map(|b| (String::from_utf16_lossy(&d), b))
     }
 
     /// A mission save from the save folder (the load menu's, for a `SAVE_FILE_TYPE_MISSION` file): loaded into a copy of
@@ -329,7 +380,9 @@ mod tests {
     /// `usa mission 1`; its script wins, and the score screen opens 120 to 125 frames later, victorious, its Continue
     /// waiting for `USA02`, which starts as `usa mission 2`; its automatic mission save (#62 part 2) loads and starts
     /// `usa mission 2` too, after one round (one range: `USA02`'s map), so the Continue after it waits for nothing; run twice, the two runs' logic CRCs
-    /// agree on each of the first mission's 150 frames. #64 part 2, predicted: a normal save of `m01` at its 60th frame,
+    /// agree on each of the first mission's 150 frames. #89 part 2, predicted: at the same end the shell's path
+    /// ([`Flow::check_score_screen`]) gives the screen's copy of the game: single player, local player 1 (human), the
+    /// campaign victorious; once. #64 part 2, predicted: a normal save of `m01` at its 60th frame,
     /// loaded through `PendingLoad`, mounts its folder's 3 files at once (they arrived for the start) and its load reads
     /// `USA01`'s `map.ini`.
     #[test]
@@ -394,6 +447,13 @@ mod tests {
                 crcs.push(m1.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
                 if over_at.is_none() && flow.check_game_over(&m1.world) {
                     over_at = Some(f);
+                    // (#89 part 2: the shell's path at the same end: what the translated score screen reads)
+                    let mut shell_flow = Flow { watching: true, ..Flow::default() };
+                    let g = shell_flow.check_score_screen(&m1.world).expect("the score screen's game");
+                    assert_eq!((g.game_mode, g.local), (rts_lockstep_engine::common::recorder::game_mode::SINGLE_PLAYER, Some(1)));
+                    assert!(g.campaign.is_victorious() && g.players[1].human);
+                    assert!(shell_flow.played.is_some() && shell_flow.check_score_screen(&m1.world).is_none(), "once a game");
+                    eprintln!("the score screen's local player: {:?}, skill {}", String::from_utf16_lossy(&g.players[1].display_name), g.players[1].skill_points);
                 }
             }
             eprintln!("the score screen at frame {over_at:?} after the start");
