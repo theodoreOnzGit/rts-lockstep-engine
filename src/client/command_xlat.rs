@@ -4,8 +4,8 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp (CommandTranslator: issueMoveToLocationCommand,
 //     createAttackMessage, issueAttackCommand, issueSpecialPowerCommand, createEnterMessage, evaluateForceAttack,
-//     evaluateContextCommand, canSelectionSalvage, canAnyForceAttack, and translateGameMessage's selected-group, mouse-over hint,
-//     left and right click cases)
+//     evaluateContextCommand, canSelectionSalvage, canAnyForceAttack, isSystemMessage, and translateGameMessage's input gate
+//     and its selected-group, mouse-over hint, left and right click cases)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (areSelectedObjectsControllable, getCanSelectedObjectsAttack,
 //     canSelectedObjectsDoAction, canSelectedObjectsOverrideSpecialPowerDestination)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (CommandButton::isValidObjectTarget)
@@ -366,6 +366,18 @@ fn can_any_force_attack(victim: Option<ObjectId>, pos: Option<Coord3D>, ui: &InG
         Some(o) => h.object_can_force_attack(o, victim, pos),
         None => ATTACKRESULT_NOT_POSSIBLE,
     }
+}
+
+/// `isSystemMessage(msg)` (CommandXlat.cpp): the messages the input gate lets through whatever the input.
+pub fn is_system_message(t: MessageType) -> bool {
+    (t == MSG_DESTROY_SELECTED_GROUP && !crate::logic::modules::plant(9024)) || t == MSG_LOGIC_CRC || t == MSG_SET_REPLAY_CAMERA || t == MSG_FRAME_TICK
+}
+
+/// #116: the first test of `CommandTranslator::translateGameMessage`: with the input off (`TheInGameUI->getInputEnabled()`
+/// false), every message but `MSG_META_OPTIONS`, `MSG_CLEAR_GAME_DATA` and the system messages ([`is_system_message`]) is
+/// destroyed ("we want to always be able to get to the options menu even during no input times"). Whether `t` is.
+pub fn input_disabled_destroys(t: MessageType, input_enabled: bool) -> bool {
+    t != MSG_META_OPTIONS && (t != MSG_CLEAR_GAME_DATA || crate::logic::modules::plant(9023)) && !input_enabled && !is_system_message(t)
 }
 
 impl CommandTranslator {
@@ -994,6 +1006,11 @@ impl CommandTranslator {
     /// `MSG_MOUSEOVER_DRAWABLE_HINT` / `MSG_MOUSEOVER_LOCATION_HINT`: with something selected, the hint of the command a click
     /// on `draw` (at its position) or on the ground at `pos` would give.
     pub fn mouse_over(&self, draw: Option<DrawableId>, pos: &Coord3D, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+        // (#116: the input gate; the hint message is destroyed before its case)
+        let hint = if draw.is_some() { MSG_MOUSEOVER_DRAWABLE_HINT } else { MSG_MOUSEOVER_LOCATION_HINT };
+        if input_disabled_destroys(hint, ui.input_enabled()) {
+            return MSG_INVALID;
+        }
         let pos = match draw {
             Some(d) => {
                 if ui.select_count() == 0 {
@@ -1018,6 +1035,10 @@ impl CommandTranslator {
     /// released as a click): a point click with a controllable selection orders it, at `pos` on the terrain, onto `picked` (the
     /// tactical view's `pickDrawable` for the context). Returns whether the message is destroyed.
     pub fn click(&self, right: bool, is_point: bool, pos: &Coord3D, picked: Option<DrawableId>, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> bool {
+        // (#116: the input gate destroys the click before its case)
+        if input_disabled_destroys(if right { MSG_MOUSE_RIGHT_CLICK } else { MSG_MOUSE_LEFT_CLICK }, ui.input_enabled()) {
+            return true;
+        }
         // in alternate mouse mode a left click is only actioned here for a firing GUI command (C2c), and a right click only there
         if h.use_alternate_mouse() != right {
             return false;
@@ -1297,5 +1318,43 @@ pub(crate) mod tests {
         h.cmd.powers.insert((4, 7));
         assert_eq!(x.evaluate_context_command(None, &ground, DoCommand, &mut ui, &mut h), MSG_DO_SPECIAL_POWER_AT_LOCATION);
         assert_eq!(h.cmd.commands.pop().map(|(_, a)| a[5]), Some(CmdArg::Object(4)));
+    }
+
+    /// #116: the command translator's input gate. Predicted from CommandXlat.cpp: with the input on nothing is destroyed;
+    /// with it off `MSG_META_OPTIONS`, `MSG_CLEAR_GAME_DATA` and the four system messages (`MSG_DESTROY_SELECTED_GROUP`,
+    /// `MSG_LOGIC_CRC`, `MSG_SET_REPLAY_CAMERA`, `MSG_FRAME_TICK`) pass and an order, a selection or a hint is destroyed;
+    /// a point click with a controllable selection is destroyed without an order (`true`, no command), and the mouse-over
+    /// makes no hint; the attack move mode is left as it was (the click's case never runs).
+    ///
+    /// *Results (2026-11-10):* the gate held; the first run's last check (an order once the input is back) failed in
+    /// the test's setup (no `m_teamExists`), fixed by observing the group first.
+    #[test]
+    fn with_the_input_off_only_the_options_and_the_system_messages_pass() {
+        for t in [MSG_DO_MOVETO, MSG_CREATE_SELECTED_GROUP, MSG_META_OPTIONS, MSG_CLEAR_GAME_DATA, MSG_FRAME_TICK, MSG_MOUSE_LEFT_CLICK] {
+            assert!(!input_disabled_destroys(t, true), "{t:?}");
+        }
+        for t in [MSG_META_OPTIONS, MSG_CLEAR_GAME_DATA, MSG_DESTROY_SELECTED_GROUP, MSG_LOGIC_CRC, MSG_SET_REPLAY_CAMERA, MSG_FRAME_TICK] {
+            assert!(!input_disabled_destroys(t, false), "{t:?}");
+        }
+        for t in [MSG_DO_MOVETO, MSG_CREATE_SELECTED_GROUP, MSG_MOUSE_LEFT_CLICK, MSG_MOUSEOVER_LOCATION_HINT, MSG_DO_ATTACK_OBJECT] {
+            assert!(input_disabled_destroys(t, false), "{t:?}");
+        }
+        let mut h = Host { mine: vec![1], ..Default::default() };
+        let mut ui = InGameUiSelection::new();
+        ui.select_drawable(1, &mut h);
+        let mut x = CommandTranslator::default();
+        // (the group made: `m_teamExists`, which the move order needs; the first run left it out and the last click
+        // made no order)
+        x.observe_message(MSG_CREATE_SELECTED_GROUP);
+        let ground = Coord3D { x: 4.0, y: 5.0, z: 0.0 };
+        ui.set_input_enabled(false);
+        ui.set_attack_move_to_mode(true);
+        assert!(x.click(false, true, &ground, None, &mut ui, &mut h));
+        assert!(h.cmd.commands.is_empty() && ui.is_in_attack_move_to_mode());
+        assert_eq!(x.mouse_over(None, &ground, &mut ui, &mut h), MSG_INVALID);
+        assert!(h.cmd.hints.is_empty());
+        ui.set_input_enabled(true);
+        assert!(x.click(false, true, &ground, None, &mut ui, &mut h));
+        assert_eq!(h.cmd.commands.len(), 1);
     }
 }

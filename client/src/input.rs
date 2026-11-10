@@ -15,7 +15,12 @@ use rts_lockstep_engine::client::gui_command_xlat::GuiCommandTranslator;
 use rts_lockstep_engine::client::in_game_ui::InGameUiSelection;
 use rts_lockstep_engine::client::place_event::PlaceEventTranslator;
 use rts_lockstep_engine::client::selection_info::SelectionInfoHost;
+use rts_lockstep_engine::client::game_pause::ClientMouse;
+use rts_lockstep_engine::client::script_input::apply_script_input;
 use rts_lockstep_engine::client::selection_xlat::{Disposition, SelectionTranslator};
+use rts_lockstep_engine::client::window_manager::WinInputReturnCode;
+use rts_lockstep_engine::client::window_xlat::{translate_game_message as translate_window_message, MouseData, RawMessage, WindowXlatHost};
+use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP, MSG_RAW_MOUSE_POSITION};
 use rts_lockstep_engine::client::world_host::WorldClient;
 use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
 use rts_lockstep_engine::client::radar::{RadarFeedback, RadarFrame};
@@ -42,6 +47,50 @@ pub struct Controls {
     pub hint: Option<MessageType>,
     /// #35: `TheRadar` and what it draws (`rts_lockstep_engine::client::radar_world`).
     pub radar: ClientRadar,
+}
+
+/// #116: what `WindowTranslator` asks, in the game under the application's own windows: the windows use nothing (the
+/// application keeps the pointer from the translators over them, and over the shell), the shell is not active, nothing
+/// plays a movie, and the tactical view's mouse is locked while a drag selection is under way (the port's camera never
+/// locks it). The InGameUI answers for the input and the placement.
+struct GameWindows<'a> {
+    ui: &'a InGameUiSelection,
+    mouse_locked: bool,
+    pixel: ICoord2D,
+}
+
+impl WindowXlatHost for GameWindows<'_> {
+    fn mouse_locked(&self) -> bool {
+        self.mouse_locked
+    }
+    fn ui_is_scrolling(&self) -> bool {
+        false
+    }
+    fn ui_input_enabled(&self) -> bool {
+        self.ui.input_enabled()
+    }
+    fn ui_placement_anchored(&self) -> bool {
+        self.ui.is_placement_anchored()
+    }
+    fn shell_active(&self) -> bool {
+        false
+    }
+    fn mouse_status_pos(&self) -> ICoord2D {
+        self.pixel
+    }
+    fn win_process_mouse_event(&mut self, _gwm: u32, _pos: ICoord2D, _data: MouseData) -> WinInputReturnCode {
+        WinInputReturnCode::NotUsed
+    }
+    fn win_process_key(&mut self, _key: u8, _state: u8) -> WinInputReturnCode {
+        WinInputReturnCode::NotUsed
+    }
+    fn movie_playing(&self) -> bool {
+        false
+    }
+    fn allow_exit_out_of_movies(&self) -> bool {
+        false
+    }
+    fn stop_movie(&mut self) {}
 }
 
 /// A button of the selected unit's command set, with its label (the button's name, until the game's text is loaded).
@@ -104,18 +153,55 @@ impl Controls {
         }
     }
 
+    /// #116: `WindowTranslator` (priority 10) on a raw mouse message at `pixel`, before the game's translators: whether it
+    /// goes on to them. The application has already kept the pointer from them over its own windows and the shell, so
+    /// the windows here use nothing; what is left is the translator's input gate (with the input off a mouse message is
+    /// taken, but a release while a placement is anchored) and its mouse lock (a drag selection keeps everything).
+    pub fn window_keeps(&mut self, t: MessageType, pixel: ICoord2D) -> bool {
+        let mut h = GameWindows { ui: &self.ui, mouse_locked: self.selection.drag_selecting, pixel };
+        translate_window_message(&RawMessage::mouse(t, pixel), &mut h) == Disposition::Keep
+    }
+
+    /// #116: `MSG_FRAME_TICK` through the selection translator, once a client frame: with the input off its gate ends a
+    /// drag selection under way (the other translators' cases of the tick are not translated).
+    pub fn frame_tick(&mut self) {
+        self.selection.input_disabled_gate(&mut self.ui);
+    }
+
+    /// #116: a logic frame's events on the client's input: the scripts' `DISABLE_INPUT` / `ENABLE_INPUT` and deselections
+    /// (`rts_lockstep_engine::client::script_input`), on the InGameUI and `mouse`. The build tooltip and the look-at
+    /// translator's modes have nothing to reset here (no tooltip in the game; the camera input keeps no scroll mode).
+    pub fn take_script_input(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], mouse: &mut ClientMouse) {
+        for e in events {
+            let _ = apply_script_input(e, &mut self.ui, mouse, &mut self.client);
+        }
+    }
+
     /// The left button pressed at `pixel`: a building at the cursor is anchored there; with a GUI command pending the press
-    /// is used up (#54). Whether the press was taken.
+    /// is used up (#54). Whether the press was taken. #116: after the window translator; the selection translator keeps
+    /// the press for its drag.
     pub fn left_press(&mut self, pixel: ICoord2D, ground: Coord3D) -> bool {
+        if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, pixel) {
+            return false;
+        }
         self.client.view.terrain = vec![(pixel, ground)];
         if self.place.left_button_down(pixel, &mut self.ui, &mut self.client) {
             return true;
         }
-        self.gui.left_button_down(&mut self.ui) == Disposition::Destroy
+        if self.gui.left_button_down(&mut self.ui) == Disposition::Destroy {
+            return true;
+        }
+        self.selection.left_button_down(pixel, &mut self.ui);
+        false
     }
 
-    /// The pointer moved to `pixel`: an anchored building stretches toward it and turns to face it.
+    /// The pointer moved to `pixel`: an anchored building stretches toward it and turns to face it. #116: after the window
+    /// translator; with the button down the selection translator starts a drag past the click tolerance.
     pub fn pointer_moved(&mut self, pixel: ICoord2D, ground: Coord3D) {
+        if !self.window_keeps(MSG_RAW_MOUSE_POSITION, pixel) {
+            return;
+        }
+        self.selection.mouse_position(pixel, CLICK_TOLERANCE, &mut self.ui);
         if self.place.mouse_position(pixel, &mut self.ui) {
             let (start, _) = self.ui.placement_points();
             let start_ground = self.client.view.terrain.iter().find(|(p, _)| *p == start).map_or(ground, |(_, g)| *g);
@@ -127,7 +213,16 @@ impl Controls {
     /// The left button released at `release`, pressed at `press`: `in_region` are the objects under the click or in the
     /// dragged box, `picked` the one the view picks under the pointer (for an order), `ground` the terrain under the
     /// release. Returns whether a placement, a pending GUI command, a selection or an order took it.
+    ///
+    /// #116: after the window translator (with the input off the release is taken, but while a placement is anchored),
+    /// the selection translator's raw release ends its drag; every order made then passes the command translator's input
+    /// gate (`WorldClient`'s), so with the input off none reaches the logic.
     pub fn left_release(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
+        if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_UP, release) {
+            return false;
+        }
+        self.selection.left_button_up(&mut self.ui);
+        self.client.sync_modes(&self.ui);
         let frame = self.client.world.frame();
         if self.place.left_click(frame, &mut self.ui, &mut self.client) {
             return true;
@@ -150,6 +245,11 @@ impl Controls {
     pub fn hover(&mut self, picked: Option<ObjectId>, ground: Coord3D) -> Option<MessageType> {
         self.client.sync_modes(&self.ui);
         self.client.hints.clear();
+        // (#116: the selection translator's gate keeps the position without its mouse-over hint while the input is off)
+        if self.selection.input_disabled_gate(&mut self.ui).is_some() {
+            self.hint = None;
+            return None;
+        }
         self.commands.mouse_over(picked, &ground, &mut self.ui, &mut self.client);
         self.hint = self.client.hints.last().map(|(t, _)| *t);
         self.hint
@@ -186,8 +286,9 @@ impl Controls {
         (!s.is_empty() && !s.starts_with("MISSING")).then_some(s)
     }
 
-    /// A control bar button pressed.
+    /// A control bar button pressed. #116: its messages pass the command translator's input gate (`WorldClient`'s).
     pub fn press(&mut self, button: &GuiButton) -> CbCommandStatus {
+        self.client.sync_modes(&self.ui);
         let selected = self.ui.first_selected_drawable();
         let multi = self.ui.select_count() > 1;
         process_command_ui(button, PressedControl::Command, selected, multi, selected.is_none(), &mut self.ui, &mut self.client)
@@ -790,5 +891,187 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
             p.world().logic_update().expect("a frame");
         }
         assert_eq!(p.world().logic_crc(CRC_RECALC, None).expect("the CRC"), crc);
+    }
+
+    /// #116: a script of the demo world's side 0 (added when the map has none) that runs `action` once, at the script engine's next evaluation
+    /// (`CONDITION_TRUE`, one-shot).
+    fn add_script(w: &mut World, name: &[u8], action: i32) {
+        use rts_lockstep_engine::logic::scripts::{condition_type, Condition, OrCondition, Script, ScriptAction, ScriptList};
+        let templates = rts_lockstep_engine::logic::script_templates::script_templates(&mut w.names);
+        let mut s = Script::new();
+        s.script_name = name.to_vec();
+        s.conditions = vec![OrCondition { conditions: vec![Condition::new(condition_type::CONDITION_TRUE, &templates)] }];
+        s.actions = vec![ScriptAction::new(action, &templates)];
+        // (the demo map has no sides: one is added, with no properties, to hold the script)
+        if w.sides.get_num_sides() == 0 {
+            w.sides.add_side(&rts_lockstep_engine::common::dict::Dict::new());
+        }
+        w.sides.get_side_info_mut(0).expect("side 0").scripts.get_or_insert_with(ScriptList::default).scripts.push(s);
+    }
+
+    /// #116: one client frame as the application runs it: the sent messages observed, the logic frame, its script
+    /// input events on the InGameUI and the mouse, then the selection translator's tick. Returns the events.
+    fn client_frame(c: &mut Controls, mouse: &mut ClientMouse) -> Vec<rts_lockstep_engine::logic::client_event::ClientEvent> {
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        let events = c.world().take_client_events();
+        c.take_script_input(&events, mouse);
+        c.frame_tick();
+        events
+    }
+
+    /// #116: a script's `DISABLE_INPUT` in the World blocks the player's click and ends a drag; `ENABLE_INPUT` gives the
+    /// input back.
+    ///
+    /// *Predictions, written before the first run:*
+    /// - a click on the first Runner selects it (the logic's selection `[runner]` a frame later);
+    /// - a drag started (press at (0, 0), moved to (60, 60)) is under way: `m_dragSelecting` and `isSelecting`;
+    /// - the frame that runs `DISABLE_INPUT` sends the client, in order, `SetInputEnabled(false)`, `MouseSetVisibility(false)`,
+    ///   `DeselectAllDrawables`, `ClearAttackMoveToMode`, `SetWaypointMode(false)`, `DeleteBuildTooltipLayout`,
+    ///   `LookAtResetModes`; after it the input is off, the mouse hidden, nothing selected in the client, the drag ended,
+    ///   and the only message sent is `MSG_DESTROY_SELECTED_GROUP` (a system message); a frame later the logic's
+    ///   selection is empty;
+    /// - the drag's release over the Soldiers is taken by the window translator (`false`, nothing sent), and so is a
+    ///   click on a Soldier; a hover makes no hint; over 30 frames the logic's selection stays empty;
+    /// - with the input off, a message put on the stream directly passes only if it is `MSG_META_OPTIONS` or
+    ///   `MSG_CLEAR_GAME_DATA` (not `MSG_DO_MOVETO` or `MSG_CREATE_SELECTED_GROUP`);
+    /// - after `ENABLE_INPUT` (its two calls) the input is on and the mouse shown, and a click on a Soldier selects it.
+    ///
+    /// *Results (2026-11-10):* all held (after the test's own fix: the demo map had no side for the script).
+    #[test]
+    fn a_scripts_disable_input_blocks_the_players_click() {
+        use rts_lockstep_engine::client::in_game_ui::SelectionUiHost;
+        use rts_lockstep_engine::common::message_types::*;
+        use rts_lockstep_engine::logic::client_event::{ClientEvent, ScriptInputCall as C};
+        use rts_lockstep_engine::logic::scripts::action_type::{DISABLE_INPUT, ENABLE_INPUT};
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let mut mouse = ClientMouse::default();
+        let at = |x: i32, y: i32| ICoord2D { x, y };
+        let selection = |c: &Controls| c.client.world.players.get_nth(1).and_then(|p| p.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default();
+        let inputs = |ev: &[ClientEvent]| ev.iter().filter_map(|e| if let ClientEvent::ScriptInput(i) = e { Some(*i) } else { None }).collect::<Vec<_>>();
+
+        let r = o.runners[0];
+        let rp = pos(&mut c, r);
+        assert!(c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp));
+        client_frame(&mut c, &mut mouse);
+        assert_eq!(selection(&c), vec![r]);
+
+        assert!(!c.left_press(at(0, 0), Coord3D::default()));
+        c.pointer_moved(at(60, 60), Coord3D::default());
+        assert!(c.selection.drag_selecting && c.ui.is_selecting());
+
+        add_script(c.world(), b"NoInput", DISABLE_INPUT);
+        let ev = client_frame(&mut c, &mut mouse);
+        assert_eq!(
+            inputs(&ev),
+            [C::SetInputEnabled(false), C::MouseSetVisibility(false), C::DeselectAllDrawables, C::ClearAttackMoveToMode, C::SetWaypointMode(false), C::DeleteBuildTooltipLayout, C::LookAtResetModes]
+        );
+        assert!(!c.ui.input_enabled() && !mouse.visible && c.ui.select_count() == 0);
+        assert!(!c.selection.drag_selecting && !c.ui.is_selecting());
+        assert_eq!(c.client.sent, vec![MSG_DESTROY_SELECTED_GROUP]);
+        client_frame(&mut c, &mut mouse);
+        assert_eq!(selection(&c), Vec::<ObjectId>::new());
+
+        assert!(!c.left_release(at(0, 0), at(60, 60), &o.soldiers, None, Coord3D::default()));
+        let s0 = o.soldiers[0];
+        let sp = pos(&mut c, s0);
+        assert!(!c.left_press(at(30, 30), sp));
+        assert!(!c.left_release(at(30, 30), at(30, 30), &[s0], Some(s0), sp));
+        assert_eq!(c.hover(Some(s0), sp), None);
+        assert!(c.client.sent.is_empty());
+        for _ in 0..30 {
+            client_frame(&mut c, &mut mouse);
+        }
+        assert_eq!(selection(&c), Vec::<ObjectId>::new());
+        assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+
+        add_script(c.world(), b"Input", ENABLE_INPUT);
+        let ev = client_frame(&mut c, &mut mouse);
+        assert_eq!(inputs(&ev), [C::SetInputEnabled(true), C::MouseSetVisibility(true)]);
+        assert!(c.ui.input_enabled() && mouse.visible);
+        assert!(c.left_release(at(30, 30), at(30, 30), &[s0], Some(s0), sp));
+        client_frame(&mut c, &mut mouse);
+        assert_eq!(selection(&c), vec![s0]);
+
+        // (last: a `MSG_CLEAR_GAME_DATA` on the command list would end the game at the next frame)
+        c.ui.set_input_enabled(false);
+        c.client.sync_modes(&c.ui);
+        c.client.sent.clear();
+        for t in [MSG_DO_MOVETO, MSG_META_OPTIONS, MSG_CREATE_SELECTED_GROUP, MSG_CLEAR_GAME_DATA] {
+            c.client.append_message_bool(t, true);
+        }
+        assert_eq!(c.client.sent, vec![MSG_META_OPTIONS, MSG_CLEAR_GAME_DATA]);
+    }
+
+    /// #116: the client attached to a game whose script turns the input off leaves the logic's CRCs as without it.
+    ///
+    /// *Predictions, written before the first run:* over 300 frames of the demo world with `DISABLE_INPUT` added at frame
+    /// 20 and `ENABLE_INPUT` at frame 280, the World alone and the World with the client (its script input events taken,
+    /// its tick, and between frames 30 and 270 a click on a Runner, a drag over the Soldiers, a hover and a press of the
+    /// dozer's bar button every 10 frames) have equal CRCs frame for frame. The client sends exactly one message, the
+    /// deselection's `MSG_DESTROY_SELECTED_GROUP` (nothing was selected, so the logic changes nothing it CRCs).
+    ///
+    /// *Results (2026-11-10):* held: 300 equal CRCs (the last `0862d2e3` in both), the one message sent
+    /// `MSG_DESTROY_SELECTED_GROUP` (1003). The first run of this test and of the one above failed in the test's own
+    /// setup, not the gates: the demo map has no sides, so the script had nowhere to go (`add_script` now adds one).
+    #[test]
+    fn the_crcs_are_unchanged_with_the_input_gates_attached() {
+        use rts_lockstep_engine::logic::scripts::action_type::{DISABLE_INPUT, ENABLE_INPUT};
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let run = |attached: bool| -> (Vec<u32>, Vec<MessageType>) {
+            let (w, o) = demo_world();
+            let mut c = Controls::new(w, 1);
+            let mut mouse = ClientMouse::default();
+            let at = |x: i32, y: i32| ICoord2D { x, y };
+            let mut crcs = Vec::new();
+            let mut sent = Vec::new();
+            // (the dozer's construct button, pressed with nothing selected)
+            let button = {
+                let w = &c.client.world;
+                let name = w.object_get_command_set_string(o.dozer);
+                w.control_bar_find_command_set(&name).and_then(|set| {
+                    (0..rts_lockstep_engine::logic::command_button::MAX_COMMANDS_PER_SET)
+                        .find_map(|i| w.command_set_get_command_button(set, i))
+                        .and_then(|b| rts_lockstep_engine::client::command_world::gui_button(w, b))
+                })
+            };
+            assert!(button.is_some(), "the dozer's button");
+            for f in 0..300u32 {
+                match f {
+                    20 => add_script(c.world(), b"NoInput", DISABLE_INPUT),
+                    280 => add_script(c.world(), b"Input", ENABLE_INPUT),
+                    _ => {}
+                }
+                if attached && (30..270).contains(&f) && f % 10 == 0 {
+                    let r = o.runners[0];
+                    let rp = pos(&mut c, r);
+                    c.left_press(at(10, 10), rp);
+                    c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp);
+                    c.left_press(at(0, 0), Coord3D::default());
+                    c.pointer_moved(at(60, 60), Coord3D::default());
+                    c.left_release(at(0, 0), at(60, 60), &o.soldiers, None, Coord3D::default());
+                    c.hover(Some(r), rp);
+                    if let Some(b) = &button {
+                        c.press(b);
+                    }
+                }
+                sent.extend(c.client.sent.iter().copied());
+                if attached {
+                    client_frame(&mut c, &mut mouse);
+                } else {
+                    c.world().logic_update().expect("a frame");
+                    c.world().take_client_events();
+                }
+                crcs.push(c.client.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, sent)
+        };
+        let (alone, none) = run(false);
+        let (with_client, sent) = run(true);
+        eprintln!("#116 CRC: last {:08x} / {:08x}; sent with the client {sent:?}", alone[299], with_client[299]);
+        assert!(none.is_empty());
+        assert_eq!(sent, vec![rts_lockstep_engine::common::message_types::MSG_DESTROY_SELECTED_GROUP]);
+        assert_eq!(alone, with_client);
     }
 }

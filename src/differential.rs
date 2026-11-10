@@ -3580,4 +3580,8 @@ extern "C" {
     pub fn ref_fx_pos(name: *const c_char, primary: *const c_float, mtx: *const c_float, speed: c_float, secondary: *const c_float, override_radius: c_float, logic: c_uint, client: c_uint);
     pub fn ref_fx_obj(name: *const c_char, primary: c_uint, secondary: c_uint, logic: c_uint, client: c_uint);
     pub fn ref_fx_log(out: *mut c_uint, cap: c_int) -> c_int;
+
+    // GitHub #116: the input gates (differential/wrap_input_gate.cpp, which documents the cases' words): WindowXlat.cpp's
+    // translator, CommandXlat.cpp's and SelectionXlat.cpp's input gates and InGameUI::setInputEnabled, verbatim.
+    pub fn ref_input_gate_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

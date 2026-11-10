@@ -45,9 +45,12 @@
 //!   `TheW3DFrameLengthInMsec` a draw (the client's draw clock was already the wall clock).
 //! - `TheMouse`: the client draws no cursor of its own (the system's arrow is always shown), so [`ClientMouse`] keeps
 //!   the visibility and the cursor `setGamePaused` sets, for its memory and its tests, and nothing is drawn from it.
-//! - `TheInGameUI->setInputEnabled` sets the client's InGameUI flag; the client's translators do not read it yet
+//! - `TheInGameUI->setInputEnabled` sets the client's InGameUI flag; ~~the client's translators do not read it yet
 //!   (upstream's `SelectionTranslator`, `CommandTranslator`, `LookAtTranslator` and `WindowTranslator` do): while the
-//!   quit menu is up the app keeps the pointer from them instead.
+//!   quit menu is up the app keeps the pointer from them instead.~~ **Corrected 2026-11-10 (#116):** the client's
+//!   window, selection and command translators read it (`crate::client::window_xlat`, `crate::client::selection_xlat`,
+//!   `crate::client::command_xlat::input_disabled_destroys`), and the application's camera input stands in for
+//!   `LookAtTranslator`'s gate; the app still keeps the pointer from them while the quit menu is up.
 //! - The paused state is the client's `Game::paused`, which the client's own panels (saves, campaigns, the shell over
 //!   the install's game) also set without these side effects; [`ClientPause::set_game_paused`] starts from it.
 //!

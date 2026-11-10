@@ -503,6 +503,10 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
             g.cur = snapshot(g.controls.world());
             // the frame's client events, to the drawables (their flags; the draw itself is every rendered frame)
             let events = g.controls.world().take_client_events();
+            // #116: the scripts' calls on the input (`DISABLE_INPUT`, `ENABLE_INPUT`), then the frame's tick through the
+            // selection translator (its input gate ends a drag)
+            g.controls.take_script_input(&events, &mut g.pause.mouse);
+            g.controls.frame_tick();
             // #56: the logic's messages to the local player (`TheInGameUI->message`)
             g.controls.client.take_logic_messages(&events);
             // #35: the radar's calls; a stealth detector's feedback the radar's `tryEvent` refused does not play
@@ -810,7 +814,12 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
     taken.0 = ui.has_keyboard_focus();
 }
 
+/// GUI glue (needs a window): the player's camera keys, buttons, wheel and touches. #116: with the InGameUI's input off
+/// the camera takes none of them, as upstream: `LookAtTranslator::setScrolling` refuses to start a scroll and stops one
+/// at the next mouse move (LookAtXlat.cpp:76, :294), the window translator takes the raw mouse messages, and the command
+/// translator destroys the rotate and zoom keys' messages.
 fn camera_input(
+    game: NonSend<Game>,
     taken: Res<UiKeyboard>,
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -821,6 +830,9 @@ fn camera_input(
     mut rig: ResMut<Rig>,
     keyboard_scroll: Res<KeyboardScroll>,
 ) {
+    if !game.controls.ui.input_enabled() {
+        return;
+    }
     let dt = time.delta_secs();
     // (#88: the keys' pan scaled by the options' scroll factor, `LookAtXlat`'s `m_keyboardScrollFactor`)
     let speed = rig.distance * 0.9 * dt * keyboard_scroll.0;
@@ -1143,12 +1155,15 @@ fn selection_rings(game: NonSend<Game>, mut gizmos: Gizmos) {
 #[derive(Component)]
 struct DragBox;
 
-/// GUI glue (needs a window): the drag box, while the left button is held and moved.
-fn drag_box(pointer: Res<Pointer>, windows: Query<&Window>, mut boxes: Query<(&mut Node, &mut Visibility), With<DragBox>>) {
+/// GUI glue (needs a window): the drag box, while the left button is held and moved. (#116: ~~while the pointer is
+/// past the click tolerance~~ while the selection translator's drag is under way, `m_dragSelecting`, which its input gate
+/// ends: `Controls::frame_tick`, tested in `input`.)
+fn drag_box(game: NonSend<Game>, pointer: Res<Pointer>, windows: Query<&Window>, mut boxes: Query<(&mut Node, &mut Visibility), With<DragBox>>) {
     let Ok(window) = windows.single() else { return };
+    let dragging = game.controls.selection.drag_selecting;
     for (mut node, mut vis) in &mut boxes {
         match (pointer.press, window.cursor_position()) {
-            (Some(a), Some(b)) if a.distance(b) as i32 > crate::input::CLICK_TOLERANCE => {
+            (Some(a), Some(b)) if dragging && a.distance(b) as i32 > crate::input::CLICK_TOLERANCE => {
                 let (lo, hi) = (a.min(b), a.max(b));
                 node.left = px(lo.x);
                 node.top = px(lo.y);

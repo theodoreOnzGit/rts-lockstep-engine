@@ -43,7 +43,7 @@ use crate::common::ini::IniError;
 use crate::common::kind_of::KindOfType;
 use crate::logic::scripts::ScriptAction;
 use crate::logic::world::game_logic::World;
-use crate::logic::client_event::{ClientEvent, ScriptAudioEvent};
+use crate::logic::client_event::{ClientEvent, ScriptAudioEvent, ScriptInputCall};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::script_actions::{
     AudioEvent, ButtonFrom, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
@@ -138,6 +138,15 @@ impl World {
         self.events.push(ClientEvent::ScriptAudio(e));
     }
 
+    /// GitHub #116: one of the actions' calls on the client's input, sent to the client (see [`ScriptInputCall`]: nothing the
+    /// logic reads, saves or puts in its CRC changes).
+    pub(crate) fn sa_input(&mut self, e: ScriptInputCall) {
+        if let Some(t) = &mut self.cuts.trace {
+            t.push(format!("evt {e:?}"));
+        }
+        self.events.push(ClientEvent::ScriptInput(e));
+    }
+
     /// Logs one of the actions' calls into a unit the world does not hold.
     fn sa_cut(&mut self, call: &'static str) {
         self.cut(CutCall::Host { call, args: Vec::new(), text: Vec::new() });
@@ -185,26 +194,29 @@ impl ScriptActionsHost for World {
     fn sa_find_object_by_id(&self, id: ObjectId) -> Option<ObjH> {
         self.find_object(id).map(|o| o.id)
     }
-    fn sa_ui_set_input_enabled(&mut self, _enabled: bool) {
-        self.sa_cut("ui_set_input_enabled");
+    fn sa_ui_set_input_enabled(&mut self, enabled: bool) {
+        // (#116: ~~a cut~~ the client's; the world's stand-in for `getInputEnabled`, which `setGamePaused` reads, follows)
+        self.cuts.game_loop.ui_input_enabled = enabled;
+        self.sa_input(ScriptInputCall::SetInputEnabled(enabled));
     }
-    fn sa_mouse_set_visibility(&mut self, _visible: bool) {
-        self.sa_cut("mouse_set_visibility");
+    fn sa_mouse_set_visibility(&mut self, visible: bool) {
+        self.cuts.game_loop.mouse_visible = visible;
+        self.sa_input(ScriptInputCall::MouseSetVisibility(visible));
     }
     fn sa_ui_deselect_all_drawables(&mut self) {
-        self.sa_cut("ui_deselect_all_drawables");
+        self.sa_input(ScriptInputCall::DeselectAllDrawables);
     }
     fn sa_ui_clear_attack_move_to_mode(&mut self) {
-        self.sa_cut("ui_clear_attack_move_to_mode");
+        self.sa_input(ScriptInputCall::ClearAttackMoveToMode);
     }
-    fn sa_ui_set_waypoint_mode(&mut self, _on: bool) {
-        self.sa_cut("ui_set_waypoint_mode");
+    fn sa_ui_set_waypoint_mode(&mut self, on: bool) {
+        self.sa_input(ScriptInputCall::SetWaypointMode(on));
     }
     fn sa_control_bar_delete_build_tooltip_layout(&mut self) {
-        self.sa_cut("control_bar_delete_build_tooltip_layout");
+        self.sa_input(ScriptInputCall::DeleteBuildTooltipLayout);
     }
     fn sa_look_at_reset_modes(&mut self) {
-        self.sa_cut("look_at_reset_modes");
+        self.sa_input(ScriptInputCall::LookAtResetModes);
     }
     fn sa_has_campaign_manager(&self) -> bool {
         // (GitHub #61: `TheCampaignManager` always exists (`GameClient::init`); ~~false, a cut~~)

@@ -37,7 +37,12 @@
 //! `crate::client::quit_menu`; ~~`quit_menu_visible` here still answers false~~ **Corrected 2026-11-10 (#108):**
 //! `quit_menu_visible` here answers [`ClientModes::quit_menu_visible`], which the client sets from the shell's quit
 //! menu; the client also keeps the pointer from the
-//! translators while the in-game menus are up, so the selection never sees a click under them). **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
+//! translators while the in-game menus are up, so the selection never sees a click under them).
+//!
+//! **The input gate (#116).** A message the translators, the control bar or InGameUI put on the command list first passes
+//! `CommandTranslator`'s test of `TheInGameUI->getInputEnabled()` ([`ClientModes::input_disabled`]): with the input off
+//! only `MSG_META_OPTIONS`, `MSG_CLEAR_GAME_DATA` and the system messages (among them `MSG_DESTROY_SELECTED_GROUP`) reach
+//! the logic, as upstream's stream drops the rest at the command translator. **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
 
 use crate::client::command_xlat::{ActionType, CmdArg, CommandXlatHost, GuiButton, TargetMode};
 use crate::client::control_bar::ControlBarHost;
@@ -91,6 +96,10 @@ pub struct ClientModes {
     /// #108: `TheInGameUI->isQuitMenuVisible()`, set by the client from the shell's quit menu
     /// (`crate::client::quit_menu::QuitMenu::quit_menu_visible`, which holds InGameUI's flag).
     pub quit_menu_visible: bool,
+    /// #116: `!TheInGameUI->getInputEnabled()`, which [`WorldClient::sync_modes`] copies. While it is set, a message put on
+    /// the command list passes `CommandTranslator`'s input gate first
+    /// ([`crate::client::command_xlat::input_disabled_destroys`]).
+    pub input_disabled: bool,
 }
 
 /// The client's host over a `World`.
@@ -187,6 +196,7 @@ impl WorldClient {
         self.modes.force_move = ui.is_in_force_move_to_mode();
         self.modes.prefer_selection = ui.is_in_prefer_selection_mode();
         self.modes.gui_command_pending = ui.gui_command().is_some();
+        self.modes.input_disabled = !ui.input_enabled();
         // `getPickTypesForCurrentSelection`: only for a controllable selection
         let controllable = ui.all_selected_drawables().first().is_some_and(|&d| self.is_locally_controlled(d));
         let flame = controllable
@@ -195,7 +205,18 @@ impl WorldClient {
         self.view.selection = ui.all_selected_drawables().to_vec();
     }
 
+    /// #116: whether a message the client puts on the stream survives `CommandTranslator::translateGameMessage`'s input
+    /// gate. Upstream every message the translators before it, the control bar's buttons and InGameUI append passes
+    /// through the command translator (priority 70) on its way to the logic; here they go to the command list directly,
+    /// so the gate is applied where they are put on it.
+    fn passes_input_gate(&self, t: MessageType) -> bool {
+        !crate::client::command_xlat::input_disabled_destroys(t, !self.modes.input_disabled)
+    }
+
     fn push(&mut self, t: MessageType, args: &[CmdArg]) {
+        if !self.passes_input_gate(t) {
+            return;
+        }
         self.sent.push(t);
         self.world.push_command(t, self.player, |m| {
             for a in args {
@@ -330,6 +351,9 @@ impl SelectionGroupsHost for WorldClient {
         self.ui_messages.push(label.to_vec());
     }
     fn append_message_drawable(&mut self, t: MessageType, draw: DrawableId) {
+        if !self.passes_input_gate(t) {
+            return;
+        }
         self.sent.push(t);
         self.world.push_command(t, self.player, |m| m.append_drawable_id_argument(draw as u32));
     }

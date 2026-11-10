@@ -3,7 +3,9 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp (currentlyLookingForSelection,
-//   areAllSelected, deselectAll, the MSG_MOUSE_LEFT_CLICK case of SelectionTranslator::translateGameMessage)
+//   areAllSelected, deselectAll, the MSG_MOUSE_LEFT_CLICK case of SelectionTranslator::translateGameMessage; #116: its
+//   input gate, the MSG_RAW_MOUSE_LEFT_BUTTON_DOWN case and the drag halves of MSG_RAW_MOUSE_POSITION and
+//   MSG_RAW_MOUSE_LEFT_BUTTON_UP)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/SelectionInfo.cpp (addDrawableToList)
 //
 // Original copyright notice of those files:
@@ -23,10 +25,14 @@
 //! - **Not translated:** the debug-only modes of the click (hand of god, hurt, debug selection: `_DEBUG`/`_INTERNAL` and
 //!   cheat builds only), and the sounds. The double click and the control groups are in `selection_groups`; the raw
 //!   button feedback (the drag rectangle's hints) comes with the view (C2d).
+//! - **The input gate (#116).** Every case runs after `translateGameMessage`'s test of `TheInGameUI->getInputEnabled()`
+//!   ([`SelectionTranslator::input_disabled_gate`]): with the input off the message is kept and a drag selection ends.
+//!   The raw button's drag state (`m_leftMouseButtonIsDown`, `m_dragSelecting`, `m_selectFeedbackAnchor`) is kept for it.
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection, SelectionUiHost};
 use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator, CommandXlatHost};
 use crate::client::selection_info::{context_command_for_new_selection, SelectionInfo, SelectionInfoHost};
+use crate::common::base_type::ICoord2D;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_STRUCTURE;
@@ -77,11 +83,24 @@ pub struct SelectionTranslator {
     pub last_group_sel_group: i32,
     /// `m_lastGroupSelTime` (the logic frame of the last group press; `0`: none).
     pub last_group_sel_time: u32,
+    /// #116: `m_leftMouseButtonIsDown`.
+    pub left_mouse_button_is_down: bool,
+    /// #116: `m_dragSelecting` (a drag selection is under way).
+    pub drag_selecting: bool,
+    /// #116: `m_selectFeedbackAnchor`, the pixel the left button went down at.
+    pub select_feedback_anchor: ICoord2D,
 }
 
 impl Default for SelectionTranslator {
+    /// The constructor's: no group pressed, the button up, no drag, the anchor at (0, 0).
     fn default() -> Self {
-        SelectionTranslator { last_group_sel_group: -1, last_group_sel_time: 0 }
+        SelectionTranslator {
+            last_group_sel_group: -1,
+            last_group_sel_time: 0,
+            left_mouse_button_is_down: false,
+            drag_selecting: false,
+            select_feedback_anchor: ICoord2D { x: 0, y: 0 },
+        }
     }
 }
 
@@ -119,8 +138,72 @@ pub fn add_drawable_to_list(draw: DrawableId, list: &mut Vec<DrawableId>, h: &mu
 }
 
 impl SelectionTranslator {
+    /// #116: the first test of `translateGameMessage`, made for every message: with the input off
+    /// (`TheInGameUI->getInputEnabled()` false) the message is kept ("so the other translators (WindowXlat) can handle")
+    /// and a drag selection under way ends (`m_dragSelecting`, `TheInGameUI->setSelecting(FALSE)`; the view's
+    /// `endAreaSelectHint` and `setMouseLock(FALSE)` are the application's, whose drag box reads
+    /// [`SelectionTranslator::drag_selecting`]). `None` when the input is on: the message goes on to its case.
+    pub fn input_disabled_gate(&mut self, ui: &mut InGameUiSelection) -> Option<Disposition> {
+        if ui.input_enabled() {
+            return None;
+        }
+        if self.drag_selecting && !crate::logic::modules::plant(9025) {
+            self.drag_selecting = false;
+            ui.set_selecting(false);
+        }
+        Some(Disposition::Keep)
+    }
+
+    /// #116: the `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` case (after the input gate): the button is down at `pixel`; the drag
+    /// cannot start until the pointer moves.
+    pub fn left_button_down(&mut self, pixel: ICoord2D, ui: &mut InGameUiSelection) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        self.left_mouse_button_is_down = true;
+        self.select_feedback_anchor = pixel;
+        Disposition::Keep
+    }
+
+    /// #116: the `MSG_RAW_MOUSE_POSITION` case's drag half (after the input gate): with the button down and the pointer
+    /// more than `drag_tolerance` (`TheMouse->m_dragTolerance`) from the anchor on either axis, the drag selection begins
+    /// (`TheInGameUI->setSelecting(TRUE)`). The area selection hint and the mouse-over hints (the button up) are the
+    /// application's ([`crate::client::command_xlat::CommandTranslator::mouse_over`] is asked directly).
+    pub fn mouse_position(&mut self, pixel: ICoord2D, drag_tolerance: i32, ui: &mut InGameUiSelection) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        if self.left_mouse_button_is_down {
+            let dx = (pixel.x - self.select_feedback_anchor.x).abs();
+            let dy = (pixel.y - self.select_feedback_anchor.y).abs();
+            if (dx > drag_tolerance || dy > drag_tolerance) && !self.drag_selecting {
+                self.drag_selecting = true;
+                ui.set_selecting(true);
+            }
+        }
+        Disposition::Keep
+    }
+
+    /// #116: the `MSG_RAW_MOUSE_LEFT_BUTTON_UP` case's drag half (after the input gate): the button is up, and a drag
+    /// selection under way stops (its `MSG_AREA_SELECTION` region is the application's, which calls
+    /// [`SelectionTranslator::left_click`] with the dragged box). Whether a drag ended. The other half (the alternate
+    /// mouse's deselection by a left click) is not translated: the alternate mouse is off in the shipped options.
+    pub fn left_button_up(&mut self, ui: &mut InGameUiSelection) -> bool {
+        if self.input_disabled_gate(ui).is_some() {
+            return false;
+        }
+        self.left_mouse_button_is_down = false;
+        if self.drag_selecting {
+            self.drag_selecting = false;
+            ui.set_selecting(false);
+            return true;
+        }
+        false
+    }
+
     /// The `MSG_MOUSE_LEFT_CLICK` case: `in_region` are the drawables the view finds in the click's pixel region (a point
-    /// when `is_point`), before [`add_drawable_to_list`]'s filter.
+    /// when `is_point`), before [`add_drawable_to_list`]'s filter. #116: after the input gate, which keeps the click (for
+    /// the command translator, whose own gate destroys it).
     pub fn left_click<H: CommandXlatHost>(
         &mut self,
         in_region: &[DrawableId],
@@ -129,6 +212,9 @@ impl SelectionTranslator {
         ui: &mut InGameUiSelection,
         h: &mut H,
     ) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
         if h.quit_menu_visible() {
             return Disposition::Destroy;
         }
@@ -394,5 +480,38 @@ pub(crate) mod tests {
         assert!(h.messages.is_empty());
         assert_eq!(x.left_click(&[9], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
         assert_eq!(h.messages.last(), Some(&(MSG_CREATE_SELECTED_GROUP, Some(true), vec![9])));
+    }
+
+    /// #116: the raw button's drag and the input gate. Predicted from SelectionXlat.cpp, with the drag tolerance 4: a
+    /// press at (10, 10) and a move to (13, 14) is not a drag; a move to (10, 15) starts one (`setSelecting(TRUE)`);
+    /// the release ends it and answers that a drag ended. Pressed and dragged again, the input turned off (the InGameUI's
+    /// own `setInputEnabled` already clears `isSelecting`): the next message's gate ends the drag and keeps the message,
+    /// and a left click on unit 1 with the input off is kept with no message and no selection; a release then reports
+    /// no drag. With the input on again the click selects.
+    #[test]
+    fn the_input_gate_ends_a_drag_and_keeps_the_message() {
+        let mut h = Host { mine: vec![1], ..Default::default() };
+        let (mut x, mut ui) = (SelectionTranslator::default(), InGameUiSelection::new());
+        let at = |x: i32, y: i32| ICoord2D { x, y };
+        assert_eq!(x.left_button_down(at(10, 10), &mut ui), Disposition::Keep);
+        x.mouse_position(at(13, 14), 4, &mut ui);
+        assert!(!x.drag_selecting && !ui.is_selecting());
+        x.mouse_position(at(10, 15), 4, &mut ui);
+        assert!(x.drag_selecting && ui.is_selecting());
+        assert!(x.left_button_up(&mut ui));
+        assert!(!x.drag_selecting && !ui.is_selecting() && !x.left_mouse_button_is_down);
+        x.left_button_down(at(0, 0), &mut ui);
+        x.mouse_position(at(50, 50), 4, &mut ui);
+        assert!(x.drag_selecting);
+        ui.set_input_enabled(false);
+        assert!(!ui.is_selecting());
+        assert_eq!(x.mouse_position(at(60, 60), 4, &mut ui), Disposition::Keep);
+        assert!(!x.drag_selecting);
+        assert_eq!(x.left_click(&[1], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Keep);
+        assert!(h.messages.is_empty() && ui.select_count() == 0);
+        assert!(!x.left_button_up(&mut ui));
+        ui.set_input_enabled(true);
+        assert_eq!(x.left_click(&[1], true, &CommandTranslator::default(), &mut ui, &mut h), Disposition::Destroy);
+        assert_eq!(ui.all_selected_drawables(), &[1]);
     }
 }

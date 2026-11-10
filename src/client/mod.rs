@@ -90,4 +90,6 @@ pub mod replay_menu;
 pub mod popup_replay;
 pub mod quit_menu;
 pub mod game_pause; // #108: setGamePaused's side effects in the client (input, mouse, audio, the drawables' time)
+pub mod script_input; // #116: the scripts' calls on the client's input (DISABLE_INPUT, ENABLE_INPUT)
+pub mod window_xlat; // #116: WindowTranslator, the raw input given to the windows first (and taken while the input is off)
 pub mod challenge_menu;

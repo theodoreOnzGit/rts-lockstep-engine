@@ -4,7 +4,7 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (selectDrawable, deselectDrawable, deselectAllDrawables,
 //   getAllSelectedDrawables, getSelectCount, getMaxSelectCount, incrementSelectCount, decrementSelectCount,
-//   isAnySelectedKindOf, the force-attack and prefer-selection modes, setSelecting)
+//   isAnySelectedKindOf, the force-attack and prefer-selection modes, setSelecting, setInputEnabled)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/InGameUI.h
 //
 // Original copyright notice of those files:
@@ -182,9 +182,24 @@ impl InGameUiSelection {
         self.prefer_selection
     }
 
-    /// `setInputEnabled(b)` / `getInputEnabled()`.
-    pub fn set_input_enabled(&mut self, b: bool) {
-        self.input_enabled = b;
+    /// `setInputEnabled(enable)` / `getInputEnabled()`. ~~A plain setter.~~ **Corrected 2026-11-10 (#116):** as upstream,
+    /// disabling also ends a drag's `setSelecting`, and going from enabled to disabled clears the modes a key held through
+    /// a cinematic would leave on: force attack (CTRL), force move, waypoint (ALT) and prefer selection (SHIFT). The four
+    /// camera rotate and zoom flags it also clears are not InGameUI members in this port (the application's camera keys).
+    pub fn set_input_enabled(&mut self, enable: bool) {
+        if !enable {
+            self.set_selecting(false);
+        }
+        let was_enabled = self.input_enabled;
+        self.input_enabled = enable;
+        if (was_enabled || crate::logic::modules::plant(9021)) && !enable {
+            self.set_force_attack_mode(false);
+            self.set_force_move_mode(false);
+            self.set_waypoint_mode(false);
+            if !crate::logic::modules::plant(9022) {
+                self.set_prefer_selection_mode(false);
+            }
+        }
     }
     pub fn input_enabled(&self) -> bool {
         self.input_enabled
@@ -359,5 +374,32 @@ mod tests {
         assert_eq!((s.all_selected_drawables().len(), s.select_count()), (0, 0));
         assert_eq!(h.messages, vec![(crate::common::message_types::MSG_DESTROY_SELECTED_GROUP, true)]);
         assert_eq!(h.changes.len(), 3 + 1 + 2);
+    }
+
+    /// #116: `setInputEnabled`. Predicted from InGameUI.cpp: disabling ends a drag's `isSelecting` and, from enabled,
+    /// clears force attack, force move, waypoint and prefer selection, leaving attack move; a second disable with the
+    /// modes set again clears only `isSelecting` (the modes stay: the input was already off); enabling changes no mode.
+    #[test]
+    fn set_input_enabled_clears_the_held_modes_once() {
+        let mut s = InGameUiSelection::new();
+        let set_all = |s: &mut InGameUiSelection| {
+            s.set_selecting(true);
+            s.set_force_attack_mode(true);
+            s.set_force_move_mode(true);
+            s.set_waypoint_mode(true);
+            s.set_prefer_selection_mode(true);
+            s.set_attack_move_to_mode(true);
+        };
+        let modes = |s: &InGameUiSelection| {
+            [s.is_selecting(), s.is_in_force_attack_mode(), s.is_in_force_move_to_mode(), s.is_in_waypoint_mode(), s.is_in_prefer_selection_mode(), s.is_in_attack_move_to_mode()]
+        };
+        set_all(&mut s);
+        s.set_input_enabled(false);
+        assert_eq!((s.input_enabled(), modes(&s)), (false, [false, false, false, false, false, true]));
+        set_all(&mut s);
+        s.set_input_enabled(false);
+        assert_eq!(modes(&s), [false, true, true, true, true, true]);
+        s.set_input_enabled(true);
+        assert_eq!((s.input_enabled(), modes(&s)), (true, [false, true, true, true, true, true]));
     }
 }

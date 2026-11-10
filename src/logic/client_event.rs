@@ -111,6 +111,31 @@ pub enum ClientEvent {
     /// `doRadarRevertNormal`, `REFRESH_RADAR`) and the victory conditions' `forceOn(TRUE)`. Not simulation state:
     /// `Radar::crc` writes nothing (Radar.cpp), and nothing in the logic reads the radar back (`client::radar`).
     Radar(RadarCall),
+    /// GitHub #116: the script actions' calls on `TheInGameUI`, `TheMouse`, `TheControlBar` and `TheLookAtTranslator` of
+    /// `doDisableInput`, `doEnableInput` (`ENABLE_INPUT`) and the other actions that deselect ([`ScriptInputCall`]).
+    /// ~~Until #116 they went only to the cut log, so a script's `DISABLE_INPUT` never reached the client.~~ Not
+    /// simulation state: the client's InGameUI, mouse, control bar and look-at translator are not in the logic's CRC.
+    ScriptInput(ScriptInputCall),
+}
+
+/// GitHub #116: one of the script actions' calls on the client's input (ScriptActions.cpp), in the order the action makes
+/// it. The client makes it on its own InGameUI and mouse (`client::script_input`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScriptInputCall {
+    /// `TheInGameUI->setInputEnabled(enable)`.
+    SetInputEnabled(bool),
+    /// `TheMouse->setVisibility(visible)`.
+    MouseSetVisibility(bool),
+    /// `TheInGameUI->deselectAllDrawables()` (`postMsg` defaults to `TRUE`).
+    DeselectAllDrawables,
+    /// `TheInGameUI->clearAttackMoveToMode()`.
+    ClearAttackMoveToMode,
+    /// `TheInGameUI->setWaypointMode(on)`.
+    SetWaypointMode(bool),
+    /// `TheControlBar->deleteBuildTooltipLayout()`.
+    DeleteBuildTooltipLayout,
+    /// `TheLookAtTranslator->resetModes()`.
+    LookAtResetModes,
 }
 
 /// GitHub #35: one of the logic's calls on `TheRadar` that is not an object's ([`ClientEvent::Radar`]).
