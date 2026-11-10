@@ -3584,4 +3584,8 @@ extern "C" {
     // GitHub #116: the input gates (differential/wrap_input_gate.cpp, which documents the cases' words): WindowXlat.cpp's
     // translator, CommandXlat.cpp's and SelectionXlat.cpp's input gates and InGameUI::setInputEnabled, verbatim.
     pub fn ref_input_gate_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #119: LookAtTranslator (differential/wrap_look_at.cpp, which documents the steps' and the records' words),
+    // LookAtXlat.cpp verbatim on a recorder of the tactical view's calls.
+    pub fn ref_look_at_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

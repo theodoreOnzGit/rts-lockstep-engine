@@ -92,4 +92,6 @@ pub mod quit_menu;
 pub mod game_pause; // #108: setGamePaused's side effects in the client (input, mouse, audio, the drawables' time)
 pub mod script_input; // #116: the scripts' calls on the client's input (DISABLE_INPUT, ENABLE_INPUT)
 pub mod window_xlat; // #116: WindowTranslator, the raw input given to the windows first (and taken while the input is off)
+pub mod tactical_view; // #119: the View and W3DView pieces LookAtTranslator calls, and the camera they place
+pub mod look_at_xlat; // #119: LookAtTranslator, the camera translator (scrolls, rotation, zoom, bookmarks)
 pub mod challenge_menu;

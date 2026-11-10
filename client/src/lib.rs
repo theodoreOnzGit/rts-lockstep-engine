@@ -9,6 +9,8 @@
 //!
 //! - [`audio`]: the audio device (#13): the translated audio manager's voices played from the game's files; plain Rust,
 //!   with the browser's Web Audio output on the web.
+//! - [`camera`]: the tactical view's camera under the player's input through the translated `LookAtTranslator` and view
+//!   (#119); plain Rust, no Bevy.
 //! - [`campaigns`]: campaign missions and the Generals' Challenge started from a list, their maps read as the art is,
 //!   and the score screen's Continue (#62); plain Rust.
 //! - [`drawables`]: each object's drawable and its posed W3D model, chosen by its model condition flags (#25); plain Rust.
@@ -30,6 +32,7 @@
 //! - `app` (feature `app`, on by default): the Bevy application.
 
 pub mod audio;
+pub mod camera;
 pub mod campaigns;
 pub mod demo;
 pub mod drawables;

@@ -41,8 +41,10 @@
 //!   (`logic::world::script_actions_host_world`), and the client makes the calls when it takes the frame's events, after
 //!   the logic frame rather than inside it. The CRC test in `client/src/input.rs` checks the logic sees no difference.
 //! - `deleteBuildTooltipLayout` and `LookAtTranslator::resetModes` are not made here: the port has no build tooltip
-//!   window in the game, and no `LookAtTranslator` (the application's camera input stands in for it). They are handed
-//!   back to the caller ([`apply_script_input`]'s answer), which resets what it keeps.
+//!   window in the game, ~~and no `LookAtTranslator` (the application's camera input stands in for it)~~ **Corrected
+//!   2026-11-10 (#119):** and the `LookAtTranslator` (`crate::client::look_at_xlat`) is the client's camera's. They are
+//!   handed back to the caller ([`apply_script_input`]'s answer), which resets what it keeps (the client's
+//!   `Controls::take_script_input` reports the reset, and its camera calls `resetModes`).
 //!
 //! # Representation
 //!

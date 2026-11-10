@@ -7,9 +7,13 @@
 //!   the fixed clock has run past its last step. One entity per logic object, spawned when it appears and despawned when
 //!   it goes. The shapes are its collision geometry, in its player's colour. A health bar is drawn above each object with
 //!   a body.
-//! - **The camera** is an RTS camera: a focus point on the ground, a distance and a heading. Keys W/A/S/D or the arrows
-//!   pan, Q/E turn, the wheel or +/- zoom, and a right- or middle-drag pans. On a touch screen one finger pans and two
-//!   pinch. On-screen buttons zoom in, zoom out, reset the view and pause, so a phone needs no keyboard.
+//! - **The camera** ~~is an RTS camera: a focus point on the ground, a distance and a heading. Keys W/A/S/D or the
+//!   arrows pan, Q/E turn, the wheel or +/- zoom, and a right- or middle-drag pans. On a touch screen one finger pans and
+//!   two pinch.~~ **Corrected 2026-11-10 (#119):** is the game's: the translated `LookAtTranslator` on the translated
+//!   tactical view ([`crate::camera`]). The arrows scroll, a right drag scrolls (the game's RMB scroll: the farther from
+//!   where it went down, the faster), the middle button turns (a click resets), the wheel or +/- zoom and Q/E turn. On a
+//!   touch screen one finger is the right button and two pinch. On-screen buttons zoom in, zoom out, reset the view and
+//!   pause, so a phone needs no keyboard.
 //!
 //! - **The player's input** (C2d): a left click selects or orders, a left drag selects the player's units in the box; the
 //!   pointer's hint (what a click would order) is in the status line; selected units have a ring; ~~the first selected
@@ -49,7 +53,7 @@
 use std::collections::HashMap;
 
 use bevy::input::keyboard::KeyboardInput;
-use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::input::ButtonState;
 use bevy::prelude::*;
 use bevy::picking::events::{PointerLeave, PointerMove, PointerPress, PointerRelease};
@@ -246,41 +250,27 @@ struct ModelPart {
     mesh: Handle<Mesh>,
 }
 
-/// The RTS camera's state: what it looks at, from how far, from which heading.
-#[derive(Resource, Clone, Copy)]
+/// The camera (#119): the translated `LookAtTranslator` on the translated tactical view
+/// ([`crate::camera::Camera`], tested there), with the glue's own pointer state. ~~The RTS camera's state: what it looks
+/// at, from how far, from which heading.~~ **Corrected 2026-11-10 (#119):** the camera is the game's.
+#[derive(Resource)]
 struct Rig {
-    /// The focus point on the ground, game coordinates.
-    focus: Vec2,
-    distance: f32,
-    /// Heading about +z, radians.
-    yaw: f32,
-    /// Elevation above the ground plane, radians.
-    pitch: f32,
-    /// The view [`Rig::reset`] returns to.
-    home: (Vec2, f32),
+    cam: crate::camera::Camera,
+    /// Wheel lines not yet a whole notch.
+    wheel: f32,
+    /// The finger that drags as the right button.
+    touch: Option<u64>,
+    /// A two-finger pinch's distance at its last zoom step.
+    pinch: Option<f32>,
+    /// The pointer's last pixel given as `MSG_RAW_MOUSE_POSITION`.
+    last_pos: Option<ICoord2D>,
 }
 
 impl Rig {
-    fn reset(&mut self) {
-        (self.focus, self.distance) = self.home;
-        self.yaw = 0.0;
-    }
-    fn zoom(&mut self, factor: f32) {
-        self.distance = (self.distance * factor).clamp(40.0, 4000.0);
-    }
-    /// Moves the focus by `(right, forward)` in screen terms, world units.
-    fn pan(&mut self, right: f32, forward: f32) {
-        let (s, c) = self.yaw.sin_cos();
-        // the camera looks along +y at yaw 0 (game coordinates): forward is (−sin, cos), right is (cos, sin)
-        self.focus += Vec2::new(c * right - s * forward, s * right + c * forward);
-    }
-    fn transform(&self) -> Transform {
-        let (sy, cy) = self.yaw.sin_cos();
-        let (sp, cp) = self.pitch.sin_cos();
-        // behind the focus (−forward) and up, game coordinates
-        let eye = [self.focus.x + sy * cp * self.distance, self.focus.y - cy * cp * self.distance, sp * self.distance];
-        let target = [self.focus.x, self.focus.y, 0.0];
-        Transform::from_translation(Vec3::from(to_bevy(eye))).looking_at(Vec3::from(to_bevy(target)), Vec3::Y)
+    /// GUI glue (the app's start of a game; [`crate::camera::Camera::new`] is tested): the camera over the map's centre.
+    fn new(world: &GameWorld, screen: (i32, i32)) -> Self {
+        let (centre, size) = view_frame(world);
+        Rig { cam: crate::camera::Camera::new(world, Coord3D { x: centre.x, y: centre.y, z: 0.0 }, size, screen), wheel: 0.0, touch: None, pinch: None, last_pos: None }
     }
 }
 
@@ -427,9 +417,7 @@ fn poll_import(
                 commands.entity(e).despawn();
             }
             terrain.pending = true;
-            let (centre, size) = view_frame(&game.controls.client.world);
-            let distance = size * 0.6;
-            *rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
+            *rig = Rig::new(&game.controls.client.world, rig.cam.screen);
         }
         Err(e) => {
             warn!("your files did not start a game: {e}");
@@ -477,18 +465,16 @@ fn pump_art(mut game: NonSendMut<Game>, terrain: Res<TerrainState>) {
 }
 
 fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
-    let (centre, size) = view_frame(&game.controls.client.world);
     commands.spawn((
         DirectionalLight { illuminance: 9000.0, shadow_maps_enabled: true, ..default() },
         Transform::from_xyz(0.0, 1.0, 0.0).looking_at(Vec3::new(-0.4, 0.0, -0.3), Vec3::Y),
     ));
-    let distance = size * 1.1;
-    let rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
-    commands.spawn((Camera3d::default(), rig.transform()));
+    let rig = Rig::new(&game.controls.client.world, (800, 600));
+    commands.spawn((Camera3d::default(), Transform::default()));
     commands.insert_resource(rig);
 }
 
-fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
+fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
     if game.paused || game.error.is_some() {
         return;
     }
@@ -505,7 +491,12 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
             let events = g.controls.world().take_client_events();
             // #116: the scripts' calls on the input (`DISABLE_INPUT`, `ENABLE_INPUT`), then the frame's tick through the
             // selection translator (its input gate ends a drag)
-            g.controls.take_script_input(&events, &mut g.pause.mouse);
+            // (#119: `LookAtResetModes` to the camera's translator)
+            if g.controls.take_script_input(&events, &mut g.pause.mouse) {
+                if let Some(r) = rig.as_deref_mut() {
+                    r.cam.reset_modes();
+                }
+            }
             g.controls.frame_tick();
             // #56: the logic's messages to the local player (`TheInGameUI->message`)
             g.controls.client.take_logic_messages(&events);
@@ -552,7 +543,7 @@ fn step_logic(mut game: NonSendMut<Game>, rig: Option<Res<Rig>>) {
                 sound.audio.update_ambient(&host, &mut sound.device);
                 // #55: EVA, from the frame's events and the client's own requests
                 sound.audio.update_eva(&host, &heard, insufficient_funds);
-                let view = rig.as_deref().map_or_else(Default::default, |r| crate::audio::listener_view(r.focus.to_array(), r.yaw, r.pitch, r.distance));
+                let view = rig.as_deref().map_or_else(Default::default, |r| r.cam.listener());
                 sound.audio.manager.update(&host, &mut sound.device, &view);
             }
         }
@@ -711,7 +702,8 @@ fn sync_objects(
 fn health_bars(game: NonSend<Game>, fixed: Res<Time<Fixed>>, rig: Res<Rig>, mut gizmos: Gizmos) {
     let t = if game.paused || game.error.is_some() { 1.0 } else { fixed.overstep_fraction() };
     // the bar lies across the screen: along the camera's right, in game coordinates (cos yaw, sin yaw)
-    let right = Vec3::from(to_bevy([rts_lockstep_engine::ww::wwmath::cos(rig.yaw), rts_lockstep_engine::ww::wwmath::sin(rig.yaw), 0.0]));
+    let yaw = rig.cam.view.get_angle();
+    let right = Vec3::from(to_bevy([rts_lockstep_engine::ww::wwmath::cos(yaw), rts_lockstep_engine::ww::wwmath::sin(yaw), 0.0]));
     for b in &game.cur.objects {
         let Some(h) = b.health else { continue };
         let o = match game.prev.find(b.id) {
@@ -814,92 +806,156 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
     taken.0 = ui.has_keyboard_focus();
 }
 
-/// GUI glue (needs a window): the player's camera keys, buttons, wheel and touches. #116: with the InGameUI's input off
-/// the camera takes none of them, as upstream: `LookAtTranslator::setScrolling` refuses to start a scroll and stops one
-/// at the next mouse move (LookAtXlat.cpp:76, :294), the window translator takes the raw mouse messages, and the command
-/// translator destroys the rotate and zoom keys' messages.
+/// GUI glue (needs a window): the player's camera input, as raw input messages, through the camera's translated
+/// `LookAtTranslator` ([`crate::camera::Camera::translate`], tested there), then the client's frames
+/// ([`crate::camera::Camera::tick`]). ~~#116: with the InGameUI's input off the camera takes none of them ...~~
+/// **Corrected 2026-11-10 (#119):** the translator's own input gates decide (LookAtXlat.cpp:76, :294), and the window
+/// translator takes the raw mouse first. The arrows are the game's scroll keys (`KEY_UP` ...); Q and E turn and + and -
+/// zoom (the InGameUI's keyboard camera); the right button drags to scroll (the game's RMB scroll), the middle button
+/// turns, the wheel zooms. On a touch screen one finger is the right button and two pinch (a wheel notch per 15 %).
+#[allow(clippy::too_many_arguments)]
 fn camera_input(
-    game: NonSend<Game>,
+    mut game: NonSendMut<Game>,
     taken: Res<UiKeyboard>,
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     touches: Res<Touches>,
     time: Res<Time>,
+    windows: Query<&Window>,
+    bar: Res<UiBar>,
+    shell: NonSend<ShellState>,
     mut rig: ResMut<Rig>,
     keyboard_scroll: Res<KeyboardScroll>,
 ) {
-    if !game.controls.ui.input_enabled() {
-        return;
+    use rts_lockstep_engine::client::window_xlat::RawMessage;
+    use rts_lockstep_engine::common::message_types::*;
+    let g = &mut *game;
+    let r = &mut *rig;
+    if let Ok(w) = windows.single() {
+        r.cam.set_screen((w.width() as i32, w.height() as i32), &g.controls.client.world);
     }
-    let dt = time.delta_secs();
-    // (#88: the keys' pan scaled by the options' scroll factor, `LookAtXlat`'s `m_keyboardScrollFactor`)
-    let speed = rig.distance * 0.9 * dt * keyboard_scroll.0;
-    // (#74) a UI window with the focus has the keyboard
-    let empty = ButtonInput::<KeyCode>::default();
-    let keys: &ButtonInput<KeyCode> = if taken.0 { &empty } else { &keys };
-    let mut right = 0.0;
-    let mut forward = 0.0;
-    if keys.any_pressed([KeyCode::KeyA, KeyCode::ArrowLeft]) {
-        right -= speed;
-    }
-    if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) {
-        right += speed;
-    }
-    if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) {
-        forward += speed;
-    }
-    if keys.any_pressed([KeyCode::KeyS, KeyCode::ArrowDown]) {
-        forward -= speed;
-    }
-    if keys.pressed(KeyCode::KeyQ) {
-        rig.yaw += 1.5 * dt;
-    }
-    if keys.pressed(KeyCode::KeyE) {
-        rig.yaw -= 1.5 * dt;
-    }
-    if keys.any_pressed([KeyCode::Equal, KeyCode::NumpadAdd]) {
-        rig.zoom(1.0 - 1.2 * dt);
-    }
-    if keys.any_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]) {
-        rig.zoom(1.0 + 1.2 * dt);
-    }
-    if scroll.delta.y != 0.0 {
-        rig.zoom((1.0 - scroll.delta.y.clamp(-5.0, 5.0) * 0.1).max(0.2));
-    }
-    // a right or middle drag moves the ground with the pointer (roughly: a pixel is distance/800 world units)
-    if buttons.any_pressed([MouseButton::Right, MouseButton::Middle]) && motion.delta != Vec2::ZERO {
-        let k = rig.distance / 800.0;
-        right -= motion.delta.x * k;
-        forward += motion.delta.y * k;
-    }
-    // touch: one finger pans, two pinch
-    let active: Vec<_> = touches.iter().collect();
-    match active.as_slice() {
-        [t] => {
-            let d = t.delta();
-            let k = rig.distance / 800.0;
-            right -= d.x * k;
-            forward += d.y * k;
+    r.cam.set_keyboard_scroll(keyboard_scroll.0);
+    let shell_active = shell.ui.as_ref().is_some_and(|s| s.takes_input());
+    let panel = crate::saves::page::panel_open() || crate::campaigns::page::panel_open();
+    let input = !shell_active && !panel;
+    let ui = g.controls.ui.clone();
+    let mouse_msg = |r: &mut Rig, g: &mut Game, t: rts_lockstep_engine::common::message_stream::MessageType, p: ICoord2D, spin: i32| {
+        if g.controls.window_keeps(t, p) {
+            let m = RawMessage { t, pos: p, delta: ICoord2D::default(), arg0: 0, arg1: spin };
+            r.cam.translate(&m, &ui, &g.controls.client.world, shell_active);
         }
-        [a, b] => {
-            let now = a.position().distance(b.position());
-            let before = (a.position() - a.delta()).distance(b.position() - b.delta());
-            if now > 1.0 && before > 1.0 {
-                rig.zoom(before / now);
+    };
+    if input {
+        // the keys (a UI window with the focus has the keyboard, #74)
+        let free = !taken.0;
+        for k in [KeyCode::ArrowUp, KeyCode::ArrowDown, KeyCode::ArrowLeft, KeyCode::ArrowRight] {
+            let state = if keys.just_pressed(k) && free {
+                Some(rts_lockstep_engine::client::window_manager::key::STATE_DOWN)
+            } else if keys.just_released(k) {
+                Some(rts_lockstep_engine::client::window_manager::key::STATE_UP)
+            } else {
+                None
+            };
+            if let Some(st) = state {
+                let t = if st == rts_lockstep_engine::client::window_manager::key::STATE_UP { MSG_RAW_KEY_UP } else { MSG_RAW_KEY_DOWN };
+                let m = RawMessage { t, pos: ICoord2D::default(), delta: ICoord2D::default(), arg0: i32::from(dik_of(k)), arg1: st as i32 };
+                r.cam.translate(&m, &ui, &g.controls.client.world, shell_active);
             }
         }
-        _ => {}
+        r.cam.keys = crate::camera::CameraKeys {
+            rotating_left: free && keys.pressed(KeyCode::KeyQ),
+            rotating_right: free && keys.pressed(KeyCode::KeyE),
+            zooming_in: free && keys.any_pressed([KeyCode::Equal, KeyCode::NumpadAdd]),
+            zooming_out: free && keys.any_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]),
+        };
+        if let Ok(window) = windows.single() {
+            let bar_h = bar.height + bar.panel;
+            if let Some(cursor) = window.cursor_position() {
+                let p = pixel(cursor);
+                if r.last_pos != Some(p) {
+                    r.last_pos = Some(p);
+                    mouse_msg(r, g, MSG_RAW_MOUSE_POSITION, p, 0);
+                }
+                let free_pointer = !over_ui(cursor, window, bar_h);
+                for (b, down, up) in [(MouseButton::Right, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, MSG_RAW_MOUSE_RIGHT_BUTTON_UP), (MouseButton::Middle, MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN, MSG_RAW_MOUSE_MIDDLE_BUTTON_UP)] {
+                    if buttons.just_pressed(b) && free_pointer {
+                        mouse_msg(r, g, down, p, 0);
+                    }
+                    if buttons.just_released(b) {
+                        mouse_msg(r, g, up, p, 0);
+                    }
+                }
+                // the wheel: whole notches (a line, or 100 pixels)
+                let lines = match scroll.unit {
+                    bevy::input::mouse::MouseScrollUnit::Line => scroll.delta.y,
+                    bevy::input::mouse::MouseScrollUnit::Pixel => scroll.delta.y / 100.0,
+                };
+                if free_pointer {
+                    r.wheel += lines;
+                }
+                let spin = r.wheel as i32;
+                if spin != 0 {
+                    r.wheel -= spin as f32;
+                    mouse_msg(r, g, MSG_RAW_MOUSE_WHEEL, p, spin);
+                }
+            }
+            // touch: one finger is the right button, two pinch
+            let active: Vec<_> = touches.iter().collect();
+            if let Some(id) = r.touch {
+                match touches.get_pressed(id) {
+                    Some(t) if active.len() == 1 => mouse_msg(r, g, MSG_RAW_MOUSE_POSITION, pixel(t.position()), 0),
+                    _ => {
+                        let at = touches.get_pressed(id).map(|t| t.position()).or_else(|| touches.iter_just_released().find(|t| t.id() == id).map(|t| t.position())).unwrap_or_default();
+                        r.touch = None;
+                        mouse_msg(r, g, MSG_RAW_MOUSE_RIGHT_BUTTON_UP, pixel(at), 0);
+                    }
+                }
+            } else if let [t] = active.as_slice() {
+                if touches.just_pressed(t.id()) && !over_ui(t.position(), window, bar_h) {
+                    r.touch = Some(t.id());
+                    mouse_msg(r, g, MSG_RAW_MOUSE_POSITION, pixel(t.position()), 0);
+                    mouse_msg(r, g, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, pixel(t.position()), 0);
+                }
+            }
+            match active.as_slice() {
+                [a, b] => {
+                    let now = a.position().distance(b.position());
+                    let base = *r.pinch.get_or_insert(now);
+                    if now > 1.0 && base > 1.0 {
+                        let step = if now > base * 1.15 { 1 } else if now * 1.15 < base { -1 } else { 0 };
+                        if step != 0 {
+                            r.pinch = Some(now);
+                            let mid = pixel((a.position() + b.position()) / 2.0);
+                            mouse_msg(r, g, MSG_RAW_MOUSE_WHEEL, mid, step);
+                        }
+                    }
+                }
+                _ => r.pinch = None,
+            }
+        }
     }
-    if right != 0.0 || forward != 0.0 {
-        rig.pan(right, forward);
+    // the client's frames
+    for _ in 0..r.cam.ticks(time.delta_secs()) {
+        let ui = g.controls.ui.clone();
+        r.cam.tick(&ui, &g.controls.client.world, shell_active);
     }
+    g.controls.view_mouse_locked = r.cam.view.is_mouse_locked();
+    g.controls.ui_scrolling = r.cam.ui_scrolling;
 }
 
-fn apply_camera(rig: Res<Rig>, mut cams: Query<&mut Transform, With<Camera3d>>) {
-    for mut t in &mut cams {
-        *t = rig.transform();
+/// GUI glue (needs a window): the 3D camera where the translated view placed it ([`crate::camera::Camera::eye_target`]
+/// and [`crate::camera::Camera::projection`], tested there).
+fn apply_camera(rig: Res<Rig>, mut cams: Query<(&mut Transform, &mut Projection), With<Camera3d>>) {
+    let (eye, target) = rig.cam.eye_target();
+    let (fov, near, far) = rig.cam.projection();
+    for (mut t, mut proj) in &mut cams {
+        *t = Transform::from_translation(Vec3::from(to_bevy(eye))).looking_at(Vec3::from(to_bevy(target)), Vec3::Y);
+        if let Projection::Perspective(p) = &mut *proj {
+            p.fov = fov;
+            p.near = near;
+            p.far = far;
+        }
     }
 }
 
@@ -969,9 +1025,10 @@ fn setup_ui(mut commands: Commands) {
             ..default()
         },
         children![
-            (button("+"), observe(|_: On<Activate>, mut rig: ResMut<Rig>| rig.zoom(0.8))),
-            (button("-"), observe(|_: On<Activate>, mut rig: ResMut<Rig>| rig.zoom(1.25))),
-            (button("R"), observe(|_: On<Activate>, mut rig: ResMut<Rig>| rig.reset())),
+            // (#119: three wheel notches through the translator, and the reset of `Camera::reset`)
+            (button("+"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| zoom_button(&mut rig, &game, 3))),
+            (button("-"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| zoom_button(&mut rig, &game, -3))),
+            (button("R"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| rig.cam.reset(&game.controls.client.world))),
             (button("||"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| game.paused = !game.paused)),
             // (#4) the saves: the panel with the save button and the list
             (button("S"), observe(|_: On<Activate>, mut action: ResMut<SaveAction>| action.0 = Some(SaveCmd::Toggle))),
@@ -979,6 +1036,15 @@ fn setup_ui(mut commands: Commands) {
             (button("C"), observe(|_: On<Activate>, mut action: ResMut<CampaignAction>| action.0 = Some(CampaignCmd::Toggle))),
         ],
     ));
+}
+
+/// GUI glue (a button's observer; the wheel's path is tested in `crate::camera`): the zoom buttons as `spin` wheel
+/// notches at the screen's centre.
+fn zoom_button(rig: &mut Rig, game: &Game, spin: i32) {
+    use rts_lockstep_engine::client::window_xlat::RawMessage;
+    let (w, h) = rig.cam.screen;
+    let m = RawMessage { t: rts_lockstep_engine::common::message_types::MSG_RAW_MOUSE_WHEEL, pos: ICoord2D { x: w / 2, y: h / 2 }, delta: ICoord2D::default(), arg0: 0, arg1: spin };
+    rig.cam.translate(&m, &game.controls.ui, &game.controls.client.world, false);
 }
 
 fn button(label: &str) -> impl Bundle {
@@ -1812,7 +1878,7 @@ fn radar_view(
                     let pixel = ICoord2D { x: local.x as i32, y: local.y as i32 };
                     if let Some(rts_lockstep_engine::client::control_bar_callback::RadarClick::LookAt(at)) = game.controls.radar_click(pixel, right) {
                         // `TheTacticalView->lookAt(&world)`
-                        rig.focus = Vec2::new(at.x, at.y);
+                        rig.cam.look_at(at, &game.controls.client.world);
                     }
                 });
         }
@@ -2036,8 +2102,8 @@ fn apply_save_action(
         SaveCmd::Save { name: save_name, description } => {
             let g = &mut *game;
             // (`View::xfer`: the camera's heading and the point it looks at)
-            g.save_state.view.angle = rig.yaw;
-            g.save_state.view.position = Coord3D { x: rig.focus.x, y: rig.focus.y, z: 0.0 };
+            g.save_state.view.angle = rig.cam.view.get_angle();
+            g.save_state.view.position = rig.cam.view.pos;
             let frame = g.controls.client.world.frame();
             let desc = description.unwrap_or_else(|| format!("{} | frame {frame}", g.playing.split(" | ").next().unwrap_or("")));
             // (#59: the drawables with their ambient sounds, as the audio has them)
@@ -2128,8 +2194,8 @@ fn finish_load(
                     g.save_state = state;
                     let read_past = g.save_state.read_past.len();
                     // the camera to the save's view (`setAngle`, `lookAt`)
-                    rig.yaw = g.save_state.view.angle;
-                    rig.focus = Vec2::new(g.save_state.view.position.x, g.save_state.view.position.y);
+                    **rig = Rig::new(&g.controls.client.world, rig.cam.screen);
+                    rig.cam.set_saved_view(g.save_state.view.angle, g.save_state.view.position, &g.controls.client.world);
                     **game = g;
                     for (_, (e, _)) in drawn.0.drain() {
                         commands.entity(e).despawn();
@@ -2359,9 +2425,7 @@ fn campaign_flow(
                     commands.entity(e).despawn();
                 }
                 terrain.pending = true;
-                let (centre, size) = view_frame(&game.controls.client.world);
-                let distance = size * 0.6;
-                *rig = Rig { focus: centre, distance, yaw: 0.0, pitch: 0.95, home: (centre, distance) };
+                *rig = Rig::new(&game.controls.client.world, rig.cam.screen);
                 crate::campaigns::page::set_panel_open(false);
                 c.paused_before = false;
                 c.set_status(format!("playing {}", s.label));

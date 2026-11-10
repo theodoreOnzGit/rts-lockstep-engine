@@ -47,15 +47,21 @@ pub struct Controls {
     pub hint: Option<MessageType>,
     /// #35: `TheRadar` and what it draws (`rts_lockstep_engine::client::radar_world`).
     pub radar: ClientRadar,
+    /// #119: `TheTacticalView->isMouseLocked()` and `TheInGameUI->isScrolling()` as the camera
+    /// ([`crate::camera::Camera`]) last left them, for the window translator.
+    pub view_mouse_locked: bool,
+    pub ui_scrolling: bool,
 }
 
 /// #116: what `WindowTranslator` asks, in the game under the application's own windows: the windows use nothing (the
 /// application keeps the pointer from the translators over them, and over the shell), the shell is not active, nothing
-/// plays a movie, and the tactical view's mouse is locked while a drag selection is under way (the port's camera never
-/// locks it). The InGameUI answers for the input and the placement.
+/// plays a movie, and the tactical view's mouse is locked while a drag selection is under way ~~(the port's camera never
+/// locks it)~~ **Corrected 2026-11-10 (#119):** or while the camera's `LookAtTranslator` scrolls (it locks it). The
+/// InGameUI answers for the input, the placement and (#119) the scroll.
 struct GameWindows<'a> {
     ui: &'a InGameUiSelection,
     mouse_locked: bool,
+    scrolling: bool,
     pixel: ICoord2D,
 }
 
@@ -64,7 +70,7 @@ impl WindowXlatHost for GameWindows<'_> {
         self.mouse_locked
     }
     fn ui_is_scrolling(&self) -> bool {
-        false
+        self.scrolling
     }
     fn ui_input_enabled(&self) -> bool {
         self.ui.input_enabled()
@@ -111,6 +117,8 @@ impl Controls {
             gui: GuiCommandTranslator,
             hint: None,
             radar: ClientRadar::default(),
+            view_mouse_locked: false,
+            ui_scrolling: false,
         };
         // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
         c.radar.new_map(&mut c.client.world);
@@ -158,7 +166,7 @@ impl Controls {
     /// the windows here use nothing; what is left is the translator's input gate (with the input off a mouse message is
     /// taken, but a release while a placement is anchored) and its mouse lock (a drag selection keeps everything).
     pub fn window_keeps(&mut self, t: MessageType, pixel: ICoord2D) -> bool {
-        let mut h = GameWindows { ui: &self.ui, mouse_locked: self.selection.drag_selecting, pixel };
+        let mut h = GameWindows { ui: &self.ui, mouse_locked: self.selection.drag_selecting || self.view_mouse_locked, scrolling: self.ui_scrolling, pixel };
         translate_window_message(&RawMessage::mouse(t, pixel), &mut h) == Disposition::Keep
     }
 
@@ -169,12 +177,19 @@ impl Controls {
     }
 
     /// #116: a logic frame's events on the client's input: the scripts' `DISABLE_INPUT` / `ENABLE_INPUT` and deselections
-    /// (`rts_lockstep_engine::client::script_input`), on the InGameUI and `mouse`. The build tooltip and the look-at
-    /// translator's modes have nothing to reset here (no tooltip in the game; the camera input keeps no scroll mode).
-    pub fn take_script_input(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], mouse: &mut ClientMouse) {
+    /// (`rts_lockstep_engine::client::script_input`), on the InGameUI and `mouse`. The build tooltip ~~and the look-at
+    /// translator's modes have nothing to reset here (no tooltip in the game; the camera input keeps no scroll mode)~~
+    /// has nothing to delete (no tooltip in the game). **Corrected 2026-11-10 (#119):** the answer is whether a
+    /// `LookAtResetModes` came, for the camera's `LookAtTranslator::resetModes` ([`crate::camera::Camera::reset_modes`]).
+    pub fn take_script_input(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], mouse: &mut ClientMouse) -> bool {
+        use rts_lockstep_engine::logic::client_event::ScriptInputCall;
+        let mut reset = false;
         for e in events {
-            let _ = apply_script_input(e, &mut self.ui, mouse, &mut self.client);
+            if apply_script_input(e, &mut self.ui, mouse, &mut self.client) == Some(ScriptInputCall::LookAtResetModes) {
+                reset = true;
+            }
         }
+        reset
     }
 
     /// The left button pressed at `pixel`: a building at the cursor is anchored there; with a GUI command pending the press
@@ -968,6 +983,9 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
             [C::SetInputEnabled(false), C::MouseSetVisibility(false), C::DeselectAllDrawables, C::ClearAttackMoveToMode, C::SetWaypointMode(false), C::DeleteBuildTooltipLayout, C::LookAtResetModes]
         );
         assert!(!c.ui.input_enabled() && !mouse.visible && c.ui.select_count() == 0);
+        // (#119) the LookAtResetModes call is handed on for the camera's translator
+        assert!(c.take_script_input(&[ClientEvent::ScriptInput(C::LookAtResetModes)], &mut mouse));
+        assert!(!c.take_script_input(&[], &mut mouse));
         assert!(!c.selection.drag_selecting && !c.ui.is_selecting());
         assert_eq!(c.client.sent, vec![MSG_DESTROY_SELECTED_GROUP]);
         client_frame(&mut c, &mut mouse);

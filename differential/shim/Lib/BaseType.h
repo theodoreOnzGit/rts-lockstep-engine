@@ -38,6 +38,7 @@ struct RealRange { Real lo, hi; };
 Real ACos(Real);
 struct Coord2D { Real x, y;
 	Real length( void ) const { return (Real)sqrt( x*x + y*y ); }
+	void normalize( void ) { Real len = length(); if( len != 0 ) { x /= len; y /= len; } }   /* #119 (LookAtXlat): BaseType.h lines 277-285 */
 	Real toAngle( void ) const
 	{
 		const Real len = length();
