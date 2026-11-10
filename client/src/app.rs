@@ -44,7 +44,8 @@ use std::collections::HashMap;
 
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
-use bevy::picking::events::{PointerOut, PointerOver, PointerPress};
+use bevy::picking::events::{PointerLeave, PointerMove, PointerPress, PointerRelease};
+use bevy::picking::pointer::PointerButton;
 use bevy::ui_widgets::{observe, Activate, Button};
 
 use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D};
@@ -102,6 +103,8 @@ struct Game {
     tooltip_lines: Vec<Option<Vec<String>>>,
     tooltip_for: Option<ObjectId>,
     touch_pressed: bool,
+    /// (#34) The command buttons of the bar's slots this frame (`populateCommand`'s), for a press the manager selects.
+    bar_buttons: Vec<Option<usize>>,
     /// The FX lists and particle systems still to be read from the art (#43, #44).
     fx_pending: bool,
     /// The audio's tables still to be read from the art (#13).
@@ -173,6 +176,7 @@ impl Game {
             tooltip_lines: Vec::new(),
             tooltip_for: None,
             touch_pressed: false,
+            bar_buttons: Vec::new(),
             fx_pending: true,
             audio_pending: true,
             audio: None,
@@ -1272,8 +1276,8 @@ fn load_game_ui(mut game: NonSendMut<Game>) {
     let side = world.players.get_nth(g.controls.client.player).map(|p| p.side.clone()).unwrap_or_default();
     match crate::ui::load_game_ui(&art.fs, &world.statics.game_text, &side) {
         crate::ui::UiBuild::Ready(ui) => {
-            info!("control bar: {} windows, {} images", ui.tree.windows.len(), ui.images.len());
-            g.ui_status = format!("control bar: {} windows", ui.tree.windows.len());
+            info!("control bar: {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
+            g.ui_status = format!("control bar: {} windows", ui.wm.tree.windows.len());
             g.ui = Some(ui);
             g.ui_pending = false;
         }
@@ -1319,7 +1323,11 @@ fn ui_image(g: &mut Game, images: &mut Assets<Image>, name: &[u8]) -> Option<(Ha
 /// GUI glue (needs a window): the game's control bar drawn from [`crate::ui::GameUi::frame`]'s quads (the selected
 /// object's buttons from `populateCommand`, the money, the power, the build queue), as Bevy UI nodes in a box of the
 /// layout's 800-wide proportions along the bottom of the screen, as wide as the screen allows; rebuilt when the quads
-/// change. A command button presses through [`Controls::press`] (`processCommandUI`).
+/// change. ~~A command button presses through [`Controls::press`] (`processCommandUI`).~~ **Corrected 2026-11-10 (#34):**
+/// the pointer over the bar goes through the window manager ([`crate::ui::GameUi::pointer`], tested there: the root's
+/// pointer observers turn the screen position into the layout's); the button it selects presses through
+/// [`Controls::press`] (`processCommandUI`). A release that happened off the bar ends the manager's grab here.
+#[allow(clippy::too_many_arguments)]
 fn game_ui(
     mut commands: Commands,
     mut game: NonSendMut<Game>,
@@ -1327,6 +1335,8 @@ fn game_ui(
     mut roots: Query<(Entity, &mut GameUiRoot, &mut Node)>,
     windows: Query<&Window>,
     mut ui_bar: ResMut<UiBar>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
 ) {
     let g = &mut *game;
     if g.ui.is_none() {
@@ -1345,9 +1355,15 @@ fn game_ui(
         g.tooltip_for = sel;
     }
     g.tooltip_lines = state.tooltips.iter().map(|t| t.as_ref().map(crate::ui::tooltip_lines)).collect();
+    let ui = g.ui.as_mut().expect("checked");
+    // (#34) the windows as the state sets them; a grab whose release was not over the bar ends
+    ui.sync(&state);
+    if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
+        let _ = ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), 0.0, false, &mut g.tooltip);
+    }
     let ui = g.ui.as_ref().expect("checked");
     let quads = ui.frame(&state);
-    let buttons: Vec<Option<usize>> = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
+    g.bar_buttons = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
     // the box: the quads' extent, the layout's full width
     let (y0, y1) = quads.iter().fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q.rect[1]), b.max(q.rect[3])));
     if quads.is_empty() || y1 <= y0 {
@@ -1370,12 +1386,31 @@ fn game_ui(
             commands.entity(e).despawn_children();
             e
         }
-        None => commands
-            .spawn((
+        None => {
+            let mut root = commands.spawn((
                 GameUiRoot(quads.clone()),
                 Node { position_type: PositionType::Absolute, bottom: px(0), left: px((ww - width) / 2.0), width: px(width), height: px(ui_bar.height), ..default() },
-            ))
-            .id(),
+            ));
+            // (#34) the pointer over the bar, into the window manager (events bubble up from the quads)
+            root.observe(|ev: On<PointerMove>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
+                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+            });
+            root.observe(|ev: On<PointerLeave>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
+                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+            });
+            root.observe(|ev: On<PointerPress>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
+                if ev.button == PointerButton::Primary {
+                    game.touch_pressed = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
+                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                }
+            });
+            root.observe(|ev: On<PointerRelease>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
+                if ev.button == PointerButton::Primary {
+                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                }
+            });
+            root.id()
+        }
     };
     let pct = |v: f32, total: f32| Val::Percent(v / total * 100.0);
     for q in &quads {
@@ -1427,37 +1462,28 @@ fn game_ui(
                 ));
             });
         }
-        if let Some(slot) = q.command {
-            if let Some(Some(index)) = buttons.get(slot) {
-                let index = *index;
-                e.insert((
-                    Button,
-                    observe(move |_: On<Activate>, time: Res<Time>, mut game: NonSendMut<Game>| {
-                        // (#35) a long press shows the popup instead of pressing
-                        let touch = game.touch_pressed;
-                        if !game.tooltip.click(slot, time.elapsed_secs_f64(), touch) {
-                            return;
-                        }
-                        let b = rts_lockstep_engine::client::command_world::gui_button(&game.controls.client.world, index);
-                        if let Some(b) = b {
-                            game.controls.press(&b);
-                        }
-                    }),
-                ));
-                // (#35) the popup's hover and long press
-                e.observe(move |ev: On<PointerOver>, time: Res<Time>, mut game: NonSendMut<Game>| {
-                    let touch = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
-                    game.tooltip.over(slot, time.elapsed_secs_f64(), touch);
-                });
-                e.observe(move |_: On<PointerOut>, mut game: NonSendMut<Game>| game.tooltip.out(slot));
-                e.observe(move |ev: On<PointerPress>, time: Res<Time>, mut game: NonSendMut<Game>| {
-                    game.touch_pressed = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
-                    game.tooltip.press(slot, time.elapsed_secs_f64());
-                });
-            }
+        if q.command.is_some() {
+            // (#34) pickable, so the press is the bar's and not the world's; the manager decides what it presses
+            e.insert(Button);
         }
         let child = e.id();
         commands.entity(root).add_child(child);
+    }
+}
+
+/// (#34) GUI glue (needs a window): a pointer event over the bar, from the screen (logical pixels) into the layout
+/// ([`crate::ui::LayoutPlacement`] inverted) and through [`crate::ui::GameUi::pointer`]; a command button the manager
+/// selected presses through [`Controls::press`].
+fn bar_pointer(game: &mut Game, bar: &UiBar, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId, now: f64) {
+    let Some(p) = bar.placement else { return };
+    let touch = matches!(id, bevy::picking::pointer::PointerId::Touch(_));
+    let pos = ((screen.x - p.left) / p.scale, (screen.y - p.top) / p.scale + p.y0);
+    let g = &mut *game;
+    let Some(ui) = g.ui.as_mut() else { return };
+    let Some(slot) = ui.pointer(msg, pos, now, touch, &mut g.tooltip) else { return };
+    let Some(Some(index)) = g.bar_buttons.get(slot).copied() else { return };
+    if let Some(b) = rts_lockstep_engine::client::command_world::gui_button(&g.controls.client.world, index) {
+        g.controls.press(&b);
     }
 }
 

@@ -6,8 +6,11 @@
 //! and the power.
 //!
 //! Plain Rust, no Bevy: [`load_game_ui`] reads the files, [`GameUi::frame`] says what to draw this frame as quads in
-//! the layout's 800x600 space ([`UiQuad`]); `app` draws them with Bevy UI nodes. Upstream's own drawing
-//! (`W3DGameWinDefaultDraw`, the gadget draw functions, `W3DPowerDraw`) is not translated: a window with
+//! the layout's 800x600 space ([`UiQuad`]); `app` draws them with Bevy UI nodes. ~~Upstream's own drawing
+//! (`W3DGameWinDefaultDraw`, the gadget draw functions, `W3DPowerDraw`) is not translated~~ **Corrected 2026-11-10
+//! (#34):** `W3DGameWinDefaultDraw` and the push button, check box, radio button and static text draws are translated
+//! (`client::window_draw`, a draw list), but the bar does not draw from them yet (`W3DPowerDraw` and the command bar's
+//! own draws are not translated); here: a window with
 //! `WIN_STATUS_IMAGE` is drawn as its state's first image stretched over its region, any other as its first colour,
 //! text centred; the power bar as production against consumption. That part is new.
 //!
@@ -15,6 +18,13 @@
 //! `client::control_bar_popup::set_portrait_by_object`) and each command button's popup description
 //! (`populate_build_tooltip_layout`): [`BarState`] carries them, [`TooltipTimer`] decides when the popup shows (new: the
 //! hover delay, and on a phone a long press, with the last button touched kept as a visible fallback).
+//!
+//! Since #34, the bar's windows live in the window manager (`rts_lockstep_engine::client::window_manager`, a translation
+//! of `GameWindowManager`): [`GameUi::sync`] hides, shows, enables and disables them as `switchToContext` and
+//! `setControlCommand` would from the [`BarState`], and [`GameUi::pointer`] sends the pointer through
+//! `winProcessMouseEvent`, so a command button is pressed by the push button's own `GBM_SELECTED` reaching
+//! `ControlBarSystem`. Touch is a mouse: a press moves the pointer there first. The drawing is still the quads above (moving
+//! it onto the manager's draw list is #34's remaining work).
 //!
 //! The client still never changes the simulation: everything here reads the `World`.
 
@@ -24,7 +34,9 @@ use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, pop
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::image::ImageCollection;
-use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WindowTree, WndHost, WIN_COLOR_UNDEFINED};
+use rts_lockstep_engine::client::gadget;
+use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WindowMsgData};
+use rts_lockstep_engine::client::window_script::{win_status, GameWindow, WinId, WindowScript, WndHost, WIN_COLOR_UNDEFINED};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::science::GameTextFetch;
@@ -45,7 +57,8 @@ pub enum UiBuild {
 /// The control bar, read.
 pub struct GameUi {
     pub images: ImageCollection,
-    pub tree: WindowTree,
+    /// (#34) The window manager holding the bar's windows (`wm.tree`).
+    pub wm: GameWindowManager,
     pub schemes: ControlBarSchemeManager,
     /// `ButtonCommand01..18`.
     pub command_windows: Vec<Option<WinId>>,
@@ -143,13 +156,13 @@ pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetc
     if let Err(e) = r {
         return UiBuild::Missing(format!("the control bar schemes did not load: {e:?}"));
     }
-    let mut tree = WindowTree::default();
+    let mut wm = GameWindowManager::new(LAYOUT);
     let mut host = Host { keys: BTreeMap::new(), images: &images, text };
-    if let Err(e) = WindowScript::new().win_create_from_script(&wnd, &mut tree, &mut host) {
+    if let Err(e) = wm.win_create_from_script(&mut WindowScript::new(), b"ControlBar.wnd", &wnd, &mut host, &mut NoGuiHost) {
         return UiBuild::Missing(format!("ControlBar.wnd did not read: {e:?}"));
     }
-    schemes.set_control_bar_scheme_by_side(side, false, &mut tree, LAYOUT, &images);
-    let find = |n: String| tree.find_by_name(n.as_bytes());
+    schemes.set_control_bar_scheme_by_side(side, false, &mut wm.tree, LAYOUT, &images);
+    let find = |n: String| wm.tree.find_by_name(n.as_bytes());
     let ui = GameUi {
         command_windows: (1..=18).map(|i| find(format!("ControlBar.wnd:ButtonCommand{i:02}"))).collect(),
         queue_windows: (1..=9).map(|i| find(format!("ControlBar.wnd:ButtonQueue{i:02}"))).collect(),
@@ -167,10 +180,27 @@ pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetc
         upgrade_cameos: (1..=MAX_RIGHT_HUD_UPGRADE_CAMEOS).map(|i| find(format!("ControlBar.wnd:UnitUpgrade{i}"))).collect(),
         radar: find("ControlBar.wnd:LeftHUD".into()),
         images,
-        tree,
+        wm,
         schemes,
     };
     UiBuild::Ready(Box::new(ui))
+}
+
+/// (#34) The bar's own callbacks for the manager (new: upstream's `ControlBarSystem` calls
+/// `processContextSensitiveButtonClick`; here the button `GBM_SELECTED` names is kept for the caller to press).
+#[derive(Default)]
+struct BarHost {
+    selected: Option<WinId>,
+}
+
+impl GuiHost for BarHost {
+    fn system(&mut self, _wm: &mut GameWindowManager, func: &[u8], _win: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
+        if func == b"ControlBarSystem" && msg == ggm::GBM_SELECTED {
+            self.selected = data_win(d1);
+            return MsgHandled::Handled;
+        }
+        MsgHandled::Ignored
+    }
 }
 
 /// One thing to draw, in the layout's space.
@@ -330,32 +360,93 @@ impl GameUi {
     fn shown(&self, w: WinId, s: &BarState) -> bool {
         let mut cur = Some(w);
         while let Some(i) = cur {
-            let win = &self.tree.windows[i];
-            let hidden = if Some(i) == self.command_parent {
-                s.selected.is_none()
-            } else if Some(i) == self.queue_parent {
-                s.queue.is_empty()
-            } else if let Some(slot) = self.command_windows.iter().position(|&c| c == Some(i)) {
-                s.commands.get(slot).is_none_or(|c| c.is_none())
-            } else if let Some(q) = self.queue_windows.iter().position(|&c| c == Some(i)) {
-                q >= s.queue.len()
-            } else if self.hidden_parents.contains(&i) {
-                true
-            } else if Some(i) == self.money || Some(i) == self.power {
-                false
-            } else if Some(i) == self.unit_selected {
-                !s.portrait.shown
-            } else if let Some(u) = self.upgrade_cameos.iter().position(|&c| c == Some(i)) {
-                s.portrait.upgrade_cameos.get(u).is_none_or(|c| c.is_none())
-            } else {
-                win.is_hidden()
-            };
-            if hidden {
+            let win = &self.wm.tree.windows[i];
+            if self.hidden_rule(i, s).unwrap_or_else(|| win.is_hidden()) {
                 return false;
             }
             cur = win.parent;
         }
         true
+    }
+
+    /// Whether the bar's state hides window `i` (`switchToContext`, `setControlCommand`, the portrait); `None` for a
+    /// window the state does not decide.
+    fn hidden_rule(&self, i: WinId, s: &BarState) -> Option<bool> {
+        let hidden = if Some(i) == self.command_parent {
+            s.selected.is_none()
+        } else if Some(i) == self.queue_parent {
+            s.queue.is_empty()
+        } else if let Some(slot) = self.command_windows.iter().position(|&c| c == Some(i)) {
+            s.commands.get(slot).is_none_or(|c| c.is_none())
+        } else if let Some(q) = self.queue_windows.iter().position(|&c| c == Some(i)) {
+            q >= s.queue.len()
+        } else if self.hidden_parents.contains(&i) {
+            true
+        } else if Some(i) == self.money || Some(i) == self.power {
+            false
+        } else if Some(i) == self.unit_selected {
+            !s.portrait.shown
+        } else if let Some(u) = self.upgrade_cameos.iter().position(|&c| c == Some(i)) {
+            s.portrait.upgrade_cameos.get(u).is_none_or(|c| c.is_none())
+        } else {
+            return None;
+        };
+        Some(hidden)
+    }
+
+    /// (#34) The bar's state into the manager's windows, as upstream sets them (`winHide`, `winEnable`): the context
+    /// windows hidden or shown by [`GameUi::hidden_rule`], each command button enabled when its command is available.
+    /// Only changes are applied, so a window that stays hidden is not told again (`windowHiding`).
+    pub fn sync(&mut self, s: &BarState) {
+        for i in 0..self.wm.tree.windows.len() {
+            if let Some(h) = self.hidden_rule(i, s) {
+                if h != self.wm.tree.windows[i].is_hidden() {
+                    self.wm.win_hide(i, h);
+                }
+            }
+        }
+        for (slot, w) in self.command_windows.clone().into_iter().enumerate() {
+            let (Some(w), Some(Some(c))) = (w, s.commands.get(slot)) else { continue };
+            if c.enabled != (self.wm.tree.windows[w].status & win_status::ENABLED != 0) {
+                self.wm.win_enable(w, c.enabled);
+            }
+        }
+    }
+
+    /// (#34) A pointer event at `pos` (the layout's pixels) through `winProcessMouseEvent`: `msg` is `GWM_MOUSE_POS`,
+    /// `GWM_LEFT_DOWN` or `GWM_LEFT_UP` (a touch is a mouse; its press moves the pointer there first). The popup's timer
+    /// follows the window under the pointer and the press; returns the command slot whose button the manager selected
+    /// (`GBM_SELECTED` reaching `ControlBarSystem`), unless the release ends a long press ([`TooltipTimer::click`]).
+    pub fn pointer(&mut self, msg: u32, pos: (f32, f32), now: f64, touch: bool, tip: &mut TooltipTimer) -> Option<usize> {
+        let p = (pos.0.floor() as i32, pos.1.floor() as i32);
+        let mut host = BarHost::default();
+        if msg == gwm::LEFT_DOWN && touch {
+            self.wm.win_process_mouse_event(&mut host, gwm::MOUSE_POS, p, (0, 0));
+        }
+        let before = self.slot_of(self.wm.curr_mouse_rgn);
+        self.wm.win_process_mouse_event(&mut host, msg, p, (0, 0));
+        let after = self.slot_of(self.wm.curr_mouse_rgn);
+        if before != after {
+            if let Some(b) = before {
+                tip.out(b);
+            }
+        }
+        if let Some(a) = after {
+            tip.over(a, now, touch);
+        }
+        if msg == gwm::LEFT_DOWN {
+            if let Some(g) = self.slot_of(self.wm.grab_window) {
+                tip.press(g, now);
+            }
+        }
+        let slot = self.slot_of(host.selected)?;
+        tip.click(slot, now, touch).then_some(slot)
+    }
+
+    /// The command slot of a window.
+    fn slot_of(&self, w: Option<WinId>) -> Option<usize> {
+        let w = w?;
+        self.command_windows.iter().position(|&c| c == Some(w))
     }
 
     /// The quads of a frame: the scheme's background layers, the windows (parents before children; a parent's children
@@ -366,7 +457,7 @@ impl GameUi {
         let draws: Vec<SchemeDraw> = scheme.map(|c| c.draw_list(self.schemes.multiplier, Default::default(), &self.images)).unwrap_or_default();
         let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None };
         out.extend(draws.iter().filter(|d| d.layer >= 3).map(quad));
-        let roots: Vec<WinId> = (0..self.tree.windows.len()).filter(|&i| self.tree.windows[i].parent.is_none()).collect();
+        let roots: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&i| self.wm.tree.windows[i].parent.is_none()).collect();
         for r in roots {
             self.windows_into(r, s, &mut out);
         }
@@ -381,8 +472,8 @@ impl GameUi {
         if !self.shown(w, &BarState::default()) {
             return None;
         }
-        let win = &self.tree.windows[w];
-        let (x, y) = self.tree.screen_position(w);
+        let win = &self.wm.tree.windows[w];
+        let (x, y) = self.wm.tree.screen_position(w);
         Some([x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32])
     }
 
@@ -390,8 +481,8 @@ impl GameUi {
         if !self.shown(w, s) {
             return;
         }
-        let win: &GameWindow = &self.tree.windows[w];
-        let (x, y) = self.tree.screen_position(w);
+        let win: &GameWindow = &self.wm.tree.windows[w];
+        let (x, y) = self.wm.tree.screen_position(w);
         let rect = [x as f32, y as f32, (x + win.region.2 - win.region.0) as f32, (y + win.region.3 - win.region.1) as f32];
         let mut q = UiQuad { rect, image: None, color: None, text: None, command: None, dim: false, clock: None, overlay: None };
         let enabled = win.status & win_status::ENABLED != 0;
@@ -403,6 +494,11 @@ impl GameUi {
         }
         if let Some(t) = &win.text {
             q.text = Some(String::from_utf16_lossy(t));
+        }
+        // (#34) a static text keeps its text in its own `TextData`
+        let st = gadget::static_text_get_text(&self.wm, w);
+        if !st.is_empty() {
+            q.text = Some(String::from_utf16_lossy(&st));
         }
         if let Some(slot) = self.command_windows.iter().position(|&c| c == Some(w)) {
             if let Some(Some(c)) = s.commands.get(slot) {
@@ -509,15 +605,15 @@ MappedImage ImgPortrait\n  Texture = ui.tga\n  TextureWidth = 64\n  TextureHeigh
         }
         d
     };
-    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:ControlBarParent\";\n STATUS = ENABLED+IMAGE;\n STYLE = USER;\n ENABLEDDRAWDATA = {};\n CHILD\n", rect(0, 450, 800, 600), dd("ImgBar"));
+    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:ControlBarParent\";\n STATUS = ENABLED+IMAGE;\n STYLE = USER;\n SYSTEMCALLBACK = \"ControlBarSystem\";\n ENABLEDDRAWDATA = {};\n CHILD\n", rect(0, 450, 800, 600), dd("ImgBar"));
     wnd += &format!("WINDOW\n WINDOWTYPE = STATICTEXT;\n {}\n NAME = \"ControlBar.wnd:MoneyDisplay\";\n STATUS = ENABLED;\n STATICTEXTDATA = CENTERED: 1;\nEND\n", rect(20, 460, 120, 480));
     // (#35) the radar's window
     wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:LeftHUD\";\n STATUS = ENABLED;\n ENABLEDDRAWDATA = {};\nEND\n", rect(20, 500, 220, 590), dd("NoImage"));
     wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:PowerWindow\";\n STATUS = ENABLED;\n ENABLEDDRAWDATA = {};\nEND\n", rect(20, 485, 220, 495), dd("NoImage"));
-    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:CommandWindow\";\n STATUS = ENABLED+HIDDEN;\n CHILD\n", rect(250, 470, 700, 590));
+    wnd += &format!("WINDOW\n WINDOWTYPE = USER;\n {}\n NAME = \"ControlBar.wnd:CommandWindow\";\n STATUS = ENABLED+HIDDEN;\n SYSTEMCALLBACK = \"PassSelectedButtonsToParentSystem\";\n CHILD\n", rect(250, 470, 700, 590));
     for i in 0..3 {
         let x = 260 + i * 60;
-        wnd += &format!("WINDOW\n WINDOWTYPE = PUSHBUTTON;\n {}\n NAME = \"ControlBar.wnd:ButtonCommand{:02}\";\n STATUS = ENABLED+IMAGE;\n ENABLEDDRAWDATA = {};\nEND\n", rect(x, 480, x + 50, 530), i + 1, dd("ImgButton"));
+        wnd += &format!("WINDOW\n WINDOWTYPE = PUSHBUTTON;\n {}\n NAME = \"ControlBar.wnd:ButtonCommand{:02}\";\n STATUS = ENABLED+IMAGE;\n STYLE = PUSHBUTTON+MOUSETRACK;\n ENABLEDDRAWDATA = {};\nEND\n", rect(x, 480, x + 50, 530), i + 1, dd("ImgButton"));
     }
     wnd += "ENDALLCHILDREN\nEND\n";
     // (#35) the portrait: `WinUnitSelected` holding `CameoWindow` and one upgrade cameo
@@ -581,11 +677,11 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
-        assert_eq!((ui.images.len(), ui.tree.windows.len()), (4, 11));
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        assert_eq!((ui.images.len(), ui.wm.tree.windows.len()), (4, 11));
         assert_eq!(ui.schemes.current_scheme().map(|s| s.name.clone()), Some(b"default".to_vec()));
         let money = ui.money.expect("the money window");
-        assert_eq!(ui.tree.screen_position(money), (30, 455));
+        assert_eq!(ui.wm.tree.screen_position(money), (30, 455));
         let (w, o) = crate::demo::demo_world();
         let mut c = Controls::new(w, 1);
         let (m, p) = c.client.money_and_power();
@@ -632,9 +728,62 @@ mod tests {
             let (m, p) = asked.client.money_and_power();
             let st = GameUi::bar_state(sel, &mut asked.client, q, m, p);
             let _ = ui.frame(&st);
+            // (#34) the manager's state and a pointer through it
+            ui.sync(&st);
+            let _ = ui.pointer(gwm::MOUSE_POS, (285.0, 505.0 + (f % 3) as f32), f as f64, false, &mut TooltipTimer::default());
             let crc = |c: &mut Controls| c.world().logic_crc(rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC, None).expect("a CRC");
             assert_eq!(crc(&mut asked), crc(&mut plain), "frame {f}");
         }
+    }
+
+    /// #34: the bar's input through the window manager, on the synthetic files with the demo's dozer selected. Predicted
+    /// before the run from `winProcessMouseEvent` and `GadgetPushButtonInput`:
+    /// - after `sync`, the command window and `ButtonCommand01` are shown (and enabled: the depot is available),
+    ///   `ButtonCommand02` and `03` hidden;
+    /// - the mouse over button 1 (285, 505): the popup's timer is over slot 0; a press and a release at 0.1 s select it:
+    ///   `GBM_SELECTED` goes to the command window, which passes it to `ControlBarSystem`: slot 0 is pressed;
+    /// - a touch held 0.7 s on it: no press (a long press), its popup pinned;
+    /// - a press where the hidden button 2 is (345, 505): the command window takes nothing; no press;
+    /// - a press dragged off the button before the release: no press;
+    /// - with nothing selected after `sync`: the command window is hidden; the press on button 1's place presses
+    ///   nothing.
+    #[test]
+    fn the_bar_is_pressed_through_the_window_manager() {
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let (w, o) = crate::demo::demo_world();
+        let mut c = Controls::new(w, 1);
+        let (m, p) = c.client.money_and_power();
+        let dp = c.client.object_position(o.dozer);
+        assert!(c.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
+        let st = GameUi::bar_state(c.ui.first_selected_drawable(), &mut c.client, Vec::new(), m, p);
+        ui.sync(&st);
+        let win = |ui: &GameUi, i: usize| ui.command_windows[i].expect("a command window");
+        assert!(!ui.wm.is_hidden(Some(win(&ui, 0))) && ui.wm.is_enabled(Some(win(&ui, 0))));
+        assert!(ui.wm.is_hidden(Some(win(&ui, 1))) && ui.wm.is_hidden(Some(win(&ui, 2))));
+        let mut tip = TooltipTimer::default();
+        assert_eq!(ui.pointer(gwm::MOUSE_POS, (285.0, 505.0), 0.0, false, &mut tip), None);
+        assert_eq!(tip.shown(0.6), Some(0));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 0.0, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 0.1, false, &mut tip), Some(0));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (286.0, 506.0), 1.0, true, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (286.0, 506.0), 1.7, true, &mut tip), None, "a long press");
+        assert_eq!(tip.shown(1.8), Some(0));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (345.0, 505.0), 2.0, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (345.0, 505.0), 2.1, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 3.0, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), 3.05, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), 3.1, false, &mut tip), None, "released off the button");
+        let none = GameUi::bar_state(None, &mut c.client, Vec::new(), m, p);
+        ui.sync(&none);
+        assert!(ui.wm.is_hidden(Some(win(&ui, 0))));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 4.0, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 4.1, false, &mut tip), None);
     }
 
     /// #12: the money's format. Predicted: `$%d` with 1500 is `$1500`; a missing label falls back to `$ 1500`.
@@ -734,8 +883,8 @@ mod tests {
                 }
             }
         };
-        println!("ui install: waited {waits} times; {} windows, {} images", ui.tree.windows.len(), ui.images.len());
-        assert_eq!(ui.tree.windows.len(), 10);
+        println!("ui install: waited {waits} times; {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
+        assert_eq!(ui.wm.tree.windows.len(), 10);
     }
 
     /// #35, when the popup shows. Predicted from [`TooltipTimer`]'s rules (new, not upstream's): a mouse over slot 2 shows
@@ -781,7 +930,7 @@ mod tests {
         let mut fs = FileSystem::new(rts_lockstep_engine::common::file_system::NativeDevice::new(std::path::Path::new(&dir)));
         fs.init(None);
         let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
-        println!("the owner's control bar: {} windows, {} images, scheme {:?}", ui.tree.windows.len(), ui.images.len(), ui.schemes.current_scheme().map(|s| String::from_utf8_lossy(&s.name).into_owned()));
+        println!("the owner's control bar: {} windows, {} images, scheme {:?}", ui.wm.tree.windows.len(), ui.images.len(), ui.schemes.current_scheme().map(|s| String::from_utf8_lossy(&s.name).into_owned()));
         assert!(ui.command_windows.iter().all(Option::is_some));
         assert!(ui.queue_windows.iter().all(Option::is_some));
         assert!(ui.money.is_some() && ui.power.is_some());

@@ -74,7 +74,12 @@ Not yet translated:
 - ~~WND layouts.~~ **Corrected 2026-11-05 (#12):** translated: the WND reader (`client::window_script`,
   `GameWindowManagerScript.cpp`), the mapped images (`client::image`), the control bar schemes
   (`client::control_bar_scheme`) and the control bar's command windows (`client::control_bar_command`); still missing:
-  the window manager's input and drawing, the gadgets' own behaviour, and every layout but the control bar's (see #12's
+  ~~the window manager's input and drawing, the gadgets' own behaviour,~~ and every layout but the control bar's (see #12's
+  history entry below). **Corrected 2026-11-10 (#34):** the window manager is translated (`client::window_manager`:
+  creation, the tree, destruction, mouse and keyboard routing, focus, capture, modal and lone windows, the tooltip timer,
+  the layouts' callbacks), with the push button, check box, radio button, static text and progress bar
+  (`client::gadget`) and their W3D draws (`client::window_draw`); the control bar's input goes through it. Still missing:
+  the list box, combo box, sliders, text entry and tab control, and the bar's drawing from the draw list (see #34's
   history entry below).
 
 Until the owner supplies a copy for testing, the milestones that need no art come first, and the loaders are tested on
@@ -106,6 +111,33 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Looks are compared** with screenshots of the original (needs Windows and the game; the owner's call).
 
 ## Development history
+
+**#34 (2026-11-10, GitHub #34): the window manager, first part.**
+- **Translated** (engine crate, plain Rust, no Bevy):
+  - `client::window_manager` (GameWindowManager.cpp, GameWindow.cpp, WindowLayout.cpp, the lexicon tables, Mouse.cpp's
+    tooltip timer): `winCreate` with `GWM_CREATE`; the reader's windows replayed through upstream's creation calls
+    (gadget callbacks, owner, user data, the file's callbacks, the label, `GWM_SCRIPT_CREATE`); `linkWindow` (behind
+    modal windows), the child lists, `winHide`/`windowHiding`, `winEnable`, `isHidden`/`isEnabled`, `winBringToTop`,
+    `winSetParent`, `winGetWindowFromId`; `winDestroy`, `processDestroyList`, `winDestroyAll`; `winSendSystemMsg`,
+    `winSendInputMsg`, `winProcessMouseEvent` (captor, grab window, modal window, the three passes, `NO_INPUT`, the lone
+    window, enter/leave, the tooltip), `getWindowUnderCursor`, `winProcessKey`, `winSetFocus`, `winCapture`/`winRelease`,
+    `winSetModal`/`winUnsetModal`, `winSetLoneWindow`, the tab list; the layouts and their init/update/shutdown callbacks
+    (named; the game's own are the host's); `winRepaint`/`drawWindow`.
+  - `client::gadget` (GadgetPushButton.cpp, GadgetCheckBox.cpp, GadgetRadioButton.cpp, GadgetStaticText.cpp,
+    GadgetProgressBar.cpp): input and system callbacks and the setters.
+  - `client::window_draw` (W3DGameWindow.cpp, W3DPushButton.cpp, W3DCheckBox.cpp, W3DRadioButton.cpp, W3DStaticText.cpp):
+    the draw decisions as a list of `DrawItem`s (rectangles, lines, images with clip, text, the rect clock), the border.
+- **New** (client, `client/src/ui.rs`, `app.rs`): the bar's windows live in the manager; `GameUi::sync` sets their hidden
+  and enabled bits from the bar's state; `GameUi::pointer` sends the pointer (touch is a mouse) through
+  `winProcessMouseEvent`, and the button whose `GBM_SELECTED` reaches `ControlBarSystem` is pressed; the popup timer follows
+  the window under the pointer. The synthetic `ControlBar.wnd` now names `ControlBarSystem` and
+  `PassSelectedButtonsToParentSystem` and gives its buttons `MOUSETRACK` (to confirm on the owner's copy).
+- *Results:* 9 engine tests and 1 client test, predictions in their docs. One prediction missed: a press over a disabled
+  button also sends the parent `GWM_MOUSE_ENTERING` (the enter/leave step was forgotten). Lib 1056 passed, client 45
+  passed, clippy clean, gate (a) PASS (last CRC `0bf44067`), web build OK. No differential against compiled upstream yet (see the remaining list in #34). The CRC test of the
+  control bar now also syncs and routes a pointer every frame: the CRCs are unchanged.
+- *Still missing:* the list box, sliders, combo box, text entry and tab control and their inner windows; the progress bar's
+  draw; the bar drawn from the draw list; `GUIClick` played.
 
 **#64 (2026-11-06, GitHub #64): `clearGameData`; a World starts its next game in place; a save's map folder on load; the
 campaign INI's differential.**

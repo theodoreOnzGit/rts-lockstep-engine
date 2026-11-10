@@ -109,8 +109,12 @@
 //!
 //! The windows are not the game's `GameWindow`s: the gadgets' own inner windows (list box buttons, slider thumbs,
 //! combo box parts, tab panes made by default) are not created, and their draw data is kept on the gadget
-//! ([`GameWindow::parts`]). The parent's `GWM_SCRIPT_CREATE` message, the edit data, the system message `GWM_CREATE`
-//! and the default font of `winCreate` (the language's, later replaced by the window's own) are not modelled. What the
+//! ([`GameWindow::parts`]). ~~The parent's `GWM_SCRIPT_CREATE` message, the edit data, the system message `GWM_CREATE`
+//! and the default font of `winCreate` (the language's, later replaced by the window's own) are not modelled.~~
+//! **Corrected 2026-11-10 (#34):** the reader itself still sends no message, but
+//! [`crate::client::window_manager::GameWindowManager::win_create_from_script`] runs it and then replays, window by
+//! window, `winCreate`'s `GWM_CREATE`, the gadget's callbacks and owner, the file's callbacks, the text and the parent's
+//! `GWM_SCRIPT_CREATE`; the edit data and the language's default font are still not modelled. What the
 //! window manager supplies (name keys, images, game text, fonts, header templates, the function lexicon and the
 //! display's size) is asked of a [`WndHost`].
 //!
