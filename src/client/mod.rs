@@ -76,3 +76,8 @@ pub mod challenge_generals;
 pub mod save_load_menu;
 pub mod single_player_menu;
 pub mod difficulty_select;
+// (#89) the skirmish screens: MapUtil.cpp's GUI half, GUIUtil.cpp, SkirmishGameOptionsMenu.cpp, SkirmishMapSelectMenu.cpp
+pub mod map_util;
+pub mod gui_util;
+pub mod skirmish_game_options;
+pub mod skirmish_map_select;

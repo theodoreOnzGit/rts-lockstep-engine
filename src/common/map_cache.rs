@@ -8,7 +8,8 @@
 //   loadUserMaps, addMap, findMap)
 //   GeneralsMD/Code/GameEngine/Source/Common/INI/INIMapCache.cpp (MapMetaDataReader, INI::parseMapCacheDefinition)
 //   GeneralsMD/Code/GameEngine/Source/Common/System/QuotedPrintable.cpp (AsciiStringToQuotedPrintable,
-//   QuotedPrintableToAsciiString, hexDigitToInt, intToHexDigit)
+//   QuotedPrintableToAsciiString, hexDigitToInt, intToHexDigit; #89: UnicodeStringToQuotedPrintable,
+//   QuotedPrintableToUnicodeString)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -33,8 +34,12 @@
 //! - The statics of `MapUtil.cpp` that `loadMap` fills (`m_width`, `m_height`, `m_borderSize`, `worldDict`,
 //!   `m_waypoints`, the tech and supply lists) are [`MapUtilStatics`], kept in the cache: upstream never clears the
 //!   sizes or `worldDict` between maps, so a map with no `WorldInfo` chunk takes the previous map's name tag.
-//! - **Not translated:** the `_DEBUG`/`_INTERNAL` block of `updateCache` (a debug build rebuilds the shipped cache), the
-//!   map list boxes and preview images (GUI), `WouldMapTransfer`, `copyFromBigToDir`.
+//! - **Not translated:** the `_DEBUG`/`_INTERNAL` block of `updateCache` (a debug build rebuilds the shipped cache), ~~the
+//!   map list boxes and preview images (GUI), `WouldMapTransfer`,~~ `copyFromBigToDir`. **Corrected 2026-11-10 (#89):**
+//!   the map list boxes, `WouldMapTransfer`, `isValidMap`, `getDefaultMap`, `getDefaultOfficialMap`, `isOfficialMap`,
+//!   `findDrawPositions` and the preview image's lookup are translated in `crate::client::map_util` (the preview's copy
+//!   out of the archive, `copyFromBigToDir`, is not); QuotedPrintable.cpp's Unicode pair is here too
+//!   ([`unicode_string_to_quoted_printable`], [`quoted_printable_to_unicode_string`]).
 //! - **Deviation:** `FileInfo`'s timestamps are 0 ([`crate::common::file_system::FileSystem::get_file_info`] returns
 //!   only the size). Upstream reads them only to write them into `MapCache.ini`; `addMap` compares size and CRC.
 //! - **Deviation:** `parseMapCacheDefinition` reads `mdr.m_waypoints[i]` for `i < m_numPlayers` from an eight-entry
@@ -279,6 +284,72 @@ pub fn ascii_string_to_quoted_printable(original: &[u8]) -> Vec<u8> {
         dest.truncate(n);
     }
     dest
+}
+
+/// (#89) `UnicodeStringToQuotedPrintable(original)`: the string's UTF-16 units as their two bytes, low byte first (the
+/// `char *` walk over `WideChar`s), each byte that is not a letter or digit written `_` and two hex digits, until a unit
+/// whose two bytes are both 0. A byte above 0x7F is a negative `char`, whose `>> 4` is negative: its first digit is
+/// `'\0'`, which ends the string there (as [`ascii_string_to_quoted_printable`]; upstream's `isalnum` of a negative
+/// `char` is undefined in C, MSVC's table read before its start: taken as not a letter or digit, **not re-checked**).
+/// At most 1021 bytes are looked at before the check (`i<1021`, tested once per unit).
+pub fn unicode_string_to_quoted_printable(original: &[u16]) -> Vec<u8> {
+    let mut dest = Vec::with_capacity(original.len() * 6);
+    let push = |dest: &mut Vec<u8>, b: u8| {
+        if b.is_ascii_alphanumeric() {
+            dest.push(b);
+        } else {
+            let signed = i32::from(b as i8);
+            dest.push(b'_');
+            dest.push(int_to_hex_digit(signed >> 4));
+            dest.push(int_to_hex_digit(signed & 0xf));
+        }
+    };
+    for &u in original.iter().take_while(|&&u| u != 0) {
+        if dest.len() >= 1021 {
+            break;
+        }
+        push(&mut dest, (u & 0xff) as u8);
+        push(&mut dest, (u >> 8) as u8);
+    }
+    if let Some(n) = dest.iter().position(|&c| c == 0) {
+        dest.truncate(n);
+    }
+    dest
+}
+
+/// (#89) `QuotedPrintableToUnicodeString(original)`: the bytes as [`quoted_printable_to_ascii_string`] decodes them,
+/// paired into UTF-16 units low byte first; the string ends at the first 0 unit. An odd number of bytes leaves the last
+/// unit's high byte 0 (upstream's `*c = 0`) and **does not end the string** in upstream's static buffer: it reads on
+/// into what an earlier, longer call left there (from the first call, zeros). Here it ends after that unit (the earlier
+/// calls' leftovers are not modelled; recorded in the module docs of `client::skirmish_game_options`). Upstream's
+/// `i<1023` bound never moves (`i` is never incremented), so input past 2,047 decoded bytes overruns its buffer: here
+/// the units go on.
+pub fn quoted_printable_to_unicode_string(original: &[u8]) -> Vec<u16> {
+    let bytes = {
+        let mut dest = Vec::with_capacity(original.len());
+        let mut i = 0;
+        while i < original.len() && original[i] != 0 {
+            if original[i] == b'_' {
+                let Some(&d1) = original.get(i + 1).filter(|&&c| c != 0) else { break };
+                let mut c = hex_digit_to_int(d1);
+                i += 1;
+                if let Some(&d2) = original.get(i + 1).filter(|&&c| c != 0) {
+                    c = (c << 4) | hex_digit_to_int(d2);
+                    i += 1;
+                }
+                dest.push(c);
+            } else {
+                dest.push(original[i]);
+            }
+            i += 1;
+        }
+        dest
+    };
+    let mut out: Vec<u16> = bytes.chunks(2).map(|p| u16::from(p[0]) | (u16::from(*p.get(1).unwrap_or(&0)) << 8)).collect();
+    if let Some(n) = out.iter().position(|&u| u == 0) {
+        out.truncate(n);
+    }
+    out
 }
 
 /// What stops `updateCache`: a throw out of an INI read, or `loadMap`'s `throw(ERROR_CORRUPT_FILE_FORMAT)` (a map
@@ -896,6 +967,23 @@ mod tests {
         assert_eq!(quoted_printable_to_ascii_string(b"ab_4"), b"ab\x04".to_vec());
         // a byte above 0x7F ends the encoding (a negative `char`'s first digit is '\0')
         assert_eq!(ascii_string_to_quoted_printable(b"a\xE9b"), b"a_".to_vec());
+    }
+
+    /// #89: the Unicode pair (`Skirmish.ini`'s `UserName`). Predicted from QuotedPrintable.cpp before the run: `Al 1`
+    /// is the bytes `A 0 l 0 space 0 1 0`, each 0 and the space written `_XX`, the letters and the digit kept:
+    /// `A_00l_00_20_001_00`; decoding gives `Al 1` back; `é` (0x00E9) is `_` then the negative byte's `'\0'`, which ends
+    /// the encoding; an odd byte count leaves the last unit's high byte 0 (`_41` alone is `A`); a 0 unit ends it.
+    ///
+    /// **Result (2026-11-10):** as predicted.
+    #[test]
+    fn user_names_round_trip_through_quoted_printable() {
+        let name: Vec<u16> = "Al 1".encode_utf16().collect();
+        let q = unicode_string_to_quoted_printable(&name);
+        assert_eq!(q, b"A_00l_00_20_001_00".to_vec());
+        assert_eq!(quoted_printable_to_unicode_string(&q), name);
+        assert_eq!(unicode_string_to_quoted_printable(&[u16::from(b'a'), 0xE9]), b"a_00_".to_vec());
+        assert_eq!(quoted_printable_to_unicode_string(b"_41"), vec![0x41]);
+        assert_eq!(quoted_printable_to_unicode_string(b"A_00_00_00B_00"), vec![0x41]);
     }
 
     /// Batch I56: a shipped `MapCache.ini` block (the form `writeCacheINI` writes and `MapsZH.big` carries). Predicted

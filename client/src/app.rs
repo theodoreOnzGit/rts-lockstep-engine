@@ -2390,8 +2390,12 @@ fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, tim
     }
     st.tried = true;
     match loaded {
-        Some(ui) => {
+        Some(mut ui) => {
             info!("shell: {} windows", ui.wm.tree.windows.len());
+            // (#89) the skirmish screens' copy of the install's data
+            if let Some(base) = g.base.as_deref() {
+                ui.set_skirmish_data(base, &art.fs);
+            }
             st.shown_over = g.serial;
             g.paused = true;
             st.ui = Some(Box::new(ui));
@@ -2462,7 +2466,7 @@ fn shell_ui(
         let c = &mut *campaigns;
         for a in ui.take_actions(base, &mut c.flow) {
             match a {
-                crate::shell::ShellAction::CampaignChosen => {
+                crate::shell::ShellAction::CampaignChosen | crate::shell::ShellAction::SkirmishChosen => {
                     let map = c.flow.waiting_for().map(|m| String::from_utf8_lossy(m).into_owned()).unwrap_or_default();
                     c.set_status(format!("waiting {map}"));
                 }

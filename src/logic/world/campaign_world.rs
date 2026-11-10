@@ -268,6 +268,9 @@ pub enum MissionChoice {
     Continue,
     /// A mission save loaded ([`PendingMission::from_mission_save`]): its load has already made the start's message.
     MissionSave,
+    /// (#89) The skirmish screen's start (`ShellRequest::StartSkirmish`): [`World::start_skirmish_game`] with the
+    /// screen's game, mode, difficulty and FPS limit.
+    Skirmish { game: Box<crate::common::game_info::GameInfo>, mode: i32, max_fps: i32 },
 }
 
 /// GitHub #62 (new: upstream's file system holds every map): a mission chosen and waiting for its map's folder to be on
@@ -301,6 +304,14 @@ impl PendingMission {
                 campaign.set_campaign(general.get_campaign());
             }
             MissionChoice::Continue | MissionChoice::MissionSave => {}
+            MissionChoice::Skirmish { game, .. } => {
+                // (#89) the skirmish's map, which the cache must hold (the screen lists only those)
+                if base.statics.map_cache.find_map(&game.map_name).is_none() {
+                    return Err(CampaignStartError::NoMission(game.map_name.clone()));
+                }
+                let map = game.map_name.clone();
+                return Ok(PendingMission { world: base.clone(), choice, difficulty, map, mounted: None });
+            }
         }
         let map = campaign.get_current_map();
         if map.is_empty() {
@@ -368,6 +379,11 @@ impl PendingMission {
             MissionChoice::Challenge(i) => w.start_challenge(*i, self.difficulty)?,
             MissionChoice::Continue => w.start_next_campaign_game()?,
             MissionChoice::MissionSave => w.cuts.new_game.pending_file.clone(),
+            MissionChoice::Skirmish { game, mode, max_fps } => {
+                let map = game.map_name.clone();
+                w.start_skirmish_game((**game).clone(), *mode, self.difficulty, *max_fps).map_err(|_| CampaignStartError::NoMission(map.clone()))?;
+                map
+            }
         };
         Ok((w, map))
     }

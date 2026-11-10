@@ -477,6 +477,9 @@ pub enum UserData {
     Tab(crate::client::gadget_tab_control::TabRt),
     /// (#69) A message box's `WindowMessageBoxData` (`gogoMessageBox`).
     MessageBox(crate::client::message_box::MessageBoxData),
+    /// (#89) A map preview's `MapMetaData *` (`winSetUserData((void *)TheMapCache->findMap(name))`): the map's key in
+    /// the map cache (`None`: `NULL`).
+    MapMetaData(Option<Vec<u8>>),
 }
 
 /// What the manager keeps for a window besides the reader's [`GameWindow`].

@@ -145,6 +145,12 @@ pub enum ShellRequest {
     SaveGame { filename: Vec<u8>, description: Vec<u16>, file_type: i32 },
     /// (#78) `DeleteFile(getFilePathInSaveDirectory(filename))` (the save/load screen's delete).
     DeleteSave { filename: Vec<u8> },
+    /// (#89) The skirmish screen's `reallyDoStart`: `TheWritableGlobalData->m_mapName = game.map_name`,
+    /// `TheSkirmishGameInfo` the `game` given (after its `startGame(0)`), `InitGameLogicRandom(game.seed)`, and
+    /// `MSG_NEW_GAME` with `mode` (`GAME_SKIRMISH`, or `GAME_SINGLE_PLAYER` on a solo map), `difficulty`
+    /// (`DIFFICULTY_NORMAL`, "not really used"), rank 0 and the FPS limit `max_fps`: the World's
+    /// `start_skirmish_game`.
+    StartSkirmish { game: Box<crate::common::game_info::GameInfo>, mode: i32, difficulty: i32, max_fps: i32 },
 }
 
 /// `TheShell`.

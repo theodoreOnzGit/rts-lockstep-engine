@@ -168,6 +168,8 @@ impl Flow {
             return None;
         }
         let p = self.pending.take()?;
+        // (#89) the skirmish screen's start: labelled as a skirmish, and its end opens no score screen
+        let skirmish = matches!(p.choice, MissionChoice::Skirmish { .. });
         let (mut world, map) = match p.start() {
             Ok(x) => x,
             Err(e) => return Some(Err(describe(&e))),
@@ -177,6 +179,9 @@ impl Flow {
                 return Some(Err(format!("a starting frame failed: {e:?}")));
             }
             if let Some(player) = world.players.local_index().filter(|_| world.game_started()) {
+                if skirmish {
+                    return Some(Ok(Started { world, player, label: format!("skirmish on {}", String::from_utf8_lossy(&map)) }));
+                }
                 self.watching = true;
                 let campaign = world.campaign.get_current_campaign().map(|c| String::from_utf8_lossy(&c.name).into_owned()).unwrap_or_default();
                 let label = format!("{campaign} mission {} on {}", world.campaign.get_current_mission_number() + 1, String::from_utf8_lossy(&map));

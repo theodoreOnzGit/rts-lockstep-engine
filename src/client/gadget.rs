@@ -244,6 +244,13 @@ pub fn push_button_system<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: 
     Handled
 }
 
+/// (#89) `GadgetButtonSetText(g, text)`: `GGM_SET_LABEL` with the text (nothing for no window).
+pub fn button_set_text<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: Option<WinId>, text: &[u16]) {
+    let Some(w) = w else { return };
+    wm.msg_text = text.to_vec();
+    wm.win_send_system_msg(h, Some(w), ggm::SET_LABEL, 1, 0);
+}
+
 /// `GadgetCheckLikeButtonSetVisualCheck`: only the look, no message; only for a check-like button.
 pub fn check_like_button_set_visual_check(wm: &mut GameWindowManager, w: WinId, checked: bool) {
     if status(wm, w) & win_status::CHECK_LIKE == 0 {

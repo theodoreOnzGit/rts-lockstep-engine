@@ -13,7 +13,10 @@
 //!   ([`ShellAction::LoadGame`]: `SaveCmd::Load` in the app), its delete the folder's
 //!   ([`crate::saves::SaveFolder::delete`]); the folder is given to the shell's host as `iterateSaveFiles` reads the
 //!   directory ([`ShellUi::set_saves`]), and a load that fails shows the shell again ([`ShellUi::show`], `doLoadGame`'s
-//!   `showShell(TRUE)`).
+//!   `showShell(TRUE)`). (#89) The skirmish screen's start ([`ShellRequest::StartSkirmish`]) goes through the same flow
+//!   as a campaign's ([`ShellAction::SkirmishChosen`]: `MissionChoice::Skirmish`, the World's `start_skirmish_game`
+//!   once the map's folder has arrived); the screens read a copy of the install's data
+//!   ([`ShellUi::set_skirmish_data`], given when the shell is loaded).
 //!
 //! ~~**Not drawn yet (#69's remaining work):** the application does not show this shell; the windows' quads, as
 //! `crate::ui::GameUi::frame` makes the control bar's, and the phone layout (the menu over the 3D view, the zoom
@@ -73,6 +76,7 @@ use std::sync::Arc;
 use rts_lockstep_engine::client::save_game::read_save_summary;
 use rts_lockstep_engine::client::shell::{self as sh, ShellRequest, WndFiles};
 use rts_lockstep_engine::client::image::ImageCollection;
+use rts_lockstep_engine::client::gui_util::SkirmishData;
 use rts_lockstep_engine::client::shell_gui::{start_shell, ShellGui};
 use rts_lockstep_engine::client::window_manager::{gwm, GameWindowManager};
 use rts_lockstep_engine::client::window_script::WndHost;
@@ -92,9 +96,12 @@ use crate::ui::{LayoutPlacement, UiQuad, LAYOUT};
 ///
 /// (#78) With the save/load screen (`SaveLoad`, and the in-game `PopupSaveLoad`), the single player menu and the
 /// difficulty popup, whose callbacks are translated (neither of the last two is reached from Zero Hour's main menu).
-pub const SHELL_FILES: [&str; 14] = [
+///
+/// (#89) With the skirmish screen's map picker (`SkirmishMapSelectMenu`); the skirmish screen's callbacks are
+/// translated.
+pub const SHELL_FILES: [&str; 15] = [
     "MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu",
-    "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect",
+    "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect", "SkirmishMapSelectMenu",
 ];
 
 /// The files the shell reads, read ahead (the art's file system is not kept by the shell), with the reader's name keys
@@ -154,9 +161,13 @@ pub enum ShellAction {
     LoadGame(String),
     /// (#78) The save/load screen deleted this save: the folder's [`crate::saves::SaveFolder::delete`].
     DeleteSave(String),
+    /// (#89) The skirmish screen's start waits for its map in the flow (the campaign panel's path: [`Flow::choose`]
+    /// with `MissionChoice::Skirmish`, the World's `start_skirmish_game`).
+    SkirmishChosen,
 }
 
-/// The client's side of a request: [`ShellRequest::StartCampaign`] is the campaign panel's start of the campaign's
+/// The client's side of a request (#89: [`ShellRequest::StartSkirmish`] goes through the same flow as a campaign's
+/// start: [`ShellAction::SkirmishChosen`]): [`ShellRequest::StartCampaign`] is the campaign panel's start of the campaign's
 /// first mission ([`Flow::choose`] in a copy of `base`, `MissionChoice::Campaign` with `FirstMission`: the World's
 /// `start_campaign`, `setCampaign` + `prepareCampaignGame` + `doGameStart`), at the menu's difficulty.
 pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
@@ -178,6 +189,14 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
         ShellRequest::SaveGame { .. } => ShellAction::None("the in-game save popup is not reachable (QuitMenu.cpp, which opens it, is not translated)"),
         ShellRequest::ClearGameData => ShellAction::None("no game runs under the shell (the client's games are started by the flow)"),
         ShellRequest::NewShellGame => ShellAction::None("the shell map is not translated"),
+        // (#89) the skirmish screen's start: a copy of `base` waits for the map's folder, then `start_skirmish_game`
+        ShellRequest::StartSkirmish { game, mode, difficulty, max_fps } => {
+            let choice = MissionChoice::Skirmish { game: game.clone(), mode: *mode, max_fps: *max_fps };
+            match flow.choose(base, choice, *difficulty) {
+                Ok(()) => ShellAction::SkirmishChosen,
+                Err(e) => ShellAction::Failed(e),
+            }
+        }
     }
 }
 
@@ -249,6 +268,16 @@ impl ShellUi {
     /// `addGameToAvailableList` leaves out), in the folder's order.
     pub fn set_saves(&mut self, folder: &crate::saves::SaveFolder) {
         self.gui.save_files = folder.files.iter().map(|(n, b)| (n.as_bytes().to_vec(), read_save_summary(b.clone()).ok().map(|s| s.info))).collect();
+    }
+
+    /// (#89) The install's data the skirmish screens read (`TheMapCache`, `TheMultiplayerSettings`, the player
+    /// templates, ...), copied from `base` without changing it, with the map files `fs` holds (for `GameInfo::setMap`'s
+    /// contents mask).
+    pub fn set_skirmish_data<D: LocalDevice>(&mut self, base: &World, fs: &FileSystem<D>) {
+        let mut list = rts_lockstep_engine::formats::big::FilenameList::new();
+        fs.get_file_list_in_directory(b"Maps\\", b"*", &mut list, true);
+        let files = list.iter().map(|n| n.to_ascii_lowercase()).collect();
+        self.gui.skirmish_data = SkirmishData::from_world(base, files);
     }
 
     /// (#78) `TheShell->showShell(TRUE)`, as a failed load's `doLoadGame` calls it: the top screen's init again, the
@@ -516,6 +545,68 @@ mod tests {
         assert!(matches!(act(&ShellRequest::NewShellGame, &base, &mut flow), ShellAction::None(_)));
         assert!(matches!(act(&ShellRequest::ClearGameData, &base, &mut flow), ShellAction::None(_)));
         assert!(ui.take_actions(&base, &mut flow).is_empty());
+    }
+
+    /// #89: the skirmish screen in the client, from the synthetic files (no EA file), on a World whose map cache holds
+    /// one two-player multiplayer map (Alpha) and whose settings offer one starting amount (the global default, 0).
+    /// Predicted from SkirmishGameOptionsMenu.cpp before the run:
+    ///
+    /// - `set_skirmish_data` copies the World's cache (Alpha) and the map files the file system holds (none here);
+    /// - the screen pushed (as the main menu's *Skirmish* pushes it) and settled: `TheSkirmishGameInfo` on Alpha (the
+    ///   cache's first multiplayer map, no `Skirmish.ini`), slot 0 the player, slot 1 an easy computer;
+    ///   `populateSkirmishBattleHonors` recorded as untranslated, nothing undefined;
+    /// - *Start*: one request, `StartSkirmish` (`GAME_SKIRMISH`, the speed 30: the global data's limit, none here, is
+    ///   0, so the slider's 15 .. 61 clamp gives 15, and `reallyDoStart` keeps 15), which [`act`] turns into the flow's
+    ///   skirmish waiting for `maps\\alpha\\alpha.map`; the base World only read; a map the cache lacks fails.
+    ///
+    /// **Result (2026-11-10):** as predicted but for the speed: **30, not 15**. A new World has no global data at all
+    /// (`the_global_data()` is `None`), and `SkirmishData::from_world` then takes 30 for `m_framesPerSecondLimit`, so
+    /// the slider starts at 30 (the prediction took the missing data for a limit of 0). The assertion now says 30.
+    #[test]
+    fn the_skirmish_screen_starts_the_flows_skirmish() {
+        use rts_lockstep_engine::common::map_cache::MapMetaData;
+        use rts_lockstep_engine::common::money::Money;
+        use rts_lockstep_engine::common::unicode_string::UnicodeString;
+        const ALPHA: &[u8] = b"maps\\alpha\\alpha.map";
+        let (mut ui, _, fs) = shell_with(&TextTable::default());
+        let mut base = World::new();
+        {
+            let st = Arc::make_mut(&mut base.statics);
+            let display = UnicodeString::try_from_chars(&"Alpha (2)".encode_utf16().collect::<Vec<u16>>()).expect("name");
+            st.map_cache.maps.insert(ALPHA.to_vec(), MapMetaData { display_name: display, num_players: 2, is_multiplayer: true, ..Default::default() });
+            st.multiplayer_settings.add_starting_money_choice(Money::new(), true);
+        }
+        ui.set_skirmish_data(&base, &fs);
+        assert!(ui.gui.skirmish_data.map_cache.maps.contains_key(ALPHA));
+        assert!(ui.gui.skirmish_data.files.is_empty());
+        let mut now = 1000;
+        ui.frame(now);
+        sh::push(&mut ui.wm, &mut ui.gui, b"Menus/SkirmishGameOptionsMenu.wnd", false);
+        settle(&mut ui, &mut now);
+        for _ in 0..3 {
+            now += 40;
+            ui.frame(now);
+        }
+        settle(&mut ui, &mut now);
+        assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/SkirmishGameOptionsMenu.wnd"[..]));
+        let g = ui.gui.skirmish.game.clone().expect("TheSkirmishGameInfo");
+        assert_eq!(g.map_name, ALPHA);
+        assert_eq!((g.slots[0].state, g.slots[1].state), (rts_lockstep_engine::common::game_info::slot_state::PLAYER, rts_lockstep_engine::common::game_info::slot_state::EASY_AI));
+        assert!(ui.gui.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"));
+        assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
+        ui.gui.requests.clear();
+        click_named(&mut ui, "SkirmishGameOptionsMenu.wnd", "ButtonStart");
+        let [ShellRequest::StartSkirmish { mode, max_fps, .. }] = ui.gui.requests.as_slice() else { panic!("{:?}", ui.gui.requests) };
+        assert_eq!((*mode, *max_fps), (rts_lockstep_engine::common::recorder::game_mode::SKIRMISH, 30));
+        let before = base.statics.map_cache.maps.clone();
+        let mut flow = Flow::default();
+        assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SkirmishChosen]);
+        assert_eq!(flow.waiting_for(), Some(ALPHA));
+        assert!(matches!(flow.pending.as_ref().map(|p| &p.choice), Some(MissionChoice::Skirmish { .. })));
+        assert_eq!(base.statics.map_cache.maps, before, "the base World is only read");
+        let mut gone = g.clone();
+        gone.map_name = b"maps\\gone\\gone.map".to_vec();
+        assert!(matches!(act(&ShellRequest::StartSkirmish { game: Box::new(gone), mode: 2, difficulty: 1, max_fps: 30 }, &base, &mut flow), ShellAction::Failed(_)));
     }
 
     /// #78: the shell drawn from the window manager's draw list, and hidden when a game starts. Predicted from

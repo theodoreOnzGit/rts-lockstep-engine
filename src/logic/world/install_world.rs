@@ -200,7 +200,6 @@ impl World {
     pub fn start_skirmish_slots(&mut self, map: &[u8], seed: i32, slots: &[SkirmishSlot]) -> Result<(), InstallError> {
         use crate::common::game_info::{slot_state, GameInfo};
         use crate::common::recorder::game_mode;
-        use crate::logic::world::game_logic_new_game::GameSource;
         if self.statics.map_cache.find_map(map).is_none() {
             return Err(InstallError::MapNotInCache(map.to_vec()));
         }
@@ -223,16 +222,44 @@ impl World {
         g.map_name = map.to_vec();
         g.seed = seed;
         g.start_game(0, self);
+        self.launch_skirmish(g, game_mode::SKIRMISH, 1, None);
+        Ok(())
+    }
+
+    /// (#89) The skirmish menu's launch with the game its screen made (`reallyDoStart`, the translated screen's
+    /// `ShellRequest::StartSkirmish`): `game` is `TheSkirmishGameInfo` after its `startGame(0)`; a game in progress is
+    /// cleared (`clearGameData(FALSE)`), then the recorder, `m_mapName`, `InitGameLogicRandom(game.seed)` and
+    /// `MSG_NEW_GAME` with `mode` (`GAME_SKIRMISH`, or `GAME_SINGLE_PLAYER` for a solo map), `difficulty`, rank 0 and
+    /// the FPS limit `max_fps`. The game starts on the next frame. The map must be in the map cache.
+    pub fn start_skirmish_game(&mut self, game: crate::common::game_info::GameInfo, mode: i32, difficulty: i32, max_fps: i32) -> Result<(), InstallError> {
+        if self.statics.map_cache.find_map(&game.map_name).is_none() {
+            return Err(InstallError::MapNotInCache(game.map_name.clone()));
+        }
+        if crate::common::recorder::RecorderHost::is_in_game(self) {
+            self.clear_game_data(false);
+        }
+        self.cuts.game_loop.game_mode = crate::common::recorder::game_mode::SHELL;
+        self.launch_skirmish(game, mode, difficulty, Some(max_fps));
+        Ok(())
+    }
+
+    /// The tail both skirmish launches share: the game kept for `startNewGame`, the recorder, the map's name,
+    /// `InitGameLogicRandom(seed)` and `MSG_NEW_GAME` (`mode`, `difficulty`, rank 0, and the FPS limit when given).
+    fn launch_skirmish(&mut self, g: crate::common::game_info::GameInfo, mode: i32, difficulty: i32, max_fps: Option<i32>) {
+        use crate::logic::world::game_logic_new_game::GameSource;
+        let (map, seed) = (g.map_name.clone(), g.seed);
         self.cuts.new_game.games.push((GameSource::Skirmish, g));
         self.recorder_init();
-        self.cuts.new_game.map_name = map.to_vec();
+        self.cuts.new_game.map_name = map;
         self.random.init_game_logic_random(seed as u32);
         self.push_command(crate::common::message_types::MSG_NEW_GAME, 0, |m| {
-            m.append_integer_argument(game_mode::SKIRMISH);
-            m.append_integer_argument(1);
+            m.append_integer_argument(mode);
+            m.append_integer_argument(difficulty);
             m.append_integer_argument(0);
+            if let Some(fps) = max_fps {
+                m.append_integer_argument(fps);
+            }
         });
-        Ok(())
     }
 
     /// The files of a map's folder (`Maps\<name>\`: the map, its `map.ini`, `map.str`, `solo.ini`) put on the World's

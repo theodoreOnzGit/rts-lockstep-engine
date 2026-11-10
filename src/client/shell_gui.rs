@@ -8,7 +8,10 @@
 //     MainMenuUpdate, MainMenuShutdown; #78: SaveLoadMenuSystem, SinglePlayerMenuSystem, DifficultySelectSystem,
 //     SaveLoadMenuInput, SinglePlayerMenuInput, DifficultySelectInput, SaveLoadMenuInit, SaveLoadMenuFullScreenInit,
 //     SinglePlayerMenuInit, DifficultySelectInit, SaveLoadMenuUpdate, SinglePlayerMenuUpdate, SaveLoadMenuShutdown,
-//     SinglePlayerMenuShutdown)
+//     SinglePlayerMenuShutdown; #89: SkirmishGameOptionsMenuSystem, SkirmishMapSelectMenuSystem,
+//     SkirmishGameOptionsMenuInput, SkirmishMapSelectMenuInput, SkirmishGameOptionsMenuInit, SkirmishMapSelectMenuInit,
+//     SkirmishGameOptionsMenuUpdate, SkirmishMapSelectMenuUpdate, SkirmishGameOptionsMenuShutdown,
+//     SkirmishMapSelectMenuShutdown; the tooltip callbacks MapSelectorTooltip, mapListTooltipFunc)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -33,14 +36,18 @@
 //! - The window manager keeps the names (a callback of the game's own is [`SystemFunc::Host`]); [`ShellGui`] maps
 //!   them to the translated functions when they are called.
 //! - A name this translation does not have yet (~~`SaveLoadMenuInit`,~~ `OptionsMenuInit`,
-//!   `SkirmishGameOptionsMenuSystem`, ... every screen but the main menu and the message boxes) is recorded in
+//!   ~~`SkirmishGameOptionsMenuSystem`,~~ ... every screen but the main menu and the message boxes) is recorded in
 //!   [`ShellGui::untranslated`] and does nothing: the screen loads and shows its windows, but its buttons do nothing
 //!   and its shutdown never completes (`Shell::popImmediate` still takes it off). Upstream's lexicon would have the
 //!   function. **Corrected 2026-11-10 (#78):** the save/load screen (`crate::client::save_load_menu`: the full screen
 //!   and the popup), the single player menu (`crate::client::single_player_menu`) and the difficulty popup
 //!   (`crate::client::difficulty_select`) are translated and dispatched here; the runInit user data the lexicon passes
 //!   them is `NULL`, as every caller in the release passes. The save directory is the owner's
-//!   ([`ShellGui::save_files`]).
+//!   ([`ShellGui::save_files`]). **Corrected 2026-11-10 (#89):** the skirmish game-options screen
+//!   (`crate::client::skirmish_game_options`) and its map picker (`crate::client::skirmish_map_select`) are translated
+//!   and dispatched here, with their two tooltips (`MapSelectorTooltip`, `mapListTooltipFunc`); a tooltip callback
+//!   that is not translated is recorded in [`ShellGui::untranslated`]. The World's data they read is the owner's copy
+//!   ([`ShellGui::skirmish_data`]); the preference files are kept in memory ([`ShellGui::prefs`]).
 //! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
 //!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
 //!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
@@ -53,7 +60,15 @@
 //!
 //! [`SystemFunc::Host`]: crate::client::window_manager::SystemFunc::Host
 
+use std::collections::BTreeMap;
+
 use crate::client::difficulty_select::{self as ds, DifficultyHost, DifficultySelect};
+use crate::client::gui_util::{GuiUtilHost, SkirmishData};
+use crate::client::map_util::MapUtilHost;
+use crate::client::skirmish_game_options::{self as sgo, SkirmishGameOptions, SkirmishHost};
+use crate::client::skirmish_map_select::{self as smsm, SkirmishMapSelect};
+use crate::common::game_info::GameInfo;
+use crate::common::map_cache::MapCache;
 use crate::client::main_menu::{self, MainMenu, MenuHost};
 use crate::client::message_box;
 use crate::client::save_load_menu::{self as slm, SaveLoadHost, SaveLoadMenu};
@@ -96,6 +111,19 @@ pub struct ShellGui<W> {
     /// (#78) `TheNameKeyGenerator`: the table the reader gives the windows their keys from, and the callbacks ask
     /// (a clone of the host shares it, as the one global generator).
     pub keys: NameKeys,
+    /// (#89) SkirmishGameOptionsMenu.cpp's statics, `TheSkirmishGameInfo` among them.
+    pub skirmish: SkirmishGameOptions,
+    /// (#89) The World's data the skirmish screens read, as the owner copied it (empty until it does: no maps).
+    pub skirmish_data: SkirmishData,
+    /// (#89) SkirmishMapSelectMenu.cpp's statics.
+    pub map_select: SkirmishMapSelect,
+    /// (#89) The preference files (`Skirmish.ini`, `Network.ini`) by leaf name, in memory: `UserPreferences::load`
+    /// reads them, `write` replaces them (the files themselves are not read or written).
+    pub prefs: BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Vec<u8>>>,
+    /// (#89) The map names a map list's item data stands for (item data `n` is entry `n - 1`).
+    pub map_list_names: Vec<Vec<u8>>,
+    /// (#89) `SkirmishBattleHonors::getWins()` (the stats file is not read: 0 unless the owner sets it).
+    pub skirmish_wins: i32,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -120,6 +148,12 @@ impl<W: WndFiles> ShellGui<W> {
             difficulty: DifficultySelect::default(),
             campaign_difficulty_pref: None,
             keys: NameKeys::default(),
+            skirmish: SkirmishGameOptions::default(),
+            skirmish_data: SkirmishData::default(),
+            map_select: SkirmishMapSelect::default(),
+            prefs: BTreeMap::new(),
+            map_list_names: Vec::new(),
+            skirmish_wins: 0,
         }
     }
 
@@ -138,6 +172,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"SaveLoadMenuSystem" => slm::save_load_menu_system(wm, self, win, msg, d1, d2),
             b"SinglePlayerMenuSystem" => spm::single_player_menu_system(wm, self, win, msg, d1, d2),
             b"DifficultySelectSystem" => ds::difficulty_select_system(wm, self, win, msg, d1, d2),
+            b"SkirmishGameOptionsMenuSystem" => sgo::skirmish_game_options_menu_system(wm, self, win, msg, d1, d2),
+            b"SkirmishMapSelectMenuSystem" => smsm::skirmish_map_select_menu_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -150,6 +186,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"SaveLoadMenuInput" => slm::save_load_menu_input(wm, self, win, msg, d1, d2),
             b"SinglePlayerMenuInput" => spm::single_player_menu_input(wm, self, win, msg, d1, d2),
             b"DifficultySelectInput" => ds::difficulty_select_input(wm, self, win, msg, d1, d2),
+            b"SkirmishGameOptionsMenuInput" => sgo::skirmish_game_options_menu_input(wm, self, win, msg, d1, d2),
+            b"SkirmishMapSelectMenuInput" => smsm::skirmish_map_select_menu_input(wm, self, win, msg, d1, d2),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -160,6 +198,18 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
     }
     fn layout(&mut self, wm: &mut GameWindowManager, func: &[u8], layout: usize) {
         self.layout_callback(wm, func, layout, None);
+    }
+    fn tooltip(&mut self, wm: &mut GameWindowManager, func: &[u8], win: WinId, mouse: u32) {
+        match func {
+            // (#89)
+            b"MapSelectorTooltip" => sgo::map_selector_tooltip(wm, self, win, mouse),
+            b"mapListTooltipFunc" => smsm::map_list_tooltip_func(wm, self, win, mouse),
+            _ => {
+                if !self.untranslated.iter().any(|f| f == func) {
+                    self.untranslated.push(func.to_vec());
+                }
+            }
+        }
     }
     fn add_audio_event(&mut self, name: &[u8]) {
         self.audio.push(name.to_vec());
@@ -199,6 +249,13 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"SinglePlayerMenuUpdate" => spm::single_player_menu_update(wm, self, layout),
             b"SinglePlayerMenuShutdown" => spm::single_player_menu_shutdown(wm, self, layout, user),
             b"DifficultySelectInit" => ds::difficulty_select_init(wm, self, layout),
+            // (#89)
+            b"SkirmishGameOptionsMenuInit" => sgo::skirmish_game_options_menu_init(wm, self, layout),
+            b"SkirmishGameOptionsMenuUpdate" => sgo::skirmish_game_options_menu_update(wm, self, layout),
+            b"SkirmishGameOptionsMenuShutdown" => sgo::skirmish_game_options_menu_shutdown(wm, self, layout, user),
+            b"SkirmishMapSelectMenuInit" => smsm::skirmish_map_select_menu_init(wm, self, layout),
+            b"SkirmishMapSelectMenuUpdate" => smsm::skirmish_map_select_menu_update(wm, self, layout),
+            b"SkirmishMapSelectMenuShutdown" => smsm::skirmish_map_select_menu_shutdown(wm, self, layout),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -270,6 +327,83 @@ impl<W: WndFiles> DifficultyHost for ShellGui<W> {
     }
     fn campaign_difficulty_pref(&self) -> Option<i32> {
         self.campaign_difficulty_pref
+    }
+}
+
+impl<W: WndFiles> MapUtilHost for ShellGui<W> {
+    fn map_cache(&self) -> Option<&MapCache> {
+        Some(&self.skirmish_data.map_cache)
+    }
+    fn update_map_cache(&mut self) {
+        // (#89) the cache as the owner copied it, which the World built at its start (`GameEngine::init`); the user's
+        // map directory is not scanned again
+    }
+    fn user_data_path(&self) -> Vec<u8> {
+        self.skirmish_data.user_data_path.clone()
+    }
+    fn find_mapped_image(&self, name: &[u8]) -> Option<Vec<u8>> {
+        self.files.as_ref().and_then(|f| f.files.find_image(name))
+    }
+    fn map_list_item(&mut self, name: &[u8]) -> u32 {
+        let i = match self.map_list_names.iter().position(|n| n == name) {
+            Some(i) => i,
+            None => {
+                self.map_list_names.push(name.to_vec());
+                self.map_list_names.len() - 1
+            }
+        };
+        i as u32 + 1
+    }
+    fn map_list_name(&self, data: u32) -> Option<Vec<u8>> {
+        (data as usize).checked_sub(1).and_then(|i| self.map_list_names.get(i)).cloned()
+    }
+    fn real_map_path_to_portable(&self, path: &[u8]) -> Vec<u8> {
+        self.skirmish_data.real_map_path_to_portable(path)
+    }
+    fn map_preview_from_file(&mut self, _tga: &[u8], _name: &[u8], _temp_name: &[u8]) -> Option<Vec<u8>> {
+        // (#89) `copyFromBigToDir` and the new `Image`: not translated
+        self.untranslated.push(b"getMapPreviewImage: copyFromBigToDir".to_vec());
+        None
+    }
+}
+
+impl<W: WndFiles> GuiUtilHost for ShellGui<W> {
+    fn win_initialized(&mut self) -> &mut bool {
+        &mut self.skirmish.win_initialized
+    }
+    fn util_game(&self) -> Option<&GameInfo> {
+        self.skirmish.game.as_ref()
+    }
+    fn util_data(&self) -> &SkirmishData {
+        &self.skirmish_data
+    }
+}
+
+impl<W: WndFiles> SkirmishHost for ShellGui<W> {
+    fn skirmish(&mut self) -> &mut SkirmishGameOptions {
+        &mut self.skirmish
+    }
+    fn skirmish_split(&mut self) -> (&mut SkirmishGameOptions, &mut SkirmishData) {
+        (&mut self.skirmish, &mut self.skirmish_data)
+    }
+    fn map_select(&mut self) -> &mut SkirmishMapSelect {
+        &mut self.map_select
+    }
+    fn prefs_load(&mut self, leaf: &[u8]) -> BTreeMap<Vec<u8>, Vec<u8>> {
+        self.prefs.get(leaf).cloned().unwrap_or_default()
+    }
+    fn prefs_write(&mut self, leaf: &[u8], prefs: &BTreeMap<Vec<u8>, Vec<u8>>) -> bool {
+        self.prefs.insert(leaf.to_vec(), prefs.clone());
+        true
+    }
+    fn skirmish_wins(&self) -> i32 {
+        self.skirmish_wins
+    }
+    fn clear_battle_honors(&mut self) {
+        self.skirmish_wins = 0;
+    }
+    fn untranslated(&mut self, what: &[u8]) {
+        self.untranslated.push(what.to_vec());
     }
 }
 
@@ -366,6 +500,8 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             "PUSHBUTTON" => "PUSHBUTTON+MOUSETRACK",
             "RADIOBUTTON" => "RADIOBUTTON+MOUSETRACK",
             "SCROLLLISTBOX" => "SCROLLLISTBOX+MOUSETRACK",
+            // (#89: a check box takes a click only once the mouse has entered it, which needs MOUSETRACK)
+            "CHECKBOX" => "CHECKBOX+MOUSETRACK",
             k => k,
         };
         let text = if matches!(kind, "PUSHBUTTON" | "RADIOBUTTON") { format!("    TEXT = \"GUI:{name}\";\n") } else { String::new() };
@@ -463,6 +599,104 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         layout_file("DifficultySelectInit", "[None]", "[None]", &parent)
     }
 
+    /// (#89) A combo box `<file>:<name>` over `r`, not editable, 16 characters, 5 rows shown.
+    fn combo(file: &str, name: &str, r: (i32, i32, i32, i32)) -> String {
+        win(file, "COMBOBOX", name, r, false, "    COMBOBOXDATA = ISEDITABLE: 0, MAXCHARS: 16, MAXDISPLAY: 5, ASCIIONLY: 0, LETTERSANDNUMBERS: 0;\n", "")
+    }
+
+    /// (#89) A static text `<file>:<name>` over `r`.
+    fn static_text(file: &str, name: &str, r: (i32, i32, i32, i32)) -> String {
+        win(file, "STATICTEXT", name, r, false, "    STATICTEXTDATA = CENTERED: 0;\n", "")
+    }
+
+    /// (#89) The eight start-spot buttons `<file>:ButtonMapStartPosition<i>`, 16x16, in a row from (x, y), 20 apart.
+    fn start_spots(file: &str, x: i32, y: i32) -> String {
+        (0..8).map(|i| win(file, "PUSHBUTTON", &format!("ButtonMapStartPosition{i}"), (x + 20 * i, y, x + 20 * i + 16, y + 16), false, "", "")).collect()
+    }
+
+    /// (#89) A synthetic `Menus/SkirmishGameOptionsMenu.wnd` (no EA file), with the windows SkirmishGameOptionsMenu.cpp
+    /// and SkirmishMapSelectMenu.cpp find by name, under `SkirmishGameOptionsMenuParent` (the system and input
+    /// callbacks): the player's name entry at (20, 40); the seven computer slots' player combo boxes (x 20, from y 95,
+    /// 25 apart; slot `i` at y 70 + 25 i); each slot's colour (x 160), faction (x 270) and team (x 380) combo boxes from
+    /// y 40; their four labels at y 20; `MapWindow` at (500, 40)-(700, 240) holding the eight start-spot buttons (a row
+    /// at its top left, passing their presses up); the map's name `TextEntryMapDisplay` and `StaticTextMapPreview`; *Select Map* at (500, 280),
+    /// *Back* (20, 560), *Reset* (300, 560), *Start* (600, 560); the speed slider (15 to 61) at (20, 300) with its
+    /// text; the superweapon box at (20, 330); the starting money's combo box at (20, 360); `SubParent`.
+    pub fn skirmish_game_options_wnd() -> Vec<u8> {
+        let f = "SkirmishGameOptionsMenu.wnd";
+        let mut c = String::new();
+        c += &win(f, "ENTRYFIELD", "TextEntryPlayerName", (20, 40, 150, 60), false, "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n", "");
+        for i in 0..8 {
+            let y = 40 + 25 * i;
+            if i != 0 {
+                c += &combo(f, &format!("ComboBoxPlayer{i}"), (20, 30 + y, 150, 50 + y));
+            }
+            c += &combo(f, &format!("ComboBoxColor{i}"), (160, y, 260, y + 20));
+            c += &combo(f, &format!("ComboBoxPlayerTemplate{i}"), (270, y, 370, y + 20));
+            c += &combo(f, &format!("ComboBoxTeam{i}"), (380, y, 460, y + 20));
+        }
+        for (n, x) in [("StaticTextPlayers", 20), ("StaticTextColor", 160), ("StaticTextFaction", 270), ("StaticTextTeam", 380)] {
+            c += &static_text(f, n, (x, 20, x + 90, 38));
+        }
+        c += &frame(f, "MapWindow", (500, 40, 700, 240), false, &start_spots(f, 500, 40));
+        c += &static_text(f, "TextEntryMapDisplay", (500, 250, 700, 270));
+        c += &static_text(f, "StaticTextMapPreview", (500, 20, 700, 38));
+        c += &buttons(f, 500, 280, &["ButtonSelectMap"]);
+        c += &buttons(f, 20, 560, &["ButtonBack"]);
+        c += &buttons(f, 300, 560, &["ButtonReset"]);
+        c += &buttons(f, 600, 560, &["ButtonStart"]);
+        c += &win(f, "HORZSLIDER", "SliderGameSpeed", (20, 300, 220, 320), false, "    SLIDERDATA = MINVALUE: 15, MAXVALUE: 61;\n", "");
+        c += &static_text(f, "StaticTextGameSpeed", (230, 300, 270, 320));
+        c += &win(f, "CHECKBOX", "CheckboxLimitSuperweapons", (20, 330, 200, 350), false, "", "");
+        c += &combo(f, "ComboBoxStartingCash", (20, 360, 200, 380));
+        c += &win(f, "USER", "SubParent", (0, 400, 10, 410), false, "", "");
+        let parent = win(
+            f,
+            "USER",
+            "SkirmishGameOptionsMenuParent",
+            (0, 0, 800, 600),
+            false,
+            "    SYSTEMCALLBACK = \"SkirmishGameOptionsMenuSystem\";\n    INPUTCALLBACK = \"SkirmishGameOptionsMenuInput\";\n",
+            &c,
+        );
+        layout_file("SkirmishGameOptionsMenuInit", "SkirmishGameOptionsMenuUpdate", "SkirmishGameOptionsMenuShutdown", &parent)
+    }
+
+    /// (#89) A synthetic `Menus/SkirmishMapSelectMenu.wnd` (no EA file): the parent under the name the code looks for
+    /// (`SkrimishMapSelectMenuParent`, misspelt) at (100, 50)-(700, 550) with the system and input callbacks; the map
+    /// list (two columns, 10/90 %) at (110, 60)-(400, 400); the two radio buttons (group 1) at x 410 from y 60;
+    /// `WinMapPreview` at (410, 120)-(610, 320) holding the eight start-spot buttons; *OK* at (410, 500) and *Back*
+    /// at (520, 500).
+    pub fn skirmish_map_select_wnd() -> Vec<u8> {
+        let f = "SkirmishMapSelectMenu.wnd";
+        let mut c = String::new();
+        c += &win(
+            f,
+            "SCROLLLISTBOX",
+            "ListboxMap",
+            (110, 60, 400, 400),
+            false,
+            "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 2, COLUMNSWIDTH%: 10, COLUMNSWIDTH%: 90, FORCESELECT: 0;\n",
+            "",
+        );
+        for (n, y) in [("RadioButtonSystemMaps", 60), ("RadioButtonUserMaps", 85)] {
+            c += &win(f, "RADIOBUTTON", n, (410, y, 500, y + 20), false, "    RADIOBUTTONDATA = GROUP: 1;\n", "");
+        }
+        c += &win(f, "USER", "WinMapPreview", (410, 120, 610, 320), false, "", &start_spots(f, 410, 120));
+        c += &buttons(f, 410, 500, &["ButtonOK"]);
+        c += &buttons(f, 520, 500, &["ButtonBack"]);
+        let parent = win(
+            f,
+            "USER",
+            "SkrimishMapSelectMenuParent",
+            (100, 50, 700, 550),
+            false,
+            "    SYSTEMCALLBACK = \"SkirmishMapSelectMenuSystem\";\n    INPUTCALLBACK = \"SkirmishMapSelectMenuInput\";\n",
+            &c,
+        );
+        layout_file("SkirmishMapSelectMenuInit", "SkirmishMapSelectMenuUpdate", "SkirmishMapSelectMenuShutdown", &parent)
+    }
+
     /// The panels of [`main_menu_wnd`] and their buttons.
     const PANELS: [(&str, &[&str]); 5] = [
         ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
@@ -525,6 +759,8 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         }
         // (#78) the save/load screen's fade (`SaveLoadMenuFade`), on its parent, not fire-once (its shutdown reverses it)
         s += "WindowTransition SaveLoadMenuFade\n  Window\n    WinName = SaveLoad.wnd:SaveLoadMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
+        // (#89) the skirmish screen's fade, on its parent, not fire-once (its shutdown reverses it)
+        s += "WindowTransition SkirmishGameOptionsMenuFade\n  Window\n    WinName = SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         for (g, w) in [("US", "US"), ("GLA", "GLA"), ("China", "China"), ("Training", "Training"), ("Skirmish", "Skirmish")] {
             s += &format!("WindowTransition MainMenuFaction{g}\n  Window\n    WinName = MainMenu.wnd:WinFaction{w}\n    Style = WINSCALEUP\n  End\nEnd\n");
         }
@@ -543,8 +779,11 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             ("PopupSaveLoad", save_load_wnd(true)),
             ("SinglePlayerMenu", single_player_menu_wnd()),
             ("DifficultySelect", difficulty_select_wnd()),
+            // (#89)
+            ("SkirmishGameOptionsMenu", skirmish_game_options_wnd()),
+            ("SkirmishMapSelectMenu", skirmish_map_select_wnd()),
         ];
-        for n in ["BlankWindow", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"] {
+        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()

@@ -124,6 +124,57 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#89 part 1 (2026-11-10, GitHub #89): the skirmish game options screen and its map picker.**
+- **Translated** (engine crate, plain Rust):
+  - `client::skirmish_game_options` (SkirmishGameOptionsMenu.cpp, whole but `populateSkirmishBattleHonors`): the
+    statics and `TheSkirmishGameInfo`, `SkirmishPreferences` (every method) over translated `UserPreferences` readers,
+    `getNextSelectablePlayer`, `setFPSTextBox`, `reallyDoStart`, the CD check's `CheckForCDAtGameStart` /
+    `cancelStartBecauseOfNoCD`, `startPressed`, `MapSelectorTooltip`, `positionStartSpotControls`,
+    `positionAdditionalImages`, both `positionStartSpots`, `updateMapStartSpots`, the seven `handle*` functions,
+    `InitSkirmishGameGadgets`, `skirmishUpdateSlotList`, `skirmishPositionStartSpots`, `initSkirmishGameOptions`,
+    `updateSkirmishGameOptions`, and the screen's init, shutdown (both paths), update, input and system callbacks.
+  - `client::skirmish_map_select` (SkirmishMapSelectMenu.cpp, whole): `NullifyControls`, `mapListTooltipFunc`,
+    `showSkirmishGameOptionsUnderlyingGUIElements`, init, shutdown, update, input, system.
+  - `client::gui_util` (GUIUtil.cpp's slot-list functions: `EnableSlotListUpdates`, `EnableAcceptControls`,
+    `ShowUnderlyingGUIElements`, the colour / faction / team / starting-money combo boxes, `UpdateSlotList`) and
+    `SkirmishData`, the client's read-only copy of the World's map cache, multiplayer settings, player templates,
+    challenge generals, global data and text (the shell's `GameInfoHost`).
+  - `client::map_util` (MapUtil.cpp's GUI half: `populateMapListboxNoReset`, `populateMapListbox`, `isValidMap`,
+    `getDefaultMap`, `getDefaultOfficialMap`, `isOfficialMap`, `WouldMapTransfer`, `getMapPreviewImage`'s lookup,
+    `findDrawPositions`); `common::map_cache` gained QuotedPrintable.cpp's Unicode pair; `gadget::button_set_text`;
+    `UserData::MapMetaData`; `ShellRequest::StartSkirmish`; `World::start_skirmish_game` (the existing
+    `start_skirmish_slots` now shares its tail, `launch_skirmish`, unchanged for the gate) and
+    `MissionChoice::Skirmish`.
+  - `client::shell_gui`: the lexicon entries for the ten callbacks and two tooltips; `synthetic::
+    skirmish_game_options_wnd`, `skirmish_map_select_wnd` and the `SkirmishGameOptionsMenuFade` group (no EA file).
+- **Client:** the shell gets `SkirmishData` from the install's World when it loads (`ShellUi::set_skirmish_data`, with
+  the file system's `Maps\` files); `act` turns `StartSkirmish` into the campaign panel's flow
+  (`ShellAction::SkirmishChosen`: a copy of the base World waits for the map's folder, then `start_skirmish_game`);
+  `Flow::poll` labels it a skirmish and opens no score screen at its end. `SkirmishMapSelectMenu` is read with the
+  shell's files.
+- **Defect found and fixed (issue drafted):** the map list passed `overwrite = FALSE` to `GadgetListBoxAddEntryText`,
+  whose default is `TRUE`: with two columns each name went into a row of its own (caught by the picker's unit test).
+  **Upstream defects kept and recorded** (issue drafted): the starting-money combo box's and `startPressed`'s reads of
+  an end iterator, the start spots' overlap check mixing screen and window coordinates, a dead `prevMMD`, a fast Back
+  reversing a fade that holds freed windows, the empty map list's `listData[-1]`.
+- **Predictions vs results:** in each test's doc. Misses: `findDrawPositions`' hand arithmetic (73, not 72); the
+  picker shows Beta's spots after its init (the list's selection tells it, as upstream); its controls are forgotten a
+  frame later (`processDestroyList`); the load screen's labels follow the apparent start (none for an enemy computer);
+  the client's speed is 30 (a new World has no global data); and in the tests' own steps: the synthetic check box
+  lacked `MOUSETRACK`, modal message boxes swallowed clicks, the screen's fade starts two frames after the test's
+  settle, freed windows found first by name.
+- **Differential** (`tests/differential_map_list.rs`, `differential/wrap_map_list.cpp`, build.rs cuts
+  `populateMapListboxNoReset` and `populateMapListbox` verbatim): predicted 0 mismatches; three protocol misses
+  (comparing past an undefined step; the stand-in's top row ignoring the gadget's own scrolling, twice), none in the
+  translation; then 20,000 cases, 107,919 maps, 32,514 rows, **0 mismatches**. Plants 4 of 4 caught: 8901 (exact-case
+  order) 847 cases, 8902 (selection without case) 713, 8903 (red-yellow star off by one) 2,417, 8904 (`>` for `>=`)
+  358. differential_wm, differential_wnd, differential_wt and differential_save_list rerun: pass.
+- **Gaps (issue drafts):** `populateSkirmishBattleHonors` and the battle honours file; the preference files are kept in
+  memory; the preview image's copy out of the archive and its draw; the insert-disc prompt; three tooltips
+  (LobbyUtils.cpp, BattleHonors.cpp). GameSpy and LAN screens are not part of this.
+- **Gates:** lib 1112 passed (1105 before, 7 new); client 54 passed (53 before, 1 new); clippy (lib) clean (the two
+  enums carrying a `GameInfo` box it); web build ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#78 item 3 (2026-11-10, GitHub #78): the save/load screen, the single player menu and the difficulty popup.**
 - **Translated** (engine crate, plain Rust):
   - `client::save_load_menu` (PopupSaveLoad.cpp, whole; GameState.cpp's `populateSaveGameListbox`,
@@ -169,8 +220,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   (a) PASS, last CRC 0bf44067 (unchanged).
 - **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); `Options.ini`
   (`OptionPreferences`) is neither read nor written (the campaign difficulty); the date and time formats are the en-US
-  system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (the
-  skirmish map select and game options, the score screen, the challenge menu, the options menu) is not started.
+  system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (~~the
+  skirmish map select and game options,~~ the score screen, the challenge menu, the options menu) is not started.
+  **Corrected 2026-11-10 (#89):** the skirmish game options and its map picker are translated (the entry above).
 
 **#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
 - **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):
