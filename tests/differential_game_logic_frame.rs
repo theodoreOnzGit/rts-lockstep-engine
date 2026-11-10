@@ -370,6 +370,9 @@ impl GameLogicHost for Host {
     fn u_ui_deselect_drawable(&mut self, id: u32) {
         self.line(format!("ui deselect {id}"));
     }
+}
+
+impl GamePauseHost for Host {
     fn u_ui_input_enabled(&self) -> bool {
         self.flag(13)
     }

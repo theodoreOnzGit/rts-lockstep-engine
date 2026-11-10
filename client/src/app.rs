@@ -136,6 +136,10 @@ struct Game {
     /// (#78) This game's number in the session (each new game, loaded save or mission is a new one): the shell is hidden
     /// when the game under it is no longer the one it was shown over.
     serial: u64,
+    /// (#108) `setGamePaused`'s members, the mouse it sets and the drawables' clock (`syncTime`, held while paused).
+    pause: rts_lockstep_engine::client::game_pause::ClientPause,
+    /// (#108) Whether the World's game was already seen cleared (`clearGameData`), so `closeWindows` runs once.
+    cleared_seen: bool,
 }
 
 /// (#78) The next [`Game::serial`].
@@ -167,6 +171,7 @@ impl Game {
     fn from_loaded(controls: Controls, player: i32, playing: String, models: WorldDrawables<ArtDevice>) -> Self {
         let mut controls = controls;
         let cur = snapshot(controls.world());
+        let cleared_seen = controls.client.world.game_cleared.is_some();
         Game {
             controls,
             prev: cur.clone(),
@@ -202,7 +207,18 @@ impl Game {
             save_state: Default::default(),
             ambient_restore_pending: false,
             serial: GAME_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            pause: Default::default(),
+            cleared_seen,
         }
+    }
+
+    /// (#108) `TheGameLogic->setGamePaused(paused)` (the quit menu's, `pauseMusic` at its default `TRUE`): the pause
+    /// (`Game::paused`, the logic's frames not run) with its side effects on the control bar's InGameUI, the mouse and
+    /// the audio (`ClientPause::set_game_paused`, tested in the logic crate). GUI glue: the `Game` needs the app's
+    /// resources, so no test makes one.
+    fn set_game_paused(&mut self, paused: bool) {
+        let audio = self.audio.as_deref_mut().map(|s| (&mut s.audio.manager, &mut s.device));
+        self.paused = self.pause.set_game_paused(self.paused, paused, true, &mut self.controls.ui, audio);
     }
 }
 
@@ -576,8 +592,10 @@ fn sync_objects(
 ) {
     let t = if game.paused || game.error.is_some() { 1.0 } else { fixed.overstep_fraction() };
     let g = &mut *game;
-    // the draw modules' clock: the client's own (upstream's sync time), not the logic's frames
-    g.models_clock = (time.elapsed_secs_f64() * 1000.0) as u32;
+    // the draw modules' clock: the client's own (upstream's sync time), not the logic's frames; (#108) it stands still
+    // while the game is paused (`freezeTime`)
+    let paused = g.paused;
+    g.models_clock = g.pause.sync_time((time.elapsed_secs_f64() * 1000.0) as u32, paused);
     if g.error.is_none() {
         let now = g.models_clock;
         g.models.draw(g.controls.world(), now);
@@ -2525,6 +2543,14 @@ fn shell_ui(
     // for the screen's defaults
     let o = ui.client_options();
     keyboard_scroll.0 = o.keyboard_scroll;
+    // (#108) InGameUI's quit menu flag, for the translators; and the World's game cleared (`clearGameData`): the
+    // engine reset's InGameUI flags and `closeWindows`, once
+    g.controls.client.modes.quit_menu_visible = ui.quit_menu_visible();
+    let cleared = g.controls.client.world.game_cleared.is_some();
+    if cleared && !g.cleared_seen {
+        ui.clear_game_data_windows();
+    }
+    g.cleared_seen = cleared;
     g.controls.client.modes.alternate_mouse = o.alternate_mouse;
     if let Some(sound) = g.audio.as_deref() {
         ui.gui.audio_settings = sound.audio.manager.tables.settings.clone();
@@ -2656,7 +2682,8 @@ fn shell_ui(
                 crate::shell::ShellAction::SaveGame { name, description } => {
                     save_action.0 = Some(SaveCmd::Save { name, description: Some(description) });
                 }
-                crate::shell::ShellAction::SetGamePaused(p) => g.paused = p,
+                // (#108: with `setGamePaused`'s side effects)
+                crate::shell::ShellAction::SetGamePaused(p) => g.set_game_paused(p),
                 crate::shell::ShellAction::ClearGameData => {
                     let player = g.controls.client.player;
                     crate::shell::send_clear_game_data(&mut g.controls.client.world, player);

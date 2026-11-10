@@ -18,6 +18,10 @@
 **   collection, getScoreScreen), ScoreKeeper (the case's totals; calculateScore as ScoreKeeper.cpp's: 100 a unit and a
 **   building built, the money earned, 100 a unit and a building destroyed of every player but its own),
 **   AcademyStats::calculateAcademyAdvice (the case's tips, each "\n\n" and its text), TheGameLogic (the case's mode).
+** - The stand-ins' globals (TheMappedImageCollection, TheNameKeyGenerator, TheWindowManager, TheGameText,
+**   ThePlayerList, TheGameLogic) are `static`, local to this file. **Corrected 2026-11-10 (#104):** they were external
+**   definitions, which clashed with wrap_ini.cpp's at link time (duplicate TheGameText, TheMappedImageCollection,
+**   TheNameKeyGenerator) whenever a test linked both, and stopped tests/differential_recorder.rs from linking.
 **
 ** Entry point (extern "C"):
 **   ref_score_grid_run(in, out, cap)  runs one case (tests/differential_score_grid.rs's text) and writes the dump; its
@@ -81,7 +85,7 @@ public:
 	}
 };
 static SgImageCollection g_collection;
-SgImageCollection *TheMappedImageCollection = &g_collection;
+static SgImageCollection *TheMappedImageCollection = &g_collection;
 
 class GameWindow
 {
@@ -115,7 +119,7 @@ public:
 	}
 };
 static SgNameKeyGenerator g_keys;
-SgNameKeyGenerator *TheNameKeyGenerator = &g_keys;
+static SgNameKeyGenerator *TheNameKeyGenerator = &g_keys;
 
 class SgWindowManager
 {
@@ -128,7 +132,7 @@ public:
 	}
 };
 static SgWindowManager g_wm;
-SgWindowManager *TheWindowManager = &g_wm;
+static SgWindowManager *TheWindowManager = &g_wm;
 
 void GadgetStaticTextSetText(GameWindow *w, UnicodeString text) { w->text = narrow(text); }
 Int GadgetListBoxAddEntryText(GameWindow *lb, UnicodeString text, Color, Int)
@@ -144,7 +148,7 @@ public:
 	UnicodeString fetch(const char *label) { return wide(std::string("T:") + label); }
 };
 static SgGameText g_text;
-SgGameText *TheGameText = &g_text;
+static SgGameText *TheGameText = &g_text;
 
 static Color GameSpyColor[1] = { (Color)0xFFFFFFFF };
 
@@ -249,7 +253,7 @@ public:
 	}
 };
 static SgPlayerList g_players;
-SgPlayerList *ThePlayerList = &g_players;
+static SgPlayerList *ThePlayerList = &g_players;
 
 Relationship Player::getRelationship(const Team *t) const
 {
@@ -267,7 +271,7 @@ public:
 	Bool isInSinglePlayerGame() const { return g_mode == 0; }
 };
 static SgGameLogic g_logic;
-SgGameLogic *TheGameLogic = &g_logic;
+static SgGameLogic *TheGameLogic = &g_logic;
 
 /* the file's statics the cut reads */
 static GameWindow *parent = NULL;

@@ -83,8 +83,12 @@
 //!   (`setGamePaused`), [`ShellRequest::RestartMission`] (`restartMissionMenu`'s engine half). The owner sends the
 //!   messages through the logic's own message path.
 //! - `TheInGameUI`'s `m_isQuitMenuVisible` and `m_clientQuiet` are [`QuitMenu::quit_menu_visible`] and
-//!   [`QuitMenu::client_quiet`].
-//! - `TheMouse->setCursor(ARROW)`, `HideDiplomacy`, `HideInGameChat` and `TheControlBar->hidePurchaseScience` are the
+//!   [`QuitMenu::client_quiet`]. (#108) The client feeds the first to its translators' `isQuitMenuVisible`, and
+//!   clears both as `InGameUI::reset` does when it sees the World's game cleared ([`clear_game_data_windows`]).
+//! - (#108) `GameLogic::closeWindows` is the client's [`close_windows`], called when it sees the World's game cleared
+//!   (`clearGameData`). Its call from `ScriptActions::doQuickVictory` (a debug script action) is not reached.
+//! - `TheMouse->setCursor(ARROW)`, `HideDiplomacy`, `HideInGameChat`, `TheControlBar->hidePurchaseScience` (and, from
+//!   `closeWindows`, `ResetDiplomacy`, `ResetInGameChat` and `hideSpecialPowerShortcut`) are the
 //!   host's ([`QuitMenuHost::hide_in_game_windows`]): the diplomacy and chat windows are not translated, and the
 //!   control bar is not in the shell's window manager.
 //!
@@ -216,7 +220,8 @@ pub trait QuitMenuHost: SaveLoadHost + OptionsHost {
     /// QuitMenu.cpp's statics.
     fn quit_menu(&mut self) -> &mut QuitMenu;
     /// `TheMouse->setCursor(Mouse::ARROW)`, `HideDiplomacy()`, `HideInGameChat()`, `TheControlBar->hidePurchaseScience()`
-    /// (each named as `what`): outside the shell's windows.
+    /// (each named as `what`; #108: also `closeWindows`' `ResetDiplomacy()`, `ResetInGameChat()` and
+    /// `TheControlBar->hideSpecialPowerShortcut()`): outside the shell's windows.
     fn hide_in_game_windows(&mut self, _what: &'static str) {}
 }
 
@@ -347,6 +352,33 @@ pub fn hide_quit_menu<H: QuitMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     if !h.quit_menu().game.is_in_multiplayer_game() {
         h.request(ShellRequest::SetGamePaused(false));
     }
+}
+
+/// `GameLogic::closeWindows()` (GameLogicDispatch.cpp, #108), the client's windows: `HideDiplomacy`,
+/// `ResetDiplomacy`, `HideInGameChat`, `ResetInGameChat`, `TheControlBar->hidePurchaseScience` and
+/// `hideSpecialPowerShortcut` (the host's: recorded), `HideQuitMenu`, then the options screen's *Back* pressed when
+/// `OptionsMenu.wnd:OptionsMenuParent` exists (`GBM_SELECTED` with the *Back* button and its id).
+pub fn close_windows<H: QuitMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
+    for w in ["HideDiplomacy", "ResetDiplomacy", "HideInGameChat", "ResetInGameChat", "TheControlBar->hidePurchaseScience", "TheControlBar->hideSpecialPowerShortcut"] {
+        h.hide_in_game_windows(w);
+    }
+    hide_quit_menu(wm, h);
+    let button_id = h.name_to_key(b"OptionsMenu.wnd:ButtonBack") as i32;
+    let button = wm.win_get_window_from_id(None, button_id);
+    let parent_id = h.name_to_key(b"OptionsMenu.wnd:OptionsMenuParent") as i32;
+    if let Some(window) = wm.win_get_window_from_id(None, parent_id) {
+        wm.win_send_system_msg(h, Some(window), ggm::GBM_SELECTED, win_data(button), button_id as WindowMsgData);
+    }
+}
+
+/// #108: what `GameLogic::clearGameData` does to the quit menu after the logic's half: `TheGameEngine->reset()`'s
+/// `InGameUI::reset` (`m_isQuitMenuVisible` and `m_clientQuiet` cleared, [`QuitMenu::quit_menu_visible`] and
+/// [`QuitMenu::client_quiet`]), then [`close_windows`]. The client calls it when it sees the World's game cleared.
+pub fn clear_game_data_windows<H: QuitMenuHost>(wm: &mut GameWindowManager, h: &mut H) {
+    let q = h.quit_menu();
+    q.quit_menu_visible = false;
+    q.client_quiet = false;
+    close_windows(wm, h);
 }
 
 /// `layout->getFirstWindow()`.
@@ -736,6 +768,49 @@ mod tests {
         assert_eq!(h.requests, [ShellRequest::SetGamePaused(false)]);
         assert!(!h.quit_menu.quit_menu_visible && hidden(&wm, last(&wm, "QuitMenu.wnd", "QuitMenuParent")));
         let _ = key::ESC;
+        assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
+    }
+
+    /// #108: `closeWindows` and `clearGameData`'s reset of InGameUI's flags. Predicted from GameLogicDispatch.cpp and
+    /// InGameUI.cpp before the run:
+    /// - the menu shown, then the game cleared: hidden, `[SetGamePaused(false)]`, both flags cleared, the six windows
+    ///   outside the shell recorded;
+    /// - the options screen up (opened from the menu), then the game cleared: its *Back* pressed (the layout destroyed);
+    /// - nothing shown: nothing requested, the flags cleared (after *Exit*, `quit_menu_visible` was left true);
+    /// - nothing undefined.
+    ///
+    /// **Result (2026-11-10):** as predicted.
+    #[test]
+    fn the_games_clear_closes_the_windows() {
+        let (mut wm, mut h) = in_game(game_mode::SINGLE_PLAYER);
+        let f = "QuitMenu.wnd";
+        escape(&mut wm, &mut h);
+        h.requests.clear();
+        clear_game_data_windows(&mut wm, &mut h);
+        settle(&mut wm, &mut h);
+        assert_eq!(h.requests, [ShellRequest::SetGamePaused(false)]);
+        assert!(!h.quit_menu.is_visible && !h.quit_menu.quit_menu_visible && !h.quit_menu.client_quiet);
+        assert!(hidden(&wm, last(&wm, f, "QuitMenuParent")));
+        for w in ["HideDiplomacy", "ResetDiplomacy", "HideInGameChat", "ResetInGameChat", "TheControlBar->hidePurchaseScience", "TheControlBar->hideSpecialPowerShortcut"] {
+            assert!(h.untranslated.iter().any(|f| f == w.as_bytes()), "{w}");
+        }
+        // the options screen up
+        escape(&mut wm, &mut h);
+        press(&mut wm, &mut h, f, "ButtonOptions");
+        assert!(h.shell.options_layout.is_some());
+        h.requests.clear();
+        close_windows(&mut wm, &mut h);
+        assert!(h.shell.options_layout.is_none(), "its Back destroys it");
+        assert_eq!(h.requests, [ShellRequest::SetGamePaused(false)]);
+        // after Exit: the flag destroyQuitMenu leaves, cleared by the reset
+        escape(&mut wm, &mut h);
+        press(&mut wm, &mut h, f, "ButtonExit");
+        press(&mut wm, &mut h, "QuitMessageBox.wnd", "ButtonYes");
+        assert!(h.quit_menu.quit_menu_visible && h.quit_menu.client_quiet);
+        h.requests.clear();
+        clear_game_data_windows(&mut wm, &mut h);
+        assert!(h.requests.is_empty(), "{:?}", h.requests);
+        assert!(!h.quit_menu.quit_menu_visible && !h.quit_menu.client_quiet);
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
     }
 }

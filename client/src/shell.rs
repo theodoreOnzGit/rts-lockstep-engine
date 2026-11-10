@@ -63,7 +63,11 @@
 //!   with what it reads of the World: [`quit_menu_game`]), drawn and given the pointer and keyboard by this window
 //!   manager while it or a screen it opened is up ([`ShellUi::in_game_menus_shown`]). Its popup's save is the saves
 //!   panel's save under the popup's name and description ([`ShellAction::SaveGame`]); its pause is the app's (the logic's
-//!   frames not run: [`ShellAction::SetGamePaused`]); its *Exit* is `MSG_CLEAR_GAME_DATA` sent on the World's command
+//!   frames not run: [`ShellAction::SetGamePaused`]; **(#108)** with `setGamePaused`'s side effects: the InGameUI's
+//!   input disabled and restored, the audio paused and resumed, the mouse's state, and the drawables' time held,
+//!   `rts_lockstep_engine::client::game_pause`); InGameUI's quit menu flag reaches the translators
+//!   ([`ShellUi::quit_menu_visible`]), and the World's game cleared runs `closeWindows`
+//!   ([`ShellUi::clear_game_data_windows`]); its *Exit* is `MSG_CLEAR_GAME_DATA` sent on the World's command
 //!   list ([`ShellAction::ClearGameData`]), whose `clearGameData` opens the score screen as a mission's end does. Its
 //!   *Restart* ~~is a gap ([`ShellRequest::RestartMission`] is answered with a [`ShellAction::None`])~~ **Corrected
 //!   2026-11-10 (#110):** goes to the flow with the game being played ([`ShellAction::RestartMission`],
@@ -500,6 +504,20 @@ impl ShellUi {
     /// it is shown, the game unpaused outside a multiplayer game (the action [`ShellAction::SetGamePaused`]).
     pub fn hide_quit_menu(&mut self) {
         rts_lockstep_engine::client::quit_menu::hide_quit_menu(&mut self.wm, &mut self.gui);
+    }
+
+    /// (#108) `TheInGameUI->isQuitMenuVisible()`: the flag the quit menu keeps, which the app feeds to the translators
+    /// (`WorldClient`'s `ClientModes::quit_menu_visible`).
+    pub fn quit_menu_visible(&self) -> bool {
+        self.gui.quit_menu.quit_menu_visible
+    }
+
+    /// (#108) What `GameLogic::clearGameData` does to the in-game windows, the client's half: `InGameUI::reset`'s two
+    /// quit-menu flags cleared, then `closeWindows` (`HideQuitMenu`, the options screen's *Back*):
+    /// `rts_lockstep_engine::client::quit_menu::clear_game_data_windows`. The app calls it when it sees the World's game
+    /// cleared.
+    pub fn clear_game_data_windows(&mut self) {
+        rts_lockstep_engine::client::quit_menu::clear_game_data_windows(&mut self.wm, &mut self.gui);
     }
 
     /// (#109) The control bar's quit menu call ([`crate::ui::QuitMenuCall`], ControlBarCallback.cpp's `ToggleQuitMenu`
@@ -1025,6 +1043,9 @@ mod tests {
     ///   score screen's copy made (`score_screen_game_over`);
     /// - the World is only read until the message: its CRC before and after the menu's toggles is the same.
     ///
+    /// - (#108) the quit menu's flag is set while it is shown and still set after *Exit* (`destroyQuitMenu` leaves it);
+    ///   [`ShellUi::clear_game_data_windows`] once the World's game is cleared clears it and asks for no action.
+    ///
     /// **Result (2026-11-10):** one miss, then as predicted. The first run's Escape did nothing: the demo World's
     /// `isGameEnding` is true (its script engine was never given `newMap`: the end-game timer is the constructor's 0),
     /// and `ToggleQuitMenu` returns for an ending game. The test now asserts that and opens the menu with the game not
@@ -1054,7 +1075,7 @@ mod tests {
         settle(&mut ui, &mut now);
         let (base, mut flow) = (World::new(), Flow::default());
         assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
-        assert!(ui.takes_input());
+        assert!(ui.takes_input() && ui.quit_menu_visible());
         assert!(ui.draw().iter().any(|q| q.text.as_deref() == Some("Save/Load")));
         click_named(&mut ui, "QuitMenu.wnd", "ButtonSaveLoad");
         settle(&mut ui, &mut now);
@@ -1074,6 +1095,12 @@ mod tests {
         w.engine_update().expect("the frame");
         assert_eq!(w.cuts.game_loop.game_mode, rts_lockstep_engine::common::recorder::game_mode::NONE);
         assert!(w.score_screen_game_over().is_some(), "clearGameData's score screen");
+        // (#108) the flag `destroyQuitMenu` leaves, cleared when the app sees the game cleared (`InGameUI::reset`), and
+        // `closeWindows` asks nothing more (the menu already hidden)
+        assert!(ui.quit_menu_visible() && w.game_cleared.is_some());
+        ui.clear_game_data_windows();
+        assert!(!ui.quit_menu_visible());
+        assert!(ui.take_actions(&base, &mut flow).is_empty());
     }
 
     /// #110: the quit menu's *Restart* reaches the flow, over the demo game (not ending: #107's `newMap`). Predicted from QuitMenu.cpp before the run:

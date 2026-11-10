@@ -66,7 +66,7 @@ use rts_lockstep_engine::differential as cpp;
 use rts_lockstep_engine::logic::world::game_logic_dispatch::DispatchState;
 use rts_lockstep_engine::logic::world::game_logic_new_game::*;
 use rts_lockstep_engine::logic::world::game_logic_start::*;
-use rts_lockstep_engine::logic::world::game_logic_update::{GameLogicHost, GameLogicState};
+use rts_lockstep_engine::logic::world::game_logic_update::{GameLogicHost, GameLogicState, GamePauseHost};
 use std::collections::BTreeMap;
 
 struct Gen(u64);
@@ -604,6 +604,9 @@ impl GameLogicHost for Host {
     fn u_ui_deselect_drawable(&mut self, _id: u32) {
         unreachable!()
     }
+}
+
+impl GamePauseHost for Host {
     fn u_ui_input_enabled(&self) -> bool {
         unreachable!()
     }

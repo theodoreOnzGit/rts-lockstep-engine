@@ -50,7 +50,7 @@ use crate::common::message_stream::MessageType;
 use crate::common::xfer::{Snapshot, Xfer, XferResult};
 use crate::logic::world::game_logic::World;
 use crate::logic::world::game_logic_dispatch::DispatchState;
-use crate::logic::world::game_logic_update::{game_logic_update, get_crc, GameLogicHost};
+use crate::logic::world::game_logic_update::{game_logic_update, get_crc, GameLogicHost, GamePauseHost};
 use crate::logic::world::ids::ObjectId;
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::player_list::{player_list_crc, player_list_get_each_player_from_mask};
@@ -525,6 +525,9 @@ impl GameLogicHost for World {
     fn u_ui_deselect_drawable(&mut self, id: u32) {
         self.loop_cut("InGameUI::deselectDrawable", &[i64::from(id)]);
     }
+}
+
+impl GamePauseHost for World {
     fn u_ui_input_enabled(&self) -> bool {
         self.cuts.game_loop.ui_input_enabled
     }

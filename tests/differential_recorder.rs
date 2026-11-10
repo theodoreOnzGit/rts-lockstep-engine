@@ -42,21 +42,37 @@
 //! argument byte other than 0 or 1, and a few `tolower` of a byte of 0x80 or more or a number out of range in the game
 //! options.
 //!
+//! # Results (2026-11-10, #104, `REC_CASES=20000`)
+//!
+//! The generator now gives two in three replay files a different version string (`1.03`, `1.05` or empty), half of
+//! those cut inside the version fields ([`VersionKind`]), and half the programs test the generated files' versions
+//! first. 20,000 programs, 476,195 operations, 1,035,435 log lines (18,236 recordings, 12,962 playbacks started):
+//! **0 mismatches**; 10,882 programs cut at an undefined operation. `testVersionPlayback` of a generated file, compared
+//! with the C++ (answers 0 / 1): this version 2,222 / 5,757; a different version, the header whole 1,826 / 6,159 (every
+//! 0 a header `readReplayHeader` rejects, damaged or with options that do not parse); a different version, cut in the
+//! version fields 6,731 / 0. 872 of the cut files stop at `str[1024]` (cut right after the version string, the build
+//! time runs on to it); **none** is cut as an uninitialised local in `testVersionPlayback`: a file that ends inside
+//! the version fields reads its game options as `(char)EOF`, which `ParseAsciiStringToGameInfo` rejects, so the
+//! comparison is never reached with an unread field.
+//!
 //! # Planted bugs
 //!
-//! `L9_PLANT=<id>`: 9 of 9 caught.
+//! `L9_PLANT=<id>`: ~~9 of 9 caught.~~ **Corrected 2026-11-10 (#104):** 10 of 11 caught (2026-11-10, the generator
+//! above); 9001 cannot be caught through `readReplayHeader` (see the results above), and is kept to show it.
 //!
-//! | id | planted bug | caught by |
-//! |---|---|---|
-//! | 3961 | `MSG_LOGIC_CRC` not recorded | 42 programs |
-//! | 3962 | the next argument type run never started | 3 programs, then the C++ crashes on the diverged state |
-//! | 3963 | a file without `GENREP` read on | 3 programs, then the C++ crashes on the diverged state |
-//! | 3964 | the end of the file does not stop the playback | 2,317 programs |
-//! | 3965 | `cullBadCommands` deletes `MSG_LOGIC_CRC` too | 1,082 programs |
-//! | 3966 | `readCRC` takes the newest CRC, not the oldest | 226 programs |
-//! | 3967 | a single-player recording's local slot written as 0 | 242 programs |
-//! | 3968 | a `Bool` argument written as four bytes | 24 programs |
-//! | 3969 | the playback's `MSG_NEW_GAME` without its frame-rate limit | 4,983 programs |
+//! | id | planted bug | caught by (2026-10-31) | caught by (2026-11-10) |
+//! |---|---|---|---|
+//! | 3961 | `MSG_LOGIC_CRC` not recorded | 42 programs | 30 programs |
+//! | 3962 | the next argument type run never started | 3 programs, then the C++ crashes on the diverged state | 3, then the C++ crashes |
+//! | 3963 | a file without `GENREP` read on | 3 programs, then the C++ crashes on the diverged state | 3, then the C++ crashes |
+//! | 3964 | the end of the file does not stop the playback | 2,317 programs | 1,424 programs |
+//! | 3965 | `cullBadCommands` deletes `MSG_LOGIC_CRC` too | 1,082 programs | 711 programs |
+//! | 3966 | `readCRC` takes the newest CRC, not the oldest | 226 programs | 151 programs |
+//! | 3967 | a single-player recording's local slot written as 0 | 242 programs | 162 programs |
+//! | 3968 | a `Bool` argument written as four bytes | 24 programs | 18 programs |
+//! | 3969 | the playback's `MSG_NEW_GAME` without its frame-rate limit | 4,983 programs | 3,206 programs |
+//! | 9001 | `testVersionPlayback` short-circuits after a different version string (#104's proposal) | - | 0 programs (unreachable) |
+//! | 9002 | `testVersionPlayback` does not compare the version string | - | 304 programs |
 
 use rts_lockstep_engine::common::game_info::*;
 use rts_lockstep_engine::common::ini::{IniError, Undefined};
@@ -673,8 +689,23 @@ fn utf16z(s: &str) -> Vec<u8> {
     v
 }
 
+/// How a generated replay's version fields were made (#104).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum VersionKind {
+    /// this build's version string
+    Same,
+    /// a different version string, the header whole
+    Different,
+    /// a different version string, the file ending after it (at a field boundary of the version fields, or inside one)
+    DifferentCut,
+}
+
 /// A replay file: a header like `startRecording`'s, then commands; then perhaps damaged.
-fn gen_replay(g: &mut Gen, cfg: &[u32; 8]) -> Vec<u8> {
+///
+/// #104: two in three files carry a different version string (`1.03`, `1.05` or empty), and half of those end after
+/// it, inside the version fields: right after the version string, after the build time, or after or inside the
+/// version number, the exe CRC or the INI CRC.
+fn gen_replay(g: &mut Gen, cfg: &[u32; 8]) -> (Vec<u8>, VersionKind) {
     let mut f = b"GENREP".to_vec();
     for _ in 0..3 {
         f.extend_from_slice(&g.next().to_le_bytes());
@@ -686,11 +717,23 @@ fn gen_replay(g: &mut Gen, cfg: &[u32; 8]) -> Vec<u8> {
     for _ in 0..16 {
         f.push(g.below(256) as u8);
     }
-    f.extend_from_slice(&utf16z("1.04"));
+    let kind = match g.below(3) {
+        0 => VersionKind::Same,
+        _ if g.chance(2) => VersionKind::Different,
+        _ => VersionKind::DifferentCut,
+    };
+    f.extend_from_slice(&utf16z(if kind == VersionKind::Same { "1.04" } else { ["1.03", "1.05", ""][g.below(3) as usize] }));
+    let version_end = f.len();
     f.extend_from_slice(&utf16z(if g.chance(2) { "Oct 31 2026" } else { "Jan 1 2003" }));
+    let time_end = f.len();
     f.extend_from_slice(&(if g.chance(2) { cfg[5] } else { g.next() }).to_le_bytes());
     f.extend_from_slice(&(if g.chance(2) { cfg[3] } else { g.next() }).to_le_bytes());
     f.extend_from_slice(&(if g.chance(2) { cfg[4] } else { g.next() }).to_le_bytes());
+    if kind == VersionKind::DifferentCut {
+        let at = [version_end, time_end, time_end + 2, time_end + 4, time_end + 6, time_end + 8, time_end + 11][g.below(7) as usize];
+        f.truncate(at);
+        return (f, kind);
+    }
     let slots = match g.below(4) {
         0 => "X:X:X:X:X:X:X:X:",
         1 => "HBob,0,8088,TT,0,1,2,0,1:CE,3,2,-1,1:O:X:X:X:X:X:",
@@ -771,18 +814,21 @@ fn gen_replay(g: &mut Gen, cfg: &[u32; 8]) -> Vec<u8> {
             }
         }
     }
-    f
+    (f, kind)
 }
 
 type Files = Vec<(Vec<u8>, Vec<u8>)>;
 
-fn gen_program(g: &mut Gen) -> ([u32; 8], [u32; 9], Vec<Op>, Files) {
+fn gen_program(g: &mut Gen) -> ([u32; 8], [u32; 9], Vec<Op>, Files, [VersionKind; 3]) {
     let cfg = [g.below(1_000_000), g.below(60000), g.below(4), g.next(), g.next(), g.next(), g.next(), 0];
     let gcfg = [1 | 2 | (g.below(64) & !3), 8, 12, g.next(), g.below(9), g.below(3), g.below(9), g.below(3), g.next()];
     let mut files = vec![(b"00000000.rep".to_vec(), Vec::new())];
     files.clear();
-    for i in 0..3 {
-        files.push((format!("r{i}.rep").into_bytes(), gen_replay(g, &cfg)));
+    let mut kinds = [VersionKind::Same; 3];
+    for (i, k) in kinds.iter_mut().enumerate() {
+        let (bytes, kind) = gen_replay(g, &cfg);
+        *k = kind;
+        files.push((format!("r{i}.rep").into_bytes(), bytes));
     }
     // the file a recording writes (index 3), empty to begin with
     files.push((b"00000000.rep".to_vec(), Vec::new()));
@@ -815,6 +861,12 @@ fn gen_program(g: &mut Gen) -> ([u32; 8], [u32; 9], Vec<Op>, Files) {
             ops.push([3, 27, 0, 0, 0, 0]);
             ops.push([5, 0, 0, 0, 0, 0]);
             ops.push([4, 0, 0, 0, 0, 0]);
+        }
+    }
+    // #104: the version test of the generated files, early (before a playback or a recording takes the stream)
+    if g.chance(2) {
+        for _ in 0..1 + g.below(3) {
+            ops.push([8, g.below(3), 0, 0, 0, 0]);
         }
     }
     // a playback, stepped frame by frame (sometimes of the file just recorded)
@@ -889,9 +941,25 @@ fn gen_program(g: &mut Gen) -> ([u32; 8], [u32; 9], Vec<Op>, Files) {
         };
         ops.push(o);
     }
-    (cfg, gcfg, ops, files)
+    (cfg, gcfg, ops, files, kinds)
 }
 
+/// The recorder against Recorder.cpp over `REC_CASES` generated programs.
+///
+/// #104 predictions (2026-11-10, written before the run): 0 mismatches. A file cut inside its version fields never
+/// reaches the comparison: cut right after the version string, the build time runs to `str[1024]` (cut,
+/// `ArrayIndexOutOfRange`); cut anywhere later, the game options read as `(char)EOF` and the header is rejected
+/// (`testversion: 0`). So no `testVersionPlayback` is cut as `UninitialisedLocal`, a whole file with a different
+/// version string always answers 1, and plant 9001 (the short-circuit #104 proposed) is caught by 0 programs: the
+/// strict and the short-circuited forms cannot be told apart through `readReplayHeader`. Plant 9002 (the version
+/// string not compared) is caught, by the whole files whose other version fields all match (about 1 in 16).
+///
+/// Results (2026-11-10): 0 mismatches. No `testVersionPlayback` cut as `UninitialisedLocal` on a file cut in its
+/// version fields (872 cut at `ArrayIndexOutOfRange`, 6,731 answered 0): held. Plant 9001 caught by 0 programs, plant
+/// 9002 by 304, the nine older plants all caught: held. **Missed:** a whole file with a different version string
+/// answered 0 in 1,826 of 7,985 comparisons, not never; those are headers `readReplayHeader` rejects (damaged, or
+/// game options that do not parse), which answer 0 before any comparison. The prediction should have been "1 whenever
+/// the header reads".
 #[test]
 fn recorder_matches_upstream() {
     let cases: usize = std::env::var("REC_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(20_000);
@@ -900,8 +968,11 @@ fn recorder_matches_upstream() {
     let mut by_op = [0usize; 21];
     let mut cut_why = BTreeMap::<String, usize>::new();
     let (mut playbacks_ok, mut recorded) = (0usize, 0usize);
+    // #104: `testVersionPlayback` of the generated files compared, by version kind ([`VersionKind`]) and result (0, 1)
+    let mut tested = [[0usize; 2]; 3];
+    let mut tested_cut = BTreeMap::<String, usize>::new();
     for case in 0..cases {
-        let (cfg, gcfg, ops, files) = gen_program(&mut g);
+        let (cfg, gcfg, ops, files, kinds) = gen_program(&mut g);
         let (r, undefined_at) = rust_run(&cfg, &gcfg, &ops, &files);
         let n = undefined_at.as_ref().map_or(ops.len(), |u| u.0);
         if let Some((_, why)) = &undefined_at {
@@ -935,9 +1006,21 @@ fn recorder_matches_upstream() {
             lines += r.lines().count();
             playbacks_ok += r.lines().filter(|l| l.starts_with("playback ") && l.ends_with(": 1")).count();
             recorded += r.lines().filter(|l| l.starts_with("file 00000000.rep: ") && !l.ends_with("none")).count();
+            for l in r.lines().filter_map(|l| l.strip_prefix("testversion r")) {
+                let (i, v) = (l.as_bytes()[0] - b'0', l.ends_with(": 1"));
+                let k = kinds.get(usize::from(i)).copied().unwrap_or(VersionKind::Same) as usize;
+                tested[k][usize::from(v)] += 1;
+            }
+        }
+        if let Some((at, why)) = &undefined_at {
+            let o = ops[*at];
+            if o[0] == 8 && (o[1] as usize) < 3 {
+                *tested_cut.entry(format!("{:?}: {why}", kinds[o[1] as usize])).or_insert(0) += 1;
+            }
         }
     }
     println!("R1: {cases} programs ({cut} cut at an undefined operation), {ops_run} operations, {lines} lines ({playbacks_ok} playbacks started, {recorded} recordings), {mismatches} mismatches; by kind {by_op:?}");
     println!("cut at: {cut_why:?}");
+    println!("#104 testversion compared [same, different, different and cut] x [0, 1]: {tested:?}; cut there: {tested_cut:?}");
     assert_eq!(mismatches, 0);
 }

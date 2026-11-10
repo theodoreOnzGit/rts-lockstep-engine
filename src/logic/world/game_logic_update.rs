@@ -141,7 +141,7 @@ impl GameLogicState {
 }
 
 /// The world as `GameLogic::update` and its neighbours reach it. Objects are named by id, players by index.
-pub trait GameLogicHost {
+pub trait GameLogicHost: GamePauseHost {
     // --- the world's own (GameLogic's other members) ---
     /// `m_frame`.
     fn u_frame(&self) -> u32;
@@ -288,6 +288,12 @@ pub trait GameLogicHost {
     fn u_ui_select_drawable(&mut self, id: u32);
     /// `TheInGameUI->deselectDrawable(obj's drawable)`.
     fn u_ui_deselect_drawable(&mut self, id: u32);
+}
+
+/// #108: what [`set_game_paused`] reaches: `TheInGameUI`'s input, `TheMouse` and `TheAudio`, all of them the client's.
+/// A supertrait of [`GameLogicHost`] (the World's stand-ins answer it in the logic), so the client can give
+/// `setGamePaused` its own UI, mouse and audio without a whole `GameLogicHost`.
+pub trait GamePauseHost {
     /// `TheInGameUI->getInputEnabled()`.
     fn u_ui_input_enabled(&self) -> bool;
     /// `TheInGameUI->setInputEnabled(on)`.
@@ -554,7 +560,9 @@ pub fn deselect_object(id: Option<u32>, mut player_mask: u16, affect_client: boo
 
 /// `setGamePaused(paused, pauseMusic)`: pausing remembers the UI's input and the mouse's visibility, shows the arrow,
 /// disables input and pauses the audio (all of it, or all but the music); resuming restores them.
-pub fn set_game_paused(state: &mut GameLogicState, paused: bool, pause_music: bool, h: &mut impl GameLogicHost) {
+///
+/// #108: the host is only what it reaches ([`GamePauseHost`]); the client calls it with its own UI, mouse and audio.
+pub fn set_game_paused(state: &mut GameLogicState, paused: bool, pause_music: bool, h: &mut impl GamePauseHost) {
     if paused == state.game_paused {
         return;
     }

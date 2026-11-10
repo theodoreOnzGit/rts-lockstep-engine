@@ -366,21 +366,20 @@ pub fn test_version_playback<H: ReplayListHost>(wm: &mut GameWindowManager, h: &
     let Some(listing) = h.read_replay_header(filename) else { return false };
     let header = listing.header;
     let v = h.replay_version();
-    // (`||` stops at the first difference: a field the read never reached is compared only when it is reached; the
-    // INI CRC always is)
+    // ~~(`||` stops at the first difference: a field the read never reached is compared only when it is reached; the
+    // INI CRC always is)~~ **Corrected 2026-11-10 (#104):** Recorder.cpp computes each difference into its own `Bool`
+    // (`versionStringDiff` .. `exeCRCDiff`, `iniDifferent`) before the `||`, so every field is read: one the header
+    // never reached is compared unset whatever the version strings say.
     let differs = |a: Option<u32>, b: u32| a.map(|a| a != b);
-    let exe_different = if header.version_string != v.version_string || header.version_time_string != v.version_time_string {
-        Some(true)
-    } else {
-        match differs(header.version_number, v.version_number) {
-            Some(false) => differs(header.exe_crc, v.exe_crc),
-            x => x,
-        }
-    };
-    let (Some(exe_different), Some(ini_different)) = (exe_different, differs(header.ini_crc, v.ini_crc)) else {
+    let version_string_diff = header.version_string != v.version_string;
+    let version_time_string_diff = header.version_time_string != v.version_time_string;
+    let (Some(version_number_diff), Some(exe_crc_diff), Some(ini_different)) =
+        (differs(header.version_number, v.version_number), differs(header.exe_crc, v.exe_crc), differs(header.ini_crc, v.ini_crc))
+    else {
         wm.set_undefined("testVersionPlayback: the header's version or CRCs were not read (compared unset)");
         return false;
     };
+    let exe_different = version_string_diff || version_time_string_diff || version_number_diff || exe_crc_diff;
     exe_different || ini_different
 }
 
@@ -945,7 +944,7 @@ pub(crate) mod tests {
     /// - `GetReplayFilenameFromListbox` of `GUI:LastReplay`'s text is `00000000.rep`; of any other text, it with `.rep`;
     ///   of no list box, `.rep`;
     /// - `testVersionPlayback`: false for this version, true for another, false for a file that does not read, and an
-    ///   unread version is undefined;
+    ///   unread version is undefined, also behind a different version string (#104: upstream reads every field);
     /// - a header without its time, or a time `GetTimeFormatW` rejects: undefined; no map cache: the list is left
     ///   as it was;
     /// - `widen` sign-extends (`0xE9` is `0xFFE9`), `narrow` cuts and drops 0; `system_time` reads the eight words;
@@ -967,6 +966,14 @@ pub(crate) mod tests {
         test_version_playback(&mut wm, &mut h, b"00000000.rep");
         assert!(wm.undefined.take().is_some());
         h.replays.files[0].2.as_mut().expect("listing").header.ini_crc = Some(0);
+        // #104: upstream reads the version number even when the version string already differs
+        let saved = h.replays.files[0].2.as_ref().expect("listing").header.clone();
+        let hd = &mut h.replays.files[0].2.as_mut().expect("listing").header;
+        hd.version_string = wide("9.99");
+        hd.version_number = None;
+        test_version_playback(&mut wm, &mut h, b"00000000.rep");
+        assert!(wm.undefined.take().is_some());
+        h.replays.files[0].2.as_mut().expect("listing").header = saved;
         h.replays.files[0].2.as_mut().expect("listing").header.time_val = None;
         populate_replay_file_listbox(&mut wm, &mut h, l);
         assert!(wm.undefined.take().is_some());

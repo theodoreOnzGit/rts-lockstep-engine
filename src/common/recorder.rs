@@ -56,6 +56,11 @@
 //! - `readUnicodeString` tests `fgetwc`'s result against `EOF`; Windows' `fgetwc` returns `WEOF`, 0xFFFF (its `wint_t` is
 //!   an `unsigned short`), which is never `EOF`, so a wide string that meets the end of the file runs on to `str[1024]`
 //!   ([`Undefined::ArrayIndexOutOfRange`]).
+//! - `testVersionPlayback` reads every field it compares: upstream computes each difference into its own `Bool`
+//!   before the `||`, so a version number, exe CRC or INI CRC the header never reached is an uninitialised local even
+//!   when a version string already differs (#104). Such a header cannot reach the comparison in practice: the file
+//!   ends inside the version fields, the game options read as `(char)EOF`, and `ParseAsciiStringToGameInfo` rejects
+//!   them first.
 //! - A type run of count 0 makes `appendNextCommand` read every remaining argument as that type (its count goes to -1
 //!   and never back to 0).
 //!
@@ -899,20 +904,30 @@ impl Recorder {
 
     /// `testVersionPlayback(filename)`: true when the file's version or CRCs differ from this build's (the file is left
     /// open, as upstream leaves it).
+    ///
+    /// #104: upstream (Recorder.cpp at 0a05454d, both games) computes each difference into its own `Bool` first
+    /// (`versionStringDiff`, `versionTimeStringDiff`, `versionNumberDiff`, `exeCRCDiff`, `iniDifferent`) and only then
+    /// combines them with `||`, so the version number, the exe CRC and the INI CRC are always read: an unread one is
+    /// an uninitialised local whatever the version strings say. The `||` short-circuit #104 quotes is not upstream's.
+    /// (Plant 9001, differential builds only: the short-circuit #104 proposed, which skips the version number and exe
+    /// CRC once a version string differs.)
     pub fn test_version_playback(&mut self, filename: &[u8], host: &mut impl RecorderHost) -> R<bool> {
         let mut header = ReplayHeader { for_playback: true, filename: filename.to_vec(), ..Default::default() };
         if !self.read_replay_header(&mut header, host)? {
             return Ok(false);
         }
-        let (vn, exe, ini) = match (header.version_number, header.exe_crc, header.ini_crc) {
-            (Some(a), Some(b), Some(c)) => (a, b, c),
-            _ => return Err(undefined(Undefined::UninitialisedLocal)),
-        };
-        let exe_different = header.version_string != host.version_string()
-            || header.version_time_string != host.version_time_string()
-            || vn != host.version_number()
-            || exe != host.exe_crc();
-        Ok(exe_different || ini != host.ini_crc())
+        // (plant 9002, differential builds only: the version string not compared)
+        let version_string_diff = !plant(9002) && header.version_string != host.version_string();
+        let version_time_string_diff = header.version_time_string != host.version_time_string();
+        if plant(9001) && (version_string_diff || version_time_string_diff) && header.ini_crc.is_some() {
+            return Ok(true);
+        }
+        let unread = || undefined(Undefined::UninitialisedLocal);
+        let version_number_diff = header.version_number.ok_or_else(unread)? != host.version_number();
+        let exe_crc_diff = header.exe_crc.ok_or_else(unread)? != host.exe_crc();
+        let exe_different = version_string_diff || version_time_string_diff || version_number_diff || exe_crc_diff;
+        let ini_different = header.ini_crc.ok_or_else(unread)? != host.ini_crc();
+        Ok(exe_different || ini_different)
     }
 
     /// `playbackFile(filename)`.

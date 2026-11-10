@@ -34,7 +34,9 @@
 //! **Not read from the World yet:** the construction special's button kept by a production module
 //! (`getSpecialPowerConstructionCommandButton`: no module call returns it), so placement here always builds with a dozer;
 //! the quit menu ~~(no shell yet)~~ **Corrected 2026-11-10 (#87):** (translated in the shell's host,
-//! `crate::client::quit_menu`; `quit_menu_visible` here still answers false: the client keeps the pointer from the
+//! `crate::client::quit_menu`; ~~`quit_menu_visible` here still answers false~~ **Corrected 2026-11-10 (#108):**
+//! `quit_menu_visible` here answers [`ClientModes::quit_menu_visible`], which the client sets from the shell's quit
+//! menu; the client also keeps the pointer from the
 //! translators while the in-game menus are up, so the selection never sees a click under them). **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
 
 use crate::client::command_xlat::{ActionType, CmdArg, CommandXlatHost, GuiButton, TargetMode};
@@ -86,6 +88,9 @@ pub struct ClientModes {
     pub gui_command_pending: bool,
     /// `TheGlobalData->m_useAlternateMouse` (off by default, as the shipped options).
     pub alternate_mouse: bool,
+    /// #108: `TheInGameUI->isQuitMenuVisible()`, set by the client from the shell's quit menu
+    /// (`crate::client::quit_menu::QuitMenu::quit_menu_visible`, which holds InGameUI's flag).
+    pub quit_menu_visible: bool,
 }
 
 /// The client's host over a `World`.
@@ -250,7 +255,7 @@ impl SelectionInfoHost for WorldClient {
 
 impl SelectionXlatHost for WorldClient {
     fn quit_menu_visible(&self) -> bool {
-        false
+        self.modes.quit_menu_visible
     }
     fn gui_command_pending(&self) -> bool {
         self.modes.gui_command_pending
@@ -1481,6 +1486,8 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
     /// kept on the client only, sends nothing and leaves the logic's CRCs equal, frame by frame for 300 frames, to the
     /// plain gate run's. The questions go through the action manager, the weapon checks (which may touch weapon status
     /// cells), the quick path search and the shroud; if any of them writes the World, a CRC differs.
+    /// (#108 adds: with `quit_menu_visible` set, a left click on a unit of the player's is destroyed and the selection
+    /// is unchanged. Predicted before the run; result 2026-11-10: held.)
     #[test]
     fn the_clients_questions_leave_the_crcs_alone() {
         let frames = 300;
@@ -1517,6 +1524,15 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
             }
             crcs.push(c.world.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC"));
         }
+        // #108: with the quit menu visible (InGameUI's flag, fed from the shell's quit menu), a left click is destroyed
+        // and selects nothing; without it, the same click is not destroyed
+        let mut sel = crate::client::selection_xlat::SelectionTranslator::default();
+        let mine: Vec<ObjectId> = c.local_player_objects();
+        let selected = ui.all_selected_drawables().to_vec();
+        c.modes.quit_menu_visible = true;
+        assert_eq!(sel.left_click(&mine[..1], true, &cmd, &mut ui, &mut c), crate::client::selection_xlat::Disposition::Destroy);
+        assert_eq!(ui.all_selected_drawables(), &selected[..], "a click under the quit menu selected");
+        c.modes.quit_menu_visible = false;
         eprintln!("C2d: {asked} questions over {frames} frames, {} hints, {} sent; selected {:?}", c.hints.len(), c.sent.len(), ui.all_selected_drawables());
         assert!(c.sent.is_empty(), "a question sent a message: {:?}", c.sent);
         assert!(!ui.all_selected_drawables().is_empty());

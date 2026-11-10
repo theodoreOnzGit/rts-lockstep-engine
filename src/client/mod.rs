@@ -89,4 +89,5 @@ pub mod score_screen;
 pub mod replay_menu;
 pub mod popup_replay;
 pub mod quit_menu;
+pub mod game_pause; // #108: setGamePaused's side effects in the client (input, mouse, audio, the drawables' time)
 pub mod challenge_menu;
