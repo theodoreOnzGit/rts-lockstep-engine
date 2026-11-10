@@ -104,11 +104,20 @@
 //!   `W3DGameWinDefaultDraw`; their inner windows are not created (see #34's remaining list).~~ **Corrected 2026-11-10
 //!   (#70):** the list box and the sliders are translated ([`crate::client::gadget_list_box`],
 //!   [`crate::client::gadget_slider`]), with their inner windows (the scroll bar's buttons and slider, the thumbs),
-//!   created after the file's children of the gadget in the child list as upstream's are; the combo box, text entry
+//!   created after the file's children of the gadget in the child list as upstream's are; ~~the combo box, text entry
 //!   and tab control still get no behaviour and are drawn with `W3DGameWinDefaultDraw`, and the progress bar's draw is
-//!   that too (see #70's remaining list).
+//!   that too (see #70's remaining list).~~ **Corrected 2026-11-10 (#72):** the text entry, combo box and tab control
+//!   are translated too ([`crate::client::gadget_text_entry`], [`crate::client::gadget_combo_box`],
+//!   [`crate::client::gadget_tab_control`]), with their inner windows (the combo box's drop-down button, edit box and
+//!   list; the tab control's panes, which a file with children replaces: `parseChildWindows`), and every gadget has
+//!   its W3D draw; `assignDefaultGadgetLook`'s default visual is translated ([`crate::client::gadget_look`]) and given
+//!   where upstream asks for it (the gadgets' inner buttons, thumbs and sliders; [`GameWindowManager::gogo_gadget_look`]
+//!   with `default_visual`).
 //! - Where upstream's behaviour is undefined (a `NULL` or out-of-range access in a gadget), the manager records it in
-//!   [`GameWindowManager::undefined`] and the message stops.
+//!   [`GameWindowManager::undefined`] and the message stops. **Added 2026-11-10 (#72):** so does a mouse event while
+//!   the top of the modal stack is a freed window (`winDestroy` unsets only the top: a window destroyed below it stays
+//!   in the stack, and once the windows above it are unset upstream searches freed memory). `getWindowUnderCursor`
+//!   reads it as it is (it cannot record).
 //! - Window data that upstream passes as pointers: a window is `id + 1` (0 for `NULL`, [`win_data`]); a string
 //!   (`GGM_SET_LABEL`, `GGM_GET_LABEL`) is in [`GameWindowManager::msg_text`]; the `Bool*` of `GWM_INPUT_FOCUS` is
 //!   [`GameWindowManager::focus_reply`].
@@ -275,8 +284,12 @@ pub enum SystemFunc {
     VerticalSlider,
     /// `GadgetHorizontalSliderSystem`.
     HorizontalSlider,
-    /// A gadget whose behaviour is not translated yet (`GadgetComboBoxSystem`, ...): ignores everything.
-    Untranslated(&'static str),
+    /// `GadgetTextEntrySystem`.
+    TextEntry,
+    /// `GadgetComboBoxSystem`.
+    ComboBox,
+    /// `GadgetTabControlSystem`.
+    TabControl,
     /// A callback of the game's own (`ControlBarSystem`, `MainMenuSystem`, ...), for the [`GuiHost`].
     Host(Vec<u8>),
 }
@@ -298,7 +311,12 @@ pub enum InputFunc {
     ListBoxMulti,
     VerticalSlider,
     HorizontalSlider,
-    Untranslated(&'static str),
+    /// `GadgetTextEntryInput`.
+    TextEntry,
+    /// `GadgetComboBoxInput`.
+    ComboBox,
+    /// `GadgetTabControlInput`.
+    TabControl,
     Host(Vec<u8>),
 }
 
@@ -325,8 +343,14 @@ pub enum DrawFunc {
     HorizontalSliderImage,
     /// `W3DNoDraw`.
     NoDraw,
-    /// A gadget whose drawing is not translated yet: drawn as `W3DGameWinDefaultDraw` (see the module docs).
-    Untranslated(&'static str),
+    TabControl,
+    TabControlImage,
+    ComboBox,
+    ComboBoxImage,
+    ProgressBar,
+    ProgressBarImage,
+    TextEntry,
+    TextEntryImage,
     Host(Vec<u8>),
 }
 
@@ -342,12 +366,12 @@ pub fn lexicon_system(name: &[u8]) -> SystemFunc {
         b"GadgetRadioButtonSystem" => SystemFunc::RadioButton,
         b"GadgetStaticTextSystem" => SystemFunc::StaticText,
         b"GadgetProgressBarSystem" => SystemFunc::ProgressBar,
-        b"GadgetTabControlSystem" => SystemFunc::Untranslated("GadgetTabControlSystem"),
+        b"GadgetTabControlSystem" => SystemFunc::TabControl,
         b"GadgetListBoxSystem" => SystemFunc::ListBox,
-        b"GadgetComboBoxSystem" => SystemFunc::Untranslated("GadgetComboBoxSystem"),
+        b"GadgetComboBoxSystem" => SystemFunc::ComboBox,
         b"GadgetHorizontalSliderSystem" => SystemFunc::HorizontalSlider,
         b"GadgetVerticalSliderSystem" => SystemFunc::VerticalSlider,
-        b"GadgetTextEntrySystem" => SystemFunc::Untranslated("GadgetTextEntrySystem"),
+        b"GadgetTextEntrySystem" => SystemFunc::TextEntry,
         _ => SystemFunc::Host(name.to_vec()),
     }
 }
@@ -361,13 +385,13 @@ pub fn lexicon_input(name: &[u8]) -> InputFunc {
         b"GadgetCheckBoxInput" => InputFunc::CheckBox,
         b"GadgetRadioButtonInput" => InputFunc::RadioButton,
         b"GadgetStaticTextInput" => InputFunc::StaticText,
-        b"GadgetTabControlInput" => InputFunc::Untranslated("GadgetTabControlInput"),
+        b"GadgetTabControlInput" => InputFunc::TabControl,
         b"GadgetListBoxInput" => InputFunc::ListBox,
         b"GadgetListBoxMultiInput" => InputFunc::ListBoxMulti,
-        b"GadgetComboBoxInput" => InputFunc::Untranslated("GadgetComboBoxInput"),
+        b"GadgetComboBoxInput" => InputFunc::ComboBox,
         b"GadgetHorizontalSliderInput" => InputFunc::HorizontalSlider,
         b"GadgetVerticalSliderInput" => InputFunc::VerticalSlider,
-        b"GadgetTextEntryInput" => InputFunc::Untranslated("GadgetTextEntryInput"),
+        b"GadgetTextEntryInput" => InputFunc::TextEntry,
         _ => InputFunc::Host(name.to_vec()),
     }
 }
@@ -387,16 +411,20 @@ pub fn lexicon_draw(name: &[u8]) -> DrawFunc {
         b"W3DGadgetStaticTextDraw" => DrawFunc::StaticText,
         b"W3DGadgetStaticTextImageDraw" => DrawFunc::StaticTextImage,
         b"W3DNoDraw" => DrawFunc::NoDraw,
-        b"W3DGadgetTabControlDraw" | b"W3DGadgetTabControlImageDraw" => DrawFunc::Untranslated("W3DGadgetTabControlDraw"),
+        b"W3DGadgetTabControlDraw" => DrawFunc::TabControl,
+        b"W3DGadgetTabControlImageDraw" => DrawFunc::TabControlImage,
         b"W3DGadgetListBoxDraw" => DrawFunc::ListBox,
         b"W3DGadgetListBoxImageDraw" => DrawFunc::ListBoxImage,
-        b"W3DGadgetComboBoxDraw" | b"W3DGadgetComboBoxImageDraw" => DrawFunc::Untranslated("W3DGadgetComboBoxDraw"),
+        b"W3DGadgetComboBoxDraw" => DrawFunc::ComboBox,
+        b"W3DGadgetComboBoxImageDraw" => DrawFunc::ComboBoxImage,
         b"W3DGadgetHorizontalSliderDraw" => DrawFunc::HorizontalSlider,
         b"W3DGadgetHorizontalSliderImageDraw" => DrawFunc::HorizontalSliderImage,
         b"W3DGadgetVerticalSliderDraw" => DrawFunc::VerticalSlider,
         b"W3DGadgetVerticalSliderImageDraw" => DrawFunc::VerticalSliderImage,
-        b"W3DGadgetProgressBarDraw" | b"W3DGadgetProgressBarImageDraw" => DrawFunc::Untranslated("W3DGadgetProgressBarDraw"),
-        b"W3DGadgetTextEntryDraw" | b"W3DGadgetTextEntryImageDraw" => DrawFunc::Untranslated("W3DGadgetTextEntryDraw"),
+        b"W3DGadgetProgressBarDraw" => DrawFunc::ProgressBar,
+        b"W3DGadgetProgressBarImageDraw" => DrawFunc::ProgressBarImage,
+        b"W3DGadgetTextEntryDraw" => DrawFunc::TextEntry,
+        b"W3DGadgetTextEntryImageDraw" => DrawFunc::TextEntryImage,
         _ => DrawFunc::Host(name.to_vec()),
     }
 }
@@ -439,6 +467,12 @@ pub enum UserData {
     Listbox(crate::client::gadget_list_box::ListboxRt),
     /// A slider's `SliderData`.
     Slider(crate::client::gadget_slider::SliderRt),
+    /// A text entry's `EntryData`.
+    Entry(crate::client::gadget_text_entry::EntryRt),
+    /// A combo box's `ComboBoxData`.
+    Combo(crate::client::gadget_combo_box::ComboRt),
+    /// A tab control's `TabControlData`.
+    Tab(crate::client::gadget_tab_control::TabRt),
 }
 
 /// What the manager keeps for a window besides the reader's [`GameWindow`].
@@ -633,6 +667,12 @@ pub struct GameWindowManager {
     pub list_msg: crate::client::gadget_list_box::ListMsg,
     /// `timeGetTime()`, milliseconds (the list box's double click), set by the host.
     pub time_ms: u32,
+    /// The string the text entry's messages point to.
+    pub entry_msg: crate::client::gadget_text_entry::EntryMsg,
+    /// The data the combo box's messages point to.
+    pub combo_msg: crate::client::gadget_combo_box::ComboMsg,
+    /// `drawTextEntryText`'s `static Byte drawCnt` (the caret's blink), one for every text entry.
+    pub(crate) entry_draw_cnt: u8,
 }
 
 /// The gadget kinds this translation creates, from the style bits (`createGadget`'s order).
@@ -1104,7 +1144,7 @@ impl GameWindowManager {
             return MsgHandled::Ignored;
         }
         match self.ext[w].system.clone() {
-            SystemFunc::Default | SystemFunc::Untranslated(_) => MsgHandled::Ignored,
+            SystemFunc::Default => MsgHandled::Ignored,
             SystemFunc::PassSelectedButtonsToParent => {
                 if matches!(msg, ggm::GBM_SELECTED | ggm::GBM_SELECTED_RIGHT | ggm::GBM_MOUSE_ENTERING | ggm::GBM_MOUSE_LEAVING | ggm::GEM_EDIT_DONE) {
                     if let Some(p) = self.tree.windows[w].parent {
@@ -1125,6 +1165,9 @@ impl GameWindowManager {
             SystemFunc::ListBox => crate::client::gadget_list_box::list_box_system(self, h, w, msg, d1, d2),
             SystemFunc::VerticalSlider => crate::client::gadget_slider::vertical_slider_system(self, h, w, msg, d1, d2),
             SystemFunc::HorizontalSlider => crate::client::gadget_slider::horizontal_slider_system(self, h, w, msg, d1, d2),
+            SystemFunc::TextEntry => crate::client::gadget_text_entry::text_entry_system(self, h, w, msg, d1, d2),
+            SystemFunc::ComboBox => crate::client::gadget_combo_box::combo_box_system(self, h, w, msg, d1, d2),
+            SystemFunc::TabControl => crate::client::gadget_tab_control::tab_control_system(self, h, w, msg, d1, d2),
             SystemFunc::Host(name) => h.system(self, &name, w, msg, d1, d2),
         }
     }
@@ -1136,7 +1179,7 @@ impl GameWindowManager {
             return MsgHandled::Ignored;
         }
         match self.ext[w].input.clone() {
-            InputFunc::Default | InputFunc::Untranslated(_) => MsgHandled::Ignored,
+            InputFunc::Default => MsgHandled::Ignored,
             InputFunc::Block => {
                 // `GameWinBlockInput`
                 if msg == gwm::CHAR || msg == gwm::MOUSE_POS {
@@ -1155,6 +1198,9 @@ impl GameWindowManager {
             InputFunc::ListBoxMulti => crate::client::gadget_list_box::list_box_multi_input(self, h, w, msg, d1, d2),
             InputFunc::VerticalSlider => crate::client::gadget_slider::vertical_slider_input(self, h, w, msg, d1, d2),
             InputFunc::HorizontalSlider => crate::client::gadget_slider::horizontal_slider_input(self, h, w, msg, d1, d2),
+            InputFunc::TextEntry => crate::client::gadget_text_entry::text_entry_input(self, h, w, msg, d1, d2),
+            InputFunc::ComboBox => crate::client::gadget_combo_box::combo_box_input(self, h, w, msg, d1, d2),
+            InputFunc::TabControl => crate::client::gadget_tab_control::tab_control_input(self, h, w, msg, d1, d2),
             InputFunc::Host(name) => h.input(self, &name, w, msg, d1, d2),
         }
     }
@@ -1296,6 +1342,12 @@ impl GameWindowManager {
             rc = WinInputReturnCode::Used;
         } else {
             if let Some(&m) = self.modal.first() {
+                // `winDestroy` unsets only the top of the modal stack: a destroyed window below it stays, and once it
+                // is freed and the windows above are unset, upstream searches freed memory (#72)
+                if self.ext[m].freed {
+                    self.set_undefined("winProcessMouseEvent: the modal head is a freed window (destroyed below the top of the modal stack)");
+                    return WinInputReturnCode::NotUsed;
+                }
                 window = Some(self.win_point_in_child(h, m, x, y, false, false));
             } else {
                 let list = self.window_list.clone();
@@ -1499,20 +1551,8 @@ impl GameWindowManager {
                 e.user = UserData::StaticText(t, Vec::new());
             }
             gws::PROGRESS_BAR => {
-                e.draw = DrawFunc::Untranslated("W3DGadgetProgressBarDraw");
+                e.draw = pick(DrawFunc::ProgressBarImage, DrawFunc::ProgressBar);
                 e.user = UserData::Progress(0);
-            }
-            gws::TAB_CONTROL => {
-                e.input = InputFunc::Untranslated("GadgetTabControlInput");
-                e.draw = DrawFunc::Untranslated("W3DGadgetTabControlDraw");
-            }
-            gws::COMBO_BOX => {
-                e.input = InputFunc::Untranslated("GadgetComboBoxInput");
-                e.draw = DrawFunc::Untranslated("W3DGadgetComboBoxDraw");
-            }
-            gws::ENTRY_FIELD => {
-                e.input = InputFunc::Untranslated("GadgetTextEntryInput");
-                e.draw = DrawFunc::Untranslated("W3DGadgetTextEntryDraw");
             }
             _ => {}
         }
@@ -1527,12 +1567,12 @@ impl GameWindowManager {
             gws::RADIO_BUTTON => SystemFunc::RadioButton,
             gws::STATIC_TEXT => SystemFunc::StaticText,
             gws::PROGRESS_BAR => SystemFunc::ProgressBar,
-            gws::TAB_CONTROL => SystemFunc::Untranslated("GadgetTabControlSystem"),
+            gws::TAB_CONTROL => SystemFunc::TabControl,
             gws::VERT_SLIDER => SystemFunc::VerticalSlider,
             gws::HORZ_SLIDER => SystemFunc::HorizontalSlider,
             gws::SCROLL_LISTBOX => SystemFunc::ListBox,
-            gws::COMBO_BOX => SystemFunc::Untranslated("GadgetComboBoxSystem"),
-            gws::ENTRY_FIELD => SystemFunc::Untranslated("GadgetTextEntrySystem"),
+            gws::COMBO_BOX => SystemFunc::ComboBox,
+            gws::ENTRY_FIELD => SystemFunc::TextEntry,
             _ => return None,
         })
     }
@@ -1553,42 +1593,96 @@ impl GameWindowManager {
         }
     }
 
-    /// `assignDefaultGadgetLook(gadget, defaultFont, FALSE)`: the font given, else the default.
-    pub(crate) fn assign_default_font(&mut self, w: WinId, font: Option<GameFont>) {
-        self.tree.windows[w].inst.font = Some(font.unwrap_or_else(default_font));
+    /// `GameWindow::winSetFont(font)`: the window's font, and the special gadgets' strings (a list box's cells, a combo
+    /// box's list box and edit box, a text entry's strings; the other display strings take the window's font when
+    /// drawn).
+    pub fn win_set_font(&mut self, w: WinId, font: Option<GameFont>) {
+        self.tree.windows[w].inst.font = font.clone();
+        let style = self.tree.windows[w].inst.style;
+        if style & gws::SCROLL_LISTBOX != 0 {
+            crate::client::gadget_list_box::set_font(self, w, font);
+        } else if style & gws::COMBO_BOX != 0 {
+            crate::client::gadget_combo_box::set_font(self, w, font);
+        } else if style & gws::ENTRY_FIELD != 0 {
+            crate::client::gadget_text_entry::set_font(self, w, font);
+        }
     }
 
-    /// `gogoGadgetPushButton(parent, status, x, y, w, h, instData, NULL, TRUE)` for an inner button (no label). The
-    /// default visual it assigns (`PushButtonEnabled`, ...) is not modelled: the script's part draw data replace all
-    /// of it.
+    /// `GameWindow::winSet{Enabled,Disabled,Hilite}TextColors(color, borderColor)` (`which` 0, 1, 2): a combo box's
+    /// also go to its list box and edit box.
+    pub fn win_set_text_colors(&mut self, w: WinId, which: usize, color: i32, border: i32) {
+        let inst = &mut self.tree.windows[w].inst;
+        let t = match which {
+            0 => &mut inst.enabled_text,
+            1 => &mut inst.disabled_text,
+            _ => &mut inst.hilite_text,
+        };
+        t.color = color;
+        t.border_color = border;
+        if inst.style & gws::COMBO_BOX != 0 {
+            crate::client::gadget_combo_box::set_text_colors(self, w, which, color, border);
+        }
+    }
+
+    /// `gogoGadgetPushButton(parent, status, x, y, w, h, instData, NULL, defaultVisual)` for an inner button (no
+    /// label); the gadgets ask for the default visual (`TRUE`).
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn gogo_push_button<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData) -> WinId {
-        self.gogo_gadget(h, parent, status, x, y, width, height, inst, GadgetData::None).expect("a push button")
+    pub(crate) fn gogo_push_button<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, default_visual: bool) -> WinId {
+        self.gogo_gadget_look(h, parent, status, x, y, width, height, inst, GadgetData::None, default_visual).expect("a push button")
+    }
+
+    /// [`Self::gogo_gadget_look`] without the default visual (`defaultVisual` FALSE, as the scripts make gadgets).
+    #[allow(clippy::too_many_arguments)]
+    pub fn gogo_gadget<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, data: GadgetData) -> Option<WinId> {
+        self.gogo_gadget_look(h, parent, status, x, y, width, height, inst, data, false)
     }
 
     /// `gogoGadgetPushButton`, `gogoGadgetCheckbox`, `gogoGadgetRadioButton`, `gogoGadgetStaticText`,
-    /// `gogoGadgetProgressBar`, `gogoGadgetListBox`, `gogoGadgetSlider` (by the instance data's style), with the label
+    /// `gogoGadgetProgressBar`, `gogoGadgetListBox`, `gogoGadgetSlider`, `gogoGadgetTextEntry`, `gogoGadgetComboBox`,
+    /// `gogoGadgetTabControl` (by the instance data's style; `defaultFont` is the instance data's font), with the label
     /// as its text (`winTextLabelToText`: the label translated byte for byte). `None` where upstream asserts (no
-    /// gadget style this translation creates).
+    /// gadget style).
     #[allow(clippy::too_many_arguments)]
-    pub fn gogo_gadget<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, mut inst: WinInstanceData, data: GadgetData) -> Option<WinId> {
+    pub fn gogo_gadget_look<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, mut inst: WinInstanceData, data: GadgetData, default_visual: bool) -> Option<WinId> {
         let style = gadget_style(inst.style);
-        if style == gws::SCROLL_LISTBOX {
-            let t = match &data {
-                GadgetData::Listbox(d) => crate::client::gadget_list_box::listbox_template(d),
-                _ => crate::client::gadget_list_box::ListboxRt::default(),
-            };
-            return crate::client::gadget_list_box::gogo_gadget_list_box(self, h, parent, status, x, y, width, height, inst, t);
-        }
-        if style == gws::VERT_SLIDER || style == gws::HORZ_SLIDER {
-            let mut t = match &data {
-                GadgetData::Slider(d) => crate::client::gadget_slider::slider_template(d),
-                _ => crate::client::gadget_slider::SliderRt::default(),
-            };
-            return crate::client::gadget_slider::gogo_gadget_slider(self, h, parent, status, x, y, width, height, inst, &mut t);
-        }
-        if !matches!(style, gws::PUSH_BUTTON | gws::CHECK_BOX | gws::RADIO_BUTTON | gws::STATIC_TEXT | gws::PROGRESS_BAR) {
-            return None;
+        match style {
+            gws::SCROLL_LISTBOX => {
+                let t = match &data {
+                    GadgetData::Listbox(d) => crate::client::gadget_list_box::listbox_template(d),
+                    _ => crate::client::gadget_list_box::ListboxRt::default(),
+                };
+                return crate::client::gadget_list_box::gogo_gadget_list_box_look(self, h, parent, status, x, y, width, height, inst, t, default_visual);
+            }
+            gws::VERT_SLIDER | gws::HORZ_SLIDER => {
+                let mut t = match &data {
+                    GadgetData::Slider(d) => crate::client::gadget_slider::slider_template(d),
+                    _ => crate::client::gadget_slider::SliderRt::default(),
+                };
+                return crate::client::gadget_slider::gogo_gadget_slider(self, h, parent, status, x, y, width, height, inst, &mut t, default_visual);
+            }
+            gws::ENTRY_FIELD => {
+                let t = match &data {
+                    GadgetData::Entry(d) => crate::client::gadget_text_entry::entry_template(d),
+                    _ => crate::client::gadget_text_entry::EntryRt::default(),
+                };
+                return crate::client::gadget_text_entry::gogo_gadget_text_entry(self, h, parent, status, x, y, width, height, inst, t, default_visual);
+            }
+            gws::COMBO_BOX => {
+                let t = match &data {
+                    GadgetData::ComboBox(d) => crate::client::gadget_combo_box::combo_template(d),
+                    _ => crate::client::gadget_combo_box::combo_template(&Default::default()),
+                };
+                return crate::client::gadget_combo_box::gogo_gadget_combo_box(self, h, parent, status, x, y, width, height, inst, t, default_visual);
+            }
+            gws::TAB_CONTROL => {
+                let t = match &data {
+                    GadgetData::TabControl(d) => crate::client::gadget_tab_control::tab_template(d),
+                    _ => crate::client::gadget_tab_control::TabRt::default(),
+                };
+                return crate::client::gadget_tab_control::gogo_gadget_tab_control(self, h, parent, status, x, y, width, height, inst, t, default_visual);
+            }
+            gws::PUSH_BUTTON | gws::CHECK_BOX | gws::RADIO_BUTTON | gws::STATIC_TEXT | gws::PROGRESS_BAR => {}
+            _ => return None,
         }
         if style == gws::STATIC_TEXT {
             inst.style &= !gws::TAB_STOP;
@@ -1598,21 +1692,23 @@ impl GameWindowManager {
         let w = self.win_create(h, parent, status, x, y, width, height, Self::gadget_system(inst.style)?, Some(inst));
         self.tree.windows[w].gadget = data;
         self.install_gadget(w, parent);
-        // assignDefaultGadgetLook: the instance data's font, else the default
-        self.tree.windows[w].inst.font = Some(font.unwrap_or_else(default_font));
+        crate::client::gadget_look::assign_default_gadget_look(self, h, w, font, default_visual);
         if !label.is_empty() && style != gws::PROGRESS_BAR {
             self.set_label(h, w, &label);
         }
         Some(w)
     }
 
-    /// `GadgetButtonSetText` / `GadgetCheckBoxSetText` / `GadgetRadioSetText` / `GadgetStaticTextSetText`
-    /// (`GGM_SET_LABEL`), else `winSetText`.
+    /// `setWindowText`'s and the gadgets' text setters: `GadgetButtonSetText` / `GadgetCheckBoxSetText` /
+    /// `GadgetRadioSetText` / `GadgetStaticTextSetText` (`GGM_SET_LABEL`), `GadgetTextEntrySetText` (`GEM_SET_TEXT`),
+    /// else `winSetText`.
     pub fn set_label<H: GuiHost>(&mut self, h: &mut H, w: WinId, text: &[u16]) {
         let style = self.tree.windows[w].inst.style;
         if style & (gws::PUSH_BUTTON | gws::RADIO_BUTTON | gws::CHECK_BOX | gws::STATIC_TEXT) != 0 {
             self.msg_text = text.to_vec();
             self.win_send_system_msg(h, Some(w), ggm::SET_LABEL, 1, 0);
+        } else if style & gws::ENTRY_FIELD != 0 {
+            crate::client::gadget_text_entry::set_text(self, h, Some(w), text);
         } else {
             self.win_set_text(w, text);
         }
@@ -1637,6 +1733,12 @@ impl GameWindowManager {
         let last = self.tree.windows.len();
         for w in first..last {
             self.adopt(h, w);
+        }
+        // parseChildWindows: once its children are read, a tab control's panes are its children
+        for w in first..last {
+            if self.tree.windows[w].inst.style & gws::TAB_CONTROL != 0 && !self.tree.windows[w].children.is_empty() && self.undefined.is_none() {
+                crate::client::gadget_tab_control::fixup_sub_pane_list(self, w);
+            }
         }
         let Some(info) = r.info.clone() else { return Ok((None, r)) };
         if r.first_window.is_none() {
@@ -1683,7 +1785,7 @@ impl GameWindowManager {
                         _ => crate::client::gadget_list_box::ListboxRt::default(),
                     };
                     let font = self.tree.windows[w].inst.font.clone();
-                    crate::client::gadget_list_box::list_box_after_create(self, h, w, parent, font, t);
+                    crate::client::gadget_list_box::list_box_after_create(self, h, w, parent, font, t, false);
                     crate::client::gadget_list_box::assign_part_draw_data(self, w);
                 }
                 gws::VERT_SLIDER | gws::HORZ_SLIDER => {
@@ -1694,7 +1796,7 @@ impl GameWindowManager {
                     self.tree.windows[w].status |= win_status::TAB_STOP;
                     let status = self.tree.windows[w].status;
                     let font = self.tree.windows[w].inst.font.clone();
-                    crate::client::gadget_slider::slider_after_create(self, h, w, parent, status, style, font, &mut t);
+                    crate::client::gadget_slider::slider_after_create(self, h, w, parent, status, style, font, &mut t, false);
                     // createGadget: the file's thumb draw data
                     let thumb = self.tree.windows[w].children.first().copied();
                     let part = self.tree.windows[w].parts.iter().find(|p| p.0 == crate::client::window_script::GadgetPart::SliderThumb).map(|p| p.1.clone());
@@ -1703,6 +1805,39 @@ impl GameWindowManager {
                         i.enabled_draw_data = d.enabled;
                         i.disabled_draw_data = d.disabled;
                         i.hilite_draw_data = d.hilite;
+                    }
+                }
+                gws::ENTRY_FIELD => {
+                    let t = match &self.tree.windows[w].gadget {
+                        GadgetData::Entry(d) => crate::client::gadget_text_entry::entry_template(d),
+                        _ => crate::client::gadget_text_entry::EntryRt::default(),
+                    };
+                    let font = self.tree.windows[w].inst.font.clone();
+                    crate::client::gadget_text_entry::text_entry_after_create(self, h, w, parent, font, t, false);
+                    // (the label's text: set once, below, as setWindowText sets it again)
+                }
+                gws::COMBO_BOX => {
+                    let t = match &self.tree.windows[w].gadget {
+                        GadgetData::ComboBox(d) => crate::client::gadget_combo_box::combo_template(d),
+                        _ => crate::client::gadget_combo_box::combo_template(&Default::default()),
+                    };
+                    let status = self.tree.windows[w].status;
+                    let font = self.tree.windows[w].inst.font.clone();
+                    crate::client::gadget_combo_box::combo_box_after_create(self, h, w, parent, status, font, t, false);
+                    crate::client::gadget_combo_box::assign_part_draw_data(self, w);
+                }
+                gws::TAB_CONTROL => {
+                    let t = match &self.tree.windows[w].gadget {
+                        GadgetData::TabControl(d) => crate::client::gadget_tab_control::tab_template(d),
+                        _ => crate::client::gadget_tab_control::TabRt::default(),
+                    };
+                    let font = self.tree.windows[w].inst.font.clone();
+                    let first_new = self.tree.windows.len();
+                    crate::client::gadget_tab_control::tab_control_after_create(self, h, w, parent, font, t, false);
+                    // parseChildWindows: a tab control with children in the file loses its default panes first
+                    if kids > 0 {
+                        let panes: Vec<WinId> = (first_new..self.tree.windows.len()).collect();
+                        crate::client::gadget_tab_control::destroy_default_panes(self, w, &panes);
                     }
                 }
                 _ => self.install_gadget(w, parent),
@@ -1918,7 +2053,7 @@ impl GameWindowManager {
 }
 
 /// `winFindFont("Times New Roman", 14, FALSE)`, the default when no language data gives one.
-fn default_font() -> GameFont {
+pub(crate) fn default_font() -> GameFont {
     GameFont { name: b"Times New Roman".to_vec(), point_size: 14, bold: false }
 }
 
@@ -2277,6 +2412,25 @@ END\n";
         assert_eq!([sel(&wm, ids.r[0]), sel(&wm, ids.r[1]), sel(&wm, ids.r[2])], [true, false, false]);
         assert!(h.sys[n..].iter().all(|m| m.2 != ggm::GBM_SELECTED));
         assert!(sel(&wm, other), "another screen's group is left alone");
+    }
+
+    /// #72: a window destroyed below the top of the modal stack stays in it (`winDestroy` unsets only the top); once
+    /// it is freed and the top is unset, a mouse event searches it, and upstream reads freed memory. Predicted: the
+    /// stack is `[b, a]` after `a` is freed; the event is recorded as undefined and not used.
+    #[test]
+    fn a_freed_modal_window_is_undefined_upstream() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let a = wm.win_create(&mut h, None, win_status::ENABLED, 0, 0, 100, 100, SystemFunc::Default, None);
+        let b = wm.win_create(&mut h, None, win_status::ENABLED, 200, 0, 100, 100, SystemFunc::Default, None);
+        wm.win_set_modal(Some(a));
+        wm.win_set_modal(Some(b));
+        wm.win_destroy(Some(a));
+        wm.update(&mut h);
+        assert_eq!(wm.modal, vec![b, a]);
+        wm.win_unset_modal(Some(b));
+        assert_eq!(wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (10, 10), (0, 0)), WinInputReturnCode::NotUsed);
+        assert!(wm.undefined.is_some());
     }
 
     /// #34: destruction, the lone window and the tooltip timer. Predicted:

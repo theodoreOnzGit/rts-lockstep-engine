@@ -508,7 +508,7 @@ pub fn horizontal_slider_system<H: GuiHost>(wm: &mut GameWindowManager, h: &mut 
 /// `data` is the caller's template, which upstream updates in place (`maxVal`, `numTicks`). `None` where upstream
 /// asserts (neither slider style).
 #[allow(clippy::too_many_arguments)]
-pub fn gogo_gadget_slider<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, data: &mut SliderRt) -> Option<WinId> {
+pub fn gogo_gadget_slider<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, data: &mut SliderRt, default_visual: bool) -> Option<WinId> {
     let status = status | win_status::TAB_STOP;
     let horz = inst.style & gws::HORZ_SLIDER != 0;
     if !horz && inst.style & gws::VERT_SLIDER == 0 {
@@ -518,14 +518,14 @@ pub fn gogo_gadget_slider<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, par
     let font = inst.font.clone();
     let system = if horz { SystemFunc::HorizontalSlider } else { SystemFunc::VerticalSlider };
     let s = wm.win_create(h, parent, status, x, y, width, height, system, Some(inst));
-    slider_after_create(wm, h, s, parent, status, style, font, data);
+    slider_after_create(wm, h, s, parent, status, style, font, data, default_visual);
     Some(s)
 }
 
-/// `gogoGadgetSlider` after its `winCreate` (`status` already with `TAB_STOP`): the callbacks, owner, thumb, data and
-/// font.
+/// `gogoGadgetSlider` after its `winCreate` (`status` already with `TAB_STOP`): the callbacks, owner, thumb (made with
+/// the default visual), data and look.
 #[allow(clippy::too_many_arguments)]
-pub fn slider_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, s: WinId, parent: Option<WinId>, status: u32, style: u32, font: Option<crate::client::window_script::GameFont>, data: &mut SliderRt) {
+pub fn slider_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, s: WinId, parent: Option<WinId>, status: u32, style: u32, font: Option<crate::client::window_script::GameFont>, data: &mut SliderRt, default_visual: bool) {
     let horz = style & gws::HORZ_SLIDER != 0;
     let (width, height) = wm.tree.windows[s].size;
     wm.install_slider_callbacks(s, parent);
@@ -536,16 +536,16 @@ pub fn slider_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, s:
     }
     let flags = (status | win_status::ENABLED | win_status::DRAGABLE) & !win_status::HIDDEN;
     if horz {
-        wm.gogo_push_button(h, Some(s), flags, 0, HORIZONTAL_SLIDER_THUMB_POSITION, HORIZONTAL_SLIDER_THUMB_WIDTH, HORIZONTAL_SLIDER_THUMB_HEIGHT, bi);
+        wm.gogo_push_button(h, Some(s), flags, 0, HORIZONTAL_SLIDER_THUMB_POSITION, HORIZONTAL_SLIDER_THUMB_WIDTH, HORIZONTAL_SLIDER_THUMB_HEIGHT, bi, true);
     } else {
-        wm.gogo_push_button(h, Some(s), flags, 0, 0, width, width.wrapping_add(1), bi);
+        wm.gogo_push_button(h, Some(s), flags, 0, 0, width, width.wrapping_add(1), bi, true);
     }
     if data.max_val == data.min_val {
         data.max_val = data.min_val.wrapping_add(1);
     }
     data.num_ticks = if horz { width.wrapping_sub(HORIZONTAL_SLIDER_THUMB_WIDTH) as f32 / data.max_val.wrapping_sub(data.min_val) as f32 } else { height.wrapping_sub(GADGET_SIZE) as f32 / data.max_val.wrapping_sub(data.min_val) as f32 };
     wm.ext[s].user = UserData::Slider(*data);
-    wm.assign_default_font(s, font);
+    crate::client::gadget_look::assign_default_gadget_look(wm, h, s, font, default_visual);
 }
 
 /// The script's `SliderData` (min and max; the rest zero, as `getDataTemplate` clears it).

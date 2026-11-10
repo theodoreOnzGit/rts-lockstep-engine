@@ -19,6 +19,14 @@
 //     (W3DGadgetVerticalSliderDraw, W3DGadgetVerticalSliderImageDraw)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DHorizontalSlider.cpp
 //     (W3DGadgetHorizontalSliderDraw, W3DGadgetHorizontalSliderImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DTextEntry.cpp (drawTextEntryText,
+//     W3DGadgetTextEntryDraw, W3DGadgetTextEntryImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DComboBox.cpp (W3DGadgetComboBoxDraw,
+//     W3DGadgetComboBoxImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DTabControl.cpp
+//     (W3DGadgetTabControlDraw, W3DGadgetTabControlImageDraw)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/GUI/Gadget/W3DProgressBar.cpp
+//     (W3DGadgetProgressBarDraw, W3DGadgetProgressBarImageDraw)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GameWindowGlobal.cpp (winDrawImage, winFillRect, winOpenRect,
 //     winDrawLine)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/{GadgetPushButton.h, GadgetCheckBox.h, GadgetRadioButton.h,
@@ -66,6 +74,16 @@
 //!   (0), the repeated centre (2), the small centre (3) and the bottom (1); the horizontal image draw is a row of
 //!   boxes, filled (the **disabled** image 0) up to the position and blank (disabled image 1) after, with the hilite
 //!   image 0 behind them when hilited.
+//! - Text entry (#72): the back (colour 0) or the images (left 0, right 1, a repeated centre 2 and small centre 3),
+//!   then the text (or `*`s) 5 pixels in, clipped to the field and scrolled by half its width once it is wider; drawn
+//!   from its start (a non-editable combo box's edit box), clipped to the window. While the entry, or its combo box,
+//!   has the focus, a caret 2 pixels wide blinks every 8 focused draws.
+//! - Combo box (#72): its title, then the border and colour 0 below it; the image draw draws image 0 over it all.
+//! - Tab control (#72): `W3DGameWinDefaultDraw`, the border (with `BORDER`), then each tab: draw data `1 + tab` of
+//!   the disabled state (a disabled tab), the hilite state (the active one) or the enabled state.
+//! - Progress bar (#72): the back (colour 0), the bar (colour 4) over `progress` % of the width with a white top line
+//!   and a light grey left line; the image draw repeats the back's centre between its ends and the bar's centre (6)
+//!   for the progress, the bar's right piece (5) after it.
 //!
 //! # Upstream quirks that are kept
 //!
@@ -82,6 +100,11 @@
 //!   image bar, never the selection colours. A list box's own draw sets each cell's font to the window's (and, with
 //!   `ONE_LINE`, its word wrap to 0), which later row heights see.
 //! - `winDrawBorder` takes the list box's slider adjustment from the thumb's **height**, off the width.
+//! - The text entry with `ONE_LINE` puts its text at `size.y / 2 - fontHeight / 2`, without the window's `y`.
+//! - The caret's counter (`static Byte drawCnt`) is shared by every text entry and counts only focused draws.
+//! - A tab control with `BORDER` draws its border twice (its draw, then `drawWindow`).
+//! - The progress bar's image draw does not test the bar's centre image (a `NULL` one is dereferenced: recorded as
+//!   undefined), and draws the back's last, clipped centre piece only when there is a gap.
 //!
 //! # Where this differs from upstream
 //!
@@ -155,7 +178,7 @@ fn place(wm: &GameWindowManager, w: WinId) -> ((i32, i32), (i32, i32)) {
 pub fn draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
     match wm.ext[w].draw.clone() {
         DrawFunc::GameWinDefault | DrawFunc::NoDraw => {}
-        DrawFunc::W3DDefault | DrawFunc::Untranslated(_) => w3d_game_win_default_draw(wm, w, out),
+        DrawFunc::W3DDefault => w3d_game_win_default_draw(wm, w, out),
         DrawFunc::PushButton => push_button_draw(wm, h, w, out),
         DrawFunc::PushButtonImage => push_button_image_draw(wm, h, w, out),
         DrawFunc::CheckBox => check_box_draw(wm, h, w, out),
@@ -169,6 +192,14 @@ pub fn draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &m
         DrawFunc::VerticalSlider | DrawFunc::HorizontalSlider => slider_draw(wm, w, out),
         DrawFunc::VerticalSliderImage => vertical_slider_image_draw(wm, h, w, out),
         DrawFunc::HorizontalSliderImage => horizontal_slider_image_draw(wm, h, w, out),
+        DrawFunc::TextEntry => text_entry_draw(wm, h, w, out),
+        DrawFunc::TextEntryImage => text_entry_image_draw(wm, h, w, out),
+        DrawFunc::ComboBox => combo_box_draw(wm, h, w, out),
+        DrawFunc::ComboBoxImage => combo_box_image_draw(wm, h, w, out),
+        DrawFunc::TabControl => tab_control_draw(wm, h, w, out, false),
+        DrawFunc::TabControlImage => tab_control_draw(wm, h, w, out, true),
+        DrawFunc::ProgressBar => progress_bar_draw(wm, w, out),
+        DrawFunc::ProgressBarImage => progress_bar_image_draw(wm, h, w, out),
         DrawFunc::Host(name) => h.draw(wm, &name, w, out),
     }
 }
@@ -839,6 +870,326 @@ pub fn horizontal_slider_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &
     }
 }
 
+/// `drawTextEntryText`: the entry's text (or its secret text) in the window's font, clipped to the field (or, drawn
+/// from its start, to the window), scrolled by half widths when it is wider than the field, and the caret, blinking
+/// every 8 draws while the entry (or its combo box) has the focus. The IME's construction text is always empty.
+#[allow(clippy::too_many_arguments)]
+fn draw_text_entry_text<H: GuiHost>(wm: &mut GameWindowManager, h: &H, w: WinId, text_color: i32, text_drop: i32, x: i32, y: i32, width: i32, font_height: i32, out: &mut Vec<DrawItem>) {
+    let font = wm.tree.windows[w].inst.font.clone();
+    let UserData::Entry(e) = &mut wm.ext[w].user else { return };
+    e.construct_text.text.clear();
+    if text_color == WIN_COLOR_UNDEFINED {
+        return;
+    }
+    // the strings take the window's font
+    let secret = e.secret_text;
+    let ds = if secret { &mut e.s_text } else { &mut e.text };
+    ds.font = font.clone();
+    let text = ds.text.clone();
+    e.construct_text.font = font.clone();
+    let from_start = e.draw_text_from_start;
+    let text_width = h.text_size(font.as_ref(), &text, None).0;
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let mut x = x;
+    let cursor;
+    let draw = |out: &mut Vec<DrawItem>, at: i32, clip: (i32, i32, i32, i32)| out.push(DrawItem::Text { text: text.clone(), x: at, y, color: text_color, drop_color: text_drop, font: font.clone(), word_wrap: None, wrap_centered: false, hotkey: false, clip: Some(clip) });
+    if !from_start {
+        let clip = (x, y, x + width, y + font_height);
+        x += 2;
+        if text_width < width {
+            draw(out, x, clip);
+            cursor = text_width + x;
+        } else {
+            if width / 2 == 0 {
+                wm.set_undefined("drawTextEntryText: textWidth / (width / 2) with width / 2 == 0 (division by zero)");
+                return;
+            }
+            let div = text_width / (width / 2) - 1;
+            draw(out, x - div * (width / 2), clip);
+            cursor = text_width - div * (width / 2) + x;
+        }
+    } else {
+        let clip = (ox, oy, ox + sx, oy + sy);
+        x += 5;
+        draw(out, x, clip);
+        cursor = text_width + x;
+    }
+    // the caret: `drawCnt` counts only the draws where the entry (or its combo box) has the focus
+    let focus = wm.keyboard_focus;
+    let parent = crate::client::gadget_text_entry::combo_parent(wm, w);
+    if focus == Some(w) || (parent.is_some() && parent == focus) {
+        let cnt = wm.entry_draw_cnt;
+        wm.entry_draw_cnt = cnt.wrapping_add(1);
+        if (cnt >> 3) & 1 != 0 {
+            fill_rect(out, text_color, cursor, oy + 3, cursor + 2, oy + sy - 3);
+        }
+    }
+}
+
+/// The text colours and the `Gadget*Get{state}...` draw data index 0 of the entry's state.
+fn entry_state(win: &GameWindow) -> (DrawState, (i32, i32)) {
+    let st = draw_state(win);
+    (st, text_colors(win, st))
+}
+
+/// `W3DGadgetTextEntryDraw`: the back border and fill (colour 0 of the state), then the text 5 pixels in (with
+/// `ONE_LINE`, at `size.y / 2 - fontHeight / 2`, **without** the window's `y`).
+pub fn text_entry_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    if let UserData::Entry(e) = &mut wm.ext[w].user {
+        e.received_unichar = false;
+    }
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let (st, (tc, tb)) = entry_state(win);
+    let d = dd(win, st, 0).clone();
+    if d.border_color != WIN_COLOR_UNDEFINED {
+        open_rect(out, d.border_color, ox, oy, ox + sx, oy + sy);
+    }
+    if d.color != WIN_COLOR_UNDEFINED {
+        fill_rect(out, d.color, ox + 1, oy + 1, ox + 1 + sx - 2, oy + 1 + sy - 2);
+    }
+    entry_text_at(wm, h, w, tc, tb, out);
+}
+
+/// The end of both text entry draws: where the text goes.
+fn entry_text_at<H: GuiHost>(wm: &mut GameWindowManager, h: &H, w: WinId, tc: i32, tb: i32, out: &mut Vec<DrawItem>) {
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let fh = h.font_height(win.inst.font.as_ref());
+    let y = if win.status & win_status::ONE_LINE != 0 { sy / 2 - fh / 2 } else { oy + 5 };
+    draw_text_entry_text(wm, h, w, tc, tb, ox + 5, y, sx - 10, fh, out);
+}
+
+/// `W3DGadgetTextEntryImageDraw`: the repeated centre (2), the small centre (3) up to the right end, the left (0) and
+/// right (1) ends, then the text. Upstream dereferences all four images: without one, or with a zero-width centre,
+/// it is undefined (recorded, nothing drawn).
+pub fn text_entry_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    if let UserData::Entry(e) = &mut wm.ext[w].user {
+        e.received_unichar = false;
+    }
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = wm.tree.windows[w].clone();
+    let (xo, yo) = win.inst.image_offset;
+    let (st, (tc, tb)) = entry_state(&win);
+    let im = |k: usize| dd(&win, st, k).image.clone();
+    let (Some(left), Some(right), Some(center), Some(small)) = (im(0), im(1), im(2), im(3)) else {
+        wm.set_undefined("W3DGadgetTextEntryImageDraw: a NULL image dereferenced");
+        return;
+    };
+    let size = |i: &Vec<u8>| h.image_size(i).unwrap_or((0, 0));
+    let (ls, rs, cs, ss) = (size(&left), size(&right), size(&center), size(&small));
+    if cs.0 == 0 || ss.0 == 0 {
+        wm.set_undefined("W3DGadgetTextEntryImageDraw: a centre image of width 0 (division by zero)");
+        return;
+    }
+    let left_end = (ox + ls.0 + xo, oy + sy + yo);
+    let right_start = (ox + sx - rs.0 + xo, oy + yo);
+    let pieces = (right_start.0 - left_end.0) / cs.0;
+    let (mut x, y0) = (left_end.0, oy + yo);
+    let y1 = y0 + sy;
+    for _ in 0..pieces {
+        image(out, wm, Some(&center), x, y0, x + cs.0, y1);
+        x += cs.0;
+    }
+    let pieces = (right_start.0 - x) / ss.0 + 1;
+    for _ in 0..pieces {
+        image(out, wm, Some(&small), x, y0, x + ss.0, y1);
+        x += ss.0;
+    }
+    image(out, wm, Some(&left), ox + xo, oy + yo, left_end.0, left_end.1);
+    image(out, wm, Some(&right), right_start.0, right_start.1, right_start.0 + rs.0, right_start.1 + sy);
+    entry_text_at(wm, h, w, tc, tb, out);
+}
+
+/// The combo box's title, if it has one: drawn at `(x + 1, y)` in the state's text colours.
+fn combo_title(wm: &GameWindowManager, w: WinId, x: i32, y: i32, color: i32, drop: i32, out: &mut Vec<DrawItem>) -> bool {
+    let win = &wm.tree.windows[w];
+    let Some(t) = win.text.as_ref().filter(|t| !t.is_empty()) else { return false };
+    out.push(DrawItem::Text { text: t.clone(), x: x + 1, y, color, drop_color: drop, font: win.inst.font.clone(), word_wrap: None, wrap_centered: false, hotkey: false, clip: None });
+    true
+}
+
+/// `W3DGadgetComboBoxDraw`: the title, then the border and the background (colour 0 of the state) below it.
+pub fn combo_box_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((x, mut y), (width, mut height)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let fh = h.font_height(win.inst.font.as_ref());
+    let st = draw_state(win);
+    let d = dd(win, st, 0).clone();
+    let (tc, tb) = text_colors(win, st);
+    if combo_title(wm, w, x, y, tc, tb, out) {
+        y += fh + 1;
+        height -= fh + 1;
+    }
+    if d.border_color != WIN_COLOR_UNDEFINED {
+        open_rect(out, d.border_color, x, y, x + width, y + height);
+    }
+    if d.color != WIN_COLOR_UNDEFINED {
+        fill_rect(out, d.color, x + 1, y + 1, x + width - 1, y + height - 1);
+    }
+}
+
+/// `W3DGadgetComboBoxImageDraw`: image 0 of the state over the whole window (title included), then the title.
+pub fn combo_box_image_draw<H: GuiHost>(wm: &mut GameWindowManager, _h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((x, y), (width, height)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let st = draw_state(win);
+    let (xo, yo) = win.inst.image_offset;
+    let img = dd(win, st, 0).image.clone();
+    let (tc, tb) = text_colors(win, st);
+    image(out, wm, img.as_ref(), x + xo, y + yo, x + xo + width, y + yo + height);
+    combo_title(wm, w, x, y, tc, tb, out);
+}
+
+/// `W3DGadgetTabControlDraw` / `W3DGadgetTabControlImageDraw`: the background (`W3DGameWinDefaultDraw`), the border
+/// with `BORDER` (and not `SEE_THRU`), then each tab that exists (`tabCount`), along the edge from the tab rectangle's
+/// corner: draw data `1 + tab` of the disabled state if the tab is disabled, else hilite if it is the active tab, else
+/// enabled (border and colour, or the image).
+pub fn tab_control_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>, images: bool) {
+    let (ox, oy) = wm.tree.screen_position(w);
+    w3d_game_win_default_draw(wm, w, out);
+    let s = wm.tree.windows[w].status;
+    if s & win_status::BORDER != 0 && s & win_status::SEE_THRU == 0 {
+        win_draw_border(wm, h, w, out);
+    }
+    let Some(t) = crate::client::gadget_tab_control::tab_rt(wm, w).cloned() else {
+        wm.set_undefined("W3DGadgetTabControlDraw: no TabControlData");
+        return;
+    };
+    let win = &wm.tree.windows[w];
+    let (mut tx, mut ty) = (ox + t.tabs_left_limit, oy + t.tabs_top_limit);
+    let (tw, th) = (t.tab_width, t.tab_height);
+    let along_x = t.tab_edge == crate::client::gadget_tab_control::tp::TOP_SIDE || t.tab_edge == crate::client::gadget_tab_control::tp::BOTTOM_SIDE;
+    let (dx, dy) = if along_x { (tw, 0) } else { (0, th) };
+    for k in 0..crate::client::window_script::NUM_TAB_PANES {
+        if t.tab_count > k as i32 {
+            let st = if t.sub_pane_disabled[k] {
+                DrawState::Disabled
+            } else if t.active_tab == k as i32 {
+                DrawState::Hilite
+            } else {
+                DrawState::Enabled
+            };
+            let d = dd(win, st, 1 + k);
+            if images {
+                image(out, wm, d.image.as_ref(), tx, ty, tx + tw, ty + th);
+            } else {
+                if d.border_color != WIN_COLOR_UNDEFINED {
+                    open_rect(out, d.border_color, tx, ty, tx + tw, ty + th);
+                }
+                if d.color != WIN_COLOR_UNDEFINED {
+                    fill_rect(out, d.color, tx + 1, ty + 1, tx + tw - 1, ty + th - 1);
+                }
+            }
+        }
+        tx += dx;
+        ty += dy;
+    }
+}
+
+/// The progress bar's progress (its user data, an `Int`).
+fn progress(wm: &GameWindowManager, w: WinId) -> i32 {
+    match wm.ext[w].user {
+        UserData::Progress(p) => p,
+        _ => 0,
+    }
+}
+
+/// `W3DGadgetProgressBarDraw`: the back (colour 0 of the state), then, with progress, the bar (colour 4) over
+/// `size.x * progress / 100` (only when more than one pixel wide), with a white line on its top and a light grey one
+/// on its left.
+pub fn progress_bar_draw(wm: &GameWindowManager, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = &wm.tree.windows[w];
+    let st = draw_state(win);
+    let (back, bar) = (dd(win, st, 0), dd(win, st, 4));
+    let p = progress(wm, w);
+    if back.border_color != WIN_COLOR_UNDEFINED {
+        open_rect(out, back.border_color, ox, oy, ox + sx, oy + sy);
+    }
+    if back.color != WIN_COLOR_UNDEFINED {
+        fill_rect(out, back.color, ox + 1, oy + 1, ox + 1 + sx - 2, oy + 1 + sy - 2);
+    }
+    if p != 0 {
+        if bar.border_color != WIN_COLOR_UNDEFINED {
+            let ex = ox + sx.wrapping_mul(p) / 100;
+            if ex - ox > 1 {
+                open_rect(out, bar.border_color, ox, oy, ex, oy + sy);
+            }
+        }
+        if bar.color != WIN_COLOR_UNDEFINED {
+            let (x0, y0) = (ox + 1, oy + 1);
+            let (x1, y1) = (x0 + sx.wrapping_mul(p) / 100 - 2, y0 + sy - 2);
+            if x1 - x0 > 1 {
+                fill_rect(out, bar.color, x0, y0, x1, y1);
+                out.push(DrawItem::Line { x0, y0, x1, y1: y0, color: 0xFFFF_FFFF_u32 as i32 });
+                out.push(DrawItem::Line { x0, y0, x1: x0, y1, color: 0xFFC8_C8C8_u32 as i32 });
+            }
+        }
+    }
+}
+
+/// `W3DGadgetProgressBarImageDraw`: the back's repeated centre (2) between the ends, one more clipped to the gap, the
+/// left (0) and right (1) ends; then the bar: `(size.x - 20) * progress / 100` of bar centres (6) from 10 pixels in,
+/// and bar right pieces (5) for the rest of the `(size.x - 20) / width` slots. Nothing without the back's three
+/// images or the bar's right one; the bar's centre is dereferenced unchecked (recorded as undefined, as is a zero
+/// image width).
+pub fn progress_bar_image_draw<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, out: &mut Vec<DrawItem>) {
+    let ((ox, oy), (sx, sy)) = place(wm, w);
+    let win = wm.tree.windows[w].clone();
+    let (xo, yo) = win.inst.image_offset;
+    let st = draw_state(&win);
+    let im = |k: usize| dd(&win, st, k).image.clone();
+    let p = progress(wm, w);
+    let (Some(back_left), Some(back_right), Some(back_center), Some(bar_right)) = (im(0), im(1), im(2), im(5)) else { return };
+    let size = |i: &Vec<u8>| h.image_size(i).unwrap_or((0, 0));
+    let (ls, rs, cs) = (size(&back_left), size(&back_right), size(&back_center));
+    if cs.0 == 0 {
+        wm.set_undefined("W3DGadgetProgressBarImageDraw: a centre image of width 0 (division by zero)");
+        return;
+    }
+    let left_end = (ox + ls.0 + xo, oy + sy + yo);
+    let right_start = (ox + sx - rs.0 + xo, oy + yo);
+    let pieces = (right_start.0 - left_end.0) / cs.0;
+    let (mut x, y0) = (left_end.0, oy + yo);
+    let y1 = y0 + sy;
+    for _ in 0..pieces {
+        image(out, wm, Some(&back_center), x, y0, x + cs.0, y1);
+        x += cs.0;
+    }
+    if right_start.0 - x > 0 {
+        wm.clip = Some((x, y0, right_start.0, y1));
+        image(out, wm, Some(&back_center), x, y0, x + cs.0, y1);
+        wm.clip = None;
+    }
+    image(out, wm, Some(&back_left), ox + xo, oy + yo, left_end.0, left_end.1);
+    image(out, wm, Some(&back_right), right_start.0, right_start.1, right_start.0 + rs.0, right_start.1 + sy);
+    let Some(bar_center) = im(6) else {
+        wm.set_undefined("W3DGadgetProgressBarImageDraw: the bar's centre image NULL dereferenced");
+        return;
+    };
+    let (bcw, brw) = (size(&bar_center).0, size(&bar_right).0);
+    if bcw == 0 {
+        wm.set_undefined("W3DGadgetProgressBarImageDraw: the bar's centre image of width 0 (division by zero)");
+        return;
+    }
+    let bar_w = (sx - 20).wrapping_mul(p) / 100;
+    let pieces = bar_w / bcw;
+    let mut x = ox + 10;
+    let y0 = oy + yo + 5;
+    let y1 = y0 + sy - 10;
+    for _ in 0..pieces {
+        image(out, wm, Some(&bar_center), x, y0, x + bcw, y1);
+        x += bcw;
+    }
+    let mut x = ox + 10 + bcw * pieces;
+    let rest = (sx - 20) / bcw - pieces;
+    for _ in 0..rest {
+        image(out, wm, Some(&bar_right), x, y0, x + brw, y1);
+        x += brw;
+    }
+}
+
 /// `BORDER_CORNER_SIZE`, `BORDER_LINE_SIZE`.
 const BORDER_CORNER_SIZE: i32 = 15;
 const BORDER_LINE_SIZE: i32 = 20;
@@ -1134,5 +1485,200 @@ mod tests {
         let i4 = d.iter().position(|d| matches!(d, DrawItem::FillRect { color: 4, .. })).unwrap();
         let ib = d.iter().position(|d| matches!(d, DrawItem::Image { image, .. } if image == b"BorderCornerUL")).expect("a border");
         assert!(ib > i4);
+    }
+
+    fn images_of(d: &[DrawItem]) -> Vec<(Vec<u8>, i32, i32, i32, i32)> {
+        d.iter().filter_map(|x| if let DrawItem::Image { image, x0, y0, x1, y1, .. } = x { Some((image.clone(), *x0, *y0, *x1, *y1)) } else { None }).collect()
+    }
+
+    fn entry(wm: &mut GameWindowManager, h: &mut Rec, status: u32) -> WinId {
+        let mut inst = WinInstanceData { style: gws::ENTRY_FIELD, text_label_string: b"abc".to_vec(), ..WinInstanceData::new() };
+        colours(&mut inst);
+        inst.enabled_text.color = 0x7001;
+        inst.hilite_text.color = 0x7003;
+        inst.font = Some(crate::client::window_script::GameFont { name: b"F".to_vec(), point_size: 10, bold: false });
+        wm.gogo_gadget(h, None, status, 10, 20, 100, 20, inst, GadgetData::Entry(Default::default())).expect("an entry")
+    }
+
+    /// #72: the text entry's colour draw. Predicted from W3DTextEntry.cpp (entry at (10,20), 100x20, font 10: text 5
+    /// pixels a unit, 10 high; label `abc`):
+    /// - enabled: `OpenRect(10,20,100,20, 0x110)`, `FillRect(11,21,98,18, 0x100)`, the text at (17, 25) in 0x7001,
+    ///   clipped to (15, 25, 105, 35);
+    /// - with the focus (hilited and selected): 0x310 / 0x300, text 0x7003; no caret on the first 8 focused draws, a
+    ///   caret `FillRect(32, 23, 2, 14)` (text end 17 + 15) on the 9th;
+    /// - 40 characters (200 wide, over the 90 of the field): scrolled by `(200 / 45 - 1) * 45` = 135: at x -118;
+    /// - secret: `***` drawn; `ONE_LINE`: y = 20 / 2 - 10 / 2 = 5 (without the window's y); drawn from its start: at
+    ///   x 20, clipped to the window.
+    #[test]
+    fn a_text_entry_draws_as_upstream_draws_it() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let e = entry(&mut wm, &mut h, win_status::ENABLED);
+        let draw = |wm: &mut GameWindowManager, h: &mut Rec| {
+            let mut out = Vec::new();
+            text_entry_draw(wm, h, e, &mut out);
+            out
+        };
+        let d = draw(&mut wm, &mut h);
+        assert_eq!(d[..2], [DrawItem::OpenRect { x: 10, y: 20, w: 100, h: 20, color: 0x110 }, DrawItem::FillRect { x: 11, y: 21, w: 98, h: 18, color: 0x100 }]);
+        assert!(matches!(&d[2], DrawItem::Text { x: 17, y: 25, color: 0x7001, clip: Some((15, 25, 105, 35)), .. }), "{:?}", d[2]);
+        assert_eq!(d.len(), 3);
+        wm.win_set_focus(&mut h, Some(e));
+        for _ in 0..8 {
+            let d = draw(&mut wm, &mut h);
+            assert_eq!(d.len(), 3);
+            assert!(matches!(d[0], DrawItem::OpenRect { color: 0x310, .. }) && matches!(&d[2], DrawItem::Text { color: 0x7003, .. }));
+        }
+        let d = draw(&mut wm, &mut h);
+        assert_eq!(d[3], DrawItem::FillRect { x: 32, y: 23, w: 2, h: 14, color: 0x7003 });
+        wm.win_set_focus(&mut h, None);
+        let long: Vec<u16> = vec![u16::from(b'x'); 40];
+        crate::client::gadget_text_entry::set_text(&mut wm, &mut h, Some(e), &long);
+        let d = draw(&mut wm, &mut h);
+        assert!(matches!(&d[2], DrawItem::Text { x: -118, .. }), "{:?}", d[2]);
+        if let UserData::Entry(x) = &mut wm.ext[e].user {
+            x.secret_text = true;
+            x.draw_text_from_start = true;
+        }
+        wm.win_set_status(e, win_status::ONE_LINE);
+        let d = draw(&mut wm, &mut h);
+        assert!(matches!(&d[2], DrawItem::Text { x: 20, y: 5, clip: Some((10, 20, 110, 40)), text, .. } if text.len() == 40 && text.iter().all(|&c| c == u16::from(b'*'))), "{:?}", d[2]);
+        // no text colour: no text
+        wm.win_mut(e).inst.enabled_text.color = WIN_COLOR_UNDEFINED;
+        assert_eq!(draw(&mut wm, &mut h).len(), 2);
+    }
+
+    /// #72: the text entry's image draw. Predicted (images 5x10; entry 100x20 at (10,20)): 18 centres from x 15 to 105,
+    /// one small centre at 105, the left end (10,20)-(15,40), the right end (105,20)-(110,40), then the text; without
+    /// an image upstream dereferences `NULL` (recorded).
+    #[test]
+    fn a_text_entry_draws_its_images_as_upstream_draws_them() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let e = entry(&mut wm, &mut h, win_status::ENABLED | win_status::IMAGE);
+        assert_eq!(wm.ext[e].draw, DrawFunc::TextEntryImage);
+        let d = wm.win_repaint(&mut h);
+        let im = images_of(&d);
+        assert_eq!(im.len(), 21);
+        assert_eq!(im[0], (b"Img100_2".to_vec(), 15, 20, 20, 40));
+        assert_eq!(im[17], (b"Img100_2".to_vec(), 100, 20, 105, 40));
+        assert_eq!(im[18], (b"Img100_3".to_vec(), 105, 20, 110, 40));
+        assert_eq!(im[19..], [(b"Img100_0".to_vec(), 10, 20, 15, 40), (b"Img100_1".to_vec(), 105, 20, 110, 40)]);
+        assert!(matches!(d.last(), Some(DrawItem::Text { x: 17, .. })));
+        wm.win_mut(e).inst.enabled_draw_data[3].image = None;
+        wm.win_repaint(&mut h);
+        assert!(wm.undefined.is_some());
+    }
+
+    /// #72: the combo box's draws. Predicted from W3DComboBox.cpp (120x20 at (10,20), font 10, title `T`): the title at
+    /// (11, 20), then the border at y 31 (20 + 10 + 1), 9 high, and the fill inside; the image draw puts image 0 over
+    /// the whole window and the title on it.
+    #[test]
+    fn a_combo_box_draws_as_upstream_draws_it() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let mut inst = WinInstanceData { style: gws::COMBO_BOX, ..WinInstanceData::new() };
+        colours(&mut inst);
+        inst.font = Some(crate::client::window_script::GameFont { name: b"F".to_vec(), point_size: 10, bold: false });
+        let c = wm.gogo_gadget(&mut h, None, win_status::ENABLED, 10, 20, 120, 20, inst, GadgetData::ComboBox(Default::default())).expect("a combo box");
+        wm.win_mut(c).inst.enabled_text.color = 0x7001;
+        let t: Vec<u16> = "T".encode_utf16().collect();
+        wm.win_set_text(c, &t);
+        let mut out = Vec::new();
+        combo_box_draw(&mut wm, &mut h, c, &mut out);
+        assert!(matches!(&out[0], DrawItem::Text { x: 11, y: 20, color: 0x7001, .. }));
+        assert_eq!(out[1..], [DrawItem::OpenRect { x: 10, y: 31, w: 120, h: 9, color: 0x110 }, DrawItem::FillRect { x: 11, y: 32, w: 118, h: 7, color: 0x100 }]);
+        let mut out = Vec::new();
+        combo_box_image_draw(&mut wm, &mut h, c, &mut out);
+        assert_eq!(images_of(&out), vec![(b"Img100_0".to_vec(), 10, 20, 130, 40)]);
+        assert!(matches!(&out[1], DrawItem::Text { x: 11, y: 20, .. }));
+        assert_eq!(wm.ext[c].draw, DrawFunc::ComboBox);
+    }
+
+    /// #72: the tab control's draws. Predicted from W3DTabControl.cpp (200x100 at (10,10), border 4, tabs 30x20, 3
+    /// tabs on the top, centred: the tabs from (65, 14)): the background (enabled 0), then tab 0, active: hilite 1
+    /// (`OpenRect(65,14,30,20, 0x311)`, fill 0x301 inside); tab 1: enabled 2 (0x112 / 0x102) at x 95; tab 2,
+    /// disabled: disabled 3 (0x213 / 0x203) at x 125. The image draw: `Img300_1`, `Img100_2`, `Img200_3` at the same
+    /// places, after the background image.
+    #[test]
+    fn a_tab_control_draws_as_upstream_draws_it() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let mut inst = WinInstanceData { style: gws::TAB_CONTROL, ..WinInstanceData::new() };
+        colours(&mut inst);
+        let mut td = crate::client::window_script::TabControlData { tab_orientation: 0, tab_edge: 3, tab_width: 30, tab_height: 20, tab_count: 3, pane_border: 4, ..Default::default() };
+        td.sub_pane_disabled[2] = true;
+        let t = wm.gogo_gadget(&mut h, None, win_status::ENABLED, 10, 10, 200, 100, inst, GadgetData::TabControl(td)).expect("a tab control");
+        let mut out = Vec::new();
+        tab_control_draw(&mut wm, &mut h, t, &mut out, false);
+        assert_eq!(
+            out,
+            vec![
+                DrawItem::OpenRect { x: 10, y: 10, w: 200, h: 100, color: 0x110 },
+                DrawItem::FillRect { x: 11, y: 11, w: 198, h: 98, color: 0x100 },
+                DrawItem::OpenRect { x: 65, y: 14, w: 30, h: 20, color: 0x311 },
+                DrawItem::FillRect { x: 66, y: 15, w: 28, h: 18, color: 0x301 },
+                DrawItem::OpenRect { x: 95, y: 14, w: 30, h: 20, color: 0x112 },
+                DrawItem::FillRect { x: 96, y: 15, w: 28, h: 18, color: 0x102 },
+                DrawItem::OpenRect { x: 125, y: 14, w: 30, h: 20, color: 0x213 },
+                DrawItem::FillRect { x: 126, y: 15, w: 28, h: 18, color: 0x203 },
+            ]
+        );
+        wm.win_set_status(t, win_status::IMAGE);
+        let mut out = Vec::new();
+        tab_control_draw(&mut wm, &mut h, t, &mut out, true);
+        assert_eq!(images_of(&out), vec![(b"Img100_0".to_vec(), 10, 10, 210, 110), (b"Img300_1".to_vec(), 65, 14, 95, 34), (b"Img100_2".to_vec(), 95, 14, 125, 34), (b"Img200_3".to_vec(), 125, 14, 155, 34)]);
+        // with a border, the border's images come after the background
+        wm.win_set_status(t, win_status::BORDER);
+        let mut out = Vec::new();
+        tab_control_draw(&mut wm, &mut h, t, &mut out, true);
+        assert!(images_of(&out).iter().any(|i| i.0 == b"BorderCornerUL"));
+        assert_eq!(wm.ext[t].draw, DrawFunc::TabControl);
+    }
+
+    /// #72: the progress bar's draws. Predicted from W3DProgressBar.cpp (100x20 at (10,20)):
+    /// - 50 %: the back (0x110 / 0x100), the bar's border `OpenRect(10,20,50,20, 0x114)`, its fill `FillRect(11,21,48,18,
+    ///   0x104)`, a white line on its top (11,21)-(59,21) and a light grey one (0xFFC8C8C8) on its left; 1 %: no bar
+    ///   (less than two pixels); 0: the back only;
+    /// - the image draw at 50 %: 18 back centres (images 5 wide) from 15, both ends, then (100 - 20) * 50 / 100 = 40
+    ///   pixels of bar centres (8, `Img100_6`) from x 20 (y 25 to 35) and 80 / 5 - 8 = 8 bar right pieces; 103 wide, a
+    ///   back centre clipped to (105, 20, 108, 40).
+    #[test]
+    fn a_progress_bar_draws_as_upstream_draws_it() {
+        let mut h = Rec::default();
+        let mut wm = GameWindowManager::new((800, 600));
+        let mut inst = WinInstanceData { style: gws::PROGRESS_BAR, ..WinInstanceData::new() };
+        colours(&mut inst);
+        let p = wm.gogo_gadget(&mut h, None, win_status::ENABLED, 10, 20, 100, 20, inst, GadgetData::None).expect("a progress bar");
+        assert_eq!(wm.ext[p].draw, DrawFunc::ProgressBar);
+        gadget::progress_bar_set_progress(&mut wm, &mut h, p, 50);
+        let d = wm.win_repaint(&mut h);
+        assert_eq!(
+            d,
+            vec![
+                DrawItem::OpenRect { x: 10, y: 20, w: 100, h: 20, color: 0x110 },
+                DrawItem::FillRect { x: 11, y: 21, w: 98, h: 18, color: 0x100 },
+                DrawItem::OpenRect { x: 10, y: 20, w: 50, h: 20, color: 0x114 },
+                DrawItem::FillRect { x: 11, y: 21, w: 48, h: 18, color: 0x104 },
+                DrawItem::Line { x0: 11, y0: 21, x1: 59, y1: 21, color: -1 },
+                DrawItem::Line { x0: 11, y0: 21, x1: 11, y1: 39, color: 0xFFC8_C8C8_u32 as i32 },
+            ]
+        );
+        gadget::progress_bar_set_progress(&mut wm, &mut h, p, 1);
+        assert_eq!(wm.win_repaint(&mut h).len(), 2);
+        gadget::progress_bar_set_progress(&mut wm, &mut h, p, 50);
+        let mut out = Vec::new();
+        progress_bar_image_draw(&mut wm, &mut h, p, &mut out);
+        let im = images_of(&out);
+        assert_eq!(im.len(), 18 + 2 + 8 + 8);
+        assert_eq!(im[20], (b"Img100_6".to_vec(), 20, 25, 25, 35));
+        assert_eq!(im[28], (b"Img100_5".to_vec(), 60, 25, 65, 35));
+        wm.win_set_size(&mut h, p, 103, 20);
+        let mut out = Vec::new();
+        progress_bar_image_draw(&mut wm, &mut h, p, &mut out);
+        assert!(out.iter().any(|d| matches!(d, DrawItem::Image { x0: 105, clip: Some((105, 20, 108, 40)), .. })));
+        wm.win_mut(p).inst.enabled_draw_data[6].image = None;
+        progress_bar_image_draw(&mut wm, &mut h, p, &mut Vec::new());
+        assert!(wm.undefined.is_some());
     }
 }

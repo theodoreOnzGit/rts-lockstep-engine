@@ -110,7 +110,9 @@
 //! The windows are not the game's `GameWindow`s: the gadgets' own inner windows (list box buttons, slider thumbs,
 //! combo box parts, tab panes made by default) are not created **by the reader**, and their draw data is kept on the
 //! gadget ([`GameWindow::parts`]). **Corrected 2026-11-10 (#70):** the window manager creates the list box's and the
-//! sliders' inner windows when it adopts the file's windows and gives them these parts, as `createGadget` does. ~~The parent's `GWM_SCRIPT_CREATE` message, the edit data, the system message `GWM_CREATE`
+//! sliders' inner windows when it adopts the file's windows and gives them these parts, as `createGadget` does.
+//! **Corrected 2026-11-10 (#72):** and the combo box's parts and the tab control's default panes (destroyed when the
+//! file gives the tab control children). ~~The parent's `GWM_SCRIPT_CREATE` message, the edit data, the system message `GWM_CREATE`
 //! and the default font of `winCreate` (the language's, later replaced by the window's own) are not modelled.~~
 //! **Corrected 2026-11-10 (#34):** the reader itself still sends no message, but
 //! [`crate::client::window_manager::GameWindowManager::win_create_from_script`] runs it and then replays, window by

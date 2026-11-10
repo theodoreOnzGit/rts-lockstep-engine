@@ -34,6 +34,13 @@
 ** - The host's own callbacks: `TestSystem` (handles everything, does not want the focus) and `TestInput` (ignores
 **   everything) on the user windows; both record the message.
 **
+** #72 added: the combo box, text entry, tab control, progress bar and static text made by their gogoGadget* calls,
+** every gadget made with `defaultVisual` as the operation says (the combo box's EntryData and ListboxData made as
+** createGadget makes them, with NEW: gogoGadgetComboBox deletes both); the operations on them (GWM_IME_CHAR, the
+** GadgetTextEntry / GadgetComboBox / GadgetTabControl functions); and in the dump every window's text colours, the
+** draw data of the windows each `W` made, and the entries', combo boxes' and tab controls' data. Each call is made
+** before its result is logged, so that the messages it sends come first in the log.
+**
 ** Input (stdin): one operation per line (see tests/differential_wm.rs, which writes them and runs the same ones on the
 ** Rust). Output (stdout): after each operation, `#` and its number, the messages the host recorded, then a dump of the
 ** windows and the manager's state, in the format the Rust writes. A crash ends the output early (the Rust test
@@ -57,6 +64,9 @@
 #include "GameClient/GadgetRadioButton.h"
 #include "GameClient/GadgetStaticText.h"
 #include "GameClient/GadgetProgressBar.h"
+#include "GameClient/GadgetTextEntry.h"
+#include "GameClient/GadgetComboBox.h"
+#include "GameClient/GadgetTabControl.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/Image.h"
@@ -77,6 +87,8 @@ const AsciiString AsciiString::TheEmptyString;
 static std::ostringstream g_log;
 static unsigned int g_time = 0;
 static std::vector<GameWindow *> g_windows;
+/* the first window whose draw data the dump writes: the ones the last 'W' made */
+static int g_dd_from = 1 << 30;
 static std::vector<int> g_freed;
 
 static int widx(const void *w)
@@ -374,7 +386,20 @@ static void dump(std::ostringstream &o, TestWindowManager *wm)
 		o << " parent " << widx(w->winGetParent()) << " owner " << widx(w->winGetOwner()) << " kids";
 		for (GameWindow *c = w->winGetChild(); c; c = c->winGetNext()) o << " " << widx(c);
 		dump_text(o, w->winGetText());
+		o << " tx " << w->winGetEnabledTextColor() << "/" << w->winGetEnabledTextBorderColor() << " " << w->winGetDisabledTextColor() << "/" << w->winGetDisabledTextBorderColor() << " " << w->winGetHiliteTextColor() << "/" << w->winGetHiliteTextBorderColor();
 		o << "\n";
+		if ((int)i >= g_dd_from)
+		{
+			/* the draw data of the windows the operation made (#72: assignDefaultGadgetLook) */
+			o << " dd";
+			for (int st = 0; st < 3; ++st)
+				for (int k = 0; k < MAX_DRAW_DATA; ++k)
+				{
+					const WinDrawData *dd = st == 0 ? &d->m_enabledDrawData[k] : st == 1 ? &d->m_disabledDrawData[k] : &d->m_hiliteDrawData[k];
+					o << " " << (dd->image ? dd->image->getName().str() : "-") << "/" << dd->color << "/" << dd->borderColor;
+				}
+			o << "\n";
+		}
 		Int style = d->getStyle();
 		void *ud = w->winGetUserData();
 		if (BitTest(style, GWS_SCROLL_LISTBOX) && ud)
@@ -416,6 +441,28 @@ static void dump(std::ostringstream &o, TestWindowManager *wm)
 			memcpy(&bits, &s->numTicks, 4);
 			o << " sl " << s->minVal << " " << s->maxVal << " " << bits << " " << s->position << "\n";
 		}
+		else if (BitTest(style, GWS_ENTRY_FIELD) && ud)
+		{
+			EntryData *e = (EntryData *)ud;
+			o << " te";
+			dump_text(o, e->text->getText());
+			dump_text(o, e->sText->getText());
+			o << " " << e->charPos << " " << e->maxTextLen << " " << (int)e->secretText << (int)e->numericalOnly << (int)e->alphaNumericalOnly << (int)e->aSCIIOnly << (int)e->drawTextFromStart << (int)e->receivedUnichar << " " << e->conCharPos << "\n";
+		}
+		else if (BitTest(style, GWS_COMBO_BOX) && ud)
+		{
+			ComboBoxData *c = (ComboBoxData *)ud;
+			o << " cb " << (int)c->isEditable << " " << c->maxDisplay << " " << c->maxChars << " " << (int)c->asciiOnly << (int)c->lettersAndNumbersOnly << (int)c->dontHide << " " << c->entryCount << " " << widx(c->dropDownButton) << " " << widx(c->editBox) << " " << widx(c->listBox) << "\n";
+		}
+		else if (BitTest(style, GWS_TAB_CONTROL) && ud)
+		{
+			TabControlData *t = (TabControlData *)ud;
+			o << " tb " << t->tabOrientation << " " << t->tabEdge << " " << t->tabWidth << " " << t->tabHeight << " " << t->tabCount << " " << t->paneBorder << " " << t->activeTab << " " << t->tabsLeftLimit << " " << t->tabsRightLimit << " " << t->tabsTopLimit << " " << t->tabsBottomLimit << " panes";
+			for (int k = 0; k < NUM_TAB_PANES; ++k) o << " " << widx(t->subPanes[k]);
+			o << " dis";
+			for (int k = 0; k < NUM_TAB_PANES; ++k) o << " " << (int)t->subPaneDisabled[k];
+			o << "\n";
+		}
 	}
 	o << "mgr focus " << widx(wm->focus()) << " cap " << widx(wm->captor()) << " grab " << widx(wm->grab()) << " rgn " << widx(wm->rgn()) << " lone " << widx(wm->lone()) << " modal";
 	for (ModalWindow *m = wm->modal(); m; m = m->next) o << " " << widx(m->window);
@@ -436,9 +483,9 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 	{
 	case 'W':
 	{
-		int parent, type, x, y, w, h;
+		int parent, type, x, y, w, h, visual;
 		unsigned int status, style;
-		in >> parent >> type >> x >> y >> w >> h >> status >> style;
+		in >> parent >> type >> x >> y >> w >> h >> status >> style >> visual;
 		WinInstanceData inst;
 		inst.init();
 		inst.m_style = style;
@@ -452,14 +499,14 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 			u->winSetInputFunc(TestInput);
 			break;
 		}
-		case 1: wm->gogoGadgetPushButton(p, status, x, y, w, h, &inst, NULL, FALSE); break;
-		case 2: wm->gogoGadgetCheckbox(p, status, x, y, w, h, &inst, NULL, FALSE); break;
+		case 1: wm->gogoGadgetPushButton(p, status, x, y, w, h, &inst, NULL, visual); break;
+		case 2: wm->gogoGadgetCheckbox(p, status, x, y, w, h, &inst, NULL, visual); break;
 		case 3:
 		{
 			RadioButtonData r;
 			in >> r.group;
 			r.screen = 1;
-			wm->gogoGadgetRadioButton(p, status, x, y, w, h, &inst, &r, NULL, FALSE);
+			wm->gogoGadgetRadioButton(p, status, x, y, w, h, &inst, &r, NULL, visual);
 			break;
 		}
 		case 6:
@@ -476,7 +523,7 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 				l.columnWidthPercentage = NEW Int[cols];
 				for (int i = 0; i < cols; ++i) in >> l.columnWidthPercentage[i];
 			}
-			wm->gogoGadgetListBox(p, status, x, y, w, h, &inst, &l, NULL, FALSE);
+			wm->gogoGadgetListBox(p, status, x, y, w, h, &inst, &l, NULL, visual);
 			break;
 		}
 		case 7: case 8:
@@ -484,7 +531,60 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 			static SliderData s;
 			memset(&s, 0, sizeof(s));
 			in >> s.minVal >> s.maxVal;
-			wm->gogoGadgetSlider(p, status, x, y, w, h, &inst, &s, NULL, FALSE);
+			wm->gogoGadgetSlider(p, status, x, y, w, h, &inst, &s, NULL, visual);
+			break;
+		}
+		case 4:
+		{
+			/* createGadget's combo box data: an EntryData and a ListboxData (NEW: gogoGadgetComboBox deletes both) */
+			static ComboBoxData c;
+			memset(&c, 0, sizeof(c));
+			int editable, ascii, letters, len, sb, fsize;
+			in >> editable >> c.maxDisplay >> c.maxChars >> ascii >> letters >> len >> sb >> fsize;
+			c.isEditable = editable; c.asciiOnly = ascii; c.lettersAndNumbersOnly = letters;
+			c.entryData = NEW EntryData;
+			memset(c.entryData, 0, sizeof(EntryData));
+			c.entryData->aSCIIOnly = c.asciiOnly;
+			c.entryData->alphaNumericalOnly = c.lettersAndNumbersOnly;
+			c.entryData->maxTextLen = c.maxChars;
+			c.listboxData = NEW ListboxData;
+			memset(c.listboxData, 0, sizeof(ListboxData));
+			c.listboxData->listLength = (Short)len;
+			c.listboxData->scrollBar = sb;
+			c.listboxData->forceSelect = 1;
+			c.listboxData->columns = 1;
+			inst.m_font = fsize ? TheFontLibrary->getFont(AsciiString("F"), fsize, FALSE) : NULL;
+			wm->gogoGadgetComboBox(p, status, x, y, w, h, &inst, &c, inst.m_font, visual);
+			break;
+		}
+		case 5:
+		{
+			static TabControlData t;
+			memset(&t, 0, sizeof(t));
+			int mask;
+			in >> t.tabOrientation >> t.tabEdge >> t.tabWidth >> t.tabHeight >> t.tabCount >> t.paneBorder >> mask;
+			for (int k = 0; k < NUM_TAB_PANES; ++k) t.subPaneDisabled[k] = (mask >> k) & 1;
+			wm->gogoGadgetTabControl(p, status, x, y, w, h, &inst, &t, NULL, visual);
+			break;
+		}
+		case 9:
+		{
+			static EntryData e;
+			memset(&e, 0, sizeof(e));
+			int maxlen, secret, num, alnum, ascii;
+			std::string label;
+			in >> maxlen >> secret >> num >> alnum >> ascii >> label;
+			e.maxTextLen = (Short)maxlen; e.secretText = secret; e.numericalOnly = num; e.alphaNumericalOnly = alnum; e.aSCIIOnly = ascii;
+			if (label != "_") inst.m_textLabelString = label.c_str();
+			wm->gogoGadgetTextEntry(p, status, x, y, w, h, &inst, &e, NULL, visual);
+			break;
+		}
+		case 10: wm->gogoGadgetProgressBar(p, status, x, y, w, h, &inst, NULL, visual); break;
+		case 11:
+		{
+			static TextData t;
+			memset(&t, 0, sizeof(t));
+			wm->gogoGadgetStaticText(p, status, x, y, w, h, &inst, &t, NULL, visual);
 			break;
 		}
 		}
@@ -554,6 +654,42 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 		win(a)->winSetText(u);
 		break;
 	}
+	/* #72: the text entry, the combo box, the tab control */
+	/* (each call is made before its result is logged: the messages it sends are logged first) */
+	case 'I': { in >> a >> b; int r = (int)wm->winSendInputMsg(win(a), GWM_IME_CHAR, (WindowMsgData)b, 0); g_log << "ret " << r << "\n"; break; }
+	case 'e': case 'y': case 'a':
+	{
+		std::string t;
+		in >> a >> t;
+		UnicodeString u;
+		for (size_t i = 0; i < t.size(); ++i) if (t[i] != '_') u.concat((WideChar)t[i]);
+		if (op == 'e') GadgetTextEntrySetText(win(a), u);
+		else if (op == 'y') GadgetComboBoxSetText(win(a), u);
+		else { in >> b; Int r = GadgetComboBoxAddEntry(win(a), u, b); g_log << "cadded " << r << "\n"; }
+		break;
+	}
+	case 'g': { in >> a; UnicodeString t = GadgetTextEntryGetText(win(a)); g_log << "etext"; dump_text(g_log, t); g_log << "\n"; break; }
+	case 'c': { in >> a; UnicodeString t = GadgetComboBoxGetText(win(a)); g_log << "ctext"; dump_text(g_log, t); g_log << "\n"; break; }
+	case 'r': in >> a; GadgetComboBoxReset(win(a)); break;
+	case 's': in >> a >> b >> c; GadgetComboBoxSetSelectedPos(win(a), b, c); break;
+	case 'p': { in >> a; Int v = -7; GadgetComboBoxGetSelectedPos(win(a), &v); g_log << "csel " << v << "\n"; break; }
+	case 'h': in >> a; GadgetComboBoxHideList(win(a)); break;
+	case 'k':
+		in >> a >> b >> c;
+		switch (b)
+		{
+		case 0: GadgetComboBoxSetIsEditable(win(a), c); break;
+		case 1: GadgetComboBoxSetMaxChars(win(a), c); break;
+		case 2: GadgetComboBoxSetMaxDisplay(win(a), c); break;
+		case 3: GadgetComboBoxSetAsciiOnly(win(a), c); break;
+		default: GadgetComboBoxSetLettersAndNumbersOnly(win(a), c); break;
+		}
+		break;
+	case 'j': in >> a >> b >> c; GadgetComboBoxSetItemData(win(a), b, (void *)(uintptr_t)(unsigned int)c); break;
+	case 'J': { in >> a >> b; void *r = GadgetComboBoxGetItemData(win(a), b); g_log << "cdata " << (unsigned int)(uintptr_t)r << "\n"; break; }
+	case 'n': in >> a >> b; GadgetTabControlShowSubPane(win(a), b); break;
+	case 'q': in >> a; GadgetTabControlCreateSubPanes(win(a)); break;
+	case 'u': in >> a; GadgetTabControlFixupSubPaneList(win(a)); break;
 	}
 }
 
@@ -572,7 +708,9 @@ static void run_case(void)
 		std::istringstream in(g_ops[i]);
 		char op = 0;
 		in >> op;
+		size_t before = g_windows.size();
 		run_op(wm, in, op);
+		g_dd_from = op == 'W' ? (int)before : 1 << 30;
 		std::ostringstream o;
 		o << "#" << i << "\n" << g_log.str();
 		g_log.str("");

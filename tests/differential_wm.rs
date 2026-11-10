@@ -44,13 +44,66 @@
 //!   offset) 879, 4703 (the vertical slider's thumb from the minimum) 291, 4704 (`GLM_SCROLL_BUFFER`'s selection at
 //!   0) 19. An earlier 4702 (force-select ignored on the second click) was an equivalent mutant: never caught, since
 //!   upstream's next line restores the selection.
-//! - Not compared: drawing; the combo box, text entry and tab control (compiled, not driven: not translated yet);
-//!   images in list box cells.
+//! - ~~Not compared: drawing; the combo box, text entry and tab control (compiled, not driven: not translated yet);
+//!   images in list box cells.~~ **Corrected 2026-11-10 (#72):** the combo box, text entry and tab control are driven
+//!   (see below); not compared: drawing, images in list box cells.
+//!
+//! # #72: the text entry, the combo box, the tab control, the default visual
+//!
+//! Every gadget is now made with `defaultVisual` TRUE or FALSE (a third of them TRUE), and the cases also make combo
+//! boxes (editable or not, `maxDisplay` 0..6, `maxChars` -2..300, the filters, the list's length 0..12 with or without
+//! a scroll bar, a font given or not), tab controls (any orientation, edges 0..6, tab sizes including 0, 0..9 tabs,
+//! disabled tabs), text entries (`maxTextLen` -1..12 or ~300, the four flags, a label or none), progress bars and
+//! static texts. The new operations: `GWM_IME_CHAR` sent to an entry (letters, digits, space, `-`, return, 0xE9,
+//! 0x4E2D, 0xFF10, 0), `GadgetTextEntrySetText` / `GetText`, `GadgetComboBoxAddEntry`, `Reset`, `SetSelectedPos`,
+//! `GetSelectedPos`, `GetText`, `SetText`, `HideList`, the five setters, `SetItemData` / `GetItemData`, clicks on the
+//! drop-down button, presses on the tabs, `GadgetTabControlShowSubPane` (-1..8), `CreateSubPanes`,
+//! `FixupSubPaneList`; the keys add backspace, delete, escape, home, F1 and control. The dump adds every window's
+//! text colours, the draw data (27 images and colours) of the windows each `W` made, and the entries' (text, secret
+//! text, `charPos`, `maxTextLen`, flags), combo boxes' and tab controls' data.
+//!
+//! **Predictions (written before the first run):** a few mismatches on the first run (2 to 5 causes), most likely in
+//! the combo box's resizing chain (`GGM_RESIZED` from `winSetSize` reaching the list box and the edit box), in the
+//! order of the default visual's writes on the inner windows, and in `charPos` for long texts; glibc's `iswalnum` in
+//! the C locale classifies only ASCII, as the translation does, so the characters above 0x7F agree. Then 0
+//! mismatches. Stopped as undefined: tab controls with no tabs (`subPanes[-1]` at creation), a zero tab size pressed,
+//! `ShowSubPane(-1)` / `(8)`, combo boxes whose children were destroyed, list lengths of 0.
+//! Planted bugs (2000 cases each): 4705 (typing allowed up to `maxTextLen` instead of `maxTextLen - 1`) 100 to 200
+//! cases; 4706 (`GCM_ADD_ENTRY`'s short list not 16 wider) 400 to 500; 4707 (the tabs' right edge exclusive) 10 to
+//! 30; 4708 (the default visual's hilite text border dark blue) 1500 or more, since every scroll bar button and slider
+//! thumb gets the visual.
+//!
+//! **Results (2026-11-10, `WM_CASES=2000`):**
+//! - First run (50 cases): 16 cases differed, all from the harness: wrap_wm.cpp wrote `ret ` before making the call
+//!   (`g_log << "ret " << call(...)`), so the messages the call sent were logged after it. Fixed by making each call
+//!   before logging its result. Then 200 cases: 0 mismatches.
+//! - 2000 cases: **1 mismatch**, not in the new gadgets: a window destroyed below the top of the modal stack stayed in
+//!   it (`winDestroy` unsets only the top), was freed, became the top when the window above was unset, and the mouse
+//!   was routed into it. Upstream reads freed memory there (the compiled upstream found no window, the port found
+//!   one): recorded as undefined in `winProcessMouseEvent` (a new unit test pins it). Not predicted.
+//! - Then **2000 cases, 70,035 operations compared, 0 mismatches.** Compared, by operation: 28,421 mouse events, 6,319
+//!   keys, 1,785 `GWM_IME_CHAR`, 239 entry texts set and 500 read, 544 combo box entries added, 89 resets, 199
+//!   selections set and 95 read, 90 + 89 texts read and set, 102 lists hidden, 221 setters, 81 + 119 item data,
+//!   217 + 132 + 141 tab control calls, and the gadgets made (by `W` type): 550 combo boxes, 274 tab controls, 593
+//!   entries, 297 progress bars, 316 static texts, 1,331 list boxes, 614 sliders, 854 buttons.
+//! - Stopped where upstream is undefined, new reasons: 56 `ShowSubPane` past the array, 3 with no tabs, 3 a zero tab
+//!   size pressed, 5 a freed pane, 9 a freed combo box child, 1 the freed modal window.
+//! - The prediction of a few mismatch causes in the gadgets missed: none was in the translation of the gadgets; the
+//!   one cause was in the manager, and one in the harness. The prediction that glibc agrees above 0x7F held as far as
+//!   the cases reach (no mismatch; 3 in 10 of the characters typed are 0xE9, 0x4E2D or 0xFF10, into entries of which
+//!   about two in five filter); MSVC's classification there stays unverified.
+//! - Planted bugs (2000 cases each): 4705 **26** cases differ (predicted 100 to 200: missed, typing up to the limit is
+//!   rarer than guessed: entries made with a label already near or past a small `maxTextLen`); 4706 **254**
+//!   (predicted 400 to 500: missed, low); 4707 **9** (predicted 10 to 30: just under; in 3 of them the compiled
+//!   upstream crashed past the point the planted Rust ate the press); 4708 **1500** (predicted 1500 or more: held).
 
 #![cfg(feature = "differential")]
 
+use rts_lockstep_engine::client::gadget_combo_box::{self as cbx, combo_rt};
 use rts_lockstep_engine::client::gadget_list_box::{self as lbx, glm, listbox_rt, CellData, ListboxRt, LISTBOX_IMAGE, LISTBOX_TEXT};
 use rts_lockstep_engine::client::gadget_slider::{slider_rt, slider_set_position};
+use rts_lockstep_engine::client::gadget_tab_control::{self as tbx, tab_rt};
+use rts_lockstep_engine::client::gadget_text_entry::{self as tex, EntryRt};
 use rts_lockstep_engine::client::window_manager::*;
 use rts_lockstep_engine::client::window_script::*;
 use std::collections::BTreeMap;
@@ -136,8 +189,15 @@ fn idx(w: Option<WinId>) -> i64 {
     w.map_or(-1, |w| w as i64)
 }
 
-/// The dump, in wrap_wm.cpp's format.
-fn dump(wm: &GameWindowManager) -> String {
+fn draw_data(o: &mut String, set: &DrawDataSet) {
+    for d in set {
+        let name = d.image.as_ref().map_or("-".to_string(), |n| String::from_utf8_lossy(n).into_owned());
+        let _ = write!(o, " {name}/{}/{}", d.color, d.border_color);
+    }
+}
+
+/// The dump, in wrap_wm.cpp's format; the draw data of the windows from `dd_from` on (the ones a `W` made).
+fn dump(wm: &GameWindowManager, dd_from: usize) -> String {
     let mut o = String::new();
     for (i, w) in wm.tree.windows.iter().enumerate() {
         if wm.ext[i].freed {
@@ -149,11 +209,41 @@ fn dump(wm: &GameWindowManager) -> String {
             let _ = write!(o, " {c}");
         }
         text(&mut o, wm.win_get_text(i));
-        o.push('\n');
+        let t = &w.inst;
+        let _ = writeln!(o, " tx {}/{} {}/{} {}/{}", t.enabled_text.color, t.enabled_text.border_color, t.disabled_text.color, t.disabled_text.border_color, t.hilite_text.color, t.hilite_text.border_color);
+        if i >= dd_from {
+            o.push_str(" dd");
+            draw_data(&mut o, &t.enabled_draw_data);
+            draw_data(&mut o, &t.disabled_draw_data);
+            draw_data(&mut o, &t.hilite_draw_data);
+            o.push('\n');
+        }
         match &wm.ext[i].user {
             UserData::Listbox(l) => dump_listbox(&mut o, l),
             UserData::Slider(s) => {
                 let _ = writeln!(o, " sl {} {} {} {}", s.min_val, s.max_val, s.num_ticks.to_bits(), s.position);
+            }
+            UserData::Entry(e) => {
+                o.push_str(" te");
+                text(&mut o, &e.text.text);
+                text(&mut o, &e.s_text.text);
+                let b = |x: bool| u8::from(x);
+                let _ = writeln!(o, " {} {} {}{}{}{}{}{} {}", e.char_pos, e.max_text_len, b(e.secret_text), b(e.numerical_only), b(e.alpha_numerical_only), b(e.ascii_only), b(e.draw_text_from_start), b(e.received_unichar), e.con_char_pos);
+            }
+            UserData::Combo(c) => {
+                let b = |x: bool| u8::from(x);
+                let _ = writeln!(o, " cb {} {} {} {}{}{} {} {} {} {}", b(c.is_editable), c.max_display, c.max_chars, b(c.ascii_only), b(c.letters_and_numbers_only), b(c.dont_hide), c.entry_count, idx(c.drop_down_button), idx(c.edit_box), idx(c.list_box));
+            }
+            UserData::Tab(t) => {
+                let _ = write!(o, " tb {} {} {} {} {} {} {} {} {} {} {} panes", t.tab_orientation, t.tab_edge, t.tab_width, t.tab_height, t.tab_count, t.pane_border, t.active_tab, t.tabs_left_limit, t.tabs_right_limit, t.tabs_top_limit, t.tabs_bottom_limit);
+                for p in &t.sub_panes {
+                    let _ = write!(o, " {}", idx(*p));
+                }
+                o.push_str(" dis");
+                for d in &t.sub_pane_disabled {
+                    let _ = write!(o, " {}", u8::from(*d));
+                }
+                o.push('\n');
             }
             _ => {}
         }
@@ -231,30 +321,60 @@ fn run_op(wm: &mut GameWindowManager, h: &mut Host, op: &str) {
             let (x, y, ww, hh) = (n(&mut v), n(&mut v), n(&mut v), n(&mut v));
             let status = n(&mut v) as u32;
             let style = n(&mut v) as u32;
-            let inst = WinInstanceData { style, ..WinInstanceData::new() };
+            let visual = n(&mut v) != 0;
+            let mut inst = WinInstanceData { style, ..WinInstanceData::new() };
             match ty {
                 0 => {
                     let u = wm.win_create(h, parent, status, x, y, ww, hh, SystemFunc::Host(b"TestSystem".to_vec()), Some(inst));
                     wm.ext[u].input = InputFunc::Host(b"TestInput".to_vec());
                     wm.ext[u].owner = parent;
                 }
-                1 | 2 => {
-                    wm.gogo_gadget(h, parent, status, x, y, ww, hh, inst, GadgetData::None);
+                1 | 2 | 10 => {
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::None, visual);
+                }
+                11 => {
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::Text(TextData::default()), visual);
                 }
                 3 => {
                     let group = n(&mut v);
-                    wm.gogo_gadget(h, parent, status, x, y, ww, hh, inst, GadgetData::Radio(RadioButtonData { screen: 1, group }));
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::Radio(RadioButtonData { screen: 1, group }), visual);
+                }
+                4 => {
+                    let f: Vec<i32> = (0..8).map(|_| n(&mut v)).collect();
+                    let d = ComboBoxData { is_editable: f[0] != 0, max_display: f[1], max_chars: f[2], ascii_only: f[3] != 0, letters_and_numbers_only: f[4] != 0 };
+                    let mut t = cbx::combo_template(&d);
+                    t.listbox.list_length = f[5] as i16;
+                    t.listbox.scroll_bar = f[6] != 0;
+                    inst.font = (f[7] != 0).then(|| GameFont { name: b"F".to_vec(), point_size: f[7], bold: false });
+                    cbx::gogo_gadget_combo_box(wm, h, parent, status, x, y, ww, hh, inst, t, visual);
+                }
+                5 => {
+                    let f: Vec<i32> = (0..7).map(|_| n(&mut v)).collect();
+                    let mut d = TabControlData { tab_orientation: f[0], tab_edge: f[1], tab_width: f[2], tab_height: f[3], tab_count: f[4], pane_border: f[5], ..Default::default() };
+                    for (k, x) in d.sub_pane_disabled.iter_mut().enumerate() {
+                        *x = (f[6] >> k) & 1 != 0;
+                    }
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::TabControl(d), visual);
+                }
+                9 => {
+                    let f: Vec<i32> = (0..5).map(|_| n(&mut v)).collect();
+                    let label = v.remove(0);
+                    if label != "_" {
+                        inst.text_label_string = label.as_bytes().to_vec();
+                    }
+                    let t = EntryRt { max_text_len: f[0] as i16, secret_text: f[1] != 0, numerical_only: f[2] != 0, alpha_numerical_only: f[3] != 0, ascii_only: f[4] != 0, ..Default::default() };
+                    tex::gogo_gadget_text_entry(wm, h, parent, status, x, y, ww, hh, inst, t, visual);
                 }
                 6 => {
                     let (len, cols) = (n(&mut v), n(&mut v));
                     let f: Vec<bool> = (0..6).map(|_| n(&mut v) != 0).collect();
                     let pct = if cols > 1 { (0..cols).map(|_| n(&mut v)).collect() } else { Vec::new() };
                     let d = ListboxData { list_length: len as i16, columns: cols as i16, column_width_percentage: pct, auto_scroll: f[0], auto_purge: f[1], scroll_bar: f[2], multi_select: f[3], force_select: f[4], scroll_if_at_end: f[5] };
-                    wm.gogo_gadget(h, parent, status, x, y, ww, hh, inst, GadgetData::Listbox(d));
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::Listbox(d), visual);
                 }
                 _ => {
                     let (min_val, max_val) = (n(&mut v), n(&mut v));
-                    wm.gogo_gadget(h, parent, status, x, y, ww, hh, inst, GadgetData::Slider(SliderData { min_val, max_val }));
+                    wm.gogo_gadget_look(h, parent, status, x, y, ww, hh, inst, GadgetData::Slider(SliderData { min_val, max_val }), visual);
                 }
             }
         }
@@ -369,6 +489,79 @@ fn run_op(wm: &mut GameWindowManager, h: &mut Host, op: &str) {
             let t = units(v.remove(0));
             wm.win_set_text(x, &t);
         }
+        // #72: the text entry, the combo box, the tab control
+        "I" => {
+            let (x, ch) = (n(&mut v) as usize, n(&mut v));
+            let r = wm.win_send_input_msg(h, Some(x), gwm::IME_CHAR, ch as u32, 0);
+            let _ = writeln!(h.log, "ret {}", u8::from(r == MsgHandled::Handled));
+        }
+        "e" | "y" | "a" => {
+            let x = n(&mut v) as usize;
+            let t = units(v.remove(0));
+            match c {
+                "e" => tex::set_text(wm, h, Some(x), &t),
+                "y" => cbx::set_text(wm, h, x, &t),
+                _ => {
+                    let color = n(&mut v);
+                    let r = cbx::add_entry(wm, h, x, &t, color);
+                    if wm.undefined.is_none() {
+                        let _ = writeln!(h.log, "cadded {r}");
+                    }
+                }
+            }
+        }
+        "g" | "c" => {
+            let x = n(&mut v) as usize;
+            let t = if c == "g" { tex::get_text(wm, h, Some(x)) } else { cbx::get_text(wm, h, x) };
+            if wm.undefined.is_none() {
+                h.log.push_str(if c == "g" { "etext" } else { "ctext" });
+                text(&mut h.log, &t);
+                h.log.push('\n');
+            }
+        }
+        "r" => cbx::reset(wm, h, n(&mut v) as usize),
+        "s" => {
+            let x = n(&mut v) as usize;
+            let (i, d) = (n(&mut v), n(&mut v));
+            cbx::set_selected_pos(wm, h, x, i, d != 0);
+        }
+        "p" => {
+            let x = n(&mut v) as usize;
+            let r = cbx::get_selected_pos(wm, h, x, -7);
+            if wm.undefined.is_none() {
+                let _ = writeln!(h.log, "csel {r}");
+            }
+        }
+        "h" => cbx::hide_list(wm, h, n(&mut v) as usize),
+        "k" => {
+            let x = n(&mut v) as usize;
+            let (which, val) = (n(&mut v), n(&mut v));
+            match which {
+                0 => cbx::set_is_editable(wm, x, val != 0),
+                1 => cbx::set_max_chars(wm, x, val),
+                2 => cbx::set_max_display(wm, x, val),
+                3 => cbx::set_ascii_only(wm, x, val != 0),
+                _ => cbx::set_letters_and_numbers_only(wm, x, val != 0),
+            }
+        }
+        "j" => {
+            let x = n(&mut v) as usize;
+            let (i, d) = (n(&mut v), n(&mut v));
+            cbx::set_item_data(wm, h, x, i, d as u32);
+        }
+        "J" => {
+            let x = n(&mut v) as usize;
+            let r = cbx::get_item_data(wm, h, x, n(&mut v));
+            if wm.undefined.is_none() {
+                let _ = writeln!(h.log, "cdata {r}");
+            }
+        }
+        "n" => {
+            let x = n(&mut v) as usize;
+            tbx::show_sub_pane(wm, x, n(&mut v));
+        }
+        "q" => tbx::create_sub_panes(wm, h, n(&mut v) as usize),
+        "u" => tbx::fixup_sub_pane_list(wm, n(&mut v) as usize),
         _ => panic!("unknown op {op}"),
     }
 }
@@ -384,6 +577,9 @@ const TEXTS: &[&str] = &["A", "B", "C", "AB", "BA", "ABC", "CAB", "_", "ABCABCAB
 fn gen_op(r: &mut Rng, wm: &GameWindowManager) -> String {
     let lbs = live(wm, |_, u| matches!(u, UserData::Listbox(_)));
     let sls = live(wm, |_, u| matches!(u, UserData::Slider(_)));
+    let ens = live(wm, |_, u| matches!(u, UserData::Entry(_)));
+    let cbs = live(wm, |_, u| matches!(u, UserData::Combo(_)));
+    let tbs = live(wm, |_, u| matches!(u, UserData::Tab(_)));
     let all = live(wm, |_, _| true);
     let pick = |r: &mut Rng, v: &[WinId]| v[r.below(v.len() as u64) as usize];
     // a point in a window (or anywhere)
@@ -398,7 +594,7 @@ fn gen_op(r: &mut Rng, wm: &GameWindowManager) -> String {
         }
     };
     let k = r.below(100);
-    if k < 40 {
+    if k < 36 {
         let (x, y) = point(r);
         let m = match r.below(12) {
             0..=2 => gwm::MOUSE_POS,
@@ -413,15 +609,73 @@ fn gen_op(r: &mut Rng, wm: &GameWindowManager) -> String {
         let (dx, dy) = if m == gwm::LEFT_DRAG { (r.range(-30, 30), r.range(-30, 30)) } else { (0, 0) };
         return format!("M {m} {x} {y} {dx} {dy}");
     }
-    if k < 50 {
-        let keys = [key::UP, key::DOWN, key::LEFT, key::RIGHT, key::TAB, key::ENTER, key::SPACE, b'A', b'B', b'C', b'Z'];
+    if k < 46 {
+        let keys = [key::UP, key::DOWN, key::LEFT, key::RIGHT, key::TAB, key::ENTER, key::SPACE, b'A', b'B', b'C', b'Z', key::BACKSPACE, key::BACKSPACE, key::DEL, key::ESC, key::HOME, 0x3B];
         let kk = keys[r.below(keys.len() as u64) as usize];
-        return format!("K {kk} {}", if r.chance(3, 4) { key::STATE_DOWN } else { key::STATE_UP });
+        let state = match r.below(8) {
+            0..=4 => key::STATE_DOWN,
+            5..=6 => key::STATE_UP,
+            _ => key::STATE_DOWN | 0x0004,
+        };
+        return format!("K {kk} {state}");
     }
-    if k < 54 {
+    if k < 49 {
         return format!("t {}", wm.time_ms + r.below(800) as u32);
     }
-    if k < 80 && !lbs.is_empty() {
+    if k < 58 && !ens.is_empty() {
+        let e = pick(r, &ens);
+        let chars = [u32::from(b'a'), u32::from(b'Z'), u32::from(b'5'), u32::from(b' '), u32::from(b'-'), 13, 0xE9, 0x4E2D, 0xFF10, 0];
+        return match r.below(10) {
+            0..=6 => format!("I {e} {}", chars[r.below(chars.len() as u64) as usize]),
+            7 => format!("e {e} {}", TEXTS[r.below(TEXTS.len() as u64) as usize]),
+            _ => format!("g {e}"),
+        };
+    }
+    if k < 70 && !cbs.is_empty() {
+        let c = pick(r, &cbs);
+        let n = combo_rt(wm, c).map_or(0, |d| d.entry_count);
+        return match r.below(20) {
+            0..=5 => format!("a {c} {} {}", TEXTS[r.below(8) as usize], r.range(0, 9)),
+            6 => format!("r {c}"),
+            7..=8 => format!("s {c} {} {}", r.range(-1, n), r.below(2)),
+            9 => format!("p {c}"),
+            10 => format!("c {c}"),
+            11 => format!("y {c} {}", TEXTS[r.below(8) as usize]),
+            12 => format!("h {c}"),
+            13..=14 => {
+                let which = r.below(5);
+                let val = match which {
+                    1 => r.range(-2, 300),
+                    2 => r.range(0, 8),
+                    _ => r.range(0, 1),
+                };
+                format!("k {c} {which} {val}")
+            }
+            15 => format!("j {c} {} {}", r.range(-1, n), r.range(0, 1000)),
+            16 => format!("J {c} {}", r.range(-1, n)),
+            // the drop-down button's GBM_SELECTED, through a click on it
+            _ => {
+                let Some(dd) = combo_rt(wm, c).and_then(|d| d.drop_down_button).filter(|&d| !wm.ext[d].freed) else { return format!("c {c}") };
+                let (x, y) = wm.tree.screen_position(dd);
+                format!("M {} {} {} 0 0", if r.chance(1, 2) { gwm::LEFT_DOWN } else { gwm::LEFT_UP }, x + 3, y + 3)
+            }
+        };
+    }
+    if k < 76 && !tbs.is_empty() {
+        let t = pick(r, &tbs);
+        let d = tab_rt(wm, t).expect("a tab control").clone();
+        return match r.below(10) {
+            0..=5 => {
+                // a press on the tabs (or near them)
+                let (x, y) = wm.tree.screen_position(t);
+                format!("M {} {} {} 0 0", gwm::LEFT_DOWN, x + r.range(d.tabs_left_limit - 2, d.tabs_right_limit + 1), y + r.range(d.tabs_top_limit - 2, d.tabs_bottom_limit + 1))
+            }
+            6..=7 => format!("n {t} {}", r.range(-1, 8)),
+            8 => format!("q {t}"),
+            _ => format!("u {t}"),
+        };
+    }
+    if k < 82 && !lbs.is_empty() {
         let l = pick(r, &lbs);
         let lr = listbox_rt(wm, l).expect("a list box");
         let end = i32::from(lr.end_pos);
@@ -451,7 +705,7 @@ fn gen_op(r: &mut Rng, wm: &GameWindowManager) -> String {
             _ => format!("G {l} -1 0"),
         };
     }
-    if k < 86 && !sls.is_empty() {
+    if k < 85 && !sls.is_empty() {
         let s = pick(r, &sls);
         return if r.chance(3, 4) { format!("P {s} {}", r.range(-5, 110)) } else { format!("Q {s} {} {}", r.range(-10, 20), r.range(-10, 120)) };
     }
@@ -482,7 +736,7 @@ fn gen_tree(r: &mut Rng) -> Vec<String> {
     let mut next = 0i32;
     for i in 0..roots {
         let (x, y) = if i == 0 { (0, 0) } else { (r.range(200, 400), r.range(100, 300)) };
-        ops.push(format!("W -1 0 {x} {y} 400 300 {} {}", win_status::ENABLED, gws::USER_WINDOW));
+        ops.push(format!("W -1 0 {x} {y} 400 300 {} {} 0", win_status::ENABLED, gws::USER_WINDOW));
         parents.push(next);
         next += 1;
     }
@@ -497,28 +751,51 @@ fn gen_tree(r: &mut Rng) -> Vec<String> {
         }
         let track = if r.chance(1, 2) { gws::MOUSE_TRACK } else { 0 };
         let (x, y) = (r.range(0, 250), r.range(0, 200));
-        let kind = r.below(10);
+        let kind = r.below(17);
+        let visual = u8::from(r.chance(1, 3));
         let (op, made) = match kind {
             0..=4 => {
                 if r.chance(1, 4) {
                     status |= win_status::ONE_LINE;
                 }
                 let cols = if r.chance(2, 3) { 1 } else { r.range(2, 3) };
-                let mut s = format!("W {p} 6 {x} {y} {} {} {status} {} {} {cols}", r.range(60, 250), r.range(30, 200), gws::SCROLL_LISTBOX | track, if r.chance(1, 20) { 0 } else { r.range(1, 12) });
+                let mut s = format!("W {p} 6 {x} {y} {} {} {status} {} {visual} {} {cols}", r.range(60, 250), r.range(30, 200), gws::SCROLL_LISTBOX | track, if r.chance(1, 20) { 0 } else { r.range(1, 12) });
                 for f in [3, 3, 2, 4, 3, 8] {
                     let _ = write!(s, " {}", u8::from(r.chance(1, f)));
                 }
                 for _ in 0..if cols > 1 { cols } else { 0 } {
                     let _ = write!(s, " {}", r.range(10, 70));
                 }
-                let made = if s.split(' ').nth(13) == Some("1") { 5 } else { 1 };
+                let made = if s.split(' ').nth(14) == Some("1") { 5 } else { 1 };
                 (s, made)
             }
-            5 => (format!("W {p} 7 {x} {y} {} {} {status} {} {} {}", r.range(10, 30), r.range(30, 200), gws::VERT_SLIDER | track, r.range(-10, 20), r.range(-10, 120)), 2),
-            6 => (format!("W {p} 8 {x} {y} {} {} {status} {} {} {}", r.range(30, 250), r.range(10, 30), gws::HORZ_SLIDER | track, r.range(-10, 20), r.range(-10, 120)), 2),
-            7 => (format!("W {p} 1 {x} {y} {} {} {status} {}", r.range(20, 100), r.range(10, 40), gws::PUSH_BUTTON | track), 1),
-            8 => (format!("W {p} 2 {x} {y} {} {} {status} {}", r.range(20, 100), r.range(10, 40), gws::CHECK_BOX | track), 1),
-            _ => (format!("W {p} 3 {x} {y} {} {} {status} {} {}", r.range(20, 100), r.range(10, 40), gws::RADIO_BUTTON | track, r.range(0, 2)), 1),
+            5 => (format!("W {p} 7 {x} {y} {} {} {status} {} {visual} {} {}", r.range(10, 30), r.range(30, 200), gws::VERT_SLIDER | track, r.range(-10, 20), r.range(-10, 120)), 2),
+            6 => (format!("W {p} 8 {x} {y} {} {} {status} {} {visual} {} {}", r.range(30, 250), r.range(10, 30), gws::HORZ_SLIDER | track, r.range(-10, 20), r.range(-10, 120)), 2),
+            7 => (format!("W {p} 1 {x} {y} {} {} {status} {} {visual}", r.range(20, 100), r.range(10, 40), gws::PUSH_BUTTON | track), 1),
+            8 => (format!("W {p} 2 {x} {y} {} {} {status} {} {visual}", r.range(20, 100), r.range(10, 40), gws::CHECK_BOX | track), 1),
+            9 => (format!("W {p} 3 {x} {y} {} {} {status} {} {visual} {}", r.range(20, 100), r.range(10, 40), gws::RADIO_BUTTON | track, r.range(0, 2)), 1),
+            10..=11 => {
+                // a combo box: editable, maxDisplay, maxChars, ascii, letters and numbers, the list's length and scroll bar,
+                // the font's size (0: none given)
+                let len = if r.chance(1, 20) { 0 } else { r.range(1, 12) };
+                let sb = u8::from(r.chance(4, 5));
+                let fs = if r.chance(1, 2) { 0 } else { r.range(8, 16) };
+                let op = format!("W {p} 4 {x} {y} {} {} {status} {} {visual} {} {} {} {} {} {len} {sb} {fs}", r.range(40, 200), r.range(14, 30), gws::COMBO_BOX | track, u8::from(r.chance(1, 2)), r.range(0, 6), r.range(-2, 300), u8::from(r.chance(1, 4)), u8::from(r.chance(1, 4)));
+                (op, 4 + if sb == 1 { 4 } else { 0 })
+            }
+            12 => {
+                let count = if r.chance(1, 20) { r.range(0, 9) } else { r.range(1, 8) };
+                let w = if r.chance(1, 20) { 0 } else { r.range(10, 40) };
+                let op = format!("W {p} 5 {x} {y} {} {} {status} {} {visual} {} {} {w} {} {count} {} {}", r.range(100, 300), r.range(60, 200), gws::TAB_CONTROL | track, r.range(0, 2), if r.chance(1, 10) { r.range(0, 2) } else { r.range(3, 6) }, r.range(10, 30), r.range(0, 8), r.below(256));
+                (op, 9)
+            }
+            13..=14 => {
+                let label = ["_", "Ab1", "xyz"][r.below(3) as usize];
+                let op = format!("W {p} 9 {x} {y} {} {} {status} {} {visual} {} {} {} {} {} {label}", r.range(10, 150), r.range(10, 30), gws::ENTRY_FIELD | track, r.range(-1, 12) + if r.chance(1, 10) { 290 } else { 0 }, u8::from(r.chance(1, 4)), u8::from(r.chance(1, 5)), u8::from(r.chance(1, 5)), u8::from(r.chance(1, 4)));
+                (op, 1)
+            }
+            15 => (format!("W {p} 10 {x} {y} {} {} {status} {} {visual}", r.range(20, 100), r.range(10, 40), gws::PROGRESS_BAR | track), 1),
+            _ => (format!("W {p} 11 {x} {y} {} {} {status} {} {visual}", r.range(20, 100), r.range(10, 40), gws::STATIC_TEXT | track), 1),
         };
         ops.push(op);
         if kind <= 4 && r.chance(1, 4) {
@@ -549,13 +826,15 @@ fn run_rust(r: &mut Rng, len: u64) -> Case {
             let op = gen_op(r, &wm);
             ops.push(op);
         }
+        let before = wm.tree.windows.len();
         run_op(&mut wm, &mut h, &ops[i]);
+        let dd_from = if ops[i].starts_with("W ") { before } else { usize::MAX };
         if let Some(u) = wm.undefined {
             let at = ops[i].split(' ').next().unwrap_or("").to_string();
             ops.truncate(i);
             return Case { ops, dumps, undefined: Some(u), undefined_op: at };
         }
-        dumps.push(format!("#{i}\n{}{}", std::mem::take(&mut h.log), dump(&wm)));
+        dumps.push(format!("#{i}\n{}{}", std::mem::take(&mut h.log), dump(&wm, dd_from)));
         i += 1;
     }
     Case { ops, dumps, undefined: None, undefined_op: String::new() }
@@ -597,6 +876,8 @@ fn window_manager_and_gadgets_match_upstream() {
     let mut r = Rng(0x2545_F491_4F6C_DD1D);
     let (mut ops_compared, mut equal_cases, mut mismatched_cases, mut crashed) = (0u64, 0u64, 0u64, 0u64);
     let mut undefined: BTreeMap<String, u64> = BTreeMap::new();
+    // what was exercised: the operations compared, by kind, and the gadgets made (`W` by type), over the compared ones
+    let mut by_op: BTreeMap<String, u64> = BTreeMap::new();
     let mut first_bad: Option<String> = None;
     for case in 0..cases {
         let len = 10 + r.below(61);
@@ -617,7 +898,13 @@ fn window_manager_and_gadgets_match_upstream() {
         let mut bad = None;
         for (i, d) in c.dumps.iter().enumerate() {
             match cpp.get(i) {
-                Some(x) if x == d => ops_compared += 1,
+                Some(x) if x == d => {
+                    ops_compared += 1;
+                    let mut t = c.ops[i].split(' ');
+                    let k = t.next().unwrap_or("").to_string();
+                    let k = if k == "W" { format!("W{}", t.nth(1).unwrap_or("")) } else { k };
+                    *by_op.entry(k).or_default() += 1;
+                }
                 Some(x) => {
                     bad = Some(format!("case {case}, op {i} `{}`:\n--- rust\n{d}--- c++\n{x}", c.ops[i]));
                     break;
@@ -641,6 +928,7 @@ fn window_manager_and_gadgets_match_upstream() {
         }
     }
     eprintln!("wm differential: {cases} cases, {ops_compared} operations compared, {equal_cases} cases identical, {mismatched_cases} with a mismatch ({crashed} where the C++ stopped)");
+    eprintln!("  compared, by operation (W by gadget type): {by_op:?}");
     for (u, n) in &undefined {
         eprintln!("  stopped where upstream is undefined: {n} x {u}");
     }

@@ -1631,10 +1631,10 @@ pub fn create_scrollbar<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: Wi
     let track = wm.tree.windows[w].inst.style & gws::MOUSE_TRACK;
     let inst = |style: u32| WinInstanceData { style: style | track, ..WinInstanceData::new() };
     let st = status | win_status::ACTIVE | win_status::ENABLED;
-    let up = wm.gogo_push_button(h, Some(w), st, width - bw - 2, top + 2, bw, bh, inst(gws::PUSH_BUTTON));
-    let down = wm.gogo_push_button(h, Some(w), st, width - bw - 2, top + bottom - bh - 2, bw, bh, inst(gws::PUSH_BUTTON));
+    let up = wm.gogo_push_button(h, Some(w), st, width - bw - 2, top + 2, bw, bh, inst(gws::PUSH_BUTTON), true);
+    let down = wm.gogo_push_button(h, Some(w), st, width - bw - 2, top + bottom - bh - 2, bw, bh, inst(gws::PUSH_BUTTON), true);
     let mut sd = SliderRt::default();
-    let slider = crate::client::gadget_slider::gogo_gadget_slider(wm, h, Some(w), st, width - bw - 2, top + bh + 3, bw, bottom - 2 * bh - 6, inst(gws::VERT_SLIDER), &mut sd);
+    let slider = crate::client::gadget_slider::gogo_gadget_slider(wm, h, Some(w), st, width - bw - 2, top + bh + 3, bw, bottom - 2 * bh - 6, inst(gws::VERT_SLIDER), &mut sd, true);
     if let Some(l) = lb_opt(wm, w) {
         l.up_button = Some(up);
         l.down_button = Some(down);
@@ -1843,19 +1843,25 @@ pub fn listbox_template(d: &ListboxData) -> ListboxRt {
 /// asserts (not a list box style).
 #[allow(clippy::too_many_arguments)]
 pub fn gogo_gadget_list_box<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, template: ListboxRt) -> Option<WinId> {
+    gogo_gadget_list_box_look(wm, h, parent, status, x, y, width, height, inst, template, false)
+}
+
+/// `gogoGadgetListBox(..., defaultVisual)` (`defaultFont` is the instance data's font).
+#[allow(clippy::too_many_arguments)]
+pub fn gogo_gadget_list_box_look<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, inst: WinInstanceData, template: ListboxRt, default_visual: bool) -> Option<WinId> {
     if inst.style & gws::SCROLL_LISTBOX == 0 {
         return None;
     }
     let inst_font = inst.font.clone();
     let lw = wm.win_create(h, parent, status, x, y, width, height, SystemFunc::ListBox, Some(inst));
-    list_box_after_create(wm, h, lw, parent, inst_font, template);
+    list_box_after_create(wm, h, lw, parent, inst_font, template, default_visual);
     Some(lw)
 }
 
 /// `gogoGadgetListBox` after its `winCreate`: the data, owner, callbacks, list length, display, scroll bar, columns
 /// and font. Where upstream returns `NULL` (more than one column without percentages, or no columns: `createGadget`
 /// then dereferences it) the manager's `undefined` is set.
-pub fn list_box_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, lw: WinId, parent: Option<WinId>, inst_font: Option<GameFont>, template: ListboxRt) {
+pub fn list_box_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, lw: WinId, parent: Option<WinId>, inst_font: Option<GameFont>, template: ListboxRt, default_visual: bool) {
     let (width, height) = wm.tree.windows[lw].size;
     // `instData->getTextLength()`: the script sets the text after creation (setWindowText), so never
     let title = false;
@@ -1907,7 +1913,7 @@ pub fn list_box_after_create<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, 
         let total = width - slider_w.map_or(0, |s| s + 2);
         l.column_width = Some((0..n).map(|i| p[i].wrapping_mul(total) / 100).collect());
     }
-    wm.assign_default_font(lw, inst_font);
+    crate::client::gadget_look::assign_default_gadget_look(wm, h, lw, inst_font, default_visual);
 }
 
 /// createGadget's list box branch after `gogoGadgetListBox`: the file's part draw data to the up button, the down
