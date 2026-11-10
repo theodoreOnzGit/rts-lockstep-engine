@@ -80,5 +80,7 @@ pub mod difficulty_select;
 pub mod map_util;
 pub mod gui_util;
 pub mod skirmish_game_options;
+pub mod user_preferences;
+pub mod options_menu;
 pub mod skirmish_map_select;
 pub mod score_screen;

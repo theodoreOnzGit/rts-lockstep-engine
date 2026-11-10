@@ -63,7 +63,7 @@ use crate::client::gadget::radio_set_selection;
 use crate::client::gadget::static_text_set_text;
 use crate::client::gadget_list_box as lb;
 use crate::client::map_util::{get_map_preview_image, populate_map_listbox, populate_map_listbox_no_reset};
-use crate::client::skirmish_game_options::{self as sgo, SkirmishHost, UserPreferences};
+use crate::client::skirmish_game_options::{self as sgo, SkirmishHost};
 use crate::client::shell;
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, UserData, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
@@ -178,7 +178,7 @@ pub fn skirmish_map_select_menu_init<H: SkirmishHost>(wm: &mut GameWindowManager
     let parent = wm.win_get_window_from_id(None, parent_id);
     h.map_select().parent = parent;
     wm.win_set_focus(h, parent);
-    let pref = UserPreferences::load(h, b"Network.ini");
+    let pref = crate::client::user_preferences::load_preferences(wm, h, b"Network.ini");
     let mut uses_system_map_dir = pref.uses_system_map_dir();
     let Some(map) = h.skirmish().game.as_ref().map(|g| g.map_name.clone()) else {
         wm.set_undefined("SkirmishMapSelectMenuInit: TheSkirmishGameInfo is NULL (getMap)");

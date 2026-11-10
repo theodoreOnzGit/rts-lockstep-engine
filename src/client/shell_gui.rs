@@ -12,7 +12,8 @@
 //     SkirmishGameOptionsMenuInput, SkirmishMapSelectMenuInput, SkirmishGameOptionsMenuInit, SkirmishMapSelectMenuInit,
 //     SkirmishGameOptionsMenuUpdate, SkirmishMapSelectMenuUpdate, SkirmishGameOptionsMenuShutdown,
 //     SkirmishMapSelectMenuShutdown; the tooltip callbacks MapSelectorTooltip, mapListTooltipFunc; #89 part 2:
-//     ScoreScreenSystem, ScoreScreenInput, ScoreScreenInit, ScoreScreenUpdate, ScoreScreenShutdown)
+//     ScoreScreenSystem, ScoreScreenInput, ScoreScreenInit, ScoreScreenUpdate, ScoreScreenShutdown; #88:
+//     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -48,9 +49,14 @@
 //!   (`crate::client::skirmish_game_options`) and its map picker (`crate::client::skirmish_map_select`) are translated
 //!   and dispatched here, with their two tooltips (`MapSelectorTooltip`, `mapListTooltipFunc`); a tooltip callback
 //!   that is not translated is recorded in [`ShellGui::untranslated`]. The World's data they read is the owner's copy
-//!   ([`ShellGui::skirmish_data`]); the preference files are kept in memory ([`ShellGui::prefs`]). **Corrected
+//!   ([`ShellGui::skirmish_data`]); ~~the preference files are kept in memory (`ShellGui::prefs`)~~. **Corrected
 //!   2026-11-10 (#89 part 2):** the score screen (`crate::client::score_screen`) is translated and dispatched here; the
-//!   game it scores is the owner's copy ([`ShellGui::score_screen`]'s `game`).
+//!   game it scores is the owner's copy ([`ShellGui::score_screen`]'s `game`). **Corrected 2026-11-10 (#89):** the
+//!   preference files are the owner's user data folder ([`ShellGui::user_data`], read by the translated
+//!   `UserPreferences::load`; the files written queued in [`ShellGui::user_data_writes`]), and the options screen
+//!   (`crate::client::options_menu`) is translated and dispatched here, over the owner's copy of the global data
+//!   ([`ShellGui::global_data`]); what the client lacks of it (the LOD manager, the display modes, the gamma, the
+//!   registry, the IP addresses) is answered here as missing and recorded in [`ShellGui::untranslated`].
 //! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
 //!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
 //!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
@@ -63,8 +69,10 @@
 //!
 //! [`SystemFunc::Host`]: crate::client::window_manager::SystemFunc::Host
 
-use std::collections::BTreeMap;
-
+use crate::client::audio_info::AudioSettings;
+use crate::client::options_menu::{self as om, DisplaySettings, OptionsHost, OptionsMenu};
+use crate::client::user_preferences::{MemoryUserData, PreferenceMap, UserDataFiles, UserPreferences};
+use crate::common::global_data::GlobalData;
 use crate::client::difficulty_select::{self as ds, DifficultyHost, DifficultySelect};
 use crate::client::gui_util::{GuiUtilHost, SkirmishData};
 use crate::client::map_util::MapUtilHost;
@@ -110,8 +118,6 @@ pub struct ShellGui<W> {
     pub single_player: SinglePlayerMenu,
     /// (#78) DifficultySelect.cpp's statics.
     pub difficulty: DifficultySelect,
-    /// (#78) `Options.ini`'s `CampaignDifficulty` (`None`: no entry; the options are not read in this client).
-    pub campaign_difficulty_pref: Option<i32>,
     /// (#78) `TheNameKeyGenerator`: the table the reader gives the windows their keys from, and the callbacks ask
     /// (a clone of the host shares it, as the one global generator).
     pub keys: NameKeys,
@@ -121,9 +127,27 @@ pub struct ShellGui<W> {
     pub skirmish_data: SkirmishData,
     /// (#89) SkirmishMapSelectMenu.cpp's statics.
     pub map_select: SkirmishMapSelect,
-    /// (#89) The preference files (`Skirmish.ini`, `Network.ini`) by leaf name, in memory: `UserPreferences::load`
-    /// reads them, `write` replaces them (the files themselves are not read or written).
-    pub prefs: BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Vec<u8>>>,
+    /// ~~(#89) The preference files (`Skirmish.ini`, `Network.ini`) by leaf name, in memory: `UserPreferences::load`
+    /// reads them, `write` replaces them (the files themselves are not read or written).~~ **Corrected 2026-11-10
+    /// (#89):** the user data folder as the owner gave it (`Options.ini`, `Skirmish.ini`, `Network.ini`, ... by their
+    /// full paths, `path` the folder): the translated `UserPreferences::load` reads them; a `write` replaces the file
+    /// here and queues it in [`ShellGui::user_data_writes`] for the owner to keep (on disk, or in OPFS).
+    pub user_data: MemoryUserData,
+    /// (#93) The files written since the owner last took them: (full path, bytes as written in text mode).
+    pub user_data_writes: Vec<(Vec<u8>, Vec<u8>)>,
+    /// (#88) OptionsMenu.cpp's statics.
+    pub options: OptionsMenu,
+    /// (#88) `TheWritableGlobalData` as the options screen reads and writes it: the client's copy (the owner gives it
+    /// from the World's and applies what the screen changed; the logic's own is never written).
+    pub global_data: GlobalData,
+    /// (#88) `TheAudio->getAudioSettings()` (the owner's audio's; the defaults until it gives them).
+    pub audio_settings: AudioSettings,
+    /// (#88) `TheGameLODManager->getStaticLODLevel()`: kept, not applied (GameLOD.cpp is not translated).
+    pub static_lod_level: i32,
+    /// (#88) `TheDisplay`'s modes (width, height, bit depth): none, the client does not change its display mode.
+    pub display_modes: Vec<(i32, i32, i32)>,
+    /// (#88) `TheInGameUI`'s RMB scroll anchors (draw, move): kept for the owner (the client has none yet).
+    pub rmb_scroll_anchor: (bool, bool),
     /// (#89) The map names a map list's item data stands for (item data `n` is entry `n - 1`).
     pub map_list_names: Vec<Vec<u8>>,
     /// (#89) `SkirmishBattleHonors::getWins()` (the stats file is not read: 0 unless the owner sets it).
@@ -152,12 +176,18 @@ impl<W: WndFiles> ShellGui<W> {
             save_files: Vec::new(),
             single_player: SinglePlayerMenu::default(),
             difficulty: DifficultySelect::default(),
-            campaign_difficulty_pref: None,
             keys: NameKeys::default(),
             skirmish: SkirmishGameOptions::default(),
             skirmish_data: SkirmishData::default(),
             map_select: SkirmishMapSelect::default(),
-            prefs: BTreeMap::new(),
+            user_data: MemoryUserData::default(),
+            user_data_writes: Vec::new(),
+            options: OptionsMenu::default(),
+            global_data: GlobalData::new(),
+            audio_settings: AudioSettings::default(),
+            static_lod_level: crate::client::options_menu::STATIC_GAME_LOD_UNKNOWN,
+            display_modes: Vec::new(),
+            rmb_scroll_anchor: (false, false),
             map_list_names: Vec::new(),
             skirmish_wins: 0,
             score_screen: ScoreScreen::default(),
@@ -183,6 +213,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"SkirmishMapSelectMenuSystem" => smsm::skirmish_map_select_menu_system(wm, self, win, msg, d1, d2),
             // (#89 part 2)
             b"ScoreScreenSystem" => ss::score_screen_system(wm, self, win, msg, d1, d2),
+            // (#88)
+            b"OptionsMenuSystem" => om::options_menu_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -198,6 +230,7 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"SkirmishGameOptionsMenuInput" => sgo::skirmish_game_options_menu_input(wm, self, win, msg, d1, d2),
             b"SkirmishMapSelectMenuInput" => smsm::skirmish_map_select_menu_input(wm, self, win, msg, d1, d2),
             b"ScoreScreenInput" => ss::score_screen_input(wm, self, win, msg, d1, d2),
+            b"OptionsMenuInput" => om::options_menu_input(wm, self, win, msg, d1, d2),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -270,6 +303,10 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"ScoreScreenInit" => ss::score_screen_init(wm, self, layout),
             b"ScoreScreenUpdate" => ss::score_screen_update(wm, self, layout),
             b"ScoreScreenShutdown" => ss::score_screen_shutdown(wm, self, layout),
+            // (#88)
+            b"OptionsMenuInit" => om::options_menu_init(wm, self, layout),
+            b"OptionsMenuUpdate" => om::options_menu_update(wm, self, layout),
+            b"OptionsMenuShutdown" => om::options_menu_shutdown(wm, self, layout),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -310,6 +347,137 @@ impl<W: WndFiles> MenuHost for ShellGui<W> {
     }
     fn score_screen_globals(&mut self) -> Option<&mut ScoreScreenGlobals> {
         Some(&mut self.score_screen.globals)
+    }
+    fn path_user_data(&self) -> Vec<u8> {
+        self.user_data.path.clone()
+    }
+    fn user_data_read(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        self.user_data.user_data_read(path)
+    }
+    fn user_data_write(&mut self, path: &[u8], bytes: &[u8]) -> bool {
+        self.user_data.user_data_write(path, bytes);
+        self.user_data_writes.push((path.to_vec(), bytes.to_vec()));
+        true
+    }
+}
+
+impl<W: WndFiles> ShellGui<W> {
+    /// (#93) The preference file `leaf` of the user data folder as `UserPreferences::load` reads it (`None`: no file).
+    pub fn pref_file(&mut self, leaf: &[u8]) -> Option<PreferenceMap> {
+        let mut p = UserPreferences::new();
+        p.load(&mut self.user_data, leaf).then_some(p.map)
+    }
+
+    /// (#93) The preference file `leaf` made from `map` as `UserPreferences::write` writes it.
+    pub fn set_pref_file(&mut self, leaf: &[u8], map: &PreferenceMap) {
+        let mut p = UserPreferences::new();
+        p.load(&mut self.user_data, leaf);
+        p.map = map.clone();
+        p.write(&mut self.user_data);
+    }
+}
+
+impl<W: WndFiles> OptionsHost for ShellGui<W> {
+    fn options_menu(&mut self) -> &mut OptionsMenu {
+        &mut self.options
+    }
+    fn global_data(&mut self) -> &mut GlobalData {
+        &mut self.global_data
+    }
+    fn audio_settings(&self) -> AudioSettings {
+        self.audio_settings.clone()
+    }
+    fn set_volume(&mut self, volume: f32, affect: u32) {
+        self.requests.push(ShellRequest::SetVolume { volume, affect });
+    }
+    fn quitting(&self) -> bool {
+        false
+    }
+    fn game_mode(&self) -> i32 {
+        if self.env.in_shell_game {
+            crate::common::recorder::game_mode::SHELL
+        } else if self.env.in_game {
+            crate::common::recorder::game_mode::SINGLE_PLAYER
+        } else {
+            crate::common::recorder::game_mode::NONE
+        }
+    }
+    fn ip_addresses(&mut self) -> Vec<(Vec<u8>, u32)> {
+        // (IPEnumeration: the client has no network)
+        Vec::new()
+    }
+    fn registry_version(&mut self) -> u32 {
+        self.untranslated.push(b"GetRegistryVersion".to_vec());
+        0
+    }
+    fn registry_proxy(&mut self) -> Vec<u8> {
+        self.untranslated.push(b"GetStringFromRegistry(Proxy)".to_vec());
+        Vec::new()
+    }
+    fn set_proxy(&mut self, _proxy: &[u8]) {
+        self.untranslated.push(b"SetStringInRegistry(Proxy), ghttpSetProxy".to_vec());
+    }
+    fn static_lod_level(&mut self) -> i32 {
+        self.static_lod_level
+    }
+    fn set_static_lod_level(&mut self, level: i32) -> bool {
+        // (the level kept; GameLODManager::setStaticLODLevel's settings are not applied: GameLOD.cpp)
+        self.untranslated.push(b"GameLODManager::setStaticLODLevel".to_vec());
+        let changed = self.static_lod_level != level;
+        self.static_lod_level = level;
+        changed
+    }
+    fn find_static_lod_level(&mut self) -> i32 {
+        self.untranslated.push(b"GameLODManager::findStaticLODLevel".to_vec());
+        crate::client::options_menu::STATIC_GAME_LOD_UNKNOWN
+    }
+    fn current_texture_reduction(&mut self) -> i32 {
+        self.global_data.texture_reduction_factor
+    }
+    fn recommended_texture_reduction(&mut self) -> i32 {
+        self.untranslated.push(b"GameLODManager::getRecommendedTextureReduction".to_vec());
+        self.global_data.texture_reduction_factor
+    }
+    fn static_game_lod_level_name(&mut self, level: i32) -> Vec<u8> {
+        // (GameLOD.cpp's StaticGameLODNames)
+        match level {
+            0 => b"Low".to_vec(),
+            1 => b"Medium".to_vec(),
+            2 => b"High".to_vec(),
+            3 => b"Custom".to_vec(),
+            _ => Vec::new(),
+        }
+    }
+    fn adjust_lod(&mut self, _adj: i32) {
+        self.untranslated.push(b"GameClient::adjustLOD".to_vec());
+    }
+    fn display_modes(&mut self) -> Vec<(i32, i32, i32)> {
+        self.display_modes.clone()
+    }
+    fn display_settings(&mut self) -> DisplaySettings {
+        DisplaySettings { x_res: self.global_data.x_resolution, y_res: self.global_data.y_resolution, bit_depth: 32, windowed: self.env.windowed }
+    }
+    fn set_display_mode(&mut self, _x: i32, _y: i32, _bits: i32, _windowed: bool) -> bool {
+        self.untranslated.push(b"Display::setDisplayMode".to_vec());
+        false
+    }
+    fn resolution_changed(&mut self, _wm: &mut GameWindowManager) {
+        self.untranslated.push(b"OptionsMenu: the shell made anew after a display change".to_vec());
+    }
+    fn set_gamma(&mut self, _gamma: f32) {
+        self.untranslated.push(b"Display::setGamma".to_vec());
+    }
+    fn draw_rmb_scroll_anchor(&mut self) -> &mut bool {
+        &mut self.rmb_scroll_anchor.0
+    }
+    fn move_rmb_scroll_anchor(&mut self) -> &mut bool {
+        &mut self.rmb_scroll_anchor.1
+    }
+    fn options_destroy_quit_menu(&mut self) {
+        self.untranslated.push(b"destroyQuitMenu".to_vec());
+    }
+    fn do_resolution_dialog(&mut self, _wm: &mut GameWindowManager) {
+        self.untranslated.push(b"DoResolutionDialog".to_vec());
     }
 }
 
@@ -361,9 +529,6 @@ impl<W: WndFiles> SinglePlayerHost for ShellGui<W> {
 impl<W: WndFiles> DifficultyHost for ShellGui<W> {
     fn difficulty_select(&mut self) -> &mut DifficultySelect {
         &mut self.difficulty
-    }
-    fn campaign_difficulty_pref(&self) -> Option<i32> {
-        self.campaign_difficulty_pref
     }
 }
 
@@ -425,13 +590,6 @@ impl<W: WndFiles> SkirmishHost for ShellGui<W> {
     }
     fn map_select(&mut self) -> &mut SkirmishMapSelect {
         &mut self.map_select
-    }
-    fn prefs_load(&mut self, leaf: &[u8]) -> BTreeMap<Vec<u8>, Vec<u8>> {
-        self.prefs.get(leaf).cloned().unwrap_or_default()
-    }
-    fn prefs_write(&mut self, leaf: &[u8], prefs: &BTreeMap<Vec<u8>, Vec<u8>>) -> bool {
-        self.prefs.insert(leaf.to_vec(), prefs.clone());
-        true
     }
     fn skirmish_wins(&self) -> i32 {
         self.skirmish_wins
@@ -849,6 +1007,52 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         s.into_bytes()
     }
 
+    /// (#88) A synthetic `Menus/OptionsMenu.wnd` (no EA file), with every window OptionsMenu.cpp finds by name under
+    /// `OptionsMenuParent` (the system and input callbacks): the four combo boxes and the two IP lists at x 20 from
+    /// y 20, 25 apart; the check boxes at x 250 from y 20, 22 apart; the sliders (0 .. 100; the texture one 0 .. 2,
+    /// the particle one 100 .. 5000) at x 500 from y 20, 25 apart; the two text entries, the version label;
+    /// *Back*, *Defaults*, *Accept*, *Keyboard Options*, *Firewall Refresh* at y 560; and the advanced display window
+    /// (hidden by the init) holding its controls and its *Accept* / *Back*.
+    pub fn options_menu_wnd() -> Vec<u8> {
+        let f = "OptionsMenu.wnd";
+        let mut c = String::new();
+        for (i, n) in ["ComboBoxIP", "ComboBoxOnlineIP", "ComboBoxAntiAliasing", "ComboBoxResolution", "ComboBoxDetail"].iter().enumerate() {
+            let y = 20 + 25 * i as i32;
+            c += &combo(f, n, (20, y, 200, y + 20));
+        }
+        let checks = ["CheckAlternateMouse", "Retaliation", "CheckDoubleClickAttackMove", "CheckLanguageFilter", "CheckSendDelay", "CheckBoxDrawAnchor", "CheckBoxMoveAnchor", "CheckBoxSaveCamera", "CheckBoxUseCamera"];
+        for (i, n) in checks.iter().enumerate() {
+            let y = 20 + 22 * i as i32;
+            c += &win(f, "CHECKBOX", n, (250, y, 450, y + 20), false, "", "");
+        }
+        for (i, n) in ["SliderScrollSpeed", "SliderMusicVolume", "SliderSFXVolume", "SliderVoiceVolume", "SliderGamma"].iter().enumerate() {
+            let y = 20 + 25 * i as i32;
+            c += &win(f, "HORZSLIDER", n, (500, y, 700, y + 20), false, "    SLIDERDATA = MINVALUE: 0, MAXVALUE: 100;\n", "");
+        }
+        let entry = "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n";
+        c += &win(f, "ENTRYFIELD", "TextEntryHTTPProxy", (20, 200, 200, 220), false, entry, "");
+        c += &win(f, "ENTRYFIELD", "TextEntryFirewallPortOverride", (20, 230, 200, 250), false, entry, "");
+        c += &static_text(f, "LabelVersion", (20, 530, 300, 550));
+        c += &buttons(f, 20, 560, &["ButtonBack"]);
+        c += &buttons(f, 140, 560, &["ButtonDefaults"]);
+        c += &buttons(f, 260, 560, &["ButtonAccept"]);
+        c += &buttons(f, 380, 560, &["ButtonKeyboardOptions"]);
+        c += &buttons(f, 500, 560, &["ButtonFirewallRefresh"]);
+        let mut a = String::new();
+        let adv = ["Check3DShadows", "Check2DShadows", "CheckCloudShadows", "CheckGroundLighting", "CheckSmoothWater", "CheckExtraAnimations", "CheckNoDynamicLOD", "CheckHeatEffects", "CheckUnlockFPS", "CheckBehindBuilding", "CheckShowProps"];
+        for (i, n) in adv.iter().enumerate() {
+            let y = 310 + 18 * i as i32;
+            a += &win(f, "CHECKBOX", n, (210, y, 400, y + 16), false, "", "");
+        }
+        a += &win(f, "HORZSLIDER", "LowResSlider", (410, 310, 590, 330), false, "    SLIDERDATA = MINVALUE: 0, MAXVALUE: 2;\n", "");
+        a += &win(f, "HORZSLIDER", "ParticleCapSlider", (410, 340, 590, 360), false, "    SLIDERDATA = MINVALUE: 100, MAXVALUE: 5000;\n", "");
+        a += &buttons(f, 410, 470, &["ButtonAdvanceAccept"]);
+        a += &buttons(f, 500, 470, &["ButtonAdvanceBack"]);
+        c += &frame(f, "WinAdvancedDisplayOptions", (200, 300, 600, 500), false, &a);
+        let parent = win(f, "USER", "OptionsMenuParent", (0, 0, 800, 600), false, "    SYSTEMCALLBACK = \"OptionsMenuSystem\";\n    INPUTCALLBACK = \"OptionsMenuInput\";\n", &c);
+        layout_file("OptionsMenuInit", "OptionsMenuUpdate", "OptionsMenuShutdown", &parent)
+    }
+
     /// The shell's synthetic files by their paths (`Window\Menus/<name>.wnd`): the main menu, the two message boxes,
     /// and plain screens ([`screen`]) for the background and the screens the main menu pushes.
     pub fn shell_wnd_files() -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -866,8 +1070,10 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             ("SkirmishMapSelectMenu", skirmish_map_select_wnd()),
             // (#89 part 2)
             ("ScoreScreen", score_screen_wnd()),
+            // (#88)
+            ("OptionsMenu", options_menu_wnd()),
         ];
-        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu", "PopupReplay"] {
+        for n in ["BlankWindow", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "ChallengeMenu", "PopupReplay", "KeyboardOptionsMenu"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()
@@ -1109,7 +1315,8 @@ pub(crate) mod tests {
     }
 
     /// #69, options, the world builder, the hover and the IME detach, predicted from MainMenu.cpp and Shell.cpp:
-    /// *Options* loads `Menus/OptionsMenu.wnd` once and runs its (untranslated) init; *World Builder* cannot spawn, so
+    /// *Options* loads `Menus/OptionsMenu.wnd` once and runs its ~~(untranslated)~~ init (**Corrected 2026-11-10
+    /// (#88):** translated; its *Back* closes it); *World Builder* cannot spawn, so
     /// an OK box (`GUI:WorldBuilder`) opens; *OK* closes it. The mouse entering *Exit* signals the exit hook; entering
     /// *USA* asks for its logo's transition. A text entry attached to the IME is detached by the shell's push.
     #[test]
@@ -1121,9 +1328,11 @@ pub(crate) mod tests {
         click(&mut wm, &mut h, b);
         let o = h.shell.options_layout.expect("options");
         assert!(!wm.layouts[o].hidden);
-        assert!(h.untranslated.contains(&b"OptionsMenuInit".to_vec()));
-        // (the options screen covers the menu: hidden, as its own Back would)
-        wm.layout_hide(o, true);
+        assert!(!h.untranslated.contains(&b"OptionsMenuInit".to_vec()));
+        // (#88) the options screen is modal over the menu; its Back destroys it
+        let back = wm.tree.find_by_name(b"OptionsMenu.wnd:ButtonBack").expect("back");
+        click(&mut wm, &mut h, back);
+        assert!(wm.layouts[o].deleted && h.shell.options_layout.is_none());
         tick(&mut wm, &mut h);
         let b = w(&wm, "ButtonWorldBuilder");
         click(&mut wm, &mut h, b);

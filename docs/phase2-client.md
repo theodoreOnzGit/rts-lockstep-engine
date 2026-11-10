@@ -124,6 +124,50 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#89 part 3 (2026-11-10, GitHub #93, #88): the preference files and the options screen.**
+- **Translated** (engine crate, plain Rust):
+  - `client::user_preferences` (UserPreferences.h / UserPreferences.cpp's base class, whole: `intAsStr`, `boolAsStr`,
+    `realAsStr`, `load`, `write`, `getBool`, `getReal`, `getInt`, `getAsciiString`, `setBool`, `setReal`, `setInt`,
+    `setAsciiString`) over the host's user data folder (`UserDataFiles`; MSVC's text mode `crt_text_read` /
+    `crt_text_write`). The skirmish screens' `UserPreferences` (#89 part 1, an in-memory map per leaf name) is now this
+    one; `SkirmishHost::prefs_load` / `prefs_write` are gone, the files go through `MenuHost::user_data_read` /
+    `user_data_write`.
+  - `client::options_menu` (OptionsMenu.cpp, whole: `OptionPreferences` (every method), `setDefaults`, `saveOptions`,
+    `DestroyOptionsLayout`, `showAdvancedOptions`, `acceptAdvancedOptions`, `cancelAdvancedOptions`, init, shutdown,
+    update, input, system) and GlobalData.cpp's `parseGameDataDefinition` tail (`apply_option_preferences`). The four
+    volume getters stay `audio_info::OptionPrefs`' (filled by `OptionPreferences::audio_prefs`).
+  - `DifficultySelect`'s *OK* and the main menu's `prepareCampaignGame` now write `CampaignDifficulty` to
+    `Options.ini`; the popup reads it through `OptionPreferences` (`DifficultyHost::campaign_difficulty_pref` is
+    gone).
+  - `client::shell_gui`: the five options callbacks, `synthetic::options_menu_wnd`; the host keeps the folder
+    (`user_data`, writes queued in `user_data_writes`), a copy of the global data, the audio settings, the LOD level;
+    `ShellRequest::SetVolume`.
+- **Client:** `client/src/user_data.rs`: the user data folder (natively `RTS_ZH_USER_DATA` or the documents folder's
+  `Command and Conquer Generals Zero Hour Data`, the saves' folder's parent, now shared with `saves::native_save_dir`;
+  in the browser the OPFS root, read at start and written through the page's queue, `web/index.html`). The shell gets
+  the folder and the World's global data with `Options.ini` applied (`ShellUi::set_user_data`); the files it writes
+  are kept (`take_user_data_writes`); its volumes go to the audio manager (`ShellAction::SetVolume`), its scroll
+  factor to the camera's keyboard pan (`KeyboardScroll`), its alternate mouse mode to the command translation; the
+  audio's tables read `Options.ini`'s volumes (`load_tables(open, prefs)`). `KeyboardOptionsMenu.wnd` is read.
+- **Gaps (issue drafts):** the LOD manager, display modes and gamma, renderer settings, network / registry settings,
+  scroll anchors, retaliation, double-click attack move, KeyboardOptionsMenu.cpp; the online and LAN preference
+  classes; MSVC C-library details not re-checked; the browser's prefs arriving after the audio's tables.
+  **Upstream undefined steps and quirks kept** (recorded, issue drafted): `line.str() + 1` past an empty line,
+  `isspace` of bytes from 0x80, `atoi` out of range, `operator[]` inserting empty entries, the anti-aliasing `>`,
+  `selectedXRes` set twice.
+- **Predictions vs results:** in each test's doc. Misses: ` = v` reads past its end too (predicted defined: `nextToken`
+  skips the leading `=`); in the options test's own steps, a queue count (its setup's file is not queued) and twice the
+  freed windows found first by name.
+- **Differential** (`tests/differential_user_prefs.rs`, `differential/wrap_user_prefs.cpp`, build.rs cuts the class
+  and UserPreferences.cpp's base class verbatim, compiled with the real AsciiString and glibc's stdio on real files):
+  predicted 0 mismatches; 20,000 cases, 403,076 lines (6,357 longer than 2,047 bytes), 169,591 keys, 33,024 getter
+  answers, **0 mismatches** on the first run (8,816 cases compared without the keys of their undefined lines, 553
+  `getReal`s of glibc-only forms not compared). Plants 5 of 5 caught: 8941 (first duplicate kept) 17,223 cases, 8942
+  (value untrimmed) 18,981, 8943 (`key=value`) 11,116, 8944 (`getBool` without `toLower`) 354, 8945 (`fgets` of 2,048)
+  4,894 (predicted rare: a miss). differential_wm, _wnd, _wt, _save_list, _map_list and _score_grid rerun: pass.
+- **Gates:** lib 1125 passed (1119 before, 6 new); client 57 passed (55 before, 2 new); clippy (lib) clean; web build
+  ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#89 part 2 (2026-11-10, GitHub #89): the score screen.**
 - **Translated** (engine crate, plain Rust): `client::score_screen` (ScoreScreen.cpp): the statics and globals
   (`DontShowMainMenu`, `ReplayWasPressed`, `g_playMusic`, `LastReplayFileName`), `startNextCampaignGame`,
@@ -214,8 +258,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   translation; then 20,000 cases, 107,919 maps, 32,514 rows, **0 mismatches**. Plants 4 of 4 caught: 8901 (exact-case
   order) 847 cases, 8902 (selection without case) 713, 8903 (red-yellow star off by one) 2,417, 8904 (`>` for `>=`)
   358. differential_wm, differential_wnd, differential_wt and differential_save_list rerun: pass.
-- **Gaps (issue drafts):** `populateSkirmishBattleHonors` and the battle honours file; the preference files are kept in
-  memory; the preview image's copy out of the archive and its draw; the insert-disc prompt; three tooltips
+- **Gaps (issue drafts):** `populateSkirmishBattleHonors` and the battle honours file; ~~the preference files are kept in
+  memory;~~ **Corrected 2026-11-10 (#89):** the preference files are read and written (#93, the entry above); the preview image's copy out of the archive and its draw; the insert-disc prompt; three tooltips
   (LobbyUtils.cpp, BattleHonors.cpp). GameSpy and LAN screens are not part of this.
 - **Gates:** lib 1112 passed (1105 before, 7 new); client 54 passed (53 before, 1 new); clippy (lib) clean (the two
   enums carrying a `GameInfo` box it); web build ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
@@ -263,12 +307,14 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Gates:** lib 1105 passed (1099 before, 6 new); client 53 passed (52 before, 1 new); clippy (lib) clean; the
   differential build (`--features differential --tests`) compiles, the differentials above pass; web build ok; gate
   (a) PASS, last CRC 0bf44067 (unchanged).
-- **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); `Options.ini`
-  (`OptionPreferences`) is neither read nor written (the campaign difficulty); the date and time formats are the en-US
+- **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); ~~`Options.ini`
+  (`OptionPreferences`) is neither read nor written (the campaign difficulty);~~ **Corrected 2026-11-10 (#89):**
+  `Options.ini` is read and written (#88, #93: the entry above); the date and time formats are the en-US
   system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (~~the
-  skirmish map select and game options,~~ ~~the score screen,~~ the challenge menu, the options menu) is not started.
+  skirmish map select and game options,~~ ~~the score screen,~~ the challenge menu, ~~the options menu~~) is not started.
   **Corrected 2026-11-10 (#89):** the skirmish game options and its map picker are translated (the entry above).
-  **Corrected 2026-11-10 (#89 part 2):** the score screen is translated (the entry above).
+  **Corrected 2026-11-10 (#89 part 2):** the score screen is translated (the entry above). **Corrected 2026-11-10
+  (#89):** the options menu is translated (#88, the entry above).
 
 **#78 (2026-11-10, GitHub #78, items 1 and 5): the shell drawn in the application; the mapped images shared.**
 - **New glue, client only** (no engine change; no host trait, `ClientEvent` or differential input changed):

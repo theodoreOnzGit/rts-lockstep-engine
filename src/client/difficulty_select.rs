@@ -42,14 +42,19 @@
 //!
 //! # Where this differs from upstream
 //!
-//! - `OptionPreferences` (`Options.ini`) is the host's to read ([`DifficultyHost::campaign_difficulty_pref`]) and is
-//!   not written (`setCampaignDifficulty`, `write`): the main menu's campaign difficulty is not written either.
+//! - ~~`OptionPreferences` (`Options.ini`) is the host's to read (`DifficultyHost::campaign_difficulty_pref`) and is
+//!   not written (`setCampaignDifficulty`, `write`): the main menu's campaign difficulty is not written either.~~
+//!   **Corrected 2026-11-10 (#89):** `OptionPreferences` is read and written through the translated
+//!   `UserPreferences` ([`crate::client::options_menu::OptionPreferences`]) over the host's user data folder: *OK*
+//!   writes the difficulty, as the main menu's `prepareCampaignGame` does.
 //!
 //! # Representation
 //!
 //! [`DifficultySelect`]: the file's statics.
 
 use crate::client::gadget::radio_set_selection;
+use crate::client::options_menu::OptionPreferences;
+use crate::client::user_preferences::{report_undefined, HostUserData};
 use crate::client::main_menu::{self, MenuHost, DIFFICULTY_EASY, DIFFICULTY_HARD, DIFFICULTY_NORMAL};
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
@@ -58,10 +63,6 @@ use crate::client::window_script::WinId;
 pub trait DifficultyHost: MenuHost {
     /// DifficultySelect.cpp's statics.
     fn difficulty_select(&mut self) -> &mut DifficultySelect;
-    /// `Options.ini`'s `CampaignDifficulty` entry, as `atoi` reads it (`None`: no entry).
-    fn campaign_difficulty_pref(&self) -> Option<i32> {
-        None
-    }
     /// `TheScriptEngine->getGlobalDifficulty()`.
     fn global_difficulty(&self) -> i32 {
         DIFFICULTY_NORMAL
@@ -103,18 +104,18 @@ impl Default for DifficultySelect {
     }
 }
 
-/// `OptionPreferences::getCampaignDifficulty()`: the entry clamped to easy .. hard, or the global difficulty.
-pub fn get_campaign_difficulty<H: DifficultyHost>(h: &H) -> i32 {
-    match h.campaign_difficulty_pref() {
-        None => h.global_difficulty(),
-        Some(f) => f.clamp(DIFFICULTY_EASY, DIFFICULTY_HARD),
-    }
+/// `OptionPreferences pref; pref.getCampaignDifficulty()`: the entry clamped to easy .. hard, or the global difficulty.
+pub fn get_campaign_difficulty<H: DifficultyHost>(wm: &mut GameWindowManager, h: &mut H) -> i32 {
+    let mut pref = OptionPreferences::new(wm, h);
+    let d = pref.get_campaign_difficulty(h.global_difficulty());
+    report_undefined(wm, &mut pref.prefs);
+    d
 }
 
 /// `SetDifficultyRadioButton()` (`TheScriptEngine` always exists here).
 fn set_difficulty_radio_button<H: DifficultyHost>(wm: &mut GameWindowManager, h: &mut H) {
     let d = h.difficulty_select().clone();
-    let (radio, diff) = match get_campaign_difficulty(h) {
+    let (radio, diff) = match get_campaign_difficulty(wm, h) {
         DIFFICULTY_EASY => (d.radio_easy, DIFFICULTY_EASY),
         DIFFICULTY_NORMAL => (d.radio_medium, DIFFICULTY_NORMAL),
         DIFFICULTY_HARD => (d.radio_hard, DIFFICULTY_HARD),
@@ -181,7 +182,10 @@ pub fn difficulty_select_system<H: DifficultyHost>(wm: &mut GameWindowManager, h
             let id = wm.tree.windows[control].id;
             let d = h.difficulty_select().clone();
             if id == d.button_ok_id {
-                // (`OptionPreferences::setCampaignDifficulty`, `write`: not written)
+                // (#88) OptionPreferences pref; pref.setCampaignDifficulty(s_AIDiff); pref.write();
+                let mut pref = OptionPreferences::new(wm, h);
+                pref.set_campaign_difficulty(d.ai_diff);
+                pref.write(&mut HostUserData(h));
                 destroy_own_layout(wm, window);
                 main_menu::setup_game_start(wm, h, d.ai_diff);
             } else if id == d.button_cancel_id {
@@ -218,13 +222,14 @@ mod tests {
     ///   `StartCampaign { USA, easy }`: the same start as the main menu's own difficulty buttons;
     /// - made again with no options entry: the global difficulty (normal), the medium button; *Cancel*: the campaign
     ///   cleared, the modal undone, the layout destroyed.
+    /// - (#88, predicted before its run) *OK* writes `CampaignDifficulty = 0` to `Options.ini` in the user data folder.
     ///
     /// **Result (2026-11-10):** as predicted.
     #[test]
     fn the_difficulty_popup_starts_the_campaign() {
         let (mut wm, mut h) = booted();
         h.main_menu.campaign = b"USA".to_vec();
-        h.campaign_difficulty_pref = Some(7);
+        h.set_pref_file(b"Options.ini", &[(b"CampaignDifficulty".to_vec(), b"7".to_vec())].into_iter().collect());
         let l = h.create_layout(&mut wm, b"Menus/DifficultySelect.wnd").expect("the popup loads");
         crate::client::shell::run_layout(&mut wm, &mut h, l, 0, None);
         let f = "DifficultySelect.wnd";
@@ -240,8 +245,10 @@ mod tests {
         assert!(wm.layouts[l].deleted && h.main_menu.start_game && h.main_menu.difficulty == DIFFICULTY_EASY);
         settle(&mut wm, &mut h);
         assert_eq!(h.requests, [ShellRequest::StartCampaign { campaign: b"USA".to_vec(), difficulty: DIFFICULTY_EASY }]);
+        // (#88) OK wrote the difficulty to Options.ini
+        assert_eq!(h.pref_file(b"Options.ini").and_then(|p| p.get(&b"CampaignDifficulty"[..]).cloned()), Some(b"0".to_vec()));
         // again, with no options entry, and Cancel
-        h.campaign_difficulty_pref = None;
+        h.user_data.files.clear();
         let l = h.create_layout(&mut wm, b"Menus/DifficultySelect.wnd").expect("the popup loads");
         crate::client::shell::run_layout(&mut wm, &mut h, l, 0, None);
         assert_eq!(h.difficulty.ai_diff, DIFFICULTY_NORMAL);

@@ -341,9 +341,12 @@ impl<O: AudioOutput> AudioDevice for ClientDevice<O> {
 
 /// The audio's tables from the game's INI files (`AudioManager::init`'s list), read with `open` (the art's file system):
 /// `None` while a file is still arriving (try again on a later frame). The errors are the files that did not parse.
-pub fn load_tables(open: impl Fn(&[u8]) -> Option<Option<Vec<u8>>>) -> Option<(AudioTables, Vec<(Vec<u8>, String)>)> {
+///
+/// (#88) `prefs` is the user's `Options.ini` as `parseAudioSettingsDefinition` reads it (`OptionPreferences`).
+pub fn load_tables(open: impl Fn(&[u8]) -> Option<Option<Vec<u8>>>, prefs: rts_lockstep_engine::client::audio_info::OptionPrefs) -> Option<(AudioTables, Vec<(Vec<u8>, String)>)> {
     let waiting = std::cell::Cell::new(false);
     let mut t = AudioTables::new();
+    t.prefs = prefs;
     let errors = t.load(|p| match open(p) {
         None => {
             waiting.set(true);

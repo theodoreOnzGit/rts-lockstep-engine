@@ -52,7 +52,7 @@
   // `rts_client.js` and `rts_client_bg.wasm` are written next to this page by `scripts/build_web.sh`.
   import init, { import_file, import_ranged, import_done, import_outcome, import_wanted, import_range, big_directory_prefix, art_status,
     saves_add, saves_import, saves_write_name, saves_write_bytes, saves_download_name, saves_download_bytes, saves_panel_open, saves_delete_name,
-    saves_status, saves_logic_frame, campaign_status } from './rts_client.js';
+    saves_status, saves_logic_frame, campaign_status, prefs_add, prefs_write_name, prefs_write_bytes } from './rts_client.js';
   const $ = (id) => document.getElementById(id);
   const status = (t) => { $('status').textContent = t; };
 
@@ -257,7 +257,22 @@
     } catch (e) { /* no OPFS in this browser */ }
     return out;
   }
+  // #93: the user data folder's preference files (Options.ini, Skirmish.ini, Network.ini): upstream's
+  // getPath_UserData(), whose Save\ holds the saves, is the OPFS root here. The page reads its .ini files at start
+  // and writes the ones the game writes (src/user_data.rs's `page`), in this browser only.
+  async function prefFiles() {
+    const out = [];
+    try {
+      for await (const [name, h] of (await navigator.storage.getDirectory()).entries()) {
+        if (h.kind === 'file' && /\.ini$/i.test(name)) out.push([name, h]);
+      }
+    } catch (e) { /* no OPFS in this browser */ }
+    return out;
+  }
   ready.then(async () => {
+    for (const [name, h] of await prefFiles()) {
+      prefs_add(name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
+    }
     for (const [name, h] of await savedGames()) {
       saves_add(name, new Uint8Array(await (await h.getFile()).arrayBuffer()));
     }
@@ -284,6 +299,17 @@
             await w.write(bytes);
             await w.close();
           } catch (e) { console.warn('could not keep the save ' + name + ' in this browser: ' + e); }
+        }
+        // #93: the preference files the game wrote, to the OPFS root
+        for (;;) {
+          const name = prefs_write_name();
+          if (!name) break;
+          const bytes = prefs_write_bytes();
+          try {
+            const w = await (await (await navigator.storage.getDirectory()).getFileHandle(name, { create: true })).createWritable();
+            await w.write(bytes);
+            await w.close();
+          } catch (e) { console.warn('could not keep ' + name + ' in this browser: ' + e); }
         }
         // #78: the saves the game's save/load screen deleted
         for (;;) {

@@ -80,6 +80,9 @@ use rts_lockstep_engine::client::save_game::read_save_summary;
 use rts_lockstep_engine::client::shell::{self as sh, ShellRequest, WndFiles};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gui_util::SkirmishData;
+use rts_lockstep_engine::client::options_menu::{apply_option_preferences, OptionPreferences};
+use rts_lockstep_engine::client::user_preferences::MemoryUserData;
+use rts_lockstep_engine::common::global_data::GlobalData;
 use rts_lockstep_engine::client::shell_gui::{start_shell, ShellGui};
 use rts_lockstep_engine::client::window_manager::{gwm, GameWindowManager};
 use rts_lockstep_engine::client::window_script::WndHost;
@@ -105,9 +108,11 @@ use crate::ui::{LayoutPlacement, UiQuad, LAYOUT};
 ///
 /// (#89 part 2) With the score screen (`ScoreScreen`, translated) and the replay popup it opens (`PopupReplay`, whose
 /// callbacks are not).
-pub const SHELL_FILES: [&str; 17] = [
+pub const SHELL_FILES: [&str; 18] = [
     "MainMenu", "MessageBox", "QuitMessageBox", "BlankWindow", "SaveLoad", "SkirmishGameOptionsMenu", "ReplayMenu", "CreditsMenu", "LanLobbyMenu", "OptionsMenu", "ChallengeMenu",
     "PopupSaveLoad", "SinglePlayerMenu", "DifficultySelect", "SkirmishMapSelectMenu", "ScoreScreen", "PopupReplay",
+    // (#88: the options screen's *Keyboard Options*)
+    "KeyboardOptionsMenu",
 ];
 
 /// The files the shell reads, read ahead (the art's file system is not kept by the shell), with the reader's name keys
@@ -152,7 +157,7 @@ impl WndFiles for MenuFiles {
 }
 
 /// What the client does for a request of the shell's callbacks.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ShellAction {
     /// Nothing to do here (said why).
     None(&'static str),
@@ -172,6 +177,8 @@ pub enum ShellAction {
     SkirmishChosen,
     /// (#89 part 2) The score screen's mission save (`missionSave`): its description and bytes, for the save folder.
     MissionSaved(String, Vec<u8>),
+    /// (#88) The options screen's `TheAudio->setVolume(volume, affect)`: the client's audio manager's.
+    SetVolume(f32, u32),
 }
 
 /// The client's side of a request (#89: [`ShellRequest::StartSkirmish`] goes through the same flow as a campaign's
@@ -207,6 +214,7 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
             Some((d, b)) => ShellAction::MissionSaved(d, b),
             None => ShellAction::Failed("the mission save failed (no game ended, or no campaign)".to_string()),
         },
+        ShellRequest::SetVolume { volume, affect } => ShellAction::SetVolume(*volume, *affect),
         // (#89) the skirmish screen's start: a copy of `base` waits for the map's folder, then `start_skirmish_game`
         ShellRequest::StartSkirmish { game, mode, difficulty, max_fps } => {
             let choice = MissionChoice::Skirmish { game: game.clone(), mode: *mode, max_fps: *max_fps };
@@ -216,6 +224,15 @@ pub fn act(r: &ShellRequest, base: &World, flow: &mut Flow) -> ShellAction {
             }
         }
     }
+}
+
+/// (#88) What the client applies of the options ([`ShellUi::client_options`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClientOptions {
+    /// The keyboard pan's speed, 1 at the default scroll factor.
+    pub keyboard_scroll: f32,
+    /// `TheGlobalData->m_useAlternateMouse` (the command translation's `use_alternate_mouse`).
+    pub alternate_mouse: bool,
 }
 
 /// The shell: its window manager and its host.
@@ -286,6 +303,33 @@ impl ShellUi {
     /// `addGameToAvailableList` leaves out), in the folder's order.
     pub fn set_saves(&mut self, folder: &crate::saves::SaveFolder) {
         self.gui.save_files = folder.files.iter().map(|(n, b)| (n.as_bytes().to_vec(), read_save_summary(b.clone()).ok().map(|s| s.info))).collect();
+    }
+
+    /// (#93) The user data folder's preference files, for the translated `UserPreferences::load`
+    /// (`getPath_UserData()` is empty here: a file is opened by its name), and (#88) the client's copy of the global
+    /// data the options screen reads and writes: `base`'s (the install's World; a new one without it), with
+    /// `Options.ini` applied as `GlobalData::parseGameDataDefinition`'s tail applies it (`apply_option_preferences`; no
+    /// IP addresses: the client has no network). The copy is the shell's; `base` is not changed.
+    pub fn set_user_data(&mut self, folder: &crate::user_data::UserDataFolder, base: Option<&World>) {
+        self.gui.user_data = MemoryUserData { path: Vec::new(), files: folder.files.iter().map(|(n, b)| (n.as_bytes().to_vec(), b.clone())).collect() };
+        let mut g = base.and_then(|w| w.statics.global_data.the_global_data().cloned()).unwrap_or_else(GlobalData::new);
+        let mut p = OptionPreferences::load_from(&mut self.gui.user_data);
+        apply_option_preferences(&mut g, &mut p, &[]);
+        self.gui.global_data = g;
+    }
+
+    /// (#93) The preference files the shell wrote since the last call (`UserPreferences::write`): name and bytes.
+    pub fn take_user_data_writes(&mut self) -> Vec<(String, Vec<u8>)> {
+        std::mem::take(&mut self.gui.user_data_writes).into_iter().map(|(p, b)| (String::from_utf8_lossy(&p).into_owned(), b)).collect()
+    }
+
+    /// (#88) The options the client applies, from the shell's global data: the keyboard scroll factor relative to
+    /// its default (the client's camera's keyboard pan is scaled by it, as `LookAtXlat` scales upstream's by the
+    /// factor) and the alternate mouse mode.
+    pub fn client_options(&self) -> ClientOptions {
+        let g = &self.gui.global_data;
+        let scroll = if g.keyboard_default_scroll_factor > 0.0 { g.keyboard_scroll_factor / g.keyboard_default_scroll_factor } else { 1.0 };
+        ClientOptions { keyboard_scroll: scroll, alternate_mouse: g.use_alternate_mouse }
     }
 
     /// (#89) The install's data the skirmish screens read (`TheMapCache`, `TheMultiplayerSettings`, the player
@@ -687,6 +731,37 @@ mod tests {
     ///   text "Single Player" here), placed from the button's top left inward, inside its rectangle (10..110, 110..130);
     /// - no quad of the hidden panels' buttons (`ButtonUSA`'s text);
     /// - `hideShell`: not active, the main menu's shutdown run, nothing drawn, the pointer ignored.
+    /// (#88, #93) The options screen over the user data folder, predicted from OptionsMenu.cpp and GlobalData.cpp
+    /// before the run: `Options.ini`'s `ScrollFactor = 100` makes the keyboard pan twice the default's (factor 1.0
+    /// over the default 0.5) and `UseAlternateMouse = yes` the alternate mouse; the screen opened by *Options* and
+    /// accepted with the music slider at 25 asks the client's audio for 0.25 music ([`ShellAction::SetVolume`]) and
+    /// writes `Options.ini` back (CR LF lines, `MusicVolume = 25`, the scroll factor kept), which the folder keeps.
+    #[test]
+    fn the_options_screen_reads_and_writes_the_user_data_folder() {
+        let mut ui = shell();
+        let mut folder = crate::user_data::UserDataFolder::default();
+        folder.files.insert("Options.ini".into(), b"ScrollFactor = 100\r\nUseAlternateMouse = yes\r\n".to_vec());
+        ui.set_user_data(&folder, None);
+        let o = ui.client_options();
+        assert_eq!((o.keyboard_scroll, o.alternate_mouse), (2.0, true));
+        ui.frame(1000);
+        assert!(ui.keyboard(0x39, true, Some(" ")));
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        click(&mut ui, "ButtonOptions", false);
+        let music = ui.wm.tree.find_by_name(b"OptionsMenu.wnd:SliderMusicVolume").expect("the options screen");
+        rts_lockstep_engine::client::gadget_slider::slider_set_position(&mut ui.wm, &mut ui.gui, music, 25);
+        click_named(&mut ui, "OptionsMenu.wnd", "ButtonAccept");
+        let (base, mut flow) = (World::new(), Flow::default());
+        let actions = ui.take_actions(&base, &mut flow);
+        assert!(actions.contains(&ShellAction::SetVolume(0.25, 0x11)), "{actions:?}");
+        for (name, bytes) in ui.take_user_data_writes() {
+            folder.write(&name, bytes).expect("kept");
+        }
+        let text = String::from_utf8(folder.files["Options.ini"].clone()).expect("text");
+        assert!(text.contains("MusicVolume = 25\r\n") && text.contains("ScrollFactor = 100\r\n"), "{text}");
+    }
+
     #[test]
     fn the_shell_draws_from_the_window_managers_draw_list() {
         let mut text = TextTable::default();

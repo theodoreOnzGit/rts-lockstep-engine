@@ -304,6 +304,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .insert_non_send(game)
         .insert_non_send(Saves::new())
         .init_resource::<SaveAction>()
+        .insert_resource(KeyboardScroll(1.0))
         .insert_non_send(Campaigns::default())
         .init_resource::<CampaignAction>()
         .insert_resource(TerrainState { pending: true, look: "none" })
@@ -773,9 +774,11 @@ fn camera_input(
     touches: Res<Touches>,
     time: Res<Time>,
     mut rig: ResMut<Rig>,
+    keyboard_scroll: Res<KeyboardScroll>,
 ) {
     let dt = time.delta_secs();
-    let speed = rig.distance * 0.9 * dt;
+    // (#88: the keys' pan scaled by the options' scroll factor, `LookAtXlat`'s `m_keyboardScrollFactor`)
+    let speed = rig.distance * 0.9 * dt * keyboard_scroll.0;
     // (#74) a UI window with the focus has the keyboard
     let empty = ButtonInput::<KeyCode>::default();
     let keys: &ButtonInput<KeyCode> = if taken.0 { &empty } else { &keys };
@@ -1192,7 +1195,7 @@ struct GameUiRoot(Vec<crate::ui::UiQuad>);
 /// GUI glue (needs the app): the audio's tables from the art's INI files once they have arrived (#13,
 /// `crate::audio::load_tables`, tested through the engine's `AudioTables`), then each frame the device's files read
 /// and decoded and its voices started and ended (`ClientDevice::pump`, tested there).
-fn update_audio(mut game: NonSendMut<Game>, time: Res<Time>) {
+fn update_audio(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, time: Res<Time>) {
     let g = &mut *game;
     let Some(art) = &g.models.art else { return };
     let open = |p: &[u8]| {
@@ -1204,7 +1207,13 @@ fn update_audio(mut game: NonSendMut<Game>, time: Res<Time>) {
     if g.audio_pending {
         // #55: `Eva::init`'s `Data\INI\Eva.ini` too (`None`: still arriving)
         let eva_ini = open(rts_lockstep_engine::client::eva::EVA_INI_FILE);
-        if let (Some(eva_ini), Some((tables, errors))) = (eva_ini, crate::audio::load_tables(open)) {
+        // (#88) `parseAudioSettingsDefinition` reads the volumes, provider and speakers from `Options.ini`
+        let prefs = rts_lockstep_engine::client::options_menu::OptionPreferences::load_from(&mut rts_lockstep_engine::client::user_preferences::MemoryUserData {
+            path: Vec::new(),
+            files: shell.user_data().files.iter().map(|(n, b)| (n.as_bytes().to_vec(), b.clone())).collect(),
+        })
+        .audio_prefs();
+        if let (Some(eva_ini), Some((tables, errors))) = (eva_ini, crate::audio::load_tables(open, prefs)) {
             g.audio_pending = false;
             info!("audio: {} events, {} music tracks, {} errors {errors:?}", tables.infos.len(), tables.music_tracks.len(), errors.len());
             let mut manager = rts_lockstep_engine::client::game_audio::AudioManager::new(tables);
@@ -2359,7 +2368,23 @@ struct ShellState {
     saves_generation: Option<u64>,
     /// (#78) A load the shell's save/load screen asked for, until it ends (a failed one shows the shell again).
     loading: Option<String>,
+    /// (#93) The user data folder's preference files (made at the first use: [`ShellState::user_data`]).
+    user_data: Option<crate::user_data::UserDataFolder>,
 }
+
+impl ShellState {
+    /// (#93) The user data folder, with the files the page has handed over since the last call (the browser's).
+    fn user_data(&mut self) -> &mut crate::user_data::UserDataFolder {
+        let f = self.user_data.get_or_insert_with(crate::user_data::UserDataFolder::start);
+        f.take_page_files();
+        f
+    }
+}
+
+/// (#88) The keyboard pan's speed from the options' scroll factor (1 at the default factor): the shell's
+/// [`crate::shell::ShellUi::client_options`].
+#[derive(Resource, Clone, Copy)]
+struct KeyboardScroll(f32);
 
 /// The shell's root node, and the quads it was last drawn with.
 #[derive(Component)]
@@ -2406,6 +2431,9 @@ fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, tim
     match loaded {
         Some(mut ui) => {
             info!("shell: {} windows", ui.wm.tree.windows.len());
+            // (#93) the preference files, and (#88) the options applied to the shell's copy of the global data
+            let base = g.base.as_deref();
+            ui.set_user_data(st.user_data(), base);
             // (#89) the skirmish screens' copy of the install's data
             if let Some(base) = g.base.as_deref() {
                 ui.set_skirmish_data(base, &art.fs);
@@ -2440,10 +2468,26 @@ fn shell_ui(
     mut exit: MessageWriter<AppExit>,
     mut saves: NonSendMut<Saves>,
     mut save_action: ResMut<SaveAction>,
+    mut keyboard_scroll: ResMut<KeyboardScroll>,
 ) {
     let st = &mut *shell;
     let Some(ui) = st.ui.as_mut() else { return };
     let g = &mut *game;
+    // (#88) the options the client has: the keyboard pan's speed and the alternate mouse mode; the audio's settings
+    // for the screen's defaults
+    let o = ui.client_options();
+    keyboard_scroll.0 = o.keyboard_scroll;
+    g.controls.client.modes.alternate_mouse = o.alternate_mouse;
+    if let Some(sound) = g.audio.as_deref() {
+        ui.gui.audio_settings = sound.audio.manager.tables.settings.clone();
+    }
+    // (#93) the preference files the shell wrote, kept in the folder (on disk, or in OPFS by the page)
+    for (name, bytes) in ui.take_user_data_writes() {
+        let folder = st.user_data.get_or_insert_with(crate::user_data::UserDataFolder::start);
+        if let Err(e) = folder.write(&name, bytes) {
+            warn!("the preference file {name} was not kept: {e}");
+        }
+    }
     // (#78) the save folder, as the save/load screen lists it; a load it asked for that failed shows the shell again
     if st.saves_generation != Some(saves.generation) {
         ui.set_saves(&saves.folder);
@@ -2519,6 +2563,12 @@ fn shell_ui(
                     };
                     saves.set_status(s);
                     saves.generation += 1;
+                }
+                crate::shell::ShellAction::SetVolume(volume, affect) => {
+                    // (#88) `TheAudio->setVolume`: the client's audio manager, once it is up
+                    if let Some(sound) = g.audio.as_deref_mut() {
+                        sound.audio.manager.set_volume(volume, affect);
+                    }
                 }
                 crate::shell::ShellAction::None(why) => {
                     if !why.is_empty() {

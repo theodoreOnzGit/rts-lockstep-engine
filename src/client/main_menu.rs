@@ -85,7 +85,9 @@
 //!   difficulty buttons do nothing.
 //! - `_spawnl` of `WorldBuilder.exe` is the host's ([`MenuHost::spawn_world_builder`]): it fails here, so the menu shows
 //!   upstream's failure box.
-//! - `OptionPreferences::setCampaignDifficulty` / `write` (Options.ini): not written.
+//! - ~~`OptionPreferences::setCampaignDifficulty` / `write` (Options.ini): not written.~~ **Corrected 2026-11-10
+//!   (#89):** `prepareCampaignGame` writes the campaign difficulty to `Options.ini` in the host's user data folder
+//!   ([`MenuHost::user_data_write`]).
 //! - Starting the campaign is a [`ShellRequest::StartCampaign`] to the host: the campaign set, the difficulty, as
 //!   `MSG_NEW_GAME` carries them (the World's `start_campaign` does the rest of `prepareCampaignGame` and
 //!   `doGameStart`, `InitRandom(0)` included).
@@ -150,6 +152,19 @@ pub trait MenuHost: ShellHost {
     }
     /// `_spawnl(_P_NOWAIT, "WorldBuilder.exe", ...) >= 0`.
     fn spawn_world_builder(&mut self) -> bool {
+        false
+    }
+    /// (#93) `TheGlobalData->getPath_UserData()`, the folder of the preference files (`UserPreferences::load`).
+    fn path_user_data(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    /// (#93) `fopen(path, "r")` in the user data folder: the file's bytes (`None`: it does not open; a host without a
+    /// folder has none).
+    fn user_data_read(&mut self, _path: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+    /// (#93) `fopen(path, "w")` and what is written; whether it opened.
+    fn user_data_write(&mut self, _path: &[u8], _bytes: &[u8]) -> bool {
         false
     }
 }
@@ -296,9 +311,12 @@ pub fn setup_game_start<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff
 fn prepare_campaign_game<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i32) {
     let m = h.main_menu();
     m.dont_allow_transitions = true;
-    // (OptionPreferences' campaign difficulty, written to Options.ini; `TheScriptEngine->setGlobalDifficulty(diff)`:
-    // the World's, in `start_campaign`)
-    m.button_pushed = false;
+    // (#88) OptionPreferences pref; pref.setCampaignDifficulty(diff); pref.write(); (`TheScriptEngine->
+    // setGlobalDifficulty(diff)`: the World's, in `start_campaign`)
+    let mut pref = crate::client::options_menu::OptionPreferences::new(wm, h);
+    pref.set_campaign_difficulty(diff);
+    pref.write(&mut crate::client::user_preferences::HostUserData(h));
+    h.main_menu().button_pushed = false;
     wt::reverse(wm, h, b"MainMenuDifficultyMenuBack");
     setup_game_start(wm, h, diff);
 }

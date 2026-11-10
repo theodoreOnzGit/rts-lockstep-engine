@@ -43,7 +43,8 @@
 //! - **A new description starts zeroed**, as upstream's pooled `newInstance` (`MemoryPool::allocateBlock` zeroes).
 //!   `AudioSettings` has no constructor upstream (its plain fields are left as `new` leaves them); here they are zero.
 //! - **The user's `Options.ini`** (`OptionPreferences`) is an optional map of its keys ([`OptionPrefs`]); without it the
-//!   preferred volumes come from the defaults, as upstream's getters do with no entry.
+//!   preferred volumes come from the defaults, as upstream's getters do with no entry. (#88: the client fills it from
+//!   the file with `crate::client::options_menu::OptionPreferences::audio_prefs`, each entry `atof`'d.)
 //! - `SoundsMorning`, `SoundsNight` and `SoundsEvening` are parsed and kept but, as upstream, never read:
 //!   `AudioEventRTS::generateFilename` only ever picks from `Sounds`.
 //! - The 3-D provider and speaker selection (`setPreferredProvider`, `setPreferredSpeaker`) belong to the Miles device,

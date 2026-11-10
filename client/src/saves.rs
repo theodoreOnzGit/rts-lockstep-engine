@@ -194,11 +194,8 @@ pub mod page {
 /// name from the registry (`UserDataLeafName`) and falls back to that default.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn native_save_dir() -> Option<std::path::PathBuf> {
-    if let Some(d) = std::env::var_os("RTS_ZH_USER_DATA") {
-        return Some(std::path::PathBuf::from(d).join("Save"));
-    }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
-    Some(std::path::PathBuf::from(home).join("Documents").join("Command and Conquer Generals Zero Hour Data").join("Save"))
+    // (#93: the user data folder is the preference files' too: `crate::user_data`)
+    crate::user_data::native_user_data_dir().map(|d| d.join("Save"))
 }
 
 /// The save folder: the files by name, and natively the directory they are written to.

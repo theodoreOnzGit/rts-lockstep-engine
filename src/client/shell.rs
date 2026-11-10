@@ -159,6 +159,8 @@ pub enum ShellRequest {
     /// (#89 part 2) `TheGameState->missionSave()` (the score screen's `finishSinglePlayerInit` after a victory with a
     /// mission to follow), with the screen's `TheCampaignManager`.
     MissionSave { campaign: Box<crate::client::campaign_manager::CampaignManager> },
+    /// (#88) The options screen's `TheAudio->setVolume(volume, affect)` (`AudioAffect` bits): the client's audio.
+    SetVolume { volume: f32, affect: u32 },
 }
 
 /// `TheShell`.

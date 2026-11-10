@@ -36,6 +36,7 @@ pub mod input;
 pub mod particles;
 pub mod saves;
 pub mod shell;
+pub mod user_data;
 pub mod terrain;
 pub mod ui;
 pub mod view;

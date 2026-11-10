@@ -13,8 +13,6 @@
 //     InitSkirmishGameGadgets, skirmishUpdateSlotList, skirmishPositionStartSpots, initSkirmishGameOptions,
 //     updateSkirmishGameOptions, SkirmishGameOptionsMenuInit, shutdownComplete, SkirmishGameOptionsMenuShutdown,
 //     SkirmishGameOptionsMenuUpdate, SkirmishGameOptionsMenuInput, SkirmishGameOptionsMenuSystem)
-//   GeneralsMD/Code/GameEngine/Source/Common/UserPreferences.cpp (UserPreferences::getInt, getAsciiString, setInt,
-//     setAsciiString, intAsStr)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/LanLobbyMenu.cpp
 //     (LANPreferences::usesSystemMapDir)
 //
@@ -76,9 +74,12 @@
 //!   (`GAME_SKIRMISH`, or `GAME_SINGLE_PLAYER` on a solo map) and the speed, which the client turns into the World's
 //!   skirmish start (`World::start_skirmish_game`: `m_mapName`, `InitGameLogicRandom(seed)`, `MSG_NEW_GAME`). A game in
 //!   progress is cleared first ([`ShellRequest::ClearGameData`]), as the main menu's start does.
-//! - **The preferences** (`Skirmish.ini`, `Network.ini`'s `UseSystemMapDir`) are the host's maps
-//!   ([`SkirmishHost::prefs_load`], [`SkirmishHost::prefs_write`]): `UserPreferences::load` and `write`'s file reading
-//!   and writing are not translated (the client keeps them in memory, GitHub issue draft `issue89_preferences`).
+//! - ~~**The preferences** (`Skirmish.ini`, `Network.ini`'s `UseSystemMapDir`) are the host's maps
+//!   (`SkirmishHost::prefs_load`, `SkirmishHost::prefs_write`): `UserPreferences::load` and `write`'s file reading
+//!   and writing are not translated (the client keeps them in memory, GitHub issue draft `issue89_preferences`).~~
+//!   **Corrected 2026-11-10 (#89):** the preferences are read and written by the translated `UserPreferences::load`
+//!   and `write` ([`crate::client::user_preferences`]) over the host's user data folder
+//!   ([`crate::client::main_menu::MenuHost::user_data_read`]); the client keeps that folder on disk or in OPFS.
 //! - **Battle honours** (`SkirmishBattleHonors`, `SkirmishStats.ini`): the wins are the host's
 //!   ([`SkirmishHost::skirmish_wins`]); `populateSkirmishBattleHonors` (the honours list box, BattleHonors.cpp's
 //!   `InsertBattleHonor`) is **not translated**: recorded through [`SkirmishHost::untranslated`]. *Reset* clears the
@@ -104,8 +105,6 @@
 //! `TheSupplyAndTechImageLocations`, `doUpdateSlotList`, `sandboxOk`) and GUIUtil's `winInitialized`; the host gives
 //! it with the World's data ([`SkirmishHost::skirmish_split`]), which is `TheSkirmishGameInfo`'s `GameInfoHost`.
 
-use std::collections::BTreeMap;
-
 use crate::client::control_bar_popup::{format_wide, FormatArg};
 use crate::client::gadget::{button_set_text, check_box_is_checked, check_box_set_checked, static_text_set_text};
 use crate::client::gadget_combo_box as cb;
@@ -117,6 +116,7 @@ use crate::client::map_util::{self, find_draw_positions, get_map_preview_image, 
 use crate::client::message_box::message_box_ok;
 use crate::client::shell::{self, ShellRequest};
 use crate::client::skirmish_map_select::SkirmishMapSelect;
+use crate::client::user_preferences::{load_preferences, HostUserData, UserPreferences};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, UserData, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
 use crate::client::window_transitions as wt;
@@ -145,10 +145,6 @@ pub trait SkirmishHost: GuiUtilHost {
     fn skirmish_split(&mut self) -> (&mut SkirmishGameOptions, &mut SkirmishData);
     /// SkirmishMapSelectMenu.cpp's statics.
     fn map_select(&mut self) -> &mut SkirmishMapSelect;
-    /// `UserPreferences::load(leaf)`: the file's keys and values (empty without the file).
-    fn prefs_load(&mut self, leaf: &[u8]) -> BTreeMap<Vec<u8>, Vec<u8>>;
-    /// `UserPreferences::write()`: the keys and values written to the file; whether it opened.
-    fn prefs_write(&mut self, leaf: &[u8], prefs: &BTreeMap<Vec<u8>, Vec<u8>>) -> bool;
     /// `SkirmishBattleHonors::getWins()`.
     fn skirmish_wins(&self) -> i32 {
         0
@@ -330,51 +326,11 @@ fn strtoul(s: &[u8]) -> u32 {
     }
 }
 
-/// `UserPreferences` (a `std::map<AsciiString, AsciiString>`) and its subclasses' readers used here: `Skirmish.ini`
-/// (`SkirmishPreferences`) and `Network.ini` (`LANPreferences`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct UserPreferences {
-    /// The leaf name `load` was given.
-    pub leaf: Vec<u8>,
-    pub map: BTreeMap<Vec<u8>, Vec<u8>>,
-}
-
+// ~~`UserPreferences` (a `std::map<AsciiString, AsciiString>`) and its subclasses' readers used here~~ **Corrected
+// 2026-11-10 (#89):** `UserPreferences` itself is `crate::client::user_preferences` (load and write over the user data
+// folder); its subclasses' readers used here (`Skirmish.ini`, `SkirmishPreferences`; `Network.ini`,
+// `LANPreferences`) are this impl.
 impl UserPreferences {
-    /// The constructor's `load(leaf)` (the host's file).
-    pub fn load<H: SkirmishHost>(h: &mut H, leaf: &[u8]) -> UserPreferences {
-        UserPreferences { leaf: leaf.to_vec(), map: h.prefs_load(leaf) }
-    }
-
-    /// `getAsciiString(key, defaultValue)`.
-    pub fn get_ascii_string(&self, key: &[u8], default: &[u8]) -> Vec<u8> {
-        self.map.get(key).cloned().unwrap_or_else(|| default.to_vec())
-    }
-
-    /// `getInt(key, defaultValue)`: `atoi` of a non-empty value.
-    pub fn get_int(&self, key: &[u8], default: i32) -> i32 {
-        let v = self.get_ascii_string(key, b"");
-        if v.is_empty() {
-            default
-        } else {
-            atoi(&v)
-        }
-    }
-
-    /// `setAsciiString(key, val)`.
-    pub fn set_ascii_string(&mut self, key: &[u8], val: &[u8]) {
-        self.map.insert(key.to_vec(), val.to_vec());
-    }
-
-    /// `setInt(key, val)` (`intAsStr`: `%d`).
-    pub fn set_int(&mut self, key: &[u8], val: i32) {
-        self.set_ascii_string(key, format!("{val}").as_bytes());
-    }
-
-    /// `UserPreferences::write()`.
-    pub fn write_file<H: SkirmishHost>(&self, h: &mut H) -> bool {
-        h.prefs_write(&self.leaf, &self.map)
-    }
-
     /// `LANPreferences::usesSystemMapDir()` (and `SkirmishPreferences::usesSystemMapDir()`, the same): no entry, or
     /// `yes` without regard to case.
     pub fn uses_system_map_dir(&self) -> bool {
@@ -481,7 +437,7 @@ impl UserPreferences {
 
     /// `SkirmishPreferences::write()`: the game's slot 0 colour, faction and name, its map, starting money, superweapon
     /// limit and slot list, the speed slider's position, written (false without a game).
-    pub fn write<H: SkirmishHost>(&mut self, wm: &mut GameWindowManager, h: &mut H) -> bool {
+    pub fn write_skirmish<H: SkirmishHost>(&mut self, wm: &mut GameWindowManager, h: &mut H) -> bool {
         let Some(g) = h.skirmish().game.clone() else { return false };
         self.set_ascii_string(b"Color", format!("{}", g.slots[0].color).as_bytes());
         self.set_ascii_string(b"PlayerTemplate", format!("{}", g.slots[0].player_template).as_bytes());
@@ -497,7 +453,7 @@ impl UserPreferences {
         };
         let max_fps = slider_get_position(wm, slider);
         self.set_int(b"FPS", max_fps);
-        self.write_file(h)
+        self.write(&mut HostUserData(h))
     }
 }
 
@@ -509,9 +465,9 @@ fn trim_ascii(s: &[u8]) -> Vec<u8> {
     s[start..end.max(start)].to_vec()
 }
 
-/// `SkirmishPreferences prefs` (`load("Skirmish.ini")`).
-pub fn skirmish_preferences<H: SkirmishHost>(h: &mut H) -> UserPreferences {
-    UserPreferences::load(h, b"Skirmish.ini")
+/// `SkirmishPreferences prefs` (`load("Skirmish.ini")`; what the read left undefined recorded).
+pub fn skirmish_preferences<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) -> UserPreferences {
+    load_preferences(wm, h, b"Skirmish.ini")
 }
 
 /// `getNextSelectablePlayer(start)`: the first slot from `start` without a start spot that is the player's or (for the
@@ -1191,7 +1147,7 @@ pub fn skirmish_game_options_menu_init<H: SkirmishHost>(wm: &mut GameWindowManag
     gu::enable_slot_list_updates(h, false);
     init_skirmish_game_gadgets(wm, h);
     gu::enable_slot_list_updates(h, true);
-    let prefs = skirmish_preferences(h);
+    let mut prefs = skirmish_preferences(wm, h);
     let user_name = prefs.get_user_name(h);
     let color = prefs.get_preferred_color(h);
     let faction = prefs.get_preferred_faction(h);
@@ -1433,8 +1389,8 @@ pub fn skirmish_game_options_menu_system<H: SkirmishHost>(wm: &mut GameWindowMan
             let o = h.skirmish().clone();
             if id == o.button_exit_id {
                 h.skirmish().button_pushed = true;
-                let mut prefs = skirmish_preferences(h);
-                prefs.write(wm, h);
+                let mut prefs = skirmish_preferences(wm, h);
+                prefs.write_skirmish(wm, h);
                 if let Some(l) = h.skirmish().skirmish_map_select_layout.take() {
                     wm.layout_destroy_windows(l);
                     wm.layouts[l].deleted = true;
@@ -1454,8 +1410,8 @@ pub fn skirmish_game_options_menu_system<H: SkirmishHost>(wm: &mut GameWindowMan
                 wm.layout_bring_forward(l);
             } else if id == o.button_start_id {
                 h.skirmish().button_pushed = true;
-                let mut prefs = skirmish_preferences(h);
-                prefs.write(wm, h);
+                let mut prefs = skirmish_preferences(wm, h);
+                prefs.write_skirmish(wm, h);
                 start_pressed(wm, h);
             } else if id == o.button_reset_id {
                 h.clear_battle_honors();
@@ -1598,7 +1554,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
     }
 
     /// The tests' `Skirmish.ini`: the name `Me`, Blue, America, Beta, 45 frames a second, 20,000, superweapons limited.
-    pub(crate) fn prefs() -> BTreeMap<Vec<u8>, Vec<u8>> {
+    pub(crate) fn prefs() -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
         let me: Vec<u16> = "Me".encode_utf16().collect();
         [
             (&b"UserName"[..], unicode_string_to_quoted_printable(&me)),
@@ -1619,7 +1575,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
     pub(crate) fn opened() -> (GameWindowManager, H) {
         let (mut wm, mut h) = booted();
         h.skirmish_data = data();
-        h.prefs.insert(b"Skirmish.ini".to_vec(), prefs());
+        h.set_pref_file(b"Skirmish.ini", &prefs());
         push_settled(&mut wm, &mut h, false);
         (wm, h)
     }
@@ -1765,7 +1721,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         // Start
         h.requests.clear();
         { let b = named(&wm, F, "ButtonStart"); click(&mut wm, &mut h, b); }
-        let written = h.prefs.get(&b"Skirmish.ini"[..]).cloned().expect("written");
+        let written = h.pref_file(b"Skirmish.ini").expect("written");
         assert_eq!(written.get(&b"Map"[..]).map(|v| v.as_slice()), Some(BETA));
         assert_eq!(written.get(&b"FPS"[..]).map(|v| v.as_slice()), Some(&b"61"[..]));
         assert_eq!(written.get(&b"StartingCash"[..]).map(|v| v.as_slice()), Some(&b"5000"[..]));
@@ -1867,7 +1823,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         settle(&mut wm, &mut h);
         tick(&mut wm, &mut h);
         assert_eq!(wm.layouts[h.shell.top().expect("top")].filename, b"Menus/MainMenu.wnd");
-        assert_eq!(h.prefs.get(&b"Skirmish.ini"[..]).and_then(|p| p.get(&b"Map"[..])).map(|v| v.as_slice()), Some(SOLO));
+        assert_eq!(h.pref_file(b"Skirmish.ini").and_then(|p| p.get(&b"Map"[..]).cloned()), Some(SOLO.to_vec()));
         // again, from what was written (Solo is not a valid multiplayer map: the cache's first, Alpha), and Escape
         push_settled(&mut wm, &mut h, false);
         assert_eq!(h.skirmish.game.as_ref().map(|g| g.map_name.clone()), Some(ALPHA.to_vec()));
