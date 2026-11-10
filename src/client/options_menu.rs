@@ -668,7 +668,7 @@ pub trait OptionsHost: MenuHost {
     /// `TheInGameUI->getMoveRMBScrollAnchor()` / `setMoveRMBScrollAnchor`.
     fn move_rmb_scroll_anchor(&mut self) -> &mut bool;
     /// `destroyQuitMenu()`.
-    fn options_destroy_quit_menu(&mut self);
+    fn options_destroy_quit_menu(&mut self, wm: &mut GameWindowManager);
     /// `DoResolutionDialog()`.
     fn do_resolution_dialog(&mut self, wm: &mut GameWindowManager);
 }
@@ -1369,7 +1369,7 @@ pub fn options_menu_system<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H
                 m.ctl[C_ONLINE_IP] = None;
                 let env = h.env();
                 if !env.in_game || env.in_shell_game {
-                    h.options_destroy_quit_menu();
+                    h.options_destroy_quit_menu(wm);
                 }
                 destroy_options_layout(wm, h);
                 if h.options_menu().disp_changed {

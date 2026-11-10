@@ -177,6 +177,16 @@ pub enum ShellRequest {
     /// map, `clearGameData`, the challenge's `difficulty`, `MSG_NEW_GAME`, `InitRandom(0)`: the World's
     /// `start_challenge`.
     StartChallenge { general: i32, difficulty: i32 },
+    /// (#87) The quit menu's `MSG_SELF_DESTRUCT` with `TRUE` (a multiplayer game's exit or surrender).
+    SelfDestruct,
+    /// (#87) `TheGameLogic->setGamePaused(paused)` (the quit menu's): while paused, `GameEngine::update` does not run
+    /// the logic's frames (outside a network game).
+    SetGamePaused(bool),
+    /// (#87) The quit menu's `restartMissionMenu`, its engine half: the recording stopped (`stop_recording`),
+    /// `clearGameData(FALSE)`, `setQuitting(FALSE)`; then `TheRecorder->playbackFile(replay_file)` when it is not empty,
+    /// else `m_pendingFile = map_name` and `MSG_NEW_GAME` (`game_mode`, `difficulty`, `rank_points`, `fps`) with
+    /// `InitRandom(0)`.
+    RestartMission { game_mode: i32, difficulty: i32, rank_points: i32, fps: i32, map_name: Vec<u8>, replay_file: Vec<u8>, stop_recording: bool },
 }
 
 /// `TheShell`.

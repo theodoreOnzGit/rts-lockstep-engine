@@ -16,7 +16,8 @@
 //!   unit's command buttons are along the bottom~~ **corrected 2026-11-05 (#12):** the first selected unit's command
 //!   buttons are the game's control bar's when its files are loaded (below), else a debug panel along the bottom (also
 //!   shown, above the bar, on a narrow screen); a construct button puts the building at the cursor until a click
-//!   places it. Escape cancels a placement or a pending command. Everything goes through [`crate::input::Controls`], the
+//!   places it. Escape cancels a placement or a pending command (**corrected 2026-11-10 (#87):** and otherwise
+//!   opens the game's quit menu, the shell's, when its files are loaded). Everything goes through [`crate::input::Controls`], the
 //!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
 //!   (within 18 pixels), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
 //!   **corrected 2026-11-05 (#11):** the logic's ground height (`TerrainLogic::ground_height`), the plane at 0 only
@@ -745,21 +746,47 @@ fn dik_of(k: KeyCode) -> u8 {
 /// (#74) GUI glue (needs a window's keyboard events): each of Bevy's keyboard events, natively and in the browser,
 /// into the game's UI ([`crate::ui::GameUi::keyboard`], tested there): the key by its DirectInput code, and the text it
 /// typed. The modifier states (`KEY_STATE_CONTROL`, ...) are not passed yet.
+///
+/// (#87) Escape in a game (`MSG_META_OPTIONS`) cancels a placement or a pending command first (the client's, #6), else
+/// toggles the quit menu ([`crate::shell::ShellUi::toggle_quit_menu`], tested there) when the shell is loaded; while the
+/// in-game menus are up they have the keyboard, and an Escape their windows did not use toggles again (upstream's
+/// window manager sees the key before the meta map).
 fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Game>, mut taken: ResMut<UiKeyboard>, mut shell: NonSendMut<ShellState>) {
-    // (#78) the shell, while it is shown, has the keyboard (`crate::shell::ShellUi::keyboard`, tested there)
-    if let Some(s) = shell.ui.as_mut().filter(|s| s.is_active()) {
+    let g = &mut *game;
+    // (#78) the shell, while it is shown, has the keyboard (`crate::shell::ShellUi::keyboard`, tested there); (#87) so
+    // do the in-game menus
+    if let Some(s) = shell.ui.as_mut().filter(|s| s.takes_input()) {
         for k in events.read() {
-            s.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+            let down = k.state == ButtonState::Pressed;
+            let used = s.keyboard(dik_of(k.key_code), down, k.text.as_deref());
+            if !used && down && k.key_code == KeyCode::Escape && !s.is_active() {
+                s.toggle_quit_menu(crate::shell::quit_menu_game(&g.controls.client.world, g.controls.ui.input_enabled()));
+            }
         }
         taken.0 = true;
         return;
     }
-    let Some(ui) = game.ui.as_mut() else {
-        events.clear();
+    let panel = crate::saves::page::panel_open() || crate::campaigns::page::panel_open();
+    let mut keys: Vec<KeyboardInput> = Vec::new();
+    for k in events.read() {
+        if k.key_code == KeyCode::Escape && k.state == ButtonState::Pressed && !panel {
+            let c = &mut g.controls;
+            if c.ui.pending_place_type().is_some() || c.ui.gui_command().is_some() {
+                // (the client's cancel, #6)
+                c.ui.place_build_available(None, None, 0.0, &c.client);
+                c.ui.set_gui_command(None);
+            } else if let Some(s) = shell.ui.as_mut() {
+                s.toggle_quit_menu(crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
+            }
+            continue;
+        }
+        keys.push(k.clone());
+    }
+    let Some(ui) = g.ui.as_mut() else {
         taken.0 = false;
         return;
     };
-    for k in events.read() {
+    for k in keys {
         ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
     }
     taken.0 = ui.has_keyboard_focus();
@@ -1031,12 +1058,11 @@ fn pixel(v: Vec2) -> ICoord2D {
     ICoord2D { x: v.x as i32, y: v.y as i32 }
 }
 
-/// GUI glue (needs a window): the left button, the pointer's hover and Escape, through [`Controls`].
+/// GUI glue (needs a window): the left button and the pointer's hover ((#87) Escape is `keyboard_ui`'s), through [`Controls`].
 fn pointer_input(
     mut game: NonSendMut<Game>,
     mut pointer: ResMut<Pointer>,
     buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform)>,
     bar: Res<UiBar>,
@@ -1044,18 +1070,15 @@ fn pointer_input(
     shell: NonSend<ShellState>,
 ) {
     let bar = bar.height + bar.panel;
-    // (#4) the saves panel takes the pointer while it is open (the game is paused under it); (#78) so does the shell
-    if crate::saves::page::panel_open() || crate::campaigns::page::panel_open() || shell.ui.as_ref().is_some_and(|s| s.is_active()) {
+    // (#4) the saves panel takes the pointer while it is open (the game is paused under it); (#78) so does the shell;
+    // (#87) and the in-game menus
+    if crate::saves::page::panel_open() || crate::campaigns::page::panel_open() || shell.ui.as_ref().is_some_and(|s| s.takes_input()) {
         pointer.press = None;
         return;
     }
     let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
     let g = &mut *game;
-    if keys.just_pressed(KeyCode::Escape) {
-        let c = &mut g.controls;
-        c.ui.place_build_available(None, None, 0.0, &c.client);
-        c.ui.set_gui_command(None);
-    }
+    // (~~Escape cancels here~~ **Corrected 2026-11-10 (#87):** in `keyboard_ui`, which also opens the quit menu)
     let Some(cursor) = window.cursor_position() else { return };
     let Some(ground) = ground_under(camera, cam, cursor, |x, y| g.controls.client.world.terrain.ground_height(x, y, false).0) else { return };
     let screen = on_screen(g, camera, cam);
@@ -1890,7 +1913,8 @@ impl Saves {
 #[derive(Clone, Debug)]
 enum SaveCmd {
     Toggle,
-    Save,
+    /// (#87) Under `name` (`None`: the folder's next name) with `description` (`None`: the client's own).
+    Save { name: Option<String>, description: Option<String> },
     Load(String),
     Export(String),
 }
@@ -1968,13 +1992,13 @@ fn apply_save_action(
             }
             saves.generation += 1;
         }
-        SaveCmd::Save => {
+        SaveCmd::Save { name: save_name, description } => {
             let g = &mut *game;
             // (`View::xfer`: the camera's heading and the point it looks at)
             g.save_state.view.angle = rig.yaw;
             g.save_state.view.position = Coord3D { x: rig.focus.x, y: rig.focus.y, z: 0.0 };
             let frame = g.controls.client.world.frame();
-            let desc = format!("{} | frame {frame}", g.playing.split(" | ").next().unwrap_or(""));
+            let desc = description.unwrap_or_else(|| format!("{} | frame {frame}", g.playing.split(" | ").next().unwrap_or("")));
             // (#59: the drawables with their ambient sounds, as the audio has them)
             if let Some(sound) = g.audio.as_deref() {
                 sound.audio.ambient.save_into(&mut g.models.drawables);
@@ -1990,7 +2014,7 @@ fn apply_save_action(
             });
             let status = match r {
                 Ok(bytes) => {
-                    let name = saves.folder.next_name();
+                    let name = save_name.unwrap_or_else(|| saves.folder.next_name());
                     match saves.folder.write(&name, bytes) {
                         Ok(()) => {
                             // (`saveGame`'s message to the player)
@@ -2131,7 +2155,7 @@ fn saves_panel(mut commands: Commands, mut saves: NonSendMut<Saves>, panels: Que
     let header = commands
         .spawn(Node { flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, column_gap: px(6), row_gap: px(6), ..default() })
         .id();
-    let save = commands.spawn((bar_button("Save game"), observe(|_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Save)))).id();
+    let save = commands.spawn((bar_button("Save game"), observe(|_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Save { name: None, description: None })))).id();
     let close = commands.spawn((bar_button("Close"), observe(|_: On<Activate>, mut a: ResMut<SaveAction>| a.0 = Some(SaveCmd::Toggle)))).id();
     commands.entity(header).add_children(&[save, close]);
     if saves.folder.dir.is_none() {
@@ -2538,7 +2562,8 @@ fn shell_ui(
         ui.hide();
         info!("shell hidden: a game started");
     }
-    if ui.is_active() {
+    // (#87: also while the in-game menus are up)
+    if ui.takes_input() {
         ui.frame((time.elapsed_secs_f64() * 1000.0) as u32);
         if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
             match (st.last_pointer, st.placement) {
@@ -2618,6 +2643,17 @@ fn shell_ui(
                     if let Some(sound) = g.audio.as_deref_mut() {
                         sound.audio.manager.set_volume(volume, affect);
                     }
+                }
+                // (#87) the quit menu's: the save popup's save (the saves panel's), the pause, the exit
+                crate::shell::ShellAction::SaveGame { name, description } => {
+                    save_action.0 = Some(SaveCmd::Save { name, description: Some(description) });
+                }
+                crate::shell::ShellAction::SetGamePaused(p) => g.paused = p,
+                crate::shell::ShellAction::ClearGameData => {
+                    let player = g.controls.client.player;
+                    crate::shell::send_clear_game_data(&mut g.controls.client.world, player);
+                    // (the game's end is watched whatever started it: `clearGameData` opens the score screen)
+                    c.flow.watching = true;
                 }
                 crate::shell::ShellAction::None(why) => {
                     if !why.is_empty() {

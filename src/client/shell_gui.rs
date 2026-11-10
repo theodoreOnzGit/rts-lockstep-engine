@@ -16,7 +16,7 @@
 //     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown; #98:
 //     ReplayMenuSystem, PopupReplaySystem, ChallengeMenuSystem, ReplayMenuInput, PopupReplayInput, ChallengeMenuInput,
 //     ReplayMenuInit, PopupReplayInit, ChallengeMenuInit, ReplayMenuUpdate, PopupReplayUpdate, ChallengeMenuUpdate,
-//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown)
+//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown; #87: QuitMenuSystem)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -64,6 +64,11 @@
 //!   (`crate::client::popup_replay`) and the challenge menu (`crate::client::challenge_menu`) are translated and
 //!   dispatched here, with their message boxes' callbacks (`reallySaveReplay`, `reallyLoadReplay`,
 //!   `deleteReplayFlag`, `copyReplayFlag`); the replay folder is the owner's ([`ShellGui::replays`]).
+//!   **Corrected 2026-11-10 (#87):** the in-game quit menu (`crate::client::quit_menu`, `QuitMenuSystem`) is
+//!   translated and dispatched here, with its boxes' callbacks (`exitQuitMenu`, `noExitQuitMenu`,
+//!   `surrenderQuitMenu`, `restartMissionMenu`); `destroyQuitMenu` (the save/load popup's load, the options screen's
+//!   accept) is its translation, no longer recorded as untranslated. What it reads of the game is the owner's copy
+//!   ([`ShellGui::quit_menu`]'s `game`).
 //! - (#78) `TheNameKeyGenerator` is [`ShellGui::keys`] ([`NameKeys`]), which the reader shares while the host lends it
 //!   its files: ~~[`ShellHost::name_to_key`] asked the files' generator, and answered `u32::MAX` while they were lent
 //!   to the reader~~ **Corrected 2026-11-10 (#78):** a callback the reader runs (a window's `GWM_CREATE`) gets the
@@ -94,6 +99,7 @@ use crate::client::save_load_menu::{self as slm, SaveLoadHost, SaveLoadMenu};
 use crate::client::single_player_menu::{self as spm, SinglePlayerHost, SinglePlayerMenu};
 use crate::client::challenge_menu::{self as cm, ChallengeHost, ChallengeMenu};
 use crate::client::popup_replay::{self as pr, PopupReplay, PopupReplayHost};
+use crate::client::quit_menu::{self as qm, QuitMenu, QuitMenuHost};
 use crate::client::replay_menu::{self as rm, MemoryReplayFolder, ReplayListHost, ReplayListing, ReplayMenu, ReplayVersion};
 use crate::formats::big::FilenameList;
 use crate::common::game_state::SaveGameInfo;
@@ -174,6 +180,8 @@ pub struct ShellGui<W> {
     /// (#98) The replay folder as the owner gave it (each file's listing read by the owner with the logic's recorder);
     /// its writes and deletes are queued in [`ShellGui::requests`].
     pub replays: MemoryReplayFolder,
+    /// (#87) QuitMenu.cpp's statics, `TheInGameUI`'s quit-menu flags and the game's state the menu reads (the owner's).
+    pub quit_menu: QuitMenu,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -215,6 +223,7 @@ impl<W: WndFiles> ShellGui<W> {
             popup_replay: PopupReplay::default(),
             challenge: ChallengeMenu::default(),
             replays: MemoryReplayFolder { files: Vec::new(), desktop: b"Desktop".to_vec() },
+            quit_menu: QuitMenu::default(),
         }
     }
 
@@ -251,6 +260,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ReplayMenuSystem" => rm::replay_menu_system(wm, self, win, msg, d1, d2),
             b"PopupReplaySystem" => pr::popup_replay_system(wm, self, win, msg, d1, d2),
             b"ChallengeMenuSystem" => cm::challenge_menu_system(wm, self, win, msg, d1, d2),
+            // (#87)
+            b"QuitMenuSystem" => qm::quit_menu_system(wm, self, win, msg, d1, d2),
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -382,6 +393,11 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"reallyLoadReplay" => rm::really_load_replay(wm, self),
             b"deleteReplayFlag" => rm::delete_replay_flag(self),
             b"copyReplayFlag" => rm::copy_replay_flag(self),
+            // (#87)
+            b"exitQuitMenu" => qm::exit_quit_menu(wm, self),
+            b"noExitQuitMenu" => qm::no_exit_quit_menu(self),
+            b"surrenderQuitMenu" => qm::surrender_quit_menu(wm, self),
+            b"restartMissionMenu" => qm::restart_mission_menu(wm, self),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -528,8 +544,9 @@ impl<W: WndFiles> OptionsHost for ShellGui<W> {
     fn move_rmb_scroll_anchor(&mut self) -> &mut bool {
         &mut self.rmb_scroll_anchor.1
     }
-    fn options_destroy_quit_menu(&mut self) {
-        self.untranslated.push(b"destroyQuitMenu".to_vec());
+    fn options_destroy_quit_menu(&mut self, wm: &mut GameWindowManager) {
+        // (~~recorded as untranslated~~ **Corrected 2026-11-10 (#87):** translated)
+        qm::destroy_quit_menu(wm, self);
     }
     fn do_resolution_dialog(&mut self, _wm: &mut GameWindowManager) {
         self.untranslated.push(b"DoResolutionDialog".to_vec());
@@ -622,8 +639,21 @@ impl<W: WndFiles> SaveLoadHost for ShellGui<W> {
         self.save_files.retain(|(n, _)| !n.eq_ignore_ascii_case(filename));
         self.requests.push(ShellRequest::DeleteSave { filename: filename.to_vec() });
     }
-    fn destroy_quit_menu(&mut self) {
-        self.untranslated.push(b"destroyQuitMenu".to_vec());
+    fn destroy_quit_menu(&mut self, wm: &mut GameWindowManager) {
+        // (~~recorded as untranslated~~ **Corrected 2026-11-10 (#87):** translated)
+        qm::destroy_quit_menu(wm, self);
+    }
+}
+
+impl<W: WndFiles> QuitMenuHost for ShellGui<W> {
+    fn quit_menu(&mut self) -> &mut QuitMenu {
+        &mut self.quit_menu
+    }
+    fn hide_in_game_windows(&mut self, what: &'static str) {
+        // (the cursor, the diplomacy and chat windows and the control bar's science purchase are not the shell's)
+        if !self.untranslated.iter().any(|f| f == what.as_bytes()) {
+            self.untranslated.push(what.as_bytes().to_vec());
+        }
     }
 }
 
@@ -1113,6 +1143,17 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         layout_file("ChallengeMenuInit", "ChallengeMenuUpdate", "ChallengeMenuShutdown", &parent)
     }
 
+    /// (#87) A synthetic `Menus/QuitMenu.wnd`, or with `no_save` `Menus/QuitNoSave.wnd` (no EA file): the parent
+    /// `QuitMenuParent` (hidden in the file: the window transitions show it; the system callback `QuitMenuSystem`) at
+    /// (300, 150)-(500, 450), with *Exit*, *Restart*, *Return*, *Options* and (not in `QuitNoSave`) *Save/Load*, at
+    /// x 310 from y 160, 25 apart. No layout callbacks (the lexicon has none for it).
+    pub fn quit_menu_wnd(no_save: bool) -> Vec<u8> {
+        let f = if no_save { "QuitNoSave.wnd" } else { "QuitMenu.wnd" };
+        let names: &[&str] = if no_save { &["ButtonExit", "ButtonRestart", "ButtonReturn", "ButtonOptions"] } else { &["ButtonExit", "ButtonRestart", "ButtonReturn", "ButtonOptions", "ButtonSaveLoad"] };
+        let parent = win(f, "USER", "QuitMenuParent", (300, 150, 500, 450), true, "    SYSTEMCALLBACK = \"QuitMenuSystem\";\n", &buttons(f, 310, 160, names));
+        layout_file("[None]", "[None]", "[None]", &parent)
+    }
+
     /// The panels of [`main_menu_wnd`] and their buttons.
     const PANELS: [(&str, &[&str]); 5] = [
         ("MapBorder2", &["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"]),
@@ -1179,6 +1220,11 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         s += "WindowTransition ScoreScreenShow\n  Window\n    WinName = ScoreScreen.wnd:GadgetParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         // (#98) the replay and challenge menus' fades, on their parents, not fire-once (their shutdowns reverse them)
         s += "WindowTransition ReplayMenuFade\n  Window\n    WinName = ReplayMenu.wnd:ParentReplayMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
+        // (#87) the quit menu's groups, on its parent: the shows (`QuitFull`, `QuitNoSave`) and the hides, reversed
+        // (`QuitFullBack`, `QuitNoSaveBack`)
+        for (g, f) in [("QuitFull", "QuitMenu"), ("QuitFullBack", "QuitMenu"), ("QuitNoSave", "QuitNoSave"), ("QuitNoSaveBack", "QuitNoSave")] {
+            s += &format!("WindowTransition {g}\n  Window\n    WinName = {f}.wnd:QuitMenuParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n");
+        }
         s += "WindowTransition ChallengeMenuFade\n  Window\n    WinName = ChallengeMenu.wnd:ParentChallengeMenu\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
         // (#89) the skirmish screen's fade, on its parent, not fire-once (its shutdown reverses it)
         s += "WindowTransition SkirmishGameOptionsMenuFade\n  Window\n    WinName = SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent\n    Style = FLASH\n    FrameDelay = 0\n  End\nEnd\n";
@@ -1257,6 +1303,9 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             ("ReplayMenu", replay_menu_wnd()),
             ("PopupReplay", popup_replay_wnd()),
             ("ChallengeMenu", challenge_menu_wnd()),
+            // (#87)
+            ("QuitMenu", quit_menu_wnd(false)),
+            ("QuitNoSave", quit_menu_wnd(true)),
         ];
         for n in ["BlankWindow", "CreditsMenu", "LanLobbyMenu", "KeyboardOptionsMenu"] {
             out.push((n, screen(n)));

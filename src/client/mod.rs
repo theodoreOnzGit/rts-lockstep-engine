@@ -88,4 +88,5 @@ pub mod score_screen;
 // (ChallengeMenu.cpp)
 pub mod replay_menu;
 pub mod popup_replay;
+pub mod quit_menu;
 pub mod challenge_menu;

@@ -33,7 +33,9 @@
 //!
 //! **Not read from the World yet:** the construction special's button kept by a production module
 //! (`getSpecialPowerConstructionCommandButton`: no module call returns it), so placement here always builds with a dozer;
-//! the quit menu (no shell yet). **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
+//! the quit menu ~~(no shell yet)~~ **Corrected 2026-11-10 (#87):** (translated in the shell's host,
+//! `crate::client::quit_menu`; `quit_menu_visible` here still answers false: the client keeps the pointer from the
+//! translators while the in-game menus are up, so the selection never sees a click under them). **Not written:** the single-use command flag ([`ControlBarHost::mark_single_use_command_used`]).
 
 use crate::client::command_xlat::{ActionType, CmdArg, CommandXlatHost, GuiButton, TargetMode};
 use crate::client::control_bar::ControlBarHost;

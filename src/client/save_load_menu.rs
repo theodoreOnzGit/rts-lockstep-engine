@@ -90,10 +90,12 @@
 //!   shell, then `loadGame`), [`ShellRequest::SaveGame`] (`saveGame`), [`ShellRequest::DeleteSave`] (`DeleteFile`; the
 //!   host's list is told at once, [`SaveLoadHost::delete_save_file`], so the list filled again lacks it, as upstream's).
 //!   A load's failure is the client's to report: it shows the shell again (`showShell(TRUE)`), as `doLoadGame` does.
-//! - `destroyQuitMenu` (QuitMenu.cpp, the in-game Escape menu) is not translated: the host's
+//! - ~~`destroyQuitMenu` (QuitMenu.cpp, the in-game Escape menu) is not translated: the host's
 //!   ([`SaveLoadHost::destroy_quit_menu`]), which records it. **The in-game popup is not reachable** in the client (the
 //!   quit menu that opens it, `getSaveLoadMenuLayout`'s caller, is not translated): its callbacks are translated and
-//!   tested from a synthetic `PopupSaveLoad.wnd`, and the client answers its save request by saying so (#78).
+//!   tested from a synthetic `PopupSaveLoad.wnd`, and the client answers its save request by saying so (#78).~~ **Corrected 2026-11-10 (#87):** QuitMenu.cpp is translated
+//!   (`crate::client::quit_menu`): its *Save/Load* opens this popup, and the host's `destroy_quit_menu` is its
+//!   `destroyQuitMenu`; the client saves the popup's request through the saves panel's save.
 //! - The runInit user data (`SaveLoadLayoutType *`) is an argument ([`save_load_menu_init`]); the lexicon passes `None`
 //!   (`NULL`), as every caller in the release does (QuitMenu.cpp's is commented out).
 //! - ~~`DontShowMainMenu` and `ReplayWasPressed` (ScoreScreen.cpp's globals; the score screen is not translated) are
@@ -164,8 +166,10 @@ pub trait SaveLoadHost: MenuHost {
     fn map_name(&self) -> Vec<u8> {
         Vec::new()
     }
-    /// `destroyQuitMenu()` (QuitMenu.cpp: not translated; recorded).
-    fn destroy_quit_menu(&mut self) {}
+    /// `destroyQuitMenu()` (QuitMenu.cpp: ~~not translated; recorded~~ **Corrected 2026-11-10 (#87):** translated,
+    /// `crate::client::quit_menu::destroy_quit_menu`, which the shell's host calls; nothing for a host without the quit
+    /// menu).
+    fn destroy_quit_menu(&mut self, _wm: &mut GameWindowManager) {}
 }
 
 /// PopupSaveLoad.cpp's statics (the window keys, the windows, the layout type) and `TheGameState->m_availableGames`.
@@ -587,7 +591,7 @@ fn do_load_game<H: SaveLoadHost>(wm: &mut GameWindowManager, h: &mut H) {
         return;
     };
     if !h.shell().is_shell_active() {
-        h.destroy_quit_menu();
+        h.destroy_quit_menu(wm);
     } else {
         wt::remove(wm, h, b"MainMenuLoadReplayMenu", false);
         wt::remove(wm, h, b"MainMenuLoadReplayMenuBack", false);
@@ -1070,7 +1074,8 @@ pub(crate) mod tests {
         settle(wm, h);
     }
 
-    /// #78: the in-game popup's save and load (not reachable in the client: QuitMenu.cpp is not translated), predicted
+    /// #78: the in-game popup's save and load (~~not reachable in the client: QuitMenu.cpp is not translated~~
+    /// **Corrected 2026-11-10 (#87):** reached through the translated quit menu, `crate::client::quit_menu`), predicted
     /// before the run, with the shell not active (in a game):
     ///
     /// - *Save* on the new-game row: the description window shown with the default text (no campaign: the map's name,
@@ -1080,7 +1085,8 @@ pub(crate) mod tests {
     ///   `SAVE_FILE_TYPE_NORMAL`;
     /// - *Save* on a save (row 1, `00000002.sav`): the overwrite confirmation, the list and the frame disabled; its
     ///   *Confirm*: `SaveGame` of `00000002.sav` with the save's own description (empty) and the normal type;
-    /// - *Load* on row 1 in a game: the load confirmation (no load yet); its *Confirm*: `destroyQuitMenu` (recorded) and
+    /// - *Load* on row 1 in a game: the load confirmation (no load yet); its *Confirm*: `destroyQuitMenu` (~~recorded~~
+    ///   **Corrected 2026-11-10 (#87):** translated: nothing to destroy here) and
     ///   `LoadGame` of `00000002.sav`; *Back*: the popup's layout hidden.
     ///
     /// **Result (2026-11-10):** as predicted.
@@ -1126,7 +1132,10 @@ pub(crate) mod tests {
         let ok = named(&wm, f, "ButtonLoadConfirm");
         click(&mut wm, &mut h, ok);
         assert_eq!(h.requests, [ShellRequest::LoadGame { filename: b"00000002.sav".to_vec() }]);
-        assert!(h.untranslated.contains(&b"destroyQuitMenu".to_vec()));
+        // (~~`destroyQuitMenu` recorded as untranslated~~ **Corrected 2026-11-10 (#87):** translated; with no quit menu
+        // made it destroys nothing)
+        assert!(!h.untranslated.contains(&b"destroyQuitMenu".to_vec()));
+        assert!(h.quit_menu.full_quit_menu_layout.is_none() && !h.quit_menu.is_visible);
         wm.layout_hide(pl, false);
         let back = named(&wm, f, "ButtonBack");
         click(&mut wm, &mut h, back);

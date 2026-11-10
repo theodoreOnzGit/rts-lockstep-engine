@@ -124,6 +124,37 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#87 (2026-11-10, GitHub #87): the in-game quit menu (Escape), so the in-game save popup works.**
+- **Translated** (engine crate, plain Rust): `client::quit_menu` (QuitMenu.cpp, whole but `quitToDesktopQuitMenu`,
+  which only a commented-out button names: the statics, `initGadgetsFullQuit`, `initGadgetsNoSaveQuit`,
+  `destroyQuitMenu`, `exitQuitMenu`, `noExitQuitMenu`, `surrenderQuitMenu`, `restartMissionMenu`, `HideQuitMenu`,
+  `ToggleQuitMenu`, `QuitMenuSystem`). What it reads of the game is `QuitMenuGame` (the owner's copy); what it asks is a
+  `ShellRequest`: `ClearGameData`, `SelfDestruct`, `SetGamePaused`, `RestartMission`. `client::shell_gui`: the
+  lexicon entry, the four box callbacks; `destroyQuitMenu` (the popup's load, the options screen's accept) is now the
+  translation (`SaveLoadHost::destroy_quit_menu` and `OptionsHost::options_destroy_quit_menu` take the window manager);
+  `synthetic::quit_menu_wnd` and the `QuitFull`, `QuitFullBack`, `QuitNoSave`, `QuitNoSaveBack` groups.
+- **Client:** Escape in a game (after a placement's or a pending command's cancel, the client's) is `ToggleQuitMenu`
+  (`ShellUi::toggle_quit_menu`, with `quit_menu_game` read from the World); the shell's window manager is drawn and takes
+  the pointer and keyboard while the in-game menus are up (`ShellUi::takes_input`), the control bar staying under it.
+  The pause is the app's (`ShellAction::SetGamePaused`: the logic's frames not run, as `GameEngine::update` does with
+  `m_gamePaused`, which is neither saved nor CRC'd). The popup's save is the saves panel's save under the popup's name
+  and description (`ShellAction::SaveGame`). *Exit* sends `MSG_CLEAR_GAME_DATA` on the World's command list
+  (`send_clear_game_data`); the next frame's `clearGameData` opens the score screen (the flow now watches whatever
+  game was exited). *Restart* is a gap. The client changes the simulation only through that message.
+- **Predictions vs results:** both engine tests held on the first run. The client test missed once: the demo World's
+  `isGameEnding` is true (its script engine never had `newMap`: the end-game timer is the constructor's 0), so Escape
+  did nothing there, as upstream's would; the test now asserts that and runs with a started game's timer. Defect
+  drafted, not fixed (fixing it changes what the demo's frames run).
+- **Differential:** none. QuitMenu.cpp has no computation to compare: every function is window and state glue whose
+  only branches are on the game mode and four flags, all exercised by the tests above.
+- **Gaps (issue drafts):** the restart (the flow does not keep the running game's choice); `setGamePaused`'s input,
+  audio, mouse and time effects, `isQuitMenuVisible` for the selection, `closeWindows`'s `HideQuitMenu`; no on-screen
+  way in on a phone (the control bar's options button). **Upstream undefined steps** (a layout without `ButtonRestart`
+  or `ButtonOptions`: `winEnable` on `NULL`) are recorded with `set_undefined`.
+- **Gates:** lib 1132 passed (1130 before, 2 new); client 60 passed (59 before, 1 new); clippy (lib) clean; the
+  differentials wm, wnd, wt, save_list, map_list, score_grid, user_prefs, replay_list pass (0 mismatches); web build ok
+  (no warnings); gate (a) PASS, last CRC 0bf44067 (unchanged).
+
 **#98 (2026-11-10, GitHub #98, #89): the replay folder, *Save Replay*, the replay menu and the challenge menu.**
 - **Translated** (engine crate, plain Rust):
   - `client::replay_menu` (ReplayMenu.cpp, whole but the debug build's *Analyze Replay*: the statics,
@@ -345,8 +376,9 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   `DeleteSave`; `MenuFiles::fetch_text_exists`. `client/src/app.rs`: `shell_ui` gives the shell the folder when it
   changes, maps `LoadGame` onto the saves panel's own `SaveCmd::Load` (the same call: mission saves included) and
   shows the shell again when that load fails (`Saves::last_load`); `DeleteSave` is `SaveFolder::delete` (natively the
-  file; on the web a new queue the page empties into OPFS `removeEntry`). The in-game popup's save is answered as a gap
-  (QuitMenu.cpp, which opens it, is not translated).
+  file; on the web a new queue the page empties into OPFS `removeEntry`). ~~The in-game popup's save is answered as a gap
+  (QuitMenu.cpp, which opens it, is not translated).~~ **Corrected 2026-11-10 (#87):** QuitMenu.cpp is translated; the
+  popup's save is the saves panel's save under the popup's name and description (the #87 entry above).
 - **Predictions vs results:** recorded in each test's doc. Misses: the full screen's focus is nobody's after its init
   (it gives the parent the focus, then hides the parent: `windowHiding` drops it; upstream's order); `ab.cde`'s
   extension is cut (its fourth character from the end is the dot), predicted kept; a list box cell never written reads
@@ -364,7 +396,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Gates:** lib 1105 passed (1099 before, 6 new); client 53 passed (52 before, 1 new); clippy (lib) clean; the
   differential build (`--features differential --tests`) compiles, the differentials above pass; web build ok; gate
   (a) PASS, last CRC 0bf44067 (unchanged).
-- **Gaps (issue drafts in the scratchpad):** the in-game save popup is not reachable (QuitMenu.cpp); ~~`Options.ini`
+- **Gaps (issue drafts in the scratchpad):** ~~the in-game save popup is not reachable (QuitMenu.cpp);~~ **Corrected
+  2026-11-10 (#87):** it is, through the translated quit menu; ~~`Options.ini`
   (`OptionPreferences`) is neither read nor written (the campaign difficulty);~~ **Corrected 2026-11-10 (#89):**
   `Options.ini` is read and written (#88, #93: the entry above); the date and time formats are the en-US
   system locale's; `MapSelectMenu.wnd` (the single player menu's *New*) is not translated; the rest of item 3 (~~the
