@@ -2308,6 +2308,77 @@ mod differential {
                 la.compile("upstream_look_at");
             }
 
+            // GitHub #125: the command translator's meta-key cases and MetaEvent's key map (differential/wrap_command_meta.cpp,
+            // which lists the cuts). Cut verbatim into OUT_DIR/command_meta_gen from CommandXlat.cpp (translateGameMessage's
+            // gate, left open for the wrapper's switch; isSystemMessage; viewCommandCenter and iNeedAHero; the meta cases
+            // from MSG_META_SELECT_MATCHING_UNITS to the chat comment, PLACE/REMOVE_BEACON, TOGGLE_ATTACKMOVE to
+            // TOGGLE_FAST_FORWARD_REPLAY, BEGIN_FORCEMOVE to TAKE_SCREENSHOT; the selected-group cases), InGameUI.cpp
+            // (kindOfUnitSelection, similarUnitSelection; selectAllUnitsByTypeAcrossRegion to addFloatingText), ControlBar.h
+            // (GUICommandType), MetaEvent.h (the key enums and names) and MetaEvent.cpp (GameMessageMetaTypeNames,
+            // MetaEventTranslator::translateGameMessage, findGameMessageMetaType and getMetaMapRec). No text is edited.
+            // Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_command_meta.cpp");
+                let ge = up.join("GameEngine");
+                let rd = |f: &str| String::from_utf8_lossy(&std::fs::read(ge.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"))).into_owned();
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let cx = rd("Source/GameClient/MessageStream/CommandXlat.cpp");
+                let ui = rd("Source/GameClient/InGameUI.cpp");
+                let cb = rd("Include/GameClient/ControlBar.h");
+                let me = rd("Source/GameClient/MessageStream/MetaEvent.cpp");
+                let mh = rd("Include/GameClient/MetaEvent.h");
+                let c = "CommandXlat.cpp";
+                let files = [
+                    ("command_gate_open.inc", piece(&cx, c, "GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage *msg)\n{", Some("#if defined(_DEBUG) || defined(_INTERNAL)\n\tExtentModType extentModType"))),
+                    ("system_message.inc", piece(&cx, c, "static Bool isSystemMessage( const GameMessage *msg )\n{", None)),
+                    ("view_hero.inc", piece(&cx, c, "struct CommandCenterLocator\n", Some("GameMessage::Type CommandTranslator::issueMoveToLocationCommand("))),
+                    ("meta_select_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_SELECT_MATCHING_UNITS:\n", Some("\t\t/* MDC - no such thing as chat to players"))),
+                    ("meta_beacon_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_PLACE_BEACON:\n", Some("\t\tcase GameMessage::MSG_META_OPTIONS:\n"))),
+                    ("meta_mode_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_TOGGLE_ATTACKMOVE:\n", Some("\t\tcase GameMessage::MSG_META_TOGGLE_FAST_FORWARD_REPLAY:\n"))),
+                    ("meta_held_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_BEGIN_FORCEMOVE:\n", Some("\t\tcase GameMessage::MSG_META_TAKE_SCREENSHOT:\n"))),
+                    ("group_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_CREATE_SELECTED_GROUP:\n\t\tcase GameMessage::MSG_SELECT_TEAM0:\n", Some("\t\t// An object is mouseover'd"))),
+                    ("kind_of_selection.inc", piece(&ui, "InGameUI.cpp", "struct KindOfSelectionData\n", Some("void showReplayControls( void )"))),
+                    (
+                        "select_by_type.inc",
+                        piece(&ui, "InGameUI.cpp", "Int InGameUI::selectAllUnitsByTypeAcrossRegion( IRegion2D *region, KindOfMaskType mustBeSet, KindOfMaskType mustBeClear )\n", Some("void InGameUI::addFloatingText(")),
+                    ),
+                    ("command_options.inc", piece(&cb, "ControlBar.h", "enum CommandOption\n{", Some("#ifdef DEFINE_GUI_COMMMAND_NAMES"))),
+                    ("meta_header.inc", piece(&mh, "MetaEvent.h", "enum MappableKeyCategories\n", Some("class MetaMapRec : public MemoryPoolObject\n"))),
+                    ("meta_names.inc", piece(&me, "MetaEvent.cpp", "static const LookupListRec GameMessageMetaTypeNames[] = \n", Some("static const FieldParse TheMetaMapFieldParseTable[] = \n"))),
+                    ("meta_translate.inc", piece(&me, "MetaEvent.cpp", "GameMessageDisposition MetaEventTranslator::translateGameMessage(const GameMessage *msg)\n", Some("MetaMap::MetaMap() : \n"))),
+                    ("meta_map.inc", piece(&me, "MetaEvent.cpp", "GameMessage::Type MetaMap::findGameMessageMetaType(const char* name)\n", Some("/*static */ void MetaMap::parseMetaMap(INI* ini)\n"))),
+                ];
+                let gen = out_dir.join("command_meta_gen");
+                std::fs::create_dir_all(&gen).expect("create command_meta_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_command_meta.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}")).expect("write a command meta cut");
+                }
+                let mut cm = cc::Build::new();
+                base(&mut cm);
+                cm.include(&gen)
+                    .include(&shim)
+                    .include(root.join("differential/shim_wm"))
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_command_meta.cpp"));
+                cm.compile("upstream_command_meta");
+            }
+
             // GitHub #117: TheMouse's cursor (differential/wrap_mouse.cpp). Cut verbatim into OUT_DIR/mouse_gen: Mouse.h's
             // `class CursorInfo` and its two enums (`enum MouseCursor` to `RedrawModeName`); Mouse.cpp's
             // `CursorInfo::CursorInfo`, `setMouseText`, `getCursorIndex` and `setCursor`; Win32Mouse.cpp's

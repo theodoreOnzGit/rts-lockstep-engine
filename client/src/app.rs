@@ -534,6 +534,7 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
             // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
             let requests: Vec<_> = g.models.drawables.fx.requests.drain(..).collect();
             let voices: Vec<_> = g.controls.client.voices.drain(..).collect();
+            let cheers = std::mem::take(&mut g.controls.client.all_cheers);
             let insufficient_funds = g.controls.client.eva_insufficient_funds;
             if let (Some(sound), Some(art)) = (g.audio.as_deref_mut(), g.models.art.as_ref()) {
                 let files = |p: &[u8]| art.fs.does_file_exist(p);
@@ -558,6 +559,8 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
                 for v in &voices {
                     sound.audio.play_unit_voice(&host, v);
                 }
+                // #125: `MSG_META_ALL_CHEER`'s sound
+                sound.audio.play_all_cheer_sound(&host, cheers);
                 for e in &heard {
                     sound.audio.apply_event(&host, &mut sound.device, e);
                 }
@@ -786,7 +789,11 @@ fn dik_of(k: KeyCode) -> u8 {
 
 /// (#74) GUI glue (needs a window's keyboard events): each of Bevy's keyboard events, natively and in the browser,
 /// into the game's UI ([`crate::ui::GameUi::keyboard`], tested there): the key by its DirectInput code, and the text it
-/// typed. The modifier states (`KEY_STATE_CONTROL`, ...) are not passed yet.
+/// typed. ~~The modifier states (`KEY_STATE_CONTROL`, ...) are not passed yet.~~ **Corrected 2026-11-11 (#125):** the window
+/// manager's keys still carry no modifier state; the keys the game's windows do not use (none has the focus) go on to
+/// `MetaEventTranslator` with the keyboard's modifier bits ([`crate::input::Controls::key`]), which turns the
+/// CommandMap's bindings into the meta messages the selection and command translators carry out. `CommandMap.ini`
+/// (`Data\English\`, then `Data\INI\`) is read once the game's files are up. A phone has no keyboard: none of it runs.
 ///
 /// (#87) Escape in a game (`MSG_META_OPTIONS`) cancels a placement or a pending command first (the client's, #6), else
 /// toggles the quit menu ([`crate::shell::ShellUi::toggle_quit_menu`], tested there) when the shell is loaded; while the
@@ -823,14 +830,52 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
         }
         keys.push(k.clone());
     }
-    let Some(ui) = g.ui.as_mut() else {
-        taken.0 = false;
-        return;
-    };
-    for k in keys {
-        ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+    // (#125) `TheMetaMap`, once the game's files are up: `Data\English\CommandMap.ini`, then `Data\INI\CommandMap.ini`
+    if !g.controls.meta_map_tried {
+        if let Some(art) = g.models.art.as_ref() {
+            let waiting = std::cell::Cell::new(false);
+            let open = |p: &[u8]| {
+                let before = art.fs.local.device.unserved_reads();
+                let r = art.fs.open_file(p);
+                if art.fs.local.device.unserved_reads() != before {
+                    waiting.set(true);
+                    return None;
+                }
+                r
+            };
+            let language = String::from_utf8_lossy(rts_lockstep_engine::logic::world::install_world::DEFAULT_LANGUAGE).into_owned();
+            let mut map = rts_lockstep_engine::client::meta_event::MetaMap::new();
+            let text = &g.controls.client.world.statics.game_text;
+            let read = map.load_files(&language, open, Some(text));
+            if !waiting.get() {
+                g.controls.meta_map_tried = true;
+                match read {
+                    Ok(true) => g.controls.meta_map = map,
+                    Ok(false) => warn!("no CommandMap.ini: the game's keys are not bound"),
+                    Err(e) => warn!("the CommandMap did not read: {e:?}"),
+                }
+            }
+        }
     }
-    taken.0 = ui.has_keyboard_focus();
+    // the game's windows first (`WindowTranslator`), then (#125) the keys they did not use through the CommandMap
+    let mut used = vec![false; keys.len()];
+    match g.ui.as_mut() {
+        Some(ui) => {
+            for (k, u) in keys.iter().zip(used.iter_mut()) {
+                *u = ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+            }
+            taken.0 = ui.has_keyboard_focus();
+        }
+        None => taken.0 = false,
+    }
+    if !taken.0 {
+        for (k, u) in keys.iter().zip(used) {
+            let dik = dik_of(k.key_code);
+            if !u && dik != 0 {
+                g.controls.key(dik, k.state == ButtonState::Pressed, k.repeat);
+            }
+        }
+    }
 }
 
 /// GUI glue (needs a window): the player's camera input, as raw input messages, through the camera's translated
@@ -838,7 +883,9 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
 /// ([`crate::camera::Camera::tick`]). ~~#116: with the InGameUI's input off the camera takes none of them ...~~
 /// **Corrected 2026-11-10 (#119):** the translator's own input gates decide (LookAtXlat.cpp:76, :294), and the window
 /// translator takes the raw mouse first. The arrows are the game's scroll keys (`KEY_UP` ...); Q and E turn and + and -
-/// zoom (the InGameUI's keyboard camera); the right button drags to scroll (the game's RMB scroll), the middle button
+/// zoom (the InGameUI's keyboard camera) **(#125:** a key the CommandMap binds is left to it, as upstream's
+/// `MetaEventTranslator` destroys a key it maps before `LookAtTranslator` sees it); the translators' `lookAt`s (the meta
+/// keys, a control group's double press) and the camera tracking move the view here; the right button drags to scroll (the game's RMB scroll), the middle button
 /// turns, the wheel zooms. On a touch screen one finger is the right button and two pinch (a wheel notch per 15 %).
 #[allow(clippy::too_many_arguments)]
 fn camera_input(
@@ -878,7 +925,9 @@ fn camera_input(
     if input {
         // the keys (a UI window with the focus has the keyboard, #74)
         let free = !taken.0;
-        for k in [KeyCode::ArrowUp, KeyCode::ArrowDown, KeyCode::ArrowLeft, KeyCode::ArrowRight] {
+        // (#125: a key the CommandMap binds is MetaEventTranslator's, which upstream runs before the look-at translator)
+        let own = |k: KeyCode| !g.controls.meta_map_binds(dik_of(k));
+        for k in [KeyCode::ArrowUp, KeyCode::ArrowDown, KeyCode::ArrowLeft, KeyCode::ArrowRight].into_iter().filter(|&k| own(k)) {
             let state = if keys.just_pressed(k) && free {
                 Some(rts_lockstep_engine::client::window_manager::key::STATE_DOWN)
             } else if keys.just_released(k) {
@@ -892,11 +941,12 @@ fn camera_input(
                 r.cam.translate(&m, &ui, &g.controls.client.world, shell_active);
             }
         }
+        let held = |ks: &[KeyCode]| free && ks.iter().any(|&k| own(k) && keys.pressed(k));
         r.cam.keys = crate::camera::CameraKeys {
-            rotating_left: free && keys.pressed(KeyCode::KeyQ),
-            rotating_right: free && keys.pressed(KeyCode::KeyE),
-            zooming_in: free && keys.any_pressed([KeyCode::Equal, KeyCode::NumpadAdd]),
-            zooming_out: free && keys.any_pressed([KeyCode::Minus, KeyCode::NumpadSubtract]),
+            rotating_left: held(&[KeyCode::KeyQ]),
+            rotating_right: held(&[KeyCode::KeyE]),
+            zooming_in: held(&[KeyCode::Equal, KeyCode::NumpadAdd]),
+            zooming_out: held(&[KeyCode::Minus, KeyCode::NumpadSubtract]),
         };
         if let Ok(window) = windows.single() {
             let bar_h = bar.height + bar.panel;
@@ -963,6 +1013,14 @@ fn camera_input(
                 _ => r.pinch = None,
             }
         }
+    }
+    // (#125) the tactical view's `lookAt`s the translators asked for (the meta keys, a control group's double press), and
+    // `GameClient::update`'s camera tracking
+    for at in g.controls.take_look_ats() {
+        r.cam.look_at(at, &g.controls.client.world);
+    }
+    if let Some(at) = g.controls.camera_tracking() {
+        r.cam.look_at(at, &g.controls.client.world);
     }
     // the client's frames
     for _ in 0..r.cam.ticks(time.delta_secs()) {

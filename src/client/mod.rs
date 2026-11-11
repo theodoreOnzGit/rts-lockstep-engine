@@ -24,6 +24,8 @@ pub mod selection_info;
 pub mod selection_xlat;
 pub mod selection_groups;
 pub mod command_xlat;
+pub mod command_xlat_meta;
+pub mod meta_event;
 pub mod command_world;
 pub mod control_bar;
 pub mod place_event;

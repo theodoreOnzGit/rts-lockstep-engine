@@ -20,6 +20,7 @@ use rts_lockstep_engine::client::script_input::apply_script_input;
 use rts_lockstep_engine::client::selection_xlat::{Disposition, SelectionTranslator};
 use rts_lockstep_engine::client::window_manager::WinInputReturnCode;
 use rts_lockstep_engine::client::window_xlat::{translate_game_message as translate_window_message, MouseData, RawMessage, WindowXlatHost};
+use rts_lockstep_engine::client::meta_event::{KeyContext, KeyboardModifiers, MetaEventTranslator, MetaMap};
 use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP, MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, MSG_RAW_MOUSE_POSITION};
 use rts_lockstep_engine::client::world_host::WorldClient;
 use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
@@ -57,6 +58,16 @@ pub struct Controls {
     /// #124: `KEY_STATE_ALT` in the click's modifiers, as the application last set it (the double click selects across the
     /// map with it).
     pub alt_held: bool,
+    /// #125: `TheMetaMap` (from `CommandMap.ini`; empty until the game's files give it: no key makes a meta message then).
+    pub meta_map: MetaMap,
+    /// #125: `MetaEventTranslator`'s key members.
+    pub meta_event: MetaEventTranslator,
+    /// #125: the keyboard's modifier bits (`Keyboard::m_modifiers`).
+    pub keyboard_mods: KeyboardModifiers,
+    /// #125: `TheGameClient->getFrame()`, counted by [`Controls::frame_tick`].
+    pub client_frame: u32,
+    /// #125: whether the application has tried to read the CommandMap for this game.
+    pub meta_map_tried: bool,
 }
 
 /// #124: the operating system's double click, which upstream gets from Windows (`WM_LBUTTONDBLCLK` in
@@ -161,6 +172,11 @@ impl Controls {
             ui_scrolling: false,
             next_up_double_click: false,
             alt_held: false,
+            meta_map: MetaMap::new(),
+            meta_event: MetaEventTranslator::default(),
+            keyboard_mods: KeyboardModifiers::default(),
+            client_frame: 0,
+            meta_map_tried: false,
         };
         // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
         c.radar.new_map(&mut c.client.world);
@@ -215,7 +231,94 @@ impl Controls {
     /// #116: `MSG_FRAME_TICK` through the selection translator, once a client frame: with the input off its gate ends a
     /// drag selection under way (the other translators' cases of the tick are not translated).
     pub fn frame_tick(&mut self) {
+        self.client_frame = self.client_frame.wrapping_add(1);
         self.selection.input_disabled_gate(&mut self.ui);
+    }
+
+    /// #125: a key of the keyboard (its DirectInput code; `repeat` the window system's auto-repeat) that the game's own
+    /// windows did not use, through the translators in the stream's order: `WindowTranslator` (10: with the input off it
+    /// takes the key, an Escape release apart), `MetaEventTranslator` (20: the CommandMap's binding, with the keyboard's
+    /// modifiers, [`MetaEventTranslator::translate_key`]), then each meta message it makes through [`Controls::meta`].
+    /// Whether the key was used up (the camera's keys then leave it alone, as upstream's `LookAtTranslator` (60) never
+    /// sees a destroyed key). On a phone no key comes: nothing changes.
+    pub fn key(&mut self, dik: u8, down: bool, repeat: bool) -> bool {
+        use rts_lockstep_engine::common::message_types::{MSG_RAW_KEY_DOWN, MSG_RAW_KEY_UP};
+        let state = self.keyboard_mods.key_state(dik, down, repeat);
+        let t = if down { MSG_RAW_KEY_DOWN } else { MSG_RAW_KEY_UP };
+        let raw = RawMessage { t, pos: ICoord2D { x: i32::from(dik), y: 0 }, delta: ICoord2D::default(), arg0: i32::from(dik), arg1: state };
+        let mut h = GameWindows { ui: &self.ui, mouse_locked: self.selection.drag_selecting || self.view_mouse_locked, scrolling: self.ui_scrolling, pixel: ICoord2D::default() };
+        if translate_window_message(&raw, &mut h) == Disposition::Destroy {
+            return true;
+        }
+        let in_replay = rts_lockstep_engine::client::command_xlat_meta::CommandMetaHost::is_in_replay_game(&self.client);
+        // (the shell's keys are the shell's own window's: the application does not give them here)
+        let ctx = KeyContext { client_frame: self.client_frame, shell_active: false, in_replay };
+        let r = self.meta_event.translate_key(&self.meta_map, down, i32::from(dik), state, &ctx);
+        for m in r.metas {
+            self.meta(m);
+        }
+        r.disposition == Some(Disposition::Destroy)
+    }
+
+    /// #125: whether the CommandMap binds the key `dik` (with any modifiers): the application's own camera keys leave such
+    /// a key to it.
+    pub fn meta_map_binds(&self, dik: u8) -> bool {
+        self.meta_map.records().iter().any(|r| r.key == i32::from(dik))
+    }
+
+    /// #125: a meta message through the translators that have cases for it: `SelectionTranslator` (50; force attack and
+    /// the control groups `MSG_META_CREATE/SELECT/ADD/VIEW_TEAMn`, after its input gate, which keeps the message without
+    /// its case) and `CommandTranslator` (70,
+    /// `rts_lockstep_engine::client::command_xlat_meta`). Its disposition at the command translator, `None` for one it has
+    /// no case for. Its messages go on the World's command list as the local player's; its looks are
+    /// [`Controls::take_look_ats`]'.
+    pub fn meta(&mut self, t: MessageType) -> Option<Disposition> {
+        use rts_lockstep_engine::common::message_types::{
+            MSG_META_ADD_TEAM0, MSG_META_BEGIN_FORCEATTACK, MSG_META_CREATE_TEAM0, MSG_META_END_FORCEATTACK, MSG_META_SELECT_TEAM0, MSG_META_VIEW_TEAM0,
+        };
+        self.client.sync_modes(&self.ui);
+        self.client.view.radar_last_event = self.radar.radar.get_last_event_loc();
+        if self.selection.input_disabled_gate(&mut self.ui).is_none() {
+            if t == MSG_META_BEGIN_FORCEATTACK || t == MSG_META_END_FORCEATTACK {
+                self.selection.set_force_attack(t == MSG_META_BEGIN_FORCEATTACK, &mut self.ui);
+            }
+            // SelectionTranslator's control groups (`rts_lockstep_engine::client::selection_groups`): the message is
+            // destroyed there
+            let group = |base: MessageType| (base.0..base.0 + 10).contains(&t.0).then(|| (t.0 - base.0) as i32);
+            let d = if let Some(n) = group(MSG_META_CREATE_TEAM0) {
+                Some(self.selection.create_team(n, &self.ui, &mut self.client))
+            } else if let Some(n) = group(MSG_META_SELECT_TEAM0) {
+                Some(self.selection.select_team(n, &mut self.ui, &mut self.client))
+            } else if let Some(n) = group(MSG_META_ADD_TEAM0) {
+                Some(self.selection.add_team(n, &mut self.ui, &mut self.client))
+            } else if let Some(n) = group(MSG_META_VIEW_TEAM0) {
+                Some(self.selection.view_team(n, &mut self.client))
+            } else {
+                None
+            };
+            if d == Some(Disposition::Destroy) {
+                self.client.sync_modes(&self.ui);
+                return d;
+            }
+        }
+        let d = self.commands.meta(t, &mut self.ui, &mut self.client);
+        self.client.sync_modes(&self.ui);
+        d
+    }
+
+    /// #125: where the tactical view was asked to look since the last call (`TheTacticalView->lookAt`): the meta keys'
+    /// positions and the control groups' double press (`SelectionTranslator`'s `lookAt` of the group's last object, at
+    /// its position), in order of kind, for the camera.
+    pub fn take_look_ats(&mut self) -> Vec<Coord3D> {
+        let mut at: Vec<Coord3D> = self.client.looks.drain(..).filter_map(|o| self.client.world.find_object(o).map(|x| x.get_position())).collect();
+        at.append(&mut self.client.look_at_points);
+        at
+    }
+
+    /// #125: `GameClient::update`'s camera tracking, once a client frame: the first selected unit's position while
+    /// `MSG_META_TOGGLE_CAMERA_TRACKING_DRAWABLE` holds (`command_xlat_meta::camera_tracking_look_at`).
+    pub fn camera_tracking(&mut self) -> Option<Coord3D> {
+        rts_lockstep_engine::client::command_xlat_meta::camera_tracking_look_at(&mut self.ui, &self.client)
     }
 
     /// #116: a logic frame's events on the client's input: the scripts' `DISABLE_INPUT` / `ENABLE_INPUT` and deselections
@@ -519,6 +622,78 @@ mod tests {
         assert_eq!(depots.len(), 1, "sent {:?}, messages {:?}", c.client.sent, c.client.ui_messages);
         assert_eq!(c.client.world.get_controlling_player(depots[0]), Some(1));
         assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+    }
+
+    /// #125, predicted before the run, with a CommandMap of this test's own (tab: the next unit; S: stop; ctrl alone: force
+    /// attack; ctrl+A: select all; Q: matching units): before the first client frame tab does nothing (a game-only
+    /// command); then tab is used up, selects one of player 1's units (the logic's selection after the next frame is that
+    /// unit) and asks the view to look at it; S sends `MSG_DO_STOP`; ctrl down sets force attack (both translators), ctrl
+    /// up clears it; ctrl+A selects player 1's mobile units across the map (more than one) with one
+    /// `MSG_CREATE_SELECTED_GROUP`; a key the map does not bind (P) is not used; with the input off tab is taken by the
+    /// window translator and sends nothing; ctrl+1 makes control group 1 through the selection translator
+    /// (`MSG_CREATE_TEAM1`).
+    ///
+    /// Results (2026-11-11): all held but one, a miss of the prediction, not of the code: ctrl+A was predicted to send
+    /// `MSG_DESTROY_SELECTED_GROUP` first; upstream deselects only a selection the type would not take (a dozer,
+    /// harvester or structure), and the unit tab chose is none of those, so only `MSG_CREATE_SELECTED_GROUP(FALSE, ...)` goes.
+    #[test]
+    fn the_command_map_keys_select_order_and_look() {
+        use rts_lockstep_engine::common::message_types::{MSG_CREATE_SELECTED_GROUP, MSG_DESTROY_SELECTED_GROUP, MSG_DO_STOP};
+        let map = b"CommandMap SELECT_NEXT_UNIT\n Key = KEY_TAB\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap STOP\n Key = KEY_S\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap BEGIN_FORCEATTACK\n Key = KEY_NONE\n Transition = DOWN\n Modifiers = CTRL\n UseableIn = GAME\nEnd\n\
+CommandMap END_FORCEATTACK\n Key = KEY_NONE\n Transition = UP\n Modifiers = CTRL\n UseableIn = GAME\nEnd\n\
+CommandMap SELECT_ALL\n Key = KEY_A\n Transition = DOWN\n Modifiers = CTRL\n UseableIn = GAME\nEnd\n\
+CommandMap SELECT_MATCHING_UNITS\n Key = KEY_Q\n Transition = DOWN\n Modifiers = NONE\n UseableIn = GAME\nEnd\n\
+CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n UseableIn = GAME\nEnd\n";
+        let (tab, s_key, ctrl, a_key, p_key) = (0x0F, 0x1F, 0x1D, 0x1E, 0x19);
+        let (w, _o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        c.meta_map.load_text(b"Data\\INI\\CommandMap.ini", map, None).expect("the map reads");
+        let selection = |c: &Controls| c.client.world.players.get_nth(1).and_then(|p| p.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default();
+        assert!(!c.key(tab, true, false), "before client frame 1 a game command is skipped");
+        c.key(tab, false, false);
+        c.frame_tick();
+        assert!(c.key(tab, true, false));
+        c.key(tab, false, false);
+        assert_eq!(c.ui.select_count(), 1);
+        let unit = c.ui.first_selected_drawable().expect("a unit");
+        assert_eq!(c.client.world.get_controlling_player(unit), Some(1));
+        assert_eq!(c.client.sent, vec![MSG_CREATE_SELECTED_GROUP]);
+        let looks = c.take_look_ats();
+        assert_eq!(looks, vec![c.client.object_position(unit)]);
+        c.observe_sent();
+        assert!(c.commands.team_exists);
+        c.world().logic_update().expect("a frame");
+        assert_eq!(selection(&c), vec![unit]);
+        assert!(c.key(s_key, true, false));
+        assert_eq!(c.client.sent, vec![MSG_DO_STOP]);
+        c.key(s_key, false, false);
+        c.client.sent.clear();
+        assert!(c.key(ctrl, true, false));
+        assert!(c.ui.is_in_force_attack_mode());
+        assert!(c.key(a_key, true, false));
+        c.key(a_key, false, false);
+        assert!(c.key(ctrl, false, false));
+        assert!(!c.ui.is_in_force_attack_mode());
+        assert!(c.ui.select_count() > 1, "selected {:?}", c.ui.all_selected_drawables());
+        // (the unit tab chose is not a dozer, harvester or structure, so select all keeps it and adds the rest)
+        assert!(!c.client.sent.contains(&MSG_DESTROY_SELECTED_GROUP));
+        assert_eq!(c.client.sent, vec![MSG_CREATE_SELECTED_GROUP]);
+        // the control groups through the selection translator: ctrl+1 makes group 1 of the selection
+        c.client.sent.clear();
+        assert!(c.key(ctrl, true, false));
+        assert!(c.key(0x02, true, false));
+        c.key(0x02, false, false);
+        assert!(c.key(ctrl, false, false));
+        assert_eq!(c.client.sent, vec![rts_lockstep_engine::common::message_types::MSG_CREATE_TEAM1]);
+        assert!(!c.key(p_key, true, false));
+        c.key(p_key, false, false);
+        c.client.sent.clear();
+        c.ui.set_input_enabled(false);
+        assert!(c.key(tab, true, false), "the window translator takes the key");
+        assert!(c.client.sent.is_empty());
+        assert!(c.meta_map_binds(tab) && !c.meta_map_binds(p_key));
     }
 
     /// #122, predicted before the run: on the demo, with nothing selected, the pointer over player 1's Runner queues

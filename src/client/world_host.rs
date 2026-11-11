@@ -93,6 +93,8 @@ pub struct ClientView {
     pub radar_hidden: bool,
     /// #122: `TheLookAtTranslator->hasMouseMovedRecently()`.
     pub mouse_moved_recently: bool,
+    /// #125: `TheRadar->getLastEventLoc()`, the client's radar's.
+    pub radar_last_event: Option<Coord3D>,
 }
 
 /// InGameUI's modes, as the selection info's questions read them.
@@ -128,6 +130,10 @@ pub struct WorldClient {
     pub ui_messages: Vec<Vec<u8>>,
     /// The objects `lookAt` was asked to look at.
     pub looks: Vec<ObjectId>,
+    /// #125: the positions `TheTacticalView->lookAt` was asked to look at (the meta keys').
+    pub look_at_points: Vec<Coord3D>,
+    /// #125: `MSG_META_ALL_CHEER`'s `m_allCheerSound` plays.
+    pub all_cheers: u32,
     /// `EVA_InsufficientFunds` plays.
     pub eva_insufficient_funds: u32,
     /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
@@ -179,6 +185,8 @@ impl WorldClient {
             hints: Vec::new(),
             ui_messages: Vec::new(),
             looks: Vec::new(),
+            look_at_points: Vec::new(),
+            all_cheers: 0,
             eva_insufficient_funds: 0,
             voices: Vec::new(),
             double_click_attack_move_orders_given: 0,
@@ -512,6 +520,75 @@ impl CommandXlatHost for WorldClient {
     }
     fn record_double_click_attack_move_order_given(&mut self) {
         self.double_click_attack_move_orders_given = self.double_click_attack_move_orders_given.wrapping_add(1);
+    }
+}
+
+/// #125: the meta keys' reads. The questions only read the World: `isMobile`, `isEffectivelyDead`, the kinds, the
+/// player's objects in `iterateObjects`' order, `calcCostToBuild` (the build assistant's arithmetic), the game mode, the
+/// player's activity and its beacons (`Player::countObjectsByThingTemplate`); `tests` checks that asking them leaves the
+/// CRCs alone. The view's look and the cheer are kept for the application ([`WorldClient::look_at_points`],
+/// [`WorldClient::all_cheers`]); the radar's last event is the client's radar's, set in the view.
+impl crate::client::command_xlat_meta::CommandMetaHost for WorldClient {
+    fn object_is_mobile(&self, obj: ObjectId) -> bool {
+        self.world.is_mobile(obj)
+    }
+    fn object_is_effectively_dead(&self, obj: ObjectId) -> bool {
+        self.world.find_object(obj).is_some_and(|o| o.is_effectively_dead())
+    }
+    fn drawable_is_kind_of(&self, draw: DrawableId, k: KindOfType) -> bool {
+        // (the client's drawable has its object's template: no disguise is drawn)
+        self.is_kind_of(draw, k)
+    }
+    fn drawable_position(&self, draw: DrawableId) -> Coord3D {
+        // (a drawable stands at its object's position, as `Drawable::getPosition` after the object's update)
+        self.world.find_object(draw).map(|o| o.get_position()).unwrap_or_default()
+    }
+    fn local_player_objects(&mut self) -> Option<Vec<ObjectId>> {
+        Some(self.world.player_iterate_objects(self.player))
+    }
+    fn object_cost_to_build(&mut self, obj: ObjectId) -> i32 {
+        let Some(t) = self.world.find_object(obj).map(|o| o.template().get_template_id()) else { return 0 };
+        let p = self.world.get_controlling_player(obj).unwrap_or(self.player);
+        self.world.template_calc_cost_to_build(t, p)
+    }
+    fn radar_last_event_loc(&self) -> Option<Coord3D> {
+        self.view.radar_last_event
+    }
+    fn look_at_position(&mut self, pos: &Coord3D) {
+        self.look_at_points.push(*pos);
+    }
+    fn is_in_multiplayer_game(&self) -> bool {
+        use crate::common::recorder::game_mode;
+        let m = self.world.cuts.game_loop.game_mode;
+        m == game_mode::LAN || m == game_mode::INTERNET
+    }
+    fn is_in_replay_game(&self) -> bool {
+        self.world.cuts.game_loop.game_mode == crate::common::recorder::game_mode::REPLAY
+    }
+    fn local_player_active(&self) -> bool {
+        self.world.tq().player_is_active(self.player)
+    }
+    fn beacons_allowed_by_game_info(&self) -> bool {
+        // (`m_netMinPlayers == 0 || TheGameInfo->isMultiPlayer()`: the client's games have no game info with other humans,
+        // so the global data's minimum decides)
+        self.world.statics.global_data.the_global_data().is_some_and(|g| g.net_min_players == 0)
+    }
+    fn local_beacon_count(&mut self) -> i32 {
+        use crate::logic::world::game_logic_dispatch::DispatchHost;
+        match self.world.d_beacon_template(self.player) {
+            Ok(Some(t)) => self.world.d_count_objects_of_template(self.player, t),
+            _ => 0,
+        }
+    }
+    fn max_beacons_per_player(&self) -> i32 {
+        self.world.statics.multiplayer_settings.get_max_beacons_per_player()
+    }
+    fn place_beacon_button(&mut self) -> Option<GuiButton> {
+        let i = self.world.cuts.command_buttons.iter().position(|b| b.name == b"Command_PlaceBeacon")?;
+        crate::client::command_world::gui_button(&self.world, i)
+    }
+    fn play_all_cheer_sound(&mut self) {
+        self.all_cheers += 1;
     }
 }
 
@@ -1355,6 +1432,39 @@ mod tests {
         assert!(sources.contains(&format!("{:?}", VoiceSource::InitiateSound(SPECIAL_PARADROP_AMERICA))));
         let gun = crate::client::unit_voice::UnitVoiceHost::voice_weapon(&c, x.gunner, None).expect("the gunner's weapon");
         assert_eq!((gun.slot, gun.name.as_slice()), (0, &b"ClipGun"[..]));
+    }
+
+    /// #125, predicted before the run: the meta keys' questions (mobility, death, kinds, the player's objects in order,
+    /// the cost to build, the game mode, the player's activity, its beacons, the beacon button) asked of every object every
+    /// frame for 300 frames leave the CRCs equal to an untouched world's, and send nothing.
+    #[test]
+    fn the_meta_keys_questions_leave_the_crcs_alone() {
+        use crate::client::command_xlat_meta::CommandMetaHost;
+        use crate::common::kind_of::{KINDOF_AIRCRAFT, KINDOF_DOZER, KINDOF_STRUCTURE};
+        let frames = 300;
+        let (mut plain, _) = world33();
+        let (w, _) = world33();
+        let mut c = WorldClient::new(w, 1);
+        let mut asked = 0u32;
+        for f in 0..frames {
+            plain.logic_update().expect("a frame");
+            c.world.logic_update().expect("a frame");
+            let objs = CommandMetaHost::local_player_objects(&mut c).unwrap_or_default();
+            for o in c.world.objects.ids_in_order() {
+                let _ = (c.object_is_mobile(o), c.object_is_effectively_dead(o), c.drawable_position(o));
+                let _ = [KINDOF_AIRCRAFT, KINDOF_DOZER, KINDOF_STRUCTURE].map(|k| c.drawable_is_kind_of(o, k));
+                let _ = c.object_cost_to_build(o);
+                asked += 1;
+            }
+            let _ = (c.is_in_multiplayer_game(), c.is_in_replay_game(), c.local_player_active(), c.beacons_allowed_by_game_info());
+            let _ = (c.local_beacon_count(), c.max_beacons_per_player(), c.place_beacon_button(), objs.len());
+            let a = c.world.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            let b = plain.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            assert_eq!(a, b, "the CRCs part at frame {f}");
+        }
+        eprintln!("#125: {asked} objects asked over {frames} frames");
+        assert!(asked > 0);
+        assert!(c.sent.is_empty());
     }
 
     /// #33: the game's own templates for the control bar's questions, read after the gate's INI (the gate's are unchanged).

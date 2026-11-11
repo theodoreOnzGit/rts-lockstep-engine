@@ -3599,4 +3599,8 @@ extern "C" {
     // setGUICommand, placeBuildAvailable and triggerDoubleClickAttackMoveGuardHint, SelectionXlat.cpp's CanSelectDrawable
     // and its MSG_MOUSEOVER_DRAWABLE_HINT case, verbatim.
     pub fn ref_cursor_hint_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #125: the command translator's meta-key cases and MetaEvent's key map (differential/wrap_command_meta.cpp,
+    // which documents the cases' words), verbatim.
+    pub fn ref_command_meta_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

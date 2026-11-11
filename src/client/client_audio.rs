@@ -493,6 +493,14 @@ impl ClientAudio {
         }
     }
 
+    /// #125: `MSG_META_ALL_CHEER`'s `TheAudio->addAudioEvent(&TheAudio->getMiscAudio()->m_allCheerSound)`, `count` times.
+    pub fn play_all_cheer_sound(&mut self, host: &dyn AudioHost, count: u32) {
+        for _ in 0..count {
+            let name = self.manager.tables.misc.all_cheer_sound.event_name.clone();
+            self.add(host, Self::named(&name, 0, None, None));
+        }
+    }
+
     /// An FX list's sound (`SoundFXNugget`): at the position, if it has one.
     pub fn fx_request(&mut self, host: &dyn AudioHost, r: &FxRequest) {
         if let FxRequest::Sound { name, position } = r {

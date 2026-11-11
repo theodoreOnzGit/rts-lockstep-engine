@@ -37,12 +37,20 @@
 //!   guard order is translated ([`CommandTranslator::double_click`]); the right button's bookkeeping
 //!   (`MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` / `UP`, `TheMouse->isClick` and `placeBuildAvailable(NULL, NULL)`) is still not, so
 //!   the alternate mouse's right click is taken as a click whatever the drag.
+//! - **#125:** the meta-key cases (the selection walks, the hero, select all, the views, scatter, stop, formation, the
+//!   beacon, the held modes, attack-move, camera tracking, the cheer) are translated in
+//!   [`crate::client::command_xlat_meta`] ([`CommandTranslator::meta`]), and the key map that makes them in
+//!   [`crate::client::meta_event`]. Still not here: chat, diplomacy, the lower-details and control-bar toggles, the
+//!   screenshot, the replay's fast forward, the camera rotate / zoom / reset flags (the application's camera keys).
 //!
 //! # As upstream reads it
 //!
 //! `CommandTranslator::translateGameMessage` (CommandXlat.cpp:2341) first destroys every message but the options, the
 //! clear-game-data and the system messages while the input is off ([`input_disabled_destroys`]), then switches on the
 //! message. The cases here:
+//! - The selected-group cases (3514-3570, [`CommandTranslator::observe_message`]): `m_teamExists` is set by
+//!   `MSG_CREATE_SELECTED_GROUP(_NO_SOUND)`, `MSG_SELECT_TEAMn` and `MSG_ADD_TEAMn`, cleared by `MSG_DESTROY_SELECTED_GROUP`
+//!   (#125: also for the groups the meta keys make, as the differential test checks).
 //! - `MSG_MOUSEOVER_DRAWABLE_HINT` (3575): with something selected **or** a pending `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT`
 //!   (#123), the hint of what a click on the drawable, at its position, would order; `MSG_MOUSEOVER_LOCATION_HINT` (3608):
 //!   the same on the ground, whatever is selected. Both kept (the hint spy reads them too). [`CommandTranslator::mouse_over`].

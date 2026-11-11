@@ -492,6 +492,8 @@ pub(crate) mod tests {
         pub place: crate::client::place_event::tests::PlaceFacts,
         /// #54: the objects that are `KINDOF_SELECTABLE` (the GUI command translator's pick type).
         pub selectable: Vec<ObjectId>,
+        /// #125: the meta cases' facts.
+        pub meta: crate::client::command_xlat_meta::tests::MetaFacts,
     }
 
     impl SelectionInfoHost for Host {

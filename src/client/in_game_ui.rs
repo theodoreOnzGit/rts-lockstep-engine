@@ -103,6 +103,8 @@ pub struct InGameUiSelection {
     /// #122: `TheRecorder->getMode() == RECORDERMODETYPE_PLAYBACK`, as the owner last set it
     /// ([`InGameUiSelection::set_recorder_playback`]), for `setGUICommand`'s guard.
     pub(crate) recorder_playback: bool,
+    /// #125: `m_cameraTrackingDrawable`.
+    camera_tracking_drawable: bool,
 }
 
 impl InGameUiSelection {
@@ -264,6 +266,15 @@ impl InGameUiSelection {
     /// `toggleAttackMoveToMode()` (C2c).
     pub fn toggle_attack_move_to_mode(&mut self) {
         self.attack_move_to_mode = !self.attack_move_to_mode;
+    }
+
+    /// #125: `setCameraTrackingDrawable(set)` / `isCameraTrackingDrawable()` (`m_cameraTrackingDrawable`; GameClient's
+    /// update looks at the first selected drawable while it is set: `command_xlat_meta::camera_tracking_look_at`).
+    pub fn set_camera_tracking_drawable(&mut self, set: bool) {
+        self.camera_tracking_drawable = set;
+    }
+    pub fn is_camera_tracking_drawable(&self) -> bool {
+        self.camera_tracking_drawable
     }
 
     /// `setGUICommand(command)` (C2c): a command that needs no target is refused ("does not need additional user
