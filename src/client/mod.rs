@@ -32,6 +32,7 @@ pub mod command_world;
 pub mod control_bar;
 pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)
+pub mod shell_hooks; // #142: TheShellHookNames, SignalUIInteraction, and the owner's single-player exception (#139)
 pub mod place_event;
 pub mod gui_command_xlat;
 pub mod control_bar_callback;

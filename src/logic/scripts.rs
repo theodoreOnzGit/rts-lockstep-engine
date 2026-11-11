@@ -69,8 +69,10 @@
 //! - **Save games:** the `Snapshot` methods (`crc`, `xfer`,
 //!   `loadPostProcess`) of `ScriptList`, `ScriptGroup` and `Script` belong
 //!   to the save/load layer.
-//! - `SignalUIInteraction` and `TheShellHookNames` (the shell asks the
-//!   engine to raise a flag): UI to engine, layer 11.
+//! - ~~`SignalUIInteraction` and `TheShellHookNames` (the shell asks the
+//!   engine to raise a flag): UI to engine, layer 11.~~ **Corrected
+//!   2026-11-11, #142:** translated in `crate::client::shell_hooks` (the
+//!   shell is their only caller).
 //!
 //! # Where upstream is undefined
 //!

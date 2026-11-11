@@ -68,8 +68,11 @@
 //!   cleared by the first update once they are done. A group the INI lacks is upstream's `NULL`: `reverse` of it with
 //!   none current is recorded as undefined.
 //! - `TheScriptEngine->signalUIInteract` (the shell map's scripts) is given to the host
-//!   ([`MenuHost::signal_ui_interact`]), which only records it: there is no shell map game here, and the client never
-//!   changes the simulation.
+//!   ([`MenuHost::signal_ui_interact`]), ~~which only records it: there is no shell map game here, and the client never
+//!   changes the simulation.~~ **Corrected 2026-11-11, #142:** with upstream's `TheShellHookNames` strings (#140), and
+//!   the shell records it; the Bevy client hands a frame's hooks to the World's script engine only when this machine is
+//!   the sole player and no replay is recorded (the owner's exception, #139: `crate::client::shell_hooks`). There is
+//!   still no shell map game, so the main menu's own hooks find no game and are dropped.
 //! - Online and the web: `ghttpStartup` / `ghttpCleanup`, `TearDownGameSpy`, `StopAsyncDNSCheck`, `StartPatchCheck`
 //!   (the Online button: its panel state changes, the patch check and the online menus do not happen),
 //!   `CancelPatchCheckCallback`, `StartDownloadingPatches`, `RaiseGSMessageBox`, `HTTPThinkWrapper`,
@@ -99,6 +102,7 @@
 
 use crate::client::message_box::quit_message_box_yes_no;
 use crate::client::shell::{self, ShellHost, ShellRequest};
+use crate::client::shell_hooks as sh;
 use crate::client::window_manager::{data_win, ggm, gwm, GameWindowManager, MsgHandled, WindowMsgData};
 use crate::client::window_script::WinId;
 use crate::client::window_transitions as wt;
@@ -139,7 +143,10 @@ pub trait MenuHost: ShellHost {
     fn main_menu(&mut self) -> &mut MainMenu;
     /// `TheGameText->fetch(label)`.
     fn fetch_text(&self, label: &[u8]) -> Vec<u16>;
-    /// `TheScriptEngine->signalUIInteract(TheShellHookNames[hook])` (the shell map's scripts: recorded only).
+    /// `TheScriptEngine->signalUIInteract(TheShellHookNames[hook])`: the caller passes the string
+    /// (`client::shell_hooks::THE_SHELL_HOOK_NAMES`). ~~(the shell map's scripts: recorded only)~~ **Corrected 2026-11-11,
+    /// #142:** recorded here; the Bevy client hands a frame's hooks to the World's script engine only under the owner's
+    /// single-player exception (#139, `client::shell_hooks::apply_ui_interacts`), and drops them otherwise.
     fn signal_ui_interact(&mut self, _hook: &'static str) {}
     /// `IsFirstCDPresent()`.
     fn first_cd_present(&self) -> bool {
@@ -287,7 +294,7 @@ fn show_selective_buttons<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, sh
 /// `quitCallback()`: the menu popped, the engine quitting.
 pub fn quit_callback<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H) {
     h.main_menu().button_pushed = true;
-    h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_SELECTED");
+    h.signal_ui_interact(sh::THE_SHELL_HOOK_NAMES[sh::SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_SELECTED as usize]);
     shell::pop(wm, h);
     h.request(ShellRequest::Quit);
     if h.env().in_game {
@@ -581,17 +588,20 @@ pub fn main_menu_system<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, _win
             let entering = msg == ggm::GBM_MOUSE_ENTERING;
             let Some(control) = data_win(d1) else { return MsgHandled::Handled };
             let id = wm.tree.windows[control].id;
+            // (`TheShellHookNames[SHELL_SCRIPT_HOOK_..._HIGHLIGHTED]` entering, `..._UNHIGHLIGHTED` leaving; ~~the hooks' enum
+            // names~~ **Corrected 2026-11-11, #142:** upstream's strings, #140)
             let hook = |what: &str| -> &'static str {
-                match (what, entering) {
-                    ("Online", true) => "SHELL_SCRIPT_HOOK_MAIN_MENU_ONLINE_HIGHLIGHTED",
-                    ("Online", false) => "SHELL_SCRIPT_HOOK_MAIN_MENU_ONLINE_UNHIGHLIGHTED",
-                    ("Network", true) => "SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_HIGHLIGHTED",
-                    ("Network", false) => "SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_UNHIGHLIGHTED",
-                    ("Options", true) => "SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_HIGHLIGHTED",
-                    ("Options", false) => "SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_UNHIGHLIGHTED",
-                    (_, true) => "SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_HIGHLIGHTED",
-                    (_, false) => "SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_UNHIGHLIGHTED",
-                }
+                let i = match (what, entering) {
+                    ("Online", true) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_ONLINE_HIGHLIGHTED,
+                    ("Online", false) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_ONLINE_UNHIGHLIGHTED,
+                    ("Network", true) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_HIGHLIGHTED,
+                    ("Network", false) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_UNHIGHLIGHTED,
+                    ("Options", true) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_HIGHLIGHTED,
+                    ("Options", false) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_UNHIGHLIGHTED,
+                    (_, true) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_HIGHLIGHTED,
+                    (_, false) => sh::SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_UNHIGHLIGHTED,
+                };
+                sh::THE_SHELL_HOOK_NAMES[i as usize]
             };
             if id == key(h, "ButtonOnline") {
                 h.signal_ui_interact(hook("Online"));
@@ -722,7 +732,7 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         wt::remove(wm, h, b"MainMenuFactionSkirmish", false);
         wt::reverse(wm, h, b"MainMenuSinglePlayerMenuBackSkirmish");
         shell::push(wm, h, b"Menus/SkirmishGameOptionsMenu.wnd", false);
-        h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED");
+        h.signal_ui_interact(sh::THE_SHELL_HOOK_NAMES[sh::SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED as usize]);
     } else if is(h, "ButtonOnline") {
         if dont {
             return;
@@ -744,13 +754,13 @@ fn main_menu_selected<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, contro
         show_panel(wm, h, DROPDOWN_MULTIPLAYER);
         wt::reverse(wm, h, b"MainMenuMultiPlayerMenuTransitionToNext");
         shell::push(wm, h, b"Menus/LanLobbyMenu.wnd", false);
-        h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_SELECTED");
+        h.signal_ui_interact(sh::THE_SHELL_HOOK_NAMES[sh::SHELL_SCRIPT_HOOK_MAIN_MENU_NETWORK_SELECTED as usize]);
     } else if is(h, "ButtonOptions") {
         if dont {
             return;
         }
         h.main_menu().dont_allow_transitions = true;
-        h.signal_ui_interact("SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_SELECTED");
+        h.signal_ui_interact(sh::THE_SHELL_HOOK_NAMES[sh::SHELL_SCRIPT_HOOK_MAIN_MENU_OPTIONS_SELECTED as usize]);
         let Some(opt) = shell::get_options_layout(wm, h, true) else {
             wm.set_undefined("MainMenuSystem: the options layout did not load (runInit on NULL)");
             return;

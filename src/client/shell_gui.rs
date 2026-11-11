@@ -119,7 +119,9 @@ pub struct ShellGui<W> {
     pub env: ShellEnv,
     /// What the callbacks asked of the engine and the logic, oldest first (the owner takes them).
     pub requests: Vec<ShellRequest>,
-    /// `TheScriptEngine->signalUIInteract`'s hooks (not run: no shell map).
+    /// `TheScriptEngine->signalUIInteract`'s hooks, ~~(not run: no shell map)~~ **Corrected 2026-11-11, #142:** upstream's
+    /// `TheShellHookNames` strings, recorded this frame; the app hands them to the World only under the owner's exception
+    /// (#139, `crate::client::shell_hooks::apply_ui_interacts`).
     pub ui_interacts: Vec<&'static str>,
     /// `TheAudio->addAudioEvent` names (the buttons' clicks), for the owner to play.
     pub audio: Vec<Vec<u8>>,
@@ -1536,7 +1538,7 @@ pub(crate) mod tests {
         let yes = wm.tree.windows.len() - 1 - wm.tree.windows.iter().rev().position(|x| x.name() == b"QuitMessageBox.wnd:ButtonYes").expect("yes");
         click(&mut wm, &mut h, yes);
         assert_eq!(h.requests, [ShellRequest::Quit]);
-        assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_SELECTED"));
+        assert!(h.ui_interacts.contains(&"ShellMainMenuExitPushed"));
         assert!(h.main_menu.is_shutting_down && h.shell.pending_pop);
         // (#77: the shutdown reversed the animate manager, which is finished only after its next update, which runs
         // after the screens' updates: the second update completes the shutdown)
@@ -1580,12 +1582,12 @@ pub(crate) mod tests {
         let e = w(&wm, "ButtonExit");
         let (x, y) = wm.tree.screen_position(e);
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (x + 5, y + 5), (0, 0));
-        assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_HIGHLIGHTED"));
+        assert!(h.ui_interacts.contains(&"ShellMainMenuExitHighlighted"));
         wm.win_hide(w(&wm, "MapBorder"), false);
         let u = w(&wm, "ButtonUSA");
         let (x, y) = wm.tree.screen_position(u);
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (x + 5, y + 5), (0, 0));
-        assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_MAIN_MENU_EXIT_UNHIGHLIGHTED"));
+        assert!(h.ui_interacts.contains(&"ShellMainMenuExitUnhighlighted"));
         assert_eq!(current(&wm).as_deref(), Some("MainMenuFactionUS"));
         assert!(!wm.transitions.groups[wm.transitions.current.expect("current")].is_reversed());
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (790, 590), (0, 0));

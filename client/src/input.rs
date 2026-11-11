@@ -391,6 +391,26 @@ impl Controls {
         d
     }
 
+    /// #135 (owner decision 2026-11-11): the phone's `X` button, which has no right button: a whole right click at
+    /// `pixel` (the view's centre), sent as the application sends a mouse's, through the same translated paths and in
+    /// the same order. The press: `WindowTranslator`, then `SelectionTranslator`'s `right_button_down` (#132, its
+    /// `Keep` lets the camera's `LookAtTranslator` have it), then `MetaEventTranslator` and `CommandTranslator`'s
+    /// `right_button_down` ([`Controls::right_press`], #131). The release: `SelectionTranslator`'s `right_button_up`,
+    /// which cancels a pending GUI command (destroying the release) or else deselects everything in the regular mouse
+    /// mode, then [`Controls::right_release`] (`CommandTranslator`'s bookkeeping, which cancels a building's placement,
+    /// and the click `MetaEventTranslator` inserts, which orders only in the alternate mouse mode, as a mouse's right
+    /// click at that place would). Nothing is under the click (`picked` none); `ground` is the terrain under `pixel`.
+    /// Returns whether the camera's translator gets the press and the release (as `camera_input` gives a mouse's).
+    pub fn cancel_click(&mut self, pixel: ICoord2D, time_ms: u32, camera_pos: Coord3D, ground: Coord3D, mut ui_set_scrolling: impl FnMut(bool)) -> (bool, bool) {
+        let down = self.window_keeps(MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, pixel)
+            && self.selection_right_button(true, pixel, time_ms, camera_pos, &mut ui_set_scrolling) == Disposition::Keep;
+        self.right_press(pixel, time_ms, false);
+        let up = self.window_keeps(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, pixel)
+            && self.selection_right_button(false, pixel, time_ms, camera_pos, &mut ui_set_scrolling) == Disposition::Keep;
+        self.right_release(pixel, time_ms, None, ground);
+        (down, up)
+    }
+
     /// #131: the right button released at `pixel`, `time_ms`: `CommandTranslator`'s bookkeeping (CommandXlat.cpp:3640: a
     /// click cancels a building's placement), then the click `MetaEventTranslator` inserted: `MSG_MOUSE_RIGHT_CLICK` or
     /// `MSG_MOUSE_RIGHT_DOUBLE_CLICK` through the command translator ([`CommandTranslator::click`], `double_click`; they act
@@ -914,6 +934,37 @@ mod tests {
         assert_eq!(c.selection_right_button(false, at(380, 300), 3050, cam, |_| stops += 1), Disposition::Keep);
         assert_eq!(c.ui.all_selected_drawables(), &[o.dozer], "a right drag deselects nothing");
         assert_eq!(stops, 1);
+    }
+
+    /// #135, the phone's `X` (predicted before the run): with a dozer selected and no GUI command, `X` deselects, and
+    /// both raw messages go on to the camera; with a pending GUI command, it cancels the command (the release
+    /// destroyed: the camera gets the press only), keeps the selection and stops the InGameUI's scroll once; the
+    /// destroyed release is used up, as a mouse's.
+    #[test]
+    fn the_cancel_button_is_a_right_click() {
+        use rts_lockstep_engine::client::command_xlat::GuiButton;
+        use rts_lockstep_engine::client::control_bar::opt;
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let at = |x, y| ICoord2D { x, y };
+        let cam = Coord3D { x: 100.0, y: 100.0, z: 0.0 };
+        c.world().logic_update().expect("a frame");
+        let dp = c.client.object_position(o.dozer);
+        let select = |c: &mut Controls| {
+            assert!(c.click(at(20, 20), at(20, 20), &[o.dozer], Some(o.dozer), dp));
+            assert_eq!(c.ui.all_selected_drawables(), &[o.dozer]);
+        };
+        select(&mut c);
+        let mut stops = 0;
+        assert_eq!(c.cancel_click(at(400, 300), 1000, cam, Coord3D::default(), |on| stops += i32::from(!on)), (true, true));
+        assert!(c.ui.all_selected_drawables().is_empty(), "X deselects");
+        select(&mut c);
+        c.ui.set_gui_command(Some(GuiButton { options: opt::NEED_TARGET_POS, ..Default::default() }));
+        assert_eq!(c.cancel_click(at(400, 300), 2000, cam, Coord3D::default(), |on| stops += i32::from(!on)), (true, false));
+        assert!(c.ui.gui_command().is_none(), "X cancels the GUI command");
+        assert_eq!(c.ui.all_selected_drawables(), &[o.dozer], "the selection is kept");
+        assert_eq!(stops, 1, "the InGameUI's scroll is stopped once");
+        assert!(!c.right_up_destroyed, "the destroyed release is used up");
     }
 
     /// #125, predicted before the run, with a CommandMap of this test's own (tab: the next unit; S: stop; ctrl alone: force

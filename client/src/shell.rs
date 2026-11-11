@@ -87,8 +87,10 @@
 //! - On the web, a quit cannot close the page: it says so in the status line.
 //! - ~~The shell's sounds (`TheAudio->addAudioEvent`) and the script hooks (`signalUIInteract`) are not played or run; the
 //!   app clears them each frame.~~ **Corrected 2026-11-11, #136:** the shell's sounds are played through the client's
-//!   audio (`ClientAudio::play_gui_sound`, by the app's `update_audio`); the script hooks (`signalUIInteract`) are still
-//!   not run, and the app clears them each frame.
+//!   audio (`ClientAudio::play_gui_sound`, by the app's `update_audio`); ~~the script hooks (`signalUIInteract`) are still
+//!   not run, and the app clears them each frame.~~ **Corrected 2026-11-11, #142:** the script hooks (upstream's
+//!   `TheShellHookNames` strings, #140) go to the World's script engine when this machine is the sole player and no
+//!   replay is recorded (the owner's exception, #139: `shell_hooks::apply_ui_interacts`), and are dropped otherwise.
 //! - **(#136)** The shell's window manager sets the one `TheMouse`'s tooltip: the app lends it around each call
 //!   ([`ShellUi::with_mouse`]), and draws it over the shell.
 //!
@@ -1224,7 +1226,8 @@ mod tests {
     ///   *Cancel* hides it.
     ///
     /// **Result (2026-11-10):** the toggles and the hide as predicted; two misses over two runs, recorded where asserted
-    /// (the buttons are 90 wide, 43.875 x 9.75 CSS pixels; *Load* and *Delete* disabled). Every enabled button of the menu,
+    /// (the buttons are 90 wide, ~~43.875 x 9.75~~ **corrected 2026-11-11, #142:** 38.7 x 8.6 CSS pixels; *Load* and
+    /// *Delete* disabled). Every enabled button of the menu,
     /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
     #[test]
     fn the_bars_options_button_opens_the_quit_menu_which_fits_a_phone() {
@@ -1253,8 +1256,10 @@ mod tests {
         let p = shell_placement((390.0, 844.0));
         // (~~126.75~~ corrected 2026-11-11, #131: the zoom column is 108 taller with the two turn buttons, so the menu
         // centres 54 higher in the room above it; the scale, set by the width, is the same) (~~72.75~~ corrected
-        // 2026-11-11, #136: 54 taller again with `B`, 27 higher: 45.75)
-        assert_eq!((p.left, p.top, p.scale), (0.0, 45.75, 0.4875));
+        // 2026-11-11, #136: 54 taller again with `B`, 27 higher: 45.75) (~~(0, 45.75, 0.4875)~~ corrected 2026-11-11,
+        // #142: 54 taller again with the phone's `X`, #135; the room above the column, 390 x 258, is now set by its
+        // height: scale 258 / 600 = 0.43, the menu 344 wide at left 23, top 36)
+        assert_eq!((p.left, p.top, p.scale), (23.0, 36.0, 0.43));
         let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
         let last = |ui: &ShellUi, file: &str, name: &str| -> usize {
             let full = format!("{file}:{name}");
@@ -1284,7 +1289,8 @@ mod tests {
             let w = last(&ui, "QuitMenu.wnd", name);
             let reg = ui.wm.tree.windows[w].region;
             // (first run, a miss: the synthetic quit menu's buttons are 90 by 20, not 100: 43.875 x 9.75 CSS pixels)
-            assert_eq!(((reg.2 - reg.0) as f32 * p.scale, (reg.3 - reg.1) as f32 * p.scale), (43.875, 9.75), "{name}");
+            // (~~43.875 x 9.75~~ corrected 2026-11-11, #142: 38.7 x 8.6 at the scale 0.43)
+            assert_eq!(((reg.2 - reg.0) as f32 * p.scale, (reg.3 - reg.1) as f32 * p.scale), (38.7, 8.6), "{name}");
             if name == "ButtonSaveLoad" {
                 tap(&mut ui, at);
             }
@@ -1346,19 +1352,23 @@ mod tests {
     /// - 390x844: the full width above the zoom column wins (scale 390 / 800 = 0.4875 against (390 - 64) / 800 =
     ///   0.4075 beside it); the menu 390 x 292.5 at left 0, top 36 + (474 - 292.5) / 2 = 126.75 (**corrected 2026-11-11
     ///   (#131):** ~~126.75~~ ~~36 + (366 - 292.5) / 2 = 72.75~~, the zoom column 108 taller with the two turn buttons;
-    ///   **corrected 2026-11-11, #136:** 36 + (312 - 292.5) / 2 = 45.75, 54 taller again with `B`);
+    ///   **corrected 2026-11-11, #136:** 36 + (312 - 292.5) / 2 = 45.75, 54 taller again with `B`); **corrected
+    ///   2026-11-11, #142:** with the phone's `X` the room above the column is 390 x 258, so its height sets the scale,
+    ///   258 / 600 = 0.43 (still above beside's 0.4075): the menu 344 x 258 at left 23, top 36;
     /// - 1280x720: beside the column wins (scale min(1216 / 800, 676 / 600) = 1.1267); left (1216 - 901.3) / 2 = 157.3,
     ///   top 36;
     /// - at 390x844 every button of the main panel is on the screen, below the status line's first line (y 36) and
-    ///   above the zoom column (y 518), and a tap at its centre on the screen is that button's (`getWindowUnderCursor`);
+    ///   above the zoom column (~~y 518~~ **corrected 2026-11-11, #142:** y 302, 844 less the column's 542; it was 356
+    ///   since #136), and a tap at its centre on the screen is that button's (`getWindowUnderCursor`);
     ///   a tap on *Single Player* through the screen shows the single player panel, as a click does. Each button is
-    ///   48.75 x 9.75 CSS pixels (the synthetic layout's 100 x 20).
+    ///   ~~48.75 x 9.75~~ **corrected 2026-11-11, #142:** 43 x 8.6 CSS pixels (the synthetic layout's 100 x 20).
     #[test]
     fn the_menu_fits_a_phone_and_every_button_is_tapped() {
         let p = shell_placement((390.0, 844.0));
         // (~~126.75~~ corrected 2026-11-11, #131: the taller zoom column, see the quit menu's test; ~~72.75~~
-        // corrected 2026-11-11, #136: 45.75, `B` added)
-        assert_eq!((p.left, p.top, p.y0, p.scale), (0.0, 45.75, 0.0, 0.4875));
+        // corrected 2026-11-11, #136: 45.75, `B` added; ~~(0, 45.75, 0, 0.4875)~~ corrected 2026-11-11, #142: `X` added,
+        // the room's height sets the scale, 0.43, see the quit menu's test)
+        assert_eq!((p.left, p.top, p.y0, p.scale), (23.0, 36.0, 0.0, 0.43));
         let d = shell_placement((1280.0, 720.0));
         assert!((d.scale - 676.0 / 600.0).abs() < 1e-5 && (d.left - (1216.0 - 800.0 * 676.0 / 600.0) / 2.0).abs() < 1e-3 && d.top == 36.0, "{d:?}");
         let mut ui = shell();
@@ -1376,7 +1386,8 @@ mod tests {
             let centre = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
             let (lx, ly) = p.to_layout(centre);
             assert_eq!(ui.wm.get_window_under_cursor(&mut ui.gui, lx as i32, ly as i32, false), Some(w), "{name}");
-            assert_eq!(((r[2] - r[0]), (r[3] - r[1])), (48.75, 9.75));
+            // (~~48.75 x 9.75~~ corrected 2026-11-11, #142: 43 x 8.6 at the scale 0.43, to f32's rounding)
+            assert!((r[2] - r[0] - 43.0).abs() < 1e-3 && (r[3] - r[1] - 8.6).abs() < 1e-3, "{name}: {r:?}");
         }
         let w = win(&ui, "ButtonSinglePlayer");
         let (x, y) = ui.wm.tree.screen_position(w);

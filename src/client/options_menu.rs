@@ -132,9 +132,10 @@ pub const NUM_ALIASING_MODES: i32 = 3;
 /// `FirewallHelperClass::FIREWALL_TYPE_UNKNOWN`.
 pub const FIREWALL_TYPE_UNKNOWN: u32 = 0;
 
-/// `SHELL_SCRIPT_HOOK_OPTIONS_OPENED`, `SHELL_SCRIPT_HOOK_OPTIONS_CLOSED`.
-const HOOK_OPENED: &str = "SHELL_SCRIPT_HOOK_OPTIONS_OPENED";
-const HOOK_CLOSED: &str = "SHELL_SCRIPT_HOOK_OPTIONS_CLOSED";
+/// `SHELL_SCRIPT_HOOK_OPTIONS_OPENED`, `SHELL_SCRIPT_HOOK_OPTIONS_CLOSED`: ~~the enum's names as strings~~ **Corrected
+/// 2026-11-11, #142:** the hooks themselves; `SignalUIInteraction` passes `TheShellHookNames[hook]` (#140).
+const HOOK_OPENED: i32 = crate::client::shell_hooks::SHELL_SCRIPT_HOOK_OPTIONS_OPENED;
+const HOOK_CLOSED: i32 = crate::client::shell_hooks::SHELL_SCRIPT_HOOK_OPTIONS_CLOSED;
 
 // ------------------------------------------------------------------------------------------------------------------
 // OptionPreferences
@@ -1011,7 +1012,7 @@ pub fn save_options<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H) {
 
 /// `DestroyOptionsLayout()`.
 fn destroy_options_layout<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H) {
-    h.signal_ui_interact(HOOK_CLOSED);
+    crate::client::shell_hooks::signal_ui_interaction(h, HOOK_CLOSED);
     shell::destroy_options_layout(wm, h);
     h.options_menu().layout = None;
 }
@@ -1092,7 +1093,7 @@ pub fn options_menu_init<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H, 
         let p = OptionPreferences::new(wm, h);
         h.options_menu().pref = Some(p);
     }
-    h.signal_ui_interact(HOOK_OPENED);
+    crate::client::shell_hooks::signal_ui_interaction(h, HOOK_OPENED);
     for (i, n) in CONTROL_NAMES.iter().enumerate() {
         let id = h.name_to_key(format!("OptionsMenu.wnd:{n}").as_bytes()) as i32;
         let w = wm.win_get_window_from_id(None, id);
@@ -1508,7 +1509,7 @@ mod tests {
         assert_eq!(wm.modal.first().copied(), Some(parent));
         let label = crate::client::gadget::static_text_get_text(&wm, last(&wm, "LabelVersion"));
         assert_eq!(String::from_utf16_lossy(&label), "T:Version:Format2");
-        assert!(h.ui_interacts.contains(&HOOK_OPENED));
+        assert!(h.ui_interacts.contains(&"ShellOptionsOpened"));
         // Custom detail: the advanced window; its Back
         let detail = last(&wm, "ComboBoxDetail");
         cb::set_selected_pos(&mut wm, &mut h, detail, CUSTOMDETAIL, false);
@@ -1542,7 +1543,7 @@ mod tests {
         assert_eq!(h.user_data_writes.len(), 1, "Accept's (the test's own file was put in the folder directly)");
         assert!(h.user_data_writes[0].1.windows(2).any(|w| w == b"\r\n"));
         assert!(wm.layouts[l].deleted && h.shell.options_layout.is_none() && h.options.pref.is_none());
-        assert!(h.ui_interacts.contains(&HOOK_CLOSED));
+        assert!(h.ui_interacts.contains(&"ShellOptionsClosed"));
         // opened again: Escape (the closed screen's windows freed first: `processDestroyList`)
         settle(&mut wm, &mut h);
         let l = open(&mut wm, &mut h);

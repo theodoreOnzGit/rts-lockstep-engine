@@ -1795,7 +1795,8 @@ base faction's template and renames it to the name as written.
    `Surfaces` and `ShakeIntensities` tables.
 3. **Save games:** the `Snapshot` methods (`crc`, `xfer`, `loadPostProcess`) of `SidesList`, `BuildListInfo`,
    `ScriptList`, `ScriptGroup`, `Script`.
-4. **UI to engine:** `SignalUIInteraction` and `TheShellHookNames`.
+4. **UI to engine:** `SignalUIInteraction` and `TheShellHookNames`. **Corrected 2026-11-11, #142:** translated, in
+   `client::shell_hooks` (the shell calls them; the hooks reach the logic only under the owner's exception, #139).
 5. **INI:** `BuildListInfo::parseStructure` (the AI's `BuildList` block; `AISideBuildList` is layer 10).
 6. **The file system:** the skirmish scripts file is bytes (`SidesCtx::skirmish_scripts_file`).
 7. **Players and templates are names:** a side is a dictionary (`playerName`, `playerFaction`, ...), a build list entry holds

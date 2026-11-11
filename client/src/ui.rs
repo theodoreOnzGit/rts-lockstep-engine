@@ -1084,10 +1084,11 @@ impl LayoutPlacement {
 /// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** ~~5 buttons of 48 and 4
 /// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** ~~6 buttons of 48 and 5 gaps of 6, the campaigns
 /// button added~~ ~~**Corrected 2026-11-11 (#131):** 8 buttons of 48 and 7 gaps of 6, the two turn buttons added~~
-/// **Corrected 2026-11-11, #136:** 9 buttons of 48 and 8 gaps of 6, the control bar's `B` added,
+/// ~~**Corrected 2026-11-11, #136:** 9 buttons of 48 and 8 gaps of 6, the control bar's `B` added~~
+/// **Corrected 2026-11-11, #142:** 10 buttons of 48 and 9 gaps of 6, the phone's cancel button `X` added (#135),
 /// `app::setup_ui`) and its bottom margin. (#136's first phone screenshot, with the constant still at 8, showed the radar
 /// over the `+` button.)
-pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 9.0 * 48.0 + 8.0 * 6.0 + 8.0;
+pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 10.0 * 48.0 + 9.0 * 6.0 + 8.0;
 
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
@@ -1790,8 +1791,9 @@ mod tests {
         // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button; ~~[265, 476,
         // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button; ~~[265, 422, 382,
         // 510]~~ corrected 2026-11-11, #131: 108 higher, above the two turn buttons; ~~[265, 314, 382, 402]~~ corrected
-        // 2026-11-11, #136: 54 higher again, above the control bar's `B`)
-        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 260.0, 382.0, 348.0]);
+        // 2026-11-11, #136: 54 higher again, above the control bar's `B`; ~~[265, 260, 382, 348]~~ corrected 2026-11-11,
+        // #142: 54 higher again, above the phone's cancel button `X`, #135)
+        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 206.0, 382.0, 294.0]);
         assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
         let big = radar_screen_rect(None, None, (1280.0, 720.0));
         assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));

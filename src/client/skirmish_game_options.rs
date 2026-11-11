@@ -1134,7 +1134,7 @@ pub fn skirmish_game_options_menu_init<H: SkirmishHost>(wm: &mut GameWindowManag
         Some(_) => true,
     };
     if signal {
-        h.signal_ui_interact("SHELL_SCRIPT_HOOK_SKIRMISH_OPENED");
+        crate::client::shell_hooks::signal_ui_interaction(h, crate::client::shell_hooks::SHELL_SCRIPT_HOOK_SKIRMISH_OPENED);
     }
     let (o, d) = h.skirmish_split();
     let g = o.game.as_mut().expect("made above");
@@ -1255,7 +1255,7 @@ fn menu_shutdown_complete<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H
 
 /// `SkirmishGameOptionsMenuShutdown(layout, userData)`: `immediate` is `*(Bool *)userData`.
 pub fn skirmish_game_options_menu_shutdown<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize, immediate: Option<bool>) {
-    h.signal_ui_interact("SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED");
+    crate::client::shell_hooks::signal_ui_interaction(h, crate::client::shell_hooks::SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED);
     // (`TheMouse->setCursor(Mouse::ARROW)`, `setMouseText(empty)`: not modelled)
     let Some(pop_immediate) = immediate else {
         wm.set_undefined("SkirmishGameOptionsMenuShutdown: no user data (*(Bool *)NULL)");
@@ -1272,7 +1272,7 @@ pub fn skirmish_game_options_menu_shutdown<H: SkirmishHost>(wm: &mut GameWindowM
 /// `SkirmishGameOptionsMenuUpdate(layout, userData)`.
 pub fn skirmish_game_options_menu_update<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
     if h.env().in_shell_game && h.logic_frame() == 1 {
-        h.signal_ui_interact("SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME");
+        crate::client::shell_hooks::signal_ui_interaction(h, crate::client::shell_hooks::SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME);
     }
     if h.skirmish().just_entered {
         if h.skirmish().initial_gadget_delay == 1 {
@@ -1647,7 +1647,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         let top = h.shell.top().expect("top");
         assert_eq!(wm.layouts[top].filename, b"Menus/SkirmishGameOptionsMenu.wnd");
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
-        assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_SKIRMISH_OPENED"));
+        assert!(h.ui_interacts.contains(&"ShellSkirmishOpened"));
         assert!(h.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"), "{:?}", h.untranslated);
         let g = h.skirmish.game.clone().expect("TheSkirmishGameInfo");
         assert!(g.in_game && !g.in_progress);
@@ -1819,7 +1819,7 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         h.skirmish.button_pushed = false;
         { let b = named(&wm, F, "ButtonBack"); click(&mut wm, &mut h, b); }
         assert!(h.skirmish.game.is_none() && h.shell.pending_pop);
-        assert!(h.ui_interacts.contains(&"SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED"));
+        assert!(h.ui_interacts.contains(&"ShellSkirmishClosed"));
         settle(&mut wm, &mut h);
         tick(&mut wm, &mut h);
         assert_eq!(wm.layouts[h.shell.top().expect("top")].filename, b"Menus/MainMenu.wnd");

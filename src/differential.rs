@@ -3637,6 +3637,11 @@ extern "C" {
     // popup part, verbatim.
     pub fn ref_build_tooltip_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #142 (#140, #139): the shell's script hooks (differential/wrap_shell_hooks.cpp, which documents the kinds and
+    // words): ShellHooks.h's enum, Scripts.cpp's TheShellHookNames and SignalUIInteraction, ScriptEngine.cpp's
+    // signalUIInteract, allocateFlag, evaluateFlag and update's clear of m_uiInteractions, verbatim.
+    pub fn ref_shell_hooks_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #131: the control bar's hot keys and the keyboard's key names (differential/wrap_hot_key.cpp, which
     // documents the cases' words), verbatim.
     pub fn ref_hot_key_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;

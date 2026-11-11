@@ -1385,6 +1385,10 @@ fn setup_ui(mut commands: Commands) {
             (button("B"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| {
                 game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
             })),
+            // (#135, owner decision 2026-11-11) a phone has no right button: `X` sends what a right click sends, at the
+            // view's centre, through SelectionXlat's (#132/#134) and CommandXlat's (#131) right button: it cancels a
+            // pending GUI command, otherwise it deselects
+            (button("X"), observe(|_: On<Activate>, mut game: NonSendMut<Game>, mut rig: ResMut<Rig>, time: Res<Time>| cancel_button(&mut rig, &mut game, &time))),
         ],
     ));
 }
@@ -1396,6 +1400,29 @@ fn zoom_button(rig: &mut Rig, game: &Game, spin: i32) {
     let (w, h) = rig.cam.screen;
     let m = RawMessage { t: rts_lockstep_engine::common::message_types::MSG_RAW_MOUSE_WHEEL, pos: ICoord2D { x: w / 2, y: h / 2 }, delta: ICoord2D::default(), arg0: 0, arg1: spin };
     rig.cam.translate(&m, &game.controls.ui, &game.controls.client.world, false);
+}
+
+/// GUI glue (a button's observer; the click's path is tested in `crate::input`, `the_cancel_button_is_a_right_click`): the
+/// phone's `X` as a right click at the view's centre ([`crate::input::Controls::cancel_click`]), the camera's translator
+/// given the raw press and release the selection translator keeps, as `camera_input` gives a mouse's.
+fn cancel_button(rig: &mut Rig, game: &mut Game, time: &Time) {
+    use rts_lockstep_engine::client::window_xlat::RawMessage;
+    use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, MSG_RAW_MOUSE_RIGHT_BUTTON_UP};
+    let (w, h) = rig.cam.screen;
+    let at = ICoord2D { x: w / 2, y: h / 2 };
+    let ground = rig.cam.ground_under(at, |x, y| game.controls.client.world.terrain.ground_height(x, y, false).0).unwrap_or_default();
+    let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
+    let mut stop = false;
+    let (down, up) = game.controls.cancel_click(at, now_ms, rig.cam.view.pos, ground, |on| stop |= !on);
+    if stop {
+        rig.cam.set_ui_scrolling(false);
+    }
+    for (kept, t) in [(down, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN), (up, MSG_RAW_MOUSE_RIGHT_BUTTON_UP)] {
+        if kept {
+            let m = RawMessage { t, pos: at, delta: ICoord2D::default(), arg0: 0, arg1: 0 };
+            rig.cam.translate(&m, &game.controls.ui, &game.controls.client.world, false);
+        }
+    }
 }
 
 fn button(label: &str) -> impl Bundle {
@@ -3381,10 +3408,23 @@ fn shell_ui(
             }
         }
     }
-    // (~~the clicks' sounds and~~ the script hooks are not run yet; the untranslated callbacks are logged once)
+    // (~~the clicks' sounds and the script hooks are not run yet~~; the untranslated callbacks are logged once)
     // (**corrected 2026-11-11, #136:** the windows' sounds are played, `update_audio`)
     g.gui_sounds.append(&mut ui.gui.audio);
-    ui.gui.ui_interacts.clear();
+    // **Corrected 2026-11-11, #142:** the script hooks run. THE OWNER'S EXCEPTION to "the client never changes the
+    // simulation" (#139, owner decision 2026-11-11): upstream's menus call `TheScriptEngine->signalUIInteract` directly
+    // (ScriptEngine.cpp:7266, Scripts.cpp:125), writing logic state no game message carries and no CRC covers. The
+    // client makes that call itself ONLY when this machine is the sole player and no replay is being recorded (a
+    // campaign mission, a challenge, a skirmish against the AI only with the recorder off); `apply_ui_interacts`
+    // decides from the World (game mode, `TheNetwork`, the recorder's file and playback, the human players). Everywhere
+    // else the frame's hooks are only recorded (logged here) and dropped, never applied.
+    if !ui.gui.ui_interacts.is_empty() {
+        let names = ui.gui.ui_interacts.join(", ");
+        match rts_lockstep_engine::client::shell_hooks::apply_ui_interacts(&mut g.controls.client.world, &mut ui.gui.ui_interacts) {
+            Ok(n) => debug!("shell: {n} script hook(s) to the script engine: {names}"),
+            Err(why) => debug!("shell: script hook(s) recorded only ({why:?}): {names}"),
+        }
+    }
     for f in ui.gui.untranslated.drain(..) {
         debug!("shell: untranslated callback {}", String::from_utf8_lossy(&f));
     }
