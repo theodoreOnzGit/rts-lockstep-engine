@@ -68,7 +68,7 @@ pub(crate) fn polygon_bounds(points: &[ICoord3D]) -> (IRegion2D, f32) {
     }
     let half_width = (b.hi.x - b.lo.x) as f32 / 2.0;
     let half_height = (b.hi.y + b.lo.y) as f32 / 2.0;
-    (b, (half_height * half_height + half_width * half_width).sqrt())
+    (b, petir::Real::sqrt(half_height * half_height + half_width * half_width))
 }
 
 impl World {
@@ -343,6 +343,6 @@ mod tests {
         let pts = [ICoord3D { x: 10, y: 20, z: 0 }, ICoord3D { x: 30, y: 60, z: 0 }];
         let (b, r) = polygon_bounds(&pts);
         assert_eq!((b.lo.x, b.lo.y, b.hi.x, b.hi.y), (10, 20, 30, 60));
-        assert_eq!(r, (10.0f32 * 10.0 + 40.0 * 40.0).sqrt());
+        assert_eq!(r, petir::Real::sqrt(10.0f32 * 10.0 + 40.0 * 40.0));
     }
 }

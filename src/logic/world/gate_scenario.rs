@@ -503,7 +503,7 @@ mod script_order_tests {
         }
         for &s in &soldiers {
             let p = w.find_object(s).map(|o| o.get_position()).expect("the soldier lives");
-            let d = ((p.x - 250.0).powi(2) + (p.y - 200.0).powi(2)).sqrt();
+            let d = petir::Real::sqrt(petir::Real::powi(p.x - 250.0, 2) + petir::Real::powi(p.y - 200.0, 2));
             assert!(d < 40.0, "soldier {s} at ({:.0}, {:.0}), {d:.0} from the waypoint", p.x, p.y);
         }
         assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
@@ -2009,7 +2009,7 @@ mod attack_search_tests {
         let goal = *path.node(path.last_node().expect("a node")).position();
         let weapon = w.objects.find(me).unwrap().weapon_set.get_cur_weapon().cloned().expect("the soldier's gun");
         let in_range = weapon.is_goal_pos_within_attack_range(&mut w, me, &goal, Some(enemy), &enemy_pos);
-        let dist = ((goal.x - enemy_pos.x).powi(2) + (goal.y - enemy_pos.y).powi(2)).sqrt() - 10.0;
+        let dist = petir::Real::sqrt(petir::Real::powi(goal.x - enemy_pos.x, 2) + petir::Real::powi(goal.y - enemy_pos.y, 2)) - 10.0;
         eprintln!("goal {goal:?}, {dist} from the enemy's circle, in range {in_range}; facts left {:?}", w.cuts.pathfinder.attack_search.is_some());
         assert!(in_range);
         assert!((50.0..=97.5).contains(&dist), "the goal is {dist} from the enemy's circle");

@@ -383,10 +383,10 @@ pub fn is_out_of_special_reload_ammo<H: AiStateHost>(h: &mut H) -> bool {
 /// `intersectInfiniteLine2D(ax, ay, ao, cx, cy, co)`: the intersection of the two lines through the points at the angles (none:
 /// parallel).
 fn intersect_infinite_line_2d(ax: f32, ay: f32, ao: f32, cx: f32, cy: f32, co: f32) -> Option<(f32, f32)> {
-    let bx = ax + ao.cos();
-    let by = ay + ao.sin();
-    let dx = cx + co.cos();
-    let dy = cy + co.sin();
+    let bx = ax + petir::Real::cos(ao);
+    let by = ay + petir::Real::sin(ao);
+    let dx = cx + petir::Real::cos(co);
+    let dy = cy + petir::Real::sin(co);
     let denom = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
     if denom == 0.0 {
         return None; // "the lines are parallel."
@@ -630,7 +630,7 @@ pub fn taxi_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, mod
     };
     let mut intermed: Option<Coord3D> = None;
     // (`atan2` on the floats: the double one, rounded)
-    let orient = ((info.runway_prep.y - info.parking_space.y) as f64).atan2((info.runway_prep.x - info.parking_space.x) as f64) as f32;
+    let orient = petir::Real::atan2((info.runway_prep.y - info.parking_space.y) as f64, (info.runway_prep.x - info.parking_space.x) as f64) as f32;
     if std_angle_diff(orient, info.parking_orientation).abs() > PI / 128.0 {
         let z = (info.parking_space.z + info.runway_prep.z) * 0.5;
         intermed = intersect_infinite_line_2d(
@@ -866,7 +866,7 @@ pub fn takeoff_or_landing_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: 
         let info = h.pp_calc_pp_info(pp, me);
         let pos = h.position();
         let (dx, dy, dz) = (info.runway_end.x - pos.x, info.runway_end.y - pos.y, info.runway_end.z - pos.z);
-        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        let dist = petir::Real::sqrt(dx * dx + dy * dy + dz * dz);
         let mut ratio: f32 = 1.0 - (dist / info.runway_takeoff_dist);
         ratio *= ratio; // "dampen it...."
         ratio = ratio.clamp(0.0, 1.0);
@@ -1537,14 +1537,14 @@ fn position_lockon<H: AiStateHost>(h: &mut H) {
     let final_dist = h.bounding_circle_radius();
     let dist = final_dist + (d.lockon_initial_dist - final_dist) * frac;
     let angle = d.lockon_angle_spin * frac;
-    pos.x += angle.cos() * dist;
-    pos.y += angle.sin() * dist;
+    pos.x += petir::Real::cos(angle) * dist;
+    pos.y += petir::Real::sin(angle) * dist;
     // "pos.z is untouched"
     h.rope_call(draw, crate::logic::ai::chinook_ai_update::RopeCall::SetPosition(pos));
     let dx = own.x - pos.x;
     let dy = own.y - pos.y;
     if dx != 0.0 || dy != 0.0 {
-        h.drawable_set_orientation(draw, (dy as f64).atan2(dx as f64) as f32);
+        h.drawable_set_orientation(draw, petir::Real::atan2(dy as f64, dx as f64) as f32);
     }
     // "the Gaussian sum, to avoid keeping a running total"
     let elapsed_time_sum_prev = 0.5 * (elapsed.wrapping_sub(1)) as f32 * elapsed as f32;

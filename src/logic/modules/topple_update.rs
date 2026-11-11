@@ -349,7 +349,7 @@ impl ToppleUpdate {
         world.emit(ObjectClientEvent::DrawableStopSway { object_id: id });
         // rotate around the z-axis so that our x-axis is perpendicular to the topple direction.
         let cur_angle_x = normalize_angle(world.objects.find(id).map_or(0.0, |o| o.thing.orientation()));
-        let mut topple_angle = normalize_angle(f64::from(self.topple_direction.y).atan2(f64::from(self.topple_direction.x)) as f32);
+        let mut topple_angle = normalize_angle(petir::Real::atan2(f64::from(self.topple_direction.y), f64::from(self.topple_direction.x)) as f32);
         if d.topple_left_or_right_only {
             // it's a fence or such, and can only topple left or right, so pick the closest
             topple_angle = angle_closest_to(cur_angle_x + PI / 2.0, cur_angle_x - PI / 2.0, topple_angle);

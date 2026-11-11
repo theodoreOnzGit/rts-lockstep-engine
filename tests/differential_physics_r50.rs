@@ -40,6 +40,15 @@
 //! xfers, 17,705 collisions, 85,347 effect lines (1,533 landings, 645 bounce sounds, 204 falling damages, 996 crushes, 861 kills, 3,763 AI
 //! `processCollision` calls, 7 crash weapons, 1,023 destroys, 36 pilot captures).
 //!
+//! **2026-11-11 (#127).** The module's `sqrt` calls moved from `std`'s method syntax to `petir::Real::sqrt` (AGENTS.md, #40). petir builds
+//! `libm` without its `arch` feature, so its `sqrt` is the software one, which returns +NaN (`7fc00000`) for a negative input where the C++'s
+//! x86 `sqrtss` returns -NaN (`ffc00000`); finite results are bit-identical. The first run after the change gave 34 of 475,052 outputs
+//! different, every one a NaN on both sides with a different sign bit (33 in the op result or a state word, 1 in the xfer bytes). By the owner's decision these
+//! are counted as NaN-payload-only (`harness::NAN_WORDS`), as `support::Check` already does for typed floats, because Rust leaves NaN sign
+//! and payload unspecified and the logic must not depend on them; the game CRC is unchanged (gate (a), last CRC 0bf44067). Re-run:
+//! 9,000 cases, 229,972 ops, 475,052 outputs: **0 mismatches, 34 NaN-payload-only**, max ULP 0
+//! (the case counts as above). A first version of the rule took hex words only and left the xfer-bytes one as a mismatch.
+//!
 //! **CORRECTED 2026-10-25.** ~~9,000 cases (2,476 excluded, undefined upstream: 2,473 `m_turning` saved or read before anything set it, or
 //! the never-set `m_originalAllowBounce` read when a bounce ends; 3 the parachute case), 139,359 ops and 288,882 outputs: 0 mismatches.~~
 //! The first run treated the two members the constructor never sets as undefined. They are not, in the shipped game or here: the memory pool
@@ -893,6 +902,9 @@ fn rust_run(ctx: Ctx, data: ModuleDataKind, cfg_in: &[u32], ops: &[[u32; 5]], ta
 fn physics_behavior_matches_upstream() {
     let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tally = RefCell::new(Tally::default());
+    // #127 (owner decision, 2026-11-11): NaN sign/payload bits are unspecified in Rust, as support::Check already counts for typed
+    // floats; petir's software sqrt returns +NaN for a negative input where the C++'s x86 sqrtss returns -NaN
+    harness::NAN_WORDS.with(|n| n.set(true));
     let h = Harness {
         label: "R50 PhysicsBehavior",
         seed: 0x0050_9475,

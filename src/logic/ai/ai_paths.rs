@@ -464,7 +464,7 @@ pub fn compute_attack_path<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, victim: Ob
                 goal.x -= obj_pos.x;
                 goal.y -= obj_pos.y;
                 goal.z -= obj_pos.z;
-                if (goal.x * goal.x + goal.y * goal.y + goal.z * goal.z).sqrt() < 3.0 * PATHFIND_CELL_SIZE_F && !plant(3263) {
+                if petir::Real::sqrt(goal.x * goal.x + goal.y * goal.y + goal.z * goal.z) < 3.0 * PATHFIND_CELL_SIZE_F && !plant(3263) {
                     crate::logic::ai::ai_states::with_ai(h, |a, h| a.destroy_path(h));
                     h.pf_adjust_destination(&mut obj_pos);
                     ai(h).path = h.pf_find_closest_path(&obj_pos, false, 0.2, true);

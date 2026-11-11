@@ -648,7 +648,7 @@ mod tests {
     fn a_box_has_the_pythagorean_bounds_and_the_footprint_area() {
         let g = GeometryInfo::new(GeometryType::Box, false, 12.0, 3.0, 4.0);
         assert_eq!(g.get_bounding_circle_radius(), 5.0);
-        assert_eq!(g.get_bounding_sphere_radius(), 61.0f32.sqrt());
+        assert_eq!(g.get_bounding_sphere_radius(), petir::Real::sqrt(61.0f32));
         assert_eq!(g.get_footprint_area(), 48.0);
         assert_eq!(g.get_z_delta_to_center_position(), 6.0);
         assert_eq!(g.get_max_height_below_position(), 0.0);
@@ -668,8 +668,8 @@ mod tests {
         let other = GeometryInfo::new(GeometryType::Sphere, false, 0.0, 1.0, 1.0);
         let (min, max) = me.calc_pitches(&c(0.0, 0.0, 0.0), &other, &c(10.0, 0.0, 10.0));
         // the top of `other` is 1 above its centre, its bottom 1 below (a sphere)
-        assert_eq!(max, 11.0f32.atan2(10.0));
-        assert_eq!(min, 9.0f32.atan2(10.0));
+        assert_eq!(max, petir::Real::atan2(11.0f32, 10.0));
+        assert_eq!(min, petir::Real::atan2(9.0f32, 10.0));
     }
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
         let mut g = GeometryInfo::new(GeometryType::Box, false, 0.0, 3.0, 4.0);
         g.expand_footprint(1.0);
         assert_eq!((g.get_major_radius(), g.get_minor_radius()), (4.0, 5.0));
-        assert_eq!(g.get_bounding_circle_radius(), 41.0f32.sqrt());
+        assert_eq!(g.get_bounding_circle_radius(), petir::Real::sqrt(41.0f32));
         g.set_major_radius(0.0);
         assert_eq!(g.get_bounding_circle_radius(), 5.0);
         g.set_minor_radius(0.0);

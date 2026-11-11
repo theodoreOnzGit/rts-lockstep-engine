@@ -260,7 +260,7 @@ impl CleanupHazardUpdate {
         } else if self.move_range != 0.0 {
             // "There's nothing nearby, so ... set the AI to idle so it can advance to the next script!"
             if Self::ai_idle_or_busy(world, us) == Some(true) {
-                let dist = world.contain_partition_get_distance_squared(us, &self.pos).sqrt();
+                let dist = petir::Real::sqrt(world.contain_partition_get_distance_squared(us, &self.pos));
                 if dist < if crate::logic::modules::plant(2262) { 2.5 } else { 25.0 } {
                     // "Abort clean area because there's nothing left to clean!"
                     self.move_range = 0.0;
@@ -280,7 +280,7 @@ impl CleanupHazardUpdate {
         let mut target = (self.best_target_id != INVALID_ID && world.objects.find(self.best_target_id).is_some()).then_some(self.best_target_id);
         if let Some(t) = target.filter(|_| self.move_range == 0.0) {
             let fire_range = self.attack_range(world)?;
-            let dist = world.partition_get_distance_squared_center_2d(us, t).sqrt();
+            let dist = petir::Real::sqrt(world.partition_get_distance_squared_center_2d(us, t));
             if dist < fire_range {
                 // "We are currently in range!"
                 self.in_range = true;

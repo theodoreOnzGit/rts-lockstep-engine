@@ -110,7 +110,7 @@ const IS_STUNNED: i32 = 0x0800;
 
 /// `heightToSpeed(height)`: "back-calc it from our speed & gravity... v = sqrt(2*g*h)".
 fn height_to_speed(gravity: f32, height: f32) -> f32 {
-    (2.0 * gravity * height).abs().sqrt()
+    petir::Real::sqrt((2.0 * gravity * height).abs())
 }
 
 /// `class PhysicsBehaviorModuleData : public UpdateModuleData`.
@@ -328,7 +328,7 @@ impl PhysicsBehavior {
     /// one, else the same expression [`get_velocity_magnitude`](Self::get_velocity_magnitude) caches, so the same bits.
     pub fn peek_velocity_magnitude(&self) -> f32 {
         if self.vel_mag == INVALID_VEL_MAG {
-            (sqr(self.vel.x) + sqr(self.vel.y) + sqr(self.vel.z)).sqrt()
+            petir::Real::sqrt(sqr(self.vel.x) + sqr(self.vel.y) + sqr(self.vel.z))
         } else {
             self.vel_mag
         }
@@ -351,7 +351,7 @@ impl PhysicsBehavior {
         let vx = self.vel.x * dir.x;
         let vy = self.vel.y * dir.y;
         let dot = vx + vy;
-        let speed = (vx * vx + vy * vy).sqrt();
+        let speed = petir::Real::sqrt(vx * vx + vy * vy);
         if dot >= 0.0 {
             speed
         } else {
@@ -738,7 +738,7 @@ impl PhysicsBehavior {
     /// `getVelocityMagnitude()`.
     fn get_velocity_magnitude(&mut self) -> f32 {
         if self.vel_mag == INVALID_VEL_MAG {
-            self.vel_mag = (sqr(self.vel.x) + sqr(self.vel.y) + sqr(self.vel.z)).sqrt();
+            self.vel_mag = petir::Real::sqrt(sqr(self.vel.x) + sqr(self.vel.y) + sqr(self.vel.z));
         }
         self.vel_mag
     }
@@ -759,7 +759,7 @@ impl PhysicsBehavior {
             self.vel.x = 0.0;
             self.vel.y = 0.0;
         } else {
-            let cur = (self.vel.x * self.vel.x + self.vel.y * self.vel.y).sqrt();
+            let cur = petir::Real::sqrt(self.vel.x * self.vel.x + self.vel.y * self.vel.y);
             if desired > cur || crate::logic::modules::plant(2208) {
                 return;
             }
@@ -848,8 +848,8 @@ impl PhysicsBehavior {
                 let offset = d.center_of_mass_offset;
                 if offset != 0.0 {
                     let xvec = mtx.get_x_vector();
-                    let xy = (sqr(xvec.x) + sqr(xvec.y)).sqrt();
-                    let pitch_angle = f64::from(xvec.z).atan2(f64::from(xy)) as f32;
+                    let xy = petir::Real::sqrt(sqr(xvec.x) + sqr(xvec.y));
+                    let pitch_angle = petir::Real::atan2(f64::from(xvec.z), f64::from(xy)) as f32;
                     let half_pi = std::f32::consts::PI / 2.0;
                     let remaining_angle = if offset > 0.0 { half_pi - pitch_angle } else { -half_pi + pitch_angle };
                     let s = trig::sin(remaining_angle);
@@ -1104,7 +1104,7 @@ impl PhysicsBehavior {
             return Ok(());
         }
         self.last_collidee = other;
-        let mut dist = dist_sqr.sqrt();
+        let mut dist = petir::Real::sqrt(dist_sqr);
         let mut overlap = us_radius + them_radius - dist;
         if dist < 1.0 {
             dist = 1.0;
@@ -1336,7 +1336,7 @@ impl PhysicsBehavior {
         let vx = self.vel.x * dir.x;
         let vy = self.vel.y * dir.y;
         let dot = vx + vy;
-        let speed = (vx * vx + vy * vy).sqrt();
+        let speed = petir::Real::sqrt(vx * vx + vy * vy);
         if dot >= 0.0 {
             speed
         } else {
@@ -1351,7 +1351,7 @@ impl PhysicsBehavior {
         let vy = self.vel.y * dir.y;
         let vz = self.vel.z * dir.z;
         let dot = vx + vy + vz;
-        let speed = (vx * vx + vy * vy + vz * vz).sqrt();
+        let speed = petir::Real::sqrt(vx * vx + vy * vy + vz * vz);
         if dot >= 0.0 {
             speed
         } else {
@@ -1635,6 +1635,6 @@ mod tests {
         // m_turning: the memory pool's zero, TURN_NONE
         assert_eq!(m.state_words()[12], TURN_NONE as u32);
         assert_eq!(m.state_words()[14] as i32, ALLOW_COLLIDE_FORCE);
-        assert_eq!(height_to_speed(-1.0, 40.0), 80.0f32.sqrt());
+        assert_eq!(height_to_speed(-1.0, 40.0), petir::Real::sqrt(80.0f32));
     }
 }

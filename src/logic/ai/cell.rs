@@ -755,7 +755,7 @@ impl CellStore {
         let me = &self.infos[me as usize];
         let dx = me.pos.x - i32::from(self.x_index(goal));
         let dy = me.pos.y - i32::from(self.y_index(goal));
-        let d = f64::from(COST_ORTHOGONAL) * f64::from(dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy))).sqrt() + if plant(3018) { 0.0 } else { 0.5 };
+        let d = f64::from(COST_ORTHOGONAL) * petir::Real::sqrt(f64::from(dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)))) + if plant(3018) { 0.0 } else { 0.5 };
         real_to_int_floor(d as f32) as u32
     }
 

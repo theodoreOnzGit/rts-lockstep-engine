@@ -418,8 +418,8 @@ pub fn deliver_dive<H: AiStateHost>(h: &mut H) -> SmResult<()> {
         if h.velocity().z < 5.0 {
             // "Calc strafe ratio"
             let start_dive_distance = dp(h).data.dive_start_distance;
-            let end_dive_distance = end_dive_distance_squared.sqrt();
-            let current_distance = current_distance_squared.sqrt();
+            let end_dive_distance = petir::Real::sqrt(end_dive_distance_squared);
+            let current_distance = petir::Real::sqrt(current_distance_squared);
             let dive_ratio = (start_dive_distance - current_distance) / (start_dive_distance - end_dive_distance);
             let mut velocity = h.velocity();
             velocity.z = 0.0;

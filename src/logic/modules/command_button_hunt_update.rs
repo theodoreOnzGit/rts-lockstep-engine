@@ -411,7 +411,7 @@ impl CommandButtonHuntUpdate {
                         }
                     }
                     let dist_sqr = world.body_get_distance_squared(me, other);
-                    let dist = dist_sqr.sqrt();
+                    let dist = petir::Real::sqrt(dist_sqr);
                     let mut cur_priority = real_to_int(d.scan_range - dist)?;
                     if let Some(ai) = ai {
                         if let ModuleReply::Int(p) = world.module_call(me, ai, ModuleCall::AiGetAttackPriority { other }) {

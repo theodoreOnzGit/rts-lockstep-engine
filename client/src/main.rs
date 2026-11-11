@@ -9,6 +9,9 @@
 //! `main` glue: reached by running the app, not by a test (the view model is tested in `view`, the import in `import`,
 //! the viewer's scene in `model`).
 
+// #40, #127: see `clippy.toml` at the repository root.
+#![deny(clippy::disallowed_methods)]
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();

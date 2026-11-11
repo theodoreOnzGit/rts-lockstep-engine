@@ -32,6 +32,9 @@
 //! - `model` (feature `app`): W3D models drawn with Bevy, and the model viewer's scene (#10, step 4).
 //! - `app` (feature `app`, on by default): the Bevy application.
 
+// #40, #127: `clippy.toml` (repository root) disallows `f32`/`f64` maths methods; call `ww::wwmath::sin(x)` etc.
+#![deny(clippy::disallowed_methods)]
+
 pub mod audio;
 pub mod camera;
 pub mod campaigns;

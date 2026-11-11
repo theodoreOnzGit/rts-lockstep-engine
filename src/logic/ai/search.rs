@@ -378,7 +378,7 @@ impl Pathfinder {
                 } else {
                     dx = coord.x - i32::from(self.store.x_index(g));
                     dy = coord.y - i32::from(self.store.y_index(g));
-                    cost_remaining = (f64::from(COST_ORTHOGONAL) * f64::from(dx * dx + dy * dy).sqrt()) as i32;
+                    cost_remaining = (f64::from(COST_ORTHOGONAL) * petir::Real::sqrt(f64::from(dx * dx + dy * dy))) as i32;
                     cost_remaining -= attack_distance / 2;
                     if cost_remaining < 0 {
                         cost_remaining = 0;

@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn mult_factor_is_two_to_minus_32() {
-        assert_eq!(MULT_FACTOR.to_bits(), (2.0f32).powi(-32).to_bits());
+        assert_eq!(MULT_FACTOR.to_bits(), petir::Real::powi(2.0f32, -32).to_bits());
     }
 
     #[test]

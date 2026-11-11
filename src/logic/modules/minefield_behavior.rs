@@ -604,7 +604,7 @@ impl MinefieldBehavior {
         if start.z > end_on_ground.z {
             // "figure out how long it will take to fall, and replace scoot time with that"
             let gravity = world.object_globals().gravity;
-            let falling_time = real_to_int_ceil((2.0 * (start.z - end_on_ground.z) / gravity.abs()).sqrt()) as u32;
+            let falling_time = real_to_int_ceil(petir::Real::sqrt(2.0 * (start.z - end_on_ground.z) / gravity.abs())) as u32;
             // "we can scoot after we land, but don't want to stop scooting before we land"
             if scoot_time < falling_time {
                 scoot_time = falling_time;
@@ -619,7 +619,7 @@ impl MinefieldBehavior {
         let dx = end_on_ground.x - start.x;
         let dy = end_on_ground.y - start.y;
         let dz = end_on_ground.z - start.z;
-        let dist = (dx * dx + dy * dy).sqrt();
+        let dist = petir::Real::sqrt(dx * dx + dy * dy);
         if dist <= 0.1 && dz.abs() <= 0.1 {
             world.set_position(id, &end_on_ground);
             self.scoot_frames_left = 0;

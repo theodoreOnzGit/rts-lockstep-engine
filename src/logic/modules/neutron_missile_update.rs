@@ -545,7 +545,7 @@ impl NeutronMissileUpdate {
                 self.reached_intermediate_pos = true;
                 world.set_position(me, &self.intermed_pos);
                 let v = self.vel;
-                let vel = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+                let vel = petir::Real::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
                 self.vel = Coord3D { x: 0.0, y: 0.0, z: -vel * STRAIGHT_DOWN_SLOW_FACTOR };
             }
         }
@@ -559,7 +559,7 @@ impl NeutronMissileUpdate {
         if self.no_turn_dist_left > 0.0 && old_pos_valid && !crate::logic::modules::plant(2376) {
             let new_pos = Self::position(world, me);
             let (dx, dy, dz) = (new_pos.x - old_pos.x, new_pos.y - old_pos.y, new_pos.z - old_pos.z);
-            let dist_this_turn = (dx * dx + dy * dy + dz * dz).sqrt();
+            let dist_this_turn = petir::Real::sqrt(dx * dx + dy * dy + dz * dz);
             self.no_turn_dist_left -= dist_this_turn;
         }
         if self.state != PRELAUNCH && self.state != DEAD && !world.is_above_terrain(me) {

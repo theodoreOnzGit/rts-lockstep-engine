@@ -16,6 +16,54 @@ use crate::up_common::*;
 thread_local! {
     /// Definitions loaded with the upgrades in every case, on both sides (batch R53: special power templates); empty unless a test sets it.
     pub static EXTRA_DEFS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// When set, a dump line that differs from the C++ only in hex words, or 4-byte little-endian windows of a decimal byte list (the xfer
+    /// bytes), that are NaN on **both** sides (sign or payload bits)
+    /// is counted as NaN-payload-only, as `support::Check::f32` does for typed floats, instead of as a mismatch. Off unless a
+    /// test sets it (#127: petir's software `sqrt` gives +NaN for a negative input where x86 `sqrtss` gives -NaN).
+    pub static NAN_WORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// True when `a` and `b` have the same tokens except for hex words that are f32 NaN bit patterns on both sides (see `NAN_WORDS`).
+fn differs_only_in_nan_words(a: &str, b: &str) -> bool {
+    let split = |s: &str| -> Vec<String> { s.split(|c: char| c == ' ' || c == ',' || c == '[' || c == ']').filter(|t| !t.is_empty()).map(str::to_string).collect() };
+    let (ta, tb) = (split(a), split(b));
+    if ta.len() != tb.len() {
+        return false;
+    }
+    let nan = |t: &str| -> bool {
+        let h = t.strip_prefix("0x").unwrap_or(t);
+        h.len() == 8 && u32::from_str_radix(h, 16).is_ok_and(|v| f32::from_bits(v).is_nan())
+    };
+    // a little-endian f32 inside a list of decimal bytes (the xfer bytes): the 4 tokens at `s` are bytes on both sides and NaN on both
+    let byte = |t: &str| -> Option<u8> { t.parse::<u8>().ok() };
+    let nan_bytes = |t: &[String], s: usize| -> bool {
+        s + 4 <= t.len() && {
+            let b: Vec<Option<u8>> = t[s..s + 4].iter().map(|x| byte(x)).collect();
+            b.iter().all(Option::is_some) && f32::from_le_bytes([b[0].unwrap(), b[1].unwrap(), b[2].unwrap(), b[3].unwrap()]).is_nan()
+        }
+    };
+    let mut any = false;
+    let mut i = 0;
+    while i < ta.len() {
+        if ta[i] != tb[i] {
+            if nan(&ta[i]) && nan(&tb[i]) {
+                any = true;
+                i += 1;
+                continue;
+            }
+            // the byte window holding this byte, NaN on both sides; everything after it in the window is skipped
+            match (i.saturating_sub(3)..=i).find(|&s| nan_bytes(&ta, s) && nan_bytes(&tb, s)) {
+                Some(s) => {
+                    any = true;
+                    i = s + 4;
+                    continue;
+                }
+                None => return false,
+            }
+        }
+        i += 1;
+    }
+    any
 }
 
 /// What the Rust run returns.
@@ -174,7 +222,13 @@ impl Harness<'_> {
                 eprintln!("--- case {case} file {:?} ops {ops:?}\n  rust {:?}\n  c++  {:?}\n  prev {:?}\n  cfg {cfg:x?}", show(&text), dr.get(i), dc.get(i), i.checked_sub(1).and_then(|j| dr.get(j)));
             }
             run.eq(&dr.len(), &dc.len(), what);
+            let nan_words = NAN_WORDS.with(|n| n.get());
             for (a, b) in dr.iter().zip(dc.iter()) {
+                if nan_words && a != b && differs_only_in_nan_words(a, b) {
+                    run.compared += 1;
+                    run.nan_only += 1;
+                    continue;
+                }
                 run.eq(a, b, what);
             }
             if !self.probe.is_empty() {

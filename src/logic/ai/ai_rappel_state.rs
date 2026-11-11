@@ -165,8 +165,8 @@ pub fn rappel_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) -> 
                 // "Downish."
                 let angle = h.logic_random_value_real(PI, 2.0 * PI);
                 let mut start = h.object_position(bldg);
-                start.x += offset * angle.cos();
-                start.y += offset * angle.sin();
+                start.x += offset * petir::Real::cos(angle);
+                start.y += offset * petir::Real::sin(angle);
                 start.z = h.ground_height(start.x, start.y);
                 h.set_position(&start);
                 h.set_orientation(exit_angle);

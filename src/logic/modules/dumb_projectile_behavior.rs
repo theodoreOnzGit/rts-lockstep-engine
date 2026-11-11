@@ -325,7 +325,7 @@ impl DumbProjectileBehavior {
             // "Some weapons want to scale their start speed to the range"
             let min_range = t.get_minimum_attack_range();
             let max_range = t.get_unmodified_attack_range();
-            let range = world.partition_distance_squared_to_pos(me.object, &victim_pos_to_use, DistanceCalculationType::FromCenter2D).sqrt();
+            let range = petir::Real::sqrt(world.partition_distance_squared_to_pos(me.object, &victim_pos_to_use, DistanceCalculationType::FromCenter2D));
             let range_ratio = (range - min_range) / (max_range - min_range);
             self.flight_path_speed = (range_ratio * (weapon_speed - min_weapon_speed)) + min_weapon_speed;
         } else {
@@ -520,7 +520,7 @@ impl DumbProjectileBehavior {
             };
             let dist_victim_moved_sqr = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
             if dist_victim_moved_sqr > 0.1 {
-                let mut dist_victim_moved = dist_victim_moved_sqr.sqrt();
+                let mut dist_victim_moved = petir::Real::sqrt(dist_victim_moved_sqr);
                 if dist_victim_moved > d.flight_path_adjust_dist_per_frame && !crate::logic::modules::plant(2386) {
                     dist_victim_moved = d.flight_path_adjust_dist_per_frame;
                 }

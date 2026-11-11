@@ -231,7 +231,7 @@ pub fn populate_random_side_and_color(game: Option<&mut GameInfo>, h: &mut impl 
 fn distance(a: &Coord3D, b: &Coord3D) -> f32 {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
-    (dx * dx + dy * dy).sqrt()
+    petir::Real::sqrt(dx * dx + dy * dy)
 }
 
 /// `populateRandomStartPosition(game)`.

@@ -198,7 +198,7 @@ impl PointDefenseLaserUpdate {
 
     /// `sqrt(ThePartitionManager->getDistanceSquared(me, other, FROM_CENTER_2D))`.
     fn distance(world: &mut World, me: ObjectId, other: ObjectId) -> f32 {
-        world.partition_get_distance_squared_center_2d(me, other).sqrt()
+        petir::Real::sqrt(world.partition_get_distance_squared_center_2d(me, other))
     }
 
     /// "Set target to NULL ... re-evaluate by forcing a new scan": a rescan in 0 to 3 frames, at once if that is 0.

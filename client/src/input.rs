@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(c.client.sent, vec![MSG_DO_MOVETO]);
         let d = |c: &mut Controls| {
             let p = pos(c, r);
-            ((p.x - 200.0).powi(2) + (p.y - 60.0).powi(2)).sqrt()
+            rts_lockstep_engine::ww::wwmath::sqrt((p.x - 200.0) * (p.x - 200.0) + (p.y - 60.0) * (p.y - 60.0))
         };
         let before = d(&mut c);
         for _ in 0..90 {

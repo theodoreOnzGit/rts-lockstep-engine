@@ -835,7 +835,7 @@ impl ParticleUplinkCannonUpdate {
             let radians = (factor * TWO_PI) - PI;
             let cx_distance = (factor * d.swath_of_death_distance) - (d.swath_of_death_distance * 0.5);
             // "Now calculate the amplitude value."
-            let height = radians.sin();
+            let height = petir::Real::sin(radians);
             let cx_height = height * d.swath_of_death_amplitude;
             let mut to_initial = self.initial_target_position;
             to_initial.sub(&me_pos);

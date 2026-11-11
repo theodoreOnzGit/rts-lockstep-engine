@@ -55,6 +55,9 @@
 //! original C++ compiled for SSE; it does **not** establish agreement with the
 //! original x87 build (see `SCOPE.md` section 3).
 
+// #40, #127: `clippy.toml` disallows `f32`/`f64` maths methods (`x.sqrt()`, `x.sin()`, ...); call `petir::Real::sqrt(x)`.
+#![deny(clippy::disallowed_methods)]
+
 pub mod client;
 pub mod common;
 pub mod formats;

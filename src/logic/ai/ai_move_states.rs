@@ -479,7 +479,7 @@ pub(crate) fn internal_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Sta
                 }
                 let pos = h.position();
                 let (dx, dy) = (pos.x - goal_pos.x, pos.y - goal_pos.y);
-                if (dx * dx + dy * dy).sqrt() > 4.0 * PATHFIND_CELL_SIZE_F && !plant(3271) {
+                if petir::Real::sqrt(dx * dx + dy * dy) > 4.0 * PATHFIND_CELL_SIZE_F && !plant(3271) {
                     // "Trying to finish early. Continuing..." (the distance is asked again)
                     with_ai(h, |a, h| a.get_locomotor_distance_to_goal(h, &*sm));
                     return Ok(StateReturn::CONTINUE);
@@ -565,7 +565,7 @@ pub(crate) fn move_to_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: Stat
                 my_speed = 5.0;
             }
             // (0.5*delta.length()) is a double upstream
-            let lead_distance = ((0.5 * f64::from((dx * dx + dy * dy + dz * dz).sqrt())) * f64::from(goal_speed) / f64::from(my_speed)) as f32;
+            let lead_distance = ((0.5 * f64::from(petir::Real::sqrt(dx * dx + dy * dy + dz * dz))) * f64::from(goal_speed) / f64::from(my_speed)) as f32;
             let dir = h.object_unit_direction_vector_3d(o.id);
             goal.x += dir.x * lead_distance;
             goal.y += dir.y * lead_distance;
@@ -699,7 +699,7 @@ fn follow_path_on_enter<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId) 
 fn follow_path_extra_distance<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H, id: StateId, pos: &Coord3D, next_pos: Option<&Coord3D>, index: i32) {
     if let Some(next) = next_pos {
         let (dx, dy) = (next.x - pos.x, next.y - pos.y);
-        let mut offset = (dx * dx + dy * dy).sqrt();
+        let mut offset = petir::Real::sqrt(dx * dx + dy * dy);
         if goal_path_position(h, index + 2).is_some() {
             offset += 4.0 * PATHFIND_CELL_SIZE_F;
         }

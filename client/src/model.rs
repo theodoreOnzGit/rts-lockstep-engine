@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(anim.frame_rounding(), Some(FloatToLongMode::Win32Fistp));
         let yaw = |s: &ModelScene| {
             let m = s.model.bone_transform(2).unwrap();
-            m[0][2].atan2(m[0][0]).to_degrees().abs()
+            rts_lockstep_engine::ww::wwmath::atan2(m[0][2], m[0][0]).to_degrees().abs()
         };
         scene.frame = 1.25;
         scene.advance(0.0).unwrap();

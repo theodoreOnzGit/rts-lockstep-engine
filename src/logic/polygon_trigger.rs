@@ -643,7 +643,7 @@ mod tests {
         let t = square();
         assert_eq!(t.bounds(), Ok(IRegion2D { lo: ICoord2D { x: 0, y: 0 }, hi: ICoord2D { x: 10, y: 10 } }));
         // halfWidth = halfHeight = 5, radius = sqrt(50)
-        assert_eq!(t.radius().unwrap().to_bits(), (50.0f32.sqrt()).to_bits());
+        assert_eq!(t.radius().unwrap().to_bits(), (petir::Real::sqrt(50.0f32)).to_bits());
         assert_eq!(t.center_point(), Ok((5.0, 5.0)));
     }
 

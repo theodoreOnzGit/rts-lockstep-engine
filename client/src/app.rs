@@ -3310,7 +3310,7 @@ fn viewer_animate(
 }
 
 fn viewer_camera(viewer: NonSend<Viewer>, mut cams: Query<&mut Transform, (With<Camera3d>, Without<PartOf>)>) {
-    let (s, c) = viewer.yaw.sin_cos();
+    let (s, c) = (rts_lockstep_engine::ww::wwmath::sin(viewer.yaw), rts_lockstep_engine::ww::wwmath::cos(viewer.yaw));
     let eye = viewer.target + Vec3::new(s * viewer.distance, viewer.distance * 0.5, c * viewer.distance);
     for mut t in &mut cams {
         *t = Transform::from_translation(eye).looking_at(viewer.target, Vec3::Y);

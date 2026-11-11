@@ -1321,7 +1321,7 @@ impl ProbeModule {
             }
             ModuleCall::PhysicsGetVelocityMagnitude => {
                 let v = self.answers.velocity;
-                ModuleReply::Real((v.x * v.x + v.y * v.y + v.z * v.z).sqrt())
+                ModuleReply::Real(petir::Real::sqrt(v.x * v.x + v.y * v.y + v.z * v.z))
             }
             ModuleCall::PhysicsResetDynamicPhysics => {
                 world.body_trace(format!("resetphysics {}", me.object));

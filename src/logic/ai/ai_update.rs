@@ -811,7 +811,7 @@ impl AiUpdate {
                                 let fp = self.final_position;
                                 h.set_position(&fp);
                             } else {
-                                let mut dist = d_sqr.sqrt();
+                                let mut dist = petir::Real::sqrt(d_sqr);
                                 if dist < 1.0 {
                                     dist = 1.0;
                                 }
@@ -989,7 +989,7 @@ impl AiUpdate {
                         dest = *path.node(last).position();
                     }
                     let distance = h.distance_squared_3d(&dest);
-                    return (f64::from(distance).sqrt()) as f32;
+                    return petir::Real::sqrt(f64::from(distance)) as f32;
                 }
                 let treat_as_aircraft = self.get_treat_as_aircraft_for_loco_dist_to_goal(h);
                 let mut goal_pos;
@@ -1019,11 +1019,11 @@ impl AiUpdate {
                 let dist_sqr = dx * dx + dy * dy;
 
                 if treat_as_aircraft {
-                    return if sqr(dist) > dist_sqr { (f64::from(dist_sqr).sqrt()) as f32 } else { dist };
+                    return if sqr(dist) > dist_sqr { petir::Real::sqrt(f64::from(dist_sqr)) as f32 } else { dist };
                 }
 
                 if dist < PATHFIND_CELL_SIZE_F || sqr(dist) < dist_sqr {
-                    dist_sqr.sqrt()
+                    petir::Real::sqrt(dist_sqr)
                 } else {
                     dist
                 }

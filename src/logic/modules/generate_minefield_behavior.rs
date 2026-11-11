@@ -383,7 +383,7 @@ impl GenerateMinefieldBehavior {
         let team = Self::team(world, me.object)?;
         let dx = end.x - start.x;
         let dy = end.y - start.y;
-        let len = (dx * dx + dy * dy).sqrt();
+        let len = petir::Real::sqrt(dx * dx + dy * dy);
         let mine_radius = mine.geom.get_bounding_circle_radius();
         let mine_diameter = mine_radius * 2.0;
         let mine_jitter = mine_radius * self.data.random_jitter;

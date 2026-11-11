@@ -500,7 +500,7 @@ fn find_position_around_returns_a_legal_spot_or_the_off_map_centre() {
     pm.update(&mut host);
     let opts = FindPositionOptions { flags: fpf::IGNORE_WATER, min_radius: 0.0, max_radius: 60.0, start_angle: 0.0, ..Default::default() };
     let p = pm.find_position_around(&mut host, &at(200.0, 200.0), &opts).expect("a position exists");
-    let d = ((p.x - 200.0).powi(2) + (p.y - 200.0).powi(2)).sqrt();
+    let d = petir::Real::sqrt(petir::Real::powi(p.x - 200.0, 2) + petir::Real::powi(p.y - 200.0, 2));
     assert!((0.0..=60.5).contains(&d));
     // the spot is clear of object 1 (a 5-radius sphere at the spot must not touch the 8-radius sphere)
     assert!(!pm.geom_collides_with_geom(&p, &sphere(5.0), 0.0, &at(200.0, 200.0), &sphere(8.0), 0.0));

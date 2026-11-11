@@ -805,7 +805,7 @@ impl DeliverPayloadNugget {
         if self.formation_size > 1 {
             let mut dx = primary.x - secondary.x;
             let mut dy = primary.y - secondary.y;
-            let length = (dx * dx + dy * dy).sqrt();
+            let length = petir::Real::sqrt(dx * dx + dy * dy);
             dx /= length;
             dy /= length;
             if plant(37) {

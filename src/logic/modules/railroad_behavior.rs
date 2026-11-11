@@ -111,7 +111,7 @@ fn mu_law(value_to_run: f32, max_value_for_val: f32, mu: f32) -> f32 {
     } else {
         0.0
     };
-    (sign * (f64::from(1.0 + mu * test_val.abs())).ln() / f64::from(1.0 + mu).ln()) as f32
+    (sign * petir::Real::ln(f64::from(1.0 + mu * test_val.abs())) / petir::Real::ln(f64::from(1.0 + mu))) as f32
 }
 
 /// `NormalizeToRange(value, minRange, maxRange, outRangeMin, outRangeMax)` (Statistics.cpp, with `Normalize`).
@@ -680,7 +680,7 @@ impl RailroadBehavior {
         if !world.audio_is_currently_playing(self.whistle_sound.handle) {
             self.whistle_sound.handle = self.whistle_sound.add(world);
         }
-        let dist = (dlt.x * dlt.x + dlt.y * dlt.y + dlt.z * dlt.z).sqrt();
+        let dist = petir::Real::sqrt(dlt.x * dlt.x + dlt.y * dlt.y + dlt.z * dlt.z);
         let us_radius = world.objects.find(us).map_or(0.0, |o| o.geometry_info.get_major_radius());
         let them_radius = world.objects.find(other).map_or(0.0, |o| o.geometry_info.get_major_radius());
         // "the plus 1 makes them go just outside of me."
@@ -1182,7 +1182,7 @@ impl RailroadBehavior {
         let dx = puller.tow_hitch_position.x - turn_pos.x;
         let dy = puller.tow_hitch_position.y - turn_pos.y;
         // (`atan2` on floats: the double function)
-        let desired_angle = f64::from(dy).atan2(f64::from(dx)) as f32;
+        let desired_angle = petir::Real::atan2(f64::from(dy), f64::from(dx)) as f32;
         let rel_angle = std_angle_diff(desired_angle, z_rotation);
         let mut tmp = Matrix3D::IDENTITY;
         tmp.translate(turn_pos.x, turn_pos.y, 0.0);

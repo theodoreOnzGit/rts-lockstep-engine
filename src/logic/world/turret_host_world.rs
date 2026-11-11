@@ -81,7 +81,7 @@ impl World {
         let Some(o) = self.objects.find(obj) else { return 0.0 };
         let p = o.get_position();
         let mut v = Coord3D { x: pos.x - p.x, y: pos.y - p.y, z: 0.0 };
-        let dist = (v.x * v.x + v.y * v.y).sqrt();
+        let dist = petir::Real::sqrt(v.x * v.x + v.y * v.y);
         if dist == 0.0 {
             return 0.0;
         }

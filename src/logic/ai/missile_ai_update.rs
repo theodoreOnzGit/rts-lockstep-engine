@@ -317,7 +317,7 @@ pub fn projectile_fire_at_object_or_position<H: AiStateHost>(
     let delta_z = victim_pos.z - pos.z;
     let dx = victim_pos.x - pos.x;
     let dy = victim_pos.y - pos.y;
-    let mut xy_dist = (dx * dx + dy * dy).sqrt();
+    let mut xy_dist = petir::Real::sqrt(dx * dx + dy * dy);
     if xy_dist < 1.0 {
         xy_dist = 1.0;
     }
@@ -626,9 +626,9 @@ pub fn missile_pre_update<H: AiStateHost>(sm: &mut Sm<H>, h: &mut H) -> SmResult
         let m = ms(h);
         if m.no_turn_dist_left > 0.0 && m.state >= IGNITION {
             let p = m.prev_pos;
-            let dist_this_turn = ((new_pos.x - p.x) * (new_pos.x - p.x) + (new_pos.y - p.y) * (new_pos.y - p.y)
-                + (new_pos.z - p.z) * (new_pos.z - p.z))
-                .sqrt();
+            let dist_this_turn = petir::Real::sqrt(
+                (new_pos.x - p.x) * (new_pos.x - p.x) + (new_pos.y - p.y) * (new_pos.y - p.y) + (new_pos.z - p.z) * (new_pos.z - p.z),
+            );
             m.no_turn_dist_left -= dist_this_turn;
             m.prev_pos = new_pos;
         }

@@ -906,7 +906,7 @@ mod tests {
         let selection = |c: &ClientOfWorld| c.w.players.get_nth(c.p).and_then(|pl| pl.current_selection.as_ref()).map(|s| s.object_ids.clone()).unwrap_or_default();
         let dist = |c: &ClientOfWorld, a: ObjectId, b: Coord3D| {
             let at = c.w.find_object(a).expect("the unit").get_position();
-            ((at.x - b.x).powi(2) + (at.y - b.y).powi(2)).sqrt()
+            petir::Real::sqrt(petir::Real::powi(at.x - b.x, 2) + petir::Real::powi(at.y - b.y, 2))
         };
 
         assert_eq!(x.left_click(&[runner], true, &cmd, &mut ui, &mut c), Disposition::Destroy);
