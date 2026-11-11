@@ -40,7 +40,10 @@ The epics: #1 (phase 2, the client). The phase 1 issues are #7 (comparison with 
   picks `std`'s own.
 - **The client never changes the simulation** (`client/`, phase 2). It reads the `World`, consumes the logic's client
   events, and sends orders only as the game's own command messages. Each client milestone keeps a test that the
-  logic's CRCs are unchanged with it attached.
+  logic's CRCs are unchanged with it attached. One named exception (owner decision 2026-11-11, #139): the shell's script
+  hooks (`signalUIInteract`, upstream's `TheShellHookNames` strings) reach the World's script engine only when this
+  machine is the sole player and no replay is recorded or played (`client::shell_hooks::ui_interact_gate`). Everywhere
+  else they are only recorded.
 
 ## The game's files (HARD RULE)
 
