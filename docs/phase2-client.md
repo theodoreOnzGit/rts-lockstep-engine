@@ -689,7 +689,8 @@ draws and the default visual.**
   or more).
 - *Still missing*: ~~typed characters (`IMEManager`'s `WM_CHAR` path);~~ (**corrected 2026-11-10 (#74):** translated)
   #34's items 7, 8 and 10 (the control bar drawn
-  from the draw list, `GUIClick`, the check against the real `ControlBar.wnd`); drawing is not in the differential, nor
+  from the draw list, ~~`GUIClick`~~ (**corrected 2026-11-11, #136:** played through the client's audio), the check
+  against the real `ControlBar.wnd`); drawing is not in the differential, nor
   images in list box cells; MSVC's character classes above 0x7F; a tab control with an empty `CHILD` block in a file.
 
 **#70 (2026-11-10, GitHub #70, part of #34): the list box, the sliders, and the window manager's differential.**
@@ -759,7 +760,7 @@ draws and the default visual.**
   passed, clippy clean, gate (a) PASS (last CRC `0bf44067`), web build OK. No differential against compiled upstream yet (see the remaining list in #34). The CRC test of the
   control bar now also syncs and routes a pointer every frame: the CRCs are unchanged.
 - *Still missing:* the list box, sliders, combo box, text entry and tab control and their inner windows; the progress bar's
-  draw; the bar drawn from the draw list; `GUIClick` played.
+  draw; the bar drawn from the draw list; ~~`GUIClick` played~~ (**corrected 2026-11-11, #136:** played).
 
 **#64 (2026-11-06, GitHub #64): `clearGameData`; a World starts its next game in place; a save's map folder on load; the
 campaign INI's differential.**

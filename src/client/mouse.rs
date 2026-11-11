@@ -373,7 +373,9 @@ pub const HIGHLIGHT_WIDTH: i32 = 15;
 /// `createStreamMessages`, `mouseNotifyResolutionChange`'s display string and `drawTooltip`. Upstream they are members of
 /// `Mouse`; they are kept together here because the window manager's tests and screens (`GameWindowManager::mouse`) and
 /// the game's [`Mouse::tooltip`] both use them. The `Mouse` block of `Mouse.ini` is [`MouseTooltip::settings`] (the
-/// tooltip reads most of it; the drag tolerances and the ortho camera are there too).
+/// tooltip reads most of it; the drag tolerances and the ortho camera are there too). **(#136)** In the client there is
+/// one: [`Mouse::tooltip`], lent to the shell's and the control bar's window managers around their calls
+/// (`GameWindowManager::swap_mouse_tooltip`), so their windows' and menus' tooltips are the one `TheMouse` draws.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MouseTooltip {
     /// The `Mouse` block of `Mouse.ini` (`TheMouseFieldParseTable` but `CursorMode`), with `Mouse::Mouse`'s values.

@@ -3619,6 +3619,12 @@ extern "C" {
     // which documents the cases' words), verbatim.
     pub fn ref_command_meta_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #136: hiding, showing, lowering and raising the control bar (differential/wrap_control_bar_stage.cpp, which
+    // documents the setup's, the steps' and the records' words): ControlBar's stages, setUpDownImages and
+    // hidePurchaseScience, ShowControlBar, HideControlBar, ToggleControlBar, the replay controls and the
+    // MSG_META_TOGGLE_CONTROL_BAR case, verbatim.
+    pub fn ref_control_bar_stage_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #131: the control bar's hot keys and the keyboard's key names (differential/wrap_hot_key.cpp, which
     // documents the cases' words), verbatim.
     pub fn ref_hot_key_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;

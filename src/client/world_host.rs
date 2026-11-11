@@ -148,6 +148,9 @@ pub struct WorldClient {
     /// #131: `TheInGameUI->resetCamera()` calls (`MSG_META_CAMERA_RESET`), for the application's view to make
     /// (`in_game_ui::reset_camera`) and clear.
     pub camera_resets: u32,
+    /// #136: `ToggleControlBar(immediate)` calls (`MSG_META_TOGGLE_CONTROL_BAR`), for the application's control bar to
+    /// make (`control_bar_stage::toggle_control_bar`) and clear.
+    pub control_bar_toggles: Vec<bool>,
     /// `EVA_InsufficientFunds` plays.
     pub eva_insufficient_funds: u32,
     /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
@@ -202,6 +205,7 @@ impl WorldClient {
             look_at_points: Vec::new(),
             all_cheers: 0,
             camera_resets: 0,
+            control_bar_toggles: Vec::new(),
             eva_insufficient_funds: 0,
             voices: Vec::new(),
             double_click_attack_move_orders_given: 0,
@@ -638,6 +642,25 @@ impl crate::client::command_xlat_meta::CommandMetaHost for WorldClient {
 impl crate::client::command_xlat_meta::CameraMetaHost for WorldClient {
     fn reset_camera(&mut self) {
         self.camera_resets += 1;
+    }
+}
+
+/// #136: `MSG_META_TOGGLE_CONTROL_BAR`'s host. The shell is never active here: while the shell's windows are up the
+/// application gives the keys to the shell's own window manager, not to the translators (#78), so the case's shell half
+/// is reached only by the differential test. The control bar is the application's: the call is queued.
+impl crate::client::control_bar_stage::ToggleControlBarHost for WorldClient {
+    fn shell_is_active(&self) -> bool {
+        false
+    }
+    fn shell_top_is_hidden(&self) -> Option<bool> {
+        None
+    }
+    fn shell_top_hide(&mut self, _hide: bool) {}
+    fn toggle_bar_recorder_playback(&self) -> bool {
+        self.world.cuts.game_loop.recorder.as_ref().is_some_and(|r| r.mode == crate::common::recorder::RecorderMode::Playback)
+    }
+    fn toggle_control_bar(&mut self, immediate: bool) {
+        self.control_bar_toggles.push(immediate);
     }
 }
 

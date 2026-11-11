@@ -30,6 +30,7 @@ pub mod keyboard; // #131: the keyboard's printable key names (Keyboard::initKey
 pub mod hot_key; // #131: the control bar's hot keys (HotKey.cpp: HotKeyManager, HotKeyTranslator)
 pub mod command_world;
 pub mod control_bar;
+pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
 pub mod place_event;
 pub mod gui_command_xlat;
 pub mod control_bar_callback;

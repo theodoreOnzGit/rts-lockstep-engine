@@ -466,6 +466,21 @@ impl CommandMetaHost for MetaHost {
 impl rts_lockstep_engine::client::command_xlat_meta::CameraMetaHost for MetaHost {
     fn reset_camera(&mut self) {}
 }
+/// (#136) `MSG_META_TOGGLE_CONTROL_BAR` is not among this test's types (`tests/differential_control_bar_stage.rs` tests
+/// it): never reached.
+impl rts_lockstep_engine::client::control_bar_stage::ToggleControlBarHost for MetaHost {
+    fn shell_is_active(&self) -> bool {
+        unreachable!("MSG_META_TOGGLE_CONTROL_BAR is not generated here")
+    }
+    fn shell_top_is_hidden(&self) -> Option<bool> {
+        None
+    }
+    fn shell_top_hide(&mut self, _hide: bool) {}
+    fn toggle_bar_recorder_playback(&self) -> bool {
+        false
+    }
+    fn toggle_control_bar(&mut self, _immediate: bool) {}
+}
 
 const META_TYPES: [MessageType; 28] = [
     MSG_META_SELECT_MATCHING_UNITS,

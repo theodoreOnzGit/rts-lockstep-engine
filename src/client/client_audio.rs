@@ -501,6 +501,14 @@ impl ClientAudio {
         }
     }
 
+    /// #136: a window's sound, as the window code plays it: `AudioEventRTS buttonClick("GUIClick"); if (TheAudio)
+    /// TheAudio->addAudioEvent(&buttonClick);` (HotKey.cpp's `executeHotKey`, the push button's `GUIClick` or its
+    /// `altSound`, GameWindowManager.cpp's `GUIClickDisabled` over a disabled child, the combo and list boxes' clicks, the
+    /// window transitions' sounds): a plain event of that name, no object, no position.
+    pub fn play_gui_sound(&mut self, host: &dyn AudioHost, name: &[u8]) {
+        self.add(host, AudioEventRts::new(name));
+    }
+
     /// An FX list's sound (`SoundFXNugget`): at the position, if it has one.
     pub fn fx_request(&mut self, host: &dyn AudioHost, r: &FxRequest) {
         if let FxRequest::Sound { name, position } = r {
@@ -544,5 +552,27 @@ MiscAudio\n RadarNotifyOnlineSound = RadarOn\n MoneyDepositSound = Cash\nEnd\n";
         audio.client_quiet = false;
         audio.apply_event(&host, &mut dev, &radar);
         assert_eq!(names(&audio).len(), 3);
+    }
+
+    /// #136: the window code's click sounds. Predicted before the run: `GUIClick` (a `ui everyone` event in the INI) is
+    /// added and handed a handle; `GUIClickDisabled` (not in the INI) is logged with `AHSV_ERROR`, as upstream's
+    /// `addAudioEvent` answers an event without info; neither has an object.
+    ///
+    /// **Result (2026-11-11):** as predicted on the first run.
+    #[test]
+    fn the_gui_click_sounds_are_added_as_the_window_code_adds_them() {
+        use crate::client::audio_event::{AHSV_ERROR, AHSV_FIRST_HANDLE};
+        const INI: &[u8] = b"AudioEvent GUIClick\n Sounds = click\n Type = ui everyone\nEnd\n";
+        let w = crate::logic::world::gate_scenario::gate_map_world();
+        let mut t = AudioTables::new();
+        t.load_text(b"a.ini", INI).expect("the audio INI");
+        let mut audio = ClientAudio::new(AudioManager::new(t));
+        let files = |_: &[u8]| true;
+        let host = WorldAudioHost { world: &w, local_player_index: None, files: &files, language: b"English" };
+        audio.play_gui_sound(&host, b"GUIClick");
+        audio.play_gui_sound(&host, b"GUIClickDisabled");
+        assert_eq!(audio.log[0].0, b"GUIClick".to_vec());
+        assert!(audio.log[0].1 >= AHSV_FIRST_HANDLE, "a handle: {:?}", audio.log[0]);
+        assert_eq!(audio.log[1], (b"GUIClickDisabled".to_vec(), AHSV_ERROR));
     }
 }

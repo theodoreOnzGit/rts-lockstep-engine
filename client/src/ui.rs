@@ -41,6 +41,12 @@
 //! shell's quit menu (`crate::shell::ShellUi::bar_quit_menu_call`): the phone's way into the quit menu, which has no
 //! Escape key. The general's `togglePurchaseScience` and the idle worker's `selectNextIdleWorker` are not translated.
 //!
+//! Since #136, the bar hides, shows, lowers and raises as `TheControlBar`'s stages do
+//! (`rts_lockstep_engine::client::control_bar_stage`, differential-tested): [`GameUi::toggle_control_bar`] is
+//! `ToggleControlBar`, `ButtonLarge`'s `GBM_SELECTED` is `toggleControlBarStage` (the low stage leaves the bar's top tenth
+//! of the layout showing; the scheme's layers move with `BackgroundMarker`). Its windows' tooltips go to the one mouse
+//! ([`GameUi::with_mouse`]) and their click sounds to the audio ([`GameUi::take_gui_sounds`]).
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -49,6 +55,7 @@ use std::sync::Arc;
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
+use rts_lockstep_engine::client::control_bar_stage::{set_toggle_images, toggle_control_bar, ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleImage, BUTTON_LARGE};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
 use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
@@ -104,6 +111,85 @@ pub struct GameUi {
     pub hide_quit_menu_buttons: Vec<WinId>,
     /// (#109) The quit menu call the last pointer event's `GBM_SELECTED` made ([`GameUi::take_quit_menu_call`]).
     quit_menu_call: Option<QuitMenuCall>,
+    /// (#136) `TheControlBar`'s stage: `m_currentControlBarStage`, `CP_MASTER` (`ControlBarParent`) and its default
+    /// position (`rts_lockstep_engine::client::control_bar_stage`).
+    pub stage: ControlBarStage,
+    /// (#136) `ControlBar.wnd:ButtonLarge` (`ControlBarSystem`'s `buttonLargeID`: `toggleControlBarStage()`).
+    pub button_large: Option<WinId>,
+    /// (#136) `ControlBar.wnd:BackgroundMarker` and its screen position at load (`m_controlBarBackgroundMarkerPos`, which
+    /// is also the foreground's): the scheme's layers move with it (`W3DCommandBarBackgroundDraw`'s offset).
+    pub background_marker: Option<(WinId, (i32, i32))>,
+    /// (#136) `TheRecorder`'s playback, as the application last set it: the stages do not switch during one.
+    pub recorder_playback: bool,
+    /// (#136) The tactical view's height the stages last asked for (`TheTacticalView->setHeight`). The client's view keeps
+    /// the whole window, the bar drawn over it, so nothing reads it but the tests.
+    pub view_height: Option<i32>,
+    /// (#136) The window code's sounds (`GUIClick` ...) since [`GameUi::take_gui_sounds`].
+    gui_sounds: Vec<Vec<u8>>,
+}
+
+/// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
+/// client has no replay controls window (`ReplayControl.wnd` is not loaded), no special power shortcut bar and no
+/// animate window manager, and rebuilds the popup and the buttons every frame ([`GameUi::bar_state`]): those calls do
+/// nothing.
+struct StageHost<'a> {
+    wm: &'a mut GameWindowManager,
+    schemes: &'a ControlBarSchemeManager,
+    images: &'a ImageCollection,
+    playback: bool,
+    view_height: &'a mut Option<i32>,
+}
+
+impl ControlBarStageHost for StageHost<'_> {
+    fn win_from_name(&self, name: &[u8]) -> Option<WinId> {
+        self.wm.tree.find_by_name(name)
+    }
+    fn win_is_hidden(&self, w: WinId) -> bool {
+        self.wm.tree.windows[w].is_hidden()
+    }
+    fn win_hide(&mut self, w: WinId, hide: bool) {
+        self.wm.win_hide(w, hide);
+    }
+    fn win_get_position(&self, w: WinId) -> (i32, i32) {
+        let r = self.wm.tree.windows[w].region;
+        (r.0, r.1)
+    }
+    fn win_set_position(&mut self, w: WinId, x: i32, y: i32) {
+        self.wm.win_set_position(w, x, y);
+    }
+    /// `updateUpDownImages`' images are the side's scheme's (`ToggleButtonUpIn` ...), by name.
+    fn gadget_button_set_images(&mut self, w: WinId, enabled: ToggleImage, hilite: ToggleImage, hilite_selected: ToggleImage) {
+        let scheme = self.schemes.current_scheme();
+        let img = |t: ToggleImage| scheme.and_then(|c| c.images.get(t.scheme_field())).and_then(|n| self.images.find_image_by_name(n)).map(|i| i.name.clone());
+        let images = [img(enabled), img(hilite), img(hilite_selected)];
+        set_toggle_images(&mut self.wm.tree, w, images);
+    }
+    fn display_height(&self) -> u32 {
+        LAYOUT.1 as u32
+    }
+    fn set_tactical_view_height(&mut self, h: i32) {
+        *self.view_height = Some(h);
+    }
+    fn recorder_playback(&self) -> bool {
+        self.playback
+    }
+    fn is_in_replay_game(&self) -> bool {
+        false
+    }
+    fn replay_window(&self) -> Option<WinId> {
+        None
+    }
+    fn show_special_power_shortcut(&mut self) {}
+    fn hide_special_power_shortcut(&mut self) {}
+    fn animate_special_power_shortcut(&mut self, _on: bool) {}
+    fn repopulate_build_tooltip_layout(&mut self) {}
+    fn mark_ui_dirty(&mut self) {}
+    fn has_animate_window_manager(&self) -> bool {
+        false
+    }
+    fn animate_reset(&mut self) {}
+    fn animate_register_slide_bottom(&mut self, _w: WinId) {}
+    fn animate_reverse(&mut self) {}
 }
 
 /// (#109) What `ControlBarSystem`'s `GBM_SELECTED` asks of the quit menu (ControlBarCallback.cpp): `ToggleQuitMenu()` for
@@ -244,10 +330,23 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         options_button: find("ControlBar.wnd:ButtonOptions".into()),
         hide_quit_menu_buttons: ["ButtonGeneral", "ButtonIdleWorker"].iter().filter_map(|n| find(format!("ControlBar.wnd:{n}"))).collect(),
         quit_menu_call: None,
+        stage: ControlBarStage::default(),
+        button_large: find(String::from_utf8_lossy(BUTTON_LARGE).into_owned()),
+        background_marker: find("ControlBar.wnd:BackgroundMarker".into()).map(|w| (w, wm.tree.screen_position(w))),
+        recorder_playback: false,
+        view_height: None,
+        gui_sounds: Vec::new(),
         images,
         wm,
         schemes,
     };
+    let mut ui = ui;
+    // (#136) `ControlBar::init`'s `CP_MASTER` and its default position; then `ControlBarScheme::init`'s
+    // `switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT)` when the side's scheme is set (the "down" images on `ButtonLarge`)
+    ui.with_stage(|stage, h| {
+        *stage = ControlBarStage::new(h);
+        stage.switch_control_bar_stage(ControlBarStages::Default as i32, h);
+    });
     UiBuild::Ready(Box::new(ui))
 }
 
@@ -256,9 +355,14 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
 #[derive(Default)]
 struct BarHost {
     selected: Option<WinId>,
+    /// (#136) The window code's sounds (`TheAudio->addAudioEvent`: the push button's `GUIClick`, `GUIClickDisabled`).
+    sounds: Vec<Vec<u8>>,
 }
 
 impl GuiHost for BarHost {
+    fn add_audio_event(&mut self, name: &[u8]) {
+        self.sounds.push(name.to_vec());
+    }
     fn system(&mut self, _wm: &mut GameWindowManager, func: &[u8], _win: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
         if func == b"ControlBarSystem" && msg == ggm::GBM_SELECTED {
             self.selected = data_win(d1);
@@ -642,8 +746,12 @@ impl GameUi {
                 self.quit_menu_call = Some(QuitMenuCall::Toggle);
             } else if self.hide_quit_menu_buttons.contains(&w) {
                 self.quit_menu_call = Some(QuitMenuCall::Hide);
+            } else if Some(w) == self.button_large {
+                // (#136) `buttonLargeID`: `TheControlBar->toggleControlBarStage()`
+                self.with_stage(|stage, h| stage.toggle_control_bar_stage(h));
             }
         }
+        self.gui_sounds.append(&mut host.sounds);
         let slot = self.slot_of(host.selected)?;
         tip.click(slot, now, touch).then_some(slot)
     }
@@ -660,6 +768,33 @@ impl GameUi {
             .collect()
     }
 
+    /// (#136) `f` with the one `TheMouse`'s tooltip lent to the bar's window manager
+    /// (`GameWindowManager::swap_mouse_tooltip`): moving over the bar clears the world's tooltip, as upstream's
+    /// `winProcessMouseEvent` does, and a bar window's tooltip text shows in it.
+    pub fn with_mouse<R>(&mut self, the_mouse: &mut rts_lockstep_engine::client::mouse::MouseTooltip, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.wm.swap_mouse_tooltip(the_mouse);
+        let r = f(self);
+        self.wm.swap_mouse_tooltip(the_mouse);
+        r
+    }
+
+    /// (#136) The stage functions on the bar's windows ([`StageHost`]).
+    fn with_stage(&mut self, f: impl FnOnce(&mut ControlBarStage, &mut StageHost)) {
+        let mut h = StageHost { wm: &mut self.wm, schemes: &self.schemes, images: &self.images, playback: self.recorder_playback, view_height: &mut self.view_height };
+        f(&mut self.stage, &mut h);
+    }
+
+    /// (#136) `ToggleControlBar(immediate)` (`MSG_META_TOGGLE_CONTROL_BAR`, through the command translator's case:
+    /// `rts_lockstep_engine::client::control_bar_stage::toggle_control_bar_meta`).
+    pub fn toggle_control_bar(&mut self, immediate: bool) {
+        self.with_stage(|stage, h| toggle_control_bar(stage, immediate, h));
+    }
+
+    /// (#136) Whether `ControlBarParent` (`CP_MASTER`) is hidden: the bar draws nothing.
+    pub fn is_bar_hidden(&self) -> bool {
+        self.stage.master.is_some_and(|m| self.wm.tree.windows[m].is_hidden())
+    }
+
     /// (#109) The quit menu call a button of the bar made since the last call ([`QuitMenuCall`]), for the app to make
     /// on the shell's quit menu.
     pub fn take_quit_menu_call(&mut self) -> Option<QuitMenuCall> {
@@ -668,7 +803,15 @@ impl GameUi {
 
     /// (#74) A key through the bar's window manager ([`keyboard_into`]); whether the UI used it.
     pub fn keyboard(&mut self, scan: u8, down: bool, text: Option<&str>) -> bool {
-        keyboard_into(&mut self.wm, &mut BarHost::default(), scan, down, text)
+        let mut host = BarHost::default();
+        let used = keyboard_into(&mut self.wm, &mut host, scan, down, text);
+        self.gui_sounds.append(&mut host.sounds);
+        used
+    }
+
+    /// (#136) The window code's sounds the bar's windows asked for since the last call, for the application's audio.
+    pub fn take_gui_sounds(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.gui_sounds)
     }
 
     /// (#74) Whether a window of the bar has the keyboard's focus (the camera's keys then go to it, not the view).
@@ -687,7 +830,22 @@ impl GameUi {
     pub fn frame(&self, s: &BarState) -> Vec<UiQuad> {
         let mut out = Vec::new();
         let scheme = self.schemes.current_scheme();
-        let draws: Vec<SchemeDraw> = scheme.map(|c| c.draw_list(self.schemes.multiplier, Default::default(), &self.images)).unwrap_or_default();
+        // (#136) the layers are drawn by windows inside `ControlBarParent` (`W3DCommandBarBackgroundDraw`,
+        // `W3DCommandBarForegroundDraw`), offset by how far `BackgroundMarker` has moved since the load: not at all
+        // while the bar is hidden; lowered with it. Without a marker (the synthetic bar), `CP_MASTER` stands for it.
+        let marker = match (self.background_marker, self.stage.master) {
+            (Some((w, base)), _) => Some((w, base)),
+            (None, Some(m)) => Some((m, self.stage.default_position)),
+            _ => None,
+        };
+        let (layers_shown, offset) = match marker {
+            Some((w, base)) => {
+                let (x, y) = self.wm.tree.screen_position(w);
+                (self.shown(w, s), rts_lockstep_engine::common::base_type::ICoord2D { x: x - base.0, y: y - base.1 })
+            }
+            None => (true, Default::default()),
+        };
+        let draws: Vec<SchemeDraw> = if layers_shown { scheme.map(|c| c.draw_list(self.schemes.multiplier, offset, &self.images)).unwrap_or_default() } else { Vec::new() };
         let quad = |d: &SchemeDraw| UiQuad { rect: [d.start.0, d.start.1, d.end.0, d.end.1], image: Some(d.image.clone()), color: None, text: None, command: None, dim: false, clock: None, overlay: None, ..Default::default() };
         out.extend(draws.iter().filter(|d| d.layer >= 3).map(quad));
         let roots: Vec<WinId> = (0..self.wm.tree.windows.len()).filter(|&i| self.wm.tree.windows[i].parent.is_none()).collect();
@@ -805,9 +963,11 @@ impl LayoutPlacement {
 
 /// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** ~~5 buttons of 48 and 4
 /// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** ~~6 buttons of 48 and 5 gaps of 6, the campaigns
-/// button added~~ **Corrected 2026-11-11 (#131):** 8 buttons of 48 and 7 gaps of 6, the two turn buttons added,
-/// `app::setup_ui`) and its bottom margin.
-pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 8.0 * 48.0 + 7.0 * 6.0 + 8.0;
+/// button added~~ ~~**Corrected 2026-11-11 (#131):** 8 buttons of 48 and 7 gaps of 6, the two turn buttons added~~
+/// **Corrected 2026-11-11, #136:** 9 buttons of 48 and 8 gaps of 6, the control bar's `B` added,
+/// `app::setup_ui`) and its bottom margin. (#136's first phone screenshot, with the constant still at 8, showed the radar
+/// over the `+` button.)
+pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 9.0 * 48.0 + 8.0 * 6.0 + 8.0;
 
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
@@ -1127,6 +1287,119 @@ mod tests {
         assert_eq!(ui.take_quit_menu_call(), None, "the background");
     }
 
+    /// (#136) The synthetic bar with `ButtonLarge` added (a copy of `ButtonCommand01` with the tooltip text `TIP:Large`, a
+    /// child of the parent, placed by the scheme's `MinMaxUL`/`LR` at (380, 452)-(420, 468)) and the scheme's toggle images
+    /// (down: `ImgButton`, up: `ImgBack`).
+    fn bar_with_button_large() -> GameUi {
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let start = wnd.find("WINDOW\n WINDOWTYPE = PUSHBUTTON;").expect("a button");
+                let button = &wnd[start..start + wnd[start..].find("END\n").expect("its end") + 4];
+                let large = button
+                    .replace("NAME = \"ControlBar.wnd:ButtonCommand01\";\n", "NAME = \"ControlBar.wnd:ButtonLarge\";\n TOOLTIPTEXT = \"TIP:Large\";\n")
+                    .replace("UPPERLEFT: 260 480, BOTTOMRIGHT: 310 530", "UPPERLEFT: 380 452, BOTTOMRIGHT: 420 468");
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                format!("{}{}{}", &wnd[..at], large, &wnd[at..]).into_bytes()
+            } else if p == b"Data\\INI\\ControlBarScheme.ini" {
+                let fields = "  MinMaxUL = X:380 Y:452\n  MinMaxLR = X:420 Y:468\n  ToggleButtonUpIn = ImgBack\n  ToggleButtonUpOn = ImgBack\n  ToggleButtonUpPushed = ImgBack\n  ToggleButtonDownIn = ImgButton\n  ToggleButtonDownOn = ImgButton\n  ToggleButtonDownPushed = ImgButton\n";
+                String::from_utf8(b).expect("text").replacen("  Side = Observer\n", &format!("  Side = Observer\n{fields}"), 1).into_bytes()
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        *ui
+    }
+
+    /// #136: the bar hidden, shown, lowered and raised (`ToggleControlBar`, `ButtonLarge`'s `toggleControlBarStage`).
+    /// Predicted before the run: loaded at the default stage (the view 480 high, `ButtonLarge` with the "down" image
+    /// `ImgButton`), the scheme's layer from y 440; a tap on `ButtonLarge` lowers the bar to y 540 (the layer moves the
+    /// same 90 down to 530) and gives it the "up" image `ImgBack`; a tap there again raises it to 450; the meta key
+    /// queues one immediate `ToggleControlBar`, which hides the bar (nothing drawn, the view the whole 600) and the next
+    /// shows it at the default stage; during a replay's playback the stage stays.
+    ///
+    /// **Result (2026-11-11):** as predicted on the first run.
+    #[test]
+    fn the_bar_hides_shows_lowers_and_raises() {
+        use rts_lockstep_engine::client::control_bar_stage::ControlBarStages;
+        let mut ui = bar_with_button_large();
+        let large = ui.button_large.expect("ButtonLarge");
+        let image = |ui: &GameUi| ui.wm.tree.windows[large].inst.enabled_draw_data[0].image.clone();
+        assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
+        assert_eq!(image(&ui).as_deref(), Some(&b"ImgButton"[..]));
+        let top = |ui: &GameUi| ui.frame(&BarState::default()).iter().fold(f32::MAX, |a, q| a.min(q.rect[1]));
+        assert_eq!(top(&ui), 440.0);
+        let mut tip = TooltipTimer::default();
+        let tap = |ui: &mut GameUi, at: (f32, f32), t: f64, tip: &mut TooltipTimer| {
+            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, t, true, tip), None);
+            assert_eq!(ui.pointer(gwm::LEFT_UP, at, t + 0.1, true, tip), None);
+        };
+        tap(&mut ui, (400.0, 460.0), 0.0, &mut tip);
+        let master = ui.stage.master.expect("ControlBarParent");
+        assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Low, 540));
+        assert_eq!(top(&ui), 530.0);
+        assert_eq!(image(&ui).as_deref(), Some(&b"ImgBack"[..]));
+        tap(&mut ui, (400.0, 550.0), 1.0, &mut tip);
+        assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Default, 450));
+        let (w, _) = crate::demo::demo_world();
+        let mut c = Controls::new(w, 1);
+        c.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
+        assert_eq!(c.client.control_bar_toggles, vec![true]);
+        ui.toggle_control_bar(true);
+        assert!(ui.is_bar_hidden() && ui.frame(&BarState::default()).is_empty());
+        assert_eq!(ui.view_height, Some(600));
+        ui.toggle_control_bar(true);
+        assert!(!ui.is_bar_hidden());
+        assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
+        ui.recorder_playback = true;
+        tap(&mut ui, (400.0, 460.0), 2.0, &mut tip);
+        assert_eq!(ui.stage.current, ControlBarStages::Default, "no stage switch during a replay's playback");
+    }
+
+    /// #136: one `TheMouse`. Predicted before the run: with the mouse lent, the pointer over `ButtonLarge` sets its tooltip
+    /// text into the one mouse (`winProcessMouseEvent`'s window tooltip), and the bar's manager keeps none of its own;
+    /// once the mouse has been still past its delay the tooltip is drawn by the world's drawing
+    /// (`crate::cursor::tooltip_shapes`): a box and the text; the pointer over the bar's background clears it (the event's
+    /// `setCursorTooltip(UnicodeString::TheEmptyString)`), and nothing is drawn.
+    ///
+    /// **Result (2026-11-11):** one miss, the test's own: the first draw is the box alone, 2 pixels wide (the highlight
+    /// opens the box and reveals the text over the following draws, as #124's test found), so the text is looked for
+    /// over the next draws. Then as predicted.
+    #[test]
+    fn the_bars_tooltip_is_the_one_mouses() {
+        use rts_lockstep_engine::client::mouse::Mouse;
+        let mut ui = bar_with_button_large();
+        let mut m = Mouse::new();
+        m.init();
+        m.set_visibility(true);
+        m.set_mouse_limits(800, 600);
+        m.pos = ICoord2D { x: 400, y: 460 };
+        let mut tip = TooltipTimer::default();
+        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (400.0, 460.0), 0.0, false, &mut tip));
+        let text = String::from_utf16_lossy(&m.tooltip.display_string);
+        assert!(text.contains("TIP:Large"), "{text:?}");
+        assert!(ui.wm.mouse.is_empty && !m.tooltip.is_empty);
+        m.tooltip.create_stream_messages(1000, true);
+        m.tooltip.create_stream_messages(100_000, false);
+        let shapes = crate::cursor::tooltip_shapes(&mut m, 100_000, false);
+        assert!(shapes.iter().any(|s| matches!(s, crate::cursor::TooltipShape::Rect { .. })), "{shapes:?}");
+        // (the box opens and the text is revealed over the following draws, `drawTooltip`'s highlight)
+        let revealed = (1..200).any(|i| {
+            let shapes = crate::cursor::tooltip_shapes(&mut m, 100_000 + i * 10, false);
+            shapes.iter().any(|s| matches!(s, crate::cursor::TooltipShape::Text { text, .. } if text.contains("TIP:Large")))
+        });
+        assert!(revealed, "the text is drawn");
+        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (600.0, 455.0), 0.0, false, &mut tip));
+        assert!(m.tooltip.is_empty);
+        m.tooltip.create_stream_messages(200_000, false);
+        assert!(crate::cursor::tooltip_shapes(&mut m, 200_000, false).is_empty());
+    }
+
     /// #74: typed characters reach a text entry in the bar's window manager (the bar has none of its own: one is made
     /// with `gogoGadgetTextEntry`, as a menu's would be). Predicted from IMEManager.cpp and GadgetTextEntry.cpp before
     /// the run: before it has the focus, typing `a` is not used; once focused (`winSetFocus`, which attaches the IME),
@@ -1334,8 +1607,9 @@ mod tests {
         assert_eq!(radar_screen_rect(Some(r), Some(p), (390.0, 844.0)), [9.75, 795.25, 107.25, 839.125]);
         // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button; ~~[265, 476,
         // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button; ~~[265, 422, 382,
-        // 510]~~ corrected 2026-11-11, #131: 108 higher, above the two turn buttons)
-        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 314.0, 382.0, 402.0]);
+        // 510]~~ corrected 2026-11-11, #131: 108 higher, above the two turn buttons; ~~[265, 314, 382, 402]~~ corrected
+        // 2026-11-11, #136: 54 higher again, above the control bar's `B`)
+        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 260.0, 382.0, 348.0]);
         assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
         let big = radar_screen_rect(None, None, (1280.0, 720.0));
         assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));

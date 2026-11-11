@@ -5,7 +5,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp (CommandTranslator::translateGameMessage's
 //     meta-key cases: MSG_META_SELECT_MATCHING_UNITS to MSG_META_FOLLOW, MSG_META_PLACE_BEACON, MSG_META_REMOVE_BEACON,
 //     MSG_META_TOGGLE_ATTACKMOVE, MSG_META_TOGGLE_CAMERA_TRACKING_DRAWABLE, MSG_META_BEGIN/END_FORCEMOVE, WAYPOINTS,
-//     PREFER_SELECTION, FORCEATTACK, MSG_META_ALL_CHEER; findCommandCenterOrMostExpensiveBuilding, viewCommandCenter,
+//     PREFER_SELECTION, FORCEATTACK, MSG_META_ALL_CHEER, (#136) MSG_META_TOGGLE_CONTROL_BAR (in control_bar_stage.rs);
+//     findCommandCenterOrMostExpensiveBuilding, viewCommandCenter,
 //     amIAHero, iNeedAHero)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (kindOfUnitSelection, selectAllUnitsByTypeAcrossRegion,
 //     selectAllUnitsByTypeAcrossScreen, selectAllUnitsByTypeAcrossMap, selectAllUnitsByType,
@@ -57,6 +58,8 @@
 //!   keyboard camera flags, which `InGameUI::update` turns and zooms the view by
 //!   ([`InGameUiSelection::update_keyboard_camera`]); `MSG_META_CAMERA_RESET` (3237): `TheInGameUI->resetCamera()`
 //!   ([`CameraMetaHost::reset_camera`]). Kept. [`CommandTranslator::camera_meta`].
+//! - **(#136)** `MSG_META_TOGGLE_CONTROL_BAR` (3168): the shell's top layout hidden or shown, else (not in a replay's
+//!   playback) `ToggleControlBar()`; destroyed ([`crate::client::control_bar_stage::toggle_control_bar_meta`]).
 //! - `MSG_META_TOGGLE_ATTACKMOVE` (3201), `TOGGLE_CAMERA_TRACKING_DRAWABLE` (3240), `BEGIN/END_FORCEMOVE` (3448),
 //!   `BEGIN/END_WAYPOINTS`, `BEGIN/END_PREFER_SELECTION`, `BEGIN/END_FORCEATTACK` (3460-3491): InGameUI's flags; kept.
 //! - `MSG_META_ALL_CHEER` (3493): in a multiplayer game, the misc audio's `AllCheerSound` and `MSG_DO_CHEER`, destroyed;
@@ -120,8 +123,9 @@ use crate::common::message_types::*;
 use crate::common::thing_template::ThingTemplateAudioType;
 use crate::logic::modules::plant;
 
-/// What the meta cases ask beyond [`CommandXlatHost`].
-pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost {
+/// What the meta cases ask beyond [`CommandXlatHost`]; **(#136)** `MSG_META_TOGGLE_CONTROL_BAR`'s shell, recorder and
+/// control bar ([`crate::client::control_bar_stage::ToggleControlBarHost`]).
+pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost + crate::client::control_bar_stage::ToggleControlBarHost {
     /// `obj->isMobile()`.
     fn object_is_mobile(&self, obj: ObjectId) -> bool;
     /// `obj->isEffectivelyDead()`.
@@ -406,6 +410,7 @@ impl CommandTranslator {
             MSG_META_BEGIN_FORCEATTACK,
             MSG_META_END_FORCEATTACK,
             MSG_META_ALL_CHEER,
+            MSG_META_TOGGLE_CONTROL_BAR,
         ];
         if !handled.contains(&t) {
             return None;
@@ -415,6 +420,8 @@ impl CommandTranslator {
             return Some(Destroy);
         }
         let d = match t {
+            // #136: CommandXlat.cpp:3168
+            MSG_META_TOGGLE_CONTROL_BAR => crate::client::control_bar_stage::toggle_control_bar_meta(h),
             MSG_META_SELECT_MATCHING_UNITS => {
                 select_units_matching_current_selection(ui, h);
                 Destroy
@@ -799,6 +806,8 @@ pub(crate) mod tests {
         pub looks: Vec<Coord3D>,
         pub multiplayer: bool,
         pub cheers: u32,
+        /// (#136) `ToggleControlBar` calls.
+        pub bar_toggles: u32,
     }
 
     impl CommandMetaHost for Host {
@@ -854,6 +863,21 @@ pub(crate) mod tests {
     impl CameraMetaHost for Host {
         fn reset_camera(&mut self) {}
     }
+    impl crate::client::control_bar_stage::ToggleControlBarHost for Host {
+        fn shell_is_active(&self) -> bool {
+            false
+        }
+        fn shell_top_is_hidden(&self) -> Option<bool> {
+            None
+        }
+        fn shell_top_hide(&mut self, _hide: bool) {}
+        fn toggle_bar_recorder_playback(&self) -> bool {
+            false
+        }
+        fn toggle_control_bar(&mut self, _immediate: bool) {
+            self.meta.bar_toggles += 1;
+        }
+    }
 
     /// Predicted before the run: with drawables 1..=5 (all mine, 3 immobile), nothing selected, the next unit is the
     /// last (5), the next again 4, then 2 (3 is immobile); the previous unit with nothing selected checks only the
@@ -892,6 +916,9 @@ pub(crate) mod tests {
         h.meta.multiplayer = true;
         assert_eq!(x.meta(MSG_META_ALL_CHEER, &mut ui, &mut h), Some(Disposition::Destroy));
         assert_eq!(h.meta.cheers, 1);
+        // (#136) the control bar's toggle: `ToggleControlBar()` once, destroyed
+        assert_eq!(x.meta(MSG_META_TOGGLE_CONTROL_BAR, &mut ui, &mut h), Some(Disposition::Destroy));
+        assert_eq!(h.meta.bar_toggles, 1);
         assert_eq!(x.meta(MSG_META_BEGIN_FORCEMOVE, &mut ui, &mut h), Some(Disposition::Keep));
         assert!(ui.is_in_force_move_to_mode());
         x.meta(MSG_META_TOGGLE_CAMERA_TRACKING_DRAWABLE, &mut ui, &mut h);

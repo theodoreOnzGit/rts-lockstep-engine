@@ -40,7 +40,11 @@
 //!
 //! - **The control bar** (#12): read from the art's files when a game starts (`crate::ui`, tested there) and drawn as
 //!   Bevy UI nodes along the bottom, scaled to the screen's width (a phone's too); its command buttons press through
-//!   `Controls::press`. Without the files the debug panel stays.
+//!   `Controls::press`. Without the files the debug panel stays. **(#136)** It hides and shows: the CommandMap's
+//!   `TOGGLE_CONTROL_BAR` key or the zoom column's `B` button make `MSG_META_TOGGLE_CONTROL_BAR`, whose case
+//!   (`ToggleControlBar`) the bar carries out; its own `ButtonLarge` lowers it to a strip and raises it
+//!   (`toggleControlBarStage`). The window code's click sounds play through the audio, and the shell's and the bar's
+//!   windows set the one mouse's tooltip, drawn over the shell too.
 //!
 //! - **The shell** (#78): the game's menus (`crate::shell`, tested there), read once the owner's files are there and
 //!   shown over the install's game (paused under it), drawn from the shell's window manager's draw list with the
@@ -123,6 +127,9 @@ struct Game {
     audio_pending: bool,
     /// The audio (#13): the translated manager and the device, once its tables are read.
     audio: Option<Box<GameSound>>,
+    /// (#136) The window code's sounds to play (`GUIClick`, `GUIClickDisabled`, the shell's buttons' and transitions'):
+    /// the hot keys', the bar's and the shell's windows', played by `update_audio`.
+    gui_sounds: Vec<Vec<u8>>,
     /// (#35) The radar's image, the logic frame and size it was drawn for, and the "RadarEvent" sounds it asked for
     /// (played with the next frame's sounds).
     radar_image: Option<Handle<Image>>,
@@ -220,6 +227,7 @@ impl Game {
             fx_pending: true,
             audio_pending: true,
             audio: None,
+            gui_sounds: Vec::new(),
             radar_image: None,
             radar_drawn: None,
             radar_event_sounds: 0,
@@ -834,7 +842,8 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
     if let Some(s) = shell.ui.as_mut().filter(|s| s.takes_input()) {
         for k in events.read() {
             let down = k.state == ButtonState::Pressed;
-            let used = s.keyboard(dik_of(k.key_code), down, k.text.as_deref());
+            // (#136: with the one mouse's tooltip lent, `ShellUi::with_mouse`)
+            let used = s.with_mouse(&mut g.pause.mouse.tooltip, |s| s.keyboard(dik_of(k.key_code), down, k.text.as_deref()));
             if !used && down && k.key_code == KeyCode::Escape && !s.is_active() {
                 s.toggle_quit_menu(crate::shell::quit_menu_game(&g.controls.client.world, g.controls.ui.input_enabled()));
             }
@@ -890,7 +899,7 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
     match g.ui.as_mut() {
         Some(ui) => {
             for (k, u) in keys.iter().zip(used.iter_mut()) {
-                *u = ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref());
+                *u = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.keyboard(dik_of(k.key_code), k.state == ButtonState::Pressed, k.text.as_deref()));
             }
             taken.0 = ui.has_keyboard_focus();
         }
@@ -1342,6 +1351,12 @@ fn setup_ui(mut commands: Commands) {
             (button("S"), observe(|_: On<Activate>, mut action: ResMut<SaveAction>| action.0 = Some(SaveCmd::Toggle))),
             // (#62) the campaigns: the missions and the Generals' Challenge, and the score screen
             (button("C"), observe(|_: On<Activate>, mut action: ResMut<CampaignAction>| action.0 = Some(CampaignCmd::Toggle))),
+            // (#136) the control bar hidden and shown: `MSG_META_TOGGLE_CONTROL_BAR` through the command translator, as
+            // its key makes it (a phone has no keyboard; the bar's own `ButtonLarge` lowers and raises it, but is hidden
+            // with it)
+            (button("B"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| {
+                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
+            })),
         ],
     ));
 }
@@ -1635,6 +1650,9 @@ struct WorldTooltip(Vec<crate::cursor::TooltipShape>);
 /// change: the box, its border, and each text in a node cut at its clip region, the text placed at its own corner. It
 /// takes no pointer. At a phone's 390 pixels the box is moved left of the finger at the right edge (upstream's rule,
 /// `xPos -= 20 + width`) and wraps at `TooltipWidth` of the screen (15 %: 58 pixels, so a long name takes several lines).
+/// **(#136)** The mouse is the one `TheMouse`: the shell's and the control bar's windows set its tooltip too (their
+/// managers borrow it, `with_mouse`), so it is drawn over the shell as well: ~~`ZIndex(50)`, under the shell's
+/// `GlobalZIndex(10)`~~ **corrected 2026-11-11, #136:** `GlobalZIndex(20)`, over the shell's 10.
 fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<Game>, mut roots: Query<(Entity, &mut WorldTooltip)>) {
     let g = &mut *game;
     let now = (time.elapsed_secs_f64() * 1000.0) as u32;
@@ -1650,7 +1668,7 @@ fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<G
             e
         }
         None => commands
-            .spawn((WorldTooltip(shapes.clone()), Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, Pickable::IGNORE, ZIndex(50)))
+            .spawn((WorldTooltip(shapes.clone()), Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, Pickable::IGNORE, GlobalZIndex(20)))
             .id(),
     };
     for sh in &shapes {
@@ -1778,9 +1796,13 @@ struct GameUiRoot(Vec<crate::ui::UiQuad>);
 /// GUI glue (needs the app): the audio's tables from the art's INI files once they have arrived (#13,
 /// `crate::audio::load_tables`, tested through the engine's `AudioTables`), then each frame the device's files read
 /// and decoded and its voices started and ended (`ClientDevice::pump`, tested there).
-fn update_audio(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, time: Res<Time>) {
+fn update_audio(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, time: Res<Time>, rig: Option<Res<Rig>>) {
     let g = &mut *game;
-    let Some(art) = &g.models.art else { return };
+    let Some(art) = &g.models.art else {
+        // (#136: no art, no audio: the windows' clicks are dropped)
+        g.gui_sounds.clear();
+        return;
+    };
     let open = |p: &[u8]| {
         if !art.fs.file_ready(p) {
             return None;
@@ -1811,7 +1833,31 @@ fn update_audio(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, t
             g.audio = Some(Box::new(GameSound { audio, device: crate::audio::ClientDevice::new(SoundOutput::default()) }));
         }
     }
-    let Some(sound) = g.audio.as_deref_mut() else { return };
+    let Some(sound) = g.audio.as_deref_mut() else {
+        // (#136: no audio yet, no sound for the windows' clicks)
+        g.gui_sounds.clear();
+        return;
+    };
+    // (#136) the window code's sounds (`AudioEventRTS buttonClick("GUIClick"); TheAudio->addAudioEvent(&buttonClick)`);
+    // while the game is paused (the shell and the menus are over it) no logic frame runs the manager's update, so it runs
+    // here, as upstream's `TheAudio->update()` runs every client frame
+    let clicks = std::mem::take(&mut g.gui_sounds);
+    if !clicks.is_empty() || g.paused {
+        let files = |p: &[u8]| art.fs.does_file_exist(p);
+        let host = rts_lockstep_engine::client::client_audio::WorldAudioHost {
+            world: &g.controls.client.world,
+            local_player_index: g.models.drawables.local_player_index,
+            files: &files,
+            language: rts_lockstep_engine::logic::world::install_world::DEFAULT_LANGUAGE,
+        };
+        for c in &clicks {
+            sound.audio.play_gui_sound(&host, c);
+        }
+        if g.paused {
+            let view = rig.as_deref().map_or_else(Default::default, |r| r.cam.listener());
+            sound.audio.manager.update(&host, &mut sound.device, &view);
+        }
+    }
     sound.device.pump(|p| {
         if !art.fs.file_ready(p) {
             return crate::audio::Fetch::Waiting;
@@ -2021,6 +2067,22 @@ fn game_ui(
         let c = &g.controls;
         s.bar_quit_menu_call(call, || crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
     }
+    // (#136) `MSG_META_TOGGLE_CONTROL_BAR`'s `ToggleControlBar()` calls (the key's, or the phone column's `B`), on the
+    // game's bar; the stages hold still during a replay's playback. Without the game's files there is no bar: the
+    // calls are dropped.
+    let toggles = std::mem::take(&mut g.controls.client.control_bar_toggles);
+    if let Some(ui) = g.ui.as_mut() {
+        ui.recorder_playback = rts_lockstep_engine::client::control_bar_stage::ToggleControlBarHost::toggle_bar_recorder_playback(&g.controls.client);
+        for immediate in toggles {
+            ui.toggle_control_bar(immediate);
+        }
+    }
+    // (#131) the hot keys' `GUIClick` / `GUIClickDisabled` ~~are cleared: the client plays no GUI sound yet~~
+    // **corrected 2026-11-11, #136:** played (`update_audio`), with the bar's windows' (its push buttons' `GUIClick`)
+    g.gui_sounds.append(&mut g.controls.gui_sounds);
+    if let Some(ui) = g.ui.as_mut() {
+        g.gui_sounds.extend(ui.take_gui_sounds());
+    }
     // (#78) the shell, while shown, is drawn in place of the bar (upstream's control bar is hidden in the shell)
     let shell_up = shell.ui.as_ref().is_some_and(|s| s.is_active());
     for (_, _, mut node) in roots.iter_mut() {
@@ -2057,17 +2119,24 @@ fn game_ui(
         })
         .collect();
     g.controls.set_bar_hot_keys(&state.hot_keys, hot_windows);
-    // (#131) the hot keys' `GUIClick` / `GUIClickDisabled`: the client plays no GUI sound yet (#131's gaps)
-    g.controls.gui_sounds.clear();
     if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
-        let _ = ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), 0.0, false, &mut g.tooltip);
+        let tip = &mut g.tooltip;
+        let _ = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), 0.0, false, tip));
     }
     let ui = g.ui.as_ref().expect("checked");
     let quads = ui.frame(&state);
     g.bar_buttons = state.commands.iter().map(|s| s.as_ref().map(|s| s.button)).collect();
-    // the box: the quads' extent, the layout's full width
+    // the box: the quads' extent, the layout's full width; (#136) cut at the layout's bottom (the low stage moves the bar
+    // down past it, its top tenth showing)
     let (y0, y1) = quads.iter().fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q.rect[1]), b.max(q.rect[3])));
+    let y1 = y1.min(crate::ui::LAYOUT.1 as f32);
     if quads.is_empty() || y1 <= y0 {
+        // (#136) the bar hidden (`ControlBarParent`): nothing drawn, nothing taken from the screen
+        ui_bar.height = 0.0;
+        ui_bar.placement = None;
+        for (_, _, mut node) in roots.iter_mut() {
+            node.display = Display::None;
+        }
         return;
     }
     let (lw, bh) = (crate::ui::LAYOUT.0 as f32, y1 - y0);
@@ -2090,7 +2159,7 @@ fn game_ui(
         None => {
             let mut root = commands.spawn((
                 GameUiRoot(quads.clone()),
-                Node { position_type: PositionType::Absolute, bottom: px(0), left: px((ww - width) / 2.0), width: px(width), height: px(ui_bar.height), ..default() },
+                Node { position_type: PositionType::Absolute, bottom: px(0), left: px((ww - width) / 2.0), width: px(width), height: px(ui_bar.height), overflow: Overflow::clip(), ..default() },
             ));
             // (#34) the pointer over the bar, into the window manager (events bubble up from the quads)
             root.observe(|ev: On<PointerMove>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
@@ -2212,7 +2281,9 @@ fn bar_pointer(game: &mut Game, bar: &UiBar, msg: u32, screen: Vec2, id: &bevy::
     let pos = p.to_layout((screen.x, screen.y));
     let g = &mut *game;
     let Some(ui) = g.ui.as_mut() else { return };
-    let Some(slot) = ui.pointer(msg, pos, now, touch, &mut g.tooltip) else { return };
+    // (#136) through `winProcessMouseEvent` with the one mouse's tooltip lent
+    let tip = &mut g.tooltip;
+    let Some(slot) = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(msg, pos, now, touch, tip)) else { return };
     let Some(Some(index)) = g.bar_buttons.get(slot).copied() else { return };
     if let Some(b) = rts_lockstep_engine::client::command_world::gui_button(&g.controls.client.world, index) {
         g.controls.press(&b);
@@ -3161,13 +3232,19 @@ fn shell_ui(
     }
     // (#87: also while the in-game menus are up)
     if ui.takes_input() {
-        ui.frame((time.elapsed_secs_f64() * 1000.0) as u32);
-        if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
-            match (st.last_pointer, st.placement) {
-                (Some(at), Some(p)) => ui.pointer_at(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, at, &p, false),
-                _ => ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), false),
+        // (#136) the shell's update and its stray release with the one mouse's tooltip lent (the menus'
+        // `setCursorTooltip`, `winProcessMouseEvent`'s)
+        let (last_pointer, placement) = (st.last_pointer, st.placement);
+        let pressed = buttons.pressed(MouseButton::Left) || touches.iter().next().is_some();
+        ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| {
+            ui.frame((time.elapsed_secs_f64() * 1000.0) as u32);
+            if ui.wm.grab_window.is_some() && !pressed {
+                match (last_pointer, placement) {
+                    (Some(at), Some(p)) => ui.pointer_at(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, at, &p, false),
+                    _ => ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), false),
+                }
             }
-        }
+        });
     }
     if let Some(base) = g.base.as_deref() {
         let c = &mut *campaigns;
@@ -3272,8 +3349,9 @@ fn shell_ui(
             }
         }
     }
-    // (the clicks' sounds and the script hooks are not played or run yet; the untranslated callbacks are logged once)
-    ui.gui.audio.clear();
+    // (~~the clicks' sounds and~~ the script hooks are not run yet; the untranslated callbacks are logged once)
+    // (**corrected 2026-11-11, #136:** the windows' sounds are played, `update_audio`)
+    g.gui_sounds.append(&mut ui.gui.audio);
     ui.gui.ui_interacts.clear();
     for f in ui.gui.untranslated.drain(..) {
         debug!("shell: untranslated callback {}", String::from_utf8_lossy(&f));
@@ -3308,16 +3386,16 @@ fn shell_ui(
                 Node { position_type: PositionType::Absolute, left: px(placement.left), top: px(placement.top), width: px(lw * placement.scale), height: px(lh * placement.scale), ..default() },
             ));
             let gwm = rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS;
-            root.observe(move |ev: On<PointerMove>, mut shell: NonSendMut<ShellState>| shell_pointer(&mut shell, gwm, ev.pointer.position, &ev.pointer.id));
-            root.observe(move |ev: On<PointerLeave>, mut shell: NonSendMut<ShellState>| shell_pointer(&mut shell, gwm, ev.pointer.position, &ev.pointer.id));
-            root.observe(|ev: On<PointerPress>, mut shell: NonSendMut<ShellState>| {
+            root.observe(move |ev: On<PointerMove>, mut shell: NonSendMut<ShellState>, mut game: NonSendMut<Game>| shell_pointer(&mut shell, &mut game, gwm, ev.pointer.position, &ev.pointer.id));
+            root.observe(move |ev: On<PointerLeave>, mut shell: NonSendMut<ShellState>, mut game: NonSendMut<Game>| shell_pointer(&mut shell, &mut game, gwm, ev.pointer.position, &ev.pointer.id));
+            root.observe(|ev: On<PointerPress>, mut shell: NonSendMut<ShellState>, mut game: NonSendMut<Game>| {
                 if ev.button == PointerButton::Primary {
-                    shell_pointer(&mut shell, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id);
+                    shell_pointer(&mut shell, &mut game, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id);
                 }
             });
-            root.observe(|ev: On<PointerRelease>, mut shell: NonSendMut<ShellState>| {
+            root.observe(|ev: On<PointerRelease>, mut shell: NonSendMut<ShellState>, mut game: NonSendMut<Game>| {
                 if ev.button == PointerButton::Primary {
-                    shell_pointer(&mut shell, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id);
+                    shell_pointer(&mut shell, &mut game, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id);
                 }
             });
             root.id()
@@ -3334,12 +3412,13 @@ fn shell_ui(
 
 /// GUI glue (needs a window): a pointer event over the shell, from the screen (logical pixels) through
 /// [`crate::shell::ShellUi::pointer_at`] (tested there).
-fn shell_pointer(shell: &mut ShellState, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId) {
+fn shell_pointer(shell: &mut ShellState, game: &mut Game, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId) {
     let touch = matches!(id, bevy::picking::pointer::PointerId::Touch(_));
     let Some(p) = shell.placement else { return };
     shell.last_pointer = Some((screen.x, screen.y));
     if let Some(ui) = shell.ui.as_mut() {
-        ui.pointer_at(msg, (screen.x, screen.y), &p, touch);
+        // (#136) `winProcessMouseEvent` sets (or clears) the one mouse's tooltip, which `world_tooltip` draws
+        ui.with_mouse(&mut game.pause.mouse.tooltip, |ui| ui.pointer_at(msg, (screen.x, screen.y), &p, touch));
     }
 }
 

@@ -133,7 +133,10 @@
 //! [`GameWindowManager`] holds the windows ([`WindowTree`], the reader's), each one's callbacks, owner, layout and
 //! user data ([`WinExt`]), the window list (head first: the newest top-level window, drawn last and hit first), the
 //! destroy list, the modal stack (top first), and the mouse's tooltip ([`MouseTooltip`]). A window's children are in
-//! its `children` vector, head first.
+//! its `children` vector, head first. ~~Each manager keeps its own tooltip.~~ **Corrected 2026-11-11, #136:** upstream
+//! has one `TheMouse`; the application lends the one translated mouse's tooltip to whichever manager it calls
+//! ([`GameWindowManager::swap_mouse_tooltip`]), so the shell's and the control bar's windows, and the menus'
+//! `setCursorTooltip` calls, set the tooltip the client draws.
 
 use crate::client::window_script::{gws, win_status, GadgetData, GameFont, GameWindow, RadioButtonData, ScriptResult, TextData, WinId, WinInstanceData, WindowLayoutInfo, WindowScript, WindowTree, WndError, WndHost};
 
@@ -617,7 +620,8 @@ pub struct GameWindowManager {
     /// `m_tabList`.
     pub tab_list: Vec<WinId>,
     pub layouts: Vec<WindowLayout>,
-    /// `TheMouse`'s tooltip.
+    /// `TheMouse`'s tooltip while the application has lent it (**#136**, [`GameWindowManager::swap_mouse_tooltip`]);
+    /// between the application's calls, a default one nobody draws.
     pub mouse: MouseTooltip,
     /// `TheDisplay->getWidth()`, `getHeight()`.
     pub display: (i32, i32),
@@ -1239,6 +1243,13 @@ impl GameWindowManager {
     fn in_region(&self, w: WinId, x: i32, y: i32) -> bool {
         let r = self.tree.windows[w].region;
         x >= r.0 && x <= r.2 && y >= r.1 && y <= r.3
+    }
+
+    /// #136: `TheMouse` is one (upstream's `Mouse` singleton); the application keeps it (`Mouse::tooltip`,
+    /// [`crate::client::mouse`]) and swaps it into a manager around each call that may set the tooltip
+    /// (`winProcessMouseEvent`'s :851 clear and :1222 window tooltip, a menu's `setCursorTooltip`), then back.
+    pub fn swap_mouse_tooltip(&mut self, the_mouse: &mut MouseTooltip) {
+        std::mem::swap(&mut self.mouse, the_mouse);
     }
 
     /// Whether a window offers a tooltip (`m_tooltip || getTooltipTextLength()`).
@@ -2447,6 +2458,18 @@ END\n";
         wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (300, 250), (0, 0));
         wm.mouse.create_stream_messages(5000, false);
         assert_eq!(wm.mouse.shown(), None);
+        // (#136) the one mouse, lent: B1's tooltip is set into it, and the manager's own stays empty; the next event
+        // (outside any window) clears the lent one
+        let mut the_mouse = MouseTooltip::default();
+        wm.swap_mouse_tooltip(&mut the_mouse);
+        wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (25, 25), (0, 0));
+        wm.swap_mouse_tooltip(&mut the_mouse);
+        assert_eq!(the_mouse.display_string, s("T:TIP:B1"));
+        assert!(wm.mouse.is_empty && !the_mouse.is_empty);
+        wm.swap_mouse_tooltip(&mut the_mouse);
+        wm.win_process_mouse_event(&mut h, gwm::MOUSE_POS, (300, 250), (0, 0));
+        wm.swap_mouse_tooltip(&mut the_mouse);
+        assert!(the_mouse.is_empty);
         // destruction
         wm.win_destroy(Some(ids.p));
         assert!(!wm.window_list.contains(&ids.p));

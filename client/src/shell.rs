@@ -85,8 +85,12 @@
 //!   20-pixel buttons are 9.75 CSS pixels high at 390 wide (reachable by a tap, small; the real WND's sizes are the
 //!   owner's files' and not checked).
 //! - On the web, a quit cannot close the page: it says so in the status line.
-//! - The shell's sounds (`TheAudio->addAudioEvent`) and the script hooks (`signalUIInteract`) are not played or run; the
-//!   app clears them each frame.
+//! - ~~The shell's sounds (`TheAudio->addAudioEvent`) and the script hooks (`signalUIInteract`) are not played or run; the
+//!   app clears them each frame.~~ **Corrected 2026-11-11, #136:** the shell's sounds are played through the client's
+//!   audio (`ClientAudio::play_gui_sound`, by the app's `update_audio`); the script hooks (`signalUIInteract`) are still
+//!   not run, and the app clears them each frame.
+//! - **(#136)** The shell's window manager sets the one `TheMouse`'s tooltip: the app lends it around each call
+//!   ([`ShellUi::with_mouse`]), and draws it over the shell.
 //!
 //! # Representation
 //!
@@ -372,6 +376,16 @@ impl ShellUi {
             self.wm.win_process_mouse_event(&mut self.gui, gwm::MOUSE_POS, p, (0, 0));
         }
         self.wm.win_process_mouse_event(&mut self.gui, msg, p, (0, 0));
+    }
+
+    /// (#136) `f` with the one `TheMouse`'s tooltip lent to the shell's window manager
+    /// (`GameWindowManager::swap_mouse_tooltip`): its windows' tooltips (`winProcessMouseEvent`) and its menus'
+    /// `setCursorTooltip` calls set the tooltip the application draws, and nothing else's.
+    pub fn with_mouse<R>(&mut self, the_mouse: &mut rts_lockstep_engine::client::mouse::MouseTooltip, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.wm.swap_mouse_tooltip(the_mouse);
+        let r = f(self);
+        self.wm.swap_mouse_tooltip(the_mouse);
+        r
     }
 
     /// A key and its text ([`crate::ui::keyboard_into`]); whether the shell used it.
@@ -1199,7 +1213,8 @@ mod tests {
     ///   ([`ShellAction::SetGamePaused`] true); `Hide` hides it and unpauses (false); `Hide` again does nothing (not
     ///   visible); `Toggle` shows it again (true);
     /// - at 390x844 (the placement of the #78 test: scale 0.4875, top ~~126.75, unchanged: no button is added to the zoom
-    ///   column~~ **corrected 2026-11-11 (#131):** 72.75, the two turn buttons added to the zoom column) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
+    ///   column~~ **corrected 2026-11-11 (#131):** ~~72.75~~, the two turn buttons added to the zoom column; **corrected 2026-11-11, #136:**
+    ///   45.75, the control bar's `B` added) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
     ///   on the screen, below
     ///   the status line (y 36) and above the zoom column, and a tap at its centre is that button's
     ///   (`getWindowUnderCursor`);
@@ -1237,8 +1252,9 @@ mod tests {
         assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
         let p = shell_placement((390.0, 844.0));
         // (~~126.75~~ corrected 2026-11-11, #131: the zoom column is 108 taller with the two turn buttons, so the menu
-        // centres 54 higher in the room above it; the scale, set by the width, is the same)
-        assert_eq!((p.left, p.top, p.scale), (0.0, 72.75, 0.4875));
+        // centres 54 higher in the room above it; the scale, set by the width, is the same) (~~72.75~~ corrected
+        // 2026-11-11, #136: 54 taller again with `B`, 27 higher: 45.75)
+        assert_eq!((p.left, p.top, p.scale), (0.0, 45.75, 0.4875));
         let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
         let last = |ui: &ShellUi, file: &str, name: &str| -> usize {
             let full = format!("{file}:{name}");
@@ -1329,7 +1345,8 @@ mod tests {
     ///
     /// - 390x844: the full width above the zoom column wins (scale 390 / 800 = 0.4875 against (390 - 64) / 800 =
     ///   0.4075 beside it); the menu 390 x 292.5 at left 0, top 36 + (474 - 292.5) / 2 = 126.75 (**corrected 2026-11-11
-    ///   (#131):** ~~126.75~~ 36 + (366 - 292.5) / 2 = 72.75, the zoom column 108 taller with the two turn buttons);
+    ///   (#131):** ~~126.75~~ ~~36 + (366 - 292.5) / 2 = 72.75~~, the zoom column 108 taller with the two turn buttons;
+    ///   **corrected 2026-11-11, #136:** 36 + (312 - 292.5) / 2 = 45.75, 54 taller again with `B`);
     /// - 1280x720: beside the column wins (scale min(1216 / 800, 676 / 600) = 1.1267); left (1216 - 901.3) / 2 = 157.3,
     ///   top 36;
     /// - at 390x844 every button of the main panel is on the screen, below the status line's first line (y 36) and
@@ -1339,8 +1356,9 @@ mod tests {
     #[test]
     fn the_menu_fits_a_phone_and_every_button_is_tapped() {
         let p = shell_placement((390.0, 844.0));
-        // (~~126.75~~ corrected 2026-11-11, #131: the taller zoom column, see the quit menu's test)
-        assert_eq!((p.left, p.top, p.y0, p.scale), (0.0, 72.75, 0.0, 0.4875));
+        // (~~126.75~~ corrected 2026-11-11, #131: the taller zoom column, see the quit menu's test; ~~72.75~~
+        // corrected 2026-11-11, #136: 45.75, `B` added)
+        assert_eq!((p.left, p.top, p.y0, p.scale), (0.0, 45.75, 0.0, 0.4875));
         let d = shell_placement((1280.0, 720.0));
         assert!((d.scale - 676.0 / 600.0).abs() < 1e-5 && (d.left - (1216.0 - 800.0 * 676.0 / 600.0) / 2.0).abs() < 1e-3 && d.top == 36.0, "{d:?}");
         let mut ui = shell();
