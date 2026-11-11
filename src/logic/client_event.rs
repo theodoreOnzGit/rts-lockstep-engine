@@ -139,6 +139,26 @@ pub enum ScriptInputCall {
     /// GitHub #117: `TheGameLogic->closeWindows()` (`ScriptActions::doQuickVictory`, after `closeWindows(FALSE)`): the
     /// client's windows closed (`client::quit_menu::close_windows`). ~~Until #117 a cut the client did not see.~~
     CloseWindows,
+    /// GitHub #138: `HideControlBar(immediate)` (`ScriptActions::doLetterBoxMode`'s start, `CAMERA_LETTERBOX_BEGIN`): the
+    /// client's control bar hidden (`client::control_bar_stage::script_control_bar`). ~~Until #138 a cut the client did
+    /// not see.~~
+    HideControlBar(bool),
+    /// GitHub #138: `ShowControlBar(immediate)` (`doLetterBoxMode`'s end, `CAMERA_LETTERBOX_END`).
+    ShowControlBar(bool),
+    /// GitHub #138: `TheDisplay->enableLetterBox(enable)` (`doLetterBoxMode`). The client draws no letterbox yet (#138's
+    /// gaps).
+    EnableLetterBox(bool),
+}
+
+impl ScriptInputCall {
+    /// GitHub #138: the event of `HideControlBar(immediate)` (`hide`) or `ShowControlBar(immediate)`.
+    pub fn control_bar(hide: bool, immediate: bool) -> ScriptInputCall {
+        if hide {
+            ScriptInputCall::HideControlBar(immediate)
+        } else {
+            ScriptInputCall::ShowControlBar(immediate)
+        }
+    }
 }
 
 /// GitHub #35: one of the logic's calls on `TheRadar` that is not an object's ([`ClientEvent::Radar`]).

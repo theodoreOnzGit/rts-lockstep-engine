@@ -1131,11 +1131,14 @@ impl ScriptActionsHost for World {
             crate::logic::world::player_objects::player_ungarrison_all_units(self, p, cmd)
         };
     }
-    fn sa_control_bar_show(&mut self, _hide: bool, _immediate: bool) {
+    fn sa_control_bar_show(&mut self, hide: bool, immediate: bool) {
         self.sa_cut("control_bar_show");
+        // (#138: and to the client, whose control bar it is)
+        self.sa_input(ScriptInputCall::control_bar(hide, immediate));
     }
-    fn sa_display_enable_letter_box(&mut self, _enable: bool) {
+    fn sa_display_enable_letter_box(&mut self, enable: bool) {
         self.sa_cut("display_enable_letter_box");
+        self.sa_input(ScriptInputCall::EnableLetterBox(enable));
     }
     fn sa_view_set_fade_parameters(&mut self, _frames: i32, _direction: i32) {
         self.sa_cut("view_set_fade_parameters");

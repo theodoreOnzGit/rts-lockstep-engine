@@ -2448,7 +2448,9 @@ mod differential {
             // ControlBarStages`), ControlBar.cpp (toggleControlBarStage to setDefaultControlBarConfig; setLowControlBarConfig
             // and setHiddenControlBar; setUpDownImages; hidePurchaseScience), ControlBarCallback.cpp (ShowControlBar,
             // HideControlBar, ToggleControlBar), InGameUI.cpp (the replay controls) and CommandXlat.cpp (the
-            // MSG_META_TOGGLE_CONTROL_BAR case). No text is edited. Each anchor must occur once.
+            // MSG_META_TOGGLE_CONTROL_BAR case); #138: ScriptActions.cpp (doLetterBoxMode), InGameUI.cpp (createControlBar),
+            // GameEngine.cpp (init's end), GameLogic.cpp (startNewGame's bar) and GameLogicDispatch.cpp (clearGameData's
+            // bar). No text is edited. Each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_control_bar_stage.cpp");
                 let ge = up.join("GameEngine");
@@ -2476,6 +2478,15 @@ mod differential {
                     ("cbs_callback.inc", piece(&cbk, "ControlBarCallback.cpp", "extern void showReplayControls( void );", "/** Resize the control bar */")),
                     ("cbs_replay.inc", piece(&ui, "InGameUI.cpp", "void showReplayControls( void )", "SuperweaponInfo::SuperweaponInfo(")),
                     ("cbs_meta.inc", piece(&cx, "CommandXlat.cpp", "\t\tcase GameMessage::MSG_META_TOGGLE_CONTROL_BAR:\n", "\t\tcase GameMessage::MSG_META_TOGGLE_ATTACKMOVE:\n")),
+                    // (#138) the other callers of HideControlBar and ShowControlBar
+                    ("cbs_letterbox.inc", piece(&rd("Source/GameLogic/ScriptEngine/ScriptActions.cpp"), "ScriptActions.cpp", "void ScriptActions::doLetterBoxMode(Bool startLetterbox)\n", "/** doBlackWhiteMode */")),
+                    ("cbs_create.inc", piece(&ui, "InGameUI.cpp", "void InGameUI::createControlBar( void )\n", "/** Create the replay control GUI */")),
+                    ("cbs_engine.inc", piece(&rd("Source/Common/GameEngine.cpp"), "GameEngine.cpp", "\tTheSubsystemList->resetAll();\n\tHideControlBar();\n", "}  // end init")),
+                    (
+                        "cbs_new_game.inc",
+                        piece(&rd("Source/GameLogic/System/GameLogic.cpp"), "GameLogic.cpp", "\tif(m_gameMode == GAME_SHELL)\n\t{\n\t\tHideControlBar();\n\t}\n\telse\n\t{\n\t\tShowControlBar(FALSE);\n\t}\n", "#ifdef DO_UNIT_TIMINGS\n\t// Turn off the UI"),
+                    ),
+                    ("cbs_clear.inc", piece(&rd("Source/GameLogic/System/GameLogicDispatch.cpp"), "GameLogicDispatch.cpp", "\tHideControlBar();\n\tcloseWindows();\n", "\n\tTheMouse->setVisibility(TRUE);")),
                 ];
                 let gen = out_dir.join("control_bar_stage_gen");
                 std::fs::create_dir_all(&gen).expect("create control_bar_stage_gen");
@@ -2491,6 +2502,112 @@ mod differential {
                     .include(up.join("Libraries/Include"))
                     .file(dif.join("wrap_control_bar_stage.cpp"));
                 cs.compile("upstream_control_bar_stage");
+            }
+
+            // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
+            // which lists the cuts). Cut verbatim into OUT_DIR/tactical_view_gen from View.h (getScreenCornerWorldPointsAtZ's
+            // declaration and the size and origin accessors), View.cpp (getScreenCornerWorldPointsAtZ), W3DView.cpp
+            // (setHeight, setWidth, setOrigin; getPickRay; screenToWorldAtZ), W3DConvert.cpp (PixelScreenToW3DLogicalScreen),
+            // camera.h (Get_Depth to Get_Viewport) and camera.cpp (Set_View_Plane(hfov, vfov), Set_Aspect_Ratio, Un_Project).
+            // No text is edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_tactical_view.cpp");
+                let rd = |f: &Path| read_upstream(f);
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let ge = up.join("GameEngine");
+                let gd = up.join("GameEngineDevice");
+                let vh = rd(&ge.join("Include/GameClient/View.h"));
+                let vc = rd(&ge.join("Source/GameClient/View.cpp"));
+                let wv = rd(&gd.join("Source/W3DDevice/GameClient/W3DView.cpp"));
+                let cv = rd(&gd.join("Source/W3DDevice/Common/W3DConvert.cpp"));
+                let ch = rd(&ww.join("WW3D2/camera.h"));
+                let cc_ = rd(&ww.join("WW3D2/camera.cpp"));
+                let w = "W3DView.cpp";
+                let files = [
+                    ("tv_view_h.inc", piece(&vh, "View.h", "\t/** project the 4 corners of this view into the world and return each point as a parameter,", Some("\tvirtual void forceRedraw() = 0;"))),
+                    ("tv_corners.inc", piece(&vc, "View.cpp", "void View::getScreenCornerWorldPointsAtZ( Coord3D *topLeft, Coord3D *topRight,", Some("/** Xfer method for a view */"))),
+                    ("tv_size.inc", piece(&wv, w, "void W3DView::setHeight(Int height)\n", Some("/** @todo This is inefficient. We should construct the matrix directly using vectors. */"))),
+                    ("tv_pick.inc", piece(&wv, w, "void W3DView::getPickRay(const ICoord2D *screen, Vector3 *rayStart, Vector3 *rayEnd)\n", Some("/** set the transform matrix of m_3DCamera, based on m_pos & m_angle */"))),
+                    ("tv_at_z.inc", piece(&wv, w, "void W3DView::screenToWorldAtZ( const ICoord2D *s, Coord3D *w, Real z )\n", Some("void W3DView::cameraEnableSlaveMode("))),
+                    ("tv_convert.inc", piece(&cv, "W3DConvert.cpp", "void PixelScreenToW3DLogicalScreen( Int screenX, Int screenY,", None)),
+                    ("tv_cam_inline.inc", piece(&ch, "camera.h", "inline float CameraClass::Get_Depth(void) const", Some("inline void\tCameraClass::Set_Depth_Range(float zmin,float zmax)"))),
+                    ("tv_cam_plane.inc", piece(&cc_, "camera.cpp", "void CameraClass::Set_View_Plane(float hfov,float vfov)\n", Some("void CameraClass::Get_View_Plane(Vector2 & set_min,Vector2 & set_max) const"))),
+                    ("tv_cam_unproj.inc", piece(&cc_, "camera.cpp", "void CameraClass::Un_Project(Vector3 & dest,const Vector2 & view_point) const\n", Some("void CameraClass::Transform_To_View_Space(Vector3 & dest,const Vector3 & ws_point) const"))),
+                ];
+                let gen = out_dir.join("tactical_view_gen");
+                std::fs::create_dir_all(&gen).expect("create tactical_view_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_tactical_view.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}")).expect("write a tactical view cut");
+                }
+                let mut tv = cc::Build::new();
+                base(&mut tv);
+                tv.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_tactical_view.cpp"));
+                tv.compile("upstream_tactical_view");
+            }
+
+            // GitHub #138: the control bar's popup description's timing (differential/wrap_build_tooltip.cpp, which lists the
+            // cuts). Cut verbatim into OUT_DIR/build_tooltip_gen from ControlBarPopupDescription.cpp (its statics to
+            // repopulateBuildTooltipLayout; hideBuildTooltipLayout and deleteBuildTooltipLayout) and ControlBar.cpp
+            // (commandButtonTooltip; ControlBar::update's popup part). No text is edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_build_tooltip.cpp");
+                let ge = up.join("GameEngine");
+                let rd = |f: &str| read_upstream(ge.join(f));
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let pd = rd("Source/GameClient/GUI/GUICallbacks/ControlBarPopupDescription.cpp");
+                let cb = rd("Source/GameClient/GUI/ControlBar/ControlBar.cpp");
+                let p = "ControlBarPopupDescription.cpp";
+                let files = [
+                    ("bt_popup.inc", piece(&pd, p, "static WindowLayout *theLayout = NULL;", Some("void ControlBar::populateBuildTooltipLayout( const CommandButton *commandButton, GameWindow *tooltipWin)"))),
+                    ("bt_delete.inc", piece(&pd, p, "void ControlBar::hideBuildTooltipLayout()", None)),
+                    ("bt_callback.inc", piece(&cb, "ControlBar.cpp", "static void commandButtonTooltip(GameWindow *window,", Some("/// mark the UI as dirty so the context of everything is re-evaluated"))),
+                    ("bt_update.inc", piece(&cb, "ControlBar.cpp", "\tif( !m_buildToolTipLayout->isHidden())\n\t{\n\t\tm_buildToolTipLayout->runUpdate();", Some("\tupdateSpecialPowerShortcut();\n\t// if we're an observer"))),
+                ];
+                let gen = out_dir.join("build_tooltip_gen");
+                std::fs::create_dir_all(&gen).expect("create build_tooltip_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_build_tooltip.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}")).expect("write a build tooltip cut");
+                }
+                let mut bt = cc::Build::new();
+                base(&mut bt);
+                bt.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .file(dif.join("wrap_build_tooltip.cpp"));
+                bt.compile("upstream_build_tooltip");
             }
 
             // GitHub #131: the control bar's hot keys (differential/wrap_hot_key.cpp, which lists the cuts). Cut verbatim into

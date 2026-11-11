@@ -13,7 +13,17 @@
 **   cbs_replay.inc    GameEngine/Source/GameClient/InGameUI.cpp, `showReplayControls`, `hideReplayControls` and
 **                     `toggleReplayControls` (to `SuperweaponInfo::SuperweaponInfo`);
 **   cbs_meta.inc      GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp, translateGameMessage's
-**                     `case GameMessage::MSG_META_TOGGLE_CONTROL_BAR` (to `MSG_META_TOGGLE_ATTACKMOVE`).
+**                     `case GameMessage::MSG_META_TOGGLE_CONTROL_BAR` (to `MSG_META_TOGGLE_ATTACKMOVE`);
+** and, GitHub #138, the other callers of HideControlBar and ShowControlBar:
+**   cbs_letterbox.inc GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp, `ScriptActions::doLetterBoxMode` (to
+**                     `doBlackWhiteMode`'s comment);
+**   cbs_create.inc    InGameUI.cpp, `InGameUI::createControlBar` (to `createReplayControl`'s comment);
+**   cbs_engine.inc    GameEngine/Source/Common/GameEngine.cpp, the end of `GameEngine::init` from
+**                     `TheSubsystemList->resetAll();` (to `}  // end init`: the wrapper closes it);
+**   cbs_new_game.inc  GameEngine/Source/GameLogic/System/GameLogic.cpp, startNewGame's `if(m_gameMode == GAME_SHELL)`
+**                     block that hides or shows the bar (to `#ifdef DO_UNIT_TIMINGS` / `// Turn off the UI`);
+**   cbs_clear.inc     GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp, clearGameData's `HideControlBar();` and
+**                     `closeWindows();` (to `TheMouse->setVisibility(TRUE);`).
 ** No edit. They are compiled inside namespace cbs on stand-ins: a `ControlBar` declaring the members they use
 ** (ControlBar.h's names and types), four windows (0 ControlBarParent, which is also CP_MASTER; 1 ButtonLarge; 2 the
 ** replay window; 3 CP_PURCHASE_SCIENCE) that keep their hidden bit and position, a window manager that finds 0 and 1 by
@@ -35,11 +45,18 @@
 **     kind 5  ToggleControlBar(a)
 **     kind 6  the world changes: a 0 playback b, 1 in a replay game b, 2 shell active b, 3 the shell top's hidden b,
 **             4 the display's height b, 5 window b's own hidden bit c (winHide)
+**     (#138, never a hide with ControlBarParent not found)
+**     kind 7  TheScriptActions->doLetterBoxMode(a)
+**     kind 8  TheInGameUI->createControlBar()
+**     kind 9  the end of GameEngine::init
+**     kind 10 the end of GameLogic::startNewGame with m_gameMode GAME_SHELL (a 1) or GAME_SKIRMISH (a 0)
+**     kind 11 GameLogic::clearGameData's HideControlBar and closeWindows
 **   Records of 6 words: [1, win, hide] winHide; [2, win, x, y] winSetPosition; [3, h] setHeight; [4, win, enabled,
 **   hilite, hilite selected] the images; [5] showSpecialPowerShortcut; [6] hideSpecialPowerShortcut; [7, on]
 **   animateSpecialPowerShortcut; [8] repopulateBuildTooltipLayout; [9] markUIDirty; [10] animate reset; [11, win]
 **   registerGameWindow(SLIDE_BOTTOM, TRUE, 500, 0); [12] reverseAnimateWindow; [13, hide] the shell top's hide;
-**   [20, disposition] after a meta case; after each step [100, stage, the hidden bits, window 0's x, y, the shell
+**   [20, disposition] after a meta case; (#138) [14, on] TheDisplay->enableLetterBox; [15] winCreateFromScript of
+**   ControlBar.wnd; [17] TheSubsystemList->resetAll; [18] closeWindows; after each step [100, stage, the hidden bits, window 0's x, y, the shell
 **   top's hidden]. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,6 +107,7 @@ NameKeyGenerator *TheNameKeyGenerator = &g_keys;
 class GameWindowManager
 {
 public:
+	GameWindow *winCreateFromScript( AsciiString name ) { if (!strcmp(name.str(), "ControlBar.wnd")) rec(15); else rec(99); return NULL; }
 	GameWindow *winGetWindowFromId( GameWindow *, Int id )
 	{
 		if (id == KEY_PARENT) return g_parentFound ? &g_win[0] : NULL;
@@ -116,7 +134,12 @@ void GadgetButtonSetHiliteImage( GameWindow *w, const Image *i ) { imageSet(w, 1
 void GadgetButtonSetHiliteSelectedImage( GameWindow *w, const Image *i ) { imageSet(w, 2, i); }
 
 /* ---- the display, the view, the recorder, the logic, the shell ---- */
-struct DisplayStub { UnsignedInt m_height; UnsignedInt getHeight() { return m_height; } };
+struct DisplayStub
+{
+	UnsignedInt m_height;
+	UnsignedInt getHeight() { return m_height; }
+	void enableLetterBox( Bool enable ) { rec(14, enable ? 1 : 0); }
+};
 DisplayStub g_display;
 DisplayStub *TheDisplay = &g_display;
 struct TacticalViewStub { void setHeight( Int h ) { rec(3, h); } };
@@ -223,6 +246,47 @@ GameMessageDisposition metaCase( GameMessage::Type t )
 	return disp;
 }
 
+/* ---- #138: the other callers ---- */
+class ScriptActions { public: void doLetterBoxMode(Bool startLetterbox); };
+#include "cbs_letterbox.inc"
+ScriptActions g_actions;
+ScriptActions *TheScriptActions = &g_actions;
+
+class InGameUI { public: void createControlBar( void ); };
+#include "cbs_create.inc"
+InGameUI g_ui;
+InGameUI *TheInGameUI = &g_ui;
+
+struct SubsystemListStub { void resetAll() { rec(17); } };
+SubsystemListStub g_subsystems;
+SubsystemListStub *TheSubsystemList = &g_subsystems;
+void gameEngineInitEnd( void )
+{
+#include "cbs_engine.inc"
+}
+
+/* GameType.h's GameMode */
+enum GameMode { GAME_SINGLE_PLAYER, GAME_LAN, GAME_SKIRMISH, GAME_REPLAY, GAME_SHELL, GAME_INTERNET, GAME_NONE };
+struct GameLogicStart
+{
+	GameMode m_gameMode;
+	void endOfStartNewGame( void )
+	{
+#include "cbs_new_game.inc"
+	}
+};
+GameLogicStart g_start;
+
+struct GameLogicClear
+{
+	void closeWindows( void ) { rec(18); }
+	void clearGameDataControlBar( void )
+	{
+#include "cbs_clear.inc"
+	}
+};
+GameLogicClear g_clear;
+
 static void state(void)
 {
 	Int bits = 0;
@@ -286,6 +350,11 @@ extern "C" int ref_control_bar_stage_seq(const int *in, int nin, int *out, int c
 			case 5: g_win[w[2] & 3].winHide(w[3] != 0); break;
 			}
 			break;
+		case 7: TheScriptActions->doLetterBoxMode(w[1] != 0); break;
+		case 8: TheInGameUI->createControlBar(); break;
+		case 9: gameEngineInitEnd(); break;
+		case 10: g_start.m_gameMode = w[1] ? GAME_SHELL : GAME_SKIRMISH; g_start.endOfStartNewGame(); break;
+		case 11: g_clear.clearGameDataControlBar(); break;
 		}
 		state();
 	}

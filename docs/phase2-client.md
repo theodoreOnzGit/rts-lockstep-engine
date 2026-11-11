@@ -752,8 +752,10 @@ draws and the default visual.**
     the draw decisions as a list of `DrawItem`s (rectangles, lines, images with clip, text, the rect clock), the border.
 - **New** (client, `client/src/ui.rs`, `app.rs`): the bar's windows live in the manager; `GameUi::sync` sets their hidden
   and enabled bits from the bar's state; `GameUi::pointer` sends the pointer (touch is a mouse) through
-  `winProcessMouseEvent`, and the button whose `GBM_SELECTED` reaches `ControlBarSystem` is pressed; the popup timer follows
-  the window under the pointer. The synthetic `ControlBar.wnd` now names `ControlBarSystem` and
+  `winProcessMouseEvent`, and the button whose `GBM_SELECTED` reaches `ControlBarSystem` is pressed; ~~the popup timer follows
+  the window under the pointer.~~ **Corrected 2026-11-11, #138:** the popup's timing is upstream's
+  (`client::build_tooltip`: `commandButtonTooltip` from the manager, `showBuildTooltipLayout`, `ControlBar::update`'s part);
+  the client's popup timer is gone. The synthetic `ControlBar.wnd` now names `ControlBarSystem` and
   `PassSelectedButtonsToParentSystem` and gives its buttons `MOUSETRACK` (to confirm on the owner's copy).
 - *Results:* 9 engine tests and 1 client test, predictions in their docs. One prediction missed: a press over a disabled
   button also sends the parent `GWM_MOUSE_ENTERING` (the enter/leave step was forgotten). Lib 1056 passed, client 45

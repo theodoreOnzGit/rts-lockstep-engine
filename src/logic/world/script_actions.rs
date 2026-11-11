@@ -326,6 +326,38 @@ pub enum ButtonSearch {
 }
 
 /// The world, as `ScriptActions.cpp` reaches it. See the module docs.
+/// GitHub #138: what `ScriptActions::doLetterBoxMode` reaches: `HideControlBar`/`ShowControlBar` and
+/// `TheDisplay->enableLetterBox`, both the client's. Every [`ScriptActionsHost`] is one (its `sa_control_bar_show` and
+/// `sa_display_enable_letter_box`); the World's sends them to the client as `ScriptInputCall`s.
+pub trait LetterBoxHost {
+    /// `HideControlBar(immediate)` (`hide`) or `ShowControlBar(immediate)`.
+    fn letter_box_control_bar_show(&mut self, hide: bool, immediate: bool);
+    /// `TheDisplay->enableLetterBox(enable)`.
+    fn letter_box_enable(&mut self, enable: bool);
+}
+
+impl<T: ScriptActionsHost> LetterBoxHost for T {
+    fn letter_box_control_bar_show(&mut self, hide: bool, immediate: bool) {
+        self.sa_control_bar_show(hide, immediate);
+    }
+    fn letter_box_enable(&mut self, enable: bool) {
+        self.sa_display_enable_letter_box(enable);
+    }
+}
+
+/// GitHub #138: `ScriptActions::doLetterBoxMode(startLetterbox)` (ScriptActions.cpp:3773, the actions
+/// `CAMERA_LETTERBOX_BEGIN` and `CAMERA_LETTERBOX_END`): starting, `HideControlBar(TRUE)` then the display's letterbox
+/// on; ending, `ShowControlBar(FALSE)` then the letterbox off.
+pub fn do_letter_box_mode(h: &mut impl LetterBoxHost, start_letterbox: bool) {
+    if start_letterbox {
+        h.letter_box_control_bar_show(true, !plant(9283));
+        h.letter_box_enable(true);
+    } else {
+        h.letter_box_control_bar_show(false, plant(9284));
+        h.letter_box_enable(false);
+    }
+}
+
 pub trait ScriptActionsHost {
     // --- windows, the logic, the client's input ---
     /// `TheWindowManager->winCreateFromScript(name)`.
@@ -2955,14 +2987,9 @@ impl ScriptActions {
                         h.sa_player_garrison_all(p, a.action_type == PLAYER_GARRISON_ALL_BUILDINGS, CMD_FROM_SCRIPT);
                     }
                 }
-                CAMERA_LETTERBOX_BEGIN => {
-                    h.sa_control_bar_show(true, true);
-                    h.sa_display_enable_letter_box(true);
-                }
-                CAMERA_LETTERBOX_END => {
-                    h.sa_control_bar_show(false, false);
-                    h.sa_display_enable_letter_box(false);
-                }
+                // (#138: `doLetterBoxMode`, shared with the client's differential test)
+                CAMERA_LETTERBOX_BEGIN => do_letter_box_mode(h, true),
+                CAMERA_LETTERBOX_END => do_letter_box_mode(h, false),
                 CAMERA_BW_MODE_BEGIN | CAMERA_BW_MODE_END => {
                     let frames = a.get_parameter(0).map(|p| p.int).unwrap_or(0);
                     if a.action_type == CAMERA_BW_MODE_BEGIN {

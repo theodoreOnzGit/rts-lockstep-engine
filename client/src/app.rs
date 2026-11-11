@@ -113,11 +113,13 @@ struct Game {
     ui_status: String,
     /// The UI's textures by file name (`None`: missing), with their sizes.
     ui_textures: UiTextures,
-    /// (#35) When a command button's popup shows, the popups' lines by command slot, the selection they were made for, and
-    /// whether the last pointer to press a button was a touch.
-    tooltip: crate::ui::TooltipTimer,
-    tooltip_lines: Vec<Option<Vec<String>>>,
-    tooltip_for: Option<ObjectId>,
+    /// (#35) ~~When a command button's popup shows, the popups' lines by command slot, the selection they were made for,
+    /// and~~ whether the last pointer to press a button was a touch. **Corrected 2026-11-11, #138:** when the popup shows
+    /// is the bar's (`GameUi::build_tooltip`); here, the popups' lines by command button (`GadgetButtonGetData`, the
+    /// World's list), and where the pointer over the bar last was (the window's logical pixels; whether a touch), for
+    /// the frame's mouse event (upstream's `MSG_RAW_MOUSE_POSITION`, every frame).
+    tooltip_lines: Vec<(usize, Vec<String>)>,
+    bar_pointer: Option<(Vec2, bool)>,
     touch_pressed: bool,
     /// (#34) The command buttons of the bar's slots this frame (`populateCommand`'s), for a press the manager selects.
     bar_buttons: Vec<Option<usize>>,
@@ -219,9 +221,8 @@ impl Game {
             ui_pending: true,
             ui_status: "no game files: debug panel".to_string(),
             ui_textures: HashMap::new(),
-            tooltip: crate::ui::TooltipTimer::default(),
             tooltip_lines: Vec::new(),
-            tooltip_for: None,
+            bar_pointer: None,
             touch_pressed: false,
             bar_buttons: Vec::new(),
             fx_pending: true,
@@ -524,6 +525,9 @@ fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
     ));
     let rig = Rig::new(&game.controls.client.world, (800, 600));
     commands.spawn((Camera3d::default(), Transform::default()));
+    // (#138) the UI's own camera over the whole window, drawn after the world's: the world's camera keeps to the tactical
+    // view's viewport (`W3DView::setHeight`), which the UI must not be cut to
+    commands.spawn((Camera2d, Camera { order: 1, clear_color: ClearColorConfig::None, ..default() }, IsDefaultUiCamera));
     commands.insert_resource(rig);
 }
 
@@ -558,6 +562,12 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
                 }
             }
             g.close_windows_pending |= back.close_windows;
+            // (#138: a script's letterbox `HideControlBar`/`ShowControlBar` and `deleteBuildTooltipLayout`, to the bar)
+            if let Some(ui) = g.ui.as_mut() {
+                for c in &back.bar_calls {
+                    ui.script_call(c);
+                }
+            }
             g.controls.frame_tick();
             // #56: the logic's messages to the local player (`TheInGameUI->message`)
             g.controls.client.take_logic_messages(&events);
@@ -948,6 +958,9 @@ fn camera_input(
     let r = &mut *rig;
     if let Ok(w) = windows.single() {
         r.cam.set_screen((w.width() as i32, w.height() as i32), &g.controls.client.world);
+        // (#138) `TheTacticalView->setHeight` as the bar's stages last asked (80 % with the bar shown), on the window
+        let asked = g.ui.as_ref().filter(|_| !shell.ui.as_ref().is_some_and(|s| s.is_active())).and_then(|u| u.view_height);
+        r.cam.set_view_height(crate::ui::tactical_view_height(asked, bar.placement, w.height()) as i32);
     }
     r.cam.set_keyboard_scroll(keyboard_scroll.0);
     let shell_active = shell.ui.as_ref().is_some_and(|s| s.takes_input());
@@ -1256,11 +1269,26 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
 }
 
 /// GUI glue (needs a window): the 3D camera where the translated view placed it ([`crate::camera::Camera::eye_target`]
-/// and [`crate::camera::Camera::projection`], tested there).
-fn apply_camera(rig: Res<Rig>, mut cams: Query<(&mut Transform, &mut Projection), With<Camera3d>>) {
+/// and [`crate::camera::Camera::projection`], tested there); (#138) drawn into the view's viewport
+/// ([`crate::camera::Camera::viewport`], tested there: `W3DView::setHeight`'s `Set_Viewport`), the whole window when the
+/// view is.
+fn apply_camera(rig: Res<Rig>, windows: Query<&Window>, mut cams: Query<(&mut Transform, &mut Projection, &mut Camera), With<Camera3d>>) {
     let (eye, target) = rig.cam.eye_target();
     let (fov, near, far) = rig.cam.projection();
-    for (mut t, mut proj) in &mut cams {
+    let viewport = windows.single().ok().and_then(|w| {
+        let (vw, vh) = rig.cam.viewport();
+        if vh as f32 >= w.height() && vw as f32 >= w.width() {
+            return None;
+        }
+        let sf = w.scale_factor();
+        let size = UVec2::new(((vw as f32 * sf) as u32).clamp(1, w.physical_width().max(1)), ((vh as f32 * sf) as u32).clamp(1, w.physical_height().max(1)));
+        Some(bevy::camera::Viewport { physical_position: UVec2::ZERO, physical_size: size, ..default() })
+    });
+    for (mut t, mut proj, mut camera) in &mut cams {
+        let key = |v: &Option<bevy::camera::Viewport>| v.as_ref().map(|v| (v.physical_position, v.physical_size));
+        if key(&camera.viewport) != key(&viewport) {
+            camera.viewport = viewport.clone();
+        }
         *t = Transform::from_translation(Vec3::from(to_bevy(eye))).looking_at(Vec3::from(to_bevy(target)), Vec3::Y);
         if let Projection::Perspective(p) = &mut *proj {
             p.fov = fov;
@@ -1433,43 +1461,10 @@ fn over_ui(cursor: Vec2, window: &Window, bar: f32) -> bool {
     cursor.y > window.height() - BAR_HEIGHT.max(bar) || cursor.x > window.width() - ZOOM_COLUMN || cursor.y < 28.0
 }
 
-/// The game point (z up) on the ground under `cursor`: where the camera ray first meets the logic's ground height
-/// (`height(x, y)`, game axes; #11: the terrain is no longer flat), marched in steps of 2 units then halved 16 times; the
-/// plane at height 0 when the ray meets no ground within 20,000 units.
-fn ground_under(camera: &Camera, cam: &GlobalTransform, cursor: Vec2, height: impl Fn(f32, f32) -> f32) -> Option<Coord3D> {
-    let ray = camera.viewport_to_world(cam, cursor).ok()?;
-    // Bevy (x, y up, -game y) to the game's (x, y, z up)
-    let game = |p: Vec3| Coord3D { x: p.x, y: -p.z, z: p.y };
-    let above = |t: f32| {
-        let p = ray.get_point(t);
-        p.y > height(p.x, -p.z)
-    };
-    let (mut lo, mut hi) = (0.0f32, 0.0f32);
-    let mut found = false;
-    while hi < 20_000.0 {
-        if !above(hi) {
-            found = true;
-            break;
-        }
-        lo = hi;
-        hi += 2.0;
-    }
-    if !found {
-        let d = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Vec3::Y))?;
-        return Some(game(ray.get_point(d)));
-    }
-    for _ in 0..16 {
-        let mid = (lo + hi) / 2.0;
-        if above(mid) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    let p = ray.get_point(hi);
-    Some(Coord3D { x: p.x, y: -p.z, z: height(p.x, -p.z) })
-}
-
+/// ~~The game point (z up) on the ground under `cursor`: where the camera ray first meets the logic's ground height~~
+/// **Corrected 2026-11-11, #138:** the ground under the pointer is [`crate::camera::Camera::ground_under`], along the
+/// translated view's pick ray (Bevy's camera ray no longer stands in for `getPickRay`).
+///
 /// The objects' positions on screen, from the last snapshot.
 fn on_screen(game: &Game, camera: &Camera, cam: &GlobalTransform) -> Vec<(ObjectId, Vec2)> {
     game.cur
@@ -1489,7 +1484,8 @@ fn pointer_input(
     mut pointer: ResMut<Pointer>,
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
-    cams: Query<(&Camera, &GlobalTransform)>,
+    cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    rig: Option<Res<Rig>>,
     bar: Res<UiBar>,
     radar_box: Res<RadarBox>,
     shell: NonSend<ShellState>,
@@ -1510,7 +1506,9 @@ fn pointer_input(
     // (#124: a phone has no hover; a finger's place stands for the pointer's while it touches, so its hints, the
     // tooltip and the radius cursor follow it)
     let Some(cursor) = window.cursor_position().or_else(|| touches.iter().next().map(|t| t.position())) else { return };
-    let Some(ground) = ground_under(camera, cam, cursor, |x, y| g.controls.client.world.terrain.ground_height(x, y, false).0) else { return };
+    // (#138) along the translated view's pick ray (`getPickRay`), which follows the view's height
+    let Some(rig) = rig else { return };
+    let Some(ground) = rig.cam.ground_under(pixel(cursor), |x, y| g.controls.client.world.terrain.ground_height(x, y, false).0) else { return };
     // (#124) the mouse's place for the radius cursor and the guard hint's stash (`getMouseStatus()->pos`, its
     // `screenToTerrain`, and the radar's `screenPixelToWorld` over the radar)
     g.controls.client.view.mouse_pos = pixel(cursor);
@@ -2059,8 +2057,10 @@ fn game_ui(
     buttons: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
     mut shell: NonSendMut<ShellState>,
+    time: Res<Time>,
 ) {
     let g = &mut *game;
+    let popup_world = popup_world(g, &time);
     // (#109) the bar's options button (`ControlBarSystem`'s `ToggleQuitMenu`, `HideQuitMenu`): the shell's quit menu,
     // as Escape opens it (`keyboard_ui`); the phone's way in
     if let (Some(call), Some(s)) = (g.ui.as_mut().and_then(|u| u.take_quit_menu_call()), shell.ui.as_mut()) {
@@ -2098,12 +2098,9 @@ fn game_ui(
     let queue = sel.map(|o| c.client.production_queue(o)).unwrap_or_default();
     let (money, power) = c.client.money_and_power();
     let state = crate::ui::GameUi::bar_state(sel, &mut c.client, queue, money, power);
-    // (#35) the popups of this selection's buttons; a new selection shows none
-    if sel != g.tooltip_for {
-        g.tooltip.reset();
-        g.tooltip_for = sel;
-    }
-    g.tooltip_lines = state.tooltips.iter().map(|t| t.as_ref().map(crate::ui::tooltip_lines)).collect();
+    // (#35) the popups of this selection's buttons, by button (#138: ~~a new selection shows none~~ the popup is the
+    // bar's, which shows what `populateBuildTooltipLayout` was last given)
+    g.tooltip_lines = state.commands.iter().zip(&state.tooltips).filter_map(|(c, t)| Some((c.as_ref()?.button, crate::ui::tooltip_lines(t.as_ref()?)))).collect();
     let ui = g.ui.as_mut().expect("checked");
     // (#34) the windows as the state sets them; a grab whose release was not over the bar ends
     ui.sync(&state);
@@ -2120,8 +2117,18 @@ fn game_ui(
         .collect();
     g.controls.set_bar_hot_keys(&state.hot_keys, hot_windows);
     if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
-        let tip = &mut g.tooltip;
-        let _ = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), 0.0, false, tip));
+        let _ = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), false, &popup_world));
+    }
+    // (#138) `ControlBar::update`'s popup part, then the frame's mouse event over the bar (upstream's
+    // `MSG_RAW_MOUSE_POSITION` every frame, through `winProcessMouseEvent`, which calls `commandButtonTooltip`); a new
+    // touch elsewhere ends a finger's pointer (a mouse's ends when it leaves the bar)
+    ui.popup_frame(&popup_world);
+    if touches.iter_just_pressed().next().is_some() && g.bar_pointer.is_some_and(|(_, t)| t) && !touches.iter_just_pressed().any(|t| ui_bar.placement.is_some_and(|p| bar_contains(&p, ui_bar.height, windows.single().map_or(600.0, |w| w.height()), t.position()))) {
+        g.bar_pointer = None;
+    }
+    if let (Some((at, touch)), Some(p)) = (g.bar_pointer, ui_bar.placement) {
+        let pos = p.to_layout((at.x, at.y));
+        let _ = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, pos, touch, &popup_world));
     }
     let ui = g.ui.as_ref().expect("checked");
     let quads = ui.frame(&state);
@@ -2163,20 +2170,25 @@ fn game_ui(
             ));
             // (#34) the pointer over the bar, into the window manager (events bubble up from the quads)
             root.observe(|ev: On<PointerMove>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
-                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, &time);
             });
             root.observe(|ev: On<PointerLeave>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
-                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, ev.pointer.position, &ev.pointer.id, &time);
+                // (#138) a mouse that left the bar sends it no more frames' events; a finger's place stays (a phone's
+                // pointer stays where it lifted)
+                if !matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_)) {
+                    game.bar_pointer = None;
+                }
             });
             root.observe(|ev: On<PointerPress>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
                 if ev.button == PointerButton::Primary {
                     game.touch_pressed = matches!(ev.pointer.id, bevy::picking::pointer::PointerId::Touch(_));
-                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_DOWN, ev.pointer.position, &ev.pointer.id, &time);
                 }
             });
             root.observe(|ev: On<PointerRelease>, time: Res<Time>, bar: Res<UiBar>, mut game: NonSendMut<Game>| {
                 if ev.button == PointerButton::Primary {
-                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id, time.elapsed_secs_f64());
+                    bar_pointer(&mut *game, &bar, rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, ev.pointer.position, &ev.pointer.id, &time);
                 }
             });
             root.id()
@@ -2272,18 +2284,38 @@ fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad
     }
 }
 
+/// (#138) What the bar's popup reads outside it this frame: the clock (`timeGetTime`), the World's game ending
+/// (`TheScriptEngine->isGameEnding()`) and replay game, the quit menu. GUI glue: the parts are tested where they are kept.
+fn popup_world(g: &Game, time: &Time) -> crate::ui::PopupWorld {
+    let w = &g.controls.client.world;
+    crate::ui::PopupWorld {
+        now_ms: (time.elapsed_secs_f64() * 1000.0) as u32,
+        tooltips_disabled: false,
+        game_ending: w.script_engine.is_game_ending(),
+        replay_game: w.cuts.game_loop.game_mode == rts_lockstep_engine::common::recorder::game_mode::REPLAY,
+        quit_menu_visible: g.controls.client.modes.quit_menu_visible,
+    }
+}
+
+/// (#138) Whether a window point is on the bar as drawn (`placement`, `height` logical pixels at the window's bottom).
+fn bar_contains(p: &crate::ui::LayoutPlacement, height: f32, window_height: f32, at: Vec2) -> bool {
+    at.x >= p.left && at.x <= p.left + crate::ui::LAYOUT.0 as f32 * p.scale && at.y >= window_height - height && at.y <= window_height
+}
+
 /// (#34) GUI glue (needs a window): a pointer event over the bar, from the screen (logical pixels) into the layout
 /// ([`crate::ui::LayoutPlacement`] inverted) and through [`crate::ui::GameUi::pointer`]; a command button the manager
 /// selected presses through [`Controls::press`].
-fn bar_pointer(game: &mut Game, bar: &UiBar, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId, now: f64) {
+fn bar_pointer(game: &mut Game, bar: &UiBar, msg: u32, screen: Vec2, id: &bevy::picking::pointer::PointerId, time: &Time) {
     let Some(p) = bar.placement else { return };
     let touch = matches!(id, bevy::picking::pointer::PointerId::Touch(_));
     let pos = p.to_layout((screen.x, screen.y));
     let g = &mut *game;
+    // (#138) the pointer's place over the bar, for the frame's mouse event
+    g.bar_pointer = Some((screen, touch));
+    let world = popup_world(g, time);
     let Some(ui) = g.ui.as_mut() else { return };
     // (#136) through `winProcessMouseEvent` with the one mouse's tooltip lent
-    let tip = &mut g.tooltip;
-    let Some(slot) = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(msg, pos, now, touch, tip)) else { return };
+    let Some(slot) = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(msg, pos, touch, &world)) else { return };
     let Some(Some(index)) = g.bar_buttons.get(slot).copied() else { return };
     if let Some(b) = rts_lockstep_engine::client::command_world::gui_button(&g.controls.client.world, index) {
         g.controls.press(&b);
@@ -2306,17 +2338,10 @@ impl RadarBox {
 #[derive(Component)]
 struct RadarNode;
 
-/// The tactical view's corners on the plane of height `z` (`getScreenCornerWorldPointsAtZ`: upper left, upper right, lower
-/// right, lower left), game axes; `None` if a corner's ray does not meet it.
-fn screen_corners_at_z(camera: &Camera, cam: &GlobalTransform, size: Vec2, z: f32) -> Option<[Coord3D; 4]> {
-    let at = |p: Vec2| -> Option<Coord3D> {
-        let ray = camera.viewport_to_world(cam, p).ok()?;
-        let d = ray.intersect_plane(Vec3::new(0.0, z, 0.0), InfinitePlane3d::new(Vec3::Y))?;
-        let w = ray.get_point(d);
-        Some(Coord3D { x: w.x, y: -w.z, z })
-    };
-    Some([at(Vec2::ZERO)?, at(Vec2::new(size.x, 0.0))?, at(size)?, at(Vec2::new(0.0, size.y))?])
-}
+/// ~~The tactical view's corners on the plane of height `z` (`getScreenCornerWorldPointsAtZ`: upper left, upper right,
+/// lower right, lower left), game axes, through Bevy's camera rays.~~ **Corrected 2026-11-11, #138:** the radar's view
+/// box is the translated `View::getScreenCornerWorldPointsAtZ` ([`crate::camera::Camera::screen_corners_at_z`]), over the
+/// view's own height.
 
 /// GUI glue (needs a window): the radar (#35), drawn by the engine's `W3DRadar` translation
 /// (`rts_lockstep_engine::client::w3d_radar`, tested there; `ClientRadar::draw`) into an image shown in `LeftHUD`, or
@@ -2330,7 +2355,7 @@ fn radar_view(
     mut images: ResMut<Assets<Image>>,
     mut nodes: Query<(&mut Node, &mut Visibility, &mut ImageNode), With<RadarNode>>,
     windows: Query<&Window>,
-    cams: Query<(&Camera, &GlobalTransform)>,
+    rig: Option<Res<Rig>>,
     ui_bar: Res<UiBar>,
     mut radar_box: ResMut<RadarBox>,
 ) {
@@ -2376,7 +2401,8 @@ fn radar_view(
         return;
     }
     g.radar_drawn = Some((frame, size));
-    let view = cams.single().ok().and_then(|(camera, cam)| screen_corners_at_z(camera, cam, Vec2::new(screen.0, screen.1), g.controls.radar.radar.terrain_average_z));
+    // (#138) `TheTacticalView->getScreenCornerWorldPointsAtZ` (W3DRadar.cpp:185), over the view's height
+    let view = rig.map(|r| r.cam.screen_corners_at_z(g.controls.radar.radar.terrain_average_z));
     let img = g.controls.radar.draw(&mut g.controls.client.world, Some(&g.models.drawables), size, view);
     let Some(img) = img else {
         for (mut n, mut vis, _) in &mut nodes {
@@ -2436,11 +2462,13 @@ fn radar_view(
 struct TooltipPanel(Vec<String>);
 
 /// GUI glue (needs a window): the shown command button's popup (`ControlBarPopupDescription.wnd`'s name, cost and
-/// description, from [`crate::ui::tooltip_lines`]; when, from [`crate::ui::TooltipTimer`], both tested in `ui`), as a
+/// description, from [`crate::ui::tooltip_lines`]; when, from ~~[`crate::ui::TooltipTimer`]~~ (#138) the bar's popup state,
+/// `GameUi::shown_popup`, both tested in `ui`), as a
 /// panel just above the control bar, no wider than the screen less its 8-pixel margins (a phone's too). Rebuilt when its
 /// lines change; none while nothing is shown.
-fn tooltip_panel(mut commands: Commands, time: Res<Time>, game: NonSend<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
-    let lines = game.tooltip.shown(time.elapsed_secs_f64()).and_then(|s| game.tooltip_lines.get(s).cloned().flatten());
+fn tooltip_panel(mut commands: Commands, game: NonSend<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
+    let shown = game.ui.as_ref().and_then(|u| u.shown_popup()).and_then(|(c, _)| c);
+    let lines = shown.and_then(|b| game.tooltip_lines.iter().find(|(button, _)| *button == b).map(|(_, l)| l.clone()));
     let ww = windows.single().map_or(800.0, |w| w.width());
     let width = (ww - 16.0).clamp(120.0, 420.0);
     let mut existing = panels.iter_mut().next();
@@ -3173,6 +3201,10 @@ fn shell_ui(
     g.controls.client.modes.quit_menu_visible = ui.quit_menu_visible();
     let cleared = g.controls.client.world.game_cleared.is_some();
     if cleared && !g.cleared_seen {
+        // (#138: `clearGameData`'s `HideControlBar()`, GameLogicDispatch.cpp:291, before its `closeWindows()`)
+        if let Some(bar) = g.ui.as_mut() {
+            bar.clear_game_data();
+        }
         ui.clear_game_data_windows();
         // (#117: then `clearGameData`'s `TheMouse->setVisibility(TRUE)`, GameLogicDispatch.cpp:294)
         g.pause.mouse.set_visibility(true);

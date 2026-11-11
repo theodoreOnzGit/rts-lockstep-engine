@@ -48,6 +48,9 @@
 //! - (#117) `ScriptActions::doQuickVictory`'s `TheGameLogic->closeWindows()` is [`ScriptInputCall::CloseWindows`],
 //!   handed back too: the windows it closes are the shell's (`crate::client::quit_menu::close_windows`), which the
 //!   client's application owns.
+//! - (#138) `ScriptActions::doLetterBoxMode`'s `HideControlBar`/`ShowControlBar` and `TheDisplay->enableLetterBox` are
+//!   handed back as well: the control bar is the application's
+//!   ([`crate::client::control_bar_stage::script_control_bar`]); the letterbox is not drawn yet.
 //!
 //! # Representation
 //!
@@ -62,7 +65,8 @@ use crate::logic::client_event::{ClientEvent, ScriptInputCall};
 
 /// Makes one logic event's call on the client's input, if it is a [`ClientEvent::ScriptInput`]. Returns the call when it
 /// is the caller's to make (`DeleteBuildTooltipLayout`, `LookAtResetModes`, #117: `CloseWindows`, which closes the
-/// shell's windows: `crate::client::quit_menu::close_windows`), else `None`.
+/// shell's windows: `crate::client::quit_menu::close_windows`; #138: `HideControlBar`, `ShowControlBar`,
+/// `EnableLetterBox`), else `None`.
 pub fn apply_script_input(e: &ClientEvent, ui: &mut InGameUiSelection, mouse: &mut ClientMouse, h: &mut impl SelectionUiHost) -> Option<ScriptInputCall> {
     let ClientEvent::ScriptInput(call) = e else { return None };
     match *call {
@@ -73,6 +77,8 @@ pub fn apply_script_input(e: &ClientEvent, ui: &mut InGameUiSelection, mouse: &m
         ScriptInputCall::ClearAttackMoveToMode => ui.clear_attack_move_to_mode(),
         ScriptInputCall::SetWaypointMode(on) => ui.set_waypoint_mode(on),
         c @ (ScriptInputCall::DeleteBuildTooltipLayout | ScriptInputCall::LookAtResetModes | ScriptInputCall::CloseWindows) => return Some(c),
+        // (#138: the control bar and the display are the application's: `crate::client::control_bar_stage::script_control_bar`)
+        c @ (ScriptInputCall::HideControlBar(_) | ScriptInputCall::ShowControlBar(_) | ScriptInputCall::EnableLetterBox(_)) => return Some(c),
     }
     None
 }

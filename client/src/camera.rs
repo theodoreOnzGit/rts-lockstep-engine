@@ -312,6 +312,73 @@ impl Camera {
         self.view.set_camera_transform(&vh);
     }
 
+    /// GitHub #138: `TheTacticalView->setHeight(height)` as the control bar's stages ask for it, in the display's pixels
+    /// (`crate::ui::tactical_view_height` maps it from the bar's layout): the camera's aspect and viewport change, nothing
+    /// else, as upstream's (`W3DView::setHeight` leaves the transform and the constraints). Clamped to 1 .. the display.
+    pub fn set_view_height(&mut self, height: i32) {
+        let h = height.clamp(1, self.screen.1.max(1));
+        if h != self.view.height {
+            self.view.set_height(h, self.screen.1);
+        }
+    }
+
+    /// GitHub #138: the 3D viewport the view's height leaves, in the display's pixels from its top left: `(width,
+    /// height)`; the renderer draws the world there and nowhere else (`W3DView::setHeight`'s `Set_Viewport`).
+    pub fn viewport(&self) -> (i32, i32) {
+        (self.view.width, self.view.height)
+    }
+
+    /// GitHub #138: the game point (z up) on the ground under the display's pixel `cursor`, along the translated view's
+    /// pick ray (`W3DView::getPickRay`, so a view shortened above the control bar maps the pixel as upstream does): where
+    /// the ray first meets `height(x, y)`, marched in steps of 2 units then halved 16 times; the plane at height 0 when
+    /// it meets no ground within 20,000 units. The march is the client's (upstream casts the ray on the terrain's render
+    /// object, which the port does not have).
+    pub fn ground_under(&self, cursor: ICoord2D, height: impl Fn(f32, f32) -> f32) -> Option<Coord3D> {
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let (start, end) = self.view.get_pick_ray(cursor);
+        let mut dir = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+        dir.normalize();
+        let at = |t: f32| Coord3D { x: start.x + dir.x * t, y: start.y + dir.y * t, z: start.z + dir.z * t };
+        let above = |t: f32| {
+            let p = at(t);
+            p.z > height(p.x, p.y)
+        };
+        let (mut lo, mut hi) = (0.0f32, 0.0f32);
+        let mut found = false;
+        while hi < 20_000.0 {
+            if !above(hi) {
+                found = true;
+                break;
+            }
+            lo = hi;
+            hi += 2.0;
+        }
+        if !found {
+            if dir.z >= 0.0 {
+                return None;
+            }
+            let t = -start.z / dir.z;
+            let p = at(t);
+            return Some(Coord3D { x: p.x, y: p.y, z: 0.0 });
+        }
+        for _ in 0..16 {
+            let mid = (lo + hi) / 2.0;
+            if above(mid) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let p = at(hi);
+        Some(Coord3D { x: p.x, y: p.y, z: height(p.x, p.y) })
+    }
+
+    /// GitHub #138: the view's corners on the plane at height `z` (`View::getScreenCornerWorldPointsAtZ`: upper left,
+    /// upper right, lower right, lower left), for the radar's view box.
+    pub fn screen_corners_at_z(&self, z: f32) -> [Coord3D; 4] {
+        self.view.get_screen_corner_world_points_at_z(z)
+    }
+
     /// The options' keyboard scroll speed as a share of the default (`m_keyboardScrollFactor`, #88).
     pub fn set_keyboard_scroll(&mut self, ratio: f32) {
         self.globals.keyboard_scroll_factor = self.globals.keyboard_default_scroll_factor * ratio;
@@ -532,6 +599,51 @@ mod tests {
             cam.tick(&ui, &c.client.world, false);
             assert_eq!(c.client.world.logic_crc(CRC_RECALC, None).expect("CRC"), plain.logic_crc(CRC_RECALC, None).expect("CRC"));
         }
+    }
+
+    /// #138: the view shortened above the control bar on a phone (390x844, the bar's 80 % line at 785 pixels:
+    /// `crate::ui::tactical_view_height`). *Predictions, written before the first run:* the viewport is 390x785; at the
+    /// whole height and at 785 the view's own centre pixel looks at the point looked at (`screenToWorldAtZ` at the ground
+    /// level within 2 units: the camera aims at the view's centre, and a 785-pixel view's centre is 392.5); at 785 the
+    /// window's centre (422) lies nearer the camera than the point (the camera is south of it: a smaller y); the vertical
+    /// field of view shrinks by 785/844 (`setHeight` keeps the view plane's width: "maintaining original camera
+    /// perspective"); the radar's box is shorter from top to bottom; the ground picked under a pixel follows the pick ray
+    /// (`ground_under` lands on the ground's height); and the World's CRC does not change.
+    ///
+    /// *Results (2026-11-11):* as predicted, on the first run.
+    #[test]
+    fn the_view_shortened_above_the_bar_picks_as_upstream() {
+        let (mut c, _) = demo();
+        let e = c.client.world.terrain.extent().expect("terrain");
+        let centre = Coord3D { x: (e.lo.x + e.hi.x) / 2.0, y: (e.lo.y + e.hi.y) / 2.0, z: 0.0 };
+        let crc0 = c.client.world.logic_crc(CRC_RECALC, None).expect("CRC");
+        let mut cam = Camera::new(&c.client.world, centre, e.hi.x - e.lo.x, (390, 844));
+        let near = |a: Coord3D, b: Coord3D| (a.x - b.x).abs() < 2.0 && (a.y - b.y).abs() < 2.0;
+        let pos = cam.view.pos;
+        let gl = cam.view.ground_level;
+        assert_eq!(cam.viewport(), (390, 844));
+        assert!(near(cam.view.screen_to_world_at_z(ICoord2D { x: 195, y: 422 }, gl), pos));
+        let half_full = cam.view.camera.view_plane.1.y;
+        let box_full = cam.screen_corners_at_z(gl);
+        cam.set_view_height(785);
+        assert_eq!(cam.viewport(), (390, 785));
+        assert!(near(cam.view.screen_to_world_at_z(ICoord2D { x: 195, y: 392 }, gl), pos), "{:?} {pos:?}", cam.view.screen_to_world_at_z(ICoord2D { x: 195, y: 392 }, gl));
+        let window_centre = cam.view.screen_to_world_at_z(ICoord2D { x: 195, y: 422 }, gl);
+        assert!(window_centre.y < pos.y - 1.0, "{window_centre:?} {pos:?}");
+        // (the projection's vertical field of view is `2 atan` of the view plane's half height)
+        let half_short = cam.view.camera.view_plane.1.y;
+        assert!((half_short / half_full - 785.0 / 844.0).abs() < 1e-4, "{half_full} {half_short}");
+        let box_short = cam.screen_corners_at_z(gl);
+        let depth = |b: &[Coord3D; 4]| b[0].y - b[3].y;
+        assert!(depth(&box_short) < depth(&box_full), "{box_full:?} {box_short:?}");
+        let w = &c.client.world;
+        let h = |x: f32, y: f32| w.terrain.ground_height(x, y, false).0;
+        let g = cam.ground_under(ICoord2D { x: 195, y: 392 }, h).expect("the ground");
+        assert!((g.z - h(g.x, g.y)).abs() < 1e-3);
+        assert!(cam.ground_under(ICoord2D { x: 195, y: 392 }, |_, _| 0.0).is_some_and(|p| p.z == 0.0));
+        cam.set_view_height(5000);
+        assert_eq!(cam.viewport(), (390, 844), "clamped to the display");
+        assert_eq!(c.client.world.logic_crc(CRC_RECALC, None).expect("CRC"), crc0);
     }
 
     /// A phone (390x844): a finger dragged up and held (the right button's scroll) moves the point; the zoom buttons'

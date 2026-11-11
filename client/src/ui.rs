@@ -16,8 +16,17 @@
 //!
 //! Since #35, the selected object's portrait (`ControlBar.wnd:WinUnitSelected`, `CameoWindow`, `UnitUpgrade1..5`, from
 //! `client::control_bar_popup::set_portrait_by_object`) and each command button's popup description
-//! (`populate_build_tooltip_layout`): [`BarState`] carries them, [`TooltipTimer`] decides when the popup shows (new: the
-//! hover delay, and on a phone a long press, with the last button touched kept as a visible fallback).
+//! (`populate_build_tooltip_layout`): [`BarState`] carries them, ~~[`TooltipTimer`] decides when the popup shows (new: the
+//! hover delay, and on a phone a long press, with the last button touched kept as a visible fallback).~~ **Corrected
+//! 2026-11-11, #138:** the client's `TooltipTimer` is gone: the popup shows and hides as `TheControlBar`'s does
+//! (`rts_lockstep_engine::client::build_tooltip`, differential-tested): the command buttons get `commandButtonTooltip`
+//! (`setControlCommand`), the bar's window manager calls it from `winProcessMouseEvent` with the one mouse lent (whose
+//! own tooltip it clears over the bar, as upstream's), the mouse's position goes to the manager every frame (upstream's
+//! `MSG_RAW_MOUSE_POSITION`) and `ControlBar::update`'s part runs every frame ([`GameUi::popup_frame`]). Two things are
+//! new, for a phone, which has no hover: the pointer stays where a finger lifted (as a mouse's would), so the popup of the
+//! last button touched shows once its delay has passed and stays; and a touch held [`LONG_PRESS_MS`] or longer (a long
+//! press) is released away from the button, so it does not press it, and its popup then shows. (While a button is held,
+//! upstream's window manager calls no tooltip callback: its grab. So the popup cannot show during the press itself.)
 //!
 //! Since #34, the bar's windows live in the window manager (`rts_lockstep_engine::client::window_manager`, a translation
 //! of `GameWindowManager`): [`GameUi::sync`] hides, shows, enables and disables them as `switchToContext` and
@@ -47,6 +56,11 @@
 //! of the layout showing; the scheme's layers move with `BackgroundMarker`). Its windows' tooltips go to the one mouse
 //! ([`GameUi::with_mouse`]) and their click sounds to the audio ([`GameUi::take_gui_sounds`]).
 //!
+//! Since #138, the bar's other `HideControlBar`/`ShowControlBar` callers: its load makes `createControlBar`'s, the end of
+//! `GameEngine::init`'s and the end of `startNewGame`'s calls ([`load_game_ui_with`]), a script's letterbox reaches it as
+//! the logic's event ([`GameUi::script_call`]), and the World's game cleared hides it ([`GameUi::clear_game_data`]). The
+//! view's height the stages ask for is applied: [`tactical_view_height`] maps it onto the window.
+//!
 //! The client still never changes the simulation: everything here reads the `World`.
 
 use std::collections::BTreeMap;
@@ -55,7 +69,11 @@ use std::sync::Arc;
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
-use rts_lockstep_engine::client::control_bar_stage::{set_toggle_images, toggle_control_bar, ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleImage, BUTTON_LARGE};
+use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, BuildTooltip, BuildTooltipHost, COMMAND_BUTTON_TOOLTIP};
+use rts_lockstep_engine::client::control_bar_stage::{
+    clear_game_data_control_bar, create_control_bar, game_engine_init_control_bar, script_control_bar, set_toggle_images, start_new_game_control_bar, toggle_control_bar,
+    ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleImage, BUTTON_LARGE,
+};
 use rts_lockstep_engine::client::image::ImageCollection;
 use rts_lockstep_engine::client::gadget;
 use rts_lockstep_engine::client::window_manager::{data_win, ggm, gwm, key, DrawItem, GameWindowManager, GuiHost, MsgHandled, NoGuiHost, WinInputReturnCode, WindowMsgData};
@@ -121,23 +139,37 @@ pub struct GameUi {
     pub background_marker: Option<(WinId, (i32, i32))>,
     /// (#136) `TheRecorder`'s playback, as the application last set it: the stages do not switch during one.
     pub recorder_playback: bool,
-    /// (#136) The tactical view's height the stages last asked for (`TheTacticalView->setHeight`). The client's view keeps
-    /// the whole window, the bar drawn over it, so nothing reads it but the tests.
+    /// (#136) The tactical view's height the stages last asked for (`TheTacticalView->setHeight`), in the layout's pixels.
+    /// ~~The client's view keeps the whole window, the bar drawn over it, so nothing reads it but the tests.~~ **Corrected
+    /// 2026-11-11, #138:** the client's view takes it ([`tactical_view_height`] maps it onto the window).
     pub view_height: Option<i32>,
+    /// (#138) `TheControlBar`'s popup state (`m_showBuildToolTipLayout`, `prevWindow`, ...).
+    pub build_tooltip: BuildTooltip,
+    /// (#138) `m_buildToolTipLayout`'s hidden bit (`ControlBar::init` hides it).
+    pub popup_hidden: bool,
+    /// (#138) The last `populateBuildTooltipLayout(commandButton, tooltipWin)`: the command's button (its place in the
+    /// World's list), the window.
+    pub popup: Option<(Option<usize>, Option<WinId>)>,
+    /// (#138) Each command slot's button (`GadgetButtonGetData`), as the last [`GameUi::sync`] set them.
+    slot_buttons: Vec<Option<usize>>,
+    /// (#138) When the touch now held went down (`PopupWorld::now_ms`), for the long press ([`LONG_PRESS_MS`]).
+    touch_press_ms: Option<u32>,
     /// (#136) The window code's sounds (`GUIClick` ...) since [`GameUi::take_gui_sounds`].
     gui_sounds: Vec<Vec<u8>>,
 }
 
 /// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
 /// client has no replay controls window (`ReplayControl.wnd` is not loaded), no special power shortcut bar and no
-/// animate window manager, and rebuilds the popup and the buttons every frame ([`GameUi::bar_state`]): those calls do
-/// nothing.
+/// animate window manager~~, and rebuilds the popup and the buttons every frame ([`GameUi::bar_state`])~~: those calls do
+/// nothing. **Corrected 2026-11-11, #138:** `repopulateBuildTooltipLayout` is made (on [`GameUi::build_tooltip`]).
 struct StageHost<'a> {
     wm: &'a mut GameWindowManager,
     schemes: &'a ControlBarSchemeManager,
     images: &'a ImageCollection,
     playback: bool,
     view_height: &'a mut Option<i32>,
+    /// (#138) `repopulateBuildTooltipLayout()` was asked for (made after the stage's call: [`GameUi::with_stage`]).
+    repopulate: &'a mut bool,
 }
 
 impl ControlBarStageHost for StageHost<'_> {
@@ -182,7 +214,9 @@ impl ControlBarStageHost for StageHost<'_> {
     fn show_special_power_shortcut(&mut self) {}
     fn hide_special_power_shortcut(&mut self) {}
     fn animate_special_power_shortcut(&mut self, _on: bool) {}
-    fn repopulate_build_tooltip_layout(&mut self) {}
+    fn repopulate_build_tooltip_layout(&mut self) {
+        *self.repopulate = true;
+    }
     fn mark_ui_dirty(&mut self) {}
     fn has_animate_window_manager(&self) -> bool {
         false
@@ -335,17 +369,27 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         background_marker: find("ControlBar.wnd:BackgroundMarker".into()).map(|w| (w, wm.tree.screen_position(w))),
         recorder_playback: false,
         view_height: None,
+        build_tooltip: BuildTooltip::default(),
+        popup_hidden: true,
+        popup: None,
+        slot_buttons: Vec::new(),
+        touch_press_ms: None,
         gui_sounds: Vec::new(),
         images,
         wm,
         schemes,
     };
     let mut ui = ui;
-    // (#136) `ControlBar::init`'s `CP_MASTER` and its default position; then `ControlBarScheme::init`'s
-    // `switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT)` when the side's scheme is set (the "down" images on `ButtonLarge`)
+    // (#136) `ControlBar::init`'s `CP_MASTER` and its default position; (#138) `InGameUI::createControlBar`'s
+    // `HideControlBar()` and the end of `GameEngine::init`'s; then `ControlBarScheme::init`'s
+    // `switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT)` when the side's scheme is set (the "down" images on `ButtonLarge`);
+    // (#138) then the end of `GameLogic::startNewGame`: a game, not the shell's, so `ShowControlBar(FALSE)`
     ui.with_stage(|stage, h| {
         *stage = ControlBarStage::new(h);
+        create_control_bar(stage, h);
+        game_engine_init_control_bar(stage, h);
         stage.switch_control_bar_stage(ControlBarStages::Default as i32, h);
+        start_new_game_control_bar(stage, false, h);
     });
     UiBuild::Ready(Box::new(ui))
 }
@@ -357,11 +401,19 @@ struct BarHost {
     selected: Option<WinId>,
     /// (#136) The window code's sounds (`TheAudio->addAudioEvent`: the push button's `GUIClick`, `GUIClickDisabled`).
     sounds: Vec<Vec<u8>>,
+    /// (#138) The windows whose `commandButtonTooltip` the manager called, in order.
+    tooltips: Vec<WinId>,
 }
 
 impl GuiHost for BarHost {
     fn add_audio_event(&mut self, name: &[u8]) {
         self.sounds.push(name.to_vec());
+    }
+    /// (#138) `winProcessMouseEvent`'s tooltip callback: `commandButtonTooltip` ([`GameUi::pointer`] makes it).
+    fn tooltip(&mut self, _wm: &mut GameWindowManager, func: &[u8], win: WinId, _mouse: u32) {
+        if func == COMMAND_BUTTON_TOOLTIP {
+            self.tooltips.push(win);
+        }
     }
     fn system(&mut self, _wm: &mut GameWindowManager, func: &[u8], _win: WinId, msg: u32, d1: WindowMsgData, _d2: WindowMsgData) -> MsgHandled {
         if func == b"ControlBarSystem" && msg == ggm::GBM_SELECTED {
@@ -536,78 +588,97 @@ pub struct BarState {
     /// (#131) The hot keys `setControlCommand` adds, `(slot, key)` in order
     /// (`control_bar_command::populate_command_with_hot_keys`).
     pub hot_keys: Vec<(usize, Vec<u8>)>,
+    /// (#138) Whether each command window gets `commandButtonTooltip` (`setControlCommand`: a text label or sciences).
+    pub tooltip_funcs: Vec<bool>,
 }
 
-/// When the popup of a command button shows (new: upstream's `showBuildTooltipLayout` waits `getTooltipDelay()` with the
-/// mouse over the button; a phone has no hover). A pointer over a slot for [`TooltipTimer::DELAY`] seconds shows its popup,
-/// whether a mouse hovers or a finger holds. A press held that long is a **long press**: its release shows the popup and
-/// does not press the button. A touch's slot stays shown after the finger lifts (the **visible fallback**: the last button
-/// touched keeps its description on screen) until another is touched or the selection changes.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TooltipTimer {
-    /// The slot under the pointer, since when, and whether the pointer is a touch.
-    over: Option<(usize, f64, bool)>,
-    /// The slot pressed, and since when.
-    pressed: Option<(usize, f64)>,
-    /// The slot kept shown after a touch.
-    pinned: Option<usize>,
+/// ~~`TooltipTimer`: when the popup of a command button shows (new: the hover delay, a phone's long press and the last
+/// button touched kept as a visible fallback).~~ **Corrected 2026-11-11, #138:** removed; the popup's timing is
+/// `TheControlBar`'s (`rts_lockstep_engine::client::build_tooltip`, [`GameUi::popup_frame`]). What the popup's timing reads
+/// outside the bar this frame (#138).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PopupWorld {
+    /// `timeGetTime()`: the client's clock in milliseconds.
+    pub now_ms: u32,
+    /// `TheInGameUI->areTooltipsDisabled()` (the client never disables them: #138's gaps).
+    pub tooltips_disabled: bool,
+    /// `TheScriptEngine->isGameEnding()`, the World's.
+    pub game_ending: bool,
+    /// `TheGameLogic->isInReplayGame()`.
+    pub replay_game: bool,
+    /// `TheInGameUI->isQuitMenuVisible()`.
+    pub quit_menu_visible: bool,
 }
 
-impl TooltipTimer {
-    /// Seconds over (or held on) a button before its popup shows.
-    pub const DELAY: f64 = 0.5;
+/// (#138, new: a phone has no hover) A touch held this long on a button is a long press: its release does not press the
+/// button ([`GameUi::pointer`]); the popup shows after it, the pointer staying there.
+pub const LONG_PRESS_MS: u32 = 500;
 
-    /// The pointer came over `slot` at `now`.
-    pub fn over(&mut self, slot: usize, now: f64, touch: bool) {
-        if self.over.map(|o| o.0) != Some(slot) {
-            self.over = Some((slot, now, touch));
-        }
-        if touch && self.pinned != Some(slot) {
-            self.pinned = None;
-        }
-    }
+/// (#138) [`BuildTooltipHost`] on the bar's windows, its popup layout and the frame's [`PopupWorld`].
+struct PopupBar<'a> {
+    wm: &'a GameWindowManager,
+    command_windows: &'a [Option<WinId>],
+    slot_buttons: &'a [Option<usize>],
+    hidden: &'a mut bool,
+    popup: &'a mut Option<(Option<usize>, Option<WinId>)>,
+    world: PopupWorld,
+}
 
-    /// The pointer left `slot`.
-    pub fn out(&mut self, slot: usize) {
-        if self.over.is_some_and(|o| o.0 == slot) {
-            self.over = None;
-        }
+impl BuildTooltipHost for PopupBar<'_> {
+    fn tooltips_disabled(&self) -> bool {
+        self.world.tooltips_disabled
     }
+    fn is_game_ending(&self) -> bool {
+        self.world.game_ending
+    }
+    fn time_get_time(&self) -> u32 {
+        self.world.now_ms
+    }
+    fn win_style(&self, w: WinId) -> u32 {
+        self.wm.tree.windows[w].inst.style
+    }
+    fn tooltip_delay(&self, w: WinId) -> i32 {
+        self.wm.tree.windows[w].inst.tooltip_delay
+    }
+    fn gadget_button_command(&self, w: WinId) -> Option<usize> {
+        let slot = self.command_windows.iter().position(|&c| c == Some(w))?;
+        self.slot_buttons.get(slot).copied().flatten()
+    }
+    fn is_in_replay_game(&self) -> bool {
+        self.world.replay_game
+    }
+    fn is_quit_menu_visible(&self) -> bool {
+        self.world.quit_menu_visible
+    }
+    /// (the client has no disconnect screen)
+    fn disconnect_menu_visible(&self) -> bool {
+        false
+    }
+    fn populate_build_tooltip_layout(&mut self, command: Option<usize>, tooltip_win: Option<WinId>) {
+        *self.popup = Some((command, tooltip_win));
+    }
+    fn layout_is_hidden(&self) -> bool {
+        *self.hidden
+    }
+    fn layout_hide(&mut self, hide: bool) {
+        *self.hidden = hide;
+    }
+}
 
-    /// `slot` was pressed at `now`.
-    pub fn press(&mut self, slot: usize, now: f64) {
-        self.pressed = Some((slot, now));
-    }
-
-    /// `slot` was clicked (released over it) at `now`: whether the click presses the button (`false` after a long press).
-    pub fn click(&mut self, slot: usize, now: f64, touch: bool) -> bool {
-        let long = self.pressed.is_some_and(|(s, t)| s == slot && now - t >= Self::DELAY);
-        self.pressed = None;
-        if touch || long {
-            self.pinned = Some(slot);
-        }
-        !long
-    }
-
-    /// The selection changed: nothing shown.
-    pub fn reset(&mut self) {
-        *self = TooltipTimer::default();
-    }
-
-    /// The slot whose popup shows at `now`.
-    pub fn shown(&self, now: f64) -> Option<usize> {
-        if let Some((s, t, _)) = self.over {
-            if now - t >= Self::DELAY {
-                return Some(s);
-            }
-        }
-        if let Some((s, t)) = self.pressed {
-            if now - t >= Self::DELAY {
-                return Some(s);
-            }
-        }
-        self.pinned
-    }
+/// (#138) The tactical view's height on the window (logical pixels) for the height the stages asked for in the bar's
+/// layout (`TheTacticalView->setHeight`, out of the layout's 600): where that line of the layout is on the window
+/// (`placement`, the bar as drawn), so the view ends where upstream's ends above the bar (80 % of a 4:3 window, and on a
+/// phone, whose bar is scaled to its width, the same line of the bar); without a bar on the window, that share of the
+/// window; the whole window when nothing was asked. New glue: upstream's display is the layout's own size.
+pub fn tactical_view_height(view_height: Option<i32>, placement: Option<LayoutPlacement>, window_height: f32) -> f32 {
+    let h = match (view_height, placement) {
+        (None, _) => window_height,
+        (Some(v), Some(p)) => p.top + (v as f32 - p.y0) * p.scale,
+        (Some(v), None) => window_height * v as f32 / LAYOUT.1 as f32,
+    };
+    // (`WWMath::Clamp`, function syntax)
+    let top = if window_height > 1.0 { window_height } else { 1.0 };
+    rts_lockstep_engine::ww::wwmath::clamp(h, 1.0, top)
 }
 
 /// A popup's text as the drawing shows it: the name, the cost (if any) and the description, one line each (the
@@ -649,9 +720,10 @@ impl GameUi {
     pub fn bar_state<H: ControlBarStateHost + PopupHost + PortraitHost>(selected: Option<ObjectId>, h: &mut H, queue: Vec<(bool, u32, Option<Vec<u8>>, f32)>, money: u32, power: (i32, i32)) -> BarState {
         let (commands, hot_keys) = selected.map(|o| populate_command_with_hot_keys(o, h)).map(|(c, k)| (c.to_vec(), k)).unwrap_or_default();
         let tooltips = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).map(|b| populate_build_tooltip_layout(&b, h))).collect();
+        let tooltip_funcs = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).is_some_and(|b| command_gets_tooltip(b.labels[0].is_empty(), !b.science.is_empty()))).collect();
         let portrait = set_portrait_by_object(selected, h);
         let (queue, queue_clock) = populate_build_queue(&queue);
-        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips, hot_keys }
+        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips, hot_keys, tooltip_funcs }
     }
 
     /// Whether a window is drawn: it and every ancestor not hidden, with the context parents shown as
@@ -697,6 +769,14 @@ impl GameUi {
     /// windows hidden or shown by [`GameUi::hidden_rule`], each command button enabled when its command is available.
     /// Only changes are applied, so a window that stays hidden is not told again (`windowHiding`).
     pub fn sync(&mut self, s: &BarState) {
+        // (#138) `setControlCommand`: `GadgetButtonSetData` and, with a text label or sciences, `commandButtonTooltip`
+        // (never taken away again, as upstream's)
+        self.slot_buttons = s.commands.iter().map(|c| c.as_ref().map(|c| c.button)).collect();
+        for (slot, w) in self.command_windows.clone().into_iter().enumerate() {
+            if let (Some(w), Some(true)) = (w, s.tooltip_funcs.get(slot).copied()) {
+                self.wm.ext[w].tooltip = Some(COMMAND_BUTTON_TOOLTIP.to_vec());
+            }
+        }
         for i in 0..self.wm.tree.windows.len() {
             if let Some(h) = self.hidden_rule(i, s) {
                 if h != self.wm.tree.windows[i].is_hidden() {
@@ -713,30 +793,29 @@ impl GameUi {
     }
 
     /// (#34) A pointer event at `pos` (the layout's pixels) through `winProcessMouseEvent`: `msg` is `GWM_MOUSE_POS`,
-    /// `GWM_LEFT_DOWN` or `GWM_LEFT_UP` (a touch is a mouse; its press moves the pointer there first). The popup's timer
-    /// follows the window under the pointer and the press; returns the command slot whose button the manager selected
-    /// (`GBM_SELECTED` reaching `ControlBarSystem`), unless the release ends a long press ([`TooltipTimer::click`]).
-    pub fn pointer(&mut self, msg: u32, pos: (f32, f32), now: f64, touch: bool, tip: &mut TooltipTimer) -> Option<usize> {
-        let p = (pos.0.floor() as i32, pos.1.floor() as i32);
+    /// `GWM_LEFT_DOWN` or `GWM_LEFT_UP` (a touch is a mouse; its press moves the pointer there first). ~~The popup's timer
+    /// follows the window under the pointer and the press~~ **Corrected 2026-11-11, #138:** the manager's
+    /// `commandButtonTooltip` calls go to `showBuildTooltipLayout` ([`GameUi::build_tooltip`], read with `world`); a touch
+    /// held [`LONG_PRESS_MS`] or longer is released away from the button (new: a phone's long press presses nothing, and
+    /// the pointer staying there then shows the popup). Returns the command slot whose button the manager selected (`GBM_SELECTED` reaching
+    /// `ControlBarSystem`).
+    pub fn pointer(&mut self, msg: u32, pos: (f32, f32), touch: bool, world: &PopupWorld) -> Option<usize> {
+        let mut p = (pos.0.floor() as i32, pos.1.floor() as i32);
         let mut host = BarHost::default();
         if msg == gwm::LEFT_DOWN && touch {
             self.wm.win_process_mouse_event(&mut host, gwm::MOUSE_POS, p, (0, 0));
         }
-        let before = self.slot_of(self.wm.curr_mouse_rgn);
+        if msg == gwm::LEFT_DOWN && touch {
+            self.touch_press_ms = Some(world.now_ms);
+        }
+        if msg == gwm::LEFT_UP && touch {
+            if self.touch_press_ms.take().is_some_and(|t| world.now_ms.wrapping_sub(t) >= LONG_PRESS_MS) {
+                p = (-1, -1);
+            }
+        }
         self.wm.win_process_mouse_event(&mut host, msg, p, (0, 0));
-        let after = self.slot_of(self.wm.curr_mouse_rgn);
-        if before != after {
-            if let Some(b) = before {
-                tip.out(b);
-            }
-        }
-        if let Some(a) = after {
-            tip.over(a, now, touch);
-        }
-        if msg == gwm::LEFT_DOWN {
-            if let Some(g) = self.slot_of(self.wm.grab_window) {
-                tip.press(g, now);
-            }
+        for w in std::mem::take(&mut host.tooltips) {
+            self.with_popup(*world, |b, h| command_button_tooltip(b, w, h));
         }
         // (#109) `ControlBarSystem`'s `GBM_SELECTED` for the options button (`ToggleQuitMenu`), and the `HideQuitMenu` of
         // the general's and the idle worker's buttons (their own calls, `togglePurchaseScience` and
@@ -752,8 +831,45 @@ impl GameUi {
             }
         }
         self.gui_sounds.append(&mut host.sounds);
-        let slot = self.slot_of(host.selected)?;
-        tip.click(slot, now, touch).then_some(slot)
+        self.slot_of(host.selected)
+    }
+
+    /// (#138) `f` on the popup's state with its host ([`PopupBar`]).
+    fn with_popup(&mut self, world: PopupWorld, f: impl FnOnce(&mut BuildTooltip, &mut PopupBar)) {
+        let mut h = PopupBar { wm: &self.wm, command_windows: &self.command_windows, slot_buttons: &self.slot_buttons, hidden: &mut self.popup_hidden, popup: &mut self.popup, world };
+        f(&mut self.build_tooltip, &mut h);
+    }
+
+    /// (#138) `ControlBar::update`'s popup part, once a client frame, before the frame's mouse event.
+    pub fn popup_frame(&mut self, world: &PopupWorld) {
+        self.with_popup(*world, |b, h| b.update(h));
+    }
+
+    /// (#138) What the popup shows (`populateBuildTooltipLayout`'s command button and window), while it shows.
+    pub fn shown_popup(&self) -> Option<(Option<usize>, Option<WinId>)> {
+        if self.popup_hidden {
+            None
+        } else {
+            self.popup
+        }
+    }
+
+    /// (#138) A logic event's call on the bar, as the application takes it from the frame's events: a script's
+    /// `HideControlBar`/`ShowControlBar` (`script_control_bar`) or `deleteBuildTooltipLayout`.
+    pub fn script_call(&mut self, call: &rts_lockstep_engine::logic::client_event::ScriptInputCall) {
+        use rts_lockstep_engine::logic::client_event::ScriptInputCall;
+        if *call == ScriptInputCall::DeleteBuildTooltipLayout {
+            self.with_popup(PopupWorld::default(), |b, h| b.delete_build_tooltip_layout(h));
+            return;
+        }
+        self.with_stage(|stage, h| {
+            script_control_bar(call, stage, h);
+        });
+    }
+
+    /// (#138) `GameLogic::clearGameData`'s `HideControlBar()`, when the World's game is cleared.
+    pub fn clear_game_data(&mut self) {
+        self.with_stage(|stage, h| clear_game_data_control_bar(stage, h));
     }
 
     /// (#131) Each command window's own `WIN_STATUS_HIDDEN` and `WIN_STATUS_ENABLED` bits as the manager has them (after
@@ -780,8 +896,12 @@ impl GameUi {
 
     /// (#136) The stage functions on the bar's windows ([`StageHost`]).
     fn with_stage(&mut self, f: impl FnOnce(&mut ControlBarStage, &mut StageHost)) {
-        let mut h = StageHost { wm: &mut self.wm, schemes: &self.schemes, images: &self.images, playback: self.recorder_playback, view_height: &mut self.view_height };
+        let mut repopulate = false;
+        let mut h = StageHost { wm: &mut self.wm, schemes: &self.schemes, images: &self.images, playback: self.recorder_playback, view_height: &mut self.view_height, repopulate: &mut repopulate };
         f(&mut self.stage, &mut h);
+        if repopulate {
+            self.with_popup(PopupWorld::default(), |b, h| b.repopulate_build_tooltip_layout(h));
+        }
     }
 
     /// (#136) `ToggleControlBar(immediate)` (`MSG_META_TOGGLE_CONTROL_BAR`, through the command translator's case:
@@ -1169,7 +1289,8 @@ mod tests {
             let _ = ui.frame(&st);
             // (#34) the manager's state and a pointer through it
             ui.sync(&st);
-            let _ = ui.pointer(gwm::MOUSE_POS, (285.0, 505.0 + (f % 3) as f32), f as f64, false, &mut TooltipTimer::default());
+            ui.popup_frame(&PopupWorld { now_ms: f * 33, ..Default::default() });
+            let _ = ui.pointer(gwm::MOUSE_POS, (285.0, 505.0 + (f % 3) as f32), false, &PopupWorld { now_ms: f * 33, ..Default::default() });
             let crc = |c: &mut Controls| c.world().logic_crc(rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC, None).expect("a CRC");
             assert_eq!(crc(&mut asked), crc(&mut plain), "frame {f}");
         }
@@ -1179,13 +1300,25 @@ mod tests {
     /// before the run from `winProcessMouseEvent` and `GadgetPushButtonInput`:
     /// - after `sync`, the command window and `ButtonCommand01` are shown (and enabled: the depot is available),
     ///   `ButtonCommand02` and `03` hidden;
-    /// - the mouse over button 1 (285, 505): the popup's timer is over slot 0; a press and a release at 0.1 s select it:
-    ///   `GBM_SELECTED` goes to the command window, which passes it to `ControlBarSystem`: slot 0 is pressed;
-    /// - a touch held 0.7 s on it: no press (a long press), its popup pinned;
+    /// - a press and a release over button 1 (285, 505) select it: `GBM_SELECTED` goes to the command window, which
+    ///   passes it to `ControlBarSystem`: slot 0 is pressed;
     /// - a press where the hidden button 2 is (345, 505): the command window takes nothing; no press;
     /// - a press dragged off the button before the release: no press;
     /// - with nothing selected after `sync`: the command window is hidden; the press on button 1's place presses
     ///   nothing.
+    ///
+    /// **#138** (the popup through `commandButtonTooltip`; predicted before the run): `sync` gives button 1
+    /// `commandButtonTooltip` (the depot's command has a label); the first frame over it shows no popup, the second does
+    /// (the synthetic window's tooltip delay is -1: `beginWaitTime - 1 < now`), filled from the depot's button; it stays
+    /// while the frames' events come and goes two frames after they stop; a quick touch tap presses slot 0; a touch held
+    /// half a second does not press (its release goes away from the button) and the popup shows after it.
+    ///
+    /// *Results (2026-11-11):* one miss, of my prediction (written as "the popup shows while the touch is held, and
+    /// stays"): while a button is held the manager has a grab and calls no tooltip callback (upstream's
+    /// `winProcessMouseEvent` makes the tooltip only with no grab window), so the popup goes during the press and shows
+    /// again after the release, the pointer staying there. The long press's rule was changed to a plain hold of
+    /// [`LONG_PRESS_MS`] (it had also required the popup shown), and the test to look after the release. Then as
+    /// predicted.
     #[test]
     fn the_bar_is_pressed_through_the_window_manager() {
         let mut d = MemoryDevice::new();
@@ -1205,24 +1338,50 @@ mod tests {
         let win = |ui: &GameUi, i: usize| ui.command_windows[i].expect("a command window");
         assert!(!ui.wm.is_hidden(Some(win(&ui, 0))) && ui.wm.is_enabled(Some(win(&ui, 0))));
         assert!(ui.wm.is_hidden(Some(win(&ui, 1))) && ui.wm.is_hidden(Some(win(&ui, 2))));
-        let mut tip = TooltipTimer::default();
-        assert_eq!(ui.pointer(gwm::MOUSE_POS, (285.0, 505.0), 0.0, false, &mut tip), None);
-        assert_eq!(tip.shown(0.6), Some(0));
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 0.0, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 0.1, false, &mut tip), Some(0));
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (286.0, 506.0), 1.0, true, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (286.0, 506.0), 1.7, true, &mut tip), None, "a long press");
-        assert_eq!(tip.shown(1.8), Some(0));
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (345.0, 505.0), 2.0, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (345.0, 505.0), 2.1, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 3.0, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), 3.05, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), 3.1, false, &mut tip), None, "released off the button");
+        assert_eq!(ui.wm.ext[win(&ui, 0)].tooltip.as_deref(), Some(COMMAND_BUTTON_TOOLTIP));
+        let depot = st.commands[0].as_ref().expect("the depot").button;
+        let at = |t: u32| PopupWorld { now_ms: t, ..Default::default() };
+        // (#138) the frames over button 1: `ControlBar::update`'s part, then the frame's mouse event
+        let frame = |ui: &mut GameUi, t: u32, pos: Option<(f32, f32)>| {
+            ui.popup_frame(&at(t));
+            if let Some(pos) = pos {
+                assert_eq!(ui.pointer(gwm::MOUSE_POS, pos, false, &at(t)), None);
+            }
+        };
+        frame(&mut ui, 1000, Some((285.0, 505.0)));
+        assert_eq!(ui.shown_popup(), None);
+        frame(&mut ui, 1033, Some((285.0, 505.0)));
+        assert_eq!(ui.shown_popup(), Some((Some(depot), None)));
+        frame(&mut ui, 1066, Some((286.0, 505.0)));
+        assert_eq!(ui.shown_popup(), Some((Some(depot), None)));
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), false, &at(1070)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), false, &at(1080)), Some(0));
+        frame(&mut ui, 1100, None);
+        assert!(ui.shown_popup().is_some(), "the last event's mark holds one frame");
+        frame(&mut ui, 1133, None);
+        assert_eq!((ui.shown_popup(), ui.build_tooltip.prev_window), (None, None));
+        // a quick tap presses; a held touch shows the popup, and its release does not press
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (286.0, 506.0), true, &at(2000)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (286.0, 506.0), true, &at(2050)), Some(0), "a quick tap");
+        frame(&mut ui, 3000, None);
+        frame(&mut ui, 3033, None);
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (286.0, 506.0), true, &at(4000)), None);
+        frame(&mut ui, 4033, Some((286.0, 506.0)));
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (286.0, 506.0), true, &at(4500)), None, "a long press");
+        // (no tooltip call while the button is held: the manager's grab; the pointer then stays where the finger lifted)
+        frame(&mut ui, 4533, Some((286.0, 506.0)));
+        frame(&mut ui, 4566, Some((286.0, 506.0)));
+        assert_eq!(ui.shown_popup(), Some((Some(depot), None)), "the pointer stays where the finger lifted");
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (345.0, 505.0), false, &at(5000)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (345.0, 505.0), false, &at(5100)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), false, &at(6000)), None);
+        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), false, &at(6050)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), false, &at(6100)), None, "released off the button");
         let none = GameUi::bar_state(None, &mut c.client, Vec::new(), m, p);
         ui.sync(&none);
         assert!(ui.wm.is_hidden(Some(win(&ui, 0))));
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), 4.0, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), 4.1, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (285.0, 505.0), false, &at(7000)), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (285.0, 505.0), false, &at(7100)), None);
     }
 
     /// (#109) The synthetic bar with `ButtonOptions` and `ButtonIdleWorker` added (copies of `ButtonCommand01`, children
@@ -1268,22 +1427,22 @@ mod tests {
     fn the_bars_options_button_toggles_the_quit_menu() {
         let mut ui = bar_with_options();
         assert!(ui.options_button.is_some() && ui.hide_quit_menu_buttons.len() == 1);
-        let mut tip = TooltipTimer::default();
-        let tap = |ui: &mut GameUi, at: (f32, f32), t: f64, tip: &mut TooltipTimer| -> Option<usize> {
-            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, t, true, tip), None);
-            ui.pointer(gwm::LEFT_UP, at, t + 0.1, true, tip)
+        let w = PopupWorld::default();
+        let tap = |ui: &mut GameUi, at: (f32, f32), _t: f64, w: &PopupWorld| -> Option<usize> {
+            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, true, w), None);
+            ui.pointer(gwm::LEFT_UP, at, true, w)
         };
         assert_eq!(ui.take_quit_menu_call(), None);
-        assert_eq!(tap(&mut ui, (155.0, 465.0), 0.0, &mut tip), None);
+        assert_eq!(tap(&mut ui, (155.0, 465.0), 0.0, &w), None);
         assert_eq!(ui.take_quit_menu_call(), Some(QuitMenuCall::Toggle));
         assert_eq!(ui.take_quit_menu_call(), None, "taken once");
-        assert_eq!(tap(&mut ui, (215.0, 465.0), 1.0, &mut tip), None);
+        assert_eq!(tap(&mut ui, (215.0, 465.0), 1.0, &w), None);
         assert_eq!(ui.take_quit_menu_call(), Some(QuitMenuCall::Hide));
-        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (155.0, 465.0), 2.0, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), 2.05, false, &mut tip), None);
-        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), 2.1, false, &mut tip), None);
+        assert_eq!(ui.pointer(gwm::LEFT_DOWN, (155.0, 465.0), false, &w), None);
+        assert_eq!(ui.pointer(gwm::MOUSE_POS, (400.0, 560.0), false, &w), None);
+        assert_eq!(ui.pointer(gwm::LEFT_UP, (400.0, 560.0), false, &w), None);
         assert_eq!(ui.take_quit_menu_call(), None, "released off the button");
-        assert_eq!(tap(&mut ui, (400.0, 460.0), 3.0, &mut tip), None);
+        assert_eq!(tap(&mut ui, (400.0, 460.0), 3.0, &w), None);
         assert_eq!(ui.take_quit_menu_call(), None, "the background");
     }
 
@@ -1334,20 +1493,20 @@ mod tests {
         assert_eq!(image(&ui).as_deref(), Some(&b"ImgButton"[..]));
         let top = |ui: &GameUi| ui.frame(&BarState::default()).iter().fold(f32::MAX, |a, q| a.min(q.rect[1]));
         assert_eq!(top(&ui), 440.0);
-        let mut tip = TooltipTimer::default();
-        let tap = |ui: &mut GameUi, at: (f32, f32), t: f64, tip: &mut TooltipTimer| {
-            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, t, true, tip), None);
-            assert_eq!(ui.pointer(gwm::LEFT_UP, at, t + 0.1, true, tip), None);
+        let w = PopupWorld::default();
+        let tap = |ui: &mut GameUi, at: (f32, f32), _t: f64, w: &PopupWorld| {
+            assert_eq!(ui.pointer(gwm::LEFT_DOWN, at, true, w), None);
+            assert_eq!(ui.pointer(gwm::LEFT_UP, at, true, w), None);
         };
-        tap(&mut ui, (400.0, 460.0), 0.0, &mut tip);
+        tap(&mut ui, (400.0, 460.0), 0.0, &w);
         let master = ui.stage.master.expect("ControlBarParent");
         assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Low, 540));
         assert_eq!(top(&ui), 530.0);
         assert_eq!(image(&ui).as_deref(), Some(&b"ImgBack"[..]));
-        tap(&mut ui, (400.0, 550.0), 1.0, &mut tip);
+        tap(&mut ui, (400.0, 550.0), 1.0, &w);
         assert_eq!((ui.stage.current, ui.wm.tree.windows[master].region.1), (ControlBarStages::Default, 450));
-        let (w, _) = crate::demo::demo_world();
-        let mut c = Controls::new(w, 1);
+        let (world, _) = crate::demo::demo_world();
+        let mut c = Controls::new(world, 1);
         c.meta(rts_lockstep_engine::common::message_types::MSG_META_TOGGLE_CONTROL_BAR);
         assert_eq!(c.client.control_bar_toggles, vec![true]);
         ui.toggle_control_bar(true);
@@ -1357,7 +1516,7 @@ mod tests {
         assert!(!ui.is_bar_hidden());
         assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
         ui.recorder_playback = true;
-        tap(&mut ui, (400.0, 460.0), 2.0, &mut tip);
+        tap(&mut ui, (400.0, 460.0), 2.0, &w);
         assert_eq!(ui.stage.current, ControlBarStages::Default, "no stage switch during a replay's playback");
     }
 
@@ -1379,8 +1538,8 @@ mod tests {
         m.set_visibility(true);
         m.set_mouse_limits(800, 600);
         m.pos = ICoord2D { x: 400, y: 460 };
-        let mut tip = TooltipTimer::default();
-        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (400.0, 460.0), 0.0, false, &mut tip));
+        let w = PopupWorld::default();
+        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (400.0, 460.0), false, &w));
         let text = String::from_utf16_lossy(&m.tooltip.display_string);
         assert!(text.contains("TIP:Large"), "{text:?}");
         assert!(ui.wm.mouse.is_empty && !m.tooltip.is_empty);
@@ -1394,7 +1553,7 @@ mod tests {
             shapes.iter().any(|s| matches!(s, crate::cursor::TooltipShape::Text { text, .. } if text.contains("TIP:Large")))
         });
         assert!(revealed, "the text is drawn");
-        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (600.0, 455.0), 0.0, false, &mut tip));
+        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (600.0, 455.0), false, &w));
         assert!(m.tooltip.is_empty);
         m.tooltip.create_stream_messages(200_000, false);
         assert!(crate::cursor::tooltip_shapes(&mut m, 200_000, false).is_empty());
@@ -1534,36 +1693,59 @@ mod tests {
         assert_eq!(ui.wm.tree.windows.len(), 10);
     }
 
-    /// #35, when the popup shows. Predicted from [`TooltipTimer`]'s rules (new, not upstream's): a mouse over slot 2 shows
-    /// nothing at 0.4 s and slot 2 at 0.5 s; leaving hides it; a quick click (0.1 s) presses the button and, from a mouse,
-    /// pins nothing; a touch held 0.6 s shows the popup while held, its release does not press, and the popup stays pinned
-    /// after the finger leaves; a quick tap on slot 0 presses it and pins slot 0 (the visible fallback); a reset clears it.
+    /// ~~#35, when the popup shows (`TooltipTimer`'s rules).~~ **Corrected 2026-11-11, #138:** `TooltipTimer` is gone (the
+    /// popup's timing is upstream's: `the_bar_is_pressed_through_the_window_manager`, and the engine's differential
+    /// test). #138: where the view ends on the window. *Predicted before the run:* no height asked: the whole window; the
+    /// bar shown at the default stage (480 of the layout's 600) on an 800x600 window, the bar's layout at scale 1 from y
+    /// 440: 480; on a phone (390x844, the bar scaled 0.4875 to its width, its top 440 at 844 - 160 x 0.4875 = 766):
+    /// 785.5; the low stage or the bar hidden (600): the whole window; a height with no bar on the window: its share of
+    /// the window (480: 675.2); never below 1 or past the window.
+    ///
+    /// *Results (2026-11-11):* as predicted, on the first run.
     #[test]
-    fn a_popup_shows_on_hover_and_on_a_long_press() {
-        let mut t = TooltipTimer::default();
-        t.over(2, 10.0, false);
-        assert_eq!((t.shown(10.4), t.shown(10.5)), (None, Some(2)));
-        t.out(2);
-        assert_eq!(t.shown(11.0), None);
-        t.over(2, 20.0, false);
-        t.press(2, 20.0);
-        assert!(t.click(2, 20.1, false), "a quick click presses");
-        t.out(2);
-        assert_eq!(t.shown(21.0), None);
-        t.over(1, 30.0, true);
-        t.press(1, 30.0);
-        assert_eq!(t.shown(30.6), Some(1), "held: shown");
-        assert!(!t.click(1, 30.6, true), "a long press does not press");
-        t.out(1);
-        assert_eq!(t.shown(31.0), Some(1), "pinned after the finger lifts");
-        t.over(0, 40.0, true);
-        t.press(0, 40.0);
-        assert_eq!(t.shown(40.05), None, "another touch unpins");
-        assert!(t.click(0, 40.1, true));
-        t.out(0);
-        assert_eq!(t.shown(40.2), Some(0), "the tapped button's popup stays");
-        t.reset();
-        assert_eq!(t.shown(50.0), None);
+    fn the_view_ends_where_upstreams_does_above_the_bar() {
+        assert_eq!(tactical_view_height(None, None, 600.0), 600.0);
+        let desk = LayoutPlacement { left: 0.0, top: 440.0, y0: 440.0, scale: 1.0 };
+        assert_eq!(tactical_view_height(Some(480), Some(desk), 600.0), 480.0);
+        let s = 390.0 / 800.0;
+        let phone = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * s, y0: 440.0, scale: s };
+        assert_eq!(tactical_view_height(Some(480), Some(phone), 844.0), 785.5);
+        assert_eq!(tactical_view_height(Some(600), Some(phone), 844.0), 844.0);
+        assert_eq!(tactical_view_height(Some(600), None, 844.0), 844.0);
+        assert_eq!(tactical_view_height(Some(480), None, 844.0), 675.2);
+        assert_eq!(tactical_view_height(Some(-5), None, 844.0), 1.0);
+        assert_eq!(tactical_view_height(Some(900), Some(desk), 600.0), 600.0);
+    }
+
+    /// #138: the bar's other `HideControlBar`/`ShowControlBar` callers, on the synthetic bar. *Predicted before the run:*
+    /// loaded as a game's (`createControlBar`'s and `GameEngine::init`'s hides, then `startNewGame`'s
+    /// `ShowControlBar(FALSE)`): shown at the default stage, the view 480; a script's letterbox (the logic's
+    /// `HideControlBar(TRUE)` event) hides it, the view 600; its end (`ShowControlBar(FALSE)`) shows it, 480; a script's
+    /// `deleteBuildTooltipLayout` hides the popup and forgets its window; the World's game cleared hides the bar, 600.
+    ///
+    /// *Results (2026-11-11):* as predicted, on the first run.
+    #[test]
+    fn the_scripts_and_the_game_hide_and_show_the_bar() {
+        use rts_lockstep_engine::logic::client_event::ScriptInputCall;
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        assert!(!ui.is_bar_hidden());
+        assert_eq!((ui.stage.current, ui.view_height), (ControlBarStages::Default, Some(480)));
+        ui.script_call(&ScriptInputCall::HideControlBar(true));
+        assert!(ui.is_bar_hidden() && ui.view_height == Some(600));
+        ui.script_call(&ScriptInputCall::ShowControlBar(false));
+        assert!(!ui.is_bar_hidden() && ui.view_height == Some(480));
+        ui.popup_hidden = false;
+        ui.build_tooltip.prev_window = Some(3);
+        ui.script_call(&ScriptInputCall::DeleteBuildTooltipLayout);
+        assert!(ui.popup_hidden && ui.build_tooltip.prev_window.is_none());
+        ui.clear_game_data();
+        assert!(ui.is_bar_hidden() && ui.view_height == Some(600));
     }
 
     /// #12, on the owner's copy of Zero Hour (`RTS_ZH_DIR`, a folder with its archives; skipped without it, never faked):

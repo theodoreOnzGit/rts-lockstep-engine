@@ -3,10 +3,10 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/View.cpp (View::View, init, zoomIn, zoomOut, setAngle, setPitch,
-//     setAngleAndPitchToDefault, getLocation, setLocation)
+//     setAngleAndPitchToDefault, getLocation, setLocation; #138: getScreenCornerWorldPointsAtZ)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/View.h (ViewLocation, the inline accessors)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp (normAngle, getHeightAroundPos,
-//     W3DView::W3DView, setHeight, setWidth, buildCameraTransform, calcCameraConstraints, getPickRay,
+//     W3DView::W3DView, setHeight, setWidth, (#138) setOrigin and screenToWorldAtZ, buildCameraTransform, calcCameraConstraints, getPickRay,
 //     setCameraTransform, init, update's height above ground, scrollBy, forceRedraw, setAngle, setPitch,
 //     setAngleAndPitchToDefault, setDefaultView, setHeightAboveGround, setZoom, setZoomToDefault, lookAt,
 //     initHeightForMap; #131: resetCamera with the end of the 1 ms moveCameraTo, zoomCamera and pitchCamera it starts:
@@ -53,11 +53,19 @@
 //!   flags they clear; **#131:** but for `resetCamera`'s instant form, whose end state [`TacticalView::reset_camera`]
 //!   gives), the camera lock and its follow in `update`, the camera shake (`m_shakeOffset` and
 //!   `CameraShakerSystem`: their angles are 0, a rotation by nothing), the slaved and real-zoom cameras
-//!   (`m_isCameraSlaved`, `m_useRealZoomCam`, both false), the field of view (debug only), picking and drawing.
+//!   (`m_isCameraSlaved`, `m_useRealZoomCam`, both false), the field of view (debug only), ~~picking~~ and drawing.
+//!   **Corrected 2026-11-11, #138:** the pick ray (`getPickRay`), `screenToWorldAtZ` and
+//!   `getScreenCornerWorldPointsAtZ` are translated and differential-tested (`tests/differential_tactical_view.rs`); the
+//!   client picks the ground with them and draws the radar's view box from them. `worldToScreen` (`CameraClass::Project`)
+//!   is not translated.
 //! - `lookAt` takes the on-ground branch only: a point higher than a pathfind cell above the ground would be cast
 //!   along the view ray onto the terrain render object, which the port does not have (GitHub #119's gaps).
-//! - `TheTerrainLogic`, the global data and the game's pause are given through [`ViewHost`]; the display's size is the
-//!   view's (the client's tactical view is the whole window; upstream's is 77 % of its height, the control bar below).
+//! - `TheTerrainLogic`, the global data and the game's pause are given through [`ViewHost`]; ~~the display's size is the
+//!   view's (the client's tactical view is the whole window; upstream's is 77 % of its height, the control bar below).~~
+//!   **Corrected 2026-11-11, #138:** the view's width is the display's, and its height what the control bar's stages ask
+//!   for (`TheTacticalView->setHeight`: 80 %, not 77 %, of the display with the bar shown; the whole of it hidden or
+//!   lowered), which the client applies ([`TacticalView::set_height`]); the 3D viewport, the camera's aspect, the pick
+//!   ray and the radar's view box follow it.
 //!
 //! # Representation
 //!
@@ -67,6 +75,7 @@
 
 use crate::common::base_type::{max, Coord2D, Coord3D, ICoord2D, Region2D, Region3D, PI};
 use crate::common::global_data::GlobalData;
+use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
@@ -388,19 +397,39 @@ impl TacticalView {
         self.scroll_amount_cutoff = h.global().scroll_amount_cutoff;
     }
 
-    /// `W3DView::setWidth(width)`: the camera's aspect, viewport and a 50 degree view plane scaled to the display.
+    /// `W3DView::setWidth(width)`: the camera's aspect, viewport and a 50 degree view plane scaled to the display ("we
+    /// want to maintain the same scale, so we'll need to adjust the fov").
     pub fn set_width(&mut self, width: i32, display_width: i32) {
         self.width = width;
         self.camera.set_aspect_ratio(width as f32 / self.height as f32);
         self.camera.viewport.1.x = (self.origin.x + width) as f32 / display_width as f32;
-        self.camera.set_view_plane_fov(width as f32 / display_width as f32 * deg_to_radf(50.0), -1.0);
+        let w = if plant(9272) { display_width } else { width };
+        self.camera.set_view_plane_fov(w as f32 / display_width as f32 * deg_to_radf(50.0), -1.0);
     }
 
-    /// `W3DView::setHeight(height)`: the camera's aspect and viewport.
+    /// `W3DView::setHeight(height)` (W3DView.cpp:204, "Sets the height of the viewport, while maintaining original
+    /// camera perspective"): the camera's aspect (the view plane's height follows its unchanged width, so a shorter view
+    /// sees less below and above at the same scale) and the viewport's bottom edge, as a fraction of the display.
+    /// GitHub #138: the control bar's 80 % (`ShowControlBar`, the default stage) and 100 % (`HideControlBar`, the low
+    /// stage) reach the client's view through this.
     pub fn set_height(&mut self, height: i32, display_height: i32) {
         self.height = height;
-        self.camera.set_aspect_ratio(self.width as f32 / height as f32);
+        let aspect = if plant(9271) { self.width as f32 / display_height as f32 } else { self.width as f32 / height as f32 };
+        self.camera.set_aspect_ratio(aspect);
         self.camera.viewport.1.y = (self.origin.y + height) as f32 / display_height as f32;
+    }
+
+    /// GitHub #138: `W3DView::setOrigin(x, y)` (W3DView.cpp:238, "Sets location of top-left view corner on display"):
+    /// the viewport's top-left corner as a fraction of the display, then `setWidth(m_width)` and `setHeight(m_height)`
+    /// ("bottom-right border was also moved my this call, so force an update of extents").
+    pub fn set_origin(&mut self, x: i32, y: i32, display_width: i32, display_height: i32) {
+        self.origin = ICoord2D { x, y };
+        self.camera.viewport.0.x = x as f32 / display_width as f32;
+        self.camera.viewport.0.y = y as f32 / display_height as f32;
+        self.set_width(self.width, display_width);
+        if !plant(9273) {
+            self.set_height(self.height, display_height);
+        }
     }
 
     /// `View::setMouseLock(locked)`.
@@ -467,9 +496,13 @@ impl TacticalView {
         self.camera.transform
     }
 
-    /// `getPickRay(&screen, &start, &end)`: from the camera through a pixel of the view to the far clip plane.
+    /// `getPickRay(&screen, &start, &end)`: from the camera through a pixel of the view to the far clip plane. (#138: the
+    /// pixel is the display's; the view's origin and size map it to -1 .. 1, so a view 80 % of the display's height
+    /// spans its own 80 %.)
     pub fn get_pick_ray(&self, screen: ICoord2D) -> (Vector3, Vector3) {
-        let (log_x, log_y) = pixel_screen_to_w3d_logical_screen(screen.x - self.origin.x, screen.y - self.origin.y, self.width, self.height);
+        let oy = if plant(9274) { 0 } else { self.origin.y };
+        let h = if plant(9275) { self.render_target().1 } else { self.height };
+        let (log_x, log_y) = pixel_screen_to_w3d_logical_screen(screen.x - self.origin.x, screen.y - oy, self.width, h);
         let ray_start = self.camera.position();
         let mut ray_end = self.camera.un_project(Vector2::new(log_x, log_y));
         ray_end -= ray_start;
@@ -477,6 +510,30 @@ impl TacticalView {
         ray_end *= self.camera.depth();
         ray_end += ray_start;
         (ray_start, ray_end)
+    }
+
+    /// GitHub #138: `W3DView::screenToWorldAtZ(&s, &w, z)` (W3DView.cpp:3311): where the pick ray through a pixel of the
+    /// display crosses the plane at height `z`.
+    pub fn screen_to_world_at_z(&self, s: ICoord2D, z: f32) -> Coord3D {
+        let (ray_start, ray_end) = self.get_pick_ray(s);
+        let y = if plant(9276) { Vector3::find_x_at_z(z, &ray_start, &ray_end) } else { Vector3::find_y_at_z(z, &ray_start, &ray_end) };
+        Coord3D { x: Vector3::find_x_at_z(z, &ray_start, &ray_end), y, z }
+    }
+
+    /// GitHub #138: `View::getScreenCornerWorldPointsAtZ(&topLeft, &topRight, &bottomLeft, &bottomRight, z)` (View.cpp:225):
+    /// the view's four corners (its origin, plus its width, plus its height) on the plane at height `z`, in upstream's
+    /// order and with upstream's names: the third is the lower **right** corner although it is returned as `bottomLeft`,
+    /// the fourth the lower left as `bottomRight` ("lower right", "lower left", in its own comments). The radar's view
+    /// box (`W3DRadar::drawViewBox`) reads them in that order.
+    pub fn get_screen_corner_world_points_at_z(&self, z: f32) -> [Coord3D; 4] {
+        let view_width = self.width;
+        let view_height = if plant(9277) { self.render_target().1 } else { self.height };
+        let origin = self.origin;
+        let top_left = ICoord2D { x: origin.x, y: origin.y };
+        let top_right = ICoord2D { x: origin.x + view_width, y: origin.y };
+        let bottom_left = ICoord2D { x: origin.x + view_width, y: origin.y + view_height };
+        let bottom_right = ICoord2D { x: if plant(9278) { origin.x + view_width } else { origin.x }, y: origin.y + view_height };
+        [self.screen_to_world_at_z(top_left, z), self.screen_to_world_at_z(top_right, z), self.screen_to_world_at_z(bottom_left, z), self.screen_to_world_at_z(bottom_right, z)]
     }
 
     /// `calcCameraConstraints()`: the map's extent less the ground distance from the screen's centre to 95 % down it

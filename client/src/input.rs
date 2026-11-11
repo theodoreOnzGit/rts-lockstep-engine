@@ -204,12 +204,15 @@ pub struct BarButton {
 }
 
 /// (#119, #117) What the scripts' input calls hand back to the application ([`Controls::take_script_input`]).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScriptInputBack {
     /// A `LookAtResetModes` came: the camera's `LookAtTranslator::resetModes`.
     pub reset_modes: bool,
     /// (#117) A `CloseWindows` came: `GameLogic::closeWindows` on the shell's windows.
     pub close_windows: bool,
+    /// (#138) The calls on the control bar that came, in order: a script's `HideControlBar`/`ShowControlBar`
+    /// (`doLetterBoxMode`) and `deleteBuildTooltipLayout`, for the bar (`crate::ui::GameUi::script_call`).
+    pub bar_calls: Vec<rts_lockstep_engine::logic::client_event::ScriptInputCall>,
 }
 
 impl Controls {
@@ -494,7 +497,9 @@ impl Controls {
     /// #116: a logic frame's events on the client's input: the scripts' `DISABLE_INPUT` / `ENABLE_INPUT` and deselections
     /// (`rts_lockstep_engine::client::script_input`), on the InGameUI and `mouse`. The build tooltip ~~and the look-at
     /// translator's modes have nothing to reset here (no tooltip in the game; the camera input keeps no scroll mode)~~
-    /// has nothing to delete (no tooltip in the game). **Corrected 2026-11-10 (#119):** the answer is whether a
+    /// ~~has nothing to delete (no tooltip in the game).~~ **Corrected 2026-11-11, #138:** the build tooltip's
+    /// `deleteBuildTooltipLayout`, with a script's `HideControlBar`/`ShowControlBar`, is handed back for the bar
+    /// ([`ScriptInputBack::bar_calls`]). **Corrected 2026-11-10 (#119):** the answer is whether a
     /// `LookAtResetModes` came, for the camera's `LookAtTranslator::resetModes` ([`crate::camera::Camera::reset_modes`]).
     /// **(#117)** The answer also says whether a `CloseWindows` came (`doQuickVictory`'s `TheGameLogic->closeWindows()`),
     /// for the shell's windows ([`crate::shell::ShellUi::close_windows`]).
@@ -505,6 +510,7 @@ impl Controls {
             match apply_script_input(e, &mut self.ui, mouse, &mut self.client) {
                 Some(ScriptInputCall::LookAtResetModes) => back.reset_modes = true,
                 Some(ScriptInputCall::CloseWindows) => back.close_windows = true,
+                Some(c @ (ScriptInputCall::HideControlBar(_) | ScriptInputCall::ShowControlBar(_) | ScriptInputCall::DeleteBuildTooltipLayout)) => back.bar_calls.push(c),
                 _ => {}
             }
         }
@@ -1587,6 +1593,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
                     let b = c.take_script_input(&events, &mut mouse);
                     back.reset_modes |= b.reset_modes;
                     back.close_windows |= b.close_windows;
+                    back.bar_calls.extend(b.bar_calls);
                     calls.extend(events.iter().filter_map(|e| if let ClientEvent::ScriptInput(i) = e { Some(*i) } else { None }));
                 }
                 crcs.push(c.client.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
@@ -1598,7 +1605,8 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         assert_eq!(alone, with, "the CRCs are unchanged with the client attached");
         assert_eq!(calls.first(), Some(&C::CloseWindows));
         assert_eq!(&calls[1..], [C::SetInputEnabled(false), C::MouseSetVisibility(false), C::DeselectAllDrawables, C::ClearAttackMoveToMode, C::SetWaypointMode(false), C::DeleteBuildTooltipLayout, C::LookAtResetModes]);
-        assert_eq!(back, ScriptInputBack { reset_modes: true, close_windows: true });
+        // (#138: `deleteBuildTooltipLayout` comes back for the bar)
+        assert_eq!(back, ScriptInputBack { reset_modes: true, close_windows: true, bar_calls: vec![C::DeleteBuildTooltipLayout] });
         assert!(!shown, "doDisableInput hides the mouse");
         eprintln!("#117 QUICKVICTORY: {} frames, last CRC {:08x}, calls {:?}", with.len(), with.last().copied().unwrap_or(0), calls);
     }
@@ -1655,7 +1663,10 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         assert!(c.take_script_input(&[ClientEvent::ScriptInput(C::LookAtResetModes)], &mut mouse).reset_modes);
         assert_eq!(c.take_script_input(&[], &mut mouse), ScriptInputBack::default());
         // #117: `doQuickVictory`'s `closeWindows` comes back for the shell
-        assert_eq!(c.take_script_input(&[ClientEvent::ScriptInput(C::CloseWindows)], &mut mouse), ScriptInputBack { reset_modes: false, close_windows: true });
+        assert_eq!(c.take_script_input(&[ClientEvent::ScriptInput(C::CloseWindows)], &mut mouse), ScriptInputBack { reset_modes: false, close_windows: true, bar_calls: Vec::new() });
+        // (#138) a script's letterbox comes back for the bar, in order
+        let lb = [ClientEvent::ScriptInput(C::HideControlBar(true)), ClientEvent::ScriptInput(C::EnableLetterBox(true)), ClientEvent::ScriptInput(C::ShowControlBar(false))];
+        assert_eq!(c.take_script_input(&lb, &mut mouse).bar_calls, [C::HideControlBar(true), C::ShowControlBar(false)]);
         assert!(!c.selection.drag_selecting && !c.ui.is_selecting());
         assert_eq!(c.client.sent, vec![MSG_DESTROY_SELECTED_GROUP]);
         client_frame(&mut c, &mut mouse);

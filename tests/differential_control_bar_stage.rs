@@ -10,6 +10,9 @@
 //     HideControlBar, ToggleControlBar)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (the replay controls)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp (MSG_META_TOGGLE_CONTROL_BAR)
+//   (#138) GeneralsMD/Code/GameEngine/Source/GameLogic/ScriptEngine/ScriptActions.cpp (doLetterBoxMode),
+//     GameClient/InGameUI.cpp (createControlBar), Common/GameEngine.cpp (init's end), GameLogic/System/GameLogic.cpp
+//     (startNewGame's bar), GameLogic/System/GameLogicDispatch.cpp (clearGameData's bar)
 //
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
@@ -58,6 +61,25 @@
 //!
 //! With the two rewritten, 15 of 15 plants are caught.
 //!
+//! # #138: the other callers of HideControlBar and ShowControlBar (2026-11-11)
+//!
+//! Added: the script's letterbox (ScriptActions.cpp's `doLetterBoxMode`; on the Rust side the logic's
+//! `do_letter_box_mode`, the events the World sends, `ScriptInputCall::control_bar` and `EnableLetterBox`, and the
+//! client's `script_control_bar` taking them in order), `InGameUI::createControlBar`, the end of `GameEngine::init`, the
+//! end of `GameLogic::startNewGame` (shell game or not) and `GameLogic::clearGameData`'s bar, all cut verbatim (kinds 7
+//! to 11 of the wrapper). The generator draws them in 2 of 18 step kinds (it drew 16 before, so the sequences and the
+//! counts above changed). **Predictions:** not written before the first run, a process miss of mine; the run is reported
+//! as it came.
+//!
+//! **Results:** 20,000 sequences, 411,367 steps (8,409 letterboxes, 3,768 `createControlBar`, 3,718 `GameEngine::init`
+//! ends, 26,049 `startNewGame` ends, 3,882 `clearGameData`; 91,129 meta cases, 101,294 steps ending low, the bar hidden
+//! 88,334 times, the shell's top toggled 23,390 times): **0 mismatches** on the first run.
+//!
+//! Planted bugs on the new sequences, mismatching sequences of 20,000: 9241 10,767; 9242 7,542; 9243 9,276; 9244
+//! 14,558; 9245 11,116; 9246 8,837; 9247 8,837; 9248 3,264; 9249 17,544; 9250 8,610; 9251 9,704; 9252 7,565; 9253
+//! 13,350; 9254 4,996; 9255 4,466; and the new ones 9279 3,276; 9280 3,241; 9281 12,980; 9282 6,243; 9283 3,222; 9284
+//! 2,494; 9285 4,019. **22 of 22 caught.**
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints a `MEASURED` line and fails on purpose):
@@ -79,13 +101,23 @@
 //! | 9253 | `ToggleControlBar` never hides the bar |
 //! | 9254 | the meta case in the shell always hides the top layout |
 //! | 9255 | the meta case toggles the bar during a replay's playback |
+//! | 9279 | (#138) `createControlBar` hides the bar with `immediate` FALSE |
+//! | 9280 | (#138) the end of `GameEngine::init` does not hide the bar |
+//! | 9281 | (#138) the end of `startNewGame` shows the bar in the shell's game and hides it in another |
+//! | 9282 | (#138) the end of `startNewGame` shows the bar immediately (no slide) |
+//! | 9283 | (#138) the letterbox's start hides the bar with `immediate` FALSE |
+//! | 9284 | (#138) the letterbox's end shows the bar immediately |
+//! | 9285 | (#138) the client takes a script's `ShowControlBar` as `ToggleControlBar` |
 
 mod support;
 
 use rts_lockstep_engine::client::control_bar_stage::{
-    hide_control_bar, show_control_bar, toggle_control_bar, toggle_control_bar_meta, ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleControlBarHost,
+    clear_game_data_control_bar, create_control_bar, game_engine_init_control_bar, hide_control_bar, script_control_bar, show_control_bar,
+    start_new_game_control_bar, toggle_control_bar, toggle_control_bar_meta, ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleControlBarHost,
     ToggleImage, BUTTON_LARGE, CONTROL_BAR_PARENT,
 };
+use rts_lockstep_engine::logic::client_event::ScriptInputCall;
+use rts_lockstep_engine::logic::world::script_actions::{do_letter_box_mode, LetterBoxHost};
 use rts_lockstep_engine::client::selection_xlat::Disposition;
 use rts_lockstep_engine::client::window_script::WinId;
 use rts_lockstep_engine::differential as cpp;
@@ -218,6 +250,20 @@ impl ToggleControlBarHost for Meta {
     }
 }
 
+/// (#138) The World's side of the script's letterbox: `doLetterBoxMode`'s calls become the events the World sends
+/// (`ScriptInputCall::control_bar`, `EnableLetterBox`), in order.
+#[derive(Default)]
+struct Events(Vec<ScriptInputCall>);
+
+impl LetterBoxHost for Events {
+    fn letter_box_control_bar_show(&mut self, hide: bool, immediate: bool) {
+        self.0.push(ScriptInputCall::control_bar(hide, immediate));
+    }
+    fn letter_box_enable(&mut self, enable: bool) {
+        self.0.push(ScriptInputCall::EnableLetterBox(enable));
+    }
+}
+
 fn rust_seq(input: &[i32]) -> Vec<i32> {
     let env = Env {
         hidden: [0, 1, 2, 3].map(|i| (input[12] >> i) & 1 != 0),
@@ -253,6 +299,33 @@ fn rust_seq(input: &[i32]) -> Vec<i32> {
             3 => show_control_bar(&mut m.bar, w[1] != 0, &mut m.env),
             4 => hide_control_bar(&mut m.bar, w[1] != 0, &mut m.env),
             5 => toggle_control_bar(&mut m.bar, w[1] != 0, &mut m.env),
+            // (#138) the logic's half, then the client taking the events in order
+            7 => {
+                let mut e = Events::default();
+                do_letter_box_mode(&mut e, w[1] != 0);
+                for call in e.0 {
+                    if !script_control_bar(&call, &mut m.bar, &mut m.env) {
+                        let ScriptInputCall::EnableLetterBox(on) = call else { panic!("{call:?}") };
+                        m.env.rec([14, i32::from(on), 0, 0, 0, 0]);
+                    }
+                }
+            }
+            8 => {
+                // (`winCreateFromScript`, the caller's)
+                m.env.rec([15, 0, 0, 0, 0, 0]);
+                create_control_bar(&mut m.bar, &mut m.env);
+            }
+            9 => {
+                // (`TheSubsystemList->resetAll()`, the caller's)
+                m.env.rec([17, 0, 0, 0, 0, 0]);
+                game_engine_init_control_bar(&mut m.bar, &mut m.env);
+            }
+            10 => start_new_game_control_bar(&mut m.bar, w[1] != 0, &mut m.env),
+            11 => {
+                clear_game_data_control_bar(&mut m.bar, &mut m.env);
+                // (`closeWindows()`, the caller's)
+                m.env.rec([18, 0, 0, 0, 0, 0]);
+            }
             _ => match w[1] {
                 0 => m.env.playback = w[2] != 0,
                 1 => m.env.replay = w[2] != 0,
@@ -304,7 +377,7 @@ fn gen_case(g: &mut Gen) -> Vec<i32> {
     let (animate, parent) = (v[8] != 0, v[9] != 0);
     let steps = 1 + g.below(40);
     for _ in 0..steps {
-        let s = match g.below(16) {
+        let s = match g.below(18) {
             0..=3 => [0, 0, 0, 0],
             4..=5 => [1, 0, 0, 0],
             6 => [2, g.below(8) as i32 - 2, 0, 0],
@@ -326,6 +399,16 @@ fn gen_case(g: &mut Gen) -> Vec<i32> {
                 }
             }
             11..=12 => [5, g.below(2) as i32, 0, 0],
+            // (#138) the other callers; never a `HideControlBar` (immediate) without ControlBarParent
+            13 => match (g.below(5), parent) {
+                (0, _) => [7, 0, 0, 0],
+                (1, true) => [7, 1, 0, 0],
+                (2, true) => [8, 0, 0, 0],
+                (3, true) => [9, 0, 0, 0],
+                (4, true) => [11, 0, 0, 0],
+                _ => [10, 0, 0, 0],
+            },
+            14 => [10, i32::from(parent && g.below(3) == 0), 0, 0],
             _ => match g.below(6) {
                 4 => [6, 4, height(g), 0],
                 5 => [6, 5, g.below(4) as i32, g.below(2) as i32],
@@ -344,9 +427,16 @@ fn the_control_bar_stages_match_upstream() {
     let mut g = Gen::new(0x136_1360);
     let mut whole = Check::new("the control bar's stages and toggles");
     let (mut steps, mut metas, mut lows, mut toggled_hidden, mut shell_tops) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    // (#138) the letterbox, createControlBar, GameEngine::init's end, startNewGame's end, clearGameData
+    let mut others = [0u64; 5];
     for i in 0..cases {
         let input = gen_case(&mut g);
         steps += ((input.len() - 16) / 4) as u64;
+        for st in input[16..].chunks(4) {
+            if (7..=11).contains(&st[0]) {
+                others[(st[0] - 7) as usize] += 1;
+            }
+        }
         let r = rust_seq(&input);
         let c = cpp_seq(&input);
         for rec in c.chunks(6) {
@@ -365,6 +455,7 @@ fn the_control_bar_stages_match_upstream() {
         whole.eq(r, c, || format!("sequence {i}"));
     }
     println!("{cases} sequences, {steps} steps: {metas} meta cases, {lows} steps ending low, the bar hidden {toggled_hidden} times, the shell's top toggled {shell_tops} times");
+    println!("(#138) letterbox {}, createControlBar {}, GameEngine::init {}, startNewGame {}, clearGameData {}", others[0], others[1], others[2], others[3], others[4]);
     if planted {
         whole.report();
     } else {

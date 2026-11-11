@@ -39,9 +39,12 @@
 //! # Where this differs from upstream
 //!
 //! The windows are not changed in place: [`set_portrait_by_object`] and [`populate_build_tooltip_layout`] return what is
-//! shown ([`Portrait`], [`Tooltip`]); the drawing applies it. The popup's delay, animation, word wrap and placement
+//! shown ([`Portrait`], [`Tooltip`]); the drawing applies it. ~~The popup's delay, animation, word wrap and placement
 //! (`showBuildTooltipLayout`, the wrap and resize at the end of `populateBuildTooltipLayout`) are the drawing's, not
-//! translated: on a phone a long press stands for the hover. Upstream's popup has **no build time** line; none is added.
+//! translated: on a phone a long press stands for the hover.~~ **Corrected 2026-11-11, #138:** the popup's delay
+//! (`showBuildTooltipLayout`, `commandButtonTooltip`, `ControlBar::update`'s part) is translated in
+//! `crate::client::build_tooltip` (its animation is dead code upstream); the word wrap and placement (the end of
+//! `populateBuildTooltipLayout`) are still the drawing's. Upstream's popup has **no build time** line; none is added.
 //! `UnicodeString::format` (`vswprintf`) is [`format_wide`], which knows the conversions the game's strings use.
 
 use crate::client::control_bar::gui;

@@ -60,8 +60,24 @@
 //!   `ControlBar::init` dereferences `CP_MASTER` unchecked; here a bar without it keeps the position (0, 0) and the
 //!   stage functions skip the window. The differential test generates none of these.
 //! - The windows, the tactical view, the display, the special power shortcut, the animation and the UI's dirty flag are
-//!   the host's ([`ControlBarStageHost`]); the client's tactical view keeps the whole window (the bar is drawn over it),
-//!   so it takes no height from here.
+//!   the host's ([`ControlBarStageHost`]); ~~the client's tactical view keeps the whole window (the bar is drawn over
+//!   it), so it takes no height from here.~~ **Corrected 2026-11-11, #138:** the client's tactical view takes the height
+//!   asked for here (`TheTacticalView->setHeight`), mapped from the bar's 800x600 layout onto the window, and its 3D
+//!   viewport, pick ray and radar view box follow it.
+//!
+//! # The other callers (#138)
+//!
+//! - `InGameUI::createControlBar` ([`create_control_bar`]), the end of `GameEngine::init`
+//!   ([`game_engine_init_control_bar`]), the end of `GameLogic::startNewGame` ([`start_new_game_control_bar`]) and
+//!   `GameLogic::clearGameData` ([`clear_game_data_control_bar`]): the client makes them when it reads the bar (the
+//!   first three, in upstream's order) and when the World's game is cleared.
+//! - The script's letterbox (`ScriptActions::doLetterBoxMode`, ScriptActions.cpp:3777): the logic's half is
+//!   `logic::world::script_actions::do_letter_box_mode`, which the World sends as `ScriptInputCall`s; the client applies
+//!   them ([`script_control_bar`]).
+//! - **Not translated:** `MSG_META_DEMO_TOGGLE_LETTERBOX` (CommandXlat.cpp:3994) is inside `#if defined(_DEBUG) ||
+//!   defined(_INTERNAL)` (CommandXlat.cpp:3817-5128) and its key binding inside the same guard in MetaEvent.cpp:211, so
+//!   the release build has neither; the shell game's `HideControlBar()` after its load screen (GameLogic.cpp:2228), which
+//!   the client has no shell map game to reach.
 
 use crate::client::control_bar_scheme::{gadget_button_set_enabled_image, gadget_button_set_hilite_image, gadget_button_set_hilite_selected_image};
 use crate::client::selection_xlat::Disposition;
@@ -376,6 +392,55 @@ pub fn toggle_control_bar(bar: &mut ControlBarStage, immediate: bool, h: &mut im
         let hidden = h.win_is_hidden(window);
         h.win_hide(window, !hidden && !plant(9253));
     }
+}
+
+/// GitHub #138: `InGameUI::createControlBar()` (InGameUI.cpp:3864): `TheWindowManager->winCreateFromScript("ControlBar.wnd")`
+/// (the caller's: the client reads the layout before it has a bar to make) then `HideControlBar()` (`immediate` defaults
+/// to `TRUE`, GUICallbacks.h:324). The bar starts hidden, the view the display's whole height.
+pub fn create_control_bar(bar: &mut ControlBarStage, h: &mut impl ControlBarStageHost) {
+    hide_control_bar(bar, !plant(9279), h);
+}
+
+/// GitHub #138: `GameEngine::init`'s last call (GameEngine.cpp:703), after `TheSubsystemList->resetAll()` (the caller's):
+/// `HideControlBar()`.
+pub fn game_engine_init_control_bar(bar: &mut ControlBarStage, h: &mut impl ControlBarStageHost) {
+    if !plant(9280) {
+        hide_control_bar(bar, true, h);
+    }
+}
+
+/// GitHub #138: `GameLogic::startNewGame`'s control bar (GameLogic.cpp:2307), after `initSpecialPowershortcutBar` (the
+/// caller's): hidden in the shell's own game (`GAME_SHELL`, the shell map behind the menus), else
+/// `ShowControlBar(FALSE)` (with an animate window manager, the bar slides in). The client has no shell map game, so it
+/// always shows the bar. (GameLogic.cpp:2228, the shell game's `HideControlBar()` after the load screen, is in a branch
+/// the client never reaches for the same reason.)
+pub fn start_new_game_control_bar(bar: &mut ControlBarStage, shell_game: bool, h: &mut impl ControlBarStageHost) {
+    if shell_game != plant(9281) {
+        hide_control_bar(bar, true, h);
+    } else {
+        show_control_bar(bar, plant(9282), h);
+    }
+}
+
+/// GitHub #138: `GameLogic::clearGameData`'s control bar (GameLogicDispatch.cpp:291), after `TheGameEngine->reset()` and
+/// before `closeWindows()` (both the caller's): `HideControlBar()`.
+pub fn clear_game_data_control_bar(bar: &mut ControlBarStage, h: &mut impl ControlBarStageHost) {
+    hide_control_bar(bar, true, h);
+}
+
+/// GitHub #138: one of the logic's calls on the control bar, as the client takes it from the frame's events: a script's
+/// `HideControlBar(immediate)` or `ShowControlBar(immediate)` (`ScriptActions::doLetterBoxMode`, ScriptActions.cpp:3773,
+/// through `ScriptInputCall`); whether it was one. The client only consumes the event: the logic made the call and keeps
+/// nothing of it.
+pub fn script_control_bar(call: &crate::logic::client_event::ScriptInputCall, bar: &mut ControlBarStage, h: &mut impl ControlBarStageHost) -> bool {
+    use crate::logic::client_event::ScriptInputCall;
+    match *call {
+        ScriptInputCall::HideControlBar(immediate) => hide_control_bar(bar, immediate, h),
+        ScriptInputCall::ShowControlBar(immediate) if plant(9285) => toggle_control_bar(bar, immediate, h),
+        ScriptInputCall::ShowControlBar(immediate) => show_control_bar(bar, immediate, h),
+        _ => return false,
+    }
+    true
 }
 
 /// What `MSG_META_TOGGLE_CONTROL_BAR` reaches: the shell's top layout, the recorder, and `ToggleControlBar`.

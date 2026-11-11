@@ -3625,6 +3625,18 @@ extern "C" {
     // MSG_META_TOGGLE_CONTROL_BAR case, verbatim.
     pub fn ref_control_bar_stage_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
+    // which documents the setup's, the steps' and the records' words): W3DView's setHeight, setWidth, setOrigin,
+    // getPickRay and screenToWorldAtZ, View::getScreenCornerWorldPointsAtZ and CameraClass's view plane, viewport and
+    // Un_Project, verbatim.
+    pub fn ref_tactical_view_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #138: the control bar's popup description's timing (differential/wrap_build_tooltip.cpp, which documents the
+    // words): ControlBarPopupDescription.cpp's update function, showBuildTooltipLayout, repopulateBuildTooltipLayout,
+    // hideBuildTooltipLayout and deleteBuildTooltipLayout, ControlBar.cpp's commandButtonTooltip and ControlBar::update's
+    // popup part, verbatim.
+    pub fn ref_build_tooltip_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #131: the control bar's hot keys and the keyboard's key names (differential/wrap_hot_key.cpp, which
     // documents the cases' words), verbatim.
     pub fn ref_hot_key_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
