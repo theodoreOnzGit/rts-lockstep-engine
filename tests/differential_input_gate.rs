@@ -293,6 +293,8 @@ struct MouseHost {
     out: Vec<i32>,
     evals: Vec<i32>,
     records: i32,
+    /// #132: the `MSG_DESTROY_SELECTED_GROUP`s posted (`deselectAllDrawables`); not part of the mouse cases' output.
+    destroy_groups: i32,
 }
 
 fn draw_pos(o: ObjectId) -> Coord3D {
@@ -303,7 +305,11 @@ impl SelectionUiHost for MouseHost {
     fn logic_frame(&self) -> u32 {
         0
     }
-    fn append_message_bool(&mut self, _t: MessageType, _b: bool) {}
+    fn append_message_bool(&mut self, t: MessageType, _b: bool) {
+        if t == MSG_DESTROY_SELECTED_GROUP {
+            self.destroy_groups += 1;
+        }
+    }
     fn on_selection_changed(&mut self, _draw: DrawableId, _selected: bool) {}
 }
 impl SelectionInfoHost for MouseHost {
@@ -678,6 +684,222 @@ fn command_mouse_cases_match_upstream() {
         c.eq(rust, cpp_case(4, &input), || format!("case {i} {input:?}"));
     }
     println!("mouse cases: {} evaluated, {} guard orders, {} destroyed, {} shortcut hints with nothing selected", stats[0], stats[1], stats[2], stats[3]);
+    if planted {
+        c.report();
+    } else {
+        c.finish();
+    }
+    assert!(!planted, "a planted run: see the MEASURED lines (a mismatch is the plant caught)");
+}
+
+// ---- #132: the selection translator's right button ----
+
+use rts_lockstep_engine::client::selection_xlat::DragTolerances;
+
+/// One sequence's fixed facts: `TheMouse`'s tolerances, the mouse mode, and the clock's start.
+struct RightSequence {
+    tol: DragTolerances,
+    alternate: bool,
+    time: u32,
+    /// The C++ translator's state, carried from its own output: anchor x, y, `m_lastClick`, camera x, y, z bits.
+    cpp_state: [i32; 6],
+}
+
+/// One message of a right-button sequence through both sides; the Rust translator `x` is carried by the caller.
+fn right_message(g: &mut Gen, seq: &mut RightSequence, x: &mut SelectionTranslator, stats: &mut [u64; 5]) -> (Vec<i32>, Vec<i32>) {
+    // a press two times in five, a release two in five, else the other raw button messages' neighbours (kept by both)
+    let t = match g.below(10) {
+        0..=3 => MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN,
+        4..=8 => MSG_RAW_MOUSE_RIGHT_BUTTON_UP,
+        _ => [MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK, MSG_RAW_MOUSE_RIGHT_DRAG, MSG_RAW_MOUSE_POSITION][g.below(3) as usize],
+    };
+    let on = g.below(8) != 0;
+    let (drag, selecting) = (g.below(4) == 0, g.below(2) == 1);
+    // the pointer near the last press (within twice the tolerance) most of the time, anywhere one time in eight
+    // (the press's own pixel a third of the time, so that clicks are common)
+    let pixel = if g.below(3) == 0 {
+        x.deselect_feedback_anchor
+    } else if g.below(8) == 0 {
+        ICoord2D { x: g.i32(), y: g.i32() }
+    } else {
+        let r = (seq.tol.pixels as i32).saturating_mul(2).clamp(1, 1 << 20);
+        let a = x.deselect_feedback_anchor;
+        ICoord2D { x: a.x.wrapping_add(g.below(2 * r as u32 + 1) as i32 - r), y: a.y.wrapping_add(g.below(2 * r as u32 + 1) as i32 - r) }
+    };
+    // the clock: forward by up to twice the time tolerance, sometimes back, and wrapping past 2^32
+    seq.time = match g.below(10) {
+        0 => seq.time.wrapping_sub(g.below(500)),
+        1 => g.u32(),
+        2..=6 => seq.time.wrapping_add(g.below(seq.tol.ms.saturating_add(1))),
+        _ => seq.time.wrapping_add(g.below(seq.tol.ms.saturating_mul(2).clamp(1, 1 << 30))),
+    };
+    // the camera at the press's point half the time, else moved by up to twice the 3-D tolerance on each axis
+    let base = x.deselect_down_camera_position;
+    let camera = if g.below(2) == 0 {
+        base
+    } else {
+        let w = if seq.tol.world == 0 { 2.0f32 } else { seq.tol.world as f32 * 2.0 };
+        Coord3D { x: base.x + g.uniform(-w, w), y: base.y + g.uniform(-w, w), z: base.z + g.uniform(-w, w) }
+    };
+    let command = g.below(3) == 0;
+    let place = if g.below(4) == 0 { 1 + g.below(9) } else { 0 };
+    let input = vec![
+        t.0 as i32,
+        i32::from(on),
+        i32::from(drag),
+        i32::from(selecting),
+        pixel.x,
+        pixel.y,
+        seq.time as i32,
+        camera.x.to_bits() as i32,
+        camera.y.to_bits() as i32,
+        camera.z.to_bits() as i32,
+        seq.tol.pixels as i32,
+        seq.tol.world as i32,
+        seq.tol.ms as i32,
+        i32::from(seq.alternate),
+        i32::from(command),
+        place as i32,
+        seq.cpp_state[0],
+        seq.cpp_state[1],
+        seq.cpp_state[2],
+        seq.cpp_state[3],
+        seq.cpp_state[4],
+        seq.cpp_state[5],
+    ];
+
+    let mut h = MouseHost::default();
+    let mut ui = InGameUiSelection::new();
+    ui.set_input_enabled(on);
+    ui.set_selecting(selecting);
+    for d in 1..=g.below(3) {
+        ui.select_drawable(d as DrawableId, &mut h);
+    }
+    if command {
+        ui.set_gui_command(Some(GuiButton { command_type: 0, options: opt::NEED_TARGET_POS, ..Default::default() }));
+    }
+    if place != 0 {
+        ui.place_build_available(Some(1), Some(place as DrawableId), 0.0, &h);
+    }
+    x.drag_selecting = drag;
+    let mut scroll_stops = 0;
+    let d = if t == MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN {
+        x.right_button_down(pixel, seq.time, camera, &mut ui)
+    } else if t == MSG_RAW_MOUSE_RIGHT_BUTTON_UP {
+        x.right_button_up(pixel, seq.time, camera, seq.tol, seq.alternate, &mut ui, &mut h, |b| scroll_stops += i32::from(!b))
+    } else {
+        // (no case: only the gate)
+        x.input_disabled_gate(&mut ui).unwrap_or(Disposition::Keep)
+    };
+    let cleared = i32::from(command && ui.gui_command().is_none());
+    stats[0] += u64::from(t == MSG_RAW_MOUSE_RIGHT_BUTTON_UP && on);
+    stats[1] += u64::from(d == Disposition::Destroy);
+    stats[2] += u64::from(h.destroy_groups > 0);
+    stats[3] += u64::from(cleared > 0);
+    stats[4] += u64::from(t == MSG_RAW_MOUSE_RIGHT_BUTTON_UP && on && !command && h.destroy_groups == 0 && (!seq.alternate || place != 0));
+    let a = x.deselect_feedback_anchor;
+    let c = x.deselect_down_camera_position;
+    let rust = vec![
+        disp(d),
+        a.x,
+        a.y,
+        x.last_click as i32,
+        c.x.to_bits() as i32,
+        c.y.to_bits() as i32,
+        c.z.to_bits() as i32,
+        i32::from(x.drag_selecting),
+        i32::from(ui.is_selecting()),
+        h.destroy_groups,
+        cleared,
+        i32::from(ui.gui_command().is_some()),
+        scroll_stops,
+    ];
+    (input, rust)
+}
+
+/// #132: `SelectionTranslator::translateGameMessage`'s right button (the gate, then the cut from
+/// `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` to `MSG_META_CREATE_TEAM0`, SelectionXlat.cpp:977-1050) against
+/// `SelectionTranslator::right_button_down` and `right_button_up`, over random sequences of messages.
+///
+/// # Method
+///
+/// Each sequence draws `TheMouse`'s tolerances (pixels 0-7, or up to 2^31 one time in eight; 3-D 0-39; milliseconds
+/// 0-399, or 0 or past 2^31 one time in eight each), the mouse mode (alternate half the time) and a start time anywhere in
+/// the 32-bit clock, then one to eight messages: the press and the release (four and five times in ten), or a double
+/// click, drag or position message, which only the gate sees. Each message draws the input (on 7 times in 8), the drag
+/// selection and the InGameUI's selecting flag, the pixel (the last press's a third of the time, else near it, within
+/// twice the tolerance, or anywhere one time in eight), the time (forward within the tolerance half the time, else by up
+/// to twice it, back by up to 499 ms, or anywhere: the unsigned difference wraps), the camera (at the press's position half the time, else moved by up to twice the 3-D tolerance per
+/// axis), a pending GUI command (a third of the time), a building waiting to be placed (a quarter), and 0 to 2 selected
+/// drawables. The Rust translator is carried through the sequence; the C++ one starts each message from the state its
+/// own last message returned, so a divergence in state shows. Compared after each message: the disposition, the
+/// translator's three right-button members (the camera as bits), the drag selection and selecting flags,
+/// `deselectAllDrawables` calls (the Rust posts `MSG_DESTROY_SELECTED_GROUP`), `setGUICommand(NULL)` calls, whether a
+/// GUI command is still pending, and `setScrolling(FALSE)` calls.
+///
+/// *Predictions, before the first run* (`issue134_progress.md`): 0 mismatches; every plant 9211-9221 caught; about a
+/// third of the 20,000 sequences' releases are clicks.
+///
+/// # Results (2026-11-11, `SELECTION_RIGHT_SEQUENCES=20000`, the default)
+///
+/// First run: 20,000 sequences, 89,951 messages, **0 mismatches**, but clicks were rare (a miss): of 39,552 releases
+/// with the input on, 599 cancelled a GUI command and 657 deselected, about 3 %, because the pointer, the clock and the
+/// camera each left their tolerance about half the time. The generator now gives the press's own pixel a third of the
+/// time and a time within the tolerance half the time. Second run: 20,000 sequences, 89,537 messages, **0 mismatches**;
+/// 39,340 releases with the input on, 1,177 cancelled a GUI command (destroyed), 1,486 deselected all, 14,913 were
+/// kept by a drag or the mode (6.8 % clicks, still under the predicted share).
+///
+/// # Planted bugs
+///
+/// `L9_PLANT=<id>`: **11 of 11 caught** (2026-11-11, the second run's sequences).
+///
+/// | id | planted bug | caught by (messages) |
+/// |---|---|---|
+/// | 9211 | the press's time is not kept | 60,569 |
+/// | 9212 | the time's difference reversed | 2,098 |
+/// | 9213 | the 3-D tolerance one unit larger | 82 |
+/// | 9214 | a drag counts as a click | 26,820 |
+/// | 9215 | the cancel leaves the GUI command | 1,177 |
+/// | 9216 | the cancel keeps the message | 1,177 |
+/// | 9217 | the cancel does not stop the scroll | 1,177 |
+/// | 9218 | the alternate mouse ignores a pending placement | 309 |
+/// | 9219 | the mode's `||` made `&&` | 1,201 |
+/// | 9220 | the pixel test `>=` | 561 |
+/// | 9221 | the pixel test ignores y | 614 |
+#[test]
+fn selection_right_button_matches_upstream() {
+    let sequences: u64 = std::env::var("SELECTION_RIGHT_SEQUENCES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
+    let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
+    let mut g = Gen::new(0x132_1320);
+    let mut c = Check::new("SelectionTranslator right button");
+    let mut stats = [0u64; 5];
+    let mut messages = 0u64;
+    for i in 0..sequences {
+        let tol = DragTolerances {
+            pixels: if g.below(8) == 0 { g.below(1 << 31) } else { g.below(8) },
+            world: g.below(40),
+            ms: match g.below(8) {
+                0 => 0,
+                1 => (1u32 << 31) + g.below(1 << 31),
+                _ => g.below(400),
+            },
+        };
+        let mut seq = RightSequence { tol, alternate: g.below(2) == 1, time: g.u32(), cpp_state: [0, 0, 0, 0, 0, 0] };
+        let mut x = SelectionTranslator::default();
+        for m in 0..1 + g.below(8) {
+            let (input, rust) = right_message(&mut g, &mut seq, &mut x, &mut stats);
+            let cpp = cpp_case(5, &input);
+            if cpp.len() >= 7 {
+                seq.cpp_state.copy_from_slice(&cpp[1..7]);
+            }
+            messages += 1;
+            c.eq(rust, cpp, || format!("sequence {i} message {m} {input:?}"));
+        }
+    }
+    println!(
+        "right button: {sequences} sequences, {messages} messages; {} releases with the input on, {} destroyed, {} deselected all, {} GUI commands cancelled, {} kept by a drag or the mode",
+        stats[0], stats[1], stats[2], stats[3], stats[4]
+    );
     if planted {
         c.report();
     } else {

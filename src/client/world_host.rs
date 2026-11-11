@@ -75,6 +75,9 @@ pub struct ClientView {
     /// #131: `TheMouse->m_dragTolerance` and `m_dragToleranceMS` from `Mouse.ini` once the client read it; `None` until
     /// then (the demo has no game files): [`FALLBACK_DRAG_TOLERANCE`].
     pub mouse_drag_tolerance: Option<(u32, u32)>,
+    /// #132: `TheMouse->m_dragTolerance3D` from `Mouse.ini` once the client read it; `None` until then:
+    /// [`FALLBACK_DRAG_TOLERANCE_3D`].
+    pub mouse_drag_tolerance_3d: Option<u32>,
     /// `TheTacticalView->iterateDrawablesInRegion` over the whole view: the objects on screen.
     pub on_screen: Vec<ObjectId>,
     /// `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)` at the last double click.
@@ -546,10 +549,20 @@ impl crate::client::command_xlat::MouseClickHost for WorldClient {
 /// click tolerance the client used before #131) and no time limit (a slow click is still a click).
 pub const FALLBACK_DRAG_TOLERANCE: (u32, u32) = (4, u32::MAX);
 
+/// #132: the 3-D drag tolerance the client uses until `Mouse.ini` gives the game's (new, the client's own, like
+/// [`FALLBACK_DRAG_TOLERANCE`]'s time): no limit, so the camera's move does not keep a right click from deselecting.
+pub const FALLBACK_DRAG_TOLERANCE_3D: u32 = u32::MAX;
+
 impl WorldClient {
     /// #131: `TheMouse`'s `m_dragTolerance` and `m_dragToleranceMS` ([`ClientView::mouse_drag_tolerance`]).
     pub fn drag_tolerance(&self) -> (u32, u32) {
         self.view.mouse_drag_tolerance.unwrap_or(FALLBACK_DRAG_TOLERANCE)
+    }
+
+    /// #132: all three of `TheMouse`'s drag tolerances, as `SelectionTranslator`'s right button reads them.
+    pub fn drag_tolerances(&self) -> crate::client::selection_xlat::DragTolerances {
+        let (pixels, ms) = self.drag_tolerance();
+        crate::client::selection_xlat::DragTolerances { pixels, world: self.view.mouse_drag_tolerance_3d.unwrap_or(FALLBACK_DRAG_TOLERANCE_3D), ms }
     }
 }
 
@@ -1989,6 +2002,21 @@ impl crate::client::radius_cursor::RadiusCursorHost for WorldClient {
         self.world.frame()
     }
     fn draw_icon_ui(&self) -> bool {
+        self.world.game_logic.draw_icon_ui
+    }
+}
+
+/// #130: the logic's radius decals' questions (`createRadiusDecal`'s owner colour and local player, `update`'s icon flag),
+/// answered from the World, read only.
+impl crate::client::radius_cursor::LogicRadiusDecalHost for WorldClient {
+    fn decal_player_color(&self, player: i32) -> Option<i32> {
+        // (the logic names only a controlling player that exists, as `radius_controlling_player` reads it)
+        Some(self.world.tq().player_color(player))
+    }
+    fn decal_local_player(&self) -> i32 {
+        self.player
+    }
+    fn decal_draw_icon_ui(&self) -> bool {
         self.world.game_logic.draw_icon_ui
     }
 }

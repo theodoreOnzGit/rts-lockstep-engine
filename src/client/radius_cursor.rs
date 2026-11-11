@@ -7,7 +7,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (TheInGameUIFieldParseTable, INI::parseInGameUIDefinition,
 //     InGameUI::init's load of InGameUI.ini, setRadiusCursor, handleRadiusCursor)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/RadiusDecal.cpp (RadiusDecalTemplate::createRadiusDecal's drawing,
-//     RadiusDecal::RadiusDecal, clear, update, setOpacity, setPosition)
+//     RadiusDecal::RadiusDecal, clear, update, setOpacity, setPosition; #130: ~RadiusDecal, and the same calls on the
+//     logic's own decals, LogicRadiusDecals)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -64,6 +65,8 @@
 //! - The rest of `InGameUI.ini` is read into [`InGameUiIniSettings`] (so the file reads as upstream reads it); the
 //!   constructor's values of those fields are not translated (zero here), nothing reads them yet.
 //! - The questions on the World are [`RadiusCursorHost`]'s.
+//! - **(#130)** The logic's own decals (delivery decals, the shroud's grid, the gunship's reticles) are
+//!   [`LogicRadiusDecals`]: the same `RadiusDecal` calls, made from the logic's `GridDecal` events.
 
 use crate::common::base_type::{Coord2D, Coord3D, ICoord2D, RGBAColorInt};
 use crate::common::game_type::ObjectId;
@@ -579,5 +582,151 @@ impl InGameUiRadiusCursor {
     /// The decal to draw, if any: the projected decal of a radius cursor that is shown.
     pub fn shown(&self) -> Option<&DecalShadow> {
         self.cur_radius_cursor.decal.as_ref()
+    }
+}
+
+// ---- #130 (batch #134): the logic's own radius decals ----
+
+/// #130: what the client's half of the logic's `RadiusDecal`s asks of the game.
+pub trait LogicRadiusDecalHost {
+    /// `owningPlayer->getPlayerColor()` of the player with this index (`None`: no such player, read as `NULL`).
+    fn decal_player_color(&self, player: i32) -> Option<i32>;
+    /// `ThePlayerList->getLocalPlayer()->getPlayerIndex()`.
+    fn decal_local_player(&self) -> i32;
+    /// `TheGameLogic->getDrawIconUI()`.
+    fn decal_draw_icon_ui(&self) -> bool;
+}
+
+/// #130: the client's halves of the logic's `RadiusDecal`s: the delivery decals of `DeliverPayloadAIUpdate`,
+/// `NeutronMissileUpdate` and `RadiusDecalUpdate` (made by the OCL `Attack` nugget), `DynamicShroudClearingRangeUpdate`'s
+/// grid decals and the Spectre gunship's attack area and targeting reticle. The logic keeps each decal's `m_empty` (game
+/// state, the same on every machine) and tells the client every call on it as an
+/// [`ObjectClientEvent::GridDecal`](crate::logic::world::object_events::ObjectClientEvent::GridDecal), addressed by the
+/// owning object and the decal's index in its module. Here each address keeps what upstream's `RadiusDecal` keeps beyond
+/// `m_empty`: `m_template` (the module data's template, which the event carries a copy of) and `m_decal` (the
+/// projected decal, [`DecalShadow`]), and the calls are made on them as RadiusDecal.cpp makes them:
+///
+/// - `createRadiusDecal(pos, radius, owningPlayer, result)` ([`create_radius_decal`]): cleared, then, with an owning
+///   player, a texture and a radius above 0, a projected decal when the template is visible to everyone or the owner is
+///   the local player, coloured the template's colour or the owner's;
+/// - `clear()`, `setPosition(pos)`, `setOpacity(o)` ([`ClientRadiusDecal`]);
+/// - `update()`: the opacity throb at `TheGameLogic->getFrame()`, the frame the module ran in (the events are read after
+///   the frame, so the caller passes the frame the logic was in before it advanced);
+/// - `~RadiusDecal()`: the owning object's destruction (`ClientEvent::ObjectDestroyed`) clears all its decals, as each
+///   module's member is destroyed with the object;
+/// - `xferRadiusDecal` on a load clears the decal: the client starts a loaded game with none.
+///
+/// Nothing here reaches the logic: the client only reads the events.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LogicRadiusDecals {
+    /// By `(object, index)`: the template the decal was made from and the decal.
+    decals: std::collections::BTreeMap<(ObjectId, u32), (RadiusDecalTemplate, ClientRadiusDecal)>,
+}
+
+impl LogicRadiusDecals {
+    /// One call on the decal at `(object, index)`, during logic frame `now`.
+    pub fn apply(&mut self, object: ObjectId, index: u32, op: &crate::logic::world::object_events::GridDecalOp, now: u32, h: &impl LogicRadiusDecalHost) {
+        use crate::logic::world::object_events::GridDecalOp;
+        let index = if plant(9227) { 0 } else { index };
+        let (tmpl, decal) = self.decals.entry((object, index)).or_insert_with(|| (RadiusDecalTemplate::default(), ClientRadiusDecal::default()));
+        match op {
+            GridDecalOp::Clear => {
+                if !plant(9222) {
+                    decal.clear();
+                }
+            }
+            GridDecalOp::Create { template, radius, position, player } => {
+                // `result.m_template = this`: the module data's template, kept here as the event's copy
+                *tmpl = template.clone();
+                let owning = player.and_then(|p| h.decal_player_color(p).map(|c| (p, c)));
+                let local = if plant(9226) { owning.map_or(-1, |o| o.0) } else { h.decal_local_player() };
+                create_radius_decal(tmpl, 0, *position, *radius, owning, local, decal);
+            }
+            GridDecalOp::SetPosition(p) => decal.set_position(*p),
+            GridDecalOp::SetOpacity(o) => {
+                if !plant(9225) {
+                    decal.set_opacity(*o);
+                }
+            }
+            GridDecalOp::Update => {
+                let frame = if plant(9224) { now.wrapping_add(1) } else { now };
+                decal.update(std::slice::from_ref(tmpl), frame, h.decal_draw_icon_ui());
+            }
+        }
+    }
+
+    /// `~RadiusDecal()` for every decal of `object`: the object is gone.
+    pub fn object_destroyed(&mut self, object: ObjectId) {
+        if plant(9223) {
+            return;
+        }
+        self.decals.retain(|&(o, _), _| o != object);
+    }
+
+    /// The frame's client events, in order: the grid decal calls and the objects destroyed. `now` is the logic frame the
+    /// events were made in.
+    pub fn take_events(&mut self, events: &[crate::logic::client_event::ClientEvent], now: u32, h: &impl LogicRadiusDecalHost) {
+        use crate::logic::client_event::ClientEvent;
+        use crate::logic::world::object_events::ObjectClientEvent;
+        for e in events {
+            match e {
+                ClientEvent::Object(ObjectClientEvent::GridDecal { object_id, index, op }) => self.apply(*object_id, *index, op, now, h),
+                ClientEvent::ObjectDestroyed { object_id } => self.object_destroyed(*object_id),
+                _ => {}
+            }
+        }
+    }
+
+    /// The decal at `(object, index)`, if the logic ever made a call on it.
+    pub fn get(&self, object: ObjectId, index: u32) -> Option<&ClientRadiusDecal> {
+        self.decals.get(&(object, index)).map(|(_, d)| d)
+    }
+
+    /// The projected decals to draw, in address order.
+    pub fn shown(&self) -> impl Iterator<Item = &DecalShadow> {
+        self.decals.values().filter_map(|(_, d)| d.decal.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod logic_decal_tests {
+    use super::*;
+    use crate::logic::world::object_events::GridDecalOp;
+
+    struct Host;
+    impl LogicRadiusDecalHost for Host {
+        fn decal_player_color(&self, p: i32) -> Option<i32> {
+            (0..4).contains(&p).then_some(0x10 + p)
+        }
+        fn decal_local_player(&self) -> i32 {
+            1
+        }
+        fn decal_draw_icon_ui(&self) -> bool {
+            true
+        }
+    }
+
+    /// A delivery decal for the local player (1) is drawn in its colour at the target, follows `setPosition`, throbs on
+    /// `update` (frame 0 of a 30-frame throb from 0 % to 100 %: half of 255, 127.5, truncated by `REAL_TO_INT` to 127) and goes with the object; one for player 2
+    /// visible only to its owner is not drawn but not empty; a clear empties it.
+    #[test]
+    fn the_logics_decals_are_made_moved_throbbed_and_cleared() {
+        let t = RadiusDecalTemplate { name: b"SCCNukeDecal".to_vec(), min_opacity: 0.0, max_opacity: 1.0, opacity_throb_time: 30, ..Default::default() };
+        let at = Coord3D { x: 50.0, y: 60.0, z: 2.0 };
+        let mut d = LogicRadiusDecals::default();
+        d.apply(7, 0, &GridDecalOp::Create { template: t.clone(), radius: 40.0, position: at, player: Some(1) }, 5, &Host);
+        let s = d.get(7, 0).and_then(|x| x.decal.clone()).expect("drawn for the local player");
+        assert_eq!((s.size, s.color, s.position), ((80.0, 80.0), 0x11, at));
+        d.apply(7, 0, &GridDecalOp::SetPosition(Coord3D { x: 1.0, y: 2.0, z: 3.0 }), 5, &Host);
+        d.apply(7, 0, &GridDecalOp::Update, 0, &Host);
+        let s = d.get(7, 0).and_then(|x| x.decal.clone()).expect("still drawn");
+        assert_eq!((s.position, s.opacity), (Coord3D { x: 1.0, y: 2.0, z: 3.0 }, Some(127)));
+        d.apply(8, 3, &GridDecalOp::Create { template: t.clone(), radius: 40.0, position: at, player: Some(2) }, 5, &Host);
+        assert!(d.get(8, 3).is_some_and(|x| !x.is_empty() && x.decal.is_none()), "made for another player: not empty, not drawn");
+        assert_eq!(d.shown().count(), 1);
+        d.object_destroyed(7);
+        assert!(d.get(7, 0).is_none() && d.shown().count() == 0, "the object's decals go with it");
+        d.apply(8, 3, &GridDecalOp::Clear, 5, &Host);
+        assert!(d.get(8, 3).is_some_and(|x| x.is_empty()));
     }
 }

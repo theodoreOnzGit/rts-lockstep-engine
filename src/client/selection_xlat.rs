@@ -6,7 +6,7 @@
 //   areAllSelected, deselectAll, the MSG_MOUSE_LEFT_CLICK case of SelectionTranslator::translateGameMessage; #116: its
 //   input gate, the MSG_RAW_MOUSE_LEFT_BUTTON_DOWN case and the drag halves of MSG_RAW_MOUSE_POSITION and
 //   MSG_RAW_MOUSE_LEFT_BUTTON_UP; #122: CanSelectDrawable, the mouse-over half of MSG_RAW_MOUSE_POSITION and the
-//   MSG_MOUSEOVER_DRAWABLE_HINT case)
+//   MSG_MOUSEOVER_DRAWABLE_HINT case; #132: the MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN and _UP cases)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/SelectionInfo.cpp (addDrawableToList)
 //
 // Original copyright notice of those files:
@@ -35,11 +35,16 @@
 //! - **The input gate (#116).** Every case runs after `translateGameMessage`'s test of `TheInGameUI->getInputEnabled()`
 //!   ([`SelectionTranslator::input_disabled_gate`]): with the input off the message is kept and a drag selection ends.
 //!   The raw button's drag state (`m_leftMouseButtonIsDown`, `m_dragSelecting`, `m_selectFeedbackAnchor`) is kept for it.
+//! - **The right button (#132).** `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` keeps the press's pixel, time and camera position
+//!   ([`SelectionTranslator::right_button_down`]); on `MSG_RAW_MOUSE_RIGHT_BUTTON_UP` a click (within `TheMouse`'s three
+//!   drag tolerances) cancels a pending GUI command, the message destroyed, or else deselects everything in the regular
+//!   mouse mode, or in the alternate one while a building waits to be placed ([`SelectionTranslator::right_button_up`]).
+//!   `tests/differential_input_gate.rs` compares both with the C++.
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection, SelectionUiHost};
 use crate::client::command_xlat::{CommandEvaluateType, CommandTranslator, CommandXlatHost};
 use crate::client::selection_info::{context_command_for_new_selection, SelectionInfo, SelectionInfoHost};
-use crate::common::base_type::ICoord2D;
+use crate::common::base_type::{Coord3D, ICoord2D};
 use crate::common::game_common::Relationship;
 use crate::common::game_type::ObjectId;
 use crate::common::kind_of::KINDOF_STRUCTURE;
@@ -142,7 +147,7 @@ pub enum Disposition {
 }
 
 /// `SelectionTranslator`'s state that the left click reads and writes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SelectionTranslator {
     /// `m_lastGroupSelGroup` (`-1`: none), which the control groups' double press reads.
     pub last_group_sel_group: i32,
@@ -154,10 +159,28 @@ pub struct SelectionTranslator {
     pub drag_selecting: bool,
     /// #116: `m_selectFeedbackAnchor`, the pixel the left button went down at.
     pub select_feedback_anchor: ICoord2D,
+    /// #132: `m_deselectFeedbackAnchor`, the pixel the right button went down at.
+    pub deselect_feedback_anchor: ICoord2D,
+    /// #132: `m_lastClick`, the mouse's time of the right button's press.
+    pub last_click: u32,
+    /// #132: `m_deselectDownCameraPosition`, `TheTacticalView->getPosition` at the right button's press.
+    pub deselect_down_camera_position: Coord3D,
+}
+
+/// #132: `TheMouse`'s three drag tolerances, which the right button's release reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DragTolerances {
+    /// `m_dragTolerance` (pixels).
+    pub pixels: u32,
+    /// `m_dragTolerance3D` (world units the camera may move).
+    pub world: u32,
+    /// `m_dragToleranceMS` (milliseconds).
+    pub ms: u32,
 }
 
 impl Default for SelectionTranslator {
-    /// The constructor's: no group pressed, the button up, no drag, the anchor at (0, 0).
+    /// The constructor's: no group pressed, the button up, no drag, the anchor at (0, 0); (#132) the right button's
+    /// anchor at (0, 0), `m_lastClick` 0 and the camera position zero.
     fn default() -> Self {
         SelectionTranslator {
             last_group_sel_group: -1,
@@ -165,6 +188,9 @@ impl Default for SelectionTranslator {
             left_mouse_button_is_down: false,
             drag_selecting: false,
             select_feedback_anchor: ICoord2D { x: 0, y: 0 },
+            deselect_feedback_anchor: ICoord2D { x: 0, y: 0 },
+            last_click: 0,
+            deselect_down_camera_position: Coord3D { x: 0.0, y: 0.0, z: 0.0 },
         }
     }
 }
@@ -325,6 +351,105 @@ impl SelectionTranslator {
             return true;
         }
         false
+    }
+
+    /// #132: the `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` case (SelectionXlat.cpp:977-988, after the input gate). "There are three
+    /// ways in which we can ignore this as a deselect": the pixel, the time and the camera's position, each kept here for
+    /// the release: `pixel` and `time` are the message's arguments 0 and 2, `camera_pos` is
+    /// `TheTacticalView->getPosition()`. The message is kept.
+    pub fn right_button_down(&mut self, pixel: ICoord2D, time: u32, camera_pos: Coord3D, ui: &mut InGameUiSelection) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        self.deselect_feedback_anchor = pixel;
+        if !crate::logic::modules::plant(9211) {
+            self.last_click = time;
+        }
+        self.deselect_down_camera_position = camera_pos;
+        Disposition::Keep
+    }
+
+    /// #132: the `MSG_RAW_MOUSE_RIGHT_BUTTON_UP` case (SelectionXlat.cpp:990-1050, after the input gate). The release at
+    /// `pixel`, `time` (the message's arguments 0 and 2), with the camera at `camera_pos`, is a click unless the pointer
+    /// moved more than `tol.pixels` on an axis from the press, more than `tol.ms` passed (unsigned, so a clock that wrapped
+    /// still counts forward), or the camera moved more than `tol.world` (`cameraPos.length()`, a `Real` against the
+    /// `UnsignedInt` made `Real`). Upstream's first test reads `isClick && abs(dx) > tol || abs(dy) > tol`, which `&&`
+    /// binds first; with `isClick` still true there it is the same as both axes tested, and the port writes it as
+    /// upstream does. A click with a GUI command pending cancels it (`setGUICommand(NULL)`), stops the InGameUI's scroll
+    /// (`ui_set_scrolling(false)`, `TheInGameUI->setScrolling(FALSE)`, which the camera's owner keeps) and destroys the
+    /// message, so the look-at and command translators after it never see the release. Otherwise a click deselects
+    /// everything (`deselectAll`: `deselectAllDrawables`, which posts `MSG_DESTROY_SELECTED_GROUP`) in the regular mouse
+    /// mode, or in the alternate one (`use_alternate_mouse`) only while a building waits to be placed
+    /// (`getPendingPlaceSourceObjectID() != INVALID_ID`). Anything else keeps the message.
+    #[allow(clippy::too_many_arguments)]
+    pub fn right_button_up(
+        &mut self,
+        pixel: ICoord2D,
+        time: u32,
+        camera_pos: Coord3D,
+        tol: DragTolerances,
+        use_alternate_mouse: bool,
+        ui: &mut InGameUiSelection,
+        h: &mut impl SelectionUiHost,
+        ui_set_scrolling: impl FnOnce(bool),
+    ) -> Disposition {
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        let mut disp = Disposition::Keep;
+        let mut camera_pos = camera_pos;
+        camera_pos.sub(&self.deselect_down_camera_position);
+        let current_time = time;
+        let delta = ICoord2D {
+            x: self.deselect_feedback_anchor.x.wrapping_sub(pixel.x),
+            y: self.deselect_feedback_anchor.y.wrapping_sub(pixel.y),
+        };
+        // `abs(int)` compared with an `UnsignedInt`: the int is made unsigned (abs(INT_MIN) stays INT_MIN, 2^31)
+        let abs_u = |v: i32| v.wrapping_abs() as u32;
+        let mut is_click = true;
+        let over = |v: i32| if crate::logic::modules::plant(9220) { abs_u(v) >= tol.pixels } else { abs_u(v) > tol.pixels };
+        if (is_click && over(delta.x)) || (over(delta.y) && !crate::logic::modules::plant(9221)) {
+            is_click = false;
+        }
+        let elapsed = if crate::logic::modules::plant(9212) { self.last_click.wrapping_sub(current_time) } else { current_time.wrapping_sub(self.last_click) };
+        if is_click && elapsed > tol.ms {
+            is_click = false;
+        }
+        let limit_3d = if crate::logic::modules::plant(9213) { tol.world as f32 + 1.0f32 } else { tol.world as f32 };
+        if is_click && camera_pos.length() > limit_3d {
+            is_click = false;
+        }
+        // right click behavior (not right drag)
+        if is_click || crate::logic::modules::plant(9214) {
+            // "Added support to cancel the GUI command without deselecting the unit(s) involved when you right click."
+            if ui.gui_command().is_some() {
+                // Cancel GUI command mode... don't deselect units.
+                if !crate::logic::modules::plant(9215) {
+                    ui.set_gui_command(None);
+                }
+                // With a GUI command cancel, we want no other behavior.
+                if !crate::logic::modules::plant(9216) {
+                    disp = Disposition::Destroy;
+                }
+                if !crate::logic::modules::plant(9217) {
+                    ui_set_scrolling(false);
+                }
+            } else {
+                // No GUI command mode, so deselect everyone if we're in regular mouse mode.
+                // In alternate mouse mode, right click still cancels building placement.
+                let deselect = if crate::logic::modules::plant(9218) {
+                    !use_alternate_mouse
+                } else if crate::logic::modules::plant(9219) {
+                    !use_alternate_mouse && ui.pending_place_source().is_some()
+                } else {
+                    !use_alternate_mouse || ui.pending_place_source().is_some()
+                };
+                if deselect {
+                    ui.deselect_all_drawables(true, h);
+                }
+            }
+        }
+        disp
     }
 
     /// The `MSG_MOUSE_LEFT_CLICK` case: `in_region` are the drawables the view finds in the click's pixel region (a point

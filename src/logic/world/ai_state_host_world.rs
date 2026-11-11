@@ -988,14 +988,28 @@ impl AiStateHost for World {
     fn deliver_machine_stack(&mut self) -> &mut Vec<Option<StateMachine<crate::logic::ai::deliver_payload_ai_update::DeliverState<Self>>>> where Self: Sized {
         &mut self.ai_stacks.deliver
     }
-    fn delivery_decal_create(&mut self, _template: &crate::logic::radius_decal::RadiusDecalTemplate, _pos: &Coord3D, _radius: f32, _has_player: bool) {
-        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
+    /// `m_data.m_deliveryDecalTemplate.createRadiusDecal(*targetPos, m_data.m_deliveryDecalRadius,
+    /// getObject()->getControllingPlayer(), m_deliveryDecal)`: (batch I14: the client's drawing, a decal on the ground;
+    /// nothing of the logic's) ~~nothing~~ **Corrected 2026-11-11, #134 (#130):** told to the client as a
+    /// [`ObjectClientEvent::GridDecal`](crate::logic::world::object_events::ObjectClientEvent::GridDecal) of the
+    /// delivering object, index 0, which draws it; the decal's `m_empty` stays the AI's own.
+    fn delivery_decal_create(&mut self, template: &crate::logic::radius_decal::RadiusDecalTemplate, pos: &Coord3D, radius: f32, has_player: bool) {
+        use crate::logic::world::object_events::{GridDecalOp, ObjectClientEvent};
+        let us = self.ai_self;
+        let player = if has_player { self.get_controlling_player(us) } else { None };
+        self.emit(ObjectClientEvent::GridDecal { object_id: us, index: 0, op: GridDecalOp::Create { template: template.clone(), radius, position: *pos, player } });
     }
+    /// `m_deliveryDecal.update()` (#130: to the client, as `delivery_decal_create`).
     fn delivery_decal_update(&mut self) {
-        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
+        use crate::logic::world::object_events::{GridDecalOp, ObjectClientEvent};
+        let us = self.ai_self;
+        self.emit(ObjectClientEvent::GridDecal { object_id: us, index: 0, op: GridDecalOp::Update });
     }
+    /// `m_deliveryDecal.clear()` (#130: to the client, as `delivery_decal_create`).
     fn delivery_decal_clear(&mut self) {
-        // (batch I14: the client's drawing, a decal on the ground; nothing of the logic's)
+        use crate::logic::world::object_events::{GridDecalOp, ObjectClientEvent};
+        let us = self.ai_self;
+        self.emit(ObjectClientEvent::GridDecal { object_id: us, index: 0, op: GridDecalOp::Clear });
     }
     fn play_per_unit_sound_at(&mut self, _name: &[u8], _pos: &Coord3D) {
         self.ais_cut("play_per_unit_sound_at");

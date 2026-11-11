@@ -88,11 +88,59 @@ mod differential {
         out
     }
 
+    // --- #133 (batch #134): one decode for every upstream cut ---
+    /// Windows-1252's characters for the bytes 0x80..=0x9F (the five bytes 1252 leaves undefined, 0x81, 0x8D, 0x8F,
+    /// 0x90 and 0x9D, keep their C1 code points, as `MultiByteToWideChar` gives them). Every other byte is its own
+    /// Latin-1 code point. This is #131's table, moved here from the Keyboard.cpp cut.
+    const CP1252_80_9F: [u32; 32] = [
+        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, 0x90, 0x2018,
+        0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178,
+    ];
+
+    /// `raw` decoded as Windows-1252 (#131, #133). Upstream's sources carry no byte-order mark and were compiled by
+    /// MSVC in the Windows-1252 code page, so this is the text MSVC read: the euro sign in Keyboard.cpp is byte 0x80.
+    /// Lossy UTF-8 turned every such byte into U+FFFD.
+    pub fn decode_cp1252(raw: &[u8]) -> String {
+        raw.iter().map(|&b| if (0x80..0xA0).contains(&b) { char::from_u32(CP1252_80_9F[usize::from(b - 0x80)]).expect("a char") } else { char::from(b) }).collect()
+    }
+
+    /// The file listing every upstream file `read_upstream` read in this build (OUT_DIR/upstream_cut_files.txt), one
+    /// line each: the path under `upstream/`, then the count of bytes >= 0x80 in the whole file.
+    fn upstream_cut_list() -> std::path::PathBuf {
+        std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("upstream_cut_files.txt")
+    }
+
+    /// #133: the one way build.rs reads an upstream file it cuts. The file must lie under `upstream/`, it is decoded
+    /// as Windows-1252 (`decode_cp1252`), and it is listed in `upstream_cut_list()`. Byte-level cuts take
+    /// `.into_bytes()` of the result: UTF-8, identical to the file's own bytes where the file is ASCII.
+    ///
+    /// **The scan (2026-11-11, #133, batch #134).** This build reads 293 distinct upstream files (418 reads). Only one
+    /// holds any byte >= 0x80: Keyboard.cpp, 39 bytes, all inside the `initKeyNames` cut (lines 255-679): 38 in `//`
+    /// comments (the keys' characters, `//£` and the like) and one in code, line 451's `L'€'` (byte 0x80). Before #131
+    /// that one became U+FFFD; the comments' bytes would have too, harmlessly. The 474 generated files were byte for byte
+    /// the same after this decode as before it. Outside build.rs's cuts the tree holds non-ASCII code bytes only in
+    /// WWLib/cpudetect.cpp:1071 (`µOPs` in a log string) and Tools/Autorun/Jsupport.cpp (a Shift-JIS table), neither
+    /// cut nor compiled here.
+    pub fn read_upstream(path: impl AsRef<Path>) -> String {
+        use std::io::Write;
+        let path = path.as_ref();
+        let rel = path.to_string_lossy();
+        let at = rel.find("upstream/").unwrap_or_else(|| panic!("read_upstream: {rel} is not an upstream file"));
+        let raw = std::fs::read(path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        assert!(!raw.starts_with(&[0xEF, 0xBB, 0xBF]), "{rel}: a UTF-8 byte-order mark (MSVC would read the file as UTF-8)");
+        let high = raw.iter().filter(|&&b| b >= 0x80).count();
+        let mut list = std::fs::OpenOptions::new().create(true).append(true).open(upstream_cut_list()).expect("open upstream_cut_files.txt");
+        writeln!(list, "{} {high}", &rel[at..]).expect("write upstream_cut_files.txt");
+        decode_cp1252(&raw)
+    }
+    // --- end #133 ---
+
     // --- p1w6-object ---
     /// The text of Object.cpp and its neighbours for differential/wrap_object.cpp (see the block in `build`).
-    /// Latin-1 sources are read lossily: only comments carry non-ASCII bytes.
+    /// ~~Latin-1 sources are read lossily: only comments carry non-ASCII bytes.~~ **Corrected 2026-11-11, #134:** read through
+    /// `read_upstream`, as Windows-1252 (#133). The scan found no byte >= 0x80 inside these cuts.
     fn generate_object_includes(engine: &Path, out: &Path) {
-        let rd = |rel: &str| -> String { String::from_utf8_lossy(&std::fs::read(engine.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))).into_owned() };
+        let rd = |rel: &str| -> String { read_upstream(engine.join(rel)) };
         let wr = |name: &str, text: String| std::fs::write(out.join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
         fn once(text: &str, marker: &str) -> usize {
             assert_eq!(text.matches(marker).count(), 1, "{marker:?} must occur exactly once");
@@ -193,7 +241,7 @@ mod differential {
         wr("experience_cpp.inc", format!("/* generated: ExperienceTracker.cpp without its includes */\n{}", &ex_c[a..]));
 
         // Coord3D, ICoord3D, Region3D
-        let bt = String::from_utf8_lossy(&std::fs::read(engine.join("../Libraries/Include/Lib/BaseType.h")).expect("read BaseType.h")).into_owned();
+        let bt = read_upstream(engine.join("../Libraries/Include/Lib/BaseType.h"));
         let struct_text = |first: &str| -> String {
             let a = once(&bt, first);
             let b = bt[a..].find("\n};\n").unwrap_or_else(|| panic!("end of {first:?}")) + a;
@@ -279,6 +327,8 @@ mod differential {
                  `git submodule update --init` (expected commit {UPSTREAM_COMMIT})"
             );
         }
+        // #133: a fresh list of the upstream files this run cuts (see `read_upstream`)
+        let _ = std::fs::remove_file(upstream_cut_list());
         let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         if target_arch != "x86_64" {
             panic!("feature `differential` is supported on x86_64 hosts only (found {target_arch})");
@@ -315,7 +365,7 @@ mod differential {
         let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
         let w3d = ww.join("WW3D2");
         let patch_copy = |src: &Path, name: &str, edits: &[(&str, &str, usize)]| -> Vec<u8> {
-            let mut text = std::fs::read(src).expect("read upstream source");
+            let mut text = read_upstream(src).into_bytes();
             for (from, to, count) in edits {
                 let f = from.as_bytes();
                 let hits: Vec<usize> = (0..text.len().saturating_sub(f.len() - 1)).filter(|&i| &text[i..i + f.len()] == f).collect();
@@ -368,7 +418,7 @@ mod differential {
             ],
         );
         std::fs::write(gen.join("vector_this.h"), vector).expect("write vector_this.h");
-        let meshmdlio_text = std::fs::read(w3d.join("meshmdlio.cpp")).expect("read meshmdlio.cpp");
+        let meshmdlio_text = read_upstream(w3d.join("meshmdlio.cpp")).into_bytes();
         let ctx_start = b"class MeshLoadContextClass : public W3DMPO";
         let a = (0..meshmdlio_text.len()).find(|&i| meshmdlio_text[i..].starts_with(ctx_start)).expect("MeshLoadContextClass");
         let b = a + (0..meshmdlio_text.len() - a).find(|&i| meshmdlio_text[a + i..].starts_with(b"\n};")).expect("end of class") + 3;
@@ -601,7 +651,7 @@ mod differential {
             let comment_before = |text: &[u8], at: usize| -> usize {
                 (0..at).rev().find(|&i| text[i..].starts_with(b"/*****")).expect("comment before the function")
             };
-            let sh = std::fs::read(w3d.join("shader.cpp")).expect("read shader.cpp");
+            let sh = read_upstream(w3d.join("shader.cpp")).into_bytes();
             let a0 = once(&sh, b"bool ShaderClass::ShaderDirty=true;", "shader.cpp");
             let a1 = once(&sh, b"/*\n** Definitions of the preset shaders:", "shader.cpp");
             let b0 = once(&sh, b"class Blend\n", "shader.cpp");
@@ -623,14 +673,14 @@ mod differential {
             sb.file(dif.join("wrap_w3d_shader.cpp")).file(&shader_def);
             sb.compile("upstream_w3d_shader");
 
-            let mg = std::fs::read(w3d.join("meshgeometry.cpp")).expect("read meshgeometry.cpp");
+            let mg = read_upstream(w3d.join("meshgeometry.cpp")).into_bytes();
             let line_start = |text: &[u8], at: usize| -> usize { (0..at).rev().find(|&i| text[i] == b'\n').map_or(0, |i| i + 1) };
             let d0 = once(&mg, b"void MeshGeometryClass::get_deformed_vertices(Vector3 *dst_vert,const HTreeClass * htree)", "meshgeometry.cpp");
             let d1 = once(&mg, b"void MeshGeometryClass::get_deformed_screenspace_vertices(", "meshgeometry.cpp");
             // up to the comment line before the screen-space function
             let d1 = line_start(&mg, line_start(&mg, d1) - 1);
             assert!(d0 < d1, "meshgeometry.cpp segment order");
-            let vp = std::fs::read(ww.join("WWMath/vp.cpp")).expect("read vp.cpp");
+            let vp = read_upstream(ww.join("WWMath/vp.cpp")).into_bytes();
             let v0 = once(&vp, b"void VectorProcessorClass::Transform (Vector3* dst,const Vector3 *src, const Matrix3D& mtx, const int count)", "vp.cpp");
             let v1 = once(&vp, b"void VectorProcessorClass::Transform(Vector4* dst,const Vector3 *src, const Matrix4x4& matrix, const int count)", "vp.cpp");
             let mut dd = b"/* generated by build.rs: segments of WW3D2/meshgeometry.cpp and WWMath/vp.cpp, verbatim (see build.rs) */\n\
@@ -687,7 +737,7 @@ mod differential {
                 hits[0]
             };
             let rfind = |text: &[u8], at: usize, m: &[u8]| -> usize { (0..at).rev().find(|&i| text[i..].starts_with(m)).expect("marker before") };
-            let rd = |path: std::path::PathBuf| std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            let rd = |path: std::path::PathBuf| read_upstream(&path).into_bytes();
             let emt_h = rd(w3d.join("part_emt.h"));
             let ldr_h = rd(w3d.join("part_ldr.h"));
             let ldr = rd(w3d.join("part_ldr.cpp"));
@@ -915,7 +965,7 @@ mod differential {
         // includes of hlod.cpp the segment uses. With mesh_prelude.h, whose
         // stand-ins hlod.h's render-object headers need, and WWSaveLoad
         // (persist.h, for rendobj.h).
-        let hlod_text = std::fs::read(w3d.join("hlod.cpp")).expect("read hlod.cpp");
+        let hlod_text = read_upstream(w3d.join("hlod.cpp")).into_bytes();
         let find_once = |m: &[u8]| -> usize {
             let hits: Vec<usize> = (0..hlod_text.len().saturating_sub(m.len() - 1)).filter(|&i| hlod_text[i..].starts_with(m)).collect();
             assert_eq!(hits.len(), 1, "hlod.cpp marker {:?} must occur once", String::from_utf8_lossy(m));
@@ -967,7 +1017,7 @@ mod differential {
         // upstream_w3d_string library, built below with the same rename),
         // while the mesh wrapper keeps its own empty-only StringClass
         // stand-ins under the real name.
-        let read_text = |name: &str| std::fs::read(w3d.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        let read_text = |name: &str| read_upstream(w3d.join(name)).into_bytes();
         let once_in = |text: &[u8], m: &[u8], name: &str| -> usize {
             let hits: Vec<usize> = (0..text.len().saturating_sub(m.len() - 1)).filter(|&i| text[i..].starts_with(m)).collect();
             assert_eq!(hits.len(), 1, "{name} marker {:?} must occur once", String::from_utf8_lossy(m));
@@ -1061,7 +1111,7 @@ mod differential {
             out
         };
         let simplevec = this_copy(
-            std::fs::read(ww.join("WWLib/simplevec.h")).expect("read simplevec.h"),
+            read_upstream(ww.join("WWLib/simplevec.h")).into_bytes(),
             "simplevec.h",
             b"template <class T> class SimpleDynVecClass",
             SIMPLEVEC_EDITS,
@@ -1328,7 +1378,7 @@ mod differential {
         // once. g++ cannot compile the rest of the header (MSVC __int64,
         // __forceinline, __asm). Compiled before upstream_gameengine, whose
         // Trig.cpp supplies the ACos that Coord2D::toAngle calls.
-        let basetype = std::fs::read_to_string(up.join("Libraries/Include/Lib/BaseType.h")).expect("read BaseType.h");
+        let basetype = read_upstream(up.join("Libraries/Include/Lib/BaseType.h"));
         let segment = |first: &str, last: &str| -> String {
             assert_eq!(basetype.matches(first).count(), 1, "BaseType.h segment start {first:?} must occur once");
             let a = basetype.find(first).expect("segment start");
@@ -1390,7 +1440,7 @@ mod differential {
                 std::fs::create_dir_all(gen.join(d)).expect("create globaldata_gen dir");
             }
             let extract = |file: &str, first: &str, last: &str| -> String {
-                let text = std::fs::read_to_string(engine.join(file)).expect("read upstream file");
+                let text = read_upstream(engine.join(file));
                 assert_eq!(text.matches(first).count(), 1, "{file}: {first:?} must occur once");
                 let a = text.find(first).expect("segment start");
                 let rel = text[a..].find(last).unwrap_or_else(|| panic!("{file}: {last:?} must follow {first:?}"));
@@ -1423,7 +1473,7 @@ mod differential {
                     extract("Include/GameLogic/Weapon.h", "enum WeaponBonusConditionType", "EMPTY_DTOR(WeaponBonusSet)")
                 ),
             );
-            let fw = std::fs::read_to_string(engine.join("Include/GameNetwork/FirewallHelper.h")).expect("read FirewallHelper.h");
+            let fw = read_upstream(engine.join("Include/GameNetwork/FirewallHelper.h"));
             assert_eq!(fw.matches("FIREWALL_TYPE_UNKNOWN = 0,").count(), 1, "FirewallHelper.h: FIREWALL_TYPE_UNKNOWN = 0 must occur once");
             header(
                 "GameNetwork/FirewallHelper.h",
@@ -1444,7 +1494,7 @@ mod differential {
                 )
                 .as_bytes(),
             );
-            let gd_src = std::fs::read_to_string(engine.join("Source/Common/GlobalData.cpp")).expect("read GlobalData.cpp");
+            let gd_src = read_upstream(engine.join("Source/Common/GlobalData.cpp"));
             let marker = "\t// override INI values with user preferences\n";
             assert_eq!(gd_src.matches(marker).count(), 1, "GlobalData.cpp: the user preferences comment must occur once");
             let cut = gd_src.find(marker).expect("marker");
@@ -1531,7 +1581,7 @@ mod differential {
             let shim_tt = dif.join("shim_thingtemplate");
             let tt_gen = out_dir.join("tt_gen");
             std::fs::create_dir_all(tt_gen.join("Common")).expect("create tt_gen");
-            let read = |p: &str| std::fs::read_to_string(up.join(p)).expect("read upstream source");
+            let read = |p: &str| read_upstream(up.join(p));
             let once = |text: &str, what: &str, marker: &str| -> usize {
                 assert_eq!(text.matches(marker).count(), 1, "{what}: {marker:?} must occur once");
                 text.find(marker).expect("marker")
@@ -1820,7 +1870,7 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("partition_gen");
             std::fs::create_dir_all(gen.join("GameLogic")).expect("create partition_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             let friends: Vec<(String, String, usize)> = [
                 ("hLineAddLooker", "playerIndex"),
                 ("hLineRemoveLooker", "playerIndex"),
@@ -2101,7 +2151,7 @@ mod differential {
             // edit, in a copy (the upstream file is never edited): getArgumentDataType declares its loop variable in the
             // for and reads it after the loop (MSVC's pre-standard scope, which g++ rejects); the copy declares it before.
             // The text must occur once.
-            let ms_src = std::fs::read_to_string(up.join("GameEngine/Source/Common/MessageStream.cpp")).expect("read MessageStream.cpp");
+            let ms_src = read_upstream(up.join("GameEngine/Source/Common/MessageStream.cpp"));
             let ms_old = "\tfor (GameMessageArgument *a = m_argList; a && (i < argIndex); a=a->m_next, ++i );\n";
             let ms_new = "\tGameMessageArgument *a;\n\tfor (a = m_argList; a && (i < argIndex); a=a->m_next, ++i );\n";
             assert_eq!(ms_src.matches(ms_old).count(), 1, "MessageStream.cpp: getArgumentDataType's loop must occur once");
@@ -2126,14 +2176,14 @@ mod differential {
             // for-scope); the copy declares it before the first. And FileTransfer.cpp's map-derived paths (lines 138-239,
             // GetBasePathFromPath through GetReadmeFromMap), cut verbatim (the rest of the file is the network transfer).
             // Each text must occur once.
-            let gi_src = std::fs::read_to_string(up.join("GameEngine/Source/GameNetwork/GameInfo.cpp")).expect("read GameInfo.cpp");
+            let gi_src = read_upstream(up.join("GameEngine/Source/GameNetwork/GameInfo.cpp"));
             let gi_old = "\t\tfor (Int i = 0; i < MAX_SLOTS; ++i)\n\t\t{\n\t\t\tGameSlot *tempSlot = getSlot(i);\n";
             let gi_new = "\t\tInt i;\n\t\tfor (i = 0; i < MAX_SLOTS; ++i)\n\t\t{\n\t\t\tGameSlot *tempSlot = getSlot(i);\n";
             assert_eq!(gi_src.matches(gi_old).count(), 1, "GameInfo.cpp: adjustSlotsForMap's first loop must occur once");
             let ginfo_gen = out_dir.join("ginfo_gen");
             std::fs::create_dir_all(&ginfo_gen).expect("create ginfo_gen");
             std::fs::write(ginfo_gen.join("GameInfo.cpp"), gi_src.replacen(gi_old, gi_new, 1)).expect("write GameInfo.cpp");
-            let ft_src = std::fs::read_to_string(up.join("GameEngine/Source/GameNetwork/FileTransfer.cpp")).expect("read FileTransfer.cpp");
+            let ft_src = read_upstream(up.join("GameEngine/Source/GameNetwork/FileTransfer.cpp"));
             let ft_from = "AsciiString GetBasePathFromPath( AsciiString path )\n";
             let ft_to = "\tout.format(\"%s\\\\readme.txt\", base.str());\n\treturn out;\n}\n";
             assert_eq!((ft_src.matches(ft_from).count(), ft_src.matches(ft_to).count()), (1, 1), "FileTransfer.cpp: the path helpers' ends must occur once");
@@ -2157,7 +2207,7 @@ mod differential {
             // GameInfo builds above under the same names. One edit in a copy: readUnicodeString's `UnsignedShort str[1024] =
             // L"";` initialises 16-bit units from a wide literal (MSVC's 16-bit wchar_t; g++'s is 32-bit and rejects it); the
             // copy writes `= {0}`, the same all-zero array. The text must occur once.
-            let rec_src = std::fs::read_to_string(up.join("GameEngine/Source/Common/Recorder.cpp")).expect("read Recorder.cpp");
+            let rec_src = read_upstream(up.join("GameEngine/Source/Common/Recorder.cpp"));
             let rec_old = "\tUnsignedShort str[1024] = L\"\";\n";
             let rec_new = "\tUnsignedShort str[1024] = {0};\n";
             assert_eq!(rec_src.matches(rec_old).count(), 1, "Recorder.cpp: readUnicodeString's buffer must occur once");
@@ -2182,7 +2232,7 @@ mod differential {
             // to `void GameLogic::closeWindows`) and the function (from its first line to the end of the file); the rest
             // of the file is the client's (closing windows, the score screen). One edit: MSG_SELF_DESTRUCT reads its loop
             // variable after the loop (MSVC's for-scope); the copy declares it before. Each text must occur once.
-            let gld = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp")).expect("read GameLogicDispatch.cpp");
+            let gld = read_upstream(up.join("GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp"));
             let (a_from, a_to, b_from) = ("#define MAX_PATH_SUBJECTS 64\n", "void GameLogic::closeWindows( void )\n", "void GameLogic::logicMessageDispatcher( GameMessage *msg, void *userData )\n");
             for t in [a_from, a_to, b_from] {
                 assert_eq!(gld.matches(t).count(), 1, "GameLogicDispatch.cpp: a cut point must occur once");
@@ -2214,11 +2264,13 @@ mod differential {
             // translateGameMessage pieces are closed with `return disp; }` (the only text added). Each anchor must occur once.
             // #123, #124: also ControlBar.h's `enum CommandOption` to `#ifdef DEFINE_GUI_COMMMAND_NAMES` and CommandXlat.cpp's
             // translateGameMessage cases from `MSG_MOUSEOVER_DRAWABLE_HINT` to `#ifdef ALLOW_ALT_F4` (the wrapper puts them
-            // in a switch of its own).
+            // in a switch of its own). #132 (batch #134): SelectionXlat.cpp's translateGameMessage cases from
+            // `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` to `MSG_META_CREATE_TEAM0` (the right button's two cases; the wrapper puts
+            // them in a switch of its own too), and its static `deselectAll`.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_input_gate.cpp");
                 let gc = up.join("GameEngine/Source/GameClient");
-                let rd = |f: &str| std::fs::read_to_string(gc.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"));
+                let rd = |f: &str| read_upstream(gc.join(f));
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once");
                     let i = text.find(from).expect("from");
@@ -2237,7 +2289,7 @@ mod differential {
                 let cx = rd("MessageStream/CommandXlat.cpp");
                 let sx = rd("MessageStream/SelectionXlat.cpp");
                 let ui = rd("InGameUI.cpp");
-                let cb = std::fs::read_to_string(up.join("GameEngine/Include/GameClient/ControlBar.h")).expect("read ControlBar.h");
+                let cb = read_upstream(up.join("GameEngine/Include/GameClient/ControlBar.h"));
                 let gen = out_dir.join("input_gate_gen");
                 std::fs::create_dir_all(&gen).expect("create input_gate_gen");
                 let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_input_gate.cpp) */\n";
@@ -2257,6 +2309,15 @@ mod differential {
                     // messages, the double clicks and the clicks) to the ALT-F4 demo case
                     ("command_options.inc", piece(&cb, "ControlBar.h", "enum CommandOption\n{", Some("#ifdef DEFINE_GUI_COMMMAND_NAMES"))),
                     ("command_mouse_cases.inc", piece(&cx, "CommandXlat.cpp", "\t\tcase GameMessage::MSG_MOUSEOVER_DRAWABLE_HINT:\n", Some("#ifdef ALLOW_ALT_F4\n"))),
+                    // #132: the right button's raw cases, and the deselectAll they call
+                    (
+                        "selection_deselect_all.inc",
+                        piece(&sx, "SelectionXlat.cpp", "static void deselectAll()\n{", Some("\n//-----------------------------------------------------------------------------\n/**\n * Select the given drawable, without playing its sound.")),
+                    ),
+                    (
+                        "selection_right_cases.inc",
+                        piece(&sx, "SelectionXlat.cpp", "\t\tcase GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:\n", Some("\t\tcase GameMessage::MSG_META_CREATE_TEAM0:\n")),
+                    ),
                 ];
                 for (name, body) in files {
                     std::fs::write(gen.join(name), format!("{head}{body}")).expect("write an input gate cut");
@@ -2281,8 +2342,8 @@ mod differential {
             {
                 println!("cargo:rerun-if-changed=differential/wrap_look_at.cpp");
                 let gc = up.join("GameEngine");
-                let h = std::fs::read_to_string(gc.join("Include/GameClient/LookAtXlat.h")).expect("read LookAtXlat.h");
-                let c = std::fs::read_to_string(gc.join("Source/GameClient/MessageStream/LookAtXlat.cpp")).expect("read LookAtXlat.cpp");
+                let h = read_upstream(gc.join("Include/GameClient/LookAtXlat.h"));
+                let c = read_upstream(gc.join("Source/GameClient/MessageStream/LookAtXlat.cpp"));
                 let (h_from, h_to) = ("class LookAtTranslator : public GameMessageTranslator\n", "extern LookAtTranslator *TheLookAtTranslator;");
                 let c_from = "LookAtTranslator *TheLookAtTranslator = NULL;\n";
                 let (e_old, e_new) = ("static enum\n{\n\tDIR_UP = 0,", "enum\n{\n\tDIR_UP = 0,");
@@ -2321,7 +2382,7 @@ mod differential {
             {
                 println!("cargo:rerun-if-changed=differential/wrap_command_meta.cpp");
                 let ge = up.join("GameEngine");
-                let rd = |f: &str| String::from_utf8_lossy(&std::fs::read(ge.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"))).into_owned();
+                let rd = |f: &str| read_upstream(ge.join(f));
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     let i = text.find(from).expect("from");
@@ -2390,7 +2451,7 @@ mod differential {
             {
                 println!("cargo:rerun-if-changed=differential/wrap_hot_key.cpp");
                 let ge = up.join("GameEngine");
-                let rd = |f: &str| String::from_utf8_lossy(&std::fs::read(ge.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"))).into_owned();
+                let rd = |f: &str| read_upstream(ge.join(f));
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     let i = text.find(from).expect("from");
@@ -2409,15 +2470,9 @@ mod differential {
                 let mh = rd("Include/GameClient/MetaEvent.h");
                 let lh = rd("Include/Common/Language.h");
                 // (Keyboard.cpp is a Windows-1252 file: its one non-ASCII character literal, byte 0x80, is the euro sign as
-                // MSVC read it, so the file is decoded as Windows-1252, not as UTF-8)
-                let kc: String = {
-                    const CP1252: [u32; 32] = [
-                        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, 0x90, 0x2018,
-                        0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178,
-                    ];
-                    let raw = std::fs::read(ge.join("Source/GameClient/Input/Keyboard.cpp")).expect("read Keyboard.cpp");
-                    raw.iter().map(|&b| if (0x80..0xA0).contains(&b) { char::from_u32(CP1252[usize::from(b - 0x80)]).expect("a char") } else { char::from(b) }).collect()
-                };
+                // MSVC read it. ~~so the file is decoded as Windows-1252, not as UTF-8~~ **Corrected 2026-11-11, #134:**
+                // every upstream cut is now decoded as Windows-1252 by `read_upstream`, this one included (#133))
+                let kc = rd("Source/GameClient/Input/Keyboard.cpp");
                 let files = [
                     ("hot_key_class.inc", piece(&hh, "HotKey.h", "class HotKeyTranslator : public GameMessageTranslator\n", Some("extern HotKeyManager *TheHotKeyManager;"))),
                     ("hot_key.inc", piece(&hc, "HotKey.cpp", "GameMessageDisposition HotKeyTranslator::translateGameMessage(const GameMessage *msg)\n", Some("HotKeyManager *TheHotKeyManager = NULL;"))),
@@ -2452,7 +2507,7 @@ mod differential {
             // setupWaypointPath, the one-frame steps). No text is edited. Each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_meta_camera.cpp");
-                let rd = |f: &Path| String::from_utf8_lossy(&std::fs::read(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()))).into_owned();
+                let rd = |f: &Path| read_upstream(f);
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     let i = text.find(from).expect("from");
@@ -2527,7 +2582,7 @@ mod differential {
             // `setCursorDirection`; InGameUI.cpp's `setMouseCursor` and `setScrolling`. No edit; each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_mouse.cpp");
-                let rd = |f: &Path| std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+                let rd = |f: &Path| read_upstream(f);
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     let i = text.find(from).expect("from");
@@ -2582,7 +2637,7 @@ mod differential {
             // `drawTooltip`. No edit; each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_mouse_tooltip.cpp");
-                let rd = |f: &Path| std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+                let rd = |f: &Path| read_upstream(f);
                 let piece = |text: &str, file: &str, from: &str, to: &str| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
@@ -2624,7 +2679,7 @@ mod differential {
             // No edit; each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_radius_cursor.cpp");
-                let rd = |f: &Path| std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+                let rd = |f: &Path| read_upstream(f);
                 let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     let i = text.find(from).expect("from");
@@ -2680,7 +2735,7 @@ mod differential {
             // each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_cursor_hint.cpp");
-                let rd = |f: &Path| std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()));
+                let rd = |f: &Path| read_upstream(f);
                 let piece = |text: &str, file: &str, from: &str, to: &str| -> String {
                     assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
                     assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
@@ -2735,7 +2790,7 @@ mod differential {
             // perf timers and update(); inCRCGen and getCRC; isGamePaused to getObjectCount; the buildable and
             // control-bar overrides (to the DUMP_PERF_STATS block before getAIMetricsStatistics); and (batch L2) from
             // findTOCEntryByName to loadPostProcess. Each anchor must occur once.
-            let glc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp")).expect("read GameLogic.cpp");
+            let glc = read_upstream(up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp"));
             let gl_pieces: [(&str, &str); 6] = [
                 ("void GameLogic::processCommandList( CommandList *list )", "inline void GameLogic::validateSleepyUpdate() const"),
                 ("DECLARE_PERF_TIMER(GameLogic_update)\n", "Object *GameLogic::getFirstObject( void )"),
@@ -2846,8 +2901,9 @@ mod differential {
 
             // Layer 8 batch O1: Object::updateObjValuesFromMapProperties (differential/wrap_object_map_props.cpp). Cut verbatim
             // from Object.cpp into OUT_DIR/objmp_gen/object_map_props_cut.inc: the function, up to the comment block before
-            // friend_adjustPowerForPlayer. Each anchor must occur once; Object.cpp is read as bytes (it is not all UTF-8).
-            let objc = String::from_utf8_lossy(&std::fs::read(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp")).into_owned();
+            // friend_adjustPowerForPlayer. Each anchor must occur once; ~~Object.cpp is read as bytes (it is not all UTF-8).~~ **Corrected
+            // 2026-11-11, #134:** Object.cpp is read as Windows-1252 by `read_upstream` (#133), like every upstream cut.
+            let objc = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
             let omp_from = "void Object::updateObjValuesFromMapProperties(Dict* properties)";
             let omp_to = "void Object::friend_adjustPowerForPlayer( Bool incoming )";
             assert_eq!(objc.matches(omp_from).count(), 1, "Object.cpp: updateObjValuesFromMapProperties must occur once");
@@ -2875,7 +2931,7 @@ mod differential {
             // friend_xferSaveDataForCRC), the post-process list, and GameState::xfer; the rest of the file is the save
             // and load menus, the Windows date formats, init's registration of the engine's subsystems, and saveGame and
             // loadGame's file handling. Each anchor must occur once.
-            let gs = std::fs::read_to_string(up.join("GameEngine/Source/Common/System/SaveGame/GameState.cpp")).expect("read GameState.cpp");
+            let gs = read_upstream(up.join("GameEngine/Source/Common/System/SaveGame/GameState.cpp"));
             let pieces: [(&str, Option<&str>); 11] = [
                 ("static const Char *SAVE_FILE_EOF", Some("// block of game data that has campaign info")),
                 ("SaveGameInfo::SaveGameInfo( void )", Some("}  // end ~SaveGameInfo")),
@@ -2909,7 +2965,7 @@ mod differential {
             std::fs::write(gstate_gen.join("game_state_cut.inc"), cut).expect("write game_state_cut.inc");
             // Layer 12 batch M2: GameStateMap.cpp from its global (after the includes) to the end, verbatim, into
             // gstate_gen/game_state_map_cut.inc (the same build: it needs this GameState). The anchor must occur once.
-            let gsm = std::fs::read_to_string(up.join("GameEngine/Source/Common/System/SaveGame/GameStateMap.cpp")).expect("read GameStateMap.cpp");
+            let gsm = read_upstream(up.join("GameEngine/Source/Common/System/SaveGame/GameStateMap.cpp"));
             let gsm_from = "GameStateMap *TheGameStateMap = NULL;";
             assert_eq!(gsm.matches(gsm_from).count(), 1, "GameStateMap.cpp: TheGameStateMap's definition must occur once");
             std::fs::write(
@@ -2970,7 +3026,7 @@ mod differential {
             // #89: the skirmish map list (differential/wrap_map_list.cpp). Cut verbatim from MapUtil.cpp into
             // OUT_DIR/map_list_gen/map_list_cut.inc: populateMapListboxNoReset and populateMapListbox, under the
             // wrapper's names (its macros). Each anchor must occur once.
-            let mu = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/MapUtil.cpp")).expect("read MapUtil.cpp");
+            let mu = read_upstream(up.join("GameEngine/Source/GameClient/MapUtil.cpp"));
             let ml_pieces: [(&str, &str); 2] = [
                 ("Int populateMapListboxNoReset( GameWindow *listbox, Bool useSystemMaps, Bool isMultiplayer, AsciiString mapToSelect )", "}  // end loadMapListbox"),
                 ("Int populateMapListbox( GameWindow *listbox, Bool useSystemMaps, Bool isMultiplayer, AsciiString mapToSelect )", "return populateMapListboxNoReset( listbox, useSystemMaps, isMultiplayer, mapToSelect );\n}"),
@@ -3004,8 +3060,8 @@ mod differential {
             // OUT_DIR/user_prefs_gen/user_prefs_cut.inc: UserPreferences.h's PreferenceMap and class UserPreferences,
             // then UserPreferences.cpp from intAsStr to the end of setAsciiString (the QuickMatchPreferences banner).
             // Compiled as the AsciiString build is (the REAL AsciiString.h and AsciiString.cpp), under names of its own.
-            let uph = std::fs::read_to_string(up.join("GameEngine/Include/Common/UserPreferences.h")).expect("read UserPreferences.h");
-            let upc = std::fs::read_to_string(up.join("GameEngine/Source/Common/UserPreferences.cpp")).expect("read UserPreferences.cpp");
+            let uph = read_upstream(up.join("GameEngine/Include/Common/UserPreferences.h"));
+            let upc = read_upstream(up.join("GameEngine/Source/Common/UserPreferences.cpp"));
             let once = |text: &str, m: &str| {
                 assert_eq!(text.matches(m).count(), 1, "UserPreferences: {m:?} must occur once");
                 text.find(m).expect("marker")
@@ -3045,7 +3101,7 @@ mod differential {
             // into OUT_DIR/score_grid_gen/score_grid_cut.inc: struct ScoreGather and populateSideInfo's prototype;
             // populatePlayerInfo up to its skirmish tail (the battle honours, #92, and the internet stats: gaps), closed
             // with a `}`; grabMultiPlayerInfo to the end of the file. Each anchor must occur once.
-            let ss = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/ScoreScreen.cpp")).expect("read ScoreScreen.cpp");
+            let ss = read_upstream(up.join("GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/ScoreScreen.cpp"));
             let once = |a: &str| {
                 assert_eq!(ss.matches(a).count(), 1, "ScoreScreen.cpp: {a:?} must occur once");
                 ss.find(a).expect("anchor")
@@ -3080,7 +3136,7 @@ mod differential {
             // #98: the replay list (differential/wrap_replay_list.cpp). Cut verbatim from ReplayMenu.cpp into
             // OUT_DIR/replay_list_gen/replay_list_cut.inc: GetReplayFilenameFromListbox and PopulateReplayFileListbox.
             // Each anchor must occur once.
-            let rm = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/ReplayMenu.cpp")).expect("read ReplayMenu.cpp");
+            let rm = read_upstream(up.join("GameEngine/Source/GameClient/GUI/GUICallbacks/Menus/ReplayMenu.cpp"));
             let once = |a: &str| {
                 assert_eq!(rm.matches(a).count(), 1, "ReplayMenu.cpp: {a:?} must occur once");
                 rm.find(a).expect("anchor")
@@ -3264,7 +3320,7 @@ mod differential {
             let device = up.join("GameEngineDevice");
             let gen = out_dir.join("terrain_logic_gen");
             std::fs::create_dir_all(&gen).expect("create terrain_logic_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             // from `first` (which must occur once) to the end of `last` after it
             let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
                 assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
@@ -3449,7 +3505,7 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("loco_gen");
             std::fs::create_dir_all(&gen).expect("create loco_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             // from `first` (which must occur once) to the end of `last` after it
             let seg = |text: &str, what: &str, first: &str, last: &str| -> String {
                 assert_eq!(text.matches(first).count(), 1, "{what}: {first:?} must occur once");
@@ -3571,7 +3627,7 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("psys_gen");
             std::fs::create_dir_all(&gen).expect("create psys_gen");
-            let read = |p: std::path::PathBuf| String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))).into_owned();
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             let once = |text: &str, what: &str, m: &str| -> usize {
                 assert_eq!(text.matches(m).count(), 1, "{what}: {m:?} must occur once");
                 text.find(m).expect("marker")
@@ -3653,7 +3709,7 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("audio_gen");
             std::fs::create_dir_all(&gen).expect("create audio_gen");
-            let read = |p: std::path::PathBuf| String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))).into_owned();
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             let once = |text: &str, what: &str, m: &str| -> usize {
                 assert_eq!(text.matches(m).count(), 1, "{what}: {m:?} must occur once");
                 text.find(m).expect("marker")
@@ -3731,7 +3787,7 @@ mod differential {
             let gen = out_dir.join("pathfind_gen");
             std::fs::create_dir_all(&gen).expect("create pathfind_gen");
             let path = engine.join("Source/GameLogic/AI/AIPathfind.cpp");
-            let text = std::fs::read_to_string(&path).expect("read AIPathfind.cpp");
+            let text = read_upstream(&path);
             let (first, last) = ("inline Int IABS(Int x)", "enum { PATHFIND_CELLS_PER_FRAME");
             assert_eq!(text.matches(first).count(), 1, "AIPathfind.cpp: {first:?} must occur once");
             assert_eq!(text.matches(last).count(), 1, "AIPathfind.cpp: the cells-per-frame enum must occur once");
@@ -3917,7 +3973,7 @@ mod differential {
             let engine = up.join("GameEngine");
             let gen = out_dir.join("ai_gen");
             std::fs::create_dir_all(&gen).expect("create ai_gen");
-            let rd = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let rd = |p: std::path::PathBuf| read_upstream(&p);
             let once = |text: &str, file: &str, marker: &str| -> usize {
                 assert_eq!(text.matches(marker).count(), 1, "{file}: {marker:?} must occur once");
                 text.find(marker).expect("marker")
@@ -5118,7 +5174,7 @@ mod differential {
         {
             let tgen = out_dir.join("turret_gen");
             std::fs::create_dir_all(&tgen).expect("create turret_gen");
-            let rd = |rel: &str| -> String { String::from_utf8_lossy(&std::fs::read(up.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))).into_owned() };
+            let rd = |rel: &str| -> String { read_upstream(up.join(rel)) };
             fn cut_once(text: &str, file: &str, from: &str, to: &str) -> String {
                 assert_eq!(text.matches(from).count(), 1, "{file}: {from:?} must occur once");
                 assert_eq!(text.matches(to).count(), 1, "{file}: {to:?} must occur once");
@@ -5255,7 +5311,7 @@ mod differential {
             ("GameEngine/Source/GameLogic/Object/WeaponSet.cpp", "const char* WeaponSetFlags::s_bitNameList[] = \n"),
             ("GameEngine/Source/Common/RTS/SpecialPower.cpp", "const char* SpecialPowerMaskType::s_bitNameList[] = \n"),
         ] {
-            let text = std::fs::read_to_string(up.join(file)).expect("read name-list source");
+            let text = read_upstream(up.join(file));
             assert_eq!(text.matches(first).count(), 1, "{file}: {first:?} must occur once");
             let a = text.find(first).expect("list start");
             let b = a + text[a..].find("\n};\n").expect("list end") + 4;
@@ -5394,7 +5450,7 @@ mod differential {
                 format!("/* generated by build.rs: verbatim from Libraries/Include/Lib/BaseType.h */\n{coord3d}"),
             )
             .expect("write basetype_coord3d.h");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp")).expect("read Weapon.cpp");
+            let mut src = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp"));
             // the includes become the ones the stand-ins need (fire_standins.h is included by the wrapper before this text);
             // PATHFIND_CELL_SIZE_F is AIPathfind.h's. Everything else of Weapon.cpp is kept, unchanged.
             let (a, b) = (once_at(&src, "#include \"Common/CRC.h\""), once_at(&src, "#define RATIONALIZE_ATTACK_RANGE"));
@@ -5412,7 +5468,7 @@ mod differential {
             std::fs::write(weapon_gen.join("Weapon_cut.cpp"), &src).expect("write Weapon_cut.cpp");
             // WeaponSet.cpp: the includes, the bit-name list of WeaponSetFlags (another fixture defines it) and the four INI
             // parsers of WeaponTemplateSet (the sets are built without INI here) are cut; the rest is unchanged.
-            let mut ws = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/WeaponSet.cpp")).expect("read WeaponSet.cpp");
+            let mut ws = read_upstream(up.join("GameEngine/Source/GameLogic/Object/WeaponSet.cpp"));
             let (a, b) = (once_at(&ws, "#include \"PreRTS.h\""), once_at(&ws, "#include \"GameLogic/Weapon.h\""));
             assert!(a < b);
             ws = format!("{}#include \"GameLogic/WeaponSet.h\"\n{}", &ws[..a], &ws[b..]);
@@ -5422,7 +5478,7 @@ mod differential {
             // Object.cpp: the weapon forwarders and the two model-condition functions (Object_weapons.cpp), each function
             // taken whole, unchanged, from its signature line to its closing brace (every signature asserted to occur once),
             // with the static array they share. The rest of Object.cpp is the Object differential test's (wrap_object.cpp).
-            let oc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+            let oc = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
             fn extract(text: &str, header: &str) -> String {
                 assert_eq!(text.matches(header).count(), 1, "{header:?} must occur once");
                 let a = text.find(header).expect("header");
@@ -5481,7 +5537,7 @@ mod differential {
             std::fs::write(weapon_gen.join("Object_weapons.cpp"), ow).expect("write Object_weapons.cpp");
             // ActionManager.cpp: only its include block is replaced (the stand-ins and the real enums are in
             // wrap_weapon.cpp and fire_standins.h); everything else is unchanged.
-            let mut am = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/ActionManager.cpp")).expect("read ActionManager.cpp");
+            let mut am = read_upstream(up.join("GameEngine/Source/Common/RTS/ActionManager.cpp"));
             let (a, b) = (once_at(&am, "#include \"PreRTS.h\""), once_at(&am, "#ifdef _INTERNAL"));
             assert!(a < b);
             am = format!("{}#include \"Common/ActionManager.h\"\n\n{}", &am[..a], &am[b..]);
@@ -5559,7 +5615,7 @@ mod differential {
                 format!("/* generated by build.rs: verbatim from Libraries/Include/Lib/BaseType.h */\n{coord3d}"),
             )
             .expect("write basetype_coord3d.h");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Team.cpp")).expect("read Team.cpp");
+            let mut src = read_upstream(up.join("GameEngine/Source/Common/RTS/Team.cpp"));
             let a = once_at(&src, "#include \"PreRTS.h\"");
             let end = "#include \"GameLogic/ScriptEngine.h\"";
             let b = once_at(&src, end) + end.len();
@@ -5570,14 +5626,14 @@ mod differential {
             // iterator names the pointer to the next-link member as `OBJCLASS::dlink_next_<list>`, which only MSVC reads
             // as `&OBJCLASS::dlink_next_<list>`. Found before the real header (team_gen is first on the include path).
             {
-                let gc = std::fs::read_to_string(up.join("GameEngine/Include/Common/GameCommon.h")).expect("read GameCommon.h");
+                let gc = read_upstream(up.join("GameEngine/Include/Common/GameCommon.h"));
                 let marker = "return DLINK_ITERATOR<OBJCLASS>(m_dlinkhead_##LISTNAME.m_head, OBJCLASS::dlink_next_##LISTNAME);";
                 once_at(&gc, marker);
                 let gc = gc.replace(marker, "return DLINK_ITERATOR<OBJCLASS>(m_dlinkhead_##LISTNAME.m_head, &OBJCLASS::dlink_next_##LISTNAME);");
                 std::fs::create_dir_all(team_gen.join("Common")).expect("create team_gen/Common");
                 std::fs::write(team_gen.join("Common/GameCommon.h"), gc).expect("write GameCommon.h");
             }
-            let ph = std::fs::read_to_string(up.join("GameEngine/Include/Common/Player.h")).expect("read Player.h");
+            let ph = read_upstream(up.join("GameEngine/Include/Common/Player.h"));
             let a = once_at(&ph, "typedef std::hash_map< PlayerIndex, Relationship, std::hash<PlayerIndex>, std::equal_to<PlayerIndex> > PlayerRelationMapType;");
             let c = once_at(&ph, "class PlayerRelationMap : public MemoryPoolObject,");
             let e = c + ph[c..].find("\n};").expect("end of PlayerRelationMap") + 3;
@@ -5587,7 +5643,7 @@ mod differential {
                 format!("/* generated by build.rs: PlayerRelationMapType and class PlayerRelationMap, verbatim from Player.h */\n{}\n", &ph[a..e]),
             )
             .expect("write player_relation_map_class.inc");
-            let pc = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/Player.cpp")).expect("read Player.cpp");
+            let pc = read_upstream(up.join("GameEngine/Source/Common/RTS/Player.cpp"));
             let mut fns = String::from("/* generated by build.rs: the functions of PlayerRelationMap, verbatim from Player.cpp */\n");
             for h in [
                 "PlayerRelationMap::PlayerRelationMap( void )",
@@ -5676,7 +5732,7 @@ mod differential {
             let player_gen = out_dir.join("player_gen");
             std::fs::create_dir_all(&player_gen).expect("create player_gen");
             let rts = up.join("GameEngine/Source/Common/RTS");
-            let read = |n: &str| std::fs::read_to_string(rts.join(n)).unwrap_or_else(|_| panic!("read {n}"));
+            let read = |n: &str| read_upstream(rts.join(n));
             let pc = read("Player.cpp");
             let mut fns = String::from("/* generated by build.rs (p1w10-sonnet): the functions of Player.cpp, Energy.cpp, Money.cpp, Handicap.cpp and MissionStats.cpp that\n** slice 1 translates, each verbatim */\n");
             let neutral = "#define NEUTRAL_PLAYER_COLOR 0xffffffff";
@@ -5873,7 +5929,7 @@ mod differential {
                 fns.push_str(&extract_block(&pc, h));
             }
             let gsrc = up.join("GameEngine/Source");
-            let rds = |n: &str| std::fs::read_to_string(gsrc.join(n)).unwrap_or_else(|_| panic!("read {n}"));
+            let rds = |n: &str| read_upstream(gsrc.join(n));
             let sq = rds("GameLogic/AI/Squad.cpp");
             for h in [
                 "void Squad::addObject(Object *objectToAdd)",
@@ -5948,7 +6004,7 @@ mod differential {
                 assert_eq!(fns.matches(old).count(), 1, "killPlayer's second loop");
                 fns = fns.replace(old, "\tfor (PlayerTeamList::iterator it = m_playerTeamPrototypes.begin(); it != m_playerTeamPrototypes.end(); ++it) {");
             }
-            let tt = std::fs::read_to_string(up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp")).expect("read ThingTemplate.cpp");
+            let tt = read_upstream(up.join("GameEngine/Source/Common/Thing/ThingTemplate.cpp"));
             fns.push_str(&extract_block(&tt, "Int ThingTemplate::calcCostToBuild( const Player* player) const"));
             let en = read("Energy.cpp");
             for h in [
@@ -6015,7 +6071,7 @@ mod differential {
             // 64-bit reference (see common/bit_flags.rs). Player::crc writes two such masks, so the reference is made to hash the 4 bytes
             // the shipped build hashes: the one edit of this copy of BitFlagsIO.h (found before the upstream header), asserted once.
             std::fs::create_dir_all(player_gen.join("Common")).expect("create player_gen/Common");
-            let bf = std::fs::read_to_string(up.join("GameEngine/Include/Common/BitFlagsIO.h")).expect("read BitFlagsIO.h");
+            let bf = read_upstream(up.join("GameEngine/Include/Common/BitFlagsIO.h"));
             let bf_old = "xfer->xferUser( this, sizeof( this ) );";
             assert_eq!(bf.matches(bf_old).count(), 1, "BitFlags::xfer's CRC branch");
             // (it also does what differential/shim_flags/Common/BitFlagsIO.h does, which it replaces: the real KindOf.h first, see that file)
@@ -6026,7 +6082,7 @@ mod differential {
             std::fs::write(player_gen.join("Common/BitFlagsIO.h"), bf_text).expect("write BitFlagsIO.h");
             // Player.h forward-declares `enum BattlePlanStatus;` and `class BattlePlanBonuses;`, which only MSVC accepts
             // for an enum; the definitions come from BattlePlanUpdate.h, whole and unchanged
-            let bp = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/BattlePlanUpdate.h")).expect("read BattlePlanUpdate.h");
+            let bp = read_upstream(up.join("GameEngine/Include/GameLogic/Module/BattlePlanUpdate.h"));
             let mut enums = String::from("/* generated by build.rs (p1w10-sonnet): from BattlePlanUpdate.h, verbatim */\n");
             enums.push_str(&extract_block(&bp, "enum BattlePlanStatus"));
             enums.push_str(&extract_block(&bp, "class BattlePlanBonuses : public MemoryPoolObject"));
@@ -6034,9 +6090,9 @@ mod differential {
             once_at(&bp, all_plans);
             // slice 2: two enums the real headers declare only as opaque `enum X;` (Object.h) or inside classes the
             // stand-ins replace
-            let wpn = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Weapon.h")).expect("read Weapon.h");
+            let wpn = read_upstream(up.join("GameEngine/Include/GameLogic/Weapon.h"));
             enums.push_str(&extract_block(&wpn, "enum WeaponBonusConditionType"));
-            let tth = std::fs::read_to_string(up.join("GameEngine/Include/Common/ThingTemplate.h")).expect("read ThingTemplate.h");
+            let tth = read_upstream(up.join("GameEngine/Include/Common/ThingTemplate.h"));
             enums.push_str(&extract_block(&tth, "enum BuildableStatus"));
             enums.push_str("EMPTY_DTOR(BattlePlanBonuses)\n");
             enums.push_str(all_plans);
@@ -6099,7 +6155,7 @@ mod differential {
             }
             let ba_gen = out_dir.join("build_assistant_gen");
             std::fs::create_dir_all(&ba_gen).expect("create build_assistant_gen");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/Common/System/BuildAssistant.cpp")).expect("read BuildAssistant.cpp");
+            let mut src = read_upstream(up.join("GameEngine/Source/Common/System/BuildAssistant.cpp"));
             let a = once_at(&src, "#include \"PreRTS.h\"");
             let end = "#include \"GameLogic/Module/ParkingPlaceBehavior.h\"";
             let b = once_at(&src, end) + end.len();
@@ -6161,7 +6217,7 @@ mod differential {
             }
             let ocl_gen = out_dir.join("ocl_gen");
             std::fs::create_dir_all(&ocl_gen).expect("create ocl_gen");
-            let mut src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp")).expect("read ObjectCreationList.cpp");
+            let mut src = read_upstream(up.join("GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp"));
             let pre = "#include \"PreRTS.h\"";
             let a = once_at(&src, pre);
             let eol = a + src[a..].find('\n').expect("end of the PreRTS line");
@@ -6174,18 +6230,18 @@ mod differential {
             src = format!("{}/* the include block of ObjectCreationList.cpp is replaced by the includes of differential/wrap_ocl.cpp (build.rs) */{}", &src[..a], &src[b..]);
             std::fs::write(ocl_gen.join("ObjectCreationList_cut.cpp"), src).expect("write ObjectCreationList_cut.cpp");
 
-            let rd = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp")).expect("read RadiusDecal.cpp");
+            let rd = read_upstream(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp"));
             let mut inc = extract(&rd, "RadiusDecalTemplate::RadiusDecalTemplate() : ", "\n}\n");
             inc += &extract(&rd, "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(", "\tini->initFromINI(store, dataFieldParse);\n}");
             std::fs::write(ocl_gen.join("ocl_radius_decal_template.inc"), inc).expect("write ocl_radius_decal_template.inc");
 
-            let dh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h")).expect("read DeliverPayloadAIUpdate.h");
-            let dc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp")).expect("read DeliverPayloadAIUpdate.cpp");
+            let dh = read_upstream(up.join("GameEngine/Include/GameLogic/Module/DeliverPayloadAIUpdate.h"));
+            let dc = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/DeliverPayloadAIUpdate.cpp"));
             let mut inc = extract(&dh, "class DeliverPayloadData\n{", "\tstatic const FieldParse* getFieldParse();\n};");
             inc += &extract(&dc, "const FieldParse* DeliverPayloadData::getFieldParse()", "\treturn dataFieldParse;\n}");
             std::fs::write(ocl_gen.join("ocl_deliver_payload_data.inc"), inc).expect("write ocl_deliver_payload_data.inc");
 
-            let lod = std::fs::read_to_string(up.join("GameEngine/Source/Common/GameLOD.cpp")).expect("read GameLOD.cpp");
+            let lod = read_upstream(up.join("GameEngine/Source/Common/GameLOD.cpp"));
             let mut inc = extract(&lod, "static const char *StaticGameLODNames[]=", "\n};");
             inc += &extract(&lod, "void INI::parseStaticGameLODLevel( INI* ini, void * , void *store, const void*)", "\tthrow INI_INVALID_DATA;\n}");
             std::fs::write(ocl_gen.join("ocl_static_lod_level.inc"), inc).expect("write ocl_static_lod_level.inc");
@@ -6488,8 +6544,7 @@ mod differential {
         {
             let gen = out_dir.join("engine_gen");
             std::fs::create_dir_all(&gen).expect("create engine_gen");
-            let src = std::fs::read(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp")).expect("read ScriptEngine.cpp");
-            let mut src = String::from_utf8_lossy(&src).into_owned();
+            let mut src = read_upstream(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp"));
             let end = "void _appendMessage(const AsciiString& str, Bool isTrueMessage, Bool shouldPause)\n";
             assert_eq!(src.matches(end).count(), 1, "ScriptEngine.cpp: _appendMessage's definition");
             src.truncate(src.find(end).expect("end"));
@@ -6538,7 +6593,7 @@ mod differential {
                 .collect();
             let edits: Vec<(&str, &str, usize)> = enums.iter().map(|(a, b, n)| (a.as_str(), b.as_str(), *n)).collect();
             std::fs::write(gen.join("GameLogic/AI.h"), patch_copy(&up.join("GameEngine/Include/GameLogic/AI.h"), "AI.h", &edits)).expect("write AI.h copy");
-            let rd = |p: std::path::PathBuf| String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))).into_owned();
+            let rd = |p: std::path::PathBuf| read_upstream(&p);
             let ai_cpp = rd(up.join("GameEngine/Source/GameLogic/AI/AI.cpp"));
             let sides_cpp = rd(up.join("GameEngine/Source/GameLogic/Map/SidesList.cpp"));
             let cut = |t: &str, file: &str, a: &str, b: &str| -> String {
@@ -6603,7 +6658,7 @@ mod differential {
         {
             let gen = out_dir.join("campaign_gen");
             std::fs::create_dir_all(&gen).expect("create campaign_gen");
-            let rd = |p: std::path::PathBuf| String::from_utf8_lossy(&std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))).into_owned();
+            let rd = |p: std::path::PathBuf| read_upstream(&p);
             let once = |t: &str, file: &str, m: &str| -> usize {
                 assert_eq!(t.matches(m).count(), 1, "{file}: {m:?} must occur once");
                 t.find(m).expect("marker")
@@ -6699,7 +6754,7 @@ mod differential {
                 &[("const char* SpecialPowerMaskType::s_bitNameList[] = ", "const char* UpSpecialPowerRealNames[] = ", 1)],
             );
             std::fs::write(up_gen.join("SpecialPower_names_renamed.cpp"), sp_copy).expect("write SpecialPower copy");
-            let academy = std::fs::read_to_string(up.join("GameEngine/Source/Common/RTS/AcademyStats.cpp")).expect("read AcademyStats.cpp");
+            let academy = read_upstream(up.join("GameEngine/Source/Common/RTS/AcademyStats.cpp"));
             let first = "const char *TheAcademyClassificationTypeNames[] = \n{";
             assert_eq!(academy.matches(first).count(), 1, "AcademyStats.cpp names definition must occur once");
             let a = academy.find(first).expect("names definition");
@@ -6756,7 +6811,7 @@ mod differential {
             let shim_sm = dif.join("shim_statemachine");
             let sm_gen = out_dir.join("sm_gen");
             std::fs::create_dir_all(&sm_gen).expect("create sm_gen");
-            let game_state = std::fs::read_to_string(up.join("GameEngine/Include/Common/GameState.h")).expect("read GameState.h");
+            let game_state = read_upstream(up.join("GameEngine/Include/Common/GameState.h"));
             let first = "enum SaveCode\n{";
             assert_eq!(game_state.matches(first).count(), 1, "GameState.h SaveCode definition must occur once");
             let a = game_state.find(first).expect("SaveCode definition");
@@ -6848,7 +6903,7 @@ mod differential {
             let shim_mod = dif.join("shim_module");
             let mod_gen = out_dir.join("mod_gen");
             std::fs::create_dir_all(&mod_gen).expect("create mod_gen");
-            let factory = std::fs::read_to_string(up.join("GameEngine/Source/Common/Thing/ModuleFactory.cpp")).expect("read ModuleFactory.cpp");
+            let factory = read_upstream(up.join("GameEngine/Source/Common/Thing/ModuleFactory.cpp"));
             let (first, last) = ("void ModuleFactory::init( void )\n{\n", "}  // end init");
             assert_eq!(factory.matches(first).count(), 1, "ModuleFactory.cpp: init() must occur once");
             assert_eq!(factory.matches(last).count(), 1, "ModuleFactory.cpp: its end marker must occur once");
@@ -6868,7 +6923,7 @@ mod differential {
             //     that the Rust side's per-world cache can be compared run by run. The initialiser is upstream's, the init-once control flow is the
             //     `static`'s own.
             let money_path = up.join("GameEngine/Source/GameLogic/Object/Collide/CrateCollide/MoneyCrateCollide.cpp");
-            let money = std::fs::read_to_string(&money_path).expect("read MoneyCrateCollide.cpp");
+            let money = read_upstream(&money_path);
             let static_line = "static const UpgradeTemplate *upgradeTemplate = TheUpgradeCenter->findUpgrade( info.type.c_str() );";
             assert_eq!(money.matches(static_line).count(), 1, "MoneyCrateCollide.cpp: the static declaration must occur once");
             let money_cut = money.replace(
@@ -6879,7 +6934,7 @@ mod differential {
             // (2) AutoDepositUpdate.cpp -> mod_gen/AutoDepositUpdate_static.cpp: the same `static` inside the loop of its
             //     getUpgradedSupplyBoost (a defect of its own), made a global and a flag the driver resets. The file also defines parseUpgradePair,
             //     which MoneyCrateCollide's data reads (crate batch F had it cut out alone before the update module was translated).
-            let deposit = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp")).expect("read AutoDepositUpdate.cpp");
+            let deposit = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Update/AutoDepositUpdate.cpp"));
             assert_eq!(deposit.matches(static_line).count(), 1, "AutoDepositUpdate.cpp: the static declaration must occur once");
             let deposit_cut = deposit.replace(
                 static_line,
@@ -6898,7 +6953,7 @@ mod differential {
                 ("SpyVisionSpecialPower.cpp", "static const NameKeyType key_SpyVisionUpdate = NAMEKEY( \"SpyVisionUpdate\" );"),
             ] {
                 let path = up.join("GameEngine/Source/GameLogic/Object/SpecialPower").join(file);
-                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+                let text = read_upstream(&path);
                 assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");
                 let cut = text.replace(decl, &decl.replacen("static ", "", 1));
                 std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut).expect("write nokey copy");
@@ -6910,7 +6965,7 @@ mod differential {
             // are cut out of Object.cpp verbatim, from the first line of the first to the last line of the last (both markers asserted once), and
             // compiled on the module build's stand-in Object (its two sole-benefactor members, its body and its game logic).
             {
-                let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+                let object_cpp = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
                 let first = "void Object::attemptHealing(Real amount, const Object* source)\n{";
                 let last = "\t\treturn TRUE;\n\t}\n\n\treturn FALSE;\n\n}\n";
                 assert_eq!(object_cpp.matches(first).count(), 1, "Object.cpp: attemptHealing must occur once");
@@ -6931,7 +6986,7 @@ mod differential {
             // times; the edited header is mod_gen/GameLogic/Module/AutoHealBehavior.h, which the module build finds before the upstream one.
             {
                 let path = up.join("GameEngine/Include/GameLogic/Module/AutoHealBehavior.h");
-                let text = std::fs::read_to_string(&path).expect("read AutoHealBehavior.h");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/BitFlagsIO.h\"\n");
                 assert_eq!(text.matches(parse).count(), 2, "AutoHealBehavior.h: the particle system parser must occur twice");
                 assert_eq!(text.matches(include).count(), 1, "AutoHealBehavior.h: the BitFlagsIO include must occur once");
@@ -6949,7 +7004,7 @@ mod differential {
             // (asserted once). The edited header is mod_gen/GameLogic/Module/GrantStealthBehavior.h.
             {
                 let path = up.join("GameEngine/Include/GameLogic/Module/GrantStealthBehavior.h");
-                let text = std::fs::read_to_string(&path).expect("read GrantStealthBehavior.h");
+                let text = read_upstream(&path);
                 let (parse, guard) = ("INI::parseParticleSystemTemplate", "#define __GrantStealthBehavior_H_\n");
                 assert_eq!(text.matches(parse).count(), 1, "GrantStealthBehavior.h: the particle system parser must occur once");
                 assert_eq!(text.matches(guard).count(), 1, "GrantStealthBehavior.h: the include guard must occur once");
@@ -6969,7 +7024,7 @@ mod differential {
             {
                 let (dir, file, decl) = ("Update", "FlammableUpdate.cpp", "static const NameKeyType key_FireSpreadUpdate = NAMEKEY(\"FireSpreadUpdate\");");
                 let path = up.join("GameEngine/Source/GameLogic/Object").join(dir).join(file);
-                let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+                let text = read_upstream(&path);
                 assert_eq!(text.matches(decl).count(), 1, "{file}: the static name key must occur once");
                 let cut = text.replace(decl, &decl.replacen("static const ", "const ", 1));
                 std::fs::write(mod_gen.join(file.replace(".cpp", "_nokey.cpp")), cut).expect("write nokey copy");
@@ -6988,12 +7043,12 @@ mod differential {
                     let b = rest.find(end).unwrap_or_else(|| panic!("{end:?} must follow {start:?}"));
                     format!("{}\n", &rest[..b + end.len()])
                 }
-                let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+                let object_cpp = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
                 let kill = cut(&object_cpp, "void Object::kill( DamageType damageType, DeathType deathType )\n{", "}  // end kill\n");
                 std::fs::write(mod_gen.join("ObjectKill.inc"), format!("/* generated by build.rs: Object::kill, verbatim from Object.cpp */\n{kill}")).expect("write ObjectKill.inc");
                 let relationship = cut(&object_cpp, "Relationship Object::getRelationship(const Object *that) const", "\treturn NEUTRAL;\n\n}\n");
                 std::fs::write(mod_gen.join("ObjectRelationship.inc"), format!("/* generated by build.rs: Object::getRelationship, verbatim from Object.cpp */\n{relationship}")).expect("write ObjectRelationship.inc");
-                let rd = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp")).expect("read RadiusDecal.cpp");
+                let rd = read_upstream(up.join("GameEngine/Source/GameClient/RadiusDecal.cpp"));
                 let mut inc = cut(&rd, "RadiusDecalTemplate::RadiusDecalTemplate() : ", "\n}\n");
                 inc += &cut(&rd, "/*static*/ void RadiusDecalTemplate::parseRadiusDecalTemplate(", "\tini->initFromINI(store, dataFieldParse);\n}");
                 std::fs::write(mod_gen.join("radius_decal_template.inc"), inc).expect("write radius_decal_template.inc");
@@ -7001,7 +7056,7 @@ mod differential {
                 // SquishCollide.cpp (differential/l9_squish_collide_o.inc): the function-local `static` of its name key loses its `static` (the test resets
                 // the name key generator for every case), as FlammableUpdate.cpp's does; asserted once, the edited copy is mod_gen/SquishCollide_nokey.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Collide/SquishCollide.cpp");
-                let text = std::fs::read_to_string(&path).expect("read SquishCollide.cpp");
+                let text = read_upstream(&path);
                 let decl = "static NameKeyType key_HijackerUpdate = NAMEKEY( \"HijackerUpdate\" );";
                 assert_eq!(text.matches(decl).count(), 1, "SquishCollide.cpp: the static name key must occur once");
                 std::fs::write(mod_gen.join("SquishCollide_nokey.cpp"), text.replace(decl, &decl.replacen("static ", "", 1))).expect("write SquishCollide_nokey.cpp");
@@ -7011,7 +7066,7 @@ mod differential {
                 // same arguments, which answer for the test's objects (the real FlammableUpdate needs a body, a drawable and a sound manager of its own, and has its
                 // own test); the edited copy is mod_gen/FireSpreadUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/FireSpreadUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read FireSpreadUpdate.cpp");
+                let text = read_upstream(&path);
                 let decl = "static NameKeyType key_FlammableUpdate = NAMEKEY(\"FlammableUpdate\");";
                 assert_eq!(text.matches(decl).count(), 2, "FireSpreadUpdate.cpp: the static name key must occur twice");
                 let (would, tryto) = ("fu->wouldIgnite()", "fu->tryToIgnite()");
@@ -7027,18 +7082,18 @@ mod differential {
                 // whole file against its own Object; this unit's class is ModTestDamageFX). BridgeBehavior.cpp: getBridgeBehaviorInterfaceFromObject, verbatim,
                 // into mod_gen/BridgeBehaviorFromObject.inc.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Body/ActiveBody.cpp");
-                let text = std::fs::read_to_string(&path).expect("read ActiveBody.cpp");
+                let text = read_upstream(&path);
                 let decl = "static const ParticleSystemTemplate *";
                 assert_eq!(text.matches(decl).count(), 7, "ActiveBody.cpp: the static particle system templates must occur seven times");
                 std::fs::write(mod_gen.join("ActiveBody_edit.cpp"), text.replace(decl, "const ParticleSystemTemplate *")).expect("write ActiveBody_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let path = up.join("GameEngine/Source/Common/DamageFX.cpp");
-                let text = std::fs::read_to_string(&path).expect("read DamageFX.cpp");
+                let text = read_upstream(&path);
                 let fx = cut(&text, "DamageFX::DamageFX()\n{", "\treturn fx;\n}\n");
                 std::fs::write(mod_gen.join("DamageFX_cut.inc"), format!("/* generated by build.rs: the Object functions of DamageFX, verbatim from DamageFX.cpp */\n{fx}")).expect("write DamageFX_cut.inc");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/BridgeBehavior.cpp");
-                let text = std::fs::read_to_string(&path).expect("read BridgeBehavior.cpp");
+                let text = read_upstream(&path);
                 let bridge = cut(&text, "/*static */BridgeBehaviorInterface *BridgeBehavior::getBridgeBehaviorInterfaceFromObject( Object *obj )\n{", "}  // end getBridgeBehaviorInterfaceFromObject\n");
                 std::fs::write(mod_gen.join("BridgeBehaviorFromObject.inc"), format!("/* generated by build.rs: BridgeBehavior::getBridgeBehaviorInterfaceFromObject, verbatim from BridgeBehavior.cpp */\n{bridge}")).expect("write BridgeBehaviorFromObject.inc");
                 println!("cargo:rerun-if-changed={}", path.display());
@@ -7046,7 +7101,7 @@ mod differential {
                 // name key generator for every case), the SlavedUpdate it finds is an UpdateModule whose onSlaverDie is the driver's l9sdSlaverDie (the real
                 // SlavedUpdate needs the whole slaved layer), and its second loop declares its own `update`; each asserted once, into mod_gen/SlowDeathBehavior_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/SlowDeathBehavior.cpp");
-                let text = std::fs::read_to_string(&path).expect("read SlowDeathBehavior.cpp");
+                let text = read_upstream(&path);
                 let decl = "static NameKeyType key_SlavedUpdate = NAMEKEY( \"SlavedUpdate\" );";
                 assert_eq!(text.matches(decl).count(), 1, "SlowDeathBehavior.cpp: the static name key must occur once");
                 let (find, die) = ("SlavedUpdate* slave = (SlavedUpdate*)obj->findUpdateModule( key_SlavedUpdate );", "slave->onSlaverDie( NULL );");
@@ -7061,7 +7116,7 @@ mod differential {
                 // UndeadBody.cpp (differential/l9_active_body_p.inc): the second loop of startSecondLife names the first loop's `update` (Visual C++ 6 let a `for`
                 // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/UndeadBody_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Body/UndeadBody.cpp");
-                let text = std::fs::read_to_string(&path).expect("read UndeadBody.cpp");
+                let text = read_upstream(&path);
                 let (loop2, loop2_fixed) = ("for( update = getObject()->getBehaviorModules(); *update; ++update)", "for( BehaviorModule** update = getObject()->getBehaviorModules(); *update; ++update)");
                 assert_eq!(text.matches(loop2).count(), 1, "UndeadBody.cpp: the second loop must occur once");
                 std::fs::write(mod_gen.join("UndeadBody_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write UndeadBody_edit.cpp");
@@ -7070,7 +7125,7 @@ mod differential {
                 // done (undefined: the sentinel holds no value). The edit reads that as the loop ending, which is what the shipped game does, asserted once, into
                 // mod_gen/OpenContain_edit.cpp; the Rust side records the undefined read (`Undefined::EndIteratorDereferenced`) and the test accepts that one.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OpenContain.cpp");
-                let text = std::fs::read_to_string(&path).expect("read OpenContain.cpp");
+                let text = read_upstream(&path);
                 let (wh, wh_fixed) = ("while( *it )", "while( it != items->end() )");
                 assert_eq!(text.matches(wh).count(), 1, "OpenContain.cpp: the processDamageToContained loop must occur once");
                 std::fs::write(mod_gen.join("OpenContain_edit.cpp"), text.replace(wh, wh_fixed)).expect("write OpenContain_edit.cpp");
@@ -7078,7 +7133,7 @@ mod differential {
                 // batch R2: TransportContain.cpp loops `while( *it )` twice (letRidersUpgradeWeaponSet over riderList, update over items), with the same read of
                 // list::end() after the last rider; both end there, asserted once each and in that order, into mod_gen/TransportContain_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/TransportContain.cpp");
-                let text = std::fs::read_to_string(&path).expect("read TransportContain.cpp");
+                let text = read_upstream(&path);
                 assert_eq!(text.matches(wh).count(), 2, "TransportContain.cpp: the two `while( *it )` loops must occur twice");
                 let first = text.find(wh).expect("first loop");
                 let second = first + wh.len() + text[first + wh.len()..].find(wh).expect("second loop");
@@ -7102,7 +7157,7 @@ mod differential {
                 // ObjectStatusTypes), so it becomes an empty enum of int, the size MSVC gives the forward declaration. Into mod_gen/RiderChangeContain_edit.h,
                 // which the driver includes first (the same include guard).
                 let path = up.join("GameEngine/Include/GameLogic/Module/RiderChangeContain.h");
-                let text = std::fs::read_to_string(&path).expect("read RiderChangeContain.h");
+                let text = read_upstream(&path);
                 let fwd = "enum WeaponSetType;\r\nenum ObjectStatusType;\r\nenum LocomotorSetType;";
                 let fwd_lf = "enum WeaponSetType;\nenum ObjectStatusType;\nenum LocomotorSetType;";
                 let fixed = "enum ObjectStatusType : int {};   /* build.rs: see the batch R5 note */";
@@ -7115,7 +7170,7 @@ mod differential {
                 // batch R6: OverlordContain.cpp's clientVisibleContainedFlashAsSelected loops `while( *it )` over the list (the read of end() after the
                 // last one); it ends there, asserted once, into mod_gen/OverlordContain_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/OverlordContain.cpp");
-                let text = std::fs::read_to_string(&path).expect("read OverlordContain.cpp");
+                let text = read_upstream(&path);
                 assert_eq!(text.matches(wh).count(), 1, "OverlordContain.cpp: the `while( *it )` loop must occur once");
                 assert!(text.contains("const ContainedItemsList* items = TransportContain::getContainedItemsList();"), "OverlordContain.cpp: the loop is over items");
                 std::fs::write(mod_gen.join("OverlordContain_edit.cpp"), text.replace(wh, "while( it != items->end() )")).expect("write OverlordContain_edit.cpp");
@@ -7123,7 +7178,7 @@ mod differential {
                 // (isValidContainerFor) and update's `while( *it )` after the last rider; both stop at `end()` (the Rust side records
                 // `Undefined::EndIteratorDereferenced`), asserted once each, into mod_gen/MobNexusContain_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/MobNexusContain.cpp");
-                let text = std::fs::read_to_string(&path).expect("read MobNexusContain.cpp");
+                let text = read_upstream(&path);
                 let iff = "if( *it )";
                 assert_eq!(text.matches(iff).count(), 1, "MobNexusContain.cpp: `if( *it )` must occur once");
                 assert_eq!(text.matches(wh).count(), 1, "MobNexusContain.cpp: `while( *it )` must occur once");
@@ -7133,7 +7188,7 @@ mod differential {
                 // batch R12: GarrisonContain.cpp's loadStationGarrisonPoints names the first loop's `t` in its second loop (Visual C++ 6 let a `for`
                 // variable outlive its loop; clang does not): it declares its own, asserted once, into mod_gen/GarrisonContain_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Contain/GarrisonContain.cpp");
-                let text = std::fs::read_to_string(&path).expect("read GarrisonContain.cpp");
+                let text = read_upstream(&path);
                 let (loop2, loop2_fixed) = ("for( t = 0; t < count; ++t )", "for( int t = 0; t < count; ++t )");
                 assert_eq!(text.matches(loop2).count(), 1, "GarrisonContain.cpp: the second loop must occur once");
                 std::fs::write(mod_gen.join("GarrisonContain_edit.cpp"), text.replace(loop2, loop2_fixed)).expect("write GarrisonContain_edit.cpp");
@@ -7142,7 +7197,7 @@ mod differential {
                 // four times, as AutoHealBehavior.h does; the same replacement (asserted four times), its declaration after the last include (asserted
                 // once), into mod_gen/StealthDetectorUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/StealthDetectorUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read StealthDetectorUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"Common/Player.h\"\n");
                 assert_eq!(text.matches(parse).count(), 4, "StealthDetectorUpdate.cpp: the particle system parser must occur four times");
                 assert_eq!(text.matches(include).count(), 1, "StealthDetectorUpdate.cpp: the Player.h include must occur once");
@@ -7156,7 +7211,7 @@ mod differential {
                 // batch R30 (differential/l9_bonefx_r30.inc): BoneFXUpdate.cpp parses its particle systems with `ini->parseParticleSystemTemplate`; the same
                 // replacement (asserted once), its declaration after the BoneFXDamage.h include (asserted once), into mod_gen/BoneFXUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/BoneFXUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read BoneFXUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/BoneFXDamage.h\"\n");
                 assert_eq!(text.matches(parse).count(), 1, "BoneFXUpdate.cpp: the particle system parser must occur once");
                 assert_eq!(text.matches(include).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage.h include must occur once");
@@ -7175,7 +7230,7 @@ mod differential {
                 assert_eq!(cut.matches(key).count(), 1, "BoneFXUpdate.cpp: the BoneFXDamage name key must occur once");
                 let cut = cut.replace(key, &key["static ".len()..]);
                 let dpath = up.join("GameEngine/Source/GameLogic/Object/Damage/BoneFXDamage.cpp");
-                let dtext = std::fs::read_to_string(&dpath).expect("read BoneFXDamage.cpp");
+                let dtext = read_upstream(&dpath);
                 let dkey = "static NameKeyType key_BoneFXUpdate = NAMEKEY(\"BoneFXUpdate\");";
                 assert_eq!(dtext.matches(dkey).count(), 2, "BoneFXDamage.cpp: the BoneFXUpdate name key must occur twice");
                 std::fs::write(mod_gen.join("BoneFXDamage_edit.cpp"), dtext.replace(dkey, &dkey["static ".len()..])).expect("write BoneFXDamage_edit.cpp");
@@ -7183,7 +7238,7 @@ mod differential {
                 std::fs::write(mod_gen.join("BoneFXUpdate_edit.cpp"), cut).expect("write BoneFXUpdate_edit.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/BoneFXUpdate.h");
-                let htext = std::fs::read_to_string(&hpath).expect("read BoneFXUpdate.h");
+                let htext = read_upstream(&hpath);
                 let (once, guard) = ("#pragma once\n", "#ifndef __BONEFXUPDATE_H_\n#define __BONEFXUPDATE_H_\n");
                 assert_eq!(htext.matches(once).count(), 1, "BoneFXUpdate.h: #pragma once must occur once");
                 assert_eq!(htext.matches(guard).count(), 1, "BoneFXUpdate.h: the include guard must occur once");
@@ -7194,7 +7249,7 @@ mod differential {
                 // `ini->parseParticleSystemTemplate`; the same replacement (asserted once), its declaration after the module header's include (asserted
                 // once), into mod_gen/TransitionDamageFX_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Damage/TransitionDamageFX.cpp");
-                let text = std::fs::read_to_string(&path).expect("read TransitionDamageFX.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("ini->parseParticleSystemTemplate", "#include \"GameLogic/Module/TransitionDamageFX.h\"\n");
                 assert_eq!(text.matches(parse).count(), 1, "TransitionDamageFX.cpp: the particle system parser must occur once");
                 assert_eq!(text.matches(include).count(), 1, "TransitionDamageFX.cpp: the module header include must occur once");
@@ -7208,7 +7263,7 @@ mod differential {
                 // `INI::parseParticleSystemTemplate` sixteen times; the same replacement (asserted sixteen times), its declaration after the module header's
                 // include (asserted once), into mod_gen/FirestormDynamicGeometryInfoUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/FirestormDynamicGeometryInfoUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read FirestormDynamicGeometryInfoUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/FirestormDynamicGeometryInfoUpdate.h\"\n");
                 assert_eq!(text.matches(parse).count(), 16, "FirestormDynamicGeometryInfoUpdate.cpp: the particle system parser must occur sixteen times");
                 assert_eq!(text.matches(include).count(), 1, "FirestormDynamicGeometryInfoUpdate.cpp: the module header include must occur once");
@@ -7221,7 +7276,7 @@ mod differential {
                 // batch R33 (differential/l9_emp_r33.inc): EMPUpdate.h's field tables name `INI::parseParticleSystemTemplate` twice; the same
                 // replacement (asserted twice), its declaration after the include guard line (asserted once), into mod_gen/GameLogic/Module/EMPUpdate.h.
                 let path = up.join("GameEngine/Include/GameLogic/Module/EMPUpdate.h");
-                let text = std::fs::read_to_string(&path).expect("read EMPUpdate.h");
+                let text = read_upstream(&path);
                 let (parse, guard) = ("INI::parseParticleSystemTemplate", "#define __EMPUPDATE_H_\n");
                 assert_eq!(text.matches(parse).count(), 2, "EMPUpdate.h: the particle system parser must occur twice");
                 assert_eq!(text.matches(guard).count(), 1, "EMPUpdate.h: the include guard must occur once");
@@ -7236,7 +7291,7 @@ mod differential {
                 // which the test's per-case reset of the name key generator would leave stale; the `static` dropped (asserted once), into
                 // mod_gen/TensileFormationUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/TensileFormationUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read TensileFormationUpdate.cpp");
+                let text = read_upstream(&path);
                 let key = "static NameKeyType theTFUKey";
                 assert_eq!(text.matches(key).count(), 1, "TensileFormationUpdate.cpp: getTFU's static name key must occur once");
                 let cut = text.replace(key, "NameKeyType theTFUKey");
@@ -7246,7 +7301,7 @@ mod differential {
                 // after the loop (MSVC's old `for` scope); the declaration hoisted before the loop (asserted once), which changes nothing else,
                 // into mod_gen/StructureToppleUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/StructureToppleUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read StructureToppleUpdate.cpp");
+                let text = read_upstream(&path);
                 let loop_head = "for (Real j = m_lastCrushedLocation;";
                 assert_eq!(text.matches(loop_head).count(), 1, "StructureToppleUpdate.cpp: the crushing loop must occur once");
                 let cut = text.replace(loop_head, "Real j; for (j = m_lastCrushedLocation;");
@@ -7256,7 +7311,7 @@ mod differential {
                 // function-local `static`, which the test's per-case reset of the name key generator would leave stale; the `static` dropped
                 // (asserted once), into mod_gen/StickyBombUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/StickyBombUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read StickyBombUpdate.cpp");
+                let text = read_upstream(&path);
                 let key = "static NameKeyType key_LifetimeUpdate";
                 assert_eq!(text.matches(key).count(), 1, "StickyBombUpdate.cpp: initStickyBomb's static name key must occur once");
                 let cut = text.replace(key, "NameKeyType key_LifetimeUpdate");
@@ -7265,7 +7320,7 @@ mod differential {
                 // The header is already in the unit (RebuildHoleBehavior's driver, batch R15, stands in for two of the bomb's methods), so the
                 // driver compiles the class under another name from a copy of the header whose include guard is renamed (asserted twice).
                 let path = up.join("GameEngine/Include/GameLogic/Module/StickyBombUpdate.h");
-                let text = std::fs::read_to_string(&path).expect("read StickyBombUpdate.h");
+                let text = read_upstream(&path);
                 let guard = "__STICK_BOMB_UPDATE_H";
                 assert_eq!(text.matches(guard).count(), 3, "StickyBombUpdate.h: the include guard must occur three times (two lines and the end comment)");
                 std::fs::write(mod_gen.join("StickyBombUpdate_r39.h"), text.replace(guard, "__STICK_BOMB_UPDATE_H_R39")).expect("write StickyBombUpdate_r39.h");
@@ -7274,7 +7329,7 @@ mod differential {
                 // function-local `static`, which the test's per-case reset of the name key generator would leave stale; the `static` dropped
                 // (asserted once), into mod_gen/MinefieldBehavior_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/MinefieldBehavior.cpp");
-                let text = std::fs::read_to_string(&path).expect("read MinefieldBehavior.cpp");
+                let text = read_upstream(&path);
                 let key = "static const NameKeyType key_AutoHealBehavior";
                 assert_eq!(text.matches(key).count(), 1, "MinefieldBehavior.cpp: update's static name key must occur once");
                 let cut = text.replace(key, "const NameKeyType key_AutoHealBehavior");
@@ -7284,7 +7339,7 @@ mod differential {
                 // variable declared in a `for` lives on after it; clang's standard scoping rejects the three later uses. Each use gets its own
                 // declaration (asserted once each, the two xfer loops together), into mod_gen/DockUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/DockUpdate/DockUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read DockUpdate.cpp");
+                let text = read_upstream(&path);
                 let (a, b) = ("\t\tpositionIndex = m_approachPositionOwners.size() - 1;", "\tfor( vectorIndex = 0; vectorIndex < vectorSize; ++vectorIndex )");
                 assert_eq!((text.matches(a).count(), text.matches(b).count()), (1, 2), "DockUpdate.cpp: the MSVC for-scope uses must occur once and twice");
                 let cut = text.replace(a, "\t\tInt positionIndex = m_approachPositionOwners.size() - 1;").replace(b, "\tfor( Int vectorIndex = 0; vectorIndex < vectorSize; ++vectorIndex )");
@@ -7294,7 +7349,7 @@ mod differential {
                 // reads its loop's index after the loop and initializeBonePositions reuses its first loop's. Both are declared before their loops
                 // (asserted once each), into mod_gen/SpawnPointProductionExitUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/ProductionExitUpdate/SpawnPointProductionExitUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read SpawnPointProductionExitUpdate.cpp");
+                let text = read_upstream(&path);
                 let (a, b) = ("\t\tfor( Int positionIndex = 0; positionIndex < m_spawnPointCount; positionIndex++ )", "\tfor( Int matrixIndex = 0; matrixIndex < MAX_SPAWN_POINTS; matrixIndex++ )");
                 assert_eq!((text.matches(a).count(), text.matches(b).count()), (1, 1), "SpawnPointProductionExitUpdate.cpp: the MSVC for-scope loops must occur once each");
                 let cut = text
@@ -7306,7 +7361,7 @@ mod differential {
                 // once, as AutoHealBehavior.h does; the same replacement (asserted once), its declaration after the PhysicsUpdate.h include (asserted
                 // once), into mod_gen/HelicopterSlowDeathUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/HelicopterSlowDeathUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read HelicopterSlowDeathUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/PhysicsUpdate.h\"\n");
                 assert_eq!(text.matches(parse).count(), 1, "HelicopterSlowDeathUpdate.cpp: the particle system parser must occur once");
                 assert_eq!(text.matches(include).count(), 1, "HelicopterSlowDeathUpdate.cpp: the PhysicsUpdate.h include must occur once");
@@ -7320,7 +7375,7 @@ mod differential {
                 // same replacement (asserted once), its declaration after the PhysicsUpdate.h include (asserted once), into
                 // mod_gen/WaveGuideUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/WaveGuideUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read WaveGuideUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic/Module/PhysicsUpdate.h\"\n");
                 assert_eq!(text.matches(parse).count(), 1, "WaveGuideUpdate.cpp: the particle system parser must occur once");
                 assert_eq!(text.matches(include).count(), 1, "WaveGuideUpdate.cpp: the PhysicsUpdate.h include must occur once");
@@ -7333,7 +7388,7 @@ mod differential {
                 // batch R72 (differential/l9_spectre_gunship_r72.inc): SpectreGunshipUpdate.cpp, the same way (its PhysicsUpdate.h include is written
                 // with backslashes), into mod_gen/SpectreGunshipUpdate_edit.cpp.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/SpectreGunshipUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read SpectreGunshipUpdate.cpp");
+                let text = read_upstream(&path);
                 let (parse, include) = ("INI::parseParticleSystemTemplate", "#include \"GameLogic\\Module\\PhysicsUpdate.h\"\n");
                 assert_eq!(text.matches(parse).count(), 1, "SpectreGunshipUpdate.cpp: the particle system parser must occur once");
                 assert_eq!(text.matches(include).count(), 1, "SpectreGunshipUpdate.cpp: the PhysicsUpdate.h include must occur once");
@@ -7353,7 +7408,7 @@ mod differential {
                 // once), into mod_gen/ParticleUplinkCannonUpdate_r75.h, which the driver includes first (the .cpp's own include then stops at the
                 // include guard).
                 let path = up.join("GameEngine/Include/GameLogic/Module/ParticleUplinkCannonUpdate.h");
-                let text = std::fs::read_to_string(&path).expect("read ParticleUplinkCannonUpdate.h");
+                let text = read_upstream(&path);
                 let fwd = "enum ParticleSystemID;\n";
                 assert_eq!(text.matches(fwd).count(), 1, "ParticleUplinkCannonUpdate.h: the forward declaration must occur once");
                 std::fs::write(mod_gen.join("ParticleUplinkCannonUpdate_r75.h"), text.replace(fwd, "")).expect("write ParticleUplinkCannonUpdate_r75.h");
@@ -7362,7 +7417,7 @@ mod differential {
                 // which the module build's stand-in header (GameLogic/Module/BridgeBehavior.h, already in the unit) defines with the same six lines:
                 // the header without them (each asserted once), into mod_gen/BridgeBehavior_r77.h, which the driver includes first.
                 let path = up.join("GameEngine/Include/GameLogic/Module/BridgeBehavior.h");
-                let text = std::fs::read_to_string(&path).expect("read BridgeBehavior.h");
+                let text = read_upstream(&path);
                 let fwd = "enum BridgeTowerType;\n";
                 let start = "class BridgeBehaviorInterface\n{";
                 assert_eq!(text.matches(fwd).count(), 1, "BridgeBehavior.h: the forward declaration must occur once");
@@ -7378,7 +7433,7 @@ mod differential {
                 // mod_gen/PhysicsUpdate_r50.cpp, with its include of the header and the AI's `processCollision(this, other)` (the AI was declared
                 // with the stand-in's type for the argument) edited, each asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/PhysicsUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read PhysicsUpdate.cpp");
+                let text = read_upstream(&path);
                 let edits = [
                     ("#include \"GameLogic/Module/PhysicsUpdate.h\"", "#include \"PhysicsUpdate_r50.h\""),
                     ("ai->processCollision(this, other)", "ai->processCollision((R50OrigPhysics *)(void *)this, other)"),
@@ -7391,7 +7446,7 @@ mod differential {
                 std::fs::write(mod_gen.join("PhysicsUpdate_r50.cpp"), cut).expect("write PhysicsUpdate_r50.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/PhysicsUpdate.h");
-                let htext = std::fs::read_to_string(&hpath).expect("read PhysicsUpdate.h");
+                let htext = read_upstream(&hpath);
                 let (once, guard) = ("#pragma once\n", "#ifndef _PHYSICSUPDATE_H_\n#define _PHYSICSUPDATE_H_\n");
                 assert_eq!(htext.matches(once).count(), 1, "PhysicsUpdate.h: #pragma once must occur once");
                 assert_eq!(htext.matches(guard).count(), 1, "PhysicsUpdate.h: the include guard must occur once");
@@ -7406,7 +7461,7 @@ mod differential {
                 // `m_carriageTemplateNameIterator = 0;` made a value-initialised iterator (MSVC 6's vector iterator was a pointer; the member
                 // is never read); each asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/AIUpdate/RailroadGuideAIUpdate.cpp");
-                let mut text = std::fs::read_to_string(&path).expect("read RailroadGuideAIUpdate.cpp");
+                let mut text = read_upstream(&path);
                 for (from, to) in [
                     ("#include \"GameLogic/Module/RailroadGuideAIUpdate.h\"", "#include \"RailroadGuideAIUpdate_r80.h\""),
                     ("#include \"GameClient/Statistics.h\"", ""),
@@ -7418,7 +7473,7 @@ mod differential {
                 std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r80.cpp"), text).expect("write RailroadGuideAIUpdate_r80.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/RailroadGuideAIUpdate.h");
-                let htext = std::fs::read_to_string(&hpath).expect("read RailroadGuideAIUpdate.h");
+                let htext = read_upstream(&hpath);
                 let from = "#include \"GameLogic/Module/PhysicsUpdate.h\"\n";
                 assert_eq!(htext.matches(from).count(), 1, "RailroadGuideAIUpdate.h: `{from}` must occur once");
                 std::fs::write(mod_gen.join("RailroadGuideAIUpdate_r80.h"), htext.replace(from, "")).expect("write RailroadGuideAIUpdate_r80.h");
@@ -7429,14 +7484,14 @@ mod differential {
                 // unit's l9ahParsePsTemplate (as batch M's AutoHealBehavior.h), declared after the guard; the .cpp as
                 // mod_gen/SpecialAbilityUpdate_r81.cpp with its include of the header edited; each asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/SpecialAbilityUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read SpecialAbilityUpdate.cpp");
+                let text = read_upstream(&path);
                 let from = "#include \"GameLogic/Module/SpecialAbilityUpdate.h\"";
                 assert_eq!(text.matches(from).count(), 1, "SpecialAbilityUpdate.cpp: `{from}` must occur once");
                 std::fs::write(mod_gen.join("SpecialAbilityUpdate_r81.cpp"), text.replace(from, "#include \"SpecialAbilityUpdate_r81.h\""))
                     .expect("write SpecialAbilityUpdate_r81.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/SpecialAbilityUpdate.h");
-                let mut htext = std::fs::read_to_string(&hpath).expect("read SpecialAbilityUpdate.h");
+                let mut htext = read_upstream(&hpath);
                 for (from, to) in [
                     (
                         "#ifndef __SPECIAL_ABILITY_UPDATE_H\n#define __SPECIAL_ABILITY_UPDATE_H\n",
@@ -7458,7 +7513,7 @@ mod differential {
                 // loop's variable after it), and `setPosition( pCreationLocations->begin() )` given the element's address; and xfer's uninitialised
                 // `Int commandType` given the command (below); each asserted.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/FlightDeckBehavior.cpp");
-                let mut text = std::fs::read_to_string(&path).expect("read FlightDeckBehavior.cpp");
+                let mut text = read_upstream(&path);
                 for (from, to, n) in [
                     ("#include \"GameLogic/Module/FlightDeckBehavior.h\"", "#include \"FlightDeckBehavior_r82.h\"\nclass INI;\nvoid l9ahParsePsTemplate( INI *ini, void *instance, void *store, const void *userData );", 1),
                     ("INI::parseParticleSystemTemplate", "l9ahParsePsTemplate", 2),
@@ -7491,7 +7546,7 @@ mod differential {
                 std::fs::write(mod_gen.join("FlightDeckBehavior_r82.cpp"), text).expect("write FlightDeckBehavior_r82.cpp");
                 println!("cargo:rerun-if-changed={}", path.display());
                 let hpath = up.join("GameEngine/Include/GameLogic/Module/FlightDeckBehavior.h");
-                let mut htext = std::fs::read_to_string(&hpath).expect("read FlightDeckBehavior.h");
+                let mut htext = read_upstream(&hpath);
                 for (from, to) in [
                     ("class FlightDeckBehaviorModuleData : public AIUpdateModuleData", "class FlightDeckBehaviorModuleData : public R82AiData"),
                     ("class FlightDeckBehavior : public AIUpdateInterface,", "class FlightDeckBehavior : public R82AiBase,"),
@@ -7503,7 +7558,7 @@ mod differential {
                 println!("cargo:rerun-if-changed={}", hpath.display());
                 // and `Object::canCrushOrSquish`, cut out of Object.cpp verbatim (from its first line to the end of the function, asserted once), into
                 // mod_gen/ObjectCrush.inc, as batch O cuts `Object::kill`.
-                let object_cpp = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+                let object_cpp = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
                 let start = "Bool Object::canCrushOrSquish(Object *otherObj, CrushSquishTestType testType ) const\n{";
                 let end = "\t\t\treturn true;\n\t\t}\n\t}\n\t\t\n\treturn false;\n}\n";
                 assert_eq!(object_cpp.matches(start).count(), 1, "Object.cpp: canCrushOrSquish must occur once");
@@ -7516,7 +7571,7 @@ mod differential {
                 // the test of the end iterator as a pointer (`if( it )`: the shipped std::vector's iterator is one, null while the vector has no
                 // storage, which no other library's is) made the test of the storage it stands for, asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Behavior/CountermeasuresBehavior.cpp");
-                let text = std::fs::read_to_string(&path).expect("read CountermeasuresBehavior.cpp");
+                let text = read_upstream(&path);
                 let from = "\tif( it )\n";
                 assert_eq!(text.matches(from).count(), 1, "CountermeasuresBehavior.cpp: `if( it )` must occur once");
                 let cut = text.replace(from, "\tif( m_counterMeasures.capacity() != 0 )   /* build.rs: was `if( it )` */\n");
@@ -7525,7 +7580,7 @@ mod differential {
                 // batch R57 (differential/l9_slaved_r57.inc): PartitionManager.cpp's four distance procedures (theDistCalcProcs' entries),
                 // verbatim, into mod_gen/PartitionDist.inc; the driver compiles them over the module build's objects.
                 let path = up.join("GameEngine/Source/GameLogic/Object/PartitionManager.cpp");
-                let text = std::fs::read_to_string(&path).expect("read PartitionManager.cpp");
+                let text = read_upstream(&path);
                 let first = "static Bool distCalcProc_CenterAndCenter_2D(\n";
                 let last = "static Bool distCalcProc_BoundaryAndBoundary_3D(\n";
                 let tail = "\treturn abDistSqr < maxDistSqr;\n}\n";
@@ -7541,7 +7596,7 @@ mod differential {
                 // setCleanupAreaParameters defined as a member of the driver's subclass R56Cleanup (the class's own name is special power batch H's
                 // stand-in, the line CleanupAreaPower's test reads), its body unchanged; asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Update/CleanupHazardUpdate.cpp");
-                let text = std::fs::read_to_string(&path).expect("read CleanupHazardUpdate.cpp");
+                let text = read_upstream(&path);
                 let from = "void CleanupHazardUpdate::setCleanupAreaParameters( const Coord3D *pos, Real range )\n";
                 assert_eq!(text.matches(from).count(), 1, "CleanupHazardUpdate.cpp: setCleanupAreaParameters must occur once");
                 let cut = text.replace(from, "void R56Cleanup::r56SetCleanupAreaParameters( const Coord3D *pos, Real range )   /* build.rs: was CleanupHazardUpdate:: */\n");
@@ -7551,7 +7606,7 @@ mod differential {
                 // into mod_gen/RailedTransportDockUpdate_r61.h: the contain driver (l9_open_contain_r.inc) defines the guard and copies that class
                 // (the header's lines 57-66) for RailedTransportContain.cpp, before DockUpdate is in the unit; the rest of the header is unchanged.
                 let path = up.join("GameEngine/Include/GameLogic/Module/RailedTransportDockUpdate.h");
-                let text = std::fs::read_to_string(&path).expect("read RailedTransportDockUpdate.h");
+                let text = read_upstream(&path);
                 let start = "class RailedTransportDockUpdateInterface\n{";
                 assert_eq!(text.matches(start).count(), 1, "RailedTransportDockUpdate.h: the interface class must occur once");
                 let at = text.find(start).expect("the interface class");
@@ -7565,7 +7620,7 @@ mod differential {
                 // `loadPostProcess` (and, batch R64, `getStatus`), verbatim, into mod_gen/Weapon_r62.inc, for the module build's stand-in Weapon (which has their members): each
                 // from its first line to its first closing brace at the left margin, each asserted once.
                 let path = up.join("GameEngine/Source/GameLogic/Object/Weapon.cpp");
-                let text = std::fs::read_to_string(&path).expect("read Weapon.cpp");
+                let text = read_upstream(&path);
                 let mut out = String::from("/* generated by build.rs: five functions of Weapon.cpp, verbatim */\n");
                 for start in [
                     "Weapon::Weapon(const WeaponTemplate* tmpl, WeaponSlotType wslot)\n",
@@ -7667,7 +7722,7 @@ mod differential {
         {
             let map_gen = out_dir.join("map_gen");
             std::fs::create_dir_all(&map_gen).expect("create map_gen");
-            let mu = std::fs::read_to_string(up.join("GameEngine/Source/GameClient/MapUtil.cpp")).expect("read MapUtil.cpp");
+            let mu = read_upstream(up.join("GameEngine/Source/GameClient/MapUtil.cpp"));
             let (first, last) = (
                 "static Bool ParseObjectDataChunk(DataChunkInput &file, DataChunkInfo *info, void *userData)\n",
                 "static Bool ParseObjectsDataChunk(",
@@ -7688,8 +7743,7 @@ mod differential {
             // g++ rejects; the use is in DEBUG_ASSERTCRASH and `if (pTrig)`). A copy
             // with that declaration moved before the loop, as INI.cpp's copy below
             // (the upstream file is never edited). The text must occur once.
-            let pt_src = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Map/PolygonTrigger.cpp"))
-                .expect("read PolygonTrigger.cpp");
+            let pt_src = read_upstream(up.join("GameEngine/Source/GameLogic/Map/PolygonTrigger.cpp"));
             let pt_old = "\tfor (PolygonTrigger *pTrig=getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {\n\t\tif (pTrig==pTrigger) break;\n";
             let pt_new = "\tPolygonTrigger *pTrig;\n\tfor (pTrig=getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {\n\t\tif (pTrig==pTrigger) break;\n";
             assert_eq!(pt_src.matches(pt_old).count(), 1, "PolygonTrigger.cpp: removePolygonTrigger's loop must occur once");
@@ -7873,7 +7927,7 @@ mod differential {
         // pointer truncated to its low 32 bits, the mask). GameCommon.cpp
         // (TheVeterancyNames) and the wrapper compile unchanged.
         let ini_src = up.join("GameEngine/Source/Common/INI/INI.cpp");
-        let mut ini_text = std::fs::read_to_string(&ini_src).expect("read INI.cpp");
+        let mut ini_text = read_upstream(&ini_src);
         for (from, to) in [
             (
                 "\tfor (const FieldParse* parse = parseTable; parse->token; ++parse)",
@@ -8033,8 +8087,7 @@ mod differential {
         // OUT_DIR/script_templates_gen/init_templates.inc.
         let templates_gen = out_dir.join("script_templates_gen");
         {
-            let engine_cpp = std::fs::read(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp")).expect("read ScriptEngine.cpp");
-            let engine_cpp = String::from_utf8_lossy(&engine_cpp).into_owned();
+            let engine_cpp = read_upstream(up.join("GameEngine/Source/GameLogic/ScriptEngine/ScriptEngine.cpp"));
             let from = "\t// Set up the script action templates.";
             let to = "\n\n\n\treset();\n\n}  // end init";
             assert_eq!(engine_cpp.matches(from).count(), 1, "ScriptEngine.cpp: the start of init's templates");
@@ -8124,7 +8177,7 @@ mod differential {
             let device = up.join("GameEngineDevice");
             let gen = out_dir.join("terrain_mesh_gen");
             std::fs::create_dir_all(&gen).expect("create terrain_mesh_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             let cut = |text: &str, what: &str, from: &str, to: &str| -> String {
                 assert_eq!(text.matches(from).count(), 1, "{what}: {from:?} must occur once");
                 assert_eq!(text.matches(to).count(), 1, "{what}: {to:?} must occur once");
@@ -8179,7 +8232,7 @@ mod differential {
         {
             let gen = out_dir.join("wnd_gen");
             std::fs::create_dir_all(&gen).expect("create wnd_gen");
-            let read = |p: std::path::PathBuf| std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let read = |p: std::path::PathBuf| read_upstream(&p);
             let cut = |text: &str, what: &str, from: &str, to: Option<&str>| -> String {
                 assert_eq!(text.matches(from).count(), 1, "{what}: {from:?} must occur once");
                 let a = text.find(from).expect("start");
@@ -8255,9 +8308,9 @@ mod differential {
             for f in files {
                 let path = gui.join(f);
                 println!("cargo:rerun-if-changed={}", path.display());
-                let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-                // upstream's files are Windows-1252: carried byte for byte
-                let mut text: String = bytes.iter().map(|&b| b as char).collect();
+                // upstream's files are Windows-1252: ~~carried byte for byte~~ **Corrected 2026-11-11, #134:** decoded as
+                // Windows-1252 by `read_upstream` and written as UTF-8 (#133; these cuts are ASCII, so the bytes are the same)
+                let mut text = read_upstream(&path);
                 let marker = "#include \"PreRTS.h\"";
                 assert_eq!(text.matches(marker).count(), 1, "{f}: {marker:?} must occur once");
                 text = text[text.find(marker).expect("marker")..].to_string();
@@ -8270,7 +8323,7 @@ mod differential {
                     }
                 }
                 let name = f.replace("Gadget/", "");
-                let out: Vec<u8> = format!("/* generated by build.rs: verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}").chars().map(|c| c as u8).collect();
+                let out = format!("/* generated by build.rs: verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}");
                 std::fs::write(gen.join(&name), out).expect("write wm_gen");
                 sources.push(gen.join(&name));
             }
@@ -8299,7 +8352,7 @@ mod differential {
             std::fs::create_dir_all(wt_gen.join("GameClient")).expect("create wt_gen");
             let hdr_path = up.join("GameEngine/Include/GameClient/GameWindowTransitions.h");
             println!("cargo:rerun-if-changed={}", hdr_path.display());
-            let hdr = std::fs::read(&hdr_path).expect("read GameWindowTransitions.h");
+            let hdr = read_upstream(&hdr_path).into_bytes();
             let mut out = b"/* generated by build.rs: verbatim from GameEngine/Include/GameClient/GameWindowTransitions.h (see build.rs) */\n".to_vec();
             out.extend_from_slice(&hdr);
             std::fs::write(wt_gen.join("GameClient/GameWindowTransitions.h"), out).expect("write wt_gen header");
@@ -8307,12 +8360,11 @@ mod differential {
             for f in ["GameWindowTransitions.cpp", "GameWindowTransitionsStyles.cpp", "AnimateWindowManager.cpp", "ProcessAnimateWindow.cpp"] {
                 let path = gui.join(f);
                 println!("cargo:rerun-if-changed={}", path.display());
-                let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-                let text: String = bytes.iter().map(|&b| b as char).collect();
+                let text = read_upstream(&path);
                 let marker = "#include \"PreRTS.h\"";
                 assert_eq!(text.matches(marker).count(), 1, "{f}: {marker:?} must occur once");
                 let text = &text[text.find(marker).expect("marker")..];
-                let out: Vec<u8> = format!("/* generated by build.rs: verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}").chars().map(|c| c as u8).collect();
+                let out = format!("/* generated by build.rs: verbatim from GameEngine/Source/GameClient/GUI/{f} (see build.rs) */\n{text}");
                 std::fs::write(wt_gen.join(f), out).expect("write wt_gen");
                 wsrc.push(wt_gen.join(f));
             }
@@ -8441,9 +8493,9 @@ mod differential {
         {
             let world_gen = out_dir.join("world_gen");
             std::fs::create_dir_all(&world_gen).expect("create world_gen");
-            let gl = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp")).expect("read GameLogic.cpp");
-            let glh = std::fs::read_to_string(up.join("GameEngine/Include/GameLogic/GameLogic.h")).expect("read GameLogic.h");
-            let oc = std::fs::read_to_string(up.join("GameEngine/Source/GameLogic/Object/Object.cpp")).expect("read Object.cpp");
+            let gl = read_upstream(up.join("GameEngine/Source/GameLogic/System/GameLogic.cpp"));
+            let glh = read_upstream(up.join("GameEngine/Include/GameLogic/GameLogic.h"));
+            let oc = read_upstream(up.join("GameEngine/Source/GameLogic/Object/Object.cpp"));
             // (file name, source, first marker (kept), last marker (cut before it))
             let cuts: [(&str, &String, &str, &str); 9] = [
                 ("sleepy_heap.inc", &gl, "inline void GameLogic::validateSleepyUpdate() const", "#ifdef DO_UNIT_TIMINGS\n\nvoid drawGraph"),

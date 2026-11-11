@@ -32,7 +32,23 @@
 **     kind 5  the environment: mouse (a, b), radar on c, radar hits d, frame e, icons f, double-click attack move g
 **   After the setup and after each step: [300, m_empty, m_template's type (-1 NULL), m_curRcType, m_decal != NULL, timer,
 **   0, 0], [301, texture hash, shadow type, size x bits, size y bits, angle bits, colour, opacity (-1 never set)],
-**   [302, decal x, y, z bits, stash x, y, z bits, 0]. */
+**   [302, decal x, y, z bits, stash x, y, z bits, 0].
+**
+** (#130, batch #134) Second entry point: ref_logic_decals_seq(in, nin, out, cap), the logic's own decals as the client
+** keeps them: six real `RadiusDecal`s (objects 1..3, each with decals 0 and 1, slot = 2 (object - 1) + index), each with
+** its module's `RadiusDecalTemplate`, driven by the calls the logic's `GridDecal` events stand for. Setup: 5 words [local
+** player, the colours of players 0..3]. Steps of 16 words [kind, slot, ...]:
+**     kind 0  m_tmpl[slot] = [texture 0 none | 1 "T<slot>", style, OpacityMin bits, OpacityMax bits, OpacityThrobTime,
+**             Color, OnlyVisibleToOwningPlayer] (words 2-8), then m_tmpl[slot].createRadiusDecal((x, y, z) words 10-12
+**             bits, radius word 9 bits, player word 13 (-1 NULL), decal[slot])
+**     kind 1  decal[slot].clear()
+**     kind 2  decal[slot].setPosition((x, y, z) words 2-4 bits)
+**     kind 3  decal[slot].setOpacity(word 2 bits)
+**     kind 4  TheGameLogic's frame word 2 and getDrawIconUI word 3, then decal[slot].update()
+**     kind 5  the slot's object destroyed: ~RadiusDecal() on both its decals (then made anew, as a new object's would be)
+**   After each step, per slot: [m_empty, m_decal != NULL, texture hash, type, size x bits, size y bits, angle bits,
+**   colour, opacity (-1 never set), x, y, z bits] (12 words; the shadow's words 0 without a decal). The shadows come
+**   from a free list of 16 here (the cursor's entry keeps its ring of two). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,12 +100,19 @@ public:
 	void release() { m_live = FALSE; }
 	Bool m_live;
 };
-Shadow g_shadows[2];
+Shadow g_shadows[16];
 Int g_nextShadow;
+Bool g_freeList; /* (#130) the logic decals' entry: the first shadow not live */
 struct ProjectedShadowManager {
 	Shadow *addDecal(Shadow::ShadowTypeInfo *i)
 	{
 		Shadow *s = &g_shadows[g_nextShadow++ & 1];
+		if (g_freeList) {
+			Int k = 0;
+			while (k < 15 && g_shadows[k].m_live)
+				++k;
+			s = &g_shadows[k];
+		}
 		s->m_name = i->m_ShadowName; s->m_type = i->m_type; s->m_sizeX = i->m_sizeX; s->m_sizeY = i->m_sizeY;
 		s->m_angle = 99.0f; s->m_color = 0; s->m_pos.x = s->m_pos.y = s->m_pos.z = -1.0f; s->m_opacity = -1; s->m_live = TRUE;
 		return s;
@@ -237,6 +260,7 @@ extern "C" int ref_radius_cursor_seq(const int *in, int nin, int *out, int cap)
 	if (nin < SETUP)
 		return 0;
 	g_nextShadow = 0;
+	g_freeList = FALSE;
 	memset(&g_mouse, 0, sizeof g_mouse);
 	g_radar.m_on = g_radar.m_hits = FALSE;
 	g_gd.m_doubleClickAttackMove = FALSE;
@@ -322,5 +346,107 @@ extern "C" int ref_radius_cursor_seq(const int *in, int nin, int *out, int cap)
 	if (n > cap)
 		n = cap;
 	memcpy(out, &g_out[0], n * sizeof(int));
+	return n;
+}
+
+/* ---- (#130) the logic's own decals ---- */
+namespace rcz {
+alignas(RadiusDecal) unsigned char g_decalBuf[6][sizeof(RadiusDecal)];
+RadiusDecalTemplate g_tmpl[6];
+RadiusDecal *decalAt(Int s) { return reinterpret_cast<RadiusDecal *>(g_decalBuf[s]); }
+UnsignedInt nameHash(const char *c)
+{
+	UnsignedInt h = 2166136261u;
+	for (; *c; ++c) {
+		h ^= (UnsignedInt)(unsigned char)*c;
+		h *= 16777619u;
+	}
+	return h;
+}
+}  // namespace rcz
+
+extern "C" int ref_logic_decals_seq(const int *in, int nin, int *out, int cap)
+{
+	g_out.clear();
+	if (nin < 5)
+		return 0;
+	g_freeList = TRUE;
+	for (Int k = 0; k < 16; ++k)
+		g_shadows[k].m_live = FALSE;
+	g_logic.m_frame = 0;
+	g_logic.m_icons = TRUE;
+	g_playerList.m_local = in[0];
+	for (Int p = 0; p < 4; ++p) {
+		g_players[p].m_index = p;
+		g_players[p].m_color = in[1 + p];
+	}
+	for (Int s = 0; s < 6; ++s) {
+		new (g_decalBuf[s]) RadiusDecal();
+		g_tmpl[s] = RadiusDecalTemplate();
+	}
+	char name[16];
+	for (int st = 5; st + 16 <= nin; st += 16) {
+		const int *w = in + st;
+		Int slot = w[1];
+		RadiusDecal *d = decalAt(slot);
+		switch (w[0]) {
+		case 0: {
+			RadiusDecalTemplate &t = g_tmpl[slot];
+			sprintf(name, "T%d", (int)slot);
+			t.m_name = w[2] ? name : "";
+			t.m_shadowType = (ShadowType)w[3];
+			t.m_minOpacity = realOf(w[4]);
+			t.m_maxOpacity = realOf(w[5]);
+			t.m_opacityThrobTime = (UnsignedInt)w[6];
+			t.m_color = w[7];
+			t.m_onlyVisibleToOwningPlayer = w[8] != 0;
+			Coord3D pos;
+			pos.x = realOf(w[10]); pos.y = realOf(w[11]); pos.z = realOf(w[12]);
+			t.createRadiusDecal(pos, realOf(w[9]), w[13] < 0 ? NULL : &g_players[w[13]], *d);
+			break;
+		}
+		case 1: d->clear(); break;
+		case 2: {
+			Coord3D pos;
+			pos.x = realOf(w[2]); pos.y = realOf(w[3]); pos.z = realOf(w[4]);
+			d->setPosition(pos);
+			break;
+		}
+		case 3: d->setOpacity(realOf(w[2])); break;
+		case 4:
+			g_logic.m_frame = (UnsignedInt)w[2];
+			g_logic.m_icons = w[3] != 0;
+			d->update();
+			break;
+		case 5: {
+			Int first = slot & ~1;
+			for (Int s = first; s < first + 2; ++s) {
+				decalAt(s)->~RadiusDecal();
+				new (g_decalBuf[s]) RadiusDecal();
+			}
+			break;
+		}
+		}
+		for (Int s = 0; s < 6; ++s) {
+			RadiusDecal *e = decalAt(s);
+			Shadow *sh = e->m_decal;
+			Int w12[12] = { (Int)e->m_empty, sh != NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+			if (sh) {
+				w12[2] = (Int)nameHash(sh->m_name.str());
+				w12[3] = sh->m_type; w12[4] = bitsOf(sh->m_sizeX); w12[5] = bitsOf(sh->m_sizeY); w12[6] = bitsOf(sh->m_angle);
+				w12[7] = sh->m_color; w12[8] = sh->m_opacity;
+				w12[9] = bitsOf(sh->m_pos.x); w12[10] = bitsOf(sh->m_pos.y); w12[11] = bitsOf(sh->m_pos.z);
+			}
+			g_out.insert(g_out.end(), w12, w12 + 12);
+		}
+	}
+	for (Int s = 0; s < 6; ++s)
+		decalAt(s)->~RadiusDecal();
+	g_freeList = FALSE;
+	int n = (int)g_out.size();
+	if (n > cap)
+		n = cap;
+	if (n)
+		memcpy(out, &g_out[0], n * sizeof(int));
 	return n;
 }

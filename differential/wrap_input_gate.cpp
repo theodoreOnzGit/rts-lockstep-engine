@@ -14,6 +14,11 @@
 **                       to `#ifdef ALLOW_ALT_F4` (the mouse-over hints, the right button's raw messages, the right and
 **                       left double clicks and clicks; #123, #124), compiled as the body of a switch in
 **                       CommandTranslator::mouseCases, which the wrapper writes (`switch (t) { <cut> default: break; }`).
+**   selection_right_cases.inc  (#132, batch #134) SelectionXlat.cpp, translateGameMessage's cases from
+**                       `case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:` to `case GameMessage::MSG_META_CREATE_TEAM0:`
+**                       (the right button's press and release), compiled as the body of a switch in
+**                       SelectionTranslator::rightCases, which the wrapper writes;
+**   selection_deselect_all.inc  SelectionXlat.cpp, the static deselectAll they call.
 ** They are compiled inside namespace igt on stand-ins for the classes and singletons they name. The messages are the
 ** real GameMessage of the message stream build (wrap_message_stream.cpp), under its names. The stand-ins answer from a
 ** case the test sets and log the calls that act, in the format the test's Rust host logs.
@@ -40,7 +45,14 @@
 **             evaluateContextCommand (2) call: (kind, drawable id or 0, x, y, z float bits, CommandEvaluateType); -1; per
 **             appended message: (type, argument count, then per argument its data type and value: an integer's value, a
 **             location's three float bits); -2; academy records; the guard hint's timer; attack-move mode after. The
-**             drawable n stands at (10n + 0.5, 3n - 2, n / 4); screenToTerrain(p) is (p.x / 2 + 3, p.y / 4 - 7, 1.5). */
+**             drawable n stands at (10n + 0.5, 3n - 2, n / 4); screenToTerrain(p) is (p.x / 2 + 3, p.y / 4 - 7, 1.5).
+**     kind 5: (#132) the selection translator's gate then its right button cases. in: type, input enabled,
+**             m_dragSelecting, isSelecting, the pixel's x, y, the message's time (argument 2), the view's position x, y, z
+**             (float bits), TheMouse's m_dragTolerance, m_dragTolerance3D, m_dragToleranceMS, m_useAlternateMouse, a
+**             pending GUI command (0/1), getPendingPlaceSourceObjectID(), then the translator's state before:
+**             m_deselectFeedbackAnchor x, y, m_lastClick, m_deselectDownCameraPosition x, y, z (float bits). out:
+**             disposition, that state after (the six words), m_dragSelecting, isSelecting, deselectAllDrawables calls,
+**             setGUICommand(NULL) calls, a GUI command still pending, setScrolling(FALSE) calls. */
 #define GameMessage MsTestGameMessage
 #define GameMessageArgument MsTestGameMessageArgument
 #define GameMessageList MsTestGameMessageList
@@ -135,6 +147,8 @@ class View
 {
 public:
 	Int m_unlocks;
+	Coord3D m_pos; /* (#132) */
+	void getPosition(Coord3D *pos) { *pos = m_pos; }
 	Bool isMouseLocked() { return flag(0); }
 	void setMouseLock(Bool lock) { if (!lock) ++m_unlocks; }
 	void screenToTerrain(const ICoord2D *p, Coord3D *pos) { pos->x = (Real)p->x * 0.5f + 3.0f; pos->y = (Real)p->y * 0.25f - 7.0f; pos->z = 1.5f; }
@@ -149,6 +163,7 @@ class Mouse
 {
 public:
 	MouseIO m_status;
+	UnsignedInt m_dragTolerance, m_dragTolerance3D, m_dragToleranceMS; /* (#132) */
 	const MouseIO *getMouseStatus() { m_status.pos = g_mouseStatus; return &m_status; }
 	Bool isClick(const ICoord2D *, const ICoord2D *, UnsignedInt, UnsignedInt) { return g_isClick; }
 };
@@ -205,6 +220,13 @@ public:
 	void clearAttackMoveToMode() { m_attackMove = FALSE; }
 	void placeBuildAvailable(const void *, Drawable *) {}
 	void triggerDoubleClickAttackMoveGuardHint() { m_guardHintTimer = 11; }
+	/* (#132) the right button's calls */
+	Int m_deselects, m_commandClears, m_scrollStops;
+	ObjectID m_pendingPlaceSource;
+	void deselectAllDrawables() { ++m_deselects; }
+	void setGUICommand(const CommandButton *c) { if (!c) ++m_commandClears; m_command = c; }
+	void setScrolling(Bool b) { if (!b) ++m_scrollStops; }
+	const ObjectID getPendingPlaceSourceObjectID() { return m_pendingPlaceSource; }
 	Bool getInputEnabled() { return m_inputEnabled; }
 	Bool isScrolling() { return flag(1); }
 	Bool isPlacementAnchored() { return flag(3); }
@@ -257,6 +279,11 @@ class SelectionTranslator : public GameMessageTranslator
 {
 public:
 	Bool m_dragSelecting;
+	/* (#132) SelectionXlat.h's right button members */
+	ICoord2D m_deselectFeedbackAnchor;
+	UnsignedInt m_lastClick;
+	Coord3D m_deselectDownCameraPosition;
+	GameMessageDisposition rightCases(const GameMessage *msg);
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg);
 };
 static Bool isSystemMessage( const GameMessage *msg );
@@ -266,6 +293,20 @@ static Bool isSystemMessage( const GameMessage *msg );
 #include "system_message.inc"
 #include "selection_gate.inc"
 #include "set_input_enabled.inc"
+#include "selection_deselect_all.inc"
+
+GameMessageDisposition SelectionTranslator::rightCases(const GameMessage *msg)
+{
+	GameMessage::Type t = msg->getType();
+	GameMessageDisposition disp = KEEP_MESSAGE;
+	switch (t)
+	{
+#include "selection_right_cases.inc"
+		default:
+			break;
+	}
+	return disp;
+}
 
 GameMessageDisposition CommandTranslator::mouseCases(const GameMessage *msg)
 {
@@ -410,6 +451,44 @@ extern "C" int ref_input_gate_case(int kind, const int *in, int nin, int *out, i
 		g_out.push_back(g_players.m_local.m_stats.m_records);
 		g_out.push_back(g_ui.m_guardHintTimer);
 		g_out.push_back((Int)g_ui.m_attackMove);
+	}
+	else if (kind == 5) {
+		Int t = in[0];
+		g_ui.m_inputEnabled = in[1] != 0;
+		g_ui.m_isSelecting = in[3] != 0;
+		g_ui.m_endHints = 0;
+		g_view.m_unlocks = 0;
+		memcpy(&g_view.m_pos.x, &in[7], 4); memcpy(&g_view.m_pos.y, &in[8], 4); memcpy(&g_view.m_pos.z, &in[9], 4);
+		g_mouse.m_dragTolerance = (UnsignedInt)in[10];
+		g_mouse.m_dragTolerance3D = (UnsignedInt)in[11];
+		g_mouse.m_dragToleranceMS = (UnsignedInt)in[12];
+		g_global.m_useAlternateMouse = in[13] != 0;
+		g_command.m_type = (GUICommandType)0;
+		g_ui.m_command = in[14] ? &g_command : NULL;
+		g_ui.m_pendingPlaceSource = (ObjectID)in[15];
+		g_ui.m_deselects = g_ui.m_commandClears = g_ui.m_scrollStops = 0;
+		SelectionTranslator x;
+		x.m_dragSelecting = in[2] != 0;
+		x.m_deselectFeedbackAnchor.x = in[16];
+		x.m_deselectFeedbackAnchor.y = in[17];
+		x.m_lastClick = (UnsignedInt)in[18];
+		memcpy(&x.m_deselectDownCameraPosition.x, &in[19], 4);
+		memcpy(&x.m_deselectDownCameraPosition.y, &in[20], 4);
+		memcpy(&x.m_deselectDownCameraPosition.z, &in[21], 4);
+		GameMessage *msg = newInstance(GameMessage)((GameMessage::Type)t);
+		ICoord2D pixel; pixel.x = in[4]; pixel.y = in[5];
+		msg->appendPixelArgument(pixel);
+		msg->appendIntegerArgument(0);
+		msg->appendIntegerArgument(in[6]);
+		Int disp = (Int)x.translateGameMessage(msg);
+		/* the gate's piece ends where the switch starts: the switch runs only with the input on */
+		if (g_ui.m_inputEnabled)
+			disp = (Int)x.rightCases(msg);
+		msg->deleteInstance();
+		Int w[16] = { disp, x.m_deselectFeedbackAnchor.x, x.m_deselectFeedbackAnchor.y, (Int)x.m_lastClick,
+			realBits(x.m_deselectDownCameraPosition.x), realBits(x.m_deselectDownCameraPosition.y), realBits(x.m_deselectDownCameraPosition.z),
+			(Int)x.m_dragSelecting, (Int)g_ui.m_isSelecting, g_ui.m_deselects, g_ui.m_commandClears, (Int)(g_ui.m_command != NULL), g_ui.m_scrollStops, 0, 0, 0 };
+		g_out.insert(g_out.end(), w, w + 13);
 	}
 	int n = (int)g_out.size();
 	for (int i = 0; i < n && i < cap; ++i) out[i] = g_out[i];

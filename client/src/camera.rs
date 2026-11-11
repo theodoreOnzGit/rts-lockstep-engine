@@ -119,6 +119,20 @@ pub enum CursorCall {
     Mouse(i32),
 }
 
+/// #117: `InGameUI::setScrolling(b)` on the camera's copy of the InGameUI's scroll state: when it changes,
+/// `setMouseCursor(SCROLL)` on, `setMouseCursor(ARROW)` off (the capture and the camera locks it also breaks are not the
+/// client's). (#132: shared by the look-at translator's host and [`Camera::set_ui_scrolling`].)
+fn in_game_ui_set_scrolling(ui_scrolling: &mut bool, cursor: &mut i32, cursor_calls: &mut Vec<CursorCall>, b: bool) {
+    use rts_lockstep_engine::client::mouse::cursor;
+    if *ui_scrolling == b {
+        return;
+    }
+    let c = if b { cursor::SCROLL } else { cursor::ARROW };
+    *cursor = c;
+    cursor_calls.push(CursorCall::InGameUi(c));
+    *ui_scrolling = b;
+}
+
 /// The translator's host: the camera's members, the InGameUI's selection model and the World.
 struct LookWorld<'a> {
     view: &'a mut TacticalView,
@@ -143,16 +157,7 @@ impl LookAtHost for LookWorld<'_> {
         self.ui.is_selecting()
     }
     fn ui_set_scrolling(&mut self, b: bool) {
-        // #117: `InGameUI::setScrolling`: when it changes, `setMouseCursor(SCROLL)` on, `setMouseCursor(ARROW)` off (the
-        // capture and the camera locks it also breaks are not the client's)
-        use rts_lockstep_engine::client::mouse::cursor;
-        if *self.ui_scrolling == b {
-            return;
-        }
-        let c = if b { cursor::SCROLL } else { cursor::ARROW };
-        *self.cursor = c;
-        self.cursor_calls.push(CursorCall::InGameUi(c));
-        *self.ui_scrolling = b;
+        in_game_ui_set_scrolling(self.ui_scrolling, self.cursor, self.cursor_calls, b);
     }
     fn ui_is_scrolling(&self) -> bool {
         *self.ui_scrolling
@@ -338,6 +343,13 @@ impl Camera {
         let speed = vh.g.keyboard_camera_rotate_speed;
         ui.update_keyboard_camera(&mut rts_lockstep_engine::client::tactical_view::HostedView { view: &mut self.view, h: &vh }, speed);
         self.view.update_height(self.ui_scrolling, &vh);
+    }
+
+    /// (#132) `TheInGameUI->setScrolling(b)` from outside the look-at translator: `SelectionTranslator`'s right click
+    /// that cancels a GUI command stops the InGameUI's scroll; the translator, which never got that release, stops its
+    /// own at its next frame tick (`MSG_FRAME_TICK`: scrolling while the InGameUI is not, "forced to stop").
+    pub fn set_ui_scrolling(&mut self, b: bool) {
+        in_game_ui_set_scrolling(&mut self.ui_scrolling, &mut self.cursor, &mut self.cursor_calls, b);
     }
 
     /// `ScriptInputCall::LookAtResetModes`: `TheLookAtTranslator->resetModes()`.

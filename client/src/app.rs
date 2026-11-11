@@ -155,6 +155,10 @@ struct Game {
     /// `InGameUI.ini` is still to be read for it.
     radius: rts_lockstep_engine::client::radius_cursor::InGameUiRadiusCursor,
     in_game_ui_pending: bool,
+    /// (#130) The client's halves of the logic's own radius decals (delivery decals, the shroud's grid, the gunship's
+    /// reticles), fed the frame's `GridDecal` events. A new game or a loaded save starts with none (`xferRadiusDecal`'s
+    /// load clears every decal).
+    logic_decals: rts_lockstep_engine::client::radius_cursor::LogicRadiusDecals,
     // (#117's `mouse_mode_cursor` is ~~here~~ **Corrected 2026-11-11 (#122):** the InGameUI's, `controls.ui`'s, with the
     // mouse mode it depends on)
 }
@@ -231,6 +235,7 @@ impl Game {
             mouse_pending: true,
             radius: Default::default(),
             in_game_ui_pending: true,
+            logic_decals: Default::default(),
         }
     }
 
@@ -368,7 +373,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             Update,
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
-        .add_systems(Update, (radius_decal, world_tooltip).chain().after(show_cursor))
+        .add_systems(Update, (radius_decal, logic_decals, world_tooltip).chain().after(show_cursor))
         .run();
 }
 
@@ -520,6 +525,9 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
     }
     let g = &mut *game;
     g.controls.observe_sent();
+    // (#130: the frame the modules run in, `TheGameLogic->getFrame()` during it; the World has moved past it when the
+    // events are read)
+    let frame_run = g.controls.client.world.frame();
     // (`GameEngine::update`'s logic half: the message stream's commands, then the frame)
     match g.controls.world().engine_update() {
         Ok(()) => {
@@ -529,6 +537,8 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
             g.cur = snapshot(g.controls.world());
             // the frame's client events, to the drawables (their flags; the draw itself is every rendered frame)
             let events = g.controls.world().take_client_events();
+            // #130: the logic's radius decals (made, moved, throbbed, cleared; gone with their objects)
+            g.logic_decals.take_events(&events, frame_run, &g.controls.client);
             // #116: the scripts' calls on the input (`DISABLE_INPUT`, `ENABLE_INPUT`), then the frame's tick through the
             // selection translator (its input gate ends a drag)
             // (#119: `LookAtResetModes` to the camera's translator)
@@ -996,11 +1006,27 @@ fn camera_input(
                     mouse_msg(r, g, MSG_RAW_MOUSE_POSITION, p, 0);
                 }
                 let free_pointer = !over_ui(cursor, window, bar_h);
+                // (#132) the mouse's right button goes through `SelectionTranslator` (50) first: the press keeps its place,
+                // time and camera; a release that is a click cancels a GUI command (destroyed: the camera never gets it)
+                // or deselects everything
+                let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
+                let selection_keeps = |r: &mut Rig, g: &mut Game, t, is_down: bool| -> bool {
+                    if !g.controls.window_keeps(t, p) {
+                        return true;
+                    }
+                    let mut stop = false;
+                    let d = g.controls.selection_right_button(is_down, p, now_ms, r.cam.view.pos, |on| stop = !on);
+                    if stop {
+                        r.cam.set_ui_scrolling(false);
+                    }
+                    d == rts_lockstep_engine::client::selection_xlat::Disposition::Keep
+                };
                 for (b, down, up) in [(MouseButton::Right, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, MSG_RAW_MOUSE_RIGHT_BUTTON_UP), (MouseButton::Middle, MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN, MSG_RAW_MOUSE_MIDDLE_BUTTON_UP)] {
-                    if buttons.just_pressed(b) && free_pointer {
+                    let right = b == MouseButton::Right;
+                    if buttons.just_pressed(b) && free_pointer && (!right || selection_keeps(r, g, down, true)) {
                         mouse_msg(r, g, down, p, 0);
                     }
-                    if buttons.just_released(b) {
+                    if buttons.just_released(b) && (!right || selection_keeps(r, g, up, false)) {
                         mouse_msg(r, g, up, p, 0);
                     }
                 }
@@ -1176,6 +1202,8 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
                 // (#131) `TheMouse`'s drag tolerances, for the clicks (`MetaEventTranslator`, `Mouse::isClick`)
                 let st = &g.pause.mouse.tooltip.settings;
                 g.controls.client.view.mouse_drag_tolerance = Some((st.drag_tolerance, st.drag_tolerance_ms));
+                // (#132) and the 3-D one, for the selection translator's right click
+                g.controls.client.view.mouse_drag_tolerance_3d = Some(st.drag_tolerance_3d);
             }
             Some(Err(e)) => {
                 warn!("the mouse's cursors: {e}");
@@ -1580,6 +1608,22 @@ fn radius_decal(game: NonSend<Game>, mut gizmos: Gizmos) {
         return;
     }
     gizmos.linestrip(pts.into_iter().map(|p| Vec3::from(to_bevy(p))), Color::srgba_u8(c[0], c[1], c[2], c[3]));
+}
+
+/// (#130) GUI glue (needs a window): the logic's own radius decals (superweapon delivery decals, the shroud's grid,
+/// the gunship's reticles; made, moved, throbbed and cleared by the translated
+/// `rts_lockstep_engine::client::radius_cursor::LogicRadiusDecals`) as their circles laid on the terrain, the same
+/// drawing as the radius cursor's ([`crate::cursor::decal_ring`], tested there). A decal at opacity 0 (the scripts' icon
+/// flag off, or a grid decal faded out) is not drawn.
+fn logic_decals(game: NonSend<Game>, mut gizmos: Gizmos) {
+    let world = &game.controls.client.world;
+    for d in game.logic_decals.shown() {
+        let (pts, c) = crate::cursor::decal_ring(d, 64, |x, y| world.terrain.ground_height(x, y, false).0);
+        if c[3] == 0 {
+            continue;
+        }
+        gizmos.linestrip(pts.into_iter().map(|p| Vec3::from(to_bevy(p))), Color::srgba_u8(c[0], c[1], c[2], c[3]));
+    }
 }
 
 /// (#124) The world's tooltip root and the shapes it shows.

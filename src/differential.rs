@@ -3582,7 +3582,8 @@ extern "C" {
     pub fn ref_fx_log(out: *mut c_uint, cap: c_int) -> c_int;
 
     // GitHub #116: the input gates (differential/wrap_input_gate.cpp, which documents the cases' words): WindowXlat.cpp's
-    // translator, CommandXlat.cpp's and SelectionXlat.cpp's input gates and InGameUI::setInputEnabled, verbatim.
+    // translator, CommandXlat.cpp's and SelectionXlat.cpp's input gates and InGameUI::setInputEnabled, verbatim. (#132,
+    // batch #134: kind 5, SelectionXlat.cpp's MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN and _UP cases and deselectAll, verbatim.)
     pub fn ref_input_gate_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
     // GitHub #119: LookAtTranslator (differential/wrap_look_at.cpp, which documents the steps' and the records' words),
@@ -3603,6 +3604,10 @@ extern "C" {
     // InGameUI's setRadiusCursor, handleRadiusCursor and triggerDoubleClickAttackMoveGuardHint, RadiusDecal.cpp's
     // createRadiusDecal, clear, update, setOpacity and setPosition, verbatim.
     pub fn ref_radius_cursor_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    // #130 (batch #134): the logic's own radius decals as the client keeps them (the same wrapper): six real RadiusDecals
+    // driven by the calls the logic's GridDecal events stand for (createRadiusDecal, clear, setPosition, setOpacity,
+    // update, ~RadiusDecal), verbatim.
+    pub fn ref_logic_decals_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
     // GitHub #122: the cursors the in-game UI asks for (differential/wrap_cursor_hint.cpp, which documents the setup's,
     // the steps' and the records' words): InGameUI's createMouseoverHint, createCommandHint, setMouseCursor,
