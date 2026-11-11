@@ -520,7 +520,8 @@ pub(crate) mod tests {
             false
         }
         fn use_alternate_mouse(&self) -> bool {
-            false
+            // (#124: off but where a command translator test turns it on)
+            self.cmd.alternate_mouse
         }
     }
 

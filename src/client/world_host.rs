@@ -132,6 +132,9 @@ pub struct WorldClient {
     pub eva_insufficient_funds: u32,
     /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
     pub voices: Vec<crate::client::unit_voice::UnitVoice>,
+    /// #124: the double-click guard orders given (`AcademyStats::recordDoubleClickAttackMoveOrderGiven`, which upstream
+    /// keeps on the local player; the client keeps its own count and never writes the World's academy stats).
+    pub double_click_attack_move_orders_given: u32,
 }
 
 /// `getPickTypesForContext(forceAttackMode)` and `PickDrawableStruct`'s kinds: selectable things; force-attackable ones in
@@ -178,6 +181,7 @@ impl WorldClient {
             looks: Vec::new(),
             eva_insufficient_funds: 0,
             voices: Vec::new(),
+            double_click_attack_move_orders_given: 0,
         }
     }
 
@@ -502,6 +506,12 @@ impl CommandXlatHost for WorldClient {
     }
     fn append_hint(&mut self, t: MessageType, args: &[CmdArg]) {
         self.hints.push((t, args.to_vec()));
+    }
+    fn double_click_attack_move(&self) -> bool {
+        self.world.statics.global_data.the_global_data().is_some_and(|g| g.double_click_attack_move)
+    }
+    fn record_double_click_attack_move_order_given(&mut self) {
+        self.double_click_attack_move_orders_given = self.double_click_attack_move_orders_given.wrapping_add(1);
     }
 }
 

@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/CommandXlat.cpp (CommandTranslator: issueMoveToLocationCommand,
 //     createAttackMessage, issueAttackCommand, issueSpecialPowerCommand, createEnterMessage, evaluateForceAttack,
 //     evaluateContextCommand, canSelectionSalvage, canAnyForceAttack, isSystemMessage, and translateGameMessage's input gate
-//     and its selected-group, mouse-over hint, left and right click cases)
+//     and its selected-group, mouse-over hint, left and right click cases; #124: its left and right double-click cases)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (areSelectedObjectsControllable, getCanSelectedObjectsAttack,
 //     canSelectedObjectsDoAction, canSelectedObjectsOverrideSpecialPowerDestination)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (CommandButton::isValidObjectTarget)
@@ -32,8 +32,55 @@
 //! - ~~**Unit voices** (`pickAndPlayUnitVoiceResponse`) and the stats collector are audio and debug; they change no message.~~
 //!   **Corrected 2026-11-06 (#51):** the unit voices are played at upstream's call sites ([`crate::client::unit_voice`]);
 //!   the stats collector (debug) is still left out. Neither changes a message.
-//! - **The double-click guard order** (`m_doubleClickAttackMove`, off in the shipped options) and the right-button drag
-//!   bookkeeping that cancels build placement (C2c, with placement).
+//! - ~~**The double-click guard order** (`m_doubleClickAttackMove`, off in the shipped options) and~~ the right-button drag
+//!   bookkeeping that cancels build placement (C2c, with placement). **Corrected 2026-11-11 (#124):** the double-click
+//!   guard order is translated ([`CommandTranslator::double_click`]); the right button's bookkeeping
+//!   (`MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` / `UP`, `TheMouse->isClick` and `placeBuildAvailable(NULL, NULL)`) is still not, so
+//!   the alternate mouse's right click is taken as a click whatever the drag.
+//!
+//! # As upstream reads it
+//!
+//! `CommandTranslator::translateGameMessage` (CommandXlat.cpp:2341) first destroys every message but the options, the
+//! clear-game-data and the system messages while the input is off ([`input_disabled_destroys`]), then switches on the
+//! message. The cases here:
+//! - `MSG_MOUSEOVER_DRAWABLE_HINT` (3575): with something selected **or** a pending `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT`
+//!   (#123), the hint of what a click on the drawable, at its position, would order; `MSG_MOUSEOVER_LOCATION_HINT` (3608):
+//!   the same on the ground, whatever is selected. Both kept (the hint spy reads them too). [`CommandTranslator::mouse_over`].
+//! - `MSG_MOUSE_LEFT_CLICK` (3741): in alternate mouse mode only a firing GUI command (special power, from the shortcut,
+//!   fire weapon, combat drop, hijack, car bomb) is actioned here; a point click with a controllable selection (or a
+//!   shortcut special power pending) evaluates the context (`DO_COMMAND`) on the drawable the view picks, clears attack-move
+//!   mode and is destroyed. `MSG_MOUSE_RIGHT_CLICK` (3678): the same in alternate mouse mode. [`CommandTranslator::click`].
+//! - `MSG_MOUSE_LEFT_DOUBLE_CLICK` (3722) without the alternate mouse, `MSG_MOUSE_RIGHT_DOUBLE_CLICK` (3659) with it, and
+//!   `m_doubleClickAttackMove` set: `MSG_DO_GUARD_POSITION` at the ground under the click with `GUARDMODE_NORMAL`, the local
+//!   player's academy record, `triggerDoubleClickAttackMoveGuardHint()`, the message kept; otherwise the case falls through
+//!   to the click's (#124). [`CommandTranslator::double_click`].
+//!
+//! # Upstream quirks that are kept
+//!
+//! - The guard order is made whatever is selected, even nothing, and whether the click was a point or a drag; it does not
+//!   clear attack-move mode and does not use the message up.
+//! - `isFiringGUICommand` compares `getCommandType()` with `GUICOMMANDMODE_HIJACK_VEHICLE` and
+//!   `GUICOMMANDMODE_CONVERT_TO_CARBOMB` (members of the same `GUICommandType`), and not with the sabotage mode.
+//! - The drawable hint is not made for a pending command other than the shortcut special power when nothing is selected,
+//!   although `evaluateContextCommand` would accept no selection only for that one anyway.
+//! - A gated message is destroyed before its case: with the input off a double click makes no guard order.
+//!
+//! # Where this differs from upstream
+//!
+//! - `recordDoubleClickAttackMoveOrderGiven()` writes the local player's academy stats, which are the logic's; the client
+//!   never changes the World, so the record goes to the host ([`CommandXlatHost::record_double_click_attack_move_order_given`]),
+//!   which the World's client counts on its own side (`WorldClient::double_click_attack_move_orders_given`).
+//! - The view's answers are the application's: `pos` is the ground under the click (upstream: `screenToTerrain` of the
+//!   pixel region's `lo`) and `picked` the view's pick there. The drawable hint without an object takes the ground position
+//!   (upstream: the drawable's own; a drawable the client hands in always has one).
+//! - The right button's drag bookkeeping is not translated (above).
+//!
+//! # Representation
+//!
+//! The cases are methods taking what the message carries (the drawable or ground, whether the click was a point, the ground
+//! under it, the picked drawable) and answering whether the message is destroyed. Each has a `_with` form that takes the
+//! evaluation (`evaluateForceAttack` or `evaluateContextCommand`, [`Evaluation`]) as a closure, which the differential test
+//! (`tests/differential_input_gate.rs`) replaces to compare the cases alone with the C++.
 
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection};
 use crate::client::selection_groups::SelectionGroupsHost;
@@ -52,7 +99,7 @@ use crate::common::special_power_type::{
 };
 use crate::logic::ai::ai_update_types::{
     CanAttackResultValue, ATTACKRESULT_INVALID_SHOT, ATTACKRESULT_NOT_POSSIBLE, ATTACKRESULT_POSSIBLE,
-    ATTACKRESULT_POSSIBLE_AFTER_MOVING,
+    ATTACKRESULT_POSSIBLE_AFTER_MOVING, GUARDMODE_GUARD_WITHOUT_PURSUIT, GUARDMODE_NORMAL,
 };
 use crate::logic::world::object_command_button::{is_valid_relationship_target, opt};
 
@@ -167,6 +214,18 @@ pub trait CommandXlatHost: SelectionGroupsHost + UnitVoiceHost {
     fn append_command(&mut self, t: MessageType, args: &[CmdArg]);
     /// The same for a hint (`*_HINT`): for the client's hint spy and cursor, not the logic.
     fn append_hint(&mut self, t: MessageType, args: &[CmdArg]);
+    /// #124: `TheGlobalData->m_doubleClickAttackMove`.
+    fn double_click_attack_move(&self) -> bool;
+    /// #124: `ThePlayerList->getLocalPlayer()->getAcademyStats()->recordDoubleClickAttackMoveOrderGiven()`. The academy
+    /// stats are the logic's; the host keeps the count on the client's side (the client never changes the World).
+    fn record_double_click_attack_move_order_given(&mut self);
+}
+
+/// #124: what a mouse case evaluates: `evaluateForceAttack` in force attack mode, else `evaluateContextCommand`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Evaluation {
+    ForceAttack,
+    Context,
 }
 
 /// `class CommandTranslator`'s members this batch uses.
@@ -1003,9 +1062,31 @@ impl CommandTranslator {
         t
     }
 
-    /// `MSG_MOUSEOVER_DRAWABLE_HINT` / `MSG_MOUSEOVER_LOCATION_HINT`: with something selected, the hint of the command a click
-    /// on `draw` (at its position) or on the ground at `pos` would give.
-    pub fn mouse_over(&self, draw: Option<DrawableId>, pos: &Coord3D, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+    /// `evaluateForceAttack(draw, pos, ty)` or `evaluateContextCommand(draw, pos, ty)`, by `e`: the evaluation the mouse
+    /// cases make.
+    pub fn evaluate(&self, e: Evaluation, draw: Option<DrawableId>, pos: &Coord3D, ty: CommandEvaluateType, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> MessageType {
+        match e {
+            Evaluation::ForceAttack => self.evaluate_force_attack(draw, Some(pos), ty, ui, h),
+            Evaluation::Context => self.evaluate_context_command(draw, pos, ty, ui, h),
+        }
+    }
+
+    /// `MSG_MOUSEOVER_DRAWABLE_HINT` / `MSG_MOUSEOVER_LOCATION_HINT`: ~~with something selected~~ **Corrected 2026-11-11
+    /// (#123):** over a drawable, with something selected or a pending `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT` (over the
+    /// ground, always), the hint of the command a click on `draw` (at its position) or on the ground at `pos` would give.
+    pub fn mouse_over<H: CommandXlatHost>(&self, draw: Option<DrawableId>, pos: &Coord3D, ui: &mut InGameUiSelection, h: &mut H) -> MessageType {
+        self.mouse_over_with(draw, pos, ui, h, |e, d, p, ty, ui, h| self.evaluate(e, d, p, ty, ui, h))
+    }
+
+    /// [`Self::mouse_over`] with the evaluation given (`eval`).
+    pub fn mouse_over_with<H: CommandXlatHost>(
+        &self,
+        draw: Option<DrawableId>,
+        pos: &Coord3D,
+        ui: &mut InGameUiSelection,
+        h: &mut H,
+        eval: impl FnOnce(Evaluation, Option<DrawableId>, &Coord3D, CommandEvaluateType, &mut InGameUiSelection, &mut H) -> MessageType,
+    ) -> MessageType {
         // (#116: the input gate; the hint message is destroyed before its case)
         let hint = if draw.is_some() { MSG_MOUSEOVER_DRAWABLE_HINT } else { MSG_MOUSEOVER_LOCATION_HINT };
         if input_disabled_destroys(hint, ui.input_enabled()) {
@@ -1013,10 +1094,14 @@ impl CommandTranslator {
         }
         let pos = match draw {
             Some(d) => {
-                if ui.select_count() == 0 {
+                // "If something is selected" (#123: or a special power from the shortcut bar is pending, which needs no
+                // selection)
+                let shortcut = ui.gui_command().is_some_and(|c| c.command_type == gui::SPECIAL_POWER_FROM_SHORTCUT) && !crate::logic::modules::plant(9101);
+                let any_command = ui.gui_command().is_some() && crate::logic::modules::plant(9102);
+                if !(ui.select_count() > 0 || shortcut || any_command) {
                     return MSG_INVALID;
                 }
-                match h.drawable_object(d) {
+                match h.drawable_object(d).filter(|_| !crate::logic::modules::plant(9114)) {
                     Some(o) => h.object_position(o),
                     // (upstream reads the drawable's own position; without an object no command is possible)
                     None => *pos,
@@ -1024,35 +1109,138 @@ impl CommandTranslator {
             }
             None => *pos,
         };
-        if ui.is_in_force_attack_mode() {
-            self.evaluate_force_attack(draw, Some(&pos), CommandEvaluateType::DoHint, ui, h)
-        } else {
-            self.evaluate_context_command(draw, &pos, CommandEvaluateType::DoHint, ui, h)
-        }
+        let e = if ui.is_in_force_attack_mode() { Evaluation::ForceAttack } else { Evaluation::Context };
+        eval(e, draw, &pos, CommandEvaluateType::DoHint, ui, h)
     }
 
     /// `MSG_MOUSE_LEFT_CLICK` (and `MSG_MOUSE_RIGHT_CLICK` in alternate mouse mode, `use_alternate_mouse` set and the button
     /// released as a click): a point click with a controllable selection orders it, at `pos` on the terrain, onto `picked` (the
     /// tactical view's `pickDrawable` for the context). Returns whether the message is destroyed.
-    pub fn click(&self, right: bool, is_point: bool, pos: &Coord3D, picked: Option<DrawableId>, ui: &mut InGameUiSelection, h: &mut impl CommandXlatHost) -> bool {
+    ///
+    /// **Corrected 2026-11-11 (#124):** ~~a left click in alternate mouse mode was never actioned, and a pending shortcut
+    /// special power did not make the selection controllable~~ as upstream, a left click in alternate mouse mode is actioned
+    /// for a firing GUI command (special power, from the shortcut, fire weapon, combat drop, hijack, car bomb), and a pending
+    /// `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT` counts as a controllable selection (it needs none).
+    pub fn click<H: CommandXlatHost>(&self, right: bool, is_point: bool, pos: &Coord3D, picked: Option<DrawableId>, ui: &mut InGameUiSelection, h: &mut H) -> bool {
+        self.click_with(right, is_point, pos, picked, ui, h, |e, d, p, ty, ui, h| self.evaluate(e, d, p, ty, ui, h))
+    }
+
+    /// [`Self::click`] with the evaluation given (`eval`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn click_with<H: CommandXlatHost>(
+        &self,
+        right: bool,
+        is_point: bool,
+        pos: &Coord3D,
+        picked: Option<DrawableId>,
+        ui: &mut InGameUiSelection,
+        h: &mut H,
+        eval: impl FnOnce(Evaluation, Option<DrawableId>, &Coord3D, CommandEvaluateType, &mut InGameUiSelection, &mut H) -> MessageType,
+    ) -> bool {
         // (#116: the input gate destroys the click before its case)
         if input_disabled_destroys(if right { MSG_MOUSE_RIGHT_CLICK } else { MSG_MOUSE_LEFT_CLICK }, ui.input_enabled()) {
             return true;
         }
-        // in alternate mouse mode a left click is only actioned here for a firing GUI command (C2c), and a right click only there
-        if h.use_alternate_mouse() != right {
-            return false;
-        }
-        if !(is_point && are_selected_objects_controllable(ui, h)) {
-            return false;
-        }
-        if ui.is_in_force_attack_mode() {
-            self.evaluate_force_attack(picked, Some(pos), CommandEvaluateType::DoCommand, ui, h);
+        Self::click_case(right, is_point, pos, picked, ui, h, eval)
+    }
+
+    /// The bodies of the `MSG_MOUSE_LEFT_CLICK` and `MSG_MOUSE_RIGHT_CLICK` cases (after the gate), which the double clicks
+    /// fall through to.
+    fn click_case<H: CommandXlatHost>(
+        right: bool,
+        is_point: bool,
+        pos: &Coord3D,
+        picked: Option<DrawableId>,
+        ui: &mut InGameUiSelection,
+        h: &mut H,
+        eval: impl FnOnce(Evaluation, Option<DrawableId>, &Coord3D, CommandEvaluateType, &mut InGameUiSelection, &mut H) -> MessageType,
+    ) -> bool {
+        let ct = ui.gui_command().map(|c| c.command_type);
+        let alternate = h.use_alternate_mouse();
+        if right {
+            // "right click is only actioned here if we're in alternate mouse mode" (and `TheMouse->isClick` of the
+            // button's press and release, not translated: see the module docs)
+            if !alternate {
+                return false;
+            }
         } else {
-            self.evaluate_context_command(picked, pos, CommandEvaluateType::DoCommand, ui, h);
+            // "maintain this as the list of GUI button initiated commands that fire with left click in alt mouse mode"
+            let firing = ct.is_some_and(|t| {
+                t == gui::SPECIAL_POWER
+                    || t == gui::SPECIAL_POWER_FROM_SHORTCUT
+                    || t == gui::FIRE_WEAPON
+                    || (t == gui::COMBATDROP && !crate::logic::modules::plant(9110))
+                    || t == gui::HIJACK_VEHICLE
+                    || t == gui::CONVERT_TO_CARBOMB
+            }) && !crate::logic::modules::plant(9109);
+            // "in alternate mouse mode, this left click is only actioned here if we're firing a gui command"
+            if alternate && !firing {
+                return false;
+            }
         }
-        ui.clear_attack_move_to_mode();
+        let shortcut = ct == Some(gui::SPECIAL_POWER_FROM_SHORTCUT) && !crate::logic::modules::plant(9108);
+        let controllable = are_selected_objects_controllable(ui, h) || shortcut;
+        if !(is_point && controllable) {
+            return false;
+        }
+        let e = if ui.is_in_force_attack_mode() { Evaluation::ForceAttack } else { Evaluation::Context };
+        eval(e, picked, pos, CommandEvaluateType::DoCommand, ui, h);
+        if !crate::logic::modules::plant(9112) {
+            ui.clear_attack_move_to_mode();
+        }
         true
+    }
+
+    /// #124: `MSG_MOUSE_LEFT_DOUBLE_CLICK` (`right` false) and `MSG_MOUSE_RIGHT_DOUBLE_CLICK` (`right` true): with
+    /// `m_doubleClickAttackMove` set and the button the mouse mode orders with (the left one without the alternate mouse,
+    /// the right one with it), a guard order at the ground under the click (`MSG_DO_GUARD_POSITION`, `GUARDMODE_NORMAL`),
+    /// the academy's record and the InGameUI's guard hint, and the message is kept; otherwise the click's case
+    /// ([`Self::click`], "intentional fall through"). Returns whether the message is destroyed.
+    pub fn double_click<H: CommandXlatHost>(&self, right: bool, is_point: bool, pos: &Coord3D, picked: Option<DrawableId>, ui: &mut InGameUiSelection, h: &mut H) -> bool {
+        self.double_click_with(right, is_point, pos, picked, ui, h, |e, d, p, ty, ui, h| self.evaluate(e, d, p, ty, ui, h))
+    }
+
+    /// [`Self::double_click`] with the evaluation given (`eval`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn double_click_with<H: CommandXlatHost>(
+        &self,
+        right: bool,
+        is_point: bool,
+        pos: &Coord3D,
+        picked: Option<DrawableId>,
+        ui: &mut InGameUiSelection,
+        h: &mut H,
+        eval: impl FnOnce(Evaluation, Option<DrawableId>, &Coord3D, CommandEvaluateType, &mut InGameUiSelection, &mut H) -> MessageType,
+    ) -> bool {
+        // (the input gate destroys the double click before its case, as any message but the options and system ones)
+        if input_disabled_destroys(if right { MSG_MOUSE_RIGHT_DOUBLE_CLICK } else { MSG_MOUSE_LEFT_DOUBLE_CLICK }, ui.input_enabled()) {
+            return true;
+        }
+        let mouse_matches = if crate::logic::modules::plant(9103) && !right {
+            true
+        } else if crate::logic::modules::plant(9111) && right {
+            !h.use_alternate_mouse()
+        } else {
+            h.use_alternate_mouse() == right
+        };
+        if mouse_matches && h.double_click_attack_move() {
+            // "create the message and append arguments for a guard location"
+            let mode = if crate::logic::modules::plant(9104) { GUARDMODE_GUARD_WITHOUT_PURSUIT } else { GUARDMODE_NORMAL };
+            h.append_command(MSG_DO_GUARD_POSITION, &[CmdArg::Location(*pos), CmdArg::Int(mode)]);
+            if !crate::logic::modules::plant(9113) {
+                h.record_double_click_attack_move_order_given();
+            }
+            if !crate::logic::modules::plant(9106) {
+                ui.trigger_double_click_attack_move_guard_hint();
+            }
+            if crate::logic::modules::plant(9107) {
+                return Self::click_case(right, is_point, pos, picked, ui, h, eval);
+            }
+            // (`break`: the message is kept)
+            return crate::logic::modules::plant(9105);
+        }
+        // "intentional fall through"
+        Self::click_case(right, is_point, pos, picked, ui, h, eval)
     }
 }
 
@@ -1076,6 +1264,12 @@ pub(crate) mod tests {
         /// `(src, button index)` whose special power or weapon is allowed, at any target.
         powers: BTreeSet<(ObjectId, usize)>,
         shortcut: Option<ObjectId>,
+        /// #124: `m_useAlternateMouse` (the selection test host's answer).
+        pub(crate) alternate_mouse: bool,
+        /// #124: `m_doubleClickAttackMove`.
+        pub(crate) double_click_attack_move: bool,
+        /// #124: the academy's double-click records.
+        pub(crate) double_click_records: u32,
     }
 
     fn code(a: ActionType) -> u8 {
@@ -1155,6 +1349,12 @@ pub(crate) mod tests {
         }
         fn append_hint(&mut self, t: MessageType, args: &[CmdArg]) {
             self.cmd.hints.push((t, args.to_vec()));
+        }
+        fn double_click_attack_move(&self) -> bool {
+            self.cmd.double_click_attack_move
+        }
+        fn record_double_click_attack_move_order_given(&mut self) {
+            self.cmd.double_click_records += 1;
         }
     }
 
@@ -1356,5 +1556,60 @@ pub(crate) mod tests {
         ui.set_input_enabled(true);
         assert!(x.click(false, true, &ground, None, &mut ui, &mut h));
         assert_eq!(h.cmd.commands.len(), 1);
+    }
+
+    /// #123 / #124: the drawable hint with a shortcut special power and nothing selected, the double clicks and the
+    /// click's firing commands. Predicted from CommandXlat.cpp:3575-3792, with my unit 1 and the ground at (4, 5):
+    /// - nothing selected, a `GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT` pending (no shortcut source ready): the hint over
+    ///   drawable 9 is evaluated, `MSG_INVALID_GUICOMMAND_HINT` (before #123: `MSG_INVALID`, no hint); a plain special power
+    ///   pending instead: no hint (`MSG_INVALID`);
+    /// - unit 1 selected as a group, the attack move off: a left double click falls through to the click
+    ///   (`MSG_DO_MOVETO(ground)`, destroyed); with it on: `MSG_DO_GUARD_POSITION(ground, 0)`, one academy record, the
+    ///   hint timer at 11, the message kept, attack-move mode left on; a right double click without the alternate mouse:
+    ///   no order, kept;
+    /// - the alternate mouse on: the left double click falls through and the left click is not actioned (no firing
+    ///   command); the right double click guards; with a fire-weapon command pending the left click is actioned.
+    ///
+    /// *Results (2026-11-11):* as predicted, first run (lib suite 1,159 passed).
+    #[test]
+    fn the_shortcut_hint_and_the_double_clicks() {
+        let mut h = Host { mine: vec![1], ..Default::default() };
+        let mut ui = InGameUiSelection::new();
+        let mut x = CommandTranslator::default();
+        let ground = Coord3D { x: 4.0, y: 5.0, z: 0.0 };
+        let shortcut = GuiButton { command_type: gui::SPECIAL_POWER_FROM_SHORTCUT, special_power: Some((7, 3)), options: opt::NEED_TARGET_POS, ..Default::default() };
+        ui.set_gui_command(Some(shortcut));
+        assert_eq!(x.mouse_over(Some(9), &ground, &mut ui, &mut h), MSG_INVALID_GUICOMMAND_HINT);
+        assert_eq!(h.cmd.hints.pop().map(|(t, _)| t), Some(MSG_INVALID_GUICOMMAND_HINT));
+        let power = GuiButton { command_type: gui::SPECIAL_POWER, special_power: Some((7, 3)), options: opt::NEED_TARGET_POS, ..Default::default() };
+        ui.set_gui_command(Some(power));
+        assert_eq!(x.mouse_over(Some(9), &ground, &mut ui, &mut h), MSG_INVALID);
+        assert!(h.cmd.hints.is_empty());
+        ui.set_gui_command(None);
+
+        ui.select_drawable(1, &mut h);
+        x.observe_message(MSG_CREATE_SELECTED_GROUP);
+        assert!(x.double_click(false, true, &ground, None, &mut ui, &mut h));
+        assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_MOVETO, vec![CmdArg::Location(ground)])));
+        h.cmd.double_click_attack_move = true;
+        ui.set_attack_move_to_mode(true);
+        assert!(!x.double_click(false, true, &ground, None, &mut ui, &mut h));
+        assert_eq!(h.cmd.commands.pop(), Some((MSG_DO_GUARD_POSITION, vec![CmdArg::Location(ground), CmdArg::Int(0)])));
+        assert!(h.cmd.commands.is_empty());
+        assert_eq!((h.cmd.double_click_records, ui.double_click_attack_move_guard_hint_timer()), (1, 11));
+        assert!(ui.is_in_attack_move_to_mode());
+        assert!(!x.double_click(true, true, &ground, None, &mut ui, &mut h));
+        assert!(h.cmd.commands.is_empty());
+
+        h.cmd.alternate_mouse = true;
+        assert!(!x.double_click(false, true, &ground, None, &mut ui, &mut h));
+        assert!(h.cmd.commands.is_empty());
+        assert!(!x.double_click(true, true, &ground, None, &mut ui, &mut h));
+        assert_eq!(h.cmd.commands.pop().map(|(t, _)| t), Some(MSG_DO_GUARD_POSITION));
+        assert_eq!(h.cmd.double_click_records, 2);
+        let weapon = GuiButton { command_type: gui::FIRE_WEAPON, options: opt::NEED_TARGET_POS, ..Default::default() };
+        ui.set_gui_command(Some(weapon));
+        assert!(x.click(false, true, &ground, None, &mut ui, &mut h), "a firing command is actioned by the left click");
+        assert!(!ui.is_in_attack_move_to_mode());
     }
 }

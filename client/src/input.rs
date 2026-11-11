@@ -20,7 +20,7 @@ use rts_lockstep_engine::client::script_input::apply_script_input;
 use rts_lockstep_engine::client::selection_xlat::{Disposition, SelectionTranslator};
 use rts_lockstep_engine::client::window_manager::WinInputReturnCode;
 use rts_lockstep_engine::client::window_xlat::{translate_game_message as translate_window_message, MouseData, RawMessage, WindowXlatHost};
-use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP, MSG_RAW_MOUSE_POSITION};
+use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP, MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, MSG_RAW_MOUSE_POSITION};
 use rts_lockstep_engine::client::world_host::WorldClient;
 use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
 use rts_lockstep_engine::client::radar::{RadarFeedback, RadarFrame};
@@ -51,6 +51,37 @@ pub struct Controls {
     /// ([`crate::camera::Camera`]) last left them, for the window translator.
     pub view_mouse_locked: bool,
     pub ui_scrolling: bool,
+    /// #124: `MetaEventTranslator::m_nextUpShouldCreateDoubleClick[0]`: the left button's press was a double click
+    /// (`MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK`), so its release makes `MSG_MOUSE_LEFT_DOUBLE_CLICK`, not `MSG_MOUSE_LEFT_CLICK`.
+    pub next_up_double_click: bool,
+    /// #124: `KEY_STATE_ALT` in the click's modifiers, as the application last set it (the double click selects across the
+    /// map with it).
+    pub alt_held: bool,
+}
+
+/// #124: the operating system's double click, which upstream gets from Windows (`WM_LBUTTONDBLCLK` in
+/// `Win32Mouse::translateEvent`; the game's window class asks for it with `CS_DBLCLKS`, WinMain.cpp:689). New code (the
+/// device is replaced): Windows' rule, a press within `GetDoubleClickTime()` (`TheGlobalData->m_doubleClickTimeMS`) of
+/// the last press and within the `SM_CXDOUBLECLK` x `SM_CYDOUBLECLK` rectangle centred on it (4 x 4 pixels by default),
+/// the last press not itself a double click.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DoubleClickDetector {
+    last: Option<(ICoord2D, u32)>,
+}
+
+/// `SM_CXDOUBLECLK` / `SM_CYDOUBLECLK`'s default, in pixels.
+pub const DOUBLE_CLICK_RECT: i32 = 4;
+
+impl DoubleClickDetector {
+    /// A press at `at`, `now_ms`: whether it is a double click (`double_click_time_ms` the limit).
+    pub fn press(&mut self, at: ICoord2D, now_ms: u32, double_click_time_ms: u32) -> bool {
+        let double = self.last.is_some_and(|(p, t)| {
+            now_ms.wrapping_sub(t) <= double_click_time_ms && (at.x - p.x).abs() <= DOUBLE_CLICK_RECT / 2 && (at.y - p.y).abs() <= DOUBLE_CLICK_RECT / 2
+        });
+        // (after a double click the next press starts a new pair)
+        self.last = if double { None } else { Some((at, now_ms)) };
+        double
+    }
 }
 
 /// #116: what `WindowTranslator` asks, in the game under the application's own windows: the windows use nothing (the
@@ -128,6 +159,8 @@ impl Controls {
             radar: ClientRadar::default(),
             view_mouse_locked: false,
             ui_scrolling: false,
+            next_up_double_click: false,
+            alt_held: false,
         };
         // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
         c.radar.new_map(&mut c.client.world);
@@ -212,6 +245,8 @@ impl Controls {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, pixel) {
             return false;
         }
+        // (#124: `MetaEventTranslator`'s press: the next release is a click)
+        self.next_up_double_click = false;
         self.client.view.terrain = vec![(pixel, ground)];
         if self.place.left_button_down(pixel, &mut self.ui, &mut self.client) {
             return true;
@@ -221,6 +256,19 @@ impl Controls {
         }
         self.selection.left_button_down(pixel, &mut self.ui);
         false
+    }
+
+    /// #124: the left button pressed again as a double click (`MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK`, in place of the press,
+    /// [`DoubleClickDetector`]): after the window translator (which takes it as a press), `MetaEventTranslator` marks the
+    /// release as a double click. The placement, GUI command and selection translators have cases only for the plain
+    /// press (`MSG_RAW_MOUSE_LEFT_BUTTON_DOWN`), so nothing else happens: no building is anchored and no drag starts.
+    /// Whether it went past the window translator (and so marks the release).
+    pub fn left_double_press(&mut self, pixel: ICoord2D) -> bool {
+        if !self.window_keeps(MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, pixel) {
+            return false;
+        }
+        self.next_up_double_click = true;
+        true
     }
 
     /// The pointer moved to `pixel`: an anchored building stretches toward it and turns to face it. #116: after the window
@@ -245,10 +293,17 @@ impl Controls {
     /// #116: after the window translator (with the input off the release is taken, but while a placement is anchored),
     /// the selection translator's raw release ends its drag; every order made then passes the command translator's input
     /// gate (`WorldClient`'s), so with the input off none reaches the logic.
+    ///
+    /// **#124:** after a double press ([`Self::left_double_press`]) the release is `MSG_MOUSE_LEFT_DOUBLE_CLICK`: placement
+    /// and the GUI command take it as a click, the selection translator's double-click case selects every unit like the
+    /// one picked (destroying it), and the command translator's case gives the double-click guard order
+    /// (`m_doubleClickAttackMove`) or falls through to the click's.
     pub fn left_release(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_UP, release) {
             return false;
         }
+        // (#124: `MetaEventTranslator` makes the click or the double click of the release)
+        let double = std::mem::take(&mut self.next_up_double_click);
         self.selection.left_button_up(&mut self.ui);
         self.client.sync_modes(&self.ui);
         let frame = self.client.world.frame();
@@ -262,6 +317,15 @@ impl Controls {
         }
         let is_point = (release.x - press.x).abs() <= CLICK_TOLERANCE && (release.y - press.y).abs() <= CLICK_TOLERANCE;
         self.client.sync_modes(&self.ui);
+        if double {
+            // `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)`: the application's pick under the pointer
+            self.client.view.picked_at_click = picked;
+            if self.selection.left_double_click(is_point, self.alt_held, &mut self.ui, &mut self.client) == Disposition::Destroy {
+                return true;
+            }
+            self.client.sync_modes(&self.ui);
+            return self.commands.double_click(false, is_point, &ground, picked, &mut self.ui, &mut self.client);
+        }
         if self.selection.left_click(in_region, is_point, &self.commands, &mut self.ui, &mut self.client) == Disposition::Destroy {
             return true;
         }
@@ -1236,5 +1300,54 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         assert!(none.is_empty());
         assert_eq!(sent, vec![rts_lockstep_engine::common::message_types::MSG_DESTROY_SELECTED_GROUP]);
         assert_eq!(alone, with_client);
+    }
+
+    /// #124: the double click, from the device to the order. Predicted from Win32's rule and CommandXlat.cpp:3722-3792:
+    /// - the detector: a press at (10, 10) at 0 ms is not a double click; at (11, 11) 300 ms later it is; the third press
+    ///   at 400 ms starts a new pair (not one); one at (30, 30) is too far, and one 600 ms after is too late;
+    /// - the demo's first Runner selected by a click; with `m_doubleClickAttackMove` off a double click on the ground at
+    ///   (200, 60) falls through to the click: `MSG_DO_MOVETO`, the message used up;
+    /// - with it on: `MSG_DO_GUARD_POSITION` alone, the message kept (`false`), the guard hint's timer at 11 and one
+    ///   order counted on the client (the World's academy stats untouched);
+    /// - a double click on the Runner itself is the selection translator's (select all like it): the guard order is not
+    ///   given and nothing is sent but the selection's messages.
+    ///
+    /// *Results (2026-11-11):* as predicted, first run that compiled (the first build stopped on `statics`, an `Arc`: the
+    /// test now writes the global data through `Arc::make_mut`); client suite 72 passed.
+    #[test]
+    fn a_double_click_is_the_attack_move_guard() {
+        use rts_lockstep_engine::common::message_types::{MSG_DO_GUARD_POSITION, MSG_DO_MOVETO};
+        let mut d = DoubleClickDetector::default();
+        let at = |x: i32, y: i32| ICoord2D { x, y };
+        assert!(!d.press(at(10, 10), 0, 500));
+        assert!(d.press(at(11, 11), 300, 500));
+        assert!(!d.press(at(11, 11), 400, 500));
+        assert!(!d.press(at(30, 30), 450, 500));
+        assert!(!d.press(at(30, 30), 1050, 500));
+
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let r = o.runners[0];
+        let rp = pos(&mut c, r);
+        assert!(c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp));
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        let ground = Coord3D { x: 200.0, y: 60.0, z: 0.0 };
+        let double = |c: &mut Controls, picked: Option<ObjectId>, g: Coord3D| {
+            c.client.sent.clear();
+            c.left_press(at(50, 10), g);
+            c.left_release(at(50, 10), at(50, 10), &picked.into_iter().collect::<Vec<_>>(), picked, g);
+            assert!(c.left_double_press(at(50, 10)));
+            c.left_release(at(50, 10), at(50, 10), &picked.into_iter().collect::<Vec<_>>(), picked, g)
+        };
+        assert!(double(&mut c, None, ground));
+        assert_eq!(c.client.sent, vec![MSG_DO_MOVETO, MSG_DO_MOVETO]);
+        std::sync::Arc::make_mut(&mut c.client.world.statics).global_data.create_original().double_click_attack_move = true;
+        assert!(!double(&mut c, None, ground));
+        assert_eq!(c.client.sent, vec![MSG_DO_MOVETO, MSG_DO_GUARD_POSITION]);
+        assert_eq!((c.ui.double_click_attack_move_guard_hint_timer(), c.client.double_click_attack_move_orders_given), (11, 1));
+        assert!(double(&mut c, Some(r), rp));
+        assert!(!c.client.sent.contains(&MSG_DO_GUARD_POSITION), "{:?}", c.client.sent);
+        assert_eq!(c.client.double_click_attack_move_orders_given, 1);
     }
 }

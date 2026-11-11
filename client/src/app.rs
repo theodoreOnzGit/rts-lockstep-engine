@@ -1205,10 +1205,11 @@ fn hint_name(h: rts_lockstep_engine::common::message_stream::MessageType) -> Str
     name.to_string()
 }
 
-/// The left button's press, while it is held.
+/// The left button's press, while it is held; (#124) and the operating system's double click.
 #[derive(Resource, Default)]
 struct Pointer {
     press: Option<Vec2>,
+    double: crate::input::DoubleClickDetector,
 }
 
 /// The status bar's and the control bar's height, and the zoom column's width, in logical pixels: the pointer over them is
@@ -1280,6 +1281,8 @@ fn pointer_input(
     bar: Res<UiBar>,
     radar_box: Res<RadarBox>,
     shell: NonSend<ShellState>,
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
     let bar = bar.height + bar.panel;
     // (#4) the saves panel takes the pointer while it is open (the game is paused under it); (#78) so does the shell;
@@ -1313,9 +1316,18 @@ fn pointer_input(
         view.hidden = screen.iter().filter(|(id, _)| drawn.get(id).is_some_and(|d| d.is_drawable_effectively_hidden())).map(|(id, _)| *id).collect();
     }
     let over_ui = |c: Vec2, w: &Window, b: f32| over_ui(c, w, b) || radar_box.contains(c);
+    // (#124) `KEY_STATE_ALT` for the double click's select across the map
+    g.controls.alt_held = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
     if buttons.just_pressed(MouseButton::Left) && !over_ui(cursor, window, bar) {
         pointer.press = Some(cursor);
-        g.controls.left_press(pixel(cursor), ground);
+        // (#124) the second press of a double click is `MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK`, not a press (Windows' rule, with
+        // `TheGlobalData->m_doubleClickTimeMS`)
+        let limit = g.controls.client.world.statics.global_data.the_global_data().map_or(rts_lockstep_engine::common::global_data::DEFAULT_DOUBLE_CLICK_TIME_MS, |d| d.double_click_time_ms);
+        if pointer.double.press(pixel(cursor), (time.elapsed_secs_f64() * 1000.0) as u32, limit) {
+            g.controls.left_double_press(pixel(cursor));
+        } else {
+            g.controls.left_press(pixel(cursor), ground);
+        }
     }
     if pointer.press.is_some() {
         g.controls.pointer_moved(pixel(cursor), ground);

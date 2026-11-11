@@ -715,6 +715,10 @@ mod tests {
         fn append_hint(&mut self, t: crate::common::message_stream::MessageType, _args: &[crate::client::command_xlat::CmdArg]) {
             self.hints.push(t);
         }
+        fn double_click_attack_move(&self) -> bool {
+            false
+        }
+        fn record_double_click_attack_move_order_given(&mut self) {}
     }
 
     /// The control bar's questions (C2c), from the World where this file's tests ask them; the others answer as noted.
