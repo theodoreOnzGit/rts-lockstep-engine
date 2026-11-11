@@ -82,6 +82,17 @@ pub struct ClientView {
     pub pick_kinds: Vec<KindOfType>,
     /// `TheInGameUI->getAllSelectedDrawables()`, as their objects (#33: the switch weapon buttons ask for their current weapons).
     pub selection: Vec<ObjectId>,
+    /// #122: the window under the mouse and its parents, for the hints' walk (empty: the world, no window).
+    pub windows_under_cursor: Vec<crate::client::in_game_ui_cursor::UiWindow>,
+    /// #122: the objects whose screen point lies under an opaque window of the application (`CanSelectDrawable`).
+    pub obscured: Vec<ObjectId>,
+    /// #122: the drawables that are effectively hidden (`isDrawableEffectivelyHidden`, the client's drawables').
+    pub hidden: Vec<ObjectId>,
+    /// #122: `TheRadar->isRadarForced()` and `isRadarHidden()`.
+    pub radar_forced: bool,
+    pub radar_hidden: bool,
+    /// #122: `TheLookAtTranslator->hasMouseMovedRecently()`.
+    pub mouse_moved_recently: bool,
 }
 
 /// InGameUI's modes, as the selection info's questions read them.
@@ -1025,6 +1036,146 @@ impl crate::client::control_bar_popup::PopupHost for WorldClient {
     }
 }
 
+// --- #122: the hints' questions (client::in_game_ui_cursor, CanSelectDrawable), answered from the World, read only ---
+
+impl crate::client::selection_xlat::CanSelectHost for WorldClient {
+    fn is_effectively_dead(&self, obj: ObjectId) -> bool {
+        self.world.find_object(obj).is_some_and(|o| o.is_effectively_dead())
+    }
+    fn is_drawable_effectively_hidden(&self, draw: DrawableId) -> bool {
+        self.view.hidden.contains(&draw)
+    }
+    fn windows_at_drawable(&self, draw: DrawableId) -> Vec<crate::client::in_game_ui_cursor::UiWindow> {
+        if self.view.obscured.contains(&draw) {
+            vec![crate::client::in_game_ui_cursor::UiWindow { see_thru: false, ..Default::default() }]
+        } else {
+            Vec::new()
+        }
+    }
+    fn drawable_is_kind_of(&self, draw: DrawableId, k: KindOfType) -> bool {
+        self.is_kind_of(draw, k)
+    }
+    fn unselectable_or_masked(&self, obj: ObjectId) -> bool {
+        use crate::common::object_status_types::OBJECT_STATUS_UNSELECTABLE;
+        self.world.find_object(obj).is_some_and(|o| o.test_status(OBJECT_STATUS_UNSELECTABLE) || o.test_status(OBJECT_STATUS_MASKED))
+    }
+    fn object_is_selectable(&self, obj: ObjectId) -> bool {
+        self.world.is_selectable(obj)
+    }
+}
+
+impl crate::client::in_game_ui_cursor::CursorHintHost for WorldClient {
+    fn find_drawable(&self, draw: DrawableId) -> bool {
+        self.world.find_object(draw).is_some()
+    }
+    fn windows_under_cursor(&self) -> Vec<crate::client::in_game_ui_cursor::UiWindow> {
+        self.view.windows_under_cursor.clone()
+    }
+    fn recorder_playback(&self) -> bool {
+        self.world.cuts.game_loop.recorder.as_ref().is_some_and(|r| r.mode == crate::common::recorder::RecorderMode::Playback)
+    }
+    fn mouse_moved_recently(&mut self) -> bool {
+        self.view.mouse_moved_recently
+    }
+    fn double_click_attack_move(&self) -> bool {
+        self.world.statics.global_data.the_global_data().is_some_and(|g| g.double_click_attack_move)
+    }
+    fn radar_forced(&self) -> bool {
+        self.view.radar_forced
+    }
+    fn radar_hidden(&self) -> bool {
+        self.view.radar_hidden
+    }
+    fn local_player_has_radar(&self) -> bool {
+        crate::logic::world::player_ops::player_has_radar(&self.world, self.player).unwrap_or(false)
+    }
+    fn object_shroud_status_for_local_player(&self, obj: ObjectId) -> ObjectShroudStatus {
+        self.world.get_shrouded_status(obj, self.player)
+    }
+    fn mob_member_slaver(&self, obj: ObjectId) -> Option<ObjectId> {
+        use crate::logic::world::module_call::ModuleHandle;
+        use crate::logic::world::update_body::UpdateBody;
+        let index = self.world.find_object(obj)?.find_module(b"MobMemberSlavedUpdate")?;
+        match self.world.peek_module_body(ModuleHandle { object: obj, index })? {
+            UpdateBody::MobMemberSlavedUpdate(m) => Some(m.slaver_id()),
+            _ => None,
+        }
+    }
+    fn object_drawable_of(&self, obj: ObjectId) -> Option<DrawableId> {
+        self.world.find_object(obj).map(|_| obj)
+    }
+    fn contain_info(&mut self, obj: ObjectId) -> Option<crate::client::in_game_ui_cursor::ContainInfo> {
+        let c = self.world.find_object(obj)?.contain?;
+        let p = self.world.module_call(obj, c, ModuleCall::GetApparentControllingPlayer { observer: self.player }).as_int(-1);
+        let garrisonable = self.world.module_call(obj, c, ModuleCall::IsGarrisonable).as_bool();
+        Some(crate::client::in_game_ui_cursor::ContainInfo { apparent_controlling_player: (p >= 0).then_some(p), garrisonable })
+    }
+    fn controlling_player(&self, obj: ObjectId) -> Option<i32> {
+        self.world.get_controlling_player(obj)
+    }
+    fn disguise(&self, obj: ObjectId) -> Option<crate::client::in_game_ui_cursor::DisguiseInfo> {
+        let s = crate::logic::modules::stealth_update::stealth_update_of(&self.world, obj)?;
+        Some(crate::client::in_game_ui_cursor::DisguiseInfo {
+            disguised: s.is_disguised(),
+            player_index: s.get_disguised_player_index(),
+            template: s.get_disguised_template().map(|t| t.get_template_id()),
+        })
+    }
+    fn player_allied_to_local_default_team(&self, player: i32) -> bool {
+        let team = self.world.players.get_nth(self.player).and_then(|p| p.default_team);
+        crate::logic::world::player_ops::player_get_relationship(&self.world, player, team).ok() == Some(Relationship::Allies)
+    }
+    fn local_player_active(&self) -> bool {
+        crate::logic::world::player_ops::player_is_player_active(&self.world, self.player).unwrap_or(false)
+    }
+    fn object_template(&self, obj: ObjectId) -> u16 {
+        self.world.find_object(obj).map_or(0, |o| o.template().get_template_id())
+    }
+    fn template_display_name(&self, template: u16) -> Vec<u16> {
+        self.world.statics.thing_factory.find_by_template_id(template).map(|t| t.data.get_display_name().str().to_vec()).unwrap_or_default()
+    }
+    fn template_name(&self, template: u16) -> Vec<u8> {
+        self.world.statics.thing_factory.find_by_template_id(template).map(|t| t.data.get_name().to_vec()).unwrap_or_default()
+    }
+    fn fetch(&self, label: &[u8]) -> Vec<u16> {
+        use crate::common::science::GameTextFetch;
+        self.world.statics.game_text.fetch(label).str().to_vec()
+    }
+    fn warehouse_boxes(&mut self, obj: ObjectId) -> Option<i32> {
+        let d = self.world.find_module(obj, b"SupplyWarehouseDockUpdate")?;
+        Some(self.world.module_call(obj, d, ModuleCall::SupplyWarehouseGetBoxesStored).as_int(0))
+    }
+    fn base_value_per_supply_box(&self) -> i32 {
+        self.world.statics.global_data.the_global_data().map_or(0, |g| g.base_value_per_supply_box)
+    }
+    fn format_int(&self, format: &[u16], value: i32) -> Vec<u16> {
+        // (`UnicodeString::format`'s `%d`, the one directive `TOOLTIP:SupplyWarehouse` carries)
+        let s = String::from_utf16_lossy(format).replacen("%d", &value.to_string(), 1);
+        s.encode_utf16().collect()
+    }
+    fn recorder_multiplayer(&self) -> bool {
+        self.world.recorder_is_multiplayer().unwrap_or(false)
+    }
+    fn player_is_playable_side(&self, _player: i32) -> bool {
+        // (not wired: the player template's `isPlayableSide`; #122 gaps)
+        false
+    }
+    fn player_display_name(&self, player: i32) -> Vec<u16> {
+        self.world.players.get_nth(player).map(|p| p.display_name.str().to_vec()).unwrap_or_default()
+    }
+    fn object_cell_clear_for_local_player(&self, obj: ObjectId) -> bool {
+        let Some(o) = self.world.find_object(obj) else { return false };
+        let at = o.get_position();
+        self.world.partition.get_shroud_status_for_player(self.player, &at) == CellShroudStatus::Clear
+    }
+    fn player_color(&self, player: i32) -> i32 {
+        self.world.tq().player_color(player)
+    }
+    fn indicator_color(&self, obj: ObjectId) -> i32 {
+        self.world.get_indicator_color(obj)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1511,7 +1662,9 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
     /// plain gate run's. The questions go through the action manager, the weapon checks (which may touch weapon status
     /// cells), the quick path search and the shroud; if any of them writes the World, a CRC differs.
     /// (#108 adds: with `quit_menu_visible` set, a left click on a unit of the player's is destroyed and the selection
-    /// is unchanged. Predicted before the run; result 2026-11-10: held.)
+    /// is unchanged. Predicted before the run; result 2026-11-10: held.) (#122 adds the InGameUI's `createMouseoverHint`
+    /// over every object and `createCommandHint` of every hint made, whose tooltip asks containers and warehouses through
+    /// module calls. Predicted before the run: the CRCs stay equal.)
     #[test]
     fn the_clients_questions_leave_the_crcs_alone() {
         let frames = 300;
@@ -1539,7 +1692,13 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
                     let at = c.object_position(o);
                     cmd.mouse_over(Some(o), &at, &mut ui, &mut c);
                     cmd.evaluate_context_command(Some(o), &at, CommandEvaluateType::EvaluateOnly, &mut ui, &mut c);
-                    asked += 2;
+                    // (#122: the hints' cursors and tooltip, which read containers, warehouses and the shroud)
+                    ui.create_mouseover_hint(&crate::client::in_game_ui_cursor::MouseoverHint::Drawable(o), &mut c);
+                    for t in c.hints.drain(..).map(|(t, _)| t).collect::<Vec<_>>() {
+                        ui.create_command_hint(t, &mut c);
+                    }
+                    ui.take_mouse_calls();
+                    asked += 4;
                 }
                 for (x, y) in ground {
                     cmd.mouse_over(None, &Coord3D { x, y, z: 0.0 }, &mut ui, &mut c);

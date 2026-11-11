@@ -5,7 +5,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/SelectionXlat.cpp (currentlyLookingForSelection,
 //   areAllSelected, deselectAll, the MSG_MOUSE_LEFT_CLICK case of SelectionTranslator::translateGameMessage; #116: its
 //   input gate, the MSG_RAW_MOUSE_LEFT_BUTTON_DOWN case and the drag halves of MSG_RAW_MOUSE_POSITION and
-//   MSG_RAW_MOUSE_LEFT_BUTTON_UP)
+//   MSG_RAW_MOUSE_LEFT_BUTTON_UP; #122: CanSelectDrawable, the mouse-over half of MSG_RAW_MOUSE_POSITION and the
+//   MSG_MOUSEOVER_DRAWABLE_HINT case)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/SelectionInfo.cpp (addDrawableToList)
 //
 // Original copyright notice of those files:
@@ -25,6 +26,12 @@
 //! - **Not translated:** the debug-only modes of the click (hand of god, hurt, debug selection: `_DEBUG`/`_INTERNAL` and
 //!   cheat builds only), and the sounds. The double click and the control groups are in `selection_groups`; the raw
 //!   button feedback (the drag rectangle's hints) comes with the view (C2d).
+//! - **The mouse-over (#122).** `CanSelectDrawable` ([`can_select_drawable`], against [`CanSelectHost`]), the
+//!   `MSG_RAW_MOUSE_POSITION` case's mouse-over message ([`SelectionTranslator::mouseover_message`]) and the
+//!   `MSG_MOUSEOVER_DRAWABLE_HINT` case ([`SelectionTranslator::mouseover_drawable_hint`]: over a drawable a click
+//!   would not order, the InGameUI's `createMouseoverHint` and `TheMouse`'s `SELECTING` or arrow, the message eaten).
+//!   `tests/differential_cursor_hint.rs` compares the last two of them with the C++ (the mouse-over message's pick is the
+//!   application's and is not compared).
 //! - **The input gate (#116).** Every case runs after `translateGameMessage`'s test of `TheInGameUI->getInputEnabled()`
 //!   ([`SelectionTranslator::input_disabled_gate`]): with the input off the message is kept and a drag selection ends.
 //!   The raw button's drag state (`m_leftMouseButtonIsDown`, `m_dragSelecting`, `m_selectFeedbackAnchor`) is kept for it.
@@ -65,6 +72,64 @@ pub trait SelectionXlatHost: SelectionInfoHost + SelectionUiHost {
     fn record_drag_selection(&mut self);
     /// `TheInGameUI->clearAttackMoveToMode()`.
     fn clear_attack_move_to_mode(&mut self);
+}
+
+/// What `CanSelectDrawable` asks of the game beyond [`SelectionInfoHost`] (#122).
+pub trait CanSelectHost: SelectionInfoHost {
+    /// `obj->isEffectivelyDead()`.
+    fn is_effectively_dead(&self, obj: ObjectId) -> bool;
+    /// `draw->isDrawableEffectivelyHidden()`.
+    fn is_drawable_effectively_hidden(&self, draw: DrawableId) -> bool;
+    /// The window over the drawable's screen point (`TheTacticalView->worldToScreen` of its position,
+    /// `getWindowUnderCursor`) and its parents, the window first.
+    fn windows_at_drawable(&self, draw: DrawableId) -> Vec<crate::client::in_game_ui_cursor::UiWindow>;
+    /// `draw->isKindOf(k)` (the drawable's template; the object's in the client).
+    fn drawable_is_kind_of(&self, draw: DrawableId, k: crate::common::kind_of::KindOfType) -> bool;
+    /// `obj->getStatusBits().testForAny(OBJECT_STATUS_UNSELECTABLE | OBJECT_STATUS_MASKED)`.
+    fn unselectable_or_masked(&self, obj: ObjectId) -> bool;
+    /// `obj->isSelectable()`.
+    fn object_is_selectable(&self, obj: ObjectId) -> bool;
+}
+
+/// `CanSelectDrawable(draw, dragSelecting)` (SelectionXlat.cpp:128, #122): whether `draw` (`None`: `NULL`) may be
+/// selected: not without an object, a dead one unless `ALWAYS_SELECTABLE`, a force-attackable one that is not
+/// `SELECTABLE`, a hidden one, one under an opaque window, a structure in a drag, one the logic made unselectable or
+/// masked, one that is not selectable, or in a drag another player's.
+pub fn can_select_drawable(draw: Option<DrawableId>, drag_selecting: bool, h: &impl CanSelectHost) -> bool {
+    use crate::common::kind_of::{KINDOF_ALWAYS_SELECTABLE, KINDOF_FORCEATTACKABLE, KINDOF_SELECTABLE};
+    let Some(draw) = draw else { return false };
+    let Some(obj) = h.drawable_object(draw) else { return false };
+    if h.is_effectively_dead(obj) && !h.is_kind_of(obj, KINDOF_ALWAYS_SELECTABLE) {
+        // Don't select dead/dying units.
+        return false;
+    }
+    if !h.is_kind_of(obj, KINDOF_SELECTABLE) && h.is_kind_of(obj, KINDOF_FORCEATTACKABLE) {
+        return false;
+    }
+    // hidden objects cannot be selected
+    if h.is_drawable_effectively_hidden(draw) {
+        return false;
+    }
+    // ignore objects obscured by the GUI
+    if h.windows_at_drawable(draw).iter().any(|w| !w.see_thru) {
+        return false;
+    }
+    // structures cannot be selected by a drag select, you must individually pick them
+    if (drag_selecting || crate::logic::modules::plant(9091)) && h.drawable_is_kind_of(draw, KINDOF_STRUCTURE) {
+        return false;
+    }
+    // You cannot select something that has a logic override of unselectability or masked
+    if h.unselectable_or_masked(obj) {
+        return false;
+    }
+    if !h.object_is_selectable(obj) {
+        return false;
+    }
+    // In fact the only way you can drag select is if the unit is on your team.
+    if drag_selecting && !h.is_locally_controlled(obj) {
+        return false;
+    }
+    true
 }
 
 /// `GameMessageDisposition`: what the translator does with the message it was given.
@@ -167,8 +232,10 @@ impl SelectionTranslator {
 
     /// #116: the `MSG_RAW_MOUSE_POSITION` case's drag half (after the input gate): with the button down and the pointer
     /// more than `drag_tolerance` (`TheMouse->m_dragTolerance`) from the anchor on either axis, the drag selection begins
-    /// (`TheInGameUI->setSelecting(TRUE)`). The area selection hint and the mouse-over hints (the button up) are the
-    /// application's ([`crate::client::command_xlat::CommandTranslator::mouse_over`] is asked directly).
+    /// (`TheInGameUI->setSelecting(TRUE)`). The area selection hint ~~and the mouse-over hints (the button up) are the
+    /// application's ([`crate::client::command_xlat::CommandTranslator::mouse_over`] is asked directly)~~ is the
+    /// application's. **Corrected 2026-11-11 (#122):** the mouse-over message (the button up) is
+    /// [`SelectionTranslator::mouseover_message`].
     pub fn mouse_position(&mut self, pixel: ICoord2D, drag_tolerance: i32, ui: &mut InGameUiSelection) -> Disposition {
         if let Some(d) = self.input_disabled_gate(ui) {
             return d;
@@ -182,6 +249,65 @@ impl SelectionTranslator {
             }
         }
         Disposition::Keep
+    }
+
+    /// #122: the `MSG_RAW_MOUSE_POSITION` case's other half (after the input gate and [`SelectionTranslator::mouse_position`]):
+    /// with the left button up, the mouse-over message appended for the command translator and `HintSpy`: over `picked`
+    /// (the tactical view's `pickDrawable` for the context's pick types, the application's) when its object is alive or
+    /// `ALWAYS_SELECTABLE`, else over the ground at `ground` (`screenToTerrain`). `None` with the button down.
+    pub fn mouseover_message(&self, picked: Option<DrawableId>, ground: crate::common::base_type::Coord3D, h: &impl CanSelectHost) -> Option<crate::client::in_game_ui_cursor::MouseoverHint> {
+        use crate::client::in_game_ui_cursor::MouseoverHint;
+        if self.left_mouse_button_is_down {
+            return None;
+        }
+        let under = picked.and_then(|d| h.drawable_object(d).map(|o| (d, o)));
+        Some(match under {
+            Some((d, o)) if !h.is_effectively_dead(o) || h.is_kind_of(o, crate::common::kind_of::KINDOF_ALWAYS_SELECTABLE) => MouseoverHint::Drawable(d),
+            _ => MouseoverHint::Location(ground),
+        })
+    }
+
+    /// #122: the `MSG_MOUSEOVER_DRAWABLE_HINT` case (SelectionXlat.cpp:549-592, after the input gate): nothing while
+    /// scrolling or for a drawable that is gone; else when the context command a click on `draw` would give
+    /// (`evaluate_only`: `evaluateContextCommand(draw, draw->getPosition(), EVALUATE_ONLY)`) is `MSG_INVALID`, the hint is
+    /// the InGameUI's (`createMouseoverHint`), the message is destroyed (the command translator and `HintSpy` never see
+    /// it), and unless the pending GUI command is an attack move or a guard, or `draw` is shrubbery, `TheMouse` shows
+    /// `SELECTING` over a selectable drawable and the arrow otherwise.
+    pub fn mouseover_drawable_hint<H: crate::client::in_game_ui_cursor::CursorHintHost>(
+        &mut self,
+        draw: DrawableId,
+        ui: &mut InGameUiSelection,
+        h: &mut H,
+        evaluate_only: impl FnOnce(&mut InGameUiSelection, &mut H) -> MessageType,
+    ) -> Disposition {
+        use crate::client::control_bar::gui;
+        use crate::client::mouse::cursor;
+        if let Some(d) = self.input_disabled_gate(ui) {
+            return d;
+        }
+        if ui.is_scrolling() {
+            // dont show this now.
+            return Disposition::Keep;
+        }
+        if !h.find_drawable(draw) {
+            return Disposition::Keep;
+        }
+        if evaluate_only(ui, h) != MSG_INVALID {
+            return Disposition::Keep;
+        }
+        ui.create_mouseover_hint(&crate::client::in_game_ui_cursor::MouseoverHint::Drawable(draw), h); // this sets the cursor
+        let ignore_command = ui.gui_command().is_some_and(|c| {
+            // These GUI commands can take care of themselves -- don't let the selection translator meddle.
+            matches!(c.command_type, gui::ATTACK_MOVE | gui::GUARD | gui::GUARD_WITHOUT_PURSUIT | gui::GUARD_FLYING_UNITS_ONLY)
+        });
+        if !ignore_command && (crate::logic::modules::plant(9092) || !h.drawable_is_kind_of(draw, crate::common::kind_of::KINDOF_SHRUBBERY)) {
+            if can_select_drawable(Some(draw), false, h) {
+                ui.mouse_set_cursor(cursor::SELECTING);
+            } else {
+                ui.mouse_set_cursor(cursor::ARROW);
+            }
+        }
+        Disposition::Destroy
     }
 
     /// #116: the `MSG_RAW_MOUSE_LEFT_BUTTON_UP` case's drag half (after the input gate): the button is up, and a drag

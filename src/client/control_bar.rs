@@ -112,6 +112,11 @@ pub struct GuiButton {
     pub upgrade: Option<u32>,
     /// `getScienceVec()`.
     pub sciences: Vec<i32>,
+    /// #122: `getCursorName()` and `getInvalidCursorName()` (the `Mouse.ini` cursor names the GUI command mode shows).
+    pub cursor_name: Vec<u8>,
+    pub invalid_cursor_name: Vec<u8>,
+    /// #122: `getRadiusCursorType()`.
+    pub radius_cursor: i32,
 }
 
 impl GuiButton {

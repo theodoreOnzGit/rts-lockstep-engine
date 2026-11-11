@@ -671,6 +671,13 @@ impl Mouse {
 /// other than the arrow and the scroll one becomes `m_mouseModeCursor`.
 pub fn in_game_ui_set_mouse_cursor(mouse: &mut Mouse, gui_command_mode: bool, mouse_mode_cursor: &mut i32, c: i32) {
     mouse.set_cursor(c);
+    remember_mode_cursor(gui_command_mode, mouse_mode_cursor, c);
+}
+
+/// `InGameUI::setMouseCursor(c)`'s second half: in `MOUSEMODE_GUI_COMMAND` (`gui_command_mode`) a cursor other than the
+/// arrow and the scroll one becomes `m_mouseModeCursor` (#122: shared with
+/// [`crate::client::in_game_ui::InGameUiSelection::set_mouse_cursor`], whose `TheMouse->setCursor` is queued).
+pub fn remember_mode_cursor(gui_command_mode: bool, mouse_mode_cursor: &mut i32, c: i32) {
     if gui_command_mode && (plant(9069) || (c != cursor::ARROW && c != cursor::SCROLL)) {
         *mouse_mode_cursor = c;
     }

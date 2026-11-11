@@ -19,6 +19,7 @@
 //! which the World holds, as the logic reads them.
 
 pub mod in_game_ui;
+pub mod in_game_ui_cursor; // #122: the cursors the in-game UI asks for (createMouseoverHint, createCommandHint, the mouse mode)
 pub mod selection_info;
 pub mod selection_xlat;
 pub mod selection_groups;

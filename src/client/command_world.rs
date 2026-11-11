@@ -183,7 +183,10 @@ pub fn object_can_override_special_power_destination(w: &mut World, src: Option<
 pub fn gui_button(w: &World, index: usize) -> Option<GuiButton> {
     let b = w.cuts.command_buttons.get(index)?;
     let special_power = b.special_power.and_then(|id| w.statics.special_power_store.find_special_power_template_by_id(id).map(|t| (id, t.special_power_type())));
-    let sciences = w.statics.command_buttons.find_command_button(&b.name).map(|c| c.science.iter().map(|s| s.0).collect()).unwrap_or_default();
+    let found = w.statics.command_buttons.find_command_button(&b.name);
+    let sciences = found.map(|c| c.science.iter().map(|s| s.0).collect()).unwrap_or_default();
+    // (#122) the client's fields of the button: its cursors and radius cursor
+    let (cursor_name, invalid_cursor_name, radius_cursor) = found.map(|c| (c.images[1].clone(), c.images[2].clone(), c.radius_cursor)).unwrap_or_default();
     Some(GuiButton {
         index,
         command_type: b.command_type,
@@ -194,6 +197,9 @@ pub fn gui_button(w: &World, index: usize) -> Option<GuiButton> {
         thing_template: b.thing_template,
         upgrade: b.upgrade,
         sciences,
+        cursor_name,
+        invalid_cursor_name,
+        radius_cursor,
     })
 }
 

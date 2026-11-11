@@ -4,7 +4,8 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (selectDrawable, deselectDrawable, deselectAllDrawables,
 //   getAllSelectedDrawables, getSelectCount, getMaxSelectCount, incrementSelectCount, decrementSelectCount,
-//   isAnySelectedKindOf, the force-attack and prefer-selection modes, setSelecting, setInputEnabled)
+//   isAnySelectedKindOf, the force-attack and prefer-selection modes, setSelecting, setInputEnabled; #122: the cursor
+//   halves of setGUICommand and placeBuildAvailable, with the recursion of the latter)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/InGameUI.h
 //
 // Original copyright notice of those files:
@@ -25,6 +26,9 @@
 //!   iterate it (the first selected drawable is the list's front, the last one selected).
 //! - **Not translated here:** `evaluateSoloNexus` (the angry mob's lone selection), the control bar's `onDrawableSelected`
 //!   (C5), and the drawing of the selection. Each is a call on [`SelectionUiHost`], which the client gives.
+//! - **The mouse mode and the cursor (#122)** are kept here too (`m_mouseMode`, `m_mouseModeCursor`,
+//!   `m_mousedOverDrawableID`, the guard hint's timer); the hints that read them are `client::in_game_ui_cursor`'s,
+//!   and the calls on `TheMouse` are queued for the application ([`InGameUiSelection::take_mouse_calls`]).
 
 use crate::common::message_stream::MessageType;
 
@@ -82,12 +86,30 @@ pub struct InGameUiSelection {
     place_anchor_in_progress: bool,
     /// `m_placeIcon[0]->getOrientation()` (C2c part 2): the building's placement angle.
     placement_angle: f32,
+    /// #122: `m_mouseMode` (`setGUICommand` and `placeBuildAvailable` set it).
+    pub(crate) mouse_mode: crate::client::in_game_ui_cursor::MouseMode,
+    /// #122: `m_mouseModeCursor` (~~the application's, #117~~ moved here from the application with #122).
+    pub(crate) mouse_mode_cursor: i32,
+    /// #122: `m_mousedOverDrawableID` (`None`: `INVALID_DRAWABLE_ID`).
+    pub(crate) moused_over_drawable: Option<DrawableId>,
+    /// #122: `m_isScrolling`, as the camera's `LookAtTranslator` last left it (the camera keeps the flag that
+    /// `setScrolling` writes; the hints read this copy).
+    pub(crate) is_scrolling: bool,
+    /// #122: `m_duringDoubleClickAttackMoveGuardHintTimer`.
+    pub(crate) double_click_attack_move_guard_hint_timer: i32,
+    /// #122: the calls the InGameUI made on `TheMouse` and on its radius cursor, in order, for the owner to make
+    /// ([`InGameUiSelection::take_mouse_calls`]).
+    pub(crate) mouse_calls: Vec<crate::client::in_game_ui_cursor::UiMouseCall>,
+    /// #122: `TheRecorder->getMode() == RECORDERMODETYPE_PLAYBACK`, as the owner last set it
+    /// ([`InGameUiSelection::set_recorder_playback`]), for `setGUICommand`'s guard.
+    pub(crate) recorder_playback: bool,
 }
 
 impl InGameUiSelection {
     /// `InGameUI()`'s selection members: nothing selected, no limit, input enabled.
     pub fn new() -> Self {
-        InGameUiSelection { max_select_count: -1, input_enabled: true, ..Default::default() }
+        // (#122: `m_mouseModeCursor = Mouse::ARROW`, InGameUI.cpp:912)
+        InGameUiSelection { max_select_count: -1, input_enabled: true, mouse_mode_cursor: crate::client::mouse::cursor::ARROW, ..Default::default() }
     }
 
     /// `draw->isSelected()`.
@@ -245,14 +267,51 @@ impl InGameUiSelection {
     }
 
     /// `setGUICommand(command)` (C2c): a command that needs no target is refused ("does not need additional user
-    /// interaction", a `DEBUG_ASSERTCRASH` upstream) and clears the pending one. The cursor and radius cursor are the view's
-    /// (C2d); the recorder's playback guard comes with the replay viewer.
+    /// interaction", a `DEBUG_ASSERTCRASH` upstream) and clears the pending one. ~~The cursor and radius cursor are the
+    /// view's (C2d)~~ **Corrected 2026-11-11 (#122):** with the mouse mode (`MOUSEMODE_GUI_COMMAND` with a command,
+    /// `MOUSEMODE_DEFAULT` without, or for a refused one), the cursor (`setMouseCursor(ARROW)`, then
+    /// `m_mouseModeCursor = TheMouse->getMouseCursor()`) and the radius cursor, as upstream (InGameUI.cpp:2896-2941;
+    /// `tests/differential_cursor_hint.rs`). ~~The recorder's playback guard comes with the replay viewer.~~ The
+    /// recorder's playback guard reads the flag the owner sets ([`InGameUiSelection::set_recorder_playback`]; #122: the
+    /// differential test found it missing).
     pub fn set_gui_command(&mut self, command: Option<crate::client::control_bar::GuiButton>) {
-        if command.as_ref().is_some_and(|c| c.options & crate::client::control_bar::opt::NEED_TARGET == 0) {
-            self.gui_command = None;
+        use crate::client::control_bar::opt;
+        use crate::client::in_game_ui_cursor::{MouseMode, UiMouseCall};
+        use crate::client::mouse::cursor;
+        if self.recorder_playback {
             return;
         }
+        match &command {
+            Some(c) => {
+                if c.options & opt::NEED_TARGET == 0 {
+                    self.gui_command = None;
+                    self.mouse_mode = MouseMode::Default;
+                    return;
+                }
+                self.mouse_mode = MouseMode::GuiCommand;
+            }
+            None => self.mouse_mode = MouseMode::Default,
+        }
         self.gui_command = command;
+        // set the mouse cursor for commands that need a targeting or to normal with no command
+        match self.gui_command.as_ref().filter(|c| c.options & opt::NEED_TARGET != 0 && !c.is_context_command()) {
+            Some(c) => {
+                let radius = UiMouseCall::radius_cursor_of(c);
+                // "This occurs on the mouse-up of a panel button, so make an arrow"
+                self.set_mouse_cursor(cursor::ARROW);
+                self.mouse_calls.push(radius);
+            }
+            None => {
+                // (`if (TheMouse)`: the client's mouse always exists)
+                self.set_mouse_cursor(cursor::ARROW);
+                self.mouse_calls.push(UiMouseCall::RADIUS_CURSOR_NONE);
+            }
+        }
+        // `m_mouseModeCursor = TheMouse->getMouseCursor()`: `W3DMouse::setCursor` makes the cursor just set the current
+        // one whatever else it does, so this is the arrow both branches set
+        if !crate::logic::modules::plant(9093) {
+            self.mouse_mode_cursor = self.last_mouse_cursor_set().unwrap_or(cursor::ARROW);
+        }
     }
     /// `getGUICommand()` (C2c).
     pub fn gui_command(&self) -> Option<&crate::client::control_bar::GuiButton> {
@@ -260,19 +319,46 @@ impl InGameUiSelection {
     }
 
     /// `placeBuildAvailable(build, buildDrawable)` (C2c): start (or with `None`, end) placing `build`, built by the object of
-    /// `builder`; the icon starts at `view_angle` (`build->getPlacementViewAngle()`). The building at the cursor and the
-    /// cursor itself are the view's (C2d).
+    /// `builder`; the icon starts at `view_angle` (`build->getPlacementViewAngle()`). ~~The building at the cursor and the
+    /// cursor itself are the view's (C2d).~~ **Corrected 2026-11-11 (#122):** the cursor is translated here: the mouse
+    /// mode (`MOUSEMODE_BUILD_PLACE` and the cross as its cursor; back to `MOUSEMODE_DEFAULT` and the arrow), the
+    /// mouse's capture and its cursor (`setMouseCursor(CROSS)` / `(ARROW)`), the radius cursor, and upstream's recursive
+    /// `placeBuildAvailable(NULL, NULL)` when a placement starts over one under way (~~here that is the same
+    /// assignment~~ it was not: it also clears the prevent-deselection flag, #122's defect). The building at the cursor
+    /// is the view's; the builder's `setSpecialPowerConstructionCommandButton(NULL)` is not translated (#122 gaps).
     pub fn place_build_available(&mut self, build: Option<u16>, builder: Option<DrawableId>, view_angle: f32, h: &impl crate::client::selection_info::SelectionInfoHost) {
+        use crate::client::in_game_ui_cursor::{MouseMode, UiMouseCall};
+        use crate::client::mouse::cursor;
         if build.is_some() {
-            self.placement_angle = view_angle;
-        } else {
-            // (upstream destroys the icon; its angle is gone with it)
-            self.place_anchor_in_progress = false;
+            // if building something, no radius cursor, thankew
+            self.mouse_calls.push(UiMouseCall::RADIUS_CURSOR_NONE);
         }
-        // (upstream first ends a placement under way when a new one starts; here that is the same assignment)
+        // if we're setting another place available, but we're somehow already in the placement mode, get out of it
+        // before we start a new one
+        if self.pending_place_type.is_some() && build.is_some() && !crate::logic::modules::plant(9094) {
+            self.place_build_available(None, None, 0.0, h);
+        }
         self.pending_place_type = build;
         self.prevent_left_click_deselection_once = self.pending_place_source.is_some();
         self.pending_place_source = builder.and_then(|d| h.drawable_object(d));
+        // (`if( TheMouse )`: the client's mouse always exists)
+        if build.is_some() {
+            self.mouse_mode = MouseMode::BuildPlace;
+            self.mouse_mode_cursor = cursor::CROSS;
+            self.mouse_calls.push(UiMouseCall::Capture);
+            self.set_mouse_cursor(cursor::CROSS);
+            // (the icon at the cursor is the view's; its angle is kept here)
+            self.placement_angle = view_angle;
+        } else {
+            if self.mouse_mode == MouseMode::BuildPlace {
+                self.mouse_mode = MouseMode::Default;
+                self.mouse_mode_cursor = cursor::ARROW;
+            }
+            self.mouse_calls.push(UiMouseCall::ReleaseCapture);
+            self.set_mouse_cursor(cursor::ARROW);
+            self.set_placement_start(None);
+            // (upstream destroys the icon; its angle is gone with it)
+        }
     }
     /// `getPendingPlaceType()` / `getPendingPlaceSourceObjectID()` (C2c).
     pub fn pending_place_type(&self) -> Option<u16> {

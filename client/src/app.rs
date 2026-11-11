@@ -151,8 +151,8 @@ struct Game {
     /// (#117) `Mouse.ini` still to be read for the mouse (`GameClient::init`'s `parseIni`); until it is, the window's
     /// cursor is left alone.
     mouse_pending: bool,
-    /// (#117) `InGameUI::m_mouseModeCursor` (`setMouseCursor`'s, in a GUI command's mode).
-    mouse_mode_cursor: i32,
+    // (#117's `mouse_mode_cursor` is ~~here~~ **Corrected 2026-11-11 (#122):** the InGameUI's, `controls.ui`'s, with the
+    // mouse mode it depends on)
 }
 
 /// (#78) The next [`Game::serial`].
@@ -225,7 +225,6 @@ impl Game {
             close_windows_pending: false,
             client_quiet: false,
             mouse_pending: true,
-            mouse_mode_cursor: rts_lockstep_engine::client::mouse::cursor::NONE,
         }
     }
 
@@ -972,14 +971,20 @@ fn camera_input(
     }
     g.controls.view_mouse_locked = r.cam.view.is_mouse_locked();
     g.controls.ui_scrolling = r.cam.ui_scrolling;
-    // (#117) the translator's calls on the cursor, made on the client's mouse; the InGameUI's scroll for its direction
-    let gui_command_mode = g.controls.ui.gui_command().is_some();
+    // (#117) the translator's calls on the cursor, made on the client's mouse; the InGameUI's scroll for its direction.
+    // ~~`gui_command_mode` was a pending GUI command~~ **Corrected 2026-11-11 (#122):** the calls join the InGameUI's
+    // queue in order (`setMouseCursor` reads the InGameUI's own mouse mode and mode cursor), which `show_cursor` makes
+    // on the mouse; and `hasMouseMovedRecently` for the hints
     for c in r.cam.cursor_calls.drain(..) {
         match c {
-            crate::camera::CursorCall::InGameUi(c) => rts_lockstep_engine::client::mouse::in_game_ui_set_mouse_cursor(&mut g.pause.mouse, gui_command_mode, &mut g.mouse_mode_cursor, c),
-            crate::camera::CursorCall::Mouse(c) => g.pause.mouse.set_cursor(c),
+            crate::camera::CursorCall::InGameUi(c) => g.controls.ui.set_mouse_cursor(c),
+            crate::camera::CursorCall::Mouse(c) => g.controls.ui.mouse_set_cursor(c),
         }
     }
+    let logic_frame = g.controls.client.world.frame();
+    g.controls.client.view.mouse_moved_recently = r.cam.look.has_mouse_moved_recently(logic_frame);
+    let playback = rts_lockstep_engine::client::in_game_ui_cursor::CursorHintHost::recorder_playback(&g.controls.client);
+    g.controls.ui.set_recorder_playback(playback);
     g.pause.mouse.ui_scrolling = r.cam.ui_scrolling;
     g.pause.mouse.ui_scroll_amount = r.cam.scroll_amount;
 }
@@ -992,6 +997,9 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, mut windows: 
     use crate::cursor::{cursor_look, CursorLook, Icon};
     use bevy::window::{CursorIcon, SystemCursorIcon as S};
     let g = &mut *game;
+    // (#122) the InGameUI's calls on `TheMouse` this frame (setMouseCursor from the hints, the GUI command, the
+    // placement and the camera's scroll), in order, before the mouse draws
+    crate::cursor::apply_ui_mouse_calls(&mut g.pause.mouse, g.controls.ui.take_mouse_calls());
     if g.mouse_pending {
         let Some(art) = g.models.art.as_ref() else { return };
         let waiting = std::cell::Cell::new(false);
@@ -1288,6 +1296,22 @@ fn pointer_input(
     let screen = on_screen(g, camera, cam);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();
+    // (#122) what is under the pointer for the hints: the radar (`LeftHUDInput`'s window) or an opaque window of the
+    // application's; the objects under its windows and the hidden ones, for `CanSelectDrawable`
+    {
+        use rts_lockstep_engine::client::in_game_ui_cursor::UiWindow;
+        let view = &mut g.controls.client.view;
+        view.windows_under_cursor = if radar_box.contains(cursor) {
+            vec![UiWindow { left_hud_input: true, see_thru: false, radar: true }]
+        } else if over_ui(cursor, window, bar) {
+            vec![UiWindow { left_hud_input: false, see_thru: false, radar: false }]
+        } else {
+            Vec::new()
+        };
+        view.obscured = screen.iter().filter(|(_, p)| over_ui(*p, window, bar) || radar_box.contains(*p)).map(|(id, _)| *id).collect();
+        let drawn = &g.models.drawables.drawables;
+        view.hidden = screen.iter().filter(|(id, _)| drawn.get(id).is_some_and(|d| d.is_drawable_effectively_hidden())).map(|(id, _)| *id).collect();
+    }
     let over_ui = |c: Vec2, w: &Window, b: f32| over_ui(c, w, b) || radar_box.contains(c);
     if buttons.just_pressed(MouseButton::Left) && !over_ui(cursor, window, bar) {
         pointer.press = Some(cursor);
@@ -1306,7 +1330,8 @@ fn pointer_input(
             };
             g.controls.left_release(pixel(press), pixel(cursor), &in_box, picked, ground);
         }
-    } else if !over_ui(cursor, window, bar) {
+    } else {
+        // (#122: over the application's windows too: the hints then show the arrow, or over the radar its cursor)
         g.controls.hover(picked, ground);
     }
 }

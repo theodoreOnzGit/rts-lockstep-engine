@@ -3593,4 +3593,10 @@ extern "C" {
     // records' words): Mouse.cpp's, Win32Mouse.cpp's and W3DMouse.cpp's cursor functions and InGameUI's setMouseCursor
     // and setScrolling, verbatim.
     pub fn ref_mouse_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #122: the cursors the in-game UI asks for (differential/wrap_cursor_hint.cpp, which documents the setup's,
+    // the steps' and the records' words): InGameUI's createMouseoverHint, createCommandHint, setMouseCursor,
+    // setGUICommand, placeBuildAvailable and triggerDoubleClickAttackMoveGuardHint, SelectionXlat.cpp's CanSelectDrawable
+    // and its MSG_MOUSEOVER_DRAWABLE_HINT case, verbatim.
+    pub fn ref_cursor_hint_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

@@ -270,16 +270,55 @@ impl Controls {
     }
 
     /// The pointer rests over `picked` (or the ground at `ground`): the hint of what a click would order.
+    ///
+    /// **#122:** the mouse-over message runs as the game's stream runs it: `SelectionTranslator` (50) makes it (with the
+    /// button up: over `picked` when alive, else over the ground) and, over a drawable a click would not order, gives the
+    /// InGameUI's `createMouseoverHint` and its own cursor and eats it; `CommandTranslator` (70) makes the command hints;
+    /// `HintSpyTranslator` (100) gives the InGameUI `createMouseoverHint` and `createCommandHint` of each, which queue
+    /// the cursor ([`InGameUiSelection::take_mouse_calls`], made on the mouse by the application). The windows under
+    /// the pointer, the obscured and hidden objects are the application's, in `self.client.view`.
     pub fn hover(&mut self, picked: Option<ObjectId>, ground: Coord3D) -> Option<MessageType> {
+        use rts_lockstep_engine::client::in_game_ui_cursor::{hint_spy_creates_command_hint, MouseoverHint};
         self.client.sync_modes(&self.ui);
         self.client.hints.clear();
+        self.ui.set_is_scrolling(self.ui_scrolling);
+        self.client.view.radar_forced = self.radar.radar.radar_force_on;
+        self.client.view.radar_hidden = self.radar.radar.radar_hidden;
         // (#116: the selection translator's gate keeps the position without its mouse-over hint while the input is off)
         if self.selection.input_disabled_gate(&mut self.ui).is_some() {
             self.hint = None;
             return None;
         }
-        self.commands.mouse_over(picked, &ground, &mut self.ui, &mut self.client);
-        self.hint = self.client.hints.last().map(|(t, _)| *t);
+        // SelectionTranslator: MSG_RAW_MOUSE_POSITION's mouse-over message, then its MSG_MOUSEOVER_DRAWABLE_HINT case
+        let Some(msg) = self.selection.mouseover_message(picked, ground, &self.client) else {
+            self.hint = None;
+            return None;
+        };
+        let mut kept = true;
+        if let MouseoverHint::Drawable(d) = msg {
+            let cmd = &self.commands;
+            let evaluate = |ui: &mut InGameUiSelection, h: &mut WorldClient| {
+                let at = h.object_position(d);
+                cmd.evaluate_context_command(Some(d), &at, CommandEvaluateType::EvaluateOnly, ui, h)
+            };
+            kept = self.selection.mouseover_drawable_hint(d, &mut self.ui, &mut self.client, evaluate) == Disposition::Keep;
+        }
+        if !kept {
+            self.hint = None;
+            return None;
+        }
+        // CommandTranslator: the command hints
+        match msg {
+            MouseoverHint::Drawable(d) => self.commands.mouse_over(Some(d), &ground, &mut self.ui, &mut self.client),
+            MouseoverHint::Location(at) => self.commands.mouse_over(None, &at, &mut self.ui, &mut self.client),
+        };
+        // HintSpyTranslator: the mouse-over message first, then the command hints in their order
+        self.ui.create_mouseover_hint(&msg, &mut self.client);
+        let hints: Vec<MessageType> = self.client.hints.iter().map(|(t, _)| *t).collect();
+        for t in hints.iter().copied().filter(|&t| hint_spy_creates_command_hint(t)) {
+            self.ui.create_command_hint(t, &mut self.client);
+        }
+        self.hint = hints.last().copied();
         self.hint
     }
 
@@ -416,6 +455,49 @@ mod tests {
         assert_eq!(depots.len(), 1, "sent {:?}, messages {:?}", c.client.sent, c.client.ui_messages);
         assert_eq!(c.client.world.get_controlling_player(depots[0]), Some(1));
         assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+    }
+
+    /// #122, predicted before the run: on the demo, with nothing selected, the pointer over player 1's Runner queues
+    /// `SELECTING` (`createMouseoverHint`; the selection translator's mouse-over first sets it too, since a click would
+    /// select it) and over the ground the arrow; with the soldiers selected, over the ground the move hint queues
+    /// `MOVETO` and over an enemy the attack-after-moving hint `OUTRANGE`; over an opaque window of the application the
+    /// arrow whatever the hint; and the mouse, given the calls (`crate::cursor::apply_ui_mouse_calls`), shows the last
+    /// one. Nothing is sent to the logic by any of it.
+    ///
+    /// Results (2026-11-11): all held.
+    #[test]
+    fn the_hints_choose_the_cursor() {
+        use rts_lockstep_engine::client::in_game_ui_cursor::{UiMouseCall, UiWindow};
+        use rts_lockstep_engine::client::mouse::{cursor, Mouse};
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let last = |c: &mut Controls| {
+            c.ui.take_mouse_calls().into_iter().filter_map(|x| if let UiMouseCall::SetCursor(x) = x { Some(x) } else { None }).last()
+        };
+        let ground = Coord3D { x: 200.0, y: 60.0, z: 0.0 };
+        let r = o.runners[0];
+        let rp = pos(&mut c, r);
+        c.hover(Some(r), rp);
+        assert_eq!(last(&mut c), Some(cursor::SELECTING));
+        c.hover(None, ground);
+        assert_eq!(last(&mut c), Some(cursor::ARROW));
+        assert!(c.left_release(ICoord2D { x: 0, y: 0 }, ICoord2D { x: 60, y: 60 }, &o.soldiers, None, Coord3D::default()));
+        c.observe_sent();
+        c.world().logic_update().expect("a frame");
+        c.client.sent.clear();
+        assert_eq!(c.hover(None, ground), Some(MSG_DO_MOVETO_HINT));
+        assert_eq!(last(&mut c), Some(cursor::MOVETO));
+        let e = o.enemies[0];
+        let ep = pos(&mut c, e);
+        assert_eq!(c.hover(Some(e), ep), Some(MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT));
+        assert_eq!(last(&mut c), Some(cursor::OUTRANGE));
+        c.client.view.windows_under_cursor = vec![UiWindow { left_hud_input: false, see_thru: false, radar: false }];
+        c.hover(None, ground);
+        let calls = c.ui.take_mouse_calls();
+        let mut m = Mouse::new();
+        crate::cursor::apply_ui_mouse_calls(&mut m, calls);
+        assert_eq!(m.get_mouse_cursor(), cursor::ARROW);
+        assert!(c.client.sent.is_empty(), "{:?}", c.client.sent);
     }
 
     /// GitHub #51: a game of voiced soldiers, two of player 1's and one enemy, from the gate's Soldier with `VoiceSelect`,

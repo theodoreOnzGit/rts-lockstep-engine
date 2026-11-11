@@ -85,6 +85,20 @@ pub fn cursor_look(mouse: &Mouse) -> CursorLook {
     })
 }
 
+/// (#122) The InGameUI's queued calls on `TheMouse` (`rts_lockstep_engine::client::in_game_ui_cursor::UiMouseCall`) made
+/// on `mouse` in order: its cursors. The capture, the tooltip and the radius cursor have nothing to act on in the client
+/// yet (the browser and the window system keep the pointer; the world's tooltip and the radius decal are not drawn: #122
+/// gaps). On a phone the cursor shows nothing; the calls change only the translated mouse's state. GUI glue's helper,
+/// tested below.
+pub fn apply_ui_mouse_calls(mouse: &mut Mouse, calls: Vec<rts_lockstep_engine::client::in_game_ui_cursor::UiMouseCall>) {
+    use rts_lockstep_engine::client::in_game_ui_cursor::UiMouseCall;
+    for c in calls {
+        if let UiMouseCall::SetCursor(c) = c {
+            mouse.set_cursor(c);
+        }
+    }
+}
+
 /// `GameClient::init`'s mouse: `parseIni` of `Data\INI\Mouse.ini` (from `open`), `initCursorResources` (each named
 /// texture's resource counts as loaded: the system icon stands in for the `.ANI` file, which is not read), then
 /// `init`. `None` while the file is still being fetched; `Some(Err)` if it is missing or does not read (the mouse is
