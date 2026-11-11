@@ -86,11 +86,17 @@
 //!   [`QuitMenu::client_quiet`]. (#108) The client feeds the first to its translators' `isQuitMenuVisible`, and
 //!   clears both as `InGameUI::reset` does when it sees the World's game cleared ([`clear_game_data_windows`]).
 //! - (#108) `GameLogic::closeWindows` is the client's [`close_windows`], called when it sees the World's game cleared
-//!   (`clearGameData`). Its call from `ScriptActions::doQuickVictory` (a debug script action) is not reached.
-//! - `TheMouse->setCursor(ARROW)`, `HideDiplomacy`, `HideInGameChat`, `TheControlBar->hidePurchaseScience` (and, from
-//!   `closeWindows`, `ResetDiplomacy`, `ResetInGameChat` and `hideSpecialPowerShortcut`) are the
+//!   (`clearGameData`). ~~Its call from `ScriptActions::doQuickVictory` (a debug script action) is not reached.~~
+//!   **Corrected 2026-11-10 (#117):** its call from `ScriptActions::doQuickVictory` reaches the client as
+//!   `ScriptInputCall::CloseWindows` (`crate::client::script_input`), on which the client calls it.
+//! - ~~`TheMouse->setCursor(ARROW)`,~~ `HideDiplomacy`, `HideInGameChat`, `TheControlBar->hidePurchaseScience` (and,
+//!   from `closeWindows`, `ResetDiplomacy`, `ResetInGameChat` and `hideSpecialPowerShortcut`) are the
 //!   host's ([`QuitMenuHost::hide_in_game_windows`]): the diplomacy and chat windows are not translated, and the
-//!   control bar is not in the shell's window manager.
+//!   control bar is not in the shell's window manager. **Corrected 2026-11-10 (#117):** `TheMouse->setCursor(ARROW)`
+//!   is queued in [`QuitMenu::mouse_set_cursor`] for the client's translated mouse (`crate::client::mouse`). The
+//!   control bar's two calls stay the host's: the windows they hide (`GeneralsExpPoints.wnd:GenExpParent` and the
+//!   special power shortcut bar's parent) are layouts of their own that the client's control bar (`ControlBar.wnd`
+//!   alone) does not make.
 //!
 //! # Representation
 //!
@@ -211,6 +217,9 @@ pub struct QuitMenu {
     pub quit_menu_visible: bool,
     /// `TheInGameUI->m_clientQuiet`.
     pub client_quiet: bool,
+    /// (#117) The menu's `TheMouse->setCursor(c)` calls, in order, for the owner to make on its mouse
+    /// (`crate::client::mouse::Mouse::set_cursor`) and clear.
+    pub mouse_set_cursor: Vec<i32>,
     /// What the menu reads of the game.
     pub game: QuitMenuGame,
 }
@@ -219,7 +228,8 @@ pub struct QuitMenu {
 pub trait QuitMenuHost: SaveLoadHost + OptionsHost {
     /// QuitMenu.cpp's statics.
     fn quit_menu(&mut self) -> &mut QuitMenu;
-    /// `TheMouse->setCursor(Mouse::ARROW)`, `HideDiplomacy()`, `HideInGameChat()`, `TheControlBar->hidePurchaseScience()`
+    /// ~~`TheMouse->setCursor(Mouse::ARROW)`,~~ (#117: [`QuitMenu::mouse_set_cursor`]) `HideDiplomacy()`, `HideInGameChat()`,
+    /// `TheControlBar->hidePurchaseScience()`
     /// (each named as `what`; #108: also `closeWindows`' `ResetDiplomacy()`, `ResetInGameChat()` and
     /// `TheControlBar->hideSpecialPowerShortcut()`): outside the shell's windows.
     fn hide_in_game_windows(&mut self, _what: &'static str) {}
@@ -434,7 +444,8 @@ pub fn toggle_quit_menu<H: QuitMenuHost>(wm: &mut GameWindowManager, h: &mut H) 
         }
         reverse_back_group(wm, h);
     } else {
-        h.hide_in_game_windows("TheMouse->setCursor(Mouse::ARROW)");
+        // (#117: ~~the host's, recorded~~ the client's mouse: `Mouse::setCursor`, translated)
+        h.quit_menu().mouse_set_cursor.push(crate::client::mouse::cursor::ARROW);
         h.hide_in_game_windows("TheControlBar->hidePurchaseScience");
         if g.is_in_multiplayer_game() || g.is_in_replay_game() {
             if h.quit_menu().no_save_load_quit_menu_layout.is_none() {
@@ -632,9 +643,12 @@ mod tests {
         assert!(!hidden(&wm, last(&wm, f, "QuitMenuParent")), "QuitFull shows the parent");
         assert_eq!(text(&wm, last(&wm, f, "ButtonRestart")), "T:GUI:RestartMission");
         assert_eq!(text(&wm, last(&wm, f, "ButtonExit")), "T:GUI:ExitMission");
-        for w in ["TheMouse->setCursor(Mouse::ARROW)", "HideDiplomacy", "HideInGameChat", "TheControlBar->hidePurchaseScience"] {
+        for w in ["HideDiplomacy", "HideInGameChat", "TheControlBar->hidePurchaseScience"] {
             assert!(h.untranslated.iter().any(|f| f == w.as_bytes()), "{w}");
         }
+        // #117: the arrow is the client's mouse's
+        assert_eq!(h.quit_menu.mouse_set_cursor, [crate::client::mouse::cursor::ARROW]);
+        assert!(!h.untranslated.iter().any(|f| f.starts_with(b"TheMouse")));
         assert!(in_game_menus_shown(&wm, &h.quit_menu, h.shell.options_layout));
         // Options, then Escape: its Back
         press(&mut wm, &mut h, f, "ButtonOptions");

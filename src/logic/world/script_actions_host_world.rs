@@ -189,7 +189,8 @@ impl ScriptActionsHost for World {
         self.sa_cut("win_destroy");
     }
     fn sa_logic_close_windows(&mut self) {
-        self.sa_cut("logic_close_windows");
+        // (#117: ~~a cut~~ the client's: `GameLogic::closeWindows` closes only client windows)
+        self.sa_input(ScriptInputCall::CloseWindows);
     }
     fn sa_find_object_by_id(&self, id: ObjectId) -> Option<ObjH> {
         self.find_object(id).map(|o| o.id)

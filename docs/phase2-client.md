@@ -124,6 +124,36 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#117 (2026-11-11, GitHub #117): `TheMouse`'s cursor shown; `doQuickVictory`'s `closeWindows` reaches the client; the
+client's quiet flag silences the radar edge sounds.**
+- **Translated** (engine crate): `client::mouse`: Mouse.cpp's cursor definitions (`CursorInfo`, the `MouseCursor` and
+  `Mouse` blocks of `Mouse.ini`), `getCursorIndex`, `setMouseText`, `setCursor`; Win32Mouse.cpp's `setVisibility`,
+  `initCursorResources`, `setCursor`, `lostFocus`; W3DMouse.cpp's `init`, `setCursor` and `draw` in `RM_WINDOWS` (the
+  one mode the game runs in: `m_winCursors` is TRUE), `setCursorDirection`; WinMain's `WM_SETCURSOR`;
+  InGameUI's `setMouseCursor` and `setScrolling`'s cursor. `ClientMouse` (#108) is now this mouse: `setGamePaused`, the
+  scripts' `setVisibility`, the quit menu's `setCursor(ARROW)`, the main menu's `setVisibility` and the camera
+  translator's `getMouseCursor`/`setCursor` reach it. `ScriptInputCall::CloseWindows` (the World's `sa_logic_close_windows`,
+  a cut until now) is handed to the shell's `close_windows`. `ClientAudio::client_quiet` applies
+  `Player::okToPlayRadarEdgeSound`'s one client term (`isClientQuiet`, its only reader upstream) to the `RadarSound`
+  events.
+- **The client** (`client/src/cursor.rs`, `app.rs`): `Mouse.ini` read from the art, the mouse drawn once a frame, and
+  the window's cursor hidden or set to a system icon chosen for the cursor (the `.ANI` art is EA's, the browser cannot
+  show it, a phone has no cursor); the mouse outlives the games (`Game::replace`). Until `Mouse.ini` is read (the demo)
+  the cursor is left alone.
+- **Predictions vs results:** all held. The differential's first run crashed in the C++ on the test's own generator (a
+  "one ULP below +0.0" scroll amount is a NaN, whose `(Int)` frame indexed past `cursorResources`; the InGameUI's scroll
+  is never a NaN); fixed in the generator, then 0 mismatches. Plant 9068 not caught, as predicted (the cursor text never
+  changes after `init` in `RM_WINDOWS`).
+- **Differential:** `differential_mouse`: 20,000 sequences, 608,946 steps, 0 mismatches; plants 9061-9071: 10 of 11
+  caught (9068 by design, above).
+- **Gaps (issue drafts):** the in-game UI's hint cursors (`createCommandHint`, `createMouseoverHint`), the selection
+  translator's mouse-over cursor, the other menus' mouse calls, the cursor text's drawing; `hidePurchaseScience` and
+  `hideSpecialPowerShortcut` (their windows are layouts the client's control bar does not make); the diplomacy and chat
+  windows.
+- **Gates:** lib 1156 passed (1152 before, 4 new); client 70 passed (68 before, 2 new); clippy (lib) clean; the
+  differentials mouse, input_gate, wm, wnd, look_at pass (0 mismatches); web build ok (no warnings); gate (a) PASS,
+  last CRC 0bf44067 (unchanged).
+
 **#110, #109, #107 (2026-11-10, GitHub #110, #109, #107): the quit menu's *Restart*, its phone entry, and the demo's
 `newMap`.**
 - **#110, the restart.** The logic: `World::restart_mission` translates `restartMissionMenu`'s engine half

@@ -196,8 +196,11 @@ pub struct MainMenu {
     pub drop_down_windows: [Option<WinId>; DROPDOWN_COUNT],
     /// `MainMenuInput`'s `static Int mousePosX, mousePosY` (set by the first position it sees).
     pub first_mouse: Option<(i32, i32)>,
-    /// `TheMouse->setVisibility`.
+    /// `TheMouse->setVisibility`'s last value.
     pub mouse_visible: bool,
+    /// (#117) The `TheMouse->setVisibility(v)` calls, in order, for the owner to make on its mouse
+    /// (`crate::client::mouse::Mouse::set_visibility`) and clear.
+    pub mouse_set_visibility: Vec<bool>,
     /// `TheCampaignManager->setCampaign(...)`'s name (empty: none).
     pub campaign: Vec<u8>,
     /// `TheCampaignManager->setGameDifficulty(...)`.
@@ -230,6 +233,7 @@ impl Default for MainMenu {
             drop_down_windows: [None; DROPDOWN_COUNT],
             first_mouse: None,
             mouse_visible: true,
+            mouse_set_visibility: Vec::new(),
             campaign: Vec::new(),
             difficulty: DIFFICULTY_NORMAL,
         }
@@ -374,6 +378,7 @@ pub fn main_menu_init<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layout
     shell::show_shell_map(wm, h, true);
     let m = h.main_menu();
     m.mouse_visible = true;
+    m.mouse_set_visibility.push(true);
     m.button_pushed = false;
     m.is_shutting_down = false;
     m.start_game = false;
@@ -412,6 +417,7 @@ pub fn main_menu_init<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, layout
     h.main_menu().campaign_selected = false;
     if h.main_menu().first_time_running_the_game {
         h.main_menu().mouse_visible = false;
+        h.main_menu().mouse_set_visibility.push(false);
         wt::reverse(wm, h, b"FadeWholeScreen");
         h.main_menu().first_time_running_the_game = false;
     } else {
@@ -510,6 +516,7 @@ fn first_show<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H) -> MsgHandled 
     wt::set_group(wm, h, b"MainMenuDefaultMenu", false);
     let m = h.main_menu();
     m.mouse_visible = true;
+    m.mouse_set_visibility.push(true);
     m.not_shown = false;
     MsgHandled::Handled
 }

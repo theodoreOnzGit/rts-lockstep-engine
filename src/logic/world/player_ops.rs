@@ -153,7 +153,9 @@ pub struct PlayerGlobals {
     pub in_game_logic_update: bool,
     /// `TheGameLogic->getRankLevelLimit()`.
     pub rank_level_limit: i32,
-    /// `TheInGameUI->isClientQuiet()`.
+    /// `TheInGameUI->isClientQuiet()`. **Corrected 2026-11-10 (#117):** the world's stand-in, always false in the
+    /// World (the flag is the client's InGameUI's); the client applies the term to the `RadarSound` events it plays
+    /// (`crate::client::client_audio::ClientAudio::client_quiet`).
     pub client_quiet: bool,
     /// `TheScriptEngine->getGlobalDifficulty()`.
     pub global_difficulty: GameDifficulty,

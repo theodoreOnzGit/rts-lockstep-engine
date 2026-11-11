@@ -144,6 +144,15 @@ struct Game {
     pause: rts_lockstep_engine::client::game_pause::ClientPause,
     /// (#108) Whether the World's game was already seen cleared (`clearGameData`), so `closeWindows` runs once.
     cleared_seen: bool,
+    /// (#117) A script's `closeWindows` (`doQuickVictory`) still to be made on the shell's windows.
+    close_windows_pending: bool,
+    /// (#117) `TheInGameUI->isClientQuiet()` (the shell's quit menu flag), for the audio's radar edge sounds.
+    client_quiet: bool,
+    /// (#117) `Mouse.ini` still to be read for the mouse (`GameClient::init`'s `parseIni`); until it is, the window's
+    /// cursor is left alone.
+    mouse_pending: bool,
+    /// (#117) `InGameUI::m_mouseModeCursor` (`setMouseCursor`'s, in a GUI command's mode).
+    mouse_mode_cursor: i32,
 }
 
 /// (#78) The next [`Game::serial`].
@@ -213,7 +222,21 @@ impl Game {
             serial: GAME_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             pause: Default::default(),
             cleared_seen,
+            close_windows_pending: false,
+            client_quiet: false,
+            mouse_pending: true,
+            mouse_mode_cursor: rts_lockstep_engine::client::mouse::cursor::NONE,
         }
+    }
+
+    /// (#117) `self` replaced by the game `new`, with `TheMouse` kept (upstream's mouse outlives the games), and the
+    /// mouse made visible as `GameLogic::startNewGame`'s load screen leaves it (`TheMouse->setVisibility(TRUE)`,
+    /// GameLogic.cpp:2199): every game the client starts is a new game, a loaded save or a mission. GUI glue.
+    fn replace(&mut self, mut new: Game) {
+        new.pause.mouse = std::mem::take(&mut self.pause.mouse);
+        new.mouse_pending = self.mouse_pending;
+        new.pause.mouse.set_visibility(true);
+        *self = new;
     }
 
     /// (#108) `TheGameLogic->setGamePaused(paused)` (the quit menu's, `pauseMusic` at its default `TRUE`): the pause
@@ -327,7 +350,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain, load_shell, shell_ui).chain())
         .add_systems(
             Update,
-            (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud).chain(),
+            (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
         .run();
 }
@@ -411,7 +434,7 @@ fn poll_import(
                 drop(art);
                 None
             };
-            *game = Game::new(s.world, s.player, s.report, art);
+            game.replace(Game::new(s.world, s.player, s.report, art));
             game.base = Some(Box::new(s.base));
             for (_, (e, _)) in drawn.0.drain() {
                 commands.entity(e).despawn();
@@ -492,11 +515,14 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
             // #116: the scripts' calls on the input (`DISABLE_INPUT`, `ENABLE_INPUT`), then the frame's tick through the
             // selection translator (its input gate ends a drag)
             // (#119: `LookAtResetModes` to the camera's translator)
-            if g.controls.take_script_input(&events, &mut g.pause.mouse) {
+            // (#117: `CloseWindows`, `doQuickVictory`'s `closeWindows`, to the shell's windows)
+            let back = g.controls.take_script_input(&events, &mut g.pause.mouse);
+            if back.reset_modes {
                 if let Some(r) = rig.as_deref_mut() {
                     r.cam.reset_modes();
                 }
             }
+            g.close_windows_pending |= back.close_windows;
             g.controls.frame_tick();
             // #56: the logic's messages to the local player (`TheInGameUI->message`)
             g.controls.client.take_logic_messages(&events);
@@ -522,6 +548,8 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
                 // #51: a map's `map.ini` audio events, as the logic read them; the unit voices the translators played since
                 // the last frame; then the frame's events
                 sound.audio.sync_logic_ini_audio(&w.statics.audio);
+                // #117: `TheInGameUI->isClientQuiet()` (the radar edge sounds' last term)
+                sound.audio.client_quiet = g.client_quiet;
                 // #59: a loaded game's drawables' ambient sounds, once (`Drawable::xfer`'s and `loadPostProcess`'s)
                 if g.ambient_restore_pending {
                     g.ambient_restore_pending = false;
@@ -840,6 +868,8 @@ fn camera_input(
     let panel = crate::saves::page::panel_open() || crate::campaigns::page::panel_open();
     let input = !shell_active && !panel;
     let ui = g.controls.ui.clone();
+    // (#117) the translator's `getMouseCursor` is the client's mouse's
+    r.cam.cursor = g.pause.mouse.get_mouse_cursor();
     let mouse_msg = |r: &mut Rig, g: &mut Game, t: rts_lockstep_engine::common::message_stream::MessageType, p: ICoord2D, spin: i32| {
         if g.controls.window_keeps(t, p) {
             let m = RawMessage { t, pos: p, delta: ICoord2D::default(), arg0: 0, arg1: spin };
@@ -942,6 +972,84 @@ fn camera_input(
     }
     g.controls.view_mouse_locked = r.cam.view.is_mouse_locked();
     g.controls.ui_scrolling = r.cam.ui_scrolling;
+    // (#117) the translator's calls on the cursor, made on the client's mouse; the InGameUI's scroll for its direction
+    let gui_command_mode = g.controls.ui.gui_command().is_some();
+    for c in r.cam.cursor_calls.drain(..) {
+        match c {
+            crate::camera::CursorCall::InGameUi(c) => rts_lockstep_engine::client::mouse::in_game_ui_set_mouse_cursor(&mut g.pause.mouse, gui_command_mode, &mut g.mouse_mode_cursor, c),
+            crate::camera::CursorCall::Mouse(c) => g.pause.mouse.set_cursor(c),
+        }
+    }
+    g.pause.mouse.ui_scrolling = r.cam.ui_scrolling;
+    g.pause.mouse.ui_scroll_amount = r.cam.scroll_amount;
+}
+
+/// GUI glue (needs a window; the decisions are the translated mouse's, tested in the logic crate, and the icons'
+/// mapping is [`crate::cursor`]'s, tested there): `Mouse.ini` read once the art is up, the window's focus given to the
+/// mouse (`WM_SETFOCUS`, `WM_KILLFOCUS`), the mouse drawn (`W3DMouse::draw`, once a frame), and the window's cursor set
+/// to what it shows: hidden, or the system icon for it. A phone has no cursor: the settings change nothing there.
+fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, mut windows: Query<(Entity, &Window, &mut bevy::window::CursorOptions, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>) {
+    use crate::cursor::{cursor_look, CursorLook, Icon};
+    use bevy::window::{CursorIcon, SystemCursorIcon as S};
+    let g = &mut *game;
+    if g.mouse_pending {
+        let Some(art) = g.models.art.as_ref() else { return };
+        let waiting = std::cell::Cell::new(false);
+        let open = |p: &[u8]| {
+            let before = art.fs.local.device.unserved_reads();
+            let r = art.fs.open_file(p);
+            if art.fs.local.device.unserved_reads() != before {
+                waiting.set(true);
+                return None;
+            }
+            r
+        };
+        match crate::cursor::load_mouse(&mut g.pause.mouse, open, || waiting.get()) {
+            None => return,
+            Some(Ok(())) => {
+                // (the main menu or the game's load screen makes it visible; the client's game is already up)
+                g.pause.mouse.set_visibility(true);
+                g.mouse_pending = false;
+            }
+            Some(Err(e)) => {
+                warn!("the mouse's cursors: {e}");
+                g.mouse_pending = false;
+                return;
+            }
+        }
+    }
+    let Ok((e, window, mut options, icon)) = windows.single_mut() else { return };
+    g.pause.mouse.lost_focus(!window.focused);
+    g.pause.mouse.draw();
+    let look = cursor_look(&g.pause.mouse);
+    let visible = look != CursorLook::Hidden;
+    if options.visible != visible {
+        options.visible = visible;
+    }
+    if let CursorLook::Icon(i) = look {
+        let s = match i {
+            Icon::Default => S::Default,
+            Icon::Pointer => S::Pointer,
+            Icon::Crosshair => S::Crosshair,
+            Icon::Move => S::Move,
+            Icon::NotAllowed => S::NotAllowed,
+            Icon::Cell => S::Cell,
+            Icon::Grab => S::Grab,
+            Icon::Help => S::Help,
+            Icon::EResize => S::EResize,
+            Icon::SeResize => S::SeResize,
+            Icon::SResize => S::SResize,
+            Icon::SwResize => S::SwResize,
+            Icon::WResize => S::WResize,
+            Icon::NwResize => S::NwResize,
+            Icon::NResize => S::NResize,
+            Icon::NeResize => S::NeResize,
+        };
+        let want = CursorIcon::System(s);
+        if icon != Some(&want) {
+            commands.entity(e).insert(want);
+        }
+    }
 }
 
 /// GUI glue (needs a window): the 3D camera where the translated view placed it ([`crate::camera::Camera::eye_target`]
@@ -2196,7 +2304,7 @@ fn finish_load(
                     // the camera to the save's view (`setAngle`, `lookAt`)
                     **rig = Rig::new(&g.controls.client.world, rig.cam.screen);
                     rig.cam.set_saved_view(g.save_state.view.angle, g.save_state.view.position, &g.controls.client.world);
-                    **game = g;
+                    game.replace(g);
                     for (_, (e, _)) in drawn.0.drain() {
                         commands.entity(e).despawn();
                     }
@@ -2419,7 +2527,7 @@ fn campaign_flow(
                 c.briefing = crate::campaigns::briefing(&s.world);
                 let art = game.models.art.take();
                 let base = game.base.take();
-                *game = Game::new(s.world, s.player, s.label.clone(), art);
+                game.replace(Game::new(s.world, s.player, s.label.clone(), art));
                 game.base = base;
                 for (_, (e, _)) in drawn.0.drain() {
                     commands.entity(e).despawn();
@@ -2628,8 +2736,17 @@ fn shell_ui(
     let cleared = g.controls.client.world.game_cleared.is_some();
     if cleared && !g.cleared_seen {
         ui.clear_game_data_windows();
+        // (#117: then `clearGameData`'s `TheMouse->setVisibility(TRUE)`, GameLogicDispatch.cpp:294)
+        g.pause.mouse.set_visibility(true);
     }
     g.cleared_seen = cleared;
+    // (#117) a script's `closeWindows` (`doQuickVictory`); the quit menu's quiet flag for the audio; the shell's calls on
+    // `TheMouse` (the main menu's `setVisibility`, the quit menu's `setCursor(ARROW)`)
+    if std::mem::take(&mut g.close_windows_pending) {
+        ui.close_windows();
+    }
+    g.client_quiet = ui.client_quiet();
+    ui.take_mouse_calls(&mut g.pause.mouse);
     g.controls.client.modes.alternate_mouse = o.alternate_mouse;
     if let Some(sound) = g.audio.as_deref() {
         ui.gui.audio_settings = sound.audio.manager.tables.settings.clone();

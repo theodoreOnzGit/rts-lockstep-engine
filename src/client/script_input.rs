@@ -45,6 +45,9 @@
 //!   2026-11-10 (#119):** and the `LookAtTranslator` (`crate::client::look_at_xlat`) is the client's camera's. They are
 //!   handed back to the caller ([`apply_script_input`]'s answer), which resets what it keeps (the client's
 //!   `Controls::take_script_input` reports the reset, and its camera calls `resetModes`).
+//! - (#117) `ScriptActions::doQuickVictory`'s `TheGameLogic->closeWindows()` is [`ScriptInputCall::CloseWindows`],
+//!   handed back too: the windows it closes are the shell's (`crate::client::quit_menu::close_windows`), which the
+//!   client's application owns.
 //!
 //! # Representation
 //!
@@ -58,16 +61,18 @@ use crate::client::in_game_ui::{InGameUiSelection, SelectionUiHost};
 use crate::logic::client_event::{ClientEvent, ScriptInputCall};
 
 /// Makes one logic event's call on the client's input, if it is a [`ClientEvent::ScriptInput`]. Returns the call when it
-/// is the caller's to make (`DeleteBuildTooltipLayout`, `LookAtResetModes`), else `None`.
+/// is the caller's to make (`DeleteBuildTooltipLayout`, `LookAtResetModes`, #117: `CloseWindows`, which closes the
+/// shell's windows: `crate::client::quit_menu::close_windows`), else `None`.
 pub fn apply_script_input(e: &ClientEvent, ui: &mut InGameUiSelection, mouse: &mut ClientMouse, h: &mut impl SelectionUiHost) -> Option<ScriptInputCall> {
     let ClientEvent::ScriptInput(call) = e else { return None };
     match *call {
         ScriptInputCall::SetInputEnabled(on) => ui.set_input_enabled(on),
-        ScriptInputCall::MouseSetVisibility(on) => mouse.visible = on,
+        // (#117: ~~`mouse.visible = on`~~ `Win32Mouse::setVisibility`, translated)
+        ScriptInputCall::MouseSetVisibility(on) => mouse.set_visibility(on),
         ScriptInputCall::DeselectAllDrawables => ui.deselect_all_drawables(true, h),
         ScriptInputCall::ClearAttackMoveToMode => ui.clear_attack_move_to_mode(),
         ScriptInputCall::SetWaypointMode(on) => ui.set_waypoint_mode(on),
-        c @ (ScriptInputCall::DeleteBuildTooltipLayout | ScriptInputCall::LookAtResetModes) => return Some(c),
+        c @ (ScriptInputCall::DeleteBuildTooltipLayout | ScriptInputCall::LookAtResetModes | ScriptInputCall::CloseWindows) => return Some(c),
     }
     None
 }
@@ -123,6 +128,7 @@ mod tests {
         let back: Vec<_> = disable.iter().filter_map(|c| apply_script_input(&ClientEvent::ScriptInput(*c), &mut ui, &mut mouse, &mut h)).collect();
         assert_eq!(back, [ScriptInputCall::DeleteBuildTooltipLayout, ScriptInputCall::LookAtResetModes]);
         assert!(!ui.input_enabled() && !mouse.visible && ui.select_count() == 0 && !ui.is_selecting());
+        assert_eq!(mouse.shown(), None, "#117: setVisibility(false) hides the Windows cursor at once");
         assert!(!ui.is_in_force_attack_mode() && !ui.is_in_waypoint_mode() && !ui.is_in_attack_move_to_mode());
         assert_eq!(h.messages, [(MSG_DESTROY_SELECTED_GROUP, true)]);
         for c in [ScriptInputCall::SetInputEnabled(true), ScriptInputCall::MouseSetVisibility(true)] {
@@ -130,6 +136,9 @@ mod tests {
         }
         assert!(ui.input_enabled() && mouse.visible && !ui.is_in_force_attack_mode());
         assert_eq!(h.messages.len(), 1);
+        // #117: `doQuickVictory`'s `TheGameLogic->closeWindows()` is the caller's
+        let c = ScriptInputCall::CloseWindows;
+        assert_eq!(apply_script_input(&ClientEvent::ScriptInput(c), &mut ui, &mut mouse, &mut h), Some(c));
         assert_eq!(apply_script_input(&ClientEvent::DrawablesOnLevelStart, &mut ui, &mut mouse, &mut h), None);
         assert!(ui.input_enabled());
     }

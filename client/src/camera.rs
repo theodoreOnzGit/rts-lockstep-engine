@@ -117,8 +117,14 @@ pub struct Camera {
     pub move_rmb_anchor: bool,
     /// The keyboard camera flags.
     pub keys: CameraKeys,
-    /// `TheMouse`'s cursor as the translator sets it (the client draws the system's).
+    /// ~~`TheMouse`'s cursor as the translator sets it (the client draws the system's).~~ **Corrected 2026-11-10
+    /// (#117):** `TheMouse->getMouseCursor()` as the owner copied it from the client's mouse
+    /// (`rts_lockstep_engine::client::mouse::Mouse`) before the call, kept up to date by the calls below.
     pub cursor: i32,
+    /// (#117) The calls the translator made on the cursor, in order, for the owner to make on its mouse and clear:
+    /// [`CursorCall::InGameUi`] is `InGameUI::setMouseCursor` (from `InGameUI::setScrolling`), [`CursorCall::Mouse`]
+    /// `TheMouse->setCursor`.
+    pub cursor_calls: Vec<CursorCall>,
     /// `TheGameClient->getFrame()`.
     pub client_frame: u32,
     /// The display's size in pixels.
@@ -127,6 +133,15 @@ pub struct Camera {
     pub home: Coord3D,
     /// Seconds not yet given to a client frame.
     clock: f32,
+}
+
+/// (#117) One call on the cursor made while the camera translated ([`Camera::cursor_calls`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorCall {
+    /// `TheInGameUI->setMouseCursor(c)` (`rts_lockstep_engine::client::mouse::in_game_ui_set_mouse_cursor`).
+    InGameUi(i32),
+    /// `TheMouse->setCursor(c)`.
+    Mouse(i32),
 }
 
 /// The translator's host: the camera's members, the InGameUI's selection model and the World.
@@ -139,6 +154,7 @@ struct LookWorld<'a> {
     scroll_amount: &'a mut Coord2D,
     move_rmb_anchor: bool,
     cursor: &'a mut i32,
+    cursor_calls: &'a mut Vec<CursorCall>,
     client_frame: u32,
     screen: (i32, i32),
     shell_active: bool,
@@ -152,6 +168,15 @@ impl LookAtHost for LookWorld<'_> {
         self.ui.is_selecting()
     }
     fn ui_set_scrolling(&mut self, b: bool) {
+        // #117: `InGameUI::setScrolling`: when it changes, `setMouseCursor(SCROLL)` on, `setMouseCursor(ARROW)` off (the
+        // capture and the camera locks it also breaks are not the client's)
+        use rts_lockstep_engine::client::mouse::cursor;
+        if *self.ui_scrolling == b {
+            return;
+        }
+        let c = if b { cursor::SCROLL } else { cursor::ARROW };
+        *self.cursor = c;
+        self.cursor_calls.push(CursorCall::InGameUi(c));
         *self.ui_scrolling = b;
     }
     fn ui_is_scrolling(&self) -> bool {
@@ -169,6 +194,7 @@ impl LookAtHost for LookWorld<'_> {
     }
     fn mouse_set_cursor(&mut self, cursor: i32) {
         *self.cursor = cursor;
+        self.cursor_calls.push(CursorCall::Mouse(cursor));
     }
     fn shell_active(&self) -> bool {
         self.shell_active
@@ -266,6 +292,7 @@ impl Camera {
             move_rmb_anchor: false,
             keys: CameraKeys::default(),
             cursor: MOUSE_ARROW,
+            cursor_calls: Vec::new(),
             client_frame: 0,
             screen,
             home: centre,
@@ -313,8 +340,8 @@ impl Camera {
 
     /// A raw input message through `LookAtTranslator`. `shell_active`: the shell or an in-game menu has the input.
     pub fn translate(&mut self, msg: &RawMessage, ui: &InGameUiSelection, world: &World, shell_active: bool) -> Disposition {
-        let Camera { view, look, globals, ui_scrolling, scroll_amount, move_rmb_anchor, cursor, client_frame, screen, .. } = self;
-        let mut h = LookWorld { view, g: globals, world, ui, ui_scrolling, scroll_amount, move_rmb_anchor: *move_rmb_anchor, cursor, client_frame: *client_frame, screen: *screen, shell_active };
+        let Camera { view, look, globals, ui_scrolling, scroll_amount, move_rmb_anchor, cursor, cursor_calls, client_frame, screen, .. } = self;
+        let mut h = LookWorld { view, g: globals, world, ui, ui_scrolling, scroll_amount, move_rmb_anchor: *move_rmb_anchor, cursor, cursor_calls, client_frame: *client_frame, screen: *screen, shell_active };
         look.translate_game_message(msg, &mut h)
     }
 
@@ -428,7 +455,8 @@ mod tests {
     /// the height asked for by 10 and the frames settle the zoom toward it; the client's frames are 30 a second; and
     /// none of it changes the World's CRC.
     ///
-    /// *Results (2026-11-10):* all held.
+    /// *Results (2026-11-10):* all held. (#117, predicted 2026-11-11: the right button's scroll asks the cursor for
+    /// SCROLL, then ARROW and the kept ARROW; results: held.)
     #[test]
     fn the_camera_scrolls_turns_and_zooms_without_touching_the_world() {
         let (mut c, mut cam) = demo();
@@ -447,6 +475,13 @@ mod tests {
         assert!(cam.view.pos.x > start.x + 1.0, "{start:?} {:?}", cam.view.pos);
         cam.translate(&mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, 500, 300), &ui, w, false);
         assert!(!cam.ui_scrolling && !cam.view.is_mouse_locked());
+        // #117: the scroll's cursor calls: `setScrolling(TRUE)`'s SCROLL, `setScrolling(FALSE)`'s ARROW, then the
+        // translator's `setCursor` of the cursor it kept (the arrow)
+        {
+            use rts_lockstep_engine::client::mouse::cursor;
+            assert_eq!(cam.cursor_calls, [CursorCall::InGameUi(cursor::SCROLL), CursorCall::InGameUi(cursor::ARROW), CursorCall::Mouse(cursor::ARROW)]);
+            cam.cursor_calls.clear();
+        }
         // the arrow key
         let y0 = cam.view.pos.y;
         let k = |t, up: bool| RawMessage { t, pos: ICoord2D::default(), delta: ICoord2D::default(), arg0: i32::from(key::UP), arg1: if up { 1 } else { 2 } };

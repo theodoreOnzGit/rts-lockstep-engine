@@ -106,6 +106,15 @@ pub struct BarButton {
     pub button: GuiButton,
 }
 
+/// (#119, #117) What the scripts' input calls hand back to the application ([`Controls::take_script_input`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ScriptInputBack {
+    /// A `LookAtResetModes` came: the camera's `LookAtTranslator::resetModes`.
+    pub reset_modes: bool,
+    /// (#117) A `CloseWindows` came: `GameLogic::closeWindows` on the shell's windows.
+    pub close_windows: bool,
+}
+
 impl Controls {
     pub fn new(world: World, player: i32) -> Self {
         let mut c = Controls {
@@ -181,15 +190,19 @@ impl Controls {
     /// translator's modes have nothing to reset here (no tooltip in the game; the camera input keeps no scroll mode)~~
     /// has nothing to delete (no tooltip in the game). **Corrected 2026-11-10 (#119):** the answer is whether a
     /// `LookAtResetModes` came, for the camera's `LookAtTranslator::resetModes` ([`crate::camera::Camera::reset_modes`]).
-    pub fn take_script_input(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], mouse: &mut ClientMouse) -> bool {
+    /// **(#117)** The answer also says whether a `CloseWindows` came (`doQuickVictory`'s `TheGameLogic->closeWindows()`),
+    /// for the shell's windows ([`crate::shell::ShellUi::close_windows`]).
+    pub fn take_script_input(&mut self, events: &[rts_lockstep_engine::logic::client_event::ClientEvent], mouse: &mut ClientMouse) -> ScriptInputBack {
         use rts_lockstep_engine::logic::client_event::ScriptInputCall;
-        let mut reset = false;
+        let mut back = ScriptInputBack::default();
         for e in events {
-            if apply_script_input(e, &mut self.ui, mouse, &mut self.client) == Some(ScriptInputCall::LookAtResetModes) {
-                reset = true;
+            match apply_script_input(e, &mut self.ui, mouse, &mut self.client) {
+                Some(ScriptInputCall::LookAtResetModes) => back.reset_modes = true,
+                Some(ScriptInputCall::CloseWindows) => back.close_windows = true,
+                _ => {}
             }
         }
-        reset
+        back
     }
 
     /// The left button pressed at `pixel`: a building at the cursor is anchored there; with a GUI command pending the press
@@ -935,6 +948,54 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         events
     }
 
+    /// #117: a script's `QUICKVICTORY` (`ScriptActions::doQuickVictory`) reaches the client's windows: its
+    /// `TheGameLogic->closeWindows()` is a `ScriptInputCall::CloseWindows` event, handed back for the shell.
+    ///
+    /// *Predictions, written before the first run:* the frame that runs the action sends the client
+    /// `CloseWindows` first (after `closeWindows(FALSE)`, which is the logic's), then `doDisableInput`'s seven calls in
+    /// their order; [`Controls::take_script_input`] answers `close_windows` and `reset_modes`, the input is off and the
+    /// mouse hidden (`SetCursor(NULL)`). The World with the client attached has the CRCs of the World alone over 60
+    /// frames (the event is not simulation state).
+    ///
+    /// *Results (2026-11-11):* all held: the calls `[CloseWindows, SetInputEnabled(false), MouseSetVisibility(false),
+    /// DeselectAllDrawables, ClearAttackMoveToMode, SetWaypointMode(false), DeleteBuildTooltipLayout, LookAtResetModes]`,
+    /// 60 equal CRCs (the last `0862d2e3` in both).
+    #[test]
+    fn a_scripts_quick_victory_closes_the_clients_windows() {
+        use rts_lockstep_engine::logic::client_event::{ClientEvent, ScriptInputCall as C};
+        use rts_lockstep_engine::logic::scripts::action_type::QUICKVICTORY;
+        use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+        let run = |attached: bool| -> (Vec<u32>, Vec<C>, ScriptInputBack, bool) {
+            let (w, _) = demo_world();
+            let mut c = Controls::new(w, 1);
+            let mut mouse = ClientMouse::new();
+            mouse.init();
+            mouse.set_visibility(true);
+            add_script(&mut c.client.world, b"quick", QUICKVICTORY);
+            let (mut crcs, mut calls, mut back) = (Vec::new(), Vec::new(), ScriptInputBack::default());
+            for _ in 0..60 {
+                c.world().logic_update().expect("a frame");
+                let events = c.world().take_client_events();
+                if attached {
+                    let b = c.take_script_input(&events, &mut mouse);
+                    back.reset_modes |= b.reset_modes;
+                    back.close_windows |= b.close_windows;
+                    calls.extend(events.iter().filter_map(|e| if let ClientEvent::ScriptInput(i) = e { Some(*i) } else { None }));
+                }
+                crcs.push(c.client.world.logic_crc(CRC_RECALC, None).expect("the CRC"));
+            }
+            (crcs, calls, back, mouse.visible || mouse.shown().is_some())
+        };
+        let (alone, ..) = run(false);
+        let (with, calls, back, shown) = run(true);
+        assert_eq!(alone, with, "the CRCs are unchanged with the client attached");
+        assert_eq!(calls.first(), Some(&C::CloseWindows));
+        assert_eq!(&calls[1..], [C::SetInputEnabled(false), C::MouseSetVisibility(false), C::DeselectAllDrawables, C::ClearAttackMoveToMode, C::SetWaypointMode(false), C::DeleteBuildTooltipLayout, C::LookAtResetModes]);
+        assert_eq!(back, ScriptInputBack { reset_modes: true, close_windows: true });
+        assert!(!shown, "doDisableInput hides the mouse");
+        eprintln!("#117 QUICKVICTORY: {} frames, last CRC {:08x}, calls {:?}", with.len(), with.last().copied().unwrap_or(0), calls);
+    }
+
     /// #116: a script's `DISABLE_INPUT` in the World blocks the player's click and ends a drag; `ENABLE_INPUT` gives the
     /// input back.
     ///
@@ -984,8 +1045,10 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         );
         assert!(!c.ui.input_enabled() && !mouse.visible && c.ui.select_count() == 0);
         // (#119) the LookAtResetModes call is handed on for the camera's translator
-        assert!(c.take_script_input(&[ClientEvent::ScriptInput(C::LookAtResetModes)], &mut mouse));
-        assert!(!c.take_script_input(&[], &mut mouse));
+        assert!(c.take_script_input(&[ClientEvent::ScriptInput(C::LookAtResetModes)], &mut mouse).reset_modes);
+        assert_eq!(c.take_script_input(&[], &mut mouse), ScriptInputBack::default());
+        // #117: `doQuickVictory`'s `closeWindows` comes back for the shell
+        assert_eq!(c.take_script_input(&[ClientEvent::ScriptInput(C::CloseWindows)], &mut mouse), ScriptInputBack { reset_modes: false, close_windows: true });
         assert!(!c.selection.drag_selecting && !c.ui.is_selecting());
         assert_eq!(c.client.sent, vec![MSG_DESTROY_SELECTED_GROUP]);
         client_frame(&mut c, &mut mouse);

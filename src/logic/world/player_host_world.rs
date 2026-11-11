@@ -160,7 +160,9 @@ pub struct PlayerHostCuts {
     /// `TheGameLogic->getRankLevelLimit()` (~~`isInSinglePlayerGame()`, `isInShellGame()` were here too~~ the world's game mode since
     /// integration batch I31).
     pub rank_level_limit: i32,
-    /// `TheInGameUI->isClientQuiet()`.
+    /// `TheInGameUI->isClientQuiet()`: ~~the flag~~ **Corrected 2026-11-10 (#117):** a stand-in only cleared
+    /// (`startNewGame`'s `setClientQuiet(FALSE)`); the client's InGameUI holds the flag and applies it to the radar edge
+    /// sounds (`crate::client::client_audio::ClientAudio::client_quiet`).
     pub client_quiet: bool,
     /// `TheNetwork != NULL`.
     pub network_present: bool,

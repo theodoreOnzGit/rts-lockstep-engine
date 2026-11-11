@@ -136,6 +136,9 @@ pub enum ScriptInputCall {
     DeleteBuildTooltipLayout,
     /// `TheLookAtTranslator->resetModes()`.
     LookAtResetModes,
+    /// GitHub #117: `TheGameLogic->closeWindows()` (`ScriptActions::doQuickVictory`, after `closeWindows(FALSE)`): the
+    /// client's windows closed (`client::quit_menu::close_windows`). ~~Until #117 a cut the client did not see.~~
+    CloseWindows,
 }
 
 /// GitHub #35: one of the logic's calls on `TheRadar` that is not an object's ([`ClientEvent::Radar`]).

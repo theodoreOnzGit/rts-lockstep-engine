@@ -40,6 +40,14 @@
 //!   leaves out the feedback events whose `tryEvent` refused ([`crate::client::radar::RadarFrame::refused`]) before they
 //!   reach the audio and EVA, and the radar's own sounds and EVA are played by [`ClientAudio::apply_radar_feedback`]
 //!   and [`ClientAudio::play_radar_event_sound`].
+//! - **`TheInGameUI->isClientQuiet()`** (#117) has one reader upstream, `Player::okToPlayRadarEdgeSound` (Player.cpp:3150:
+//!   not single-player defeated, not dead, **not quiet**, inside the logic's update, past frame 0), which decides whether
+//!   `addRadar`, `removeRadar`, `disableRadar` and `enableRadar` play the radar's online or offline sound. The flag is
+//!   the client's (the quit menu sets it when the player leaves, `GameLogic::startNewGame` clears it), so the logic
+//!   evaluates the other four terms (its own stand-in for the flag, `PlayerGlobals::client_quiet`, is always false) and
+//!   the client applies the fifth here: a `RadarSound` that arrives while [`ClientAudio::client_quiet`] is set is not
+//!   played. The terms have no side effects, so the split changes nothing but when the flag is read: when the client
+//!   takes the frame's events, after the logic frame, rather than inside it.
 
 use crate::client::audio_event::{AudioEventHost, AudioEventRts, AudioHandle};
 use crate::client::audio_info::{AudioTables, MiscAudio};
@@ -190,6 +198,9 @@ pub struct ClientAudio {
     pub superweapons: SuperweaponTimers,
     /// #55: how many of the client's `EVA_InsufficientFunds` requests (`WorldClient::eva_insufficient_funds`) EVA has taken.
     pub eva_insufficient_funds_taken: u32,
+    /// #117: `TheInGameUI->isClientQuiet()` (`m_clientQuiet`, the quit menu's: `crate::client::quit_menu::QuitMenu::client_quiet`),
+    /// which the owner copies here before the frame's events; it silences the radar edge sounds (see the module docs).
+    pub client_quiet: bool,
 }
 
 /// `MiscAudio`'s sound for an [`ObjectSound`] (`None`: not a misc sound).
@@ -228,6 +239,7 @@ impl ClientAudio {
             eva: Eva::new(),
             superweapons: SuperweaponTimers::default(),
             eva_insufficient_funds_taken: 0,
+            client_quiet: false,
         }
     }
 
@@ -291,7 +303,8 @@ impl ClientAudio {
             ClientEvent::Audio { event_name, object_id, player_index } => {
                 self.add(host, Self::named(event_name, *object_id, None, Some(*player_index)));
             }
-            ClientEvent::Player(PlayerClientEvent::RadarSound { online, player_index }) => {
+            // #117: `Player::okToPlayRadarEdgeSound`'s `!TheInGameUI->isClientQuiet()`, the one term the logic cannot read
+            ClientEvent::Player(PlayerClientEvent::RadarSound { online, player_index }) if !self.client_quiet => {
                 let n = if *online { &misc.radar_online_sound } else { &misc.radar_offline_sound };
                 self.add(host, Self::named(&n.event_name, 0, None, Some(*player_index)));
             }
@@ -485,5 +498,43 @@ impl ClientAudio {
         if let FxRequest::Sound { name, position } = r {
             self.add(host, Self::named(name, 0, position.as_ref(), None));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::audio_info::AudioTables;
+    use crate::client::game_audio::tests::LogDevice;
+    use crate::client::game_audio::AudioManager;
+
+    /// #117, predicted from Player.cpp's `okToPlayRadarEdgeSound` before the run: the radar's online sound the logic asks
+    /// for is played (`addAudioEvent` logs it) while the client is not quiet, and not at all while it is (the quit
+    /// menu's `setClientQuiet(TRUE)`); another sound (the money's) plays either way.
+    ///
+    /// Results (2026-11-11): held.
+    #[test]
+    fn the_radar_edge_sounds_are_silent_while_the_client_is_quiet() {
+        const INI: &[u8] = b"AudioEvent RadarOn\n Sounds = on\n Type = ui everyone\nEnd\nAudioEvent Cash\n Sounds = cash\n Type = ui everyone\nEnd\n\
+MiscAudio\n RadarNotifyOnlineSound = RadarOn\n MoneyDepositSound = Cash\nEnd\n";
+        let w = crate::logic::world::gate_scenario::gate_map_world();
+        let mut t = AudioTables::new();
+        t.load_text(b"a.ini", INI).expect("the audio INI");
+        let mut audio = ClientAudio::new(AudioManager::new(t));
+        let mut dev = LogDevice::default();
+        let files = |_: &[u8]| true;
+        let host = WorldAudioHost { world: &w, local_player_index: None, files: &files, language: b"English" };
+        let radar = ClientEvent::Player(PlayerClientEvent::RadarSound { online: true, player_index: 0 });
+        let money = ClientEvent::MoneySound { sound: MoneySound::Deposit, player_index: 0 };
+        let names = |a: &ClientAudio| a.log.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+        audio.apply_event(&host, &mut dev, &radar);
+        assert_eq!(names(&audio), [b"RadarOn".to_vec()]);
+        audio.client_quiet = true;
+        audio.apply_event(&host, &mut dev, &radar);
+        audio.apply_event(&host, &mut dev, &money);
+        assert_eq!(names(&audio), [b"RadarOn".to_vec(), b"Cash".to_vec()]);
+        audio.client_quiet = false;
+        audio.apply_event(&host, &mut dev, &radar);
+        assert_eq!(names(&audio).len(), 3);
     }
 }

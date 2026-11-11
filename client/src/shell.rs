@@ -520,6 +520,28 @@ impl ShellUi {
         rts_lockstep_engine::client::quit_menu::clear_game_data_windows(&mut self.wm, &mut self.gui);
     }
 
+    /// (#117) `TheGameLogic->closeWindows()` from a script (`ScriptActions::doQuickVictory`, which reaches the client as
+    /// `ScriptInputCall::CloseWindows`): `rts_lockstep_engine::client::quit_menu::close_windows`.
+    pub fn close_windows(&mut self) {
+        rts_lockstep_engine::client::quit_menu::close_windows(&mut self.wm, &mut self.gui);
+    }
+
+    /// (#117) `TheInGameUI->isClientQuiet()` (the quit menu's flag), for the audio's radar edge sounds.
+    pub fn client_quiet(&self) -> bool {
+        self.gui.quit_menu.client_quiet
+    }
+
+    /// (#117) The shell's calls on `TheMouse` since the last call, made on `mouse` in order: the main menu's
+    /// `setVisibility`, the quit menu's `setCursor(ARROW)`.
+    pub fn take_mouse_calls(&mut self, mouse: &mut rts_lockstep_engine::client::mouse::Mouse) {
+        for v in self.gui.main_menu.mouse_set_visibility.drain(..) {
+            mouse.set_visibility(v);
+        }
+        for c in self.gui.quit_menu.mouse_set_cursor.drain(..) {
+            mouse.set_cursor(c);
+        }
+    }
+
     /// (#109) The control bar's quit menu call ([`crate::ui::QuitMenuCall`], ControlBarCallback.cpp's `ToggleQuitMenu`
     /// on the options button, `HideQuitMenu` on the general's and the idle worker's), with what the menu reads of the
     /// game when it toggles.

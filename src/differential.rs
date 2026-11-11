@@ -3588,4 +3588,9 @@ extern "C" {
     // GitHub #119: LookAtTranslator (differential/wrap_look_at.cpp, which documents the steps' and the records' words),
     // LookAtXlat.cpp verbatim on a recorder of the tactical view's calls.
     pub fn ref_look_at_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #117: TheMouse's cursor (differential/wrap_mouse.cpp, which documents the setup's, the steps' and the
+    // records' words): Mouse.cpp's, Win32Mouse.cpp's and W3DMouse.cpp's cursor functions and InGameUI's setMouseCursor
+    // and setScrolling, verbatim.
+    pub fn ref_mouse_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

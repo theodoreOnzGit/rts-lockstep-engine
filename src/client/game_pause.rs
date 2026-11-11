@@ -43,8 +43,10 @@
 //!
 //! - `syncTime` advances by the wall clock's elapsed milliseconds while not frozen, not by a constant
 //!   `TheW3DFrameLengthInMsec` a draw (the client's draw clock was already the wall clock).
-//! - `TheMouse`: the client draws no cursor of its own (the system's arrow is always shown), so [`ClientMouse`] keeps
-//!   the visibility and the cursor `setGamePaused` sets, for its memory and its tests, and nothing is drawn from it.
+//! - ~~`TheMouse`: the client draws no cursor of its own (the system's arrow is always shown), so [`ClientMouse`] keeps
+//!   the visibility and the cursor `setGamePaused` sets, for its memory and its tests, and nothing is drawn from it.~~
+//!   **Corrected 2026-11-10 (#117):** [`ClientMouse`] is the translated `TheMouse` ([`crate::client::mouse::Mouse`]):
+//!   `setVisibility` and `setCursor(ARROW)` are its own, and the client shows the cursor it decides.
 //! - `TheInGameUI->setInputEnabled` sets the client's InGameUI flag; ~~the client's translators do not read it yet
 //!   (upstream's `SelectionTranslator`, `CommandTranslator`, `LookAtTranslator` and `WindowTranslator` do): while the
 //!   quit menu is up the app keeps the pointer from them instead.~~ **Corrected 2026-11-10 (#116):** the client's
@@ -66,20 +68,9 @@ use crate::client::game_audio::{AudioDevice, AudioManager};
 use crate::client::in_game_ui::InGameUiSelection;
 use crate::logic::world::game_logic_update::{set_game_paused, GameLogicState, GamePauseHost};
 
-/// `TheMouse`'s state `setGamePaused` reads and sets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClientMouse {
-    /// `getVisibility()` / `setVisibility(on)`.
-    pub visible: bool,
-    /// Whether `setCursor(Mouse::ARROW)` was the last cursor set.
-    pub arrow: bool,
-}
-
-impl Default for ClientMouse {
-    fn default() -> Self {
-        ClientMouse { visible: true, arrow: false }
-    }
-}
+/// ~~`TheMouse`'s state `setGamePaused` reads and sets (`visible`, and whether the arrow was the last cursor set).~~
+/// **Corrected 2026-11-10 (#117):** `TheMouse` itself, translated in [`crate::client::mouse`].
+pub type ClientMouse = crate::client::mouse::Mouse;
 
 /// The client's pause: `setGamePaused`'s members, the mouse, and the drawables' clock (`syncTime`).
 #[derive(Clone, Debug)]
@@ -112,13 +103,13 @@ impl<D: AudioDevice> GamePauseHost for PauseTarget<'_, D> {
         self.ui.set_input_enabled(on);
     }
     fn u_mouse_visible(&self) -> bool {
-        self.mouse.visible
+        self.mouse.get_visibility()
     }
     fn u_mouse_set_visible(&mut self, on: bool) {
-        self.mouse.visible = on;
+        self.mouse.set_visibility(on);
     }
     fn u_mouse_set_arrow_cursor(&mut self) {
-        self.mouse.arrow = true;
+        self.mouse.set_cursor(crate::client::mouse::cursor::ARROW);
     }
     fn u_audio_pause(&mut self, affect: i32) {
         if let Some((m, d)) = self.audio.as_mut() {
@@ -135,7 +126,7 @@ impl<D: AudioDevice> GamePauseHost for PauseTarget<'_, D> {
 impl ClientPause {
     /// As `GameLogic::GameLogic()` leaves the members (not paused, input and mouse remembered as on).
     pub fn new() -> Self {
-        ClientPause { logic: GameLogicState::new(), mouse: ClientMouse::default(), clock: None }
+        ClientPause { logic: GameLogicState::new(), mouse: ClientMouse::new(), clock: None }
     }
 
     /// `isGamePaused()`.
@@ -225,6 +216,7 @@ mod tests {
     #[test]
     fn the_pause_reaches_the_input_the_mouse_the_audio_and_the_time() {
         let mut p = ClientPause::new();
+        p.mouse.set_visibility(true); // (#117: the translated mouse starts hidden, as `Mouse::Mouse` leaves it)
         let mut ui = InGameUiSelection::new();
         let mut m = AudioManager::new(AudioTables::default());
         let mut d = Paused::default();
@@ -232,7 +224,7 @@ mod tests {
         m.requests.push(AudioRequest { request: RequestType::Play, pending: Err(3), requires_check_for_sample: false });
         assert!(p.set_game_paused(false, true, true, &mut ui, Some((&mut m, &mut d))));
         assert!(!ui.input_enabled());
-        assert_eq!(p.mouse, ClientMouse { visible: true, arrow: true });
+        assert!(p.mouse.visible && p.mouse.current_cursor == crate::client::mouse::cursor::ARROW);
         assert_eq!(d.0, [(7, true)]);
         assert!(m.requests.is_empty());
         assert!(p.set_game_paused(true, true, true, &mut ui, Some((&mut m, &mut d))));
