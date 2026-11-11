@@ -72,6 +72,9 @@ use crate::logic::world::module_call::{ModuleCall, ModuleReply};
 /// What the view knows, set by the client before a translator runs.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ClientView {
+    /// #131: `TheMouse->m_dragTolerance` and `m_dragToleranceMS` from `Mouse.ini` once the client read it; `None` until
+    /// then (the demo has no game files): [`FALLBACK_DRAG_TOLERANCE`].
+    pub mouse_drag_tolerance: Option<(u32, u32)>,
     /// `TheTacticalView->iterateDrawablesInRegion` over the whole view: the objects on screen.
     pub on_screen: Vec<ObjectId>,
     /// `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)` at the last double click.
@@ -139,6 +142,9 @@ pub struct WorldClient {
     pub look_at_points: Vec<Coord3D>,
     /// #125: `MSG_META_ALL_CHEER`'s `m_allCheerSound` plays.
     pub all_cheers: u32,
+    /// #131: `TheInGameUI->resetCamera()` calls (`MSG_META_CAMERA_RESET`), for the application's view to make
+    /// (`in_game_ui::reset_camera`) and clear.
+    pub camera_resets: u32,
     /// `EVA_InsufficientFunds` plays.
     pub eva_insufficient_funds: u32,
     /// #51: the unit voices the translators played (`addAudioEvent`), for the client's audio to take.
@@ -192,6 +198,7 @@ impl WorldClient {
             looks: Vec::new(),
             look_at_points: Vec::new(),
             all_cheers: 0,
+            camera_resets: 0,
             eva_insufficient_funds: 0,
             voices: Vec::new(),
             double_click_attack_move_orders_given: 0,
@@ -528,6 +535,24 @@ impl CommandXlatHost for WorldClient {
     }
 }
 
+impl crate::client::command_xlat::MouseClickHost for WorldClient {
+    fn mouse_is_click(&self, anchor: &ICoord2D, dest: &ICoord2D, previous_mouse_click: u32, current_mouse_click: u32) -> bool {
+        let (tol, tol_ms) = self.drag_tolerance();
+        crate::client::mouse::is_click(anchor, dest, previous_mouse_click, current_mouse_click, tol, tol_ms)
+    }
+}
+
+/// #131: the drag tolerances the client uses until `Mouse.ini` gives the game's (new, the client's own): 4 pixels (the
+/// click tolerance the client used before #131) and no time limit (a slow click is still a click).
+pub const FALLBACK_DRAG_TOLERANCE: (u32, u32) = (4, u32::MAX);
+
+impl WorldClient {
+    /// #131: `TheMouse`'s `m_dragTolerance` and `m_dragToleranceMS` ([`ClientView::mouse_drag_tolerance`]).
+    pub fn drag_tolerance(&self) -> (u32, u32) {
+        self.view.mouse_drag_tolerance.unwrap_or(FALLBACK_DRAG_TOLERANCE)
+    }
+}
+
 /// #125: the meta keys' reads. The questions only read the World: `isMobile`, `isEffectivelyDead`, the kinds, the
 /// player's objects in `iterateObjects`' order, `calcCostToBuild` (the build assistant's arithmetic), the game mode, the
 /// player's activity and its beacons (`Player::countObjectsByThingTemplate`); `tests` checks that asking them leaves the
@@ -594,6 +619,12 @@ impl crate::client::command_xlat_meta::CommandMetaHost for WorldClient {
     }
     fn play_all_cheer_sound(&mut self) {
         self.all_cheers += 1;
+    }
+}
+
+impl crate::client::command_xlat_meta::CameraMetaHost for WorldClient {
+    fn reset_camera(&mut self) {
+        self.camera_resets += 1;
     }
 }
 
@@ -1844,7 +1875,7 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
         let frames = 300;
         let plain = run_gate_scenario(frames);
         let mut c = WorldClient::new(gate_world(), 1);
-        let (cmd, mut ui) = (CommandTranslator { team_exists: true }, InGameUiSelection::new());
+        let (cmd, mut ui) = (CommandTranslator { team_exists: true, ..Default::default() }, InGameUiSelection::new());
         let ground = [(60.0, 60.0), (200.0, 200.0), (360.0, 100.0), (390.0, 390.0)];
         let mut asked = 0u64;
         let mut crcs = Vec::new();

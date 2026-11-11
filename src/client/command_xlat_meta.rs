@@ -24,7 +24,8 @@
 //! GitHub #125: the command translator's meta-key cases, the ones a key of `CommandMap.ini` makes through
 //! [`crate::client::meta_event`]: select the next or previous unit or worker, the hero, every unit (or aircraft), the units
 //! like the selected ones; look at the command center or the last radar event; scatter, stop, make a formation; the beacon;
-//! the held modes (force move, waypoints, prefer selection, force attack), attack-move and camera tracking; the cheer.
+//! the held modes (force move, waypoints, prefer selection, force attack), attack-move and camera tracking; the cheer;
+//! **(#131)** the keyboard camera's rotate and zoom flags and its reset.
 //!
 //! # As upstream reads it
 //!
@@ -52,6 +53,10 @@
 //! - `MSG_META_PLACE_BEACON` (3087): in a multiplayer game, not a replay, with the local player active (and a
 //!   multiplayer game info or `m_netMinPlayers == 0`), under the beacon cap, the `Command_PlaceBeacon` button becomes the
 //!   pending GUI command; `MSG_META_REMOVE_BEACON` (3106): `MSG_REMOVE_BEACON` in a multiplayer game, not a replay. Destroyed.
+//! - **(#131)** `MSG_META_BEGIN/END_CAMERA_ROTATE_LEFT`, `ROTATE_RIGHT`, `ZOOM_IN`, `ZOOM_OUT` (3205-3236): the InGameUI's
+//!   keyboard camera flags, which `InGameUI::update` turns and zooms the view by
+//!   ([`InGameUiSelection::update_keyboard_camera`]); `MSG_META_CAMERA_RESET` (3237): `TheInGameUI->resetCamera()`
+//!   ([`CameraMetaHost::reset_camera`]). Kept. [`CommandTranslator::camera_meta`].
 //! - `MSG_META_TOGGLE_ATTACKMOVE` (3201), `TOGGLE_CAMERA_TRACKING_DRAWABLE` (3240), `BEGIN/END_FORCEMOVE` (3448),
 //!   `BEGIN/END_WAYPOINTS`, `BEGIN/END_PREFER_SELECTION`, `BEGIN/END_FORCEATTACK` (3460-3491): InGameUI's flags; kept.
 //! - `MSG_META_ALL_CHEER` (3493): in a multiplayer game, the misc audio's `AllCheerSound` and `MSG_DO_CHEER`, destroyed;
@@ -116,7 +121,7 @@ use crate::common::thing_template::ThingTemplateAudioType;
 use crate::logic::modules::plant;
 
 /// What the meta cases ask beyond [`CommandXlatHost`].
-pub trait CommandMetaHost: CommandXlatHost {
+pub trait CommandMetaHost: CommandXlatHost + CameraMetaHost {
     /// `obj->isMobile()`.
     fn object_is_mobile(&self, obj: ObjectId) -> bool;
     /// `obj->isEffectivelyDead()`.
@@ -149,6 +154,13 @@ pub trait CommandMetaHost: CommandXlatHost {
     fn place_beacon_button(&mut self) -> Option<GuiButton>;
     /// `TheAudio->addAudioEvent(&TheAudio->getMiscAudio()->m_allCheerSound)`.
     fn play_all_cheer_sound(&mut self);
+}
+
+/// #131: what the camera's meta cases ask beyond the InGameUI's flags.
+pub trait CameraMetaHost {
+    /// `TheInGameUI->resetCamera()`: the tactical view's ([`crate::client::in_game_ui::reset_camera`]), which the host
+    /// owns.
+    fn reset_camera(&mut self);
 }
 
 /// `kindOfUnitSelection(test, data)`: selects `test` when its object is of every `must_set` kind and none of `must_clear`,
@@ -319,10 +331,52 @@ fn facts(obj: ObjectId, h: &impl CommandMetaHost) -> Facts {
 }
 
 impl CommandTranslator {
+    /// #131: the keyboard camera's cases of `translateGameMessage` (CommandXlat.cpp:3205-3239), after the input gate:
+    /// `MSG_META_BEGIN/END_CAMERA_ROTATE_LEFT`, `ROTATE_RIGHT`, `ZOOM_IN` and `ZOOM_OUT` set and clear the InGameUI's
+    /// flags (the `DEBUG_ASSERTCRASH`es that a flag was not already so are debug only); `MSG_META_CAMERA_RESET` asks
+    /// `TheInGameUI->resetCamera()`. All kept. `None` for another message.
+    pub fn camera_meta(t: MessageType, ui: &mut InGameUiSelection, h: &mut impl CameraMetaHost) -> Option<Disposition> {
+        use Disposition::{Destroy, Keep};
+        let camera = [
+            MSG_META_BEGIN_CAMERA_ROTATE_LEFT,
+            MSG_META_END_CAMERA_ROTATE_LEFT,
+            MSG_META_BEGIN_CAMERA_ROTATE_RIGHT,
+            MSG_META_END_CAMERA_ROTATE_RIGHT,
+            MSG_META_BEGIN_CAMERA_ZOOM_IN,
+            MSG_META_END_CAMERA_ZOOM_IN,
+            MSG_META_BEGIN_CAMERA_ZOOM_OUT,
+            MSG_META_END_CAMERA_ZOOM_OUT,
+            MSG_META_CAMERA_RESET,
+        ];
+        if !camera.contains(&t) {
+            return None;
+        }
+        if input_disabled_destroys(t, ui.input_enabled()) {
+            return Some(Destroy);
+        }
+        match t {
+            MSG_META_BEGIN_CAMERA_ROTATE_LEFT | MSG_META_END_CAMERA_ROTATE_LEFT => {
+                if plant(9201) && t == MSG_META_END_CAMERA_ROTATE_LEFT {
+                    ui.set_camera_rotate_right(false);
+                } else {
+                    ui.set_camera_rotate_left(t == MSG_META_BEGIN_CAMERA_ROTATE_LEFT);
+                }
+            }
+            MSG_META_BEGIN_CAMERA_ROTATE_RIGHT | MSG_META_END_CAMERA_ROTATE_RIGHT => ui.set_camera_rotate_right(t == MSG_META_BEGIN_CAMERA_ROTATE_RIGHT),
+            MSG_META_BEGIN_CAMERA_ZOOM_IN | MSG_META_END_CAMERA_ZOOM_IN => ui.set_camera_zoom_in(t == MSG_META_BEGIN_CAMERA_ZOOM_IN),
+            MSG_META_BEGIN_CAMERA_ZOOM_OUT | MSG_META_END_CAMERA_ZOOM_OUT => ui.set_camera_zoom_out(t == MSG_META_BEGIN_CAMERA_ZOOM_OUT),
+            _ => h.reset_camera(),
+        }
+        Some(Keep)
+    }
+
     /// GitHub #125: `translateGameMessage` for the meta messages of the module docs (after its input gate): the
     /// disposition, or `None` for a message type this has no case for.
     pub fn meta(&self, t: MessageType, ui: &mut InGameUiSelection, h: &mut impl CommandMetaHost) -> Option<Disposition> {
         use Disposition::{Destroy, Keep};
+        if let Some(d) = Self::camera_meta(t, ui, h) {
+            return Some(d);
+        }
         let handled = [
             MSG_META_SELECT_MATCHING_UNITS,
             MSG_META_SELECT_NEXT_UNIT,
@@ -796,6 +850,9 @@ pub(crate) mod tests {
         fn play_all_cheer_sound(&mut self) {
             self.meta.cheers += 1;
         }
+    }
+    impl CameraMetaHost for Host {
+        fn reset_camera(&mut self) {}
     }
 
     /// Predicted before the run: with drawables 1..=5 (all mine, 3 immobile), nothing selected, the next unit is the

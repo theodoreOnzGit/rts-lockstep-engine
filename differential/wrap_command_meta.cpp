@@ -21,7 +21,8 @@
 **   meta_header.inc        MetaEvent.h, `enum MappableKeyCategories` to `class MetaMapRec` (the key enums and names);
 **   meta_names.inc         MetaEvent.cpp, GameMessageMetaTypeNames;
 **   meta_translate.inc     MetaEvent.cpp, MetaEventTranslator::translateGameMessage;
-**   meta_map.inc           MetaEvent.cpp, MetaMap::findGameMessageMetaType and getMetaMapRec.
+**   meta_map.inc           MetaEvent.cpp, MetaMap::findGameMessageMetaType and getMetaMapRec;
+**   meta_ctor.inc          (#131) MetaEvent.cpp, MetaEventTranslator::MetaEventTranslator (to the destructor).
 ** They are compiled inside namespace cmx on stand-ins for the classes and singletons they name; the messages are the real
 ** GameMessage of the message stream build (wrap_message_stream.cpp), under its names.
 **
@@ -37,7 +38,12 @@
 **     active, replay, m_lastModState, m_lastKeyDown, m_TiVOFastMode, record count, then per record (meta, key,
 **     transition, modifiers, usable in) made with getMetaMapRec. out: disposition; -1; the appended metas; -2;
 **     m_lastModState, m_lastKeyDown, m_TiVOFastMode, messages; -3; the records' metas in list order.
-**   kind 2: in: i. out: GameMessageMetaTypeNames[i]'s value and name bytes (none past the end). */
+**   kind 2: in: i. out: GameMessageMetaTypeNames[i]'s value and name bytes (none past the end).
+**   kind 3 (#131): a sequence of raw mouse messages through one MetaEventTranslator (constructed by its constructor in
+**     zeroed storage: the constructor leaves m_mouseDownPosition unset, which the port starts at 0). in: TheMouse's
+**     m_dragTolerance, then steps of 4 words: type, x, y, the modifier keys (argument 1). out: per step the
+**     disposition, then per message inserted (type, the pixel region's lo.x, lo.y, hi.x, hi.y, the integer argument),
+**     -1, the three m_nextUpShouldCreateDoubleClick, the three m_mouseDownPosition (x, y), -2. */
 #define GameMessage MsTestGameMessage
 #define GameMessageArgument MsTestGameMessageArgument
 #define GameMessageList MsTestGameMessageList
@@ -55,6 +61,7 @@
 #include <list>
 #include <set>
 #include <vector>
+#include <new>
 #define PI 3.14159265359f
 #include "PreRTS.h"
 #include "Common/AsciiString.h"
@@ -423,7 +430,8 @@ Shell g_shell;
 Shell *TheShell = &g_shell;
 UnsignedInt g_clientFrame;
 class GameClientFrame { public: UnsignedInt getFrame() { return g_clientFrame; } };
-struct MouseStandIn { Int m_dragTolerance; };
+/* (#131: UnsignedInt, Mouse.h's type, which the release's `abs(...) < m_dragTolerance` compares unsigned) */
+struct MouseStandIn { UnsignedInt m_dragTolerance; };
 MouseStandIn g_mouse;
 MouseStandIn *TheMouse = &g_mouse;
 enum { NUM_MOUSE_BUTTONS = 3 };
@@ -435,6 +443,7 @@ public:
 	Int m_lastModState;
 	Bool m_nextUpShouldCreateDoubleClick[NUM_MOUSE_BUTTONS];
 	ICoord2D m_mouseDownPosition[NUM_MOUSE_BUTTONS];
+	MetaEventTranslator();
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg);
 };
 #define stricmp strcasecmp
@@ -444,6 +453,7 @@ namespace metaclient { GameClientFrame g_frameClient; }
 #include "meta_names.inc"
 #include "meta_translate.inc"
 #include "meta_map.inc"
+#include "meta_ctor.inc"
 #undef TheGameClient
 #undef newInstance
 
@@ -613,6 +623,36 @@ extern "C" int ref_command_meta_case(int kind, const int *in, int nin, int *out,
 		g_out.push_back((Int)(g_uiMsgs.size() / 2));
 		g_out.push_back(-3);
 		for (MetaMapRec *m = g_metaMap.m_metaMaps; m; m = m->m_next) g_out.push_back((Int)m->m_meta);
+	} else if (kind == 3) {
+		g_stream.m_msgs.clear();
+		while (g_metaMap.m_metaMaps) { MetaMapRec *n = g_metaMap.m_metaMaps->m_next; delete g_metaMap.m_metaMaps; g_metaMap.m_metaMaps = n; }
+		g_mouse.m_dragTolerance = (UnsignedInt)in[0];
+		static unsigned char storage[sizeof(MetaEventTranslator)];
+		memset(storage, 0, sizeof storage);
+		MetaEventTranslator *x = new (storage) MetaEventTranslator;
+		for (Int p = 1; p + 3 < nin; p += 4) {
+			GameMessage *msg = mkMsg((GameMessage::Type)in[p]);
+			ICoord2D px; px.x = in[p + 1]; px.y = in[p + 2];
+			msg->appendPixelArgument(px);
+			msg->appendIntegerArgument(in[p + 3]);
+			msg->appendIntegerArgument(0);
+			Int disp = (Int)x->translateGameMessage(msg);
+			msg->deleteInstance();
+			g_out.push_back(disp);
+			for (size_t i = 0; i < g_stream.m_msgs.size(); ++i) {
+				GameMessage *m = g_stream.m_msgs[i];
+				const IRegion2D &r = m->getArgument(0)->pixelRegion;
+				Int w[6] = { (Int)m->getType(), r.lo.x, r.lo.y, r.hi.x, r.hi.y, m->getArgument(1)->integer };
+				g_out.insert(g_out.end(), w, w + 6);
+				m->deleteInstance();
+			}
+			g_stream.m_msgs.clear();
+			g_out.push_back(-1);
+			for (Int b = 0; b < 3; ++b) g_out.push_back((Int)x->m_nextUpShouldCreateDoubleClick[b]);
+			for (Int b = 0; b < 3; ++b) { g_out.push_back(x->m_mouseDownPosition[b].x); g_out.push_back(x->m_mouseDownPosition[b].y); }
+			g_out.push_back(-2);
+		}
+		x->~MetaEventTranslator();
 	} else if (kind == 2) {
 		Int n = 0;
 		while (GameMessageMetaTypeNames[n].name) ++n;

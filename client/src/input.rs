@@ -20,8 +20,13 @@ use rts_lockstep_engine::client::script_input::apply_script_input;
 use rts_lockstep_engine::client::selection_xlat::{Disposition, SelectionTranslator};
 use rts_lockstep_engine::client::window_manager::WinInputReturnCode;
 use rts_lockstep_engine::client::window_xlat::{translate_game_message as translate_window_message, MouseData, RawMessage, WindowXlatHost};
-use rts_lockstep_engine::client::meta_event::{KeyContext, KeyboardModifiers, MetaEventTranslator, MetaMap};
-use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP, MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, MSG_RAW_MOUSE_POSITION};
+use rts_lockstep_engine::client::meta_event::{KeyContext, KeyboardModifiers, MetaEventTranslator, MetaMap, MouseClick};
+use rts_lockstep_engine::client::hot_key::{HotKeyHost, HotKeyManager, HotKeyTranslator};
+use rts_lockstep_engine::client::keyboard::KeyNames;
+use rts_lockstep_engine::common::message_types::{
+    MSG_MOUSE_LEFT_DOUBLE_CLICK, MSG_MOUSE_RIGHT_CLICK, MSG_MOUSE_RIGHT_DOUBLE_CLICK, MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, MSG_RAW_MOUSE_LEFT_BUTTON_UP,
+    MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, MSG_RAW_MOUSE_POSITION, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, MSG_RAW_MOUSE_RIGHT_BUTTON_UP,
+};
 use rts_lockstep_engine::client::world_host::WorldClient;
 use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
 use rts_lockstep_engine::client::radar::{RadarFeedback, RadarFrame};
@@ -32,7 +37,10 @@ use rts_lockstep_engine::common::message_stream::MessageType;
 use rts_lockstep_engine::logic::world::game_logic::World;
 
 /// How far, in pixels, the pointer may move between press and release for a click rather than a drag (upstream's
-/// `Mouse::isClick` uses the drag tolerance from `Mouse.ini`, 4 by default in the shipped options).
+/// `Mouse::isClick` uses the drag tolerance from `Mouse.ini`, 4 by default in the shipped options). **(#131)** The
+/// client's own figure (`Mouse.ini` is not checked here): the selection translator's drag start and the application's
+/// box; the clicks' point test is `MetaEventTranslator`'s now, with `TheMouse`'s tolerance
+/// (`WorldClient::drag_tolerance`).
 pub const CLICK_TOLERANCE: i32 = 4;
 
 /// The client's state: the World host and InGameUI, with the translators that act on them.
@@ -52,9 +60,11 @@ pub struct Controls {
     /// ([`crate::camera::Camera`]) last left them, for the window translator.
     pub view_mouse_locked: bool,
     pub ui_scrolling: bool,
-    /// #124: `MetaEventTranslator::m_nextUpShouldCreateDoubleClick[0]`: the left button's press was a double click
-    /// (`MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK`), so its release makes `MSG_MOUSE_LEFT_DOUBLE_CLICK`, not `MSG_MOUSE_LEFT_CLICK`.
-    pub next_up_double_click: bool,
+    /// ~~#124: `MetaEventTranslator::m_nextUpShouldCreateDoubleClick[0]`: the left button's press was a double click
+    /// (`MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK`), so its release makes `MSG_MOUSE_LEFT_DOUBLE_CLICK`, not `MSG_MOUSE_LEFT_CLICK`.~~
+    /// **Corrected 2026-11-11 (#131):** removed; `MetaEventTranslator`'s mouse part is translated
+    /// (`rts_lockstep_engine::client::meta_event::MetaEventTranslator::translate_mouse`), in [`Controls::meta_event`],
+    /// for the three buttons.
     /// #124: `KEY_STATE_ALT` in the click's modifiers, as the application last set it (the double click selects across the
     /// map with it).
     pub alt_held: bool,
@@ -68,6 +78,47 @@ pub struct Controls {
     pub client_frame: u32,
     /// #125: whether the application has tried to read the CommandMap for this game.
     pub meta_map_tried: bool,
+    /// #131: `TheKeyboard`'s printable key names (US English, the client's language and layout).
+    pub key_names: KeyNames,
+    /// #131: `TheHotKeyManager`, refilled from the control bar each frame ([`Controls::set_bar_hot_keys`]).
+    pub hot_keys: HotKeyManager,
+    /// #131: the command windows the hot keys name, by slot: hidden, enabled, and the World's button it holds.
+    pub hot_key_windows: Vec<Option<HotKeyWindow>>,
+    /// #131: the sounds the hot keys asked for (`GUIClick`, `GUIClickDisabled`), for the application to take.
+    pub gui_sounds: Vec<Vec<u8>>,
+}
+
+/// #131: a command window as `executeHotKey` sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HotKeyWindow {
+    /// `WIN_STATUS_HIDDEN` (the window's own bit).
+    pub hidden: bool,
+    /// `WIN_STATUS_ENABLED`.
+    pub enabled: bool,
+    /// The button's place in the World's list (`GadgetButtonGetData`), pressed on `GBM_SELECTED`.
+    pub button: usize,
+}
+
+/// #131: `executeHotKey`'s window manager and audio, on the client's command windows.
+struct BarHotKeys<'a> {
+    windows: &'a [Option<HotKeyWindow>],
+    selected: Option<usize>,
+    sounds: &'a mut Vec<Vec<u8>>,
+}
+
+impl HotKeyHost for BarHotKeys<'_> {
+    fn win_hidden(&self, win: usize) -> bool {
+        self.windows.get(win).copied().flatten().is_none_or(|w| w.hidden)
+    }
+    fn win_enabled(&self, win: usize) -> bool {
+        self.windows.get(win).copied().flatten().is_some_and(|w| w.enabled)
+    }
+    fn send_selected(&mut self, win: usize) {
+        self.selected = Some(win);
+    }
+    fn add_audio_event(&mut self, name: &[u8]) {
+        self.sounds.push(name.to_vec());
+    }
 }
 
 /// #124: the operating system's double click, which upstream gets from Windows (`WM_LBUTTONDBLCLK` in
@@ -170,13 +221,16 @@ impl Controls {
             radar: ClientRadar::default(),
             view_mouse_locked: false,
             ui_scrolling: false,
-            next_up_double_click: false,
             alt_held: false,
             meta_map: MetaMap::new(),
             meta_event: MetaEventTranslator::default(),
             keyboard_mods: KeyboardModifiers::default(),
             client_frame: 0,
             meta_map_tried: false,
+            key_names: KeyNames::init_key_names(rts_lockstep_engine::client::keyboard::language_id::US, rts_lockstep_engine::client::keyboard::LAYOUT_US_ENGLISH),
+            hot_keys: HotKeyManager::new(),
+            hot_key_windows: Vec::new(),
+            gui_sounds: Vec::new(),
         };
         // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
         c.radar.new_map(&mut c.client.world);
@@ -238,9 +292,11 @@ impl Controls {
     /// #125: a key of the keyboard (its DirectInput code; `repeat` the window system's auto-repeat) that the game's own
     /// windows did not use, through the translators in the stream's order: `WindowTranslator` (10: with the input off it
     /// takes the key, an Escape release apart), `MetaEventTranslator` (20: the CommandMap's binding, with the keyboard's
-    /// modifiers, [`MetaEventTranslator::translate_key`]), then each meta message it makes through [`Controls::meta`].
-    /// Whether the key was used up (the camera's keys then leave it alone, as upstream's `LookAtTranslator` (60) never
-    /// sees a destroyed key). On a phone no key comes: nothing changes.
+    /// modifiers, [`MetaEventTranslator::translate_key`]), then each meta message it makes through [`Controls::meta`];
+    /// **(#131)** then `HotKeyTranslator` (25): a release without modifiers whose key names a control bar button's hot key
+    /// presses that button ([`Controls::set_bar_hot_keys`]). Whether the key was used up (the camera's keys then leave it
+    /// alone, as upstream's `LookAtTranslator` (60) never sees a destroyed key). On a phone no key comes: nothing
+    /// changes.
     pub fn key(&mut self, dik: u8, down: bool, repeat: bool) -> bool {
         use rts_lockstep_engine::common::message_types::{MSG_RAW_KEY_DOWN, MSG_RAW_KEY_UP};
         let state = self.keyboard_mods.key_state(dik, down, repeat);
@@ -257,7 +313,92 @@ impl Controls {
         for m in r.metas {
             self.meta(m);
         }
-        r.disposition == Some(Disposition::Destroy)
+        if r.disposition == Some(Disposition::Destroy) {
+            return true;
+        }
+        // (#131) `HotKeyTranslator` (25): a release presses the control bar button whose hot key it names
+        let mut h = BarHotKeys { windows: &self.hot_key_windows, selected: None, sounds: &mut self.gui_sounds };
+        let d = HotKeyTranslator.translate_game_message(t, i32::from(dik), state, &self.key_names, &self.hot_keys, &mut h);
+        if let Some(win) = h.selected {
+            // `GBM_SELECTED` to the command window's parent: `ControlBarSystem` presses its button
+            if let Some(b) = self.hot_key_windows.get(win).copied().flatten().and_then(|w| rts_lockstep_engine::client::command_world::gui_button(&self.client.world, w.button)) {
+                self.press(&b);
+            }
+        }
+        d == Disposition::Destroy
+    }
+
+    /// #131: the control bar's hot keys for this frame: `switchToContext`'s `TheHotKeyManager->reset()`, then
+    /// `setControlCommand`'s `addHotKey` for each `(slot, key)` in order
+    /// (`rts_lockstep_engine::client::control_bar_command::populate_command_with_hot_keys`), and each slot's window as
+    /// the bar shows it (`None`: hidden).
+    pub fn set_bar_hot_keys(&mut self, hot_keys: &[(usize, Vec<u8>)], windows: Vec<Option<HotKeyWindow>>) {
+        self.hot_keys.reset();
+        for (slot, key) in hot_keys {
+            self.hot_keys.add_hot_key(*slot, key);
+        }
+        self.hot_key_windows = windows;
+    }
+
+    /// #131: `MetaEventTranslator` (20) on a raw mouse message at `pixel` (after the window translator): the click or
+    /// double click a release inserts, with the keyboard's modifier bits and `TheMouse`'s drag tolerance.
+    pub fn meta_mouse(&mut self, t: MessageType, pixel: ICoord2D) -> Option<MouseClick> {
+        let tolerance = self.client.drag_tolerance().0;
+        self.meta_event.translate_mouse(t, pixel, self.keyboard_mods.bits, tolerance)
+    }
+
+    /// #131: the right button pressed (`MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN`) at `pixel`, `time_ms` the mouse's time: after the
+    /// window translator, `MetaEventTranslator` keeps the press, and (after the camera's `LookAtTranslator`, which the
+    /// application runs) `CommandTranslator` keeps its place and time (CommandXlat.cpp:3628). `double` is the operating
+    /// system's double click (`MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK`, which the command translator has no case for).
+    pub fn right_press(&mut self, pixel: ICoord2D, time_ms: u32, double: bool) {
+        use rts_lockstep_engine::common::message_types::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK;
+        let t = if double { MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK } else { MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN };
+        if !self.window_keeps(t, pixel) {
+            return;
+        }
+        self.meta_mouse(t, pixel);
+        if !double {
+            self.commands.right_button_down(pixel, time_ms, &self.ui);
+        }
+    }
+
+    /// #131: the right button released at `pixel`, `time_ms`: `CommandTranslator`'s bookkeeping (CommandXlat.cpp:3640: a
+    /// click cancels a building's placement), then the click `MetaEventTranslator` inserted: `MSG_MOUSE_RIGHT_CLICK` or
+    /// `MSG_MOUSE_RIGHT_DOUBLE_CLICK` through the command translator ([`CommandTranslator::click`], `double_click`; they act
+    /// only in alternate mouse mode). `picked` and `ground` are the view's under the release. Whether the click was used.
+    pub fn right_release(&mut self, pixel: ICoord2D, time_ms: u32, picked: Option<ObjectId>, ground: Coord3D) -> bool {
+        if !self.window_keeps(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, pixel) {
+            return false;
+        }
+        let click = self.meta_mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, pixel);
+        self.client.sync_modes(&self.ui);
+        self.commands.right_button_up(pixel, time_ms, &mut self.ui, &mut self.client);
+        let Some(click) = click else { return false };
+        self.client.sync_modes(&self.ui);
+        if click.t == MSG_MOUSE_RIGHT_DOUBLE_CLICK {
+            self.commands.double_click(true, click.is_point(), &ground, picked, &mut self.ui, &mut self.client)
+        } else {
+            debug_assert_eq!(click.t, MSG_MOUSE_RIGHT_CLICK);
+            self.commands.click(true, click.is_point(), &ground, picked, &mut self.ui, &mut self.client)
+        }
+    }
+
+    /// #131: the middle button's raw press, double press and release through `MetaEventTranslator` (its click is made,
+    /// but no translator after it has a case for `MSG_MOUSE_MIDDLE_CLICK` or its double click: the camera's
+    /// `LookAtTranslator` takes the raw messages, which the application gives it).
+    pub fn middle_button(&mut self, t: MessageType, pixel: ICoord2D) -> Option<MouseClick> {
+        if !self.window_keeps(t, pixel) {
+            return None;
+        }
+        self.meta_mouse(t, pixel)
+    }
+
+    /// #131: whether the CommandMap binds the meta message `meta` to some key usable in the game (the application's own
+    /// camera keys are fallbacks for an unbound one).
+    pub fn meta_map_binds_meta(&self, meta: MessageType) -> bool {
+        use rts_lockstep_engine::client::meta_event::usable_in;
+        self.meta_map.records().iter().any(|r| r.meta == meta && r.usable_in & usable_in::GAME != 0)
     }
 
     /// #125: whether the CommandMap binds the key `dik` (with any modifiers): the application's own camera keys leave such
@@ -348,8 +489,9 @@ impl Controls {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, pixel) {
             return false;
         }
-        // (#124: `MetaEventTranslator`'s press: the next release is a click)
-        self.next_up_double_click = false;
+        // (#124: `MetaEventTranslator`'s press: the next release is a click; #131: its translation, which also keeps the
+        // press's place for the click's rectangle)
+        self.meta_mouse(MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, pixel);
         self.client.view.terrain = vec![(pixel, ground)];
         if self.place.left_button_down(pixel, &mut self.ui, &mut self.client) {
             return true;
@@ -370,7 +512,7 @@ impl Controls {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, pixel) {
             return false;
         }
-        self.next_up_double_click = true;
+        self.meta_mouse(MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK, pixel);
         true
     }
 
@@ -389,7 +531,8 @@ impl Controls {
         }
     }
 
-    /// The left button released at `release`, pressed at `press`: `in_region` are the objects under the click or in the
+    /// The left button released at `release`, pressed at `_press` (**#131:** no longer read: the click's rectangle runs from
+    /// the press `MetaEventTranslator` kept, as upstream's): `in_region` are the objects under the click or in the
     /// dragged box, `picked` the one the view picks under the pointer (for an order), `ground` the terrain under the
     /// release. Returns whether a placement, a pending GUI command, a selection or an order took it.
     ///
@@ -401,12 +544,14 @@ impl Controls {
     /// and the GUI command take it as a click, the selection translator's double-click case selects every unit like the
     /// one picked (destroying it), and the command translator's case gives the double-click guard order
     /// (`m_doubleClickAttackMove`) or falls through to the click's.
-    pub fn left_release(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
+    pub fn left_release(&mut self, _press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_UP, release) {
             return false;
         }
-        // (#124: `MetaEventTranslator` makes the click or the double click of the release)
-        let double = std::mem::take(&mut self.next_up_double_click);
+        // (#124: `MetaEventTranslator` makes the click or the double click of the release; #131: translated, with the
+        // click's rectangle from the last press)
+        let click = self.meta_mouse(MSG_RAW_MOUSE_LEFT_BUTTON_UP, release).expect("a release makes a click");
+        let double = click.t == MSG_MOUSE_LEFT_DOUBLE_CLICK;
         self.selection.left_button_up(&mut self.ui);
         self.client.sync_modes(&self.ui);
         let frame = self.client.world.frame();
@@ -418,7 +563,9 @@ impl Controls {
         if self.gui.left_click(&ground, picked, &mut self.ui, &mut self.client) == Disposition::Destroy {
             return true;
         }
-        let is_point = (release.x - press.x).abs() <= CLICK_TOLERANCE && (release.y - press.y).abs() <= CLICK_TOLERANCE;
+        // ~~the press and release within `CLICK_TOLERANCE`~~ **Corrected 2026-11-11 (#131):** `isPoint`, the click's
+        // rectangle a point (`MetaEventTranslator`'s, with `TheMouse`'s drag tolerance)
+        let is_point = click.is_point();
         self.client.sync_modes(&self.ui);
         if double {
             // `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)`: the application's pick under the pointer
@@ -538,6 +685,16 @@ impl Controls {
 }
 
 #[cfg(test)]
+impl Controls {
+    /// (#131) A click as the application makes one, for the tests: the left press at `press`, then the release (the
+    /// click's rectangle is `MetaEventTranslator`'s, from the press it kept).
+    pub(crate) fn click(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
+        self.left_press(press, ground);
+        self.left_release(press, release, in_region, picked, ground)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::demo::demo_world;
@@ -572,11 +729,11 @@ mod tests {
 
         let r = o.runners[0];
         let rp = pos(&mut c, r);
-        assert!(c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp));
+        assert!(c.click(at(10, 10), at(10, 10), &[r], Some(r), rp));
         frame(&mut c);
         assert_eq!(selection(&c), vec![r]);
         assert_eq!(c.hover(None, ground(200.0, 60.0)), Some(MSG_DO_MOVETO_HINT));
-        assert!(c.left_release(at(50, 10), at(50, 10), &[], None, ground(200.0, 60.0)));
+        assert!(c.click(at(50, 10), at(50, 10), &[], None, ground(200.0, 60.0)));
         assert_eq!(c.client.sent, vec![MSG_DO_MOVETO]);
         let d = |c: &mut Controls| {
             let p = pos(c, r);
@@ -590,7 +747,7 @@ mod tests {
         eprintln!("C2d glue: the Runner {before} -> {after} from the point");
         assert!(after < before);
 
-        assert!(c.left_release(at(0, 0), at(60, 60), &o.soldiers, None, ground(0.0, 0.0)));
+        assert!(c.click(at(0, 0), at(60, 60), &o.soldiers, None, ground(0.0, 0.0)));
         frame(&mut c);
         let mut sel = selection(&c);
         sel.sort();
@@ -602,14 +759,14 @@ mod tests {
         let ep = pos(&mut c, e);
         assert_eq!(c.hover(Some(e), ep), Some(MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT));
         assert!(c.would_order(e));
-        assert!(c.left_release(at(90, 90), at(90, 90), &[e], Some(e), ep));
+        assert!(c.click(at(90, 90), at(90, 90), &[e], Some(e), ep));
         assert_eq!(c.client.sent, vec![MSG_DO_ATTACK_OBJECT]);
         assert!(!c.ui.is_selected(e));
         frame(&mut c);
 
         let dz = o.dozer;
         let dp = pos(&mut c, dz);
-        assert!(c.left_release(at(20, 20), at(20, 20), &[dz], Some(dz), dp));
+        assert!(c.click(at(20, 20), at(20, 20), &[dz], Some(dz), dp));
         frame(&mut c);
         let bar = c.bar_buttons();
         assert_eq!(bar.iter().map(|b| b.label.as_str()).collect::<Vec<_>>(), vec!["Command_BuildDepot"]);
@@ -622,6 +779,64 @@ mod tests {
         assert_eq!(depots.len(), 1, "sent {:?}, messages {:?}", c.client.sent, c.client.ui_messages);
         assert_eq!(c.client.world.get_controlling_player(depots[0]), Some(1));
         assert!(c.client.world.cuts.team_live_errors.is_empty(), "{:?}", c.client.world.cuts.team_live_errors);
+    }
+
+    /// #131, predicted before the run, in the demo with the dozer selected: the bar's hot key `b` (on slot 0, the
+    /// construct-Depot button, enabled) is not pressed by B's press nor by shift+B's release, and B's release presses the
+    /// button (the placement starts, `GUIClick` is asked for, the key is used up); a right click (press and release at
+    /// one point, 50 ms apart, the fallback tolerances) cancels the placement; started again, a right drag of 80 pixels
+    /// does not; with the window disabled B plays `GUIClickDisabled` and starts nothing; the camera's meta messages set
+    /// and clear the InGameUI's rotate flag and the reset asks the view for one reset; turning the input off clears a
+    /// held flag.
+    #[test]
+    fn hot_keys_right_clicks_and_the_camera_metas_reach_the_translators() {
+        use rts_lockstep_engine::common::message_types::{MSG_META_BEGIN_CAMERA_ROTATE_LEFT, MSG_META_CAMERA_RESET, MSG_META_END_CAMERA_ROTATE_LEFT};
+        let (w, o) = demo_world();
+        let mut c = Controls::new(w, 1);
+        let at = |x, y| ICoord2D { x, y };
+        let frame = |c: &mut Controls| {
+            c.observe_sent();
+            c.world().logic_update().expect("a frame");
+            c.frame_tick();
+        };
+        frame(&mut c);
+        let dp = c.client.object_position(o.dozer);
+        assert!(c.click(at(20, 20), at(20, 20), &[o.dozer], Some(o.dozer), dp));
+        frame(&mut c);
+        let window = HotKeyWindow { hidden: false, enabled: true, button: o.build_depot };
+        c.set_bar_hot_keys(&[(0, b"B".to_vec())], vec![Some(window)]);
+        let b = 0x30;
+        assert!(!c.key(b, true, false));
+        assert!(c.ui.pending_place_type().is_none());
+        assert!(!c.key(0x2A, true, false));
+        assert!(!c.key(b, false, false));
+        assert!(!c.key(0x2A, false, false));
+        assert!(c.ui.pending_place_type().is_none());
+        assert!(c.key(b, false, false), "B's release presses the button");
+        assert!(c.ui.pending_place_type().is_some());
+        assert_eq!(c.gui_sounds, vec![b"GUIClick".to_vec()]);
+        c.right_press(at(300, 300), 1000, false);
+        c.right_release(at(300, 300), 1050, None, Coord3D::default());
+        assert!(c.ui.pending_place_type().is_none(), "a right click cancels the placement");
+        assert!(c.key(b, false, false));
+        assert!(c.ui.pending_place_type().is_some());
+        c.right_press(at(300, 300), 2000, false);
+        c.right_release(at(380, 300), 2050, None, Coord3D::default());
+        assert!(c.ui.pending_place_type().is_some(), "a right drag does not");
+        c.ui.place_build_available(None, None, 0.0, &c.client);
+        c.set_bar_hot_keys(&[(0, b"b".to_vec())], vec![Some(HotKeyWindow { enabled: false, ..window })]);
+        assert!(!c.key(b, false, false));
+        assert!(c.ui.pending_place_type().is_none());
+        assert_eq!(c.gui_sounds.last(), Some(&b"GUIClickDisabled".to_vec()));
+        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT);
+        assert!(c.ui.is_camera_rotating_left());
+        c.meta(MSG_META_END_CAMERA_ROTATE_LEFT);
+        assert!(!c.ui.is_camera_rotating_left());
+        c.meta(MSG_META_CAMERA_RESET);
+        assert_eq!(c.client.camera_resets, 1);
+        c.meta(MSG_META_BEGIN_CAMERA_ROTATE_LEFT);
+        c.ui.set_input_enabled(false);
+        assert!(!c.ui.is_camera_rotating_left());
     }
 
     /// #125, predicted before the run, with a CommandMap of this test's own (tab: the next unit; S: stop; ctrl alone: force
@@ -720,7 +935,7 @@ CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n U
         assert_eq!(last(&mut c), Some(cursor::SELECTING));
         c.hover(None, ground);
         assert_eq!(last(&mut c), Some(cursor::ARROW));
-        assert!(c.left_release(ICoord2D { x: 0, y: 0 }, ICoord2D { x: 60, y: 60 }, &o.soldiers, None, Coord3D::default()));
+        assert!(c.click(ICoord2D { x: 0, y: 0 }, ICoord2D { x: 60, y: 60 }, &o.soldiers, None, Coord3D::default()));
         c.observe_sent();
         c.world().logic_update().expect("a frame");
         c.client.sent.clear();
@@ -800,12 +1015,12 @@ AudioEvent SoldierHum\n Sounds = hum\n Type = world everyone\n Control = loop\n 
         let (mut crcs, mut sent, mut fetched) = (Vec::new(), Vec::new(), Vec::new());
         for f in 0..90u32 {
             match f {
-                2 => assert!(c.left_release(pixel(10, 10), pixel(10, 10), &[a], Some(a), at(80.0, 60.0))),
-                5 => assert!(c.left_release(pixel(0, 0), pixel(60, 60), &[a, b], None, at(0.0, 0.0))),
-                10 => assert!(c.left_release(pixel(50, 10), pixel(50, 10), &[], None, at(200.0, 60.0))),
+                2 => assert!(c.click(pixel(10, 10), pixel(10, 10), &[a], Some(a), at(80.0, 60.0))),
+                5 => assert!(c.click(pixel(0, 0), pixel(60, 60), &[a, b], None, at(0.0, 0.0))),
+                10 => assert!(c.click(pixel(50, 10), pixel(50, 10), &[], None, at(200.0, 60.0))),
                 40 => {
                     let ep = c.client.world.find_object(e).map(|o| *o.thing.position()).expect("the enemy");
-                    assert!(c.left_release(pixel(90, 90), pixel(90, 90), &[e], Some(e), ep));
+                    assert!(c.click(pixel(90, 90), pixel(90, 90), &[e], Some(e), ep));
                 }
                 _ => {}
             }
@@ -998,7 +1213,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         };
         for f in 0..160u32 {
             match f {
-                2 => assert!(c.left_release(pixel(10, 10), pixel(10, 10), &[s], Some(s), c.client.object_position(s))),
+                2 => assert!(c.click(pixel(10, 10), pixel(10, 10), &[s], Some(s), c.client.object_position(s))),
                 5 => {
                     press(&mut c, "Command_DemoGuard");
                     run.sent.push(order(&mut c, ground(140.0, 100.0)));
@@ -1011,7 +1226,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
                 130 => run.attack_move.1 = dist(&mut c),
                 140 => {
                     let hp = c.client.object_position(o.hut);
-                    assert!(c.left_release(pixel(20, 20), pixel(20, 20), &[o.hut], Some(o.hut), hp));
+                    assert!(c.click(pixel(20, 20), pixel(20, 20), &[o.hut], Some(o.hut), hp));
                 }
                 145 => {
                     press(&mut c, "Command_DemoRally");
@@ -1136,7 +1351,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         c.world().logic_update().expect("a frame");
         c.world().take_client_events();
         let hp = c.client.object_position(hut);
-        assert!(c.left_release(px, px, &[hut], Some(hut), hp));
+        assert!(c.click(px, px, &[hut], Some(hut), hp));
         c.observe_sent();
         c.world().logic_update().expect("a frame");
         c.world().take_client_events();
@@ -1350,7 +1565,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
 
         let r = o.runners[0];
         let rp = pos(&mut c, r);
-        assert!(c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp));
+        assert!(c.click(at(10, 10), at(10, 10), &[r], Some(r), rp));
         client_frame(&mut c, &mut mouse);
         assert_eq!(selection(&c), vec![r]);
 
@@ -1375,7 +1590,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         client_frame(&mut c, &mut mouse);
         assert_eq!(selection(&c), Vec::<ObjectId>::new());
 
-        assert!(!c.left_release(at(0, 0), at(60, 60), &o.soldiers, None, Coord3D::default()));
+        assert!(!c.click(at(0, 0), at(60, 60), &o.soldiers, None, Coord3D::default()));
         let s0 = o.soldiers[0];
         let sp = pos(&mut c, s0);
         assert!(!c.left_press(at(30, 30), sp));
@@ -1392,7 +1607,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let ev = client_frame(&mut c, &mut mouse);
         assert_eq!(inputs(&ev), [C::SetInputEnabled(true), C::MouseSetVisibility(true)]);
         assert!(c.ui.input_enabled() && mouse.visible);
-        assert!(c.left_release(at(30, 30), at(30, 30), &[s0], Some(s0), sp));
+        assert!(c.click(at(30, 30), at(30, 30), &[s0], Some(s0), sp));
         client_frame(&mut c, &mut mouse);
         assert_eq!(selection(&c), vec![s0]);
 
@@ -1504,7 +1719,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let mut c = Controls::new(w, 1);
         let r = o.runners[0];
         let rp = pos(&mut c, r);
-        assert!(c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp));
+        assert!(c.click(at(10, 10), at(10, 10), &[r], Some(r), rp));
         c.observe_sent();
         c.world().logic_update().expect("a frame");
         let ground = Coord3D { x: 200.0, y: 60.0, z: 0.0 };

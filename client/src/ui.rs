@@ -46,7 +46,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command, CommandSlot, ControlBarStateHost, QueueSlot};
+use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
 use rts_lockstep_engine::client::image::ImageCollection;
@@ -429,6 +429,9 @@ pub struct BarState {
     /// (#35) The portrait (`setPortraitByObject`), and each command window's popup (`populateBuildTooltipLayout`).
     pub portrait: Portrait,
     pub tooltips: Vec<Option<Tooltip>>,
+    /// (#131) The hot keys `setControlCommand` adds, `(slot, key)` in order
+    /// (`control_bar_command::populate_command_with_hot_keys`).
+    pub hot_keys: Vec<(usize, Vec<u8>)>,
 }
 
 /// When the popup of a command button shows (new: upstream's `showBuildTooltipLayout` waits `getTooltipDelay()` with the
@@ -540,11 +543,11 @@ impl GameUi {
     /// The bar's state for `selected`: `populateCommand` and the build queue when an object is selected, else nothing; the
     /// portrait (`setPortraitByObject`) and each shown button's popup (`populateBuildTooltipLayout`).
     pub fn bar_state<H: ControlBarStateHost + PopupHost + PortraitHost>(selected: Option<ObjectId>, h: &mut H, queue: Vec<(bool, u32, Option<Vec<u8>>, f32)>, money: u32, power: (i32, i32)) -> BarState {
-        let commands: Vec<Option<CommandSlot>> = selected.map(|o| populate_command(o, h).to_vec()).unwrap_or_default();
+        let (commands, hot_keys) = selected.map(|o| populate_command_with_hot_keys(o, h)).map(|(c, k)| (c.to_vec(), k)).unwrap_or_default();
         let tooltips = commands.iter().map(|c| c.as_ref().and_then(|c| h.button(c.button)).map(|b| populate_build_tooltip_layout(&b, h))).collect();
         let portrait = set_portrait_by_object(selected, h);
         let (queue, queue_clock) = populate_build_queue(&queue);
-        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips }
+        BarState { selected, commands, queue, queue_clock, money, power, portrait, tooltips, hot_keys }
     }
 
     /// Whether a window is drawn: it and every ancestor not hidden, with the context parents shown as
@@ -643,6 +646,18 @@ impl GameUi {
         }
         let slot = self.slot_of(host.selected)?;
         tip.click(slot, now, touch).then_some(slot)
+    }
+
+    /// (#131) Each command window's own `WIN_STATUS_HIDDEN` and `WIN_STATUS_ENABLED` bits as the manager has them (after
+    /// [`GameUi::sync`]), by slot; `None` for a slot the layout has no window for. `executeHotKey` reads these.
+    pub fn command_window_status(&self) -> Vec<Option<(bool, bool)>> {
+        self.command_windows
+            .iter()
+            .map(|w| w.map(|w| {
+                let win = &self.wm.tree.windows[w];
+                (win.is_hidden(), win.status & win_status::ENABLED != 0)
+            }))
+            .collect()
     }
 
     /// (#109) The quit menu call a button of the bar made since the last call ([`QuitMenuCall`]), for the app to make
@@ -789,9 +804,10 @@ impl LayoutPlacement {
 }
 
 /// The zoom column's height (~~4 buttons of 48 and 3 gaps of 6~~ **corrected 2026-11-06 (#4):** ~~5 buttons of 48 and 4
-/// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** 6 buttons of 48 and 5 gaps of 6, the campaigns
-/// button added, `app::setup_ui`) and its bottom margin.
-pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 6.0 * 48.0 + 5.0 * 6.0 + 8.0;
+/// gaps of 6, the saves button added~~ **corrected 2026-11-06 (#62):** ~~6 buttons of 48 and 5 gaps of 6, the campaigns
+/// button added~~ **Corrected 2026-11-11 (#131):** 8 buttons of 48 and 7 gaps of 6, the two turn buttons added,
+/// `app::setup_ui`) and its bottom margin.
+pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 8.0 * 48.0 + 7.0 * 6.0 + 8.0;
 
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
@@ -958,7 +974,7 @@ mod tests {
         assert!(q.iter().all(|x| x.image.as_deref() != Some(&b"ImgPortrait"[..])), "no portrait without a selection");
         // select the dozer
         let dp = c.client.object_position(o.dozer);
-        assert!(c.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
+        assert!(c.click(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
         let sel = c.ui.first_selected_drawable();
         let st = GameUi::bar_state(sel, &mut c.client, Vec::new(), m, p);
         let slot = st.commands[0].clone().expect("the build button");
@@ -979,8 +995,8 @@ mod tests {
         let (w2, o2) = crate::demo::demo_world();
         let mut asked = Controls::new(w2, 1);
         let d2 = asked.client.object_position(o2.dozer);
-        asked.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o2.dozer], Some(o2.dozer), d2);
-        plain.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o2.dozer], Some(o2.dozer), d2);
+        asked.click(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o2.dozer], Some(o2.dozer), d2);
+        plain.click(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o2.dozer], Some(o2.dozer), d2);
         for f in 0..60 {
             for c in [&mut plain, &mut asked] {
                 c.observe_sent();
@@ -1023,7 +1039,7 @@ mod tests {
         let mut c = Controls::new(w, 1);
         let (m, p) = c.client.money_and_power();
         let dp = c.client.object_position(o.dozer);
-        assert!(c.left_release(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
+        assert!(c.click(ICoord2D { x: 5, y: 5 }, ICoord2D { x: 5, y: 5 }, &[o.dozer], Some(o.dozer), dp));
         let st = GameUi::bar_state(c.ui.first_selected_drawable(), &mut c.client, Vec::new(), m, p);
         ui.sync(&st);
         let win = |ui: &GameUi, i: usize| ui.command_windows[i].expect("a command window");
@@ -1317,8 +1333,9 @@ mod tests {
         let p = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * scale, y0: 440.0, scale };
         assert_eq!(radar_screen_rect(Some(r), Some(p), (390.0, 844.0)), [9.75, 795.25, 107.25, 839.125]);
         // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button; ~~[265, 476,
-        // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button)
-        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 422.0, 382.0, 510.0]);
+        // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button; ~~[265, 422, 382,
+        // 510]~~ corrected 2026-11-11, #131: 108 higher, above the two turn buttons)
+        assert_eq!(radar_screen_rect(None, None, (390.0, 844.0)), [265.0, 314.0, 382.0, 402.0]);
         assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
         let big = radar_screen_rect(None, None, (1280.0, 720.0));
         assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));

@@ -26,6 +26,8 @@ pub mod selection_groups;
 pub mod command_xlat;
 pub mod command_xlat_meta;
 pub mod meta_event;
+pub mod keyboard; // #131: the keyboard's printable key names (Keyboard::initKeyNames, getPrintableKey)
+pub mod hot_key; // #131: the control bar's hot keys (HotKey.cpp: HotKeyManager, HotKeyTranslator)
 pub mod command_world;
 pub mod control_bar;
 pub mod place_event;

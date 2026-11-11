@@ -3613,4 +3613,13 @@ extern "C" {
     // GitHub #125: the command translator's meta-key cases and MetaEvent's key map (differential/wrap_command_meta.cpp,
     // which documents the cases' words), verbatim.
     pub fn ref_command_meta_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #131: the control bar's hot keys and the keyboard's key names (differential/wrap_hot_key.cpp, which
+    // documents the cases' words), verbatim.
+    pub fn ref_hot_key_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #131: the right button's bookkeeping, the keyboard camera's cases, InGameUI::update's keyboard camera,
+    // InGameUI::resetCamera and W3DView::resetCamera (differential/wrap_meta_camera.cpp, which documents the cases'
+    // words), verbatim.
+    pub fn ref_meta_camera_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

@@ -1198,8 +1198,8 @@ mod tests {
     /// - over the demo game (not ending: #107's `newMap`), `Toggle` shows `QuitMenu.wnd` and asks for the pause
     ///   ([`ShellAction::SetGamePaused`] true); `Hide` hides it and unpauses (false); `Hide` again does nothing (not
     ///   visible); `Toggle` shows it again (true);
-    /// - at 390x844 (the placement of the #78 test: scale 0.4875, top 126.75, unchanged: no button is added to the zoom
-    ///   column) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
+    /// - at 390x844 (the placement of the #78 test: scale 0.4875, top ~~126.75, unchanged: no button is added to the zoom
+    ///   column~~ **corrected 2026-11-11 (#131):** 72.75, the two turn buttons added to the zoom column) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
     ///   on the screen, below
     ///   the status line (y 36) and above the zoom column, and a tap at its centre is that button's
     ///   (`getWindowUnderCursor`);
@@ -1236,7 +1236,9 @@ mod tests {
         settle(&mut ui, &mut now);
         assert_eq!(ui.take_actions(&base, &mut flow), [ShellAction::SetGamePaused(true)]);
         let p = shell_placement((390.0, 844.0));
-        assert_eq!((p.left, p.top, p.scale), (0.0, 126.75, 0.4875));
+        // (~~126.75~~ corrected 2026-11-11, #131: the zoom column is 108 taller with the two turn buttons, so the menu
+        // centres 54 higher in the room above it; the scale, set by the width, is the same)
+        assert_eq!((p.left, p.top, p.scale), (0.0, 72.75, 0.4875));
         let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
         let last = |ui: &ShellUi, file: &str, name: &str| -> usize {
             let full = format!("{file}:{name}");
@@ -1326,7 +1328,8 @@ mod tests {
     /// [`shell_placement`]'s arithmetic before the run:
     ///
     /// - 390x844: the full width above the zoom column wins (scale 390 / 800 = 0.4875 against (390 - 64) / 800 =
-    ///   0.4075 beside it); the menu 390 x 292.5 at left 0, top 36 + (474 - 292.5) / 2 = 126.75;
+    ///   0.4075 beside it); the menu 390 x 292.5 at left 0, top 36 + (474 - 292.5) / 2 = 126.75 (**corrected 2026-11-11
+    ///   (#131):** ~~126.75~~ 36 + (366 - 292.5) / 2 = 72.75, the zoom column 108 taller with the two turn buttons);
     /// - 1280x720: beside the column wins (scale min(1216 / 800, 676 / 600) = 1.1267); left (1216 - 901.3) / 2 = 157.3,
     ///   top 36;
     /// - at 390x844 every button of the main panel is on the screen, below the status line's first line (y 36) and
@@ -1336,7 +1339,8 @@ mod tests {
     #[test]
     fn the_menu_fits_a_phone_and_every_button_is_tapped() {
         let p = shell_placement((390.0, 844.0));
-        assert_eq!((p.left, p.top, p.y0, p.scale), (0.0, 126.75, 0.0, 0.4875));
+        // (~~126.75~~ corrected 2026-11-11, #131: the taller zoom column, see the quit menu's test)
+        assert_eq!((p.left, p.top, p.y0, p.scale), (0.0, 72.75, 0.0, 0.4875));
         let d = shell_placement((1280.0, 720.0));
         assert!((d.scale - 676.0 / 600.0).abs() < 1e-5 && (d.left - (1216.0 - 800.0 * 676.0 / 600.0) / 2.0).abs() < 1e-3 && d.top == 36.0, "{d:?}");
         let mut ui = shell();

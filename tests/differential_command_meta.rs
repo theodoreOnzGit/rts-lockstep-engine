@@ -407,6 +407,11 @@ impl CommandXlatHost for MetaHost {
     }
     fn record_double_click_attack_move_order_given(&mut self) {}
 }
+impl rts_lockstep_engine::client::command_xlat::MouseClickHost for MetaHost {
+    fn mouse_is_click(&self, _anchor: &rts_lockstep_engine::common::base_type::ICoord2D, _dest: &rts_lockstep_engine::common::base_type::ICoord2D, _previous: u32, _current: u32) -> bool {
+        true
+    }
+}
 impl CommandMetaHost for MetaHost {
     fn object_is_mobile(&self, obj: ObjectId) -> bool {
         self.d(obj).is_some_and(|d| d.mobile)
@@ -457,6 +462,9 @@ impl CommandMetaHost for MetaHost {
     fn play_all_cheer_sound(&mut self) {
         self.audio.extend([-7, 0]);
     }
+}
+impl rts_lockstep_engine::client::command_xlat_meta::CameraMetaHost for MetaHost {
+    fn reset_camera(&mut self) {}
 }
 
 const META_TYPES: [MessageType; 28] = [
@@ -655,7 +663,7 @@ fn meta_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
     ui.set_waypoint_mode(flags[3]);
     ui.set_prefer_selection_mode(flags[4]);
     ui.set_camera_tracking_drawable(flags[5]);
-    let mut x = CommandTranslator { team_exists: team };
+    let mut x = CommandTranslator { team_exists: team, ..Default::default() };
     let d = x.meta(t, &mut ui, &mut h).expect("a meta case");
     // the appended messages through the translator: its gate, then the selected-group cases
     for m in std::mem::take(&mut h.sent) {
@@ -782,7 +790,7 @@ fn key_case(g: &mut Gen, stats: &mut [u64; 3]) -> (Vec<i32>, Vec<i32>) {
         m.mod_state = r[3];
         m.usable_in = r[4] as u32;
     }
-    let mut x = MetaEventTranslator { last_key_down: last_key, last_mod_state: last_mod };
+    let mut x = MetaEventTranslator { last_key_down: last_key, last_mod_state: last_mod, ..Default::default() };
     let ctx = KeyContext { client_frame: frame, shell_active: shell, in_replay: replay };
     let r = x.translate_key(&map, down, key, state, &ctx);
     let new_tivo = if r.fast_forward_toggled { 1 - tivo } else { tivo };

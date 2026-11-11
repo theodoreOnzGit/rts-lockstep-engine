@@ -720,6 +720,11 @@ mod tests {
         }
         fn record_double_click_attack_move_order_given(&mut self) {}
     }
+    impl crate::client::command_xlat::MouseClickHost for ClientOfWorld {
+        fn mouse_is_click(&self, _anchor: &crate::common::base_type::ICoord2D, _dest: &crate::common::base_type::ICoord2D, _previous: u32, _current: u32) -> bool {
+            true
+        }
+    }
 
     /// The control bar's questions (C2c), from the World where this file's tests ask them; the others answer as noted.
     impl crate::client::control_bar::ControlBarHost for ClientOfWorld {

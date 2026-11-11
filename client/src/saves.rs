@@ -578,12 +578,12 @@ mod tests {
         let s = o.soldiers[0];
         let at = a.client.world.find_object(s).expect("the soldier").get_position();
         let px = ICoord2D { x: 100, y: 100 };
-        assert!(a.left_release(px, px, &[s], Some(s), at), "the soldier is selected");
+        assert!(a.click(px, px, &[s], Some(s), at), "the soldier is selected");
         // (the selection reaches the logic on the next frame, as the input's own test runs it, before the order)
         frame(&mut a);
         let target = Coord3D { x: at.x, y: at.y + 200.0, z: 0.0 };
         let gx = ICoord2D { x: 200, y: 50 };
-        assert!(a.left_release(gx, gx, &[], None, target), "the move is ordered");
+        assert!(a.click(gx, gx, &[], None, target), "the move is ordered");
         for _ in 0..90 {
             frame(&mut a);
         }

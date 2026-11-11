@@ -2315,7 +2315,8 @@ mod differential {
             // TOGGLE_FAST_FORWARD_REPLAY, BEGIN_FORCEMOVE to TAKE_SCREENSHOT; the selected-group cases), InGameUI.cpp
             // (kindOfUnitSelection, similarUnitSelection; selectAllUnitsByTypeAcrossRegion to addFloatingText), ControlBar.h
             // (GUICommandType), MetaEvent.h (the key enums and names) and MetaEvent.cpp (GameMessageMetaTypeNames,
-            // MetaEventTranslator::translateGameMessage, findGameMessageMetaType and getMetaMapRec). No text is edited.
+            // MetaEventTranslator::translateGameMessage, findGameMessageMetaType and getMetaMapRec; #131: the
+            // translator's constructor). No text is edited.
             // Each anchor must occur once.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_command_meta.cpp");
@@ -2359,6 +2360,8 @@ mod differential {
                     ("meta_names.inc", piece(&me, "MetaEvent.cpp", "static const LookupListRec GameMessageMetaTypeNames[] = \n", Some("static const FieldParse TheMetaMapFieldParseTable[] = \n"))),
                     ("meta_translate.inc", piece(&me, "MetaEvent.cpp", "GameMessageDisposition MetaEventTranslator::translateGameMessage(const GameMessage *msg)\n", Some("MetaMap::MetaMap() : \n"))),
                     ("meta_map.inc", piece(&me, "MetaEvent.cpp", "GameMessage::Type MetaMap::findGameMessageMetaType(const char* name)\n", Some("/*static */ void MetaMap::parseMetaMap(INI* ini)\n"))),
+                    // (#131) the constructor, for the mouse part's sequences (kind 3)
+                    ("meta_ctor.inc", piece(&me, "MetaEvent.cpp", "MetaEventTranslator::MetaEventTranslator() : \n", Some("MetaEventTranslator::~MetaEventTranslator()\n"))),
                 ];
                 let gen = out_dir.join("command_meta_gen");
                 std::fs::create_dir_all(&gen).expect("create command_meta_gen");
@@ -2377,6 +2380,144 @@ mod differential {
                     .include(ww.join("WWLib"))
                     .file(dif.join("wrap_command_meta.cpp"));
                 cm.compile("upstream_command_meta");
+            }
+
+            // GitHub #131: the control bar's hot keys (differential/wrap_hot_key.cpp, which lists the cuts). Cut verbatim into
+            // OUT_DIR/hot_key_gen from HotKey.h (the three classes), HotKey.cpp (the translator and the manager), MetaEvent.h
+            // (`enum MappableKeyModState`), Language.h (the `LanguageID` values) and Keyboard.cpp (`initKeyNames`;
+            // `getPrintableKey` in two pieces around its `return L'';`, which g++ rejects: the wrapper writes `return 0;`
+            // there). No text is edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_hot_key.cpp");
+                let ge = up.join("GameEngine");
+                let rd = |f: &str| String::from_utf8_lossy(&std::fs::read(ge.join(f)).unwrap_or_else(|e| panic!("read {f}: {e}"))).into_owned();
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let hh = rd("Include/GameClient/HotKey.h");
+                let hc = rd("Source/GameClient/MessageStream/HotKey.cpp");
+                let mh = rd("Include/GameClient/MetaEvent.h");
+                let lh = rd("Include/Common/Language.h");
+                // (Keyboard.cpp is a Windows-1252 file: its one non-ASCII character literal, byte 0x80, is the euro sign as
+                // MSVC read it, so the file is decoded as Windows-1252, not as UTF-8)
+                let kc: String = {
+                    const CP1252: [u32; 32] = [
+                        0x20AC, 0x81, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8D, 0x017D, 0x8F, 0x90, 0x2018,
+                        0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x9D, 0x017E, 0x0178,
+                    ];
+                    let raw = std::fs::read(ge.join("Source/GameClient/Input/Keyboard.cpp")).expect("read Keyboard.cpp");
+                    raw.iter().map(|&b| if (0x80..0xA0).contains(&b) { char::from_u32(CP1252[usize::from(b - 0x80)]).expect("a char") } else { char::from(b) }).collect()
+                };
+                let files = [
+                    ("hot_key_class.inc", piece(&hh, "HotKey.h", "class HotKeyTranslator : public GameMessageTranslator\n", Some("extern HotKeyManager *TheHotKeyManager;"))),
+                    ("hot_key.inc", piece(&hc, "HotKey.cpp", "GameMessageDisposition HotKeyTranslator::translateGameMessage(const GameMessage *msg)\n", Some("HotKeyManager *TheHotKeyManager = NULL;"))),
+                    ("key_mod_state.inc", piece(&mh, "MetaEvent.h", "enum MappableKeyModState\n", Some("static const LookupListRec ModifierNames[] = "))),
+                    ("language_ids.inc", piece(&lh, "Language.h", "\tLANGUAGE_ID_US = 0,", Some("} LanguageID;"))),
+                    ("init_key_names.inc", piece(&kc, "Keyboard.cpp", "void Keyboard::initKeyNames( void )\n", Some("}  // end initKeyNames"))),
+                    ("printable_head.inc", piece(&kc, "Keyboard.cpp", "WideChar Keyboard::getPrintableKey( UnsignedByte key,  Int state )\n", Some("\t\treturn L'';"))),
+                    ("printable_tail.inc", piece(&kc, "Keyboard.cpp", "\tif(state == 0)\n\t\treturn m_keyNames[key].stdKey;", None)),
+                ];
+                let gen = out_dir.join("hot_key_gen");
+                std::fs::create_dir_all(&gen).expect("create hot_key_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_hot_key.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}")).expect("write a hot key cut");
+                }
+                let mut hk = cc::Build::new();
+                base(&mut hk);
+                hk.include(&gen)
+                    .include(&shim)
+                    .include(root.join("differential/shim_wm"))
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .file(dif.join("wrap_hot_key.cpp"));
+                hk.compile("upstream_hot_key");
+            }
+
+            // GitHub #131: the right button's bookkeeping and the keyboard camera (differential/wrap_meta_camera.cpp, which
+            // lists the cuts): CommandXlat.cpp (the gate, isSystemMessage, the right button's raw cases, the camera meta
+            // cases), Mouse.cpp (isClick), InGameUI.h (the camera flags), InGameUI.cpp (update's keyboard camera,
+            // resetCamera, setInputEnabled), View.cpp (getLocation), ParabolicEase.h and .cpp, W3DView.h (the movement infos) and W3DView.cpp
+            // (minf to getHeightAroundPos, updateCameraMovements, moveCameraTo, zoomCamera, pitchCamera, resetCamera,
+            // setupWaypointPath, the one-frame steps). No text is edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_meta_camera.cpp");
+                let rd = |f: &Path| String::from_utf8_lossy(&std::fs::read(f).unwrap_or_else(|e| panic!("read {}: {e}", f.display()))).into_owned();
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let ge = up.join("GameEngine");
+                let gd = up.join("GameEngineDevice");
+                let cx = rd(&ge.join("Source/GameClient/MessageStream/CommandXlat.cpp"));
+                let mc = rd(&ge.join("Source/GameClient/Input/Mouse.cpp"));
+                let uh = rd(&ge.join("Include/GameClient/InGameUI.h"));
+                let ui = rd(&ge.join("Source/GameClient/InGameUI.cpp"));
+                let vc = rd(&ge.join("Source/GameClient/View.cpp"));
+                let ph = rd(&ge.join("Include/GameClient/ParabolicEase.h"));
+                let pc = rd(&ge.join("Source/GameClient/ParabolicEase.cpp"));
+                let wh = rd(&gd.join("Include/W3DDevice/GameClient/W3DView.h"));
+                let wv = rd(&gd.join("Source/W3DDevice/GameClient/W3DView.cpp"));
+                let c = "CommandXlat.cpp";
+                let w = "W3DView.cpp";
+                let files = [
+                    ("command_gate_open.inc", piece(&cx, c, "GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage *msg)\n{", Some("#if defined(_DEBUG) || defined(_INTERNAL)\n\tExtentModType extentModType"))),
+                    ("system_message.inc", piece(&cx, c, "static Bool isSystemMessage( const GameMessage *msg )\n{", None)),
+                    ("right_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:\n", Some("\t\tcase GameMessage::MSG_MOUSE_RIGHT_DOUBLE_CLICK:\n"))),
+                    ("camera_cases.inc", piece(&cx, c, "\t\tcase GameMessage::MSG_META_BEGIN_CAMERA_ROTATE_LEFT:\n", Some("\t\tcase GameMessage::MSG_META_TOGGLE_CAMERA_TRACKING_DRAWABLE:\n"))),
+                    ("is_click.inc", piece(&mc, "Mouse.cpp", "Bool Mouse::isClick(const ICoord2D *anchor, const ICoord2D *dest, UnsignedInt previousMouseClick, UnsignedInt currentMouseClick)\n", Some("CursorInfo::CursorInfo( void )"))),
+                    ("camera_flags.inc", piece(&uh, "InGameUI.h", "\tvoid setCameraRotateLeft( Bool set )", Some("\tvoid resetCamera();"))),
+                    ("keyboard_camera.inc", piece(&ui, "InGameUI.cpp", "\t//Handle keyboard camera rotations\n", Some("void InGameUI::registerWindowLayout( WindowLayout *layout )"))),
+                    ("reset_camera_ui.inc", piece(&ui, "InGameUI.cpp", "void InGameUI::resetCamera()\n", Some("Bool InGameUI::canSelectedObjectsNonAttackInteractWithObject("))),
+                    ("set_input_enabled.inc", piece(&ui, "InGameUI.cpp", "void InGameUI::setInputEnabled( Bool enable )\n{", Some("/** Drawable is being destroyed, clean up any UI elements associated with it. */"))),
+                    ("view_get_location.inc", piece(&vc, "View.cpp", "void View::getLocation( ViewLocation *location )\n", Some("void View::setLocation( const ViewLocation *location )"))),
+                    ("parabolic_ease.inc", piece(&ph, "ParabolicEase.h", "class ParabolicEase\n{", Some("#endif // _PARABOLICEASE_H"))),
+                    ("parabolic_ease_cpp.inc", piece(&pc, "ParabolicEase.cpp", "namespace {\n", None)),
+                    ("w3d_view_info.inc", piece(&wh, "W3DView.h", "enum {MAX_WAYPOINTS=25};", Some("class W3DView : public View, public SubsystemInterface"))),
+                    ("w3d_view_statics.inc", piece(&wv, w, "inline Real minf(Real a, Real b)", Some("W3DView::W3DView()\n"))),
+                    ("w3d_update_moves.inc", piece(&wv, w, "Bool W3DView::updateCameraMovements()\n", Some("/** This function performs all actions which affect the camera transform"))),
+                    ("w3d_move_to.inc", piece(&wv, w, "void W3DView::moveCameraTo(const Coord3D *o, Int milliseconds, Int shutter, Bool orient, Real easeIn, Real easeOut)\n", Some("void W3DView::rotateCamera(Real rotations,"))),
+                    ("w3d_zoom_pitch.inc", piece(&wv, w, "void W3DView::zoomCamera( Real finalZoom, Int milliseconds, Real easeIn, Real easeOut )\n", Some("void W3DView::cameraModFinalZoom("))),
+                    ("w3d_reset.inc", piece(&wv, w, "void W3DView::resetCamera(const Coord3D *location, Int milliseconds, Real easeIn, Real easeOut)\n", Some("Bool W3DView::isCameraMovementFinished(void)"))),
+                    ("w3d_waypoints.inc", piece(&wv, w, "void W3DView::setupWaypointPath(Bool orient)\n", Some("void W3DView::rotateCameraOneFrame(void)"))),
+                    ("w3d_one_frame.inc", piece(&wv, w, "void W3DView::zoomCameraOneFrame(void)\n", Some("void W3DView::shake( const Coord3D *epicenter,"))),
+                ];
+                let gen = out_dir.join("meta_camera_gen");
+                std::fs::create_dir_all(&gen).expect("create meta_camera_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_meta_camera.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}")).expect("write a meta camera cut");
+                }
+                let mut mc = cc::Build::new();
+                base(&mut mc);
+                mc.include(&gen)
+                    .include(&shim)
+                    .include(root.join("differential/shim_wm"))
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_meta_camera.cpp"));
+                mc.compile("upstream_meta_camera");
             }
 
             // GitHub #117: TheMouse's cursor (differential/wrap_mouse.cpp). Cut verbatim into OUT_DIR/mouse_gen: Mouse.h's

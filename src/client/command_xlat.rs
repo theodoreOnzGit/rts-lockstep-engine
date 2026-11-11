@@ -34,14 +34,19 @@
 //!   the stats collector (debug) is still left out. Neither changes a message.
 //! - ~~**The double-click guard order** (`m_doubleClickAttackMove`, off in the shipped options) and~~ the right-button drag
 //!   bookkeeping that cancels build placement (C2c, with placement). **Corrected 2026-11-11 (#124):** the double-click
-//!   guard order is translated ([`CommandTranslator::double_click`]); the right button's bookkeeping
+//!   guard order is translated ([`CommandTranslator::double_click`]); ~~the right button's bookkeeping
 //!   (`MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` / `UP`, `TheMouse->isClick` and `placeBuildAvailable(NULL, NULL)`) is still not, so
-//!   the alternate mouse's right click is taken as a click whatever the drag.
+//!   the alternate mouse's right click is taken as a click whatever the drag.~~ **Corrected 2026-11-11 (#131):** the right
+//!   button's bookkeeping is translated too ([`CommandTranslator::right_button_down`], [`CommandTranslator::right_button_up`],
+//!   CommandXlat.cpp:3628-3657): a right click (press and release within `TheMouse`'s drag tolerances) cancels a
+//!   building's placement, and the alternate mouse's right click is actioned only when it was a click.
 //! - **#125:** the meta-key cases (the selection walks, the hero, select all, the views, scatter, stop, formation, the
 //!   beacon, the held modes, attack-move, camera tracking, the cheer) are translated in
 //!   [`crate::client::command_xlat_meta`] ([`CommandTranslator::meta`]), and the key map that makes them in
 //!   [`crate::client::meta_event`]. Still not here: chat, diplomacy, the lower-details and control-bar toggles, the
-//!   screenshot, the replay's fast forward, the camera rotate / zoom / reset flags (the application's camera keys).
+//!   screenshot, the replay's fast forward~~, the camera rotate / zoom / reset flags (the application's camera keys)~~.
+//!   **Corrected 2026-11-11 (#131):** the camera rotate / zoom / reset cases are translated
+//!   (`command_xlat_meta`, CommandXlat.cpp:3205-3239), on the InGameUI's camera flags.
 //!
 //! # As upstream reads it
 //!
@@ -81,7 +86,8 @@
 //! - The view's answers are the application's: `pos` is the ground under the click (upstream: `screenToTerrain` of the
 //!   pixel region's `lo`) and `picked` the view's pick there. The drawable hint without an object takes the ground position
 //!   (upstream: the drawable's own; a drawable the client hands in always has one).
-//! - The right button's drag bookkeeping is not translated (above).
+//! - ~~The right button's drag bookkeeping is not translated (above).~~ **Corrected 2026-11-11 (#131):** it is; the press's
+//!   and release's times are the application's milliseconds (upstream: `m_currMouse.time`).
 //!
 //! # Representation
 //!
@@ -93,7 +99,8 @@
 use crate::client::in_game_ui::{DrawableId, InGameUiSelection};
 use crate::client::selection_groups::SelectionGroupsHost;
 use crate::client::unit_voice::{pick_and_play_unit_voice_response, PickAndPlayInfo, UnitVoiceHost};
-use crate::common::base_type::Coord3D;
+use crate::common::base_type::{Coord3D, ICoord2D};
+use crate::logic::modules::plant;
 use crate::common::game_common::Relationship;
 use crate::common::game_type::{ObjectId, INVALID_ANGLE, INVALID_ID};
 use crate::common::kind_of::{
@@ -178,7 +185,7 @@ pub enum TargetMode {
 
 /// What the command translator asks of the game, beyond the selection's questions. The per-object action questions are the
 /// action manager's; [`crate::client::command_world`] answers them from a World.
-pub trait CommandXlatHost: SelectionGroupsHost + UnitVoiceHost {
+pub trait CommandXlatHost: SelectionGroupsHost + UnitVoiceHost + MouseClickHost {
     /// `obj->getStatusBits().test(OBJECT_STATUS_MASKED)`.
     fn object_is_masked(&self, obj: ObjectId) -> bool;
     /// `obj->getPosition()`.
@@ -229,6 +236,13 @@ pub trait CommandXlatHost: SelectionGroupsHost + UnitVoiceHost {
     fn record_double_click_attack_move_order_given(&mut self);
 }
 
+/// #131: `TheMouse` as the command translator's right button asks it.
+pub trait MouseClickHost {
+    /// `TheMouse->isClick(anchor, dest, previousMouseClick, currentMouseClick)` with the mouse's drag tolerances
+    /// ([`crate::client::mouse::is_click`]).
+    fn mouse_is_click(&self, anchor: &ICoord2D, dest: &ICoord2D, previous_mouse_click: u32, current_mouse_click: u32) -> bool;
+}
+
 /// #124: what a mouse case evaluates: `evaluateForceAttack` in force attack mode, else `evaluateContextCommand`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Evaluation {
@@ -241,6 +255,12 @@ pub enum Evaluation {
 pub struct CommandTranslator {
     /// `m_teamExists`: a selected group was made and not destroyed since.
     pub team_exists: bool,
+    /// #131: `m_mouseRightDragAnchor`, `m_mouseRightDragLift`: where the right button last went down and came up.
+    pub mouse_right_drag_anchor: ICoord2D,
+    pub mouse_right_drag_lift: ICoord2D,
+    /// #131: `m_mouseRightDown`, `m_mouseRightUp`: the times of those (`m_currMouse.time`, milliseconds).
+    pub mouse_right_down: u32,
+    pub mouse_right_up: u32,
 }
 
 /// `pickAndPlayUnitVoiceResponse(TheInGameUI->getAllSelectedDrawables(), msg, info)` (#51).
@@ -1149,13 +1169,53 @@ impl CommandTranslator {
         if input_disabled_destroys(if right { MSG_MOUSE_RIGHT_CLICK } else { MSG_MOUSE_LEFT_CLICK }, ui.input_enabled()) {
             return true;
         }
-        Self::click_case(right, is_point, pos, picked, ui, h, eval)
+        let right_is_click = self.right_is_click(h);
+        Self::click_case(right, right_is_click, is_point, pos, picked, ui, h, eval)
+    }
+
+    /// #131: the right button's `TheMouse->isClick(&m_mouseRightDragAnchor, &m_mouseRightDragLift, m_mouseRightDown,
+    /// m_mouseRightUp)`: its last press and release were a click, not a drag or a hold.
+    pub fn right_is_click<H: MouseClickHost>(&self, h: &H) -> bool {
+        plant(9200) || h.mouse_is_click(&self.mouse_right_drag_anchor, &self.mouse_right_drag_lift, self.mouse_right_down, self.mouse_right_up)
+    }
+
+    /// #131: `MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN` (CommandXlat.cpp:3628) at `pixel`, `time` its `getArgument(2)`: "There
+    /// are two ways in which we can ignore this as a deselect: 1) 2-D position on screen 2) Time has exceeded the time
+    /// which we allow for this to be a click." The press's place and time are kept; the message is kept. With the input
+    /// off the gate destroys it first (whether the message is destroyed is the answer).
+    pub fn right_button_down(&mut self, pixel: ICoord2D, time: u32, ui: &InGameUiSelection) -> bool {
+        if input_disabled_destroys(MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, ui.input_enabled()) {
+            return true;
+        }
+        self.mouse_right_drag_anchor = pixel;
+        if !plant(9199) {
+            self.mouse_right_down = time;
+        }
+        false
+    }
+
+    /// #131: `MSG_RAW_MOUSE_RIGHT_BUTTON_UP` (CommandXlat.cpp:3640): the release's place and time are kept "for
+    /// determining if the click was fast or short enough not to be a drag", and a click cancels a building's placement
+    /// (`placeBuildAvailable(NULL, NULL)`: "Kris: July 7, 2003 ... you couldn't cancel the sneak attack mode via right
+    /// click"). The message is kept; with the input off the gate destroys it first (the answer).
+    pub fn right_button_up<H: MouseClickHost + crate::client::selection_info::SelectionInfoHost>(&mut self, pixel: ICoord2D, time: u32, ui: &mut InGameUiSelection, h: &mut H) -> bool {
+        if input_disabled_destroys(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, ui.input_enabled()) {
+            return true;
+        }
+        self.mouse_right_drag_lift = pixel;
+        self.mouse_right_up = time;
+        if plant(9196) || h.mouse_is_click(&self.mouse_right_drag_anchor, &self.mouse_right_drag_lift, self.mouse_right_down, self.mouse_right_up) {
+            ui.place_build_available(None, None, 0.0, h);
+        }
+        false
     }
 
     /// The bodies of the `MSG_MOUSE_LEFT_CLICK` and `MSG_MOUSE_RIGHT_CLICK` cases (after the gate), which the double clicks
     /// fall through to.
+    #[allow(clippy::too_many_arguments)]
     fn click_case<H: CommandXlatHost>(
         right: bool,
+        right_is_click: bool,
         is_point: bool,
         pos: &Coord3D,
         picked: Option<DrawableId>,
@@ -1166,9 +1226,10 @@ impl CommandTranslator {
         let ct = ui.gui_command().map(|c| c.command_type);
         let alternate = h.use_alternate_mouse();
         if right {
-            // "right click is only actioned here if we're in alternate mouse mode" (and `TheMouse->isClick` of the
-            // button's press and release, not translated: see the module docs)
-            if !alternate {
+            // "right click is only actioned here if we're in alternate mouse mode" ~~(and `TheMouse->isClick` of the
+            // button's press and release, not translated: see the module docs)~~ **Corrected 2026-11-11 (#131):** and
+            // `TheMouse->isClick` of the button's press and release ([`Self::right_is_click`])
+            if !(alternate && right_is_click) {
                 return false;
             }
         } else {
@@ -1224,6 +1285,7 @@ impl CommandTranslator {
         if input_disabled_destroys(if right { MSG_MOUSE_RIGHT_DOUBLE_CLICK } else { MSG_MOUSE_LEFT_DOUBLE_CLICK }, ui.input_enabled()) {
             return true;
         }
+        let right_is_click = self.right_is_click(h);
         let mouse_matches = if crate::logic::modules::plant(9103) && !right {
             true
         } else if crate::logic::modules::plant(9111) && right {
@@ -1242,13 +1304,13 @@ impl CommandTranslator {
                 ui.trigger_double_click_attack_move_guard_hint();
             }
             if crate::logic::modules::plant(9107) {
-                return Self::click_case(right, is_point, pos, picked, ui, h, eval);
+                return Self::click_case(right, right_is_click, is_point, pos, picked, ui, h, eval);
             }
             // (`break`: the message is kept)
             return crate::logic::modules::plant(9105);
         }
         // "intentional fall through"
-        Self::click_case(right, is_point, pos, picked, ui, h, eval)
+        Self::click_case(right, right_is_click, is_point, pos, picked, ui, h, eval)
     }
 }
 
@@ -1364,6 +1426,32 @@ pub(crate) mod tests {
         fn record_double_click_attack_move_order_given(&mut self) {
             self.cmd.double_click_records += 1;
         }
+    }
+    impl MouseClickHost for Host {
+        fn mouse_is_click(&self, anchor: &ICoord2D, dest: &ICoord2D, previous: u32, current: u32) -> bool {
+            crate::client::mouse::is_click(anchor, dest, previous, current, 4, 500)
+        }
+    }
+
+    /// #131, predicted before the run (the test host's tolerances: 4 pixels, 500 ms): a right press and release at one
+    /// point 100 ms apart cancels a pending building (`placeBuildAvailable(NULL, NULL)`); 600 ms apart (held) or 10 pixels
+    /// apart (dragged) it does not; with the input off the raw messages are destroyed and keep nothing.
+    #[test]
+    fn the_right_button_cancels_a_placement_only_on_a_click() {
+        let mut h = Host { mine: vec![1], ..Default::default() };
+        let mut ui = InGameUiSelection::new();
+        let mut x = CommandTranslator::default();
+        let p = |x, y| ICoord2D { x, y };
+        for (release, up, cancels) in [(p(5, 5), 100, true), (p(5, 5), 600, false), (p(15, 5), 100, false)] {
+            ui.place_build_available(Some(3), None, 0.0, &h);
+            assert!(!x.right_button_down(p(5, 5), 0, &ui));
+            assert!(!x.right_button_up(release, up, &mut ui, &mut h));
+            assert_eq!(ui.pending_place_type().is_none(), cancels, "{release:?} {up}");
+            assert_eq!((x.mouse_right_drag_lift, x.mouse_right_up), (release, up));
+        }
+        ui.set_input_enabled(false);
+        assert!(x.right_button_down(p(9, 9), 7, &ui));
+        assert_eq!((x.mouse_right_drag_anchor, x.mouse_right_down), (p(5, 5), 0));
     }
 
     /// C2b: `evaluateContextCommand`'s order of precedence. Predicted from CommandXlat.cpp, with my tank 1 selected as a group,

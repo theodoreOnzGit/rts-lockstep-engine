@@ -296,13 +296,20 @@ struct Rig {
     pinch: Option<f32>,
     /// The pointer's last pixel given as `MSG_RAW_MOUSE_POSITION`.
     last_pos: Option<ICoord2D>,
+    /// (#131) The keyboard camera's fallback keys and turn buttons held (rotate left, right, zoom in, out), for their
+    /// meta messages' begin and end.
+    camera_held: [bool; 4],
 }
+
+/// (#131) An on-screen turn button (0 left, 1 right): held, it turns the view as the camera's rotate meta keys do.
+#[derive(Component)]
+struct TurnButton(usize);
 
 impl Rig {
     /// GUI glue (the app's start of a game; [`crate::camera::Camera::new`] is tested): the camera over the map's centre.
     fn new(world: &GameWorld, screen: (i32, i32)) -> Self {
         let (centre, size) = view_frame(world);
-        Rig { cam: crate::camera::Camera::new(world, Coord3D { x: centre.x, y: centre.y, z: 0.0 }, size, screen), wheel: 0.0, touch: None, pinch: None, last_pos: None }
+        Rig { cam: crate::camera::Camera::new(world, Coord3D { x: centre.x, y: centre.y, z: 0.0 }, size, screen), wheel: 0.0, touch: None, pinch: None, last_pos: None, camera_held: [false; 4] }
     }
 }
 
@@ -894,7 +901,9 @@ fn keyboard_ui(mut events: MessageReader<KeyboardInput>, mut game: NonSendMut<Ga
 /// ([`crate::camera::Camera::tick`]). ~~#116: with the InGameUI's input off the camera takes none of them ...~~
 /// **Corrected 2026-11-10 (#119):** the translator's own input gates decide (LookAtXlat.cpp:76, :294), and the window
 /// translator takes the raw mouse first. The arrows are the game's scroll keys (`KEY_UP` ...); Q and E turn and + and -
-/// zoom (the InGameUI's keyboard camera) **(#125:** a key the CommandMap binds is left to it, as upstream's
+/// zoom (the InGameUI's keyboard camera; **#131:** only where the CommandMap binds no key to that camera meta message,
+/// and then through the same `MSG_META_BEGIN/END_CAMERA_*` messages; the on-screen `<` and `>` buttons, held, turn the
+/// view the same way, and `R` sends `MSG_META_CAMERA_RESET`) **(#125:** a key the CommandMap binds is left to it, as upstream's
 /// `MetaEventTranslator` destroys a key it maps before `LookAtTranslator` sees it); the translators' `lookAt`s (the meta
 /// keys, a control group's double press) and the camera tracking move the view here; the right button drags to scroll (the game's RMB scroll), the middle button
 /// turns, the wheel zooms. On a touch screen one finger is the right button and two pinch (a wheel notch per 15 %).
@@ -912,6 +921,7 @@ fn camera_input(
     shell: NonSend<ShellState>,
     mut rig: ResMut<Rig>,
     keyboard_scroll: Res<KeyboardScroll>,
+    turn_buttons: Query<(Has<bevy::ui::Pressed>, &TurnButton)>,
 ) {
     use rts_lockstep_engine::client::window_xlat::RawMessage;
     use rts_lockstep_engine::common::message_types::*;
@@ -952,13 +962,31 @@ fn camera_input(
                 r.cam.translate(&m, &ui, &g.controls.client.world, shell_active);
             }
         }
-        let held = |ks: &[KeyCode]| free && ks.iter().any(|&k| own(k) && keys.pressed(k));
-        r.cam.keys = crate::camera::CameraKeys {
-            rotating_left: held(&[KeyCode::KeyQ]),
-            rotating_right: held(&[KeyCode::KeyE]),
-            zooming_in: held(&[KeyCode::Equal, KeyCode::NumpadAdd]),
-            zooming_out: held(&[KeyCode::Minus, KeyCode::NumpadSubtract]),
-        };
+        // (#131) the keyboard camera: the CommandMap's camera meta keys set the InGameUI's flags (`Controls::key`); where
+        // it binds none, Q and E turn and + and - zoom as the application's fallback, through the same meta messages; the
+        // on-screen turn buttons (a phone's way) always do
+        let fallbacks = [
+            (&[KeyCode::KeyQ][..], MSG_META_BEGIN_CAMERA_ROTATE_LEFT, MSG_META_END_CAMERA_ROTATE_LEFT, Some(0usize)),
+            (&[KeyCode::KeyE][..], MSG_META_BEGIN_CAMERA_ROTATE_RIGHT, MSG_META_END_CAMERA_ROTATE_RIGHT, Some(1)),
+            (&[KeyCode::Equal, KeyCode::NumpadAdd][..], MSG_META_BEGIN_CAMERA_ZOOM_IN, MSG_META_END_CAMERA_ZOOM_IN, None),
+            (&[KeyCode::Minus, KeyCode::NumpadSubtract][..], MSG_META_BEGIN_CAMERA_ZOOM_OUT, MSG_META_END_CAMERA_ZOOM_OUT, None),
+        ];
+        for (ks, begin, end, button) in fallbacks {
+            let bound = g.controls.meta_map_binds_meta(begin);
+            let key_held = !bound && free && ks.iter().any(|&k| !g.controls.meta_map_binds(dik_of(k)) && keys.pressed(k));
+            let button_held = button.is_some_and(|b| turn_buttons.iter().any(|(pressed, t)| t.0 == b && pressed));
+            let held = key_held || button_held;
+            let i = match begin {
+                x if x == MSG_META_BEGIN_CAMERA_ROTATE_LEFT => 0,
+                x if x == MSG_META_BEGIN_CAMERA_ROTATE_RIGHT => 1,
+                x if x == MSG_META_BEGIN_CAMERA_ZOOM_IN => 2,
+                _ => 3,
+            };
+            if held != r.camera_held[i] {
+                r.camera_held[i] = held;
+                g.controls.meta(if held { begin } else { end });
+            }
+        }
         if let Ok(window) = windows.single() {
             let bar_h = bar.height + bar.panel;
             if let Some(cursor) = window.cursor_position() {
@@ -1024,6 +1052,19 @@ fn camera_input(
                 _ => r.pinch = None,
             }
         }
+    }
+    if !input {
+        // (#131) a held fallback key or turn button ends while the shell or a panel has the input
+        let ends = [MSG_META_END_CAMERA_ROTATE_LEFT, MSG_META_END_CAMERA_ROTATE_RIGHT, MSG_META_END_CAMERA_ZOOM_IN, MSG_META_END_CAMERA_ZOOM_OUT];
+        for (i, end) in ends.into_iter().enumerate() {
+            if std::mem::take(&mut r.camera_held[i]) {
+                g.controls.meta(end);
+            }
+        }
+    }
+    // (#131) `MSG_META_CAMERA_RESET`'s `TheInGameUI->resetCamera()` (a key, or the R button)
+    for _ in 0..std::mem::take(&mut g.controls.client.camera_resets) {
+        r.cam.reset_camera(&g.controls.client.world);
     }
     // (#125) the tactical view's `lookAt`s the translators asked for (the meta keys, a control group's double press), and
     // `GameClient::update`'s camera tracking
@@ -1132,6 +1173,9 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
                 // (the main menu or the game's load screen makes it visible; the client's game is already up)
                 g.pause.mouse.set_visibility(true);
                 g.mouse_pending = false;
+                // (#131) `TheMouse`'s drag tolerances, for the clicks (`MetaEventTranslator`, `Mouse::isClick`)
+                let st = &g.pause.mouse.tooltip.settings;
+                g.controls.client.view.mouse_drag_tolerance = Some((st.drag_tolerance, st.drag_tolerance_ms));
             }
             Some(Err(e)) => {
                 warn!("the mouse's cursors: {e}");
@@ -1258,7 +1302,13 @@ fn setup_ui(mut commands: Commands) {
             // (#119: three wheel notches through the translator, and the reset of `Camera::reset`)
             (button("+"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| zoom_button(&mut rig, &game, 3))),
             (button("-"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| zoom_button(&mut rig, &game, -3))),
-            (button("R"), observe(|_: On<Activate>, mut rig: ResMut<Rig>, game: NonSend<Game>| rig.cam.reset(&game.controls.client.world))),
+            // (#131) the reset is the game's: `MSG_META_CAMERA_RESET` through the command translator (`resetCamera`: the
+            // default angle and zoom where the view looks; ~~the start's point~~); the turn buttons, held, turn the view
+            (button("R"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| {
+                game.controls.meta(rts_lockstep_engine::common::message_types::MSG_META_CAMERA_RESET);
+            })),
+            (button("<"), TurnButton(0)),
+            (button(">"), TurnButton(1)),
             (button("||"), observe(|_: On<Activate>, mut game: NonSendMut<Game>| game.paused = !game.paused)),
             // (#4) the saves: the panel with the save button and the list
             (button("S"), observe(|_: On<Activate>, mut action: ResMut<SaveAction>| action.0 = Some(SaveCmd::Toggle))),
@@ -1319,11 +1369,16 @@ fn hint_name(h: rts_lockstep_engine::common::message_stream::MessageType) -> Str
     name.to_string()
 }
 
-/// The left button's press, while it is held; (#124) and the operating system's double click.
+/// The left button's press, while it is held; (#124) and the operating system's double click; (#131) the same for a
+/// mouse's right and middle buttons.
 #[derive(Resource, Default)]
 struct Pointer {
     press: Option<Vec2>,
     double: crate::input::DoubleClickDetector,
+    right_press: Option<Vec2>,
+    right_double: crate::input::DoubleClickDetector,
+    middle_press: Option<Vec2>,
+    middle_double: crate::input::DoubleClickDetector,
 }
 
 /// The status bar's and the control bar's height, and the zoom column's width, in logical pixels: the pointer over them is
@@ -1457,6 +1512,31 @@ fn pointer_input(
     }
     if pointer.press.is_some() {
         g.controls.pointer_moved(pixel(cursor), ground);
+    }
+    // (#131) a mouse's right and middle buttons through `MetaEventTranslator` (their clicks and double clicks) and, the
+    // right one, `CommandTranslator`'s bookkeeping and its click (a right click cancels a building's placement; it orders
+    // in alternate mouse mode). The camera's `LookAtTranslator` has the raw messages in `camera_input`. A touch is not a
+    // mouse button here: one finger is the camera's scroll only, so a tap does not cancel a placement.
+    {
+        use rts_lockstep_engine::common::message_types::{MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN, MSG_RAW_MOUSE_MIDDLE_BUTTON_UP, MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK};
+        let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
+        let limit = g.controls.client.world.statics.global_data.the_global_data().map_or(rts_lockstep_engine::common::global_data::DEFAULT_DOUBLE_CLICK_TIME_MS, |d| d.double_click_time_ms);
+        if buttons.just_pressed(MouseButton::Right) && !over_ui(cursor, window, bar) {
+            pointer.right_press = Some(cursor);
+            let double = pointer.right_double.press(pixel(cursor), now_ms, limit);
+            g.controls.right_press(pixel(cursor), now_ms, double);
+        }
+        if buttons.just_released(MouseButton::Right) && pointer.right_press.take().is_some() {
+            g.controls.right_release(pixel(cursor), now_ms, picked, ground);
+        }
+        if buttons.just_pressed(MouseButton::Middle) && !over_ui(cursor, window, bar) {
+            pointer.middle_press = Some(cursor);
+            let double = pointer.middle_double.press(pixel(cursor), now_ms, limit);
+            g.controls.middle_button(if double { MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK } else { MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN }, pixel(cursor));
+        }
+        if buttons.just_released(MouseButton::Middle) && pointer.middle_press.take().is_some() {
+            g.controls.middle_button(MSG_RAW_MOUSE_MIDDLE_BUTTON_UP, pixel(cursor));
+        }
     }
     if buttons.just_released(MouseButton::Left) {
         if let Some(press) = pointer.press.take() {
@@ -1921,6 +2001,20 @@ fn game_ui(
     let ui = g.ui.as_mut().expect("checked");
     // (#34) the windows as the state sets them; a grab whose release was not over the bar ends
     ui.sync(&state);
+    // (#131) `TheHotKeyManager` for this context: the hot keys the command windows' buttons name, on those windows
+    let hot_windows: Vec<Option<crate::input::HotKeyWindow>> = ui
+        .command_window_status()
+        .into_iter()
+        .enumerate()
+        .map(|(slot, st)| {
+            let (hidden, enabled) = st?;
+            let button = state.commands.get(slot).cloned().flatten().map_or(usize::MAX, |c| c.button);
+            Some(crate::input::HotKeyWindow { hidden, enabled, button })
+        })
+        .collect();
+    g.controls.set_bar_hot_keys(&state.hot_keys, hot_windows);
+    // (#131) the hot keys' `GUIClick` / `GUIClickDisabled`: the client plays no GUI sound yet (#131's gaps)
+    g.controls.gui_sounds.clear();
     if ui.wm.grab_window.is_some() && !buttons.pressed(MouseButton::Left) && touches.iter().next().is_none() {
         let _ = ui.pointer(rts_lockstep_engine::client::window_manager::gwm::LEFT_UP, (-1.0, -1.0), 0.0, false, &mut g.tooltip);
     }

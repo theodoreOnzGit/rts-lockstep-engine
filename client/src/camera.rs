@@ -10,7 +10,9 @@
 //! What is the game's, and what is the client's:
 //!
 //! - **Translated:** the translator and the view (see their modules); `InGameUI::update`'s keyboard rotation and zoom
-//!   ([`CameraKeys::update`]); the game's start of the view (`InGameUI::init`'s size and default view,
+//!   (~~[`CameraKeys::update`]~~ **Corrected 2026-11-11 (#131):** moved into the library as
+//!   `InGameUiSelection::update_keyboard_camera`, on the InGameUI's own flags, which the CommandMap's camera meta keys
+//!   set; `InGameUI::resetCamera` is [`Camera::reset_camera`]); the game's start of the view (`InGameUI::init`'s size and default view,
 //!   `GameLogic::startNewGame`'s `lookAt`, `initHeightForMap`, `setAngleAndPitchToDefault`, `setZoomToDefault`,
 //!   `setOkToAdjustHeight(TRUE)`: [`Camera::start`]).
 //! - **The client's (new):** the client frame is 30 a second ([`Camera::ticks`], the game's own frame cap); the camera's
@@ -72,36 +74,11 @@ impl ViewHost for ViewWorld<'_> {
     }
 }
 
-/// `InGameUI`'s keyboard camera flags (`m_cameraRotatingLeft`, ...), set while the client's rotate and zoom keys are
-/// held (upstream: the meta keys' messages through `CommandTranslator`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CameraKeys {
-    pub rotating_left: bool,
-    pub rotating_right: bool,
-    pub zooming_in: bool,
-    pub zooming_out: bool,
-}
-
-impl CameraKeys {
-    /// `InGameUI::update`'s keyboard camera: one key of a pair turns the view by `m_keyboardCameraRotateSpeed` or zooms
-    /// it one step.
-    pub fn update(&self, view: &mut TacticalView, h: &impl ViewHost) {
-        let speed = h.global().keyboard_camera_rotate_speed;
-        if self.rotating_left && !self.rotating_right {
-            view.set_angle(view.get_angle() - speed, h);
-        }
-        if self.rotating_right && !self.rotating_left {
-            view.set_angle(view.get_angle() + speed, h);
-        }
-        if self.zooming_in && !self.zooming_out {
-            view.zoom_in(h);
-        }
-        if self.zooming_out && !self.zooming_in {
-            view.zoom_out(h);
-        }
-    }
-}
-
+/// ~~`InGameUI`'s keyboard camera flags (`m_cameraRotatingLeft`, ...), set while the client's rotate and zoom keys are
+/// held (upstream: the meta keys' messages through `CommandTranslator`).~~ **Corrected 2026-11-11 (#131):** `CameraKeys`
+/// is gone: the flags are the InGameUI's (`InGameUiSelection::set_camera_rotate_left`, ...), set by the CommandMap's
+/// camera meta keys through `CommandTranslator`, or by the application's fallback keys and on-screen buttons where the
+/// CommandMap binds none.
 /// The camera: the view, the translator and the InGameUI's scroll state.
 #[derive(Clone, Debug)]
 pub struct Camera {
@@ -115,8 +92,6 @@ pub struct Camera {
     pub scroll_amount: Coord2D,
     /// `InGameUI::m_moveRMBScrollAnchor` (off, the InGameUI's default, until the options set it).
     pub move_rmb_anchor: bool,
-    /// The keyboard camera flags.
-    pub keys: CameraKeys,
     /// ~~`TheMouse`'s cursor as the translator sets it (the client draws the system's).~~ **Corrected 2026-11-10
     /// (#117):** `TheMouse->getMouseCursor()` as the owner copied it from the client's mouse
     /// (`rts_lockstep_engine::client::mouse::Mouse`) before the call, kept up to date by the calls below.
@@ -290,7 +265,6 @@ impl Camera {
             ui_scrolling: false,
             scroll_amount: Coord2D::default(),
             move_rmb_anchor: false,
-            keys: CameraKeys::default(),
             cursor: MOUSE_ARROW,
             cursor_calls: Vec::new(),
             client_frame: 0,
@@ -360,9 +334,9 @@ impl Camera {
         self.client_frame = self.client_frame.wrapping_add(1);
         self.translate(&RawMessage::mouse(MSG_FRAME_TICK, ICoord2D::default()), ui, world, shell_active);
         let vh = ViewWorld { g: &self.globals, world };
-        if ui.input_enabled() {
-            self.keys.update(&mut self.view, &vh);
-        }
+        // (#131: `InGameUI::update`'s keyboard camera, on the InGameUI's flags; `setInputEnabled(FALSE)` clears them)
+        let speed = vh.g.keyboard_camera_rotate_speed;
+        ui.update_keyboard_camera(&mut rts_lockstep_engine::client::tactical_view::HostedView { view: &mut self.view, h: &vh }, speed);
         self.view.update_height(self.ui_scrolling, &vh);
     }
 
@@ -377,6 +351,13 @@ impl Camera {
         self.view.look_at(&self.home, &vh);
         self.view.set_angle_and_pitch_to_default(&vh);
         self.view.set_zoom_to_default(&vh);
+    }
+
+    /// #131: `InGameUI::resetCamera()` (`MSG_META_CAMERA_RESET`): the default angle, FX pitch and zoom at the point the
+    /// view looks at (`rts_lockstep_engine::client::in_game_ui::reset_camera`).
+    pub fn reset_camera(&mut self, world: &World) {
+        let vh = ViewWorld { g: &self.globals, world };
+        rts_lockstep_engine::client::in_game_ui::reset_camera(&mut self.view, &vh);
     }
 
     /// The radar's look: `TheTacticalView->lookAt(&world)`.
@@ -499,12 +480,16 @@ mod tests {
         let z0 = cam.view.zoom;
         cam.tick(&ui, w, false);
         assert!(cam.view.zoom < z0);
-        // the keys' rotation
-        cam.keys.rotating_left = true;
+        // the keys' rotation (#131: the InGameUI's flag)
+        let mut turning = ui.clone();
+        turning.set_camera_rotate_left(true);
         let a0 = cam.view.angle;
-        cam.tick(&ui, w, false);
+        cam.tick(&turning, w, false);
         assert!(cam.view.angle < a0);
-        cam.keys = CameraKeys::default();
+        // (#131) the reset: angle 0 at the point looked at
+        let at = cam.view.pos;
+        cam.reset_camera(w);
+        assert_eq!((cam.view.pos.x, cam.view.pos.y, cam.view.angle, cam.view.fx_pitch), (at.x, at.y, 0.0, 1.0));
         // the clock
         assert_eq!(cam.ticks(0.1), 3);
         assert_eq!(cam.ticks(10.0), 4);

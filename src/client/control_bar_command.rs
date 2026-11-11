@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarCommand.cpp (ControlBar::populateCommand,
 //     populateBuildQueue, updateContextCommand, getCommandAvailability, getRappellerCount's use)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (setControlCommand: the images and the
-//     tooltip text of a command button)
+//     tooltip text of a command button; #131: its hot key)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/ControlBar.h (CommandAvailability, CommandOption, MAX_BUILD_QUEUE_BUTTONS)
 //
 // Original copyright notice of those files:
@@ -48,8 +48,9 @@
 //! # Where this differs from upstream
 //!
 //! The windows are not changed in place: [`populate_command`] returns what each slot shows ([`CommandSlot`]); the
-//! drawing applies it. The veterancy overlay, hot keys, the rally point display, the transport inventory
-//! (`doTransportInventoryUI`) and the multi-select context are not translated yet. Every question about the World is
+//! drawing applies it. The veterancy overlay, ~~hot keys,~~ the rally point display, the transport inventory
+//! (`doTransportInventoryUI`) and the multi-select context are not translated yet. **Corrected 2026-11-11 (#131):** the
+//! hot keys are ([`populate_command_with_hot_keys`], [`crate::client::hot_key`]). Every question about the World is
 //! asked of a [`ControlBarStateHost`]; the client's host answers from the World, read only.
 
 use crate::client::control_bar::gui;
@@ -439,13 +440,35 @@ pub struct CommandSlot {
 /// `populateCommand(obj)` then the command windows' part of `updateContextCommand()`: what each of the 18 command windows
 /// shows (`None`: hidden).
 pub fn populate_command(obj: ObjectId, h: &mut impl ControlBarStateHost) -> [Option<CommandSlot>; MAX_COMMANDS_PER_SET] {
-    let mut slots: [Option<CommandSlot>; MAX_COMMANDS_PER_SET] = Default::default();
-    let Some(set) = h.command_set_buttons(obj) else { return slots };
+    populate_command_with_hot_keys(obj, h).0
+}
+
+/// The 18 command windows' slots ([`populate_command`]).
+pub type CommandSlots = [Option<CommandSlot>; MAX_COMMANDS_PER_SET];
+
+/// #131: [`populate_command`], and the hot keys `setControlCommand` adds on the way (`searchHotKey` of each button's text
+/// label, [`crate::client::hot_key`]): `(command window slot, key)` in the order added, for every button the loop gives a
+/// window to (all but the script-only ones and the transport's exit buttons), **including** those then hidden for a
+/// science the player lacks or by their availability. The caller resets `TheHotKeyManager` first (`switchToContext`)
+/// and adds them in order (a key already mapped keeps its first window).
+pub fn populate_command_with_hot_keys(obj: ObjectId, h: &mut impl ControlBarStateHost) -> (CommandSlots, Vec<(usize, Vec<u8>)>) {
+    let mut slots: CommandSlots = Default::default();
+    let mut hot_keys = Vec::new();
+    let Some(set) = h.command_set_buttons(obj) else { return (slots, hot_keys) };
     for (i, b) in set.iter().enumerate() {
         let Some(bi) = *b else { continue };
         let Some(button) = h.button(bi) else { continue };
         if button.options & opt::SCRIPT_ONLY != 0 || button.command == gui::EXIT_CONTAINER {
             continue;
+        }
+        // (#131) setControlCommand's hot key: `searchHotKey(commandButton->getTextLabel())`, the button's own label (the
+        // purchase-science text below comes after it, upstream's `copyButtonTextFrom`)
+        if !button.labels[0].is_empty() {
+            let text = h.fetch_text(&button.labels[0]);
+            let key = crate::client::hot_key::HotKeyManager::search_hot_key(&text);
+            if !key.is_empty() {
+                hot_keys.push((i, key));
+            }
         }
         // setControlCommand
         let mut image = (!button.images[0].is_empty()).then(|| button.images[0].clone());
@@ -509,7 +532,7 @@ pub fn populate_command(obj: ObjectId, h: &mut impl ControlBarStateHost) -> [Opt
             checked: check_like && availability == CommandAvailability::Active,
         });
     }
-    slots
+    (slots, hot_keys)
 }
 
 /// One build queue entry as the queue window shows it (`m_queueData`).

@@ -9,7 +9,8 @@
 //     W3DView::W3DView, setHeight, setWidth, buildCameraTransform, calcCameraConstraints, getPickRay,
 //     setCameraTransform, init, update's height above ground, scrollBy, forceRedraw, setAngle, setPitch,
 //     setAngleAndPitchToDefault, setDefaultView, setHeightAboveGround, setZoom, setZoomToDefault, lookAt,
-//     initHeightForMap)
+//     initHeightForMap; #131: resetCamera with the end of the 1 ms moveCameraTo, zoomCamera and pitchCamera it starts:
+//     setupWaypointPath, moveAlongWaypointPath, zoomCameraOneFrame, pitchCameraOneFrame, updateCameraMovements)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/camera.cpp (CameraClass: the constructor, Set_View_Plane,
 //     Set_Aspect_Ratio, Un_Project, Device_To_View_Space, Device_To_World_Space)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp (PixelScreenToW3DLogicalScreen)
@@ -49,7 +50,8 @@
 //!
 //! - Not translated (not reached by `LookAtTranslator` in a release build, nor by the client): the scripted camera
 //!   (`moveCameraTo`, `rotateCamera`, the waypoint paths, `cameraMod*`, `updateCameraMovements` and the `m_doing*`
-//!   flags they clear), the camera lock and its follow in `update`, the camera shake (`m_shakeOffset` and
+//!   flags they clear; **#131:** but for `resetCamera`'s instant form, whose end state [`TacticalView::reset_camera`]
+//!   gives), the camera lock and its follow in `update`, the camera shake (`m_shakeOffset` and
 //!   `CameraShakerSystem`: their angles are 0, a rotation by nothing), the slaved and real-zoom cameras
 //!   (`m_isCameraSlaved`, `m_useRealZoomCam`, both false), the field of view (debug only), picking and drawing.
 //! - `lookAt` takes the on-ground branch only: a point higher than a pathfind cell above the ground would be cast
@@ -668,6 +670,74 @@ impl TacticalView {
         self.set_camera_transform(h);
     }
 
+    /// #131: `W3DView::resetCamera(location, milliseconds, easeIn, easeOut)` (W3DView.cpp:2789), as the view stands once
+    /// the movements it starts have finished, then the camera placed (`updateView`'s `recalcCamera`). `InGameUI::resetCamera`
+    /// passes the view's own position and 1 ms, and every 1 ms movement finishes on the next frame's
+    /// `updateCameraMovements`: [`Self::reset_camera_end_state`].
+    pub fn reset_camera(&mut self, location: &Coord3D, milliseconds: i32, ease_in: f32, ease_out: f32, h: &impl ViewHost) {
+        self.reset_camera_end_state(location, milliseconds, ease_in, ease_out, h);
+        self.set_camera_transform(h);
+    }
+
+    /// #131: what `resetCamera(location, 1, 0, 0)` and the next frame's `updateCameraMovements` leave:
+    /// - `zoomCamera(desiredZoom, ...)`: the zoom that puts the camera the maximum height above the highest ground around
+    ///   `location` (`getHeightAroundPos`), reached in its one frame (`zoomCameraOneFrame`'s `m_zoom = endZoom`); the
+    ///   height asked for (`m_heightAboveGround`) is **not** changed, so the next frames' height adjustment
+    ///   ([`Self::update_height`]) takes the zoom back toward it;
+    /// - `pitchCamera(1.0, ...)`: the FX pitch 1;
+    /// - `moveCameraTo(location, ...)` with `m_mcwpInfo.cameraAngle[2] = 0.0` after it: at the path's end
+    ///   (`moveAlongWaypointPath`'s finish) the angle 0, the ground level the ground under `location` (the path's last
+    ///   `groundHeight`, the blend `m_groundLevel*0 + newGround*1`), the camera offset's y and x from its z and the
+    ///   global data's pitch and yaw, the position `location` at height 0, and the camera constraints widened to hold it.
+    ///
+    /// With `TheGlobalData->m_disableCameraMovement` the movements end without moving anything. Only the instant form is
+    /// translated (`milliseconds` up to one frame, `TheW3DFrameLengthInMsec`, and no ease, as `InGameUI::resetCamera`
+    /// calls it); the scripted camera's frames in between are not (see the module docs). The location must be the view's
+    /// own position (as `resetCamera`'s caller passes): another one within a unit of it would take an in-between frame
+    /// first.
+    pub fn reset_camera_end_state(&mut self, location: &Coord3D, _milliseconds: i32, _ease_in: f32, _ease_out: f32, h: &impl ViewHost) {
+        // (`moveCameraTo` keeps `m_angle = m_mcwpInfo.cameraAngle[0]`, its own angle: no change)
+        // "terrain height + desired height offset == cameraOffset * actual zoom"
+        let terrain_height_max = get_height_around_pos(h, location.x, location.y);
+        let above = if crate::logic::modules::plant(9207) { self.height_above_ground } else { self.max_height_above_ground };
+        let desired_height = terrain_height_max + above;
+        let desired_zoom = desired_height / self.camera_offset.z;
+        let g = h.global();
+        if g.disable_camera_movement {
+            return;
+        }
+        // zoomCameraOneFrame, pitchCameraOneFrame
+        self.zoom = desired_zoom;
+        if !crate::logic::modules::plant(9208) {
+            self.fx_pitch = 1.0;
+        }
+        // moveAlongWaypointPath's finish: `cameraAngle[numWaypoints]`, set to 0 by resetCamera ("default angle")
+        if !crate::logic::modules::plant(9206) {
+            self.angle = 0.0;
+        }
+        // `groundHeight[numWaypoints] = m_groundLevel*factor1 + newGround*factor2` with factor2 = 1
+        let mut new_ground = h.ground_height(location.x, location.y);
+        if crate::logic::modules::plant(9210) && new_ground > 120.0f32 {
+            new_ground = 120.0;
+        }
+        let factor2 = 1.0f32;
+        let factor1 = (1.0f64 - f64::from(factor2)) as f32;
+        self.ground_level = self.ground_level * factor1 + new_ground * factor2;
+        self.camera_offset.y = (-(f64::from(self.camera_offset.z) / petir::Real::tan(f64::from(g.camera_pitch) * (f64::from(PI) / 180.0)))) as f32;
+        self.camera_offset.x = (-(f64::from(self.camera_offset.y) * petir::Real::tan(f64::from(g.camera_yaw) * (f64::from(PI) / 180.0)))) as f32;
+        let mut pos = *location;
+        pos.z = 0.0;
+        self.pos = pos;
+        // "assuming that the scripter knows what he is doing, we adjust the constraints so that the scripted action can
+        // occur."
+        if !crate::logic::modules::plant(9209) {
+            self.camera_constraint.lo.x = minf(self.camera_constraint.lo.x, pos.x);
+            self.camera_constraint.hi.x = maxf(self.camera_constraint.hi.x, pos.x);
+            self.camera_constraint.lo.y = minf(self.camera_constraint.lo.y, pos.y);
+            self.camera_constraint.hi.y = maxf(self.camera_constraint.hi.y, pos.y);
+        }
+    }
+
     /// `View::getLocation(&location)`.
     pub fn get_location(&self) -> ViewLocation {
         let mut l = ViewLocation::default();
@@ -752,6 +822,27 @@ impl TacticalView {
     }
 }
 
+/// #131: `TheTacticalView` for `InGameUI::update`'s keyboard camera: the view with its host.
+pub struct HostedView<'a, H: ViewHost> {
+    pub view: &'a mut TacticalView,
+    pub h: &'a H,
+}
+
+impl<H: ViewHost> crate::client::in_game_ui::KeyboardCameraView for HostedView<'_, H> {
+    fn get_angle(&self) -> f32 {
+        self.view.get_angle()
+    }
+    fn set_angle(&mut self, angle: f32) {
+        self.view.set_angle(angle, self.h);
+    }
+    fn zoom_in(&mut self) {
+        self.view.zoom_in(self.h);
+    }
+    fn zoom_out(&mut self) {
+        self.view.zoom_out(self.h);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,6 +878,33 @@ mod tests {
         g.max_camera_height = 300.0;
         g.min_camera_height = 100.0;
         Flat { g, ground: 0.0, paused: false }
+    }
+
+    /// #131, predicted before the run: the view turned to 1.2, its FX pitch 0.5 and zoomed in, `InGameUI::resetCamera`
+    /// leaves it at the same point with angle 0, FX pitch 1, the ground level of the ground there, and the zoom of the
+    /// maximum height over the highest ground around it (`setZoomToDefault`'s zoom at that point) while the height asked
+    /// for stays the zoomed-in one; with camera movement disabled nothing changes.
+    #[test]
+    fn the_camera_reset_turns_to_north_and_zooms_out_where_it_looks() {
+        let h = host();
+        let mut v = started(&h);
+        v.set_angle(1.2, &h);
+        v.fx_pitch = 0.5;
+        v.zoom_in(&h);
+        let asked = v.height_above_ground;
+        let at = v.pos;
+        crate::client::in_game_ui::reset_camera(&mut v, &h);
+        let mut d = started(&h);
+        d.pos = at;
+        d.set_zoom_to_default(&h);
+        assert_eq!((v.pos.x, v.pos.y, v.angle, v.fx_pitch), (at.x, at.y, 0.0, 1.0));
+        assert_eq!((v.zoom, v.ground_level, v.height_above_ground), (d.zoom, 0.0, asked));
+        let mut off = host();
+        off.g.disable_camera_movement = true;
+        let mut w = started(&off);
+        w.set_angle(1.2, &off);
+        crate::client::in_game_ui::reset_camera(&mut w, &off);
+        assert_eq!(w.angle, norm_angle(1.2));
     }
 
     /// The game's start sequence (`InGameUI::init`, `GameLogic::startNewGame`) on a 800x600 display.

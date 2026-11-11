@@ -5,7 +5,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (selectDrawable, deselectDrawable, deselectAllDrawables,
 //   getAllSelectedDrawables, getSelectCount, getMaxSelectCount, incrementSelectCount, decrementSelectCount,
 //   isAnySelectedKindOf, the force-attack and prefer-selection modes, setSelecting, setInputEnabled; #122: the cursor
-//   halves of setGUICommand and placeBuildAvailable, with the recursion of the latter)
+//   halves of setGUICommand and placeBuildAvailable, with the recursion of the latter; #131: the keyboard camera flags,
+//   update's keyboard camera rotation and zoom, resetCamera)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/InGameUI.h
 //
 // Original copyright notice of those files:
@@ -109,6 +110,12 @@ pub struct InGameUiSelection {
     pub(crate) recorder_playback: bool,
     /// #125: `m_cameraTrackingDrawable`.
     camera_tracking_drawable: bool,
+    /// #131: `m_cameraRotatingLeft`, `m_cameraRotatingRight`, `m_cameraZoomingIn`, `m_cameraZoomingOut`: the keyboard
+    /// camera, set and cleared by the CommandMap's camera meta keys (CommandXlat.cpp:3205-3236).
+    camera_rotating_left: bool,
+    camera_rotating_right: bool,
+    camera_zooming_in: bool,
+    camera_zooming_out: bool,
 }
 
 impl InGameUiSelection {
@@ -212,8 +219,10 @@ impl InGameUiSelection {
 
     /// `setInputEnabled(enable)` / `getInputEnabled()`. ~~A plain setter.~~ **Corrected 2026-11-10 (#116):** as upstream,
     /// disabling also ends a drag's `setSelecting`, and going from enabled to disabled clears the modes a key held through
-    /// a cinematic would leave on: force attack (CTRL), force move, waypoint (ALT) and prefer selection (SHIFT). The four
-    /// camera rotate and zoom flags it also clears are not InGameUI members in this port (the application's camera keys).
+    /// a cinematic would leave on: force attack (CTRL), force move, waypoint (ALT) and prefer selection (SHIFT). ~~The four
+    /// camera rotate and zoom flags it also clears are not InGameUI members in this port (the application's camera keys).~~
+    /// **Corrected 2026-11-11 (#131):** the four camera rotate and zoom flags are InGameUI members now, and it clears them
+    /// too (KP4, KP6, KP8, KP2 in upstream's comments).
     pub fn set_input_enabled(&mut self, enable: bool) {
         if !enable {
             self.set_selecting(false);
@@ -227,6 +236,61 @@ impl InGameUiSelection {
             if !crate::logic::modules::plant(9022) {
                 self.set_prefer_selection_mode(false);
             }
+            if !crate::logic::modules::plant(9205) {
+                self.set_camera_rotate_left(false);
+                self.set_camera_rotate_right(false);
+                self.set_camera_zoom_in(false);
+                self.set_camera_zoom_out(false);
+            }
+        }
+    }
+
+    /// #131: `setCameraRotateLeft(set)`, `setCameraRotateRight`, `setCameraZoomIn`, `setCameraZoomOut` and their
+    /// `isCamera*` questions (InGameUI.h:545-553).
+    pub fn set_camera_rotate_left(&mut self, set: bool) {
+        self.camera_rotating_left = set;
+    }
+    pub fn set_camera_rotate_right(&mut self, set: bool) {
+        self.camera_rotating_right = set;
+    }
+    pub fn set_camera_zoom_in(&mut self, set: bool) {
+        self.camera_zooming_in = set;
+    }
+    pub fn set_camera_zoom_out(&mut self, set: bool) {
+        self.camera_zooming_out = set;
+    }
+    pub fn is_camera_rotating_left(&self) -> bool {
+        self.camera_rotating_left
+    }
+    pub fn is_camera_rotating_right(&self) -> bool {
+        self.camera_rotating_right
+    }
+    pub fn is_camera_zooming_in(&self) -> bool {
+        self.camera_zooming_in
+    }
+    pub fn is_camera_zooming_out(&self) -> bool {
+        self.camera_zooming_out
+    }
+
+    /// #131: `InGameUI::update`'s keyboard camera (InGameUI.cpp:1856-1876): one of a pair turns the view by
+    /// `m_keyboardCameraRotateSpeed` (`rotate_speed`; left lowers the angle) or zooms it one step; both of a pair do
+    /// nothing. The view is `TheTacticalView` ([`crate::client::tactical_view::HostedView`] for the client's).
+    pub fn update_keyboard_camera(&self, view: &mut impl KeyboardCameraView, rotate_speed: f32) {
+        let both = crate::logic::modules::plant(9202);
+        if self.camera_rotating_left && (!self.camera_rotating_right || both) {
+            // "Keyboard rotate left"
+            let a = view.get_angle() - rotate_speed;
+            view.set_angle(a);
+        }
+        if self.camera_rotating_right && !self.camera_rotating_left {
+            let a = view.get_angle() + rotate_speed;
+            view.set_angle(a);
+        }
+        if self.camera_zooming_in && (!self.camera_zooming_out || crate::logic::modules::plant(9203)) {
+            view.zoom_in();
+        }
+        if self.camera_zooming_out && !self.camera_zooming_in {
+            view.zoom_out();
         }
     }
     pub fn input_enabled(&self) -> bool {
@@ -429,6 +493,27 @@ impl InGameUiSelection {
     }
 }
 
+/// #131: what `InGameUI::update`'s keyboard camera calls on `TheTacticalView`: `getAngle`, `setAngle`, `zoomIn`,
+/// `zoomOut`.
+pub trait KeyboardCameraView {
+    fn get_angle(&self) -> f32;
+    fn set_angle(&mut self, angle: f32);
+    fn zoom_in(&mut self);
+    fn zoom_out(&mut self);
+}
+
+/// #131: `InGameUI::resetCamera()` (InGameUI.cpp:4163): "Resets the camera to default zoom and orientation." The view's
+/// location (`getLocation`) and `TheTacticalView->resetCamera(&position, 1, 0.0f, 0.0f)`
+/// ([`crate::client::tactical_view::TacticalView::reset_camera`]).
+pub fn reset_camera(view: &mut crate::client::tactical_view::TacticalView, h: &impl crate::client::tactical_view::ViewHost) {
+    let current_view = view.get_location();
+    let mut at = current_view.pos;
+    if crate::logic::modules::plant(9204) {
+        at = crate::common::base_type::Coord3D::default();
+    }
+    view.reset_camera(&at, 1, 0.0, 0.0, h);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,4 +588,52 @@ mod tests {
         s.set_input_enabled(true);
         assert_eq!((s.input_enabled(), modes(&s)), (true, [false, true, true, true, true, true]));
     }
+
+    /// #131, predicted before the run: rotate left alone lowers the angle by the rotate speed; both rotations together do
+    /// nothing; zoom in alone lowers the height asked for by 10; turning the input off from on clears all four flags.
+    #[test]
+    fn the_keyboard_camera_flags_turn_and_zoom_the_view() {
+        use crate::client::tactical_view::{TacticalView, ViewHost};
+        use crate::common::global_data::GlobalData;
+        struct H(GlobalData);
+        impl ViewHost for H {
+            fn global(&self) -> &GlobalData {
+                &self.0
+            }
+            fn ground_height(&self, _x: f32, _y: f32) -> f32 {
+                0.0
+            }
+            fn extent(&self) -> Option<crate::common::base_type::Region3D> {
+                None
+            }
+            fn game_paused(&self) -> bool {
+                false
+            }
+        }
+        let mut g = GlobalData::new();
+        g.camera_height = 250.0;
+        g.camera_pitch = 40.0;
+        g.max_camera_height = 300.0;
+        g.min_camera_height = 100.0;
+        g.keyboard_camera_rotate_speed = 0.1;
+        let h = H(g);
+        let mut v = TacticalView::new(&h.0);
+        v.init(&h);
+        v.height_above_ground = 200.0;
+        let mut ui = InGameUiSelection::new();
+        let speed = h.0.keyboard_camera_rotate_speed;
+        ui.set_camera_rotate_left(true);
+        ui.update_keyboard_camera(&mut crate::client::tactical_view::HostedView { view: &mut v, h: &h }, speed);
+        assert_eq!(v.get_angle(), -0.1);
+        ui.set_camera_rotate_right(true);
+        ui.update_keyboard_camera(&mut crate::client::tactical_view::HostedView { view: &mut v, h: &h }, speed);
+        assert_eq!(v.get_angle(), -0.1);
+        ui.set_camera_zoom_in(true);
+        ui.update_keyboard_camera(&mut crate::client::tactical_view::HostedView { view: &mut v, h: &h }, speed);
+        assert_eq!(v.get_height_above_ground(), 190.0);
+        ui.set_camera_zoom_out(true);
+        ui.set_input_enabled(false);
+        assert!(!ui.is_camera_rotating_left() && !ui.is_camera_rotating_right() && !ui.is_camera_zooming_in() && !ui.is_camera_zooming_out());
+    }
+
 }

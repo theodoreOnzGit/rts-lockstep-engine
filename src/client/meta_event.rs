@@ -3,7 +3,8 @@
 // Translated from (EA's release, https://github.com/electronicarts/CnC_Generals_Zero_Hour,
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MessageStream/MetaEvent.cpp (GameMessageMetaTypeNames,
-//     TheMetaMapFieldParseTable, MetaEventTranslator::translateGameMessage's key part, MetaMap::findGameMessageMetaType,
+//     TheMetaMapFieldParseTable, MetaEventTranslator::MetaEventTranslator, MetaEventTranslator::translateGameMessage's key
+//     part and (#131) its mouse part, MetaMap::findGameMessageMetaType,
 //     MetaMap::getMetaMapRec, MetaMap::parseMetaMap, INI::parseMetaMapDefinition)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/MetaEvent.h (MappableKeyCategories, MappableKeyType, KeyNames,
 //     MappableKeyTransition, MappableKeyModState, CommandUsableInType and their names, MetaMapRec)
@@ -20,7 +21,8 @@
 // this translation), with the additional terms in NOTICE.md.
 // Translated to Rust and modified; not the original program.
 
-//! GitHub #125: the key map (`TheMetaMap`, from `CommandMap.ini`) and `MetaEventTranslator`'s key part: a raw key message
+//! GitHub #125: the key map (`TheMetaMap`, from `CommandMap.ini`) and `MetaEventTranslator`'s key part **and (#131) its
+//! mouse part** (the clicks and double clicks of the three buttons): a raw key message
 //! becomes the meta message its binding names (`MSG_META_SELECT_NEXT_UNIT` for the tab key, ...), which the command
 //! translator's cases then carry out ([`crate::client::command_xlat_meta`]).
 //!
@@ -31,6 +33,11 @@
 //!   by `GameMessageMetaTypeNames` (unknown: `INI_INVALID_DATA`); `getMetaMapRec` finds the record of that message or
 //!   **prepends** a new one (key `MK_NONE`, `DOWN`, no modifiers, usable nowhere, `CATEGORY_MISC`), and the block's
 //!   fields (`Key`, `Transition`, `Modifiers`, `UseableIn`, `Category`, `Description`, `DisplayName`) fill it.
+//! - **(#131)** On a raw mouse message ([`MetaEventTranslator::translate_mouse`], MetaEvent.cpp:550-640): a button's press
+//!   keeps where it went down and clears the button's double click; the operating system's double click
+//!   (`MSG_RAW_MOUSE_*_DOUBLE_CLICK`, in place of the second press) marks it; the release inserts after itself
+//!   `MSG_MOUSE_*_CLICK`, or `MSG_MOUSE_*_DOUBLE_CLICK` when marked, with the rectangle from the press to the release
+//!   (a point within the drag tolerance) and the release's modifier keys. The left, middle and right buttons alike.
 //! - `MetaEventTranslator::translateGameMessage` (priority 20) on `MSG_RAW_KEY_DOWN` / `UP` ([`MetaEventTranslator::translate_key`]):
 //!   the key state's control, shift and alt bits (either side) make the modifier state; the records are tried in the list's
 //!   order, skipping a game-only command before client frame 1 and one not usable where the shell is (shown or not).
@@ -46,6 +53,10 @@
 //! - A record's `Transition = DOUBLEDOWN` never fires (the double-down test is commented out).
 //! - The modifiers-only rule needs no key match: a modifier key's own message (or any key at a changed modifier state)
 //!   fires it, before any record with a key is tried.
+//! - **(#131)** A release's click rectangle is collapsed only when **both** sides are under the drag tolerance (`<`,
+//!   so a tolerance of 0 never makes a point), and to the corner `buildRegion` puts in `lo`, not to the press.
+//! - **(#131)** The double click mark is the button's own: a double click of one button does not make another's
+//!   release a double click; a release without a press since the last one reuses the last press's place.
 //!
 //! # Where this differs from upstream
 //!
@@ -64,6 +75,7 @@
 //! get ([`KeyResult`]).
 
 use crate::client::selection_xlat::Disposition;
+use crate::common::base_type::{ICoord2D, IRegion2D};
 use crate::common::ini::{BlockParse, FieldParse, Ini, IniError, IniErrorKind, IniLoadType, IniResult, LookupListRec, UserData};
 use crate::common::message_stream::MessageType;
 use crate::common::message_types::*;
@@ -530,13 +542,41 @@ pub struct KeyResult {
     pub fast_forward_toggled: bool,
 }
 
-/// `class MetaEventTranslator`'s key members.
+/// `NUM_MOUSE_BUTTONS` (left, middle, right).
+pub const NUM_MOUSE_BUTTONS: usize = 3;
+
+/// `class MetaEventTranslator`'s members (`MetaEventTranslator()`: `MK_NONE`, no modifiers, no double click pending;
+/// the down positions are left unset upstream, zero here).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct MetaEventTranslator {
     /// `m_lastKeyDown` (`MK_NONE` at first).
     pub last_key_down: i32,
     /// `m_lastModState`.
     pub last_mod_state: i32,
+    /// #131: `m_mouseDownPosition[NUM_MOUSE_BUTTONS]`: where each button (left, middle, right) last went down.
+    pub mouse_down_position: [ICoord2D; NUM_MOUSE_BUTTONS],
+    /// #131: `m_nextUpShouldCreateDoubleClick[NUM_MOUSE_BUTTONS]`: the button's last press was a double click.
+    pub next_up_should_create_double_click: [bool; NUM_MOUSE_BUTTONS],
+}
+
+/// #131: the click message a button's release inserts after it (`TheMessageStream->insertMessage(type, msg)`, so the
+/// translators after `MetaEventTranslator` see it right after the release), with its two arguments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MouseClick {
+    /// `MSG_MOUSE_LEFT_CLICK`, `MSG_MOUSE_LEFT_DOUBLE_CLICK`, the middle's and the right's.
+    pub t: MessageType,
+    /// `appendPixelRegionArgument`: the press and the release's rectangle, a point (`hi` = `lo`) inside the drag
+    /// tolerance.
+    pub region: IRegion2D,
+    /// `appendIntegerArgument(msg->getArgument(1)->integer)`: the release's modifier keys.
+    pub modifiers: i32,
+}
+
+impl MouseClick {
+    /// The command translator's `isPoint`: the region's width and height are 0.
+    pub fn is_point(&self) -> bool {
+        self.region.hi.x.wrapping_sub(self.region.lo.x) == 0 && self.region.hi.y.wrapping_sub(self.region.lo.y) == 0
+    }
 }
 
 impl MetaEventTranslator {
@@ -611,6 +651,77 @@ impl MetaEventTranslator {
         self.last_mod_state = new_mod_state;
         out
     }
+
+    /// #131: `translateGameMessage` on a raw mouse message (`MSG_RAW_MOUSE_BEGIN` < `t` < `MSG_RAW_MOUSE_END`) at `pixel`
+    /// with its modifier keys (`getArgument(1)`); `drag_tolerance` is `TheMouse->m_dragTolerance`. The message itself is
+    /// always kept. A press (left, middle, right) keeps its place and clears the button's double click; a double click
+    /// (the second press, `MSG_RAW_MOUSE_*_DOUBLE_CLICK`) marks the button's next release as one; a release inserts the
+    /// button's click or double click, clears the mark, and gives it the rectangle from the press to the release
+    /// (`buildRegion`), collapsed to its `lo` corner when both sides are inside the drag tolerance, and the modifiers.
+    pub fn translate_mouse(&mut self, t: MessageType, pixel: ICoord2D, modifiers: i32, drag_tolerance: u32) -> Option<MouseClick> {
+        if !(t.0 > MSG_RAW_MOUSE_BEGIN.0 && t.0 < MSG_RAW_MOUSE_END.0) {
+            return None;
+        }
+        let index = |middle: MessageType, right: MessageType| {
+            if t == middle {
+                if plant(9191) {
+                    2
+                } else {
+                    1
+                }
+            } else if t == right {
+                2
+            } else {
+                0
+            }
+        };
+        if t == MSG_RAW_MOUSE_LEFT_BUTTON_DOWN || t == MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN || t == MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN {
+            // "Fill out which the current mouse down position"
+            let i = index(MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN, MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN);
+            self.mouse_down_position[i] = pixel;
+            if !plant(9190) {
+                self.next_up_should_create_double_click[i] = false;
+            }
+            None
+        } else if t == MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK || t == MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK || t == MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK {
+            let i = index(MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK, MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK);
+            self.next_up_should_create_double_click[i] = true;
+            None
+        } else if t == MSG_RAW_MOUSE_LEFT_BUTTON_UP || t == MSG_RAW_MOUSE_MIDDLE_BUTTON_UP || t == MSG_RAW_MOUSE_RIGHT_BUTTON_UP {
+            let location = pixel;
+            let i = index(MSG_RAW_MOUSE_MIDDLE_BUTTON_UP, MSG_RAW_MOUSE_RIGHT_BUTTON_UP);
+            let (click, double) = if t == MSG_RAW_MOUSE_LEFT_BUTTON_UP {
+                (MSG_MOUSE_LEFT_CLICK, MSG_MOUSE_LEFT_DOUBLE_CLICK)
+            } else if t == MSG_RAW_MOUSE_MIDDLE_BUTTON_UP {
+                (MSG_MOUSE_MIDDLE_CLICK, MSG_MOUSE_MIDDLE_DOUBLE_CLICK)
+            } else {
+                (MSG_MOUSE_RIGHT_CLICK, MSG_MOUSE_RIGHT_DOUBLE_CLICK)
+            };
+            let new_t = if self.next_up_should_create_double_click[i] { double } else { click };
+            if !plant(9193) {
+                self.next_up_should_create_double_click[i] = false;
+            }
+            let mut pixel_region = crate::common::message_stream::build_region(self.mouse_down_position[i], location);
+            // `abs(hi - lo) < TheMouse->m_dragTolerance`: the int's magnitude against the unsigned tolerance
+            let inside = |d: i32| {
+                let d = d.wrapping_abs() as u32;
+                if plant(9192) {
+                    d <= drag_tolerance
+                } else {
+                    d < drag_tolerance
+                }
+            };
+            let dy_inside = plant(9195) || inside(pixel_region.hi.y.wrapping_sub(pixel_region.lo.y));
+            if inside(pixel_region.hi.x.wrapping_sub(pixel_region.lo.x)) && dy_inside {
+                pixel_region.hi.x = pixel_region.lo.x;
+                pixel_region.hi.y = pixel_region.lo.y;
+            }
+            // "append the modifier keys to the message."
+            Some(MouseClick { t: new_t, region: pixel_region, modifiers: if plant(9194) { 0 } else { modifiers } })
+        } else {
+            None
+        }
+    }
 }
 
 /// Keyboard.cpp's modifier bits (`m_modifiers`), which every key message of a frame carries: kept per key event here.
@@ -662,6 +773,27 @@ impl KeyboardModifiers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #131, predicted before the run (drag tolerance 4): a left press at (10, 10) and release at (12, 13) is a left
+    /// click at the point (10, 10); a release 10 pixels away a click over the rectangle; a right double click marks the
+    /// next right release only (a middle release after it is a plain click); the release after it is a plain click
+    /// again; the modifiers ride along; a key message is not a mouse message.
+    #[test]
+    fn the_buttons_releases_make_clicks_and_double_clicks() {
+        let p = |x, y| ICoord2D { x, y };
+        let mut x = MetaEventTranslator::default();
+        assert_eq!(x.translate_mouse(MSG_RAW_MOUSE_LEFT_BUTTON_DOWN, p(10, 10), 0, 4), None);
+        let c = x.translate_mouse(MSG_RAW_MOUSE_LEFT_BUTTON_UP, p(12, 13), 0x10, 4).expect("a click");
+        assert_eq!((c.t, c.region.lo, c.region.hi, c.modifiers, c.is_point()), (MSG_MOUSE_LEFT_CLICK, p(10, 10), p(10, 10), 0x10, true));
+        let c = x.translate_mouse(MSG_RAW_MOUSE_LEFT_BUTTON_UP, p(20, 5), 0, 4).expect("a click");
+        assert_eq!((c.region.lo, c.region.hi, c.is_point()), (p(10, 5), p(20, 10), false));
+        x.translate_mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN, p(1, 1), 0, 4);
+        x.translate_mouse(MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK, p(1, 1), 0, 4);
+        assert_eq!(x.translate_mouse(MSG_RAW_MOUSE_MIDDLE_BUTTON_UP, p(1, 1), 0, 4).map(|c| c.t), Some(MSG_MOUSE_MIDDLE_CLICK));
+        assert_eq!(x.translate_mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, p(1, 1), 0, 4).map(|c| c.t), Some(MSG_MOUSE_RIGHT_DOUBLE_CLICK));
+        assert_eq!(x.translate_mouse(MSG_RAW_MOUSE_RIGHT_BUTTON_UP, p(1, 1), 0, 4).map(|c| c.t), Some(MSG_MOUSE_RIGHT_CLICK));
+        assert_eq!(x.translate_mouse(MSG_RAW_KEY_DOWN, p(1, 1), 0, 4), None);
+    }
 
     /// Predicted before the run: a CommandMap with the tab key's `SELECT_NEXT_UNIT` (game), `BEGIN_FORCEATTACK` on CTRL
     /// alone (DOWN) and `END_FORCEATTACK` (UP), and a later block for `SELECT_NEXT_UNIT` again (its record is reused):

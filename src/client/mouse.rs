@@ -7,7 +7,8 @@
 //     TheMouseFieldParseTable, CursorInfo::CursorInfo, Mouse::Mouse, Mouse::parseIni, Mouse::init (its cursor
 //     members), Mouse::setMouseText, Mouse::getCursorIndex, Mouse::setCursor, INI::parseMouseCursorDefinition,
 //     INI::parseMouseDefinition; #124: Mouse::Mouse's and Mouse::init's tooltip members, mouseNotifyResolutionChange,
-//     createStreamMessages' tooltip timer, setCursorTooltip, resetTooltipDelay, drawTooltip, Mouse::setMouseLimits)
+//     createStreamMessages' tooltip timer, setCursorTooltip, resetTooltipDelay, drawTooltip, Mouse::setMouseLimits;
+//     #131: Mouse::isClick)
 //   GeneralsMD/Code/GameEngineDevice/Source/Win32Device/GameClient/Win32Mouse.cpp (Win32Mouse::Win32Mouse (its cursor
 //     members), setVisibility, initCursorResources, setCursor)
 //   GeneralsMD/Code/GameEngineDevice/Include/Win32Device/GameClient/Win32Mouse.h (lostFocus)
@@ -716,6 +717,26 @@ impl Default for Mouse {
     fn default() -> Self {
         Mouse::new()
     }
+}
+
+/// #131: `Mouse::isClick(anchor, dest, previousMouseClick, currentMouseClick)` (Mouse.cpp:396) with the mouse's
+/// `m_dragTolerance` and `m_dragToleranceMS`: a click unless either side moved more than the tolerance or the release
+/// came more than the time tolerance after the press. The `int` magnitudes compare as unsigned with the tolerance, and
+/// the time difference wraps (`UnsignedInt`).
+pub fn is_click(anchor: &ICoord2D, dest: &ICoord2D, previous_mouse_click: u32, current_mouse_click: u32, drag_tolerance: u32, drag_tolerance_ms: u32) -> bool {
+    let dx = anchor.x.wrapping_sub(dest.x);
+    let dy = anchor.y.wrapping_sub(dest.y);
+    // "if the mouse hasn't moved further than the tolerance distance or the click took less than the tolerance duration"
+    let far = |d: i32| {
+        let d = d.wrapping_abs() as u32;
+        if crate::logic::modules::plant(9197) {
+            d >= drag_tolerance
+        } else {
+            d > drag_tolerance
+        }
+    };
+    let slow = !crate::logic::modules::plant(9198) && current_mouse_click.wrapping_sub(previous_mouse_click) > drag_tolerance_ms;
+    !(far(dx) || far(dy) || slow)
 }
 
 impl Mouse {

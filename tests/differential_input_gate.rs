@@ -32,8 +32,9 @@
 //! - the command translator's gate: its disposition;
 //! - the selection translator's gate: its disposition, `m_dragSelecting` and `isSelecting` after, and the calls that end a
 //!   drag (`endAreaSelectHint`, `setMouseLock(FALSE)`), which the Rust counts as "a drag ended";
-//! - `setInputEnabled`: the input and the five flags after; the four camera flags it clears (not InGameUI members in
-//!   the port) are compared with the branch the Rust takes (enabled before and disabling).
+//! - `setInputEnabled`: the input and the five flags after; the four camera flags it clears ~~(not InGameUI members in
+//!   the port) are compared with the branch the Rust takes (enabled before and disabling)~~. **Corrected 2026-11-11
+//!   (#131):** the camera flags are InGameUI members now; they are set before the call and compared cleared or not.
 //!
 //! # Results (2026-11-10, `INPUT_GATE_CASES=20000`, the default)
 //!
@@ -229,8 +230,12 @@ fn input_gates_match_upstream() {
                 s.set_force_move_mode(b[4]);
                 s.set_waypoint_mode(b[5]);
                 s.set_prefer_selection_mode(b[6]);
+                // (#131: the camera flags are InGameUI members now: all set, then whether each was cleared)
+                s.set_camera_rotate_left(true);
+                s.set_camera_rotate_right(true);
+                s.set_camera_zoom_in(true);
+                s.set_camera_zoom_out(true);
                 s.set_input_enabled(b[0]);
-                let cam = i32::from(b[1] && !b[0]);
                 let rust = vec![
                     i32::from(s.input_enabled()),
                     i32::from(s.is_selecting()),
@@ -238,10 +243,10 @@ fn input_gates_match_upstream() {
                     i32::from(s.is_in_force_move_to_mode()),
                     i32::from(s.is_in_waypoint_mode()),
                     i32::from(s.is_in_prefer_selection_mode()),
-                    cam,
-                    cam,
-                    cam,
-                    cam,
+                    i32::from(!s.is_camera_rotating_left()),
+                    i32::from(!s.is_camera_rotating_right()),
+                    i32::from(!s.is_camera_zooming_in()),
+                    i32::from(!s.is_camera_zooming_out()),
                 ];
                 let input: Vec<i32> = b.iter().map(|&x| i32::from(x)).collect();
                 ui.eq(rust, cpp_case(3, &input), || format!("case {i} {b:?}"));
@@ -283,6 +288,8 @@ struct MouseHost {
     alternate: bool,
     attack_move: bool,
     controllable: bool,
+    /// #131: the stand-in `TheMouse->isClick`'s answer.
+    is_click: bool,
     out: Vec<i32>,
     evals: Vec<i32>,
     records: i32,
@@ -465,6 +472,11 @@ impl CommandXlatHost for MouseHost {
         self.records += 1;
     }
 }
+impl rts_lockstep_engine::client::command_xlat::MouseClickHost for MouseHost {
+    fn mouse_is_click(&self, _anchor: &ICoord2D, _dest: &ICoord2D, _previous: u32, _current: u32) -> bool {
+        self.is_click
+    }
+}
 
 /// The evaluation the C++ stand-ins log: (1 force attack / 2 context, drawable or 0, the position's bits, the type).
 fn log_eval(e: Evaluation, d: Option<DrawableId>, p: &Coord3D, ty: CommandEvaluateType, h: &mut MouseHost) -> MessageType {
@@ -534,6 +546,7 @@ fn mouse_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
     let picked = if g.below(3) == 0 { 0 } else { 1 + g.below(9) };
     let draw = 1 + g.below(9);
     let loc = Coord3D { x: small(g) as f32 / 4.0, y: small(g) as f32 / 4.0, z: g.below(41) as f32 / 8.0 };
+    let is_click = g.below(4) != 0;
     let input = vec![
         t.0 as i32,
         i32::from(on),
@@ -553,12 +566,13 @@ fn mouse_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
         loc.x.to_bits() as i32,
         loc.y.to_bits() as i32,
         loc.z.to_bits() as i32,
-        // `TheMouse->isClick`: the port does not keep the right button's bookkeeping (CommandXlat.cpp:3628-3657), so the
-        // stand-in always answers a click
-        1,
+        // `TheMouse->isClick`: ~~the port does not keep the right button's bookkeeping (CommandXlat.cpp:3628-3657), so the
+        // stand-in always answers a click~~ **Corrected 2026-11-11 (#131):** the port keeps it and asks the host
+        // (`CommandXlatHost::mouse_is_click`), so the stand-in's answer is random, a click 3 times in 4
+        i32::from(is_click),
     ];
 
-    let mut h = MouseHost { alternate, attack_move, controllable, ..Default::default() };
+    let mut h = MouseHost { alternate, attack_move, controllable, is_click, ..Default::default() };
     let mut ui = InGameUiSelection::new();
     ui.set_input_enabled(on);
     for d in 1..=sel {
@@ -613,8 +627,10 @@ fn mouse_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
 /// attack move, guard or any type below 35; force attack mode a quarter of the time, attack-move mode half; the pixel
 /// region a point half the time; the picked drawable none a third of the time. Compared: the disposition, every
 /// `evaluateForceAttack` / `evaluateContextCommand` call (drawable, position bits, type), every message appended with its
-/// arguments, the academy's records, the guard hint's timer and attack-move mode after. `TheMouse->isClick` (the right
-/// button's bookkeeping, not translated) answers a click.
+/// arguments, the academy's records, the guard hint's timer and attack-move mode after. ~~`TheMouse->isClick` (the right
+/// button's bookkeeping, not translated) answers a click.~~ **Corrected 2026-11-11 (#131):** the right button's
+/// bookkeeping is translated; `TheMouse->isClick` answers a click 3 times in 4 on both sides (the stand-in's answer).
+/// The bookkeeping itself is `tests/differential_meta_input.rs`'.
 ///
 /// *Predictions, before the first run* (`issue123_progress.md`): 0 mismatches; every plant 9101-9114 caught.
 ///
@@ -626,26 +642,30 @@ fn mouse_case(g: &mut Gen, stats: &mut [u64; 4]) -> (Vec<i32>, Vec<i32>) {
 /// translation but the harness, the two tests calling the wrapper's global state from two threads at once; `cpp_case`
 /// now holds a lock, and the unchanged first test's numbers came back as before (1,001 destroyed, 2 movies stopped).
 ///
+/// **Re-run 2026-11-11 (#131),** the generator now drawing `isClick` (a click 3 times in 4): 20,000 cases, **0
+/// mismatches**; 6,121 evaluated, 1,968 guard orders, 3,953 destroyed, 123 drawable hints with nothing selected. The
+/// plants' counts below are this run's; the earlier ones are struck through.
+///
 /// # Planted bugs
 ///
 /// `L9_PLANT=<id>`: **14 of 14 caught** (2026-11-11).
 ///
 /// | id | planted bug | caught by |
 /// |---|---|---|
-/// | 9101 | the drawable hint without the shortcut term (the code before #123) | 137 cases |
-/// | 9102 | the drawable hint for any pending GUI command | 405 cases |
-/// | 9103 | the left double click guards in alternate mouse mode too | 1,085 cases |
-/// | 9104 | the guard order's mode `GUARDMODE_GUARD_WITHOUT_PURSUIT` | 1,920 cases |
-/// | 9105 | the guard order destroys the message | 1,920 cases |
-/// | 9106 | no `triggerDoubleClickAttackMoveGuardHint` | 1,920 cases |
-/// | 9107 | the guard order falls through to the click as well | 448 cases |
-/// | 9108 | the click without the shortcut's controllable term (the code before #124) | 383 cases |
-/// | 9109 | the alternate mouse's left click ignores firing GUI commands (the code before #124) | 490 cases |
-/// | 9110 | the firing commands without `GUI_COMMAND_COMBATDROP` | 40 cases |
-/// | 9111 | the right double click's alternate-mouse test inverted | 1,651 cases |
-/// | 9112 | the click does not clear attack-move mode | 682 cases |
-/// | 9113 | no academy record | 1,920 cases |
-/// | 9114 | the drawable hint at the ground, not the drawable's position | 2,642 cases |
+/// | 9101 | the drawable hint without the shortcut term (the code before #123) | ~~137 cases~~ 123 cases (#131) |
+/// | 9102 | the drawable hint for any pending GUI command | ~~405 cases~~ 433 cases (#131) |
+/// | 9103 | the left double click guards in alternate mouse mode too | ~~1,085 cases~~ 1,061 cases (#131) |
+/// | 9104 | the guard order's mode `GUARDMODE_GUARD_WITHOUT_PURSUIT` | ~~1,920 cases~~ 1,968 cases (#131) |
+/// | 9105 | the guard order destroys the message | ~~1,920 cases~~ 1,968 cases (#131) |
+/// | 9106 | no `triggerDoubleClickAttackMoveGuardHint` | ~~1,920 cases~~ 1,968 cases (#131) |
+/// | 9107 | the guard order falls through to the click as well | ~~448 cases~~ 410 cases (#131) |
+/// | 9108 | the click without the shortcut's controllable term (the code before #124) | ~~383 cases~~ 405 cases (#131) |
+/// | 9109 | the alternate mouse's left click ignores firing GUI commands (the code before #124) | ~~490 cases~~ 512 cases (#131) |
+/// | 9110 | the firing commands without `GUI_COMMAND_COMBATDROP` | ~~40 cases~~ 38 cases (#131) |
+/// | 9111 | the right double click's alternate-mouse test inverted | ~~1,651 cases~~ 1,647 cases (#131) |
+/// | 9112 | the click does not clear attack-move mode | ~~682 cases~~ 708 cases (#131) |
+/// | 9113 | no academy record | ~~1,920 cases~~ 1,968 cases (#131) |
+/// | 9114 | the drawable hint at the ground, not the drawable's position | ~~2,642 cases~~ 2,554 cases (#131) |
 #[test]
 fn command_mouse_cases_match_upstream() {
     let cases: u64 = std::env::var("COMMAND_MOUSE_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
