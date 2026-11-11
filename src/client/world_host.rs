@@ -95,6 +95,11 @@ pub struct ClientView {
     pub mouse_moved_recently: bool,
     /// #125: `TheRadar->getLastEventLoc()`, the client's radar's.
     pub radar_last_event: Option<Coord3D>,
+    /// #124: `TheMouse->getMouseStatus()->pos`, the terrain under it (`screenToTerrain`) and the radar's world point
+    /// under it (`TheRadar->screenPixelToWorld`; `None`: not over the radar), as the client last found them.
+    pub mouse_pos: ICoord2D,
+    pub mouse_terrain: Coord3D,
+    pub radar_world_under_mouse: Option<Coord3D>,
 }
 
 /// InGameUI's modes, as the selection info's questions read them.
@@ -1243,9 +1248,10 @@ impl crate::client::in_game_ui_cursor::CursorHintHost for WorldClient {
     fn recorder_multiplayer(&self) -> bool {
         self.world.recorder_is_multiplayer().unwrap_or(false)
     }
-    fn player_is_playable_side(&self, _player: i32) -> bool {
-        // (not wired: the player template's `isPlayableSide`; #122 gaps)
-        false
+    fn player_is_playable_side(&self, player: i32) -> bool {
+        // ~~(not wired: the player template's `isPlayableSide`; #122 gaps)~~ **Corrected 2026-11-11 (#124):**
+        // `Player::isPlayableSide()`, the player template's (`FALSE` without one)
+        self.world.tq().player_is_playable_side(player)
     }
     fn player_display_name(&self, player: i32) -> Vec<u16> {
         self.world.players.get_nth(player).map(|p| p.display_name.str().to_vec()).unwrap_or_default()
@@ -1465,6 +1471,54 @@ mod tests {
         eprintln!("#125: {asked} objects asked over {frames} frames");
         assert!(asked > 0);
         assert!(c.sent.is_empty());
+    }
+
+    /// #124, predicted before the run: on the #33 world with the guard area's radius cursor given a texture, the gunner
+    /// selected, `setRadiusCursor(RADIUSCURSOR_GUARD_AREA)` makes a decal whose size is twice the gunner's standard guard
+    /// range (above 0: its vision range is 150), coloured its player's colour, placed at the terrain under the mouse; the
+    /// attack damage area of its `ClipGun` (`PrimaryDamageRadius = 0`) makes none; done every frame for 100 frames with
+    /// `handleRadiusCursor`, the questions leave the CRCs equal to an untouched world's and send nothing. Each player's
+    /// `isPlayableSide()` is its template's.
+    ///
+    /// Results (2026-11-11): all held: guard range 150 (the decal 300 across); the gate world's three players all answer
+    /// `isPlayableSide()` false (its player templates have no `PlayableSide`), so the name line's `TRUE` case is not
+    /// reached here.
+    #[test]
+    fn the_radius_cursors_questions_read_the_world_and_leave_the_crcs_alone() {
+        use crate::client::in_game_ui_cursor::CursorHintHost;
+        use crate::client::radius_cursor::{radius_cursor_type as rc, InGameUiRadiusCursor, RadiusCursorHost, RadiusUiState};
+        let (mut plain, _) = world33();
+        let (w, x) = world33();
+        let mut c = WorldClient::new(w, 1);
+        let mut r = InGameUiRadiusCursor::default();
+        r.radius_cursors[rc::GUARD_AREA as usize].name = b"SCCGuard".to_vec();
+        r.radius_cursors[rc::ATTACK_DAMAGE_AREA as usize].name = b"SCCDamage".to_vec();
+        let state = RadiusUiState { select_count: 1, first_selected: Some(x.gunner), ..Default::default() };
+        c.view.mouse_pos = ICoord2D { x: 5, y: 6 };
+        c.view.mouse_terrain = Coord3D { x: 100.0, y: 120.0, z: 2.0 };
+        let guard = c.std_guard_range(x.gunner);
+        let player = c.world.get_controlling_player(x.gunner).expect("the gunner's player");
+        let color = c.world.tq().player_color(player);
+        for f in 0..100 {
+            plain.logic_update().expect("a frame");
+            c.world.logic_update().expect("a frame");
+            r.set_radius_cursor(&state, rc::ATTACK_DAMAGE_AREA, None, 0, &mut c);
+            assert!(r.shown().is_none(), "a zero damage radius makes no decal");
+            r.set_radius_cursor(&state, rc::GUARD_AREA, None, 0, &mut c);
+            r.handle_radius_cursor(&state, &mut c);
+            let d = r.shown().expect("the guard area's decal");
+            assert_eq!((d.size.0, d.color, d.position), (guard * 2.0, color, c.view.mouse_terrain));
+            let a = c.world.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            let b = plain.logic_crc(crate::logic::world::game_logic_update::CRC_RECALC, None).expect("the CRC");
+            assert_eq!(a, b, "the CRCs part at frame {f}");
+        }
+        assert!(guard > 0.0);
+        assert!(c.sent.is_empty());
+        let sides: Vec<bool> = (0..c.world.players.player_count()).map(|p| c.player_is_playable_side(p)).collect();
+        for (p, &s) in sides.iter().enumerate() {
+            assert_eq!(s, c.world.tq().player_is_playable_side(p as i32));
+        }
+        eprintln!("#124: guard range {guard}, playable sides {sides:?}");
     }
 
     /// #33: the game's own templates for the control bar's questions, read after the gate's INI (the gate's are unchanged).
@@ -1842,5 +1896,68 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
         let first = crcs.iter().zip(&plain).position(|(a, b)| a != b);
         assert_eq!(first, None, "the CRCs part at frame {first:?}");
         assert_eq!(crcs.len(), plain.len());
+    }
+}
+
+/// #124: the radius cursor's questions (`setRadiusCursor`, `handleRadiusCursor`), answered from the World (read only:
+/// the weapon's bonus is computed, nothing is set) and the client's view.
+impl crate::client::radius_cursor::RadiusCursorHost for WorldClient {
+    fn radius_drawable_object(&self, draw: DrawableId) -> Option<ObjectId> {
+        self.world.find_object(draw).map(|_| draw)
+    }
+    fn radius_most_ready_shortcut_special_power(&mut self, sp: SpecialPowerType) -> Option<ObjectId> {
+        crate::logic::world::player_objects::player_find_most_ready_shortcut_special_power_of_type(&mut self.world, self.player, sp).ok().flatten()
+    }
+    fn special_power_radius(&self, sp: u32) -> Option<(SpecialPowerType, f32)> {
+        self.world.statics.special_power_store.find_special_power_template_by_id(sp).map(|t| (t.special_power_type(), t.radius_cursor_radius()))
+    }
+    fn radius_controlling_player(&self, obj: ObjectId) -> Option<(i32, i32)> {
+        let p = self.world.get_controlling_player(obj)?;
+        Some((p, self.world.tq().player_color(p)))
+    }
+    fn weapon_primary_damage_radius(&mut self, obj: ObjectId, slot: i32) -> Option<f32> {
+        let w = self.world.find_object(obj)?.weapon_set.get_weapon_in_weapon_slot(slot)?.clone();
+        Some(w.get_primary_damage_radius(&mut self.world, obj))
+    }
+    fn weapon_scatter_radius(&mut self, obj: ObjectId, slot: i32) -> Option<f32> {
+        let t = self.world.weapon_in_slot_template(obj, slot)?;
+        let t = &self.world.statics.weapon_store.templates()[t];
+        Some(t.scatter_radius + t.scatter_target_scalar)
+    }
+    fn weapon_continue_attack_range(&mut self, obj: ObjectId, slot: i32) -> Option<f32> {
+        let t = self.world.weapon_in_slot_template(obj, slot)?;
+        Some(self.world.statics.weapon_store.templates()[t].continue_attack_range)
+    }
+    fn std_guard_range(&mut self, obj: ObjectId) -> f32 {
+        // `AIGuardMachine::getStdGuardRange(obj)`: the adjusted vision range for the owner type, the mood and the inner guard
+        use crate::logic::ai::ai_update_types::{AI_VISIONFACTOR_GUARDINNER, AI_VISIONFACTOR_MOOD, AI_VISIONFACTOR_OWNERTYPE};
+        self.world.ai_adjusted_vision_range(obj, AI_VISIONFACTOR_OWNERTYPE | AI_VISIONFACTOR_MOOD | AI_VISIONFACTOR_GUARDINNER)
+    }
+    fn radius_local_player(&self) -> i32 {
+        self.player
+    }
+    fn radius_mouse_pos(&self) -> ICoord2D {
+        self.view.mouse_pos
+    }
+    fn radius_radar_on(&self) -> bool {
+        self.view.radar_forced || (!self.view.radar_hidden && crate::logic::world::player_ops::player_has_radar(&self.world, self.player).unwrap_or(false))
+    }
+    fn radar_screen_pixel_to_world(&self, pixel: ICoord2D) -> Option<Coord3D> {
+        if pixel == self.view.mouse_pos { self.view.radar_world_under_mouse } else { None }
+    }
+    fn radius_screen_to_terrain(&mut self, pixel: ICoord2D) -> Coord3D {
+        if pixel == self.view.mouse_pos {
+            return self.view.mouse_terrain;
+        }
+        PlaceHost::screen_to_terrain(self, pixel)
+    }
+    fn radius_double_click_attack_move(&self) -> bool {
+        self.world.statics.global_data.the_global_data().is_some_and(|g| g.double_click_attack_move)
+    }
+    fn radius_logic_frame(&self) -> u32 {
+        self.world.frame()
+    }
+    fn draw_icon_ui(&self) -> bool {
+        self.world.game_logic.draw_icon_ui
     }
 }

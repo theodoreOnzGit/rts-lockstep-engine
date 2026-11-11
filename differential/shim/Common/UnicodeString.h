@@ -97,6 +97,8 @@ public:
 		while (*a && *a == *s) { ++a; ++s; }
 		return (int)*a - (int)*s;
 	}
+	/* compare(const UnicodeString&) (UnicodeString.h: wcscmp of the two strings), for Mouse::setCursorTooltip (#124) */
+	int compare(const UnicodeString &s) const { return compare(s.str()); }
 	/* compareNoCase (UnicodeString.h: _wcsicmp): ASCII letters folded to lower case, then the units compared */
 	int compareNoCase(const UnicodeString &o) const
 	{

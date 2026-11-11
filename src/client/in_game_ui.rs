@@ -97,6 +97,10 @@ pub struct InGameUiSelection {
     pub(crate) is_scrolling: bool,
     /// #122: `m_duringDoubleClickAttackMoveGuardHintTimer`.
     pub(crate) double_click_attack_move_guard_hint_timer: i32,
+    /// #124: `m_duringDoubleClickAttackMoveGuardHintStashedPosition` (`zero()`ed by the constructor).
+    pub(crate) double_click_attack_move_guard_hint_stashed_position: crate::common::base_type::Coord3D,
+    /// #124: the terrain under the mouse, as the owner last set it (see `set_mouse_terrain`).
+    pub(crate) mouse_terrain: crate::common::base_type::Coord3D,
     /// #122: the calls the InGameUI made on `TheMouse` and on its radius cursor, in order, for the owner to make
     /// ([`InGameUiSelection::take_mouse_calls`]).
     pub(crate) mouse_calls: Vec<crate::client::in_game_ui_cursor::UiMouseCall>,

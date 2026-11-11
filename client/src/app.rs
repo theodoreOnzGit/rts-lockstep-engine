@@ -151,6 +151,10 @@ struct Game {
     /// (#117) `Mouse.ini` still to be read for the mouse (`GameClient::init`'s `parseIni`); until it is, the window's
     /// cursor is left alone.
     mouse_pending: bool,
+    /// (#124) The InGameUI's radius cursor (its templates from `InGameUI.ini`, the current decal), and whether
+    /// `InGameUI.ini` is still to be read for it.
+    radius: rts_lockstep_engine::client::radius_cursor::InGameUiRadiusCursor,
+    in_game_ui_pending: bool,
     // (#117's `mouse_mode_cursor` is ~~here~~ **Corrected 2026-11-11 (#122):** the InGameUI's, `controls.ui`'s, with the
     // mouse mode it depends on)
 }
@@ -225,6 +229,8 @@ impl Game {
             close_windows_pending: false,
             client_quiet: false,
             mouse_pending: true,
+            radius: Default::default(),
+            in_game_ui_pending: true,
         }
     }
 
@@ -234,6 +240,10 @@ impl Game {
     fn replace(&mut self, mut new: Game) {
         new.pause.mouse = std::mem::take(&mut self.pause.mouse);
         new.mouse_pending = self.mouse_pending;
+        // (#124) `TheInGameUI`'s templates outlive the games too (its decal does not: `InGameUI::reset` clears it)
+        new.radius.radius_cursors = std::mem::take(&mut self.radius.radius_cursors);
+        new.radius.settings = std::mem::take(&mut self.radius.settings);
+        new.in_game_ui_pending = self.in_game_ui_pending;
         new.pause.mouse.set_visibility(true);
         *self = new;
     }
@@ -351,6 +361,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             Update,
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
+        .add_systems(Update, (radius_decal, world_tooltip).chain().after(show_cursor))
         .run();
 }
 
@@ -1051,13 +1062,58 @@ fn camera_input(
 /// mapping is [`crate::cursor`]'s, tested there): `Mouse.ini` read once the art is up, the window's focus given to the
 /// mouse (`WM_SETFOCUS`, `WM_KILLFOCUS`), the mouse drawn (`W3DMouse::draw`, once a frame), and the window's cursor set
 /// to what it shows: hidden, or the system icon for it. A phone has no cursor: the settings change nothing there.
-fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, mut windows: Query<(Entity, &Window, &mut bevy::window::CursorOptions, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>) {
+fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, touches: Res<Touches>, mut windows: Query<(Entity, &Window, &mut bevy::window::CursorOptions, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>) {
     use crate::cursor::{cursor_look, CursorLook, Icon};
     use bevy::window::{CursorIcon, SystemCursorIcon as S};
+    use rts_lockstep_engine::client::radius_cursor::RadiusUiState;
     let g = &mut *game;
+    let now = (time.elapsed_secs_f64() * 1000.0) as u32;
+    // (#124) the mouse's position and limits (`m_currMouse.pos`, `setMouseLimits`), and `createStreamMessages`' tooltip
+    // timer: the mouse moved this frame or not. A phone has no hover: the finger's place stands for it while it touches.
+    if let Ok((_, window, _, _)) = windows.single() {
+        g.pause.mouse.set_mouse_limits(window.width() as i32, window.height() as i32);
+        if let Some(p) = window.cursor_position().or_else(|| touches.iter().next().map(|t| t.position())) {
+            let p = pixel(p);
+            let moved = p != g.pause.mouse.pos;
+            g.pause.mouse.pos = p;
+            g.pause.mouse.tooltip.create_stream_messages(now, moved);
+        } else {
+            g.pause.mouse.tooltip.create_stream_messages(now, false);
+        }
+    }
     // (#122) the InGameUI's calls on `TheMouse` this frame (setMouseCursor from the hints, the GUI command, the
-    // placement and the camera's scroll), in order, before the mouse draws
-    crate::cursor::apply_ui_mouse_calls(&mut g.pause.mouse, g.controls.ui.take_mouse_calls());
+    // placement and the camera's scroll), in order, before the mouse draws; (#124) the tooltip's, and the radius cursor's
+    // `setRadiusCursor`
+    {
+        let calls = g.controls.ui.take_mouse_calls();
+        let state = RadiusUiState::of(&g.controls.ui);
+        let (radius, client) = (&mut g.radius, &mut g.controls.client);
+        crate::cursor::apply_ui_mouse_calls(&mut g.pause.mouse, calls, now, |kind, sp, slot| radius.set_radius_cursor(&state, kind, sp, slot, client));
+        // `InGameUI::preDraw`'s `handleRadiusCursor()`
+        radius.handle_radius_cursor(&state, client);
+    }
+    if g.in_game_ui_pending {
+        if let Some(art) = g.models.art.as_ref() {
+            let waiting = std::cell::Cell::new(false);
+            let open = |p: &[u8]| {
+                let before = art.fs.local.device.unserved_reads();
+                let r = art.fs.open_file(p);
+                if art.fs.local.device.unserved_reads() != before {
+                    waiting.set(true);
+                    return None;
+                }
+                r
+            };
+            match crate::cursor::load_in_game_ui(&mut g.radius, open, || waiting.get()) {
+                None => {}
+                Some(Ok(())) => g.in_game_ui_pending = false,
+                Some(Err(e)) => {
+                    warn!("the radius cursors: {e}");
+                    g.in_game_ui_pending = false;
+                }
+            }
+        }
+    }
     if g.mouse_pending {
         let Some(art) = g.models.art.as_ref() else { return };
         let waiting = std::cell::Cell::new(false);
@@ -1341,6 +1397,7 @@ fn pointer_input(
     shell: NonSend<ShellState>,
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
 ) {
     let bar = bar.height + bar.panel;
     // (#4) the saves panel takes the pointer while it is open (the game is paused under it); (#78) so does the shell;
@@ -1352,8 +1409,19 @@ fn pointer_input(
     let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
     let g = &mut *game;
     // (~~Escape cancels here~~ **Corrected 2026-11-10 (#87):** in `keyboard_ui`, which also opens the quit menu)
-    let Some(cursor) = window.cursor_position() else { return };
+    // (#124: a phone has no hover; a finger's place stands for the pointer's while it touches, so its hints, the
+    // tooltip and the radius cursor follow it)
+    let Some(cursor) = window.cursor_position().or_else(|| touches.iter().next().map(|t| t.position())) else { return };
     let Some(ground) = ground_under(camera, cam, cursor, |x, y| g.controls.client.world.terrain.ground_height(x, y, false).0) else { return };
+    // (#124) the mouse's place for the radius cursor and the guard hint's stash (`getMouseStatus()->pos`, its
+    // `screenToTerrain`, and the radar's `screenPixelToWorld` over the radar)
+    g.controls.client.view.mouse_pos = pixel(cursor);
+    g.controls.client.view.mouse_terrain = ground;
+    g.controls.client.view.radar_world_under_mouse = radar_box.rect.filter(|r| r.contains(cursor)).and_then(|r| {
+        let local = cursor - r.min;
+        g.controls.radar.local_pixel_to_world(&mut g.controls.client.world, &ICoord2D { x: local.x as i32, y: local.y as i32 })
+    });
+    g.controls.ui.set_mouse_terrain(ground);
     let screen = on_screen(g, camera, cam);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();
@@ -1418,6 +1486,72 @@ fn selection_rings(game: NonSend<Game>, mut gizmos: Gizmos) {
             + 2.0;
         let at = Vec3::from(to_bevy([o.pos[0], o.pos[1], o.pos[2] + 0.3]));
         gizmos.circle(Isometry3d::new(at, Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)), r, Color::srgb(0.3, 1.0, 0.4));
+    }
+}
+
+/// (#124) GUI glue (needs a window): the radius cursor's decal on the ground (`InGameUI::m_curRadiusCursor`'s projected
+/// decal, made and moved by the translated `setRadiusCursor` and `handleRadiusCursor`) as its circle laid on the terrain
+/// ([`crate::cursor::decal_ring`], tested there).
+fn radius_decal(game: NonSend<Game>, mut gizmos: Gizmos) {
+    let Some(d) = game.radius.shown() else { return };
+    let world = &game.controls.client.world;
+    let (pts, c) = crate::cursor::decal_ring(d, 64, |x, y| world.terrain.ground_height(x, y, false).0);
+    if c[3] == 0 {
+        return;
+    }
+    gizmos.linestrip(pts.into_iter().map(|p| Vec3::from(to_bevy(p))), Color::srgba_u8(c[0], c[1], c[2], c[3]));
+}
+
+/// (#124) The world's tooltip root and the shapes it shows.
+#[derive(Component)]
+struct WorldTooltip(Vec<crate::cursor::TooltipShape>);
+
+/// (#124) GUI glue (needs a window): the mouse's tooltip over the world (`W3DMouse::draw`'s `drawTooltip`, translated;
+/// its shapes from [`crate::cursor::tooltip_shapes`], tested there), as UI nodes over everything, rebuilt when its shapes
+/// change: the box, its border, and each text in a node cut at its clip region, the text placed at its own corner. It
+/// takes no pointer. At a phone's 390 pixels the box is moved left of the finger at the right edge (upstream's rule,
+/// `xPos -= 20 + width`) and wraps at `TooltipWidth` of the screen (15 %: 58 pixels, so a long name takes several lines).
+fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<Game>, mut roots: Query<(Entity, &mut WorldTooltip)>) {
+    let g = &mut *game;
+    let now = (time.elapsed_secs_f64() * 1000.0) as u32;
+    let fade = g.controls.client.world.script_engine.fade != rts_lockstep_engine::logic::world::script_engine::fade::NONE;
+    let shapes = crate::cursor::tooltip_shapes(&mut g.pause.mouse, now, fade);
+    let root = match roots.iter_mut().next() {
+        Some((e, mut r)) => {
+            if r.0 == shapes {
+                return;
+            }
+            r.0 = shapes.clone();
+            commands.entity(e).despawn_children();
+            e
+        }
+        None => commands
+            .spawn((WorldTooltip(shapes.clone()), Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, Pickable::IGNORE, ZIndex(50)))
+            .id(),
+    };
+    for sh in &shapes {
+        let child = match sh {
+            crate::cursor::TooltipShape::Rect { rect, color } => commands
+                .spawn((
+                    Node { position_type: PositionType::Absolute, left: px(rect[0]), top: px(rect[1]), width: px(rect[2] - rect[0]), height: px(rect[3] - rect[1]), ..default() },
+                    BackgroundColor(Color::srgba_u8(color[0], color[1], color[2], color[3])),
+                    Pickable::IGNORE,
+                ))
+                .id(),
+            crate::cursor::TooltipShape::Text { text, rect, clip, color, font_px } => {
+                let clip_node = Node { position_type: PositionType::Absolute, left: px(clip[0]), top: px(clip[1]), width: px(clip[2] - clip[0]), height: px(clip[3] - clip[1]), overflow: Overflow::clip(), ..default() };
+                let text_node = Node { position_type: PositionType::Absolute, left: px(rect[0] - clip[0]), top: px(rect[1] - clip[1]), width: px(rect[2] - rect[0]), ..default() };
+                let colour = Color::srgba_u8(color[0], color[1], color[2], color[3]);
+                let font = TextFont { font_size: bevy::text::FontSize::Px(*font_px), ..default() };
+                commands
+                    .spawn((clip_node, Pickable::IGNORE))
+                    .with_children(|p| {
+                        p.spawn((text_node, Text::new(text.clone()), font, TextColor(colour), Pickable::IGNORE));
+                    })
+                    .id()
+            }
+        };
+        commands.entity(root).add_child(child);
     }
 }
 

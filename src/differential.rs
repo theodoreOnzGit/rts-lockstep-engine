@@ -3594,6 +3594,16 @@ extern "C" {
     // and setScrolling, verbatim.
     pub fn ref_mouse_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #124: the mouse's tooltip (differential/wrap_mouse_tooltip.cpp, which documents the setup's, the steps' and
+    // the records' words): Mouse.cpp's constructor, init, mouseNotifyResolutionChange, createStreamMessages,
+    // setCursorTooltip, resetTooltipDelay and drawTooltip, verbatim.
+    pub fn ref_mouse_tooltip_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #124: the in-game UI's radius cursor (differential/wrap_radius_cursor.cpp, which documents the words):
+    // InGameUI's setRadiusCursor, handleRadiusCursor and triggerDoubleClickAttackMoveGuardHint, RadiusDecal.cpp's
+    // createRadiusDecal, clear, update, setOpacity and setPosition, verbatim.
+    pub fn ref_radius_cursor_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #122: the cursors the in-game UI asks for (differential/wrap_cursor_hint.cpp, which documents the setup's,
     // the steps' and the records' words): InGameUI's createMouseoverHint, createCommandHint, setMouseCursor,
     // setGUICommand, placeBuildAvailable and triggerDoubleClickAttackMoveGuardHint, SelectionXlat.cpp's CanSelectDrawable

@@ -734,7 +734,7 @@ CommandMap CREATE_TEAM1\n Key = KEY_1\n Transition = DOWN\n Modifiers = CTRL\n U
         c.hover(None, ground);
         let calls = c.ui.take_mouse_calls();
         let mut m = Mouse::new();
-        crate::cursor::apply_ui_mouse_calls(&mut m, calls);
+        crate::cursor::apply_ui_mouse_calls(&mut m, calls, 0, |_, _, _| {});
         assert_eq!(m.get_mouse_cursor(), cursor::ARROW);
         assert!(c.client.sent.is_empty(), "{:?}", c.client.sent);
     }

@@ -79,7 +79,11 @@
 //! - **The window under the mouse** (`TheWindowManager->getWindowUnderCursor` and its parents) is the host's list of
 //!   [`UiWindow`]s, from the window under the cursor up; `TheRadar->isRadarWindow(w)` is [`UiWindow::radar`].
 //! - **The tooltip** is the text and colour `setCursorTooltip` was given ([`UiMouseCall::Tooltip`]); drawing it is the
-//!   application's (not wired yet: #122 gaps). The disguise, containers, warehouse and text are the host's questions.
+//!   application's ~~(not wired yet: #122 gaps)~~ (**Corrected 2026-11-11 (#124):** the client's mouse takes it,
+//!   `crate::client::mouse::MouseTooltip`, and draws it over the world). The disguise, containers, warehouse and text are
+//!   the host's questions.
+//! - **The radius cursor** is queued ([`UiMouseCall::RadiusCursor`]) and made by the owner on
+//!   `crate::client::radius_cursor::InGameUiRadiusCursor` (#124).
 //! - `m_isScrolling` is a copy of the camera's (`LookAtTranslator` keeps the flag `setScrolling` writes).
 //! - The debug builds' branches (`_DEBUG`/`_INTERNAL`'s constant debug update and shroud switch, `AI_DEBUG_TOOLTIPS`)
 //!   are not translated: the release build has none of them.
@@ -331,9 +335,21 @@ impl InGameUiSelection {
     pub fn set_recorder_playback(&mut self, playback: bool) {
         self.recorder_playback = playback;
     }
-    /// `triggerDoubleClickAttackMoveGuardHint()`'s timer (its stashed position is the radius cursor's, not here).
+    /// `triggerDoubleClickAttackMoveGuardHint()`: the timer, and ~~(its stashed position is the radius cursor's, not
+    /// here)~~ **Corrected 2026-11-11 (#124):** the stashed position, `TheTacticalView->screenToTerrain` of the mouse's
+    /// position, which the owner keeps in [`InGameUiSelection::set_mouse_terrain`].
     pub fn trigger_double_click_attack_move_guard_hint(&mut self) {
         self.double_click_attack_move_guard_hint_timer = 11;
+        self.double_click_attack_move_guard_hint_stashed_position = self.mouse_terrain;
+    }
+    /// #124: `m_duringDoubleClickAttackMoveGuardHintStashedPosition`.
+    pub fn double_click_attack_move_guard_hint_stashed_position(&self) -> Coord3D {
+        self.double_click_attack_move_guard_hint_stashed_position
+    }
+    /// #124: `TheTacticalView->screenToTerrain(&TheMouse->getMouseStatus()->pos)`, as the owner last found it (for the
+    /// guard hint's stash).
+    pub fn set_mouse_terrain(&mut self, at: Coord3D) {
+        self.mouse_terrain = at;
     }
     /// `m_duringDoubleClickAttackMoveGuardHintTimer`.
     pub fn double_click_attack_move_guard_hint_timer(&self) -> i32 {

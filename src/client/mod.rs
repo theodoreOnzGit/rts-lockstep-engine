@@ -97,5 +97,6 @@ pub mod script_input; // #116: the scripts' calls on the client's input (DISABLE
 pub mod window_xlat; // #116: WindowTranslator, the raw input given to the windows first (and taken while the input is off)
 pub mod tactical_view; // #119: the View and W3DView pieces LookAtTranslator calls, and the camera they place
 pub mod look_at_xlat; // #119: LookAtTranslator, the camera translator (scrolls, rotation, zoom, bookmarks)
+pub mod radius_cursor; // #124: the in-game UI's radius cursor (InGameUI's RadiusDecalTemplates, setRadiusCursor, handleRadiusCursor; RadiusDecal's drawing)
 pub mod mouse; // #117: TheMouse's cursor (Mouse.cpp, Win32Mouse.cpp, W3DMouse.cpp in RM_WINDOWS): which cursor shows, and whether
 pub mod challenge_menu;

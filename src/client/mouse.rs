@@ -6,7 +6,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Input/Mouse.cpp (TheMouseCursorFieldParseTable,
 //     TheMouseFieldParseTable, CursorInfo::CursorInfo, Mouse::Mouse, Mouse::parseIni, Mouse::init (its cursor
 //     members), Mouse::setMouseText, Mouse::getCursorIndex, Mouse::setCursor, INI::parseMouseCursorDefinition,
-//     INI::parseMouseDefinition)
+//     INI::parseMouseDefinition; #124: Mouse::Mouse's and Mouse::init's tooltip members, mouseNotifyResolutionChange,
+//     createStreamMessages' tooltip timer, setCursorTooltip, resetTooltipDelay, drawTooltip, Mouse::setMouseLimits)
 //   GeneralsMD/Code/GameEngineDevice/Source/Win32Device/GameClient/Win32Mouse.cpp (Win32Mouse::Win32Mouse (its cursor
 //     members), setVisibility, initCursorResources, setCursor)
 //   GeneralsMD/Code/GameEngineDevice/Include/Win32Device/GameClient/Win32Mouse.h (lostFocus)
@@ -113,11 +114,15 @@
 //! - **`TheInGameUI->isScrolling()` and `getScrollAmount()`**, which `setCursorDirection` reads, are
 //!   [`Mouse::ui_scrolling`] and [`Mouse::ui_scroll_amount`], which the owner keeps up to date (the camera's).
 //! - **The cursor text** is kept as the definition's text label ([`CursorText::label`], `TheGameText->fetch` of it is the
-//!   drawer's), with its colours; `drawCursorText` and `drawTooltip` are not here (the window manager keeps the
-//!   tooltip).
+//!   drawer's), with its colours; `drawCursorText` ~~and `drawTooltip` are not here (the window manager keeps the
+//!   tooltip)~~ is not here. **Corrected 2026-11-11 (#124):** the tooltip is translated here ([`MouseTooltip`]:
+//!   `setCursorTooltip` with its width and colours, `resetTooltipDelay`, `createStreamMessages`' timer,
+//!   `mouseNotifyResolutionChange`'s display string and `drawTooltip`'s draws, `tests/differential_mouse_tooltip.rs`), and
+//!   the window manager uses it; the display string's measure (`getSize`) and the drawing are the owner's.
 //! - The mouse's input (`MouseIO`, the event buffer, `createStreamMessages`, `setPosition`, `setMouseLimits`,
-//!   `capture`) is not here: the client's input is Bevy's (`client/src/input.rs`, `client/src/camera.rs`). The
-//!   `Mouse` block's tooltip fields and drag tolerances are read into [`MouseIniSettings`].
+//!   `capture`) is not here: the client's input is Bevy's (`client/src/input.rs`, `client/src/camera.rs`); the owner sets
+//!   [`Mouse::pos`] and tells the tooltip's timer whether the mouse moved. The `Mouse` block's tooltip fields and drag
+//!   tolerances are read into [`MouseIniSettings`] (`Mouse::tooltip`'s).
 //! - `MouseThreadClass` (`isThread`) only runs in `RM_DX8`: `draw` always draws its text here.
 //!
 //! # Representation
@@ -360,29 +365,267 @@ impl Default for MouseIniSettings {
     }
 }
 
+/// `drawTooltip`'s `HIGHLIGHT_WIDTH`: the highlighted strip's width, pixels.
+pub const HIGHLIGHT_WIDTH: i32 = 15;
+
+/// The mouse's tooltip (#124): `Mouse`'s tooltip members, `setCursorTooltip`, `resetTooltipDelay`, the timer of
+/// `createStreamMessages`, `mouseNotifyResolutionChange`'s display string and `drawTooltip`. Upstream they are members of
+/// `Mouse`; they are kept together here because the window manager's tests and screens (`GameWindowManager::mouse`) and
+/// the game's [`Mouse::tooltip`] both use them. The `Mouse` block of `Mouse.ini` is [`MouseTooltip::settings`] (the
+/// tooltip reads most of it; the drag tolerances and the ortho camera are there too).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MouseTooltip {
+    /// The `Mouse` block of `Mouse.ini` (`TheMouseFieldParseTable` but `CursorMode`), with `Mouse::Mouse`'s values.
+    pub settings: MouseIniSettings,
+    /// `m_tooltipDisplayString`'s text (`getText()`).
+    pub display_string: Vec<u16>,
+    /// `m_tooltipDisplayString`'s word wrap (`setWordWrap`), pixels.
+    pub word_wrap: i32,
+    /// `m_tooltipDisplayString`'s font as `mouseNotifyResolutionChange` chose it (`None` before: no display string).
+    pub font: Option<crate::client::window_script::GameFont>,
+    /// `m_isTooltipEmpty`.
+    pub is_empty: bool,
+    /// `m_tooltipDelay` (-1: the default).
+    pub delay: i32,
+    /// `m_lastTooltipWidth`.
+    pub last_tooltip_width: f32,
+    /// `m_tooltipTextColor`, `m_tooltipBackColor`.
+    pub text_color: RGBAColorInt,
+    pub back_color: RGBAColorInt,
+    /// `m_stillTime`, `timeGetTime()` milliseconds.
+    pub still_time: u32,
+    /// `m_displayTooltip`.
+    pub display: bool,
+    /// `m_highlightPos`, `m_highlightUpdateStart`.
+    pub highlight_pos: i32,
+    pub highlight_update_start: u32,
+    /// `TheDisplay->getWidth()`, as the owner last set it (`setCursorTooltip` reads it).
+    pub display_width: i32,
+    /// `TheGlobalData->m_scriptDebug` (no delay while script debugging); off in a game.
+    pub script_debug: bool,
+}
+
+impl Default for MouseTooltip {
+    /// `Mouse::Mouse()`'s tooltip members (no display string yet: `init`'s `mouseNotifyResolutionChange` makes it).
+    fn default() -> Self {
+        let c = |red, green, blue, alpha| RGBAColorInt { red, green, blue, alpha };
+        MouseTooltip {
+            settings: MouseIniSettings::default(),
+            display_string: Vec::new(),
+            word_wrap: 0,
+            font: None,
+            is_empty: true,
+            delay: -1,
+            last_tooltip_width: 0.0,
+            text_color: c(255, 255, 255, 255),
+            back_color: c(0, 0, 0, 255),
+            still_time: 0,
+            display: false,
+            highlight_pos: 0,
+            highlight_update_start: 0,
+            display_width: 800,
+            script_debug: false,
+        }
+    }
+}
+
+impl MouseTooltip {
+    /// `mouseNotifyResolutionChange()`: a new display string (empty) in the tooltip font, word wrapped at 120 pixels.
+    /// `TheGlobalLanguageData`'s tooltip font (`language_font`, when it names one) is taken before `Mouse.ini`'s; its
+    /// `adjustFontSize` is the host's (the size is kept as given).
+    pub fn mouse_notify_resolution_change(&mut self, language_font: Option<crate::client::window_script::GameFont>) {
+        self.display_string = Vec::new();
+        let s = &self.settings;
+        self.font = Some(match language_font.filter(|f| !f.name.is_empty()) {
+            Some(f) => f,
+            None => crate::client::window_script::GameFont { name: s.tooltip_font_name.clone(), point_size: s.tooltip_font_size, bold: s.tooltip_font_is_bold },
+        });
+        self.word_wrap = if plant(9161) { 0 } else { 120 };
+    }
+
+    /// `setCursorTooltip(tooltip)` with its default arguments (`-1`, `NULL`, `1.0f`) but the delay.
+    pub fn set_cursor_tooltip(&mut self, tooltip: &[u16], delay: i32) {
+        self.set_cursor_tooltip_with(tooltip, delay, None, 1.0);
+    }
+
+    /// `setCursorTooltip(tooltip, delay, color, width)`.
+    pub fn set_cursor_tooltip_with(&mut self, tooltip: &[u16], delay: i32, color: Option<&crate::common::base_type::RGBColor>, width: f32) {
+        use crate::common::base_type::real_to_int;
+        self.is_empty = tooltip.is_empty();
+        self.delay = delay;
+        let mut force_recalc = false;
+        if !tooltip.is_empty() && (width != self.last_tooltip_width || plant(9162)) {
+            force_recalc = true;
+            let display = self.display_width;
+            // `(Int)(TheDisplay->getWidth()*m_tooltipWidth*width)`: (UnsignedInt * Real) * Real, truncated as x86's
+            // `cvttss2si` does (out of range: `0x80000000`)
+            let f = display as u32 as f32 * self.settings.tooltip_width * width;
+            let mut width_in_pixels = if f.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&f) { i32::MIN } else { f as i32 };
+            if width_in_pixels < 10 {
+                width_in_pixels = 120;
+            } else if width_in_pixels as u32 > display as u32 && !plant(9163) {
+                width_in_pixels = display;
+            }
+            self.word_wrap = width_in_pixels;
+            self.last_tooltip_width = width;
+        }
+        if force_recalc || (!self.is_empty && tooltip != self.display_string.as_slice()) {
+            self.display_string = tooltip.to_vec();
+        }
+        let s = &self.settings;
+        match color {
+            Some(color) => {
+                if s.use_tooltip_alt_text_color {
+                    if s.adjust_tooltip_alt_color {
+                        self.text_color.red = real_to_int((color.red + 1.0) * 255.0 / 2.0) as u32;
+                        self.text_color.green = real_to_int((color.green + 1.0) * 255.0 / 2.0) as u32;
+                        self.text_color.blue = real_to_int((color.blue + 1.0) * 255.0 / 2.0) as u32;
+                    } else {
+                        self.text_color.red = real_to_int(color.red * 255.0) as u32;
+                        self.text_color.green = real_to_int(color.green * 255.0) as u32;
+                        self.text_color.blue = real_to_int(color.blue * 255.0) as u32;
+                    }
+                    self.text_color.alpha = s.tooltip_color_text.alpha;
+                }
+                if s.use_tooltip_alt_back_color && !plant(9164) {
+                    if s.adjust_tooltip_alt_color {
+                        self.back_color.red = real_to_int(color.red * 255.0 * 0.5) as u32;
+                        self.back_color.green = real_to_int(color.green * 255.0 * 0.5) as u32;
+                        self.back_color.blue = real_to_int(color.blue * 255.0 * 0.5) as u32;
+                    } else {
+                        self.back_color.red = real_to_int(color.red * 255.0) as u32;
+                        self.back_color.green = real_to_int(color.green * 255.0) as u32;
+                        self.back_color.blue = real_to_int(color.blue * 255.0) as u32;
+                    }
+                    self.back_color.alpha = s.tooltip_color_background.alpha;
+                }
+            }
+            None => {
+                self.text_color = s.tooltip_color_text;
+                if !plant(9165) {
+                    self.back_color = s.tooltip_color_background;
+                }
+            }
+        }
+    }
+
+    /// `resetTooltipDelay()` at `now` (`timeGetTime()`).
+    pub fn reset_tooltip_delay(&mut self, now: u32) {
+        self.still_time = now;
+        self.display = false;
+    }
+
+    /// `createStreamMessages`' tooltip timer at `now` (ms): whether to display is decided first (a tooltip that starts to
+    /// show restarts its highlight); then, if the mouse moved in one of this frame's events, the still time restarts.
+    pub fn create_stream_messages(&mut self, now: u32, moved: bool) {
+        let mut delay = if self.delay >= 0 && !plant(9166) { self.delay } else { self.settings.tooltip_delay_time };
+        if self.script_debug {
+            delay = 0; // No delay while scriptdebugging!
+        }
+        // `now - m_stillTime >= delay`: unsigned, the delay converted
+        if now.wrapping_sub(self.still_time) >= delay as u32 || plant(9167) {
+            if !self.display && !plant(9168) {
+                self.highlight_pos = 0;
+                self.highlight_update_start = now;
+            }
+            // display tooltip for current window
+            self.display = true;
+        } else {
+            self.display = false;
+        }
+        if moved {
+            self.still_time = now;
+        }
+    }
+
+    /// `drawTooltip`'s condition: the text drawn, if any (with no fade).
+    pub fn shown(&self) -> Option<&[u16]> {
+        (self.display && !self.display_string.is_empty() && !self.is_empty).then_some(self.display_string.as_slice())
+    }
+
+    /// `drawTooltip()` at `now` (ms), the mouse at `pos` within `max` (`m_maxX`, `m_maxY`): nothing while a script fade
+    /// is on (`fade`); else, when shown, the box (its width growing with the highlight when `TooltipAnimateBackground`),
+    /// its border, the text cut at the highlight and the highlighted strip, as `TheDisplay`'s and the display string's
+    /// draws; then the highlight moves on. `size(text, wrap)` is `m_tooltipDisplayString->getSize`.
+    pub fn draw_tooltip(&mut self, now: u32, fade: bool, pos: ICoord2D, max: ICoord2D, size: impl FnOnce(&[u16], i32) -> (i32, i32)) -> Vec<crate::client::window_manager::DrawItem> {
+        use crate::client::window_manager::DrawItem;
+        let mut out = Vec::new();
+        if fade {
+            return out;
+        }
+        if !(self.display && !self.display_string.is_empty() && !self.is_empty) {
+            return out;
+        }
+        let (width, height) = size(&self.display_string, self.word_wrap);
+        let mut x_pos = pos.x.wrapping_add(20);
+        let mut y_pos = pos.y;
+        if x_pos.wrapping_add(width).wrapping_add(4) > max.x {
+            x_pos = x_pos.wrapping_sub(20i32.wrapping_add(width));
+        }
+        if y_pos.wrapping_add(height).wrapping_add(4) > max.y && !plant(9169) {
+            y_pos = y_pos.wrapping_sub(height);
+        }
+        let box_width = if self.settings.tooltip_animate_background && !plant(9170) { width.min(self.highlight_pos) } else { width };
+        let gmc = |c: RGBAColorInt| crate::common::ini::game_make_color(c.red as u8, c.green as u8, c.blue as u8, c.alpha as u8);
+        let s = &self.settings;
+        out.push(DrawItem::FillRect { x: x_pos, y: y_pos, w: box_width.wrapping_add(2), h: height.wrapping_add(2), color: gmc(self.back_color) });
+        out.push(DrawItem::OpenRect { x: x_pos, y: y_pos, w: box_width.wrapping_add(2), h: height.wrapping_add(2), color: gmc(s.tooltip_color_border) });
+        let text = |color: i32, clip: (i32, i32, i32, i32)| DrawItem::Text {
+            text: self.display_string.clone(),
+            x: x_pos.wrapping_add(2),
+            y: y_pos.wrapping_add(1),
+            color,
+            drop_color: gmc(s.tooltip_color_shadow),
+            font: self.font.clone(),
+            word_wrap: Some(self.word_wrap),
+            wrap_centered: false,
+            hotkey: false,
+            clip: Some(clip),
+        };
+        // build clip rect
+        let lo_x = x_pos.wrapping_add(2);
+        let lo_y = y_pos.wrapping_add(1);
+        let hi_y = y_pos.wrapping_add(1).wrapping_add(height);
+        let hi_x = lo_x.wrapping_add(self.highlight_pos);
+        out.push(text(gmc(self.text_color), (lo_x, lo_y, hi_x, hi_y)));
+        // highlight section
+        let hw = if plant(9171) { HIGHLIGHT_WIDTH + 1 } else { HIGHLIGHT_WIDTH };
+        out.push(text(gmc(s.tooltip_color_highlight), (hi_x.wrapping_sub(hw), lo_y, hi_x, hi_y)));
+        // get ready for the next part of the anim
+        if self.highlight_pos < width.wrapping_add(HIGHLIGHT_WIDTH) {
+            // `(width*(now-m_highlightUpdateStart))/m_tooltipFillTime`: unsigned (an `Int` times an `UnsignedInt`)
+            let elapsed = if plant(9172) { now.wrapping_sub(self.highlight_update_start).wrapping_add(1) } else { now.wrapping_sub(self.highlight_update_start) };
+            let num = (width as u32).wrapping_mul(elapsed);
+            // (a `TooltipFillTime` of 0 divides by zero upstream, a crash; here the highlight is full at once)
+            self.highlight_pos = num.checked_div(s.tooltip_fill_time as u32).unwrap_or(u32::MAX) as i32;
+        }
+        out
+    }
+}
+
 /// `TheMouseFieldParseTable` (its `CursorMode` is the mouse's redraw mode).
 const MOUSE_FIELDS: &[FieldParse<Mouse>] = &[
-    FieldParse::new("TooltipFontName", |ini, m, _| ini.parse_ascii_string().map(|v| m.settings.tooltip_font_name = v), UserData::None),
-    FieldParse::new("TooltipFontSize", |ini, m, _| ini.parse_int().map(|v| m.settings.tooltip_font_size = v), UserData::None),
-    FieldParse::new("TooltipFontIsBold", |ini, m, _| ini.parse_bool().map(|v| m.settings.tooltip_font_is_bold = v), UserData::None),
-    FieldParse::new("TooltipAnimateBackground", |ini, m, _| ini.parse_bool().map(|v| m.settings.tooltip_animate_background = v), UserData::None),
-    FieldParse::new("TooltipFillTime", |ini, m, _| ini.parse_int().map(|v| m.settings.tooltip_fill_time = v), UserData::None),
-    FieldParse::new("TooltipDelayTime", |ini, m, _| ini.parse_int().map(|v| m.settings.tooltip_delay_time = v), UserData::None),
-    FieldParse::new("TooltipTextColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.settings.tooltip_color_text = v), UserData::None),
-    FieldParse::new("TooltipHighlightColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.settings.tooltip_color_highlight = v), UserData::None),
-    FieldParse::new("TooltipShadowColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.settings.tooltip_color_shadow = v), UserData::None),
-    FieldParse::new("TooltipBackgroundColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.settings.tooltip_color_background = v), UserData::None),
-    FieldParse::new("TooltipBorderColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.settings.tooltip_color_border = v), UserData::None),
-    FieldParse::new("TooltipWidth", |ini, m, _| ini.parse_percent_to_real().map(|v| m.settings.tooltip_width = v), UserData::None),
+    FieldParse::new("TooltipFontName", |ini, m, _| ini.parse_ascii_string().map(|v| m.tooltip.settings.tooltip_font_name = v), UserData::None),
+    FieldParse::new("TooltipFontSize", |ini, m, _| ini.parse_int().map(|v| m.tooltip.settings.tooltip_font_size = v), UserData::None),
+    FieldParse::new("TooltipFontIsBold", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.tooltip_font_is_bold = v), UserData::None),
+    FieldParse::new("TooltipAnimateBackground", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.tooltip_animate_background = v), UserData::None),
+    FieldParse::new("TooltipFillTime", |ini, m, _| ini.parse_int().map(|v| m.tooltip.settings.tooltip_fill_time = v), UserData::None),
+    FieldParse::new("TooltipDelayTime", |ini, m, _| ini.parse_int().map(|v| m.tooltip.settings.tooltip_delay_time = v), UserData::None),
+    FieldParse::new("TooltipTextColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.tooltip.settings.tooltip_color_text = v), UserData::None),
+    FieldParse::new("TooltipHighlightColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.tooltip.settings.tooltip_color_highlight = v), UserData::None),
+    FieldParse::new("TooltipShadowColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.tooltip.settings.tooltip_color_shadow = v), UserData::None),
+    FieldParse::new("TooltipBackgroundColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.tooltip.settings.tooltip_color_background = v), UserData::None),
+    FieldParse::new("TooltipBorderColor", |ini, m, _| ini.parse_rgba_color_int().map(|v| m.tooltip.settings.tooltip_color_border = v), UserData::None),
+    FieldParse::new("TooltipWidth", |ini, m, _| ini.parse_percent_to_real().map(|v| m.tooltip.settings.tooltip_width = v), UserData::None),
     FieldParse::new("CursorMode", |ini, m, _| ini.parse_int().map(|v| m.current_redraw_mode = v), UserData::None),
-    FieldParse::new("UseTooltipAltTextColor", |ini, m, _| ini.parse_bool().map(|v| m.settings.use_tooltip_alt_text_color = v), UserData::None),
-    FieldParse::new("UseTooltipAltBackColor", |ini, m, _| ini.parse_bool().map(|v| m.settings.use_tooltip_alt_back_color = v), UserData::None),
-    FieldParse::new("AdjustTooltipAltColor", |ini, m, _| ini.parse_bool().map(|v| m.settings.adjust_tooltip_alt_color = v), UserData::None),
-    FieldParse::new("OrthoCamera", |ini, m, _| ini.parse_bool().map(|v| m.settings.ortho_camera = v), UserData::None),
-    FieldParse::new("OrthoZoom", |ini, m, _| ini.parse_real().map(|v| m.settings.ortho_zoom = v), UserData::None),
-    FieldParse::new("DragTolerance", |ini, m, _| ini.parse_unsigned_int().map(|v| m.settings.drag_tolerance = v), UserData::None),
-    FieldParse::new("DragTolerance3D", |ini, m, _| ini.parse_unsigned_int().map(|v| m.settings.drag_tolerance_3d = v), UserData::None),
-    FieldParse::new("DragToleranceMS", |ini, m, _| ini.parse_unsigned_int().map(|v| m.settings.drag_tolerance_ms = v), UserData::None),
+    FieldParse::new("UseTooltipAltTextColor", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.use_tooltip_alt_text_color = v), UserData::None),
+    FieldParse::new("UseTooltipAltBackColor", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.use_tooltip_alt_back_color = v), UserData::None),
+    FieldParse::new("AdjustTooltipAltColor", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.adjust_tooltip_alt_color = v), UserData::None),
+    FieldParse::new("OrthoCamera", |ini, m, _| ini.parse_bool().map(|v| m.tooltip.settings.ortho_camera = v), UserData::None),
+    FieldParse::new("OrthoZoom", |ini, m, _| ini.parse_real().map(|v| m.tooltip.settings.ortho_zoom = v), UserData::None),
+    FieldParse::new("DragTolerance", |ini, m, _| ini.parse_unsigned_int().map(|v| m.tooltip.settings.drag_tolerance = v), UserData::None),
+    FieldParse::new("DragTolerance3D", |ini, m, _| ini.parse_unsigned_int().map(|v| m.tooltip.settings.drag_tolerance_3d = v), UserData::None),
+    FieldParse::new("DragToleranceMS", |ini, m, _| ini.parse_unsigned_int().map(|v| m.tooltip.settings.drag_tolerance_ms = v), UserData::None),
     FieldParse::end(),
 ];
 
@@ -433,8 +676,12 @@ pub enum OsCursor {
 pub struct Mouse {
     /// `m_cursorInfo`, by cursor.
     pub cursor_info: Vec<CursorInfo>,
-    /// The rest of the `Mouse` block.
-    pub settings: MouseIniSettings,
+    /// (#124) The tooltip, with the rest of the `Mouse` block (`tooltip.settings`).
+    pub tooltip: MouseTooltip,
+    /// (#124) `m_currMouse.pos`: where the pointer is, as the owner last set it (`drawTooltip` reads it).
+    pub pos: ICoord2D,
+    /// (#124) `m_maxX`, `m_maxY` (`Mouse::init`'s 799, 599; `setMouseLimits` makes them the display's size).
+    pub max: ICoord2D,
     /// `m_currentRedrawMode`.
     pub current_redraw_mode: i32,
     /// `m_visible`.
@@ -477,7 +724,9 @@ impl Mouse {
     pub fn new() -> Self {
         Mouse {
             cursor_info: vec![CursorInfo::default(); cursor::NUM_MOUSE_CURSORS as usize],
-            settings: MouseIniSettings::default(),
+            tooltip: MouseTooltip::default(),
+            pos: ICoord2D { x: 0, y: 0 },
+            max: ICoord2D { x: 0, y: 0 },
             current_redraw_mode: redraw_mode::RM_WINDOWS,
             visible: false,
             current_cursor: cursor::ARROW,
@@ -525,8 +774,28 @@ impl Mouse {
         self.current_cursor = cursor::ARROW;
         // (the colours are `Mouse::Mouse`'s white; the text string is `init`'s)
         let white = RGBAColorInt { red: 255, green: 255, blue: 255, alpha: 255 };
+        // (#124) `mouseNotifyResolutionChange()`, `m_displayTooltip = FALSE`, the limits
+        self.tooltip.mouse_notify_resolution_change(None);
+        self.tooltip.display = false;
+        self.max = ICoord2D { x: 799, y: 599 };
         self.cursor_text = Some(CursorText { label: Vec::new(), color: white, drop_color: white });
         self.set_cursor(cursor::ARROW);
+    }
+
+    /// (#124) `GameClient::init`'s `setPosition(0, 0)` and `setMouseLimits()` (`Mouse`'s: the display's size), and
+    /// `TheDisplay->getWidth()` for the tooltip.
+    pub fn set_mouse_limits(&mut self, display_width: i32, display_height: i32) {
+        self.max = ICoord2D { x: display_width, y: display_height };
+        self.tooltip.display_width = display_width;
+    }
+
+    /// (#124) `W3DMouse::draw`'s tooltip: `if (m_visible && !isThread) drawTooltip()` at `now` (ms), nothing while a
+    /// script fade is on (`fade`); `size` measures the display string (see [`MouseTooltip::draw_tooltip`]).
+    pub fn draw_tooltip(&mut self, now: u32, fade: bool, size: impl FnOnce(&[u16], i32) -> (i32, i32)) -> Vec<crate::client::window_manager::DrawItem> {
+        if !self.visible {
+            return Vec::new();
+        }
+        self.tooltip.draw_tooltip(now, fade, self.pos, self.max, size)
     }
 
     /// `getMouseCursor()`.
@@ -792,7 +1061,7 @@ mod tests {
         let mut m = Mouse::new();
         let ini = b"Mouse\n  CursorMode = 1\n  DragTolerance = 4\nEnd\nMouseCursor Scroll\n  Texture = SCCScroll\n  Directions = 8\n  CursorText = CURSOR:Scroll\nEnd\n";
         m.parse_ini(b"Data\\INI\\Mouse.ini", ini).expect("reads");
-        assert_eq!((m.current_redraw_mode, m.settings.drag_tolerance), (redraw_mode::RM_W3D, 4));
+        assert_eq!((m.current_redraw_mode, m.tooltip.settings.drag_tolerance), (redraw_mode::RM_W3D, 4));
         let s = &m.cursor_info[cursor::SCROLL as usize];
         assert_eq!((s.cursor_name.as_slice(), s.texture_name.as_slice(), s.num_directions), (&b"Scroll"[..], &b"SCCScroll"[..], 8));
         m.init();

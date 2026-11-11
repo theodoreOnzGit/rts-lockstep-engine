@@ -521,55 +521,9 @@ pub struct WindowLayout {
     pub deleted: bool,
 }
 
-/// The mouse's tooltip (`Mouse::setCursorTooltip`, the timer of `createStreamMessages`, `drawTooltip`'s condition).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MouseTooltip {
-    /// `m_tooltipDisplayString`'s text: the last non-empty tooltip set.
-    pub display_string: Vec<u16>,
-    pub is_empty: bool,
-    /// `m_tooltipDelay` (-1: the default).
-    pub delay: i32,
-    /// `TooltipDelayTime` (Mouse.ini; 50 by default), milliseconds.
-    pub delay_time: i32,
-    /// `m_stillTime`, `timeGetTime()` milliseconds.
-    pub still_time: u32,
-    pub display: bool,
-}
-
-impl Default for MouseTooltip {
-    fn default() -> Self {
-        MouseTooltip { display_string: Vec::new(), is_empty: true, delay: -1, delay_time: 50, still_time: 0, display: false }
-    }
-}
-
-impl MouseTooltip {
-    /// `setCursorTooltip(tooltip, delay)` (the width and colour are not modelled).
-    pub fn set_cursor_tooltip(&mut self, tooltip: &[u16], delay: i32) {
-        self.is_empty = tooltip.is_empty();
-        self.delay = delay;
-        if !self.is_empty && tooltip != self.display_string.as_slice() {
-            self.display_string = tooltip.to_vec();
-        }
-    }
-    /// `resetTooltipDelay`.
-    pub fn reset_tooltip_delay(&mut self, now: u32) {
-        self.still_time = now;
-        self.display = false;
-    }
-    /// `createStreamMessages`' timer at `now` (ms): whether to display is decided first; then, if the mouse moved this
-    /// frame, the still time restarts.
-    pub fn create_stream_messages(&mut self, now: u32, moved: bool) {
-        let delay = if self.delay >= 0 { self.delay } else { self.delay_time };
-        self.display = now.wrapping_sub(self.still_time) >= delay as u32;
-        if moved {
-            self.still_time = now;
-        }
-    }
-    /// `drawTooltip`'s condition: the text drawn, if any.
-    pub fn shown(&self) -> Option<&[u16]> {
-        (self.display && !self.display_string.is_empty() && !self.is_empty).then_some(self.display_string.as_slice())
-    }
-}
+/// The mouse's tooltip: ~~here~~ **Corrected 2026-11-11 (#124):** translated in full with the mouse
+/// ([`crate::client::mouse::MouseTooltip`]: `setCursorTooltip` with its width and colour, the timer, `drawTooltip`).
+pub use crate::client::mouse::MouseTooltip;
 
 /// One thing to draw (`TheDisplay`'s calls), in screen pixels.
 #[derive(Clone, Debug, PartialEq, Eq)]
