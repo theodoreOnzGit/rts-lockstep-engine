@@ -144,10 +144,12 @@ class GameLODManager
 public:
 	Int getMinDynamicParticlePriority() { return m_minPriority; }
 	Int getMinDynamicParticleSkipPriority() { return m_minSkipPriority; }
-	Bool isParticleSkipped() { return m_skipped; }
+	/* (#160) GameLOD.h lines 227-230 (copied): the count and the mask, as upstream's (the stand-in held a fixed answer) */
+	Bool isParticleSkipped() { return (++m_numParticleGenerations & m_dynamicParticleSkipMask) != m_dynamicParticleSkipMask; }
 	Int m_minPriority;
 	Int m_minSkipPriority;
-	Bool m_skipped;
+	Int m_numParticleGenerations;
+	Int m_dynamicParticleSkipMask;
 };
 extern GameLODManager *TheGameLODManager;
 

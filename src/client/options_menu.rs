@@ -77,8 +77,10 @@
 //!   factor and the alternate mouse mode (the client's copy of the global data, which its camera and command
 //!   translation read: `client/src/shell.rs`).
 //! - **Kept, not applied (recorded gaps):** the display modes, the resolution change and the dialog that confirms it
-//!   (`TheDisplay`, `DoResolutionDialog`, the shell's re-creation), the gamma (`TheDisplay->setGamma`), the LOD manager
-//!   (`TheGameLODManager`: its level is the host's, GameLOD.cpp is not translated), texture reduction
+//!   (`TheDisplay`, `DoResolutionDialog`, the shell's re-creation), the gamma (`TheDisplay->setGamma`), ~~the LOD manager
+//!   (`TheGameLODManager`: its level is the host's, GameLOD.cpp is not translated)~~ **Corrected 2026-11-12 (#160):**
+//!   the LOD manager is translated (`crate::client::game_lod`, the shell's `ShellGui::lod`): its levels are applied to the
+//!   client's copy of the global data, and the particle cap and the draw modules' minimum LOD read it; texture reduction
 //!   (`TheGameClient->adjustLOD`), the shadows, cloud map, light map, soft water, trees, heat effects, building markers
 //!   and particle cap (the Bevy renderer's own), anti-aliasing, the IP addresses (`IPEnumeration`: the client has no
 //!   network), the firewall and send delay, the HTTP proxy (the registry, `ghttpSetProxy`), the version label
@@ -1081,6 +1083,34 @@ fn fill_ip_combo<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H, c: usize
     }
 }
 
+/// (#160) `GameLODManager::init`'s reads of `Options.ini`: the two entries (the manager turns them into levels, as
+/// `getStaticGameDetail` and `getIdealStaticGameDetail` do through it) and the custom level's getters.
+impl crate::client::game_lod::LodOptionPrefs for OptionPreferences {
+    fn static_game_lod(&self) -> Option<Vec<u8>> {
+        self.found(b"StaticGameLOD")
+    }
+    fn ideal_static_game_lod(&self) -> Option<Vec<u8>> {
+        self.found(b"IdealStaticGameLOD")
+    }
+    fn custom(&mut self, g: &GlobalData) -> crate::client::game_lod::LodCustomPrefs {
+        crate::client::game_lod::LodCustomPrefs {
+            texture_reduction: self.get_texture_reduction(),
+            shadows_3d: self.get_3d_shadows_enabled(g),
+            shadows_2d: self.get_2d_shadows_enabled(g),
+            building_occlusion: self.get_building_occlusion_enabled(g),
+            particle_cap: self.get_particle_cap(g),
+            dynamic_lod: self.get_dynamic_lod_enabled(g),
+            fps_limit: self.get_fps_limit_enabled(g),
+            lightmap: self.get_lightmap_enabled(g),
+            cloud_shadows: self.get_cloud_shadows_enabled(g),
+            smooth_water: self.get_smooth_water_enabled(g),
+            heat_effects: self.get_use_heat_effects(g),
+            extra_animations_disabled: self.get_extra_animations_disabled(g),
+            trees: self.get_trees_enabled(g),
+        }
+    }
+}
+
 /// `OptionsMenuInit(layout, userData)`.
 #[allow(unused_assignments)] // (upstream's `selectedXRes = 800; selectedXRes = 600;`, kept)
 pub fn options_menu_init<H: OptionsHost>(wm: &mut GameWindowManager, h: &mut H, layout: usize) {
@@ -1528,7 +1558,12 @@ mod tests {
         let get = |k: &str| written.get(k.as_bytes()).map(|v| String::from_utf8_lossy(v).into_owned());
         assert_eq!((get("MusicVolume"), get("SFXVolume"), get("SFX3DVolume")), (Some("80".into()), Some("60".into()), Some("60".into())));
         assert_eq!((get("VoiceVolume"), get("Gamma"), get("ScrollFactor")), (Some("55".into()), Some("75".into()), Some("70".into())));
-        assert_eq!(get("StaticGameLOD"), Some("Custom".into()));
+        // ~~`StaticGameLOD = Custom`~~ **Corrected 2026-11-12 (#160):** with the translated LOD manager the init finds and
+        // sets the level of this (unknown) machine, low; *Custom*'s Back puts the combo box back on it, so Accept's
+        // `setStaticLODLevel(LOW)` changes nothing and writes no `StaticGameLOD` (upstream's behaviour; the stub before
+        // reported every level as a change). The manager's own save of it (`findStaticLODLevel`) went to the file before
+        // the screen's preferences, read at its init, overwrote it.
+        assert_eq!(get("StaticGameLOD"), None);
         let sys = AUDIO_AFFECT_SYSTEM_SETTING;
         assert_eq!(
             h.requests,
@@ -1540,7 +1575,9 @@ mod tests {
             ]
         );
         assert!(!h.untranslated.contains(&b"Display::setGamma".to_vec()));
-        assert_eq!(h.user_data_writes.len(), 1, "Accept's (the test's own file was put in the folder directly)");
+        // ~~1, Accept's~~ **Corrected 2026-11-12 (#160):** 2: the init's `findStaticLODLevel` save, then Accept's (the
+        // test's own file was put in the folder directly)
+        assert_eq!(h.user_data_writes.len(), 2, "the LOD manager's save and Accept's");
         assert!(h.user_data_writes[0].1.windows(2).any(|w| w == b"\r\n"));
         assert!(wm.layouts[l].deleted && h.shell.options_layout.is_none() && h.options.pref.is_none());
         assert!(h.ui_interacts.contains(&"ShellOptionsClosed"));
@@ -1549,7 +1586,8 @@ mod tests {
         let l = open(&mut wm, &mut h);
         let parent = wm.layouts[l].windows[0];
         options_menu_input(&mut wm, &mut h, parent, gwm::CHAR, u32::from(key::ESC), key::STATE_UP);
-        assert!(wm.layouts[l].deleted && h.user_data_writes.len() == 1);
+        // (#160: the ideal level is known now: no second LOD save)
+        assert!(wm.layouts[l].deleted && h.user_data_writes.len() == 2);
         // and again: Defaults, the camera box, Firewall Refresh, Back
         settle(&mut wm, &mut h);
         let _ = open(&mut wm, &mut h);
@@ -1566,7 +1604,8 @@ mod tests {
         let back = last(&wm, "ButtonBack");
         click(&mut wm, &mut h, back);
         settle(&mut wm, &mut h);
-        assert_eq!(h.user_data_writes.len(), 1, "Back writes nothing");
+        // (#160: the two writes above, the LOD manager's and Accept's: ~~1~~)
+        assert_eq!(h.user_data_writes.len(), 2, "Back writes nothing");
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
         assert_eq!(options_menu_input(&mut wm, &mut h, parent, gwm::CHAR, 0, 0), MsgHandled::Ignored);
     }
@@ -1643,7 +1682,10 @@ mod tests {
         let accept = last(&wm, "ButtonAccept");
         click(&mut wm, &mut h, accept);
         let folder: Vec<(Vec<u8>, Vec<u8>)> = std::mem::take(&mut h.user_data_writes);
-        assert_eq!(folder.len(), 1);
+        // ~~one write~~ **Corrected 2026-11-12 (#160):** two writes of Options.ini: `findStaticLODLevel`'s (the options
+        // screen's init finds this machine's level, `IdealStaticGameLOD` and `StaticGameLOD` saved) and Accept's
+        assert_eq!(folder.len(), 2);
+        assert!(folder.iter().all(|(p, _)| p.as_slice() == b"Options.ini"));
         let (mut wm2, mut h2) = booted();
         for (path, bytes) in folder {
             h2.user_data.files.insert(path, bytes);

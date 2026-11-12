@@ -3014,6 +3014,10 @@ extern "C" {
     pub fn ref_battle_honors_run(input: *const c_char, dir: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// #157: the map preview's placement and draw (differential/wrap_map_preview.cpp): the dump's length.
     pub fn ref_map_preview_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    /// #160: the game's level of detail (differential/wrap_game_lod.cpp): the dump's length (written up to `cap`).
+    pub fn ref_game_lod_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    /// #160: the keyboard options menu (differential/wrap_keyboard_options.cpp): the dump's length (written up to `cap`).
+    pub fn ref_keyboard_options_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.
@@ -3571,7 +3575,9 @@ extern "C" {
     pub fn ref_audio_dump(out: *mut c_uint, cap: c_int) -> c_int;
     pub fn ref_audio_event(name: *const c_char, owner: c_int, id: c_uint, pos: *const c_float, logical: c_int, player_index: c_int, n_ops: c_int, ops: c_uint, out: *mut c_uint, cap: c_int) -> c_int;
     pub fn ref_psys_reset();
-    pub fn ref_psys_settings(use_fx: c_int, scale: c_float, max_count: c_int, max_field: c_int, min_pri: c_int, min_skip_pri: c_int, skipped: c_int, field_count: c_uint);
+    pub fn ref_psys_settings(use_fx: c_int, scale: c_float, max_count: c_int, max_field: c_int, min_pri: c_int, min_skip_pri: c_int, skip_mask: c_int, field_count: c_uint, generations: c_int);
+    /// #160: the LOD manager's particle count (`m_numParticleGenerations`) after the last update.
+    pub fn ref_psys_generations() -> c_int;
     pub fn ref_psys_scene(kind: c_int, id: c_uint, v: *const c_float, iv: *const c_int);
     pub fn ref_psys_template_dump(out: *mut c_uint, cap: c_int) -> c_int;
     pub fn ref_psys_create(name: *const c_char, create_slaves: c_int, frame: c_uint, attach_to: c_uint) -> c_uint;

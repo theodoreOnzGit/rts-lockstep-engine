@@ -49,7 +49,11 @@
 //!
 //! - **The block handlers.** Upstream's `theTypeTable` maps 62 block types to
 //!   handlers defined elsewhere, all of which build game objects (thing
-//!   templates, weapons, audio events, ...): none is translated yet. The
+//!   templates, weapons, audio events, ...): ~~none is translated yet~~
+//!   **Corrected 2026-11-12 (#160):** many are, in their own modules (see
+//!   [`TYPE_TABLE`]'s note); GameLOD.cpp's five (`StaticGameLOD`,
+//!   `DynamicGameLOD`, `LODPreset`, `BenchProfile`, `ReallyLowMHz`) are
+//!   `crate::client::game_lod`'s `parse_*` functions. The
 //!   table's tokens are in [`TYPE_TABLE`] (with the upstream file of each
 //!   handler); a caller passes its own [`BlockParse`] table to [`Ini::load`].
 //! - **Field parsers that look names up in game systems not yet
@@ -287,6 +291,9 @@ pub enum Undefined {
     /// layer 12: `new char[n]` of a size the shipped 32-bit build cannot allocate (`GameStateMap`'s map buffer: a
     /// negative `Int` size, or an `UnsignedInt` block size of 2^31 or more): `std::bad_alloc`, which nothing catches.
     AllocationFailed,
+    /// #160: a field table with no `{ 0, 0, 0, 0 }` terminator searched for a token it does not hold (GameLOD.cpp's
+    /// `TheStaticGameLODFieldParseTable` and `TheDynamicGameLODFieldParseTable`: `findFieldParse` reads past the array).
+    UnterminatedFieldTable,
     // --- end p1w13-sonnet ---
     // --- p1l9-upgrades ---
     /// `ArmorUpgrade`: a triggered chemical-suits upgrade on an object with no
@@ -646,6 +653,7 @@ pub struct BlockParse<C> {
 /// (`WeaponStore::parse_weapon_template_definition`, `DamageFxStore::parse_damage_fx_definition`,
 /// `ObjectCreationListStore::parse_object_creation_list_definition`, ...); this table lists every block type and the file upstream
 /// defines its handler in (checked against `grep "fn parse_.*_definition" src`).
+/// (#160: the five GameLOD.cpp rows are `crate::client::game_lod::GAME_LOD_BLOCKS`.)
 pub const TYPE_TABLE: [(&str, &str, &str); 62] = [
     ("AIData", "INI::parseAIDataDefinition", "Common/INI/INIAiData.cpp"),
     ("Animation", "INI::parseAnim2DDefinition", "Common/INI/INIAnimation.cpp"),

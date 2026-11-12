@@ -58,6 +58,12 @@
 //!   ricochet angle from y and x swapped), 4414 (the nugget's `cosf` in `float`, put back), 4415 (`InitialDelay`'s
 //!   default 0, not -1, the FX INI test). Each must make its test fail.
 //!
+//! **#160 (2026-11-12):** `isParticleSkipped` was a fixed flag on both sides (the Rust `ParticleSettings::particle_skipped`
+//! and the stand-in's `m_skipped`); upstream counts each particle asked for against the dynamic level's skip mask
+//! (GameLOD.h:227-230). Both now count (the stand-in's body is GameLOD.h's), the mask drawn from 0, 1, 3 and 7 and the
+//! count from 0 .. 8, and the count after each update is compared. Predicted 0 mismatches; **result: 0** (5,000 runs,
+//! 275,149 frame states, 545,415 client random states compared).
+//!
 //! # Predictions (written before the first run)
 //!
 //! Expected 0 mismatches, except where reading the two side by side (before the run) found differences:
@@ -879,7 +885,9 @@ fn settings_both(g: &mut Gen, m: &mut ParticleSystemManager) -> ParticleSettings
         max_field_particle_count: [0, 2, 30][g.below(3) as usize],
         min_dynamic_particle_priority: if g.below(4) == 0 { 1 + g.below(13) as i32 } else { 1 },
         min_dynamic_particle_skip_priority: if g.below(4) == 0 { 1 + g.below(13) as i32 } else { 1 },
-        particle_skipped: g.below(5) == 0,
+        // (#160: the LOD manager's mask and count; was a fixed `particle_skipped`, 1 in 5)
+        particle_skip_mask: [0, 0, 0, 1, 3, 7][g.below(6) as usize],
+        particle_generations: std::cell::Cell::new(g.below(9) as i32),
     };
     m.field_particle_count = g.below(40);
     unsafe {
@@ -890,8 +898,9 @@ fn settings_both(g: &mut Gen, m: &mut ParticleSystemManager) -> ParticleSettings
             st.max_field_particle_count,
             st.min_dynamic_particle_priority,
             st.min_dynamic_particle_skip_priority,
-            i32::from(st.particle_skipped),
+            st.particle_skip_mask,
             m.field_particle_count,
+            st.particle_generations.get(),
         )
     };
     st
@@ -1084,7 +1093,10 @@ fn particle_systems_run_as_upstream() {
             }
             frames += 1;
             let ctx = || ctx0(frame);
-            let ok = frames_ck.cmp(&rust_dump(&m), &cpp_dump(), ctx) && rng_ck.cmp(&random.client, &cpp_client_state(), ctx);
+            // (#160: and the LOD manager's particle count, which `isParticleSkipped` advances)
+            let gens = [st.particle_generations.get() as u32];
+            let cgens = [unsafe { cpp::ref_psys_generations() } as u32];
+            let ok = frames_ck.cmp(&rust_dump(&m), &cpp_dump(), ctx) && rng_ck.cmp(&random.client, &cpp_client_state(), ctx) && rng_ck.cmp(&gens, &cgens, ctx);
             if !ok && std::env::var("PSYS_FULL").is_ok() {
                 println!("RNG equal: {}; last_new_vel {:?}", random.client == cpp_client_state(), m.last_new_vel);
                 for sy in &m.systems {

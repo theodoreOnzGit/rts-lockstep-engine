@@ -505,9 +505,17 @@ STUB(INI::parseShellMenuSchemeDefinition) WEAK_STUB(INI::parseTerrainDefinition)
 WEAK_STUB(INI::parseUpgradeDefinition) /* p1w2-upgrade: real in wrap_upgrade.cpp */ STUB(INI::parseVideoDefinition)
 STUB(INI::parseWaterSettingDefinition) STUB(INI::parseWaterTransparencyDefinition)
 STUB(INI::parseWeatherDefinition) WEAK_STUB(INI::parseWebpageURLDefinition) /* p1w2-science: WEAK, wrap_science.cpp uses this block to reach parseScience */
-STUB(INI::parseHeaderTemplateDefinition) STUB(INI::parseStaticGameLODDefinition)
-STUB(INI::parseDynamicGameLODDefinition) STUB(INI::parseLODPreset) STUB(INI::parseBenchProfile)
-STUB(parseReallyLowMHz) STUB(ScriptEngine::parseScriptAction) STUB(ScriptEngine::parseScriptCondition)
+STUB(INI::parseHeaderTemplateDefinition)
+/* #160: the five blocks of GameLOD.cpp reach its handlers (wrap_game_lod.cpp, renamed there) when that fixture sets the
+** hooks (ref_game_lod_reset): 0 StaticGameLOD, 1 DynamicGameLOD, 2 LODPreset, 3 BenchProfile, 4 ReallyLowMHz; with none
+** set they throw, as the stubs did. */
+extern "C" { void (*ref_game_lod_block_hook[5])(INI *) = { 0, 0, 0, 0, 0 }; }
+void INI::parseStaticGameLODDefinition(INI *ini) { if (!ref_game_lod_block_hook[0]) throw ERROR_BUG; ref_game_lod_block_hook[0](ini); }
+void INI::parseDynamicGameLODDefinition(INI *ini) { if (!ref_game_lod_block_hook[1]) throw ERROR_BUG; ref_game_lod_block_hook[1](ini); }
+void INI::parseLODPreset(INI *ini) { if (!ref_game_lod_block_hook[2]) throw ERROR_BUG; ref_game_lod_block_hook[2](ini); }
+void INI::parseBenchProfile(INI *ini) { if (!ref_game_lod_block_hook[3]) throw ERROR_BUG; ref_game_lod_block_hook[3](ini); }
+void parseReallyLowMHz(INI *ini) { if (!ref_game_lod_block_hook[4]) throw ERROR_BUG; ref_game_lod_block_hook[4](ini); }
+STUB(ScriptEngine::parseScriptAction) STUB(ScriptEngine::parseScriptCondition)
 
 /* FileSystem::getFileListInDirectory (FileSystem.cpp, not compiled): the
 ** registered listing, for INI::loadDirectory */

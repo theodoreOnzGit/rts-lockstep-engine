@@ -3808,6 +3808,17 @@ fn shell_ui(
     // for the screen's defaults
     let o = ui.client_options();
     keyboard_scroll.0 = o.keyboard_scroll;
+    // (#160) `TheGameLODManager`: W3DDisplay::draw's dynamic level, the particles' limits and count, the draw modules'
+    // static level; and `TheMetaMap` for the keyboard options screen
+    let gens = g.models.drawables.fx.lod.map(|l| l.particle_generations);
+    let show = g.controls.client.world.game_logic.show_dynamic_lod;
+    g.models.drawables.fx.lod = Some(ui.lod_frame((time.elapsed_secs_f64() * 1_000_000.0) as i64, show, gens));
+    if let Some(l) = ui.static_lod() {
+        g.models.drawables.static_lod = l;
+    }
+    if ui.gui.meta_map.recs.len() != g.controls.meta_map.recs.len() {
+        ui.gui.meta_map = g.controls.meta_map.clone();
+    }
     // (#108) InGameUI's quit menu flag, for the translators; and the World's game cleared (`clearGameData`): the
     // engine reset's InGameUI flags and `closeWindows`, once
     g.controls.client.modes.quit_menu_visible = ui.quit_menu_visible();

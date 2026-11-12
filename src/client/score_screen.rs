@@ -116,8 +116,9 @@
 //! - `CopyProtect::validate()` (the launcher's shared memory) is the host's ([`ScoreScreenHost::copy_protect_validate`],
 //!   true: as the launcher set it).
 //! - **The final movie** (`PlayMovieAndBlock`): Bink was never released; `TheVideoPlayer->open` gives no stream, and the
-//!   function returns as upstream's does then. `TheGameLODManager` is not translated: the movie is asked for
-//!   whatever the LOD.
+//!   function returns as upstream's does then. ~~`TheGameLODManager` is not translated~~ **Corrected 2026-11-12 (#160):**
+//!   `TheGameLODManager` is translated (`crate::client::game_lod`) but not read here yet (a gap of #160): the movie is
+//!   asked for whatever the LOD.
 //! - The music (`TheAudio->addAudioEvent`) is the host's audio list; `removeAudioEvent(AHSV_StopTheMusicFade)` and
 //!   `TheAudio->update()` are the host's audio (not recorded).
 //! - ~~`PopupReplay.wnd`'s callbacks (`PopupReplayUpdate`, its init) are not translated: the lexicon records them.~~
@@ -1247,7 +1248,8 @@ fn finish_single_player_init<H: ScoreScreenHost>(wm: &mut GameWindowManager, h: 
                     hide_if(wm, w, true);
                 }
                 if !campaign.get_final_victory_movie().is_empty() {
-                    // (`TheGameLODManager`'s low-resolution test: not translated; the movie is asked for)
+                    // (`TheGameLODManager`'s low-resolution test: ~~not translated~~ **Corrected 2026-11-12 (#160):** translated
+                    // in `client::game_lod`, not read here yet; the movie is asked for)
                     play_movie_and_block(h, campaign.get_final_victory_movie());
                 }
             }

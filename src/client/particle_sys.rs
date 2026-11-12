@@ -884,7 +884,7 @@ impl ParticleHost for NoParticleHost {
 }
 
 /// `TheGlobalData`'s and `TheGameLODManager`'s particle settings.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ParticleSettings {
     /// `m_useFX`.
     pub use_fx: bool,
@@ -898,8 +898,24 @@ pub struct ParticleSettings {
     pub min_dynamic_particle_priority: i32,
     /// `getMinDynamicParticleSkipPriority()`.
     pub min_dynamic_particle_skip_priority: i32,
-    /// `isParticleSkipped()`.
-    pub particle_skipped: bool,
+    /// ~~`isParticleSkipped()`.~~ **Corrected 2026-11-12 (#160):** `isParticleSkipped()` is not a constant: it counts
+    /// the particles asked for and skips all but every (mask + 1)th ([`ParticleSettings::is_particle_skipped`], over
+    /// these two of the LOD manager's members).
+    /// `m_dynamicParticleSkipMask` (`crate::client::game_lod::GameLodManager::dynamic_particle_skip_mask`).
+    pub particle_skip_mask: i32,
+    /// `m_numParticleGenerations`: counted by each [`ParticleSettings::is_particle_skipped`] (the caller keeps it from
+    /// one update to the next, as the LOD manager does).
+    pub particle_generations: std::cell::Cell<i32>,
+}
+
+impl ParticleSettings {
+    /// `GameLODManager::isParticleSkipped()` (GameLOD.h): `(++m_numParticleGenerations & m_dynamicParticleSkipMask) !=
+    /// m_dynamicParticleSkipMask`.
+    pub fn is_particle_skipped(&self) -> bool {
+        let n = self.particle_generations.get().wrapping_add(1);
+        self.particle_generations.set(n);
+        (n & self.particle_skip_mask) != self.particle_skip_mask
+    }
 }
 
 impl Default for ParticleSettings {
@@ -913,7 +929,8 @@ impl Default for ParticleSettings {
             max_field_particle_count: 30,
             min_dynamic_particle_priority: priority::PARTICLE_PRIORITY_LOWEST,
             min_dynamic_particle_skip_priority: priority::PARTICLE_PRIORITY_LOWEST,
-            particle_skipped: false,
+            particle_skip_mask: 0,
+            particle_generations: std::cell::Cell::new(0),
         }
     }
 }
@@ -1543,7 +1560,7 @@ impl ParticleSystemManager {
             if !settings.use_fx {
                 return None;
             }
-            if pri < settings.min_dynamic_particle_priority || (pri < settings.min_dynamic_particle_skip_priority && settings.particle_skipped) {
+            if pri < settings.min_dynamic_particle_priority || (pri < settings.min_dynamic_particle_skip_priority && settings.is_particle_skipped()) {
                 return None;
             }
             let s = &self.systems[si];

@@ -260,7 +260,7 @@ void ref_psys_reset(void)
 	g_objects.clear(); g_drawables.clear(); g_objectDrawables.clear();
 	g_client.m_frame = 0; g_logic.m_frame = 0; g_terrain.m_ground = 0.0f;
 	g_global.m_useFX = TRUE; g_global.m_particleScale = 1.0f; g_global.m_maxParticleCount = 0; g_global.m_maxFieldParticleCount = 30;
-	g_lod.m_minPriority = PARTICLE_PRIORITY_LOWEST; g_lod.m_minSkipPriority = PARTICLE_PRIORITY_LOWEST; g_lod.m_skipped = FALSE;
+	g_lod.m_minPriority = PARTICLE_PRIORITY_LOWEST; g_lod.m_minSkipPriority = PARTICLE_PRIORITY_LOWEST; g_lod.m_numParticleGenerations = 0; g_lod.m_dynamicParticleSkipMask = 0;
 	ref_particle_block_hook = blockHook;
 	/* computeParticleVelocity's `static Coord3D newVel` outlives the manager (OUTWARD velocity with a volume type it has
 	** no case for keeps it): one call by a system with no velocity type (its default branch) zeroes it, so that every
@@ -275,13 +275,18 @@ void ref_psys_reset(void)
 	TheParticleSystemManager->m_uniqueSystemID = INVALID_PARTICLE_SYSTEM_ID;
 }
 
-void ref_psys_settings(int useFX, float scale, int maxCount, int maxField, int minPri, int minSkipPri, int skipped, unsigned fieldCount)
+/* (#160: `skipMask` and `generations` are the LOD manager's m_dynamicParticleSkipMask and m_numParticleGenerations; the
+** count after an update is read back by ref_psys_generations) */
+void ref_psys_settings(int useFX, float scale, int maxCount, int maxField, int minPri, int minSkipPri, int skipMask, unsigned fieldCount, int generations)
 {
 	g_global.m_useFX = useFX != 0; g_global.m_particleScale = scale; g_global.m_maxParticleCount = maxCount;
 	g_global.m_maxFieldParticleCount = maxField;
-	g_lod.m_minPriority = minPri; g_lod.m_minSkipPriority = minSkipPri; g_lod.m_skipped = skipped != 0;
+	g_lod.m_minPriority = minPri; g_lod.m_minSkipPriority = minSkipPri; g_lod.m_dynamicParticleSkipMask = skipMask; g_lod.m_numParticleGenerations = generations;
 	TheParticleSystemManager->m_fieldParticleCount = fieldCount;
 }
+
+/* (#160) the LOD manager's particle count after the last update */
+int ref_psys_generations(void) { return g_lod.m_numParticleGenerations; }
 
 /* The scene. kind 0: object `id` (pos 3, transform 12, the drawable's transform 12, the bounding circle radius; iv:
 ** shroud status, has drawable); kind 1: drawable `id` (pos 3, transform 12, obscured); kind 2: remove object `id`;

@@ -338,6 +338,13 @@ pub struct ShellUi {
     /// (#157) The maps' `.tga` files the listing found and the file system has not served yet (the browser fetches
     /// them as they are asked for): read by [`ShellUi::load_map_previews`].
     pub previews_pending: Vec<Vec<u8>>,
+    /// (#160) `Data\INI\GameLOD.ini` and `Data\INI\GameLODPresets.ini` as the art's file system had them when the
+    /// shell was read (the LOD manager's `init` reads them: [`ShellUi::set_user_data`]).
+    pub lod_files: Vec<(Vec<u8>, Vec<u8>)>,
+    /// (#160) `W3DDisplay::updateAverageFPS`'s statics and `m_averageFPS` (the client's clock in microseconds).
+    pub average_fps: rts_lockstep_engine::client::game_lod::AverageFps,
+    /// (#160) What the LOD manager's init said (`None`: not run yet; an error: an INI file missing or refused).
+    pub lod_init: Option<Result<(), String>>,
 }
 
 impl ShellUi {
@@ -373,7 +380,16 @@ impl ShellUi {
         let mut wm = GameWindowManager::new(LAYOUT);
         wm.default_window_font = Some(language.default_window_font.clone());
         wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &transitions).ok()?;
-        let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }), previews_pending: Vec::new() };
+        // (#160) the LOD manager's two files
+        let lod_files = [&b"Data\\INI\\GameLOD.ini"[..], b"Data\\INI\\GameLODPresets.ini"].iter().filter_map(|p| fs.open_file(p).map(|d| (p.to_vec(), d))).collect();
+        let mut ui = ShellUi {
+            wm,
+            gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }),
+            previews_pending: Vec::new(),
+            lod_files,
+            average_fps: Default::default(),
+            lod_init: None,
+        };
         ui.gui.time_ms = now_ms;
         // (#153) the windows measured as upstream measures them (`DisplayString::getSize`, `winFontHeight`), over the
         // client's estimate of GDI's answers (`crate::text_metrics`)
@@ -563,6 +579,42 @@ impl ShellUi {
         let mut p = OptionPreferences::load_from(&mut self.gui.user_data);
         apply_option_preferences(&mut g, &mut p, &[]);
         self.gui.global_data = g;
+        // (#160) `TheGameLODManager->init()` (GameEngine::init, after the global data) and W3DDisplay::init's level, on
+        // the shell's copy of the global data
+        let files = self.lod_files.clone();
+        let r = self.gui.init_game_lod(|p| files.iter().find(|(n, _)| n.as_slice() == p).map(|(_, d)| d.clone()));
+        self.lod_init = Some(r.map_err(|e| format!("{e:?}")));
+    }
+
+    /// (#160) GUI glue's helper, each frame: `W3DDisplay::draw`'s `updateAverageFPS` at `now_us` (the client's clock,
+    /// in microseconds) and its dynamic LOD (`m_enableDynamicLOD` of the shell's global data, `show_dynamic_lod` the
+    /// World's `TheGameLogic->getShowDynamicLOD()`), after the particle count the particles advanced
+    /// (`particle_generations`, from [`ParticleLod`]) is given back to the manager. What the particles read now.
+    ///
+    /// [`ParticleLod`]: rts_lockstep_engine::client::client_fx::ParticleLod
+    pub fn lod_frame(&mut self, now_us: i64, show_dynamic_lod: bool, particle_generations: Option<i32>) -> rts_lockstep_engine::client::client_fx::ParticleLod {
+        if let Some(n) = particle_generations {
+            self.gui.lod.num_particle_generations = n;
+        }
+        self.average_fps.update(now_us, 1_000_000);
+        let enable = self.gui.global_data.enable_dynamic_lod;
+        let fps = self.average_fps.average_fps;
+        self.gui.lod.display_draw(enable, show_dynamic_lod, fps);
+        let l = &self.gui.lod;
+        rts_lockstep_engine::client::client_fx::ParticleLod {
+            max_particle_count: self.gui.global_data.max_particle_count,
+            min_dynamic_particle_priority: l.min_dynamic_particle_priority,
+            min_dynamic_particle_skip_priority: l.min_dynamic_particle_skip_priority,
+            particle_skip_mask: l.dynamic_particle_skip_mask,
+            particle_generations: l.num_particle_generations,
+        }
+    }
+
+    /// (#160) `TheGameLODManager->getStaticLODLevel()` once the manager has a level (`None` before: the drawables keep
+    /// their own).
+    pub fn static_lod(&self) -> Option<i32> {
+        let l = self.gui.lod.get_static_lod_level();
+        (l != rts_lockstep_engine::client::game_lod::STATIC_GAME_LOD_UNKNOWN).then_some(l)
     }
 
     /// (#93) The preference files the shell wrote since the last call (`UserPreferences::write`): name and bytes.

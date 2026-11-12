@@ -76,7 +76,10 @@
 //! - Only `W3DModelDraw` and the draw modules built on its data are made; the
 //!   others (`W3DDefaultDraw`, trees, lasers, ...) are not translated yet.
 //! - The static LOD is [`ClientDrawables::static_lod`] (`STATIC_GAME_LOD_HIGH`
-//!   by default); upstream measures the machine.
+//!   by default); ~~upstream measures the machine.~~ **Corrected 2026-11-12 (#160):** upstream's
+//!   `TheGameLODManager->getStaticLODLevel()` (`crate::client::game_lod`): the owner copies the shell's LOD
+//!   manager's level here once it has one (`client/src/shell.rs`); the manager measures nothing (the machine is
+//!   unknown to it), so its level is the player's `Options.ini` choice or what an unknown machine is recommended.
 //! - **Stealth and shroud** (GitHub #45): of `setStealthLook`, only the look and `m_hiddenByStealth` are kept; the
 //!   stealth and second material pass opacities, the heat-vision pass, the shadows' `setShadowsEnabled`, and the
 //!   deselection `updateHiddenStatus` asks of the in-game UI are not translated (nothing draws them yet), nor are
@@ -334,7 +337,7 @@ pub struct ClientDrawables {
     module_data: BTreeMap<Vec<u8>, Arc<Vec<Arc<W3DModelDrawModuleData>>>>,
     /// The client's random generator (`theGameClientSeed`), the client's own.
     pub random: RandomValues,
-    /// `TheGameLODManager->getStaticLODLevel()`.
+    /// `TheGameLODManager->getStaticLODLevel()` (#160: the shell's manager's, copied by the owner; high without one).
     pub static_lod: i32,
     /// What did not parse or construct: template, module, why.
     pub errors: Vec<(Vec<u8>, Vec<u8>, String)>,

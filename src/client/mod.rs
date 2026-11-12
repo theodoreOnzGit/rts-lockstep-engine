@@ -49,6 +49,8 @@ pub mod w3d_model_draw;
 pub mod w3d_truck_draw;
 pub mod drawable;
 pub mod particle_sys;
+pub mod game_lod; // #160: GameLOD.cpp (TheGameLODManager), W3DDisplay::updateAverageFPS
+pub mod keyboard_options_menu; // #160: KeyboardOptionsMenu.cpp
 pub mod fx_list;
 pub mod client_fx;
 pub mod drawable_loco;

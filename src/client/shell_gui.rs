@@ -16,7 +16,8 @@
 //     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown; #98:
 //     ReplayMenuSystem, PopupReplaySystem, ChallengeMenuSystem, ReplayMenuInput, PopupReplayInput, ChallengeMenuInput,
 //     ReplayMenuInit, PopupReplayInit, ChallengeMenuInit, ReplayMenuUpdate, PopupReplayUpdate, ChallengeMenuUpdate,
-//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown; #87: QuitMenuSystem; #157: the tooltip callbacks
+//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown; #87: QuitMenuSystem; #160: KeyboardOptionsMenuSystem,
+//     KeyboardOptionsMenuInput, KeyboardOptionsMenuInit, KeyboardOptionsMenuShutdown; #157: the tooltip callbacks
 //     BattleHonorTooltip, playerTemplateComboBoxTooltip, playerTemplateListBoxTooltip, ExtendedMessageBoxSystem's
 //     setting by gogoExMessageBox)
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp (#157: the
@@ -62,8 +63,12 @@
 //!   preference files are the owner's user data folder ([`ShellGui::user_data`], read by the translated
 //!   `UserPreferences::load`; the files written queued in [`ShellGui::user_data_writes`]), and the options screen
 //!   (`crate::client::options_menu`) is translated and dispatched here, over the owner's copy of the global data
-//!   ([`ShellGui::global_data`]); what the client lacks of it (the LOD manager, the display modes, the gamma, the
+//!   ([`ShellGui::global_data`]); what the client lacks of it (~~the LOD manager,~~ the display modes, the gamma, the
 //!   registry, the IP addresses) is answered here as missing and recorded in [`ShellGui::untranslated`].
+//!   **Corrected 2026-11-12 (#160):** the LOD manager is translated (`crate::client::game_lod`, [`ShellGui::lod`]), on a
+//!   machine it does not know ([`ShellLodHost`]); and the keyboard options screen (`crate::client::keyboard_options_menu`,
+//!   `KeyboardOptionsMenuInit`, `Shutdown`, `Input`, `System`, and the entry's `KeyboardTextEntryInput`) is dispatched here,
+//!   over the owner's copy of `TheMetaMap` ([`ShellGui::meta_map`]).
 //!   **Corrected 2026-11-10 (#98):** the replay menu (`crate::client::replay_menu`), the score screen's replay popup
 //!   (`crate::client::popup_replay`) and the challenge menu (`crate::client::challenge_menu`) are translated and
 //!   dispatched here, with their message boxes' callbacks (`reallySaveReplay`, `reallyLoadReplay`,
@@ -104,6 +109,7 @@ use crate::client::single_player_menu::{self as spm, SinglePlayerHost, SinglePla
 use crate::client::challenge_menu::{self as cm, ChallengeHost, ChallengeMenu};
 use crate::client::popup_replay::{self as pr, PopupReplay, PopupReplayHost};
 use crate::client::quit_menu::{self as qm, QuitMenu, QuitMenuHost};
+use crate::client::keyboard_options_menu::{self as kom, KeyboardOptionsHost, KeyboardOptionsMenu};
 use crate::client::replay_menu::{self as rm, MemoryReplayFolder, ReplayListHost, ReplayListing, ReplayMenu, ReplayVersion};
 use crate::formats::big::FilenameList;
 use crate::common::game_state::SaveGameInfo;
@@ -165,8 +171,16 @@ pub struct ShellGui<W> {
     pub global_data: GlobalData,
     /// (#88) `TheAudio->getAudioSettings()` (the owner's audio's; the defaults until it gives them).
     pub audio_settings: AudioSettings,
-    /// (#88) `TheGameLODManager->getStaticLODLevel()`: kept, not applied (GameLOD.cpp is not translated).
-    pub static_lod_level: i32,
+    /// ~~(#88) `TheGameLODManager->getStaticLODLevel()`: kept, not applied (GameLOD.cpp is not translated).~~
+    /// **Corrected 2026-11-12 (#160):** `TheGameLODManager` (`crate::client::game_lod`), its levels applied to
+    /// [`ShellGui::global_data`] (the client's copy); the machine is unknown to it ([`ShellGui::lod_host`]).
+    pub lod: crate::client::game_lod::GameLodManager,
+    /// (#160) The LOD manager's host: the hardware answered unknown, its calls recorded.
+    pub lod_host: crate::client::game_lod::UnknownHardware,
+    /// (#160) KeyboardOptionsMenu.cpp's statics and globals.
+    pub keyboard_options: crate::client::keyboard_options_menu::KeyboardOptionsMenu,
+    /// (#160) `TheMetaMap` as the owner copied it (the keyboard options screen lists its records).
+    pub meta_map: crate::client::meta_event::MetaMap,
     /// (#88) `TheDisplay`'s modes (width, height, bit depth): none, the client does not change its display mode.
     pub display_modes: Vec<(i32, i32, i32)>,
     /// (#88) `TheInGameUI`'s RMB scroll anchors (draw, move): kept for the owner (the client has none yet).
@@ -208,6 +222,90 @@ pub struct ShellGui<W> {
     /// (#153) The owner's text measure (`DisplayString::getSize`, `winFontHeight`); `None`, [`GuiHost`]'s default
     /// estimate (as the tests and the differential tests measure).
     pub text_metrics: Option<crate::client::window_manager::TextMetrics>,
+}
+
+/// (#160) The LOD manager's host on the shell: the machine unknown and the game client's and terrain's calls recorded
+/// ([`crate::client::game_lod::UnknownHardware`]); `findStaticLODLevel`'s preferences written to `Options.ini` of the
+/// user data folder (and queued for the owner, as every write is).
+pub struct ShellLodHost<'a> {
+    pub hw: &'a mut crate::client::game_lod::UnknownHardware,
+    pub user_data: &'a mut MemoryUserData,
+    pub writes: &'a mut Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+/// The user data folder with each write queued.
+struct QueuedWrites<'a, 'b>(&'a mut ShellLodHost<'b>);
+
+impl UserDataFiles for QueuedWrites<'_, '_> {
+    fn path_user_data(&self) -> Vec<u8> {
+        self.0.user_data.path.clone()
+    }
+    fn user_data_read(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        self.0.user_data.user_data_read(path)
+    }
+    fn user_data_write(&mut self, path: &[u8], bytes: &[u8]) -> bool {
+        self.0.user_data.user_data_write(path, bytes);
+        self.0.writes.push((path.to_vec(), bytes.to_vec()));
+        true
+    }
+}
+
+impl crate::client::game_lod::GameLodHost for ShellLodHost<'_> {
+    fn video_chip_type(&mut self) -> i32 {
+        self.hw.video_chip_type()
+    }
+    fn cpu_freq_ram(&mut self) -> (i32, Option<i32>, Option<i32>) {
+        self.hw.cpu_freq_ram()
+    }
+    fn benchmark(&mut self) -> Option<(f32, f32, f32)> {
+        self.hw.benchmark()
+    }
+    fn write_benchmark_file(&mut self, text: &[u8]) {
+        self.hw.write_benchmark_file(text);
+    }
+    fn adjust_lod(&mut self, adj: i32) {
+        self.hw.adjust_lod(adj);
+    }
+    fn reallocate_shadows(&mut self) {
+        self.hw.reallocate_shadows();
+    }
+    fn set_shore_line_detail(&mut self) {
+        self.hw.set_shore_line_detail();
+    }
+    fn set_terrain_tracks_detail(&mut self) {
+        self.hw.set_terrain_tracks_detail();
+    }
+    fn save_lod_preferences(&mut self, ideal: &[u8], static_level: Option<&[u8]>) {
+        // `OptionPreferences optionPref; optionPref["IdealStaticGameLOD"] = ...; optionPref.write();`
+        self.hw.save_lod_preferences(ideal, static_level);
+        let mut q = QueuedWrites(self);
+        let mut p = crate::client::options_menu::OptionPreferences::load_from(&mut q);
+        p.prefs.set_ascii_string(b"IdealStaticGameLOD", ideal);
+        if let Some(s) = static_level {
+            p.prefs.set_ascii_string(b"StaticGameLOD", s);
+        }
+        p.prefs.write(&mut q);
+    }
+}
+
+impl<W: WndFiles> ShellGui<W> {
+    /// (#160) `f` on `TheGameLODManager` ([`ShellGui::lod`]) with its host ([`ShellLodHost`]) and the shell's global data.
+    pub fn lod_with<R>(&mut self, f: impl FnOnce(&mut crate::client::game_lod::GameLodManager, &mut ShellLodHost<'_>, &mut GlobalData) -> R) -> R {
+        let mut host = ShellLodHost { hw: &mut self.lod_host, user_data: &mut self.user_data, writes: &mut self.user_data_writes };
+        f(&mut self.lod, &mut host, &mut self.global_data)
+    }
+
+    /// (#160) A new `TheGameLODManager` made and initialised as `GameEngine::init` does (`GameLODManager::init`: the
+    /// two INI files `files` gives, `Options.ini` of the user data folder, the machine unknown), then its static level
+    /// set as `W3DDisplay::init` sets it when none is: on the shell's global data (the client's copy; the logic's is
+    /// never written). An INI file missing or refused ends the init there, as upstream's throw would (the error).
+    pub fn init_game_lod(&mut self, files: impl Fn(&[u8]) -> Option<Vec<u8>>) -> crate::common::ini::IniResult<()> {
+        self.lod = crate::client::game_lod::GameLodManager::new();
+        let mut prefs = crate::client::options_menu::OptionPreferences::load_from(&mut self.user_data);
+        self.lod_with(|m, h, g| m.init(h, g, &mut prefs, files))?;
+        self.lod_with(|m, h, g| m.display_init(h, g));
+        Ok(())
+    }
 }
 
 /// (#151) A call of the popup message on the game, for the owner of the game to make.
@@ -330,7 +428,10 @@ impl<W: WndFiles> ShellGui<W> {
             options: OptionsMenu::default(),
             global_data: GlobalData::new(),
             audio_settings: AudioSettings::default(),
-            static_lod_level: crate::client::options_menu::STATIC_GAME_LOD_UNKNOWN,
+            lod: crate::client::game_lod::GameLodManager::new(),
+            lod_host: Default::default(),
+            keyboard_options: Default::default(),
+            meta_map: Default::default(),
             display_modes: Vec::new(),
             rmb_scroll_anchor: (false, false),
             map_list_names: Vec::new(),
@@ -415,6 +516,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ChallengeMenuSystem" => cm::challenge_menu_system(wm, self, win, msg, d1, d2),
             // (#87)
             b"QuitMenuSystem" => qm::quit_menu_system(wm, self, win, msg, d1, d2),
+            // (#160)
+            b"KeyboardOptionsMenuSystem" => kom::keyboard_options_menu_system(wm, self, win, msg, d1, d2),
             // (#148) the briefing history (`Diplomacy.wnd`)
             b"DiplomacySystem" => {
                 let control_id = crate::client::window_manager::data_win(d1).map_or(0, |c| wm.tree.windows[c].id);
@@ -452,6 +555,9 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ReplayMenuInput" => rm::replay_menu_input(wm, self, win, msg, d1, d2),
             b"PopupReplayInput" => pr::popup_replay_input(wm, self, win, msg, d1, d2),
             b"ChallengeMenuInput" => cm::challenge_menu_input(wm, self, win, msg, d1, d2),
+            // (#160; `KeyboardTextEntryInput` is set by `winSetInputFunc`, not named by a WND)
+            b"KeyboardOptionsMenuInput" => kom::keyboard_options_menu_input(wm, self, win, msg, d1, d2),
+            b"KeyboardTextEntryInput" => kom::keyboard_text_entry_input(wm, self, win, msg, d1, d2),
             // (#148)
             b"DiplomacyInput" => self.diplomacy_with(wm, |h| crate::client::diplomacy::diplomacy_input(h, msg, d1 as u8)).0,
             // (#151)
@@ -557,6 +663,9 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"ChallengeMenuInit" => cm::challenge_menu_init(wm, self, layout),
             b"ChallengeMenuUpdate" => cm::challenge_menu_update(wm, self, layout),
             b"ChallengeMenuShutdown" => cm::challenge_menu_shutdown(wm, self, layout, user),
+            // (#160; `KeyboardOptionsMenuUpdate` is not in upstream's lexicon)
+            b"KeyboardOptionsMenuInit" => kom::keyboard_options_menu_init(wm, self, layout),
+            b"KeyboardOptionsMenuShutdown" => kom::keyboard_options_menu_shutdown(wm, self, layout),
             // (#151) the popup message's layout
             b"InGamePopupMessageInit" => crate::client::in_game_popup_message::in_game_popup_message_init(&mut ShellPopup { wm, gui: self }),
             _ => self.untranslated.push(func.to_vec()),
@@ -667,6 +776,18 @@ impl<W: WndFiles> ShellGui<W> {
     }
 }
 
+impl<W: WndFiles> KeyboardOptionsHost for ShellGui<W> {
+    fn keyboard_options(&mut self) -> &mut KeyboardOptionsMenu {
+        &mut self.keyboard_options
+    }
+    fn meta_map(&self) -> &crate::client::meta_event::MetaMap {
+        &self.meta_map
+    }
+    fn keyboard_text(&self, label: &[u8]) -> Vec<u16> {
+        self.text(label)
+    }
+}
+
 impl<W: WndFiles> OptionsHost for ShellGui<W> {
     fn options_menu(&mut self) -> &mut OptionsMenu {
         &mut self.options
@@ -707,36 +828,31 @@ impl<W: WndFiles> OptionsHost for ShellGui<W> {
     fn set_proxy(&mut self, _proxy: &[u8]) {
         self.untranslated.push(b"SetStringInRegistry(Proxy), ghttpSetProxy".to_vec());
     }
+    // ~~(the level kept; GameLODManager::setStaticLODLevel's settings are not applied: GameLOD.cpp)~~ **Corrected
+    // 2026-11-12 (#160):** the translated `TheGameLODManager` ([`ShellGui::lod`]), on the shell's global data
     fn static_lod_level(&mut self) -> i32 {
-        self.static_lod_level
+        self.lod.get_static_lod_level()
     }
     fn set_static_lod_level(&mut self, level: i32) -> bool {
-        // (the level kept; GameLODManager::setStaticLODLevel's settings are not applied: GameLOD.cpp)
-        self.untranslated.push(b"GameLODManager::setStaticLODLevel".to_vec());
-        let changed = self.static_lod_level != level;
-        self.static_lod_level = level;
-        changed
+        self.lod_with(|m, h, g| m.set_static_lod_level(h, g, level))
     }
     fn find_static_lod_level(&mut self) -> i32 {
-        self.untranslated.push(b"GameLODManager::findStaticLODLevel".to_vec());
-        crate::client::options_menu::STATIC_GAME_LOD_UNKNOWN
+        // ~~(answered unknown: GameLOD.cpp is not translated)~~ **Corrected 2026-11-12 (#160):** the manager's
+        // match of the presets, on a machine its host does not know (upstream's own path: `crate::client::game_lod`)
+        self.lod_with(|m, h, _| m.find_static_lod_level(h))
     }
     fn current_texture_reduction(&mut self) -> i32 {
-        self.global_data.texture_reduction_factor
+        // ~~`self.global_data.texture_reduction_factor`~~ **Corrected 2026-11-12 (#160):** upstream reads the manager's
+        // (OptionsMenu.cpp:1668, `getCurrentTextureReduction`), which only the display sets (W3DDisplay::init,
+        // W3DGameClient: not translated, so it stays 0)
+        self.lod.get_current_texture_reduction()
     }
     fn recommended_texture_reduction(&mut self) -> i32 {
-        self.untranslated.push(b"GameLODManager::getRecommendedTextureReduction".to_vec());
-        self.global_data.texture_reduction_factor
+        self.lod_with(|m, h, _| m.get_recommended_texture_reduction(h))
     }
     fn static_game_lod_level_name(&mut self, level: i32) -> Vec<u8> {
-        // (GameLOD.cpp's StaticGameLODNames)
-        match level {
-            0 => b"Low".to_vec(),
-            1 => b"Medium".to_vec(),
-            2 => b"High".to_vec(),
-            3 => b"Custom".to_vec(),
-            _ => Vec::new(),
-        }
+        // (GameLOD.cpp's StaticGameLODNames; a level outside them is undefined upstream: empty here)
+        self.lod.get_static_game_lod_level_name(level).map_or_else(Vec::new, |n| n.as_bytes().to_vec())
     }
     fn adjust_lod(&mut self, _adj: i32) {
         self.untranslated.push(b"GameClient::adjustLOD".to_vec());
@@ -1594,6 +1710,23 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         layout_file("OptionsMenuInit", "OptionsMenuUpdate", "OptionsMenuShutdown", &parent)
     }
 
+    /// (#160) A synthetic `Menus/KeyboardOptionsMenu.wnd` (no EA file): the parent with the screen's callbacks, the
+    /// category combo box, the command list (100 rows), the description and current key texts, the hotkey entry and the
+    /// *Back*, *Reset All* and *Assign* buttons.
+    pub fn keyboard_options_menu_wnd() -> Vec<u8> {
+        let f = "KeyboardOptionsMenu.wnd";
+        let mut c = combo(f, "ComboBoxCategoryList", (20, 20, 220, 40));
+        c += &win(f, "SCROLLLISTBOX", "ListBoxCommandList", (20, 60, 380, 400), false, "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 1, COLUMNSWIDTH%: 100, FORCESELECT: 0;\n", "");
+        c += &static_text(f, "StaticTextDescription", (400, 60, 780, 100));
+        c += &static_text(f, "StaticTextCurrentHotkey", (400, 110, 780, 130));
+        c += &win(f, "ENTRYFIELD", "TextEntryAssignHotkey", (400, 140, 780, 160), false, "    TEXTENTRYDATA = MAXLEN: 64, SECRETTEXT: 0, NUMERICALONLY: 0, ALPHANUMERICALONLY: 0, ASCIIONLY: 0;\n", "");
+        c += &buttons(f, 20, 560, &["ButtonBack"]);
+        c += &buttons(f, 140, 560, &["ButtonResetAll"]);
+        c += &buttons(f, 260, 560, &["ButtonAssign"]);
+        let parent = win(f, "USER", "ParentKeyboardOptionsMenu", (0, 0, 800, 600), true, "    SYSTEMCALLBACK = \"KeyboardOptionsMenuSystem\";\n    INPUTCALLBACK = \"KeyboardOptionsMenuInput\";\n", &c);
+        layout_file("KeyboardOptionsMenuInit", "[None]", "KeyboardOptionsMenuShutdown", &parent)
+    }
+
     /// The shell's synthetic files by their paths (`Window\Menus/<name>.wnd`): the main menu, the two message boxes,
     /// and plain screens ([`screen`]) for the background and the screens the main menu pushes.
     pub fn shell_wnd_files() -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -1620,8 +1753,10 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
             // (#87)
             ("QuitMenu", quit_menu_wnd(false)),
             ("QuitNoSave", quit_menu_wnd(true)),
+            // (#160)
+            ("KeyboardOptionsMenu", keyboard_options_menu_wnd()),
         ];
-        for n in ["BlankWindow", "CreditsMenu", "LanLobbyMenu", "KeyboardOptionsMenu"] {
+        for n in ["BlankWindow", "CreditsMenu", "LanLobbyMenu"] {
             out.push((n, screen(n)));
         }
         out.into_iter().map(|(n, d)| (format!("Window\\Menus/{n}.wnd").into_bytes(), d)).collect()
@@ -1956,5 +2091,51 @@ pub(crate) mod tests {
         assert_eq!(main_menu::main_menu_input(&mut wm, &mut h, p, gwm::MOUSE_POS, short_to_long(115, 110), 0), MsgHandled::Ignored);
         assert_eq!(main_menu::main_menu_input(&mut wm, &mut h, p, gwm::MOUSE_POS, short_to_long(121, 100), 0), MsgHandled::Handled);
         assert_eq!(main_menu::main_menu_input(&mut wm, &mut h, p, gwm::CHAR, 0, 0), MsgHandled::Ignored);
+    }
+
+    /// #160: the keyboard options screen through the shell (predicted from KeyboardOptionsMenu.cpp before the run): the
+    /// push runs `KeyboardOptionsMenuInit`, which fills the combo box with the eight categories and selects the first
+    /// (its `GCM_SELECTED` fills the list with the control category's commands), disables the hotkey entry and gives it
+    /// `KeyboardTextEntryInput`; a command picked shows its description and key name and enables the entry; left control
+    /// down types the `Ctrl+` prefix, a character completes it; *Back* pops the screen (its shutdown runs).
+    #[test]
+    fn the_keyboard_options_screen_runs_in_the_shell() {
+        use crate::client::meta_event::MetaMapRec;
+        let (mut wm, mut h) = booted();
+        for (cat, key, name) in [(0, 0x1E, "Attack"), (3, 0x30, "Select"), (0, 0x1F, "Stop")] {
+            let mut r = MetaMapRec::new(Default::default());
+            r.category = cat;
+            r.key = key;
+            for c in name.encode_utf16() {
+                let _ = r.display_name.concat_char(c);
+            }
+            for c in "desc".encode_utf16() {
+                let _ = r.description.concat_char(c);
+            }
+            h.meta_map.recs.push(r);
+        }
+        shell::push(&mut wm, &mut h, b"Menus/KeyboardOptionsMenu.wnd", true);
+        settle(&mut wm, &mut h);
+        assert!(!h.untranslated.contains(&b"KeyboardOptionsMenuInit".to_vec()), "{:?}", h.untranslated);
+        let f = |wm: &GameWindowManager, n: &str| wm.tree.find_by_name(format!("KeyboardOptionsMenu.wnd:{n}").as_bytes()).expect("window");
+        let combo = f(&wm, "ComboBoxCategoryList");
+        let list = f(&wm, "ListBoxCommandList");
+        let entry = f(&wm, "TextEntryAssignHotkey");
+        assert_eq!(crate::client::gadget_combo_box::get_length(&wm, combo), 8);
+        assert_eq!(crate::client::gadget_list_box::get_num_entries(&wm, list), 2, "the control category's two commands");
+        assert!(wm.tree.windows[entry].status & win_status::ENABLED == 0);
+        crate::client::gadget_list_box::set_selected(&mut wm, &mut h, list, &[1]);
+        let hot = crate::client::gadget::static_text_get_text(&wm, f(&wm, "StaticTextCurrentHotkey"));
+        assert_eq!(String::from_utf16_lossy(&hot), "KEY_S");
+        assert!(wm.tree.windows[entry].status & win_status::ENABLED != 0);
+        wm.win_send_input_msg(&mut h, Some(entry), gwm::CHAR, 0x1D, key::STATE_DOWN);
+        wm.win_send_input_msg(&mut h, Some(entry), gwm::IME_CHAR, u32::from(b'q'), 0);
+        let t = crate::client::gadget_text_entry::entry_rt(&wm, entry).expect("entry").text.text.clone();
+        assert_eq!(String::from_utf16_lossy(&t), "T:KEYBOARD:Ctrl+q");
+        assert!(h.keyboard_options.ctrl_down);
+        let back = f(&wm, "ButtonBack");
+        click(&mut wm, &mut h, back);
+        settle(&mut wm, &mut h);
+        assert_ne!(h.shell.top().map(|l| wm.layouts[l].filename.clone()), Some(b"Menus/KeyboardOptionsMenu.wnd".to_vec()));
     }
 }

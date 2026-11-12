@@ -42,8 +42,13 @@
 //! - **The local player** is the client's (`ClientDrawables::local_player_index`), else the World's; with none, the
 //!   shroud is taken as clear.
 //! - **The particle limit** is `TheGlobalData->m_maxParticleCount`, which upstream's static game LOD sets
-//!   (`GameLODManager::applyStaticLODLevel`, not translated); when the game data leaves it 0, the client uses
-//!   [`DEFAULT_MAX_PARTICLE_COUNT`] (new), and never more than [`MAX_CLIENT_PARTICLES`] (new: the UI thread's cap).
+//!   (`GameLODManager::applyStaticLODLevel`, ~~not translated~~ **Corrected 2026-11-12 (#160):** translated in
+//!   `crate::client::game_lod`: with the shell's LOD manager, [`ClientFx::lod`] carries the cap it applied to the
+//!   client's global data, and the dynamic level's particle priorities and skip mask and count); when the game data
+//!   leaves it 0, the client uses [`DEFAULT_MAX_PARTICLE_COUNT`] (new), and never more than [`MAX_CLIENT_PARTICLES`]
+//!   (new: the UI thread's cap). With no LOD manager (no shell, or its INI missing), the World's game data's cap and no
+//!   dynamic limit, as before. A dynamic level never applied leaves upstream's priorities uninitialised (undefined); the
+//!   client then takes the lowest priority (no limit).
 //! - `FXListAtBonePos` finds no bones yet ([`WorldFxHost::bone_positions`]); `CreateAtGroundHeight` takes the ground
 //!   layer (`getLayerForDestination`'s bridges are not read).
 //! - The requests of nuggets not drawn yet (sounds, light pulses, shakes, scorches, tracers, rays) are kept in
@@ -94,6 +99,23 @@ pub struct ClientFx {
     pub errors: Vec<(Vec<u8>, String)>,
     /// The logic's particle system ids (`ObjectClientEvent::ParticleSystemAtBone`'s `id`) to the client's.
     pub logic_ids: BTreeMap<u32, u32>,
+    /// (#160) `TheGameLODManager`'s particle settings, when the client has the manager (the owner copies them in each
+    /// frame and the count back: [`ParticleLod`]).
+    pub lod: Option<ParticleLod>,
+}
+
+/// (#160) What the particle systems read of `TheGameLODManager` and the global data its static level wrote.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ParticleLod {
+    /// `TheGlobalData->m_maxParticleCount` as the static level set it (the client's copy of the global data).
+    pub max_particle_count: i32,
+    /// `getMinDynamicParticlePriority()`, `getMinDynamicParticleSkipPriority()` (`None`: no dynamic level applied).
+    pub min_dynamic_particle_priority: Option<i32>,
+    pub min_dynamic_particle_skip_priority: Option<i32>,
+    /// `m_dynamicParticleSkipMask`.
+    pub particle_skip_mask: i32,
+    /// `m_numParticleGenerations`, advanced by `isParticleSkipped` during the update.
+    pub particle_generations: i32,
 }
 
 /// The World and the drawables as [`FxHost`] and [`ParticleHost`] read them (all `&`: nothing is written).
@@ -172,14 +194,22 @@ impl ClientFx {
         }
     }
 
-    /// The particle settings from the World's game data (see the module docs for the limit).
-    pub fn settings(w: &World) -> ParticleSettings {
+    /// The particle settings from the World's game data, and (#160) the LOD manager's when there is one (see the
+    /// module docs for the limit).
+    pub fn settings(w: &World, lod: Option<&ParticleLod>) -> ParticleSettings {
         let mut s = ParticleSettings::default();
         if let Some(g) = w.statics.global_data.the_global_data() {
             s.use_fx = g.use_fx;
             s.particle_scale = g.particle_scale;
             s.max_particle_count = g.max_particle_count;
             s.max_field_particle_count = g.max_field_particle_count;
+        }
+        if let Some(l) = lod {
+            s.max_particle_count = l.max_particle_count;
+            s.min_dynamic_particle_priority = l.min_dynamic_particle_priority.unwrap_or(crate::client::particle_sys::priority::PARTICLE_PRIORITY_LOWEST);
+            s.min_dynamic_particle_skip_priority = l.min_dynamic_particle_skip_priority.unwrap_or(crate::client::particle_sys::priority::PARTICLE_PRIORITY_LOWEST);
+            s.particle_skip_mask = l.particle_skip_mask;
+            s.particle_generations.set(l.particle_generations);
         }
         if s.max_particle_count == 0 {
             s.max_particle_count = DEFAULT_MAX_PARTICLE_COUNT;
@@ -243,8 +273,11 @@ impl ClientFx {
     /// `TheParticleSystemManager->setLocalPlayerIndex(...)` and `update()` at the World's frame.
     pub fn update(&mut self, host: &WorldFxHost<'_>, random: &mut RandomValues) {
         self.particles.local_player_index = host.local_player_index.unwrap_or(0);
-        let settings = Self::settings(host.world);
+        let settings = Self::settings(host.world, self.lod.as_ref());
         let frame = host.world.frame();
         self.particles.update(host, random, &settings, frame, frame);
+        if let Some(l) = self.lod.as_mut() {
+            l.particle_generations = settings.particle_generations.get();
+        }
     }
 }
