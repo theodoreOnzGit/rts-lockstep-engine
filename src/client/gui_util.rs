@@ -100,6 +100,8 @@ pub struct TemplateView {
     pub medallion_normal: Vec<u8>,
     pub medallion_selected: Vec<u8>,
     pub medallion_hilite: Vec<u8>,
+    /// (#157) `getTooltip()` (LobbyUtils.cpp's faction tooltips).
+    pub tooltip: Vec<u8>,
 }
 
 /// (#89) The World's data the skirmish screens read, copied by the client when it gives the shell its World
@@ -124,6 +126,9 @@ pub struct SkirmishData {
     pub files: BTreeSet<Vec<u8>>,
     /// `GetTickCount()` (set by the host before a call that reads it).
     pub tick: u32,
+    /// (#157) The maps' preview `.tga` files the file system holds (lower-case path, bytes: the owner's archives,
+    /// read when it copies the data), which `getMapPreviewImage`'s `copyFromBigToDir` copies out.
+    pub map_previews: std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
 impl SkirmishData {
@@ -145,6 +150,7 @@ impl SkirmishData {
                 medallion_normal: t.medallion_normal().to_vec(),
                 medallion_selected: t.medallion_selected().to_vec(),
                 medallion_hilite: t.medallion_hilite().to_vec(),
+                tooltip: t.tooltip().to_vec(),
             })
             .collect();
         SkirmishData {
@@ -159,6 +165,7 @@ impl SkirmishData {
             text: w.statics.game_text.clone(),
             files,
             tick: 0,
+            map_previews: Default::default(),
         }
     }
 

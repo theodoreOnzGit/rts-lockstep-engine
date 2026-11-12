@@ -83,9 +83,10 @@
 //! - `TheWritableGlobalData->m_breakTheMovie`~~, `DontShowMainMenu` (false in the game)~~: not modelled.
 //!   **Corrected 2026-11-10 (#89):** `DontShowMainMenu` is ScoreScreen.cpp's global, true while the score screen is
 //!   up (over the main menu): [`MenuHost::score_screen_globals`]; `MainMenuUpdate` reads it.
-//! - `IsFirstCDPresent` (`TheFileSystem->areMusicFilesOnCD()`) is the host's ([`MenuHost::first_cd_present`]); the
+//! - `IsFirstCDPresent` (`TheFileSystem->areMusicFilesOnCD()`) is the host's ([`MenuHost::first_cd_present`]); ~~the
 //!   insert-disc prompt (`ExMessageBoxOkCancel`, ExtendedMessageBox.cpp) is not translated: without the disc the
-//!   difficulty buttons do nothing.
+//!   difficulty buttons do nothing.~~ **Corrected 2026-11-12, #157:** the insert-disc prompt is translated
+//!   (`crate::client::extended_message_box`; [`check_cd_callback`], [`cancel_start_because_of_no_cd`]).
 //! - `_spawnl` of `WorldBuilder.exe` is the host's ([`MenuHost::spawn_world_builder`]): it fails here, so the menu shows
 //!   upstream's failure box.
 //! - ~~`OptionPreferences::setCampaignDifficulty` / `write` (Options.ini): not written.~~ **Corrected 2026-11-10
@@ -347,10 +348,33 @@ fn do_game_start<H: MenuHost>(_wm: &mut GameWindowManager, h: &mut H) {
 /// `checkCDBeforeCampaign(diff)`.
 fn check_cd_before_campaign<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i32) {
     if !h.first_cd_present() {
-        // `ExMessageBoxOkCancel(GUI:InsertCDPrompt, ...)`: not translated (see the module docs)
+        // (#157) `ExMessageBoxOkCancel(GUI:InsertCDPrompt, GUI:InsertCDMessage, (void *)diff, checkCDCallback,
+        // cancelStartBecauseOfNoCD)`
+        let (t, b) = (h.fetch_text(b"GUI:InsertCDPrompt"), h.fetch_text(b"GUI:InsertCDMessage"));
+        crate::client::extended_message_box::ex_message_box_ok_cancel(wm, h, &t, &b, crate::client::extended_message_box::ExUserData::Int(diff), Some(CHECK_CD_CALLBACK), Some(CANCEL_START_NO_CD));
         return;
     }
     prepare_campaign_game(wm, h, diff);
+}
+
+/// The names of MainMenu.cpp's prompt callbacks (statics of their own, apart from the skirmish screen's).
+pub const CHECK_CD_CALLBACK: &str = "MainMenu.cpp:checkCDCallback";
+pub const CANCEL_START_NO_CD: &str = "MainMenu.cpp:cancelStartBecauseOfNoCD";
+
+/// (#157) MainMenu.cpp's `checkCDCallback(userData)`: still no disc, the box stays; else `prepareCampaignGame(diff)`
+/// and it closes.
+pub fn check_cd_callback<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, diff: i32) -> crate::client::extended_message_box::MessageBoxReturn {
+    use crate::client::extended_message_box::MessageBoxReturn;
+    if !h.first_cd_present() {
+        return MessageBoxReturn::KeepOpen;
+    }
+    prepare_campaign_game(wm, h, diff);
+    MessageBoxReturn::Close
+}
+
+/// (#157) MainMenu.cpp's `cancelStartBecauseOfNoCD(userData)`: `MB_RETURN_CLOSE`.
+pub fn cancel_start_because_of_no_cd() -> crate::client::extended_message_box::MessageBoxReturn {
+    crate::client::extended_message_box::MessageBoxReturn::Close
 }
 
 /// The file's `shutdownComplete(layout)`: the layout hidden, the shell told.

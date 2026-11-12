@@ -310,6 +310,7 @@ fn rust_run(c: &Case) -> (String, Vec<(i32, i32)>) {
         campaign: CampaignManager::new(),
         challenge_generals: ChallengeGenerals::new(),
         local_academy_advice: (!c.tips.is_empty()).then(|| c.tips.iter().map(|t| t.as_bytes().to_vec()).collect()),
+        honors_inputs: Default::default(),
     };
     h.ss.parent = Some(parent);
     h.ss.listbox_academy = wm.tree.find_by_name(b"ScoreScreen.wnd:ListboxWarschoolAdvice");

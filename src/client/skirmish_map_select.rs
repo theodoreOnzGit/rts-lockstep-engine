@@ -103,8 +103,11 @@ fn nullify_controls<H: SkirmishHost>(h: &mut H) {
 /// `mapListTooltipFunc(window, instData, mouse)`: the medal's tooltip of the row under the mouse (its column 1 item
 /// data, 0 to 4), else none.
 pub fn map_list_tooltip_func<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, mouse: u32) {
-    let x = i32::from(mouse as u16 as i16);
-    let y = i32::from((mouse >> 16) as u16 as i16);
+    // ~~`x = LOLONGTOSHORT(mouse)` read as a signed 16-bit value~~ **Corrected 2026-11-12, #157:**
+    // `LOLONGTOSHORT(a)` is `((a) & 0x0000FFFF)` and `HILONGTOSHORT(b)` `(((b) & 0xFFFF0000) >> 16)` (GameWindow.h:111):
+    // masked, not sign-extended
+    let x = (mouse & 0x0000_FFFF) as i32;
+    let y = ((mouse & 0xFFFF_0000) >> 16) as i32;
     let (row, col) = lb::get_entry_based_on_xy(wm, h, window, x, y).unwrap_or((-1, -1));
     if row == -1 || col == -1 {
         wm.mouse.set_cursor_tooltip(&[], -1);
@@ -474,7 +477,24 @@ mod tests {
         let preview = m(&wm, "WinMapPreview");
         assert_eq!(wm.tree.windows[preview].status & win_status::IMAGE, 0);
         assert_eq!(wm.ext[preview].user, UserData::MapMetaData(Some(ALPHA.to_vec())));
-        assert!(h.untranslated.iter().any(|f| f.starts_with(b"getMapPreviewImage")));
+        // (#157: no `.tga` for the map: no image, nothing recorded)
+        assert!(!h.untranslated.iter().any(|f| f.starts_with(b"getMapPreviewImage")));
+        // (#157) with the map's `.tga` in the files: copied to `MapPreviews/`, the new image the window's, drawn by
+        // `W3DDrawMapPreview` in the map's area
+        let mut tga = ALPHA[..ALPHA.len() - 4].to_vec();
+        tga.extend_from_slice(b".tga");
+        h.skirmish_data.map_previews.insert(tga.to_ascii_lowercase(), b"TGA bytes".to_vec());
+        wm.win_send_system_msg(&mut h, Some(p), ggm::GLM_SELECTED, win_data(Some(list)), 0);
+        assert_eq!(h.map_preview_images.len(), 1, "{:?}", h.untranslated);
+        let made = h.map_preview_images[0].clone();
+        assert_eq!((made.texture_size, made.uv), ((128, 128), [0.0, 0.0, 1.0, 1.0]));
+        assert_ne!(wm.tree.windows[preview].status & win_status::IMAGE, 0);
+        assert_eq!(wm.tree.windows[preview].inst.enabled_draw_data[0].image.as_ref(), Some(&made.name));
+        let mut copy = b"MapPreviews/".to_vec();
+        copy.extend_from_slice(&made.filename);
+        assert_eq!(h.user_data.files.get(&copy).map(|v| v.as_slice()), Some(&b"TGA bytes"[..]));
+        let drawn = wm.win_repaint(&mut h);
+        assert!(drawn.iter().any(|d| matches!(d, crate::client::window_manager::DrawItem::Image { image, .. } if *image == made.name)), "{drawn:?}");
         let (px, py) = wm.tree.screen_position(preview);
         let b0 = m(&wm, "ButtonMapStartPosition0");
         let b1 = m(&wm, "ButtonMapStartPosition1");

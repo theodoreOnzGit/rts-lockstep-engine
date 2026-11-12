@@ -335,6 +335,9 @@ pub struct ClientOptions {
 pub struct ShellUi {
     pub wm: GameWindowManager,
     pub gui: ShellGui<MenuFiles>,
+    /// (#157) The maps' `.tga` files the listing found and the file system has not served yet (the browser fetches
+    /// them as they are asked for): read by [`ShellUi::load_map_previews`].
+    pub previews_pending: Vec<Vec<u8>>,
 }
 
 impl ShellUi {
@@ -370,7 +373,7 @@ impl ShellUi {
         let mut wm = GameWindowManager::new(LAYOUT);
         wm.default_window_font = Some(language.default_window_font.clone());
         wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &transitions).ok()?;
-        let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }) };
+        let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }), previews_pending: Vec::new() };
         ui.gui.time_ms = now_ms;
         // (#153) the windows measured as upstream measures them (`DisplayString::getSize`, `winFontHeight`), over the
         // client's estimate of GDI's answers (`crate::text_metrics`)
@@ -582,8 +585,29 @@ impl ShellUi {
     pub fn set_skirmish_data<D: LocalDevice>(&mut self, base: &World, fs: &FileSystem<D>) {
         let mut list = rts_lockstep_engine::formats::big::FilenameList::new();
         fs.get_file_list_in_directory(b"Maps\\", b"*", &mut list, true);
-        let files = list.iter().map(|n| n.to_ascii_lowercase()).collect();
+        let files: std::collections::BTreeSet<Vec<u8>> = list.iter().map(|n| n.to_ascii_lowercase()).collect();
+        // (#157) the maps' preview `.tga` files, which `getMapPreviewImage` copies out (`copyFromBigToDir`)
+        self.previews_pending = files.iter().filter(|n| n.ends_with(b".tga")).cloned().collect();
         self.gui.skirmish_data = SkirmishData::from_world(base, files);
+        self.load_map_previews(fs);
+    }
+
+    /// (#157) The pending map previews the file system serves now, read into the skirmish data
+    /// ([`SkirmishData::map_previews`]); the others stay pending (the browser's fetch is under way). How many are left.
+    pub fn load_map_previews<D: LocalDevice>(&mut self, fs: &FileSystem<D>) -> usize {
+        let pending = std::mem::take(&mut self.previews_pending);
+        for p in pending {
+            let before = fs.local.device.unserved_reads();
+            match fs.open_file(&p) {
+                Some(bytes) => {
+                    self.gui.skirmish_data.map_previews.insert(p, bytes);
+                }
+                // (not there yet: asked again later; not there at all: dropped)
+                None if fs.local.device.unserved_reads() != before => self.previews_pending.push(p),
+                None => {}
+            }
+        }
+        self.previews_pending.len()
     }
 
     /// (#89 part 2) `GameLogic::clearGameData`'s score screen for the game that ended (`game`, what the screen reads of
@@ -1002,6 +1026,24 @@ mod tests {
         assert!(ui.take_actions(&base, &mut flow).is_empty());
     }
 
+    /// #157: the maps' preview `.tga` files the listing finds are read into the skirmish data (lower case), the
+    /// others' bytes left; one the device does not hold is dropped, not kept pending. Predicted: `Maps\Alpha\Alpha.tga`
+    /// read as `maps\alpha\alpha.tga`, the `.map` not; nothing pending.
+    #[test]
+    fn the_map_previews_are_read_from_the_files() {
+        let (mut ui, _, _) = shell_with(&TextTable::default());
+        let mut d = rts_lockstep_engine::common::file_system::MemoryDevice::new();
+        d.insert(b"Maps\\Alpha\\Alpha.tga", b"TGA".to_vec());
+        d.insert(b"Maps\\Alpha\\Alpha.map", b"MAP".to_vec());
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        ui.set_skirmish_data(&World::new(), &fs);
+        assert_eq!(ui.gui.skirmish_data.map_previews.keys().cloned().collect::<Vec<_>>(), vec![b"maps\\alpha\\alpha.tga".to_vec()]);
+        assert_eq!(ui.gui.skirmish_data.map_previews.values().next().map(|v| v.as_slice()), Some(&b"TGA"[..]));
+        assert!(ui.previews_pending.is_empty());
+        assert_eq!(ui.load_map_previews(&fs), 0);
+    }
+
     /// #89: the skirmish screen in the client, from the synthetic files (no EA file), on a World whose map cache holds
     /// one two-player multiplayer map (Alpha) and whose settings offer one starting amount (the global default, 0).
     /// Predicted from SkirmishGameOptionsMenu.cpp before the run:
@@ -1009,7 +1051,8 @@ mod tests {
     /// - `set_skirmish_data` copies the World's cache (Alpha) and the map files the file system holds (none here);
     /// - the screen pushed (as the main menu's *Skirmish* pushes it) and settled: `TheSkirmishGameInfo` on Alpha (the
     ///   cache's first multiplayer map, no `Skirmish.ini`), slot 0 the player, slot 1 an easy computer;
-    ///   `populateSkirmishBattleHonors` recorded as untranslated, nothing undefined;
+    ///   ~~`populateSkirmishBattleHonors` recorded as untranslated~~ (**corrected 2026-11-12, #157:** translated: the
+    ///   honours list filled), nothing undefined;
     /// - *Start*: one request, `StartSkirmish` (`GAME_SKIRMISH`, the speed 30: the global data's limit, none here, is
     ///   0, so the slider's 15 .. 61 clamp gives 15, and `reallyDoStart` keeps 15), which [`act`] turns into the flow's
     ///   skirmish waiting for `maps\\alpha\\alpha.map`; the base World only read; a map the cache lacks fails.
@@ -1047,7 +1090,10 @@ mod tests {
         let g = ui.gui.skirmish.game.clone().expect("TheSkirmishGameInfo");
         assert_eq!(g.map_name, ALPHA);
         assert_eq!((g.slots[0].state, g.slots[1].state), (rts_lockstep_engine::common::game_info::slot_state::PLAYER, rts_lockstep_engine::common::game_info::slot_state::EASY_AI));
-        assert!(ui.gui.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"));
+        // (#157: the honours translated: `ListboxInfo` filled, nothing recorded)
+        assert!(!ui.gui.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"));
+        let info = ui.wm.tree.find_by_name(b"SkirmishGameOptionsMenu.wnd:ListboxInfo").expect("ListboxInfo");
+        assert!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, info) > 1);
         assert!(ui.wm.undefined.is_none(), "{:?}", ui.wm.undefined);
         ui.gui.requests.clear();
         click_named(&mut ui, "SkirmishGameOptionsMenu.wnd", "ButtonStart");

@@ -98,10 +98,17 @@
 //!   the next mission in the World that played, as upstream's one engine does.
 //! - **The mission save** (`TheGameState->missionSave()`) is a [`ShellRequest::MissionSave`] with the screen's
 //!   campaign; the client writes it to the save folder.
-//! - **The battle honours** (`SkirmishBattleHonors`, gap #92): the calls are recorded ([`HonorsCall`]), the stats file is
+//! - ~~**The battle honours** (`SkirmishBattleHonors`, gap #92): the calls are recorded (`HonorsCall`), the stats file is
 //!   not read or written. The campaign's completion (`finishSinglePlayerInit`) is translated as the calls it makes; a
 //!   skirmish's update (`populatePlayerInfo`'s tail with `updateSkirmishBattleHonors`, `updateChallengeMedals`) is
-//!   recorded as one [`HonorsCall::SkirmishResult`] once its early return is passed.
+//!   recorded as one `HonorsCall::SkirmishResult` once its early return is passed.~~ **Corrected 2026-11-12, #157:**
+//!   the battle honours are translated: `SkirmishStats.ini` is read and written through the host's user data folder
+//!   ([`crate::client::battle_honors::SkirmishBattleHonors`]); the campaign's completion and the skirmish's tail
+//!   ([`skirmish_stats_skipped`], [`skirmish_stats_update`]: `isSlotLocalAlly`, `updateSkirmishBattleHonors`,
+//!   `updateChallengeMedals`) are translated. What `updateSkirmishBattleHonors` reads of the game (the superweapons and
+//!   units the local player built, the frame, the side) is copied with the game ([`SkirmishHonorsInputs`]).
+//!   `updateChallengeMedals`' return for an allied computer cannot change its result: `isSkirmish()` is already false
+//!   with one (found by #157's planted bug 9526).
 //! - **Multiplayer** (gaps, never faked): `TheLAN` and `TheGameSpyInfo` do not exist in the client (`NULL`): the chat
 //!   and emote send nothing, the buddy request of `ButtonAdd<i>` is recorded as undefined (`TheGameSpyInfo` read on
 //!   `NULL`), `GameSpyToggleOverlay` is recorded, the internet branch of `populatePlayerInfo` (the stats report,
@@ -166,11 +173,17 @@ pub const MAX_PLAYER_COUNT: i32 = 16;
 /// `MAX_GLOBAL_GENERAL_TYPES`.
 pub const MAX_GLOBAL_GENERAL_TYPES: i32 = 9;
 
-/// BattleHonors.h's bits the file sets.
-pub const BATTLE_HONOR_CAMPAIGN_USA: i32 = 0x0000_0800;
-pub const BATTLE_HONOR_CAMPAIGN_CHINA: i32 = 0x0000_1000;
-pub const BATTLE_HONOR_CAMPAIGN_GLA: i32 = 0x0000_2000;
-pub const BATTLE_HONOR_CHALLENGE_MODE: i32 = 0x0010_0000;
+/// BattleHonors.h's bits the file sets (#157: `crate::client::battle_honors`'s).
+pub use crate::client::battle_honors::{
+    BATTLE_HONOR_AIR_WING, BATTLE_HONOR_APOCALYPSE, BATTLE_HONOR_BATTLE_TANK, BATTLE_HONOR_BLITZ10, BATTLE_HONOR_BLITZ5, BATTLE_HONOR_CAMPAIGN_CHINA, BATTLE_HONOR_CAMPAIGN_GLA, BATTLE_HONOR_CAMPAIGN_USA,
+    BATTLE_HONOR_CHALLENGE_MODE, BATTLE_HONOR_LOYALTY_CHINA, BATTLE_HONOR_LOYALTY_GLA, BATTLE_HONOR_LOYALTY_USA, BATTLE_HONOR_STREAK, BH_CHALLENGE_MASK,
+};
+use crate::client::battle_honors::SkirmishBattleHonors;
+use crate::client::user_preferences::{report_undefined, HostUserData, UserDataFiles};
+use crate::common::game_info::slot_state;
+
+/// `LOGICFRAMES_PER_SECOND`.
+pub const LOGICFRAMES_PER_SECOND: u32 = 30;
 
 /// The grid's per-row windows, in the order `populatePlayerInfo` sets them (`StaticTextBuildingsDestroyed` twice, as
 /// upstream).
@@ -249,6 +262,67 @@ pub struct ScoreScreenGame {
     pub challenge_generals: ChallengeGenerals,
     /// The local player's `calculateAcademyAdvice(&info)`: the tips' labels (`None`: `FALSE`, no tip).
     pub local_academy_advice: Option<Vec<Vec<u8>>>,
+    /// (#157) What `updateSkirmishBattleHonors` reads of the local player and the logic.
+    pub honors_inputs: SkirmishHonorsInputs,
+}
+
+/// (#157) The superweapons `updateSkirmishBattleHonors` counts (`TheThingFactory->findTemplate(name)`), in its order:
+/// the SCUD storms, the particle cannons, the nuclear missiles.
+pub const APOCALYPSE_TEMPLATES: [&str; 15] = [
+    "GLAScudStorm", "Boss_GLAScudStorm", "Chem_GLAScudStorm", "Slth_GLAScudStorm", "Demo_GLAScudStorm",
+    "AmericaParticleCannonUplink", "AirF_AmericaParticleCannonUplink", "Lazr_AmericaParticleCannonUplink", "SupW_AmericaParticleCannonUplink", "Boss_ParticleCannonUplink",
+    "ChinaNuclearMissileLauncher", "Boss_NuclearMissileLauncher", "Infa_ChinaNuclearMissileLauncher", "Nuke_ChinaNuclearMissileLauncher", "Tank_ChinaNuclearMissileLauncher",
+];
+
+/// (#157) What `updateSkirmishBattleHonors` reads besides the stats and `TheGameInfo`, copied with the game.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkirmishHonorsInputs {
+    /// The local player's `ScoreKeeper::getTotalObjectsBuilt(findTemplate(name))` for each of
+    /// [`APOCALYPSE_TEMPLATES`] (`None`: no such template, upstream's `isEquivalentTo(NULL)`).
+    pub objects_built: Vec<Option<i32>>,
+    /// `getTotalUnitsBuilt(VEHICLE, AIRCRAFT)` and `getTotalUnitsBuilt(AIRCRAFT, none)`.
+    pub vehicles_built: i32,
+    pub aircraft_built: i32,
+    /// `TheGameLogic->getFrame()`.
+    pub frame: u32,
+    /// `ThePlayerList->getLocalPlayer()->getSide()`.
+    pub local_side: Vec<u8>,
+}
+
+impl Default for SkirmishHonorsInputs {
+    /// Nothing built (every template found), frame 0, no side.
+    fn default() -> Self {
+        SkirmishHonorsInputs { objects_built: vec![Some(0); APOCALYPSE_TEMPLATES.len()], vehicles_built: 0, aircraft_built: 0, frame: 0, local_side: Vec::new() }
+    }
+}
+
+impl SkirmishHonorsInputs {
+    /// The copy from `w` (read only).
+    pub fn from_world(w: &crate::logic::world::game_logic::World) -> SkirmishHonorsInputs {
+        use crate::common::kind_of::{KindOfMaskType, KINDOF_AIRCRAFT, KINDOF_VEHICLE};
+        let Some(lp) = w.players.local_index().and_then(|l| w.players.get_nth(l)) else { return Self::default() };
+        let tf = &w.statics.thing_factory;
+        let s = &lp.score_keeper;
+        let objects_built = APOCALYPSE_TEMPLATES
+            .iter()
+            .map(|n| {
+                // (no template: `isEquivalentTo(NULL)` is only reached when something was built)
+                let Some(target) = tf.find_template(n.as_bytes()) else {
+                    return (s.get_total_objects_built(|_| true) == 0).then_some(0);
+                };
+                Some(s.get_total_objects_built(|name| tf.find_template(name).is_some_and(|t| crate::common::thing_template::is_equivalent_to(t, target))))
+            })
+            .collect();
+        let kind_of = |name: &[u8]| tf.find_template(name).map(|t| *t.get_final_override().data.kindof());
+        let (mut valid, mut invalid) = (KindOfMaskType::default(), KindOfMaskType::default());
+        valid.set(KINDOF_VEHICLE, 1);
+        invalid.set(KINDOF_AIRCRAFT, 1);
+        let vehicles_built = s.get_total_units_built(&valid, &invalid, kind_of);
+        let (mut valid, invalid) = (KindOfMaskType::default(), KindOfMaskType::default());
+        valid.set(KINDOF_AIRCRAFT, 1);
+        let aircraft_built = s.get_total_units_built(&valid, &invalid, kind_of);
+        SkirmishHonorsInputs { objects_built, vehicles_built, aircraft_built, frame: w.frame(), local_side: lp.side.clone() }
+    }
 }
 
 impl ScoreScreenGame {
@@ -329,23 +403,190 @@ impl ScoreScreenGame {
             campaign: w.campaign.clone(),
             challenge_generals: w.challenge_generals.clone(),
             local_academy_advice,
+            honors_inputs: SkirmishHonorsInputs::from_world(w),
         }
     }
 }
 
-/// A `SkirmishBattleHonors` call the file makes (gap #92: recorded, the stats file is neither read nor written).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HonorsCall {
-    SetUsaCampaignComplete(i32),
-    SetChinaCampaignComplete(i32),
-    SetGlaCampaignComplete(i32),
-    SetChallengeCampaignComplete(i32, i32),
-    SetHonors(i32),
-    Write,
-    /// `populatePlayerInfo`'s skirmish tail past its early return: the wins or losses, the streak, the honours
-    /// (`updateSkirmishBattleHonors`, `updateChallengeMedals`), the last general and the loyalty, then `write()`; not
-    /// translated (#92): the result and the side it is recorded with.
-    SkirmishResult { victory: bool, side: Vec<u8> },
+/// ~~A `SkirmishBattleHonors` call the file makes (gap #92: recorded, the stats file is neither read nor written).~~
+/// **Corrected 2026-11-12, #157:** `HonorsCall` is removed: the calls are made on the translated
+/// [`SkirmishBattleHonors`], read from and written to the host's user data folder ([`GridUserData`]).
+///
+/// `isSlotLocalAlly(game, slot)` (ScoreScreen.cpp's static): no local slot, the local slot itself, or a slot on the
+/// local slot's team (a slot without a team is not an ally).
+pub fn is_slot_local_ally(game: &GameInfo, slot: usize) -> bool {
+    let local = game.local_slot_num();
+    let Some(local_slot) = game.slot(local) else { return true };
+    if slot as i32 == local {
+        return true;
+    }
+    let s = &game.slots[slot];
+    // (plant 9525, differential builds only: a slot without a team counted as an ally)
+    if s.team_number < 0 {
+        return plant(9525);
+    }
+    s.team_number == local_slot.team_number
+}
+
+/// `updateChallengeMedals(medals)`: in a skirmish (`is_skirmish`: `TheGameInfo->isSkirmish()`) with no computer ally,
+/// the medal of the number of hard computer opponents (1 to 7).
+pub fn update_challenge_medals(medals: &mut i32, game: &GameInfo, is_skirmish: bool) {
+    if !is_skirmish {
+        return;
+    }
+    let (mut num_ais, mut num_brutals) = (0, 0);
+    for i in 0..MAX_SLOTS as usize {
+        let slot = &game.slots[i];
+        if slot.is_ai() && !is_slot_local_ally(game, i) {
+            num_ais += 1;
+            if slot.state == slot_state::BRUTAL_AI {
+                num_brutals += 1;
+            }
+        } else if slot.is_ai() {
+            // "can't get challenge medals with AI helpers"
+            return;
+        }
+    }
+    if num_ais != 0 && (1..=7).contains(&num_brutals) {
+        // (plant 9526, differential builds only: the medal of one brutal opponent more)
+        let k = if plant(9526) { (num_brutals as usize).min(6) } else { num_brutals as usize - 1 };
+        *medals |= BH_CHALLENGE_MASK[k];
+    }
+}
+
+/// `updateSkirmishBattleHonors(stats)`: the honours a won skirmish earns (see the module docs). `Err` where upstream
+/// is undefined (a superweapon template the data lacks, reached with objects built).
+pub fn update_skirmish_battle_honors(stats: &mut SkirmishBattleHonors, inp: &SkirmishHonorsInputs, game: &GameInfo) -> Result<(), &'static str> {
+    // (plant 9537, differential builds only: the streak honour from 4 wins)
+    if stats.get_win_streak() >= if plant(9537) { 4 } else { 5 } {
+        stats.set_honors(BATTLE_HONOR_STREAK);
+    }
+    // "For Apocalypse Honor, see if the player has used each category of super weapon."
+    for (i, _) in APOCALYPSE_TEMPLATES.iter().enumerate() {
+        let n = inp.objects_built.get(i).copied().flatten().ok_or("updateSkirmishBattleHonors: findTemplate gave NULL (isEquivalentTo(NULL))")?;
+        if n > 0 {
+            match i / 5 {
+                0 => stats.set_built_scud(),
+                1 => stats.set_built_particle_cannon(),
+                _ => stats.set_built_nuke(),
+            }
+        }
+    }
+    if stats.built_nuke() && stats.built_particle_cannon() && stats.built_scud() {
+        stats.set_honors(BATTLE_HONOR_APOCALYPSE);
+    }
+    if inp.vehicles_built >= 50 {
+        stats.set_honors(BATTLE_HONOR_BATTLE_TANK);
+    }
+    if inp.aircraft_built >= 20 {
+        stats.set_honors(BATTLE_HONOR_AIR_WING);
+    }
+    // `TheGameLogic->getFrame() / LOGICFRAMES_PER_SECOND / 60` (unsigned)
+    let minutes = inp.frame / LOGICFRAMES_PER_SECOND / 60;
+    // (plant 9523, differential builds only: `<=` for `<`)
+    if if plant(9523) { minutes <= 5 } else { minutes < 5 } {
+        stats.set_honors(BATTLE_HONOR_BLITZ5);
+    }
+    if minutes < 10 {
+        stats.set_honors(BATTLE_HONOR_BLITZ10);
+    }
+    for (side, bit) in [(&b"America"[..], BATTLE_HONOR_LOYALTY_USA), (b"China", BATTLE_HONOR_LOYALTY_CHINA), (b"GLA", BATTLE_HONOR_LOYALTY_GLA)] {
+        if stats.get_num_games_loyal() >= 20 && inp.local_side == side {
+            stats.set_honors(bit);
+        }
+    }
+    // the endurance medals
+    let (mut num_easy, mut num_medium, mut num_brutal) = (0, 0, 0);
+    for i in 0..MAX_SLOTS as usize {
+        let slot = &game.slots[i];
+        if slot.is_ai() && !is_slot_local_ally(game, i) {
+            match slot.state {
+                slot_state::EASY_AI => num_easy += 1,
+                slot_state::MED_AI => num_medium += 1,
+                slot_state::BRUTAL_AI => num_brutal += 1,
+                _ => {}
+            }
+        }
+        // (else an allied computer: `anyAlliedAI`, not read)
+    }
+    if num_easy != 0 || num_medium != 0 || num_brutal != 0 {
+        let map = game.map_name.clone();
+        let old_easy = stats.get_endurance_medal(&map, slot_state::EASY_AI);
+        let old_medium = stats.get_endurance_medal(&map, slot_state::MED_AI);
+        let old_brutal = stats.get_endurance_medal(&map, slot_state::BRUTAL_AI);
+        if num_easy != 0 {
+            // (plant 9524, differential builds only: the hard opponents left out of the easy medal)
+            let n = if plant(9524) { num_easy + num_medium } else { num_easy + num_medium + num_brutal };
+            stats.set_endurance_medal(&map, slot_state::EASY_AI, old_easy.max(n));
+        }
+        if num_medium != 0 {
+            stats.set_endurance_medal(&map, slot_state::MED_AI, old_medium.max(num_medium + num_brutal));
+        }
+        if num_brutal != 0 {
+            stats.set_endurance_medal(&map, slot_state::BRUTAL_AI, old_brutal.max(num_brutal));
+        }
+    }
+    Ok(())
+}
+
+/// `populatePlayerInfo`'s skirmish tail's early return: a sandbox game, or one neither won nor lost by the local
+/// allies, with the player still active (`isPlayerActive`) records nothing ("Skipping skirmish stats update").
+pub fn skirmish_stats_skipped(sandbox: bool, victory: bool, defeat: bool, active: bool) -> bool {
+    (sandbox || !(defeat || victory)) && active
+}
+
+/// `populatePlayerInfo`'s skirmish tail past its early return: the stats (`SkirmishBattleHonors stats;`, from `fs`)
+/// counted, `updateSkirmishBattleHonors` and `updateChallengeMedals` after a win, the last general and the loyalty,
+/// then `write()`. `side` is `player->getPlayerTemplate()->getSide()`. `Err`: an undefined step (nothing written).
+pub fn skirmish_stats_update<F: UserDataFiles + ?Sized>(fs: &mut F, victory: bool, side: &[u8], inp: &SkirmishHonorsInputs, game: &GameInfo, is_skirmish: bool) -> Result<SkirmishBattleHonors, &'static str> {
+    let mut stats = SkirmishBattleHonors::new(fs);
+    if victory {
+        let w = stats.get_wins();
+        stats.set_wins(w.wrapping_add(1));
+        // (plant 9528, differential builds only: the best streak taken before the streak is counted)
+        let best_first = plant(9528).then(|| stats.get_best_win_streak().max(stats.get_win_streak()));
+        let st = stats.get_win_streak();
+        stats.set_win_streak(st.wrapping_add(1));
+        let best = best_first.unwrap_or_else(|| stats.get_best_win_streak().max(stats.get_win_streak()));
+        stats.set_best_win_streak(best);
+        update_skirmish_battle_honors(&mut stats, inp, game)?;
+        let mut challenge_medals = stats.get_challenge_medals();
+        update_challenge_medals(&mut challenge_medals, game, is_skirmish);
+        stats.set_challenge_medals(challenge_medals);
+    } else {
+        let l = stats.get_losses();
+        stats.set_losses(l.wrapping_add(1));
+        if !plant(9538) {
+            // (plant 9538, differential builds only: a loss keeps the streak)
+            stats.set_win_streak(0);
+        }
+    }
+    let last_general = stats.get_last_general();
+    stats.set_last_general(side);
+    if last_general != stats.get_last_general() && !plant(9527) {
+        // (plant 9527, differential builds only: a change of general keeps the count)
+        stats.set_num_games_loyal(0);
+    } else {
+        let n = stats.get_num_games_loyal();
+        stats.set_num_games_loyal(n.wrapping_add(1));
+    }
+    stats.write(fs);
+    Ok(stats)
+}
+
+/// The score grid's host as the user data folder ([`ScoreGridHost::grid_user_data_read`] and kin).
+pub struct GridUserData<'a, H: ?Sized>(pub &'a mut H);
+
+impl<H: ScoreGridHost + ?Sized> UserDataFiles for GridUserData<'_, H> {
+    fn path_user_data(&self) -> Vec<u8> {
+        self.0.grid_path_user_data()
+    }
+    fn user_data_read(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        self.0.grid_user_data_read(path)
+    }
+    fn user_data_write(&mut self, path: &[u8], bytes: &[u8]) -> bool {
+        self.0.grid_user_data_write(path, bytes)
+    }
 }
 
 /// ScoreScreen.cpp's globals that other files read: `DontShowMainMenu` (MainMenu.cpp, PopupSaveLoad.cpp),
@@ -400,8 +641,6 @@ pub struct ScoreScreen {
     pub globals: ScoreScreenGlobals,
     /// The game the screen scores (set by the owner before the push; `None`: no game).
     pub game: Option<ScoreScreenGame>,
-    /// The battle honours' calls (#92).
-    pub honors: Vec<HonorsCall>,
 }
 
 /// What the score grid needs (`populatePlayerInfo` and the functions it is called with): the statics, the name keys,
@@ -415,8 +654,19 @@ pub trait ScoreGridHost: GuiHost {
     fn grid_fetch_text(&self, label: &[u8]) -> Vec<u16>;
     /// `TheMappedImageCollection->findImageByName(name)` (`None`: `NULL`).
     fn grid_find_image(&self, name: &[u8]) -> Option<Vec<u8>>;
-    /// A call of the file that is not translated (multiplayer, the movie, the CD prompt), recorded.
+    /// A call of the file that is not translated (multiplayer, the movie), recorded.
     fn score_untranslated(&mut self, what: &[u8]);
+    /// (#157) The user data folder `SkirmishBattleHonors` reads and writes (`getPath_UserData()`, `fopen`): none by
+    /// default.
+    fn grid_path_user_data(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn grid_user_data_read(&mut self, _path: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+    fn grid_user_data_write(&mut self, _path: &[u8], _bytes: &[u8]) -> bool {
+        false
+    }
 }
 
 /// What the score screen needs besides the main menu's host.
@@ -510,14 +760,11 @@ pub fn start_next_campaign_game<H: ScoreScreenHost>(wm: &mut GameWindowManager, 
     h.request(ShellRequest::StartNextCampaignGame { campaign: Box::new(campaign) });
 }
 
-/// `CheckForCDAtGameStart(startNextCampaignGame)`: the start at once with the disc; else the prompt
-/// (`ExMessageBoxOkCancel`, not translated: recorded).
+/// `CheckForCDAtGameStart(startNextCampaignGame)`: the start at once with the disc; else ~~the prompt
+/// (`ExMessageBoxOkCancel`, not translated: recorded)~~ **corrected 2026-11-12, #157:** the insert-disc prompt
+/// (SkirmishGameOptionsMenu.cpp's, `crate::client::skirmish_game_options::check_for_cd_at_game_start_with`).
 fn check_for_cd_at_game_start<H: ScoreScreenHost>(wm: &mut GameWindowManager, h: &mut H) {
-    if !h.first_cd_present() {
-        h.score_untranslated(b"ExMessageBoxOkCancel(GUI:InsertCDPrompt)");
-    } else {
-        start_next_campaign_game(wm, h);
-    }
+    crate::client::skirmish_game_options::check_for_cd_at_game_start_with(wm, h, "startNextCampaignGame", start_next_campaign_game);
 }
 
 /// `ScoreScreenEnableControls(enable)`.
@@ -969,31 +1216,32 @@ fn finish_single_player_init<H: ScoreScreenHost>(wm: &mut GameWindowManager, h: 
             let g = h.score_screen().game.as_ref().expect("checked");
             if let Some(campaign) = g.campaign.get_current_campaign().cloned() {
                 let difficulty = g.campaign.get_game_difficulty();
-                let mut calls = Vec::new();
+                // (#157) `SkirmishBattleHonors stats;`: the stats file, completed and written
+                let mut stats = SkirmishBattleHonors::new(&mut HostUserData(h));
                 let is = |n: &[u8]| campaign.name.eq_ignore_ascii_case(n);
                 if is(b"USA") {
-                    calls.push(HonorsCall::SetUsaCampaignComplete(difficulty));
-                    calls.push(HonorsCall::SetHonors(BATTLE_HONOR_CAMPAIGN_USA));
+                    stats.set_usa_campaign_complete(difficulty);
+                    stats.set_honors(BATTLE_HONOR_CAMPAIGN_USA);
                 }
                 if is(b"China") {
-                    calls.push(HonorsCall::SetChinaCampaignComplete(difficulty));
-                    calls.push(HonorsCall::SetHonors(BATTLE_HONOR_CAMPAIGN_CHINA));
+                    stats.set_china_campaign_complete(difficulty);
+                    stats.set_honors(BATTLE_HONOR_CAMPAIGN_CHINA);
                 }
                 // (twice, as upstream)
                 for _ in 0..2 {
                     if is(b"GLA") {
-                        calls.push(HonorsCall::SetGlaCampaignComplete(difficulty));
-                        calls.push(HonorsCall::SetHonors(BATTLE_HONOR_CAMPAIGN_GLA));
+                        stats.set_gla_campaign_complete(difficulty);
+                        stats.set_honors(BATTLE_HONOR_CAMPAIGN_GLA);
                     }
                 }
                 for i in 0..MAX_GLOBAL_GENERAL_TYPES {
                     if is(format!("CHALLENGE_{i}").as_bytes()) {
-                        calls.push(HonorsCall::SetChallengeCampaignComplete(i, difficulty));
-                        calls.push(HonorsCall::SetHonors(BATTLE_HONOR_CHALLENGE_MODE));
+                        stats.set_challenge_campaign_complete(i, difficulty);
+                        stats.set_honors(BATTLE_HONOR_CHALLENGE_MODE);
                     }
                 }
-                calls.push(HonorsCall::Write);
-                h.score_screen().honors.extend(calls);
+                stats.write(&mut HostUserData(h));
+                report_undefined(wm, &mut stats.prefs);
                 let s = h.score_screen().clone();
                 for w in [s.button_ok, s.button_continue, s.text_entry_chat, s.button_emote, s.listbox_chat, s.listbox_academy, s.static_text_academy_title, s.chat_box_border, s.button_buddies] {
                     hide_if(wm, w, true);
@@ -1192,15 +1440,30 @@ pub fn populate_player_info<H: ScoreGridHost>(wm: &mut GameWindowManager, h: &mu
             return;
         };
         let (victory, defeat) = (g.local_allied_victory, g.local_allied_defeat);
-        if (sandbox || !(defeat || victory)) && !p.observer && !p.dead {
-            // "Skipping skirmish stats update"
+        if skirmish_stats_skipped(sandbox, victory, defeat, !p.observer && !p.dead) {
             return;
         }
-        let Some(side) = p.template.and_then(|t| g.templates.get(t)).map(|t| t.side.clone()) else {
+        // (#157: translated; the template is read only after the stats file, as upstream)
+        let side = p.template.and_then(|t| g.templates.get(t)).map(|t| t.side.clone());
+        let inp = g.honors_inputs.clone();
+        let gi = g.game_info.clone().expect("checked");
+        let is_skirmish = gi.is_skirmish(|i| crate::common::game_info::TheGameInfo::Is(&gi, Some(i)));
+        let Some(side) = side else {
             wm.set_undefined("populatePlayerInfo: the local player has no template (getPlayerTemplate()->getSide on NULL)");
             return;
         };
-        h.score_screen().honors.push(HonorsCall::SkirmishResult { victory, side });
+        let Ok(is_skirmish) = is_skirmish else {
+            wm.set_undefined("populatePlayerInfo: isSkirmish read a NULL slot");
+            return;
+        };
+        let r = skirmish_stats_update(&mut GridUserData(h), victory, &side, &inp, &gi, is_skirmish);
+        match r {
+            Ok(mut stats) => report_undefined(wm, &mut stats.prefs),
+            Err(e) => {
+                wm.set_undefined(e);
+                return;
+            }
+        }
     }
     if screen_type == SCORESCREEN_INTERNET {
         h.score_untranslated(b"populatePlayerInfo: SCORESCREEN_INTERNET stats (GameSpy)");
@@ -1499,6 +1762,7 @@ pub(crate) mod tests {
             campaign,
             challenge_generals,
             local_academy_advice: Some(vec![b"ACADEMY:A".to_vec(), b"ACADEMY:B".to_vec()]),
+            honors_inputs: SkirmishHonorsInputs::default(),
         }
     }
 
@@ -1514,6 +1778,11 @@ pub(crate) mod tests {
         g.slots[1].state = slot_state::EASY_AI;
         g.slots[1].team_number = -1;
         g
+    }
+
+    /// (#157) `SkirmishStats.ini` as the screen wrote it to the host's user data folder.
+    fn stats_file(h: &H) -> String {
+        String::from_utf8_lossy(h.user_data.files.get(&b"SkirmishStats.ini"[..]).map_or(&[][..], |v| v.as_slice())).into_owned()
     }
 
     /// The shell in a game (hidden), then `clearGameData`'s score screen with `g`.
@@ -1605,7 +1874,9 @@ pub(crate) mod tests {
         }
         assert!(!hidden(&wm, w(&wm, "ButtonOk")));
         assert!(wm.is_enabled(Some(w(&wm, "ButtonSaveReplay"))));
-        assert_eq!(h.score_screen.honors, [HonorsCall::SkirmishResult { victory: true, side: b"America".to_vec() }]);
+        // (#157) the win counted in SkirmishStats.ini: a win, a streak of 1, the blitz honours (frame 0), the
+        // endurance medal of the easy opponent on the map, the first game with the general
+        assert_eq!(stats_file(&h), "BestWinStreak = 1\r\nChallenge = 0\r\nHonors = 49152\r\nLastHouse = America\r\nLoyalGames = 0\r\nNOMAP_2 = 1\r\nWinStreak = 1\r\nWins = 1\r\n");
         h.audio.clear();
         tick(&mut wm, &mut h);
         assert!(h.audio.iter().any(|a| a == b"ScoreUSA"), "{:?}", h.audio);
@@ -1719,7 +1990,7 @@ pub(crate) mod tests {
         let cont = w(&wm, "ButtonContinue");
         assert_eq!(String::from_utf16_lossy(wm.win_get_text(cont)), "T:GUI:EndCampaign");
         assert!(h.score_screen.button_is_finish_campaign);
-        assert_eq!(h.score_screen.honors, [HonorsCall::SetUsaCampaignComplete(2), HonorsCall::SetHonors(BATTLE_HONOR_CAMPAIGN_USA), HonorsCall::Write]);
+        assert_eq!(stats_file(&h), format!("Honors = {BATTLE_HONOR_CAMPAIGN_USA}\r\nUSACampaign_2 = 1\r\n"));
         assert!(h.untranslated.iter().any(|u| u == b"PlayMovieAndBlock: no video stream for FinalUSA"));
         assert!(!hidden(&wm, cont) && !hidden(&wm, w(&wm, "ButtonOk")));
         h.requests.clear();
@@ -1757,7 +2028,7 @@ pub(crate) mod tests {
         assert_eq!(wm.tree.windows[portrait].inst.enabled_draw_data[0].image.as_deref(), Some(&b"ImgDefeated"[..]));
         assert_eq!(wm.tree.windows[w(&wm, "ParentScoreScreen")].inst.enabled_draw_data[0].image, None);
         assert!(h.audio.iter().any(|a| a == b"WinS"));
-        assert_eq!(h.score_screen.honors, [HonorsCall::SetChallengeCampaignComplete(0, 2), HonorsCall::SetHonors(BATTLE_HONOR_CHALLENGE_MODE), HonorsCall::Write]);
+        assert_eq!(stats_file(&h), format!("ChallengeCampaign0_2 = 1\r\nHonors = {BATTLE_HONOR_CHALLENGE_MODE}\r\n"));
     }
 
     /// #89 part 2: the other screens and the buttons, predicted before the run:

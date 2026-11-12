@@ -16,7 +16,11 @@
 //     OptionsMenuSystem, OptionsMenuInput, OptionsMenuInit, OptionsMenuUpdate, OptionsMenuShutdown; #98:
 //     ReplayMenuSystem, PopupReplaySystem, ChallengeMenuSystem, ReplayMenuInput, PopupReplayInput, ChallengeMenuInput,
 //     ReplayMenuInit, PopupReplayInit, ChallengeMenuInit, ReplayMenuUpdate, PopupReplayUpdate, ChallengeMenuUpdate,
-//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown; #87: QuitMenuSystem)
+//     ReplayMenuShutdown, PopupReplayShutdown, ChallengeMenuShutdown; #87: QuitMenuSystem; #157: the tooltip callbacks
+//     BattleHonorTooltip, playerTemplateComboBoxTooltip, playerTemplateListBoxTooltip, ExtendedMessageBoxSystem's
+//     setting by gogoExMessageBox)
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp (#157: the
+//     W3DDrawMapPreview entry of gameWinDrawTable)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -169,8 +173,15 @@ pub struct ShellGui<W> {
     pub rmb_scroll_anchor: (bool, bool),
     /// (#89) The map names a map list's item data stands for (item data `n` is entry `n - 1`).
     pub map_list_names: Vec<Vec<u8>>,
-    /// (#89) `SkirmishBattleHonors::getWins()` (the stats file is not read: 0 unless the owner sets it).
-    pub skirmish_wins: i32,
+    /// ~~(#89) `SkirmishBattleHonors::getWins()` (the stats file is not read: 0 unless the owner sets it).~~
+    /// **Corrected 2026-11-12, #157:** removed; `SkirmishBattleHonors` reads `SkirmishStats.ini` from
+    /// [`ShellGui::user_data`]. The map previews `getMapPreviewImage` made (`newInstance(Image)` added to
+    /// `TheMappedImageCollection`), each a 128x128 texture whose file the shell copied into
+    /// `<user data>MapPreviews/` of [`ShellGui::user_data`].
+    pub map_preview_images: Vec<crate::client::image::Image>,
+    /// (#157) `GetUnsignedIntFromRegistry("", "Preorder", isPreorder)` gave a non-zero value: the owner's (false: the
+    /// client reads no registry).
+    pub preorder: bool,
     /// (#89 part 2) ScoreScreen.cpp's statics and globals, with the game it scores (the owner's copy).
     pub score_screen: ScoreScreen,
     /// (#98) ReplayMenu.cpp's statics.
@@ -323,7 +334,8 @@ impl<W: WndFiles> ShellGui<W> {
             display_modes: Vec::new(),
             rmb_scroll_anchor: (false, false),
             map_list_names: Vec::new(),
-            skirmish_wins: 0,
+            map_preview_images: Vec::new(),
+            preorder: false,
             score_screen: ScoreScreen::default(),
             replay_menu: ReplayMenu::default(),
             popup_replay: PopupReplay::default(),
@@ -386,6 +398,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"MainMenuSystem" => main_menu::main_menu_system(wm, self, win, msg, d1, d2),
             b"MessageBoxSystem" => message_box::message_box_system(wm, self, win, msg, d1, d2, false),
             b"QuitMessageBoxSystem" => message_box::message_box_system(wm, self, win, msg, d1, d2, true),
+            // (#157)
+            b"ExtendedMessageBoxSystem" => crate::client::extended_message_box::extended_message_box_system(wm, self, win, msg, d1, d2),
             b"SaveLoadMenuSystem" => slm::save_load_menu_system(wm, self, win, msg, d1, d2),
             b"SinglePlayerMenuSystem" => spm::single_player_menu_system(wm, self, win, msg, d1, d2),
             b"DifficultySelectSystem" => ds::difficulty_select_system(wm, self, win, msg, d1, d2),
@@ -458,6 +472,10 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             // (#89)
             b"MapSelectorTooltip" => sgo::map_selector_tooltip(wm, self, win, mouse),
             b"mapListTooltipFunc" => smsm::map_list_tooltip_func(wm, self, win, mouse),
+            // (#157)
+            b"BattleHonorTooltip" => crate::client::battle_honors::battle_honor_tooltip(wm, self, win, mouse),
+            b"playerTemplateComboBoxTooltip" => crate::client::lobby_utils::player_template_combo_box_tooltip(wm, self, win, mouse),
+            b"playerTemplateListBoxTooltip" => crate::client::lobby_utils::player_template_list_box_tooltip(wm, self, win, mouse),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -467,6 +485,17 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
     }
     fn add_audio_event(&mut self, name: &[u8]) {
         self.audio.push(name.to_vec());
+    }
+    fn draw(&mut self, wm: &GameWindowManager, func: &[u8], win: WinId, out: &mut Vec<crate::client::window_manager::DrawItem>) {
+        // (#157) `W3DDrawMapPreview`: the window's `MapMetaData *`, `TheSupplyAndTechImageLocations`
+        if func == b"W3DDrawMapPreview" {
+            let extent = match &wm.ext[win].user {
+                crate::client::window_manager::UserData::MapMetaData(Some(k)) => self.skirmish_data.map_cache.maps.get(k).map(|m| m.extent),
+                _ => None,
+            };
+            let find = |n: &[u8]| self.find_mapped_image(n);
+            crate::client::w3d_map_preview::w3d_draw_map_preview(wm, win, extent.as_ref(), &self.skirmish.supply_pos_list, &self.skirmish.tech_pos_list, &find, out);
+        }
     }
 }
 
@@ -562,6 +591,34 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"restartMissionMenu" => qm::restart_mission_menu(wm, self),
             _ => self.untranslated.push(func.to_vec()),
         }
+    }
+    fn ex_message_box_callback(&mut self, wm: &mut GameWindowManager, func: &[u8], user_data: &crate::client::extended_message_box::ExUserData) -> crate::client::extended_message_box::MessageBoxReturn {
+        use crate::client::extended_message_box::{ExUserData, MessageBoxReturn};
+        // (#157) the insert-disc prompt's callbacks
+        if func == sgo::CHECK_CD_CALLBACK.as_bytes() {
+            let start = match user_data {
+                ExUserData::Callback(n) => n.clone(),
+                _ => Vec::new(),
+            };
+            return sgo::check_cd_callback(wm, self, |wm, h| match start.as_slice() {
+                b"reallyDoStart" => sgo::really_do_start(wm, h),
+                b"startNextCampaignGame" => ss::start_next_campaign_game(wm, h),
+                // (`callback` NULL: nothing)
+                _ => {}
+            });
+        }
+        if func == sgo::CANCEL_START_NO_CD.as_bytes() {
+            return sgo::cancel_start_because_of_no_cd(self);
+        }
+        if func == main_menu::CHECK_CD_CALLBACK.as_bytes() {
+            let diff = if let ExUserData::Int(d) = user_data { *d } else { 0 };
+            return main_menu::check_cd_callback(wm, self, diff);
+        }
+        if func == main_menu::CANCEL_START_NO_CD.as_bytes() {
+            return main_menu::cancel_start_because_of_no_cd();
+        }
+        self.untranslated.push(func.to_vec());
+        MessageBoxReturn::Close
     }
 }
 
@@ -731,6 +788,16 @@ impl<W: WndFiles> ScoreGridHost for ShellGui<W> {
     fn score_untranslated(&mut self, what: &[u8]) {
         self.untranslated.push(what.to_vec());
     }
+    // (#157) the stats file in the owner's user data folder, as the other preference files
+    fn grid_path_user_data(&self) -> Vec<u8> {
+        MenuHost::path_user_data(self)
+    }
+    fn grid_user_data_read(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        MenuHost::user_data_read(self, path)
+    }
+    fn grid_user_data_write(&mut self, path: &[u8], bytes: &[u8]) -> bool {
+        MenuHost::user_data_write(self, path, bytes)
+    }
 }
 
 impl<W: WndFiles> ScoreScreenHost for ShellGui<W> {}
@@ -849,7 +916,14 @@ impl<W: WndFiles> MapUtilHost for ShellGui<W> {
         self.skirmish_data.user_data_path.clone()
     }
     fn find_mapped_image(&self, name: &[u8]) -> Option<Vec<u8>> {
-        self.files.as_ref().and_then(|f| f.files.find_image(name))
+        // (#157: the map previews `getMapPreviewImage` added to the collection come after the collection's own)
+        self.files.as_ref().and_then(|f| f.files.find_image(name)).or_else(|| self.map_preview_images.iter().find(|i| i.name == name).map(|i| i.name.clone()))
+    }
+    fn endurance_medal(&self, map: &[u8], state: i32) -> i32 {
+        // (#157) `battleHonors->getEnduranceMedal(map, state)`: the stats file read (a copy of the folder: the read
+        // changes nothing)
+        let mut fs = self.user_data.clone();
+        crate::client::battle_honors::SkirmishBattleHonors::new(&mut fs).get_endurance_medal(map, state)
     }
     fn map_list_item(&mut self, name: &[u8]) -> u32 {
         let i = match self.map_list_names.iter().position(|n| n == name) {
@@ -867,10 +941,15 @@ impl<W: WndFiles> MapUtilHost for ShellGui<W> {
     fn real_map_path_to_portable(&self, path: &[u8]) -> Vec<u8> {
         self.skirmish_data.real_map_path_to_portable(path)
     }
-    fn map_preview_from_file(&mut self, _tga: &[u8], _name: &[u8], _temp_name: &[u8]) -> Option<Vec<u8>> {
-        // (#89) `copyFromBigToDir` and the new `Image`: not translated
-        self.untranslated.push(b"getMapPreviewImage: copyFromBigToDir".to_vec());
-        None
+    fn map_preview_from_file(&mut self, tga: &[u8], name: &[u8], temp_name: &[u8]) -> Option<Vec<u8>> {
+        // ~~(#89) `copyFromBigToDir` and the new `Image`: not translated~~ **Corrected 2026-11-12, #157:** translated
+        // (`crate::client::map_util::map_preview_from_file`) over the map files the owner gave
+        // ([`SkirmishData::map_previews`]) and the shell's view of the user data folder
+        let mut fs = MapPreviewFiles { previews: &self.skirmish_data.map_previews, user: &mut self.user_data };
+        let image = crate::client::map_util::map_preview_from_file(&mut fs, tga, name, temp_name)?;
+        let n = image.name.clone();
+        self.map_preview_images.push(image);
+        Some(n)
     }
 }
 
@@ -896,14 +975,35 @@ impl<W: WndFiles> SkirmishHost for ShellGui<W> {
     fn map_select(&mut self) -> &mut SkirmishMapSelect {
         &mut self.map_select
     }
-    fn skirmish_wins(&self) -> i32 {
-        self.skirmish_wins
-    }
-    fn clear_battle_honors(&mut self) {
-        self.skirmish_wins = 0;
+    fn is_preorder(&self) -> bool {
+        self.preorder
     }
     fn untranslated(&mut self, what: &[u8]) {
         self.untranslated.push(what.to_vec());
+    }
+}
+
+/// (#157) `getMapPreviewImage`'s files: the owner's map previews ([`SkirmishData::map_previews`], by their lower-case
+/// paths: `TheFileSystem`'s archives match without case) and the shell's view of the user data folder, where the copy
+/// is kept for the session (the client's folder keeps only preference files: the copy is not written to disk or OPFS).
+pub struct MapPreviewFiles<'a> {
+    pub previews: &'a std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
+    pub user: &'a mut MemoryUserData,
+}
+
+impl crate::client::map_util::PreviewFiles for MapPreviewFiles<'_> {
+    fn does_file_exist(&self, path: &[u8]) -> bool {
+        self.previews.contains_key(&path.to_ascii_lowercase()) || self.user.files.contains_key(path)
+    }
+    fn read_file(&mut self, path: &[u8]) -> Option<Vec<u8>> {
+        self.previews.get(&path.to_ascii_lowercase()).cloned().or_else(|| self.user.files.get(path).cloned())
+    }
+    fn write_file(&mut self, path: &[u8], bytes: &[u8]) -> bool {
+        self.user.files.insert(path.to_vec(), bytes.to_vec());
+        true
+    }
+    fn path_user_data(&self) -> Vec<u8> {
+        self.user.path.clone()
     }
 }
 
@@ -1121,7 +1221,10 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
     /// y 40; their four labels at y 20; `MapWindow` at (500, 40)-(700, 240) holding the eight start-spot buttons (a row
     /// at its top left, passing their presses up); the map's name `TextEntryMapDisplay` and `StaticTextMapPreview`; *Select Map* at (500, 280),
     /// *Back* (20, 560), *Reset* (300, 560), *Start* (600, 560); the speed slider (15 to 61) at (20, 300) with its
-    /// text; the superweapon box at (20, 330); the starting money's combo box at (20, 360); `SubParent`.
+    /// text; the superweapon box at (20, 330); the starting money's combo box at (20, 360); `SubParent`. (#157) The map
+/// window draws with `W3DDrawMapPreview`; the honours list `ListboxInfo` (four columns, length 100) at
+/// (500, 320)-(780, 500), and the record's four numbers (`StaticTextStreakValue`, `...BestStreakValue`,
+/// `...WinsValue`, `...LossesValue`) at x 300 from y 420, 25 apart.
     pub fn skirmish_game_options_wnd() -> Vec<u8> {
         let f = "SkirmishGameOptionsMenu.wnd";
         let mut c = String::new();
@@ -1138,7 +1241,22 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         for (n, x) in [("StaticTextPlayers", 20), ("StaticTextColor", 160), ("StaticTextFaction", 270), ("StaticTextTeam", 380)] {
             c += &static_text(f, n, (x, 20, x + 90, 38));
         }
-        c += &frame(f, "MapWindow", (500, 40, 700, 240), false, &start_spots(f, 500, 40));
+        // (#157: the preview's draw callback, as the game's file names it)
+        c += &win(f, "USER", "MapWindow", (500, 40, 700, 240), false, "    SYSTEMCALLBACK = \"PassSelectedButtonsToParentSystem\";\n    DRAWCALLBACK = \"W3DDrawMapPreview\";\n", &start_spots(f, 500, 40));
+        // (#157) the battle honours: `ListboxInfo` (four columns) and the record's four numbers
+        c += &win(
+            f,
+            "SCROLLLISTBOX",
+            "ListboxInfo",
+            (500, 320, 780, 500),
+            false,
+            "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 4, COLUMNSWIDTH%: 25, COLUMNSWIDTH%: 25, COLUMNSWIDTH%: 25, COLUMNSWIDTH%: 25, FORCESELECT: 0;\n",
+            "",
+        );
+        for (i, n) in ["StaticTextStreakValue", "StaticTextBestStreakValue", "StaticTextWinsValue", "StaticTextLossesValue"].iter().enumerate() {
+            let y = 420 + 25 * i as i32;
+            c += &static_text(f, n, (300, y, 480, y + 20));
+        }
         c += &static_text(f, "TextEntryMapDisplay", (500, 250, 700, 270));
         c += &static_text(f, "StaticTextMapPreview", (500, 20, 700, 38));
         c += &buttons(f, 500, 280, &["ButtonSelectMap"]);
@@ -1165,7 +1283,7 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
     /// (#89) A synthetic `Menus/SkirmishMapSelectMenu.wnd` (no EA file): the parent under the name the code looks for
     /// (`SkrimishMapSelectMenuParent`, misspelt) at (100, 50)-(700, 550) with the system and input callbacks; the map
     /// list (two columns, 10/90 %) at (110, 60)-(400, 400); the two radio buttons (group 1) at x 410 from y 60;
-    /// `WinMapPreview` at (410, 120)-(610, 320) holding the eight start-spot buttons; *OK* at (410, 500) and *Back*
+    /// `WinMapPreview` at (410, 120)-(610, 320) (#157: drawn with `W3DDrawMapPreview`) holding the eight start-spot buttons; *OK* at (410, 500) and *Back*
     /// at (520, 500).
     pub fn skirmish_map_select_wnd() -> Vec<u8> {
         let f = "SkirmishMapSelectMenu.wnd";
@@ -1182,7 +1300,7 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         for (n, y) in [("RadioButtonSystemMaps", 60), ("RadioButtonUserMaps", 85)] {
             c += &win(f, "RADIOBUTTON", n, (410, y, 500, y + 20), false, "    RADIOBUTTONDATA = GROUP: 1;\n", "");
         }
-        c += &win(f, "USER", "WinMapPreview", (410, 120, 610, 320), false, "", &start_spots(f, 410, 120));
+        c += &win(f, "USER", "WinMapPreview", (410, 120, 610, 320), false, "    DRAWCALLBACK = \"W3DDrawMapPreview\";\n", &start_spots(f, 410, 120));
         c += &buttons(f, 410, 500, &["ButtonOK"]);
         c += &buttons(f, 520, 500, &["ButtonBack"]);
         let parent = win(
@@ -1653,6 +1771,42 @@ pub(crate) mod tests {
         assert!(wm.layouts[top].hidden);
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
         assert!(h.untranslated.iter().all(|f| f.starts_with(b"BlankWindow")), "{:?}", h.untranslated);
+    }
+
+    /// #157: the main menu's insert-disc prompt (`checkCDBeforeCampaign`, ExtendedMessageBox.cpp). Predicted: without
+    /// the disc *Medium* opens the box (OK and Cancel shown, the title `GUI:InsertCDPrompt`), no start; *OK* still
+    /// without it keeps the box; with the disc *OK* closes it and the campaign starts as from *Medium* (`StartCampaign
+    /// { USA, 1 }` once the fade is done).
+    #[test]
+    fn the_main_menu_asks_for_the_disc() {
+        let (mut wm, mut h) = booted();
+        wm.win_process_key(&mut h, key::SPACE, key::STATE_DOWN);
+        settle(&mut wm, &mut h);
+        for b in ["ButtonSinglePlayer", "ButtonUSA"] {
+            let b = w(&wm, b);
+            click(&mut wm, &mut h, b);
+            settle(&mut wm, &mut h);
+        }
+        h.first_cd_present = false;
+        let newest = |wm: &GameWindowManager, name: &str| {
+            let full = format!("MessageBox.wnd:{name}");
+            (0..wm.tree.windows.len()).rev().find(|&i| wm.tree.windows[i].inst.decorated_name_string == full.as_bytes() && wm.tree.windows[i].status & crate::client::window_script::win_status::DESTROYED == 0).unwrap_or_else(|| panic!("{name}"))
+        };
+        let gone = |wm: &GameWindowManager, w: WinId| wm.tree.windows[w].status & crate::client::window_script::win_status::DESTROYED != 0;
+        let b = w(&wm, "ButtonMedium");
+        click(&mut wm, &mut h, b);
+        let parent = newest(&wm, "MessageBoxParent");
+        let title = newest(&wm, "StaticTextTitle");
+        assert_eq!(String::from_utf16_lossy(&crate::client::gadget::static_text_get_text(&wm, title)), String::from_utf16_lossy(&h.text(b"GUI:InsertCDPrompt")));
+        let ok = newest(&wm, "ButtonOk");
+        click(&mut wm, &mut h, ok);
+        assert!(!gone(&wm, parent) && !h.main_menu.start_game);
+        h.first_cd_present = true;
+        click(&mut wm, &mut h, ok);
+        assert!(gone(&wm, parent) && h.main_menu.start_game);
+        settle(&mut wm, &mut h);
+        assert_eq!(h.requests, [ShellRequest::StartCampaign { campaign: b"USA".to_vec(), difficulty: 1 }]);
+        assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
     }
 
     /// #69, the other buttons, predicted from MainMenu.cpp before the run:

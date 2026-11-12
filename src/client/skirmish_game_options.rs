@@ -80,16 +80,23 @@
 //!   **Corrected 2026-11-10 (#89):** the preferences are read and written by the translated `UserPreferences::load`
 //!   and `write` ([`crate::client::user_preferences`]) over the host's user data folder
 //!   ([`crate::client::main_menu::MenuHost::user_data_read`]); the client keeps that folder on disk or in OPFS.
-//! - **Battle honours** (`SkirmishBattleHonors`, `SkirmishStats.ini`): the wins are the host's
-//!   ([`SkirmishHost::skirmish_wins`]); `populateSkirmishBattleHonors` (the honours list box, BattleHonors.cpp's
+//! - ~~**Battle honours** (`SkirmishBattleHonors`, `SkirmishStats.ini`): the wins are the host's
+//!   (`SkirmishHost::skirmish_wins`); `populateSkirmishBattleHonors` (the honours list box, BattleHonors.cpp's
 //!   `InsertBattleHonor`) is **not translated**: recorded through [`SkirmishHost::untranslated`]. *Reset* clears the
-//!   host's stats ([`SkirmishHost::clear_battle_honors`]).
-//! - `IsFirstCDPresent` is the host's ([`MenuHost::first_cd_present`]); the insert-disc prompt
+//!   host's stats (`SkirmishHost::clear_battle_honors`).~~ **Corrected 2026-11-12, #157:** `SkirmishBattleHonors` is
+//!   translated (`crate::client::battle_honors`) and `SkirmishStats.ini` read from and written to the host's user data
+//!   folder; `populateSkirmishBattleHonors` is translated ([`populate_skirmish_battle_honors`]); *Reset* is the
+//!   stats' `clear()` and `write()`.
+//! - `IsFirstCDPresent` is the host's ([`MenuHost::first_cd_present`]); ~~the insert-disc prompt
 //!   (`ExMessageBoxOkCancel`, ExtendedMessageBox.cpp) is not translated: recorded, and the start does not happen (its
-//!   cancel callback, which clears `buttonPushed`, is translated: [`cancel_start_because_of_no_cd`]).
-//! - `TheMouse->setCursor(Mouse::ARROW)` and `setMouseText` (the shutdown's) are not modelled; the tooltip callbacks
+//!   cancel callback, which clears `buttonPushed`, is translated: [`cancel_start_because_of_no_cd`]).~~ **Corrected
+//!   2026-11-12, #157:** the insert-disc prompt is translated (`crate::client::extended_message_box`): *OK* starts the
+//!   game once the disc is there (`checkCDCallback`), *Cancel* clears `buttonPushed`.
+//! - `TheMouse->setCursor(Mouse::ARROW)` and `setMouseText` (the shutdown's) are not modelled; ~~the tooltip callbacks
 //!   of LobbyUtils.cpp (`playerTemplateComboBoxTooltip`, `playerTemplateListBoxTooltip`) and BattleHonors.cpp are set
-//!   by name and recorded as untranslated when they run.
+//!   by name and recorded as untranslated when they run.~~ **Corrected 2026-11-12, #157:** the tooltip callbacks of
+//!   LobbyUtils.cpp (`crate::client::lobby_utils`) and PopupPlayerInfo.cpp's `BattleHonorTooltip` (which #92 placed in
+//!   a BattleHonors.cpp the release does not have) are translated and dispatched by the shell's host.
 //! - `GetUnsignedIntFromRegistry("", "Preorder")` is the host's ([`SkirmishHost::is_preorder`]);
 //!   `IPEnumeration::getMachineName` too ([`SkirmishHost::machine_name`]).
 //! - `QuotedPrintableToUnicodeString` of an odd byte count: upstream's static buffer leftovers are not modelled
@@ -105,18 +112,22 @@
 //! `TheSupplyAndTechImageLocations`, `doUpdateSlotList`, `sandboxOk`) and GUIUtil's `winInitialized`; the host gives
 //! it with the World's data ([`SkirmishHost::skirmish_split`]), which is `TheSkirmishGameInfo`'s `GameInfoHost`.
 
+use crate::client::battle_honors::{self as bh, BattleHonorInsertion, SkirmishBattleHonors};
 use crate::client::control_bar_popup::{format_wide, FormatArg};
 use crate::client::gadget::{button_set_text, check_box_is_checked, check_box_set_checked, static_text_set_text};
 use crate::client::gadget_combo_box as cb;
 use crate::client::gadget_slider::{slider_get_position, slider_set_position};
 use crate::client::gadget_text_entry as te;
 use crate::client::gui_util::{self as gu, GuiUtilHost, SkirmishData};
-use crate::client::main_menu::DIFFICULTY_NORMAL;
+use crate::client::gadget_list_box as lb;
+use crate::client::main_menu::{MenuHost, DIFFICULTY_EASY, DIFFICULTY_HARD, DIFFICULTY_NORMAL};
+use crate::logic::modules::plant;
 use crate::client::map_util::{self, find_draw_positions, get_map_preview_image, SUPPLY_TECH_SIZE};
 use crate::client::message_box::message_box_ok;
+use crate::client::extended_message_box::{ex_message_box_ok_cancel, ExUserData, MessageBoxReturn};
 use crate::client::shell::{self, ShellRequest};
 use crate::client::skirmish_map_select::SkirmishMapSelect;
-use crate::client::user_preferences::{load_preferences, HostUserData, UserPreferences};
+use crate::client::user_preferences::{load_preferences, report_undefined, HostUserData, UserPreferences};
 use crate::client::window_manager::{data_win, ggm, gwm, key, win_data, GameWindowManager, MsgHandled, UserData, WindowMsgData};
 use crate::client::window_script::{win_status, WinId};
 use crate::client::window_transitions as wt;
@@ -127,6 +138,9 @@ use crate::common::map_cache::{quoted_printable_to_ascii_string, quoted_printabl
 use crate::common::money::Money;
 use crate::common::recorder::game_mode;
 use crate::common::unicode_string::UnicodeString;
+
+/// `MAX_GLOBAL_GENERAL_TYPES`.
+pub const MAX_GLOBAL_GENERAL_TYPES: i32 = 9;
 
 /// `GREATER_NO_FPS_LIMIT`.
 pub const GREATER_NO_FPS_LIMIT: i32 = 60;
@@ -145,12 +159,6 @@ pub trait SkirmishHost: GuiUtilHost {
     fn skirmish_split(&mut self) -> (&mut SkirmishGameOptions, &mut SkirmishData);
     /// SkirmishMapSelectMenu.cpp's statics.
     fn map_select(&mut self) -> &mut SkirmishMapSelect;
-    /// `SkirmishBattleHonors::getWins()`.
-    fn skirmish_wins(&self) -> i32 {
-        0
-    }
-    /// `SkirmishBattleHonors::clear()` then `write()`.
-    fn clear_battle_honors(&mut self) {}
     /// `IPEnumeration::getMachineName()`.
     fn machine_name(&self) -> Vec<u8> {
         Vec::new()
@@ -229,6 +237,8 @@ pub struct SkirmishGameOptions {
     pub tech_pos_list: Vec<ICoord2D>,
     /// GUIUtil.cpp's `winInitialized`.
     pub win_initialized: bool,
+    /// (#157) PopupPlayerInfo.cpp's `rowsToSkip`, the honours list's insertion state.
+    pub battle_honor_insertion: BattleHonorInsertion,
 }
 
 impl Default for SkirmishGameOptions {
@@ -279,6 +289,7 @@ impl Default for SkirmishGameOptions {
             supply_pos_list: Vec::new(),
             tech_pos_list: Vec::new(),
             win_initialized: false,
+            battle_honor_insertion: BattleHonorInsertion::default(),
         }
     }
 }
@@ -531,19 +542,42 @@ pub fn really_do_start<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) {
     h.request(ShellRequest::StartSkirmish { game, mode, difficulty: DIFFICULTY_NORMAL, max_fps });
 }
 
-/// `cancelStartBecauseOfNoCD(userData)`: the insert-disc prompt's cancel.
-pub fn cancel_start_because_of_no_cd<H: SkirmishHost>(h: &mut H) {
+/// `cancelStartBecauseOfNoCD(userData)`: the insert-disc prompt's cancel (`MB_RETURN_CLOSE`).
+pub fn cancel_start_because_of_no_cd<H: SkirmishHost>(h: &mut H) -> MessageBoxReturn {
     h.skirmish().button_pushed = false;
+    MessageBoxReturn::Close
 }
 
-/// `CheckForCDAtGameStart(callback)` with `reallyDoStart`: the start at once with the disc; else the prompt
-/// (`ExMessageBoxOkCancel`, not translated: recorded).
-pub fn check_for_cd_at_game_start<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) {
+/// `checkCDCallback(userData)`: the prompt's *OK*: still no disc, the box stays (`IsFirstCDPresent` asked twice, as
+/// upstream); else the game start callback (`userData`) is run and the box closes. The callback is run by the host
+/// (`run`, by its name).
+pub fn check_cd_callback<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, run: impl FnOnce(&mut GameWindowManager, &mut H)) -> MessageBoxReturn {
     if !h.first_cd_present() {
-        h.untranslated(b"ExMessageBoxOkCancel(GUI:InsertCDPrompt)");
-    } else {
-        really_do_start(wm, h);
+        return if h.first_cd_present() { MessageBoxReturn::Close } else { MessageBoxReturn::KeepOpen };
     }
+    run(wm, h);
+    MessageBoxReturn::Close
+}
+
+/// `CheckForCDAtGameStart(callback)`: the start at once with the disc; else the prompt (`ExMessageBoxOkCancel(
+/// GUI:InsertCDPrompt, GUI:InsertCDMessage, callback, checkCDCallback, cancelStartBecauseOfNoCD)`). `callback` is the
+/// game start's name (`reallyDoStart`, `startNextCampaignGame`), `start` that function.
+pub fn check_for_cd_at_game_start_with<H: MenuHost>(wm: &mut GameWindowManager, h: &mut H, callback: &str, start: impl FnOnce(&mut GameWindowManager, &mut H)) {
+    if !h.first_cd_present() {
+        let (t, b) = (h.fetch_text(b"GUI:InsertCDPrompt"), h.fetch_text(b"GUI:InsertCDMessage"));
+        ex_message_box_ok_cancel(wm, h, &t, &b, ExUserData::Callback(callback.as_bytes().to_vec()), Some(CHECK_CD_CALLBACK), Some(CANCEL_START_NO_CD));
+    } else {
+        start(wm, h);
+    }
+}
+
+/// The names the prompt's callbacks go by (SkirmishGameOptionsMenu.cpp's statics).
+pub const CHECK_CD_CALLBACK: &str = "SkirmishGameOptionsMenu.cpp:checkCDCallback";
+pub const CANCEL_START_NO_CD: &str = "SkirmishGameOptionsMenu.cpp:cancelStartBecauseOfNoCD";
+
+/// `CheckForCDAtGameStart(reallyDoStart)`.
+pub fn check_for_cd_at_game_start<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) {
+    check_for_cd_at_game_start_with(wm, h, "reallyDoStart", really_do_start);
 }
 
 /// `startPressed()`: the map must be in the cache and hold the players.
@@ -578,8 +612,11 @@ fn start_pressed<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) {
 
 /// `MapSelectorTooltip(window, instData, mouse)`: the tech building's or supply dock's tooltip under the mouse.
 pub fn map_selector_tooltip<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H, window: WinId, mouse: u32) {
-    let x = i32::from(mouse as u16 as i16);
-    let y = i32::from((mouse >> 16) as u16 as i16);
+    // ~~`x = LOLONGTOSHORT(mouse)` read as a signed 16-bit value~~ **Corrected 2026-11-12, #157:**
+    // `LOLONGTOSHORT(a)` is `((a) & 0x0000FFFF)` and `HILONGTOSHORT(b)` `(((b) & 0xFFFF0000) >> 16)` (GameWindow.h:111):
+    // masked, not sign-extended
+    let x = (mouse & 0x0000_FFFF) as i32;
+    let y = ((mouse & 0xFFFF_0000) >> 16) as i32;
     let (pixel_x, pixel_y) = wm.tree.screen_position(window);
     let image = h.find_mapped_image(b"TecBuilding");
     let image2 = h.find_mapped_image(b"Cash");
@@ -607,7 +644,9 @@ pub fn position_start_spot_controls(wm: &mut GameWindowManager, win: Option<WinI
     let position = (pos.x - e.lo.x) / (e.hi.x - e.lo.x);
     let mut gx = ((position * small_width as f32) - (gadget_size.0 / 2) as f32 + ul.x as f32) as i32;
     let position = (pos.y - e.lo.y) / (e.hi.y - e.lo.y);
-    let mut gy = (((1.0 - position) * small_height as f32) - (gadget_size.1 / 2) as f32 + ul.y as f32) as i32;
+    // (plant 9534, differential builds only: the y not flipped)
+    let flipped = if plant(9534) { position } else { 1.0 - position };
+    let mut gy = ((flipped * small_height as f32) - (gadget_size.1 / 2) as f32 + ul.y as f32) as i32;
     for b in buttons {
         if *b == Some(win) {
             break;
@@ -626,7 +665,10 @@ pub fn position_start_spot_controls(wm: &mut GameWindowManager, win: Option<WinI
                 gy = ty + gadget_size.1 + 1;
             } else {
                 gx = tx + gadget_size.0 + 1;
-                gy = ty + gadget_size.1 + 1;
+                // (plant 9532, differential builds only: a tie nudged right only)
+                if !plant(9532) {
+                    gy = ty + gadget_size.1 + 1;
+                }
             }
         }
     }
@@ -640,7 +682,8 @@ pub fn position_additional_images<H: SkirmishHost>(wm: &GameWindowManager, h: &m
     o.supply_pos_list.clear();
     o.tech_pos_list.clear();
     let (Some(mmd), Some(map_window)) = (mmd, map_window) else { return };
-    if wm.tree.windows[map_window].status & win_status::HIDDEN != 0 {
+    // (plant 9540, differential builds only: a hidden map window still gets its markers)
+    if wm.tree.windows[map_window].status & win_status::HIDDEN != 0 && !plant(9540) {
         return;
     }
     // (`static MapMetaData *prevMMD`: set to NULL by `force`, never to anything else; its check never returns)
@@ -658,7 +701,12 @@ pub fn position_additional_images<H: SkirmishHost>(wm: &GameWindowManager, h: &m
     };
     for p in &mmd.supply_positions {
         let m = marker(p);
-        o.supply_pos_list.insert(0, m);
+        // (plant 9533, differential builds only: pushed to the back)
+        if plant(9533) {
+            o.supply_pos_list.push(m);
+        } else {
+            o.supply_pos_list.insert(0, m);
+        }
     }
     for p in &mmd.tech_positions {
         let m = marker(p);
@@ -1020,13 +1068,181 @@ pub fn init_skirmish_game_gadgets<H: SkirmishHost>(wm: &mut GameWindowManager, h
         gu::populate_player_template_combo_box(wm, h, i, &o.combo_box_player_template, false);
         gu::populate_team_combo_box(wm, h, i, &o.combo_box_team, false);
     }
-    populate_skirmish_battle_honors(h);
+    populate_skirmish_battle_honors(wm, h);
 }
 
-/// `populateSkirmishBattleHonors()`: **not translated** (BattleHonors.cpp's `InsertBattleHonor`, the honours file):
-/// recorded.
-fn populate_skirmish_battle_honors<H: SkirmishHost>(h: &mut H) {
-    h.untranslated(b"populateSkirmishBattleHonors");
+/// `SkirmishBattleHonors stats;`: the stats file read from the host's user data folder.
+pub fn skirmish_battle_honors<H: MenuHost>(h: &mut H) -> SkirmishBattleHonors {
+    SkirmishBattleHonors::new(&mut HostUserData(h))
+}
+
+/// `InsertBattleHonor(list, TheMappedImageCollection->findImageByName(image), enabled, honor, row, column, ..,
+/// extra)`.
+#[allow(clippy::too_many_arguments)]
+fn insert_honor<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H, list: WinId, image: &[u8], enabled: bool, honor: i32, row: &mut i32, column: &mut i32, extra: i32) {
+    let img = h.find_mapped_image(image);
+    let mut ins = h.skirmish().battle_honor_insertion;
+    bh::insert_battle_honor(wm, h, &mut ins, list, img, enabled, honor, row, column, extra);
+    h.skirmish().battle_honor_insertion = ins;
+}
+
+/// `populateSkirmishBattleHonors()` (SkirmishGameOptionsMenu.cpp, line 1788 to the end): the record's four numbers,
+/// then the honours into `ListboxInfo`, each through `InsertBattleHonor` (crate::client::battle_honors): a first row
+/// of the three campaigns, the generals' challenge, the air wing and the battle tank (gold, silver or bronze by the
+/// hardest difficulty done; a greyed bronze when none), then the endurance (by the official multiplayer maps' medals),
+/// the apocalypse, the blitz, the streak, the domination, the ultimate, and the officers' club for a pre-order.
+pub fn populate_skirmish_battle_honors<H: SkirmishHost>(wm: &mut GameWindowManager, h: &mut H) {
+    let id = h.name_to_key(b"SkirmishGameOptionsMenu.wnd:ListboxInfo") as i32;
+    let Some(list) = wm.win_get_window_from_id(None, id) else { return };
+    let mut stats = skirmish_battle_honors(h);
+    wm.ext[list].tooltip = Some(b"BattleHonorTooltip".to_vec());
+    lb::reset(wm, h, list);
+    let honors = stats.get_honors();
+    for (name, v) in [("StaticTextStreakValue", stats.get_win_streak()), ("StaticTextBestStreakValue", stats.get_best_win_streak()), ("StaticTextWinsValue", stats.get_wins()), ("StaticTextLossesValue", stats.get_losses())] {
+        let id = h.name_to_key(format!("SkirmishGameOptionsMenu.wnd:{name}").as_bytes()) as i32;
+        if let Some(w) = wm.win_get_window_from_id(None, id) {
+            let t: Vec<u16> = v.to_string().encode_utf16().collect();
+            static_text_set_text(wm, h, Some(w), &t);
+        }
+    }
+    let mut ins = h.skirmish().battle_honor_insertion;
+    bh::reset_battle_honor_insertion(&mut ins);
+    h.skirmish().battle_honor_insertion = ins;
+    lb::add_entry_image(wm, h, list, None, 0, 0, 10, 10, true, game_make_color(255, 255, 255, 255));
+    // FIRST ROW OF HONORS
+    let (mut row, mut column) = (1, 0);
+    // the three campaigns: gold on hard, silver on normal, bronze on easy, else a bronze greyed unless the bit is set
+    type Done = fn(&mut SkirmishBattleHonors, i32) -> bool;
+    let campaigns: [(Done, &str, i32); 3] = [
+        (SkirmishBattleHonors::get_china_campaign_complete, "ChinaCampaign", bh::BATTLE_HONOR_CAMPAIGN_CHINA),
+        (SkirmishBattleHonors::get_gla_campaign_complete, "GLACampaign", bh::BATTLE_HONOR_CAMPAIGN_GLA),
+        (SkirmishBattleHonors::get_usa_campaign_complete, "USACampaign", bh::BATTLE_HONOR_CAMPAIGN_USA),
+    ];
+    for (done, image, bit) in campaigns {
+        let (img, enabled) = if done(&mut stats, DIFFICULTY_HARD) {
+            ("G", true)
+        } else if done(&mut stats, DIFFICULTY_NORMAL) {
+            ("S", true)
+        } else if done(&mut stats, DIFFICULTY_EASY) {
+            ("B", true)
+        } else {
+            ("B", honors & bit != 0)
+        };
+        insert_honor(wm, h, list, format!("{image}_{img}").as_bytes(), enabled, bit, &mut row, &mut column, 0);
+    }
+    // the generals' challenge
+    let (mut on_hard, mut on_normal, mut on_easy) = (false, false, false);
+    for i in 0..MAX_GLOBAL_GENERAL_TYPES {
+        on_hard |= stats.get_challenge_campaign_complete(i, DIFFICULTY_HARD);
+        on_normal |= stats.get_challenge_campaign_complete(i, DIFFICULTY_NORMAL);
+        on_easy |= stats.get_challenge_campaign_complete(i, DIFFICULTY_EASY);
+    }
+    let (img, enabled): (&[u8], bool) = if on_hard {
+        (b"Challenge_Gold", true)
+    } else if on_normal {
+        (b"Challenge_Silver", true)
+    } else if on_easy {
+        (b"Challenge_Bronz", true)
+    } else {
+        (b"Challenge_Bronz", false)
+    };
+    insert_honor(wm, h, list, img, enabled, bh::BATTLE_HONOR_CHALLENGE_MODE, &mut row, &mut column, 0);
+    insert_honor(wm, h, list, b"HonorAirWing", honors & bh::BATTLE_HONOR_AIR_WING != 0, bh::BATTLE_HONOR_AIR_WING, &mut row, &mut column, 0);
+    insert_honor(wm, h, list, b"HonorBattleTank", honors & bh::BATTLE_HONOR_BATTLE_TANK != 0, bh::BATTLE_HONOR_BATTLE_TANK, &mut row, &mut column, 0);
+    lb::add_entry_image(wm, h, list, None, 2, 0, 10, 10, true, game_make_color(255, 255, 255, 255));
+    // NEXT ROW OF HONORS
+    row = 3;
+    column = 0;
+    // the endurance: every official multiplayer map's medals, in the cache's order
+    let maps: Vec<(Vec<u8>, i32)> = h.util_data().map_cache.maps.iter().filter(|(_, m)| m.is_official && m.is_multiplayer).map(|(k, m)| (k.clone(), m.num_players)).collect();
+    let (mut missing_easy, mut missing_medium, mut missing_brutal) = (false, false, false);
+    for (k, _) in &maps {
+        let easy = stats.get_endurance_medal(k, slot_state::EASY_AI) != 0;
+        let med = stats.get_endurance_medal(k, slot_state::MED_AI) != 0;
+        let hard = stats.get_endurance_medal(k, slot_state::BRUTAL_AI) != 0;
+        if !easy && !med && !hard {
+            missing_easy = true;
+        }
+        // (plant 9519, differential builds only: the silver missing on the medium medal alone)
+        if if plant(9519) { !med } else { !med && !hard } {
+            missing_medium = true;
+        }
+        if !hard {
+            missing_brutal = true;
+        }
+    }
+    let (img, enabled): (&[u8], bool) = if !missing_brutal {
+        (b"Endurance_G", true)
+    } else if !missing_medium {
+        (b"Endurance_S", true)
+    } else if !missing_easy {
+        (b"Endurance_B", true)
+    } else {
+        (b"Endurance_B", false)
+    };
+    insert_honor(wm, h, list, img, enabled, bh::BATTLE_HONOR_ENDURANCE, &mut row, &mut column, 0);
+    insert_honor(wm, h, list, b"Apocalypse", honors & bh::BATTLE_HONOR_APOCALYPSE != 0, bh::BATTLE_HONOR_APOCALYPSE, &mut row, &mut column, 0);
+    // the blitz
+    let (img, enabled, bit): (&[u8], bool, i32) = if honors & bh::BATTLE_HONOR_BLITZ5 != 0 {
+        (b"HonorBlitz5", true, bh::BATTLE_HONOR_BLITZ5)
+    } else if honors & bh::BATTLE_HONOR_BLITZ10 != 0 {
+        (b"HonorBlitz10", true, bh::BATTLE_HONOR_BLITZ10)
+    } else {
+        (b"HonorBlitz10", false, bh::BATTLE_HONOR_BLITZ10)
+    };
+    insert_honor(wm, h, list, img, enabled, bit, &mut row, &mut column, 0);
+    // the streak (`uStr.format(L"%10d", streak)`: the text, unused)
+    let streak = stats.get_best_win_streak();
+    // (plant 9518, differential builds only: the gold streak from 24)
+    let t25 = if plant(9518) { 24 } else { 25 };
+    let (img, enabled): (&[u8], bool) = if streak >= 1000 {
+        (b"HonorStreak_1000", true)
+    } else if streak >= 500 {
+        (b"HonorStreak_500", true)
+    } else if streak >= 100 {
+        (b"HonorStreak_100", true)
+    } else if streak >= t25 {
+        (b"HonorStreak_G", true)
+    } else if streak >= 10 {
+        (b"HonorStreak_S", true)
+    } else if streak >= 3 {
+        (b"HonorStreak_B", true)
+    } else {
+        (b"HonorStreak_B", false)
+    };
+    insert_honor(wm, h, list, img, enabled, bh::BATTLE_HONOR_STREAK, &mut row, &mut column, streak);
+    // the domination
+    let total_wins = stats.get_wins();
+    let (img, enabled): (&[u8], bool) = if total_wins >= 10000 {
+        (b"Domination_10000", true)
+    } else if total_wins >= 1000 {
+        (b"Domination_1000", true)
+    } else if total_wins >= 500 {
+        (b"Domination_500", true)
+    } else if total_wins >= 100 {
+        (b"Domination_100", true)
+    } else {
+        (b"Domination_100", false)
+    };
+    insert_honor(wm, h, list, img, enabled, bh::BATTLE_HONOR_DOMINATION, &mut row, &mut column, total_wins);
+    // the ultimate: every official multiplayer map's every opponent beaten on brutal
+    let mut perfect = true;
+    for (k, players) in &maps {
+        let total_opponent_slots = players - 1;
+        let beaten = stats.get_endurance_medal(k, slot_state::BRUTAL_AI);
+        // (plant 9520, differential builds only: `<=` for `<`)
+        if if plant(9520) { beaten <= total_opponent_slots } else { beaten < total_opponent_slots } {
+            perfect = false;
+            break;
+        }
+    }
+    insert_honor(wm, h, list, b"Ultimate", perfect, bh::BATTLE_HONOR_ULTIMATE, &mut row, &mut column, 0);
+    // (the loyalty and the challenge medals are commented out upstream)
+    if h.is_preorder() {
+        insert_honor(wm, h, list, b"OfficersClub", true, bh::BATTLE_HONOR_OFFICERSCLUB, &mut row, &mut column, 0);
+    }
+    let mut p = stats.prefs;
+    report_undefined(wm, &mut p);
 }
 
 /// `skirmishUpdateSlotList()`: the map's name, the player's name and GUIUtil's `UpdateSlotList`, then the start spots'
@@ -1151,7 +1367,11 @@ pub fn skirmish_game_options_menu_init<H: SkirmishHost>(wm: &mut GameWindowManag
     let user_name = prefs.get_user_name(h);
     let color = prefs.get_preferred_color(h);
     let faction = prefs.get_preferred_faction(h);
-    let wins = h.skirmish_wins();
+    // `SkirmishBattleHonors honors; honors.getWins()` (#157: the stats file read)
+    let mut honors = skirmish_battle_honors(h);
+    let wins = honors.get_wins();
+    let mut hp = std::mem::take(&mut honors.prefs);
+    report_undefined(wm, &mut hp);
     let (o, d) = h.skirmish_split();
     let Some(g) = o.game.as_mut() else {
         wm.set_undefined("SkirmishGameOptionsMenuInit: TheSkirmishGameInfo deleted during the init");
@@ -1414,8 +1634,11 @@ pub fn skirmish_game_options_menu_system<H: SkirmishHost>(wm: &mut GameWindowMan
                 prefs.write_skirmish(wm, h);
                 start_pressed(wm, h);
             } else if id == o.button_reset_id {
-                h.clear_battle_honors();
-                populate_skirmish_battle_honors(h);
+                // `SkirmishBattleHonors stats; stats.clear(); stats.write();`
+                let mut stats = skirmish_battle_honors(h);
+                stats.clear();
+                stats.write(&mut HostUserData(h));
+                populate_skirmish_battle_honors(wm, h);
             } else if id == o.check_box_limit_superweapons_id {
                 handle_limit_superweapons_click(wm, h);
             } else {
@@ -1641,6 +1864,52 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
     /// screen's labels (`updateMapStartSpots(..., TRUE)`, called by the test) were predicted on slot 1's spot: they
     /// follow `getApparentStartPos`, which for an enemy computer with `ShowRandomStartPos` is its original spot (-1),
     /// so no label; the local player's own spot is labelled (the assertion now says so).
+    /// #157: the screen's three translated tooltips and the map's draw, through the shell's host as the window manager
+    /// calls them. Predicted: slot 0's faction combo box shows its selected template's tooltip label (or *Random*'s);
+    /// the faction list's cell under the mouse its own; the honours list's USA campaign cell (row 1, column 2, not
+    /// gained) `TOOLTIP:BattleHonorCampaignUSADisabled` at 1.5 times the width, and China's (row 1, column 0, its item
+    /// data cleared by the row below) the general `TOOLTIP:BattleHonors`; the map window draws its bands, its area and
+    /// its frame (no frame images in the synthetic files: no images), nothing undefined.
+    #[test]
+    fn the_skirmish_screen_tooltips_and_preview_draw() {
+        let (mut wm, mut h) = opened();
+        for t in h.skirmish_data.templates.iter_mut() {
+            t.tooltip = [&b"TOOLTIP:Bio"[..], &t.name].concat();
+        }
+        let combo = h.skirmish.combo_box_player_template[0].expect("slot 0's faction");
+        let index = cb::get_selected_pos(&mut wm, &mut h, combo, 0);
+        let data = cb::get_item_data(&mut wm, &mut h, combo, index) as i32;
+        crate::client::window_manager::GuiHost::tooltip(&mut h, &mut wm, b"playerTemplateComboBoxTooltip", combo, 0);
+        let want = crate::client::lobby_utils::player_template_tooltip_label(&h, data).map_or_else(Vec::new, |l| h.fetch_text(&l));
+        assert!(!want.is_empty());
+        assert_eq!(wm.mouse.display_string, want);
+        let info = wm.tree.find_by_name(b"SkirmishGameOptionsMenu.wnd:ListboxInfo").expect("ListboxInfo");
+        let (lx, ly) = wm.tree.screen_position(info);
+        let at = |wm: &mut GameWindowManager, h: &mut H, row: i32, col: i32| -> u32 {
+            for y in ly..ly + 180 {
+                for x in (lx..lx + 280).step_by(5) {
+                    if lb::get_entry_based_on_xy(wm, h, info, x, y) == Some((row, col)) {
+                        return short_to_long(x, y);
+                    }
+                }
+            }
+            panic!("no cell ({row}, {col})");
+        };
+        let m = at(&mut wm, &mut h, 1, 2);
+        crate::client::window_manager::GuiHost::tooltip(&mut h, &mut wm, b"BattleHonorTooltip", info, m);
+        assert_eq!(String::from_utf16_lossy(&wm.mouse.display_string), "T:TOOLTIP:BattleHonorCampaignUSADisabled");
+        let m = at(&mut wm, &mut h, 1, 0);
+        crate::client::window_manager::GuiHost::tooltip(&mut h, &mut wm, b"BattleHonorTooltip", info, m);
+        assert_eq!(String::from_utf16_lossy(&wm.mouse.display_string), "T:TOOLTIP:BattleHonors");
+        let mw = h.skirmish.window_map.expect("the map window");
+        let mut items = Vec::new();
+        crate::client::window_manager::GuiHost::draw(&mut h, &wm, b"W3DDrawMapPreview", mw, &mut items);
+        assert!(items.iter().any(|d| matches!(d, crate::client::window_manager::DrawItem::Line { .. })), "{items:?}");
+        assert!(items.iter().any(|d| matches!(d, crate::client::window_manager::DrawItem::FillRect { .. })), "{items:?}");
+        assert!(h.untranslated.iter().all(|u| !u.ends_with(b"Tooltip")), "{:?}", h.untranslated);
+        assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
+    }
+
     #[test]
     fn the_skirmish_screen_sets_up_and_starts_a_game() {
         let (mut wm, mut h) = opened();
@@ -1648,7 +1917,17 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         assert_eq!(wm.layouts[top].filename, b"Menus/SkirmishGameOptionsMenu.wnd");
         assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
         assert!(h.ui_interacts.contains(&"ShellSkirmishOpened"));
-        assert!(h.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"), "{:?}", h.untranslated);
+        // (#157) the honours: no stats file, so 0s and every honour greyed; the list's first row the blank 10x10
+        assert!(!h.untranslated.iter().any(|f| f == b"populateSkirmishBattleHonors"), "{:?}", h.untranslated);
+        let info = wm.tree.find_by_name(b"SkirmishGameOptionsMenu.wnd:ListboxInfo").expect("ListboxInfo");
+        assert_eq!(wm.ext[info].tooltip.as_deref(), Some(&b"BattleHonorTooltip"[..]));
+        assert_eq!(lb::get_num_entries(&wm, info), 5);
+        let wins = wm.tree.find_by_name(b"SkirmishGameOptionsMenu.wnd:StaticTextWinsValue").expect("wins");
+        assert_eq!(String::from_utf16_lossy(&crate::client::gadget::static_text_get_text(&wm, wins)), "0");
+        // (upstream's quirk: the row below's honours write their `extra` into this row's first two cells, so China's
+        // and the GLA's item data are 0 by the end; the USA's survives)
+        assert_eq!(lb::get_item_data(&mut wm, &mut h, info, 1, 0), 0);
+        assert_eq!(lb::get_item_data(&mut wm, &mut h, info, 1, 2) as i32, bh::BATTLE_HONOR_CAMPAIGN_USA | bh::BATTLE_HONOR_NOT_GAINED);
         let g = h.skirmish.game.clone().expect("TheSkirmishGameInfo");
         assert!(g.in_game && !g.in_progress);
         assert_eq!(g.slots[0].state, slot_state::PLAYER);
@@ -1738,11 +2017,32 @@ MultiplayerStartingMoneyChoice\n Value = 20000\nEnd\n";
         // the module's other entry points: no disc, the cancel, the tooltip without its images, the load screen's labels
         h.skirmish.button_pushed = false;
         h.first_cd_present = false;
+        // (#157) the insert-disc prompt: *OK* without the disc keeps it open (no start); with it, starts and closes;
+        // a second prompt's *Cancel* clears `buttonPushed` and closes
+        let newest = |wm: &GameWindowManager, name: &str| {
+            let full = format!("MessageBox.wnd:{name}");
+            (0..wm.tree.windows.len()).rev().find(|&i| wm.tree.windows[i].inst.decorated_name_string == full.as_bytes() && wm.tree.windows[i].status & win_status::DESTROYED == 0).unwrap_or_else(|| panic!("{name}"))
+        };
         check_for_cd_at_game_start(&mut wm, &mut h);
-        assert!(h.untranslated.iter().any(|f| f.starts_with(b"ExMessageBoxOkCancel")));
+        let parent = newest(&wm, "MessageBoxParent");
+        assert!(matches!(wm.ext[parent].user, UserData::ExMessageBox(_)));
+        let (ok, cancel) = (newest(&wm, "ButtonOk"), newest(&wm, "ButtonCancel"));
+        assert!(!hidden(&wm, ok) && !hidden(&wm, cancel) && hidden(&wm, newest(&wm, "ButtonNo")));
+        let before = h.requests.len();
+        click(&mut wm, &mut h, ok);
+        let gone = |wm: &GameWindowManager, w: WinId| wm.tree.windows[w].status & win_status::DESTROYED != 0;
+        assert!(!gone(&wm, parent) && h.requests.len() == before, "the box stays without the disc");
+        h.first_cd_present = true;
+        click(&mut wm, &mut h, ok);
+        assert!(gone(&wm, parent), "the box closes");
+        assert!(matches!(h.requests.last(), Some(ShellRequest::StartSkirmish { .. })), "{:?}", h.requests.last());
+        h.first_cd_present = false;
         h.skirmish.button_pushed = true;
-        cancel_start_because_of_no_cd(&mut h);
-        assert!(!h.skirmish.button_pushed);
+        check_for_cd_at_game_start(&mut wm, &mut h);
+        let (parent, cancel) = (newest(&wm, "MessageBoxParent"), newest(&wm, "ButtonCancel"));
+        click(&mut wm, &mut h, cancel);
+        assert!(!h.skirmish.button_pushed && gone(&wm, parent));
+        assert!(wm.undefined.is_none(), "{:?}", wm.undefined);
         let mw = h.skirmish.window_map.expect("map window");
         map_selector_tooltip(&mut wm, &mut h, mw, short_to_long(mx + 1, my + 1));
         assert!(wm.mouse.is_empty);

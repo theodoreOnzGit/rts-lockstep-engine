@@ -277,6 +277,10 @@ pub trait ShellHost: GuiHost {
     /// A message box's callback (`GameWinMsgBoxFunc`), by the name its caller gave
     /// ([`crate::client::message_box::MessageBoxData`]).
     fn message_box_callback(&mut self, _wm: &mut GameWindowManager, _func: &[u8]) {}
+    /// (#157) An extended message box's callback `func(userData)` (`MessageBoxFunc`): whether the box closes.
+    fn ex_message_box_callback(&mut self, _wm: &mut GameWindowManager, _func: &[u8], _user_data: &crate::client::extended_message_box::ExUserData) -> crate::client::extended_message_box::MessageBoxReturn {
+        crate::client::extended_message_box::MessageBoxReturn::Close
+    }
 }
 
 /// The WND files and what the reader needs, for a [`ShellHost`]'s [`ShellHost::create_layout`] and

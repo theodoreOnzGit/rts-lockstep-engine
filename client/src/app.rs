@@ -4107,8 +4107,35 @@ fn shell_ui(
         _ => Default::default(),
     };
     let art = g.models.art.as_ref();
+    // (#157) the map previews the file system has served since the shell was given its data
+    if let (Some(ui), Some(a)) = (st.ui.as_mut(), art) {
+        if !ui.previews_pending.is_empty() {
+            ui.load_map_previews(&a.fs);
+        }
+    }
     let textures = &mut st.textures;
-    spawn_quads(&mut commands, root, &quads, [0.0, 0.0, lw, lh], placement.scale, true, |n| art.and_then(|a| mapped_texture(a, textures, &collection, &mut images, n)));
+    let previews = st.ui.as_ref().map(|u| (&u.gui.map_preview_images, &u.gui.user_data));
+    spawn_quads(&mut commands, root, &quads, [0.0, 0.0, lw, lh], placement.scale, true, |n| {
+        art.and_then(|a| mapped_texture(a, textures, &collection, &mut images, n)).or_else(|| previews.and_then(|(p, u)| preview_texture(textures, p, u, &mut images, n)))
+    });
+}
+
+/// (#157) A map preview `getMapPreviewImage` made (`ShellGui::map_preview_images`): its texture read from the copy in
+/// the user data folder's `MapPreviews/` (upstream's `GameFileClass` looks for a `.tga` there last,
+/// W3DFileSystem.cpp:314-326), made once into `cache`, and the image's rectangle of it. GUI glue (needs the app's image
+/// assets).
+fn preview_texture(cache: &mut UiTextures, previews: &[rts_lockstep_engine::client::image::Image], user: &rts_lockstep_engine::client::user_preferences::MemoryUserData, images: &mut Assets<Image>, name: &[u8]) -> Option<(Handle<Image>, Rect)> {
+    let img = previews.iter().find(|i| i.name == name)?;
+    let mut key = user.path.clone();
+    key.extend_from_slice(b"MapPreviews/");
+    key.extend_from_slice(&img.filename);
+    if !cache.contains_key(&key) {
+        let entry = user.files.get(&key).and_then(|b| rts_lockstep_engine::formats::w3d::render::decode_targa(b).ok()).map(|t| (images.add(crate::model::texture_image(&t, Some((true, true)))), (t.width, t.height)));
+        cache.insert(key.clone(), entry);
+    }
+    let (h, (w, ht)) = cache.get(&key)?.clone()?;
+    let (w, ht) = (w as f32, ht as f32);
+    Some((h, Rect::new(img.uv[0] * w + 0.5, img.uv[1] * ht + 0.5, img.uv[2] * w - 0.5, img.uv[3] * ht - 0.5)))
 }
 
 /// GUI glue (needs a window): a pointer event over the shell, from the screen (logical pixels) through

@@ -124,6 +124,33 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#157 (2026-11-12, GitHub #157, #92, #94): the skirmish battle honours, the map preview, the insert-disc prompt and
+three tooltips.**
+- **Translated** (engine crate):
+  - `client::battle_honors`: SkirmishBattleHonors.cpp whole (`SkirmishStats.ini` over the translated
+    `UserPreferences`, read and written in the user data folder, on disk or in OPFS); PopupPlayerInfo.cpp's
+    `ResetBattleHonorInsertion`, `InsertBattleHonor`, `BattleHonorTooltip` (#92 called their file BattleHonors.cpp:
+    the release has none); BattleHonors.h's bits.
+  - `client::skirmish_game_options::populate_skirmish_battle_honors` (SkirmishGameOptionsMenu.cpp:1788-2167); the
+    init's wins and *Reset* now read and clear the file.
+  - `client::score_screen`: `isSlotLocalAlly`, `updateSkirmishBattleHonors`, `updateChallengeMedals` and
+    `populatePlayerInfo`'s skirmish block (ScoreScreen.cpp:1104-1251, 1333-1383, 1590-1634); the campaign's completion
+    writes the file. `HonorsCall` is removed.
+  - `client::map_util`: `copyFromBigToDir` and `getMapPreviewImage`'s new image (MapUtil.cpp:1096-1228);
+    `client::w3d_map_preview`: `W3DDrawMapPreview`, `drawSkinnyBorder` (W3DControlBar.cpp:693-913), dispatched by the
+    shell's host for both map windows.
+  - `client::extended_message_box`: ExtendedMessageBox.cpp whole; the insert-disc prompt (`CheckForCDAtGameStart`,
+    MainMenu.cpp's `checkCDBeforeCampaign`) with its `checkCDCallback` / `cancelStartBecauseOfNoCD`.
+  - `client::lobby_utils`: LobbyUtils.cpp's `playerTemplateComboBoxTooltip`, `playerTemplateListBoxTooltip`.
+- **Client:** the maps' `.tga` files read from the archives (`ShellUi::load_map_previews`, retried while the browser
+  fetches them); a preview's texture is the copy in the shell's `MapPreviews/` (`preview_texture`).
+- **Defect fixed:** `MapSelectorTooltip` and `mapListTooltipFunc` sign-extended the mouse's coordinates;
+  `LOLONGTOSHORT` masks.
+- **Differential tests:** `differential_battle_honors` (20,000 cases, 0 mismatches after one wrapper fix; plants
+  9511-9528, 9537, 9538 caught, 9526 replaced as unobservable) and `differential_map_preview` (20,000 cases, 0
+  mismatches; plants 9529-9536, 9539, 9540 caught after the generator was given aspect ties). Details in the tests'
+  docs.
+
 **#117 (2026-11-11, GitHub #117): `TheMouse`'s cursor shown; `doQuickVictory`'s `closeWindows` reaches the client; the
 client's quiet flag silences the radar edge sounds.**
 - **Translated** (engine crate): `client::mouse`: Mouse.cpp's cursor definitions (`CursorInfo`, the `MouseCursor` and
@@ -337,10 +364,12 @@ client's quiet flag silences the radar edge sounds.**
   `MainMenuUpdate` and `SaveLoadMenuUpdate` now read `DontShowMainMenu` / `ReplayWasPressed`
   (`MenuHost::score_screen_globals`). `ScoreKeeper::friend_set_totals` (tests). `shell_gui`: the five lexicon entries,
   `synthetic::score_screen_wnd`, the `ScoreScreenShow` group, a plain `PopupReplay.wnd`.
-- **Not translated (recorded, issue drafts):** the internet branch's stats report and `updateMPBattleHonors`; the
+- **Not translated (recorded, issue drafts):** the internet branch's stats report and `updateMPBattleHonors`; ~~the
   skirmish tail's `SkirmishBattleHonors` update (`updateSkirmishBattleHonors`, `updateChallengeMedals`,
   `isSlotLocalAlly`, `CheckForApocalypse`: one `HonorsCall::SkirmishResult` recorded, #92); the campaign's completion
-  is translated as its `SkirmishBattleHonors` calls, recorded, nothing written (#92); the buddy and chat calls
+  is translated as its `SkirmishBattleHonors` calls, recorded, nothing written (#92);~~ **Corrected 2026-11-12,
+  #157:** the skirmish tail and the campaign's completion are translated and write `SkirmishStats.ini` (the #157
+  entry); `CheckForApocalypse` is unused upstream (the tail calls `findTemplate` itself); the buddy and chat calls
   (`TheLAN`, `TheGameSpyInfo` are `NULL` in the client); ~~PopupReplay.cpp~~ **Corrected 2026-11-10 (#98):**
   PopupReplay.cpp is translated (the #98 entry above).
 - **Client:** `Flow` watches a skirmish too and keeps the World that played (`Flow::check_score_screen`,
@@ -369,7 +398,8 @@ client's quiet flag silences the radar edge sounds.**
 
 **#89 part 1 (2026-11-10, GitHub #89): the skirmish game options screen and its map picker.**
 - **Translated** (engine crate, plain Rust):
-  - `client::skirmish_game_options` (SkirmishGameOptionsMenu.cpp, whole but `populateSkirmishBattleHonors`): the
+  - `client::skirmish_game_options` (SkirmishGameOptionsMenu.cpp, whole but `populateSkirmishBattleHonors`, ~~a gap~~
+    **corrected 2026-11-12, #157:** translated since): the
     statics and `TheSkirmishGameInfo`, `SkirmishPreferences` (every method) over translated `UserPreferences` readers,
     `getNextSelectablePlayer`, `setFPSTextBox`, `reallyDoStart`, the CD check's `CheckForCDAtGameStart` /
     `cancelStartBecauseOfNoCD`, `startPressed`, `MapSelectorTooltip`, `positionStartSpotControls`,
@@ -413,9 +443,11 @@ client's quiet flag silences the radar edge sounds.**
   translation; then 20,000 cases, 107,919 maps, 32,514 rows, **0 mismatches**. Plants 4 of 4 caught: 8901 (exact-case
   order) 847 cases, 8902 (selection without case) 713, 8903 (red-yellow star off by one) 2,417, 8904 (`>` for `>=`)
   358. differential_wm, differential_wnd, differential_wt and differential_save_list rerun: pass.
-- **Gaps (issue drafts):** `populateSkirmishBattleHonors` and the battle honours file; ~~the preference files are kept in
-  memory;~~ **Corrected 2026-11-10 (#89):** the preference files are read and written (#93, the entry above); the preview image's copy out of the archive and its draw; the insert-disc prompt; three tooltips
-  (LobbyUtils.cpp, BattleHonors.cpp). GameSpy and LAN screens are not part of this.
+- **Gaps (issue drafts):** ~~`populateSkirmishBattleHonors` and the battle honours file~~; ~~the preference files are kept in
+  memory;~~ **Corrected 2026-11-10 (#89):** the preference files are read and written (#93, the entry above); ~~the preview image's copy out of the archive and its draw; the insert-disc prompt; three tooltips
+  (LobbyUtils.cpp, BattleHonors.cpp)~~ **corrected 2026-11-12, #157:** the honours, the preview's copy and draw, the
+  prompt and the three tooltips (LobbyUtils.cpp; PopupPlayerInfo.cpp, not a BattleHonors.cpp) are translated (the #157
+  entry). GameSpy and LAN screens are not part of this.
 - **Gates:** lib 1112 passed (1105 before, 7 new); client 54 passed (53 before, 1 new); clippy (lib) clean (the two
   enums carrying a `GameInfo` box it); web build ok; gate (a) PASS, last CRC 0bf44067 (unchanged).
 
@@ -604,7 +636,7 @@ client's quiet flag silences the radar edge sounds.**
 - **Gaps, recorded (issues drafted):** ~~the window transitions (`GameWindowTransitions*.cpp`, `WindowTransitions.ini`:
   without them the difficulty panel is never shown by the menu, so the campaign path is reached only by its messages),
   the animate window manager,~~ (**corrected 2026-11-10 (#77):** both translated, see #77's entry) the shell menu schemes, the shell map, Bink video, the online / GameSpy / LAN / patch
-  buttons' work, `ExMessageBoxOkCancel` (insert-disc prompt), the screens the menu pushes (~~save/load,~~ skirmish, replay,
+  buttons' work, ~~`ExMessageBoxOkCancel` (insert-disc prompt)~~ (**corrected 2026-11-12, #157:** translated), the screens the menu pushes (~~save/load,~~ skirmish, replay,
   credits, LAN lobby, options, challenge: they load, their callbacks are not translated; **corrected 2026-11-10 (#78
   item 3):** the save/load screen's are translated), and drawing the shell.
 - **Predictions vs results:** the stack, the clock and the layouts held as predicted. Missed: the campaign start

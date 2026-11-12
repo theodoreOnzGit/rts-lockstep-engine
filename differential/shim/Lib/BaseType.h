@@ -67,7 +67,10 @@ struct Coord3D { Real x, y, z; void zero( void ) { x = 0.0f; y = 0.0f; z = 0.0f;
 struct ICoord3D { Int x, y, z; void zero( void ) { x = 0; y = 0; z = 0; } };
 struct Region3D { Coord3D lo, hi;
 	/* batch R72 (SpectreGunshipUpdate): BaseType.h lines 437-441 */
-	Bool isInRegionNoZ( const Coord3D *query ) const { return (lo.x < query->x) && (query->x < hi.x) && (lo.y < query->y) && (query->y < hi.y); } };
+	Bool isInRegionNoZ( const Coord3D *query ) const { return (lo.x < query->x) && (query->x < hi.x) && (lo.y < query->y) && (query->y < hi.y); }
+	/* #157 (the map preview): BaseType.h lines 432-433 */
+	Real width( void ) const { return hi.x - lo.x; }
+	Real height( void ) const { return hi.y - lo.y; } };
 struct IRegion3D { ICoord3D lo, hi; };
 struct RGBColor { Real red, green, blue;
 	/* p1w2-globaldata: setFromInt (BaseType.h lines 472-477), called by GlobalData's constructor */

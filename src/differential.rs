@@ -3010,6 +3010,10 @@ extern "C" {
     pub fn ref_replay_list_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// #93: the user preference files (differential/wrap_user_prefs.cpp): the dump's length (-1: too small).
     pub fn ref_user_prefs_run(input: *const c_uchar, len: c_int, dir: *const c_char, out: *mut c_uchar, cap: c_int) -> c_int;
+    /// #157: the skirmish battle honours (differential/wrap_battle_honors.cpp): the dump's length (written up to `cap`).
+    pub fn ref_battle_honors_run(input: *const c_char, dir: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
+    /// #157: the map preview's placement and draw (differential/wrap_map_preview.cpp): the dump's length.
+    pub fn ref_map_preview_run(input: *const c_char, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch S1: GameState (differential/wrap_game_state.cpp): the log's length.
     pub fn ref_gstate_run(cfg: *const c_uint, ops: *const c_uint, n: c_int, strs: *const c_char, nstrs: c_int, out: *mut c_char, cap: c_int) -> c_int;
     /// layer 12 batch M2: GameStateMap (differential/wrap_game_state.cpp): the log's length.

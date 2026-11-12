@@ -4,7 +4,8 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/MapUtil.cpp (WouldMapTransfer, populateMapListboxNoReset,
 //     populateMapListbox, isValidMap, getDefaultMap, getDefaultOfficialMap, isOfficialMap, getMapPreviewImage,
-//     findDrawPositions)
+//     findDrawPositions; #157: copyFromBigToDir)
+//   GeneralsMD/Code/GameEngine/Include/Common/FileSystem.h (MAP_PREVIEW_DIR_PATH)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/MapUtil.h (SUPPLY_TECH_SIZE)
 //
 // Original copyright notice of those files:
@@ -52,10 +53,14 @@
 //! - The item data is a `char *` into the map cache's key; here it is a number the host gives the name
 //!   ([`MapUtilHost::map_list_item`], 0 for `NULL`), turned back by [`MapUtilHost::map_list_name`].
 //! - `TheMapCache->updateCache()` is the host's ([`MapUtilHost::update_map_cache`]).
-//! - `SkirmishBattleHonors` (the `SkirmishStats.ini` file) is the host's ([`MapUtilHost::endurance_medal`]).
+//! - `SkirmishBattleHonors` (the `SkirmishStats.ini` file) is the host's ([`MapUtilHost::endurance_medal`]; #157: the
+//!   shell's host reads the file with the translated `crate::client::battle_honors::SkirmishBattleHonors`).
 //! - `getMapPreviewImage`: the image's name and the collection's lookup are translated; making a new image from the
 //!   map's `.tga` (`doesFileExist`, `copyFromBigToDir` into the user's `MapPreviews` folder, `newInstance(Image)`) is
-//!   the host's ([`MapUtilHost::map_preview_from_file`], recorded as untranslated by the shell's host).
+//!   the host's ([`MapUtilHost::map_preview_from_file`], ~~recorded as untranslated by the shell's host~~ **corrected
+//!   2026-11-12, #157:** translated, [`map_preview_from_file`] and [`copy_from_big_to_dir`] over the host's files
+//!   ([`PreviewFiles`])). Its commented-out tail (an image built from the map file's `MapPreview` chunk,
+//!   `parseMapPreviewChunk`, which returns `FALSE`) is dead upstream: the preview is only ever the map's `.tga`.
 //! - `findDrawPositions`: a float converted to `Int` out of range (an empty extent divides by zero) is undefined in C;
 //!   Rust's `as` saturates (NaN to 0).
 //!
@@ -308,13 +313,69 @@ pub fn get_map_preview_image<H: MapUtilHost>(h: &mut H, map_name: &[u8]) -> Opti
     filename.extend_from_slice(b".tga");
     tga_name.extend_from_slice(b".tga");
     let portable_name = h.real_map_path_to_portable(&name);
-    let temp_name: Vec<u8> = portable_name.iter().map(|&c| if c == b'\\' || c == b':' { b'_' } else { c }).collect();
+    // (plant 9535, differential builds only: the folders' `\` kept)
+    let temp_name: Vec<u8> = portable_name.iter().map(|&c| if (c == b'\\' && !plant(9535)) || c == b':' { b'_' } else { c }).collect();
     let mut name = temp_name.clone();
     name.extend_from_slice(b".tga");
     if let Some(image) = h.find_mapped_image(&temp_name) {
         return Some(image);
     }
     h.map_preview_from_file(&tga_name, &name, &temp_name)
+}
+
+/// What `getMapPreviewImage`'s file steps reach: `TheFileSystem` (the archives' map files and the user data folder)
+/// and `TheGlobalData->getPath_UserData()`.
+pub trait PreviewFiles {
+    /// `TheFileSystem->doesFileExist(path)`.
+    fn does_file_exist(&self, path: &[u8]) -> bool;
+    /// `TheFileSystem->openFile(path, READ | BINARY)` and the whole file read (`None`: `NULL`, or a short read).
+    fn read_file(&mut self, path: &[u8]) -> Option<Vec<u8>>;
+    /// `TheFileSystem->openFile(path, WRITE | CREATE | BINARY)` and `write` of every byte: whether it was written.
+    fn write_file(&mut self, path: &[u8], bytes: &[u8]) -> bool;
+    /// `TheFileSystem->createDirectory(dir)`.
+    fn create_directory(&mut self, _dir: &[u8]) {}
+    /// `TheGlobalData->getPath_UserData()`.
+    fn path_user_data(&self) -> Vec<u8>;
+}
+
+/// `MAP_PREVIEW_DIR_PATH` (FileSystem.h): `"%sMapPreviews/"` of the user data folder.
+pub fn map_preview_dir<F: PreviewFiles + ?Sized>(fs: &F) -> Vec<u8> {
+    let mut d = fs.path_user_data();
+    d.extend_from_slice(b"MapPreviews/");
+    d
+}
+
+/// `copyFromBigToDir(infile, outfile)`: the file read whole and written to `outfile`; `false` where upstream throws
+/// `SC_INVALID_DATA` (the source does not open or reads short, the target does not open or writes short).
+pub fn copy_from_big_to_dir<F: PreviewFiles + ?Sized>(fs: &mut F, infile: &[u8], outfile: &[u8]) -> bool {
+    let Some(buffer) = fs.read_file(infile) else { return false };
+    fs.write_file(outfile, &buffer)
+}
+
+/// `getMapPreviewImage`'s tail when the collection has no `temp_name`: without the map's `.tga` (`tga`) nothing;
+/// else the user data folder's `MapPreviews/` made, the `.tga` copied there as `name` (`copyFromBigToDir`), and on
+/// success the new `Image`: named `temp_name`, its file `name`, status none, the whole texture (UV 0..1), a texture
+/// of 128x128. The caller adds it to the collection.
+pub fn map_preview_from_file<F: PreviewFiles + ?Sized>(fs: &mut F, tga: &[u8], name: &[u8], temp_name: &[u8]) -> Option<crate::client::image::Image> {
+    if !fs.does_file_exist(tga) {
+        return None;
+    }
+    let mut map_preview_dir = map_preview_dir(fs);
+    fs.create_directory(&map_preview_dir);
+    map_preview_dir.extend_from_slice(name);
+    // (`try { copyFromBigToDir } catch (...) { success = false; }`)
+    let success = copy_from_big_to_dir(fs, tga, &map_preview_dir);
+    if !success {
+        return None;
+    }
+    let mut image = crate::client::image::Image::new(temp_name);
+    image.filename = name.to_vec();
+    image.status = 0;
+    image.uv = [0.0, 0.0, 1.0, 1.0];
+    // (plant 9536, differential builds only: a texture of 64x64)
+    let t = if plant(9536) { 64 } else { 128 };
+    image.texture_size = (t, t);
+    Some(image)
 }
 
 /// `findDrawPositions(startX, startY, width, height, extent, &ul, &lr)`: where a map of `extent` sits in a
@@ -328,7 +389,9 @@ pub fn find_draw_positions(start_x: i32, start_y: i32, width: i32, height: i32, 
     if ratio_width >= ratio_height {
         let rx = ew / ratio_width;
         let ry = eh / ratio_width;
-        ul = ICoord2D { x: 0, y: ((height as f32 - ry) / 2.0) as i32 };
+        // (plant 9539, differential builds only: the band rounded half up)
+        let band = (height as f32 - ry) / 2.0 + if plant(9539) { 0.5 } else { 0.0 };
+        ul = ICoord2D { x: 0, y: band as i32 };
         lr = ICoord2D { x: rx as i32, y: 0 };
         lr.y = height - ul.y;
     } else {
