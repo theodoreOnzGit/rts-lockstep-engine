@@ -35,7 +35,7 @@
 //! |---|---|---|
 //! | `CHUNK_Radar` | `Radar::xfer` v1 | **Translated whole**: the hidden and forced flags, both object lists (each object's id and colour; a load gives each object its radar data back, `friend_setRadarData`, the World's `on_radar`), the 64 events, the two indices. `loadPostProcess` refreshes the terrain. |
 //! | `CHUNK_TacticalView` | `View::xfer` v1 | **Translated whole**: the angle and the position, into [`TacticalViewSave`]; the application turns its camera to them (upstream's `setAngle`, `lookAt`). |
-//! | `CHUNK_GameClient` | `GameClient::xfer` v3 | ~~**The frame, the drawable table of contents, each drawable's object id and the briefing list translated; each drawable's own data (`Drawable::xfer`: its modules, model condition, animation, tint, ambient sound) read past** by its block's size, as upstream itself skips a drawable of an unknown template. A loaded game's drawables are made new from their objects (the client makes one for every object), so their looks start from their objects' state, not the save's. A save writes the frame, an empty table, no drawables and no briefing lines (upstream's load then leaves each object's drawable as it made it).~~ **Corrected 2026-11-06 (GitHub #59): translated whole.** The frame, the table of contents, each drawable (`Drawable::xfer` v7 with its modules, `client::drawable_save`) and the briefing list. A save writes the client's drawables ([`SaveDrawables`]); a load clears them, then for each saved drawable takes its object's drawable (made, as the object's creation makes it upstream; made again from the saved template when the object's has another, upstream's disguised bomb truck) or a new one without an object, and reads the save into it. A drawable of a template the port has not got is skipped by its size, as upstream. The briefing list is kept as read and written back (the port keeps no briefing list). Without [`SaveDrawables`] (the logic's tests) a save writes no drawables and a load reads them into drawables it then drops. |
+//! | `CHUNK_GameClient` | `GameClient::xfer` v3 | ~~**The frame, the drawable table of contents, each drawable's object id and the briefing list translated; each drawable's own data (`Drawable::xfer`: its modules, model condition, animation, tint, ambient sound) read past** by its block's size, as upstream itself skips a drawable of an unknown template. A loaded game's drawables are made new from their objects (the client makes one for every object), so their looks start from their objects' state, not the save's. A save writes the frame, an empty table, no drawables and no briefing lines (upstream's load then leaves each object's drawable as it made it).~~ **Corrected 2026-11-06 (GitHub #59): translated whole.** The frame, the table of contents, each drawable (`Drawable::xfer` v7 with its modules, `client::drawable_save`) and the briefing list. A save writes the client's drawables ([`SaveDrawables`]); a load clears them, then for each saved drawable takes its object's drawable (made, as the object's creation makes it upstream; made again from the saved template when the object's has another, upstream's disguised bomb truck) or a new one without an object, and reads the save into it. A drawable of a template the port has not got is skipped by its size, as upstream. ~~The briefing list is kept as read and written back (the port keeps no briefing list).~~ **Corrected 2026-11-12, #151:** the briefing list is the client's briefing history (`client::diplomacy::xfer_briefing_list`): a save writes the list the client gives ([`GameClientSave::briefing`]), a load reads it through `UpdateDiplomacyBriefingText` and the client gives it to its history. Without [`SaveDrawables`] (the logic's tests) a save writes no drawables and a load reads them into drawables it then drops. |
 //! | `CHUNK_InGameUI` | `InGameUI::xfer` v3 | **Translated whole** into [`InGameUiSave`] (the named timers and the superweapon timers; a superweapon's special power must exist, as upstream). The port's in-game UI does not show these timers yet, so a load keeps what it read and a save writes it back. |
 //! | `CHUNK_ParticleSystem` | `ParticleSystemManager::xfer` v1 | **The system id counter translated; the systems read past** (`ParticleSystem::xfer` and its particles are not translated): a loaded game's effects start empty. A save writes the counter and no systems. |
 //! | `CHUNK_TerrainVisual` | `W3DTerrainVisual::xfer` v3 | **The World's** (the logic height map and the water grid live in the World: `World::xfer_terrain_visual_part`); a version 3 block's tree and prop buffers are read past here. A save writes version 2. |
@@ -204,7 +204,10 @@ pub struct GameClientSave {
     /// 2026-11-06 (GitHub #59):** the drawables a load skipped because the port has not got their template (their object
     /// is not read: `INVALID_ID`); the others are read into the client's drawables.
     pub drawables_read_past: Vec<(Vec<u8>, ObjectId)>,
-    /// The mission briefing history (`GetBriefingTextList`); a save writes none (the port keeps no briefing list).
+    /// The mission briefing history (`GetBriefingTextList`); ~~a save writes none (the port keeps no briefing list)~~
+    /// **Corrected 2026-11-12, #151:** a save writes the list the caller put here (the client's: the shell's briefing
+    /// history, `crate::client::diplomacy`); a load leaves here the list `UpdateDiplomacyBriefingText` made of what it
+    /// read (`crate::client::diplomacy::xfer_briefing_list`), for the caller to give its briefing history.
     pub briefing: Vec<Vec<u8>>,
 }
 
@@ -682,26 +685,13 @@ impl<'a> SaveHost<'a> {
                 }
             }
         }
+        // (#151) "xfer the in-game mission briefing history list": `theBriefingList` is the client's (the shell's
+        // briefing history, `client::diplomacy`), given to and taken from `briefing`
         let gc = &mut self.client.game_client;
-        if version >= 2 {
-            if saving {
-                let mut n = gc.briefing.len() as i32;
-                xfer.xfer_int(&mut n)?;
-                for b in gc.briefing.iter_mut() {
-                    xfer.xfer_ascii_string(b)?;
-                }
-            } else {
-                let mut n = 0i32;
-                xfer.xfer_int(&mut n)?;
-                gc.briefing.clear();
-                while n > 0 {
-                    n -= 1;
-                    let mut s = Vec::new();
-                    xfer.xfer_ascii_string(&mut s)?;
-                    gc.briefing.push(s);
-                }
-            }
-        }
+        let mut d = crate::client::diplomacy::Diplomacy { briefing_list: std::mem::take(&mut gc.briefing), ..Default::default() };
+        let r = crate::client::diplomacy::xfer_briefing_list(xfer, version, &mut crate::client::diplomacy::BriefingListOnly(&mut d));
+        gc.briefing = d.briefing_list;
+        r?;
         Ok(())
     }
 
@@ -1714,4 +1704,44 @@ GeometryMajorRadius = 5\n GeometryHeight = 5\nEnd\n";
         assert!(g2 == g3, "the loaded drawables save as they were read");
     }
 
+    /// #151, predicted before the run: a client save carries the briefing history it is given (`CHUNK_GameClient`'s
+    /// version-2 list) and a load into a fresh client gives the same list back, in order; a list with a repeated and an
+    /// empty label written by hand loads as `UpdateDiplomacyBriefingText` keeps it (the repeat and the empty one
+    /// dropped); a label over 255 bytes fails the save (`XFER_STRING_ERROR`); version 1 reads and writes nothing.
+    #[test]
+    fn the_briefing_list_round_trips_through_a_save() {
+        use crate::client::diplomacy::{xfer_briefing_list, BriefingListOnly, Diplomacy};
+        use crate::common::xfer_load::XferLoad;
+        use crate::common::xfer_save::XferSave;
+        let list = vec![b"SCRIPT:Brief1".to_vec(), b"SCRIPT:Pop".to_vec(), b"DIALOGEVENT:Speech1Subtitle".to_vec()];
+        let mut a = Client::new(crate::logic::world::gate_scenario::gate_world());
+        a.state.game_client.briefing = list.clone();
+        for _ in 0..5 {
+            a.step();
+        }
+        let bytes = a.save("briefings");
+        let (b, _) = Client::load_into(crate::logic::world::gate_scenario::gate_map_world(), bytes).unwrap_or_else(|e| panic!("the load: {e}"));
+        assert_eq!(b.state.game_client.briefing, list);
+        // a hand-written list: 4 labels, one repeated and one empty
+        let mut x = XferSave::new();
+        x.open(b"b").expect("open");
+        let mut n = 4i32;
+        x.xfer_int(&mut n).expect("count");
+        for l in [&b"A"[..], b"B", b"A", b""] {
+            x.xfer_ascii_string(&mut l.to_vec()).expect("label");
+        }
+        let mut d = Diplomacy { briefing_list: vec![b"OLD".to_vec()], ..Default::default() };
+        let mut load = XferLoad::new(x.bytes().to_vec());
+        load.open(b"b").expect("open");
+        xfer_briefing_list(&mut load, 3, &mut BriefingListOnly(&mut d)).expect("load");
+        assert_eq!(d.briefing_list, vec![b"A".to_vec(), b"B".to_vec()]);
+        let mut d = Diplomacy { briefing_list: vec![vec![b'x'; 256]], ..Default::default() };
+        let mut x = XferSave::new();
+        x.open(b"b").expect("open");
+        assert_eq!(xfer_briefing_list(&mut x, 2, &mut BriefingListOnly(&mut d)), Err(XferStatus::StringError));
+        let mut x = XferSave::new();
+        x.open(b"b").expect("open");
+        xfer_briefing_list(&mut x, 1, &mut BriefingListOnly(&mut d)).expect("version 1");
+        assert!(x.bytes().is_empty());
+    }
 }

@@ -62,8 +62,12 @@
 //! - The calls are made once a frame by the owner of the mouse, in the order the InGameUI queued them
 //!   (`crate::client::in_game_ui_cursor::UiMouseCall::RadiusCursor`), not inside `setGUICommand` and the hints: the
 //!   selection and the pending command are read when the queue is played, the same frame.
-//! - The rest of `InGameUI.ini` is read into [`InGameUiIniSettings`] (so the file reads as upstream reads it); the
-//!   constructor's values of those fields are not translated (zero here), nothing reads them yet.
+//! - The rest of `InGameUI.ini` is read into [`InGameUiIniSettings`] (so the file reads as upstream reads it); ~~the
+//!   constructor's values of those fields are not translated (zero here), nothing reads them yet~~ **Corrected
+//!   2026-11-12, #151:** the constructor's values of the message, military caption and popup fields are translated
+//!   (`InGameUiIniSettings::set_constructor_caption_values`, which [`InGameUiRadiusCursor::default`] applies), and the
+//!   military subtitle and the popup message read them (`client::military_subtitle`, `client::in_game_popup_message`);
+//!   the other fields' constructor values are not translated (zero here), nothing reads them yet.
 //! - The questions on the World are [`RadiusCursorHost`]'s.
 //! - **(#130)** The logic's own decals (delivery decals, the shroud's grid, the gunship's reticles) are
 //!   [`LogicRadiusDecals`]: the same `RadiusDecal` calls, made from the logic's `GridDecal` events.
@@ -396,13 +400,16 @@ pub struct InGameUiRadiusCursor {
 }
 
 impl Default for InGameUiRadiusCursor {
-    /// `InGameUI()`: the templates' defaults, no decal, `RADIUSCURSOR_NONE`.
+    /// `InGameUI()`: the templates' defaults, no decal, `RADIUSCURSOR_NONE`; (#151) the constructor's message, military
+    /// caption and popup values (`InGameUiIniSettings::set_constructor_caption_values`).
     fn default() -> Self {
+        let mut settings = InGameUiIniSettings::default();
+        settings.set_constructor_caption_values();
         InGameUiRadiusCursor {
             radius_cursors: vec![RadiusDecalTemplate::default(); radius_cursor_type::COUNT as usize],
             cur_radius_cursor: ClientRadiusDecal::default(),
             cur_rc_type: radius_cursor_type::NONE,
-            settings: InGameUiIniSettings::default(),
+            settings,
         }
     }
 }

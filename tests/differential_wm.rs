@@ -118,6 +118,26 @@
 //! (predicted 20 to 60: missed, low: a space typed while an entry is attached is rarer than guessed); 4710 **143**
 //! (predicted 100 to 300: held).
 
+//!
+//! # #151: `TheGlobalLanguageData`'s `DefaultWindowFont`
+//!
+//! `winCreate` and `assignDefaultGadgetLook` take the language's `m_defaultWindowFont` when there is language data and
+//! its name is not empty, else Times New Roman 14 (GameWindowManager.cpp:1447, 2915). Each case now starts with an `l`
+//! operation from its own stream (so the operations after it are #74's): `TheGlobalLanguageData` NULL in a quarter of
+//! the cases (the NULL case kept, the shim's), else language data whose font is `Arial Unicode MS`, `Arial`, `Courier
+//! New` or `Times New Roman` (the empty name one time in five), 6 to 20 points, bold or not. The dump adds every
+//! window's font (name, size, bold).
+//!
+//! **Predictions (written before the first run, 2026-11-12):** 0 mismatches over 20,000 cases (the fonts' heights now
+//! vary, which moves list box rows, wraps and the combo box's list; the arithmetic is #70's). Plants: 9421 (`winCreate`
+//! ignores the language) caught in most cases with language data, every window being made by `winCreate`; 9422 (the
+//! gadget look ignores it) caught wherever a gadget is made without a font given, nearly as many.
+//!
+//! **Results (2026-11-12, `WM_CASES=20000`):** **20,000 cases, 719,964 operations compared, 0 mismatches** (20,000 `l`),
+//! as predicted. Plants (20,000 cases each): 9421 **11,958** cases differ, 9422 **11,720** (predicted: most of the
+//! cases with language data, about 12,000: held). The #74 sequences after the `l` are unchanged, so the undefined
+//! stops are #74's kinds.
+
 #![cfg(feature = "differential")]
 
 use rts_lockstep_engine::client::gadget_combo_box::{self as cbx, combo_rt};
@@ -125,6 +145,7 @@ use rts_lockstep_engine::client::gadget_list_box::{self as lbx, glm, listbox_rt,
 use rts_lockstep_engine::client::gadget_slider::{slider_rt, slider_set_position};
 use rts_lockstep_engine::client::gadget_tab_control::{self as tbx, tab_rt};
 use rts_lockstep_engine::client::gadget_text_entry::{self as tex, EntryRt};
+use rts_lockstep_engine::client::global_language::FontDesc;
 use rts_lockstep_engine::client::window_manager::*;
 use rts_lockstep_engine::client::window_script::*;
 use std::collections::BTreeMap;
@@ -231,6 +252,13 @@ fn dump(wm: &GameWindowManager, dd_from: usize) -> String {
         }
         text(&mut o, wm.win_get_text(i));
         let t = &w.inst;
+        // (#151) the window's font
+        match &t.font {
+            Some(f) => {
+                let _ = write!(o, " font {}/{}/{}", String::from_utf8_lossy(&f.name), f.point_size, u8::from(f.bold));
+            }
+            None => o.push_str(" font -"),
+        }
         let _ = writeln!(o, " tx {}/{} {}/{} {}/{}", t.enabled_text.color, t.enabled_text.border_color, t.disabled_text.color, t.disabled_text.border_color, t.hilite_text.color, t.hilite_text.border_color);
         if i >= dd_from {
             o.push_str(" dd");
@@ -500,6 +528,12 @@ fn run_op(wm: &mut GameWindowManager, h: &mut Host, op: &str) {
             let x = w(n(&mut v));
             wm.win_destroy(x);
             wm.update(h);
+        }
+        // (#151) `TheGlobalLanguageData`: NULL, or language data with this `m_defaultWindowFont`
+        "l" => {
+            let has = n(&mut v) != 0;
+            let (name, size, bold) = (n(&mut v), n(&mut v), n(&mut v) != 0);
+            wm.default_window_font = has.then(|| FontDesc { name: LANGUAGE_FONTS[name as usize].as_bytes().to_vec(), size, bold });
         }
         "Y" => {
             let x = n(&mut v) as usize;
@@ -844,10 +878,28 @@ struct Case {
     undefined_op: String,
 }
 
-fn run_rust(r: &mut Rng, len: u64) -> Case {
+/// (#151) The `m_defaultWindowFont` names an `l` operation gives (wrap_wm.cpp's `NAMES`; 0 the empty name, which takes
+/// upstream's fallback as NULL does).
+const LANGUAGE_FONTS: [&str; 5] = ["", "Arial Unicode MS", "Arial", "Courier New", "Times New Roman"];
+
+/// (#151) The case's first operation, `TheGlobalLanguageData`, from its own stream (`case`'s), so that the operations
+/// after it are #74's: NULL in a quarter of the cases (the NULL case kept), else language data whose
+/// `DefaultWindowFont` is one of [`LANGUAGE_FONTS`] (the empty name one time in five), size 6 to 20, bold or not.
+fn gen_language(case: u64) -> String {
+    let mut r = Rng(case.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x151);
+    r.next();
+    if r.chance(1, 4) {
+        return "l 0 0 0 0".into();
+    }
+    let name = if r.chance(1, 5) { 0 } else { 1 + r.below(4) };
+    format!("l 1 {name} {} {}", r.range(6, 20), r.below(2))
+}
+
+fn run_rust(r: &mut Rng, len: u64, case: u64) -> Case {
     let mut wm = GameWindowManager::new((800, 600));
     let mut h = Host::default();
-    let mut ops = gen_tree(r);
+    let mut ops = vec![gen_language(case)];
+    ops.extend(gen_tree(r));
     let mut dumps = Vec::new();
     let mut i = 0;
     let total = ops.len() as u64 + len;
@@ -911,7 +963,7 @@ fn window_manager_and_gadgets_match_upstream() {
     let mut first_bad: Option<String> = None;
     for case in 0..cases {
         let len = 10 + r.below(61);
-        let c = run_rust(&mut r, len);
+        let c = run_rust(&mut r, len, case);
         if let Some(u) = c.undefined {
             *undefined.entry(format!("{u} (at `{}`)", c.undefined_op)).or_default() += 1;
         }

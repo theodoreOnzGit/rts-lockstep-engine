@@ -166,6 +166,14 @@ struct Game {
     /// 30-a-second draw.
     cinematic: rts_lockstep_engine::client::cinematic_text::CinematicText,
     cinematic_clock: f32,
+    /// (#151) `TheInGameUI`'s military subtitle (`rts_lockstep_engine::client::military_subtitle`): made from the logic's
+    /// `ClientEvent::InGameUi(MilitarySubtitle)`, updated and drawn by [`military_subtitle`] 30 times a second (on its
+    /// clock, the seconds not yet given to it).
+    subtitle: rts_lockstep_engine::client::military_subtitle::MilitarySubtitleUi,
+    subtitle_clock: f32,
+    /// (#151) The logic's popup messages (`ClientEvent::InGameUi(PopupMessage)`) and its
+    /// `MSG_CLEAR_INGAME_POPUP_MESSAGE`s (`ClientCall::ClearPopupMessage`, `None`), for the shell's window manager.
+    popups: Vec<Option<rts_lockstep_engine::logic::client_event::InGameUiCall>>,
     /// (#144) The popup's text as the last `populateBuildTooltipLayout(NULL, window)` filled it (the money, power and
     /// general's experience windows), and the bar's fill count it was taken at (`GameUi::popup_fills`).
     window_popup_lines: Option<Vec<String>>,
@@ -183,6 +191,8 @@ struct Game {
     /// (#148) The briefings the logic showed since the shell last took them (`ClientEvent::InGameUi`'s labels), for its
     /// briefing history.
     briefings: Vec<Vec<u8>>,
+    /// (#151) A loaded game's briefing list is in `briefings`: the history is cleared before it is given them.
+    briefings_reset: bool,
     /// (#124) The InGameUI's radius cursor (its templates from `InGameUI.ini`, the current decal), and whether
     /// `InGameUI.ini` is still to be read for it.
     radius: rts_lockstep_engine::client::radius_cursor::InGameUiRadiusCursor,
@@ -266,6 +276,9 @@ impl Game {
             letterbox: Default::default(),
             cinematic: Default::default(),
             cinematic_clock: 0.0,
+            subtitle: Default::default(),
+            subtitle_clock: 0.0,
+            popups: Vec::new(),
             window_popup_lines: None,
             popup_fills_seen: 0,
             client_quiet: false,
@@ -273,6 +286,7 @@ impl Game {
             language: Default::default(),
             language_pending: true,
             briefings: Vec::new(),
+            briefings_reset: false,
             radius: Default::default(),
             in_game_ui_pending: true,
             logic_decals: Default::default(),
@@ -417,7 +431,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
         .add_systems(Update, (radius_decal, logic_decals, world_tooltip).chain().after(show_cursor))
-        .add_systems(Update, (letterbox_bars, cinematic_text).chain().after(world_tooltip))
+        .add_systems(Update, (letterbox_bars, cinematic_text, military_subtitle).chain().after(world_tooltip))
         .run();
 }
 
@@ -619,11 +633,31 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
                     g.cinematic.apply(c, x_resolution, g.language.resolution_font_size_adjustment);
                 }
                 // (#148: `InGameUI::militarySubtitle` and `popupMessage`'s `UpdateDiplomacyBriefingText(label, FALSE)`, for
-                // the shell's briefing history)
+                // the shell's briefing history; #151: `militarySubtitle` itself, which gives the label to the history, on
+                // the client's subtitle; the popup to the shell, whose `popupMessage` gives it to the history)
                 if let rts_lockstep_engine::logic::client_event::ClientEvent::InGameUi(c) = e {
                     use rts_lockstep_engine::logic::client_event::InGameUiCall;
-                    let (InGameUiCall::MilitarySubtitle { label, .. } | InGameUiCall::PopupMessage { message: label, .. }) = c;
-                    g.briefings.push(label.clone());
+                    match c {
+                        InGameUiCall::MilitarySubtitle { label, duration } => {
+                            let world = &g.controls.client.world;
+                            let display = windows.single().map_or((800, 600), |w| (w.width() as i32, w.height() as i32));
+                            let mut h = crate::view::SubtitleHost {
+                                frame: world.frame(),
+                                frozen: world.script_engine.is_time_frozen_script(),
+                                display,
+                                text: &world.statics.game_text,
+                                language: &g.language,
+                                sounds: &mut g.gui_sounds,
+                                briefings: &mut g.briefings,
+                            };
+                            g.subtitle.military_subtitle(&mut h, &g.radius.settings, label, *duration);
+                        }
+                        InGameUiCall::PopupMessage { .. } => g.popups.push(Some(c.clone())),
+                    }
+                }
+                // (#151: the logic's `MSG_CLEAR_INGAME_POPUP_MESSAGE`, GameLogicDispatch.cpp:896, to the shell's popup)
+                if let rts_lockstep_engine::logic::client_event::ClientEvent::Dispatch(rts_lockstep_engine::logic::world::game_logic_dispatch::ClientCall::ClearPopupMessage) = e {
+                    g.popups.push(None);
                 }
             }
             g.controls.frame_tick();
@@ -1239,7 +1273,8 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
         // `InGameUI::preDraw`'s `handleRadiusCursor()`
         radius.handle_radius_cursor(&state, client);
     }
-    if g.in_game_ui_pending {
+    // (#151: `TheGlobalLanguageData` first, whose fonts `InGameUI::init` lays over InGameUI.ini's)
+    if g.in_game_ui_pending && !g.language_pending {
         if let Some(art) = g.models.art.as_ref() {
             let waiting = std::cell::Cell::new(false);
             let open = |p: &[u8]| {
@@ -1258,6 +1293,10 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
                     warn!("the radius cursors: {e}");
                     g.in_game_ui_pending = false;
                 }
+            }
+            // (#151) `InGameUI::init`'s "override INI values with language localized values" (the caption's fonts)
+            if !g.in_game_ui_pending {
+                g.radius.settings.apply_language_fonts(&g.language);
             }
         }
     }
@@ -1977,6 +2016,77 @@ fn letterbox_bars(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<
 #[derive(Component)]
 struct CinematicTextNode;
 
+/// (#151) The military subtitle on screen.
+#[derive(Component)]
+struct SubtitleNode;
+
+/// (#151) GUI glue (needs a window; the caption's typing, timing, place and draw list are
+/// `rts_lockstep_engine::client::military_subtitle`'s, tested there and against the C++; the host is
+/// [`crate::view::SubtitleHost`], tested there): `InGameUI::update`'s military subtitle once an engine frame (30 a second,
+/// on this system's clock; at most 4 a client frame) and `postDraw`'s draw of it: each line at its place in its colour
+/// over a black drop shadow one pixel down and right (`W3DDisplayString::draw`'s `xDrop`, `yDrop` of 1,
+/// W3DDisplayString.cpp:160), in its font's point size (the client draws
+/// in its own font), and the typing block, a filled rectangle. Over the cinematic text (`GlobalZIndex(24)`). A game cleared
+/// (`clearGameData`'s `InGameUI::reset`) removes it.
+fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<SubtitleNode>>) {
+    use rts_lockstep_engine::client::military_subtitle::SubtitleDraw;
+    let Ok(win) = windows.single() else { return };
+    let g = &mut *game;
+    if g.controls.client.world.game_cleared.is_some() {
+        g.subtitle.remove_military_subtitle();
+    }
+    g.subtitle_clock += time.delta_secs();
+    let ticks = (g.subtitle_clock * 30.0) as u32;
+    if ticks == 0 {
+        return;
+    }
+    g.subtitle_clock -= ticks as f32 / 30.0;
+    let world = &g.controls.client.world;
+    let mut h = crate::view::SubtitleHost {
+        frame: world.frame(),
+        frozen: world.script_engine.is_time_frozen_script(),
+        display: (win.width() as i32, win.height() as i32),
+        text: &world.statics.game_text,
+        language: &g.language,
+        sounds: &mut g.gui_sounds,
+        briefings: &mut g.briefings,
+    };
+    let drawn = crate::view::subtitle_frame(&mut g.subtitle, &mut h, &g.radius.settings, ticks);
+    for e in &nodes {
+        commands.entity(e).despawn();
+    }
+    let rgba = |c: i32| Color::srgba_u8((c >> 16) as u8, (c >> 8) as u8, c as u8, (c >> 24) as u8);
+    for d in drawn {
+        match d {
+            SubtitleDraw::Text { x, y, text, font, color, drop_color } => {
+                let text = String::from_utf16_lossy(&text);
+                let size = font.point_size.max(1) as f32;
+                for (dx, c) in [(1.0, drop_color), (0.0, color)] {
+                    commands.spawn((
+                        SubtitleNode,
+                        Text::new(text.clone()),
+                        TextFont { font_size: bevy::text::FontSize::Px(size), ..default() },
+                        TextColor(rgba(c)),
+                        TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() },
+                        Node { position_type: PositionType::Absolute, left: px(x as f32 + dx), top: px(y as f32 + dx), ..default() },
+                        Pickable::IGNORE,
+                        GlobalZIndex(24),
+                    ));
+                }
+            }
+            SubtitleDraw::FillRect { x, y, width, height, color } => {
+                commands.spawn((
+                    SubtitleNode,
+                    Node { position_type: PositionType::Absolute, left: px(x as f32), top: px(y as f32), width: px(width as f32), height: px(height as f32), ..default() },
+                    BackgroundColor(rgba(color)),
+                    Pickable::IGNORE,
+                    GlobalZIndex(24),
+                ));
+            }
+        }
+    }
+}
+
 /// (#146) GUI glue (needs a window; the text, its place and its count are `rts_lockstep_engine::client::cinematic_text`,
 /// tested there and against the C++): `W3DDisplay::draw`'s cinematic text, right after the letterbox and so over it
 /// (`GlobalZIndex(22)`, over the bars' 21). Upstream draws it once a drawn frame, 30 a second; here once a client frame
@@ -2239,6 +2349,10 @@ fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
         g.ui_pending = false;
         return;
     };
+    // (#151) `TheGlobalLanguageData` before the bar's windows (their default font)
+    if g.language_pending {
+        return;
+    }
     // (#78) the mapped images are the shell's, read first ([`load_shell`]), so that both share one collection
     let shared = match &shell.images {
         None => return,
@@ -2247,7 +2361,7 @@ fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
     };
     let world = &g.controls.client.world;
     let side = world.players.get_nth(g.controls.client.player).map(|p| p.side.clone()).unwrap_or_default();
-    match crate::ui::load_game_ui_with(&art.fs, &world.statics.game_text, &side, shared) {
+    match crate::ui::load_game_ui_with(&art.fs, &world.statics.game_text, &side, shared, &g.language) {
         crate::ui::UiBuild::Ready(mut ui) => {
             // (#144) `ControlBar::init`'s `findCommandButton("NonCommand_...")`: the World's buttons
             let client = &g.controls.client;
@@ -2592,7 +2706,8 @@ fn popup_world(g: &Game, time: &Time) -> crate::ui::PopupWorld {
     let w = &g.controls.client.world;
     crate::ui::PopupWorld {
         now_ms: (time.elapsed_secs_f64() * 1000.0) as u32,
-        tooltips_disabled: false,
+        // (#151) the military subtitle's `disableTooltipsUntil`
+        tooltips_disabled: g.subtitle.are_tooltips_disabled(w.frame()),
         game_ending: w.script_engine.is_game_ending(),
         replay_game: w.cuts.game_loop.game_mode == rts_lockstep_engine::common::recorder::game_mode::REPLAY,
         quit_menu_visible: g.controls.client.modes.quit_menu_visible,
@@ -2927,6 +3042,7 @@ fn apply_save_action(
     mut drawn: ResMut<Drawn>,
     mut terrain: ResMut<TerrainState>,
     mut campaigns: NonSendMut<Campaigns>,
+    shell: NonSend<ShellState>,
 ) {
     // (#64 part 2: a save waiting for its map's folder, read from the art's files; once mounted, the load)
     if let Some((name, mut p)) = saves.pending.take() {
@@ -2981,6 +3097,10 @@ fn apply_save_action(
         }
         SaveCmd::Save { name: save_name, description } => {
             let g = &mut *game;
+            // (#151) `GameClient::xfer`'s `GetBriefingTextList()`: the shell's briefing history, with the briefings it has
+            // not yet taken
+            let history = shell.ui.as_ref().map(|u| u.briefing_list());
+            g.save_state.game_client.briefing = crate::saves::briefing_list_for_save(history, &g.briefings, g.briefings_reset);
             // (`View::xfer`: the camera's heading and the point it looks at)
             g.save_state.view.angle = rig.cam.view.get_angle();
             g.save_state.view.position = rig.cam.view.pos;
@@ -3072,6 +3192,9 @@ fn finish_load(
                     g.models.drawables.fx.particles.unique_system_id = particles.unique_system_id;
                     g.base = base;
                     g.save_state = state;
+                    // (#151) the save's briefing list to the shell's history, which `GameClient::xfer`'s load clears first
+                    g.briefings = g.save_state.game_client.briefing.clone();
+                    g.briefings_reset = true;
                     let read_past = g.save_state.read_past.len();
                     // the camera to the save's view (`setAngle`, `lookAt`)
                     **rig = Rig::new(&g.controls.client.world, rig.cam.screen);
@@ -3445,10 +3568,14 @@ fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, tim
     if g.base.is_none() {
         return;
     }
+    // (#151) `TheGlobalLanguageData` is made before the window manager (its windows' default font): `Language.ini` first
+    if g.language_pending {
+        return;
+    }
     let images = images.unwrap_or_default();
     let before = art.fs.local.device.unserved_reads();
     let now = (time.elapsed_secs_f64() * 1000.0) as u32;
-    let loaded = crate::shell::ShellUi::load(&art.fs, &g.controls.client.world.statics.game_text, images, now);
+    let loaded = crate::shell::ShellUi::load(&art.fs, &g.controls.client.world.statics.game_text, images, now, &g.language);
     if art.fs.local.device.unserved_reads() != before {
         return;
     }
@@ -3523,9 +3650,33 @@ fn shell_ui(
     if std::mem::take(&mut g.close_windows_pending) {
         ui.close_windows();
     }
-    // (#148) the logic's briefings into the history
+    // (#148) the logic's briefings into the history; (#151) a loaded game's list replaces it (`GameClient::xfer`'s
+    // `UpdateDiplomacyBriefingText(TheEmptyString, TRUE)`, then each label)
+    if std::mem::take(&mut g.briefings_reset) {
+        ui.clear_briefings();
+    }
     for label in std::mem::take(&mut g.briefings) {
         ui.briefing(&label);
+    }
+    // (#151) the logic's popup messages and their clears, then the popup's calls on the game: its pause
+    // (`setGamePaused`), and its OK's `MSG_CLEAR_INGAME_POPUP_MESSAGE`, sent as the game's own command message
+    for p in std::mem::take(&mut g.popups) {
+        match p {
+            Some(rts_lockstep_engine::logic::client_event::InGameUiCall::PopupMessage { message, x, y, width, pause, pause_music }) => {
+                ui.popup_message(&message, x, y, width, g.radius.settings.popup_message_color, pause, pause_music);
+            }
+            Some(_) => {}
+            None => ui.clear_popup_message(),
+        }
+    }
+    for c in ui.take_popup_calls() {
+        match c {
+            rts_lockstep_engine::client::shell_gui::PopupCall::SetGamePaused { paused, .. } => g.set_game_paused(paused),
+            rts_lockstep_engine::client::shell_gui::PopupCall::ClearMessage => {
+                let player = g.controls.client.player;
+                g.controls.client.world.push_command(rts_lockstep_engine::common::message_types::MSG_CLEAR_INGAME_POPUP_MESSAGE, player, |_| {});
+            }
+        }
     }
     g.client_quiet = ui.client_quiet();
     ui.take_mouse_calls(&mut g.pause.mouse);

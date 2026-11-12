@@ -649,6 +649,10 @@ pub struct GameWindowManager {
     /// (#77) `TheTransitionHandler`, which the manager creates, updates, draws and resets
     /// ([`crate::client::window_transitions`]).
     pub transitions: crate::client::window_transitions::GameWindowTransitionsHandler,
+    /// (#151) `TheGlobalLanguageData`'s `m_defaultWindowFont`, which `winCreate` and `assignDefaultGadgetLook` read
+    /// (GameWindowManager.cpp:1447, 2915); `None` is `TheGlobalLanguageData == NULL`. The game always has its language
+    /// data (the client sets it, `crate::client::global_language`); the differential's NULL case is upstream's fallback.
+    pub default_window_font: Option<crate::client::global_language::FontDesc>,
 }
 
 /// The gadget kinds this translation creates, from the style bits (`createGadget`'s order).
@@ -1463,10 +1467,12 @@ impl GameWindowManager {
 
     /// `winCreate(parent, status, x, y, width, height, system, instData)`: the window's id. The default font
     /// replaces the instance data's (~~`TheGlobalLanguageData` is not modelled: Times New Roman 14~~ **Corrected
-    /// 2026-11-12, #148:** `TheGlobalLanguageData` is modelled, `crate::client::global_language`, but not given to the
+    /// 2026-11-12, #148:** ~~`TheGlobalLanguageData` is modelled, `crate::client::global_language`, but not given to the
     /// window manager: the font is upstream's fallback for no language data, Times New Roman 14, where upstream with its
     /// language data takes `m_defaultWindowFont` (GameWindowManager.cpp:1447; the constructor's `Arial Unicode MS` 12, or
-    /// `Language.ini`'s `DefaultWindowFont`)).
+    /// `Language.ini`'s `DefaultWindowFont`)~~ **Corrected 2026-11-12, #151:** the language's `m_defaultWindowFont`
+    /// ([`GameWindowManager::default_window_font`], GameWindowManager.cpp:1447) when there is language data and its name
+    /// is not empty, else Times New Roman 14: [`GameWindowManager::win_default_font`]).
     #[allow(clippy::too_many_arguments)]
     pub fn win_create<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, system: SystemFunc, inst: Option<WinInstanceData>) -> WinId {
         let id = self.tree.windows.len();
@@ -1497,8 +1503,19 @@ impl GameWindowManager {
         if let Some(i) = inst {
             self.tree.windows[id].inst = i;
         }
-        self.tree.windows[id].inst.font = Some(default_font());
+        self.tree.windows[id].inst.font = Some(self.win_default_font(9421));
         id
+    }
+
+    /// (#151) The default font `winCreate` (GameWindowManager.cpp:1446) and `assignDefaultGadgetLook`
+    /// (GameWindowManager.cpp:2913) set: `if (TheGlobalLanguageData && TheGlobalLanguageData->m_defaultWindowFont.name
+    /// .isNotEmpty())` its `winFindFont(name, size, bold)`, else `winFindFont("Times New Roman", 14, FALSE)`. `plant` is
+    /// the caller's planted bug (the language ignored).
+    pub fn win_default_font(&self, plant: u32) -> GameFont {
+        match &self.default_window_font {
+            Some(f) if !f.name.is_empty() && !crate::logic::modules::plant(plant) => GameFont { name: f.name.clone(), point_size: f.size, bold: f.bold },
+            _ => default_font(),
+        }
     }
 
     /// The gadget part of `gogoGadget*` after `winCreate`: the input and draw callbacks (the image draw with
@@ -2048,7 +2065,8 @@ impl GameWindowManager {
     }
 }
 
-/// `winFindFont("Times New Roman", 14, FALSE)`, the default when no language data gives one.
+/// `winFindFont("Times New Roman", 14, FALSE)`, the default when no language data gives one
+/// ([`GameWindowManager::win_default_font`]).
 pub(crate) fn default_font() -> GameFont {
     GameFont { name: b"Times New Roman".to_vec(), point_size: 14, bold: false }
 }

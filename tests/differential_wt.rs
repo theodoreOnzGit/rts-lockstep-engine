@@ -225,6 +225,13 @@ fn dump(wm: &GameWindowManager, h: &Host, dd_from: usize) -> String {
         }
         text(&mut o, wm.win_get_text(i));
         let t = &w.inst;
+        // (#151) the window's font
+        match &t.font {
+            Some(f) => {
+                let _ = write!(o, " font {}/{}/{}", String::from_utf8_lossy(&f.name), f.point_size, u8::from(f.bold));
+            }
+            None => o.push_str(" font -"),
+        }
         let _ = writeln!(o, " tx {}/{} {}/{} {}/{}", t.enabled_text.color, t.enabled_text.border_color, t.disabled_text.color, t.disabled_text.border_color, t.hilite_text.color, t.hilite_text.border_color);
         if i >= dd_from {
             o.push_str(" dd");

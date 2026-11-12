@@ -3691,4 +3691,17 @@ extern "C" {
     // GitHub #148: Diplomacy.cpp's briefing history and window (UpdateDiplomacyBriefingText, Show/Hide/Reset/
     // ToggleDiplomacy, updateFunc, DiplomacyInput, DiplomacySystem), verbatim (differential/wrap_diplomacy.cpp).
     pub fn ref_diplomacy_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #151: GameClient::xfer's briefing list (version 2), verbatim, on Diplomacy.cpp's cut and the real
+    // XferSave / XferLoad (differential/wrap_diplomacy.cpp, which documents the words).
+    pub fn ref_briefing_xfer_save(labels: *const c_int, n: c_int, version: c_int, path: *const std::os::raw::c_char) -> c_int;
+    pub fn ref_briefing_xfer_load(input: *const c_int, nin: c_int, version: c_int, path: *const std::os::raw::c_char, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #151: InGameUI's military subtitle (militarySubtitle, removeMilitarySubtitle, update's and postDraw's
+    // blocks, the tooltip switch), verbatim (differential/wrap_military_subtitle.cpp, which documents the words).
+    pub fn ref_military_subtitle_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #151: InGameUI::popupMessage, clearPopupMessageData and InGamePopupMessage.cpp's callbacks, verbatim
+    // (differential/wrap_popup_message.cpp, which documents the words).
+    pub fn ref_popup_message_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

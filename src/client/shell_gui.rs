@@ -190,6 +190,101 @@ pub struct ShellGui<W> {
     pub diplomacy: crate::client::diplomacy::Diplomacy,
     pub diplomacy_animate: Option<crate::client::animate_window::AnimateWindowManager>,
     pub diplomacy_calls: Vec<&'static str>,
+    /// (#151) `TheInGameUI`'s popup message and InGamePopupMessage.cpp's statics (`crate::client::in_game_popup_message`),
+    /// and its calls on the game for the owner to make ([`PopupCall`]).
+    pub popup: crate::client::in_game_popup_message::InGamePopupMessage,
+    pub popup_calls: Vec<PopupCall>,
+}
+
+/// (#151) A call of the popup message on the game, for the owner of the game to make.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopupCall {
+    /// `TheGameLogic->setGamePaused(paused, pauseMusic)`.
+    SetGamePaused { paused: bool, pause_music: bool },
+    /// `TheMessageStream->appendMessage(GameMessage::MSG_CLEAR_INGAME_POPUP_MESSAGE)`.
+    ClearMessage,
+}
+
+/// (#151) The client's [`crate::client::in_game_popup_message::PopupMessageHost`] on the shell's window manager: the
+/// layout made from the player's `InGamePopupMessage.wnd`, the text and its measure the shell's, the briefing history
+/// the shell's (`ShellGui::diplomacy_with`); the pause and the clear message queued for the owner
+/// ([`ShellGui::popup_calls`]).
+pub struct ShellPopup<'a, W: WndFiles> {
+    pub wm: &'a mut GameWindowManager,
+    pub gui: &'a mut ShellGui<W>,
+}
+
+impl<W: WndFiles> crate::client::in_game_popup_message::PopupMessageHost for ShellPopup<'_, W> {
+    fn popup(&mut self) -> &mut crate::client::in_game_popup_message::InGamePopupMessage {
+        &mut self.gui.popup
+    }
+    fn fetch(&mut self, label: &[u8]) -> Vec<u16> {
+        self.gui.text(label)
+    }
+    fn update_diplomacy_briefing_text(&mut self, label: &[u8]) {
+        self.gui.diplomacy_with(self.wm, |h| crate::client::diplomacy::update_diplomacy_briefing_text(h, label, false));
+    }
+    fn display_size(&self) -> (i32, i32) {
+        self.wm.display
+    }
+    fn set_game_paused(&mut self, paused: bool, pause_music: bool) {
+        self.gui.popup_calls.push(PopupCall::SetGamePaused { paused, pause_music });
+    }
+    fn win_create_layout(&mut self, file: &[u8]) -> Option<usize> {
+        ShellHost::create_layout(self.gui, self.wm, file)
+    }
+    fn layout_run_init(&mut self, layout: usize) {
+        crate::client::shell::run_layout(self.wm, self.gui, layout, 0, None);
+    }
+    fn layout_destroy(&mut self, layout: usize) {
+        crate::client::shell::destroy_layout(self.wm, layout);
+    }
+    fn name_to_key(&mut self, name: &[u8]) -> i32 {
+        ShellHost::name_to_key(self.gui, name) as i32
+    }
+    fn win_get_window_from_id(&mut self, parent: Option<WinId>, id: i32) -> Option<WinId> {
+        self.wm.win_get_window_from_id(parent, id)
+    }
+    fn win_get_font(&mut self, w: WinId) -> Option<crate::client::window_script::GameFont> {
+        self.wm.tree.windows[w].inst.font.clone()
+    }
+    fn string_size(&mut self, text: &[u16], font: Option<&crate::client::window_script::GameFont>, wrap: i32) -> (i32, i32) {
+        GuiHost::text_size(self.gui, font, text, Some(wrap))
+    }
+    fn static_text_set_text(&mut self, w: WinId, text: &[u16]) {
+        crate::client::gadget::static_text_set_text(self.wm, self.gui, Some(w), text);
+    }
+    fn win_get_size(&mut self, w: WinId) -> (i32, i32) {
+        self.wm.tree.windows[w].size
+    }
+    fn win_set_position(&mut self, w: WinId, x: i32, y: i32) {
+        self.wm.win_set_position(w, x, y);
+    }
+    fn win_set_size(&mut self, w: WinId, width: i32, height: i32) {
+        self.wm.win_set_size(self.gui, w, width, height);
+    }
+    fn win_set_enabled_text_colors(&mut self, w: WinId, color: i32, border_color: i32) {
+        self.wm.win_set_text_colors(w, 0, color, border_color);
+    }
+    fn win_set_modal(&mut self, w: WinId) {
+        self.wm.win_set_modal(Some(w));
+    }
+    fn win_set_focus(&mut self, w: WinId) {
+        self.wm.win_set_focus(self.gui, Some(w));
+    }
+    fn win_hide(&mut self, w: WinId, hide: bool) {
+        self.wm.win_hide(w, hide);
+    }
+    fn win_bring_to_top(&mut self, w: WinId) {
+        self.wm.win_bring_to_top(w);
+    }
+    fn send_selected(&mut self, window: WinId, control: Option<WinId>, control_id: i32) {
+        let d1 = crate::client::window_manager::win_data(control);
+        self.wm.win_send_system_msg(self.gui, Some(window), crate::client::window_manager::ggm::GBM_SELECTED, d1, control_id as u32);
+    }
+    fn append_clear_popup_message(&mut self) {
+        self.gui.popup_calls.push(PopupCall::ClearMessage);
+    }
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -235,6 +330,8 @@ impl<W: WndFiles> ShellGui<W> {
             diplomacy: Default::default(),
             diplomacy_animate: None,
             diplomacy_calls: Vec::new(),
+            popup: Default::default(),
+            popup_calls: Vec::new(),
         }
     }
 
@@ -292,6 +389,18 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
                 let control_id = crate::client::window_manager::data_win(d1).map_or(0, |c| wm.tree.windows[c].id);
                 self.diplomacy_with(wm, |h| crate::client::diplomacy::diplomacy_system(h, msg, control_id, None)).0
             }
+            // (#151) the popup message (`InGamePopupMessage.wnd`): the focus wanted (`*(Bool *)mData2 = TRUE`)
+            b"InGamePopupMessageSystem" => {
+                let control_id = (msg == crate::client::window_manager::ggm::GBM_SELECTED).then(|| crate::client::window_manager::data_win(d1).map(|c| wm.tree.windows[c].id)).flatten();
+                let mut focus = wm.focus_reply;
+                let r = {
+                    let mut h = ShellPopup { wm, gui: self };
+                    let focus_arg = (msg == crate::client::window_manager::gwm::INPUT_FOCUS).then_some((d1 == 1, &mut focus));
+                    crate::client::in_game_popup_message::in_game_popup_message_system(&mut h, msg, control_id, focus_arg)
+                };
+                wm.focus_reply = focus;
+                r
+            }
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -314,6 +423,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ChallengeMenuInput" => cm::challenge_menu_input(wm, self, win, msg, d1, d2),
             // (#148)
             b"DiplomacyInput" => self.diplomacy_with(wm, |h| crate::client::diplomacy::diplomacy_input(h, msg, d1 as u8)).0,
+            // (#151)
+            b"InGamePopupMessageInput" => crate::client::in_game_popup_message::in_game_popup_message_input(&mut ShellPopup { wm, gui: self }, win, msg, d1 as u8, d2 as u8),
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -400,6 +511,8 @@ impl<W: WndFiles> ShellHost for ShellGui<W> {
             b"ChallengeMenuInit" => cm::challenge_menu_init(wm, self, layout),
             b"ChallengeMenuUpdate" => cm::challenge_menu_update(wm, self, layout),
             b"ChallengeMenuShutdown" => cm::challenge_menu_shutdown(wm, self, layout, user),
+            // (#151) the popup message's layout
+            b"InGamePopupMessageInit" => crate::client::in_game_popup_message::in_game_popup_message_init(&mut ShellPopup { wm, gui: self }),
             _ => self.untranslated.push(func.to_vec()),
         }
     }
@@ -1207,6 +1320,17 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         c += &buttons(f, 600, 410, &["ButtonHide"]);
         let parent = win(f, "USER", "DiplomacyParent", (90, 70, 710, 450), false, "    SYSTEMCALLBACK = \"DiplomacySystem\";\n    INPUTCALLBACK = \"DiplomacyInput\";\n", &c);
         layout_file("[None]", "[None]", "[None]", &parent)
+    }
+
+    /// (#151) An `InGamePopupMessage.wnd` (the popup message's window, made by `popupMessage`): the hidden parent with
+    /// InGamePopupMessage.cpp's callbacks and its layout init, the static text and the OK button (60x20). Test data, not
+    /// EA's layout.
+    pub fn in_game_popup_message_wnd() -> Vec<u8> {
+        let f = "InGamePopupMessage.wnd";
+        let mut c = win(f, "STATICTEXT", "StaticTextMessage", (2, 2, 196, 40), false, "    STATICTEXTDATA = CENTERED: 0;\n", "");
+        c += &win(f, "PUSHBUTTON", "ButtonOk", (138, 44, 198, 64), false, "", "");
+        let parent = win(f, "USER", "InGamePopupMessageParent", (0, 0, 200, 66), true, "    SYSTEMCALLBACK = \"InGamePopupMessageSystem\";\n    INPUTCALLBACK = \"InGamePopupMessageInput\";\n", &c);
+        layout_file("InGamePopupMessageInit", "[None]", "[None]", &parent)
     }
 
     /// The panels of [`main_menu_wnd`] and their buttons.

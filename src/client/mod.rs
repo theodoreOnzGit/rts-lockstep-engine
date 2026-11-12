@@ -37,6 +37,8 @@ pub mod cinematic_text; // #146: the cinematic text (Display's m_cinematicText, 
 pub mod global_language; // #148: TheGlobalLanguageData (GlobalLanguage.cpp: Language.ini's fonts, adjustFontSize)
 pub mod pick_drawable; // #148: W3DView::pickDrawable's ray cast (RTS3DScene::castRay, the boxes' Cast_Ray, CollisionMath)
 pub mod diplomacy; // #148: the briefing history window (Diplomacy.cpp: UpdateDiplomacyBriefingText, Show/Hide/ToggleDiplomacy)
+pub mod military_subtitle; // #151: InGameUI::militarySubtitle, its update and draw (the typed-out briefing caption)
+pub mod in_game_popup_message; // #151: InGameUI::popupMessage and InGamePopupMessage.cpp (the script popup box)
 pub mod shell_hooks; // #142: TheShellHookNames, SignalUIInteraction, and the owner's single-player exception (#139)
 pub mod place_event;
 pub mod gui_command_xlat;

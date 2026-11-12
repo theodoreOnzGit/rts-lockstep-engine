@@ -307,7 +307,7 @@ impl<T: GameTextFetch> WndHost for Host<'_, T> {
 /// Reads the control bar: the mapped images (`ImageCollection::load(512)`), `Window\ControlBar.wnd`, the schemes, and
 /// the scheme of `side` (`setControlBarSchemeByPlayerTemplate`). Reads only.
 pub fn load_game_ui<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetch, side: &[u8]) -> UiBuild {
-    load_game_ui_with(fs, text, side, None)
+    load_game_ui_with(fs, text, side, None, &Default::default())
 }
 
 /// (#78) What [`load_mapped_images`] found.
@@ -335,7 +335,7 @@ pub fn load_mapped_images<D: LocalDevice>(fs: &FileSystem<D>) -> ImagesBuild {
 
 /// [`load_game_ui`] with (#78) the mapped images already read (the shell's, [`load_mapped_images`]) when given, so the
 /// shell and the bar share one collection, as upstream's windows share `TheMappedImageCollection`.
-pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetch, side: &[u8], shared: Option<Arc<ImageCollection>>) -> UiBuild {
+pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTextFetch, side: &[u8], shared: Option<Arc<ImageCollection>>, language: &rts_lockstep_engine::client::global_language::GlobalLanguage) -> UiBuild {
     let reads = Reads { fs, waiting: std::cell::Cell::new(false) };
     let images = match shared {
         Some(i) => i,
@@ -357,6 +357,8 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         return UiBuild::Missing(format!("the control bar schemes did not load: {e:?}"));
     }
     let mut wm = GameWindowManager::new(LAYOUT);
+    // (#151) `TheGlobalLanguageData`'s `DefaultWindowFont`, every window's default font (GameWindowManager.cpp:1447)
+    wm.default_window_font = Some(language.default_window_font.clone());
     let mut host = Host { keys: BTreeMap::new(), images: &images, text };
     if let Err(e) = wm.win_create_from_script(&mut WindowScript::new(), b"ControlBar.wnd", &wnd, &mut host, &mut NoGuiHost) {
         return UiBuild::Missing(format!("ControlBar.wnd did not read: {e:?}"));
@@ -625,7 +627,8 @@ pub struct BarState {
 pub struct PopupWorld {
     /// `timeGetTime()`: the client's clock in milliseconds.
     pub now_ms: u32,
-    /// `TheInGameUI->areTooltipsDisabled()` (the client never disables them: #138's gaps).
+    /// `TheInGameUI->areTooltipsDisabled()` (~~the client never disables them: #138's gaps~~ **corrected 2026-11-12,
+    /// #151:** the military subtitle disables them until its end, `rts_lockstep_engine::client::military_subtitle`).
     pub tooltips_disabled: bool,
     /// `TheScriptEngine->isGameEnding()`, the World's.
     pub game_ending: bool,

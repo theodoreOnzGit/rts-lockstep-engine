@@ -340,8 +340,12 @@ fn gen_case(g: &mut Gen) -> Vec<i32> {
     v
 }
 
+/// (#151) The two tests share wrap_diplomacy.cpp's statics (`theBriefingList`, the window's): one at a time.
+static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn the_briefing_history_matches_upstream() {
+    let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let cases: u64 = std::env::var("DIPLOMACY_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
     let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
     let mut g = Gen::new(0x148_0170);
@@ -366,6 +370,208 @@ fn the_briefing_history_matches_upstream() {
         whole.report();
     } else {
         whole.finish();
+    }
+    assert!(!planted, "a planted run: see the MEASURED line (a mismatch is the plant caught)");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// #151: GameClient::xfer's briefing list
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// wrap_diplomacy.cpp's `long_label`: Diplomacy's nine labels, then one of 255 bytes and one of 256.
+fn long_label(i: i32) -> Vec<u8> {
+    match i {
+        0..=8 => LABELS[i as usize].to_vec(),
+        9 => vec![b'L'; 255],
+        _ => vec![b'L'; 256],
+    }
+}
+
+fn fnv_ascii(a: &[u8]) -> i32 {
+    let mut h: u32 = 2166136261;
+    for &b in a {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(16777619);
+    }
+    h as i32
+}
+
+/// A status as the wrapper gives it: 0, or the `XferStatus` + 1.
+fn status(r: Result<(), rts_lockstep_engine::common::xfer::XferStatus>) -> i32 {
+    match r {
+        Ok(()) => 0,
+        Err(e) => e as i32 + 1,
+    }
+}
+
+fn xfer_path(kind: &str) -> String {
+    format!("{}/briefing_xfer_{kind}_{}.bin", std::env::temp_dir().display(), std::process::id())
+}
+
+/// A save: `labels` (indices of [`long_label`]) as the list, at `version`: the status and the bytes. Rust's, then C++'s.
+fn save_both(labels: &[i32], version: i32) -> ((i32, Vec<u8>), (i32, Vec<u8>)) {
+    use rts_lockstep_engine::common::xfer::Xfer;
+    let mut d = Diplomacy { briefing_list: labels.iter().map(|&i| long_label(i % 11)).collect(), ..Default::default() };
+    let mut x = rts_lockstep_engine::common::xfer_save::XferSave::new();
+    let st = match x.open(b"briefing") {
+        Ok(()) => status(xfer_briefing_list(&mut x, version as u8, &mut BriefingListOnly(&mut d))),
+        Err(e) => e as i32 + 1,
+    };
+    let rust = (st, x.bytes().to_vec());
+    let path = xfer_path("save");
+    let cpath = std::ffi::CString::new(path.clone()).expect("path");
+    let cst = unsafe { cpp::ref_briefing_xfer_save(labels.as_ptr(), labels.len() as i32, version, cpath.as_ptr()) };
+    let bytes = std::fs::read(&path).unwrap_or_default();
+    let _ = std::fs::remove_file(&path);
+    (rust, (cst, bytes))
+}
+
+/// A load of `bytes` at `version` after `pre` ([the layout has ListboxSolo, ShowDiplomacy first, the count, the labels]):
+/// the status, the calls the load made, and the list.
+fn load_both(pre: &[i32], bytes: &[u8], version: i32) -> (Vec<i32>, Vec<i32>) {
+    use rts_lockstep_engine::common::xfer::Xfer;
+    let mut m = Model {
+        d: Diplomacy::default(),
+        keys: NAMES.iter().map(|n| n.as_bytes().to_vec()).collect(),
+        wins: vec![Win::default(); 8],
+        made: false,
+        has_listbox: pre[0] != 0,
+        anim_left: 0,
+        anim_reverse: false,
+        out: Vec::new(),
+    };
+    m.d.game.message_colors = [0xFFFF_FFFFu32 as i32, 0xFFB4_B4B4u32 as i32];
+    if pre[1] != 0 {
+        show_diplomacy(&mut m, true);
+    }
+    for &l in &pre[3..3 + pre[2] as usize] {
+        update_diplomacy_briefing_text(&mut m, &long_label(l % 9), false);
+    }
+    m.out.clear();
+    let mut x = rts_lockstep_engine::common::xfer_load::XferLoad::new(bytes.to_vec());
+    let st = match x.open(b"briefing") {
+        Ok(()) => status(xfer_briefing_list(&mut x, version as u8, &mut m)),
+        Err(e) => e as i32 + 1,
+    };
+    let mut rust = vec![st];
+    rust.append(&mut m.out);
+    rust.extend([100, m.d.briefing_list.len() as i32]);
+    rust.extend(m.d.briefing_list.iter().map(|l| fnv_ascii(l)));
+    let path = xfer_path("load");
+    std::fs::write(&path, bytes).expect("write the save");
+    let cpath = std::ffi::CString::new(path.clone()).expect("path");
+    let mut out = vec![0i32; 100_000];
+    let n = unsafe { cpp::ref_briefing_xfer_load(pre.as_ptr(), pre.len() as i32, version, cpath.as_ptr(), out.as_mut_ptr(), out.len() as i32) };
+    let _ = std::fs::remove_file(&path);
+    out.truncate(n as usize);
+    (rust, out)
+}
+
+/// #151: `GameClient::xfer`'s briefing list (`client::diplomacy::xfer_briefing_list`) against GameClient.cpp's own block,
+/// cut verbatim, on Diplomacy.cpp's cut and the real `XferSave` / `XferLoad`.
+///
+/// # Method
+///
+/// Each sequence is a save and a load. The save: a list of 0 to 12 labels (Diplomacy's nine, repeats kept, and one time
+/// in twenty a 255- or 256-byte one, which `XferSave` refuses: `XFER_STRING_ERROR`) at version 1, 2 or 3; compared, the
+/// status and the file's bytes. The load: the bytes of a random list's save, or of a hand-made file (a count from -3 to
+/// 15, labels of any bytes, NUL among them, of 0 to 40 bytes, the file sometimes cut short), into a briefing history
+/// whose layout has the solo list box or not, shown first or not, holding 0 to 4 labels already; compared, the status,
+/// every call the load made on the window (the list box's reset and entries, as `ref_diplomacy_seq` records them) and the
+/// list after it.
+///
+/// # Predictions (written before the first run, 2026-11-12)
+///
+/// - 0 mismatches over 20,000 sequences: a count and strings on both sides, through code already compared (#148).
+/// - Plants 9423-9425 all caught: 9423 (the save's count at most 1) by every version-2 save of two labels or more, about
+///   half the sequences; 9424 (the load does not clear) by every load into a history holding labels, about 4 in 5 of
+///   them; 9425 (the load adds without `UpdateDiplomacyBriefingText`) by every load of an empty or repeated label, and
+///   by a shown window (no entry added), about half.
+///
+/// # Results (2026-11-12, `BRIEFING_CASES=20000`, the default)
+///
+/// - First run: 20,000 sequences, **0 mismatches** in the saves and in the loads, as predicted. 1,816 saves refused (a
+///   256-byte label: `XFER_STRING_ERROR`), 4,298 loads that stopped (a file cut short: `XFER_READ_ERROR`), about 29,000
+///   list box entries added by loads into a shown window.
+/// - Plants, sequences that differ of 20,000: 9423 **11,294** saves (predicted about half: held); 9424 **12,586** loads
+///   (predicted about 4 in 5: **missed, low**, 63 %: a load that stops on its count, or of version 1, reads before the
+///   clear or not at all); 9425 **9,771** loads (predicted about half: held). **3 of 3 caught.**
+///
+/// # Planted bugs
+///
+/// | id | planted bug |
+/// |---|---|
+/// | 9423 | the save writes a count of at most 1 |
+/// | 9424 | the load does not clear the list first |
+/// | 9425 | the load pushes each label without `UpdateDiplomacyBriefingText` |
+#[test]
+fn the_briefing_list_xfer_matches_upstream() {
+    let _lock = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let cases: u64 = std::env::var("BRIEFING_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20000);
+    let planted = std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0;
+    let mut g = Gen::new(0x151_0002);
+    let mut saves = Check::new("the briefing list's save");
+    let mut loads = Check::new("the briefing list's load");
+    let (mut errors, mut load_errors, mut entries) = (0u64, 0u64, 0u64);
+    for i in 0..cases {
+        let version = 1 + g.below(3) as i32;
+        let n = g.below(13) as usize;
+        let labels: Vec<i32> = (0..n).map(|_| if g.below(20) == 0 { 9 + g.below(2) as i32 } else { g.below(9) as i32 }).collect();
+        let (r, c) = save_both(&labels, version);
+        if r.0 != 0 {
+            errors += 1;
+        }
+        if r != c && !planted {
+            println!("sequence {i} save differs: rust {r:?} c++ {c:?}");
+        }
+        saves.eq(r.clone(), c, || format!("sequence {i}: save {labels:?} at version {version}"));
+        // the load's file: the save's own bytes, or a hand-made one
+        let bytes = if g.below(2) == 0 && r.0 == 0 {
+            r.1
+        } else {
+            let mut b = Vec::new();
+            let count = g.below(19) as i32 - 3;
+            b.extend_from_slice(&count.to_le_bytes());
+            for _ in 0..count.max(0) {
+                let len = g.below(41) as usize;
+                b.push(len as u8);
+                for _ in 0..len {
+                    b.push(match g.below(10) {
+                        0 => 0,
+                        1 => 0x80 + g.below(128) as u8,
+                        _ => b'A' + g.below(4) as u8,
+                    });
+                }
+            }
+            if g.below(8) == 0 && !b.is_empty() {
+                let cut = g.below(b.len() as u32) as usize;
+                b.truncate(cut);
+            }
+            b
+        };
+        let pre_count = g.below(5) as i32;
+        let mut pre = vec![i32::from(g.below(5) != 0), i32::from(g.below(2) == 0), pre_count];
+        pre.extend((0..pre_count).map(|_| g.below(9) as i32));
+        let load_version = if g.below(10) == 0 { 1 } else { version.max(2) };
+        let (r, c) = load_both(&pre, &bytes, load_version);
+        if r[0] != 0 {
+            load_errors += 1;
+        }
+        entries += r.iter().filter(|&&w| w == 4).count() as u64;
+        if r != c && !planted {
+            let k = r.iter().zip(&c).position(|(a, b)| a != b).unwrap_or(r.len().min(c.len()));
+            println!("sequence {i} load first difference at word {k}: rust {:?} c++ {:?}", &r[k.saturating_sub(4)..(k + 8).min(r.len())], &c[k.saturating_sub(4).min(c.len())..(k + 8).min(c.len())]);
+        }
+        loads.eq(r, c, || format!("sequence {i}: load of {bytes:?} at version {load_version} after {pre:?}"));
+    }
+    println!("{cases} sequences: {errors} saves refused, {load_errors} loads that stopped, about {entries} list box entries added by loads");
+    if planted {
+        let a = saves.report();
+        let b = loads.report();
+        println!("planted: {a} saves and {b} loads differ");
+    } else {
+        saves.finish();
+        loads.finish();
     }
     assert!(!planted, "a planted run: see the MEASURED line (a mismatch is the plant caught)");
 }

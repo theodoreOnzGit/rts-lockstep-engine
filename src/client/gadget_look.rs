@@ -153,8 +153,10 @@ fn text_colors(wm: &mut GameWindowManager, w: WinId) {
 
 /// `assignDefaultGadgetLook(gadget, defaultFont, assignVisual)`.
 pub fn assign_default_gadget_look<H: GuiHost>(wm: &mut GameWindowManager, h: &mut H, w: WinId, font: Option<GameFont>, visual: bool) {
-    // the font: the one given, else (no language data here) Times New Roman 14
-    wm.win_set_font(w, Some(font.unwrap_or_else(crate::client::window_manager::default_font)));
+    // the font: the one given, else ~~(no language data here) Times New Roman 14~~ (corrected 2026-11-12, #151) the
+    // language's `m_defaultWindowFont`, or Times New Roman 14 without one (`GameWindowManager::win_default_font`)
+    let font = font.unwrap_or_else(|| wm.win_default_font(9422));
+    wm.win_set_font(w, Some(font));
     if !visual {
         return;
     }

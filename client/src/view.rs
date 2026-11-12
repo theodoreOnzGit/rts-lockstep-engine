@@ -195,9 +195,110 @@ pub fn cinematic_frame(c: &mut rts_lockstep_engine::client::cinematic_text::Cine
     (drawn, column_shown)
 }
 
+/// (#151) The military subtitle's host in the client (`rts_lockstep_engine::client::military_subtitle`): the World's frame
+/// and its scripts' frozen time, the game's text, the display's size, `TheGlobalLanguageData`, and the fonts measured as a
+/// monospaced font measures (`DisplayString::getSize`: each unit 0.6 of the point size wide, the line the point size
+/// high; the client draws in its own font, not the game's). The typing sound joins the frame's GUI sounds; the label
+/// joins the briefings for the shell's history.
+pub struct SubtitleHost<'a> {
+    pub frame: u32,
+    pub frozen: bool,
+    pub display: (i32, i32),
+    pub text: &'a rts_lockstep_engine::logic::world::game_data::TextTable,
+    pub language: &'a rts_lockstep_engine::client::global_language::GlobalLanguage,
+    pub sounds: &'a mut Vec<Vec<u8>>,
+    pub briefings: &'a mut Vec<Vec<u8>>,
+}
+
+impl rts_lockstep_engine::client::military_subtitle::MilitarySubtitleHost for SubtitleHost<'_> {
+    fn logic_frame(&self) -> u32 {
+        self.frame
+    }
+    fn fetch(&mut self, label: &[u8]) -> Vec<u16> {
+        use rts_lockstep_engine::common::science::GameTextFetch;
+        self.text.fetch(label).str().to_vec()
+    }
+    fn display_size(&self) -> (i32, i32) {
+        self.display
+    }
+    fn military_caption_delay_ms(&self) -> i32 {
+        self.language.military_caption_delay_ms
+    }
+    fn language_military_caption_speed(&self) -> Option<i32> {
+        Some(self.language.military_caption_speed)
+    }
+    fn adjust_font_size(&self, size: i32) -> i32 {
+        self.language.adjust_font_size(size, self.display.0)
+    }
+    fn string_size(&self, text: &[u16], font: &rts_lockstep_engine::client::window_script::GameFont) -> (i32, i32) {
+        ((text.len() as f32 * font.point_size as f32 * 0.6) as i32, font.point_size)
+    }
+    fn font_height(&self, font: &rts_lockstep_engine::client::window_script::GameFont) -> i32 {
+        font.point_size
+    }
+    fn add_audio_event(&mut self, name: &[u8]) {
+        self.sounds.push(name.to_vec());
+    }
+    fn is_time_frozen_script(&self) -> bool {
+        self.frozen
+    }
+    fn update_diplomacy_briefing_text(&mut self, label: &[u8]) {
+        self.briefings.push(label.to_vec());
+    }
+}
+
+/// (#151) The military subtitle's engine frames since the last client frame: each one's `update` (at most 4, as
+/// [`cinematic_frame`] draws), then what `postDraw` draws.
+pub fn subtitle_frame(u: &mut rts_lockstep_engine::client::military_subtitle::MilitarySubtitleUi, h: &mut SubtitleHost<'_>, settings: &rts_lockstep_engine::client::radius_cursor::InGameUiIniSettings, ticks: u32) -> Vec<rts_lockstep_engine::client::military_subtitle::SubtitleDraw> {
+    use rts_lockstep_engine::client::military_subtitle::MilitarySubtitleHost as _;
+    for _ in 0..ticks.min(4) {
+        u.update(h, settings);
+    }
+    let _ = h.logic_frame();
+    u.draw(h)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #151, predicted before the run: on a phone's 390x844 a 1,000 ms caption "Hi" made at frame 10 sits at (4, 534) (10
+    /// and 380 of 800x600 scaled), its title font the constructor's Courier 12 bold at `adjustFontSize`'s size for a
+    /// 390-wide display (12: the adjustment lowers nothing under 800 wide); the language's 750 ms delay is 22 frames, so
+    /// frame 33 types `H` with the typing sound and the block 7 to the right (0.6 x 12); frame 34 types `i` (speed 0: the
+    /// next frame); updated every frame the block is on at 33 (off at 20, on at 30); the label went to the briefings once.
+    #[test]
+    fn the_military_subtitle_types_out_on_a_phone() {
+        use rts_lockstep_engine::client::military_subtitle::{MilitarySubtitleUi, SubtitleDraw};
+        use rts_lockstep_engine::client::radius_cursor::InGameUiIniSettings;
+        let mut text = rts_lockstep_engine::logic::world::game_data::TextTable::default();
+        text.strings.insert(b"SCRIPT:Hi".to_vec(), rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&[72, 105]).expect("text"));
+        let language = rts_lockstep_engine::client::global_language::GlobalLanguage::default();
+        let (mut sounds, mut briefings) = (Vec::new(), Vec::new());
+        let mut settings = InGameUiIniSettings::default();
+        settings.set_constructor_caption_values();
+        let mut u = MilitarySubtitleUi::default();
+        let mut h = SubtitleHost { frame: 10, frozen: false, display: (390, 844), text: &text, language: &language, sounds: &mut sounds, briefings: &mut briefings };
+        u.military_subtitle(&mut h, &settings, b"SCRIPT:Hi", 1000);
+        let m = u.military_subtitle.clone().expect("made");
+        assert_eq!((m.position.x, m.position.y, m.increment_on_frame), (4, 534, 32));
+        assert_eq!(m.display_strings[0].as_ref().map(|d| (d.font.point_size, d.font.bold)), Some((12, true)));
+        // (an update every frame: the block toggles off at 20 and on at 30)
+        let mut d = Vec::new();
+        for f in 11..=33 {
+            h.frame = f;
+            d = subtitle_frame(&mut u, &mut h, &settings, 1);
+        }
+        assert!(matches!(&d[0], SubtitleDraw::Text { x: 4, y: 534, text, .. } if text == &[72]), "{d:?}");
+        assert!(matches!(d[1], SubtitleDraw::FillRect { x: 11, y: 534, width: 9, height: 12, .. }), "{d:?}");
+        h.frame = 34;
+        let d = subtitle_frame(&mut u, &mut h, &settings, 1);
+        assert!(matches!(&d[0], SubtitleDraw::Text { text, .. } if text == &[72, 105]), "{d:?}");
+        drop(h);
+        assert_eq!(sounds.len(), 2);
+        assert_eq!(briefings, vec![b"SCRIPT:Hi".to_vec()]);
+    }
+
     use rts_lockstep_engine::logic::world::gate_scenario::{gate_world, run_gate_scenario};
     use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
 

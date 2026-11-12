@@ -29,7 +29,19 @@
 **   registerGameWindow(w, SLIDE_TOP, TRUE, 200), [13] reverseAnimateWindow, [14] update, [15, 1|0]
 **   register/unregisterWindowLayout, [16] HideQuitMenu, [17] PopulateInGameDiplomacyPopup; a window is its name's index
 **   (-1 none). After each step [100, the handled result (-1 none), the focus flag, theWindow != NULL, the list's length,
-**   each label's index]. */
+**   each label's index].
+**
+** #151: GameClient::xfer's briefing list, cut verbatim by build.rs into OUT_DIR/diplomacy_gen/gc_briefing_cut.inc:
+**   GameEngine/Source/GameClient/GameClient.cpp, from `\t// xfer the in-game mission briefing history list` to
+**   `}  // end xfer` (the end of GameClient::xfer, version 2's block). Compiled inside dp as the body of
+**   briefing_xfer(xfer, version), after the cut's own Diplomacy.cpp (its theBriefingList, GetBriefingTextList and
+**   UpdateDiplomacyBriefingText) and on the REAL XferSave / XferLoad (upstream_xfer: XferSave.cpp, XferLoad.cpp, Xfer.cpp).
+**   ref_briefing_xfer_save(labels, n, version, path): theBriefingList set to the labels (each the index of LONG_LABELS,
+**     pushed as they are: repeats kept), then XferSave to `path`; returns 0 or the XferStatus + 1.
+**   ref_briefing_xfer_load(in, nin, version, path, out, cap): `in` is [the layout has ListboxSolo, ShowDiplomacy first,
+**     the list's labels before (count, then indices)], then XferLoad of `path`; `out` is the status (0, or the
+**     XferStatus + 1), then the calls (as ref_diplomacy_seq records them), then [100, the list's length, each label's
+**     bytes' FNV-1a]. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +52,9 @@
 #include "Lib/BaseType.h"
 #include "Common/AsciiString.h"
 #include "Common/UnicodeString.h"
+#include "Common/XferSave.h"
+#include "Common/XferLoad.h"
+#include "Common/Debug.h"
 
 namespace dp {
 
@@ -218,7 +233,109 @@ void ResetDiplomacy( void );
 
 #include "dp_cut.inc"
 
+/* #151: GameClient::xfer's briefing list (its version 2 block), as the body of a function of the save's version */
+static void briefing_xfer( Xfer *xfer, XferVersion version )
+{
+#include "gc_briefing_cut.inc"
+
+/* the labels a save may hold: Diplomacy's, a 255-byte one and a 256-byte one (XFER_STRING_ERROR on a save) */
+static AsciiString long_label( Int i )
+{
+	if (i < 9) return AsciiString(LABELS[i]);
+	std::string s(i == 9 ? 255 : 256, 'L');
+	return AsciiString(s.c_str());
+}
+static const Int NLONG = 11;
+
+static Int fnv_ascii( const AsciiString &a )
+{
+	UnsignedInt h = 2166136261u;
+	for (Int i = 0; i < a.getLength(); ++i) {
+		h ^= (UnsignedInt)(unsigned char)a.str()[i];
+		h *= 16777619u;
+	}
+	return (Int)h;
+}
+
+/* the state of a new program (ref_diplomacy_seq's start) */
+static void fresh( Bool hasListbox )
+{
+	g_out.clear();
+	g_keys.clear();
+	for (Int i = 0; i < NNAMES; ++i) {
+		g_keys.push_back(NAMES[i]);
+		g_windows[i].m_index = i;
+		g_windows[i].m_hidden = FALSE;
+		g_windows[i].m_enabled = TRUE;
+		g_windows[i].m_entries.clear();
+	}
+	g_foreign.m_index = -1;
+	g_made = FALSE;
+	g_hasListbox = hasListbox;
+	g_flags.input = TRUE; g_flags.intro = FALSE; g_flags.loading = FALSE; g_flags.quit = FALSE;
+	g_flags.disconnect = FALSE; g_flags.multiplayer = FALSE; g_flags.animate = TRUE;
+	g_gd.m_animateWindows = TRUE;
+	theLayout = NULL;
+	theWindow = NULL;
+	if (theAnimateWindowManager) theAnimateWindowManager = NULL;
+	theBriefingList.clear();
+	radioButtonInGame = radioButtonBuddies = winInGame = winBuddies = winSolo = NULL;
+}
+
 } /* namespace dp */
+
+extern "C" int ref_briefing_xfer_save(const int *labels, int n, int version, const char *path)
+{
+	using namespace dp;
+	fresh(TRUE);
+	for (int i = 0; i < n; ++i)
+		theBriefingList.push_back(long_label(labels[i] % NLONG));
+	XferSave x;
+	int status = 0;
+	try {
+		x.open(AsciiString(path));
+		briefing_xfer(&x, (XferVersion)version);
+		x.close();
+	} catch (XferStatus s) {
+		status = (int)s + 1;
+		try { x.close(); } catch (...) {}
+	}
+	return status;
+}
+
+extern "C" int ref_briefing_xfer_load(const int *in, int nin, int version, const char *path, int *out, int cap)
+{
+	using namespace dp;
+	fresh(in[0] != 0);
+	if (in[1])
+		ShowDiplomacy(TRUE);
+	for (int i = 0; i < in[2] && 3 + i < nin; ++i)
+		UpdateDiplomacyBriefingText(long_label(in[3 + i] % 9), FALSE);
+	g_out.clear();
+	XferLoad x;
+	int status = 0;
+	try {
+		x.open(AsciiString(path));
+		briefing_xfer(&x, (XferVersion)version);
+		x.close();
+	} catch (XferStatus s) {
+		status = (int)s + 1;
+		try { x.close(); } catch (...) {}
+	}
+	std::vector<int> calls = g_out;
+	g_out.clear();
+	rec({status});
+	g_out.insert(g_out.end(), calls.begin(), calls.end());
+	rec({100, (Int)theBriefingList.size()});
+	for (BriefingList::iterator it = theBriefingList.begin(); it != theBriefingList.end(); ++it)
+		rec({fnv_ascii(*it)});
+	int k = (int)g_out.size();
+	if (k > cap)
+		k = cap;
+	if (k > 0)
+		memcpy(out, &g_out[0], k * sizeof(int));
+	return k;
+}
 
 extern "C" int ref_diplomacy_seq(const int *in, int nin, int *out, int cap)
 {

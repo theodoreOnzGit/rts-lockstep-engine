@@ -46,6 +46,10 @@
 ** windows and the manager's state, in the format the Rust writes. A crash ends the output early (the Rust test
 ** reports it).
 **
+** #151: TheGlobalLanguageData is NULL (the shim's fallback, Times New Roman 14) unless an `l` operation gives it language
+** data with a m_defaultWindowFont (a static GlobalLanguage of the shim's one member), which winCreate and
+** assignDefaultGadgetLook then read (GameWindowManager.cpp:1447, 2915); the dump adds each window's font.
+**
 ** #77: differential/wrap_wt.cpp compiles this file again with WT_REF defined, for the window transitions and the
 ** animate window manager (`wt_ref`): the real transitions handler instead of the stand-in, the `Gradient` image, the
 ** display string's draw recorded, and its own operations (`!`) and dump. Without WT_REF this file is as before. */
@@ -161,7 +165,9 @@ IMEManagerInterface *TheIMEManager = &s_ime;
 static GameWindowTransitionsHandler s_trans;
 GameWindowTransitionsHandler *TheTransitionHandler = &s_trans;
 #endif
+/* #151: NULL (upstream's fallback, Times New Roman 14), or s_language after an `l` operation */
 GlobalLanguage *TheGlobalLanguageData = NULL;
+static GlobalLanguage s_language;
 LanguageID OurLanguage = LANGUAGE_ID_US;
 
 /* ---- display strings */
@@ -411,6 +417,10 @@ static void dump(std::ostringstream &o, TestWindowManager *wm)
 		o << " parent " << widx(w->winGetParent()) << " owner " << widx(w->winGetOwner()) << " kids";
 		for (GameWindow *c = w->winGetChild(); c; c = c->winGetNext()) o << " " << widx(c);
 		dump_text(o, w->winGetText());
+		/* #151: the window's font (winCreate's default, assignDefaultGadgetLook's, or the one given) */
+		GameFont *wf = w->winGetFont();
+		if (wf) o << " font " << wf->nameString.str() << "/" << wf->pointSize << "/" << (int)wf->bold;
+		else o << " font -";
 		o << " tx " << w->winGetEnabledTextColor() << "/" << w->winGetEnabledTextBorderColor() << " " << w->winGetDisabledTextColor() << "/" << w->winGetDisabledTextBorderColor() << " " << w->winGetHiliteTextColor() << "/" << w->winGetHiliteTextBorderColor();
 		o << "\n";
 		if ((int)i >= g_dd_from)
@@ -733,6 +743,24 @@ static void run_op(TestWindowManager *wm, std::istringstream &in, char op)
 	case 'n': in >> a >> b; GadgetTabControlShowSubPane(win(a), b); break;
 	case 'q': in >> a; GadgetTabControlCreateSubPanes(win(a)); break;
 	case 'u': in >> a; GadgetTabControlFixupSubPaneList(win(a)); break;
+	case 'l':
+	{
+		/* #151: TheGlobalLanguageData: `l 0` NULL; `l 1 <name> <size> <bold>` the language data with that
+		** m_defaultWindowFont (the name's index in the Rust test's LANGUAGE_FONTS; 0 the empty name) */
+		int has = 0, name = 0, size = 0, bold = 0;
+		in >> has >> name >> size >> bold;
+		static const char *const NAMES[] = { "", "Arial Unicode MS", "Arial", "Courier New", "Times New Roman" };
+		if (has)
+		{
+			s_language.m_defaultWindowFont.name = AsciiString(NAMES[name]);
+			s_language.m_defaultWindowFont.size = size;
+			s_language.m_defaultWindowFont.bold = bold ? TRUE : FALSE;
+			TheGlobalLanguageData = &s_language;
+		}
+		else
+			TheGlobalLanguageData = NULL;
+		break;
+	}
 #ifdef WT_REF
 	/* (#77) the transitions' and the animate manager's operations (wrap_wt.cpp) */
 	case '!': wt_op(wm, in); break;

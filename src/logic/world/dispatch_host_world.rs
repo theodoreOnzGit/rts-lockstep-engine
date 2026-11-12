@@ -375,8 +375,11 @@ impl DispatchHost for World {
     fn d_has_stats_collector(&self) -> bool {
         self.cuts.game_loop.has_stats_collector
     }
+    /// ~~`false`~~ **Corrected 2026-11-12, #151:** `TheInGameUI` always exists in a game (the client's): the
+    /// `MSG_CLEAR_INGAME_POPUP_MESSAGE` case gives `clearPopupMessageData` to the client (`ClientCall::ClearPopupMessage`),
+    /// a client event, which no logic state reads. Without it the popup message's OK did nothing.
     fn d_has_in_game_ui(&self) -> bool {
-        false
+        true
     }
     fn d_recorder_playback(&self) -> bool {
         // (batch I55: the live recorder when made)

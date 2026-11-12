@@ -438,6 +438,20 @@ pub fn civil_time(ms: i64) -> [u16; 8] {
     [year as u16, month as u16, dow as u16, day as u16, (rem / 3_600_000) as u16, (rem / 60_000 % 60) as u16, (rem / 1000 % 60) as u16, (rem % 1000) as u16]
 }
 
+/// (#151) `GetBriefingTextList()` for a save (`GameClient::xfer`'s version-2 block): the shell's briefing history when the
+/// shell is loaded (`history`), with the briefings the logic showed since the shell last took them (`pending`, after a
+/// clear when `reset`: a loaded game's list) given to it as the shell would (`UpdateDiplomacyBriefingText(label, FALSE)`:
+/// an empty or repeated one dropped). Without the shell, `pending` alone is the history.
+pub fn briefing_list_for_save(history: Option<&[Vec<u8>]>, pending: &[Vec<u8>], reset: bool) -> Vec<Vec<u8>> {
+    use rts_lockstep_engine::client::diplomacy::{update_diplomacy_briefing_text, BriefingListOnly, Diplomacy};
+    let mut d = Diplomacy { briefing_list: if reset { Vec::new() } else { history.map(|h| h.to_vec()).unwrap_or_default() }, ..Default::default() };
+    let mut h = BriefingListOnly(&mut d);
+    for label in pending {
+        update_diplomacy_briefing_text(&mut h, label, false);
+    }
+    d.briefing_list
+}
+
 /// The client's drawables for a save or a load (GitHub #59): the drawables, the art their modules are made from, and the
 /// client's clock (milliseconds) they are drawn by.
 pub type Drawables<'a> = (&'a mut ClientDrawables, &'a mut dyn W3dAssetSource, u32);
@@ -633,6 +647,29 @@ mod tests {
         for w in [&b.client.world, &c.client.world, &d] {
             assert!(w.cuts.team_live_errors.is_empty(), "{:?}", w.cuts.team_live_errors);
         }
+    }
+
+    /// #151, predicted before the run: a demo game saved with a briefing history of three labels loads with the same
+    /// three in order (`CHUNK_GameClient`'s version-2 list through the client's save and load); the list a save takes is
+    /// the shell's history with the pending briefings added once each (a repeat and an empty one dropped), the pending
+    /// ones alone after a load's reset, and the pending ones alone without a shell.
+    #[test]
+    fn the_briefing_history_round_trips_through_a_client_save() {
+        let (w, _) = crate::demo::demo_world();
+        let mut a = Controls::new(w, crate::demo::DEMO_LOCAL_PLAYER);
+        for _ in 0..3 {
+            frame(&mut a);
+        }
+        let mut particles = ParticleSystemManager::new();
+        let mut state = ClientState::default();
+        let history = vec![b"SCRIPT:Brief1".to_vec(), b"SCRIPT:Pop".to_vec()];
+        state.game_client.briefing = briefing_list_for_save(Some(&history), &[b"SCRIPT:Brief1".to_vec(), b"".to_vec(), b"SCRIPT:Brief2".to_vec()], false);
+        assert_eq!(state.game_client.briefing, vec![b"SCRIPT:Brief1".to_vec(), b"SCRIPT:Pop".to_vec(), b"SCRIPT:Brief2".to_vec()]);
+        let bytes = save_game(&mut a, &mut particles, &mut state, None, "briefings").expect("the save");
+        let (_, _, sb, _, _) = client_from_save(bytes, None, None).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(sb.game_client.briefing, state.game_client.briefing);
+        assert_eq!(briefing_list_for_save(Some(&history), &[b"X".to_vec()], true), vec![b"X".to_vec()]);
+        assert_eq!(briefing_list_for_save(None, &[b"X".to_vec(), b"X".to_vec()], false), vec![b"X".to_vec()]);
     }
 
     /// GitHub #4: the folder's queues for the page. Predicted: a file the page read is listed; an import under a name the

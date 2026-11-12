@@ -339,7 +339,10 @@ impl ShellUi {
     /// milliseconds.
     ///
     /// (#78) `images` is the mapped image collection the control bar shares (`crate::ui::load_mapped_images`).
-    pub fn load<D: LocalDevice>(fs: &FileSystem<D>, text: &TextTable, images: Arc<ImageCollection>, now_ms: u32) -> Option<ShellUi> {
+    ///
+    /// (#151) `language` is `TheGlobalLanguageData`: its `DefaultWindowFont` is every window's default font
+    /// (`GameWindowManager::default_window_font`, GameWindowManager.cpp:1447).
+    pub fn load<D: LocalDevice>(fs: &FileSystem<D>, text: &TextTable, images: Arc<ImageCollection>, now_ms: u32, language: &rts_lockstep_engine::client::global_language::GlobalLanguage) -> Option<ShellUi> {
         let mut files = BTreeMap::new();
         for n in SHELL_FILES {
             let p = format!("Window\\Menus\\{n}.wnd").into_bytes();
@@ -350,14 +353,18 @@ impl ShellUi {
         if !files.contains_key(&b"Window\\Menus\\MainMenu.wnd"[..]) {
             return None;
         }
-        // (#148) the briefing history's window (`ToggleDiplomacy`'s `winCreateLayout("Diplomacy.wnd")`)
-        if let Some(d) = fs.open_file(b"Window\\Diplomacy.wnd") {
-            files.insert(b"Window\\Diplomacy.wnd".to_vec(), d);
+        // (#148) the briefing history's window (`ToggleDiplomacy`'s `winCreateLayout("Diplomacy.wnd")`); (#151) the popup
+        // message's (`popupMessage`'s `winCreateLayout("InGamePopupMessage.wnd")`)
+        for f in [&b"Window\\Diplomacy.wnd"[..], b"Window\\InGamePopupMessage.wnd"] {
+            if let Some(d) = fs.open_file(f) {
+                files.insert(f.to_vec(), d);
+            }
         }
         // (#77) `TheTransitionHandler->load()` at the window manager's init: without the file upstream's INI load
         // throws; here there is no shell
         let transitions = fs.open_file(wt::WINDOW_TRANSITIONS_INI)?;
         let mut wm = GameWindowManager::new(LAYOUT);
+        wm.default_window_font = Some(language.default_window_font.clone());
         wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &transitions).ok()?;
         let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }) };
         ui.gui.time_ms = now_ms;
@@ -405,9 +412,47 @@ impl ShellUi {
         self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_diplomacy_briefing_text(h, label, false));
     }
 
+    /// (#151) `UpdateDiplomacyBriefingText(TheEmptyString, TRUE)`: the history cleared, as `GameClient::xfer`'s load does
+    /// before it gives the save's list.
+    pub fn clear_briefings(&mut self) {
+        self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_diplomacy_briefing_text(h, b"", true));
+    }
+
+    /// (#151) `GetBriefingTextList()`: the history, for a save (`GameClient::xfer`).
+    pub fn briefing_list(&self) -> &[Vec<u8>] {
+        &self.gui.diplomacy.briefing_list
+    }
+
     /// (#148) The briefing history's window is up (made and not hidden): it is drawn and takes the input.
     pub fn diplomacy_shown(&self) -> bool {
         self.gui.diplomacy.the_window.is_some_and(|w| !self.wm.is_hidden(Some(w)))
+    }
+
+    /// (#151) `TheInGameUI->popupMessage(message, x, y, width, textColor, pause, pauseMusic)`: the logic's
+    /// `ClientEvent::InGameUi(PopupMessage)` with InGameUI.ini's `PopupMessageColor`
+    /// (`rts_lockstep_engine::client::in_game_popup_message`), on the shell's window manager. Its label goes to the briefing
+    /// history.
+    #[allow(clippy::too_many_arguments)]
+    pub fn popup_message(&mut self, message: &[u8], x: i32, y: i32, width: i32, color: i32, pause: bool, pause_music: bool) {
+        let mut h = rts_lockstep_engine::client::shell_gui::ShellPopup { wm: &mut self.wm, gui: &mut self.gui };
+        rts_lockstep_engine::client::in_game_popup_message::popup_message(&mut h, message, x, y, width, color, pause, pause_music);
+    }
+
+    /// (#151) `TheInGameUI->clearPopupMessageData()`: the logic's `MSG_CLEAR_INGAME_POPUP_MESSAGE`
+    /// (`ClientCall::ClearPopupMessage`), and `InGameUI::reset`.
+    pub fn clear_popup_message(&mut self) {
+        let mut h = rts_lockstep_engine::client::shell_gui::ShellPopup { wm: &mut self.wm, gui: &mut self.gui };
+        rts_lockstep_engine::client::in_game_popup_message::clear_popup_message_data(&mut h);
+    }
+
+    /// (#151) The popup's calls on the game since the last call (the pause, the clear message), for the app to make.
+    pub fn take_popup_calls(&mut self) -> Vec<rts_lockstep_engine::client::shell_gui::PopupCall> {
+        std::mem::take(&mut self.gui.popup_calls)
+    }
+
+    /// (#151) The popup message's window is up: it is drawn and takes the input.
+    pub fn popup_shown(&self) -> bool {
+        self.gui.popup.popup_message_data.as_ref().is_some_and(|d| d.layout.is_some()) && self.gui.popup.parent.is_some_and(|w| !self.wm.is_hidden(Some(w)))
     }
 
     /// The pointer at `pos` (the layout's pixels) through `winProcessMouseEvent`: `msg` is `GWM_MOUSE_POS`,
@@ -579,6 +624,8 @@ impl ShellUi {
         self.diplomacy_calls();
         // (#148) `TheGameEngine->reset()`'s `InGameUI::reset`: `UpdateDiplomacyBriefingText("", TRUE)`, the history cleared
         self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_diplomacy_briefing_text(h, b"", true));
+        // (#151) and its `clearPopupMessageData()`
+        self.clear_popup_message();
     }
 
     /// (#117) `TheGameLogic->closeWindows()` from a script (`ScriptActions::doQuickVictory`, which reaches the client as
@@ -623,8 +670,9 @@ impl ShellUi {
     /// (#87) Whether this window manager is drawn and takes the pointer and keyboard: the shell is active, or the
     /// in-game menus are up.
     pub fn takes_input(&self) -> bool {
-        // (#148: and while the briefing history is up; new: upstream's game keeps its input around the window)
-        self.is_active() || self.in_game_menus_shown() || self.diplomacy_shown()
+        // (#148: and while the briefing history is up; new: upstream's game keeps its input around the window; #151: and
+        // the popup message)
+        self.is_active() || self.in_game_menus_shown() || self.diplomacy_shown() || self.popup_shown()
     }
 
     /// (#78) `TheShell->isShellActive()`: the shell is shown (it is drawn and takes the input).
@@ -740,13 +788,15 @@ mod tests {
         d.insert(b"Data\\INI\\WindowTransitions.ini", window_transitions_ini());
         // (#148) the briefing history's window
         d.insert(b"Window\\Diplomacy.wnd", rts_lockstep_engine::client::shell_gui::synthetic::diplomacy_wnd());
+        // (#151) the popup message's window
+        d.insert(b"Window\\InGamePopupMessage.wnd", rts_lockstep_engine::client::shell_gui::synthetic::in_game_popup_message_wnd());
         for (p, b) in crate::ui::synthetic_ui_files() {
             d.insert(p, b);
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
         let crate::ui::ImagesBuild::Ready(images) = crate::ui::load_mapped_images(&fs) else { panic!("the mapped images load") };
-        let ui = ShellUi::load(&fs, text, images.clone(), 1000).expect("the shell loads");
+        let ui = ShellUi::load(&fs, text, images.clone(), 1000, &Default::default()).expect("the shell loads");
         (ui, images, fs)
     }
 
@@ -881,7 +931,7 @@ mod tests {
         d.insert(b"Window\\Menus\\MessageBox.wnd", Vec::new());
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        assert!(ShellUi::load(&fs, &TextTable::default(), Arc::new(ImageCollection::new()), 0).is_none());
+        assert!(ShellUi::load(&fs, &TextTable::default(), Arc::new(ImageCollection::new()), 0, &Default::default()).is_none());
         let mut d = MemoryDevice::new();
         for (p, b) in shell_wnd_files() {
             let p: Vec<u8> = p.iter().map(|&c| if c == b'/' { b'\\' } else { c }).collect();
@@ -889,7 +939,7 @@ mod tests {
         }
         let mut fs = FileSystem::new(d);
         fs.init(None);
-        assert!(ShellUi::load(&fs, &TextTable::default(), Arc::new(ImageCollection::new()), 0).is_none(), "no WindowTransitions.ini: no shell");
+        assert!(ShellUi::load(&fs, &TextTable::default(), Arc::new(ImageCollection::new()), 0, &Default::default()).is_none(), "no WindowTransitions.ini: no shell");
         let mut ui = shell();
         // (the shell's first update only starts its clock: `static Int lastUpdate`; missed in the first run, where the
         // first frame came after the click and the USA press was refused)
@@ -1256,29 +1306,58 @@ mod tests {
         assert!(started.label.contains("Maps\\Gate\\Gate.map"), "{}", started.label);
     }
 
-    /// #109: the control bar's options button's way into the quit menu (ControlBarCallback.cpp's `ToggleQuitMenu` and
-    /// `HideQuitMenu`, [`ShellUi::bar_quit_menu_call`]), and the menu and its save/load popup on a phone, 390 by 844 CSS
-    /// pixels. Predicted from QuitMenu.cpp and [`shell_placement`] before the run:
+    /// #151: the popup message (`popupMessage`, InGamePopupMessage.cpp) on the synthetic `InGamePopupMessage.wnd`, in a
+    /// game (the shell hidden). Predicted from InGameUI.cpp and InGamePopupMessage.cpp before the run:
     ///
-    /// - over the demo game (not ending: #107's `newMap`), `Toggle` shows `QuitMenu.wnd` and asks for the pause
-    ///   ([`ShellAction::SetGamePaused`] true); `Hide` hides it and unpauses (false); `Hide` again does nothing (not
-    ///   visible); `Toggle` shows it again (true);
-    /// - at 390x844 (the placement of the #78 test: scale 0.4875, top ~~126.75, unchanged: no button is added to the zoom
-    ///   column~~ **corrected 2026-11-11 (#131):** ~~72.75~~, the two turn buttons added to the zoom column; **corrected 2026-11-11, #136:**
-    ///   45.75, the control bar's `B` added) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
-    ///   on the screen, below
-    ///   the status line (y 36) and above the zoom column, and a tap at its centre is that button's
-    ///   (`getWindowUnderCursor`);
-    /// - a tap on *Save/Load* opens the popup; its four buttons (*Save*, *Load*, *Delete*, *Back*) are each on the screen
-    ///   and tapped the same way (~~all four~~ **first run:** *Load* and *Delete* are disabled with no save listed, so
-    ///   not under the cursor; *Save* and *Back* are); a tap on *Save* shows the description box, whose *Confirm* and *Cancel* are too; a tap on
-    ///   *Cancel* hides it.
-    ///
-    /// **Result (2026-11-10):** the toggles and the hide as predicted; two misses over two runs, recorded where asserted
-    /// (the buttons are 90 wide, ~~43.875 x 9.75~~ **corrected 2026-11-11, #142:** 38.7 x 8.6 CSS pixels; *Load* and
-    /// *Delete* disabled). Every enabled button of the menu,
-    /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
+    /// - a pausing message at (25 %, 40 %), 300 wide, on the 800x600 layout: the box at (200, 240), 300 wide; the label in
+    ///   the briefing history; the game paused (`SetGamePaused { paused: true, .. }`); the window up, modal, with the
+    ///   focus, drawn and taking the input; the text in the given colour;
+    /// - Enter released (its `GBM_SELECTED` on OK): a pausing message is cleared at once, the layout destroyed, the game
+    ///   unpaused; nothing drawn;
+    /// - a message that does not pause: its OK (Escape) sends `MSG_CLEAR_INGAME_POPUP_MESSAGE` (`PopupCall::ClearMessage`)
+    ///   and the box stays until the logic's clear comes back (`clear_popup_message`);
+    /// - the game's end (`InGameUI::reset`) clears one that is up.
     #[test]
+    fn a_popup_message_shows_and_closes_as_upstream() {
+        use rts_lockstep_engine::client::shell_gui::PopupCall;
+        let mut text = TextTable::default();
+        text.strings.insert(b"SCRIPT:Pop".to_vec(), rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&"Reinforcements are on the way".encode_utf16().collect::<Vec<_>>()).expect("text"));
+        let (mut ui, _, _) = shell_with(&text);
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        ui.hide();
+        settle(&mut ui, &mut now);
+        assert!(!ui.takes_input());
+        let color = rts_lockstep_engine::common::ini::game_make_color(255, 255, 0, 255);
+        ui.popup_message(b"SCRIPT:Pop", 25, 40, 300, color, true, false);
+        assert_eq!(ui.take_popup_calls(), vec![PopupCall::SetGamePaused { paused: true, pause_music: false }]);
+        assert_eq!(ui.briefing_list(), &[b"SCRIPT:Pop".to_vec()]);
+        let parent = ui.gui.popup.parent.expect("the parent");
+        let st = ui.gui.popup.static_text_message.expect("the text");
+        assert_eq!((ui.wm.tree.windows[parent].region.0, ui.wm.tree.windows[parent].region.1, ui.wm.tree.windows[parent].size.0), (200, 240, 300));
+        assert_eq!(ui.wm.tree.windows[st].inst.enabled_text.color, color);
+        assert_eq!(ui.wm.modal.first(), Some(&parent));
+        assert_eq!(ui.wm.keyboard_focus, Some(parent));
+        assert!(ui.popup_shown() && ui.takes_input() && !ui.draw().is_empty());
+        // Enter, pressed then released: the release is OK's click
+        ui.keyboard(0x1C, true, None);
+        ui.keyboard(0x1C, false, None);
+        assert!(ui.gui.popup.popup_message_data.is_none(), "cleared at once");
+        assert_eq!(ui.take_popup_calls(), vec![PopupCall::SetGamePaused { paused: false, pause_music: false }]);
+        assert!(!ui.popup_shown() && ui.draw().is_empty());
+        ui.popup_message(b"SCRIPT:Pop", 50, 50, 10, color, false, false);
+        assert_eq!(ui.gui.popup.popup_message_data.as_ref().map(|d| d.width), Some(50));
+        ui.keyboard(0x01, true, None);
+        ui.keyboard(0x01, false, None);
+        assert_eq!(ui.take_popup_calls(), vec![PopupCall::ClearMessage]);
+        assert!(ui.popup_shown(), "up until the logic's clear");
+        ui.clear_popup_message();
+        assert!(!ui.popup_shown());
+        ui.popup_message(b"SCRIPT:Pop", 50, 50, 200, color, false, false);
+        ui.clear_game_data_windows();
+        assert!(ui.gui.popup.popup_message_data.is_none() && !ui.popup_shown());
+    }
+
     /// #148: the briefing history from the communicator button (`ToggleDiplomacy(FALSE)`), on the synthetic
     /// `Diplomacy.wnd`. Predicted from Diplomacy.cpp before the run:
     ///
@@ -1341,6 +1420,32 @@ mod tests {
         assert!(ui.gui.diplomacy.the_window.is_none() && ui.gui.diplomacy.briefing_list.is_empty());
     }
 
+    /// #109: the control bar's options button's way into the quit menu (ControlBarCallback.cpp's `ToggleQuitMenu` and
+    /// `HideQuitMenu`, [`ShellUi::bar_quit_menu_call`]), and the menu and its save/load popup on a phone, 390 by 844 CSS
+    /// pixels. Predicted from QuitMenu.cpp and [`shell_placement`] before the run:
+    ///
+    /// - over the demo game (not ending: #107's `newMap`), `Toggle` shows `QuitMenu.wnd` and asks for the pause
+    ///   ([`ShellAction::SetGamePaused`] true); `Hide` hides it and unpauses (false); `Hide` again does nothing (not
+    ///   visible); `Toggle` shows it again (true);
+    /// - at 390x844 (the placement of the #78 test: scale 0.4875, top ~~126.75, unchanged: no button is added to the zoom
+    ///   column~~ **corrected 2026-11-11 (#131):** ~~72.75~~, the two turn buttons added to the zoom column; **corrected 2026-11-11, #136:**
+    ///   45.75, the control bar's `B` added) each of the menu's five buttons, ~~100~~ 90 x 20 in the layout, is ~~48.75~~ 43.875 x 9.75 CSS pixels
+    ///   on the screen, below
+    ///   the status line (y 36) and above the zoom column, and a tap at its centre is that button's
+    ///   (`getWindowUnderCursor`);
+    /// - a tap on *Save/Load* opens the popup; its four buttons (*Save*, *Load*, *Delete*, *Back*) are each on the screen
+    ///   and tapped the same way (~~all four~~ **first run:** *Load* and *Delete* are disabled with no save listed, so
+    ///   not under the cursor; *Save* and *Back* are); a tap on *Save* shows the description box, whose *Confirm* and *Cancel* are too; a tap on
+    ///   *Cancel* hides it.
+    ///
+    /// **Result (2026-11-10):** the toggles and the hide as predicted; two misses over two runs, recorded where asserted
+    /// (the buttons are 90 wide, ~~43.875 x 9.75~~ **corrected 2026-11-11, #142:** 38.7 x 8.6 CSS pixels; *Load* and
+    /// *Delete* disabled). Every enabled button of the menu,
+    /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
+    ///
+    /// (#151: this doc and a second `#[test]` had been left above #148's test, which #148 put between them and this
+    /// function: rustdoc gave this doc to #148's test, and rustc warned of the duplicated attribute. Moved back; the test
+    /// itself always ran.)
     #[test]
     fn the_bars_options_button_opens_the_quit_menu_which_fits_a_phone() {
         use crate::ui::QuitMenuCall;
@@ -1522,7 +1627,7 @@ mod tests {
         let files = &ui.gui.files.as_ref().expect("the files").files;
         assert_eq!(files.find_image(b"ImgBack").as_deref(), Some(&b"ImgBack"[..]));
         assert_eq!(files.find_image(b"NoSuchImage"), None);
-        let crate::ui::UiBuild::Ready(bar) = crate::ui::load_game_ui_with(&fs, &TextTable::default(), b"America", Some(images.clone())) else { panic!("the bar loads") };
+        let crate::ui::UiBuild::Ready(bar) = crate::ui::load_game_ui_with(&fs, &TextTable::default(), b"America", Some(images.clone()), &Default::default()) else { panic!("the bar loads") };
         assert!(Arc::ptr_eq(&bar.images, &images));
         assert_eq!(bar.images.len(), 4);
     }
@@ -1584,7 +1689,7 @@ mod tests {
         let mut fs = FileSystem::new(rts_lockstep_engine::common::file_system::NativeDevice::new(to));
         fs.init(None);
         let crate::ui::ImagesBuild::Ready(images) = crate::ui::load_mapped_images(&fs) else { panic!("the images") };
-        let mut ui = ShellUi::load(&fs, &TextTable::default(), images, 0).expect("the shell loads from the install");
+        let mut ui = ShellUi::load(&fs, &TextTable::default(), images, 0, &Default::default()).expect("the shell loads from the install");
         ui.frame(0);
         assert_eq!(ui.top_screen().as_deref(), Some(&b"Menus/MainMenu.wnd"[..]));
     }

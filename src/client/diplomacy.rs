@@ -9,6 +9,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/InGameUI.cpp (the callers: militarySubtitle, popupMessage, reset)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/ControlBarCallback.cpp (the communicator button's
 //     ToggleDiplomacy(FALSE), line 399)
+//   GeneralsMD/Code/GameEngine/Source/GameClient/GameClient.cpp (#151: GameClient::xfer's briefing list, lines 1555-1587)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -32,7 +33,7 @@
 //!   ([`update_diplomacy_briefing_text`]): an empty or repeated label is not added; a new one is, and goes into the
 //!   open window's `ListboxSolo` translated (`TheGameText->fetch`), in the in-game UI's message colours by turn
 //!   (`getMessageColor(numEntries % 2)`). `InGameUI::reset` clears the list (`UpdateDiplomacyBriefingText("", TRUE)`),
-//!   and a saved game carries it (`GameClient::xfer`, version 2).
+//!   and a saved game carries it (`GameClient::xfer`, version 2: [`xfer_briefing_list`], #151).
 //! - **The window.** `ShowDiplomacy` (Diplomacy.cpp:199, [`show_diplomacy`]) makes `Diplomacy.wnd` the first time (and, in
 //!   a single player game, fills its `ListboxSolo` from the list), shows it, shows the solo parent (the multiplayer
 //!   game's in-game parent instead), and slides it in from the top unless `immediate`. `HideDiplomacy`
@@ -426,6 +427,101 @@ pub fn diplomacy_system<H: DiplomacyHost>(h: &mut H, msg: u32, control_id: i32, 
         }
         _ => MsgHandled::Ignored,
     }
+}
+
+/// (#151) A [`DiplomacyHost`] with no window manager: only `theBriefingList` (Diplomacy.cpp's static), for a save's
+/// `GameClient::xfer` when the briefing history's window is not the caller's to give (`crate::client::save_game`). Every
+/// `winGetWindowFromId` finds nothing, so `UpdateDiplomacyBriefingText` keeps the list as it does before
+/// `Diplomacy.wnd` is made.
+pub struct BriefingListOnly<'a>(pub &'a mut Diplomacy);
+
+impl DiplomacyHost for BriefingListOnly<'_> {
+    fn diplomacy(&mut self) -> &mut Diplomacy {
+        self.0
+    }
+    fn name_to_key(&mut self, _name: &[u8]) -> i32 {
+        0
+    }
+    fn win_get_window_from_id(&mut self, _parent: Option<WinId>, _name: &[u8]) -> Option<WinId> {
+        None
+    }
+    fn win_create_layout(&mut self, _file: &[u8]) -> Option<usize> {
+        None
+    }
+    fn layout_first_window(&mut self, _layout: usize) -> Option<WinId> {
+        None
+    }
+    fn layout_hide(&mut self, _layout: usize, _hide: bool) {}
+    fn layout_destroy(&mut self, _layout: usize) {}
+    fn win_hide(&mut self, _w: WinId, _hide: bool) {}
+    fn win_enable(&mut self, _w: WinId, _enable: bool) {}
+    fn win_is_hidden(&mut self, _w: WinId) -> bool {
+        true
+    }
+    fn list_box_reset(&mut self, _w: WinId) {}
+    fn list_box_get_num_entries(&mut self, _w: WinId) -> i32 {
+        0
+    }
+    fn list_box_add_entry_text(&mut self, _w: WinId, _text: &[u16], _color: i32) {}
+    fn radio_set_selection(&mut self, _w: WinId) {}
+    fn fetch(&mut self, label: &[u8]) -> Vec<u16> {
+        label.iter().map(|&b| u16::from(b)).collect()
+    }
+    fn animate_new(&mut self) {}
+    fn animate_delete(&mut self) {}
+    fn animate_reset(&mut self) {}
+    fn animate_update(&mut self) {}
+    fn animate_is_finished(&mut self) -> bool {
+        true
+    }
+    fn animate_is_reversed(&mut self) -> bool {
+        false
+    }
+    fn animate_reverse(&mut self) {}
+    fn animate_register_slide_top(&mut self, _w: WinId) {}
+    fn register_window_layout(&mut self, _layout: usize, _register: bool) {}
+    fn hide_quit_menu(&mut self) {}
+    fn populate_in_game_diplomacy_popup(&mut self) {}
+}
+
+/// (#151) `GameClient::xfer`'s mission briefing history (GameClient.cpp:1555-1587, save version 2 and later): a save
+/// writes `GetBriefingTextList()`'s length (`xferInt`) and each label (`xferAsciiString`); a load reads the length,
+/// clears the list (`UpdateDiplomacyBriefingText(AsciiString::TheEmptyString, TRUE)`), then gives each label read to
+/// `UpdateDiplomacyBriefingText(label, FALSE)`, so an empty or repeated one is dropped and the open window's list box gets
+/// each new one. A count of 0 or less reads no label. Before version 2 nothing is read or written.
+pub fn xfer_briefing_list<H: DiplomacyHost>(xfer: &mut dyn crate::common::xfer::Xfer, version: crate::common::xfer::XferVersion, h: &mut H) -> crate::common::xfer::XferResult<()> {
+    if version < 2 {
+        return Ok(());
+    }
+    if xfer.get_xfer_mode() == crate::common::xfer::XferMode::Save {
+        let list = get_briefing_text_list(h).to_vec();
+        let mut num_entries = list.len() as i32;
+        if plant(9423) {
+            num_entries = num_entries.min(1);
+        }
+        xfer.xfer_int(&mut num_entries)?;
+        for label in list {
+            let mut temp_str = label;
+            xfer.xfer_ascii_string(&mut temp_str)?;
+        }
+    } else {
+        let mut num_entries = 0i32;
+        xfer.xfer_int(&mut num_entries)?;
+        if !plant(9424) {
+            update_diplomacy_briefing_text(h, b"", true);
+        }
+        while num_entries > 0 {
+            num_entries -= 1;
+            let mut temp_str = Vec::new();
+            xfer.xfer_ascii_string(&mut temp_str)?;
+            if plant(9425) {
+                h.diplomacy().briefing_list.push(temp_str);
+            } else {
+                update_diplomacy_briefing_text(h, &temp_str, false);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The client's [`DiplomacyHost`] on a window manager (the shell's, which draws `Diplomacy.wnd` from the player's files):
