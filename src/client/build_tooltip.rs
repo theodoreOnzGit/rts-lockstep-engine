@@ -6,7 +6,8 @@
 //     ControlBarPopupDescriptionUpdateFunc, ControlBar::showBuildTooltipLayout, repopulateBuildTooltipLayout,
 //     hideBuildTooltipLayout, deleteBuildTooltipLayout)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp (commandButtonTooltip; ControlBar::update's
-//     popup part; ControlBar::init's and setControlCommand's winSetTooltipFunc calls)
+//     popup part; ControlBar::init's and setControlCommand's winSetTooltipFunc calls; #144: ControlBar::init's tooltip part
+//     (lines 1190-1240), setControlCommand and setCommandBarBorder)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -40,6 +41,12 @@
 //!   (`ControlBarPopupDescriptionUpdateFunc`, [`BuildTooltip::popup_update`]) hides it when the game is ending or when no
 //!   call marked it wanted since the last frame; then the mark is cleared. So the popup stays while the mouse's events
 //!   keep reaching the button and goes the frame after they stop.
+//! - **Which windows** (GitHub #144, [`control_bar_init_tooltips`]): `ControlBar::init` gives the non-command push
+//!   buttons (`PopupCommunicator`, `ButtonOptions`, `ButtonIdleWorker`, `ButtonPlaceBeacon`, `ButtonGeneral`,
+//!   `ButtonLarge`) their `NonCommand_*` command buttons (`setControlCommand(win, findCommandButton(...))`,
+//!   [`set_control_command`]) and `commandButtonTooltip`; the power, money and general's experience windows get
+//!   `commandButtonTooltip` alone, and their popups are `populateBuildTooltipLayout(NULL, window)`'s
+//!   (`crate::client::control_bar_popup::populate_window_tooltip`).
 //! - `hideBuildTooltipLayout` and `deleteBuildTooltipLayout` ([`BuildTooltip::delete_build_tooltip_layout`]: the mark
 //!   cleared, the window forgotten, the layout hidden); `repopulateBuildTooltipLayout` (the stages' default config) refills
 //!   it from the remembered push button.
@@ -235,6 +242,162 @@ pub fn command_button_tooltip(bar: &mut BuildTooltip, window: WinId, h: &mut imp
 /// callback left as it was. Whether the button gets the callback.
 pub fn command_gets_tooltip(text_label_empty: bool, has_sciences: bool) -> bool {
     !text_label_empty || has_sciences
+}
+
+/// ControlBar.cpp:1190-1224, `ControlBar::init`: the non-command push buttons and the command button each is given
+/// (`findCommandButton`), in order. The communicator's window is `m_communicatorButton`.
+pub const NON_COMMAND_BUTTONS: [(&[u8], &[u8]); 6] = [
+    (b"ControlBar.wnd:PopupCommunicator", b"NonCommand_Communicator"),
+    (b"ControlBar.wnd:ButtonOptions", b"NonCommand_Options"),
+    (b"ControlBar.wnd:ButtonIdleWorker", b"NonCommand_IdleWorker"),
+    (b"ControlBar.wnd:ButtonPlaceBeacon", b"NonCommand_Beacon"),
+    (b"ControlBar.wnd:ButtonGeneral", b"NonCommand_GeneralsExperience"),
+    (b"ControlBar.wnd:ButtonLarge", b"NonCommand_UpDown"),
+];
+
+/// ControlBar.cpp:1226-1240, `ControlBar::init`: the windows given `commandButtonTooltip` alone, in order (their popups are
+/// `populateBuildTooltipLayout(NULL, window)`'s: `crate::client::control_bar_popup::populate_window_tooltip`).
+pub const TOOLTIP_ONLY_WINDOWS: [&[u8]; 3] = [b"ControlBar.wnd:PowerWindow", b"ControlBar.wnd:MoneyDisplay", b"ControlBar.wnd:GeneralsExp"];
+
+/// `CommandButtonMappedBorderType` (ControlBar.h): `COMMAND_BUTTON_BORDER_NONE` .. `_SYSTEM`.
+pub mod border {
+    pub const NONE: i32 = 0;
+    pub const BUILD: i32 = 1;
+    pub const UPGRADE: i32 = 2;
+    pub const ACTION: i32 = 3;
+    pub const SYSTEM: i32 = 4;
+}
+
+/// `GAME_COLOR_UNDEFINED` (Color.h): what `ControlBar::ControlBar` gives the four border colours
+/// (`updateCommanBarBorderColors`), until a scheme's `init` sets them.
+pub const GAME_COLOR_UNDEFINED: i32 = 0x00FF_FFFF;
+
+/// What `ControlBar::init`'s tooltip part and `setControlCommand` reach on the window manager and the command buttons
+/// (GitHub #144). A command button is an index the host knows (as [`BuildTooltipHost::gadget_button_command`]'s).
+pub trait ControlBarInitHost {
+    /// `TheWindowManager->winGetWindowFromId(NULL, TheNameKeyGenerator->nameToKey(name))`.
+    fn win_get_window_from_id(&self, name: &[u8]) -> Option<WinId>;
+    /// `findCommandButton(name)` (`None`: `NULL`).
+    fn find_command_button(&self, name: &[u8]) -> Option<usize>;
+    /// `window->winSetTooltipFunc(commandButtonTooltip)` ([`COMMAND_BUTTON_TOOLTIP`]).
+    fn win_set_tooltip_func(&mut self, w: WinId);
+    /// `button->winGetInputFunc() == GadgetPushButtonInput`.
+    fn is_push_button_input(&self, w: WinId) -> bool;
+    /// The command's `getOptions()`.
+    fn command_options(&self, c: usize) -> u32;
+    /// The command's `getButtonImage()`: the mapped image's name (`None`: `NULL`, no name or no such image).
+    fn command_button_image(&self, c: usize) -> Option<Vec<u8>>;
+    /// The command's `getTextLabel()`.
+    fn command_text_label(&self, c: usize) -> Vec<u8>;
+    /// `!getScienceVec().empty()`.
+    fn command_has_sciences(&self, c: usize) -> bool;
+    /// `getCommandButtonMappedBorderType()` ([`border`]).
+    fn command_border(&self, c: usize) -> i32;
+    /// `GadgetButtonEnableCheckLike(button, checkLike, checked)`.
+    fn gadget_button_enable_check_like(&mut self, w: WinId, check_like: bool, checked: bool);
+    /// `GadgetButtonSetEnabledImage(button, image)`.
+    fn gadget_button_set_enabled_image(&mut self, w: WinId, image: Vec<u8>);
+    /// `GadgetButtonSetText(button, UnicodeString(L""))`.
+    fn gadget_button_clear_text(&mut self, w: WinId);
+    /// `GadgetButtonSetData(button, (void*)commandButton)`.
+    fn gadget_button_set_data(&mut self, w: WinId, c: usize);
+    /// `GadgetButtonSetBorder(button, color, drawBorder)`.
+    fn gadget_button_set_border(&mut self, w: WinId, color: i32, draw: bool);
+    /// `m_commandButtonBorderBuildColor`, `..UpgradeColor`, `..ActionColor`, `..SystemColor`.
+    fn border_colors(&self) -> [i32; 4];
+    /// `TheHotKeyManager->searchHotKey(label)`; `None` without `TheHotKeyManager`.
+    fn search_hot_key(&mut self, label: &[u8]) -> Option<Vec<u8>>;
+    /// `TheHotKeyManager->addHotKey(button, hotKey)`.
+    fn add_hot_key(&mut self, w: WinId, key: Vec<u8>);
+    /// `GadgetButtonSetAltSound(button, sound)`.
+    fn gadget_button_set_alt_sound(&mut self, w: WinId, sound: &[u8]);
+}
+
+/// `ControlBar::setCommandBarBorder(button, type)` (ControlBar.cpp:2385): the border's colour by the command's type;
+/// none for `COMMAND_BUTTON_BORDER_NONE` and any other value.
+pub fn set_command_bar_border(button: WinId, kind: i32, h: &mut impl ControlBarInitHost) {
+    let [build, upgrade, action, system] = h.border_colors();
+    let (build, upgrade) = if plant(9350) { (upgrade, build) } else { (build, upgrade) };
+    match kind {
+        border::BUILD => h.gadget_button_set_border(button, build, true),
+        border::UPGRADE => h.gadget_button_set_border(button, upgrade, true),
+        border::ACTION => h.gadget_button_set_border(button, action, true),
+        border::SYSTEM => h.gadget_button_set_border(button, system, true),
+        _ => h.gadget_button_set_border(button, GAME_COLOR_UNDEFINED, plant(9351)),
+    }
+}
+
+/// `ControlBar::setControlCommand(button, commandButton)` (ControlBar.cpp:2427): nothing for a window that is not a
+/// push button, or for no command (both `DEBUG_ASSERTCRASH`, compiled out); else the check-like state from the
+/// command's `CHECK_LIKE` option, the button image as the enabled image (when there is one), `commandButtonTooltip` for a
+/// command with a text label or sciences (else the button's text cleared), the command as the button's data, the
+/// border, the text label's hot key, and the `GUICommandBarClick` alternate sound.
+pub fn set_control_command(button: WinId, command: Option<usize>, h: &mut impl ControlBarInitHost) {
+    if !h.is_push_button_input(button) && !plant(9345) {
+        return;
+    }
+    let Some(c) = command else {
+        if plant(9346) {
+            h.win_set_tooltip_func(button);
+        }
+        return;
+    };
+    let options = h.command_options(c);
+    if options & crate::client::control_bar_command::opt::CHECK_LIKE != 0 && !plant(9347) {
+        h.gadget_button_enable_check_like(button, true, false);
+    } else {
+        h.gadget_button_enable_check_like(button, false, false);
+    }
+    if let Some(image) = h.command_button_image(c) {
+        h.gadget_button_set_enabled_image(button, image);
+    }
+    let label = h.command_text_label(c);
+    let has_sciences = h.command_has_sciences(c) && !plant(9348);
+    if command_gets_tooltip(label.is_empty(), has_sciences) {
+        h.win_set_tooltip_func(button);
+    } else {
+        h.gadget_button_clear_text(button);
+    }
+    if !plant(9349) {
+        h.gadget_button_set_data(button, c);
+    }
+    let kind = h.command_border(c);
+    set_command_bar_border(button, kind, h);
+    if let Some(key) = h.search_hot_key(&label) {
+        if !key.is_empty() || plant(9352) {
+            h.add_hot_key(button, key);
+        }
+    }
+    if !plant(9353) {
+        h.gadget_button_set_alt_sound(button, b"GUICommandBarClick");
+    }
+}
+
+/// `ControlBar::init`'s tooltip callbacks (ControlBar.cpp:1190-1240), GitHub #144: each non-command push button
+/// ([`NON_COMMAND_BUTTONS`]) gets its `NonCommand_*` command ([`set_control_command`] with `findCommandButton`'s) and
+/// `commandButtonTooltip`; the power, money and general's experience windows ([`TOOLTIP_ONLY_WINDOWS`]) get
+/// `commandButtonTooltip` alone. A window the layout does not have is skipped (`if(win)`); upstream reads
+/// `m_communicatorButton` without that check (a layout without it would crash there), so the communicator is skipped
+/// here too. The window manager then calls `commandButtonTooltip` over these windows instead of giving their text to
+/// `TheMouse`'s tooltip.
+pub fn control_bar_init_tooltips(h: &mut impl ControlBarInitHost) {
+    for (i, (window, command)) in NON_COMMAND_BUTTONS.iter().enumerate() {
+        let Some(win) = h.win_get_window_from_id(window) else { continue };
+        let command = if plant(9342) && i == 5 { b"NonCommand_Options".as_slice() } else { command };
+        let c = h.find_command_button(command);
+        set_control_command(win, c, h);
+        if !(plant(9341) && i == 0) {
+            h.win_set_tooltip_func(win);
+        }
+    }
+    for (i, window) in TOOLTIP_ONLY_WINDOWS.iter().enumerate() {
+        if (plant(9343) && i == 0) || (plant(9344) && i == 2) {
+            continue;
+        }
+        if let Some(win) = h.win_get_window_from_id(window) {
+            h.win_set_tooltip_func(win);
+        }
+    }
 }
 
 #[cfg(test)]

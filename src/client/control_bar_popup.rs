@@ -7,7 +7,8 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarCommand.cpp
 //     (ControlBar::calculateVeterancyOverlayForObject)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GUICallbacks/ControlBarPopupDescription.cpp
-//     (ControlBar::populateBuildTooltipLayout: what the popup says, for a command button and for the money and power windows)
+//     (ControlBar::populateBuildTooltipLayout: what the popup says, for a command button and for the money and power windows;
+//     #144: and the general's experience window, the comparisons that pick the window, the observer's player)
 //   GeneralsMD/Code/GameEngine/Source/Common/RTS/ProductionPrerequisite.cpp (ProductionPrerequisite::getRequiresList)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/ControlBar.h (MAX_RIGHT_HUD_UPGRADE_CAMEOS)
 //
@@ -33,8 +34,9 @@
 //! `populateBuildTooltipLayout(button)` fills `ControlBarPopupDescription.wnd`: the name (the button's `TextLabel`), the
 //! cost (`TOOLTIP:Cost` of the thing's or upgrade's cost to build, hidden when 0) and the description (`DescriptLabel`, plus
 //! the reason a unit cannot be bought, the overcharge state, the requirements, or the purchased/conflicting text of an
-//! upgrade; for a purchase-science button the science's own name, description and `TOOLTIP:ScienceCost`). The money and
-//! power windows have popups of their own.
+//! upgrade; for a purchase-science button the science's own name, description and `TOOLTIP:ScienceCost`). The money,
+//! power and general's experience windows have popups of their own ([`tooltip_window_of`], [`populate_window_tooltip`],
+//! #144).
 //!
 //! # Where this differs from upstream
 //!
@@ -190,7 +192,19 @@ pub trait PopupHost: ControlBarStateHost {
     fn science_cost(&self, st: i32) -> i32;
     /// Each behavior module's overcharge interface's `isOverchargeActive()`, in module order.
     fn overcharge_interfaces(&mut self, obj: ObjectId) -> Vec<bool>;
-    /// The local player's energy: `(getProduction(), getConsumption())`, `None` without a player.
+    // ~~`local_energy`: the local player's energy~~ **Corrected 2026-11-11, #144:** moved to [`PopupWindowHost`], with the
+    // observer's player, for the power window's popup.
+}
+
+/// GitHub #144: what `populateBuildTooltipLayout(NULL, tooltipWin)`'s money, power and general's experience branches read.
+pub trait PopupWindowHost {
+    /// `TheGameText->fetch(label)`.
+    fn fetch_text(&self, label: &[u8]) -> Vec<u16>;
+    /// `TheControlBar->isObserverControlBarOn()`.
+    fn is_observer_control_bar_on(&self) -> bool;
+    /// `TheControlBar->getObserverLookAtPlayer()`'s energy: `(getProduction(), getConsumption())`, `None` without one.
+    fn observer_look_at_player_energy(&self) -> Option<(i32, i32)>;
+    /// `ThePlayerList->getLocalPlayer()`'s energy, `None` without a player.
     fn local_energy(&self) -> Option<(i32, i32)>;
 }
 
@@ -478,10 +492,46 @@ pub enum TooltipWindow {
     GeneralsExp,
 }
 
-/// `populateBuildTooltipLayout(NULL, tooltipWin)`: the money, power and general's experience windows' popups (no cost). The
-/// power's description is formatted with the local player's production and consumption (0, 0 without a player; the
-/// observer's player is not translated).
-pub fn populate_window_tooltip(win: TooltipWindow, h: &mut impl PopupHost) -> Tooltip {
+/// The names `populateBuildTooltipLayout` compares `tooltipWin` with, in its order (ControlBarPopupDescription.cpp:556).
+pub const TOOLTIP_WINDOW_NAMES: [(&[u8], TooltipWindow); 3] = [
+    (b"ControlBar.wnd:MoneyDisplay", TooltipWindow::Money),
+    (b"ControlBar.wnd:PowerWindow", TooltipWindow::Power),
+    (b"ControlBar.wnd:GeneralsExp", TooltipWindow::GeneralsExp),
+];
+
+/// GitHub #144: `populateBuildTooltipLayout(NULL, tooltipWin)`'s comparisons (ControlBarPopupDescription.cpp:556): which
+/// of the money, power and general's experience windows `tooltip_win` is, each found with
+/// `TheWindowManager->winGetWindowFromId(m_buildToolTipLayout->getFirstWindow(), nameToKey(name))` (`find`); `None` is
+/// upstream's `DEBUG_ASSERTCRASH` and `return`: the popup is not filled (and `showBuildTooltipLayout` then shows it as it
+/// was).
+///
+/// The search starts at the popup layout's first window and walks the window list from there (`m_next`) and every
+/// child. `ControlBar::init` makes the popup's layout after `ControlBar.wnd` exists (`InGameUI::init`'s
+/// `createControlBar()` comes before `TheControlBar->init()`), and `linkWindow` puts a new window at the list's head, so
+/// every window of `ControlBar.wnd` is reached: `find` searches the bar's windows.
+pub fn tooltip_window_of(tooltip_win: crate::client::window_script::WinId, find: impl Fn(&[u8]) -> Option<crate::client::window_script::WinId>) -> Option<TooltipWindow> {
+    for (i, (name, win)) in TOOLTIP_WINDOW_NAMES.iter().enumerate() {
+        if find(name) == Some(tooltip_win) {
+            // (planted: the general's experience window read as the money's)
+            if crate::logic::modules::plant(9358) && i == 2 {
+                return Some(TooltipWindow::Money);
+            }
+            return Some(*win);
+        }
+    }
+    if crate::logic::modules::plant(9355) {
+        return Some(TooltipWindow::Money);
+    }
+    None
+}
+
+/// `populateBuildTooltipLayout(NULL, tooltipWin)`'s branches for the money, power and general's experience windows
+/// (ControlBarPopupDescription.cpp:556-596; no cost). The power's description is formatted with the displayed player's
+/// production and consumption (`descrip.format(descrip, ...)`): the observer's look-at player while the observer's
+/// control bar is on, else the local player; 0, 0 without one. **Corrected 2026-11-11, #144:** ~~the observer's player
+/// is not translated~~ it is ([`PopupWindowHost::is_observer_control_bar_on`]).
+pub fn populate_window_tooltip(win: TooltipWindow, h: &impl PopupWindowHost) -> Tooltip {
+    use crate::logic::modules::plant;
     let (n, d): (&[u8], &[u8]) = match win {
         TooltipWindow::Money => (b"CONTROLBAR:Money", b"CONTROLBAR:MoneyDescription"),
         TooltipWindow::Power => (b"CONTROLBAR:Power", b"CONTROLBAR:PowerDescription"),
@@ -490,8 +540,13 @@ pub fn populate_window_tooltip(win: TooltipWindow, h: &mut impl PopupHost) -> To
     let name = h.fetch_text(n);
     let mut description = h.fetch_text(d);
     if win == TooltipWindow::Power {
-        let (p, c) = h.local_energy().unwrap_or((0, 0));
-        description = format_wide(&description, &[FormatArg::Int(i64::from(p)), FormatArg::Int(i64::from(c))]);
+        let energy = if h.is_observer_control_bar_on() && !plant(9356) { h.observer_look_at_player_energy() } else { h.local_energy() };
+        match energy {
+            Some((p, c)) if plant(9354) => description = format_wide(&description, &[FormatArg::Int(i64::from(c)), FormatArg::Int(i64::from(p))]),
+            Some((p, c)) => description = format_wide(&description, &[FormatArg::Int(i64::from(p)), FormatArg::Int(i64::from(c))]),
+            None if plant(9357) => {}
+            None => description = format_wide(&description, &[FormatArg::Int(0), FormatArg::Int(0)]),
+        }
     }
     Tooltip { name, cost: None, description }
 }

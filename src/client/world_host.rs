@@ -1189,6 +1189,20 @@ impl crate::client::control_bar_popup::PopupHost for WorldClient {
         let mods: Vec<_> = self.world.all_modules(obj).into_iter().filter(|&i| self.world.module_slot(obj, i).is_some_and(|m| m.name == b"OverchargeBehavior")).collect();
         mods.into_iter().map(|i| self.world.module_call(obj, i, ModuleCall::IsOverchargeActive).as_bool()).collect()
     }
+}
+
+/// #144: the money, power and general's experience windows' popups (`populateBuildTooltipLayout(NULL, tooltipWin)`), read
+/// from the World. The client has no observer's control bar (`isObserverControlBarOn()` is FALSE).
+impl crate::client::control_bar_popup::PopupWindowHost for WorldClient {
+    fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
+        crate::client::control_bar_command::ControlBarStateHost::fetch_text(self, label)
+    }
+    fn is_observer_control_bar_on(&self) -> bool {
+        false
+    }
+    fn observer_look_at_player_energy(&self) -> Option<(i32, i32)> {
+        None
+    }
     fn local_energy(&self) -> Option<(i32, i32)> {
         let frame = self.world.frame();
         self.world.players.get_nth(self.player).map(|p| (p.energy.production(frame), p.energy.consumption()))
@@ -1891,7 +1905,7 @@ CommandSet ChargerSet\n 1 = Command_Own\nEnd\n";
         assert_eq!((t.cost.is_none(), text(&t.description)), (true, "Already upgraded.".into()));
         let p = set_portrait_by_object(Some(x.gunner), &mut c);
         assert_eq!(p.upgrade_cameos[0], Some((Some(b"SUDrill".to_vec()), true)));
-        let t = populate_window_tooltip(TooltipWindow::Power, &mut c);
+        let t = populate_window_tooltip(TooltipWindow::Power, &c);
         eprintln!("#35: the power's popup: {:?} / {:?}", text(&t.name), text(&t.description));
         assert_eq!((text(&t.name), text(&t.description)), ("Power".into(), "Power 0/0".into()));
     }

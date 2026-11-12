@@ -3637,6 +3637,16 @@ extern "C" {
     // popup part, verbatim.
     pub fn ref_build_tooltip_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #144: ControlBar::init's tooltip callbacks (with setControlCommand and setCommandBarBorder) and
+    // populateBuildTooltipLayout's money, power and general's experience branches (differential/wrap_bar_tooltips.cpp,
+    // which documents the words), verbatim.
+    pub fn ref_bar_tooltips_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #144: the script letterbox: W3DDisplay.cpp's renderLetterBox, isLetterBoxFading, isLetterBoxed,
+    // toggleLetterBox, enableLetterBox and Display::reset's letterbox lines (differential/wrap_letterbox.cpp, which
+    // documents the words), verbatim.
+    pub fn ref_letterbox_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #142 (#140, #139): the shell's script hooks (differential/wrap_shell_hooks.cpp, which documents the kinds and
     // words): ShellHooks.h's enum, Scripts.cpp's TheShellHookNames and SignalUIInteraction, ScriptEngine.cpp's
     // signalUIInteract, allocateFlag, evaluateFlag and update's clear of m_uiInteractions, verbatim.

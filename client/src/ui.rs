@@ -53,13 +53,21 @@
 //! Since #136, the bar hides, shows, lowers and raises as `TheControlBar`'s stages do
 //! (`rts_lockstep_engine::client::control_bar_stage`, differential-tested): [`GameUi::toggle_control_bar`] is
 //! `ToggleControlBar`, `ButtonLarge`'s `GBM_SELECTED` is `toggleControlBarStage` (the low stage leaves the bar's top tenth
-//! of the layout showing; the scheme's layers move with `BackgroundMarker`). Its windows' tooltips go to the one mouse
-//! ([`GameUi::with_mouse`]) and their click sounds to the audio ([`GameUi::take_gui_sounds`]).
+//! of the layout showing; the scheme's layers move with `BackgroundMarker`). ~~Its windows' tooltips go to the one mouse~~
+//! **Corrected 2026-11-11, #144:** the tooltip text of its windows without `commandButtonTooltip` goes to the one mouse
+//! ([`GameUi::with_mouse`]), and their click sounds to the audio ([`GameUi::take_gui_sounds`]).
 //!
 //! Since #138, the bar's other `HideControlBar`/`ShowControlBar` callers: its load makes `createControlBar`'s, the end of
 //! `GameEngine::init`'s and the end of `startNewGame`'s calls ([`load_game_ui_with`]), a script's letterbox reaches it as
 //! the logic's event ([`GameUi::script_call`]), and the World's game cleared hides it ([`GameUi::clear_game_data`]). The
 //! view's height the stages ask for is applied: [`tactical_view_height`] maps it onto the window.
+//!
+//! Since #144, `ControlBar::init`'s tooltip callbacks ([`GameUi::init_tooltips`],
+//! `rts_lockstep_engine::client::build_tooltip::control_bar_init_tooltips`, differential-tested): the non-command push
+//! buttons (`PopupCommunicator`, `ButtonOptions`, `ButtonIdleWorker`, `ButtonPlaceBeacon`, `ButtonGeneral`, `ButtonLarge`)
+//! get their `NonCommand_*` commands and `commandButtonTooltip`, and the power, money and general's experience windows
+//! `commandButtonTooltip`, so their popups show (the windows' ones through [`GameUi::window_popup`]) and their own tooltip
+//! text no longer goes to `TheMouse`, as upstream's.
 //!
 //! The client still never changes the simulation: everything here reads the `World`.
 
@@ -67,9 +75,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
-use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, set_portrait_by_object, PopupHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
+use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, populate_window_tooltip, set_portrait_by_object, tooltip_window_of, PopupHost, PopupWindowHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
-use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, BuildTooltip, BuildTooltipHost, COMMAND_BUTTON_TOOLTIP};
+use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, GAME_COLOR_UNDEFINED, NON_COMMAND_BUTTONS};
+use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
     clear_game_data_control_bar, create_control_bar, game_engine_init_control_bar, script_control_bar, set_toggle_images, start_new_game_control_bar, toggle_control_bar,
     ControlBarStage, ControlBarStageHost, ControlBarStages, ToggleImage, BUTTON_LARGE,
@@ -156,6 +165,12 @@ pub struct GameUi {
     touch_press_ms: Option<u32>,
     /// (#136) The window code's sounds (`GUIClick` ...) since [`GameUi::take_gui_sounds`].
     gui_sounds: Vec<Vec<u8>>,
+    /// (#144) The non-command push buttons' commands (`ControlBar::init`'s `setControlCommand`: `GadgetButtonSetData`),
+    /// by window: each `NonCommand_*` button's place in the World's list.
+    pub non_command_buttons: Vec<(WinId, usize)>,
+    /// (#144) How many times `populateBuildTooltipLayout` was called: the application refills the popup's text when it
+    /// changes (upstream fills it at that call, and the text then stays as it was filled).
+    pub popup_fills: u32,
 }
 
 /// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
@@ -375,6 +390,8 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         slot_buttons: Vec::new(),
         touch_press_ms: None,
         gui_sounds: Vec::new(),
+        non_command_buttons: Vec::new(),
+        popup_fills: 0,
         images,
         wm,
         schemes,
@@ -391,6 +408,10 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         stage.switch_control_bar_stage(ControlBarStages::Default as i32, h);
         start_new_game_control_bar(stage, false, h);
     });
+    // (#144) `ControlBar::init`'s tooltip callbacks (ControlBar.cpp:1190-1240): the bar's windows get
+    // `commandButtonTooltip`; the `NonCommand_*` buttons are the World's, given by the application once it has the World
+    // ([`GameUi::init_tooltips`] again): none here
+    ui.init_tooltips(|_| None);
     UiBuild::Ready(Box::new(ui))
 }
 
@@ -619,6 +640,10 @@ struct PopupBar<'a> {
     wm: &'a GameWindowManager,
     command_windows: &'a [Option<WinId>],
     slot_buttons: &'a [Option<usize>],
+    /// (#144) [`GameUi::non_command_buttons`].
+    non_command_buttons: &'a [(WinId, usize)],
+    /// (#144) [`GameUi::popup_fills`].
+    fills: &'a mut u32,
     hidden: &'a mut bool,
     popup: &'a mut Option<(Option<usize>, Option<WinId>)>,
     world: PopupWorld,
@@ -641,6 +666,10 @@ impl BuildTooltipHost for PopupBar<'_> {
         self.wm.tree.windows[w].inst.tooltip_delay
     }
     fn gadget_button_command(&self, w: WinId) -> Option<usize> {
+        // (#144) a non-command button's, set by `ControlBar::init`
+        if let Some(&(_, c)) = self.non_command_buttons.iter().find(|(nw, _)| *nw == w) {
+            return Some(c);
+        }
         let slot = self.command_windows.iter().position(|&c| c == Some(w))?;
         self.slot_buttons.get(slot).copied().flatten()
     }
@@ -656,12 +685,89 @@ impl BuildTooltipHost for PopupBar<'_> {
     }
     fn populate_build_tooltip_layout(&mut self, command: Option<usize>, tooltip_win: Option<WinId>) {
         *self.popup = Some((command, tooltip_win));
+        *self.fills = self.fills.wrapping_add(1);
     }
     fn layout_is_hidden(&self) -> bool {
         *self.hidden
     }
     fn layout_hide(&mut self, hide: bool) {
         *self.hidden = hide;
+    }
+}
+
+/// (#144) [`ControlBarInitHost`] on the bar's window manager: `ControlBar::init`'s tooltip part and `setControlCommand`
+/// for the non-command buttons. The border colours are `ControlBar::ControlBar`'s (`GAME_COLOR_UNDEFINED`: a scheme's
+/// `init` sets them later, not modelled); there is no `TheHotKeyManager` here (the bar's hot keys are the
+/// application's, and upstream's `switchToContext` resets the manager before any key is used: #144's gaps).
+struct BarInitHost<'a> {
+    wm: &'a mut GameWindowManager,
+    images: &'a ImageCollection,
+    /// `findCommandButton`'s answers for the `NonCommand_*` names: the name, the button's place, the button.
+    found: Vec<(&'static [u8], usize, CommandButton)>,
+    data: &'a mut Vec<(WinId, usize)>,
+}
+
+impl BarInitHost<'_> {
+    fn button(&self, c: usize) -> Option<&CommandButton> {
+        self.found.iter().find(|(_, i, _)| *i == c).map(|(_, _, b)| b)
+    }
+}
+
+impl ControlBarInitHost for BarInitHost<'_> {
+    fn win_get_window_from_id(&self, name: &[u8]) -> Option<WinId> {
+        self.wm.tree.find_by_name(name)
+    }
+    fn find_command_button(&self, name: &[u8]) -> Option<usize> {
+        self.found.iter().find(|(n, _, _)| *n == name).map(|(_, i, _)| *i)
+    }
+    fn win_set_tooltip_func(&mut self, w: WinId) {
+        self.wm.ext[w].tooltip = Some(COMMAND_BUTTON_TOOLTIP.to_vec());
+    }
+    fn is_push_button_input(&self, w: WinId) -> bool {
+        self.wm.ext[w].input == rts_lockstep_engine::client::window_manager::InputFunc::PushButton
+    }
+    fn command_options(&self, c: usize) -> u32 {
+        self.button(c).map_or(0, |b| b.options)
+    }
+    /// `getButtonImage()`: the `ButtonImage` found in the mapped images (`cacheButtonImage`).
+    fn command_button_image(&self, c: usize) -> Option<Vec<u8>> {
+        let name = &self.button(c)?.images[0];
+        (!name.is_empty() && self.images.find_image_by_name(name).is_some()).then(|| name.clone())
+    }
+    fn command_text_label(&self, c: usize) -> Vec<u8> {
+        self.button(c).map(|b| b.labels[0].clone()).unwrap_or_default()
+    }
+    fn command_has_sciences(&self, c: usize) -> bool {
+        self.button(c).is_some_and(|b| !b.science.is_empty())
+    }
+    fn command_border(&self, c: usize) -> i32 {
+        self.button(c).map_or(0, |b| b.border)
+    }
+    fn gadget_button_enable_check_like(&mut self, w: WinId, check_like: bool, checked: bool) {
+        rts_lockstep_engine::client::gadget::button_enable_check_like(self.wm, w, check_like, checked);
+    }
+    fn gadget_button_set_enabled_image(&mut self, w: WinId, image: Vec<u8>) {
+        rts_lockstep_engine::client::control_bar_scheme::gadget_button_set_enabled_image(&mut self.wm.tree, w, Some(image));
+    }
+    fn gadget_button_clear_text(&mut self, w: WinId) {
+        rts_lockstep_engine::client::gadget::button_set_text(self.wm, &mut NoGuiHost, Some(w), &[]);
+    }
+    fn gadget_button_set_data(&mut self, w: WinId, c: usize) {
+        self.data.retain(|(dw, _)| *dw != w);
+        self.data.push((w, c));
+    }
+    fn gadget_button_set_border(&mut self, w: WinId, color: i32, draw: bool) {
+        rts_lockstep_engine::client::gadget::button_set_border(self.wm, w, color, draw);
+    }
+    fn border_colors(&self) -> [i32; 4] {
+        [GAME_COLOR_UNDEFINED; 4]
+    }
+    fn search_hot_key(&mut self, _label: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+    fn add_hot_key(&mut self, _w: WinId, _key: Vec<u8>) {}
+    fn gadget_button_set_alt_sound(&mut self, w: WinId, sound: &[u8]) {
+        rts_lockstep_engine::client::gadget::button_set_alt_sound(self.wm, w, sound);
     }
 }
 
@@ -836,7 +942,16 @@ impl GameUi {
 
     /// (#138) `f` on the popup's state with its host ([`PopupBar`]).
     fn with_popup(&mut self, world: PopupWorld, f: impl FnOnce(&mut BuildTooltip, &mut PopupBar)) {
-        let mut h = PopupBar { wm: &self.wm, command_windows: &self.command_windows, slot_buttons: &self.slot_buttons, hidden: &mut self.popup_hidden, popup: &mut self.popup, world };
+        let mut h = PopupBar {
+            wm: &self.wm,
+            command_windows: &self.command_windows,
+            slot_buttons: &self.slot_buttons,
+            non_command_buttons: &self.non_command_buttons,
+            fills: &mut self.popup_fills,
+            hidden: &mut self.popup_hidden,
+            popup: &mut self.popup,
+            world,
+        };
         f(&mut self.build_tooltip, &mut h);
     }
 
@@ -852,6 +967,34 @@ impl GameUi {
         } else {
             self.popup
         }
+    }
+
+    /// (#144) `ControlBar::init`'s tooltip callbacks (ControlBar.cpp:1190-1240,
+    /// `rts_lockstep_engine::client::build_tooltip::control_bar_init_tooltips`) on the bar's windows: the non-command
+    /// push buttons get their `NonCommand_*` command (`find`: a name's button in the World's list and the button;
+    /// `None` for `findCommandButton`'s `NULL`) and `commandButtonTooltip`; the power, money and general's experience
+    /// windows get `commandButtonTooltip`. The window manager then calls the popup's timing over them, and their own
+    /// tooltip text no longer goes to `TheMouse`. New glue: upstream runs it once, with its command buttons loaded; the
+    /// bar is read before the World's buttons are at hand, so [`load_game_ui_with`] runs it with none and the
+    /// application again with the World's (a second run sets the same callbacks again and the commands found).
+    pub fn init_tooltips(&mut self, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
+        let found = NON_COMMAND_BUTTONS.iter().filter_map(|(_, name)| find(name).map(|(i, b)| (*name, i, b))).collect();
+        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons };
+        control_bar_init_tooltips(&mut h);
+    }
+
+    /// (#144) `populateBuildTooltipLayout(NULL, tooltipWin)` for a window: which of the money, power and general's
+    /// experience windows it is (`tooltip_window_of`, searching the bar's windows), and that window's popup; `None` for
+    /// another window (upstream's `DEBUG_ASSERTCRASH` and `return`: the popup keeps what it had).
+    pub fn window_popup(&self, win: WinId, h: &impl PopupWindowHost) -> Option<Tooltip> {
+        let t = tooltip_window_of(win, |n| self.wm.tree.find_by_name(n))?;
+        Some(populate_window_tooltip(t, h))
+    }
+
+    /// (#144) The non-command buttons' popups (`populateBuildTooltipLayout(commandButton)` of each `NonCommand_*` button
+    /// `ControlBar::init` gave a window), by the button's place in the World's list, as [`tooltip_lines`] shows them.
+    pub fn non_command_tooltips<H: PopupHost>(&self, h: &mut H) -> Vec<(usize, Vec<String>)> {
+        self.non_command_buttons.iter().filter_map(|&(_, c)| h.button(c).map(|b| (c, tooltip_lines(&populate_build_tooltip_layout(&b, h))))).collect()
     }
 
     /// (#138) A logic event's call on the bar, as the application takes it from the frame's events: a script's
@@ -1521,40 +1664,104 @@ mod tests {
         assert_eq!(ui.stage.current, ControlBarStages::Default, "no stage switch during a replay's playback");
     }
 
-    /// #136: one `TheMouse`. Predicted before the run: with the mouse lent, the pointer over `ButtonLarge` sets its tooltip
+    /// #136: one `TheMouse`. ~~Predicted before the run: with the mouse lent, the pointer over `ButtonLarge` sets its tooltip
     /// text into the one mouse (`winProcessMouseEvent`'s window tooltip), and the bar's manager keeps none of its own;
     /// once the mouse has been still past its delay the tooltip is drawn by the world's drawing
     /// (`crate::cursor::tooltip_shapes`): a box and the text; the pointer over the bar's background clears it (the event's
-    /// `setCursorTooltip(UnicodeString::TheEmptyString)`), and nothing is drawn.
+    /// `setCursorTooltip(UnicodeString::TheEmptyString)`), and nothing is drawn.~~
     ///
-    /// **Result (2026-11-11):** one miss, the test's own: the first draw is the box alone, 2 pixels wide (the highlight
+    /// ~~**Result (2026-11-11):** one miss, the test's own: the first draw is the box alone, 2 pixels wide (the highlight
     /// opens the box and reveals the text over the following draws, as #124's test found), so the text is looked for
-    /// over the next draws. Then as predicted.
+    /// over the next draws. Then as predicted.~~
+    ///
+    /// **Corrected 2026-11-11, #144:** that asserted the client's behaviour, not upstream's: upstream's `ControlBar::init`
+    /// gives `ButtonLarge` (and the other non-command buttons, and the power, money and general's experience windows)
+    /// `commandButtonTooltip`, so `winProcessMouseEvent` calls it **instead of** setting the window's tooltip text into
+    /// `TheMouse` (GameWindowManager.cpp:1222). Revisited to assert upstream's behaviour. *Predictions, written before the
+    /// run:* loaded, the bar's windows already have the callback ([`load_game_ui_with`] runs the init with no command
+    /// buttons) and `ButtonLarge` no command; given the World's `NonCommand_UpDown` (place 7), `ButtonLarge` holds it.
+    /// With the mouse lent, the pointer over `ButtonLarge` leaves the one mouse's tooltip **empty** (its `TIP:Large` is
+    /// never set) and nothing is drawn for it; still over it for a second of frames, the bar's popup shows
+    /// `NonCommand_UpDown` (`(Some(7), None)`); over the power window it goes, then shows the power window's own popup
+    /// (`(None, Some(power))`, "Power" and its description formatted with the player's production and consumption),
+    /// then the money window's ("Money"); over the bar's background it goes, and the mouse's tooltip stays empty.
+    ///
+    /// **Result (2026-11-11):** one miss, the test's own: the popup never showed over `ButtonLarge` with the clock
+    /// starting at 0, because the synthetic windows' tooltip delay is -1 and upstream's unsigned wait
+    /// (`beginWaitTime + getTooltipDelay() < timeGetTime()`) is then `0xFFFFFFFF < now`, never true (#138's
+    /// differential test predicted exactly this). Started at 1 s, the rest held as predicted.
     #[test]
     fn the_bars_tooltip_is_the_one_mouses() {
         use rts_lockstep_engine::client::mouse::Mouse;
+        struct Energy;
+        impl PopupWindowHost for Energy {
+            fn fetch_text(&self, label: &[u8]) -> Vec<u16> {
+                match label {
+                    b"CONTROLBAR:Power" => "Power".encode_utf16().collect(),
+                    b"CONTROLBAR:PowerDescription" => "%d made, %d used".encode_utf16().collect(),
+                    b"CONTROLBAR:Money" => "Money".encode_utf16().collect(),
+                    _ => label.iter().map(|&b| u16::from(b)).collect(),
+                }
+            }
+            fn is_observer_control_bar_on(&self) -> bool {
+                false
+            }
+            fn observer_look_at_player_energy(&self) -> Option<(i32, i32)> {
+                None
+            }
+            fn local_energy(&self) -> Option<(i32, i32)> {
+                Some((5, 3))
+            }
+        }
         let mut ui = bar_with_button_large();
+        let large = ui.button_large.expect("ButtonLarge");
+        let power = ui.power.expect("PowerWindow");
+        let money = ui.money.expect("MoneyDisplay");
+        for w in [large, power, money] {
+            assert_eq!(ui.wm.ext[w].tooltip.as_deref(), Some(COMMAND_BUTTON_TOOLTIP));
+        }
+        assert!(ui.non_command_buttons.is_empty());
+        let mut up_down = CommandButton::new(b"NonCommand_UpDown");
+        up_down.labels[0] = b"CONTROLBAR:UpDown".to_vec();
+        ui.init_tooltips(|n| (n == b"NonCommand_UpDown").then(|| (7, up_down.clone())));
+        assert_eq!(ui.non_command_buttons, vec![(large, 7)]);
         let mut m = Mouse::new();
         m.init();
         m.set_visibility(true);
         m.set_mouse_limits(800, 600);
         m.pos = ICoord2D { x: 400, y: 460 };
-        let w = PopupWorld::default();
-        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (400.0, 460.0), false, &w));
-        let text = String::from_utf16_lossy(&m.tooltip.display_string);
-        assert!(text.contains("TIP:Large"), "{text:?}");
-        assert!(ui.wm.mouse.is_empty && !m.tooltip.is_empty);
+        // (the clock starts at 1 s: the synthetic windows' tooltip delay is -1, and `beginWaitTime + delay` at a
+        // first call at 0 would be `0xFFFFFFFF`, which no clock passes, #138's test's finding)
+        let mut t = 1000u32;
+        let mut frames = |ui: &mut GameUi, m: &mut Mouse, at: (f32, f32), n: u32| {
+            for _ in 0..n {
+                let w = PopupWorld { now_ms: t, ..Default::default() };
+                ui.popup_frame(&w);
+                ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, at, false, &w));
+                t += 100;
+            }
+        };
+        frames(&mut ui, &mut m, (400.0, 460.0), 1);
+        assert!(m.tooltip.is_empty && m.tooltip.display_string.is_empty(), "{:?}", String::from_utf16_lossy(&m.tooltip.display_string));
+        assert!(ui.wm.mouse.is_empty);
         m.tooltip.create_stream_messages(1000, true);
         m.tooltip.create_stream_messages(100_000, false);
-        let shapes = crate::cursor::tooltip_shapes(&mut m, 100_000, false);
-        assert!(shapes.iter().any(|s| matches!(s, crate::cursor::TooltipShape::Rect { .. })), "{shapes:?}");
-        // (the box opens and the text is revealed over the following draws, `drawTooltip`'s highlight)
-        let revealed = (1..200).any(|i| {
-            let shapes = crate::cursor::tooltip_shapes(&mut m, 100_000 + i * 10, false);
-            shapes.iter().any(|s| matches!(s, crate::cursor::TooltipShape::Text { text, .. } if text.contains("TIP:Large")))
-        });
-        assert!(revealed, "the text is drawn");
-        ui.with_mouse(&mut m.tooltip, |ui| ui.pointer(gwm::MOUSE_POS, (600.0, 455.0), false, &w));
+        assert!(crate::cursor::tooltip_shapes(&mut m, 100_000, false).is_empty());
+        frames(&mut ui, &mut m, (400.0, 460.0), 10);
+        assert_eq!(ui.shown_popup(), Some((Some(7), None)));
+        assert!(m.tooltip.is_empty);
+        let fills = ui.popup_fills;
+        frames(&mut ui, &mut m, (120.0, 490.0), 12);
+        assert_eq!(ui.shown_popup(), Some((None, Some(power))));
+        assert!(ui.popup_fills > fills);
+        let tip = ui.window_popup(power, &Energy).expect("the power window's popup");
+        assert_eq!(tooltip_lines(&tip), vec!["Power".to_string(), "5 made, 3 used".to_string()]);
+        frames(&mut ui, &mut m, (60.0, 470.0), 12);
+        assert_eq!(ui.shown_popup(), Some((None, Some(money))));
+        assert_eq!(ui.window_popup(money, &Energy).map(|t| tooltip_lines(&t)[0].clone()).as_deref(), Some("Money"));
+        assert!(ui.window_popup(large, &Energy).is_none(), "a window the popup does not know: upstream's return");
+        frames(&mut ui, &mut m, (600.0, 455.0), 3);
+        assert_eq!(ui.shown_popup(), None);
         assert!(m.tooltip.is_empty);
         m.tooltip.create_stream_messages(200_000, false);
         assert!(crate::cursor::tooltip_shapes(&mut m, 200_000, false).is_empty());

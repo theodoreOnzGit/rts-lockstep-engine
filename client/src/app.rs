@@ -155,6 +155,13 @@ struct Game {
     cleared_seen: bool,
     /// (#117) A script's `closeWindows` (`doQuickVictory`) still to be made on the shell's windows.
     close_windows_pending: bool,
+    /// (#144) `TheDisplay`'s letterbox (`rts_lockstep_engine::client::letterbox`): a script's `EnableLetterBox`, drawn by
+    /// [`letterbox_bars`].
+    letterbox: rts_lockstep_engine::client::letterbox::LetterBox,
+    /// (#144) The popup's text as the last `populateBuildTooltipLayout(NULL, window)` filled it (the money, power and
+    /// general's experience windows), and the bar's fill count it was taken at (`GameUi::popup_fills`).
+    window_popup_lines: Option<Vec<String>>,
+    popup_fills_seen: u32,
     /// (#117) `TheInGameUI->isClientQuiet()` (the shell's quit menu flag), for the audio's radar edge sounds.
     client_quiet: bool,
     /// (#117) `Mouse.ini` still to be read for the mouse (`GameClient::init`'s `parseIni`); until it is, the window's
@@ -240,6 +247,9 @@ impl Game {
             pause: Default::default(),
             cleared_seen,
             close_windows_pending: false,
+            letterbox: Default::default(),
+            window_popup_lines: None,
+            popup_fills_seen: 0,
             client_quiet: false,
             mouse_pending: true,
             radius: Default::default(),
@@ -383,6 +393,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
         .add_systems(Update, (radius_decal, logic_decals, world_tooltip).chain().after(show_cursor))
+        .add_systems(Update, letterbox_bars.after(world_tooltip))
         .run();
 }
 
@@ -531,7 +542,7 @@ fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
     commands.insert_resource(rig);
 }
 
-fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
+fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>) {
     if game.paused || game.error.is_some() {
         return;
     }
@@ -563,8 +574,15 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>) {
             }
             g.close_windows_pending |= back.close_windows;
             // (#138: a script's letterbox `HideControlBar`/`ShowControlBar` and `deleteBuildTooltipLayout`, to the bar)
-            if let Some(ui) = g.ui.as_mut() {
-                for c in &back.bar_calls {
+            // (#144: its `EnableLetterBox`, `TheDisplay->enableLetterBox(enable)` at `timeGetTime()`, to the display's
+            // letterbox, and the zoom limit to the tactical view, `if( TheTacticalView )`)
+            let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
+            for c in &back.bar_calls {
+                if let rts_lockstep_engine::logic::client_event::ScriptInputCall::EnableLetterBox(enable) = *c {
+                    if let (Some(limit), Some(r)) = (g.letterbox.enable_letter_box(enable, now_ms), rig.as_deref_mut()) {
+                        r.cam.view.zoom_limited = limit;
+                    }
+                } else if let Some(ui) = g.ui.as_mut() {
                     ui.script_call(c);
                 }
             }
@@ -1795,6 +1813,49 @@ fn control_bar(
 #[derive(Component)]
 struct ZoomColumn;
 
+/// (#144) One of the letterbox's bars on screen.
+#[derive(Component)]
+struct LetterBoxBar;
+
+/// (#144) GUI glue (needs a window; the bars and their fade are `rts_lockstep_engine::client::letterbox`, tested there and
+/// against the C++): `W3DDisplay::draw`'s `renderLetterBox(now)`, once a rendered frame, on the window as the display
+/// (`m_width`, `m_height` in logical pixels): each `drawFillRect` a black node with the fade as alpha. Upstream draws it
+/// after the views, the in-game UI's windows and the mouse, so it is over all of them here too (`GlobalZIndex(21)`, over
+/// the world tooltip's 20 and the shell's 10); it takes no input, as a draw does not. New: the client's own buttons
+/// (the zoom column, which a phone needs) stay over it while it is drawn (`GlobalZIndex(22)`), so a cinematic does not
+/// hide them; upstream has no such buttons.
+fn letterbox_bars(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, bars: Query<Entity, With<LetterBoxBar>>, cols: Query<Entity, With<ZoomColumn>>) {
+    let Ok(win) = windows.single() else { return };
+    let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
+    let rects = game.letterbox.render_letter_box(now_ms, win.width() as i32, win.height() as i32);
+    for e in &bars {
+        commands.entity(e).despawn();
+    }
+    let mut drawn = false;
+    for r in rects {
+        // (a display wider than 16:9 gives a negative size: nothing to draw)
+        if r.width <= 0 || r.height <= 0 {
+            continue;
+        }
+        let alpha = (r.color >> 24) as f32 / 255.0;
+        commands.spawn((
+            LetterBoxBar,
+            Node { position_type: PositionType::Absolute, left: px(r.x as f32), top: px(r.y as f32), width: px(r.width as f32), height: px(r.height as f32), ..default() },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, alpha)),
+            Pickable::IGNORE,
+            GlobalZIndex(21),
+        ));
+        drawn = true;
+    }
+    for e in &cols {
+        if drawn {
+            commands.entity(e).insert(GlobalZIndex(22));
+        } else {
+            commands.entity(e).remove::<GlobalZIndex>();
+        }
+    }
+}
+
 /// GUI glue (needs a window): the zoom column stays above the game's control bar (#12).
 fn lift_zoom(bar: Res<UiBar>, mut cols: Query<&mut Node, With<ZoomColumn>>) {
     for mut n in &mut cols {
@@ -2011,7 +2072,13 @@ fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
     let world = &g.controls.client.world;
     let side = world.players.get_nth(g.controls.client.player).map(|p| p.side.clone()).unwrap_or_default();
     match crate::ui::load_game_ui_with(&art.fs, &world.statics.game_text, &side, shared) {
-        crate::ui::UiBuild::Ready(ui) => {
+        crate::ui::UiBuild::Ready(mut ui) => {
+            // (#144) `ControlBar::init`'s `findCommandButton("NonCommand_...")`: the World's buttons
+            let client = &g.controls.client;
+            ui.init_tooltips(|name| {
+                let i = client.world.cuts.command_buttons.iter().position(|b| b.name == name)?;
+                rts_lockstep_engine::client::control_bar_command::ControlBarStateHost::button(client, i).map(|b| (i, b))
+            });
             info!("control bar: {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
             g.ui_status = format!("control bar: {} windows", ui.wm.tree.windows.len());
             g.ui = Some(ui);
@@ -2128,6 +2195,11 @@ fn game_ui(
     // (#35) the popups of this selection's buttons, by button (#138: ~~a new selection shows none~~ the popup is the
     // bar's, which shows what `populateBuildTooltipLayout` was last given)
     g.tooltip_lines = state.commands.iter().zip(&state.tooltips).filter_map(|(c, t)| Some((c.as_ref()?.button, crate::ui::tooltip_lines(t.as_ref()?)))).collect();
+    // (#144) and the non-command buttons' (`ControlBar::init`'s `NonCommand_*`)
+    if let Some(ui) = g.ui.as_ref() {
+        let more = ui.non_command_tooltips(&mut g.controls.client);
+        g.tooltip_lines.extend(more);
+    }
     let ui = g.ui.as_mut().expect("checked");
     // (#34) the windows as the state sets them; a grab whose release was not over the bar ends
     ui.sync(&state);
@@ -2156,6 +2228,16 @@ fn game_ui(
     if let (Some((at, touch)), Some(p)) = (g.bar_pointer, ui_bar.placement) {
         let pos = p.to_layout((at.x, at.y));
         let _ = ui.with_mouse(&mut g.pause.mouse.tooltip, |ui| ui.pointer(rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS, pos, touch, &popup_world));
+    }
+    // (#144) a `populateBuildTooltipLayout(NULL, window)` since the last frame fills the popup's text from the World,
+    // once; an unknown window leaves it as it was (upstream's `return`)
+    if ui.popup_fills != g.popup_fills_seen {
+        g.popup_fills_seen = ui.popup_fills;
+        if let Some((None, Some(w))) = ui.popup {
+            if let Some(t) = ui.window_popup(w, &g.controls.client) {
+                g.window_popup_lines = Some(crate::ui::tooltip_lines(&t));
+            }
+        }
     }
     let ui = g.ui.as_ref().expect("checked");
     let quads = ui.frame(&state);
@@ -2494,8 +2576,12 @@ struct TooltipPanel(Vec<String>);
 /// panel just above the control bar, no wider than the screen less its 8-pixel margins (a phone's too). Rebuilt when its
 /// lines change; none while nothing is shown.
 fn tooltip_panel(mut commands: Commands, game: NonSend<Game>, mut panels: Query<(Entity, &mut TooltipPanel, &mut Node)>, windows: Query<&Window>, ui_bar: Res<UiBar>) {
-    let shown = game.ui.as_ref().and_then(|u| u.shown_popup()).and_then(|(c, _)| c);
-    let lines = shown.and_then(|b| game.tooltip_lines.iter().find(|(button, _)| *button == b).map(|(_, l)| l.clone()));
+    // (#144) a window's popup (the money, power and general's experience windows) shows the text it was filled with
+    let lines = match game.ui.as_ref().and_then(|u| u.shown_popup()) {
+        Some((Some(b), _)) => game.tooltip_lines.iter().find(|(button, _)| *button == b).map(|(_, l)| l.clone()),
+        Some((None, Some(_))) => game.window_popup_lines.clone(),
+        _ => None,
+    };
     let ww = windows.single().map_or(800.0, |w| w.width());
     let width = (ww - 16.0).clamp(120.0, 420.0);
     let mut existing = panels.iter_mut().next();
@@ -3232,6 +3318,8 @@ fn shell_ui(
         if let Some(bar) = g.ui.as_mut() {
             bar.clear_game_data();
         }
+        // (#144: `TheGameEngine->reset()`'s `Display::reset`, before it: the letterbox off at once)
+        g.letterbox.reset();
         ui.clear_game_data_windows();
         // (#117: then `clearGameData`'s `TheMouse->setVisibility(TRUE)`, GameLogicDispatch.cpp:294)
         g.pause.mouse.set_visibility(true);
