@@ -4418,6 +4418,77 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert_eq!(live.get_translation(), Vector3::new(4.0, 0.0, 2.0));
         }
 
+        /// (#175, an investigation: measures, changes nothing) The logic's pristine bones in a game made by the ordinary
+        /// path, against upstream's (`W3DModelDraw::getPristineBonePositionsForConditionState` and
+        /// `getProjectileLaunchOffset`, which this client reproduces since #172) for the same art, at `Scale` 2 and 1.
+        ///
+        /// Predictions, written before the first run (`issue175_predictions.md`):
+        /// - the logic's art-bone tables (`cuts.contain.{pristine_bones, pristine_bone_transforms, single_bones,
+        ///   fire_points, turret_bones}`, `cuts.bone_transforms`, `cuts.drawable_launch_offset`,
+        ///   `cuts.drawable_barrel_count`) are empty, at both scales; the object has a drawable;
+        /// - so the logic finds no `MUZZLEFX` bone, no launch offset, 0 barrels, and `getSingleLogicalBonePosition`
+        ///   falls back to the object's own position;
+        /// - upstream's (the client's) pristine `muzzlefx01` is at (16, 0, 8) with rotation part 2 I at scale 2, and
+        ///   at (4, 0, 2) with I at scale 1; the launch bone's projectile offset is the same matrix; pushed through
+        ///   an object at (100, 300, 0) (`Thing::convertBonePosToWorldPos`) it is (116, 300, 8) and (104, 300, 2).
+        #[test]
+        fn issue175_the_logic_s_bones_against_upstream_s() {
+            use crate::logic::weapon_host::WeaponHost;
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::team_ops::factory_find_team;
+            for (scale, art) in [(2.0f32, [16.0f32, 0.0, 8.0]), (1.0, [4.0, 0.0, 2.0])] {
+                // the logic: a template with the art's draw module and its scale, made as the game makes objects
+                let ini = format!(
+                    "Object ScaledGun\n Scale = {scale:.1}\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                     Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = GUNT\n   WeaponFireFXBone = PRIMARY MuzzleFX\n\
+                     \x20  WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n End\n\
+                     Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n"
+                );
+                let mut w = gate_world_with(&ini);
+                let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+                let id = make(&mut w, b"ScaledGun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
+                assert_eq!(w.find_object(id).unwrap().template().get_asset_scale(), scale);
+                assert!(w.has_drawable(id));
+                for _ in 0..30 {
+                    w.logic_update().unwrap();
+                }
+                let c = &w.cuts.contain;
+                assert!(c.pristine_bones.is_empty() && c.pristine_bone_transforms.is_empty() && c.single_bones.is_empty());
+                assert!(c.fire_points.is_empty() && c.turret_bones.is_empty());
+                assert!(w.cuts.bone_transforms.is_empty() && w.cuts.drawable_launch_offset.is_empty() && w.cuts.drawable_barrel_count.is_empty());
+                assert!(w.drawable_pristine_bones(id, b"MUZZLEFX", 1, 4).is_empty());
+                assert!(w.drawable_pristine_bone_transforms(id, b"MUZZLEFX", 1, 4).is_empty());
+                assert_eq!(WeaponHost::projectile_launch_offset(&mut w, id, 0, 0, -1), None);
+                assert_eq!(WeaponHost::barrel_count(&mut w, id, 0), Some(0));
+                let (found, logic_pos, _) = w.object_get_single_logical_bone_transform(id, b"MUZZLEFX01");
+                assert!(!found);
+                assert_eq!((logic_pos.x, logic_pos.y, logic_pos.z), (100.0, 300.0, 0.0));
+
+                // upstream's, through the client's translation of W3DModelDraw (#172) on the same art
+                let mut rig = Rig::new();
+                let d = Arc::new(
+                    parse(&[(0, "DefaultConditionState", ""), (1, "Model", "GUNT"), (1, "WeaponFireFXBone", "PRIMARY MuzzleFX"), (1, "WeaponLaunchBone", "PRIMARY MuzzleFX")])
+                        .unwrap(),
+                );
+                let mut a = W3dFiles { assets: &mut rig.am, fs: &rig.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
+                let m = W3DModelDraw::new_scaled(d, 0, false, false, scale, Arc::new(Vec::new()), &mut env).unwrap();
+                let cache = m.get_cur_state().unwrap().bone_cache();
+                let pristine = cache.pristine_bones[&b"muzzlefx01"[..]].mtx;
+                assert!(near(pristine.get_translation(), art), "{:?}", pristine.get_translation());
+                assert_eq!((pristine.row[0][0], pristine.row[1][1], pristine.row[2][2]), (scale, scale, scale));
+                let offset = cache.weapon_barrel_info_vec[0][0].projectile_offset_mtx;
+                assert_eq!(offset, pristine);
+                let p = Coord3D { x: art[0], y: art[1], z: art[2] };
+                let (world_pos, _) = w.object_convert_bone_pos_to_world_pos(id, &p, &pristine);
+                eprintln!(
+                    "#175 scale {scale}: logic: no bone, getSingleLogicalBonePosition -> ({}, {}, {}); upstream: pristine ({}, {}, {}), world ({}, {}, {}), diag {}",
+                    logic_pos.x, logic_pos.y, logic_pos.z, art[0], art[1], art[2], world_pos.x, world_pos.y, world_pos.z, pristine.row[0][0]
+                );
+                assert_eq!((world_pos.x, world_pos.y, world_pos.z), (100.0 + art[0], 300.0 + art[1], art[2]));
+            }
+        }
+
         /// The browser's asset source in small (GitHub #42): the files of [`gunt`], answering every question "none for
         /// now" (counted, as `Deferred` counts them) until `arrived`, or only the skeleton when `skeleton_only`.
         struct Fetching<'a> {
