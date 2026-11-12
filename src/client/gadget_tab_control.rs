@@ -149,9 +149,12 @@ fn hide_pane(wm: &mut GameWindowManager, p: WinId, hide: bool) -> R<()> {
     Ok(())
 }
 
-/// `LOLONGTOSHORT`, `HILONGTOSHORT` of a packed mouse position.
+/// `LOLONGTOSHORT`, `HILONGTOSHORT` of a packed mouse position (GadgetTabControl.cpp:82-83).
+///
+/// ~~Read as signed 16-bit values~~ **Corrected 2026-11-12, #159:** `LOLONGTOSHORT(a)` is `((a) & 0x0000FFFF)` and
+/// `HILONGTOSHORT(b)` `(((b) & 0xFFFF0000) >> 16)` (GameWindow.h:111-112): masked, not sign-extended.
 fn unpack(d: WindowMsgData) -> (i32, i32) {
-    (i32::from(d as u16 as i16), i32::from((d >> 16) as u16 as i16))
+    ((d & 0x0000_FFFF) as i32, ((d & 0xFFFF_0000) >> 16) as i32)
 }
 
 /// `GadgetTabControlInput`.
@@ -396,6 +399,14 @@ pub fn destroy_default_panes(wm: &mut GameWindowManager, w: WinId, panes: &[WinI
 
 #[cfg(test)]
 mod tests {
+    /// #159: the packed mouse position is masked as upstream's `LOLONGTOSHORT`/`HILONGTOSHORT`, so coordinates from
+    /// 32,768 up stay positive.
+    #[test]
+    fn unpack_masks_like_lolongtoshort() {
+        assert_eq!(super::unpack(0x0002_0001), (1, 2));
+        assert_eq!(super::unpack(0x9000_8001), (0x8001, 0x9000));
+    }
+
     use super::*;
     use crate::client::window_manager::{short_to_long, tests::Rec};
 
