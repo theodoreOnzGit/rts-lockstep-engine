@@ -95,7 +95,9 @@
 //! - **Stealth and shroud** (GitHub #45): of `setStealthLook`, only the look and `m_hiddenByStealth` are kept; the
 //!   stealth and second material pass opacities, the heat-vision pass, the shadows' `setShadowsEnabled`, and the
 //!   deselection `updateHiddenStatus` asks of the in-game UI are not translated (nothing draws them yet), nor are
-//!   `W3DModelDraw::setFullyObscuredByShroud`'s shadow, decal and particle-system switches. The shroud status is the
+//!   `W3DModelDraw::setFullyObscuredByShroud`'s shadow, decal ~~and particle-system~~ switches (**Corrected 2026-11-12
+//!   (#171):** its particle-system switch is translated, and the modules' bone particle systems are made, moved,
+//!   stopped and destroyed with `TheParticleSystemManager`, `ClientFx::particles`). The shroud status is the
 //!   World's (`World::get_shrouded_status`, a read of the partition's table); the scene's clear frame is set at the
 //!   client's render step for a drawable with a render object, without the scene's view-frustum cull (every drawable
 //!   counts as on screen). The render step itself ([`W3DModelDraw::render`], the animation's advance) is the scene's
@@ -119,7 +121,7 @@ use super::radar::RadarEventType;
 use crate::common::base_type::Coord3D;
 use super::drawable_loco::physics_xform_facts;
 use super::drawable_save::DrawableSaveFields;
-use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, WeaponFireFxAt, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
+use super::w3d_model_draw::{DrawEnv, DrawFacts, DrawParticles, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, WeaponFireFxAt, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
 use crate::common::disabled_types::{DISABLED_EMP, DISABLED_HACKED, DISABLED_PARALYZED, DISABLED_SUBDUED, DISABLED_UNDERPOWERED, DISABLED_UNMANNED};
 use crate::common::game_common::{ObjectShroudStatus, LOGICFRAMES_PER_SECOND};
 use crate::common::game_type::ObjectId;
@@ -296,10 +298,11 @@ impl Drawable {
     ///
     /// ~~each module's render object~~ **Corrected 2026-11-06 (GitHub #45):** only when `m_hidden` changed, and the
     /// modules are given `m_hidden || m_hiddenByStealth` ([`Drawable::update_hidden_status`]).
-    pub fn set_drawable_hidden(&mut self, hidden: bool) {
+    /// (#171) `particles`: `TheParticleSystemManager`, for the modules' bone particle systems (`None`: none found).
+    pub fn set_drawable_hidden(&mut self, hidden: bool, particles: Option<&mut ParticleSystemManager>) {
         if hidden != self.hidden {
             self.hidden = hidden;
-            self.update_hidden_status();
+            self.update_hidden_status(particles);
         }
     }
 
@@ -312,10 +315,12 @@ impl Drawable {
     /// (`TheInGameUI->deselectDrawable(this)` is not translated: the client's selection is the logic-side model's.)
     /// Upstream walks `getDrawModules()`, which first gives dirty flags; here the modules are walked as they are, as
     /// before (no draw environment at hand), so the flags wait for the next draw.
-    pub fn update_hidden_status(&mut self) {
+    /// (#171) Each module's `setHidden` also stops or starts its bone particle systems (`particles`).
+    pub fn update_hidden_status(&mut self, particles: Option<&mut ParticleSystemManager>) {
         let hidden = self.is_drawable_effectively_hidden();
+        let mut particles = particles;
         for dm in &mut self.draw_modules {
-            dm.set_hidden(hidden);
+            dm.set_hidden(hidden, particles.as_deref_mut());
         }
     }
 
@@ -323,18 +328,26 @@ impl Drawable {
     /// (true only for `STEALTHLOOK_INVISIBLE`: every other case of upstream's switch clears it, the disguised
     /// friendly's early `break` included), the look kept, then `updateHiddenStatus()`. The opacities are not
     /// translated (see the module docs).
-    pub fn set_stealth_look(&mut self, look: i32) {
+    pub fn set_stealth_look(&mut self, look: i32, particles: Option<&mut ParticleSystemManager>) {
         if look != self.stealth_look {
             self.hidden_by_stealth = look == stealth_look::INVISIBLE;
             self.stealth_look = look;
-            self.update_hidden_status();
+            self.update_hidden_status(particles);
         }
     }
 
     /// `setFullyObscuredByShroud(fullyObscured)` (GitHub #45): the flag. Upstream also tells each draw module, whose
-    /// `W3DModelDraw` switches its shadow, terrain decal and particle systems; none is made here yet.
-    pub fn set_fully_obscured_by_shroud(&mut self, fully_obscured: bool) {
+    /// `W3DModelDraw` switches its shadow, terrain decal and particle systems; ~~none is made here yet~~ **Corrected
+    /// 2026-11-12 (#171):** each module is told first (Drawable.cpp:916-926), and switches its bone particle systems
+    /// ([`W3DModelDraw::set_fully_obscured_by_shroud`]; no shadow or decal is made yet). Upstream walks
+    /// `getDrawModules()`, which first gives dirty flags; here the modules are walked as they are (as
+    /// [`Drawable::update_hidden_status`]).
+    pub fn set_fully_obscured_by_shroud(&mut self, fully_obscured: bool, particles: Option<&mut ParticleSystemManager>) {
         if self.fully_obscured_by_shroud != fully_obscured {
+            let mut particles = particles;
+            for dm in &mut self.draw_modules {
+                dm.set_fully_obscured_by_shroud(fully_obscured, particles.as_deref_mut());
+            }
             self.fully_obscured_by_shroud = fully_obscured;
         }
     }
@@ -560,13 +573,17 @@ impl ClientDrawables {
         let scale = t.get_asset_scale();
         let standard = Arc::new(w.statics.global_data.the_global_data().map_or_else(Vec::new, |g| g.standard_public_bones.clone()));
         let mut draw_modules = Vec::new();
-        let mut env = DrawEnv { assets, random: &mut self.random, sync_time, logic_time };
+        let mut env = DrawEnv { assets, random: &mut self.random, sync_time, logic_time, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
         for d in datas.iter() {
             if use_lod && d.min_lod_required > self.static_lod {
                 continue;
             }
             match W3DModelDraw::new_scaled(d.clone(), hex_color, night, snowy, scale, standard.clone(), &mut env) {
-                Ok(m) => draw_modules.push(m),
+                Ok(mut m) => {
+                    // (#171) the drawable the module's bone particle systems attach to (`getDrawable()->getID()`)
+                    m.drawable_id = id;
+                    draw_modules.push(m)
+                }
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
             }
         }
@@ -682,13 +699,15 @@ impl ClientDrawables {
                     }
                 }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetHidden { object_id, hidden }) => {
-                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
-                        d.set_drawable_hidden(*hidden);
+                    self.drawable(w, *object_id, assets, sync_time);
+                    if let Some(d) = self.drawables.get_mut(object_id) {
+                        d.set_drawable_hidden(*hidden, Some(&mut self.fx.particles));
                     }
                 }
                 ClientEvent::Object(ObjectClientEvent::Stealth { object_id, op: StealthClientOp::StealthLook(look) }) => {
-                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
-                        d.set_stealth_look(*look);
+                    self.drawable(w, *object_id, assets, sync_time);
+                    if let Some(d) = self.drawables.get_mut(object_id) {
+                        d.set_stealth_look(*look, Some(&mut self.fx.particles));
                     }
                 }
                 ClientEvent::Object(ObjectClientEvent::DrawableShowSubObject { object_id, name, show }) => {
@@ -699,7 +718,7 @@ impl ClientDrawables {
                 ClientEvent::Object(ObjectClientEvent::DrawableUpdateSubObjects { object_id }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
-                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
+                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                         d.update_sub_objects(&mut env);
                     }
                 }
@@ -707,7 +726,7 @@ impl ClientDrawables {
                     self.drawable(w, *source, assets, sync_time);
                     let mut handled = None;
                     if let (Some(d), Ok(wslot)) = (self.drawables.get_mut(source), usize::try_from(*weapon_slot)) {
-                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
+                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                         handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &mut env);
                     }
                     // the FX list itself (GitHub #43): at the handling module's FX bone, else where
@@ -781,7 +800,7 @@ impl ClientDrawables {
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
-                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true };
+                        let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                         d.set_animation_loop_duration(*frames, &mut env);
                     }
                 }
@@ -1019,6 +1038,9 @@ impl ClientDrawables {
             motion: Self::motion(w, id),
             show_client_physics,
             wheel_info,
+            // (#171) the render object's transform (`Set_Transform(mtx)`) as the port places it: the object's transform
+            // matrix (the scale is the skeleton's); the identity without an object
+            transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
         }
     }
 
@@ -1027,7 +1049,8 @@ impl ClientDrawables {
     /// taken as clear while fewer than `2*LOGICFRAMES_PER_SECOND` frames (3 more when the object is effectively dead)
     /// have passed since the scene last drew it clear, then `setFullyObscuredByShroud(ss >= OBJECTSHROUD_FOGGED)`. A
     /// drawable without an object, or a World without a local player, is left as it is.
-    pub fn update_shroud(d: &mut Drawable, w: &World, local_player_index: Option<i32>) {
+    /// (#171) `particles`: the client's particle systems, which the draw modules' bone systems are stopped or started in.
+    pub fn update_shroud(d: &mut Drawable, w: &World, local_player_index: Option<i32>, particles: Option<&mut ParticleSystemManager>) {
         let (Some(object), Some(local)) = (w.find_object(d.object_id), local_player_index) else { return };
         let mut ss = w.get_shrouded_status(d.object_id, local);
         if ss >= ObjectShroudStatus::Fogged && d.shroud_clear_frame != 0 {
@@ -1041,7 +1064,7 @@ impl ClientDrawables {
                 ss = ObjectShroudStatus::Clear;
             }
         }
-        d.set_fully_obscured_by_shroud(ss >= ObjectShroudStatus::Fogged);
+        d.set_fully_obscured_by_shroud(ss >= ObjectShroudStatus::Fogged, particles);
     }
 
     /// One client draw at sync time `sync_time` (milliseconds): make the
@@ -1078,7 +1101,7 @@ impl ClientDrawables {
             // (#165) every client update module's `clientUpdate()` (a laser may destroy its drawable)
             self.client_update_modules(w, id, ClientUpdateCall::Update);
             let Some(d) = self.drawables.get_mut(&id) else { continue };
-            Self::update_shroud(d, w, local_player_index);
+            Self::update_shroud(d, w, local_player_index, Some(&mut self.fx.particles));
             // `if (m_hidden || m_hiddenByStealth || getFullyObscuredByShroud()) return;`
             if d.is_drawable_effectively_hidden() || d.get_fully_obscured_by_shroud() {
                 d.physics_xform = None;
@@ -1087,7 +1110,7 @@ impl ClientDrawables {
                 let xform = physics_xform_facts(w, id);
                 d.apply_physics_xform(&xform, &mut self.random);
                 let facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
-                let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
+                let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                 for dm in d.get_draw_modules(&mut env) {
                     dm.do_draw_module(&facts, &mut env);
                 }
@@ -1121,7 +1144,7 @@ impl ClientDrawables {
                 continue;
             }
             let facts = Self::draw_facts(w, crate::common::game_type::INVALID_ID, show_client_physics, None);
-            let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
+            let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
             for dm in d.get_draw_modules(&mut env) {
                 dm.do_draw_module(&facts, &mut env);
             }
@@ -1228,7 +1251,13 @@ impl AnimatedParticleSysBoneHost for DrawableClientHost<'_> {
         true
     }
     fn update_bones_for_client_particle_systems(&mut self, i: usize) -> bool {
-        self.drawable.draw_modules[i].update_bones_for_client_particle_systems()
+        // (#171) the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s): the object's, or
+        // without one the drawable's saved transform
+        let transform = match self.world.find_object(self.drawable.object_id) {
+            Some(o) => *o.thing.transform_matrix(),
+            None => self.drawable.saved.transform,
+        };
+        self.drawable.draw_modules[i].update_bones_for_client_particle_systems(&transform, Some(&mut *self.particles))
     }
 }
 
@@ -1330,7 +1359,7 @@ impl BeaconHost for DrawableBeaconHost<'_> {
     }
     fn hide_drawable(&mut self) {
         // `setDrawableHidden(true)`; `setShadowsEnabled(false)` has nothing to turn off (no shadows are drawn yet)
-        self.drawable.set_drawable_hidden(true);
+        self.drawable.set_drawable_hidden(true, Some(&mut *self.particles));
     }
     fn is_drawable_effectively_hidden(&self) -> bool {
         self.drawable.is_drawable_effectively_hidden()
@@ -1389,7 +1418,7 @@ mod tests {
             l.parent_bone_name = b"MUZZLE".to_vec();
         }
         let mut random = RandomValues::new(0);
-        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: false };
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: false, particles: None };
         let mut save = crate::common::xfer_save::XferSave::new();
         save.open(b"t").unwrap();
         d.xfer_drawable_modules(&mut save, &mut env).unwrap();
@@ -1415,7 +1444,7 @@ mod tests {
         };
         let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
         let mut random = RandomValues::new(0);
-        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true };
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true, particles: None };
         let m = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
         let mut d = Drawable { object_id: 1, template: b"T".to_vec(), condition_state: ModelConditionFlags::new(), is_model_dirty: false, draw_modules: vec![m], ..Drawable::for_tests() };
         d.clear_and_set_model_condition_flags(&ModelConditionFlags::new(), &ModelConditionFlags::new());
@@ -1433,7 +1462,7 @@ mod tests {
         assert!(!d.get_model_condition_flags().any());
         d.get_draw_modules(&mut env);
         assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(0)));
-        d.set_drawable_hidden(true);
+        d.set_drawable_hidden(true, None);
         assert!(d.draw_modules[0].render_object.as_ref().unwrap().hidden);
     }
 
@@ -1530,7 +1559,7 @@ mod tests {
             ],
         };
         let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
-        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut c.random, sync_time: 0, logic_time: true };
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut c.random, sync_time: 0, logic_time: true, particles: None };
         let m = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
         c.drawables.get_mut(&id).unwrap().draw_modules = vec![m];
         // (the gate's World has no local player; the client names its own)
@@ -1566,7 +1595,7 @@ mod tests {
         let (w, mut c, id) = gate_with_a_transition_module();
         let d = c.drawables.get_mut(&id).unwrap();
         moving(d, true);
-        d.set_drawable_hidden(true);
+        d.set_drawable_hidden(true, None);
         assert!(d.draw_modules[0].render_object.as_ref().unwrap().hidden);
         c.draw(&w, &mut NoAssets, 33);
         let d = &c.drawables[&id];
@@ -1575,7 +1604,7 @@ mod tests {
         assert!(d.physics_xform.is_none());
         assert_eq!(d.shroud_clear_frame, 0);
 
-        c.drawables.get_mut(&id).unwrap().set_drawable_hidden(false);
+        c.drawables.get_mut(&id).unwrap().set_drawable_hidden(false, None);
         c.draw(&w, &mut NoAssets, 66);
         let d = &c.drawables[&id];
         assert!(!d.is_model_dirty);

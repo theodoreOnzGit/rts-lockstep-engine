@@ -683,17 +683,17 @@ mod tests {
             l.extend_from_slice(extra);
             let d = Arc::new(W3DModelDrawModuleData::parse(module.as_bytes(), &block(&l)).unwrap().unwrap());
             let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: true };
+            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: true, particles: None };
             W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
         }
         fn frame(&mut self, m: &mut W3DModelDraw, facts: &DrawFacts) {
             let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
             m.do_draw_module(facts, &mut env);
         }
         fn set_flags(&mut self, m: &mut W3DModelDraw, bits: &[i32]) {
             let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+            let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
             m.replace_model_condition_state(&ModelConditionFlags::from_indices(bits), &mut env);
         }
     }
@@ -720,6 +720,7 @@ mod tests {
             motion: m,
             show_client_physics: true,
             wheel_info,
+            transform: crate::ww::matrix3d::Matrix3D::IDENTITY,
         }
     }
 

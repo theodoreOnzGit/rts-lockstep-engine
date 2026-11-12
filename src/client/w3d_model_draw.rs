@@ -37,6 +37,10 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/rendobj.h (TheAnimModeNames)
 //   GeneralsMD/Code/GameEngine/Source/Common/GameLOD.cpp
 //   (INI::parseStaticGameLODLevel, StaticGameLODNames)
+//   (GitHub #171) W3DModelDraw.cpp: doStartOrStopParticleSys, setHidden's call of it,
+//   setFullyObscuredByShroud, stopClientParticleSystems, recalcBonesForClientParticleSystems,
+//   updateBonesForClientParticleSystems, and the constructor's, setModelState's and doDrawModule's
+//   parts for them
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -141,18 +145,31 @@
 //!   never `NAMEKEY_INVALID`, which is the empty name here.
 //! - **`ParticleSysBone`** keeps the system's name, not a template pointer
 //!   (~~the client has no particle systems yet~~ **Corrected 2026-11-06 (GitHub #43):** the client has them,
-//!   `crate::client::particle_sys`, but this module does not make its bone systems yet); `RequiredScience` keeps the
-//!   science's name.
+//!   `crate::client::particle_sys`, ~~but this module does not make its bone systems yet~~ **Corrected 2026-11-12
+//!   (#171):** and this module makes, moves, stops and destroys its bone systems, see below); `RequiredScience` keeps
+//!   the science's name.
+//! - (#171) **The bone particle systems** ([`W3DModelDraw::recalc_bones_for_client_particle_systems`],
+//!   [`W3DModelDraw::update_bones_for_client_particle_systems`], [`W3DModelDraw::stop_client_particle_systems`]) reach
+//!   `TheParticleSystemManager` as an argument ([`DrawEnv::particles`], or `Option<&mut ParticleSystemManager>`);
+//!   without one (`None`: tests, a save's load) no system is found or made, as a manager with none would answer. A
+//!   bone's transform is the render object's [`Skeleton`] as made (the base pose under the drawable's scale), not the
+//!   animated pose upstream's `Get_Bone_Transform` evaluates, and without the turret and recoil bone captures; the
+//!   live transform `updateBonesForClientParticleSystems` reads is [`DrawFacts::transform`] (the drawable's, without
+//!   the scale, which the skeleton carries). For a drawable scale that is not a power of two the port's
+//!   `world * (Scale * bone)` rounds differently from upstream's `(world * Scale) * bone` (measured,
+//!   `tests/differential_model_draw_particles.rs`). `attachToDrawable` takes [`W3DModelDraw::drawable_id`] (the port's
+//!   drawable id for particles is its object's).
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
 //!   weapon barrels), turret and recoil posing, sub-object hide and show,
-//!   muzzle flashes, headlights,~~ particle systems, shadows, terrain decals and
+//!   muzzle flashes, headlights, particle systems,~~ shadows, terrain decals and
 //!   tracks, the attach-to-bone offset, `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`,
 //!   the weapon fire FX lists themselves, garrison flags, and the subclasses'
 //!   runtime (~~treads,~~ tires, supplies, dependencies). ~~`validateStuff` only
 //!   marks the turret info valid.~~ **Corrected 2026-11-06 (#27):** the bone
 //!   caches, turret and recoil posing, muzzle flashes, sub-object hide and
-//!   show and headlights are translated (below). **Corrected 2026-11-06
+//!   show and headlights are translated (below). **Corrected 2026-11-12 (#171):** the bone particle systems are
+//!   translated (above). **Corrected 2026-11-06
 //!   (#41):** `W3DTankDraw`'s treads are translated
 //!   ([`W3DModelDraw::update_tread_objects`], [`TankDraw`]); its tread debris
 //!   (particle systems), `W3DTruckDraw`, `W3DTankTruckDraw` and
@@ -229,6 +246,10 @@ use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
 use crate::formats::w3d::vertmaterial::MapperKind;
 use crate::ww::matrix3d::Matrix3D;
 use crate::client::w3d_truck_draw::TruckKind;
+use crate::client::particle_sys::{ParticleSystemId, ParticleSystemManager};
+use crate::common::base_type::Coord3D;
+use crate::common::game_type::ObjectId;
+use crate::logic::modules::plant;
 
 /// `MAX_TURRETS`.
 pub const MAX_TURRETS: usize = 2;
@@ -2081,6 +2102,27 @@ impl RenderObj {
         self.is_hlod && self.skeleton.as_ref().is_some_and(|k| k.has_htree())
     }
 
+    /// (#171) `Get_Bone_Index(bonename)`: an HLOD's hierarchy's (`HTreeClass::Get_Bone_Index`, htree.cpp:922-930: the
+    /// first pivot of that name ignoring case, else 0); 0 for any other render object (`RenderObjClass`'s, rendobj.h:354)
+    /// or without a hierarchy (`Animatable3DObjClass`'s).
+    pub fn get_bone_index(&self, bonename: &[u8]) -> i32 {
+        if !self.has_htree() {
+            return 0;
+        }
+        self.skeleton.as_ref().map_or(0, |k| k.get_bone_index(bonename))
+    }
+
+    /// (#171) `Get_Bone_Transform(boneindex)` under `Set_Transform(Matrix3D(true).Scale(scale))` (the drawable's scale):
+    /// the skeleton's pose as made (animobj.cpp:658-675 evaluates the current animation; here the base pose, the
+    /// module docs). Without a hierarchy, or out of range, the render object's own transform: the identity here.
+    pub fn get_bone_transform_scaled(&self, boneindex: i32) -> Matrix3D {
+        if !self.has_htree() {
+            return Matrix3D::IDENTITY;
+        }
+        let k = self.skeleton.as_ref().expect("a hierarchy");
+        usize::try_from(boneindex).ok().and_then(|b| k.bones.get(b)).map_or(Matrix3D::IDENTITY, |b| b.transform)
+    }
+
     /// `Capture_Bone(boneindex)` (`Animatable3DObjClass`: nothing without a hierarchy; a bone
     /// out of range is an upstream assertion, ignored).
     pub fn capture_bone(&mut self, boneindex: i32) {
@@ -2221,6 +2263,24 @@ pub struct DrawEnv<'a, A: W3dAssetSource> {
     pub sync_time: u32,
     /// `isValidTimeToCalcLogicStuff()` (see the module docs).
     pub logic_time: bool,
+    /// (#171) `TheParticleSystemManager`, for the bone particle systems (`None`: no system is found or made).
+    pub particles: Option<DrawParticles<'a>>,
+}
+
+/// (#171) The client's particle systems as a draw module reaches them: `TheParticleSystemManager`, and the frame a new
+/// system's `m_startTimestamp` takes (`TheGameClient->getFrame()`, the logic's frame in the port, as the other makers').
+pub struct DrawParticles<'a> {
+    pub manager: &'a mut ParticleSystemManager,
+    pub frame: u32,
+}
+
+/// (#171) `W3DModelDraw::ParticleSysTrackerType` (W3DModelDraw.h:481-485): a bone particle system the module made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParticleSysTrackerType {
+    /// `id`.
+    pub id: ParticleSystemId,
+    /// `boneIndex`: the render object's bone it was made at (0: none).
+    pub bone_index: i32,
 }
 
 /// What `doDrawModule` reads from the drawable and its object.
@@ -2245,6 +2305,10 @@ pub struct DrawFacts {
     /// `getDrawable()->getWheelInfo()`, after this draw's `applyPhysicsXform` (GitHub #41,
     /// `crate::client::drawable_loco`); `None` until the drawable's first physics model ran.
     pub wheel_info: Option<crate::client::drawable_loco::TWheelInfo>,
+    /// (#171) The render object's transform as `doDrawModule` sets it (`m_renderObject->Set_Transform(mtx)`), without
+    /// the drawable's scale (which the port's [`Skeleton`] carries): what `updateBonesForClientParticleSystems` puts the
+    /// bones in. The object's transform matrix ([`crate::client::drawable::ClientDrawables::draw_facts`]).
+    pub transform: Matrix3D,
 }
 
 /// The logic's state a subclass draw module reads (`W3DTankDraw::doDrawModule`), read only: see
@@ -2303,7 +2367,8 @@ pub struct TreadObjectInfo {
 /// `m_prevRenderObj` (by the render object's serial, see [`W3DModelDraw::render_obj_serial`]),
 /// `m_lastDirection`. The tread debris particle systems are not made (~~no particle systems yet~~ **Corrected
 /// 2026-11-06 (GitHub #44):** the client's particle systems exist, `crate::client::particle_sys`; the draw modules do
-/// not reach them yet).
+/// not reach them yet; **Corrected 2026-11-12 (#171):** they reach them (`DrawEnv::particles`, for the bone particle
+/// systems), but the tread debris is still not made).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TankDraw {
     pub treads: Vec<TreadObjectInfo>,
@@ -2457,6 +2522,20 @@ pub struct W3DModelDraw {
     /// `W3DDependencyModelDraw::m_dependencyCleared` (`FALSE` at construction), which its xfer saves (GitHub #59). Kept
     /// but not used: the dependency draw's own behaviour (drawn only once its container says so) is not translated.
     pub dependency_cleared: bool,
+    /// (#171) `m_needRecalcBoneParticleSystems`.
+    pub need_recalc_bone_particle_systems: bool,
+    /// (#171) `m_fullyObscuredByShroud`.
+    pub fully_obscured_by_shroud: bool,
+    /// (#171) `m_particleSystemIDs`: the bone particle systems made for the current state.
+    pub particle_system_ids: Vec<ParticleSysTrackerType>,
+    /// (#171) `getDrawable()->getID()`, what `attachToDrawable` keeps: the port's drawable id for particles is its
+    /// object's ([`crate::client::particle_sys::ParticleSystem::attached_to_drawable`]); set by the drawable that makes
+    /// the module (0 until then: none).
+    pub drawable_id: ObjectId,
+    /// (#171) `getDrawable()->testDrawableStatus(DRAWABLE_STATUS_NO_STATE_PARTICLES)`: no bone particle systems. Upstream
+    /// sets it only on the in-game UI's placement previews (InGameUI.cpp:1551, 3040), which the port's drawables are not:
+    /// false unless a caller sets it.
+    pub drawable_no_state_particles: bool,
 }
 
 impl W3DModelDraw {
@@ -2504,6 +2583,12 @@ impl W3DModelDraw {
             tank: matches!(data_extra, DrawModuleExtra::Tank(_)).then(TankDraw::new),
             truck: None,
             dependency_cleared: false,
+            // `m_needRecalcBoneParticleSystems = false; m_fullyObscuredByShroud = false;` (W3DModelDraw.cpp:1740-1741)
+            need_recalc_bone_particle_systems: false,
+            fully_obscured_by_shroud: false,
+            particle_system_ids: Vec::new(),
+            drawable_id: 0,
+            drawable_no_state_particles: false,
         };
         d.set_model_state(StateRef::Normal(info), env);
         // the subclass's own members are made after the base class's constructor (whose `setModelState` calls the
@@ -2603,6 +2688,16 @@ impl W3DModelDraw {
         }
 
         let prev_anim_fraction = self.get_current_anim_fraction();
+
+        // (#171, W3DModelDraw.cpp:2997-3006) Set up any particle effects for the new model. Also stop the old ones;
+        // none are placed for a drawable whose status says not to
+        if !self.drawable_no_state_particles || plant(9681) {
+            self.need_recalc_bone_particle_systems = true;
+        }
+        // always stop particle systems now
+        if !plant(9682) {
+            self.stop_client_particle_systems(env.particles.as_mut().map(|p| &mut *p.manager));
+        }
 
         let data = self.data.clone();
         let ns = data.state(&new_state);
@@ -2861,6 +2956,14 @@ impl W3DModelDraw {
         self.adjust_anim_speed_to_movement_speed(facts.speed);
 
         self.handle_client_turret_positioning(&facts.turrets);
+        // (#171, W3DModelDraw.cpp:2103-2107) the bone particle systems: made when the state changed, and moved to their
+        // bones each draw when the module data says they follow animated bones
+        if self.render_object.is_some() || !plant(9688) {
+            self.recalc_bones_for_client_particle_systems(env.particles.as_mut(), env.random);
+        }
+        if (self.data.particles_attached_to_animated_bones || plant(9686)) && !plant(9687) {
+            self.update_bones_for_client_particle_systems(&facts.transform, env.particles.as_mut().map(|p| &mut *p.manager));
+        }
         self.handle_client_recoil();
     }
 
@@ -2916,7 +3019,8 @@ impl W3DModelDraw {
     /// - A render object other than the last one seen: [`W3DModelDraw::update_tread_objects`].
     /// - The tread debris (`startMoveDebris`, `stopMoveDebris`, the velocity and burst
     ///   multipliers) is not made: ~~no particle systems yet~~ **Corrected 2026-11-06 (GitHub #44):** the draw
-    ///   modules do not reach the client's particle systems yet.
+    ///   modules do not reach the client's particle systems yet (**Corrected 2026-11-12 (#171):** they do now, through
+    ///   `DrawEnv::particles`; the debris itself is still not made).
     /// - With treads: while turning and slower than `TreadPivotSpeedFraction` of the current
     ///   locomotor's speed, the treads move by the `TreadAnimationRate` (negative when turning
     ///   right, `TURN_NEGATIVE`) when the direction changed since the last draw (the cosine between
@@ -3231,10 +3335,170 @@ impl W3DModelDraw {
     }
 
     /// (#165) `updateBonesForClientParticleSystems()` (W3DModelDraw.cpp:2677-2722): each bone particle system the module
-    /// made (`m_particleSystemIDs`) found and moved to its bone; always true. The module makes no bone particle systems
-    /// yet (the module docs: `ParticleSysBone`), so the list is empty and nothing moves.
-    pub fn update_bones_for_client_particle_systems(&mut self) -> bool {
+    /// made (`m_particleSystemIDs`) found and moved to its bone; always true. ~~The module makes no bone particle systems
+    /// yet (the module docs: `ParticleSysBone`), so the list is empty and nothing moves.~~ **Corrected 2026-11-12
+    /// (#171):** the module makes them ([`W3DModelDraw::recalc_bones_for_client_particle_systems`]) and this moves them.
+    ///
+    /// (#171) With a current state and a render object, each system that is still there and was made at a bone (index
+    /// not 0) is given the bone's transform in the world: its position (`setPosition`), a turn by the bone's Z rotation
+    /// (`rotateLocalTransformZ`, which the next call overwrites, kept as upstream does it), the whole transform as its
+    /// local transform (`setLocalTransform`) and `setSkipParentXfrm(true)`, so the drawable's transform is not applied
+    /// again. The bone is `transform` (the render object's, [`DrawFacts::transform`]) times the skeleton's bone under the
+    /// drawable's scale (the module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
+    /// does not: it writes the client's particle systems only.
+    pub fn update_bones_for_client_particle_systems(&mut self, transform: &Matrix3D, particles: Option<&mut ParticleSystemManager>) -> bool {
+        // `drawable != NULL` always holds for a module of a drawable
+        if self.cur_state.is_some() {
+            if let (Some(r), Some(manager)) = (&self.render_object, particles) {
+                let first_bone = self.particle_system_ids.first().map_or(0, |t| t.bone_index);
+                for it in &self.particle_system_ids {
+                    let bone_index = if plant(9677) { first_bone } else { it.bone_index };
+                    let Some(sys) = manager.find_particle_system_mut(it.id) else { continue };
+                    if bone_index != 0 || plant(9673) {
+                        // `m_renderObject->Get_Bone_Transform(boneIndex)` in the world
+                        let bone = r.get_bone_transform_scaled(bone_index);
+                        let bone_transform = if plant(9676) { bone } else { Matrix3D::multiply(transform, &bone) };
+                        let vpos = bone_transform.get_translation();
+                        let pos = Coord3D { x: vpos.x, y: vpos.y, z: vpos.z };
+                        sys.set_position(&pos);
+                        let orientation = bone_transform.get_z_rotation();
+                        sys.rotate_local_transform_z(orientation);
+                        if !plant(9675) {
+                            sys.set_local_transform(&bone_transform);
+                        }
+                        // `setSkipParentXfrm(true)` (ParticleSys.h:547)
+                        sys.skip_parent_xfrm = !plant(9674);
+                    }
+                }
+            }
+        }
         true
+    }
+
+    /// (#171) `recalcBonesForClientParticleSystems()` (W3DModelDraw.cpp:2589-2656): once the state changed
+    /// (`m_needRecalcBoneParticleSystems`), unless the drawable's status forbids it, a system for each of the state's
+    /// `ParticleSysBone`s whose template exists: at its bone in model space under the drawable's scale (the origin, no
+    /// turn, when the render object has no such bone, or there is no render object), turned by the bone's Z rotation,
+    /// attached to the drawable, never saved (`setSaveable(FALSE)`: re-made after a load), stopped when the drawable is
+    /// hidden or fully obscured by the shroud, and listed with its bone. The flag is then cleared. DANGER WARNING READ
+    /// ME (upstream's): client only.
+    pub fn recalc_bones_for_client_particle_systems(&mut self, particles: Option<&mut DrawParticles<'_>>, random: &mut RandomValues) {
+        if self.need_recalc_bone_particle_systems {
+            // `drawable != NULL` always holds for a module of a drawable
+            if let Some(cur) = self.cur_state.clone() {
+                if !self.drawable_no_state_particles || plant(9662) {
+                    let data = self.data.clone();
+                    let mut particles = particles;
+                    for it in &data.state(&cur).particle_sys_bones {
+                        // `TheParticleSystemManager->createParticleSystem(it->particleSystemTemplate)`: none without the
+                        // template (or without a manager)
+                        let Some(p) = particles.as_deref_mut() else { continue };
+                        let Some(id) = p.manager.create_particle_system(&it.particle_system_template, true, random, p.frame) else { continue };
+                        let mut pos = Coord3D::default();
+                        let mut rotation = 0.0f32;
+                        let bone_index = match &self.render_object {
+                            Some(r) if !plant(9663) => r.get_bone_index(&it.bone_name),
+                            _ => 0,
+                        };
+                        if bone_index != 0 {
+                            // ugh... kill the mtx so we get it in modelspace, not world space (upstream sets the render
+                            // object's transform to the drawable's scale, reads the bone and restores it: the skeleton
+                            // as made)
+                            let bone_transform = self.render_object.as_ref().expect("a render object").get_bone_transform_scaled(bone_index);
+                            let vpos = bone_transform.get_translation();
+                            rotation = bone_transform.get_z_rotation();
+                            pos.x = vpos.x;
+                            pos.y = vpos.y;
+                            pos.z = if plant(9690) { 0.0 } else { vpos.z };
+                            if plant(9665) {
+                                std::mem::swap(&mut pos.x, &mut pos.y);
+                            }
+                        }
+                        let hidden = if plant(9670) {
+                            self.fully_obscured_by_shroud
+                        } else if plant(9669) {
+                            self.drawable_hidden
+                        } else {
+                            self.drawable_hidden || self.fully_obscured_by_shroud
+                        };
+                        let sys = p.manager.find_particle_system_mut(id).expect("just made");
+                        // got the bone position...
+                        sys.set_position(&pos);
+                        // and the direction, so that the system is oriented like the bone is
+                        if !plant(9664) {
+                            sys.rotate_local_transform_z(rotation);
+                        }
+                        // Attach it to the object...
+                        if !plant(9666) {
+                            sys.attach_to_drawable(self.drawable_id);
+                        }
+                        // important: mark it as do-not-save, since we'll just re-create it when we reload.
+                        if !plant(9667) {
+                            p.manager.set_saveable(id, false);
+                        }
+                        if hidden != plant(9672) {
+                            // don't start the systems for drawables that are hidden.
+                            p.manager.find_particle_system_mut(id).expect("just made").stop();
+                        }
+                        // store the particle system id so we can kill it later.
+                        self.particle_system_ids.push(ParticleSysTrackerType { id, bone_index: if plant(9671) { 0 } else { bone_index } });
+                    }
+                }
+            }
+            if !plant(9661) {
+                self.need_recalc_bone_particle_systems = false;
+            }
+        }
+    }
+
+    /// (#171) `stopClientParticleSystems()` (W3DModelDraw.cpp:2385-2397): each listed system that is still there
+    /// destroyed (`ParticleSystem::destroy`, its slave too), then the list cleared. Without a manager (`None`) none is
+    /// found: the list is cleared.
+    pub fn stop_client_particle_systems(&mut self, particles: Option<&mut ParticleSystemManager>) {
+        if let Some(manager) = particles {
+            for it in &self.particle_system_ids {
+                if manager.find_particle_system(it.id).is_some() {
+                    // this can be NULL
+                    if plant(9680) {
+                        manager.find_particle_system_mut(it.id).expect("found").stop();
+                    } else {
+                        manager.destroy(it.id);
+                    }
+                }
+            }
+        }
+        if !plant(9679) {
+            self.particle_system_ids.clear();
+        }
+    }
+
+    /// (#171) `doStartOrStopParticleSys()` (W3DModelDraw.cpp:1803-1818): each listed system that is still there stopped
+    /// while the drawable is effectively hidden or fully obscured by the shroud, else started.
+    pub fn do_start_or_stop_particle_sys(&mut self, particles: Option<&mut ParticleSystemManager>) {
+        let hidden = (self.drawable_hidden && !plant(9678)) || (self.fully_obscured_by_shroud && !plant(9683));
+        let Some(manager) = particles else { return };
+        for it in &self.particle_system_ids {
+            if let Some(sys) = manager.find_particle_system_mut(it.id) {
+                // this can be NULL
+                if hidden {
+                    sys.stop();
+                } else if !plant(9684) {
+                    sys.start();
+                }
+            }
+        }
+    }
+
+    /// (#171) `setFullyObscuredByShroud(fullyObscured)` (W3DModelDraw.cpp:1939-1952): when it changed, kept, and the
+    /// particle systems stopped or started (the shadow's and the terrain decal's `enableShadowInvisible` have nothing to
+    /// switch: neither is made yet).
+    pub fn set_fully_obscured_by_shroud(&mut self, fully_obscured: bool, particles: Option<&mut ParticleSystemManager>) {
+        if self.fully_obscured_by_shroud != fully_obscured {
+            if !plant(9685) {
+                self.fully_obscured_by_shroud = fully_obscured;
+            }
+            self.do_start_or_stop_particle_sys(particles);
+        }
     }
 
     /// (#165) `getCurrentWorldspaceClientBonePositions(boneName, transform)` (W3DModelDraw.cpp:3555-3566): with a render
@@ -3300,11 +3564,16 @@ impl W3DModelDraw {
         }
     }
 
-    /// `setHidden(h)`: the render object's visibility.
-    pub fn set_hidden(&mut self, h: bool) {
+    /// `setHidden(h)`: the render object's visibility (W3DModelDraw.cpp:1823-1841; the shadow, terrain decal and
+    /// track parts have nothing to switch: none is made yet). (#171) Then `doStartOrStopParticleSys()`, which reads the
+    /// drawable's `isDrawableEffectivelyHidden()`: `h` as its `updateHiddenStatus` gives it.
+    pub fn set_hidden(&mut self, h: bool, particles: Option<&mut ParticleSystemManager>) {
         self.drawable_hidden = h;
         if let Some(r) = &mut self.render_object {
             r.hidden = h;
+        }
+        if !plant(9689) {
+            self.do_start_or_stop_particle_sys(particles);
         }
     }
 }
@@ -3515,21 +3784,21 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
 
     fn draw_of(lines: &[(u32, &str, &str)], assets: &mut Fake, random: &mut RandomValues) -> W3DModelDraw {
         let d = Arc::new(parse(lines).unwrap());
-        let mut env = DrawEnv { assets, random, sync_time: 0, logic_time: true };
+        let mut env = DrawEnv { assets, random, sync_time: 0, logic_time: true, particles: None };
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
-        let mut env = DrawEnv { assets, random, sync_time: t, logic_time: false };
+        let mut env = DrawEnv { assets, random, sync_time: t, logic_time: false, particles: None };
         m.do_draw_module(&FACTS, &mut env);
         m.render(t);
     }
 
     fn set_flags(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32, bits: &[i32]) {
-        let mut env = DrawEnv { assets, random, sync_time: t, logic_time: false };
+        let mut env = DrawEnv { assets, random, sync_time: t, logic_time: false, particles: None };
         m.replace_model_condition_state(&flags(bits), &mut env);
     }
 
@@ -3728,7 +3997,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let (mut a, mut r) = (fake(), RandomValues::new(0));
         let lines = [(0, "DefaultConditionState", ""), (1, "Model", "T"), (1, "Animation", "T.D 20"), (1, "AnimationMode", "LOOP")];
         let mut m = draw_of(&lines, &mut a, &mut r);
-        let mut env = DrawEnv { assets: &mut a, random: &mut r, sync_time: 0, logic_time: false };
+        let mut env = DrawEnv { assets: &mut a, random: &mut r, sync_time: 0, logic_time: false, particles: None };
         m.do_draw_module(&DrawFacts { speed: Some(2.0), ..FACTS }, &mut env);
         let mult = m.render_object.as_ref().unwrap().anim.as_ref().unwrap().frame_rate_multiplier;
         assert!((mult - 3.0).abs() < 1e-5, "{mult}");
@@ -3835,17 +4104,17 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             fn draw(&mut self, logic_time: bool) -> W3DModelDraw {
                 let d = Arc::new(parse(GUN_DRAW).unwrap());
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time, particles: None };
                 W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
             }
             fn frame(&mut self, m: &mut W3DModelDraw, turrets: [Option<(f32, f32)>; 2]) {
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
                 m.do_draw_module(&DrawFacts { turrets, ..FACTS }, &mut env);
             }
             fn set_flags(&mut self, m: &mut W3DModelDraw, bits: &[i32]) {
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
                 m.replace_model_condition_state(&flags(bits), &mut env);
             }
             /// The render model the client draws for `m`, with `m`'s controls and visibility, posed.
@@ -4029,7 +4298,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 let data = Arc::new(parse(GUN_DRAW).unwrap());
                 let mut src = Fetching { files: W3dFiles { assets: &mut rig.am, fs: &rig.fs }, arrived: false, skeleton_only, deferred: 0 };
                 let m = {
-                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
                     W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
                 };
                 let s = m.get_cur_state().unwrap();
@@ -4045,7 +4314,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 // made outside a logic time once the files are there: upstream's rule, nothing validated
                 src.arrived = true;
                 let m = {
-                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: false };
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: false, particles: None };
                     W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
                 };
                 assert!(!m.get_cur_state().unwrap().pristine_bones_valid());
@@ -4054,7 +4323,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 // made again at a logic time (the client's remake): found
                 let before = src.deferred;
                 let m = {
-                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+                    let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
                     W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap()
                 };
                 assert_eq!(src.deferred, before);
@@ -4078,7 +4347,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(m.data.validated_for(false, false));
             let mut src = Fetching { files: W3dFiles { assets: &mut rig.am, fs: &rig.fs }, arrived: true, skeleton_only: false, deferred: 0 };
             let data = Arc::new(parse(GUN_DRAW).unwrap());
-            let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true };
+            let mut env = DrawEnv { assets: &mut src, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
             let m2 = W3DModelDraw::new(data, 0, false, false, &mut env).unwrap();
             assert_eq!(src.deferred, 0);
             assert_eq!(m2.get_cur_state().unwrap().bone_cache(), s.bone_cache());
@@ -4178,17 +4447,17 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 ];
                 let d = Arc::new(W3DModelDrawModuleData::parse(b"W3DTankDraw", &block(&l)).unwrap().unwrap());
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: true };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: true, particles: None };
                 W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
             }
             fn frame(&mut self, m: &mut W3DModelDraw, facts: &DrawFacts) {
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
                 m.do_draw_module(facts, &mut env);
             }
             fn set_flags(&mut self, m: &mut W3DModelDraw, bits: &[i32]) {
                 let mut a = W3dFiles { assets: &mut self.am, fs: &self.fs };
-                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false };
+                let mut env = DrawEnv { assets: &mut a, random: &mut self.random, sync_time: 0, logic_time: false, particles: None };
                 m.replace_model_condition_state(&flags(bits), &mut env);
             }
         }
@@ -4288,5 +4557,104 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             let m = rig.draw("0");
             assert!(offsets(&m).is_empty());
         }
+    }
+
+    /// (#171) The bone particle systems, end to end on a module with one HLOD (`RootTransform`, `Smoke01` at (1, 2, 3)
+    /// turned a quarter about Z) and a `PS0` template with a slave `PS1`.
+    ///
+    /// Predictions, written before the first run: the constructor flags a recalc and makes nothing; the first draw makes
+    /// `PS0` (id 1, with slave id 2) for `smoke01` (bone 1) at (2, 4, 6) under the drawable's scale 2, unsaveable
+    /// (its slave too), attached to drawable 7, running, with the flag cleared, and `PS0` for `nosuch` (id 3, slave 4) at
+    /// the origin with bone 0; `NoSuch` makes nothing. Hidden: both masters stopped; shown again: started. The update
+    /// (`ParticlesAttachedToAnimatedBones`) moves only the bone-1 system, to the world's translation plus (2, 4, 6),
+    /// skipping the parent's transform. The shroud stops them; a new state destroys all four (slaves with their masters)
+    /// and empties the list; with `NO_STATE_PARTICLES` the next state flags nothing and the draw makes nothing.
+    #[test]
+    fn bone_particle_systems_are_made_moved_and_destroyed() {
+        struct Bones;
+        impl W3dAssetSource for Bones {
+            fn create_render_obj(&mut self, name: &[u8]) -> Option<bool> {
+                name.eq_ignore_ascii_case(b"tank").then_some(true)
+            }
+            fn get_hanim(&mut self, _: &[u8]) -> Option<AnimHandle> {
+                None
+            }
+            fn skeleton(&mut self, _: &[u8], _: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
+                let mut root = Matrix3D::IDENTITY;
+                root.scale(scale);
+                let mut smoke = Matrix3D::IDENTITY;
+                smoke.rotate_z(crate::common::base_type::PI / 2.0);
+                smoke.set_translation(&crate::ww::vector3::Vector3::new(1.0, 2.0, 3.0));
+                let bone = |name: &str, t: &Matrix3D| SkeletonBone { name: name.as_bytes().to_vec(), parent_index: 0, transform: Matrix3D::multiply(&root, t) };
+                Some(Skeleton { bones: vec![bone("RootTransform", &Matrix3D::IDENTITY), bone("Smoke01", &smoke)], sub_objects: Vec::new() })
+            }
+        }
+        let lines: &[(u32, &str, &str)] = &[
+            (0, "ParticlesAttachedToAnimatedBones", "Yes"),
+            (0, "DefaultConditionState", ""),
+            (1, "Model", "Tank"),
+            (1, "ParticleSysBone", "Smoke01 PS0"),
+            (1, "ParticleSysBone", "NoSuch PS0"),
+            (1, "ParticleSysBone", "Smoke01 NoSuch"),
+            (0, "ConditionState", "DAMAGED"),
+            (1, "Model", "Tank"),
+            (0, "ConditionState", "RUBBLE"),
+            (1, "Model", "Tank"),
+            (1, "ParticleSysBone", "Smoke01 PS0"),
+        ];
+        let mut mgr = ParticleSystemManager::new();
+        mgr.new_template(b"PS0").info.slave_system_name = b"PS1".to_vec();
+        mgr.new_template(b"PS1");
+        let mut random = RandomValues::new(1);
+        let mut assets = Bones;
+        let d = Arc::new(parse(lines).unwrap());
+        let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 5 }) };
+        let mut m = W3DModelDraw::new_scaled(d.clone(), 0, false, false, 2.0, Arc::new(Vec::new()), &mut env).unwrap();
+        m.drawable_id = 7;
+        assert!(m.need_recalc_bone_particle_systems && m.particle_system_ids.is_empty());
+        let mut world = Matrix3D::IDENTITY;
+        world.set_translation(&crate::ww::vector3::Vector3::new(100.0, 0.0, 0.0));
+        let facts = DrawFacts { transform: world, ..FACTS };
+        m.do_draw_module(&facts, &mut env);
+        drop(env);
+        assert!(!m.need_recalc_bone_particle_systems);
+        assert_eq!(m.particle_system_ids, vec![ParticleSysTrackerType { id: 1, bone_index: 1 }, ParticleSysTrackerType { id: 3, bone_index: 0 }]);
+        assert_eq!(mgr.systems.len(), 4);
+        let sys = |mgr: &ParticleSystemManager, id: u32| mgr.find_particle_system(id).unwrap().clone();
+        assert!(mgr.systems.iter().all(|s| !s.is_saveable && !s.is_stopped));
+        assert_eq!((sys(&mgr, 1).attached_to_drawable, sys(&mgr, 2).attached_to_drawable, sys(&mgr, 1).slave), (7, 0, Some(2)));
+        // the draw's update moved the bone-1 system into the world (100 + 2, 4, 6) and skips the parent's transform
+        let p = sys(&mgr, 1).get_position();
+        assert_eq!((p.x, p.y, p.z, sys(&mgr, 1).skip_parent_xfrm), (102.0, 4.0, 6.0, true));
+        let p = sys(&mgr, 3).get_position();
+        assert_eq!((p.x, p.y, p.z, sys(&mgr, 3).skip_parent_xfrm, sys(&mgr, 3).is_local_identity), (0.0, 0.0, 0.0, false, false));
+        m.set_hidden(true, Some(&mut mgr));
+        assert!(sys(&mgr, 1).is_stopped && sys(&mgr, 3).is_stopped && !sys(&mgr, 2).is_stopped);
+        m.set_hidden(false, Some(&mut mgr));
+        assert!(!sys(&mgr, 1).is_stopped && !sys(&mgr, 3).is_stopped);
+        m.set_fully_obscured_by_shroud(true, Some(&mut mgr));
+        assert!(m.fully_obscured_by_shroud && sys(&mgr, 1).is_stopped);
+        assert!(m.update_bones_for_client_particle_systems(&Matrix3D::IDENTITY, Some(&mut mgr)));
+        let p = sys(&mgr, 1).get_position();
+        assert_eq!((p.x, p.y, p.z), (2.0, 4.0, 6.0));
+        let damaged = d.find_best_info(&flags(&[crate::common::model_state::MODELCONDITION_DAMAGED])).unwrap();
+        let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 6 }) };
+        m.set_model_state(StateRef::Normal(damaged), &mut env);
+        drop(env);
+        assert!(m.particle_system_ids.is_empty() && m.need_recalc_bone_particle_systems);
+        assert!(mgr.systems.iter().all(|s| s.is_destroyed));
+        // a drawable whose status forbids state particles: no flag, nothing made
+        m.drawable_no_state_particles = true;
+        m.need_recalc_bone_particle_systems = false;
+        let rubble = d.find_best_info(&flags(&[crate::common::model_state::MODELCONDITION_RUBBLE])).unwrap();
+        let mut env = DrawEnv { assets: &mut assets, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 7 }) };
+        m.set_model_state(StateRef::Normal(rubble), &mut env);
+        m.do_draw_module(&facts, &mut env);
+        drop(env);
+        assert!(!m.need_recalc_bone_particle_systems && m.particle_system_ids.is_empty() && mgr.systems.len() == 4);
+        // without a manager, nothing is found or made and the list is cleared
+        m.particle_system_ids.push(ParticleSysTrackerType { id: 1, bone_index: 1 });
+        m.stop_client_particle_systems(None);
+        assert!(m.particle_system_ids.is_empty());
     }
 }

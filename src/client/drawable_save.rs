@@ -728,7 +728,7 @@ impl Drawable {
             self.stealth_look = stealth_look::NONE;
             // "Also, need to update the hidden status for all sub-modules."
             if self.hidden || self.hidden_by_stealth {
-                self.update_hidden_status();
+                self.update_hidden_status(None);
             }
             // "when loading we will force the modules to be dirty just to be sure that they get re-evaluated"
             self.is_model_dirty = true;

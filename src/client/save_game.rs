@@ -627,7 +627,7 @@ impl<'a> SaveHost<'a> {
                 xfer.begin_block()?;
                 let mut object = if world.find_object(d.object_id).is_some() { d.object_id } else { INVALID_ID };
                 xfer.xfer_object_id(&mut object)?;
-                let mut env = DrawEnv { assets: &mut assets, random: &mut *random, sync_time, logic_time: false };
+                let mut env = DrawEnv { assets: &mut assets, random: &mut *random, sync_time, logic_time: false, particles: None };
                 d.xfer(xfer, world, &mut env)?;
                 xfer.end_block()?;
             }
@@ -678,7 +678,7 @@ impl<'a> SaveHost<'a> {
                     // drawable now"
                     drawables.new_drawable(world, INVALID_ID, &template, &mut assets, sync_time, false)
                 };
-                let mut env = DrawEnv { assets: &mut assets, random: &mut drawables.random, sync_time, logic_time: false };
+                let mut env = DrawEnv { assets: &mut assets, random: &mut drawables.random, sync_time, logic_time: false, particles: None };
                 d.xfer(xfer, world, &mut env)?;
                 xfer.end_block()?;
                 if object != INVALID_ID {
@@ -1607,7 +1607,7 @@ GeometryMajorRadius = 5\n GeometryHeight = 5\nEnd\n";
             loco.wheel_info.wheel_angle = 0.2;
             loco.wheel_info.frames_airborne = 4;
             d.loco_info = Some(loco);
-            d.set_stealth_look(stealth_look::INVISIBLE);
+            d.set_stealth_look(stealth_look::INVISIBLE, None);
             d.saved.color_tint_envelope = Some(tint);
             d.saved.tint_status = 4;
             d.saved.prev_tint_status = 2;
@@ -1615,7 +1615,7 @@ GeometryMajorRadius = 5\n GeometryHeight = 5\nEnd\n";
             d.saved.icons.insert(4, icon.clone());
             d.saved.ambient = custom.clone();
             let b = cd.drawables.get_mut(&tb).unwrap();
-            b.set_drawable_hidden(true);
+            b.set_drawable_hidden(true, None);
             b.saved.ambient = silenced.clone();
             // a client update module the port does not make, as a load of an original save keeps it
             b.saved.kept_modules.push(KeptModule { module_type: 1, tag: b"ModuleTag_Sway".to_vec(), data: vec![1, 1, 1, 1, 0, 0, 128, 63] });

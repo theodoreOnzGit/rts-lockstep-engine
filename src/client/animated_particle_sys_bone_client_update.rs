@@ -32,8 +32,9 @@
 //!
 //! - **The host** ([`AnimatedParticleSysBoneHost`]) answers the drawable's draw modules. On the client's drawables every
 //!   draw module is a `W3DModelDraw` (or a subclass), whose `updateBonesForClientParticleSystems` always answers true
-//!   ([`crate::client::w3d_model_draw::W3DModelDraw::update_bones_for_client_particle_systems`]); its systems are not
-//!   made yet (#165's gaps), so the walk moves nothing.
+//!   ([`crate::client::w3d_model_draw::W3DModelDraw::update_bones_for_client_particle_systems`]); ~~its systems are not
+//!   made yet (#165's gaps), so the walk moves nothing.~~ **Corrected 2026-11-12 (#171):** the module makes its bone
+//!   systems, and the walk moves them, in the object's transform (`DrawableClientHost`).
 
 use crate::common::xfer::{Xfer, XferResult, XferVersion};
 use crate::client::laser_update::drawable_module_base_xfer;

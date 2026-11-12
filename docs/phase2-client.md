@@ -124,6 +124,26 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#171 (2026-11-12, GitHub #171, #166 item 6): `W3DModelDraw`'s bone particle systems (`ParticleSysBone`).**
+- **Translated** (engine crate, `client::w3d_model_draw`, W3DModelDraw.cpp at 0a05454d): `recalcBonesForClientParticleSystems`
+  (2589-2656), `updateBonesForClientParticleSystems` (2677-2722), `stopClientParticleSystems` (2385-2397),
+  `doStartOrStopParticleSys` (1803-1818) and `setHidden`'s call of it, `setFullyObscuredByShroud` (1939-1952), the
+  constructor's flags (1740-1741), `setModelState`'s flag and stop (3002-3006) and `doDrawModule`'s recalc and update
+  (2103-2107); ParticleSys.cpp's `setSaveable` (1253-1258, `ParticleSystemManager::set_saveable`). Upstream's destructor,
+  `xfer` and `loadPostProcess` do not touch the systems (they are unsaveable and re-made after a load).
+- **Wired:** the draw modules reach `TheParticleSystemManager` (`ClientFx::particles`) through `DrawEnv::particles` and
+  the hide, stealth and shroud calls; `Drawable::setFullyObscuredByShroud` now tells its modules first, as upstream;
+  `AnimatedParticleSysBoneClientUpdate`'s `updateBonesForClientParticleSystems` moves the systems with the object's
+  transform. The client crate's drawable remake (files arriving) destroys the old drawable's systems.
+- **Compared with the compiled upstream** (`tests/differential_model_draw_particles.rs`,
+  `differential/wrap_model_draw_particles.cpp`): 20,000 sequences (409,427 steps, 52,828 systems made; none undefined
+  upstream), 0 mismatches, max ULP 0, at power-of-two drawable scales; at any scale (2,000, not gated) 230 differ by
+  rounding only (largest 3.8e-6 of max(|value|, 1)); 30 of 30 planted bugs (9661-9690) caught. Lib 1213, client 100,
+  gate (a) 0bf44067, clippy and web build clean.
+- **Not yet** (#171's gaps): the bone transform is the skeleton's base pose (no animation, no turret captures; #166 item
+  3); at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
+  upstream's; the object-less drawables' systems attach to no drawable.
+
 **#168 (2026-11-12, GitHub #168): `W3DLaserDraw`, and the logic's object-less drawables (the particle cannon's beams).**
 - **Translated** (engine crate): `client::w3d_laser_draw`: W3DLaserDraw.cpp whole (the data and its field table, the
   constructor's lines, `getLaserTemplateWidth`, `doDrawModule`'s segments, arcs, ground skim, widths and tile factors,
@@ -163,11 +183,12 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   20,000 sequences each for the sway (826,163 steps), the bones (413,080) and the laser (410,225), and 4 x 20,000 saves
   and loads, all 0 mismatches; 23 of 23 planted bugs caught.
 - **Not yet** (#165's gaps): ~~`W3DLaserDraw` and~~ `W3DTreeDraw` (so ~~no laser width and~~ no tree draw module's
-  `isVisible`), the scene's frustum flag, the bone particle systems, the animated bone pose for a laser's start, ~~the
+  `isVisible`), the scene's frustum flag, ~~the bone particle systems,~~ the animated bone pose for a laser's start, ~~the
   `ParticleUplinkCannonUpdate` beams' drawables (`LaserDrawInit`, `LaserSetDecayFrames`: the client never hears of
   them),~~ and the instance matrix the sway sets is not yet applied by the renderer. **Corrected 2026-11-12 (#168):**
   `W3DLaserDraw` is translated (the laser width is the template's) and the beams' drawables are made from the logic's
-  `ClientNewDrawable` / `ClientDestroyDrawable` and given `LaserDrawInit` and `LaserSetDecayFrames` (see #168 below).
+  `ClientNewDrawable` / `ClientDestroyDrawable` and given `LaserDrawInit` and `LaserSetDecayFrames` (see #168 below). **Corrected 2026-11-12 (#171):** the bone particle systems are made, moved, stopped and destroyed (see #171
+  above), so `AnimatedParticleSysBoneClientUpdate` moves real systems.
 
 **#157 (2026-11-12, GitHub #157, #92, #94): the skirmish battle honours, the map preview, the insert-disc prompt and
 three tooltips.**
@@ -1674,8 +1695,10 @@ differential `differential_w3d` 25 pass, `differential_thing_template` 3 pass (7
 existing `SparseMatchFinder<ModelConditionFlags>` check 60,000 queries, 0 mismatches; clippy clean (lib); the web build
 builds; gate (a) identical over 300 frames native and wasm (last CRC `0bf44067`).
 **Not done yet** (#25's remaining work): turret and recoil bones (rung 4), the bone caches, sub-object hide and show,
-muzzle flashes, particle systems, shadows, tracks, the subclasses' runtime (treads, tires), the other draw modules
+muzzle flashes, ~~particle systems,~~ shadows, tracks, the subclasses' runtime (treads, tires), the other draw modules
 (`W3DDefaultDraw`, trees, lasers, ...), and a differential of `parseConditionState` against upstream's compiled code.
+**Corrected 2026-11-12 (#171):** the bone particle systems (`ParticleSysBone`) are translated (see #171 above); the
+others in this list were done by later batches as their entries say.
 
 **Batch #10 step 4 (2026-11-05, GitHub #10): W3D models drawn in the Bevy client, with meshes, materials, textures and
 skinning.**

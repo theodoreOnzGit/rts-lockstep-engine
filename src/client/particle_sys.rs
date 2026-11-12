@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/System/ParticleSys.cpp
 //     (ParticleInfo::ParticleInfo; Particle::computeAlphaRate, computeColorRate, Particle::Particle,
 //     Particle::~Particle, applyForce, update, doWindMotion, isInvisible; ParticleSystemInfo::ParticleSystemInfo;
-//     ParticleSystem::ParticleSystem, ~ParticleSystem, setMaster, setSlave, start, stop, destroy, getPosition,
+//     ParticleSystem::ParticleSystem, ~ParticleSystem, setMaster, setSlave, setSaveable (#171), start, stop, destroy, getPosition,
 //     setPosition, setLocalTransform, rotateLocalTransformX/Y/Z, attachToDrawable, attachToObject,
 //     computePointOnUnitSphere, computeParticleVelocity, computeParticlePosition, createParticle,
 //     generateParticleInfo, update, updateWindMotion, addParticle, removeParticle, mergeRelatedParticleSystems,
@@ -1462,6 +1462,17 @@ impl ParticleSystemManager {
             let s = &mut self.systems[i];
             s.is_destroyed = true;
             next = s.slave;
+        }
+    }
+
+    /// (#171) `ParticleSystem::setSaveable(b)` of system `id` (ParticleSys.cpp:1253-1258): kept, and given to its slave
+    /// (which gives it to its own).
+    pub fn set_saveable(&mut self, id: ParticleSystemId, b: bool) {
+        let mut next = Some(id);
+        while let Some(i) = next.and_then(|id| self.index_of(id)) {
+            let s = &mut self.systems[i];
+            s.is_saveable = b;
+            next = if plant(9668) { None } else { s.slave };
         }
     }
 

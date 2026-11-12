@@ -31,7 +31,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rts_lockstep_engine::client::drawable::ClientDrawables;
-use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, Skeleton, W3dAssetSource, W3dFiles};
+use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, DrawParticles, Skeleton, W3dAssetSource, W3dFiles};
 use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
@@ -433,7 +433,13 @@ impl<D: LocalDevice> WorldDrawables<D> {
             .map(|(id, _)| *id)
             .collect();
         for id in incomplete {
-            let Some(old) = self.drawables.drawables.remove(&id) else { continue };
+            let Some(mut old) = self.drawables.drawables.remove(&id) else { continue };
+            // (#171) the old drawable's bone particle systems go with it: the remade drawable has the same id, so the
+            // manager would otherwise keep them attached to it (upstream's destroyed drawable's systems are dropped by
+            // the manager's next update; the port's remake is new, not upstream's)
+            for m in &mut old.draw_modules {
+                m.stop_client_particle_systems(Some(&mut self.drawables.fx.particles));
+            }
             let mut src = Deferred { files: W3dFiles { assets: &mut art.assets, fs: &art.fs }, models: &mut self.waiting_models, anims: &mut self.waiting_anims, deferred: 0 };
             if !self.drawables.create_drawable(w, id, &mut src, sync_time) {
                 continue;
@@ -441,14 +447,21 @@ impl<D: LocalDevice> WorldDrawables<D> {
             self.remade += 1;
             let flags = *old.get_model_condition_flags();
             let d = self.drawables.drawables.get_mut(&id).expect("made");
-            let mut env = DrawEnv { assets: &mut src, random: &mut self.drawables.random, sync_time, logic_time: false };
+            let frame = w.frame();
+            let mut env = DrawEnv {
+                assets: &mut src,
+                random: &mut self.drawables.random,
+                sync_time,
+                logic_time: false,
+                particles: Some(DrawParticles { manager: &mut self.drawables.fx.particles, frame }),
+            };
             d.replace_model_condition_flags(&flags, false, &mut env);
             if old.hidden {
-                d.set_drawable_hidden(true);
+                d.set_drawable_hidden(true, Some(&mut self.drawables.fx.particles));
             }
             // (GitHub #45: its stealth look and shroud state too)
-            d.set_stealth_look(old.stealth_look);
-            d.set_fully_obscured_by_shroud(old.fully_obscured_by_shroud);
+            d.set_stealth_look(old.stealth_look, Some(&mut self.drawables.fx.particles));
+            d.set_fully_obscured_by_shroud(old.fully_obscured_by_shroud, Some(&mut self.drawables.fx.particles));
             d.shroud_clear_frame = old.shroud_clear_frame;
             // (GitHub #59: its saved members, its client physics and its `showSubObject` lists, which a load may have given)
             d.saved = old.saved.clone();
