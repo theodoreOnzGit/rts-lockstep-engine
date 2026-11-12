@@ -4,7 +4,7 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable/Update/BeaconClientUpdate.cpp (BeaconClientUpdateModuleData:
 //     its constructor and buildFieldParse; BeaconClientUpdate: its constructor, createParticleSystem, hideBeacon,
-//     clientUpdate, xfer)
+//     clientUpdate; #165: xfer, which the header listed before it was written)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Module/BeaconClientUpdate.h
 //
 // Original copyright notice of those files:
@@ -36,7 +36,9 @@
 //! - **`hideBeacon`** (the logic's `MSG_REMOVE_BEACON` and `MSG_PLACE_BEACON`'s refusals, `ClientCall::HideBeacon`):
 //!   the drawable hidden (`setDrawableHidden(true)`) with its shadows off, a system made if there is none, and the
 //!   system stopped (`stop()`) if the manager still has it.
-//! - **The save** (`xfer`, version 1): the base's, the system's id (as raw bytes) and `m_lastRadarPulse`.
+//! - **The save** (`xfer`, version 1): the base's, the system's id (as raw bytes) and `m_lastRadarPulse`. ~~(not
+//!   written: #59 kept client update modules as raw blocks)~~ **Corrected 2026-11-12 (#165):** written and read by
+//!   [`BeaconClientUpdate::xfer`] in the drawable's module list (`client::drawable_save`).
 //!
 //! # Upstream quirks that are kept
 //!
@@ -55,6 +57,10 @@ use crate::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, Us
 use crate::common::thing_template::ClientModuleData;
 use crate::client::particle_sys::{ParticleSystemId, INVALID_PARTICLE_SYSTEM_ID};
 use crate::client::radar::{RadarEventType, RADAR_EVENT_BEACON_PULSE};
+use crate::common::xfer::{Xfer, XferResult, XferVersion};
+use crate::client::animated_particle_sys_bone_client_update::{AnimatedParticleSysBoneClientUpdate, ANIMATED_PARTICLE_SYS_BONE_CLIENT_UPDATE};
+use crate::client::laser_update::{drawable_module_base_xfer, xfer_particle_system_id, LaserUpdate, LASER_UPDATE};
+use crate::client::sway_client_update::{SwayClientUpdate, SWAY_CLIENT_UPDATE};
 use crate::logic::modules::plant;
 
 /// The module's name (`ClientUpdate = BeaconClientUpdate`).
@@ -210,12 +216,66 @@ impl BeaconClientUpdate {
             }
         }
     }
+
+    /// `xfer(xfer)` (version 1, BeaconClientUpdate.cpp:202-219; #165): the base's (`ClientUpdateModule::xfer`, which is
+    /// `DrawableModule::xfer` and `Module::xfer`), the system's id (`xferUser`, its four bytes) and `m_lastRadarPulse`.
+    pub fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        let current: XferVersion = 1;
+        let mut version = current;
+        xfer.xfer_version(&mut version, current)?;
+        drawable_module_base_xfer(xfer)?;
+        if plant(9614) {
+            xfer.xfer_unsigned_int(&mut self.last_radar_pulse)?;
+            xfer_particle_system_id(xfer, &mut self.particle_system_id)?;
+        } else {
+            xfer_particle_system_id(xfer, &mut self.particle_system_id)?;
+            xfer.xfer_unsigned_int(&mut self.last_radar_pulse)?;
+        }
+        Ok(())
+    }
 }
 
-/// A drawable's client update module (`MODULETYPE_CLIENT_UPDATE`): the ones the client makes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A drawable's client update module (`MODULETYPE_CLIENT_UPDATE`): the ones the client makes. ~~(#162) Only the beacon's.~~
+/// **Corrected 2026-11-12 (#165):** all four of upstream's client update classes (`ModuleFactory.cpp`'s
+/// `addModule` list): the beacon's, the tree sway, the animated particle system bones and the laser.
+#[derive(Clone, Debug, PartialEq)]
 pub enum ClientUpdateModule {
     Beacon(BeaconClientUpdate),
+    /// (#165) `SwayClientUpdate`.
+    Sway(SwayClientUpdate),
+    /// (#165) `AnimatedParticleSysBoneClientUpdate`.
+    AnimatedParticleSysBone(AnimatedParticleSysBoneClientUpdate),
+    /// (#165) `LaserUpdate`.
+    Laser(LaserUpdate),
+}
+
+impl ClientUpdateModule {
+    /// The module's class name (`getModuleNameKey()`'s name: what `findClientUpdateModule` compares).
+    pub fn module_name(&self) -> &'static [u8] {
+        match self {
+            ClientUpdateModule::Beacon(_) => BEACON_CLIENT_UPDATE,
+            ClientUpdateModule::Sway(_) => SWAY_CLIENT_UPDATE,
+            ClientUpdateModule::AnimatedParticleSysBone(_) => ANIMATED_PARTICLE_SYS_BONE_CLIENT_UPDATE,
+            ClientUpdateModule::Laser(_) => LASER_UPDATE,
+        }
+    }
+
+    /// (#165) The module's `xfer` (each class's own, which layers the base's).
+    pub fn xfer(&mut self, xfer: &mut dyn Xfer) -> XferResult<()> {
+        match self {
+            ClientUpdateModule::Beacon(m) => m.xfer(xfer),
+            ClientUpdateModule::Sway(m) => m.xfer(xfer),
+            ClientUpdateModule::AnimatedParticleSysBone(m) => m.xfer(xfer),
+            ClientUpdateModule::Laser(m) => m.xfer(xfer),
+        }
+    }
+}
+
+/// (#165) A client update module with its module tag (`getModuleTagNameKey()`'s name: what a save finds it by).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TaggedClientUpdateModule {
+    pub module_tag: Vec<u8>,
+    pub module: ClientUpdateModule,
 }
 
 #[cfg(test)]

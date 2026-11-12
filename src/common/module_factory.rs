@@ -69,6 +69,10 @@
 //! cannot fail there: every class exists). So until a name's arm exists, an
 //! object INI using it cannot be loaded.
 //!
+//! **(#165)** The four client update classes stay without an arm here: the logic keeps a template's `ClientUpdate`
+//! blocks as tokens (`ModuleInfoData::Client`) and never asks this factory for them, and the client makes all four
+//! (`client::drawable`: `BeaconClientUpdate`, `SwayClientUpdate`, `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate`).
+//!
 //! # Translation choices
 //!
 //! - `m_moduleTemplateMap` is a `std::map` ordered by name key; here a
@@ -2033,7 +2037,9 @@ mod tests {
         f.init(&mut names).unwrap();
         let name = |s: &str| s.as_bytes().to_vec();
         let find = |f: &ModuleFactory, names: &mut NameKeyGenerator, n: &str, t| f.find_module_template(names, n.as_bytes(), t).unwrap_err();
-        // (batch I9b-5: with the AI subclasses every behavior module is translated; the client updates are not)
+        // (batch I9b-5: with the AI subclasses every behavior module is translated; ~~the client updates are not~~ **Corrected
+        // 2026-11-12 (#165):** the logic's factory has no arm for the four client update modules, by design: the client makes
+        // all four, `client::drawable` from the template's tokens)
         assert!(f.find_module_template(&mut names, b"JetAIUpdate", ModuleType::Behavior).is_ok());
         assert_eq!(
             find(&f, &mut names, "SwayClientUpdate", ModuleType::ClientUpdate),
@@ -2056,7 +2062,8 @@ mod tests {
         assert!(matches!(find(&f, &mut names, "NoSuchModule", ModuleType::Behavior), ModuleFactoryError::UnknownModule { .. }));
         assert!(matches!(find(&f, &mut names, "autohealbehavior", ModuleType::Behavior), ModuleFactoryError::NotTranslated { .. } | ModuleFactoryError::UnknownModule { .. }));
         // the three public entry points, for an untranslated name
-        // (batch I9b-5: no behavior module is left untranslated; a client update is)
+        // (batch I9b-5: no behavior module is left untranslated; a client update is: **(#165)** in this factory only, the
+        // client makes it)
         let pending = REGISTRATIONS.iter().find(|r| r.module_type == ModuleType::ClientUpdate && r.in_shipped_build && !is_translated(r.name)).map(|r| r.name.as_bytes().to_vec()).unwrap();
         let pending = &pending[..];
         let e = f.new_module(&mut names, 1, pending, None, ModuleType::ClientUpdate).unwrap_err();

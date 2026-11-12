@@ -2645,6 +2645,92 @@ mod differential {
                 rb.compile("upstream_radar_draw");
             }
 
+            // GitHub #165: the client update modules (differential/wrap_client_update.cpp, which lists the cuts): ParticleSys.h's
+            // ParticleSystemID, GameCommon.h's ObjectShroudStatus and frame constants, Radar.h's event enum, ScriptEngine.h's
+            // BreezeInfo, Module.cpp's Module and DrawableModule crc/xfer/loadPostProcess, and SwayClientUpdate,
+            // AnimatedParticleSysBoneClientUpdate, LaserUpdate and BeaconClientUpdate (headers and sources). No text is
+            // edited. Each anchor must occur once. Linked before upstream_xfer, upstream_gameengine (InitRandom,
+            // GetGameClientRandomValueReal, Cos) and upstream_wwmath, which it calls.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_client_update.cpp");
+                let ge = up.join("GameEngine");
+                let rd = |f: &str| read_upstream(ge.join(f));
+                // `to: None` cuts to the text's end
+                let piece = |text: &str, file: &str, from: &str, to: Option<(&str, bool)>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    let j = match to {
+                        Some((to, keep_to)) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            text.find(to).expect("to") + if keep_to { to.len() } else { 0 }
+                        }
+                        None => text.len(),
+                    };
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                };
+                let psys_h = rd("Include/GameClient/ParticleSys.h");
+                let common_h = rd("Include/Common/GameCommon.h");
+                let radar_h = rd("Include/Common/Radar.h");
+                let script_h = rd("Include/GameLogic/ScriptEngine.h");
+                let module = rd("Source/Common/Thing/Module.cpp");
+                let sway_h = rd("Include/GameClient/Module/SwayClientUpdate.h");
+                let sway = rd("Source/GameClient/Drawable/Update/SwayClientUpdate.cpp");
+                let apsb_h = rd("Include/GameClient/Module/AnimatedParticleSysBoneClientUpdate.h");
+                let apsb = rd("Source/GameClient/Drawable/Update/AnimatedParticleSysBoneClientUpdate.cpp");
+                let laser_h = rd("Include/GameLogic/Module/LaserUpdate.h");
+                let laser = rd("Source/GameLogic/Object/Update/LaserUpdate.cpp");
+                let bh = rd("Include/GameClient/Module/BeaconClientUpdate.h");
+                let bc = rd("Source/GameClient/Drawable/Update/BeaconClientUpdate.cpp");
+                let files = [
+                    ("cu_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", Some(("#define MAX_VOLUME_PARTICLE_DEPTH", false)))),
+                    ("cu_shroud.inc", piece(&common_h, "GameCommon.h", "enum ObjectShroudStatus\n", Some(("enum GuardMode\n", false)))),
+                    ("cu_cells.inc", piece(&radar_h, "Radar.h", "enum \n{ \n\tRADAR_CELL_WIDTH", Some(("// PROTOTYPES /////", false)))),
+                    (
+                        "cu_frames.inc",
+                        piece(&common_h, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", Some(("const Real SECONDS_PER_LOGICFRAME_REAL = 1.0f / LOGICFRAMES_PER_SECONDS_REAL;\n", true))),
+                    ),
+                    ("cu_breeze.inc", piece(&script_h, "ScriptEngine.h", "struct BreezeInfo", Some(("// This could belong elsewhere, but for now...", false)))),
+                    ("cu_module.inc", piece(&module, "Module.cpp", "void Module::crc( Xfer *xfer )", Some(("ObjectModule::ObjectModule( Thing *thing,", false)))),
+                    ("cu_drawable_module.inc", piece(&module, "Module.cpp", "void DrawableModule::crc( Xfer *xfer )", Some(("void UpgradeMuxData::performUpgradeFX(Object* obj) const", false)))),
+                    ("cu_sway_h.inc", piece(&sway_h, "SwayClientUpdate.h", "class SwayClientUpdate : public ClientUpdateModule", Some(("#endif // __SWAYCLIENTUPDATE_H_", false)))),
+                    ("cu_sway.inc", piece(&sway, "SwayClientUpdate.cpp", "SwayClientUpdate::SwayClientUpdate( Thing *thing, const ModuleData* moduleData ) :", None)),
+                    (
+                        "cu_apsb_h.inc",
+                        piece(&apsb_h, "AnimatedParticleSysBoneClientUpdate.h", "class AnimatedParticleSysBoneClientUpdate : public ClientUpdateModule", Some(("#endif // __ANIMPARTICLESYSBONEUPDATE_H_", false))),
+                    ),
+                    (
+                        "cu_apsb.inc",
+                        piece(&apsb, "AnimatedParticleSysBoneClientUpdate.cpp", "AnimatedParticleSysBoneClientUpdate::AnimatedParticleSysBoneClientUpdate( Thing *thing, const ModuleData* moduleData ) :", None),
+                    ),
+                    ("cu_laser_h.inc", piece(&laser_h, "LaserUpdate.h", "class LaserUpdateModuleData : public ClientUpdateModuleData", Some(("\n#endif", false)))),
+                    ("cu_laser_data.inc", piece(&laser, "LaserUpdate.cpp", "LaserUpdateModuleData::LaserUpdateModuleData()", Some(("/*static*/ void LaserUpdateModuleData::buildFieldParse(MultiIniFieldParse& p)", false)))),
+                    ("cu_laser.inc", piece(&laser, "LaserUpdate.cpp", "LaserUpdate::LaserUpdate( Thing *thing, const ModuleData* moduleData ) : ClientUpdateModule( thing, moduleData )", None)),
+                    ("cu_beacon_h.inc", piece(&bh, "BeaconClientUpdate.h", "class BeaconClientUpdateModuleData : public ClientUpdateModuleData", Some(("#endif // __BEACONCLIENTUPDATE_H_", false)))),
+                    (
+                        "cu_beacon_data.inc",
+                        piece(&bc, "BeaconClientUpdate.cpp", "BeaconClientUpdateModuleData::BeaconClientUpdateModuleData() :", Some(("void BeaconClientUpdateModuleData::buildFieldParse(MultiIniFieldParse& p)", false))),
+                    ),
+                    ("cu_beacon.inc", piece(&bc, "BeaconClientUpdate.cpp", "BeaconClientUpdate::BeaconClientUpdate( Thing *thing, const ModuleData* moduleData ) :", None)),
+                ];
+                let gen = out_dir.join("client_update_gen");
+                std::fs::create_dir_all(&gen).expect("create client_update_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_client_update.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a client update cut");
+                }
+                let mut cb = cc::Build::new();
+                base(&mut cb);
+                cb.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_client_update.cpp"));
+                cb.compile("upstream_client_update");
+            }
+
             // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
             // which lists the cuts). Cut verbatim into OUT_DIR/tactical_view_gen from View.h (getScreenCornerWorldPointsAtZ's
             // declaration and the size and origin accessors), View.cpp (getScreenCornerWorldPointsAtZ), W3DView.cpp

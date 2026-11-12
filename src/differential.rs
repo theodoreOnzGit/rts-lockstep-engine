@@ -3641,6 +3641,14 @@ extern "C" {
     pub fn ref_radar_glow_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
     pub fn ref_beacon_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #165: the client update modules (differential/wrap_client_update.cpp, which documents the words):
+    // SwayClientUpdate, AnimatedParticleSysBoneClientUpdate and LaserUpdate (update sequences) and the four modules'
+    // xfers (BeaconClientUpdate's too) on the real XferSave / XferLoad, verbatim.
+    pub fn ref_sway_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    pub fn ref_apsb_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    pub fn ref_laser_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    pub fn ref_cu_xfer(kind: c_int, mode: c_int, input: *const c_int, nin: c_int, path: *const std::os::raw::c_char, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
     // which documents the setup's, the steps' and the records' words): W3DView's setHeight, setWidth, setOrigin,
     // getPickRay and screenToWorldAtZ, View::getScreenCornerWorldPointsAtZ and CameraClass's view plane, viewport and

@@ -124,6 +124,26 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#165 (2026-11-12, GitHub #165): the other three client update modules, and every client update module saved.**
+- **Translated** (engine crate): `client::sway_client_update` (SwayClientUpdate.cpp:54-205: `updateSway`,
+  `clientUpdate`, `stopSway`, `xfer`, `loadPostProcess`), `client::animated_particle_sys_bone_client_update`
+  (AnimatedParticleSysBoneClientUpdate.cpp:48-133), `client::laser_update` (LaserUpdate.cpp:54-494: the data and its
+  field table, `updateStartPos`, `updateEndPos`, `clientUpdate`, `setDecayFrames`, `initLaser`,
+  `getCurrentLaserRadius`, the destructor, `xfer`), and `BeaconClientUpdate::xfer` (BeaconClientUpdate.cpp:202-219).
+  `W3DModelDraw` gains `isVisible`, `updateBonesForClientParticleSystems` and `getCurrentWorldspaceClientBonePositions`.
+- **Wired:** a drawable makes all four classes from its template's `ClientUpdate` list (a shrubbery's sway left out
+  without `m_useTreeSway`), runs each `clientUpdate()` every client frame, stops the sways on `DrawableStopSway`
+  (`ToppleUpdate`), gives `LaserInit` to `findClientUpdateModule("LaserUpdate")` (upstream's lookup never advances past
+  the first module: a laser that is not first is recorded, not run) and runs `~LaserUpdate()` when it goes. The save
+  writes and reads the four by their own xfers in the module list; their `loadPostProcess` runs after the load.
+- **Compared with the compiled upstream** (`tests/differential_client_update.rs`, `differential/wrap_client_update.cpp`):
+  20,000 sequences each for the sway (826,163 steps), the bones (413,080) and the laser (410,225), and 4 x 20,000 saves
+  and loads, all 0 mismatches; 23 of 23 planted bugs caught.
+- **Not yet** (#165's gaps): `W3DLaserDraw` and `W3DTreeDraw` (so no laser width and no tree draw module's `isVisible`),
+  the scene's frustum flag, the bone particle systems, the animated bone pose for a laser's start, the
+  `ParticleUplinkCannonUpdate` beams' drawables (`LaserDrawInit`, `LaserSetDecayFrames`: the client never hears of
+  them), and the instance matrix the sway sets is not yet applied by the renderer.
+
 **#157 (2026-11-12, GitHub #157, #92, #94): the skirmish battle honours, the map preview, the insert-disc prompt and
 three tooltips.**
 - **Translated** (engine crate):
@@ -887,8 +907,10 @@ campaign INI's differential.**
   object's transform and raises the drawable id counter.
 - **Read as upstream reads it, all versions:** the drawable's versions 1 to 7 (condition state after the modules before 2,
   position and orientation in 3 and 4, the ambient switches from 4 and 6, the custom sound from 7), `W3DModelDraw` 1 and 2.
-  A module the port has not got (a client update module, `W3DDefaultDraw`, trees, ...) is found by its tag as upstream and,
+  A module the port has not got (~~a client update module,~~ `W3DDefaultDraw`, trees, ...) is found by its tag as upstream and,
   where upstream skips it, its block is kept and written back; a drawable of an unknown template is skipped by its size.
+  **Corrected 2026-11-12 (#165):** the four client update modules are made and saved by their own xfers
+  (`client::drawable_save`); only one whose tag the drawable lacks is kept.
 - **Kept but unused** (read, held in `DrawableSaveFields`, written back): the drawable id, the transform, both tint
   envelopes and the tint statuses, the terrain decal, the six opacities, `m_status`, the fade members, the flash count and
   colour, the second material pass opacity, the instance matrix, identity flag and scale, the shroud status object, the
@@ -921,7 +943,8 @@ campaign INI's differential.**
 - **Gates:** lib 1029 (1027 + 2), client 41 (one test extended), clippy clean, web build clean, gate (a) PASS (last
   `0bf44067`, unchanged), gate (b) passes (in the lib tests).
 - **Not done** (`issue59_followups`): no `Anim2DCollection` (icon templates unchecked); the kept members drive nothing yet;
-  object-less drawables and client update modules are kept, not drawn or run; no original save has been read (none here).
+  object-less drawables ~~and client update modules~~ are kept, not drawn or run; no original save has been read (none here).
+  **Corrected 2026-11-12 (#165):** client update modules are run each frame and saved by their own xfers.
 
 **#62 (2026-11-06, GitHub #62): campaign missions and the Generals' Challenge started from the client; mission saves.**
 - **Upstream read first:** `GameLogic::startNewGame`'s `loadMapINI` (the map's folder: `map.ini`, `solo.ini`, `map.str`,

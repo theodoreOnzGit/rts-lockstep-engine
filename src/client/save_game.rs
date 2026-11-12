@@ -708,6 +708,8 @@ impl<'a> SaveHost<'a> {
                 world.save_side.drawable_id_counter = d.saved.drawable_id.wrapping_add(1);
             }
         }
+        // (#165) the client update modules' `loadPostProcess` (`SwayClientUpdate::updateSway`), after the drawables'
+        sd.drawables.client_update_load_post_process(world);
     }
 
     /// `InGameUI::xfer` (version 3).

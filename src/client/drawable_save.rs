@@ -26,6 +26,10 @@
 
 //! A drawable in a save file (GitHub #59): `Drawable::xfer` (version 7) with its modules (`xferDrawableModules`) and the
 //! xfers of the draw modules the port has, each layered as upstream's class is.
+//! **(#165)** The client update modules the port makes (all four classes: `BeaconClientUpdate`, `SwayClientUpdate`,
+//! `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate`) are written and read by their own xfers
+//! ([`crate::client::beacon_client_update::ClientUpdateModule::xfer`]), compared byte for byte with upstream's
+//! (`tests/differential_client_update.rs`).
 //!
 //! # As upstream writes it
 //!
@@ -51,13 +55,16 @@
 //! terrain decal, the opacities, `m_status`, the fade members, the flash count and colour, the second material pass opacity,
 //! the instance matrix, its identity flag and scale (the modules were made with the template's scale), the shroud status
 //! object, the expiration date, the icons (`TheAnim2DCollection` is not translated: an icon's template name is kept
-//! unchecked), the modules the port does not make (their blocks kept as read, and written back), and
+//! unchecked), the modules the port does not make (their blocks kept as read, and written back; ~~a client update module
+//! is one~~ **Corrected 2026-11-12 (#165):** the client update modules are made and saved by their own xfers, so only a
+//! client update module whose tag the drawable has not got is kept), and
 //! `W3DDependencyModelDraw::m_dependencyCleared`. The ambient sound's part is the client audio's
 //! ([`crate::client::drawable_ambient::AmbientSounds::to_save`], `restore_saved`).
 //!
 //! # Where this differs from upstream
 //!
-//! - **The modules' order in a save:** the port's draw modules in their order, then the kept modules of that type;
+//! - **The modules' order in a save:** the port's draw modules (#165: or client update modules) in their order, then the
+//!   kept modules of that type;
 //!   upstream writes its module list (which also holds the modules the port does not make).
 //! - **An icon whose name is not one of upstream's** is refused (`SC_INVALID_DATA`); upstream indexes with `ICON_INVALID`
 //!   (undefined).
@@ -511,7 +518,8 @@ impl Drawable {
         let mut module_types = NUM_DRAWABLE_MODULE_TYPES;
         xfer.xfer_unsigned_short(&mut module_types)?;
         for cur in 0..module_types {
-            let own = if cur == DRAW_MODULES { self.draw_modules.len() } else { 0 };
+            // (#165) the client update modules the port makes are its own too
+            let own = if cur == DRAW_MODULES { self.draw_modules.len() } else { self.client_update_modules.len() };
             let kept = self.saved.kept_modules.iter().filter(|k| k.module_type == cur).count();
             let mut count = (own + kept) as u16;
             xfer.xfer_unsigned_short(&mut count)?;
@@ -522,6 +530,16 @@ impl Drawable {
                         xfer.xfer_ascii_string(&mut tag)?;
                         xfer.begin_block()?;
                         draw_module_xfer(xfer, m, now)?;
+                        xfer.end_block()?;
+                    }
+                } else if cur == CLIENT_UPDATE_MODULES {
+                    // (#165) each client update module's own xfer (`BeaconClientUpdate`, `SwayClientUpdate`,
+                    // `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate`)
+                    for m in self.client_update_modules.iter_mut() {
+                        let mut tag = m.module_tag.clone();
+                        xfer.xfer_ascii_string(&mut tag)?;
+                        xfer.begin_block()?;
+                        m.module.xfer(xfer)?;
                         xfer.end_block()?;
                     }
                 }
@@ -536,10 +554,13 @@ impl Drawable {
                     let mut tag = Vec::new();
                     xfer.xfer_ascii_string(&mut tag)?;
                     let found = if cur == DRAW_MODULES { self.draw_modules.iter().position(|m| m.data.module_tag == tag) } else { None };
+                    // (#165) a client update module found by its tag (`findModule(moduleIdentifier)`, the first)
+                    let found_client = if cur == CLIENT_UPDATE_MODULES { self.client_update_modules.iter().position(|m| m.module_tag == tag) } else { None };
                     let data_size = xfer.begin_block()?;
-                    match found {
-                        Some(i) => draw_module_xfer(xfer, &mut self.draw_modules[i], now)?,
-                        None => {
+                    match (found, found_client) {
+                        (Some(i), _) => draw_module_xfer(xfer, &mut self.draw_modules[i], now)?,
+                        (None, Some(i)) => self.client_update_modules[i].module.xfer(xfer)?,
+                        (None, None) => {
                             // ("Module '%s' was indicated in file, but not found on Drawable": its data skipped upstream,
                             // kept here)
                             let mut data = vec![0u8; data_size.max(0) as usize];

@@ -3209,6 +3209,34 @@ impl W3DModelDraw {
         }
     }
 
+    /// (#165) `isVisible()` (W3DModelDraw.cpp:3916-3919): a render object that `Is_Really_Visible()`. Here: one that is
+    /// not hidden (`Set_Hidden`); the scene's view-frustum flag (`IS_VISIBLE`) is not kept (#165's gaps), so a render
+    /// object off screen counts as visible.
+    pub fn is_visible(&self) -> bool {
+        self.render_object.as_ref().is_some_and(|r| !r.hidden)
+    }
+
+    /// (#165) `updateBonesForClientParticleSystems()` (W3DModelDraw.cpp:2677-2722): each bone particle system the module
+    /// made (`m_particleSystemIDs`) found and moved to its bone; always true. The module makes no bone particle systems
+    /// yet (the module docs: `ParticleSysBone`), so the list is empty and nothing moves.
+    pub fn update_bones_for_client_particle_systems(&mut self) -> bool {
+        true
+    }
+
+    /// (#165) `getCurrentWorldspaceClientBonePositions(boneName, transform)` (W3DModelDraw.cpp:3555-3566): with a render
+    /// object, its `Get_Bone_Index(boneName)` (0: none, false) and `Get_Bone_Transform(index)`. Here the bone's transform
+    /// is the skeleton's pose as made (as [`W3DModelDraw::handle_weapon_fire_fx_at`] reads it), put in the world by the
+    /// drawable's transform `world`: the animation's current pose is not applied (#165's gaps).
+    pub fn get_current_worldspace_client_bone_positions(&self, bone_name: &[u8], world: &Matrix3D) -> Option<Matrix3D> {
+        let r = self.render_object.as_ref()?;
+        let k = r.skeleton.as_ref()?;
+        let bone_index = k.get_bone_index(bone_name);
+        if bone_index == 0 {
+            return None;
+        }
+        Some(Matrix3D::multiply(world, &k.bones[bone_index as usize].transform))
+    }
+
     /// `showSubObject(name, show)`: kept in the list (`m_subObjectVec`), by name ignoring case;
     /// applied by [`W3DModelDraw::update_sub_objects`].
     pub fn show_sub_object(&mut self, name: &[u8], show: bool) {

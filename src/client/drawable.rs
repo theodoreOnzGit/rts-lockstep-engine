@@ -57,6 +57,11 @@
 //!
 //! - **Saved games** (GitHub #59): `Drawable::xfer` and the modules' xfers are [`super::drawable_save`]'s; the members a
 //!   save holds that this drawable does not use are kept in [`Drawable::saved`].
+//! - **Client update modules** (#162, #165): made from the template's `ClientUpdate` list in order (Drawable.cpp:473-491:
+//!   a shrubbery's `SwayClientUpdate` is left out without `m_useTreeSway`), each `clientUpdate()` run in order before the
+//!   drawable's other per-frame work (`updateDrawable`), `~LaserUpdate()` run when the drawable goes. The logic's calls
+//!   arrive as events: `hideBeacon` (`ClientCall::HideBeacon`), `stopSway` (`DrawableStopSway`, `ToppleUpdate`) and
+//!   `initLaser` (`LaserInit`, through `findClientUpdateModule`, which upstream never advances past the first module).
 //!
 //! # Where this differs from upstream
 //!
@@ -92,7 +97,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use super::beacon_client_update::{BeaconClientUpdate, BeaconClientUpdateModuleData, BeaconHost, ClientUpdateModule, BEACON_CLIENT_UPDATE};
+use super::animated_particle_sys_bone_client_update::{AnimatedParticleSysBoneClientUpdate, AnimatedParticleSysBoneHost, ANIMATED_PARTICLE_SYS_BONE_CLIENT_UPDATE};
+use super::beacon_client_update::{BeaconClientUpdate, BeaconClientUpdateModuleData, BeaconHost, ClientUpdateModule, TaggedClientUpdateModule, BEACON_CLIENT_UPDATE};
+use super::laser_update::{LaserHost, LaserObject, LaserUpdate, LaserUpdateModuleData, LASER_UPDATE};
+use super::sway_client_update::{SwayClientUpdate, SwayHost, SWAY_CLIENT_UPDATE};
+use crate::common::game_type::DrawableId;
+use crate::common::kind_of::KINDOF_SHRUBBERY;
+use crate::logic::world::script_engine::BreezeInfo;
+use crate::ww::matrix3d::Matrix3D;
 use super::client_fx::{ClientFx, WeaponFireFx, WorldFxHost};
 use super::particle_sys::{ParticleSystemId, ParticleSystemManager};
 use super::radar::RadarEventType;
@@ -151,8 +163,10 @@ pub struct Drawable {
     /// #59, [`super::drawable_save`]).
     pub saved: DrawableSaveFields,
     /// (#162) Its client update modules (`MODULETYPE_CLIENT_UPDATE`) that the client makes: the `BeaconClientUpdate`s
-    /// ([`ClientUpdateModule`]), in the template's order. The others (`SwayClientUpdate`, ...) are not made yet.
-    pub client_update_modules: Vec<ClientUpdateModule>,
+    /// ([`ClientUpdateModule`]), in the template's order. ~~The others (`SwayClientUpdate`, ...) are not made yet.~~
+    /// **Corrected 2026-11-12 (#165):** all four classes are made (`SwayClientUpdate`,
+    /// `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate` too), each with its module tag.
+    pub client_update_modules: Vec<TaggedClientUpdateModule>,
 }
 
 impl Drawable {
@@ -360,6 +374,9 @@ pub struct ClientDrawables {
     /// (#162) The radar events the client update modules asked for (`TheRadar->createEvent(pos, type, seconds)`), for
     /// the owner of the radar to make ([`ClientDrawables::take_radar_requests`]).
     pub radar_requests: Vec<(Coord3D, RadarEventType, f32)>,
+    /// (#165) The objects whose drawable the client destroyed (`TheGameClient->destroyDrawable` of a `LaserUpdate` given
+    /// nothing to aim at): not made again while the object lives.
+    pub destroyed_by_client: std::collections::BTreeSet<ObjectId>,
 }
 
 impl Default for ClientDrawables {
@@ -374,6 +391,7 @@ impl Default for ClientDrawables {
             fx: ClientFx::new(),
             object_less: Vec::new(),
             radar_requests: Vec::new(),
+            destroyed_by_client: std::collections::BTreeSet::new(),
         }
     }
 }
@@ -412,6 +430,9 @@ impl ClientDrawables {
     /// draw modules, each constructed (inside the logic update upstream, so
     /// at a valid time for the logic's bones).
     pub fn create_drawable<A: W3dAssetSource>(&mut self, w: &World, id: ObjectId, assets: &mut A, sync_time: u32) -> bool {
+        if self.destroyed_by_client.contains(&id) {
+            return false;
+        }
         let Some(o) = w.find_object(id) else { return false };
         let t = o.template().clone();
         let drawable = self.new_drawable(w, id, &t, assets, sync_time, true);
@@ -445,15 +466,26 @@ impl ClientDrawables {
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
             }
         }
-        // (#162) the client update modules the client makes, each made as its constructor does
+        // (#162) the client update modules the client makes, each made as its constructor does; (#165) all four classes,
+        // in the template's order (Drawable.cpp:473-491), a shrubbery's `SwayClientUpdate` left out without
+        // `m_useTreeSway` ("this is evil, we shouldn't look at the module name directly!")
+        let use_tree_sway = w.statics.global_data.the_global_data().is_none_or(|g| g.use_tree_sway);
         let mut client_update_modules = Vec::new();
         for n in t.get_client_update_module_info().nuggets() {
             let ModuleInfoData::Client(block) = &n.second else { continue };
-            if n.first.as_slice() == BEACON_CLIENT_UPDATE {
-                match BeaconClientUpdateModuleData::parse(block) {
-                    Ok(d) => client_update_modules.push(ClientUpdateModule::Beacon(BeaconClientUpdate::new(d, w.frame()))),
-                    Err(e) => self.errors.push((t.get_name().to_vec(), n.first.clone(), format!("{e:?}"))),
-                }
+            if t.is_kind_of(KINDOF_SHRUBBERY) && !use_tree_sway && n.first.eq_ignore_ascii_case(SWAY_CLIENT_UPDATE) {
+                continue;
+            }
+            let made = match n.first.as_slice() {
+                BEACON_CLIENT_UPDATE => BeaconClientUpdateModuleData::parse(block).map(|d| ClientUpdateModule::Beacon(BeaconClientUpdate::new(d, w.frame()))),
+                SWAY_CLIENT_UPDATE => super::sway_client_update::parse_base_module_data(block).map(|()| ClientUpdateModule::Sway(SwayClientUpdate::new())),
+                ANIMATED_PARTICLE_SYS_BONE_CLIENT_UPDATE => super::sway_client_update::parse_base_module_data(block).map(|()| ClientUpdateModule::AnimatedParticleSysBone(AnimatedParticleSysBoneClientUpdate::new())),
+                LASER_UPDATE => LaserUpdateModuleData::parse(block).map(|d| ClientUpdateModule::Laser(LaserUpdate::new(d))),
+                _ => continue,
+            };
+            match made {
+                Ok(module) => client_update_modules.push(TaggedClientUpdateModule { module_tag: n.module_tag.clone(), module }),
+                Err(e) => self.errors.push((t.get_name().to_vec(), n.first.clone(), format!("{e:?}"))),
             }
         }
         Drawable {
@@ -497,7 +529,11 @@ impl ClientDrawables {
                     }
                 }
                 ClientEvent::ObjectDestroyed { object_id } => {
-                    self.drawables.remove(object_id);
+                    // (#165) the drawable's modules destroyed with it: `~LaserUpdate()` destroys its systems
+                    if let Some(mut d) = self.drawables.remove(object_id) {
+                        self.destroy_client_update_modules(w, &mut d);
+                    }
+                    self.destroyed_by_client.remove(object_id);
                 }
                 ClientEvent::Object(ObjectClientEvent::DrawableModelCondition { object_id, op }) => {
                     if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
@@ -562,8 +598,35 @@ impl ClientDrawables {
                 ClientEvent::Dispatch(crate::logic::world::game_logic_dispatch::ClientCall::HideBeacon { obj }) => {
                     let id = *obj as ObjectId;
                     self.drawable(w, id, assets, sync_time);
-                    self.beacon_modules(w, id, false);
+                    self.client_update_modules(w, id, ClientUpdateCall::HideBeacon);
                 }
+                // (#165) `ToppleUpdate`: `stopSway()` on each `SwayClientUpdate` of the toppling object's drawable
+                // (ToppleUpdate.cpp:170-181)
+                ClientEvent::Object(ObjectClientEvent::DrawableStopSway { object_id }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        for m in d.client_update_modules.iter_mut() {
+                            if let ClientUpdateModule::Sway(s) = &mut m.module {
+                                s.stop_sway();
+                            }
+                        }
+                    }
+                }
+                // (#165) `LaserUpdate::initLaser(parent, target, &start, &end, bone)` on the laser object's drawable's
+                // `findClientUpdateModule("LaserUpdate")` (`Weapon::fireWeaponTemplate`, `SpecialAbilityUpdate::initLaser`,
+                // `AssistedTargetingUpdate`)
+                ClientEvent::Object(ObjectClientEvent::LaserInit { laser, parent, target, start, end, bone }) => {
+                    for id in [*laser, *parent, *target] {
+                        if id != crate::common::game_type::INVALID_ID {
+                            self.drawable(w, id, assets, sync_time);
+                        }
+                    }
+                    let parent = self.laser_object(w, *parent);
+                    let target = self.laser_object(w, *target);
+                    self.client_update_modules(w, *laser, ClientUpdateCall::InitLaser { parent, target, start: *start, end: *end, bone: bone.clone() });
+                }
+                // (#165) `ParticleUplinkCannonUpdate`'s beams (`LaserDrawInit`, `LaserSetDecayFrames`) are drawables the
+                // logic makes with `TheThingFactory->newDrawable` and tells the client nothing of: the client has no such
+                // drawable, so these are not applied (#165's gaps)
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
@@ -579,21 +642,121 @@ impl ClientDrawables {
         }
     }
 
-    /// (#162) The drawable's beacon modules: `clientUpdate()` (`update`) or `hideBeacon()` each, through a
-    /// [`DrawableBeaconHost`].
-    fn beacon_modules(&mut self, w: &World, id: ObjectId, update: bool) {
-        let Some(d) = self.drawables.get_mut(&id) else { return };
+    /// (#165) An object as `initLaser` reads it: its id, its drawable's id (`getDrawable()->getID()`, the drawable's
+    /// saved id: the object's own unless a load gave another) and its position; `None` for `INVALID_ID` or an object the
+    /// World no longer has.
+    fn laser_object(&self, w: &World, id: ObjectId) -> Option<LaserObject> {
+        let o = w.find_object(id)?;
+        Some(LaserObject { id, drawable: self.drawables.get(&id).map(|d| d.saved.drawable_id), position: o.get_position() })
+    }
+
+    /// (#165) The drawable's modules' destructors (`~LaserUpdate()`'s systems), the drawable going away.
+    fn destroy_client_update_modules(&mut self, w: &World, d: &mut Drawable) {
         let mut modules = std::mem::take(&mut d.client_update_modules);
-        let mut host = DrawableBeaconHost { world: w, drawable: d, particles: &mut self.fx.particles, random: &mut self.random, requests: &mut self.radar_requests };
-        for m in &mut modules {
-            let ClientUpdateModule::Beacon(b) = m;
-            if update {
-                b.client_update(&mut host);
-            } else {
-                b.hide_beacon(&mut host);
+        let mut destroyed = false;
+        let local_player_index = self.local_player_index.or(w.players.local_index());
+        {
+            let mut host = DrawableClientHost { world: w, drawable: d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+            for m in &mut modules {
+                if let ClientUpdateModule::Laser(l) = &mut m.module {
+                    l.destroy(&mut host);
+                }
             }
         }
         d.client_update_modules = modules;
+    }
+
+    /// (#162) The drawable's beacon modules: `clientUpdate()` (`update`) or `hideBeacon()` each, through a
+    /// [`DrawableBeaconHost`]. **(#165)** Every client update module's call: `clientUpdate()` of each in order
+    /// (`Drawable::updateDrawable`, Drawable.cpp:1176-1179), `hideBeacon()` of each beacon module, or `initLaser` of the
+    /// module `findClientUpdateModule("LaserUpdate")` finds. That lookup never advances past the first module
+    /// (Drawable.cpp:4767-4773: the loop has no `++clientModules`): it finds a `LaserUpdate` that is the first client
+    /// update module, finds nothing without client update modules, and spins for ever otherwise (recorded in
+    /// [`ClientDrawables::errors`], nothing done). A laser that destroys its drawable (`initLaser` with nothing to aim at)
+    /// takes the drawable out of the client (not remade for its object: [`ClientDrawables::destroyed_by_client`]).
+    fn client_update_modules(&mut self, w: &World, id: ObjectId, call: ClientUpdateCall) {
+        // the drawable taken out of the list while its modules run, so that they can find the others
+        let Some(mut d) = self.drawables.remove(&id) else { return };
+        let mut modules = std::mem::take(&mut d.client_update_modules);
+        let mut destroyed = false;
+        let local_player_index = self.local_player_index.or(w.players.local_index());
+        let laser = match &call {
+            ClientUpdateCall::InitLaser { .. } => match modules.first().map(|m| &m.module) {
+                Some(ClientUpdateModule::Laser(_)) => Some(0),
+                Some(_) => {
+                    self.errors.push((d.template.clone(), LASER_UPDATE.to_vec(), "findClientUpdateModule(LaserUpdate) spins for ever: the first client update module is not the laser".into()));
+                    None
+                }
+                None => None,
+            },
+            _ => None,
+        };
+        for (i, m) in modules.iter_mut().enumerate() {
+            if destroyed {
+                break;
+            }
+            match (&call, &mut m.module) {
+                (ClientUpdateCall::Update, ClientUpdateModule::Beacon(b)) => {
+                    let mut host = DrawableBeaconHost { world: w, drawable: &mut d, particles: &mut self.fx.particles, random: &mut self.random, requests: &mut self.radar_requests };
+                    b.client_update(&mut host);
+                }
+                (ClientUpdateCall::HideBeacon, ClientUpdateModule::Beacon(b)) => {
+                    let mut host = DrawableBeaconHost { world: w, drawable: &mut d, particles: &mut self.fx.particles, random: &mut self.random, requests: &mut self.radar_requests };
+                    b.hide_beacon(&mut host);
+                }
+                (ClientUpdateCall::Update, ClientUpdateModule::Sway(s)) => {
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    if s.client_update(&mut host).is_err() {
+                        // (not reached: the module's drawable is the host's)
+                        self.errors.push((d.template.clone(), SWAY_CLIENT_UPDATE.to_vec(), "SwayClientUpdate without a drawable".into()));
+                    }
+                }
+                (ClientUpdateCall::Update, ClientUpdateModule::AnimatedParticleSysBone(a)) => {
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    a.client_update(&mut host);
+                }
+                (ClientUpdateCall::Update, ClientUpdateModule::Laser(l)) => {
+                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    l.client_update(&host);
+                }
+                (ClientUpdateCall::InitLaser { parent, target, start, end, bone }, ClientUpdateModule::Laser(l)) if laser == Some(i) => {
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    if let Err(e) = l.init_laser(&mut host, parent.as_ref(), target.as_ref(), Some(start), Some(end), bone, 0) {
+                        self.errors.push((d.template.clone(), LASER_UPDATE.to_vec(), format!("initLaser undefined upstream: {e:?}")));
+                    }
+                }
+                _ => {}
+            }
+        }
+        if destroyed {
+            // `TheGameClient->destroyDrawable(getDrawable())`: the drawable and its modules go
+            d.client_update_modules = modules;
+            self.destroy_client_update_modules(w, &mut d);
+            self.destroyed_by_client.insert(id);
+            return;
+        }
+        d.client_update_modules = modules;
+        self.drawables.insert(id, d);
+    }
+
+    /// (#165) `loadPostProcess()` of the drawable's client update modules after a load (`SwayClientUpdate`'s recomputes
+    /// its sway; the others add nothing), in the drawables' order.
+    pub fn client_update_load_post_process(&mut self, w: &World) {
+        let ids: Vec<ObjectId> = self.drawables.keys().copied().collect();
+        let local_player_index = self.local_player_index.or(w.players.local_index());
+        for id in ids {
+            let Some(mut d) = self.drawables.remove(&id) else { continue };
+            let mut modules = std::mem::take(&mut d.client_update_modules);
+            let mut destroyed = false;
+            for m in &mut modules {
+                if let ClientUpdateModule::Sway(s) = &mut m.module {
+                    let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    s.load_post_process(&mut host);
+                }
+            }
+            d.client_update_modules = modules;
+            self.drawables.insert(id, d);
+        }
     }
 
     /// (#162) The radar events the client update modules asked for since the last call.
@@ -726,7 +889,7 @@ impl ClientDrawables {
     /// nothing is written.
     pub fn draw<A: W3dAssetSource>(&mut self, w: &World, assets: &mut A, sync_time: u32) {
         for id in w.objects.ids_in_order() {
-            if !self.drawables.contains_key(&id) && w.find_object(id).is_some_and(|o| !o.is_destroyed()) {
+            if !self.drawables.contains_key(&id) && !self.destroyed_by_client.contains(&id) && w.find_object(id).is_some_and(|o| !o.is_destroyed()) {
                 self.create_drawable(w, id, assets, sync_time);
             }
         }
@@ -735,8 +898,9 @@ impl ClientDrawables {
         let local_player_index = self.local_player_index.or(w.players.local_index());
         for id in ids {
             // (#162) `draw->updateDrawable()` (GameClient::update, after the shroud): the client update modules first
-            self.beacon_modules(w, id, true);
-            let d = self.drawables.get_mut(&id).expect("listed");
+            // (#165) every client update module's `clientUpdate()` (a laser may destroy its drawable)
+            self.client_update_modules(w, id, ClientUpdateCall::Update);
+            let Some(d) = self.drawables.get_mut(&id) else { continue };
             Self::update_shroud(d, w, local_player_index);
             // `if (m_hidden || m_hiddenByStealth || getFullyObscuredByShroud()) return;`
             if d.is_drawable_effectively_hidden() || d.get_fully_obscured_by_shroud() {
@@ -769,6 +933,154 @@ impl ClientDrawables {
         // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
         let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index };
         self.fx.update(&host, &mut self.random);
+    }
+}
+
+/// (#165) What [`ClientDrawables`] asks of a drawable's client update modules.
+#[derive(Clone, Debug)]
+enum ClientUpdateCall {
+    /// `clientUpdate()` of each.
+    Update,
+    /// `hideBeacon()` of each beacon module.
+    HideBeacon,
+    /// `initLaser(parent, target, &start, &end, bone)` of the module `findClientUpdateModule("LaserUpdate")` finds.
+    InitLaser { parent: Option<LaserObject>, target: Option<LaserObject>, start: Coord3D, end: Coord3D, bone: Vec<u8> },
+}
+
+/// (#165) A drawable's position as the port keeps it: its object's (`Thing::getPosition`), or, without one, its saved
+/// transform's translation.
+fn drawable_position(w: &World, d: &Drawable) -> Coord3D {
+    match w.find_object(d.object_id) {
+        Some(o) => o.get_position(),
+        None => {
+            let t = d.saved.transform.get_translation();
+            Coord3D { x: t.x, y: t.y, z: t.z }
+        }
+    }
+}
+
+/// (#165) The host of `SwayClientUpdate`, `AnimatedParticleSysBoneClientUpdate` and `LaserUpdate` on a drawable of the
+/// client's (taken out of the list while its modules run), the other drawables (`TheGameClient->findDrawableByID`), the
+/// World (read only: its objects, the script engine's breeze, the shroud, the frame), the particle systems and the client's
+/// random numbers.
+pub struct DrawableClientHost<'a> {
+    pub world: &'a World,
+    pub drawable: &'a mut Drawable,
+    pub others: &'a BTreeMap<ObjectId, Drawable>,
+    pub particles: &'a mut ParticleSystemManager,
+    pub random: &'a mut RandomValues,
+    /// `ThePlayerList->getLocalPlayer()`'s index.
+    pub local_player_index: Option<i32>,
+    /// Set by `TheGameClient->destroyDrawable(getDrawable())`.
+    pub destroyed: &'a mut bool,
+}
+
+impl DrawableClientHost<'_> {
+    /// `TheGameClient->findDrawableByID(id)`: this drawable or another, by its (saved) drawable id.
+    fn find_drawable(&self, id: DrawableId) -> Option<&Drawable> {
+        if self.drawable.saved.drawable_id == id {
+            return Some(self.drawable);
+        }
+        self.others.values().find(|d| d.saved.drawable_id == id)
+    }
+}
+
+impl SwayHost for DrawableClientHost<'_> {
+    fn breeze_info(&self) -> BreezeInfo {
+        self.world.script_engine.breeze_info
+    }
+    fn game_client_random_value_real(&mut self, lo: f32, hi: f32) -> f32 {
+        self.random.game_client_random_value_real(lo, hi)
+    }
+    fn has_drawable(&self) -> bool {
+        true
+    }
+    fn is_visible(&self) -> bool {
+        // `Drawable::isVisible` (Drawable.cpp:613-623): any draw module visible
+        self.drawable.draw_modules.iter().any(|m| m.is_visible())
+    }
+    fn instance_matrix(&self) -> Matrix3D {
+        self.drawable.saved.instance
+    }
+    fn set_instance_matrix(&mut self, m: &Matrix3D) {
+        // `setInstanceMatrix(&m)` (Drawable.cpp:4281-4293)
+        self.drawable.saved.instance = *m;
+        self.drawable.saved.instance_is_identity = false;
+    }
+    fn object_burned(&self) -> bool {
+        self.world.find_object(self.drawable.object_id).is_some_and(|o| o.test_status(super::sway_client_update::BURNED))
+    }
+}
+
+impl AnimatedParticleSysBoneHost for DrawableClientHost<'_> {
+    fn has_drawable(&self) -> bool {
+        true
+    }
+    fn draw_module_count(&self) -> usize {
+        self.drawable.draw_modules.len()
+    }
+    fn has_object_draw_interface(&self, _: usize) -> bool {
+        // every draw module the client makes is a `W3DModelDraw`, an `ObjectDrawInterface`
+        true
+    }
+    fn update_bones_for_client_particle_systems(&mut self, i: usize) -> bool {
+        self.drawable.draw_modules[i].update_bones_for_client_particle_systems()
+    }
+}
+
+impl LaserHost for DrawableClientHost<'_> {
+    fn logic_frame(&self) -> u32 {
+        self.world.frame()
+    }
+    fn has_drawable(&self) -> bool {
+        true
+    }
+    fn drawable_position(&self, id: DrawableId) -> Option<Coord3D> {
+        self.find_drawable(id).map(|d| drawable_position(self.world, d))
+    }
+    fn drawable_bone_transform(&self, id: DrawableId, bone: &[u8]) -> Option<Matrix3D> {
+        // `Drawable::getCurrentWorldspaceClientBonePositions` (Drawable.cpp:829-838): the first draw module that finds it
+        let d = self.find_drawable(id)?;
+        let world = match self.world.find_object(d.object_id) {
+            Some(o) => *o.thing.transform_matrix(),
+            None => d.saved.transform,
+        };
+        d.draw_modules.iter().find_map(|m| m.get_current_worldspace_client_bone_positions(bone, &world))
+    }
+    fn drawable_object_effectively_dead(&self, id: DrawableId) -> bool {
+        self.find_drawable(id).and_then(|d| self.world.find_object(d.object_id)).is_some_and(|o| o.is_effectively_dead())
+    }
+    fn destroy_own_drawable(&mut self) {
+        *self.destroyed = true;
+    }
+    fn local_player_index(&self) -> Option<i32> {
+        self.local_player_index
+    }
+    fn shrouded_status(&self, obj: &LaserObject, player_index: i32) -> ObjectShroudStatus {
+        self.world.get_shrouded_status(obj.id, player_index)
+    }
+    fn find_template(&self, name: &[u8]) -> bool {
+        self.particles.find_template(name).is_some()
+    }
+    fn create_particle_system(&mut self, name: &[u8]) -> Option<ParticleSystemId> {
+        self.particles.create_particle_system(name, true, self.random, self.world.frame())
+    }
+    fn set_particle_system_position(&mut self, id: ParticleSystemId, pos: &Coord3D) {
+        if let Some(s) = self.particles.find_particle_system_mut(id) {
+            s.set_position(pos);
+        }
+    }
+    fn destroy_particle_system_by_id(&mut self, id: ParticleSystemId) {
+        self.particles.destroy_particle_system_by_id(id);
+    }
+    fn set_drawable_position(&mut self, pos: &Coord3D) {
+        // `Drawable::setPosition` (`Thing::setPosition`: the transform's translation); a drawable with an object is
+        // drawn at its object's position here, so this is what a save of it holds
+        self.drawable.saved.transform.set_translation(&crate::ww::vector3::Vector3 { x: pos.x, y: pos.y, z: pos.z });
+    }
+    fn laser_template_width(&self) -> Option<f32> {
+        // `getLaserDrawInterface()`: only `W3DLaserDraw` has one, and the client does not make it (#165's gaps)
+        None
     }
 }
 
@@ -848,6 +1160,47 @@ mod tests {
     /// Predictions: setting flags the drawable already has does not dirty it; a change does, and the modules see the
     /// new flags only at the next `getDrawModules` (once); the body damage states replace one another's bits (really
     /// damaged clears damaged; pristine clears all three); the module follows: DAMAGED's state, then the default.
+    /// (#165) Predicted: a drawable's client update modules are written by their own xfers in its module list (the
+    /// client update type's count 3, each by its tag) and a load into fresh modules of the same tags gives them back;
+    /// a tag the drawable has not got is kept as a raw block.
+    #[test]
+    fn client_update_modules_round_trip_in_the_module_list() {
+        use crate::common::xfer::Xfer;
+        let tagged = |tag: &str, module| TaggedClientUpdateModule { module_tag: tag.as_bytes().to_vec(), module };
+        let fresh = || {
+            vec![
+                tagged("ModuleTag_Sway", ClientUpdateModule::Sway(SwayClientUpdate::new())),
+                tagged("ModuleTag_Bones", ClientUpdateModule::AnimatedParticleSysBone(AnimatedParticleSysBoneClientUpdate::new())),
+                tagged("ModuleTag_Laser", ClientUpdateModule::Laser(LaserUpdate::new(LaserUpdateModuleData::default()))),
+            ]
+        };
+        let mut d = Drawable { client_update_modules: fresh(), ..Drawable::for_tests() };
+        if let ClientUpdateModule::Sway(s) = &mut d.client_update_modules[0].module {
+            s.cur_angle = 0.25;
+            s.cur_version = 3;
+        }
+        if let ClientUpdateModule::Laser(l) = &mut d.client_update_modules[2].module {
+            l.end_pos = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
+            l.parent_bone_name = b"MUZZLE".to_vec();
+        }
+        let mut random = RandomValues::new(0);
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: false };
+        let mut save = crate::common::xfer_save::XferSave::new();
+        save.open(b"t").unwrap();
+        d.xfer_drawable_modules(&mut save, &mut env).unwrap();
+        let bytes = save.bytes().to_vec();
+        // version, type count 2, draw modules 0, client update modules 3
+        assert_eq!(&bytes[..7], &[1, 2, 0, 0, 0, 3, 0]);
+        let mut back = Drawable { client_update_modules: fresh(), ..Drawable::for_tests() };
+        back.client_update_modules.remove(1);
+        let mut load = crate::common::xfer_load::XferLoad::new(bytes);
+        load.open(b"t").unwrap();
+        back.xfer_drawable_modules(&mut load, &mut env).unwrap();
+        assert_eq!(back.client_update_modules[0], d.client_update_modules[0]);
+        assert_eq!(back.client_update_modules[1], d.client_update_modules[2]);
+        assert_eq!(back.saved.kept_modules.iter().map(|k| (k.module_type, k.tag.clone(), k.data.len())).collect::<Vec<_>>(), [(1, b"ModuleTag_Bones".to_vec(), 3)]);
+    }
+
     #[test]
     fn flags_are_dirty_until_the_draw_modules_are_asked() {
         let line = |depth, f: &str, a: &str| ClientLine { depth, field: f.as_bytes().to_vec(), args: a.split_whitespace().map(|t| t.as_bytes().to_vec()).collect() };
