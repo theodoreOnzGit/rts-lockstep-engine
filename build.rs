@@ -2731,6 +2731,72 @@ mod differential {
                 cb.compile("upstream_client_update");
             }
 
+            // GitHub #168: W3DLaserDraw (differential/wrap_laser_draw.cpp, which lists the cuts): ParticleSys.h's
+            // ParticleSystemID, Module.cpp's Module and DrawableModule crc/xfer/loadPostProcess, DrawModule.cpp's, Color.cpp's
+            // GameGetColorComponentsReal, LaserUpdate.h's classes and LaserUpdate.cpp's data constructor, constructor, destructor and
+            // getCurrentLaserRadius, and W3DLaserDraw.h and W3DLaserDraw.cpp (the data's constructor; the module's
+            // constructor to the end). No text is edited. Each anchor must occur once. Linked before upstream_xfer and
+            // upstream_wwmath, which it calls.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_laser_draw.cpp");
+                let ge = up.join("GameEngine");
+                let gd = up.join("GameEngineDevice");
+                let piece = |text: &str, file: &str, from: &str, to: Option<(&str, bool)>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    let j = match to {
+                        Some((to, keep_to)) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            text.find(to).expect("to") + if keep_to { to.len() } else { 0 }
+                        }
+                        None => text.len(),
+                    };
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                };
+                let psys_h = read_upstream(ge.join("Include/GameClient/ParticleSys.h"));
+                let module = read_upstream(ge.join("Source/Common/Thing/Module.cpp"));
+                let draw_module = read_upstream(ge.join("Source/Common/Thing/DrawModule.cpp"));
+                let color = read_upstream(ge.join("Source/GameClient/Color.cpp"));
+                let laser_h = read_upstream(ge.join("Include/GameLogic/Module/LaserUpdate.h"));
+                let laser = read_upstream(ge.join("Source/GameLogic/Object/Update/LaserUpdate.cpp"));
+                let w3d_h = read_upstream(gd.join("Include/W3DDevice/GameClient/Module/W3DLaserDraw.h"));
+                let w3d = read_upstream(gd.join("Source/W3DDevice/GameClient/Drawable/Draw/W3DLaserDraw.cpp"));
+                let files = [
+                    ("ld_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", Some(("#define MAX_VOLUME_PARTICLE_DEPTH", false)))),
+                    ("ld_module.inc", piece(&module, "Module.cpp", "void Module::crc( Xfer *xfer )", Some(("ObjectModule::ObjectModule( Thing *thing,", false)))),
+                    ("ld_drawable_module.inc", piece(&module, "Module.cpp", "void DrawableModule::crc( Xfer *xfer )", Some(("void UpgradeMuxData::performUpgradeFX(Object* obj) const", false)))),
+                    ("ld_draw_module.inc", piece(&draw_module, "DrawModule.cpp", "void DrawModule::crc( Xfer *xfer )", None)),
+                    ("ld_color.inc", piece(&color, "Color.cpp", "void GameGetColorComponentsReal( Color color, Real *red, Real *green, Real *blue, Real *alpha )", Some(("Color GameDarkenColor( Color color, Int percent )", false)))),
+                    ("ld_laser_h.inc", piece(&laser_h, "LaserUpdate.h", "class LaserUpdateModuleData : public ClientUpdateModuleData", Some(("\n#endif", false)))),
+                    ("ld_laser_data.inc", piece(&laser, "LaserUpdate.cpp", "LaserUpdateModuleData::LaserUpdateModuleData()", Some(("/*static*/ void LaserUpdateModuleData::buildFieldParse(MultiIniFieldParse& p)", false)))),
+                    (
+                        "ld_laser_ctor.inc",
+                        piece(&laser, "LaserUpdate.cpp", "LaserUpdate::LaserUpdate( Thing *thing, const ModuleData* moduleData ) : ClientUpdateModule( thing, moduleData )", Some(("void LaserUpdate::updateStartPos()", false))),
+                    ),
+                    ("ld_laser_radius.inc", piece(&laser, "LaserUpdate.cpp", "Real LaserUpdate::getCurrentLaserRadius() const", Some(("void LaserUpdate::crc( Xfer *xfer )", false)))),
+                    ("ld_w3d_h.inc", piece(&w3d_h, "W3DLaserDraw.h", "class W3DLaserDrawModuleData : public ModuleData", Some(("#endif // __W3DLASERDRAW_H_", false)))),
+                    ("ld_w3d_data.inc", piece(&w3d, "W3DLaserDraw.cpp", "W3DLaserDrawModuleData::W3DLaserDrawModuleData()", Some(("void W3DLaserDrawModuleData::buildFieldParse(MultiIniFieldParse& p)", false)))),
+                    ("ld_w3d.inc", piece(&w3d, "W3DLaserDraw.cpp", "W3DLaserDraw::W3DLaserDraw( Thing *thing, const ModuleData* moduleData ) :", None)),
+                ];
+                let gen = out_dir.join("laser_draw_gen");
+                std::fs::create_dir_all(&gen).expect("create laser_draw_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_laser_draw.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a laser draw cut");
+                }
+                let mut lb = cc::Build::new();
+                base(&mut lb);
+                lb.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_laser_draw.cpp"));
+                lb.compile("upstream_laser_draw");
+            }
+
             // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
             // which lists the cuts). Cut verbatim into OUT_DIR/tactical_view_gen from View.h (getScreenCornerWorldPointsAtZ's
             // declaration and the size and origin accessors), View.cpp (getScreenCornerWorldPointsAtZ), W3DView.cpp

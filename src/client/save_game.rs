@@ -441,6 +441,9 @@ impl W3dAssetSource for DynAssets<'_, '_> {
     fn deferred_answers(&self) -> usize {
         self.0.deferred_answers()
     }
+    fn texture_size(&mut self, name: &[u8]) -> Option<(u32, u32)> {
+        self.0.texture_size(name)
+    }
 }
 
 /// No art: render objects that are not HLODs, no animations (the drawables a load reads without [`SaveDrawables`]).

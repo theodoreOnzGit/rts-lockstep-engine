@@ -34,6 +34,7 @@ pub mod beacon_client_update; // #162: BeaconClientUpdate, the first client upda
 pub mod sway_client_update; // #165: SwayClientUpdate
 pub mod animated_particle_sys_bone_client_update; // #165: AnimatedParticleSysBoneClientUpdate
 pub mod laser_update; // #165: LaserUpdate (a client update module, though its source is under GameLogic)
+pub mod w3d_laser_draw; // #168: W3DLaserDraw (the LaserDrawInterface and the beams' geometry)
 pub mod control_bar_glow; // #162: the radar's under-attack glow (ControlBar::triggerRadarAttackGlow, updateRadarAttackGlow)
 pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)

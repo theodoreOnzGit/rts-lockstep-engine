@@ -245,6 +245,60 @@ pub fn emitter_quads<'a>(
     out
 }
 
+/// (#168) The laser beams: every `W3DLaserDraw` line of the client's drawables (the objects' and the logic's object-less
+/// ones), each a camera-facing quad of the line's width from the strip the core works out
+/// ([`SegmentedLine::render_strip`](rts_lockstep_engine::client::w3d_laser_draw::SegmentedLine::render_strip): its points,
+/// width, colour and the tiled mapping's U and V with the scrolled offset, advanced to `sync_time`), in batches keyed as
+/// [`particle_quads`]'s. **New** (the DirectX 8 device is replaced): upstream's `SegLineRendererClass` builds the strip in
+/// camera space with end caps and intersection merging, and the scene culls each line by its bounding sphere; here one
+/// quad per line, never culled.
+pub fn laser_quads(d: &mut rts_lockstep_engine::client::drawable::ClientDrawables, sync_time: u32, right: [f32; 3], up: [f32; 3]) -> BTreeMap<(Vec<u8>, Blend), QuadBatch> {
+    let mut out: BTreeMap<(Vec<u8>, Blend), QuadBatch> = BTreeMap::new();
+    for dr in d.drawables.values_mut().chain(d.logic_drawables.values_mut()) {
+        for m in &mut dr.laser_draws {
+            for l in &mut m.lines {
+                let Some(s) = l.render_strip(sync_time) else { continue };
+                let blend = if s.additive { Blend::Add } else { Blend::Alpha };
+                let tex = s.texture.clone().unwrap_or_default().to_ascii_lowercase();
+                let b = out.entry((tex, blend)).or_default();
+                let pts: Vec<[f32; 3]> = s.points.iter().map(|p| [p.x, p.y, p.z]).collect();
+                let rgba = match blend {
+                    Blend::Add => [s.rgba[0], s.rgba[1], s.rgba[2], 1.0],
+                    Blend::Alpha => s.rgba,
+                };
+                strip(b, &pts, rgba, s.width, s.u, &s.v, right, up);
+            }
+        }
+    }
+    out
+}
+
+/// (#168) A camera-facing strip of `width` through `points` (game axes) with U `u` across it and V `v` along it, into
+/// `b` (Bevy axes): [`ribbon`]'s geometry with the line's own texture coordinates.
+#[allow(clippy::too_many_arguments)]
+fn strip(b: &mut QuadBatch, points: &[[f32; 3]], rgba: [f32; 4], width: f32, u: [f32; 2], v: &[f32], right: [f32; 3], up: [f32; 3]) {
+    use rts_lockstep_engine::ww::wwmath::sqrt;
+    let view = [right[1] * up[2] - right[2] * up[1], right[2] * up[0] - right[0] * up[2], right[0] * up[1] - right[1] * up[0]];
+    for k in 0..points.len().saturating_sub(1) {
+        let (a, c) = (to_bevy(points[k]), to_bevy(points[k + 1]));
+        let dir = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let mut o = [dir[1] * view[2] - dir[2] * view[1], dir[2] * view[0] - dir[0] * view[2], dir[0] * view[1] - dir[1] * view[0]];
+        let l = sqrt(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]);
+        if l <= 0.0 || !l.is_finite() {
+            continue;
+        }
+        let h = 0.5 * width / l;
+        o = [o[0] * h, o[1] * h, o[2] * h];
+        let base = b.positions.len() as u32;
+        for (p, sgn, uv) in [(a, -1.0f32, [u[0], v[k]]), (c, -1.0, [u[0], v[k + 1]]), (c, 1.0, [u[1], v[k + 1]]), (a, 1.0, [u[1], v[k]])] {
+            b.positions.push([p[0] + sgn * o[0], p[1] + sgn * o[1], p[2] + sgn * o[2]]);
+            b.uvs.push(uv);
+        }
+        b.colors.extend([rgba; 4]);
+        b.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
 /// `b`'s quads appended to `a` (the INI particles' batches and the W3D emitters' share keys).
 pub fn merge_batches(a: &mut BTreeMap<(Vec<u8>, Blend), QuadBatch>, b: BTreeMap<(Vec<u8>, Blend), QuadBatch>) {
     for (k, v) in b {
@@ -260,6 +314,29 @@ pub fn merge_batches(a: &mut BTreeMap<(Vec<u8>, Blend), QuadBatch>, b: BTreeMap<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// (#168) *Predictions, written before the first run:* one additive laser line of width 2 from (0,0,0) to (10,0,0),
+    /// drawn once, gives one quad of 4 corners in the untextured additive batch, its corners 1 from the line across it
+    /// (the camera looking down Bevy's -y: right x, up -z), U 0 and 1 across, V 0 along (no texture: the uniform mapping).
+    #[test]
+    fn a_laser_line_becomes_one_quad() {
+        use rts_lockstep_engine::client::w3d_laser_draw::{W3DLaserDraw, W3DLaserDrawModuleData};
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let mut d = rts_lockstep_engine::client::drawable::ClientDrawables::new();
+        let data = W3DLaserDrawModuleData { inner_beam_width: 2.0, inner_color: -1, ..Default::default() };
+        let mut m = W3DLaserDraw::new(std::sync::Arc::new(data), None, 0).unwrap();
+        m.lines[0].points = vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(10.0, 0.0, 0.0)];
+        let mut dr = rts_lockstep_engine::client::drawable::Drawable::bare(0, b"T".to_vec());
+        dr.laser_draws = vec![m];
+        d.logic_drawables.insert(1000, dr);
+        let q = laser_quads(&mut d, 0, [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]);
+        let b = &q[&(Vec::new(), Blend::Add)];
+        assert_eq!(b.len(), 1);
+        assert_eq!(b.uvs, vec![[0.0, 0.0], [0.0, 0.0], [1.0, 0.0], [1.0, 0.0]]);
+        let widths: Vec<f32> = b.positions.iter().map(|p| p[2].abs()).collect();
+        assert!(widths.iter().all(|w| (*w - 1.0).abs() < 1e-6), "{:?}", b.positions);
+        assert_eq!(b.colors[0], [1.0, 1.0, 1.0, 1.0]);
+    }
     use rts_lockstep_engine::client::particle_sys::{NoParticleHost, ParticleSettings};
     use rts_lockstep_engine::common::random_value::RandomValues;
 

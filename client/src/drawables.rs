@@ -137,6 +137,11 @@ impl<D: LocalDevice> W3dAssetSource for Deferred<'_, D> {
     fn deferred_answers(&self) -> usize {
         self.deferred
     }
+    /// (#168) The texture's size as [`W3dFiles`] reads it; a read still being fetched answers none (the missing
+    /// texture's aspect, 1) and is not waited for: the laser drawables that ask are short-lived (a gap of #168).
+    fn texture_size(&mut self, name: &[u8]) -> Option<(u32, u32)> {
+        self.files.texture_size(name)
+    }
 }
 
 /// What one object's model draws: the model's name, its animation and frame.

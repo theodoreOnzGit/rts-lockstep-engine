@@ -825,19 +825,32 @@ impl World {
     }
 
     /// batch R75: `TheThingFactory->newDrawable(tmpl)`: a client drawable (the muzzle flashes' ids, [`World::contain_effect_new`]); one of a
-    /// laser template (`cuts.laser_templates`) has a `LaserUpdate`.
+    /// laser template (`cuts.laser_templates`) has a `LaserUpdate`. **#168:** ~~the client is told nothing~~ the client is told
+    /// (`ClientNewDrawable`, the template's name and this id) and makes the drawable; a template whose first client update module is a
+    /// `LaserUpdate` (INI data: what `findClientUpdateModule("LaserUpdate")` finds on the new drawable) has one too, as do the test's
+    /// `cuts.laser_templates`. The ids stay the logic's own (from 1000, [`World::contain_effect_new`]); the client numbers its drawables
+    /// apart from them (`client::drawable`).
     pub fn client_new_drawable(&mut self, template: u16) -> crate::common::game_type::DrawableId {
         let id = self.contain_effect_new();
-        if self.cuts.laser_templates.contains(&template) {
+        let (first_client_update_is_laser, name) = match self.statics.thing_factory.find_by_template_id(template) {
+            Some(t) => {
+                let first = t.data.get_client_update_module_info().nuggets().first().is_some_and(|n| n.first.as_slice() == b"LaserUpdate");
+                (first, t.data.get_name().to_vec())
+            }
+            None => (false, Vec::new()),
+        };
+        if self.cuts.laser_templates.contains(&template) || first_client_update_is_laser {
             self.cuts.laser_drawables.insert(id);
         }
+        self.emit(ObjectClientEvent::ClientNewDrawable { drawable: id, template: name });
         id
     }
 
-    /// batch R75: `TheGameClient->destroyDrawable(draw)` of a client drawable.
+    /// batch R75: `TheGameClient->destroyDrawable(draw)` of a client drawable; **#168:** the client is told (`ClientDestroyDrawable`).
     pub fn client_destroy_drawable(&mut self, id: crate::common::game_type::DrawableId) {
         self.cuts.laser_drawables.remove(&id);
         self.contain_effect_destroy(id);
+        self.emit(ObjectClientEvent::ClientDestroyDrawable { drawable: id });
     }
 
     /// batch R75: `(LaserUpdate *)draw->findClientUpdateModule("LaserUpdate") != NULL` of a client drawable.

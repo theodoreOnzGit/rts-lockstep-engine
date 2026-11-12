@@ -2403,6 +2403,10 @@ fn draw_particles(
     // the W3D models' emitters (#49), in the same batches
     let w3d = crate::particles::emitter_quads(g.models.instances(), crate::particles::point_tables(), right.to_array(), up.to_array());
     crate::particles::merge_batches(&mut quads, w3d);
+    // the laser beams' lines (#168), in the same batches
+    let clock = g.models_clock;
+    let lasers = crate::particles::laser_quads(&mut g.models.drawables, clock, right.to_array(), up.to_array());
+    crate::particles::merge_batches(&mut quads, lasers);
     // the batches no particle uses this frame are hidden, not freed
     for (key, (e, _)) in &pd.batches {
         if !quads.contains_key(key) {

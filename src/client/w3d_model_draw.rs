@@ -1836,6 +1836,12 @@ pub trait W3dAssetSource {
     fn deferred_answers(&self) -> usize {
         0
     }
+    /// (#168) `WW3DAssetManager::Get_Texture(name)`'s top level `(Width, Height)` (`Get_Level_Description`), `None` when
+    /// this source cannot tell (upstream's missing texture is then assumed: 128 x 128, aspect 1). New: the W3D textures'
+    /// headers are the source's to read.
+    fn texture_size(&mut self, _name: &[u8]) -> Option<(u32, u32)> {
+        None
+    }
 }
 
 /// A render object's bone: `Pivot[i]` of its `HTreeClass` as the draw module reads it.
@@ -1973,6 +1979,14 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
             None => m.update::<AssetManager>(&root, None).ok()?,
         }
         Some(Skeleton::of(&m))
+    }
+    /// (#168) The texture's size, read by decoding it ([`crate::formats::w3d::render::load_texture_image`]); `None` for a
+    /// texture that is not there or does not decode (upstream's missing texture).
+    fn texture_size(&mut self, name: &[u8]) -> Option<(u32, u32)> {
+        match crate::formats::w3d::render::load_texture_image(&self.assets.file_factory, self.fs, name) {
+            Ok(Ok(img)) => Some((img.width, img.height)),
+            _ => None,
+        }
     }
 }
 

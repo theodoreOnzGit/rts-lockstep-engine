@@ -124,6 +124,29 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#168 (2026-11-12, GitHub #168): `W3DLaserDraw`, and the logic's object-less drawables (the particle cannon's beams).**
+- **Translated** (engine crate): `client::w3d_laser_draw`: W3DLaserDraw.cpp whole (the data and its field table, the
+  constructor's lines, `getLaserTemplateWidth`, `doDrawModule`'s segments, arcs, ground skim, widths and tile factors,
+  `crc`, `xfer`, `loadPostProcess`), Color.cpp's `GameGetColorComponentsReal`, DrawModule.cpp's `xfer`, and the parts of
+  `SegmentedLineClass` / `SegLineRendererClass` the module drives (the setters' clamps, the UV scroll and the tiled
+  mapping's U and V: `SegmentedLine::render_strip`). Drawables make their `W3DLaserDraw` modules
+  (`Drawable::laser_draws`), draw them each frame after the model draws, save them in the module list, and answer
+  `LaserUpdate::getCurrentLaserRadius` with the template's width.
+- **The logic's object-less drawables:** the logic now emits `ClientNewDrawable` (the logic's id and the template's name)
+  and `ClientDestroyDrawable` where `ParticleUplinkCannonUpdate` calls `TheThingFactory->newDrawable` and
+  `TheGameClient->destroyDrawable`; the client keeps them by the logic's id (`ClientDrawables::logic_drawables`) and numbers
+  them from 2^30 (`alloc_drawable_id`, upstream's `m_nextDrawableID`, apart from the object-backed drawables' object ids),
+  and gives them `LaserDrawInit` and `LaserSetDecayFrames`. The logic answers `findClientUpdateModule("LaserUpdate")` of
+  such a drawable from the template's first `ClientUpdate` (INI data) as well as from its test table. Gate (a)'s CRC is
+  unchanged (0bf44067).
+- **Drawn** (`client/src/particles.rs::laser_quads`): one camera-facing quad per line in the particles' batches.
+- **Compared with the compiled upstream** (`tests/differential_laser_draw.rs`, `differential/wrap_laser_draw.cpp`): 20,000
+  sequences (311,757 steps, 125,145 draws; 98 undefined upstream), 0 mismatches, max ULP 0; the save and 20,000 loads, 0
+  mismatches; 30 of 30 planted bugs caught.
+- **Not yet** (#168's gaps): the segment-line renderer's own strip (end caps, sorting) and the scene's culling of the
+  lines; the logic-made drawables in a save; a client attached mid-game; the logic's laser radius (still the test table's,
+  0 in a game).
+
 **#165 (2026-11-12, GitHub #165): the other three client update modules, and every client update module saved.**
 - **Translated** (engine crate): `client::sway_client_update` (SwayClientUpdate.cpp:54-205: `updateSway`,
   `clientUpdate`, `stopSway`, `xfer`, `loadPostProcess`), `client::animated_particle_sys_bone_client_update`
@@ -139,10 +162,12 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 - **Compared with the compiled upstream** (`tests/differential_client_update.rs`, `differential/wrap_client_update.cpp`):
   20,000 sequences each for the sway (826,163 steps), the bones (413,080) and the laser (410,225), and 4 x 20,000 saves
   and loads, all 0 mismatches; 23 of 23 planted bugs caught.
-- **Not yet** (#165's gaps): `W3DLaserDraw` and `W3DTreeDraw` (so no laser width and no tree draw module's `isVisible`),
-  the scene's frustum flag, the bone particle systems, the animated bone pose for a laser's start, the
+- **Not yet** (#165's gaps): ~~`W3DLaserDraw` and~~ `W3DTreeDraw` (so ~~no laser width and~~ no tree draw module's
+  `isVisible`), the scene's frustum flag, the bone particle systems, the animated bone pose for a laser's start, ~~the
   `ParticleUplinkCannonUpdate` beams' drawables (`LaserDrawInit`, `LaserSetDecayFrames`: the client never hears of
-  them), and the instance matrix the sway sets is not yet applied by the renderer.
+  them),~~ and the instance matrix the sway sets is not yet applied by the renderer. **Corrected 2026-11-12 (#168):**
+  `W3DLaserDraw` is translated (the laser width is the template's) and the beams' drawables are made from the logic's
+  `ClientNewDrawable` / `ClientDestroyDrawable` and given `LaserDrawInit` and `LaserSetDecayFrames` (see #168 below).
 
 **#157 (2026-11-12, GitHub #157, #92, #94): the skirmish battle honours, the map preview, the insert-disc prompt and
 three tooltips.**

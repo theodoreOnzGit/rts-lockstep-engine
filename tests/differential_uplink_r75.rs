@@ -556,6 +556,9 @@ fn effects(w: &mut World, tally: &mut Tally, names: &mut BTreeMap<u32, Vec<u8>>,
                     log.push(format!("laserdraw {drawable} {} {} {growth_frames}", pos3(&start), pos3(&end)))
                 }
                 Some(ObjectClientEvent::LaserSetDecayFrames { drawable, frames }) => log.push(format!("laserdecay {drawable} {frames}")),
+                // (#168) the client told of the drawables the logic makes and destroys: the same calls the cut logs as `effnew` and
+                // `effdestroy` (the C++ logs them once, from `newDrawable` and `destroyDrawable`)
+                Some(ObjectClientEvent::ClientNewDrawable { .. } | ObjectClientEvent::ClientDestroyDrawable { .. }) => {}
                 Some(e) => log.push(format!("unexpected {e:?}")),
                 None => {}
             }

@@ -519,7 +519,8 @@ impl Drawable {
         xfer.xfer_unsigned_short(&mut module_types)?;
         for cur in 0..module_types {
             // (#165) the client update modules the port makes are its own too
-            let own = if cur == DRAW_MODULES { self.draw_modules.len() } else { self.client_update_modules.len() };
+            // (#168) the `W3DLaserDraw` modules are draw modules too (written after the others)
+            let own = if cur == DRAW_MODULES { self.draw_modules.len() + self.laser_draws.len() } else { self.client_update_modules.len() };
             let kept = self.saved.kept_modules.iter().filter(|k| k.module_type == cur).count();
             let mut count = (own + kept) as u16;
             xfer.xfer_unsigned_short(&mut count)?;
@@ -530,6 +531,13 @@ impl Drawable {
                         xfer.xfer_ascii_string(&mut tag)?;
                         xfer.begin_block()?;
                         draw_module_xfer(xfer, m, now)?;
+                        xfer.end_block()?;
+                    }
+                    for m in self.laser_draws.iter_mut() {
+                        let mut tag = m.data.module_tag.clone();
+                        xfer.xfer_ascii_string(&mut tag)?;
+                        xfer.begin_block()?;
+                        m.xfer(xfer)?;
                         xfer.end_block()?;
                     }
                 } else if cur == CLIENT_UPDATE_MODULES {
@@ -554,12 +562,15 @@ impl Drawable {
                     let mut tag = Vec::new();
                     xfer.xfer_ascii_string(&mut tag)?;
                     let found = if cur == DRAW_MODULES { self.draw_modules.iter().position(|m| m.data.module_tag == tag) } else { None };
+                    // (#168) a `W3DLaserDraw` found by its tag
+                    let found_laser = if cur == DRAW_MODULES && found.is_none() { self.laser_draws.iter().position(|m| m.data.module_tag == tag) } else { None };
                     // (#165) a client update module found by its tag (`findModule(moduleIdentifier)`, the first)
                     let found_client = if cur == CLIENT_UPDATE_MODULES { self.client_update_modules.iter().position(|m| m.module_tag == tag) } else { None };
                     let data_size = xfer.begin_block()?;
                     match (found, found_client) {
                         (Some(i), _) => draw_module_xfer(xfer, &mut self.draw_modules[i], now)?,
                         (None, Some(i)) => self.client_update_modules[i].module.xfer(xfer)?,
+                        (None, None) if found_laser.is_some() => self.laser_draws[found_laser.unwrap_or_default()].xfer(xfer)?,
                         (None, None) => {
                             // ("Module '%s' was indicated in file, but not found on Drawable": its data skipped upstream,
                             // kept here)

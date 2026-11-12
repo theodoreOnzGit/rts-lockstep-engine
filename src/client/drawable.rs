@@ -79,7 +79,14 @@
 //!   that does not parse is listed in [`ClientDrawables::errors`] and its
 //!   module left out (upstream refuses the INI file).
 //! - Only `W3DModelDraw` and the draw modules built on its data are made; the
-//!   others (`W3DDefaultDraw`, trees, lasers, ...) are not translated yet.
+//!   others (`W3DDefaultDraw`, trees, ~~lasers,~~ ...) are not translated yet. **Corrected 2026-11-12 (#168):**
+//!   `W3DLaserDraw` is made too ([`Drawable::laser_draws`], kept apart from the others and written after them in a save).
+//! - **The logic's object-less drawables** (#168): `TheThingFactory->newDrawable` without an object
+//!   (`ParticleUplinkCannonUpdate`'s beams) arrives as `ClientNewDrawable` / `ClientDestroyDrawable`; the client keeps them by
+//!   the logic's id ([`ClientDrawables::logic_drawables`]) and numbers them itself from [`LOGIC_DRAWABLE_ID_BASE`]
+//!   (upstream's one `m_nextDrawableID`; the port's object-backed drawables take their objects' ids). They get
+//!   `LaserDrawInit` and `LaserSetDecayFrames`, their client update modules each frame, and their laser draws. They are
+//!   not written by a save (the logic keeps no record of which of its ids they are: a gap of #168).
 //! - The static LOD is [`ClientDrawables::static_lod`] (`STATIC_GAME_LOD_HIGH`
 //!   by default); ~~upstream measures the machine.~~ **Corrected 2026-11-12 (#160):** upstream's
 //!   `TheGameLODManager->getStaticLODLevel()` (`crate::client::game_lod`): the owner copies the shell's LOD
@@ -101,6 +108,7 @@ use super::animated_particle_sys_bone_client_update::{AnimatedParticleSysBoneCli
 use super::beacon_client_update::{BeaconClientUpdate, BeaconClientUpdateModuleData, BeaconHost, ClientUpdateModule, TaggedClientUpdateModule, BEACON_CLIENT_UPDATE};
 use super::laser_update::{LaserHost, LaserObject, LaserUpdate, LaserUpdateModuleData, LASER_UPDATE};
 use super::sway_client_update::{SwayClientUpdate, SwayHost, SWAY_CLIENT_UPDATE};
+use super::w3d_laser_draw::{W3DLaserDraw, W3DLaserDrawModuleData, W3D_LASER_DRAW};
 use crate::common::game_type::DrawableId;
 use crate::common::kind_of::KINDOF_SHRUBBERY;
 use crate::logic::world::script_engine::BreezeInfo;
@@ -167,15 +175,24 @@ pub struct Drawable {
     /// **Corrected 2026-11-12 (#165):** all four classes are made (`SwayClientUpdate`,
     /// `AnimatedParticleSysBoneClientUpdate`, `LaserUpdate` too), each with its module tag.
     pub client_update_modules: Vec<TaggedClientUpdateModule>,
+    /// (#168) Its `W3DLaserDraw` draw modules (`MODULETYPE_DRAW` too: upstream keeps them in one list with the others; here
+    /// apart, after them), each the `LaserDrawInterface` that `LaserUpdate::getCurrentLaserRadius` asks for.
+    pub laser_draws: Vec<W3DLaserDraw>,
 }
 
 impl Drawable {
     /// A drawable of object 1 with no draw modules, for tests elsewhere in the crate.
     #[cfg(test)]
     pub(crate) fn for_tests() -> Drawable {
+        Drawable::bare(1, b"T".to_vec())
+    }
+
+    /// (#168) A drawable of object `object_id` (`INVALID_ID`: none) and template `template` with no modules, clean: what
+    /// the constructor makes of a template with none (and the client crate's tests start from).
+    pub fn bare(object_id: ObjectId, template: Vec<u8>) -> Drawable {
         Drawable {
-            object_id: 1,
-            template: b"T".to_vec(),
+            object_id,
+            template,
             condition_state: ModelConditionFlags::new(),
             is_model_dirty: false,
             draw_modules: Vec::new(),
@@ -186,9 +203,35 @@ impl Drawable {
             shroud_clear_frame: 0,
             loco_info: None,
             physics_xform: None,
-            saved: DrawableSaveFields::new(1, 1.0),
+            saved: DrawableSaveFields::new(object_id, 1.0),
             client_update_modules: Vec::new(),
+            laser_draws: Vec::new(),
         }
+    }
+
+    /// (#168) `doDrawModule` of each `W3DLaserDraw`, given the drawable's `findClientUpdateModule("LaserUpdate")`: the first
+    /// client update module when it is the laser, none without client update modules; any other first module makes
+    /// upstream's lookup spin for ever (Drawable.cpp:4767-4773, the loop has no `++clientModules`): `Err`, nothing drawn.
+    /// `ground` is `TheTerrainLogic->getGroundHeight(x, y)`.
+    pub fn draw_laser_modules(&mut self, ground: &mut dyn FnMut(f32, f32) -> f32) -> Result<(), String> {
+        if self.laser_draws.is_empty() {
+            return Ok(());
+        }
+        let mut update = match self.client_update_modules.first_mut().map(|m| &mut m.module) {
+            Some(ClientUpdateModule::Laser(l)) => Some(l),
+            Some(_) => return Err("findClientUpdateModule(LaserUpdate) spins for ever: the first client update module is not the laser".into()),
+            None => None,
+        };
+        for m in &mut self.laser_draws {
+            m.do_draw_module(update.as_deref_mut(), ground);
+        }
+        Ok(())
+    }
+
+    /// (#168) The first draw module's `getLaserDrawInterface()->getLaserTemplateWidth()`: only `W3DLaserDraw` has the
+    /// interface, so the first of those; `None` without one.
+    pub fn laser_template_width(&self) -> Option<f32> {
+        self.laser_draws.first().map(|m| m.get_laser_template_width())
     }
 
     /// `getModelConditionFlags()`.
@@ -377,7 +420,22 @@ pub struct ClientDrawables {
     /// (#165) The objects whose drawable the client destroyed (`TheGameClient->destroyDrawable` of a `LaserUpdate` given
     /// nothing to aim at): not made again while the object lives.
     pub destroyed_by_client: std::collections::BTreeSet<ObjectId>,
+    /// (#168) Each template's parsed `W3DLaserDraw` module data, by template name.
+    laser_module_data: BTreeMap<Vec<u8>, Arc<Vec<Arc<W3DLaserDrawModuleData>>>>,
+    /// (#168) The drawables the logic made with no object (`TheThingFactory->newDrawable`, `ClientNewDrawable`:
+    /// `ParticleUplinkCannonUpdate`'s beams), by the logic's id for them. Each has a drawable id of the client's own
+    /// ([`ClientDrawables::alloc_drawable_id`]).
+    pub logic_drawables: BTreeMap<DrawableId, Drawable>,
+    /// (#168) `GameClient::m_nextDrawableID` for the drawables the client numbers itself (the logic-made ones): from
+    /// [`LOGIC_DRAWABLE_ID_BASE`], apart from the object-backed drawables, whose ids are their objects'.
+    pub next_drawable_id: DrawableId,
 }
+
+/// (#168) The first id [`ClientDrawables::alloc_drawable_id`] gives. Upstream numbers every drawable from one counter
+/// (`GameClient::allocDrawableID`, GameClient.cpp:486-492, from 1); the port's object-backed drawables take their objects'
+/// ids (the logic's counter, from 1), so the client's own count from 2^30: an object would need that many ids before the
+/// two met, and the counter stops short of wrapping into them ([`ClientDrawables::alloc_drawable_id`]).
+pub const LOGIC_DRAWABLE_ID_BASE: DrawableId = 1 << 30;
 
 impl Default for ClientDrawables {
     fn default() -> Self {
@@ -392,8 +450,19 @@ impl Default for ClientDrawables {
             object_less: Vec::new(),
             radar_requests: Vec::new(),
             destroyed_by_client: std::collections::BTreeSet::new(),
+            laser_module_data: BTreeMap::new(),
+            logic_drawables: BTreeMap::new(),
+            next_drawable_id: LOGIC_DRAWABLE_ID_BASE,
         }
     }
+}
+
+/// (#168) Which of the client's lists a drawable is in: an object's (by its id) or the logic's object-less ones (by the
+/// logic's id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    Object(ObjectId),
+    Logic(DrawableId),
 }
 
 impl ClientDrawables {
@@ -426,6 +495,40 @@ impl ClientDrawables {
         out
     }
 
+    /// (#168) The parsed `W3DLaserDraw` module data of a template (cached), in the template's order.
+    pub fn laser_module_data_for(&mut self, t: &ThingTemplate) -> Arc<Vec<Arc<W3DLaserDrawModuleData>>> {
+        let name = t.get_name().to_vec();
+        if let Some(d) = self.laser_module_data.get(&name) {
+            return d.clone();
+        }
+        let mut out = Vec::new();
+        for n in t.get_draw_module_info().nuggets() {
+            let ModuleInfoData::Client(block) = &n.second else { continue };
+            if n.first.as_slice() != W3D_LASER_DRAW {
+                continue;
+            }
+            match W3DLaserDrawModuleData::parse(block) {
+                Ok(mut d) => {
+                    d.module_tag = n.module_tag.clone();
+                    out.push(Arc::new(d));
+                }
+                Err(e) => self.errors.push((name.clone(), n.first.clone(), format!("{e:?}"))),
+            }
+        }
+        let out = Arc::new(out);
+        self.laser_module_data.insert(name, out.clone());
+        out
+    }
+
+    /// (#168) `GameClient::allocDrawableID()` (GameClient.cpp:486-492) for a drawable the client numbers itself: the next
+    /// id from [`LOGIC_DRAWABLE_ID_BASE`]. Upstream's counter wraps through every value; this one starts over at the base
+    /// rather than wrap into the objects' ids (2^31 - 2^30 drawables later).
+    pub fn alloc_drawable_id(&mut self) -> DrawableId {
+        let ret = self.next_drawable_id;
+        self.next_drawable_id = if ret == DrawableId::MAX { LOGIC_DRAWABLE_ID_BASE } else { ret + 1 };
+        ret
+    }
+
     /// `Drawable(thingTemplate)` for object `id`, if the World has it: its
     /// draw modules, each constructed (inside the logic update upstream, so
     /// at a valid time for the logic's bones).
@@ -446,6 +549,7 @@ impl ClientDrawables {
     /// object, is made this way.
     pub fn new_drawable<A: W3dAssetSource>(&mut self, w: &World, id: ObjectId, t: &ThingTemplate, assets: &mut A, sync_time: u32, logic_time: bool) -> Drawable {
         let datas = self.module_data_for(t);
+        let laser_datas = self.laser_module_data_for(t);
         let (use_lod, night, snowy) = w
             .statics
             .global_data
@@ -464,6 +568,15 @@ impl ClientDrawables {
             match W3DModelDraw::new_scaled(d.clone(), hex_color, night, snowy, scale, standard.clone(), &mut env) {
                 Ok(m) => draw_modules.push(m),
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
+            }
+        }
+        // (#168) the `W3DLaserDraw` modules, each made as its constructor does (its texture's size the assets')
+        let mut laser_draws = Vec::new();
+        for d in laser_datas.iter() {
+            let size = if d.texture_name.is_empty() { None } else { env.assets.texture_size(&d.texture_name) };
+            match W3DLaserDraw::new(d.clone(), size, sync_time) {
+                Ok(m) => laser_draws.push(m),
+                Err(e) => self.errors.push((t.get_name().to_vec(), W3D_LASER_DRAW.to_vec(), format!("undefined upstream: {e:?}"))),
             }
         }
         // (#162) the client update modules the client makes, each made as its constructor does; (#165) all four classes,
@@ -503,6 +616,25 @@ impl ClientDrawables {
             physics_xform: None,
             saved: DrawableSaveFields::new(id, scale),
             client_update_modules,
+            laser_draws,
+        }
+    }
+
+    /// (#168) `TheThingFactory->newDrawable(tmpl)` of the logic's (`ClientNewDrawable`): a drawable of no object, of the
+    /// template named `template` (its final override), numbered by the client ([`ClientDrawables::alloc_drawable_id`]) and
+    /// kept by the logic's id. A template the client does not know is recorded in [`ClientDrawables::errors`] (upstream's
+    /// `newDrawable` would read through `NULL`).
+    pub fn new_logic_drawable<A: W3dAssetSource>(&mut self, w: &World, logic_id: DrawableId, template: &[u8], assets: &mut A, sync_time: u32) {
+        let Some(t) = w.statics.thing_factory.find_template(template) else {
+            self.errors.push((template.to_vec(), Vec::new(), "ClientNewDrawable of a template the client does not know".into()));
+            return;
+        };
+        let t = t.get_final_override().data.clone();
+        let mut d = self.new_drawable(w, crate::common::game_type::INVALID_ID, &t, assets, sync_time, true);
+        d.saved.drawable_id = self.alloc_drawable_id();
+        if let Some(mut old) = self.logic_drawables.insert(logic_id, d) {
+            // (the logic reuses no id while its drawable lives: not reached)
+            self.destroy_client_update_modules(w, &mut old);
         }
     }
 
@@ -622,11 +754,30 @@ impl ClientDrawables {
                     }
                     let parent = self.laser_object(w, *parent);
                     let target = self.laser_object(w, *target);
-                    self.client_update_modules(w, *laser, ClientUpdateCall::InitLaser { parent, target, start: *start, end: *end, bone: bone.clone() });
+                    self.client_update_modules(w, *laser, ClientUpdateCall::InitLaser { parent, target, start: *start, end: *end, bone: bone.clone(), size_delta_frames: 0 });
                 }
-                // (#165) `ParticleUplinkCannonUpdate`'s beams (`LaserDrawInit`, `LaserSetDecayFrames`) are drawables the
+                // ~~(#165) `ParticleUplinkCannonUpdate`'s beams (`LaserDrawInit`, `LaserSetDecayFrames`) are drawables the
                 // logic makes with `TheThingFactory->newDrawable` and tells the client nothing of: the client has no such
-                // drawable, so these are not applied (#165's gaps)
+                // drawable, so these are not applied (#165's gaps)~~ **Corrected 2026-11-12 (#168):** the logic tells the
+                // client (`ClientNewDrawable`, `ClientDestroyDrawable`); the client makes them ([`ClientDrawables::logic_drawables`])
+                // and gives their `findClientUpdateModule("LaserUpdate")` the two calls
+                ClientEvent::Object(ObjectClientEvent::ClientNewDrawable { drawable, template }) => {
+                    self.new_logic_drawable(w, *drawable, template, assets, sync_time);
+                }
+                ClientEvent::Object(ObjectClientEvent::ClientDestroyDrawable { drawable }) => {
+                    if let Some(mut d) = self.logic_drawables.remove(drawable) {
+                        self.destroy_client_update_modules(w, &mut d);
+                    }
+                }
+                // `update->initLaser(NULL, NULL, &start, &end, "", growthFrames)` (ParticleUplinkCannonUpdate.cpp)
+                ClientEvent::Object(ObjectClientEvent::LaserDrawInit { drawable, start, end, growth_frames }) => {
+                    let call = ClientUpdateCall::InitLaser { parent: None, target: None, start: *start, end: *end, bone: Vec::new(), size_delta_frames: *growth_frames };
+                    self.client_update_modules_in(w, Slot::Logic(*drawable), call);
+                }
+                // `update->setDecayFrames(frames)`
+                ClientEvent::Object(ObjectClientEvent::LaserSetDecayFrames { drawable, frames }) => {
+                    self.client_update_modules_in(w, Slot::Logic(*drawable), ClientUpdateCall::SetDecayFrames(*frames));
+                }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
@@ -675,13 +826,22 @@ impl ClientDrawables {
     /// [`ClientDrawables::errors`], nothing done). A laser that destroys its drawable (`initLaser` with nothing to aim at)
     /// takes the drawable out of the client (not remade for its object: [`ClientDrawables::destroyed_by_client`]).
     fn client_update_modules(&mut self, w: &World, id: ObjectId, call: ClientUpdateCall) {
+        self.client_update_modules_in(w, Slot::Object(id), call);
+    }
+
+    /// (#168) [`ClientDrawables::client_update_modules`] of a drawable in either list.
+    fn client_update_modules_in(&mut self, w: &World, slot: Slot, call: ClientUpdateCall) {
         // the drawable taken out of the list while its modules run, so that they can find the others
-        let Some(mut d) = self.drawables.remove(&id) else { return };
+        let taken = match slot {
+            Slot::Object(id) => self.drawables.remove(&id),
+            Slot::Logic(id) => self.logic_drawables.remove(&id),
+        };
+        let Some(mut d) = taken else { return };
         let mut modules = std::mem::take(&mut d.client_update_modules);
         let mut destroyed = false;
         let local_player_index = self.local_player_index.or(w.players.local_index());
         let laser = match &call {
-            ClientUpdateCall::InitLaser { .. } => match modules.first().map(|m| &m.module) {
+            ClientUpdateCall::InitLaser { .. } | ClientUpdateCall::SetDecayFrames(_) => match modules.first().map(|m| &m.module) {
                 Some(ClientUpdateModule::Laser(_)) => Some(0),
                 Some(_) => {
                     self.errors.push((d.template.clone(), LASER_UPDATE.to_vec(), "findClientUpdateModule(LaserUpdate) spins for ever: the first client update module is not the laser".into()));
@@ -719,9 +879,13 @@ impl ClientDrawables {
                     let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
                     l.client_update(&host);
                 }
-                (ClientUpdateCall::InitLaser { parent, target, start, end, bone }, ClientUpdateModule::Laser(l)) if laser == Some(i) => {
+                (ClientUpdateCall::SetDecayFrames(frames), ClientUpdateModule::Laser(l)) if laser == Some(i) => {
+                    let host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
+                    l.set_decay_frames(*frames, &host);
+                }
+                (ClientUpdateCall::InitLaser { parent, target, start, end, bone, size_delta_frames }, ClientUpdateModule::Laser(l)) if laser == Some(i) => {
                     let mut host = DrawableClientHost { world: w, drawable: &mut d, others: &self.drawables, particles: &mut self.fx.particles, random: &mut self.random, local_player_index, destroyed: &mut destroyed };
-                    if let Err(e) = l.init_laser(&mut host, parent.as_ref(), target.as_ref(), Some(start), Some(end), bone, 0) {
+                    if let Err(e) = l.init_laser(&mut host, parent.as_ref(), target.as_ref(), Some(start), Some(end), bone, *size_delta_frames) {
                         self.errors.push((d.template.clone(), LASER_UPDATE.to_vec(), format!("initLaser undefined upstream: {e:?}")));
                     }
                 }
@@ -732,15 +896,24 @@ impl ClientDrawables {
             // `TheGameClient->destroyDrawable(getDrawable())`: the drawable and its modules go
             d.client_update_modules = modules;
             self.destroy_client_update_modules(w, &mut d);
-            self.destroyed_by_client.insert(id);
+            if let Slot::Object(id) = slot {
+                self.destroyed_by_client.insert(id);
+            }
             return;
         }
         d.client_update_modules = modules;
-        self.drawables.insert(id, d);
+        match slot {
+            Slot::Object(id) => {
+                self.drawables.insert(id, d);
+            }
+            Slot::Logic(id) => {
+                self.logic_drawables.insert(id, d);
+            }
+        }
     }
 
     /// (#165) `loadPostProcess()` of the drawable's client update modules after a load (`SwayClientUpdate`'s recomputes
-    /// its sway; the others add nothing), in the drawables' order.
+    /// its sway; the others add nothing), in the drawables' order; (#168) and of its `W3DLaserDraw` modules.
     pub fn client_update_load_post_process(&mut self, w: &World) {
         let ids: Vec<ObjectId> = self.drawables.keys().copied().collect();
         let local_player_index = self.local_player_index.or(w.players.local_index());
@@ -755,6 +928,10 @@ impl ClientDrawables {
                 }
             }
             d.client_update_modules = modules;
+            // (#168) `W3DLaserDraw::loadPostProcess`: drawn again the first time after the load
+            for m in &mut d.laser_draws {
+                m.load_post_process();
+            }
             self.drawables.insert(id, d);
         }
     }
@@ -914,6 +1091,10 @@ impl ClientDrawables {
                 for dm in d.get_draw_modules(&mut env) {
                     dm.do_draw_module(&facts, &mut env);
                 }
+                // (#168) the `W3DLaserDraw` modules' `doDrawModule`
+                if let Err(e) = d.draw_laser_modules(&mut |x, y| w.terrain.ground_height(x, y, false).0) {
+                    self.errors.push((d.template.clone(), W3D_LASER_DRAW.to_vec(), e));
+                }
             }
             // the scene's render step
             let mut rendered = false;
@@ -930,6 +1111,27 @@ impl ClientDrawables {
                 }
             }
         }
+        // (#168) the logic's object-less drawables (`ParticleUplinkCannonUpdate`'s beams): their client update modules,
+        // then `Drawable::draw` (no object: no shroud, no physics); their only draw modules the client makes are lasers
+        let logic_ids: Vec<DrawableId> = self.logic_drawables.keys().copied().collect();
+        for id in logic_ids {
+            self.client_update_modules_in(w, Slot::Logic(id), ClientUpdateCall::Update);
+            let Some(d) = self.logic_drawables.get_mut(&id) else { continue };
+            if d.is_drawable_effectively_hidden() {
+                continue;
+            }
+            let facts = Self::draw_facts(w, crate::common::game_type::INVALID_ID, show_client_physics, None);
+            let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false };
+            for dm in d.get_draw_modules(&mut env) {
+                dm.do_draw_module(&facts, &mut env);
+            }
+            if let Err(e) = d.draw_laser_modules(&mut |x, y| w.terrain.ground_height(x, y, false).0) {
+                self.errors.push((d.template.clone(), W3D_LASER_DRAW.to_vec(), e));
+            }
+            for dm in &mut d.draw_modules {
+                dm.render(sync_time);
+            }
+        }
         // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
         let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index };
         self.fx.update(&host, &mut self.random);
@@ -944,7 +1146,9 @@ enum ClientUpdateCall {
     /// `hideBeacon()` of each beacon module.
     HideBeacon,
     /// `initLaser(parent, target, &start, &end, bone)` of the module `findClientUpdateModule("LaserUpdate")` finds.
-    InitLaser { parent: Option<LaserObject>, target: Option<LaserObject>, start: Coord3D, end: Coord3D, bone: Vec<u8> },
+    InitLaser { parent: Option<LaserObject>, target: Option<LaserObject>, start: Coord3D, end: Coord3D, bone: Vec<u8>, size_delta_frames: i32 },
+    /// (#168) `setDecayFrames(frames)` of the module `findClientUpdateModule("LaserUpdate")` finds.
+    SetDecayFrames(u32),
 }
 
 /// (#165) A drawable's position as the port keeps it: its object's (`Thing::getPosition`), or, without one, its saved
@@ -1079,8 +1283,9 @@ impl LaserHost for DrawableClientHost<'_> {
         self.drawable.saved.transform.set_translation(&crate::ww::vector3::Vector3 { x: pos.x, y: pos.y, z: pos.z });
     }
     fn laser_template_width(&self) -> Option<f32> {
-        // `getLaserDrawInterface()`: only `W3DLaserDraw` has one, and the client does not make it (#165's gaps)
-        None
+        // `getLaserDrawInterface()`: only `W3DLaserDraw` has one; ~~and the client does not make it (#165's gaps)~~
+        // **Corrected 2026-11-12 (#168):** the client makes it (`Drawable::laser_draws`)
+        self.drawable.laser_template_width()
     }
 }
 
@@ -1249,6 +1454,55 @@ mod tests {
         assert_eq!(c.drawables.len(), 12);
         c.draw(&mut w, &mut NoAssets, 33);
         assert_eq!(c.drawables.len(), 13, "an object the client has not seen gets its drawable at the draw");
+    }
+
+    /// (#168) Predicted: a `ClientNewDrawable` makes an object-less drawable kept by the logic's id (1000) and numbered
+    /// from 2^30 (a second one 2^30 + 1); with a `LaserUpdate` and a `W3DLaserDraw` on it, `LaserDrawInit` (growth 4 frames)
+    /// starts it at width 0 and the draw puts the start and end on the line at width 0; four frames on the width is the
+    /// full 2 and the radius `outer * 0.5 * 1` = 3; `LaserSetDecayFrames` starts a decay; `ClientDestroyDrawable` removes
+    /// it; the World's objects keep their drawables, and nothing of the World is written.
+    #[test]
+    fn logic_made_laser_drawables_get_their_calls() {
+        use crate::client::laser_update::LaserUpdateModuleData;
+        use crate::client::w3d_laser_draw::{W3DLaserDraw, W3DLaserDrawModuleData};
+        let mut w = crate::logic::world::gate_scenario::gate_world();
+        let mut c = ClientDrawables::new();
+        let ev = w.take_client_events();
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        let objects = c.drawables.len();
+        let template = c.drawables.values().next().unwrap().template.clone();
+        let new = |d: i32| ClientEvent::Object(ObjectClientEvent::ClientNewDrawable { drawable: d, template: template.clone() });
+        c.apply_events(&w, &[new(1000), new(1001)], &mut NoAssets, 0);
+        assert_eq!(c.logic_drawables.len(), 2);
+        assert_eq!(c.logic_drawables[&1000].saved.drawable_id, LOGIC_DRAWABLE_ID_BASE);
+        assert_eq!(c.logic_drawables[&1001].saved.drawable_id, LOGIC_DRAWABLE_ID_BASE + 1);
+        assert_eq!(c.drawables.len(), objects);
+        {
+            let d = c.logic_drawables.get_mut(&1000).unwrap();
+            d.client_update_modules = vec![TaggedClientUpdateModule { module_tag: b"ModuleTag_L".to_vec(), module: ClientUpdateModule::Laser(LaserUpdate::new(LaserUpdateModuleData::default())) }];
+            let data = W3DLaserDrawModuleData { inner_beam_width: 2.0, outer_beam_width: 6.0, ..Default::default() };
+            d.laser_draws = vec![W3DLaserDraw::new(Arc::new(data), None, 0).unwrap()];
+        }
+        let frame = w.frame();
+        let start = Coord3D { x: 1.0, y: 2.0, z: 3.0 };
+        let end = Coord3D { x: 4.0, y: 5.0, z: 6.0 };
+        c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::LaserDrawInit { drawable: 1000, start, end, growth_frames: 4 })], &mut NoAssets, 0);
+        c.draw(&w, &mut NoAssets, 33);
+        let line = &c.logic_drawables[&1000].laser_draws[0].lines[0];
+        assert_eq!((line.points[0].x, line.points[1].z, line.width_set), (1.0, 6.0, 0.0));
+        for _ in 0..4 {
+            w.logic_update().expect("a frame");
+        }
+        assert_eq!(w.frame(), frame + 4);
+        c.draw(&w, &mut NoAssets, 66);
+        assert_eq!(c.logic_drawables[&1000].laser_draws[0].lines[0].width_set, 2.0);
+        assert_eq!(c.logic_drawables[&1000].laser_template_width(), Some(3.0));
+        c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::LaserSetDecayFrames { drawable: 1000, frames: 10 })], &mut NoAssets, 0);
+        let ClientUpdateModule::Laser(l) = &c.logic_drawables[&1000].client_update_modules[0].module else { unreachable!() };
+        assert!(l.decaying);
+        c.apply_events(&w, &[ClientEvent::Object(ObjectClientEvent::ClientDestroyDrawable { drawable: 1000 })], &mut NoAssets, 0);
+        assert_eq!(c.logic_drawables.keys().copied().collect::<Vec<_>>(), [1001]);
+        assert!(c.errors.is_empty(), "{:?}", c.errors);
     }
 
     /// The drawable of the gate game's first object, with one module (no art: `NoAssets` gives a render object that is
