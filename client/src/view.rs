@@ -196,9 +196,11 @@ pub fn cinematic_frame(c: &mut rts_lockstep_engine::client::cinematic_text::Cine
 }
 
 /// (#151) The military subtitle's host in the client (`rts_lockstep_engine::client::military_subtitle`): the World's frame
-/// and its scripts' frozen time, the game's text, the display's size, `TheGlobalLanguageData`, and the fonts measured as a
+/// and its scripts' frozen time, the game's text, the display's size, `TheGlobalLanguageData`, and the fonts measured ~~as a
 /// monospaced font measures (`DisplayString::getSize`: each unit 0.6 of the point size wide, the line the point size
-/// high; the client draws in its own font, not the game's). The typing sound joins the frame's GUI sounds; the label
+/// high; the client draws in its own font, not the game's)~~ **corrected 2026-11-12, #153:** as upstream measures them
+/// (`DisplayString::getSize` and the font's height, `crate::text_metrics`: render2dsentence.cpp's measure over Arial's
+/// widths; the client draws in Bevy's font unless it has the face). The typing sound joins the frame's GUI sounds; the label
 /// joins the briefings for the shell's history.
 pub struct SubtitleHost<'a> {
     pub frame: u32,
@@ -231,10 +233,11 @@ impl rts_lockstep_engine::client::military_subtitle::MilitarySubtitleHost for Su
         self.language.adjust_font_size(size, self.display.0)
     }
     fn string_size(&self, text: &[u16], font: &rts_lockstep_engine::client::window_script::GameFont) -> (i32, i32) {
-        ((text.len() as f32 * font.point_size as f32 * 0.6) as i32, font.point_size)
+        // (~~0.6 of the point size a unit, the point size high~~ corrected 2026-11-12, #153: upstream's measure)
+        crate::text_metrics::text_size(Some(font), text, None)
     }
     fn font_height(&self, font: &rts_lockstep_engine::client::window_script::GameFont) -> i32 {
-        font.point_size
+        crate::text_metrics::font_height(Some(font))
     }
     fn add_audio_event(&mut self, name: &[u8]) {
         self.sounds.push(name.to_vec());
@@ -243,7 +246,9 @@ impl rts_lockstep_engine::client::military_subtitle::MilitarySubtitleHost for Su
         self.frozen
     }
     fn update_diplomacy_briefing_text(&mut self, label: &[u8]) {
-        self.briefings.push(label.to_vec());
+        // (~~pushed whatever it was: without a shell the queue grew without limit~~ corrected 2026-11-12, #153: as
+        // upstream's list takes it, an empty or repeated label dropped)
+        crate::saves::queue_briefing(self.briefings, label);
     }
 }
 
@@ -267,6 +272,11 @@ mod tests {
     /// 390-wide display (12: the adjustment lowers nothing under 800 wide); the language's 750 ms delay is 22 frames, so
     /// frame 33 types `H` with the typing sound and the block 7 to the right (0.6 x 12); frame 34 types `i` (speed 0: the
     /// next frame); updated every frame the block is on at 33 (off at 20, on at 30); the label went to the briefings once.
+    ///
+    /// **Corrected 2026-11-12, #153** (predicted before the run): measured as upstream measures (`crate::text_metrics`),
+    /// Courier 12 bold is Arial bold at 16 pixels: `H` 722 x 16 / 1000 = 12 wide plus the extra overlap 2, so the block is
+    /// ~~7~~ 14 to the right (x 18), and the font's height ~~12~~ 18 (round(2288 x 16 / 2048)): the block ~~9 x 12~~ 14 x
+    /// 18 (0.8 of the height wide).
     #[test]
     fn the_military_subtitle_types_out_on_a_phone() {
         use rts_lockstep_engine::client::military_subtitle::{MilitarySubtitleUi, SubtitleDraw};
@@ -290,7 +300,8 @@ mod tests {
             d = subtitle_frame(&mut u, &mut h, &settings, 1);
         }
         assert!(matches!(&d[0], SubtitleDraw::Text { x: 4, y: 534, text, .. } if text == &[72]), "{d:?}");
-        assert!(matches!(d[1], SubtitleDraw::FillRect { x: 11, y: 534, width: 9, height: 12, .. }), "{d:?}");
+        // (~~x 11, 9 x 12~~ corrected 2026-11-12, #153: upstream's measure, see above)
+        assert!(matches!(d[1], SubtitleDraw::FillRect { x: 18, y: 534, width: 14, height: 18, .. }), "{d:?}");
         h.frame = 34;
         let d = subtitle_frame(&mut u, &mut h, &settings, 1);
         assert!(matches!(&d[0], SubtitleDraw::Text { text, .. } if text == &[72, 105]), "{d:?}");

@@ -189,7 +189,8 @@ struct Game {
     language: rts_lockstep_engine::client::global_language::GlobalLanguage,
     language_pending: bool,
     /// (#148) The briefings the logic showed since the shell last took them (`ClientEvent::InGameUi`'s labels), for its
-    /// briefing history.
+    /// briefing history. (#153) Taken as upstream's list takes them (`crate::saves::queue_briefing`: no empty or repeated
+    /// label), and without a shell they are the history, cleared when a game is: bounded as upstream's list.
     briefings: Vec<Vec<u8>>,
     /// (#151) A loaded game's briefing list is in `briefings`: the history is cleared before it is given them.
     briefings_reset: bool,
@@ -1418,8 +1419,24 @@ fn apply_camera(rig: Res<Rig>, windows: Query<&Window>, mut cams: Query<(&mut Tr
     }
 }
 
-fn update_hud(game: NonSend<Game>, mut hud: Query<&mut Text, With<Hud>>) {
-    for mut text in &mut hud {
+fn update_hud(game: NonSend<Game>, windows: Query<&Window>, mut hud: Query<(&mut Text, &mut TextFont, &mut TextLayout, &mut Node), With<Hud>>) {
+    // (#153) on a narrow screen one line, cut at the right margin, in a smaller font, so it no longer covers the shell
+    // (`crate::ui::status_line_narrow`, tested there); a wide screen keeps the wrapped line
+    let narrow = windows.single().is_ok_and(|w| crate::ui::status_line_narrow(w.width()));
+    for (mut text, mut font, mut layout, mut node) in &mut hud {
+        let size = if narrow { bevy::text::FontSize::Px(crate::ui::STATUS_NARROW_FONT_PX) } else { TextFont::default().font_size };
+        if font.font_size != size {
+            font.font_size = size;
+        }
+        let linebreak = if narrow { bevy::text::LineBreak::NoWrap } else { TextLayout::default().linebreak };
+        if layout.linebreak != linebreak {
+            layout.linebreak = linebreak;
+        }
+        let (right, overflow) = if narrow { (px(8), Overflow::clip()) } else { (Val::Auto, Overflow::default()) };
+        if node.right != right || node.overflow != overflow {
+            node.right = right;
+            node.overflow = overflow;
+        }
         let state = match (&game.error, game.paused) {
             (Some(e), _) => format!("stopped: {e}"),
             (None, true) => "paused".to_string(),
@@ -2025,8 +2042,9 @@ struct SubtitleNode;
 /// [`crate::view::SubtitleHost`], tested there): `InGameUI::update`'s military subtitle once an engine frame (30 a second,
 /// on this system's clock; at most 4 a client frame) and `postDraw`'s draw of it: each line at its place in its colour
 /// over a black drop shadow one pixel down and right (`W3DDisplayString::draw`'s `xDrop`, `yDrop` of 1,
-/// W3DDisplayString.cpp:160), in its font's point size (the client draws
-/// in its own font), and the typing block, a filled rectangle. Over the cinematic text (`GlobalZIndex(24)`). A game cleared
+/// W3DDisplayString.cpp:160), in its font's ~~point size (the client draws
+/// in its own font)~~ **corrected 2026-11-12, #153:** em (`MulDiv(points, 96, 72)`, as measured: `crate::text_metrics`)
+/// and face where Bevy has it, else Bevy's own font, and the typing block, a filled rectangle. Over the cinematic text (`GlobalZIndex(24)`). A game cleared
 /// (`clearGameData`'s `InGameUI::reset`) removes it.
 fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<SubtitleNode>>) {
     use rts_lockstep_engine::client::military_subtitle::SubtitleDraw;
@@ -2060,12 +2078,15 @@ fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: R
         match d {
             SubtitleDraw::Text { x, y, text, font, color, drop_color } => {
                 let text = String::from_utf16_lossy(&text);
-                let size = font.point_size.max(1) as f32;
+                // (#153: the font's em and face, as the window text is drawn)
+                let size = crate::text_metrics::em_px(Some(&font)).max(1.0);
+                let face = bevy::text::FontSource::list([bevy::text::FontSource::family(crate::text_metrics::draw_face(Some(&font))), bevy::text::FontSource::Handle(Handle::default())]);
+                let weight = if font.bold { bevy::text::FontWeight::BOLD } else { default() };
                 for (dx, c) in [(1.0, drop_color), (0.0, color)] {
                     commands.spawn((
                         SubtitleNode,
                         Text::new(text.clone()),
-                        TextFont { font_size: bevy::text::FontSize::Px(size), ..default() },
+                        TextFont { font: face.clone(), font_size: bevy::text::FontSize::Px(size), weight, ..default() },
                         TextColor(rgba(c)),
                         TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() },
                         Node { position_type: PositionType::Absolute, left: px(x as f32 + dx), top: px(y as f32 + dx), ..default() },
@@ -2566,7 +2587,7 @@ fn game_ui(
     let (ww, wh) = windows.single().map_or((800.0, 600.0), |w| (w.width(), w.height()));
     let width = ww.min(wh * lw / crate::ui::LAYOUT.1 as f32);
     ui_bar.height = width * bh / lw;
-    ui_bar.placement = Some(crate::ui::LayoutPlacement { left: (ww - width) / 2.0, top: wh - ui_bar.height, y0, scale: width / lw });
+    ui_bar.placement = Some(crate::ui::LayoutPlacement { left: (ww - width) / 2.0, top: wh - ui_bar.height, y0, scale: width / lw, turned: false });
     let root = match roots.iter_mut().next() {
         Some((e, mut r, mut node)) => {
             node.width = px(width);
@@ -2667,8 +2688,14 @@ fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad
             let size = q.font_px.map_or((scale * 11.0).clamp(8.0, 18.0), |f| (f * scale).max(6.0));
             let colour = q.text_color.map_or(Color::WHITE, |c| rgba(c, false));
             let layout = if corner && !q.text_wrap { TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() } } else { TextLayout::default() };
+            // (#153) the window font's face where Bevy has it, else Bevy's own font; its weight
+            let font = match &q.font_name {
+                Some(n) => bevy::text::FontSource::list([bevy::text::FontSource::family(n.clone()), bevy::text::FontSource::Handle(Handle::default())]),
+                None => default(),
+            };
+            let weight = if q.font_bold { bevy::text::FontWeight::BOLD } else { default() };
             e.with_children(|p| {
-                p.spawn((Text::new(t.clone()), TextFont { font_size: bevy::text::FontSize::Px(size), ..default() }, TextColor(colour), layout, pick));
+                p.spawn((Text::new(t.clone()), TextFont { font, font_size: bevy::text::FontSize::Px(size), weight, ..default() }, TextColor(colour), layout, pick));
             });
         }
         if let Some((h, rect)) = q.overlay.as_ref().and_then(|n| image(n)) {
@@ -3602,7 +3629,8 @@ fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, tim
 /// clock ([`crate::shell::ShellUi::frame`]), its callbacks' requests ([`crate::shell::ShellUi::take_actions`]: a campaign's
 /// start is the campaign panel's flow; a quit ends the native app, and on the web says so), and its windows drawn from the
 /// window manager's draw list ([`crate::shell::ShellUi::draw`]) with the control bar's drawing ([`spawn_quads`]), in the
-/// layout's 4:3 scaled over the 3D view ([`crate::shell::shell_placement`]); rebuilt when the quads change. A plain panel
+/// layout's 4:3 scaled over the 3D view ([`crate::shell::shell_placement`]; **(#153)** turned a quarter clockwise on a
+/// portrait screen, the root node turned about its centre); rebuilt when the quads change. A plain panel
 /// open over it hides it. The pointer over it goes through [`crate::shell::ShellUi::pointer_at`]; a release off it ends
 /// the window manager's grab.
 #[allow(clippy::too_many_arguments)]
@@ -3612,7 +3640,7 @@ fn shell_ui(
     mut shell: NonSendMut<ShellState>,
     mut campaigns: NonSendMut<Campaigns>,
     mut images: ResMut<Assets<Image>>,
-    mut roots: Query<(Entity, &mut ShellRoot, &mut Node)>,
+    mut roots: Query<(Entity, &mut ShellRoot, &mut Node, &mut UiTransform)>,
     windows: Query<&Window>,
     time: Res<Time>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -3623,6 +3651,25 @@ fn shell_ui(
     mut keyboard_scroll: ResMut<KeyboardScroll>,
 ) {
     let st = &mut *shell;
+    if st.tried && st.ui.is_none() {
+        // (#153) no shell (no `MainMenu.wnd`, or no `WindowTransitions.ini`): the pending briefings are the history
+        // itself (`crate::saves::queue_briefing` bounds them as upstream's list); a game cleared clears them
+        // (`InGameUI::reset`), and a popup message, which no window manager shows, still gives its label to them
+        // (`popupMessage`'s `UpdateDiplomacyBriefingText(identifier, FALSE)`, InGameUI.cpp:5174) and is dropped
+        let g = &mut *game;
+        let cleared = g.controls.client.world.game_cleared.is_some();
+        if cleared && !g.cleared_seen {
+            crate::saves::clear_briefings(&mut g.briefings);
+        }
+        g.cleared_seen = cleared;
+        g.briefings_reset = false;
+        for p in std::mem::take(&mut g.popups) {
+            if let Some(rts_lockstep_engine::logic::client_event::InGameUiCall::PopupMessage { message, .. }) = p {
+                crate::saves::queue_briefing(&mut g.briefings, &message);
+            }
+        }
+        return;
+    }
     let Some(ui) = st.ui.as_mut() else { return };
     let g = &mut *game;
     // (#88) the options the client has: the keyboard pan's speed and the alternate mouse mode; the audio's settings
@@ -3870,13 +3917,21 @@ fn shell_ui(
     let placement = crate::shell::shell_placement((ww, wh));
     st.placement = (!quads.is_empty()).then_some(placement);
     let (lw, lh) = (crate::ui::LAYOUT.0 as f32, crate::ui::LAYOUT.1 as f32);
+    // (#153) turned on a portrait screen: the node is the layout upright, centred on the turned box, and turned a quarter
+    // clockwise about its centre (Bevy's UI turns a node about its centre; picking inverts the turn)
+    let (bw, bh) = placement.screen_size((lw, lh));
+    let (node_left, node_top) = (placement.left + bw / 2.0 - lw * placement.scale / 2.0, placement.top + bh / 2.0 - lh * placement.scale / 2.0);
+    let turn = if placement.turned { UiTransform::from_rotation(Rot2::from_sin_cos(1.0, 0.0)) } else { UiTransform::default() };
     let root = match roots.iter_mut().next() {
-        Some((e, mut r, mut node)) => {
-            node.left = px(placement.left);
-            node.top = px(placement.top);
+        Some((e, mut r, mut node, mut transform)) => {
+            node.left = px(node_left);
+            node.top = px(node_top);
             node.width = px(lw * placement.scale);
             node.height = px(lh * placement.scale);
             node.display = if quads.is_empty() { Display::None } else { Display::Flex };
+            if *transform != turn {
+                *transform = turn;
+            }
             if r.0 == quads {
                 return;
             }
@@ -3891,7 +3946,8 @@ fn shell_ui(
             let mut root = commands.spawn((
                 ShellRoot(quads.clone()),
                 GlobalZIndex(10),
-                Node { position_type: PositionType::Absolute, left: px(placement.left), top: px(placement.top), width: px(lw * placement.scale), height: px(lh * placement.scale), ..default() },
+                Node { position_type: PositionType::Absolute, left: px(node_left), top: px(node_top), width: px(lw * placement.scale), height: px(lh * placement.scale), ..default() },
+                turn,
             ));
             let gwm = rts_lockstep_engine::client::window_manager::gwm::MOUSE_POS;
             root.observe(move |ev: On<PointerMove>, mut shell: NonSendMut<ShellState>, mut game: NonSendMut<Game>| shell_pointer(&mut shell, &mut game, gwm, ev.pointer.position, &ev.pointer.id));

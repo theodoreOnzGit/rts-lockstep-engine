@@ -3704,4 +3704,9 @@ extern "C" {
     // GitHub #151: InGameUI::popupMessage, clearPopupMessageData and InGamePopupMessage.cpp's callbacks, verbatim
     // (differential/wrap_popup_message.cpp, which documents the words).
     pub fn ref_popup_message_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #153: FontCharsClass's measure (Get_Char_Data to Create_GDI_Font, Grow_Unicode_Array) and
+    // Render2DSentenceClass::Build_Sentence_Not_Centered's extents, verbatim (differential/wrap_render2d_sentence.cpp,
+    // which documents the words).
+    pub fn ref_render2d_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

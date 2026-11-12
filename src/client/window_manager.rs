@@ -597,6 +597,19 @@ pub trait GuiHost {
     }
 }
 
+/// (#153) `DisplayString::getSize(font, text, wrap)` as a host measures it: (width, height).
+pub type TextSizeFn = fn(Option<&GameFont>, &[u16], Option<i32>) -> (i32, i32);
+
+/// (#153) A host's text measure in place of [`GuiHost`]'s default estimate: `DisplayString::getSize` (`text_size`) and
+/// `winFontHeight` (`font_height`). New glue: upstream measures with the font's GDI glyphs (`FontCharsClass`), which a
+/// host without Windows' fonts can only estimate; the client gives its own (`client/src/ui.rs`'s `text_metrics`). The
+/// logic never measures text, so this changes only what a client's windows are laid out with.
+#[derive(Clone, Copy, Debug)]
+pub struct TextMetrics {
+    pub text_size: TextSizeFn,
+    pub font_height: fn(Option<&GameFont>) -> i32,
+}
+
 /// A host with none of the game's callbacks.
 pub struct NoGuiHost;
 impl GuiHost for NoGuiHost {}

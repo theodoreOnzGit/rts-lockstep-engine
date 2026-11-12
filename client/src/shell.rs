@@ -81,9 +81,13 @@
 //!   only while it is active ([`ShellUi::is_active`]); upstream's one manager keeps drawing what the shutdowns left
 //!   shown.
 //! - The layout stays 800x600 (`LAYOUT`) and is scaled whole onto the screen ([`shell_placement`]), not re-made at the
-//!   display's resolution: on a phone the menu is fitted above the zoom column (mobile first). The synthetic menu's
+//!   display's resolution: ~~on a phone the menu is fitted above the zoom column (mobile first). The synthetic menu's
 //!   20-pixel buttons are 9.75 CSS pixels high at 390 wide (reachable by a tap, small; the real WND's sizes are the
-//!   owner's files' and not checked).
+//!   owner's files' and not checked).~~ **Corrected 2026-11-12, #153 (owner decision):** on a portrait screen the layout
+//!   is drawn a quarter turn clockwise, beside the zoom column, so it fills the long side (scale 0.5433 at 390x844,
+//!   against 0.43 upright), and the pointer is turned back with it ([`crate::ui::LayoutPlacement::turned`]); the
+//!   synthetic menu's 100 x 20 buttons are 10.87 x 54.33 CSS pixels there (the real WND's sizes are the owner's files'
+//!   and not checked). A landscape screen is placed as before.
 //! - On the web, a quit cannot close the page: it says so in the status line.
 //! - ~~The shell's sounds (`TheAudio->addAudioEvent`) and the script hooks (`signalUIInteract`) are not played or run; the
 //!   app clears them each frame.~~ **Corrected 2026-11-11, #136:** the shell's sounds are played through the client's
@@ -368,6 +372,9 @@ impl ShellUi {
         wt::load_window_transitions(&mut wm, wt::WINDOW_TRANSITIONS_INI, &transitions).ok()?;
         let mut ui = ShellUi { wm, gui: ShellGui::new(MenuFiles { files, keys: BTreeMap::new(), text: text.clone(), images }) };
         ui.gui.time_ms = now_ms;
+        // (#153) the windows measured as upstream measures them (`DisplayString::getSize`, `winFontHeight`), over the
+        // client's estimate of GDI's answers (`crate::text_metrics`)
+        ui.gui.text_metrics = Some(crate::text_metrics::METRICS);
         start_shell(&mut ui.wm, &mut ui.gui);
         Some(ui)
     }
@@ -756,13 +763,22 @@ const ZOOM_COLUMN_WIDTH: f32 = 48.0 + 8.0 + 8.0;
 /// status line's first line and clear of the zoom column (`app::setup_ui`) so that every button the menu shows can be
 /// tapped: the full width above the column (a phone held upright), or the full height left of it (a wide screen).
 /// New: upstream's menus are made at the display's resolution.
+///
+/// **(#153, owner decision 2026-11-12)** On a portrait screen (taller than wide) the layout is drawn a quarter turn
+/// clockwise ([`LayoutPlacement::turned`]), so its 800-pixel side runs along the screen's long side: the same two places,
+/// with the turned layout's box (600 x 800, scaled) fitted to them. At 390x844 the scale is 0.5433 (beside the column,
+/// 326 x 800: 326 / 600), not the upright 0.43. The player turns the phone to read it; the pointer is turned back through
+/// [`LayoutPlacement::to_layout`]. A landscape screen is placed as before.
 pub fn shell_placement(screen: (f32, f32)) -> LayoutPlacement {
     let (lw, lh) = (LAYOUT.0 as f32, LAYOUT.1 as f32);
+    let turned = screen.1 > screen.0;
+    // (turned, the box on screen is the layout's height wide and its width high)
+    let (bw, bh) = if turned { (lh, lw) } else { (lw, lh) };
     let above = (screen.0, screen.1 - crate::ui::ZOOM_COLUMN_HEIGHT - 8.0 - STATUS_TOP);
     let beside = (screen.0 - ZOOM_COLUMN_WIDTH, screen.1 - 8.0 - STATUS_TOP);
-    let fit = |a: (f32, f32)| (a.0 / lw).min(a.1 / lh).max(0.05);
+    let fit = |a: (f32, f32)| (a.0 / bw).min(a.1 / bh).max(0.05);
     let (area, scale) = if fit(above) >= fit(beside) { (above, fit(above)) } else { (beside, fit(beside)) };
-    LayoutPlacement { left: ((area.0 - lw * scale) / 2.0).max(0.0), top: STATUS_TOP + ((area.1 - lh * scale) / 2.0).max(0.0), y0: 0.0, scale }
+    LayoutPlacement { left: ((area.0 - bw * scale) / 2.0).max(0.0), top: STATUS_TOP + ((area.1 - bh * scale) / 2.0).max(0.0), y0: 0.0, scale, turned }
 }
 
 #[cfg(test)]
@@ -1443,6 +1459,10 @@ mod tests {
     /// *Delete* disabled). Every enabled button of the menu,
     /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
     ///
+    /// **Corrected 2026-11-12, #153:** the 390x844 placement is now the turned one (scale 0.5433, see
+    /// [`shell_placement`]); the menu's buttons are 10.87 x 48.9 CSS pixels, beside the zoom column, each still taken by a
+    /// tap at its centre.
+    ///
     /// (#151: this doc and a second `#[test]` had been left above #148's test, which #148 put between them and this
     /// function: rustdoc gave this doc to #148's test, and rustc warned of the duplicated attribute. Moved back; the test
     /// itself always ran.)
@@ -1475,9 +1495,12 @@ mod tests {
         // centres 54 higher in the room above it; the scale, set by the width, is the same) (~~72.75~~ corrected
         // 2026-11-11, #136: 54 taller again with `B`, 27 higher: 45.75) (~~(0, 45.75, 0.4875)~~ corrected 2026-11-11,
         // #142: 54 taller again with the phone's `X`, #135; the room above the column, 390 x 258, is now set by its
-        // height: scale 258 / 600 = 0.43, the menu 344 wide at left 23, top 36)
-        assert_eq!((p.left, p.top, p.scale), (23.0, 36.0, 0.43));
+        // height: scale 258 / 600 = 0.43, the menu 344 wide at left 23, top 36) (~~(23, 36, 0.43)~~ corrected
+        // 2026-11-12, #153: a portrait screen turns the layout a quarter, beside the column: 326 / 600 = 0.5433, the box
+        // 326 x 434.67 at left 0, top 36 + (800 - 434.67) / 2 = 218.67)
+        assert!(p.turned && p.left == 0.0 && (p.top - (36.0 + (800.0 - 800.0 * 326.0 / 600.0) / 2.0)).abs() < 1e-3 && (p.scale - 326.0 / 600.0).abs() < 1e-6, "{p:?}");
         let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
+        let column_left = 390.0 - ZOOM_COLUMN_WIDTH;
         let last = |ui: &ShellUi, file: &str, name: &str| -> usize {
             let full = format!("{file}:{name}");
             ui.wm.tree.windows.len() - 1 - ui.wm.tree.windows.iter().rev().position(|x| x.name() == full.as_bytes()).expect(name)
@@ -1489,7 +1512,8 @@ mod tests {
             let (x, y) = ui.wm.tree.screen_position(w);
             let reg = ui.wm.tree.windows[w].region;
             let r = p.to_screen([x as f32, y as f32, (x + reg.2 - reg.0) as f32, (y + reg.3 - reg.1) as f32]);
-            assert!(r[0] >= 0.0 && r[2] <= 390.0 && r[1] >= 36.0 && r[3] <= column_top, "{name}: {r:?}");
+            // (#153: clear of the zoom column, beside it or above it)
+            assert!(r[0] >= 0.0 && r[2] <= 390.0 && r[1] >= 36.0 && r[3] <= 844.0 && (r[2] <= column_left || r[3] <= column_top), "{name}: {r:?}");
             let centre = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
             let (lx, ly) = p.to_layout(centre);
             assert_eq!(ui.wm.get_window_under_cursor(&mut ui.gui, lx as i32, ly as i32, false), Some(w), "{name}");
@@ -1506,8 +1530,10 @@ mod tests {
             let w = last(&ui, "QuitMenu.wnd", name);
             let reg = ui.wm.tree.windows[w].region;
             // (first run, a miss: the synthetic quit menu's buttons are 90 by 20, not 100: 43.875 x 9.75 CSS pixels)
-            // (~~43.875 x 9.75~~ corrected 2026-11-11, #142: 38.7 x 8.6 at the scale 0.43)
-            assert_eq!(((reg.2 - reg.0) as f32 * p.scale, (reg.3 - reg.1) as f32 * p.scale), (38.7, 8.6), "{name}");
+            // (~~43.875 x 9.75~~ corrected 2026-11-11, #142: 38.7 x 8.6 at the scale 0.43) (~~38.7 x 8.6~~ corrected
+            // 2026-11-12, #153: turned, 20 x 90 at 0.5433: 10.87 wide, 48.9 high)
+            let (sw, sh) = p.screen_size(((reg.2 - reg.0) as f32, (reg.3 - reg.1) as f32));
+            assert!((sw - 20.0 * 326.0 / 600.0).abs() < 1e-3 && (sh - 90.0 * 326.0 / 600.0).abs() < 1e-3, "{name}: {sw} x {sh}");
             if name == "ButtonSaveLoad" {
                 tap(&mut ui, at);
             }
@@ -1579,13 +1605,19 @@ mod tests {
     ///   since #136), and a tap at its centre on the screen is that button's (`getWindowUnderCursor`);
     ///   a tap on *Single Player* through the screen shows the single player panel, as a click does. Each button is
     ///   ~~48.75 x 9.75~~ **corrected 2026-11-11, #142:** 43 x 8.6 CSS pixels (the synthetic layout's 100 x 20).
+    ///
+    /// ~~The 390x844 placement above (scale 0.43, upright, above the column)~~ **Corrected 2026-11-12, #153:** a
+    /// portrait screen turns the layout a quarter clockwise ([`shell_placement`]): beside the column, scale 326 / 600 =
+    /// 0.5433, the box 326 x 434.67 at left 0, top 218.67; each button 10.87 x 54.33 CSS pixels, beside the column
+    /// (right edge at most 326), and a tap at its centre still that button's. The 1280x720 placement is unchanged.
     #[test]
     fn the_menu_fits_a_phone_and_every_button_is_tapped() {
         let p = shell_placement((390.0, 844.0));
         // (~~126.75~~ corrected 2026-11-11, #131: the taller zoom column, see the quit menu's test; ~~72.75~~
         // corrected 2026-11-11, #136: 45.75, `B` added; ~~(0, 45.75, 0, 0.4875)~~ corrected 2026-11-11, #142: `X` added,
-        // the room's height sets the scale, 0.43, see the quit menu's test)
-        assert_eq!((p.left, p.top, p.y0, p.scale), (23.0, 36.0, 0.0, 0.43));
+        // the room's height sets the scale, 0.43, see the quit menu's test) (~~(23, 36, 0, 0.43)~~ corrected 2026-11-12,
+        // #153: turned, see the quit menu's test)
+        assert!(p.turned && p.left == 0.0 && p.y0 == 0.0 && (p.scale - 326.0 / 600.0).abs() < 1e-6, "{p:?}");
         let d = shell_placement((1280.0, 720.0));
         assert!((d.scale - 676.0 / 600.0).abs() < 1e-5 && (d.left - (1216.0 - 800.0 * 676.0 / 600.0) / 2.0).abs() < 1e-3 && d.top == 36.0, "{d:?}");
         let mut ui = shell();
@@ -1594,17 +1626,20 @@ mod tests {
         let mut now = 1000;
         settle(&mut ui, &mut now);
         let column_top = 844.0 - crate::ui::ZOOM_COLUMN_HEIGHT;
+        let column_left = 390.0 - ZOOM_COLUMN_WIDTH;
         for name in ["ButtonSinglePlayer", "ButtonMultiplayer", "ButtonLoadReplay", "ButtonOptions", "ButtonCredits", "ButtonExit", "ButtonWorldBuilder"] {
             let w = win(&ui, name);
             let (x, y) = ui.wm.tree.screen_position(w);
             let reg = ui.wm.tree.windows[w].region;
             let r = p.to_screen([x as f32, y as f32, (x + reg.2 - reg.0) as f32, (y + reg.3 - reg.1) as f32]);
-            assert!(r[0] >= 0.0 && r[2] <= 390.0 && r[1] >= 36.0 && r[3] <= column_top, "{name}: {r:?}");
+            // (#153: clear of the zoom column, beside it or above it)
+            assert!(r[0] >= 0.0 && r[2] <= 390.0 && r[1] >= 36.0 && r[3] <= 844.0 && (r[2] <= column_left || r[3] <= column_top), "{name}: {r:?}");
             let centre = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
             let (lx, ly) = p.to_layout(centre);
             assert_eq!(ui.wm.get_window_under_cursor(&mut ui.gui, lx as i32, ly as i32, false), Some(w), "{name}");
-            // (~~48.75 x 9.75~~ corrected 2026-11-11, #142: 43 x 8.6 at the scale 0.43, to f32's rounding)
-            assert!((r[2] - r[0] - 43.0).abs() < 1e-3 && (r[3] - r[1] - 8.6).abs() < 1e-3, "{name}: {r:?}");
+            // (~~48.75 x 9.75~~ corrected 2026-11-11, #142: 43 x 8.6 at the scale 0.43, to f32's rounding) (~~43 x 8.6~~
+            // corrected 2026-11-12, #153: turned, 20 x 100 at 0.5433: 10.87 x 54.33)
+            assert!((r[2] - r[0] - 20.0 * 326.0 / 600.0).abs() < 1e-3 && (r[3] - r[1] - 100.0 * 326.0 / 600.0).abs() < 1e-3, "{name}: {r:?}");
         }
         let w = win(&ui, "ButtonSinglePlayer");
         let (x, y) = ui.wm.tree.screen_position(w);
@@ -1616,6 +1651,68 @@ mod tests {
         settle(&mut ui, &mut now);
         assert!(ui.wm.tree.windows[win(&ui, "MapBorder2")].is_hidden(), "the tap left the main panel");
         assert!(!ui.wm.tree.windows[win(&ui, "MapBorder")].is_hidden(), "the single player panel is shown");
+    }
+
+    /// #153 (owner decision 2026-11-12): the shell's layout turned on a portrait screen. Predicted from
+    /// [`shell_placement`] and [`LayoutPlacement`] before the run:
+    ///
+    /// - (a) 390x844 is turned: beside the zoom column (326 x 800 room) wins over above it (390 x 258): scale min(326 /
+    ///   600, 800 / 800) = 0.5433 against min(390 / 600, 258 / 800) = 0.3225; the box 326 x 434.67 at left 0, top 36 +
+    ///   (800 - 434.67) / 2 = 218.67. The layout's corners: (0, 0), its top left, at the box's top right (326, 218.67);
+    ///   (800, 600) at its bottom left (0, 653.33); (0, 600) at the top left (0, 218.67);
+    /// - (b) a tap maps back: the screen point (300, 250) is the layout's ((250 - 218.67) / 0.5433, 600 - 300 / 0.5433)
+    ///   = (57.67, 47.85), and that point to the screen is (300, 250) again; a tap at the centre of the main menu's
+    ///   *Single Player* (100 x 20 in the layout, drawn 10.87 wide and 54.33 high) hits it, as the shell's own
+    ///   `pointer_at` gives it;
+    /// - (c) 844x390 (and 1280x720, 800x600) is not turned and placed as before #153: 844x390 beside the column, scale
+    ///   min(780 / 800, 346 / 600) = 0.5767, left (780 - 461.33) / 2 = 159.33, top 36; a point maps as `left + x x scale`.
+    ///
+    /// **Result (2026-11-12):** as predicted, but for one miss in the test itself: the landscape round trip of (10, 20)
+    /// came back as 9.999993 in f32, so it is compared to within 0.001.
+    #[test]
+    fn a_portrait_screen_turns_the_shell_and_its_taps() {
+        let p = shell_placement((390.0, 844.0));
+        let s = 326.0f32 / 600.0;
+        let top = 36.0 + (800.0 - 800.0 * s) / 2.0;
+        assert!(p.turned && p.left == 0.0 && (p.top - top).abs() < 1e-3 && (p.scale - s).abs() < 1e-6, "{p:?}");
+        let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3);
+        assert!(near(p.to_screen([0.0, 0.0, 0.0, 0.0]), [326.0, top, 326.0, top]), "{:?}", p.to_screen([0.0; 4]));
+        assert!(near(p.to_screen([800.0, 600.0, 800.0, 600.0]), [0.0, top + 800.0 * s, 0.0, top + 800.0 * s]));
+        assert!(near(p.to_screen([0.0, 600.0, 0.0, 600.0]), [0.0, top, 0.0, top]));
+        assert_eq!(p.screen_size((800.0, 600.0)), (600.0 * s, 800.0 * s));
+        // (b) a tap's point to the layout and back
+        let (lx, ly) = p.to_layout((300.0, 250.0));
+        assert!((lx - (250.0 - top) / s).abs() < 1e-3 && (ly - (600.0 - 300.0 / s)).abs() < 1e-3, "{lx}, {ly}");
+        let back = p.to_screen([lx, ly, lx, ly]);
+        assert!((back[0] - 300.0).abs() < 1e-3 && (back[1] - 250.0).abs() < 1e-3, "{back:?}");
+        let mut ui = shell();
+        ui.frame(1000);
+        assert!(ui.keyboard(0x39, true, Some(" ")));
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        let w = win(&ui, "ButtonSinglePlayer");
+        let (x, y) = ui.wm.tree.screen_position(w);
+        let r = p.to_screen([x as f32, y as f32, x as f32 + 100.0, y as f32 + 20.0]);
+        assert!((r[2] - r[0] - 20.0 * s).abs() < 1e-3 && (r[3] - r[1] - 100.0 * s).abs() < 1e-3, "{r:?}");
+        let centre = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+        let (cx, cy) = p.to_layout(centre);
+        assert_eq!(ui.wm.get_window_under_cursor(&mut ui.gui, cx as i32, cy as i32, false), Some(w));
+        for msg in [gwm::LEFT_DOWN, gwm::LEFT_UP] {
+            ui.pointer_at(msg, centre, &p, true);
+        }
+        settle(&mut ui, &mut now);
+        assert!(!ui.wm.tree.windows[win(&ui, "MapBorder")].is_hidden(), "the turned tap pressed Single Player");
+        // (c) landscape: not turned, as before
+        let l = shell_placement((844.0, 390.0));
+        let ls = (780.0f32 / 800.0).min(346.0 / 600.0);
+        assert!(!l.turned && (l.scale - ls).abs() < 1e-6 && (l.left - (780.0 - 800.0 * ls) / 2.0).abs() < 1e-3 && l.top == 36.0, "{l:?}");
+        assert_eq!(l.to_screen([10.0, 20.0, 30.0, 40.0]), [l.left + 10.0 * l.scale, l.top + 20.0 * l.scale, l.left + 30.0 * l.scale, l.top + 40.0 * l.scale]);
+        // (first run, a miss in the test: f32's round trip gives 9.999993, not 10 exactly)
+        let (bx, by) = l.to_layout((l.left + 10.0 * l.scale, l.top + 20.0 * l.scale));
+        assert!((bx - 10.0).abs() < 1e-3 && (by - 20.0).abs() < 1e-3, "{bx}, {by}");
+        for screen in [(1280.0, 720.0), (800.0, 600.0)] {
+            assert!(!shell_placement(screen).turned, "{screen:?}");
+        }
     }
 
     /// #78 item 5: the shell's windows find the mapped images the control bar reads, one collection shared. Predicted:

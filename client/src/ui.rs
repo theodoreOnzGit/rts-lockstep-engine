@@ -433,6 +433,14 @@ struct BarHost {
 }
 
 impl GuiHost for BarHost {
+    /// (#153) `DisplayString::getSize`: the client's measure (`crate::text_metrics`), not the default estimate.
+    fn text_size(&self, font: Option<&rts_lockstep_engine::client::window_script::GameFont>, text: &[u16], wrap: Option<i32>) -> (i32, i32) {
+        crate::text_metrics::text_size(font, text, wrap)
+    }
+    /// (#153) `winFontHeight`: the client's measure.
+    fn font_height(&self, font: Option<&rts_lockstep_engine::client::window_script::GameFont>) -> i32 {
+        crate::text_metrics::font_height(font)
+    }
     fn add_audio_event(&mut self, name: &[u8]) {
         self.sounds.push(name.to_vec());
     }
@@ -492,8 +500,13 @@ pub struct UiQuad {
     pub uv: Option<[f32; 4]>,
     /// (#78) The text's colour (white when `None`).
     pub text_color: Option<[u8; 4]>,
-    /// (#78) The text's height in layout pixels (the bar's own size when `None`).
+    /// (#78) The text's height in layout pixels (the bar's own size when `None`). (~~`winFontHeight`~~ **Corrected
+    /// 2026-11-12, #153:** the window font's em in layout pixels, `MulDiv(points, 96, 72)`: `crate::text_metrics::em_px`,
+    /// the size GDI draws it at, which Bevy's font size is.)
     pub font_px: Option<f32>,
+    /// (#153) The window font's face, asked of Bevy by name (its own font when it has no such face), and bold.
+    pub font_name: Option<String>,
+    pub font_bold: bool,
     /// (#78) The text starts at the quad's top left, where the window's draw placed it (`DisplayString::draw(x, y)`),
     /// rather than centred; it wraps at the quad's width only when `text_wrap`.
     pub text_top_left: bool,
@@ -539,7 +552,8 @@ fn clipped(r: [f32; 4], clip: Option<(i32, i32, i32, i32)>) -> Option<([f32; 4],
 /// - `drawImage`: the mapped image over its rectangle, cut by the clip region it was drawn under, tinted by its colour;
 ///   a grayscale draw is drawn dimmed (the app has no grayscale shader);
 /// - `DisplayString::draw`: the text from its top left, in its colour, its box measured by the host
-///   (`GuiHost::text_size`), cut by its clip region; the drop shadow is not drawn;
+///   (`GuiHost::text_size`), cut by its clip region; the drop shadow is not drawn; **(#153)** at its font's em
+///   (`crate::text_metrics::em_px`) in its font's face where Bevy has it;
 /// - `drawRectClock`: the quad's clock (the bar's darkened part), the remaining part for an inverse clock.
 pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> {
     let mut out = Vec::new();
@@ -583,7 +597,10 @@ pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> 
                     rect,
                     text: Some(String::from_utf16_lossy(text)),
                     text_color: Some(rgba(*c as u32)),
-                    font_px: Some(host.font_height(font.as_ref()) as f32),
+                    // (#153: the font's em, its face and its weight)
+                    font_px: Some(crate::text_metrics::em_px(font.as_ref())),
+                    font_name: Some(crate::text_metrics::draw_face(font.as_ref())),
+                    font_bold: font.as_ref().is_some_and(|f| f.bold),
                     text_top_left: true,
                     text_wrap: word_wrap.is_some_and(|w| w > 0),
                     ..Default::default()
@@ -1241,23 +1258,47 @@ impl GameUi {
 
 /// (#35) Where the bar's layout sits on screen, as `app::game_ui` places it: the screen point of the layout's
 /// `(0, y0)` (`y0` the top of the bar's quads) and the scale (screen pixels per layout pixel).
+///
+/// (#153) `turned`: the layout is drawn a quarter turn clockwise (the shell's on a portrait screen,
+/// `crate::shell::shell_placement`): its top edge along the screen's right, its left edge along the screen's top. Then
+/// `(left, top)` is the top left of the turned layout's box on screen (`LAYOUT.1 x scale` wide, `LAYOUT.0 x scale` high),
+/// and `y0` is 0 (the whole layout). New: upstream's display is never turned.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LayoutPlacement {
     pub left: f32,
     pub top: f32,
     pub y0: f32,
     pub scale: f32,
+    pub turned: bool,
 }
 
 impl LayoutPlacement {
-    /// A layout rectangle `(x0, y0, x1, y1)` on screen.
+    /// A layout rectangle `(x0, y0, x1, y1)` on screen (for a turned layout, the box it covers, turned:
+    /// layout `(x, y)` is screen `(left + (LAYOUT.1 - y) x scale, top + x x scale)`).
     pub fn to_screen(&self, r: [f32; 4]) -> [f32; 4] {
+        if self.turned {
+            let h = LAYOUT.1 as f32;
+            return [self.left + (h - r[3]) * self.scale, self.top + r[0] * self.scale, self.left + (h - r[1]) * self.scale, self.top + r[2] * self.scale];
+        }
         [self.left + r[0] * self.scale, self.top + (r[1] - self.y0) * self.scale, self.left + r[2] * self.scale, self.top + (r[3] - self.y0) * self.scale]
     }
 
     /// (#78) A screen point (logical pixels) in the layout: [`LayoutPlacement::to_screen`] inverted.
     pub fn to_layout(&self, p: (f32, f32)) -> (f32, f32) {
+        if self.turned {
+            return ((p.1 - self.top) / self.scale, LAYOUT.1 as f32 - (p.0 - self.left) / self.scale);
+        }
         ((p.0 - self.left) / self.scale, (p.1 - self.top) / self.scale + self.y0)
+    }
+
+    /// (#153) The size on screen of the layout's box `size` (layout pixels) as drawn: turned, its width and height
+    /// swap.
+    pub fn screen_size(&self, size: (f32, f32)) -> (f32, f32) {
+        if self.turned {
+            (size.1 * self.scale, size.0 * self.scale)
+        } else {
+            (size.0 * self.scale, size.1 * self.scale)
+        }
     }
 }
 
@@ -1270,11 +1311,27 @@ impl LayoutPlacement {
 /// over the `+` button.)
 pub(crate) const ZOOM_COLUMN_HEIGHT: f32 = 10.0 * 48.0 + 9.0 * 6.0 + 8.0;
 
+/// (#153) Below this width (logical pixels) the status line is narrow: one line, cut at the screen's right margin, in
+/// [`STATUS_NARROW_FONT_PX`] (a phone, either way up: 390 and 844 wide). The full line (the game, the frame, the objects,
+/// the art, the selection, the bar's state) runs to about 100 characters, two lines or more under 1024 pixels at the
+/// default 16-pixel font. New (the client's own status line).
+pub const STATUS_NARROW_WIDTH: f32 = 1024.0;
+/// (#153) The narrow status line's font size: one line of it (Bevy's line height, 1.2 of the size: 15.6) below its top
+/// margin (8) ends at 23.6, above the 36 the shell and the radar box keep clear (`STATUS_TOP`).
+pub const STATUS_NARROW_FONT_PX: f32 = 13.0;
+
+/// (#153) Whether the status line is one line (narrow) on a screen `width` logical pixels wide.
+pub fn status_line_narrow(width: f32) -> bool {
+    width < STATUS_NARROW_WIDTH
+}
+
 /// (#35) The radar's window on screen (logical pixels, `(x0, y0, x1, y1)`): the control bar's `LeftHUD` where the bar is
 /// drawn; else (no game files, or no such window) a box of the project's own at the right, just above the zoom column
 /// (mobile first: 30 % of the screen's short side, 96 to 180 pixels wide, 4:3, inside an 8-pixel margin; never above the
 /// status line's first line, y 36). ~~At the top right, below the status line~~ **corrected 2026-11-06 (#35):** the status
-/// line wraps to four lines on a phone and the box covered it (the phone check's first screenshot).
+/// line ~~wraps~~ wrapped to four lines on a phone and the box covered it (the phone check's first screenshot).
+/// (**Corrected 2026-11-12, #153:** on a narrow screen the status line is now one line, [`status_line_narrow`]; the box
+/// stays where #35 put it.)
 pub fn radar_screen_rect(window: Option<[f32; 4]>, placement: Option<LayoutPlacement>, screen: (f32, f32)) -> [f32; 4] {
     if let (Some(r), Some(p)) = (window, placement) {
         return p.to_screen(r);
@@ -1365,7 +1422,8 @@ mod tests {
     /// - an image (0, 0)..(100, 50) clipped to (50, 0)..(200, 25): (50, 0, 100, 25), the image's (0.5, 0)..(1, 0.5),
     ///   no tint (opaque white); tinted 0x80FFFFFF: alpha 128; clipped away: no quad;
     /// - the text "AB" at (5, 6), no font (the default host: 12 high, 6 a character): (5, 6, 17, 18) from its top left,
-    ///   green, 12 high, not wrapped;
+    ///   green, 12 high, not wrapped; (~~12 high~~ **corrected 2026-11-12, #153:** drawn at the font's em, `MulDiv(12, 96,
+    ///   72)` = 16, in Arial, the box still the host's measure)
     /// - an inverse clock at 30 %: 70.
     /// - a placement's `to_layout` inverts `to_screen`.
     #[test]
@@ -1386,10 +1444,11 @@ mod tests {
         assert_eq!((i[0].rect, i[0].uv, i[0].tint, i[0].image.as_deref()), ([50.0, 0.0, 100.0, 25.0], Some([0.5, 0.0, 1.0, 0.5]), None, Some(&b"ImgBack"[..])));
         assert_eq!((i[1].uv, i[1].tint), (None, Some([255, 255, 255, 128])));
         let t = q(&[DrawItem::Text { text: "AB".encode_utf16().collect(), x: 5, y: 6, color: 0xFF00_FF00_u32 as i32, drop_color: 0, font: None, word_wrap: None, wrap_centered: false, hotkey: false, clip: None }]);
-        assert_eq!((t[0].rect, t[0].text.as_deref(), t[0].text_color, t[0].font_px, t[0].text_top_left, t[0].text_wrap), ([5.0, 6.0, 17.0, 18.0], Some("AB"), Some([0, 255, 0, 255]), Some(12.0), true, false));
+        assert_eq!((t[0].rect, t[0].text.as_deref(), t[0].text_color, t[0].font_px, t[0].text_top_left, t[0].text_wrap), ([5.0, 6.0, 17.0, 18.0], Some("AB"), Some([0, 255, 0, 255]), Some(16.0), true, false));
+        assert_eq!((t[0].font_name.as_deref(), t[0].font_bold), (Some("Arial"), false));
         let c = q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: 0, inverse: true }]);
         assert_eq!(c[0].clock, Some(70));
-        let p = LayoutPlacement { left: 7.0, top: 100.0, y0: 450.0, scale: 0.5 };
+        let p = LayoutPlacement { left: 7.0, top: 100.0, y0: 450.0, scale: 0.5, turned: false };
         let r = p.to_screen([40.0, 470.0, 0.0, 0.0]);
         assert_eq!(p.to_layout((r[0], r[1])), (40.0, 470.0));
     }
@@ -1992,10 +2051,10 @@ mod tests {
     #[test]
     fn the_view_ends_where_upstreams_does_above_the_bar() {
         assert_eq!(tactical_view_height(None, None, 600.0), 600.0);
-        let desk = LayoutPlacement { left: 0.0, top: 440.0, y0: 440.0, scale: 1.0 };
+        let desk = LayoutPlacement { left: 0.0, top: 440.0, y0: 440.0, scale: 1.0, turned: false };
         assert_eq!(tactical_view_height(Some(480), Some(desk), 600.0), 480.0);
         let s = 390.0 / 800.0;
-        let phone = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * s, y0: 440.0, scale: s };
+        let phone = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * s, y0: 440.0, scale: s, turned: false };
         assert_eq!(tactical_view_height(Some(480), Some(phone), 844.0), 785.5);
         assert_eq!(tactical_view_height(Some(600), Some(phone), 844.0), 844.0);
         assert_eq!(tactical_view_height(Some(600), None, 844.0), 844.0);
@@ -2072,7 +2131,7 @@ mod tests {
         let r = ui.radar_window().expect("LeftHUD");
         assert_eq!(r, [20.0, 500.0, 220.0, 590.0]);
         let scale = 390.0 / 800.0;
-        let p = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * scale, y0: 440.0, scale };
+        let p = LayoutPlacement { left: 0.0, top: 844.0 - 160.0 * scale, y0: 440.0, scale, turned: false };
         assert_eq!(radar_screen_rect(Some(r), Some(p), (390.0, 844.0)), [9.75, 795.25, 107.25, 839.125]);
         // (~~[265, 530, 382, 618]~~ corrected 2026-11-06, #4: 54 higher, above the zoom column's fifth button; ~~[265, 476,
         // 382, 564]~~ corrected 2026-11-06, #62: 54 higher again, above the sixth, the campaigns button; ~~[265, 422, 382,
@@ -2083,5 +2142,16 @@ mod tests {
         assert_eq!(radar_screen_rect(None, None, (844.0, 300.0))[1], 36.0);
         let big = radar_screen_rect(None, None, (1280.0, 720.0));
         assert_eq!((big[2] - big[0], big[3] - big[1]), (180.0, 135.0));
+    }
+
+    /// #153: the status line shrinks to one line on a narrow screen. Predicted before the run: 390 (a phone upright) and
+    /// 844 (on its side) are narrow, 1024 and 1280 are not; the narrow line's one row, 13 x 1.2 = 15.6 high under its top
+    /// margin 8, ends above 36, the top of the shell's area and the radar box's (`radar_screen_rect` keeps y 36).
+    #[test]
+    fn the_status_line_is_one_line_on_a_narrow_screen() {
+        assert!(status_line_narrow(390.0) && status_line_narrow(844.0));
+        assert!(!status_line_narrow(1024.0) && !status_line_narrow(1280.0));
+        assert!(8.0 + STATUS_NARROW_FONT_PX * 1.2 < 36.0);
+        assert!(radar_screen_rect(None, None, (844.0, 390.0))[1] >= 36.0);
     }
 }

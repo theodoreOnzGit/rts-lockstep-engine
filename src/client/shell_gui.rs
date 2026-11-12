@@ -194,6 +194,9 @@ pub struct ShellGui<W> {
     /// and its calls on the game for the owner to make ([`PopupCall`]).
     pub popup: crate::client::in_game_popup_message::InGamePopupMessage,
     pub popup_calls: Vec<PopupCall>,
+    /// (#153) The owner's text measure (`DisplayString::getSize`, `winFontHeight`); `None`, [`GuiHost`]'s default
+    /// estimate (as the tests and the differential tests measure).
+    pub text_metrics: Option<crate::client::window_manager::TextMetrics>,
 }
 
 /// (#151) A call of the popup message on the game, for the owner of the game to make.
@@ -332,6 +335,7 @@ impl<W: WndFiles> ShellGui<W> {
             diplomacy_calls: Vec::new(),
             popup: Default::default(),
             popup_calls: Vec::new(),
+            text_metrics: None,
         }
     }
 
@@ -356,6 +360,19 @@ impl<W: WndFiles> ShellGui<W> {
 }
 
 impl<W: WndFiles> GuiHost for ShellGui<W> {
+    // (#153) the owner's measure when it gave one ([`ShellGui::text_metrics`]), else the default estimate
+    fn text_size(&self, font: Option<&crate::client::window_script::GameFont>, text: &[u16], wrap: Option<i32>) -> (i32, i32) {
+        match self.text_metrics {
+            Some(m) => (m.text_size)(font, text, wrap),
+            None => crate::client::window_manager::NoGuiHost.text_size(font, text, wrap),
+        }
+    }
+    fn font_height(&self, font: Option<&crate::client::window_script::GameFont>) -> i32 {
+        match self.text_metrics {
+            Some(m) => (m.font_height)(font),
+            None => crate::client::window_manager::NoGuiHost.font_height(font),
+        }
+    }
     // (#98, defect fixed: the shell's host answered no image sizes and no images, `GuiHost`'s defaults, so every draw
     // and callback that measures a mapped image (`getImageWidth`) or asks whether one exists read 0 and false)
     fn image_size(&self, image: &[u8]) -> Option<(i32, i32)> {

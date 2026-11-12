@@ -49,6 +49,7 @@ pub mod saves;
 pub mod shell;
 pub mod user_data;
 pub mod terrain;
+pub mod text_metrics;
 pub mod ui;
 pub mod view;
 

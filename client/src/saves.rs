@@ -452,6 +452,27 @@ pub fn briefing_list_for_save(history: Option<&[Vec<u8>]>, pending: &[Vec<u8>], 
     d.briefing_list
 }
 
+/// (#153) A briefing the logic showed, into the client's pending briefings (`Game::briefings`: the ones the shell has not
+/// taken yet, or, without a shell, the whole history) as upstream's list takes it
+/// (`UpdateDiplomacyBriefingText(label, FALSE)`, Diplomacy.cpp:170, the logic's translation): an empty or repeated label
+/// is dropped. So the queue is bounded as upstream's list is, by the distinct labels shown since the last clear
+/// ([`clear_briefings`]); the shell's history drops the same repeats when it takes them, so nothing it would keep is lost.
+pub fn queue_briefing(pending: &mut Vec<Vec<u8>>, label: &[u8]) {
+    use rts_lockstep_engine::client::diplomacy::{update_diplomacy_briefing_text, BriefingListOnly, Diplomacy};
+    let mut d = Diplomacy { briefing_list: std::mem::take(pending), ..Default::default() };
+    update_diplomacy_briefing_text(&mut BriefingListOnly(&mut d), label, false);
+    *pending = d.briefing_list;
+}
+
+/// (#153) `UpdateDiplomacyBriefingText(TheEmptyString, TRUE)` on the pending briefings: `InGameUI::reset`'s clear
+/// (InGameUI.cpp:1983), which a game cleared makes. The app clears them so when there is no shell to clear its history.
+pub fn clear_briefings(pending: &mut Vec<Vec<u8>>) {
+    use rts_lockstep_engine::client::diplomacy::{update_diplomacy_briefing_text, BriefingListOnly, Diplomacy};
+    let mut d = Diplomacy { briefing_list: std::mem::take(pending), ..Default::default() };
+    update_diplomacy_briefing_text(&mut BriefingListOnly(&mut d), b"", true);
+    *pending = d.briefing_list;
+}
+
 /// The client's drawables for a save or a load (GitHub #59): the drawables, the art their modules are made from, and the
 /// client's clock (milliseconds) they are drawn by.
 pub type Drawables<'a> = (&'a mut ClientDrawables, &'a mut dyn W3dAssetSource, u32);
@@ -692,5 +713,25 @@ mod tests {
         assert!(l[0].line().contains("does not read"), "{}", l[0].line());
         // 2026-11-06 12:30:15.250 UTC was a Friday
         assert_eq!(civil_time(1_793_968_215_250), [2026, 11, 5, 6, 12, 30, 15, 250]);
+    }
+
+    /// #153: the pending briefings without a shell are bounded as upstream's list is. Predicted from Diplomacy.cpp:170
+    /// before the run: 10,000 briefings cycling through 3 labels and the empty one leave the 3 labels, in their first
+    /// order (the empty one and every repeat dropped); a clear (`InGameUI::reset`) empties them; then a fourth label is
+    /// the only one; the save's list from them (no shell) is the same 1.
+    #[test]
+    fn the_pending_briefings_are_bounded_as_upstreams_list() {
+        let labels: [&[u8]; 4] = [b"SCRIPT:A", b"", b"SCRIPT:B", b"SCRIPT:C"];
+        let mut pending = Vec::new();
+        for i in 0..10_000 {
+            queue_briefing(&mut pending, labels[i % 4]);
+        }
+        assert_eq!(pending, vec![b"SCRIPT:A".to_vec(), b"SCRIPT:B".to_vec(), b"SCRIPT:C".to_vec()]);
+        clear_briefings(&mut pending);
+        assert!(pending.is_empty());
+        queue_briefing(&mut pending, b"SCRIPT:D");
+        queue_briefing(&mut pending, b"SCRIPT:D");
+        assert_eq!(pending, vec![b"SCRIPT:D".to_vec()]);
+        assert_eq!(briefing_list_for_save(None, &pending, false), pending);
     }
 }
