@@ -3660,4 +3660,20 @@ extern "C" {
     // InGameUI::resetCamera and W3DView::resetCamera (differential/wrap_meta_camera.cpp, which documents the cases'
     // words), verbatim.
     pub fn ref_meta_camera_case(kind: c_int, input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #146: the tactical view's world-to-screen mapping: View.h's WorldToScreenReturn and worldToScreen,
+    // W3DView.cpp's worldToScreenTriReturn and iterateDrawablesInRegion, W3DConvert.cpp's W3DLogicalScreenToPixelScreen
+    // and camera.cpp's Get_View_Plane, Project, Update_Frustum and Get_Clip_Planes, verbatim (differential/
+    // wrap_world_to_screen.cpp, which documents the words).
+    pub fn ref_world_to_screen_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #146: ControlBarSchemeManager::setControlBarSchemeByPlayer (the communicator switch and the scheme of the
+    // player's side) and findControlBarScheme, verbatim (differential/wrap_scheme_by_player.cpp, which documents the
+    // words).
+    pub fn ref_scheme_by_player_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #146: the cinematic text: Display.h's setCinematicText, setCinematicFont and setCinematicTextFrames,
+    // Display::Display's cinematic members and W3DDisplay::draw's cinematic text block, verbatim
+    // (differential/wrap_cinematic_text.cpp, which documents the words).
+    pub fn ref_cinematic_text_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

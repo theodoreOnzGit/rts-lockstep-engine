@@ -43,7 +43,7 @@ use crate::common::ini::IniError;
 use crate::common::kind_of::KindOfType;
 use crate::logic::scripts::ScriptAction;
 use crate::logic::world::game_logic::World;
-use crate::logic::client_event::{ClientEvent, ScriptAudioEvent, ScriptInputCall};
+use crate::logic::client_event::{CinematicTextCall, ClientEvent, ScriptAudioEvent, ScriptInputCall};
 use crate::logic::world::object_cuts::CutCall;
 use crate::logic::world::script_actions::{
     AudioEvent, ButtonFrom, ButtonH, ButtonSearch, CommandSetH, GroupH, ObjH, PlayerH, ProtoH, ScriptActionsHost, SpecialPowerH, TeamH, TeamTemplateInfo,
@@ -842,20 +842,35 @@ impl ScriptActionsHost for World {
     fn sa_ui_popup_message(&mut self, _message: &[u8], _x: i32, _y: i32, _width: i32, _pause: bool, _pause_music: bool) {
         self.sa_cut("ui_popup_message");
     }
-    fn sa_game_text_fetch(&self, _label: &[u8]) -> (Vec<u16>, bool) {
-        Default::default()
+    /// ~~(the empty text, not found)~~ **Corrected 2026-11-12, #146:** `TheGameText->fetch(label, &exists)` on the
+    /// World's text table (`statics.game_text`: a test's strings, then the game's string file; a missing label gives
+    /// `MISSING: '<label>'` and not found). Reads only: no simulation state.
+    fn sa_game_text_fetch(&self, label: &[u8]) -> (Vec<u16>, bool) {
+        use crate::common::science::GameTextFetch;
+        let t = &self.statics.game_text;
+        let found = t.strings.contains_key(label) || t.csf.as_ref().is_some_and(|c| c.fetch(label).is_some());
+        (t.fetch(label).str().to_vec(), found)
     }
-    fn sa_display_set_cinematic_text(&mut self, _text: &[u8]) {
+    /// (#146: and to the client, [`ClientEvent::CinematicText`])
+    fn sa_display_set_cinematic_text(&mut self, text: &[u8]) {
         self.sa_cut("display_set_cinematic_text");
+        self.events.push(ClientEvent::CinematicText(CinematicTextCall::Text(text.to_vec())));
     }
-    fn sa_display_set_cinematic_font(&mut self, _name: &[u8], _size: i32, _bold: bool) {
+    /// (#146: and to the client; the size is `adjustFontSize`'s argument, see [`Self::sa_adjust_font_size`])
+    fn sa_display_set_cinematic_font(&mut self, name: &[u8], size: i32, bold: bool) {
         self.sa_cut("display_set_cinematic_font");
+        self.events.push(ClientEvent::CinematicText(CinematicTextCall::Font { name: name.to_vec(), size, bold }));
     }
-    fn sa_adjust_font_size(&self, _size: i32) -> i32 {
-        Default::default()
+    /// ~~(0)~~ **Corrected 2026-11-12, #146:** the size unchanged. `TheGlobalLanguageData->adjustFontSize` reads the
+    /// display's resolution and the language's `ResolutionFontAdjustment`, which are the client's: the client's display
+    /// applies it to the event's size (`client::cinematic_text::adjust_font_size`).
+    fn sa_adjust_font_size(&self, size: i32) -> i32 {
+        size
     }
-    fn sa_display_set_cinematic_text_frames(&mut self, _frames: i32) {
+    /// (#146: and to the client)
+    fn sa_display_set_cinematic_text_frames(&mut self, frames: i32) {
         self.sa_cut("display_set_cinematic_text_frames");
+        self.events.push(ClientEvent::CinematicText(CinematicTextCall::Frames(frames)));
     }
     fn sa_button_set_flash_count(&mut self, _b: ButtonH, _count: i32) {
         self.sa_cut("button_set_flash_count");
@@ -1861,6 +1876,40 @@ mod tests {
         }
         a.num_parms = i as i32;
         a
+    }
+
+    /// GitHub #146: `DISPLAY_CINEMATIC_TEXT` reaches the client as three events, and changes nothing the logic CRCs.
+    ///
+    /// *Predictions, written before the first run:* with the label `CINE:Test` holding "Enemy approaches" in the World's
+    /// text table, `DISPLAY_CINEMATIC_TEXT CINE:Test "Arial - Size:20 [Bold]" 5` sends `Text("Enemy approaches")`, then
+    /// `Font { "rial - Size:20 [Bold]al - Size:20 [Bold] - Size:20 [Bold]", 20, bold }` (upstream's parse: the rest of the
+    /// buffer after each character up to the dash; the size unadjusted, the client adjusts it), then `Frames(150)`. A
+    /// label the table lacks gives `MISSING: 'CINE:None'`. The CRC is unchanged.
+    #[test]
+    fn the_cinematic_text_is_three_client_events_that_change_no_logic_state() {
+        use crate::common::unicode_string::UnicodeString;
+        use crate::logic::client_event::{CinematicTextCall, ClientEvent};
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        let (mut w, _) = world();
+        let mut engine = std::mem::take(&mut w.script_engine);
+        w.take_client_events();
+        let units: Vec<u16> = "Enemy approaches".encode_utf16().collect();
+        std::sync::Arc::make_mut(&mut w.statics).game_text.strings.insert(b"CINE:Test".to_vec(), UnicodeString::try_from_chars(&units).unwrap());
+        let crc = w.logic_crc(CRC_RECALC, None).unwrap();
+        w.execute_action_with(&mut engine, &action(at::DISPLAY_CINEMATIC_TEXT, &[b"CINE:Test", b"Arial - Size:20 [Bold]"], &[5], &[])).unwrap();
+        assert_eq!(w.logic_crc(CRC_RECALC, None).unwrap(), crc, "the CRC");
+        let ev: Vec<_> = w.take_client_events().into_iter().filter_map(|e| if let ClientEvent::CinematicText(c) = e { Some(c) } else { None }).collect();
+        assert_eq!(
+            ev,
+            [
+                CinematicTextCall::Text(b"Enemy approaches".to_vec()),
+                CinematicTextCall::Font { name: b"rial - Size:20 [Bold]al - Size:20 [Bold] - Size:20 [Bold]".to_vec(), size: 20, bold: true },
+                CinematicTextCall::Frames(150),
+            ]
+        );
+        w.execute_action_with(&mut engine, &action(at::DISPLAY_CINEMATIC_TEXT, &[b"CINE:None", b"Arial - Size:12"], &[1], &[])).unwrap();
+        let ev = w.take_client_events();
+        assert!(ev.contains(&ClientEvent::CinematicText(CinematicTextCall::Text(b"MISSING: 'CINE:None'".to_vec()))), "{ev:?}");
     }
 
     /// GitHub #51: the scripts' audio actions are client events, and change nothing the logic CRCs or saves.

@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarScheme.cpp (the field parse table, AnimTypeNames,
 //     ControlBarScheme::reset, init, addAnimation, addImage, drawForeground, drawBackground; ControlBarSchemeManager's
 //     parseImagePart, parseAnimatingPartImage, parseAnimatingPart, newControlBarScheme, findControlBarScheme, init,
-//     setControlBarSchemeByPlayerTemplate)
+//     setControlBarSchemeByPlayerTemplate; #146: setControlBarSchemeByPlayer)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/ControlBarScheme.h
 //   GeneralsMD/Code/GameEngine/Source/Common/INI/INIControlBarScheme.cpp (INI::parseControlBarSchemeDefinition)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/GadgetPushButton.h (GadgetButtonSet*Image)
@@ -48,6 +48,10 @@
 //!   the subtraction (in `Real`), and sized `(LR - UL) * multiplier`, truncated.
 //! - `setControlBarSchemeByPlayerTemplate` with the current scheme's side (exact case) only runs `init` again, without
 //!   recomputing the multiplier.
+//! - **#146:** `setControlBarSchemeByPlayer(p)` ([`ControlBarSchemeManager::set_control_bar_scheme_by_player`]) first
+//!   gives the communicator button `NonCommand_BriefingHistory` outside a multiplayer game and `NonCommand_Communicator`
+//!   in one ([`set_control_bar_scheme_by_player_communicator`]), even with no player; then it is the template version
+//!   with the player's side and no "Small". Differential-tested (`tests/differential_scheme_by_player.rs`).
 //!
 //! # Where this differs from upstream
 //!
@@ -66,6 +70,7 @@ use crate::client::image::ImageCollection;
 use crate::client::window_script::{WindowTree, WinId};
 use crate::common::base_type::ICoord2D;
 use crate::common::ini::{BlockParse, FieldParse, Ini, IniLoadType, IniResult, LookupListRec, UserData};
+use crate::logic::modules::plant;
 use std::collections::BTreeMap;
 
 /// `MAX_CONTROL_BAR_SCHEME_IMAGE_LAYERS`.
@@ -405,6 +410,19 @@ pub struct ControlBarSchemeManager {
     pub multiplier: (f32, f32),
 }
 
+/// GitHub #146: `ControlBarSchemeManager::setControlBarSchemeByPlayer`'s first lines (ControlBarScheme.cpp:1165): the
+/// window `ControlBar.wnd:PopupCommunicator`, when the layout has it (and `TheControlBar` exists, as it does in the
+/// client), gets `NonCommand_Communicator` in a multiplayer game (`TheRecorder->isMultiplayer()`) and
+/// `NonCommand_BriefingHistory` outside one, through `ControlBar::setControlCommand` with `findCommandButton`'s button
+/// (`crate::client::build_tooltip::set_control_command`). It overrides `ControlBar::init`'s `NonCommand_Communicator`.
+pub fn set_control_bar_scheme_by_player_communicator(multiplayer: bool, h: &mut impl crate::client::build_tooltip::ControlBarInitHost) {
+    let Some(communicator_button) = h.win_get_window_from_id(b"ControlBar.wnd:PopupCommunicator") else { return };
+    let multiplayer = multiplayer != plant(9378);
+    let name: &[u8] = if multiplayer { b"NonCommand_Communicator" } else { b"NonCommand_BriefingHistory" };
+    let c = h.find_command_button(name);
+    crate::client::build_tooltip::set_control_command(communicator_button, c, h);
+}
+
 /// The `ControlBarScheme` block of the INI.
 fn parse_control_bar_scheme_definition(ini: &mut Ini<'_>, m: &mut ControlBarSchemeManager) -> IniResult<()> {
     let name = ini.get_next_token(None)?;
@@ -464,32 +482,61 @@ impl ControlBarSchemeManager {
         if use_small {
             side.extend_from_slice(b"Small");
         }
+        if let Some(c) = self.choose_scheme_by_side(side, display) {
+            self.schemes[c].init(tree, display, images);
+        }
+    }
+
+    /// The part `setControlBarSchemeByPlayerTemplate` and (GitHub #146) `setControlBarSchemeByPlayer` share, from the
+    /// side on: the current scheme kept when its side is the same (exact case), else the scheme of that side (compared
+    /// without case; an empty side is `Observer`; among several, the one with the widest `ScreenCreationRes`, the first of
+    /// equals) with the multiplier set to the display over its creation resolution, else `Default`. The scheme whose
+    /// `init` runs next (`None`: no current scheme).
+    pub fn choose_scheme_by_side(&mut self, mut side: Vec<u8>, display: (i32, i32)) -> Option<usize> {
         if let Some(c) = self.current {
-            if self.schemes[c].side == side {
-                self.schemes[c].init(tree, display, images);
-                return;
+            let same = if plant(9380) { self.schemes[c].side.eq_ignore_ascii_case(&side) } else { self.schemes[c].side == side };
+            if same {
+                return Some(c);
             }
         }
-        if side.is_empty() {
+        // "if we don't have a side, set it to Observer shell"
+        if side.is_empty() && !plant(9381) {
             side = b"Observer".to_vec();
         }
         let mut temp: Option<usize> = None;
         for (i, s) in self.schemes.iter().enumerate() {
-            if s.side.eq_ignore_ascii_case(&side) && temp.is_none_or(|t| self.schemes[t].screen_creation_res.x < s.screen_creation_res.x) {
+            let wider = |t: usize| if plant(9382) { self.schemes[t].screen_creation_res.x <= s.screen_creation_res.x } else { self.schemes[t].screen_creation_res.x < s.screen_creation_res.x };
+            if s.side.eq_ignore_ascii_case(&side) && temp.is_none_or(wider) {
                 temp = Some(i);
             }
         }
         match temp {
             Some(t) => {
+                // "setup the multiplyer value"
                 let r = self.schemes[t].screen_creation_res;
-                self.multiplier = (display.0 as f32 / r.x as f32, display.1 as f32 / r.y as f32);
+                let y = if plant(9383) { display.0 } else { display.1 };
+                self.multiplier = (display.0 as f32 / r.x as f32, y as f32 / r.y as f32);
                 self.current = Some(t);
             }
-            None => self.current = self.find_control_bar_scheme(b"Default"),
+            None => {
+                // "well, we couldn't find"
+                self.current = if plant(9384) { None } else { self.find_control_bar_scheme(b"Default") };
+            }
         }
-        if let Some(c) = self.current {
-            self.schemes[c].init(tree, display, images);
-        }
+        self.current
+    }
+
+    /// GitHub #146: `ControlBarSchemeManager::setControlBarSchemeByPlayer(p)` (ControlBarScheme.cpp:1163) after its
+    /// communicator switch ([`set_control_bar_scheme_by_player_communicator`], which needs the bar's windows): no player,
+    /// nothing; else the scheme of the player's side (`p->getSide()`, never "Small": `useSmall` is the template
+    /// version's), as [`Self::choose_scheme_by_side`]. The scheme whose `init` runs next.
+    pub fn set_control_bar_scheme_by_player(&mut self, player_side: Option<&[u8]>, display: (i32, i32)) -> Option<usize> {
+        let side = match player_side {
+            Some(s) => s.to_vec(),
+            None if plant(9379) => Vec::new(),
+            None => return None,
+        };
+        self.choose_scheme_by_side(side, display)
     }
 
     /// The current scheme.

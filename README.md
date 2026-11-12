@@ -77,7 +77,7 @@ work is on `phase1-gamelogic`, Settings -> Environments -> `github-pages` -> Dep
 | `formats::data_chunk` | the chunk format of maps: the input side of `GameEngine/Source/Common/System/DataChunk.cpp` (`CachedFileInputStream` reads, `DataChunkTableOfContents`, `DataChunkInput`: registered parsers, nested `parse`, the chunk stack, the typed reads incl. `readDict` and `readNameKey`), on uncompressed in-memory bytes; names stand in for `NameKeyType`s. ~~Not the writer (`DataChunkOutput`)~~ **CORRECTED 2026-10-18**: the writer is `formats::data_chunk_output`. Not decompression (`CompressionManager`) |
 | `ww::wwmath` | `Libraries/Source/WWVegas/WWMath/wwmath.h` (+ table init of `wwmath.cpp`) |
 | `ww::vector2`, `ww::vector3`, `ww::vector4` | `WWMath/vector2.h`, `vector3.h`, `vector4.h` (the subset `Matrix3D` uses) |
-| `ww::matrix3d` | `WWMath/matrix3d.h`, `matrix3d.cpp` (not `Get_Inverse`, the `Matrix3x3`/`Quaternion` setters, `Lerp`) |
+| `ww::matrix3d` | `WWMath/matrix3d.h`, `matrix3d.cpp` (not ~~`Get_Inverse`,~~ the `Matrix3x3`/`Quaternion` setters, `Lerp`; **corrected 2026-11-12, #146:** `Get_Inverse` is translated, the DirectX SDK's `D3DXMatrixInverse` it calls given a stand-in) |
 | `ww::quat` | `WWMath/quat.h`, `quat.cpp`: the `Quaternion` data and `Build_Matrix3D` only |
 | `ww::chunkio` | `WWLib/chunkio.h`, `chunkio.cpp`: `ChunkLoadClass` (chunks, micro-chunks, reads), with the file read through `GameFileClass` over `RAMFile` (the game's path for W3D files in `.big` archives); not the writer (`ChunkSaveClass`) |
 | `ww::realcrc` | `WWLib/realcrc.h`, `realcrc.cpp`: `CRC_Memory` |

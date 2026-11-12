@@ -983,6 +983,27 @@ impl GameUi {
         control_bar_init_tooltips(&mut h);
     }
 
+    /// (#146) `ControlBarSchemeManager::setControlBarSchemeByPlayer`'s communicator switch (ControlBarScheme.cpp:1165,
+    /// `rts_lockstep_engine::client::control_bar_scheme::set_control_bar_scheme_by_player_communicator`,
+    /// differential-tested): at each game's start (`GameLogic::startNewGame`'s `setControlBarSchemeByPlayer`), the
+    /// communicator button gets `NonCommand_Communicator` in a multiplayer game (`TheRecorder->isMultiplayer()`) and
+    /// `NonCommand_BriefingHistory` outside one, in place of `ControlBar::init`'s `NonCommand_Communicator`. `find` is as
+    /// [`Self::init_tooltips`]'s. The rest of the function (the scheme of the player's side) is the application's
+    /// [`load_game_ui_with`] (`set_control_bar_scheme_by_side`, the same choice).
+    pub fn set_communicator(&mut self, multiplayer: bool, find: impl Fn(&[u8]) -> Option<(usize, CommandButton)>) {
+        const NAMES: [&[u8]; 2] = [b"NonCommand_Communicator", b"NonCommand_BriefingHistory"];
+        let found = NAMES.iter().filter_map(|name| find(name).map(|(i, b)| (*name, i, b))).collect();
+        let mut h = BarInitHost { wm: &mut self.wm, images: &self.images, found, data: &mut self.non_command_buttons };
+        rts_lockstep_engine::client::control_bar_scheme::set_control_bar_scheme_by_player_communicator(multiplayer, &mut h);
+    }
+
+    /// (#146) The command button the bar's communicator holds (its place in the World's list), as `setControlCommand`
+    /// gave it.
+    pub fn communicator_command(&self) -> Option<usize> {
+        let w = self.wm.tree.find_by_name(b"ControlBar.wnd:PopupCommunicator")?;
+        self.non_command_buttons.iter().find(|(win, _)| *win == w).map(|(_, c)| *c)
+    }
+
     /// (#144) `populateBuildTooltipLayout(NULL, tooltipWin)` for a window: which of the money, power and general's
     /// experience windows it is (`tooltip_window_of`, searching the bar's windows), and that window's popup; `None` for
     /// another window (upstream's `DEBUG_ASSERTCRASH` and `return`: the popup keeps what it had).
@@ -1617,6 +1638,48 @@ mod tests {
         fs.init(None);
         let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
         *ui
+    }
+
+    /// #146: `setControlBarSchemeByPlayer`'s communicator switch on the bar's own windows. Predicted before the run: a bar
+    /// whose layout has `PopupCommunicator` (a push button): `ControlBar::init` gives it `NonCommand_Communicator` (button
+    /// 5); a single player game's start gives it `NonCommand_BriefingHistory` (6); a multiplayer game's
+    /// `NonCommand_Communicator` again; with no `BriefingHistory` button in the World's list it keeps the one it had
+    /// (`setControlCommand` does nothing for `NULL`).
+    #[test]
+    fn the_communicator_is_the_briefing_history_outside_multiplayer() {
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            let b = if p == b"Window\\ControlBar.wnd" {
+                let wnd = String::from_utf8(b).expect("text");
+                let start = wnd.find("WINDOW\n WINDOWTYPE = PUSHBUTTON;").expect("a button");
+                let button = &wnd[start..start + wnd[start..].find("END\n").expect("its end") + 4];
+                let communicator = button.replace("NAME = \"ControlBar.wnd:ButtonCommand01\";\n", "NAME = \"ControlBar.wnd:PopupCommunicator\";\n").replace("UPPERLEFT: 260 480, BOTTOMRIGHT: 310 530", "UPPERLEFT: 380 452, BOTTOMRIGHT: 420 468");
+                let at = wnd.find("WINDOW\n WINDOWTYPE = USER;\n SCREENRECT = UPPERLEFT: 250 470").expect("the command window");
+                format!("{}{}{}", &wnd[..at], communicator, &wnd[at..]).into_bytes()
+            } else {
+                b
+            };
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        let mut ui = *ui;
+        let comm = CommandButton::new(b"NonCommand_Communicator");
+        let briefing = CommandButton::new(b"NonCommand_BriefingHistory");
+        let find = |n: &[u8]| match n {
+            b"NonCommand_Communicator" => Some((5, comm.clone())),
+            b"NonCommand_BriefingHistory" => Some((6, briefing.clone())),
+            _ => None,
+        };
+        ui.init_tooltips(find);
+        assert_eq!(ui.communicator_command(), Some(5));
+        ui.set_communicator(false, find);
+        assert_eq!(ui.communicator_command(), Some(6));
+        ui.set_communicator(true, find);
+        assert_eq!(ui.communicator_command(), Some(5));
+        ui.set_communicator(false, |n: &[u8]| (n == b"NonCommand_Communicator").then(|| (5, comm.clone())));
+        assert_eq!(ui.communicator_command(), Some(5), "no BriefingHistory: setControlCommand(NULL) does nothing");
     }
 
     /// #136: the bar hidden, shown, lowered and raised (`ToggleControlBar`, `ButtonLarge`'s `toggleControlBarStage`).

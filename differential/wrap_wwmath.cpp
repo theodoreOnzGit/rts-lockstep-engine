@@ -50,8 +50,55 @@ static void shim_wwmath_init_tables(void)
 }
 
 /* ---- link stubs for matrix3d.cpp functions that are NOT translated ------ */
-/* Get_Inverse calls the DirectX SDK (not in the upstream release). */
-D3DXMATRIX* D3DXMatrixInverse(D3DXMATRIX*, float*, const D3DXMATRIX*) { abort(); }
+/* Get_Inverse calls the DirectX SDK (not in the upstream release). ~~abort()~~ GitHub #146 (2026-11-12): the
+** stand-in `src/ww/matrix3d.rs`'s `d3dx_matrix_inverse_stand_in` translates, the same expressions in the same order
+** (NOT the SDK's code, which is not available), so CameraClass::Update_Frustum's Get_Inverse can run here. A zero
+** determinant gives the identity in `out` and NULL. */
+D3DXMATRIX* D3DXMatrixInverse(D3DXMATRIX* out, float* det_out, const D3DXMATRIX* in)
+{
+	const float (*m)[4] = in->m;
+	float s0 = m[0][0] * m[1][1] - m[1][0] * m[0][1];
+	float s1 = m[0][0] * m[1][2] - m[1][0] * m[0][2];
+	float s2 = m[0][0] * m[1][3] - m[1][0] * m[0][3];
+	float s3 = m[0][1] * m[1][2] - m[1][1] * m[0][2];
+	float s4 = m[0][1] * m[1][3] - m[1][1] * m[0][3];
+	float s5 = m[0][2] * m[1][3] - m[1][2] * m[0][3];
+	float c5 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
+	float c4 = m[2][1] * m[3][3] - m[3][1] * m[2][3];
+	float c3 = m[2][1] * m[3][2] - m[3][1] * m[2][2];
+	float c2 = m[2][0] * m[3][3] - m[3][0] * m[2][3];
+	float c1 = m[2][0] * m[3][2] - m[3][0] * m[2][2];
+	float c0 = m[2][0] * m[3][1] - m[3][0] * m[2][1];
+	float det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+	if (det_out)
+		*det_out = det;
+	float r[4][4];
+	if (det == 0.0f) {
+		for (int a = 0; a < 4; ++a)
+			for (int b = 0; b < 4; ++b)
+				out->m[a][b] = (a == b) ? 1.0f : 0.0f;
+		return NULL;
+	}
+	float i = 1.0f / det;
+	r[0][0] = (m[1][1] * c5 - m[1][2] * c4 + m[1][3] * c3) * i;
+	r[0][1] = (-m[0][1] * c5 + m[0][2] * c4 - m[0][3] * c3) * i;
+	r[0][2] = (m[3][1] * s5 - m[3][2] * s4 + m[3][3] * s3) * i;
+	r[0][3] = (-m[2][1] * s5 + m[2][2] * s4 - m[2][3] * s3) * i;
+	r[1][0] = (-m[1][0] * c5 + m[1][2] * c2 - m[1][3] * c1) * i;
+	r[1][1] = (m[0][0] * c5 - m[0][2] * c2 + m[0][3] * c1) * i;
+	r[1][2] = (-m[3][0] * s5 + m[3][2] * s2 - m[3][3] * s1) * i;
+	r[1][3] = (m[2][0] * s5 - m[2][2] * s2 + m[2][3] * s1) * i;
+	r[2][0] = (m[1][0] * c4 - m[1][1] * c2 + m[1][3] * c0) * i;
+	r[2][1] = (-m[0][0] * c4 + m[0][1] * c2 - m[0][3] * c0) * i;
+	r[2][2] = (m[3][0] * s4 - m[3][1] * s2 + m[3][3] * s0) * i;
+	r[2][3] = (-m[2][0] * s4 + m[2][1] * s2 - m[2][3] * s0) * i;
+	r[3][0] = (-m[1][0] * c3 + m[1][1] * c1 - m[1][2] * c0) * i;
+	r[3][1] = (m[0][0] * c3 - m[0][1] * c1 + m[0][2] * c0) * i;
+	r[3][2] = (-m[3][0] * s3 + m[3][1] * s1 - m[3][2] * s0) * i;
+	r[3][3] = (m[2][0] * s3 - m[2][1] * s1 + m[2][2] * s0) * i;
+	memcpy(out->m, r, sizeof r);
+	return out;
+}
 
 static inline Vector3 v3(const float *p) { return Vector3(p[0], p[1], p[2]); }
 static inline void put3(const Vector3 &v, float *p) { p[0] = v.X; p[1] = v.Y; p[2] = v.Z; }

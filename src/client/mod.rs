@@ -33,6 +33,7 @@ pub mod control_bar;
 pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)
 pub mod letterbox; // #144: the script letterbox (W3DDisplay's renderLetterBox, enableLetterBox)
+pub mod cinematic_text; // #146: the cinematic text (Display's m_cinematicText, W3DDisplay::draw's block)
 pub mod shell_hooks; // #142: TheShellHookNames, SignalUIInteraction, and the owner's single-player exception (#139)
 pub mod place_event;
 pub mod gui_command_xlat;

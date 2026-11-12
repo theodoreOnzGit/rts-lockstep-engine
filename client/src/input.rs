@@ -31,7 +31,7 @@ use rts_lockstep_engine::client::world_host::WorldClient;
 use rts_lockstep_engine::client::control_bar_callback::{left_hud_input_click, RadarClick};
 use rts_lockstep_engine::client::radar::{RadarFeedback, RadarFrame};
 use rts_lockstep_engine::client::radar_world::ClientRadar;
-use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D};
+use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D, IRegion2D};
 use rts_lockstep_engine::common::game_type::ObjectId;
 use rts_lockstep_engine::common::message_stream::MessageType;
 use rts_lockstep_engine::logic::world::game_logic::World;
@@ -599,7 +599,12 @@ impl Controls {
     /// and the GUI command take it as a click, the selection translator's double-click case selects every unit like the
     /// one picked (destroying it), and the command translator's case gives the double-click guard order
     /// (`m_doubleClickAttackMove`) or falls through to the click's.
-    pub fn left_release(&mut self, _press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
+    ///
+    /// (#146) `in_region` is `TheTacticalView->iterateDrawablesInRegion` on a pixel region (the application's: it has the
+    /// view and the objects), asked with the click's region (`MetaEventTranslator`'s, a point within the drag tolerance)
+    /// as `SelectionTranslator` asks it. ~~(`in_region` was the region's objects, the application having guessed the
+    /// region from its own click tolerance.)~~ **Corrected 2026-11-12, #146.**
+    pub fn left_release(&mut self, _press: ICoord2D, release: ICoord2D, in_region: impl Fn(&IRegion2D) -> Vec<ObjectId>, picked: Option<ObjectId>, ground: Coord3D) -> bool {
         if !self.window_keeps(MSG_RAW_MOUSE_LEFT_BUTTON_UP, release) {
             return false;
         }
@@ -631,7 +636,8 @@ impl Controls {
             self.client.sync_modes(&self.ui);
             return self.commands.double_click(false, is_point, &ground, picked, &mut self.ui, &mut self.client);
         }
-        if self.selection.left_click(in_region, is_point, &self.commands, &mut self.ui, &mut self.client) == Disposition::Destroy {
+        let in_region = in_region(&click.region);
+        if self.selection.left_click(&in_region, is_point, &self.commands, &mut self.ui, &mut self.client) == Disposition::Destroy {
             return true;
         }
         self.client.sync_modes(&self.ui);
@@ -745,7 +751,8 @@ impl Controls {
     /// click's rectangle is `MetaEventTranslator`'s, from the press it kept).
     pub(crate) fn click(&mut self, press: ICoord2D, release: ICoord2D, in_region: &[ObjectId], picked: Option<ObjectId>, ground: Coord3D) -> bool {
         self.left_press(press, ground);
-        self.left_release(press, release, in_region, picked, ground)
+        let found = in_region.to_vec();
+        self.left_release(press, release, move |_: &IRegion2D| found.clone(), picked, ground)
     }
 }
 
@@ -753,6 +760,12 @@ impl Controls {
 mod tests {
     use super::*;
     use crate::demo::demo_world;
+
+    /// (#146) A region test that answers the same objects whatever the region (the tests' fixed answers).
+    fn fixed(objects: &[ObjectId]) -> impl Fn(&IRegion2D) -> Vec<ObjectId> {
+        let objects = objects.to_vec();
+        move |_| objects.clone()
+    }
     use rts_lockstep_engine::common::message_types::{MSG_DO_ATTACK_OBJECT, MSG_DO_ATTACK_OBJECT_AFTER_MOVING_HINT, MSG_DO_MOVETO, MSG_DO_MOVETO_HINT};
 
     fn pos(c: &mut Controls, o: ObjectId) -> Coord3D {
@@ -828,7 +841,7 @@ mod tests {
         assert_eq!(c.press(&bar[0].button), CbCommandStatus::Used);
         assert!(c.ui.pending_place_type().is_some());
         assert!(c.left_press(at(150, 200), ground(150.0, 200.0)));
-        assert!(c.left_release(at(150, 200), at(150, 200), &[], None, ground(150.0, 200.0)));
+        assert!(c.left_release(at(150, 200), at(150, 200), fixed(&[]), None, ground(150.0, 200.0)));
         frame(&mut c);
         let depots: Vec<_> = c.client.world.objects.ids_in_order().into_iter().filter(|&x| c.client.world.find_object(x).is_some_and(|y| y.template().get_name() == b"Depot")).collect();
         assert_eq!(depots.len(), 1, "sent {:?}, messages {:?}", c.client.sent, c.client.ui_messages);
@@ -1328,7 +1341,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let order = |c: &mut Controls, at: Coord3D| {
             c.client.sent.clear();
             assert!(c.left_press(pixel(300, 300), at), "the press is used up");
-            assert!(c.left_release(pixel(300, 300), pixel(300, 300), &[], None, at), "the click is used up");
+            assert!(c.left_release(pixel(300, 300), pixel(300, 300), fixed(&[]), None, at), "the click is used up");
             assert!(c.ui.gui_command().is_none(), "the command ended");
             c.client.sent.clone()
         };
@@ -1487,7 +1500,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let b = bar.iter().find(|b| b.label == "Command_DemoRally").expect("the rally button").button.clone();
         assert_eq!(c.press(&b), CbCommandStatus::Used);
         assert!(c.left_press(ICoord2D { x: 300, y: 300 }, at));
-        assert!(c.left_release(ICoord2D { x: 300, y: 300 }, ICoord2D { x: 300, y: 300 }, &[], None, at));
+        assert!(c.left_release(ICoord2D { x: 300, y: 300 }, ICoord2D { x: 300, y: 300 }, fixed(&[]), None, at));
         c.observe_sent();
         c.world().logic_update().expect("a frame");
         let ev = c.world().take_client_events();
@@ -1727,7 +1740,7 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let s0 = o.soldiers[0];
         let sp = pos(&mut c, s0);
         assert!(!c.left_press(at(30, 30), sp));
-        assert!(!c.left_release(at(30, 30), at(30, 30), &[s0], Some(s0), sp));
+        assert!(!c.left_release(at(30, 30), at(30, 30), fixed(&[s0]), Some(s0), sp));
         assert_eq!(c.hover(Some(s0), sp), None);
         assert!(c.client.sent.is_empty());
         for _ in 0..30 {
@@ -1797,10 +1810,10 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
                     let r = o.runners[0];
                     let rp = pos(&mut c, r);
                     c.left_press(at(10, 10), rp);
-                    c.left_release(at(10, 10), at(10, 10), &[r], Some(r), rp);
+                    c.left_release(at(10, 10), at(10, 10), fixed(&[r]), Some(r), rp);
                     c.left_press(at(0, 0), Coord3D::default());
                     c.pointer_moved(at(60, 60), Coord3D::default());
-                    c.left_release(at(0, 0), at(60, 60), &o.soldiers, None, Coord3D::default());
+                    c.left_release(at(0, 0), at(60, 60), fixed(&o.soldiers), None, Coord3D::default());
                     c.hover(Some(r), rp);
                     if let Some(b) = &button {
                         c.press(b);
@@ -1859,9 +1872,9 @@ AudioEvent DemoSoldierMove\n Sounds = move\n Type = ui everyone\n Volume = 100%\
         let double = |c: &mut Controls, picked: Option<ObjectId>, g: Coord3D| {
             c.client.sent.clear();
             c.left_press(at(50, 10), g);
-            c.left_release(at(50, 10), at(50, 10), &picked.into_iter().collect::<Vec<_>>(), picked, g);
+            c.left_release(at(50, 10), at(50, 10), fixed(&picked.into_iter().collect::<Vec<_>>()), picked, g);
             assert!(c.left_double_press(at(50, 10)));
-            c.left_release(at(50, 10), at(50, 10), &picked.into_iter().collect::<Vec<_>>(), picked, g)
+            c.left_release(at(50, 10), at(50, 10), fixed(&picked.into_iter().collect::<Vec<_>>()), picked, g)
         };
         assert!(double(&mut c, None, ground));
         assert_eq!(c.client.sent, vec![MSG_DO_MOVETO, MSG_DO_MOVETO]);

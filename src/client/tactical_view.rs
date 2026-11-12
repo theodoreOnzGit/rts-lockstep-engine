@@ -8,12 +8,18 @@
 //   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp (normAngle, getHeightAroundPos,
 //     W3DView::W3DView, setHeight, setWidth, (#138) setOrigin and screenToWorldAtZ, buildCameraTransform, calcCameraConstraints, getPickRay,
 //     setCameraTransform, init, update's height above ground, scrollBy, forceRedraw, setAngle, setPitch,
+//     (#146) worldToScreenTriReturn and iterateDrawablesInRegion,
 //     setAngleAndPitchToDefault, setDefaultView, setHeightAboveGround, setZoom, setZoomToDefault, lookAt,
 //     initHeightForMap; #131: resetCamera with the end of the 1 ms moveCameraTo, zoomCamera and pitchCamera it starts:
 //     setupWaypointPath, moveAlongWaypointPath, zoomCameraOneFrame, pitchCameraOneFrame, updateCameraMovements)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/camera.cpp (CameraClass: the constructor, Set_View_Plane,
-//     Set_Aspect_Ratio, Un_Project, Device_To_View_Space, Device_To_World_Space)
-//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp (PixelScreenToW3DLogicalScreen)
+//     Set_Aspect_Ratio, Un_Project, Device_To_View_Space, Device_To_World_Space; #146: Update_Frustum's inverse and
+//     projection, Project)
+//   GeneralsMD/Code/GameEngine/Include/GameClient/View.h (#146: WorldToScreenReturn, worldToScreen)
+//   GeneralsMD/Code/Libraries/Source/WWVegas/WWMath/matrix4.h (#146: Make_Identity, Init_Perspective, operator *
+//     (Matrix4x4, Vector3))
+//   GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp (PixelScreenToW3DLogicalScreen; #146:
+//     W3DLogicalScreenToPixelScreen)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -56,8 +62,12 @@
 //!   (`m_isCameraSlaved`, `m_useRealZoomCam`, both false), the field of view (debug only), ~~picking~~ and drawing.
 //!   **Corrected 2026-11-11, #138:** the pick ray (`getPickRay`), `screenToWorldAtZ` and
 //!   `getScreenCornerWorldPointsAtZ` are translated and differential-tested (`tests/differential_tactical_view.rs`); the
-//!   client picks the ground with them and draws the radar's view box from them. `worldToScreen` (`CameraClass::Project`)
-//!   is not translated.
+//!   client picks the ground with them and draws the radar's view box from them. ~~`worldToScreen` (`CameraClass::Project`)
+//!   is not translated.~~ **Corrected 2026-11-12, #146:** `worldToScreen`, `worldToScreenTriReturn` (with
+//!   `CameraClass::Project`, `Update_Frustum`'s inverse and projection, and `W3DLogicalScreenToPixelScreen`) and
+//!   `iterateDrawablesInRegion` are translated and differential-tested (`tests/differential_world_to_screen.rs`); the
+//!   client maps the objects to the screen with them (the drag box, the click pick, the hints, the obscured and hidden
+//!   lists) instead of Bevy's projection.
 //! - `lookAt` takes the on-ground branch only: a point higher than a pathfind cell above the ground would be cast
 //!   along the view ray onto the terrain render object, which the port does not have (GitHub #119's gaps).
 //! - `TheTerrainLogic`, the global data and the game's pause are given through [`ViewHost`]; ~~the display's size is the
@@ -73,12 +83,13 @@
 //! `CameraClass` members (`Transform`, `ViewPlane`, `Viewport`, `AspectRatio`, the clip planes). `ViewLocation` is
 //! [`ViewLocation`] with public fields.
 
-use crate::common::base_type::{max, Coord2D, Coord3D, ICoord2D, Region2D, Region3D, PI};
+use crate::common::base_type::{fast_float2long_round, max, real_to_int, Coord2D, Coord3D, ICoord2D, IRegion2D, Region2D, Region3D, PI};
 use crate::common::global_data::GlobalData;
 use crate::logic::modules::plant;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::vector2::Vector2;
 use crate::ww::vector3::Vector3;
+use crate::ww::vector4::Vector4;
 use crate::ww::wwmath::WWMATH_PI;
 
 /// `DEFAULT_VIEW_WIDTH`.
@@ -200,6 +211,27 @@ impl ViewCamera {
         Matrix3D::transform_vector(&self.transform, &point)
     }
 
+    /// GitHub #146: `Update_Frustum()` (camera.cpp:599), the parts `Project` reads: the inverse of the transform
+    /// (`Transform.Get_Inverse(CameraInvTransform)`, through the SDK stand-in, [`Matrix3D::get_inverse`]) and the
+    /// projection (`Init_Perspective` of the view plane times the near distance; the camera is always `PERSPECTIVE`
+    /// here: `W3DView` never sets `ORTHO`). Upstream caches them until the camera changes (`FrustumValid`); computing them
+    /// afresh gives the same values. The frustum planes and the near clip box are not read by `Project` and are not
+    /// made.
+    pub fn update_frustum(&self) -> CameraFrustum {
+        let (vpmin, vpmax) = self.view_plane;
+        let (znear_dist, zfar_dist) = self.clip;
+        let camera_inv_transform = if plant(9365) { self.transform.get_orthogonal_inverse() } else { self.transform.get_inverse() };
+        let mut projection_transform = Matrix4x4::identity();
+        projection_transform.init_perspective(vpmin.x * znear_dist, vpmax.x * znear_dist, vpmin.y * znear_dist, vpmax.y * znear_dist, znear_dist, zfar_dist);
+        CameraFrustum { camera_inv_transform, projection_transform, z_near: znear_dist }
+    }
+
+    /// GitHub #146: `Project(dest, ws_point)` (camera.cpp:403): a world point on the normalized view plane (x, y and z
+    /// from -1 to 1), and whether it is inside the frustum. Behind the near clip plane: (0, 0, 0).
+    pub fn project(&self, ws_point: &Vector3) -> (ProjectionResType, Vector3) {
+        self.update_frustum().project(ws_point)
+    }
+
     /// `Device_To_World_Space(device, &world)` (through `Device_To_View_Space`): a pixel of the render target
     /// (`res_width` by `res_height`) on the view plane at z = -1, in world space.
     pub fn device_to_world_space(&self, device: Vector2, res_width: i32, res_height: i32) -> Vector3 {
@@ -219,6 +251,111 @@ impl Default for ViewCamera {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// GitHub #146: `CameraClass::ProjectionResType` (camera.h).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectionResType {
+    /// `INSIDE_FRUSTUM`.
+    InsideFrustum = 0,
+    /// `OUTSIDE_FRUSTUM`.
+    OutsideFrustum,
+    /// `OUTSIDE_NEAR_CLIP`.
+    OutsideNearClip,
+    /// `OUTSIDE_FAR_CLIP`.
+    OutsideFarClip,
+}
+
+/// GitHub #146: `View::WorldToScreenReturn` (View.h:87).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorldToScreenReturn {
+    /// `WTS_INSIDE_FRUSTUM`: on the screen.
+    InsideFrustum = 0,
+    /// `WTS_OUTSIDE_FRUSTUM`: the point is valid but off the screen.
+    OutsideFrustum,
+    /// `WTS_INVALID`: no transform possible (behind the near or past the far clip plane).
+    Invalid,
+}
+
+/// GitHub #146: the parts of WWMath's `Matrix4x4` (matrix4.h) that `CameraClass::Project` uses: `Vector4 Row[4]`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Matrix4x4 {
+    pub row: [Vector4; 4],
+}
+
+impl Matrix4x4 {
+    /// `Make_Identity()`.
+    pub fn identity() -> Self {
+        Matrix4x4 { row: [Vector4::new(1.0, 0.0, 0.0, 0.0), Vector4::new(0.0, 1.0, 0.0, 0.0), Vector4::new(0.0, 0.0, 1.0, 0.0), Vector4::new(0.0, 0.0, 0.0, 1.0)] }
+    }
+
+    /// `Init_Perspective(left, right, bottom, top, znear, zfar)` (matrix4.h:483): OpenGL's perspective projection; the
+    /// `static_cast<float>(2.0 * ...)` terms are computed in `double`.
+    pub fn init_perspective(&mut self, left: f32, right: f32, bottom: f32, top: f32, znear: f32, zfar: f32) {
+        *self = Matrix4x4::identity();
+        self.row[0][0] = (2.0f64 * f64::from(znear) / f64::from(right - left)) as f32;
+        self.row[0][2] = (right + left) / (right - left);
+        self.row[1][1] = (2.0f64 * f64::from(znear) / f64::from(top - bottom)) as f32;
+        self.row[1][2] = if plant(9363) { (top + bottom) / (right - left) } else { (top + bottom) / (top - bottom) };
+        self.row[2][2] = -(zfar + znear) / (zfar - znear);
+        self.row[2][3] = if plant(9364) { -(2.0f32 * zfar * znear) / (zfar - znear) } else { (-(2.0f64 * f64::from(zfar) * f64::from(znear)) / f64::from(zfar - znear)) as f32 };
+        self.row[3][2] = -1.0f32;
+        self.row[3][3] = 0.0f32;
+    }
+
+    /// `operator * (const Matrix4x4 & a, const Vector3 & v)` (matrix4.h:777): "assumes w=1.0!!!".
+    pub fn mul_vector3(&self, v: &Vector3) -> Vector4 {
+        let a = &self.row;
+        Vector4::new(
+            a[0][0] * v[0] + a[0][1] * v[1] + a[0][2] * v[2] + a[0][3] * 1.0f32,
+            a[1][0] * v[0] + a[1][1] * v[1] + a[1][2] * v[2] + a[1][3] * 1.0f32,
+            a[2][0] * v[0] + a[2][1] * v[1] + a[2][2] * v[2] + a[2][3] * 1.0f32,
+            a[3][0] * v[0] + a[3][1] * v[1] + a[3][2] * v[2] + a[3][3] * 1.0f32,
+        )
+    }
+}
+
+/// GitHub #146: what `CameraClass::Update_Frustum` leaves for `Project` (`CameraInvTransform`, `ProjectionTransform`)
+/// and `ZNear` ([`ViewCamera::update_frustum`]). Made once, it projects many points ([`TacticalView::iterate_drawables_in_region`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraFrustum {
+    /// `CameraInvTransform`.
+    pub camera_inv_transform: Matrix3D,
+    /// `ProjectionTransform`.
+    pub projection_transform: Matrix4x4,
+    /// `ZNear`.
+    pub z_near: f32,
+}
+
+impl CameraFrustum {
+    /// `CameraClass::Project(dest, ws_point)` (camera.cpp:403) after `Update_Frustum`.
+    pub fn project(&self, ws_point: &Vector3) -> (ProjectionResType, Vector3) {
+        let cam_point = Matrix3D::transform_vector(&self.camera_inv_transform, ws_point);
+        let near = if plant(9361) { cam_point.z >= -self.z_near } else { cam_point.z > -self.z_near };
+        if near {
+            return (ProjectionResType::OutsideNearClip, Vector3::new(0.0, 0.0, 0.0));
+        }
+        let view_point = self.projection_transform.mul_vector3(&cam_point);
+        let oow = 1.0f32 / view_point.w;
+        let dest = Vector3::new(view_point.x * oow, view_point.y * oow, view_point.z * oow);
+        let far = if plant(9366) { dest.z >= 1.0f32 } else { dest.z > 1.0f32 };
+        if far {
+            return (ProjectionResType::OutsideFarClip, dest);
+        }
+        let outside_y = !plant(9362) && ((dest.y < -1.0f32) || (dest.y > 1.0f32));
+        if (dest.x < -1.0f32) || (dest.x > 1.0f32) || outside_y {
+            return (ProjectionResType::OutsideFrustum, dest);
+        }
+        (ProjectionResType::InsideFrustum, dest)
+    }
+}
+
+/// GitHub #146: `W3DLogicalScreenToPixelScreen(logX, logY, &x, &y, w, h)` (W3DConvert.cpp:86): -1 .. 1 (y up) to a pixel
+/// (0, 0 at the top left), `REAL_TO_INT` (truncation, x87 `fistp` of the truncated value).
+pub fn w3d_logical_screen_to_pixel_screen(log_x: f32, log_y: f32, screen_width: i32, screen_height: i32) -> (i32, i32) {
+    let conv = |x: f32| if plant(9371) { fast_float2long_round(x) } else { real_to_int(x) };
+    let y = if plant(9368) { log_y } else { -log_y };
+    (conv((screen_width as f32 * (log_x + 1.0f32)) / 2.0f32), conv((screen_height as f32 * (y + 1.0f32)) / 2.0f32))
 }
 
 /// `DEG_TO_RADF(x)`: `x * WWMATH_PI / 180.0f`.
@@ -534,6 +671,116 @@ impl TacticalView {
         let bottom_left = ICoord2D { x: origin.x + view_width, y: origin.y + view_height };
         let bottom_right = ICoord2D { x: if plant(9278) { origin.x + view_width } else { origin.x }, y: origin.y + view_height };
         [self.screen_to_world_at_z(top_left, z), self.screen_to_world_at_z(top_right, z), self.screen_to_world_at_z(bottom_left, z), self.screen_to_world_at_z(bottom_right, z)]
+    }
+
+    /// GitHub #146: `W3DView::worldToScreenTriReturn(&w, &s)` (W3DView.cpp:2021): a world point to a pixel of the display
+    /// through the camera (`CameraClass::Project`), the view's size and origin, and whether it is on the screen. Beyond
+    /// the clip planes the pixel is (0, 0) and the answer `WTS_INVALID`; outside the frustum the pixel is still given.
+    pub fn world_to_screen_tri_return(&self, w: &Coord3D) -> (WorldToScreenReturn, ICoord2D) {
+        self.world_to_screen_with(&self.camera.update_frustum(), w)
+    }
+
+    /// [`Self::world_to_screen_tri_return`] with the camera's frustum already made (`Update_Frustum`'s cache).
+    pub fn world_to_screen_with(&self, frustum: &CameraFrustum, w: &Coord3D) -> (WorldToScreenReturn, ICoord2D) {
+        let world = Vector3::new(w.x, w.y, w.z);
+        let (projection, screen) = frustum.project(&world);
+        if projection != ProjectionResType::InsideFrustum && projection != ProjectionResType::OutsideFrustum {
+            // "Can't get a valid number if it's beyond the clip planes.  jba"
+            let s = if plant(9370) { ICoord2D { x: 1, y: 1 } } else { ICoord2D { x: 0, y: 0 } };
+            return (WorldToScreenReturn::Invalid, s);
+        }
+        let (mut x, mut y) = w3d_logical_screen_to_pixel_screen(screen.x, screen.y, self.width, self.height);
+        // ("convert viewport coordinates to full screen coordinates"; an `Int` sum, wrapping as x86 does)
+        if !plant(9367) {
+            x = x.wrapping_add(self.origin.x);
+        }
+        y = y.wrapping_add(self.origin.y);
+        let s = ICoord2D { x, y };
+        if projection != ProjectionResType::InsideFrustum && !plant(9369) {
+            return (WorldToScreenReturn::OutsideFrustum, s);
+        }
+        (WorldToScreenReturn::InsideFrustum, s)
+    }
+
+    /// GitHub #146: `View::worldToScreen(&w, &s)` (View.h:200): `worldToScreenTriReturn(w, s) == WTS_INSIDE_FRUSTUM`, and
+    /// the pixel it set.
+    pub fn world_to_screen(&self, w: &Coord3D) -> (bool, ICoord2D) {
+        let (r, s) = self.world_to_screen_tri_return(w);
+        (r == WorldToScreenReturn::InsideFrustum, s)
+    }
+
+    /// GitHub #146: `W3DView::iterateDrawablesInRegion(screenRegion, callback, userData)` (W3DView.cpp:2091): each
+    /// drawable whose position projects inside the frustum and inside the pixel region (made -1 .. 1 by the view's origin
+    /// and size, y up) is given to `callback`; the count of the callbacks that answered true is returned. No region: every
+    /// drawable. A region of no width and no height is a point: only the drawable `pick` finds there
+    /// (`pickDrawable(&screenRegion->lo, TRUE, getPickTypesForContext(...))`, the host's: the port casts no ray on the
+    /// render objects), or nothing, and the count is 0.
+    ///
+    /// `drawables` are `TheGameClient`'s, in its order, each with its `getPosition()`. Kept from upstream: the point's
+    /// drawable is reached only through the loop over the drawables, so with no drawables at all nothing is called back.
+    pub fn iterate_drawables_in_region<T: Copy>(
+        &self,
+        screen_region: Option<&IRegion2D>,
+        drawables: impl IntoIterator<Item = (T, Coord3D)>,
+        pick: impl FnOnce(ICoord2D) -> Option<T>,
+        mut callback: impl FnMut(T) -> bool,
+    ) -> i32 {
+        let mut count = 0;
+        let mut normalized_region = Region2D::default();
+        let mut region_is_point = false;
+        if let Some(r) = screen_region {
+            if r.hi.y - r.lo.y == 0 && r.hi.x - r.lo.x == 0 && !plant(9374) {
+                region_is_point = true;
+            }
+            let lo_y = if plant(9372) { r.lo.y } else { r.hi.y };
+            normalized_region.lo.x = ((r.lo.x - self.origin.x) as f32 / self.width as f32) * 2.0f32 - 1.0f32;
+            normalized_region.lo.y = -(((lo_y - self.origin.y) as f32 / self.height as f32) * 2.0f32 - 1.0f32);
+            normalized_region.hi.x = ((r.hi.x - self.origin.x) as f32 / self.width as f32) * 2.0f32 - 1.0f32;
+            normalized_region.hi.y = -(((r.lo.y - self.origin.y) as f32 / self.height as f32) * 2.0f32 - 1.0f32);
+        }
+        let mut only_drawable_to_test = None;
+        if region_is_point {
+            // "Allow all drawables to be picked."
+            only_drawable_to_test = pick(screen_region.map(|r| r.lo).unwrap_or_default());
+            if only_drawable_to_test.is_none() {
+                return 0;
+            }
+        }
+        let frustum = self.camera.update_frustum();
+        let mut drawables = drawables.into_iter().peekable();
+        if plant(9375) && drawables.peek().is_none() {
+            if let Some(d) = only_drawable_to_test {
+                if callback(d) {
+                    count += 1;
+                }
+            }
+            return count;
+        }
+        for (draw, pos) in drawables {
+            let (draw, inside) = if let Some(only) = only_drawable_to_test {
+                (only, true)
+            } else if screen_region.is_none() {
+                // "no screen region, means all drawbles"
+                (draw, true)
+            } else {
+                let world = Vector3::new(pos.x, pos.y, pos.z);
+                let (projection, screen) = frustum.project(&world);
+                let projected = projection == ProjectionResType::InsideFrustum || (plant(9373) && projection == ProjectionResType::OutsideFrustum);
+                let hi_x = if plant(9377) { screen.x < normalized_region.hi.x } else { screen.x <= normalized_region.hi.x };
+                (draw, projected && screen.x >= normalized_region.lo.x && hi_x && screen.y >= normalized_region.lo.y && screen.y <= normalized_region.hi.y)
+            };
+            if inside {
+                let answered = callback(draw);
+                if answered || plant(9376) {
+                    count += 1;
+                }
+            }
+            // "If onlyDrawableToTest, then we should bail out now."
+            if only_drawable_to_test.is_some() {
+                break;
+            }
+        }
+        count
     }
 
     /// `calcCameraConstraints()`: the map's extent less the ground distance from the screen's centre to 95 % down it

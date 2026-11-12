@@ -23,7 +23,8 @@
 //!   places it. Escape cancels a placement or a pending command (**corrected 2026-11-10 (#87):** and otherwise
 //!   opens the game's quit menu, the shell's, when its files are loaded). Everything goes through [`crate::input::Controls`], the
 //!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
-//!   (within 18 pixels), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
+//!   (within 18 pixels; **#146:** projected by the translated `worldToScreen`, and a drag box's objects found by the
+//!   translated `iterateDrawablesInRegion`), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
 //!   **corrected 2026-11-05 (#11):** the logic's ground height (`TerrainLogic::ground_height`), the plane at 0 only
 //!   when the ray meets no ground.
 //!
@@ -64,7 +65,7 @@ use bevy::picking::events::{PointerLeave, PointerMove, PointerPress, PointerRele
 use bevy::picking::pointer::PointerButton;
 use bevy::ui_widgets::{observe, Activate, Button};
 
-use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D};
+use rts_lockstep_engine::common::base_type::{Coord3D, ICoord2D, IRegion2D};
 use rts_lockstep_engine::common::game_type::ObjectId;
 
 use rts_lockstep_engine::logic::world::game_logic::World as GameWorld;
@@ -158,6 +159,11 @@ struct Game {
     /// (#144) `TheDisplay`'s letterbox (`rts_lockstep_engine::client::letterbox`): a script's `EnableLetterBox`, drawn by
     /// [`letterbox_bars`].
     letterbox: rts_lockstep_engine::client::letterbox::LetterBox,
+    /// (#146) `TheDisplay`'s cinematic text (`rts_lockstep_engine::client::cinematic_text`): the logic's
+    /// `ClientEvent::CinematicText`, drawn by [`cinematic_text`] over the letterbox; and the seconds not yet given to its
+    /// 30-a-second draw.
+    cinematic: rts_lockstep_engine::client::cinematic_text::CinematicText,
+    cinematic_clock: f32,
     /// (#144) The popup's text as the last `populateBuildTooltipLayout(NULL, window)` filled it (the money, power and
     /// general's experience windows), and the bar's fill count it was taken at (`GameUi::popup_fills`).
     window_popup_lines: Option<Vec<String>>,
@@ -248,6 +254,8 @@ impl Game {
             cleared_seen,
             close_windows_pending: false,
             letterbox: Default::default(),
+            cinematic: Default::default(),
+            cinematic_clock: 0.0,
             window_popup_lines: None,
             popup_fills_seen: 0,
             client_quiet: false,
@@ -393,7 +401,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
             (load_fx, update_audio, sync_objects, draw_particles, health_bars, keyboard_ui, camera_input, apply_camera, pointer_input, selection_rings, drag_box, load_game_ui, game_ui, radar_view, tooltip_panel, lift_zoom, control_bar, update_hud, show_cursor).chain(),
         )
         .add_systems(Update, (radius_decal, logic_decals, world_tooltip).chain().after(show_cursor))
-        .add_systems(Update, letterbox_bars.after(world_tooltip))
+        .add_systems(Update, (letterbox_bars, cinematic_text).chain().after(world_tooltip))
         .run();
 }
 
@@ -542,7 +550,7 @@ fn setup_scene(mut commands: Commands, game: NonSend<Game>) {
     commands.insert_resource(rig);
 }
 
-fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>) {
+fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Res<Time>, windows: Query<&Window>) {
     if game.paused || game.error.is_some() {
         return;
     }
@@ -584,6 +592,14 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
                     }
                 } else if let Some(ui) = g.ui.as_mut() {
                     ui.script_call(c);
+                }
+            }
+            // (#146: `doDisplayCinematicText`'s calls, to the display's cinematic text; `adjustFontSize` at the display's
+            // width, `m_xResolution`, and the language's default adjustment: the client reads no `Language.ini`)
+            let x_resolution = windows.single().map_or(800, |w| w.width() as i32);
+            for e in &events {
+                if let rts_lockstep_engine::logic::client_event::ClientEvent::CinematicText(c) = e {
+                    g.cinematic.apply(c, x_resolution, rts_lockstep_engine::client::cinematic_text::DEFAULT_RESOLUTION_FONT_SIZE_ADJUSTMENT);
                 }
             }
             g.controls.frame_tick();
@@ -1510,13 +1526,38 @@ fn over_ui(cursor: Vec2, window: &Window, bar: f32) -> bool {
 /// **Corrected 2026-11-11, #138:** the ground under the pointer is [`crate::camera::Camera::ground_under`], along the
 /// translated view's pick ray (Bevy's camera ray no longer stands in for `getPickRay`).
 ///
-/// The objects' positions on screen, from the last snapshot.
-fn on_screen(game: &Game, camera: &Camera, cam: &GlobalTransform) -> Vec<(ObjectId, Vec2)> {
+/// The objects' positions on screen, from the last snapshot. ~~Bevy's camera projects them (`world_to_viewport`).~~
+/// **Corrected 2026-11-12, #146:** the translated view's `worldToScreen` (`W3DView::worldToScreenTriReturn` through
+/// `CameraClass::Project`, `rts_lockstep_engine::client::tactical_view`, differential-tested): the objects inside the
+/// camera's frustum, at the display's pixel each projects to (the view's origin and size, so a view shortened above the
+/// control bar maps as upstream's does).
+fn on_screen(game: &Game, view: &rts_lockstep_engine::client::tactical_view::TacticalView) -> Vec<(ObjectId, Vec2)> {
+    let frustum = view.camera.update_frustum();
     game.cur
         .objects
         .iter()
-        .filter_map(|o| camera.world_to_viewport(cam, Vec3::from(to_bevy(o.pos))).ok().map(|p| (o.id, p)))
+        .filter_map(|o| {
+            let (inside, s) = view.world_to_screen_with(&frustum, &object_position(o));
+            (inside == rts_lockstep_engine::client::tactical_view::WorldToScreenReturn::InsideFrustum).then(|| (o.id, Vec2::new(s.x as f32, s.y as f32)))
+        })
         .collect()
+}
+
+/// (#146) An object's position as its drawable's (`Drawable::getPosition`), game coordinates (z up).
+fn object_position(o: &crate::view::ViewObject) -> Coord3D {
+    Coord3D { x: o.pos[0], y: o.pos[1], z: o.pos[2] }
+}
+
+/// (#146) `TheTacticalView->iterateDrawablesInRegion(region, ...)` over the snapshot's objects in their order (as
+/// `TheGameClient`'s drawables), collecting those the callback is given; a point's drawable is `picked` (the client's
+/// stand-in for `pickDrawable`: the nearest object projected within 18 pixels of the pointer).
+fn drawables_in_region(game: &Game, view: &rts_lockstep_engine::client::tactical_view::TacticalView, region: Option<&IRegion2D>, picked: Option<ObjectId>) -> Vec<ObjectId> {
+    let mut found = Vec::new();
+    view.iterate_drawables_in_region(region, game.cur.objects.iter().map(|o| (o.id, object_position(o))), |_| picked, |d| {
+        found.push(d);
+        true
+    });
+    found
 }
 
 fn pixel(v: Vec2) -> ICoord2D {
@@ -1545,7 +1586,8 @@ fn pointer_input(
         pointer.press = None;
         return;
     }
-    let (Ok(window), Ok((camera, cam))) = (windows.single(), cams.single()) else { return };
+    // (#146: the 3D camera's projection is no longer read here: the translated view maps the objects)
+    let (Ok(window), Ok(_)) = (windows.single(), cams.single()) else { return };
     let g = &mut *game;
     // (~~Escape cancels here~~ **Corrected 2026-11-10 (#87):** in `keyboard_ui`, which also opens the quit menu)
     // (#124: a phone has no hover; a finger's place stands for the pointer's while it touches, so its hints, the
@@ -1563,9 +1605,13 @@ fn pointer_input(
         g.controls.radar.local_pixel_to_world(&mut g.controls.client.world, &ICoord2D { x: local.x as i32, y: local.y as i32 })
     });
     g.controls.ui.set_mouse_terrain(ground);
-    let screen = on_screen(g, camera, cam);
+    let view = &rig.cam.view;
+    let screen = on_screen(g, view);
     let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
-    g.controls.client.view.on_screen = screen.iter().map(|(id, _)| *id).collect();
+    // (#146) the objects on the screen, as `selectAllUnitsByTypeAcrossScreen` asks for them: the view's region
+    // (`buildRegion(&origin, &size)`, upstream's: the size given as the far corner) through `iterateDrawablesInRegion`
+    let whole = rts_lockstep_engine::common::message_stream::build_region(view.origin, ICoord2D { x: view.width, y: view.height });
+    g.controls.client.view.on_screen = drawables_in_region(g, view, Some(&whole), None);
     // (#122) what is under the pointer for the hints: the radar (`LeftHUDInput`'s window) or an opaque window of the
     // application's; the objects under its windows and the hidden ones, for `CanSelectDrawable`
     {
@@ -1626,13 +1672,20 @@ fn pointer_input(
     }
     if buttons.just_released(MouseButton::Left) {
         if let Some(press) = pointer.press.take() {
-            let (lo, hi) = (press.min(cursor), press.max(cursor));
-            let in_box: Vec<ObjectId> = if press.distance(cursor) as i32 <= crate::input::CLICK_TOLERANCE {
-                picked.into_iter().collect()
-            } else {
-                screen.iter().filter(|(_, p)| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y).map(|(id, _)| *id).collect()
+            // ~~the box's objects by their Bevy-projected points; a click's, the picked one~~ **Corrected 2026-11-12,
+            // #146:** `SelectionTranslator`'s `iterateDrawablesInRegion(&selectionRegion, ...)` on the click's region
+            // (`MetaEventTranslator`'s, a point within the drag tolerance), translated: the projected objects in the box,
+            // or a point's picked one
+            let snapshot = &g.cur;
+            let in_region = |r: &IRegion2D| {
+                let mut found = Vec::new();
+                view.iterate_drawables_in_region(Some(r), snapshot.objects.iter().map(|o| (o.id, object_position(o))), |_| picked, |d| {
+                    found.push(d);
+                    true
+                });
+                found
             };
-            g.controls.left_release(pixel(press), pixel(cursor), &in_box, picked, ground);
+            g.controls.left_release(pixel(press), pixel(cursor), in_region, picked, ground);
         }
     } else {
         // (#122: over the application's windows too: the hints then show the arrow, or over the radar its cursor)
@@ -1822,8 +1875,9 @@ struct LetterBoxBar;
 /// (`m_width`, `m_height` in logical pixels): each `drawFillRect` a black node with the fade as alpha. Upstream draws it
 /// after the views, the in-game UI's windows and the mouse, so it is over all of them here too (`GlobalZIndex(21)`, over
 /// the world tooltip's 20 and the shell's 10); it takes no input, as a draw does not. New: the client's own buttons
-/// (the zoom column, which a phone needs) stay over it while it is drawn (`GlobalZIndex(22)`), so a cinematic does not
-/// hide them; upstream has no such buttons.
+/// (the zoom column, which a phone needs) stay over it while it is drawn (~~`GlobalZIndex(22)`~~ **corrected 2026-11-12,
+/// #146:** `GlobalZIndex(23)`, over the cinematic text's 22), so a cinematic does not hide them; upstream has no such
+/// buttons.
 fn letterbox_bars(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, bars: Query<Entity, With<LetterBoxBar>>, cols: Query<Entity, With<ZoomColumn>>) {
     let Ok(win) = windows.single() else { return };
     let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
@@ -1849,11 +1903,64 @@ fn letterbox_bars(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<
     }
     for e in &cols {
         if drawn {
-            commands.entity(e).insert(GlobalZIndex(22));
+            commands.entity(e).insert(GlobalZIndex(23));
         } else {
             commands.entity(e).remove::<GlobalZIndex>();
         }
     }
+}
+
+/// (#146) The cinematic text on screen.
+#[derive(Component)]
+struct CinematicTextNode;
+
+/// (#146) GUI glue (needs a window; the text, its place and its count are `rts_lockstep_engine::client::cinematic_text`,
+/// tested there and against the C++): `W3DDisplay::draw`'s cinematic text, right after the letterbox and so over it
+/// (`GlobalZIndex(22)`, over the bars' 21). Upstream draws it once a drawn frame, 30 a second; here once a client frame
+/// (30 a second, counted on this system's clock), each taking a frame from the count; between two client frames the
+/// last draw stays. White, at `y`, in the font's point size (12, Times New Roman's default size, with none), wrapped at
+/// the display's width less 20 and centred line by line: Bevy centres the text in the display's width, which is
+/// upstream's `x` for a string narrower than the display (the string's width, which upstream's font measures, is not
+/// known before Bevy lays the text out: the draw is asked with 0). A unit above 0xFF (a byte from 0x80 up, which
+/// `translate` sign-extends) is shown as its byte's Latin-1 character; upstream's font is asked for the sign-extended
+/// unit.
+fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<CinematicTextNode>>) {
+    let Ok(win) = windows.single() else { return };
+    let g = &mut *game;
+    g.cinematic_clock += time.delta_secs();
+    let ticks = (g.cinematic_clock * 30.0) as u32;
+    if ticks == 0 {
+        return;
+    }
+    g.cinematic_clock -= ticks as f32 / 30.0;
+    let mut drawn = None;
+    for _ in 0..ticks.min(4) {
+        drawn = g.cinematic.draw(win.width() as u32, win.height() as u32, |_| 0);
+    }
+    for e in &nodes {
+        commands.entity(e).despawn();
+    }
+    let Some(d) = drawn else { return };
+    let text = String::from_utf16_lossy(&d.text.iter().map(|&u| if u > 0xFF { u & 0xFF } else { u }).collect::<Vec<_>>());
+    let size = d.font.as_ref().map_or(12.0, |f| f.point_size.max(1) as f32);
+    let color = Color::srgba_u8((d.color >> 16) as u8, (d.color >> 8) as u8, d.color as u8, (d.color >> 24) as u8);
+    commands
+        .spawn((
+            CinematicTextNode,
+            Node { position_type: PositionType::Absolute, left: px(0.0), top: px(d.y as f32), width: px(win.width()), justify_content: JustifyContent::Center, ..default() },
+            Pickable::IGNORE,
+            GlobalZIndex(22),
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Text::new(text),
+                TextFont { font_size: bevy::text::FontSize::Px(size), ..default() },
+                TextColor(color),
+                TextLayout { justify: Justify::Center, ..default() },
+                Node { max_width: px(d.word_wrap.max(1) as f32), ..default() },
+                Pickable::IGNORE,
+            ));
+        });
 }
 
 /// GUI glue (needs a window): the zoom column stays above the game's control bar (#12).
@@ -2075,10 +2182,13 @@ fn load_game_ui(mut game: NonSendMut<Game>, shell: NonSend<ShellState>) {
         crate::ui::UiBuild::Ready(mut ui) => {
             // (#144) `ControlBar::init`'s `findCommandButton("NonCommand_...")`: the World's buttons
             let client = &g.controls.client;
-            ui.init_tooltips(|name| {
+            let find = |name: &[u8]| {
                 let i = client.world.cuts.command_buttons.iter().position(|b| b.name == name)?;
                 rts_lockstep_engine::client::control_bar_command::ControlBarStateHost::button(client, i).map(|b| (i, b))
-            });
+            };
+            ui.init_tooltips(find);
+            // (#146) the game's start: `setControlBarSchemeByPlayer`'s communicator switch (`TheRecorder->isMultiplayer()`)
+            ui.set_communicator(client.world.recorder_is_multiplayer().unwrap_or(false), find);
             info!("control bar: {} windows, {} images", ui.wm.tree.windows.len(), ui.images.len());
             g.ui_status = format!("control bar: {} windows", ui.wm.tree.windows.len());
             g.ui = Some(ui);

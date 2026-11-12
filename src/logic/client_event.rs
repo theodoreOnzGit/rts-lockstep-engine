@@ -116,6 +116,26 @@ pub enum ClientEvent {
     /// ~~Until #116 they went only to the cut log, so a script's `DISABLE_INPUT` never reached the client.~~ Not
     /// simulation state: the client's InGameUI, mouse, control bar and look-at translator are not in the logic's CRC.
     ScriptInput(ScriptInputCall),
+    /// GitHub #146: the script action `DISPLAY_CINEMATIC_TEXT`'s calls on `TheDisplay` (`ScriptActions::doDisplayCinematicText`,
+    /// ScriptActions.cpp:2563), in its order ([`CinematicTextCall`]). ~~Until #146 they went only to the cut log.~~ Not
+    /// simulation state: the display's cinematic text is the client's and nothing in the logic reads it back.
+    CinematicText(CinematicTextCall),
+}
+
+/// GitHub #146: one of `doDisplayCinematicText`'s calls on `TheDisplay`, as the client's display makes it
+/// (`client::cinematic_text`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CinematicTextCall {
+    /// `TheDisplay->setCinematicText(aStr)`: the label's text fetched from `TheGameText` and translated to ASCII (each
+    /// unit's low byte).
+    Text(Vec<u8>),
+    /// `TheDisplay->setCinematicFont(TheFontLibrary->getFont(name, TheGlobalLanguageData->adjustFontSize(size), bold))`:
+    /// the font's name as the action parsed it (upstream's parse, kept), its size **before** `adjustFontSize` (the
+    /// World does not model `TheGlobalLanguageData` or the display's resolution, which `adjustFontSize` reads: the
+    /// client's display applies it, `client::cinematic_text::adjust_font_size`), and bold.
+    Font { name: Vec<u8>, size: i32, bold: bool },
+    /// `TheDisplay->setCinematicTextFrames(LOGICFRAMES_PER_SECOND * timeInSeconds)`.
+    Frames(i32),
 }
 
 /// GitHub #116: one of the script actions' calls on the client's input (ScriptActions.cpp), in the order the action makes
@@ -145,8 +165,8 @@ pub enum ScriptInputCall {
     HideControlBar(bool),
     /// GitHub #138: `ShowControlBar(immediate)` (`doLetterBoxMode`'s end, `CAMERA_LETTERBOX_END`).
     ShowControlBar(bool),
-    /// GitHub #138: `TheDisplay->enableLetterBox(enable)` (`doLetterBoxMode`). The client draws no letterbox yet (#138's
-    /// gaps).
+    /// GitHub #138: `TheDisplay->enableLetterBox(enable)` (`doLetterBoxMode`). ~~The client draws no letterbox yet (#138's
+    /// gaps).~~ **Corrected 2026-11-12, #146:** the client draws it since #144 (`client::letterbox`).
     EnableLetterBox(bool),
 }
 

@@ -20,10 +20,17 @@
 //! `#else` branches (`mul`, `mulVector3`, ...) are the ones translated.
 //!
 //! **Not translated in this batch** (each needs code that is not here yet):
-//! - `Get_Inverse`: calls `D3DXMatrixInverse` from the DirectX SDK, which is
+//! - ~~`Get_Inverse`: calls `D3DXMatrixInverse` from the DirectX SDK, which is
 //!   not in the upstream release, so it has no compilable reference. Use
 //!   [`Matrix3D::get_orthogonal_inverse`] (which is what upstream's own TODO
-//!   says most callers want).
+//!   says most callers want).~~ **Corrected 2026-11-12, #146:** `Get_Inverse`
+//!   is translated ([`Matrix3D::get_inverse`]: the matrix widened to 4x4, then
+//!   inverted, its first three rows kept), because `CameraClass::Update_Frustum`
+//!   calls it for `Project`. `D3DXMatrixInverse` itself is the DirectX SDK's
+//!   and not in the release: [`d3dx_matrix_inverse_stand_in`] stands in for it
+//!   (new code, a cofactor inverse), and the differential build's
+//!   `D3DXMatrixInverse` (`differential/wrap_wwmath.cpp`) is the same
+//!   algorithm, so a differential test checks everything but the SDK routine.
 //! - `Set(Matrix3x3, pos)`, `Set(Quaternion, pos)`, `Set_Rotation(...)`, the
 //!   matching constructors, and `Lerp` (needs `Quaternion`/`Slerp`).
 //!
@@ -600,6 +607,16 @@ impl Matrix3D {
         inv
     }
 
+    /// GitHub #146: `Get_Inverse(inv)` (matrix3d.cpp:514): `Matrix4x4 mat4(*this)` (the fourth row `0 0 0 1`),
+    /// `D3DXMatrixInverse(&mat4Inv, &det, &mat4)`, then `mat4Inv`'s first three rows. The SDK routine is
+    /// [`d3dx_matrix_inverse_stand_in`] (not upstream's code: see the module docs).
+    pub fn get_inverse(&self) -> Matrix3D {
+        let r = &self.row;
+        let mat4 = [[r[0].x, r[0].y, r[0].z, r[0].w], [r[1].x, r[1].y, r[1].z, r[1].w], [r[2].x, r[2].y, r[2].z, r[2].w], [0.0, 0.0, 0.0, 1.0]];
+        let (inv, _) = d3dx_matrix_inverse_stand_in(&mat4);
+        Matrix3D::new(inv[0][0], inv[0][1], inv[0][2], inv[0][3], inv[1][0], inv[1][1], inv[1][2], inv[1][3], inv[2][0], inv[2][1], inv[2][2], inv[2][3])
+    }
+
     /// `Copy_3x3_Matrix(float matrix[3][3])`: sets the rotation, zeroes the
     /// translation.
     pub fn copy_3x3_matrix(&mut self, matrix: &[[f32; 3]; 3]) {
@@ -920,9 +937,69 @@ impl IndexMut<usize> for Matrix3D {
     }
 }
 
+/// **New, not upstream (GitHub #146):** what stands in for the DirectX SDK's `D3DXMatrixInverse(out, &det, in)`,
+/// which `Get_Inverse` calls and the release does not contain. A 4x4 cofactor inverse in `float`: the six 2x2
+/// determinants of the top two rows (`s0`..`s5`) and of the bottom two (`c0`..`c5`), the determinant from them, and each
+/// cofactor times `1 / det`, in the order written below; `differential/wrap_wwmath.cpp`'s `D3DXMatrixInverse` is the
+/// same expressions in the same order. A determinant of 0 is the SDK's failure (`NULL`), after which `Get_Inverse`
+/// copies an uninitialised `mat4Inv`: the stand-in gives the identity and `false` there, on both sides. The SDK's own
+/// rounding is unknown; on the camera's transforms (a rotation and a translation) any exact inverse agrees with
+/// `get_orthogonal_inverse` to within a few ULPs.
+pub fn d3dx_matrix_inverse_stand_in(m: &[[f32; 4]; 4]) -> ([[f32; 4]; 4], bool) {
+    let s0 = m[0][0] * m[1][1] - m[1][0] * m[0][1];
+    let s1 = m[0][0] * m[1][2] - m[1][0] * m[0][2];
+    let s2 = m[0][0] * m[1][3] - m[1][0] * m[0][3];
+    let s3 = m[0][1] * m[1][2] - m[1][1] * m[0][2];
+    let s4 = m[0][1] * m[1][3] - m[1][1] * m[0][3];
+    let s5 = m[0][2] * m[1][3] - m[1][2] * m[0][3];
+    let c5 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
+    let c4 = m[2][1] * m[3][3] - m[3][1] * m[2][3];
+    let c3 = m[2][1] * m[3][2] - m[3][1] * m[2][2];
+    let c2 = m[2][0] * m[3][3] - m[3][0] * m[2][3];
+    let c1 = m[2][0] * m[3][2] - m[3][0] * m[2][2];
+    let c0 = m[2][0] * m[3][1] - m[3][0] * m[2][1];
+    let det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+    if det == 0.0 {
+        return ([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]], false);
+    }
+    let i = 1.0f32 / det;
+    let inv = [
+        [(m[1][1] * c5 - m[1][2] * c4 + m[1][3] * c3) * i, (-m[0][1] * c5 + m[0][2] * c4 - m[0][3] * c3) * i, (m[3][1] * s5 - m[3][2] * s4 + m[3][3] * s3) * i, (-m[2][1] * s5 + m[2][2] * s4 - m[2][3] * s3) * i],
+        [(-m[1][0] * c5 + m[1][2] * c2 - m[1][3] * c1) * i, (m[0][0] * c5 - m[0][2] * c2 + m[0][3] * c1) * i, (-m[3][0] * s5 + m[3][2] * s2 - m[3][3] * s1) * i, (m[2][0] * s5 - m[2][2] * s2 + m[2][3] * s1) * i],
+        [(m[1][0] * c4 - m[1][1] * c2 + m[1][3] * c0) * i, (-m[0][0] * c4 + m[0][1] * c2 - m[0][3] * c0) * i, (m[3][0] * s4 - m[3][1] * s2 + m[3][3] * s0) * i, (-m[2][0] * s4 + m[2][1] * s2 - m[2][3] * s0) * i],
+        [(-m[1][0] * c3 + m[1][1] * c1 - m[1][2] * c0) * i, (m[0][0] * c3 - m[0][1] * c1 + m[0][2] * c0) * i, (-m[3][0] * s3 + m[3][1] * s1 - m[3][2] * s0) * i, (m[2][0] * s3 - m[2][1] * s1 + m[2][2] * s0) * i],
+    ];
+    (inv, true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GitHub #146: `Get_Inverse` (through the SDK stand-in) of a rotation and translation is its inverse: the product
+    /// is the identity to within rounding, and the orthogonal inverse agrees to a few ULPs.
+    #[test]
+    fn get_inverse_inverts() {
+        let mut m = Matrix3D::identity();
+        m.look_at(&Vector3::new(100.0, -50.0, 300.0), &Vector3::new(120.0, 80.0, 10.0), 0.0);
+        let inv = m.get_inverse();
+        let p = Matrix3D::multiply(&m, &inv);
+        for (r, row) in p.row.iter().enumerate() {
+            for c in 0..4 {
+                let want = if r == c { 1.0 } else { 0.0 };
+                assert!(wwmath::fabs(row[c] - want) < 1e-4, "{r} {c}: {}", row[c]);
+            }
+        }
+        let o = m.get_orthogonal_inverse();
+        for r in 0..3 {
+            for c in 0..4 {
+                assert!(wwmath::fabs(inv.row[r][c] - o.row[r][c]) < 1e-3);
+            }
+        }
+        // a singular matrix: the identity (the stand-in's choice for the SDK's failure)
+        let z = Matrix3D::new(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0);
+        assert_eq!(z.get_inverse(), Matrix3D::IDENTITY);
+    }
 
     #[test]
     fn identity_and_inverse() {
