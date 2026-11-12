@@ -33,6 +33,7 @@ pub mod boxrobj;
 pub mod collect;
 pub mod distlod;
 pub mod hanim;
+pub mod hanim_combo;
 pub mod hlod;
 pub mod hmdldef;
 pub mod hmorphanim;

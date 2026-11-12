@@ -12,6 +12,9 @@
 **                         Simple_Evaluate_Pivot, Capture_Bone, Release_Bone,
 **                         Control_Bone; pivot.cpp Capture_Update
 **   WWMath/quat.cpp       Fast_Slerp
+**   WW3D2/hanim.cpp       (#162) HAnimComboClass, HAnimComboDataClass,
+**                         PivotMapClass, NamedPivotMapClass; htree.cpp's
+**                         Combo_Update over them
 ** all COMPILED from upstream's files: motchan.cpp, htree.cpp, hrawanim.cpp,
 ** hcanim.cpp, pivot.cpp and quat.cpp in the upstream_w3d library
 ** (wrap_w3d.cpp, with its MSVC-scope edits, see build.rs; htree.cpp's and
@@ -164,8 +167,76 @@ void log_tree(HTreeClass *t)
 	}
 }
 
+/* (#162) the combos, the pivot maps (one reference each) and the entries
+** made by op 25 (always shared, so no combo deletes them) */
+std::vector<HAnimComboClass *> g_combos;
+std::vector<PivotMapClass *> g_maps;
+std::vector<HAnimComboDataClass *> g_datas;
+
+/* the names op 20 adds to a named pivot map */
+const char *const COMBO_NAMES[10] = { "B0", "B1", "b2", "B3", "B4", "B5", "RootTransform", "NOPE", "rOOTtRANSFORM", "" };
+
+uint32_t anim_index(HAnimClass *a)
+{
+	if (a == NULL) return 0xFFFFFFFFu;
+	for (size_t i = 0; i < g_anims.size(); ++i)
+		if (g_anims[i].first == a) return (uint32_t)i;
+	abort();
+}
+
+void put_map(PivotMapClass *m)
+{
+	if (m == NULL) { put32(0xFFFFFFFFu); return; }
+	put32((uint32_t)m->Count());
+	for (int i = 0; i < m->Count(); ++i) putF((*m)[i]);
+}
+
+/* every entry: frame, previous frame, weight, the animation's index, its map */
+void put_combo(HAnimComboClass *c)
+{
+	put32((uint32_t)c->Get_Num_Anims());
+	for (int i = 0; i < c->Get_Num_Anims(); ++i) {
+		putF(c->Get_Frame(i));
+		putF(c->Get_Prev_Frame(i));
+		putF(c->Get_Weight(i));
+		put32(anim_index(c->Peek_Motion(i)));
+		put_map(c->Peek_Pivot_Weight_Map(i));
+	}
+}
+
+/* (#162) HAnimComboDataClass's pool (WWLib/mempool.h, ObjectPoolClass) links its blocks through the first
+** sizeof(uint32 *) bytes of each block and puts the first object at `BlockListHead + 1`, sizeof(uint32) bytes in: on
+** Win32 the two sizes agree; on x86-64 the link is 8 bytes and the first object overwrites its upper half, so the pool's
+** destructor at process exit follows a broken pointer (a SIGSEGV after the tests pass, measured). Not upstream's
+** behaviour, a 64-bit artefact of compiling it here: after each run the pool forgets its block list (the blocks stay
+** in use through its free list, and are never freed), which only the destructor reads. The pool is AutoPoolClass's
+** private static: reached through an explicit instantiation (which access checking does not apply to); its block list
+** is protected: reached through a pointer to the member taken in a class derived from the pool. */
+typedef ObjectPoolClass<HAnimComboDataClass, 256> ComboPool;
+struct ComboPoolTag {
+	typedef ComboPool *type;
+	friend type combo_pool(ComboPoolTag);
+};
+template <typename Tag, typename Tag::type P> struct ComboPoolRob {
+	friend typename Tag::type combo_pool(Tag) { return P; }
+};
+template struct ComboPoolRob<ComboPoolTag, &AutoPoolClass<HAnimComboDataClass, 256>::Allocator>;
+struct PoolPeek : public ComboPool {
+	static uint32 *ComboPool::*blocks() { return &PoolPeek::BlockListHead; }
+};
+void forget_pool_blocks()
+{
+	combo_pool(ComboPoolTag())->*PoolPeek::blocks() = NULL;
+}
+
 void free_all()
 {
+	for (size_t i = 0; i < g_combos.size(); ++i) delete g_combos[i];
+	g_combos.clear();
+	for (size_t i = 0; i < g_datas.size(); ++i) delete g_datas[i];
+	g_datas.clear();
+	for (size_t i = 0; i < g_maps.size(); ++i) g_maps[i]->Release_Ref();
+	g_maps.clear();
 	for (size_t i = g_anims.size(); i-- > 0;) g_anims[i].first->Release_Ref();
 	g_anims.clear();
 	for (size_t i = 0; i < g_trees.size(); ++i) delete g_trees[i];
@@ -195,7 +266,27 @@ extern "C" {
 **                              -> 1 byte, 12 floats
 **  11 C tree bone capture wst matrix  Capture_Bone + Control_Bone, or
 **                              Release_Bone when capture is 0 -> nothing
-** "The tree" is every pivot's Get_Transform (12 floats) and Get_Visibility
+**  (#162) the combos (HAnimComboClass), indices into the ops' own lists:
+**  12 combo n                 new HAnimComboClass(n), or () for n = -1
+**  13 combo i anim            Set_Motion (anim -1: NULL)
+**  14 / 15 / 16 combo i f     Set_Frame / Set_Prev_Frame / Set_Weight
+**  17 combo i map             Set_Pivot_Weight_Map (map -1: NULL)
+**  18 named                   new PivotMapClass, or NamedPivotMapClass
+**  19 map w                   Add(w)
+**  20 map name w              NamedPivotMapClass::Add(COMBO_NAMES[name], w)
+**                             (nothing on a plain map)
+**  21 map tree                Update_Pivot_Map(tree) (nothing on a plain map)
+**  22 combo i                 Peek_Anim_Combo_Data(i)->Build_Active_Pivot_Map
+**  23 combo                   Normalize_Weights -> 1 byte, the combo
+**  24 tree combo root         Combo_Update            -> the tree
+**  25                         new HAnimComboDataClass(true)
+**  26 / 27 combo data         Append_ / Remove_Anim_Combo_Data
+**  28 / 29 combo              Clear / Reset
+**  30 combo                   -> the combo
+**  31 map                     -> the map
+** "The combo" is Get_Num_Anims, then per entry its frame, previous frame and
+** weight, its animation's index (0xFFFFFFFF: none) and its map's Count() and
+** elements (0xFFFFFFFF: none). "The tree" is every pivot's Get_Transform (12 floats) and Get_Visibility
 ** (1 byte). Orientation and transform outputs start as a NaN sentinel
 ** (0x7FC0DEAD), which shows when the function leaves them alone. The Rust
 ** test only sends ops that are defined upstream. */
@@ -344,11 +435,91 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 			}
 			break;
 		}
+		case 12: {
+			int n = (int)rd.u();
+			g_combos.push_back(n < 0 ? new HAnimComboClass() : new HAnimComboClass(n));
+			break;
+		}
+		case 13: case 14: case 15: case 16: case 17: {
+			HAnimComboClass *c = g_combos[rd.u()];
+			int i = (int)rd.u();
+			uint32_t v = rd.u();
+			float f;
+			memcpy(&f, &v, 4);
+			if (op == 13) c->Set_Motion(i, (int)v < 0 ? NULL : g_anims[v].first);
+			else if (op == 14) c->Set_Frame(i, f);
+			else if (op == 15) c->Set_Prev_Frame(i, f);
+			else if (op == 16) c->Set_Weight(i, f);
+			else c->Set_Pivot_Weight_Map(i, (int)v < 0 ? NULL : g_maps[v]);
+			break;
+		}
+		case 18: {
+			uint32_t named = rd.u();
+			g_maps.push_back(named ? (PivotMapClass *)new NamedPivotMapClass : new PivotMapClass);
+			break;
+		}
+		case 19: {
+			PivotMapClass *m = g_maps[rd.u()];
+			float w = rd.f();
+			m->Add(w);
+			break;
+		}
+		case 20: {
+			PivotMapClass *m = g_maps[rd.u()];
+			uint32_t name = rd.u();
+			float w = rd.f();
+			if (NamedPivotMapClass *n = m->As_Named_Pivot_Map()) n->Add(COMBO_NAMES[name], w);
+			break;
+		}
+		case 21: {
+			PivotMapClass *m = g_maps[rd.u()];
+			HTreeClass *t = g_trees[rd.u()];
+			if (NamedPivotMapClass *n = m->As_Named_Pivot_Map()) n->Update_Pivot_Map(t);
+			break;
+		}
+		case 22: {
+			HAnimComboClass *c = g_combos[rd.u()];
+			int i = (int)rd.u();
+			c->Peek_Anim_Combo_Data(i)->Build_Active_Pivot_Map();
+			break;
+		}
+		case 23: {
+			HAnimComboClass *c = g_combos[rd.u()];
+			put8(c->Normalize_Weights() ? 1 : 0);
+			put_combo(c);
+			break;
+		}
+		case 24: {
+			HTreeClass *t = g_trees[rd.u()];
+			HAnimComboClass *c = g_combos[rd.u()];
+			Matrix3D root = rd.m();
+			t->Combo_Update(root, c);
+			log_tree(t);
+			break;
+		}
+		case 25:
+			g_datas.push_back(new HAnimComboDataClass(true));
+			break;
+		case 26: case 27: {
+			HAnimComboClass *c = g_combos[rd.u()];
+			HAnimComboDataClass *d = g_datas[rd.u()];
+			if (op == 26) c->Append_Anim_Combo_Data(d); else c->Remove_Anim_Combo_Data(d);
+			break;
+		}
+		case 28: case 29: case 30: {
+			HAnimComboClass *c = g_combos[rd.u()];
+			if (op == 28) c->Clear(); else if (op == 29) c->Reset(); else put_combo(c);
+			break;
+		}
+		case 31:
+			put_map(g_maps[rd.u()]);
+			break;
 		default:
 			abort();
 		}
 	}
 	free_all();
+	forget_pool_blocks();
 	int n = (int)g_log.size();
 	*log_len = n;
 	if (n > cap) n = cap;

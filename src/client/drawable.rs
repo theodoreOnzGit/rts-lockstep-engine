@@ -92,7 +92,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::beacon_client_update::{BeaconClientUpdate, BeaconClientUpdateModuleData, BeaconHost, ClientUpdateModule, BEACON_CLIENT_UPDATE};
 use super::client_fx::{ClientFx, WeaponFireFx, WorldFxHost};
+use super::particle_sys::{ParticleSystemId, ParticleSystemManager};
+use super::radar::RadarEventType;
+use crate::common::base_type::Coord3D;
 use super::drawable_loco::physics_xform_facts;
 use super::drawable_save::DrawableSaveFields;
 use super::w3d_model_draw::{DrawEnv, DrawFacts, MotionFacts, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource, WeaponFireFxAt, MAX_TURRETS, STATIC_GAME_LOD_HIGH};
@@ -146,6 +150,9 @@ pub struct Drawable {
     /// The members upstream's drawable saves that the port's does not use, and the ambient sound's saved part (GitHub
     /// #59, [`super::drawable_save`]).
     pub saved: DrawableSaveFields,
+    /// (#162) Its client update modules (`MODULETYPE_CLIENT_UPDATE`) that the client makes: the `BeaconClientUpdate`s
+    /// ([`ClientUpdateModule`]), in the template's order. The others (`SwayClientUpdate`, ...) are not made yet.
+    pub client_update_modules: Vec<ClientUpdateModule>,
 }
 
 impl Drawable {
@@ -166,6 +173,7 @@ impl Drawable {
             loco_info: None,
             physics_xform: None,
             saved: DrawableSaveFields::new(1, 1.0),
+            client_update_modules: Vec::new(),
         }
     }
 
@@ -349,6 +357,9 @@ pub struct ClientDrawables {
     /// GitHub #59: the drawables a save held with no object (upstream's `newDrawable` without an object: debris and the
     /// like), in the save's order. Kept but not drawn (the port's drawables are its objects'), and written back by a save.
     pub object_less: Vec<Drawable>,
+    /// (#162) The radar events the client update modules asked for (`TheRadar->createEvent(pos, type, seconds)`), for
+    /// the owner of the radar to make ([`ClientDrawables::take_radar_requests`]).
+    pub radar_requests: Vec<(Coord3D, RadarEventType, f32)>,
 }
 
 impl Default for ClientDrawables {
@@ -362,6 +373,7 @@ impl Default for ClientDrawables {
             local_player_index: None,
             fx: ClientFx::new(),
             object_less: Vec::new(),
+            radar_requests: Vec::new(),
         }
     }
 }
@@ -433,6 +445,17 @@ impl ClientDrawables {
                 Err(e) => self.errors.push((t.get_name().to_vec(), d.module_name.clone(), format!("{e:?}"))),
             }
         }
+        // (#162) the client update modules the client makes, each made as its constructor does
+        let mut client_update_modules = Vec::new();
+        for n in t.get_client_update_module_info().nuggets() {
+            let ModuleInfoData::Client(block) = &n.second else { continue };
+            if n.first.as_slice() == BEACON_CLIENT_UPDATE {
+                match BeaconClientUpdateModuleData::parse(block) {
+                    Ok(d) => client_update_modules.push(ClientUpdateModule::Beacon(BeaconClientUpdate::new(d, w.frame()))),
+                    Err(e) => self.errors.push((t.get_name().to_vec(), n.first.clone(), format!("{e:?}"))),
+                }
+            }
+        }
         Drawable {
             object_id: id,
             template: t.get_name().to_vec(),
@@ -447,6 +470,7 @@ impl ClientDrawables {
             loco_info: None,
             physics_xform: None,
             saved: DrawableSaveFields::new(id, scale),
+            client_update_modules,
         }
     }
 
@@ -534,6 +558,12 @@ impl ClientDrawables {
                         self.fx.weapon_fire_fx(&host, &mut self.random, &f);
                     }
                 }
+                // (#162) `BeaconClientUpdate::hideBeacon()` on each of the beacon's drawable's beacon modules
+                ClientEvent::Dispatch(crate::logic::world::game_logic_dispatch::ClientCall::HideBeacon { obj }) => {
+                    let id = *obj as ObjectId;
+                    self.drawable(w, id, assets, sync_time);
+                    self.beacon_modules(w, id, false);
+                }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetAnimationLoopDuration { object_id, frames }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
@@ -547,6 +577,28 @@ impl ClientDrawables {
             let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index: self.local_player_index.or(w.players.local_index()) };
             self.fx.apply_event(&host, &mut self.random, e);
         }
+    }
+
+    /// (#162) The drawable's beacon modules: `clientUpdate()` (`update`) or `hideBeacon()` each, through a
+    /// [`DrawableBeaconHost`].
+    fn beacon_modules(&mut self, w: &World, id: ObjectId, update: bool) {
+        let Some(d) = self.drawables.get_mut(&id) else { return };
+        let mut modules = std::mem::take(&mut d.client_update_modules);
+        let mut host = DrawableBeaconHost { world: w, drawable: d, particles: &mut self.fx.particles, random: &mut self.random, requests: &mut self.radar_requests };
+        for m in &mut modules {
+            let ClientUpdateModule::Beacon(b) = m;
+            if update {
+                b.client_update(&mut host);
+            } else {
+                b.hide_beacon(&mut host);
+            }
+        }
+        d.client_update_modules = modules;
+    }
+
+    /// (#162) The radar events the client update modules asked for since the last call.
+    pub fn take_radar_requests(&mut self) -> Vec<(Coord3D, RadarEventType, f32)> {
+        std::mem::take(&mut self.radar_requests)
     }
 
     /// `getShouldAnimate(considerPower)` of the object's drawable.
@@ -682,6 +734,8 @@ impl ClientDrawables {
         let show_client_physics = w.statics.global_data.the_global_data().is_none_or(|g| g.show_client_physics);
         let local_player_index = self.local_player_index.or(w.players.local_index());
         for id in ids {
+            // (#162) `draw->updateDrawable()` (GameClient::update, after the shroud): the client update modules first
+            self.beacon_modules(w, id, true);
             let d = self.drawables.get_mut(&id).expect("listed");
             Self::update_shroud(d, w, local_player_index);
             // `if (m_hidden || m_hiddenByStealth || getFullyObscuredByShroud()) return;`
@@ -715,6 +769,63 @@ impl ClientDrawables {
         // `W3DDisplay::draw`'s `TheParticleSystemManager->update()`, once per logic frame (GitHub #43, #44)
         let host = WorldFxHost { world: w, drawables: &self.drawables, local_player_index };
         self.fx.update(&host, &mut self.random);
+    }
+}
+
+/// (#162) [`BeaconHost`] on a drawable of the client's, its object in the World, the client's particle systems and the
+/// radar's requests.
+pub struct DrawableBeaconHost<'a> {
+    pub world: &'a World,
+    pub drawable: &'a mut Drawable,
+    pub particles: &'a mut ParticleSystemManager,
+    pub random: &'a mut RandomValues,
+    pub requests: &'a mut Vec<(Coord3D, RadarEventType, f32)>,
+}
+
+impl BeaconHost for DrawableBeaconHost<'_> {
+    fn has_drawable(&self) -> bool {
+        true
+    }
+    fn object_indicator_color(&self) -> Option<i32> {
+        let id = self.drawable.object_id;
+        self.world.find_object(id).map(|_| self.world.get_indicator_color(id))
+    }
+    fn find_template(&self, name: &[u8]) -> bool {
+        self.particles.find_template(name).is_some()
+    }
+    fn create_attached_particle_system(&mut self, name: &[u8]) -> Option<ParticleSystemId> {
+        // `createParticleSystem(template)` (slaves made, the default) at the logic's frame, then `attachToDrawable(draw)`
+        let id = self.particles.create_particle_system(name, true, self.random, self.world.frame())?;
+        if let Some(s) = self.particles.find_particle_system_mut(id) {
+            s.attach_to_drawable(self.drawable.object_id);
+        }
+        Some(id)
+    }
+    fn tint_all_colors(&mut self, id: ParticleSystemId, color: i32) {
+        if let Some(s) = self.particles.find_particle_system_mut(id) {
+            s.info.tint_all_colors(color);
+        }
+    }
+    fn stop_particle_system(&mut self, id: ParticleSystemId) {
+        if let Some(s) = self.particles.find_particle_system_mut(id) {
+            s.stop();
+        }
+    }
+    fn hide_drawable(&mut self) {
+        // `setDrawableHidden(true)`; `setShadowsEnabled(false)` has nothing to turn off (no shadows are drawn yet)
+        self.drawable.set_drawable_hidden(true);
+    }
+    fn is_drawable_effectively_hidden(&self) -> bool {
+        self.drawable.is_drawable_effectively_hidden()
+    }
+    fn drawable_position(&self) -> Coord3D {
+        self.world.find_object(self.drawable.object_id).map_or_else(Coord3D::default, |o| o.get_position())
+    }
+    fn logic_frame(&self) -> u32 {
+        self.world.frame()
+    }
+    fn radar_create_event(&mut self, pos: &Coord3D, event_type: RadarEventType, seconds_to_live: f32) {
+        self.requests.push((*pos, event_type, seconds_to_live));
     }
 }
 

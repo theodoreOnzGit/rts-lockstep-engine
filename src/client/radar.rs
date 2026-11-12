@@ -57,7 +57,8 @@
 //!   `ControlBar.wnd:LeftHUD` in `newMap`.
 //! - **What `tryUnderAttackEvent` and `tryInfiltrationEvent` do besides the event** (`TheControlBar->triggerRadarAttackGlow`,
 //!   `TheInGameUI->message`, `TheAudio->addAudioEvent`, `TheEva->setShouldPlay`) is returned as [`RadarFeedback`] for the
-//!   control bar, the UI messages, the audio and EVA to carry out.
+//!   control bar, the UI messages, the audio and EVA to carry out. (#162: the control bar's glow,
+//!   [`crate::client::control_bar_glow`], is triggered from it by the client's bar, `client/src/ui.rs`.)
 //! - **`newMap`'s terrain read** asks the host (`isUnderwater`), which reads the logic's terrain without counting.
 //!
 //! # Upstream quirks that are kept

@@ -3635,6 +3635,12 @@ extern "C" {
     // MSG_META_TOGGLE_CONTROL_BAR case, verbatim.
     pub fn ref_control_bar_stage_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #162: the radar's drawing items of #57 (differential/wrap_radar_draw.cpp, which documents the words):
+    // W3DRadar::drawHeroIcon's rectangle, ControlBar's radar attack glow, BeaconClientUpdate, verbatim.
+    pub fn ref_radar_hero_icon(f: *const f32, i: *const c_int, out: *mut c_int);
+    pub fn ref_radar_glow_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+    pub fn ref_beacon_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
     // which documents the setup's, the steps' and the records' words): W3DView's setHeight, setWidth, setOrigin,
     // getPickRay and screenToWorldAtZ, View::getScreenCornerWorldPointsAtZ and CameraClass's view plane, viewport and

@@ -1213,9 +1213,13 @@ output).**
   first place (the top right) covered the phone's four-line status line (the phone check's screenshot), so it moved above
   the zoom column. The rest held on the first run, including `tryEvent`'s throttling read from upstream's unparenthesised
   distance (any two points of a map are "close").
-- **Not yet:** ~~`CHUNK_Radar` in the save;~~ (**corrected 2026-11-06, #4:** saved and loaded) the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;
-  the dozer's construction message and voice; a map's own `WaterTransparency`; the beacon's radar pulse
-  (`BeaconClientUpdate`, not translated); `GameLogic::startNewGame`'s replay `forceOn`.
+- **Not yet:** ~~`CHUNK_Radar` in the save;~~ (**corrected 2026-11-06, #4:** saved and loaded) ~~the hero icon's image (a white square stands in); `triggerRadarAttackGlow`;~~
+  the dozer's construction message and voice; a map's own `WaterTransparency`; ~~the beacon's radar pulse
+  (`BeaconClientUpdate`, not translated);~~ `GameLogic::startNewGame`'s replay `forceOn`. **Corrected 2026-11-12 (#162):**
+  the hero icon is the `HeroReticle` mapped image (`client::w3d_radar::hero_icon_rect`, `RadarImage::draw_image`), the
+  glow is `ControlBar.wnd:WinUAttack` flashed by `client::control_bar_glow` (its disabled image drawn by the bar), and
+  `BeaconClientUpdate` is the client's first client update module (`client::beacon_client_update`: its smoke system and
+  its `RADAR_EVENT_BEACON_PULSE`), each compared with the compiled upstream (`tests/differential_radar_draw.rs`).
 - **Gates:** lib 1021 (1009 + 12), client 39 (37 + 2), clippy clean, web build clean, the page checked at 390 x 844 and
   1000 x 700 (no overflow, the radar drawn, a tap moves the camera). Gate (a): *predicted* unchanged (nothing in the
   logic's CRC changed); *result* PASS, last CRC `0bf44067`.

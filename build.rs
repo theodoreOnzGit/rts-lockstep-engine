@@ -1359,6 +1359,32 @@ mod differential {
         w3d_build(&mut sb, true);
         sb.define("StringClass", Some("ShimStringClass")).file(dif.join("wrap_w3d_string.cpp"));
         sb.compile("upstream_w3d_string");
+        // #162: WW3D2/hanim.cpp (HAnimComboClass, HAnimComboDataClass,
+        // NamedPivotMapClass; htree.cpp's Combo_Update calls them), a copy
+        // with one edit: DEFINE_AUTO_POOL defines a member of a class
+        // template specialisation without `template<>` (as multilist.cpp
+        // above). Its `nstrdup` (NamedPivotMapClass::WeightInfoStruct's
+        // operator=) and a copy of WWLib/nstrdup.cpp are renamed
+        // `ref_hanim_nstrdup` by a line put first in each, so that the one in
+        // upstream_w3d_emit (linked earlier) is not needed here.
+        const NSTRDUP_RENAME: &[u8] = b"/* differential: see build.rs (#162) */\n#define nstrdup ref_hanim_nstrdup\n";
+        // The copy also includes the generated vector_this.h first (see
+        // above): hanim.cpp instantiates DynamicVectorClass<float>::Add.
+        let mut hanim_text = NSTRDUP_RENAME.to_vec();
+        hanim_text.extend_from_slice(b"#include \"vector_this.h\"\n");
+        hanim_text.extend(patch_copy(
+            &w3d.join("hanim.cpp"),
+            "hanim.cpp",
+            &[(
+                "DEFINE_AUTO_POOL(HAnimComboDataClass,256);",
+                "template<> ObjectPoolClass<HAnimComboDataClass, 256> AutoPoolClass<HAnimComboDataClass, 256>::Allocator{};",
+                1,
+            )],
+        ));
+        let hanim = write("hanim_auto_pool.cpp", &hanim_text);
+        let mut nstrdup_text = NSTRDUP_RENAME.to_vec();
+        nstrdup_text.extend(read_upstream(ww.join("WWLib/nstrdup.cpp")).into_bytes());
+        let nstrdup_copy = write("nstrdup_hanim.cpp", &nstrdup_text);
         let mut wb = cc::Build::new();
         w3d_build(&mut wb, false);
         wb.file(dif.join("wrap_w3d.cpp"))
@@ -1368,7 +1394,9 @@ mod differential {
             .file(&hrawanim)
             .file(w3d.join("hcanim.cpp"))
             .file(w3d.join("pivot.cpp"))
-            .file(ww.join("WWMath/quat.cpp"));
+            .file(ww.join("WWMath/quat.cpp"))
+            .file(&hanim)
+            .file(&nstrdup_copy);
         wb.compile("upstream_w3d");
 
         // BaseType.h's value types and templates (differential/
@@ -2546,6 +2574,75 @@ mod differential {
                     .include(up.join("Libraries/Include"))
                     .file(dif.join("wrap_control_bar_stage.cpp"));
                 cs.compile("upstream_control_bar_stage");
+            }
+
+            // GitHub #162: the radar's drawing items of #57 (differential/wrap_radar_draw.cpp, which lists the cuts): Radar.h's
+            // cell and event enums, GameCommon.h's frame constants, ParticleSys.h's ParticleSystemID, GameWindow.h's
+            // WIN_STATUS_ENABLED line, W3DRadar.cpp (radarToPixel, drawHeroIcon), ControlBar.cpp (the radar attack glow and
+            // reset's glow lines), GameWindow.cpp (winEnable), BeaconClientUpdate.h and BeaconClientUpdate.cpp. No text is
+            // edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_radar_draw.cpp");
+                let ge = up.join("GameEngine");
+                let rd = |f: &str| read_upstream(ge.join(f));
+                let piece = |text: &str, file: &str, from: &str, to: &str, keep_to: bool| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                    let i = text.find(from).expect("from");
+                    let j = text.find(to).expect("to") + if keep_to { to.len() } else { 0 };
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                };
+                let radar_h = rd("Include/Common/Radar.h");
+                let common_h = rd("Include/Common/GameCommon.h");
+                let psys_h = rd("Include/GameClient/ParticleSys.h");
+                let gw_h = rd("Include/GameClient/GameWindow.h");
+                let w3d_radar = read_upstream(up.join("GameEngineDevice/Source/W3DDevice/Common/System/W3DRadar.cpp"));
+                let cb = rd("Source/GameClient/GUI/ControlBar/ControlBar.cpp");
+                let gw = rd("Source/GameClient/GUI/GameWindow.cpp");
+                let bh = rd("Include/GameClient/Module/BeaconClientUpdate.h");
+                let bc = rd("Source/GameClient/Drawable/Update/BeaconClientUpdate.cpp");
+                let c = "ControlBar.cpp";
+                let files = [
+                    ("rd_cells.inc", piece(&radar_h, "Radar.h", "enum \n{ \n\tRADAR_CELL_WIDTH", "// PROTOTYPES /////", false)),
+                    ("rd_frames.inc", piece(&common_h, "GameCommon.h", "enum\n{\n\tLOGICFRAMES_PER_SECOND = 30,", "const Real SECONDS_PER_LOGICFRAME_REAL = 1.0f / LOGICFRAMES_PER_SECONDS_REAL;\n", true)),
+                    ("rd_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", "#define MAX_VOLUME_PARTICLE_DEPTH", false)),
+                    ("rd_win_status.inc", piece(&gw_h, "GameWindow.h", "\tWIN_STATUS_ENABLED\t", "// Window can receive input", false)),
+                    (
+                        "rd_hero.inc",
+                        piece(&w3d_radar, "W3DRadar.cpp", "void W3DRadar::radarToPixel( const ICoord2D *radar, ICoord2D *pixel,", "/** Draw a \"box\" into the texture passed in that represents the viewable area for", false),
+                    ),
+                    ("rd_glow.inc", piece(&cb, c, "enum{\n\tRADAR_ATTACK_GLOW_FRAMES = 150,", "void ControlBar::initSpecialPowershortcutBar( Player *player)", false)),
+                    (
+                        "rd_glow_reset.inc",
+                        piece(
+                            &cb,
+                            c,
+                            "\tif(m_radarAttackGlowWindow)\n\t\tm_radarAttackGlowWindow->winEnable(TRUE);\n\tm_radarAttackGlowOn = FALSE;",
+                            "\tm_remainingRadarAttackGlowFrames = 0;\n\n\tm_displayedConstructPercent",
+                            true,
+                        )
+                        .trim_end_matches("\n\tm_displayedConstructPercent")
+                        .to_string(),
+                    ),
+                    ("rd_win_enable.inc", piece(&gw, "GameWindow.cpp", "Int GameWindow::winEnable( Bool enable )", "Bool GameWindow::winGetEnabled( void )", false)),
+                    ("rd_beacon_h.inc", piece(&bh, "BeaconClientUpdate.h", "class BeaconClientUpdateModuleData : public ClientUpdateModuleData", "#endif // __BEACONCLIENTUPDATE_H_", false)),
+                    (
+                        "rd_beacon_data.inc",
+                        piece(&bc, "BeaconClientUpdate.cpp", "BeaconClientUpdateModuleData::BeaconClientUpdateModuleData() :", "void BeaconClientUpdateModuleData::buildFieldParse(MultiIniFieldParse& p)", false),
+                    ),
+                    ("rd_beacon.inc", piece(&bc, "BeaconClientUpdate.cpp", "BeaconClientUpdate::BeaconClientUpdate( Thing *thing, const ModuleData* moduleData ) :", "/** CRC */", false)),
+                ];
+                let gen = out_dir.join("radar_draw_gen");
+                std::fs::create_dir_all(&gen).expect("create radar_draw_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_radar_draw.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a radar draw cut");
+                }
+                let mut rb = cc::Build::new();
+                base(&mut rb);
+                rb.include(&gen).include(&shim).include(up.join("GameEngine/Include")).include(up.join("Libraries/Include")).file(dif.join("wrap_radar_draw.cpp"));
+                rb.compile("upstream_radar_draw");
             }
 
             // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,

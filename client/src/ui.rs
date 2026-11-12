@@ -77,6 +77,7 @@ use std::sync::Arc;
 use rts_lockstep_engine::client::control_bar_command::{populate_build_queue, populate_command_with_hot_keys, CommandSlot, ControlBarStateHost, QueueSlot};
 use rts_lockstep_engine::client::control_bar_popup::{populate_build_tooltip_layout, populate_window_tooltip, set_portrait_by_object, tooltip_window_of, PopupHost, PopupWindowHost, Portrait, PortraitHost, Tooltip, MAX_RIGHT_HUD_UPGRADE_CAMEOS};
 use rts_lockstep_engine::client::control_bar_scheme::{ControlBarSchemeManager, SchemeDraw};
+use rts_lockstep_engine::client::control_bar_glow::RadarAttackGlow;
 use rts_lockstep_engine::client::build_tooltip::{command_button_tooltip, command_gets_tooltip, control_bar_init_tooltips, BuildTooltip, BuildTooltipHost, ControlBarInitHost, COMMAND_BUTTON_TOOLTIP, GAME_COLOR_UNDEFINED, NON_COMMAND_BUTTONS};
 use rts_lockstep_engine::logic::command_button::CommandButton;
 use rts_lockstep_engine::client::control_bar_stage::{
@@ -174,6 +175,10 @@ pub struct GameUi {
     /// (#144) How many times `populateBuildTooltipLayout` was called: the application refills the popup's text when it
     /// changes (upstream fills it at that call, and the text then stays as it was filled).
     pub popup_fills: u32,
+    /// (#162) `TheControlBar`'s radar attack glow (`m_radarAttackGlowOn`, its frames, `ControlBar.wnd:WinUAttack`):
+    /// triggered by the radar's under-attack events, flashed once a frame ([`GameUi::radar_attack_glow_frame`]); the
+    /// window's disabled image is the lit glow ([`GameUi::frame`] draws it as the manager has it).
+    pub radar_attack_glow: RadarAttackGlow,
 }
 
 /// (#136) [`ControlBarStageHost`] on the bar's window manager and scheme. The display is the bar's 800x600 layout; the
@@ -398,6 +403,7 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         gui_sounds: Vec::new(),
         non_command_buttons: Vec::new(),
         popup_fills: 0,
+        radar_attack_glow: RadarAttackGlow::new(),
         images,
         wm,
         schemes,
@@ -418,6 +424,8 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
     // `commandButtonTooltip`; the `NonCommand_*` buttons are the World's, given by the application once it has the World
     // ([`GameUi::init_tooltips`] again): none here
     ui.init_tooltips(|_| None);
+    // (#162) `ControlBar::init`'s `m_radarAttackGlowWindow = winGetWindowFromId(NULL, "ControlBar.wnd:WinUAttack")`
+    ui.radar_attack_glow.init(&ui.wm);
     UiBuild::Ready(Box::new(ui))
 }
 
@@ -1068,6 +1076,22 @@ impl GameUi {
     /// (#138) `GameLogic::clearGameData`'s `HideControlBar()`, when the World's game is cleared.
     pub fn clear_game_data(&mut self) {
         self.with_stage(|stage, h| clear_game_data_control_bar(stage, h));
+    }
+
+    /// (#162) A frame of the radar attack glow: `ControlBar::update`'s `updateRadarAttackGlow()` (the client's update
+    /// comes before the logic's frame in `GameEngine::update`), then `triggerRadarAttackGlow()` for each of the frame's
+    /// `RadarFeedback::AttackGlow`s (`Radar::tryUnderAttackEvent`, inside the logic's frame). Once a logic frame, the
+    /// client's 30 a second (upstream: once a client frame, which the frame limiter holds at 30).
+    pub fn radar_attack_glow_frame(&mut self, triggers: usize) {
+        self.radar_attack_glow.update(&mut self.wm);
+        for _ in 0..triggers {
+            self.radar_attack_glow.trigger(&mut self.wm);
+        }
+    }
+
+    /// (#162) `ControlBar::reset()`'s glow lines (`TheGameClient->reset()`, a new game).
+    pub fn reset_radar_attack_glow(&mut self) {
+        self.radar_attack_glow.reset(&mut self.wm);
     }
 
     /// (#131) Each command window's own `WIN_STATUS_HIDDEN` and `WIN_STATUS_ENABLED` bits as the manager has them (after
@@ -2100,6 +2124,56 @@ mod tests {
         assert!(ui.popup_hidden && ui.build_tooltip.prev_window.is_none());
         ui.clear_game_data();
         assert!(ui.is_bar_hidden() && ui.view_height == Some(600));
+    }
+
+    /// #162: the radar attack glow on the bar's window manager. The synthetic bar has no `ControlBar.wnd:WinUAttack`, so
+    /// the test adds one (enabled image `GlowOff`, disabled `GlowOn`) and lets `ControlBar::init`'s lookup find it.
+    /// *Predicted before the run:* without the window the glow does nothing; with it, one trigger draws the window lit
+    /// (its disabled image), it flips at 135, 120, ... 15 frames left (nine flips, the last unlighting it), and is unlit
+    /// and off after 150 frames; the World's
+    /// game cleared (`reset`) unlights it at once.
+    #[test]
+    fn the_radar_attack_glow_lights_the_bar_window() {
+        use rts_lockstep_engine::client::window_manager::{NoGuiHost, SystemFunc};
+        use rts_lockstep_engine::client::window_script::WinInstanceData;
+        let mut d = MemoryDevice::new();
+        for (p, b) in synthetic_ui_files() {
+            d.insert(p, b);
+        }
+        let mut fs = FileSystem::new(d);
+        fs.init(None);
+        let UiBuild::Ready(mut ui) = load_game_ui(&fs, &TextTable::default(), b"America") else { panic!("the bar did not load") };
+        assert_eq!(ui.radar_attack_glow.window, None);
+        ui.radar_attack_glow_frame(1);
+        assert!(!ui.radar_attack_glow.on);
+        let w = ui.wm.win_create(&mut NoGuiHost, None, win_status::ENABLED | win_status::IMAGE, 10, 10, 20, 20, SystemFunc::Default, Some(WinInstanceData::new()));
+        ui.wm.tree.windows[w].inst.decorated_name_string = b"ControlBar.wnd:WinUAttack".to_vec();
+        ui.wm.tree.windows[w].inst.enabled_draw_data[0].image = Some(b"GlowOff".to_vec());
+        ui.wm.tree.windows[w].inst.disabled_draw_data[0].image = Some(b"GlowOn".to_vec());
+        ui.radar_attack_glow.init(&ui.wm);
+        let image = |ui: &GameUi| ui.frame(&BarState::default()).into_iter().find(|q| q.rect == [10.0, 10.0, 30.0, 30.0]).and_then(|q| q.image);
+        assert_eq!(image(&ui), Some(b"GlowOff".to_vec()));
+        ui.radar_attack_glow_frame(1);
+        // (the frame's update came first, then the trigger: lit, 150 left)
+        assert_eq!((ui.radar_attack_glow.on, ui.radar_attack_glow.remaining_frames), (true, 150));
+        assert_eq!(image(&ui), Some(b"GlowOn".to_vec()));
+        let mut flips = Vec::new();
+        let mut lit = true;
+        for k in 1..=150 {
+            ui.radar_attack_glow_frame(0);
+            let now = image(&ui) == Some(b"GlowOn".to_vec());
+            if now != lit {
+                flips.push(k);
+                lit = now;
+            }
+        }
+        // nine flips (135, 120, ..., 15 left): the ninth leaves it unlit, so the end's `winEnable(TRUE)` changes nothing
+        assert_eq!(flips, [15, 30, 45, 60, 75, 90, 105, 120, 135]);
+        assert!(!ui.radar_attack_glow.on && !lit);
+        ui.radar_attack_glow_frame(1);
+        assert_eq!(image(&ui), Some(b"GlowOn".to_vec()));
+        ui.reset_radar_attack_glow();
+        assert_eq!(image(&ui), Some(b"GlowOff".to_vec()));
     }
 
     /// #12, on the owner's copy of Zero Hour (`RTS_ZH_DIR`, a folder with its archives; skipped without it, never faked):

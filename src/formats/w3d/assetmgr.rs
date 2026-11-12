@@ -458,6 +458,17 @@ impl HAnim {
         }
     }
 
+    /// `Is_Node_Motion_Present(pividx)` (a morph animation's is always
+    /// `true`, `hmorphanim.h`). Used by `HAnimComboDataClass::
+    /// Build_Active_Pivot_Map` (#162).
+    pub fn is_node_motion_present(&self, pividx: i32) -> W3dResult<bool> {
+        match self {
+            HAnim::Raw(a) => a.is_node_motion_present(pividx),
+            HAnim::Compressed(a) => a.is_node_motion_present(pividx),
+            HAnim::Morph(_) => Ok(true),
+        }
+    }
+
     /// `Get_Num_Frames()`.
     pub fn get_num_frames(&self) -> i32 {
         match self {

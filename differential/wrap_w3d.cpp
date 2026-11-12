@@ -167,12 +167,9 @@ void *allocateFromW3DMemPool(void *, int n) { return calloc(1, n); }
 void *allocateFromW3DMemPool(void *, int n, const char *, int) { return calloc(1, n); }
 void freeFromW3DMemPool(void *, void *p) { free(p); }
 
-/* ---- stand-ins never reached by the loaders (they abort) ------------ */
-HAnimClass *HAnimComboClass::Get_Motion(int) { abort(); }
-float HAnimComboClass::Get_Weight(int) { abort(); }
-HAnimClass *HAnimComboClass::Peek_Motion(int) { abort(); }
-PivotMapClass *HAnimComboClass::Get_Pivot_Weight_Map(int) { abort(); }
-float HAnimComboClass::Get_Frame(int) { abort(); }
+/* ---- (#162) the stand-ins of HAnimComboClass's Get_Motion, Get_Weight, Peek_Motion, Get_Pivot_Weight_Map and
+** Get_Frame (which aborted: the loaders never reach Combo_Update) are gone: upstream's own hanim.cpp is compiled into
+** this library now (build.rs). */
 
 /* ---- the file -------------------------------------------------------- */
 extern "C" {

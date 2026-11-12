@@ -192,6 +192,13 @@ impl ClientRadar {
         f
     }
 
+    /// (#162) `TheRadar->createEvent(pos, type, secondsToLive)` (a client update module's: `BeaconClientUpdate`'s pulse).
+    pub fn create_event(&mut self, world: &mut World, pos: &Coord3D, event_type: crate::client::radar::RadarEventType, seconds_to_live: f32) {
+        let mut radar = std::mem::take(&mut self.radar);
+        radar.create_event(pos, event_type, seconds_to_live, &self.host(world, None));
+        self.radar = radar;
+    }
+
     /// `W3DLeftHUDDraw` into a window of `size` ([`W3dRadar::draw_left_hud`]).
     pub fn draw(&mut self, world: &mut World, drawables: Option<&ClientDrawables>, size: ICoord2D, view: Option<[Coord3D; 4]>) -> Option<RadarImage> {
         let mut radar = std::mem::take(&mut self.radar);

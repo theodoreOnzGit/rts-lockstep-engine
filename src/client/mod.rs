@@ -30,6 +30,8 @@ pub mod keyboard; // #131: the keyboard's printable key names (Keyboard::initKey
 pub mod hot_key; // #131: the control bar's hot keys (HotKey.cpp: HotKeyManager, HotKeyTranslator)
 pub mod command_world;
 pub mod control_bar;
+pub mod beacon_client_update; // #162: BeaconClientUpdate, the first client update module
+pub mod control_bar_glow; // #162: the radar's under-attack glow (ControlBar::triggerRadarAttackGlow, updateRadarAttackGlow)
 pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the control bar (ControlBar's stages, ToggleControlBar)
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)
 pub mod letterbox; // #144: the script letterbox (W3DDisplay's renderLetterBox, enableLetterBox)

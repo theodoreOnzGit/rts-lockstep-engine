@@ -50,8 +50,12 @@
 //!   a line is clipped pixel by pixel to its region where upstream clipped it (`ClipLine2D`) before drawing.
 //! - **The shroud** is read from the partition for the local player when the overlay is rebuilt (`RadarDrawHost`), rather
 //!   than kept from `setShroudLevel` calls; each cell is written as `setShroudLevel` writes it.
-//! - **The hero icon** (`HeroReticle`, a mapped image) is drawn as a hollow 7 x 7 square in white, centred where upstream
-//!   centres the image, until the radar draws mapped images.
+//! - ~~**The hero icon** (`HeroReticle`, a mapped image) is drawn as a hollow 7 x 7 square in white, centred where upstream
+//!   centres the image, until the radar draws mapped images.~~ **Corrected 2026-11-12 (#162):** the hero icon is the
+//!   `HeroReticle` mapped image ([`W3dRadar::hero_reticle`], which the client sets from the art's mapped images and
+//!   texture page), drawn by [`RadarImage::draw_image`] (nearest texel, blended), where upstream's `drawHeroIcon` puts
+//!   it ([`hero_icon_rect`]); nothing without the image. Upstream looks the image up once (a function `static`) at the
+//!   first hero drawn and keeps that answer; here it is whatever the client last set.
 //! - **The view box** is given the view's four corners on the average height by the caller (`getScreenCornerWorldPointsAtZ`);
 //!   it is rebuilt whenever they move, where upstream rebuilds its offsets when the zoom or angle change and moves the box
 //!   with the view's origin.
@@ -194,6 +198,32 @@ impl RadarImage {
         }
     }
 
+    /// (#162) `TheDisplay->drawImage(image, x0, y0, x1, y1)` of a mapped image (`DRAW_IMAGE_ALPHA`, white: the texels as
+    /// they are), stretched over the rectangle `[x0, x1) x [y0, y1)` and blended over the image; each pixel takes the
+    /// texel nearest its centre's UV (`W3DDisplay::drawImage`'s quad, or its two triangles for an image rotated 90
+    /// degrees clockwise: the screen's upper left takes the UV's upper right, its lower left the upper left). No clip
+    /// (the radar does not enable one).
+    pub fn draw_image(&mut self, image: &MappedImage, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let (w, h) = (x1 - x0, y1 - y0);
+        if w <= 0 || h <= 0 || image.page_width == 0 || image.page_height == 0 {
+            return;
+        }
+        let [ul, ut, ur, ub] = image.uv;
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let s = (px - x0) as f32 / w as f32 + 0.5 / w as f32;
+                let t = (py - y0) as f32 / h as f32 + 0.5 / h as f32;
+                let (u, v) = if image.rotated { (ur - t * (ur - ul), ut + s * (ub - ut)) } else { (ul + s * (ur - ul), ut + t * (ub - ut)) };
+                let tx = (u as i32).clamp(0, image.page_width as i32 - 1) as usize;
+                let ty = (v as i32).clamp(0, image.page_height as i32 - 1) as usize;
+                let i = (ty * image.page_width as usize + tx) * 4;
+                let c = &image.rgba[i..i + 4];
+                let argb = (u32::from(c[3]) << 24) | (u32::from(c[0]) << 16) | (u32::from(c[1]) << 8) | u32::from(c[2]);
+                self.blend(px, py, argb, None);
+            }
+        }
+    }
+
     /// `TheDisplay->drawImage(image, ul.x, ul.y, lr.x, lr.y)` of a radar texture whose UVs flip it vertically
     /// (`W3DRadar::init`: "(0,0) in the upper left" to the world's), sampled nearest.
     fn image(&mut self, tex: &[u32], ul: ICoord2D, lr: ICoord2D) {
@@ -210,6 +240,62 @@ impl RadarImage {
             }
         }
     }
+}
+
+/// (#162) A mapped image as `TheDisplay->drawImage` draws it: its texture page's texels and its rectangle on the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MappedImage {
+    /// `getImageWidth()`, `getImageHeight()`.
+    pub image_size: (i32, i32),
+    /// The page's size in texels and its RGBA texels, rows top first (shared: one page holds many images).
+    pub page_width: u32,
+    pub page_height: u32,
+    pub rgba: std::sync::Arc<Vec<u8>>,
+    /// `getUV()` in texels of the page: left, top, right, bottom.
+    pub uv: [f32; 4],
+    /// `IMAGE_STATUS_ROTATED_90_CLOCKWISE`.
+    pub rotated: bool,
+}
+
+impl MappedImage {
+    /// The image `image` of the collection on its loaded page `rgba` (`width` x `height`): its UVs over the page's size
+    /// (UVs given before the INI's `TextureWidth` stay texels, as the client's other mapped images, `client/src/app.rs`).
+    pub fn new(image: &crate::client::image::Image, width: u32, height: u32, rgba: std::sync::Arc<Vec<u8>>) -> Self {
+        let to_px = |u: f32, size: u32, given: i32| if given != 0 { u * size as f32 } else { u };
+        MappedImage {
+            image_size: image.image_size,
+            page_width: width,
+            page_height: height,
+            rgba,
+            uv: [
+                to_px(image.uv[0], width, image.texture_size.0),
+                to_px(image.uv[1], height, image.texture_size.1),
+                to_px(image.uv[2], width, image.texture_size.0),
+                to_px(image.uv[3], height, image.texture_size.1),
+            ],
+            rotated: image.is_rotated(),
+        }
+    }
+}
+
+/// (#162) `drawHeroIcon`'s rectangle for `pos` (the arguments of its `TheDisplay->drawImage`): `pos` in radar cells
+/// (`Int` truncations of `pos / (extent / RADAR_CELL_*)`), to pixels of the area `(px, py, w, h)` (`radarToPixel`),
+/// shifted "from an upper left to a center focus" by `iconWidth / 2 - 1` and `iconHeight / 2`, `iconWidth` by
+/// `iconHeight` large. `None` where upstream is undefined: a float to `Int` conversion out of range (or of a NaN), or
+/// an `Int` overflow.
+pub fn hero_icon_rect(map_extent: (f32, f32), pos: &Coord3D, area: (i32, i32, i32, i32), icon: (i32, i32)) -> Option<(i32, i32, i32, i32)> {
+    let (px, py, w, h) = area;
+    let to_int = |v: f32| if v.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&v) { None } else { Some(v as i32) };
+    let ulx = to_int(pos.x / (map_extent.0 / RADAR_CELL_WIDTH as f32))?;
+    let uly = to_int(pos.y / (map_extent.1 / RADAR_CELL_HEIGHT as f32))?;
+    // radarToPixel
+    let x = ulx.checked_mul(w)?.checked_div(RADAR_CELL_WIDTH)?.checked_add(px)?;
+    let y = (RADAR_CELL_HEIGHT - 1).checked_sub(uly)?.checked_mul(h)?.checked_div(RADAR_CELL_HEIGHT)?.checked_add(py)?;
+    let (iw, ih) = icon;
+    let shift = if crate::logic::modules::plant(9592) { iw / 2 } else { (iw / 2) - 1 };
+    let x = x.checked_sub(shift)?;
+    let y = y.checked_sub(ih / 2)?;
+    Some((x, y, x.checked_add(iw)?, y.checked_add(ih)?))
 }
 
 /// `class W3DRadar`'s textures and view box.
@@ -231,6 +317,10 @@ pub struct W3dRadar {
     pub cached_hero_pos_list: Vec<Coord3D>,
     /// `TheGameClient->getFrame()`, as counted by [`W3dRadar::draw`].
     pub client_frame: u32,
+    /// (#162) `drawHeroIcon`'s `static const Image *image = TheMappedImageCollection->findImageByName("HeroReticle")`:
+    /// the image with its page, set by the client once the art's mapped images and the page are read (`None`: not
+    /// found, nothing drawn, as upstream with a null image).
+    pub hero_reticle: Option<MappedImage>,
 }
 
 impl Default for W3dRadar {
@@ -253,6 +343,7 @@ impl W3dRadar {
             reconstruct_view_box: true,
             cached_hero_pos_list: Vec::new(),
             client_frame: 0,
+            hero_reticle: None,
         }
     }
 
@@ -624,24 +715,14 @@ impl W3dRadar {
         }
     }
 
-    /// `drawHeroIcon(pixelX, pixelY, width, height, pos)` (see the module docs for the icon).
-    fn draw_hero_icon(img: &mut RadarImage, radar: &Radar, pos: &Coord3D, area: (i32, i32, i32, i32)) {
-        let (px, py, w, h) = area;
-        let ul_radar = ICoord2D {
-            x: (pos.x / (radar.map_extent.width() / RADAR_CELL_WIDTH as f32)) as i32,
-            y: (pos.y / (radar.map_extent.height() / RADAR_CELL_HEIGHT as f32)) as i32,
-        };
-        let mut at = Self::radar_to_pixel(&ul_radar, px, py, w, h);
-        let (icon_w, icon_h) = (7, 7);
-        // "shift from an upper left to a center focus for the icon"
-        at.x -= (icon_w / 2) - 1;
-        at.y -= icon_h / 2;
-        let white = game_make_color(255, 255, 255, 255);
-        let (x1, y1) = (at.x + icon_w - 1, at.y + icon_h - 1);
-        img.line(at, ICoord2D { x: x1, y: at.y }, white, white, None);
-        img.line(ICoord2D { x: x1, y: at.y }, ICoord2D { x: x1, y: y1 }, white, white, None);
-        img.line(ICoord2D { x: x1, y: y1 }, ICoord2D { x: at.x, y: y1 }, white, white, None);
-        img.line(ICoord2D { x: at.x, y: y1 }, at, white, white, None);
+    /// `drawHeroIcon(pixelX, pixelY, width, height, pos)`: the `HeroReticle` image ([`W3dRadar::hero_reticle`]; nothing
+    /// without it) at [`hero_icon_rect`] (nothing where that is undefined upstream).
+    fn draw_hero_icon(&self, img: &mut RadarImage, radar: &Radar, pos: &Coord3D, area: (i32, i32, i32, i32)) {
+        let Some(image) = &self.hero_reticle else { return };
+        let extent = (radar.map_extent.width(), radar.map_extent.height());
+        if let Some((x0, y0, x1, y1)) = hero_icon_rect(extent, pos, area, image.image_size) {
+            img.draw_image(image, x0, y0, x1, y1);
+        }
     }
 
     /// `W3DRadar::draw(pixelX, pixelY, width, height)` into `img`: nothing when the local player has no radar and it is
@@ -687,7 +768,7 @@ impl W3dRadar {
         img.image(&self.shroud_texture, ul, lr);
         let area = (ul.x, ul.y, sw, sh);
         for p in self.cached_hero_pos_list.clone() {
-            Self::draw_hero_icon(img, radar, &p, area);
+            self.draw_hero_icon(img, radar, &p, area);
         }
         let frame = host.radar_frame();
         self.draw_events(img, radar, frame, area);
@@ -928,5 +1009,35 @@ mod tests {
         assert_eq!(again.event_sounds, 0);
         h.base.has_radar = false;
         assert!(w.draw_left_hud(&mut radar, &mut h, size, None).is_none());
+    }
+
+    /// #162: the hero icon's rectangle (upstream's arithmetic: cells by truncation, `radarToPixel`, the centring shift
+    /// of `w / 2 - 1` and `h / 2`) and the mapped image stretched into it. Predicted: a 7 x 5 icon at the middle of a
+    /// 1000 x 1000 map in a 128 x 128 area at (0, 0) covers x 62..69, y 61..66; the image's red texels fill it, its
+    /// rotated drawing takes the page's other column first.
+    #[test]
+    fn the_hero_icon_is_the_mapped_image() {
+        let pos = Coord3D { x: 500.0, y: 500.0, z: 0.0 };
+        assert_eq!(hero_icon_rect((1000.0, 1000.0), &pos, (0, 0, 128, 128), (7, 5)), Some((62, 61, 69, 66)));
+        assert_eq!(hero_icon_rect((0.0, 1000.0), &pos, (0, 0, 128, 128), (7, 5)), None, "inf to Int: undefined");
+        // a 2 x 1 page: red, then blue; the image is the whole page
+        let page = std::sync::Arc::new(vec![255, 0, 0, 255, 0, 0, 255, 255]);
+        let mut im = crate::client::image::Image::new(b"HeroReticle");
+        im.texture_size = (2, 1);
+        im.uv = [0.0, 0.0, 1.0, 1.0];
+        im.image_size = (2, 1);
+        let image = MappedImage::new(&im, 2, 1, page);
+        let mut img = RadarImage::new(4, 4);
+        img.draw_image(&image, 0, 0, 4, 2);
+        assert_eq!(img.pixel(0, 0), [255, 0, 0, 255]);
+        assert_eq!(img.pixel(3, 1), [0, 0, 255, 255]);
+        assert_eq!(img.pixel(0, 3), [0, 0, 0, 0]);
+        let mut rotated = image.clone();
+        rotated.rotated = true;
+        let mut img = RadarImage::new(4, 4);
+        img.draw_image(&rotated, 0, 0, 2, 2);
+        // the screen's upper left takes the UV's right edge (blue); its lower left the left edge (red)
+        assert_eq!(img.pixel(0, 0), [0, 0, 255, 255]);
+        assert_eq!(img.pixel(0, 1), [255, 0, 0, 255]);
     }
 }

@@ -225,6 +225,26 @@ impl RenderModel {
         }
     }
 
+    /// The hierarchy update a render does in `MULTIPLE_ANIM`
+    /// (`Animatable3DObjClass::Update_Sub_Object_Transforms`'s
+    /// `Combo_Update(Transform, ModeCombo.AnimCombo)`, after
+    /// `HLodClass::Set_Animation(HAnimComboClass *)`; #162): the combo's
+    /// pose under `root`. Nothing without a hierarchy. `motion` resolves a
+    /// combo entry's animation handle. The embedded-sound triggering that
+    /// follows upstream is not translated (no animation of the game's
+    /// combos has embedded sounds: no game code makes a combo, see
+    /// [`super::hanim_combo`]).
+    pub fn update_combo<'w, P: super::hmorphanim::PoseLookup, M: Clone>(
+        &mut self,
+        root: &Matrix3D,
+        combo: &super::hanim_combo::HAnimCombo<M>,
+        poses: &P,
+        motion: impl Fn(&M) -> &'w HAnim,
+    ) -> W3dResult<()> {
+        let Some(tree) = &mut self.htree else { return Ok(()) };
+        tree.combo_update(root, combo, poses, motion)
+    }
+
     /// Bone `bone`'s posed transform (`HTree->Get_Transform(bone)`); the
     /// identity without a hierarchy.
     pub fn bone_transform(&self, bone: i32) -> W3dResult<Matrix3D> {

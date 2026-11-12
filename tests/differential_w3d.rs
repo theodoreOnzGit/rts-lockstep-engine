@@ -3838,6 +3838,7 @@ fn assetmgr_matches_upstream() {
 // ---------------------------------------------------------------------------
 
 use rts_lockstep_engine::formats::w3d::assetmgr::HAnim;
+use rts_lockstep_engine::formats::w3d::hanim_combo::{ComboDataRef, HAnimCombo, HAnimComboData, PivotMap, PivotMapRef};
 use rts_lockstep_engine::formats::w3d::hmorphanim::PoseLookup;
 use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 
@@ -3846,6 +3847,11 @@ use rts_lockstep_engine::ww::matrix3d::Matrix3D;
 struct EvalWorld {
     trees: Vec<HTree>,
     anims: Vec<(HAnim, u8)>,
+    /// (#162) the combos (their animations by index into `anims`), the
+    /// pivot maps and the shared entries the script made (ops 12 to 31).
+    combos: Vec<HAnimCombo<usize>>,
+    maps: Vec<PivotMapRef>,
+    datas: Vec<ComboDataRef<usize>>,
 }
 
 /// wrap_w3d_eval.cpp's pose hook: the first raw or compressed animation of
@@ -3860,7 +3866,7 @@ impl PoseLookup for EvalWorld {
 /// with `mode`'s `Float_To_Long` (#19).
 fn rust_eval_load(data: &[u8], mode: FloatToLongMode) -> W3dResult<(Log, EvalWorld)> {
     let mut log = vec![b'L'];
-    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new() };
+    let mut w = EvalWorld { trees: Vec::new(), anims: Vec::new(), combos: Vec::new(), maps: Vec::new(), datas: Vec::new() };
     let mut c = ChunkLoad::new(GameFile::new(data).unwrap());
     while c.open_chunk()? {
         let trees = &w.trees;
@@ -4030,7 +4036,144 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
                 w.trees[t].release_bone(bone)?;
             }
         }
+        12..=31 => rust_combo_op(w, r, log, op)?,
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// (#162) A `Normalize_Weights` or `Combo_Update` whose result holds a NaN is not compared (the script stops before it,
+/// counted under this reason): which NaN an operation with two NaN operands returns (their signs and payloads) depends
+/// on the operand order the compiler chose, as x86 returns the first; NaN weights (the wild scripts' `mixed` values),
+/// `weight / weight_total` with a zero total and `-alpha` give NaNs of both signs. The first run found one such case
+/// (16,775 of 20,000: the same NaNs, with opposite signs). Defined upstream, but not reproducible bit for bit.
+const NAN_NOT_COMPARED: &str = "a NaN result (its sign and payload not compared)";
+
+/// The names op 20 adds (wrap_w3d_eval.cpp's `COMBO_NAMES`).
+const COMBO_NAMES: [&[u8]; 10] = [b"B0", b"B1", b"b2", b"B3", b"B4", b"B5", b"RootTransform", b"NOPE", b"rOOTtRANSFORM", b""];
+
+fn log_map(log: &mut Log, m: &Option<PivotMapRef>) {
+    match m {
+        None => p32(log, 0xFFFF_FFFF),
+        Some(m) => {
+            let m = m.read().unwrap();
+            p32(log, m.count() as u32);
+            for v in &m.weights {
+                p32(log, v.to_bits());
+            }
+        }
+    }
+}
+
+fn log_combo(log: &mut Log, c: &HAnimCombo<usize>) -> W3dResult<()> {
+    p32(log, c.get_num_anims() as u32);
+    for i in 0..c.get_num_anims() {
+        p32(log, c.get_frame(i)?.to_bits());
+        p32(log, c.get_prev_frame(i)?.to_bits());
+        p32(log, c.get_weight(i)?.to_bits());
+        p32(log, c.peek_motion(i)?.map_or(0xFFFF_FFFF, |a| a as u32));
+        log_map(log, &c.peek_pivot_weight_map(i)?);
+    }
+    Ok(())
+}
+
+/// The combo ops (#162) in Rust (see `ref_w3d_eval`).
+fn rust_combo_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log, op: u8) -> W3dResult<()> {
+    match op {
+        12 => {
+            let n = r.u() as i32;
+            w.combos.push(if n < 0 { HAnimCombo::new() } else { HAnimCombo::with_anims(n as usize) });
+        }
+        13..=17 => {
+            let c = r.u() as usize;
+            let i = r.u() as i32;
+            let v = r.u();
+            let combo = &w.combos[c];
+            match op {
+                13 => combo.set_motion(i, if (v as i32) < 0 { None } else { Some(v as usize) })?,
+                14 => combo.set_frame(i, f32::from_bits(v))?,
+                15 => combo.set_prev_frame(i, f32::from_bits(v))?,
+                16 => combo.set_weight(i, f32::from_bits(v))?,
+                _ => combo.set_pivot_weight_map(i, if (v as i32) < 0 { None } else { Some(w.maps[v as usize].clone()) })?,
+            }
+        }
+        18 => {
+            let named = r.u();
+            w.maps.push(if named != 0 { PivotMap::new_named() } else { PivotMap::new() }.shared());
+        }
+        19 => {
+            let m = r.u() as usize;
+            let v = r.f();
+            w.maps[m].write().unwrap().add(v);
+        }
+        20 => {
+            let m = r.u() as usize;
+            let name = r.u() as usize;
+            let v = r.f();
+            w.maps[m].write().unwrap().add_named(COMBO_NAMES[name], v);
+        }
+        21 => {
+            let m = r.u() as usize;
+            let t = r.u() as usize;
+            w.maps[m].write().unwrap().update_pivot_map(&w.trees[t])?;
+        }
+        22 => {
+            let c = r.u() as usize;
+            let i = r.u() as i32;
+            let d = w.combos[c].peek_anim_combo_data(i)?;
+            let anims = &w.anims;
+            d.write().unwrap().build_active_pivot_map(|&a| &anims[a].0)?;
+        }
+        23 => {
+            let c = r.u() as usize;
+            let anims = &w.anims;
+            let ok = w.combos[c].normalize_weights(|&a| &anims[a].0)?;
+            log.push(u8::from(ok));
+            log_combo(log, &w.combos[c])?;
+            let nan = (0..w.combos[c].get_num_anims()).any(|i| {
+                w.combos[c].get_weight(i).is_ok_and(f32::is_nan)
+                    || w.combos[c].get_pivot_weight_map(i).ok().flatten().is_some_and(|m| m.read().unwrap().weights.iter().any(|v| v.is_nan()))
+            });
+            if nan {
+                return Err(W3dError::Unsupported(NAN_NOT_COMPARED));
+            }
+        }
+        24 => {
+            let t = r.u() as usize;
+            let c = r.u() as usize;
+            let root = r.m();
+            let mut tree = w.trees[t].clone();
+            let res = tree.combo_update(&root, &w.combos[c], &*w, |&a| &w.anims[a].0);
+            w.trees[t] = tree;
+            res?;
+            log_eval_tree(log, &w.trees[t])?;
+            let tr = &w.trees[t];
+            if (0..tr.num_pivots).any(|p| tr.get_transform(p).is_ok_and(|m| m.to_array().iter().any(|v| v.is_nan()))) {
+                return Err(W3dError::Unsupported(NAN_NOT_COMPARED));
+            }
+        }
+        25 => w.datas.push(HAnimComboData::new(true).into_ref()),
+        26 | 27 => {
+            let c = r.u() as usize;
+            let d = w.datas[r.u() as usize].clone();
+            if op == 26 {
+                w.combos[c].append_anim_combo_data(d);
+            } else {
+                w.combos[c].remove_anim_combo_data(&d);
+            }
+        }
+        28..=30 => {
+            let c = r.u() as usize;
+            match op {
+                28 => w.combos[c].clear(),
+                29 => w.combos[c].reset(),
+                _ => log_combo(log, &w.combos[c])?,
+            }
+        }
+        _ => {
+            let m = r.u() as usize;
+            log_map(log, &Some(w.maps[m].clone()));
+        }
     }
     Ok(())
 }
@@ -4048,6 +4191,11 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             9 => 4 + 12,
             10 => 2 + 12,
             11 => 4 + 12,
+            12 | 18 | 23 | 28..=31 => 1,
+            13..=17 | 20 => 3,
+            19 | 21 | 22 | 26 | 27 => 2,
+            24 => 2 + 12,
+            25 => 0,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -4468,6 +4616,216 @@ fn ev_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
     s
 }
 
+/// (#162) A script of combo ops (12 to 31; see `ref_w3d_eval`) over the
+/// file's hierarchies and animations: combos of 0 to 5 entries made by
+/// either constructor and by appending shared entries, their motions,
+/// frames, weights and pivot maps set (plain maps of 0 to 8 weights, named
+/// maps fitted to a hierarchy, active maps), then `Combo_Update`s,
+/// `Normalize_Weights`, removals, clears and resets, and dumps. A tame
+/// script (every other file) gives every entry an animation before it is
+/// updated, keeps indices in range and fits its maps; a wild one does not.
+fn combo_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let na = w.anims.len() as u32;
+    let nt = w.trees.len() as u32;
+    if na == 0 || nt == 0 {
+        return s;
+    }
+    // the generator's view: each combo's entries (None: its own, Some(d): shared entry d), the maps' kinds
+    let mut combos: Vec<Vec<Option<u32>>> = Vec::new();
+    let mut maps: Vec<bool> = Vec::new();
+    let mut datas = 0u32;
+    let weight = |g: &mut Gn| -> f32 {
+        match g.below(10) {
+            0 => 0.0,
+            1 | 2 => 1.0,
+            3 => 0.5,
+            4 => 0.25,
+            5 => 1.0 / 3.0,
+            6 if !g.clean => g.f32(),
+            _ => g.g.uniform(-0.5, 1.5),
+        }
+    };
+    let op = |s: &mut Vec<u8>, code: u8, words: &[u32]| {
+        s.push(code);
+        for &v in words {
+            w32(s, v);
+        }
+    };
+    // a new combo, its entries given animations, frames and weights
+    let new_combo = |g: &mut Gn, s: &mut Vec<u8>, combos: &mut Vec<Vec<Option<u32>>>| {
+        let n = if g.below(6) == 0 { u32::MAX } else { g.below(5) };
+        op(s, 12, &[n]);
+        let c = combos.len() as u32;
+        combos.push(vec![None; if n == u32::MAX { 0 } else { n as usize }]);
+        for i in 0..combos[c as usize].len() as u32 {
+            if !g.chance(8) {
+                op(s, 13, &[c, i, g.below(na)]);
+            }
+            let a = g.below(na);
+            op(s, 14, &[c, i, ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits()]);
+            if g.coin() {
+                op(s, 16, &[c, i, weight(g).to_bits()]);
+            }
+        }
+    };
+    for _ in 0..1 + g.below(2) {
+        new_combo(g, &mut s, &mut combos);
+    }
+    for _ in 0..2 + g.below(30) {
+        let c = g.below(combos.len() as u32);
+        let n = combos[c as usize].len() as u32;
+        let entry = |g: &mut Gn| -> u32 {
+            if n == 0 || g.chance(20) {
+                n + g.below(2)
+            } else {
+                g.below(n)
+            }
+        };
+        match g.below(24) {
+            0 => new_combo(g, &mut s, &mut combos),
+            1 if n > 0 || !g.clean => op(&mut s, 13, &[c, entry(g), if g.chance(6) { u32::MAX } else { g.below(na) }]),
+            2 | 3 if n > 0 || !g.clean => {
+                let a = g.below(na);
+                let code = if g.below(4) == 0 { 15 } else { 14 };
+                op(&mut s, code, &[c, entry(g), ev_frame(g, w.anims[a as usize].0.get_num_frames()).to_bits()]);
+            }
+            4 | 5 if n > 0 || !g.clean => op(&mut s, 16, &[c, entry(g), weight(g).to_bits()]),
+            6 | 7 => {
+                // a map: plain (0 to 8 weights) or named (fitted to a tree, perhaps with names)
+                let named = g.coin();
+                op(&mut s, 18, &[u32::from(named)]);
+                let m = maps.len() as u32;
+                maps.push(named);
+                if named {
+                    for _ in 0..g.below(4) {
+                        op(&mut s, 20, &[m, g.below(COMBO_NAMES.len() as u32), weight(g).to_bits()]);
+                    }
+                    op(&mut s, 21, &[m, g.below(nt)]);
+                } else {
+                    let len = if g.clean { 8 } else { g.below(9) };
+                    for _ in 0..len {
+                        let v = match g.below(4) {
+                            0 => 0.0,
+                            1 => 1.0,
+                            2 => 0.5,
+                            _ => g.g.uniform(0.0, 1.0),
+                        };
+                        op(&mut s, 19, &[m, v.to_bits()]);
+                    }
+                }
+                if n > 0 && g.coin() {
+                    op(&mut s, 17, &[c, entry(g), m]);
+                }
+            }
+            8 if !maps.is_empty() && (n > 0 || !g.clean) => {
+                let m = if g.below(5) == 0 { u32::MAX } else { g.below(maps.len() as u32) };
+                op(&mut s, 17, &[c, entry(g), m]);
+            }
+            9 if !maps.is_empty() => {
+                let m = g.below(maps.len() as u32);
+                if maps[m as usize] {
+                    op(&mut s, 20, &[m, g.below(COMBO_NAMES.len() as u32), weight(g).to_bits()]);
+                } else if !g.clean {
+                    op(&mut s, 19, &[m, weight(g).to_bits()]);
+                }
+                op(&mut s, 21, &[m, g.below(nt)]);
+            }
+            10 if n > 0 || !g.clean => op(&mut s, 22, &[c, entry(g)]),
+            11 | 12 => op(&mut s, 23, &[c]),
+            13..=17 => {
+                op(&mut s, 24, &[g.below(nt), c]);
+                ev_matrix(g, &mut s);
+            }
+            18 => {
+                op(&mut s, 25, &[]);
+                let d = datas;
+                datas += 1;
+                op(&mut s, 26, &[c, d]);
+                combos[c as usize].push(Some(d));
+                let i = combos[c as usize].len() as u32 - 1;
+                if !g.chance(6) {
+                    op(&mut s, 13, &[c, i, g.below(na)]);
+                }
+                op(&mut s, 16, &[c, i, weight(g).to_bits()]);
+            }
+            19 if datas > 0 => {
+                let d = g.below(datas);
+                if g.coin() {
+                    op(&mut s, 26, &[c, d]);
+                    combos[c as usize].push(Some(d));
+                } else {
+                    op(&mut s, 27, &[c, d]);
+                    if let Some(k) = combos[c as usize].iter().position(|&e| e == Some(d)) {
+                        combos[c as usize].remove(k);
+                    }
+                }
+            }
+            20 if !g.clean => op(&mut s, 28, &[c]),
+            21 if !g.clean || g.below(4) == 0 => {
+                op(&mut s, 29, &[c]);
+                combos[c as usize].clear();
+            }
+            22 if !maps.is_empty() => op(&mut s, 31, &[g.below(maps.len() as u32)]),
+            _ => op(&mut s, 30, &[c]),
+        }
+    }
+    s
+}
+
+/// Section 13's combos (#162): `HTreeClass::Combo_Update` and
+/// `hanim.cpp`'s `HAnimComboClass`, `HAnimComboDataClass`, `PivotMapClass`
+/// and `NamedPivotMapClass` (the combo ops of `ref_w3d_eval`), compiled
+/// from upstream's own `htree.cpp` and `hanim.cpp` (`build.rs`), against
+/// [`HTree::combo_update`] and [`rts_lockstep_engine::formats::w3d::
+/// hanim_combo`]. The files are section 13's (the same generator, another
+/// seed); the scripts are [`combo_script`]'s, every result compared as raw
+/// bits (each transform's 12 floats, each weight and frame), the portable
+/// `Float_To_Long` pair as [`animation_evaluation_matches_upstream`].
+///
+/// Predicted before the run (`issue162_predictions.md`): 0 mismatches,
+/// max ULP 0, since the Rust adds `weight * ScaleFactor * translation` and
+/// `Fast_Slerp`s at `weight / weight_total` in upstream's order; scripts
+/// stopping mostly at `IndexOutOfRange` (entries and maps out of range, maps
+/// shorter than the pivots), `NullPointer` (an entry without an animation
+/// at `Combo_Update` or `Normalize_Weights`) and the section's own
+/// undefined animation kinds.
+///
+/// Results (2026-11-12). First run, 6,000 files: 0 mismatches, but the
+/// test binary died with SIGSEGV at exit (a 64-bit artefact of the
+/// harness: `HAnimComboDataClass`'s `ObjectPoolClass` links its blocks with
+/// an 8-byte pointer and puts the first object 4 bytes in; see
+/// `wrap_w3d_eval.cpp`, which now makes the pool forget its block list).
+/// Then 20,000 files: 1 mismatching file, the same NaNs with opposite signs
+/// in a `Combo_Update` (a wild script's NaN weight): see
+/// [`NAN_NOT_COMPARED`]; such results are no longer compared, and a
+/// `Fast_Slerp` of a NaN cosine is undefined (`Fast_Acos`'s table). Final:
+/// 20,000 files, all run (9,697 tame scripts to the end), 502,984 of
+/// 708,711 ops compared, among them 39,192 `Combo_Update`s, 16,699
+/// `Normalize_Weights`, 5,961 `Build_Active_Pivot_Map`s, 12,719
+/// `Update_Pivot_Map`s and 57,910 dumps; **0 mismatches, max ULP 0**.
+/// Scripts stopped at undefined upstream: 9,100 (`IndexOutOfRange` 5,532,
+/// `NullPointer` 3,074, `FloatToInt` 256, `NonTerminating` 135,
+/// `UninitialisedRead` 93) and 10 at a NaN result.
+///
+/// Planted bugs (`L9_PLANT`, mismatching files of 20,000): 9571 (no slerp:
+/// every orientation replaces the last) 4,273; 9572 (the pivot map's weight
+/// ignored) 1,206; 9573 (the translation not weighted) 5,418; 9574 (`Update_Pivot_Map` applies the pairs first to last) 987;
+/// 9575 (`Get_Bone_Index` gives -1 for an unknown name) 1,280; 9576
+/// (`Set_Frame` keeps the previous frame) 3,081; 9577 (`Clear` clears
+/// shared entries too) 37; 9578 (`Build_Active_Pivot_Map` all 1) 346; 9579
+/// (`weight_total > 0` for `!= 0`) 304; 9580 (the visibility of the last
+/// animation, not the first visible one) 1,563; 9593 (the per-pivot
+/// normalisation leaves the maps) 424: **11 of 11 caught**. The first 9573 (the fewest pivots
+/// taken as the most) made the Rust skip work, so the C++ ran ops the Rust
+/// had not checked and the process died; replaced by the unweighted
+/// translation.
+#[test]
+fn combo_evaluation_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    eval_cases(FloatToLongMode::PortableTruncate, 0xC0B0, 20_000, "W3D anim combos (hanim.cpp, Combo_Update)", combo_script);
+}
+
 /// Random W3D files (one or two hierarchies of 1 to 6 pivots, sometimes
 /// pre-3.0, with random base poses and parents, now and then a parent that
 /// is missing, the pivot itself, a later pivot or one past the end; one to
@@ -4644,15 +5002,20 @@ fn float_to_long_fistp_matches_x87() {
 /// Section 13 in the given `Float_To_Long` branch; the C++ side must have
 /// been set to the same one.
 fn animation_evaluation(mode: FloatToLongMode) {
-    let mut g = Gn { g: Gen::new(0xE7A1), clean: true };
+    eval_cases(mode, 0xE7A1, 6_000, "W3D animation evaluation (motchan, hrawanim, hcanim, hmorphanim, htree)", ev_script);
+}
+
+/// Section 13's driver: `cases` files from `seed`, each with a script from
+/// `script_gen`, in the given `Float_To_Long` branch.
+fn eval_cases(mode: FloatToLongMode, seed: u64, cases: usize, label: &str, script_gen: fn(&mut Gn, &EvalWorld) -> Vec<u8>) {
+    let mut g = Gn { g: Gen::new(seed), clean: true };
     let mut tame_full = 0u64;
-    let mut check = Check::new(&format!("W3D animation evaluation (motchan, hrawanim, hcanim, hmorphanim, htree), {mode:?}"));
+    let mut check = Check::new(&format!("{label}, {mode:?}"));
     let mut excluded: BTreeMap<String, u64> = BTreeMap::new();
     let mut load_excluded: BTreeMap<String, u64> = BTreeMap::new();
     let (mut files, mut ops_run, mut ops_total) = (0u64, 0u64, 0u64);
-    let mut per_op = [0u64; 12];
-    const CASES: usize = 6_000;
-    for case in 0..CASES {
+    let mut per_op = [0u64; 32];
+    for case in 0..cases {
         g.clean = case % 2 == 0;
         let data = ev_file(&mut g);
         let (mut log, mut w) = match rust_eval_load(&data, mode) {
@@ -4662,7 +5025,7 @@ fn animation_evaluation(mode: FloatToLongMode) {
                 continue;
             }
         };
-        let script = ev_script(&mut g, &w);
+        let script = script_gen(&mut g, &w);
         let ops = script_ops(&script);
         ops_total += ops.len() as u64;
         let mut end = 0;
@@ -4723,7 +5086,7 @@ fn animation_evaluation(mode: FloatToLongMode) {
         files += 1;
     }
     println!(
-        "animation evaluation ({mode:?}): {CASES} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=11: {:?}); \
+        "{label} ({mode:?}): {cases} files, {files} run ({tame_full} tame scripts run to the end), {ops_run} of {ops_total} ops compared (per op 1..=31: {:?}); \
          files excluded (loading undefined): {load_excluded:?}; scripts stopped at (undefined upstream): {} {excluded:?}",
         &per_op[1..],
         excluded.values().sum::<u64>()

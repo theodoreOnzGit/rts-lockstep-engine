@@ -142,6 +142,9 @@ struct Game {
     radar_event_sounds: u32,
     /// (#35) Whether the water INI has been read for the radar (once the art is there).
     radar_water_pending: bool,
+    /// (#162) Whether `drawHeroIcon`'s `HeroReticle` has been looked up for the radar (once the bar's mapped images and
+    /// the art are there, and its page has been read).
+    hero_reticle_done: bool,
     /// (#4) The World as the install made it, before the game started: a save of this install's games is loaded into a
     /// copy of it (`crate::import::Started::base`); `None` for the demo.
     base: Option<Box<GameWorld>>,
@@ -280,6 +283,7 @@ impl Game {
             radar_drawn: None,
             radar_event_sounds: 0,
             radar_water_pending: true,
+            hero_reticle_done: false,
             base: None,
             save_state: Default::default(),
             ambient_restore_pending: false,
@@ -707,10 +711,19 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
             g.controls.client.take_logic_messages(&events);
             // #35: the radar's calls; a stealth detector's feedback the radar's `tryEvent` refused does not play
             let radar = g.controls.take_radar_events(&events);
+            // #162: the radar attack glow's frame (`updateRadarAttackGlow`, then the frame's `triggerRadarAttackGlow`s)
+            if let Some(bar) = g.ui.as_mut() {
+                let triggers = radar.feedback.iter().filter(|f| matches!(f, rts_lockstep_engine::client::radar::RadarFeedback::AttackGlow)).count();
+                bar.radar_attack_glow_frame(triggers);
+            }
             let heard: Vec<_> = events.iter().enumerate().filter(|(i, _)| !radar.refused.contains(i)).map(|(_, e)| e.clone()).collect();
             let radar_sounds = std::mem::take(&mut g.radar_event_sounds);
             let now = g.models_clock;
             g.models.apply_events(g.controls.world(), &events, now);
+            // #162: the radar events the drawables' client update modules asked for (`BeaconClientUpdate`'s pulses)
+            for (pos, ty, secs) in g.models.drawables.take_radar_requests() {
+                g.controls.radar.create_event(&mut g.controls.client.world, &pos, ty, secs);
+            }
             // #13: the frame's sounds, from the logic's events and the FX lists' requests, then the manager's frame
             let requests: Vec<_> = g.models.drawables.fx.requests.drain(..).collect();
             let voices: Vec<_> = g.controls.client.voices.drain(..).collect();
@@ -2915,6 +2928,29 @@ fn radar_view(
         }
         g.radar_water_pending = false;
     }
+    // (#162) `drawHeroIcon`'s `TheMappedImageCollection->findImageByName("HeroReticle")` and its page, once
+    if !g.hero_reticle_done {
+        if let (Some(ui), Some(art)) = (g.ui.as_ref(), g.models.art.as_ref()) {
+            match ui.images.find_image_by_name(b"HeroReticle").cloned() {
+                None => g.hero_reticle_done = true,
+                Some(im) => {
+                    let before = art.fs.local.device.unserved_reads();
+                    let r = rts_lockstep_engine::formats::w3d::render::load_texture_image(&art.assets.file_factory, &art.fs, &im.filename);
+                    if art.fs.local.device.unserved_reads() == before {
+                        g.hero_reticle_done = true;
+                        match r {
+                            Ok(Ok(t)) => {
+                                let page = std::sync::Arc::new(t.rgba);
+                                g.controls.radar.device.hero_reticle = Some(rts_lockstep_engine::client::w3d_radar::MappedImage::new(&im, t.width, t.height, page));
+                                info!("radar: HeroReticle read");
+                            }
+                            other => warn!("radar: HeroReticle's page {} did not read: {:?}", String::from_utf8_lossy(&im.filename), other.map(|x| x.map(|_| ()))),
+                        }
+                    }
+                }
+            }
+        }
+    }
     let screen = (window.width(), window.height());
     let r = crate::ui::radar_screen_rect(g.ui.as_ref().and_then(|u| u.radar_window()), ui_bar.placement, screen);
     let size = ICoord2D { x: (r[2] - r[0]).round() as i32, y: (r[3] - r[1]).round() as i32 };
@@ -3827,6 +3863,8 @@ fn shell_ui(
         // (#138: `clearGameData`'s `HideControlBar()`, GameLogicDispatch.cpp:291, before its `closeWindows()`)
         if let Some(bar) = g.ui.as_mut() {
             bar.clear_game_data();
+            // (#162: then `TheGameEngine->reset()`'s `resetAll`: `InGameUI::reset`'s `TheControlBar->reset()`, the glow off)
+            bar.reset_radar_attack_glow();
         }
         // (#144: `TheGameEngine->reset()`'s `Display::reset`, before it: the letterbox off at once)
         g.letterbox.reset();

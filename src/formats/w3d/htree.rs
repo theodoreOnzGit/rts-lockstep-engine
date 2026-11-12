@@ -4,7 +4,7 @@
 // commit 0a05454d8574207440a5fb15241b98ad0b435590):
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp
 //   (HTreeClass::Load_W3D, read_pivots, Free; Base_Update, both
-//   Anim_Update, Blend_Update, both Simple_Evaluate_Pivot, Capture_Bone,
+//   Anim_Update, Blend_Update, Combo_Update (#162), both Simple_Evaluate_Pivot, Capture_Bone,
 //   Release_Bone, Is_Bone_Captured, Control_Bone, Get_Bone_Control) and
 //   htree.h (Get_Transform, Get_Visibility, Get_Root_Transform)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/pivot.h, pivot.cpp
@@ -26,7 +26,10 @@
 //! updates that compute every pivot's transform: `Base_Update`,
 //! `Anim_Update` (the virtual one and the raw-animation fast path),
 //! `Blend_Update`, `Simple_Evaluate_Pivot`, and bone capture.
-//! `Combo_Update` (`HAnimComboClass`, `hanim.cpp`) is not translated yet.
+//! ~~`Combo_Update` (`HAnimComboClass`, `hanim.cpp`) is not translated yet.~~
+//! **Corrected 2026-11-12 (#162):** and `Combo_Update`
+//! ([`HTree::combo_update`]) over an [`HAnimCombo`]
+//! ([`super::hanim_combo`], `hanim.cpp`).
 //!
 //! # Pose updates, as upstream computes them
 //!
@@ -125,6 +128,7 @@
 //! [`Pivot`].
 
 use super::assetmgr::HAnim;
+use super::hanim_combo::HAnimCombo;
 use super::hanim::HRawAnim;
 use super::hmorphanim::PoseLookup;
 use super::w3d_file::*;
@@ -387,6 +391,110 @@ impl HTree {
                 self.pivots[i].is_visible = motion0.get_visibility(pi, frame0)? || motion1.get_visibility(pi, frame1)?;
             }
             self.captured(i);
+        }
+        Ok(())
+    }
+
+    /// `Combo_Update(root, anim)`: the pose of a combination of animations
+    /// (GitHub #18, #162). Upstream compiles it with
+    /// `ASSUME_NORMALIZED_ANIM_COMBO_WEIGHTS` defined: for each pivot below
+    /// the fewest pivots of the animations, every animation whose weight
+    /// (times its pivot map's weight for the pivot, if it has a map) is not
+    /// 0 adds `weight * ScaleFactor * translation` and its weight to the
+    /// totals; its orientation is taken as is by the first such animation
+    /// and `Fast_Slerp`ed in by the others at `weight / weight_total`. When
+    /// the total is not 0, the pivot is translated by the sum and rotated by
+    /// the blended orientation; its visibility is the first visible
+    /// animation's (`|=`, stopping at the first). `motion` resolves an
+    /// entry's handle to its animation.
+    ///
+    /// Undefined upstream: an entry with no animation (the first loop
+    /// dereferences every `Peek_Motion`), a pivot map shorter than the
+    /// pivot, an orientation a compressed animation of an unknown flavor
+    /// leaves uninitialised where it is used, and a `Fast_Slerp` of
+    /// orientations whose dot product is a NaN (`Fast_Acos` indexes its table
+    /// with the NaN's garbage index: [`W3dUndefined::IndexOutOfRange`]).
+    pub fn combo_update<'w, P: PoseLookup, M: Clone>(
+        &mut self,
+        root: &Matrix3D,
+        anim: &HAnimCombo<M>,
+        poses: &P,
+        motion: impl Fn(&M) -> &'w HAnim,
+    ) -> W3dResult<()> {
+        self.begin_update(root)?;
+        let num_anim_pivots = anim.min_anim_pivots(&motion)?;
+        for piv_idx in 1..self.num_pivots as usize {
+            self.base_pose(piv_idx)?;
+            let pi = piv_idx as i32;
+            if pi < num_anim_pivots {
+                // ASSUME_NORMALIZED_ANIM_COMBO_WEIGHTS
+                let mut trans = Vector3::new(0.0, 0.0, 0.0);
+                // `Quaternion q0, q1;`: uninitialised until written
+                let mut q0: Option<Quaternion> = None;
+                let mut q1: Option<Quaternion> = None;
+                let mut weight_total = 0.0f32;
+                let mut wcount = 0;
+                for anim_num in 0..anim.get_num_anims() {
+                    let Some(m) = anim.get_motion(anim_num)? else { continue };
+                    let mo = motion(&m);
+                    let frame_num = anim.get_frame(anim_num)?;
+                    let pivot_map = anim.get_pivot_weight_map(anim_num)?;
+                    let mut weight = anim.get_weight(anim_num)?;
+                    if let Some(map) = pivot_map {
+                        let w = map.read().expect("pivot map lock").get(pi)?;
+                        if !crate::logic::modules::plant(9572) {
+                            weight *= w;
+                        }
+                    }
+                    if f64::from(weight) != 0.0 {
+                        wcount += 1;
+                        let temp_trans = mo.get_translation(poses, pi, frame_num)?;
+                        if crate::logic::modules::plant(9573) {
+                            trans += self.scale_factor * temp_trans;
+                        } else {
+                            trans += weight * self.scale_factor * temp_trans;
+                        }
+                        weight_total += weight;
+                        if let Some(q) = mo.get_orientation(poses, pi, frame_num)? {
+                            q1 = Some(q);
+                        }
+                        let q1v = q1.ok_or(W3dUndefined::UninitialisedRead)?;
+                        if wcount == 1 || crate::logic::modules::plant(9571) {
+                            q0 = Some(q1v);
+                        } else {
+                            let q0v = q0.ok_or(W3dUndefined::UninitialisedRead)?;
+                            // `Fast_Slerp`'s cosine: a NaN reaches `Fast_Acos`'s table with an index outside it
+                            // (upstream reads past the table; the Rust's table lookup would panic)
+                            let cos_t = q0v.x * q1v.x + q0v.y * q1v.y + q0v.z * q1v.z + q0v.w * q1v.w;
+                            if cos_t.is_nan() {
+                                return Err(W3dUndefined::IndexOutOfRange.into());
+                            }
+                            q0 = Some(fast_slerp(&q0v, &q1v, weight / weight_total));
+                        }
+                    }
+                }
+                if (weight_total != 0.0f32 && !crate::logic::modules::plant(9579)) || (crate::logic::modules::plant(9579) && weight_total > 0.0f32) {
+                    let q = q0.ok_or(W3dUndefined::UninitialisedRead)?;
+                    let p = &mut self.pivots[piv_idx];
+                    p.transform.translate_v(&trans);
+                    p.transform.post_mul(&build_matrix3d(&q));
+                }
+                let mut visible = false;
+                let mut anim_num = 0;
+                while anim_num < anim.get_num_anims() && (!visible || crate::logic::modules::plant(9580)) {
+                    if let Some(m) = anim.get_motion(anim_num)? {
+                        let frame_num = anim.get_frame(anim_num)?;
+                        if crate::logic::modules::plant(9580) {
+                            visible = motion(&m).get_visibility(pi, frame_num)?;
+                        } else {
+                            visible |= motion(&m).get_visibility(pi, frame_num)?;
+                        }
+                    }
+                    anim_num += 1;
+                }
+                self.pivots[piv_idx].is_visible = visible;
+            }
+            self.captured(piv_idx);
         }
         Ok(())
     }
