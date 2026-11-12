@@ -3676,4 +3676,19 @@ extern "C" {
     // Display::Display's cinematic members and W3DDisplay::draw's cinematic text block, verbatim
     // (differential/wrap_cinematic_text.cpp, which documents the words).
     pub fn ref_cinematic_text_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #148: W3DView::pickDrawable, RTS3DScene::castRay, HLodClass::Cast_Ray, the boxes' Cast_Ray, colmathline.cpp's
+    // box collides, rendobj.h's collision types, W3DModelDraw's collision types and setSelectable, and SelectionInfo.cpp's
+    // getPickTypesForContext, verbatim (differential/wrap_pick_drawable.cpp, which documents the words).
+    pub fn ref_pick_drawable_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
+    // GitHub #148: GlobalLanguage.cpp's field table, INI::parseLanguageDefinition, the constructor, parseFontDesc,
+    // parseFontFileName and adjustFontSize, verbatim, under the real INI::load (differential/wrap_global_language.cpp).
+    pub fn ref_global_language_reset(x_resolution: c_int);
+    pub fn ref_global_language_dump(buf: *mut c_uchar, cap: c_int) -> c_int;
+    pub fn ref_global_language_adjust(size: c_int) -> c_int;
+
+    // GitHub #148: Diplomacy.cpp's briefing history and window (UpdateDiplomacyBriefingText, Show/Hide/Reset/
+    // ToggleDiplomacy, updateFunc, DiplomacyInput, DiplomacySystem), verbatim (differential/wrap_diplomacy.cpp).
+    pub fn ref_diplomacy_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 }

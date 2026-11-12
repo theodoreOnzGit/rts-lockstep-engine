@@ -218,6 +218,25 @@ pub fn decal_ring(decal: &rts_lockstep_engine::client::radius_cursor::DecalShado
     (pts, [cr, cg, cb, alpha])
 }
 
+/// (#148) `GlobalLanguage::init`: `INI::load("Data\\<language>\\Language.ini", INI_LOAD_OVERWRITE)` (from `open`) over the
+/// constructor's members. `None` while the file is still being fetched; `Some(Err)` if it is missing or does not read
+/// (the language is left as it was: the constructor's values, as upstream without the file).
+pub fn load_language(language: &mut rts_lockstep_engine::client::global_language::GlobalLanguage, name: &[u8], open: impl Fn(&[u8]) -> Option<Vec<u8>>, waiting: impl Fn() -> bool) -> Option<Result<(), String>> {
+    use rts_lockstep_engine::client::global_language::GlobalLanguage;
+    let path = GlobalLanguage::file_name(name);
+    let text = open(&path);
+    if waiting() {
+        return None;
+    }
+    let Some(text) = text else { return Some(Err(format!("no {}", String::from_utf8_lossy(&path)))) };
+    let mut g = language.clone();
+    if let Err(e) = g.parse_ini(&path, &text) {
+        return Some(Err(format!("Language.ini did not read: {e:?}")));
+    }
+    *language = g;
+    Some(Ok(()))
+}
+
 /// `GameClient::init`'s mouse: `parseIni` of `Data\INI\Mouse.ini` (from `open`), `initCursorResources` (each named
 /// texture's resource counts as loaded: the system icon stands in for the `.ANI` file, which is not read), then
 /// `init`. `None` while the file is still being fetched; `Some(Err)` if it is missing or does not read (the mouse is
@@ -234,6 +253,8 @@ pub fn load_mouse(mouse: &mut Mouse, open: impl Fn(&[u8]) -> Option<Vec<u8>>, wa
         return Some(Err(format!("Mouse.ini did not read: {e:?}")));
     }
     m.init_cursor_resources(|_| true);
+    // (#148) `TheGlobalLanguageData`, made before the mouse: `init`'s tooltip font reads it
+    m.language = mouse.language.clone();
     m.init();
     // what the mouse had been asked before the file came (visibility, the cursor, the focus) is kept
     m.visible = mouse.visible;
@@ -249,6 +270,26 @@ pub fn load_mouse(mouse: &mut Mouse, open: impl Fn(&[u8]) -> Option<Vec<u8>>, wa
 mod tests {
     use super::*;
     use rts_lockstep_engine::common::base_type::Coord2D;
+
+    /// #148, predicted before the run: without the file the language is the constructor's and the missing file is reported;
+    /// while fetched, `None`; a `Language.ini` with `ResolutionFontAdjustment = 0.25` reads it; one with an unknown field
+    /// is reported and leaves the language alone.
+    #[test]
+    fn language_ini_is_read_from_the_files() {
+        use rts_lockstep_engine::client::global_language::GlobalLanguage;
+        let mut g = GlobalLanguage::default();
+        assert_eq!(load_language(&mut g, b"English", |_| None, || false), Some(Err("no Data\\English\\Language.ini".into())));
+        assert_eq!(load_language(&mut g, b"English", |_| None, || true), None);
+        assert_eq!(g, GlobalLanguage::default());
+        let bad = b"Language\n  Nope = 1\nEnd\n".to_vec();
+        assert!(matches!(load_language(&mut g, b"English", |_| Some(bad.clone()), || false), Some(Err(_))));
+        assert_eq!(g, GlobalLanguage::default());
+        let ini = b"Language\n  ResolutionFontAdjustment = 0.25\nEnd\n".to_vec();
+        assert_eq!(load_language(&mut g, b"English", |p| (p == b"Data\\English\\Language.ini").then(|| ini.clone()), || false), Some(Ok(())));
+        assert_eq!(g.resolution_font_size_adjustment, 0.25);
+        // 1600 wide: 20 * (1 + 1 * 0.25) = 25
+        assert_eq!(g.adjust_font_size(20, 1600), 25);
+    }
 
     /// #117, predicted before the run: with a `Mouse.ini` naming the arrow, the attack cursor and an eight-way scroll
     /// cursor, the mouse after `load_mouse` and `setVisibility(TRUE)` shows the default arrow; hidden it shows nothing;

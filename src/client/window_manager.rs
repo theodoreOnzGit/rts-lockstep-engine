@@ -1462,7 +1462,11 @@ impl GameWindowManager {
     // -----------------------------------------------------------------------
 
     /// `winCreate(parent, status, x, y, width, height, system, instData)`: the window's id. The default font
-    /// replaces the instance data's (`TheGlobalLanguageData` is not modelled: Times New Roman 14).
+    /// replaces the instance data's (~~`TheGlobalLanguageData` is not modelled: Times New Roman 14~~ **Corrected
+    /// 2026-11-12, #148:** `TheGlobalLanguageData` is modelled, `crate::client::global_language`, but not given to the
+    /// window manager: the font is upstream's fallback for no language data, Times New Roman 14, where upstream with its
+    /// language data takes `m_defaultWindowFont` (GameWindowManager.cpp:1447; the constructor's `Arial Unicode MS` 12, or
+    /// `Language.ini`'s `DefaultWindowFont`)).
     #[allow(clippy::too_many_arguments)]
     pub fn win_create<H: GuiHost>(&mut self, h: &mut H, parent: Option<WinId>, status: u32, x: i32, y: i32, width: i32, height: i32, system: SystemFunc, inst: Option<WinInstanceData>) -> WinId {
         let id = self.tree.windows.len();

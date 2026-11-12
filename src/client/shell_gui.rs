@@ -184,6 +184,12 @@ pub struct ShellGui<W> {
     pub replays: MemoryReplayFolder,
     /// (#87) QuitMenu.cpp's statics, `TheInGameUI`'s quit-menu flags and the game's state the menu reads (the owner's).
     pub quit_menu: QuitMenu,
+    /// (#148) Diplomacy.cpp's statics (the briefing history and its window, `crate::client::diplomacy`), the window's
+    /// slide (`theAnimateWindowManager`), and the quit menu's `HideDiplomacy` / `ResetDiplomacy` calls not yet made (the
+    /// owner makes them on the window manager, [`ShellGui::diplomacy_with`]).
+    pub diplomacy: crate::client::diplomacy::Diplomacy,
+    pub diplomacy_animate: Option<crate::client::animate_window::AnimateWindowManager>,
+    pub diplomacy_calls: Vec<&'static str>,
 }
 
 impl<W: WndFiles> ShellGui<W> {
@@ -226,12 +232,29 @@ impl<W: WndFiles> ShellGui<W> {
             challenge: ChallengeMenu::default(),
             replays: MemoryReplayFolder { files: Vec::new(), desktop: b"Desktop".to_vec() },
             quit_menu: QuitMenu::default(),
+            diplomacy: Default::default(),
+            diplomacy_animate: None,
+            diplomacy_calls: Vec::new(),
         }
     }
 
     /// The files' text (`TheGameText`), through the reader's host.
     fn text(&self, label: &[u8]) -> Vec<u16> {
         self.files.as_ref().map_or_else(Vec::new, |f| f.files.fetch_text(label))
+    }
+
+    /// (#148) `f` on the briefing history's window (`crate::client::diplomacy`) with this host and `wm`; whether it asked
+    /// for the quit menu to be hidden (`ToggleDiplomacy`'s `HideQuitMenu()`).
+    pub fn diplomacy_with<R>(&mut self, wm: &mut GameWindowManager, f: impl FnOnce(&mut crate::client::diplomacy::WindowManagerDiplomacy<'_, Self, fn(&Self, &[u8]) -> Vec<u16>>) -> R) -> (R, bool) {
+        let mut d = std::mem::take(&mut self.diplomacy);
+        let mut a = self.diplomacy_animate.take();
+        let fetch: fn(&Self, &[u8]) -> Vec<u16> = |h, l| h.text(l);
+        let mut h = crate::client::diplomacy::WindowManagerDiplomacy { wm, host: self, diplomacy: &mut d, animate: &mut a, fetch, hide_quit_menu: false };
+        let r = f(&mut h);
+        let hide_quit_menu = h.hide_quit_menu;
+        self.diplomacy = d;
+        self.diplomacy_animate = a;
+        (r, hide_quit_menu)
     }
 }
 
@@ -264,6 +287,11 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ChallengeMenuSystem" => cm::challenge_menu_system(wm, self, win, msg, d1, d2),
             // (#87)
             b"QuitMenuSystem" => qm::quit_menu_system(wm, self, win, msg, d1, d2),
+            // (#148) the briefing history (`Diplomacy.wnd`)
+            b"DiplomacySystem" => {
+                let control_id = crate::client::window_manager::data_win(d1).map_or(0, |c| wm.tree.windows[c].id);
+                self.diplomacy_with(wm, |h| crate::client::diplomacy::diplomacy_system(h, msg, control_id, None)).0
+            }
             _ => {
                 self.untranslated.push(func.to_vec());
                 MsgHandled::Ignored
@@ -284,6 +312,8 @@ impl<W: WndFiles> GuiHost for ShellGui<W> {
             b"ReplayMenuInput" => rm::replay_menu_input(wm, self, win, msg, d1, d2),
             b"PopupReplayInput" => pr::popup_replay_input(wm, self, win, msg, d1, d2),
             b"ChallengeMenuInput" => cm::challenge_menu_input(wm, self, win, msg, d1, d2),
+            // (#148)
+            b"DiplomacyInput" => self.diplomacy_with(wm, |h| crate::client::diplomacy::diplomacy_input(h, msg, d1 as u8)).0,
             _ => {
                 if !self.untranslated.iter().any(|f| f == func) {
                     self.untranslated.push(func.to_vec());
@@ -652,7 +682,13 @@ impl<W: WndFiles> QuitMenuHost for ShellGui<W> {
         &mut self.quit_menu
     }
     fn hide_in_game_windows(&mut self, what: &'static str) {
-        // (the cursor, the diplomacy and chat windows and the control bar's science purchase are not the shell's)
+        // (#148: `HideDiplomacy` and `ResetDiplomacy`, the briefing history's window, made by the owner on the window
+        // manager after the quit menu's call)
+        if what == "HideDiplomacy" || what == "ResetDiplomacy" {
+            self.diplomacy_calls.push(what);
+            return;
+        }
+        // (the cursor, ~~the diplomacy~~ (#148) the chat windows and the control bar's science purchase are not the shell's)
         if !self.untranslated.iter().any(|f| f == what.as_bytes()) {
             self.untranslated.push(what.as_bytes().to_vec());
         }
@@ -1153,6 +1189,23 @@ WINDOW\n  WINDOWTYPE = USER;\n  SCREENRECT = UPPERLEFT: 0 0, BOTTOMRIGHT: 800 60
         let f = if no_save { "QuitNoSave.wnd" } else { "QuitMenu.wnd" };
         let names: &[&str] = if no_save { &["ButtonExit", "ButtonRestart", "ButtonReturn", "ButtonOptions"] } else { &["ButtonExit", "ButtonRestart", "ButtonReturn", "ButtonOptions", "ButtonSaveLoad"] };
         let parent = win(f, "USER", "QuitMenuParent", (300, 150, 500, 450), true, "    SYSTEMCALLBACK = \"QuitMenuSystem\";\n", &buttons(f, 310, 160, names));
+        layout_file("[None]", "[None]", "[None]", &parent)
+    }
+
+    /// (#148) A `Diplomacy.wnd` (the briefing history's window, made by `ShowDiplomacy`): the parent with Diplomacy.cpp's
+    /// callbacks, the solo parent with its list box, the in-game and buddies parents, the two radio buttons and the hide
+    /// button. Test data, not EA's layout.
+    pub fn diplomacy_wnd() -> Vec<u8> {
+        let f = "Diplomacy.wnd";
+        let list = "    LISTBOXDATA = LENGTH: 100, AUTOSCROLL: 0, AUTOPURGE: 0, SCROLLBAR: 0, MULTISELECT: 0, COLUMNS: 1, FORCESELECT: 0;\n";
+        let solo = win(f, "USER", "SoloParent", (100, 100, 700, 400), false, "", &win(f, "SCROLLLISTBOX", "ListboxSolo", (120, 120, 680, 360), false, list, ""));
+        let mut c = solo;
+        c += &win(f, "USER", "InGameParent", (100, 100, 700, 400), false, "", "");
+        c += &win(f, "USER", "BuddiesParent", (100, 100, 700, 400), false, "", "");
+        c += &win(f, "RADIOBUTTON", "RadioButtonInGame", (110, 80, 200, 98), false, "    RADIOBUTTONDATA = GROUP: 1;\n", "");
+        c += &win(f, "RADIOBUTTON", "RadioButtonBuddies", (210, 80, 300, 98), false, "    RADIOBUTTONDATA = GROUP: 1;\n", "");
+        c += &buttons(f, 600, 410, &["ButtonHide"]);
+        let parent = win(f, "USER", "DiplomacyParent", (90, 70, 710, 450), false, "    SYSTEMCALLBACK = \"DiplomacySystem\";\n    INPUTCALLBACK = \"DiplomacyInput\";\n", &c);
         layout_file("[None]", "[None]", "[None]", &parent)
     }
 

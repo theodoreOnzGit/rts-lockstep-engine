@@ -643,9 +643,11 @@ mod tests {
         assert!(!hidden(&wm, last(&wm, f, "QuitMenuParent")), "QuitFull shows the parent");
         assert_eq!(text(&wm, last(&wm, f, "ButtonRestart")), "T:GUI:RestartMission");
         assert_eq!(text(&wm, last(&wm, f, "ButtonExit")), "T:GUI:ExitMission");
-        for w in ["HideDiplomacy", "HideInGameChat", "TheControlBar->hidePurchaseScience"] {
+        for w in ["HideInGameChat", "TheControlBar->hidePurchaseScience"] {
             assert!(h.untranslated.iter().any(|f| f == w.as_bytes()), "{w}");
         }
+        // (~~recorded as untranslated~~ corrected 2026-11-12, #148: `HideDiplomacy` is queued for the briefing history)
+        assert!(h.diplomacy_calls.contains(&"HideDiplomacy"));
         // #117: the arrow is the client's mouse's
         assert_eq!(h.quit_menu.mouse_set_cursor, [crate::client::mouse::cursor::ARROW]);
         assert!(!h.untranslated.iter().any(|f| f.starts_with(b"TheMouse")));
@@ -805,9 +807,11 @@ mod tests {
         assert_eq!(h.requests, [ShellRequest::SetGamePaused(false)]);
         assert!(!h.quit_menu.is_visible && !h.quit_menu.quit_menu_visible && !h.quit_menu.client_quiet);
         assert!(hidden(&wm, last(&wm, f, "QuitMenuParent")));
-        for w in ["HideDiplomacy", "ResetDiplomacy", "HideInGameChat", "ResetInGameChat", "TheControlBar->hidePurchaseScience", "TheControlBar->hideSpecialPowerShortcut"] {
+        for w in ["HideInGameChat", "ResetInGameChat", "TheControlBar->hidePurchaseScience", "TheControlBar->hideSpecialPowerShortcut"] {
             assert!(h.untranslated.iter().any(|f| f == w.as_bytes()), "{w}");
         }
+        // (corrected 2026-11-12, #148: the diplomacy calls are queued for the briefing history)
+        assert!(h.diplomacy_calls.contains(&"HideDiplomacy") && h.diplomacy_calls.contains(&"ResetDiplomacy"));
         // the options screen up
         escape(&mut wm, &mut h);
         press(&mut wm, &mut h, f, "ButtonOptions");

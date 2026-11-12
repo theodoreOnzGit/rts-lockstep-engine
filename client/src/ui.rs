@@ -138,6 +138,9 @@ pub struct GameUi {
     pub hide_quit_menu_buttons: Vec<WinId>,
     /// (#109) The quit menu call the last pointer event's `GBM_SELECTED` made ([`GameUi::take_quit_menu_call`]).
     quit_menu_call: Option<QuitMenuCall>,
+    /// (#148) `ControlBarSystem`'s `GBM_SELECTED` on `ControlBar.wnd:PopupCommunicator` (`ToggleDiplomacy(FALSE)`, the
+    /// briefing history outside a multiplayer game): made by the app on the shell ([`GameUi::take_diplomacy_toggle`]).
+    diplomacy_toggle: bool,
     /// (#136) `TheControlBar`'s stage: `m_currentControlBarStage`, `CP_MASTER` (`ControlBarParent`) and its default
     /// position (`rts_lockstep_engine::client::control_bar_stage`).
     pub stage: ControlBarStage,
@@ -379,6 +382,7 @@ pub fn load_game_ui_with<D: LocalDevice>(fs: &FileSystem<D>, text: &impl GameTex
         options_button: find("ControlBar.wnd:ButtonOptions".into()),
         hide_quit_menu_buttons: ["ButtonGeneral", "ButtonIdleWorker"].iter().filter_map(|n| find(format!("ControlBar.wnd:{n}"))).collect(),
         quit_menu_call: None,
+        diplomacy_toggle: false,
         stage: ControlBarStage::default(),
         button_large: find(String::from_utf8_lossy(BUTTON_LARGE).into_owned()),
         background_marker: find("ControlBar.wnd:BackgroundMarker".into()).map(|w| (w, wm.tree.screen_position(w))),
@@ -931,6 +935,9 @@ impl GameUi {
                 self.quit_menu_call = Some(QuitMenuCall::Toggle);
             } else if self.hide_quit_menu_buttons.contains(&w) {
                 self.quit_menu_call = Some(QuitMenuCall::Hide);
+            } else if Some(w) == self.wm.tree.find_by_name(b"ControlBar.wnd:PopupCommunicator") {
+                // (#148) `controlID == buttonCommunicator`: `ToggleDiplomacy(FALSE)`, whichever command the button holds
+                self.diplomacy_toggle = true;
             } else if Some(w) == self.button_large {
                 // (#136) `buttonLargeID`: `TheControlBar->toggleControlBarStage()`
                 self.with_stage(|stage, h| stage.toggle_control_bar_stage(h));
@@ -1083,6 +1090,12 @@ impl GameUi {
     /// on the shell's quit menu.
     pub fn take_quit_menu_call(&mut self) -> Option<QuitMenuCall> {
         self.quit_menu_call.take()
+    }
+
+    /// (#148) Whether the communicator button was pressed since the last call (`ToggleDiplomacy(FALSE)`), for the app to
+    /// make on the shell's briefing history.
+    pub fn take_diplomacy_toggle(&mut self) -> bool {
+        std::mem::take(&mut self.diplomacy_toggle)
     }
 
     /// (#74) A key through the bar's window manager ([`keyboard_into`]); whether the UI used it.

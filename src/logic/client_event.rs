@@ -120,6 +120,21 @@ pub enum ClientEvent {
     /// ScriptActions.cpp:2563), in its order ([`CinematicTextCall`]). ~~Until #146 they went only to the cut log.~~ Not
     /// simulation state: the display's cinematic text is the client's and nothing in the logic reads it back.
     CinematicText(CinematicTextCall),
+    /// GitHub #148: the script actions' calls on `TheInGameUI` that show a briefing: `militarySubtitle(label, duration)`
+    /// (`SHOW_MILITARY_CAPTION`, and `doSpeechPlay`'s subtitle) and `popupMessage(message, x, y, width, pause, pauseMusic)`
+    /// (`INGAME_POPUP_MESSAGE`). Each records its label in the briefing history (`UpdateDiplomacyBriefingText(label,
+    /// FALSE)`, `client::diplomacy`). ~~Until #148 they went only to the cut log.~~ Not simulation state: the InGameUI is
+    /// the client's and nothing in the logic reads it back.
+    InGameUi(InGameUiCall),
+}
+
+/// GitHub #148: one of the script actions' briefing calls on `TheInGameUI` ([`ClientEvent::InGameUi`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InGameUiCall {
+    /// `TheInGameUI->militarySubtitle(label, duration)` (duration in milliseconds).
+    MilitarySubtitle { label: Vec<u8>, duration: i32 },
+    /// `TheInGameUI->popupMessage(message, x, y, width, pause, pauseMusic)` (x and y are percentages of the screen).
+    PopupMessage { message: Vec<u8>, x: i32, y: i32, width: i32, pause: bool, pause_music: bool },
 }
 
 /// GitHub #146: one of `doDisplayCinematicText`'s calls on `TheDisplay`, as the client's display makes it

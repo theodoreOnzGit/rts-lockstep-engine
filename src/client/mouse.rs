@@ -434,14 +434,17 @@ impl Default for MouseTooltip {
 
 impl MouseTooltip {
     /// `mouseNotifyResolutionChange()`: a new display string (empty) in the tooltip font, word wrapped at 120 pixels.
-    /// `TheGlobalLanguageData`'s tooltip font (`language_font`, when it names one) is taken before `Mouse.ini`'s; its
-    /// `adjustFontSize` is the host's (the size is kept as given).
-    pub fn mouse_notify_resolution_change(&mut self, language_font: Option<crate::client::window_script::GameFont>) {
+    /// `TheGlobalLanguageData`'s tooltip font (`language_font`, when it names one) is taken before `Mouse.ini`'s.
+    /// ~~its `adjustFontSize` is the host's (the size is kept as given)~~ **Corrected 2026-11-12, #148:** either size goes
+    /// through `TheGlobalLanguageData->adjustFontSize` (`adjust_font_size`, the caller's: the language's
+    /// `ResolutionFontAdjustment` at the display's width, `client::global_language`), as Mouse.cpp:616 and 623 do; the
+    /// size was kept as given.
+    pub fn mouse_notify_resolution_change(&mut self, language_font: Option<crate::client::window_script::GameFont>, adjust_font_size: impl Fn(i32) -> i32) {
         self.display_string = Vec::new();
         let s = &self.settings;
         self.font = Some(match language_font.filter(|f| !f.name.is_empty()) {
-            Some(f) => f,
-            None => crate::client::window_script::GameFont { name: s.tooltip_font_name.clone(), point_size: s.tooltip_font_size, bold: s.tooltip_font_is_bold },
+            Some(f) => crate::client::window_script::GameFont { point_size: adjust_font_size(f.point_size), ..f },
+            None => crate::client::window_script::GameFont { name: s.tooltip_font_name.clone(), point_size: adjust_font_size(s.tooltip_font_size), bold: s.tooltip_font_is_bold },
         });
         self.word_wrap = if plant(9161) { 0 } else { 120 };
     }
@@ -713,6 +716,9 @@ pub struct Mouse {
     /// `TheInGameUI->isScrolling()` and `getScrollAmount()` as the owner last set them (`setCursorDirection` reads them).
     pub ui_scrolling: bool,
     pub ui_scroll_amount: Coord2D,
+    /// (#148) `TheGlobalLanguageData` as `init`'s `mouseNotifyResolutionChange` reads it (its tooltip font and
+    /// `adjustFontSize`): the constructor's until the owner gives it the language's `Language.ini`.
+    pub language: crate::client::global_language::GlobalLanguage,
 }
 
 impl Default for Mouse {
@@ -765,6 +771,7 @@ impl Mouse {
             drawing: false,
             ui_scrolling: false,
             ui_scroll_amount: Coord2D { x: 0.0, y: 0.0 },
+            language: crate::client::global_language::GlobalLanguage::default(),
         }
     }
 
@@ -797,8 +804,10 @@ impl Mouse {
         self.current_cursor = cursor::ARROW;
         // (the colours are `Mouse::Mouse`'s white; the text string is `init`'s)
         let white = RGBAColorInt { red: 255, green: 255, blue: 255, alpha: 255 };
-        // (#124) `mouseNotifyResolutionChange()`, `m_displayTooltip = FALSE`, the limits
-        self.tooltip.mouse_notify_resolution_change(None);
+        // (#124) `mouseNotifyResolutionChange()`, `m_displayTooltip = FALSE`, the limits (#148: with `TheGlobalLanguageData`'s
+        // tooltip font and `adjustFontSize`, [`Self::language`], at `m_xResolution`, the display's width)
+        let (font, lang, x_resolution) = (self.language.tooltip_font(), self.language.clone(), self.tooltip.display_width);
+        self.tooltip.mouse_notify_resolution_change(font, |s| lang.adjust_font_size(s, x_resolution));
         self.tooltip.display = false;
         self.max = ICoord2D { x: 799, y: 599 };
         self.cursor_text = Some(CursorText { label: Vec::new(), color: white, drop_color: white });

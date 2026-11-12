@@ -90,6 +90,10 @@ pub struct Controls {
     /// command), so the translators after it (the camera's `LookAtTranslator`, 60, and `CommandTranslator`, 70) do not
     /// get it. Set by [`Controls::selection_right_button`], read by [`Controls::right_release`].
     pub right_up_destroyed: bool,
+    /// #148: the double click's own pick, `pickDrawable(&region.lo, FALSE, PICK_TYPE_SELECTABLE)` (SelectionXlat.cpp:493),
+    /// when the application gives one for the next release ([`Controls::left_release`] takes it; without one the
+    /// release's `picked` stands in).
+    pub double_click_pick: Option<Option<ObjectId>>,
 }
 
 /// #131: a command window as `executeHotKey` sees it.
@@ -239,10 +243,29 @@ impl Controls {
             hot_key_windows: Vec::new(),
             gui_sounds: Vec::new(),
             right_up_destroyed: false,
+            double_click_pick: None,
         };
         // #35: `TheRadar->newMap(TheTerrainLogic)` (`GameLogic::startNewGame`)
         c.radar.new_map(&mut c.client.world);
         c
+    }
+
+    /// #148: `getPickTypesForContext(forceAttackMode)` (SelectionInfo.cpp:252) on the InGameUI's pending GUI command and
+    /// selection: `getPickTypesForCurrentSelection` reads whether the selection is controllable and each selected
+    /// object's `hasWeaponToDealDamageType(DAMAGE_FLAME)` from the World (reads only).
+    pub fn pick_types_for_context(&self, force_attack_mode: bool) -> i32 {
+        use rts_lockstep_engine::client::pick_drawable::{get_pick_types_for_context, get_pick_types_for_current_selection};
+        use rts_lockstep_engine::client::selection_info::SelectionInfoHost;
+        let ui = &self.ui;
+        let h = &self.client;
+        let options = ui.gui_command().map(|b| b.options);
+        get_pick_types_for_context(force_attack_mode, options, |force| {
+            let controllable = rts_lockstep_engine::client::command_xlat::are_selected_objects_controllable(ui, h);
+            let flames = ui.all_selected_drawables().iter().map(|&d| {
+                h.drawable_object(d).map(|o| rts_lockstep_engine::logic::world::object_weapons::has_weapon_to_deal_damage_type(&h.world, o, rts_lockstep_engine::logic::damage::DAMAGE_FLAME))
+            });
+            get_pick_types_for_current_selection(force, controllable, flames)
+        }) as i32
     }
 
     /// #35: a logic frame's events to the radar: its lists, events and flags; the messages it shows
@@ -627,9 +650,12 @@ impl Controls {
         // rectangle a point (`MetaEventTranslator`'s, with `TheMouse`'s drag tolerance)
         let is_point = click.is_point();
         self.client.sync_modes(&self.ui);
+        let double_click_pick = self.double_click_pick.take();
         if double {
-            // `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)`: the application's pick under the pointer
-            self.client.view.picked_at_click = picked;
+            // `pickDrawable(point, FALSE, PICK_TYPE_SELECTABLE)`: ~~the application's pick under the pointer~~ **corrected
+            // 2026-11-12, #148:** the application's translated `pickDrawable` with `PICK_TYPE_SELECTABLE`
+            // ([`Self::double_click_pick`]), else the release's pick
+            self.client.view.picked_at_click = double_click_pick.unwrap_or(picked);
             if self.selection.left_double_click(is_point, self.alt_held, &mut self.ui, &mut self.client) == Disposition::Destroy {
                 return true;
             }

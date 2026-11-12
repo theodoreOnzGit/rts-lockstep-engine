@@ -181,11 +181,49 @@ pub fn terrain_grid(w: &World, step: f32) -> Option<TerrainGrid> {
     Some(TerrainGrid { step, nx, ny, heights })
 }
 
+/// (#146, #148) One client frame of the display's cinematic text: `ticks` drawn frames (30 a second, at most 4 after a
+/// stall) of `W3DDisplay::draw`'s block, each taking a frame from the count; the last frame's draw, and whether the
+/// client's button column (`+ - R < > || S C B X`, the zoom column a phone needs) shows. **Owner decision 2026-11-12
+/// (#147, #148):** the column hides while cinematic text is showing (a frame drew it) and comes back when the text
+/// ends (new: upstream has no such column; the letterbox stays upstream's).
+pub fn cinematic_frame(c: &mut rts_lockstep_engine::client::cinematic_text::CinematicText, ticks: u32, width: u32, height: u32) -> (Option<rts_lockstep_engine::client::cinematic_text::CinematicDraw>, bool) {
+    let mut drawn = None;
+    for _ in 0..ticks.min(4) {
+        drawn = c.draw(width, height, |_| 0);
+    }
+    let column_shown = drawn.is_none();
+    (drawn, column_shown)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rts_lockstep_engine::logic::world::gate_scenario::{gate_world, run_gate_scenario};
     use rts_lockstep_engine::logic::world::game_logic_update::CRC_RECALC;
+
+    /// #148 (owner decision 2026-11-12), predicted before the run: on a phone's 390x844 the column shows with no cinematic
+    /// text; a script's text for 2 frames hides it on the two frames that draw the text (at y 759) and it comes back on
+    /// the third, when the text is no longer drawn; a stall of 10 ticks draws at most 4; text with no frames left, or an
+    /// empty text, never hides it.
+    #[test]
+    fn the_column_hides_while_cinematic_text_shows() {
+        use rts_lockstep_engine::client::cinematic_text::{CinematicText, DEFAULT_RESOLUTION_FONT_SIZE_ADJUSTMENT as ADJ};
+        use rts_lockstep_engine::logic::client_event::CinematicTextCall;
+        let mut c = CinematicText::default();
+        assert_eq!(cinematic_frame(&mut c, 1, 390, 844), (None, true));
+        c.apply(&CinematicTextCall::Text(b"The base is under attack".to_vec()), 390, ADJ);
+        c.apply(&CinematicTextCall::Frames(2), 390, ADJ);
+        let (d, shown) = cinematic_frame(&mut c, 1, 390, 844);
+        assert_eq!((d.map(|d| d.y), shown), (Some(759), false));
+        assert!(!cinematic_frame(&mut c, 1, 390, 844).1);
+        assert_eq!(cinematic_frame(&mut c, 1, 390, 844), (None, true), "the text has ended: the column is back");
+        c.apply(&CinematicTextCall::Frames(30), 390, ADJ);
+        let (d, shown) = cinematic_frame(&mut c, 10, 390, 844);
+        assert!(d.is_some() && !shown);
+        assert_eq!(c.frames, 26, "a stall draws at most 4 frames");
+        c.apply(&CinematicTextCall::Text(Vec::new()), 390, ADJ);
+        assert_eq!(cinematic_frame(&mut c, 1, 390, 844), (None, true), "an empty text is not shown");
+    }
 
     /// The client never changes the simulation: the gate game played with a snapshot taken after every frame gives
     /// exactly the CRCs of the gate game played without (`run_gate_scenario`, which gate (a) compares between the native

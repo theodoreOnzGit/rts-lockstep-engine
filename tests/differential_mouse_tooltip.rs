@@ -126,7 +126,7 @@ fn rust_seq(input: &[i32]) -> Vec<i32> {
     let mut t = MouseTooltip { settings: s, display_width: input[15], ..MouseTooltip::default() };
     // `Mouse::init`
     let lang = (input[14] != 0).then(|| GameFont { name: b"Language".to_vec(), point_size: input[14], bold: true });
-    t.mouse_notify_resolution_change(lang.clone());
+    t.mouse_notify_resolution_change(lang.clone(), |s| s);
     t.display = false;
     state(&t, &mut out);
     for w in input[16..].chunks(8) {
@@ -164,7 +164,7 @@ fn rust_seq(input: &[i32]) -> Vec<i32> {
                     }
                 }
             }
-            4 => t.mouse_notify_resolution_change(lang.clone()),
+            4 => t.mouse_notify_resolution_change(lang.clone(), |s| s),
             _ => t.display_width = w[2],
         }
         state(&t, &mut out);

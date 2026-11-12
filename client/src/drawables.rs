@@ -286,6 +286,106 @@ impl<D: LocalDevice> WorldDrawables<D> {
         }
     }
 
+    /// #148: the scene `pickDrawable` casts at (`RTS3DScene`'s render list, `rts_lockstep_engine::client::pick_drawable`):
+    /// one render object per object of `objects`, in their order, its drawable the object (`DrawableInfo::m_drawable`).
+    ///
+    /// - **Its collision types** are `W3DModelDraw::setModelState`'s from the object's kinds, its rubble state (the
+    ///   drawable's `MODELCONDITION_RUBBLE`) and whether it is effectively dead (`model_draw_collision_type`), with the
+    ///   selectable bit cleared for an object made unselectable (`Object::setSelectable(FALSE)` reaching
+    ///   `W3DModelDraw::setSelectable`).
+    /// - **Its visibility** (`Is_Really_Visible`) is the drawable's: not effectively hidden. (The camera's visibility pass
+    ///   is not made: the pick ray only crosses the view.)
+    /// - **Its models** (new, see `pick_drawable`'s module docs): with the art, each shown sub-object mesh of the posed
+    ///   model as the oriented box of its vertices in its bone's frame (a skin's deformed vertices in the model's frame),
+    ///   under the object's transform (its position, its orientation about z, the drawable's physics transform), as the
+    ///   model is drawn. **Without the art (the demo), the fallback:** the object's logic geometry as the one box (a
+    ///   sphere's or cylinder's radius as the box's half-widths, a box's own half-lengths, standing on its position but
+    ///   a sphere's, centred on it; at least the sizes the shapes are drawn with).
+    /// - **Its bounding sphere** is the sphere around its boxes.
+    pub fn pick_scene(&self, w: &World, objects: &[crate::view::ViewObject]) -> Vec<rts_lockstep_engine::client::pick_drawable::SceneRenderObj<ObjectId>> {
+        use rts_lockstep_engine::client::pick_drawable::{bounding_sphere, coll_type, model_draw_collision_type, oriented_bounds, set_selectable, BoxRenderObj, CollisionKinds, CollisionObject, SceneRenderObj};
+        use rts_lockstep_engine::common::kind_of::*;
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let mut list = Vec::new();
+        for o in objects {
+            let id = o.id;
+            let Some(obj) = w.find_object(id) else { continue };
+            let drawable = self.drawables.drawables.get(&id);
+            let kinds = CollisionKinds {
+                selectable: obj.is_kind_of(KINDOF_SELECTABLE),
+                shrubbery: obj.is_kind_of(KINDOF_SHRUBBERY),
+                mine: obj.is_kind_of(KINDOF_MINE),
+                forceattackable: obj.is_kind_of(KINDOF_FORCEATTACKABLE),
+                click_through: obj.is_kind_of(KINDOF_CLICK_THROUGH),
+            };
+            let co = CollisionObject {
+                bridge: obj.is_kind_of(KINDOF_BRIDGE),
+                bridge_tower: obj.is_kind_of(KINDOF_BRIDGE_TOWER),
+                structure: obj.is_kind_of(KINDOF_STRUCTURE),
+                rubble: drawable.is_some_and(|d| d.get_model_condition_flags().test(rts_lockstep_engine::common::model_state::MODELCONDITION_RUBBLE)),
+                effectively_dead: obj.is_effectively_dead(),
+            };
+            let mut collision_type = model_draw_collision_type(coll_type::ALL, &kinds, Some(&co));
+            if !obj.is_selectable {
+                collision_type = set_selectable(collision_type, false);
+            }
+            let mut world = Matrix3D::from_translation(&Vector3::new(o.pos[0], o.pos[1], o.pos[2]));
+            world.rotate_z(o.angle);
+            if let Some(x) = self.physics_xform(id) {
+                world = Matrix3D::multiply(&world, &x);
+            }
+            let basis_of = |m: &Matrix3D| {
+                let a = m.to_array();
+                ([[a[0], a[1], a[2]], [a[4], a[5], a[6]], [a[8], a[9], a[10]]], Vector3::new(a[3], a[7], a[11]))
+            };
+            let mut models: Vec<BoxRenderObj> = Vec::new();
+            match self.instance(id) {
+                Some(m) => {
+                    for (i, sub) in m.sub_objects.iter().enumerate() {
+                        if sub.hidden {
+                            continue;
+                        }
+                        let (points, tm) = if sub.is_skin() {
+                            (m.deformed(i).map(|(p, _)| p).unwrap_or_default(), world)
+                        } else {
+                            let Ok(t) = m.sub_object_transform(i) else { continue };
+                            (sub.model.vertices.clone(), Matrix3D::multiply(&world, &t))
+                        };
+                        let (basis, origin) = basis_of(&tm);
+                        if let Some(b) = oriented_bounds(points.iter().map(|p| Vector3::new(p[0], p[1], p[2])), basis, origin, coll_type::ALL) {
+                            models.push(b);
+                        }
+                    }
+                }
+                None => {
+                    let (basis, origin) = basis_of(&world);
+                    let (ex, ey, ez, up) = match o.shape {
+                        crate::view::Shape::Sphere { radius } => {
+                            let r = radius.max(0.5);
+                            (r, r, r, 0.0)
+                        }
+                        crate::view::Shape::Cylinder { radius, height } => {
+                            let h = height.max(0.5);
+                            (radius.max(0.5), radius.max(0.5), h / 2.0, h / 2.0)
+                        }
+                        crate::view::Shape::Box { half_forward, half_side, height } => {
+                            let h = height.max(0.5);
+                            (half_forward.max(0.25), half_side.max(0.25), h / 2.0, h / 2.0)
+                        }
+                    };
+                    let corners = [Vector3::new(-ex, -ey, up - ez), Vector3::new(ex, ey, up + ez)];
+                    if let Some(b) = oriented_bounds(corners, basis, origin, coll_type::ALL) {
+                        models.push(b);
+                    }
+                }
+            }
+            let (sphere_center, sphere_radius) = bounding_sphere(&models);
+            let really_visible = !drawable.is_some_and(|d| d.is_drawable_effectively_hidden());
+            list.push(SceneRenderObj { drawable: Some(id), collision_type, really_visible, sphere_center, sphere_radius, models });
+        }
+        list
+    }
+
     /// The posed models, for drawing their particles (#49).
     pub fn instances(&self) -> impl Iterator<Item = &RenderModel> {
         self.instances.values().map(|(_, m)| m)
@@ -536,6 +636,50 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
         assert!(r.roll_frames > 3, "the roll animation runs: {} frames seen", r.roll_frames);
         assert!(r.back.is_some(), "the runner stopped and is back to its idle model");
         assert_eq!(r.fired, [true, true], "both soldiers showed their firing model");
+    }
+
+    /// #148, `pickDrawable`'s scene. Predicted before the first run: with the synthetic art, the runner at (40, 50) is its
+    /// model's cube (-2 .. 2 about its bone, 2 up): a vertical pick ray through (40, 50) picks it, one through (43, 50)
+    /// passes beside the cube and picks nothing; a ray through the soldier at (150, 380) picks the soldier; without the
+    /// art (the demo's fallback, the logic geometry's box) the ray through (40, 50) picks the runner too; asked for
+    /// `PICK_TYPE_SHRUBBERY` alone, nothing. **Missed:** the gate's units are not `SELECTABLE`, so their render objects
+    /// have `COLL_TYPE_ALL` alone and `PICK_TYPE_SELECTABLE` picks none of them (as upstream's would not): the gate world
+    /// is asked with every bit (`(PickType)0xffffffff`, W3DDisplay.cpp:1322's debug pick) and with `SELECTABLE` (nothing),
+    /// and the demo's `SELECTABLE` copies (`crate::demo`, no art: the fallback) with `SELECTABLE`.
+    #[test]
+    fn the_pick_scene_is_the_models_boxes_or_the_shapes() {
+        use rts_lockstep_engine::client::pick_drawable::{pick_drawable_on_ray, pick_type, SceneRenderObj};
+        use rts_lockstep_engine::ww::vector3::Vector3;
+        let down = |scene: &[SceneRenderObj<ObjectId>], x: f32, y: f32, t: i32| pick_drawable_on_ray([], Vector3::new(x, y, 500.0), Vector3::new(x, y, -500.0), false, t, scene);
+        let extra = format!("{}{}", drawn("Runner", RUNNER_DRAW), drawn("Soldier", SOLDIER_DRAW));
+        for with_art in [true, false] {
+            let mut w = gate_map_world_with(&extra);
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+            let runner = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+            let soldier = make(&mut w, b"DrawnSoldier", team, at(150.0, 380.0));
+            let mut d = WorldDrawables::new(with_art.then(|| Art::new(synthetic_art())));
+            let ev = w.take_client_events();
+            d.update(&mut w, &ev, 0);
+            let snap = crate::view::snapshot(&mut w);
+            let scene = d.pick_scene(&w, &snap.objects);
+            assert_eq!(scene.len(), snap.objects.len());
+            assert_eq!(down(&scene, 40.0, 50.0, -1), Some(runner), "with art: {with_art}");
+            assert_eq!(down(&scene, 150.0, 380.0, -1), Some(soldier), "with art: {with_art}");
+            assert_eq!(down(&scene, 40.0, 50.0, pick_type::SELECTABLE), None, "the gate's runner is not selectable");
+            assert_eq!(down(&scene, 40.0, 50.0, pick_type::SHRUBBERY), None);
+            if with_art {
+                assert!(d.instance(runner).is_some(), "the runner's model is posed");
+                assert_eq!(down(&scene, 43.0, 50.0, -1), None);
+            }
+        }
+        let (mut w, o) = crate::demo::demo_world();
+        let d = WorldDrawables::<rts_lockstep_engine::common::file_system::MemoryDevice>::new(None);
+        let snap = crate::view::snapshot(&mut w);
+        let scene = d.pick_scene(&w, &snap.objects);
+        assert_eq!(down(&scene, 40.0, 60.0, pick_type::SELECTABLE), Some(o.runners[0]));
+        assert_eq!(down(&scene, 80.0, 90.0, pick_type::SELECTABLE), Some(o.soldiers[1]));
+        assert_eq!(down(&scene, 250.0, 250.0, pick_type::SELECTABLE), None);
     }
 
     /// What [`play_demo`] saw: the frame the runner's moving model showed, the distinct frames of its roll, the frame it

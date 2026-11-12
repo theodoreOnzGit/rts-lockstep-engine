@@ -483,7 +483,11 @@ WEAK_STUB(INI::parseDamageFXDefinition) AUDIO_HOOK(INI::parseDialogDefinition, 2
 STUB(INI::parseDrawGroupNumberDefinition) STUB(INI::parseEvaEvent)
 WEAK_STUB(INI::parseGameDataDefinition) /* p1w2-globaldata: INIGameData.cpp (wrap_globaldata.cpp) defines it */
 STUB(INI::parseInGameUIDefinition) WEAK_STUB(INI::parseLocomotorTemplateDefinition) /* p1w6-locomotor: real in Locomotor.cpp (wrap_locomotor.cpp) */
-STUB(INI::parseLanguageDefinition) STUB(INI::parseMapCacheDefinition)
+/* GitHub #148: the Language block reaches GlobalLanguage.cpp's handler (wrap_global_language.cpp, renamed there) when
+** that fixture sets the hook (ref_global_language_reset); with none set it throws, as the stub did. */
+extern "C" { void (*ref_language_block_hook)(INI *) = 0; }
+void INI::parseLanguageDefinition(INI *ini) { if (!ref_language_block_hook) throw ERROR_BUG; ref_language_block_hook(ini); }
+STUB(INI::parseMapCacheDefinition)
 STUB(INI::parseMapDataDefinition) STUB(INI::parseMappedImageDefinition)
 AUDIO_HOOK(INI::parseMiscAudio, 3) STUB(INI::parseMouseDefinition) STUB(INI::parseMouseCursorDefinition)
 WEAK_STUB(INI::parseMultiplayerColorDefinition) WEAK_STUB(INI::parseMultiplayerStartingMoneyChoiceDefinition)

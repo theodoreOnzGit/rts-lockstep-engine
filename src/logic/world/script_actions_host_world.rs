@@ -839,8 +839,10 @@ impl ScriptActionsHost for World {
     fn sa_ui_message(&mut self, _text: &[u8]) {
         self.sa_cut("ui_message");
     }
-    fn sa_ui_popup_message(&mut self, _message: &[u8], _x: i32, _y: i32, _width: i32, _pause: bool, _pause_music: bool) {
+    /// (#148: and to the client, [`ClientEvent::InGameUi`])
+    fn sa_ui_popup_message(&mut self, message: &[u8], x: i32, y: i32, width: i32, pause: bool, pause_music: bool) {
         self.sa_cut("ui_popup_message");
+        self.events.push(ClientEvent::InGameUi(crate::logic::client_event::InGameUiCall::PopupMessage { message: message.to_vec(), x, y, width, pause, pause_music }));
     }
     /// ~~(the empty text, not found)~~ **Corrected 2026-11-12, #146:** `TheGameText->fetch(label, &exists)` on the
     /// World's text table (`statics.game_text`: a test's strings, then the game's string file; a missing label gives
@@ -905,8 +907,10 @@ impl ScriptActionsHost for World {
     fn sa_ui_play_movie(&mut self, _name: &[u8]) {
         self.sa_cut("ui_play_movie");
     }
-    fn sa_ui_military_subtitle(&mut self, _label: &[u8], _duration: i32) {
+    /// (#148: and to the client, [`ClientEvent::InGameUi`])
+    fn sa_ui_military_subtitle(&mut self, label: &[u8], duration: i32) {
         self.sa_cut("ui_military_subtitle");
+        self.events.push(ClientEvent::InGameUi(crate::logic::client_event::InGameUiCall::MilitarySubtitle { label: label.to_vec(), duration }));
     }
     fn sa_player_transfer_assets_from(&mut self, dest: PlayerH, src: PlayerH) {
         let _ = crate::logic::world::player_objects::player_transfer_assets_from_that(self, dest, src);
@@ -1910,6 +1914,33 @@ mod tests {
         w.execute_action_with(&mut engine, &action(at::DISPLAY_CINEMATIC_TEXT, &[b"CINE:None", b"Arial - Size:12"], &[1], &[])).unwrap();
         let ev = w.take_client_events();
         assert!(ev.contains(&ClientEvent::CinematicText(CinematicTextCall::Text(b"MISSING: 'CINE:None'".to_vec()))), "{ev:?}");
+    }
+
+    /// GitHub #148: `SHOW_MILITARY_CAPTION` and `INGAME_POPUP_MESSAGE` reach the client (the briefing history), and change
+    /// nothing the logic CRCs.
+    ///
+    /// *Predictions, written before the first run:* `SHOW_MILITARY_CAPTION SCRIPT:Brief1 4000` sends
+    /// `MilitarySubtitle { SCRIPT:Brief1, 4000 }`; `INGAME_POPUP_MESSAGE SCRIPT:Pop 10 20 300 1` sends `PopupMessage {
+    /// SCRIPT:Pop, 10, 20, 300, pause, no music pause }`. The CRC is unchanged.
+    #[test]
+    fn the_briefings_are_client_events_that_change_no_logic_state() {
+        use crate::logic::client_event::{ClientEvent, InGameUiCall};
+        use crate::logic::world::game_logic_update::CRC_RECALC;
+        let (mut w, _) = world();
+        let mut engine = std::mem::take(&mut w.script_engine);
+        w.take_client_events();
+        let crc = w.logic_crc(CRC_RECALC, None).unwrap();
+        w.execute_action_with(&mut engine, &action(at::SHOW_MILITARY_CAPTION, &[b"SCRIPT:Brief1"], &[4000], &[])).unwrap();
+        w.execute_action_with(&mut engine, &action(at::INGAME_POPUP_MESSAGE, &[b"SCRIPT:Pop"], &[10, 20, 300, 1], &[])).unwrap();
+        assert_eq!(w.logic_crc(CRC_RECALC, None).unwrap(), crc, "the CRC");
+        let ev: Vec<_> = w.take_client_events().into_iter().filter_map(|e| if let ClientEvent::InGameUi(c) = e { Some(c) } else { None }).collect();
+        assert_eq!(
+            ev,
+            [
+                InGameUiCall::MilitarySubtitle { label: b"SCRIPT:Brief1".to_vec(), duration: 4000 },
+                InGameUiCall::PopupMessage { message: b"SCRIPT:Pop".to_vec(), x: 10, y: 20, width: 300, pause: true, pause_music: false },
+            ]
+        );
     }
 
     /// GitHub #51: the scripts' audio actions are client events, and change nothing the logic CRCs or saves.

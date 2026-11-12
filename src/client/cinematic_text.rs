@@ -71,7 +71,7 @@ pub const DEFAULT_RESOLUTION_FONT_SIZE_ADJUSTMENT: f32 = 0.7;
 pub fn adjust_font_size(the_font_size: i32, x_resolution: i32, resolution_font_size_adjustment: f32) -> i32 {
     let mut adjust_factor = x_resolution as f32 / 800.0f32;
     adjust_factor = 1.0f32 + (adjust_factor - 1.0f32) * resolution_font_size_adjustment;
-    if adjust_factor < 1.0f32 {
+    if adjust_factor < 1.0f32 && !plant(9405) {
         adjust_factor = 1.0f32;
     }
     if adjust_factor > 2.0f32 {

@@ -34,6 +34,9 @@ pub mod control_bar_stage; // #136: hiding, showing, lowering and raising the co
 pub mod build_tooltip; // #138: the control bar's popup description's timing (commandButtonTooltip, showBuildTooltipLayout)
 pub mod letterbox; // #144: the script letterbox (W3DDisplay's renderLetterBox, enableLetterBox)
 pub mod cinematic_text; // #146: the cinematic text (Display's m_cinematicText, W3DDisplay::draw's block)
+pub mod global_language; // #148: TheGlobalLanguageData (GlobalLanguage.cpp: Language.ini's fonts, adjustFontSize)
+pub mod pick_drawable; // #148: W3DView::pickDrawable's ray cast (RTS3DScene::castRay, the boxes' Cast_Ray, CollisionMath)
+pub mod diplomacy; // #148: the briefing history window (Diplomacy.cpp: UpdateDiplomacyBriefingText, Show/Hide/ToggleDiplomacy)
 pub mod shell_hooks; // #142: TheShellHookNames, SignalUIInteraction, and the owner's single-player exception (#139)
 pub mod place_event;
 pub mod gui_command_xlat;

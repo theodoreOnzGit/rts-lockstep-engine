@@ -2820,6 +2820,89 @@ mod differential {
                 ct.compile("upstream_cinematic_text");
             }
 
+            // GitHub #148: W3DView::pickDrawable and what it reaches (differential/wrap_pick_drawable.cpp, which lists the cuts).
+            // Cut verbatim into OUT_DIR/pick_drawable_gen from View.h (enum PickType), W3DView.cpp (pickDrawable), W3DScene.cpp
+            // (RTS3DScene::castRay), rendobj.h (Get_Collision_Type, Set_Collision_Type), hlod.cpp (HLodClass::Cast_Ray),
+            // boxrobj.cpp (the two boxes' Cast_Ray), colmathline.cpp (the box collides, Test_Aligned_Box), W3DModelDraw.cpp
+            // (setModelState's collision types, setSelectable) and SelectionInfo.cpp (getPickTypesForContext,
+            // getPickTypesForCurrentSelection). No text is edited. Each anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_pick_drawable.cpp");
+                let piece = |text: &str, file: &str, from: &str, to: Option<&str>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    match to {
+                        Some(to) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            let j = text.find(to).expect("to");
+                            assert!(i < j, "{file}: a cut must end after it starts");
+                            text[i..j].to_string()
+                        }
+                        None => text[i..].to_string(),
+                    }
+                };
+                let vh = read_upstream(up.join("GameEngine/Include/GameClient/View.h"));
+                let wv = read_upstream(up.join("GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp"));
+                let sc = read_upstream(up.join("GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp"));
+                let ro = read_upstream(ww.join("WW3D2/rendobj.h"));
+                let hl = read_upstream(ww.join("WW3D2/hlod.cpp"));
+                let bx = read_upstream(ww.join("WW3D2/boxrobj.cpp"));
+                let cm = read_upstream(ww.join("WWMath/colmathline.cpp"));
+                let md = read_upstream(up.join("GameEngineDevice/Source/W3DDevice/GameClient/Drawable/Draw/W3DModelDraw.cpp"));
+                let si = read_upstream(up.join("GameEngine/Source/GameClient/SelectionInfo.cpp"));
+                let files = [
+                    ("pd_pick_type.inc", piece(&vh, "View.h", "enum PickType\n", Some("/** The implementation of common view functionality. */"))),
+                    ("pd_pick.inc", piece(&wv, "W3DView.cpp", "Drawable *W3DView::pickDrawable( const ICoord2D *screen, Bool forceAttack, PickType pickType )\n", Some("/** convert a pixel (x,y) to a location in the world on the terrain."))),
+                    ("pd_cast.inc", piece(&sc, "W3DScene.cpp", "Bool RTS3DScene::castRay(RayCollisionTestClass & raytest, Bool testAll, Int collisionType)\n", Some("// RTS3DScene::Visibility_Check\n"))),
+                    ("pd_coll_type.inc", piece(&ro, "rendobj.h", "\tvirtual int\t\t\t\t\t\tGet_Collision_Type(void) const", Some("   virtual bool\t\t\t\t\tIs_Complete(void)"))),
+                    ("pd_hlod_cast.inc", piece(&hl, "hlod.cpp", "bool HLodClass::Cast_Ray(RayCollisionTestClass & raytest)\n", Some("bool HLodClass::Cast_AABox("))),
+                    ("pd_aabox_cast.inc", piece(&bx, "boxrobj.cpp", "bool AABoxRenderObjClass::Cast_Ray(RayCollisionTestClass & raytest)\n", Some("bool AABoxRenderObjClass::Cast_AABox("))),
+                    ("pd_obbox_cast.inc", piece(&bx, "boxrobj.cpp", "bool OBBoxRenderObjClass::Cast_Ray(RayCollisionTestClass & raytest)\n", Some("bool OBBoxRenderObjClass::Cast_AABox("))),
+                    ("pd_colmath_head.inc", piece(&cm, "colmathline.cpp", "struct BoxTestStruct\n", Some("bool CollisionMath::Collide(const LineSegClass & line,const AAPlaneClass & plane,CastResultStruct * result)"))),
+                    ("pd_colmath_box.inc", piece(&cm, "colmathline.cpp", "bool CollisionMath::Collide(const LineSegClass & line,const AABoxClass & box,CastResultStruct * res)", None)),
+                    ("pd_model_draw.inc", piece(&md, "W3DModelDraw.cpp", "\t\t\t// set collision type for render object.  Used by WW3D2 collision code.\n\t\t\tif (tmplate->isKindOf(KINDOF_SELECTABLE))", Some("\t\t\t// add render object to our scene"))),
+                    ("pd_selectable.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::setSelectable(Bool selectable)\n", Some("void W3DModelDraw::replaceIndicatorColor(Color color)"))),
+                    ("pd_pick_types.inc", piece(&si, "SelectionInfo.cpp", "UnsignedInt getPickTypesForContext( Bool forceAttackMode )\n", Some("void translatePickTypesToKindof(UnsignedInt pickTypes, KindOfMaskType& outMask)"))),
+                ];
+                let gen = out_dir.join("pick_drawable_gen");
+                std::fs::create_dir_all(&gen).expect("create pick_drawable_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_pick_drawable.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a pick drawable cut");
+                }
+                let mut pd = cc::Build::new();
+                base(&mut pd);
+                pd.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WW3D2"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_pick_drawable.cpp"));
+                pd.compile("upstream_pick_drawable");
+            }
+
+            // GitHub #148: the briefing history window (differential/wrap_diplomacy.cpp, which lists the cut). Cut verbatim into
+            // OUT_DIR/diplomacy_gen from Diplomacy.cpp (the statics to PopulateInGameDiplomacyPopup). No text is edited. Each
+            // anchor must occur once.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_diplomacy.cpp");
+                let dc = read_upstream(up.join("GameEngine/Source/GameClient/GUI/GUICallbacks/Diplomacy.cpp"));
+                let (from, to) = ("static NameKeyType staticTextPlayerID[MAX_SLOTS];", "void PopulateInGameDiplomacyPopup( void )\n");
+                assert_eq!(dc.matches(from).count(), 1, "Diplomacy.cpp: a cut's start must occur once: {from:?}");
+                assert_eq!(dc.matches(to).count(), 1, "Diplomacy.cpp: a cut's end must occur once: {to:?}");
+                let (i, j) = (dc.find(from).expect("from"), dc.find(to).expect("to"));
+                assert!(i < j, "Diplomacy.cpp: a cut must end after it starts");
+                let gen = out_dir.join("diplomacy_gen");
+                std::fs::create_dir_all(&gen).expect("create diplomacy_gen");
+                std::fs::write(gen.join("dp_cut.inc"), format!("/* generated by build.rs: verbatim from upstream (see differential/wrap_diplomacy.cpp) */\n{}\n", &dc[i..j])).expect("write the diplomacy cut");
+                let mut dp = cc::Build::new();
+                base(&mut dp);
+                dp.include(&gen).include(&shim).include(up.join("GameEngine/Include")).include(up.join("Libraries/Include")).file(dif.join("wrap_diplomacy.cpp"));
+                dp.compile("upstream_diplomacy");
+            }
+
             // GitHub #142 (#140, #139): the shell's script hooks (differential/wrap_shell_hooks.cpp, which lists the cuts).
             // Cut verbatim into OUT_DIR/shell_hooks_gen from ShellHooks.h (the enum), Scripts.cpp (TheShellHookNames and
             // SignalUIInteraction) and ScriptEngine.cpp (signalUIInteract, allocateFlag, evaluateFlag, and update's clear
@@ -7137,6 +7220,50 @@ mod differential {
                 "upstream/GeneralsMD/Code/GameEngine/Include/GameClient/ChallengeGenerals.h",
             ] {
                 println!("cargo:rerun-if-changed={p}");
+            }
+            // GitHub #148: TheGlobalLanguageData (differential/wrap_global_language.cpp), in the campaign build's setup, with the
+            // REAL GameClient/GlobalLanguage.h and FontDesc.h. Generated into OUT_DIR/global_language_gen, verbatim but for one
+            // mechanical rename, asserted once: global_language_cut.inc is GlobalLanguage.cpp from `GlobalLanguage
+            // *TheGlobalLanguageData = NULL;` to `// PRIVATE FUNCTIONS`, with `void INI::parseLanguageDefinition( INI *ini )` made
+            // `static void glParseLanguageDefinition( INI *ini )` (wrap_ini.cpp's handler reaches it through
+            // ref_language_block_hook).
+            {
+                let gl = rd(engine.join("Source/GameClient/GlobalLanguage.cpp"));
+                let (a, b) = (once(&gl, "GlobalLanguage.cpp", "GlobalLanguage *TheGlobalLanguageData = NULL;"), once(&gl, "GlobalLanguage.cpp", "// PRIVATE FUNCTIONS"));
+                assert!(a < b, "GlobalLanguage.cpp: cut order");
+                let gl = edit(gl[a..b].to_string(), "GlobalLanguage.cpp", "void INI::parseLanguageDefinition( INI *ini )", "static void glParseLanguageDefinition( INI *ini )");
+                let gen = out_dir.join("global_language_gen");
+                std::fs::create_dir_all(&gen).expect("create global_language_gen");
+                std::fs::write(gen.join("global_language_cut.inc"), format!("/* generated by build.rs: GlobalLanguage.cpp, see build.rs (#148) */\n{gl}\n"))
+                    .expect("write global_language_cut.inc");
+                let mut gb = cc::Build::new();
+                base(&mut gb);
+                gb.compiler("clang++")
+                    .flag("-fms-extensions")
+                    .flag("-fdelayed-template-parsing")
+                    .include(&gen)
+                    .include(&shim_science)
+                    .include(&shim_armor)
+                    .include(&flags_gen)
+                    .include(dif.join("shim_flags"))
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .include(&dif)
+                    .flag("-include")
+                    .flag(shim_science.join("science_prelude.h").to_str().expect("UTF-8 path"))
+                    .file(dif.join("wrap_global_language.cpp"));
+                gb.compile("upstream_global_language");
+                for p in [
+                    "differential/wrap_global_language.cpp",
+                    "upstream/GeneralsMD/Code/GameEngine/Source/GameClient/GlobalLanguage.cpp",
+                    "upstream/GeneralsMD/Code/GameEngine/Include/GameClient/GlobalLanguage.h",
+                    "upstream/GeneralsMD/Code/GameEngine/Include/GameClient/FontDesc.h",
+                ] {
+                    println!("cargo:rerun-if-changed={p}");
+                }
             }
         }
         for p in [

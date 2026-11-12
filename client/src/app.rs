@@ -22,9 +22,11 @@
 //!   shown, above the bar, on a narrow screen); a construct button puts the building at the cursor until a click
 //!   places it. Escape cancels a placement or a pending command (**corrected 2026-11-10 (#87):** and otherwise
 //!   opens the game's quit menu, the shell's, when its files are loaded). Everything goes through [`crate::input::Controls`], the
-//!   translated client: the window only says what is under the pointer. Objects are picked by their projected position
-//!   (within 18 pixels; **#146:** projected by the translated `worldToScreen`, and a drag box's objects found by the
-//!   translated `iterateDrawablesInRegion`), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
+//!   translated client: the window only says what is under the pointer. ~~Objects are picked by their projected position
+//!   (within 18 pixels;~~ **corrected 2026-11-12, #148:** the object under the pointer is the translated `pickDrawable`'s,
+//!   the pick ray cast at the objects' boxes (`rts_lockstep_engine::client::pick_drawable`); (**#146:** objects are
+//!   projected by the translated `worldToScreen`, and a drag box's objects found by the translated
+//!   `iterateDrawablesInRegion`), the ground by the camera ray meeting ~~the ground plane (the demo's ground is flat)~~
 //!   **corrected 2026-11-05 (#11):** the logic's ground height (`TerrainLogic::ground_height`), the plane at 0 only
 //!   when the ray meets no ground.
 //!
@@ -173,6 +175,14 @@ struct Game {
     /// (#117) `Mouse.ini` still to be read for the mouse (`GameClient::init`'s `parseIni`); until it is, the window's
     /// cursor is left alone.
     mouse_pending: bool,
+    /// (#148) `TheGlobalLanguageData` (`rts_lockstep_engine::client::global_language`): the constructor's until
+    /// `Data\<language>\Language.ini` is read (`GlobalLanguage::init`, before the mouse's `Mouse.ini`, as upstream's
+    /// engine makes the language before the client), and whether it is still to be read.
+    language: rts_lockstep_engine::client::global_language::GlobalLanguage,
+    language_pending: bool,
+    /// (#148) The briefings the logic showed since the shell last took them (`ClientEvent::InGameUi`'s labels), for its
+    /// briefing history.
+    briefings: Vec<Vec<u8>>,
     /// (#124) The InGameUI's radius cursor (its templates from `InGameUI.ini`, the current decal), and whether
     /// `InGameUI.ini` is still to be read for it.
     radius: rts_lockstep_engine::client::radius_cursor::InGameUiRadiusCursor,
@@ -260,6 +270,9 @@ impl Game {
             popup_fills_seen: 0,
             client_quiet: false,
             mouse_pending: true,
+            language: Default::default(),
+            language_pending: true,
+            briefings: Vec::new(),
             radius: Default::default(),
             in_game_ui_pending: true,
             logic_decals: Default::default(),
@@ -272,6 +285,9 @@ impl Game {
     fn replace(&mut self, mut new: Game) {
         new.pause.mouse = std::mem::take(&mut self.pause.mouse);
         new.mouse_pending = self.mouse_pending;
+        // (#148) `TheGlobalLanguageData` outlives the games (a subsystem of the engine's)
+        new.language = std::mem::take(&mut self.language);
+        new.language_pending = self.language_pending;
         // (#124) `TheInGameUI`'s templates outlive the games too (its decal does not: `InGameUI::reset` clears it)
         new.radius.radius_cursors = std::mem::take(&mut self.radius.radius_cursors);
         new.radius.settings = std::mem::take(&mut self.radius.settings);
@@ -595,11 +611,19 @@ fn step_logic(mut game: NonSendMut<Game>, mut rig: Option<ResMut<Rig>>, time: Re
                 }
             }
             // (#146: `doDisplayCinematicText`'s calls, to the display's cinematic text; `adjustFontSize` at the display's
-            // width, `m_xResolution`, and the language's default adjustment: the client reads no `Language.ini`)
+            // width, `m_xResolution`, and ~~the language's default adjustment: the client reads no `Language.ini`~~
+            // **corrected 2026-11-12, #148:** the language's `ResolutionFontAdjustment`, from `Language.ini` once read)
             let x_resolution = windows.single().map_or(800, |w| w.width() as i32);
             for e in &events {
                 if let rts_lockstep_engine::logic::client_event::ClientEvent::CinematicText(c) = e {
-                    g.cinematic.apply(c, x_resolution, rts_lockstep_engine::client::cinematic_text::DEFAULT_RESOLUTION_FONT_SIZE_ADJUSTMENT);
+                    g.cinematic.apply(c, x_resolution, g.language.resolution_font_size_adjustment);
+                }
+                // (#148: `InGameUI::militarySubtitle` and `popupMessage`'s `UpdateDiplomacyBriefingText(label, FALSE)`, for
+                // the shell's briefing history)
+                if let rts_lockstep_engine::logic::client_event::ClientEvent::InGameUi(c) = e {
+                    use rts_lockstep_engine::logic::client_event::InGameUiCall;
+                    let (InGameUiCall::MilitarySubtitle { label, .. } | InGameUiCall::PopupMessage { message: label, .. }) = c;
+                    g.briefings.push(label.clone());
                 }
             }
             g.controls.frame_tick();
@@ -1237,6 +1261,29 @@ fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Tim
             }
         }
     }
+    // (#148) `GlobalLanguage::init`'s `Language.ini`, before the mouse reads its tooltip font
+    if g.language_pending {
+        let Some(art) = g.models.art.as_ref() else { return };
+        let waiting = std::cell::Cell::new(false);
+        let open = |p: &[u8]| {
+            let before = art.fs.local.device.unserved_reads();
+            let r = art.fs.open_file(p);
+            if art.fs.local.device.unserved_reads() != before {
+                waiting.set(true);
+                return None;
+            }
+            r
+        };
+        match crate::cursor::load_language(&mut g.language, rts_lockstep_engine::logic::world::install_world::DEFAULT_LANGUAGE, open, || waiting.get()) {
+            None => return,
+            Some(Ok(())) => g.language_pending = false,
+            Some(Err(e)) => {
+                warn!("the language: {e}");
+                g.language_pending = false;
+            }
+        }
+        g.pause.mouse.language = g.language.clone();
+    }
     if g.mouse_pending {
         let Some(art) = g.models.art.as_ref() else { return };
         let waiting = std::cell::Cell::new(false);
@@ -1549,8 +1596,9 @@ fn object_position(o: &crate::view::ViewObject) -> Coord3D {
 }
 
 /// (#146) `TheTacticalView->iterateDrawablesInRegion(region, ...)` over the snapshot's objects in their order (as
-/// `TheGameClient`'s drawables), collecting those the callback is given; a point's drawable is `picked` (the client's
-/// stand-in for `pickDrawable`: the nearest object projected within 18 pixels of the pointer).
+/// `TheGameClient`'s drawables), collecting those the callback is given; a point's drawable is `picked` (~~the client's
+/// stand-in for `pickDrawable`: the nearest object projected within 18 pixels of the pointer~~ **corrected 2026-11-12,
+/// #148:** the caller's; only the whole view's region is asked here, which is no point).
 fn drawables_in_region(game: &Game, view: &rts_lockstep_engine::client::tactical_view::TacticalView, region: Option<&IRegion2D>, picked: Option<ObjectId>) -> Vec<ObjectId> {
     let mut found = Vec::new();
     view.iterate_drawables_in_region(region, game.cur.objects.iter().map(|o| (o.id, object_position(o))), |_| picked, |d| {
@@ -1607,7 +1655,6 @@ fn pointer_input(
     g.controls.ui.set_mouse_terrain(ground);
     let view = &rig.cam.view;
     let screen = on_screen(g, view);
-    let picked = screen.iter().filter(|(_, p)| p.distance(cursor) < 18.0).min_by(|a, b| a.1.distance(cursor).total_cmp(&b.1.distance(cursor))).map(|(id, _)| *id);
     // (#146) the objects on the screen, as `selectAllUnitsByTypeAcrossScreen` asks for them: the view's region
     // (`buildRegion(&origin, &size)`, upstream's: the size given as the far corner) through `iterateDrawablesInRegion`
     let whole = rts_lockstep_engine::common::message_stream::build_region(view.origin, ICoord2D { x: view.width, y: view.height });
@@ -1628,6 +1675,18 @@ fn pointer_input(
         let drawn = &g.models.drawables.drawables;
         view.hidden = screen.iter().filter(|(id, _)| drawn.get(id).is_some_and(|d| d.is_drawable_effectively_hidden())).map(|(id, _)| *id).collect();
     }
+    // ~~the nearest object projected within 18 pixels (the client's stand-in for `pickDrawable`)~~ **Corrected 2026-11-12,
+    // #148:** the translated `W3DView::pickDrawable` (`rts_lockstep_engine::client::pick_drawable`): the view's pick ray
+    // cast at the objects' render objects (`WorldDrawables::pick_scene`: the art's boxes, or the demo's shapes), behind
+    // the windows under the pointer. The mouse-over's pick asks `getPickTypesForContext(TRUE)` (SelectionXlat.cpp:453),
+    // the clicks' and orders' `getPickTypesForContext(isInForceAttackMode())`, the double click `PICK_TYPE_SELECTABLE`.
+    let scene = g.models.pick_scene(&g.controls.client.world, &g.cur.objects);
+    let chain: Vec<bool> = g.controls.client.view.windows_under_cursor.iter().map(|w| w.see_thru).collect();
+    let force = g.controls.ui.is_in_force_attack_mode();
+    let (types_hover, types) = (g.controls.pick_types_for_context(true), g.controls.pick_types_for_context(force));
+    let pick = |at: ICoord2D, force_attack: bool, pick_type: i32| rts_lockstep_engine::client::pick_drawable::pick_drawable(view, at, chain.iter().copied(), force_attack, pick_type, &scene);
+    let picked_hover = pick(pixel(cursor), force, types_hover);
+    let picked = pick(pixel(cursor), force, types);
     let over_ui = |c: Vec2, w: &Window, b: f32| over_ui(c, w, b) || radar_box.contains(c);
     // (#124) `KEY_STATE_ALT` for the double click's select across the map
     g.controls.alt_held = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
@@ -1677,9 +1736,12 @@ fn pointer_input(
             // (`MetaEventTranslator`'s, a point within the drag tolerance), translated: the projected objects in the box,
             // or a point's picked one
             let snapshot = &g.cur;
+            // (#148) the region's point: `pickDrawable(&screenRegion->lo, TRUE, getPickTypesForContext(...))`; the double
+            // click's `PICK_TYPE_SELECTABLE`
+            g.controls.double_click_pick = Some(pick(pixel(cursor), false, rts_lockstep_engine::client::pick_drawable::pick_type::SELECTABLE));
             let in_region = |r: &IRegion2D| {
                 let mut found = Vec::new();
-                view.iterate_drawables_in_region(Some(r), snapshot.objects.iter().map(|o| (o.id, object_position(o))), |_| picked, |d| {
+                view.iterate_drawables_in_region(Some(r), snapshot.objects.iter().map(|o| (o.id, object_position(o))), |lo| pick(lo, true, types), |d| {
                     found.push(d);
                     true
                 });
@@ -1689,7 +1751,7 @@ fn pointer_input(
         }
     } else {
         // (#122: over the application's windows too: the hints then show the arrow, or over the radar its cursor)
-        g.controls.hover(picked, ground);
+        g.controls.hover(picked_hover, ground);
     }
 }
 
@@ -1876,8 +1938,9 @@ struct LetterBoxBar;
 /// after the views, the in-game UI's windows and the mouse, so it is over all of them here too (`GlobalZIndex(21)`, over
 /// the world tooltip's 20 and the shell's 10); it takes no input, as a draw does not. New: the client's own buttons
 /// (the zoom column, which a phone needs) stay over it while it is drawn (~~`GlobalZIndex(22)`~~ **corrected 2026-11-12,
-/// #146:** `GlobalZIndex(23)`, over the cinematic text's 22), so a cinematic does not hide them; upstream has no such
-/// buttons.
+/// #146:** `GlobalZIndex(23)`, over the cinematic text's 22), so ~~a cinematic does not hide them~~ the letterbox does not
+/// hide them; upstream has no such buttons. (**Corrected 2026-11-12, #148,** owner decision: the column is hidden while
+/// cinematic text is drawn, [`cinematic_text`].)
 fn letterbox_bars(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, bars: Query<Entity, With<LetterBoxBar>>, cols: Query<Entity, With<ZoomColumn>>) {
     let Ok(win) = windows.single() else { return };
     let now_ms = (time.elapsed_secs_f64() * 1000.0) as u32;
@@ -1924,7 +1987,10 @@ struct CinematicTextNode;
 /// known before Bevy lays the text out: the draw is asked with 0). A unit above 0xFF (a byte from 0x80 up, which
 /// `translate` sign-extends) is shown as its byte's Latin-1 character; upstream's font is asked for the sign-extended
 /// unit.
-fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<CinematicTextNode>>) {
+///
+/// **#148 (owner decision 2026-11-12):** the button column (`ZoomColumn`) is hidden while the text is drawn and shown
+/// again when it ends ([`crate::view::cinematic_frame`], tested there).
+fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<CinematicTextNode>>, mut cols: Query<&mut Visibility, With<ZoomColumn>>) {
     let Ok(win) = windows.single() else { return };
     let g = &mut *game;
     g.cinematic_clock += time.delta_secs();
@@ -1933,9 +1999,12 @@ fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<
         return;
     }
     g.cinematic_clock -= ticks as f32 / 30.0;
-    let mut drawn = None;
-    for _ in 0..ticks.min(4) {
-        drawn = g.cinematic.draw(win.width() as u32, win.height() as u32, |_| 0);
+    let (drawn, column_shown) = crate::view::cinematic_frame(&mut g.cinematic, ticks, win.width() as u32, win.height() as u32);
+    for mut v in &mut cols {
+        let want = if column_shown { Visibility::Inherited } else { Visibility::Hidden };
+        if *v != want {
+            *v = want;
+        }
     }
     for e in &nodes {
         commands.entity(e).despawn();
@@ -2270,6 +2339,20 @@ fn game_ui(
     if let (Some(call), Some(s)) = (g.ui.as_mut().and_then(|u| u.take_quit_menu_call()), shell.ui.as_mut()) {
         let c = &g.controls;
         s.bar_quit_menu_call(call, || crate::shell::quit_menu_game(&c.client.world, c.ui.input_enabled()));
+    }
+    // (#148) the bar's communicator (`NonCommand_BriefingHistory` outside a multiplayer game): `ToggleDiplomacy(FALSE)`, the
+    // briefing history on the shell's window manager (`Diplomacy.wnd` from the player's files)
+    if g.ui.as_mut().is_some_and(|u| u.take_diplomacy_toggle()) {
+        if let Some(s) = shell.ui.as_mut() {
+            let c = &g.controls;
+            let game = rts_lockstep_engine::client::diplomacy::DiplomacyGame {
+                input_enabled: c.ui.input_enabled(),
+                quit_menu_visible: s.quit_menu_visible(),
+                multiplayer: c.client.world.recorder_is_multiplayer().unwrap_or(false),
+                ..Default::default()
+            };
+            s.toggle_diplomacy(game);
+        }
     }
     // (#136) `MSG_META_TOGGLE_CONTROL_BAR`'s `ToggleControlBar()` calls (the key's, or the phone column's `B`), on the
     // game's bar; the stages hold still during a replay's playback. Without the game's files there is no bar: the
@@ -3439,6 +3522,10 @@ fn shell_ui(
     // `TheMouse` (the main menu's `setVisibility`, the quit menu's `setCursor(ARROW)`)
     if std::mem::take(&mut g.close_windows_pending) {
         ui.close_windows();
+    }
+    // (#148) the logic's briefings into the history
+    for label in std::mem::take(&mut g.briefings) {
+        ui.briefing(&label);
     }
     g.client_quiet = ui.client_quiet();
     ui.take_mouse_calls(&mut g.pause.mouse);

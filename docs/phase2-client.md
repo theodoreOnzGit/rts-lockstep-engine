@@ -1675,7 +1675,9 @@ Full run: 1198 tests pass (2026-11-05: the engine's 1192 in 204 suites, the clie
   own test data with selectable, sighted Runners, Soldiers, a WorkDozer that can build a Depot and the Caster.
 - `client/src/app.rs`: a left click selects or orders, a left drag selects in a box (drawn), the hint is in the status line,
   selected units have rings, the first selected unit's buttons run along the bottom, a construct button places a building,
-  Escape cancels. Picking is by projected position (18 pixels), the ground by the camera ray on the ground plane.
+  Escape cancels. ~~Picking is by projected position (18 pixels)~~ **Corrected 2026-11-12, #148:** picking is the translated
+  `W3DView::pickDrawable` (the pick ray cast at the objects' boxes, `client::pick_drawable`), the ground by the camera ray on
+  the ground plane.
 
 *Predictions before the runs:* the questions a hovering player asks every frame (18,000 over 300 frames: hints on every
 object and four ground points, normal and force attack, and `EVALUATE_ONLY` on every object) send nothing and leave the gate

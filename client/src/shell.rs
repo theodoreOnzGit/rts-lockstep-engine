@@ -350,6 +350,10 @@ impl ShellUi {
         if !files.contains_key(&b"Window\\Menus\\MainMenu.wnd"[..]) {
             return None;
         }
+        // (#148) the briefing history's window (`ToggleDiplomacy`'s `winCreateLayout("Diplomacy.wnd")`)
+        if let Some(d) = fs.open_file(b"Window\\Diplomacy.wnd") {
+            files.insert(b"Window\\Diplomacy.wnd".to_vec(), d);
+        }
         // (#77) `TheTransitionHandler->load()` at the window manager's init: without the file upstream's INI load
         // throws; here there is no shell
         let transitions = fs.open_file(wt::WINDOW_TRANSITIONS_INI)?;
@@ -367,7 +371,43 @@ impl ShellUi {
         self.gui.time_ms = now_ms;
         self.wm.time_ms = now_ms;
         sh::update(&mut self.wm, &mut self.gui);
+        // (#148) the briefing history's layout update (`updateFunc`: its slide), and the quit menu's `HideDiplomacy`
+        self.diplomacy_calls();
+        if self.gui.diplomacy.the_layout.is_some() {
+            self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_func(h));
+        }
         self.wm.update(&mut self.gui);
+    }
+
+    /// (#148) The quit menu's `HideDiplomacy()` and `closeWindows`' `ResetDiplomacy()` calls, made on the briefing
+    /// history's window.
+    fn diplomacy_calls(&mut self) {
+        use rts_lockstep_engine::client::diplomacy::{hide_diplomacy, reset_diplomacy};
+        for c in std::mem::take(&mut self.gui.diplomacy_calls) {
+            self.gui.diplomacy_with(&mut self.wm, |h| if c == "ResetDiplomacy" { reset_diplomacy(h) } else { hide_diplomacy(h, true) });
+        }
+    }
+
+    /// (#148) `ToggleDiplomacy(FALSE)`: the control bar's communicator button holding `NonCommand_BriefingHistory`
+    /// (`ControlBarSystem`, ControlBarCallback.cpp:399), with what the window reads of the game (`game`). Its
+    /// `HideQuitMenu()` hides the shell's quit menu. `rts_lockstep_engine::client::diplomacy`.
+    pub fn toggle_diplomacy(&mut self, game: rts_lockstep_engine::client::diplomacy::DiplomacyGame) {
+        self.gui.diplomacy.game = game;
+        let ((), hide_quit_menu) = self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::toggle_diplomacy(h, false));
+        if hide_quit_menu {
+            self.hide_quit_menu();
+        }
+    }
+
+    /// (#148) `UpdateDiplomacyBriefingText(label, FALSE)`: a briefing the scripts showed (`InGameUI::militarySubtitle`,
+    /// `popupMessage`, the logic's `ClientEvent::InGameUi`), into the history (and the open window's list).
+    pub fn briefing(&mut self, label: &[u8]) {
+        self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_diplomacy_briefing_text(h, label, false));
+    }
+
+    /// (#148) The briefing history's window is up (made and not hidden): it is drawn and takes the input.
+    pub fn diplomacy_shown(&self) -> bool {
+        self.gui.diplomacy.the_window.is_some_and(|w| !self.wm.is_hidden(Some(w)))
     }
 
     /// The pointer at `pos` (the layout's pixels) through `winProcessMouseEvent`: `msg` is `GWM_MOUSE_POS`,
@@ -514,6 +554,8 @@ impl ShellUi {
         self.gui.env.in_shell_game = game.game_mode == rts_lockstep_engine::common::recorder::game_mode::SHELL;
         self.gui.quit_menu.game = game;
         rts_lockstep_engine::client::quit_menu::toggle_quit_menu(&mut self.wm, &mut self.gui);
+        // (#148: its `HideDiplomacy()`)
+        self.diplomacy_calls();
     }
 
     /// (#109) `HideQuitMenu()` (the control bar's general and idle worker buttons call it first): the quit menu hidden if
@@ -534,12 +576,16 @@ impl ShellUi {
     /// cleared.
     pub fn clear_game_data_windows(&mut self) {
         rts_lockstep_engine::client::quit_menu::clear_game_data_windows(&mut self.wm, &mut self.gui);
+        self.diplomacy_calls();
+        // (#148) `TheGameEngine->reset()`'s `InGameUI::reset`: `UpdateDiplomacyBriefingText("", TRUE)`, the history cleared
+        self.gui.diplomacy_with(&mut self.wm, |h| rts_lockstep_engine::client::diplomacy::update_diplomacy_briefing_text(h, b"", true));
     }
 
     /// (#117) `TheGameLogic->closeWindows()` from a script (`ScriptActions::doQuickVictory`, which reaches the client as
     /// `ScriptInputCall::CloseWindows`): `rts_lockstep_engine::client::quit_menu::close_windows`.
     pub fn close_windows(&mut self) {
         rts_lockstep_engine::client::quit_menu::close_windows(&mut self.wm, &mut self.gui);
+        self.diplomacy_calls();
     }
 
     /// (#117) `TheInGameUI->isClientQuiet()` (the quit menu's flag), for the audio's radar edge sounds.
@@ -577,7 +623,8 @@ impl ShellUi {
     /// (#87) Whether this window manager is drawn and takes the pointer and keyboard: the shell is active, or the
     /// in-game menus are up.
     pub fn takes_input(&self) -> bool {
-        self.is_active() || self.in_game_menus_shown()
+        // (#148: and while the briefing history is up; new: upstream's game keeps its input around the window)
+        self.is_active() || self.in_game_menus_shown() || self.diplomacy_shown()
     }
 
     /// (#78) `TheShell->isShellActive()`: the shell is shown (it is drawn and takes the input).
@@ -691,6 +738,8 @@ mod tests {
             d.insert(&p, b);
         }
         d.insert(b"Data\\INI\\WindowTransitions.ini", window_transitions_ini());
+        // (#148) the briefing history's window
+        d.insert(b"Window\\Diplomacy.wnd", rts_lockstep_engine::client::shell_gui::synthetic::diplomacy_wnd());
         for (p, b) in crate::ui::synthetic_ui_files() {
             d.insert(p, b);
         }
@@ -1229,6 +1278,69 @@ mod tests {
     /// (the buttons are 90 wide, ~~43.875 x 9.75~~ **corrected 2026-11-11, #142:** 38.7 x 8.6 CSS pixels; *Load* and
     /// *Delete* disabled). Every enabled button of the menu,
     /// the popup and its description box is on the screen above the zoom column and taken by a tap at its centre.
+    #[test]
+    /// #148: the briefing history from the communicator button (`ToggleDiplomacy(FALSE)`), on the synthetic
+    /// `Diplomacy.wnd`. Predicted from Diplomacy.cpp before the run:
+    ///
+    /// - two briefings and a repeat before the window exists: the history holds two, nothing is drawn;
+    /// - the toggle makes the window (shown, taking the input), its solo list box filled with the two, the solo parent
+    ///   shown and the in-game parent hidden; a third briefing goes straight into the box (three entries);
+    /// - the toggle again slides it out (`HideDiplomacy(FALSE)` with the windows animated): still shown until the slide
+    ///   ends, then hidden; the toggle shows it again (`winHide(FALSE)`, the box kept: three entries);
+    /// - its `ButtonHide` hides it the same way; the quit menu's Escape (`HideDiplomacy()`, immediate) hides it at once;
+    /// - the game's end (`clearGameData`: `closeWindows`' `ResetDiplomacy`, `InGameUI::reset`'s clear) destroys the window
+    ///   and empties the history.
+    #[test]
+    fn the_communicator_shows_the_briefing_history() {
+        use rts_lockstep_engine::client::diplomacy::DiplomacyGame;
+        let (mut ui, _, _) = shell_with(&TextTable::default());
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        ui.hide();
+        settle(&mut ui, &mut now);
+        for l in [&b"SCRIPT:Brief1"[..], b"SCRIPT:Brief2", b"SCRIPT:Brief1"] {
+            ui.briefing(l);
+        }
+        assert_eq!(ui.gui.diplomacy.briefing_list.len(), 2);
+        assert!(!ui.takes_input() && ui.draw().is_empty());
+        // (60 frames: the slide from the top moves a step an update, from 690 above the screen: 21 to 40 updates)
+        let frames = |ui: &mut ShellUi, now: &mut u32| {
+            for _ in 0..60 {
+                *now += 40;
+                ui.frame(*now);
+            }
+        };
+        ui.toggle_diplomacy(DiplomacyGame::default());
+        frames(&mut ui, &mut now);
+        assert!(ui.diplomacy_shown() && ui.takes_input(), "the window is up");
+        let list = ui.wm.tree.find_by_name(b"Diplomacy.wnd:ListboxSolo").expect("the list box");
+        assert_eq!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, list), 2);
+        let hidden = |ui: &ShellUi, n: &str| ui.wm.is_hidden(ui.wm.tree.find_by_name(format!("Diplomacy.wnd:{n}").as_bytes()));
+        assert!(!hidden(&ui, "SoloParent") && hidden(&ui, "InGameParent"));
+        assert!(!ui.draw().is_empty());
+        ui.briefing(b"SCRIPT:Brief3");
+        assert_eq!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, list), 3);
+        ui.toggle_diplomacy(DiplomacyGame::default());
+        assert!(ui.diplomacy_shown(), "sliding out");
+        frames(&mut ui, &mut now);
+        assert!(!ui.diplomacy_shown(), "hidden once the slide ends");
+        ui.toggle_diplomacy(DiplomacyGame::default());
+        frames(&mut ui, &mut now);
+        assert!(ui.diplomacy_shown());
+        assert_eq!(rts_lockstep_engine::client::gadget_list_box::get_num_entries(&ui.wm, list), 3);
+        click_named(&mut ui, "Diplomacy.wnd", "ButtonHide");
+        frames(&mut ui, &mut now);
+        assert!(!ui.diplomacy_shown(), "ButtonHide");
+        ui.toggle_diplomacy(DiplomacyGame::default());
+        frames(&mut ui, &mut now);
+        assert!(ui.diplomacy_shown());
+        let (w, _) = crate::demo::demo_world();
+        ui.toggle_quit_menu(quit_menu_game(&w, true));
+        assert!(!ui.diplomacy_shown(), "the quit menu's HideDiplomacy");
+        ui.clear_game_data_windows();
+        assert!(ui.gui.diplomacy.the_window.is_none() && ui.gui.diplomacy.briefing_list.is_empty());
+    }
+
     #[test]
     fn the_bars_options_button_opens_the_quit_menu_which_fits_a_phone() {
         use crate::ui::QuitMenuCall;

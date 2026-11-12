@@ -713,8 +713,10 @@ impl TacticalView {
     /// drawable whose position projects inside the frustum and inside the pixel region (made -1 .. 1 by the view's origin
     /// and size, y up) is given to `callback`; the count of the callbacks that answered true is returned. No region: every
     /// drawable. A region of no width and no height is a point: only the drawable `pick` finds there
-    /// (`pickDrawable(&screenRegion->lo, TRUE, getPickTypesForContext(...))`, the host's: the port casts no ray on the
-    /// render objects), or nothing, and the count is 0.
+    /// (`pickDrawable(&screenRegion->lo, TRUE, getPickTypesForContext(...))`, the host's: ~~the port casts no ray on the
+    /// render objects~~ **corrected 2026-11-12, #148:** the client gives the translated `pickDrawable`,
+    /// `crate::client::pick_drawable::pick_drawable`, its ray cast at the render objects' boxes), or nothing, and the count
+    /// is 0.
     ///
     /// `drawables` are `TheGameClient`'s, in its order, each with its `getPosition()`. Kept from upstream: the point's
     /// drawable is reached only through the loop over the drawables, so with no drawables at all nothing is called back.
