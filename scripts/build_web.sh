@@ -14,4 +14,6 @@ if command -v wasm-opt > /dev/null; then
   wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int -o "$OUT/rts_client_bg.wasm" "$OUT/rts_client_bg.wasm"
 fi
 cp "$ROOT/client/web/index.html" "$OUT/"
+# (#155) Liberation Sans is compiled into the .wasm; its licence (SIL OFL 1.1, with the copyright notice) ships beside it
+cp "$ROOT/client/fonts/OFL.txt" "$OUT/LiberationSans-OFL.txt"
 ls -la "$OUT"

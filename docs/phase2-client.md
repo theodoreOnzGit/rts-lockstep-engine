@@ -521,8 +521,9 @@ client's quiet flag silences the radar edge sounds.**
   differential build was not rerun.
 - **Gaps (recorded in the modules' docs; issue drafts in the scratchpad):** the shell's click sounds and
   `signalUIInteract` (~~a gap~~ **Corrected 2026-11-11, #142:** the sounds are played since #136; the hooks reach the
-  script engine under the owner's single-player exception, #139, `client::shell_hooks`); text drop shadows; grayscale images drawn dimmed; the rect clock's wedge; Bevy's font against the
-  host's measured box; the synthetic buttons are 9.75 CSS pixels high on a phone (reachable, small; the real WND's sizes
+  script engine under the owner's single-player exception, #139, `client::shell_hooks`); text drop shadows; grayscale images drawn dimmed; the rect clock's wedge; ~~Bevy's font against the
+  host's measured box~~ **Corrected 2026-11-12, #155:** the text is drawn in Liberation Sans (Arial's metrics, shipped with
+  the client) as the lines the measure breaks it into, so it fits the measured box; the synthetic buttons are 9.75 CSS pixels high on a phone (reachable, small; the real WND's sizes
   unchecked). Item 3 (the other screens' callbacks) ~~is not started~~ **Corrected 2026-11-10 (#78):** is started: see
   the entry for item 3 above.
 

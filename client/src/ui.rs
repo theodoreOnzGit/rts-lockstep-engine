@@ -504,11 +504,15 @@ pub struct UiQuad {
     /// 2026-11-12, #153:** the window font's em in layout pixels, `MulDiv(points, 96, 72)`: `crate::text_metrics::em_px`,
     /// the size GDI draws it at, which Bevy's font size is.)
     pub font_px: Option<f32>,
-    /// (#153) The window font's face, asked of Bevy by name (its own font when it has no such face), and bold.
-    pub font_name: Option<String>,
-    pub font_bold: bool,
+    /// ~~(#153) The window font's face, asked of Bevy by name (its own font when it has no such face), and bold.~~
+    /// **Corrected 2026-11-12, #155:** the face the window font is drawn in (`crate::text_metrics::draw_face`: Liberation
+    /// Sans, regular or bold), and the height its lines are drawn apart (`crate::text_metrics::line_px`, layout pixels).
+    pub font_face: Option<crate::fonts::Face>,
+    pub line_px: Option<f32>,
     /// (#78) The text starts at the quad's top left, where the window's draw placed it (`DisplayString::draw(x, y)`),
-    /// rather than centred; it wraps at the quad's width only when `text_wrap`.
+    /// rather than centred; ~~it wraps at the quad's width only when `text_wrap`~~ **(corrected 2026-11-12, #155)** its
+    /// lines come broken where the measure breaks them, and it is drawn without wrapping; `text_wrap` only records that
+    /// the window gave a word wrap.
     pub text_top_left: bool,
     pub text_wrap: bool,
     /// (#78) A line not along an axis (`drawLine`): the quad is the line laid flat about its centre, turned clockwise by
@@ -553,7 +557,9 @@ fn clipped(r: [f32; 4], clip: Option<(i32, i32, i32, i32)>) -> Option<([f32; 4],
 ///   a grayscale draw is drawn dimmed (the app has no grayscale shader);
 /// - `DisplayString::draw`: the text from its top left, in its colour, its box measured by the host
 ///   (`GuiHost::text_size`), cut by its clip region; the drop shadow is not drawn; **(#153)** at its font's em
-///   (`crate::text_metrics::em_px`) in its font's face where Bevy has it;
+///   (`crate::text_metrics::em_px`) ~~in its font's face where Bevy has it~~ **(corrected 2026-11-12, #155)** in
+///   Liberation Sans, as the lines the client's measure breaks it into (`crate::text_metrics::text_lines`), each its
+///   font's height below the last;
 /// - `drawRectClock`: the quad's clock (the bar's darkened part), the remaining part for an inverse clock.
 pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> {
     let mut out = Vec::new();
@@ -595,12 +601,13 @@ pub fn draw_list_quads<H: GuiHost>(items: &[DrawItem], host: &H) -> Vec<UiQuad> 
                 let Some((rect, _)) = clipped([*x as f32, *y as f32, (x + w) as f32, (y + h) as f32], *clip) else { continue };
                 out.push(UiQuad {
                     rect,
-                    text: Some(String::from_utf16_lossy(text)),
+                    // (#155: the measured lines, each where the client's measure breaks it)
+                    text: Some(crate::text_metrics::text_lines_string(font.as_ref(), text, *word_wrap)),
                     text_color: Some(rgba(*c as u32)),
-                    // (#153: the font's em, its face and its weight)
+                    // (#153: the font's em; #155: its Liberation Sans face and its line height)
                     font_px: Some(crate::text_metrics::em_px(font.as_ref())),
-                    font_name: Some(crate::text_metrics::draw_face(font.as_ref())),
-                    font_bold: font.as_ref().is_some_and(|f| f.bold),
+                    font_face: Some(crate::text_metrics::draw_face(font.as_ref())),
+                    line_px: Some(crate::text_metrics::line_px(font.as_ref())),
                     text_top_left: true,
                     text_wrap: word_wrap.is_some_and(|w| w > 0),
                     ..Default::default()
@@ -1423,7 +1430,7 @@ mod tests {
     ///   no tint (opaque white); tinted 0x80FFFFFF: alpha 128; clipped away: no quad;
     /// - the text "AB" at (5, 6), no font (the default host: 12 high, 6 a character): (5, 6, 17, 18) from its top left,
     ///   green, 12 high, not wrapped; (~~12 high~~ **corrected 2026-11-12, #153:** drawn at the font's em, `MulDiv(12, 96,
-    ///   72)` = 16, in Arial, the box still the host's measure)
+    ///   72)` = 16, ~~in Arial~~ (**#155:** in Liberation Sans regular, its lines 18 apart), the box still the host's measure)
     /// - an inverse clock at 30 %: 70.
     /// - a placement's `to_layout` inverts `to_screen`.
     #[test]
@@ -1445,7 +1452,8 @@ mod tests {
         assert_eq!((i[1].uv, i[1].tint), (None, Some([255, 255, 255, 128])));
         let t = q(&[DrawItem::Text { text: "AB".encode_utf16().collect(), x: 5, y: 6, color: 0xFF00_FF00_u32 as i32, drop_color: 0, font: None, word_wrap: None, wrap_centered: false, hotkey: false, clip: None }]);
         assert_eq!((t[0].rect, t[0].text.as_deref(), t[0].text_color, t[0].font_px, t[0].text_top_left, t[0].text_wrap), ([5.0, 6.0, 17.0, 18.0], Some("AB"), Some([0, 255, 0, 255]), Some(16.0), true, false));
-        assert_eq!((t[0].font_name.as_deref(), t[0].font_bold), (Some("Arial"), false));
+        // (#155: Liberation Sans regular, the lines 18 apart, Arial 12's height)
+        assert_eq!((t[0].font_face, t[0].line_px), (Some(crate::fonts::Face::Regular), Some(18.0)));
         let c = q(&[DrawItem::RectClock { x: 0, y: 0, w: 4, h: 4, percent: 30, color: 0, inverse: true }]);
         assert_eq!(c[0].clock, Some(70));
         let p = LayoutPlacement { left: 7.0, top: 100.0, y0: 450.0, scale: 0.5, turned: false };

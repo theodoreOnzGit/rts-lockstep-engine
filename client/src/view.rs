@@ -200,7 +200,8 @@ pub fn cinematic_frame(c: &mut rts_lockstep_engine::client::cinematic_text::Cine
 /// monospaced font measures (`DisplayString::getSize`: each unit 0.6 of the point size wide, the line the point size
 /// high; the client draws in its own font, not the game's)~~ **corrected 2026-11-12, #153:** as upstream measures them
 /// (`DisplayString::getSize` and the font's height, `crate::text_metrics`: render2dsentence.cpp's measure over Arial's
-/// widths; the client draws in Bevy's font unless it has the face). The typing sound joins the frame's GUI sounds; the label
+/// widths; the client draws in ~~Bevy's font unless it has the face~~ **(corrected 2026-11-12, #155)** Liberation Sans,
+/// `crate::fonts`). The typing sound joins the frame's GUI sounds; the label
 /// joins the briefings for the shell's history.
 pub struct SubtitleHost<'a> {
     pub frame: u32,

@@ -16,6 +16,7 @@
 //! - [`cursor`]: the translated mouse's cursor shown as a system cursor icon, and `Mouse.ini` read (#117); plain Rust.
 //! - [`drawables`]: each object's drawable and its posed W3D model, chosen by its model condition flags (#25); plain Rust.
 //! - [`demo`]: the demo game, until the player's own files are loaded (C2d).
+//! - [`fonts`]: Liberation Sans, regular and bold, the font the game's text is drawn in, shipped with the client (#155).
 //! - [`import`]: the player's Zero Hour files and the game made from them (C3).
 //! - [`input`]: the player's input through the translated client (C2d); plain Rust, no Bevy.
 //! - [`replays`]: the replay folder (#98): natively the user data folder's `Replays`, in the browser OPFS `Replays/`;
@@ -41,6 +42,7 @@ pub mod campaigns;
 pub mod cursor;
 pub mod demo;
 pub mod drawables;
+pub mod fonts;
 pub mod import;
 pub mod input;
 pub mod particles;

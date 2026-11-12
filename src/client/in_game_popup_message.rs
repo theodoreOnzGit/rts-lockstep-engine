@@ -48,6 +48,9 @@
 //!   the client's is the shell's window manager.
 //! - Upstream dereferences the three windows and the layout without checking: a `InGamePopupMessage.wnd` without them
 //!   crashes. Here the call that would is skipped and [`InGamePopupMessage::undefined`] records it.
+//! - (#155) A client with no window manager (no shell yet, or none) holds the message without a window
+//!   ([`WindowlessPopup`]: upstream's data, history and pause, made as upstream makes them) and shows it in the shell when
+//!   one comes ([`show_held_popup_message`]). New: upstream always has its window manager.
 
 use crate::client::window_manager::MsgHandled;
 use crate::client::window_script::{GameFont, WinId};
@@ -165,6 +168,13 @@ pub fn popup_message<H: PopupMessageHost>(h: &mut H, identifier: &[u8], x: i32, 
     if pause {
         h.set_game_paused(true, pause_music);
     }
+    create_popup_message_layout(h);
+}
+
+/// `popupMessage`'s last two statements (InGameUI.cpp:5204): `m_popupMessageData->layout =
+/// TheWindowManager->winCreateLayout("InGamePopupMessage.wnd")`, then `layout->runInit()`. (#155: shared with
+/// [`show_held_popup_message`].)
+fn create_popup_message_layout<H: PopupMessageHost>(h: &mut H) {
     let layout = h.win_create_layout(IN_GAME_POPUP_MESSAGE_WND);
     if let Some(d) = h.popup().popup_message_data.as_mut() {
         d.layout = layout;
@@ -172,6 +182,147 @@ pub fn popup_message<H: PopupMessageHost>(h: &mut H, identifier: &[u8], x: i32, 
     match layout {
         Some(l) => h.layout_run_init(l),
         None => h.popup().set_undefined("popupMessage: winCreateLayout gave NULL (layout->runInit)"),
+    }
+}
+
+/// (#155) New: a popup message held without a window manager ([`WindowlessPopup`], its data made and its pause made
+/// when it came), shown once the client has one (the shell is read): `m_popupMessageData` is that data and
+/// `popupMessage`'s last two statements run, as if the layout had been made when the message came. Its pause and its
+/// history label were made then, so neither is made again. A message already shown is cleared first, as `popupMessage`
+/// clears one.
+pub fn show_held_popup_message<H: PopupMessageHost>(h: &mut H, data: PopupMessageData) {
+    if h.popup().popup_message_data.is_some() {
+        clear_popup_message_data(h);
+    }
+    h.popup().popup_message_data = Some(PopupMessageData { layout: None, ..data });
+    if plant(9486) {
+        // (planted: the layout made, its init not run)
+        let layout = h.win_create_layout(IN_GAME_POPUP_MESSAGE_WND);
+        if let Some(d) = h.popup().popup_message_data.as_mut() {
+            d.layout = layout;
+        }
+        return;
+    }
+    create_popup_message_layout(h);
+}
+
+/// (#155) A call the popup's code made on a client with no window manager, for the client to make
+/// ([`WindowlessPopup::calls`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WindowlessCall {
+    /// `TheGameLogic->setGamePaused(paused, pauseMusic)`.
+    SetGamePaused { paused: bool, pause_music: bool },
+    /// `UpdateDiplomacyBriefingText(label, FALSE)`.
+    Briefing(Vec<u8>),
+}
+
+/// (#155) New: `TheInGameUI`'s popup message on a client that has no window manager: before the shell is read (the
+/// owner's files still coming) and when there is none (no `MainMenu.wnd`). Upstream always has its window manager; what
+/// it does without the window is read from `popupMessage` (InGameUI.cpp:5169): the message is held
+/// (`m_popupMessageData`), its label goes to the briefing history and a pausing message pauses the game **before**
+/// `winCreateLayout`, so all of that is done here as upstream does it, by the translated [`popup_message`]. Only the
+/// window is not made: upstream would dereference the `NULL` layout `winCreateLayout` gives without the file
+/// (`layout->runInit()`, a crash); here there is no window manager to ask, and nothing is recorded as undefined. A clear
+/// (`MSG_CLEAR_INGAME_POPUP_MESSAGE`, `InGameUI::reset`) or the next message unpauses a pausing one through the
+/// translated [`clear_popup_message_data`]. At most one message is held (upstream's one `m_popupMessageData`): the
+/// client's popups no longer wait in a queue for a shell (bounded, #154). When a shell comes, the held message is shown
+/// in it ([`WindowlessPopup::take_held`], [`show_held_popup_message`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WindowlessPopup {
+    /// `m_popupMessageData` (and the window statics, which stay unset: no window is made).
+    pub popup: InGamePopupMessage,
+    /// `TheDisplay->getWidth()`, `getHeight()`.
+    pub display: (i32, i32),
+    /// The calls on the game and the briefing history made since the client last took them, in order.
+    pub calls: Vec<WindowlessCall>,
+}
+
+/// [`WindowlessPopup`] as the popup's host, with `TheGameText->fetch`.
+struct Windowless<'a, F: FnMut(&[u8]) -> Vec<u16>> {
+    w: &'a mut WindowlessPopup,
+    fetch: F,
+}
+
+impl<F: FnMut(&[u8]) -> Vec<u16>> PopupMessageHost for Windowless<'_, F> {
+    fn popup(&mut self) -> &mut InGamePopupMessage {
+        &mut self.w.popup
+    }
+    fn fetch(&mut self, label: &[u8]) -> Vec<u16> {
+        (self.fetch)(label)
+    }
+    fn update_diplomacy_briefing_text(&mut self, label: &[u8]) {
+        if !plant(9485) {
+            self.w.calls.push(WindowlessCall::Briefing(label.to_vec()));
+        }
+    }
+    fn display_size(&self) -> (i32, i32) {
+        if plant(9487) {
+            return (self.w.display.1, self.w.display.0);
+        }
+        self.w.display
+    }
+    fn set_game_paused(&mut self, paused: bool, pause_music: bool) {
+        if !(paused && plant(9484)) {
+            self.w.calls.push(WindowlessCall::SetGamePaused { paused, pause_music });
+        }
+    }
+    /// No window manager: no layout.
+    fn win_create_layout(&mut self, _file: &[u8]) -> Option<usize> {
+        None
+    }
+    // (no layout is ever made, so nothing below is reached)
+    fn layout_run_init(&mut self, _layout: usize) {}
+    fn layout_destroy(&mut self, _layout: usize) {}
+    fn name_to_key(&mut self, _name: &[u8]) -> i32 {
+        0
+    }
+    fn win_get_window_from_id(&mut self, _parent: Option<WinId>, _id: i32) -> Option<WinId> {
+        None
+    }
+    fn win_get_font(&mut self, _w: WinId) -> Option<GameFont> {
+        None
+    }
+    fn string_size(&mut self, _text: &[u16], _font: Option<&GameFont>, _wrap: i32) -> (i32, i32) {
+        (0, 0)
+    }
+    fn static_text_set_text(&mut self, _w: WinId, _text: &[u16]) {}
+    fn win_get_size(&mut self, _w: WinId) -> (i32, i32) {
+        (0, 0)
+    }
+    fn win_set_position(&mut self, _w: WinId, _x: i32, _y: i32) {}
+    fn win_set_size(&mut self, _w: WinId, _width: i32, _height: i32) {}
+    fn win_set_enabled_text_colors(&mut self, _w: WinId, _color: i32, _border_color: i32) {}
+    fn win_set_modal(&mut self, _w: WinId) {}
+    fn win_set_focus(&mut self, _w: WinId) {}
+    fn win_hide(&mut self, _w: WinId, _hide: bool) {}
+    fn win_bring_to_top(&mut self, _w: WinId) {}
+    fn send_selected(&mut self, _window: WinId, _control: Option<WinId>, _control_id: i32) {}
+    fn append_clear_popup_message(&mut self) {}
+}
+
+impl WindowlessPopup {
+    /// `popupMessage(identifier, x, y, width, textColor, pause, pauseMusic)` without a window manager ([`popup_message`]
+    /// on this host); `fetch` is `TheGameText->fetch`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn popup_message(&mut self, fetch: impl FnMut(&[u8]) -> Vec<u16>, identifier: &[u8], x: i32, y: i32, width: i32, text_color: i32, pause: bool, pause_music: bool) {
+        popup_message(&mut Windowless { w: self, fetch }, identifier, x, y, width, text_color, pause, pause_music);
+        // (no window manager: the missing layout is this client's, not upstream's undefined behaviour)
+        self.popup.undefined = None;
+    }
+
+    /// `clearPopupMessageData()` ([`clear_popup_message_data`] on this host).
+    pub fn clear_popup_message_data(&mut self) {
+        clear_popup_message_data(&mut Windowless { w: self, fetch: |_: &[u8]| Vec::new() });
+    }
+
+    /// The held message, for a window manager to show ([`show_held_popup_message`]); none is held after. Its pause stays
+    /// made: the shown message's clear unpauses.
+    pub fn take_held(&mut self) -> Option<PopupMessageData> {
+        let d = self.popup.popup_message_data.take();
+        if plant(9488) && d.as_ref().is_some_and(|d| d.pause) {
+            self.calls.push(WindowlessCall::SetGamePaused { paused: false, pause_music: d.as_ref().is_some_and(|d| d.pause_music) });
+        }
+        d
     }
 }
 

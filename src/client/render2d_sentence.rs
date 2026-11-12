@@ -24,6 +24,8 @@
 //!   `Get_Formatted_Text_Extents` returns): the widest line at its breaks, the space wrap (the next word with the
 //!   space before it, `>=` the wrap width) and the hard wrap, plus `Get_Extra_Overlap`.
 //! - [`display_string_size`] is `W3DDisplayString::computeExtents` (an empty string or no font measures 0 by 0).
+//! - (#155) [`formatted_text_line_starts`] is the same pass's line breaks, where the client starts each line it draws
+//!   (new output: upstream draws each glyph where the pass puts it).
 //!
 //! What GDI answers (`CreateFont`'s text metrics, `GetTextExtentPoint32W`) is the host's ([`FontGdi`]): upstream's are
 //! Windows' fonts, which a client elsewhere can only estimate. Checked against the C++ by `tests/differential_render2d.rs`
@@ -229,6 +231,23 @@ fn allocate_new_surface<G: FontGdi>(font: &mut FontChars, gdi: &mut G, text: &[u
 /// `wrap_width` is `WrapWidth` (0: none), `hard_wrap` `useHardWordWrap`, `texture_size_hint` `TextureSizeHint`. The
 /// text ends at its end or at a 0. The renderer has no surface (a string never drawn).
 pub fn formatted_text_extents<G: FontGdi>(font: &mut FontChars, gdi: &mut G, text: &[u16], wrap_width: f32, hard_wrap: bool, texture_size_hint: i32) -> (f32, f32) {
+    build_sentence_not_centered(font, gdi, text, wrap_width, hard_wrap, texture_size_hint, |_| {})
+}
+
+/// (#155) Where [`formatted_text_extents`]'s pass starts each line after the first: the index of the character the new
+/// line starts with (the space a space wrap breaks before, which the new line starts with; the character after a
+/// newline; the character a hard wrap moves down). New output of the same pass (upstream draws each character where the
+/// pass puts it; the client draws the lines in its own font): the line count times the font's height is the extents'
+/// height (`tests/differential_render2d.rs` checks it against the C++'s height).
+pub fn formatted_text_line_starts<G: FontGdi>(font: &mut FontChars, gdi: &mut G, text: &[u16], wrap_width: f32, hard_wrap: bool, texture_size_hint: i32) -> Vec<usize> {
+    let mut starts = Vec::new();
+    build_sentence_not_centered(font, gdi, text, wrap_width, hard_wrap, texture_size_hint, |i| starts.push(i));
+    starts
+}
+
+/// `Build_Sentence_Not_Centered`'s pass with `justCalcExtents` (see [`formatted_text_extents`]); `new_line(i)` is told
+/// each line it starts after the first, at character `i` (#155).
+fn build_sentence_not_centered<G: FontGdi>(font: &mut FontChars, gdi: &mut G, text: &[u16], wrap_width: f32, hard_wrap: bool, texture_size_hint: i32, mut new_line: impl FnMut(usize)) -> (f32, f32) {
     const TEXTURE_OFFSET: i32 = 2;
     let at = |i: usize| text.get(i).copied().unwrap_or(0);
     let (space, newline) = (u16::from(b' '), u16::from(b'\n'));
@@ -264,16 +283,23 @@ pub fn formatted_text_extents<G: FontGdi>(font: &mut FontChars, gdi: &mut G, tex
                     if wraps {
                         cursor_x = 0.0;
                         cursor_y += char_height;
+                        new_line(if plant(9482) { i } else { i - 1 });
                     }
                 }
             } else if ch == newline {
                 cursor_x = 0.0;
                 cursor_y += char_height;
+                if !plant(9483) {
+                    new_line(i);
+                }
             } else if ch == 0 {
                 break;
             } else if word_bigger_then_line {
                 cursor_x = 0.0;
                 cursor_y += char_height;
+                if !plant(9481) {
+                    new_line(i - 1);
+                }
             }
             if exceeded_texture_width && !plant(9466) {
                 texture_start_x = TEXTURE_OFFSET;

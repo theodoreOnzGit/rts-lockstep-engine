@@ -9,7 +9,7 @@
 // Licensed under the GNU General Public License version 3 (GPL-3.0-only), with
 // the additional terms in NOTICE.md.
 
-//! `client::render2d_sentence` (GitHub #153) against render2dsentence.cpp.
+//! `client::render2d_sentence` (GitHub #153; the line starts #155) against render2dsentence.cpp.
 //!
 //! # Method
 //!
@@ -40,6 +40,10 @@
 //!   caught, though by few sequences: only where the texture fills mid-line and a later negative spacing makes the
 //!   reset matter.
 //!
+//! - (#155, written before the run.) The line starts (`formatted_text_line_starts`, new output of the same pass) hold
+//!   for every string: as many lines as the C++'s height has rows, each start at a space, after a newline or (hard wrap)
+//!   anywhere. Plants 9481-9483 caught by those checks, the measure itself unchanged.
+//!
 //! # Results (2026-11-12, `RENDER2D_CASES=20000`, the default)
 //!
 //! - **First run (port without the texture): 2 mismatches of 20,000**, sequences 5938 and 18738, the widest line 1
@@ -53,6 +57,10 @@
 //!   9457 2,811; 9458 15,557; 9459 728; 9460 8,179; 9461 17,897; 9462 5,148; 9463 6,757; 9464 10,489; 9465 9,997; 9466
 //!   474. **16 of 16 caught**, as predicted. (`MulDiv` is Windows', not upstream's: the C++ side's is the stand-in's, so
 //!   9463 checks the port against that model.)
+//! - (#155) The line starts. **First run, a miss in the check:** 3,788 sequences failed, every one on two equal starts
+//!   (a newline, then a space that wraps at once: an empty line, which upstream makes too, two moves down); the check
+//!   asked for rising starts and now asks that they never go back. Second run: 130,005 strings, **0 failures**, the
+//!   measure 0 mismatches. Plants: 9481 5,149 sequences; 9482 11,227; 9483 18,981. **3 of 3 caught.**
 //!
 //! # Planted bugs
 //!
@@ -74,6 +82,9 @@
 //! | 9464 | an empty string is measured |
 //! | 9465 | a bold font is asked for at `FW_NORMAL` |
 //! | 9466 | a texture chunk's end does not reset the texture's offsets |
+//! | 9481 | (#155) a hard wrap's new line is not reported |
+//! | 9482 | (#155) a space wrap's new line is reported one character late (after the space) |
+//! | 9483 | (#155) a newline's new line is not reported |
 
 mod support;
 
@@ -112,6 +123,50 @@ impl FontGdi for Gdi<'_> {
     fn text_extent(&mut self, font: usize, ch: u16) -> (i32, i32) {
         (self.widths[font * 16 + usize::from(ch % 16)], self.metrics[font][0])
     }
+}
+
+/// (#155) Each string's line starts ([`formatted_text_line_starts`]) checked against the C++'s extents: as many lines as
+/// the height's rows (`(starts + 1) x char_height`, the C++'s float bits), the starts never going back, each at a space, after a newline, or (hard wrap on) anywhere. The number of strings checked, or the first failure.
+fn line_starts_hold(input: &[i32], c: &[i32]) -> Result<u64, String> {
+    let (point, bold, face, alt, hard) = (input[0], input[1] != 0, input[2] as usize, input[3], input[5] != 0);
+    let m = &input[8..14];
+    let mut g = Gdi { metrics: [[m[0], m[1], m[2]], [m[3], m[4], m[5]]], widths: &input[14..46], fonts: 0, out: Vec::new() };
+    let mut font = FontChars::new(&mut g, FACES[face], point, bold);
+    if alt == 1 {
+        font.alternate = Alternate::SelfFont;
+    }
+    if alt == 2 {
+        font.alternate = Alternate::Other(Box::new(FontChars::new(&mut g, b"Arial Unicode MS", point, bold)));
+    }
+    let fonts = if alt == 2 { 2 } else { 1 };
+    let records = &c[10 * fonts..];
+    let (mut k, mut n) = (46, 0usize);
+    while k + 2 <= input.len() {
+        let (wrap, len) = (input[k], input[k + 1] as usize);
+        k += 2;
+        let text: Vec<u16> = input[k..k + len].iter().map(|&c| c as u16).collect();
+        k += len;
+        let starts = formatted_text_line_starts(&mut font, &mut g, &text, wrap as f32, hard, input[4]);
+        let rows = (starts.len() + 1) as f32 * font.get_char_height() as f32;
+        let y = records.get(n * 6 + 2).map(|&b| f32::from_bits(b as u32));
+        if y != Some(rows) {
+            return Err(format!("string {n}: {} lines ({rows} high), the C++'s height {y:?}", starts.len() + 1));
+        }
+        // (two starts at one character are an empty line: a newline, then a space wrap at the next line's first
+        // character, moves down twice)
+        if !starts.windows(2).all(|w| w[0] <= w[1]) {
+            return Err(format!("string {n}: the starts {starts:?} go back"));
+        }
+        for &s in &starts {
+            let at_space = text.get(s) == Some(&u16::from(b' '));
+            let after_newline = s > 0 && text.get(s - 1) == Some(&u16::from(b'\n'));
+            if !(at_space || after_newline || hard) {
+                return Err(format!("string {n}: a line starts at {s} in {text:?}"));
+            }
+        }
+        n += 1;
+    }
+    Ok(n as u64)
 }
 
 fn rust_seq(input: &[i32]) -> Vec<i32> {
@@ -180,6 +235,7 @@ fn the_text_measure_matches_upstream() {
     let mut whole = Check::new("the text measure");
     let mut strings = 0u64;
     let mut wrapped = 0u64;
+    let (mut lines_checked, mut lines_failed) = (0u64, 0u64);
     for i in 0..cases {
         let input = gen_case(&mut g);
         let r = rust_seq(&input);
@@ -196,10 +252,26 @@ fn the_text_measure_matches_upstream() {
             let k0 = k.saturating_sub(8);
             println!("sequence {i} first difference at word {k}: rust {:?} c++ {:?}", &r[k0.min(r.len())..(k + 8).min(r.len())], &c[k0.min(c.len())..(k + 8).min(c.len())]);
         }
+        // (#155) the line starts, against the C++'s heights (a plant changing the measure itself shows above)
+        match line_starts_hold(&input, &c) {
+            Ok(n) => lines_checked += n,
+            Err(e) => {
+                lines_failed += 1;
+                if lines_failed <= 3 {
+                    println!("sequence {i}: line starts: {e}");
+                }
+            }
+        }
         whole.eq(r, c, || format!("sequence {i}: {input:?}"));
     }
     println!("{cases} sequences, about {strings} strings measured ({wrapped} of more than one line)");
-    if planted {
+    println!("line starts: {lines_checked} strings held, {lines_failed} sequences failed");
+    assert!(planted || lines_failed == 0, "{lines_failed} sequences' line starts disagree with the C++'s heights");
+    if planted && lines_failed > 0 {
+        // (a plant in the line starts: caught by them, the measure itself unchanged)
+        println!("PLANTED line starts caught in {lines_failed} sequences");
+        whole.report();
+    } else if planted {
         whole.finish_planted();
     } else {
         whole.finish();

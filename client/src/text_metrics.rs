@@ -18,8 +18,14 @@
 //! is upstream's, differential-tested (`tests/differential_render2d.rs`). Against the estimate it replaces: "Single
 //! Player" in a 12-point font measured 93 pixels by 12 with 0.6 of the point size a character (the subtitle's), 78 by
 //! 12 with half the point size (the shell's and the bar's), and measures 98 by 18 here (`the_measure_is_arials`).
-//! What the client draws is Bevy's own font unless it has the named face ([`draw_face`]), so the drawn text can still be
-//! wider or narrower than its measured box.
+//! ~~What the client draws is Bevy's own font unless it has the named face ([`draw_face`]), so the drawn text can still be
+//! wider or narrower than its measured box.~~ **Corrected 2026-11-12, #155:** the client draws every face in Liberation
+//! Sans (`crate::fonts`, shipped with it: Arial's metrics), regular or bold, line by line where this measure breaks the
+//! lines ([`text_lines`]), each line the font's height ([`font_height`]) below the last, as render2dsentence.cpp lays
+//! them out. Arial's widths are Liberation Sans' widths, so the drawn text fits its measured box but for the measure's
+//! rounding of each character to a whole pixel (the box's extra overlap, 2 pixels at 12 points, takes it up). A face
+//! that is not Arial (Times New Roman, the narrowed `Generals`) is drawn in Liberation Sans all the same, an
+//! approximation: the measure is Arial's too, so box and text agree with each other but not with upstream's face.
 
 use rts_lockstep_engine::client::render2d_sentence::{display_string_size, mul_div, Alternate, FontChars, FontGdi, TextMetric, FW_BOLD};
 use rts_lockstep_engine::client::window_manager::TextMetrics;
@@ -129,14 +135,56 @@ pub fn em_px(font: Option<&GameFont>) -> f32 {
     mul_div(font_or_default(font).1, 96, 72) as f32
 }
 
-/// The face the client asks Bevy for: the font's name (`Generals` is Arial, as `Create_GDI_Font` draws it). Bevy falls
-/// back to its own font when it does not have the face.
-pub fn draw_face(font: Option<&GameFont>) -> String {
-    let (name, _, _) = font_or_default(font);
-    if name == b"Generals" {
-        return "Arial".to_string();
+/// ~~The face the client asks Bevy for: the font's name (`Generals` is Arial, as `Create_GDI_Font` draws it). Bevy falls
+/// back to its own font when it does not have the face.~~ **Corrected 2026-11-12, #155:** the face the client draws a
+/// font in: Liberation Sans, bold for a bold font, whatever the font's name (see the module's doc).
+pub fn draw_face(font: Option<&GameFont>) -> crate::fonts::Face {
+    let (_, _, bold) = font_or_default(font);
+    if bold {
+        crate::fonts::Face::Bold
+    } else {
+        crate::fonts::Face::Regular
     }
-    String::from_utf8_lossy(&name).into_owned()
+}
+
+/// (#155) `text` as the lines `DisplayString::getSize`'s pass breaks it into ([`text_size`]'s measure, word wrapped at
+/// `wrap` pixels when given): each line from where the pass starts it (`formatted_text_line_starts`), a newline that ends
+/// it left out, so the client draws exactly the measured lines (a line a space wrap starts begins with that space, as
+/// upstream's does). An empty text is no line.
+pub fn text_lines(font: Option<&GameFont>, text: &[u16], wrap: Option<i32>) -> Vec<Vec<u16>> {
+    use rts_lockstep_engine::client::render2d_sentence::formatted_text_line_starts;
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut gdi = ArialEstimate::default();
+    let mut f = load_font(&mut gdi, font);
+    // (`computeExtents` hands the pass the text as the display string holds it: it ends at a 0)
+    let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
+    let text = &text[..end];
+    let starts = formatted_text_line_starts(&mut f, &mut gdi, text, wrap.unwrap_or(0).max(0) as f32, false, 0);
+    let mut lines = Vec::with_capacity(starts.len() + 1);
+    let mut from = 0;
+    for s in starts.into_iter().chain([text.len()]) {
+        let mut line = &text[from.min(s)..s];
+        if line.last() == Some(&u16::from(b'\n')) {
+            line = &line[..line.len() - 1];
+        }
+        lines.push(line.to_vec());
+        from = s;
+    }
+    lines
+}
+
+/// (#155) [`text_lines`] as one string, the lines joined by newlines (for a text node that does not wrap).
+pub fn text_lines_string(font: Option<&GameFont>, text: &[u16], wrap: Option<i32>) -> String {
+    let lines: Vec<String> = text_lines(font, text, wrap).iter().map(|l| String::from_utf16_lossy(l)).collect();
+    lines.join("\n")
+}
+
+/// (#155) The line height the client draws a font's lines at, in pixels: [`font_height`] (render2dsentence.cpp moves
+/// each line down by `Get_Char_Height`, the text metrics' height), not Bevy's 1.2 em.
+pub fn line_px(font: Option<&GameFont>) -> f32 {
+    font_height(font) as f32
 }
 
 /// The measure given to the shell's window manager ([`rts_lockstep_engine::client::shell_gui::ShellGui::text_metrics`]).
@@ -166,7 +214,9 @@ mod tests {
     /// - `Generals` 12 is narrowed: `fontWidth` 6 (0.40 x 16, truncated), each width scaled by 6 x 2048 / 904 / 1000:
     ///   "Single Player" 83 + 2 = 85 wide (its overhang 0);
     /// - an empty string and a missing font name measure 0 by 0 and Arial 12;
-    /// - the em drawn is 16 pixels; `Generals` is drawn as Arial.
+    /// - the em drawn is 16 pixels; `Generals` is drawn as Arial. (~~as Arial~~ **#155:** in Liberation Sans, bold for a
+    ///   bold font, as every face; "Single Player" wrapped at 50 is drawn as "Single" and " Player"; "a\nb\n" as "a", "b"
+    ///   and an empty third line, as the measure's three rows; an empty text as no line; the lines 18 apart.)
     #[test]
     fn the_measure_is_arials() {
         let a12 = font("Arial", 12, false);
@@ -178,7 +228,14 @@ mod tests {
         assert_eq!(text_size(Some(&a12), &[], None), (0, 0));
         assert_eq!(text_size(None, &u("Wi"), None), (22, 18));
         assert_eq!(em_px(Some(&a12)), 16.0);
-        assert_eq!(draw_face(Some(&font("Generals", 10, true))), "Arial");
-        assert_eq!(draw_face(Some(&font("Times New Roman", 10, true))), "Times New Roman");
+        // (#155: every face in Liberation Sans, bold for a bold font; the lines as measured)
+        assert_eq!(draw_face(Some(&font("Generals", 10, true))), crate::fonts::Face::Bold);
+        assert_eq!(draw_face(Some(&font("Times New Roman", 10, false))), crate::fonts::Face::Regular);
+        assert_eq!(draw_face(None), crate::fonts::Face::Regular);
+        assert_eq!(text_lines(Some(&a12), &u("Single Player"), Some(50)), vec![u("Single"), u(" Player")]);
+        assert_eq!(text_lines_string(Some(&a12), &u("Single Player"), None), "Single Player");
+        assert_eq!(text_lines_string(Some(&a12), &u("a\nb\n"), None), "a\nb\n");
+        assert!(text_lines(Some(&a12), &[], None).is_empty());
+        assert_eq!(line_px(Some(&a12)), 18.0);
     }
 }

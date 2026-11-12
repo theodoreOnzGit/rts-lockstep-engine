@@ -112,24 +112,57 @@ pub fn apply_ui_mouse_calls(mouse: &mut Mouse, calls: Vec<rts_lockstep_engine::c
     }
 }
 
-/// (#124) `DisplayString::getSize` of the tooltip as the client draws it (new: the font's own measure is Bevy's, which
+/// (#124) `DisplayString::getSize` of the tooltip ~~as the client draws it (new: the font's own measure is Bevy's, which
 /// is not known before it lays the text out): `font_px` high a line, half that wide a character, each of the text's
-/// lines wrapped at `wrap` pixels when given.
-pub fn tooltip_text_size(font_px: i32, text: &[u16], wrap: i32) -> (i32, i32) {
-    let h = font_px.max(1);
-    let cw = (h / 2).max(1);
-    let (mut w, mut rows) = (0, 0);
-    for line in text.split(|&c| c == u16::from(b'\n')) {
-        let lw = line.len() as i32 * cw;
-        if wrap > 0 && lw > wrap {
-            rows += (lw + wrap - 1) / wrap;
-            w = w.max(wrap);
+/// lines wrapped at `wrap` pixels when given~~. **Corrected 2026-11-12, #155:** as upstream measures it
+/// (`m_tooltipDisplayString->getSize`, Mouse.cpp's `drawTooltip`): the tooltip's font (`font`, `None` for none: Arial 12)
+/// through #153's translated measure (`crate::text_metrics::text_size`: render2dsentence.cpp's pass over Arial's widths),
+/// word wrapped at `wrap` pixels (0: no wrap, `setWordWrap(0)`).
+pub fn tooltip_text_size(font: Option<&rts_lockstep_engine::client::window_script::GameFont>, text: &[u16], wrap: i32) -> (i32, i32) {
+    crate::text_metrics::text_size(font, text, Some(wrap))
+}
+
+/// (#155) The frame the mouse's tooltip is laid out in: the window (`screen`, logical pixels), or, while the shell's layout
+/// is drawn turned a quarter clockwise on a portrait screen (#153's `LayoutPlacement::turned`), the window turned with it:
+/// `screen.1` wide and `screen.0` high, a screen point `(sx, sy)` at `(sy, screen.0 - sx)`. The mouse's limits
+/// (`setMouseLimits`, the tooltip's display width) and its position are given in this frame, so the translated
+/// `drawTooltip` keeps the box beside the pointer and inside the frame's edges as upstream does on an upright display;
+/// the app then draws the frame turned back ([`TooltipFrame::to_screen`]). New presentation code: upstream's display is
+/// never turned.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TooltipFrame {
+    pub screen: (f32, f32),
+    pub turned: bool,
+}
+
+impl TooltipFrame {
+    /// The frame's size, whole pixels (the mouse's limits).
+    pub fn size(&self) -> (i32, i32) {
+        let (w, h) = (self.screen.0 as i32, self.screen.1 as i32);
+        if self.turned {
+            (h, w)
         } else {
-            rows += 1;
-            w = w.max(lw);
+            (w, h)
         }
     }
-    (w, h * rows)
+
+    /// A screen point in the frame.
+    pub fn to_frame(&self, p: (f32, f32)) -> (f32, f32) {
+        if self.turned {
+            (p.1, self.screen.0 - p.0)
+        } else {
+            p
+        }
+    }
+
+    /// A frame point on screen ([`TooltipFrame::to_frame`] inverted).
+    pub fn to_screen(&self, p: (f32, f32)) -> (f32, f32) {
+        if self.turned {
+            (self.screen.0 - p.1, p.0)
+        } else {
+            p
+        }
+    }
 }
 
 /// (#124) One shape of the world's tooltip on screen, in window pixels.
@@ -137,8 +170,10 @@ pub fn tooltip_text_size(font_px: i32, text: &[u16], wrap: i32) -> (i32, i32) {
 pub enum TooltipShape {
     /// A filled rectangle `(x0, y0, x1, y1)` (`drawFillRect`, and each edge of `drawOpenRect`), RGBA.
     Rect { rect: [f32; 4], color: [u8; 4] },
-    /// `DisplayString::draw`: the text laid out in `rect` (its full size), shown only inside `clip`.
-    Text { text: String, rect: [f32; 4], clip: [f32; 4], color: [u8; 4], font_px: f32 },
+    /// `DisplayString::draw`: the text laid out in `rect` (its full size), shown only inside `clip`. **(#155)** `text`
+    /// is the measured lines joined by newlines (`crate::text_metrics::text_lines`), drawn without wrapping at the font's
+    /// em `font_px` (`MulDiv(points, 96, 72)`), `line_px` apart (its height), in Liberation Sans `face`.
+    Text { text: String, rect: [f32; 4], clip: [f32; 4], color: [u8; 4], font_px: f32, line_px: f32, face: crate::fonts::Face },
 }
 
 /// `Color` (`0xAARRGGBB`) as RGBA.
@@ -150,10 +185,13 @@ fn rgba(c: i32) -> [u8; 4] {
 /// (#124) `W3DMouse::draw`'s tooltip (`Mouse::drawTooltip`, translated in the logic crate) at `now` (ms) as shapes: the
 /// box, its one-pixel border, the text revealed up to the highlight and the highlighted strip. The drop shadow is not
 /// drawn (as the control bar's text, `crate::ui`). Nothing while a script fade is on (`fade`) or the mouse is hidden.
+/// **(#155)** Measured as upstream measures it ([`tooltip_text_size`]) and drawn in the tooltip font's em, line height
+/// and Liberation Sans face (~~the point size, Bevy's font~~); the shapes are in the mouse's frame ([`TooltipFrame`]:
+/// the window, or the turned shell's).
 pub fn tooltip_shapes(mouse: &mut Mouse, now: u32, fade: bool) -> Vec<TooltipShape> {
     use rts_lockstep_engine::client::window_manager::DrawItem;
-    let font_px = mouse.tooltip.font.as_ref().map_or(12, |f| f.point_size.max(1));
-    let items = mouse.draw_tooltip(now, fade, |t, wrap| tooltip_text_size(font_px, t, wrap));
+    let font = mouse.tooltip.font.clone();
+    let items = mouse.draw_tooltip(now, fade, |t, wrap| tooltip_text_size(font.as_ref(), t, wrap));
     let mut out = Vec::new();
     for d in items {
         match d {
@@ -165,12 +203,21 @@ pub fn tooltip_shapes(mouse: &mut Mouse, now: u32, fade: bool) -> Vec<TooltipSha
                 }
             }
             DrawItem::Text { text, x, y, color, word_wrap, clip, .. } => {
-                let (w, h) = tooltip_text_size(font_px, &text, word_wrap.unwrap_or(0));
+                let (w, h) = tooltip_text_size(font.as_ref(), &text, word_wrap.unwrap_or(0));
                 let rect = [x as f32, y as f32, (x + w) as f32, (y + h) as f32];
                 // the clip region where it meets the text (a strip left of the text shows nothing)
                 let clip = clip.map_or(rect, |(a, b, c, d)| [(a as f32).max(rect[0]), (b as f32).max(rect[1]), (c as f32).min(rect[2]), (d as f32).min(rect[3])]);
                 if clip[2] > clip[0] && clip[3] > clip[1] {
-                    out.push(TooltipShape::Text { text: String::from_utf16_lossy(&text), rect, clip, color: rgba(color), font_px: font_px as f32 });
+                    let f = font.as_ref();
+                    out.push(TooltipShape::Text {
+                        text: crate::text_metrics::text_lines_string(f, &text, word_wrap),
+                        rect,
+                        clip,
+                        color: rgba(color),
+                        font_px: crate::text_metrics::em_px(f),
+                        line_px: crate::text_metrics::line_px(f),
+                        face: crate::text_metrics::draw_face(f),
+                    });
                 }
             }
             _ => {}
@@ -346,6 +393,12 @@ mod tests {
     /// each clip to its text, so nothing is drawn for it. **Fourth miss:** the highlight a draw shows is the one the draw
     /// before it computed (`drawTooltip` moves it on after drawing), so the 12-pixel reveal of 1075 shows at the next draw
     /// (1076), not at 1075's.
+    ///
+    /// **#155, predicted before the run (the measure is now upstream's, `tooltip_text_size`):** the default tooltip font,
+    /// Times New Roman 12, measures as Arial 12: 18 high, "Tank" 10 + 9 + 9 + 8 + 2 = 38 wide. So the box is 20 high
+    /// (rect to y 120); at 1076 the reveal is 38 x 25 / 50 = 19: the text's clip 122 to 141, the strip 126 to 141 (y 101 to
+    /// 119); the text drawn is "Tank" in its full box (122, 101) to (160, 119) at the em 16, 18 apart, regular; at the right
+    /// edge the box is at 810 - 20 - 38 = 752.
     #[test]
     fn the_world_tooltip_is_drawn_as_the_mouse_decides() {
         use rts_lockstep_engine::client::in_game_ui_cursor::UiMouseCall;
@@ -369,16 +422,21 @@ mod tests {
         assert!(tooltip_shapes(&mut m, 1049, false).is_empty());
         m.tooltip.create_stream_messages(1050, false);
         let s = tooltip_shapes(&mut m, 1050, false);
-        assert_eq!(s[0], TooltipShape::Rect { rect: [120.0, 100.0, 122.0, 114.0], color: [0, 0, 0, 255] });
+        // (#155: 18 high, the measured Times New Roman 12 as Arial: the box 20 high; was 14)
+        assert_eq!(s[0], TooltipShape::Rect { rect: [120.0, 100.0, 122.0, 120.0], color: [0, 0, 0, 255] });
         assert!(!s.iter().any(|x| matches!(x, TooltipShape::Text { .. })), "nothing revealed yet: {s:?}");
         tooltip_shapes(&mut m, 1075, false);
         let s = tooltip_shapes(&mut m, 1076, false);
         let texts: Vec<_> = s.iter().filter_map(|x| if let TooltipShape::Text { clip, color, .. } = x { Some((*clip, *color)) } else { None }).collect();
-        assert_eq!(texts, vec![([122.0, 101.0, 134.0, 113.0], [255, 255, 255, 255]), ([122.0, 101.0, 134.0, 113.0], [255, 255, 0, 255])]);
+        // (#155: "Tank" 38 wide, so the highlight at 1075 is 38 x 25 / 50 = 19: the text cut at 141, the strip 126 to 141)
+        assert_eq!(texts, vec![([122.0, 101.0, 141.0, 119.0], [255, 255, 255, 255]), ([126.0, 101.0, 141.0, 119.0], [255, 255, 0, 255])]);
+        let drawn: Vec<_> = s.iter().filter_map(|x| if let TooltipShape::Text { text, rect, font_px, line_px, face, .. } = x { Some((text.clone(), *rect, *font_px, *line_px, *face)) } else { None }).collect();
+        assert_eq!(drawn[0], ("Tank".to_string(), [122.0, 101.0, 160.0, 119.0], 16.0, 18.0, crate::fonts::Face::Regular));
         assert!(tooltip_shapes(&mut m, 1080, true).is_empty(), "a script fade hides it");
         m.pos.x = 790;
         let s = tooltip_shapes(&mut m, 1100, false);
-        assert!(matches!(s[0], TooltipShape::Rect { rect, .. } if rect[0] == 766.0), "{s:?}");
+        // (#155: 810 - 20 - 38 = 752; was 766 with "Tank" 24 wide)
+        assert!(matches!(s[0], TooltipShape::Rect { rect, .. } if rect[0] == 752.0), "{s:?}");
         m.tooltip.reset_tooltip_delay(1100);
         assert!(tooltip_shapes(&mut m, 1101, false).is_empty());
         apply_ui_mouse_calls(&mut m, vec![UiMouseCall::Tooltip { text: Vec::new(), color: None }], 1200, |_, _, _| {});
@@ -387,7 +445,11 @@ mod tests {
     }
 
     /// #124, predicted before the run: two lines wrap separately (`"ab\ncdefgh"` at 12 px: 6 px a character, 36 pixels
-    /// for the longer line, 24 high; wrapped at 24 pixels the longer takes two rows: 24 x 36); a decal of size 20 at
+    /// for the longer line, 24 high; wrapped at 24 pixels the longer takes two rows: 24 x 36). ~~(that measure)~~
+    /// **Corrected 2026-11-12, #155:** upstream's measure (Arial 12, no font given): "ab" 9 + 9, "cdefgh" 8 + 9 + 9 + 4 +
+    /// 9 + 9 = 48, plus the overlap 2: 50 x 36, and the same wrapped at 24 (upstream wraps only at a space); "ab cdefgh" 18
+    /// + 4 + 48 + 2 = 72 x 18, and at 24 two lines, the second the space and "cdefgh" (52), 54 x 36,
+    /// drawn as "ab" and " cdefgh". A decal of size 20 at
     /// (10, 20) with colour `0x00336699` and opacity 128 rings 10 units around it, half a unit over the ground, in
     /// (0x33, 0x66, 0x99, 128); an `InGameUI.ini` giving the guard area's texture loads it, and a missing file is reported.
     ///
@@ -396,8 +458,14 @@ mod tests {
     fn the_tooltip_measure_the_decal_ring_and_in_game_ui_ini() {
         use rts_lockstep_engine::client::radius_cursor::{radius_cursor_type, DecalShadow, InGameUiRadiusCursor};
         let t: Vec<u16> = "ab\ncdefgh".encode_utf16().collect();
-        assert_eq!(tooltip_text_size(12, &t, 0), (36, 24));
-        assert_eq!(tooltip_text_size(12, &t, 24), (24, 36));
+        // (#155: upstream's measure, no font: Arial 12)
+        assert_eq!(tooltip_text_size(None, &t, 0), (50, 36));
+        assert_eq!(tooltip_text_size(None, &t, 24), (50, 36));
+        let t2: Vec<u16> = "ab cdefgh".encode_utf16().collect();
+        assert_eq!(tooltip_text_size(None, &t2, 0), (72, 18));
+        assert_eq!(tooltip_text_size(None, &t2, 24), (54, 36));
+        assert_eq!(crate::text_metrics::text_lines_string(None, &t2, Some(24)), "ab\n cdefgh");
+        assert_eq!(crate::text_metrics::text_lines_string(None, &t, Some(24)), "ab\ncdefgh");
         let d = DecalShadow { texture: b"T".to_vec(), shadow_type: 0x20, size: (20.0, 20.0), angle: 0.0, color: 0x0033_6699, position: rts_lockstep_engine::common::base_type::Coord3D { x: 10.0, y: 20.0, z: 0.0 }, opacity: Some(128) };
         let (pts, c) = decal_ring(&d, 8, |_, _| 4.0);
         assert_eq!(c, [0x33, 0x66, 0x99, 128]);
@@ -418,4 +486,34 @@ mod tests {
         assert_eq!(load_in_game_ui(&mut r, |_| None, || true), None);
     }
 
+
+    /// #155, predicted before the run: on a 390x844 screen with the shell turned, the tooltip's frame is 844 wide and 390
+    /// high; the finger at (300, 100) is the frame's (100, 90), and back. The mouse given that frame shows "Tank" (38 by 18)
+    /// at frame (120, 90): beside the pointer in the frame, which on screen is (390 - 90, 120) = (300, 120), 20 pixels below
+    /// the finger, its box running down the screen. Upright (844x390, not turned) the frame is the screen.
+    ///
+    /// Results (2026-11-12): all held.
+    #[test]
+    fn the_tooltip_turns_with_the_shell() {
+        let f = TooltipFrame { screen: (390.0, 844.0), turned: true };
+        assert_eq!(f.size(), (844, 390));
+        assert_eq!(f.to_frame((300.0, 100.0)), (100.0, 90.0));
+        assert_eq!(f.to_screen((100.0, 90.0)), (300.0, 100.0));
+        let mut m = Mouse::new();
+        m.init();
+        m.set_visibility(true);
+        let (w, h) = f.size();
+        m.set_mouse_limits(w, h);
+        let p = f.to_frame((300.0, 100.0));
+        m.pos = rts_lockstep_engine::common::base_type::ICoord2D { x: p.0 as i32, y: p.1 as i32 };
+        apply_ui_mouse_calls(&mut m, vec![rts_lockstep_engine::client::in_game_ui_cursor::UiMouseCall::Tooltip { text: "Tank".encode_utf16().collect(), color: None }], 1000, |_, _, _| {});
+        m.tooltip.reset_tooltip_delay(1000);
+        m.tooltip.create_stream_messages(2000, false);
+        let s = tooltip_shapes(&mut m, 2000, false);
+        let TooltipShape::Rect { rect, .. } = &s[0] else { panic!("{s:?}") };
+        assert_eq!((rect[0], rect[1]), (120.0, 90.0));
+        assert_eq!(f.to_screen((rect[0], rect[1])), (300.0, 120.0));
+        let up = TooltipFrame { screen: (844.0, 390.0), turned: false };
+        assert_eq!((up.size(), up.to_frame((300.0, 100.0)), up.to_screen((300.0, 100.0))), ((844, 390), (300.0, 100.0), (300.0, 100.0)));
+    }
 }

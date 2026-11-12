@@ -452,6 +452,14 @@ impl ShellUi {
         rts_lockstep_engine::client::in_game_popup_message::clear_popup_message_data(&mut h);
     }
 
+    /// (#155) A popup message held while there was no shell (`rts_lockstep_engine::client::in_game_popup_message::
+    /// WindowlessPopup`, its pause and history label already made), shown on the shell's window manager now that there is
+    /// one (`show_held_popup_message`: `popupMessage`'s window, made as if when the message came).
+    pub fn show_held_popup_message(&mut self, data: rts_lockstep_engine::client::in_game_popup_message::PopupMessageData) {
+        let mut h = rts_lockstep_engine::client::shell_gui::ShellPopup { wm: &mut self.wm, gui: &mut self.gui };
+        rts_lockstep_engine::client::in_game_popup_message::show_held_popup_message(&mut h, data);
+    }
+
     /// (#151) The popup's calls on the game since the last call (the pause, the clear message), for the app to make.
     pub fn take_popup_calls(&mut self) -> Vec<rts_lockstep_engine::client::shell_gui::PopupCall> {
         std::mem::take(&mut self.gui.popup_calls)
@@ -1372,6 +1380,73 @@ mod tests {
         ui.popup_message(b"SCRIPT:Pop", 50, 50, 200, color, false, false);
         ui.clear_game_data_windows();
         assert!(ui.gui.popup.popup_message_data.is_none() && !ui.popup_shown());
+    }
+
+    /// #155: a pausing popup message with no shell (`WindowlessPopup`), then a shell. Predicted from InGameUI.cpp's
+    /// `popupMessage` before the run:
+    ///
+    /// - without a window manager a pausing message at (25 %, 40 %), 300 wide, on an 800x600 display is held (at (200,
+    ///   240), 300 wide, no layout), its label goes to the history and the game is paused, in that order (`popupMessage`
+    ///   calls `UpdateDiplomacyBriefingText` before `setGamePaused`); nothing is recorded undefined;
+    /// - a second message replaces it: the first's clear unpauses, then the second's label and pause; one is held;
+    /// - the logic's clear unpauses and holds none; `InGameUI::reset` likewise;
+    /// - a held pausing message given to the shell: its box at (200, 240), up, modal, with the focus; no pause call made
+    ///   again; Enter (OK) clears it and unpauses once;
+    /// - the long message's text is drawn as the measured lines: as many lines (each 18 apart: Arial 12) as fit the static
+    ///   text's measured height, which its window (the measure plus 7) holds: no line cut off.
+    #[test]
+    fn a_pausing_popup_without_a_shell_pauses_and_is_shown_when_the_shell_comes() {
+        use rts_lockstep_engine::client::in_game_popup_message::{WindowlessCall, WindowlessPopup};
+        use rts_lockstep_engine::client::shell_gui::PopupCall;
+        let mut text = TextTable::default();
+        let long = "The convoy is under attack. Hold the bridge until the reinforcements arrive from the north.";
+        text.strings.insert(b"SCRIPT:Pop".to_vec(), rts_lockstep_engine::common::unicode_string::UnicodeString::try_from_chars(&long.encode_utf16().collect::<Vec<_>>()).expect("text"));
+        let fetch = |l: &[u8]| {
+            use rts_lockstep_engine::common::science::GameTextFetch;
+            text.fetch(l).str().to_vec()
+        };
+        let mut w = WindowlessPopup { display: (800, 600), ..Default::default() };
+        w.popup_message(fetch, b"SCRIPT:Pop", 25, 40, 300, 7, true, false);
+        let d = w.popup.popup_message_data.clone().expect("held");
+        assert_eq!((d.x, d.y, d.width, d.layout, d.pause), (200, 240, 300, None, true));
+        assert_eq!(std::mem::take(&mut w.calls), vec![WindowlessCall::Briefing(b"SCRIPT:Pop".to_vec()), WindowlessCall::SetGamePaused { paused: true, pause_music: false }]);
+        assert_eq!(w.popup.undefined, None);
+        w.popup_message(fetch, b"SCRIPT:Two", 0, 0, 100, 7, true, true);
+        assert_eq!(std::mem::take(&mut w.calls), vec![WindowlessCall::SetGamePaused { paused: false, pause_music: false }, WindowlessCall::Briefing(b"SCRIPT:Two".to_vec()), WindowlessCall::SetGamePaused { paused: true, pause_music: true }]);
+        w.clear_popup_message_data();
+        assert_eq!(std::mem::take(&mut w.calls), vec![WindowlessCall::SetGamePaused { paused: false, pause_music: true }]);
+        assert!(w.popup.popup_message_data.is_none() && w.take_held().is_none());
+        w.popup_message(fetch, b"SCRIPT:Pop", 25, 40, 300, 7, true, false);
+        w.calls.clear();
+        let held = w.take_held().expect("held");
+        assert!(w.calls.is_empty() && w.popup.popup_message_data.is_none());
+        let (mut ui, _, _) = shell_with(&text);
+        let mut now = 1000;
+        settle(&mut ui, &mut now);
+        ui.hide();
+        settle(&mut ui, &mut now);
+        ui.show_held_popup_message(held);
+        assert!(ui.take_popup_calls().is_empty(), "the pause was made when the message came");
+        let parent = ui.gui.popup.parent.expect("the parent");
+        let st = ui.gui.popup.static_text_message.expect("the text");
+        assert_eq!((ui.wm.tree.windows[parent].region.0, ui.wm.tree.windows[parent].region.1, ui.wm.tree.windows[parent].size.0), (200, 240, 300));
+        assert_eq!(ui.wm.modal.first(), Some(&parent));
+        assert!(ui.popup_shown() && ui.takes_input());
+        // the text drawn: the measured lines, inside the static text's window
+        let quads = ui.draw();
+        let t = quads.iter().find(|q| q.text.as_deref().is_some_and(|t| t.starts_with("The convoy"))).expect("the text drawn");
+        let lines = t.text.as_deref().map_or(0, |t| t.split('\n').count());
+        let (sw, sh) = ui.wm.tree.windows[st].size;
+        eprintln!("popup text: {lines} lines {:?}, its window {sw}x{sh}, the quad {:?}", t.text, t.rect);
+        assert!(lines >= 2, "{t:?}");
+        assert_eq!(t.line_px, Some(18.0));
+        assert_eq!(t.rect[3] - t.rect[1], 18.0 * lines as f32, "the box is the lines' height");
+        assert!(18 * lines as i32 <= sh, "every line inside the window's {sh}");
+        assert!(long.replace(' ', "") == t.text.as_deref().unwrap_or("").replace(['\n', ' '], ""), "no word lost");
+        ui.keyboard(0x1C, true, None);
+        ui.keyboard(0x1C, false, None);
+        assert_eq!(ui.take_popup_calls(), vec![PopupCall::SetGamePaused { paused: false, pause_music: false }]);
+        assert!(!ui.popup_shown());
     }
 
     /// #148: the briefing history from the communicator button (`ToggleDiplomacy(FALSE)`), on the synthetic

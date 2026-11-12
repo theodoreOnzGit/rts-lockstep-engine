@@ -51,3 +51,12 @@ WARRANTY. SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION OF OR LIMITATIONS ON
 IMPLIED WARRANTIES OR THE LIMITATIONS ON THE APPLICABLE STATUTORY RIGHTS OF A
 CONSUMER, SO SOME OR ALL OF THE ABOVE EXCLUSIONS AND LIMITATIONS MAY NOT APPLY
 TO YOU.
+
+## Bundled font: Liberation Sans (GitHub #155)
+
+The client (`client/`) ships Liberation Sans 2.1.5, regular and bold (`client/fonts/`), compiled into its native and web
+builds. The fonts are not EA's and are not part of the game. They are copyright (c) 2010 Google Corporation (Reserved
+Font Arimo, Tinos and Cousine) and (c) 2012 Red Hat, Inc. (Reserved Font Name Liberation), and are licensed under the SIL
+Open Font License, Version 1.1 (`client/fonts/OFL.txt`; the web build ships it as `LiberationSans-OFL.txt`), not under
+the GPL. Source: the Debian package `fonts-liberation` 1:2.1.5-3, unmodified (upstream:
+https://github.com/liberationfonts/liberation-fonts); see `client/fonts/README.md`.

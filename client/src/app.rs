@@ -173,7 +173,20 @@ struct Game {
     subtitle_clock: f32,
     /// (#151) The logic's popup messages (`ClientEvent::InGameUi(PopupMessage)`) and its
     /// `MSG_CLEAR_INGAME_POPUP_MESSAGE`s (`ClientCall::ClearPopupMessage`, `None`), for the shell's window manager.
+    /// **(#155)** Taken every frame: by the shell, or without one by [`Game::windowless_popup`] (they no longer wait for a
+    /// shell: bounded by a frame's events).
     popups: Vec<Option<rts_lockstep_engine::logic::client_event::InGameUiCall>>,
+    /// (#155) `TheInGameUI`'s popup message while there is no shell (not read yet, or none): held without a window, its
+    /// pause and history label made as upstream makes them (`rts_lockstep_engine::client::in_game_popup_message::
+    /// WindowlessPopup`); given to the shell when one comes. And whether the World's game was already seen cleared for
+    /// it (`InGameUI::reset`'s clear).
+    windowless_popup: rts_lockstep_engine::client::in_game_popup_message::WindowlessPopup,
+    windowless_cleared_seen: bool,
+    /// (#155) The frame the mouse's tooltip is laid out in this frame: the window, or the turned shell's
+    /// ([`crate::cursor::TooltipFrame`]).
+    tooltip_frame: crate::cursor::TooltipFrame,
+    /// (#155) The pointer's last place on screen (logical pixels), mouse or finger, for the mouse's position in the frame.
+    pointer_screen: Option<(f32, f32)>,
     /// (#144) The popup's text as the last `populateBuildTooltipLayout(NULL, window)` filled it (the money, power and
     /// general's experience windows), and the bar's fill count it was taken at (`GameUi::popup_fills`).
     window_popup_lines: Option<Vec<String>>,
@@ -280,6 +293,10 @@ impl Game {
             subtitle: Default::default(),
             subtitle_clock: 0.0,
             popups: Vec::new(),
+            windowless_popup: Default::default(),
+            windowless_cleared_seen: cleared_seen,
+            tooltip_frame: crate::cursor::TooltipFrame { screen: (800.0, 600.0), turned: false },
+            pointer_screen: None,
             window_popup_lines: None,
             popup_fills_seen: 0,
             client_quiet: false,
@@ -379,6 +396,30 @@ impl Rig {
 #[derive(Component)]
 struct Hud;
 
+/// (#155) Liberation Sans' two faces as Bevy fonts (`crate::fonts`), at fixed handles.
+const LIBERATION_REGULAR: Handle<Font> = bevy::asset::uuid_handle!("6d1f7a52-3c1e-4f0b-9a55-155a0e2b7c01");
+const LIBERATION_BOLD: Handle<Font> = bevy::asset::uuid_handle!("6d1f7a52-3c1e-4f0b-9a55-155a0e2b7c02");
+
+/// GUI glue (needs the app; the bytes and their faces are `crate::fonts`', tested there): (#155) both faces of
+/// Liberation Sans given to Bevy at start-up, from the bytes compiled into the client (native and web alike).
+fn load_fonts(mut fonts: ResMut<Assets<Font>>) {
+    for (h, face) in [(LIBERATION_REGULAR, crate::fonts::Face::Regular), (LIBERATION_BOLD, crate::fonts::Face::Bold)] {
+        if let Err(e) = fonts.insert(&h, Font::from_bytes(face.bytes().to_vec())) {
+            warn!("Liberation Sans {face:?} not loaded: {e}");
+        }
+    }
+}
+
+/// (#155) The Bevy font and weight a face is drawn with: the face's own font, then Bevy's own (FiraMono) for a character
+/// Liberation Sans lacks. GUI glue's helper.
+fn liberation(face: crate::fonts::Face) -> (bevy::text::FontSource, bevy::text::FontWeight) {
+    let (h, weight) = match face {
+        crate::fonts::Face::Regular => (LIBERATION_REGULAR, bevy::text::FontWeight::NORMAL),
+        crate::fonts::Face::Bold => (LIBERATION_BOLD, bevy::text::FontWeight::BOLD),
+    };
+    (bevy::text::FontSource::list([bevy::text::FontSource::Handle(h), bevy::text::FontSource::Handle(Handle::default())]), weight)
+}
+
 /// Runs the client: on the player's Zero Hour folder when `zh` names one (native), else on the demo game until the page
 /// hands over the player's files ([`crate::import`]). (C2d ran the demo; C1 the gate game, whose units cannot be selected.)
 pub fn run(zh: Option<std::path::PathBuf>) {
@@ -423,7 +464,7 @@ pub fn run(zh: Option<std::path::PathBuf>) {
         .init_resource::<UiKeyboard>()
         .init_resource::<RadarBox>()
         .init_resource::<ParticleDraw>()
-        .add_systems(Startup, (setup_scene, setup_ui))
+        .add_systems(Startup, (load_fonts, setup_scene, setup_ui))
         .add_systems(FixedUpdate, step_logic)
         .insert_non_send(ShellState::default())
         .add_systems(Update, (poll_import, apply_save_action, saves_panel, pump_art, apply_campaign_action, campaign_flow, campaign_panel, update_terrain, load_shell, shell_ui).chain())
@@ -1244,18 +1285,33 @@ fn camera_input(
 /// mapping is [`crate::cursor`]'s, tested there): `Mouse.ini` read once the art is up, the window's focus given to the
 /// mouse (`WM_SETFOCUS`, `WM_KILLFOCUS`), the mouse drawn (`W3DMouse::draw`, once a frame), and the window's cursor set
 /// to what it shows: hidden, or the system icon for it. A phone has no cursor: the settings change nothing there.
-fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, touches: Res<Touches>, mut windows: Query<(Entity, &Window, &mut bevy::window::CursorOptions, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>) {
+#[allow(clippy::type_complexity)]
+fn show_cursor(mut commands: Commands, mut game: NonSendMut<Game>, shell: NonSend<ShellState>, time: Res<Time>, touches: Res<Touches>, mut windows: Query<(Entity, &Window, &mut bevy::window::CursorOptions, Option<&bevy::window::CursorIcon>), With<bevy::window::PrimaryWindow>>) {
     use crate::cursor::{cursor_look, CursorLook, Icon};
     use bevy::window::{CursorIcon, SystemCursorIcon as S};
     use rts_lockstep_engine::client::radius_cursor::RadiusUiState;
     let g = &mut *game;
     let now = (time.elapsed_secs_f64() * 1000.0) as u32;
     // (#124) the mouse's position and limits (`m_currMouse.pos`, `setMouseLimits`), and `createStreamMessages`' tooltip
-    // timer: the mouse moved this frame or not. A phone has no hover: the finger's place stands for it while it touches.
+    // timer: the mouse moved this frame or not. A phone has no hover: the finger's place stands for it while it touches
+    // (#155: and where a tap ended).
+    // (#155) in the tooltip's frame: the window, or turned with the shell's layout while it is drawn turned
     if let Ok((_, window, _, _)) = windows.single() {
-        g.pause.mouse.set_mouse_limits(window.width() as i32, window.height() as i32);
-        if let Some(p) = window.cursor_position().or_else(|| touches.iter().next().map(|t| t.position())) {
-            let p = pixel(p);
+        let frame = crate::cursor::TooltipFrame { screen: (window.width(), window.height()), turned: shell.placement.is_some_and(|p| p.turned) };
+        g.tooltip_frame = frame;
+        let (fw, fh) = frame.size();
+        g.pause.mouse.set_mouse_limits(fw, fh);
+        // (#155: a tap that begins and ends within one frame is no held touch; its place stands for the pointer too.
+        // The pointer's last place on screen is kept and put in this frame's frame every frame, so a frame that turns
+        // while the pointer rests moves the mouse with it)
+        let touch = touches.iter().next().or_else(|| touches.iter_just_released().next()).map(|t| t.position());
+        let seen = window.cursor_position().or(touch);
+        if let Some(p) = seen {
+            g.pointer_screen = Some((p.x, p.y));
+        }
+        if let Some(p) = g.pointer_screen {
+            let (fx, fy) = frame.to_frame(p);
+            let p = pixel(Vec2::new(fx, fy));
             let moved = p != g.pause.mouse.pos;
             g.pause.mouse.pos = p;
             g.pause.mouse.tooltip.create_stream_messages(now, moved);
@@ -1866,14 +1922,34 @@ struct WorldTooltip(Vec<crate::cursor::TooltipShape>);
 /// `xPos -= 20 + width`) and wraps at `TooltipWidth` of the screen (15 %: 58 pixels, so a long name takes several lines).
 /// **(#136)** The mouse is the one `TheMouse`: the shell's and the control bar's windows set its tooltip too (their
 /// managers borrow it, `with_mouse`), so it is drawn over the shell as well: ~~`ZIndex(50)`, under the shell's
-/// `GlobalZIndex(10)`~~ **corrected 2026-11-11, #136:** `GlobalZIndex(20)`, over the shell's 10.
-fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<Game>, mut roots: Query<(Entity, &mut WorldTooltip)>) {
+/// `GlobalZIndex(10)`~~ **corrected 2026-11-11, #136:** `GlobalZIndex(20)`, over the shell's 10. **(#155)** Measured as
+/// upstream measures it and drawn in Liberation Sans; while the shell's layout is drawn turned on a portrait screen, the
+/// tooltip is laid out in the turned frame ([`crate::cursor::TooltipFrame`], the mouse's position and limits given in it
+/// by [`show_cursor`]) and its root, the frame's size centred on the window, is turned a quarter clockwise with it, so
+/// the box sits at the turned pointer and reads the shell's way up.
+fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<Game>, mut roots: Query<(Entity, &mut WorldTooltip, &mut Node, &mut UiTransform)>) {
     let g = &mut *game;
     let now = (time.elapsed_secs_f64() * 1000.0) as u32;
     let fade = g.controls.client.world.script_engine.fade != rts_lockstep_engine::logic::world::script_engine::fade::NONE;
     let shapes = crate::cursor::tooltip_shapes(&mut g.pause.mouse, now, fade);
+    // (#155) the frame's root: the window, or turned a quarter clockwise about the window's centre (the frame's size,
+    // centred on it), as the shell's layout is
+    let frame = g.tooltip_frame;
+    let (fw, fh) = (frame.size().0 as f32, frame.size().1 as f32);
+    let (sw, sh) = frame.screen;
+    let turn = if frame.turned { UiTransform::from_rotation(Rot2::from_sin_cos(1.0, 0.0)) } else { UiTransform::default() };
+    let place = |n: &mut Node| {
+        n.left = px((sw - fw) / 2.0);
+        n.top = px((sh - fh) / 2.0);
+        n.width = px(fw);
+        n.height = px(fh);
+    };
     let root = match roots.iter_mut().next() {
-        Some((e, mut r)) => {
+        Some((e, mut r, mut node, mut transform)) => {
+            place(&mut node);
+            if *transform != turn {
+                *transform = turn;
+            }
             if r.0 == shapes {
                 return;
             }
@@ -1881,9 +1957,11 @@ fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<G
             commands.entity(e).despawn_children();
             e
         }
-        None => commands
-            .spawn((WorldTooltip(shapes.clone()), Node { position_type: PositionType::Absolute, left: px(0), top: px(0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, Pickable::IGNORE, GlobalZIndex(20)))
-            .id(),
+        None => {
+            let mut node = Node { position_type: PositionType::Absolute, ..default() };
+            place(&mut node);
+            commands.spawn((WorldTooltip(shapes.clone()), node, turn, Pickable::IGNORE, GlobalZIndex(20))).id()
+        }
     };
     for sh in &shapes {
         let child = match sh {
@@ -1894,15 +1972,18 @@ fn world_tooltip(mut commands: Commands, time: Res<Time>, mut game: NonSendMut<G
                     Pickable::IGNORE,
                 ))
                 .id(),
-            crate::cursor::TooltipShape::Text { text, rect, clip, color, font_px } => {
+            crate::cursor::TooltipShape::Text { text, rect, clip, color, font_px, line_px, face } => {
                 let clip_node = Node { position_type: PositionType::Absolute, left: px(clip[0]), top: px(clip[1]), width: px(clip[2] - clip[0]), height: px(clip[3] - clip[1]), overflow: Overflow::clip(), ..default() };
                 let text_node = Node { position_type: PositionType::Absolute, left: px(rect[0] - clip[0]), top: px(rect[1] - clip[1]), width: px(rect[2] - rect[0]), ..default() };
                 let colour = Color::srgba_u8(color[0], color[1], color[2], color[3]);
-                let font = TextFont { font_size: bevy::text::FontSize::Px(*font_px), ..default() };
+                // (#155) the measured lines, in Liberation Sans at the font's em, its height apart
+                let (source, weight) = liberation(*face);
+                let font = TextFont { font: source, font_size: bevy::text::FontSize::Px(*font_px), weight, ..default() };
+                let layout = TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() };
                 commands
                     .spawn((clip_node, Pickable::IGNORE))
                     .with_children(|p| {
-                        p.spawn((text_node, Text::new(text.clone()), font, TextColor(colour), Pickable::IGNORE));
+                        p.spawn((text_node, Text::new(text.clone()), font, bevy::text::LineHeight::Px(*line_px), layout, TextColor(colour), Pickable::IGNORE));
                     })
                     .id()
             }
@@ -2044,7 +2125,8 @@ struct SubtitleNode;
 /// over a black drop shadow one pixel down and right (`W3DDisplayString::draw`'s `xDrop`, `yDrop` of 1,
 /// W3DDisplayString.cpp:160), in its font's ~~point size (the client draws
 /// in its own font)~~ **corrected 2026-11-12, #153:** em (`MulDiv(points, 96, 72)`, as measured: `crate::text_metrics`)
-/// and face where Bevy has it, else Bevy's own font, and the typing block, a filled rectangle. Over the cinematic text (`GlobalZIndex(24)`). A game cleared
+/// and ~~face where Bevy has it, else Bevy's own font~~ **(corrected 2026-11-12, #155)** Liberation Sans, regular or bold
+/// (`crate::fonts`), and the typing block, a filled rectangle. Over the cinematic text (`GlobalZIndex(24)`). A game cleared
 /// (`clearGameData`'s `InGameUI::reset`) removes it.
 fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<Time>, windows: Query<&Window>, nodes: Query<Entity, With<SubtitleNode>>) {
     use rts_lockstep_engine::client::military_subtitle::SubtitleDraw;
@@ -2078,10 +2160,9 @@ fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: R
         match d {
             SubtitleDraw::Text { x, y, text, font, color, drop_color } => {
                 let text = String::from_utf16_lossy(&text);
-                // (#153: the font's em and face, as the window text is drawn)
+                // (#153: the font's em and face, as the window text is drawn; #155: in Liberation Sans)
                 let size = crate::text_metrics::em_px(Some(&font)).max(1.0);
-                let face = bevy::text::FontSource::list([bevy::text::FontSource::family(crate::text_metrics::draw_face(Some(&font))), bevy::text::FontSource::Handle(Handle::default())]);
-                let weight = if font.bold { bevy::text::FontWeight::BOLD } else { default() };
+                let (face, weight) = liberation(crate::text_metrics::draw_face(Some(&font)));
                 for (dx, c) in [(1.0, drop_color), (0.0, color)] {
                     commands.spawn((
                         SubtitleNode,
@@ -2112,8 +2193,10 @@ fn military_subtitle(mut commands: Commands, mut game: NonSendMut<Game>, time: R
 /// tested there and against the C++): `W3DDisplay::draw`'s cinematic text, right after the letterbox and so over it
 /// (`GlobalZIndex(22)`, over the bars' 21). Upstream draws it once a drawn frame, 30 a second; here once a client frame
 /// (30 a second, counted on this system's clock), each taking a frame from the count; between two client frames the
-/// last draw stays. White, at `y`, in the font's point size (12, Times New Roman's default size, with none), wrapped at
-/// the display's width less 20 and centred line by line: Bevy centres the text in the display's width, which is
+/// last draw stays. White, at `y`, in the font's ~~point size (12, Times New Roman's default size, with none), wrapped at
+/// the display's width less 20~~ **(corrected 2026-11-12, #155)** em (`MulDiv(points, 96, 72)`; Times New Roman 12 with
+/// none) in Liberation Sans, as the lines the client's measure breaks it into at the display's width less 20
+/// (`crate::text_metrics::text_lines`), the font's height apart, and centred line by line: Bevy centres the text in the display's width, which is
 /// upstream's `x` for a string narrower than the display (the string's width, which upstream's font measures, is not
 /// known before Bevy lays the text out: the draw is asked with 0). A unit above 0xFF (a byte from 0x80 up, which
 /// `translate` sign-extends) is shown as its byte's Latin-1 character; upstream's font is asked for the sign-extended
@@ -2141,8 +2224,15 @@ fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<
         commands.entity(e).despawn();
     }
     let Some(d) = drawn else { return };
-    let text = String::from_utf16_lossy(&d.text.iter().map(|&u| if u > 0xFF { u & 0xFF } else { u }).collect::<Vec<_>>());
-    let size = d.font.as_ref().map_or(12.0, |f| f.point_size.max(1) as f32);
+    // (#155) the font as a window font (Times New Roman 12 with none: the display string's default), measured and
+    // broken into lines at the wrap as upstream's measure breaks them, drawn at its em in Liberation Sans, the lines its
+    // height apart
+    let units: Vec<u16> = d.text.iter().map(|&u| if u > 0xFF { u & 0xFF } else { u }).collect();
+    let font = d.font.as_ref().map_or(rts_lockstep_engine::client::window_script::GameFont { name: b"Times New Roman".to_vec(), point_size: 12, bold: false }, |f| rts_lockstep_engine::client::window_script::GameFont { name: f.name.clone(), point_size: f.point_size, bold: f.bold });
+    let text = crate::text_metrics::text_lines_string(Some(&font), &units, Some(d.word_wrap));
+    let size = crate::text_metrics::em_px(Some(&font)).max(1.0);
+    let (face, weight) = liberation(crate::text_metrics::draw_face(Some(&font)));
+    let line = bevy::text::LineHeight::Px(crate::text_metrics::line_px(Some(&font)));
     let color = Color::srgba_u8((d.color >> 16) as u8, (d.color >> 8) as u8, d.color as u8, (d.color >> 24) as u8);
     commands
         .spawn((
@@ -2154,10 +2244,10 @@ fn cinematic_text(mut commands: Commands, mut game: NonSendMut<Game>, time: Res<
         .with_children(|p| {
             p.spawn((
                 Text::new(text),
-                TextFont { font_size: bevy::text::FontSize::Px(size), ..default() },
+                TextFont { font: face, font_size: bevy::text::FontSize::Px(size), weight, ..default() },
+                line,
                 TextColor(color),
-                TextLayout { justify: Justify::Center, ..default() },
-                Node { max_width: px(d.word_wrap.max(1) as f32), ..default() },
+                TextLayout { justify: Justify::Center, linebreak: bevy::text::LineBreak::NoWrap },
                 Pickable::IGNORE,
             ));
         });
@@ -2687,15 +2777,14 @@ fn spawn_quads(commands: &mut Commands, root: Entity, quads: &[crate::ui::UiQuad
         if let Some(t) = &q.text {
             let size = q.font_px.map_or((scale * 11.0).clamp(8.0, 18.0), |f| (f * scale).max(6.0));
             let colour = q.text_color.map_or(Color::WHITE, |c| rgba(c, false));
-            let layout = if corner && !q.text_wrap { TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() } } else { TextLayout::default() };
-            // (#153) the window font's face where Bevy has it, else Bevy's own font; its weight
-            let font = match &q.font_name {
-                Some(n) => bevy::text::FontSource::list([bevy::text::FontSource::family(n.clone()), bevy::text::FontSource::Handle(Handle::default())]),
-                None => default(),
-            };
-            let weight = if q.font_bold { bevy::text::FontWeight::BOLD } else { default() };
+            // (#155) a window's text comes as its measured lines: drawn as they are, not wrapped again
+            let layout = if corner { TextLayout { linebreak: bevy::text::LineBreak::NoWrap, ..default() } } else { TextLayout::default() };
+            // ~~(#153) the window font's face where Bevy has it, else Bevy's own font; its weight~~ (#155) Liberation
+            // Sans, regular or bold, its lines the font's height apart
+            let (font, weight) = q.font_face.map_or((default(), default()), liberation);
+            let line = q.line_px.map_or(bevy::text::LineHeight::default(), |l| bevy::text::LineHeight::Px((l * scale).max(size)));
             e.with_children(|p| {
-                p.spawn((Text::new(t.clone()), TextFont { font, font_size: bevy::text::FontSize::Px(size), weight, ..default() }, TextColor(colour), layout, pick));
+                p.spawn((Text::new(t.clone()), TextFont { font, font_size: bevy::text::FontSize::Px(size), weight, ..default() }, line, TextColor(colour), layout, pick));
             });
         }
         if let Some((h, rect)) = q.overlay.as_ref().and_then(|n| image(n)) {
@@ -3625,6 +3714,47 @@ fn load_shell(mut game: NonSendMut<Game>, mut shell: NonSendMut<ShellState>, tim
     }
 }
 
+/// (#155) GUI glue's helper (the popup's code is `WindowlessPopup`'s, tested in the logic crate, against the C++ by
+/// `tests/differential_popup_windowless.rs`, and with the shell in `crate::shell`): the frame's popup messages and clears
+/// with no shell, on `display`; a game cleared since last seen clears the held one (`InGameUI::reset`); then the calls they
+/// made ([`windowless_calls`]).
+fn windowless_popups(g: &mut Game, display: (i32, i32)) {
+    use rts_lockstep_engine::logic::client_event::InGameUiCall;
+    let cleared = g.controls.client.world.game_cleared.is_some();
+    if cleared && !g.windowless_cleared_seen {
+        g.windowless_popup.clear_popup_message_data();
+    }
+    g.windowless_cleared_seen = cleared;
+    g.windowless_popup.display = display;
+    let text = &g.controls.client.world.statics.game_text;
+    let fetch = |l: &[u8]| {
+        use rts_lockstep_engine::common::science::GameTextFetch;
+        text.fetch(l).str().to_vec()
+    };
+    for p in std::mem::take(&mut g.popups) {
+        match p {
+            Some(InGameUiCall::PopupMessage { message, x, y, width, pause, pause_music }) => {
+                g.windowless_popup.popup_message(fetch, &message, x, y, width, g.radius.settings.popup_message_color, pause, pause_music);
+            }
+            Some(_) => {}
+            None => g.windowless_popup.clear_popup_message_data(),
+        }
+    }
+    windowless_calls(g);
+}
+
+/// (#155) GUI glue's helper: the windowless popup's calls made on the game: its pause (`setGamePaused`) and its labels
+/// into the pending briefings (`crate::saves::queue_briefing`, bounded as upstream's list).
+fn windowless_calls(g: &mut Game) {
+    use rts_lockstep_engine::client::in_game_popup_message::WindowlessCall;
+    for c in std::mem::take(&mut g.windowless_popup.calls) {
+        match c {
+            WindowlessCall::SetGamePaused { paused, .. } => g.set_game_paused(paused),
+            WindowlessCall::Briefing(label) => crate::saves::queue_briefing(&mut g.briefings, &label),
+        }
+    }
+}
+
 /// GUI glue (needs a window): the shell each frame. A game started under it hides it (`hideShell`); while shown, its
 /// clock ([`crate::shell::ShellUi::frame`]), its callbacks' requests ([`crate::shell::ShellUi::take_actions`]: a campaign's
 /// start is the campaign panel's flow; a quit ends the native app, and on the web says so), and its windows drawn from the
@@ -3651,23 +3781,25 @@ fn shell_ui(
     mut keyboard_scroll: ResMut<KeyboardScroll>,
 ) {
     let st = &mut *shell;
-    if st.tried && st.ui.is_none() {
-        // (#153) no shell (no `MainMenu.wnd`, or no `WindowTransitions.ini`): the pending briefings are the history
-        // itself (`crate::saves::queue_briefing` bounds them as upstream's list); a game cleared clears them
-        // (`InGameUI::reset`), and a popup message, which no window manager shows, still gives its label to them
-        // (`popupMessage`'s `UpdateDiplomacyBriefingText(identifier, FALSE)`, InGameUI.cpp:5174) and is dropped
+    if st.ui.is_none() {
         let g = &mut *game;
-        let cleared = g.controls.client.world.game_cleared.is_some();
-        if cleared && !g.cleared_seen {
-            crate::saves::clear_briefings(&mut g.briefings);
-        }
-        g.cleared_seen = cleared;
-        g.briefings_reset = false;
-        for p in std::mem::take(&mut g.popups) {
-            if let Some(rts_lockstep_engine::logic::client_event::InGameUiCall::PopupMessage { message, .. }) = p {
-                crate::saves::queue_briefing(&mut g.briefings, &message);
+        if st.tried {
+            // (#153) no shell (no `MainMenu.wnd`, or no `WindowTransitions.ini`): the pending briefings are the history
+            // itself (`crate::saves::queue_briefing` bounds them as upstream's list); a game cleared clears them
+            // (`InGameUI::reset`)
+            let cleared = g.controls.client.world.game_cleared.is_some();
+            if cleared && !g.cleared_seen {
+                crate::saves::clear_briefings(&mut g.briefings);
             }
+            g.cleared_seen = cleared;
+            g.briefings_reset = false;
         }
+        // ~~(#153) a popup message, which no window manager shows, still gives its label to them and is dropped~~
+        // **Corrected 2026-11-12, #155:** with no shell, read yet or not, a popup message is held as upstream's
+        // `popupMessage` holds it without its window (`WindowlessPopup`): its label to the briefings, and a pausing one
+        // pauses the game; a clear or the game cleared (`InGameUI::reset`) unpauses it. Nothing waits for a shell.
+        let display = windows.single().map_or((800, 600), |w| (w.width() as i32, w.height() as i32));
+        windowless_popups(g, display);
         return;
     }
     let Some(ui) = st.ui.as_mut() else { return };
@@ -3705,6 +3837,11 @@ fn shell_ui(
     for label in std::mem::take(&mut g.briefings) {
         ui.briefing(&label);
     }
+    // (#155) a popup message held while there was no shell is shown on it now (its pause and label made already)
+    if let Some(held) = g.windowless_popup.take_held() {
+        ui.show_held_popup_message(held);
+    }
+    windowless_calls(g);
     // (#151) the logic's popup messages and their clears, then the popup's calls on the game: its pause
     // (`setGamePaused`), and its OK's `MSG_CLEAR_INGAME_POPUP_MESSAGE`, sent as the game's own command message
     for p in std::mem::take(&mut g.popups) {
