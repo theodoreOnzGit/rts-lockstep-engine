@@ -375,14 +375,16 @@ impl Drawable {
     /// it ends the walk (the drawable's own recoil pitch and roll, `m_locoInfo`, is not
     /// translated: no locomotor info on the client yet).
     pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> bool {
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env).is_some()
+        // where it plays is not asked: any render object transform
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, &Matrix3D::IDENTITY, env).is_some()
     }
 
     /// [`Drawable::handle_weapon_fire_fx`] with where the handling module plays the FX list (GitHub #43,
-    /// [`W3DModelDraw::handle_weapon_fire_fx_at`]).
-    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
+    /// [`W3DModelDraw::handle_weapon_fire_fx_at`]); (#172) `transform` is the render objects' (the drawable's transform,
+    /// as the draw sets it), which the FX bone is chained from.
+    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, transform: &Matrix3D, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
         for dm in self.get_draw_modules(env) {
-            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl) {
+            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, transform) {
                 return Some(at);
             }
         }
@@ -726,8 +728,14 @@ impl ClientDrawables {
                     self.drawable(w, *source, assets, sync_time);
                     let mut handled = None;
                     if let (Some(d), Ok(wslot)) = (self.drawables.get_mut(source), usize::try_from(*weapon_slot)) {
+                        // (#172) the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s): the
+                        // object's, or without one the drawable's saved transform
+                        let transform = match w.find_object(*source) {
+                            Some(o) => *o.thing.transform_matrix(),
+                            None => d.saved.transform,
+                        };
                         let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
-                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &mut env);
+                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &transform, &mut env);
                     }
                     // the FX list itself (GitHub #43): at the handling module's FX bone, else where
                     // `fireWeaponTemplate` plays it

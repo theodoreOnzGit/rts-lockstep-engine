@@ -41,6 +41,10 @@
 //   setFullyObscuredByShroud, stopClientParticleSystems, recalcBonesForClientParticleSystems,
 //   updateBonesForClientParticleSystems, and the constructor's, setModelState's and doDrawModule's
 //   parts for them
+//   (GitHub #172) GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DAssetManager.cpp
+//   (Create_Render_Obj's scaling: ident_scale, scale_epsilon, reallyscale, rendobj->Scale), hlod.cpp
+//   (HLodClass::Scale's hierarchy part), animobj.cpp (Get_Bone_Transform, Update_Sub_Object_Transforms'
+//   BASE_POSE), htree.cpp (Base_Update, through formats::w3d::htree)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -155,10 +159,25 @@
 //!   bone's transform is the render object's [`Skeleton`] as made (the base pose under the drawable's scale), not the
 //!   animated pose upstream's `Get_Bone_Transform` evaluates, and without the turret and recoil bone captures; the
 //!   live transform `updateBonesForClientParticleSystems` reads is [`DrawFacts::transform`] (the drawable's, without
-//!   the scale, which the skeleton carries). For a drawable scale that is not a power of two the port's
+//!   the scale, which the skeleton carries). ~~For a drawable scale that is not a power of two the port's
 //!   `world * (Scale * bone)` rounds differently from upstream's `(world * Scale) * bone` (measured,
-//!   `tests/differential_model_draw_particles.rs`). `attachToDrawable` takes [`W3DModelDraw::drawable_id`] (the port's
-//!   drawable id for particles is its object's).
+//!   `tests/differential_model_draw_particles.rs`).~~ **Corrected 2026-11-12 (#172):** that was not upstream's
+//!   convention, nor only a rounding: see the next item. `attachToDrawable` takes [`W3DModelDraw::drawable_id`] (the
+//!   port's drawable id for particles is its object's).
+//! - (#172) **The drawable's scale is in the render object's hierarchy, not in a matrix.** Upstream makes the render
+//!   object with `Create_Render_Obj(name, getScale(), color)` (W3DModelDraw.cpp:623, 3034), which when
+//!   `WWMath::Fabs(scale - 1) > 0.01` (W3DAssetManager.cpp:84-85, 738) calls `rendobj->Scale(scale)` (858-859):
+//!   `HLodClass::Scale` -> `HTreeClass::Scale`, which multiplies every pivot's base *translation* by the scale
+//!   (htree.cpp:982-996; [`crate::formats::w3d::htree::HTree::scale`], [`scale_render_obj_hierarchy`]). The live
+//!   render object's transform is the drawable's (2094-2100: no template scale), and a bone is `Base_Update`'s chain
+//!   from that root, `((root * B'1) * B'2) ...` (htree.cpp:531-548, animobj.cpp:658-675, 780-802). So there are two
+//!   roots: **(A)** `Set_Transform(Matrix3D(true).Scale(getScale()))` then `Get_Bone_Transform` (the pristine bones,
+//!   669-672, and the bone systems' recalc, 2611-2617): the chain from `S` over the scaled pivots, translations scaled
+//!   twice, rotations once: [`SkeletonBone::transform`], [`RenderObj::get_bone_transform_scaled`]; **(B)** the live
+//!   transform (the bone systems' update 2698, `getCurrentWorldspaceClientBonePositions` 3564, `handleWeaponFireFX`
+//!   3727): the chain from the drawable's transform, rotations not scaled: [`Skeleton::bone_transform`],
+//!   [`RenderObj::get_bone_transform`]. Both are computed as upstream computes them, in its order, so they agree
+//!   with it bit for bit at any scale (`tests/differential_model_draw_particles.rs`, gated).
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
 //!   weapon barrels), turret and recoil posing, sub-object hide and show,
@@ -241,6 +260,8 @@ use crate::common::random_value::RandomValues;
 use crate::common::sparse_match_finder::{SparseMatchFinder, SparseMatchable};
 use crate::common::thing_template::{ClientModuleData, CLIENT_NESTED_BLOCKS};
 use crate::formats::w3d::assetmgr::{AssetManager, Prototype};
+use crate::formats::w3d::htree::{HTree, Pivot};
+use crate::formats::w3d::w3d_file::W3D_NAME_LEN;
 use crate::formats::w3d::render::{compute_current_frame, get_frame_rate, AnimMode, RenderModel};
 use crate::logic::weapon_set::{SLOTS, WEAPON_SLOT_TYPE_NAMES};
 use crate::formats::w3d::vertmaterial::MapperKind;
@@ -1841,12 +1862,14 @@ pub trait W3dAssetSource {
     fn create_render_obj(&mut self, name: &[u8]) -> Option<bool>;
     /// `Get_HAnim(name)`.
     fn get_hanim(&mut self, name: &[u8]) -> Option<AnimHandle>;
-    /// The hierarchy and sub-objects of a new render object of `name` (`Create_Render_Obj`),
-    /// posed at `pose`'s animation and frame (the base pose without one, or when the animation
-    /// is not found) under a transform of `scale` (`Matrix3D(true).Scale(scale)`): what
-    /// `Get_Bone_Index`, `Get_Bone_Transform`, `Get_Sub_Object_By_Name` and the hide-show
-    /// functions read of it. `None` when it has none to give (no such render object, or a
-    /// source without hierarchies); a mesh gives an empty [`Skeleton`].
+    /// The hierarchy and sub-objects of a new render object of `name` ~~(`Create_Render_Obj`)~~
+    /// **Corrected 2026-11-12 (#172):** made at the drawable's `scale` (`Create_Render_Obj(name, scale, color)`, whose
+    /// hierarchy is then scaled as [`scale_render_obj_hierarchy`] scales it), posed at `pose`'s animation and frame (the
+    /// base pose without one, or when the animation is not found) under a transform of `scale`
+    /// (`Matrix3D(true).Scale(scale)`): what `Get_Bone_Index`, `Get_Bone_Transform`, `Get_Sub_Object_By_Name` and the
+    /// hide-show functions read of it, with each bone's scaled base transform ([`SkeletonBone::base`]) for the chain
+    /// from another root. `None` when it has none to give (no such render object, or a source without hierarchies); a
+    /// mesh gives an empty [`Skeleton`].
     fn skeleton(&mut self, _name: &[u8], _pose: Option<(&[u8], f32)>, _scale: f32) -> Option<Skeleton> {
         None
     }
@@ -1872,8 +1895,14 @@ pub struct SkeletonBone {
     pub name: Vec<u8>,
     /// `Get_Parent_Index(i)`: the parent's index, 0 for none.
     pub parent_index: i32,
-    /// `Get_Transform(i)` in the pose the skeleton was made for.
+    /// `Get_Transform(i)` in the pose the skeleton was made for ~~.~~ **Corrected 2026-11-12 (#172):** under the root
+    /// `Matrix3D(true).Scale(scale)`, over the pivots as the render object made at that scale holds them (root (A) of
+    /// the module docs: what upstream reads after `Set_Transform(Matrix3D(true).Scale(getScale()))`).
     pub transform: Matrix3D,
+    /// (#172) `Pivot[i].BaseTransform` as the render object holds it: as loaded, its translation scaled by
+    /// `HTreeClass::Scale` when the render object was made at a scale ([`scale_render_obj_hierarchy`]). What
+    /// [`Skeleton::bone_transform`] chains from another root.
+    pub base: Matrix3D,
 }
 
 /// A render object's sub-object (`Get_Sub_Object(i)`).
@@ -1910,13 +1939,7 @@ impl Skeleton {
         let Some(tree) = (if m.is_hlod { m.htree.as_ref() } else { None }) else {
             return Skeleton::default();
         };
-        let mut bones = Vec::new();
-        for i in 0..tree.num_pivots().max(0) as usize {
-            let p = tree.pivot(i).unwrap_or_default();
-            let end = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
-            let parent_index = p.parent.and_then(|q| tree.pivot(q as usize)).map_or(0, |q| q.index);
-            bones.push(SkeletonBone { name: p.name[..end].to_vec(), parent_index, transform: tree.get_transform(i as i32).unwrap_or(Matrix3D::IDENTITY) });
-        }
+        let bones = Skeleton::bones_of(tree);
         let sub_objects = m
             .sub_objects
             .iter()
@@ -1929,6 +1952,62 @@ impl Skeleton {
             })
             .collect();
         Skeleton { bones, sub_objects }
+    }
+
+    /// The bones of a posed hierarchy: each pivot's name, parent, posed transform (`Get_Transform(i)`) and (#172) base
+    /// transform (`BaseTransform`).
+    pub fn bones_of(tree: &HTree) -> Vec<SkeletonBone> {
+        let mut bones = Vec::new();
+        for i in 0..tree.num_pivots().max(0) as usize {
+            let p = tree.pivot(i).unwrap_or_default();
+            let end = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
+            let parent_index = p.parent.and_then(|q| tree.pivot(q as usize)).map_or(0, |q| q.index);
+            bones.push(SkeletonBone {
+                name: p.name[..end].to_vec(),
+                parent_index,
+                transform: tree.get_transform(i as i32).unwrap_or(Matrix3D::IDENTITY),
+                base: p.base_transform,
+            });
+        }
+        bones
+    }
+
+    /// (#172) Bone `bone`'s transform under the render object's transform `root`, in the base pose: what
+    /// `Animatable3DObjClass::Get_Bone_Transform(bone)` (animobj.cpp:658-675) gives after
+    /// `Update_Sub_Object_Transforms` (780-802) runs `HTreeClass::Base_Update(Transform)` (htree.cpp:531-548): pivot 0
+    /// is `root`, each other pivot `Multiply(Parent->Transform, BaseTransform)` in index order, so the chain is
+    /// computed *from the root* (`((root * B1) * B2) ...`), never as `root * (B1 * B2 ...)`. Run by the port's own
+    /// [`HTree::base_update`] over the bones' [`SkeletonBone::base`] and parents (no bone is captured here: the turret
+    /// and recoil captures are not applied, as before). Without bones, or a bone out of range (an upstream assertion),
+    /// or a hierarchy `Base_Update` cannot run (a parent out of range): `root`.
+    pub fn bone_transform(&self, root: &Matrix3D, bone: i32) -> Matrix3D {
+        let n = self.bones.len();
+        if n == 0 || usize::try_from(bone).map_or(true, |b| b >= n) {
+            return *root;
+        }
+        if plant(9694) {
+            let made = Skeleton { bones: self.bones.clone(), sub_objects: Vec::new() };
+            return Matrix3D::multiply(root, &made.bone_transform_base_update(&Matrix3D::IDENTITY, bone));
+        }
+        self.bone_transform_base_update(root, bone)
+    }
+
+    /// [`Skeleton::bone_transform`]'s `Base_Update(root)` and `Get_Transform(bone)`.
+    fn bone_transform_base_update(&self, root: &Matrix3D, bone: i32) -> Matrix3D {
+        let pivots = self
+            .bones
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                let parent = if i == 0 { None } else if plant(9698) { Some(0) } else { u32::try_from(b.parent_index).ok() };
+                Pivot::new([0; W3D_NAME_LEN], parent, b.base, i as i32)
+            })
+            .collect();
+        let mut tree = HTree { name: [0; W3D_NAME_LEN], num_pivots: self.bones.len() as i32, pivots, scale_factor: 1.0 };
+        match tree.base_update(root) {
+            Ok(()) => tree.get_transform(bone).unwrap_or(*root),
+            Err(_) => *root,
+        }
     }
 
     /// `Get_HTree() != NULL`.
@@ -1962,6 +2041,24 @@ impl Skeleton {
     }
 }
 
+/// (#172) `ident_scale` (W3DAssetManager.cpp:84).
+pub const IDENT_SCALE: f32 = 1.0;
+/// (#172) `scale_epsilon` (W3DAssetManager.cpp:85).
+pub const SCALE_EPSILON: f32 = 0.01;
+
+/// (#172) What `W3DAssetManager::Create_Render_Obj(name, scale, color)` (W3DAssetManager.cpp:719-895) does to the new
+/// render object's hierarchy: `reallyscale = (WWMath::Fabs(scale - ident_scale) > scale_epsilon)` (738), and when it
+/// really scales, `rendobj->Scale(scale)` (858-859), whose `HLodClass::Scale` (hlod.cpp:3264-3290) ends in
+/// `HTree->Scale(scale)` ([`HTree::scale`]: the pivots' translations). A scale within 0.01 of 1 leaves the hierarchy as
+/// loaded (and only the root's `Matrix3D(true).Scale(scale)` of the (A) reads applies it). The meshes' own `Scale` (the
+/// vertices) is the renderer's, not the skeleton's.
+pub fn scale_render_obj_hierarchy(tree: &mut HTree, scale: f32) {
+    let reallyscale = crate::ww::wwmath::fabs(scale - IDENT_SCALE) > SCALE_EPSILON;
+    if (reallyscale || plant(9693)) && !plant(9692) {
+        tree.scale(scale);
+    }
+}
+
 /// The asset manager over the game's files.
 pub struct W3dFiles<'a, D: LocalDevice> {
     pub assets: &'a mut AssetManager,
@@ -1982,10 +2079,14 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
             _ => None,
         }
     }
-    /// The render model as drawn ([`RenderModel::create`]), posed by `Anim_Update` (or
-    /// `Base_Update`) under the scaled identity, as `Validate_Transform` poses it.
+    /// The render model as drawn ([`RenderModel::create`]), ~~posed~~ **Corrected 2026-11-12 (#172):** its
+    /// hierarchy scaled as `Create_Render_Obj(name, scale, color)` scales it ([`scale_render_obj_hierarchy`]), then
+    /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it.
     fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         let mut m = RenderModel::create(self.assets, self.fs, name).ok()??;
+        if let Some(tree) = m.htree.as_mut() {
+            scale_render_obj_hierarchy(tree, scale);
+        }
         let mut root = Matrix3D::IDENTITY;
         root.scale(scale);
         let anim = match pose {
@@ -2027,7 +2128,9 @@ pub struct ModeAnim {
 /// Where a handled `handleWeaponFireFX` plays its FX list (GitHub #43).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponFireFxAt {
-    /// The FX bone's transform in the model's space (its pose as made); `None` when the asset source gave no skeleton.
+    /// The FX bone's transform ~~in the model's space (its pose as made)~~ **Corrected 2026-11-12 (#172):** in the world,
+    /// as `Get_Bone_Transform` gives it (the chain from the render object's transform over the scaled pivots, base
+    /// pose); `None` when the asset source gave no skeleton.
     pub bone_transform: Option<Matrix3D>,
     /// `m_renderObject->Is_Hidden()`: upstream then plays at the logic object's position and transform.
     pub render_hidden: bool,
@@ -2114,13 +2217,26 @@ impl RenderObj {
 
     /// (#171) `Get_Bone_Transform(boneindex)` under `Set_Transform(Matrix3D(true).Scale(scale))` (the drawable's scale):
     /// the skeleton's pose as made (animobj.cpp:658-675 evaluates the current animation; here the base pose, the
-    /// module docs). Without a hierarchy, or out of range, the render object's own transform: the identity here.
+    /// module docs). (#172) That is root (A) of the module docs: the chain from the scale over the scaled pivots
+    /// ([`SkeletonBone::transform`]). Without a hierarchy, or out of range, the render object's own transform: the
+    /// identity here.
     pub fn get_bone_transform_scaled(&self, boneindex: i32) -> Matrix3D {
         if !self.has_htree() {
             return Matrix3D::IDENTITY;
         }
         let k = self.skeleton.as_ref().expect("a hierarchy");
         usize::try_from(boneindex).ok().and_then(|b| k.bones.get(b)).map_or(Matrix3D::IDENTITY, |b| b.transform)
+    }
+
+    /// (#172) `Get_Bone_Transform(boneindex)` with the render object's transform `root` (root (B) of the module docs:
+    /// the drawable's transform as `doDrawModule` sets it): [`Skeleton::bone_transform`], the chain from `root` over
+    /// the scaled pivots in the base pose. Without a hierarchy (`RenderObjClass::Get_Bone_Transform`, or
+    /// `Animatable3DObjClass`'s without an `HTree`): `root` itself.
+    pub fn get_bone_transform(&self, root: &Matrix3D, boneindex: i32) -> Matrix3D {
+        if !self.has_htree() {
+            return *root;
+        }
+        self.skeleton.as_ref().expect("a hierarchy").bone_transform(root, boneindex)
     }
 
     /// `Capture_Bone(boneindex)` (`Animatable3DObjClass`: nothing without a hierarchy; a bone
@@ -2306,8 +2422,9 @@ pub struct DrawFacts {
     /// `crate::client::drawable_loco`); `None` until the drawable's first physics model ran.
     pub wheel_info: Option<crate::client::drawable_loco::TWheelInfo>,
     /// (#171) The render object's transform as `doDrawModule` sets it (`m_renderObject->Set_Transform(mtx)`), without
-    /// the drawable's scale (which the port's [`Skeleton`] carries): what `updateBonesForClientParticleSystems` puts the
-    /// bones in. The object's transform matrix ([`crate::client::drawable::ClientDrawables::draw_facts`]).
+    /// the drawable's scale (which ~~the port's [`Skeleton`] carries~~ **Corrected 2026-11-12 (#172):** upstream's
+    /// render object carries in its hierarchy's translations, as the port's [`Skeleton`] does): what
+    /// `updateBonesForClientParticleSystems` chains the bones from. The object's transform matrix ([`crate::client::drawable::ClientDrawables::draw_facts`]).
     pub transform: Matrix3D,
 }
 
@@ -3236,15 +3353,17 @@ impl W3DModelDraw {
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`'s answer, whether it was handled
     /// (see [`W3DModelDraw::handle_weapon_fire_fx_at`] for where the effect plays).
     pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> bool {
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl).is_some()
+        // where it plays is not asked: any render object transform
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, &Matrix3D::IDENTITY).is_some()
     }
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the barrel's recoil started and its muzzle flash
     /// shown; when it is handled (an FX list, the barrel's FX bone and a render object), where upstream's
     /// `FXList::doFXPos` plays: ~~not drawn yet~~ **since GitHub #43 (2026-11-06)** the caller plays it
     /// (`crate::client::client_fx`) at the bone the answer names, or at the logic object when the render object is
-    /// hidden.
-    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> Option<WeaponFireFxAt> {
+    /// hidden. (#172) `transform` is the render object's (the drawable's, as `doDrawModule` sets it): the FX bone is
+    /// `Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727), the chain from it ([`RenderObj::get_bone_transform`]).
+    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, transform: &Matrix3D) -> Option<WeaponFireFxAt> {
         let cur = self.get_cur_state()?;
         if !cur.barrels_valid() || wslot >= SLOTS {
             return None;
@@ -3260,9 +3379,15 @@ impl W3DModelDraw {
         let info = wbvec[barrel];
         if has_fxl && info.fx_bone != 0 {
             if let Some(r) = &self.render_object {
-                // `m_renderObject->Get_Bone_Transform(info.m_fxBone)` unless hidden; the bone's pose as made (the
-                // skeleton's), in the model's space
-                let bone_transform = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| b.transform);
+                // `m_renderObject->Get_Bone_Transform(info.m_fxBone)` unless hidden; the bone's base pose (the
+                // skeleton's), (#172) in the world: the chain from the render object's transform
+                let bone_transform = r.skeleton.as_ref().and_then(|k| k.bones.get(info.fx_bone as usize)).map(|b| {
+                    if plant(9697) {
+                        b.transform
+                    } else {
+                        r.get_bone_transform(transform, info.fx_bone)
+                    }
+                });
                 handled = Some(WeaponFireFxAt { bone_transform, render_hidden: r.hidden });
             }
         }
@@ -3343,8 +3468,10 @@ impl W3DModelDraw {
     /// not 0) is given the bone's transform in the world: its position (`setPosition`), a turn by the bone's Z rotation
     /// (`rotateLocalTransformZ`, which the next call overwrites, kept as upstream does it), the whole transform as its
     /// local transform (`setLocalTransform`) and `setSkipParentXfrm(true)`, so the drawable's transform is not applied
-    /// again. The bone is `transform` (the render object's, [`DrawFacts::transform`]) times the skeleton's bone under the
-    /// drawable's scale (the module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
+    /// again. The bone is ~~`transform` (the render object's, [`DrawFacts::transform`]) times the skeleton's bone under
+    /// the drawable's scale (the module docs)~~ **Corrected 2026-11-12 (#172):** the chain from `transform` (the render
+    /// object's, [`DrawFacts::transform`]) over the scaled pivots, [`RenderObj::get_bone_transform`] (root (B) of the
+    /// module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
     /// does not: it writes the client's particle systems only.
     pub fn update_bones_for_client_particle_systems(&mut self, transform: &Matrix3D, particles: Option<&mut ParticleSystemManager>) -> bool {
         // `drawable != NULL` always holds for a module of a drawable
@@ -3355,9 +3482,15 @@ impl W3DModelDraw {
                     let bone_index = if plant(9677) { first_bone } else { it.bone_index };
                     let Some(sys) = manager.find_particle_system_mut(it.id) else { continue };
                     if bone_index != 0 || plant(9673) {
-                        // `m_renderObject->Get_Bone_Transform(boneIndex)` in the world
-                        let bone = r.get_bone_transform_scaled(bone_index);
-                        let bone_transform = if plant(9676) { bone } else { Matrix3D::multiply(transform, &bone) };
+                        // `m_renderObject->Get_Bone_Transform(boneIndex)` in the world: (#172) the chain from the render
+                        // object's transform
+                        let bone_transform = if plant(9676) {
+                            r.get_bone_transform_scaled(bone_index)
+                        } else if plant(9691) {
+                            Matrix3D::multiply(transform, &r.get_bone_transform_scaled(bone_index))
+                        } else {
+                            r.get_bone_transform(transform, bone_index)
+                        };
                         let vpos = bone_transform.get_translation();
                         let pos = Coord3D { x: vpos.x, y: vpos.y, z: vpos.z };
                         sys.set_position(&pos);
@@ -3504,7 +3637,9 @@ impl W3DModelDraw {
     /// (#165) `getCurrentWorldspaceClientBonePositions(boneName, transform)` (W3DModelDraw.cpp:3555-3566): with a render
     /// object, its `Get_Bone_Index(boneName)` (0: none, false) and `Get_Bone_Transform(index)`. Here the bone's transform
     /// is the skeleton's pose as made (as [`W3DModelDraw::handle_weapon_fire_fx_at`] reads it), put in the world by the
-    /// drawable's transform `world`: the animation's current pose is not applied (#165's gaps).
+    /// drawable's transform `world` ~~(`world` times the bone as made)~~ (**Corrected 2026-11-12 (#172):** the chain
+    /// from `world` over the scaled pivots, [`RenderObj::get_bone_transform`]): the animation's current pose is not
+    /// applied (#165's gaps).
     pub fn get_current_worldspace_client_bone_positions(&self, bone_name: &[u8], world: &Matrix3D) -> Option<Matrix3D> {
         let r = self.render_object.as_ref()?;
         let k = r.skeleton.as_ref()?;
@@ -3512,7 +3647,10 @@ impl W3DModelDraw {
         if bone_index == 0 {
             return None;
         }
-        Some(Matrix3D::multiply(world, &k.bones[bone_index as usize].transform))
+        if plant(9696) {
+            return Some(Matrix3D::multiply(world, &k.bones[bone_index as usize].transform));
+        }
+        Some(r.get_bone_transform(world, bone_index))
     }
 
     /// `showSubObject(name, show)`: kept in the list (`m_subObjectVec`), by name ignoring case;
@@ -4238,6 +4376,48 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert!(m.handle_weapon_fire_fx(0, 0, true));
         }
 
+        /// (#172) The drawable's scale as upstream's render object carries it, on [`gunt`] (MUZZLEFX01 is four pivots
+        /// below the root: TURRET (0, 0, 2), BARREL (1, 0, 0), RECOIL01 (2, 0, 0), MUZZLEFX01 (1, 0, 0)), through the
+        /// game's asset source ([`W3dFiles::skeleton`]).
+        ///
+        /// Predictions, written before the first run:
+        /// - scale 2 is "really" a scale: the pivots' translations are doubled (`HTreeClass::Scale`), so MUZZLEFX01's
+        ///   chain from the identity is at (8, 0, 4) with the rotations unscaled;
+        /// - root (A), the pristine bone (`Set_Transform(Scale(2))`): at (16, 0, 8) with the rotation part 2 I (the old
+        ///   skeleton gave (8, 0, 4));
+        /// - root (B), the live bone under a world translated by (100, 50, 0):
+        ///   `getCurrentWorldspaceClientBonePositions` at (108, 50, 4) with the rotation part I (the old code gave 2 I),
+        ///   and `handleWeaponFireFX`'s FX bone exactly the same matrix;
+        /// - scale 1.005 is within `scale_epsilon` of 1: the hierarchy is not scaled, the pristine bone is
+        ///   `Scale(1.005)` of (4, 0, 2) = (4.02, 0, 2.01), and the live bone under the identity is at (4, 0, 2).
+        #[test]
+        fn a_scaled_gun_s_bones_are_upstream_s() {
+            let mut rig = Rig::new();
+            let mut draw_scaled = |scale: f32| {
+                let d = Arc::new(parse(GUN_DRAW).unwrap());
+                let mut a = W3dFiles { assets: &mut rig.am, fs: &rig.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
+                W3DModelDraw::new_scaled(d, 0, false, false, scale, Arc::new(Vec::new()), &mut env).unwrap()
+            };
+            let mut m = draw_scaled(2.0);
+            let pristine = m.get_cur_state().unwrap().bone_cache().pristine_bones[&b"muzzlefx01"[..]].mtx;
+            assert!(near(pristine.get_translation(), [16.0, 0.0, 8.0]), "{:?}", pristine.get_translation());
+            assert_eq!((pristine.row[0][0], pristine.row[1][1], pristine.row[2][2]), (2.0, 2.0, 2.0));
+            let mut world = Matrix3D::IDENTITY;
+            world.set_translation(&Vector3::new(100.0, 50.0, 0.0));
+            let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &world).unwrap();
+            assert!(near(live.get_translation(), [108.0, 50.0, 4.0]), "{:?}", live.get_translation());
+            assert_eq!((live.row[0][0], live.row[1][1], live.row[2][2]), (1.0, 1.0, 1.0));
+            let at = m.handle_weapon_fire_fx_at(0, 0, true, &world).unwrap();
+            assert_eq!(at, WeaponFireFxAt { bone_transform: Some(live), render_hidden: false });
+
+            let m = draw_scaled(1.005);
+            let pristine = m.get_cur_state().unwrap().bone_cache().pristine_bones[&b"muzzlefx01"[..]].mtx;
+            assert!(near(pristine.get_translation(), [4.02, 0.0, 2.01]), "{:?}", pristine.get_translation());
+            let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &Matrix3D::IDENTITY).unwrap();
+            assert_eq!(live.get_translation(), Vector3::new(4.0, 0.0, 2.0));
+        }
+
         /// The browser's asset source in small (GitHub #42): the files of [`gunt`], answering every question "none for
         /// now" (counted, as `Deferred` counts them) until `arrived`, or only the skeleton when `skeleton_only`.
         struct Fetching<'a> {
@@ -4569,6 +4749,11 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
     /// (`ParticlesAttachedToAnimatedBones`) moves only the bone-1 system, to the world's translation plus (2, 4, 6),
     /// skipping the parent's transform. The shroud stops them; a new state destroys all four (slaves with their masters)
     /// and empties the list; with `NO_STATE_PARTICLES` the next state flags nothing and the draw makes nothing.
+    ///
+    /// (#172) The asset source now makes the skeleton as upstream's render object made at scale 2 holds it (the pivot's
+    /// translation scaled to (2, 4, 6), [`scale_render_obj_hierarchy`], posed under `Scale(2)`). Predictions, written
+    /// before the run: every position above unchanged; the update's local transform has the bone's rotation *unscaled*
+    /// (its Z row (0, 0, 1, 6); the old `world * (Scale * bone)` gave (0, 0, 2, 6)).
     #[test]
     fn bone_particle_systems_are_made_moved_and_destroyed() {
         struct Bones;
@@ -4580,13 +4765,26 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 None
             }
             fn skeleton(&mut self, _: &[u8], _: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
-                let mut root = Matrix3D::IDENTITY;
-                root.scale(scale);
                 let mut smoke = Matrix3D::IDENTITY;
                 smoke.rotate_z(crate::common::base_type::PI / 2.0);
                 smoke.set_translation(&crate::ww::vector3::Vector3::new(1.0, 2.0, 3.0));
-                let bone = |name: &str, t: &Matrix3D| SkeletonBone { name: name.as_bytes().to_vec(), parent_index: 0, transform: Matrix3D::multiply(&root, t) };
-                Some(Skeleton { bones: vec![bone("RootTransform", &Matrix3D::IDENTITY), bone("Smoke01", &smoke)], sub_objects: Vec::new() })
+                let name = |n: &[u8]| {
+                    let mut a = [0u8; W3D_NAME_LEN];
+                    a[..n.len()].copy_from_slice(n);
+                    a
+                };
+                // (#172) the render object made at `scale` (`Create_Render_Obj`), posed under `Scale(scale)`
+                let mut tree = HTree {
+                    name: name(b"TANK"),
+                    num_pivots: 2,
+                    pivots: vec![Pivot::new(name(b"RootTransform"), None, Matrix3D::IDENTITY, 0), Pivot::new(name(b"Smoke01"), Some(0), smoke, 1)],
+                    scale_factor: 1.0,
+                };
+                scale_render_obj_hierarchy(&mut tree, scale);
+                let mut root = Matrix3D::IDENTITY;
+                root.scale(scale);
+                tree.base_update(&root).unwrap();
+                Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new() })
             }
         }
         let lines: &[(u32, &str, &str)] = &[
@@ -4626,6 +4824,9 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         // the draw's update moved the bone-1 system into the world (100 + 2, 4, 6) and skips the parent's transform
         let p = sys(&mgr, 1).get_position();
         assert_eq!((p.x, p.y, p.z, sys(&mgr, 1).skip_parent_xfrm), (102.0, 4.0, 6.0, true));
+        // (#172) upstream's live bone: the rotation is not scaled
+        let z = sys(&mgr, 1).local_transform.row[2];
+        assert_eq!([z[0], z[1], z[2], z[3]], [0.0, 0.0, 1.0, 6.0]);
         let p = sys(&mgr, 3).get_position();
         assert_eq!((p.x, p.y, p.z, sys(&mgr, 3).skip_parent_xfrm, sys(&mgr, 3).is_local_identity), (0.0, 0.0, 0.0, false, false));
         m.set_hidden(true, Some(&mut mgr));

@@ -124,6 +124,37 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#172 (2026-11-12, GitHub #172): the drawable's scale in the render object's bones, as upstream carries it.**
+- **Upstream read first** (0a05454d): `W3DModelDraw` makes its render object with `Create_Render_Obj(name, getScale(),
+  color)` (W3DModelDraw.cpp:623, 3034); `W3DAssetManager::Create_Render_Obj` then, when `WWMath::Fabs(scale - 1) > 0.01`
+  (W3DAssetManager.cpp:84-85, 738), calls `rendobj->Scale(scale)` (858-859): `HLodClass::Scale` (hlod.cpp:3264-3290) ->
+  `HTreeClass::Scale` (htree.cpp:982-996), which scales every pivot's base *translation* (not its rotation) and
+  `ScaleFactor`. The live render object's transform is the drawable's (2094-2100: no template scale), and a bone is
+  `Base_Update`'s chain from that root (htree.cpp:531-548; animobj.cpp:658-675, 780-802). The (A) reads after
+  `Set_Transform(Matrix3D(true).Scale(getScale()))` (pristine bones 669-672, the bone systems' recalc 2611-2617) thus scale
+  translations twice and rotations once; the live (B) reads (the bone systems' update 2698,
+  `getCurrentWorldspaceClientBonePositions` 3564, `handleWeaponFireFX` 3727) do not scale rotations at all. **#172's own
+  description (`(world * Scale) * pose`) was not upstream's either**; neither was #171's C++ stand-in (`world *
+  Scale(scale)`, one-level poses).
+- **Fixed** (engine crate): `formats::w3d::htree::HTree::scale` (htree.cpp:982-996);
+  `client::w3d_model_draw::scale_render_obj_hierarchy` (the asset manager's `reallyscale` and `Scale`), applied by
+  `W3dFiles::skeleton`; `SkeletonBone::base` (the scaled base transform), `Skeleton::bones_of`,
+  `Skeleton::bone_transform` (`Base_Update(root)` by the port's `HTree::base_update`, then `Get_Transform`) and
+  `RenderObj::get_bone_transform`. Consumers on (B): `update_bones_for_client_particle_systems`,
+  `get_current_worldspace_client_bone_positions` (so `LaserUpdate`'s start bone), `handle_weapon_fire_fx_at` (now given
+  the render object's transform; `ClientFx::weapon_fire_fx` no longer multiplies). On (A), unchanged code, now upstream's
+  values: the pristine bones and the recalc. Not touched (no bone transform read): turret, recoil, tank and truck (bone
+  captures and controls), the Bevy app's own posed model, the drawable's save.
+- **Compared with the compiled upstream** (`tests/differential_model_draw_particles.rs`, its wrapper now making the render
+  object as the asset manager does from cut `HTreeClass::Scale`, `Base_Update` and `Get_Transform`, chains up to 5 deep,
+  and a new `getCurrentWorldspaceClientBonePositions` step): main (any scale, the `scale_epsilon` edge included) 20,000
+  sequences, **0 mismatches**; the second test, now gated, 20,000 at any scale with infinite and NaN world entries
+  restored, **0 mismatches** (204 NaN words differ only in their bits, normalised). Planted bugs 9691-9698: 8 of 8 caught
+  (9697 by the lib test `a_scaled_gun_s_bones_are_upstream_s`); #171's 30 still caught.
+- **Not yet:** the bones are still the base pose without the turret and recoil captures (#171's gap); upstream's
+  instance scale (`doDrawModule`'s `Scale(getInstanceScale())`, 2045-2054) and `adjustTransformMtx` are not in
+  `DrawFacts::transform`; `getCurrentBonePositions` (its `DO_INV` branch) is not translated.
+
 **#171 (2026-11-12, GitHub #171, #166 item 6): `W3DModelDraw`'s bone particle systems (`ParticleSysBone`).**
 - **Translated** (engine crate, `client::w3d_model_draw`, W3DModelDraw.cpp at 0a05454d): `recalcBonesForClientParticleSystems`
   (2589-2656), `updateBonesForClientParticleSystems` (2677-2722), `stopClientParticleSystems` (2385-2397),
@@ -137,12 +168,14 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   transform. The client crate's drawable remake (files arriving) destroys the old drawable's systems.
 - **Compared with the compiled upstream** (`tests/differential_model_draw_particles.rs`,
   `differential/wrap_model_draw_particles.cpp`): 20,000 sequences (409,427 steps, 52,828 systems made; none undefined
-  upstream), 0 mismatches, max ULP 0, at power-of-two drawable scales; at any scale (2,000, not gated) 230 differ by
-  rounding only (largest 3.8e-6 of max(|value|, 1)); 30 of 30 planted bugs (9661-9690) caught. Lib 1213, client 100,
+  upstream), 0 mismatches, max ULP 0, at power-of-two drawable scales; ~~at any scale (2,000, not gated) 230 differ by
+  rounding only (largest 3.8e-6 of max(|value|, 1))~~ **Corrected 2026-11-12 (#172):** that compared the port with a
+  stand-in that shared its mistaken picture of the scale (see #172); 30 of 30 planted bugs (9661-9690) caught. Lib 1213, client 100,
   gate (a) 0bf44067, clippy and web build clean.
 - **Not yet** (#171's gaps): the bone transform is the skeleton's base pose (no animation, no turret captures; #166 item
-  3); at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
-  upstream's; the object-less drawables' systems attach to no drawable.
+  3); ~~at a drawable scale that is not a power of two the port's bone (`world * (Scale * bone)`) rounds differently from
+  upstream's~~ **Corrected 2026-11-12 (#172):** not a rounding nor a design decision but a translation defect, fixed in
+  #172; the object-less drawables' systems attach to no drawable.
 
 **#168 (2026-11-12, GitHub #168): `W3DLaserDraw`, and the logic's object-less drawables (the particle cannon's beams).**
 - **Translated** (engine crate): `client::w3d_laser_draw`: W3DLaserDraw.cpp whole (the data and its field table, the

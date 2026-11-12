@@ -1508,7 +1508,7 @@ mod tests {
             use crate::ww::matrix3d::Matrix3D;
             let sub = |n: &str, l| SkeletonSubObject { name: n.as_bytes().to_vec(), bone_index: 0, hidden: false, transform: Matrix3D::IDENTITY, linear_offset_materials: l };
             Some(Skeleton {
-                bones: vec![SkeletonBone { name: b"ROOTTRANSFORM".to_vec(), parent_index: 0, transform: Matrix3D::IDENTITY }],
+                bones: vec![SkeletonBone { name: b"ROOTTRANSFORM".to_vec(), parent_index: 0, transform: Matrix3D::IDENTITY, base: Matrix3D::IDENTITY }],
                 sub_objects: vec![sub("TANKA.CHASSIS", 0), sub("TANKA.TREADSL", 1), sub("TANKA.TREADSR", 1), sub("TANKA.TURRET", 0)],
             })
         }

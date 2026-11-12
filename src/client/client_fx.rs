@@ -83,8 +83,9 @@ pub struct WeaponFireFx {
     pub target: Coord3D,
     pub radius: f32,
     pub contact_weapon: bool,
-    /// `Some` when handled: the FX bone's transform in model space (`None` inside: no skeleton) and whether the
-    /// render object is hidden.
+    /// `Some` when handled: the FX bone's transform ~~in model space~~ **Corrected 2026-11-12 (#172):** in the world,
+    /// as the render object's `Get_Bone_Transform` gives it (`None` inside: no skeleton) and whether the render object
+    /// is hidden.
     pub handled: Option<(Option<Matrix3D>, bool)>,
 }
 
@@ -256,8 +257,9 @@ impl ClientFx {
         let store = &self.fx_lists;
         match f.handled {
             Some((Some(bone), false)) => {
-                let mut mtx = Matrix3D::IDENTITY;
-                mtx.mul(&obj_mtx, &bone);
+                // (#172) `Matrix3D mtx = m_renderObject->Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727): already
+                // in the world
+                let mtx = bone;
                 let t = mtx.get_translation();
                 let pos = Coord3D { x: t.x, y: t.y, z: t.z };
                 store.do_fx_pos(&f.fx, host, &mut play, Some(&pos), Some(&mtx), f.speed, Some(&f.target), f.radius);

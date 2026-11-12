@@ -9,6 +9,9 @@
 //   doDrawModule that reach them) and its header (ParticleSysTrackerType)
 //   GeneralsMD/Code/GameEngine/Source/GameClient/System/ParticleSys.cpp (ParticleSystem::setSaveable, start, stop,
 //   destroy, setPosition, setLocalTransform, rotateLocalTransformZ, attachToDrawable)
+//   (GitHub #172) W3DModelDraw.cpp (getCurrentWorldspaceClientBonePositions); W3DAssetManager.cpp (Create_Render_Obj's
+//   scaling); GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp (HTreeClass::Scale, Base_Update), htree.h
+//   (Get_Transform), hlod.cpp (HLodClass::Scale), animobj.cpp (Get_Bone_Transform)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -25,25 +28,39 @@
 //! Each case makes a module (the port's whole [`W3DModelDraw`], parsed from a `Draw` block) of a drawable of a random id
 //! and scale, with `ParticlesAttachedToAnimatedBones` on or off; four particle system templates `PS0`..`PS3`, each with a
 //! later one as its slave or none; three models (HLOD or mesh, 0 to 6 bones named from a pool with case and duplicate
-//! variations, each with a random pose: rotation-and-scale entries in -2..2, translation in -50..50) and the names `None`
+//! variations, each with a random pose: rotation-and-scale entries in -2..2, translation in -50..50, and (#172) a random
+//! earlier pivot as its parent, so chains up to 5 deep) and the names `None`
 //! (no model) and `Missing` (no such render object); one to four states, each with a model and up to three
 //! `ParticleSysBone`s (a bone name from a pool that includes one no model has, and a template, `None` or an unknown
-//! name). The asset source gives the port's skeleton as `W3dAssetSource::skeleton` promises it: each bone under
-//! `Matrix3D(true).Scale(scale)`, by WWMath's `Multiply`. Then 1 to 40 steps: `setModelState` 15 %, `doDrawModule` 35 %
-//! (with a random world transform: the C++ render object gets `world * Scale(scale)`, the port [`DrawFacts::transform`] =
-//! `world`), `updateBonesForClientParticleSystems` 15 % (the same), the drawable hidden or shown 10 %, the shroud 10 %,
-//! a system dropped by the manager 8 % (as its update deletes one), the drawable's `NO_STATE_PARTICLES` status 7 %. 1 in
-//! 20 world transforms of a case at scale 1 has entries from `Gen::finite` (huge, tiny and subnormal values, never NaN or
-//! infinite: see the results). Compared, every
+//! name). The asset source gives the port's skeleton as `W3dAssetSource::skeleton` promises it: ~~each bone under
+//! `Matrix3D(true).Scale(scale)`, by WWMath's `Multiply`~~ **Corrected 2026-11-12 (#172):** the hierarchy scaled as
+//! `Create_Render_Obj(name, scale, color)` scales it (the port's `scale_render_obj_hierarchy` and `HTree::scale`), posed
+//! by the port's `Base_Update` under `Matrix3D(true).Scale(scale)`; the C++ render object is made the same way by the
+//! cut upstream (`HTreeClass::Scale`, `Base_Update`, `Get_Transform`, the asset manager's `reallyscale`). Then 1 to 40
+//! steps: `setModelState` 15 %, `doDrawModule` ~~35 %~~ 30 % (with a random world transform: ~~the C++ render object gets
+//! `world * Scale(scale)`~~ (#172) the C++ render object gets `world`, as upstream's does (no template scale in its
+//! transform), the port [`DrawFacts::transform`] = `world`), `updateBonesForClientParticleSystems` 15 % (the same), the
+//! drawable hidden or shown 10 %, the shroud 10 %, a system dropped by the manager ~~8 %~~ 7 % (as its update deletes
+//! one), the drawable's `NO_STATE_PARTICLES` status ~~7 %~~ 6 %, and (#172) `getCurrentWorldspaceClientBonePositions`
+//! of a name from the bone pool under a random world 7 % (recorded: found, and the 12 words). ~~1 in 20 world
+//! transforms of a case at scale 1 has entries from `Gen::finite` (huge, tiny and subnormal values, never NaN or
+//! infinite: see the results).~~ (#172) The main test: 1 in 20 world transforms has entries from `Gen::finite` (huge,
+//! tiny and subnormal) at any scale; the second test: 1 in 10 from `Gen::mixed` (infinities and NaN too). Compared, every
 //! word as bits (NaN on both sides as equal), after the constructor and after each step: the module's
 //! `m_needRecalcBoneParticleSystems`, `m_fullyObscuredByShroud`, its trackers (id, bone), and every system in the manager
 //! in id order (attached drawable, saveable, stopped, destroyed, skip-parent, local identity, slave, master, local
 //! transform).
 //!
-//! - **The main test** draws the scale from the powers of two 0.25 .. 4, where the port's bone convention (the skeleton
-//!   carries the scale: `world * (Scale * pose)`) and upstream's (`(world * Scale) * pose`) round the same.
-//! - **The second test** (2,000 cases) draws any scale in 0.5 .. 2 and reports, not gates, how far the two conventions
-//!   round apart.
+//! - ~~**The main test** draws the scale from the powers of two 0.25 .. 4, where the port's bone convention (the skeleton
+//!   carries the scale: `world * (Scale * pose)`) and upstream's (`(world * Scale) * pose`) round the same.~~
+//!   **Corrected 2026-11-12 (#172):** neither was upstream's. Upstream scales the render object's *hierarchy* (the
+//!   pivots' translations, `HTreeClass::Scale`, when `|scale - 1| > 0.01`) and chains each bone from the render object's
+//!   transform; the port now does the same (module docs of `client::w3d_model_draw`). **The main test** (gated, 20,000)
+//!   draws the scale from the powers of two 0.25 .. 4 (40 %), the edge of `scale_epsilon` (0.9899 .. 1.0101, 20 %) and
+//!   any in 0.5 .. 2 (40 %).
+//! - ~~**The second test** (2,000 cases) draws any scale in 0.5 .. 2 and reports, not gates, how far the two conventions
+//!   round apart.~~ **Corrected 2026-11-12 (#172): the second test** (gated, 20,000 cases) draws any scale in 0.25 .. 4,
+//!   or from `Gen::mixed` (0, NaN, infinities) 1 in 10, with infinite and NaN world entries.
 //!
 //! # Predictions (written before the first run, `issue171_predictions.md`)
 //!
@@ -56,14 +73,33 @@
 //! - First run: 4,970 of 20,000 sequences mismatched: the wrapper's states did not start as a copy of the default state's
 //!   `ParticleSysBone` list, as `parseConditionState` makes them (the port's parse does). The wrapper's error, fixed.
 //! - Second run: 2 of 20,000 mismatched, both a world transform with an infinite entry (from `Gen::mixed`): upstream's
-//!   `world * Scale(1)` makes `inf * 0 = NaN` in the row, the port's `world * (Scale * pose)` keeps the infinity. Not a
+//!   `world * Scale(1)` makes `inf * 0 = NaN` in the row, the port's `world * (Scale * pose)` keeps the infinity. ~~Not a
 //!   translation defect but the bone convention (module docs of `w3d_model_draw`), which no drawable's transform reaches;
-//!   the mixed words are now finite (`Gen::finite`). **A prediction miss** (I predicted 0 at scale 1).
+//!   the mixed words are now finite (`Gen::finite`).~~ **Corrected 2026-11-12 (#172):** a translation defect (#172): the
+//!   port's bone order was not upstream's, and the stand-in's `world * Scale(1)` was not upstream's either; with both
+//!   fixed, infinite entries agree (second test). **A prediction miss** (I predicted 0 at scale 1).
 //! - **Main, third run:** 20,000 sequences, 409,427 steps, 52,828 particle systems made; 0 NaN words; 0 undefined
 //!   upstream (none generated: no template cycles, every bone index in range); **0 mismatches, max ULP 0**.
-//! - **Any scale (not gated):** 230 of 2,000 sequences differ, max ULP 32,768 (on words near zero after a
+//! - ~~**Any scale (not gated):** 230 of 2,000 sequences differ, max ULP 32,768 (on words near zero after a
 //!   cancellation), largest difference 3.8e-6 of max(|value|, 1): rounding only, every id, bone and flag word equal.
-//!   **A prediction miss** on the size (I predicted max ULP <= 4; ULP is the wrong measure for words near zero).
+//!   **A prediction miss** on the size (I predicted max ULP <= 4; ULP is the wrong measure for words near zero).~~
+//!   **Corrected 2026-11-12 (#172):** that measured the port against a stand-in that shared its mistaken picture of the
+//!   scale; superseded below.
+//!
+//! # #172 (2026-11-12): predictions and results
+//!
+//! Predicted (`issue172_predictions.md`, before any change or run): both tests 0 mismatches over 20,000 cases; NaN on
+//! both sides with differing payload bits 0; plants 9691-9698 caught (9697 by the lib test
+//! `a_scaled_gun_s_bones_are_upstream_s`, which this test cannot reach); the 30 plants of #171 still caught.
+//!
+//! - **First run** (the port and the wrapper as described above): **main 0 mismatches** over 20,000 sequences (407,610
+//!   steps, 50,486 systems made, 147 NaN words, max ULP 0); **any scale 0 mismatches** over 20,000 (409,774 steps,
+//!   50,422 systems, 1,125 NaN words, max ULP 0). 204 words are NaN on both sides with different bits (counted and
+//!   normalised as before): **a prediction miss** (I predicted 0; the NaN arise from NaN or infinite inputs on both
+//!   sides, and their payload/sign bits are not specified by the arithmetic either side runs).
+//! - Plants (main test, mismatching of 20,000): 9691 1,973; 9692 3,140; 9693 632; 9694 1,406; 9695 2,963; 9696 2,307;
+//!   9698 1,449; 9697 0 here (not reachable), caught by the lib test. **8 of 8 caught.** The #171 plants re-run on
+//!   the changed test: 30 of 30 caught (9661 18,834 ... 9690 1,381).
 //!
 //! Planted bugs, mismatching sequences of 20,000: 9661 19,070; 9662 1,708; 9663 2,894; 9664 1,358; 9665 1,466; 9666
 //! 13,237; 9667 13,237; 9668 5,045; 9669 2,379; 9670 2,401; 9671 2,894; 9672 13,237; 9673 6,509; 9674 2,295; 9675 2,295;
@@ -108,13 +144,22 @@
 //! | 9688 | `doDrawModule` recalcs only with a render object |
 //! | 9689 | `setHidden` does not stop or start the systems |
 //! | 9690 | the recalc's bone position has z 0 |
+//! | 9691 | (#172) the update's bone is `world * (bone under Scale)` (the old convention) |
+//! | 9692 | (#172) the render object's hierarchy is never scaled |
+//! | 9693 | (#172) the hierarchy is scaled within `scale_epsilon` of 1 too |
+//! | 9694 | (#172) the live bone is `root * (chain from the identity)` |
+//! | 9695 | (#172) `HTreeClass::Scale` scales the pivots' rotations too |
+//! | 9696 | (#172) `getCurrentWorldspaceClientBonePositions` is `world * (bone under Scale)` |
+//! | 9697 | (#172) `handleWeaponFireFX`'s FX bone is the bone under Scale, not in the world (lib test) |
+//! | 9698 | (#172) the live bone ignores its parents (every pivot under the root) |
 
 mod support;
 
 use std::sync::Arc;
 
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
-use rts_lockstep_engine::client::w3d_model_draw::{AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, SkeletonBone, StateRef, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource};
+use rts_lockstep_engine::client::w3d_model_draw::{scale_render_obj_hierarchy, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, StateRef, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource};
+use rts_lockstep_engine::formats::w3d::htree::{HTree, Pivot};
 use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODEL_CONDITION_NAMES};
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::thing_template::{ClientLine, ClientModuleData};
@@ -149,16 +194,26 @@ const TEMPLATE_NAMES: [&str; 6] = ["PS0", "PS1", "PS2", "PS3", "None", "NoSuch"]
 /// The states' condition bits (the first state is the default).
 const STATE_BITS: [&str; 4] = ["", "DAMAGED", "RUBBLE", "GARRISONED"];
 
-const HEADER: usize = 7 + 3 * (2 + 6 * 13) + 1 + 4 * (2 + 3 * 2);
+const HEADER: usize = 7 + 3 * (2 + 6 * 14) + 1 + 4 * (2 + 3 * 2);
 const STEP: usize = 14;
 
-fn matrix_words(g: &mut Gen, lo: f32, hi: f32, t: f32, mixed: bool) -> [i32; 12] {
+/// A world entry that is not well scaled: `Gen::finite` (huge, tiny, subnormal), or (#172, the second test) `Gen::mixed`,
+/// infinities and NaN included.
+#[derive(Clone, Copy, PartialEq)]
+enum Odd {
+    None,
+    Finite,
+    Any,
+}
+
+fn matrix_words(g: &mut Gen, lo: f32, hi: f32, t: f32, odd: Odd) -> [i32; 12] {
     let mut w = [0i32; 12];
     for (k, v) in w.iter_mut().enumerate() {
-        let f = if mixed && g.below(3) == 0 {
-            // finite: an infinite world entry separates the two bone conventions too (`inf * 0` in upstream's
-            // `world * Scale`, none in the port's), see the results
-            g.finite()
+        let f = if odd != Odd::None && g.below(3) == 0 {
+            // ~~finite: an infinite world entry separates the two bone conventions too (`inf * 0` in upstream's
+            // `world * Scale`, none in the port's), see the results~~ (#172) both sides now run the same chain: the
+            // second test draws infinities and NaN too
+            if odd == Odd::Any { g.mixed() } else { g.finite() }
         } else if k % 4 == 3 {
             g.uniform(-t, t)
         } else {
@@ -179,11 +234,24 @@ fn matrix(w: &[i32]) -> Matrix3D {
     m
 }
 
-/// One case's words (the wrapper's layout); `any_scale`: a scale in 0.5..2, else a power of two.
+/// One case's words (the wrapper's layout). ~~`any_scale`: a scale in 0.5..2, else a power of two.~~ **Corrected
+/// 2026-11-12 (#172):** `any_scale` false (the main test): a power of two (1 included) 40 %, a scale at
+/// `scale_epsilon`'s edge (0.99 .. 1.0101) 20 %, any in 0.5..2 40 %, with 1 in 20 world transforms `Gen::finite`; true
+/// (the second test): any in 0.25..4 90 %, `Gen::mixed` (0, NaN and infinities included) 10 %, with 1 in 10 world
+/// transforms `Gen::mixed`.
 fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
     let mut w = Vec::new();
     w.push(1 + g.below(1000) as i32);
-    let scale = if any_scale { g.uniform(0.5, 2.0) } else { [0.25f32, 0.5, 1.0, 1.0, 1.0, 2.0, 4.0][g.below(7) as usize] };
+    let scale = if any_scale {
+        if g.below(10) == 0 { g.mixed() } else { g.uniform(0.25, 4.0) }
+    } else {
+        match g.below(10) {
+            0..=3 => [0.25f32, 0.5, 1.0, 1.0, 1.0, 2.0, 4.0][g.below(7) as usize],
+            // `WWMath::Fabs(scale - 1) > 0.01`: 0.99 and 1.01 are not "really" scales in f32, 0.9899 and 1.0101 are
+            4..=5 => [0.9899f32, 0.99, 0.995, 1.005, 1.0099, 1.01, 1.0101][g.below(7) as usize],
+            _ => g.uniform(0.5, 2.0),
+        }
+    };
     w.push(b(scale));
     w.push((g.below(2) == 0) as i32);
     for t in 0..4u32 {
@@ -194,6 +262,8 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
         w.push(g.below(7) as i32);
         for k in 0..6 {
             w.push(if k == 0 { 0 } else { 1 + g.below(5) as i32 });
+            // (#172) the pivot's parent: an earlier pivot (chains up to 5 deep); unused for pivot 0
+            w.push(if k == 0 { 0 } else { g.below(k) as i32 });
             if g.below(10) == 0 {
                 let mut p = [0i32; 12];
                 for (i, v) in p.iter_mut().enumerate() {
@@ -201,7 +271,7 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
                 }
                 w.extend(p);
             } else {
-                w.extend(matrix_words(g, -2.0, 2.0, 50.0, false));
+                w.extend(matrix_words(g, -2.0, 2.0, 50.0, Odd::None));
             }
         }
     }
@@ -215,26 +285,33 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
         }
     }
     assert_eq!(w.len(), HEADER);
-    let mixed_ok = scale == 1.0;
+    // ~~only at scale 1~~ (#172) at any scale
     for _ in 0..1 + g.below(40) {
         let mut s = [0i32; STEP];
         let op = match g.below(100) {
             0..=14 => 0,
-            15..=49 => 1,
-            50..=64 => 2,
-            65..=74 => 3,
-            75..=84 => 4,
-            85..=92 => 5,
-            _ => 6,
+            15..=44 => 1,
+            45..=59 => 2,
+            60..=69 => 3,
+            70..=79 => 4,
+            80..=86 => 5,
+            87..=92 => 6,
+            _ => 7,
         };
         s[0] = op;
         s[1] = match op {
             3 | 4 | 6 => (g.below(2) == 0) as i32,
             _ => g.below(1000) as i32,
         };
-        if op == 1 || op == 2 {
-            let mixed = mixed_ok && g.below(20) == 0;
-            let m = matrix_words(g, -2.0, 2.0, 1000.0, mixed);
+        if op == 1 || op == 2 || op == 7 {
+            let odd = if any_scale {
+                if g.below(10) == 0 { Odd::Any } else { Odd::None }
+            } else if g.below(20) == 0 {
+                Odd::Finite
+            } else {
+                Odd::None
+            };
+            let m = matrix_words(g, -2.0, 2.0, 1000.0, odd);
             s[2..].copy_from_slice(&m);
         }
         w.extend(s);
@@ -244,8 +321,8 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
 
 /// The test's asset manager: the case's three models.
 struct Models {
-    /// (hlod, bones (name, pose)) of `M0`..`M2`.
-    models: Vec<(bool, Vec<(&'static str, Matrix3D)>)>,
+    /// (hlod, bones (name, parent, pose)) of `M0`..`M2`.
+    models: Vec<(bool, Vec<(&'static str, u32, Matrix3D)>)>,
 }
 
 impl Models {
@@ -267,13 +344,29 @@ impl W3dAssetSource for Models {
         if !hlod {
             return Some(Skeleton::default());
         }
-        // each bone under `Matrix3D(true).Scale(scale)` (`W3dFiles::skeleton`'s root)
+        if bones.is_empty() {
+            // an HLOD without pivots: no hierarchy
+            return Some(Skeleton::default());
+        }
+        // ~~each bone under `Matrix3D(true).Scale(scale)` (`W3dFiles::skeleton`'s root)~~ (#172) as `W3dFiles::skeleton`
+        // makes it: the hierarchy scaled as `Create_Render_Obj(name, scale, color)` scales it (the port's
+        // `scale_render_obj_hierarchy`, `HTree::scale`), posed by the port's `Base_Update` under
+        // `Matrix3D(true).Scale(scale)`
+        let pivots = bones
+            .iter()
+            .enumerate()
+            .map(|(i, (n, parent, pose))| {
+                let mut name = [0u8; 16];
+                name[..n.len()].copy_from_slice(n.as_bytes());
+                Pivot::new(name, if i == 0 { None } else { Some(*parent) }, *pose, i as i32)
+            })
+            .collect();
+        let mut tree = HTree { name: [0; 16], num_pivots: bones.len() as i32, pivots, scale_factor: 1.0 };
+        scale_render_obj_hierarchy(&mut tree, scale);
         let mut root = Matrix3D::IDENTITY;
         root.scale(scale);
-        Some(Skeleton {
-            bones: bones.iter().map(|(n, p)| SkeletonBone { name: n.as_bytes().to_vec(), parent_index: 0, transform: Matrix3D::multiply(&root, p) }).collect(),
-            sub_objects: Vec::new(),
-        })
+        tree.base_update(&root).expect("parents come first");
+        Some(Skeleton { bones: Skeleton::bones_of(&tree), sub_objects: Vec::new() })
     }
 }
 
@@ -343,12 +436,13 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
         let mut bones = Vec::new();
         for bi in 0..6 {
             let code = next() as usize;
+            let parent = next() as u32;
             let mut p = [0i32; 12];
             for v in &mut p {
                 *v = next();
             }
             if bi < n {
-                bones.push((BONE_NAMES[code], matrix(&p)));
+                bones.push((BONE_NAMES[code], parent, matrix(&p)));
             }
         }
         models.models.push((hlod, bones));
@@ -431,7 +525,24 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     mgr.systems.remove(i);
                 }
             }
-            _ => m.drawable_no_state_particles = s[1] != 0,
+            6 => m.drawable_no_state_particles = s[1] != 0,
+            _ => {
+                // (#172) `getCurrentWorldspaceClientBonePositions(name, transform)` under the render object's transform
+                match m.get_current_worldspace_client_bone_positions(STATE_BONE_NAMES[s[1] as usize % 6].as_bytes(), &matrix(&s[2..])) {
+                    Some(t) => {
+                        out.extend([200, 1]);
+                        for row in 0..3 {
+                            for c in 0..4 {
+                                out.push(b(t.row[row][c]));
+                            }
+                        }
+                    }
+                    None => {
+                        out.extend([200, 0]);
+                        out.extend([0; 12]);
+                    }
+                }
+            }
         }
         state_words(&mut out, &m, &mgr);
     }
@@ -514,16 +625,20 @@ fn the_bone_particle_systems_match_upstream() {
     c.finish();
 }
 
-/// Not gated: the rounding of the port's bone convention at scales that are not powers of two (module docs).
+/// ~~Not gated: the rounding of the port's bone convention at scales that are not powers of two (module docs).~~
+/// **Corrected 2026-11-12 (#172):** gated at 0 mismatches: any scale (0.25..4, and `Gen::mixed`'s 0, NaN, infinities),
+/// world transforms with infinite and NaN entries, 20,000 cases (`MODEL_DRAW_PARTICLES_ANY_CASES`).
 #[test]
-fn any_scale_rounds_as_measured() {
+fn any_scale_matches_upstream() {
     if planted() {
         return;
     }
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let (c, [steps, _, _, _, max_ulp]) = compare("W3DModelDraw particles, any scale", 0x171_0002, 2_000, true);
+    let n = std::env::var("MODEL_DRAW_PARTICLES_ANY_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+    let (c, [steps, systems, nan_words, nan_only, max_ulp]) = compare("W3DModelDraw particles, any scale", 0x171_0002, n, true);
     let rel = f64::from_bits(MAX_REL.load(std::sync::atomic::Ordering::Relaxed));
-    println!("any scale: 2000 cases, {steps} steps, max ULP among differing finite words {max_ulp}, largest difference {rel:e} of max(|value|, 1)");
-    let mismatching = c.report();
-    println!("any scale: {mismatching} of 2000 cases differ");
+    println!(
+        "any scale: {n} cases, {steps} steps, {systems} particle systems made, {nan_words} NaN words ({nan_only} NaN on both sides with different bits); max ULP among differing finite words {max_ulp}, largest difference {rel:e} of max(|value|, 1)"
+    );
+    c.finish();
 }

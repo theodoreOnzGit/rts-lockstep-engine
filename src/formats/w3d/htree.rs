@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp
 //   (HTreeClass::Load_W3D, read_pivots, Free; Base_Update, both
 //   Anim_Update, Blend_Update, Combo_Update (#162), both Simple_Evaluate_Pivot, Capture_Bone,
-//   Release_Bone, Is_Bone_Captured, Control_Bone, Get_Bone_Control) and
+//   Release_Bone, Is_Bone_Captured, Control_Bone, Get_Bone_Control, Scale (#172)) and
 //   htree.h (Get_Transform, Get_Visibility, Get_Root_Transform)
 //   GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/pivot.h, pivot.cpp
 //   (PivotClass's data and constructor, Capture_Update)
@@ -629,6 +629,29 @@ impl HTree {
     /// `Get_Root_Transform()`: `Pivot[0].Transform`.
     pub fn get_root_transform(&self) -> W3dResult<Matrix3D> {
         self.get_transform(0)
+    }
+
+    /// (#172) `Scale(factor)` (htree.cpp:982-996): nothing for a factor of 1; else every pivot's `BaseTransform` has its
+    /// translation multiplied by the factor (`Get_Translation`, `*=`, `Set_Translation`: the rotation is not scaled) and
+    /// `ScaleFactor *= factor`, which the animation updates multiply into the animated translations. A tree whose
+    /// pivots were never read has none to scale. This is how a render object made at a scale
+    /// (`W3DAssetManager::Create_Render_Obj(name, scale, color)` -> `HLodClass::Scale`) carries it: in its hierarchy,
+    /// not in its transform.
+    pub fn scale(&mut self, factor: f32) {
+        if factor == 1.0 {
+            return;
+        }
+        // Scale pivot translations
+        for p in &mut self.pivots {
+            if crate::logic::modules::plant(9695) {
+                p.base_transform.scale(factor);
+            }
+            let mut pivot_translation = p.base_transform.get_translation();
+            pivot_translation *= factor;
+            p.base_transform.set_translation(&pivot_translation);
+        }
+        // Set state used later to scale animations:
+        self.scale_factor *= factor;
     }
 }
 
