@@ -3664,6 +3664,11 @@ extern "C" {
     /// 1 the second; C++ leaves the argument order unspecified).
     pub fn ref_mdp_shudder_order() -> c_int;
 
+    // GitHub #182 item 2: Drawable's client physics models (differential/wrap_drawable_loco.cpp, which documents the
+    // words): calcPhysicsXform and its Thrust, HoverOrWings, Treads, Wheels and Motorcycle models, verbatim, over a
+    // sequence of frames.
+    pub fn ref_drawable_loco_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #175: the logic's bone and launch-offset questions (differential/wrap_logic_bones.cpp, which documents the
     // words): Drawable's getPristineBonePositions, getProjectileLaunchOffset and getBarrelCount over W3DModelDraw's,
     // the bone caches they validate, and Object's logical bone positions, verbatim, over one case's operations.

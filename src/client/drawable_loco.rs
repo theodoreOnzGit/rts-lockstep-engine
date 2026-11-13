@@ -5,7 +5,7 @@
 //   GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp
 //   (DrawableLocoInfo::DrawableLocoInfo, Drawable::applyPhysicsXform, calcPhysicsXform,
 //   calcPhysicsXformThrust, calcPhysicsXformHoverOrWings, calcPhysicsXformTreads,
-//   calcPhysicsXformWheels; GitHub #41)
+//   calcPhysicsXformWheels; GitHub #41; calcPhysicsXformMotorcycle, GitHub #182 item 2)
 //   GeneralsMD/Code/GameEngine/Include/GameClient/Drawable.h
 //   (TWheelInfo, DrawableLocoInfo, PhysicsXformInfo, getWheelInfo)
 //
@@ -31,7 +31,8 @@
 //!   by the total Z, then turned about Y by the pitch, about X by minus the roll and about Z by the yaw
 //!   ([`PhysicsXformInfo::apply`]). A hidden drawable is not drawn at all (`m_hidden`), so none of this runs.
 //! - **`calcPhysicsXform`**: without an AI or a current locomotor, nothing; `LOCO_WHEELS_FOUR`, `LOCO_TREADS`,
-//!   `LOCO_HOVER`/`LOCO_WINGS` and `LOCO_THRUST` each have their own spring and damper model, kept in the drawable's
+//!   `LOCO_HOVER`/`LOCO_WINGS`, `LOCO_THRUST` and (**#182 item 2**) `LOCO_MOTORCYCLE` each have their own spring and
+//!   damper model, kept in the drawable's
 //!   `DrawableLocoInfo` (made on the first call); a total under 1e-20 in size is flushed to 0 (the "denormal hotfix").
 //!   Each model returns early, its totals 0, without physics; the transform is still applied (upstream's
 //!   `hasPhysicsXform` is set by the appearance alone).
@@ -42,6 +43,24 @@
 //!   offset follows the pitch and roll heights (damped by half when it drops, never below the maximum extension), and
 //!   the wheel angle moves a tenth of the way to the turn angle each draw (reversed when moving backwards). In the air,
 //!   the rear wheels drop and only the height changes.
+//! - **Motorcycle** (#182 item 2, [`DrawableLocoInfo::calc_motorcycle`]): the wheels' model on two wheels, with
+//!   upstream's differences kept: no early return in the air (the springs "Autolevel" towards 0 there, the rear wheel
+//!   drops, and the height is added only on the ground), the pitch rate not halved, each right wheel its left's, the
+//!   roll never raising a wheel, and a total roll that is always 0 (`unclampedRoll > 0.5 && unclampedRoll < -0.5`).
+//!   The bounce, the steering and the height divisor are the wheels' own code ([`DrawableLocoInfo::calc_wheels`]
+//!   shares them: `bounce`, `steer_wheels`, `raise_divisor`).
+//! - **C's double functions** (#182 item 2): where upstream calls `sin`, `cos`, `sqrt`, `atan2` or `fabs` on a `Real`,
+//!   MSVC's C headers give the double function, and the expression goes on in double and is rounded to the `Real` once
+//!   at the assignment (the differential build's shim `math.h` keeps those semantics). The hover's rudder and elevator
+//!   correction and its climb pitch, and the wheels' and motorcycle's `m_totalZ += fabs(h)/divisor` (and the wheels'
+//!   airborne `fabs(ph)/4 + fabs(rh)/4`) are computed that way here. `Sin` (`Trig.cpp`) is `sinf` and the treads'
+//!   `sqrtf` is explicit: those stay in float.
+//!
+//! # Verification
+//!
+//! `tests/differential_drawable_loco.rs` (#182 item 2): all six models and the dispatch against Drawable.cpp's text
+//! compiled verbatim, 20,000 random sequences, every total and every `m_locoInfo` word bit for bit, and the client
+//! random stream; 0 mismatches after three fixes (the test's header has the numbers).
 //!
 //! # Where this differs from upstream
 //!
@@ -51,10 +70,15 @@
 //!   (`World::peek_is_significantly_above_terrain`), and for the treads the overlapped object and its body's crushed
 //!   flags (`World::peek_crushed`). Nothing is written and no cache is filled.
 //! - **Time frozen** (`isTimeFrozen`, the script engine's freezes): the client has no frozen time yet; not checked.
-//! - `calcPhysicsXformMotorcycle` (`LOCO_MOTORCYCLE`) is not translated: no transform for it yet.
-//! - The hover model's `atan2`, `sqrt`, `sin` and `cos` take float arguments, so they are the C++ `float` overloads
+//! - ~~`calcPhysicsXformMotorcycle` (`LOCO_MOTORCYCLE`) is not translated: no transform for it yet.~~ **Corrected
+//!   2026-11-13 (#182 item 2):** translated ([`DrawableLocoInfo::calc_motorcycle`]) and dispatched.
+//! - ~~The hover model's `atan2`, `sqrt`, `sin` and `cos` take float arguments, so they are the C++ `float` overloads
 //!   of MSVC's `math.h` (`atan2f`, `sqrtf`, `sinf`, `cosf`): petir's `f32` functions here. (Not checked against a
-//!   build of the shipped binary; the double functions would differ in the last bit at most.)
+//!   build of the shipped binary; the double functions would differ in the last bit at most.)~~ **Corrected 2026-11-13
+//!   (#182 item 2):** they are C's double functions (MSVC's C headers, as the differential's shim `math.h` and the other
+//!   ports here take them: see "C's double functions" above); the float reading was wrong, and so were the wheels'
+//!   height sums. The differential measured 7,125, 1,240 and 1,904 of 20,000 sequences differing from them; fixed.
+//!   (Still not checked against a build of the shipped binary: no Windows build is run here.)
 
 use crate::common::base_type::{sqr, Coord3D, PI};
 use crate::common::disabled_types::DISABLED_HELD;
@@ -63,6 +87,7 @@ use crate::common::kind_of::{KINDOF_INFANTRY, KINDOF_LOW_OVERLAPPABLE, KINDOF_SH
 use crate::common::random_value::RandomValues;
 use crate::common::trig;
 use crate::logic::locomotor::{Locomotor, LocomotorAppearance};
+use crate::logic::modules::plant;
 use crate::logic::world::game_logic::World;
 use crate::ww::matrix3d::Matrix3D;
 use crate::ww::wwmath::fabs;
@@ -257,6 +282,19 @@ pub struct OverlapFacts {
     pub flat: bool,
 }
 
+impl OverlapFacts {
+    /// The treads' overlapped object as `calcPhysicsXformTreads` reads it: `None` for shrubbery ("We just smash
+    /// through shrubbery"); `flat` when it is `KINDOF_LOW_OVERLAPPABLE` or `KINDOF_INFANTRY` or its body is crushed
+    /// front and back. `kinds` = (shrubbery, low overlappable, infantry), `crushed` = (front, back).
+    pub fn of(position: Coord3D, bounding_circle_radius: f32, max_height_above_position: f32, kinds: [bool; 3], crushed: (bool, bool)) -> Option<OverlapFacts> {
+        let [shrubbery, low_overlappable, infantry] = kinds;
+        if shrubbery {
+            return None;
+        }
+        Some(OverlapFacts { position, bounding_circle_radius, max_height_above_position, flat: low_overlappable || infantry || if plant(9900) { crushed.0 || crushed.1 } else { crushed.0 && crushed.1 } })
+    }
+}
+
 /// What `calcPhysicsXform*` read of the object and its physics; see [`physics_xform_facts`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct XformObjectFacts {
@@ -318,14 +356,15 @@ pub fn physics_xform_facts(w: &World, id: ObjectId) -> PhysicsXformFacts {
         let dir = o.thing.peek_unit_direction_vector_2d();
         let (layer_height, normal) = w.peek_layer_height_and_normal(pos.x, pos.y, o.layer);
         let (current, previous) = p.peek_overlaps();
-        let overlap = w.find_object(current).filter(|x| !x.is_kind_of(KINDOF_SHRUBBERY)).map(|x| {
+        let overlap = w.find_object(current).and_then(|x| {
             let (front, back) = w.peek_crushed(current);
-            OverlapFacts {
-                position: x.get_position(),
-                bounding_circle_radius: x.geometry_info.get_bounding_circle_radius(),
-                max_height_above_position: x.geometry_info.get_max_height_above_position(),
-                flat: x.is_kind_of(KINDOF_LOW_OVERLAPPABLE) || x.is_kind_of(KINDOF_INFANTRY) || (front && back),
-            }
+            OverlapFacts::of(
+                x.get_position(),
+                x.geometry_info.get_bounding_circle_radius(),
+                x.geometry_info.get_max_height_above_position(),
+                [x.is_kind_of(KINDOF_SHRUBBERY), x.is_kind_of(KINDOF_LOW_OVERLAPPABLE), x.is_kind_of(KINDOF_INFANTRY)],
+                (front, back),
+            )
         });
         XformObjectFacts {
             position: pos,
@@ -404,6 +443,42 @@ impl DrawableLocoInfo {
         (ground_pitch, ground_roll)
     }
 
+    /// The wheels' and the motorcycle's "Bouncy." (the same text in both upstream): above a tenth of the locomotor's
+    /// speed, when the pitch and roll rates are small, a kick of the pitch and roll rates by `BOUNCE_ANGLE_KICK` times
+    /// the speed's fraction, in one of four directions (`GameClientRandomValue(0, 3)`, the client's generator).
+    fn bounce(&mut self, l: &LocoFacts, o: &XformObjectFacts, airborne: bool, random: &mut RandomValues) {
+        let bounce_angle_kick = l.bounce_kick;
+        let cur_speed = o.velocity_magnitude;
+        let max_speed = o.cur_locomotor_speed;
+        if !airborne && cur_speed > max_speed / 10.0 {
+            let factor = cur_speed / max_speed;
+            if fabs(self.pitch_rate) < factor * bounce_angle_kick / 4.0 && fabs(self.roll_rate) < factor * bounce_angle_kick / 8.0 {
+                // do the bouncy.
+                let r = random.game_client_random_value(0, 3);
+                let r = if plant(9905) && (r == 1 || r == 2) { 3 - r } else { r };
+                match r {
+                    0 => {
+                        self.pitch_rate -= bounce_angle_kick * factor;
+                        self.roll_rate -= bounce_angle_kick * factor / 2.0;
+                    }
+                    1 => {
+                        self.pitch_rate += bounce_angle_kick * factor;
+                        self.roll_rate -= bounce_angle_kick * factor / 2.0;
+                    }
+                    2 => {
+                        self.pitch_rate -= bounce_angle_kick * factor;
+                        self.roll_rate += bounce_angle_kick * factor / 2.0;
+                    }
+                    3 => {
+                        self.pitch_rate += bounce_angle_kick * factor;
+                        self.roll_rate += bounce_angle_kick * factor / 2.0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// `calcPhysicsXformThrust(locomotor, info)`: the wobble ("a kind of quick thrust implementation cause we need
     /// scud missiles to wobble *now*") and the thrust roll. Reads no physics.
     pub fn calc_thrust(&mut self, l: &LocoFacts, info: &mut PhysicsXformInfo) {
@@ -417,7 +492,7 @@ impl DrawableLocoInfo {
                     self.pitch += wobble_rate / 2.0;
                     self.yaw += wobble_rate / 2.0;
                 }
-                if self.pitch >= max_wobble {
+                if if plant(9891) { self.pitch > max_wobble } else { self.pitch >= max_wobble } {
                     self.wobble = -1.0;
                 }
             } else {
@@ -433,11 +508,15 @@ impl DrawableLocoInfo {
                 }
             }
             info.total_pitch = self.pitch;
-            info.total_yaw = self.yaw;
+            if !plant(9892) {
+                info.total_yaw = self.yaw;
+            }
         }
         if thrust_roll != 0.0 {
-            self.roll += thrust_roll;
-            info.total_roll = self.roll;
+            if !plant(9893) {
+                self.roll += thrust_roll;
+            }
+            info.total_roll = if plant(9893) { thrust_roll } else { self.roll };
         }
     }
 
@@ -452,7 +531,7 @@ impl DrawableLocoInfo {
         self.roll_rate += (-l.roll_stiffness * self.roll) + (-l.roll_damping * self.roll_rate); // spring/damper
 
         self.pitch += self.pitch_rate * l.uniform_axial_damping;
-        self.roll += self.roll_rate * l.uniform_axial_damping;
+        self.roll += self.roll_rate * if plant(9894) { 1.0 } else { l.uniform_axial_damping };
 
         // process chassis acceleration dynamics - damp back towards zero
         self.damp_acceleration(l);
@@ -464,11 +543,16 @@ impl DrawableLocoInfo {
         if o.is_motive {
             if l.pitch_by_z_vel_coef != 0.0 {
                 const TINY_DZ: f32 = 0.001;
-                if fabs(vel.z) > TINY_DZ {
-                    // `atan2(vel->z, sqrt(sqr(vel->x)+sqr(vel->y)))`, the float overloads
-                    let horizontal: f32 = petir::Real::sqrt(sqr(vel.x) + sqr(vel.y));
-                    let pitch: f32 = petir::Real::atan2(vel.z, horizontal);
-                    self.pitch -= l.pitch_by_z_vel_coef * pitch;
+                if fabs(if plant(9897) { vel.x } else { vel.z }) > TINY_DZ {
+                    // `atan2(vel->z, sqrt(sqr(vel->x)+sqr(vel->y)))`: ~~the float overloads~~ **Corrected 2026-11-13
+                    // (#182 item 2):** C's double `sqrt` and `atan2` (MSVC's C semantics), rounded once to the `Real`
+                    let horizontal: f64 = petir::Real::sqrt(f64::from(sqr(vel.x) + sqr(vel.y)));
+                    let pitch = petir::Real::atan2(f64::from(vel.z), horizontal) as f32;
+                    if plant(9896) {
+                        self.pitch += l.pitch_by_z_vel_coef * pitch;
+                    } else {
+                        self.pitch -= l.pitch_by_z_vel_coef * pitch;
+                    }
                 }
             }
 
@@ -476,7 +560,7 @@ impl DrawableLocoInfo {
             let forward_vel = dir.x * vel.x + dir.y * vel.y;
             self.pitch += -(l.forward_vel_coef * forward_vel);
 
-            let lateral_vel = -dir.y * vel.x + dir.x * vel.y;
+            let lateral_vel = if plant(9895) { dir.y * vel.x + dir.x * vel.y } else { -dir.y * vel.x + dir.x * vel.y };
             self.roll += -(l.lateral_vel_coef * lateral_vel);
 
             // cause the chassis to pitch & roll in reaction to acceleration/deceleration
@@ -486,10 +570,15 @@ impl DrawableLocoInfo {
         // limit acceleration pitch and roll
         self.limit_acceleration(l);
 
+        let old_yaw_modulator = self.yaw_modulator;
         self.yaw_modulator += l.rudder_correction_rate;
-        info.total_yaw = l.rudder_correction_degree * petir::Real::sin(self.yaw_modulator);
+        // (#182 item 2) C's double `sin` and `cos` (MSVC's C semantics): the product, and the pitch's sum, in double,
+        // rounded once to the `Real`
+        let yaw_sin: f64 = petir::Real::sin(f64::from(if plant(9898) { old_yaw_modulator } else { self.yaw_modulator }));
+        info.total_yaw = (f64::from(l.rudder_correction_degree) * yaw_sin) as f32;
         self.pitch_modulator += l.elevator_correction_rate;
-        info.total_pitch += l.elevator_correction_degree * petir::Real::cos(self.pitch_modulator);
+        let pitch_cos: f64 = petir::Real::cos(f64::from(self.pitch_modulator));
+        info.total_pitch = (f64::from(info.total_pitch) + f64::from(l.elevator_correction_degree) * pitch_cos) as f32;
 
         info.total_z = 0.0;
     }
@@ -526,7 +615,7 @@ impl DrawableLocoInfo {
             let mut max_center_dist = other_size + our_size;
 
             // shrink the overlap distance a bit to avoid floating
-            max_center_dist *= OVERLAP_SHRINK_FACTOR;
+            max_center_dist *= if plant(9899) { 1.0 } else { OVERLAP_SHRINK_FACTOR };
             if center_dist_sqr < sqr(max_center_dist) {
                 let center_dist: f32 = petir::Real::sqrt(center_dist_sqr);
                 let mut amount = 1.0 - center_dist / max_center_dist;
@@ -578,7 +667,7 @@ impl DrawableLocoInfo {
         } else {
             // no overlap this frame: if we had an overlap last frame, and we're now in the air, give a kick to the
             // pitch for effect
-            if o.had_previous_overlap && self.overlap_z > 0.0 {
+            if (o.had_previous_overlap || plant(9901)) && self.overlap_z > 0.0 {
                 self.pitch_rate += LEAVE_OVERLAP_PITCH_KICK;
             }
         }
@@ -590,7 +679,7 @@ impl DrawableLocoInfo {
         // the ground can only push back if we're touching it
         if o.overlap.is_some() || self.overlap_z <= 0.0 {
             self.pitch_rate += (-l.pitch_stiffness * (self.pitch - ground_pitch)) + (-l.pitch_damping * self.pitch_rate); // spring/damper
-            if self.pitch_rate > 0.0 {
+            if self.pitch_rate > 0.0 && !plant(9902) {
                 self.pitch_rate *= 0.5;
             }
 
@@ -625,7 +714,7 @@ impl DrawableLocoInfo {
 
         // do fake Z physics
         if self.overlap_z > 0.0 {
-            self.overlap_z_vel -= 0.2;
+            self.overlap_z_vel -= if plant(9903) { 0.1 } else { 0.2 };
             self.overlap_z += self.overlap_z_vel;
         }
 
@@ -633,12 +722,11 @@ impl DrawableLocoInfo {
             self.overlap_z = 0.0;
             self.overlap_z_vel = 0.0;
         }
-        info.total_z = ztmp;
+        info.total_z = if plant(9904) { self.overlap_z / 2.0 } else { ztmp };
     }
 
     /// `calcPhysicsXformWheels(locomotor, info)` (see the module docs). `None` physics: returns, totals 0.
     pub fn calc_wheels(&mut self, l: &LocoFacts, o: Option<&XformObjectFacts>, random: &mut RandomValues, info: &mut PhysicsXformInfo) {
-        let bounce_angle_kick = l.bounce_kick;
         let max_suspension_extension = l.max_wheel_extension; //-2.3f;
         let wheel_angle = l.wheel_turn_angle; //PI/8;
         let do_wheels = l.has_suspension;
@@ -671,38 +759,15 @@ impl DrawableLocoInfo {
             let width = o.minor_radius;
             let pitch_height = length * trig::sin(self.pitch + self.acceleration_pitch - ground_pitch);
             let roll_height = width * trig::sin(self.roll + self.acceleration_roll - ground_roll);
-            info.total_z = fabs(pitch_height) / 4.0 + fabs(roll_height) / 4.0;
-            return; // maintain the same orientation while we fly through the air.
+            // (#182 item 2) C's double `fabs`: the quotients and the sum in double, rounded once
+            info.total_z = (f64::from(fabs(pitch_height)) / 4.0 + f64::from(fabs(roll_height)) / 4.0) as f32;
+            if !plant(9906) {
+                return; // maintain the same orientation while we fly through the air.
+            }
         }
 
         // Bouncy.
-        let cur_speed = o.velocity_magnitude;
-        let max_speed = o.cur_locomotor_speed;
-        if !airborne && cur_speed > max_speed / 10.0 {
-            let factor = cur_speed / max_speed;
-            if fabs(self.pitch_rate) < factor * bounce_angle_kick / 4.0 && fabs(self.roll_rate) < factor * bounce_angle_kick / 8.0 {
-                // do the bouncy.
-                match random.game_client_random_value(0, 3) {
-                    0 => {
-                        self.pitch_rate -= bounce_angle_kick * factor;
-                        self.roll_rate -= bounce_angle_kick * factor / 2.0;
-                    }
-                    1 => {
-                        self.pitch_rate += bounce_angle_kick * factor;
-                        self.roll_rate -= bounce_angle_kick * factor / 2.0;
-                    }
-                    2 => {
-                        self.pitch_rate -= bounce_angle_kick * factor;
-                        self.roll_rate += bounce_angle_kick * factor / 2.0;
-                    }
-                    3 => {
-                        self.pitch_rate += bounce_angle_kick * factor;
-                        self.roll_rate += bounce_angle_kick * factor / 2.0;
-                    }
-                    _ => {}
-                }
-            }
-        }
+        self.bounce(l, o, airborne, random);
 
         // process chassis suspension dynamics - damp back towards groundPitch
 
@@ -743,25 +808,8 @@ impl DrawableLocoInfo {
         let roll_height = width * trig::sin(info.total_roll - ground_roll);
         if do_wheels {
             // calculate each wheel position
-            self.wheel_info.frames_airborne = self.wheel_info.frames_airborne_counter;
-            self.wheel_info.frames_airborne_counter = 0;
-            let mut new_info = self.wheel_info;
-            let rotation = o.turning;
-            if rotation == TURN_NEGATIVE {
-                new_info.wheel_angle = -wheel_angle;
-            } else if rotation == TURN_POSITIVE {
-                new_info.wheel_angle = wheel_angle;
-            } else {
-                new_info.wheel_angle = 0.0;
-            }
-            if o.forward_speed_2d < 0.0 {
-                // if we're moving backwards, the wheels rotate in the opposite direction.
-                new_info.wheel_angle = -new_info.wheel_angle;
-            }
-
-            // smaller angles each draw, for "smoother" wheel turning transitions
+            let mut new_info = self.steer_wheels(wheel_angle, o);
             let w = &mut self.wheel_info;
-            w.wheel_angle += (new_info.wheel_angle - w.wheel_angle) / WHEEL_SMOOTHNESS;
 
             const SPRING_FACTOR: f32 = 0.9;
             if pitch_height < 0.0 {
@@ -792,7 +840,7 @@ impl DrawableLocoInfo {
             }
             // If it's going down, dampen the movement a bit
             let follow = |cur: &mut f32, new: f32| {
-                if new < *cur {
+                if if plant(9909) { new > *cur } else { new < *cur } {
                     *cur += (new - *cur) / 2.0;
                 } else {
                     *cur = new;
@@ -803,42 +851,232 @@ impl DrawableLocoInfo {
             follow(&mut w.rear_left_height_offset, new_info.rear_left_height_offset);
             follow(&mut w.rear_right_height_offset, new_info.rear_right_height_offset);
             for h in [&mut w.front_left_height_offset, &mut w.front_right_height_offset, &mut w.rear_left_height_offset, &mut w.rear_right_height_offset] {
-                if *h < max_suspension_extension {
+                if *h < max_suspension_extension && !plant(9910) {
                     *h = max_suspension_extension;
                 }
             }
         }
         // If we are > 22 degrees, need to raise height;
-        let mut divisor = 4.0f32;
-        let pitch = fabs(info.total_pitch - ground_pitch);
+        let divisor = raise_divisor(info.total_pitch, ground_pitch);
+        // (#182 item 2) ~~`info.total_z += fabs(pitch_height) / divisor`, in float~~ C's double `fabs`: the quotient and
+        // the sum in double, rounded once (`add_double_quotient`)
+        info.total_z = add_double_quotient(info.total_z, fabs(pitch_height), divisor);
+        info.total_z = add_double_quotient(info.total_z, fabs(roll_height), divisor);
+    }
 
-        if pitch > PI / 8.0 {
-            divisor = ((4.0 * PI / 8.0) + (1.0 * (pitch - PI / 8.0))) / pitch;
+    /// The wheels' and the motorcycle's steering (the same text in both upstream): `m_framesAirborne` takes the counter,
+    /// which restarts; the new wheel angle is `±WHEEL_ANGLE` by the physics' turning (0 straight), reversed when moving
+    /// backwards (`getForwardSpeed2D() < 0`), and the wheel angle moves a tenth of the way to it (`WHEEL_SMOOTHNESS`).
+    /// Returns `newInfo`: the wheel info as it was, with the new angle.
+    fn steer_wheels(&mut self, wheel_angle: f32, o: &XformObjectFacts) -> TWheelInfo {
+        if !plant(9907) {
+            self.wheel_info.frames_airborne = self.wheel_info.frames_airborne_counter;
         }
-        info.total_z += fabs(pitch_height) / divisor;
-        info.total_z += fabs(roll_height) / divisor;
+        self.wheel_info.frames_airborne_counter = 0;
+        let mut new_info = self.wheel_info;
+        let rotation = o.turning;
+        if rotation == TURN_NEGATIVE {
+            new_info.wheel_angle = -wheel_angle;
+        } else if rotation == TURN_POSITIVE {
+            new_info.wheel_angle = wheel_angle;
+        } else {
+            new_info.wheel_angle = 0.0;
+        }
+        if o.forward_speed_2d < 0.0 && !plant(9908) {
+            // if we're moving backwards, the wheels rotate in the opposite direction.
+            new_info.wheel_angle = -new_info.wheel_angle;
+        }
+
+        // smaller angles each draw, for "smoother" wheel turning transitions
+        let w = &mut self.wheel_info;
+        w.wheel_angle += (new_info.wheel_angle - w.wheel_angle) / WHEEL_SMOOTHNESS;
+        new_info
+    }
+
+    /// `calcPhysicsXformMotorcycle(locomotor, info)` (#182 item 2): the wheels' model on two wheels. Unlike the wheels:
+    /// in the air it does not return (the rear wheel drops, the total Z is set from the pitch alone and then zeroed
+    /// below, and the springs pull the pitch and roll towards level, "Autolevel", not towards the ground's); on the
+    /// ground the pitch rate is not halved when positive; the left and right wheels move as one (each right offset is
+    /// its left's); the roll does not raise the wheels; the total roll is `unclampedRoll > 0.5 && unclampedRoll < -0.5 ?
+    /// unclampedRoll : 0`, which is never true, so always 0 ("Now only motorcycles enjoy this constraint"); and the
+    /// height raise from the pitch and roll is added only on the ground. `fabs` is C's double `fabs` (the shim's
+    /// math.h, MSVC's C semantics): `fabs(h)/divisor` is a double quotient added to the float total in double and
+    /// rounded once. `None` physics: returns, totals 0.
+    #[allow(clippy::impossible_comparisons)] // upstream's total roll test, which can never be true, kept as written
+    pub fn calc_motorcycle(&mut self, l: &LocoFacts, o: Option<&XformObjectFacts>, random: &mut RandomValues, info: &mut PhysicsXformInfo) {
+        let max_suspension_extension = l.max_wheel_extension; //-2.3f;
+        let wheel_angle = l.wheel_turn_angle; //PI/8;
+        let do_wheels = l.has_suspension;
+
+        let Some(o) = o else { return };
+        let (pos, dir, accel) = (&o.position, &o.dir, &o.accel);
+
+        // find pitch and roll of terrain under chassis
+        let hheight = o.layer_height;
+        let (ground_pitch, ground_roll) = Self::ground_pitch_and_roll(o, &o.normal);
+
+        let airborne = o.airborne;
+
+        if airborne {
+            if do_wheels {
+                // Wheels extend when airborne.
+                let w = &mut self.wheel_info;
+                w.frames_airborne = 0;
+                w.frames_airborne_counter += 1;
+                if (pos.z - hheight > -max_suspension_extension) != plant(9914) {
+                    w.rear_left_height_offset += (max_suspension_extension - w.rear_left_height_offset) / 2.0;
+                } else {
+                    w.rear_left_height_offset += (0.0 - w.rear_left_height_offset) / 2.0;
+                }
+                w.rear_right_height_offset = w.rear_left_height_offset;
+            }
+            // Calculate suspension info.
+            let length = o.major_radius;
+            let pitch_height = length * trig::sin(self.pitch + self.acceleration_pitch - ground_pitch);
+            info.total_z = (f64::from(fabs(pitch_height)) / 4.0) as f32; // + fabs(rollHeight)/4;
+            //return; // maintain the same orientation while we fly through the air.
+        }
+
+        // Bouncy.
+        self.bounce(l, o, airborne, random);
+
+        // process chassis suspension dynamics - damp back towards groundPitch
+
+        // the ground can only push back if we're touching it
+        if !airborne || plant(9912) {
+            self.pitch_rate += (-l.pitch_stiffness * (self.pitch - ground_pitch)) + (-l.pitch_damping * self.pitch_rate); // spring/damper
+            self.roll_rate += (-l.roll_stiffness * (self.roll - ground_roll)) + (-l.roll_damping * self.roll_rate); // spring/damper
+        } else {
+            //Autolevel
+            self.pitch_rate += (-l.pitch_stiffness * self.pitch) + (-l.pitch_damping * self.pitch_rate); // spring/damper
+            self.roll_rate += (-l.roll_stiffness * self.roll) + (-l.roll_damping * self.roll_rate); // spring/damper
+        }
+
+        self.pitch += self.pitch_rate * l.uniform_axial_damping;
+        self.roll += self.roll_rate * l.uniform_axial_damping;
+
+        // process chassis acceleration dynamics - damp back towards zero
+        self.damp_acceleration(l);
+
+        // compute total pitch and roll of tank
+        info.total_pitch = self.pitch + self.acceleration_pitch;
+
+        // "THis logic had recently been added to Drawable::applyPhysicsXform(), which was naughty, since it clamped the
+        // roll in every drawable in the game. Now only motorcycles enjoy this constraint" (never true: always 0)
+        let unclamped_roll = self.roll + self.acceleration_roll;
+        info.total_roll = if plant(9911) || (unclamped_roll > 0.5 && unclamped_roll < -0.5) { unclamped_roll } else { 0.0 };
+
+        if o.is_motive {
+            // cause the chassis to pitch & roll in reaction to acceleration/deceleration
+            self.kick_acceleration(l, dir, accel);
+        }
+
+        // limit acceleration pitch and roll
+        self.limit_acceleration(l);
+
+        info.total_z = 0.0;
+
+        // Calculate suspension info.
+        let length = o.major_radius;
+        let width = o.minor_radius;
+        let pitch_height = length * trig::sin(info.total_pitch - ground_pitch);
+        let roll_height = width * trig::sin(info.total_roll - ground_roll);
+        if do_wheels {
+            // calculate each wheel position
+            let mut new_info = self.steer_wheels(wheel_angle, o);
+
+            const SPRING_FACTOR: f32 = 0.9;
+            if pitch_height < 0.0 {
+                // Front raising up
+                new_info.front_left_height_offset = SPRING_FACTOR * (pitch_height / 3.0 + pitch_height / 2.0);
+                new_info.rear_left_height_offset = -pitch_height / 2.0 + pitch_height / 4.0;
+            } else {
+                // Back raising up.
+                new_info.front_left_height_offset = -pitch_height / 4.0 + pitch_height / 2.0;
+                new_info.rear_left_height_offset = SPRING_FACTOR * (-pitch_height / 2.0 + -pitch_height / 3.0);
+            }
+            new_info.front_right_height_offset = new_info.front_left_height_offset;
+            new_info.rear_right_height_offset = new_info.rear_left_height_offset;
+            let w = &mut self.wheel_info;
+            if new_info.front_left_height_offset < w.front_left_height_offset {
+                // If it's going down, dampen the movement a bit
+                w.front_left_height_offset += (new_info.front_left_height_offset - w.front_left_height_offset) / 2.0;
+            } else {
+                w.front_left_height_offset = new_info.front_left_height_offset;
+            }
+            w.front_right_height_offset = w.front_left_height_offset;
+            if new_info.rear_left_height_offset < w.rear_left_height_offset {
+                // If it's going down, dampen the movement a bit
+                w.rear_left_height_offset += (new_info.rear_left_height_offset - w.rear_left_height_offset) / 2.0;
+            } else {
+                w.rear_left_height_offset = new_info.rear_left_height_offset;
+            }
+            w.rear_right_height_offset = w.rear_left_height_offset;
+            if w.front_left_height_offset < max_suspension_extension {
+                w.front_left_height_offset = max_suspension_extension;
+                w.front_right_height_offset = max_suspension_extension;
+            }
+            if w.rear_left_height_offset < max_suspension_extension {
+                w.rear_left_height_offset = max_suspension_extension;
+                w.rear_right_height_offset = max_suspension_extension;
+            }
+        }
+        // If we are > 22 degrees, need to raise height;
+        let divisor = raise_divisor(info.total_pitch, ground_pitch);
+
+        if !airborne || plant(9913) {
+            info.total_z = add_double_quotient(info.total_z, fabs(pitch_height), divisor);
+            info.total_z = add_double_quotient(info.total_z, fabs(roll_height), divisor);
+        }
     }
 }
 
-impl Drawable {
-    /// `calcPhysicsXform(info)`: the current locomotor's model by its appearance (making `m_locoInfo` on the first),
-    /// the totals' denormals flushed; `None` when no model ran (no locomotor, or an appearance without one:
-    /// `LOCO_LEGS_TWO`, `LOCO_CLIMBER`, `LOCO_OTHER`, and `LOCO_MOTORCYCLE`, not translated yet).
-    pub fn calc_physics_xform(&mut self, facts: &PhysicsXformFacts, random: &mut RandomValues) -> Option<PhysicsXformInfo> {
+/// The wheels' and the motorcycle's height divisor: 4, or above `PI/8` ("> 22 degrees") of pitch against the ground
+/// `((4*PI/8) + (1*(pitch-PI/8)))/pitch`, in float.
+fn raise_divisor(total_pitch: f32, ground_pitch: f32) -> f32 {
+    let mut divisor = 4.0f32;
+    let pitch = fabs(total_pitch - ground_pitch);
+
+    if pitch > PI / 8.0 {
+        divisor = ((4.0 * PI / 8.0) + (1.0 * (pitch - PI / 8.0))) / pitch;
+    }
+    divisor
+}
+
+/// `total += fabs(h)/divisor` with C's double `fabs` (the shim's math.h, MSVC's C semantics): the quotient and the sum
+/// in double, rounded to float once by the assignment. `h` is already `fabs(h)` (exact in either width).
+fn add_double_quotient(total: f32, abs_h: f32, divisor: f32) -> f32 {
+    (f64::from(total) + f64::from(abs_h) / f64::from(divisor)) as f32
+}
+
+impl DrawableLocoInfo {
+    /// `calcPhysicsXform(info)` on a drawable's `m_locoInfo` (`slot`): the current locomotor's model by its appearance
+    /// (making `m_locoInfo` on the first), the totals' denormals flushed; `None` when no model ran (no AI or locomotor,
+    /// or an appearance without one: `LOCO_LEGS_TWO`, `LOCO_CLIMBER`, `LOCO_OTHER`). ~~and `LOCO_MOTORCYCLE`, not
+    /// translated yet~~ **Corrected 2026-11-13 (#182 item 2):** `LOCO_MOTORCYCLE` runs
+    /// [`DrawableLocoInfo::calc_motorcycle`].
+    pub fn calc_physics_xform(slot: &mut Option<DrawableLocoInfo>, facts: &PhysicsXformFacts, random: &mut RandomValues) -> Option<PhysicsXformInfo> {
         let l = facts.locomotor.as_ref()?;
         let mut info = PhysicsXformInfo::default();
         let o = facts.object.as_ref();
         match l.appearance {
-            LocomotorAppearance::LocoWheelsFour => self.loco_info.get_or_insert_with(Default::default).calc_wheels(l, o, random, &mut info),
-            LocomotorAppearance::LocoTreads => self.loco_info.get_or_insert_with(Default::default).calc_treads(l, o, random, &mut info),
-            LocomotorAppearance::LocoHover | LocomotorAppearance::LocoWings => {
-                self.loco_info.get_or_insert_with(Default::default).calc_hover_or_wings(l, o, &mut info)
-            }
-            LocomotorAppearance::LocoThrust => self.loco_info.get_or_insert_with(Default::default).calc_thrust(l, &mut info),
+            LocomotorAppearance::LocoWheelsFour => slot.get_or_insert_with(Default::default).calc_wheels(l, o, random, &mut info),
+            LocomotorAppearance::LocoMotorcycle => slot.get_or_insert_with(Default::default).calc_motorcycle(l, o, random, &mut info),
+            LocomotorAppearance::LocoTreads => slot.get_or_insert_with(Default::default).calc_treads(l, o, random, &mut info),
+            LocomotorAppearance::LocoWings if plant(9915) => return None,
+            LocomotorAppearance::LocoHover | LocomotorAppearance::LocoWings => slot.get_or_insert_with(Default::default).calc_hover_or_wings(l, o, &mut info),
+            LocomotorAppearance::LocoThrust => slot.get_or_insert_with(Default::default).calc_thrust(l, &mut info),
             _ => return None,
         }
         info.flush_denormals();
         Some(info)
+    }
+}
+
+impl Drawable {
+    /// `calcPhysicsXform(info)` on this drawable's `m_locoInfo` ([`DrawableLocoInfo::calc_physics_xform`]).
+    pub fn calc_physics_xform(&mut self, facts: &PhysicsXformFacts, random: &mut RandomValues) -> Option<PhysicsXformInfo> {
+        DrawableLocoInfo::calc_physics_xform(&mut self.loco_info, facts, random)
     }
 
     /// `applyPhysicsXform(&transformMtx)` as `Drawable::draw` calls it (see the module docs): this draw's totals kept in
@@ -947,7 +1185,8 @@ mod tests {
     /// draw after the totals are taken (totals 0 then -0.2); the yaw is 0.1 sin 0.5, then 0.1 sin 1; not motive, the
     /// pitch stays; without physics the model returns, totals 0, but the transform still applies (`Some`).
     ///
-    /// *Results (2026-11-06), first run:* all held.
+    /// *Results (2026-11-06), first run:* all held. **2026-11-13 (#182 item 2):** the yaw's expected value is now the
+    /// double `sin`'s (see the assertion); it failed by 1 ULP on the old f32 expectation after the fix.
     #[test]
     fn hover_pitches_with_its_speed() {
         let l = LocoFacts { forward_vel_coef: 0.1, rudder_correction_degree: 0.1, rudder_correction_rate: 0.5, ..loco(LocomotorAppearance::LocoHover) };
@@ -958,8 +1197,11 @@ mod tests {
         let b = d.calc_physics_xform(&f, &mut random).unwrap();
         assert_eq!(a.total_pitch, 0.0);
         assert!((b.total_pitch + 0.2).abs() < 1e-7);
-        assert_eq!(a.total_yaw, 0.1 * trig::sin(0.5));
-        assert_eq!(b.total_yaw, 0.1 * trig::sin(1.0));
+        // ~~`0.1 * trig::sin(0.5)`, in float~~ **Corrected 2026-11-13 (#182 item 2):** C's double `sin`, the product in
+        // double, rounded once (the differential's finding)
+        let dsin = |x: f32| (f64::from(0.1f32) * petir::Real::sin(f64::from(x))) as f32;
+        assert_eq!(a.total_yaw, dsin(0.5));
+        assert_eq!(b.total_yaw, dsin(1.0));
         let still = PhysicsXformFacts { object: Some(object(2.0, false)), ..f };
         let c = d.calc_physics_xform(&still, &mut random).unwrap();
         assert!((c.total_pitch + 0.4).abs() < 1e-6, "{}", c.total_pitch);
@@ -1002,4 +1244,88 @@ mod tests {
         assert_eq!(d.loco_info.unwrap().pitch_rate, PI / 128.0);
         assert_eq!(b.total_pitch, PI / 128.0);
     }
+
+    /// *Predictions, written before the first run* (#182 item 2; motorcycle, no springs, axial damping 1, suspension
+    /// on, maximum extension -2, radii 5, flat ground, at rest so no bounce; `m_locoInfo` preset to pitch 0.3, roll 0.7):
+    /// on the ground the total roll is 0 (0.7 is not both > 0.5 and < -0.5), the total pitch 0.3, the height
+    /// `|5 sin 0.3| / 4` (divisor 4: 0.3 < PI/8); the back raises: the front wheels go up to `ph/4` at once, the rear go
+    /// down half way to `-0.75 ph` (`-0.375 ph`), the right wheels each the left's. The next draw in the air, 3 above
+    /// the terrain: the rear drops half way to -2, then the ground block (which upstream runs in the air too) sets
+    /// `m_framesAirborne` 1 and the counter 0 and lifts the rear to `-0.75 ph` (the new offset is above it); the total Z
+    /// 0 (only added on the ground). The dispatch runs it for `LOCO_MOTORCYCLE`.
+    ///
+    /// *Results (2026-11-13), first run:* all held.
+    #[test]
+    fn motorcycle_rides_on_two_wheels() {
+        let l = LocoFacts { has_suspension: true, max_wheel_extension: -2.0, ..loco(LocomotorAppearance::LocoMotorcycle) };
+        let mut d = drawable();
+        d.loco_info = Some(DrawableLocoInfo { pitch: 0.3, roll: 0.7, ..Default::default() });
+        let mut random = RandomValues::new(0);
+        let o = object(0.0, false);
+        let a = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).expect("a motorcycle model");
+        let ph = 5.0 * trig::sin(0.3);
+        assert_eq!(a.total_roll, 0.0);
+        assert_eq!(a.total_pitch, 0.3);
+        assert!((a.total_z - ph / 4.0).abs() < 1e-6, "{}", a.total_z);
+        let w = d.get_wheel_info().unwrap();
+        assert!((w.front_left_height_offset - ph / 4.0).abs() < 1e-6 && w.front_right_height_offset == w.front_left_height_offset);
+        assert!((w.rear_left_height_offset + 0.375 * ph).abs() < 1e-6 && w.rear_right_height_offset == w.rear_left_height_offset);
+        let mut up = o;
+        up.airborne = true;
+        up.position.z = 3.0;
+        let b = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(up) }, &mut random).unwrap();
+        assert_eq!(b.total_z, 0.0);
+        assert_eq!(b.total_roll, 0.0);
+        let w = d.get_wheel_info().unwrap();
+        assert_eq!((w.frames_airborne, w.frames_airborne_counter), (1, 0));
+        assert!((w.rear_left_height_offset + 0.75 * ph).abs() < 1e-6 && w.rear_right_height_offset == w.rear_left_height_offset);
+    }
+
+    /// *Predictions, written before the first run* (#182 item 2; wheels as the motorcycle's test, pitch 0.2, roll 0.1
+    /// preset): in the air the model returns with the total Z `|5 sin 0.2|/4 + |5 sin 0.1|/4` (summed in double) and
+    /// the pitch and roll totals 0, the counter 1; then on the ground turning right (`TURN_POSITIVE`) with a wheel turn
+    /// angle of 0.5, the wheel angle moves a tenth of the way, 0.05, and `m_framesAirborne` takes the counter, 1; moving
+    /// backwards it moves a tenth of the way to -0.5 instead (0.05 - 0.055 = -0.005).
+    ///
+    /// *Results (2026-11-13), first run:* all held.
+    #[test]
+    fn wheels_fly_then_steer() {
+        let l = LocoFacts { has_suspension: true, max_wheel_extension: -2.0, wheel_turn_angle: 0.5, ..loco(LocomotorAppearance::LocoWheelsFour) };
+        let mut d = drawable();
+        d.loco_info = Some(DrawableLocoInfo { pitch: 0.2, roll: 0.1, ..Default::default() });
+        let mut random = RandomValues::new(0);
+        let mut o = object(0.0, false);
+        o.airborne = true;
+        let a = d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        let want = (f64::from(fabs(5.0 * trig::sin(0.2f32))) / 4.0 + f64::from(fabs(5.0 * trig::sin(0.1f32))) / 4.0) as f32;
+        assert_eq!(a.total_z, want);
+        assert_eq!((a.total_pitch, a.total_roll), (0.0, 0.0));
+        assert_eq!(d.get_wheel_info().unwrap().frames_airborne_counter, 1);
+        o.airborne = false;
+        o.turning = TURN_POSITIVE;
+        d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        let w = d.get_wheel_info().unwrap();
+        assert!((w.wheel_angle - 0.05).abs() < 1e-7, "{}", w.wheel_angle);
+        assert_eq!((w.frames_airborne, w.frames_airborne_counter), (1, 0));
+        o.forward_speed_2d = -1.0;
+        d.calc_physics_xform(&PhysicsXformFacts { apply: true, locomotor: Some(l), object: Some(o) }, &mut random).unwrap();
+        assert!((d.get_wheel_info().unwrap().wheel_angle + 0.005).abs() < 1e-7);
+    }
+
+    /// *Predictions, written before the first run* (#182 item 2): shrubbery is no overlap; low overlappable, infantry,
+    /// or crushed front and back is flat; crushed front alone is not.
+    ///
+    /// *Results (2026-11-13), first run:* all held.
+    #[test]
+    fn the_treads_overlap_as_upstream_reads_it() {
+        let p = Coord3D::default();
+        assert_eq!(OverlapFacts::of(p, 1.0, 2.0, [true, true, false], (true, true)), None);
+        assert!(OverlapFacts::of(p, 1.0, 2.0, [false, true, false], (false, false)).unwrap().flat);
+        assert!(OverlapFacts::of(p, 1.0, 2.0, [false, false, true], (false, false)).unwrap().flat);
+        assert!(OverlapFacts::of(p, 1.0, 2.0, [false, false, false], (true, true)).unwrap().flat);
+        let o = OverlapFacts::of(p, 1.0, 2.0, [false, false, false], (true, false)).unwrap();
+        assert!(!o.flat);
+        assert_eq!((o.bounding_circle_radius, o.max_height_above_position), (1.0, 2.0));
+    }
+
 }

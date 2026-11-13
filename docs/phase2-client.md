@@ -124,6 +124,24 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#182 item 2 (2026-11-13, GitHub #182): the drawable's client physics models against upstream; the motorcycle.**
+- **Translated:** `calcPhysicsXformMotorcycle` (Drawable.cpp:2214-2506, `DrawableLocoInfo::calc_motorcycle`), wired
+  into the dispatch as upstream's `calcPhysicsXform` switch (`DrawableLocoInfo::calc_physics_xform`, which
+  `Drawable::calc_physics_xform` now calls); the bounce, the steering and the height divisor are shared with the
+  wheels (`bounce`, `steer_wheels`, `raise_divisor`), as the two upstream functions share the text. ~~No transform for
+  `LOCO_MOTORCYCLE` yet~~ (drawable_loco.rs's module docs, struck through).
+- **Verified:** `tests/differential_drawable_loco.rs`: Drawable.cpp's `calcPhysicsXform` and all five models (and
+  Drawable.h's `TWheelInfo`, `DrawableLocoInfo`, `PhysicsXformInfo`, Locomotor.h's appearance and PhysicsUpdate.h's
+  turning) cut verbatim (`differential/wrap_drawable_loco.cpp`), on the real client random values and `Sin`; 20,000
+  random sequences (607,059 frames), every total and `m_locoInfo` word and the client random state compared.
+- **Defects found and fixed** (#41's translation): upstream's `sin`, `cos`, `sqrt`, `atan2`, `fabs` of a `Real` are C's
+  double functions (MSVC's C headers), the expression rounded once, and the port had them in float: the hover's
+  rudder and elevator correction (7,125 of 20,000 sequences differed), its climb pitch `atan2(vz, sqrt(...))` (1,240),
+  and the wheels' `m_totalZ += fabs(h)/divisor` (1,904, max 1 ULP). After the fixes 0 mismatches (16,430,593 words).
+  The module's claim that they were the float overloads is struck through.
+- **Plants** 9891-9915: 25 of 25 caught (the first 9914, an airborne copy upstream overwrites in the same draw, could not
+  be observed and was replaced). See the test's header.
+
 **#182 item 1 (2026-11-13, GitHub #182): the logic's instance matrices reach the drawable.**
 - **Found:** the logic emitted `DrawableSetInstanceTranslation` (StructureCollapseUpdate), `DrawableFloatTilt`
   (FloatUpdate) and `DrawableSetInstanceMatrix` (NeutronMissileUpdate), and the client consumed none of them, so the
