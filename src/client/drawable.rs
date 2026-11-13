@@ -168,7 +168,9 @@ pub struct Drawable {
     /// `m_locoInfo` (GitHub #41): made by the first physics model that runs ([`Drawable::calc_physics_xform`]).
     pub loco_info: Option<super::drawable_loco::DrawableLocoInfo>,
     /// The last draw's `applyPhysicsXform` totals, for the client to put on the drawn model (`None`: none applied).
-    /// New: upstream applies them to the draw's transform matrix in place.
+    /// ~~New: upstream applies them to the draw's transform matrix in place.~~ **Corrected 2026-11-13 (#179 item 3):**
+    /// they are applied to the draw's transform matrix as upstream applies them ([`Drawable::draw_transform_mtx`], the
+    /// root every `doDrawModule` gets); kept here too for the renderer ([`Drawable::draw_local_matrix`]).
     pub physics_xform: Option<super::drawable_loco::PhysicsXformInfo>,
     /// The members upstream's drawable saves that the port's does not use, and the ambient sound's saved part (GitHub
     /// #59, [`super::drawable_save`]).
@@ -254,6 +256,45 @@ impl Drawable {
                 dm.scale = value;
             }
         }
+    }
+
+    /// (#179) `setInstanceMatrix(instance)` (Drawable.cpp:4281-4293): with a matrix, `m_instance` is it and not the
+    /// identity; without (`NULL`), `m_instance` is made the identity and flagged so.
+    pub fn set_instance_matrix(&mut self, instance: Option<&Matrix3D>) {
+        match instance {
+            Some(m) => {
+                self.saved.instance = *m;
+                self.saved.instance_is_identity = plant(9855);
+            }
+            None => {
+                self.saved.instance.make_identity();
+                self.saved.instance_is_identity = true;
+            }
+        }
+    }
+
+    /// (#179) The transform `Drawable::draw` hands every `doDrawModule` (Drawable.cpp:2662-2673) for this drawable's
+    /// transform `transform` (`*getTransformMatrix()`: its object's, see [`ClientDrawables::draw`]): [`draw_transform_mtx`]
+    /// with this drawable's instance matrix (`m_instance` unless `isInstanceIdentity()`) and this draw's
+    /// `applyPhysicsXform` totals ([`Drawable::physics_xform`], which [`Drawable::apply_physics_xform`] set just before).
+    pub fn draw_transform_mtx(&self, transform: &Matrix3D) -> Matrix3D {
+        let instance = (!self.saved.instance_is_identity || plant(9854)).then_some(&self.saved.instance);
+        draw_transform_mtx(transform, instance, self.physics_xform.as_ref())
+    }
+
+    /// (#179) The part of [`Drawable::draw_transform_mtx`] after the drawable's own transform, for the client's renderer
+    /// (new: the Bevy app draws the object at its interpolated position and orientation and puts this after it):
+    /// [`draw_transform_mtx`] of the identity, `None` when it is the identity (no instance matrix and no physics
+    /// totals). Upstream has no such part: its render object takes the whole matrix ([`Drawable::draw_transform_mtx`],
+    /// which the live bones follow); this is the same product to the renderer's precision, not bit for bit.
+    pub fn draw_local_matrix(&self) -> Option<Matrix3D> {
+        if self.saved.instance_is_identity && self.physics_xform.is_none() {
+            return None;
+        }
+        if plant(9856) {
+            return self.physics_xform.map(|x| x.local_matrix());
+        }
+        Some(self.draw_transform_mtx(&Matrix3D::IDENTITY))
     }
 
     /// (#174) Each module's `W3DModelDrawModuleData::getAttachToDrawableBoneOffset(this)` (W3DModelDraw.cpp:1148-1174),
@@ -838,8 +879,10 @@ impl ClientDrawables {
                     self.drawable(w, *source, assets, sync_time);
                     let mut handled = None;
                     if let (Some(d), Ok(wslot)) = (self.drawables.get_mut(source), usize::try_from(*weapon_slot)) {
-                        // (#172) the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s): the
-                        // object's, or without one the drawable's saved transform
+                        // (#172) ~~the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s)~~
+                        // **Corrected 2026-11-13 (#179 item 3):** the drawable's transform (`getTransformMatrix()`, as
+                        // `reactToTransformChange` reads it; the draw's root adds the instance matrix and the physics):
+                        // the object's, or without one the drawable's saved transform
                         let transform = match w.find_object(*source) {
                             Some(o) => *o.thing.transform_matrix(),
                             None => d.saved.transform,
@@ -1162,8 +1205,11 @@ impl ClientDrawables {
             show_client_physics,
             wheel_info,
             // (#171) the render object's transform (`Set_Transform(mtx)`) as the port places it: the object's transform
-            // matrix (the scale is the skeleton's); the identity without an object
+            // matrix (the scale is the skeleton's); the identity without an object. (#179 item 3) `getTransformMatrix()`
+            // only: `ClientDrawables::draw` replaces it with the draw's root (`Drawable::draw_transform_mtx`: the
+            // instance matrix and `applyPhysicsXform` on it)
             transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
+            drawable_transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
             construction: Self::construction(w, id),
         }
     }
@@ -1204,7 +1250,9 @@ impl ClientDrawables {
     /// fully obscured by the shroud (GitHub #45), else its
     /// `applyPhysicsXform` (GitHub #41, [`Drawable::apply_physics_xform`]), give its
     /// modules the flags if dirty (`getDrawModules`, from the client: not a
-    /// valid time for the logic's bones) and `doDrawModule`; then the scene's
+    /// valid time for the logic's bones) and `doDrawModule` (#179 item 3: with the
+    /// draw's root, [`Drawable::draw_transform_mtx`]: the object's transform, the
+    /// instance matrix and the physics totals); then the scene's
     /// render step (the animation advances, unless the render object is hidden;
     /// a drawable not effectively hidden, with a render object, drawn clear of
     /// the shroud marks the frame, `setShroudClearFrame`). Last, the particle
@@ -1240,7 +1288,12 @@ impl ClientDrawables {
                 // `applyPhysicsXform(&transformMtx)`, before the draw modules (GitHub #41)
                 let xform = physics_xform_facts(w, id);
                 d.apply_physics_xform(&xform, &mut self.random);
-                let facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
+                let mut facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
+                // (#179 item 3) `transformMtx`: the drawable's transform, its instance matrix and this draw's physics
+                // totals, in upstream's order (Drawable.cpp:2662-2673)
+                if !plant(9857) {
+                    facts.transform = d.draw_transform_mtx(&facts.drawable_transform);
+                }
                 let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
                 // (#174) the modules' `AttachToBoneInAnotherModule` offsets, which `adjustTransformMtx` reads (filled once)
                 let orientation = w.find_object(id).map_or(0.0, |o| o.thing.orientation());
@@ -1308,6 +1361,50 @@ enum ClientUpdateCall {
     SetDecayFrames(u32),
 }
 
+/// (#179) `Drawable::draw`'s transform for the draw modules (Drawable.cpp:2662-2673):
+///
+/// ```text
+/// Matrix3D transformMtx = *getTransformMatrix();
+/// if (!isInstanceIdentity())
+///     transformMtx.postMul(*getInstanceMatrix());   // NO_ALLOW_TEMPORARIES (matrix3d.h:79)
+/// applyPhysicsXform(&transformMtx);
+/// ```
+///
+/// `transform` is the drawable's transform, `instance` its instance matrix when it is not flagged the identity, and
+/// `physics` the totals `applyPhysicsXform` applies (`None` when it returns before them: no object, `DISABLED_HELD`,
+/// no `ShowClientPhysics`, or `calcPhysicsXform` false; [`Drawable::apply_physics_xform`]), put on in its order
+/// ([`PhysicsXformInfo::apply`]: `Translate(0, 0, totalZ)`, `Rotate_Y(totalPitch)`, `Rotate_X(-totalRoll)`,
+/// `Rotate_Z(totalYaw)`). Checked against the upstream text compiled verbatim (`tests/differential_model_draw_particles.rs`).
+///
+/// [`PhysicsXformInfo::apply`]: super::drawable_loco::PhysicsXformInfo::apply
+pub fn draw_transform_mtx(transform: &Matrix3D, instance: Option<&Matrix3D>, physics: Option<&super::drawable_loco::PhysicsXformInfo>) -> Matrix3D {
+    let mut transform_mtx = *transform;
+    if plant(9870) {
+        // the root before #179: the drawable's transform alone
+        return transform_mtx;
+    }
+    if plant(9848) {
+        if let Some(p) = physics {
+            p.apply(&mut transform_mtx);
+        }
+    }
+    if let Some(i) = instance {
+        if !plant(9846) {
+            if plant(9847) {
+                transform_mtx.pre_mul(i);
+            } else {
+                transform_mtx.post_mul(i);
+            }
+        }
+    }
+    if let Some(p) = physics {
+        if !plant(9849) && !plant(9848) {
+            p.apply(&mut transform_mtx);
+        }
+    }
+    transform_mtx
+}
+
 /// (#165) A drawable's position as the port keeps it: its object's (`Thing::getPosition`), or, without one, its saved
 /// transform's translation.
 fn drawable_position(w: &World, d: &Drawable) -> Coord3D {
@@ -1367,8 +1464,7 @@ impl SwayHost for DrawableClientHost<'_> {
     }
     fn set_instance_matrix(&mut self, m: &Matrix3D) {
         // `setInstanceMatrix(&m)` (Drawable.cpp:4281-4293)
-        self.drawable.saved.instance = *m;
-        self.drawable.saved.instance_is_identity = false;
+        self.drawable.set_instance_matrix(Some(m));
     }
     fn object_burned(&self) -> bool {
         self.world.find_object(self.drawable.object_id).is_some_and(|o| o.test_status(super::sway_client_update::BURNED))
@@ -1387,8 +1483,10 @@ impl AnimatedParticleSysBoneHost for DrawableClientHost<'_> {
         true
     }
     fn update_bones_for_client_particle_systems(&mut self, i: usize) -> bool {
-        // (#171) the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s): the object's, or
-        // without one the drawable's saved transform
+        // (#171) ~~the render object's transform as the draw sets it (`ClientDrawables::draw_facts`'s)~~ **Corrected
+        // 2026-11-13 (#179 item 3):** the drawable's transform (`getTransformMatrix()`, as `reactToTransformChange` reads
+        // it; the draw's root adds the instance matrix and the physics): the object's, or without one the drawable's
+        // saved transform
         let transform = match self.world.find_object(self.drawable.object_id) {
             Some(o) => *o.thing.transform_matrix(),
             None => self.drawable.saved.transform,
@@ -1866,6 +1964,54 @@ mod tests {
     /// words of at least one module (its cache was not valid), which is the write the draw used to make.
     ///
     /// *Results (2026-11-06), first run:* all held.
+    /// (#179 item 3) `Drawable::draw`'s root reaches the render object (Drawable.cpp:2662-2673, W3DModelDraw.cpp:2094-2100).
+    ///
+    /// *Predictions (issue179i3_predictions.md, before the run):* with the instance matrix a turn of 0.3 about Z and a
+    /// lift of 5 (`setInstanceMatrix`), the gate object's render object after a draw is the object's transform
+    /// post-multiplied by it, then this draw's physics totals if any (the module has no attach bone, no height flag, scale
+    /// 1); the module keeps the object's transform for `nukeCurrentRender`; the renderer's local matrix is the instance
+    /// matrix then the totals; `setInstanceMatrix(NULL)` gives the identity, flagged, and the renderer's local matrix is
+    /// the totals alone (or none). Plants 9853, 9855, 9856 and 9857 each fail it.
+    ///
+    /// *Results (2026-11-13), first run:* all held. Plants 9846, 9847, 9853, 9855, 9856, 9857 and 9870 each fail it;
+    /// 9849 (no physics on the root) does not: the gate object has no physics totals here (the differential test and the
+    /// client's truck test cover the physics).
+    #[test]
+    fn the_draw_root_carries_the_instance_matrix_and_the_physics() {
+        let (w, mut c, id) = gate_with_a_transition_module();
+        let mut inst = Matrix3D::IDENTITY;
+        inst.rotate_z(0.3);
+        inst.translate(0.0, 0.0, 5.0);
+        let d = c.drawables.get_mut(&id).unwrap();
+        d.set_instance_matrix(Some(&inst));
+        assert!(!d.saved.instance_is_identity);
+        c.draw(&w, &mut NoAssets, 33);
+        let d = &c.drawables[&id];
+        let object = *w.find_object(id).unwrap().thing.transform_matrix();
+        let mut expected = object;
+        expected.post_mul(&inst);
+        if let Some(p) = &d.physics_xform {
+            p.apply(&mut expected);
+        }
+        assert_ne!(expected, object);
+        assert_eq!(d.draw_modules[0].render_object.as_ref().unwrap().transform, expected, "the render object's transform is the draw's root");
+        assert_eq!(d.draw_transform_mtx(&object), expected);
+        assert_eq!(d.draw_modules[0].drawable_transform, object, "nukeCurrentRender's transform is the drawable's");
+        let mut local = inst;
+        if let Some(p) = &d.physics_xform {
+            p.apply(&mut local);
+        }
+        assert_eq!(d.draw_local_matrix(), Some(local));
+
+        let d = c.drawables.get_mut(&id).unwrap();
+        d.set_instance_matrix(None);
+        assert!(d.saved.instance_is_identity);
+        assert_eq!(d.saved.instance, Matrix3D::IDENTITY);
+        assert_eq!(d.draw_local_matrix(), d.physics_xform.map(|p| p.local_matrix()));
+        // the free function: no instance, no physics is the drawable's transform
+        assert_eq!(draw_transform_mtx(&object, None, None), object);
+    }
+
     #[test]
     fn the_draw_reads_the_speed_without_writing_the_physics_cache() {
         use crate::logic::world::module_call::ModuleCall;

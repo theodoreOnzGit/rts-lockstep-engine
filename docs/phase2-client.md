@@ -124,6 +124,26 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#179 item 3 (2026-11-13, GitHub #179): the draw's root carries the instance matrix and the physics.**
+- **Translated:** `Drawable::draw`'s root (Drawable.cpp:2662-2673): the drawable's transform post-multiplied by its
+  instance matrix unless flagged the identity, then `applyPhysicsXform`'s `Translate`, `Rotate_Y`, `Rotate_X`,
+  `Rotate_Z` (`client::drawable::draw_transform_mtx`, `Drawable::draw_transform_mtx`); `setInstanceMatrix`
+  (Drawable.cpp:4281-4293, `Drawable::set_instance_matrix`, which the sway host now calls). `ClientDrawables::draw`
+  hands that root to every `doDrawModule` (`DrawFacts::transform`), so the render object's `Set_Transform` and the
+  draw's live bones (the bone particle systems, the turret and recoil captures) carry the pitch, roll, bounce and the
+  sway as upstream's do. `DrawFacts::drawable_transform` keeps `getTransformMatrix()` apart for `nukeCurrentRender`.
+- **The renderer:** the Bevy app puts `Drawable::draw_local_matrix` (the instance matrix, then the physics) after the
+  object's interpolated transform (`WorldDrawables::draw_xform`, formerly `physics_xform`). The physics is applied once:
+  the drawn model is posed under the identity root and never reads `RenderObj::transform`. The sway's tilt is drawn for
+  the first time.
+- **Left as it was:** a bone query outside a draw still puts the render object at the drawable's transform first
+  (`reactToTransformChange`'s, no instance matrix or physics), upstream's answer only for an object the logic moved
+  since the last draw (#179 item 3's gaps).
+- **Results:** `differential_model_draw_particles` (the root, `applyPhysicsXform`, `setInstanceMatrix` and
+  `PhysicsXformInfo` cut verbatim; new ops for the root, the instance matrix and the totals): main 0 mismatches over
+  20,000 (406,777 steps), any scale 0 over 20,000 (409,698 steps); the pre-fix root mismatches 7,363 of 20,000; 12 of
+  12 plants caught (9846-9857). See the test's header for the full numbers.
+
 **#180 (2026-11-13, GitHub #180): the drawn pose takes upstream's render-object path.**
 - **Translated:** animobj.h's inline `Animatable3DObjClass::Anim_Update` (animobj.h:256-268): a raw animation
   (`CLASSID_HRAWANIM`) through `HTreeClass`'s raw fast path at one integer frame (`Float_To_Long(frame)`), the others
@@ -257,7 +277,9 @@ first frame.** The logic's change is described in `docs/phase1-porting-graph.md`
   them),~~ and the instance matrix the sway sets is not yet applied by the renderer. **Corrected 2026-11-12 (#168):**
   `W3DLaserDraw` is translated (the laser width is the template's) and the beams' drawables are made from the logic's
   `ClientNewDrawable` / `ClientDestroyDrawable` and given `LaserDrawInit` and `LaserSetDecayFrames` (see #168 below). **Corrected 2026-11-12 (#171):** the bone particle systems are made, moved, stopped and destroyed (see #171
-  above), so `AnimatedParticleSysBoneClientUpdate` moves real systems.
+  above), so `AnimatedParticleSysBoneClientUpdate` moves real systems. **Corrected 2026-11-13 (#179 item 3):** the
+  instance matrix the sway sets is applied: in the draw's root (`Drawable::draw_transform_mtx`, so the render object and
+  its live bones carry it) and by the renderer (`Drawable::draw_local_matrix`, after the object's transform).
 
 **#157 (2026-11-12, GitHub #157, #92, #94): the skirmish battle honours, the map preview, the insert-disc prompt and
 three tooltips.**

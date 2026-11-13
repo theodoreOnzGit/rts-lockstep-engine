@@ -826,8 +826,9 @@ fn sync_objects(
             None => b.clone(),
         };
         let mut transform = Transform::from_translation(Vec3::from(to_bevy(o.pos))).with_rotation(Quat::from_rotation_y(o.angle));
-        // the drawable's client-side physics (#41, `applyPhysicsXform`): suspension, pitch and roll, in the model's frame
-        if let Some(x) = g.models.physics_xform(b.id) {
+        // the drawable's client-side physics (#41, `applyPhysicsXform`): suspension, pitch and roll, in the model's frame;
+        // (#179 item 3) after its instance matrix (the sway's), as `Drawable::draw` orders them
+        if let Some(x) = g.models.draw_xform(b.id) {
             transform = Transform::from_matrix(transform.to_matrix() * crate::model::to_bevy_matrix(&x));
         }
         let mut instance = g.models.instance(b.id);

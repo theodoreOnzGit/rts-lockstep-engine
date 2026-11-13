@@ -141,14 +141,27 @@ impl PhysicsXformInfo {
     /// The transform part of `applyPhysicsXform(mtx)`: `Translate(0, 0, totalZ)`, `Rotate_Y(totalPitch)`,
     /// `Rotate_X(-totalRoll)`, `Rotate_Z(totalYaw)`, each a post-multiplication (in the model's own frame).
     pub fn apply(&self, mtx: &mut Matrix3D) {
-        mtx.translate(0.0, 0.0, self.total_z);
-        mtx.rotate_y(self.total_pitch);
-        mtx.rotate_x(-self.total_roll);
+        use crate::logic::modules::plant;
+        if !plant(9852) {
+            mtx.translate(0.0, 0.0, self.total_z);
+        }
+        if plant(9851) {
+            mtx.rotate_x(-self.total_roll);
+            mtx.rotate_y(self.total_pitch);
+        } else {
+            mtx.rotate_y(self.total_pitch);
+            mtx.rotate_x(if plant(9850) { self.total_roll } else { -self.total_roll });
+        }
         mtx.rotate_z(self.total_yaw);
+        if plant(9852) {
+            mtx.translate(0.0, 0.0, self.total_z);
+        }
     }
 
-    /// [`PhysicsXformInfo::apply`] to the identity: the transform in the model's frame, for a caller that has the
-    /// object's own transform apart (the client's Bevy entity).
+    /// [`PhysicsXformInfo::apply`] to the identity: the transform in the model's frame. ~~for a caller that has the
+    /// object's own transform apart (the client's Bevy entity).~~ **Corrected 2026-11-13 (#179 item 3):** the client's
+    /// renderer now takes [`crate::client::drawable::Drawable::draw_local_matrix`] (the instance matrix, then this);
+    /// the draw modules take the whole root ([`crate::client::drawable::draw_transform_mtx`]).
     pub fn local_matrix(&self) -> Matrix3D {
         let mut m = Matrix3D::IDENTITY;
         self.apply(&mut m);
@@ -829,8 +842,9 @@ impl Drawable {
     }
 
     /// `applyPhysicsXform(&transformMtx)` as `Drawable::draw` calls it (see the module docs): this draw's totals kept in
-    /// [`Drawable::physics_xform`] (for the client to put on the drawn model, [`PhysicsXformInfo::apply`]), `None` when
-    /// none applies (no object, held, `ShowClientPhysics` off, the drawable hidden, or no model ran).
+    /// [`Drawable::physics_xform`] (for the client to put on the drawn model, [`PhysicsXformInfo::apply`]; **#179 item
+    /// 3:** and put on the draw's root by [`Drawable::draw_transform_mtx`], as upstream puts them on `transformMtx`),
+    /// `None` when none applies (no object, held, `ShowClientPhysics` off, the drawable hidden, or no model ran).
     pub fn apply_physics_xform(&mut self, facts: &PhysicsXformFacts, random: &mut RandomValues) {
         self.physics_xform = if !facts.apply || self.hidden { None } else { self.calc_physics_xform(facts, random) };
     }

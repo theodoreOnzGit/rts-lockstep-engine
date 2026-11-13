@@ -91,7 +91,21 @@
 **     getCurrentBonePositions(PREFIXES[a1 % 7], start word 2, positions NULL if word 4 is 0, transforms NULL if word 5 is
 **     0, maxBones word 3) into 64-entry arrays, recorded as [300, count, then for each of min(count, 64): the position's
 **     3 words (0 if NULL) and the transform's 12 (0 if NULL)]. Each state record ends with [render object present, its
-**     Transform's 12 words, ObjectScale] (zeros without one). */
+**     Transform's 12 words, ObjectScale] (zeros without one).
+**   (#179 item 3, Drawable::draw's root) Cut verbatim too, from GameEngine/Source/GameClient/Drawable.cpp:
+**     mp_draw_root.inc      `Drawable::draw` from `// call the database defined draw action method` to its end
+**                           (2660-2680: the instance matrix's postMul, applyPhysicsXform, every doDrawModule);
+**     mp_apply_physics.inc  `applyPhysicsXform` (1388-1410);
+**     mp_set_instance.inc   `setInstanceMatrix` (4281-4293);
+**   and from GameEngine/Include/GameClient/Drawable.h: mp_physics_info.inc, `struct PhysicsXformInfo` (613-621).
+**   Stand-ins: the drawable's `m_instance`, `m_instanceIsIdentity`, `getInstanceMatrix`, `isInstanceIdentity`
+**   (Drawable.h:400-402), `getDrawModules` (the case's module behind a recorder of the root it is handed),
+**   `calcPhysicsXform` (the case's answer and totals: the locomotor models are drawable_loco.rs's, not compared here),
+**   the object's `isDisabledByType` (never held), `TheGlobalData->m_showClientPhysics` (on) and the view's and script
+**   engine's time freezes (none). The drawable starts as `setInstanceMatrix(NULL)` with no physics. New ops: 11 the
+**   drawable's transform = the 12 words, then `Drawable::draw` from its root (recorded as [400, the root's 12 words]
+**   before the module's doDrawModule); 12 `setInstanceMatrix(a1 ? &words : NULL)`; 13 `calcPhysicsXform` answers a1
+**   with totals pitch, roll, yaw, z = words 2..5 for the next draws. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -138,6 +152,8 @@ enum DrawableStatus { DRAWABLE_STATUS_NO_STATE_PARTICLES = 0x00000008 };
 
 /* (#174) the object adjustTransformMtx and reactToTransformChange read */
 enum ObjectStatusTypes { OBJECT_STATUS_STEALTHED = 1 };
+/* (#179 item 3) GameEngine/Include/Common/DisabledTypes.h's DisabledType, the one value applyPhysicsXform names */
+enum DisabledType { DISABLED_HELD = 6 };
 class GeometryInfo
 {
 public:
@@ -154,9 +170,34 @@ public:
 	const GeometryInfo& getGeometryInfo() const { return m_geometryInfo; }
 	Bool testStatus( ObjectStatusTypes ) const { abort(); return FALSE; }
 	Bool isSignificantlyAboveTerrain() const { abort(); return FALSE; }
+	/* (#179 item 3) applyPhysicsXform's DISABLED_HELD test: never held here (the port's gate is
+	** physics_xform_facts', read from the World) */
+	Bool isDisabledByType( DisabledType ) const { return FALSE; }
 };
 Object g_object;
 Bool g_hasObject;
+
+/* (#179 item 3) what applyPhysicsXform reads besides the object: ShowClientPhysics (on), the tactical view's and the
+** script engine's time freezes (none: the port's client has no frozen time, drawable_loco.rs's module docs) */
+struct GlobalData { Bool m_showClientPhysics; };
+GlobalData g_globalData = { TRUE };
+GlobalData *TheGlobalData = &g_globalData;
+struct View
+{
+	Bool isTimeFrozen() const { return FALSE; }
+	Bool isCameraMovementFinished() const { return TRUE; }
+};
+View g_view;
+View *TheTacticalView = &g_view;
+struct ScriptEngine
+{
+	Bool isTimeFrozenDebug() const { return FALSE; }
+	Bool isTimeFrozenScript() const { return FALSE; }
+};
+ScriptEngine g_scriptEngine;
+ScriptEngine *TheScriptEngine = &g_scriptEngine;
+/* the draw module list Drawable::draw walks: the case's W3DModelDraw behind a recorder of the root it is handed */
+class DrawModule;
 Bool g_attachFound;
 Matrix3D g_attachMtx;
 
@@ -180,6 +221,21 @@ public:
 	const Coord3D *getPosition() const { return &m_pos; }
 	const Matrix3D *getTransformMatrix() const { return &m_transform; }
 	Object *getObject() const { return g_hasObject ? &g_object : NULL; }
+	/* (#179 item 3) Drawable.h:400-402, 611-623 (PhysicsXformInfo cut) and the members m_instance, m_instanceIsIdentity */
+	Matrix3D m_instance;
+	Bool m_instanceIsIdentity;
+	void setInstanceMatrix( const Matrix3D *instance );
+	const Matrix3D *getInstanceMatrix( void ) const { return &m_instance; }
+	inline Bool isInstanceIdentity() const { return m_instanceIsIdentity; }
+	void applyPhysicsXform(Matrix3D* mtx);
+#include "mp_physics_info.inc"
+	/* calcPhysicsXform: the case's answer (its totals, and whether a locomotor appearance ran); the models themselves
+	** are drawable_loco.rs's, not compared here */
+	Bool calcPhysicsXform(PhysicsXformInfo& info);
+	DrawModule *m_modules[2];
+	DrawModule** getDrawModules() { return m_modules; }
+	/* Drawable::draw from its root on (the cut), with the early returns before it taken */
+	void drawRoot();
 	/* (#174) the case's attach bone, as the drawable's pristine bones answer it for (name, 0, NULL, &mtx, 1) */
 	Int getPristineBonePositions(const char*, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
 	{
@@ -533,6 +589,34 @@ public:
 #include "mp_current_bones.inc"
 #include "mp_react.inc"
 
+/* (#179 item 3) */
+Bool g_physicsHas;
+Drawable::PhysicsXformInfo g_physicsInfo;
+Bool Drawable::calcPhysicsXform(PhysicsXformInfo& info)
+{
+	info = g_physicsInfo;
+	return g_physicsHas;
+}
+#include "mp_apply_physics.inc"
+#include "mp_set_instance.inc"
+class DrawModule
+{
+public:
+	W3DModelDraw *m_draw;
+	/* the root recorded as [400, its 12 words], then the module's doDrawModule */
+	void doDrawModule( const Matrix3D* transformMtx )
+	{
+		rec({400});
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 4; ++c) rec({bits((*transformMtx)[r][c])});
+		m_draw->doDrawModule(transformMtx);
+	}
+};
+DrawModule g_drawModule;
+void Drawable::drawRoot()
+{
+#include "mp_draw_root.inc"
+
 Matrix3D matrix(const int *w)
 {
 	Matrix3D m(true);
@@ -564,6 +648,10 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 	g_drawable.m_hidden = FALSE;
 	g_drawable.m_status = 0;
 	g_drawable.m_transform.Make_Identity();
+	/* (#179 item 3) Drawable's constructor: setInstanceMatrix(NULL); no physics until the case says */
+	g_drawable.setInstanceMatrix(NULL);
+	g_physicsHas = FALSE;
+	g_physicsInfo = Drawable::PhysicsXformInfo();
 	g_data.m_particlesAttachedToAnimatedBones = in[k++] != 0;
 	/* (#174) */
 	g_data.m_attachToDrawableBone = in[k++] ? "attachbone" : "";
@@ -612,6 +700,9 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 		}
 	}
 	W3DModelDraw *draw = new W3DModelDraw();
+	g_drawModule.m_draw = draw;
+	g_drawable.m_modules[0] = &g_drawModule;
+	g_drawable.m_modules[1] = NULL;
 	draw->state();
 	for (int st = k; st + 13 < nin; st += 14) {
 		const int *a = in + st;
@@ -654,6 +745,29 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 			}
 			break;
 		case 9: g_drawable.m_scale = real(a[2]); break;
+		case 11:
+			/* (#179 item 3) Drawable::draw with the drawable's transform = the words: its root (the instance matrix,
+			** applyPhysicsXform) recorded and handed to doDrawModule */
+			g_drawable.m_transform = matrix(a + 2);
+			g_drawable.drawRoot();
+			break;
+		case 12:
+			/* (#179 item 3) setInstanceMatrix(a1 ? &words : NULL) (SwayClientUpdate's, FloatUpdate's, ...) */
+			if (a[1]) {
+				Matrix3D m = matrix(a + 2);
+				g_drawable.setInstanceMatrix(&m);
+			} else {
+				g_drawable.setInstanceMatrix(NULL);
+			}
+			break;
+		case 13:
+			/* (#179 item 3) the next draws' calcPhysicsXform: answers a1, totals pitch, roll, yaw, z = words 2..5 */
+			g_physicsHas = a[1] != 0;
+			g_physicsInfo.m_totalPitch = real(a[2]);
+			g_physicsInfo.m_totalRoll = real(a[3]);
+			g_physicsInfo.m_totalYaw = real(a[4]);
+			g_physicsInfo.m_totalZ = real(a[5]);
+			break;
 		case 10: {
 			Coord3D pos[64];
 			Matrix3D mtx[64];

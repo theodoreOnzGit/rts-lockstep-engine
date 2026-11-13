@@ -281,7 +281,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             let p = o.get_position();
             let mut world = Matrix3D::from_translation(&rts_lockstep_engine::ww::vector3::Vector3::new(p.x, p.y, p.z));
             world.rotate_z(o.thing.orientation());
-            if let Some(x) = self.physics_xform(id) {
+            if let Some(x) = self.draw_xform(id) {
                 world = Matrix3D::multiply(&world, &x);
             }
             if let Some((_, m)) = self.instances.get_mut(&id) {
@@ -337,7 +337,7 @@ impl<D: LocalDevice> WorldDrawables<D> {
             }
             let mut world = Matrix3D::from_translation(&Vector3::new(o.pos[0], o.pos[1], o.pos[2]));
             world.rotate_z(o.angle);
-            if let Some(x) = self.physics_xform(id) {
+            if let Some(x) = self.draw_xform(id) {
                 world = Matrix3D::multiply(&world, &x);
             }
             let basis_of = |m: &Matrix3D| {
@@ -494,8 +494,13 @@ impl<D: LocalDevice> WorldDrawables<D> {
     /// The last draw's client-side physics transform of the object's drawable, in the model's own frame (GitHub #41,
     /// `Drawable::applyPhysicsXform`: the suspension's height, pitch, roll and yaw, `PhysicsXformInfo::apply` to the
     /// identity), for the app to put after the object's own transform; `None` when none applied.
-    pub fn physics_xform(&self, id: ObjectId) -> Option<Matrix3D> {
-        self.drawables.drawables.get(&id)?.physics_xform.map(|x| x.local_matrix())
+    /// **Corrected 2026-11-13 (#179 item 3):** renamed from `physics_xform`: the drawable's instance matrix (the sway's,
+    /// never drawn before), then the physics transform, as `Drawable::draw` puts them on its root
+    /// (`Drawable::draw_local_matrix`); `None` when both are the identity. The draw modules' render objects take the
+    /// whole root themselves (the live bones follow it); the app's posed model is posed under the identity, so this is
+    /// applied once.
+    pub fn draw_xform(&self, id: ObjectId) -> Option<Matrix3D> {
+        self.drawables.drawables.get(&id)?.draw_local_matrix()
     }
 
     /// Each object's render model made (when its model changes) and posed at its animation's frame
@@ -1482,7 +1487,14 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
     /// - the runner turns left (`TURN_POSITIVE`) to face its goal: on some frame the front tire's control is steered left
     ///   (its Z rotation above 0.01), never more than the turn angle, 20 degrees;
     /// - accelerating from rest pitches the chassis nose up: the total pitch is below 0 on some frame of the first ten;
-    /// - the posed model's front-left tire is not where it was made (its control is on the drawn model).
+    /// - the posed model's front-left tire is not where it was made (its control is on the drawn model);
+    /// - (#179 item 3, predicted before the run) the render object's transform is the draw's root
+    ///   (`Drawable::draw_transform_mtx`: the object's transform with the physics totals on it) on all 200 frames, and
+    ///   differs from the object's own on some; the renderer's local matrix (`draw_xform`) is the physics alone (no
+    ///   instance matrix).
+    ///
+    /// *Results (2026-11-13, #179 item 3):* held: the render object at the draw's root on 200 of 200 frames, the physics
+    /// moving it off the object's own transform on all 200.
     ///
     /// *Results (2026-11-06), first run:* all held. CRCs equal over 200 frames; a physics transform and wheel info on all
     /// 200 frames; 195 units driven (the path is longer than the straight line's 116.6), front tires at 39.000076 rad
@@ -1510,6 +1522,8 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
             let start = w.find_object(truck).unwrap().get_position();
             let (mut crcs, mut xformed, mut max_steer, mut min_steer, mut early_pitch, mut wheel_frames) = (Vec::new(), 0, 0.0f32, 0.0f32, 0.0f32, 0);
             let (mut rotation, mut distance, mut prev_pos, mut moved_tire) = (0.0f32, 0.0f32, start, false);
+            // (#179 item 3) frames whose render object is at the draw's root, and those of them the physics moved
+            let (mut at_root, mut physics_moved) = (0, 0);
             for f in 1..=200u32 {
                 w.logic_update().expect("a frame");
                 let ev = w.take_client_events();
@@ -1529,6 +1543,21 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
                         wheel_frames += 1;
                     }
                     let m = &dr.draw_modules[0];
+                    // (#179 item 3) `Set_Transform` of the draw's root (the module's scale on it; no attach bone, no
+                    // height flag), and the renderer's local matrix the same totals
+                    let object_tm = *w.find_object(truck).unwrap().thing.transform_matrix();
+                    let mut root = dr.draw_transform_mtx(&object_tm);
+                    if m.scale != 1.0 {
+                        root.scale(m.scale);
+                    }
+                    let ro = m.render_object.as_ref().unwrap();
+                    if ro.transform == root {
+                        at_root += 1;
+                        if root != object_tm {
+                            physics_moved += 1;
+                        }
+                    }
+                    assert_eq!(d.draw_xform(truck), dr.physics_xform.map(|x| x.local_matrix()), "no instance matrix: the physics alone");
                     let Some(rts_lockstep_engine::client::w3d_truck_draw::TruckKind::Truck(t)) = &m.truck else { panic!("a truck draw") };
                     rotation = t.front_wheel_rotation;
                     if let Some(c) = m.render_object.as_ref().unwrap().bone_controls.get(&1) {
@@ -1550,13 +1579,15 @@ UniformAxialDamping = 1.0\n BounceAmount = 30\n AccelerationPitchLimit = 10\n De
                 }
                 crcs.push(w.logic_crc(CRC_RECALC, None).expect("the CRC"));
             }
-            (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire)
+            (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire, at_root, physics_moved)
         };
         let (plain, ..) = play(false);
-        let (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire) = play(true);
+        let (crcs, xformed, wheel_frames, rotation, distance, max_steer, min_steer, early_pitch, moved_tire, at_root, physics_moved) = play(true);
         println!(
-            "xformed {xformed} wheel frames {wheel_frames} rotation {rotation} distance {distance} steer [{min_steer}, {max_steer}] early pitch {early_pitch} tire moved {moved_tire}"
+            "xformed {xformed} wheel frames {wheel_frames} rotation {rotation} distance {distance} steer [{min_steer}, {max_steer}] early pitch {early_pitch} tire moved {moved_tire} at root {at_root} physics moved {physics_moved}"
         );
+        assert_eq!(at_root, 200, "the render object is at the draw's root on every drawn frame");
+        assert!(physics_moved > 0, "the physics moved the render object");
         assert_eq!(crcs, plain);
         assert_eq!((xformed, wheel_frames), (200, 200));
         assert!(distance >= 116.0, "{distance}");

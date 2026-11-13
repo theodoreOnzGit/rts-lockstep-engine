@@ -154,6 +154,37 @@
 //! words); any scale 0 over 20,000 (407,905 steps, 44,672 systems, 2,291 NaN words, 165 NaN-payload-only): the #174
 //! numbers. The animated pose itself is checked in `tests/differential_w3d.rs` (`animatable_bones_match_upstream`).
 //!
+//! # #179 item 3 (2026-11-13): `Drawable::draw`'s root
+//!
+//! Upstream hands every `doDrawModule` the drawable's transform post-multiplied by its instance matrix (unless flagged
+//! the identity), with `applyPhysicsXform`'s `Translate`, `Rotate_Y`, `Rotate_X`, `Rotate_Z` on it (Drawable.cpp:2662-2673,
+//! cut verbatim with `applyPhysicsXform`, `setInstanceMatrix` and Drawable.h's `PhysicsXformInfo`). New ops: 11 (12 %)
+//! `Drawable::draw` with the drawable's transform the 12 words (drawn as op 1's): the root is recorded
+//! ([400, 12 words]) and handed to `doDrawModule`; the port's side is `Drawable::draw_transform_mtx` with the drawable's
+//! physics totals (none without an object, as `physics_xform_facts`' `apply`) and [`DrawFacts::drawable_transform`] the
+//! words. 12 (4 %) `setInstanceMatrix`: `NULL` 1 in 4, else a sway's tilt (about X and Y), a float's lift and turn, the
+//! identity (flagged not), or any matrix (`Gen::mixed` 1 in 10 in the second test); the port's
+//! `Drawable::set_instance_matrix`. 13 (4 %) `calcPhysicsXform`'s answer (false 1 in 5) and totals (pitch and roll in
+//! -0.6..0.6, yaw in -0.3..0.3, z in -3..3; all 0 one in 8; `Gen::mixed` 1 in 10 each in the second test). The other ops'
+//! shares shrink (setModelState 11 %, doDrawModule 18 %, ...); the random stream is new, so the step and system counts
+//! are new numbers. The locomotor models themselves (`calcPhysicsXform*`) are not compared here (no differential covers
+//! them yet: #179 item 3's gaps).
+//!
+//! Predicted (`issue179i3_predictions.md`, before any run): 0 mismatches in both tests after the fix; the pre-fix root
+//! (plant 9870) 9,000 - 13,000 of 20,000; plants 9846-9857 caught (9854 not in the main test, 9856 and 9857 only by the
+//! lib test).
+//!
+//! - **First run (2026-11-13):** main **0 mismatches** over 20,000 (406,777 steps, 47,070 systems, 122 NaN words, max
+//!   ULP 0); any scale **0** over 20,000 (409,698 steps, 47,435 systems, 3,034 NaN words, 134 NaN-payload-only,
+//!   normalised; max ULP 0).
+//! - **The pre-fix root** (9870: the drawable's transform alone, as `ClientDrawables::draw` gave it before):
+//!   **7,363** of 20,000 mismatch. **A prediction miss** on the size (I predicted 9,000 - 13,000).
+//! - Plants, mismatching of 20,000: 9846 4,491; 9847 4,490; 9848 1,387; 9849 4,373; 9850 4,374; 9851 4,373; 9852 4,373;
+//!   9853 417; 9854 8 (**a prediction miss**: I predicted 0 here; the identity's post-multiply turns a `-0.0` entry
+//!   into `+0.0`, `-0 * 1 + x * 0 + y * 0`); 9855 4,491; 9856 and 9857 0 here (the renderer's matrix and
+//!   `ClientDrawables::draw` are not reached), caught by the lib test
+//!   `the_draw_root_carries_the_instance_matrix_and_the_physics`. **12 of 12 caught.**
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose):
@@ -212,11 +243,26 @@
 //! | 9764 | (#174) `getCurrentBonePositions` reads the bone under the identity, not the render object's transform |
 //! | 9765 | (#174) `getCurrentBonePositions` post-multiplies the inverse |
 //! | 9766 | (#174) `getCurrentBonePositions`' positions have z 0 |
+//! | 9846 | (#179 item 3) the draw's root ignores the instance matrix |
+//! | 9847 | (#179 item 3) the instance matrix is pre-multiplied |
+//! | 9848 | (#179 item 3) the physics is applied before the instance matrix |
+//! | 9849 | (#179 item 3) the physics totals are never applied to the root |
+//! | 9850 | (#179 item 3) `Rotate_X(+roll)` |
+//! | 9851 | (#179 item 3) the Y and X rotations swapped |
+//! | 9852 | (#179 item 3) the Z translation after the rotations |
+//! | 9853 | (#179 item 3) `nukeCurrentRender`'s drawable transform is the draw's root |
+//! | 9854 | (#179 item 3) the instance matrix is multiplied even when flagged the identity |
+//! | 9855 | (#179 item 3) `setInstanceMatrix(m)` leaves the identity flag set |
+//! | 9856 | (#179 item 3) the renderer's local matrix ignores the instance matrix (lib test) |
+//! | 9857 | (#179 item 3) `ClientDrawables::draw` hands the modules the drawable's transform (lib test) |
+//! | 9870 | (#179 item 3) the pre-fix root: the drawable's transform alone |
 
 mod support;
 
 use std::sync::Arc;
 
+use rts_lockstep_engine::client::drawable::Drawable;
+use rts_lockstep_engine::client::drawable_loco::PhysicsXformInfo;
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
 use rts_lockstep_engine::client::w3d_model_draw::{scale_render_obj_hierarchy, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, StateRef, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource};
 use rts_lockstep_engine::formats::w3d::htree::{HTree, Pivot};
@@ -366,23 +412,30 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
     // ~~only at scale 1~~ (#172) at any scale
     for _ in 0..1 + g.below(40) {
         let mut s = [0i32; STEP];
-        // (#174) the captures (8), the instance scale (9) and getCurrentBonePositions (10)
+        // (#174) the captures (8), the instance scale (9) and getCurrentBonePositions (10); (#179 item 3) the draw's
+        // root (11), the instance matrix (12) and the physics totals (13)
         let op = match g.below(100) {
-            0..=11 => 0,
-            12..=36 => 1,
-            37..=48 => 2,
-            49..=55 => 3,
-            56..=62 => 4,
-            63..=67 => 5,
-            68..=72 => 6,
-            73..=78 => 7,
-            79..=88 => 8,
-            89..=91 => 9,
-            _ => 10,
+            0..=10 => 0,
+            11..=28 => 1,
+            29..=38 => 2,
+            39..=44 => 3,
+            45..=50 => 4,
+            51..=54 => 5,
+            55..=58 => 6,
+            59..=63 => 7,
+            64..=71 => 8,
+            72..=73 => 9,
+            74..=79 => 10,
+            80..=91 => 11,
+            92..=95 => 12,
+            _ => 13,
         };
         s[0] = op;
         s[1] = match op {
             3 | 4 | 6 => (g.below(2) == 0) as i32,
+            // (#179 item 3) setInstanceMatrix(NULL) 1 in 4; calcPhysicsXform answers false 1 in 5
+            12 => (g.below(4) != 0) as i32,
+            13 => (g.below(5) != 0) as i32,
             _ => g.below(1000) as i32,
         };
         if op == 8 {
@@ -412,7 +465,39 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
             s[4] = (g.below(4) != 0) as i32;
             s[5] = (g.below(4) != 0) as i32;
         }
-        if op == 1 || op == 2 || op == 7 {
+        if op == 12 && s[1] != 0 {
+            // a sway's tilt (SwayClientUpdate: about X and Y), a float's bob (a lift and a turn), the identity (flagged
+            // not), or any matrix
+            let mut m = Matrix3D::IDENTITY;
+            match g.below(4) {
+                0 => {
+                    m.rotate_x(g.uniform(-0.2, 0.2));
+                    m.rotate_y(g.uniform(-0.2, 0.2));
+                }
+                1 => {
+                    m.translate(0.0, 0.0, g.uniform(-3.0, 3.0));
+                    m.rotate_z(g.uniform(-0.3, 0.3));
+                }
+                2 => {}
+                _ => {
+                    let odd = if any_scale && g.below(10) == 0 { Odd::Any } else { Odd::None };
+                    m = matrix(&matrix_words(g, -2.0, 2.0, 10.0, odd));
+                }
+            }
+            for row in 0..3 {
+                for c in 0..4 {
+                    s[2 + row * 4 + c] = b(m.row[row][c]);
+                }
+            }
+        } else if op == 13 {
+            // the totals: pitch, roll, yaw, z (all 0 one in 8; `Gen::mixed` one in 10 each in the second test)
+            if g.below(8) != 0 {
+                for (i, (lo, hi)) in [(-0.6f32, 0.6f32), (-0.6, 0.6), (-0.3, 0.3), (-3.0, 3.0)].into_iter().enumerate() {
+                    s[2 + i] = b(if any_scale && g.below(10) == 0 { g.mixed() } else { g.uniform(lo, hi) });
+                }
+            }
+        }
+        if op == 1 || op == 2 || op == 7 || op == 11 {
             let odd = if any_scale {
                 if g.below(10) == 0 { Odd::Any } else { Odd::None }
             } else if g.below(20) == 0 {
@@ -611,6 +696,9 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
     let states: Vec<usize> = STATE_BITS[..nstates].iter().map(|bit| data.find_best_info(&flags(bit)).expect("a state")).collect();
     let mut random = RandomValues::new(1);
     let mut out = Vec::new();
+    // (#179 item 3) the drawable (its instance matrix and physics totals) and the case's `calcPhysicsXform` answer
+    let mut d = Drawable::bare(1, b"T".to_vec());
+    let mut physics: Option<PhysicsXformInfo> = None;
     let mut m = {
         let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
         W3DModelDraw::new_scaled(data.clone(), 0, false, false, scale, Arc::new(Vec::new()), &mut env).expect("an idle state")
@@ -636,6 +724,7 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     show_client_physics: true,
                     wheel_info: None,
                     transform: matrix(&s[2..]),
+                    drawable_transform: matrix(&s[2..]),
                     construction,
                 };
                 let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
@@ -683,6 +772,41 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
             }
             // (#174) `setInstanceScale` (`Drawable::set_instance_scale`: the modules' `getScale()`)
             9 => m.scale = r(s[2]),
+            11 => {
+                // (#179 item 3) `Drawable::draw`: `applyPhysicsXform`'s totals are the drawable's for this draw
+                // (`Drawable::apply_physics_xform`: none without an object, `physics_xform_facts`' `apply`), then the root
+                // (`Drawable::draw_transform_mtx`) handed to `doDrawModule` as `ClientDrawables::draw` hands it
+                let world = matrix(&s[2..]);
+                d.physics_xform = if has_object { physics } else { None };
+                let root = d.draw_transform_mtx(&world);
+                out.push(400);
+                for row in 0..3 {
+                    for c in 0..4 {
+                        out.push(b(root.row[row][c]));
+                    }
+                }
+                let facts = DrawFacts {
+                    should_animate_with_power: true,
+                    should_animate_without_power: true,
+                    speed: None,
+                    turrets: [None, None],
+                    motion: None,
+                    show_client_physics: true,
+                    wheel_info: None,
+                    transform: root,
+                    drawable_transform: world,
+                    construction,
+                };
+                let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
+                m.do_draw_module(&facts, &mut env);
+            }
+            12 => {
+                let mtx = matrix(&s[2..]);
+                d.set_instance_matrix(if s[1] != 0 { Some(&mtx) } else { None });
+            }
+            13 => {
+                physics = (s[1] != 0).then_some(PhysicsXformInfo { total_pitch: r(s[2]), total_roll: r(s[3]), total_yaw: r(s[4]), total_z: r(s[5]) });
+            }
             10 => {
                 let mut pos = [Coord3D::default(); 64];
                 let mut mtx = [Matrix3D::IDENTITY; 64];

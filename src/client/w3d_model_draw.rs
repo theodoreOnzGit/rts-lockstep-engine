@@ -204,9 +204,20 @@
 //!   `Render` progresses and then evaluates ([`RenderObj::render`]). Where the port may only read a render object (another
 //!   drawable's bone for a laser, the FX lists' bones), it answers without writing the state upstream's query writes
 //!   ([`RenderObj::peek_bone_transform`]: #179's gaps). Checked against animobj.cpp compiled verbatim
-//!   (`tests/differential_w3d.rs`, `animatable_bones_match_upstream`). `applyPhysicsXform`'s
+//!   (`tests/differential_w3d.rs`, `animatable_bones_match_upstream`). ~~`applyPhysicsXform`'s
 //!   pitch, roll and bounce and the drawable's instance matrix (Drawable.cpp:2663-2674) are not in the draw's root
-//!   either ([`crate::client::drawable::Drawable::physics_xform`] is kept apart for the renderer).
+//!   either ([`crate::client::drawable::Drawable::physics_xform`] is kept apart for the renderer).~~ **Corrected
+//!   2026-11-13 (#179 item 3):** they are: `Drawable::draw`'s root is the drawable's transform post-multiplied by its
+//!   instance matrix (unless flagged the identity), then `applyPhysicsXform`'s `Translate`, `Rotate_Y`, `Rotate_X`,
+//!   `Rotate_Z` ([`crate::client::drawable::draw_transform_mtx`], [`DrawFacts::transform`]), so the render object's
+//!   transform at a draw and every live bone the draw reads (the bone particle systems, the turret and recoil
+//!   captures) carry them, as upstream's do (`tests/differential_model_draw_particles.rs`, the upstream text compiled
+//!   verbatim). A bone query outside a draw (the weapon's fire FX, a laser's bone, the animated particle bones' client
+//!   update, the FX lists' bones) still puts the render object at the drawable's transform first, as
+//!   `reactToTransformChange` does (no instance matrix, no physics): upstream's answer only when the logic moved the
+//!   object since the last draw; for one it did not move, upstream's render object keeps the draw's root (#174's and
+//!   #179's gaps). The client's renderer puts [`crate::client::drawable::Drawable::draw_local_matrix`] (the instance
+//!   matrix, then the physics) after the object's interpolated transform; it never reads [`RenderObj::transform`].
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
 //!   weapon barrels), turret and recoil posing, sub-object hide and show,
@@ -3138,8 +3149,14 @@ pub struct DrawFacts {
     /// `updateBonesForClientParticleSystems` chains the bones from. The object's transform matrix ([`crate::client::drawable::ClientDrawables::draw_facts`]).
     /// **Corrected 2026-11-13 (#174):** this is the drawable's transform (`transformMtx`); the render object's is made
     /// from it by `doDrawModule` (the instance scale and `adjustTransformMtx`, [`RenderObj::transform`]), which the
-    /// bones chain from.
+    /// bones chain from. ~~the drawable's transform~~ **Corrected 2026-11-13 (#179 item 3):** `transformMtx` is
+    /// `Drawable::draw`'s root (Drawable.cpp:2662-2673, [`crate::client::drawable::draw_transform_mtx`]): the drawable's
+    /// transform ([`DrawFacts::drawable_transform`]) with its instance matrix and `applyPhysicsXform`'s pitch, roll and
+    /// bounce on it.
     pub transform: Matrix3D,
+    /// (#179 item 3) `*getDrawable()->getTransformMatrix()` (the object's transform, without the instance matrix or the
+    /// physics): what [`W3DModelDraw::drawable_transform`] keeps for `nukeCurrentRender`.
+    pub drawable_transform: Matrix3D,
     /// (#174) The object's `getConstructionPercent()` and `getGeometryInfo().getMaxHeightAbovePosition()`, which
     /// `adjustTransformMtx` reads for a state flagged `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`; `None` without an object.
     pub construction: Option<(f32, f32)>,
@@ -3371,7 +3388,8 @@ pub struct W3DModelDraw {
     /// false unless a caller sets it.
     pub drawable_no_state_particles: bool,
     /// (#174) `*getDrawable()->getTransformMatrix()` as the module was last given it ([`W3DModelDraw::do_draw_module`]'s
-    /// [`DrawFacts::transform`], [`W3DModelDraw::react_to_transform_change`]): what `nukeCurrentRender(&transform)`
+    /// ~~[`DrawFacts::transform`]~~ **Corrected 2026-11-13 (#179 item 3):** [`DrawFacts::drawable_transform`] (the
+    /// draw's root, [`DrawFacts::transform`], is not the drawable's transform), [`W3DModelDraw::react_to_transform_change`]): what `nukeCurrentRender(&transform)`
     /// (W3DModelDraw.cpp:2811-2816) hands a new render object when there was no old one. Upstream reads the drawable's
     /// current transform there; the module has no drawable to read, so the last one it was given (the identity before
     /// any).
@@ -3788,7 +3806,8 @@ impl W3DModelDraw {
         let should_animate = if self.data.animations_require_power { facts.should_animate_with_power } else { facts.should_animate_without_power };
         self.set_pause_animation(!should_animate, env.sync_time);
 
-        self.drawable_transform = facts.transform;
+        // (#179 item 3) `getDrawable()->getTransformMatrix()`, not `transformMtx`
+        self.drawable_transform = if plant(9853) { facts.transform } else { facts.drawable_transform };
         let mut transform_mtx = facts.transform;
         if self.scale != 1.0 && !plant(9755) {
             // do custom scaling of the W3D model.
@@ -4890,7 +4909,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY, construction: None };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY, drawable_transform: Matrix3D::IDENTITY, construction: None };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -5387,7 +5406,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             {
                 let mut a = W3dFiles { assets: &mut rig.am, fs: &rig.fs };
                 let mut env = DrawEnv { assets: &mut a, random: &mut rig.random, sync_time: 0, logic_time: false, particles: None };
-                m.do_draw_module(&DrawFacts { transform: world, ..FACTS }, &mut env);
+                m.do_draw_module(&DrawFacts { transform: world, drawable_transform: world, ..FACTS }, &mut env);
             }
             let r = m.render_object.as_ref().unwrap();
             let mut scaled = world;
@@ -6205,7 +6224,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         assert!(m.need_recalc_bone_particle_systems && m.particle_system_ids.is_empty());
         let mut world = Matrix3D::IDENTITY;
         world.set_translation(&crate::ww::vector3::Vector3::new(100.0, 0.0, 0.0));
-        let facts = DrawFacts { transform: world, ..FACTS };
+        let facts = DrawFacts { transform: world, drawable_transform: world, ..FACTS };
         m.do_draw_module(&facts, &mut env);
         drop(env);
         assert!(!m.need_recalc_bone_particle_systems);

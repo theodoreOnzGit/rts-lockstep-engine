@@ -721,6 +721,7 @@ mod tests {
             show_client_physics: true,
             wheel_info,
             transform: crate::ww::matrix3d::Matrix3D::IDENTITY,
+            drawable_transform: crate::ww::matrix3d::Matrix3D::IDENTITY,
             construction: None,
         }
     }

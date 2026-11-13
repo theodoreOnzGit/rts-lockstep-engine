@@ -2850,8 +2850,10 @@ mod differential {
             // scale_epsilon. GitHub #174: W3DModelDraw.h's CACHE_ATTACH_BONE; W3DModelDraw.cpp's ACBits,
             // getAttachToDrawableBoneOffset, adjustTransformMtx, doDrawModule's instance scale and Set_Transform,
             // getCurrentBonePositions and reactToTransformChange; pivot.cpp's PivotClass::Capture_Update; htree.cpp's
-            // Capture_Bone, Release_Bone, Is_Bone_Captured and Control_Bone. No text is edited. Each anchor must occur
-            // once. Linked before upstream_xfer and upstream_wwmath, which it calls.
+            // Capture_Bone, Release_Bone, Is_Bone_Captured and Control_Bone. GitHub #179 item 3: Drawable.cpp's
+            // Drawable::draw root (the instance matrix and applyPhysicsXform's call, to the end of draw),
+            // applyPhysicsXform and setInstanceMatrix; Drawable.h's PhysicsXformInfo. No text is edited. Each anchor must
+            // occur once. Linked before upstream_xfer and upstream_wwmath, which it calls.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_model_draw_particles.cpp");
                 let ge = up.join("GameEngine");
@@ -2877,6 +2879,9 @@ mod differential {
                 let htree_h = read_upstream(ww.join("WW3D2/htree.h"));
                 let am = read_upstream(gd.join("Source/W3DDevice/GameClient/W3DAssetManager.cpp"));
                 let pivot = read_upstream(ww.join("WW3D2/pivot.cpp"));
+                // (#179 item 3) Drawable::draw's root, applyPhysicsXform, setInstanceMatrix, Drawable.h's PhysicsXformInfo
+                let dr = read_upstream(ge.join("Source/GameClient/Drawable.cpp"));
+                let dr_h = read_upstream(ge.join("Include/GameClient/Drawable.h"));
                 let files = [
                     ("mp_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", Some(("#define MAX_VOLUME_PARTICLE_DEPTH", false)))),
                     ("mp_tracker.inc", piece(&md_h, "W3DModelDraw.h", "\tstruct ParticleSysTrackerType\n", Some(("\ttypedef std::vector<WeaponRecoilInfo>", false)))),
@@ -2952,6 +2957,23 @@ mod differential {
                     (
                         "mp_htree_capture.inc",
                         piece(&htree, "htree.cpp", "void HTreeClass::Capture_Bone(int boneindex)", Some(("void HTreeClass::Get_Bone_Control(int boneindex, Matrix3D & relative_tm) const", false))),
+                    ),
+                    // GitHub #179 item 3
+                    (
+                        "mp_draw_root.inc",
+                        piece(&dr, "Drawable.cpp", "\t// call the database defined draw action method\n", Some(("static Bool computeHealthRegion( const Drawable *draw, IRegion2D& region )", false))),
+                    ),
+                    (
+                        "mp_apply_physics.inc",
+                        piece(&dr, "Drawable.cpp", "void Drawable::applyPhysicsXform(Matrix3D* mtx)", Some(("Bool Drawable::calcPhysicsXform(PhysicsXformInfo& info)", false))),
+                    ),
+                    (
+                        "mp_set_instance.inc",
+                        piece(&dr, "Drawable.cpp", "void Drawable::setInstanceMatrix( const Matrix3D *instance ) ", Some(("const Matrix3D *Drawable::getTransformMatrix( void ) const", false))),
+                    ),
+                    (
+                        "mp_physics_info.inc",
+                        piece(&dr_h, "Drawable.h", "\tstruct PhysicsXformInfo\n", Some(("\tBool calcPhysicsXform(PhysicsXformInfo& info);", false))),
                     ),
                 ];
                 let gen = out_dir.join("model_draw_particles_gen");
