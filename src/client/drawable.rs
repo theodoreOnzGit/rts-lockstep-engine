@@ -1320,6 +1320,9 @@ impl ClientDrawables {
             transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
             drawable_transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
             construction: Self::construction(w, id),
+            // (#184 item 1) the freeze the tank and truck draws test, the expression applyPhysicsXform's gates hold
+            frozen: super::drawable_loco::PhysicsXformGates::of(w, id).frozen() && !plant(9936),
+            has_object: w.find_object(id).is_some(),
         }
     }
 
@@ -1984,6 +1987,10 @@ mod tests {
     /// *Results (2026-11-13), first run:* all held. Plants 9925, 9926, 9927 and 9928 each fail it, as predicted; so do
     /// 9916-9920, 9922, 9924 and 9929 (the gates themselves). 9921 (the call order) and 9923 (`ShowClientPhysics`, never
     /// off in the gate's World) do not: the truth-table test and the differentials catch those.
+    ///
+    /// (#184 item 1) Also [`PhysicsXformGates::frozen`] and [`DrawFacts::frozen`] (`draw_facts`): frozen by the script's
+    /// freeze, not by `DISABLED_HELD`. *Prediction, written before the run:* plant 9936 (the draw facts' freeze not
+    /// read) fails it. *Result (2026-11-13):* held, and 9936 fails it.
     #[test]
     fn the_physics_gates_read_the_worlds_time_freezes() {
         use crate::client::drawable_loco::{physics_xform_facts, PhysicsXformGates};
@@ -1991,9 +1998,13 @@ mod tests {
         assert_eq!(PhysicsXformGates::of(&w, id), PhysicsXformGates::OPEN);
         assert!(physics_xform_facts(&w, id).gates.passes());
 
+        assert!(!ClientDrawables::draw_facts(&w, id, true, None).frozen);
         w.script_engine.do_freeze_time();
         let g = PhysicsXformGates::of(&w, id);
         assert!(g.time_frozen_script && !g.passes(), "a script froze time: {g:?}");
+        // (#184 item 1) the draw modules' freeze is the same expression, read with the same gates
+        assert!(g.frozen());
+        assert!(ClientDrawables::draw_facts(&w, id, true, None).frozen, "the tank and truck draws see the freeze");
         assert_eq!(physics_xform_facts(&w, id).gates, g);
         c.draw(&w, &mut NoAssets, 33);
         assert!(c.drawables[&id].physics_xform.is_none());
@@ -2015,6 +2026,8 @@ mod tests {
         w.set_disabled(id, crate::common::disabled_types::DISABLED_HELD);
         let g = PhysicsXformGates::of(&w, id);
         assert!(g.held && !g.passes(), "{g:?}");
+        // (#184 item 1) held is not frozen: the tank and truck draws do not test it
+        assert!(!g.frozen() && !ClientDrawables::draw_facts(&w, id, true, None).frozen);
 
         let g = PhysicsXformGates::of(&w, crate::common::game_type::INVALID_ID);
         assert!(!g.has_object && !g.passes());

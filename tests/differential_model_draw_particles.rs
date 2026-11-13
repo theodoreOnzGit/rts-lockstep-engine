@@ -835,6 +835,8 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     transform: matrix(&s[2..]),
                     drawable_transform: matrix(&s[2..]),
                     construction,
+                    frozen: false,
+                    has_object,
                 };
                 let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
                 m.do_draw_module(&facts, &mut env);
@@ -906,6 +908,8 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     transform: root,
                     drawable_transform: world,
                     construction,
+                    frozen: false,
+                    has_object,
                 };
                 let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
                 m.do_draw_module(&facts, &mut env);

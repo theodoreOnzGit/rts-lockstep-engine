@@ -68,9 +68,14 @@
 //!   2026-11-06 (GitHub #44):** the client's particle systems exist, `crate::client::particle_sys`, but these draws do
 //!   not create theirs yet: `createEmitters`, `enableEmitters` and the speed multipliers are the remaining step). They
 //!   change nothing that is drawn here.
-//! - Time frozen is not checked ~~(the client has none yet)~~, as for the tank. **Corrected 2026-11-13 (#182 item 3):**
-//!   the client reads the World's freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`); these modules'
-//!   own `frozen` tests (W3DTruckDraw.cpp:399-400, W3DTankTruckDraw.cpp:513-514) are not translated yet.
+//! - ~~Time frozen is not checked~~ ~~(the client has none yet)~~, ~~as for the tank.~~ **Corrected 2026-11-13 (#182 item 3):**
+//!   the client reads the World's freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`); ~~these modules'
+//!   own `frozen` tests (W3DTruckDraw.cpp:399-400, W3DTankTruckDraw.cpp:513-514) are not translated yet.~~
+//!   **Corrected 2026-11-13 (#184 item 1):** these modules' own `frozen` tests (W3DTruckDraw.cpp:399-401,
+//!   W3DTankTruckDraw.cpp:513-515, [`DrawFacts::frozen`]) are translated, as upstream places them: after the base
+//!   class's draw and the `ShowClientPhysics` return, before anything of their own (no bone search, no wheel, cab or
+//!   trailer rotation, no bone control, `m_isPowersliding` left as it was, and the tank truck's treads neither searched
+//!   nor scrolled).
 //! - The tank truck's locomotor speed: without an AI upstream dereferences null; here its treads do not move then.
 
 use crate::common::random_value::RandomValues;
@@ -78,6 +83,7 @@ use crate::ww::matrix3d::Matrix3D;
 use crate::ww::wwmath;
 
 use crate::formats::w3d::render::AnimMode;
+use crate::logic::modules::plant;
 
 use super::w3d_model_draw::{
     find_tread_objects, DrawEnv, DrawFacts, DrawModuleExtra, RenderObj, TreadObjectInfo, TruckFields, W3DModelDraw, W3dAssetSource,
@@ -258,6 +264,14 @@ impl TruckDraw {
         if !facts.show_client_physics {
             return;
         }
+        // (#184 item 1) Bool frozen = ...; if (frozen) return; (W3DTruckDraw.cpp:399-401)
+        if facts.frozen && !plant(9938) && !plant(9943) {
+            return;
+        }
+        // (#184 item 1) get object from logic: `if (obj == NULL) return;`, before the bone search (W3DTruckDraw.cpp:405-407)
+        if !facts.has_object && !plant(9946) {
+            return;
+        }
         if id != self.prev_render_obj {
             // ("shouldn't update bones. jba")
             self.update_bones(f, r, id);
@@ -267,7 +281,7 @@ impl TruckDraw {
         let mut speed = m.velocity_magnitude;
         let wheel_info = facts.wheel_info; // note, can return null!
 
-        if self.cab_bone != 0 {
+        if self.cab_bone != 0 && !(plant(9943) && facts.frozen) {
             if let Some(wheel_info) = &wheel_info {
                 let mut cab_xfrm = Matrix3D::IDENTITY;
                 let mut desired_angle = wheel_info.wheel_angle * real(f, "CabRotationMultiplier");
@@ -420,6 +434,14 @@ impl TankTruckDraw {
         if !facts.show_client_physics {
             return;
         }
+        // (#184 item 1) Bool frozen = ...; if (frozen) return; (W3DTankTruckDraw.cpp:513-515)
+        if facts.frozen && !plant(9939) && !plant(9942) {
+            return;
+        }
+        // (#184 item 1) `if (obj == NULL) return;`, before the bone and tread searches (W3DTankTruckDraw.cpp:519-521)
+        if !facts.has_object && !plant(9947) {
+            return;
+        }
         if id != self.prev_render_obj {
             self.update_bones(f, r, id);
             self.update_tread_objects(tread_animation_rate, Some(&mut *r), id);
@@ -486,6 +508,10 @@ impl TankTruckDraw {
 
         // the effects and sounds are not made: no powerslide effect, so never powersliding
         self.is_powersliding = false;
+        if plant(9942) && facts.frozen {
+            // the planted order: the freeze stops only the treads
+            return;
+        }
 
         //Update movement of treads
         if !self.treads.is_empty() {
@@ -560,6 +586,10 @@ impl W3DModelDraw {
                 r.set_animation(Some(anim), *cur_frame, AnimMode::Manual, env.sync_time);
             }
             // (the dynamic light's colour from the frame is not drawn: no dynamic lights)
+        }
+        if plant(9941) && facts.frozen {
+            // the planted order: the freeze before the base class's draw
+            return;
         }
         self.model_draw_do_draw_module(facts, env);
         let id = self.render_obj_id();
@@ -725,6 +755,8 @@ mod tests {
             transform: crate::ww::matrix3d::Matrix3D::IDENTITY,
             drawable_transform: crate::ww::matrix3d::Matrix3D::IDENTITY,
             construction: None,
+            frozen: false,
+            has_object: true,
         }
     }
 
@@ -1038,6 +1070,46 @@ mod tests {
         assert_eq!(m.render_object.as_ref().unwrap().model_name, b"trucku");
         assert_eq!((t.front_left_tire_bone, t.rear_right_tire_bone), (FL, RR));
         assert!(t.treads.is_empty());
+    }
+
+    /// (#184 item 1) The trucks' `frozen` returns (W3DTruckDraw.cpp:399-401, W3DTankTruckDraw.cpp:513-515).
+    ///
+    /// *Predictions, written before the first run:* a frozen first draw of the truck finds no bones, turns no tire and
+    /// controls no bone, but the base class's draw still runs (the render object takes the draw's transform); the
+    /// tank truck's frozen draw finds neither bones nor treads; the next unfrozen draw of each spins the tires by one
+    /// step (1 rad) and the tank truck's treads by one rate step. *Results (2026-11-13), first run:* all held.
+    #[test]
+    fn frozen_trucks_turn_nothing() {
+        let mut rig = Rig::new();
+        let level = Some(TWheelInfo::default());
+        let mut frozen = facts(Some(motion(2.0, false, None)), level);
+        frozen.frozen = true;
+        frozen.transform.set_translation(&crate::ww::vector3::Vector3::new(5.0, 0.0, 0.0));
+
+        let mut m = rig.draw("W3DTruckDraw", "TRUCKT", None, TIRES);
+        rig.frame(&mut m, &frozen);
+        let t = truck(&m);
+        assert_eq!((t.front_left_tire_bone, t.front_wheel_rotation, t.rear_wheel_rotation, t.prev_render_obj), (0, 0.0, 0.0, None));
+        assert!(m.render_object.as_ref().unwrap().bone_controls.is_empty());
+        assert_eq!(m.render_object.as_ref().unwrap().transform, frozen.transform, "frozen: the base class's draw still ran");
+        rig.frame(&mut m, &facts(Some(motion(2.0, false, None)), level));
+        assert_eq!((truck(&m).front_left_tire_bone, truck(&m).front_wheel_rotation), (FL, 1.0));
+        assert_eq!(ctl(&m, FL), Some(rot_y(1.0)));
+
+        let mut l = TIRES.to_vec();
+        l.push((0, "TreadAnimationRate", "3"));
+        let mut m = rig.draw("W3DTankTruckDraw", "TANKRU", None, &l);
+        rig.frame(&mut m, &frozen);
+        let Some(TruckKind::TankTruck(t)) = &m.truck else { panic!("a tank truck") };
+        assert_eq!((t.front_left_tire_bone, t.front_wheel_rotation, t.prev_render_obj), (0, 0.0, None));
+        assert!(t.treads.is_empty());
+        rig.frame(&mut m, &facts(Some(motion(2.0, false, None)), level));
+        let Some(TruckKind::TankTruck(t)) = &m.truck else { panic!("a tank truck") };
+        assert_eq!((t.front_left_tire_bone, t.front_wheel_rotation), (FL, 1.0));
+        let rate = 3.0f32 * crate::common::game_common::SECONDS_PER_LOGICFRAME_REAL;
+        let mut want = -rate;
+        want -= crate::ww::wwmath::floor(want);
+        assert!(!t.treads.is_empty() && t.treads.iter().all(|x| x.custom_uv_offset == [want, 0.0]));
     }
 
     /// *Predictions, written before the first run* (rung 3, `W3DPoliceCarDraw` of `COPCAR` playing its 4-frame

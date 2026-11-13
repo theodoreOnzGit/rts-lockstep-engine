@@ -3160,6 +3160,14 @@ pub struct DrawFacts {
     /// (#174) The object's `getConstructionPercent()` and `getGeometryInfo().getMaxHeightAbovePosition()`, which
     /// `adjustTransformMtx` reads for a state flagged `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`; `None` without an object.
     pub construction: Option<(f32, f32)>,
+    /// (#184 item 1) The time freeze the tank, truck and tank truck draws test (W3DTankDraw.cpp:312-313,
+    /// W3DTruckDraw.cpp:399-400, W3DTankTruckDraw.cpp:513-514): `applyPhysicsXform`'s own expression,
+    /// [`crate::client::drawable_loco::PhysicsXformGates::frozen`], read with the same gates
+    /// ([`crate::client::drawable_loco::PhysicsXformGates::of`]).
+    pub frozen: bool,
+    /// (#184 item 1) `getDrawable()->getObject() != NULL`: the trucks return before their bone and tread searches
+    /// without one (W3DTruckDraw.cpp:405-407, W3DTankTruckDraw.cpp:519-521).
+    pub has_object: bool,
 }
 
 /// The logic's state a subclass draw module reads (`W3DTankDraw::doDrawModule`), read only: see
@@ -3237,17 +3245,26 @@ impl TankDraw {
     /// `updateTreadPositions(uvDelta)`: each tread's U offset moved by `uv_delta` (a left tread
     /// forwards, a right one backwards) and wrapped into [0, 1) (`offset - WWMath::Floor(offset)`).
     /// A middle tread: upstream's `offset_u` is not set for it (the previous tread's value, or
-    /// uninitialised for the first: undefined); here its offset is wrapped unchanged.
+    /// uninitialised for the first: undefined); ~~here its offset is wrapped unchanged.~~ **Corrected 2026-11-13
+    /// (#184 item 1):** `offset_u` is declared before the loop (W3DTankDraw.cpp:224), so after a left or right tread
+    /// a middle one takes the previous tread's value, wrapped again: defined, and translated so (the new tank and
+    /// truck differential found it). Only a middle tread first in the list reads an uninitialised `offset_u`; there
+    /// its own offset is wrapped unchanged, as before.
     pub fn update_tread_positions(&mut self, uv_delta: f32) {
+        let mut offset_u: Option<f32> = None;
         for t in &mut self.treads {
-            let mut offset_u = match t.kind {
+            let mut o = match t.kind {
                 TreadType::Left => t.custom_uv_offset[0] + uv_delta,
                 TreadType::Right => t.custom_uv_offset[0] - uv_delta,
-                TreadType::Middle => t.custom_uv_offset[0],
+                TreadType::Middle => match offset_u {
+                    Some(prev) if !plant(9945) => prev,
+                    _ => t.custom_uv_offset[0],
+                },
             };
             // ensure coordinates of offset are in [0, 1] range:
-            offset_u -= crate::ww::wwmath::floor(offset_u);
-            t.custom_uv_offset = [offset_u, 0.0];
+            o -= crate::ww::wwmath::floor(o);
+            t.custom_uv_offset = [o, 0.0];
+            offset_u = Some(o);
         }
     }
 }
@@ -3438,7 +3455,8 @@ impl W3DModelDraw {
             sub_object_vec: Vec::new(),
             weapon_recoil_info_vec: Default::default(),
             render_obj_serial: 0,
-            tank: matches!(data_extra, DrawModuleExtra::Tank(_)).then(TankDraw::new),
+            // (#184 item 1) the tank's members are made after `setModelState`, below (the planted order: before it)
+            tank: (plant(9944) && matches!(data_extra, DrawModuleExtra::Tank(_))).then(TankDraw::new),
             truck: None,
             dependency_cleared: false,
             // `m_needRecalcBoneParticleSystems = false; m_fullyObscuredByShroud = false;` (W3DModelDraw.cpp:1740-1741)
@@ -3454,6 +3472,14 @@ impl W3DModelDraw {
         // base class's `onRenderObjRecreated`, C++'s dispatch during construction): the trucks find their bones on
         // their first draw
         d.truck = TruckKind::new_for(&d.data.module_name, &d.data.extra, env.random);
+        // (#184 item 1) and so does the tank find its treads: `W3DTankDraw`'s constructor runs after the base class's
+        // (W3DTankDraw.cpp:92-110: no treads, `m_prevRenderObj` NULL), so its first unfrozen draw finds them
+        // (W3DTankDraw.cpp:317-319). Before #184 item 1 the port made the tank with the base class's members, so the
+        // constructor's `setModelState` found its treads; that shows once a frozen draw returns before the search:
+        // upstream's frozen tank has no treads (and its sub-objects no material override) yet.
+        if !plant(9944) {
+            d.tank = matches!(d.data.extra, DrawModuleExtra::Tank(_)).then(TankDraw::new);
+        }
         Ok(d)
     }
 
@@ -3984,14 +4010,24 @@ impl W3DModelDraw {
     ///   wrapped into [0, 1). The rate is per draw, not per unit of speed ("tread scrolling speed
     ///   was not directly tied into tank velocity because it looked odd").
     /// - Time frozen (`isTimeFrozen`, the script engine's freezes): ~~the client has no frozen time
-    ///   yet;~~ not checked here. **Corrected 2026-11-13 (#182 item 3):** the client reads the World's
-    ///   freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`), but this module's own
-    ///   `frozen` test (W3DTankDraw.cpp:312-313) is not translated yet.
+    ///   yet;~~ ~~not checked here.~~ **Corrected 2026-11-13 (#182 item 3):** the client reads the World's
+    ///   freezes for `applyPhysicsXform` (`drawable_loco::PhysicsXformGates`), ~~but this module's own
+    ///   `frozen` test (W3DTankDraw.cpp:312-313) is not translated yet.~~ **Corrected 2026-11-13 (#184
+    ///   item 1):** and this module's own `frozen` test (W3DTankDraw.cpp:312-315, [`DrawFacts::frozen`]) is
+    ///   translated: it is the first test, so a frozen draw returns `false` before the render object check,
+    ///   and nothing changes (no tread search, no tread offset, no `m_lastDirection`), and the base class's
+    ///   draw does not run either (upstream returns before `W3DModelDraw::doDrawModule`).
     /// - Without an AI upstream dereferences null for the locomotor speed; here the treads do not
     ///   move then.
     /// - The values sent to the render object: the treads' offsets, as the sub-objects' material
     ///   overrides (upstream's sub-objects point at them).
     fn tank_do_draw_module(&mut self, facts: &DrawFacts) -> bool {
+        // Bool frozen = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
+        // frozen = frozen || TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript();
+        // if (frozen) return;
+        if facts.frozen && !plant(9937) {
+            return plant(9940);
+        }
         if self.render_object.is_none() {
             return false;
         }
@@ -4911,7 +4947,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY, drawable_transform: Matrix3D::IDENTITY, construction: None };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY, drawable_transform: Matrix3D::IDENTITY, construction: None, frozen: false, has_object: true };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -6086,14 +6122,17 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
 
         /// *Predictions, written before the first run* (rate 3 a second is 0.1 a frame; the pivot and drive fractions
         /// are the defaults, 0.6 and 0.3; the locomotor's speed is 4):
-        /// - the render object made in the constructor gives three treads: TREADSL left (sub-object 1), TREADSR right
+        /// - ~~the render object made in the constructor gives three treads~~ **Corrected 2026-11-13 (#184 item 1):**
+        ///   the constructor finds no treads (upstream's base class constructor calls its own `onRenderObjRecreated`);
+        ///   the first draw finds three: TREADSL left (sub-object 1), TREADSR right
         ///   (2), TREADSX middle (3), offsets 0; not CHASSIS, and not TREADSNOMAP (no linear-offset mapper);
         /// - driving straight at speed v = 2 (half the locomotor's speed, above 0.3) under a motive force, every tread's
         ///   U goes down by 0.1 a draw, wrapped: 0.9, 0.8, 0.7 after three draws (to within one ulp of the same sum); the
         ///   client's render model gets those offsets on sub-objects 1 to 3 and none on 0 and 4;
         /// - at v = 1 (0.25 of the locomotor's speed, under 0.3), or at v = 2 without a motive force, nothing moves;
         /// - pivoting right (`TURN_NEGATIVE`, v = 0) with the direction turned 0.1 rad since the last draw: the left
-        ///   tread goes down by 0.1, the right one up by 0.1, the middle one not at all; a second draw facing the same
+        ///   tread goes down by 0.1, the right one up by 0.1, ~~the middle one not at all~~ **Corrected 2026-11-13 (#184 item 1):**
+        ///   the middle one (after them) to the right one's value, as upstream's `offset_u` carries; a second draw facing the same
         ///   way moves nothing; pivoting left moves them the other way;
         /// - without physics (no motion facts) `doDrawModule` returns before the base class's: an object that should not
         ///   animate is not paused;
@@ -6107,6 +6146,10 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         fn treads_scroll_with_the_tank_s_motion() {
             let mut rig = Rig::new();
             let mut m = rig.draw("3");
+            // (#184 item 1) none until the first draw, as upstream
+            assert!(offsets(&m).is_empty());
+            assert_eq!(m.tank.as_ref().unwrap().prev_render_obj, None);
+            rig.frame(&mut m, &moving(0.0, TURN_NONE, false, 0.0));
             assert_eq!(offsets(&m), vec![(LEFT, TreadType::Left, 0.0), (RIGHT, TreadType::Right, 0.0), (MIDDLE, TreadType::Middle, 0.0)]);
             // (the first run's miss: `parseVelocityReal` gives 3 * (1/30) = 0.10000001 in f32, not 0.1)
             let DrawModuleExtra::Tank(t) = &m.data.extra else { panic!("a tank") };
@@ -6133,13 +6176,13 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             let mut m = rig.draw("3");
             rig.frame(&mut m, &moving(0.0, TURN_NEGATIVE, false, 0.1));
             let down = -rate - crate::ww::wwmath::floor(-rate);
-            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, 0.0]);
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, rate]);
             rig.frame(&mut m, &moving(0.0, TURN_NEGATIVE, false, 0.1));
-            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, 0.0]);
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![down, rate, rate]);
             rig.frame(&mut m, &moving(0.0, TURN_POSITIVE, false, 0.0));
             let l = down + rate - crate::ww::wwmath::floor(down + rate);
             let r = rate - rate - crate::ww::wwmath::floor(rate - rate);
-            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![l, r, 0.0]);
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![l, r, r]);
 
             rig.frame(&mut m, &DrawFacts { should_animate_with_power: false, should_animate_without_power: false, ..FACTS });
             assert!(!m.pause_animation, "the base class's doDrawModule did not run");
@@ -6150,6 +6193,38 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
 
             let m = rig.draw("0");
             assert!(offsets(&m).is_empty());
+        }
+
+        /// (#184 item 1) `W3DTankDraw::doDrawModule`'s `frozen` return (W3DTankDraw.cpp:312-315), its first test.
+        ///
+        /// *Predictions, written before the first run:* a frozen first draw driving at v = 2 does not even find the
+        /// treads, and leaves `m_lastDirection`; a frozen pivot draw likewise; a frozen draw of an object that should not animate does not
+        /// pause it (the base class's draw does not run); the same draws unfrozen scroll by one step, turn the last
+        /// direction, and pause. *Results (2026-11-13), first run:* all held.
+        #[test]
+        fn a_frozen_tank_draws_nothing() {
+            let mut rig = Rig::new();
+            let mut m = rig.draw("3");
+            let DrawModuleExtra::Tank(t) = &m.data.extra else { panic!("a tank") };
+            let rate = t.tread_animation_rate;
+            let frozen = |f: DrawFacts| DrawFacts { frozen: true, ..f };
+            rig.frame(&mut m, &frozen(moving(2.0, TURN_NONE, true, 0.0)));
+            // not even the first draw's tread search (W3DTankDraw.cpp:317-319 is after the return)
+            assert!(offsets(&m).is_empty());
+            assert_eq!(m.tank.as_ref().unwrap().prev_render_obj, None);
+            rig.frame(&mut m, &frozen(moving(0.0, TURN_NEGATIVE, false, 0.1)));
+            assert!(offsets(&m).is_empty());
+            assert_eq!(m.tank.as_ref().unwrap().last_direction, (1.0, 0.0));
+            rig.frame(&mut m, &frozen(DrawFacts { should_animate_with_power: false, should_animate_without_power: false, ..FACTS }));
+            assert!(!m.pause_animation, "frozen: the base class's doDrawModule did not run");
+
+            rig.frame(&mut m, &moving(2.0, TURN_NONE, true, 0.0));
+            assert_eq!(offsets(&m).iter().map(|o| o.2).collect::<Vec<_>>(), vec![scrolled(1, rate); 3]);
+            rig.frame(&mut m, &moving(0.0, TURN_NEGATIVE, false, 0.1));
+            assert_ne!(m.tank.as_ref().unwrap().last_direction, (1.0, 0.0));
+            rig.frame(&mut m, &moving(0.0, TURN_NONE, false, 0.0));
+            rig.frame(&mut m, &DrawFacts { should_animate_with_power: false, should_animate_without_power: false, motion: moving(0.0, TURN_NONE, false, 0.0).motion, ..FACTS });
+            assert!(m.pause_animation, "unfrozen: the base class's doDrawModule ran");
         }
     }
 

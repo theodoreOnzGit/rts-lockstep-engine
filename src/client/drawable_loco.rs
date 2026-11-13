@@ -383,8 +383,20 @@ impl PhysicsXformGates {
         if (!self.has_object && !plant(9924)) || (self.held && !plant(9922)) || (!self.show_client_physics && !plant(9923)) {
             return false;
         }
+        !self.frozen()
+    }
+
+    /// (#184 item 1) The freeze expression alone, which `applyPhysicsXform` (Drawable.cpp:1397-1400) and the tank,
+    /// truck and tank truck draws (W3DTankDraw.cpp:312-313, W3DTruckDraw.cpp:399-400, W3DTankTruckDraw.cpp:513-514)
+    /// each write out:
+    ///
+    /// ```text
+    /// Bool frozen = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();
+    /// frozen = frozen || TheScriptEngine->isTimeFrozenDebug() || TheScriptEngine->isTimeFrozenScript();
+    /// ```
+    pub fn frozen(&self) -> bool {
         if plant(9916) {
-            return true;
+            return false;
         }
         let view = if plant(9918) {
             false
@@ -395,8 +407,11 @@ impl PhysicsXformGates {
         };
         let debug = self.time_frozen_debug && !plant(9919);
         let script = self.time_frozen_script && !plant(9920);
-        let frozen = if plant(9929) { view && (debug || script) } else { view || debug || script };
-        !frozen
+        if plant(9929) {
+            view && (debug || script)
+        } else {
+            view || debug || script
+        }
     }
 
     /// The gates for object `id`, read with `&World`: the object and its `DISABLED_HELD`, the global data's

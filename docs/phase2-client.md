@@ -124,6 +124,25 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#184 item 1 (2026-11-13, GitHub #184): the tank, truck and tank truck draws' own time freezes.**
+- **Upstream:** W3DTankDraw.cpp:312-315 tests `frozen` (Drawable.cpp:1397-1400's expression) first and returns before
+  the tread search, the debris, the tread offsets, `m_lastDirection` and the base class's `doDrawModule`.
+  W3DTruckDraw.cpp:399-401 and W3DTankTruckDraw.cpp:513-515 test it after the base draw and `ShowClientPhysics`, and
+  skip the bone (and tread) searches, the wheel, cab and trailer rotations, every bone control, the powerslide flag,
+  the emitters and sounds (and the tank truck's tread scroll). None of the three draws a client random value there.
+- **Translated:** `PhysicsXformGates::frozen` (the expression, which `passes` now calls), `DrawFacts::frozen` (filled by
+  `ClientDrawables::draw_facts` from `PhysicsXformGates::of`), and the three returns at upstream's places;
+  `DrawFacts::has_object` for the trucks' `obj == NULL` return before their searches.
+- **Defects found and fixed** (all pre-existing): the tank was made before the constructor's `setModelState`, so it
+  found its treads at construction (upstream: on its first unfrozen draw); `updateTreadPositions` wrapped a middle
+  tread's own offset instead of the carried `offset_u`; the trucks searched their bones and treads without an object.
+- **Verified:** `tests/differential_tank_truck_draw.rs` (new; `differential/wrap_tank_truck_draw.cpp` cuts the three
+  `doDrawModule` bodies and `updateTreadPositions` verbatim): 0 mismatches over 20,000 sequences, 409,893 frames
+  (172,809 frozen), 79,949,135 words. Plants 9937-9947 each caught; 9936 by the lib test
+  `the_physics_gates_read_the_worlds_time_freezes`.
+- **Not done (gaps):** the effects, sounds and tread debris (not made by the port); a render object changed between
+  draws without `setModelState`; the police car's frozen path is the truck's (not differentially tested).
+
 **#182 item 3 (2026-11-13, GitHub #182): `applyPhysicsXform`'s gates, including the time freezes.**
 - **Read upstream first:** Drawable.cpp:1388-1410 returns before `calcPhysicsXform` when there is no object, it is
   `DISABLED_HELD`, or `!m_showClientPhysics`; and then when `frozen = (TheTacticalView->isTimeFrozen() &&
@@ -175,8 +194,8 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
   The World reads 9925-9928 are 0 in both differentials and caught by the lib World test only. The truth-table test
   catches 9916-9924 and 9929.
 - **Not done (gaps):**
-  - The draw modules' own `frozen` tests (W3DTankDraw.cpp:312, W3DTruckDraw.cpp:399, W3DTankTruckDraw.cpp:513) are not
-    translated. Their docs are corrected.
+  - ~~The draw modules' own `frozen` tests (W3DTankDraw.cpp:312, W3DTruckDraw.cpp:399, W3DTankTruckDraw.cpp:513) are not
+    translated. Their docs are corrected.~~ **Corrected 2026-11-13 (#184 item 1):** translated; see that entry.
   - The client's view has no `cameraModFreezeTime` (the logic's script action is a cut).
   - The World has two stand-ins for `TheTacticalView->isTimeFrozen()`: `reads.camera_*` (`run_logic_frame`) and
     `cuts.game_loop.view_*` (`game_logic_update`). See docs/world-design.md's corrected row.
