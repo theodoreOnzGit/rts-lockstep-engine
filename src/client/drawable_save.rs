@@ -690,6 +690,12 @@ impl Drawable {
         xfer.xfer_bool(&mut s.instance_is_identity)?;
         xfer_user_matrix3d(xfer, &mut s.instance)?;
         xfer.xfer_real(&mut s.instance_scale)?;
+        // (#174) `getScale()` answers `m_instanceScale` too: the modules' copy follows a load
+        let instance_scale = s.instance_scale;
+        for dm in &mut self.draw_modules {
+            dm.scale = instance_scale;
+        }
+        let s = &mut self.saved;
         xfer.xfer_object_id(&mut s.shroud_status_object_id)?;
         if version < 2 {
             // "condition state used to be here so we must keep it here for compatibility" (read only)

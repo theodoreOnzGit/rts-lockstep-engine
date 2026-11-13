@@ -169,20 +169,36 @@
 //!   `WWMath::Fabs(scale - 1) > 0.01` (W3DAssetManager.cpp:84-85, 738) calls `rendobj->Scale(scale)` (858-859):
 //!   `HLodClass::Scale` -> `HTreeClass::Scale`, which multiplies every pivot's base *translation* by the scale
 //!   (htree.cpp:982-996; [`crate::formats::w3d::htree::HTree::scale`], [`scale_render_obj_hierarchy`]). The live
-//!   render object's transform is the drawable's (2094-2100: no template scale), and a bone is `Base_Update`'s chain
+//!   render object's transform is the drawable's ~~(2094-2100: no template scale)~~ **Corrected 2026-11-13 (#174):**
+//!   scaled by `getInstanceScale()` when that is not 1 (2045-2054), and `getInstanceScale()` is `m_instanceScale`, which
+//!   `getScale()` answers too (Drawable.h:404, Drawable.cpp:1093-1097): the template's scale *is* in the draw's root,
+//!   on top of the hierarchy's (then adjusted by `adjustTransformMtx`, 2094-2100: [`RenderObj::transform`],
+//!   [`W3DModelDraw::adjust_transform_mtx`]). Outside a draw it is `reactToTransformChange`'s, unscaled (3647-3659). A
+//!   bone is `Base_Update`'s chain
 //!   from that root, `((root * B'1) * B'2) ...` (htree.cpp:531-548, animobj.cpp:658-675, 780-802). So there are two
 //!   roots: **(A)** `Set_Transform(Matrix3D(true).Scale(getScale()))` then `Get_Bone_Transform` (the pristine bones,
 //!   669-672, and the bone systems' recalc, 2611-2617): the chain from `S` over the scaled pivots, translations scaled
 //!   twice, rotations once: [`SkeletonBone::transform`], [`RenderObj::get_bone_transform_scaled`]; **(B)** the live
 //!   transform (the bone systems' update 2698, `getCurrentWorldspaceClientBonePositions` 3564, `handleWeaponFireFX`
-//!   3727): the chain from the drawable's transform, rotations not scaled: [`Skeleton::bone_transform`],
+//!   3727): the chain from the ~~drawable's transform, rotations not scaled~~ **Corrected 2026-11-13 (#174):** render
+//!   object's transform ([`RenderObj::transform`]: in a draw the drawable's scaled by the instance scale, so at a
+//!   template scale the live bones are the pristine bones in the world): [`Skeleton::bone_transform`],
 //!   [`RenderObj::get_bone_transform`]. Both are computed as upstream computes them, in its order, so they agree
-//!   with it bit for bit at any scale (`tests/differential_model_draw_particles.rs`, gated).
+//!   with it bit for bit at any scale (`tests/differential_model_draw_particles.rs`, gated). (#174) Both apply the
+//!   render object's captured bones (`Capture_Bone`, `Control_Bone`: the turrets and the recoil,
+//!   [`Skeleton::bone_transform_controlled`]); neither applies the animation's current pose (#174's gaps).
+//! - (#174) **Not translated:** the animation's current pose in the bones (`Get_Bone_Transform` ->
+//!   `Update_Sub_Object_Transforms` -> `Anim_Update`/`Blend_Update`, animobj.cpp:780-860): the render object keeps the
+//!   animation's name, frame count, rate and frame ([`ModeAnim`]) but not its channels nor a pose source, and upstream's
+//!   evaluation also advances the frame (`Single_Anim_Progress`) when the hierarchy is not valid. `applyPhysicsXform`'s
+//!   pitch, roll and bounce and the drawable's instance matrix (Drawable.cpp:2663-2674) are not in the draw's root
+//!   either ([`crate::client::drawable::Drawable::physics_xform`] is kept apart for the renderer).
 //! - **Not translated yet** (GitHub #25's remaining work): ~~the bone caches
 //!   (`validateCachedBones`, pristine bones, public bones beyond the parse,
 //!   weapon barrels), turret and recoil posing, sub-object hide and show,
 //!   muzzle flashes, headlights, particle systems,~~ shadows, terrain decals and
-//!   tracks, the attach-to-bone offset, `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`,
+//!   tracks, ~~the attach-to-bone offset, `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`,~~
+//!   (**Corrected 2026-11-13 (#174):** both translated, [`W3DModelDraw::adjust_transform_mtx`])
 //!   the weapon fire FX lists themselves, garrison flags, and the subclasses'
 //!   runtime (~~treads,~~ tires, supplies, dependencies). ~~`validateStuff` only
 //!   marks the turret info valid.~~ **Corrected 2026-11-06 (#27):** the bone
@@ -1173,6 +1189,10 @@ pub struct W3DModelDrawModuleData {
     pub animations_require_power: bool,
     /// `m_validated` (mutable upstream).
     validated: AtomicU8,
+    /// (#174) `m_attachToDrawableBoneOffset` and `m_attachToDrawableBoneOffsetValid` (`CACHE_ATTACH_BONE`, which
+    /// W3DModelDraw.h:278 defines; mutable upstream): `None` until [`W3DModelDrawModuleData::get_attach_to_drawable_bone_offset`]
+    /// first fills it, then the offset, kept for every drawable of the template.
+    attach_to_drawable_bone_offset: Mutex<Option<crate::ww::vector3::Vector3>>,
     /// `m_particlesAttachedToAnimatedBones`.
     pub particles_attached_to_animated_bones: bool,
     /// `m_receivesDynamicLights`.
@@ -1204,6 +1224,7 @@ impl W3DModelDrawModuleData {
             ok_to_change_model_color: false,
             animations_require_power: true,
             validated: AtomicU8::new(0),
+            attach_to_drawable_bone_offset: Mutex::new(None),
             particles_attached_to_animated_bones: false,
             receives_dynamic_lights: true,
             extra,
@@ -1243,6 +1264,38 @@ impl W3DModelDrawModuleData {
         let blocks = [BlockParse { token: "Draw", parse: parse_draw_block }];
         Ini::load(b"Draw", &text, IniLoadType::Overwrite, None, &blocks, &mut data)?;
         Ok(Some(data))
+    }
+
+    /// (#174) `W3DModelDrawModuleData::getAttachToDrawableBoneOffset(draw)` (W3DModelDraw.cpp:1148-1174,
+    /// `CACHE_ATTACH_BONE`): `None` (`NULL`) without an `AttachToBoneInAnotherModule` bone; else the first call fills the
+    /// cache from `pristine` (the drawable's `getPristineBonePositions(m_attachToDrawableBone, 0, NULL, &boneMtx, 1)`:
+    /// the bone's transform when exactly one was found, its translation kept; else zero) and every call answers the
+    /// cached offset. Upstream's comment: "must use pristine bone here since the result is used by logic". `pristine`
+    /// is asked only to fill the cache.
+    pub fn get_attach_to_drawable_bone_offset(&self, pristine: impl FnOnce() -> Option<Matrix3D>) -> Option<crate::ww::vector3::Vector3> {
+        if self.attach_to_drawable_bone.is_empty() {
+            return None;
+        }
+        let mut cache = self.attach_to_drawable_bone_offset.lock().unwrap_or_else(|e| e.into_inner());
+        if cache.is_none() {
+            *cache = Some(match pristine() {
+                Some(bone_mtx) if !plant(9753) => bone_mtx.get_translation(),
+                _ => crate::ww::vector3::Vector3::new(0.0, 0.0, 0.0),
+            });
+        }
+        *cache
+    }
+
+    /// (#174) The cached `m_attachToDrawableBoneOffset` without filling it ([`W3DModelDraw::adjust_transform_mtx`]'s
+    /// read): `None` without an `AttachToBoneInAnotherModule` bone; the zero offset while not filled yet (the port's
+    /// drawable fills it before its modules draw, [`crate::client::drawable::Drawable::validate_attach_to_drawable_bone_offsets`];
+    /// a module drawn without its drawable has no pristine bones to fill it from).
+    pub fn attach_to_drawable_bone_offset_cached(&self) -> Option<crate::ww::vector3::Vector3> {
+        if self.attach_to_drawable_bone.is_empty() {
+            return None;
+        }
+        let cache = self.attach_to_drawable_bone_offset.lock().unwrap_or_else(|e| e.into_inner());
+        Some(cache.unwrap_or(crate::ww::vector3::Vector3::new(0.0, 0.0, 0.0)))
     }
 
     /// `findBestInfo(c)`: the state for the flags `c` with the ignored bits
@@ -2172,30 +2225,48 @@ impl Skeleton {
     /// `Update_Sub_Object_Transforms` (780-802) runs `HTreeClass::Base_Update(Transform)` (htree.cpp:531-548): pivot 0
     /// is `root`, each other pivot `Multiply(Parent->Transform, BaseTransform)` in index order, so the chain is
     /// computed *from the root* (`((root * B1) * B2) ...`), never as `root * (B1 * B2 ...)`. Run by the port's own
-    /// [`HTree::base_update`] over the bones' [`SkeletonBone::base`] and parents (no bone is captured here: the turret
-    /// and recoil captures are not applied, as before). Without bones, or a bone out of range (an upstream assertion),
-    /// or a hierarchy `Base_Update` cannot run (a parent out of range): `root`.
+    /// [`HTree::base_update`] over the bones' [`SkeletonBone::base`] and parents (~~no bone is captured here: the turret
+    /// and recoil captures are not applied, as before~~ **Corrected 2026-11-13 (#174):** no bone is captured in this
+    /// one; [`Skeleton::bone_transform_controlled`] applies a render object's captures). Without bones, or a bone out of
+    /// range (an upstream assertion), or a hierarchy `Base_Update` cannot run (a parent out of range): `root`.
     pub fn bone_transform(&self, root: &Matrix3D, bone: i32) -> Matrix3D {
+        self.bone_transform_controlled(root, bone, &BTreeMap::new())
+    }
+
+    /// (#174) [`Skeleton::bone_transform`] with the render object's bone captures and controls (`Capture_Bone`,
+    /// `Control_Bone`: [`RenderObj::bone_controls`]) on its pivots: `Base_Update` (htree.cpp:531-548) gives a captured
+    /// pivot, after its base pose, `PivotClass::Capture_Update()` (pivot.cpp:137-166: `Transform.postMul(CapTransform)`,
+    /// or with `WorldSpaceTranslation` the rotation part post-multiplied and the translation added), so the turret's turn
+    /// reaches every bone under it (a muzzle bone under a turret follows the turret).
+    pub fn bone_transform_controlled(&self, root: &Matrix3D, bone: i32, controls: &BTreeMap<i32, BoneControl>) -> Matrix3D {
         let n = self.bones.len();
         if n == 0 || usize::try_from(bone).map_or(true, |b| b >= n) {
             return *root;
         }
         if plant(9694) {
             let made = Skeleton { bones: self.bones.clone(), sub_objects: Vec::new() };
-            return Matrix3D::multiply(root, &made.bone_transform_base_update(&Matrix3D::IDENTITY, bone));
+            return Matrix3D::multiply(root, &made.bone_transform_base_update(&Matrix3D::IDENTITY, bone, controls));
         }
-        self.bone_transform_base_update(root, bone)
+        self.bone_transform_base_update(root, bone, controls)
     }
 
-    /// [`Skeleton::bone_transform`]'s `Base_Update(root)` and `Get_Transform(bone)`.
-    fn bone_transform_base_update(&self, root: &Matrix3D, bone: i32) -> Matrix3D {
+    /// [`Skeleton::bone_transform_controlled`]'s `Base_Update(root)` and `Get_Transform(bone)`.
+    fn bone_transform_base_update(&self, root: &Matrix3D, bone: i32, controls: &BTreeMap<i32, BoneControl>) -> Matrix3D {
         let pivots = self
             .bones
             .iter()
             .enumerate()
             .map(|(i, b)| {
                 let parent = if i == 0 { None } else if plant(9698) { Some(0) } else { u32::try_from(b.parent_index).ok() };
-                Pivot::new([0; W3D_NAME_LEN], parent, b.base, i as i32)
+                let mut p = Pivot::new([0; W3D_NAME_LEN], parent, b.base, i as i32);
+                // (#174) the pivot's `IsCaptured`, `CapTransform`, `WorldSpaceTranslation` as the render object's
+                // `Capture_Bone` and `Control_Bone` left them
+                if let Some(c) = controls.get(&(i as i32)).filter(|_| !plant(9751)) {
+                    p.is_captured = c.captured;
+                    p.cap_transform = c.transform;
+                    p.world_space_translation = c.world_space_translation;
+                }
+                p
             })
             .collect();
         let mut tree = HTree { name: [0; W3D_NAME_LEN], num_pivots: self.bones.len() as i32, pivots, scale_factor: 1.0 };
@@ -2352,6 +2423,13 @@ pub struct RenderObj {
     pub bone_controls: BTreeMap<i32, BoneControl>,
     /// Each sub-object's `Is_Hidden()` (the skeleton's sub-objects), as `Set_Hidden` left it.
     pub sub_object_hidden: Vec<bool>,
+    /// (#174) `Transform` (`Set_Transform`, `Get_Transform`): what `doDrawModule` (W3DModelDraw.cpp:2094-2100),
+    /// `reactToTransformChange` (3647-3660) and `setModelState` (3155) set it to. The identity as made.
+    pub transform: Matrix3D,
+    /// (#174) `ObjectScale` (`Set_ObjectScale`, rendobj.h:454): the drawable's instance scale, which `doDrawModule` gives
+    /// it when it is not 1 (W3DModelDraw.cpp:2052-2053); 1 as made. Kept for the renderer (upstream folds it into the
+    /// transform it is given; the bones do not read it).
+    pub object_scale: f32,
     /// The sub-objects given a `Material_Override` as user data (`Set_User_Data`), by sub-object
     /// index: its `customUVOffset` (GitHub #41, `W3DTankDraw`'s treads). Upstream the sub-object
     /// points at the draw module's settings; here the module writes the value each draw.
@@ -2385,6 +2463,8 @@ impl RenderObj {
             bone_controls: BTreeMap::new(),
             sub_object_hidden: Vec::new(),
             material_overrides: BTreeMap::new(),
+            transform: Matrix3D::IDENTITY,
+            object_scale: 1.0,
         }
     }
 
@@ -2426,12 +2506,23 @@ impl RenderObj {
     /// (#172) `Get_Bone_Transform(boneindex)` with the render object's transform `root` (root (B) of the module docs:
     /// the drawable's transform as `doDrawModule` sets it): [`Skeleton::bone_transform`], the chain from `root` over
     /// the scaled pivots in the base pose. Without a hierarchy (`RenderObjClass::Get_Bone_Transform`, or
-    /// `Animatable3DObjClass`'s without an `HTree`): `root` itself.
+    /// `Animatable3DObjClass`'s without an `HTree`): `root` itself. ~~(no capture)~~ **Corrected 2026-11-13 (#174):**
+    /// with this render object's bone captures and controls ([`RenderObj::bone_controls`],
+    /// [`Skeleton::bone_transform_controlled`]), as `Base_Update` applies them: a bone under a captured turret follows
+    /// the turret's turn. `root` is the transform the caller has upstream's render object hold
+    /// (`Set_Transform(root)`): its own [`RenderObj::transform`] for the live bones, `Matrix3D(true).Scale(scale)` for
+    /// the bone particle systems' recalc (W3DModelDraw.cpp:2611-2617). The animation's pose is not applied (#174's gaps).
     pub fn get_bone_transform(&self, root: &Matrix3D, boneindex: i32) -> Matrix3D {
         if !self.has_htree() {
             return *root;
         }
-        self.skeleton.as_ref().expect("a hierarchy").bone_transform(root, boneindex)
+        self.skeleton.as_ref().expect("a hierarchy").bone_transform_controlled(root, boneindex, &self.bone_controls)
+    }
+
+    /// (#174) `Get_Bone_Transform(boneindex)` under the render object's own transform ([`RenderObj::transform`]).
+    pub fn get_bone_transform_live(&self, boneindex: i32) -> Matrix3D {
+        let root = self.transform;
+        self.get_bone_transform(&root, boneindex)
     }
 
     /// `Capture_Bone(boneindex)` (`Animatable3DObjClass`: nothing without a hierarchy; a bone
@@ -2620,7 +2711,13 @@ pub struct DrawFacts {
     /// the drawable's scale (which ~~the port's [`Skeleton`] carries~~ **Corrected 2026-11-12 (#172):** upstream's
     /// render object carries in its hierarchy's translations, as the port's [`Skeleton`] does): what
     /// `updateBonesForClientParticleSystems` chains the bones from. The object's transform matrix ([`crate::client::drawable::ClientDrawables::draw_facts`]).
+    /// **Corrected 2026-11-13 (#174):** this is the drawable's transform (`transformMtx`); the render object's is made
+    /// from it by `doDrawModule` (the instance scale and `adjustTransformMtx`, [`RenderObj::transform`]), which the
+    /// bones chain from.
     pub transform: Matrix3D,
+    /// (#174) The object's `getConstructionPercent()` and `getGeometryInfo().getMaxHeightAbovePosition()`, which
+    /// `adjustTransformMtx` reads for a state flagged `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`; `None` without an object.
+    pub construction: Option<(f32, f32)>,
 }
 
 /// The logic's state a subclass draw module reads (`W3DTankDraw::doDrawModule`), read only: see
@@ -2848,6 +2945,12 @@ pub struct W3DModelDraw {
     /// sets it only on the in-game UI's placement previews (InGameUI.cpp:1551, 3040), which the port's drawables are not:
     /// false unless a caller sets it.
     pub drawable_no_state_particles: bool,
+    /// (#174) `*getDrawable()->getTransformMatrix()` as the module was last given it ([`W3DModelDraw::do_draw_module`]'s
+    /// [`DrawFacts::transform`], [`W3DModelDraw::react_to_transform_change`]): what `nukeCurrentRender(&transform)`
+    /// (W3DModelDraw.cpp:2811-2816) hands a new render object when there was no old one. Upstream reads the drawable's
+    /// current transform there; the module has no drawable to read, so the last one it was given (the identity before
+    /// any).
+    pub drawable_transform: Matrix3D,
 }
 
 impl W3DModelDraw {
@@ -2901,6 +3004,7 @@ impl W3DModelDraw {
             particle_system_ids: Vec::new(),
             drawable_id: 0,
             drawable_no_state_particles: false,
+            drawable_transform: Matrix3D::IDENTITY,
         };
         d.set_model_state(StateRef::Normal(info), env);
         // the subclass's own members are made after the base class's constructor (whose `setModelState` calls the
@@ -2964,9 +3068,17 @@ impl W3DModelDraw {
     }
 
     /// `nukeCurrentRender(xform)`.
-    fn nuke_current_render(&mut self) {
+    /// (#174) and its `xform`: the old render object's transform (`Get_Transform()`), or without one the drawable's
+    /// ([`W3DModelDraw::drawable_transform`]).
+    fn nuke_current_render(&mut self) -> Matrix3D {
         self.pause_animation = false;
+        // save the transform for the new model
+        let xform = match &self.render_object {
+            Some(r) => r.transform,
+            None => self.drawable_transform,
+        };
         self.render_object = None;
+        xform
     }
 
     /// `setModelState(newState)`.
@@ -3025,13 +3137,18 @@ impl W3DModelDraw {
             }
         };
         if remake {
-            self.nuke_current_render();
+            let transform = self.nuke_current_render();
             if !ns.model_name.is_empty() {
                 if let Some(hlod) = env.assets.create_render_obj(&ns.model_name) {
                     let skeleton = env.assets.skeleton(&ns.model_name, None, self.scale);
                     let mut r = RenderObj::new(&ns.model_name, hlod).with_skeleton(skeleton);
                     // preserve the visibility state of the previous render object
                     r.hidden = self.drawable_hidden;
+                    // (#174, W3DModelDraw.cpp:3150-3155) "set the transform for the new model to that we saved before, we do
+                    // this so that the model transition is smooth"
+                    if !plant(9754) {
+                        r.transform = transform;
+                    }
                     self.render_object = Some(r);
                     self.render_obj_serial = self.render_obj_serial.wrapping_add(1);
                 }
@@ -3236,9 +3353,25 @@ impl W3DModelDraw {
     }
 
     /// `W3DModelDraw::doDrawModule` (see [`W3DModelDraw::do_draw_module`]).
+    ///
+    /// (#174) The render object's transform (W3DModelDraw.cpp:2045-2054, 2094-2100): the drawable's transform
+    /// ([`DrawFacts::transform`]) scaled by `getDrawable()->getInstanceScale()` when that is not 1 (the module's
+    /// [`W3DModelDraw::scale`]: upstream's `getScale()` and `getInstanceScale()` both answer `m_instanceScale`; the render
+    /// object then also gets `Set_ObjectScale`), adjusted by [`W3DModelDraw::adjust_transform_mtx`], and set
+    /// (`Set_Transform`, [`RenderObj::transform`]) before the turret, the bone particle systems and the recoil read it.
     pub(crate) fn model_draw_do_draw_module<A: W3dAssetSource>(&mut self, facts: &DrawFacts, env: &mut DrawEnv<'_, A>) {
         let should_animate = if self.data.animations_require_power { facts.should_animate_with_power } else { facts.should_animate_without_power };
         self.set_pause_animation(!should_animate, env.sync_time);
+
+        self.drawable_transform = facts.transform;
+        let mut transform_mtx = facts.transform;
+        if self.scale != 1.0 && !plant(9755) {
+            // do custom scaling of the W3D model.
+            transform_mtx.scale(self.scale);
+            if let Some(r) = &mut self.render_object {
+                r.object_scale = self.scale;
+            }
+        }
 
         if is_animation_complete(self.render_object.as_ref()) {
             if self.cur_state.is_some() {
@@ -3267,6 +3400,15 @@ impl W3DModelDraw {
 
         self.adjust_anim_speed_to_movement_speed(facts.speed);
 
+        // set our position in the render object to our position of the drawable
+        if self.render_object.is_some() {
+            let mut mtx = transform_mtx;
+            self.adjust_transform_mtx(&mut mtx, facts.construction);
+            if let Some(r) = &mut self.render_object {
+                r.transform = mtx;
+            }
+        }
+
         self.handle_client_turret_positioning(&facts.turrets);
         // (#171, W3DModelDraw.cpp:2103-2107) the bone particle systems: made when the state changed, and moved to their
         // bones each draw when the module data says they follow animated bones
@@ -3274,9 +3416,67 @@ impl W3DModelDraw {
             self.recalc_bones_for_client_particle_systems(env.particles.as_mut(), env.random);
         }
         if (self.data.particles_attached_to_animated_bones || plant(9686)) && !plant(9687) {
-            self.update_bones_for_client_particle_systems(&facts.transform, env.particles.as_mut().map(|p| &mut *p.manager));
+            // (#174) the render object's transform, as just set
+            let transform = self.render_object.as_ref().map_or(facts.transform, |r| r.transform);
+            self.update_bones_for_client_particle_systems(&transform, env.particles.as_mut().map(|p| &mut *p.manager));
         }
         self.handle_client_recoil();
+    }
+
+    /// (#174) `adjustTransformMtx(mtx)` (W3DModelDraw.cpp:1993-2036), `CACHE_ATTACH_BONE` defined as upstream builds it
+    /// (W3DModelDraw.h:278): with an `AttachToBoneInAnotherModule` bone, its cached pristine offset
+    /// ([`W3DModelDrawModuleData::attach_to_drawable_bone_offset_cached`]) turned by the matrix (`Rotate_Vector`) and
+    /// added to its translation; then, for a current state flagged `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT`, an object
+    /// with a construction percent of 0 or more is lowered along its Z by the part not yet built
+    /// (`Translate_Z(-height + (height * pct / 100.0f))`). `construction` is the object's
+    /// (`getConstructionPercent()`, `getGeometryInfo().getMaxHeightAbovePosition()`; [`DrawFacts::construction`],
+    /// `None` without an object). Upstream reads `m_curState->m_flags` unguarded (its callers have a render object, so a
+    /// state); without a state nothing is lowered.
+    pub fn adjust_transform_mtx(&self, mtx: &mut Matrix3D, construction: Option<(f32, f32)>) {
+        if let Some(offset) = self.data.attach_to_drawable_bone_offset_cached() {
+            let tmp = if plant(9756) { offset } else { mtx.rotate_vector(&offset) };
+            mtx.adjust_x_translation(tmp.x);
+            mtx.adjust_y_translation(tmp.y);
+            mtx.adjust_z_translation(tmp.z);
+        }
+        let adjust_height = self.get_cur_state().is_some_and(|c| test_flag_bit(c.flags, ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT));
+        if adjust_height && !plant(9757) {
+            if let Some((pct, height)) = construction {
+                if pct >= 0.0 {
+                    if plant(9758) {
+                        mtx.adjust_z_translation(-height + (height * pct / 100.0));
+                    } else {
+                        mtx.translate_z(-height + (height * pct / 100.0));
+                    }
+                }
+            }
+        }
+    }
+
+    /// (#174) `reactToTransformChange(oldMtx, oldPos, oldAngle)` (W3DModelDraw.cpp:3647-3659): the render object's
+    /// transform set to the drawable's (`transform`, its object's) adjusted by [`W3DModelDraw::adjust_transform_mtx`], no
+    /// instance scale. Upstream calls it each time the logic sets the object's transform; the port's client is not told
+    /// (the logic sends no event), so the client calls it before a bone query made outside a draw (the weapon's fire
+    /// FX, the laser's and the animated particle bones' client updates): exact for an object the logic moved since the
+    /// last draw, and for any object whose instance scale is 1 and which did not move (#174's gaps). The tracks
+    /// (3661-3677) are not translated (no track render objects).
+    pub fn react_to_transform_change(&mut self, transform: &Matrix3D, construction: Option<(f32, f32)>) {
+        self.drawable_transform = *transform;
+        // set the position of our render object
+        if self.render_object.is_some() {
+            let mtx = self.reacted_transform(transform, construction);
+            if let Some(r) = &mut self.render_object {
+                r.transform = mtx;
+            }
+        }
+    }
+
+    /// (#174) The render object's transform [`W3DModelDraw::react_to_transform_change`] would set for the drawable's
+    /// `transform`, nothing written: for a bone query of another drawable, which the asker may only read.
+    pub fn reacted_transform(&self, transform: &Matrix3D, construction: Option<(f32, f32)>) -> Matrix3D {
+        let mut mtx = *transform;
+        self.adjust_transform_mtx(&mut mtx, construction);
+        mtx
     }
 
     /// The identity of the current render object (`getRenderObject()` as a pointer).
@@ -3549,16 +3749,18 @@ impl W3DModelDraw {
     /// (see [`W3DModelDraw::handle_weapon_fire_fx_at`] for where the effect plays).
     pub fn handle_weapon_fire_fx(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> bool {
         // where it plays is not asked: any render object transform
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, &Matrix3D::IDENTITY).is_some()
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl).is_some()
     }
 
     /// `handleWeaponFireFX(wslot, specificBarrelToUse, fxl, ...)`: the barrel's recoil started and its muzzle flash
     /// shown; when it is handled (an FX list, the barrel's FX bone and a render object), where upstream's
     /// `FXList::doFXPos` plays: ~~not drawn yet~~ **since GitHub #43 (2026-11-06)** the caller plays it
     /// (`crate::client::client_fx`) at the bone the answer names, or at the logic object when the render object is
-    /// hidden. (#172) `transform` is the render object's (the drawable's, as `doDrawModule` sets it): the FX bone is
-    /// `Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727), the chain from it ([`RenderObj::get_bone_transform`]).
-    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, transform: &Matrix3D) -> Option<WeaponFireFxAt> {
+    /// hidden. (#172) ~~`transform` is the render object's (the drawable's, as `doDrawModule` sets it)~~ **Corrected
+    /// 2026-11-13 (#174):** the render object's own transform ([`RenderObj::transform`]): the FX bone is
+    /// `Get_Bone_Transform(info.m_fxBone)` (W3DModelDraw.cpp:3727), the chain from it with the captured bones
+    /// ([`RenderObj::get_bone_transform_live`]).
+    pub fn handle_weapon_fire_fx_at(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool) -> Option<WeaponFireFxAt> {
         let cur = self.get_cur_state()?;
         if !cur.barrels_valid() || wslot >= SLOTS {
             return None;
@@ -3580,7 +3782,7 @@ impl W3DModelDraw {
                     if plant(9697) {
                         b.transform
                     } else {
-                        r.get_bone_transform(transform, info.fx_bone)
+                        r.get_bone_transform_live(info.fx_bone)
                     }
                 });
                 handled = Some(WeaponFireFxAt { bone_transform, render_hidden: r.hidden });
@@ -3665,8 +3867,9 @@ impl W3DModelDraw {
     /// local transform (`setLocalTransform`) and `setSkipParentXfrm(true)`, so the drawable's transform is not applied
     /// again. The bone is ~~`transform` (the render object's, [`DrawFacts::transform`]) times the skeleton's bone under
     /// the drawable's scale (the module docs)~~ **Corrected 2026-11-12 (#172):** the chain from `transform` (the render
-    /// object's, [`DrawFacts::transform`]) over the scaled pivots, [`RenderObj::get_bone_transform`] (root (B) of the
-    /// module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
+    /// object's, ~~[`DrawFacts::transform`]~~ **Corrected 2026-11-13 (#174):** its [`RenderObj::transform`] as
+    /// `doDrawModule` or `reactToTransformChange` set it) over the scaled pivots, with the captured bones,
+    /// [`RenderObj::get_bone_transform`] (root (B) of the module docs). DANGER WARNING READ ME (upstream's): this must never touch the logic, and
     /// does not: it writes the client's particle systems only.
     pub fn update_bones_for_client_particle_systems(&mut self, transform: &Matrix3D, particles: Option<&mut ParticleSystemManager>) -> bool {
         // `drawable != NULL` always holds for a module of a drawable
@@ -3730,9 +3933,17 @@ impl W3DModelDraw {
                         };
                         if bone_index != 0 {
                             // ugh... kill the mtx so we get it in modelspace, not world space (upstream sets the render
-                            // object's transform to the drawable's scale, reads the bone and restores it: the skeleton
-                            // as made)
-                            let bone_transform = self.render_object.as_ref().expect("a render object").get_bone_transform_scaled(bone_index);
+                            // object's transform to the drawable's scale, reads the bone and restores it: ~~the skeleton
+                            // as made~~ (#174) the chain from `Matrix3D(true).Scale(getScale())` with the render object's
+                            // captured bones, e.g. the turret `handleClientTurretPositioning` just turned)
+                            let r = self.render_object.as_ref().expect("a render object");
+                            let bone_transform = if plant(9759) {
+                                r.get_bone_transform_scaled(bone_index)
+                            } else {
+                                let mut tmp = Matrix3D::IDENTITY;
+                                tmp.scale(self.scale);
+                                r.get_bone_transform(&tmp, bone_index)
+                            };
                             let vpos = bone_transform.get_translation();
                             rotation = bone_transform.get_z_rotation();
                             pos.x = vpos.x;
@@ -3834,7 +4045,9 @@ impl W3DModelDraw {
     /// is the skeleton's pose as made (as [`W3DModelDraw::handle_weapon_fire_fx_at`] reads it), put in the world by the
     /// drawable's transform `world` ~~(`world` times the bone as made)~~ (**Corrected 2026-11-12 (#172):** the chain
     /// from `world` over the scaled pivots, [`RenderObj::get_bone_transform`]): the animation's current pose is not
-    /// applied (#165's gaps).
+    /// applied (#165's gaps). **Corrected 2026-11-13 (#174):** `world` is the render object's transform the caller has it
+    /// hold (its [`RenderObj::transform`], or [`W3DModelDraw::reacted_transform`] of the drawable's), and the chain
+    /// applies the render object's captured bones (the turret's turn, the recoil).
     pub fn get_current_worldspace_client_bone_positions(&self, bone_name: &[u8], world: &Matrix3D) -> Option<Matrix3D> {
         let r = self.render_object.as_ref()?;
         let k = r.skeleton.as_ref()?;
@@ -3846,6 +4059,81 @@ impl W3DModelDraw {
             return Some(Matrix3D::multiply(world, &k.bones[bone_index as usize].transform));
         }
         Some(r.get_bone_transform(world, bone_index))
+    }
+
+    /// (#174) `getCurrentBonePositions(boneNamePrefix, startIndex, positions, transforms, maxBones)`
+    /// (W3DModelDraw.cpp:3569-3646, the compiled `DO_INV` branch): the render object's current bones in model space.
+    /// `maxBones` is clamped to `MAX_BONE_GET` (64); a `NULL` `transforms` is the function's own `tmpMtx`; without a
+    /// render object, 0. The inverse is the render object's transform's `Get_Orthogonal_Inverse` scaled by
+    /// `getDrawable()->getScale()` ([`W3DModelDraw::scale`]; upstream's own note: "kill the mtx so we get it in
+    /// modelspace, not world space"). The names are `boneNamePrefix` (for `startIndex` 0 only it) or `prefix01`,
+    /// `prefix02`, ... from `startIndex` to 99, not lower-cased (`Get_Bone_Index` ignores case); a bone not found (index 0)
+    /// ends the list. Each bone is `Get_Bone_Transform(boneIndex)` (the chain from the render object's own transform with
+    /// its captures, [`RenderObj::get_bone_transform_live`]) pre-multiplied by the inverse (`preMul`). With `positions`,
+    /// each found bone's translation. Returns the count. A slot beyond the caller's array is upstream's write past it:
+    /// not made (the count still counts it).
+    pub fn get_current_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32) -> i32 {
+        const MAX_BONE_GET: i32 = 64;
+        let mut tmp_mtx = [Matrix3D::IDENTITY; MAX_BONE_GET as usize];
+
+        let max_bones = if max_bones > MAX_BONE_GET { MAX_BONE_GET } else { max_bones };
+
+        let transforms: &mut [Matrix3D] = match transforms {
+            Some(t) => t,
+            None => &mut tmp_mtx,
+        };
+
+        let Some(r) = &self.render_object else { return 0 };
+
+        // ugh... kill the mtx so we get it in modelspace, not world space
+        let original_transform = r.transform; // save the transform
+        let mut inverse = original_transform.get_orthogonal_inverse();
+        if !plant(9762) {
+            inverse.scale(self.scale);
+        }
+
+        let mut pos_count: i32 = 0;
+        let end_index = if start_index == 0 && !plant(9763) { 0 } else { 99 };
+        let mut i = start_index;
+        while i <= end_index {
+            let mut buffer = bone_name_prefix.to_vec();
+            if i != 0 {
+                buffer.extend_from_slice(format!("{i:02}").as_bytes());
+            }
+
+            let bone_index = r.get_bone_index(&buffer);
+            if bone_index == 0 {
+                break;
+            }
+
+            if let Some(t) = usize::try_from(pos_count).ok().and_then(|p| transforms.get_mut(p)) {
+                *t = if plant(9764) { r.get_bone_transform(&Matrix3D::IDENTITY, bone_index) } else { r.get_bone_transform_live(bone_index) };
+                if plant(9765) {
+                    t.post_mul(&inverse);
+                } else {
+                    t.pre_mul(&inverse);
+                }
+            }
+
+            pos_count += 1;
+            if pos_count >= max_bones {
+                break;
+            }
+            i += 1;
+        }
+
+        if let Some(positions) = positions {
+            for i in 0..pos_count.max(0) as usize {
+                if let (Some(p), Some(t)) = (positions.get_mut(i), transforms.get(i)) {
+                    let pos = t.get_translation();
+                    p.x = pos.x;
+                    p.y = pos.y;
+                    p.z = if plant(9766) { 0.0 } else { pos.z };
+                }
+            }
+        }
+
+        pos_count
     }
 
     /// `showSubObject(name, show)`: kept in the list (`m_subObjectVec`), by name ignoring case;
@@ -4121,7 +4409,7 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         W3DModelDraw::new(d, 0, false, false, &mut env).unwrap()
     }
 
-    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY };
+    const FACTS: DrawFacts = DrawFacts { should_animate_with_power: true, should_animate_without_power: true, speed: None, turrets: [None, None], motion: None, show_client_physics: true, wheel_info: None, transform: Matrix3D::IDENTITY, construction: None };
 
     /// One client frame at `t` ms: draw, then render.
     fn frame(m: &mut W3DModelDraw, assets: &mut Fake, random: &mut RandomValues, t: u32) {
@@ -4588,13 +4876,13 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         #[test]
         fn a_scaled_gun_s_bones_are_upstream_s() {
             let mut rig = Rig::new();
-            let mut draw_scaled = |scale: f32| {
+            let draw_scaled = |rig: &mut Rig, scale: f32| {
                 let d = Arc::new(parse(GUN_DRAW).unwrap());
                 let mut a = W3dFiles { assets: &mut rig.am, fs: &rig.fs };
                 let mut env = DrawEnv { assets: &mut a, random: &mut rig.random, sync_time: 0, logic_time: true, particles: None };
                 W3DModelDraw::new_scaled(d, 0, false, false, scale, Arc::new(Vec::new()), &mut env).unwrap()
             };
-            let mut m = draw_scaled(2.0);
+            let mut m = draw_scaled(&mut rig, 2.0);
             let pristine = m.get_cur_state().unwrap().bone_cache().pristine_bones[&b"muzzlefx01"[..]].mtx;
             assert!(near(pristine.get_translation(), [16.0, 0.0, 8.0]), "{:?}", pristine.get_translation());
             assert_eq!((pristine.row[0][0], pristine.row[1][1], pristine.row[2][2]), (2.0, 2.0, 2.0));
@@ -4603,10 +4891,64 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &world).unwrap();
             assert!(near(live.get_translation(), [108.0, 50.0, 4.0]), "{:?}", live.get_translation());
             assert_eq!((live.row[0][0], live.row[1][1], live.row[2][2]), (1.0, 1.0, 1.0));
-            let at = m.handle_weapon_fire_fx_at(0, 0, true, &world).unwrap();
+            // (#174) the FX bone is chained from the render object's own transform: `reactToTransformChange` puts it at the
+            // drawable's (no instance scale)
+            m.react_to_transform_change(&world, None);
+            let at = m.handle_weapon_fire_fx_at(0, 0, true).unwrap();
             assert_eq!(at, WeaponFireFxAt { bone_transform: Some(live), render_hidden: false });
+            // (#174) the draw's render object transform is the drawable's scaled by the instance scale (W3DModelDraw.cpp:
+            // 2045-2054, `m_instanceScale` = the template's 2): the live muzzle bone in the base pose is then the pristine
+            // bone in the world, (116, 50, 8) with the rotation part 2 I. Predicted before the run
+            // (issue174_predictions.md). ~~The live bone is that.~~ **Corrected after the first run (2026-11-13):** a
+            // prediction miss: the draw also runs `handleClientTurretPositioning` (TURRET captured at its
+            // `TurretArtAngle` 90) and `handleClientRecoil` (the recoil the fire FX above started: RECOIL01 shifted 2
+            // back along its X, 4 in the world at scale 2), and the live bone follows both: (100, 50 + 16 - 4, 8).
+            {
+                let mut a = W3dFiles { assets: &mut rig.am, fs: &rig.fs };
+                let mut env = DrawEnv { assets: &mut a, random: &mut rig.random, sync_time: 0, logic_time: false, particles: None };
+                m.do_draw_module(&DrawFacts { transform: world, ..FACTS }, &mut env);
+            }
+            let r = m.render_object.as_ref().unwrap();
+            let mut scaled = world;
+            scaled.scale(2.0);
+            assert_eq!((r.transform, r.object_scale), (scaled, 2.0));
+            let live2 = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &r.transform).unwrap();
+            assert!(near(live2.get_translation(), [100.0, 62.0, 8.0]), "{:?}", live2.get_translation());
+            let mut bare = r.clone();
+            bare.bone_controls.clear();
+            let base = bare.get_bone_transform_live(bare.get_bone_index(b"MUZZLEFX01"));
+            assert_eq!(base, Matrix3D::multiply(&world, &pristine));
+            assert!(near(base.get_translation(), [116.0, 50.0, 8.0]), "{:?}", base.get_translation());
+            // (#174) `getCurrentBonePositions` (DO_INV): `Get_Orthogonal_Inverse` of the render object's transform
+            // M = [2 I | (100, 50, 0)], scaled by the drawable's scale: [4 I | (-200, -100, 0)], times the live bone
+            // ~~[2 I | (116, 50, 8)]: [8 I | (264, 100, 32)]~~ **Corrected after the first run:** [2 Rz(90) | (100, 62, 8)]
+            // (the turret and the recoil, above): translation 4 (100, 62, 8) - (200, 100, 0) = (200, 148, 32). Not the
+            // model-space bone the `#else` branch (`Set_Transform(Scale(s))`) gives: the orthogonal inverse of a scaled
+            // transform is not its inverse. Upstream's, kept (at scale 1 the two agree).
+            let mut t = [Matrix3D::IDENTITY; 2];
+            let mut p = [Coord3D::default(); 2];
+            assert_eq!(m.get_current_bone_positions(b"MUZZLEFX", 1, Some(&mut p), Some(&mut t), 2), 1);
+            assert!(near(t[0].get_translation(), [200.0, 148.0, 32.0]), "{:?}", t[0]);
+            assert!((t[0].row[1][0] - 8.0).abs() < 1e-5 && (t[0].row[2][2] - 8.0).abs() < 1e-5, "{:?}", t[0]);
+            assert_eq!(p[0], Coord3D { x: t[0].row[0][3], y: t[0].row[1][3], z: t[0].row[2][3] });
 
-            let m = draw_scaled(1.005);
+            // (#174) a captured turret: TURRET turned a quarter about Z (`Capture_Bone`, `Control_Bone`, as
+            // `handleClientTurretPositioning` does) turns every bone under it. Predicted (issue174_predictions.md): under
+            // the render object's transform [2 I | (100, 50, 0)], MUZZLEFX01 moves from (116, 50, 8) to (100, 66, 8): the
+            // turret at 2 * (0, 0, 4) and the barrel's 2 * (8, 0, 0) turned onto +Y. **Corrected after the first run:**
+            // the draw had already turned it a quarter (its art angle) and the recoil holds RECOIL01 4 back, so the test
+            // turns it a half instead: 2 * (8 - 2, 0, 0) turned onto -X, (100 - 12, 50, 8).
+            let turret = m.render_object.as_ref().unwrap().get_bone_index(b"TURRET");
+            assert_ne!(turret, 0);
+            let mut quarter = Matrix3D::IDENTITY;
+            quarter.rotate_z(std::f32::consts::PI);
+            let r = m.render_object.as_mut().unwrap();
+            r.capture_bone(turret);
+            r.control_bone(turret, &quarter);
+            let turned = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &m.render_object.as_ref().unwrap().transform).unwrap();
+            assert!(near(turned.get_translation(), [88.0, 50.0, 8.0]), "{:?}", turned.get_translation());
+
+            let m = draw_scaled(&mut rig, 1.005);
             let pristine = m.get_cur_state().unwrap().bone_cache().pristine_bones[&b"muzzlefx01"[..]].mtx;
             assert!(near(pristine.get_translation(), [4.02, 0.0, 2.01]), "{:?}", pristine.get_translation());
             let live = m.get_current_worldspace_client_bone_positions(b"MUZZLEFX01", &Matrix3D::IDENTITY).unwrap();
@@ -5341,12 +5683,14 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
         let sys = |mgr: &ParticleSystemManager, id: u32| mgr.find_particle_system(id).unwrap().clone();
         assert!(mgr.systems.iter().all(|s| !s.is_saveable && !s.is_stopped));
         assert_eq!((sys(&mgr, 1).attached_to_drawable, sys(&mgr, 2).attached_to_drawable, sys(&mgr, 1).slave), (7, 0, Some(2)));
-        // the draw's update moved the bone-1 system into the world (100 + 2, 4, 6) and skips the parent's transform
+        // the draw's update moved the bone-1 system into the world ~~(100 + 2, 4, 6)~~ **Corrected 2026-11-13 (#174):** the
+        // draw's root is the drawable's transform scaled by the instance scale (2, the module's `getScale()`), so the
+        // bone is the pristine one in the world, (100 + 4, 8, 12); and it skips the parent's transform
         let p = sys(&mgr, 1).get_position();
-        assert_eq!((p.x, p.y, p.z, sys(&mgr, 1).skip_parent_xfrm), (102.0, 4.0, 6.0, true));
-        // (#172) upstream's live bone: the rotation is not scaled
+        assert_eq!((p.x, p.y, p.z, sys(&mgr, 1).skip_parent_xfrm), (104.0, 8.0, 12.0, true));
+        // ~~(#172) upstream's live bone: the rotation is not scaled~~ (#174) the rotation is scaled too: the draw's root
         let z = sys(&mgr, 1).local_transform.row[2];
-        assert_eq!([z[0], z[1], z[2], z[3]], [0.0, 0.0, 1.0, 6.0]);
+        assert_eq!([z[0], z[1], z[2], z[3]], [0.0, 0.0, 2.0, 12.0]);
         let p = sys(&mgr, 3).get_position();
         assert_eq!((p.x, p.y, p.z, sys(&mgr, 3).skip_parent_xfrm, sys(&mgr, 3).is_local_identity), (0.0, 0.0, 0.0, false, false));
         m.set_hidden(true, Some(&mut mgr));

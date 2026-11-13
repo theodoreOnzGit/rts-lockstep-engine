@@ -38,7 +38,9 @@
 //!   event order by `ClientDrawables::apply_events`, so the client random's draws keep the order they have among the
 //!   drawables' own).
 //! - **The FX bone's place** is the bone's pose as made (the skeleton's) times the object's transform: the animated
-//!   pose, the turret's turn and the barrel's recoil are not applied yet.
+//!   pose, ~~the turret's turn and the barrel's recoil are~~ is not applied yet. **Corrected 2026-11-13 (#174):** the
+//!   bone is chained from the render object's transform with its captured bones (the turret's turn and the barrel's
+//!   recoil), `crate::client::w3d_model_draw::RenderObj::get_bone_transform`; the animated pose is still not applied.
 //! - **The local player** is the client's (`ClientDrawables::local_player_index`), else the World's; with none, the
 //!   shroud is taken as clear.
 //! - **The particle limit** is `TheGlobalData->m_maxParticleCount`, which upstream's static game LOD sets
@@ -49,8 +51,9 @@
 //!   (new: the UI thread's cap). With no LOD manager (no shell, or its INI missing), the World's game data's cap and no
 //!   dynamic limit, as before. A dynamic level never applied leaves upstream's priorities uninitialised (undefined); the
 //!   client then takes the lowest priority (no limit).
-//! - `FXListAtBonePos` finds no bones yet ([`WorldFxHost::bone_positions`]); `CreateAtGroundHeight` takes the ground
-//!   layer (`getLayerForDestination`'s bridges are not read).
+//! - ~~`FXListAtBonePos` finds no bones yet~~ **Corrected 2026-11-13 (#174):** `FXListAtBonePos` finds the drawable's
+//!   current bones (`getCurrentClientBonePositions`, [`WorldFxHost::bone_positions`]); `CreateAtGroundHeight` takes the
+//!   ground layer (`getLayerForDestination`'s bridges are not read).
 //! - The requests of nuggets not drawn yet (sounds, light pulses, shakes, scorches, tracers, rays) are kept in
 //!   [`ClientFx::requests`] for the app, which may drop them.
 
@@ -148,9 +151,18 @@ impl FxHost for WorldFxHost<'_> {
     fn layer_height_for_destination(&self, pos: &Coord3D) -> f32 {
         self.world.peek_layer_height_and_normal(pos.x, pos.y, LAYER_GROUND).0
     }
-    /// No bones yet (see the module docs).
-    fn bone_positions(&self, _: ObjectId, _: &[u8], _: i32) -> Vec<(Coord3D, Matrix3D)> {
-        Vec::new()
+    /// ~~No bones yet (see the module docs).~~ **Corrected 2026-11-13 (#174):** `FXListAtBonePosFXNugget::doFxAtBones`
+    /// (FXList.cpp:736-753): the object's drawable's `getCurrentClientBonePositions(boneName, start, bonePos, boneMtx,
+    /// MAX_BONE_POINTS)` (40; [`Drawable::get_current_client_bone_positions`], the render objects' current bones in model
+    /// space) and each through `obj->convertBonePosToWorldPos` (the object's transform). None without a drawable or an
+    /// object.
+    fn bone_positions(&self, obj: ObjectId, bone_name: &[u8], start: i32) -> Vec<(Coord3D, Matrix3D)> {
+        const MAX_BONE_POINTS: usize = 40;
+        let (Some(o), Some(draw)) = (self.world.find_object(obj), self.drawables.get(&obj)) else { return Vec::new() };
+        let mut bone_pos = [Coord3D::default(); MAX_BONE_POINTS];
+        let mut bone_mtx = [Matrix3D::IDENTITY; MAX_BONE_POINTS];
+        let count = draw.get_current_client_bone_positions(bone_name, start, Some(&mut bone_pos), Some(&mut bone_mtx), MAX_BONE_POINTS as i32);
+        (0..count.max(0) as usize).filter(|&i| i < MAX_BONE_POINTS).map(|i| o.thing.convert_bone_pos_to_world_pos(&bone_pos[i], &bone_mtx[i])).collect()
     }
 }
 

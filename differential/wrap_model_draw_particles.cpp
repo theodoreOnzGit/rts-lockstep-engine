@@ -24,6 +24,18 @@
 **   mp_get_transform.inc  WW3D2/htree.h, `HTreeClass::Get_Transform` (202-208);
 **   mp_asset_scale.inc    GameEngineDevice/Source/W3DDevice/GameClient/W3DAssetManager.cpp, `ident_scale` and
 **                         `scale_epsilon` (84-85).
+** and since GitHub #174 (the live root and the captured bones):
+**   mp_cache_attach_bone.inc  W3DModelDraw.h, `#define CACHE_ATTACH_BONE` (278);
+**   mp_acbits.inc         W3DModelDraw.cpp, `enum ACBits` (221-233);
+**   mp_attach_offset.inc  W3DModelDraw.cpp, `W3DModelDrawModuleData::getAttachToDrawableBoneOffset` (1148-1173);
+**   mp_adjust.inc         W3DModelDraw.cpp, `adjustTransformMtx` (1993-2036);
+**   mp_draw_scale.inc     W3DModelDraw.cpp, doDrawModule's instance scale (2045-2054);
+**   mp_draw_set.inc       W3DModelDraw.cpp, doDrawModule's `Set_Transform` (2093-2100);
+**   mp_current_bones.inc  W3DModelDraw.cpp, `getCurrentBonePositions` (3569-3646, `DO_INV` defined in the cut);
+**   mp_react.inc          W3DModelDraw.cpp, `reactToTransformChange` (3647-3678; the track branch is not reached);
+**   mp_capture_update.inc  Libraries/Source/WWVegas/WW3D2/pivot.cpp, `PivotClass::Capture_Update` (137-171);
+**   mp_htree_capture.inc  htree.cpp, `HTreeClass::Capture_Bone`, `Release_Bone`, `Is_Bone_Captured`, `Control_Bone`
+**                         (1001-1053).
 ** No edit. Compiled on stand-ins (namespace mp): the drawable (its id, hidden flag, status bits, scale), the module data
 ** (`m_particlesAttachedToAnimatedBones`), the states (their `m_particleSysBones`), `ParticleSystem`'s members (the cut
 ** methods are its own), the particle system manager (`createParticleSystem`: NULL for a NULL template, ids counting up,
@@ -43,6 +55,15 @@
 ** `HTree->Get_Transform(i)` (cut); without one (a mesh, or an HLOD without pivots) the render object's `Transform`.
 ** The driver gives the render object the drawable's transform `world`, no template scale (doDrawModule 2094-2100). setModelState's other parts are the wrapper's: the early return for the current
 ** state (the only one reachable: the states have no transition keys) and the render object of the new state's model.
+** (#174) The pivots are `PivotClass`'s non-`LAZY_CAP_MTX_ALLOC` members (pivot.h:79-99) with `Is_Captured`
+** (pivot.h:69-76) and the cut `Capture_Update`; the render object's `Capture_Bone` and `Control_Bone` are
+** `Animatable3DObjClass`'s (animobj.cpp:690-695, 752-765: to the hierarchy when it has one; `Set_Hierarchy_Valid` is
+** moot, `Get_Bone_Transform` runs `Base_Update` each call) and `Set_ObjectScale` is rendobj.h:454's. The drawable has
+** `getInstanceScale()` = `getScale()` = `m_instanceScale` (Drawable.h:404, Drawable.cpp:1093-1097), its transform
+** (`getTransformMatrix`), an object or none (`getConstructionPercent`, `getGeometryInfo().getMaxHeightAbovePosition()`,
+** `testStatus`, `isSignificantlyAboveTerrain`), and `getPristineBonePositions(name, 0, NULL, &mtx, 1)` answering the
+** case's attach bone (found or not, its matrix). The module data has `m_attachToDrawableBone` and the cache; every
+** state has the case's `m_flags` (all states the same: `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT` or none).
 ** `sinf`, `cosf`, `atan2` are the Rust's petir functions in the test binary.
 **
 ** Entry point (extern "C", tests/differential_model_draw_particles.rs; floats travel as their bits):
@@ -60,7 +81,17 @@
 **     words). Records: after the constructor and after each step [100, needRecalc, fullyObscured, tracker count, then
 **     (id, boneIndex) each, system count, then per system in id order: id, attached drawable, saveable, stopped,
 **     destroyed, skipParentXfrm, isLocalIdentity, slave id (0 none), master id (0 none), the local transform's 12
-**     words]. */
+**     words].
+**   (#174) The header gains, after particlesAttachedToAnimatedBones, [AttachToBoneInAnotherModule (0/1),
+**     attach bone found (0/1), its 12 words, ADJUST_HEIGHT flag (0/1), has object (0/1), construction percent, max
+**     height]; the models have 9 bone name codes. Ops 2 and 7 now first set the drawable's transform to world and call
+**     reactToTransformChange (the render object's transform is the module's, no longer the driver's); op 1 sets the
+**     drawable's transform then doDrawModule(&world). New ops: 8 Capture_Bone(b) and Control_Bone(b, the 12 words) on
+**     the render object, b = a1 % its bone count (only an HLOD with bones); 9 setInstanceScale(word 2's float); 10
+**     getCurrentBonePositions(PREFIXES[a1 % 7], start word 2, positions NULL if word 4 is 0, transforms NULL if word 5 is
+**     0, maxBones word 3) into 64-entry arrays, recorded as [300, count, then for each of min(count, 64): the position's
+**     3 words (0 if NULL) and the transform's 12 (0 if NULL)]. Each state record ends with [render object present, its
+**     Transform's 12 words, ObjectScale] (zeros without one). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -102,7 +133,33 @@ float real(int i)
 /* GameEngine/Include/GameClient/Drawable.h:237 */
 enum DrawableStatus { DRAWABLE_STATUS_NO_STATE_PARTICLES = 0x00000008 };
 
-class Object;
+#include "mp_cache_attach_bone.inc"
+#include "mp_acbits.inc"
+
+/* (#174) the object adjustTransformMtx and reactToTransformChange read */
+enum ObjectStatusTypes { OBJECT_STATUS_STEALTHED = 1 };
+class GeometryInfo
+{
+public:
+	Real m_maxHeight;
+	Real getMaxHeightAbovePosition() const { return m_maxHeight; }
+};
+class Object
+{
+public:
+	Real m_constructionPercent;
+	GeometryInfo m_geometryInfo;
+	/* Object.h:401 */
+	Real getConstructionPercent() const { return m_constructionPercent; }
+	const GeometryInfo& getGeometryInfo() const { return m_geometryInfo; }
+	Bool testStatus( ObjectStatusTypes ) const { abort(); return FALSE; }
+	Bool isSignificantlyAboveTerrain() const { abort(); return FALSE; }
+};
+Object g_object;
+Bool g_hasObject;
+Bool g_attachFound;
+Matrix3D g_attachMtx;
+
 class Drawable
 {
 public:
@@ -111,13 +168,26 @@ public:
 	UnsignedInt m_status;
 	Real m_scale;
 	Coord3D m_pos;
+	Matrix3D m_transform;
 	DrawableID getID() const { return m_id; }
 	/* Drawable.h:329 (m_hiddenByStealth is false here) */
 	Bool isDrawableEffectivelyHidden() const { return m_hidden; }
 	/* Drawable.h:368 */
 	Bool testDrawableStatus( DrawableStatus bit ) const { return (m_status & bit) != 0; }
+	/* Drawable.cpp:1093-1097 and Drawable.h:404: both m_instanceScale */
 	const Real getScale( void ) const { return m_scale; }
+	Real getInstanceScale( void ) const { return m_scale; }
 	const Coord3D *getPosition() const { return &m_pos; }
+	const Matrix3D *getTransformMatrix() const { return &m_transform; }
+	Object *getObject() const { return g_hasObject ? &g_object : NULL; }
+	/* (#174) the case's attach bone, as the drawable's pristine bones answer it for (name, 0, NULL, &mtx, 1) */
+	Int getPristineBonePositions(const char*, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const
+	{
+		if (startIndex != 0 || positions != NULL || transforms == NULL || maxBones != 1) abort();
+		if (!g_attachFound) return 0;
+		*transforms = g_attachMtx;
+		return 1;
+	}
 };
 Drawable g_drawable;
 
@@ -219,19 +289,27 @@ struct FakeModel
 	Matrix3D pose[6];
 };
 
-/* (#172) the hierarchy: PivotClass's members that Base_Update and HTreeClass::Scale read (pivot.h:79-99; never
-** captured here), and HTreeClass's (htree.h) */
+/* (#172) the hierarchy: PivotClass's members that Base_Update and HTreeClass::Scale read (pivot.h:79-99; ~~never
+** captured here~~ (#174) the non-LAZY_CAP_MTX_ALLOC capture members too, as PivotClass() sets them, pivot.cpp:58-76),
+** and HTreeClass's (htree.h) */
 class PivotClass
 {
 public:
 	PivotClass *Parent;
 	Matrix3D BaseTransform;
 	Matrix3D Transform;
+	Matrix3D CapTransform;
+	int Index;
 	bool IsVisible;
-	PivotClass() : Parent(NULL), BaseTransform(true), Transform(true), IsVisible(true) {}
-	void Capture_Update( void ) { abort(); }
-	bool Is_Captured() const { return false; }
+	bool WorldSpaceTranslation;
+	bool IsCaptured;
+	PivotClass() : Parent(NULL), BaseTransform(true), Transform(true), CapTransform(true), Index(0), IsVisible(true),
+		WorldSpaceTranslation(false), IsCaptured(false) {}
+	void Capture_Update( void );
+	/* pivot.h:69-76 (no LAZY_CAP_MTX_ALLOC) */
+	bool Is_Captured() const { return IsCaptured; }
 };
+#include "mp_capture_update.inc"
 class HTreeClass
 {
 public:
@@ -242,13 +320,20 @@ public:
 	void Base_Update(const Matrix3D & root);
 	void Scale(float factor);
 	const Matrix3D & Get_Transform(int pivot) const;
+	void Capture_Bone(int boneindex);
+	void Release_Bone(int boneindex);
+	bool Is_Bone_Captured(int boneindex) const;
+	void Control_Bone(int boneindex,const Matrix3D & relative_tm,bool world_space_translation = false);
 };
 #include "mp_base_update.inc"
 #include "mp_htree_scale.inc"
 #include "mp_get_transform.inc"
+#include "mp_htree_capture.inc"
 #include "mp_asset_scale.inc"
 FakeModel g_models[3];
-const char *const BONE_NAMES[] = { "RootTransform", "Bone01", "Smoke01", "FX_A", "Muzzle", "SMOKE01" };
+const char *const BONE_NAMES[] = { "RootTransform", "Bone01", "Smoke01", "FX_A", "Muzzle", "SMOKE01", "Bone02", "BONE03", "BONE" };
+/* (#174) getCurrentBonePositions' prefixes */
+const char *const PREFIXES[] = { "Bone", "bone", "Smoke", "FX_A", "Muzzle", "RootTransform", "nosuch" };
 const char *const STATE_BONE_NAMES[] = { "RootTransform", "bone01", "SMOKE01", "fx_a", "Muzzle", "nosuchbone" };
 
 class RenderObjClass
@@ -258,12 +343,14 @@ public:
 	HTreeClass HTree;
 	Matrix3D Transform;
 	Bool hidden;
-	RenderObjClass() : m(NULL), Transform(true), hidden(FALSE) {}
+	float ObjectScale;
+	RenderObjClass() : m(NULL), Transform(true), hidden(FALSE), ObjectScale(1.0f) {}
 	/* (#172) W3DAssetManager::Create_Render_Obj(name, scale, color) for model `fm` (see the header) */
 	void Create( const FakeModel *fm, float scale )
 	{
 		m = fm;
 		HTree = HTreeClass();
+		ObjectScale = 1.0f;
 		HTree.NumPivots = fm->n;
 		for (int i = 0; i < fm->n; i++) {
 			HTree.Pivot[i].BaseTransform = fm->pose[i];
@@ -290,6 +377,15 @@ public:
 	}
 	const Matrix3D &Get_Transform( void ) const { return Transform; }
 	void Set_Transform( const Matrix3D &m3 ) { Transform = m3; }
+	/* rendobj.h:454 */
+	void Set_ObjectScale( float scale ) { ObjectScale = scale; }
+	/* (#174) Animatable3DObjClass::Capture_Bone and Control_Bone (animobj.cpp:690-695, 752-765): to the hierarchy, which
+	** an HLOD with pivots has */
+	void Capture_Bone( int boneindex ) { if (m->hlod && m->n != 0) HTree.Capture_Bone(boneindex); }
+	void Control_Bone( int bindex, const Matrix3D & objtm, bool world_space_translation = false )
+	{
+		if (m->hlod && m->n != 0) HTree.Control_Bone(bindex, objtm, world_space_translation);
+	}
 	/* Animatable3DObjClass::Get_Bone_Transform (animobj.cpp:658-675): BASE_POSE's Base_Update(Transform)
 	** (animobj.cpp:792-794), then the hierarchy's; without one, the render object's Transform */
 	const Matrix3D &Get_Bone_Transform( int i )
@@ -303,13 +399,20 @@ public:
 };
 RenderObjClass g_ro;
 
+/* (#174) never made here (m_trackRenderObject stays NULL): compiled for reactToTransformChange's branch */
+class TerrainTracksRenderObjClass
+{
+public:
+	void addCapEdgeToTrack( Real, Real ) { abort(); }
+	void addEdgeToTrack( Real, Real ) { abort(); }
+	void setAirborne() { abort(); }
+};
 class Shadow
 {
 public:
 	void enableShadowRender( Bool ) { abort(); }
 	void enableShadowInvisible( Bool ) { abort(); }
 };
-class TerrainTracksRenderObjClass { public: void addCapEdgeToTrack( Real, Real ) { abort(); } };
 
 struct ParticleSysBoneInfo
 {
@@ -320,14 +423,22 @@ struct ModelConditionInfo
 {
 	Int model;
 	std::vector<ParticleSysBoneInfo> m_particleSysBones;
+	/* (#174) the ACBits flags */
+	Int m_flags;
 };
 ModelConditionInfo g_states[4];
 class W3DModelDrawModuleData
 {
 public:
 	Bool m_particlesAttachedToAnimatedBones;
+	/* (#174) W3DModelDraw.h:290-324 (CACHE_ATTACH_BONE) */
+	AsciiString m_attachToDrawableBone;
+	mutable Vector3 m_attachToDrawableBoneOffset;
+	mutable Bool m_attachToDrawableBoneOffsetValid;
+	const Vector3* getAttachToDrawableBoneOffset(const Drawable* draw) const;
 };
 W3DModelDrawModuleData g_data;
+#include "mp_attach_offset.inc"
 
 class W3DModelDraw
 {
@@ -343,6 +454,10 @@ public:
 	Shadow *m_terrainDecal;
 	TerrainTracksRenderObjClass *m_trackRenderObject;
 	ParticleSystemIDVec m_particleSystemIDs;
+	/* (#174) getCurrentBonePositions' second loop reuses its first loop's `i` (MSVC 6's for-scope: the first loop's
+	** variable lives on). Unedited, the cut's `for (i = 0; ...)` finds this member instead; it is set to 0 before it is
+	** read, as MSVC's would be. */
+	mutable Int i;
 
 	W3DModelDraw() : m_curState(NULL), m_shadowEnabled(TRUE), m_renderObject(NULL), m_shadow(NULL), m_terrainDecal(NULL), m_trackRenderObject(NULL)
 	{
@@ -359,6 +474,9 @@ public:
 	void recalcBonesForClientParticleSystems();
 	Bool updateBonesForClientParticleSystems();
 	Bool getCurrentWorldspaceClientBonePositions(const char* boneName, Matrix3D& transform) const;
+	void adjustTransformMtx(Matrix3D& mtx) const;
+	Int getCurrentBonePositions(const char* boneNamePrefix, Int startIndex, Coord3D* positions, Matrix3D* transforms, Int maxBones) const;
+	void reactToTransformChange(const Matrix3D* oldMtx, const Coord3D* oldPos, Real oldAngle);
 
 	/* setModelState: the early return for the current state, the cut, then the new state's render object */
 	void setModelState( const ModelConditionInfo *newState )
@@ -366,19 +484,22 @@ public:
 		if (m_curState != NULL && newState == m_curState)
 			return;
 #include "mp_set_model_state.inc"
+		/* (#174) nukeCurrentRender(&transform) (2787-2818): the old render object's transform, else the drawable's */
+		Matrix3D transform = m_renderObject ? m_renderObject->Get_Transform() : *getDrawable()->getTransformMatrix();
 		m_renderObject = newState->model < 3 ? &g_ro : NULL;
 		if (m_renderObject) {
 			/* (#172) Create_Render_Obj(newState->m_modelName.str(), draw->getScale(), m_hexColor) (3034) */
 			g_ro.Create(&g_models[newState->model], getDrawable()->getScale());
-			g_ro.Transform.Make_Identity();
+			/* (#174) m_renderObject->Set_Transform(transform) (3155) */
+			g_ro.Set_Transform(transform);
 		}
 		m_curState = newState;
 	}
-	/* doDrawModule: the render object's transform, then the cut */
-	void doDrawModule( const Matrix3D &mtx )
+	/* doDrawModule: (#174) the instance scale and the render object's transform (cut), then the cut */
+	void doDrawModule( const Matrix3D* transformMtx )
 	{
-		if (m_renderObject)
-			m_renderObject->Set_Transform(mtx);
+#include "mp_draw_scale.inc"
+#include "mp_draw_set.inc"
 #include "mp_draw.inc"
 	}
 	void state()
@@ -396,6 +517,11 @@ public:
 			for (int r = 0; r < 3; ++r)
 				for (int c = 0; c < 4; ++c) rec({bits(s->m_localTransform[r][c])});
 		}
+		/* (#174) the render object's transform and object scale */
+		rec({m_renderObject ? 1 : 0});
+		for (int r = 0; r < 3; ++r)
+			for (int c = 0; c < 4; ++c) rec({m_renderObject ? bits(m_renderObject->Transform[r][c]) : 0});
+		rec({m_renderObject ? bits(m_renderObject->ObjectScale) : 0});
 	}
 };
 #include "mp_start_stop.inc"
@@ -403,6 +529,9 @@ public:
 #include "mp_stop.inc"
 #include "mp_bones.inc"
 #include "mp_worldspace_bone.inc"
+#include "mp_adjust.inc"
+#include "mp_current_bones.inc"
+#include "mp_react.inc"
 
 Matrix3D matrix(const int *w)
 {
@@ -434,7 +563,18 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 	g_drawable.m_scale = real(in[k++]);
 	g_drawable.m_hidden = FALSE;
 	g_drawable.m_status = 0;
+	g_drawable.m_transform.Make_Identity();
 	g_data.m_particlesAttachedToAnimatedBones = in[k++] != 0;
+	/* (#174) */
+	g_data.m_attachToDrawableBone = in[k++] ? "attachbone" : "";
+	g_data.m_attachToDrawableBoneOffsetValid = false;
+	g_attachFound = in[k++] != 0;
+	g_attachMtx = matrix(in + k);
+	k += 12;
+	int stateFlags = in[k++] ? (1 << ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT) : 0;
+	g_hasObject = in[k++] != 0;
+	g_object.m_constructionPercent = real(in[k++]);
+	g_object.m_geometryInfo.m_maxHeight = real(in[k++]);
 	for (int t = 0; t < 4; ++t) {
 		int sl = in[k++];
 		g_templates[t].m_slave = sl < 0 ? NULL : &g_templates[sl];
@@ -453,6 +593,7 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 	int nstates = in[k++];
 	for (int si = 0; si < 4; ++si) {
 		g_states[si].model = in[k++];
+		g_states[si].m_flags = stateFlags;
 		int nb = in[k++];
 		g_states[si].m_particleSysBones.clear();
 		/* parseConditionState (W3DModelDraw.cpp:1470-1480): a ConditionState starts as a copy of the default state, its
@@ -478,12 +619,15 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 		case 0: draw->setModelState(&g_states[a[1] % nstates]); break;
 		case 1:
 		case 2: {
-			/* (#172) the drawable's transform: the template scale is in the render object's hierarchy */
+			/* (#172) the drawable's transform: the template scale is in the render object's hierarchy; (#174) the
+			** drawable's transform: doDrawModule(&transformMtx) makes the render object's, reactToTransformChange too */
 			Matrix3D mtx = matrix(a + 2);
+			g_drawable.m_transform = mtx;
 			if (a[0] == 1) {
-				draw->doDrawModule(mtx);
+				Matrix3D transformMtx = *g_drawable.getTransformMatrix();
+				draw->doDrawModule(&transformMtx);
 			} else {
-				if (draw->m_renderObject) draw->m_renderObject->Set_Transform(mtx);
+				draw->reactToTransformChange(NULL, NULL, 0.0f);
 				draw->updateBonesForClientParticleSystems();
 			}
 			break;
@@ -501,9 +645,34 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 			}
 			break;
 		case 6: g_drawable.m_status = a[1] ? DRAWABLE_STATUS_NO_STATE_PARTICLES : 0; break;
+		case 8:
+			/* (#174) handleClientTurretPositioning's (and handleClientRecoil's) calls on a bone */
+			if (draw->m_renderObject && draw->m_renderObject->m->hlod && draw->m_renderObject->m->n != 0) {
+				int bone = (unsigned)a[1] % (unsigned)draw->m_renderObject->m->n;
+				draw->m_renderObject->Capture_Bone(bone);
+				draw->m_renderObject->Control_Bone(bone, matrix(a + 2));
+			}
+			break;
+		case 9: g_drawable.m_scale = real(a[2]); break;
+		case 10: {
+			Coord3D pos[64];
+			Matrix3D mtx[64];
+			memset(pos, 0, sizeof(pos));
+			for (int i = 0; i < 64; ++i) mtx[i].Make_Identity();
+			Int n = draw->getCurrentBonePositions(PREFIXES[(unsigned)a[1] % 7], a[2], a[4] ? pos : NULL, a[5] ? mtx : NULL, a[3]);
+			rec({300, n});
+			for (int i = 0; i < n && i < 64; ++i) {
+				rec({a[4] ? bits(pos[i].x) : 0, a[4] ? bits(pos[i].y) : 0, a[4] ? bits(pos[i].z) : 0});
+				for (int r = 0; r < 3; ++r)
+					for (int c = 0; c < 4; ++c) rec({a[5] ? bits(mtx[i][r][c]) : 0});
+			}
+			break;
+		}
 		default: {
-			/* (#172) getCurrentWorldspaceClientBonePositions with the render object's transform world */
-			if (draw->m_renderObject) draw->m_renderObject->Set_Transform(matrix(a + 2));
+			/* (#172) getCurrentWorldspaceClientBonePositions with the render object's transform world; (#174) the
+			** render object's transform is the module's: the drawable's set to world, then reactToTransformChange */
+			g_drawable.m_transform = matrix(a + 2);
+			draw->reactToTransformChange(NULL, NULL, 0.0f);
 			Matrix3D t(true);
 			Bool found = draw->getCurrentWorldspaceClientBonePositions(STATE_BONE_NAMES[(unsigned)a[1] % 6], t);
 			rec({200, found ? 1 : 0});

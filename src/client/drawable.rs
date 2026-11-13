@@ -105,6 +105,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use crate::logic::modules::plant;
 
 use super::animated_particle_sys_bone_client_update::{AnimatedParticleSysBoneClientUpdate, AnimatedParticleSysBoneHost, ANIMATED_PARTICLE_SYS_BONE_CLIENT_UPDATE};
 use super::beacon_client_update::{BeaconClientUpdate, BeaconClientUpdateModuleData, BeaconHost, ClientUpdateModule, TaggedClientUpdateModule, BEACON_CLIENT_UPDATE};
@@ -234,6 +235,93 @@ impl Drawable {
     /// interface, so the first of those; `None` without one.
     pub fn laser_template_width(&self) -> Option<f32> {
         self.laser_draws.first().map(|m| m.get_laser_template_width())
+    }
+
+    /// (#174) `getInstanceScale()` (Drawable.h:404), which `getScale()` (Drawable.cpp:1093-1097) answers too:
+    /// `m_instanceScale`, the template's asset scale at construction (Drawable.cpp:431). ~~Kept only for saves.~~ The
+    /// drawable's state (`saved.instance_scale`, which `Drawable::xfer` saves); its modules keep a copy
+    /// ([`W3DModelDraw::scale`]) that [`Drawable::set_instance_scale`] and a load keep equal to it.
+    pub fn get_instance_scale(&self) -> f32 {
+        self.saved.instance_scale
+    }
+
+    /// (#174) `setInstanceScale(value)` (Drawable.h:405; `EMPUpdate`'s shrink, EMPUpdate.cpp:145): `m_instanceScale`, and
+    /// so `getScale()`: each draw module's copy follows.
+    pub fn set_instance_scale(&mut self, value: f32) {
+        self.saved.instance_scale = value;
+        if !plant(9760) {
+            for dm in &mut self.draw_modules {
+                dm.scale = value;
+            }
+        }
+    }
+
+    /// (#174) Each module's `W3DModelDrawModuleData::getAttachToDrawableBoneOffset(this)` (W3DModelDraw.cpp:1148-1174),
+    /// filled once (in the module data the template's drawables share) from this drawable's pristine bones:
+    /// `getPristineBonePositions(m_attachToDrawableBone, 0, NULL, &boneMtx, 1)` (Drawable.cpp:771-797, the logic's
+    /// translation [`crate::logic::world::drawable_bones::DrawableArt::get_pristine_bone_positions`], here over the
+    /// client's modules, flags and instance scale). Upstream fills it in the first `adjustTransformMtx` (or the logic's
+    /// `getProjectileLaunchOffset`); the port's client fills it when the drawable is made and before its modules draw
+    /// or react (the cache is already full then: nothing is asked).
+    pub fn validate_attach_to_drawable_bone_offsets<A: W3dAssetSource>(&self, object_transform: Option<Matrix3D>, orientation: f32, env: &mut DrawEnv<'_, A>) {
+        if self.draw_modules.iter().all(|m| m.data.attach_to_drawable_bone.is_empty()) {
+            return;
+        }
+        let modules: Vec<Arc<W3DModelDrawModuleData>> = self.draw_modules.iter().map(|m| m.data.clone()).collect();
+        let standard = self.draw_modules.first().map(|m| m.standard_public_bones.clone()).unwrap_or_default();
+        let art = crate::logic::world::drawable_bones::DrawableArt {
+            modules: &modules,
+            condition: self.condition_state,
+            scale: self.get_instance_scale(),
+            standard_public_bones: &standard,
+            object_transform,
+            orientation,
+        };
+        for m in &modules {
+            m.get_attach_to_drawable_bone_offset(|| {
+                let mut pivot = [Matrix3D::IDENTITY];
+                (art.get_pristine_bone_positions(&m.attach_to_drawable_bone, 0, None, Some(&mut pivot), 1, env) == 1).then_some(pivot[0])
+            });
+        }
+    }
+
+    /// (#174) `reactToTransformChange` of each draw module (Drawable.cpp:4222-4227's walk, W3DModelDraw.cpp:3647-3659):
+    /// each render object put at the drawable's transform `transform` ([`W3DModelDraw::react_to_transform_change`]).
+    pub fn react_to_transform_change(&mut self, transform: &Matrix3D, construction: Option<(f32, f32)>) {
+        for dm in &mut self.draw_modules {
+            dm.react_to_transform_change(transform, construction);
+        }
+    }
+
+    /// (#174) `getCurrentClientBonePositions(boneNamePrefix, startIndex, positions, transforms, maxBones)`
+    /// (Drawable.cpp:799-822): each draw module's [`W3DModelDraw::get_current_bone_positions`] in turn while `maxBones`
+    /// is above 0, the arrays moved on and `maxBones` lowered by each module's count. `None` for a `NULL` array. Returns
+    /// the count.
+    pub fn get_current_client_bone_positions(&self, bone_name_prefix: &[u8], start_index: i32, positions: Option<&mut [Coord3D]>, transforms: Option<&mut [Matrix3D]>, max_bones: i32) -> i32 {
+        let mut positions = positions;
+        let mut transforms = transforms;
+        let mut count = 0;
+        let mut max_bones = max_bones;
+        let (mut p_off, mut t_off) = (0usize, 0usize);
+        for dm in &self.draw_modules {
+            if max_bones <= 0 {
+                break;
+            }
+            let p = positions.as_deref_mut().map(|p| p.get_mut(p_off..).unwrap_or_default());
+            let t = transforms.as_deref_mut().map(|t| t.get_mut(t_off..).unwrap_or_default());
+            let subcount = dm.get_current_bone_positions(bone_name_prefix, start_index, p, t, max_bones);
+            if subcount > 0 {
+                count += subcount;
+                if positions.is_some() {
+                    p_off += subcount as usize;
+                }
+                if transforms.is_some() {
+                    t_off += subcount as usize;
+                }
+                max_bones -= subcount;
+            }
+        }
+        count
     }
 
     /// `getModelConditionFlags()`.
@@ -376,15 +464,17 @@ impl Drawable {
     /// translated: no locomotor info on the client yet).
     pub fn handle_weapon_fire_fx<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> bool {
         // where it plays is not asked: any render object transform
-        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, &Matrix3D::IDENTITY, env).is_some()
+        self.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, env).is_some()
     }
 
     /// [`Drawable::handle_weapon_fire_fx`] with where the handling module plays the FX list (GitHub #43,
-    /// [`W3DModelDraw::handle_weapon_fire_fx_at`]); (#172) `transform` is the render objects' (the drawable's transform,
-    /// as the draw sets it), which the FX bone is chained from.
-    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, transform: &Matrix3D, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
+    /// [`W3DModelDraw::handle_weapon_fire_fx_at`]); (#172) ~~`transform` is the render objects' (the drawable's transform,
+    /// as the draw sets it), which the FX bone is chained from~~ **Corrected 2026-11-13 (#174):** the FX bone is chained
+    /// from each render object's own transform ([`crate::client::w3d_model_draw::RenderObj::transform`]; the caller
+    /// puts it at the drawable's, [`Drawable::react_to_transform_change`]).
+    pub fn handle_weapon_fire_fx_at<A: W3dAssetSource>(&mut self, wslot: usize, specific_barrel_to_use: i32, has_fxl: bool, env: &mut DrawEnv<'_, A>) -> Option<WeaponFireFxAt> {
         for dm in self.get_draw_modules(env) {
-            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl, transform) {
+            if let Some(at) = dm.handle_weapon_fire_fx_at(wslot, specific_barrel_to_use, has_fxl) {
                 return Some(at);
             }
         }
@@ -620,7 +710,7 @@ impl ClientDrawables {
                 Err(e) => self.errors.push((t.get_name().to_vec(), n.first.clone(), format!("{e:?}"))),
             }
         }
-        Drawable {
+        let d = Drawable {
             object_id: id,
             template: t.get_name().to_vec(),
             condition_state: ModelConditionFlags::new(),
@@ -636,7 +726,13 @@ impl ClientDrawables {
             saved: DrawableSaveFields::new(id, scale),
             client_update_modules,
             laser_draws,
-        }
+        };
+        // (#174) the modules' `AttachToBoneInAnotherModule` offsets: upstream's first `adjustTransformMtx` is the
+        // object's first `setTransformMatrix` (`reactToTransformChange`), right after the drawable is made, inside the
+        // logic when the logic makes the object
+        let object = w.find_object(id);
+        d.validate_attach_to_drawable_bone_offsets(object.map(|o| *o.thing.transform_matrix()), object.map_or(0.0, |o| o.thing.orientation()), &mut env);
+        d
     }
 
     /// (#168) `TheThingFactory->newDrawable(tmpl)` of the logic's (`ClientNewDrawable`): a drawable of no object, of the
@@ -700,6 +796,12 @@ impl ClientDrawables {
                         d.react_to_body_damage_state_change(*state);
                     }
                 }
+                // (#174) `dr->setInstanceScale(scale)` (EMPUpdate.cpp:145)
+                ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceScale { object_id, scale }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        d.set_instance_scale(*scale);
+                    }
+                }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetHidden { object_id, hidden }) => {
                     self.drawable(w, *object_id, assets, sync_time);
                     if let Some(d) = self.drawables.get_mut(object_id) {
@@ -735,7 +837,12 @@ impl ClientDrawables {
                             None => d.saved.transform,
                         };
                         let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: true, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
-                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &transform, &mut env);
+                        // (#174) the render objects at the drawable's transform as `reactToTransformChange` sets them
+                        // (W3DModelDraw.cpp:3647-3659: `adjustTransformMtx`, no instance scale), see its docs
+                        let orientation = w.find_object(*source).map_or(0.0, |o| o.thing.orientation());
+                        d.validate_attach_to_drawable_bone_offsets(w.find_object(*source).map(|o| *o.thing.transform_matrix()), orientation, &mut env);
+                        d.react_to_transform_change(&transform, Self::construction(w, *source));
+                        handled = d.handle_weapon_fire_fx_at(wslot, *barrel, fx.is_some(), &mut env);
                     }
                     // the FX list itself (GitHub #43): at the handling module's FX bone, else where
                     // `fireWeaponTemplate` plays it
@@ -1049,7 +1156,14 @@ impl ClientDrawables {
             // (#171) the render object's transform (`Set_Transform(mtx)`) as the port places it: the object's transform
             // matrix (the scale is the skeleton's); the identity without an object
             transform: w.find_object(id).map_or(Matrix3D::IDENTITY, |o| *o.thing.transform_matrix()),
+            construction: Self::construction(w, id),
         }
+    }
+
+    /// (#174) What `adjustTransformMtx` reads of the object (W3DModelDraw.cpp:2024-2035): `getConstructionPercent()` and
+    /// `getGeometryInfo().getMaxHeightAbovePosition()`; `None` without an object.
+    pub fn construction(w: &World, id: ObjectId) -> Option<(f32, f32)> {
+        w.find_object(id).map(|o| (o.construction_percent, o.geometry_info.get_max_height_above_position()))
     }
 
     /// `GameClient::update`'s shroud status of `id`'s drawable (GitHub #45, the release build's `if (true)` branch):
@@ -1119,6 +1233,9 @@ impl ClientDrawables {
                 d.apply_physics_xform(&xform, &mut self.random);
                 let facts = Self::draw_facts(w, id, show_client_physics, d.get_wheel_info());
                 let mut env = DrawEnv { assets: &mut *assets, random: &mut self.random, sync_time, logic_time: false, particles: Some(DrawParticles { manager: &mut self.fx.particles, frame: w.frame() }) };
+                // (#174) the modules' `AttachToBoneInAnotherModule` offsets, which `adjustTransformMtx` reads (filled once)
+                let orientation = w.find_object(id).map_or(0.0, |o| o.thing.orientation());
+                d.validate_attach_to_drawable_bone_offsets(w.find_object(id).map(|o| *o.thing.transform_matrix()), orientation, &mut env);
                 for dm in d.get_draw_modules(&mut env) {
                     dm.do_draw_module(&facts, &mut env);
                 }
@@ -1265,7 +1382,13 @@ impl AnimatedParticleSysBoneHost for DrawableClientHost<'_> {
             Some(o) => *o.thing.transform_matrix(),
             None => self.drawable.saved.transform,
         };
-        self.drawable.draw_modules[i].update_bones_for_client_particle_systems(&transform, Some(&mut *self.particles))
+        // (#174) the render object's own transform: put at the drawable's as `reactToTransformChange` puts it (see
+        // `W3DModelDraw::react_to_transform_change`'s docs)
+        let construction = ClientDrawables::construction(self.world, self.drawable.object_id);
+        let dm = &mut self.drawable.draw_modules[i];
+        dm.react_to_transform_change(&transform, construction);
+        let transform = dm.render_object.as_ref().map_or(transform, |r| r.transform);
+        dm.update_bones_for_client_particle_systems(&transform, Some(&mut *self.particles))
     }
 }
 
@@ -1286,7 +1409,9 @@ impl LaserHost for DrawableClientHost<'_> {
             Some(o) => *o.thing.transform_matrix(),
             None => d.saved.transform,
         };
-        d.draw_modules.iter().find_map(|m| m.get_current_worldspace_client_bone_positions(bone, &world))
+        // (#174) each render object's transform as `reactToTransformChange` would put it (nothing written: another drawable)
+        let construction = ClientDrawables::construction(self.world, d.object_id);
+        d.draw_modules.iter().find_map(|m| m.get_current_worldspace_client_bone_positions(bone, &m.reacted_transform(&world, construction)))
     }
     fn drawable_object_effectively_dead(&self, id: DrawableId) -> bool {
         self.find_drawable(id).and_then(|d| self.world.find_object(d.object_id)).is_some_and(|o| o.is_effectively_dead())
@@ -1472,6 +1597,52 @@ mod tests {
         assert_eq!(d.draw_modules[0].cur_state_ref(), Some(&StateRef::Normal(0)));
         d.set_drawable_hidden(true, None);
         assert!(d.draw_modules[0].render_object.as_ref().unwrap().hidden);
+    }
+
+    /// (#174) `setInstanceScale` reaches `getScale()` (the modules' copy), and `adjustTransformMtx` moves a module's render
+    /// transform by its `AttachToBoneInAnotherModule` offset turned by the matrix, then lowers an unfinished building.
+    /// Predicted before the run (issue174_predictions.md): the scale 0.5 is the drawable's and the module's; with the
+    /// offset (1, 2, 3) from the pristine bone and the matrix a quarter turn about Z at (10, 0, 0), the adjusted
+    /// translation is (8, 1, 3); under `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT` at 25 % of a height 8, 6 lower: (8, 1, -3);
+    /// no render object gives no current bones.
+    #[test]
+    fn the_instance_scale_and_the_attach_offset_reach_the_modules() {
+        let line = |depth, f: &str, a: &str| ClientLine { depth, field: f.as_bytes().to_vec(), args: a.split_whitespace().map(|t| t.as_bytes().to_vec()).collect() };
+        let block = ClientModuleData {
+            module_tag_name_key: Default::default(),
+            lines: vec![
+                line(0, "AttachToBoneInAnotherModule", "TurretBone"),
+                line(0, "DefaultConditionState", ""),
+                line(1, "Model", "A"),
+                line(1, "Flags", "ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT"),
+            ],
+        };
+        let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
+        let mut random = RandomValues::new(0);
+        let mut env = DrawEnv { assets: &mut NoAssets, random: &mut random, sync_time: 0, logic_time: true, particles: None };
+        let m = W3DModelDraw::new(data.clone(), 0, false, false, &mut env).unwrap();
+        let mut d = Drawable { draw_modules: vec![m], ..Drawable::for_tests() };
+        d.set_instance_scale(0.5);
+        assert_eq!((d.get_instance_scale(), d.draw_modules[0].scale), (0.5, 0.5));
+        let mut bone = Matrix3D::IDENTITY;
+        bone.set_translation(&crate::ww::vector3::Vector3::new(1.0, 2.0, 3.0));
+        assert_eq!(data.get_attach_to_drawable_bone_offset(|| Some(bone)), Some(crate::ww::vector3::Vector3::new(1.0, 2.0, 3.0)));
+        // filled once: a later answer is not asked
+        assert_eq!(data.get_attach_to_drawable_bone_offset(|| unreachable!()), Some(crate::ww::vector3::Vector3::new(1.0, 2.0, 3.0)));
+        let mut mtx = Matrix3D::IDENTITY;
+        for (c, v) in [0.0, -1.0, 0.0, 10.0].into_iter().enumerate() {
+            mtx.row[0][c] = v;
+        }
+        for (c, v) in [1.0, 0.0, 0.0, 0.0].into_iter().enumerate() {
+            mtx.row[1][c] = v;
+        }
+        let mut a = mtx;
+        d.draw_modules[0].adjust_transform_mtx(&mut a, None);
+        assert_eq!(a.get_translation(), crate::ww::vector3::Vector3::new(8.0, 1.0, 3.0));
+        let mut a = mtx;
+        d.draw_modules[0].adjust_transform_mtx(&mut a, Some((25.0, 8.0)));
+        assert_eq!(a.get_translation(), crate::ww::vector3::Vector3::new(8.0, 1.0, -3.0));
+        assert_eq!(d.get_current_client_bone_positions(b"Bone", 1, None, None, 4), 0);
     }
 
     /// Predictions: in the gate game, every object gets a drawable from its creation event (13 objects); none has a

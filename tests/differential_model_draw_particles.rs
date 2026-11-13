@@ -12,6 +12,10 @@
 //   (GitHub #172) W3DModelDraw.cpp (getCurrentWorldspaceClientBonePositions); W3DAssetManager.cpp (Create_Render_Obj's
 //   scaling); GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/htree.cpp (HTreeClass::Scale, Base_Update), htree.h
 //   (Get_Transform), hlod.cpp (HLodClass::Scale), animobj.cpp (Get_Bone_Transform)
+//   (GitHub #174) W3DModelDraw.cpp (getAttachToDrawableBoneOffset, adjustTransformMtx, doDrawModule's instance scale and
+//   Set_Transform, getCurrentBonePositions, reactToTransformChange, setModelState's transform hand-over), W3DModelDraw.h
+//   (CACHE_ATTACH_BONE), pivot.cpp (PivotClass::Capture_Update), htree.cpp (Capture_Bone, Release_Bone,
+//   Is_Bone_Captured, Control_Bone), animobj.cpp (Capture_Bone, Control_Bone)
 //
 // Original copyright notice of those files:
 //   Command & Conquer Generals Zero Hour(tm)
@@ -108,6 +112,39 @@
 //! the same 1,466 sequences: a recalc's position is seen only where no update follows, i.e. without
 //! `ParticlesAttachedToAnimatedBones`.)
 //!
+//! # #174 (2026-11-13): the live root, the captured bones, `getCurrentBonePositions`
+//!
+//! Added to each case: the module's `AttachToBoneInAnotherModule` (half the cases) with the drawable's pristine answer
+//! for it (found 3 in 4, a random pose), every state's `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT` (half), an object (4 in 5)
+//! with a construction percent (-5 .. 110, 100 and -1 one in 8 each) and a height (0 .. 60); two more pivot names
+//! (`Bone02`, `BONE03`) and `BONE`. The drawable's transform is now the case's: `doDrawModule(&world)` makes the render
+//! object's (the instance scale, `Set_ObjectScale`, `adjustTransformMtx`), and the ops that read bones outside a draw (2,
+//! 7) first call `reactToTransformChange` with the drawable at `world`. New ops: `Capture_Bone` + `Control_Bone` of a
+//! random bone (10 %: a turn about Z, a pitch about Y, a recoil shift along -X, or any matrix), `setInstanceScale` (3 %:
+//! 1, 0.5, 2, 0.25, 1.005 or any in 0.2 .. 2), `getCurrentBonePositions` (8 %: a prefix from `PREFIXES`, `startIndex`
+//! 0..3, `maxBones` 1, 2, 3, 64, 70, 0 or -1, `positions` and `transforms` each `NULL` 1 in 4; recorded: the count, each
+//! position and transform). Every state record also has the render object's transform and object scale. The port's
+//! module data has its attach offset filled at the start from the same answer (as the client's drawable fills it when it
+//! is made, `Drawable::validate_attach_to_drawable_bone_offsets`).
+//!
+//! Predicted (`issue174_predictions.md`, before any run): 0 mismatches in both tests; plants 9751-9766 (those defined)
+//! caught, 9760 only by the lib test (`Drawable::set_instance_scale` is the drawable's).
+//!
+//! - **First build:** the cut `getCurrentBonePositions` reuses its first loop's `i` after the loop (MSVC 6's for-scope);
+//!   g++ refuses it even with `-fpermissive`. Without editing the text, the wrapper's module class has a `mutable Int i`
+//!   member the second loop finds (set to 0 before it is read, as MSVC's variable would be).
+//! - **First run (2026-11-13):** main 0 mismatches over 20,000 sequences (407,965 steps, 45,344 systems, 35 NaN words);
+//!   any scale 0 over 20,000 (407,905 steps, 44,672 systems, 2,624 NaN words, 315 NaN on both sides with different
+//!   bits, normalised). Plants: 9763 (`startIndex` 0 goes on) was not caught (0): no model had a bone named by a prefix
+//!   *and* `prefix01`. **A prediction miss**; the pivot name `BONE` added.
+//! - **Second run:** main 0 mismatches over 20,000 (407,965 steps, 45,344 systems, 37 NaN words, max ULP 0); any scale 0
+//!   over 20,000 (407,905 steps, 44,672 systems, 2,291 NaN words, 165 NaN-payload-only). Plants, mismatching of 20,000:
+//!   9751 1,091; 9753 5,264; 9754 7,415; 9755 11,122; 9756 5,266; 9757 3,988; 9758 3,986; 9759 177; 9762 1,113; 9763 57;
+//!   9764 1,257; 9765 1,369; 9766 1,152; 9760 0 here, caught by the lib test
+//!   `the_instance_scale_and_the_attach_offset_reach_the_modules` (9751 and 9755 are also caught by the lib tests).
+//!   **14 of 14 caught.** The #171/#172 plants re-run: 9661-9696 and 9698 all caught (9697 0 here, caught by its lib
+//!   test as before).
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose):
@@ -152,6 +189,20 @@
 //! | 9696 | (#172) `getCurrentWorldspaceClientBonePositions` is `world * (bone under Scale)` |
 //! | 9697 | (#172) `handleWeaponFireFX`'s FX bone is the bone under Scale, not in the world (lib test) |
 //! | 9698 | (#172) the live bone ignores its parents (every pivot under the root) |
+//! | 9751 | (#174) the live bones ignore the render object's captured bones |
+//! | 9753 | (#174) the attach offset is never the pristine bone's (always zero) |
+//! | 9754 | (#174) a new render object does not take the old one's transform (`setModelState`) |
+//! | 9755 | (#174) `doDrawModule` ignores the instance scale |
+//! | 9756 | (#174) `adjustTransformMtx` adds the attach offset unturned |
+//! | 9757 | (#174) `adjustTransformMtx` ignores `ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT` |
+//! | 9758 | (#174) the construction height is added along world Z, not the matrix's Z (`Translate_Z`) |
+//! | 9759 | (#174) the recalc's bone is the skeleton as made (no captured bones) |
+//! | 9760 | (#174) `Drawable::set_instance_scale` does not reach the modules (lib test) |
+//! | 9762 | (#174) `getCurrentBonePositions`' inverse is not scaled by `getScale()` |
+//! | 9763 | (#174) `getCurrentBonePositions` with `startIndex` 0 goes on to `prefix01` ... |
+//! | 9764 | (#174) `getCurrentBonePositions` reads the bone under the identity, not the render object's transform |
+//! | 9765 | (#174) `getCurrentBonePositions` post-multiplies the inverse |
+//! | 9766 | (#174) `getCurrentBonePositions`' positions have z 0 |
 
 mod support;
 
@@ -160,6 +211,7 @@ use std::sync::Arc;
 use rts_lockstep_engine::client::particle_sys::ParticleSystemManager;
 use rts_lockstep_engine::client::w3d_model_draw::{scale_render_obj_hierarchy, AnimHandle, DrawEnv, DrawFacts, DrawParticles, Skeleton, StateRef, W3DModelDraw, W3DModelDrawModuleData, W3dAssetSource};
 use rts_lockstep_engine::formats::w3d::htree::{HTree, Pivot};
+use rts_lockstep_engine::common::base_type::Coord3D;
 use rts_lockstep_engine::common::model_state::{ModelConditionFlags, MODEL_CONDITION_NAMES};
 use rts_lockstep_engine::common::random_value::RandomValues;
 use rts_lockstep_engine::common::thing_template::{ClientLine, ClientModuleData};
@@ -186,15 +238,19 @@ fn r(i: i32) -> f32 {
     f32::from_bits(i as u32)
 }
 
-/// The wrapper's `BONE_NAMES` (the models' pivots) and `STATE_BONE_NAMES` (the `ParticleSysBone` lines').
-const BONE_NAMES: [&str; 6] = ["RootTransform", "Bone01", "Smoke01", "FX_A", "Muzzle", "SMOKE01"];
+/// The wrapper's `BONE_NAMES` (the models' pivots) and `STATE_BONE_NAMES` (the `ParticleSysBone` lines'). (#174) Two
+/// more pivot names, so `getCurrentBonePositions` finds runs of `Bone01`, `Bone02`, `BONE03`, and `BONE` itself (a
+/// prefix that is also a bone: `startIndex` 0 must stop after it).
+const BONE_NAMES: [&str; 9] = ["RootTransform", "Bone01", "Smoke01", "FX_A", "Muzzle", "SMOKE01", "Bone02", "BONE03", "BONE"];
+/// (#174) The wrapper's `PREFIXES` (`getCurrentBonePositions`').
+const PREFIXES: [&str; 7] = ["Bone", "bone", "Smoke", "FX_A", "Muzzle", "RootTransform", "nosuch"];
 const STATE_BONE_NAMES: [&str; 6] = ["RootTransform", "bone01", "SMOKE01", "fx_a", "Muzzle", "nosuchbone"];
 const MODEL_NAMES: [&str; 5] = ["M0", "M1", "M2", "None", "Missing"];
 const TEMPLATE_NAMES: [&str; 6] = ["PS0", "PS1", "PS2", "PS3", "None", "NoSuch"];
 /// The states' condition bits (the first state is the default).
 const STATE_BITS: [&str; 4] = ["", "DAMAGED", "RUBBLE", "GARRISONED"];
 
-const HEADER: usize = 7 + 3 * (2 + 6 * 14) + 1 + 4 * (2 + 3 * 2);
+const HEADER: usize = 7 + 18 + 3 * (2 + 6 * 14) + 1 + 4 * (2 + 3 * 2);
 const STEP: usize = 14;
 
 /// A world entry that is not well scaled: `Gen::finite` (huge, tiny, subnormal), or (#172, the second test) `Gen::mixed`,
@@ -254,6 +310,19 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
     };
     w.push(b(scale));
     w.push((g.below(2) == 0) as i32);
+    // (#174) AttachToBoneInAnotherModule, its pristine bone (found or not, a pose), ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT,
+    // the object (or none), its construction percent (-1 .. 110, a quarter of them 100 or -1) and height
+    w.push((g.below(2) == 0) as i32);
+    w.push((g.below(4) != 0) as i32);
+    w.extend(matrix_words(g, -2.0, 2.0, 50.0, Odd::None));
+    w.push((g.below(2) == 0) as i32);
+    w.push((g.below(5) != 0) as i32);
+    w.push(b(match g.below(8) {
+        0 => 100.0,
+        1 => -1.0,
+        _ => g.uniform(-5.0, 110.0),
+    }));
+    w.push(b(g.uniform(0.0, 60.0)));
     for t in 0..4u32 {
         w.push(if t < 3 && g.below(3) == 0 { (t + 1 + g.below(3 - t)) as i32 } else { -1 });
     }
@@ -261,7 +330,7 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
         w.push((g.below(5) != 0) as i32);
         w.push(g.below(7) as i32);
         for k in 0..6 {
-            w.push(if k == 0 { 0 } else { 1 + g.below(5) as i32 });
+            w.push(if k == 0 { 0 } else { 1 + g.below(8) as i32 });
             // (#172) the pivot's parent: an earlier pivot (chains up to 5 deep); unused for pivot 0
             w.push(if k == 0 { 0 } else { g.below(k) as i32 });
             if g.below(10) == 0 {
@@ -288,21 +357,52 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
     // ~~only at scale 1~~ (#172) at any scale
     for _ in 0..1 + g.below(40) {
         let mut s = [0i32; STEP];
+        // (#174) the captures (8), the instance scale (9) and getCurrentBonePositions (10)
         let op = match g.below(100) {
-            0..=14 => 0,
-            15..=44 => 1,
-            45..=59 => 2,
-            60..=69 => 3,
-            70..=79 => 4,
-            80..=86 => 5,
-            87..=92 => 6,
-            _ => 7,
+            0..=11 => 0,
+            12..=36 => 1,
+            37..=48 => 2,
+            49..=55 => 3,
+            56..=62 => 4,
+            63..=67 => 5,
+            68..=72 => 6,
+            73..=78 => 7,
+            79..=88 => 8,
+            89..=91 => 9,
+            _ => 10,
         };
         s[0] = op;
         s[1] = match op {
             3 | 4 | 6 => (g.below(2) == 0) as i32,
             _ => g.below(1000) as i32,
         };
+        if op == 8 {
+            // a turret's turn about Z (as handleClientTurretPositioning's), a pitch about Y, a recoil's shift along X, or
+            // any matrix
+            let mut m = Matrix3D::IDENTITY;
+            match g.below(4) {
+                0 => m.rotate_z(g.uniform(-4.0, 4.0)),
+                1 => m.rotate_y(g.uniform(-1.5, 1.5)),
+                2 => m.translate_x(-g.uniform(0.0, 3.0)),
+                _ => m = matrix(&matrix_words(g, -2.0, 2.0, 10.0, Odd::None)),
+            }
+            for row in 0..3 {
+                for c in 0..4 {
+                    s[2 + row * 4 + c] = b(m.row[row][c]);
+                }
+            }
+        } else if op == 9 {
+            s[2] = b(match g.below(4) {
+                0 => 1.0,
+                1 => [0.5f32, 2.0, 0.25, 1.005][g.below(4) as usize],
+                _ => g.uniform(0.2, 2.0),
+            });
+        } else if op == 10 {
+            s[2] = [0, 0, 1, 1, 2, 3][g.below(6) as usize];
+            s[3] = [1, 2, 3, 64, 70, 0, -1][g.below(7) as usize];
+            s[4] = (g.below(4) != 0) as i32;
+            s[5] = (g.below(4) != 0) as i32;
+        }
         if op == 1 || op == 2 || op == 7 {
             let odd = if any_scale {
                 if g.below(10) == 0 { Odd::Any } else { Odd::None }
@@ -408,6 +508,15 @@ fn state_words(out: &mut Vec<i32>, m: &W3DModelDraw, mgr: &ParticleSystemManager
             }
         }
     }
+    // (#174) the render object's transform and object scale
+    let ro = m.render_object.as_ref();
+    out.push(ro.is_some() as i32);
+    for row in 0..3 {
+        for c in 0..4 {
+            out.push(ro.map_or(0, |ro| b(ro.transform.row[row][c])));
+        }
+    }
+    out.push(ro.map_or(0, |ro| b(ro.object_scale)));
 }
 
 /// The Rust's words for a case (the wrapper's records).
@@ -420,6 +529,19 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
     let drawable_id = next();
     let scale = r(next());
     let attached = next() != 0;
+    // (#174)
+    let attach_bone = next() != 0;
+    let attach_found = next() != 0;
+    let mut am = [0i32; 12];
+    for v in &mut am {
+        *v = next();
+    }
+    let attach_mtx = matrix(&am);
+    let adjust_height = next() != 0;
+    let has_object = next() != 0;
+    let construction_percent = r(next());
+    let max_height = r(next());
+    let construction = has_object.then_some((construction_percent, max_height));
     let mut mgr = ParticleSystemManager::new();
     let mut slaves = [-1i32; 4];
     for s in &mut slaves {
@@ -449,6 +571,9 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
     }
     let nstates = next() as usize;
     let mut lines = vec![line(0, "ParticlesAttachedToAnimatedBones", if attached { "Yes" } else { "No" })];
+    if attach_bone {
+        lines.push(line(0, "AttachToBoneInAnotherModule", "attachbone"));
+    }
     for (si, bit) in STATE_BITS.iter().enumerate() {
         let model = next() as usize;
         let nb = next() as usize;
@@ -465,6 +590,9 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
         }
         lines.push(if si == 0 { line(0, "DefaultConditionState", "") } else { line(0, "ConditionState", bit) });
         lines.push(line(1, "Model", MODEL_NAMES[model]));
+        if adjust_height {
+            lines.push(line(1, "Flags", "ADJUST_HEIGHT_BY_CONSTRUCTION_PERCENT"));
+        }
         for bl in &bones {
             lines.push(line(1, "ParticleSysBone", bl));
         }
@@ -479,6 +607,9 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
         W3DModelDraw::new_scaled(data.clone(), 0, false, false, scale, Arc::new(Vec::new()), &mut env).expect("an idle state")
     };
     m.drawable_id = drawable_id;
+    // (#174) the drawable fills the module data's attach offset from its pristine bones (the case's answer), as the
+    // client's `Drawable::validate_attach_to_drawable_bone_offsets` does when it is made
+    data.get_attach_to_drawable_bone_offset(|| attach_found.then_some(attach_mtx));
     state_words(&mut out, &m, &mgr);
     for s in w[k..].chunks_exact(STEP) {
         match s[0] {
@@ -496,12 +627,17 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                     show_client_physics: true,
                     wheel_info: None,
                     transform: matrix(&s[2..]),
+                    construction,
                 };
                 let mut env = DrawEnv { assets: &mut models, random: &mut random, sync_time: 0, logic_time: false, particles: Some(DrawParticles { manager: &mut mgr, frame: 0 }) };
                 m.do_draw_module(&facts, &mut env);
             }
             2 => {
-                m.update_bones_for_client_particle_systems(&matrix(&s[2..]), Some(&mut mgr));
+                // (#174) the render object's transform is the module's: `reactToTransformChange` first
+                let world = matrix(&s[2..]);
+                m.react_to_transform_change(&world, construction);
+                let t = m.render_object.as_ref().map_or(world, |ro| ro.transform);
+                m.update_bones_for_client_particle_systems(&t, Some(&mut mgr));
             }
             3 => m.set_hidden(s[1] != 0, Some(&mut mgr)),
             4 => m.set_fully_obscured_by_shroud(s[1] != 0, Some(&mut mgr)),
@@ -526,9 +662,49 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
                 }
             }
             6 => m.drawable_no_state_particles = s[1] != 0,
+            8 => {
+                // (#174) `Capture_Bone(b)`, `Control_Bone(b, m)` (handleClientTurretPositioning's and handleClientRecoil's)
+                let n = m.render_object.as_ref().filter(|ro| ro.is_hlod).and_then(|ro| ro.skeleton.as_ref()).map_or(0, |k| k.bones.len());
+                if n != 0 {
+                    let bone = (s[1] as u32 % n as u32) as i32;
+                    let ro = m.render_object.as_mut().expect("a render object");
+                    ro.capture_bone(bone);
+                    ro.control_bone(bone, &matrix(&s[2..]));
+                }
+            }
+            // (#174) `setInstanceScale` (`Drawable::set_instance_scale`: the modules' `getScale()`)
+            9 => m.scale = r(s[2]),
+            10 => {
+                let mut pos = [Coord3D::default(); 64];
+                let mut mtx = [Matrix3D::IDENTITY; 64];
+                let n = m.get_current_bone_positions(
+                    PREFIXES[s[1] as usize % 7].as_bytes(),
+                    s[2],
+                    if s[4] != 0 { Some(&mut pos) } else { None },
+                    if s[5] != 0 { Some(&mut mtx) } else { None },
+                    s[3],
+                );
+                out.extend([300, n]);
+                for i in 0..(n.max(0) as usize).min(64) {
+                    if s[4] != 0 {
+                        out.extend([b(pos[i].x), b(pos[i].y), b(pos[i].z)]);
+                    } else {
+                        out.extend([0; 3]);
+                    }
+                    for row in 0..3 {
+                        for c in 0..4 {
+                            out.push(if s[5] != 0 { b(mtx[i].row[row][c]) } else { 0 });
+                        }
+                    }
+                }
+            }
             _ => {
-                // (#172) `getCurrentWorldspaceClientBonePositions(name, transform)` under the render object's transform
-                match m.get_current_worldspace_client_bone_positions(STATE_BONE_NAMES[s[1] as usize % 6].as_bytes(), &matrix(&s[2..])) {
+                // (#172) `getCurrentWorldspaceClientBonePositions(name, transform)` under the render object's transform;
+                // (#174) the module's: `reactToTransformChange` first
+                let world = matrix(&s[2..]);
+                m.react_to_transform_change(&world, construction);
+                let t = m.render_object.as_ref().map_or(world, |ro| ro.transform);
+                match m.get_current_worldspace_client_bone_positions(STATE_BONE_NAMES[s[1] as usize % 6].as_bytes(), &t) {
                     Some(t) => {
                         out.extend([200, 1]);
                         for row in 0..3 {

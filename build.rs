@@ -2805,8 +2805,11 @@ mod differential {
             // setSaveable, start, stop, destroy, setPosition, setLocalTransform, rotateLocalTransformX/Y/Z and
             // attachToDrawable. GitHub #172: W3DModelDraw.cpp's getCurrentWorldspaceClientBonePositions; htree.cpp's
             // HTreeClass::Scale and Base_Update and htree.h's Get_Transform; W3DAssetManager.cpp's ident_scale and
-            // scale_epsilon. No text is edited. Each anchor must occur once. Linked before upstream_xfer and
-            // upstream_wwmath, which it calls.
+            // scale_epsilon. GitHub #174: W3DModelDraw.h's CACHE_ATTACH_BONE; W3DModelDraw.cpp's ACBits,
+            // getAttachToDrawableBoneOffset, adjustTransformMtx, doDrawModule's instance scale and Set_Transform,
+            // getCurrentBonePositions and reactToTransformChange; pivot.cpp's PivotClass::Capture_Update; htree.cpp's
+            // Capture_Bone, Release_Bone, Is_Bone_Captured and Control_Bone. No text is edited. Each anchor must occur
+            // once. Linked before upstream_xfer and upstream_wwmath, which it calls.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_model_draw_particles.cpp");
                 let ge = up.join("GameEngine");
@@ -2831,6 +2834,7 @@ mod differential {
                 let htree = read_upstream(ww.join("WW3D2/htree.cpp"));
                 let htree_h = read_upstream(ww.join("WW3D2/htree.h"));
                 let am = read_upstream(gd.join("Source/W3DDevice/GameClient/W3DAssetManager.cpp"));
+                let pivot = read_upstream(ww.join("WW3D2/pivot.cpp"));
                 let files = [
                     ("mp_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", Some(("#define MAX_VOLUME_PARTICLE_DEPTH", false)))),
                     ("mp_tracker.inc", piece(&md_h, "W3DModelDraw.h", "\tstruct ParticleSysTrackerType\n", Some(("\ttypedef std::vector<WeaponRecoilInfo>", false)))),
@@ -2863,6 +2867,50 @@ mod differential {
                         piece(&htree_h, "htree.h", "WWINLINE const Matrix3D & HTreeClass::Get_Transform(int pivot) const", Some(("\treturn Pivot[pivot].Transform;\n}", true))),
                     ),
                     ("mp_asset_scale.inc", piece(&am, "W3DAssetManager.cpp", "const float ident_scale(1.0f);", Some(("const Vector3 ident_HSV(0,0,0);", false)))),
+                    // GitHub #174
+                    ("mp_cache_attach_bone.inc", piece(&md_h, "W3DModelDraw.h", "#define CACHE_ATTACH_BONE", Some(("#define CACHE_ATTACH_BONE", true)))),
+                    ("mp_acbits.inc", piece(&md, "W3DModelDraw.cpp", "enum ACBits\n{", Some(("static const char *ACBitsNames[] =", false)))),
+                    (
+                        "mp_attach_offset.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "const Vector3* W3DModelDrawModuleData::getAttachToDrawableBoneOffset(const Drawable* draw) const",
+                            Some(("\t\treturn &m_attachToDrawableBoneOffset;\n\t}\n}\n", true)),
+                        ),
+                    ),
+                    ("mp_adjust.inc", piece(&md, "W3DModelDraw.cpp", "void W3DModelDraw::adjustTransformMtx(Matrix3D& mtx) const", Some(("void W3DModelDraw::doDrawModule(const Matrix3D* transformMtx)", false)))),
+                    (
+                        "mp_draw_scale.inc",
+                        piece(&md, "W3DModelDraw.cpp", "\tMatrix3D scaledTransform;\n\tif (getDrawable()->getInstanceScale() != 1.0f)", Some(("\tif (isAnimationComplete(m_renderObject))", false))),
+                    ),
+                    (
+                        "mp_draw_set.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "\t// set our position in the render object to our position of the drawable\n",
+                            Some(("\thandleClientTurretPositioning();\n\trecalcBonesForClientParticleSystems();", false)),
+                        ),
+                    ),
+                    (
+                        "mp_current_bones.inc",
+                        piece(&md, "W3DModelDraw.cpp", "Int W3DModelDraw::getCurrentBonePositions(", Some(("void W3DModelDraw::reactToTransformChange( const Matrix3D* oldMtx, ", false))),
+                    ),
+                    (
+                        "mp_react.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "void W3DModelDraw::reactToTransformChange( const Matrix3D* oldMtx, ",
+                            Some(("const ModelConditionInfo* W3DModelDraw::findBestInfo(const ModelConditionFlags& c) const", false)),
+                        ),
+                    ),
+                    ("mp_capture_update.inc", piece(&pivot, "pivot.cpp", "void PivotClass::Capture_Update(void)", None)),
+                    (
+                        "mp_htree_capture.inc",
+                        piece(&htree, "htree.cpp", "void HTreeClass::Capture_Bone(int boneindex)", Some(("void HTreeClass::Get_Bone_Control(int boneindex, Matrix3D & relative_tm) const", false))),
+                    ),
                 ];
                 let gen = out_dir.join("model_draw_particles_gen");
                 std::fs::create_dir_all(&gen).expect("create model_draw_particles_gen");

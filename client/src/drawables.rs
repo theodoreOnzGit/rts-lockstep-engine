@@ -1030,7 +1030,8 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
     /// (20 damage against 100 health, one shot every 15 frames) before the runner dies, each shot's `FX_Gun` handled by
     /// the draw module at `MuzzleFX` and making one `MuzzleSmoke` system: 5 systems and 5 sound requests; the first is
     /// placed at the bone's pose as made, (4, 0, 2) from the gun (the turret's 2 up, the barrel 1, the recoil bone 2
-    /// and the muzzle 1 along x), so (154, 380, 2) (the turret's turn is not applied, see `client_fx`); each system
+    /// and the muzzle 1 along x), so (154, 380, 2) (the turret's turn is not applied, see `client_fx`; **Corrected
+    /// 2026-11-13 (#174):** it is now, see the assertion); each system
     /// emits 2 particles on its first update and lives 3 frames, its particles 10, so at most 2 alive at once (shots
     /// are 15 frames apart).
     ///
@@ -1053,7 +1054,14 @@ WeaponFireFXBone = PRIMARY MuzzleFX\n  End\n End\n";
         assert_eq!(played, 5, "#13: each shot's GunShot played by the audio, the CRCs unchanged");
         assert_eq!(systems, 5);
         assert_eq!(sounds, 5);
-        assert_eq!(first, Some(Coord3D { x: 154.0, y: 380.0, z: 2.0 }));
+        // ~~(154, 380, 2): the bone's pose as made, the turret's turn not applied~~ **Corrected 2026-11-13 (#174):** the FX
+        // bone follows the render object's captured bones: the turret turned by the logic's angle toward the runner
+        // (`handleClientTurretPositioning`), so the muzzle is 4 from the gun in the horizontal plane (the turret's 2 up
+        // unchanged), turned off +x. Measured: (150.27904, 383.99023, 2).
+        let first = first.expect("a system");
+        let (dx, dy) = (first.x - 150.0, first.y - 380.0);
+        assert!(((dx * dx + dy * dy).sqrt() - 4.0).abs() < 1e-3 && first.z == 2.0, "{first:?}");
+        assert!(dy > 3.9, "turned onto +y by the turret: {first:?}");
         assert_eq!(most, 2);
     }
 
