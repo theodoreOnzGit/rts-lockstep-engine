@@ -33,6 +33,7 @@
 //! # Results
 //!
 //! See the `DIFF` lines of a run; recorded in `docs/phase2-client.md` (#13).
+#![cfg(feature = "differential")]
 
 mod support;
 
