@@ -700,6 +700,21 @@ int ref_w3d_eval(const char *data, int len, const unsigned char *script, int sle
 		case 41:
 			ao::g_sync_time = rd.u();
 			break;
+		/* (#180) 50 tree anim frame: the client's drawn pose. A fresh render object on the tree (scale 1), in SINGLE_ANIM
+		** (Set_Animation(anim, frame), ANIM_MODE_MANUAL), then the update its Update_Sub_Object_Transforms runs, animobj.h's
+		** inline Anim_Update(Transform, ModeAnim.Motion, ModeAnim.Frame) (the raw fast path for CLASSID_HRAWANIM); its
+		** hierarchy logged as op 5 logs a tree. The loaded tree is not changed. */
+		case 50: {
+			HTreeClass *t = g_trees[rd.u()];
+			HAnimClass *a = g_anims[rd.u()].first;
+			float frame = rd.f();
+			ao::Animatable3DObjClass *r = new ao::Animatable3DObjClass(t, 1.0f);
+			r->Set_Animation(a, frame);
+			r->Anim_Update(r->Get_Transform(), r->ModeAnim.Motion, r->ModeAnim.Frame);
+			log_tree(r->HTree);
+			delete r;
+			break;
+		}
 		case 42: case 43: case 44: case 45: case 46: case 47: case 48: case 49: {
 			size_t ri = rd.u();
 			ao::Animatable3DObjClass *r = ao::g_robjs[ri];

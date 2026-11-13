@@ -124,6 +124,24 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#180 (2026-11-13, GitHub #180): the drawn pose takes upstream's render-object path.**
+- **Translated:** animobj.h's inline `Animatable3DObjClass::Anim_Update` (animobj.h:256-268): a raw animation
+  (`CLASSID_HRAWANIM`) through `HTreeClass`'s raw fast path at one integer frame (`Float_To_Long(frame)`), the others
+  through the virtual `Anim_Update`. The dispatch #179 wrote inside `RenderObj::update_sub_object_transforms` is now one
+  helper, `HTree::anim_update_animobj`, used by the live render object and by the new
+  `RenderModel::update_render_obj`, which `WorldDrawables::pose` (`client/src/drawables.rs`) now calls instead of
+  `RenderModel::update`. Before, the drawn pose interpolated a raw animation between frames.
+- **Left alone:** `RenderModel::update` and `W3dFiles::skeleton`, which feed the logic's art bones (#175). Their
+  callers ask only frame 0 or `NumFrames - 1`, and at integer frames the two paths agree bit for bit under the
+  default `Win32Fistp` (lib test `integer_frames_agree_on_both_paths_in_win32`: 94,308 poses, 0 differ; under the
+  portable truncation, which no production code selects, 21,844 differ).
+- **Results:** `differential_w3d::drawn_pose_matches_upstream` and `drawn_pose_win32_matches_upstream` (upstream's
+  render object compiled from animobj.cpp/animobj.h against `update_render_obj`): 10,000 files each, 0 mismatches,
+  max ULP 0. The pre-#180 path, planted, mismatches 5,197 / 5,345 files. The client's test
+  `the_drawn_pose_of_a_raw_animation_takes_the_fast_path`: 131 drawn frames all on the fast path, 130 of them
+  different from the interpolated pose. `animatable_bones_match_upstream` unchanged (494,431 ops, 0 mismatches). Lib
+  1225, client 101, differential_w3d 37 passed; gate (a) last CRC 0bf44067; `src/logic` unchanged.
+
 **#175 (2026-11-12, GitHub #175): the logic's bones are the art's; the client hands the World its art before the
 first frame.** The logic's change is described in `docs/phase1-porting-graph.md` (#175). Here are the client's parts.
 - `W3DModelDrawModuleData` (`client::w3d_model_draw`) gains the logic's three queries:
@@ -1561,8 +1579,12 @@ output).**
 - **The decision** (the owner's option 2): the client's W3D animation evaluation uses the Win32 branch of
   `WWMath::Float_To_Long` (wwmath.h: `fld [f]` / `fistp [i]`), which the shipped game ran under the round-to-nearest
   control word its `setFPMode` (GameLogic.cpp) sets after `_fpreset` (`_RC_NEAR`; `_RC_CHOP` is commented out there).
-  The portable truncation `(long) f` stays available as a named choice. The logic never calls either: nothing under
-  `src/logic` or `src/common` reaches `formats::w3d` or the conversion, and gate (a) keeps its CRCs.
+  The portable truncation `(long) f` stays available as a named choice. ~~The logic never calls either: nothing under
+  `src/logic` or `src/common` reaches `formats::w3d` or the conversion, and gate (a) keeps its CRCs.~~ **Corrected
+  2026-11-13 (#180):** since #175 the logic does reach them: `World::load_art_bones` validates each state's bone caches
+  through `W3dFiles::skeleton`, which poses the model with `RenderModel::update` (`HRawAnim::frames`, so
+  `Float_To_Long`). It asks only integer frames (0 or `NumFrames - 1`), and the gate game (`examples/gate_native.rs`,
+  `gate_wasm.rs`) loads no art bones, so gate (a) keeps its CRCs.
 - **Translated:** `ww::wwmath::float_to_long_fistp` (round to nearest, ties to even; NaN, the infinities and anything
   rounding outside `i32` give the x87 integer indefinite `i32::MIN`, the masked invalid-operation result, so defined)
   and `FloatToLongMode { Win32Fistp, PortableTruncate }`. Its call sites are `hrawanim.cpp`'s three

@@ -6,7 +6,8 @@
 //! choose a model and an animation from the drawable's model condition flags, and time the animation. This module runs
 //! them over a `World` after each logic frame, loads the chosen models through the W3D asset manager from the game's
 //! files when there are any ([`Art`]), and poses one render model per object (its hierarchy at the animation's frame,
-//! `Anim_Update`). The Bevy app draws those; an object with no model (no files, no `Draw` block, or a model that is not
+//! ~~`Anim_Update`~~ **Corrected 2026-11-13 (#180):** animobj.h's inline `Anim_Update`, which poses a raw animation
+//! through `HTreeClass`'s raw fast path at one integer frame, as upstream's render object does). The Bevy app draws those; an object with no model (no files, no `Draw` block, or a model that is not
 //! found) is drawn as its primitive shape (`view`).
 //!
 //! **Reading only.** The drawables take the World's client events (`take_client_events`, which only drains the queue
@@ -497,7 +498,8 @@ impl<D: LocalDevice> WorldDrawables<D> {
         self.drawables.drawables.get(&id)?.physics_xform.map(|x| x.local_matrix())
     }
 
-    /// Each object's render model made (when its model changes) and posed at its animation's frame.
+    /// Each object's render model made (when its model changes) and posed at its animation's frame
+    /// ([`RenderModel::update_render_obj`], #180: a raw animation at one integer frame, as upstream's render object).
     fn pose(&mut self) {
         let Some(art) = &mut self.art else { return };
         self.instances.retain(|id, _| self.drawables.drawables.contains_key(id));
@@ -537,13 +539,15 @@ impl<D: LocalDevice> WorldDrawables<D> {
             if let Some(r) = self.drawables.drawables.get(&id).and_then(|d| d.draw_modules.first()).and_then(|dm| dm.render_object.as_ref()) {
                 r.pose_render_model(m);
             }
+            // (#180) posed as upstream's render object poses itself (animobj.h's inline `Anim_Update`): a raw animation
+            // through the raw fast path at one integer frame, as the live render object (`RenderObj`) does
             let root = Matrix3D::IDENTITY;
             let posed = match &c.anim {
                 Some((name, frame)) => match art.assets.peek_anim(name) {
-                    Some(a) => m.update(&root, Some((a, &art.assets, *frame))),
-                    None => m.update::<AssetManager>(&root, None),
+                    Some(a) => m.update_render_obj(&root, Some((a, &art.assets, *frame))),
+                    None => m.update_render_obj::<AssetManager>(&root, None),
                 },
-                None => m.update::<AssetManager>(&root, None),
+                None => m.update_render_obj::<AssetManager>(&root, None),
             };
             if let Err(e) = posed {
                 self.missing.insert(c.model.clone(), format!("posing: {e}"));
@@ -654,6 +658,65 @@ ConditionState = FIRING_A\n   Model = SoldierFr\n   Animation = SoldierFr.Fire\n
         assert!(r.roll_frames > 3, "the roll animation runs: {} frames seen", r.roll_frames);
         assert!(r.back.is_some(), "the runner stopped and is back to its idle model");
         assert_eq!(r.fired, [true, true], "both soldiers showed their firing model");
+    }
+
+    /// GitHub #180: the drawn pose takes upstream's render-object path. The demo's runner, ordered to move, plays
+    /// `RUNNERMV.ROLL` (a raw animation: 4 keys 90 degrees apart about Z, 10 frames a second) at the frames the
+    /// client's clock gives (33 ms a logic frame, so about 0.33 of a frame each). On every frame it shows that animation
+    /// its drawn hierarchy is compared, as raw bits, with the same hierarchy posed through `HTreeClass`'s raw fast path
+    /// at that frame (`anim_update_raw`, one integer frame) and through the virtual, interpolating `Anim_Update`.
+    ///
+    /// Predictions, written before the first run: the drawn pose equals the fast path's on every such frame (about 130);
+    /// the interpolating path differs on at least 90 % of them (the frames are rarely whole). Before #180 the drawn pose
+    /// was the interpolating one, and this test fails at the first fractional frame.
+    ///
+    /// *Results (2026-11-13), first run:* 131 frames of `RUNNERMV.ROLL` drawn, every one equal to the fast path's; the
+    /// interpolating path differs on 130 of them (the one whole frame agrees). With the pre-#180 call (`update`) put back
+    /// by hand, the test failed at logic frame 3 (animation frame 0.33), as predicted.
+    #[test]
+    fn the_drawn_pose_of_a_raw_animation_takes_the_fast_path() {
+        use rts_lockstep_engine::formats::w3d::assetmgr::HAnim;
+        use rts_lockstep_engine::formats::w3d::htree::HTree;
+        let bits = |t: &HTree| -> Vec<(Vec<u32>, bool)> {
+            (0..t.num_pivots).map(|i| (t.get_transform(i).unwrap().to_array().iter().map(|v| v.to_bits()).collect(), t.get_visibility(i).unwrap())).collect()
+        };
+        let extra = drawn("Runner", RUNNER_DRAW);
+        let mut w = gate_map_world_with(&extra);
+        let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+        let at = |x: f32, y: f32| Coord3D { x, y, z: 0.0 };
+        let runner = make(&mut w, b"DrawnRunner", team, at(40.0, 50.0));
+        w.pathfinder_op(rts_lockstep_engine::logic::world::pathfinder_host_world::PfOp::NewMap);
+        let mut d = WorldDrawables::new(Some(Art::new(synthetic_art())));
+        let ev = w.take_client_events();
+        d.update(&mut w, &ev, 0);
+        let ai = w.find_object(runner).and_then(|o| o.ai).expect("the runner's AI");
+        w.module_call(runner, ai, ModuleCall::AiMoveToPosition { pos: at(160.0, 50.0), command_source: 0 });
+        let (mut seen, mut interp_differs, mut whole) = (0usize, 0usize, 0usize);
+        for f in 1..=300u32 {
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            d.update(&mut w, &ev, f * 33);
+            let Some((name, frame)) = d.choice(runner).and_then(|c| c.anim) else { continue };
+            if name != b"RUNNERMV.ROLL" {
+                continue;
+            }
+            let Some(m) = d.instance(runner) else { continue };
+            let art = d.art.as_ref().unwrap();
+            let a = art.assets.peek_anim(&name).expect("the roll is loaded");
+            let HAnim::Raw(raw) = a else { panic!("a raw animation") };
+            let drawn_tree = m.htree.as_ref().expect("an HLOD's hierarchy");
+            let mut fast = drawn_tree.clone();
+            fast.anim_update_raw(&Matrix3D::IDENTITY, raw, frame).unwrap();
+            let mut interp = drawn_tree.clone();
+            interp.anim_update(&Matrix3D::IDENTITY, a, &art.assets, frame).unwrap();
+            assert_eq!(bits(drawn_tree), bits(&fast), "logic frame {f}, animation frame {frame}: the raw fast path");
+            seen += 1;
+            interp_differs += usize::from(bits(drawn_tree) != bits(&interp));
+            whole += usize::from(rts_lockstep_engine::ww::wwmath::floor(frame) == frame);
+        }
+        println!("#180 drawn pose: {seen} frames of RUNNERMV.ROLL drawn on the fast path; the interpolating path differs on {interp_differs}; whole frames {whole}");
+        assert!(seen > 100, "{seen}");
+        assert!(interp_differs * 10 >= seen * 9, "{interp_differs} of {seen}");
     }
 
     /// #148, `pickDrawable`'s scene. Predicted before the first run: with the synthetic art, the runner at (40, 50) is its

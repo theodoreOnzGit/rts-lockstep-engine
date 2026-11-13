@@ -2472,7 +2472,11 @@ impl<D: LocalDevice> W3dAssetSource for W3dFiles<'_, D> {
     }
     /// The render model as drawn ([`RenderModel::create`]), ~~posed~~ **Corrected 2026-11-12 (#172):** its
     /// hierarchy scaled as `Create_Render_Obj(name, scale, color)` scales it ([`scale_render_obj_hierarchy`]), then
-    /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it.
+    /// posed by `Anim_Update` (or `Base_Update`) under the scaled identity, as `Validate_Transform` poses it. (#180) The
+    /// `Anim_Update` is the virtual one ([`RenderModel::update`]), where upstream's render object takes animobj.h's inline
+    /// one (the raw fast path for a raw animation, [`RenderModel::update_render_obj`]); kept, because this feeds the
+    /// logic's art bones (#175) and its callers ask only integer frames (0 or `NumFrames - 1`), where the two agree bit
+    /// for bit under the default `Float_To_Long` (the lib test `integer_frames_agree_on_both_paths_in_win32`).
     fn skeleton(&mut self, name: &[u8], pose: Option<(&[u8], f32)>, scale: f32) -> Option<Skeleton> {
         let mut m = RenderModel::create(self.assets, self.fs, name).ok()??;
         if let Some(tree) = m.htree.as_mut() {
@@ -2770,7 +2774,7 @@ impl RenderObj {
     /// `SINGLE_ANIM` `Single_Anim_Progress()` unless `ANIM_MODE_MANUAL`, then the inline `Anim_Update(Transform, Motion,
     /// Frame)` (animobj.h:256-268), which takes `HTreeClass`'s raw fast path (`Anim_Update(Transform, (HRawAnimClass *)
     /// Motion, Frame)`: one integer frame, [`HTree::anim_update_raw`]) for a raw animation (`CLASSID_HRAWANIM`) and the
-    /// virtual one ([`HTree::anim_update`]) for the others; `DOUBLE_ANIM` `Blend_Update(Transform, Motion0, Frame0,
+    /// virtual one ([`HTree::anim_update`]) for the others ([`HTree::anim_update_animobj`], #180); `DOUBLE_ANIM` `Blend_Update(Transform, Motion0, Frame0,
     /// Motion1, Frame1, Percentage)`; `MULTIPLE_ANIM` `Combo_Update(Transform, AnimCombo)`; then the hierarchy is valid.
     /// The embedded sounds that follow each update upstream (`AnimatedSoundMgrClass::Trigger_Sound`) are not translated:
     /// a motion has embedded sounds only when the animated-sound manager named a bone for it, and the port has none.
@@ -2788,10 +2792,8 @@ impl RenderObj {
             let (data, frame) = (a.motion.data.clone(), a.frame);
             match data {
                 None => self.tree_update(&root, |t, r| t.base_update(r)),
-                Some(d) => match &*d.motion {
-                    HAnim::Raw(raw) if !plant(9805) => self.tree_update(&root, |t, r| t.anim_update_raw(r, raw, frame)),
-                    m => self.tree_update(&root, |t, r| t.anim_update(r, m, &*d, frame)),
-                },
+                // (#180) the inline `Anim_Update`'s dispatch, shared with the client's drawn pose
+                Some(d) => self.tree_update(&root, |t, r| t.anim_update_animobj(r, &d.motion, &*d, frame)),
             }
         } else if let Some(i) = self.mode_interp.clone() {
             match (&i.motion0, &i.motion1) {

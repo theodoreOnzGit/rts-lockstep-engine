@@ -133,7 +133,7 @@ pub struct RenderModel {
     pub name: Vec<u8>,
     /// Whether it is an HLOD (`Class_ID() == CLASSID_HLOD`), not a lone mesh.
     pub is_hlod: bool,
-    /// The hierarchy (posed by [`RenderModel::update`]); `None` for a lone
+    /// The hierarchy (posed by [`RenderModel::update_render_obj`] or [`RenderModel::update`]); `None` for a lone
     /// mesh, or when the HLOD's could not be found.
     pub htree: Option<HTree>,
     pub sub_objects: Vec<SubObject>,
@@ -215,13 +215,38 @@ impl RenderModel {
         }
     }
 
-    /// The hierarchy update a render does: the base pose, or the animation's
-    /// pose at `frame` (`Anim_Update(root, motion, frame)`), under `root`.
+    /// ~~The hierarchy update a render does~~ **Corrected 2026-11-13 (#180):** the hierarchy posed through the
+    /// *virtual* `HTreeClass::Anim_Update(root, motion, frame)` ([`HTree::anim_update`], which interpolates a raw
+    /// animation between frames), or the base pose, under `root`. A render does not do this upstream: a render object
+    /// takes animobj.h's inline update, [`RenderModel::update_render_obj`], which the client's drawn pose uses. This one
+    /// stays for [`crate::client::w3d_model_draw::W3dFiles::skeleton`] (the pristine bones, which also feed the
+    /// logic's art bones, #175): those ask only integer frames (0 or `NumFrames - 1`), where the two paths agree bit
+    /// for bit under the default `Float_To_Long` ([`FloatToLongMode::Win32Fistp`](crate::ww::wwmath::FloatToLongMode);
+    /// checked by the test `integer_frames_agree_on_both_paths_in_win32`), and a change to the logic's function is
+    /// the owner's decision (#180).
     pub fn update<P: super::hmorphanim::PoseLookup>(&mut self, root: &Matrix3D, anim: Option<(&HAnim, &P, f32)>) -> W3dResult<()> {
         let Some(tree) = &mut self.htree else { return Ok(()) };
         match anim {
             Some((motion, poses, frame)) => tree.anim_update(root, motion, poses, frame),
             None => tree.base_update(root),
+        }
+    }
+
+    /// (#180) The hierarchy update a render object's render does (animobj.cpp's `Update_Sub_Object_Transforms`): with
+    /// an animation, animobj.h's inline `Anim_Update(Transform, Motion, Frame)` ([`HTree::anim_update_animobj`], the
+    /// code the live render object `RenderObj` runs: a raw animation through the raw fast path at one integer frame,
+    /// `Float_To_Long(frame)`, the others through the virtual update); without one, `Base_Update(root)`. `root` is the
+    /// render object's `Transform`. Nothing without a hierarchy. The client's drawn pose
+    /// (`rts_client::drawables::WorldDrawables`).
+    pub fn update_render_obj<P: super::hmorphanim::PoseLookup>(&mut self, root: &Matrix3D, anim: Option<(&HAnim, &P, f32)>) -> W3dResult<()> {
+        if crate::logic::modules::plant(9831) {
+            return self.update(root, anim);
+        }
+        let root = if crate::logic::modules::plant(9834) { Matrix3D::IDENTITY } else { *root };
+        let Some(tree) = &mut self.htree else { return Ok(()) };
+        match anim {
+            Some((motion, poses, frame)) if !crate::logic::modules::plant(9832) => tree.anim_update_animobj(&root, motion, poses, frame),
+            _ => tree.base_update(&root),
         }
     }
 

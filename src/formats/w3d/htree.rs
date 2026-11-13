@@ -357,6 +357,26 @@ impl HTree {
         Ok(())
     }
 
+    /// (#180) The hierarchy part of animobj.h's inline `Animatable3DObjClass::Anim_Update(root, motion, frame)`
+    /// (animobj.h:256-268), the update a render object's `Update_Sub_Object_Transforms` runs in `SINGLE_ANIM`: for a raw
+    /// animation (`Class_ID() == CLASSID_HRAWANIM`) `HTree->Anim_Update(Transform, (HRawAnimClass*)ModeAnim.Motion,
+    /// ModeAnim.Frame)`, the raw fast path ([`HTree::anim_update_raw`]: one integer frame, `Float_To_Long(frame)`, no
+    /// interpolation); for the others the virtual `HTree->Anim_Update(root, motion, frame)` ([`HTree::anim_update`]).
+    /// Upstream's raw branch reads the render object's `Transform`, `ModeAnim.Motion` and `ModeAnim.Frame` instead of
+    /// its arguments; its one caller passes exactly those, so `root`, `motion` and `frame` stand for them here. The
+    /// render object's `Set_Hierarchy_Valid(true)` is the caller's. Shared by the live render object
+    /// ([`crate::client::w3d_model_draw::RenderObj::update_sub_object_transforms`]) and the client's drawn pose
+    /// ([`super::render::RenderModel::update_render_obj`]).
+    pub fn anim_update_animobj<P: PoseLookup>(&mut self, root: &Matrix3D, motion: &HAnim, poses: &P, frame: f32) -> W3dResult<()> {
+        match motion {
+            HAnim::Raw(raw) if !crate::logic::modules::plant(9805) => {
+                let frame = if crate::logic::modules::plant(9833) { crate::ww::wwmath::floor(frame) } else { frame };
+                self.anim_update_raw(root, raw, frame)
+            }
+            m => self.anim_update(root, m, poses, frame),
+        }
+    }
+
     /// `Blend_Update(root, motion0, frame0, motion1, frame1, percentage)`
     /// (0 is `motion0`, 1 is `motion1`).
     #[allow(clippy::too_many_arguments)]
@@ -951,5 +971,127 @@ mod tests {
         assert_eq!(t.simple_evaluate_pivot(5, &obj).unwrap(), (false, Matrix3D::IDENTITY));
         let mut empty = HTree { name: [0; W3D_NAME_LEN], num_pivots: 0, pivots: Vec::new(), scale_factor: 1.0 };
         assert!(empty.base_update(&root).is_err());
+    }
+
+    /// The pivots' transforms as raw bits, and their visibility.
+    fn pose_bits(t: &HTree) -> Vec<(Vec<u32>, bool)> {
+        (0..t.num_pivots).map(|i| (t.get_transform(i).unwrap().to_array().iter().map(|v| v.to_bits()).collect(), t.get_visibility(i).unwrap())).collect()
+    }
+
+    /// GitHub #180: the client's drawn pose ([`RenderModel::update_render_obj`](super::super::render::RenderModel::update_render_obj))
+    /// takes animobj.h's inline `Anim_Update`, so a raw animation is posed through the raw fast path at one integer
+    /// frame. `raw_anim` (X = 0, 10, 40; Q identity, identity, Rz(90); 3 frames, the default Win32 `Float_To_Long`) on
+    /// `two_pivots` under a root turned and lifted. Predictions, written before the run: at 0.4, 1.6, 2.5 and 2.6
+    /// (fast-path keys 0, 2, 2 (the tie to even) and 0 (3 is past the end)) and 1.0 the drawn pose equals
+    /// `anim_update_raw`'s bit for bit; the virtual path (`RenderModel::update`) differs at 0.4, 1.6 and 2.6 (ratio not
+    /// 0: x = 4, 28, then key 2 blended towards key 0) and 2.5 (ratio 0.5: 20 against 40), and agrees at 1.0. Without an
+    /// animation, the base pose; without a hierarchy, nothing. Reaches `update_render_obj`, `anim_update_animobj`, and
+    /// catches plants 9805, 9831, 9832, 9833 (at 1.6: key 1) and 9834 (the root).
+    ///
+    /// Results (2026-11-13): as predicted; each of plants 9805, 9831, 9832, 9833 and 9834 fails it
+    /// (`--features differential`).
+    #[test]
+    fn a_render_model_s_drawn_pose_takes_the_raw_fast_path() {
+        use super::super::render::RenderModel;
+        use crate::formats::w3d::hmorphanim::NoPoses;
+        let raw = crate::formats::w3d::hanim::tests::raw_anim();
+        let anim = HAnim::Raw(raw.clone());
+        let h = 0.3f32;
+        let mut root = build_matrix3d(&Quaternion::new(0.0, 0.0, crate::ww::wwmath::sin(h), crate::ww::wwmath::cos(h)));
+        root.set_translation(&Vector3::new(3.0, -1.0, 2.0));
+        let model = |t: HTree| RenderModel { name: b"SKL".to_vec(), is_hlod: true, htree: Some(t), sub_objects: Vec::new(), not_drawn: Vec::new(), emitters: Vec::new() };
+        for (f, virtual_differs) in [(0.4f32, true), (1.6, true), (2.5, true), (2.6, true), (1.0, false)] {
+            let mut drawn = model(two_pivots());
+            drawn.update_render_obj(&root, Some((&anim, &NoPoses, f))).unwrap();
+            let mut fast = two_pivots();
+            fast.anim_update_raw(&root, &raw, f).unwrap();
+            assert_eq!(pose_bits(drawn.htree.as_ref().unwrap()), pose_bits(&fast), "frame {f}: the raw fast path");
+            let mut virt = model(two_pivots());
+            virt.update(&root, Some((&anim, &NoPoses, f))).unwrap();
+            assert_eq!(pose_bits(virt.htree.as_ref().unwrap()) != pose_bits(&fast), virtual_differs, "frame {f}: the virtual path");
+        }
+        let mut drawn = model(two_pivots());
+        drawn.update_render_obj::<NoPoses>(&root, None).unwrap();
+        let mut base = two_pivots();
+        base.base_update(&root).unwrap();
+        assert_eq!(pose_bits(drawn.htree.as_ref().unwrap()), pose_bits(&base));
+        let mut lone = RenderModel { htree: None, ..model(two_pivots()) };
+        assert_eq!(lone.update_render_obj(&root, Some((&anim, &NoPoses, 1.6))), Ok(()));
+    }
+
+    /// GitHub #180, item 2: [`W3dFiles::skeleton`](crate::client::w3d_model_draw::W3dFiles) (the pristine bones, which
+    /// also feed the logic's art bones, #175) still poses through the virtual `Anim_Update`, and the logic asks it only
+    /// for frame 0 or `NumFrames - 1` (`validate_cached_bones_upstream`). Upstream's render object would take the raw
+    /// fast path there. This checks that the two paths agree bit for bit at every *integer* frame of random raw
+    /// animations (1 to 30 frames; X, Y, Z channels of random spans, values in [-50, 50); a random quaternion channel;
+    /// a visibility channel now and then; hierarchy scale factors 1, 0.5, 1.37) under the default
+    /// `Float_To_Long` (`Win32Fistp`), so leaving `skeleton` alone moves no logic answer. The portable truncation (no
+    /// production use) is measured too: there an integer frame `f >= 1` is `frame0 = f - 1` at ratio 1, and the
+    /// translation `a + (b - a) * 1` need not be `b` exactly.
+    ///
+    /// Predictions, written before the run: Win32 0 differing poses; portable some.
+    /// Results (2026-11-13): 94,308 poses per branch (2,000 animations, 3 scale factors, every integer frame); Win32
+    /// **0** differ (hit); portable 21,844 differ (hit: some), all by the `ratio = 1` translation.
+    #[test]
+    fn integer_frames_agree_on_both_paths_in_win32() {
+        use crate::formats::w3d::hanim::{HRawAnim, NodeMotion};
+        use crate::formats::w3d::hmorphanim::NoPoses;
+        use crate::formats::w3d::motchan::{BitChannel, MotionChannel};
+        use crate::ww::wwmath::FloatToLongMode;
+        let mut seed = 0x180_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (mut compared, mut differ_win, mut differ_port) = (0u32, 0u32, 0u32);
+        for case in 0..2000 {
+            let nf = 1 + (next() % 30) as i32;
+            let mut val = || ((next() % 100_000) as f32) / 1000.0 - 50.0;
+            let chan = |ty: u32, len: i32, val: &mut dyn FnMut() -> f32| {
+                let (first, last) = (0i32, nf - 1);
+                let data = (0..(last - first + 1) as usize * len as usize).map(|_| val()).collect();
+                MotionChannel { pivot_idx: 1, type_: ty, vector_len: len, first_frame: first, last_frame: last, data }
+            };
+            let mut m = NodeMotion { x: Some(chan(ANIM_CHANNEL_X, 1, &mut val)), y: Some(chan(ANIM_CHANNEL_Y, 1, &mut val)), z: Some(chan(ANIM_CHANNEL_Z, 1, &mut val)), ..Default::default() };
+            let mut q = chan(ANIM_CHANNEL_Q, 4, &mut val);
+            for k in q.data.chunks_mut(4) {
+                let n = crate::ww::wwmath::sqrt(k[0] * k[0] + k[1] * k[1] + k[2] * k[2] + k[3] * k[3]);
+                for v in k.iter_mut() {
+                    *v /= n;
+                }
+            }
+            m.q = Some(q);
+            if case % 5 == 0 {
+                m.vis = Some(BitChannel { pivot_idx: 1, type_: 0, default_val: 1, first_frame: 0, last_frame: nf - 1, bits: vec![0x55; (nf as usize).div_ceil(8)] });
+            }
+            let mut a = crate::formats::w3d::hanim::tests::raw_anim();
+            a.num_frames = nf;
+            a.node_motion.insert(1, m);
+            for mode in [FloatToLongMode::Win32Fistp, FloatToLongMode::PortableTruncate] {
+                let raw: HRawAnim = a.clone().with_frame_rounding(mode);
+                let anim = HAnim::Raw(raw.clone());
+                for scale in [1.0f32, 0.5, 1.37] {
+                    for f in 0..nf {
+                        let mut virt = two_pivots();
+                        virt.scale_factor = scale;
+                        let mut fast = virt.clone();
+                        virt.anim_update(&Matrix3D::IDENTITY, &anim, &NoPoses, f as f32).unwrap();
+                        fast.anim_update_raw(&Matrix3D::IDENTITY, &raw, f as f32).unwrap();
+                        let d = pose_bits(&virt) != pose_bits(&fast);
+                        match mode {
+                            FloatToLongMode::Win32Fistp => {
+                                compared += 1;
+                                differ_win += u32::from(d);
+                            }
+                            FloatToLongMode::PortableTruncate => differ_port += u32::from(d),
+                        }
+                    }
+                }
+            }
+        }
+        println!("#180 integer frames: {compared} poses per mode; virtual vs fast path differ: Win32 {differ_win}, portable {differ_port}");
+        assert_eq!(differ_win, 0);
     }
 }

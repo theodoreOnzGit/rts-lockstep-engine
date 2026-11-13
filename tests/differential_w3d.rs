@@ -4045,6 +4045,23 @@ fn rust_eval_op(w: &mut EvalWorld, r: &mut ScriptReader<'_>, log: &mut Log) -> W
         }
         12..=31 => rust_combo_op(w, r, log, op)?,
         40..=49 => rust_robj_op(w, r, log, op)?,
+        // (#180) the client's drawn pose: `RenderModel::update_render_obj` on a copy of the tree, under the identity
+        // (the render object's `Transform`); the loaded tree is not changed
+        50 => {
+            let t = r.u() as usize;
+            let a = r.u() as usize;
+            let frame = r.f();
+            let mut m = rts_lockstep_engine::formats::w3d::render::RenderModel {
+                name: b"R".to_vec(),
+                is_hlod: true,
+                htree: Some(w.trees[t].clone()),
+                sub_objects: Vec::new(),
+                not_drawn: Vec::new(),
+                emitters: Vec::new(),
+            };
+            m.update_render_obj(&rts_lockstep_engine::ww::matrix3d::Matrix3D::IDENTITY, Some((&w.anims[a].0, &*w, frame)))?;
+            log_eval_tree(log, m.htree.as_ref().expect("made with one"))?;
+        }
         _ => unreachable!(),
     }
     Ok(())
@@ -4212,6 +4229,8 @@ fn script_ops(script: &[u8]) -> Vec<(usize, usize)> {
             45 | 48 | 49 => 2,
             46 => 1 + 12,
             47 => 4 + 12,
+            // (#180)
+            50 => 3,
             _ => unreachable!(),
         };
         v.push((i, i + 1 + 4 * words));
@@ -5141,6 +5160,75 @@ fn animatable_bones_match_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let n = std::env::var("W3D_ANIMOBJ_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
     eval_cases(FloatToLongMode::PortableTruncate, 0x179_A0B1, n, "W3D render objects' animated bones (animobj.cpp)", animobj_script);
+}
+
+/// GitHub #180: the scripts of [`drawn_pose_matches_upstream`], only op 50 (the client's drawn pose): up to 40 poses,
+/// each of a hierarchy a render object can have ([`robj_ok`]), with an animation (a raw one two times in three when
+/// the file has one) at a frame that is fractional two times in three (between 0 and `NumFrames + 1`) and otherwise
+/// [`ev_frame`]'s (integer, half, fractional, and in the wild half negative, NaN and arbitrary).
+fn drawn_pose_script(g: &mut Gn, w: &EvalWorld) -> Vec<u8> {
+    let mut s = Vec::new();
+    let ok: Vec<u32> = (0..w.trees.len() as u32).filter(|&t| robj_ok(&w.trees[t as usize])).collect();
+    let raws: Vec<u32> = (0..w.anims.len() as u32).filter(|&a| matches!(w.anims[a as usize].0, HAnim::Raw(_))).collect();
+    if w.anims.is_empty() || ok.is_empty() {
+        return s;
+    }
+    for _ in 0..1 + g.below(40) {
+        let t = ok[g.below(ok.len() as u32) as usize];
+        let a = if !raws.is_empty() && g.below(3) != 0 { raws[g.below(raws.len() as u32) as usize] } else { g.below(w.anims.len() as u32) };
+        let nf = w.anims[a as usize].0.get_num_frames();
+        let frame = if g.below(3) != 0 { g.g.uniform(0.0, nf.clamp(0, 100) as f32 + 1.0) } else { ev_frame(g, nf) };
+        s.push(50);
+        w32(&mut s, t);
+        w32(&mut s, a);
+        w32(&mut s, frame.to_bits());
+    }
+    s
+}
+
+/// GitHub #180: the client's drawn pose (`formats::w3d::render::RenderModel::update_render_obj`, which
+/// `rts_client::drawables::WorldDrawables` poses each object's model with) against upstream's render object: a fresh
+/// `Animatable3DObjClass` (animobj.cpp's constructor, compiled from upstream's text as for
+/// [`animatable_bones_match_upstream`]) on a copy of a loaded hierarchy, `Set_Animation(anim, frame)` in
+/// `ANIM_MODE_MANUAL`, then animobj.h's inline `Anim_Update(Transform, ModeAnim.Motion, ModeAnim.Frame)` (the update
+/// `Update_Sub_Object_Transforms` runs in `SINGLE_ANIM`: `HTreeClass`'s raw fast path for `CLASSID_HRAWANIM`, the
+/// virtual `Anim_Update` otherwise), over section 13's random files (the real loaders, `htree.cpp`, `hrawanim.cpp`,
+/// `hcanim.cpp`, `hmorphanim.cpp`, `motchan.cpp`) with [`drawn_pose_script`]'s scripts (op 50 only), in both
+/// `Float_To_Long` branches (the client's is `Win32Fistp`). Compared as raw bits: every pivot's 12 floats and its
+/// visibility. A script stops before an op the Rust reports undefined upstream.
+///
+/// Predictions (`issue180_predictions.md`, before the first run): 0 mismatches, max ULP 0 in both branches; some
+/// scripts stopped at `FloatToInt` (compressed animations at negative or NaN frames) and at the wild files' undefined
+/// evaluations. With the pre-#180 client path planted (9831, `RenderModel::update`) more than 40 % of the run files
+/// mismatch in each branch, at the fractional frames of raw animations.
+///
+/// Results (2026-11-13), first run: 10,000 files each, **0 mismatches, max ULP 0** in both branches (hit). Portable:
+/// 135,198 of 193,774 ops compared, scripts stopped at undefined upstream 3,281 (`IndexOutOfRange` 2,065,
+/// `FloatToInt` 627, `NonTerminating` 259, `NullPointer` 194, `UninitialisedRead` 136). Win32: 140,851 compared, 2,923
+/// stopped (`FloatToInt` 164). Planted bugs (mismatching files of 10,000, portable / Win32): 9831 (the pre-#180 client
+/// path, `RenderModel::update`) 5,197 / 5,345; 9805 (the shared helper's raw branch through the virtual update) the
+/// same; 9833 (the raw frame floored before `Float_To_Long`) 340 / 4,390; 9834 (the root ignored) 0 / 0, not reachable
+/// here (the root is the identity on both sides), caught by the lib test `a_render_model_s_drawn_pose_takes_the_raw_fast_path`;
+/// 9832 (the base pose instead of the animation) hangs the C++ within the first 6 files (the planted Rust stops
+/// predicting the undefined evaluations the C++ then runs, as #179's starred plants), caught by that lib test.
+#[test]
+fn drawn_pose_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    eval_cases(FloatToLongMode::PortableTruncate, 0x180_D2A3, drawn_pose_cases(), "W3D drawn pose (animobj.h inline Anim_Update)", drawn_pose_script);
+}
+
+/// [`drawn_pose_matches_upstream`] in the shipped Win32 `Float_To_Long` branch on both sides (the client's), on the
+/// same files and scripts.
+#[test]
+fn drawn_pose_win32_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _m = CppFloatToLongMode::set(FloatToLongMode::Win32Fistp);
+    eval_cases(FloatToLongMode::Win32Fistp, 0x180_D2A3, drawn_pose_cases(), "W3D drawn pose (animobj.h inline Anim_Update)", drawn_pose_script);
+}
+
+/// The drawn-pose tests' file count: 10,000, or `W3D_DRAWN_POSE_CASES`.
+fn drawn_pose_cases() -> usize {
+    std::env::var("W3D_DRAWN_POSE_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000)
 }
 
 /// Random W3D files (one or two hierarchies of 1 to 6 pivots, sometimes
