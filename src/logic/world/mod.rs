@@ -117,6 +117,7 @@ pub mod object_queries;
 // --- p1w13-sonnet ---
 pub mod body_cuts;
 pub mod contain_cuts;
+pub mod drawable_bones;
 // --- end p1w13-sonnet ---
 // --- layer 12 ---
 pub mod game_logic_dispatch;

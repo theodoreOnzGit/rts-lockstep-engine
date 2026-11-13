@@ -705,6 +705,13 @@ impl<'a> SaveHost<'a> {
     fn game_client_load_post_process(&mut self) {
         let Some(sd) = &mut self.drawables else { return };
         let world = &mut *self.world;
+        // (#175) the logic's copy of each object's drawable's flags (`Drawable::m_conditionState`, which this block
+        // saves upstream): what the logic's bone questions read (`logic::world::drawable_bones`)
+        for (id, d) in sd.drawables.drawables.iter() {
+            if world.has_drawable(*id) {
+                world.drawable_condition.insert(*id, d.condition_state);
+            }
+        }
         for d in sd.drawables.drawables.values_mut().chain(sd.drawables.object_less.iter_mut()) {
             d.load_post_process(world);
             if d.saved.drawable_id >= world.save_side.drawable_id_counter {

@@ -712,11 +712,20 @@ impl WeaponHost for World {
         if !self.has_drawable(o) {
             return None;
         }
+        // (#175) with `live_bones`, the art's (`logic::world::drawable_bones`)
+        if self.cuts.live_bones && !crate::logic::modules::plant(9750) {
+            return self.live_barrel_count(o, wslot);
+        }
         Some(self.cuts.drawable_barrel_count.get(&(o, wslot)).copied().unwrap_or(0))
     }
     fn projectile_launch_offset(&mut self, o: ObjectId, wslot: i32, barrel: i32, turret: i32) -> Option<LaunchOffset> {
         if !self.has_drawable(o) {
             return None;
+        }
+        // (#175) with `live_bones`, the art's (`logic::world::drawable_bones`)
+        if self.cuts.live_bones && !crate::logic::modules::plant(9750) {
+            let (found, lo) = self.live_projectile_launch_offset(o, wslot, barrel, turret);
+            return found.then_some(lo);
         }
         self.cuts.drawable_launch_offset.get(&(o, wslot, barrel, turret)).copied()
     }

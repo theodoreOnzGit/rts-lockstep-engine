@@ -1265,11 +1265,11 @@ pub fn base_put_obj_at_next_fire_point<T: OpenContainVirtuals>(t: &mut T, world:
     // first, if we need to load the 3D point data from the art do so, if we've already determined there is no firepoints in the current art we will avoid
     // searching for it all the time
     if t.oc().fire_point_size == 0 && !t.oc().no_fire_points_in_art {
-        let found = out(t, world, me, |w| w.contain_get_multi_logical_bone_position(us, b"FIREPOINT", MAX_FIRE_POINTS as i32));
-        t.oc_mut().fire_point_size = found.len() as i32;
-        for (i, m) in found.iter().enumerate() {
-            t.oc_mut().fire_points[i] = *m;
-        }
+        // (#175) into the array itself, as upstream passes `m_firePoints` (a miss's write after the bones found is kept)
+        let mut points = t.oc().fire_points;
+        let count = out(t, world, me, |w| w.contain_get_multi_logical_bone_position_into(us, b"FIREPOINT", &mut points));
+        t.oc_mut().fire_point_size = count;
+        t.oc_mut().fire_points = points;
 
         // if there is still no firepoints in the art, we'll set a flag so that we don't ever go through the art stuff again
         if t.oc().fire_point_size == 0 {

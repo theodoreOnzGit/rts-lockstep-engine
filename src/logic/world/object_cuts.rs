@@ -50,7 +50,7 @@
 //! | `TheAudio`, `TheRadar`, `TheInGameUI`, `TheControlBar`, `TheEva`, `TheGameClient` | see `object_events.rs` | `ObjectClientEvent` |
 //! | module factory, `ModuleInfo` | `newModule` | the caller (`NewObject::modules`) |
 //! | `CommandButton`, `TheControlBar->findCommandSet` | `doCommandButton*`, `canProduceUpgrade` | **not translated** (client/GUI types) |
-//! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | ~~**not translated**~~ (corrected 2026-10-24, batch R43: the art's bones are tables, `cuts.contain.single_bones` and `cuts.contain.pristine_bones`, read by `World::drawable_pristine_bones` and the contain cuts) |
+//! | bone positions (`Drawable::getPristineBonePositions` and friends) | `getSingleLogicalBonePosition*`, `getMultiLogicalBonePosition` | ~~**not translated**~~ (corrected 2026-10-24, batch R43: the art's bones are tables, `cuts.contain.single_bones` and `cuts.contain.pristine_bones`, read by `World::drawable_pristine_bones` and the contain cuts; ~~which hold the art's bones in a game~~ **Corrected 2026-11-12 (#175):** only the differential tests fill them, so a game read none; with `live_bones` (on in a game) the art's, `logic::world::drawable_bones`) |
 
 use crate::logic::world::script_engine::ScriptNote;
 use std::collections::{BTreeMap, BTreeSet};
@@ -329,12 +329,20 @@ impl World {
     /// `cuts.contain.pristine_bones`: for `start_index` 0 the bone named `prefix`, else `<prefix>01`, `<prefix>02`, ... (from `start_index`, to 99)
     /// while the art has them, at most `max_bones` (W3DModelDraw's loop). None for an object with no drawable.
     pub fn drawable_pristine_bones(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<Coord3D> {
+        // (#175) with `live_bones`, the art's (`logic::world::drawable_bones`)
+        if self.cuts.live_bones {
+            return self.live_pristine_bones(id, prefix, start_index, max_bones).into_iter().map(|(p, _)| p).collect();
+        }
         self.drawable_pristine_bone_names(id, prefix, start_index, max_bones).iter().map(|n| self.cuts.contain.pristine_bones[&(id, n.clone())]).collect()
     }
 
     /// batch R45: `drawable->getPristineBonePositions(prefix, startIndex, NULL, transforms, maxBones)`: the same bones' transforms (from
     /// `cuts.contain.pristine_bone_transforms`, the identity for a bone that has none).
     pub fn drawable_pristine_bone_transforms(&self, id: ObjectId, prefix: &[u8], start_index: i32, max_bones: i32) -> Vec<crate::ww::matrix3d::Matrix3D> {
+        // (#175) with `live_bones`, the art's (`logic::world::drawable_bones`)
+        if self.cuts.live_bones {
+            return self.live_pristine_bones(id, prefix, start_index, max_bones).into_iter().map(|(_, m)| m).collect();
+        }
         self.drawable_pristine_bone_names(id, prefix, start_index, max_bones)
             .into_iter()
             .map(|n| self.cuts.contain.pristine_bone_transforms.get(&(id, n)).copied().unwrap_or_else(crate::ww::matrix3d::Matrix3D::identity))
@@ -772,7 +780,15 @@ impl World {
     /// batch R74: `obj->getSingleLogicalBonePosition(name, &pos, &mtx)` on the art's bones (`cuts.bone_transforms`): whether the bone was
     /// found, its position, and its transform (the identity turned about z, at the position); with no such bone the object's position and
     /// transform, as upstream's fallback.
+    ///
+    /// **#175:** with `live_bones`, upstream's `Object::getSingleLogicalBonePosition` (`object_weapons`'s translation)
+    /// over the art (`logic::world::drawable_bones`): the bone's world position and transform (`convertBonePosToWorldPos`
+    /// of its pristine transform, `s² t` and `s R` at the template's scale `s`).
     pub fn object_get_single_logical_bone_transform(&self, id: ObjectId, name: &[u8]) -> (bool, Coord3D, crate::ww::matrix3d::Matrix3D) {
+        if self.cuts.live_bones {
+            let q = crate::logic::world::object_weapons::get_single_logical_bone_position(self, id, name, true, true);
+            return (q.found, q.position.unwrap_or_default(), q.transform.unwrap_or(crate::ww::matrix3d::Matrix3D::IDENTITY));
+        }
         match self.cuts.bone_transforms.get(&(id, name.to_vec())) {
             Some(&(p, angle)) => {
                 let mut m = crate::ww::matrix3d::Matrix3D::IDENTITY;
@@ -789,7 +805,18 @@ impl World {
 
     /// batch R75: `obj->getMultiLogicalBonePosition(prefix, maxBones, positions, transforms, FALSE)`: the drawable's pristine bones `prefix01`,
     /// `prefix02`, ... while the art has them (`cuts.bone_transforms`), at most `max_bones`; none without a drawable.
+    ///
+    /// ~~(the pristine bones)~~ **Corrected 2026-11-12 (#175):** the table's entries are what
+    /// [`World::object_get_single_logical_bone_transform`] answers, a bone's *world* transform, so this read them
+    /// converted, where upstream's `FALSE` leaves them pristine; with `live_bones` it is upstream's
+    /// (`object_weapons::get_multi_logical_bone_position` over the art: the pristine positions and transforms).
     pub fn object_get_multi_logical_bone_transforms(&self, id: ObjectId, prefix: &[u8], max_bones: i32) -> Vec<(Coord3D, crate::ww::matrix3d::Matrix3D)> {
+        if self.cuts.live_bones {
+            return crate::logic::world::object_weapons::get_multi_logical_bone_position(self, id, prefix, max_bones, true, true, false)
+                .into_iter()
+                .map(|(p, m)| (p.unwrap_or_default(), m.unwrap_or(crate::ww::matrix3d::Matrix3D::IDENTITY)))
+                .collect();
+        }
         let mut out = Vec::new();
         if !self.has_drawable(id) {
             return out;
@@ -811,7 +838,16 @@ impl World {
 
     /// batch R75: `draw->getCurrentClientBonePositions(name, 0, &pos, &mtx, 1)`: the drawable's bone of that name (`cuts.bone_transforms`, the
     /// client's current pose taken as the pristine one), `None` where the art has none; the caller checks the drawable.
+    ///
+    /// **#175:** with `live_bones`, the bone's *pristine* position and transform from the art
+    /// ([`World::live_pristine_bones`]): upstream reads the client's current pose (`W3DModelDraw::getCurrentBonePositions`,
+    /// the render object's animated bones), which the logic cannot read in lockstep; the pristine pose stands in for it
+    /// (a gap of #175). Before, the table's answer was the bone's world transform, which `ParticleUplinkCannonUpdate`
+    /// then converted to the world a second time.
     pub fn drawable_get_current_client_bone(&self, id: ObjectId, name: &[u8]) -> Option<(Coord3D, crate::ww::matrix3d::Matrix3D)> {
+        if self.cuts.live_bones {
+            return self.live_pristine_bones(id, name, 0, 1).into_iter().next();
+        }
         let (found, p, m) = self.object_get_single_logical_bone_transform(id, name);
         found.then_some((p, m))
     }
@@ -2217,9 +2253,10 @@ pub struct ObjectCuts {
     pub consecutive_shots_at_victim: BTreeMap<(ObjectId, ObjectId), i32>,
     /// batch W1b: `TheTerrainLogic->getBridgeAttackPoints(bridge, &info)`'s two points, by bridge (no entry: the origin twice).
     pub bridge_attack_points: BTreeMap<ObjectId, (Coord3D, Coord3D)>,
-    /// batch W1b: `getDrawable()->getBarrelCount(wslot)` by (object, slot) (no entry: 0).
+    /// batch W1b: `getDrawable()->getBarrelCount(wslot)` by (object, slot) (no entry: 0). **#175:** read without `live_bones` only.
     pub drawable_barrel_count: BTreeMap<(ObjectId, i32), i32>,
     /// batch W1b: `getDrawable()->getProjectileLaunchOffset(wslot, barrel, ...)` by (object, slot, barrel, turret) (no entry: no bone).
+    /// **#175:** read without `live_bones` only.
     pub drawable_launch_offset: BTreeMap<(ObjectId, i32, i32, i32), crate::logic::weapon_host::LaunchOffset>,
     /// batch R68: the others a stubbed `shouldProjectileCollideWith` says the projectile collides with.
     pub projectile_collides_with: std::collections::BTreeSet<ObjectId>,
@@ -2250,7 +2287,8 @@ pub struct ObjectCuts {
     /// batch R73: the objects whose drawables are selected (`Drawable::isSelected`, the client's).
     pub selected: BTreeSet<ObjectId>,
     /// batch R74: the art's bones by object and name: the position and the rotation about z of the bone's world transform (no entry: no
-    /// such bone).
+    /// such bone). **#175:** the tests' stand-in, read without `live_bones`; it cannot hold upstream's whole transform (a pristine
+    /// bone's rotation part is `s R` at the template's scale `s`), which the art's answer (`logic::world::drawable_bones`) carries.
     pub bone_transforms: BTreeMap<(ObjectId, Vec<u8>), (Coord3D, f32)>,
     /// batch R75: the thing templates whose drawables have a `LaserUpdate` client module, the client drawables made of one (`newDrawable`),
     /// and every laser's `getCurrentLaserRadius()` (the client's growth, the test's).
@@ -2424,6 +2462,14 @@ pub struct ObjectCuts {
     /// Off by default, as the other `live_*` switches: the module tests set the tables. Batch I54: also
     /// `TheUpgradeCenter->findVeterancyUpgrade(level)` (the upgrade center's rather than `veterancy_upgrades`).
     pub live_globals: bool,
+    /// GitHub #175: the drawable's art answers the logic's bone and launch-offset questions as upstream's
+    /// `W3DModelDraw` does (`getPristineBonePositionsForConditionState`, `getProjectileLaunchOffset`, `getBarrelCount`,
+    /// and `Object`'s logical bone positions over them: `logic::world::drawable_bones`), from the bones the World loaded
+    /// with its art ([`World::load_art_bones`](crate::logic::world::game_logic::World::load_art_bones)), rather than
+    /// the tables `contain.{pristine_bones, pristine_bone_transforms, single_bones, fire_points, turret_bones}`,
+    /// `bone_transforms`, `drawable_barrel_count` and `drawable_launch_offset`. Off by default, as the other `live_*`
+    /// switches: the differential tests' stand-ins answer from the tables.
+    pub live_bones: bool,
     /// Integration batch I51: a factory's `ProductionUpdate` asking `TheBuildAssistant->canMakeUnit` from its own call is lent
     /// out of its slot, so the build assistant's questions back to it (`getProductionUpdateInterface`,
     /// `getSpecialPowerConstructionCommandButton`, `canQueueCreateUnit`) are answered from these facts, which the module gives
@@ -2604,6 +2650,7 @@ impl Default for ObjectCuts {
             live_ai: false,
             live_special_powers: false,
             live_globals: false,
+            live_bones: false,
             production_lent: None,
             next_drawable_id: 1,
         }
@@ -2612,7 +2659,8 @@ impl Default for ObjectCuts {
 
 impl ObjectCuts {
     /// Every integration switch on (batch I46): the world's own partition, object creation lists, terrain, teams and players,
-    /// build assistant, pathfinder, AI and special powers answer, rather than these tables. A game is played with all of them;
+    /// build assistant, pathfinder, AI and special powers ((#175) and the drawables' art bones, `live_bones`) answer, rather
+    /// than these tables. A game is played with all of them;
     /// each `live_*` field left off is a deliberate ablation (the module tests answer from the tables).
     pub fn set_all_live(&mut self) {
         self.live_partition = true;
@@ -2624,12 +2672,14 @@ impl ObjectCuts {
         self.live_ai = true;
         self.live_special_powers = true;
         self.live_globals = true;
+        // (#175)
+        self.live_bones = true;
     }
 
     /// Whether every integration switch is on ([`ObjectCuts::set_all_live`]).
     pub fn all_live(&self) -> bool {
         self.live_partition && self.live_ocl && self.live_terrain && self.live_teams && self.live_build_assistant && self.live_pathfinder
-            && self.live_ai && self.live_special_powers && self.live_globals
+            && self.live_ai && self.live_special_powers && self.live_globals && self.live_bones
     }
 
     /// `Team::getControllingPlayer()`: `None` for a team no player controls.
@@ -2910,6 +2960,8 @@ impl World {
         if let Some(t) = &mut self.cuts.trace {
             t.push(format!("evt {e:?}"));
         }
+        // (#175) the logic's copy of the drawable's flags (`Drawable::m_conditionState`), which its bone questions read
+        self.note_drawable_condition_event(&e);
         self.events.push(ClientEvent::Object(e));
     }
 

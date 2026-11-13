@@ -395,9 +395,9 @@ impl<T: ThingTemplateView> Thing<T> {
     }
 
     /// `convertBonePosToWorldPos(bonePos, boneTransform, &worldPos, &worldTransform)`
-    /// with both outputs wanted.
+    /// with both outputs wanted ((#175) [`convert_bone_pos_to_world_pos`] of this thing's transform).
     pub fn convert_bone_pos_to_world_pos(&self, bone_pos: &Coord3D, bone_transform: &Matrix3D) -> (Coord3D, Matrix3D) {
-        (self.bone_position_to_world(bone_pos), self.bone_transform_to_world(bone_transform))
+        convert_bone_pos_to_world_pos(&self.transform, bone_pos, bone_transform)
     }
 
     /// `setTransformMatrix(mx)`: the world transform; every cache is
@@ -439,4 +439,15 @@ impl<T: ThingTemplateView> Thing<T> {
             old_angle: self.cached_angle,
         }
     }
+}/// (#175) `Thing::convertBonePosToWorldPos(bonePos, boneTransform, worldPos, worldTransform)` (Thing.cpp:341-362) over
+/// the thing's `m_transform` `transform`: the world transform `mul(m_transform, boneTransform)` and the world position
+/// `Transform_Vector(m_transform, bonePos)`, both outputs given. The method [`Thing::convert_bone_pos_to_world_pos`] and
+/// the logic's bone queries (`logic::world::drawable_bones`) use it.
+pub fn convert_bone_pos_to_world_pos(transform: &Matrix3D, bone_pos: &Coord3D, bone_transform: &Matrix3D) -> (Coord3D, Matrix3D) {
+    let mut world_transform = Matrix3D::IDENTITY;
+    world_transform.mul(transform, bone_transform);
+    let v = Matrix3D::transform_vector(transform, &Vector3::new(bone_pos.x, bone_pos.y, bone_pos.z));
+    (Coord3D { x: v.x, y: v.y, z: v.z }, world_transform)
 }
+
+

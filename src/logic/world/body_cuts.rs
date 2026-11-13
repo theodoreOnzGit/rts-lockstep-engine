@@ -330,6 +330,13 @@ impl World {
     /// (`get_multi_logical_bone_position`), else the bones of the table, at most `max`.
     pub fn body_get_multi_logical_bone_position(&mut self, id: ObjectId, prefix: &[u8], max: i32) -> Vec<Coord3D> {
         self.body_cut(BodyCall::GetMultiLogicalBonePosition { object: id, prefix: prefix.to_vec(), max });
+        // (#175) with `live_bones`, the art's (`Object::getMultiLogicalBonePosition`, `object_weapons`: pristine)
+        if self.cuts.live_bones {
+            return crate::logic::world::object_weapons::get_multi_logical_bone_position(&*self, id, prefix, max, true, false, false)
+                .into_iter()
+                .map(|(p, _)| p.unwrap_or_default())
+                .collect();
+        }
         let has_drawable = self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
         if !has_drawable {
             return Vec::new();

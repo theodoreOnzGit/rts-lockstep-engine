@@ -522,6 +522,15 @@ pub trait ObjectBoneHost: WeaponHost {
     fn command_set_string_override(&self, o: ObjectId) -> Vec<u8>;
     /// `getTemplate()->friend_getCommandSetString()`.
     fn template_command_set_string(&self, o: ObjectId) -> Vec<u8>;
+    /// (#175) `getDrawable()->getProjectileLaunchOffset(PRIMARY_WEAPON, 1, NULL, whichTurret, &turretPosition, NULL)`'s
+    /// `turretPosition`, which upstream writes whatever the call returns (with `launchPos` `NULL` it always returns
+    /// false): `None` when no draw module wrote it (left uninitialised). ~~The turret position was read only when
+    /// [`WeaponHost::projectile_launch_offset`] found a launch bone.~~ **Corrected 2026-11-12 (#175):** this default is
+    /// that old reading (a host that cannot tell the two apart, the weapon differential's stand-in); the World answers
+    /// from the drawable's art (`logic::world::drawable_bones`).
+    fn turret_rot_pos_for_bone(&mut self, o: ObjectId, which_turret: i32) -> Option<Coord3D> {
+        self.projectile_launch_offset(o, PRIMARY_WEAPON_SLOT, 1, which_turret).map(|l| l.turret_rot_pos)
+    }
 }
 
 /// What `Object::getSingleLogicalBonePosition` and `...OnTurret` give back through their pointers.
@@ -572,14 +581,14 @@ pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
     }
 
     // We need to find the TurretBone's pristine position.
-    let launch = host.projectile_launch_offset(o, PRIMARY_WEAPON_SLOT, 1, which_turret);
+    let launch = host.turret_rot_pos_for_bone(o, which_turret);
     // And the required bone's pristine position
     let bones = host.pristine_bone_positions(o, bone_name, 0, 1);
     if bones.len() != 1 {
         return Ok(none);
     }
     let bone_position = bones[0].0;
-    let turret_position = launch.ok_or(WeaponError::UninitialisedRead)?.turret_rot_pos;
+    let turret_position = launch.ok_or(WeaponError::UninitialisedRead)?;
     // Then we mojo the Logic position of the required bone like Missile firing does. Using the logic twist of the turret
     let (turret_rotation, _) = host.ai_turret_rot_and_pitch(o, which_turret).ok_or(WeaponError::UninitialisedRead)?;
 
@@ -588,8 +597,10 @@ pub fn get_single_logical_bone_position_on_turret<H: ObjectBoneHost>(
 
     let mut turn_adjustment = Matrix3D::identity(); // this is the turret twist to be applied to the final answer
     turn_adjustment.translate(turret_position.x, turret_position.y, turret_position.z);
-    turn_adjustment.in_place_pre_rotate_z(turret_rotation);
-    turn_adjustment.translate(-turret_position.x, -turret_position.y, -turret_position.z);
+    turn_adjustment.in_place_pre_rotate_z(if crate::logic::modules::plant(9737) { -turret_rotation } else { turret_rotation });
+    if !crate::logic::modules::plant(9738) {
+        turn_adjustment.translate(-turret_position.x, -turret_position.y, -turret_position.z);
+    }
 
     let mut bone_logic_transform = Matrix3D::identity();
     bone_logic_transform.mul(&turn_adjustment, &bone_offset);

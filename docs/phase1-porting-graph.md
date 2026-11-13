@@ -2082,6 +2082,108 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
 **Results (2026-11-01):** library tests 735 passed; ten differential suites of the docks, the supply, the player and the AI passed (`differential_ai_update`, `_player`, `_railed_dock_r61`, `_repair_dock_r43`, `_resource_gathering`, `_supply_docks_r44`, `_thing_template`, `_weapon_fire`, `_ai_player`, `_contain_open`); gate (a) PASS, last `49d4f669`, unchanged, as predicted (no dock or truck in the gate game; the players' new managers are saved but not in the player's CRC); clippy clean.
 
+**#175 (2026-11-12, GitHub #175; owner's approval 2026-11-12): the logic's bones from the art, as upstream reads them.**
+- **The defect.** The investigation (commit 33a615b) found that in a game every logic bone question answered "the art has
+  no such bone". The tables these questions read are filled only by the differential tests:
+  - `cuts.contain.{pristine_bones, pristine_bone_transforms, single_bones, fire_points, turret_bones}`;
+  - `cuts.bone_transforms`, `cuts.drawable_barrel_count` and `cuts.drawable_launch_offset`;
+  - and, found now, `cuts.body.bones`.
+
+  So weapons fired from the object's own position, and exits, fire points, dock places and FX bones fell back the same
+  way. The railed dock's unload took its `Undefined::UninitialisedLocal` path.
+- **Upstream read first** (0a05454d):
+  - `Object::getSingleLogicalBonePosition`, `...OnTurret` and `getMultiLogicalBonePosition` (Object.cpp:6014-6105) call
+    the drawable.
+  - `Drawable::getPristineBonePositions`, `getProjectileLaunchOffset` and `getBarrelCount` (Drawable.cpp:771-797,
+    679-687, 4266-4275) ask each `W3DModelDraw`.
+  - `getPristineBonePositionsForConditionState` and `getProjectileLaunchOffset` (W3DModelDraw.cpp:3253-3506) use
+    `findBestInfo` of the drawable's flags, which the logic sets. They never use the client's `m_curState`, which may be
+    a transition. Each validates that state's caches (`validateStuff`, :569-713) at the drawable's scale (`m_instanceScale`,
+    the template's asset scale, Drawable.cpp:431) and reads them.
+  - A miss writes the object's transform where the next bone would go.
+  - The pristine pose (`Set_Transform(Matrix3D(true).Scale(s))` over a hierarchy scaled by `HTreeClass::Scale`) gives
+    translations `s² t` and rotation parts `s R`. The quirk is kept.
+  - `convertBonePosToWorldPos` (Thing.cpp:341-362).
+- **Translated** (`src/logic/world/drawable_bones.rs`, new; and `W3DModelDrawModuleData`'s
+  `get_pristine_bone_positions_for_condition_state`, `get_projectile_launch_offset` and
+  `get_barrel_count_for_condition_state` in `client::w3d_model_draw`). The bone caches are the client's translation,
+  reused (`validate_stuff`, `validate_cached_bones`, the turret and barrel caches, `scale_render_obj_hierarchy`,
+  `W3dFiles`). `Object`'s three functions are `object_weapons`' translation, reused over the World: the World is now an
+  `ObjectBoneHost`. `logic::thing::convert_bone_pos_to_world_pos` is new as a free function, and `Thing`'s method uses it.
+- **The switch.** `ObjectCuts::live_bones` follows the `live_*` pattern. `set_all_live` turns it on, so it is on in a
+  game. Off, the tables answer as before, as the differential tests' stand-ins.
+- **How the logic reaches the art.**
+  - `World::load_art_bones(source)` reads every template's `W3DModelDraw` module data (the client's parse) and validates
+    each state's caches at the template's asset scale.
+  - It runs **once, before the first frame**, and either completes or refuses. If its source answered "not yet" for any
+    file, the World is left unchanged and the count is returned.
+  - Natively the source is `W3dFiles` over the install's own files (`client/src/import.rs`, `start_from_fs`).
+  - In the browser, `Starting::art_bones_ready` fetches the art by range after the audio headers, retrying until
+    nothing is unserved, and only then starts the game.
+  - No logic frame waits for the art, and #42's deferral is not used in the logic. A missing model answers as upstream's
+    "no render object": no bones, no barrels, zero turret positions. A World that never loaded art has no module data
+    and answers the same.
+- **The flags.** `World::drawable_condition` is the logic's own `Drawable::m_conditionState`. It is kept by
+  `World::emit` from the flag events the World sends:
+  - the operations;
+  - the map's time and weather;
+  - `reactToBodyDamageStateChange`;
+  - the burned stump;
+  - and the contain modules' flag calls.
+
+  A new drawable's flags start empty, and the entry goes with the drawable. Upstream saves the flags in
+  `CHUNK_GameClient`; `client::save_game` restores the logic's copy from there.
+- **Saves.** Upstream saves none of the caches (`ModelConditionInfo`'s mutable members are in no xfer), so nothing is
+  added to a save.
+- **Predictions** (`issue175b_predictions.md`, written before any run) and **results** (2026-11-13):
+  - **Gate (a), with `live_bones` on:** PASS, 300/300 identical native and wasm CRCs, last **`0bf44067`**, unchanged as
+    predicted. No gate template has a `Draw` module (checked), so every answer is "no art", the same as the empty
+    tables gave.
+  - **Lib tests:** 1,220 passed. That includes gate (b), `a_saved_game_loads_and_runs_on`, and six new tests:
+    - `issue175_the_logic_s_bones_against_upstream_s`: `MUZZLEFX01` at (16, 0, 8) with rotation part 2 I at scale 2 and
+      (4, 0, 2) at scale 1. The logic's world bone is (116, 300, 8) / (104, 300, 2), upstream's exactly. The ablation
+      gives the old "not found".
+    - `issue175_a_game_s_weapon_fires_from_the_muzzle_bone`: in the gate game with GUNT art, `ArtGun` (Scale 2)
+      acquires an enemy depot and fires. The shell's flight starts at (116, 300, 8); with the switch off, at
+      (100, 300, 0).
+    - `issue175_the_railed_dock_finds_its_waiting_bone`: `DOCKWAITING07` is found at (10, 4, 0), world (210, 104, 0).
+      The railed dock's `UninitialisedLocal` path is not taken where the art has the bone.
+    - `issue175_the_logic_s_flags_choose_the_state`.
+    - `issue175_the_art_bones_load_is_complete_or_refused`.
+    - `issue175_the_world_s_other_bone_answers`: `OpenContain`'s fire points into its array, with the miss's write of
+      the object's transform; the World as `ObjectBoneHost`.
+  - **The two test-fixture misses** were found on the first run:
+    - `doSingleBoneName("DockWaiting")` stops at the first missing number;
+    - a template without `Scale` has the port's asset scale 0 (the game's `DefaultThingTemplate` sets 1), and at scale 0
+      every bone is zero, as upstream makes it.
+  - **A port defect found by the first run** and handled as the client does: the logic emits some flag operations with
+    an index out of range, which `ModelConditionFlags::from_indices` panicked on (defect D7 of #175's report).
+  - **New differential** `tests/differential_logic_bones.rs` (`differential/wrap_logic_bones.cpp`, the cuts verbatim:
+    W3DModelDraw.cpp's caches and queries, Drawable.cpp's forwarding, Object.cpp's three functions, Thing.cpp,
+    rendobj.cpp, htree; findBestInfo through the real SparseMatchFinder). **20,000 cases, 129,837 operations,
+    0 mismatches, max ULP 0.** 609 turret queries were excluded as undefined upstream (a rotation never written).
+  - **Plants 9721-9750:**
+    - 27 planted, all caught: 26 by the differential, and 9745 (the flags copy) by the lib test.
+    - 9750 (the weapon host) is caught by both.
+    - 9741 was removed: no logic answer shows the barrel's FX bone.
+    - 9732 and 9736 were not used.
+    - The counts are in the test's docs.
+  - **The 16 differentials that write the bone tables** pass with the switch off, as do `differential_weapon_fire`,
+    `_model_draw_particles`, `_w3d`, `_client_update` and `_turret_t1`.
+  - **Other gates:** the client's tests, clippy and the web build are clean.
+- **Not done** (#175's gaps):
+  - the cost on a real install, and of the browser's fetch (no game files here);
+  - the EMP's runtime scale;
+  - upstream's live-render-object pose of the client's current state;
+  - `getBarrelCount`'s transition state;
+  - `getCurrentClientBonePositions` (the pristine pose stands in);
+  - a World loaded without its client block has no flags;
+  - `ObjectReskin`'s shared module data;
+  - the draw-module LOD.
+
+  Defects found and not fixed: `ClientReads::drawable_model_condition` is never fed in a game; the contain modules'
+  flag calls never reach the client.
+
 **Integration batch I64 (2026-11-04, `p1w13-sonnet`, GitHub #8): every module type the shipped game has builds.** A real install's INI names every module type the original has, and one with no body in the port would be silently inert in a game: the World puts a bodiless stub in its place and lists it in `cuts.untranslated_modules`.
 
 **Two checks:**

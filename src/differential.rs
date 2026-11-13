@@ -3661,6 +3661,11 @@ extern "C" {
     // reach them, verbatim, over sequences.
     pub fn ref_model_draw_particles_seq(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
 
+    // GitHub #175: the logic's bone and launch-offset questions (differential/wrap_logic_bones.cpp, which documents the
+    // words): Drawable's getPristineBonePositions, getProjectileLaunchOffset and getBarrelCount over W3DModelDraw's,
+    // the bone caches they validate, and Object's logical bone positions, verbatim, over one case's operations.
+    pub fn ref_logic_bones_case(input: *const c_int, nin: c_int, out: *mut c_int, cap: c_int) -> c_int;
+
     // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
     // which documents the setup's, the steps' and the records' words): W3DView's setHeight, setWidth, setOrigin,
     // getPickRay and screenToWorldAtZ, View::getScreenCornerWorldPointsAtZ and CameraClass's view plane, viewport and

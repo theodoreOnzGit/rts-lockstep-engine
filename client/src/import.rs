@@ -28,9 +28,12 @@ use rts_lockstep_engine::common::file_system::{FileSystem, LocalDevice, MemoryDe
 use rts_lockstep_engine::formats::big::ArchiveFile;
 use rts_lockstep_engine::client::audio_info::AudioTables;
 use rts_lockstep_engine::logic::audio_length::audio_lengths_ms;
+#[cfg(not(target_arch = "wasm32"))]
 use rts_lockstep_engine::logic::world::game_data::GameDataFiles;
 use rts_lockstep_engine::logic::world::game_logic::World;
-use rts_lockstep_engine::logic::world::install_world::{InstallError, QuickSkirmish, DEFAULT_LANGUAGE};
+use rts_lockstep_engine::logic::world::install_world::{InstallError, InstallReport, QuickSkirmish, DEFAULT_LANGUAGE};
+use rts_lockstep_engine::client::w3d_model_draw::W3dFiles;
+use rts_lockstep_engine::formats::w3d::assetmgr::{AssetManager, W3dFileFactory};
 
 /// An install's failure in words a player can read and report: the INI error's kind and the files the load lacks (the
 /// first eight, and how many), the map cache's error, or the map not found.
@@ -246,6 +249,14 @@ pub fn start_from_files(files: Vec<(Vec<u8>, Imported)>, map: Option<&[u8]>) -> 
 pub struct Starting {
     logic: FileSystem<MemoryDevice>,
     art: FileSystem<RangedDevice>,
+    /// (#175) The World as the install made it, once the audio headers are held, waiting for its art's bones
+    /// ([`Starting::art_bones_ready`]).
+    installed: Option<(World, InstallReport)>,
+    /// (#175) The asset manager the logic's bones are read with (its own: the client's draws read theirs), and the
+    /// models and animations waiting for their files.
+    bone_assets: AssetManager,
+    bone_models: std::collections::BTreeSet<Vec<u8>>,
+    bone_anims: std::collections::BTreeSet<Vec<u8>>,
     /// The audio tables read from the logic's files (the ones the load will read).
     tables: AudioTables,
     map: Option<Vec<u8>>,
@@ -283,7 +294,17 @@ impl Starting {
         art.init(generals);
         let mut tables = AudioTables::new();
         let _ = tables.load(|p| logic.open_file(p));
-        Starting { logic, art, tables, map: map.map(<[u8]>::to_vec), files: n }
+        Starting {
+            logic,
+            art,
+            installed: None,
+            bone_assets: AssetManager::new_game(W3dFileFactory::default()),
+            bone_models: Default::default(),
+            bone_anims: Default::default(),
+            tables,
+            map: map.map(<[u8]>::to_vec),
+            files: n,
+        }
     }
 
     /// The art's device (the page's ranges go to it, [`pump_ranges`]).
@@ -304,9 +325,38 @@ impl Starting {
         self.art.local.device.outstanding()
     }
 
-    /// The game: the logic's load from its files, the audio lengths from the art's device.
-    pub fn start(self) -> Result<(Started, FileSystem<RangedDevice>), String> {
-        let started = start_from_fs(&self.logic, &self.art, self.map.as_deref(), self.files)?;
+    /// (#175) Whether the logic's art bones are loaded (`World::load_art_bones`, before the game's first frame): the
+    /// World is made from the logic's files once (the audio headers held), then its templates' models are read from
+    /// the art's device; a model, hierarchy or animation still being fetched refuses the load, the device asks for its
+    /// bytes (listed for the page by the next [`pump_ranges`]) and the next call reads again. The logic never starts
+    /// with part of its art.
+    pub fn art_bones_ready(&mut self) -> Result<bool, String> {
+        if self.installed.is_none() {
+            let (world, report) = World::from_install_with_audio(&self.logic, &self.art, DEFAULT_LANGUAGE).map_err(|e| format!("the game's data did not load: {}", describe(&e)))?;
+            self.installed = Some((world, report));
+        }
+        let Some((world, _)) = self.installed.as_mut() else { return Ok(false) };
+        let mut src = crate::drawables::Deferred {
+            files: W3dFiles { assets: &mut self.bone_assets, fs: &self.art },
+            models: &mut self.bone_models,
+            anims: &mut self.bone_anims,
+            deferred: 0,
+        };
+        let before = self.art.local.device.unserved_reads();
+        let loaded = world.load_art_bones(&mut src).is_ok();
+        self.bone_models.clear();
+        self.bone_anims.clear();
+        Ok(loaded && self.art.local.device.unserved_reads() == before)
+    }
+
+    /// The game: the logic's load from its files, the audio lengths from the art's device, (#175) the art's bones
+    /// ([`Starting::art_bones_ready`], read here when not read yet: every byte must be there).
+    pub fn start(mut self) -> Result<(Started, FileSystem<RangedDevice>), String> {
+        if !self.art_bones_ready()? {
+            return Err("the art the logic reads is still being fetched".to_string());
+        }
+        let (world, report) = self.installed.take().ok_or("no World")?;
+        let started = start_installed(world, report, &self.logic, self.map.as_deref(), self.files)?;
         drop(self.logic);
         Ok((started, self.art))
     }
@@ -334,6 +384,19 @@ pub fn poll_start() -> Option<Result<(Started, FileSystem<RangedDevice>), String
         if !ready {
             set_art_status(format!("reading the sounds' headers: {} ranges outstanding", st.outstanding()));
             return None;
+        }
+        // (#175) then the models the logic's bones are read from, before its first frame
+        match st.art_bones_ready() {
+            Ok(true) => {}
+            Ok(false) => {
+                pump_ranges(st.art_device());
+                set_art_status(format!("reading the models' bones: {} ranges outstanding", st.outstanding()));
+                return None;
+            }
+            Err(e) => {
+                slot.take();
+                return Some(Err(e));
+            }
         }
         let st = slot.take()?;
         Some(st.start())
@@ -390,9 +453,19 @@ pub fn start_from_folder(folder: &std::path::Path, map: Option<&[u8]>) -> Result
     start_from_fs(&fs, &fs, map, 0)
 }
 
-/// The game from the logic's files, with the audio files' headers read from `audio` (#52; natively the same files).
+/// The game from the logic's files, with the audio files' headers read from `audio` (#52; natively the same files)
+/// and (#175) the logic's art bones from the same files (`World::load_art_bones`, the files at hand).
+#[cfg(not(target_arch = "wasm32"))]
 fn start_from_fs<D: LocalDevice>(fs: &FileSystem<D>, audio: &impl GameDataFiles, map: Option<&[u8]>, files: usize) -> Result<Started, String> {
     let (mut world, report) = World::from_install_with_audio(fs, audio, DEFAULT_LANGUAGE).map_err(|e| format!("the game's data did not load: {}", describe(&e)))?;
+    let mut assets = AssetManager::new_game(W3dFileFactory::default());
+    world.load_art_bones(&mut W3dFiles { assets: &mut assets, fs }).map_err(|e| format!("the art's bones did not load: {e:?}"))?;
+    start_installed(world, report, fs, map, files)
+}
+
+/// The game from the World the install made (its art's bones loaded): the map chosen and mounted, the skirmish
+/// started, its first frames run.
+fn start_installed<D: LocalDevice>(mut world: World, report: InstallReport, fs: &FileSystem<D>, map: Option<&[u8]>, files: usize) -> Result<Started, String> {
     // (`World::quick_skirmish` in its steps, so the World before the game is kept for a save's load, GitHub #4)
     let chosen = world.choose_skirmish_map(map).map_err(|e| format!("no skirmish could start: {}", describe(&e)))?;
     let mounted = world.mount_map(fs, &chosen);

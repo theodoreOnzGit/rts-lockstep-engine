@@ -2882,6 +2882,133 @@ mod differential {
                 mb.compile("upstream_model_draw_particles");
             }
 
+            // GitHub #175: the logic's bone and launch-offset questions (differential/wrap_logic_bones.cpp, which lists the
+            // cuts): NameKeyGenerator.h's NameKeyType; GameCommon.h's WhichTurretType; W3DModelDraw.h's PristineBoneInfo,
+            // TurretInfo, WeaponBarrelInfo and the m_validStuff bits; W3DModelDraw.cpp's ACBits, isValidTimeToCalcLogicStuff,
+            // addPublicBone, the bone caches (testFlagBit to loadAnimations), findBestInfo, getProjectileLaunchOffset,
+            // getPristineBonePositionsForConditionState and getBarrelCount; Drawable.cpp's getProjectileLaunchOffset,
+            // getPristineBonePositions and getBarrelCount; Object.cpp's getSingleLogicalBonePosition,
+            // getSingleLogicalBonePositionOnTurret and getMultiLogicalBonePosition; Thing.cpp's convertBonePosToWorldPos;
+            // rendobj.cpp's Get_Sub_Object_By_Name; and #172's htree and asset-scale pieces. No text is edited. Each anchor
+            // must occur once. Linked before upstream_flags (ref_sparse_match, the real SparseMatchFinder) and
+            // upstream_wwmath, which it calls.
+            {
+                println!("cargo:rerun-if-changed=differential/wrap_logic_bones.cpp");
+                let ge = up.join("GameEngine");
+                let gd = up.join("GameEngineDevice");
+                let piece = |text: &str, file: &str, from: &str, to: Option<(&str, bool)>| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    let j = match to {
+                        Some((to, keep_to)) => {
+                            assert_eq!(text.matches(to).count(), 1, "{file}: a cut's end must occur once: {to:?}");
+                            text.find(to).expect("to") + if keep_to { to.len() } else { 0 }
+                        }
+                        None => text.len(),
+                    };
+                    assert!(i < j, "{file}: a cut must end after it starts");
+                    text[i..j].to_string()
+                };
+                // the cut from `from` to the first `to` after it, `to` kept
+                let piece_to_next = |text: &str, file: &str, from: &str, to: &str| -> String {
+                    assert_eq!(text.matches(from).count(), 1, "{file}: a cut's start must occur once: {from:?}");
+                    let i = text.find(from).expect("from");
+                    let j = i + text[i..].find(to).unwrap_or_else(|| panic!("{file}: {to:?} after {from:?}")) + to.len();
+                    text[i..j].to_string()
+                };
+                let nk = read_upstream(ge.join("Include/Common/NameKeyGenerator.h"));
+                let gc = read_upstream(ge.join("Include/Common/GameCommon.h"));
+                let md_h = read_upstream(gd.join("Include/W3DDevice/GameClient/Module/W3DModelDraw.h"));
+                let md = read_upstream(gd.join("Source/W3DDevice/GameClient/Drawable/Draw/W3DModelDraw.cpp"));
+                let dr = read_upstream(ge.join("Source/GameClient/Drawable.cpp"));
+                let ob = read_upstream(ge.join("Source/GameLogic/Object/Object.cpp"));
+                let th = read_upstream(ge.join("Source/Common/Thing/Thing.cpp"));
+                let ro = read_upstream(ww.join("WW3D2/rendobj.cpp"));
+                let htree = read_upstream(ww.join("WW3D2/htree.cpp"));
+                let htree_h = read_upstream(ww.join("WW3D2/htree.h"));
+                let am = read_upstream(gd.join("Source/W3DDevice/GameClient/W3DAssetManager.cpp"));
+                let files = [
+                    ("lb_name_key.inc", piece(&nk, "NameKeyGenerator.h", "enum NameKeyType\n{", Some(("/** A bucket entry for the name key generator */", false)))),
+                    ("lb_which_turret.inc", piece(&gc, "GameCommon.h", "enum WhichTurretType\n{", Some(("\tMAX_TURRETS\n};", true)))),
+                    ("lb_pristine.inc", piece(&md_h, "W3DModelDraw.h", "struct PristineBoneInfo\n{", Some(("struct ModelConditionInfo\n{", false)))),
+                    (
+                        "lb_turret_barrel.inc",
+                        piece(&md_h, "W3DModelDraw.h", "\tstruct TurretInfo\n\t{", Some(("\ttypedef std::vector<WeaponBarrelInfo>\tWeaponBarrelInfoVec;", true))),
+                    ),
+                    ("lb_valid_enum.inc", piece_to_next(&md_h, "W3DModelDraw.h", "\tenum\n\t{\n\t\tPRISTINE_BONES_VALID", "};")),
+                    ("lb_acbits.inc", piece(&md, "W3DModelDraw.cpp", "enum ACBits\n{", Some(("static const char *ACBitsNames[] =", false)))),
+                    (
+                        "lb_valid_time.inc",
+                        piece(&md, "W3DModelDraw.cpp", "static inline Bool isValidTimeToCalcLogicStuff()", Some(("#if defined(DEBUG_CRC) && (defined(_DEBUG) || defined(_INTERNAL))\n#include <cstdarg>", false))),
+                    ),
+                    (
+                        "lb_public_bone.inc",
+                        piece(&md, "W3DModelDraw.cpp", "void ModelConditionInfo::addPublicBone(const AsciiString& boneName) const", Some(("Bool ModelConditionInfo::matchesMode(Bool night, Bool snowy) const", false))),
+                    ),
+                    ("lb_bones.inc", piece(&md, "W3DModelDraw.cpp", "inline Bool testFlagBit(Int flags, Int bit)", Some(("void ModelConditionInfo::clear()", false)))),
+                    (
+                        "lb_find_best.inc",
+                        piece(
+                            &md,
+                            "W3DModelDraw.cpp",
+                            "const ModelConditionInfo* W3DModelDrawModuleData::findBestInfo(const ModelConditionFlags& c) const",
+                            Some(("W3DModelDraw::W3DModelDraw(Thing *thing, const ModuleData* moduleData)", false)),
+                        ),
+                    ),
+                    (
+                        "lb_queries.inc",
+                        piece(&md, "W3DModelDraw.cpp", "Bool W3DModelDraw::getProjectileLaunchOffset(", Some(("// (gth) C&C3 Added this accessor for the bounding box of a render object", false))),
+                    ),
+                    ("lb_barrel_count.inc", piece(&md, "W3DModelDraw.cpp", "Int W3DModelDraw::getBarrelCount(WeaponSlotType wslot) const", Some(("Bool W3DModelDraw::handleWeaponFireFX(", false)))),
+                    ("lb_draw_launch.inc", piece(&dr, "Drawable.cpp", "Bool Drawable::getProjectileLaunchOffset(", Some(("void Drawable::setAnimationLoopDuration(", false)))),
+                    ("lb_draw_pristine.inc", piece(&dr, "Drawable.cpp", "Int Drawable::getPristineBonePositions(", Some(("Int Drawable::getCurrentClientBonePositions(", false)))),
+                    ("lb_draw_barrels.inc", piece(&dr, "Drawable.cpp", "Int Drawable::getBarrelCount(WeaponSlotType wslot) const", Some(("void Drawable::setInstanceMatrix(", false)))),
+                    (
+                        "lb_object.inc",
+                        piece(
+                            &ob,
+                            "Object.cpp",
+                            "Bool Object::getSingleLogicalBonePosition(const char* boneName, Coord3D* position, Matrix3D* transform) const",
+                            Some(("const AsciiString& Object::getCommandSetString() const", false)),
+                        ),
+                    ),
+                    (
+                        "lb_thing.inc",
+                        piece(&th, "Thing.cpp", "void Thing::convertBonePosToWorldPos(", Some(("/** Push the 'in' parameter through our transformation matrix and store in 'out' */", false))),
+                    ),
+                    (
+                        "lb_get_sub_object.inc",
+                        piece_to_next(&ro, "rendobj.cpp", "RenderObjClass * RenderObjClass::Get_Sub_Object_By_Name(const char * name, int *index) const", "\n}\n"),
+                    ),
+                    ("lb_htree_scale.inc", piece(&htree, "htree.cpp", "void HTreeClass::Scale(float factor)", Some(("void HTreeClass::Capture_Bone(int boneindex)", false)))),
+                    (
+                        "lb_base_update.inc",
+                        piece(&htree, "htree.cpp", "void HTreeClass::Base_Update(const Matrix3D & root)", Some(("void HTreeClass::Anim_Update(const Matrix3D & root,HAnimClass * motion,float frame)", false))),
+                    ),
+                    (
+                        "lb_get_transform.inc",
+                        piece(&htree_h, "htree.h", "WWINLINE const Matrix3D & HTreeClass::Get_Transform(int pivot) const", Some(("\treturn Pivot[pivot].Transform;\n}", true))),
+                    ),
+                    ("lb_asset_scale.inc", piece(&am, "W3DAssetManager.cpp", "const float ident_scale(1.0f);", Some(("const Vector3 ident_HSV(0,0,0);", false)))),
+                ];
+                let gen = out_dir.join("logic_bones_gen");
+                std::fs::create_dir_all(&gen).expect("create logic_bones_gen");
+                let head = "/* generated by build.rs: verbatim from upstream (see differential/wrap_logic_bones.cpp) */\n";
+                for (name, body) in files {
+                    std::fs::write(gen.join(name), format!("{head}{body}\n")).expect("write a logic bones cut");
+                }
+                let mut lb = cc::Build::new();
+                base(&mut lb);
+                lb.include(&gen)
+                    .include(&shim)
+                    .include(up.join("GameEngine/Include"))
+                    .include(up.join("Libraries/Include"))
+                    .include(ww.join("WWMath"))
+                    .include(ww.join("WWLib"))
+                    .file(dif.join("wrap_logic_bones.cpp"));
+                lb.compile("upstream_logic_bones");
+            }
+
             // GitHub #138: the tactical view's height, origin and screen-to-world mapping (differential/wrap_tactical_view.cpp,
             // which lists the cuts). Cut verbatim into OUT_DIR/tactical_view_gen from View.h (getScreenCornerWorldPointsAtZ's
             // declaration and the size and origin accessors), View.cpp (getScreenCornerWorldPointsAtZ), W3DView.cpp

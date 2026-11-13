@@ -801,7 +801,7 @@ impl ModelConditionInfo {
         // if we have any animations in this state, always choose the first, since the
         // animations vary on a per-client basis.
         let anim_to_use = if !self.animations.is_empty() { self.animations[0].get_anim_handle(env.assets) } else { cur_anim.as_ref().map(|a| a.motion.clone()) };
-        let which_frame = anim_to_use.as_ref().map(|h| if test_flag_bit(self.flags, PRISTINE_BONE_POS_IN_FINAL_FRAME) { h.num_frames - 1 } else { 0 });
+        let which_frame = anim_to_use.as_ref().map(|h| if test_flag_bit(self.flags, PRISTINE_BONE_POS_IN_FINAL_FRAME) && !plant(9739) { h.num_frames - 1 } else { 0 });
         // Set_Animation does nothing on a render object that is not an HLOD
         let pose = match (&anim_to_use, which_frame) {
             (Some(h), Some(f)) if is_hlod => Some((h.name.as_slice(), f as f32)),
@@ -810,12 +810,12 @@ impl ModelConditionInfo {
         let skeleton = env.assets.skeleton(&model_name, pose, scale);
 
         let mut map = BTreeMap::new();
-        for b in standard_public_bones {
+        for b in standard_public_bones.iter().filter(|_| !plant(9749)) {
             // don't crash here, since these are catch-all global bones and won't be present in most models.
             do_single_bone_name(skeleton.as_ref(), b, &mut map);
         }
         let mut public = self.public_bones.clone();
-        for b in extra_public_bones {
+        for b in extra_public_bones.iter().filter(|_| !plant(9748)) {
             let tmp = lower(b);
             if !b.is_empty() && !is_none(b) && !public.contains(&tmp) {
                 public.push(tmp);
@@ -929,7 +929,7 @@ impl ModelConditionInfo {
                 }
                 prev_fx_bone = info.fx_bone;
             }
-            if vecs[wslot].is_empty() {
+            if vecs[wslot].is_empty() && !plant(9742) {
                 // try the unadorned names
                 let mut info = WeaponBarrelInfo::default();
                 if !recoil_bone_name.is_empty() {
@@ -967,7 +967,7 @@ fn find_single_bone(sk: Option<&Skeleton>, bone_name: &[u8]) -> Option<PristineB
     }
     let sk = sk?;
     let bone_index = sk.get_bone_index(bone_name);
-    if bone_index != 0 {
+    if bone_index != 0 || (plant(9744) && sk.has_htree()) {
         Some(PristineBoneInfo { mtx: sk.bones[bone_index as usize].transform, bone_index })
     } else {
         None
@@ -1011,7 +1011,7 @@ fn do_single_bone_name(sk: Option<&Skeleton>, bone_name: &[u8], map: &mut BTreeM
             None => break,
         }
     }
-    if !found_as_bone {
+    if !found_as_bone && !plant(9743) {
         if let Some(info) = find_single_sub_obj(sk, &tmp_name) {
             map.insert(tmp_name.clone(), info);
             found_as_sub_obj = true;
@@ -1327,6 +1327,201 @@ impl W3DModelDrawModuleData {
             (false, false) => 0x1,
         };
         self.validated.load(Ordering::Relaxed) & mode != 0
+    }
+
+    /// (#175) `W3DModelDraw::getPristineBonePositionsForConditionState(condition, boneNamePrefix, startIndex, positions,
+    /// transforms, maxBones)` (W3DModelDraw.cpp:3403-3506) as the logic asks it: "this recalcs the state every time,
+    /// rather than using m_curState, because m_curState could be a transition state, and we really need to get the
+    /// pristine bone(s) for the state that logic believes to be current" (`findBestInfo(condition)`), then
+    /// `validateStuff(stateToUse == m_curState ? m_renderObject : NULL, getDrawable()->getScale(), m_extraPublicBones)`
+    /// with no current render object (the logic's module has none: the `NULL` branch), and the pristine bones `prefix`
+    /// (for `startIndex` 0) or `prefix01`, `prefix02`, ... from `startIndex` to 99, lower-cased, at most `maxBones`
+    /// (clamped to `MAX_BONE_GET`, 64), written into `transforms` from its start. A bone not found ends the list, and
+    /// writes the object's transform (`getDrawable()->getObject()->getTransformMatrix()`, `object_transform`; the
+    /// identity without an object) at the place the next bone would have gone, as upstream writes it into the caller's
+    /// array (a slot beyond `transforms` is upstream's write past the caller's array: not made). Returns the count; the
+    /// positions are the transforms' translations (`positions[i]`, the caller's). No state for the flags: 0, nothing
+    /// written.
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_pristine_bone_positions_for_condition_state<A: W3dAssetSource>(
+        &self,
+        condition: &ModelConditionFlags,
+        bone_name_prefix: &[u8],
+        start_index: i32,
+        transforms: &mut [Matrix3D],
+        max_bones: i32,
+        scale: f32,
+        standard_public_bones: &[Vec<u8>],
+        object_transform: Option<&Matrix3D>,
+        env: &mut DrawEnv<'_, A>,
+    ) -> i32 {
+        let flags = if plant(9721) { ModelConditionFlags::new() } else { *condition };
+        let Some(i) = self.find_best_info(&flags) else { return 0 };
+        let state_to_use = &self.condition_states[i];
+        state_to_use.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
+
+        const MAX_BONE_GET: i32 = 64;
+        let max_bones = if max_bones > MAX_BONE_GET { MAX_BONE_GET } else { max_bones };
+
+        let mut pos_count: i32 = 0;
+        let end_index = if start_index == 0 && !plant(9724) { 0 } else { 99 };
+        let mut i = start_index;
+        while i <= end_index {
+            let mut buffer = bone_name_prefix.to_vec();
+            if i != 0 {
+                buffer.extend_from_slice(format!("{i:02}").as_bytes());
+            }
+            // convert to all-lowercase since that's how we filled in the map
+            if !plant(9723) {
+                buffer.make_ascii_lowercase();
+            }
+            let slot = usize::try_from(pos_count).ok().and_then(|p| transforms.get_mut(p));
+            match state_to_use.find_pristine_bone(&buffer) {
+                Some(b) => {
+                    if let Some(t) = slot {
+                        *t = b.mtx;
+                    }
+                }
+                None => {
+                    // (`*obj->getTransformMatrix()`, else `Make_Identity()`)
+                    if let Some(t) = slot {
+                        *t = match object_transform {
+                            Some(m) if !plant(9722) => *m,
+                            _ => Matrix3D::IDENTITY,
+                        };
+                    }
+                    break;
+                }
+            }
+            pos_count += 1;
+            if pos_count >= max_bones + i32::from(plant(9725)) {
+                break;
+            }
+            i += 1;
+        }
+        pos_count
+    }
+
+    /// (#175) `W3DModelDraw::getProjectileLaunchOffset(condition, wslot, specificBarrelToUse, launchPos, tur,
+    /// turretRotPos, turretPitchPos)` (W3DModelDraw.cpp:3253-3398), `CACHE_ATTACH_BONE` undefined as upstream builds it:
+    /// the state the logic believes current (`findBestInfo(condition)`; none: false, nothing written), validated with no
+    /// render object at the drawable's scale; the `AttachToBoneInAnotherModule` bone's pristine transform
+    /// (`getDrawable()->getPristineBonePositions(bone, 0, NULL, &pivot, 1) == 1`: `attach_pivot`, asked only when the
+    /// module names one) turned by the drawable's orientation (`Pre_Rotate_Z`) gives the tech offset; the barrel's
+    /// `m_projectileOffsetMtx` (barrel 0 when out of range), turned by the turret's art angle and pitch, moved by the
+    /// tech offset, into `launch_pos` (no barrels: `launchPos = NULL`, false). The turret's angle and pitch bones'
+    /// pristine positions (`findPristineBonePos`, zero when not found) into `turret_rot_pos` and `turret_pitch_pos`,
+    /// which are zeroed first. Returns whether `launch_pos` was given and written (`launchPos != NULL`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_projectile_launch_offset<A: W3dAssetSource>(
+        &self,
+        condition: &ModelConditionFlags,
+        wslot: usize,
+        specific_barrel_to_use: i32,
+        launch_pos: Option<&mut Matrix3D>,
+        tur: i32,
+        turret_rot_pos: Option<&mut Coord3D>,
+        turret_pitch_pos: Option<&mut Coord3D>,
+        scale: f32,
+        standard_public_bones: &[Vec<u8>],
+        orientation: f32,
+        attach_pivot: &mut impl FnMut(&mut DrawEnv<'_, A>) -> Option<Matrix3D>,
+        env: &mut DrawEnv<'_, A>,
+    ) -> bool {
+        let Some(si) = self.find_best_info(condition) else { return false };
+        let state_to_use = &self.condition_states[si];
+        state_to_use.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
+
+        // must use pristine bone here since the result is used by logic
+        let mut tech_offset = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        if !self.attach_to_drawable_bone.is_empty() {
+            if let Some(mut pivot) = attach_pivot(env) {
+                if !plant(9730) {
+                    pivot.pre_rotate_z(orientation);
+                }
+                tech_offset = Coord3D { x: pivot.get_x_translation(), y: pivot.get_y_translation(), z: pivot.get_z_translation() };
+            }
+        }
+
+        let turret = usize::try_from(tur).ok().filter(|&t| t < MAX_TURRETS);
+        let wbvec = state_to_use.weapon_barrels(wslot);
+        let mut launch_pos = launch_pos;
+        if wbvec.is_empty() {
+            // Can't find the launch pos, but they might still want the other info they asked for
+            launch_pos = None;
+        } else {
+            let mut barrel = specific_barrel_to_use;
+            if barrel < 0 || barrel as usize >= wbvec.len() {
+                barrel = if plant(9731) { wbvec.len() as i32 - 1 } else { 0 };
+            }
+            if let Some(lp) = launch_pos.as_deref_mut() {
+                *lp = wbvec[barrel as usize].projectile_offset_mtx;
+                if let Some(t) = turret {
+                    if !plant(9728) {
+                        lp.pre_rotate_z(state_to_use.turrets[t].turret_art_angle);
+                    }
+                    let pitch = state_to_use.turrets[t].turret_art_pitch;
+                    lp.pre_rotate_y(if plant(9729) { pitch } else { -pitch });
+                }
+                if !plant(9746) {
+                    lp.adjust_translation(&crate::ww::vector3::Vector3::new(tech_offset.x, tech_offset.y, tech_offset.z));
+                }
+            }
+        }
+
+        let mut turret_rot_pos = turret_rot_pos;
+        let mut turret_pitch_pos = turret_pitch_pos;
+        if let Some(p) = turret_rot_pos.as_deref_mut() {
+            *p = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        }
+        if let Some(p) = turret_pitch_pos.as_deref_mut() {
+            *p = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
+        }
+
+        if let Some(t) = turret {
+            let tur_info = &state_to_use.turrets[t];
+            // (`findPristineBonePos(key, pos)`: the bone's translation, else zero; "*** ASSET ERROR: TurretBone %s not found!")
+            let bone_pos = |key: &[u8]| -> Coord3D {
+                match state_to_use.find_pristine_bone(key) {
+                    Some(b) => {
+                        let v = b.mtx.get_translation();
+                        Coord3D { x: v.x, y: v.y, z: v.z }
+                    }
+                    None => Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+                }
+            };
+            if let Some(p) = turret_rot_pos {
+                if !tur_info.turret_angle_name_key.is_empty() {
+                    *p = bone_pos(&tur_info.turret_angle_name_key);
+                }
+            }
+            if let Some(p) = turret_pitch_pos {
+                if !tur_info.turret_pitch_name_key.is_empty() {
+                    *p = bone_pos(&tur_info.turret_pitch_name_key);
+                }
+            }
+        }
+        // return if LaunchPos is valid or not
+        launch_pos.is_some()
+    }
+
+    /// (#175) `W3DModelDraw::getBarrelCount(wslot)` (W3DModelDraw.cpp:3689-3693) as the logic asks it: upstream reads
+    /// `m_curState`, the client's state, which is a transition state while one plays (its timing is the client's); the
+    /// logic reads the state it believes current, `findBestInfo(condition)` (what `m_curState` is outside a transition),
+    /// validated with no render object at the drawable's scale (as `setModelState` validates the state it enters at a
+    /// logic time). The barrels of the slot when they are valid (`BARRELS_VALID`), else 0; no state: 0.
+    pub fn get_barrel_count_for_condition_state<A: W3dAssetSource>(
+        &self,
+        condition: &ModelConditionFlags,
+        wslot: usize,
+        scale: f32,
+        standard_public_bones: &[Vec<u8>],
+        env: &mut DrawEnv<'_, A>,
+    ) -> i32 {
+        let Some(si) = self.find_best_info(condition) else { return 0 };
+        let s = &self.condition_states[si];
+        s.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
+        if s.barrels_valid() { s.weapon_barrels(wslot).len() as i32 } else { 0 }
     }
 }
 
@@ -4418,19 +4613,19 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             assert_eq!(live.get_translation(), Vector3::new(4.0, 0.0, 2.0));
         }
 
-        /// (#175, an investigation: measures, changes nothing) The logic's pristine bones in a game made by the ordinary
-        /// path, against upstream's (`W3DModelDraw::getPristineBonePositionsForConditionState` and
-        /// `getProjectileLaunchOffset`, which this client reproduces since #172) for the same art, at `Scale` 2 and 1.
+        /// (#175) The logic's pristine bones in a game made by the ordinary path, against upstream's
+        /// (`W3DModelDraw::getPristineBonePositionsForConditionState` and `getProjectileLaunchOffset`, which this client
+        /// reproduces since #172) for the same art, at `Scale` 2 and 1.
         ///
-        /// Predictions, written before the first run (`issue175_predictions.md`):
-        /// - the logic's art-bone tables (`cuts.contain.{pristine_bones, pristine_bone_transforms, single_bones,
-        ///   fire_points, turret_bones}`, `cuts.bone_transforms`, `cuts.drawable_launch_offset`,
-        ///   `cuts.drawable_barrel_count`) are empty, at both scales; the object has a drawable;
-        /// - so the logic finds no `MUZZLEFX` bone, no launch offset, 0 barrels, and `getSingleLogicalBonePosition`
-        ///   falls back to the object's own position;
-        /// - upstream's (the client's) pristine `muzzlefx01` is at (16, 0, 8) with rotation part 2 I at scale 2, and
-        ///   at (4, 0, 2) with I at scale 1; the launch bone's projectile offset is the same matrix; pushed through
-        ///   an object at (100, 300, 0) (`Thing::convertBonePosToWorldPos`) it is (116, 300, 8) and (104, 300, 2).
+        /// ~~Predictions, written before the first run (`issue175_predictions.md`): the logic's art-bone tables are
+        /// empty, so the logic finds no `MUZZLEFX` bone, no launch offset, 0 barrels, and
+        /// `getSingleLogicalBonePosition` falls back to the object's own position~~ (the investigation's measurement,
+        /// all held; it is now the ablation, `live_bones` off). **Corrected 2026-11-12 (#175):** the World loads its
+        /// art's bones (`World::load_art_bones`, GUNT through `W3dFiles`) before its first frame and, with `live_bones`
+        /// (on in a game), answers from them. Predicted (`issue175b_predictions.md`): the logic's `MUZZLEFX01` is
+        /// upstream's, (16, 0, 8) with rotation part 2 I at scale 2 and (4, 0, 2) with I at scale 1; its world position
+        /// (116, 300, 8) and (104, 300, 2); the launch offset is the pristine matrix; one primary barrel. With
+        /// `live_bones` off the old answers come back (none found, the object's own position).
         #[test]
         fn issue175_the_logic_s_bones_against_upstream_s() {
             use crate::logic::weapon_host::WeaponHost;
@@ -4445,27 +4640,18 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                      Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n"
                 );
                 let mut w = gate_world_with(&ini);
+                let mut rig = Rig::new();
+                let report = w.load_art_bones(&mut W3dFiles { assets: &mut rig.am, fs: &rig.fs }).expect("the art at hand");
+                assert_eq!(report.templates, 1);
+                assert!(w.cuts.live_bones);
                 let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
                 let id = make(&mut w, b"ScaledGun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
                 assert_eq!(w.find_object(id).unwrap().template().get_asset_scale(), scale);
-                assert!(w.has_drawable(id));
                 for _ in 0..30 {
                     w.logic_update().unwrap();
                 }
-                let c = &w.cuts.contain;
-                assert!(c.pristine_bones.is_empty() && c.pristine_bone_transforms.is_empty() && c.single_bones.is_empty());
-                assert!(c.fire_points.is_empty() && c.turret_bones.is_empty());
-                assert!(w.cuts.bone_transforms.is_empty() && w.cuts.drawable_launch_offset.is_empty() && w.cuts.drawable_barrel_count.is_empty());
-                assert!(w.drawable_pristine_bones(id, b"MUZZLEFX", 1, 4).is_empty());
-                assert!(w.drawable_pristine_bone_transforms(id, b"MUZZLEFX", 1, 4).is_empty());
-                assert_eq!(WeaponHost::projectile_launch_offset(&mut w, id, 0, 0, -1), None);
-                assert_eq!(WeaponHost::barrel_count(&mut w, id, 0), Some(0));
-                let (found, logic_pos, _) = w.object_get_single_logical_bone_transform(id, b"MUZZLEFX01");
-                assert!(!found);
-                assert_eq!((logic_pos.x, logic_pos.y, logic_pos.z), (100.0, 300.0, 0.0));
 
                 // upstream's, through the client's translation of W3DModelDraw (#172) on the same art
-                let mut rig = Rig::new();
                 let d = Arc::new(
                     parse(&[(0, "DefaultConditionState", ""), (1, "Model", "GUNT"), (1, "WeaponFireFXBone", "PRIMARY MuzzleFX"), (1, "WeaponLaunchBone", "PRIMARY MuzzleFX")])
                         .unwrap(),
@@ -4477,16 +4663,279 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
                 let pristine = cache.pristine_bones[&b"muzzlefx01"[..]].mtx;
                 assert!(near(pristine.get_translation(), art), "{:?}", pristine.get_translation());
                 assert_eq!((pristine.row[0][0], pristine.row[1][1], pristine.row[2][2]), (scale, scale, scale));
-                let offset = cache.weapon_barrel_info_vec[0][0].projectile_offset_mtx;
-                assert_eq!(offset, pristine);
+                assert_eq!(cache.weapon_barrel_info_vec[0][0].projectile_offset_mtx, pristine);
+
+                // the logic's, from the art (`live_bones`)
                 let p = Coord3D { x: art[0], y: art[1], z: art[2] };
-                let (world_pos, _) = w.object_convert_bone_pos_to_world_pos(id, &p, &pristine);
+                let (upstream_world, upstream_mtx) = w.object_convert_bone_pos_to_world_pos(id, &p, &pristine);
+                assert_eq!(w.drawable_pristine_bone_transforms(id, b"MUZZLEFX", 1, 4), vec![pristine]);
+                let logic_p = w.drawable_pristine_bones(id, b"MuzzleFX", 1, 4);
+                assert_eq!(logic_p.len(), 1);
+                assert_eq!((logic_p[0].x, logic_p[0].y, logic_p[0].z), (p.x, p.y, p.z));
+                let lo = WeaponHost::projectile_launch_offset(&mut w, id, 0, 0, -1).expect("the launch bone");
+                assert_eq!(lo.attach_transform, pristine);
+                assert_eq!(WeaponHost::barrel_count(&mut w, id, 0), Some(1));
+                let (found, logic_pos, logic_mtx) = w.object_get_single_logical_bone_transform(id, b"MUZZLEFX01");
+                assert!(found);
+                assert_eq!(((logic_pos.x, logic_pos.y, logic_pos.z), logic_mtx), ((upstream_world.x, upstream_world.y, upstream_world.z), upstream_mtx));
+                assert_eq!((upstream_world.x, upstream_world.y, upstream_world.z), (100.0 + art[0], 300.0 + art[1], art[2]));
+                let multi = w.object_get_multi_logical_bone_transforms(id, b"MUZZLEFX", 4);
+                assert_eq!(multi.len(), 1);
+                assert_eq!(multi[0].1, pristine, "FALSE: not converted");
                 eprintln!(
-                    "#175 scale {scale}: logic: no bone, getSingleLogicalBonePosition -> ({}, {}, {}); upstream: pristine ({}, {}, {}), world ({}, {}, {}), diag {}",
-                    logic_pos.x, logic_pos.y, logic_pos.z, art[0], art[1], art[2], world_pos.x, world_pos.y, world_pos.z, pristine.row[0][0]
+                    "#175 scale {scale}: logic getSingleLogicalBonePosition -> ({}, {}, {}), upstream ({}, {}, {}), diag {}",
+                    logic_pos.x, logic_pos.y, logic_pos.z, upstream_world.x, upstream_world.y, upstream_world.z, logic_mtx.row[0][0]
                 );
-                assert_eq!((world_pos.x, world_pos.y, world_pos.z), (100.0 + art[0], 300.0 + art[1], art[2]));
+
+                // the ablation: the tables (empty in a game)
+                w.cuts.live_bones = false;
+                assert!(w.drawable_pristine_bones(id, b"MUZZLEFX", 1, 4).is_empty());
+                assert_eq!(WeaponHost::projectile_launch_offset(&mut w, id, 0, 0, -1), None);
+                assert_eq!(WeaponHost::barrel_count(&mut w, id, 0), Some(0));
+                let (found, logic_pos, _) = w.object_get_single_logical_bone_transform(id, b"MUZZLEFX01");
+                assert!(!found);
+                assert_eq!((logic_pos.x, logic_pos.y, logic_pos.z), (100.0, 300.0, 0.0));
             }
+        }
+
+        /// (#175) End to end: a game World (the gate's, every switch on) with the GUNT art loaded through `W3dFiles`
+        /// before its first frame, and `ArtGun` (`Scale` 2, a projectile weapon launched from `MuzzleFX`) at
+        /// (100, 300, 0) facing an enemy depot straight ahead. Its AI acquires the depot and fires; the shell's
+        /// `DumbProjectileBehavior` starts its flight at the launch position `Weapon::calcProjectileLaunchPosition`
+        /// gives (`m_flightPathStart`, `projectileFireAtObjectOrPosition` reads the projectile's position after
+        /// `positionProjectileForLaunch`).
+        ///
+        /// Predicted (`issue175b_predictions.md`): the first shell starts at upstream's muzzle bone pushed through the
+        /// gun's transform, `s² t` = (16, 0, 8) from (100, 300, 0): (116, 300, 8); with `live_bones` off (the
+        /// ablation) at the gun's own position.
+        #[test]
+        fn issue175_a_game_s_weapon_fires_from_the_muzzle_bone() {
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::team_ops::factory_find_team;
+            const INI: &str = "Weapon ArtGunShot\n PrimaryDamage = 1\n PrimaryDamageRadius = 0\n AttackRange = 150\n DamageType = ARMOR_PIERCING\n\
+                 DeathType = NORMAL\n WeaponSpeed = 20\n ProjectileObject = ArtShell\n DelayBetweenShots = 500\nEnd\n\
+                 Object ArtShell\n KindOf = PROJECTILE\n Geometry = SPHERE\n GeometryMajorRadius = 1\n\
+                 Body = ActiveBody ModuleTag_Body\n  MaxHealth = 1\n  InitialHealth = 1\n End\n\
+                 Behavior = DumbProjectileBehavior ModuleTag_Proj\n  MaxLifespan = 10000\n End\nEnd\n\
+                 Object ArtGun\n Scale = 2.0\n KindOf = VEHICLE\n VisionRange = 200\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                 WeaponSet\n  Conditions = None\n  Weapon = PRIMARY ArtGunShot\n End\n\
+                 Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = GUNT\n   WeaponFireFXBone = PRIMARY MuzzleFX\n\
+                 \x20  WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n End\n\
+                 Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                 Behavior = AIUpdateInterface ModuleTag_AI\n  AutoAcquireEnemiesWhenIdle = Yes\n End\nEnd\n";
+            let mut starts = Vec::new();
+            for live in [true, false] {
+                let mut w = gate_world_with(INI);
+                let mut rig = Rig::new();
+                w.load_art_bones(&mut W3dFiles { assets: &mut rig.am, fs: &rig.fs }).expect("the art at hand");
+                w.cuts.live_bones = live;
+                let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+                let enemy = factory_find_team(&mut w, b"team2").unwrap().unwrap();
+                let gun = make(&mut w, b"ArtGun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
+                make(&mut w, b"Depot", enemy, Coord3D { x: 180.0, y: 300.0, z: 0.0 });
+                let mut start = None;
+                for _ in 0..90 {
+                    w.logic_update().unwrap();
+                    let shells: Vec<ObjectId> = w.objects.ids_in_order().into_iter().filter(|&o| w.find_object(o).is_some_and(|x| x.template().get_name() == b"ArtShell")).collect();
+                    if let Some(&s) = shells.first() {
+                        let index = w.find_module(s, b"DumbProjectileBehavior").expect("its projectile module");
+                        let h = crate::logic::world::module_call::ModuleHandle { object: s, index };
+                        if let Some(crate::logic::world::update_body::UpdateBody::DumbProjectileBehavior(p)) = w.peek_module_body(h) {
+                            let v = p.state_words();
+                            start = Some(Coord3D { x: f32::from_bits(v[6]), y: f32::from_bits(v[7]), z: f32::from_bits(v[8]) });
+                        }
+                        break;
+                    }
+                }
+                let start = start.expect("the gun fired a shell");
+                let g = *w.find_object(gun).unwrap().thing.transform_matrix();
+                let expected = if live {
+                    crate::logic::thing::convert_bone_pos_to_world_pos(&g, &Coord3D { x: 16.0, y: 0.0, z: 8.0 }, &Matrix3D::IDENTITY).0
+                } else {
+                    let t = g.get_translation();
+                    Coord3D { x: t.x, y: t.y, z: t.z }
+                };
+                eprintln!("#175 live_bones {live}: the shell starts at ({}, {}, {}), the gun's transform {:?}", start.x, start.y, start.z, g.to_array());
+                assert_eq!((start.x.to_bits(), start.y.to_bits(), start.z.to_bits()), (expected.x.to_bits(), expected.y.to_bits(), expected.z.to_bits()));
+                starts.push(start);
+            }
+            assert_eq!((starts[0].x, starts[0].y, starts[0].z), (116.0, 300.0, 8.0));
+        }
+
+        /// (#175) The World's other bone answers, each reached here:
+        /// - `OpenContain`'s fire points written into its own array (`contain_get_multi_logical_bone_position_into`).
+        ///   Upstream's miss writes the object's transform after the bones found
+        ///   (`getPristineBonePositionsForConditionState`), and the rest is left as it was;
+        /// - the World as `ObjectBoneHost`: `Object::getCommandSetString` (the template's, then an override, `GateDozerSet`) and
+        ///   `canProduceUpgrade` over the control bar's sets; the turret position without `live_bones` (the table's
+        ///   reading) and with it.
+        ///
+        /// Predicted: one fire point, (104, 300, 2) at scale 1 for the gun at (100, 300, 0); the next entry is the
+        /// object's transform; the third is untouched. The dozer's set string is its override once set (first run: the
+        /// test assumed the gate set it, which only a gate test does; the test's error). The turret query of an
+        /// AI without a turret, the bone found, is undefined upstream (the rotation is never written), an error here.
+        /// Without `live_bones` it finds no bone.
+        #[test]
+        fn issue175_the_world_s_other_bone_answers() {
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::object_weapons;
+            use crate::logic::world::team_ops::factory_find_team;
+            let ini = "Object ArtAiGun\n Scale = 1.0\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = GUNT\n   WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n End\n\
+                       Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                       Behavior = AIUpdateInterface ModuleTag_AI\n End\nEnd\n";
+            let mut w = gate_world_with(ini);
+            let mut rig = Rig::new();
+            w.load_art_bones(&mut W3dFiles { assets: &mut rig.am, fs: &rig.fs }).expect("the art at hand");
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let id = make(&mut w, b"ArtAiGun", team, Coord3D { x: 100.0, y: 300.0, z: 0.0 });
+            let mut sentinel = Matrix3D::IDENTITY;
+            sentinel.set_translation(&Vector3::new(7.0, 7.0, 7.0));
+            let mut points = [sentinel; 3];
+            assert_eq!(w.contain_get_multi_logical_bone_position_into(id, b"MUZZLEFX", &mut points), 1);
+            assert_eq!(points[0].get_translation(), Vector3::new(104.0, 300.0, 2.0));
+            assert_eq!(points[1], *w.find_object(id).unwrap().thing.transform_matrix(), "the miss's write");
+            assert_eq!(points[2], sentinel);
+            assert_eq!(w.drawable_condition_flags(id), w.drawable_condition[&id]);
+
+            let dozer = w.objects.ids_in_order().into_iter().find(|&o| w.find_object(o).is_some_and(|x| x.template().get_name() == b"Dozer")).unwrap();
+            assert_eq!(object_weapons::get_command_set_string(&w, dozer), w.find_object(dozer).unwrap().template().friend_get_command_set_string().to_vec());
+            w.objects.find_mut(dozer).unwrap().command_set_string_override = b"GateDozerSet".to_vec();
+            assert_eq!(object_weapons::get_command_set_string(&w, dozer), b"GateDozerSet".to_vec());
+            let can = object_weapons::can_produce_upgrade(&w, dozer, 1);
+            assert_eq!(can.is_ok(), w.control_bar_find_command_set(b"GateDozerSet").is_some(), "{can:?}");
+            assert_eq!(can.ok(), w.control_bar_find_command_set(b"GateDozerSet").map(|_| false));
+
+            let live = object_weapons::get_single_logical_bone_position_on_turret(&mut w, id, 0, b"MuzzleFX01", true, true);
+            assert!(live.is_err(), "{live:?}");
+            w.cuts.live_bones = false;
+            let table = object_weapons::get_single_logical_bone_position_on_turret(&mut w, id, 0, b"MuzzleFX01", true, true).expect("defined");
+            assert!(!table.found);
+        }
+
+        /// A dock `DOCK` (#175): pivots ROOTTRANSFORM and DOCKWAITING07 (10, 4, 0), a cube on each.
+        fn dock() -> Vec<u8> {
+            let ident = [0.0, 0.0, 0.0, 1.0];
+            let p = |n: &[u8], parent: i32, t: [f32; 3]| PivotSpec { name: n.to_vec(), parent, translation: t, rotation: ident };
+            let mut f = htree_w3d(b"DOCK", &[p(b"ROOTTRANSFORM", -1, [0.0; 3]), p(b"DOCKWAITING07", 0, [10.0, 4.0, 0.0])]);
+            let mut names = Vec::new();
+            for (n, _) in [(&b"BASE"[..], 0u32), (&b"PAD"[..], 1)] {
+                let mut m = MeshSpec::cuboid(b"DOCK", n, [-0.5; 3], [0.5; 3]);
+                m.stage0.texture = None;
+                f.extend(m.to_w3d());
+                let mut full = b"DOCK.".to_vec();
+                full.extend_from_slice(n);
+                names.push(full);
+            }
+            let hl: Vec<(&[u8], u32)> = names.iter().zip([0u32, 1]).map(|(n, b)| (n.as_slice(), b)).collect();
+            f.extend(hlod_w3d(b"DOCK", b"DOCK", &hl));
+            f
+        }
+
+        /// (#175) `RailedTransportDockUpdate`'s unload end asks `getPristineBonePositions("DOCKWAITING07", 0, ...)` and
+        /// read the position uninitialised where the art has no such bone (railed_transport_dock_update.rs, the
+        /// `Undefined::UninitialisedLocal` there): in a game it always took that path (the empty table). Predicted: with
+        /// the art loaded and `live_bones`, the bone is found at (10, 4, 0) (scale 1), so the expression the module
+        /// evaluates gives a position; without art, or with the switch off, it finds none (the undefined path, as
+        /// upstream for art without the bone). (`Scale = 1.0`: a template without one has the port's asset scale 0, the
+        /// constructor's zero-filled member; a game's `DefaultThingTemplate` sets 1. At scale 0 the bones are all zero, as
+        /// upstream's `HTreeClass::Scale(0)` and `Matrix3D(true).Scale(0)` make them: the first run found the bone at
+        /// (0, 0, 0) for that reason, a fixture error.) Also, `ExtraPublicBone = DockWaiting07`: `doSingleBoneName("DockWaiting")`
+        /// stops at the first missing number (01).
+        #[test]
+        fn issue175_the_railed_dock_finds_its_waiting_bone() {
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::team_ops::factory_find_team;
+            let ini = "Object ArtDock\n Scale = 1.0\n KindOf = STRUCTURE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
+                       Draw = W3DModelDraw ModuleTag_Draw\n  ExtraPublicBone = DockWaiting07\n  DefaultConditionState\n   Model = DOCK\n  End\n End\n\
+                       Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+            let mut d = MemoryDevice::new();
+            d.insert(b"Art/W3D/dock.w3d", dock());
+            let fs = FileSystem::new(d);
+            let mut am = AssetManager::new_game(W3dFileFactory::default());
+            for (load, live, expected) in [(true, true, Some((10.0, 4.0, 0.0))), (false, true, None), (true, false, None)] {
+                let mut w = gate_world_with(ini);
+                if load {
+                    w.load_art_bones(&mut W3dFiles { assets: &mut am, fs: &fs }).expect("the art at hand");
+                }
+                w.cuts.live_bones = live;
+                let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+                let us = make(&mut w, b"ArtDock", team, Coord3D { x: 200.0, y: 100.0, z: 0.0 });
+                assert!(w.has_drawable(us));
+                // the module's expression (railed_transport_dock_update.rs, `unloadNext`'s caller)
+                let bone = w.drawable_pristine_bones(us, b"DOCKWAITING07", 0, 1).first().copied().ok_or(crate::common::ini::Undefined::UninitialisedLocal);
+                assert_eq!(bone.as_ref().ok().map(|b| (b.x, b.y, b.z)), expected, "load {load}, live {live}");
+                if let Ok(b) = bone {
+                    let p = w.contain_convert_bone_pos_to_world_pos(us, &b);
+                    assert_eq!((p.x, p.y, p.z), (210.0, 104.0, 0.0));
+                }
+            }
+        }
+
+        /// (#175) The logic's copy of the drawable's flags decides the state the bones are read from. `FLAGGED` has
+        /// GUNT by default and no model when `DAMAGED`. Predicted: no flags, the muzzle bone; the body's damage state
+        /// (`DrawableReactToBodyDamageStateChange` 1: DAMAGED) none; back to 0, found; `setModelConditionState(DAMAGED)`
+        /// none, and its clear found; a contain module's `clearAndSetModelConditionFlags` (DAMAGED) none and its
+        /// `replaceModelConditionFlags` (no flags) found. A missing model (`NOSUCH`) answers as no render object: no bone,
+        /// one model reported missing.
+        #[test]
+        fn issue175_the_logic_s_flags_choose_the_state() {
+            use crate::common::model_state::MODELCONDITION_DAMAGED;
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::object_events::ObjectClientEvent;
+            use crate::logic::world::team_ops::factory_find_team;
+            let ini = "Object Flagged\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = GUNT\n   WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n\
+                       \x20 ConditionState = DAMAGED\n   Model = None\n  End\n End\n\
+                       Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n\
+                       Object Missing\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = NOSUCH\n   WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n End\n\
+                       Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+            let mut w = gate_world_with(ini);
+            let mut rig = Rig::new();
+            let report = w.load_art_bones(&mut W3dFiles { assets: &mut rig.am, fs: &rig.fs }).expect("the art at hand");
+            assert_eq!((report.templates, report.models_missing), (2, 1));
+            let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+            let id = make(&mut w, b"Flagged", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+            let found = |w: &crate::logic::world::game_logic::World| !w.drawable_pristine_bones(id, b"MUZZLEFX", 1, 4).is_empty();
+            assert!(found(&w));
+            w.emit(ObjectClientEvent::DrawableReactToBodyDamageStateChange { object_id: id, state: 1 });
+            assert!(!found(&w), "damaged: no model");
+            w.emit(ObjectClientEvent::DrawableReactToBodyDamageStateChange { object_id: id, state: 0 });
+            assert!(found(&w));
+            w.set_model_condition_state(id, MODELCONDITION_DAMAGED);
+            assert!(!found(&w));
+            w.clear_model_condition_state(id, MODELCONDITION_DAMAGED);
+            assert!(found(&w));
+            w.contain_clear_and_set_model_condition_flags(id, &[], &[MODELCONDITION_DAMAGED]);
+            assert!(!found(&w));
+            w.contain_drawable_replace_model_condition_flags(id, &ModelConditionFlags::new());
+            assert!(found(&w));
+            let missing = make(&mut w, b"Missing", team, Coord3D { x: 120.0, y: 100.0, z: 0.0 });
+            assert!(w.drawable_pristine_bones(missing, b"MUZZLEFX", 1, 4).is_empty());
+            assert_eq!(crate::logic::weapon_host::WeaponHost::projectile_launch_offset(&mut w, missing, 0, 0, -1), None);
+            // destroyed: the copy goes with the drawable
+            w.send_object_destroyed(id);
+            assert!(!w.drawable_condition.contains_key(&id));
+        }
+
+        /// (#175) `World::load_art_bones` is complete or refused: while a file is being fetched (the browser's source,
+        /// [`Fetching`]) it refuses and leaves the World without bones; once the files are there it loads them all.
+        #[test]
+        fn issue175_the_art_bones_load_is_complete_or_refused() {
+            use crate::logic::world::gate_scenario::gate_world_with;
+            let ini = "Object ScaledGun\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       Draw = W3DModelDraw ModuleTag_Draw\n  DefaultConditionState\n   Model = GUNT\n   WeaponLaunchBone = PRIMARY MuzzleFX\n  End\n End\nEnd\n";
+            let mut w = gate_world_with(ini);
+            let mut rig = Rig::new();
+            let mut src = Fetching { files: W3dFiles { assets: &mut rig.am, fs: &rig.fs }, arrived: false, skeleton_only: false, deferred: 0 };
+            let r = w.load_art_bones(&mut src);
+            assert!(matches!(r, Err(crate::logic::world::drawable_bones::ArtBonesDeferred(n)) if n > 0), "{r:?}");
+            assert!(w.art_bones.templates.is_empty());
+            src.arrived = true;
+            let r = w.load_art_bones(&mut src).expect("arrived");
+            assert_eq!((r.templates, r.states_with_bones), (1, 1));
+            assert!(w.art_bones.templates.contains_key(&b"ScaledGun"[..]));
         }
 
         /// The browser's asset source in small (GitHub #42): the files of [`gunt`], answering every question "none for

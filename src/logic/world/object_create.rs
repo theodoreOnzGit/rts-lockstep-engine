@@ -460,6 +460,9 @@ impl World {
     pub fn friend_bind_to_drawable(&mut self, id: ObjectId, draw: DrawableId) {
         let Some(o) = self.objects.find_mut(id) else { return };
         o.drawable = draw;
+        // (#175) a new drawable's flags start empty (`Drawable`'s `m_conditionState`); none without one
+        self.drawable_condition.remove(&id);
+        let Some(o) = self.objects.find_mut(id) else { return };
         // (a new drawable has no terrain decal: `TERRAIN_DECAL_NONE`)
         o.terrain_decal_type = 8;
         if draw != INVALID_DRAWABLE_ID {

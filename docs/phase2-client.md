@@ -124,6 +124,24 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#175 (2026-11-12, GitHub #175): the logic's bones are the art's; the client hands the World its art before the
+first frame.** The logic's change is described in `docs/phase1-porting-graph.md` (#175). Here are the client's parts.
+- `W3DModelDrawModuleData` (`client::w3d_model_draw`) gains the logic's three queries:
+  - `get_pristine_bone_positions_for_condition_state` (W3DModelDraw.cpp:3403-3506);
+  - `get_projectile_launch_offset` (3253-3398);
+  - `get_barrel_count_for_condition_state` (3689-3693, the logic's state rather than the client's `m_curState`).
+
+  They run over the module data's own bone caches, with no render object (the logic has none).
+- `client/src/import.rs`. The start loads the World's art bones (`World::load_art_bones`) before the first frame.
+  - **Natively,** `start_from_fs` reads them from the install's own files (`W3dFiles` and a fresh asset manager).
+  - **In the browser,** `Starting::art_bones_ready` runs after the audio headers. It makes the World once, then reads
+    its templates' models from the art's ranged device through `Deferred`. A read still being fetched refuses the
+    load, and the page is asked for the bytes. The game starts only when nothing was unserved.
+- `client::save_game`: `GameClient::loadPostProcess` gives the logic its copy of each drawable's loaded flags
+  (`World::drawable_condition`), which upstream's `CHUNK_GameClient` holds.
+- **Results:** the client's tests (100) pass and the web build is clean. **Not measured:** the browser's fetch on a
+  real install.
+
 **#172 (2026-11-12, GitHub #172): the drawable's scale in the render object's bones, as upstream carries it.**
 - **Upstream read first** (0a05454d): `W3DModelDraw` makes its render object with `Create_Render_Obj(name, getScale(),
   color)` (W3DModelDraw.cpp:623, 3034); `W3DAssetManager::Create_Render_Obj` then, when `WWMath::Fabs(scale - 1) > 0.01`

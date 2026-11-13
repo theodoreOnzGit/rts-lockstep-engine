@@ -257,6 +257,16 @@ pub struct World {
     /// where upstream's `clearGameData` pushes the screen, before the engine's reset; the client's to take. Not
     /// simulation state.
     pub score_screen_game: Option<std::sync::Arc<crate::client::score_screen::ScoreScreenGame>>,
+    /// GitHub #175: the drawables' art as the logic reads its bones (`logic::world::drawable_bones`): every template's
+    /// `W3DModelDraw` module data, its states' bone caches validated from the World's art at its asset scale before
+    /// the first frame ([`World::load_art_bones`]). Not saved (upstream rebuilds the caches on demand), not in the CRC;
+    /// shared by the World's copies (the caches are the same for every copy: the art and the scales are).
+    pub art_bones: std::sync::Arc<crate::logic::world::drawable_bones::ArtBones>,
+    /// GitHub #175: each object's drawable's model condition flags (`Drawable::m_conditionState`) as the logic sets
+    /// them (every `DrawableModelCondition` and the other flag events the World sends, `World::emit`): what upstream's
+    /// logic hands `getPristineBonePositionsForConditionState` and `getProjectileLaunchOffset`. Upstream saves them in
+    /// the client's `CHUNK_GameClient` (the drawable's xfer); a load with the client's save restores them from there.
+    pub drawable_condition: std::collections::BTreeMap<crate::common::game_type::ObjectId, crate::common::model_state::ModelConditionFlags>,
     /// `m_frame`.
     frame: u32,
     /// `m_nextObjID`.
@@ -356,6 +366,8 @@ impl World {
             clearing_game_data: false,
             game_cleared: None,
             score_screen_game: None,
+            art_bones: Default::default(),
+            drawable_condition: std::collections::BTreeMap::new(),
             frame: 0,
             next_object_id: 1,
             objects_to_destroy: Vec::new(),

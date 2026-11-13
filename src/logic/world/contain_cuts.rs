@@ -17,7 +17,9 @@
 //! `removeObjectFromPathfindMap`, `removeUnitFromPathfindMap`, `updatePos`, `updateGoal`, `adjustToPossibleDestination`), the terrain (`getLayerHeight`,
 //! `getLayerForDestination`), the drawable (`setDrawableHidden`, `isSelected`, `getModelConditionFlags`) and the bones of the art. The partition manager and
 //! the pathfinder are layers 10 and 12 and not yet translated onto the world, the drawable is the client's, and the bones are the art's: each is a method
-//! below, one line of the upstream call, with an answer from [`ContainCutTables`] where upstream reads something back.
+//! below, one line of the upstream call, with an answer from [`ContainCutTables`] where upstream reads something back. **#175 (2026-11-12):** with
+//! `live_bones` (on in a game) the bone calls answer from the art the World loaded (`logic::world::drawable_bones`), the tables staying the
+//! differential tests' stand-ins; ~~in a game the tables were empty, so every bone was "not in the art"~~ (the measurement of #175's investigation).
 //!
 //! # The Object-level calls, and the explicit ablation
 //!
@@ -498,6 +500,11 @@ impl World {
     /// `obj->getSingleLogicalBonePosition(name, &pos, NULL)`: the bone's position, or the object's own when there is no such bone.
     pub fn contain_get_single_logical_bone_position(&mut self, id: ObjectId, name: &[u8]) -> Coord3D {
         self.contain_cut(ContainCall::GetSingleLogicalBonePosition { object: id, name: name.to_vec() });
+        // (#175) with `live_bones`, the art's (`Object::getSingleLogicalBonePosition`, `object_weapons`)
+        if self.cuts.live_bones {
+            let q = crate::logic::world::object_weapons::get_single_logical_bone_position(&*self, id, name, true, false);
+            return q.position.unwrap_or_default();
+        }
         match self.cuts.contain.single_bones.get(&(id, name.to_vec())) {
             Some(p) => *p,
             None => self.objects.find(id).map_or(Coord3D { x: 0.0, y: 0.0, z: 0.0 }, |o| o.get_position()),
@@ -507,6 +514,13 @@ impl World {
     /// `obj->getMultiLogicalBonePosition(prefix, max, NULL, transforms, TRUE)`: the transforms found.
     pub fn contain_get_multi_logical_bone_position(&mut self, id: ObjectId, prefix: &[u8], max: i32) -> Vec<Matrix3D> {
         self.contain_cut(ContainCall::GetMultiLogicalBonePosition { object: id, prefix: prefix.to_vec(), max });
+        // (#175) with `live_bones`, the art's (`Object::getMultiLogicalBonePosition`, `object_weapons`)
+        if self.cuts.live_bones {
+            return crate::logic::world::object_weapons::get_multi_logical_bone_position(&*self, id, prefix, max, false, true, true)
+                .into_iter()
+                .map(|(_, m)| m.unwrap_or(Matrix3D::IDENTITY))
+                .collect();
+        }
         let has_drawable = self.objects.find(id).is_some_and(|o| o.drawable != crate::common::game_type::INVALID_DRAWABLE_ID);
         if !has_drawable {
             return Vec::new();
@@ -525,7 +539,44 @@ impl World {
     /// `obj->getSingleLogicalBonePositionOnTurret(TURRET_MAIN, name, NULL, &matrix)`: the transform, `None` when the call gives false.
     pub fn contain_get_single_logical_bone_position_on_turret(&mut self, id: ObjectId, name: &[u8]) -> Option<Matrix3D> {
         self.contain_cut(ContainCall::GetSingleLogicalBonePositionOnTurret { object: id, name: name.to_vec() });
+        // (#175) with `live_bones`, the art's (`Object::getSingleLogicalBonePositionOnTurret(TURRET_MAIN, ...)`,
+        // `object_weapons`); its read of an uninitialised turret rotation (an AI without that turret) is undefined
+        // upstream: none here
+        if self.cuts.live_bones {
+            return match crate::logic::world::object_weapons::get_single_logical_bone_position_on_turret(self, id, crate::common::game_common::TURRET_MAIN, name, false, true) {
+                Ok(q) if q.found => q.transform,
+                _ => None,
+            };
+        }
         self.cuts.contain.turret_bones.get(&(id, name.to_vec())).copied()
+    }
+
+    /// (#175) `obj->getMultiLogicalBonePosition("FIREPOINT", MAX_FIRE_POINTS, NULL, m_firePoints, TRUE)` into the
+    /// container's own array, as `OpenContain::putObjAtNextFirePoint` passes it (OpenContain.cpp:1238): the count. With
+    /// `live_bones` upstream's writes (a module's miss writes the object's transform after the bones found:
+    /// `getPristineBonePositionsForConditionState`, kept in the array the save writes), the found ones then converted
+    /// to the world; without, the table's (the bones found only).
+    pub fn contain_get_multi_logical_bone_position_into(&mut self, id: ObjectId, prefix: &[u8], points: &mut [Matrix3D]) -> i32 {
+        if !self.cuts.live_bones {
+            let found = self.contain_get_multi_logical_bone_position(id, prefix, points.len() as i32);
+            for (i, m) in found.iter().enumerate() {
+                points[i] = *m;
+            }
+            return found.len() as i32;
+        }
+        self.contain_cut(ContainCall::GetMultiLogicalBonePosition { object: id, prefix: prefix.to_vec(), max: points.len() as i32 });
+        let max = points.len() as i32;
+        let count = self.live_pristine_bones_into(id, prefix, 1, points, max);
+        if count > 0 {
+            if let Some(o) = self.objects.find(id) {
+                for m in points.iter_mut().take(count as usize) {
+                    *m = o.thing.bone_transform_to_world(m);
+                }
+            }
+            count
+        } else {
+            0
+        }
     }
 
     // --- p1w13-sonnet --- (batch R2: TransportContain)
@@ -571,6 +622,10 @@ impl World {
     pub fn contain_drawable_pristine_bone(&mut self, id: ObjectId, bone: &[u8]) -> Option<Coord3D> {
         if !self.has_drawable(id) {
             return None;
+        }
+        // (#175) with `live_bones`, the art's
+        if self.cuts.live_bones {
+            return self.live_pristine_bones(id, bone, 0, 1).first().map(|(p, _)| *p);
         }
         self.cuts.contain.pristine_bones.get(&(id, bone.to_vec())).copied()
     }
@@ -818,6 +873,9 @@ impl World {
     /// `obj->clearAndSetModelConditionFlags(clr, set)`, if the object has a drawable.
     pub fn contain_clear_and_set_model_condition_flags(&mut self, id: ObjectId, clear: &[i32], set: &[i32]) {
         if self.has_drawable(id) {
+            // (#175) the logic's copy of the drawable's flags
+            let (c, s) = (crate::common::model_state::ModelConditionFlags::from_indices(clear), crate::common::model_state::ModelConditionFlags::from_indices(set));
+            self.drawable_clear_and_set_condition(id, &c, &s);
             self.contain_cut(ContainCall::ClearAndSetModelConditionFlags { object: id, clear: clear.to_vec(), set: set.to_vec() });
             self.cuts.contain.bone_condition.insert(id, set.iter().min().copied().unwrap_or(0));
         }
@@ -826,6 +884,10 @@ impl World {
     /// `obj->getDrawable()->replaceModelConditionFlags(flags)`: the client's; the caller checks the drawable.
     pub fn contain_drawable_replace_model_condition_flags(&mut self, id: ObjectId, flags: &crate::common::model_state::ModelConditionFlags) {
         let set: Vec<i32> = (0..crate::common::model_state::MODELCONDITION_COUNT).filter(|&i| flags.test(i)).collect();
+        // (#175) the logic's copy of the drawable's flags (`replaceModelConditionFlags`: all of them)
+        if self.has_drawable(id) {
+            self.drawable_condition.insert(id, *flags);
+        }
         self.cuts.contain.bone_condition.remove(&id);
         self.contain_cut(ContainCall::DrawableReplaceModelConditionFlags { object: id, flags: set });
     }
