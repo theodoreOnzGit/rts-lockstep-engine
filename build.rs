@@ -2937,8 +2937,9 @@ mod differential {
             // getPristineBonePositionsForConditionState and getBarrelCount; Drawable.cpp's getProjectileLaunchOffset,
             // getPristineBonePositions and getBarrelCount; Object.cpp's getSingleLogicalBonePosition,
             // getSingleLogicalBonePositionOnTurret and getMultiLogicalBonePosition; Thing.cpp's convertBonePosToWorldPos;
-            // rendobj.cpp's Get_Sub_Object_By_Name; and #172's htree and asset-scale pieces. No text is edited. Each anchor
-            // must occur once. Linked before upstream_flags (ref_sparse_match, the real SparseMatchFinder) and
+            // rendobj.cpp's Get_Sub_Object_By_Name; and #172's htree and asset-scale pieces. GitHub #178: #174's
+            // mp_cache_attach_bone.inc and mp_attach_offset.inc, included from model_draw_particles_gen (written above),
+            // not cut again. No text is edited. Each anchor must occur once. Linked before upstream_flags (ref_sparse_match, the real SparseMatchFinder) and
             // upstream_wwmath, which it calls.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_logic_bones.cpp");
@@ -3048,6 +3049,7 @@ mod differential {
                 let mut lb = cc::Build::new();
                 base(&mut lb);
                 lb.include(&gen)
+                    .include(out_dir.join("model_draw_particles_gen"))
                     .include(&shim)
                     .include(up.join("GameEngine/Include"))
                     .include(up.join("Libraries/Include"))

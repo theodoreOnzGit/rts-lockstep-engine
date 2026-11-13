@@ -29,6 +29,15 @@
 **   lb_htree_scale.inc, lb_base_update.inc, lb_get_transform.inc, lb_asset_scale.inc: WW3D2/htree.cpp's
 **                         `HTreeClass::Scale` and `Base_Update`, htree.h's `Get_Transform`, W3DAssetManager.cpp's
 **                         `ident_scale` and `scale_epsilon` (the same pieces as #172's wrap_model_draw_particles.cpp).
+** GitHub #178 reuses two of #174's cuts (build.rs writes them into OUT_DIR/model_draw_particles_gen for
+** wrap_model_draw_particles.cpp; this file includes them from there, not cut twice):
+**   mp_cache_attach_bone.inc  W3DModelDraw.h, `#define CACHE_ATTACH_BONE` (278), included before every other cut, as
+**                         the header defines it before its uses: `getProjectileLaunchOffset` (lb_queries.inc) is
+**                         compiled on its defined branch (3306, 3346, 3362-3395), as upstream builds it;
+**   mp_attach_offset.inc  W3DModelDraw.cpp, `W3DModelDrawModuleData::getAttachToDrawableBoneOffset` (1146-1174).
+** ~~(#175) compiled without the define~~ **Corrected 2026-11-13 (#178):** #175's wrapper omitted the define, so the
+** cut `getProjectileLaunchOffset` took its undefined branch (the tech offset added to the launch position) and the
+** differential agreed with the Rust on the branch upstream does not build.
 ** No text is edited. Compiled on stand-ins (namespace lb):
 ** - `ModelConditionFlags`: four 64-bit words (bit i in word i/64) with `clear(mask)`; `findBestInfo`'s
 **   `m_conditionStateMap.findBestInfo(m_conditionStates, bits)` is SparseMatchFinder.h's, through wrap_flags.cpp's
@@ -56,6 +65,15 @@
 **   `getTurretRotAndPitch(TURRET_MAIN)` gives the test's rotation or fails), and `TheGlobalData->m_standardPublicBones`;
 ** - `getBarrelCount` reads `m_curState`: the driver sets it to `findBestInfo(m_conditionState)`, validated as
 **   `setModelState` validates the state it enters at a logic time (the logic's view: never a transition state);
+** - (#178) the module data's attach-offset cache (`m_attachToDrawableBoneOffset`, `m_attachToDrawableBoneOffsetValid`,
+**   W3DModelDraw.h:290-306, cleared per case as the constructor does, 1025-1027) and `getAttachToDrawableBoneOffset`
+**   (the cut). Its first asker is the port's (see issue178_gaps / drawable_bones' docs): after the case is built, a
+**   drawable as made (empty `m_conditionState`) asks each of its modules once, as `World::load_art_bones`
+**   (`drawable_bones::validate_template_art`) fills the logic's cache; then the case's flags are set. Upstream's first
+**   asker is whichever drawable of the template first draws or fires;
+** - `AttachToBoneInAnotherModule` is parsed by W3DModelDraw.cpp's `parseAsciiStringLC` (1187-1191): lower-cased,
+**   `None` kept (~~cleared, as the other names~~ **Corrected 2026-11-13 (#178)**: the Rust kept it, the wrapper cleared
+**   it; harmless on the undefined branch, which added a zero tech offset either way);
 ** - `isValidTimeToCalcLogicStuff` (cut) reads `TheGameLogic->isInGameLogicUpdate()`: true (the logic asks in its
 **   update); `TheGameState` NULL.
 ** `W3DModelDraw::getPristineBonePositionsForConditionState`'s second loop reuses the first loop's `i` (MSVC's old `for`
@@ -82,6 +100,12 @@
 
 #ifndef stricmp
 #define stricmp strcasecmp
+#endif
+
+/* (#178) W3DModelDraw.h:278, the cut #174 made (model_draw_particles_gen) */
+#include "mp_cache_attach_bone.inc"
+#ifndef CACHE_ATTACH_BONE
+#error "CACHE_ATTACH_BONE must be defined, as W3DModelDraw.h:278 defines it"
 #endif
 
 extern "C" int ref_sparse_match(int which, const unsigned long long *masks, const int *counts, int nEntries, const unsigned long long *queries, int nQueries, int *out);
@@ -415,6 +439,7 @@ public:
 	}
 };
 
+class Drawable;
 class W3DModelDrawModuleData
 {
 public:
@@ -423,6 +448,13 @@ public:
 	ModelConditionFlags m_ignoreConditionStates;
 	std::vector<AsciiString> m_extraPublicBones;
 	AsciiString m_attachToDrawableBone;
+#ifdef CACHE_ATTACH_BONE
+	/* (#178) W3DModelDraw.h:292-294, 305-307, 322-324; the constructor's clear (W3DModelDraw.cpp:1025-1027) */
+	mutable Vector3 m_attachToDrawableBoneOffset;
+	mutable Bool m_attachToDrawableBoneOffsetValid;
+	W3DModelDrawModuleData() : m_attachToDrawableBoneOffsetValid(false) {}
+	const Vector3* getAttachToDrawableBoneOffset(const Drawable* draw) const;
+#endif
 	const ModelConditionInfo* findBestInfo(const ModelConditionFlags& c) const;
 };
 
@@ -519,6 +551,8 @@ Object g_object;
 #include "lb_barrel_count.inc"
 #include "lb_draw_launch.inc"
 #include "lb_draw_pristine.inc"
+/* (#178) W3DModelDraw.cpp:1146-1174, the cut #174 made (model_draw_particles_gen) */
+#include "mp_attach_offset.inc"
 #include "lb_draw_barrels.inc"
 #include "lb_object.inc"
 
@@ -683,7 +717,9 @@ int ref_logic_bones_case(const int *in, int nin, int *out, int cap)
 		W3DModelDrawModuleData &d = g_data[mi];
 		d = W3DModelDrawModuleData();
 		d.m_ignoreConditionStates = mask(in[k++]);
-		d.m_attachToDrawableBone = lowered(in[k++]);
+		/* (#178) parseAsciiStringLC: lower-cased, `None` kept */
+		d.m_attachToDrawableBone = QUERY_NAMES[in[k++]];
+		d.m_attachToDrawableBone.toLower();
 		int nextra = in[k++];
 		for (int e = 0; e < 2; ++e) {
 			int code = in[k++];
@@ -752,6 +788,9 @@ int ref_logic_bones_case(const int *in, int nin, int *out, int cap)
 	g_drawable.m_cachedPos = g_object.m_cachedPos;
 	g_drawable.m_cachedAngle = g_object.m_cachedAngle;
 	g_drawable.m_object = &g_object;
+	/* (#178) the attach-offset caches' first asker: a drawable as made (no flags), each module once (see the header) */
+	g_drawable.m_conditionState = ModelConditionFlags();
+	for (int mi = 0; mi < nmod; ++mi) g_data[mi].getAttachToDrawableBoneOffset(&g_drawable);
 	g_drawable.m_conditionState = mask(in[k++]);
 	for (int st = k; st + 7 < nin; st += 8) run_op(in + st, nmod);
 	int n = (int)g_out.size();

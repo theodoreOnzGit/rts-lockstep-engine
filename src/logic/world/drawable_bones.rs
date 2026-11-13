@@ -158,7 +158,44 @@ pub fn validate_template_art<A: W3dAssetSource>(modules: &[Arc<W3DModelDrawModul
             report.states_with_bones += usize::from(!s.bone_cache().pristine_bones.is_empty());
         }
     }
+    fill_attach_to_drawable_bone_offsets(modules, scale, standard_public_bones, &mut env);
     fetching
+}
+
+/// GitHub #178: the logic's `m_attachToDrawableBoneOffset` caches (`CACHE_ATTACH_BONE`, W3DModelDraw.h:278), filled
+/// once, as the template's art is loaded: each module's `getAttachToDrawableBoneOffset(draw)` (W3DModelDraw.cpp:
+/// 1146-1174, [`W3DModelDrawModuleData::get_attach_to_drawable_bone_offset`]) asked by a drawable of the template as
+/// made (`Drawable`'s constructor leaves `m_conditionState` empty; the template's scale; no object), i.e. the
+/// drawable's `getPristineBonePositions(m_attachToDrawableBone, 0, NULL, &boneMtx, 1)` over all its modules
+/// ([`DrawableArt::get_pristine_bone_positions`]): the bone's translation when exactly one was found, else zero.
+///
+/// **The port's choice of first asker** (upstream has none to give: its cache lives in the module data, the
+/// template's, process-wide, and whichever drawable of the template first draws (`adjustTransformMtx`) or fires
+/// (`getProjectileLaunchOffset`) fills it, with its own flags at that moment). The logic must not depend on the
+/// client's draw order, nor on which object fires first in a World that is copied or loaded from a save; filled here,
+/// the offset is the same in every World with the same art, whatever the order of the queries. The logic's module
+/// data are its own parse (`World::art_bones`), never the client's, so the client's cache (#174,
+/// `client::drawable::Drawable::validate_attach_to_drawable_bone_offsets`) never reaches the logic. Upstream's answer
+/// differs only when the attach bone's pristine position differs between the state for no flags and the state of
+/// upstream's first asker; upstream's own comment (W3DModelDraw.h:274-276) says the cache "WILL NOT WORK if the
+/// attach-to-module is animated in any meaningful way". Gap (#178).
+pub fn fill_attach_to_drawable_bone_offsets<A: W3dAssetSource>(modules: &[Arc<W3DModelDrawModuleData>], scale: f32, standard_public_bones: &[Vec<u8>], env: &mut DrawEnv<'_, A>) {
+    if plant(9787) {
+        return;
+    }
+    let art = DrawableArt { modules, condition: ModelConditionFlags::new(), scale, standard_public_bones, object_transform: None, orientation: 0.0 };
+    for d in modules {
+        d.get_attach_to_drawable_bone_offset(|| {
+            let mut pivot = [Matrix3D::IDENTITY];
+            let n = if plant(9786) {
+                // (#178 plant: only the module's own bones, not the drawable's walk over every module)
+                d.get_pristine_bone_positions_for_condition_state(&art.condition, &d.attach_to_drawable_bone, 0, &mut pivot, 1, art.scale(), standard_public_bones, None, env)
+            } else {
+                art.get_pristine_bone_positions(&d.attach_to_drawable_bone, 0, None, Some(&mut pivot), 1, env)
+            };
+            (n == 1).then_some(pivot[0])
+        });
+    }
 }
 
 /// A drawable as its `W3DModelDraw` modules answer the logic (`Drawable`'s part of the queries).
@@ -173,7 +210,9 @@ pub struct DrawableArt<'a> {
     pub standard_public_bones: &'a [Vec<u8>],
     /// `getObject()->getTransformMatrix()` (`None`: no object).
     pub object_transform: Option<Matrix3D>,
-    /// `getOrientation()` (the drawable's, set from its object's transform).
+    /// `getOrientation()` (the drawable's, set from its object's transform). ~~Turns the attach bone's tech offset~~
+    /// **Corrected 2026-11-13 (#178):** read by no logic query: the tech offset it turned is `CACHE_ATTACH_BONE`'s
+    /// undefined branch, which upstream does not build.
     pub orientation: f32,
 }
 
@@ -286,7 +325,6 @@ impl DrawableArt<'_> {
                 turret_pitch_pos.as_deref_mut(),
                 self.scale(),
                 self.standard_public_bones,
-                self.orientation,
                 &mut attach,
                 env,
             );

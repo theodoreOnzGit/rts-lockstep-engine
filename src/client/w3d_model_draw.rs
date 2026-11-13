@@ -1456,15 +1456,22 @@ impl W3DModelDrawModuleData {
     }
 
     /// (#175) `W3DModelDraw::getProjectileLaunchOffset(condition, wslot, specificBarrelToUse, launchPos, tur,
-    /// turretRotPos, turretPitchPos)` (W3DModelDraw.cpp:3253-3398), `CACHE_ATTACH_BONE` undefined as upstream builds it:
-    /// the state the logic believes current (`findBestInfo(condition)`; none: false, nothing written), validated with no
-    /// render object at the drawable's scale; the `AttachToBoneInAnotherModule` bone's pristine transform
-    /// (`getDrawable()->getPristineBonePositions(bone, 0, NULL, &pivot, 1) == 1`: `attach_pivot`, asked only when the
-    /// module names one) turned by the drawable's orientation (`Pre_Rotate_Z`) gives the tech offset; the barrel's
-    /// `m_projectileOffsetMtx` (barrel 0 when out of range), turned by the turret's art angle and pitch, moved by the
-    /// tech offset, into `launch_pos` (no barrels: `launchPos = NULL`, false). The turret's angle and pitch bones'
-    /// pristine positions (`findPristineBonePos`, zero when not found) into `turret_rot_pos` and `turret_pitch_pos`,
-    /// which are zeroed first. Returns whether `launch_pos` was given and written (`launchPos != NULL`).
+    /// turretRotPos, turretPitchPos)` (W3DModelDraw.cpp:3253-3398), ~~`CACHE_ATTACH_BONE` undefined as upstream builds
+    /// it~~ **Corrected 2026-11-13 (#178):** `CACHE_ATTACH_BONE` defined, as W3DModelDraw.h:278 defines it (#175
+    /// translated the undefined branch, 3306-3319 and 3346-3349: a tech offset, the attach bone's pristine transform
+    /// turned by the drawable's orientation, added to the launch position; upstream does not build it). The state the
+    /// logic believes current (`findBestInfo(condition)`; none: false, nothing written), validated with no render
+    /// object at the drawable's scale; the barrel's `m_projectileOffsetMtx` (barrel 0 when out of range), turned by the
+    /// turret's art angle and pitch, into `launch_pos` (no barrels: `launchPos = NULL`, false), with no offset added.
+    /// The turret's angle and pitch bones' pristine positions (`findPristineBonePos`, zero when not found) into
+    /// `turret_rot_pos` and `turret_pitch_pos`, which are zeroed first. With a turret, the module data's cached
+    /// attach-bone offset (`d->getAttachToDrawableBoneOffset(getDrawable())`, 3362-3364:
+    /// [`W3DModelDrawModuleData::get_attach_to_drawable_bone_offset`], `None` without an `AttachToBoneInAnotherModule`
+    /// bone) is added, as it is (model space, not turned), to each position asked for, whether or not its bone was
+    /// found (3373-3379, 3389-3395). `attach_pivot` is the drawable's `getPristineBonePositions(bone, 0, NULL, &mtx, 1)
+    /// == 1`, asked only when the cache is empty (the logic fills it at load,
+    /// [`crate::logic::world::drawable_bones::fill_attach_to_drawable_bone_offsets`]). Returns whether `launch_pos` was
+    /// given and written (`launchPos != NULL`).
     #[allow(clippy::too_many_arguments)]
     pub fn get_projectile_launch_offset<A: W3dAssetSource>(
         &self,
@@ -1477,7 +1484,6 @@ impl W3DModelDrawModuleData {
         turret_pitch_pos: Option<&mut Coord3D>,
         scale: f32,
         standard_public_bones: &[Vec<u8>],
-        orientation: f32,
         attach_pivot: &mut impl FnMut(&mut DrawEnv<'_, A>) -> Option<Matrix3D>,
         env: &mut DrawEnv<'_, A>,
     ) -> bool {
@@ -1485,16 +1491,7 @@ impl W3DModelDrawModuleData {
         let state_to_use = &self.condition_states[si];
         state_to_use.validate_stuff(None, scale, &self.extra_public_bones, standard_public_bones, env);
 
-        // must use pristine bone here since the result is used by logic
-        let mut tech_offset = Coord3D { x: 0.0, y: 0.0, z: 0.0 };
-        if !self.attach_to_drawable_bone.is_empty() {
-            if let Some(mut pivot) = attach_pivot(env) {
-                if !plant(9730) {
-                    pivot.pre_rotate_z(orientation);
-                }
-                tech_offset = Coord3D { x: pivot.get_x_translation(), y: pivot.get_y_translation(), z: pivot.get_z_translation() };
-            }
-        }
+        // (`#ifdef CACHE_ATTACH_BONE #else` ... `#endif`: no tech offset on the defined branch)
 
         let turret = usize::try_from(tur).ok().filter(|&t| t < MAX_TURRETS);
         let wbvec = state_to_use.weapon_barrels(wslot);
@@ -1516,8 +1513,11 @@ impl W3DModelDrawModuleData {
                     let pitch = state_to_use.turrets[t].turret_art_pitch;
                     lp.pre_rotate_y(if plant(9729) { pitch } else { -pitch });
                 }
-                if !plant(9746) {
-                    lp.adjust_translation(&crate::ww::vector3::Vector3::new(tech_offset.x, tech_offset.y, tech_offset.z));
+                // (#178 plant: the undefined branch's adjust kept, the cached offset added to the launch position too)
+                if plant(9784) {
+                    if let Some(o) = self.get_attach_to_drawable_bone_offset(|| attach_pivot(env)) {
+                        lp.adjust_translation(&o);
+                    }
                 }
             }
         }
@@ -1532,6 +1532,21 @@ impl W3DModelDrawModuleData {
         }
 
         if let Some(t) = turret {
+            // `const Vector3* offset = d->getAttachToDrawableBoneOffset(getDrawable());`
+            let offset = if plant(9783) {
+                // (#178 plant: no cache, the asking drawable's bone read at every call)
+                (!self.attach_to_drawable_bone.is_empty()).then(|| attach_pivot(env).map_or(crate::ww::vector3::Vector3::new(0.0, 0.0, 0.0), |m| m.get_translation()))
+            } else {
+                self.get_attach_to_drawable_bone_offset(|| attach_pivot(env))
+            };
+            // `if (offset) { pos->x += offset->X; ... }`
+            let add = |p: &mut Coord3D, o: Option<crate::ww::vector3::Vector3>| {
+                if let Some(o) = o {
+                    p.x += o.x;
+                    p.y += o.y;
+                    p.z += o.z;
+                }
+            };
             let tur_info = &state_to_use.turrets[t];
             // (`findPristineBonePos(key, pos)`: the bone's translation, else zero; "*** ASSET ERROR: TurretBone %s not found!")
             let bone_pos = |key: &[u8]| -> Coord3D {
@@ -1546,11 +1561,20 @@ impl W3DModelDrawModuleData {
             if let Some(p) = turret_rot_pos {
                 if !tur_info.turret_angle_name_key.is_empty() {
                     *p = bone_pos(&tur_info.turret_angle_name_key);
+                    if plant(9785) {
+                        add(p, offset);
+                    }
+                }
+                if !plant(9781) && !plant(9785) {
+                    add(p, offset);
                 }
             }
             if let Some(p) = turret_pitch_pos {
                 if !tur_info.turret_pitch_name_key.is_empty() {
                     *p = bone_pos(&tur_info.turret_pitch_name_key);
+                }
+                if !plant(9782) {
+                    add(p, offset);
                 }
             }
         }
@@ -5259,6 +5283,55 @@ ConditionState = MOVING\n   Model = TankMove\n   Animation = TankMove.Roll\n   A
             // destroyed: the copy goes with the drawable
             w.send_object_destroyed(id);
             assert!(!w.drawable_condition.contains_key(&id));
+        }
+
+        /// (#178) `CACHE_ATTACH_BONE` (W3DModelDraw.h:278) on the logic's side: a template whose second draw module is
+        /// attached to the first module's `MUZZLEFX01` bone (`AttachToBoneInAnotherModule`; a public bone of the first,
+        /// `ExtraPublicBone`, as only public bones are cached) and has a turret but no model.
+        /// Predictions, written before the first run (`issue178_predictions.md`): the logic's cache is filled at load by a
+        /// drawable with no flags, so the bone's pristine translation at scale 1, (4, 0, 2), is added, unturned, to both
+        /// turret positions (both bones missing: zero), whatever the flags at the query (DAMAGED, whose chassis has no
+        /// model, asked first) and whatever the object's orientation; the launch position has no barrel (false). A second
+        /// World with the same art answers the same, asked in the other order.
+        #[test]
+        fn issue178_the_logic_s_attach_offset_is_filled_at_load() {
+            use crate::common::model_state::MODELCONDITION_DAMAGED;
+            use crate::logic::world::gate_scenario::{gate_world_with, make};
+            use crate::logic::world::team_ops::factory_find_team;
+            let ini = "Object Technical\n Scale = 1.0\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                       Draw = W3DModelDraw ModuleTag_Chassis\n  ExtraPublicBone = MuzzleFX01\n  DefaultConditionState\n   Model = GUNT\n  End\n\
+                       \x20 ConditionState = DAMAGED\n   Model = None\n  End\n End\n\
+                       Draw = W3DModelDraw ModuleTag_Gun\n  AttachToBoneInAnotherModule = MuzzleFX01\n  DefaultConditionState\n   Model = None\n\
+                       \x20  Turret = Turret\n   TurretPitch = Barrel\n  End\n End\n\
+                       Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\nEnd\n";
+            let offset = Coord3D { x: 4.0, y: 0.0, z: 2.0 };
+            for damaged_first in [true, false] {
+                let mut w = gate_world_with(ini);
+                let mut rig = Rig::new();
+                let report = w.load_art_bones(&mut W3dFiles { assets: &mut rig.am, fs: &rig.fs }).expect("the art at hand");
+                assert_eq!(report.templates, 1);
+                let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+                let id = make(&mut w, b"Technical", team, Coord3D { x: 100.0, y: 100.0, z: 0.0 });
+                let mut turned = *w.find_object(id).unwrap().thing.transform_matrix();
+                turned.rotate_z(1.0);
+                w.set_transform_matrix(id, &turned);
+                let ask = |w: &mut crate::logic::world::game_logic::World, damaged: bool| {
+                    if damaged {
+                        w.set_model_condition_state(id, MODELCONDITION_DAMAGED);
+                    } else {
+                        w.clear_model_condition_state(id, MODELCONDITION_DAMAGED);
+                    }
+                    let (found, lo) = w.live_projectile_launch_offset(id, 0, 0, 0);
+                    assert!(!found, "no barrel");
+                    assert_eq!((lo.turret_rot_pos, lo.turret_pitch_pos), (offset, offset), "damaged {damaged}");
+                    assert_eq!(w.live_turret_rot_pos(id, 0), Some(offset));
+                    // no turret: no offset
+                    let (_, lo) = w.live_projectile_launch_offset(id, 0, 0, -1);
+                    assert_eq!(lo.turret_rot_pos, Coord3D::default());
+                };
+                ask(&mut w, damaged_first);
+                ask(&mut w, !damaged_first);
+            }
         }
 
         /// (#175) `World::load_art_bones` is complete or refused: while a file is being fetched (the browser's source,

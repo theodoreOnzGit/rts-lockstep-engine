@@ -2162,6 +2162,9 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
     W3DModelDraw.cpp's caches and queries, Drawable.cpp's forwarding, Object.cpp's three functions, Thing.cpp,
     rendobj.cpp, htree; findBestInfo through the real SparseMatchFinder). **20,000 cases, 129,837 operations,
     0 mismatches, max ULP 0.** 609 turret queries were excluded as undefined upstream (a rotation never written).
+    ~~Agreement with upstream's launch offsets~~ **Corrected 2026-11-13 (#178):** the wrapper omitted
+    `CACHE_ATTACH_BONE` (W3DModelDraw.h:278), so both sides took the undefined branch (a tech offset on the launch
+    position). Upstream builds the defined one; see #178.
   - **Plants 9721-9750:**
     - 27 planted, all caught: 26 by the differential, and 9745 (the flags copy) by the lib test.
     - 9750 (the weapon host) is caught by both.
@@ -2183,6 +2186,31 @@ The first three now use `filters::allow_player`, the last `filters::ALLOW_NEUTRA
 
   Defects found and not fixed: `ClientReads::drawable_model_condition` is never fed in a game; the contain modules'
   flag calls never reach the client.
+
+**#178 (2026-11-13, GitHub #178): `CACHE_ATTACH_BONE` on the logic's launch offsets.**
+- **Upstream read first** (0a05454d): W3DModelDraw.h:274-278 defines `CACHE_ATTACH_BONE`. `getProjectileLaunchOffset`
+  (W3DModelDraw.cpp:3253-3398) then adds no tech offset to the launch position (3306-3319, 3346-3349 are the undefined
+  branch) and, with a turret, adds the module data's cached `m_attachToDrawableBoneOffset`
+  (`getAttachToDrawableBoneOffset`, 1146-1174), unturned, to both turret positions (3362-3395). The cache is the
+  template's; upstream's first asker (the client's first `adjustTransformMtx`, or the logic) fills it with its own flags.
+- **The defect.** #175 translated the undefined branch, and its differential's wrapper omitted the define, so the two
+  agreed on the branch upstream does not build. The wrapper also cleared a `None` attach name, which upstream's
+  `parseAsciiStringLC` keeps.
+- **Translated.** `W3DModelDrawModuleData::get_projectile_launch_offset` on the defined branch, reusing #174's
+  `get_attach_to_drawable_bone_offset`. The wrapper includes #174's cuts of the define and of
+  `getAttachToDrawableBoneOffset` (build.rs adds `model_draw_particles_gen` to its include path; nothing cut twice).
+- **The logic's first asker** (`drawable_bones::fill_attach_to_drawable_bone_offsets`, from `validate_template_art`):
+  the logic's own module data are filled once at `World::load_art_bones`, by a drawable of the template as made (no
+  flags, the template's scale). The answer is the same in every World with the same art, whatever the query order, the
+  client's draw order, World copies or saves. Upstream differs only where the attach bone's pristine position depends
+  on the state (srj's comment: the cache "WILL NOT WORK if the attach-to-module is animated"). A gap.
+- **Predictions** (`issue178_predictions.md`) and **results** (2026-11-13):
+  - define on, the Rust unchanged: the main differential 1,306 of 20,000 cases mismatched (predicted 1,100-1,700);
+    a new attach-biased test (`the_attach_bone_offset_matches_upstream`, every module names an attach bone) 7,180 of
+    20,000 (predicted 30-60 %);
+  - after the fix: both **20,000 cases, 0 mismatches, max ULP 0** (129,837 and 130,370 operations);
+  - plants 9781-9787: 7 of 7 caught (counts in the test's docs); #175's 9730 and 9746 are retired with their code;
+  - lib test `issue178_the_logic_s_attach_offset_is_filled_at_load`; gate (a) and the other gates in #178's comment.
 
 **Integration batch I64 (2026-11-04, `p1w13-sonnet`, GitHub #8): every module type the shipped game has builds.** A real install's INI names every module type the original has, and one with no body in the port would be silently inert in a game: the World puts a bodiless stub in its place and lists it in `cuts.untranslated_modules`.
 

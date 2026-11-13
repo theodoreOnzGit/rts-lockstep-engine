@@ -130,7 +130,7 @@
 //! | 9727 | the drawable does not move the transforms on |
 //! | 9728 | the launch offset is not turned by the turret's art angle |
 //! | 9729 | the turret's art pitch turns the other way |
-//! | 9730 | the attach bone is not turned by the drawable's orientation |
+//! | 9730 | ~~the attach bone is not turned by the drawable's orientation~~ (retired 2026-11-13, #178: the undefined branch's) |
 //! | 9731 | a barrel out of range is the last, not the first |
 //! | 9732 | (unused) |
 //! | 9733 | the drawable asks only its first module for the launch offset |
@@ -146,11 +146,47 @@
 //! | 9743 | no bone found as a sub-object |
 //! | 9744 | `Get_Bone_Index` 0 counts as found |
 //! | 9745 | (lib test) the flags copy ignores the body's damage state |
-//! | 9746 | the attach bone's offset is not added to the launch position |
+//! | 9746 | ~~the attach bone's offset is not added to the launch position~~ (retired 2026-11-13, #178: the undefined branch's) |
 //! | 9747 | the drawable does not move the positions on |
 //! | 9748 | the extra public bones are not cached |
 //! | 9749 | the standard public bones are not cached |
 //! | 9750 | (lib test) the weapon host ignores `live_bones` |
+//! | 9781 | (#178) the attach offset is not added to the turret's rotation position |
+//! | 9782 | (#178) the attach offset is not added to the turret's pitch position |
+//! | 9783 | (#178) no cache: the asking drawable's attach bone is read at every call |
+//! | 9784 | (#178) the attach offset is added to the launch position too (the undefined branch's adjust kept) |
+//! | 9785 | (#178) the attach offset is added to the rotation position only when its bone key is valid |
+//! | 9786 | (#178) the load's fill asks only the module's own bones, not the drawable's walk over every module |
+//! | 9787 | (#178) the load does not fill the cache: the first query's drawable fills it, with its own flags |
+//!
+//! # GitHub #178: `CACHE_ATTACH_BONE`
+//!
+//! **Methodology.** ~~The wrapper compiled `getProjectileLaunchOffset` without `CACHE_ATTACH_BONE`~~ **Corrected
+//! 2026-11-13 (#178):** W3DModelDraw.h:278 defines it, so upstream adds no tech offset to the launch position
+//! (3306-3319 and 3346-3349 are the undefined branch, which #175 translated and the wrapper compiled, so the two agreed
+//! on the branch upstream does not build); with a turret it adds the module data's cached attach-bone offset
+//! (`getAttachToDrawableBoneOffset`, 1146-1174), unturned, to both turret positions (3362-3395). The wrapper now
+//! includes #174's cuts of the define and of `getAttachToDrawableBoneOffset`, and keeps `None` as the parse does. The
+//! cache's first asker is the port's (`drawable_bones::fill_attach_to_drawable_bone_offsets`: a drawable of the
+//! template as made, no flags, at load); the wrapper asks upstream's function the same way after building the case,
+//! then sets the case's flags. A second test, `the_attach_bone_offset_matches_upstream` (seed `0x178_0001`), names an
+//! attach bone the art may have in every module and makes 2 in 5 operations launch offsets; the main test's draws are
+//! #175's.
+//!
+//! **Predictions** (`issue178_predictions.md`, before the runs): with the define on and the Rust unchanged, the main
+//! test mismatches in 1,100 - 1,700 cases (the 1,074 plant 9746 measured, plus turret-only cases) and the attach test
+//! in 30 - 60 % of cases; after the fix 0 in both, every plant 9781-9787 caught.
+//!
+//! **Results (2026-11-13).**
+//! - Define on, the Rust still on the undefined branch: main **1,306** of 20,000 cases, attach **7,180** of 20,000.
+//!   The test now sees the branch. Both predictions held.
+//! - After the fix: main **20,000 cases, 129,837 operations, 0 mismatches**, max ULP 0, NaN-payload-only 0, 609
+//!   turret queries undefined (as #175); attach **20,000 cases, 130,370 operations, 0 mismatches**, max ULP 0, 335
+//!   undefined, 25,070 launch offsets found.
+//! - Plants (mismatching cases of 20,000, attach test / main test): 9781 4,538 / 372; 9782 4,446 / 316; 9783 3,549 /
+//!   271; 9784 4,956 / 401; 9785 2,757 / 196; 9786 2,284 / 195; 9787 3,438 / 270. Seven planted, seven caught (9781,
+//!   9782, 9783, 9786 and 9787 also by the lib test `issue178_the_logic_s_attach_offset_is_filled_at_load`). 9730 and
+//!   9746 (#175's, the undefined branch's tech offset) are retired with the code they planted in.
 
 mod support;
 
@@ -258,7 +294,11 @@ fn bits12(g: &mut Gen) -> i32 {
 
 /// One case's words (the wrapper's layout, read back by `ref_logic_bones_case`), but for the object's part, which the
 /// World decides (see [`run`]).
-fn random_case(g: &mut Gen) -> (Vec<i32>, bool, [i32; 12], Vec<[i32; OP]>, i32) {
+///
+/// (#178) `attach`: every module names an `AttachToBoneInAnotherModule` bone from the names the art may have
+/// (`ATTACH_GOOD`), and 2 in 5 operations are launch offsets, so `getProjectileLaunchOffset`'s `CACHE_ATTACH_BONE`
+/// branch (the cached offset added to the turret positions) is reached often. Off, the draws are #175's.
+fn random_case(g: &mut Gen, attach: bool) -> (Vec<i32>, bool, [i32; 12], Vec<[i32; OP]>, i32) {
     let mut w = Vec::new();
     let scale = match g.below(10) {
         0..=3 => [0.25f32, 0.5, 1.0, 1.0, 1.0, 2.0, 4.0][g.below(7) as usize],
@@ -313,7 +353,15 @@ fn random_case(g: &mut Gen) -> (Vec<i32>, bool, [i32; 12], Vec<[i32; OP]>, i32) 
     };
     for _ in 0..3 {
         w.push(if g.below(10) < 7 { 0 } else { bits12(g) });
-        w.push(if g.below(5) == 0 { q(g, 100) } else { 0 });
+        // (#178) the names a pivot of the art may have: FIREPOINT01, Turret, Barrel, Launch, Attach, muzzlefx01, MUZZLE
+        const ATTACH_GOOD: [i32; 7] = [2, 5, 6, 7, 8, 12, 13];
+        w.push(if attach {
+            ATTACH_GOOD[g.below(ATTACH_GOOD.len() as u32) as usize]
+        } else if g.below(5) == 0 {
+            q(g, 100)
+        } else {
+            0
+        });
         w.push(g.below(3) as i32);
         for _ in 0..2 {
             w.push(q(g, 100));
@@ -361,7 +409,7 @@ fn random_case(g: &mut Gen) -> (Vec<i32>, bool, [i32; 12], Vec<[i32; OP]>, i32) 
     let mut ops = Vec::new();
     for _ in 0..1 + g.below(12) {
         let mut a = [0i32; OP];
-        a[0] = match g.below(100) {
+        a[0] = if attach && g.below(5) < 2 { 4 } else { match g.below(100) {
             0..=24 => 0,
             25..=39 => 1,
             40..=52 => 2,
@@ -369,7 +417,7 @@ fn random_case(g: &mut Gen) -> (Vec<i32>, bool, [i32; 12], Vec<[i32; OP]>, i32) 
             66..=84 => 4,
             85..=91 => 5,
             _ => 6,
-        };
+        } };
         match a[0] {
             0 => {
                 a[1] = q(g, 10);
@@ -708,14 +756,14 @@ fn world() -> (World, ObjectId, ObjectId) {
 }
 
 /// (cases, operations, undefined turret queries, bones found by the pristine queries)
-fn compare(c: &mut Check, seed: u64, n: u64) -> [u64; 4] {
+fn compare(c: &mut Check, seed: u64, n: u64, attach: bool) -> [u64; 4] {
     let (mut w, gun, plain) = world();
     let mut g = Gen::new(seed);
     let (mut ops_run, mut undefined, mut found) = (0u64, 0u64, 0u64);
     // (single bones found, multi bones found, turret bones found, launch offsets found, barrel counts > 0)
     let mut hits = [0u64; 5];
     for k in 0..n {
-        let (mut words_in, turret, transform, ops, cond) = random_case(&mut g);
+        let (mut words_in, turret, transform, ops, cond) = random_case(&mut g, attach);
         let (scale, std, mut models, modules, _) = build(&words_in);
         let mut report = ArtBonesReport::default();
         validate_template_art(&modules, scale, &std, &mut models, &mut report);
@@ -792,8 +840,24 @@ fn compare(c: &mut Check, seed: u64, n: u64) -> [u64; 4] {
 fn the_logic_s_bones_match_upstream() {
     let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut c = Check::new("logic bones and launch offsets (#175)");
-    let [n, ops, undefined, found] = compare(&mut c, 0x175_0001, cases());
+    let [n, ops, undefined, found] = compare(&mut c, 0x175_0001, cases(), false);
     println!("logic bones: {n} cases, {ops} operations, {undefined} turret queries undefined upstream (excluded: both sides record -1), {found} bones found by the pristine queries");
+    if planted() {
+        c.report();
+        panic!("a planted run: see the MEASURED line (a mismatch is the plant caught)");
+    }
+    c.finish();
+}
+
+/// (#178) The same comparison with every module naming an `AttachToBoneInAnotherModule` bone the art may have and more
+/// launch-offset queries (`random_case`'s `attach`), so the `CACHE_ATTACH_BONE` branch of `getProjectileLaunchOffset`
+/// (W3DModelDraw.cpp:3362-3395) is reached in most cases.
+#[test]
+fn the_attach_bone_offset_matches_upstream() {
+    let _l = CPP_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut c = Check::new("logic launch offsets with an attach bone (#178)");
+    let [n, ops, undefined, found] = compare(&mut c, 0x178_0001, cases(), true);
+    println!("attach bone: {n} cases, {ops} operations, {undefined} turret queries undefined upstream (excluded: both sides record -1), {found} bones found by the pristine queries");
     if planted() {
         c.report();
         panic!("a planted run: see the MEASURED line (a mismatch is the plant caught)");
