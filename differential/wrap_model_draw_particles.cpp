@@ -105,7 +105,23 @@
 **   engine's time freezes (none). The drawable starts as `setInstanceMatrix(NULL)` with no physics. New ops: 11 the
 **   drawable's transform = the 12 words, then `Drawable::draw` from its root (recorded as [400, the root's 12 words]
 **   before the module's doDrawModule); 12 `setInstanceMatrix(a1 ? &words : NULL)`; 13 `calcPhysicsXform` answers a1
-**   with totals pitch, roll, yaw, z = words 2..5 for the next draws. */
+**   with totals pitch, roll, yaw, z = words 2..5 for the next draws.
+**   (#182, the instance matrices the logic's updates set) Cut verbatim too:
+**     mp_collapse_wait.inc  GameEngine/Source/GameLogic/Object/Update/StructureCollapseUpdate.cpp, the waiting shudder
+**                           from `shudder.Set(..., 0);` to `if (now >= m_collapseFrame)` (189-197);
+**     mp_collapse_fall.inc  StructureCollapseUpdate.cpp, the collapsing shudder from `shudder.Set(..., m_currentHeight);`
+**                           to `if (now >= m_burstFrame)` (217-224);
+**     mp_collapse_done.inc  StructureCollapseUpdate.cpp, the final zero from `shudder.Set(0, 0, 0);` to `return
+**                           UPDATE_SLEEP_FOREVER;` (259-265);
+**     mp_float_bob.inc      GameEngine/Source/GameLogic/Object/Update/FloatUpdate.cpp, the drawable's bob from `Drawable
+**                           *draw = getObject()->getDrawable();` to `return UPDATE_SLEEP_NONE;` (123-140).
+**   Stand-ins: the building and `getObject()` (their `getDrawable()` the case's drawable), the module data's
+**   `m_maxShudder`, `m_currentHeight`, `GameClientRandomValueReal` (the case's words in call order; which of them is x
+**   is the compiler's order of `shudder.Set`'s arguments, which C++ leaves unspecified: `ref_mdp_shudder_order` tells
+**   the test) and `TheGameLogic->getFrame()`; `INT_TO_REAL` is BaseType.h:240's. `sin` of a `Real` is C's double `sin`
+**   (the shim's math.h: MSVC's C semantics), petir's in the test binary. New ops: 14 the collapse's translation of
+**   phase a1 % 3 (0 waiting, 1 collapsing, 2 done) with the random values words 2, 3 and the height word 4; 15 the bob
+**   at frame a1. Both recorded as [500, isInstanceIdentity, the instance matrix's 12 words]. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -120,6 +136,10 @@
 #include "matrix3d.h"
 #include "vector3.h"
 #include "wwmath.h"
+/* (#182) Libraries/Include/Lib/BaseType.h:240, which the shim's BaseType.h does not carry */
+#ifndef INT_TO_REAL
+#define INT_TO_REAL(x)						((Real) (x))
+#endif
 
 #ifndef stricmp
 #define stricmp strcasecmp
@@ -617,6 +637,60 @@ void Drawable::drawRoot()
 {
 #include "mp_draw_root.inc"
 
+/* (#182) StructureCollapseUpdate's and FloatUpdate's stand-ins (see the header) */
+struct CollapseData { Real m_maxShudder; };
+Real g_clientRandom[2];
+int g_clientRandomAt;
+Real GameClientRandomValueReal(Real lo, Real hi)
+{
+	(void)lo;
+	(void)hi;
+	if (g_clientRandomAt >= 2) abort();
+	return g_clientRandom[g_clientRandomAt++];
+}
+struct Building { Drawable *getDrawable() const { return &g_drawable; } };
+Building g_building;
+struct GameLogicStandIn { UnsignedInt m_frame; UnsignedInt getFrame() const { return m_frame; } };
+GameLogicStandIn g_gameLogic;
+GameLogicStandIn *TheGameLogic = &g_gameLogic;
+void collapseShudder(int phase, Real x, Real y, Real height)
+{
+	CollapseData data;
+	data.m_maxShudder = 1.0f;
+	const CollapseData *d = &data;
+	(void)d;
+	Building *building = &g_building;
+	Real m_currentHeight = height;
+	(void)m_currentHeight;
+	g_clientRandom[0] = x;
+	g_clientRandom[1] = y;
+	g_clientRandomAt = 0;
+	if (phase == 0) {
+		Vector3 shudder;
+#include "mp_collapse_wait.inc"
+	} else if (phase == 1) {
+		Vector3 shudder;
+#include "mp_collapse_fall.inc"
+	} else {
+		Vector3 shudder;
+#include "mp_collapse_done.inc"
+	}
+}
+struct FloatUpdateStandIn
+{
+	Building *getObject() const { return &g_building; }
+	void bob()
+	{
+#include "mp_float_bob.inc"
+	}
+};
+void recInstance()
+{
+	rec({500, g_drawable.m_instanceIsIdentity ? 1 : 0});
+	for (int r = 0; r < 3; ++r)
+		for (int c = 0; c < 4; ++c) rec({bits(g_drawable.m_instance[r][c])});
+}
+
 Matrix3D matrix(const int *w)
 {
 	Matrix3D m(true);
@@ -636,6 +710,21 @@ int copy_out(int *out, int cap)
 } /* namespace mp */
 
 extern "C" {
+
+/* (#182) Which of the case's two client random values this compiler gives `shudder`'s x: 0 the first drawn (its
+** arguments evaluated left to right), 1 the second. C++ leaves the order unspecified; the waiting cut is run on 1 and 2
+** and the drawable put back as it was. */
+int ref_mdp_shudder_order(void)
+{
+	using namespace mp;
+	Matrix3D keep = g_drawable.m_instance;
+	Bool keepIdentity = g_drawable.m_instanceIsIdentity;
+	collapseShudder(0, 1.0f, 2.0f, 0.0f);
+	Real x = g_drawable.m_instance[0][3];
+	g_drawable.m_instance = keep;
+	g_drawable.m_instanceIsIdentity = keepIdentity;
+	return x == 1.0f ? 0 : x == 2.0f ? 1 : -1;
+}
 
 int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 {
@@ -768,6 +857,19 @@ int ref_model_draw_particles_seq(const int *in, int nin, int *out, int cap)
 			g_physicsInfo.m_totalYaw = real(a[4]);
 			g_physicsInfo.m_totalZ = real(a[5]);
 			break;
+		case 14:
+			/* (#182) StructureCollapseUpdate's translation of phase a1 % 3 */
+			collapseShudder((unsigned)a[1] % 3, real(a[2]), real(a[3]), real(a[4]));
+			recInstance();
+			break;
+		case 15: {
+			/* (#182) FloatUpdate's bob at frame a1 */
+			g_gameLogic.m_frame = (UnsignedInt)a[1];
+			FloatUpdateStandIn f;
+			f.bob();
+			recInstance();
+			break;
+		}
 		case 10: {
 			Coord3D pos[64];
 			Matrix3D mtx[64];

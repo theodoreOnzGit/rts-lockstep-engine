@@ -124,6 +124,24 @@ C1 and C2 make the game playable without art. C3 is the step that most needs the
 
 ## Development history
 
+**#182 item 1 (2026-11-13, GitHub #182): the logic's instance matrices reach the drawable.**
+- **Found:** the logic emitted `DrawableSetInstanceTranslation` (StructureCollapseUpdate), `DrawableFloatTilt`
+  (FloatUpdate) and `DrawableSetInstanceMatrix` (NeutronMissileUpdate), and the client consumed none of them, so the
+  collapse's shudder and sinking, the float's bob and the missile's turn never reached the draw's root.
+- **Translated:** upstream has no `Drawable::setInstanceTranslation`; the event stands for StructureCollapseUpdate.cpp's
+  `getInstanceMatrix`, `Set_Translation(shudder)`, `setInstanceMatrix` (191-197, 218-224, 260-265:
+  `Drawable::set_instance_translation`, the drawable's own rotation kept, never flagged the identity again);
+  FloatUpdate.cpp's bob (123-139: `Drawable::float_update_tilt`, with C's double `sin` as MSVC's headers give it);
+  `setInstanceMatrix` through the existing `Drawable::set_instance_matrix`. `ClientDrawables::apply_events` applies the
+  three in their place among the frame's events, before `ClientDrawables::draw` runs the client update modules and the
+  draw, as upstream's logic sets the matrix before `updateDrawable` and `draw`. A save writes what they set
+  (`Drawable::xfer`'s `m_instanceIsIdentity`, `m_instance`).
+- **Results:** `differential_model_draw_particles` (the three collapse blocks and the bob cut verbatim; ops 14 and 15):
+  main 0 mismatches over 20,000 (411,533 steps), any scale 0 over 20,000 (409,915 steps), max ULP 0; 13 of 13 plants
+  caught (9871-9883; 9880-9882 by the lib tests). The lib test `the_logic_s_instance_matrices_reach_the_draw_root` kills
+  a collapsing structure and runs a floating object in the gate's game: each event's matrix is the drawable's and its
+  render object's transform is the object's post-multiplied by it. See the test's header for the full numbers.
+
 **#179 item 3 (2026-11-13, GitHub #179): the draw's root carries the instance matrix and the physics.**
 - **Translated:** `Drawable::draw`'s root (Drawable.cpp:2662-2673): the drawable's transform post-multiplied by its
   instance matrix unless flagged the identity, then `applyPhysicsXform`'s `Translate`, `Rotate_Y`, `Rotate_X`,
@@ -1050,10 +1068,12 @@ campaign INI's differential.**
   (`client::drawable_save`); only one whose tag the drawable lacks is kept.
 - **Kept but unused** (read, held in `DrawableSaveFields`, written back): the drawable id, the transform, both tint
   envelopes and the tint statuses, the terrain decal, the six opacities, `m_status`, the fade members, the flash count and
-  colour, the second material pass opacity, the instance matrix, identity flag and scale, the shroud status object, the
+  colour, the second material pass opacity, ~~the instance matrix, identity flag and scale,~~ the shroud status object, the
   expiration date, the icons (templates unchecked: no `Anim2DCollection`), unknown modules' blocks,
   `W3DDependencyModelDraw::m_dependencyCleared`, the drawables without objects (`ClientDrawables::object_less`, not drawn),
-  the animation mode `W3DModelDraw::xfer` writes ("note, this will be ignored", upstream too).
+  the animation mode `W3DModelDraw::xfer` writes ("note, this will be ignored", upstream too). **Corrected 2026-11-13
+  (#182):** the instance matrix, its identity flag and scale are used (the scale since #174, the matrix in the draw's
+  root since #179 item 3, set by the sway and, since #182, by the logic's events), so they are saved as set.
 - **Used:** the condition flags, the animation frame (a fraction of its frames), the recoil infos, the `showSubObject` list,
   `m_locoInfo` (but its yaw and pitch modulators, which upstream does not save), the hidden and hidden-by-stealth flags, and
   the ambient sound: each drawable's switches and custom sound are copied from the client audio before a save

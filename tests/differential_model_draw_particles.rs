@@ -185,6 +185,34 @@
 //!   `ClientDrawables::draw` are not reached), caught by the lib test
 //!   `the_draw_root_carries_the_instance_matrix_and_the_physics`. **12 of 12 caught.**
 //!
+//! # #182 item 1 (2026-11-13): the instance matrices the logic sets
+//!
+//! The logic's `DrawableSetInstanceTranslation` (StructureCollapseUpdate) and `DrawableFloatTilt` (FloatUpdate) reach the
+//! client's `Drawable::set_instance_translation` and `Drawable::float_update_tilt`. Upstream has no
+//! `setInstanceTranslation`: the lines the events stand for are cut verbatim from StructureCollapseUpdate.cpp (the
+//! waiting shudder, the collapsing shudder and height, the final zero: `getInstanceMatrix`, `Set_Translation`,
+//! `setInstanceMatrix`) and FloatUpdate.cpp (the bob: `Get_Z_Rotation`, `Make_Identity`, `Rotate_Z`, `Rotate_Y`,
+//! `Rotate_X`). New ops: 14 (3 %) the translation of phase a1 % 3 with two client random values within a `MaxShudder`
+//! of up to 3 and a height in -60..0 (`Gen::mixed` one in 10 each in the second test); 15 (2 %) the bob at a frame
+//! (below 100, below 200,000, any 32 bits, or 0); both record `[500, isInstanceIdentity, the 12 words]`. Ops 11-13's
+//! shares shrink to 10 %, 3 % and 2 %. C++ leaves the order of `shudder.Set`'s arguments unspecified; the compiled
+//! wrapper (g++) evaluates them **right to left** (`ref_mdp_shudder_order`), so the test gives the port x as the second
+//! value drawn. `sin` of a `Real` is C's double `sin` (differential/shim/math.h).
+//!
+//! Predicted (`issue182_predictions.md`, before any run): 0 mismatches in both tests, max ULP 0; plants 9871-9879 and
+//! 9883 caught here, 9880-9882 only by the lib tests.
+//!
+//! - **First run:** did not build (`INT_TO_REAL` is not in the shim's BaseType.h: defined in the wrapper as
+//!   BaseType.h:240). **Second:** the bob mismatched by 1-2 ULP: the port used `sinf`, I had predicted the `float`
+//!   overload; the wrapper (shim math.h, MSVC's C semantics) calls the double `sin`. **A prediction miss and a port
+//!   defect, fixed:** `float_update_tilt` widens to the double sine.
+//! - **Third run (2026-11-13):** main **0 mismatches** over 20,000 (411,533 steps, 47,041 systems, 75 NaN words, max ULP
+//!   0); any scale **0** over 20,000 (409,915 steps, 46,698 systems, 3,152 NaN words, 151 NaN-payload-only, max ULP 0).
+//! - Plants, mismatching of 20,000: 9871 2,660; 9872 3,257; 9873 6,410; 9874 3,541; 9875 5,165; 9876 1,159; 9877 5,165;
+//!   9878 1,734; 9879 5,201; 9883 3,610; 9880, 9881, 9882 0 here (the event dispatch is not reached), caught by the lib
+//!   tests `the_logic_s_instance_matrices_reach_the_draw_root` and `the_logic_s_set_instance_matrix_reaches_the_drawable`.
+//!   **13 of 13 caught.**
+//!
 //! # Planted bugs
 //!
 //! `L9_PLANT=<id>` (the run prints `MEASURED` lines and fails on purpose):
@@ -256,6 +284,19 @@
 //! | 9856 | (#179 item 3) the renderer's local matrix ignores the instance matrix (lib test) |
 //! | 9857 | (#179 item 3) `ClientDrawables::draw` hands the modules the drawable's transform (lib test) |
 //! | 9870 | (#179 item 3) the pre-fix root: the drawable's transform alone |
+//! | 9871 | (#182) the collapse's translation is put on the identity, not on the drawable's instance matrix |
+//! | 9872 | (#182) the translation is added (`Translate`), not set |
+//! | 9873 | (#182) the translation's x and y swapped |
+//! | 9874 | (#182) the translation's z (the collapse's height) dropped |
+//! | 9875 | (#182) the bob's yaw and pitch frequencies swapped |
+//! | 9876 | (#182) the bob does not keep the Z rotation |
+//! | 9877 | (#182) the bob's `Rotate_X` before its `Rotate_Y` |
+//! | 9878 | (#182) the bob keeps the old translation |
+//! | 9879 | (#182) the bob's angle is the next frame's |
+//! | 9880 | (#182) `apply_events` ignores `DrawableSetInstanceTranslation` (lib test) |
+//! | 9881 | (#182) `apply_events` ignores `DrawableFloatTilt` (lib test) |
+//! | 9882 | (#182) `apply_events` ignores `DrawableSetInstanceMatrix` (lib test) |
+//! | 9883 | (#182) the collapse's final zero resets the matrix to the identity, flagged |
 
 mod support;
 
@@ -279,6 +320,18 @@ static CPP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn planted() -> bool {
     std::env::var("L9_PLANT").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) != 0
+}
+
+/// (#182) `ref_mdp_shudder_order`: 0 when the compiled `shudder.Set(...)` evaluates its arguments left to right (x the
+/// first client random value), 1 right to left.
+fn shudder_order() -> i32 {
+    static ORDER: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *ORDER.get_or_init(|| {
+        let o = unsafe { cpp::ref_mdp_shudder_order() };
+        assert!(o == 0 || o == 1, "the shudder's order probe: {o}");
+        println!("the compiled shudder.Set evaluates its arguments {}", if o == 0 { "left to right" } else { "right to left" });
+        o
+    })
 }
 
 fn cases() -> u64 {
@@ -426,9 +479,12 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
             64..=71 => 8,
             72..=73 => 9,
             74..=79 => 10,
-            80..=91 => 11,
-            92..=95 => 12,
-            _ => 13,
+            80..=89 => 11,
+            90..=92 => 12,
+            93..=94 => 13,
+            // (#182) the collapse's translation (14) and the float's bob (15)
+            95..=97 => 14,
+            _ => 15,
         };
         s[0] = op;
         s[1] = match op {
@@ -436,6 +492,13 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
             // (#179 item 3) setInstanceMatrix(NULL) 1 in 4; calcPhysicsXform answers false 1 in 5
             12 => (g.below(4) != 0) as i32,
             13 => (g.below(5) != 0) as i32,
+            // (#182) the bob's frame: early in a game, any game, any 32 bits, or 0
+            15 => match g.below(4) {
+                0 => g.below(100) as i32,
+                1 => g.below(200_000) as i32,
+                2 => g.below(u32::MAX) as i32,
+                _ => 0,
+            },
             _ => g.below(1000) as i32,
         };
         if op == 8 {
@@ -489,6 +552,14 @@ fn random_case(g: &mut Gen, any_scale: bool) -> Vec<i32> {
                     s[2 + row * 4 + c] = b(m.row[row][c]);
                 }
             }
+        } else if op == 14 {
+            // (#182) the shudder's two client random values (within a `MaxShudder` up to 3) and the height (falling from
+            // 0); `Gen::mixed` one in 10 each in the second test
+            let max = g.uniform(0.0, 3.0);
+            for i in 0..2 {
+                s[2 + i] = b(if any_scale && g.below(10) == 0 { g.mixed() } else { g.uniform(-max, max) });
+            }
+            s[4] = b(if any_scale && g.below(10) == 0 { g.mixed() } else { -g.uniform(0.0, 60.0) });
         } else if op == 13 {
             // the totals: pitch, roll, yaw, z (all 0 one in 8; `Gen::mixed` one in 10 each in the second test)
             if g.below(8) != 0 {
@@ -803,6 +874,30 @@ fn rust_case(w: &[i32]) -> Vec<i32> {
             12 => {
                 let mtx = matrix(&s[2..]);
                 d.set_instance_matrix(if s[1] != 0 { Some(&mtx) } else { None });
+            }
+            // (#182) `StructureCollapseUpdate`'s translation as the logic's event carries it (`shudder`: the two client
+            // random values and 0, the height, or zero), then the client's `Drawable::set_instance_translation`
+            14 | 15 => {
+                if s[0] == 14 {
+                    // the two random values in the order the compiled `shudder.Set(...)` draws them (C++ leaves it
+                    // unspecified; the logic's event carries x and y whichever was drawn first)
+                    let (x, y) = if shudder_order() == 0 { (r(s[2]), r(s[3])) } else { (r(s[3]), r(s[2])) };
+                    let shudder = match s[1] as u32 % 3 {
+                        0 => Coord3D { x, y, z: 0.0 },
+                        1 => Coord3D { x, y, z: r(s[4]) },
+                        _ => Coord3D { x: 0.0, y: 0.0, z: 0.0 },
+                    };
+                    d.set_instance_translation(&shudder);
+                } else {
+                    // `FloatUpdate`'s bob (the logic's `DrawableFloatTilt { frame }`)
+                    d.float_update_tilt(s[1] as u32);
+                }
+                out.extend([500, d.saved.instance_is_identity as i32]);
+                for row in 0..3 {
+                    for c in 0..4 {
+                        out.push(b(d.saved.instance.row[row][c]));
+                    }
+                }
             }
             13 => {
                 physics = (s[1] != 0).then_some(PhysicsXformInfo { total_pitch: r(s[2]), total_roll: r(s[3]), total_yaw: r(s[4]), total_z: r(s[5]) });

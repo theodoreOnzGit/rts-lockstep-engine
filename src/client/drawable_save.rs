@@ -53,7 +53,11 @@
 //! the drawable id (`m_id`: the port addresses drawables by object), the transform (a drawable with an object takes its
 //! object's at the load's post-process, as upstream; one without keeps it), the tint envelopes and the tint statuses, the
 //! terrain decal, the opacities, `m_status`, the fade members, the flash count and colour, the second material pass opacity,
-//! the instance matrix, its identity flag and scale (the modules were made with the template's scale), the shroud status
+//! ~~the instance matrix, its identity flag and scale (the modules were made with the template's scale)~~ **Corrected
+//! 2026-11-13 (#182):** the instance matrix, its identity flag and scale are used: `setInstanceScale` reaches the modules
+//! since #174, the draw's root carries the instance matrix since #179 item 3, and the logic's instance matrices
+//! (`DrawableSetInstanceMatrix`, `DrawableSetInstanceTranslation`, `DrawableFloatTilt`) and the sway set it, so a save
+//! writes what they set and a load restores what the next draw uses; the shroud status
 //! object, the expiration date, the icons (`TheAnim2DCollection` is not translated: an icon's template name is kept
 //! unchecked), the modules the port does not make (their blocks kept as read, and written back; ~~a client update module
 //! is one~~ **Corrected 2026-11-12 (#165):** the client update modules are made and saved by their own xfers, so only a

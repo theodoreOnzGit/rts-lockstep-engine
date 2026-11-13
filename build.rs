@@ -2852,7 +2852,9 @@ mod differential {
             // getCurrentBonePositions and reactToTransformChange; pivot.cpp's PivotClass::Capture_Update; htree.cpp's
             // Capture_Bone, Release_Bone, Is_Bone_Captured and Control_Bone. GitHub #179 item 3: Drawable.cpp's
             // Drawable::draw root (the instance matrix and applyPhysicsXform's call, to the end of draw),
-            // applyPhysicsXform and setInstanceMatrix; Drawable.h's PhysicsXformInfo. No text is edited. Each anchor must
+            // applyPhysicsXform and setInstanceMatrix; Drawable.h's PhysicsXformInfo. GitHub #182: StructureCollapseUpdate.cpp's
+            // three instance translations (the shudder while waiting, the shudder and height while collapsing, the zero when
+            // done) and FloatUpdate.cpp's bob of the drawable. No text is edited. Each anchor must
             // occur once. Linked before upstream_xfer and upstream_wwmath, which it calls.
             {
                 println!("cargo:rerun-if-changed=differential/wrap_model_draw_particles.cpp");
@@ -2882,6 +2884,9 @@ mod differential {
                 // (#179 item 3) Drawable::draw's root, applyPhysicsXform, setInstanceMatrix, Drawable.h's PhysicsXformInfo
                 let dr = read_upstream(ge.join("Source/GameClient/Drawable.cpp"));
                 let dr_h = read_upstream(ge.join("Include/GameClient/Drawable.h"));
+                // (#182) the instance matrices the logic's updates set: StructureCollapseUpdate's translation, FloatUpdate's bob
+                let sc = read_upstream(ge.join("Source/GameLogic/Object/Update/StructureCollapseUpdate.cpp"));
+                let fl = read_upstream(ge.join("Source/GameLogic/Object/Update/FloatUpdate.cpp"));
                 let files = [
                     ("mp_psid.inc", piece(&psys_h, "ParticleSys.h", "enum ParticleSystemID\n", Some(("#define MAX_VOLUME_PARTICLE_DEPTH", false)))),
                     ("mp_tracker.inc", piece(&md_h, "W3DModelDraw.h", "\tstruct ParticleSysTrackerType\n", Some(("\ttypedef std::vector<WeaponRecoilInfo>", false)))),
@@ -2974,6 +2979,33 @@ mod differential {
                     (
                         "mp_physics_info.inc",
                         piece(&dr_h, "Drawable.h", "\tstruct PhysicsXformInfo\n", Some(("\tBool calcPhysicsXform(PhysicsXformInfo& info);", false))),
+                    ),
+                    // GitHub #182
+                    (
+                        "mp_collapse_wait.inc",
+                        piece(
+                            &sc,
+                            "StructureCollapseUpdate.cpp",
+                            "\t\tshudder.Set(GameClientRandomValueReal(-(d->m_maxShudder), d->m_maxShudder), GameClientRandomValueReal(-(d->m_maxShudder), d->m_maxShudder), 0);\n",
+                            Some(("\t\tif (now >= m_collapseFrame) \n", false)),
+                        ),
+                    ),
+                    (
+                        "mp_collapse_fall.inc",
+                        piece(
+                            &sc,
+                            "StructureCollapseUpdate.cpp",
+                            "\t\tshudder.Set(GameClientRandomValueReal(-(d->m_maxShudder), d->m_maxShudder), GameClientRandomValueReal(-(d->m_maxShudder), d->m_maxShudder), m_currentHeight);\n",
+                            Some(("\t\tif (now >= m_burstFrame) \n", false)),
+                        ),
+                    ),
+                    (
+                        "mp_collapse_done.inc",
+                        piece(&sc, "StructureCollapseUpdate.cpp", "\t\t\tshudder.Set(0, 0, 0);\n", Some(("\t\t\treturn UPDATE_SLEEP_FOREVER;\n", false))),
+                    ),
+                    (
+                        "mp_float_bob.inc",
+                        piece(&fl, "FloatUpdate.cpp", "\tDrawable *draw = getObject()->getDrawable();\n", Some(("\treturn UPDATE_SLEEP_NONE;\n", false))),
                     ),
                 ];
                 let gen = out_dir.join("model_draw_particles_gen");

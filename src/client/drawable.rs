@@ -62,6 +62,11 @@
 //!   drawable's other per-frame work (`updateDrawable`), `~LaserUpdate()` run when the drawable goes. The logic's calls
 //!   arrive as events: `hideBeacon` (`ClientCall::HideBeacon`), `stopSway` (`DrawableStopSway`, `ToppleUpdate`) and
 //!   `initLaser` (`LaserInit`, through `findClientUpdateModule`, which upstream never advances past the first module).
+//! - **The instance matrix** (#179 item 3, #182): the draw's root post-multiplies the drawable's transform by it. The sway
+//!   sets it on the client; the logic's updates set it as events, applied before the frame's client updates and draw, as
+//!   upstream's logic sets it before `updateDrawable` and `draw`: `setInstanceMatrix` (`DrawableSetInstanceMatrix`),
+//!   `StructureCollapseUpdate`'s new translation on the current matrix ([`Drawable::set_instance_translation`]) and
+//!   `FloatUpdate`'s bob ([`Drawable::float_update_tilt`]).
 //!
 //! # Where this differs from upstream
 //!
@@ -271,6 +276,83 @@ impl Drawable {
                 self.saved.instance_is_identity = true;
             }
         }
+    }
+
+    /// (#182) The logic's [`ObjectClientEvent::DrawableSetInstanceTranslation`]. Upstream has no
+    /// `Drawable::setInstanceTranslation`: the event stands for the four lines `StructureCollapseUpdate::update` writes
+    /// three times (StructureCollapseUpdate.cpp:191-197, 218-224, 260-265, the shudder while waiting, the shudder and
+    /// the height while collapsing, the zero when done):
+    ///
+    /// ```text
+    /// const Matrix3D *instMatrix = building->getDrawable()->getInstanceMatrix();
+    /// Matrix3D newInstMatrix;
+    /// newInstMatrix = *instMatrix;
+    /// newInstMatrix.Set_Translation(shudder);
+    /// building->getDrawable()->setInstanceMatrix(&newInstMatrix);
+    /// ```
+    ///
+    /// The drawable's own rotation is kept, only its translation is `shudder`; and the matrix is set through
+    /// [`Drawable::set_instance_matrix`] with a matrix, so it is never flagged the identity again (not even by the
+    /// final zero). Checked against those lines compiled verbatim (`tests/differential_model_draw_particles.rs`, op 14).
+    pub fn set_instance_translation(&mut self, shudder: &Coord3D) {
+        let mut new_inst_matrix = if plant(9871) { Matrix3D::IDENTITY } else { self.saved.instance };
+        let (x, y) = if plant(9873) { (shudder.y, shudder.x) } else { (shudder.x, shudder.y) };
+        let z = if plant(9874) { 0.0 } else { shudder.z };
+        if plant(9872) {
+            new_inst_matrix.translate(x, y, z);
+        } else {
+            new_inst_matrix.set_translation(&crate::ww::vector3::Vector3::new(x, y, z));
+        }
+        if plant(9883) && x == 0.0 && y == 0.0 && z == 0.0 {
+            self.set_instance_matrix(None);
+            return;
+        }
+        self.set_instance_matrix(Some(&new_inst_matrix));
+    }
+
+    /// (#182) The logic's [`ObjectClientEvent::DrawableFloatTilt`]: `FloatUpdate::update`'s bob of the drawable
+    /// (FloatUpdate.cpp:123-139), on the frame the logic read (`TheGameLogic->getFrame()`):
+    ///
+    /// ```text
+    /// Real angle = INT_TO_REAL(TheGameLogic->getFrame());
+    /// Real yaw = sin(angle * 0.0291f) * 0.05f;
+    /// Real pitch = sin(angle * 0.0515f) * 0.05f;
+    /// Matrix3D mx = *draw->getInstanceMatrix();
+    /// Real zRot = mx.Get_Z_Rotation();
+    /// mx.Make_Identity(); mx.Rotate_Z(zRot); mx.Rotate_Y(yaw); mx.Rotate_X(pitch);
+    /// draw->setInstanceMatrix(&mx);
+    /// ```
+    ///
+    /// `sin` of a `Real` is C's double `sin` (the MSVC headers the game was built with give the global functions C
+    /// semantics, differential/shim/math.h): `yaw = (Real)(sin((double)(angle * 0.0291f)) * (double)0.05f)`, petir's
+    /// double sine. Checked against those lines compiled verbatim
+    /// (`tests/differential_model_draw_particles.rs`, op 15).
+    pub fn float_update_tilt(&mut self, frame: u32) {
+        let angle = (if plant(9879) { frame.wrapping_add(1) } else { frame }) as f32;
+        let (fy, fp) = if plant(9875) { (0.0515f32, 0.0291f32) } else { (0.0291f32, 0.0515f32) };
+        // `sin(float)` under the MSVC headers the game was built with is C's double `sin` (differential/shim/math.h):
+        // the float product widened, the double sine, times `0.05f` widened, rounded to `Real` on the assignment
+        let yaw = (petir::Real::sin(f64::from(angle * fy)) * f64::from(0.05f32)) as f32;
+        let pitch = (petir::Real::sin(f64::from(angle * fp)) * f64::from(0.05f32)) as f32;
+        let mut mx = self.saved.instance;
+        let z_rot = if plant(9876) { 0.0 } else { mx.get_z_rotation() };
+        if !plant(9878) {
+            mx.make_identity();
+        } else {
+            // (plant) the old translation kept
+            let t = mx.get_translation();
+            mx.make_identity();
+            mx.set_translation(&t);
+        }
+        mx.rotate_z(z_rot);
+        if plant(9877) {
+            mx.rotate_x(pitch);
+            mx.rotate_y(yaw);
+        } else {
+            mx.rotate_y(yaw);
+            mx.rotate_x(pitch);
+        }
+        self.set_instance_matrix(Some(&mx));
     }
 
     /// (#179) The transform `Drawable::draw` hands every `doDrawModule` (Drawable.cpp:2662-2673) for this drawable's
@@ -811,7 +893,8 @@ impl ClientDrawables {
     }
 
     /// The logic's client events of a frame, in order: drawables made and
-    /// destroyed, their flags, damage states, visibility, stealth looks (GitHub #45) and loop durations; and, since
+    /// destroyed, their flags, damage states, visibility, stealth looks (GitHub #45), loop durations, and (#182) instance
+    /// matrices (`DrawableSetInstanceMatrix`, `DrawableSetInstanceTranslation`, `DrawableFloatTilt`); and, since
     /// GitHub #43, each event's effects in its place ([`ClientFx::apply_event`], a weapon's fire FX through
     /// [`ClientFx::weapon_fire_fx`] once the drawable has answered `handleWeaponFireFX`). Other events are left to
     /// their consumers.
@@ -849,6 +932,32 @@ impl ClientDrawables {
                 ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceScale { object_id, scale }) => {
                     if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
                         d.set_instance_scale(*scale);
+                    }
+                }
+                // (#182) the drawable's instance matrix, which upstream's logic sets while it updates (so before this
+                // frame's `updateDrawable` and draw, as here: the events are applied before `ClientDrawables::draw`
+                // runs the client update modules and the draw): `setInstanceMatrix(m)` (NeutronMissileUpdate.cpp:386,
+                // 411), `StructureCollapseUpdate`'s translation (StructureCollapseUpdate.cpp:191-197, 218-224,
+                // 260-265) and `FloatUpdate`'s bob (FloatUpdate.cpp:123-139)
+                ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceMatrix { object_id, matrix }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        if !plant(9882) {
+                            d.set_instance_matrix(matrix.as_ref());
+                        }
+                    }
+                }
+                ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceTranslation { object_id, translation }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        if !plant(9880) {
+                            d.set_instance_translation(translation);
+                        }
+                    }
+                }
+                ClientEvent::Object(ObjectClientEvent::DrawableFloatTilt { object_id, frame }) => {
+                    if let Some(d) = self.drawable(w, *object_id, assets, sync_time) {
+                        if !plant(9881) {
+                            d.float_update_tilt(*frame);
+                        }
                     }
                 }
                 ClientEvent::Object(ObjectClientEvent::DrawableSetHidden { object_id, hidden }) => {
@@ -2010,6 +2119,148 @@ mod tests {
         assert_eq!(d.draw_local_matrix(), d.physics_xform.map(|p| p.local_matrix()));
         // the free function: no instance, no physics is the drawable's transform
         assert_eq!(draw_transform_mtx(&object, None, None), object);
+    }
+
+    /// (#182) The logic's instance matrices reach the drawable and the draw's root: a `StructureCollapseUpdate`
+    /// structure killed in the gate's game, and a `FloatUpdate` object (`Enabled = No`: only the bob), run frame by
+    /// frame; each frame's client events are applied (`ClientDrawables::apply_events`) and the drawables drawn.
+    ///
+    /// *Predictions (issue182_predictions.md, before the run):* the collapse's events are first the waiting shudder
+    /// (z 0), then the collapsing shudder (z the falling height, below 0), then once the zero; after each, the drawable's
+    /// instance matrix is the identity's rotation with the event's translation, never flagged the identity (not even
+    /// after the zero), and its render object's transform is the object's transform post-multiplied by it. The float's
+    /// instance matrix after each frame is `Rotate_Z(0)`, `Rotate_Y(sin(f * 0.0291) * 0.05)`, `Rotate_X(sin(f * 0.0515) *
+    /// 0.05)` of the event's frame `f` (its Z rotation stays 0). Plants 9880, 9881, 9871-9874, 9883 and 9875-9879 each
+    /// fail it.
+    ///
+    /// *Results (2026-11-13):* first run passed (9 waiting, 5 collapsing, 1 zero; 15 tilts). Plants 9872-9875, 9877,
+    /// 9879, 9880, 9881 and 9883 failed it; **9871, 9876 and 9878 did not (a prediction miss):** both drawables started
+    /// at the identity, so keeping the rotation, the Z rotation or the translation changed nothing. The test now starts
+    /// them at a client-set turn and lift (the building turned 0.3 about Z and moved (5, 5, 5), the floater turned 0.5
+    /// and lifted 4): the collapse keeps the turn and replaces the translation, the bob keeps the Z rotation of the
+    /// matrix it read and drops the lift. Re-run: passes (the same 9, 5, 1 and 15), and plants 9871-9881 and 9883 each
+    /// fail it (9882 fails `the_logic_s_set_instance_matrix_reaches_the_drawable`).
+    #[test]
+    fn the_logic_s_instance_matrices_reach_the_draw_root() {
+        use crate::logic::damage::{DAMAGE_UNRESISTABLE, DEATH_NORMAL};
+        use crate::logic::world::gate_scenario::{gate_world_with, make};
+        use crate::logic::world::team_ops::factory_find_team;
+        use crate::ww::vector3::Vector3;
+        let ini = "Object Collapser\n KindOf = STRUCTURE IMMOBILE\n Geometry = BOX\n GeometryMajorRadius = 20\n GeometryMinorRadius = 20\n GeometryHeight = 10\n\
+                   Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                   Behavior = StructureCollapseUpdate ModuleTag_Collapse\n  MinCollapseDelay = 300\n  MaxCollapseDelay = 300\n  MinBurstDelay = 1000\n  MaxBurstDelay = 2000\n  CollapseDamping = .5\n  MaxShudder = 1.5\n  BigBurstFrequency = 4\n End\nEnd\n\
+                   Object Floater\n KindOf = VEHICLE\n Geometry = CYLINDER\n GeometryMajorRadius = 5\n GeometryHeight = 5\n\
+                   Body = ActiveBody ModuleTag_Body\n  MaxHealth = 100\n  InitialHealth = 100\n End\n\
+                   Behavior = FloatUpdate ModuleTag_Float\n  Enabled = No\n End\nEnd\n";
+        let mut w = gate_world_with(ini);
+        let team = factory_find_team(&mut w, b"team1").unwrap().unwrap();
+        let building = make(&mut w, b"Collapser", team, Coord3D { x: 300.0, y: 300.0, z: 0.0 });
+        let floater = make(&mut w, b"Floater", team, Coord3D { x: 60.0, y: 300.0, z: 0.0 });
+        let mut c = ClientDrawables::new();
+        let module = |c: &mut ClientDrawables| {
+            let line = |depth, f: &str, a: &str| ClientLine { depth, field: f.as_bytes().to_vec(), args: a.split_whitespace().map(|t| t.as_bytes().to_vec()).collect() };
+            let block = ClientModuleData { module_tag_name_key: Default::default(), lines: vec![line(0, "DefaultConditionState", ""), line(1, "Model", "T")] };
+            let data = Arc::new(W3DModelDrawModuleData::parse(b"W3DModelDraw", &block).unwrap().unwrap());
+            let mut env = DrawEnv { assets: &mut NoAssets, random: &mut c.random, sync_time: 0, logic_time: true, particles: None };
+            W3DModelDraw::new(data, 0, false, false, &mut env).unwrap()
+        };
+        // the drawables (made at the first draw), each with a model and an instance matrix the client set before (a
+        // turn and a lift): the collapse keeps the building's turn, the bob keeps the floater's Z rotation alone
+        c.draw(&w, &mut NoAssets, 0);
+        let mut turned = Matrix3D::IDENTITY;
+        turned.rotate_z(0.3);
+        turned.translate(5.0, 5.0, 5.0);
+        let mut lifted = Matrix3D::IDENTITY;
+        lifted.rotate_z(0.5);
+        lifted.translate(0.0, 0.0, 4.0);
+        for (id, inst) in [(building, turned), (floater, lifted)] {
+            let m = module(&mut c);
+            let d = c.drawables.get_mut(&id).expect("a drawable");
+            d.draw_modules = vec![m];
+            d.set_instance_matrix(Some(&inst));
+        }
+        w.kill(building, DAMAGE_UNRESISTABLE, DEATH_NORMAL);
+        let (mut waiting, mut falling, mut zeros, mut floats) = (0, 0, 0, 0);
+        for frame in 0..900u32 {
+            w.logic_update().expect("a frame");
+            let ev = w.take_client_events();
+            let before = c.drawables[&floater].saved.instance;
+            let (mut last, mut tilt) = (None, None);
+            for e in &ev {
+                match e {
+                    ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceTranslation { object_id, translation }) if *object_id == building => last = Some(*translation),
+                    ClientEvent::Object(ObjectClientEvent::DrawableFloatTilt { object_id, frame }) if *object_id == floater => tilt = Some(*frame),
+                    _ => {}
+                }
+            }
+            c.apply_events(&w, &ev, &mut NoAssets, frame * 33);
+            c.draw(&w, &mut NoAssets, frame * 33);
+            let check = |c: &ClientDrawables, id: ObjectId, expected: &Matrix3D| {
+                let d = &c.drawables[&id];
+                assert!(!d.saved.instance_is_identity, "set with a matrix: never flagged the identity");
+                assert_eq!(d.saved.instance, *expected);
+                let object = *w.find_object(id).unwrap().thing.transform_matrix();
+                let mut root = object;
+                root.post_mul(expected);
+                if let Some(p) = &d.physics_xform {
+                    p.apply(&mut root);
+                }
+                assert_eq!(d.draw_transform_mtx(&object), root);
+                assert_eq!(d.draw_modules[0].render_object.as_ref().unwrap().transform, root, "the render object's transform is the draw's root");
+            };
+            if let Some(t) = last {
+                if (t.x, t.y, t.z) == (0.0, 0.0, 0.0) {
+                    zeros += 1;
+                } else if t.z == 0.0 {
+                    assert_eq!((falling, zeros), (0, 0), "the waiting shudder comes first");
+                    waiting += 1;
+                } else {
+                    assert!(t.z < 0.0 && zeros == 0);
+                    falling += 1;
+                }
+                let mut expected = turned;
+                expected.set_translation(&Vector3::new(t.x, t.y, t.z));
+                check(&c, building, &expected);
+            }
+            if let Some(f) = tilt {
+                let mut expected = Matrix3D::IDENTITY;
+                expected.rotate_z(before.get_z_rotation());
+                expected.rotate_y((petir::Real::sin(f64::from(f as f32 * 0.0291)) * f64::from(0.05f32)) as f32);
+                expected.rotate_x((petir::Real::sin(f64::from(f as f32 * 0.0515)) * f64::from(0.05f32)) as f32);
+                check(&c, floater, &expected);
+                floats += 1;
+            }
+            if zeros > 0 {
+                break;
+            }
+        }
+        println!("collapse events: waiting {waiting}, falling {falling}, zeros {zeros}; float tilts {floats}");
+        assert!(waiting > 0 && falling > 0 && zeros == 1, "waiting {waiting}, falling {falling}, zeros {zeros}");
+        assert!(floats > 0);
+        // a later frame: the collapse sleeps for ever, its drawable keeps the last matrix
+        let kept = c.drawables[&building].saved.instance;
+        w.logic_update().expect("a frame");
+        let ev = w.take_client_events();
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        assert_eq!(c.drawables[&building].saved.instance, kept);
+        assert!(!c.drawables[&building].saved.instance_is_identity);
+    }
+
+    /// (#182) `DrawableSetInstanceMatrix` (`NeutronMissileUpdate`'s `setInstanceMatrix(&m)` and `(NULL)`) reaches the
+    /// drawable: with a matrix it is the instance matrix, not flagged; with none the identity, flagged. Predicted: both
+    /// hold; plant 9882 fails it.
+    #[test]
+    fn the_logic_s_set_instance_matrix_reaches_the_drawable() {
+        let (w, mut c, id) = gate_with_a_transition_module();
+        let mut m = Matrix3D::IDENTITY;
+        m.rotate_x(0.4);
+        m.translate(1.0, 2.0, 3.0);
+        let ev = [ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceMatrix { object_id: id, matrix: Some(m) })];
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        assert_eq!((c.drawables[&id].saved.instance, c.drawables[&id].saved.instance_is_identity), (m, false));
+        let ev = [ClientEvent::Object(ObjectClientEvent::DrawableSetInstanceMatrix { object_id: id, matrix: None })];
+        c.apply_events(&w, &ev, &mut NoAssets, 0);
+        assert_eq!((c.drawables[&id].saved.instance, c.drawables[&id].saved.instance_is_identity), (Matrix3D::IDENTITY, true));
     }
 
     #[test]
